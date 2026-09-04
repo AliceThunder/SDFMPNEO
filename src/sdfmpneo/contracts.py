@@ -9,19 +9,7 @@ from torch import Tensor
 
 @dataclass
 class BasisQueryFeatures:
-    """Local query features for coordinate-conditioned basis decoding.
-
-    The first dimension is batch. Query feature dimensions may differ between
-    physical heads; each tensor contains the local coordinates/metric/boundary
-    descriptors needed by the corresponding decoder.
-
-    Shapes:
-        current_potential:  [B, Naj + Nhj, DqJ]
-        thermal:           [B, Nt, DqT]
-        velocity_potential:[B, Nav + Nhv, DqV]
-        log_tke:           [B, Nk, DqK]
-        log_omega:         [B, Nw, DqW]
-    """
+    """Local query features for coordinate-conditioned basis decoding."""
 
     current_potential: Tensor
     thermal: Tensor
@@ -36,9 +24,8 @@ class GeometryEncoding:
 
     `global_features` is shared by all heads and must not contain actual port
     excitation amplitudes. `slow_features` is visible only to thermal/flow
-    heads and may contain excitation invariants such as |I|^2 or operating-load
-    descriptors. This separation prevents excitation leakage into the shared EM
-    trial space.
+    heads. This separation prevents excitation leakage into the shared EM trial
+    space.
     """
 
     coil_tokens: Tensor
@@ -50,17 +37,7 @@ class GeometryEncoding:
 
 @dataclass
 class TopologyOperators:
-    """Gauge-reduced reference-domain exact-sequence generators.
-
-    `curl_current` and `curl_velocity` are not arbitrary raw incidence matrices:
-    the production backend must remove gauge-null directions so their columns
-    are linearly independent exact-space generators. Harmonic columns complete
-    the solenoidal space on multiply connected domains.
-
-    Divergence maps may be omitted only in local component tests that never enter
-    the physical model. `SDFMPNEO.forward` and the training path call
-    `validate_topology`, which rejects missing divergence maps.
-    """
+    """Gauge-reduced reference-domain exact-sequence generators."""
 
     curl_current: Tensor
     harmonic_current: Tensor
@@ -74,20 +51,42 @@ class TopologyOperators:
 class RawBasisBundle:
     """Coordinate-decoder outputs before hard physical maps."""
 
-    current_potential: Tensor  # [B, Naj+Nhj, rJmax]
-    thermal: Tensor  # [B, Nt, rTmax]
-    velocity_potential: Tensor  # [B, Nav+Nhv, rVmax]
-    log_tke: Tensor  # [B, Nk, rKmax]
-    log_omega: Tensor  # [B, Nw, rWmax]
+    current_potential: Tensor
+    thermal: Tensor
+    velocity_potential: Tensor
+    log_tke: Tensor
+    log_omega: Tensor
+
+
+@dataclass
+class PhysicsSeedBundle:
+    """Operator-constructed seed spaces in physical DOF coordinates.
+
+    These columns are produced without solution labels. Typical constructions:
+      * EM: source/operator compression and rational Krylov modes;
+      * thermal: low diffusion/generalised-energy eigenmodes;
+      * velocity: divergence-free Stokes modes;
+      * SST log states: constant/wall-distance/operator modes.
+
+    Shapes are `[B,Np,sp]`; zero-column tensors are valid. Seed ranks must not
+    exceed the first nested rank level because every online rank must retain the
+    complete physical backbone.
+    """
+
+    current: Tensor
+    thermal: Tensor
+    velocity: Tensor
+    log_tke: Tensor
+    log_omega: Tensor
 
 
 @dataclass
 class BasisBundle:
-    current: Tensor  # [B, Nj, rJmax]
-    thermal: Tensor  # [B, Nt, rTmax]
-    velocity: Tensor  # [B, Nv, rVmax]
-    log_tke: Tensor  # [B, Nk, rKmax]
-    log_omega: Tensor  # [B, Nw, rWmax]
+    current: Tensor
+    thermal: Tensor
+    velocity: Tensor
+    log_tke: Tensor
+    log_omega: Tensor
 
 
 @dataclass
@@ -124,14 +123,10 @@ class ReducedState:
 
 
 class ThermoFluidResidual(Protocol):
-    """Reduced coupled slow-physics residual F_r(z; xi)."""
-
     def __call__(self, z: Tensor) -> Tensor: ...
 
 
 class ResidualAssembler(Protocol):
-    """Independent full-space or certification-space residual action."""
-
     def __call__(self, z: Tensor) -> Tensor: ...
 
 
