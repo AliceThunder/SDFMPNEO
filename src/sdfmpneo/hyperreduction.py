@@ -27,11 +27,7 @@ def _projected_nnls(
     iterations: int = 600,
     tolerance: float = 1.0e-12,
 ) -> Tensor:
-    """Small dense non-negative least-squares solve by projected gradient.
-
-    Cubature construction is an offline operation, so a robust deterministic
-    solver is preferred over differentiability. `a` has shape [Nm,K].
-    """
+    """Small dense non-negative least-squares solve by projected gradient."""
     if a.ndim != 2 or target.ndim != 1 or a.shape[0] != target.shape[0]:
         raise ValueError("a must be [Nm,K] and target must be [Nm]")
     if a.shape[1] == 0:
@@ -41,8 +37,6 @@ def _projected_nnls(
     lipschitz = spectral.square().clamp_min(torch.finfo(a.dtype).eps)
     step = 1.0 / lipschitz
 
-    # A clipped least-squares start shortens the projected iterations while
-    # retaining the exact non-negativity invariant from the first iterate.
     try:
         initial = torch.linalg.lstsq(a, target).solution
         weights = initial.clamp_min(0)
@@ -52,17 +46,17 @@ def _projected_nnls(
     target_scale = torch.linalg.vector_norm(target).clamp_min(
         torch.finfo(target.dtype).eps
     )
-    previous = torch.tensor(float("inf"), dtype=target.dtype, device=target.device)
+    previous: Tensor | None = None
     for _ in range(iterations):
         residual = a @ weights - target
         gradient = a.transpose(0, 1) @ residual
         candidate = (weights - step * gradient).clamp_min(0)
         error = torch.linalg.vector_norm(a @ candidate - target) / target_scale
         weights = candidate
-        if torch.abs(previous - error) <= tolerance * torch.maximum(
-            torch.ones_like(error), previous
-        ):
-            break
+        if previous is not None:
+            scale = torch.maximum(torch.ones_like(error), previous.abs())
+            if torch.abs(previous - error) <= tolerance * scale:
+                break
         previous = error
     return weights
 
@@ -76,20 +70,8 @@ def build_positive_basis_operator_cubature(
 ) -> CubatureRule:
     """Construct solution-free positive cubature from operator moments.
 
-    Args:
-        element_moments: `[Ne, Nm]`. Each row contains contributions of one
-            element/cell to a set of basis-operator moments. These moments are
-            generated from neural trial spaces and governing operators only;
-            no full-order solution snapshots are required.
-        relative_tolerance: target relative moment reconstruction error.
-        max_points: hard cap on selected elements. Defaults to min(Ne,Nm+8).
-
-    Returns:
-        Positive cubature rule approximating
-            sum_e m_e ~= sum_{e in S} w_e m_e, w_e >= 0.
-
-    Include constant/volume moments explicitly when exact conservation of those
-    quantities is required by a backend.
+    `element_moments[e]` contains the contribution of element `e` to a vector
+    of basis/operator moments. No full-order solution snapshot is used.
     """
     if element_moments.ndim != 2:
         raise ValueError("element_moments must have shape [Ne,Nm]")
@@ -109,7 +91,6 @@ def build_positive_basis_operator_cubature(
     target_norm = torch.linalg.vector_norm(target)
     eps = torch.finfo(element_moments.dtype).eps
     if target_norm <= eps:
-        # A zero global moment needs no quadrature contribution.
         return CubatureRule(
             indices=torch.empty(0, dtype=torch.long, device=element_moments.device),
             weights=torch.empty(0, dtype=element_moments.dtype, device=element_moments.device),
@@ -135,11 +116,7 @@ def build_positive_basis_operator_cubature(
 
         indices = torch.tensor(selected, dtype=torch.long, device=element_moments.device)
         a = element_moments.index_select(0, indices).transpose(0, 1)
-        weights = _projected_nnls(
-            a,
-            target,
-            iterations=nnls_iterations,
-        )
+        weights = _projected_nnls(a, target, iterations=nnls_iterations)
         residual = target - a @ weights
         relative_error = float((torch.linalg.vector_norm(residual) / target_norm).item())
         if relative_error <= relative_tolerance:
@@ -165,12 +142,7 @@ def independent_certifier_indices(
     count: int,
     seed: int = 0,
 ) -> Tensor:
-    """Select a disjoint deterministic-random certification set.
-
-    Production backends may replace this with geometry-stratified selection,
-    but the core invariant is enforced here: solve cubature and certification
-    points cannot overlap.
-    """
+    """Select a disjoint deterministic-random certification set."""
     if element_count <= 0 or count <= 0:
         raise ValueError("element_count and count must be positive")
     excluded = torch.zeros(element_count, dtype=torch.bool)
