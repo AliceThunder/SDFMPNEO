@@ -5,7 +5,14 @@ from typing import Callable, Protocol
 
 from torch import Tensor
 
-from ..contracts import BasisBundle, EMOperators, EMSolution, GeometryEncoding, TopologyOperators
+from ..contracts import (
+    BasisBundle,
+    EMOperators,
+    EMSolution,
+    GeometryEncoding,
+    PhysicsSeedBundle,
+    TopologyOperators,
+)
 
 
 @dataclass
@@ -24,14 +31,6 @@ class CertificationIndicators:
 
 @dataclass
 class ReducedAssembly:
-    """One reduced multiphysics assembly at a candidate slow state.
-
-    The backend reconstructs only the quantities required at the current
-    cubature/operator points, updates material coefficients, and returns the EM
-    operators plus a closure mapping the resulting EM solution into the coupled
-    thermo-fluid residual.
-    """
-
     em_operators: EMOperators
     slow_residual_from_em: Callable[[EMSolution], Tensor]
 
@@ -46,21 +45,28 @@ class FinalFields:
 
 
 class MultiphysicsBackend(Protocol):
-    """Bridge from neural trial spaces to deterministic physics kernels.
-
-    The high-performance implementation is expected to combine:
-      * BFZI/DSE matrix-free electromagnetic kernels,
-      * mixed-dimensional 1D-3D conjugate heat transfer,
-      * incompressible RANS-SST operators,
-      * basis-operator cubature for local nonlinear terms,
-      * an independent certification set.
-    """
+    """Bridge from neural trial spaces to deterministic physics kernels."""
 
     def topology(self, geometry: GeometryEncoding) -> TopologyOperators: ...
 
     def basis_metrics(
         self, geometry: GeometryEncoding, topology: TopologyOperators
     ) -> dict[str, Tensor]: ...
+
+    def physics_seed_bases(
+        self,
+        geometry: GeometryEncoding,
+        topology: TopologyOperators,
+    ) -> PhysicsSeedBundle:
+        """Return operator-constructed seed spaces with zero solution labels.
+
+        The seed compiler may use deterministic source/operator compression,
+        eigenproblems, or physics solves such as rational Krylov compilation,
+        but it must not fit to FEM/CFD/full-order solution snapshots or measured
+        target fields. These columns form the mandatory prefix of every nested
+        online trial space.
+        """
+        ...
 
     def initial_slow_state(
         self,
@@ -90,14 +96,7 @@ class MultiphysicsBackend(Protocol):
         slow_state: Tensor,
         em_solution: EMSolution,
     ) -> Tensor:
-        """Return the nondimensionalised/Riesz-whitened full physics residual.
-
-        This residual is used only for solution-data-free training. It must be
-        independent of the reduced Galerkin projection that defines the slow
-        equilibrium; otherwise the training loss can collapse to a trivial
-        projected zero residual. The backend may evaluate it on the full space
-        or on an independent randomized/Riesz witness space.
-        """
+        """Return a nondimensionalised/Riesz-whitened independent residual."""
         ...
 
     def certify(
