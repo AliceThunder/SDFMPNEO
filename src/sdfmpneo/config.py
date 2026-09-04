@@ -57,3 +57,10 @@ class ModelConfig:
     thermal_indicator_tolerance: float = 1.0e-2
     flow_indicator_tolerance: float = 1.0e-2
     metric_jitter: float = 1.0e-9
+    basis_rank_rtol: float = 1.0e-10
+
+    def __post_init__(self) -> None:
+        if self.metric_jitter < 0:
+            raise ValueError("metric_jitter must be non-negative")
+        if not 0 < self.basis_rank_rtol < 1:
+            raise ValueError("basis_rank_rtol must lie in (0,1)")
