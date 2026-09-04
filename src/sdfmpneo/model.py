@@ -8,7 +8,7 @@ from .backends.base import CertificationIndicators, FinalFields, MultiphysicsBac
 from .config import ModelConfig, RankLevel
 from .contracts import BasisBundle, EMSolution, GeometryEncoding
 from .networks.base import NeuralBasisGenerator
-from .physics.em import solve_em_schur
+from .physics.em import solve_em_matrix_free
 from .reduction import build_physical_bases, truncate_bases
 from .seeds import validate_seed_prefix_ranks
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
@@ -51,7 +51,7 @@ class SDFMPNEO(nn.Module):
         slow_state: Tensor,
     ) -> Tensor:
         assembly = self.backend.assemble_reduced(geometry, bases, slow_state)
-        em = solve_em_schur(bases.current, assembly.em_operators)
+        em = solve_em_matrix_free(bases.current, assembly.em_actions)
         return assembly.slow_residual_from_em(em)
 
     def _evaluate_final(
@@ -61,7 +61,7 @@ class SDFMPNEO(nn.Module):
         slow_state: Tensor,
     ) -> tuple[EMSolution, CertificationIndicators, FinalFields]:
         assembly = self.backend.assemble_reduced(geometry, bases, slow_state)
-        em = solve_em_schur(bases.current, assembly.em_operators)
+        em = solve_em_matrix_free(bases.current, assembly.em_actions)
         indicators = self.backend.certify(geometry, bases, slow_state, em)
         fields = self.backend.reconstruct_fields(geometry, bases, slow_state)
         return em, indicators, fields
