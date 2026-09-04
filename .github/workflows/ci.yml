@@ -2,7 +2,7 @@ name: core-ci
 
 on:
   push:
-    branches: [main, "foundation/**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
