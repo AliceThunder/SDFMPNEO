@@ -42,7 +42,7 @@ class DenseEMActionAdapter:
             else torch.complex64
         )
 
-    def rhs_fields(self) -> Tensor:
+    def _rhs_fields(self) -> Tensor:
         omega = _as_column_frequency(self.operators.omega)
         coupling = self.operators.coupling.to(self._complex_dtype())
         return -1j * omega * coupling
@@ -54,6 +54,11 @@ class DenseEMActionAdapter:
         inductance = self.operators.inductance.to(dtype)
         v = vectors.to(dtype)
         return resistance @ v + 1j * omega * (inductance @ v)
+
+    def project_rhs(self, basis: Tensor) -> Tensor:
+        dtype = self._complex_dtype()
+        b = basis.to(dtype)
+        return b.conj().transpose(-2, -1) @ self._rhs_fields()
 
     def port_feedback(self, vectors: Tensor) -> Tensor:
         omega = _as_column_frequency(self.operators.omega)
@@ -72,29 +77,32 @@ def project_matrix_free_em_system(
 ) -> EMReducedSystem:
     """Project deterministic EM block actions without forming full operators.
 
-    The only full-space objects touched are the active basis block `[B,Nj,r]`
-    and the small number of multiport source fields `[B,Nj,P]`. The environment
-    operator itself remains matrix-free.
+    The core never requests a full `[Nj,Nj]` matrix and does not require a full
+    `[Nj,P]` source field. Structured source kernels may accumulate `B^H S`
+    directly through `project_rhs`.
     """
     if basis.ndim != 3:
         raise ValueError("basis must have shape [B,Nj,r]")
 
     system_on_basis = actions.apply_system(basis)
     dissipation_on_basis = actions.apply_dissipation(basis)
-    source_fields = actions.rhs_fields()
+    rhs_matrix = actions.project_rhs(basis)
     feedback = actions.port_feedback(basis)
 
     if system_on_basis.shape != basis.shape:
         raise ValueError("apply_system must preserve the trial-vector block shape")
     if dissipation_on_basis.shape != basis.shape:
         raise ValueError("apply_dissipation must preserve the trial-vector block shape")
-    if source_fields.ndim != 3 or source_fields.shape[:2] != basis.shape[:2]:
-        raise ValueError("rhs_fields must have shape [B,Nj,P]")
+    if rhs_matrix.ndim != 3 or rhs_matrix.shape[:2] != (
+        basis.shape[0],
+        basis.shape[-1],
+    ):
+        raise ValueError("project_rhs must have shape [B,r,P]")
     if feedback.ndim != 3 or feedback.shape[0] != basis.shape[0]:
         raise ValueError("port_feedback must have shape [B,P,r]")
     if feedback.shape[-1] != basis.shape[-1]:
         raise ValueError("port_feedback reduced-column dimension must equal basis rank")
-    if feedback.shape[1] != source_fields.shape[-1]:
+    if feedback.shape[1] != rhs_matrix.shape[-1]:
         raise ValueError("port_feedback/source port counts must match")
 
     complex_dtype = (
@@ -106,12 +114,11 @@ def project_matrix_free_em_system(
     bh = b.conj().transpose(-2, -1)
 
     system_matrix = bh @ system_on_basis.to(complex_dtype)
-    rhs_matrix = bh @ source_fields.to(complex_dtype)
     dissipation_matrix = bh @ dissipation_on_basis.to(complex_dtype)
 
     return EMReducedSystem(
         system_matrix=system_matrix,
-        rhs_matrix=rhs_matrix,
+        rhs_matrix=rhs_matrix.to(complex_dtype),
         feedback_matrix=feedback.to(complex_dtype),
         dissipation_matrix=dissipation_matrix,
         z_background=actions.z_background.to(complex_dtype),
