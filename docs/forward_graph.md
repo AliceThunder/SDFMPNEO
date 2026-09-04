@@ -1,6 +1,6 @@
 # SDF-MPNEO Forward Graph
 
-This document fixes the first implementation contract. Symbols below refer to **one physical parameter sample** unless a leading batch dimension `B` is shown.
+This document fixes the implementation contract for one physical parameter sample unless a leading batch dimension `B` is shown.
 
 ## 1. Geometry and operating inputs
 
@@ -10,38 +10,34 @@ The shared encoder receives
 - `package_tokens`: `[B, Np, Dp]`
 - `global_features`: `[B, Dg]`
 
-`global_features` contains geometry/environment quantities that are admissible for **all** physics heads, such as frequency, seawater salinity/reference conductivity, ambient state and imposed inflow descriptors. It must not contain actual port-current amplitudes.
+`global_features` contains geometry/environment quantities admissible for all physics heads, such as frequency, salinity/reference conductivity, ambient state and imposed inflow descriptors. It must not contain actual port-current amplitudes.
 
 Slow operating information is separated as
 
 - `slow_features`: `[B, Ds]`
 
-and is visible only to thermal/flow heads. It may contain excitation invariants such as `|I|^2`, load descriptors and thermal operating quantities. This split makes the EM trial space excitation-independent at the neural interface level.
+and is visible only to thermal/flow heads. It may contain excitation invariants such as `|I|^2`, load descriptors and thermal operating quantities. This makes the EM trial space excitation-independent at the neural interface level.
 
-The coordinate-conditioned basis decoders additionally receive local query tensors
-
-- EM potential/harmonic queries: `[B, Naj + Nhj, DqJ]`
-- thermal queries: `[B, Nt, DqT]`
-- velocity potential/harmonic queries: `[B, Nav + Nhv, DqV]`
-- log-TKE queries: `[B, Nk, DqK]`
-- log-omega queries: `[B, Nw, DqW]`
-
-The final online implementation does not need to query every full-order point. Hyper-reduced solves may request basis values only at operator/cubature points; full-field reconstruction is optional.
+Coordinate-conditioned basis decoders additionally receive local query tensors for EM potential/harmonic coordinates, thermal DOFs, velocity potential/harmonic coordinates, log-TKE and log-omega. Production hyper-reduced solves need basis values only at operator/cubature points; full-field reconstruction is optional.
 
 ## 2. Reference-domain topology
 
-For each topology template (single-package and dual-package in V1), the backend supplies the exact-sequence maps
+For each topology template the backend supplies gauge-reduced exact-space generators and harmonic complements
 
-- electromagnetic curl map `C_J`: `[Nj, Naj]`
-- electromagnetic harmonic basis `H_J`: `[Nj, Nhj]`
-- velocity curl map `C_v`: `[Nv, Nav]`
-- velocity harmonic basis `H_v`: `[Nv, Nhv]`
+- electromagnetic `C_J`, `H_J`, `D_J`;
+- velocity `C_v`, `H_v`, `D_v`.
 
-The incidence structure must satisfy the discrete identity `D @ C == 0`. Harmonic columns must also lie in `ker(D)`.
+The production path validates
 
-## 3. Neural outputs
+`D_J @ C_J = 0`, `D_J @ H_J = 0`,
 
-The neural generator outputs **coordinates of trial spaces**, not physical solutions:
+`D_v @ C_v = 0`, `D_v @ H_v = 0`,
+
+and requires `[C,H]` to have full column rank. Gauge-null directions therefore cannot consume neural modes.
+
+## 3. Neural outputs and physics seeds
+
+The neural generator outputs coordinates of trial spaces, not physical solutions:
 
 - `current_potential`: `[B, Naj + Nhj, rJmax]`
 - `thermal`: `[B, Nt, rTmax]`
@@ -49,31 +45,27 @@ The neural generator outputs **coordinates of trial spaces**, not physical solut
 - `log_tke`: `[B, Nk, rKmax]`
 - `log_omega`: `[B, Nw, rWmax]`
 
-The reference network uses one shared geometry encoder. Its EM decoder sees only the shared context. Thermal and flow decoders see the shared context plus `slow_features`. A later SE(3)-equivariant encoder may replace the reference encoder without changing these contracts.
+A deterministic solution-free physics seed is prepended to each space. The final basis is
 
-Default maximum ranks are
+`B_p = orth_P [B_p^phys, (I - Pi_phys) B_p^NN]`.
 
-- `rJmax = 32`
-- `rTmax = 32`
-- `rVmax = 36`
-- `rKmax = 12`
-- `rWmax = 12`
+Typical seed compilers are source/operator + Krylov modes for EM, diffusion modes for thermal physics, divergence-free Stokes modes for velocity, and constant/wall-distance/operator modes for SST log states. No FEM/CFD solution snapshot is permitted in the seed compiler.
 
-## 4. Hard admissibility maps
+Default maximum ranks are `(32, 32, 36, 12, 12)` for `(EM, thermal, velocity, TKE, omega)`.
 
-Electromagnetic and velocity bases are generated through the reference de Rham complex:
+## 4. Hard admissibility and metric conditioning
 
-`B_J_raw = [C_J, H_J] @ A_J`
+Electromagnetic and velocity neural proposals first pass through the exact-sequence generators:
 
-`B_v_raw = [C_v, H_v] @ A_v`
+`B_J_raw = [C_J, H_J] @ A_J`,
 
-Hence `D @ B_J_raw == 0` and `D @ B_v_raw == 0` by construction. Boundary-normal DOFs excluded by the topology template enforce no-through-current/no-through-wall conditions.
+`B_v_raw = [C_v, H_v] @ A_v`.
 
-All five bases are metric-orthogonalised:
+All seed and neural columns are checked for rank before any jitter is added. Metric whitening then enforces
 
 `B_p^H P_p B_p = I`.
 
-The metric is a fixed/reference physical metric for basis conditioning. State-dependent online operators are **not** assumed to remain identity after temperature/material updates.
+Jitter is only a Cholesky regulariser and cannot hide a collapsed trial space.
 
 ## 5. Nested rank schedule
 
@@ -86,104 +78,107 @@ The initial schedule is
 | 3 | 24 | 24 | 28 | 10 | 10 |
 | 4 | 32 | 32 | 36 | 12 | 12 |
 
-Only prefix columns are activated. Training therefore has to randomise the active level so early columns become the dominant low-rank modes.
+Physics-seed ranks may not exceed the first level, so every online rank retains the complete physical backbone. Neural enrichment occupies the remaining prefix columns.
 
-## 6. Electromagnetic inner solve
+## 6. Matrix-free electromagnetic inner solve
 
-For each candidate thermal state, the backend updates material-dependent electromagnetic operators:
+The production backend does not construct full `[Nj,Nj]` Green, resistance or inductance matrices. Instead it exposes four block actions on `V: [B,Nj,K]`:
 
-- `R_s(T,S)`: `[B, Nj, Nj]`, real symmetric dissipative operator
-- `L_s(G)`: `[B, Nj, Nj]`, real symmetric inductive operator (matrix-free in the final backend)
-- `C_c(G)`: `[B, Nj, P]`, coil-to-seawater coupling
-- `Z_0(T_c,f,G)`: `[B, P, P]`, copper + air contribution
-- `omega`: `[B]`
+- system action `A(V)`;
+- multiport source fields `S: [B,Nj,P]`;
+- port feedback functional `H(V): [B,P,K]`;
+- dissipative action `D(V)`.
 
-With shared real basis `B_J: [B, Nj, rJ]`,
+The implementation of these actions is backend-specific. It may use structured Green kernels, FFT convolution, FMM/H2, DSE, sparse PDE actions or another deterministic physics solver.
 
-`A_r = B_J^T (R_s + j omega L_s) B_J`  -> `[B, rJ, rJ]`
+With shared EM basis `B_J: [B,Nj,rJ]`, the core constructs only small matrices:
 
-`C_r = B_J^T C_c` -> `[B, rJ, P]`
+`A_r = B_J^H A(B_J)` -> `[B,rJ,rJ]`,
 
-All unit-port responses are solved together:
+`S_r = B_J^H S` -> `[B,rJ,P]`,
 
-`Y_J = -j omega A_r^{-1} C_r` -> `[B, rJ, P]`
+`H_r = H(B_J)` -> `[B,P,rJ]`,
 
-`J_s = B_J Y_J` -> `[B, Nj, P]`
+`D_r = B_J^H D(B_J)` -> `[B,rJ,rJ]`.
 
-The seawater impedance is recovered by Schur elimination:
+All ports are solved together:
 
-`Z_sea = omega^2 C_r^T A_r^{-1} C_r` -> `[B, P, P]`
+`Y_J = A_r^{-1} S_r`.
 
-`Z = Z_0 + Z_sea`.
+The environmental impedance and dissipative port quadratic form are
 
-The same excitation-independent trial space is used for all ports. With symmetric physical operators this preserves reciprocity. The dissipative part is structurally non-negative because it equals the reduced seawater Joule quadratic form.
+`Z_sea = H_r Y_J`,
 
-## 7. Slow multiphysics state
+`Q_sea,port = Y_J^H D_r Y_J`.
 
-The electromagnetic coefficients are not part of the slow Newton unknown. The backend defines a reduced slow state containing
+The backend contract requires these two constructions to be physically consistent; reciprocity, passivity and Joule consistency are verified independently. The dense `(R + j omega L)` Schur formulation remains only as a reference adapter/test and is not the production interface.
+
+## 7. Unified thermal and flow state
+
+The full thermal state is fixed as one mixed-dimensional field
+
+`Theta = [T_c(s), T_package(x), T_seawater(x)]`.
+
+A single thermal basis `B_T` spans the 1D conductor and 3D solid/fluid temperature DOFs. Conservative mortar exchange couples the conductor and package inside the same thermal operator.
+
+The slow reduced state is therefore exactly
 
 `z = [a_T, a_v, a_k, a_omega]`.
 
-Its exact flattened length depends on the active rank level and on whether the 1D conductor temperature is represented inside the thermal basis or as a coupled block. V1 backend must expose this layout consistently through `initial_slow_state` and `assemble_reduced`.
+At every residual evaluation the backend
 
-At every residual evaluation:
+1. reconstructs only quantities required at active operator/cubature points;
+2. updates temperature/salinity-dependent electrical and fluid properties;
+3. builds state-dependent matrix-free EM actions;
+4. executes the small EM solve;
+5. evaluates seawater/copper heat sources at required points;
+6. assembles the coupled mixed-dimensional heat and RANS-SST residual;
+7. returns `F_r(z)`.
 
-1. reconstruct only thermal/flow quantities required at active cubature/operator points;
-2. update `sigma_sea(T,S)`, `rho_Cu(T_c)`, fluid `mu(T)`, `rho(T)`, `k(T)` and SST closure quantities;
-3. assemble/update the reduced/full-action EM operators;
-4. execute the EM Schur solve;
-5. compute `Q_sea = rho_s |J_s|^2` and copper loss;
-6. assemble the coupled 1D-3D conjugate-heat and RANS-SST reduced residual;
-7. return the single slow residual vector `F_r(z)`.
+This is strong coupling: EM is algebraically eliminated but re-evaluated inside the nonlinear thermo-fluid equilibrium.
 
-This is strong coupling: the EM solve is eliminated algebraically but is re-evaluated inside the thermo-fluid nonlinear equilibrium.
-
-## 8. Equilibrium solve
+## 8. Equilibrium and implicit training gradient
 
 Steady operation solves
 
-`F_r(z) = 0`.
+`F_r(z) = 0`
 
-The foundation solver uses pseudo-transient damped Newton:
+with pseudo-transient damped Newton
 
 `(P/dtau + J_F) Delta z = -F_r`.
 
-Small `dtau` stabilises remote iterates; successful steps increase `dtau`, asymptotically recovering Newton. The nonlinear system is solved per physical parameter sample to avoid artificial cross-sample Jacobians.
+Training never unrolls Newton. After a detached equilibrium solve, the basis is rebuilt once with autograd and the implicit adjoint solves
 
-Transient extension reuses the same reduced physics as
+`F_z^H lambda = dL/dz`,
 
-`M_r dz/dt + F_r(z) = 0`.
+`dL/dtheta = partial_theta L - lambda^H F_theta`.
 
-## 9. Certification and adaptive capacity
+No FEM/CFD/full-order solution target is used. The objective is an independent nondimensionalised/Riesz-whitened physical residual supplied by the backend.
 
-The reduced solve and the certifier must not use the same hyper-reduction sample set. The backend returns independent indicators
+## 9. Solution-free hyper-reduction and certification
 
-- impedance indicator `eta_Z`
-- thermal indicator `eta_T`
-- flow indicator `eta_v`
+Basis-Operator Cubature is built from neural/physics basis operator moments only, with non-negative weights. It does not consume solution snapshots.
 
-A rank level is accepted only if
+The online cubature set and certification set must be disjoint. A rank level is accepted only if
 
-1. the reduced equilibrium converged, and
-2. all three independent indicators satisfy their tolerances.
+1. the reduced equilibrium converged; and
+2. independent impedance, thermal and flow indicators satisfy their tolerances.
 
-Otherwise the next nested rank is activated. Failure at maximum rank sets `requires_fallback = True`; it must not silently return a trusted prediction.
-
-For linear electromagnetic states, residual-based bounds may be rigorous under the dissipative norm. For nonlinear RANS-SST thermal-flow quantities, certification is initially treated as a residual/dual-weighted a-posteriori indicator unless stronger stability constants are established.
+Failure at maximum rank sets `requires_fallback = True`; the model must not silently return a trusted prediction.
 
 ## 10. Backend boundaries
 
-The final high-performance backend is expected to provide
+The high-performance backend owns
 
-- topology templates and geometry/Piola maps;
-- query features for coordinate-conditioned basis evaluation;
-- BFZI/DSE matrix-free Green-operator actions for EM;
-- temperature/salinity-dependent material models;
-- 1D conductor to 3D package conservative mortar coupling;
-- 3D package/seawater conjugate heat operators;
+- geometry and reference-topology templates;
+- coordinate query features and Piola/metric maps;
+- deterministic physics-seed compilation;
+- matrix-free EM actions;
+- temperature/salinity-dependent materials;
+- conservative 1D-3D conjugate heat operators;
 - incompressible RANS-SST operators;
-- solution-free basis-operator cubature for local nonlinear terms;
-- an independent certification sample/operator set;
-- optional full-field reconstruction only when requested.
+- solution-free Basis-Operator Cubature;
+- independent certification actions;
+- optional full-field reconstruction.
 
-The neural model must remain unchanged when Python reference kernels are replaced by C++/CUDA implementations.
+The neural model must remain unchanged when one deterministic EM implementation is replaced by another or when Python kernels are replaced by C++/CUDA implementations.
