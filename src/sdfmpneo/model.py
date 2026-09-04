@@ -26,13 +26,7 @@ class SDFMPNEOOutput:
 
 
 class SDFMPNEO(nn.Module):
-    """Adaptive-rank strongly coupled SDF-MPNEO forward operator.
-
-    The neural component generates admissible trial spaces once. For each rank
-    level, electromagnetic states are Schur-eliminated *inside* the nonlinear
-    thermo-fluid residual, so temperature/material feedback remains strongly
-    coupled even though the fast harmonic EM state is not a slow Newton unknown.
-    """
+    """Adaptive-rank strongly coupled SDF-MPNEO forward operator."""
 
     def __init__(
         self,
@@ -81,6 +75,7 @@ class SDFMPNEO(nn.Module):
             topology,
             metrics,
             jitter=self.config.metric_jitter,
+            rank_rtol=self.config.basis_rank_rtol,
         )
 
         previous_state: Tensor | None = None
