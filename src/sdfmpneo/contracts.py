@@ -39,12 +39,6 @@ class GeometryEncoding:
     heads and may contain excitation invariants such as |I|^2 or operating-load
     descriptors. This separation prevents excitation leakage into the shared EM
     trial space.
-
-    Shapes:
-        coil_tokens:    [B, Nc, Dc]
-        package_tokens: [B, Np, Dp]
-        global_features:[B, Dg]
-        slow_features:  [B, Ds]
     """
 
     coil_tokens: Tensor
@@ -59,35 +53,26 @@ class TopologyOperators:
     """Gauge-reduced reference-domain exact-sequence generators.
 
     `curl_current` and `curl_velocity` are not arbitrary raw incidence matrices:
-    the backend must remove gauge-null directions so their columns are linearly
-    independent exact-space generators. Harmonic columns complete the
-    solenoidal space on multiply connected domains. Divergence maps are carried
-    explicitly so the exact-sequence identities can be verified at runtime and
-    in CI.
+    the production backend must remove gauge-null directions so their columns
+    are linearly independent exact-space generators. Harmonic columns complete
+    the solenoidal space on multiply connected domains.
 
-    Shapes:
-        curl_current:      [Nj, Naj]
-        harmonic_current:  [Nj, Nhj]
-        divergence_current:[Ndj, Nj]
-        curl_velocity:     [Nv, Nav]
-        harmonic_velocity: [Nv, Nhv]
-        divergence_velocity:[Ndv, Nv]
+    Divergence maps may be omitted only in local component tests that never enter
+    the physical model. `SDFMPNEO.forward` and the training path call
+    `validate_topology`, which rejects missing divergence maps.
     """
 
     curl_current: Tensor
     harmonic_current: Tensor
-    divergence_current: Tensor
     curl_velocity: Tensor
     harmonic_velocity: Tensor
-    divergence_velocity: Tensor
+    divergence_current: Tensor | None = None
+    divergence_velocity: Tensor | None = None
 
 
 @dataclass
 class RawBasisBundle:
-    """Coordinate-decoder outputs before hard physical maps.
-
-    Shapes use the maximum nested rank configured for the model.
-    """
+    """Coordinate-decoder outputs before hard physical maps."""
 
     current_potential: Tensor  # [B, Naj+Nhj, rJmax]
     thermal: Tensor  # [B, Nt, rTmax]
@@ -107,16 +92,7 @@ class BasisBundle:
 
 @dataclass
 class EMOperators:
-    """Full-space electromagnetic operators for one batch.
-
-    RMS phasor convention is used throughout.
-
-    resistance: [B, Nj, Nj], real symmetric positive definite/semi-definite
-    inductance: [B, Nj, Nj], real symmetric
-    coupling:   [B, Nj, P],  real coil-to-seawater coupling
-    z_background:[B, P, P], complex copper + air contribution
-    omega:      [B] or [B, 1]
-    """
+    """Full-space electromagnetic operators for one batch using RMS phasors."""
 
     resistance: Tensor
     inductance: Tensor
@@ -127,11 +103,11 @@ class EMOperators:
 
 @dataclass
 class EMSolution:
-    reduced_coefficients: Tensor  # [B, rJ, P], complex
-    current_dofs: Tensor  # [B, Nj, P], complex
-    impedance_sea: Tensor  # [B, P, P], complex
-    impedance_total: Tensor  # [B, P, P], complex
-    seawater_loss_matrix: Tensor  # [B, P, P], complex Hermitian quadratic form
+    reduced_coefficients: Tensor
+    current_dofs: Tensor
+    impedance_sea: Tensor
+    impedance_total: Tensor
+    seawater_loss_matrix: Tensor
 
 
 @dataclass
