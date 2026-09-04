@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from sdfmpneo.config import SolverConfig
+from sdfmpneo.config import RankLevel, SolverConfig
 from sdfmpneo.contracts import (
     BasisQueryFeatures,
     EMOperators,
@@ -16,8 +16,11 @@ from sdfmpneo.physics.em import (
     sea_loss_consistency,
     solve_em_schur,
 )
+from sdfmpneo.physics.flow import magnetic_reynolds_number, positive_sst_state
+from sdfmpneo.physics.thermal import conservative_mortar_matrix
 from sdfmpneo.reduction import assemble_solenoidal_basis, metric_orthonormalize
 from sdfmpneo.solvers.equilibrium import solve_pseudo_transient_newton
+from sdfmpneo.state import ReducedStateLayout
 
 
 def _spd(n: int, shift: float = 1.0) -> torch.Tensor:
@@ -139,3 +142,42 @@ def test_slow_operating_features_cannot_leak_into_em_basis() -> None:
     assert raw_a.current_potential.shape[-1] == 32
     assert torch.allclose(raw_a.current_potential, raw_b.current_potential)
     assert not torch.allclose(raw_a.thermal, raw_b.thermal)
+
+
+def test_mixed_dimensional_mortar_is_conservative_and_dissipative() -> None:
+    interpolation = torch.eye(2, dtype=torch.float64)
+    conductance = torch.tensor([2.0, 3.0], dtype=torch.float64)
+    coupling = conservative_mortar_matrix(interpolation, conductance)
+
+    assert torch.allclose(coupling, coupling.T)
+    assert torch.linalg.eigvalsh(coupling).min().item() > -1.0e-12
+    uniform_temperature = torch.ones(4, dtype=torch.float64)
+    assert torch.allclose(
+        coupling @ uniform_temperature, torch.zeros(4, dtype=torch.float64)
+    )
+
+
+def test_sst_log_state_is_positive_and_rm_is_dimensionless_indicator() -> None:
+    log_state = torch.tensor([-10.0, 0.0, 2.0], dtype=torch.float64)
+    state = positive_sst_state(log_state, reference_value=1.0e-3)
+    assert torch.all(state > 0)
+
+    rm = magnetic_reynolds_number(
+        permeability=4.0e-7 * math.pi,
+        conductivity=5.0,
+        velocity_scale=2.0,
+        length_scale=0.2,
+    )
+    assert 0.0 < rm.item() < 1.0e-4
+
+
+def test_reduced_state_layout_matches_rank_schedule() -> None:
+    rank = RankLevel(em=8, thermal=5, velocity=7, tke=3, omega=2)
+    layout = ReducedStateLayout.from_rank(rank)
+    z = torch.arange(layout.size, dtype=torch.float64)
+    state = layout.split(z)
+    assert state.thermal.numel() == 5
+    assert state.velocity.numel() == 7
+    assert state.log_tke.numel() == 3
+    assert state.log_omega.numel() == 2
+    assert torch.equal(layout.pack(state), z)
