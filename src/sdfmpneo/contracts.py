@@ -105,25 +105,23 @@ class EMOperators:
 
 
 class MatrixFreeEMActions(Protocol):
-    """Matrix-free electromagnetic operator actions on blocks of trial vectors.
+    """Matrix-free electromagnetic actions on blocks of trial vectors.
 
-    All vector arguments have shape `[B, Nj, K]`, where `K` is normally the
-    active reduced rank. Implementations may use FFT Green convolution, FMM,
-    H/H2 matrices, DSE kernels, sparse PDE operators, or another deterministic
-    physics backend. No full `[Nj,Nj]` matrix is required.
+    All vector arguments have shape `[B,Nj,K]`. Implementations may use FFT
+    Green convolution, FMM, H/H2 matrices, DSE kernels, sparse PDE actions, or
+    another deterministic backend. No full `[Nj,Nj]` operator is required.
 
-    `rhs_fields()` returns the already-scaled physical multiport right-hand side
-    `[B,Nj,P]`. `port_feedback(V)` evaluates the linear port functional on each
-    column of `V` and returns `[B,P,K]`. `apply_dissipation(V)` provides the
-    positive dissipative action used for Joule/passivity accounting.
+    `project_rhs(B)` returns the multiport source projection `[B,r,P]` directly.
+    This allows structured coil/source kernels to accumulate reduced moments
+    without materialising a full `[B,Nj,P]` source field.
     """
 
     @property
     def z_background(self) -> Tensor: ...
 
-    def rhs_fields(self) -> Tensor: ...
-
     def apply_system(self, vectors: Tensor) -> Tensor: ...
+
+    def project_rhs(self, basis: Tensor) -> Tensor: ...
 
     def port_feedback(self, vectors: Tensor) -> Tensor: ...
 
