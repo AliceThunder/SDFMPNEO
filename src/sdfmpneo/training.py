@@ -42,6 +42,7 @@ def _build_rank_bases(
         topology,
         metrics,
         jitter=model.config.metric_jitter,
+        rank_rtol=model.config.basis_rank_rtol,
     )
     return truncate_bases(full, _rank_tuple(level))
 
@@ -51,12 +52,7 @@ def _solve_training_equilibrium(
     geometry: GeometryEncoding,
     level: RankLevel,
 ) -> tuple[EquilibriumResult, BasisBundle]:
-    """Solve the reduced equilibrium with detached neural bases.
-
-    Newton needs derivatives with respect to the reduced state, but it must not
-    retain a graph through the basis generator. The differentiable basis is
-    recomputed once after convergence for the implicit-gradient calculation.
-    """
+    """Solve the reduced equilibrium with detached neural bases."""
     with torch.no_grad():
         detached_bases = _build_rank_bases(model, geometry, level)
 
@@ -97,17 +93,7 @@ def implicit_parameter_gradients(
     equilibrium_state: Tensor,
     parameters: list[Tensor],
 ) -> tuple[list[Tensor], Tensor]:
-    """Differentiate a scalar objective through F(z*,theta)=0.
-
-    The caller supplies `equilibrium_state` as a leaf tensor requiring gradients
-    and a differentiable residual closure that shares the same model parameters
-    as `loss`. The returned gradients are
-
-        dL/dtheta = partial_theta L - lambda^H partial_theta F,
-        (partial_z F)^H lambda = partial_z L.
-
-    Newton history is not part of the autograd graph.
-    """
+    """Differentiate a scalar objective through F(z*,theta)=0."""
     if loss.ndim != 0:
         raise ValueError("loss must be scalar")
     if equilibrium_state.ndim != 1:
@@ -167,13 +153,7 @@ def solution_data_free_training_step(
     level: RankLevel,
     optimizer: Optimizer,
 ) -> TrainingStepResult:
-    """Perform one solution-data-free neural-basis optimisation step.
-
-    No FEM/CFD/full-order solution target is used. The objective is the
-    nondimensionalised/Riesz-whitened independent physics residual supplied by
-    the backend. The equilibrium dependence z*(theta) is differentiated by the
-    implicit-function adjoint, while Newton iterations remain outside autograd.
-    """
+    """Perform one solution-data-free neural-basis optimisation step."""
     optimizer.zero_grad(set_to_none=True)
     equilibrium, _ = _solve_training_equilibrium(model, geometry, level)
     if not equilibrium.converged:
