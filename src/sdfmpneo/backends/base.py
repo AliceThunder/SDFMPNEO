@@ -83,6 +83,23 @@ class MultiphysicsBackend(Protocol):
         slow_state: Tensor,
     ) -> Tensor | None: ...
 
+    def training_residual(
+        self,
+        geometry: GeometryEncoding,
+        bases: BasisBundle,
+        slow_state: Tensor,
+        em_solution: EMSolution,
+    ) -> Tensor:
+        """Return the nondimensionalised/Riesz-whitened full physics residual.
+
+        This residual is used only for solution-data-free training. It must be
+        independent of the reduced Galerkin projection that defines the slow
+        equilibrium; otherwise the training loss can collapse to a trivial
+        projected zero residual. The backend may evaluate it on the full space
+        or on an independent randomized/Riesz witness space.
+        """
+        ...
+
     def certify(
         self,
         geometry: GeometryEncoding,
