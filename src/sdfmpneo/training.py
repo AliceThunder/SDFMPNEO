@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 import torch
 from torch import Tensor
@@ -89,6 +89,73 @@ def _replace_none_with_zeros(
     return result
 
 
+def implicit_parameter_gradients(
+    loss: Tensor,
+    reduced_residual: Callable[[Tensor], Tensor],
+    equilibrium_state: Tensor,
+    parameters: list[Tensor],
+) -> tuple[list[Tensor], Tensor]:
+    """Differentiate a scalar objective through F(z*,theta)=0.
+
+    The caller supplies `equilibrium_state` as a leaf tensor requiring gradients
+    and a differentiable residual closure that shares the same model parameters
+    as `loss`. The returned gradients are
+
+        dL/dtheta = partial_theta L - lambda^H partial_theta F,
+        (partial_z F)^H lambda = partial_z L.
+
+    Newton history is not part of the autograd graph.
+    """
+    if loss.ndim != 0:
+        raise ValueError("loss must be scalar")
+    if equilibrium_state.ndim != 1:
+        raise ValueError("equilibrium_state must be one-dimensional")
+    if not equilibrium_state.requires_grad:
+        raise ValueError("equilibrium_state must require gradients")
+    if not parameters:
+        raise ValueError("at least one trainable parameter is required")
+
+    direct = torch.autograd.grad(
+        loss,
+        [equilibrium_state, *parameters],
+        retain_graph=True,
+        allow_unused=True,
+    )
+    grad_z = direct[0]
+    if grad_z is None:
+        grad_z = torch.zeros_like(equilibrium_state)
+    direct_parameters = _replace_none_with_zeros(direct[1:], parameters)
+
+    # Keep one explicit F graph for the parameter VJP; compute the state Jacobian
+    # independently so it does not consume that graph.
+    f = reduced_residual(equilibrium_state)
+    jacobian = torch.autograd.functional.jacobian(
+        reduced_residual,
+        equilibrium_state,
+        create_graph=False,
+        vectorize=True,
+    ).detach()
+    adjoint = torch.linalg.solve(
+        jacobian.conj().transpose(-2, -1),
+        grad_z.detach(),
+    )
+
+    implicit_raw = torch.autograd.grad(
+        f,
+        parameters,
+        grad_outputs=adjoint,
+        allow_unused=True,
+    )
+    implicit_parameters = _replace_none_with_zeros(implicit_raw, parameters)
+    total_gradients = [
+        direct_gradient - implicit_gradient
+        for direct_gradient, implicit_gradient in zip(
+            direct_parameters, implicit_parameters, strict=True
+        )
+    ]
+    return total_gradients, adjoint.detach()
+
+
 def _assign_gradients(parameters: list[Tensor], gradients: list[Tensor]) -> None:
     for parameter, gradient in zip(parameters, gradients, strict=True):
         parameter.grad = gradient.detach()
@@ -105,12 +172,7 @@ def solution_data_free_training_step(
     No FEM/CFD/full-order solution target is used. The objective is the
     nondimensionalised/Riesz-whitened independent physics residual supplied by
     the backend. The equilibrium dependence z*(theta) is differentiated by the
-    implicit-function adjoint
-
-        F_z^T lambda = dL/dz,
-        dL/dtheta = partial_theta L - lambda^T F_theta.
-
-    Newton iterations themselves are never unrolled in autograd.
+    implicit-function adjoint, while Newton iterations remain outside autograd.
     """
     optimizer.zero_grad(set_to_none=True)
     equilibrium, _ = _solve_training_equilibrium(model, geometry, level)
@@ -141,43 +203,12 @@ def solution_data_free_training_step(
     if not parameters:
         raise RuntimeError("The basis generator has no trainable parameters.")
 
-    direct = torch.autograd.grad(
+    total_gradients, _ = implicit_parameter_gradients(
         loss,
-        [z, *parameters],
-        retain_graph=True,
-        allow_unused=True,
-    )
-    grad_z = direct[0]
-    if grad_z is None:
-        grad_z = torch.zeros_like(z)
-    direct_parameters = _replace_none_with_zeros(direct[1:], parameters)
-
-    # Build F(z,theta) once with the parameter graph retained for the VJP.
-    f = reduced_residual(z)
-    jacobian = torch.autograd.functional.jacobian(
         reduced_residual,
         z,
-        create_graph=False,
-        vectorize=True,
-    ).detach()
-    adjoint = torch.linalg.solve(
-        jacobian.conj().transpose(-2, -1),
-        grad_z.detach(),
-    )
-
-    implicit_raw = torch.autograd.grad(
-        f,
         parameters,
-        grad_outputs=adjoint,
-        allow_unused=True,
     )
-    implicit_parameters = _replace_none_with_zeros(implicit_raw, parameters)
-    total_gradients = [
-        direct_gradient - implicit_gradient
-        for direct_gradient, implicit_gradient in zip(
-            direct_parameters, implicit_parameters, strict=True
-        )
-    ]
     _assign_gradients(parameters, total_gradients)
     optimizer.step()
 
