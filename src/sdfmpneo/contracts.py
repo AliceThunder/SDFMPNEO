@@ -91,7 +91,11 @@ class BasisBundle:
 
 @dataclass
 class EMOperators:
-    """Full-space electromagnetic operators for one batch using RMS phasors."""
+    """Dense reference EM operators used only by adapters/tests.
+
+    Production multiphysics backends should expose `MatrixFreeEMActions`
+    instead of materialising full-space resistance/inductance matrices.
+    """
 
     resistance: Tensor
     inductance: Tensor
@@ -100,13 +104,50 @@ class EMOperators:
     omega: Tensor
 
 
+class MatrixFreeEMActions(Protocol):
+    """Matrix-free electromagnetic operator actions on blocks of trial vectors.
+
+    All vector arguments have shape `[B, Nj, K]`, where `K` is normally the
+    active reduced rank. Implementations may use FFT Green convolution, FMM,
+    H/H2 matrices, DSE kernels, sparse PDE operators, or another deterministic
+    physics backend. No full `[Nj,Nj]` matrix is required.
+
+    `rhs_fields()` returns the already-scaled physical multiport right-hand side
+    `[B,Nj,P]`. `port_feedback(V)` evaluates the linear port functional on each
+    column of `V` and returns `[B,P,K]`. `apply_dissipation(V)` provides the
+    positive dissipative action used for Joule/passivity accounting.
+    """
+
+    @property
+    def z_background(self) -> Tensor: ...
+
+    def rhs_fields(self) -> Tensor: ...
+
+    def apply_system(self, vectors: Tensor) -> Tensor: ...
+
+    def port_feedback(self, vectors: Tensor) -> Tensor: ...
+
+    def apply_dissipation(self, vectors: Tensor) -> Tensor: ...
+
+
+@dataclass
+class EMReducedSystem:
+    """Small system obtained by matrix-free projection onto one shared EM basis."""
+
+    system_matrix: Tensor  # [B,r,r], complex
+    rhs_matrix: Tensor  # [B,r,P], complex
+    feedback_matrix: Tensor  # [B,P,r], complex
+    dissipation_matrix: Tensor  # [B,r,r], Hermitian positive semidefinite
+    z_background: Tensor  # [B,P,P], complex
+
+
 @dataclass
 class EMSolution:
     reduced_coefficients: Tensor
-    current_dofs: Tensor
     impedance_sea: Tensor
     impedance_total: Tensor
     seawater_loss_matrix: Tensor
+    current_dofs: Tensor | None = None
 
 
 @dataclass
