@@ -56,24 +56,30 @@ class GeometryEncoding:
 
 @dataclass
 class TopologyOperators:
-    """Reference-domain exact-sequence maps.
+    """Gauge-reduced reference-domain exact-sequence generators.
 
-    curl_current maps electromagnetic potential coefficients into seawater
-    H(div) current DOFs. curl_velocity does the same for incompressible
-    velocity DOFs. Harmonic columns complete ker(div) on multiply connected
-    domains.
+    `curl_current` and `curl_velocity` are not arbitrary raw incidence matrices:
+    the backend must remove gauge-null directions so their columns are linearly
+    independent exact-space generators. Harmonic columns complete the
+    solenoidal space on multiply connected domains. Divergence maps are carried
+    explicitly so the exact-sequence identities can be verified at runtime and
+    in CI.
 
     Shapes:
-        curl_current:     [Nj, Naj]
-        harmonic_current: [Nj, Nhj]
-        curl_velocity:    [Nv, Nav]
-        harmonic_velocity:[Nv, Nhv]
+        curl_current:      [Nj, Naj]
+        harmonic_current:  [Nj, Nhj]
+        divergence_current:[Ndj, Nj]
+        curl_velocity:     [Nv, Nav]
+        harmonic_velocity: [Nv, Nhv]
+        divergence_velocity:[Ndv, Nv]
     """
 
     curl_current: Tensor
     harmonic_current: Tensor
+    divergence_current: Tensor
     curl_velocity: Tensor
     harmonic_velocity: Tensor
+    divergence_velocity: Tensor
 
 
 @dataclass
