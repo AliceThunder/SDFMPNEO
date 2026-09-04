@@ -11,6 +11,7 @@ from .networks.base import NeuralBasisGenerator
 from .physics.em import solve_em_schur
 from .reduction import build_physical_bases, truncate_bases
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
+from .topology import validate_topology
 
 
 @dataclass
@@ -72,6 +73,7 @@ class SDFMPNEO(nn.Module):
 
     def forward(self, geometry: GeometryEncoding) -> SDFMPNEOOutput:
         topology = self.backend.topology(geometry)
+        validate_topology(topology)
         raw_bases = self.basis_generator(geometry, topology)
         metrics = self.backend.basis_metrics(geometry, topology)
         full_bases = build_physical_bases(
