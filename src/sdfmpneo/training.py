@@ -13,6 +13,7 @@ from .model import SDFMPNEO
 from .physics.em import solve_em_schur
 from .reduction import build_physical_bases, truncate_bases
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
+from .topology import validate_topology
 
 
 @dataclass
@@ -33,6 +34,7 @@ def _build_rank_bases(
     level: RankLevel,
 ) -> BasisBundle:
     topology = model.backend.topology(geometry)
+    validate_topology(topology)
     raw = model.basis_generator(geometry, topology)
     metrics = model.backend.basis_metrics(geometry, topology)
     full = build_physical_bases(
@@ -126,8 +128,6 @@ def implicit_parameter_gradients(
         grad_z = torch.zeros_like(equilibrium_state)
     direct_parameters = _replace_none_with_zeros(direct[1:], parameters)
 
-    # Keep one explicit F graph for the parameter VJP; compute the state Jacobian
-    # independently so it does not consume that graph.
     f = reduced_residual(equilibrium_state)
     jacobian = torch.autograd.functional.jacobian(
         reduced_residual,
@@ -181,7 +181,6 @@ def solution_data_free_training_step(
             "Reduced equilibrium did not converge; do not train on an invalid state."
         )
 
-    # Recompute the basis with autograd enabled only once at the converged state.
     bases = _build_rank_bases(model, geometry, level)
     z = equilibrium.state.detach().requires_grad_(True)
 
