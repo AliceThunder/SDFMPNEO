@@ -21,6 +21,7 @@ from sdfmpneo.physics.thermal import conservative_mortar_matrix
 from sdfmpneo.reduction import assemble_solenoidal_basis, metric_orthonormalize
 from sdfmpneo.solvers.equilibrium import solve_pseudo_transient_newton
 from sdfmpneo.state import ReducedStateLayout
+from sdfmpneo.training import implicit_parameter_gradients
 
 
 def _spd(n: int, shift: float = 1.0) -> torch.Tensor:
@@ -181,3 +182,20 @@ def test_reduced_state_layout_matches_rank_schedule() -> None:
     assert state.log_tke.numel() == 3
     assert state.log_omega.numel() == 2
     assert torch.equal(layout.pack(state), z)
+
+
+def test_implicit_equilibrium_gradient_matches_analytic_derivative() -> None:
+    # F(z, theta)=z-theta^2=0 -> z*(theta)=theta^2.
+    # L=0.5*(z+theta)^2 -> dL/dtheta=(theta^2+theta)*(2*theta+1).
+    theta = torch.tensor(1.3, dtype=torch.float64, requires_grad=True)
+    z = (theta.detach() ** 2).reshape(1).requires_grad_(True)
+
+    def residual(state: torch.Tensor) -> torch.Tensor:
+        return state - theta.square().reshape(1)
+
+    loss = 0.5 * (z[0] + theta).square()
+    gradients, adjoint = implicit_parameter_gradients(loss, residual, z, [theta])
+    expected = (theta.detach().square() + theta.detach()) * (2.0 * theta.detach() + 1.0)
+
+    assert torch.allclose(gradients[0], expected, atol=1.0e-10, rtol=1.0e-10)
+    assert adjoint.numel() == 1
