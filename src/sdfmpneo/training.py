@@ -10,7 +10,7 @@ from torch.optim import Optimizer
 from .config import RankLevel
 from .contracts import BasisBundle, GeometryEncoding
 from .model import SDFMPNEO
-from .physics.em import solve_em_schur
+from .physics.em import solve_em_matrix_free
 from .reduction import build_physical_bases, truncate_bases
 from .seeds import validate_seed_prefix_ranks
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
@@ -67,7 +67,7 @@ def _solve_training_equilibrium(
 
     def residual(z: Tensor) -> Tensor:
         assembly = model.backend.assemble_reduced(geometry, detached_bases, z)
-        em = solve_em_schur(detached_bases.current, assembly.em_operators)
+        em = solve_em_matrix_free(detached_bases.current, assembly.em_actions)
         return assembly.slow_residual_from_em(em)
 
     mass = model.backend.pseudo_mass(geometry, detached_bases, initial)
@@ -169,11 +169,11 @@ def solution_data_free_training_step(
 
     def reduced_residual(state: Tensor) -> Tensor:
         assembly = model.backend.assemble_reduced(geometry, bases, state)
-        em = solve_em_schur(bases.current, assembly.em_operators)
+        em = solve_em_matrix_free(bases.current, assembly.em_actions)
         return assembly.slow_residual_from_em(em)
 
     assembly = model.backend.assemble_reduced(geometry, bases, z)
-    em = solve_em_schur(bases.current, assembly.em_operators)
+    em = solve_em_matrix_free(bases.current, assembly.em_actions)
     training_residual = model.backend.training_residual(geometry, bases, z, em)
     loss = 0.5 * training_residual.abs().square().sum()
 
