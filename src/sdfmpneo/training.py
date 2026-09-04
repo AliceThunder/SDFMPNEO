@@ -12,6 +12,7 @@ from .contracts import BasisBundle, GeometryEncoding
 from .model import SDFMPNEO
 from .physics.em import solve_em_schur
 from .reduction import build_physical_bases, truncate_bases
+from .seeds import validate_seed_prefix_ranks
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
 from .topology import validate_topology
 
@@ -37,10 +38,13 @@ def _build_rank_bases(
     validate_topology(topology)
     raw = model.basis_generator(geometry, topology)
     metrics = model.backend.basis_metrics(geometry, topology)
+    seeds = model.backend.physics_seed_bases(geometry, topology)
+    validate_seed_prefix_ranks(seeds, model.config.ranks.levels[0])
     full = build_physical_bases(
         raw,
         topology,
         metrics,
+        seeds,
         jitter=model.config.metric_jitter,
         rank_rtol=model.config.basis_rank_rtol,
     )
@@ -52,7 +56,6 @@ def _solve_training_equilibrium(
     geometry: GeometryEncoding,
     level: RankLevel,
 ) -> tuple[EquilibriumResult, BasisBundle]:
-    """Solve the reduced equilibrium with detached neural bases."""
     with torch.no_grad():
         detached_bases = _build_rank_bases(model, geometry, level)
 
@@ -153,7 +156,7 @@ def solution_data_free_training_step(
     level: RankLevel,
     optimizer: Optimizer,
 ) -> TrainingStepResult:
-    """Perform one solution-data-free neural-basis optimisation step."""
+    """Perform one solution-data-free neural enrichment optimisation step."""
     optimizer.zero_grad(set_to_none=True)
     equilibrium, _ = _solve_training_equilibrium(model, geometry, level)
     if not equilibrium.converged:
