@@ -32,6 +32,11 @@ class CoordinateModeDecoder(nn.Module):
         rank: int,
     ) -> None:
         super().__init__()
+        if hidden_dim < rank:
+            raise ValueError(
+                f"hidden_dim={hidden_dim} must be >= rank={rank}; otherwise the "
+                "coordinate feature space imposes a structural rank bottleneck."
+            )
         self.query_encoder = _MLP(query_dim, hidden_dim, hidden_dim)
         self.context_encoder = _MLP(context_dim, hidden_dim, hidden_dim)
         self.mode_embedding = nn.Parameter(torch.empty(rank, hidden_dim))
@@ -79,6 +84,18 @@ class ReferenceCoordinateBasisGenerator(NeuralBasisGenerator):
         super().__init__()
         ranks = ranks or RankSchedule()
         maximum = ranks.maximum
+        required_hidden = max(
+            maximum.em,
+            maximum.thermal,
+            maximum.velocity,
+            maximum.tke,
+            maximum.omega,
+        )
+        if hidden_dim < required_hidden:
+            raise ValueError(
+                f"hidden_dim={hidden_dim} is smaller than maximum requested rank "
+                f"{required_hidden}. Increase hidden_dim or reduce the rank schedule."
+            )
 
         self.coil_encoder = _MLP(coil_token_dim, hidden_dim, hidden_dim)
         self.package_encoder = _MLP(package_token_dim, hidden_dim, hidden_dim)
