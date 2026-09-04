@@ -3,7 +3,13 @@ import math
 import torch
 
 from sdfmpneo.config import SolverConfig
-from sdfmpneo.contracts import EMOperators
+from sdfmpneo.contracts import (
+    BasisQueryFeatures,
+    EMOperators,
+    GeometryEncoding,
+    TopologyOperators,
+)
+from sdfmpneo.networks.reference import ReferenceCoordinateBasisGenerator
 from sdfmpneo.physics.em import (
     minimum_dissipation_eigenvalue,
     reciprocity_defect,
@@ -93,3 +99,43 @@ def test_pseudo_transient_newton_solves_nonlinear_equilibrium() -> None:
     target = torch.tensor([math.sqrt(2.0), 3.0], dtype=torch.float64)
     assert result.converged
     assert torch.allclose(result.state, target, atol=1.0e-8, rtol=1.0e-8)
+
+
+def test_slow_operating_features_cannot_leak_into_em_basis() -> None:
+    torch.manual_seed(11)
+    topology = TopologyOperators(
+        curl_current=torch.randn(3, 2),
+        harmonic_current=torch.randn(3, 1),
+        curl_velocity=torch.randn(4, 2),
+        harmonic_velocity=torch.randn(4, 1),
+    )
+    queries = BasisQueryFeatures(
+        current_potential=torch.randn(1, 3, 2),
+        thermal=torch.randn(1, 5, 3),
+        velocity_potential=torch.randn(1, 3, 2),
+        log_tke=torch.randn(1, 4, 1),
+        log_omega=torch.randn(1, 4, 1),
+    )
+    common = dict(
+        coil_tokens=torch.randn(1, 6, 4),
+        package_tokens=torch.randn(1, 7, 3),
+        global_features=torch.randn(1, 5),
+        basis_queries=queries,
+    )
+    geometry_a = GeometryEncoding(slow_features=torch.zeros(1, 2), **common)
+    geometry_b = GeometryEncoding(slow_features=torch.ones(1, 2), **common)
+
+    generator = ReferenceCoordinateBasisGenerator(
+        coil_token_dim=4,
+        package_token_dim=3,
+        global_dim=5,
+        slow_dim=2,
+        query_dims=(2, 3, 2, 1, 1),
+        hidden_dim=16,
+    )
+    raw_a = generator(geometry_a, topology)
+    raw_b = generator(geometry_b, topology)
+
+    assert raw_a.current_potential.shape[-1] == 32
+    assert torch.allclose(raw_a.current_potential, raw_b.current_potential)
+    assert not torch.allclose(raw_a.thermal, raw_b.thermal)
