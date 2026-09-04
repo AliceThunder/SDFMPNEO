@@ -2,7 +2,7 @@
 
 This document fixes the first implementation contract. Symbols below refer to **one physical parameter sample** unless a leading batch dimension `B` is shown.
 
-## 1. Geometry inputs
+## 1. Geometry and operating inputs
 
 The shared encoder receives
 
@@ -10,7 +10,23 @@ The shared encoder receives
 - `package_tokens`: `[B, Np, Dp]`
 - `global_features`: `[B, Dg]`
 
-`global_features` may contain frequency, seawater salinity/reference conductivity, ambient temperature, imposed inflow velocity and dimensionless operating descriptors. Port currents are **not** admissible EM-head inputs; the EM trial space is excitation-independent.
+`global_features` contains geometry/environment quantities that are admissible for **all** physics heads, such as frequency, seawater salinity/reference conductivity, ambient state and imposed inflow descriptors. It must not contain actual port-current amplitudes.
+
+Slow operating information is separated as
+
+- `slow_features`: `[B, Ds]`
+
+and is visible only to thermal/flow heads. It may contain excitation invariants such as `|I|^2`, load descriptors and thermal operating quantities. This split makes the EM trial space excitation-independent at the neural interface level.
+
+The coordinate-conditioned basis decoders additionally receive local query tensors
+
+- EM potential/harmonic queries: `[B, Naj + Nhj, DqJ]`
+- thermal queries: `[B, Nt, DqT]`
+- velocity potential/harmonic queries: `[B, Nav + Nhv, DqV]`
+- log-TKE queries: `[B, Nk, DqK]`
+- log-omega queries: `[B, Nw, DqW]`
+
+The final online implementation does not need to query every full-order point. Hyper-reduced solves may request basis values only at operator/cubature points; full-field reconstruction is optional.
 
 ## 2. Reference-domain topology
 
@@ -32,6 +48,8 @@ The neural generator outputs **coordinates of trial spaces**, not physical solut
 - `velocity_potential`: `[B, Nav + Nhv, rVmax]`
 - `log_tke`: `[B, Nk, rKmax]`
 - `log_omega`: `[B, Nw, rWmax]`
+
+The reference network uses one shared geometry encoder. Its EM decoder sees only the shared context. Thermal and flow decoders see the shared context plus `slow_features`. A later SE(3)-equivariant encoder may replace the reference encoder without changing these contracts.
 
 Default maximum ranks are
 
@@ -98,7 +116,7 @@ The seawater impedance is recovered by Schur elimination:
 
 `Z = Z_0 + Z_sea`.
 
-The same trial space is used for all ports. With symmetric physical operators this preserves reciprocity. The dissipative part is structurally non-negative because it equals the reduced seawater Joule quadratic form.
+The same excitation-independent trial space is used for all ports. With symmetric physical operators this preserves reciprocity. The dissipative part is structurally non-negative because it equals the reduced seawater Joule quadratic form.
 
 ## 7. Slow multiphysics state
 
@@ -158,6 +176,7 @@ For linear electromagnetic states, residual-based bounds may be rigorous under t
 The final high-performance backend is expected to provide
 
 - topology templates and geometry/Piola maps;
+- query features for coordinate-conditioned basis evaluation;
 - BFZI/DSE matrix-free Green-operator actions for EM;
 - temperature/salinity-dependent material models;
 - 1D conductor to 3D package conservative mortar coupling;
