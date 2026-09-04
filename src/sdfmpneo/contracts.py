@@ -32,17 +32,25 @@ class BasisQueryFeatures:
 
 @dataclass
 class GeometryEncoding:
-    """Geometry/environment inputs consumed by the shared encoder.
+    """Geometry/environment inputs consumed by the neural basis generator.
+
+    `global_features` is shared by all heads and must not contain actual port
+    excitation amplitudes. `slow_features` is visible only to thermal/flow
+    heads and may contain excitation invariants such as |I|^2 or operating-load
+    descriptors. This separation prevents excitation leakage into the shared EM
+    trial space.
 
     Shapes:
         coil_tokens:    [B, Nc, Dc]
         package_tokens: [B, Np, Dp]
         global_features:[B, Dg]
+        slow_features:  [B, Ds]
     """
 
     coil_tokens: Tensor
     package_tokens: Tensor
     global_features: Tensor
+    slow_features: Tensor
     basis_queries: BasisQueryFeatures
 
 
