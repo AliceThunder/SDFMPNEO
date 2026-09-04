@@ -6,6 +6,10 @@ from torch import Tensor
 from .contracts import BasisBundle, RawBasisBundle, TopologyOperators
 
 
+class BasisRankError(RuntimeError):
+    """Raised when a neural trial space is rank deficient before whitening."""
+
+
 def _batched_map(matrix: Tensor, coefficients: Tensor) -> Tensor:
     """Apply an unbatched or batched linear map to batched basis columns."""
     if matrix.ndim == 2:
@@ -20,13 +24,7 @@ def assemble_solenoidal_basis(
     harmonic_basis: Tensor,
     raw_coefficients: Tensor,
 ) -> Tensor:
-    """Generate an H(div)-admissible basis from exact-sequence coordinates.
-
-    raw_coefficients concatenates curl-potential coordinates followed by
-    harmonic coordinates. With a compatible discrete de Rham complex,
-    div(curl(.)) == 0 identically. Harmonic columns complete the solenoidal
-    space for multiply connected domains.
-    """
+    """Generate an H(div)-admissible basis from exact+harmonic coordinates."""
     n_potential = curl_map.shape[-1]
     n_harmonic = harmonic_basis.shape[-1]
     if raw_coefficients.shape[-2] != n_potential + n_harmonic:
@@ -41,12 +39,28 @@ def assemble_solenoidal_basis(
     return basis
 
 
-def metric_orthonormalize(basis: Tensor, metric: Tensor, jitter: float = 1.0e-9) -> Tensor:
-    """Return B with B^H M B = I using a Cholesky whitening map.
+def metric_orthonormalize(
+    basis: Tensor,
+    metric: Tensor,
+    jitter: float = 1.0e-9,
+    rank_rtol: float = 1.0e-10,
+) -> Tensor:
+    """Return B with B^H M B = I after explicitly checking basis rank.
 
-    basis:  [B, N, r]
-    metric: [B, N, N] or [N, N]
+    Jitter is allowed only to regularise a numerically valid Gram matrix. It is
+    not allowed to hide a collapsed neural trial space. Rank is therefore
+    checked on the unregularised metric Gram matrix before Cholesky whitening.
     """
+    if basis.ndim != 3:
+        raise ValueError("basis must have shape [B,N,r]")
+    if basis.shape[-2] < basis.shape[-1]:
+        raise BasisRankError(
+            f"trial space requests rank {basis.shape[-1]} from only "
+            f"{basis.shape[-2]} physical/query DOFs"
+        )
+    if not 0 < rank_rtol < 1:
+        raise ValueError("rank_rtol must lie in (0,1)")
+
     if metric.ndim == 2:
         gram = torch.einsum("bnr,nm,bms->brs", basis.conj(), metric, basis)
     elif metric.ndim == 3:
@@ -54,10 +68,22 @@ def metric_orthonormalize(basis: Tensor, metric: Tensor, jitter: float = 1.0e-9)
     else:
         raise ValueError("metric must have shape [N,N] or [B,N,N]")
 
+    eigenvalues = torch.linalg.eigvalsh(gram.detach())
+    largest = eigenvalues[..., -1]
+    smallest = eigenvalues[..., 0]
+    if torch.any(largest <= 0):
+        raise BasisRankError("metric Gram matrix has no positive trial-space energy")
+    relative_smallest = smallest / largest
+    if torch.any(relative_smallest <= rank_rtol):
+        worst = float(relative_smallest.min().item())
+        raise BasisRankError(
+            "neural trial basis is rank deficient or numerically collapsed before "
+            f"whitening (min/max Gram eigenvalue={worst:.3e}, threshold={rank_rtol:.3e})"
+        )
+
     rank = gram.shape[-1]
     eye = torch.eye(rank, dtype=gram.dtype, device=gram.device).expand_as(gram)
     chol = torch.linalg.cholesky(gram + jitter * eye)
-    # B_new = B @ L^{-H}, with gram = L L^H.
     whiten = torch.linalg.solve_triangular(
         chol.conj().transpose(-2, -1), eye, upper=True
     )
@@ -69,6 +95,7 @@ def build_physical_bases(
     topology: TopologyOperators,
     metrics: dict[str, Tensor],
     jitter: float = 1.0e-9,
+    rank_rtol: float = 1.0e-10,
 ) -> BasisBundle:
     current = assemble_solenoidal_basis(
         topology.curl_current, topology.harmonic_current, raw.current_potential
@@ -78,11 +105,21 @@ def build_physical_bases(
     )
 
     return BasisBundle(
-        current=metric_orthonormalize(current, metrics["current"], jitter),
-        thermal=metric_orthonormalize(raw.thermal, metrics["thermal"], jitter),
-        velocity=metric_orthonormalize(velocity, metrics["velocity"], jitter),
-        log_tke=metric_orthonormalize(raw.log_tke, metrics["log_tke"], jitter),
-        log_omega=metric_orthonormalize(raw.log_omega, metrics["log_omega"], jitter),
+        current=metric_orthonormalize(
+            current, metrics["current"], jitter, rank_rtol
+        ),
+        thermal=metric_orthonormalize(
+            raw.thermal, metrics["thermal"], jitter, rank_rtol
+        ),
+        velocity=metric_orthonormalize(
+            velocity, metrics["velocity"], jitter, rank_rtol
+        ),
+        log_tke=metric_orthonormalize(
+            raw.log_tke, metrics["log_tke"], jitter, rank_rtol
+        ),
+        log_omega=metric_orthonormalize(
+            raw.log_omega, metrics["log_omega"], jitter, rank_rtol
+        ),
     )
 
 
