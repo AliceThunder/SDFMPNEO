@@ -135,7 +135,7 @@ def test_slow_operating_features_cannot_leak_into_em_basis() -> None:
         global_dim=5,
         slow_dim=2,
         query_dims=(2, 3, 2, 1, 1),
-        hidden_dim=16,
+        hidden_dim=64,
     )
     raw_a = generator(geometry_a, topology)
     raw_b = generator(geometry_b, topology)
