@@ -43,17 +43,12 @@ def validate_topology(
     exact_tolerance: float = 1.0e-10,
     rank_rtol: float = 1.0e-10,
 ) -> TopologyValidation:
-    """Validate de Rham identities and gauge-reduced generator independence.
-
-    This function deliberately does not try to infer topology from geometry. The
-    backend owns the reference complex and harmonic construction. The core model
-    only accepts generators that satisfy
-
-        D C_g = 0,  D H = 0,
-
-    and whose concatenated exact+harmonic columns are linearly independent.
-    This prevents neural modes from being spent on gauge-null coordinates.
-    """
+    """Validate de Rham identities and gauge-reduced generator independence."""
+    if topology.divergence_current is None or topology.divergence_velocity is None:
+        raise ValueError(
+            "Production topology requires current and velocity divergence maps for "
+            "exact-sequence validation."
+        )
     if topology.curl_current.ndim != 2 or topology.harmonic_current.ndim != 2:
         raise ValueError("current topology matrices must be two-dimensional")
     if topology.curl_velocity.ndim != 2 or topology.harmonic_velocity.ndim != 2:
@@ -75,15 +70,19 @@ def validate_topology(
     current_exact_defect = _relative_defect(
         topology.divergence_current, topology.curl_current
     )
-    current_harmonic_defect = _relative_defect(
-        topology.divergence_current, topology.harmonic_current
-    ) if topology.harmonic_current.shape[1] else 0.0
+    current_harmonic_defect = (
+        _relative_defect(topology.divergence_current, topology.harmonic_current)
+        if topology.harmonic_current.shape[1]
+        else 0.0
+    )
     velocity_exact_defect = _relative_defect(
         topology.divergence_velocity, topology.curl_velocity
     )
-    velocity_harmonic_defect = _relative_defect(
-        topology.divergence_velocity, topology.harmonic_velocity
-    ) if topology.harmonic_velocity.shape[1] else 0.0
+    velocity_harmonic_defect = (
+        _relative_defect(topology.divergence_velocity, topology.harmonic_velocity)
+        if topology.harmonic_velocity.shape[1]
+        else 0.0
+    )
 
     defects = {
         "current exact": current_exact_defect,
