@@ -8,6 +8,29 @@ from torch import Tensor
 
 
 @dataclass
+class BasisQueryFeatures:
+    """Local query features for coordinate-conditioned basis decoding.
+
+    The first dimension is batch. Query feature dimensions may differ between
+    physical heads; each tensor contains the local coordinates/metric/boundary
+    descriptors needed by the corresponding decoder.
+
+    Shapes:
+        current_potential:  [B, Naj + Nhj, DqJ]
+        thermal:           [B, Nt, DqT]
+        velocity_potential:[B, Nav + Nhv, DqV]
+        log_tke:           [B, Nk, DqK]
+        log_omega:         [B, Nw, DqW]
+    """
+
+    current_potential: Tensor
+    thermal: Tensor
+    velocity_potential: Tensor
+    log_tke: Tensor
+    log_omega: Tensor
+
+
+@dataclass
 class GeometryEncoding:
     """Geometry/environment inputs consumed by the shared encoder.
 
@@ -20,6 +43,7 @@ class GeometryEncoding:
     coil_tokens: Tensor
     package_tokens: Tensor
     global_features: Tensor
+    basis_queries: BasisQueryFeatures
 
 
 @dataclass
