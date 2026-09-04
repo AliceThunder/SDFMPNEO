@@ -7,9 +7,9 @@ from torch import Tensor
 
 from ..contracts import (
     BasisBundle,
-    EMOperators,
     EMSolution,
     GeometryEncoding,
+    MatrixFreeEMActions,
     PhysicsSeedBundle,
     TopologyOperators,
 )
@@ -31,7 +31,15 @@ class CertificationIndicators:
 
 @dataclass
 class ReducedAssembly:
-    em_operators: EMOperators
+    """One strongly coupled reduced assembly at a candidate slow state.
+
+    The backend exposes matrix-free EM actions rather than full-space dense
+    matrices. The core projects those actions onto the active shared EM basis,
+    solves the small port system, then passes the resulting coefficients and
+    impedance into the slow thermo-fluid residual closure.
+    """
+
+    em_actions: MatrixFreeEMActions
     slow_residual_from_em: Callable[[EMSolution], Tensor]
 
 
@@ -58,14 +66,7 @@ class MultiphysicsBackend(Protocol):
         geometry: GeometryEncoding,
         topology: TopologyOperators,
     ) -> PhysicsSeedBundle:
-        """Return operator-constructed seed spaces with zero solution labels.
-
-        The seed compiler may use deterministic source/operator compression,
-        eigenproblems, or physics solves such as rational Krylov compilation,
-        but it must not fit to FEM/CFD/full-order solution snapshots or measured
-        target fields. These columns form the mandatory prefix of every nested
-        online trial space.
-        """
+        """Return operator-constructed seed spaces with zero solution labels."""
         ...
 
     def initial_slow_state(
@@ -80,7 +81,15 @@ class MultiphysicsBackend(Protocol):
         geometry: GeometryEncoding,
         bases: BasisBundle,
         slow_state: Tensor,
-    ) -> ReducedAssembly: ...
+    ) -> ReducedAssembly:
+        """Assemble state-dependent reduced physics through operator actions.
+
+        A production EM implementation must not construct dense `[Nj,Nj]`
+        resistance/inductance/Green matrices merely to project them. It should
+        implement `MatrixFreeEMActions` using deterministic operator kernels and
+        evaluate those kernels only on the active trial-vector block.
+        """
+        ...
 
     def pseudo_mass(
         self,
