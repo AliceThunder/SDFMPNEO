@@ -10,6 +10,7 @@ from .contracts import BasisBundle, EMSolution, GeometryEncoding
 from .networks.base import NeuralBasisGenerator
 from .physics.em import solve_em_schur
 from .reduction import build_physical_bases, truncate_bases
+from .seeds import validate_seed_prefix_ranks
 from .solvers.equilibrium import EquilibriumResult, solve_pseudo_transient_newton
 from .topology import validate_topology
 
@@ -68,12 +69,15 @@ class SDFMPNEO(nn.Module):
     def forward(self, geometry: GeometryEncoding) -> SDFMPNEOOutput:
         topology = self.backend.topology(geometry)
         validate_topology(topology)
-        raw_bases = self.basis_generator(geometry, topology)
         metrics = self.backend.basis_metrics(geometry, topology)
+        seeds = self.backend.physics_seed_bases(geometry, topology)
+        validate_seed_prefix_ranks(seeds, self.config.ranks.levels[0])
+        raw_bases = self.basis_generator(geometry, topology)
         full_bases = build_physical_bases(
             raw_bases,
             topology,
             metrics,
+            seeds,
             jitter=self.config.metric_jitter,
             rank_rtol=self.config.basis_rank_rtol,
         )
