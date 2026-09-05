@@ -1,6 +1,6 @@
 \documentclass[11pt]{article}
 
-\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[a4paper,margin=24mm]{geometry}
 \usepackage{amsmath,amssymb,amsthm,mathtools,bm}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -18,18 +18,20 @@
 
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\C}{\mathbb{C}}
-\newcommand{\N}{\mathbb{N}}
 \newcommand{\I}{\mathbf I}
-\newcommand{\T}{\mathbf T}
+\newcommand{\Aem}{\mathbf A_{\rm em}}
+\newcommand{\bem}{\mathbf b_{\rm em}}
+\newcommand{\Mem}{\mathbf M_{\rm em}}
+\newcommand{\Kem}{\mathbf K_{\rm em}}
+\newcommand{\Mt}{\mathbf M_T}
+\newcommand{\Kt}{\mathbf K_T}
+\newcommand{\PhiT}{\boldsymbol\Phi_T}
+\newcommand{\LamT}{\boldsymbol\Lambda_T}
 \newcommand{\aT}{\mathbf a}
+\newcommand{\cE}{\mathbf c}
 \newcommand{\mupar}{\boldsymbol\mu}
-\newcommand{\PhiT}{\boldsymbol\Phi}
-\newcommand{\Lam}{\boldsymbol\Lambda}
-\newcommand{\Mmat}{\mathbf M}
-\newcommand{\Kmat}{\mathbf K}
-\newcommand{\qem}{\mathbf q_{\mathrm{em}}}
-\newcommand{\gem}{\mathbf g_{\mathrm{em}}}
-\newcommand{\Res}{\mathbf R}
+\newcommand{\etaPar}{\boldsymbol\eta}
+\newcommand{\Res}{\mathbf r}
 \newcommand{\norm}[1]{\left\lVert #1\right\rVert}
 \newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
 \newcommand{\sym}{\operatorname{sym}}
@@ -40,7 +42,7 @@
 \newcommand{\dist}{\operatorname{dist}}
 
 \title{SDF-MPNEO: Complete Theory of a Solution-Data-Free\\
-Multirate Electromagnetic--Thermal Analytic Neural Evolution Operator}
+Electromagnetic--Thermal Analytic Neural Evolution Operator}
 \author{Project theoretical specification}
 \date{September 2026}
 
@@ -48,968 +50,595 @@ Multirate Electromagnetic--Thermal Analytic Neural Evolution Operator}
 \maketitle
 
 \begin{abstract}
-This document fixes the theoretical baseline of SDF-MPNEO for underwater wireless power transfer after removal of the fluid-dynamics branch. The retained physics are electromagnetic and thermal, while conductor, package, seawater, and other spatial media remain explicitly represented. The objective is to map geometry, constant operating conditions, an initial thermal state, and an arbitrary query time directly to the thermal state and electromagnetic quantities without transient time stepping and without labelled Maxwell, finite-element, or experimental solution data in training. The central construction is an analytic neural network whose neurons are themselves closed-form responses of first-order dissipative operators. Spatial reduction is deterministic and physics-derived; network topology grows from the unresolved physical residual; and thermal-reduction, neural, and electromagnetic numerical errors are combined in a single a posteriori certification framework. All approximation orders are selected by certified error requirements rather than empirical rules.
+This document fixes the theoretical baseline of SDF-MPNEO for underwater wireless power transfer. The method is derived directly from the spatial magnetoquasistatic electromagnetic equations and the conjugate heat equation. It contains no geometry-specific impedance solver as a core dependency. Electromagnetic and thermal spaces are reduced deterministically without full-solution snapshots. Geometry variation and temperature-dependent copper/seawater conductivity are included in a common certified parameter domain. The electromagnetic state is quasi-statically eliminated from the slower thermal dynamics, and copper/seawater Joule losses are projected directly to reduced thermal coordinates. Time evolution is represented by an analytic neural network whose neurons are themselves closed-form dissipative response operators. The network topology grows from unresolved physical residuals. Electromagnetic reduction error, operator-separation error, thermal reduction error, analytic-network residual, and numerical solve error are propagated into one a posteriori output certificate. All free approximation orders are selected from rigorous output-error requirements rather than empirical rules.
 \end{abstract}
 
 \tableofcontents
 
-\section{Scope, notation, and non-empirical design rules}
+\section{Scope and non-empirical rules}
 
-\subsection{Current scope}
-The present theory considers the coupled system
+The retained physics are
 \[
-\boxed{\text{electromagnetics}\;\longleftrightarrow\;\text{heat transfer}}
+\boxed{\text{magnetoquasistatic electromagnetics}\longleftrightarrow\text{heat transfer}}.
 \]
-for an underwater wireless power transfer device. Fluid velocity is not a state variable. Seawater is nevertheless retained as a spatial electromagnetic and thermal medium.
-
-The physical domain is partitioned as
+The physical domain is partitioned into conductor, package/insulator, seawater, and optional passive subdomains,
 \[
-\Omega(\mupar)=\Omega_{\mathrm c}(\mupar)\cup
-\Omega_{\mathrm p}(\mupar)\cup
-\Omega_{\mathrm s}(\mupar),
+\Omega(\mupar)=\Omega_{\rm Cu}\cup\Omega_{\rm p}\cup\Omega_{\rm sea}\cup\Omega_{\rm other}.
 \]
-where the subscripts denote conductor, package, and seawater, respectively. Additional passive dielectric or insulating subdomains can be included without changing the theory.
+Fluid velocity is outside the current model scope; seawater remains an electromagnetic and thermal spatial medium.
 
-The parameter vector is
+The parameter vector
 \[
-\mupar=(\mupar_g,\mupar_u)\in\mathcal P,
+\mupar=(\mu_g,\mu_u,\mu_m)\in\mathcal P
 \]
-where \(\mupar_g\) contains geometry and material parameters and \(\mupar_u\) contains fixed operating conditions such as excitation frequency, source voltage or current, load, and ambient temperature. The external conditions are constant for \(0\le t\le t_q\). The query time \(t_q\) is arbitrary.
-
-\subsection{Required online map}
-For initial thermal state \(T_0\), the online operator must evaluate
+contains geometry, fixed operating conditions, and material parameters. The online map is
 \[
-(\mupar,T_0,t_q)
-\mapsto
-\left\{
-T(\bm x,t_q),
-\mathbf Z(t_q),
-R(t_q),L(t_q),M(t_q),
-P_{\mathrm{Cu}}(t_q),P_{\mathrm{sea}}(t_q)
-\right\}
+(\mupar,T_0,t_q)\mapsto
+\{T(\mathbf x,t_q),\mathbf Z(t_q),R,L,M,P_{\rm Cu},P_{\rm sea},\mathcal C\},
 \]
-without integrating the thermal equations from \(0\) to \(t_q\).
+where \(\mathcal C\) denotes the numerical/physical certificate and no time marching from \(0\) to \(t_q\) is permitted online.
 
-\subsection{Non-empirical rules}
-The following are method constraints, not preferences.
+\paragraph{Method rules.}
 \begin{enumerate}[label=(R\arabic*)]
-\item No labelled electromagnetic, thermal, finite-element, computational-fluid, or experimental solution is used to train the neural evolution model.
-\item No empirical near/far spatial split is permitted.
-\item No empirical fixed reduced dimension is permitted. Reduced dimensions are selected from certified output-error requirements.
-\item No empirical neural depth or width is permitted. Analytic neurons are added by a residual-driven enrichment criterion and stopped by certification.
-\item No empirical thermal time constant is introduced. Decay rates originate from the deterministic thermal spectrum.
-\item No manually weighted sum of unrelated training losses is used as the primary correctness criterion. The primary neural residual is measured in a physical dual/energy norm.
-\item Numerical electromagnetic compression or quadrature is accepted only together with an error estimator that enters the total certificate.
-\item A model is not extrapolated beyond its certified physical/parameter domain merely because the neural network returns a finite number.
+\item No labelled full-order electromagnetic, thermal, or experimental solution is used to train the analytic evolution network.
+\item No full-order solution snapshots are required to construct the reduced electromagnetic or thermal spaces.
+\item No geometry-specific impedance solver is a core dependency.
+\item No empirical near/far split, fixed reduced rank, fixed neural depth/width, artificial time constant, or fitted correction coefficient defines the method.
+\item Copper skin/proximity effects and seawater conductive reaction arise from the spatial electromagnetic field equations.
+\item Temperature enters electromagnetics through constitutive laws such as \(\sigma_{\rm Cu}(T)\) and \(\sigma_{\rm sea}(T)\), not through empirical impedance corrections.
+\item Non-affine operator compression is accepted only with a deterministic remainder bound entering the final certificate.
+\item A parameter point outside the certified stability/geometry/material domain is reported as non-certified rather than silently extrapolated.
 \end{enumerate}
 
-\section{Full electromagnetic--thermal problem}
+\section{Full coupled field equations}
 
-\subsection{Thermal problem}
-Let \(T(\bm x,t)\) denote temperature. In each material subdomain,
-\begin{equation}
-\rho c_p\,\partial_t T-\nabla\cdot(k\nabla T)=Q_{\mathrm{em}}(T;\mupar)
-\qquad \text{in }\Omega(\mupar).
-\label{eq:heat_full}
-\end{equation}
-At an internal interface \(\Gamma_{ij}\), perfect thermal contact gives
-\begin{align}
-T_i&=T_j,\\
-k_i\nabla T_i\cdot\bm n_i&=-k_j\nabla T_j\cdot\bm n_j.
-\end{align}
-Non-perfect contact can be introduced through a physically specified interfacial conductance and is incorporated in the weak form.
-
-Boundary conditions are physical model inputs. A Dirichlet condition \(T=T_\infty\), a Robin condition
+\subsection{Magnetoquasistatic electromagnetic problem}
+For harmonic angular frequency \(\omega\), define magnetic vector potential \(\mathbf A\), electric scalar potential \(\phi\),
 \[
--k\nabla T\cdot\bm n=h(T-T_\infty),
-\]
-or an infinite-domain treatment may be used. The outer-domain location or boundary coefficient is not an empirical tuning variable: it must be prescribed from the physical environment or selected by an independently verified domain-truncation error bound.
-
-\subsection{Electromagnetic problem}
-At each thermal state, the electromagnetic dynamics are assumed fast relative to the thermal dynamics and are represented by a deterministic harmonic operator
-\begin{equation}
-\mathcal A_{\mathrm{em}}(T;\mupar)\,\bm u_{\mathrm{em}}
-=\bm b_{\mathrm{em}}(\mupar),
-\label{eq:em_operator}
-\end{equation}
-where \(\bm u_{\mathrm{em}}\) denotes the electromagnetic state required by the selected BFZI/DSE-backed formulation. Temperature modifies, at minimum,
-\begin{align}
-\rho_{\mathrm{Cu}}&=\rho_{\mathrm{Cu}}(T),\\
-\sigma_{\mathrm{sea}}&=\sigma_{\mathrm{sea}}(T).
-\end{align}
-The deterministic electromagnetic backend returns
-\begin{equation}
-\mathcal E(T;\mupar)
-=\left(
-\mathbf Z,
-P_{\mathrm{Cu}},P_{\mathrm{sea}},
-Q_{\mathrm{em}}
-\right).
-\label{eq:em_outputs}
-\end{equation}
-The local source \(Q_{\mathrm{em}}\) contains conductor and seawater losses. In a harmonic convention using peak complex fields, for example,
-\[
-Q_{\mathrm{sea}}(\bm x)=\frac12\sigma_{\mathrm{sea}}(T)|\bm E(\bm x)|^2,
-\]
-with the precise prefactor determined by the phasor convention used consistently in the backend.
-
-\subsection{Fast/slow coupling}
-The multirate assumption is
-\[
-\tau_{\mathrm{em}}\ll\tau_{\mathrm{th}}.
-\]
-This does not decouple the physics. At each slow thermal state,
-\[
-T\longrightarrow
-\{\rho_{\mathrm{Cu}}(T),\sigma_{\mathrm{sea}}(T)\}
-\longrightarrow
-\mathcal E
-\longrightarrow
-Q_{\mathrm{em}}
-\longrightarrow
-T.
-\]
-The electromagnetic state is harmonic/quasi-steady at the instantaneous thermal state, while the thermal state evolves continuously.
-
-\section{Unified geometry and a parameter-consistent thermal coordinate system}
-
-\subsection{Reference-domain mapping}
-Let \(\widehat\Omega\) be a fixed reference domain containing reference conductor, package, and seawater subdomains. For each admissible geometry, define
-\begin{equation}
-F_{\mupar}:\widehat\Omega\rightarrow\Omega(\mupar).
-\end{equation}
-
-\begin{assumption}[Uniform geometric regularity]
-For every \(\mupar\in\mathcal P\), \(F_{\mupar}\) is bi-Lipschitz and
-\[
-0<J_-\le |\det DF_{\mupar}(\widehat{\bm x})|\le J_+<\infty,
-\]
-with uniformly bounded \(DF_{\mupar}\) and \(DF_{\mupar}^{-1}\).
-\end{assumption}
-
-After pullback to \(\widehat\Omega\), all parameter instances act on one function space \(V\). Define the thermal mass and stiffness forms
-\begin{align}
-m_{\mupar}(u,v)&=\int_{\widehat\Omega}
-\widehat\rho\widehat c_p\,uv\,J_{\mupar}\,d\widehat\Omega,\\
-k_{\mupar}(u,v)&=\int_{\widehat\Omega}
-\left(DF_{\mupar}^{-T}\nabla u\right)^T
-\widehat k
-\left(DF_{\mupar}^{-T}\nabla v\right)
-J_{\mupar}\,d\widehat\Omega,
-\end{align}
-with interface and boundary terms included where required.
-
-\begin{assumption}[Uniform thermal coercivity]
-There exist constants \(m_->0\) and \(k_->0\) such that, on the homogeneous trial space,
-\[
-m_{\mupar}(v,v)\ge m_-\norm{v}_{L^2}^2,
+\mathbf B=\nabla\times\mathbf A,
 \qquad
-k_{\mupar}(v,v)\ge k_-\norm{v}_{V}^2
-\]
-for all \(\mupar\in\mathcal P\).
-\end{assumption}
-
-\subsection{Deterministic thermal spectrum}
-After spatial discretization on the reference domain, define
-\begin{equation}
-\Kmat(\mupar)\bm\phi_i(\mupar)
-=\lambda_i(\mupar)\Mmat(\mupar)\bm\phi_i(\mupar),
-\label{eq:eig}
-\end{equation}
-with
-\[
-\bm\phi_i^T\Mmat\bm\phi_j=\delta_{ij},
+\mathbf E=-j\omega\mathbf A-\nabla\phi,
 \qquad
-0<\lambda_1\le\lambda_2\le\cdots.
+\mathbf J=\sigma(T)\mathbf E+\mathbf J_s.
 \]
-These eigenvalues are physical thermal decay rates. No artificial time scale is introduced.
-
-\subsection{Spectral clusters instead of individual eigenvectors}
-Individual eigenvectors are not reliable coordinates across geometry changes because eigenvalue crossings or multiplicities can rotate the eigenvectors. Therefore the primary object is an isolated spectral subspace.
-
-Let \(\mathcal C_r(\mupar)\) be the spectral cluster retained by the reduced model and let \(\Gamma\) be a contour enclosing exactly that cluster. Its spectral projector is
-\begin{equation}
-P_r(\mupar)=\frac{1}{2\pi\mathrm i}
-\oint_\Gamma (z\I-\mathcal A_{\mathrm th}(\mupar))^{-1}\,dz,
-\qquad
-\mathcal A_{\mathrm th}=\Mmat^{-1}\Kmat.
-\label{eq:spectral_projector}
-\end{equation}
-
-\begin{assumption}[Spectral separation]
-The selected cluster is separated from the discarded spectrum:
+The magnetoquasistatic equations are
+\begin{align}
+\nabla\times\bigl(\nu(T)\nabla\times\mathbf A\bigr)
++\sigma(T)(j\omega\mathbf A+\nabla\phi)&=\mathbf J_s,
+\label{eq:mqsa}\\
+\nabla\cdot\{\sigma(T)(j\omega\mathbf A+\nabla\phi)\}&=0,
+\label{eq:mqsphi}
+\end{align}
+with a compatible gauge and port/excitation constraints. In insulating subdomains \(\sigma=0\). In copper and seawater,
 \[
-\delta_r(\mupar)=
-\dist\left(\mathcal C_r(\mupar),
-\sigma(\mathcal A_{\mathrm th})\setminus\mathcal C_r(\mupar)\right)>0
+\sigma_{\rm Cu}=\sigma_{\rm Cu}(T),
+\qquad
+\sigma_{\rm sea}=\sigma_{\rm sea}(T).
 \]
-on the certified parameter domain. If eigenvalues cross inside the selected cluster, the entire crossing cluster is retained.
-\end{assumption}
+Resolving the conductor cross-section in \eqref{eq:mqsa}--\eqref{eq:mqsphi} automatically includes current redistribution, skin effect, and proximity effect; no separate AC-resistance correction is required.
 
-\subsection{Path-independent canonical basis}
-To remove sign, permutation, and rotation ambiguity, choose a fixed reference anchor matrix \(B\) with \(r\) columns and define
-\begin{equation}
-G_B(\mupar)=B^T\Mmat(\mupar)P_r(\mupar)B.
-\end{equation}
-When \(G_B\) is positive definite, define the canonical basis
+A compatible edge/nodal discretization gives a gauge-stabilized complex linear system
 \begin{equation}
 \boxed{
-\PhiT_r(\mupar)=P_r(\mupar)B\,G_B(\mupar)^{-1/2}.
+\Aem(\etaPar)\mathbf u=\bem(\mupar),
 }
-\label{eq:canonical_basis}
+\label{eq:em_full_discrete}
 \end{equation}
-Then
+where \(\mathbf u\) contains discrete \(\mathbf A\), \(\phi\), and required constraint variables, and
 \[
-\PhiT_r^T\Mmat\PhiT_r=\I.
+\etaPar=(\mupar,\aT)
 \]
-This construction is deterministic and path-independent.
+includes the thermal reduced coordinates because the conductivity field depends on temperature.
 
-\begin{proposition}[Coordinate continuity]
-If \(F_{\mupar}\), \(\Mmat(\mupar)\), and \(\Kmat(\mupar)\) depend continuously on \(\mupar\), the retained cluster is isolated, and \(G_B(\mupar)\) remains positive definite, then \(P_r(\mupar)\) and the canonical basis in \eqref{eq:canonical_basis} vary continuously with \(\mupar\). If these dependencies are analytic, the projector and basis are analytic away from loss of cluster isolation or anchor rank.
-\end{proposition}
-\begin{proof}
-Continuity of the resolvent on the isolating contour implies continuity of the Riesz projector \eqref{eq:spectral_projector}. Positive definiteness of \(G_B\) makes the principal inverse square root continuous. Their composition gives continuity of \(\PhiT_r\). The analytic statement follows from analytic perturbation of isolated spectral projectors and analyticity of the principal matrix square root on the positive-definite cone.
-\end{proof}
+\subsection{Joule loss and electromagnetic outputs}
+Using RMS phasors, local Joule heating is
+\[
+Q_J(\mathbf x)=\sigma(T)|\mathbf E(\mathbf x)|^2.
+\]
+Hence
+\begin{align}
+P_{\rm Cu}&=\int_{\Omega_{\rm Cu}}\sigma_{\rm Cu}(T)|\mathbf E|^2\,d\Omega,\\
+P_{\rm sea}&=\int_{\Omega_{\rm sea}}\sigma_{\rm sea}(T)|\mathbf E|^2\,d\Omega.
+\end{align}
+Port voltage/current functionals of \(\mathbf u\) give the impedance matrix \(\mathbf Z\) and therefore \(R,L,M\). The exact prefactor is fixed once a single peak/RMS phasor convention is selected and is used consistently throughout the code.
 
-If the anchor loses rank, the parameter domain is covered by an atlas of anchor charts. Chart validity is determined by a certified lower bound on the smallest singular value of the overlap matrix, not by a manually chosen geometric region. Transition matrices between valid charts are computed explicitly.
+\subsection{Thermal problem}
+The temperature satisfies
+\begin{equation}
+\rho c_p\partial_tT-\nabla\cdot(k\nabla T)=Q_J(\mathbf u,T;\mupar)
+\quad\text{in }\Omega(\mupar),
+\label{eq:heat_full}
+\end{equation}
+with interface continuity of temperature and heat flux unless a physically specified contact resistance is present. Boundary conditions are physical inputs or are accompanied by an independently certified domain-truncation/open-boundary error.
+
+\subsection{Multirate closure}
+The electromagnetic relaxation time is assumed much smaller than the thermal time scale,
+\[
+\tau_{\rm em}\ll\tau_T.
+\]
+Therefore electromagnetics is quasi-steady at each instantaneous thermal state. This is a scale separation, not a decoupling: temperature modifies conductivity, which modifies electromagnetic fields and losses, which feed back into the heat equation.
+
+\section{Unified reference domain and compatible coordinates}
+
+Let \(F_{\mupar}:\widehat\Omega\to\Omega(\mupar)\) be a deterministic geometry map from a fixed reference domain.
+
+\begin{assumption}[Uniform non-degeneracy]
+For the certified geometry domain,
+\[
+0<J_-\le |\det DF_{\mupar}|\le J_+<\infty,
+\qquad
+\norm{DF_{\mupar}}+\norm{DF_{\mupar}^{-1}}\le C_F.
+\]
+\end{assumption}
+
+Thermal scalar fields use the standard \(H^1\) pullback. Electromagnetic vector potentials use the covariant Piola transformation
+\[
+\mathbf A(\mathbf x)=DF_{\mupar}^{-T}\widehat{\mathbf A}(\widehat{\mathbf x}),
+\]
+which preserves the \(H(\mathrm{curl})\) structure and curl conformity. Consequently all geometries are represented in common reference finite-element spaces, and geometry dependence appears only in transformed coefficient tensors and boundary/port functionals.
+
+This removes the need for geometry-specific solvers and makes one reduced electromagnetic space meaningful over a parameterized family of coil/package/seawater geometries, provided the map remains non-degenerate and topology does not change. Topology changes define a different certified chart/model.
 
 \section{Deterministic thermal reduction}
 
-\subsection{Boundary lifting and reduced state}
-Let \(T_b(\mupar)\) satisfy the nonhomogeneous thermal boundary conditions. Write
+After boundary lifting \(T=T_b+\widetilde T\), let the reference-domain thermal matrices be \(\Mt(\mupar)\) and \(\Kt(\mupar)\). Solve
 \begin{equation}
-T(\bm x,t;\mupar)=T_b(\bm x;\mupar)
-+\PhiT_r(\bm x;\mupar)\aT(t;\mupar).
-\label{eq:T_rom}
+\Kt(\mupar)\boldsymbol\phi_i
+=\lambda_i(\mupar)\Mt(\mupar)\boldsymbol\phi_i,
+\qquad
+\boldsymbol\phi_i^T\Mt\boldsymbol\phi_j=\delta_{ij}.
+\label{eq:thermal_eig}
 \end{equation}
-Projection gives
+The selected spectral subspace is tracked by its Riesz projector rather than by individual eigenvectors, so eigenvalue crossings inside a retained cluster do not create coordinate permutations.
+
+With a deterministic canonical basis \(\PhiT_r\),
 \begin{equation}
-\Mmat_r\dot\aT+\Kmat_r\aT
-=\qem_r(\aT;\mupar)+\bm f_b(\mupar),
-\label{eq:rom_general}
+T=T_b+\PhiT_r\aT,
+\label{eq:thermal_rom_state}
 \end{equation}
-where
-\[
-\Mmat_r=\PhiT_r^T\Mmat\PhiT_r,
-\qquad
-\Kmat_r=\PhiT_r^T\Kmat\PhiT_r,
-\qquad
-\qem_r=\PhiT_r^T\bm Q_{\mathrm{em}}.
-\]
-With the mass-orthonormal spectral basis, \(\Mmat_r=\I\) and \(\Kmat_r=\Lam\). After absorbing fixed boundary forcing into \(\gem\),
+and after mass normalization
 \begin{equation}
 \boxed{
-\dot\aT+\Lam(\mupar)\aT
-=\gem(\aT;\mupar).
+\dot\aT+\LamT\aT=\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T(\mupar).
 }
-\label{eq:reduced_dynamics}
+\label{eq:thermal_closed_template}
 \end{equation}
+No reduced dimension is fixed a priori. The smallest spectral cluster satisfying the final output-error requirement is retained; if a truncation boundary intersects a multiple/near-crossing cluster, the entire cluster is retained.
 
-\subsection{Reduced rank selection}
-The retained dimension is not prescribed. Let \(V_r\subset V_{r_c}\subset V_h\) be nested thermal spaces. The smallest \(r\) is selected such that the final quantity-of-interest certificate is satisfied. If the cut occurs inside an inseparable spectral cluster, the entire cluster is retained.
+\section{Solution-data-free electromagnetic reduction}
 
-\section{Deterministic temperature-dependent electromagnetic operator}
+This section resolves the first major difficulty: construction of a fast electromagnetic reduced space without full-order solution snapshots.
 
-\subsection{Reduced electromagnetic feedback map}
-For \(\aT\), reconstruct only the temperature information required by the electromagnetic backend,
+\subsection{Common parameter domain}
+Define
 \[
-T_r=T_b+\PhiT_r\aT.
+\etaPar=(\mupar,\aT)\in\mathcal D_{\rm em}.
 \]
-The backend computes
-\begin{equation}
-\mathcal E_r(\aT;\mupar)
-=\left\{
-\mathbf Z(\aT),
-P_{\mathrm{Cu}}(\aT),
-P_{\mathrm{sea}}(\aT),
-\qem_r(\aT)
-\right\}.
-\label{eq:em_reduced_map}
-\end{equation}
-The network never replaces this operator during training.
+The thermal coordinate set is not arbitrary. It is the certified reachable/allowable set implied by the initial-condition domain, material-temperature validity interval, and thermal energy bounds. Therefore geometry, excitation, load, frequency, copper temperature, and seawater temperature all enter one compact electromagnetic parameter domain.
 
-Geometry-only electromagnetic integrals are cached. Temperature-dependent material terms are updated through their physical constitutive laws. Any operator compression must provide an independent error estimator.
-
-\subsection{Differentiability and Jacobian}
-
-\begin{assumption}[Electromagnetic regularity]
-On a compact certified thermal/parameter set \(\mathcal D\), the constitutive laws are continuously differentiable, \(\mathcal A_{\mathrm{em}}(\aT;\mupar)\) is uniformly invertible, and all required operator derivatives are bounded.
-\end{assumption}
-
-Differentiate \eqref{eq:em_operator}. If \(\bm b_{\mathrm{em}}\) is temperature independent,
-\begin{equation}
-D_{\aT}\bm u_{\mathrm{em}}[\bm v]
-=-\mathcal A_{\mathrm{em}}^{-1}
-\left(D_{\aT}\mathcal A_{\mathrm{em}}[\bm v]\right)
-\bm u_{\mathrm{em}}.
-\label{eq:em_sensitivity}
-\end{equation}
-If the excitation also depends on temperature, add
-\(\mathcal A_{\mathrm{em}}^{-1}D_{\aT}\bm b_{\mathrm{em}}[\bm v]\).
-By differentiating the loss functional and projection, one obtains
-\begin{equation}
-\mathbf J_{\mathrm{em}}(\aT;\mupar)
-=\frac{\partial\gem}{\partial\aT}.
-\label{eq:Jem}
-\end{equation}
-This Jacobian is used for stability certification and residual-directed enrichment. It is not a learned quantity.
-
-\section{Analytic neural network: neurons as closed-form dynamical responses}
-
-\subsection{Basic philosophy}
-The neural network does not use conventional time-stepping recurrent cells and does not use a black-box activation to approximate time. Each dynamic neuron is itself the exact solution operator of a first-order dissipative equation whose decay rate is taken from the physical thermal spectrum.
-
-\subsection{Static parameter nodes}
-Each geometry, operating, or initial-state coordinate may appear as a zero-dynamics node
-\begin{equation}
-\dot p_j=0,
-\qquad
-p_j(t)=p_j(0).
-\end{equation}
-Thus parameter dependence is part of the same analytic computation graph rather than an external encoder.
-
-\subsection{Base thermal nodes}
-The homogeneous response of thermal mode \(i\) is
-\begin{equation}
-h_i^{(0)}(t)=a_{0,i}e^{-\lambda_i t}.
-\label{eq:base_node}
-\end{equation}
-These nodes enforce the exact initial state before any nonlinear correction is added.
-
-\subsection{Analytic response neuron}
-
-\begin{definition}[Analytic response neuron]
-For a target physical decay rate \(\lambda_i(\mupar)>0\), an analytic response neuron is defined by
-\begin{equation}
-\left(\partial_t+\lambda_i\right)h_\nu(t)
-=\psi_\nu(t;\mupar,\aT_0),
-\qquad
-h_\nu(0)=0,
-\label{eq:neuron_ode}
-\end{equation}
-where \(\psi_\nu\) is formed from previously available nodes using finite additions, scalar multiplications, and products. Its forward operation is the exact closed-form response
-\begin{equation}
-\boxed{
-h_\nu(t)=\int_0^t e^{-\lambda_i(t-\tau)}\psi_\nu(\tau)\,d\tau.
-}
-\label{eq:neuron_flow}
-\end{equation}
-\end{definition}
-
-The network is a directed acyclic graph of static parameter nodes, base thermal nodes, multiplicative interaction nodes, analytic response neurons, and a final linear physical-state aggregation. The trainable quantities are connection coefficients in the source expressions and output aggregation; the temporal propagation law of each neuron is fixed by physics.
-
-\section{Analytic closure of the network}
-
-\subsection{Analytic atom algebra}
-For a thermal spectrum \(\boldsymbol\lambda=(\lambda_1,\ldots,\lambda_r)\), define the additive spectral semigroup
+\subsection{Riesz map and inf-sup stability}
+Choose a fixed Hermitian positive-definite reference Riesz matrix \(\mathbf H\) on the gauge-stabilized electromagnetic state space. Define
 \[
-\mathcal S_\Lambda
-=\left\{
-\rho=\bm n^T\boldsymbol\lambda:
-\bm n\in\N_0^r
-\right\}.
+\norm{\mathbf v}_H^2=\mathbf v^*\mathbf H\mathbf v,
+\qquad
+\norm{\mathbf r}_{H^{-1}}^2=\mathbf r^*\mathbf H^{-1}\mathbf r.
+\]
+For \eqref{eq:em_full_discrete}, define the stability factor
+\begin{equation}
+\beta(\etaPar)=
+\inf_{\mathbf v\ne0}
+\frac{\norm{\Aem(\etaPar)\mathbf v}_{H^{-1}}}{\norm{\mathbf v}_H}.
+\label{eq:beta}
+\end{equation}
+The certified domain requires a computable lower bound
+\[
+\beta(\etaPar)\ge\beta_{\rm LB}(\etaPar)>0.
+\]
+A verified lower bound may be obtained from the minimum singular value of the scaled operator \(\mathbf H^{-1/2}\Aem\mathbf H^{-1/2}\), combined with the certified operator-separation representation introduced later. Global minimization over a compact parameter box is performed by deterministic interval/branch-and-bound bounds, not random sampling.
+
+\subsection{Initial reduced space from operators and excitations}
+Suppose the excitation family has a deterministic separated representation
+\[
+\bem(\mupar)=\sum_{q=1}^{Q_b}\vartheta_q^b(\mupar)\mathbf b_q+\mathbf e_b,
+\qquad
+\norm{\mathbf e_b}_{H^{-1}}\le\varepsilon_b.
 \]
 Define
 \begin{equation}
-\mathscr A_\Lambda
-=\spanop\left\{
-t^m e^{-\rho t}:
-\rho\in\mathcal S_\Lambda,\ m\in\N_0
-\right\}.
-\label{eq:analytic_algebra}
+V_0=\operatorname{orth}_H\{\mathbf H^{-1}\mathbf b_1,\ldots,\mathbf H^{-1}\mathbf b_{Q_b},\text{required constraint/port modes}\}.
+\label{eq:V0}
 \end{equation}
-Coefficients may be finite polynomials in static parameter and initial-state nodes.
+This uses only physical operators, excitations, and constraints; no field solution snapshot appears.
 
-\begin{lemma}[Algebraic closure]
-If \(f,g\in\mathscr A_\Lambda\), then
-\[
-f+g\in\mathscr A_\Lambda,
-\qquad
-fg\in\mathscr A_\Lambda,
-\qquad
-\partial_t f\in\mathscr A_\Lambda.
-\]
-\end{lemma}
-\begin{proof}
-Addition is immediate. Products satisfy
-\[
-(t^m e^{-\rho t})(t^n e^{-\sigma t})
-=t^{m+n}e^{-(\rho+\sigma)t},
-\]
-and \(\rho+\sigma\in\mathcal S_\Lambda\). Differentiation yields a finite linear combination of \(t^{m-1}e^{-\rho t}\) and \(t^m e^{-\rho t}\).
-\end{proof}
-
-\begin{lemma}[Closure under analytic response neurons]
-For \(f\in\mathscr A_\Lambda\) and \(\lambda_i>0\), the zero-initial-condition solution of
-\[
-(\partial_t+\lambda_i)h=f
-\]
-belongs to \(\mathscr A_\Lambda\).
-\end{lemma}
-\begin{proof}
-It is sufficient to consider \(f=t^m e^{-\rho t}\). Repeated differentiation with respect to \(\rho\) reduces the result to the convolution of exponentials. For \(m=0\),
-\[
-\int_0^t e^{-\lambda_i(t-\tau)}e^{-\rho\tau}d\tau
-=
-\begin{cases}
-\dfrac{e^{-\rho t}-e^{-\lambda_i t}}{\lambda_i-\rho},&\rho\ne\lambda_i,\\[2mm]
-te^{-\lambda_i t},&\rho=\lambda_i.
-\end{cases}
-\]
-Both forms lie in \(\mathscr A_\Lambda\). Higher \(m\) follows by differentiation with respect to \(\rho\), producing only polynomial factors in \(t\).
-\end{proof}
-
-\subsection{Resonance-safe unified evaluation}
-The apparent division by \(\lambda_i-\rho\) is not treated by an empirical branch. Define
-\[
-\varphi_1(z)=\frac{e^z-1}{z},\qquad\varphi_1(0)=1.
-\]
-Then
+\subsection{Minimum-residual reduced solve}
+For an \(H\)-orthonormal basis \(V_n\), define
 \begin{equation}
-\int_0^t e^{-\lambda(t-\tau)}e^{-\rho\tau}d\tau
-=t e^{-\lambda t}\varphi_1\big((\lambda-\rho)t\big),
-\label{eq:phi1}
+\mathbf c_n(\etaPar)=
+\argmin_{\mathbf c}
+\norm{\bem(\mupar)-\Aem(\etaPar)V_n\mathbf c}_{H^{-1}}.
+\label{eq:minres_rom}
 \end{equation}
-which is analytic at resonance. Higher polynomial-exponential atoms use the standard higher \(\varphi_k\) functions or their recurrence, again without heuristic switching.
-
-\begin{theorem}[Analytic-network closure]
-Every output of any finite analytic-response network constructed from the allowed nodes belongs to \(\mathscr A_\Lambda\) with parameter-polynomial coefficients. Hence the network output, its time derivative, and all intermediate dynamic nodes are available in closed analytic form.
-\end{theorem}
-\begin{proof}
-Base nodes belong to \(\mathscr A_\Lambda\). Static parameter nodes are time constants. The result follows by induction over the directed acyclic graph using the two closure lemmas.
-\end{proof}
-
-\begin{corollary}[Exact initial condition]
-If the output is assembled as
-\[
-\aT_N(t)=\aT_{\mathrm{hom}}(t)+\sum_{\nu\in\mathcal C}\bm c_\nu h_\nu(t),
-\]
-where \(\aT_{\mathrm{hom},i}=a_{0,i}e^{-\lambda_i t}\) and every correction neuron has zero initial condition, then
-\[
-\aT_N(0)=\aT_0
-\]
-exactly for every parameter and every network weight.
-\end{corollary}
-
-\section{Approximation capability}
-
-\subsection{Time compactification from a physical eigenvalue}
-Let \(\lambda_1(\mupar)>0\) be the first retained thermal decay rate and define
+The reduced electromagnetic field is \(\mathbf u_n=V_n\mathbf c_n\), with residual
 \begin{equation}
-x(\mupar,t)=e^{-\lambda_1(\mupar)t}.
+\mathbf r_n(\etaPar)=\bem(\mupar)-\Aem(\etaPar)V_n\mathbf c_n.
 \end{equation}
-On a compact parameter domain with \(\lambda_1\) continuous and uniformly positive, the map
-\[
-(\mupar,t)\mapsto(\mupar,x)
-\]
-is a homeomorphism between the compactified time domain \(\mathcal P\times[0,\infty]\) and \(\mathcal P\times[0,1]\), where \(t=\infty\) maps to \(x=0\).
-
-\begin{assumption}[Continuous stable solution map]
-On the certified domain, the reduced physical problem \eqref{eq:reduced_dynamics} has a unique solution map
-\[
-\mathcal S:(\mupar,\aT_0,t)\mapsto\aT(t)
-\]
-that is continuous on a compact set \(\mathcal P\times\mathcal A_0\times[0,\infty]\) and has a finite long-time limit.
-\end{assumption}
-
-\begin{theorem}[Uniform approximation on the certified compact domain]
-Let \(\mathcal N\) be the union of analytic-response networks whose source dictionary contains constants, parameter coordinates, initial-state coordinates, products of existing nodes, and response neurons driven by retained physical decay rates. Then for every \(\varepsilon>0\) there exists a finite network \(N\in\mathcal N\) such that
-\[
-\sup_{\mupar\in\mathcal P,\,\aT_0\in\mathcal A_0,\,t\in[0,\infty]}
-\norm{\mathcal S(\mupar,\aT_0,t)-N(\mupar,\aT_0,t)}
-<\varepsilon.
-\]
-\end{theorem}
-\begin{proof}[Proof outline]
-Under the time compactification, the target becomes a continuous function of \((\mupar,\aT_0,x)\) on a compact set. The algebra generated by constants, parameter coordinates, initial-state coordinates, and \(x\) separates points and is closed under multiplication. By Stone--Weierstrass, its finite polynomials are uniformly dense in the continuous functions on that compact set. The network can generate \(x^n=e^{-n\lambda_1 t}\) through products of a physical base exponential and can generate all required parameter and initial-state monomials through static nodes and multiplication. Linear aggregation gives the approximating polynomial. Analytic response neurons enlarge, rather than restrict, this algebra.
-\end{proof}
-
-\begin{remark}[Exact anchoring at \(t=0\)]
-If exact initial-condition preservation is required during approximation, apply the theorem to the correction. For a continuously differentiable physical solution, write
-\[
-\mathcal S(\mupar,\aT_0,t)-\aT_0
-=(1-x)\,H(\mupar,\aT_0,x),
-\]
-with continuous \(H\) under the standard initial compatibility condition. Approximate \(H\) by the network algebra; the factor \(1-x\) is itself generated analytically. The approximation then satisfies \(N(0)=\aT_0\) exactly.
-\end{remark}
-
-\section{Physical residual and solution-data-free training}
-
-\subsection{Exact reduced residual}
-For network output \(\aT_N\), define
+From \eqref{eq:beta},
 \begin{equation}
 \boxed{
-\Res_N(t;\mupar,\aT_0)
-=\dot\aT_N+\Lam\aT_N-\gem(\aT_N;\mupar).
+\norm{\mathbf u-\mathbf u_n}_H
+\le
+\Delta_n^{\rm em}(\etaPar)
+:=\frac{\norm{\mathbf r_n}_{H^{-1}}+\varepsilon_{\rm op}\norm{\mathbf u_n}_H+\varepsilon_b}{\beta_{\rm LB}(\etaPar)}.
+}
+\label{eq:em_error_bound}
+\end{equation}
+Here \(\varepsilon_{\rm op}\) is the certified operator-separation error defined later.
+
+\subsection{Worst-residual Riesz enrichment}
+Determine
+\begin{equation}
+\etaPar_n^*=\argmax_{\etaPar\in\mathcal D_{\rm em}}
+\Delta_n^{\rm em}(\etaPar),
+\label{eq:worst_eta}
+\end{equation}
+using global branch-and-bound with certified upper/lower bounds. Then compute only the Riesz lift of the residual,
+\begin{equation}
+\mathbf w_n=\mathbf H^{-1}\mathbf r_n(\etaPar_n^*),
+\label{eq:riesz_lift}
+\end{equation}
+and enrich
+\begin{equation}
+V_{n+1}=\operatorname{orth}_H[V_n,\mathbf w_n].
+\label{eq:em_enrich}
+\end{equation}
+Equation \eqref{eq:riesz_lift} uses one solve with the fixed reference Riesz matrix, not the physical full-order electromagnetic operator at \(\etaPar_n^*\). Hence it is an operator-residual correction, not a labelled solution snapshot.
+
+\begin{proposition}[Monotone electromagnetic residual]
+Because \(V_n\subset V_{n+1}\) and \eqref{eq:minres_rom} is a minimum-residual problem,
+\[
+\norm{\mathbf r_{n+1}(\etaPar)}_{H^{-1}}
+\le
+\norm{\mathbf r_n(\etaPar)}_{H^{-1}}
+\]
+for every \(\etaPar\).
+\end{proposition}
+\begin{proof}
+The old minimizer remains feasible in the enlarged reduced space, so the minimum over the enlarged space cannot be larger.
+\end{proof}
+
+\begin{theorem}[Uniform data-free electromagnetic convergence]
+Assume: (i) \(\mathcal D_{\rm em}\) is compact; (ii) \(\beta_{\rm LB}\ge\beta_0>0\); (iii) \(\Aem(\etaPar)\) and \(\bem(\mupar)\) vary continuously; (iv) the closure of the operator-generated enrichment dictionary contains the solution manifold. If each enrichment solves \eqref{eq:worst_eta} to certified global accuracy and adds a nonzero Riesz residual direction, then
+\[
+\sup_{\etaPar\in\mathcal D_{\rm em}}\Delta_n^{\rm em}(\etaPar)\to0
+\]
+up to the explicitly retained operator/excitation remainder bounds.
+\end{theorem}
+\begin{proof}[Proof structure]
+Monotonicity gives a non-increasing worst residual. If its limit were positive, compactness and continuity would provide a parameter point with nonzero limiting residual. Density of the enrichment dictionary gives a state direction producing a strict reduction of the minimum residual, contradicting stagnation. Uniform inf-sup stability converts residual convergence to state convergence. Operator/excitation remainder terms form the nonzero certified floor and are reduced independently until the output target is met.
+\end{proof}
+
+This theorem resolves both the ``no snapshot basis'' problem and the ``temperature changes the electromagnetic operator'' problem: thermal coordinates are part of \(\etaPar\), so the same worst-case enrichment certifies the reduced electromagnetic space over the complete allowed temperature field family.
+
+\section{Certified non-affine operator separation}
+
+Fast online evaluation requires reduced matrices to be assembled without traversing the full spatial mesh. No empirical interpolation is required.
+
+\subsection{Temperature-dependent constitutive laws}
+Let the certified temperature interval be \([T_-,T_+]\). For a constitutive coefficient, e.g. \(\sigma_{\rm sea}(T)\), use either its exact algebraic form or a deterministic polynomial/Chebyshev approximation
+\begin{equation}
+\sigma(T)=\sum_{m=0}^{p}s_m\chi_m(T)+r_p(T),
+\qquad
+\sup_{T\in[T_-,T_+]}|r_p(T)|\le\varepsilon_\sigma(p).
+\label{eq:sigma_cheb}
+\end{equation}
+The smallest \(p\) satisfying the propagated output-error budget is selected. The remainder bound follows from derivative/Bernstein-ellipse bounds for analytic laws or verified interval interpolation bounds for certified tabulated material data.
+
+Since
+\[
+T=T_b+\PhiT_r\aT,
+\]
+\eqref{eq:sigma_cheb} becomes a finite tensor polynomial in \(\aT\) plus a certified remainder. The same construction is used for copper conductivity and any temperature-dependent permeability when physically required.
+
+\subsection{Geometry dependence}
+After the reference-domain pullback, Jacobian and metric tensors depend on geometry parameters. Exact rational/algebraic dependence is retained when available; otherwise deterministic multivariate Chebyshev approximation with interval-certified remainder is used. Consequently
+\begin{equation}
+\boxed{
+\Aem(\etaPar)=\sum_{q=1}^{Q_A}\theta_q(\etaPar)\mathbf A_q+\mathbf E_A(\etaPar),
+\qquad
+\norm{\mathbf E_A}_{H\to H^{-1}}\le\varepsilon_{\rm op}.
+}
+\label{eq:affine_em}
+\end{equation}
+The reduced matrices \(V^*\mathbf A_qV\) are precomputed offline.
+
+\subsection{Certified tensor compression}
+If direct polynomial expansion produces many coefficient tensors, deterministic matrix/tensor SVD or hierarchical factorization may be used. Terms are discarded only if a rigorous spectral/Frobenius-to-operator norm bound proves their aggregate contribution is below the remaining operator-error budget. No weight-magnitude pruning rule defines the scientific method.
+
+\section{Quasi-static electromagnetic elimination and reduced heat source}
+
+For the final electromagnetic basis \(V_{\rm em}\), define
+\begin{equation}
+\mathbf A_{{\rm em},r}(\etaPar)=V_{\rm em}^*\Aem(\etaPar)V_{\rm em},
+\qquad
+\mathbf b_{{\rm em},r}=V_{\rm em}^*\bem.
+\end{equation}
+At a thermal state \(\aT\), solve only
+\begin{equation}
+\boxed{
+\mathbf A_{{\rm em},r}(\mupar,\aT)\cE
+=\mathbf b_{{\rm em},r}(\mupar).
+}
+\label{eq:em_rom_solve}
+\end{equation}
+The electromagnetic coefficients are therefore an algebraic function
+\[
+\cE=\mathcal C_{\rm em}(\mupar,\aT).
+\]
+There is no electromagnetic time stepping inside the thermal evolution.
+
+\subsection{Direct reduced loss projection}
+Let \(D_E\) map electromagnetic state coefficients to discrete electric-field degrees of freedom. For the \(k\)-th thermal mode, define preassembled reduced quadratic forms
+\begin{align}
+\mathbf H_{k}^{\rm Cu}(\etaPar)
+&=V_{\rm em}^*D_E^*\mathbf C_{\sigma\Phi_k}^{\rm Cu}(\etaPar)D_EV_{\rm em},\\
+\mathbf H_{k}^{\rm sea}(\etaPar)
+&=V_{\rm em}^*D_E^*\mathbf C_{\sigma\Phi_k}^{\rm sea}(\etaPar)D_EV_{\rm em}.
+\end{align}
+They use the same certified operator-separation machinery as \eqref{eq:affine_em}. The reduced thermal source is evaluated directly as
+\begin{equation}
+\boxed{
+[q_{\rm em,r}]_k
+=\cE^*\bigl(\mathbf H_k^{\rm Cu}+\mathbf H_k^{\rm sea}\bigr)\cE.
+}
+\label{eq:heat_tensor}
+\end{equation}
+Hence online evaluation does not reconstruct the full three-dimensional Joule-loss field. Copper and seawater losses remain spatially distinct because their coupling tensors are assembled on different physical subdomains.
+
+The total powers are analogous quadratic forms,
+\[
+P_{\rm Cu}=\cE^*\mathbf H_P^{\rm Cu}\cE,
+\qquad
+P_{\rm sea}=\cE^*\mathbf H_P^{\rm sea}\cE.
+\]
+Port functionals evaluated on \(V_{\rm em}\cE\) provide \(\mathbf Z,R,L,M\).
+
+\section{Closed reduced electromagnetic--thermal dynamics}
+
+After electromagnetic elimination, define
+\begin{equation}
+\mathbf g_{\rm em}(\aT;\mupar)
+=\Mt_r^{-1}\mathbf q_{\rm em,r}
+\bigl(\mathcal C_{\rm em}(\mupar,\aT),\aT;\mupar\bigr).
+\end{equation}
+With mass-normalized thermal modes, the exact reduced closure is
+\begin{equation}
+\boxed{
+\dot\aT+\LamT\aT
+=\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T(\mupar).
+}
+\label{eq:closed_et}
+\end{equation}
+All spatial copper loss, skin/proximity effect, seawater induced current, geometry dependence, and temperature feedback enter through \(\mathbf g_{\rm em}\). The analytic neural network approximates only the continuous-time solution map of \eqref{eq:closed_et}; it does not replace the electromagnetic or thermal operators.
+
+\section{Analytic neural evolution network}
+
+\subsection{Analytic function algebra}
+For a fixed parameter point, let \(\lambda_1,\ldots,\lambda_r>0\) be the thermal decay rates and define
+\begin{equation}
+\mathscr A_\Lambda=
+\operatorname{span}
+\left\{t^m e^{-\rho t}:m\in\mathbb N_0,\ \rho=\mathbf n^T\boldsymbol\lambda,\ \mathbf n\in\mathbb N_0^r\right\}.
+\end{equation}
+This set is closed under addition, multiplication, time differentiation, and the stable response operator \((\partial_t+\lambda_i)^{-1}\) with zero initial condition.
+
+\subsection{Analytic neuron}
+An analytic neuron is defined by
+\begin{equation}
+(\partial_t+\lambda_i)h_\nu(t)=S_\nu(t),
+\qquad
+h_\nu(0)=h_{\nu,0},
+\label{eq:analytic_neuron}
+\end{equation}
+where the source \(S_\nu\) is an algebraic combination of static parameter nodes, initial-state nodes, and preceding analytic neurons. Its forward map is the closed form
+\begin{equation}
+h_\nu(t)=e^{-\lambda_i t}h_{\nu,0}
++\int_0^t e^{-\lambda_i(t-\tau)}S_\nu(\tau)\,d\tau.
+\end{equation}
+For an atom \(t^m e^{-\rho t}\), use the entire function
+\[
+\varphi_{m+1}(z)=\int_0^1 e^{(1-s)z}\frac{s^m}{m!}\,ds
+\]
+to evaluate resonant and non-resonant cases without an empirical denominator threshold. Thus each neuron, its time derivative, and any finite network composition remain explicitly analytic in time.
+
+\begin{theorem}[Analytic closure]
+If all source nodes belong to \(\mathscr A_\Lambda\), every finite analytic-neuron directed acyclic graph produces outputs in \(\mathscr A_\Lambda\). Its time derivative is available symbolically/recursively without numerical time differentiation.
+\end{theorem}
+\begin{proof}
+The base decay nodes belong to \(\mathscr A_\Lambda\). Closure under algebraic source construction and under \((\partial_t+\lambda_i)^{-1}\) yields the claim by induction over the directed acyclic graph.
+\end{proof}
+
+\subsection{Approximation capacity}
+Choose any \(\lambda_*>0\) from the thermal spectrum and set \(x=e^{-\lambda_*t}\). The compactified time interval \(t\in[0,\infty]\) maps to \(x\in[0,1]\). For any continuous stable response component with a finite steady-state limit, polynomial approximation in \(x\) yields finite sums of \(e^{-n\lambda_*t}\), which are contained in \(\mathscr A_\Lambda\). With static parameter and initial-state nodes, the generated algebra separates points on a compact certified parameter/initial-state/time domain. Therefore the analytic network is dense in the continuous stable solution maps on that domain. This is an approximation statement; finite networks retain a certified residual rather than being asserted exact.
+
+\section{Solution-data-free training and residual-grown topology}
+
+The network returns \(\aT_\theta(t)\) and its exact analytic derivative. Define
+\begin{equation}
+\boxed{
+\mathbf R_\theta
+=\dot\aT_\theta+\LamT\aT_\theta
+-\mathbf g_{\rm em}(\aT_\theta;\mupar)-\mathbf f_T.
 }
 \label{eq:nn_residual}
 \end{equation}
-Because \(\aT_N\) is analytic in time, \(\dot\aT_N\) is evaluated analytically. No numerical time integration and no time automatic differentiation are required.
+The primary training objective is the physical dual/energy norm of \(\mathbf R_\theta\), integrated over the certified parameter/initial-state/time domain with deterministic error-controlled quadrature. No transient field solution appears as a label.
 
-The canonical neural objective is the squared dual/energy residual
-\begin{equation}
-\mathcal J_N
-=\int_{\mathcal P}\int_{\mathcal A_0}\int_{0}^{\infty}
-\norm{\Res_N(t;\mupar,\aT_0)}_{\mathcal R^{-1}}^2
-\,d\nu_t\,d\nu_0\,d\nu_\mu,
-\label{eq:training_functional}
-\end{equation}
-where \(\mathcal R\) is the Riesz map induced by the thermal energy metric and the measures define the stated certified operating domain. The correctness criterion is the physical residual itself; no labelled trajectory is present.
-
-Numerical evaluation of \eqref{eq:training_functional} may use an adaptive integration scheme, but final acceptance uses independent certification. Integration error is required to be below the portion of the final output error bound assigned to numerical evaluation; arbitrary sampling density is not a correctness assumption.
-
-\section{Residual-driven analytic network growth}
-
-\subsection{Nested analytic trial graphs}
-Let
+Network size is not fixed. Let \(\mathcal D_N\) be the current analytic-neuron dictionary. Candidate sources are generated hierarchically from admissible products of active nodes and static parameter nodes. For candidate \(\psi\), define the Riesz residual correlation
 \[
-\mathcal V_0\subset\mathcal V_1\subset\cdots
+I(\psi)=\frac{|\ip{\mathcal R^{-1}\mathbf R_\theta}{\psi}|^2}{\norm{\psi}_{\mathcal R}^2}.
 \]
-be nested network trial classes, where \(\mathcal V_{N+1}\) contains every function representable by \(\mathcal V_N\) plus one admissible analytic neuron and its outgoing linear connection. The initial class contains the homogeneous thermal nodes and constant-forcing response nodes required by the physical problem.
+Add the candidate with certified maximum correlation, re-optimize all active weights without increasing the physical residual, and repeat until the final output certificate is satisfied.
 
-\subsection{Candidate selection from the unresolved residual}
-At the current network \(\aT_N\), let \(\mathcal L_N\) denote the Frechet derivative of the residual operator,
-\begin{equation}
-\mathcal L_N[\delta\aT]
-=\partial_t\delta\aT+\Lam\delta\aT
--\mathbf J_{\mathrm{em}}(\aT_N;\mupar)\delta\aT.
-\label{eq:linearized_residual}
-\end{equation}
-For a normalized candidate correction \(\psi_\nu\), define the predicted residual-reduction score
-\begin{equation}
-\mathcal I_\nu
-=
-\frac{
-\left|
-\ip{\Res_N}{\mathcal L_N[\psi_\nu]}
-\right|^2
-}{
-\norm{\mathcal L_N[\psi_\nu]}^2
-}.
-\label{eq:greedy_score}
-\end{equation}
-The next neuron is
-\begin{equation}
-\boxed{
-\nu^*=\argmax_{\nu\in\mathcal D_N}\mathcal I_\nu,
-}
-\label{eq:greedy_select}
-\end{equation}
-where \(\mathcal D_N\) is the next complete level of the analytic interaction dictionary. This selects the direction giving the largest first-order reducible component of the unresolved physical residual.
+Under compactness, density of the analytic dictionary, and exact/controlled greedy selection, the monotone residual sequence converges to zero up to independent electromagnetic/thermal/operator-discretization error floors. Thus network topology is generated by unresolved physics rather than by empirical depth/width selection.
 
-\subsection{Non-empirical depth and width}
-After enrichment, all weights in the enlarged graph are re-optimized with respect to the physical residual. Because \(\mathcal V_N\subset\mathcal V_{N+1}\), the previous solution remains feasible and therefore the globally minimized residual cannot increase.
+\section{Stability and unified error certification}
 
-\begin{theorem}[Residual convergence under complete enrichment]
-Assume: (i) the union of the nested analytic trial classes is dense in the target solution class; (ii) the physical residual is coercive with respect to the state error on the certified domain; (iii) each enriched optimization returns a residual no larger than the preceding optimum; and (iv) the enrichment procedure is complete, meaning that no residual-detectable direction is permanently excluded. Then
+\subsection{Contractive domain}
+For the exact closed reduced vector field
 \[
-\inf_{v\in\mathcal V_N}\norm{\mathcal R(v)}\longrightarrow0
-\qquad\text{as }N\to\infty.
+F(\aT;\mupar)=-\LamT\aT+\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T,
 \]
-If the greedy candidate search realizes the maximal linearized residual reduction in each complete dictionary level, the adaptive sequence reaches the same zero-residual closure limit whenever the nonlinear re-optimization remains in the certified coercive branch.
-\end{theorem}
-\begin{proof}[Proof outline]
-Density gives a sequence in the union of trial classes converging to the physical solution. Coercivity and continuity of the residual imply that the best attainable residual over the nested classes tends to zero. Nestedness gives monotonic non-increase of the globally minimized residual. Completeness of enrichment prevents stagnation at a nonzero residual that has a nonzero component along an admissible correction direction. The final statement follows by combining the greedy linearized selection with nonlinear re-optimization inside the enlarged nested class.
-\end{proof}
-
-\begin{remark}
-The theorem deliberately states the conditions required for convergence. A generic nonconvex optimizer does not by itself prove global convergence. In implementation, optimization error is included as a numerical residual contribution and final physical certification is independent of the training optimizer.
-\end{remark}
-
-\section{Well-posedness, dissipativity, and long-time certification}
-
-Let
+define
 \begin{equation}
-\bm F(\aT;\mupar)
-=-\Lam\aT+\gem(\aT;\mupar).
-\end{equation}
-
-\subsection{A computable contraction margin}
-Define
-\begin{equation}
-\beta_{\mathrm{em}}
-=
-\sup_{(\aT,\mupar)\in\mathcal D}
-\lambda_{\max}\left(
-\sym\mathbf J_{\mathrm{em}}(\aT;\mupar)
-\right),
-\end{equation}
-and
-\begin{equation}
-\boxed{
-\kappa
-=\inf_{\mupar\in\mathcal P}\lambda_{\min}(\Lam(\mupar))
--\beta_{\mathrm{em}}.
-}
+\kappa=
+\lambda_{\min}(\LamT)
+-\sup_{(\aT,\mupar)\in\mathcal D}
+\lambda_{\max}\left[
+\sym\left(\frac{\partial\mathbf g_{\rm em}}{\partial\aT}\right)
+\right].
 \label{eq:kappa}
 \end{equation}
-
-\begin{theorem}[Strong dissipativity on the certified domain]
-If \(\kappa>0\), then for any \(\aT,\bm b\in\mathcal D\),
-\[
-\ip{\bm F(\aT)-\bm F(\bm b)}{\aT-\bm b}
-\le-\kappa\norm{\aT-\bm b}^2.
-\]
-Hence the reduced flow is contractive. If an equilibrium exists in the invariant physical domain, it is unique and all trajectories in that domain converge to it exponentially.
-\end{theorem}
-\begin{proof}
-Use the mean-value representation
-\[
-\gem(\aT)-\gem(\bm b)
-=\int_0^1\mathbf J_{\mathrm{em}}(\bm b+s(\aT-\bm b))(\aT-\bm b)\,ds.
-\]
-The symmetric Jacobian bound gives
-\[
-\ip{\gem(\aT)-\gem(\bm b)}{\aT-\bm b}
-\le\beta_{\mathrm{em}}\norm{\aT-\bm b}^2.
-\]
-The thermal term contributes at most
-\(-\lambda_{\min}(\Lam)\norm{\aT-\bm b}^2\). Combining them yields the result.
-\end{proof}
-
-If \(\kappa\le0\), SDF-MPNEO does not claim infinite-time contraction. A finite-time Lipschitz certificate is used, or the operating point is declared outside the long-time certified domain. The architecture is never forced to be stable when the physical model itself is not certified stable.
-
-\section{A posteriori error certification}
+If a verified lower bound gives \(\kappa>0\), the reduced electrothermal system is contractive on the certified domain. The Jacobian of \(\mathbf g_{\rm em}\) is obtained by differentiating the small reduced electromagnetic system and the preassembled loss tensors; no finite-difference perturbation is required.
 
 \subsection{Error decomposition}
-Let \(T_h\) denote the selected high-fidelity spatial-discrete thermal solution, \(T_r\) the exact solution of the retained reduced model using the exact deterministic electromagnetic map, and \(T_N\) the analytic-network approximation evaluated with the numerical electromagnetic backend. Decompose conceptually
+Let
+\begin{align*}
+\eta_T&=\text{thermal spatial-reduction/truncation residual},\\
+\eta_{\rm em}&=\text{electromagnetic reduced-state residual bound},\\
+\eta_{\rm sep}&=\text{constitutive/geometry operator-separation remainder},\\
+\eta_{\rm lin}&=\text{reduced linear-solve residual},\\
+\eta_{\rm nn}&=\norm{\mathbf R_\theta}.
+\end{align*}
+Propagating electromagnetic state/operator errors through the loss functional gives a thermal-source perturbation bound
 \[
-T_h-T_N
-=(T_h-T_r)+(T_r-T_N).
+\eta_Q\le C_{Q,u}\eta_{\rm em}+C_{Q,A}\eta_{\rm sep}+C_{Q,\rm lin}\eta_{\rm lin}.
 \]
-The total computable residual is decomposed into
-\begin{equation}
-\eta_{\mathrm{tot}}
-\le
-\eta_{\mathrm{ROM}}
-+\eta_{\mathrm{NN}}
-+\eta_{\mathrm{EM}}
-+\eta_{\mathrm{num}},
-\label{eq:eta_total}
-\end{equation}
-where the terms denote spatial truncation, analytic-network residual, electromagnetic numerical error, and residual/certification numerical evaluation error.
-
-\subsection{Independent higher-space residual}
-Let \(V_r\subset V_{r_c}\) with \(r_c>r\). The network is constructed in \(V_r\), while the certifier tests the lifted temperature in \(V_{r_c}\):
-\begin{equation}
-\Res_c(v;t)
-=m(\partial_t T_N,v)+k(T_N,v)-\ell_{\mathrm{em}}(T_N;v)
-\qquad \forall v\in V_{r_c}.
-\label{eq:high_residual}
-\end{equation}
-The certification space is enlarged until the spectral tail bound associated with the final output requirement is satisfied. Thus the network is not allowed to certify itself only in its training space.
-
-\subsection{State-error bound in a contractive domain}
-Let \(\widetilde\aT\) be the analytic-network state and \(\aT\) the exact reduced state. Define the exact-equation residual
+Define
 \[
-\bm r(t)=\dot{\widetilde\aT}-\bm F(\widetilde\aT).
+\eta_{\rm tot}=\eta_T+\eta_Q+\eta_{\rm nn}.
 \]
-Because the initial condition is exact, \(\widetilde\aT(0)=\aT(0)\).
-
-\begin{theorem}[Residual-to-state a posteriori bound]
-If \(\kappa>0\), then
+For exact initial-condition embedding, the thermal-state error satisfies
 \begin{equation}
 \boxed{
-\norm{\widetilde\aT(t)-\aT(t)}
+\norm{\aT_\theta(t)-\aT(t)}
 \le
-\int_0^t e^{-\kappa(t-\tau)}\norm{\bm r(\tau)}\,d\tau.
-}
-\label{eq:state_bound}
-\end{equation}
-Consequently,
-\begin{equation}
-\boxed{
-\norm{\widetilde\aT(t)-\aT(t)}
+\int_0^t e^{-\kappa(t-s)}\eta_{\rm tot}(s)\,ds
 \le
-\frac{1-e^{-\kappa t}}{\kappa}
-\norm{\bm r}_{L^\infty(0,t)}
+\frac{\sup_{s\le t}\eta_{\rm tot}(s)}{\kappa}.
+}
+\label{eq:uniform_error}
+\end{equation}
+Hence the certificate does not deteriorate merely because a large query time is requested. If \(\kappa\le0\), only a finite-time Gr\"onwall bound is claimed; long-time contractive certification is withheld.
+
+\subsection{Output bounds}
+For any differentiable output functional \(Q(T,\mathbf u)\),
+\[
+|Q-Q_\theta|
 \le
-\frac{\norm{\bm r}_{L^\infty}}{\kappa}.
-}
-\label{eq:uniform_state_bound}
-\end{equation}
-\end{theorem}
-\begin{proof}
-Let \(\bm e=\widetilde\aT-\aT\). Then
-\[
-\dot{\bm e}=\bm F(\widetilde\aT)-\bm F(\aT)+\bm r.
+L_{Q,T}\norm{T-T_\theta}
++L_{Q,u}\norm{\mathbf u-\mathbf u_r}
++\eta_{Q,\rm sep}+\eta_{Q,\rm lin}.
 \]
-Using strong dissipativity,
-\[
-\frac12\frac{d}{dt}\norm{\bm e}^2
-\le-\kappa\norm{\bm e}^2+\norm{\bm e}\norm{\bm r}.
-\]
-For nonzero \(\bm e\), divide by \(\norm{\bm e}\) and integrate the scalar differential inequality with \(\bm e(0)=0\).
-\end{proof}
+This produces explicit certificates for \(T_{\max}\), \(\mathbf Z\), \(R,L,M\), \(P_{\rm Cu}\), and \(P_{\rm sea}\). The user-facing accuracy target is specified on these engineering outputs; internal ranks and tolerances are then chosen by minimizing online cost subject to the propagated output bound.
 
-For the full model, the norm of \(\bm r\) in \eqref{eq:state_bound} is replaced by a certified bound containing the terms in \eqref{eq:eta_total}. Therefore long-time error does not grow without bound when \(\kappa>0\).
+\section{Resolution of the three implementation difficulties}
 
-\subsection{Finite-time certificate outside the contractive domain}
-If only a Lipschitz constant \(L\) is certified, then
-\begin{equation}
-\norm{\bm e(t)}
-\le
-\int_0^t e^{L(t-\tau)}\norm{\bm r(\tau)}d\tau.
-\label{eq:finite_time_bound}
-\end{equation}
-Such a case is explicitly marked as finite-horizon certified rather than long-time certified.
+\subsection{Difficulty I: electromagnetic basis without data}
+\textbf{Resolved by:} source/constraint Riesz initialization \eqref{eq:V0}, minimum-residual reduced solve \eqref{eq:minres_rom}, worst-case certified residual search \eqref{eq:worst_eta}, and Riesz-lift enrichment \eqref{eq:riesz_lift}. No physical full-order state snapshot is required.
 
-\section{Electromagnetic numerical error and output certification}
+\subsection{Difficulty II: temperature and geometry change the electromagnetic operator}
+\textbf{Resolved by:} common reference-domain compatible spaces, one parameter domain \(\etaPar=(\mupar,\aT)\), and uniform worst-case residual enrichment over that complete domain. The basis is not assumed valid after temperature changes; validity is proved by the supremum residual certificate. If the geometry map degenerates, topology changes, or material laws leave their certified interval, the point is outside the model chart and is explicitly non-certified.
 
-\subsection{Required backend certificate}
-The electromagnetic backend must return, in addition to nominal quantities,
-\begin{align}
-\norm{\delta\qem_r}&\le\eta_{\mathrm{EM},q},\\
-|\delta Z_{ij}|&\le\eta_{\mathrm{EM},Z_{ij}},
-\end{align}
-with analogous bounds for power quantities. These bounds may be assembled from certified quadrature remainder, operator-compression error, and linear-solve residual/error bounds. The theory does not assume that an unchecked numerical electromagnetic value is exact.
-
-\subsection{Impedance error}
-Let \(Z(\aT;\mupar)\) be differentiable on the certified thermal set and define
-\[
-L_Z=\sup_{(\aT,\mupar)\in\mathcal D}
-\norm{D_{\aT}Z(\aT;\mupar)}.
-\]
-Then
-\begin{equation}
-\boxed{
-|Z(\aT)-\widetilde Z(\widetilde\aT)|
-\le
-L_Z\norm{\aT-\widetilde\aT}
-+\eta_{\mathrm{EM},Z}.
-}
-\label{eq:Z_bound}
-\end{equation}
-The same construction applies to \(R,L,M,P_{\mathrm{Cu}},P_{\mathrm{sea}}\).
-
-\subsection{Maximum-temperature error}
-For a finite-dimensional certified spatial space with basis vector \(\bm\varphi(\bm x)\), define the computable embedding constant
-\[
-C_\infty
-=\sup_{\bm x\in\Omega}
-\norm{\Mmat^{-1/2}\bm\varphi(\bm x)}.
-\]
-Then
-\begin{equation}
-\norm{T_h-T_N}_{L^\infty}
-\le C_\infty\norm{T_h-T_N}_{\Mmat},
-\end{equation}
-and therefore
-\begin{equation}
-\boxed{
-|T_{\max,h}-T_{\max,N}|
-\le C_\infty\norm{T_h-T_N}_{\Mmat}.
-}
-\label{eq:Tmax_bound}
-\end{equation}
-
-\section{Unified non-empirical model selection}
-
-The user or application specifies physically meaningful final tolerances, for example
-\[
-|T_{\max}-T_{\max,N}|\le\varepsilon_T,
-\qquad
-\frac{|Z-Z_N|}{|Z|}\le\varepsilon_Z.
-\]
-The method then chooses thermal dimension \(r\), analytic-neuron count/topology \(N\), and electromagnetic numerical accuracy level \(p_{\mathrm{em}}\) by solving
-\begin{equation}
-\boxed{
-\min_{r,N,p_{\mathrm{em}}}
-C_{\mathrm{online}}(r,N,p_{\mathrm{em}})
-\quad\text{s.t.}\quad
-\mathcal B_Q(r,N,p_{\mathrm{em}})\le\varepsilon_Q
-\ \forall Q\in\mathcal Q.
-}
-\label{eq:model_selection}
-\end{equation}
-Here \(\mathcal B_Q\) is the certified quantity-of-interest error bound assembled from spatial, neural, electromagnetic, and numerical residual contributions. Internal tolerances are consequences of \eqref{eq:model_selection}; they are not manually assigned error budgets.
-
-\section{Training algorithm}
-
-\subsection{Offline physics construction}
-For the certified parameter domain:
+\subsection{Difficulty III: reduced electromagnetics must be extremely fast online}
+\textbf{Resolved by:}
 \begin{enumerate}
-\item construct the unified reference-domain geometry maps;
-\item assemble thermal mass/stiffness operators and isolated spectral clusters;
-\item build canonical thermal coordinates using spectral projectors and anchor charts;
-\item establish an initial reduced thermal space and an independent higher certification space;
-\item initialize the deterministic electromagnetic temperature-parameter interface, projected loss source, Jacobian action, and numerical error estimator.
+\item deterministic separated operator \eqref{eq:affine_em} with certified remainder;
+\item all full-order coefficient matrices projected offline to \(V_{\rm em}\);
+\item online solve only of the small dense complex system \eqref{eq:em_rom_solve};
+\item one factorization reused for all ports/right-hand sides at the same thermal state;
+\item copper/seawater heat sources evaluated by reduced quadratic tensors \eqref{eq:heat_tensor}, not by reconstructing full fields;
+\item deterministic tensor compression with discarded-norm certificate when required.
+\end{enumerate}
+If \(r_{\rm em}=\dim V_{\rm em}\), the dominant dense solve is \(O(r_{\rm em}^3)\), while separated assembly and loss evaluation scale only with reduced/tensor dimensions. The value of \(r_{\rm em}\) is not prescribed; it is the smallest dimension meeting the output certificate.
+
+\section{Offline and online algorithms}
+
+\subsection{Offline physics compiler}
+\begin{enumerate}
+\item Build reference-domain geometry maps and verify Jacobian bounds.
+\item Assemble compatible full electromagnetic and thermal operators.
+\item Build the certified thermal spectral space and canonical coordinates.
+\item Derive the allowable thermal-coordinate/material-temperature domain.
+\item Construct deterministic separated geometry/constitutive operators and certify their remainders.
+\item Initialize the electromagnetic reduced space from excitation/constraint Riesz lifts.
+\item Repeat worst-case electromagnetic residual enrichment until electromagnetic output bounds are satisfied on the complete \((\mupar,\aT)\) domain.
+\item Project electromagnetic operators, port functionals, and copper/seawater loss tensors to the final reduced space.
+\item Build the base analytic thermal decay graph.
+\item Train from \eqref{eq:nn_residual}; grow analytic neurons by residual correlation until the total output certificate is satisfied.
+\item Compile the sparse analytic directed acyclic graph and reduced electromagnetic tensors to deployment code.
 \end{enumerate}
 
-\subsection{Solution-data-free analytic-network training}
-For each current analytic trial graph:
+\subsection{Online arbitrary-time evaluation}
+Given \((\mupar,T_0,t_q)\):
 \begin{enumerate}
-\item evaluate \(\aT_N(\mupar,\aT_0,t)\) in closed form;
-\item evaluate \(\dot\aT_N\) analytically;
-\item call the deterministic electromagnetic operator at \(\aT_N\) to obtain \(\gem\) and required Jacobian actions;
-\item compute the physical residual \eqref{eq:nn_residual};
-\item optimize network connection coefficients to minimize the physical residual functional;
-\item compute independent higher-space and output certificates;
-\item if the certificate fails because of thermal spatial error, enlarge the thermal spectral space;
-\item if it fails because of analytic-network residual, select the next neuron by \eqref{eq:greedy_select};
-\item if it fails because of electromagnetic numerical error, tighten the certified electromagnetic operator accuracy;
-\item stop only when all requested output bounds are satisfied.
+\item project \(T_0\) to \(\aT_0\);
+\item evaluate the analytic graph once at \(t_q\) to obtain \(\aT(t_q)\) and, if needed, \(\dot\aT(t_q)\);
+\item assemble the small reduced electromagnetic matrix from precomputed separated tensors;
+\item solve \eqref{eq:em_rom_solve};
+\item evaluate impedance, copper loss, seawater loss, and reduced heat-source/output tensors;
+\item evaluate the stored certificate bounds and return certified/non-certified status.
 \end{enumerate}
-No transient high-fidelity solution is generated or consumed by this procedure.
+There is no thermal time-step loop and no full-order electromagnetic solve online.
 
-\section{Online inference}
+\section{Core theorem chain and proof obligations}
 
-For a new certified sample \((\mupar,T_0,t_q)\):
-\begin{enumerate}
-\item map the geometry to the appropriate canonical thermal coordinate chart;
-\item project \(T_0\) deterministically to obtain \(\aT_0\);
-\item evaluate the analytic neural graph directly at \(t_q\) to obtain \(\aT_N(t_q)\); no time stepping is performed;
-\item reconstruct only the temperature quantities required by the user or electromagnetic backend;
-\item call the deterministic electromagnetic operator once at \(\aT_N(t_q)\) to obtain \(\mathbf Z,R,L,M,P_{\mathrm{Cu}},P_{\mathrm{sea}}\);
-\item optionally evaluate the online certificate.
-\end{enumerate}
-The cost of querying \(t_q=1\,\mathrm s\) or \(t_q=10^4\,\mathrm s\) depends on analytic graph size, not on the elapsed physical time.
+The complete mathematical framework rests on the following chain.
 
-\section{Main theoretical results and dependency chain}
-
-The framework is logically closed by the following results.
-
-\begin{theorem}[T1: parameter-consistent spatial coordinates]
-Under uniform geometric regularity, thermal coercivity, isolated retained spectral clusters, and nonsingular canonical anchors, the reduced thermal subspace and its canonical coordinate representation vary continuously with geometry and contain whole eigenvalue-crossing clusters.
+\begin{theorem}[Compatible parameter-coordinate theorem]
+Under uniform non-degenerate reference mappings and isolated thermal spectral clusters, thermal coordinates and compatible electromagnetic spaces can be transported to a common reference domain continuously over each certified geometry chart.
 \end{theorem}
 
-\begin{theorem}[T2: analytic neural closure]
-Every finite analytic-response network has a closed-form output in the polynomial-exponential algebra \(\mathscr A_\Lambda\), with exact analytic time derivatives and exact initial-state anchoring.
+\begin{theorem}[Uniform electromagnetic reduced-space theorem]
+Under compact parameter domain, uniform inf-sup stability, continuous operators, and density of the residual-enrichment dictionary, the solution-data-free worst-residual Riesz enrichment drives the supremum electromagnetic state estimator to the independently controlled operator-remainder floor.
 \end{theorem}
 
-\begin{theorem}[T3: approximation completeness]
-On a compact certified parameter/initial-state domain with continuous stable solution map, the union of analytic-response networks is uniformly dense in the transient solution map, including the compactified infinite-time limit.
+\begin{theorem}[Analytic-neuron closure and density theorem]
+Finite analytic-neuron graphs remain in the polynomial--exponential algebra and are dense in continuous stable reduced evolution maps on compactified time and compact parameter/initial-state domains.
 \end{theorem}
 
-\begin{theorem}[T4: adaptive-growth convergence under certified assumptions]
-If the nested analytic trial classes are dense, the physical residual is coercive with respect to state error, optimization does not increase the residual, and the enrichment dictionary is complete, then the best residual over the adaptively enlarged analytic-network classes converges to zero. Residual-greedy selection supplies a physics-directed sequence of enrichments.
+\begin{theorem}[Residual-grown analytic-network convergence theorem]
+If the analytic dictionary is dense and each greedy enrichment selects a certified nonzero residual-correlated direction followed by non-increasing residual optimization, the analytic-network physical residual converges to the independent spatial/operator error floor.
 \end{theorem}
 
-\begin{theorem}[T5: unified a posteriori certification]
-If the coupled reduced dynamics are strongly dissipative with margin \(\kappa>0\), then the total thermal-state error is bounded uniformly in time by the certified total residual divided by \(\kappa\). Electromagnetic and maximum-temperature output bounds follow by sensitivity and embedding estimates such as \eqref{eq:Z_bound} and \eqref{eq:Tmax_bound}.
+\begin{theorem}[Unified a posteriori certificate]
+On a verified contractive domain \(\kappa>0\), thermal reduction, electromagnetic reduction, operator separation, reduced linear solve, and analytic-network residual errors combine through \eqref{eq:uniform_error} into a uniform-in-time thermal-state bound and hence into certified impedance, loss, mutual-inductance, and maximum-temperature output bounds.
 \end{theorem}
 
-These results have a strict dependency order:
-\[
-\boxed{
-\text{geometry regularity}
-\Rightarrow
-\text{consistent physical coordinates}
-\Rightarrow
-\text{reduced dynamics}
-\Rightarrow
-\text{analytic network}
-\Rightarrow
-\text{residual convergence}
-\Rightarrow
-\text{certified outputs}.
-}
-\]
+The theorem statements above identify the exact implementation proof obligations. Numerical code must provide: verified geometry Jacobian bounds; electromagnetic inf-sup lower bounds; constitutive/operator approximation remainders; residual dual norms; thermal spectral-tail or higher-space residual estimators; contractivity bounds; and output sensitivity bounds. Claims are made only on parameter regions where these quantities are available.
 
-\section{Remaining implementation proof obligations}
-
-The framework above separates mathematical structure from backend-specific quantities that must be computed or bounded in implementation. The following are not free empirical choices; they are required proof/certification tasks.
-
-\begin{enumerate}
-\item \textbf{Geometry-map certificate:} verify Jacobian nondegeneracy and material-subdomain correspondence over the chosen parameter domain.
-\item \textbf{Spectral-cluster certificate:} bound the retained/discarded spectral gap and canonical-anchor rank; create a new deterministic chart if the current anchor becomes singular.
-\item \textbf{Thermal-tail certificate:} compute a posteriori residual/spectral-tail bounds sufficient for the requested output tolerance.
-\item \textbf{Electromagnetic regularity certificate:} verify uniform solvability of the temperature-parameter electromagnetic operator over the certified thermal range.
-\item \textbf{Electromagnetic derivative interface:} implement \(D_{\aT}\gem\) or certified Jacobian-vector products from the deterministic backend.
-\item \textbf{Dissipativity certificate:} compute or rigorously bound \(\beta_{\mathrm{em}}\) and hence \(\kappa\). If \(\kappa\le0\), switch to finite-time certification rather than asserting long-time stability.
-\item \textbf{Electromagnetic numerical error certificate:} expose bounds for projected source and output errors from quadrature, compression, and linear solves.
-\item \textbf{Independent final validation:} high-fidelity transient simulations and experiments may be used only after training to test the theory and measure sharpness of certificates; they do not become training labels.
-\end{enumerate}
-
-\section{Minimal implementation interfaces}
-
-The codebase should expose the following mathematical interfaces.
-
-\begin{verbatim}
-geometry/reference_map(mu_g)
-    -> F_mu, DF_mu, det_DF_mu, material_regions
-
-thermal/operators(mu)
-    -> M, K, boundary_lift
-
-thermal/spectral_coordinates(mu, qoi_tolerance)
-    -> Phi_r, Lambda_r, chart_id, spectral_certificate
-
-em/evaluate(mu, a, Phi_r)
-    -> Z, R, L, Mmutual, P_cu, P_sea, q_em_r, em_certificate
-
-em/jvp(mu, a, v, Phi_r)
-    -> J_em_times_v, derivative_certificate
-
-analytic_net/evaluate(mu, a0, t)
-    -> a_t, da_dt
-
-analytic_net/residual(mu, a0, t)
-    -> R
-
-analytic_net/enrich(residual, linearized_residual, dictionary_level)
-    -> new_analytic_neuron
-
-certification/evaluate(...)
-    -> eta_ROM, eta_NN, eta_EM, output_error_bounds
-\end{verbatim}
-
-\section{Final framework definition}
+\section{Final architecture}
 
 The final SDF-MPNEO architecture is
 \[
 \boxed{
 \begin{array}{c}
-\text{unified deterministic geometry}\
-+\\[-1mm]
-\text{physics-derived thermal spectral reduction}\
-+\\[-1mm]
-\text{analytic-response neural dynamics}\
-+\\[-1mm]
-\text{deterministic temperature-dependent electromagnetic feedback}\
-+\\[-1mm]
-\text{residual-driven neural topology growth}\
-+\\[-1mm]
-\text{unified a posteriori certification}.
-\end{array}
-}
+\text{parameterized full electromagnetic and thermal field equations}\\
+\downarrow\\
+\text{compatible reference-domain discretization}\\
+\downarrow\\
+\text{solution-data-free deterministic EM/thermal reduction}\\
+\downarrow\\
+\text{quasi-static reduced EM elimination and reduced loss tensors}\\
+\downarrow\\
+\dot\aT+\LamT\aT=\mathbf g_{\rm em}(\aT;\mupar)\\
+\downarrow\\
+\text{residual-grown analytic neural evolution}\\
+\downarrow\\
+\text{arbitrary-time direct query}\\
+\downarrow\\
+\text{unified physical/numerical output certificate.}
+\end{array}}
 \]
-The defining distinction is that the neural computation unit is not a conventional scalar activation. A neuron is an exactly solvable local dynamical response operator. The physical thermal spectrum supplies its temporal generator; multiplicative neural connections generate nonlinear cross-mode interactions; the deterministic electromagnetic operator supplies the actual nonlinear thermal source during training; and unresolved physical residual determines which analytic interaction is added next.
-
-In compact form, the exact reduced physics are
-\[
-\dot\aT+\Lam\aT=\gem(\aT;\mupar),
-\]
-the analytic network provides
-\[
-\aT_N(t)=\mathcal N_{\mathrm{analytic}}(\mupar,\aT_0,t),
-\]
-training enforces
-\[
-\dot\aT_N+\Lam\aT_N-\gem(\aT_N;\mupar)\rightarrow0,
-\]
-and certification converts the remaining physical residual into explicit error bounds for temperature and electromagnetic outputs.
-
-\section{Theoretical claim discipline}
-
-The following statements are part of the framework and may be claimed when their assumptions are verified:
-\begin{itemize}
-\item the network output is analytically evaluable in time;
-\item the initial condition is exact by construction;
-\item no high-fidelity solution label is required for training;
-\item network topology can be selected by unresolved physical residual rather than a prescribed width/depth;
-\item arbitrary query time does not require temporal marching;
-\item in a certified contractive domain, residual error yields a uniform-in-time state error bound.
-\end{itemize}
-
-The following must \emph{not} be claimed without additional proof or computation:
-\begin{itemize}
-\item global long-time stability outside the domain where \(\kappa>0\) is certified;
-\item zero spatial-reduction error at finite \(r\);
-\item exact electromagnetic output when the deterministic electromagnetic backend has nonzero numerical error;
-\item global convergence of a particular nonconvex training optimizer;
-\item uniqueness of a canonical spectral chart when its anchor overlap is singular;
-\item novelty over all prior literature without a separate literature and patent search.
-\end{itemize}
+The neural network does not generate spatial bases, does not replace the electromagnetic field equations, and does not learn from transient solution labels. Its role is exclusively to represent the certified continuous-time flow of the already reduced, physically closed electromagnetic--thermal system.
 
 \end{document}
