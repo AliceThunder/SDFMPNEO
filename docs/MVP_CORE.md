@@ -18,7 +18,7 @@ Implemented in this first core:
 - reduced electro-thermal physical residual;
 - contraction and uniform-in-time state-error certificate interfaces.
 
-The code contains no BFZI dependency. It also uses no FEM/Maxwell solution snapshots, transient solution labels, fixed neural width/depth, or heuristic thermal rank.
+The code has no geometry-specific impedance-solver dependency. It also uses no FEM/Maxwell solution snapshots, transient solution labels, fixed neural width/depth, or heuristic thermal rank.
 
 ## Deliberate MVP limits
 
