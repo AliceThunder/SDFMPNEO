@@ -1,68 +1,80 @@
 # SDF-MPNEO
 
-**Solution-Data-Free Multirate Physics-Embedded Neural Equilibrium Operator for Underwater WPT**
+**Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator for Underwater WPT**
 
-SDF-MPNEO is a physics-embedded neural reduced-order framework for strongly coupled electromagnetic–thermal–fluid modelling of underwater wireless power transfer systems.
+SDF-MPNEO is a solution-data-free electromagnetic–thermal evolution framework for underwater wireless power transfer. The current baseline intentionally excludes fluid dynamics while retaining conductor, package, seawater, and other spatial media in the electromagnetic and thermal physics.
 
-The neural network does **not** regress impedance, temperature, or flow solutions from labelled FEM/CFD data. It generates geometry-conditioned admissible reduced trial spaces; the physical states are then obtained by solving reduced governing equations.
-
-## Core state
-
-- seawater induced current density `J_s`
-- conductor/package/seawater temperature `T_c, T`
-- seawater velocity `v`
-- SST turbulence closure states `k_t, omega_t`
-
-## Core architecture
+The online objective is
 
 ```text
-Unified coil/package geometry
-        |
-Shared geometry encoder
-        |
-+-------+----------+
-|       |          |
-EM      Thermal    Flow-SST
-head    head       head
-|       |          |
-|       |          +--> divergence-free velocity basis
-|       |          +--> positive SST closure bases
-|       +-------------> mixed-dimensional thermal basis
-+---------------------> divergence-free seawater-current basis
-        |
-Hard physical structure / metric orthogonalisation
-        |
-Harmonic EM Schur elimination
-        |
-Coupled thermo-fluid reduced equilibrium
-        ^
-        |  T -> sigma_sea, rho_Cu, mu, k, rho -> EM / flow
-        |
-Independent residual certifier
-        |
-Z, losses, T, v, physical error indicators
+geometry + constant operating condition + initial thermal state + arbitrary query time
+                                      |
+                                      v
+                        analytic neural evolution
+                                      |
+                                      v
+                             thermal state T(x,t)
+                                      |
+                                      v
+                 deterministic temperature-dependent EM operator
+                                      |
+                                      v
+                Z, R, L, M, Cu loss, seawater loss, certificates
 ```
 
-## Non-negotiable modelling rules
+## Core design
 
-1. **No solution labels in training.** No Maxwell, COMSOL, CFD, experimental, impedance, field, or temperature targets are used to train the neural basis generator.
-2. **Multiphysics is retained.** Electromagnetic, thermal, and fluid feedbacks are solved as one coupled physical equilibrium; the architecture is not an EM-only surrogate.
-3. **Fast/slow separation is physical, not decoupling.** Harmonic electromagnetic states are Schur-eliminated inside the slower thermo-fluid equilibrium while temperature-dependent conductivity and resistivity feed back into the electromagnetic operator.
-4. **Hard constraints where possible.** Solenoidal current/velocity spaces, passivity, reciprocity, positivity of turbulence states, and conductor-package heat exchange are enforced by construction rather than penalty tuning.
-5. **Adaptive capacity is residual-driven.** Nested reduced bases are enlarged only when independent physical residual indicators require it.
-6. **Full-order fallback is a safety path, not training data generation.**
+1. **Deterministic spatial physics.** Thermal coordinates are obtained from the physical thermal operator, not from solution snapshots and not from a neural basis generator.
+2. **Analytic neural dynamics.** A neuron is an exactly solvable local dissipative response operator. The network output is a closed-form polynomial–exponential time function and requires no temporal marching at inference.
+3. **Deterministic electromagnetic feedback.** Temperature-dependent copper resistivity and seawater conductivity are evaluated by the physical electromagnetic backend; the neural network does not replace the electromagnetic operator.
+4. **Solution-data-free training.** Training minimizes the true reduced electromagnetic–thermal residual. No Maxwell/FEM/experimental solution trajectory is used as a label.
+5. **Residual-grown topology.** Analytic neurons are added according to unresolved physical residual directions rather than a prescribed empirical width/depth.
+6. **Unified certification.** Thermal-reduction, neural-residual, and electromagnetic numerical errors are propagated to temperature and impedance output bounds.
+7. **No empirical model partitioning.** Reduced rank, network complexity, and electromagnetic numerical accuracy are selected from physical error requirements and certified convergence conditions.
 
-## Planned implementation layers
+## Reduced governing dynamics
 
-- `geometry`: unified coil/package parameterisation and reference-domain mappings
-- `topology`: discrete de Rham incidence operators and harmonic spaces
-- `networks`: shared geometry encoder plus EM/thermal/flow basis decoders
-- `physics/em`: BFZI/DSE-backed matrix-free electromagnetic operators and Schur impedance
-- `physics/thermal`: mixed-dimensional 1D conductor + 3D package/seawater conjugate heat transfer
-- `physics/flow`: incompressible RANS-SST reduced operator
-- `solvers`: pseudo-transient damped Newton and implicit differentiation
-- `reduction`: metric orthogonalisation, nested ranks, basis-operator cubature
-- `certification`: independent residual and goal-oriented indicators
+After deterministic thermal spectral reduction,
+
+```text
+    da/dt + Lambda(mu) a = g_em(a; mu)
+```
+
+where `Lambda` contains physical thermal decay rates and `g_em` is supplied by the deterministic temperature-dependent electromagnetic operator.
+
+The analytic network directly evaluates
+
+```text
+    a(t) = N_analytic(mu, a0, t)
+```
+
+and is trained from the residual
+
+```text
+    R = da/dt + Lambda a - g_em(a; mu).
+```
+
+For a certified contractive operating domain, the remaining physical residual is converted into a uniform-in-time state-error bound and then into error bounds for `Tmax`, impedance, losses, and related outputs.
+
+## Theory
+
+The complete mathematical specification, derivations, assumptions, theorem statements, proof outlines, adaptive growth rule, and unified error-certification framework are in:
+
+- [`docs/SDFMPNEO_theory.tex`](docs/SDFMPNEO_theory.tex)
+
+## Current implementation layers
+
+- `geometry`: unified coil/package/seawater parameterisation and reference-domain mappings
+- `physics/em`: BFZI/DSE-backed temperature-dependent deterministic electromagnetic operator
+- `physics/thermal`: conductor/package/seawater thermal operator and certified spectral reduction
+- `networks/analytic`: analytic response neurons, multiplicative interaction graph, exact time derivatives
+- `training`: physical-residual minimisation and residual-driven neuron enrichment
+- `certification`: independent higher-space residual, electromagnetic numerical error, and output bounds
 - `backends`: replaceable Python/C++ kernels
 
-The initial repository version focuses on fixing these interfaces and the complete forward graph before high-performance kernels are introduced.
+## Non-negotiable scope rules
+
+- No labelled FEM/Maxwell/experimental solution data in training.
+- No empirical near/far split, fixed reduced rank, fixed network width/depth, or artificial thermal time constant as part of the method definition.
+- Fluid velocity is outside the current model scope; seawater remains an explicit electromagnetic and thermal medium.
+- Full-order transient simulation and experiments are validation tools only, not training-label generators.
