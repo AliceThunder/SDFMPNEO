@@ -27,6 +27,7 @@ from .tetra import (
     build_tetrahedral_apsi_from_thermal_modes,
     tetra_face_loop_source,
 )
+from .tetra_diagnostics import build_tetrahedral_region_loss_projector
 
 __all__ = [
     "CompatibleAphiDiscretization",
@@ -52,4 +53,5 @@ __all__ = [
     "TetrahedralApsiDiscretization",
     "build_tetrahedral_apsi_from_thermal_modes",
     "tetra_face_loop_source",
+    "build_tetrahedral_region_loss_projector",
 ]
