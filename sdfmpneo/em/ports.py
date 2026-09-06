@@ -10,8 +10,8 @@ import scipy.sparse as sp
 from .energy_solver import PhysicalEnergySparseApsiSolver, apsi_physical_energy_metric
 from .grid3d import RectilinearComplex3D
 from .reduced import RieszFactor
+from .riesz_action import RieszActionFactory, SparseLUReferenceRieszAction
 from .sparse_solver import (
-    ApsiEnergyMetric,
     CertifiedEnergySparseApsiSolver,
     CertifiedSparseApsiSolver,
     SparseEnergyLinearSolveCertificate,
@@ -121,9 +121,10 @@ class CertifiedEnergySparseMultiPortResult:
 class CertifiedEnergyReducedMultiPortResult:
     """Certified multiport outputs obtained only from a reduced EM solve.
 
-    The reduced system supplies X_r. Full-order sparse work is limited to
-    residual evaluation and H^{-1} residual/source Riesz lifts required by the
-    deterministic output certificate; no full-order A x=b solve is performed.
+    With an inexact CertifiedRieszAction, ``source_dual_energy_norms`` and
+    ``residual_dual_energy_norms`` are conservative certified upper bounds.  The
+    impedance/state bounds therefore remain rigorous without requiring exact
+    H^{-1} actions.
     """
 
     names: tuple[str, ...]
@@ -442,21 +443,23 @@ class ImpressedCurrentPortSet:
         reduced_model,
         *,
         requested_impedance_element_error: float,
+        riesz_action_factory: RieszActionFactory | None = None,
     ) -> CertifiedEnergyReducedMultiPortResult:
         """Evaluate certified Z/R/L/M from the reduced model only.
 
         Let X_r=V (V^H A V)^-1 V^H B. For each unit port excitation j,
 
-            e_j = x_j-X_r,j,
-            ||e_j||_H <= sqrt(2) ||B_j-A X_r,j||_(H^-1).
+            ||x_j-X_r,j||_H
+            <= beta_H^-1 ||B_j-A X_r,j||_(H^-1),
 
-        Consequently
+        and therefore
 
             |Delta Z_ij|
-            <= omega ||B_i||_(H^-1) ||e_j||_H.
+            <= omega ||B_i||_(H^-1) ||x_j-X_r,j||_H.
 
-        Full-order sparse work is therefore certification work only; the field
-        equilibrium itself is solved exclusively in the reduced coordinates.
+        Both dual norms are consumed only through CertifiedRieszAction upper
+        bounds. The field equilibrium is solved exclusively in reduced
+        coordinates, and no exact H^{-1} action is required by the theorem.
         """
 
         if not hasattr(problem, "operator_sparse"):
@@ -470,7 +473,13 @@ class ImpressedCurrentPortSet:
         a = np.asarray(thermal_state, dtype=float)
         A = sp.csr_matrix(problem.operator_sparse(a), dtype=complex)
         H = apsi_physical_energy_metric(A)
-        energy = ApsiEnergyMetric(H)
+        if riesz_action_factory is None:
+            riesz_action_factory = getattr(
+                reduced_model,
+                "riesz_action_factory",
+                SparseLUReferenceRieszAction,
+            )
+        action = riesz_action_factory(H)
         B = np.asarray(self.coordinate_rhs, dtype=complex)
         V = np.asarray(reduced_model.V, dtype=complex)
         if A.shape[0] != B.shape[0] or V.shape[0] != A.shape[0]:
@@ -483,12 +492,16 @@ class ImpressedCurrentPortSet:
         X = V @ C
         residuals = B - AV @ C
 
+        def dual_upper(vector: np.ndarray) -> float:
+            decision = action.decide_dual_norm(vector, threshold=0.0)
+            return float(decision.result.dual_norm_upper_bound)
+
         source_dual_norms = np.array(
-            [energy.dual_norm(B[:, p]) for p in range(self.n_ports)],
+            [dual_upper(B[:, p]) for p in range(self.n_ports)],
             dtype=float,
         )
         residual_dual_norms = np.array(
-            [energy.dual_norm(residuals[:, p]) for p in range(self.n_ports)],
+            [dual_upper(residuals[:, p]) for p in range(self.n_ports)],
             dtype=float,
         )
         state_bounds = residual_dual_norms / _ENERGY_COERCIVITY
