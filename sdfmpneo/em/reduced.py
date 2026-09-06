@@ -9,16 +9,7 @@ import scipy.linalg
 
 @dataclass(frozen=True)
 class RieszFactor:
-    """Stable coordinate map for a Hermitian positive-definite Riesz metric.
-
-    If H = L L^H, then the dual norm and Riesz lift are
-
-        ||r||_{H^-1} = ||L^-1 r||_2,
-        H^-1 r       = L^-H L^-1 r.
-
-    All residual-Riesz orthogonalisation is carried out in these normalized
-    coordinates instead of explicitly solving H w = r and forming V^H H V.
-    """
+    """Stable coordinate map for a Hermitian positive-definite Riesz metric."""
 
     H: np.ndarray
     L: np.ndarray
@@ -54,13 +45,6 @@ class RieszFactor:
         residual: np.ndarray,
         basis: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Return the H-normalized residual lift orthogonal to an H-ON basis.
-
-        Linear-dependence detection uses the standard machine-precision
-        backward-error scale eps*n*||y||. This is a numerical-algebra safeguard,
-        not a scientific model threshold.
-        """
-
         y = self.dual_coordinates(residual)
         original_norm = float(np.linalg.norm(y))
 
@@ -90,12 +74,7 @@ class RieszFactor:
 
 @dataclass(frozen=True)
 class ParametricEMProblem:
-    """Deterministic affine-in-thermal-state electromagnetic operator.
-
-    A(a) = A0 + sum_k a_k A_state[k].
-    Reduced heat-source components use
-    H_j(a) = H_loss[j] + sum_k a_k H_loss_state[j,k].
-    """
+    """Affine electromagnetic problem implementing the generic reduced interface."""
 
     A0: np.ndarray
     A_state: np.ndarray
@@ -134,6 +113,12 @@ class ParametricEMProblem:
             raise ValueError("thermal state dimension mismatch")
         return self.A0 + np.tensordot(a, self.A_state, axes=(0, 0))
 
+    def operator_derivatives(self, a: np.ndarray) -> np.ndarray:
+        a = np.asarray(a, dtype=float)
+        if a.shape != (self.n_thermal,):
+            raise ValueError("thermal state dimension mismatch")
+        return self.A_state
+
     def loss_operator(self, output_mode: int, a: np.ndarray) -> np.ndarray:
         a = np.asarray(a, dtype=float)
         if a.shape != (self.n_thermal,):
@@ -143,13 +128,25 @@ class ParametricEMProblem:
             H = H + np.tensordot(a, self.H_loss_state[output_mode], axes=(0, 0))
         return H
 
+    def loss_operator_derivative(
+        self,
+        output_mode: int,
+        state_mode: int,
+        a: np.ndarray,
+    ) -> np.ndarray:
+        if self.H_loss_state is None:
+            return np.zeros_like(self.H_loss[output_mode])
+        return self.H_loss_state[output_mode, state_mode]
+
     def solve_full(self, a: np.ndarray) -> np.ndarray:
         return scipy.linalg.solve(self.operator(a), self.b, assume_a="gen")
 
 
 @dataclass
 class ReducedEMModel:
-    problem: ParametricEMProblem
+    """Reduced solver for any problem implementing the EM operator interface."""
+
+    problem: object
     V: np.ndarray
     riesz: RieszFactor | None = None
 
@@ -193,16 +190,16 @@ class ReducedEMModel:
         x = self.V @ c
         q = self.heat_source(a)
         J = np.zeros((self.problem.n_thermal, self.problem.n_thermal), dtype=float)
+        operator_derivatives = self.problem.operator_derivatives(a)
 
-        for k, Ak in enumerate(self.problem.A_state):
+        for k, Ak in enumerate(operator_derivatives):
             Akr = self.V.conj().T @ Ak @ self.V
             dc = scipy.linalg.solve(Ar, -(Akr @ c), assume_a="gen")
             dx = self.V @ dc
             for j in range(self.problem.n_thermal):
                 Hj = self.problem.loss_operator(j, a)
-                explicit = 0.0
-                if self.problem.H_loss_state is not None:
-                    explicit = np.real(np.vdot(x, self.problem.H_loss_state[j, k] @ x))
+                dH = self.problem.loss_operator_derivative(j, k, a)
+                explicit = np.real(np.vdot(x, dH @ x))
                 J[j, k] = 2.0 * np.real(np.vdot(dx, Hj @ x)) + explicit
         return q, J
 
@@ -210,7 +207,7 @@ class ReducedEMModel:
 class ResidualGreedyEMReducer:
     """Snapshot-free residual-Riesz electromagnetic basis construction."""
 
-    def __init__(self, problem: ParametricEMProblem):
+    def __init__(self, problem: object):
         self.problem = problem
         self.riesz = RieszFactor.build(problem.H_metric)
 
