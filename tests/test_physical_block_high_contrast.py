@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo.em import (
     ConductivityRegion,
     ConstantConductivity,
+    CoupledPairEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
@@ -58,14 +59,11 @@ def build_high_contrast_problem():
     )
 
 
-def test_physical_block_riesz_factory_certifies_high_contrast_tetrahedral_reduction():
-    problem = build_high_contrast_problem()
-    factory = make_physical_block_pcg_riesz_factory(problem)
+def _certify_reduction(problem, factory, requested=1e-6):
     reducer = SparseEnergyResidualGreedyEMReducer(
         problem,
         riesz_action_factory=factory,
     )
-    requested = 1e-6
     states = [np.array([-8.0]), np.array([0.0]), np.array([12.0])]
     model = reducer.build(states, requested_energy_state_error=requested)
 
@@ -74,3 +72,19 @@ def test_physical_block_riesz_factory_certifies_high_contrast_tetrahedral_reduct
     assert problem._H_metric is None
     for state in states:
         assert model.residual_certificate(state).energy_state_error_bound <= requested
+    return model
+
+
+def test_physical_block_riesz_factory_certifies_high_contrast_tetrahedral_reduction():
+    problem = build_high_contrast_problem()
+    factory = make_physical_block_pcg_riesz_factory(problem)
+    _certify_reduction(problem, factory)
+
+
+def test_factorization_free_coupled_pair_blocks_certify_high_contrast_tetrahedral_reduction():
+    problem = build_high_contrast_problem()
+    factory = make_physical_block_pcg_riesz_factory(
+        problem,
+        block_action_factory=CoupledPairEnergyPreconditioner.build,
+    )
+    _certify_reduction(problem, factory)
