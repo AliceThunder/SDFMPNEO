@@ -33,8 +33,8 @@ max(0, ||y_tilde||_H-delta)
 <= ||y_tilde||_H+delta.
 ```
 
-Every reducer/output acceptance decision uses this enclosure.  Exact inversion
-is therefore an implementation option, not an assumption of the theorem.
+Every reducer/output acceptance decision uses this enclosure. Exact inversion is
+therefore an implementation option, not an assumption of the theorem.
 
 ## 2. Certified preconditioned action
 
@@ -45,7 +45,7 @@ constant `m>0` satisfies
 H >= m P.
 ```
 
-The preconditioner applies `P^-1`.  If `y_tilde` has Riesz residual
+The preconditioner applies `P^-1`. If `y_tilde` has Riesz residual
 
 ```text
 s = r - H y_tilde,
@@ -84,7 +84,7 @@ delta <= epsilon_H.
 ```
 
 The requested `epsilon_H` must come from the propagated state/output error
-requirement.  It is not a Krylov `rtol`.
+requirement. It is not a Krylov `rtol`.
 
 ### Dual-norm threshold decision
 
@@ -112,7 +112,99 @@ beta_H = 1/sqrt(2),
 so the stopping threshold is derived directly from the physical state-error
 target.
 
-## 4. Reduction with an inexact Riesz action
+## 4. Physical magnetic/scalar block theorem
+
+For the gauge-reduced tetrahedral `A-psi` energy metric, partition the state into
+magnetic vector-potential coordinates and conducting scalar-potential
+coordinates:
+
+```text
+H = [[K_A + D_AA, D_Apsi],
+     [D_psiA,       D_psipsi]].
+```
+
+The magnetic gauge gives `K_A>0`; the conductivity Gram operator gives `D>=0`.
+If a certified constant `gamma` satisfies
+
+```text
+D_AA <= gamma K_A,
+```
+
+then conductive Cauchy-Schwarz and the optimal Young inequality give
+
+```text
+H >= m_phys(gamma) diag(K_A,D_psipsi),
+```
+
+with
+
+```text
+m_phys(gamma)
+= 2 / [2 + gamma + sqrt(gamma^2 + 4 gamma)].
+```
+
+No block weight, damping factor, or conductivity-ratio fit is selected by the
+user.
+
+### Replaceable block actions
+
+The magnetic and scalar blocks do not need exact inverses. Suppose their actions
+apply `P_K^-1` and `P_E^-1` and independently prove
+
+```text
+K_A      >= m_K P_K,
+D_psipsi >= m_E P_E.
+```
+
+Then for
+
+```text
+P = diag(P_K,P_E)
+```
+
+the outer Riesz preconditioner has the rigorous lower bound
+
+```text
+H >= m_phys(gamma) min(m_K,m_E) P.
+```
+
+This is the key scalability interface: a future auxiliary-space magnetic action
+and a future multilevel scalar action can replace the current block solvers
+without changing the outer PCG certificate, reducer, or output theorem.
+
+The default `SparseLUExactBlockPreconditioner` corresponds to
+
+```text
+P_K=K_A,  P_E=D_psipsi,  m_K=m_E=1.
+```
+
+It is a correctness backend only.
+
+## 5. Certified gamma construction
+
+The implementation first attempts a normalized Gershgorin certificate for
+`K_A` and `D_AA`. When it proves a positive magnetic lower bound, `gamma` follows
+without a factorization.
+
+Real Nedelec magnetic blocks need not be diagonally dominant. In that case the
+current correctness fallback uses a complete sparse factorization only to build
+a certificate, not to apply the global `H^-1` action. It explicitly recomputes
+factorization residuals and certifies an upper bound on `||K_A^-1||_inf`, then
+uses
+
+```text
+gamma
+<= lambda_max(K_A^-1/2 D_AA K_A^-1/2)
+<= trace(K_A^-1 D_AA).
+```
+
+Each trace contribution is inflated by the certified magnetic-solve residual.
+If the inverse/trace enclosure cannot be proved finite, construction fails.
+There is no diagonal shift or relaxed gamma target.
+
+A scalable factorization-free gamma certificate remains a production obligation.
+
+## 6. Reduction with an inexact Riesz action
 
 At candidate thermal state `a`, the reduced residual is
 
@@ -128,15 +220,19 @@ upper(||r(a)||_(H(a)^-1))
 ```
 
 If it is not certified, the approximate action vector `y_tilde` is used as the
-next residual-driven enrichment direction.  After every enrichment the complete
-full residual is re-evaluated.  Therefore an inexact enrichment can affect
+next residual-driven enrichment direction. After every enrichment the complete
+full residual is re-evaluated. Therefore an inexact enrichment can affect
 convergence speed, but it cannot create a false certificate.
 
-The global basis is still stored in the reference metric `H0=H(0)` by small-Gram
-whitening.  `H0` is a coordinate metric only; all error decisions use local
+The global basis is stored in the reference metric `H0=H(0)` by small-Gram
+whitening. `H0` is a coordinate metric only; all error decisions use local
 `H(a)`.
 
-## 5. Reduced multiport output certificate
+For a declared WPT `port_set`, all unit-port right-hand sides participate in one
+joint multi-RHS greedy construction. Certification therefore covers every
+port/state pair in the declared finite candidate set.
+
+## 7. Reduced multiport output certificate
 
 For reduced port state `X_r` and column residual `r_j`,
 
@@ -161,54 +257,53 @@ With certified Riesz-action upper bounds,
    * upper(||r_j||_(H^-1)) / beta_H.
 ```
 
-Thus `Z/R/L/M` certification also requires no exact `H^-1` application.
+Thus `Z/R/L/M` certification also requires no exact global `H^-1` application.
+The formal tetrahedral core stores the same physical-block Riesz factory in the
+reduced model, so online multiport certification automatically uses the same
+backend rather than silently reverting to the sparse-LU reference action.
 
-## 6. Implemented backends
+## 8. Implemented backends
 
-### Sparse-LU reference action
+### Global sparse-LU reference action
 
-`SparseLUReferenceRieszAction` retains the deterministic sparse-LU correctness
-backend used by the earlier implementation.  It now implements the same action
-protocol and is no longer embedded in the reduction theorem.
+`SparseLUReferenceRieszAction` remains only as a generic correctness/reference
+implementation of the Riesz-action protocol. The formal nonlinear tetrahedral
+core no longer selects it as its production path.
 
-### Certified PCG action
+### Diagonal Gershgorin action
 
-`CertifiedPCGRieszAction` accepts any preconditioner that proves `H>=mP`.
-The currently executable parameter-free preconditioner is
-`DiagonalGershgorinEnergyPreconditioner`:
-
-```text
-P = diag(H).
-```
-
-For
+`DiagonalGershgorinEnergyPreconditioner` uses
 
 ```text
-B = P^-1/2 H P^-1/2,
+P = diag(H)
 ```
 
-Gershgorin gives the proved lower bound
+and proves a normalized Gershgorin lower bound. If that bound is non-positive,
+the constructor refuses the action instead of adding a fitted shift.
+
+### Physical block PCG action
+
+The formal nonlinear tetrahedral core now uses
 
 ```text
-m <= lambda_min(B).
+make_physical_block_pcg_riesz_factory(problem)
 ```
 
-If the lower bound is non-positive the constructor refuses the preconditioner;
-it does not add a fitted diagonal shift.
+which combines the physical block theorem, local `gamma` certificate, and
+`CertifiedPCGRieszAction`.
 
-This diagonal backend is a theorem/regression implementation, not the final
-large-mesh preconditioner.  The next production step is an auxiliary-space or
-multilevel `P^-1` with its own proved positive `m`.
+The block implementation is itself injected through `BlockActionFactory`. Tests
+show that both blocks can be replaced by certified non-LU actions while
+`scipy.sparse.linalg.splu` is disabled when the corresponding proofs permit it.
 
-## 7. Floating-point contract
+## 9. Floating-point contract
 
-Energy inner products and preconditioned residual products are enclosed using
-standard `gamma_k` floating-point bounds scaled by the actual product magnitude.
-There is no absolute `max(1,...)` floor for late Krylov vectors.  This prevents a
-legitimate small positive search-direction energy from being misclassified as a
-breakdown merely because its magnitude is below one.
+Energy inner products, preconditioned residual products, Gershgorin radii, and
+the residual-certified trace fallback are enclosed with outward floating-point
+bounds scaled by the actual operation magnitude. There is no absolute
+`max(1,...)` floor for late Krylov vectors.
 
-## 8. Regression obligations
+## 10. Regression obligations
 
 The repository tests enforce that:
 
@@ -216,12 +311,18 @@ The repository tests enforce that:
    verification systems;
 2. threshold decisions are returned only after the certified interval lies on
    the declared side of the threshold;
-3. an unprovable Gershgorin spectral-equivalence constant is rejected rather
-   than repaired heuristically;
-4. `SparseEnergyResidualGreedyEMReducer` builds and certifies with
-   `scipy.sparse.linalg.splu` disabled when a certified PCG factory is supplied;
-5. reduced multiport `Z/R/L/M` output certification also works with sparse LU
-   disabled.
+3. an unprovable diagonal Gershgorin certificate is rejected rather than shifted;
+4. the physical block theorem succeeds on coupled systems where global diagonal
+   Gershgorin fails;
+5. the residual-certified generalized-trace fallback handles a real
+   non-diagonally-dominant magnetic block;
+6. block actions can run with sparse LU disabled when their own certificate does
+   not require LU;
+7. the high-contrast tetrahedral reducer uses the physical-block Riesz factory;
+8. the top-level nonlinear core cannot fall back to the global sparse-LU Riesz
+   reference backend;
+9. `build_ports -> joint multi-RHS ROM -> certified reduced Z/R/L/M` executes as
+   one top-level chain.
 
 These tests separate the scientific certificate from any particular linear
 solver implementation.
