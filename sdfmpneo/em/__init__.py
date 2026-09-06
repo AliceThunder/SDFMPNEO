@@ -25,6 +25,7 @@ from .reduced import (
 )
 from .sparse_solver import (
     ApsiBlockTriangularPreconditioner,
+    CertifiedSparseApsiSolver,
     SparseLinearSolveCertificate,
     solve_certified_sparse_apsi,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "ResidualGreedyEMReducer",
     "RieszFactor",
     "ApsiBlockTriangularPreconditioner",
+    "CertifiedSparseApsiSolver",
     "SparseLinearSolveCertificate",
     "solve_certified_sparse_apsi",
     "TetrahedralApsiDiscretization",
