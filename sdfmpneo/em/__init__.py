@@ -1,3 +1,4 @@
+from .adaptive_block import AdaptiveAggregateEnergyPreconditioner
 from .block_riesz import (
     BlockActionFactory,
     PhysicalBlockEnergyPreconditioner,
@@ -82,6 +83,7 @@ from .tetra_nonlinear import (
 from .tetra_nonlinear_diagnostics import NonlinearTetrahedralRegionLossEvaluator
 
 __all__ = [
+    "AdaptiveAggregateEnergyPreconditioner",
     "BlockActionFactory",
     "PhysicalBlockEnergyPreconditioner",
     "SparseLUExactBlockPreconditioner",
