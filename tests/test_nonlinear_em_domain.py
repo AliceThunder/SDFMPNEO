@@ -11,10 +11,10 @@ from sdfmpneo.em import (
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
-    TetrahedralComplex3D,
     make_morse_auxiliary_physical_pcg_riesz_factory,
     tetra_face_loop_source,
 )
+from sdfmpneo.spatial import TetrahedralComplex3D
 
 
 def _problem():
