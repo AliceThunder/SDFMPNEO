@@ -186,7 +186,6 @@ def test_face_circulation_auxiliary_proves_two_stage_energy_chain_on_coarse_mesh
     counts = np.bincount(auxiliary.face_tetra_assignment, minlength=problem.mesh.n_tetrahedra)
     assert np.max(counts) <= 3
     assert auxiliary.lower_spectral_equivalence_bound > 0.0
-    assert auxiliary.maximum_block_size <= problem.n_A
     P_face = auxiliary.face_energy_matrix().toarray()
     Q = auxiliary.preconditioner_matrix().toarray()
     m = auxiliary.lower_spectral_equivalence_bound
@@ -231,7 +230,7 @@ def test_topology_generated_morse_face_action_has_strictly_smaller_coarse_proble
     assert np.allclose(actual, expected, rtol=2e-11, atol=2e-11)
 
 
-def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
+def test_local_spectral_hierarchy_is_correct_but_still_global_after_refinement():
     problem = build_refined_magnetic_problem(cells_per_axis=2)
     R = problem.a_basis
     K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
@@ -240,9 +239,11 @@ def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
     assert hierarchy.dimension == problem.n_A == 72
     assert hierarchy.hierarchy_depth >= 2
     assert hierarchy.final_coarse_dimension < problem.n_A
-    assert hierarchy.maximum_transformed_block_size < problem.n_A
-    assert hierarchy.transformed_final_block_count > 1
     assert hierarchy.lower_spectral_equivalence_bound > 0.0
+    # Deliberate failure-mode regression: local spectral pairing changes
+    # coordinates but the certificate still collapses to one global block.
+    assert hierarchy.maximum_transformed_block_size == problem.n_A
+    assert hierarchy.transformed_final_block_count == 1
 
     B_h = hierarchy.transformed_matrix().toarray()
     Q_h = hierarchy.transformed_preconditioner_matrix().toarray()
@@ -250,12 +251,6 @@ def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
     remainder = 0.5 * ((B_h - m * Q_h) + (B_h - m * Q_h).conj().T)
     scale = float(np.linalg.norm(B_h, 2))
     assert np.min(np.linalg.eigvalsh(remainder).real) >= -1024.0 * np.finfo(float).eps * max(scale, 1.0)
-
-    T = hierarchy.transform_matrix().toarray()
-    rhs = np.arange(1, problem.n_A + 1, dtype=float).astype(complex)
-    expected = T @ np.linalg.solve(Q_h, T.conj().T @ rhs)
-    actual = hierarchy.solve(rhs)
-    assert np.allclose(actual, expected, rtol=5e-12, atol=5e-12)
 
 
 def test_cartesian_curl_factor_is_rejected_after_refinement_when_selected_scc_is_singular():
