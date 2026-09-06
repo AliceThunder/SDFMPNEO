@@ -84,8 +84,7 @@ def _add_oriented_box(occ, half_extent: np.ndarray, pose) -> int:
 def _add_rectangular_pipe(gmsh, coil, geometry_tolerance: float) -> tuple[int, np.ndarray, np.ndarray]:
     """Sweep the declared rectangular conductor section along a certified polyline."""
 
-    model = gmsh.model
-    occ = model.occ
+    occ = gmsh.model.occ
     points = np.asarray(coil.sample_for_geometric_tolerance(geometry_tolerance), dtype=float)
     if points.shape[0] < 2:
         raise RuntimeError("coil centerline meshing requires at least two points")
@@ -119,8 +118,8 @@ def _add_rectangular_pipe(gmsh, coil, geometry_tolerance: float) -> tuple[int, n
     return int(volumes[0]), points[0].copy(), points[-1].copy()
 
 
-def _surface_nearest_to(occ, volume_tag: int, point: np.ndarray) -> int:
-    boundary = occ.getBoundary([(3, int(volume_tag))], oriented=False, recursive=False)
+def _surface_nearest_to(model, occ, volume_tag: int, point: np.ndarray) -> int:
+    boundary = model.getBoundary([(3, int(volume_tag))], combined=False, oriented=False, recursive=False)
     candidates = [tag for dim, tag in boundary if dim == 2]
     if not candidates:
         raise RuntimeError("volume has no terminal surface candidates")
@@ -150,10 +149,9 @@ def mesh_underwater_wpt_geometry(
     """Create the production UWPT CAD, tetrahedralize it and return tagged mesh.
 
     ``gmsh`` is imported only inside this function, keeping it an optional CAD
-    dependency.  ``geometry_tolerance`` is the declared centerline polyline
-    Hausdorff/chord-error budget; no hidden segment count is introduced.
-    ``mesh_size`` is also explicit and is expected to be selected from the W4
-    spatial error budget rather than by an internal heuristic.
+    dependency. ``geometry_tolerance`` is the declared centerline polyline
+    chord-error budget; no hidden segment count is introduced. ``mesh_size`` is
+    explicit and is expected to come from the W4 spatial error budget.
     """
 
     tol = float(geometry_tolerance)
@@ -179,7 +177,8 @@ def mesh_underwater_wpt_geometry(
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
         gmsh.option.setNumber("Geometry.OCCBooleanPreserveNumbering", 1)
         gmsh.model.add("SDFMPNEO_UWPT")
-        occ = gmsh.model.occ
+        model = gmsh.model
+        occ = model.occ
 
         tx_copper, tx_start, tx_end = _add_rectangular_pipe(gmsh, geometry.transmitter, tol)
         rx_copper, rx_start, rx_end = _add_rectangular_pipe(gmsh, geometry.receiver, tol)
@@ -212,37 +211,37 @@ def mesh_underwater_wpt_geometry(
 
         occ.synchronize()
 
-        tx_s0 = _surface_nearest_to(occ, tx_copper, tx_start)
-        tx_s1 = _surface_nearest_to(occ, tx_copper, tx_end)
-        rx_s0 = _surface_nearest_to(occ, rx_copper, rx_start)
-        rx_s1 = _surface_nearest_to(occ, rx_copper, rx_end)
+        tx_s0 = _surface_nearest_to(model, occ, tx_copper, tx_start)
+        tx_s1 = _surface_nearest_to(model, occ, tx_copper, tx_end)
+        rx_s0 = _surface_nearest_to(model, occ, rx_copper, rx_start)
+        rx_s1 = _surface_nearest_to(model, occ, rx_copper, rx_end)
         if len({tx_s0, tx_s1}) != 2 or len({rx_s0, rx_s1}) != 2:
             raise RuntimeError("terminal surface identification collapsed")
 
         outer_surfaces: list[int] = []
         for volume in water:
-            for dim, surface in occ.getBoundary([(3, int(volume))], oriented=False, recursive=False):
+            for dim, surface in model.getBoundary(
+                [(3, int(volume))], combined=False, oriented=False, recursive=False
+            ):
                 if dim != 2:
                     continue
                 com = np.asarray(occ.getCenterOfMass(2, int(surface)), dtype=float)
-                # Internal package interfaces have centers well inside the sphere;
-                # only the spherical outer shell approaches the declared radius.
                 if float(np.linalg.norm(com - center)) > 0.75 * water_radius:
                     outer_surfaces.append(int(surface))
         outer_surfaces = sorted(set(outer_surfaces))
 
-        _physical_group(gmsh.model, 3, [tx_copper], physical_tags.tx_copper, "tx_copper")
-        _physical_group(gmsh.model, 3, [rx_copper], physical_tags.rx_copper, "rx_copper")
-        _physical_group(gmsh.model, 3, tx_package, physical_tags.tx_package, "tx_package")
-        _physical_group(gmsh.model, 3, rx_package, physical_tags.rx_package, "rx_package")
-        _physical_group(gmsh.model, 3, water, physical_tags.seawater, "seawater")
-        _physical_group(gmsh.model, 2, [tx_s0], physical_tags.tx_terminal_start, "tx_terminal_start")
-        _physical_group(gmsh.model, 2, [tx_s1], physical_tags.tx_terminal_end, "tx_terminal_end")
-        _physical_group(gmsh.model, 2, [rx_s0], physical_tags.rx_terminal_start, "rx_terminal_start")
-        _physical_group(gmsh.model, 2, [rx_s1], physical_tags.rx_terminal_end, "rx_terminal_end")
-        _physical_group(gmsh.model, 2, outer_surfaces, physical_tags.outer_boundary, "outer_boundary")
+        _physical_group(model, 3, [tx_copper], physical_tags.tx_copper, "tx_copper")
+        _physical_group(model, 3, [rx_copper], physical_tags.rx_copper, "rx_copper")
+        _physical_group(model, 3, tx_package, physical_tags.tx_package, "tx_package")
+        _physical_group(model, 3, rx_package, physical_tags.rx_package, "rx_package")
+        _physical_group(model, 3, water, physical_tags.seawater, "seawater")
+        _physical_group(model, 2, [tx_s0], physical_tags.tx_terminal_start, "tx_terminal_start")
+        _physical_group(model, 2, [tx_s1], physical_tags.tx_terminal_end, "tx_terminal_end")
+        _physical_group(model, 2, [rx_s0], physical_tags.rx_terminal_start, "rx_terminal_start")
+        _physical_group(model, 2, [rx_s1], physical_tags.rx_terminal_end, "rx_terminal_end")
+        _physical_group(model, 2, outer_surfaces, physical_tags.outer_boundary, "outer_boundary")
 
-        gmsh.model.mesh.generate(3)
+        model.mesh.generate(3)
         gmsh.write(str(path))
     finally:
         gmsh.finalize()
