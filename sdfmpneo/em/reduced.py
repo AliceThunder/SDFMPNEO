@@ -215,24 +215,83 @@ class ResidualGreedyEMReducer:
         q = self.riesz.orthonormalized_lift(self.problem.b)
         return q[:, None]
 
-    def build(self, candidate_states: Iterable[np.ndarray], tolerance: float) -> ReducedEMModel:
+    def _initial_basis_from_rhs(self, rhs_matrix: np.ndarray) -> np.ndarray:
+        B = np.asarray(rhs_matrix, dtype=complex)
+        if B.ndim == 1:
+            B = B[:, None]
+        if B.ndim != 2 or B.shape[0] != self.problem.n_em:
+            raise ValueError("rhs_matrix must have shape (n_em,n_rhs)")
+        if B.shape[1] == 0:
+            raise ValueError("rhs_matrix must contain at least one excitation")
+
+        V = np.empty((self.problem.n_em, 0), dtype=complex)
+        for p in range(B.shape[1]):
+            try:
+                q = self.riesz.orthonormalized_lift(B[:, p], V)
+            except np.linalg.LinAlgError:
+                continue
+            V = np.column_stack([V, q])
+        if V.shape[1] == 0:
+            raise np.linalg.LinAlgError("all supplied excitations are null/dependent in the Riesz metric")
+        return V
+
+    def _rhs_residual(
+        self,
+        thermal_state: np.ndarray,
+        rhs: np.ndarray,
+        V: np.ndarray,
+    ) -> np.ndarray:
+        A = self.problem.operator(thermal_state)
+        Ar = V.conj().T @ A @ V
+        br = V.conj().T @ rhs
+        c = scipy.linalg.solve(Ar, br, assume_a="gen")
+        return rhs - A @ (V @ c)
+
+    def build_multi_rhs(
+        self,
+        candidate_states: Iterable[np.ndarray],
+        rhs_matrix: np.ndarray,
+        tolerance: float,
+    ) -> ReducedEMModel:
+        """Grow one reduced space for a joint state-by-excitation domain.
+
+        The greedy maximization is taken over every supplied thermal state and
+        every RHS column. This is required for multiport impedance/mutual
+        inductance: a basis certified only for port 1 is not assumed to span the
+        response of port 2.
+        """
+
         if tolerance <= 0:
             raise ValueError("tolerance must be positive")
         states = [np.asarray(a, dtype=float) for a in candidate_states]
         if not states:
             raise ValueError("candidate_states cannot be empty")
+        B = np.asarray(rhs_matrix, dtype=complex)
+        if B.ndim == 1:
+            B = B[:, None]
+        if B.ndim != 2 or B.shape[0] != self.problem.n_em:
+            raise ValueError("rhs_matrix must have shape (n_em,n_rhs)")
 
-        V = self.initial_basis()
+        V = self._initial_basis_from_rhs(B)
         while True:
-            model = ReducedEMModel(self.problem, V, self.riesz)
-            values = np.array([model.residual_dual_norm(a) for a in states])
-            idx = int(np.argmax(values))
-            if float(values[idx]) <= tolerance or V.shape[1] >= self.problem.n_em:
-                return model
+            worst_norm = -1.0
+            worst_residual = None
+            for state in states:
+                for p in range(B.shape[1]):
+                    residual = self._rhs_residual(state, B[:, p], V)
+                    value = self.riesz.dual_norm(residual)
+                    if value > worst_norm:
+                        worst_norm = value
+                        worst_residual = residual
 
-            residual = model.full_residual(states[idx])
+            if worst_norm <= tolerance or V.shape[1] >= self.problem.n_em:
+                return ReducedEMModel(self.problem, V, self.riesz)
+
             try:
-                q = self.riesz.orthonormalized_lift(residual, V)
+                q = self.riesz.orthonormalized_lift(worst_residual, V)
             except np.linalg.LinAlgError:
-                return model
+                return ReducedEMModel(self.problem, V, self.riesz)
             V = np.column_stack([V, q])
+
+    def build(self, candidate_states: Iterable[np.ndarray], tolerance: float) -> ReducedEMModel:
+        return self.build_multi_rhs(candidate_states, self.problem.b[:, None], tolerance)
