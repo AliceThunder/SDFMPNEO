@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
-from .algebra import AnalyticSeries, DeferredResponseSeries
+from .algebra import AnalyticSeries, solve_response_series
 
 
 @dataclass(frozen=True)
@@ -26,8 +26,33 @@ class ProductResponseNode:
     weight: complex
 
 
+@dataclass(frozen=True)
+class CompiledAnalyticGraph:
+    lambdas: np.ndarray
+    node_series: Mapping[str, AnalyticSeries]
+    node_sources: Mapping[str, AnalyticSeries]
+    mode_series: Tuple[AnalyticSeries, ...]
+
+    def evaluate(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
+        a = np.array([np.real(s.evaluate(t, self.lambdas)) for s in self.mode_series], dtype=float)
+        da = np.array(
+            [np.real(s.derivative(self.lambdas).evaluate(t, self.lambdas)) for s in self.mode_series],
+            dtype=float,
+        )
+        return a, da
+
+    def series_for_node(self, name: str) -> AnalyticSeries:
+        return self.node_series[name]
+
+    def source_for_node(self, name: str) -> AnalyticSeries:
+        return self.node_sources[name]
+
+    def term_counts(self) -> Dict[str, int]:
+        return {name: series.term_count() for name, series in self.node_series.items()}
+
+
 class AnalyticEvolutionGraph:
-    """Minimal analytic neural DAG with exact time derivatives."""
+    """Analytic neural DAG with arbitrary chained response neurons and exact time derivatives."""
 
     def __init__(self, lambdas: Sequence[float], a0: Sequence[float]):
         self.lambdas = np.asarray(lambdas, dtype=float)
@@ -39,6 +64,10 @@ class AnalyticEvolutionGraph:
         self.n_modes = len(self.lambdas)
         self.base_nodes: List[BaseNode] = [BaseNode(f"base_{i}", i, self.a0[i]) for i in range(self.n_modes)]
         self.response_nodes: List[ProductResponseNode] = []
+        self._compiled: CompiledAnalyticGraph | None = None
+
+    def _invalidate(self) -> None:
+        self._compiled = None
 
     def add_product_response(self, name: str, target_mode: int, parents: Sequence[str], weight: complex) -> None:
         known = {n.name for n in self.base_nodes} | {n.name for n in self.response_nodes}
@@ -52,32 +81,45 @@ class AnalyticEvolutionGraph:
         if not 0 <= target_mode < self.n_modes:
             raise ValueError("target_mode out of range")
         self.response_nodes.append(ProductResponseNode(name, target_mode, tuple(parents), complex(weight)))
+        self._invalidate()
 
-    def _build_symbolic(self):
-        series: Dict[str, AnalyticSeries] = {n.name: n.series(self.n_modes) for n in self.base_nodes}
-        responses: Dict[str, DeferredResponseSeries] = {}
+    def compile(self) -> CompiledAnalyticGraph:
+        if self._compiled is not None:
+            return self._compiled
+
+        node_series: Dict[str, AnalyticSeries] = {n.name: n.series(self.n_modes) for n in self.base_nodes}
+        node_sources: Dict[str, AnalyticSeries] = {}
+        mode_series = [AnalyticSeries.zero(self.n_modes) for _ in range(self.n_modes)]
+
+        for node in self.base_nodes:
+            mode_series[node.mode] = mode_series[node.mode] + node_series[node.name]
+
         for node in self.response_nodes:
-            src = AnalyticSeries.constant(self.n_modes, node.weight)
+            source = AnalyticSeries.constant(self.n_modes, node.weight)
             for parent in node.parents:
-                if parent in responses:
-                    raise ValueError(
-                        "MVP permits product-response sources from explicit base analytic series only; "
-                        "higher-order chained response compilation is the next implementation stage."
-                    )
-                src = src * series[parent]
-            responses[node.name] = DeferredResponseSeries.from_source(src, node.target_mode)
-        return series, responses
+                source = source * node_series[parent]
+
+            response = solve_response_series(source, node.target_mode, self.lambdas)
+            node_sources[node.name] = source
+            node_series[node.name] = response
+            mode_series[node.target_mode] = mode_series[node.target_mode] + response
+
+        self._compiled = CompiledAnalyticGraph(
+            lambdas=self.lambdas.copy(),
+            node_series=dict(node_series),
+            node_sources=dict(node_sources),
+            mode_series=tuple(mode_series),
+        )
+        return self._compiled
 
     def evaluate(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
-        series, responses = self._build_symbolic()
-        a = np.zeros(self.n_modes, dtype=float)
-        da = np.zeros(self.n_modes, dtype=float)
-        for node in self.base_nodes:
-            s = series[node.name]
-            a[node.mode] += np.real(s.evaluate(t, self.lambdas))
-            da[node.mode] += np.real(s.derivative(self.lambdas).evaluate(t, self.lambdas))
-        for node in self.response_nodes:
-            r = responses[node.name]
-            a[node.target_mode] += np.real(r.evaluate(t, self.lambdas))
-            da[node.target_mode] += np.real(r.derivative_value(t, self.lambdas))
-        return a, da
+        return self.compile().evaluate(t)
+
+    def node_series(self, name: str) -> AnalyticSeries:
+        return self.compile().series_for_node(name)
+
+    def node_source(self, name: str) -> AnalyticSeries:
+        return self.compile().source_for_node(name)
+
+    def term_counts(self) -> Dict[str, int]:
+        return self.compile().term_counts()
