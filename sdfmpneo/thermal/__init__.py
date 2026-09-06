@@ -1,5 +1,9 @@
 from .grid3d import RectilinearThermalFV3D
-from .partial_spectral import PartialThermalSpectrum, build_partial_thermal_spectrum
+from .partial_spectral import (
+    PartialThermalSpectrum,
+    build_partial_thermal_spectrum,
+    li_yau_thermal_eigenvalue_lower_bound,
+)
 from .spectral import (
     ThermalRankSelection,
     ThermalSpectralModel,
@@ -13,4 +17,5 @@ __all__ = [
     "ThermalRankSelection",
     "PartialThermalSpectrum",
     "build_partial_thermal_spectrum",
+    "li_yau_thermal_eigenvalue_lower_bound",
 ]
