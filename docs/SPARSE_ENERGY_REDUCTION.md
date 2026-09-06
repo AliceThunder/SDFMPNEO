@@ -73,34 +73,31 @@ so the reduced-space error remains independently checkable after projection.
 
 ## 3. Snapshot-free residual-Riesz enrichment
 
-For every candidate thermal state and every physical excitation, evaluate
+For every candidate thermal state and every physical excitation, evaluate the certified upper bound of
 
 ```text
 eta(a,b) = sqrt(2) ||r(a,b)||_(H(a)^-1).
 ```
 
-Select the pair with the largest certified bound. Its local Riesz lift is
+The Riesz operation is not assumed exact. A `CertifiedRieszAction` returns an approximate lift `y_tilde`, an energy-action error bound `delta`, and a certified interval for the true dual norm. A candidate is accepted only if
 
 ```text
-y = H(a)^-1 r(a,b).
+upper(||r||_(H^-1))
+<= beta_H * requested_energy_state_error.
 ```
 
-The new reduced span is
+If the candidate is unresolved, the approximate certified lift is used for enrichment:
 
 ```text
-span(V_new) = span(V, y).
+y_tilde ~= H(a)^-1 r(a,b),
+span(V_new) = span(V, y_tilde).
 ```
 
-No full-order equilibrium solution `A(a)^-1 b` is inserted into the basis. The basis is therefore grown from unresolved governing-equation residuals rather than solution snapshots.
+After every enrichment the complete residual is recomputed. Therefore an inexact Riesz lift may affect convergence speed but cannot create a false certificate.
 
-The finite-candidate construction terminates when
+No full-order equilibrium solution `A(a)^-1 b` is inserted into the basis. The basis is grown from unresolved governing-equation residuals rather than solution snapshots.
 
-```text
-max_(a,b in candidate set) eta(a,b)
-<= requested_energy_state_error.
-```
-
-If the lift is numerically dependent or the full discrete space has been exhausted before the requested bound is met, the reducer returns an explicit uncertified/stalled result. The target is never relaxed.
+The finite-candidate construction terminates when the certified worst-case state error over all supplied state/excitation pairs is below the requested error. If the lift becomes numerically dependent or the full discrete space is exhausted before that condition is proved, the reducer returns an explicit uncertified/stalled result. The target is never relaxed.
 
 ## 4. Why the local energy metric is not frozen
 
@@ -158,7 +155,62 @@ For high-contrast energy metrics, orthogonality regression uses a conditioning-a
 
 and the standard `gamma_k` arithmetic model; a fixed multiple of machine epsilon is not a valid bound when large contributions cancel.
 
-## 6. Multiple excitations and ports
+## 6. Physical-block certified Riesz action
+
+For the tetrahedral `A-psi` coordinates, partition the local energy metric as
+
+```text
+H = [[K_A + D_AA, D_Apsi],
+     [D_psiA,       D_psipsi]].
+```
+
+The tree-cotree gauge makes `K_A` positive definite, while the conductivity Gram operator gives `D>=0`. If
+
+```text
+D_AA <= gamma K_A,
+```
+
+then
+
+```text
+H >= m_phys(gamma) diag(K_A,D_psipsi),
+```
+
+where
+
+```text
+m_phys(gamma)
+= 2/[2+gamma+sqrt(gamma^2+4 gamma)].
+```
+
+The magnetic and scalar blocks are themselves replaceable certified actions. If
+
+```text
+K_A      >= m_K P_K,
+D_psipsi >= m_E P_E,
+```
+
+then the actual preconditioner `P=diag(P_K,P_E)` satisfies
+
+```text
+H >= m_phys(gamma) min(m_K,m_E) P.
+```
+
+This bound is consumed by `CertifiedPCGRieszAction`. No user-selected Krylov tolerance, fitted damping, or conductivity-ratio correction enters the method.
+
+The current default block implementations use complete sparse LU strictly as correctness-scale actions. Regression tests also replace both blocks with certified non-LU actions while `splu` is disabled, demonstrating that block LU is not part of the outer theorem.
+
+For `gamma`, the fast path uses normalized Gershgorin. If the magnetic block is not diagonally dominant, the present correctness fallback computes a residual-certified upper bound through
+
+```text
+gamma
+<= lambda_max(K_A^-1/2 D_AA K_A^-1/2)
+<= trace(K_A^-1 D_AA).
+```
+
+That fallback still uses sparse factorization of `K_A` only to construct the `gamma` certificate. It is not a global `H^-1` Riesz solve.
+
+## 7. Multiple excitations and ports
 
 For port source matrix
 
@@ -173,6 +225,14 @@ A_r C = V^H B,
 X_r = V C.
 ```
 
+The top-level nonlinear core exposes this directly through
+
+```text
+build_reduced_electromagnetics(..., port_set=ports).
+```
+
+Thus every declared unit-port right-hand side participates in the same residual-greedy basis construction and certificate.
+
 The reduced multiport impedance is
 
 ```text
@@ -185,14 +245,16 @@ For each reduced port column `j`, define
 
 ```text
 r_j = b_j - A x_r,j,
-epsilon_j = sqrt(2) ||r_j||_(H^-1).
+epsilon_j <= beta_H^-1 upper(||r_j||_(H^-1)).
 ```
 
 For source port `i`,
 
 ```text
 |Delta Z_ij|
-<= omega ||b_i||_(H^-1) epsilon_j.
+<= omega
+   * upper(||b_i||_(H^-1))
+   * upper(||r_j||_(H^-1))/beta_H.
 ```
 
 Therefore
@@ -204,9 +266,9 @@ Therefore
 
 Mutual inductance entries inherit the same `L` bound. This gives certified `Z/R/L/M` from a reduced equilibrium solve without a full-order field equilibrium solve at query time.
 
-The sparse full-order operator is still used for residual evaluation and `H^-1` Riesz actions needed by the certificate. This is certification work, not a hidden full-order equilibrium solve.
+The reduced model stores the same Riesz-action factory used during construction, so online multiport certification automatically reuses the physical-block PCG path and does not silently revert to the global sparse-LU reference action.
 
-## 7. Reduced electromagnetic heat source
+## 8. Reduced electromagnetic heat source
 
 For thermal test mode `j`, the projected Joule source is
 
@@ -230,28 +292,39 @@ dq_j/da_k
 
 Thus `q_em,r(a)` and `dq_em,r/da` remain available without invoking the legacy dense full-order compatibility operators.
 
-## 8. What is and is not certified
+## 9. What is and is not certified
 
 The current finite candidate-set reducer certifies every state/excitation explicitly supplied to the construction set. It does **not** claim that a finite set proves an entire continuous thermal/geometry/frequency domain.
 
 A continuous nonlinear-domain certificate remains a separate obligation. It must bound the residual over the continuous parameter domain rather than infer coverage from sampling density.
 
-Likewise, the present implementation applies `H(a)^-1` through sparse LU. This removes full-order dense matrices and is a valid correctness baseline, but it is not yet a memory-scalable million-degree-of-freedom algorithm. The production scaling problem is therefore now sharply isolated to a certificate-compatible multilevel/auxiliary-space realization of the `H^-1` action and, where required, the sparse full-order correctness fallback.
+The formal nonlinear ROM no longer requires an exact global `H(a)^-1` action. The remaining large-scale Riesz obligations are narrower and explicit:
 
-## 9. Implementation map
+1. replace the default exact magnetic/scalar block actions by memory-scalable certified multilevel/auxiliary-space actions;
+2. replace the non-diagonally-dominant sparse-LU `gamma` certificate fallback by a scalable factorization-free proof.
+
+Neither obligation changes the residual theorem, the physical-block inequality, or the multiport output certificate.
+
+## 10. Implementation map
 
 ```text
+sdfmpneo/em/riesz_action.py
+    CertifiedRieszAction
+    SparseLUReferenceRieszAction
+
+sdfmpneo/em/certified_riesz.py
+    CertifiedPCGRieszAction
+    CertifiedEnergyPreconditioner
+
+sdfmpneo/em/block_riesz.py
+    PhysicalBlockEnergyPreconditioner
+    SparseLUExactBlockPreconditioner
+    make_physical_block_pcg_riesz_factory
+
 sdfmpneo/em/sparse_reduced.py
     SparseEnergyResidualGreedyEMReducer
     SparseEnergyReducedEMModel
     SparseEnergyReductionCertificate
-
-sdfmpneo/em/energy_solver.py
-    apsi_physical_energy_metric
-
-sdfmpneo/em/sparse_solver.py
-    ApsiEnergyMetric
-    CertifiedEnergySparseApsiSolver
 
 sdfmpneo/em/ports.py
     evaluate_reduced_physical_certified
