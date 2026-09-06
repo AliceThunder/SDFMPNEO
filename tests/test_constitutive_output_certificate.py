@@ -1,7 +1,10 @@
 import numpy as np
 
 from sdfmpneo import TetrahedralElectroThermalCore
-from sdfmpneo.certification import certify_constitutive_multiport_error
+from sdfmpneo.certification import (
+    certify_constitutive_heat_source_error,
+    certify_constitutive_multiport_error,
+)
 from sdfmpneo.em import (
     AffineConductivity,
     ConductivityRegion,
@@ -116,3 +119,53 @@ def test_tighter_constitutive_budget_reduces_certified_impedance_bound():
     assert coarse.certified and tight.certified
     assert tight.constitutive_relative_bound <= coarse.constitutive_relative_bound
     assert tight.impedance_spectral_norm_bound <= coarse.impedance_spectral_norm_bound
+
+
+def test_constitutive_heat_source_difference_is_below_combined_certificates():
+    coarse_core, _ = build_core(3e-4)
+    tight_core, _ = build_core(1e-12)
+    a = np.array([0.07])
+
+    coarse_problem = coarse_core.electromagnetic_problem
+    tight_problem = tight_core.electromagnetic_problem
+    coarse_certificate = certify_constitutive_heat_source_error(coarse_problem, a)
+    tight_certificate = certify_constitutive_heat_source_error(tight_problem, a)
+    assert coarse_certificate.certified
+    assert tight_certificate.certified
+
+    coarse_x = coarse_problem.solve_full(a)
+    tight_x = tight_problem.solve_full(a)
+    coarse_q = np.array(
+        [
+            np.real(np.vdot(coarse_x, coarse_problem.loss_operator(j, a) @ coarse_x))
+            for j in range(coarse_problem.n_thermal)
+        ]
+    )
+    tight_q = np.array(
+        [
+            np.real(np.vdot(tight_x, tight_problem.loss_operator(j, a) @ tight_x))
+            for j in range(tight_problem.n_thermal)
+        ]
+    )
+    observed = np.linalg.norm(coarse_q - tight_q)
+    pair_bound = (
+        coarse_certificate.heat_source_vector_error_bound
+        + tight_certificate.heat_source_vector_error_bound
+    )
+    assert observed <= pair_bound * (1.0 + 1e-10) + 1e-13
+
+
+def test_tighter_constitutive_budget_reduces_heat_source_bound():
+    coarse_core, _ = build_core(1e-3)
+    tight_core, _ = build_core(1e-8)
+    a = np.array([0.05])
+    coarse = certify_constitutive_heat_source_error(
+        coarse_core.electromagnetic_problem,
+        a,
+    )
+    tight = certify_constitutive_heat_source_error(
+        tight_core.electromagnetic_problem,
+        a,
+    )
+    assert coarse.certified and tight.certified
+    assert tight.heat_source_vector_error_bound <= coarse.heat_source_vector_error_bound
