@@ -1,9 +1,12 @@
 """Run the first shared 3-D electromagnetic-thermal spatial core.
 
-The affine conductivity law used here is intentionally a verification law for
-exercising the spatial coupling interface. It is not claimed as the final copper
-or seawater constitutive model; production use requires the certified
-constitutive-separation layer described in the theory.
+The material numbers in this example are deliberately *verification-scale*
+coefficients chosen to exercise topology, Hodge assembly, thermal projection,
+and electromagnetic reduction without conflating this first spatial test with
+the separate high-contrast copper/seawater linear-algebra problem.
+
+Production use requires both the certified constitutive-separation layer and the
+high-contrast preconditioned solver described in the project theory/docs.
 """
 
 import numpy as np
@@ -45,14 +48,16 @@ def main():
     mu0 = 4.0e-7 * np.pi
     reluctivity = np.ones(shape) / mu0
 
+    # Verification-scale electrical contrast. Real copper/seawater contrast is
+    # intentionally reserved for the dedicated high-contrast solver test.
     conductivity0 = np.ones(shape) * 5.0
-    conductivity0[0, 0, 0] = 5.8e7
+    conductivity0[0, 0, 0] = 500.0
     conductivity0[1, 0, 0] = 0.0
 
     # Exact affine verification law sigma = sigma0 + beta * DeltaT on each
     # already-conducting material cell. This is only an executable interface test.
     beta = np.ones(shape) * 0.01
-    beta[0, 0, 0] = -2.0e5
+    beta[0, 0, 0] = -2.0
     beta[1, 0, 0] = 0.0
     conductivity_state = np.stack(
         [beta * thermal_test[j] for j in range(n_thermal)],
