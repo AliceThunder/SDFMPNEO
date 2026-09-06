@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo.em import (
     ConductivityRegion,
     ConstantConductivity,
+    ImpressedCurrentPortSet,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
@@ -59,14 +60,7 @@ def build_high_contrast_problem():
 
 
 def _gram_roundoff_envelope(H, V):
-    """Conditioning-aware standard-model bound for forming V^H H V.
-
-    A fixed multiple of machine epsilon is invalid for the high-contrast energy
-    metric because large positive contributions can cancel in the final Gram
-    entries. The absolute arithmetic scale is |V|^T |H| |V|. The gamma_k factor
-    accounts conservatively for sparse row accumulation, the length-n dense dot
-    product, and the small dense Cholesky/triangular whitening work.
-    """
+    """Conditioning-aware standard-model bound for forming V^H H V."""
 
     Habs = H.copy().tocsr()
     Habs.data = np.abs(Habs.data)
@@ -79,6 +73,24 @@ def _gram_roundoff_envelope(H, V):
     eps = np.finfo(float).eps
     gamma = operation_depth * eps / (1.0 - operation_depth * eps)
     return float(gamma * np.linalg.norm(absolute_scale, ord="fro"))
+
+
+def _two_port_set(problem):
+    mesh = problem.mesh
+    edge_currents = np.column_stack(
+        [
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0])).real,
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
+        ]
+    )
+    return ImpressedCurrentPortSet.build(
+        mesh,
+        a_basis=problem.a_basis,
+        n_scalar=problem.n_scalar,
+        omega=problem.omega,
+        edge_currents=edge_currents,
+        names=("p1", "p2"),
+    )
 
 
 def test_sparse_energy_reducer_never_materializes_dense_riesz_metric():
@@ -109,17 +121,8 @@ def test_sparse_energy_reducer_never_materializes_dense_riesz_metric():
 
 def test_sparse_energy_multi_rhs_reduction_is_jointly_certified_without_snapshots():
     problem = build_high_contrast_problem()
-    mesh = problem.mesh
-    rhs = np.column_stack(
-        [
-            problem.source_coordinate(
-                tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0]))
-            ),
-            problem.source_coordinate(
-                tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1]))
-            ),
-        ]
-    )
+    ports = _two_port_set(problem)
+    rhs = ports.coordinate_rhs
     states = [np.array([-8.0]), np.array([0.0]), np.array([12.0])]
     requested = 2e-6
     reducer = SparseEnergyResidualGreedyEMReducer(problem)
@@ -146,9 +149,6 @@ def test_sparse_reduced_heat_and_jacobian_use_only_sparse_full_order_operators()
     )
     assert model.reduction_certificate.certified
 
-    # Dense compatibility methods are deliberately disabled after construction.
-    # The sparse reduced model must still evaluate state, heat source and exact
-    # reduced heat-source Jacobian without touching them.
     def dense_forbidden(*_args, **_kwargs):
         raise AssertionError("dense full-order compatibility path was used")
 
@@ -166,4 +166,53 @@ def test_sparse_reduced_heat_and_jacobian_use_only_sparse_full_order_operators()
     assert J.shape == (problem.n_thermal, problem.n_thermal)
     assert np.all(np.isfinite(q))
     assert np.all(np.isfinite(J))
+    assert problem._H_metric is None
+
+
+def test_reduced_multiport_outputs_are_certified_without_full_order_equilibrium_solve():
+    problem = build_high_contrast_problem()
+    ports = _two_port_set(problem)
+    query_state = np.array([6.0])
+    candidate_states = [np.array([-8.0]), np.array([0.0]), query_state, np.array([12.0])]
+
+    reducer = SparseEnergyResidualGreedyEMReducer(problem)
+    model = reducer.build_multi_rhs(
+        candidate_states,
+        ports.coordinate_rhs,
+        requested_energy_state_error=1e-9,
+    )
+    assert model.reduction_certificate.certified
+
+    full = ports.evaluate_sparse_physical_certified(
+        problem,
+        query_state,
+        requested_impedance_element_error=1e-7,
+    )
+    reduced = ports.evaluate_reduced_physical_certified(
+        problem,
+        query_state,
+        model,
+        requested_impedance_element_error=1e-7,
+    )
+    assert reduced.certified
+
+    observed = np.abs(reduced.impedance - full.impedance)
+    combined_bound = reduced.impedance_element_error_bounds + full.impedance_element_error_bounds
+    assert np.all(observed <= combined_bound)
+
+    def full_solve_forbidden(*_args, **_kwargs):
+        raise AssertionError("full-order equilibrium solve was used")
+
+    problem.solve_full = full_solve_forbidden
+    problem.solve_sparse = full_solve_forbidden
+    problem.operator = full_solve_forbidden
+
+    reduced_again = ports.evaluate_reduced_physical_certified(
+        problem,
+        query_state,
+        model,
+        requested_impedance_element_error=1e-7,
+    )
+    assert reduced_again.certified
+    assert np.allclose(reduced_again.impedance, reduced.impedance)
     assert problem._H_metric is None
