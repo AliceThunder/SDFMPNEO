@@ -23,6 +23,11 @@ from .reduced import (
     ResidualGreedyEMReducer,
     RieszFactor,
 )
+from .sparse_solver import (
+    ApsiBlockTriangularPreconditioner,
+    SparseLinearSolveCertificate,
+    solve_certified_sparse_apsi,
+)
 from .tetra import (
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
@@ -56,6 +61,9 @@ __all__ = [
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
     "RieszFactor",
+    "ApsiBlockTriangularPreconditioner",
+    "SparseLinearSolveCertificate",
+    "solve_certified_sparse_apsi",
     "TetrahedralApsiDiscretization",
     "build_tetrahedral_apsi_from_thermal_modes",
     "tetra_face_loop_source",
