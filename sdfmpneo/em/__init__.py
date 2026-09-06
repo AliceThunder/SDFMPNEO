@@ -41,6 +41,11 @@ from .reduced import (
     ResidualGreedyEMReducer,
     RieszFactor,
 )
+from .riesz_action import (
+    CertifiedRieszAction,
+    RieszActionFactory,
+    SparseLUReferenceRieszAction,
+)
 from .sparse_reduced import (
     SparseEnergyReducedEMModel,
     SparseEnergyReductionCertificate,
@@ -75,6 +80,9 @@ __all__ = [
     "CertifiedRieszActionResult",
     "DiagonalGershgorinEnergyPreconditioner",
     "RieszNormDecision",
+    "CertifiedRieszAction",
+    "RieszActionFactory",
+    "SparseLUReferenceRieszAction",
     "CompatibleAphiDiscretization",
     "ConductivityLaw",
     "ConstantConductivity",
