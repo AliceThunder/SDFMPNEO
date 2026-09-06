@@ -22,6 +22,11 @@ from .reduced import (
     ResidualGreedyEMReducer,
     RieszFactor,
 )
+from .tetra import (
+    TetrahedralApsiDiscretization,
+    build_tetrahedral_apsi_from_thermal_modes,
+    tetra_face_loop_source,
+)
 
 __all__ = [
     "CompatibleAphiDiscretization",
@@ -44,4 +49,7 @@ __all__ = [
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
     "RieszFactor",
+    "TetrahedralApsiDiscretization",
+    "build_tetrahedral_apsi_from_thermal_modes",
+    "tetra_face_loop_source",
 ]
