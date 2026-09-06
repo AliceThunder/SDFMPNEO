@@ -9,6 +9,7 @@ from .em import (
     ConductivityRegion,
     ImpressedCurrentPortSet,
     NonlinearTetrahedralApsiProblem,
+    NonlinearTetrahedralRegionLossEvaluator,
     ResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
@@ -266,15 +267,28 @@ class TetrahedralElectroThermalCore:
 
     def build_region_loss_projector(
         self,
-        regions: Mapping[str, np.ndarray],
+        regions: Mapping[str, np.ndarray] | None = None,
     ):
-        """Build total Joule-power diagnostics for the affine tetrahedral path."""
+        """Build region Joule-power diagnostics from the active material backend.
 
+        The affine verification path requires explicit tetrahedral masks. The
+        certified nonlinear path uses the conductivity regions declared when the
+        core was constructed; supplying alternate masks there is rejected so the
+        diagnostic cannot bypass the certified constitutive definition.
+        """
+
+        if self.material_backend == "certified_nonlinear":
+            if regions is not None:
+                raise ValueError(
+                    "certified nonlinear diagnostics use the declared conductivity regions; "
+                    "custom masks are not accepted"
+                )
+            return NonlinearTetrahedralRegionLossEvaluator(self.electromagnetic_problem)
+
+        if regions is None:
+            raise ValueError("affine tetrahedral region diagnostics require explicit region masks")
         if self.conductivity_reference_tetra is None or self.conductivity_temperature_slope_tetra is None:
-            raise NotImplementedError(
-                "nonlinear tetrahedral region diagnostics require the nonlinear constitutive evaluator, "
-                "not the affine RegionLossProjector"
-            )
+            raise RuntimeError("affine material metadata is unavailable")
         return build_tetrahedral_region_loss_projector(
             self.mesh,
             self.electromagnetic_discretization,
