@@ -5,6 +5,7 @@ from typing import Sequence
 
 import numpy as np
 import scipy.linalg
+import scipy.sparse as sp
 
 from sdfmpneo.spatial.barycentric_polynomial import (
     Polynomial,
@@ -23,6 +24,7 @@ from .constitutive import (
     ReciprocalLinearResistivity,
 )
 from .reciprocal_series import ReciprocalSeriesCertificate, certified_reciprocal_polynomials
+from .sparse_solver import SparseLinearSolveCertificate, solve_certified_sparse_apsi
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,10 @@ class NonlinearTetrahedralApsiProblem:
     center. The geometric-series order is the smallest order satisfying the
     declared relative constitutive error budget; every retained polynomial term
     is integrated exactly against the Nedelec basis.
+
+    Sparse edge/gradient operators are the native field representation. Dense
+    matrices are constructed only by the compatibility methods used by the
+    verification-scale reduced-order implementation.
     """
 
     def __init__(
@@ -134,11 +140,13 @@ class NonlinearTetrahedralApsiProblem:
             nu,
             np.zeros(mesh.n_tetrahedra),
         )
-        self.magnetic_stiffness = magnetic
-        self.a_basis = mesh.gauge_basis()
-        self.grad_c = mesh.conductive_gradient(support)
+        self.magnetic_stiffness = magnetic.tocsr()
+        self.a_basis = mesh.gauge_basis().astype(complex).tocsr()
+        self.grad_c = mesh.conductive_gradient(support).astype(complex).tocsr()
         self.b = self.source_coordinate(source)
-        self.H_metric = self._build_reference_riesz_metric()
+        # The dense Cholesky Riesz metric is retained only for the current
+        # verification-scale reduction path and is built lazily on demand.
+        self._H_metric: np.ndarray | None = None
 
     @property
     def n_thermal(self) -> int:
@@ -155,6 +163,12 @@ class NonlinearTetrahedralApsiProblem:
     @property
     def n_em(self) -> int:
         return self.n_A + self.n_scalar
+
+    @property
+    def H_metric(self) -> np.ndarray:
+        if self._H_metric is None:
+            self._H_metric = self._build_reference_riesz_metric()
+        return self._H_metric
 
     def temperature_local(self, a: np.ndarray) -> np.ndarray:
         state = np.asarray(a, dtype=float)
@@ -263,77 +277,131 @@ class NonlinearTetrahedralApsiProblem:
             maximum_inverse_square_relative_bound=max(c.inverse_square_relative_bound for c in certificates),
         )
 
-    def conductivity_matrix(self, a: np.ndarray):
+    def conductivity_matrix(self, a: np.ndarray) -> sp.csr_matrix:
         polynomials, _ = self._weighted_polynomials(a)
-        return assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials)
+        return assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).tocsr()
 
-    def conductivity_derivative_matrix(self, a: np.ndarray, mode: int):
+    def conductivity_derivative_matrix(self, a: np.ndarray, mode: int) -> sp.csr_matrix:
         polynomials, _ = self._weighted_polynomials(a, derivative_mode=mode)
-        return assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials)
+        return assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).tocsr()
+
+    def electric_extraction_sparse(self) -> sp.csr_matrix:
+        Q = sp.hstack([self.a_basis, self.grad_c], format="csr", dtype=complex)
+        return (-1j * self.omega * Q).tocsr()
 
     def electric_extraction(self) -> np.ndarray:
-        R = self.a_basis.toarray().astype(complex)
-        G = self.grad_c.toarray().astype(complex)
-        return -1j * self.omega * np.hstack([R, G])
+        return self.electric_extraction_sparse().toarray()
 
     def source_coordinate(self, source_current: np.ndarray) -> np.ndarray:
         source = np.asarray(source_current, dtype=complex)
         if source.shape != (self.mesh.n_edges,):
             raise ValueError("source_current shape mismatch")
-        top = self.a_basis.toarray().astype(complex).conj().T @ source
+        top = np.asarray(self.a_basis.conj().T @ source).ravel()
         return np.concatenate([top, np.zeros(self.n_scalar, dtype=complex)])
 
-    def _assemble_system(self, conductivity, *, include_magnetic: bool) -> np.ndarray:
-        R = self.a_basis.toarray().astype(complex)
-        G = self.grad_c.toarray().astype(complex)
-        S = conductivity.toarray().astype(complex)
+    def _assemble_system_sparse(
+        self,
+        conductivity: sp.spmatrix,
+        *,
+        include_magnetic: bool,
+    ) -> sp.csr_matrix:
+        R = self.a_basis
+        G = self.grad_c
+        S = sp.csr_matrix(conductivity, dtype=complex)
+        SR = S @ R
+        SG = S @ G
         if include_magnetic:
-            K = self.magnetic_stiffness.toarray().astype(complex)
-            K_A = R.conj().T @ K @ R
+            K = self.magnetic_stiffness.astype(complex)
+            K_A = (R.conj().T @ K @ R).tocsr()
         else:
-            K_A = np.zeros((self.n_A, self.n_A), dtype=complex)
+            K_A = sp.csr_matrix((self.n_A, self.n_A), dtype=complex)
         jw = 1j * self.omega
-        return np.block(
-            [
-                [K_A + jw * (R.conj().T @ S @ R), jw * (R.conj().T @ S @ G)],
-                [jw * (G.conj().T @ S @ R), jw * (G.conj().T @ S @ G)],
-            ]
+        A11 = K_A + jw * (R.conj().T @ SR)
+        A12 = jw * (R.conj().T @ SG)
+        A21 = jw * (G.conj().T @ SR)
+        A22 = jw * (G.conj().T @ SG)
+        A = sp.bmat([[A11, A12], [A21, A22]], format="csr", dtype=complex)
+        A.sum_duplicates()
+        A.eliminate_zeros()
+        return A
+
+    def _assemble_system(self, conductivity: sp.spmatrix, *, include_magnetic: bool) -> np.ndarray:
+        return self._assemble_system_sparse(
+            conductivity,
+            include_magnetic=include_magnetic,
+        ).toarray()
+
+    def _build_reference_riesz_metric_sparse(self) -> sp.csr_matrix:
+        zero = np.zeros(self.n_thermal)
+        S = self.conductivity_matrix(zero).astype(complex)
+        R = self.a_basis
+        K_A = (R.conj().T @ self.magnetic_stiffness.astype(complex) @ R).tocsr()
+        zero_as = sp.csr_matrix((self.n_A, self.n_scalar), dtype=complex)
+        zero_sa = sp.csr_matrix((self.n_scalar, self.n_A), dtype=complex)
+        zero_ss = sp.csr_matrix((self.n_scalar, self.n_scalar), dtype=complex)
+        H_mag = sp.bmat(
+            [[0.5 * K_A, zero_as], [zero_sa, zero_ss]],
+            format="csr",
+            dtype=complex,
         )
+        L = self.electric_extraction_sparse()
+        H = H_mag + (0.5 / self.omega) * (L.conj().T @ S @ L)
+        H = (0.5 * (H + H.conj().T)).tocsr()
+        H.sum_duplicates()
+        H.eliminate_zeros()
+        return H
 
     def _build_reference_riesz_metric(self) -> np.ndarray:
-        zero = np.zeros(self.n_thermal)
-        S = self.conductivity_matrix(zero).toarray().astype(complex)
-        R = self.a_basis.toarray().astype(complex)
-        K = self.magnetic_stiffness.toarray().astype(complex)
-        K_A = R.conj().T @ K @ R
-        L = self.electric_extraction()
-        H_mag = np.zeros((self.n_em, self.n_em), dtype=complex)
-        H_mag[: self.n_A, : self.n_A] = 0.5 * K_A
-        H = H_mag + (0.5 / self.omega) * (L.conj().T @ S @ L)
-        H = 0.5 * (H + H.conj().T)
+        H = self._build_reference_riesz_metric_sparse().toarray()
         scipy.linalg.cholesky(H, lower=True, check_finite=True)
         return H
 
+    def reference_riesz_metric_sparse(self) -> sp.csr_matrix:
+        return self._build_reference_riesz_metric_sparse()
+
+    def operator_sparse(self, a: np.ndarray) -> sp.csr_matrix:
+        return self._assemble_system_sparse(self.conductivity_matrix(a), include_magnetic=True)
+
     def operator(self, a: np.ndarray) -> np.ndarray:
-        return self._assemble_system(self.conductivity_matrix(a), include_magnetic=True)
+        return self.operator_sparse(a).toarray()
+
+    def operator_derivative_sparse(self, a: np.ndarray, mode: int) -> sp.csr_matrix:
+        return self._assemble_system_sparse(
+            self.conductivity_derivative_matrix(a, mode),
+            include_magnetic=False,
+        )
 
     def operator_derivatives(self, a: np.ndarray) -> np.ndarray:
         return np.stack(
-            [
-                self._assemble_system(
-                    self.conductivity_derivative_matrix(a, k),
-                    include_magnetic=False,
-                )
-                for k in range(self.n_thermal)
-            ],
+            [self.operator_derivative_sparse(a, k).toarray() for k in range(self.n_thermal)],
             axis=0,
         )
 
-    def loss_operator(self, output_mode: int, a: np.ndarray) -> np.ndarray:
+    def loss_operator_sparse(self, output_mode: int, a: np.ndarray) -> sp.csr_matrix:
         polynomials, _ = self._weighted_polynomials(a, test_mode=output_mode)
-        W = assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).toarray()
-        L = self.electric_extraction()
-        return 0.5 * (L.conj().T @ W @ L)
+        W = assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).tocsr()
+        L = self.electric_extraction_sparse()
+        H = 0.5 * (L.conj().T @ W @ L)
+        return H.tocsr()
+
+    def loss_operator(self, output_mode: int, a: np.ndarray) -> np.ndarray:
+        return self.loss_operator_sparse(output_mode, a).toarray()
+
+    def loss_operator_derivative_sparse(
+        self,
+        output_mode: int,
+        state_mode: int,
+        a: np.ndarray,
+    ) -> sp.csr_matrix:
+        polynomials, _ = self._weighted_polynomials(
+            a,
+            derivative_mode=state_mode,
+            test_mode=output_mode,
+        )
+        W = assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).tocsr()
+        L = self.electric_extraction_sparse()
+        H = 0.5 * (L.conj().T @ W @ L)
+        return H.tocsr()
 
     def loss_operator_derivative(
         self,
@@ -341,14 +409,22 @@ class NonlinearTetrahedralApsiProblem:
         state_mode: int,
         a: np.ndarray,
     ) -> np.ndarray:
-        polynomials, _ = self._weighted_polynomials(
-            a,
-            derivative_mode=state_mode,
-            test_mode=output_mode,
-        )
-        W = assemble_polynomial_weighted_nedelec_mass(self.mesh, polynomials).toarray()
-        L = self.electric_extraction()
-        return 0.5 * (L.conj().T @ W @ L)
+        return self.loss_operator_derivative_sparse(output_mode, state_mode, a).toarray()
 
     def solve_full(self, a: np.ndarray) -> np.ndarray:
         return scipy.linalg.solve(self.operator(a), self.b, assume_a="gen")
+
+    def solve_sparse(
+        self,
+        a: np.ndarray,
+        *,
+        stability_lower_bound: float,
+        requested_state_error: float,
+    ) -> tuple[np.ndarray, SparseLinearSolveCertificate]:
+        return solve_certified_sparse_apsi(
+            self.operator_sparse(a),
+            self.b,
+            n_A=self.n_A,
+            stability_lower_bound=stability_lower_bound,
+            requested_state_error=requested_state_error,
+        )
