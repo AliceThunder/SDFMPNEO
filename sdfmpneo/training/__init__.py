@@ -5,6 +5,14 @@ from .growth import (
     TangentResidualGrower,
     product_candidates,
 )
+from .parametric_growth import (
+    ParametricGrowthCandidate,
+    ParametricGrowthProposal,
+    ParametricGrowthScore,
+    ParametricQuadratureSample,
+    ParametricTangentResidualGrower,
+    parametric_product_candidates,
+)
 from .parametric_residual import (
     AffineOperatingRHSMap,
     ParametricElectroThermalResidual,
@@ -23,4 +31,10 @@ __all__ = [
     "GrowthScore",
     "TangentResidualGrower",
     "product_candidates",
+    "ParametricQuadratureSample",
+    "ParametricGrowthCandidate",
+    "ParametricGrowthScore",
+    "ParametricGrowthProposal",
+    "ParametricTangentResidualGrower",
+    "parametric_product_candidates",
 ]
