@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.linalg
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 import pytest
 
 from sdfmpneo.em import (
@@ -38,6 +39,8 @@ def test_physical_block_certificate_succeeds_where_diagonal_gershgorin_fails():
     )
     assert preconditioner.gamma_upper_bound >= 1.1
     assert preconditioner.lower_spectral_equivalence_bound > 0.0
+    assert preconditioner.magnetic_block_lower_bound == 1.0
+    assert preconditioner.scalar_block_lower_bound == 1.0
 
     # Here P=diag(K,E)=I, so the generalized minimum is simply lambda_min(H).
     true_minimum = float(np.min(np.linalg.eigvalsh(H.toarray().real)))
@@ -61,6 +64,38 @@ def test_physical_block_pcg_action_preserves_riesz_error_certificate():
 
     assert result.meets_requested_energy_action_error
     assert actual_energy_error <= result.energy_action_error_bound * (1.0 + 1e-10) + 1e-14
+
+
+def test_physical_block_accepts_certified_non_lu_block_actions(monkeypatch):
+    # Both physical blocks are diagonally dominant, so the gamma certificate and
+    # the block actions can be completed without any sparse LU factorization.
+    K = sp.diags([2.0, 3.0], format="csr", dtype=complex)
+    Daa = sp.diags([0.4, 0.2], format="csr", dtype=complex)
+    E = sp.diags([1.5, 2.5], format="csr", dtype=complex)
+    cross = sp.csr_matrix((2, 2), dtype=complex)
+    H = sp.bmat(
+        [[K + Daa, cross], [cross.conj().T, E]],
+        format="csr",
+        dtype=complex,
+    )
+
+    def forbidden_splu(*_args, **_kwargs):
+        raise AssertionError("sparse LU was used by a replaceable block action")
+
+    monkeypatch.setattr(spla, "splu", forbidden_splu)
+    preconditioner = PhysicalBlockEnergyPreconditioner.build(
+        H,
+        magnetic_block=K,
+        n_A=2,
+        block_action_factory=DiagonalGershgorinEnergyPreconditioner.build,
+    )
+
+    assert preconditioner.gamma_certificate_method == "normalized_gershgorin"
+    assert preconditioner.magnetic_block_lower_bound > 0.0
+    assert preconditioner.scalar_block_lower_bound > 0.0
+    rhs = np.array([1.0, -0.5j, 0.2 + 0.1j, -0.7], dtype=complex)
+    applied = preconditioner.solve(rhs)
+    assert np.all(np.isfinite(applied))
 
 
 def test_physical_block_uses_residual_certified_trace_when_magnetic_gershgorin_fails():
