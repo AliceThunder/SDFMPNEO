@@ -1,5 +1,9 @@
 from .algebra import AnalyticSeries, DeferredResponseSeries, ResponseTerm, solve_response_series
 from .compiler import CompiledAnalyticKernel
+from .geometry_operator import (
+    GeometryAnalyticPrediction,
+    GeometryConditionedAnalyticEvolutionOperator,
+)
 from .graph import AnalyticEvolutionGraph, CompiledAnalyticGraph
 from .operator import (
     AnalyticOperatorPrediction,
@@ -41,4 +45,6 @@ __all__ = [
     "AnalyticOperatorPrediction",
     "CanonicalAnalyticIR",
     "CertifiedAnalyticEvolutionOperator",
+    "GeometryAnalyticPrediction",
+    "GeometryConditionedAnalyticEvolutionOperator",
 ]
