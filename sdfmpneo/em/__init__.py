@@ -31,12 +31,17 @@ from .energy_solver import (
     apsi_physical_energy_metric,
     solve_physical_energy_certified_apsi,
 )
+from .face_block_riesz import (
+    FaceAuxiliaryPhysicalBlockPreconditioner,
+    make_face_auxiliary_physical_pcg_riesz_factory,
+)
 from .grid3d import (
     RectilinearComplex3D,
     SpatialAphiAssembly,
     build_compatible_aphi_from_cells,
     face_loop_source,
 )
+from .hierarchical_energy import HierarchicalEnergyPreconditioner
 from .magnetic_auxiliary import (
     MagneticCurlSubsetEnergyPreconditioner,
     build_gauge_restricted_magnetic_curl_factor,
@@ -99,11 +104,14 @@ __all__ = [
     "make_physical_block_pcg_riesz_factory",
     "CurlAuxiliaryPhysicalBlockPreconditioner",
     "make_curl_auxiliary_physical_pcg_riesz_factory",
+    "FaceAuxiliaryPhysicalBlockPreconditioner",
+    "make_face_auxiliary_physical_pcg_riesz_factory",
     "CertifiedEnergyPreconditioner",
     "CertifiedPCGRieszAction",
     "CertifiedRieszActionResult",
     "DiagonalGershgorinEnergyPreconditioner",
     "CoupledPairEnergyPreconditioner",
+    "HierarchicalEnergyPreconditioner",
     "MagneticCurlSubsetEnergyPreconditioner",
     "MagneticFaceCirculationEnergyPreconditioner",
     "build_gauge_restricted_magnetic_curl_factor",
