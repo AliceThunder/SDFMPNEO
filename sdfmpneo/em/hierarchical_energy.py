@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
 import scipy.sparse as sp
@@ -13,20 +14,17 @@ from .pair_block import _deterministic_energy_matching, _hermitian_positive_diag
 def _pair_split_transform(
     matrix: sp.csr_matrix,
 ) -> tuple[sp.csr_matrix, sp.csr_matrix, tuple[tuple[int, int], ...], tuple[int, ...]]:
-    """Return deterministic fine/coarse pair transforms for one hierarchy level.
+    """Return local-energy fine/coarse transforms for one hierarchy level.
 
-    The matching is the strongest normalized-energy matching already used by the
-    certified pair preconditioner; no strength threshold is introduced.  For a
-    real magnetic energy block and a matched pair (i,j), the low-energy sign is
-    selected directly from the sign of B_ij:
+    Matching is the deterministic strongest normalized-energy matching; there is
+    no strength threshold.  For each matched pair, the 2x2 real symmetric
+    principal energy block is diagonalized analytically.  Its high-energy local
+    eigenvector is emitted as a fine coordinate and its low-energy local
+    eigenvector is the unique coarse coordinate passed to the next level.
 
-        coarse = (e_i + s e_j)/sqrt(2),
-        fine   = (e_i - s e_j)/sqrt(2),
-        s = -sign(B_ij).
-
-    For Laplace/curl-like negative off-diagonals this gives the expected smooth
-    same-sign coarse coordinate.  Each 2x2 transform is nonsingular; unmatched
-    coordinates pass directly to the next coarse level.
+    Thus the coarse direction is selected from the local magnetic energy itself,
+    not from a fixed Haar sum/difference rule and not from a configured spectral
+    threshold.  Unmatched coordinates pass to the next coarse level unchanged.
     """
 
     B = sp.csr_matrix(matrix, dtype=complex)
@@ -46,7 +44,6 @@ def _pair_split_transform(
             singles,
         )
 
-    inv_sqrt2 = 1.0 / np.sqrt(2.0)
     fine_rows: list[int] = []
     fine_cols: list[int] = []
     fine_data: list[complex] = []
@@ -55,19 +52,28 @@ def _pair_split_transform(
     coarse_data: list[complex] = []
 
     for column, (i, j) in enumerate(pairs):
+        a = float(diagonal[i])
+        d = float(diagonal[j])
         coupling = complex(B[i, j])
-        imag_scale = max(abs(coupling.real), 1.0)
+        imag_scale = max(abs(coupling.real), abs(a), abs(d), 1.0)
         if abs(coupling.imag) > 64.0 * np.finfo(float).eps * imag_scale:
             raise ValueError("magnetic hierarchy requires a real symmetric magnetic energy block")
-        sign = 1.0 if coupling.real <= 0.0 else -1.0
+        c = float(coupling.real)
+
+        # Jacobi angle: the first column is the high-energy local eigenvector and
+        # the second column the low-energy local eigenvector.  atan2 handles
+        # c=0 and a<d deterministically without an eigenvalue-gap threshold.
+        theta = 0.5 * math.atan2(2.0 * c, a - d)
+        cosine = math.cos(theta)
+        sine = math.sin(theta)
 
         fine_rows.extend((i, j))
         fine_cols.extend((column, column))
-        fine_data.extend((inv_sqrt2, -sign * inv_sqrt2))
+        fine_data.extend((cosine, sine))
 
         coarse_rows.extend((i, j))
         coarse_cols.extend((column, column))
-        coarse_data.extend((inv_sqrt2, sign * inv_sqrt2))
+        coarse_data.extend((-sine, cosine))
 
     coarse_offset = len(pairs)
     for k, i in enumerate(singles):
@@ -90,11 +96,11 @@ def _pair_split_transform(
 
 @dataclass(frozen=True)
 class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
-    """Certificate-driven multilevel energy-coordinate preconditioner.
+    """Certificate-driven multilevel local-spectral energy preconditioner.
 
-    A sequence of deterministic pair splittings produces an invertible hierarchy
-    transform T whose columns are all fine difference coordinates followed by the
-    final unresolved coarse coordinates.  With
+    A sequence of deterministic local 2x2 energy eigen-splittings produces an
+    invertible hierarchy transform T whose columns are all high-energy fine modes
+    followed by the final unresolved low-energy coarse coordinates. With
 
         B_h = T^H B T,
 
@@ -107,11 +113,11 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
         B >= m_h P,
         P^{-1} = T Q_h^{-1} T^H.
 
-    The scientific interface contains no smoother count, strength threshold,
-    damping, drop tolerance, fixed coarse dimension, or configured block size.
-    Hierarchy depth and coarse dimension follow solely from deterministic energy
-    matching; the final local block sizes follow solely from the spectral
-    block-Gershgorin certificate.
+    There is no smoother count, strength threshold, damping, drop tolerance,
+    fixed coarse ratio, spectral cutoff, or configured block size. Hierarchy
+    depth and coarse dimensions follow from deterministic matching; local coarse
+    directions are the exact lower-energy eigenvectors of the matched principal
+    blocks; final solve blocks follow only from the block-Gershgorin certificate.
     """
 
     dimension: int
@@ -148,8 +154,7 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
             F, C, pairs, _singles = _pair_split_transform(current_matrix)
             if not pairs:
                 break
-            fine_basis = (current_basis @ F).tocsr()
-            completed_fine.append(fine_basis)
+            completed_fine.append((current_basis @ F).tocsr())
             fine_dims.append(int(F.shape[1]))
 
             current_basis = (current_basis @ C).tocsr()
@@ -159,8 +164,7 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
             current_matrix.eliminate_zeros()
             coarse_dims.append(int(current_matrix.shape[0]))
 
-        columns = completed_fine + [current_basis]
-        T = sp.hstack(columns, format="csr", dtype=complex)
+        T = sp.hstack(completed_fine + [current_basis], format="csr", dtype=complex)
         if T.shape != (n, n):
             raise RuntimeError("hierarchical coordinate transform is not square")
 
@@ -190,8 +194,6 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
 
     @property
     def inverse_inf_upper_bound(self) -> float:
-        """A conservative induced-infinity upper bound for the represented P^{-1}."""
-
         T = self._transform
         row_sum = np.asarray(np.abs(T).sum(axis=1)).ravel()
         col_sum = np.asarray(np.abs(T).sum(axis=0)).ravel()
@@ -200,9 +202,11 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
         local = float(self._local_action.inverse_inf_upper_bound)
         return float(np.nextafter(norm_inf_T * local * norm_inf_TH, np.inf))
 
-    def transform_matrix(self) -> sp.csr_matrix:
-        """Return the hierarchy transform used by the represented preconditioner."""
+    @property
+    def transformed_inverse_inf_upper_bound(self) -> float:
+        return float(self._local_action.inverse_inf_upper_bound)
 
+    def transform_matrix(self) -> sp.csr_matrix:
         return self._transform.copy()
 
     def transformed_matrix(self) -> sp.csr_matrix:
@@ -210,6 +214,9 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
 
     def transformed_preconditioner_matrix(self) -> sp.csr_matrix:
         return self._local_action.preconditioner_matrix(self._transformed_matrix)
+
+    def solve_transformed(self, rhs: np.ndarray) -> np.ndarray:
+        return self._local_action.solve(rhs)
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
         vector = np.asarray(rhs, dtype=complex)
