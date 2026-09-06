@@ -7,7 +7,12 @@ from .analytic import (
     ParametricAnalyticSeries,
 )
 from .em import ParametricEMProblem, ReducedEMModel, ResidualGreedyEMReducer
-from .model import ExecutableSDFMPNEOModel, OnlinePrediction
+from .model import (
+    ExecutableSDFMPNEOModel,
+    OnlinePrediction,
+    ParametricExecutableSDFMPNEOModel,
+    ParametricOnlinePrediction,
+)
 from .thermal import ThermalSpectralModel
 
 __version__ = "0.3.0"
@@ -23,4 +28,6 @@ __all__ = [
     "ResidualGreedyEMReducer",
     "ExecutableSDFMPNEOModel",
     "OnlinePrediction",
+    "ParametricExecutableSDFMPNEOModel",
+    "ParametricOnlinePrediction",
 ]
