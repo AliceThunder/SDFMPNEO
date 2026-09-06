@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 import math
 
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from .certified_riesz import CertifiedPCGRieszAction
+from .certified_riesz import CertifiedEnergyPreconditioner, CertifiedPCGRieszAction
+
+
+BlockActionFactory = Callable[[sp.spmatrix], CertifiedEnergyPreconditioner]
 
 
 def _gamma(operation_count: int) -> float:
@@ -104,8 +108,6 @@ def _matvec_residual_component_upper(
             float(abs(value) * abs(x[int(j)]))
             for j, value in zip(indices, values)
         )
-        # Complex multiply/add plus the final subtraction are enclosed
-        # conservatively by a standard gamma_k model.
         g = _gamma(10 * max(1, len(indices)) + 4)
         matvec_error = g * scale
         value = float(abs(residual_hat[i])) + matvec_error
@@ -122,17 +124,7 @@ def _certified_inverse_inf_upper(
     A: sp.csr_matrix,
     lu,
 ) -> float:
-    """A-posteriori upper bound for ||A^-1||_inf without storing a dense inverse.
-
-    Column solves form an implicit approximate inverse X.  The explicitly
-    recomputed residual R=I-AX gives
-
-        A^-1 = X (I-R)^-1,
-        ||A^-1||_inf <= ||X||_inf / (1-||R||_inf)
-
-    whenever ||R||_inf<1.  Only row sums are retained, so the certificate uses
-    O(n) auxiliary memory although it performs n correctness-scale block solves.
-    """
+    """A-posteriori upper bound for ||A^-1||_inf without storing a dense inverse."""
 
     n = A.shape[0]
     x_row_sums = np.zeros(n, dtype=float)
@@ -158,16 +150,7 @@ def _certified_generalized_trace_upper(
     lu_K,
     inverse_inf_upper: float,
 ) -> float:
-    """Certify lambda_max(K^-1/2 D K^-1/2) by a trace upper bound.
-
-    For physical D>=0,
-
-        lambda_max <= trace(K^-1 D).
-
-    Each diagonal contribution is obtained from a sparse solve K x=D[:,j].
-    The solve error is bounded by ||K^-1||_inf times the explicitly certified
-    residual infinity norm.  No generalized eigensolver tolerance is introduced.
-    """
+    """Certify lambda_max(K^-1/2 D K^-1/2) by a trace upper bound."""
 
     n = K.shape[0]
     terms: list[float] = []
@@ -186,6 +169,44 @@ def _certified_generalized_trace_upper(
 
     trace_upper = _inflate_sum(math.fsum(terms), n)
     return float(np.nextafter(trace_upper, np.inf))
+
+
+@dataclass(frozen=True)
+class SparseLUExactBlockPreconditioner:
+    """Reference block action P=B using complete sparse LU.
+
+    The spectral-equivalence constant is exactly one at the operator level:
+
+        B >= 1 * P,  P=B.
+
+    This class is a correctness backend, not the scalable production endpoint.
+    """
+
+    dimension: int
+    lower_spectral_equivalence_bound: float
+    _lu: object
+
+    @classmethod
+    def build(cls, B: sp.spmatrix) -> "SparseLUExactBlockPreconditioner":
+        matrix = sp.csr_matrix(B, dtype=complex)
+        n = matrix.shape[0]
+        if matrix.shape != (n, n) or n == 0:
+            raise ValueError("block matrix must be non-empty and square")
+        try:
+            lu = spla.splu(matrix.tocsc())
+        except RuntimeError as exc:
+            raise ValueError("block factorization failed") from exc
+        return cls(
+            dimension=n,
+            lower_spectral_equivalence_bound=1.0,
+            _lu=lu,
+        )
+
+    def solve(self, rhs: np.ndarray) -> np.ndarray:
+        vector = np.asarray(rhs, dtype=complex)
+        if vector.shape != (self.dimension,):
+            raise ValueError("block preconditioner rhs dimension mismatch")
+        return np.asarray(self._lu.solve(vector), dtype=complex)
 
 
 @dataclass(frozen=True)
@@ -210,30 +231,39 @@ class PhysicalBlockEnergyPreconditioner:
 
         m(gamma)=2/[2+gamma+sqrt(gamma^2+4 gamma)].
 
-    The fast certificate first attempts a normalized Gershgorin bound.  When the
-    physical magnetic block is not diagonally dominant, a deterministic
-    residual-certified sparse-factorization fallback bounds
+    The two block actions are themselves certified preconditioners.  If they
+    apply P_K^-1 and P_E^-1 with
 
-        gamma <= trace(K_A^-1 D_AA)
+        K_A        >= m_K P_K,
+        D_psipsi   >= m_E P_E,
 
-    without forming a dense inverse.  Failure of either certificate is reported;
-    no diagonal shift or fitted damping is introduced.
+    then the actual outer preconditioner P=diag(P_K,P_E) satisfies
 
-    Block inverses currently use complete sparse LU as correctness-scale
-    implementations.  The outer theorem only consumes the preconditioner action
-    and proved m(gamma), so each block can later be replaced independently by a
-    certified auxiliary-space/multilevel action.
+        H >= m(gamma) min(m_K,m_E) P.
+
+    Thus block solves are replaceable without changing the Riesz-action theorem.
+    The default block backend is complete sparse LU with m_K=m_E=1.  A scalable
+    auxiliary-space/multilevel backend may implement the same contract with its
+    own proved lower spectral-equivalence constants.
+
+    gamma is first bounded by normalized Gershgorin.  If K_A is not diagonally
+    dominant, a deterministic residual-certified sparse-factorization fallback
+    bounds gamma by trace(K_A^-1 D_AA).  This fallback is certificate construction
+    work; it is separate from the replaceable block preconditioner actions.
     """
 
     n_A: int
+    dimension: int
     lower_spectral_equivalence_bound: float
     gamma_upper_bound: float
     gamma_certificate_method: str
+    magnetic_block_lower_bound: float
+    scalar_block_lower_bound: float
     magnetic_normalized_lower_bound: float
     magnetic_inverse_inf_upper_bound: float
     scalar_normalized_lower_bound: float
-    _lu_magnetic: object
-    _lu_scalar: object | None
+    _magnetic_action: CertifiedEnergyPreconditioner
+    _scalar_action: CertifiedEnergyPreconditioner | None
 
     @classmethod
     def build(
@@ -242,6 +272,7 @@ class PhysicalBlockEnergyPreconditioner:
         *,
         magnetic_block: sp.spmatrix,
         n_A: int,
+        block_action_factory: BlockActionFactory | None = None,
     ) -> "PhysicalBlockEnergyPreconditioner":
         metric = sp.csr_matrix(H, dtype=complex)
         n = metric.shape[0]
@@ -258,10 +289,6 @@ class PhysicalBlockEnergyPreconditioner:
         K.sum_duplicates()
         K.eliminate_zeros()
         K_diag = _positive_real_diagonal(K, "magnetic block")
-        try:
-            lu_K = spla.splu(K.tocsc())
-        except RuntimeError as exc:
-            raise ValueError("magnetic block factorization failed") from exc
 
         H11 = metric[:n_A, :n_A].tocsr()
         D_AA = (H11 - K).tocsr()
@@ -276,70 +303,97 @@ class PhysicalBlockEnergyPreconditioner:
             gamma_upper = float(np.nextafter(d_upper / k_lower, np.inf))
             gamma_method = "normalized_gershgorin"
         else:
-            inverse_inf_upper = _certified_inverse_inf_upper(K, lu_K)
+            try:
+                lu_K_certificate = spla.splu(K.tocsc())
+            except RuntimeError as exc:
+                raise ValueError("magnetic block factorization failed") from exc
+            inverse_inf_upper = _certified_inverse_inf_upper(K, lu_K_certificate)
             gamma_upper = _certified_generalized_trace_upper(
                 K,
                 D_AA,
-                lu_K,
+                lu_K_certificate,
                 inverse_inf_upper,
             )
             gamma_method = "residual_certified_generalized_trace"
         if gamma_upper < 0.0 or not np.isfinite(gamma_upper):
             raise ValueError("failed to obtain a finite non-negative D_AA/K_A bound")
 
+        factory = (
+            SparseLUExactBlockPreconditioner.build
+            if block_action_factory is None
+            else block_action_factory
+        )
+        magnetic_action = factory(K)
+        magnetic_lower = float(magnetic_action.lower_spectral_equivalence_bound)
+        if magnetic_lower <= 0.0:
+            raise ValueError("magnetic block action must have a positive certified lower bound")
+
         n_scalar = n - n_A
-        scalar_lower = np.inf
-        lu_scalar = None
+        scalar_lower_gershgorin = np.inf
+        scalar_action = None
+        scalar_action_lower = 1.0
         if n_scalar:
             E = metric[n_A:, n_A:].tocsr()
             E = (0.5 * (E + E.conj().T)).tocsr()
             E.sum_duplicates()
             E.eliminate_zeros()
             E_diag = _positive_real_diagonal(E, "scalar conductive block")
-            scalar_lower = _normalized_gershgorin_lower(E, E_diag)
-            # E is a principal block of the physical H>0 and hence SPD.  A
-            # positive Gershgorin value is recorded when available, but lack of
-            # diagonal dominance is not confused with loss of physical SPD.
-            try:
-                lu_scalar = spla.splu(E.tocsc())
-            except RuntimeError as exc:
-                raise ValueError("scalar conductive block factorization failed") from exc
+            scalar_lower_gershgorin = _normalized_gershgorin_lower(E, E_diag)
+            scalar_action = factory(E)
+            scalar_action_lower = float(
+                scalar_action.lower_spectral_equivalence_bound
+            )
+            if scalar_action_lower <= 0.0:
+                raise ValueError("scalar block action must have a positive certified lower bound")
 
         if n_scalar == 0 or gamma_upper == 0.0:
-            lower = 1.0
+            physical_lower = 1.0
         else:
             root = math.sqrt(gamma_upper * gamma_upper + 4.0 * gamma_upper)
-            lower = 2.0 / (2.0 + gamma_upper + root)
-            lower = float(np.nextafter(lower, 0.0))
+            physical_lower = 2.0 / (2.0 + gamma_upper + root)
+            physical_lower = float(np.nextafter(physical_lower, 0.0))
+        block_lower = min(magnetic_lower, scalar_action_lower)
+        lower = float(np.nextafter(physical_lower * block_lower, 0.0))
         if lower <= 0.0:
             raise ValueError("physical block spectral-equivalence lower bound is non-positive")
 
         return cls(
             n_A=n_A,
+            dimension=n,
             lower_spectral_equivalence_bound=lower,
             gamma_upper_bound=gamma_upper,
             gamma_certificate_method=gamma_method,
+            magnetic_block_lower_bound=magnetic_lower,
+            scalar_block_lower_bound=scalar_action_lower,
             magnetic_normalized_lower_bound=float(k_lower),
             magnetic_inverse_inf_upper_bound=float(inverse_inf_upper),
-            scalar_normalized_lower_bound=float(scalar_lower),
-            _lu_magnetic=lu_K,
-            _lu_scalar=lu_scalar,
+            scalar_normalized_lower_bound=float(scalar_lower_gershgorin),
+            _magnetic_action=magnetic_action,
+            _scalar_action=scalar_action,
         )
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
         vector = np.asarray(rhs, dtype=complex)
-        if vector.ndim != 1 or vector.size < self.n_A:
+        if vector.shape != (self.dimension,):
             raise ValueError("preconditioner rhs dimension mismatch")
-        if self._lu_scalar is None and vector.size != self.n_A:
-            raise ValueError("preconditioner rhs dimension mismatch")
-        left = np.asarray(self._lu_magnetic.solve(vector[: self.n_A]), dtype=complex)
-        if self._lu_scalar is None:
+        left = np.asarray(
+            self._magnetic_action.solve(vector[: self.n_A]),
+            dtype=complex,
+        )
+        if self._scalar_action is None:
             return left
-        right = np.asarray(self._lu_scalar.solve(vector[self.n_A :]), dtype=complex)
+        right = np.asarray(
+            self._scalar_action.solve(vector[self.n_A :]),
+            dtype=complex,
+        )
         return np.concatenate([left, right])
 
 
-def make_physical_block_pcg_riesz_factory(problem):
+def make_physical_block_pcg_riesz_factory(
+    problem,
+    *,
+    block_action_factory: BlockActionFactory | None = None,
+):
     """Create the local-H physical block PCG Riesz factory for tetrahedra."""
 
     required = ("a_basis", "magnetic_stiffness", "n_A")
@@ -355,6 +409,7 @@ def make_physical_block_pcg_riesz_factory(problem):
             H,
             magnetic_block=K_A,
             n_A=n_A,
+            block_action_factory=block_action_factory,
         )
         return CertifiedPCGRieszAction(H, preconditioner)
 
