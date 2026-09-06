@@ -8,6 +8,11 @@ from .parametric import (
     ParametricResponseNode,
     solve_parametric_response_series,
 )
+from .parametric_realization import (
+    compile_parametric_realization,
+    evaluate_parametric_stable,
+    parametric_backend_consistency_defect,
+)
 from .realization import AnalyticRealization, CompiledRealizationGraph
 
 __all__ = [
@@ -25,4 +30,7 @@ __all__ = [
     "CompiledParametricAnalyticGraph",
     "ParametricAnalyticEvolutionGraph",
     "solve_parametric_response_series",
+    "compile_parametric_realization",
+    "evaluate_parametric_stable",
+    "parametric_backend_consistency_defect",
 ]
