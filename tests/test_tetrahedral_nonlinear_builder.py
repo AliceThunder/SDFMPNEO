@@ -5,6 +5,7 @@ from sdfmpneo.em import (
     AffineConductivity,
     ConductivityRegion,
     ReciprocalLinearResistivity,
+    SparseLUReferenceRieszAction,
     tetra_face_loop_source,
 )
 from sdfmpneo.spatial import TetrahedralComplex3D
@@ -80,6 +81,27 @@ def test_one_call_nonlinear_builder_uses_certified_material_backend():
     assert reduced.reduction_certificate.certified
     assert reduced.residual_certificate(np.array([0.02])).energy_state_error_bound <= requested
     assert core.electromagnetic_problem._H_metric is None
+
+
+def test_nonlinear_core_never_falls_back_to_global_riesz_lu(monkeypatch):
+    def forbidden_reference_riesz(*_args, **_kwargs):
+        raise AssertionError("global H sparse-LU Riesz reference backend was used")
+
+    monkeypatch.setattr(
+        SparseLUReferenceRieszAction,
+        "__init__",
+        forbidden_reference_riesz,
+    )
+    core = build_nonlinear_core()
+    requested = 1e-8
+    reduced = core.build_reduced_electromagnetics(
+        [np.array([-0.1]), np.array([0.0]), np.array([0.1])],
+        requested_energy_state_error=requested,
+    )
+
+    assert reduced.reduction_certificate.certified
+    certificate = reduced.residual_certificate(np.array([0.02]))
+    assert certificate.energy_state_error_bound <= requested
 
 
 def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
