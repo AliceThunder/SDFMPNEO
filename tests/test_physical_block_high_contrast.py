@@ -1,6 +1,8 @@
 import numpy as np
+import pytest
 
 from sdfmpneo.em import (
+    AdaptiveAggregateEnergyPreconditioner,
     ConductivityRegion,
     ConstantConductivity,
     CoupledPairEnergyPreconditioner,
@@ -81,10 +83,23 @@ def test_physical_block_riesz_factory_certifies_high_contrast_tetrahedral_reduct
     _certify_reduction(problem, factory)
 
 
-def test_factorization_free_coupled_pair_blocks_certify_high_contrast_tetrahedral_reduction():
+def test_fixed_coupled_pairs_are_correctly_rejected_on_high_contrast_magnetic_block():
     problem = build_high_contrast_problem()
     factory = make_physical_block_pcg_riesz_factory(
         problem,
         block_action_factory=CoupledPairEnergyPreconditioner.build,
+    )
+    with pytest.raises(ValueError, match="coupled-pair block Gershgorin"):
+        SparseEnergyResidualGreedyEMReducer(
+            problem,
+            riesz_action_factory=factory,
+        )
+
+
+def test_certificate_driven_aggregates_certify_high_contrast_tetrahedral_reduction_without_block_sparse_lu():
+    problem = build_high_contrast_problem()
+    factory = make_physical_block_pcg_riesz_factory(
+        problem,
+        block_action_factory=AdaptiveAggregateEnergyPreconditioner.build,
     )
     _certify_reduction(problem, factory)
