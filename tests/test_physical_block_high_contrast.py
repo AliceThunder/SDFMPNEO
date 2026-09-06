@@ -13,6 +13,7 @@ from sdfmpneo.em import (
     HierarchicalEnergyPreconditioner,
     MagneticCurlSubsetEnergyPreconditioner,
     MagneticFaceCirculationEnergyPreconditioner,
+    MorseFaceCirculationEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
@@ -203,6 +204,31 @@ def test_single_level_face_energy_is_correct_but_not_scalable_after_refinement()
     assert auxiliary.lower_spectral_equivalence_bound > 0.0
     assert auxiliary.maximum_block_size == problem.n_A
     assert auxiliary.final_block_count == 1
+
+
+def test_topology_generated_morse_face_action_has_strictly_smaller_coarse_problem_after_refinement():
+    problem = build_refined_magnetic_problem(cells_per_axis=2)
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).toarray()
+    auxiliary = MorseFaceCirculationEnergyPreconditioner.build_from_problem(problem)
+
+    assert auxiliary.dimension == problem.n_A == 72
+    assert auxiliary.lower_spectral_equivalence_bound == 1.0
+    assert auxiliary.fine_dimension > 0
+    assert 0 <= auxiliary.coarse_dimension < auxiliary.dimension
+    assert auxiliary.fine_dimension + auxiliary.coarse_dimension == auxiliary.dimension
+    assert auxiliary.coarse_fraction < 1.0
+    assert np.isfinite(auxiliary.inverse_inf_upper_bound)
+
+    P = auxiliary.auxiliary_matrix().toarray()
+    remainder = 0.5 * ((K_A - P) + (K_A - P).conj().T)
+    scale = float(np.linalg.norm(K_A, 2))
+    assert np.min(np.linalg.eigvalsh(remainder).real) >= -1024.0 * np.finfo(float).eps * max(scale, 1.0)
+
+    rhs = np.arange(1, problem.n_A + 1, dtype=float).astype(complex)
+    actual = auxiliary.solve(rhs)
+    expected = np.linalg.solve(P, rhs)
+    assert np.allclose(actual, expected, rtol=2e-11, atol=2e-11)
 
 
 def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
