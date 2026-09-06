@@ -55,15 +55,21 @@ class ParametricResidualSample:
 class ParametricElectroThermalResidual:
     """Exact residual sensitivity for static U entering an affine EM RHS.
 
-    The analytic graph supplies a(a0,U,t), da/dt and their exact derivatives
-    with respect to U. The electromagnetic solve supplies dg/da. Since the
-    field problem is linear in its RHS for a fixed thermal state, the explicit
-    heat-source derivative with respect to U is obtained from directional field
-    solves for the columns of B_U. No finite-difference parameter sensitivity is
-    used.
+    The residual is the same production equation used online:
+
+        R = da + Lambda a - g_em(a,U) - f_T.
+
+    ``f_T`` is static in the declared chart, hence it does not alter the operating
+    sensitivity formula.
     """
 
-    def __init__(self, graph, electromagnetic_model, rhs_map: AffineOperatingRHSMap):
+    def __init__(
+        self,
+        graph,
+        electromagnetic_model,
+        rhs_map: AffineOperatingRHSMap,
+        thermal_forcing: np.ndarray | None = None,
+    ):
         self.graph = graph
         self.em_model = electromagnetic_model
         self.rhs_map = rhs_map
@@ -73,6 +79,21 @@ class ParametricElectroThermalResidual:
             raise ValueError("rhs map/analytic operating dimension mismatch")
         if graph.n_modes != electromagnetic_model.problem.n_thermal:
             raise ValueError("analytic/electromagnetic thermal dimension mismatch")
+        forcing = np.zeros(graph.n_modes) if thermal_forcing is None else np.asarray(thermal_forcing, dtype=float)
+        if forcing.shape != (graph.n_modes,):
+            raise ValueError("thermal_forcing dimension mismatch")
+        self.thermal_forcing = forcing
+
+    @classmethod
+    def from_vector_field(cls, graph, vector_field) -> "ParametricElectroThermalResidual":
+        if vector_field.rhs_map is None:
+            raise ValueError("parametric residual requires a vector field with rhs_map")
+        return cls(
+            graph,
+            vector_field.em_model,
+            vector_field.rhs_map,
+            thermal_forcing=vector_field.thermal_forcing,
+        )
 
     def _graph_operating_jacobians(
         self,
@@ -123,16 +144,17 @@ class ParametricElectroThermalResidual:
         operating: np.ndarray,
     ) -> ParametricResidualSample:
         u = np.asarray(operating, dtype=float)
-        a, da = self.graph.evaluate(float(t), a0=np.asarray(a0, dtype=float), operating=u)
+        initial = np.asarray(a0, dtype=float)
+        a, da = self.graph.evaluate(float(t), a0=initial, operating=u)
         rhs = self.rhs_map.evaluate(u)
 
         g, J_g_a = self.em_model.heat_source_and_jacobian_for_rhs(a, rhs)
         g = np.asarray(g, dtype=float)
         J_g_a = np.asarray(J_g_a, dtype=float)
-        J_a, J_da = self._graph_operating_jacobians(float(t), np.asarray(a0, dtype=float), u)
+        J_a, J_da = self._graph_operating_jacobians(float(t), initial, u)
         J_g_u_explicit = self._explicit_heat_source_operating_jacobian(a, rhs)
 
-        residual = da + self.graph.lambdas * a - g
+        residual = da + self.graph.lambdas * a - g - self.thermal_forcing
         J_residual = (
             J_da
             + self.graph.lambdas[:, None] * J_a
