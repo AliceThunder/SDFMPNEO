@@ -1,6 +1,8 @@
 from .algebraic_output import (
     AlgebraicHeatSourceErrorCertificate,
+    PhysicalEnergyHeatSourceErrorCertificate,
     certify_algebraic_heat_source_error,
+    certify_physical_energy_heat_source_error,
 )
 from .basic import (
     ContractionCertificate,
@@ -29,7 +31,9 @@ from .ports import (
 
 __all__ = [
     "AlgebraicHeatSourceErrorCertificate",
+    "PhysicalEnergyHeatSourceErrorCertificate",
     "certify_algebraic_heat_source_error",
+    "certify_physical_energy_heat_source_error",
     "ContractionCertificate",
     "StateErrorCertificate",
     "contraction_certificate",
