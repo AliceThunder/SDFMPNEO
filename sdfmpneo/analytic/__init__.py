@@ -1,6 +1,11 @@
 from .algebra import AnalyticSeries, DeferredResponseSeries, ResponseTerm, solve_response_series
 from .compiler import CompiledAnalyticKernel
 from .graph import AnalyticEvolutionGraph, CompiledAnalyticGraph
+from .operator import (
+    AnalyticOperatorPrediction,
+    CanonicalAnalyticIR,
+    CertifiedAnalyticEvolutionOperator,
+)
 from .parametric import (
     CompiledParametricAnalyticGraph,
     ParametricAnalyticEvolutionGraph,
@@ -33,4 +38,7 @@ __all__ = [
     "compile_parametric_realization",
     "evaluate_parametric_stable",
     "parametric_backend_consistency_defect",
+    "AnalyticOperatorPrediction",
+    "CanonicalAnalyticIR",
+    "CertifiedAnalyticEvolutionOperator",
 ]
