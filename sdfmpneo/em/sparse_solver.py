@@ -29,6 +29,7 @@ class SparseLinearSolveCertificate:
     state_error_bound: float
     iterations: int
     iterative_info: int
+    method: str
     certified: bool
 
 
@@ -88,6 +89,37 @@ class ApsiBlockTriangularPreconditioner:
         )
 
 
+def _true_residual_certificate(
+    matrix: sp.csr_matrix,
+    rhs: np.ndarray,
+    x: np.ndarray,
+    *,
+    beta: float,
+    error: float,
+    residual_target: float,
+    iterations: int,
+    iterative_info: int,
+    method: str,
+) -> SparseLinearSolveCertificate:
+    true_residual = rhs - matrix @ x
+    residual_norm = float(np.linalg.norm(true_residual))
+    rhs_norm = float(np.linalg.norm(rhs))
+    relative = residual_norm if rhs_norm == 0.0 else residual_norm / rhs_norm
+    state_bound = residual_norm / beta
+    return SparseLinearSolveCertificate(
+        requested_state_error=error,
+        stability_lower_bound=beta,
+        residual_target=residual_target,
+        residual_norm=residual_norm,
+        relative_residual_norm=float(relative),
+        state_error_bound=float(state_bound),
+        iterations=int(iterations),
+        iterative_info=int(iterative_info),
+        method=method,
+        certified=bool(state_bound <= error),
+    )
+
+
 def solve_certified_sparse_apsi(
     A: sp.spmatrix,
     b: np.ndarray,
@@ -98,10 +130,18 @@ def solve_certified_sparse_apsi(
 ) -> tuple[np.ndarray, SparseLinearSolveCertificate]:
     """Solve a sparse A-psi system and certify its algebraic state error.
 
-    The iteration budget is the electromagnetic coordinate dimension. This is a
-    dimension-derived work bound rather than a fitted iteration count. Failure to
-    attain the requested residual within that work bound returns an uncertified
-    result; the routine never relaxes the requested error.
+    Stage 1 uses block-preconditioned BiCGSTAB with an iteration work bound equal
+    to the electromagnetic coordinate dimension. This is dimension-derived, not
+    fitted. If that short-recurrence iteration does not satisfy the requested
+    a-posteriori error bound, Stage 2 deterministically falls back to a complete
+    sparse LU factorisation of the full matrix. The fallback has no drop tolerance
+    or empirical fill parameter. It provides a correctness/high-contrast baseline;
+    scalable multilevel replacement of that fallback is a separate production
+    task.
+
+    Neither stage may relax the requested state error. The returned certificate
+    is always computed from the original unpreconditioned matrix and the explicitly
+    recomputed true residual.
     """
 
     matrix = sp.csr_matrix(A, dtype=complex)
@@ -126,7 +166,7 @@ def solve_certified_sparse_apsi(
         nonlocal iterations
         iterations += 1
 
-    x, info = spla.bicgstab(
+    x_iterative, info = spla.bicgstab(
         matrix,
         rhs,
         rtol=0.0,
@@ -135,21 +175,32 @@ def solve_certified_sparse_apsi(
         M=preconditioner.as_linear_operator(),
         callback=_count,
     )
-    x = np.asarray(x, dtype=complex)
-    true_residual = rhs - matrix @ x
-    residual_norm = float(np.linalg.norm(true_residual))
-    rhs_norm = float(np.linalg.norm(rhs))
-    relative = residual_norm if rhs_norm == 0.0 else residual_norm / rhs_norm
-    state_bound = residual_norm / beta
-    certificate = SparseLinearSolveCertificate(
-        requested_state_error=error,
-        stability_lower_bound=beta,
+    x_iterative = np.asarray(x_iterative, dtype=complex)
+    iterative_certificate = _true_residual_certificate(
+        matrix,
+        rhs,
+        x_iterative,
+        beta=beta,
+        error=error,
         residual_target=residual_target,
-        residual_norm=residual_norm,
-        relative_residual_norm=float(relative),
-        state_error_bound=float(state_bound),
-        iterations=int(iterations),
+        iterations=iterations,
         iterative_info=int(info),
-        certified=bool(state_bound <= error),
+        method="block_bicgstab",
     )
-    return x, certificate
+    if iterative_certificate.certified:
+        return x_iterative, iterative_certificate
+
+    full_lu = spla.splu(matrix.tocsc())
+    x_direct = np.asarray(full_lu.solve(rhs), dtype=complex)
+    direct_certificate = _true_residual_certificate(
+        matrix,
+        rhs,
+        x_direct,
+        beta=beta,
+        error=error,
+        residual_target=residual_target,
+        iterations=iterations,
+        iterative_info=int(info),
+        method="sparse_lu_fallback",
+    )
+    return x_direct, direct_certificate
