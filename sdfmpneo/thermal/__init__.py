@@ -1,4 +1,5 @@
 from .grid3d import RectilinearThermalFV3D
+from .partial_spectral import PartialThermalSpectrum, build_partial_thermal_spectrum
 from .spectral import (
     ThermalRankSelection,
     ThermalSpectralModel,
@@ -10,4 +11,6 @@ __all__ = [
     "ThermalSpectralModel",
     "ThermalTailCertificate",
     "ThermalRankSelection",
+    "PartialThermalSpectrum",
+    "build_partial_thermal_spectrum",
 ]
