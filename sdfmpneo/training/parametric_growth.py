@@ -12,8 +12,6 @@ from sdfmpneo.analytic import (
     solve_parametric_response_series,
 )
 
-from .parametric_residual import ParametricElectroThermalResidual
-
 
 @dataclass(frozen=True)
 class ParametricQuadratureSample:
@@ -76,16 +74,34 @@ def parametric_product_candidates(
 
 
 class ParametricTangentResidualGrower:
-    """Residual-driven topology growth on an externally supplied domain rule."""
+    """One residual-driven topology-growth engine for all static parameters.
+
+    The residual model supplies the physical vector-field Jacobian ``J_F``.
+    A unit analytic response in target mode i obeys
+
+        dh/dt + lambda_ref_i h = psi.
+
+    For the production residual ``R=da/dt-F(a,p)`` its exact first variation is
+
+        D = e_i psi - (lambda_ref_i e_i + J_F[:,i]) h.
+
+    Fixed-geometry dynamics have ``J_F=J_g-diag(lambda_ref)`` and therefore
+    recover the original ``D=e_i psi-J_g[:,i]h`` formula exactly.  Geometry-
+    conditioned canonical fields use their actual transformed ``J_F(G)`` with
+    no second grower or finite-difference state sensitivity.
+    """
 
     def __init__(
         self,
         graph: ParametricAnalyticEvolutionGraph,
-        residual_model: ParametricElectroThermalResidual,
+        residual_model,
         samples: Sequence[ParametricQuadratureSample],
     ) -> None:
         if not samples:
             raise ValueError("samples cannot be empty")
+        required = ("evaluate", "with_graph", "vector_field_state_jacobian")
+        if any(not hasattr(residual_model, name) for name in required):
+            raise TypeError("residual_model does not implement the shared growth interface")
         self.graph = graph
         self.residual_model = residual_model
         self.samples = tuple(samples)
@@ -104,16 +120,7 @@ class ParametricTangentResidualGrower:
 
     def objective(self, graph: ParametricAnalyticEvolutionGraph | None = None) -> float:
         active = self.graph if graph is None else graph
-        residual_model = (
-            self.residual_model
-            if active is self.graph
-            else ParametricElectroThermalResidual(
-                active,
-                self.residual_model.em_model,
-                self.residual_model.rhs_map,
-                thermal_forcing=self.residual_model.thermal_forcing,
-            )
-        )
+        residual_model = self.residual_model if active is self.graph else self.residual_model.with_graph(active)
         total = 0.0
         for sample in self.samples:
             value = residual_model.evaluate(
@@ -149,7 +156,9 @@ class ParametricTangentResidualGrower:
         inner = 0.0
         norm2 = 0.0
         e = np.zeros(self.graph.n_modes, dtype=float)
-        e[candidate.target_mode] = 1.0
+        i = candidate.target_mode
+        e[i] = 1.0
+        lam = float(self.graph.lambdas[i])
         compiled = self.graph.compile()
 
         for sample in self.samples:
@@ -158,13 +167,18 @@ class ParametricTangentResidualGrower:
                 a0=sample.initial,
                 operating=sample.operating,
             )
-            _, J_g_a = self.residual_model.em_model.heat_source_and_jacobian_for_rhs(
-                state.a, state.rhs
+            JF = np.asarray(
+                self.residual_model.vector_field_state_jacobian(
+                    state.a, sample.operating
+                ),
+                dtype=float,
             )
+            if JF.shape != (self.graph.n_modes, self.graph.n_modes):
+                raise ValueError("physical vector-field Jacobian dimension mismatch")
             parameters = compiled.parameter_vector(sample.initial, sample.operating)
             psi = float(np.real(source.evaluate(sample.time, self.graph.lambdas, parameters)))
             h = float(np.real(response.evaluate(sample.time, self.graph.lambdas, parameters)))
-            tangent = e * psi - np.asarray(J_g_a)[:, candidate.target_mode] * h
+            tangent = e * psi - (lam * e + JF[:, i]) * h
             inner += sample.weight * float(state.residual @ tangent)
             norm2 += sample.weight * float(tangent @ tangent)
 
