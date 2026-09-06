@@ -1,24 +1,91 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import numpy as np
 import scipy.linalg
 
 
-def _h_inner(x: np.ndarray, y: np.ndarray, H: np.ndarray) -> complex:
-    return np.vdot(x, H @ y)
+@dataclass(frozen=True)
+class RieszFactor:
+    """Stable coordinate map for a Hermitian positive-definite Riesz metric.
 
+    If H = L L^H, then the dual norm and Riesz lift are
 
-def _h_normalize(v: np.ndarray, H: np.ndarray, basis: Sequence[np.ndarray]) -> np.ndarray:
-    w = np.asarray(v, dtype=complex).copy()
-    for q in basis:
-        w -= q * _h_inner(q, w, H)
-    n2 = np.real(_h_inner(w, w, H))
-    if n2 <= 0:
-        raise np.linalg.LinAlgError("Candidate vector is linearly dependent in the H metric")
-    return w / np.sqrt(n2)
+        ||r||_{H^-1} = ||L^-1 r||_2,
+        H^-1 r       = L^-H L^-1 r.
+
+    All residual-Riesz orthogonalisation is carried out in these normalized
+    coordinates instead of explicitly solving H w = r and forming V^H H V.
+    """
+
+    H: np.ndarray
+    L: np.ndarray
+
+    @classmethod
+    def build(cls, H: np.ndarray) -> "RieszFactor":
+        H = np.asarray(H, dtype=complex)
+        L = scipy.linalg.cholesky(H, lower=True, check_finite=True)
+        return cls(H=H, L=L)
+
+    def dual_coordinates(self, residual: np.ndarray) -> np.ndarray:
+        return scipy.linalg.solve_triangular(
+            self.L,
+            np.asarray(residual, dtype=complex),
+            lower=True,
+            check_finite=True,
+        )
+
+    def dual_norm(self, residual: np.ndarray) -> float:
+        return float(np.linalg.norm(self.dual_coordinates(residual)))
+
+    def riesz_lift(self, residual: np.ndarray) -> np.ndarray:
+        y = self.dual_coordinates(residual)
+        return scipy.linalg.solve_triangular(
+            self.L.conj().T,
+            y,
+            lower=False,
+            check_finite=True,
+        )
+
+    def orthonormalized_lift(
+        self,
+        residual: np.ndarray,
+        basis: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return the H-normalized residual lift orthogonal to an H-ON basis.
+
+        Linear-dependence detection uses the standard machine-precision
+        backward-error scale eps*n*||y||. This is a numerical-algebra safeguard,
+        not a scientific model threshold.
+        """
+
+        y = self.dual_coordinates(residual)
+        original_norm = float(np.linalg.norm(y))
+
+        if basis is not None and basis.size:
+            V = np.asarray(basis, dtype=complex)
+            Y = self.L.conj().T @ V
+            y = y - Y @ (Y.conj().T @ y)
+
+        norm = float(np.linalg.norm(y))
+        backward_scale = (
+            np.finfo(float).eps
+            * max(1, y.size)
+            * max(1.0, original_norm)
+        )
+        if norm <= backward_scale:
+            raise np.linalg.LinAlgError(
+                "Riesz lift is linearly dependent at the machine-precision backward-error scale"
+            )
+
+        return scipy.linalg.solve_triangular(
+            self.L.conj().T,
+            y / norm,
+            lower=False,
+            check_finite=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -51,7 +118,7 @@ class ParametricEMProblem:
             expected = (self.n_thermal, self.n_thermal, n, n)
             if self.H_loss_state.shape != expected:
                 raise ValueError(f"H_loss_state must have shape {expected}")
-        scipy.linalg.cholesky(self.H_metric, lower=True, check_finite=True)
+        RieszFactor.build(self.H_metric)
 
     @property
     def n_thermal(self) -> int:
@@ -84,6 +151,11 @@ class ParametricEMProblem:
 class ReducedEMModel:
     problem: ParametricEMProblem
     V: np.ndarray
+    riesz: RieszFactor | None = None
+
+    def __post_init__(self) -> None:
+        if self.riesz is None:
+            self.riesz = RieszFactor.build(self.problem.H_metric)
 
     def operator_reduced(self, a: np.ndarray) -> np.ndarray:
         return self.V.conj().T @ self.problem.operator(a) @ self.V
@@ -102,14 +174,15 @@ class ReducedEMModel:
         return self.problem.b - self.problem.operator(a) @ x
 
     def residual_dual_norm(self, a: np.ndarray) -> float:
-        r = self.full_residual(a)
-        z = scipy.linalg.solve(self.problem.H_metric, r, assume_a="her")
-        return float(np.sqrt(max(0.0, np.real(np.vdot(r, z)))))
+        return self.riesz.dual_norm(self.full_residual(a))
 
     def heat_source(self, a: np.ndarray) -> np.ndarray:
         x = self.state(a)
         return np.array(
-            [np.real(np.vdot(x, self.problem.loss_operator(j, a) @ x)) for j in range(self.problem.n_thermal)]
+            [
+                np.real(np.vdot(x, self.problem.loss_operator(j, a) @ x))
+                for j in range(self.problem.n_thermal)
+            ]
         )
 
     def heat_source_and_jacobian(self, a: np.ndarray):
@@ -139,10 +212,11 @@ class ResidualGreedyEMReducer:
 
     def __init__(self, problem: ParametricEMProblem):
         self.problem = problem
+        self.riesz = RieszFactor.build(problem.H_metric)
 
     def initial_basis(self) -> np.ndarray:
-        w = scipy.linalg.solve(self.problem.H_metric, self.problem.b, assume_a="her")
-        return _h_normalize(w, self.problem.H_metric, [])[:, None]
+        q = self.riesz.orthonormalized_lift(self.problem.b)
+        return q[:, None]
 
     def build(self, candidate_states: Iterable[np.ndarray], tolerance: float) -> ReducedEMModel:
         if tolerance <= 0:
@@ -150,18 +224,18 @@ class ResidualGreedyEMReducer:
         states = [np.asarray(a, dtype=float) for a in candidate_states]
         if not states:
             raise ValueError("candidate_states cannot be empty")
+
         V = self.initial_basis()
         while True:
-            model = ReducedEMModel(self.problem, V)
+            model = ReducedEMModel(self.problem, V, self.riesz)
             values = np.array([model.residual_dual_norm(a) for a in states])
             idx = int(np.argmax(values))
             if float(values[idx]) <= tolerance or V.shape[1] >= self.problem.n_em:
                 return model
-            r = model.full_residual(states[idx])
-            w = scipy.linalg.solve(self.problem.H_metric, r, assume_a="her")
-            basis = [V[:, i] for i in range(V.shape[1])]
+
+            residual = model.full_residual(states[idx])
             try:
-                q = _h_normalize(w, self.problem.H_metric, basis)
+                q = self.riesz.orthonormalized_lift(residual, V)
             except np.linalg.LinAlgError:
                 return model
             V = np.column_stack([V, q])
