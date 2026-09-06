@@ -108,9 +108,8 @@ class DiagonalGershgorinEnergyPreconditioner:
 
             radius_hat = math.fsum(terms)
             # Per off-diagonal term: product, sqrt, division, magnitude plus the
-            # summation contribution.  gamma_k is the standard floating-point
-            # model bound; using five operations per term is conservative for
-            # this scalar enclosure and contains no fitted safety factor.
+            # summation contribution. gamma_k is the standard floating-point
+            # model bound; the operation count is algebraically determined.
             operation_count = 5 * len(terms) + 2
             if operation_count * eps >= 1.0:
                 raise FloatingPointError("matrix row is too large for the gamma_k bound")
@@ -138,7 +137,7 @@ class DiagonalGershgorinEnergyPreconditioner:
 class CertifiedPCGRieszAction:
     """PCG Riesz action stopped only by a physical/certificate decision.
 
-    The method solves H y=r.  For an iterate y_h with residual s=r-Hy_h and a
+    The method solves H y=r. For an iterate y_h with residual s=r-Hy_h and a
     certified preconditioner H>=mP,
 
         ||y-y_h||_H^2
@@ -151,7 +150,7 @@ class CertifiedPCGRieszAction:
         <= ||r||_{H^{-1}}
         <= ||y_h||_H+delta.
 
-    No ``rtol``/``atol`` belongs to the scientific interface.  ``solve`` stops
+    No ``rtol``/``atol`` belongs to the scientific interface. ``solve`` stops
     when a requested energy-action error is proven; ``decide_dual_norm`` stops
     as soon as the certified interval lies wholly on one side of a threshold.
     The dimension n is the deterministic exact-arithmetic CG work bound.
@@ -174,17 +173,54 @@ class CertifiedPCGRieszAction:
         self.preconditioner = preconditioner
         self.m = m
 
-    def _energy_norm(self, vector: np.ndarray) -> float:
+    def _dot_backward(self, left: np.ndarray, right: np.ndarray) -> float:
+        """Absolute floating-point envelope for one length-n complex dot product.
+
+        The envelope scales with the actual product magnitude. Using an absolute
+        floor such as ``max(1, ||u||||v||)`` is invalid for late Krylov vectors:
+        it can make a perfectly positive O(1e-18) energy look numerically zero.
+        """
+
+        scale = float(np.linalg.norm(left)) * float(np.linalg.norm(right))
+        if scale == 0.0:
+            return 0.0
+        eps = np.finfo(float).eps
+        operation_count = max(1, 8 * self.n)
+        if operation_count * eps >= 1.0:
+            raise FloatingPointError("dot-product dimension is too large for the gamma_k bound")
+        gamma = operation_count * eps / (1.0 - operation_count * eps)
+        return float(np.nextafter(gamma * scale, np.inf))
+
+    def _energy_norm_interval(self, vector: np.ndarray) -> tuple[float, float, float]:
         v = np.asarray(vector, dtype=complex)
-        q = float(np.real(np.vdot(v, self.H @ v)))
-        backward = (
-            np.finfo(float).eps
-            * max(1, self.n)
-            * max(1.0, float(np.linalg.norm(v)) * float(np.linalg.norm(self.H @ v)))
-        )
-        if q < -backward:
+        Hv = self.H @ v
+        q_hat = float(np.real(np.vdot(v, Hv)))
+        backward = self._dot_backward(v, Hv)
+        if q_hat < -backward:
             raise np.linalg.LinAlgError("H is not positive definite in the supplied direction")
-        return float(np.sqrt(max(q, 0.0)))
+        q_lower = max(0.0, q_hat - backward)
+        q_upper = max(0.0, q_hat + backward)
+        central = float(np.sqrt(max(q_hat, 0.0)))
+        lower = float(np.nextafter(np.sqrt(q_lower), 0.0))
+        upper = float(np.nextafter(np.sqrt(q_upper), np.inf))
+        return central, lower, upper
+
+    def _energy_norm(self, vector: np.ndarray) -> float:
+        central, _lower, _upper = self._energy_norm_interval(vector)
+        return central
+
+    def _preconditioned_residual_upper(
+        self,
+        residual: np.ndarray,
+        z: np.ndarray,
+    ) -> float:
+        q_hat = float(np.real(np.vdot(residual, z)))
+        backward = self._dot_backward(residual, z)
+        if q_hat < -backward:
+            raise np.linalg.LinAlgError(
+                "preconditioner is not positive definite in the residual direction"
+            )
+        return float(np.nextafter(max(0.0, q_hat) + backward, np.inf))
 
     def _certificate(
         self,
@@ -194,32 +230,27 @@ class CertifiedPCGRieszAction:
         iterations: int,
         requested: float | None,
     ) -> CertifiedRieszActionResult:
+        del rhs  # retained in the signature to document the certified problem.
         z = self.preconditioner.solve(residual)
-        residual_preconditioned = float(np.real(np.vdot(residual, z)))
-        backward = (
-            np.finfo(float).eps
-            * max(1, self.n)
-            * max(1.0, float(np.linalg.norm(residual)) * float(np.linalg.norm(z)))
+        residual_preconditioned_upper = self._preconditioned_residual_upper(residual, z)
+        delta = float(
+            np.nextafter(
+                np.sqrt(residual_preconditioned_upper / self.m),
+                np.inf,
+            )
         )
-        if residual_preconditioned < -backward:
-            raise np.linalg.LinAlgError("preconditioner is not positive definite in the residual direction")
-        residual_preconditioned = max(residual_preconditioned, 0.0)
-        delta = np.nextafter(
-            np.sqrt(residual_preconditioned / self.m),
-            np.inf,
-        )
-        xnorm = self._energy_norm(x)
-        lower = np.nextafter(max(0.0, xnorm - delta), 0.0)
-        upper = np.nextafter(xnorm + delta, np.inf)
+        xnorm, xnorm_lower, xnorm_upper = self._energy_norm_interval(x)
+        lower = float(np.nextafter(max(0.0, xnorm_lower - delta), 0.0))
+        upper = float(np.nextafter(xnorm_upper + delta, np.inf))
         meets = requested is not None and delta <= requested
         return CertifiedRieszActionResult(
             vector=np.asarray(x, dtype=complex).copy(),
             residual=np.asarray(residual, dtype=complex).copy(),
             iterations=int(iterations),
-            energy_action_error_bound=float(delta),
+            energy_action_error_bound=delta,
             approximate_vector_energy_norm=float(xnorm),
-            dual_norm_lower_bound=float(lower),
-            dual_norm_upper_bound=float(upper),
+            dual_norm_lower_bound=lower,
+            dual_norm_upper_bound=upper,
             requested_energy_action_error=requested,
             meets_requested_energy_action_error=bool(meets),
         )
@@ -231,29 +262,31 @@ class CertifiedPCGRieszAction:
         x = np.zeros(self.n, dtype=complex)
         residual = b.copy()
         z = self.preconditioner.solve(residual)
-        rho = float(np.real(np.vdot(residual, z)))
-        if rho < 0.0:
+        rho_hat = float(np.real(np.vdot(residual, z)))
+        backward = self._dot_backward(residual, z)
+        if rho_hat < -backward:
             raise np.linalg.LinAlgError("preconditioner must be positive definite")
+        rho = max(rho_hat, 0.0)
         return b, x, residual, z, z.copy(), rho
 
     def _step(self, x, residual, p, rho):
         Hp = self.H @ p
         denominator = float(np.real(np.vdot(p, Hp)))
-        backward = (
-            np.finfo(float).eps
-            * max(1, self.n)
-            * max(1.0, float(np.linalg.norm(p)) * float(np.linalg.norm(Hp)))
-        )
-        if denominator <= backward:
-            raise np.linalg.LinAlgError("PCG direction lost positive H energy")
+        denominator_backward = self._dot_backward(p, Hp)
+        if denominator <= denominator_backward:
+            raise np.linalg.LinAlgError(
+                "PCG search-direction energy is not provably positive at floating-point backward-error scale"
+            )
+
         alpha = rho / denominator
         x_new = x + alpha * p
         residual_new = residual - alpha * Hp
         z_new = self.preconditioner.solve(residual_new)
-        rho_new = float(np.real(np.vdot(residual_new, z_new)))
-        if rho_new < -backward:
+        rho_hat_new = float(np.real(np.vdot(residual_new, z_new)))
+        rho_backward = self._dot_backward(residual_new, z_new)
+        if rho_hat_new < -rho_backward:
             raise np.linalg.LinAlgError("preconditioned residual lost positivity")
-        rho_new = max(rho_new, 0.0)
+        rho_new = max(rho_hat_new, 0.0)
         beta = 0.0 if rho == 0.0 else rho_new / rho
         p_new = z_new + beta * p
         return x_new, residual_new, p_new, rho_new
@@ -274,6 +307,8 @@ class CertifiedPCGRieszAction:
             return result
 
         for iteration in range(1, self.n + 1):
+            if rho == 0.0:
+                return result
             x, residual, p, rho = self._step(x, residual, p, rho)
             result = self._certificate(b, x, residual, iteration, requested)
             if result.meets_requested_energy_action_error:
@@ -298,6 +333,8 @@ class CertifiedPCGRieszAction:
             return RieszNormDecision("above", target, result)
 
         for iteration in range(1, self.n + 1):
+            if rho == 0.0:
+                return RieszNormDecision("indeterminate", target, result)
             x, residual, p, rho = self._step(x, residual, p, rho)
             result = self._certificate(b, x, residual, iteration, None)
             if result.dual_norm_upper_bound <= target:
