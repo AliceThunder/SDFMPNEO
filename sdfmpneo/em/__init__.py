@@ -21,6 +21,10 @@ from .constitutive import (
     ConstantConductivity,
     ReciprocalLinearResistivity,
 )
+from .curl_block_riesz import (
+    CurlAuxiliaryPhysicalBlockPreconditioner,
+    make_curl_auxiliary_physical_pcg_riesz_factory,
+)
 from .diagnostics import RegionLossProjector, build_region_loss_projector
 from .energy_solver import (
     PhysicalEnergySparseApsiSolver,
@@ -92,6 +96,8 @@ __all__ = [
     "PhysicalBlockEnergyPreconditioner",
     "SparseLUExactBlockPreconditioner",
     "make_physical_block_pcg_riesz_factory",
+    "CurlAuxiliaryPhysicalBlockPreconditioner",
+    "make_curl_auxiliary_physical_pcg_riesz_factory",
     "CertifiedEnergyPreconditioner",
     "CertifiedPCGRieszAction",
     "CertifiedRieszActionResult",
