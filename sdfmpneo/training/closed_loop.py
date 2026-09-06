@@ -24,21 +24,31 @@ class ClosedLoopTrainingResult:
 class SolutionDataFreeClosedLoopTrainer:
     """Residual-grown analytic graph driven only by the closed physical model.
 
-    Quadrature samples construct tangent candidates; they never certify the final
-    graph.  A caller-supplied continuous-domain certificate is evaluated after
-    each accepted topology update. Exhausting ``work_budget`` returns
-    ``indeterminate`` and cannot create a false training certificate.
+    ``physical_model`` can be the fixed-geometry production vector field or any
+    residual model implementing ``evaluate/with_graph/vector_field_state_jacobian``
+    (including the cross-geometry residual).  The same tangent grower is used in
+    both cases.  Samples construct candidates only; the caller-supplied continuous
+    domain certificate is the sole stopping criterion.
     """
 
-    def __init__(self, graph, vector_field, samples: Sequence[ParametricQuadratureSample]):
+    def __init__(self, graph, physical_model, samples: Sequence[ParametricQuadratureSample]):
         self.graph = graph
-        self.vector_field = vector_field
+        self.physical_model = physical_model
         self.samples = tuple(samples)
-        if vector_field.rhs_map is None:
-            raise ValueError("closed-loop parametric training requires vector_field.rhs_map")
-        self.residual_model = ParametricElectroThermalResidual.from_vector_field(
-            graph, vector_field
-        )
+        if all(hasattr(physical_model, name) for name in ("evaluate", "with_graph", "vector_field_state_jacobian")):
+            self._base_residual = physical_model
+        else:
+            vector_field = physical_model
+            if getattr(vector_field, "rhs_map", None) is None:
+                raise ValueError("closed-loop parametric training requires vector_field.rhs_map")
+            self._base_residual = ParametricElectroThermalResidual.from_vector_field(
+                graph, vector_field
+            )
+
+    def _residual_for(self, graph):
+        if graph is self.graph and getattr(self._base_residual, "graph", None) is graph:
+            return self._base_residual
+        return self._base_residual.with_graph(graph)
 
     def train(
         self,
@@ -58,9 +68,7 @@ class SolutionDataFreeClosedLoopTrainer:
             return ClosedLoopTrainingResult(graph, "certified", 0, certificate, degree, 0)
 
         while work < work_budget:
-            residual_model = ParametricElectroThermalResidual.from_vector_field(
-                graph, self.vector_field
-            )
+            residual_model = self._residual_for(graph)
             grower = ParametricTangentResidualGrower(graph, residual_model, self.samples)
             candidates = parametric_product_candidates(graph, degree)
             if not candidates:
@@ -78,11 +86,13 @@ class SolutionDataFreeClosedLoopTrainer:
             certificate = certify(graph)
             if getattr(certificate, "status", None) == "certified":
                 self.graph = graph
+                self._base_residual = self._base_residual.with_graph(graph)
                 return ClosedLoopTrainingResult(
                     graph, "certified", accepted, certificate, degree, work
                 )
 
         self.graph = graph
+        self._base_residual = self._base_residual.with_graph(graph)
         certificate = certify(graph)
         return ClosedLoopTrainingResult(
             graph,
