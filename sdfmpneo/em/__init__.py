@@ -16,6 +16,7 @@ from .grid3d import (
 )
 from .nonlinear import NonlinearSpatialAphiProblem
 from .ports import ImpressedCurrentPortSet, MultiPortImpedanceResult
+from .reciprocal_series import ReciprocalSeriesCertificate, certified_reciprocal_polynomials
 from .reduced import (
     ParametricEMProblem,
     ReducedEMModel,
@@ -28,6 +29,10 @@ from .tetra import (
     tetra_face_loop_source,
 )
 from .tetra_diagnostics import build_tetrahedral_region_loss_projector
+from .tetra_nonlinear import (
+    NonlinearTetrahedralApsiProblem,
+    TetrahedralConstitutiveCertificate,
+)
 
 __all__ = [
     "CompatibleAphiDiscretization",
@@ -54,4 +59,8 @@ __all__ = [
     "build_tetrahedral_apsi_from_thermal_modes",
     "tetra_face_loop_source",
     "build_tetrahedral_region_loss_projector",
+    "ReciprocalSeriesCertificate",
+    "certified_reciprocal_polynomials",
+    "NonlinearTetrahedralApsiProblem",
+    "TetrahedralConstitutiveCertificate",
 ]
