@@ -33,6 +33,7 @@ from .grid3d import (
     face_loop_source,
 )
 from .nonlinear import NonlinearSpatialAphiProblem
+from .pair_block import CoupledPairEnergyPreconditioner
 from .ports import (
     CertifiedEnergyReducedMultiPortResult,
     CertifiedEnergySparseMultiPortResult,
@@ -89,6 +90,7 @@ __all__ = [
     "CertifiedPCGRieszAction",
     "CertifiedRieszActionResult",
     "DiagonalGershgorinEnergyPreconditioner",
+    "CoupledPairEnergyPreconditioner",
     "RieszNormDecision",
     "CertifiedRieszAction",
     "RieszActionFactory",
