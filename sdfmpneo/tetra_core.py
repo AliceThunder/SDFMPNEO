@@ -6,16 +6,17 @@ from typing import Iterable, Mapping, Sequence
 import numpy as np
 
 from .em import (
+    BlockActionFactory,
     ConductivityRegion,
     ImpressedCurrentPortSet,
     NonlinearTetrahedralApsiProblem,
     NonlinearTetrahedralRegionLossEvaluator,
     ResidualGreedyEMReducer,
-    RieszActionFactory,
     SparseEnergyResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
     build_tetrahedral_region_loss_projector,
+    make_physical_block_pcg_riesz_factory,
 )
 from .spatial import TetrahedralComplex3D, TetrahedralThermalAssembly
 from .thermal import ThermalSpectralModel, ThermalTailCertificate
@@ -236,16 +237,19 @@ class TetrahedralElectroThermalCore:
         candidate_thermal_states: Iterable[np.ndarray],
         *,
         requested_energy_state_error: float,
-        riesz_action_factory: RieszActionFactory | None = None,
+        block_action_factory: BlockActionFactory | None = None,
     ):
-        """Build the production nonlinear sparse physical-energy EM reduced space.
+        """Build the certified nonlinear sparse physical-energy EM reduced space.
 
-        Every full-order operator remains sparse. Residual certification and
-        enrichment consume a CertifiedRieszAction, so an exact H^{-1} solve is
-        not part of the reduction theorem. If no factory is supplied, the
-        deterministic sparse-LU reference backend is used for correctness-scale
-        builds; production auxiliary-space actions can be injected through the
-        same interface.
+        The production path always uses the same physical-block PCG Riesz
+        architecture.  For H=K+D, the outer action is certified by
+
+            H >= m(gamma) min(m_K,m_E) P,
+
+        where m_K and m_E come from the replaceable magnetic/scalar block
+        actions.  The default block action is complete sparse LU strictly as a
+        correctness backend; a certified multilevel/auxiliary-space action can
+        replace it without changing the scientific method or error theorem.
 
             ||e||_H <= sqrt(2) ||r||_(H^-1).
 
@@ -258,12 +262,13 @@ class TetrahedralElectroThermalCore:
                 "build_reduced_electromagnetics is the certified nonlinear sparse-energy path; "
                 "use build_affine_verification_reduced_electromagnetics for the affine verification backend"
             )
-        kwargs = {}
-        if riesz_action_factory is not None:
-            kwargs["riesz_action_factory"] = riesz_action_factory
+        riesz_factory = make_physical_block_pcg_riesz_factory(
+            self.electromagnetic_problem,
+            block_action_factory=block_action_factory,
+        )
         return SparseEnergyResidualGreedyEMReducer(
             self.electromagnetic_problem,
-            **kwargs,
+            riesz_action_factory=riesz_factory,
         ).build(
             candidate_thermal_states,
             requested_energy_state_error=requested_energy_state_error,
