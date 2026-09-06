@@ -32,7 +32,7 @@ def centered_tetrahedral_mesh():
     return TetrahedralComplex3D.build(vertices, tetrahedra)
 
 
-def test_one_call_nonlinear_builder_uses_certified_material_backend():
+def build_nonlinear_core():
     mesh = centered_tetrahedral_mesh()
     copper = np.array([True, True, False, False])
     seawater = ~copper
@@ -60,6 +60,11 @@ def test_one_call_nonlinear_builder_uses_certified_material_backend():
         thermal_conductivity_tetra=np.ones(mesh.n_tetrahedra) * 3.0,
         source_current=source,
     )
+    return core
+
+
+def test_one_call_nonlinear_builder_uses_certified_material_backend():
+    core = build_nonlinear_core()
     assert core.material_backend == "certified_nonlinear"
     assert core.conductivity_reference_tetra is None
     assert core.conductivity_regions is not None
@@ -74,4 +79,25 @@ def test_one_call_nonlinear_builder_uses_certified_material_backend():
     )
     assert reduced.reduction_certificate.certified
     assert reduced.residual_certificate(np.array([0.02])).energy_state_error_bound <= requested
+    assert core.electromagnetic_problem._H_metric is None
+
+
+def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
+    core = build_nonlinear_core()
+    matrix_type = type(core.electromagnetic_discretization.a_basis)
+
+    def forbidden_toarray(*_args, **_kwargs):
+        raise AssertionError("full-order sparse gauge basis was densified")
+
+    monkeypatch.setattr(matrix_type, "toarray", forbidden_toarray)
+    mesh = core.mesh
+    edge_currents = np.column_stack(
+        [
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0])).real,
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
+        ]
+    )
+    ports = core.build_ports(edge_currents, names=("p1", "p2"))
+
+    assert ports.coordinate_rhs.shape == (core.electromagnetic_problem.n_em, 2)
     assert core.electromagnetic_problem._H_metric is None
