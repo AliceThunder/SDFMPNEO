@@ -1,4 +1,13 @@
 from .grid3d import RectilinearThermalFV3D
-from .spectral import ThermalSpectralModel
+from .spectral import (
+    ThermalRankSelection,
+    ThermalSpectralModel,
+    ThermalTailCertificate,
+)
 
-__all__ = ["RectilinearThermalFV3D", "ThermalSpectralModel"]
+__all__ = [
+    "RectilinearThermalFV3D",
+    "ThermalSpectralModel",
+    "ThermalTailCertificate",
+    "ThermalRankSelection",
+]
