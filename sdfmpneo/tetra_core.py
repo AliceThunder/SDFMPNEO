@@ -6,7 +6,9 @@ from typing import Iterable, Mapping, Sequence
 import numpy as np
 
 from .em import (
+    ConductivityRegion,
     ImpressedCurrentPortSet,
+    NonlinearTetrahedralApsiProblem,
     ResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
@@ -14,6 +16,62 @@ from .em import (
 )
 from .spatial import TetrahedralComplex3D, TetrahedralThermalAssembly
 from .thermal import ThermalSpectralModel, ThermalTailCertificate
+
+
+def _build_thermal_components(
+    mesh: TetrahedralComplex3D,
+    *,
+    rho_cp_tetra: np.ndarray,
+    thermal_conductivity_tetra: np.ndarray,
+    initial_temperature_deviation_free: np.ndarray | None,
+    source_dual_bound: float | None,
+    requested_state_tolerance: float | None,
+):
+    thermal_assembly = mesh.assemble_p1_thermal(
+        rho_cp_tetra=rho_cp_tetra,
+        conductivity_tetra=thermal_conductivity_tetra,
+        homogeneous_dirichlet_boundary=True,
+    )
+    full_spectrum = ThermalSpectralModel.build(
+        thermal_assembly.M,
+        thermal_assembly.K,
+    )
+
+    certificate_inputs = (
+        initial_temperature_deviation_free,
+        source_dual_bound,
+        requested_state_tolerance,
+    )
+    supplied = tuple(value is not None for value in certificate_inputs)
+    if any(supplied) and not all(supplied):
+        raise ValueError(
+            "certified thermal truncation requires initial_temperature_deviation_free, "
+            "source_dual_bound, and requested_state_tolerance together"
+        )
+
+    if all(supplied):
+        selection = full_spectrum.select_certified_rank(
+            initial_field=np.asarray(initial_temperature_deviation_free, dtype=float),
+            source_dual_bound=float(source_dual_bound),
+            requested_state_tolerance=float(requested_state_tolerance),
+        )
+        thermal_model = selection.model
+        certificate = selection.certificate
+    else:
+        thermal_model = full_spectrum
+        certificate = None
+
+    local_modes = []
+    for k in range(thermal_model.rank):
+        full_mode = thermal_assembly.expand_free(thermal_model.Phi[:, k])
+        local_modes.append(full_mode[mesh.tetrahedra])
+    return (
+        thermal_assembly,
+        full_spectrum,
+        thermal_model,
+        certificate,
+        np.asarray(local_modes, dtype=float),
+    )
 
 
 @dataclass(frozen=True)
@@ -33,9 +91,11 @@ class TetrahedralElectroThermalCore:
     thermal_model: ThermalSpectralModel
     thermal_tail_certificate: ThermalTailCertificate | None
     thermal_mode_local_values: np.ndarray
-    conductivity_reference_tetra: np.ndarray
-    conductivity_temperature_slope_tetra: np.ndarray
-    electromagnetic_discretization: TetrahedralApsiDiscretization
+    material_backend: str
+    conductivity_reference_tetra: np.ndarray | None
+    conductivity_temperature_slope_tetra: np.ndarray | None
+    conductivity_regions: tuple[ConductivityRegion, ...] | None
+    electromagnetic_discretization: object
     electromagnetic_problem: object
 
     @classmethod
@@ -54,45 +114,20 @@ class TetrahedralElectroThermalCore:
         source_dual_bound: float | None = None,
         requested_state_tolerance: float | None = None,
     ) -> "TetrahedralElectroThermalCore":
-        thermal_assembly = mesh.assemble_p1_thermal(
+        (
+            thermal_assembly,
+            full_spectrum,
+            thermal_model,
+            certificate,
+            local_modes_array,
+        ) = _build_thermal_components(
+            mesh,
             rho_cp_tetra=rho_cp_tetra,
-            conductivity_tetra=thermal_conductivity_tetra,
-            homogeneous_dirichlet_boundary=True,
+            thermal_conductivity_tetra=thermal_conductivity_tetra,
+            initial_temperature_deviation_free=initial_temperature_deviation_free,
+            source_dual_bound=source_dual_bound,
+            requested_state_tolerance=requested_state_tolerance,
         )
-        full_spectrum = ThermalSpectralModel.build(
-            thermal_assembly.M,
-            thermal_assembly.K,
-        )
-
-        certificate_inputs = (
-            initial_temperature_deviation_free,
-            source_dual_bound,
-            requested_state_tolerance,
-        )
-        supplied = tuple(value is not None for value in certificate_inputs)
-        if any(supplied) and not all(supplied):
-            raise ValueError(
-                "certified thermal truncation requires initial_temperature_deviation_free, "
-                "source_dual_bound, and requested_state_tolerance together"
-            )
-
-        if all(supplied):
-            selection = full_spectrum.select_certified_rank(
-                initial_field=np.asarray(initial_temperature_deviation_free, dtype=float),
-                source_dual_bound=float(source_dual_bound),
-                requested_state_tolerance=float(requested_state_tolerance),
-            )
-            thermal_model = selection.model
-            certificate = selection.certificate
-        else:
-            thermal_model = full_spectrum
-            certificate = None
-
-        local_modes = []
-        for k in range(thermal_model.rank):
-            full_mode = thermal_assembly.expand_free(thermal_model.Phi[:, k])
-            local_modes.append(full_mode[mesh.tetrahedra])
-        local_modes_array = np.asarray(local_modes, dtype=float)
 
         sigma0 = np.asarray(conductivity_reference_tetra, dtype=float).copy()
         slope = np.asarray(conductivity_temperature_slope_tetra, dtype=float).copy()
@@ -117,9 +152,79 @@ class TetrahedralElectroThermalCore:
             thermal_model=thermal_model,
             thermal_tail_certificate=certificate,
             thermal_mode_local_values=local_modes_array,
+            material_backend="affine_verification",
             conductivity_reference_tetra=sigma0,
             conductivity_temperature_slope_tetra=slope,
+            conductivity_regions=None,
             electromagnetic_discretization=em_discretization,
+            electromagnetic_problem=em_problem,
+        )
+
+    @classmethod
+    def build_nonlinear(
+        cls,
+        mesh: TetrahedralComplex3D,
+        *,
+        omega: float,
+        reluctivity_tetra: np.ndarray,
+        conductivity_regions: Sequence[ConductivityRegion],
+        temperature_reference_nodal: np.ndarray,
+        constitutive_relative_error_budget: float,
+        rho_cp_tetra: np.ndarray,
+        thermal_conductivity_tetra: np.ndarray,
+        source_current: np.ndarray,
+        initial_temperature_deviation_free: np.ndarray | None = None,
+        source_dual_bound: float | None = None,
+        requested_state_tolerance: float | None = None,
+    ) -> "TetrahedralElectroThermalCore":
+        """Build the real nonlinear material path without conductivity linearization."""
+
+        (
+            thermal_assembly,
+            full_spectrum,
+            thermal_model,
+            certificate,
+            local_modes_array,
+        ) = _build_thermal_components(
+            mesh,
+            rho_cp_tetra=rho_cp_tetra,
+            thermal_conductivity_tetra=thermal_conductivity_tetra,
+            initial_temperature_deviation_free=initial_temperature_deviation_free,
+            source_dual_bound=source_dual_bound,
+            requested_state_tolerance=requested_state_tolerance,
+        )
+
+        reference_nodal = np.asarray(temperature_reference_nodal, dtype=float)
+        if reference_nodal.shape != (mesh.n_nodes,):
+            raise ValueError("temperature_reference_nodal must have shape (n_nodes,)")
+        reference_local = reference_nodal[mesh.tetrahedra]
+        regions = tuple(conductivity_regions)
+        em_problem = NonlinearTetrahedralApsiProblem(
+            mesh,
+            omega=omega,
+            reluctivity_tetra=reluctivity_tetra,
+            source_current=source_current,
+            temperature_reference_local=reference_local,
+            thermal_modes_local=local_modes_array,
+            conductivity_regions=regions,
+            constitutive_relative_error_budget=constitutive_relative_error_budget,
+        )
+
+        if em_problem.n_thermal != thermal_model.rank:
+            raise RuntimeError("internal nonlinear tetrahedral electrothermal rank mismatch")
+
+        return cls(
+            mesh=mesh,
+            thermal_assembly=thermal_assembly,
+            full_thermal_spectrum=full_spectrum,
+            thermal_model=thermal_model,
+            thermal_tail_certificate=certificate,
+            thermal_mode_local_values=local_modes_array,
+            material_backend="certified_nonlinear",
+            conductivity_reference_tetra=None,
+            conductivity_temperature_slope_tetra=None,
+            conductivity_regions=regions,
+            electromagnetic_discretization=em_problem,
             electromagnetic_problem=em_problem,
         )
 
@@ -163,8 +268,13 @@ class TetrahedralElectroThermalCore:
         self,
         regions: Mapping[str, np.ndarray],
     ):
-        """Build total Joule-power diagnostics for named tetrahedral regions."""
+        """Build total Joule-power diagnostics for the affine tetrahedral path."""
 
+        if self.conductivity_reference_tetra is None or self.conductivity_temperature_slope_tetra is None:
+            raise NotImplementedError(
+                "nonlinear tetrahedral region diagnostics require the nonlinear constitutive evaluator, "
+                "not the affine RegionLossProjector"
+            )
         return build_tetrahedral_region_loss_projector(
             self.mesh,
             self.electromagnetic_discretization,
