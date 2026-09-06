@@ -21,6 +21,7 @@ from .grid3d import (
 )
 from .nonlinear import NonlinearSpatialAphiProblem
 from .ports import (
+    CertifiedEnergyReducedMultiPortResult,
     CertifiedEnergySparseMultiPortResult,
     CertifiedSparseMultiPortResult,
     ImpressedCurrentPortSet,
@@ -80,6 +81,7 @@ __all__ = [
     "MultiPortImpedanceResult",
     "CertifiedSparseMultiPortResult",
     "CertifiedEnergySparseMultiPortResult",
+    "CertifiedEnergyReducedMultiPortResult",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
