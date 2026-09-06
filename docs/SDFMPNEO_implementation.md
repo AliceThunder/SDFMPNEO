@@ -1,17 +1,17 @@
 # SDF-MPNEO implementation specification
 
-This document is the executable architecture contract for the current SDF-MPNEO electromagnetic–thermal core. It must remain consistent with `docs/SDFMPNEO_theory.tex`, `docs/SPARSE_ENERGY_SOLVER.md`, and `docs/SPARSE_ENERGY_REDUCTION.md`.
+This document is the executable architecture contract for the current SDF-MPNEO electromagnetic–thermal core. It must remain consistent with `docs/SDFMPNEO_theory.tex`, `docs/SPARSE_ENERGY_SOLVER.md`, `docs/CERTIFIED_RIESZ_ACTION.md`, and `docs/SPARSE_ENERGY_REDUCTION.md`.
 
 The production scientific path obeys the following invariants:
 
 - no geometry-specific impedance solver in the core path;
 - no full-order electromagnetic or thermal **solution snapshots** for reduced-space construction;
 - no transient solution labels for analytic-network training;
-- no empirical fixed electromagnetic/thermal rank, neural width/depth, near/far split, penalty gauge, or solver tolerance;
+- no empirical fixed electromagnetic/thermal rank, neural width/depth, near/far split, penalty gauge, block damping, or unexplained solver tolerance;
 - all accepted approximation orders and reduced dimensions are controlled by explicit error/convergence certificates;
 - the certified nonlinear tetrahedral electromagnetic path remains sparse at full order;
-- the state-dependent physical energy metric is used for electromagnetic error certification;
-- the fixed reference energy metric is only a reduced-basis coordinate device, never a substitute for the local error theorem;
+- electromagnetic error certification always uses the state-dependent physical energy metric;
+- the fixed reference energy metric is only a reduced-basis coordinate device;
 - any missing error contribution is exposed as an uncertified/pending term rather than absorbed into a fitted safety factor.
 
 ---
@@ -27,8 +27,11 @@ sdfmpneo/
 ├── em/
 │   ├── tetra_nonlinear.py         # certified nonlinear sparse A-psi problem
 │   ├── reciprocal_series.py       # certified copper reciprocal law
-│   ├── sparse_solver.py           # sparse energy/full-order correctness solvers
+│   ├── sparse_solver.py           # sparse full-order correctness solvers
 │   ├── energy_solver.py           # H=K+D physical energy theorem
+│   ├── riesz_action.py            # certified Riesz-action protocol + reference backend
+│   ├── certified_riesz.py         # certified PCG action + preconditioner contract
+│   ├── block_riesz.py             # physical magnetic/scalar block theorem
 │   ├── sparse_reduced.py          # production snapshot-free sparse EM reduction
 │   ├── ports.py                   # sparse port projection + certified Z/R/L/M
 │   ├── tetra_nonlinear_diagnostics.py
@@ -41,11 +44,11 @@ sdfmpneo/
 ├── analytic/                      # intrinsic arbitrary-time analytic network
 ├── training/                      # physical residual and topology growth
 ├── certification/                 # state/output/material/coupling certificates
-├── tetra_core.py                  # one-call unstructured electrothermal builder
+├── tetra_core.py                  # one-call nonlinear electrothermal production core
 └── model.py                       # arbitrary-time prediction interfaces
 ```
 
-The orthogonal-grid and affine tetrahedral implementations remain useful for mathematical verification. They are not allowed to redefine the certified nonlinear production path.
+The orthogonal-grid and affine tetrahedral implementations remain verification tools. They do not redefine the certified nonlinear production path.
 
 ---
 
@@ -54,18 +57,13 @@ The orthogonal-grid and affine tetrahedral implementations remain useful for mat
 The production electromagnetic state uses gauge-reduced reciprocal `A-psi` coordinates. At thermal reduced state `a`,
 
 ```text
-A(a) x(a) = b.
+A(a)x(a)=b,
+A(a)=K+iD(a),
+K>=0,
+D(a)>=0.
 ```
 
-The sparse operator is decomposed physically as
-
-```text
-A(a) = K + i D(a),
-K >= 0,
-D(a) >= 0.
-```
-
-`K` is the gauge-reduced magnetic curl-curl contribution and `D(a)` is the conductive electric-energy contribution. Copper, seawater, and all other conductive regions are represented through spatial constitutive laws inside `D(a)`.
+`K` is the gauge-reduced magnetic curl-curl contribution. `D(a)` is the conductive electric-energy contribution. Copper, seawater, and other conductive regions are represented by spatial constitutive laws inside `D(a)`.
 
 Required production interface:
 
@@ -78,30 +76,25 @@ class NonlinearTetrahedralApsiProblem:
     def constitutive_certificate(self, a): ...
 ```
 
-Dense methods may exist only as compatibility wrappers for small verification tests. Production reduction, loss evaluation, ports, and certificates must not depend on them.
+Dense compatibility methods may exist only for small verification problems. Production reduction, loss evaluation, ports, and certification must not depend on them.
 
-No empirical AC-resistance correction is added. Copper skin/proximity and seawater induced-current effects belong to the volumetric electromagnetic field model.
+No empirical AC-resistance correction is added. Copper skin/proximity effects and seawater induced-current effects belong to the volumetric electromagnetic field problem.
 
 ---
 
 ## 3. Certified nonlinear material integration
 
-For copper resistivity
+For copper
 
 ```text
-rho(T) = rho_ref [1 + alpha(T-T_ref)]
+rho(T)=rho_ref[1+alpha(T-T_ref)],
+sigma(T)=sigma_ref/d(T),
+d(T)=1+alpha(T-T_ref).
 ```
 
-conductivity is
+Inside a P1 tetrahedron, `d(x)` is affine. Reciprocal and reciprocal-square terms are represented by certified geometric series about the exact element range centre. The retained order is the smallest integer satisfying the declared constitutive remainder bound.
 
-```text
-sigma(T) = sigma_ref / d(T),
-d(T) = 1 + alpha(T-T_ref).
-```
-
-Inside a P1 tetrahedron, `d(x)` is affine. The reciprocal and reciprocal-square terms are represented by certified geometric series about the exact element range centre. The retained order is the smallest integer satisfying the declared constitutive remainder bound.
-
-Every retained polynomial term is integrated analytically against first-order Nedelec basis functions through barycentric monomial identities. The same constitutive representation is used by
+Every retained polynomial term is integrated analytically against first-order Nedelec basis functions. The same constitutive representation is used by
 
 ```text
 A(a),
@@ -115,70 +108,173 @@ The field and heat-source paths therefore cannot silently use inconsistent condu
 
 ---
 
-## 4. Physical electromagnetic energy metric
+## 4. Physical electromagnetic energy theorem
 
-At every thermal state define
-
-```text
-H(a) = K + D(a).
-```
-
-For any complex field vector `v`,
+Define
 
 ```text
-|v^H A(a) v|
-= sqrt[(v^H K v)^2 + (v^H D(a) v)^2]
->= v^H H(a) v / sqrt(2).
+H(a)=K+D(a).
 ```
 
-Thus the production stability constant is structural:
+For every complex field vector `v`,
 
 ```text
-beta_H >= 1/sqrt(2).
+|v^H A(a)v|
+= sqrt[(v^H K v)^2+(v^H D(a)v)^2]
+>= v^H H(a)v/sqrt(2).
 ```
 
-For residual
+Therefore
 
 ```text
-r = b - A(a) x_h,
+beta_H>=1/sqrt(2)
 ```
 
-the state error satisfies
+and for residual `r=b-A(a)x_h`,
 
 ```text
 ||x-x_h||_H(a)
-<= sqrt(2) ||r||_(H(a)^-1).
+<= sqrt(2)||r||_(H(a)^-1).
 ```
 
-This theorem replaces the old production concept of a fixed Riesz metric plus an externally estimated minimum singular value. The old construction may remain in verification modules, but it is not the nonlinear production certificate.
+This structural constant is independent of the copper/seawater conductivity ratio. A fitted minimum singular value or conductivity correction is not part of the production certificate.
 
-Required energy interface:
-
-```python
-class ApsiEnergyMetric:
-    def solve(self, rhs): ...      # H(a) y = rhs
-    def norm(self, x): ...         # sqrt(x^H H(a) x)
-    def dual_norm(self, r): ...    # sqrt(r^H H(a)^-1 r)
-```
-
-The current implementation uses sparse LU for the exact `H(a)^-1` action. This is a correctness baseline. A later scalable implementation must preserve the same mathematical interface and certificate.
+The production method consumes the dual norm through a **certified Riesz action**. It does not require an exact global `H(a)^-1` solve.
 
 ---
 
-## 5. Output-driven full-order sparse correctness solve
+## 5. Certified Riesz-action contract
 
-A scientific linear-solver tolerance is not configured independently. Instead, requested engineering-output accuracy determines the required field-state accuracy.
+A Riesz action approximates
+
+```text
+y=H^-1 r
+```
+
+by `y_tilde` and must prove
+
+```text
+||y-y_tilde||_H<=delta.
+```
+
+Then
+
+```text
+max(0,||y_tilde||_H-delta)
+<= ||r||_(H^-1)
+<= ||y_tilde||_H+delta.
+```
+
+The executable interface is conceptually
+
+```python
+class CertifiedRieszAction:
+    def solve(self, rhs, requested_energy_action_error): ...
+    def decide_dual_norm(self, rhs, threshold): ...
+```
+
+All reducer and output decisions use certified intervals, not an internal Krylov tolerance.
+
+For a preconditioner `P` satisfying
+
+```text
+H>=mP,
+```
+
+the PCG residual `s=r-Hy_tilde` gives
+
+```text
+||H^-1r-y_tilde||_H^2
+<= (1/m)s^H P^-1 s.
+```
+
+`CertifiedPCGRieszAction` stops only after a physical error target or a dual-norm threshold decision has been proved.
+
+---
+
+## 6. Physical magnetic/scalar block preconditioner
+
+Partition the local energy metric into gauge-reduced magnetic coordinates and conductive scalar coordinates:
+
+```text
+H = [[K_A + D_AA, D_Apsi],
+     [D_psiA,       D_psipsi]].
+```
+
+Tree-cotree gauge elimination makes `K_A>0`; conductivity assembly gives `D>=0`.
+
+If a certified constant `gamma` satisfies
+
+```text
+D_AA<=gamma K_A,
+```
+
+then conductive Cauchy-Schwarz plus the optimal Young inequality gives
+
+```text
+H>=m_phys(gamma)diag(K_A,D_psipsi),
+```
+
+where
+
+```text
+m_phys(gamma)
+=2/[2+gamma+sqrt(gamma^2+4gamma)].
+```
+
+No fitted block weight or damping parameter appears.
+
+### 6.1 Replaceable block actions
+
+If the magnetic and scalar block actions apply `P_K^-1` and `P_E^-1` and prove
+
+```text
+K_A      >= m_K P_K,
+D_psipsi >= m_E P_E,
+```
+
+then
+
+```text
+P=diag(P_K,P_E)
+```
+
+satisfies
+
+```text
+H>=m_phys(gamma)min(m_K,m_E)P.
+```
+
+This is the production scalability interface. The current default `SparseLUExactBlockPreconditioner` uses exact block matrices as `P_K` and `P_E`, hence `m_K=m_E=1`, but it is only a correctness backend. Regression tests replace both blocks with non-LU certified actions while `scipy.sparse.linalg.splu` is disabled.
+
+### 6.2 Gamma certificate
+
+The first certificate attempts normalized Gershgorin. When the magnetic block is not diagonally dominant, the current correctness fallback uses an explicitly residual-certified sparse factorization of `K_A` to prove
+
+```text
+gamma
+<= lambda_max(K_A^-1/2 D_AA K_A^-1/2)
+<= trace(K_A^-1 D_AA).
+```
+
+The factorization residual is propagated into the trace upper bound. Failure produces an error; no diagonal shift is introduced.
+
+This factorization is used only for `gamma` certificate construction. It is not a global `H^-1` Riesz solve. Replacing this fallback by a scalable factorization-free proof is a remaining production obligation.
+
+---
+
+## 7. Output-driven full-order correctness solve
+
+The separate full-order verification solver remains available. Requested engineering-output accuracy determines its required field-state accuracy.
 
 For closed port source `b_i`,
 
 ```text
 |Delta Z_ij|
-<= omega ||b_i||_(H^-1) ||Delta x_j||_H.
+<= omega||b_i||_(H^-1)||Delta x_j||_H.
 ```
 
-Therefore a requested per-entry impedance error `epsilon_Z` determines the required energy-state error.
-
-The correctness solver follows:
+The correctness solver follows
 
 ```text
 energy-preconditioned sparse Krylov
@@ -192,279 +288,259 @@ energy-preconditioned sparse Krylov
         +--> recompute and certify again
 ```
 
-No ILU drop tolerance, fitted fill factor, or relaxed residual threshold defines correctness. The sparse LU fallback is not claimed to be production-scalable; it is the deterministic correctness reference until the multilevel `H^-1` stage is implemented.
+This full-order `A` fallback is a verification/correctness path. It is not the equilibrium solve used by the production reduced model.
 
 ---
 
-## 6. Production snapshot-free electromagnetic reduction
+## 8. Production snapshot-free electromagnetic reduction
 
-The certified nonlinear path uses `SparseEnergyResidualGreedyEMReducer`.
+The certified nonlinear path uses `SparseEnergyResidualGreedyEMReducer` with the physical-block Riesz factory created by
 
-### 6.1 Reduced equilibrium
+```python
+make_physical_block_pcg_riesz_factory(problem)
+```
 
-For basis `V`,
+through `TetrahedralElectroThermalCore.build_reduced_electromagnetics()`.
+
+### 8.1 Reduced equilibrium
 
 ```text
-A_r(a) = V^H A(a) V,
-b_r = V^H b,
+A_r(a)=V^H A(a)V,
+b_r=V^H b,
 A_r(a)c(a)=b_r,
-x_r(a)=V c(a).
+x_r(a)=Vc(a).
 ```
 
-Only `A_r` is dense. The full-order `A(a)` remains sparse.
+Only `A_r` is dense. The full-order operator remains sparse.
 
-### 6.2 Local residual certificate
+### 8.2 Local residual certificate
 
 ```text
-r(a) = b - A(a)x_r(a),
-eta(a) = sqrt(2)||r(a)||_(H(a)^-1).
+r(a)=b-A(a)x_r(a),
+eta(a)=sqrt(2)||r(a)||_(H(a)^-1).
 ```
 
-The reducer accepts a state/excitation only when the declared energy-state error target is satisfied. It never converts this target into an unrelated algebraic residual tolerance.
+A state/excitation is accepted only when the certified dual-norm **upper bound** proves the declared energy-state target.
 
-### 6.3 Residual-Riesz enrichment
+### 8.3 Residual-Riesz enrichment
 
-For the worst certified residual in the current construction domain,
+For an unresolved state/excitation,
 
 ```text
-y = H(a)^-1 r(a).
+y_tilde ~= H(a)^-1 r(a)
 ```
 
-Append `y` to the reduced span. No full-order solution state `A(a)^-1b` is used as a training snapshot.
+is obtained from the certified Riesz action and appended to the span. The complete residual is then recomputed. Inexact enrichment can change convergence rate but cannot create a false certificate.
 
-For multiple excitations, construct one space over the joint state-by-RHS domain.
+No full-order solution state `A(a)^-1b` is used as a basis snapshot.
 
-### 6.4 Local metric versus reference coordinate metric
+### 8.4 Reference coordinate metric
 
-The error theorem always uses the local physical metric
+The error theorem always uses local `H(a)`. The basis coordinate system uses only
 
 ```text
-H(a)=K+D(a).
+H0=H(0).
 ```
 
-The basis is stored using only the intrinsic reference-state metric
+For candidate basis matrix `W`, form the small Gram matrix
 
 ```text
-H0 = H(a=0).
-```
-
-`H0` is a coordinate metric, not an error surrogate.
-
-For candidate basis matrix `W`, form only the small Gram matrix
-
-```text
-G = W^H H0 W = L L^H
+G=W^H H0 W=LL^H
 ```
 
 and whiten
 
 ```text
-V = W L^(-H).
+V=WL^(-H),
+V^H H0 V=I
 ```
 
-Hence
+up to floating-point backward error. No dense full-order Cholesky factor is formed.
 
-```text
-V^H H0 V = I
-```
+### 8.5 Finite versus continuous certification
 
-up to floating-point backward error, without a dense full-order Cholesky factor.
-
-High-contrast orthogonality tests use a conditioning-aware arithmetic envelope based on
-
-```text
-|V|^T |H0| |V|
-```
-
-and the standard `gamma_k` floating-point model. A fixed `C*eps*n` test is invalid when the physical energy entries undergo large cancellation.
-
-### 6.5 Finite versus continuous certification
-
-The current greedy constructor certifies the explicitly declared candidate state/excitation set. This finite certificate must not be presented as a proof over a continuous parameter domain.
-
-A production continuous-domain layer must bound the residual supremum over thermal state, geometry, frequency, source, and any other declared parameters using deterministic interval/spectral arguments or an equivalent rigorous method.
+The greedy constructor certifies the explicitly declared candidate state/excitation set. It does not convert sample density into a continuous-domain proof.
 
 ---
 
-## 7. Certified reduced multiport outputs
+## 9. Joint WPT multiport reduction and outputs
 
-Let port source matrix be
+A WPT port set contains unit closed impressed-current source columns
 
 ```text
 B=[b_1,...,b_p].
 ```
 
-At one thermal state solve only the reduced system
+The top-level nonlinear core accepts
 
-```text
-A_r C = V^H B,
-X_r = V C.
+```python
+core.build_reduced_electromagnetics(
+    candidate_thermal_states,
+    port_set=ports,
+    requested_energy_state_error=epsilon_H,
+)
 ```
 
-Then
+and calls the same `build_multi_rhs` construction for every port RHS. Thus one global basis covers the declared state-by-port domain.
+
+At one thermal state
 
 ```text
-Z_r = i omega B^T X_r,
-R_r = Re(Z_r),
-L_r = Im(Z_r)/omega.
+A_r C=V^H B,
+X_r=VC,
+Z_r=i omega B^T X_r,
+R_r=Re(Z_r),
+L_r=Im(Z_r)/omega.
 ```
 
-For each port column,
+For reduced residual column `r_j`,
 
 ```text
-r_j = b_j - A x_r,j,
-epsilon_j = sqrt(2)||r_j||_(H^-1).
+||e_j||_H
+<= beta_H^-1 upper(||r_j||_(H^-1)).
 ```
 
-The output certificate is
+Hence
 
 ```text
 |Delta Z_ij|
-<= omega ||b_i||_(H^-1) epsilon_j,
-
-|Delta R_ij| <= |Delta Z_ij|,
-|Delta L_ij| <= |Delta Z_ij|/omega.
+<= omega
+   * upper(||b_i||_(H^-1))
+   * upper(||r_j||_(H^-1))/beta_H.
 ```
 
-Mutual-inductance entries inherit the same inductance bound.
+and
 
-The full-order sparse operator is used only for residual/Riesz certification. No full-order electromagnetic equilibrium solve is hidden inside the reduced multiport query.
+```text
+|Delta R_ij|<=|Delta Z_ij|,
+|Delta L_ij|<=|Delta Z_ij|/omega.
+```
 
-The port coordinate projection must accept the sparse gauge basis directly. `build_ports()` must not call `toarray()` on the full-order gauge basis.
+Mutual inductance inherits the same inductance bound.
+
+The reduced model stores its Riesz-action factory. `ports.evaluate_reduced_physical_certified()` reuses that factory by default, so online output certification cannot silently revert to the old global sparse-LU reference action.
+
+Regression tests execute
+
+```text
+build_ports
+-> joint multi-RHS build_reduced_electromagnetics
+-> evaluate_reduced_physical_certified
+-> certified Z/R/L/M
+```
+
+with `SparseLUReferenceRieszAction` disabled.
+
+The port coordinate projection accepts the sparse gauge basis directly and must not densify it.
 
 ---
 
-## 8. Reduced Joule source and Jacobian
+## 10. Reduced Joule source and Jacobian
 
-For each thermal test mode `j`,
+For thermal test mode `j`,
 
 ```text
-q_j(a) = Re[x_r^H H_j(a) x_r].
+q_j(a)=Re[x_r^H H_j(a)x_r].
 ```
 
-The loss matrices `H_j(a)` are sparse full-order physical operators projected through the reduced state. The reduced electromagnetic sensitivity is
+The reduced electromagnetic sensitivity is
 
 ```text
 A_r dc/da_k
-= -[V^H (dA/da_k) V]c
+= -[V^H(dA/da_k)V]c
   + V^H db/da_k.
 ```
 
-For the current impressed-source model `db/da_k=0`.
-
-Then
+For the current impressed-source model `db/da_k=0`. Therefore
 
 ```text
 dq_j/da_k
-= 2 Re[(dx/da_k)^H H_j x]
-  + Re[x^H (dH_j/da_k) x].
+=2Re[(dx/da_k)^H H_jx]
+ +Re[x^H(dH_j/da_k)x].
 ```
 
-No finite-difference thermal perturbation is required.
-
-Copper and seawater total losses are evaluated from the same electromagnetic state and constitutive operators used in the field equation.
+No finite-difference thermal perturbation is required. Copper and seawater losses are evaluated from the same field state and constitutive operators used by the electromagnetic equation.
 
 ---
 
-## 9. Thermal spectral reduction
+## 11. Thermal spectral reduction
 
 Solve
 
 ```text
-K_T phi_i = lambda_i M_T phi_i,
-phi_i^T M_T phi_j = delta_ij.
+K_T phi_i=lambda_i M_T phi_i,
+phi_i^T M_T phi_j=delta_ij.
 ```
 
 The thermal basis is deterministic physics, not network-generated.
 
-The retained rank is not a configured integer. With a certified initial tail and source dual bound, the builder selects the smallest rank satisfying the spectral-tail state target. Otherwise the correctness implementation retains the full discrete spectrum.
+The retained rank is not a configured integer. With a certified initial tail and source dual bound, the builder selects the smallest rank satisfying the spectral-tail target. Otherwise the correctness implementation retains the full discrete spectrum.
 
 For first omitted eigenvalue `lambda_(r+1)`, initial tail `E0`, and source dual bound `Q`,
 
 ```text
 ||T_tail(t)||_M
-<= exp(-lambda_(r+1)t) E0
- + [1-exp(-lambda_(r+1)t)]Q/lambda_(r+1).
+<= exp(-lambda_(r+1)t)E0
+ +[1-exp(-lambda_(r+1)t)]Q/lambda_(r+1).
 ```
 
-Production scaling requires a partial eigensolver together with a certified lower bound on the first omitted eigenvalue.
+A production partial eigensolver must retain a certified lower bound for the first omitted eigenvalue.
 
 ---
 
-## 10. Closed electrothermal reduced operator
+## 12. Closed electrothermal reduced operator
 
 The reduced thermal dynamics are
 
 ```text
-da/dt + Lambda_T a = g_em(a;U) + f_T(U).
+da/dt+Lambda_T a=g_em(a;U)+f_T(U).
 ```
 
-`g_em` is obtained from the reduced electromagnetic equilibrium and the projected Joule source:
-
-```python
-class ElectroThermalClosure:
-    def g(self, a, U):
-        c = em.solve_reduced(a, U)
-        return em.project_heat_source(a, U, c)
-
-    def jacobian(self, a, U):
-        return em.exact_reduced_heat_jacobian(a, U)
-```
-
-The electromagnetic field is quasi-static relative to the thermal evolution, so no electromagnetic transient time marching is introduced into the thermal surrogate.
+`g_em` comes from the reduced electromagnetic equilibrium and projected Joule source. The electromagnetic field is quasi-static relative to thermal evolution; no electromagnetic transient time marching is introduced.
 
 ---
 
-## 11. Intrinsic analytic evolution network
+## 13. Intrinsic analytic evolution network
 
-The network represents the arbitrary-time map
+The network represents
 
 ```text
-(a0,U,t) -> a(t)
+(a0,U,t)->a(t)
 ```
 
-inside one analytic graph. Initial state and static operating conditions are graph-internal analytic nodes; an external conditioning network does not generate the network coefficients.
+inside one analytic graph. Initial state and static operating conditions are graph-internal analytic nodes; no external conditioning network generates its coefficients.
 
-Analytic atoms are closed under the required operations and have the form
+Analytic atoms have the closed form
 
 ```text
 t^m exp[-(n dot lambda)t].
 ```
 
-The graph supplies both
-
-```text
-a(t),
-da/dt(t)
-```
-
-analytically.
-
-The response operator uses exact/state-space or entire-function evaluation so repeated/near-repeated decay rates do not require an empirical resonance threshold.
+The graph supplies both `a(t)` and `da/dt(t)` analytically. Exact/state-space evaluation handles repeated and near-repeated decay rates without an empirical resonance threshold.
 
 No inference time stepping is allowed in the final arbitrary-time evaluator.
 
 ---
 
-## 12. Residual-grown analytic topology
+## 14. Residual-grown analytic topology
 
-The physical thermal residual is
+The thermal physical residual is
 
 ```text
-R_T = da/dt + Lambda_T a - g_em(a;U) - f_T(U).
+R_T=da/dt+Lambda_T a-g_em(a;U)-f_T(U).
 ```
 
-Candidate analytic response nodes are generated from already active analytic/state/parameter nodes. Candidate selection is driven by unresolved physical residual information and exact reduced electromagnetic heat-source sensitivities.
+Candidate analytic response nodes are generated from active analytic/state/parameter nodes. Candidate selection uses unresolved physical residual information and exact reduced electromagnetic heat-source sensitivities.
 
 After adding a candidate, the complete nonlinear residual is re-evaluated. A tangent approximation alone cannot certify acceptance.
 
-The scientific method contains no fixed `num_layers` or `hidden_width`. Growth terminates only when the propagated certified error target is met or the procedure explicitly reports that certification has not been achieved.
+The scientific method contains no fixed `num_layers` or `hidden_width`. Growth terminates only when the propagated certified target is met or certification is explicitly reported as unsuccessful.
 
 ---
 
-## 13. Error decomposition
+## 15. Error decomposition
 
-The electromagnetic contribution to the coupled thermal error budget must keep distinct causes separate:
+The electromagnetic contribution remains separated by physical cause:
 
 ```text
 eta_EM
@@ -475,15 +551,15 @@ eta_EM
  + eta_outer.
 ```
 
-Current executable terms include:
+Current executable terms:
 
 ```text
 eta_constitutive : nonlinear material-series remainder,
-eta_algebraic    : sparse field/Riesz algebraic error where certified,
+eta_algebraic    : certified sparse field/Riesz action error,
 eta_EM_ROM       : reduced-space residual error on the declared certified set/domain.
 ```
 
-Pending production terms are explicit:
+Pending terms are explicit:
 
 ```text
 eta_mesh,
@@ -492,27 +568,27 @@ eta_outer.
 
 They cannot be hidden by increasing another tolerance.
 
-For the thermal evolution, if
+For thermal evolution, if
 
 ```text
 kappa
-= lambda_min(Lambda_T)
-  - sup lambda_max(sym(dg_em/da))
+=lambda_min(Lambda_T)
+ -sup lambda_max(sym(dg_em/da))
 ```
 
 has a verified positive lower bound, a uniform-in-time estimate may use
 
 ```text
-||e_T(t)|| <= eta_total/kappa.
+||e_T(t)||<=eta_total/kappa.
 ```
 
 Otherwise only a finite-time certificate may be returned.
 
 ---
 
-## 14. Offline construction contract
+## 16. Offline and online contracts
 
-The current fixed-operator-family offline flow is
+### Offline fixed-operator-family construction
 
 ```text
 conforming tetrahedral geometry/material regions
@@ -521,10 +597,10 @@ conforming tetrahedral geometry/material regions
         |       +--> certified thermal basis/rank
         |
         +--> sparse nonlinear A-psi operator
-                +--> local physical energy H(a)
+                +--> local H(a)
                 +--> constitutive certificate
-                +--> sparse residual-Riesz EM basis growth
-                +--> joint physical port RHS coverage
+                +--> physical-block certified Riesz action
+                +--> joint port RHS residual-Riesz ROM growth
                 +--> reduced loss/Jacobian operators
         |
         +--> closed reduced electrothermal dynamics
@@ -535,13 +611,7 @@ conforming tetrahedral geometry/material regions
 
 No full-order solved field/transient trajectories are consumed as training data.
 
-When geometry/frequency/operator-family parameterization is enabled, the same construction must be extended with rigorous reference maps/operator remainders and continuous-domain certification. Sampling density alone cannot define validity.
-
----
-
-## 15. Online query contract
-
-For a compiled fixed operator family:
+### Online arbitrary-time query
 
 ```python
 def evaluate(model, operating, T0, t):
@@ -551,26 +621,14 @@ def evaluate(model, operating, T0, t):
     em = model.em.solve_reduced(a, operating)
     outputs = model.em.outputs(em, a, operating)
     cert = model.certification.evaluate(a, da, em, outputs)
-
-    return Prediction(
-        thermal_coeff=a,
-        Z=outputs.Z,
-        R=outputs.R,
-        L=outputs.L,
-        M=outputs.M,
-        P_cu=outputs.P_cu,
-        P_sea=outputs.P_sea,
-        certificate=cert,
-    )
+    return Prediction(a, outputs, cert)
 ```
 
-There is no loop over thermal time steps.
-
-The current correctness implementation may still traverse sparse full-order matrices for a-posteriori certification of reduced electromagnetic outputs. The **equilibrium solve** remains reduced-order. A later deployment compiler may replace these certification actions with offline-separated bounds/tensors once rigorous continuous-domain envelopes are available.
+There is no loop over thermal time steps. Sparse full-order matrices may still be traversed for a-posteriori certification of reduced outputs, but the electromagnetic equilibrium solve remains reduced-order.
 
 ---
 
-## 16. Verification-only interfaces
+## 17. Verification-only interfaces
 
 The following remain deliberately available for mathematical regression:
 
@@ -579,22 +637,23 @@ The following remain deliberately available for mathematical regression:
 - `ParametricEMProblem`;
 - `ReducedEMModel`;
 - `ResidualGreedyEMReducer` with dense Cholesky-Riesz coordinates;
+- `SparseLUReferenceRieszAction` as a generic global-Riesz correctness backend;
 - dense direct solves for small manufactured systems.
 
-They are validation tools. They must not be cited as the certified nonlinear production architecture.
+They must not be cited as the certified nonlinear production architecture.
 
-`TetrahedralElectroThermalCore.build_reduced_electromagnetics()` is reserved for the certified nonlinear sparse-energy path.
+`TetrahedralElectroThermalCore.build_reduced_electromagnetics()` is reserved for the certified nonlinear physical-block sparse-energy path.
 
 `TetrahedralElectroThermalCore.build_affine_verification_reduced_electromagnetics()` explicitly names the legacy affine verification path.
 
 ---
 
-## 17. Remaining production obligations
+## 18. Remaining production obligations
 
-The next implementation work is ordered by the actual unresolved bottlenecks:
+Implementation work is ordered by unresolved scientific bottlenecks:
 
-1. **Scalable physical-energy inverse.** Replace exact sparse-LU `H(a)^-1` Riesz actions with a multilevel/auxiliary-space realization whose inexactness is independently certified. No heuristic ILU drop parameters may define the scientific result.
-2. **Scalable full-order correctness fallback.** Remove dependence on complete sparse LU for very large `A(a)` while preserving the true-residual state certificate.
+1. **Certified multilevel block actions.** Replace the default exact magnetic/scalar block LU actions by memory-scalable auxiliary-space/multilevel actions with proved `m_K` and `m_E`.
+2. **Factorization-free gamma proof.** Replace the residual-certified sparse-LU generalized-trace fallback by a scalable proof of `D_AA<=gamma K_A`.
 3. **Continuous nonlinear-domain certification.** Extend finite state/excitation certificates to the declared continuous thermal/geometry/frequency/source domain.
 4. **CAD/conforming mesh pipeline.** Import/generate actual round/rounded-square underwater WPT conductors, package, and seawater domains while preserving compatible topology.
 5. **Mesh and outer-domain error.** Add spatial discretization and open/infinite-domain truncation certificates.
