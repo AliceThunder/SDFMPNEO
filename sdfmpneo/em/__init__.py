@@ -1,3 +1,10 @@
+from .certified_riesz import (
+    CertifiedEnergyPreconditioner,
+    CertifiedPCGRieszAction,
+    CertifiedRieszActionResult,
+    DiagonalGershgorinEnergyPreconditioner,
+    RieszNormDecision,
+)
 from .compatible import CompatibleAphiDiscretization
 from .constitutive import (
     AffineConductivity,
@@ -63,6 +70,11 @@ from .tetra_nonlinear import (
 from .tetra_nonlinear_diagnostics import NonlinearTetrahedralRegionLossEvaluator
 
 __all__ = [
+    "CertifiedEnergyPreconditioner",
+    "CertifiedPCGRieszAction",
+    "CertifiedRieszActionResult",
+    "DiagonalGershgorinEnergyPreconditioner",
+    "RieszNormDecision",
     "CompatibleAphiDiscretization",
     "ConductivityLaw",
     "ConstantConductivity",
