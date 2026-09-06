@@ -1,4 +1,5 @@
 from .closed_loop import ClosedLoopTrainingResult, SolutionDataFreeClosedLoopTrainer
+from .geometry_residual import GeometryElectroThermalResidual, GeometryResidualSample
 from .growth import (
     AnalyticGrowthCandidate,
     GrowthProposal,
@@ -27,6 +28,8 @@ __all__ = [
     "AffineOperatingRHSMap",
     "ParametricElectroThermalResidual",
     "ParametricResidualSample",
+    "GeometryElectroThermalResidual",
+    "GeometryResidualSample",
     "AnalyticGrowthCandidate",
     "GrowthProposal",
     "GrowthScore",
