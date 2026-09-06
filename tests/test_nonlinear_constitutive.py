@@ -68,7 +68,7 @@ def make_nonlinear_problem():
     thermal_modes[0] = 1.0
     thermal_modes[1] = np.indices(shape)[0] - 0.5
 
-    problem = NonlinearSpatialAphiProblem.build(
+    return NonlinearSpatialAphiProblem.build(
         grid,
         omega=2 * np.pi * 100e3,
         reluctivity_cell=np.ones(shape) / (4e-7 * np.pi),
@@ -78,7 +78,6 @@ def make_nonlinear_problem():
         conductivity_model=model,
         thermal_test_cell=thermal_modes,
     )
-    return problem
 
 
 def test_nonlinear_aphi_operator_derivative_matches_finite_difference():
@@ -94,7 +93,7 @@ def test_nonlinear_aphi_operator_derivative_matches_finite_difference():
         assert np.allclose(derivatives[k], finite, rtol=2e-6, atol=2e-7)
 
 
-def test_nonlinear_reduced_heat_source_jacobian_matches_finite_difference():
+def test_nonlinear_reduced_heat_source_jacobian_matches_stable_finite_difference():
     problem = make_nonlinear_problem()
     candidate_states = [
         np.array([x, y])
@@ -105,7 +104,12 @@ def test_nonlinear_reduced_heat_source_jacobian_matches_finite_difference():
 
     a = np.array([0.7, -0.3])
     _, jacobian = reduced.heat_source_and_jacobian(a)
-    h = 1e-5
+
+    # The reduced complex system is moderately ill-conditioned even on this
+    # small tree-cotree test. An excessively small finite-difference step loses
+    # digits by subtraction; 1e-2 is used only as a regression cross-check of
+    # the analytic Jacobian, not as a model/training parameter.
+    h = 1e-2
     finite = np.zeros_like(jacobian)
     for k in range(problem.n_thermal):
         step = np.zeros(problem.n_thermal)
@@ -114,4 +118,4 @@ def test_nonlinear_reduced_heat_source_jacobian_matches_finite_difference():
             reduced.heat_source(a + step) - reduced.heat_source(a - step)
         ) / (2 * h)
 
-    assert np.allclose(jacobian, finite, rtol=3e-5, atol=3e-8)
+    assert np.allclose(jacobian, finite, rtol=1e-5, atol=3e-8)
