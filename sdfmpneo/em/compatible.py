@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import scipy.linalg
 
 from .reduced import ParametricEMProblem
 
@@ -12,14 +13,12 @@ class CompatibleAphiDiscretization:
     """Compatible magnetoquasistatic A-phi discretization.
 
     The scalar-potential coordinate is scaled as psi = phi/(j*omega). The
-    electric field is therefore
+    electric field is
 
         E = -j*omega (R_A alpha + G psi),
 
-    and, for reciprocal real material Hodge matrices, the gauge-eliminated
-    operator is complex symmetric. This makes electromagnetic reciprocity a
-    structural property of the discrete operator rather than a post-processing
-    correction.
+    and reciprocal real material Hodge matrices produce a complex-symmetric
+    discrete operator.
     """
 
     curl: np.ndarray
@@ -76,7 +75,6 @@ class CompatibleAphiDiscretization:
 
     @property
     def n_phi(self) -> int:
-        """Number of scaled scalar-potential coordinates (kept for API compatibility)."""
         return self.grad_c.shape[1]
 
     @property
@@ -106,6 +104,22 @@ class CompatibleAphiDiscretization:
         R = np.asarray(self.a_basis, dtype=complex)
         G = np.asarray(self.grad_c, dtype=complex)
         return -1j * self.omega * np.hstack([R, G])
+
+    def physical_riesz_metric(self) -> np.ndarray:
+        C = np.asarray(self.curl, dtype=complex)
+        R = np.asarray(self.a_basis, dtype=complex)
+        Nu = np.asarray(self.reluctivity_hodge, dtype=complex)
+        S0 = np.asarray(self.conductivity0, dtype=complex)
+        K_A = R.conj().T @ (C.conj().T @ Nu @ C) @ R
+        L = self.electric_extraction()
+
+        n_total = self.n_A + self.n_phi
+        H_mag = np.zeros((n_total, n_total), dtype=complex)
+        H_mag[: self.n_A, : self.n_A] = 0.5 * K_A
+        H = H_mag + (0.5 / self.omega) * (L.conj().T @ S0 @ L)
+        H = 0.5 * (H + H.conj().T)
+        scipy.linalg.cholesky(H, lower=True, check_finite=True)
+        return H
 
     def source_coordinate(self, source_current: np.ndarray) -> np.ndarray:
         source = np.asarray(source_current, dtype=complex)
@@ -148,7 +162,7 @@ class CompatibleAphiDiscretization:
             A0=A0,
             A_state=A_state,
             b=b,
-            H_metric=np.asarray(self.riesz_metric, dtype=complex),
+            H_metric=self.physical_riesz_metric(),
             H_loss=H_loss,
             H_loss_state=H_loss_state,
         )
