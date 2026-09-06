@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
 from .em import (
+    ImpressedCurrentPortSet,
     ResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
+    build_tetrahedral_region_loss_projector,
 )
 from .spatial import TetrahedralComplex3D, TetrahedralThermalAssembly
 from .thermal import ThermalSpectralModel, ThermalTailCertificate
@@ -31,6 +33,8 @@ class TetrahedralElectroThermalCore:
     thermal_model: ThermalSpectralModel
     thermal_tail_certificate: ThermalTailCertificate | None
     thermal_mode_local_values: np.ndarray
+    conductivity_reference_tetra: np.ndarray
+    conductivity_temperature_slope_tetra: np.ndarray
     electromagnetic_discretization: TetrahedralApsiDiscretization
     electromagnetic_problem: object
 
@@ -90,12 +94,14 @@ class TetrahedralElectroThermalCore:
             local_modes.append(full_mode[mesh.tetrahedra])
         local_modes_array = np.asarray(local_modes, dtype=float)
 
+        sigma0 = np.asarray(conductivity_reference_tetra, dtype=float).copy()
+        slope = np.asarray(conductivity_temperature_slope_tetra, dtype=float).copy()
         em_discretization = build_tetrahedral_apsi_from_thermal_modes(
             mesh,
             omega=omega,
             reluctivity_tetra=reluctivity_tetra,
-            conductivity_reference_tetra=conductivity_reference_tetra,
-            conductivity_temperature_slope_tetra=conductivity_temperature_slope_tetra,
+            conductivity_reference_tetra=sigma0,
+            conductivity_temperature_slope_tetra=slope,
             thermal_mode_local_values=local_modes_array,
             source_current=source_current,
         )
@@ -111,6 +117,8 @@ class TetrahedralElectroThermalCore:
             thermal_model=thermal_model,
             thermal_tail_certificate=certificate,
             thermal_mode_local_values=local_modes_array,
+            conductivity_reference_tetra=sigma0,
+            conductivity_temperature_slope_tetra=slope,
             electromagnetic_discretization=em_discretization,
             electromagnetic_problem=em_problem,
         )
@@ -132,4 +140,36 @@ class TetrahedralElectroThermalCore:
         return ResidualGreedyEMReducer(self.electromagnetic_problem).build(
             candidate_thermal_states,
             tolerance=residual_tolerance,
+        )
+
+    def build_ports(
+        self,
+        edge_currents: np.ndarray,
+        *,
+        names: Sequence[str] | None = None,
+    ) -> ImpressedCurrentPortSet:
+        """Build work-conjugate closed impressed-current ports on this mesh."""
+
+        return ImpressedCurrentPortSet.build(
+            self.mesh,
+            a_basis=self.electromagnetic_discretization.a_basis.toarray(),
+            n_scalar=self.electromagnetic_discretization.n_scalar,
+            omega=self.electromagnetic_discretization.omega,
+            edge_currents=edge_currents,
+            names=names,
+        )
+
+    def build_region_loss_projector(
+        self,
+        regions: Mapping[str, np.ndarray],
+    ):
+        """Build total Joule-power diagnostics for named tetrahedral regions."""
+
+        return build_tetrahedral_region_loss_projector(
+            self.mesh,
+            self.electromagnetic_discretization,
+            conductivity_reference_tetra=self.conductivity_reference_tetra,
+            conductivity_temperature_slope_tetra=self.conductivity_temperature_slope_tetra,
+            thermal_mode_local_values=self.thermal_mode_local_values,
+            regions=regions,
         )
