@@ -278,11 +278,11 @@ class TetrahedralElectroThermalCore:
         *,
         names: Sequence[str] | None = None,
     ) -> ImpressedCurrentPortSet:
-        """Build work-conjugate closed impressed-current ports on this mesh."""
+        """Build work-conjugate closed impressed-current ports without densifying the gauge basis."""
 
         return ImpressedCurrentPortSet.build(
             self.mesh,
-            a_basis=self.electromagnetic_discretization.a_basis.toarray(),
+            a_basis=self.electromagnetic_discretization.a_basis,
             n_scalar=self.electromagnetic_discretization.n_scalar,
             omega=self.electromagnetic_discretization.omega,
             edge_currents=edge_currents,
