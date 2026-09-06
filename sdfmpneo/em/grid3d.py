@@ -110,7 +110,6 @@ class RectilinearComplex3D:
             face_ijk.append(ijk)
             f += 1
 
-        # +x normal: +y(z-low), +z(y-high), -y(z-high), -z(y-low)
         for i in range(nx):
             for j in range(ny - 1):
                 for k in range(nz - 1):
@@ -125,7 +124,6 @@ class RectilinearComplex3D:
                         (i, j, k),
                     )
 
-        # +y normal: +z(x-low), +x(z-high), -z(x-high), -x(z-low)
         for i in range(nx - 1):
             for j in range(ny):
                 for k in range(nz - 1):
@@ -140,7 +138,6 @@ class RectilinearComplex3D:
                         (i, j, k),
                     )
 
-        # +z normal: +x(y-low), +y(x-high), -x(y-high), -y(x-low)
         for i in range(nx - 1):
             for j in range(ny - 1):
                 for k in range(nz):
@@ -200,15 +197,6 @@ class RectilinearComplex3D:
         return a
 
     def edge_hodge(self, cell_values) -> sp.csr_matrix:
-        """Diagonal 1-form Hodge from a cellwise coefficient.
-
-        For an x edge, for example, the coefficient is integrated on the
-        orthogonal dual face and divided by the primal x-edge length. The four
-        quarter-cell contributions are retained separately, so discontinuous
-        conductor/package/seawater coefficients are represented without
-        arithmetic averaging across material interfaces.
-        """
-
         q = self._cell_array(cell_values)
         dx, dy, dz = np.diff(self.x), np.diff(self.y), np.diff(self.z)
         nx, ny, nz = self.shape_cells
@@ -242,8 +230,6 @@ class RectilinearComplex3D:
         return sp.diags(weights, format="csr")
 
     def face_hodge(self, cell_values) -> sp.csr_matrix:
-        """Diagonal 2-form Hodge from a cellwise coefficient."""
-
         q = self._cell_array(cell_values)
         dx, dy, dz = np.diff(self.x), np.diff(self.y), np.diff(self.z)
         nx, ny, nz = self.shape_cells
@@ -274,18 +260,9 @@ class RectilinearComplex3D:
         return sp.diags(weights, format="csr")
 
     def gauge_basis(self) -> np.ndarray:
-        """Explicit algebraic Coulomb gauge basis: range(R_A)=ker(G^T)."""
-
         return scipy.linalg.null_space(self.grad.toarray().T)
 
     def conductive_gradient(self, conductivity_support_cells) -> np.ndarray:
-        """Gradient restricted to conducting connected components.
-
-        One deterministic reference node (the smallest global node index) is
-        removed from every conducting connected component. This eliminates the
-        scalar-potential nullspace by coordinates, not by a penalty.
-        """
-
         support = self._cell_array(conductivity_support_cells).astype(bool)
         edge_active = np.asarray(self.edge_hodge(support.astype(float)).diagonal() > 0)
         if not np.any(edge_active):
@@ -345,8 +322,8 @@ def build_compatible_aphi_from_cells(
 ) -> SpatialAphiAssembly:
     """Assemble the compatible A-phi model from spatial cell fields.
 
-    `conductivity_state_cell[k]` is the k-th *certified affine constitutive
-    coefficient* in reduced thermal coordinates. This routine only performs
+    `conductivity_state_cell[k]` is the k-th certified affine constitutive
+    coefficient in reduced thermal coordinates. This routine only performs
     spatial compatible assembly; it deliberately does not fit or invent the
     constitutive expansion.
     """
@@ -359,12 +336,21 @@ def build_compatible_aphi_from_cells(
     sigma_state = np.asarray(conductivity_state_cell, dtype=float)
     thermal_test = np.asarray(thermal_test_cell, dtype=float)
 
+    if omega <= 0:
+        raise ValueError("omega must be positive")
     if nu.shape != grid.shape_cells or sigma0.shape != grid.shape_cells:
         raise ValueError("cell material field shape mismatch")
     if sigma_state.ndim != 4 or sigma_state.shape[1:] != grid.shape_cells:
         raise ValueError("conductivity_state_cell must have shape (n_thermal,*shape_cells)")
     if thermal_test.shape != sigma_state.shape:
         raise ValueError("thermal_test_cell must match conductivity_state_cell shape")
+    if np.any(sigma0 < 0):
+        raise ValueError("reference conductivity must be non-negative")
+    if np.any((np.abs(sigma_state) > 0) & (sigma0[None, ...] <= 0)):
+        raise ValueError(
+            "thermal conductivity coefficients may modify an existing conducting region but may not create new conductivity support"
+        )
+
     n_thermal = sigma_state.shape[0]
     if np.asarray(source_current).shape != (grid.n_edges,):
         raise ValueError("source_current shape mismatch")
@@ -376,16 +362,30 @@ def build_compatible_aphi_from_cells(
         axis=0,
     )
 
-    support = (np.abs(sigma0) + np.sum(np.abs(sigma_state), axis=0)) > 0
+    support = sigma0 > 0
     grad_c = grid.conductive_gradient(support)
     a_basis = grid.gauge_basis()
 
-    # Deterministic coordinate Riesz metric. It is topological rather than a
-    # tunable penalty: the A block is the Euclidean Gram of the explicit gauge
-    # basis and the phi block is the graph-gradient Gram after nullspace removal.
-    H_A = a_basis.T @ a_basis
-    H_phi = grad_c.T @ grad_c
-    riesz_metric = scipy.linalg.block_diag(H_A, H_phi) if grad_c.shape[1] else H_A
+    C = grid.curl.toarray().astype(complex)
+    R = np.asarray(a_basis, dtype=complex)
+    G = np.asarray(grad_c, dtype=complex)
+    Nu = np.asarray(reluctivity_hodge, dtype=complex)
+    S0 = np.asarray(conductivity0, dtype=complex)
+
+    K_A = R.conj().T @ (C.conj().T @ Nu @ C) @ R
+    L_E = np.hstack([-1j * omega * R, -G])
+    n_total = R.shape[1] + G.shape[1]
+    H_mag = np.zeros((n_total, n_total), dtype=complex)
+    H_mag[: R.shape[1], : R.shape[1]] = 0.5 * K_A
+    H_diss_per_radian = (0.5 / omega) * (L_E.conj().T @ S0 @ L_E)
+    riesz_metric = H_mag + H_diss_per_radian
+    riesz_metric = 0.5 * (riesz_metric + riesz_metric.conj().T)
+    try:
+        scipy.linalg.cholesky(riesz_metric, lower=True, check_finite=True)
+    except np.linalg.LinAlgError as exc:
+        raise np.linalg.LinAlgError(
+            "The physical electromagnetic Riesz metric is not positive definite after gauge elimination; check domain topology, conducting-component gauges, and reference material support"
+        ) from exc
 
     thermal_loss_hodge0 = np.stack(
         [grid.edge_hodge(sigma0 * thermal_test[j]).toarray() for j in range(n_thermal)],
@@ -402,9 +402,9 @@ def build_compatible_aphi_from_cells(
             ).toarray()
 
     discretization = CompatibleAphiDiscretization(
-        curl=grid.curl.toarray(),
-        grad_c=grad_c,
-        a_basis=a_basis,
+        curl=C,
+        grad_c=G,
+        a_basis=R,
         reluctivity_hodge=reluctivity_hodge,
         conductivity0=conductivity0,
         conductivity_state=conductivity_state,
