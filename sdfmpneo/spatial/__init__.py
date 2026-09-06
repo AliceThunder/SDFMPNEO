@@ -1,3 +1,4 @@
+from .geometry_chart import AffineTetrahedralGeometryChart, GeometryBoxCertificate
 from .nedelec_weighted import assemble_weighted_nedelec_mass
 from .tetra3d import TetrahedralComplex3D, TetrahedralThermalAssembly
 from .uwpt_geometry import (
@@ -12,6 +13,8 @@ __all__ = [
     "TetrahedralComplex3D",
     "TetrahedralThermalAssembly",
     "assemble_weighted_nedelec_mass",
+    "AffineTetrahedralGeometryChart",
+    "GeometryBoxCertificate",
     "RigidPose",
     "SpiralCoilGeometry",
     "UnderwaterWPTGeometry",
