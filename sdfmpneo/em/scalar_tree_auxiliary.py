@@ -315,22 +315,28 @@ class ConductiveScalarTreeEnergyPreconditioner(CertifiedEnergyPreconditioner):
     def auxiliary_matrix(self) -> sp.csr_matrix:
         return self._P.copy()
 
-    def _solve_tree(self, rhs: np.ndarray, *, adjoint: bool) -> np.ndarray:
+    def _solve_S(self, rhs: np.ndarray) -> np.ndarray:
+        """Apply S^{-1}; row order stays fixed while scalar columns are permuted."""
+
+        b = np.asarray(rhs, dtype=complex)
+        if b.shape != (self.dimension,):
+            raise ValueError("scalar tree rhs dimension mismatch")
+        xperm = spla.spsolve_triangular(self._Sperm, b, lower=True)
+        out = np.empty_like(np.asarray(xperm, dtype=complex))
+        out[self.coordinate_order] = np.asarray(xperm, dtype=complex)
+        return out
+
+    def _solve_SH(self, rhs: np.ndarray) -> np.ndarray:
+        """Apply S^{-H}; the coordinate RHS is permuted, row-space output is not."""
+
         b = np.asarray(rhs, dtype=complex)
         if b.shape != (self.dimension,):
             raise ValueError("scalar tree rhs dimension mismatch")
         bperm = b[self.coordinate_order]
-        if adjoint:
-            xperm = spla.spsolve_triangular(
-                self._Sperm.conj().T.tocsr(),
-                bperm,
-                lower=False,
-            )
-        else:
-            xperm = spla.spsolve_triangular(self._Sperm, bperm, lower=True)
-        out = np.empty_like(np.asarray(xperm, dtype=complex))
-        out[self.coordinate_order] = np.asarray(xperm, dtype=complex)
-        return out
+        return np.asarray(
+            spla.spsolve_triangular(self._Sperm.conj().T.tocsr(), bperm, lower=False),
+            dtype=complex,
+        )
 
     def _apply_Winv(self, vector: np.ndarray) -> np.ndarray:
         v = np.asarray(vector, dtype=complex)
@@ -340,6 +346,6 @@ class ConductiveScalarTreeEnergyPreconditioner(CertifiedEnergyPreconditioner):
         return out
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
-        z = self._solve_tree(rhs, adjoint=True)
+        z = self._solve_SH(rhs)
         w = self._apply_Winv(z)
-        return self._solve_tree(w, adjoint=False)
+        return self._solve_S(w)
