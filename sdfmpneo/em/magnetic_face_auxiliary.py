@@ -11,35 +11,86 @@ from scipy.sparse.csgraph import connected_components
 from .certified_riesz import CertifiedEnergyPreconditioner
 
 
-def _deterministic_structural_row_matching(S: sp.csr_matrix) -> np.ndarray:
-    matrix = sp.csc_matrix(S)
-    n_rows, n_cols = matrix.shape
-    matched_column_for_row = np.full(n_rows, -1, dtype=int)
+def _face_area_vector(vertices: np.ndarray, face: np.ndarray) -> np.ndarray:
+    a, b, c = (vertices[int(i)] for i in face)
+    return 0.5 * np.cross(b - a, c - a)
 
-    def augment(column: int, seen_rows: np.ndarray) -> bool:
-        start, stop = matrix.indptr[column], matrix.indptr[column + 1]
-        for row in sorted(int(r) for r in matrix.indices[start:stop]):
-            if seen_rows[row]:
+
+def _incident_tetrahedra(mesh) -> tuple[tuple[int, ...], ...]:
+    face_map = {tuple(map(int, face)): i for i, face in enumerate(mesh.face_vertices)}
+    incident: list[list[int]] = [[] for _ in range(mesh.n_faces)]
+    for q, tet in enumerate(mesh.tetrahedra):
+        for local in combinations(map(int, tet), 3):
+            f = face_map[tuple(sorted(local))]
+            incident[f].append(q)
+    out = tuple(tuple(sorted(items)) for items in incident)
+    if any(len(items) not in (1, 2) for items in out):
+        raise ValueError("tetrahedral chart must be a conforming 3-D manifold with one or two cells per face")
+    return out
+
+
+def _dual_tree_complement_faces(mesh, expected_dimension: int) -> np.ndarray:
+    """Return the deterministic complement of an augmented dual spanning tree.
+
+    The augmented dual graph contains one vertex for each tetrahedron and one
+    exterior vertex.  Each interior triangular face is a dual edge between its
+    two tetrahedra; each boundary face connects its tetrahedron to the exterior.
+
+    For a connected contractible tetrahedral chart the complement of a dual
+    spanning tree contains
+
+        n_faces - n_tetrahedra = n_edges - n_nodes + 1
+
+    faces, exactly the number of cotree magnetic coordinates.  Together with the
+    primal spanning-tree gauge this is the standard topological tree--cotree
+    basis of the discrete curl complex.  A count mismatch is therefore treated
+    as a topology/chart failure (for example an unhandled harmonic subspace),
+    never repaired by a numerical rank threshold.
+    """
+
+    incident = _incident_tetrahedra(mesh)
+    exterior = int(mesh.n_tetrahedra)
+    n_dual_nodes = exterior + 1
+    adjacency: list[list[tuple[int, int]]] = [[] for _ in range(n_dual_nodes)]
+    for face, cells in enumerate(incident):
+        if len(cells) == 2:
+            u, v = int(cells[0]), int(cells[1])
+        else:
+            u, v = int(cells[0]), exterior
+        adjacency[u].append((v, face))
+        adjacency[v].append((u, face))
+    for entries in adjacency:
+        entries.sort(key=lambda item: (item[1], item[0]))
+
+    visited = np.zeros(n_dual_nodes, dtype=bool)
+    visited[exterior] = True
+    queue = [exterior]
+    head = 0
+    tree_faces: list[int] = []
+    while head < len(queue):
+        u = queue[head]
+        head += 1
+        for v, face in adjacency[u]:
+            if visited[v]:
                 continue
-            seen_rows[row] = True
-            previous = int(matched_column_for_row[row])
-            if previous < 0 or augment(previous, seen_rows):
-                matched_column_for_row[row] = column
-                return True
-        return False
+            visited[v] = True
+            queue.append(v)
+            tree_faces.append(int(face))
 
-    for column in range(n_cols):
-        seen = np.zeros(n_rows, dtype=bool)
-        if not augment(column, seen):
-            raise ValueError("face-curl incidence has no full structural row matching")
+    if not np.all(visited):
+        raise ValueError("augmented tetrahedral dual graph is disconnected")
+    if len(tree_faces) != n_dual_nodes - 1:
+        raise RuntimeError("internal dual spanning-tree construction failed")
 
-    row_for_column = np.full(n_cols, -1, dtype=int)
-    for row, column in enumerate(matched_column_for_row):
-        if column >= 0:
-            row_for_column[column] = row
-    if np.any(row_for_column < 0):
-        raise RuntimeError("internal face-curl matching is incomplete")
-    return row_for_column
+    mask = np.ones(mesh.n_faces, dtype=bool)
+    mask[np.asarray(tree_faces, dtype=int)] = False
+    selected = np.flatnonzero(mask)
+    if selected.size != int(expected_dimension):
+        raise ValueError(
+            "primal/dual tree counts do not match the magnetic cotree dimension; "
+            "the chart requires explicit harmonic/topological modes"
+        )
+    return selected
 
 
 def _scc_topological_permutation(S: sp.csr_matrix) -> tuple[np.ndarray, tuple[np.ndarray, ...]]:
@@ -79,29 +130,17 @@ def _scc_topological_permutation(S: sp.csr_matrix) -> tuple[np.ndarray, tuple[np
     return permutation, ordered
 
 
-def _face_area_vector(vertices: np.ndarray, face: np.ndarray) -> np.ndarray:
-    a, b, c = (vertices[int(i)] for i in face)
-    return 0.5 * np.cross(b - a, c - a)
-
-
-def _incident_tetrahedra(mesh) -> tuple[tuple[int, ...], ...]:
-    face_map = {tuple(map(int, face)): i for i, face in enumerate(mesh.face_vertices)}
-    incident: list[list[int]] = [[] for _ in range(mesh.n_faces)]
-    for q, tet in enumerate(mesh.tetrahedra):
-        for local in combinations(map(int, tet), 3):
-            f = face_map[tuple(sorted(local))]
-            incident[f].append(q)
-    return tuple(tuple(sorted(items)) for items in incident)
-
-
 def _assign_selected_faces_to_tetrahedra(mesh, selected_faces: np.ndarray) -> np.ndarray:
-    """Find the lexicographically first physically independent face assignment.
+    """Assign selected faces to incident tetrahedra without numerical rank tests.
 
-    Each selected global face is assigned to one incident tetrahedron.  A
-    tetrahedron may receive at most three faces, and their area vectors must have
-    full row rank.  There is no capacity parameter: three is the physical curl
-    dimension in 3-D.  Backtracking is exhaustive over the finite incidence
-    choices and therefore reports failure rather than tuning an assignment rule.
+    A non-degenerate tetrahedron has four distinct face planes.  Any set of at
+    most three distinct face normals is linearly independent: the corresponding
+    three planes meet at one tetrahedron vertex, and degeneracy would contradict
+    positive tetrahedral volume.  Therefore the only local physical constraint
+    is the exact curl dimension, namely at most three selected faces per cell.
+
+    Backtracking is exhaustive over the finite face--cell incidence choices and
+    contains no floating rank threshold or user capacity parameter.
     """
 
     incident = _incident_tetrahedra(mesh)
@@ -109,19 +148,12 @@ def _assign_selected_faces_to_tetrahedra(mesh, selected_faces: np.ndarray) -> np
     assignment = np.full(len(selected), -1, dtype=int)
     by_tet: list[list[int]] = [[] for _ in range(mesh.n_tetrahedra)]
 
-    def admissible(tet: int, face: int) -> bool:
-        trial = by_tet[tet] + [face]
-        if len(trial) > 3:
-            return False
-        normals = np.vstack([_face_area_vector(mesh.vertices, mesh.face_vertices[f]) for f in trial])
-        return np.linalg.matrix_rank(normals) == len(trial)
-
     def search(position: int) -> bool:
         if position == len(selected):
             return True
         face = selected[position]
         for tet in incident[face]:
-            if not admissible(tet, face):
+            if len(by_tet[tet]) >= 3:
                 continue
             by_tet[tet].append(face)
             assignment[position] = tet
@@ -132,7 +164,9 @@ def _assign_selected_faces_to_tetrahedra(mesh, selected_faces: np.ndarray) -> np
         return False
 
     if not search(0):
-        raise ValueError("selected face constraints cannot be assigned to independent tetrahedral curl components")
+        raise ValueError(
+            "dual-tree face basis cannot be assigned to tetrahedra within the exact three-component curl dimension"
+        )
     return assignment
 
 
@@ -147,30 +181,30 @@ class _LocalSCCLU:
 class MagneticFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner):
     """Topology-exact face-circulation auxiliary magnetic preconditioner.
 
-    With alpha denoting cotree magnetic coordinates and
+    Let alpha denote cotree magnetic coordinates and select the complement of an
+    augmented dual spanning tree.  With
 
-        S = (C R_A)[selected faces,:],
-        y = S alpha,
+        S=(C R_A)[selected faces,:],
+        y=S alpha,
 
-    Stokes' theorem gives each selected face circulation directly from the
-    constant tetrahedral curl.  For the selected faces assigned to tetrahedron q,
-    let B_q contain their oriented area vectors as rows.  Then
+    Stokes' theorem gives each selected face circulation from the constant
+    tetrahedral curl.  For selected faces assigned to tetrahedron q, let B_q
+    contain the globally oriented face-area vectors.  Then
 
-        nu_q V_q ||curl A||^2
-        >= y_q^T W_q y_q,
-        W_q = nu_q V_q (B_q B_q^T)^-1.
+        nu_q V_q ||curl A||^2 >= y_q^T W_q y_q,
+        W_q=nu_q V_q (B_q B_q^T)^-1.
 
-    Summing over tetrahedra yields the exact operator inequality
+    Summing the disjoint assigned local contributions yields
 
-        K_A >= P_A = S^T W S.
+        K_A >= P_A=S^T W S,
 
-    Hence m_K=1.  S is an integer topology matrix; its SCC decomposition contains
-    no floating near-zero edges.  P_A^-1 is applied as
+    so the magnetic spectral-equivalence constant is exactly m_K=1.
 
-        S^-1 W^-1 S^-T,
-
-    where W_q^-1=(B_q B_q^T)/(nu_q V_q) is explicit and only SCC diagonal blocks
-    of S are locally factorized.
+    The selected S is integer topology, not a floating geometric factor.  Its
+    current inverse implementation uses exact block substitution after an SCC
+    decomposition.  ``maximum_scc_size`` is intentionally exposed: a chart for
+    which it equals the full magnetic dimension is a correctness implementation,
+    not yet a scalable local solve.
     """
 
     dimension: int
@@ -198,13 +232,14 @@ class MagneticFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner)
         if C_R.shape[1] != n_A or n_A == 0:
             raise ValueError("face-curl gauge coordinates are inconsistent")
 
-        selected_faces = _deterministic_structural_row_matching(C_R)
+        selected_faces = _dual_tree_complement_faces(mesh, n_A)
         S = C_R[selected_faces, :].tocsr()
         if S.shape != (n_A, n_A):
-            raise RuntimeError("selected face-curl topology matrix is not square")
-        if np.any(np.asarray(S.diagonal()) == 0):
-            raise RuntimeError("matched face-curl topology matrix must have nonzero diagonal")
+            raise RuntimeError("dual-tree face-curl topology matrix is not square")
 
+        # Under the contractible-chart tree--cotree theorem S is nonsingular.
+        # The local block factorizations below are implementation guards; no
+        # magnitude/rank threshold is used to choose the topological basis.
         assignment = _assign_selected_faces_to_tetrahedra(mesh, selected_faces)
         W_inv = np.zeros((n_A, n_A), dtype=float)
         nu = np.asarray(problem.reluctivity_tetra, dtype=float)
@@ -231,7 +266,9 @@ class MagneticFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner)
             block = Sperm[np.ix_(positions, positions)]
             factor, pivots = scipy.linalg.lu_factor(block, check_finite=False)
             if np.any(np.diag(factor) == 0):
-                raise ValueError("selected face-curl SCC block is singular")
+                raise ValueError(
+                    "dual-tree face-curl basis is singular; the geometry chart violates the assumed contractible tree--cotree topology"
+                )
             factors.append(_LocalSCCLU(positions, factor, pivots))
             offset += size
 
