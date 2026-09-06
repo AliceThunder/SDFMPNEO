@@ -23,13 +23,19 @@ def _h_normalize(v: np.ndarray, H: np.ndarray, basis: Sequence[np.ndarray]) -> n
 
 @dataclass(frozen=True)
 class ParametricEMProblem:
-    """First executable full-order deterministic EM operator A(a)=A0+sum a_k A_k."""
+    """Deterministic affine-in-thermal-state electromagnetic operator.
+
+    A(a) = A0 + sum_k a_k A_state[k].
+    Reduced heat-source components use
+    H_j(a) = H_loss[j] + sum_k a_k H_loss_state[j,k].
+    """
 
     A0: np.ndarray
     A_state: np.ndarray
     b: np.ndarray
     H_metric: np.ndarray
     H_loss: np.ndarray
+    H_loss_state: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         n = self.A0.shape[0]
@@ -38,9 +44,13 @@ class ParametricEMProblem:
         if self.A_state.ndim != 3 or self.A_state.shape[1:] != (n, n):
             raise ValueError("A_state must have shape (n_thermal,n_em,n_em)")
         if self.H_loss.shape != self.A_state.shape:
-            raise ValueError("H_loss must match A_state shape")
+            raise ValueError("H_loss must have shape (n_thermal,n_em,n_em)")
         if self.b.shape != (n,) or self.H_metric.shape != (n, n):
             raise ValueError("b/H_metric shape mismatch")
+        if self.H_loss_state is not None:
+            expected = (self.n_thermal, self.n_thermal, n, n)
+            if self.H_loss_state.shape != expected:
+                raise ValueError(f"H_loss_state must have shape {expected}")
         scipy.linalg.cholesky(self.H_metric, lower=True, check_finite=True)
 
     @property
@@ -56,6 +66,15 @@ class ParametricEMProblem:
         if a.shape != (self.n_thermal,):
             raise ValueError("thermal state dimension mismatch")
         return self.A0 + np.tensordot(a, self.A_state, axes=(0, 0))
+
+    def loss_operator(self, output_mode: int, a: np.ndarray) -> np.ndarray:
+        a = np.asarray(a, dtype=float)
+        if a.shape != (self.n_thermal,):
+            raise ValueError("thermal state dimension mismatch")
+        H = self.H_loss[output_mode]
+        if self.H_loss_state is not None:
+            H = H + np.tensordot(a, self.H_loss_state[output_mode], axes=(0, 0))
+        return H
 
     def solve_full(self, a: np.ndarray) -> np.ndarray:
         return scipy.linalg.solve(self.operator(a), self.b, assume_a="gen")
@@ -89,7 +108,9 @@ class ReducedEMModel:
 
     def heat_source(self, a: np.ndarray) -> np.ndarray:
         x = self.state(a)
-        return np.array([np.real(np.vdot(x, H @ x)) for H in self.problem.H_loss])
+        return np.array(
+            [np.real(np.vdot(x, self.problem.loss_operator(j, a) @ x)) for j in range(self.problem.n_thermal)]
+        )
 
     def heat_source_and_jacobian(self, a: np.ndarray):
         a = np.asarray(a, dtype=float)
@@ -99,12 +120,17 @@ class ReducedEMModel:
         x = self.V @ c
         q = self.heat_source(a)
         J = np.zeros((self.problem.n_thermal, self.problem.n_thermal), dtype=float)
+
         for k, Ak in enumerate(self.problem.A_state):
             Akr = self.V.conj().T @ Ak @ self.V
             dc = scipy.linalg.solve(Ar, -(Akr @ c), assume_a="gen")
             dx = self.V @ dc
-            for j, Hj in enumerate(self.problem.H_loss):
-                J[j, k] = 2.0 * np.real(np.vdot(dx, Hj @ x))
+            for j in range(self.problem.n_thermal):
+                Hj = self.problem.loss_operator(j, a)
+                explicit = 0.0
+                if self.problem.H_loss_state is not None:
+                    explicit = np.real(np.vdot(x, self.problem.H_loss_state[j, k] @ x))
+                J[j, k] = 2.0 * np.real(np.vdot(dx, Hj @ x)) + explicit
         return q, J
 
 
