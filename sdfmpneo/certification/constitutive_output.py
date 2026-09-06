@@ -29,6 +29,7 @@ class ConstitutivePortErrorCertificate:
     constitutive_relative_bound: float
     approximate_relative_factor: float
     operator_perturbation_bound: float
+    approximate_minimum_singular_value: float
     approximate_inverse_norm: float
     inverse_perturbation_product: float
     inverse_difference_bound: float
@@ -71,7 +72,13 @@ def certify_constitutive_multiport_error(
 
     relative_factor = 0.0 if eps == 0.0 else eps / (1.0 - eps)
     delta_A = float(omega * relative_factor * np.linalg.norm(D_tilde, ord=2))
-    inverse_norm = float(np.linalg.norm(np.linalg.inv(A_tilde), ord=2))
+
+    singular_values = np.linalg.svd(A_tilde, compute_uv=False)
+    sigma_min = float(np.min(singular_values))
+    if sigma_min <= 0.0:
+        inverse_norm = float("inf")
+    else:
+        inverse_norm = 1.0 / sigma_min
     product = inverse_norm * delta_A
 
     if product < 1.0:
@@ -97,7 +104,8 @@ def certify_constitutive_multiport_error(
         constitutive_relative_bound=eps,
         approximate_relative_factor=float(relative_factor),
         operator_perturbation_bound=delta_A,
-        approximate_inverse_norm=inverse_norm,
+        approximate_minimum_singular_value=sigma_min,
+        approximate_inverse_norm=float(inverse_norm),
         inverse_perturbation_product=float(product),
         inverse_difference_bound=inverse_difference,
         impedance_spectral_norm_bound=impedance_bound,
