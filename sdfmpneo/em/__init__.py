@@ -5,7 +5,12 @@ from .grid3d import (
     build_compatible_aphi_from_cells,
     face_loop_source,
 )
-from .reduced import ParametricEMProblem, ReducedEMModel, ResidualGreedyEMReducer
+from .reduced import (
+    ParametricEMProblem,
+    ReducedEMModel,
+    ResidualGreedyEMReducer,
+    RieszFactor,
+)
 
 __all__ = [
     "CompatibleAphiDiscretization",
@@ -16,4 +21,5 @@ __all__ = [
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
+    "RieszFactor",
 ]
