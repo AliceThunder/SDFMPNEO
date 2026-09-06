@@ -6,10 +6,12 @@ from sdfmpneo.em import (
     ConductivityRegion,
     ConstantConductivity,
     CoupledPairEnergyPreconditioner,
+    MagneticCurlSubsetEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
     apsi_physical_energy_metric,
+    build_gauge_restricted_magnetic_curl_factor,
     make_physical_block_pcg_riesz_factory,
     tetra_face_loop_source,
 )
@@ -97,7 +99,7 @@ def test_fixed_coupled_pairs_are_correctly_rejected_on_high_contrast_magnetic_bl
         )
 
 
-def test_certificate_driven_aggregates_certify_high_contrast_tetrahedral_reduction_without_block_sparse_lu():
+def test_certificate_driven_aggregates_are_correct_but_expose_global_magnetic_fallback():
     problem = build_high_contrast_problem()
     factory = make_physical_block_pcg_riesz_factory(
         problem,
@@ -105,16 +107,40 @@ def test_certificate_driven_aggregates_certify_high_contrast_tetrahedral_reducti
     )
     _certify_reduction(problem, factory)
 
-
-def test_high_contrast_magnetic_aggregate_certificate_remains_strictly_local():
-    problem = build_high_contrast_problem()
     R = problem.a_basis
     K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
     magnetic = AdaptiveAggregateEnergyPreconditioner.build(K_A)
-
     assert magnetic.lower_spectral_equivalence_bound > 0.0
     assert magnetic.aggregation_steps > 0
-    assert magnetic.maximum_block_size < K_A.shape[0]
+    # This regression deliberately exposes the limitation: for this real
+    # high-contrast tetrahedral magnetic block, block-Gershgorin aggregation
+    # collapses to the whole magnetic space and therefore is not scalable.
+    assert magnetic.maximum_block_size == K_A.shape[0]
+
+
+def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxiliary_blocks():
+    problem = build_high_contrast_problem()
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
+    F_A = build_gauge_restricted_magnetic_curl_factor(problem)
+    gram = (F_A.conj().T @ F_A).toarray()
+    assert np.allclose(gram, K_A.toarray(), rtol=5e-13, atol=1e-8)
+
+    auxiliary = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
+    assert auxiliary.lower_spectral_equivalence_bound == 1.0
+    assert auxiliary.maximum_scc_size < K_A.shape[0]
+
+    S = F_A[auxiliary.selected_rows, :].toarray()
+    P = S.conj().T @ S
+    remainder = K_A.toarray() - P
+    minimum_remainder = float(np.min(np.linalg.eigvalsh(0.5 * (remainder + remainder.conj().T)).real))
+    scale = float(np.linalg.norm(K_A.toarray(), ord=2))
+    assert minimum_remainder >= -128.0 * np.finfo(float).eps * max(scale, 1.0)
+
+    rhs = np.arange(1, K_A.shape[0] + 1, dtype=float).astype(complex)
+    actual = auxiliary.solve(rhs)
+    expected = np.linalg.solve(P, rhs)
+    assert np.allclose(actual, expected, rtol=2e-12, atol=2e-12)
 
     state = np.zeros(problem.n_thermal)
     H = apsi_physical_energy_metric(problem.operator_sparse(state))
@@ -122,4 +148,3 @@ def test_high_contrast_magnetic_aggregate_certificate_remains_strictly_local():
     if E.shape[0]:
         scalar = AdaptiveAggregateEnergyPreconditioner.build(E)
         assert scalar.lower_spectral_equivalence_bound > 0.0
-        assert scalar.maximum_block_size <= E.shape[0]
