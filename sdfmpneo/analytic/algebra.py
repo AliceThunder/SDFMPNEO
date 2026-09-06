@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import factorial
 from typing import Dict, Tuple
 
 import numpy as np
@@ -36,8 +37,12 @@ class AnalyticSeries:
                 raise ValueError("Polynomial power must be non-negative")
             if len(sig) != self.n_modes:
                 raise ValueError("Decay signature dimension mismatch")
-            if coeff != 0:
-                clean[(int(power), tuple(int(x) for x in sig))] = complex(coeff)
+            key = (int(power), tuple(int(x) for x in sig))
+            value = clean.get(key, 0.0) + complex(coeff)
+            if value != 0:
+                clean[key] = value
+            elif key in clean:
+                del clean[key]
         object.__setattr__(self, "terms", clean)
 
     @staticmethod
@@ -52,7 +57,12 @@ class AnalyticSeries:
     def decay(n_modes: int, mode: int, coeff: complex = 1.0) -> "AnalyticSeries":
         return AnalyticSeries(n_modes, {(0, unit_signature(n_modes, mode)): complex(coeff)})
 
+    def scaled(self, scalar: complex) -> "AnalyticSeries":
+        return AnalyticSeries(self.n_modes, {k: scalar * v for k, v in self.terms.items()})
+
     def __add__(self, other: "AnalyticSeries") -> "AnalyticSeries":
+        if not isinstance(other, AnalyticSeries):
+            return NotImplemented
         if self.n_modes != other.n_modes:
             raise ValueError("Mode dimension mismatch")
         out = dict(self.terms)
@@ -66,11 +76,13 @@ class AnalyticSeries:
         return self + (-1.0) * other
 
     def __rmul__(self, scalar: complex) -> "AnalyticSeries":
-        return AnalyticSeries(self.n_modes, {k: scalar * v for k, v in self.terms.items()})
+        if not np.isscalar(scalar):
+            return NotImplemented
+        return self.scaled(scalar)
 
     def __mul__(self, other):
         if np.isscalar(other):
-            return other * self
+            return self.scaled(other)
         if not isinstance(other, AnalyticSeries):
             return NotImplemented
         if self.n_modes != other.n_modes:
@@ -105,6 +117,9 @@ class AnalyticSeries:
             rho = float(np.dot(np.asarray(sig, dtype=float), lambdas))
             total += c * (t ** m) * np.exp(-rho * t)
         return total
+
+    def term_count(self) -> int:
+        return len(self.terms)
 
 
 @dataclass(frozen=True)
@@ -146,3 +161,43 @@ class DeferredResponseSeries:
 
     def derivative_value(self, t: float, lambdas: np.ndarray) -> complex:
         return sum(term.derivative_value(t, lambdas) for term in self.terms)
+
+
+def solve_response_series(source: AnalyticSeries, target_mode: int, lambdas: np.ndarray) -> AnalyticSeries:
+    """Compile (d/dt + lambda_i) y = source, y(0)=0 into the same analytic algebra.
+
+    Every source term c*t^m*exp(-rho*t) is converted exactly to a finite
+    polynomial-exponential series. The only branch is exact resonance
+    (lambda_i-rho == 0); no near-resonance tolerance is introduced.
+    """
+    lambdas = np.asarray(lambdas, dtype=float)
+    if lambdas.shape != (source.n_modes,):
+        raise ValueError("lambdas must have shape (n_modes,)")
+    if not 0 <= target_mode < source.n_modes:
+        raise ValueError("target_mode out of range")
+
+    lam = float(lambdas[target_mode])
+    target_sig = unit_signature(source.n_modes, target_mode)
+    out: Dict[TermKey, complex] = {}
+
+    for (m, sig), c in source.terms.items():
+        rho = float(np.dot(np.asarray(sig, dtype=float), lambdas))
+        delta = lam - rho
+
+        if delta == 0.0:
+            key = (m + 1, target_sig)
+            out[key] = out.get(key, 0.0) + c / (m + 1)
+            continue
+
+        m_fact = factorial(m)
+        for k in range(m + 1):
+            power = m - k
+            coeff = c * ((-1) ** k) * m_fact / factorial(power) / (delta ** (k + 1))
+            key = (power, sig)
+            out[key] = out.get(key, 0.0) + coeff
+
+        target_coeff = c * ((-1) ** (m + 1)) * m_fact / (delta ** (m + 1))
+        key = (0, target_sig)
+        out[key] = out.get(key, 0.0) + target_coeff
+
+    return AnalyticSeries(source.n_modes, out)
