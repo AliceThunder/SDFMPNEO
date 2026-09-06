@@ -30,15 +30,7 @@ def _incident_tetrahedra(mesh) -> tuple[tuple[int, ...], ...]:
 
 
 def _dual_tree_complement_faces(mesh, expected_dimension: int) -> np.ndarray:
-    """Return the complement of a deterministic augmented-dual spanning tree.
-
-    The augmented dual graph contains one node per tetrahedron and one exterior
-    node.  Interior faces join two tetrahedra; boundary faces join one tetrahedron
-    to the exterior.  For a connected contractible tetrahedral chart the
-    complement contains exactly the magnetic cotree dimension.  A count mismatch
-    exposes an unhandled topological/harmonic chart rather than invoking a
-    floating numerical rank decision.
-    """
+    """Return the complement of a deterministic augmented-dual spanning tree."""
 
     incident = _incident_tetrahedra(mesh)
     exterior = int(mesh.n_tetrahedra)
@@ -86,38 +78,49 @@ def _dual_tree_complement_faces(mesh, expected_dimension: int) -> np.ndarray:
 
 
 def _assign_selected_faces_to_tetrahedra(mesh, selected_faces: np.ndarray) -> np.ndarray:
-    """Assign selected faces to cells using only the exact 3-D curl dimension.
+    """Deterministic capacity-three bipartite matching of faces to cells.
 
-    Any at most three distinct faces of a non-degenerate tetrahedron have
-    linearly independent normals.  Therefore no numerical rank tolerance is
-    required: a tetrahedron may receive at most three selected faces.
+    Every tetrahedron contributes exactly three physical curl components, so it
+    exposes three matching slots.  A selected face connects to all three slots of
+    each incident tetrahedron.  Standard augmenting-path matching then finds a
+    complete assignment in polynomial time.  Capacity three is fixed by 3-D
+    vector physics, not a tunable algorithmic parameter.
     """
 
     incident = _incident_tetrahedra(mesh)
     selected = [int(f) for f in selected_faces]
-    assignment = np.full(len(selected), -1, dtype=int)
-    by_tet: list[list[int]] = [[] for _ in range(mesh.n_tetrahedra)]
+    n_slots = 3 * mesh.n_tetrahedra
+    matched_face_for_slot = np.full(n_slots, -1, dtype=int)
 
-    def search(position: int) -> bool:
-        if position == len(selected):
-            return True
-        face = selected[position]
-        for tet in incident[face]:
-            if len(by_tet[tet]) >= 3:
+    def candidate_slots(face: int) -> list[int]:
+        return [3 * int(tet) + slot for tet in incident[face] for slot in range(3)]
+
+    def augment(face_position: int, seen_slots: np.ndarray) -> bool:
+        face = selected[face_position]
+        for slot in candidate_slots(face):
+            if seen_slots[slot]:
                 continue
-            by_tet[tet].append(face)
-            assignment[position] = tet
-            if search(position + 1):
+            seen_slots[slot] = True
+            previous = int(matched_face_for_slot[slot])
+            if previous < 0 or augment(previous, seen_slots):
+                matched_face_for_slot[slot] = face_position
                 return True
-            by_tet[tet].pop()
-            assignment[position] = -1
         return False
 
-    if not search(0):
-        raise ValueError(
-            "dual-tree face basis cannot be assigned within the exact three-component tetrahedral curl dimension"
-        )
-    return assignment
+    for position in range(len(selected)):
+        seen = np.zeros(n_slots, dtype=bool)
+        if not augment(position, seen):
+            raise ValueError(
+                "dual-tree face basis cannot be assigned within the exact three-component tetrahedral curl dimension"
+            )
+
+    slot_for_face = np.full(len(selected), -1, dtype=int)
+    for slot, position in enumerate(matched_face_for_slot):
+        if position >= 0:
+            slot_for_face[position] = slot
+    if np.any(slot_for_face < 0):
+        raise RuntimeError("internal face-to-tetrahedral-slot matching is incomplete")
+    return (slot_for_face // 3).astype(int)
 
 
 def _build_face_energy_lower_matrix(problem, selected_faces: np.ndarray, assignment: np.ndarray) -> sp.csr_matrix:
@@ -183,24 +186,16 @@ def _build_face_energy_lower_matrix(problem, selected_faces: np.ndarray, assignm
 class MagneticFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner):
     """Local certified magnetic action derived from face-circulation energy.
 
-    The topology/geometry construction first proves
+    The topology/geometry construction proves
 
-        K_A >= P_face = S^T W S.
+        K_A >= P_face=S^T W S.
 
-    No inverse of S is used in the production action.  Instead a
-    certificate-driven aggregate preconditioner constructs a block-diagonal
-    matrix Q_A from principal blocks of P_face and proves
+    A certificate-driven aggregate action then constructs Q_A and proves
 
-        P_face >= m_face Q_A.
+        P_face >= m_face Q_A,
 
-    Hence
-
-        K_A >= m_face Q_A.
-
-    ``solve(rhs)`` applies Q_A^-1 using only the final local aggregate Cholesky
-    factors.  The block size is selected by the block-Gershgorin certificate and
-    is exposed explicitly.  If it collapses to the whole magnetic dimension the
-    result is correctness-only and cannot be labelled scalable.
+    giving K_A >= m_face Q_A.  The production action therefore never inverts S
+    and only solves the certificate-selected local aggregate blocks of Q_A.
     """
 
     dimension: int
@@ -244,18 +239,12 @@ class MagneticFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner)
 
     @property
     def inverse_inf_upper_bound(self) -> float:
-        """Certified upper bound for ||Q_A^-1||_inf."""
-
         return self._local_action.inverse_inf_upper_bound
 
     def face_energy_matrix(self) -> sp.csr_matrix:
-        """Return P_face in the chain K_A >= P_face >= m_face Q_A."""
-
         return self._face_energy_matrix.copy()
 
     def preconditioner_matrix(self) -> sp.csr_matrix:
-        """Return the local block matrix Q_A actually inverted by ``solve``."""
-
         return self._local_action.preconditioner_matrix(self._face_energy_matrix)
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
