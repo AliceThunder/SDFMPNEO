@@ -237,6 +237,7 @@ class TetrahedralElectroThermalCore:
         candidate_thermal_states: Iterable[np.ndarray],
         *,
         requested_energy_state_error: float,
+        port_set: ImpressedCurrentPortSet | None = None,
         block_action_factory: BlockActionFactory | None = None,
     ):
         """Build the certified nonlinear sparse physical-energy EM reduced space.
@@ -246,10 +247,15 @@ class TetrahedralElectroThermalCore:
 
             H >= m(gamma) min(m_K,m_E) P,
 
-        where m_K and m_E come from the replaceable magnetic/scalar block
-        actions.  The default block action is complete sparse LU strictly as a
-        correctness backend; a certified multilevel/auxiliary-space action can
-        replace it without changing the scientific method or error theorem.
+        where m_K and m_E come from replaceable magnetic/scalar block actions.
+        The default block action is complete sparse LU strictly as a correctness
+        backend; a certified multilevel/auxiliary-space action can replace it
+        without changing the scientific method or error theorem.
+
+        If ``port_set`` is supplied, every unit port excitation is included in
+        one joint multi-RHS residual-greedy construction.  The returned basis is
+        therefore certified simultaneously for all declared WPT ports and can be
+        used directly by ``port_set.evaluate_reduced_physical_certified``.
 
             ||e||_H <= sqrt(2) ||r||_(H^-1).
 
@@ -266,11 +272,21 @@ class TetrahedralElectroThermalCore:
             self.electromagnetic_problem,
             block_action_factory=block_action_factory,
         )
-        return SparseEnergyResidualGreedyEMReducer(
+        reducer = SparseEnergyResidualGreedyEMReducer(
             self.electromagnetic_problem,
             riesz_action_factory=riesz_factory,
-        ).build(
+        )
+
+        if port_set is None:
+            rhs_matrix = np.asarray(self.electromagnetic_problem.b, dtype=complex)[:, None]
+        else:
+            rhs_matrix = np.asarray(port_set.coordinate_rhs, dtype=complex)
+            if rhs_matrix.ndim != 2 or rhs_matrix.shape[0] != self.electromagnetic_problem.n_em:
+                raise ValueError("port_set coordinates do not match electromagnetic problem")
+
+        return reducer.build_multi_rhs(
             candidate_thermal_states,
+            rhs_matrix,
             requested_energy_state_error=requested_energy_state_error,
         )
 
