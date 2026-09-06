@@ -59,13 +59,6 @@ def parametric_product_candidates(
     graph: ParametricAnalyticEvolutionGraph,
     degree: int,
 ) -> Tuple[ParametricGrowthCandidate, ...]:
-    """Complete commutative dictionary layer for one requested product degree.
-
-    The routine does not choose the degree. A certified outer growth driver is
-    expected to increase dictionary order systematically until the requested
-    residual/output certificate is met.
-    """
-
     if degree <= 0:
         raise ValueError("degree must be positive")
     names = graph.known_names()
@@ -83,21 +76,7 @@ def parametric_product_candidates(
 
 
 class ParametricTangentResidualGrower:
-    """Residual-driven topology growth on an externally supplied domain rule.
-
-    For a unit candidate response h in target mode i,
-
-        (d/dt + lambda_i) h = psi,
-
-    the first variation of the physical residual at fixed `(a0,U,t)` is
-
-        D = e_i psi - J_g(a,U)[:,i] h.
-
-    The candidate scalar weight minimizing the weighted tangent residual is
-    obtained in closed form. The complete nonlinear residual is recomputed for
-    the trial graph before acceptance. The class never invents parameter/time
-    samples or quadrature weights.
-    """
+    """Residual-driven topology growth on an externally supplied domain rule."""
 
     def __init__(
         self,
@@ -132,6 +111,7 @@ class ParametricTangentResidualGrower:
                 active,
                 self.residual_model.em_model,
                 self.residual_model.rhs_map,
+                thermal_forcing=self.residual_model.thermal_forcing,
             )
         )
         total = 0.0
@@ -148,16 +128,12 @@ class ParametricTangentResidualGrower:
         compiled = self.graph.compile()
         n_parameters = self.graph.n_parameters
         source = ParametricAnalyticSeries.constant(
-            self.graph.n_modes,
-            n_parameters,
-            1.0,
+            self.graph.n_modes, n_parameters, 1.0
         )
         for parent in candidate.parents:
             source = source * compiled.node_series[parent]
         response = solve_parametric_response_series(
-            source,
-            candidate.target_mode,
-            self.graph.lambdas,
+            source, candidate.target_mode, self.graph.lambdas
         )
         return source, response
 
@@ -183,16 +159,11 @@ class ParametricTangentResidualGrower:
                 operating=sample.operating,
             )
             _, J_g_a = self.residual_model.em_model.heat_source_and_jacobian_for_rhs(
-                state.a,
-                state.rhs,
+                state.a, state.rhs
             )
             parameters = compiled.parameter_vector(sample.initial, sample.operating)
-            psi = float(
-                np.real(source.evaluate(sample.time, self.graph.lambdas, parameters))
-            )
-            h = float(
-                np.real(response.evaluate(sample.time, self.graph.lambdas, parameters))
-            )
+            psi = float(np.real(source.evaluate(sample.time, self.graph.lambdas, parameters)))
+            h = float(np.real(response.evaluate(sample.time, self.graph.lambdas, parameters)))
             tangent = e * psi - np.asarray(J_g_a)[:, candidate.target_mode] * h
             inner += sample.weight * float(state.residual @ tangent)
             norm2 += sample.weight * float(tangent @ tangent)
@@ -203,7 +174,6 @@ class ParametricTangentResidualGrower:
         else:
             proposed = -inner / norm2
             decrease = inner * inner / norm2
-
         return ParametricGrowthScore(candidate, proposed, decrease, norm2, inner)
 
     def best(self, candidates: Iterable[ParametricGrowthCandidate]) -> ParametricGrowthScore:
