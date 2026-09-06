@@ -10,8 +10,10 @@ from sdfmpneo.em import (
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
+    SparseLUExactBlockPreconditioner,
     apsi_physical_energy_metric,
     build_gauge_restricted_magnetic_curl_factor,
+    make_curl_auxiliary_physical_pcg_riesz_factory,
     make_physical_block_pcg_riesz_factory,
     tetra_face_loop_source,
 )
@@ -148,3 +150,18 @@ def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxil
     if E.shape[0]:
         scalar = AdaptiveAggregateEnergyPreconditioner.build(E)
         assert scalar.lower_spectral_equivalence_bound > 0.0
+
+
+def test_curl_auxiliary_physical_riesz_certifies_high_contrast_rom_without_block_lu(monkeypatch):
+    def forbidden_block_lu(*_args, **_kwargs):
+        raise AssertionError("complete magnetic/scalar block sparse LU backend was used")
+
+    monkeypatch.setattr(
+        SparseLUExactBlockPreconditioner,
+        "build",
+        forbidden_block_lu,
+    )
+    problem = build_high_contrast_problem()
+    factory = make_curl_auxiliary_physical_pcg_riesz_factory(problem)
+    model = _certify_reduction(problem, factory)
+    assert model.reduction_certificate.certified
