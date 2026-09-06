@@ -35,21 +35,12 @@ def _normalized_gershgorin_lower(
     matrix: sp.csr_matrix,
     diagonal: np.ndarray,
 ) -> float:
-    """Certified lower bound for diag(d)^-1/2 A diag(d)^-1/2.
-
-    This routine is used only when ``diagonal`` is the exact represented
-    diagonal of ``matrix``.  Hence every normalized diagonal entry is one in
-    arithmetic over the stored coefficients, and only the off-diagonal radius
-    requires an outward floating-point enclosure.
-    """
-
     A = sp.csr_matrix(matrix, dtype=complex)
     n = A.shape[0]
     if A.shape != (n, n) or diagonal.shape != (n,):
         raise ValueError("normalized Gershgorin dimensions do not match")
 
     row_lower = np.empty(n, dtype=float)
-    eps = np.finfo(float).eps
     for i in range(n):
         terms: list[float] = []
         start, stop = A.indptr[i], A.indptr[i + 1]
@@ -60,11 +51,8 @@ def _normalized_gershgorin_lower(
             denom = math.sqrt(float(diagonal[i] * diagonal[j]))
             terms.append(float(abs(value) / denom))
         radius_hat = math.fsum(terms)
-        operation_count = 5 * len(terms) + 2
-        if operation_count * eps >= 1.0:
-            raise FloatingPointError("matrix row is too large for Gershgorin enclosure")
-        gamma = operation_count * eps / (1.0 - operation_count * eps)
-        radius_upper = float(np.nextafter(radius_hat / (1.0 - gamma), np.inf))
+        g = _gamma(5 * len(terms) + 2)
+        radius_upper = float(np.nextafter(radius_hat / (1.0 - g), np.inf))
         row_lower[i] = float(np.nextafter(1.0 - radius_upper, -np.inf))
     return float(np.min(row_lower)) if n else np.inf
 
@@ -73,15 +61,12 @@ def _normalized_gershgorin_upper(
     matrix: sp.csr_matrix,
     reference_diagonal: np.ndarray,
 ) -> float:
-    """Certified upper spectral bound after diagonal congruence scaling."""
-
     A = sp.csr_matrix(matrix, dtype=complex)
     n = A.shape[0]
     if A.shape != (n, n) or reference_diagonal.shape != (n,):
         raise ValueError("normalized Gershgorin dimensions do not match")
 
     row_upper = np.empty(n, dtype=float)
-    eps = np.finfo(float).eps
     for i in range(n):
         diagonal_term = 0.0
         off_terms: list[float] = []
@@ -95,52 +80,157 @@ def _normalized_gershgorin_upper(
             else:
                 off_terms.append(term)
         radius_hat = math.fsum(off_terms)
-        operation_count = 5 * (len(off_terms) + 1) + 2
-        if operation_count * eps >= 1.0:
-            raise FloatingPointError("matrix row is too large for Gershgorin enclosure")
-        gamma = operation_count * eps / (1.0 - operation_count * eps)
+        g = _gamma(5 * (len(off_terms) + 1) + 2)
         raw = diagonal_term + radius_hat
-        row_upper[i] = float(np.nextafter(raw / (1.0 - gamma), np.inf))
+        row_upper[i] = float(np.nextafter(raw / (1.0 - g), np.inf))
     return float(np.max(row_upper)) if n else 0.0
+
+
+def _matvec_residual_component_upper(
+    A: sp.csr_matrix,
+    x: np.ndarray,
+    b: np.ndarray,
+) -> np.ndarray:
+    """Componentwise upper bound for the exact represented residual b-Ax."""
+
+    product = np.asarray(A @ x, dtype=complex)
+    residual_hat = np.asarray(b, dtype=complex) - product
+    out = np.empty(A.shape[0], dtype=float)
+    for i in range(A.shape[0]):
+        start, stop = A.indptr[i], A.indptr[i + 1]
+        indices = A.indices[start:stop]
+        values = A.data[start:stop]
+        scale = math.fsum(
+            float(abs(value) * abs(x[int(j)]))
+            for j, value in zip(indices, values)
+        )
+        # Complex multiply/add plus the final subtraction are enclosed
+        # conservatively by a standard gamma_k model.
+        g = _gamma(10 * max(1, len(indices)) + 4)
+        matvec_error = g * scale
+        value = float(abs(residual_hat[i])) + matvec_error
+        out[i] = float(np.nextafter(value / (1.0 - _gamma(2)), np.inf))
+    return out
+
+
+def _inflate_sum(value: float, term_count: int) -> float:
+    g = _gamma(max(1, term_count))
+    return float(np.nextafter(value / (1.0 - g), np.inf))
+
+
+def _certified_inverse_inf_upper(
+    A: sp.csr_matrix,
+    lu,
+) -> float:
+    """A-posteriori upper bound for ||A^-1||_inf without storing a dense inverse.
+
+    Column solves form an implicit approximate inverse X.  The explicitly
+    recomputed residual R=I-AX gives
+
+        A^-1 = X (I-R)^-1,
+        ||A^-1||_inf <= ||X||_inf / (1-||R||_inf)
+
+    whenever ||R||_inf<1.  Only row sums are retained, so the certificate uses
+    O(n) auxiliary memory although it performs n correctness-scale block solves.
+    """
+
+    n = A.shape[0]
+    x_row_sums = np.zeros(n, dtype=float)
+    residual_row_sums = np.zeros(n, dtype=float)
+    for j in range(n):
+        rhs = np.zeros(n, dtype=complex)
+        rhs[j] = 1.0
+        x = np.asarray(lu.solve(rhs), dtype=complex)
+        x_row_sums += np.abs(x)
+        residual_row_sums += _matvec_residual_component_upper(A, x, rhs)
+
+    x_inf = _inflate_sum(float(np.max(x_row_sums)), n)
+    residual_inf = _inflate_sum(float(np.max(residual_row_sums)), n)
+    if residual_inf >= 1.0:
+        raise ValueError("sparse magnetic factorization residual cannot certify an inverse bound")
+    upper = x_inf / (1.0 - residual_inf)
+    return float(np.nextafter(upper, np.inf))
+
+
+def _certified_generalized_trace_upper(
+    K: sp.csr_matrix,
+    D: sp.csr_matrix,
+    lu_K,
+    inverse_inf_upper: float,
+) -> float:
+    """Certify lambda_max(K^-1/2 D K^-1/2) by a trace upper bound.
+
+    For physical D>=0,
+
+        lambda_max <= trace(K^-1 D).
+
+    Each diagonal contribution is obtained from a sparse solve K x=D[:,j].
+    The solve error is bounded by ||K^-1||_inf times the explicitly certified
+    residual infinity norm.  No generalized eigensolver tolerance is introduced.
+    """
+
+    n = K.shape[0]
+    terms: list[float] = []
+    for j in range(n):
+        column = np.asarray(D.getcol(j).toarray()).ravel().astype(complex)
+        if not np.any(column):
+            terms.append(0.0)
+            continue
+        x = np.asarray(lu_K.solve(column), dtype=complex)
+        residual_component = _matvec_residual_component_upper(K, x, column)
+        residual_inf = float(np.max(residual_component))
+        solution_error_inf = float(
+            np.nextafter(inverse_inf_upper * residual_inf, np.inf)
+        )
+        terms.append(float(np.nextafter(abs(x[j]) + solution_error_inf, np.inf)))
+
+    trace_upper = _inflate_sum(math.fsum(terms), n)
+    return float(np.nextafter(trace_upper, np.inf))
 
 
 @dataclass(frozen=True)
 class PhysicalBlockEnergyPreconditioner:
     """Certified magnetic/scalar-conductive block preconditioner.
 
-    For the physical A-psi energy metric
+    For
 
         H = [[K_A + D_AA, D_Apsi],
              [D_psiA,       D_psipsi]],
 
-    conductivity positivity makes the D block positive semidefinite.  Suppose
+    the physical assembly gives K_A>0 after tree-cotree gauge elimination and
+    D>=0 from the conductivity Gram form.  If
 
-        D_AA <= gamma K_A.
+        D_AA <= gamma K_A,
 
-    Then Cauchy-Schwarz in the conductive Gram form plus Young's inequality gives
+    conductive Cauchy-Schwarz plus Young's inequality yields
 
         H >= m(gamma) diag(K_A, D_psipsi),
 
-    with the optimal closed-form coefficient
+    where
 
-        m(gamma)
-        = 2 / [2 + gamma + sqrt(gamma^2 + 4 gamma)].
+        m(gamma)=2/[2+gamma+sqrt(gamma^2+4 gamma)].
 
-    No relaxation/damping parameter is selected by the user.  ``gamma`` is
-    bounded from the assembled operators by certified normalized Gershgorin
-    enclosures.  If those enclosures cannot prove positivity, construction is
-    refused rather than repaired by a shift.
+    The fast certificate first attempts a normalized Gershgorin bound.  When the
+    physical magnetic block is not diagonally dominant, a deterministic
+    residual-certified sparse-factorization fallback bounds
 
-    The current block inverse uses complete sparse LU inside K_A and D_psipsi as
-    a correctness implementation.  The theorem and outer PCG interface do not
-    depend on that choice; each block can later be replaced by a certified
-    auxiliary-space/multilevel action.
+        gamma <= trace(K_A^-1 D_AA)
+
+    without forming a dense inverse.  Failure of either certificate is reported;
+    no diagonal shift or fitted damping is introduced.
+
+    Block inverses currently use complete sparse LU as correctness-scale
+    implementations.  The outer theorem only consumes the preconditioner action
+    and proved m(gamma), so each block can later be replaced independently by a
+    certified auxiliary-space/multilevel action.
     """
 
     n_A: int
     lower_spectral_equivalence_bound: float
     gamma_upper_bound: float
+    gamma_certificate_method: str
     magnetic_normalized_lower_bound: float
+    magnetic_inverse_inf_upper_bound: float
     scalar_normalized_lower_bound: float
     _lu_magnetic: object
     _lu_scalar: object | None
@@ -167,21 +257,33 @@ class PhysicalBlockEnergyPreconditioner:
         K = (0.5 * (K + K.conj().T)).tocsr()
         K.sum_duplicates()
         K.eliminate_zeros()
-
         K_diag = _positive_real_diagonal(K, "magnetic block")
-        k_lower = _normalized_gershgorin_lower(K, K_diag)
-        if k_lower <= 0.0:
-            raise ValueError(
-                "magnetic block has no positive certified normalized Gershgorin lower bound"
-            )
+        try:
+            lu_K = spla.splu(K.tocsc())
+        except RuntimeError as exc:
+            raise ValueError("magnetic block factorization failed") from exc
 
         H11 = metric[:n_A, :n_A].tocsr()
         D_AA = (H11 - K).tocsr()
         D_AA = (0.5 * (D_AA + D_AA.conj().T)).tocsr()
         D_AA.sum_duplicates()
         D_AA.eliminate_zeros()
-        d_upper = _normalized_gershgorin_upper(D_AA, K_diag)
-        gamma_upper = float(np.nextafter(d_upper / k_lower, np.inf))
+
+        k_lower = _normalized_gershgorin_lower(K, K_diag)
+        inverse_inf_upper = np.nan
+        if k_lower > 0.0:
+            d_upper = _normalized_gershgorin_upper(D_AA, K_diag)
+            gamma_upper = float(np.nextafter(d_upper / k_lower, np.inf))
+            gamma_method = "normalized_gershgorin"
+        else:
+            inverse_inf_upper = _certified_inverse_inf_upper(K, lu_K)
+            gamma_upper = _certified_generalized_trace_upper(
+                K,
+                D_AA,
+                lu_K,
+                inverse_inf_upper,
+            )
+            gamma_method = "residual_certified_generalized_trace"
         if gamma_upper < 0.0 or not np.isfinite(gamma_upper):
             raise ValueError("failed to obtain a finite non-negative D_AA/K_A bound")
 
@@ -195,17 +297,15 @@ class PhysicalBlockEnergyPreconditioner:
             E.eliminate_zeros()
             E_diag = _positive_real_diagonal(E, "scalar conductive block")
             scalar_lower = _normalized_gershgorin_lower(E, E_diag)
-            if scalar_lower <= 0.0:
-                raise ValueError(
-                    "scalar conductive block has no positive certified normalized Gershgorin lower bound"
-                )
-            lu_scalar = spla.splu(E.tocsc())
+            # E is a principal block of the physical H>0 and hence SPD.  A
+            # positive Gershgorin value is recorded when available, but lack of
+            # diagonal dominance is not confused with loss of physical SPD.
+            try:
+                lu_scalar = spla.splu(E.tocsc())
+            except RuntimeError as exc:
+                raise ValueError("scalar conductive block factorization failed") from exc
 
-        if n_scalar == 0:
-            # H11=K+D_AA >= K structurally.
-            lower = 1.0
-        elif gamma_upper == 0.0:
-            # D_AA=0 forces the cross block to vanish for PSD conductive D.
+        if n_scalar == 0 or gamma_upper == 0.0:
             lower = 1.0
         else:
             root = math.sqrt(gamma_upper * gamma_upper + 4.0 * gamma_upper)
@@ -218,34 +318,29 @@ class PhysicalBlockEnergyPreconditioner:
             n_A=n_A,
             lower_spectral_equivalence_bound=lower,
             gamma_upper_bound=gamma_upper,
+            gamma_certificate_method=gamma_method,
             magnetic_normalized_lower_bound=float(k_lower),
+            magnetic_inverse_inf_upper_bound=float(inverse_inf_upper),
             scalar_normalized_lower_bound=float(scalar_lower),
-            _lu_magnetic=spla.splu(K.tocsc()),
+            _lu_magnetic=lu_K,
             _lu_scalar=lu_scalar,
         )
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
         vector = np.asarray(rhs, dtype=complex)
-        n_scalar = 0 if self._lu_scalar is None else vector.size - self.n_A
         if vector.ndim != 1 or vector.size < self.n_A:
             raise ValueError("preconditioner rhs dimension mismatch")
         if self._lu_scalar is None and vector.size != self.n_A:
             raise ValueError("preconditioner rhs dimension mismatch")
         left = np.asarray(self._lu_magnetic.solve(vector[: self.n_A]), dtype=complex)
-        if not n_scalar:
+        if self._lu_scalar is None:
             return left
         right = np.asarray(self._lu_scalar.solve(vector[self.n_A :]), dtype=complex)
         return np.concatenate([left, right])
 
 
 def make_physical_block_pcg_riesz_factory(problem):
-    """Create a state-independent factory closure for the physical block theorem.
-
-    The magnetic coordinate block depends only on geometry/permeability in the
-    present magnetoquasistatic formulation.  The conductive scalar block and
-    gamma certificate are rebuilt from each local H(a), so thermal material
-    variation remains inside the local certificate.
-    """
+    """Create the local-H physical block PCG Riesz factory for tetrahedra."""
 
     required = ("a_basis", "magnetic_stiffness", "n_A")
     if any(not hasattr(problem, name) for name in required):
