@@ -11,6 +11,7 @@ from .em import (
     NonlinearTetrahedralApsiProblem,
     NonlinearTetrahedralRegionLossEvaluator,
     ResidualGreedyEMReducer,
+    RieszActionFactory,
     SparseEnergyResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
@@ -235,11 +236,16 @@ class TetrahedralElectroThermalCore:
         candidate_thermal_states: Iterable[np.ndarray],
         *,
         requested_energy_state_error: float,
+        riesz_action_factory: RieszActionFactory | None = None,
     ):
         """Build the production nonlinear sparse physical-energy EM reduced space.
 
-        Every full-order operator and Riesz lift remains sparse. Candidate-state
-        error is measured by the contrast-independent local physical-energy bound
+        Every full-order operator remains sparse. Residual certification and
+        enrichment consume a CertifiedRieszAction, so an exact H^{-1} solve is
+        not part of the reduction theorem. If no factory is supplied, the
+        deterministic sparse-LU reference backend is used for correctness-scale
+        builds; production auxiliary-space actions can be injected through the
+        same interface.
 
             ||e||_H <= sqrt(2) ||r||_(H^-1).
 
@@ -252,7 +258,13 @@ class TetrahedralElectroThermalCore:
                 "build_reduced_electromagnetics is the certified nonlinear sparse-energy path; "
                 "use build_affine_verification_reduced_electromagnetics for the affine verification backend"
             )
-        return SparseEnergyResidualGreedyEMReducer(self.electromagnetic_problem).build(
+        kwargs = {}
+        if riesz_action_factory is not None:
+            kwargs["riesz_action_factory"] = riesz_action_factory
+        return SparseEnergyResidualGreedyEMReducer(
+            self.electromagnetic_problem,
+            **kwargs,
+        ).build(
             candidate_thermal_states,
             requested_energy_state_error=requested_energy_state_error,
         )
