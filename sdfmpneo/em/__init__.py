@@ -1,4 +1,5 @@
 from .compatible import CompatibleAphiDiscretization
+from .diagnostics import RegionLossProjector, build_region_loss_projector
 from .grid3d import (
     RectilinearComplex3D,
     SpatialAphiAssembly,
@@ -14,6 +15,8 @@ from .reduced import (
 
 __all__ = [
     "CompatibleAphiDiscretization",
+    "RegionLossProjector",
+    "build_region_loss_projector",
     "RectilinearComplex3D",
     "SpatialAphiAssembly",
     "build_compatible_aphi_from_cells",
