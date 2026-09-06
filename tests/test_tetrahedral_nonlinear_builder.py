@@ -64,6 +64,17 @@ def build_nonlinear_core():
     return core
 
 
+def two_port_set(core):
+    mesh = core.mesh
+    edge_currents = np.column_stack(
+        [
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0])).real,
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
+        ]
+    )
+    return core.build_ports(edge_currents, names=("p1", "p2"))
+
+
 def test_one_call_nonlinear_builder_uses_certified_material_backend():
     core = build_nonlinear_core()
     assert core.material_backend == "certified_nonlinear"
@@ -104,23 +115,59 @@ def test_nonlinear_core_never_falls_back_to_global_riesz_lu(monkeypatch):
     assert certificate.energy_state_error_bound <= requested
 
 
-def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
-    core = build_nonlinear_core()
-    mesh = core.mesh
-    edge_currents = np.column_stack(
-        [
-            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0])).real,
-            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
-        ]
+def test_core_joint_multiport_reduction_and_zrlm_certificate_use_same_physical_riesz_path(monkeypatch):
+    def forbidden_reference_riesz(*_args, **_kwargs):
+        raise AssertionError("global H sparse-LU Riesz reference backend was used")
+
+    monkeypatch.setattr(
+        SparseLUReferenceRieszAction,
+        "__init__",
+        forbidden_reference_riesz,
     )
 
+    core = build_nonlinear_core()
+    ports = two_port_set(core)
+    query_state = np.array([0.0])
+    reduced = core.build_reduced_electromagnetics(
+        [np.array([-0.1]), query_state, np.array([0.1])],
+        port_set=ports,
+        requested_energy_state_error=1e-10,
+    )
+
+    assert reduced.reduction_certificate.certified
+    for p in range(ports.n_ports):
+        cert = reduced.residual_certificate_for_rhs(
+            query_state,
+            ports.coordinate_rhs[:, p],
+        )
+        assert cert.energy_state_error_bound <= 1e-10
+
+    result = ports.evaluate_reduced_physical_certified(
+        core.electromagnetic_problem,
+        query_state,
+        reduced,
+        requested_impedance_element_error=1e-7,
+    )
+    assert result.certified
+    assert result.impedance.shape == (2, 2)
+    assert result.resistance.shape == (2, 2)
+    assert result.inductance.shape == (2, 2)
+    assert result.maximum_impedance_error_bound <= 1e-7
+    assert core.electromagnetic_problem._H_metric is None
+
+
+def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
+    core = build_nonlinear_core()
+    ports = two_port_set(core)
     matrix_type = type(core.electromagnetic_discretization.a_basis)
 
     def forbidden_toarray(*_args, **_kwargs):
         raise AssertionError("full-order sparse gauge basis was densified")
 
+    # Rebuild after the guard is installed to make sure sparse port projection is
+    # the only allowed path.
     monkeypatch.setattr(matrix_type, "toarray", forbidden_toarray)
-    ports = core.build_ports(edge_currents, names=("p1", "p2"))
+    ports = two_port_set(core)
 
     assert ports.coordinate_rhs.shape == (core.electromagnetic_problem.n_em, 2)
     assert core.electromagnetic_problem._H_metric is None
