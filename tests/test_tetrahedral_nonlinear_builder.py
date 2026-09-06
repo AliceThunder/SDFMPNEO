@@ -158,16 +158,20 @@ def test_core_joint_multiport_reduction_and_zrlm_certificate_use_same_physical_r
 
 def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
     core = build_nonlinear_core()
-    ports = two_port_set(core)
+    mesh = core.mesh
+    edge_currents = np.column_stack(
+        [
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[0])).real,
+            tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
+        ]
+    )
     matrix_type = type(core.electromagnetic_discretization.a_basis)
 
     def forbidden_toarray(*_args, **_kwargs):
         raise AssertionError("full-order sparse gauge basis was densified")
 
-    # Rebuild after the guard is installed to make sure sparse port projection is
-    # the only allowed path.
     monkeypatch.setattr(matrix_type, "toarray", forbidden_toarray)
-    ports = two_port_set(core)
+    ports = core.build_ports(edge_currents, names=("p1", "p2"))
 
     assert ports.coordinate_rhs.shape == (core.electromagnetic_problem.n_em, 2)
     assert core.electromagnetic_problem._H_metric is None
