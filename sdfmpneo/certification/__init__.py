@@ -23,6 +23,10 @@ from .em_domain import (
     bound_affine_reduced_residual_on_box,
     certify_affine_reduced_residual_domain,
 )
+from .nonlinear_em_domain import (
+    bound_nonlinear_reduced_residual_on_box,
+    certify_nonlinear_reduced_residual_domain,
+)
 from .ports import (
     MultiPortOutputCertificate,
     certify_multiport_impedance,
@@ -43,6 +47,8 @@ __all__ = [
     "ContinuousEMResidualCertificate",
     "bound_affine_reduced_residual_on_box",
     "certify_affine_reduced_residual_domain",
+    "bound_nonlinear_reduced_residual_on_box",
+    "certify_nonlinear_reduced_residual_domain",
     "MultiPortOutputCertificate",
     "electromagnetic_stability_constant",
     "certify_multiport_impedance",
