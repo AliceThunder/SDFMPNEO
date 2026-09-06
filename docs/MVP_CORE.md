@@ -21,7 +21,15 @@ The repository now contains:
 - first-order Nedelec tetrahedral electromagnetic assembly;
 - P1 tetrahedral thermal mass/conduction assembly on the same mesh;
 - reciprocal scaled `A-psi` magnetoquasistatic coordinates;
-- physical electromagnetic Riesz metric and Cholesky-Riesz residual coordinates;
+- native sparse nonlinear tetrahedral `A(a)`, `dA/da`, loss operators, and physical energy metric;
+- physical electromagnetic energy metric `H=K+D` for `A=K+iD`;
+- structural energy coercivity `beta_H >= 1/sqrt(2)`, independent of copper/seawater conductivity contrast;
+- energy-preconditioned sparse BiCGSTAB with true residual certification;
+- deterministic complete sparse-LU fallback when the short-recurrence iteration is insufficient, without drop tolerances or relaxed error targets;
+- reusable sparse factorisations across multiple port right-hand sides at one thermal state;
+- sparse algebraic field-error propagation to `Z/R/L/M` and projected heat source;
+- high-contrast regression with `sigma_Cu/sigma_seawater > 1e7`;
+- physical electromagnetic Riesz metric and Cholesky-Riesz residual coordinates for the verification-scale reduced model;
 - snapshot-free single- and multi-RHS electromagnetic reduction;
 - thermal generalized eigenmodes with spectral-tail certified rank selection;
 - exact barycentric polynomial integration against Nedelec fields;
@@ -33,7 +41,7 @@ The repository now contains:
 - reciprocity, passivity, and port-power/Joule-power/material-region power closure checks;
 - residual-to-port-output error certificates;
 - constitutive-series remainder propagated to deterministic `Z/R/L/M` bounds;
-- constitutive-series remainder propagated to projected heat-source error bounds usable as `eta_EM` in the coupled state certificate;
+- constitutive-series remainder propagated to projected heat-source error bounds usable as `eta_EM`;
 - continuous affine thermal-state EM residual certification by branch-and-bound;
 - intrinsic analytic neural DAGs with arbitrary-depth response chains;
 - intrinsic parameter nodes for `(a0,U,t) -> a(t)` at a fixed spatial/operator family;
@@ -57,15 +65,22 @@ tetrahedral geometry + material regions
         |       +--> certified retained rank
         |       +--> local P1 thermal modes
         |
-        +--> Nedelec magnetic operator
-        +--> certified sigma(T) integration
+        +--> Nedelec magnetic operator K
+        +--> certified conductivity operator D(a)
                 |
-                +--> reciprocal A-psi field system
+                +--> sparse reciprocal A=K+iD
+                |       |
+                |       +--> H=K+D
+                |       +--> beta_H >= 1/sqrt(2)
+                |       +--> certified sparse solve
+                |       +--> algebraic Z/R/L/M bounds
+                |       +--> algebraic q_em,r bounds
+                |
                 +--> snapshot-free EM reduction
                 +--> q_em,r(a), dq_em,r/da
                 +--> Z/R/L/M
                 +--> P_Cu/P_sea
-                +--> residual/output/material certificates
+                +--> constitutive/reduction/solve certificates
                           |
                           +--> analytic residual-driven network
                           +--> direct arbitrary-time query
@@ -76,7 +91,7 @@ tetrahedral geometry + material regions
 With
 
 ```text
-A = R_A alpha,
+A_field = R_A alpha,
 psi = phi/(j omega),
 E = -j omega (R_A alpha + G_c psi),
 ```
@@ -89,6 +104,63 @@ the tetrahedral Nedelec field system is
 ```
 
 For reciprocal real material matrices it is complex symmetric. The code does not symmetrize `Z` afterwards.
+
+## Contrast-independent sparse field certificate
+
+Write the gauge-reduced physical matrix as
+
+```text
+A = K + iD,
+K >= 0,
+D >= 0,
+H = K + D.
+```
+
+For any complex state `x`,
+
+```text
+|x^H A x|
+= sqrt[(x^H K x)^2 + (x^H D x)^2]
+>= x^H H x / sqrt(2).
+```
+
+Therefore
+
+```text
+beta_H >= 1/sqrt(2)
+```
+
+and for the explicitly recomputed residual `r=b-Ax_h`,
+
+```text
+||x-x_h||_H
+<= sqrt(2) ||r||_(H^-1).
+```
+
+The constant is structural and contains no empirical conductivity-ratio factor. The recommended sparse path therefore does not need an external minimum singular-value estimate.
+
+For closed port source `b_i`,
+
+```text
+|Delta Z_ij|
+<= w ||b_i||_(H^-1) ||Delta x_j||_H.
+```
+
+A requested per-entry impedance accuracy determines the field solve accuracy directly. There is no separate scientific `solver_tol` parameter.
+
+For reduced thermal test mode `phi_j`, with `m_j=||phi_j||_infinity`, the same energy-state bound gives
+
+```text
+|Delta q_j|
+<= (w m_j / 2)
+   [2 ||x_h||_H epsilon_H + epsilon_H^2].
+```
+
+This is the executable algebraic-solve contribution to `eta_EM`.
+
+The current energy-preconditioned Krylov implementation uses exact sparse `H^-1`; if it does not meet the physical residual certificate within the dimension-derived work bound, the correctness path uses complete sparse LU on `A`. That fallback is deterministic and certificate-preserving but is not the final memory-scalable production algorithm.
+
+See `docs/SPARSE_ENERGY_SOLVER.md` for the full derivation.
 
 ## Exact barycentric loss projection
 
@@ -141,48 +213,37 @@ with
 
 The code selects the minimum order satisfying the declared constitutive error allocation. A too-coarse series is allowed to become **uncertified**; no stability condition is relaxed to force a result.
 
-## Constitutive error propagation
+## Electromagnetic error decomposition
 
-The pointwise conductivity certificate gives
-
-```text
-|sigma_tilde-sigma| <= eps_sigma sigma
-```
-
-and therefore
+The code now distinguishes at least the following error sources:
 
 ```text
-|sigma_tilde-sigma|
-<= eps_sigma/(1-eps_sigma) sigma_tilde.
+eta_constitutive : certified nonlinear material-series error,
+eta_algebraic    : certified sparse linear-solve error,
+eta_EM-ROM       : electromagnetic reduced-space error.
 ```
 
-This is propagated to a field-operator perturbation bound `||Delta A||`. If
+Future certified terms are
 
 ```text
-||A_tilde^-1|| ||Delta A|| < 1,
+eta_mesh,
+eta_outer.
 ```
 
-the inverse perturbation theorem yields finite bounds on the EM state and
+They must not be hidden inside one numerical tolerance. A conservative source-level budget can use
 
 ```text
-||Delta Z||_2,
-|Delta R_ij|,
-|Delta L_ij|.
+eta_EM
+<= eta_constitutive
+ + eta_algebraic
+ + eta_EM-ROM
+ + eta_mesh
+ + eta_outer.
 ```
 
-The state bound and a loss-operator remainder bound additionally give each
+Only terms with an implemented proof should be treated as finite certified contributions.
 
-```text
-|Delta q_em,r,j|
-```
-
-and the vector norm `||Delta q_em,r||_2`. This is the executable constitutive contribution to `eta_EM` in
-
-```text
-||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa.
-```
-
-If the inverse perturbation condition fails, these certificates return an uncertified/infinite bound instead of weakening the theorem.
+The current constitutive certificate propagates pointwise conductivity error through an inverse perturbation theorem. If the inverse perturbation condition fails, the result remains uncertified/infinite rather than weakening the theorem.
 
 ## Multiport and regional power closure
 
@@ -245,19 +306,19 @@ A continuous branch-and-bound certificate is implemented for strictly affine EM 
 certified / violated / indeterminate.
 ```
 
-The new certified nonlinear tetrahedral material path has pointwise constitutive and a-posteriori output bounds, but a **continuous state/geometry/frequency-domain certificate for that nonlinear operator family is still pending**.
+The certified nonlinear tetrahedral material path has pointwise constitutive and a-posteriori output bounds, but a **continuous state/geometry/frequency-domain certificate for that nonlinear operator family is still pending**.
 
 ## Remaining production obligations
 
 1. CAD/mesh import and conforming meshing for actual round/rounded-square conductors, package, and seawater domains.
-2. Sparse end-to-end Nedelec assembly/solve and verified high-contrast preconditioning for realistic copper/seawater conductivity ratios.
-3. Continuous-domain certification for nonlinear tetrahedral material, geometry, frequency, and source parameters.
-4. Mesh-discretization and linear-solver error terms in the unified output/state certificate.
-5. Certified open/infinite seawater electromagnetic and thermal outer-domain treatment.
-6. Scalable partial thermal eigensolution with a certified lower bound on the first omitted eigenvalue.
-7. Solid-conductor terminal-current constrained ports when impressed closed-current sources are not the intended excitation.
-8. Parameterization across geometry/operator families that change the thermal spectrum; current intrinsic `U` parameterization assumes a fixed operator family.
-9. Certified compression/minimalization of large analytic state-space realizations.
-10. A global convergence proof/certificate for the complete residual-grown analytic-network construction over the full parameter domain.
+2. Replace exact sparse `H^-1` and complete sparse-LU fallback with a memory-scalable multilevel/auxiliary-space solver while retaining a verified inexact-preconditioner and field-error certificate.
+3. Make snapshot-free electromagnetic reduction fully sparse/Riesz-scalable without production dense Cholesky factors.
+4. Continuous-domain certification for nonlinear tetrahedral material, geometry, frequency, and source parameters.
+5. Mesh-discretization and certified outer-domain truncation terms in the unified output/state certificate.
+6. Certified open/infinite seawater electromagnetic and thermal outer-domain treatment.
+7. Scalable partial thermal eigensolution with a certified lower bound on the first omitted eigenvalue.
+8. Solid-conductor terminal-current constrained ports when impressed closed-current sources are not the intended excitation.
+9. Parameterization across geometry/operator families that change the thermal spectrum; current intrinsic `U` parameterization assumes a fixed operator family.
+10. Certified compression/minimalization of large analytic state-space realizations and a global convergence certificate for residual-grown analytic-network construction.
 
 These limits are explicit implementation obligations, not empirical safety factors.
