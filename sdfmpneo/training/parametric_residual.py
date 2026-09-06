@@ -58,9 +58,6 @@ class ParametricElectroThermalResidual:
     The residual is the same production equation used online:
 
         R = da + Lambda a - g_em(a,U) - f_T.
-
-    ``f_T`` is static in the declared chart, hence it does not alter the operating
-    sensitivity formula.
     """
 
     def __init__(
@@ -94,6 +91,19 @@ class ParametricElectroThermalResidual:
             vector_field.rhs_map,
             thermal_forcing=vector_field.thermal_forcing,
         )
+
+    def with_graph(self, graph) -> "ParametricElectroThermalResidual":
+        return ParametricElectroThermalResidual(
+            graph,
+            self.em_model,
+            self.rhs_map,
+            thermal_forcing=self.thermal_forcing,
+        )
+
+    def vector_field_state_jacobian(self, a: np.ndarray, operating: np.ndarray) -> np.ndarray:
+        rhs = self.rhs_map.evaluate(np.asarray(operating, dtype=float))
+        _, Jg = self.em_model.heat_source_and_jacobian_for_rhs(np.asarray(a, dtype=float), rhs)
+        return np.asarray(Jg, dtype=float) - np.diag(np.asarray(self.graph.lambdas, dtype=float))
 
     def _graph_operating_jacobians(
         self,
