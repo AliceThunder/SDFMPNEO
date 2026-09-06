@@ -7,6 +7,7 @@ import numpy as np
 
 from .algebra import AnalyticSeries, solve_response_series
 from .compiler import CompiledAnalyticKernel
+from .realization import AnalyticRealization, CompiledRealizationGraph
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,9 @@ class BaseNode:
 
     def series(self, n_modes: int) -> AnalyticSeries:
         return AnalyticSeries.decay(n_modes, self.mode, self.amplitude)
+
+    def realization(self, decay_rate: float) -> AnalyticRealization:
+        return AnalyticRealization.decay(decay_rate, self.amplitude)
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,7 @@ class CompiledAnalyticGraph:
 
 
 class AnalyticEvolutionGraph:
-    """Analytic neural DAG with arbitrary chained response neurons and exact time derivatives."""
+    """Analytic neural DAG with fast and resonance-stable exact backends."""
 
     def __init__(self, lambdas: Sequence[float], a0: Sequence[float]):
         self.lambdas = np.asarray(lambdas, dtype=float)
@@ -62,9 +66,11 @@ class AnalyticEvolutionGraph:
         self.base_nodes: List[BaseNode] = [BaseNode(f"base_{i}", i, self.a0[i]) for i in range(self.n_modes)]
         self.response_nodes: List[ProductResponseNode] = []
         self._compiled: CompiledAnalyticGraph | None = None
+        self._realization_compiled: CompiledRealizationGraph | None = None
 
     def _invalidate(self) -> None:
         self._compiled = None
+        self._realization_compiled = None
 
     def clone(self) -> "AnalyticEvolutionGraph":
         out = AnalyticEvolutionGraph(self.lambdas.copy(), self.a0.copy())
@@ -87,6 +93,8 @@ class AnalyticEvolutionGraph:
         self._invalidate()
 
     def compile(self) -> CompiledAnalyticGraph:
+        """Compile to the fast finite polynomial-exponential kernel."""
+
         if self._compiled is not None:
             return self._compiled
 
@@ -117,8 +125,59 @@ class AnalyticEvolutionGraph:
         )
         return self._compiled
 
+    def compile_realization(self) -> CompiledRealizationGraph:
+        """Compile the same DAG to exact state-space analytic realizations.
+
+        The representation is closed under multiplication and response without
+        dividing by differences of decay rates, so exact and near resonances do
+        not require a closeness threshold.
+        """
+
+        if self._realization_compiled is not None:
+            return self._realization_compiled
+
+        node_realizations: Dict[str, AnalyticRealization] = {
+            n.name: n.realization(self.lambdas[n.mode]) for n in self.base_nodes
+        }
+        source_realizations: Dict[str, AnalyticRealization] = {}
+        mode_realizations = [AnalyticRealization.zero() for _ in range(self.n_modes)]
+
+        for node in self.base_nodes:
+            mode_realizations[node.mode] = mode_realizations[node.mode].add(node_realizations[node.name])
+
+        for node in self.response_nodes:
+            source = node_realizations[node.parents[0]]
+            for parent in node.parents[1:]:
+                source = source.product(node_realizations[parent])
+            source = source.scaled(node.weight)
+            response = source.response(self.lambdas[node.target_mode])
+            source_realizations[node.name] = source
+            node_realizations[node.name] = response
+            mode_realizations[node.target_mode] = mode_realizations[node.target_mode].add(response)
+
+        self._realization_compiled = CompiledRealizationGraph(
+            lambdas=self.lambdas.copy(),
+            node_realizations=dict(node_realizations),
+            source_realizations=dict(source_realizations),
+            mode_realizations=tuple(mode_realizations),
+        )
+        return self._realization_compiled
+
     def evaluate(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
         return self.compile().evaluate(t)
+
+    def evaluate_stable(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
+        return self.compile_realization().evaluate(t)
+
+    def backend_consistency_defect(self, t: float) -> float:
+        fast_a, fast_da = self.evaluate(t)
+        stable_a, stable_da = self.evaluate_stable(t)
+        numerator = np.linalg.norm(np.concatenate([fast_a - stable_a, fast_da - stable_da]))
+        denominator = max(
+            1.0,
+            float(np.linalg.norm(np.concatenate([stable_a, stable_da]))),
+        )
+        return float(numerator / denominator)
 
     def node_series(self, name: str) -> AnalyticSeries:
         return self.compile().series_for_node(name)
