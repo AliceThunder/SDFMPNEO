@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Callable, Protocol
 
 import numpy as np
@@ -32,7 +33,31 @@ class CertifiedRieszAction(Protocol):
     ) -> RieszNormDecision: ...
 
 
-RieszActionFactory = Callable[[sp.spmatrix], CertifiedRieszAction]
+RieszActionFactory = Callable[..., CertifiedRieszAction]
+
+
+def instantiate_riesz_action(
+    factory: RieszActionFactory,
+    H: sp.spmatrix,
+    *,
+    state: np.ndarray | None = None,
+) -> CertifiedRieszAction:
+    """Instantiate a Riesz action while preserving legacy ``factory(H)`` callables.
+
+    Production state-dependent auxiliary spaces may declare a keyword-only
+    ``state`` parameter.  Legacy/reference factories remain valid without that
+    parameter.  Signature inspection is only an API compatibility operation; it
+    does not affect any physical or numerical certificate.
+    """
+
+    signature = inspect.signature(factory)
+    parameters = signature.parameters.values()
+    accepts_state = "state" in signature.parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
+    )
+    if accepts_state:
+        return factory(H, state=state)
+    return factory(H)
 
 
 class SparseLUReferenceRieszAction:
