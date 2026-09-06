@@ -84,12 +84,6 @@ def test_one_call_nonlinear_builder_uses_certified_material_backend():
 
 def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
     core = build_nonlinear_core()
-    matrix_type = type(core.electromagnetic_discretization.a_basis)
-
-    def forbidden_toarray(*_args, **_kwargs):
-        raise AssertionError("full-order sparse gauge basis was densified")
-
-    monkeypatch.setattr(matrix_type, "toarray", forbidden_toarray)
     mesh = core.mesh
     edge_currents = np.column_stack(
         [
@@ -97,6 +91,13 @@ def test_core_build_ports_never_densifies_full_order_gauge_basis(monkeypatch):
             tetra_face_loop_source(mesh, int(mesh.boundary_face_indices[1])).real,
         ]
     )
+
+    matrix_type = type(core.electromagnetic_discretization.a_basis)
+
+    def forbidden_toarray(*_args, **_kwargs):
+        raise AssertionError("full-order sparse gauge basis was densified")
+
+    monkeypatch.setattr(matrix_type, "toarray", forbidden_toarray)
     ports = core.build_ports(edge_currents, names=("p1", "p2"))
 
     assert ports.coordinate_rhs.shape == (core.electromagnetic_problem.n_em, 2)
