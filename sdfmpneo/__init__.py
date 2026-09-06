@@ -3,13 +3,16 @@
 from .analytic import (
     AnalyticEvolutionGraph,
     AnalyticSeries,
+    CertifiedAnalyticEvolutionOperator,
     ParametricAnalyticEvolutionGraph,
     ParametricAnalyticSeries,
 )
+from .electrothermal import CertifiedElectroThermalVectorField
 from .em import (
     ParametricEMProblem,
     ReducedEMModel,
     ResidualGreedyEMReducer,
+    SolidTerminalPortSet,
     SparseEnergyReducedEMModel,
     SparseEnergyResidualGreedyEMReducer,
 )
@@ -21,6 +24,7 @@ from .model import (
 )
 from .tetra_core import TetrahedralElectroThermalCore
 from .thermal import ThermalSpectralModel
+from .training import SolutionDataFreeClosedLoopTrainer
 
 __version__ = "0.8.1"
 
@@ -29,12 +33,16 @@ __all__ = [
     "AnalyticSeries",
     "ParametricAnalyticEvolutionGraph",
     "ParametricAnalyticSeries",
+    "CertifiedAnalyticEvolutionOperator",
+    "CertifiedElectroThermalVectorField",
+    "SolutionDataFreeClosedLoopTrainer",
     "ThermalSpectralModel",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
     "SparseEnergyReducedEMModel",
     "SparseEnergyResidualGreedyEMReducer",
+    "SolidTerminalPortSet",
     "ExecutableSDFMPNEOModel",
     "OnlinePrediction",
     "ParametricExecutableSDFMPNEOModel",
