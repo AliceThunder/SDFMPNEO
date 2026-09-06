@@ -9,13 +9,17 @@ from .reduced import ParametricEMProblem
 
 @dataclass(frozen=True)
 class CompatibleAphiDiscretization:
-    """Algebraic compatible magnetoquasistatic A-phi discretization.
+    """Compatible magnetoquasistatic A-phi discretization.
 
-    `curl` maps full edge magnetic-vector-potential dofs to face flux dofs.
-    `grad_c` maps gauged conductor scalar-potential dofs to full edge electric
-    field dofs. `a_basis` is an explicit gauge-elimination basis satisfying
-    A = a_basis @ alpha; it removes magnetic-vector-potential gauge freedom by
-    coordinate elimination rather than a penalty parameter.
+    The scalar-potential coordinate is scaled as psi = phi/(j*omega). The
+    electric field is therefore
+
+        E = -j*omega (R_A alpha + G psi),
+
+    and, for reciprocal real material Hodge matrices, the gauge-eliminated
+    operator is complex symmetric. This makes electromagnetic reciprocity a
+    structural property of the discrete operator rather than a post-processing
+    correction.
     """
 
     curl: np.ndarray
@@ -36,7 +40,7 @@ class CompatibleAphiDiscretization:
         R = np.asarray(self.a_basis)
         n_face, n_edge = C.shape
         if G.ndim != 2 or G.shape[0] != n_edge:
-            raise ValueError("grad_c must have shape (n_edge,n_phi)")
+            raise ValueError("grad_c must have shape (n_edge,n_scalar)")
         if R.ndim != 2 or R.shape[0] != n_edge or R.shape[1] == 0:
             raise ValueError("a_basis must have shape (n_edge,n_A) with n_A>0")
         if self.reluctivity_hodge.shape != (n_face, n_face):
@@ -72,6 +76,7 @@ class CompatibleAphiDiscretization:
 
     @property
     def n_phi(self) -> int:
+        """Number of scaled scalar-potential coordinates (kept for API compatibility)."""
         return self.grad_c.shape[1]
 
     @property
@@ -90,16 +95,28 @@ class CompatibleAphiDiscretization:
         else:
             K_A = np.zeros((self.n_A, self.n_A), dtype=complex)
 
-        top_left = K_A + 1j * self.omega * (R.conj().T @ S @ R)
-        top_right = R.conj().T @ S @ G
-        bottom_left = 1j * self.omega * G.conj().T @ S @ R
-        bottom_right = G.conj().T @ S @ G
+        jw = 1j * self.omega
+        top_left = K_A + jw * (R.conj().T @ S @ R)
+        top_right = jw * (R.conj().T @ S @ G)
+        bottom_left = jw * (G.conj().T @ S @ R)
+        bottom_right = jw * (G.conj().T @ S @ G)
         return np.block([[top_left, top_right], [bottom_left, bottom_right]])
 
     def electric_extraction(self) -> np.ndarray:
         R = np.asarray(self.a_basis, dtype=complex)
         G = np.asarray(self.grad_c, dtype=complex)
-        return np.hstack([-1j * self.omega * R, -G])
+        return -1j * self.omega * np.hstack([R, G])
+
+    def source_coordinate(self, source_current: np.ndarray) -> np.ndarray:
+        source = np.asarray(source_current, dtype=complex)
+        if source.shape != (self.n_edge,):
+            raise ValueError("source_current shape mismatch")
+        return np.concatenate(
+            [
+                np.asarray(self.a_basis, dtype=complex).conj().T @ source,
+                np.zeros(self.n_phi, dtype=complex),
+            ]
+        )
 
     def to_parametric_problem(self) -> ParametricEMProblem:
         A0 = self._assemble_from_sigma(self.conductivity0, include_curl=True)
@@ -107,13 +124,7 @@ class CompatibleAphiDiscretization:
             [self._assemble_from_sigma(Sk, include_curl=False) for Sk in self.conductivity_state],
             axis=0,
         )
-        b = np.concatenate(
-            [
-                np.asarray(self.a_basis, dtype=complex).conj().T
-                @ np.asarray(self.source_current, dtype=complex),
-                np.zeros(self.n_phi, dtype=complex),
-            ]
-        )
+        b = self.source_coordinate(self.source_current)
 
         L = self.electric_extraction()
         H_loss = np.stack(
