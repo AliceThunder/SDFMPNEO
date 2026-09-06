@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sdfmpneo"
-version = "0.7.0"
-description = "Sparse physical-energy snapshot-free tetrahedral electromagnetic-thermal analytic core for SDF-MPNEO"
+version = "0.8.0"
+description = "Certified inexact-Riesz sparse physical-energy tetrahedral electromagnetic-thermal analytic core for SDF-MPNEO"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10"]
 
