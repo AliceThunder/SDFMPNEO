@@ -10,13 +10,7 @@ import scipy.sparse as sp
 
 @dataclass(frozen=True)
 class RectilinearComplex3D:
-    """Oriented orthogonal 3-D cell complex on a rectilinear grid.
-
-    Edges are oriented in +x,+y,+z. Faces are oriented by +x,+y,+z normals.
-    The incidence matrices satisfy curl @ grad == 0 exactly (up to sparse
-    arithmetic). Material Hodge matrices are assembled from cellwise physical
-    coefficients by integrating over the orthogonal primal/dual support.
-    """
+    """Oriented orthogonal 3-D cell complex on a rectilinear grid."""
 
     x: np.ndarray
     y: np.ndarray
@@ -29,12 +23,7 @@ class RectilinearComplex3D:
     face_ijk: np.ndarray
 
     @classmethod
-    def build(
-        cls,
-        x: Iterable[float],
-        y: Iterable[float],
-        z: Iterable[float],
-    ) -> "RectilinearComplex3D":
+    def build(cls, x: Iterable[float], y: Iterable[float], z: Iterable[float]) -> "RectilinearComplex3D":
         x = np.asarray(tuple(x), dtype=float)
         y = np.asarray(tuple(y), dtype=float)
         z = np.asarray(tuple(z), dtype=float)
@@ -87,11 +76,7 @@ class RectilinearComplex3D:
                     data += [-1, 1]
                     e += 1
 
-        grad = sp.coo_matrix(
-            (data, (rows, cols)),
-            shape=(e, nx * ny * nz),
-            dtype=float,
-        ).tocsr()
+        grad = sp.coo_matrix((data, (rows, cols)), shape=(e, nx * ny * nz), dtype=float).tocsr()
 
         frows: list[int] = []
         fcols: list[int] = []
@@ -113,51 +98,34 @@ class RectilinearComplex3D:
         for i in range(nx):
             for j in range(ny - 1):
                 for k in range(nz - 1):
-                    add_face(
-                        [
-                            (edge_map[(1, i, j, k)], 1),
-                            (edge_map[(2, i, j + 1, k)], 1),
-                            (edge_map[(1, i, j, k + 1)], -1),
-                            (edge_map[(2, i, j, k)], -1),
-                        ],
-                        0,
-                        (i, j, k),
-                    )
+                    add_face([
+                        (edge_map[(1, i, j, k)], 1),
+                        (edge_map[(2, i, j + 1, k)], 1),
+                        (edge_map[(1, i, j, k + 1)], -1),
+                        (edge_map[(2, i, j, k)], -1),
+                    ], 0, (i, j, k))
 
         for i in range(nx - 1):
             for j in range(ny):
                 for k in range(nz - 1):
-                    add_face(
-                        [
-                            (edge_map[(2, i, j, k)], 1),
-                            (edge_map[(0, i, j, k + 1)], 1),
-                            (edge_map[(2, i + 1, j, k)], -1),
-                            (edge_map[(0, i, j, k)], -1),
-                        ],
-                        1,
-                        (i, j, k),
-                    )
+                    add_face([
+                        (edge_map[(2, i, j, k)], 1),
+                        (edge_map[(0, i, j, k + 1)], 1),
+                        (edge_map[(2, i + 1, j, k)], -1),
+                        (edge_map[(0, i, j, k)], -1),
+                    ], 1, (i, j, k))
 
         for i in range(nx - 1):
             for j in range(ny - 1):
                 for k in range(nz):
-                    add_face(
-                        [
-                            (edge_map[(0, i, j, k)], 1),
-                            (edge_map[(1, i + 1, j, k)], 1),
-                            (edge_map[(0, i, j + 1, k)], -1),
-                            (edge_map[(1, i, j, k)], -1),
-                        ],
-                        2,
-                        (i, j, k),
-                    )
+                    add_face([
+                        (edge_map[(0, i, j, k)], 1),
+                        (edge_map[(1, i + 1, j, k)], 1),
+                        (edge_map[(0, i, j + 1, k)], -1),
+                        (edge_map[(1, i, j, k)], -1),
+                    ], 2, (i, j, k))
 
-        curl = sp.coo_matrix(
-            (fdata, (frows, fcols)),
-            shape=(f, e),
-            dtype=float,
-        ).tocsr()
-
+        curl = sp.coo_matrix((fdata, (frows, fcols)), shape=(f, e), dtype=float).tocsr()
         return cls(
             x=x,
             y=y,
@@ -210,23 +178,22 @@ class RectilinearComplex3D:
                     if 0 <= jj < ny:
                         for kk in (k - 1, k):
                             if 0 <= kk < nz:
-                                value += q[i, jj, kk] * (0.5 * dy[jj]) * (0.5 * dz[kk])
+                                value += q[i, jj, kk] * 0.5 * dy[jj] * 0.5 * dz[kk]
                 weights[e] = value / dx[i]
             elif axis == 1:
                 for ii in (i - 1, i):
                     if 0 <= ii < nx:
                         for kk in (k - 1, k):
                             if 0 <= kk < nz:
-                                value += q[ii, j, kk] * (0.5 * dx[ii]) * (0.5 * dz[kk])
+                                value += q[ii, j, kk] * 0.5 * dx[ii] * 0.5 * dz[kk]
                 weights[e] = value / dy[j]
             else:
                 for ii in (i - 1, i):
                     if 0 <= ii < nx:
                         for jj in (j - 1, j):
                             if 0 <= jj < ny:
-                                value += q[ii, jj, k] * (0.5 * dx[ii]) * (0.5 * dy[jj])
+                                value += q[ii, jj, k] * 0.5 * dx[ii] * 0.5 * dy[jj]
                 weights[e] = value / dz[k]
-
         return sp.diags(weights, format="csr")
 
     def face_hodge(self, cell_values) -> sp.csr_matrix:
@@ -256,11 +223,57 @@ class RectilinearComplex3D:
                 if k < nz:
                     value += q[i, j, k] * 0.5 * dz[k]
                 weights[f] = value / (dx[i] * dy[j])
-
         return sp.diags(weights, format="csr")
 
+    def tree_cotree_edges(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return deterministic spanning-tree and cotree edge indices."""
+
+        parent = np.arange(self.n_nodes, dtype=int)
+        rank = np.zeros(self.n_nodes, dtype=int)
+
+        def find(node: int) -> int:
+            while parent[node] != node:
+                parent[node] = parent[parent[node]]
+                node = int(parent[node])
+            return node
+
+        def union(a: int, b: int) -> bool:
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return False
+            if rank[ra] < rank[rb]:
+                ra, rb = rb, ra
+            parent[rb] = ra
+            if rank[ra] == rank[rb]:
+                rank[ra] += 1
+            return True
+
+        tree: list[int] = []
+        G = self.grad.tocsr()
+        for edge in range(self.n_edges):
+            nodes = G.indices[G.indptr[edge] : G.indptr[edge + 1]]
+            if len(nodes) != 2:
+                raise RuntimeError("edge incidence row must contain exactly two nodes")
+            if union(int(nodes[0]), int(nodes[1])):
+                tree.append(edge)
+
+        tree_set = set(tree)
+        cotree = [edge for edge in range(self.n_edges) if edge not in tree_set]
+        return np.asarray(tree, dtype=int), np.asarray(cotree, dtype=int)
+
     def gauge_basis(self) -> np.ndarray:
-        return scipy.linalg.null_space(self.grad.toarray().T)
+        """Deterministic tree-cotree gauge selector.
+
+        Tree-edge vector-potential coordinates are fixed to zero. Cotree edges
+        are the independent A coordinates. This gives a unique representative
+        of each gauge class on the connected rectilinear graph without SVD,
+        penalty parameters, or numerical rank thresholds.
+        """
+
+        _, cotree = self.tree_cotree_edges()
+        R = np.zeros((self.n_edges, cotree.size), dtype=float)
+        R[cotree, np.arange(cotree.size)] = 1.0
+        return R
 
     def conductive_gradient(self, conductivity_support_cells) -> np.ndarray:
         support = self._cell_array(conductivity_support_cells).astype(bool)
@@ -273,11 +286,10 @@ class RectilinearComplex3D:
         active_nodes: set[int] = set()
         for edge in np.flatnonzero(edge_active):
             nodes = G.indices[G.indptr[edge] : G.indptr[edge + 1]]
-            if len(nodes) == 2:
-                a, b = map(int, nodes)
-                adjacency[a].add(b)
-                adjacency[b].add(a)
-                active_nodes.update((a, b))
+            a, b = map(int, nodes)
+            adjacency[a].add(b)
+            adjacency[b].add(a)
+            active_nodes.update((a, b))
 
         seen: set[int] = set()
         kept_nodes: list[int] = []
@@ -296,7 +308,6 @@ class RectilinearComplex3D:
                         stack.append(v)
             reference = min(component)
             kept_nodes.extend(v for v in sorted(component) if v != reference)
-
         return G[:, kept_nodes].toarray()
 
     def topology_defect(self) -> float:
@@ -320,14 +331,6 @@ def build_compatible_aphi_from_cells(
     thermal_test_cell: np.ndarray,
     source_current: np.ndarray,
 ) -> SpatialAphiAssembly:
-    """Assemble the compatible A-phi model from spatial cell fields.
-
-    `conductivity_state_cell[k]` is the k-th certified affine constitutive
-    coefficient in reduced thermal coordinates. This routine only performs
-    spatial compatible assembly; it deliberately does not fit or invent the
-    constitutive expansion.
-    """
-
     from .compatible import CompatibleAphiDiscretization
 
     grid = complex3d
@@ -347,9 +350,7 @@ def build_compatible_aphi_from_cells(
     if np.any(sigma0 < 0):
         raise ValueError("reference conductivity must be non-negative")
     if np.any((np.abs(sigma_state) > 0) & (sigma0[None, ...] <= 0)):
-        raise ValueError(
-            "thermal conductivity coefficients may modify an existing conducting region but may not create new conductivity support"
-        )
+        raise ValueError("thermal coefficients may not create new conductivity support")
 
     n_thermal = sigma_state.shape[0]
     if np.asarray(source_current).shape != (grid.n_edges,):
@@ -362,10 +363,8 @@ def build_compatible_aphi_from_cells(
         axis=0,
     )
 
-    support = sigma0 > 0
-    grad_c = grid.conductive_gradient(support)
+    grad_c = grid.conductive_gradient(sigma0 > 0)
     a_basis = grid.gauge_basis()
-
     C = grid.curl.toarray().astype(complex)
     R = np.asarray(a_basis, dtype=complex)
     G = np.asarray(grad_c, dtype=complex)
@@ -377,14 +376,13 @@ def build_compatible_aphi_from_cells(
     n_total = R.shape[1] + G.shape[1]
     H_mag = np.zeros((n_total, n_total), dtype=complex)
     H_mag[: R.shape[1], : R.shape[1]] = 0.5 * K_A
-    H_diss_per_radian = (0.5 / omega) * (L_E.conj().T @ S0 @ L_E)
-    riesz_metric = H_mag + H_diss_per_radian
-    riesz_metric = 0.5 * (riesz_metric + riesz_metric.conj().T)
+    H_metric = H_mag + (0.5 / omega) * (L_E.conj().T @ S0 @ L_E)
+    H_metric = 0.5 * (H_metric + H_metric.conj().T)
     try:
-        scipy.linalg.cholesky(riesz_metric, lower=True, check_finite=True)
+        scipy.linalg.cholesky(H_metric, lower=True, check_finite=True)
     except np.linalg.LinAlgError as exc:
         raise np.linalg.LinAlgError(
-            "The physical electromagnetic Riesz metric is not positive definite after gauge elimination; check domain topology, conducting-component gauges, and reference material support"
+            "physical electromagnetic Riesz metric is not positive definite after gauge elimination"
         ) from exc
 
     thermal_loss_hodge0 = np.stack(
@@ -392,8 +390,7 @@ def build_compatible_aphi_from_cells(
         axis=0,
     )
     thermal_loss_hodge_state = np.empty(
-        (n_thermal, n_thermal, grid.n_edges, grid.n_edges),
-        dtype=float,
+        (n_thermal, n_thermal, grid.n_edges, grid.n_edges), dtype=float
     )
     for j in range(n_thermal):
         for k in range(n_thermal):
@@ -410,7 +407,7 @@ def build_compatible_aphi_from_cells(
         conductivity_state=conductivity_state,
         source_current=np.asarray(source_current, dtype=complex),
         omega=omega,
-        riesz_metric=riesz_metric,
+        riesz_metric=H_metric,
         thermal_loss_hodge0=thermal_loss_hodge0,
         thermal_loss_hodge_state=thermal_loss_hodge_state,
     )
@@ -422,8 +419,6 @@ def face_loop_source(
     face_index: int,
     amplitude: complex = 1.0,
 ) -> np.ndarray:
-    """Divergence-free edge source equal to the oriented boundary of one face."""
-
     if not 0 <= face_index < complex3d.n_faces:
         raise ValueError("face_index out of range")
     return amplitude * complex3d.curl.getrow(face_index).toarray().ravel().astype(complex)
