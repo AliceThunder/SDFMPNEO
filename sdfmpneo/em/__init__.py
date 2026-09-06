@@ -61,6 +61,7 @@ from .ports import (
     ImpressedCurrentPortSet,
     MultiPortImpedanceResult,
 )
+from .terminal_ports import SolidTerminalPortSet
 from .reciprocal_series import ReciprocalSeriesCertificate, certified_reciprocal_polynomials
 from .reduced import (
     ParametricEMProblem,
@@ -142,6 +143,7 @@ __all__ = [
     "face_loop_source",
     "NonlinearSpatialAphiProblem",
     "ImpressedCurrentPortSet",
+    "SolidTerminalPortSet",
     "MultiPortImpedanceResult",
     "CertifiedSparseMultiPortResult",
     "CertifiedEnergySparseMultiPortResult",
