@@ -138,8 +138,11 @@ class ParametricEMProblem:
             return np.zeros_like(self.H_loss[output_mode])
         return self.H_loss_state[output_mode, state_mode]
 
-    def solve_full(self, a: np.ndarray) -> np.ndarray:
-        return scipy.linalg.solve(self.operator(a), self.b, assume_a="gen")
+    def solve_full(self, a: np.ndarray, rhs: np.ndarray | None = None) -> np.ndarray:
+        source = self.b if rhs is None else np.asarray(rhs, dtype=complex)
+        if source.shape != (self.n_em,):
+            raise ValueError("rhs dimension mismatch")
+        return scipy.linalg.solve(self.operator(a), source, assume_a="gen")
 
 
 @dataclass
@@ -157,24 +160,46 @@ class ReducedEMModel:
     def operator_reduced(self, a: np.ndarray) -> np.ndarray:
         return self.V.conj().T @ self.problem.operator(a) @ self.V
 
-    def rhs_reduced(self) -> np.ndarray:
-        return self.V.conj().T @ self.problem.b
+    def rhs_reduced(self, rhs: np.ndarray | None = None) -> np.ndarray:
+        source = self.problem.b if rhs is None else np.asarray(rhs, dtype=complex)
+        if source.shape != (self.problem.n_em,):
+            raise ValueError("rhs dimension mismatch")
+        return self.V.conj().T @ source
+
+    def solve_coeff_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+        return scipy.linalg.solve(
+            self.operator_reduced(a),
+            self.rhs_reduced(rhs),
+            assume_a="gen",
+        )
 
     def solve_coeff(self, a: np.ndarray) -> np.ndarray:
-        return scipy.linalg.solve(self.operator_reduced(a), self.rhs_reduced(), assume_a="gen")
+        return self.solve_coeff_for_rhs(a, self.problem.b)
+
+    def state_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+        return self.V @ self.solve_coeff_for_rhs(a, rhs)
 
     def state(self, a: np.ndarray) -> np.ndarray:
-        return self.V @ self.solve_coeff(a)
+        return self.state_for_rhs(a, self.problem.b)
+
+    def full_residual_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+        source = np.asarray(rhs, dtype=complex)
+        if source.shape != (self.problem.n_em,):
+            raise ValueError("rhs dimension mismatch")
+        x = self.state_for_rhs(a, source)
+        return source - self.problem.operator(a) @ x
 
     def full_residual(self, a: np.ndarray) -> np.ndarray:
-        x = self.state(a)
-        return self.problem.b - self.problem.operator(a) @ x
+        return self.full_residual_for_rhs(a, self.problem.b)
+
+    def residual_dual_norm_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> float:
+        return self.riesz.dual_norm(self.full_residual_for_rhs(a, rhs))
 
     def residual_dual_norm(self, a: np.ndarray) -> float:
-        return self.riesz.dual_norm(self.full_residual(a))
+        return self.residual_dual_norm_for_rhs(a, self.problem.b)
 
-    def heat_source(self, a: np.ndarray) -> np.ndarray:
-        x = self.state(a)
+    def heat_source_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+        x = self.state_for_rhs(a, rhs)
         return np.array(
             [
                 np.real(np.vdot(x, self.problem.loss_operator(j, a) @ x))
@@ -182,13 +207,20 @@ class ReducedEMModel:
             ]
         )
 
-    def heat_source_and_jacobian(self, a: np.ndarray):
+    def heat_source(self, a: np.ndarray) -> np.ndarray:
+        return self.heat_source_for_rhs(a, self.problem.b)
+
+    def heat_source_and_jacobian_for_rhs(self, a: np.ndarray, rhs: np.ndarray):
         a = np.asarray(a, dtype=float)
+        source = np.asarray(rhs, dtype=complex)
+        if source.shape != (self.problem.n_em,):
+            raise ValueError("rhs dimension mismatch")
+
         A = self.problem.operator(a)
-        c = self.solve_coeff(a)
+        c = self.solve_coeff_for_rhs(a, source)
         Ar = self.V.conj().T @ A @ self.V
         x = self.V @ c
-        q = self.heat_source(a)
+        q = self.heat_source_for_rhs(a, source)
         J = np.zeros((self.problem.n_thermal, self.problem.n_thermal), dtype=float)
         operator_derivatives = self.problem.operator_derivatives(a)
 
@@ -202,6 +234,9 @@ class ReducedEMModel:
                 explicit = np.real(np.vdot(x, dH @ x))
                 J[j, k] = 2.0 * np.real(np.vdot(dx, Hj @ x)) + explicit
         return q, J
+
+    def heat_source_and_jacobian(self, a: np.ndarray):
+        return self.heat_source_and_jacobian_for_rhs(a, self.problem.b)
 
 
 class ResidualGreedyEMReducer:
@@ -253,13 +288,7 @@ class ResidualGreedyEMReducer:
         rhs_matrix: np.ndarray,
         tolerance: float,
     ) -> ReducedEMModel:
-        """Grow one reduced space for a joint state-by-excitation domain.
-
-        The greedy maximization is taken over every supplied thermal state and
-        every RHS column. This is required for multiport impedance/mutual
-        inductance: a basis certified only for port 1 is not assumed to span the
-        response of port 2.
-        """
+        """Grow one reduced space for a joint state-by-excitation domain."""
 
         if tolerance <= 0:
             raise ValueError("tolerance must be positive")
