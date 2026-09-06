@@ -11,6 +11,7 @@ from .em import (
     NonlinearTetrahedralApsiProblem,
     NonlinearTetrahedralRegionLossEvaluator,
     ResidualGreedyEMReducer,
+    SparseEnergyResidualGreedyEMReducer,
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
     build_tetrahedral_region_loss_projector,
@@ -233,16 +234,39 @@ class TetrahedralElectroThermalCore:
         self,
         candidate_thermal_states: Iterable[np.ndarray],
         *,
-        residual_tolerance: float,
+        requested_energy_state_error: float,
     ):
-        """Construct the snapshot-free electromagnetic reduced space.
+        """Build the production nonlinear sparse physical-energy EM reduced space.
 
-        This method intentionally requires an explicit residual tolerance and a
-        supplied verification set. For an actual certified parameter domain the
-        resulting model must additionally pass the continuous-domain certificate;
-        this convenience method does not reinterpret a finite set as proof.
+        Every full-order operator and Riesz lift remains sparse. Candidate-state
+        error is measured by the contrast-independent local physical-energy bound
+
+            ||e||_H <= sqrt(2) ||r||_(H^-1).
+
+        The finite candidate set is an offline construction/certification set; it
+        is not silently reinterpreted as a continuous-domain proof.
         """
 
+        if self.material_backend != "certified_nonlinear":
+            raise RuntimeError(
+                "build_reduced_electromagnetics is the certified nonlinear sparse-energy path; "
+                "use build_affine_verification_reduced_electromagnetics for the affine verification backend"
+            )
+        return SparseEnergyResidualGreedyEMReducer(self.electromagnetic_problem).build(
+            candidate_thermal_states,
+            requested_energy_state_error=requested_energy_state_error,
+        )
+
+    def build_affine_verification_reduced_electromagnetics(
+        self,
+        candidate_thermal_states: Iterable[np.ndarray],
+        *,
+        residual_tolerance: float,
+    ):
+        """Retain the legacy dense affine reducer strictly as a verification path."""
+
+        if self.material_backend != "affine_verification":
+            raise RuntimeError("affine verification reduction requires the affine verification backend")
         return ResidualGreedyEMReducer(self.electromagnetic_problem).build(
             candidate_thermal_states,
             tolerance=residual_tolerance,
