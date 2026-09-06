@@ -9,6 +9,7 @@ from sdfmpneo.em import (
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
+    apsi_physical_energy_metric,
     make_physical_block_pcg_riesz_factory,
     tetra_face_loop_source,
 )
@@ -103,3 +104,22 @@ def test_certificate_driven_aggregates_certify_high_contrast_tetrahedral_reducti
         block_action_factory=AdaptiveAggregateEnergyPreconditioner.build,
     )
     _certify_reduction(problem, factory)
+
+
+def test_high_contrast_magnetic_aggregate_certificate_remains_strictly_local():
+    problem = build_high_contrast_problem()
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
+    magnetic = AdaptiveAggregateEnergyPreconditioner.build(K_A)
+
+    assert magnetic.lower_spectral_equivalence_bound > 0.0
+    assert magnetic.aggregation_steps > 0
+    assert magnetic.maximum_block_size < K_A.shape[0]
+
+    state = np.zeros(problem.n_thermal)
+    H = apsi_physical_energy_metric(problem.operator_sparse(state))
+    E = H[problem.n_A :, problem.n_A :].tocsr()
+    if E.shape[0]:
+        scalar = AdaptiveAggregateEnergyPreconditioner.build(E)
+        assert scalar.lower_spectral_equivalence_bound > 0.0
+        assert scalar.maximum_block_size <= E.shape[0]
