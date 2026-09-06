@@ -82,3 +82,22 @@ def test_third_generation_and_compile_cache_invalidation():
         lhs = n3.derivative(lam).evaluate(t, lam) + lam[0] * n3.evaluate(t, lam)
         assert np.allclose(lhs, src3.evaluate(t, lam), rtol=2e-10, atol=2e-11)
     assert third.term_counts()["n3"] > 0
+
+
+def test_compiled_kernel_matches_mode_series_and_reuses_unique_terms():
+    lam = np.array([0.9, 1.6])
+    graph = AnalyticEvolutionGraph(lam, np.array([0.45, 0.3]))
+    graph.add_product_response("n1", 0, ("base_0", "base_1"), 0.25)
+    graph.add_product_response("n2", 1, ("n1", "base_0"), -0.2)
+    graph.add_product_response("n3", 0, ("n2", "n1"), 0.1)
+    compiled = graph.compile()
+
+    total_raw_terms = sum(series.term_count() for series in compiled.mode_series)
+    assert compiled.kernel.unique_term_count <= total_raw_terms
+
+    for t in [0.0, 0.15, 0.8, 1.7]:
+        a_kernel, da_kernel = compiled.evaluate(t)
+        a_direct = np.array([np.real(s.evaluate(t, lam)) for s in compiled.mode_series])
+        da_direct = np.array([np.real(s.derivative(lam).evaluate(t, lam)) for s in compiled.mode_series])
+        assert np.allclose(a_kernel, a_direct, rtol=1e-12, atol=1e-12)
+        assert np.allclose(da_kernel, da_direct, rtol=1e-12, atol=1e-12)
