@@ -220,7 +220,24 @@ class SparseEnergyResidualGreedyEMReducer:
         coeff = scipy.linalg.solve(gram, rhs, assume_a="her")
         return y - V @ coeff
 
-    def _normalized_h0_independent(self, vector: np.ndarray, V: np.ndarray) -> np.ndarray:
+    def _whiten_h0(self, vectors: np.ndarray) -> np.ndarray:
+        """Return an exactly small-Gram-whitened basis in the H0 inner product."""
+
+        W = np.asarray(vectors, dtype=complex)
+        if W.ndim != 2 or W.shape[0] != self.problem.n_em or W.shape[1] == 0:
+            raise ValueError("vectors must have shape (n_em,n_vectors) with n_vectors>0")
+        gram = W.conj().T @ (self.H0 @ W)
+        gram = 0.5 * (gram + gram.conj().T)
+        L = scipy.linalg.cholesky(gram, lower=True, check_finite=True)
+        transform = scipy.linalg.solve_triangular(
+            L.conj().T,
+            np.eye(W.shape[1], dtype=complex),
+            lower=False,
+            check_finite=True,
+        )
+        return W @ transform
+
+    def _append_h0_independent(self, vector: np.ndarray, V: np.ndarray) -> np.ndarray:
         original = np.asarray(vector, dtype=complex)
         y = self._h0_project_out(original, V)
         original_norm = self.reference_energy.norm(original)
@@ -234,7 +251,8 @@ class SparseEnergyResidualGreedyEMReducer:
             raise np.linalg.LinAlgError(
                 "candidate lift is H0-dependent at the floating-point backward-error scale"
             )
-        return y / norm
+        W = np.column_stack([V, y / norm])
+        return self._whiten_h0(W)
 
     def _initial_basis_from_rhs(self, rhs_matrix: np.ndarray) -> np.ndarray:
         B = np.asarray(rhs_matrix, dtype=complex)
@@ -249,10 +267,9 @@ class SparseEnergyResidualGreedyEMReducer:
         for p in range(B.shape[1]):
             lift = self.reference_energy.solve(B[:, p])
             try:
-                q = self._normalized_h0_independent(lift, V)
+                V = self._append_h0_independent(lift, V)
             except np.linalg.LinAlgError:
                 continue
-            V = np.column_stack([V, q])
         if V.shape[1] == 0:
             raise np.linalg.LinAlgError(
                 "all supplied excitations are null/dependent in the reference physical energy"
@@ -341,8 +358,7 @@ class SparseEnergyResidualGreedyEMReducer:
             else:
                 local_lift = worst_context.energy.solve(worst_residual)
                 try:
-                    q = self._normalized_h0_independent(local_lift, V)
-                    V = np.column_stack([V, q])
+                    V = self._append_h0_independent(local_lift, V)
                     continue
                 except np.linalg.LinAlgError:
                     stalled = True
