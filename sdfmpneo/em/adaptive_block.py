@@ -92,7 +92,7 @@ class AdaptiveAggregateEnergyPreconditioner(CertifiedEnergyPreconditioner):
     Cross norms are rigorously upper-bounded by sparse Frobenius norms divided by
     certified local eigenvalue lower bounds.  If m_BG is non-positive, the two
     aggregates with the largest normalized cross interaction are merged and the
-    certificate is recomputed.  The process stops at the *first* positive
+    certificate is recomputed.  The process stops at the first positive
     certificate.  Therefore there is no configured block size, strength
     threshold, damping, or drop tolerance.
 
@@ -244,6 +244,47 @@ class AdaptiveAggregateEnergyPreconditioner(CertifiedEnergyPreconditioner):
             new_blocks.sort(key=lambda block: block[0])
             blocks = tuple(new_blocks)
             steps += 1
+
+    @property
+    def inverse_inf_upper_bound(self) -> float:
+        """Certified upper bound for the inverse infinity norm of the represented block matrix Q.
+
+        Q is block diagonal with the final aggregate principal blocks.  Hence
+        ``||Q^-1||_inf`` is the maximum inverse infinity norm over the blocks.
+        Each local value is already residual-certified during construction.
+        """
+
+        return float(max(local.inverse_inf_upper_bound for local in self._factors))
+
+    def preconditioner_matrix(self, parent: sp.spmatrix) -> sp.csr_matrix:
+        """Materialize the exact block-diagonal matrix Q represented by this action.
+
+        This method copies only the certificate-selected principal blocks from
+        the sparse parent matrix.  It does not create a dense global matrix and
+        is used for nested spectral/trace certificates.
+        """
+
+        matrix = sp.csr_matrix(parent, dtype=complex)
+        if matrix.shape != (self.dimension, self.dimension):
+            raise ValueError("parent matrix dimension mismatch")
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[complex] = []
+        for block in self.blocks:
+            idx = np.asarray(block, dtype=int)
+            local = matrix[idx, :][:, idx].tocoo()
+            for i, j, value in zip(local.row, local.col, local.data):
+                rows.append(int(idx[int(i)]))
+                cols.append(int(idx[int(j)]))
+                data.append(complex(value))
+        out = sp.coo_matrix(
+            (data, (rows, cols)),
+            shape=matrix.shape,
+            dtype=complex,
+        ).tocsr()
+        out.sum_duplicates()
+        out.eliminate_zeros()
+        return out
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
         vector = np.asarray(rhs, dtype=complex)
