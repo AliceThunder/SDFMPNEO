@@ -1,3 +1,4 @@
+from .closed_loop import ClosedLoopTrainingResult, SolutionDataFreeClosedLoopTrainer
 from .growth import (
     AnalyticGrowthCandidate,
     GrowthProposal,
@@ -37,4 +38,6 @@ __all__ = [
     "ParametricGrowthProposal",
     "ParametricTangentResidualGrower",
     "parametric_product_candidates",
+    "ClosedLoopTrainingResult",
+    "SolutionDataFreeClosedLoopTrainer",
 ]
