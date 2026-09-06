@@ -8,7 +8,7 @@ from sdfmpneo.em import (
 )
 
 
-def test_rectilinear_complex_exact_sequence_and_hodges():
+def test_rectilinear_complex_exact_sequence_hodges_and_tree_cotree_gauge():
     grid = RectilinearComplex3D.build([0, 1, 2], [0, 1, 3], [0, 2])
     assert grid.topology_defect() == 0.0
     assert (grid.curl @ grid.grad).nnz == 0
@@ -17,8 +17,20 @@ def test_rectilinear_complex_exact_sequence_and_hodges():
     assert np.all(grid.edge_hodge(coefficient).diagonal() > 0)
     assert np.all(grid.face_hodge(coefficient).diagonal() > 0)
 
+    tree, cotree = grid.tree_cotree_edges()
+    assert tree.size == grid.n_nodes - 1
+    assert cotree.size == grid.n_edges - grid.n_nodes + 1
+
     gauge = grid.gauge_basis()
-    assert np.allclose(grid.grad.toarray().T @ gauge, 0.0, atol=1e-12)
+    assert np.allclose(gauge[tree], 0.0)
+    assert np.allclose(gauge[cotree], np.eye(cotree.size))
+
+    # Cotree coordinates plus one-reference-node gradient coordinates form a
+    # complete direct-sum coordinate system on edge space.
+    gradient_gauge = grid.grad.toarray()[:, 1:]
+    coordinates = np.hstack([gauge, gradient_gauge])
+    assert coordinates.shape == (grid.n_edges, grid.n_edges)
+    assert np.linalg.matrix_rank(coordinates) == grid.n_edges
 
 
 def test_cell_assembled_aphi_is_nonsingular_and_reducible():
