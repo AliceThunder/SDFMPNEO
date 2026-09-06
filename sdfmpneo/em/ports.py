@@ -8,6 +8,7 @@ import scipy.linalg
 
 from .grid3d import RectilinearComplex3D
 from .reduced import RieszFactor
+from .sparse_solver import CertifiedSparseApsiSolver, SparseLinearSolveCertificate
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,40 @@ class MultiPortImpedanceResult:
         if I.shape != (len(self.names),):
             raise ValueError("currents must have shape (n_ports,)")
         return float(0.5 * np.real(np.vdot(I, self.impedance @ I)))
+
+
+@dataclass(frozen=True)
+class CertifiedSparseMultiPortResult:
+    """Sparse multiport field result with algebraic-solve output certificates."""
+
+    names: tuple[str, ...]
+    flux_linkage: np.ndarray
+    impedance: np.ndarray
+    resistance: np.ndarray
+    inductance: np.ndarray
+    reciprocity_defect: float
+    minimum_resistance_eigenvalue: float
+    solve_certificates: tuple[SparseLinearSolveCertificate, ...]
+    impedance_element_error_bounds: np.ndarray
+    resistance_element_error_bounds: np.ndarray
+    inductance_element_error_bounds: np.ndarray
+    requested_impedance_element_error: float
+
+    @property
+    def all_linear_solves_certified(self) -> bool:
+        return all(c.certified for c in self.solve_certificates)
+
+    @property
+    def maximum_impedance_error_bound(self) -> float:
+        return float(np.max(self.impedance_element_error_bounds))
+
+    @property
+    def self_inductance(self) -> np.ndarray:
+        return np.diag(self.inductance).copy()
+
+    @property
+    def mutual_inductance(self) -> np.ndarray:
+        return self.inductance - np.diag(np.diag(self.inductance))
 
 
 @dataclass(frozen=True)
@@ -162,21 +197,7 @@ class ImpressedCurrentPortSet:
         *,
         reduced_basis: np.ndarray | None = None,
     ) -> MultiPortImpedanceResult:
-        """Evaluate the field-reaction multiport impedance matrix.
-
-        With one-ampere source cochains, the flux-linkage matrix is
-
-            Psi = B^T A(a)^(-1) B,
-
-        and
-
-            Z = j*omega*Psi,
-            R = Re(Z),
-            L = Im(Z)/omega.
-
-        Transpose, not conjugate transpose, is used in the reciprocal bilinear
-        pairing. Source cochains are real by construction.
-        """
+        """Evaluate the dense/reduced field-reaction multiport impedance matrix."""
 
         a = np.asarray(thermal_state, dtype=float)
         A = np.asarray(problem.operator(a), dtype=complex)
@@ -211,4 +232,86 @@ class ImpressedCurrentPortSet:
             reciprocity_defect=reciprocity,
             minimum_resistance_eigenvalue=minimum_resistance,
             maximum_residual_dual_norm=float(maximum_residual),
+        )
+
+    def evaluate_sparse_certified(
+        self,
+        problem,
+        thermal_state: np.ndarray,
+        *,
+        stability_lower_bound: float,
+        requested_impedance_element_error: float,
+    ) -> CertifiedSparseMultiPortResult:
+        """Evaluate multiport Z with a requested algebraic output-error budget.
+
+        For port column j and row source b_i,
+
+            |Delta Z_ij| <= omega ||b_i||_2 ||Delta x_j||_2.
+
+        Therefore a single requested per-entry complex-impedance error determines
+        the required algebraic state accuracy for every right-hand side. No
+        independent iterative tolerance is exposed.
+        """
+
+        if not hasattr(problem, "operator_sparse") or not hasattr(problem, "n_A"):
+            raise TypeError("problem must provide sparse A-psi operator and n_A")
+        requested = float(requested_impedance_element_error)
+        if requested <= 0.0:
+            raise ValueError("requested_impedance_element_error must be positive")
+        a = np.asarray(thermal_state, dtype=float)
+        A = problem.operator_sparse(a)
+        B = np.asarray(self.coordinate_rhs, dtype=complex)
+        if A.shape[0] != B.shape[0]:
+            raise ValueError("port coordinates do not match electromagnetic problem")
+
+        source_norms = np.linalg.norm(B, axis=0)
+        maximum_source_norm = float(np.max(source_norms))
+        if maximum_source_norm <= 0.0:
+            raise ValueError("all port coordinate sources are zero")
+        requested_state_error = requested / (self.omega * maximum_source_norm)
+
+        solver = CertifiedSparseApsiSolver(
+            A,
+            n_A=int(problem.n_A),
+            stability_lower_bound=stability_lower_bound,
+        )
+        states = []
+        certificates = []
+        for p in range(self.n_ports):
+            x, certificate = solver.solve(
+                B[:, p],
+                requested_state_error=requested_state_error,
+            )
+            states.append(x)
+            certificates.append(certificate)
+        X = np.column_stack(states)
+
+        flux = B.T @ X
+        Z = 1j * self.omega * flux
+        Rmat = np.real(Z)
+        Lmat = np.imag(Z) / self.omega
+        norm_z = float(np.linalg.norm(Z))
+        reciprocity_absolute = float(np.linalg.norm(Z - Z.T))
+        reciprocity = reciprocity_absolute if norm_z == 0.0 else reciprocity_absolute / norm_z
+        resistance_symmetric = 0.5 * (Rmat + Rmat.T)
+        minimum_resistance = float(np.min(np.linalg.eigvalsh(resistance_symmetric)))
+
+        state_bounds = np.array([c.state_error_bound for c in certificates], dtype=float)
+        Z_bounds = self.omega * source_norms[:, None] * state_bounds[None, :]
+        R_bounds = Z_bounds.copy()
+        L_bounds = Z_bounds / self.omega
+
+        return CertifiedSparseMultiPortResult(
+            names=self.names,
+            flux_linkage=flux,
+            impedance=Z,
+            resistance=Rmat,
+            inductance=Lmat,
+            reciprocity_defect=reciprocity,
+            minimum_resistance_eigenvalue=minimum_resistance,
+            solve_certificates=tuple(certificates),
+            impedance_element_error_bounds=Z_bounds,
+            resistance_element_error_bounds=R_bounds,
+            inductance_element_error_bounds=L_bounds,
+            requested_impedance_element_error=requested,
         )
