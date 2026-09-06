@@ -5,6 +5,7 @@ import scipy.sparse.linalg as spla
 from sdfmpneo.em import (
     CertifiedPCGRieszAction,
     DiagonalGershgorinEnergyPreconditioner,
+    ImpressedCurrentPortSet,
     SparseEnergyResidualGreedyEMReducer,
 )
 
@@ -36,11 +37,15 @@ def certified_pcg_factory(H):
     )
 
 
-def test_reducer_and_residual_certificate_work_with_sparse_lu_forbidden(monkeypatch):
+def forbid_sparse_lu(monkeypatch):
     def forbidden_splu(*_args, **_kwargs):
         raise AssertionError("exact sparse LU Riesz inverse was used")
 
     monkeypatch.setattr(spla, "splu", forbidden_splu)
+
+
+def test_reducer_and_residual_certificate_work_with_sparse_lu_forbidden(monkeypatch):
+    forbid_sparse_lu(monkeypatch)
 
     problem = DiagonalThermalToyProblem()
     reducer = SparseEnergyResidualGreedyEMReducer(
@@ -64,3 +69,46 @@ def test_reducer_and_residual_certificate_work_with_sparse_lu_forbidden(monkeypa
             <= cert.residual_dual_energy_norm_upper_bound
         )
         assert cert.energy_state_error_bound <= requested
+
+
+def test_reduced_multiport_output_certificate_uses_same_inexact_riesz_backend(monkeypatch):
+    forbid_sparse_lu(monkeypatch)
+
+    problem = DiagonalThermalToyProblem()
+    B = np.array(
+        [
+            [1.0, 0.2],
+            [0.4, 1.0],
+            [0.8, -0.3],
+        ],
+        dtype=complex,
+    )
+    ports = ImpressedCurrentPortSet(
+        names=("p1", "p2"),
+        edge_currents=np.zeros((1, 2), dtype=float),
+        coordinate_rhs=B,
+        omega=7.0,
+    )
+    query = np.array([0.25])
+    reducer = SparseEnergyResidualGreedyEMReducer(
+        problem,
+        riesz_action_factory=certified_pcg_factory,
+    )
+    model = reducer.build_multi_rhs(
+        [np.array([-0.5]), np.array([0.0]), query, np.array([0.5])],
+        B,
+        requested_energy_state_error=1e-10,
+    )
+    assert model.reduction_certificate.certified
+
+    result = ports.evaluate_reduced_physical_certified(
+        problem,
+        query,
+        model,
+        requested_impedance_element_error=1e-8,
+    )
+
+    assert result.certified
+    assert result.maximum_impedance_error_bound <= 1e-8
+    assert result.impedance.shape == (2, 2)
+    assert np.all(np.isfinite(result.impedance_element_error_bounds))
