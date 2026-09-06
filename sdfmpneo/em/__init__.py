@@ -15,6 +15,7 @@ from .grid3d import (
     face_loop_source,
 )
 from .nonlinear import NonlinearSpatialAphiProblem
+from .ports import ImpressedCurrentPortSet, MultiPortImpedanceResult
 from .reduced import (
     ParametricEMProblem,
     ReducedEMModel,
@@ -37,6 +38,8 @@ __all__ = [
     "build_compatible_aphi_from_cells",
     "face_loop_source",
     "NonlinearSpatialAphiProblem",
+    "ImpressedCurrentPortSet",
+    "MultiPortImpedanceResult",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
