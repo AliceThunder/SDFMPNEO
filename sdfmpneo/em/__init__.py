@@ -1,4 +1,12 @@
 from .compatible import CompatibleAphiDiscretization
+from .constitutive import (
+    AffineConductivity,
+    CompositeCellConductivity,
+    ConductivityLaw,
+    ConductivityRegion,
+    ConstantConductivity,
+    ReciprocalLinearResistivity,
+)
 from .diagnostics import RegionLossProjector, build_region_loss_projector
 from .grid3d import (
     RectilinearComplex3D,
@@ -6,6 +14,7 @@ from .grid3d import (
     build_compatible_aphi_from_cells,
     face_loop_source,
 )
+from .nonlinear import NonlinearSpatialAphiProblem
 from .reduced import (
     ParametricEMProblem,
     ReducedEMModel,
@@ -15,12 +24,19 @@ from .reduced import (
 
 __all__ = [
     "CompatibleAphiDiscretization",
+    "ConductivityLaw",
+    "ConstantConductivity",
+    "AffineConductivity",
+    "ReciprocalLinearResistivity",
+    "ConductivityRegion",
+    "CompositeCellConductivity",
     "RegionLossProjector",
     "build_region_loss_projector",
     "RectilinearComplex3D",
     "SpatialAphiAssembly",
     "build_compatible_aphi_from_cells",
     "face_loop_source",
+    "NonlinearSpatialAphiProblem",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
