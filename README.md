@@ -45,10 +45,14 @@ The method has no geometry-specific impedance-solver dependency. Its current exe
 8. **Copper/seawater loss separation from the same field state.** Both affine and certified nonlinear tetrahedral paths support `P_Cu` and `P_sea` without add-on resistance formulas.
 9. **Field-derived multiport outputs.** Joint multi-RHS reduction returns reciprocal `Z`, `R`, `L`, and `M`, with passivity and port-power/Joule-power checks.
 10. **Constitutive remainder propagated to outputs.** The certified conductivity-series error is propagated through the EM inverse to deterministic bounds on `Z/R/L/M`, electromagnetic state, and projected heat source `q_em,r`. If the inverse perturbation condition fails, the result is explicitly uncertified rather than weakened heuristically.
-11. **Intrinsic analytic neural evolution.** Initial coordinates and static operating parameters are network-internal zero-dynamics analytic nodes. One graph represents `(a0,U,t) -> a(t)` for a fixed spatial/thermal operator family; no external condition encoder generates network weights.
-12. **Residual-grown analytic topology.** Candidate response neurons are selected by the unresolved physical residual and exact heat-source Jacobian, followed by full nonlinear residual re-evaluation.
-13. **Resonance-stable analytic evaluation.** The fast polynomial-exponential compiler has an independent exact state-space realization backend, so exact/near resonance requires no closeness threshold.
-14. **Continuous affine-domain certification.** For affine EM parameter dependence, branch-and-bound proves a residual bound over a continuous parameter box or returns `violated` / `indeterminate`.
+11. **Native sparse high-contrast tetrahedral field path.** Nonlinear tetrahedral `A(a)`, `dA/da`, loss operators, and energy metrics remain sparse. Regression cases use copper/seawater conductivity ratios above `1e7`.
+12. **Contrast-independent physical energy certificate.** For the physical sparse operator `A=K+iD`, `K,D>=0`, the metric `H=K+D` gives the structural coercivity bound `beta_H >= 1/sqrt(2)`, independent of conductivity contrast. Hence `||e||_H <= sqrt(2)||r||_(H^-1)`.
+13. **Output-driven sparse solve accuracy.** Requested `Z` accuracy is converted directly into the required field energy accuracy; the user does not choose an unrelated Krylov tolerance or minimum singular-value estimate. Linear-solve error is propagated to `Z/R/L/M` and projected heat-source bounds.
+14. **Deterministic sparse correctness fallback.** Energy-preconditioned BiCGSTAB is followed, when necessary, by complete sparse LU without ILU drop parameters. This is a certified correctness/high-contrast baseline, not a claim of million-degree-of-freedom scalability.
+15. **Intrinsic analytic neural evolution.** Initial coordinates and static operating parameters are network-internal zero-dynamics analytic nodes. One graph represents `(a0,U,t) -> a(t)` for a fixed spatial/thermal operator family; no external condition encoder generates network weights.
+16. **Residual-grown analytic topology.** Candidate response neurons are selected by the unresolved physical residual and exact heat-source Jacobian, followed by full nonlinear residual re-evaluation.
+17. **Resonance-stable analytic evaluation.** The fast polynomial-exponential compiler has an independent exact state-space realization backend, so exact/near resonance requires no closeness threshold.
+18. **Continuous affine-domain certification.** For affine EM parameter dependence, branch-and-bound proves a residual bound over a continuous parameter box or returns `violated` / `indeterminate`.
 
 ## Core equations
 
@@ -80,10 +84,47 @@ R = da/dt + Lambda_T a - g_em(a;U).
 For a contraction margin `kappa>0`, the current error architecture uses
 
 ```text
-||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa,
+||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa.
 ```
 
-where the nonlinear tetrahedral constitutive remainder now provides an executable contribution to `eta_EM` through the certified heat-source error bound.
+The nonlinear constitutive remainder and algebraic sparse field-solve error now both provide executable contributions to `eta_EM` through certified heat-source bounds.
+
+## Sparse physical-energy field certificate
+
+For the gauge-reduced reciprocal tetrahedral operator,
+
+```text
+A = K + i D,
+K >= 0,
+D >= 0,
+H = K + D.
+```
+
+For any complex field state `x`,
+
+```text
+|x^H A x|
+= sqrt[(x^H K x)^2 + (x^H D x)^2]
+>= x^H H x / sqrt(2).
+```
+
+Therefore
+
+```text
+beta_H >= 1/sqrt(2),
+||x-x_h||_H <= sqrt(2) ||b-Ax_h||_(H^-1).
+```
+
+This stability bound contains no fitted conductivity-ratio correction. For closed port sources `b_i`,
+
+```text
+|Delta Z_ij|
+<= omega ||b_i||_(H^-1) ||Delta x_j||_H.
+```
+
+A requested per-entry impedance accuracy therefore determines the field-solve requirement automatically. The same energy-state certificate is propagated to the reduced Joule heat source.
+
+See [`docs/SPARSE_ENERGY_SOLVER.md`](docs/SPARSE_ENERGY_SOLVER.md) for the derivation and implementation contract.
 
 ## Multiport field output
 
@@ -153,7 +194,8 @@ GitHub Actions runs the repository-wide test suite on every push to `main` and p
 - [`docs/SDFMPNEO_theory.tex`](docs/SDFMPNEO_theory.tex): governing equations and complete theory.
 - [`docs/SDFMPNEO_implementation.md`](docs/SDFMPNEO_implementation.md): software architecture and implementation contract.
 - [`docs/MVP_CORE.md`](docs/MVP_CORE.md): exact executable status and remaining obligations.
-- [`docs/TETRAHEDRAL_CORE.md`](docs/TETRAHEDRAL_CORE.md): unstructured Nedelec/P1 field chain, certified nonlinear material integration, and output error propagation.
+- [`docs/TETRAHEDRAL_CORE.md`](docs/TETRAHEDRAL_CORE.md): unstructured Nedelec/P1 field chain and nonlinear material integration.
+- [`docs/SPARSE_ENERGY_SOLVER.md`](docs/SPARSE_ENERGY_SOLVER.md): sparse high-contrast field solve, `1/sqrt(2)` energy coercivity, and algebraic output certificates.
 - [`docs/COMPATIBLE_EM.md`](docs/COMPATIBLE_EM.md): reciprocal `A-psi` electromagnetic formulation and multiport field outputs.
 - [`docs/SPATIAL_3D.md`](docs/SPATIAL_3D.md): shared spatial-discretization foundations.
 - [`docs/NONLINEAR_CONSTITUTIVE.md`](docs/NONLINEAR_CONSTITUTIVE.md): nonlinear temperature-dependent material laws.
@@ -164,15 +206,17 @@ GitHub Actions runs the repository-wide test suite on every push to `main` and p
 - `sdfmpneo/spatial/tetra3d.py`: unstructured tetrahedral topology, Nedelec geometry, and P1 thermal assembly
 - `sdfmpneo/spatial/barycentric_polynomial.py`: exact barycentric polynomial algebra/integration
 - `sdfmpneo/em/tetra.py`: affine tetrahedral reciprocal `A-psi` correctness path
-- `sdfmpneo/em/tetra_nonlinear.py`: certified nonlinear tetrahedral material/field path
+- `sdfmpneo/em/tetra_nonlinear.py`: certified nonlinear tetrahedral sparse material/field path
 - `sdfmpneo/em/reciprocal_series.py`: rigorous reciprocal copper series and remainder bounds
+- `sdfmpneo/em/sparse_solver.py`: reusable certified sparse field solvers and physical energy residual norms
+- `sdfmpneo/em/energy_solver.py`: physical `H=K+D` construction and contrast-independent A-psi solve wrapper
 - `sdfmpneo/em/tetra_nonlinear_diagnostics.py`: nonlinear material-region Joule powers
 - `sdfmpneo/em/reduced.py`: Cholesky-Riesz snapshot-free single/multi-RHS EM reduction
-- `sdfmpneo/em/ports.py`: field-derived multiport `Z/R/L/M`
+- `sdfmpneo/em/ports.py`: dense/reduced and certified sparse multiport `Z/R/L/M`
 - `sdfmpneo/thermal/spectral.py`: thermal spectrum and tail-certified rank selection
 - `sdfmpneo/analytic`: intrinsic analytic DAG, parameter algebra, fast compiler, and stable realization
 - `sdfmpneo/training`: physical residual and residual-driven analytic-network growth
-- `sdfmpneo/certification`: state, EM-domain, multiport, and constitutive-to-output certificates
+- `sdfmpneo/certification`: state, EM-domain, constitutive, algebraic-solve, multiport, and heat-source certificates
 - `sdfmpneo/tetra_core.py`: one-call affine or certified-nonlinear tetrahedral electrothermal core
 - `sdfmpneo/model.py`: fixed and parameter-conditioned arbitrary-time online query interfaces
 
@@ -181,20 +225,23 @@ GitHub Actions runs the repository-wide test suite on every push to `main` and p
 - No labelled FEM/Maxwell/experimental solution data in training.
 - No full-order solution snapshots are required for EM basis construction.
 - No geometry-specific impedance solver is a core dependency.
-- No empirical near/far split, fixed neural width/depth, artificial thermal time constant, gauge penalty, or empirical constitutive correction defines the method.
-- Free approximation orders/ranks must be set by governing physics or explicit error/convergence certificates.
+- No empirical near/far split, fixed neural width/depth, artificial thermal time constant, gauge penalty, empirical constitutive correction, ILU drop tolerance, or unexplained solver tolerance defines the method.
+- Free approximation orders/ranks and acceptance thresholds must be set by governing physics or explicit error/convergence certificates.
 - Full-order simulations and experiments are validation tools only.
 
 ## Remaining production obligations
 
-The mathematical unstructured core is present, but production-scale underwater WPT still requires:
+The mathematical unstructured sparse core is present, but production-scale underwater WPT still requires:
 
 1. CAD/mesh import and conforming mesh generation for actual round/rounded-square coils, package, and seawater domains;
-2. sparse end-to-end Nedelec assembly/solve and a verified high-contrast preconditioner for realistic copper/seawater ratios;
-3. continuous-domain certification for the nonlinear tetrahedral material problem, geometry, and frequency;
-4. mesh-discretization and linear-solver error contributions in the unified output/state certificate;
-5. certified open/infinite seawater electromagnetic and thermal outer-boundary treatment;
-6. scalable partial thermal eigensolution with a certified lower bound for the first omitted eigenvalue;
-7. terminal-current constrained solid-conductor ports where impressed closed-current ports are not the intended excitation;
-8. parameterization across geometry/operator families that alter the thermal spectrum, beyond the already implemented static-`U` analytic network at a fixed operator family;
-9. certified compression/minimalization of large analytic state-space realizations and a globally convergent network-growth proof.
+2. a memory-scalable multilevel/auxiliary-space realization of the physical `H^-1` preconditioner and a certified replacement for the current complete sparse-LU fallback on very large meshes;
+3. sparse/Riesz-compatible snapshot-free electromagnetic reduction that never requires dense Cholesky factors at production scale;
+4. continuous-domain certification for the nonlinear tetrahedral material problem, geometry, and frequency;
+5. spatial mesh-discretization error and certified outer-domain truncation contributions in the unified output/state certificate;
+6. certified open/infinite seawater electromagnetic and thermal outer-boundary treatment;
+7. scalable partial thermal eigensolution with a certified lower bound for the first omitted eigenvalue;
+8. terminal-current constrained solid-conductor ports where impressed closed-current ports are not the intended excitation;
+9. parameterization across geometry/operator families that alter the thermal spectrum, beyond the implemented static-`U` analytic network at a fixed operator family;
+10. certified compression/minimalization of large analytic state-space realizations and a globally convergent network-growth proof.
+
+The current complete sparse-LU fallback is intentionally described as a correctness baseline, not as evidence that million-degree-of-freedom production scaling has already been solved.
