@@ -41,6 +41,7 @@ from .magnetic_auxiliary import (
     MagneticCurlSubsetEnergyPreconditioner,
     build_gauge_restricted_magnetic_curl_factor,
 )
+from .magnetic_face_auxiliary import MagneticFaceCirculationEnergyPreconditioner
 from .nonlinear import NonlinearSpatialAphiProblem
 from .pair_block import CoupledPairEnergyPreconditioner
 from .ports import (
@@ -104,6 +105,7 @@ __all__ = [
     "DiagonalGershgorinEnergyPreconditioner",
     "CoupledPairEnergyPreconditioner",
     "MagneticCurlSubsetEnergyPreconditioner",
+    "MagneticFaceCirculationEnergyPreconditioner",
     "build_gauge_restricted_magnetic_curl_factor",
     "RieszNormDecision",
     "CertifiedRieszAction",
