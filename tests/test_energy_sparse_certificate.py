@@ -91,7 +91,7 @@ def test_physical_apsi_energy_metric_has_structural_one_over_sqrt_two_coercivity
         assert lhs + backward >= rhs
 
 
-def test_energy_solver_state_error_bound_contains_actual_dense_reference_error():
+def test_energy_solver_pair_error_is_bounded_when_dense_reference_is_also_certified():
     problem, _ = build_problem_and_ports()
     a = np.array([13.0])
     A = problem.operator_sparse(a)
@@ -102,12 +102,17 @@ def test_energy_solver_state_error_bound_contains_actual_dense_reference_error()
         requested_energy_state_error=requested,
     )
     x_dense = scipy.linalg.solve(A.toarray(), problem.b, assume_a="gen")
-    actual_energy_error = solver.energy.norm(x_sparse - x_dense)
+    dense_residual = problem.b - A @ x_dense
+    dense_bound = (
+        solver.energy.dual_norm(dense_residual)
+        / solver.COERCIVITY_LOWER_BOUND
+    )
+    observed_pair_error = solver.energy.norm(x_sparse - x_dense)
 
     assert certificate.certified
     assert certificate.coercivity_lower_bound == 1.0 / np.sqrt(2.0)
     assert certificate.energy_state_error_bound <= requested
-    assert actual_energy_error <= certificate.energy_state_error_bound * (1.0 + 1e-8) + 1e-12
+    assert observed_pair_error <= certificate.energy_state_error_bound + dense_bound + 1e-14
 
 
 def test_energy_certified_sparse_multiport_needs_no_external_singular_value_bound():
@@ -125,10 +130,35 @@ def test_energy_certified_sparse_multiport_needs_no_external_singular_value_boun
     assert sparse_result.all_linear_solves_certified
     assert sparse_result.maximum_impedance_error_bound <= requested_Z_error
 
-    dense_result = ports.evaluate(problem, a)
-    observed_Z = np.abs(sparse_result.impedance - dense_result.impedance)
-    observed_R = np.abs(sparse_result.resistance - dense_result.resistance)
-    observed_L = np.abs(sparse_result.inductance - dense_result.inductance)
-    assert np.all(observed_Z <= sparse_result.impedance_element_error_bounds + 1e-12)
-    assert np.all(observed_R <= sparse_result.resistance_element_error_bounds + 1e-12)
-    assert np.all(observed_L <= sparse_result.inductance_element_error_bounds + 1e-18)
+    # The comparison solution is itself floating-point, so certify its residual
+    # instead of treating it as an exact oracle. The difference of two numerical
+    # approximations is bounded by the sum of their independent error bounds.
+    A = problem.operator_sparse(a)
+    solver = PhysicalEnergySparseApsiSolver(A)
+    B = np.asarray(ports.coordinate_rhs, dtype=complex)
+    X_dense = scipy.linalg.solve(A.toarray(), B, assume_a="gen")
+    flux_dense = B.T @ X_dense
+    Z_dense = 1j * problem.omega * flux_dense
+    R_dense = np.real(Z_dense)
+    L_dense = np.imag(Z_dense) / problem.omega
+
+    dense_state_bounds = []
+    for p in range(ports.n_ports):
+        residual = B[:, p] - A @ X_dense[:, p]
+        dense_state_bounds.append(
+            solver.energy.dual_norm(residual) / solver.COERCIVITY_LOWER_BOUND
+        )
+    dense_state_bounds = np.asarray(dense_state_bounds, dtype=float)
+    source_dual = np.asarray(sparse_result.source_dual_energy_norms, dtype=float)
+    dense_Z_bounds = problem.omega * source_dual[:, None] * dense_state_bounds[None, :]
+
+    observed_Z = np.abs(sparse_result.impedance - Z_dense)
+    observed_R = np.abs(sparse_result.resistance - R_dense)
+    observed_L = np.abs(sparse_result.inductance - L_dense)
+    pair_Z_bound = sparse_result.impedance_element_error_bounds + dense_Z_bounds
+    pair_R_bound = sparse_result.resistance_element_error_bounds + dense_Z_bounds
+    pair_L_bound = sparse_result.inductance_element_error_bounds + dense_Z_bounds / problem.omega
+
+    assert np.all(observed_Z <= pair_Z_bound + 1e-14)
+    assert np.all(observed_R <= pair_R_bound + 1e-14)
+    assert np.all(observed_L <= pair_L_bound + 1e-20)
