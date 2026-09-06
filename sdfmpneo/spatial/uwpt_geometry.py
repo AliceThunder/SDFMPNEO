@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +48,7 @@ class SpiralCoilGeometry:
     conductor_width: float
     conductor_thickness: float
     corner_radius: float | None = None
-    pose: RigidPose = RigidPose(np.zeros(3))
+    pose: RigidPose = field(default_factory=lambda: RigidPose(np.zeros(3)))
 
     def __post_init__(self) -> None:
         if self.shape not in {"circle", "rounded_square"}:
@@ -90,7 +90,6 @@ class SpiralCoilGeometry:
         horizontal_x = horizontal_t * c
         straight_vertical = vertical_y <= center
         straight_horizontal = horizontal_x <= center
-
         b = center * (c + s)
         discriminant = b * b - (2.0 * center * center - radius * radius)
         discriminant = np.maximum(discriminant, 0.0)
@@ -103,11 +102,9 @@ class SpiralCoilGeometry:
             raise ValueError("theta lies outside the spiral chart")
         offset = self._offset(th)
         half = self.outer_half_size - offset
-        if self.shape == "circle":
-            radial = half
-        else:
-            radius = float(self.corner_radius) - offset
-            radial = self._rounded_square_radial(th, half, radius)
+        radial = half if self.shape == "circle" else self._rounded_square_radial(
+            th, half, float(self.corner_radius) - offset
+        )
         return np.column_stack([radial * np.cos(th), radial * np.sin(th), np.zeros_like(th)])
 
     def centerline(self, theta: np.ndarray) -> np.ndarray:
@@ -118,13 +115,6 @@ class SpiralCoilGeometry:
         return points[0], points[1]
 
     def sample_for_geometric_tolerance(self, chord_error: float) -> np.ndarray:
-        """Deterministically discretize only for CAD exchange, from an error request.
-
-        The angular step follows the circle sagitta inequality using the largest
-        local radius.  It is therefore derived from ``chord_error`` rather than a
-        configured number of points.
-        """
-
         error = float(chord_error)
         if not 0.0 < error < self.outer_half_size:
             raise ValueError("chord_error must lie in (0, outer_half_size)")
@@ -150,11 +140,9 @@ class UnderwaterWPTGeometry:
         object.__setattr__(self, "package_half_extent", extent)
 
     def chart_non_degeneracy(self) -> dict[str, float]:
-        Rt = self.transmitter.pose.rotation
-        Rr = self.receiver.pose.rotation
         return {
-            "transmitter_rotation_det": float(np.linalg.det(Rt)),
-            "receiver_rotation_det": float(np.linalg.det(Rr)),
+            "transmitter_rotation_det": float(np.linalg.det(self.transmitter.pose.rotation)),
+            "receiver_rotation_det": float(np.linalg.det(self.receiver.pose.rotation)),
             "transmitter_inner_half_size": float(
                 self.transmitter.outer_half_size - self.transmitter.pitch * self.transmitter.turns
             ),
@@ -184,13 +172,6 @@ class TaggedTetrahedralMesh:
 
 
 def read_gmsh_v22_ascii(path: str | Path) -> TaggedTetrahedralMesh:
-    """Read a conforming Gmsh v2.2 ASCII mesh with physical tags.
-
-    Only the production entities needed here are accepted: linear triangles
-    (type 2) and linear tetrahedra (type 4).  Node ids are remapped to dense
-    zero-based indices before constructing the compatible complex.
-    """
-
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     try:
         ni = lines.index("$Nodes")
@@ -199,20 +180,15 @@ def read_gmsh_v22_ascii(path: str | Path) -> TaggedTetrahedralMesh:
         raise ValueError("Gmsh file must contain $Nodes and $Elements") from exc
 
     n_nodes = int(lines[ni + 1])
-    node_rows = lines[ni + 2 : ni + 2 + n_nodes]
-    ids = []
-    vertices = []
-    for row in node_rows:
+    ids, vertices = [], []
+    for row in lines[ni + 2 : ni + 2 + n_nodes]:
         fields = row.split()
         ids.append(int(fields[0]))
         vertices.append([float(fields[1]), float(fields[2]), float(fields[3])])
     index = {node_id: k for k, node_id in enumerate(ids)}
 
     n_elements = int(lines[ei + 1])
-    tetra = []
-    tetra_tags = []
-    triangles = []
-    triangle_tags = []
+    tetra, tetra_tags, triangles, triangle_tags = [], [], [], []
     for row in lines[ei + 2 : ei + 2 + n_elements]:
         fields = row.split()
         element_type = int(fields[1])
