@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg
 
-from sdfmpneo.thermal import RectilinearThermalFV3D
+from sdfmpneo.thermal import RectilinearThermalFV3D, ThermalSpectralModel
 
 
 def test_thermal_fv_is_symmetric_positive_with_dirichlet_outer():
@@ -17,3 +17,8 @@ def test_thermal_fv_is_symmetric_positive_with_dirichlet_outer():
     assert np.allclose(K.toarray(), K.toarray().T)
     eigenvalues = scipy.linalg.eigvalsh(K.toarray(), M.toarray())
     assert np.all(eigenvalues > 0)
+
+    spectral = ThermalSpectralModel.build(M, K)
+    Mr, Kr = spectral.reduced_matrices()
+    assert np.allclose(Mr, np.eye(grid.n_cells), atol=1e-11)
+    assert np.allclose(Kr, np.diag(spectral.lambdas), atol=1e-11)
