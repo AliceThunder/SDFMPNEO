@@ -102,8 +102,8 @@ def test_constitutive_series_impedance_difference_is_below_combined_certificates
     assert observed <= rigorous_pair_bound * (1.0 + 1e-10) + 1e-13
 
 
-def test_tighter_constitutive_budget_reduces_certified_impedance_bound():
-    coarse_core, coarse_ports = build_core(1e-3)
+def test_tighter_certifiable_constitutive_budget_reduces_impedance_bound():
+    coarse_core, coarse_ports = build_core(2e-4)
     tight_core, tight_ports = build_core(1e-8)
     a = np.array([0.06])
     coarse = certify_constitutive_multiport_error(
@@ -119,6 +119,19 @@ def test_tighter_constitutive_budget_reduces_certified_impedance_bound():
     assert coarse.certified and tight.certified
     assert tight.constitutive_relative_bound <= coarse.constitutive_relative_bound
     assert tight.impedance_spectral_norm_bound <= coarse.impedance_spectral_norm_bound
+
+
+def test_perturbation_certificate_rejects_a_material_series_that_is_too_coarse():
+    coarse_core, coarse_ports = build_core(1e-3)
+    a = np.array([0.06])
+    certificate = certify_constitutive_multiport_error(
+        coarse_core.electromagnetic_problem,
+        coarse_ports,
+        a,
+    )
+    assert certificate.inverse_perturbation_product >= 1.0
+    assert not certificate.certified
+    assert np.isinf(certificate.impedance_spectral_norm_bound)
 
 
 def test_constitutive_heat_source_difference_is_below_combined_certificates():
@@ -155,8 +168,8 @@ def test_constitutive_heat_source_difference_is_below_combined_certificates():
     assert observed <= pair_bound * (1.0 + 1e-10) + 1e-13
 
 
-def test_tighter_constitutive_budget_reduces_heat_source_bound():
-    coarse_core, _ = build_core(1e-3)
+def test_tighter_certifiable_constitutive_budget_reduces_heat_source_bound():
+    coarse_core, _ = build_core(3e-4)
     tight_core, _ = build_core(1e-8)
     a = np.array([0.05])
     coarse = certify_constitutive_heat_source_error(
