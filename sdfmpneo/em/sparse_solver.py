@@ -34,24 +34,7 @@ class SparseLinearSolveCertificate:
 
 
 class ApsiBlockTriangularPreconditioner:
-    """Parameter-free exact-block preconditioner for the sparse A-psi system.
-
-    For
-
-        A = [A11 A12]
-            [A21 A22],
-
-    this applies the inverse of the upper block-triangular matrix
-
-        P = [A11 A12]
-            [  0 A22].
-
-    A11 and A22 are factored with sparse LU without drop tolerances or incomplete
-    factorisation parameters. Material contrast inside each diagonal block is
-    therefore retained exactly up to the sparse direct-factorisation backward
-    error; the preconditioner changes convergence speed only and cannot make an
-    uncertified solution pass the final residual certificate.
-    """
+    """Parameter-free exact-block preconditioner for the sparse A-psi system."""
 
     def __init__(self, A: sp.spmatrix, n_A: int) -> None:
         matrix = sp.csr_matrix(A, dtype=complex)
@@ -120,6 +103,98 @@ def _true_residual_certificate(
     )
 
 
+class CertifiedSparseApsiSolver:
+    """Reusable certified sparse solver for one assembled electromagnetic state.
+
+    All port/right-hand-side solves at fixed thermal state share the same block
+    preconditioner and, if needed, the same complete sparse LU fallback. Thus the
+    expensive matrix factorisations are state-dependent, not port-dependent.
+    """
+
+    def __init__(
+        self,
+        A: sp.spmatrix,
+        *,
+        n_A: int,
+        stability_lower_bound: float,
+    ) -> None:
+        matrix = sp.csr_matrix(A, dtype=complex)
+        n = matrix.shape[0]
+        if matrix.shape != (n, n):
+            raise ValueError("A must be square")
+        beta = float(stability_lower_bound)
+        if beta <= 0.0:
+            raise ValueError("stability_lower_bound must be positive")
+        self.matrix = matrix
+        self.n = n
+        self.n_A = int(n_A)
+        self.beta = beta
+        self.preconditioner = ApsiBlockTriangularPreconditioner(matrix, n_A)
+        self._full_lu = None
+
+    def _direct_lu(self):
+        if self._full_lu is None:
+            self._full_lu = spla.splu(self.matrix.tocsc())
+        return self._full_lu
+
+    def solve(
+        self,
+        b: np.ndarray,
+        *,
+        requested_state_error: float,
+    ) -> tuple[np.ndarray, SparseLinearSolveCertificate]:
+        rhs = np.asarray(b, dtype=complex)
+        if rhs.shape != (self.n,):
+            raise ValueError("b dimension mismatch")
+        error = float(requested_state_error)
+        if error <= 0.0:
+            raise ValueError("requested_state_error must be positive")
+        residual_target = self.beta * error
+        iterations = 0
+
+        def _count(_xk: np.ndarray) -> None:
+            nonlocal iterations
+            iterations += 1
+
+        x_iterative, info = spla.bicgstab(
+            self.matrix,
+            rhs,
+            rtol=0.0,
+            atol=residual_target,
+            maxiter=self.n,
+            M=self.preconditioner.as_linear_operator(),
+            callback=_count,
+        )
+        x_iterative = np.asarray(x_iterative, dtype=complex)
+        iterative_certificate = _true_residual_certificate(
+            self.matrix,
+            rhs,
+            x_iterative,
+            beta=self.beta,
+            error=error,
+            residual_target=residual_target,
+            iterations=iterations,
+            iterative_info=int(info),
+            method="block_bicgstab",
+        )
+        if iterative_certificate.certified:
+            return x_iterative, iterative_certificate
+
+        x_direct = np.asarray(self._direct_lu().solve(rhs), dtype=complex)
+        direct_certificate = _true_residual_certificate(
+            self.matrix,
+            rhs,
+            x_direct,
+            beta=self.beta,
+            error=error,
+            residual_target=residual_target,
+            iterations=iterations,
+            iterative_info=int(info),
+            method="sparse_lu_fallback",
+        )
+        return x_direct, direct_certificate
+
+
 def solve_certified_sparse_apsi(
     A: sp.spmatrix,
     b: np.ndarray,
@@ -128,79 +203,11 @@ def solve_certified_sparse_apsi(
     stability_lower_bound: float,
     requested_state_error: float,
 ) -> tuple[np.ndarray, SparseLinearSolveCertificate]:
-    """Solve a sparse A-psi system and certify its algebraic state error.
+    """One-shot convenience wrapper around `CertifiedSparseApsiSolver`."""
 
-    Stage 1 uses block-preconditioned BiCGSTAB with an iteration work bound equal
-    to the electromagnetic coordinate dimension. This is dimension-derived, not
-    fitted. If that short-recurrence iteration does not satisfy the requested
-    a-posteriori error bound, Stage 2 deterministically falls back to a complete
-    sparse LU factorisation of the full matrix. The fallback has no drop tolerance
-    or empirical fill parameter. It provides a correctness/high-contrast baseline;
-    scalable multilevel replacement of that fallback is a separate production
-    task.
-
-    Neither stage may relax the requested state error. The returned certificate
-    is always computed from the original unpreconditioned matrix and the explicitly
-    recomputed true residual.
-    """
-
-    matrix = sp.csr_matrix(A, dtype=complex)
-    n = matrix.shape[0]
-    if matrix.shape != (n, n):
-        raise ValueError("A must be square")
-    rhs = np.asarray(b, dtype=complex)
-    if rhs.shape != (n,):
-        raise ValueError("b dimension mismatch")
-    beta = float(stability_lower_bound)
-    error = float(requested_state_error)
-    if beta <= 0.0:
-        raise ValueError("stability_lower_bound must be positive")
-    if error <= 0.0:
-        raise ValueError("requested_state_error must be positive")
-
-    residual_target = beta * error
-    preconditioner = ApsiBlockTriangularPreconditioner(matrix, n_A)
-    iterations = 0
-
-    def _count(_xk: np.ndarray) -> None:
-        nonlocal iterations
-        iterations += 1
-
-    x_iterative, info = spla.bicgstab(
-        matrix,
-        rhs,
-        rtol=0.0,
-        atol=residual_target,
-        maxiter=n,
-        M=preconditioner.as_linear_operator(),
-        callback=_count,
+    solver = CertifiedSparseApsiSolver(
+        A,
+        n_A=n_A,
+        stability_lower_bound=stability_lower_bound,
     )
-    x_iterative = np.asarray(x_iterative, dtype=complex)
-    iterative_certificate = _true_residual_certificate(
-        matrix,
-        rhs,
-        x_iterative,
-        beta=beta,
-        error=error,
-        residual_target=residual_target,
-        iterations=iterations,
-        iterative_info=int(info),
-        method="block_bicgstab",
-    )
-    if iterative_certificate.certified:
-        return x_iterative, iterative_certificate
-
-    full_lu = spla.splu(matrix.tocsc())
-    x_direct = np.asarray(full_lu.solve(rhs), dtype=complex)
-    direct_certificate = _true_residual_certificate(
-        matrix,
-        rhs,
-        x_direct,
-        beta=beta,
-        error=error,
-        residual_target=residual_target,
-        iterations=iterations,
-        iterative_info=int(info),
-        method="sparse_lu_fallback",
-    )
-    return x_direct, direct_certificate
+    return solver.solve(b, requested_state_error=requested_state_error)
