@@ -4,6 +4,11 @@ from .algebraic_output import (
     certify_algebraic_heat_source_error,
     certify_physical_energy_heat_source_error,
 )
+from .analytic_residual_domain import (
+    AnalyticResidualBoxBound,
+    bound_analytic_residual_on_box,
+    certify_analytic_residual_domain,
+)
 from .basic import (
     ContractionCertificate,
     StateErrorCertificate,
@@ -16,6 +21,10 @@ from .constitutive_output import (
     certify_constitutive_heat_source_error,
     certify_constitutive_multiport_error,
 )
+from .electrothermal_domain import (
+    ElectroThermalDomainBounds,
+    certify_electrothermal_domain_bounds,
+)
 from .em_domain import (
     BoxResidualBound,
     ContinuousEMResidualCertificate,
@@ -23,9 +32,19 @@ from .em_domain import (
     bound_affine_reduced_residual_on_box,
     certify_affine_reduced_residual_domain,
 )
+from .ledger import (
+    CertifiedErrorTerm,
+    UnifiedErrorCertificate,
+    build_unified_error_certificate,
+    certified_difference_term,
+)
 from .nonlinear_em_domain import (
     bound_nonlinear_reduced_residual_on_box,
     certify_nonlinear_reduced_residual_domain,
+)
+from .operating_domain import (
+    bound_nonlinear_operating_residual_on_box,
+    certify_nonlinear_operating_domain,
 )
 from .ports import (
     MultiPortOutputCertificate,
@@ -49,6 +68,8 @@ __all__ = [
     "certify_affine_reduced_residual_domain",
     "bound_nonlinear_reduced_residual_on_box",
     "certify_nonlinear_reduced_residual_domain",
+    "bound_nonlinear_operating_residual_on_box",
+    "certify_nonlinear_operating_domain",
     "MultiPortOutputCertificate",
     "electromagnetic_stability_constant",
     "certify_multiport_impedance",
@@ -56,4 +77,13 @@ __all__ = [
     "certify_constitutive_multiport_error",
     "ConstitutiveHeatSourceErrorCertificate",
     "certify_constitutive_heat_source_error",
+    "CertifiedErrorTerm",
+    "UnifiedErrorCertificate",
+    "certified_difference_term",
+    "build_unified_error_certificate",
+    "ElectroThermalDomainBounds",
+    "certify_electrothermal_domain_bounds",
+    "AnalyticResidualBoxBound",
+    "bound_analytic_residual_on_box",
+    "certify_analytic_residual_domain",
 ]
