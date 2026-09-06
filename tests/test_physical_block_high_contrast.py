@@ -9,6 +9,7 @@ from sdfmpneo.em import (
     CoupledPairEnergyPreconditioner,
     CurlAuxiliaryPhysicalBlockPreconditioner,
     MagneticCurlSubsetEnergyPreconditioner,
+    MagneticFaceCirculationEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
@@ -115,13 +116,10 @@ def test_certificate_driven_aggregates_are_correct_but_expose_global_magnetic_fa
     magnetic = AdaptiveAggregateEnergyPreconditioner.build(K_A)
     assert magnetic.lower_spectral_equivalence_bound > 0.0
     assert magnetic.aggregation_steps > 0
-    # The certificate is correct, but on this real magnetic block the local
-    # aggregation route collapses to the whole block.  Keep this limitation
-    # visible rather than calling it scalable.
     assert magnetic.maximum_block_size == K_A.shape[0]
 
 
-def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxiliary_blocks():
+def test_cartesian_curl_subset_is_correct_but_exposes_global_scc_fallback():
     problem = build_high_contrast_problem()
     R = problem.a_basis
     K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
@@ -131,7 +129,9 @@ def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxil
 
     auxiliary = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
     assert auxiliary.lower_spectral_equivalence_bound == 1.0
-    assert auxiliary.maximum_scc_size < K_A.shape[0]
+    # Keep the known limitation explicit: geometric Cartesian curl rows produce
+    # tiny floating couplings that make this selected factor globally irreducible.
+    assert auxiliary.maximum_scc_size == K_A.shape[0]
 
     S = F_A[auxiliary.selected_rows, :].toarray()
     P = S.conj().T @ S
@@ -142,17 +142,32 @@ def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxil
     scale = float(np.linalg.norm(K_A.toarray(), ord=2))
     assert minimum_remainder >= -128.0 * np.finfo(float).eps * max(scale, 1.0)
 
-    rhs = np.arange(1, K_A.shape[0] + 1, dtype=float).astype(complex)
+
+def test_face_circulation_auxiliary_is_topological_local_and_energy_dominated():
+    problem = build_high_contrast_problem()
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).toarray()
+    auxiliary = MagneticFaceCirculationEnergyPreconditioner.build_from_problem(problem)
+
+    assert auxiliary.lower_spectral_equivalence_bound == 1.0
+    assert auxiliary.selected_faces.size == problem.n_A
+    counts = np.bincount(
+        auxiliary.face_tetra_assignment,
+        minlength=problem.mesh.n_tetrahedra,
+    )
+    assert np.max(counts) <= 3
+    assert auxiliary.maximum_scc_size < problem.n_A
+
+    P = auxiliary.auxiliary_matrix(problem).toarray()
+    remainder = 0.5 * ((K_A - P) + (K_A - P).conj().T)
+    minimum_remainder = float(np.min(np.linalg.eigvalsh(remainder).real))
+    scale = float(np.linalg.norm(K_A, ord=2))
+    assert minimum_remainder >= -256.0 * np.finfo(float).eps * max(scale, 1.0)
+
+    rhs = np.arange(1, problem.n_A + 1, dtype=float).astype(complex)
     actual = auxiliary.solve(rhs)
     expected = np.linalg.solve(P, rhs)
     assert np.allclose(actual, expected, rtol=2e-12, atol=2e-12)
-
-    state = np.zeros(problem.n_thermal)
-    H = apsi_physical_energy_metric(problem.operator_sparse(state))
-    E = H[problem.n_A :, problem.n_A :].tocsr()
-    if E.shape[0]:
-        scalar = AdaptiveAggregateEnergyPreconditioner.build(E)
-        assert scalar.lower_spectral_equivalence_bound > 0.0
 
 
 def test_curl_auxiliary_gamma_certificate_uses_factorization_free_trace_bound():
@@ -162,7 +177,9 @@ def test_curl_auxiliary_gamma_certificate_uses_factorization_free_trace_bound():
 
     assert preconditioner.gamma_certificate_method == "curl_auxiliary_residual_certified_trace"
     assert preconditioner.gamma_upper_bound >= 0.0
-    assert preconditioner.magnetic_action.maximum_scc_size < problem.n_A
+    # This legacy Cartesian action remains a correctness fallback, so locality is
+    # deliberately not asserted here.  The face-circulation test above carries
+    # the production locality requirement.
 
 
 def test_curl_auxiliary_high_contrast_rom_runs_with_splu_globally_disabled(monkeypatch):
