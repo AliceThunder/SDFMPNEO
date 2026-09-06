@@ -4,6 +4,10 @@ from .basic import (
     contraction_certificate,
     state_error_certificate,
 )
+from .constitutive_output import (
+    ConstitutivePortErrorCertificate,
+    certify_constitutive_multiport_error,
+)
 from .em_domain import (
     BoxResidualBound,
     ContinuousEMResidualCertificate,
@@ -30,4 +34,6 @@ __all__ = [
     "MultiPortOutputCertificate",
     "electromagnetic_stability_constant",
     "certify_multiport_impedance",
+    "ConstitutivePortErrorCertificate",
+    "certify_constitutive_multiport_error",
 ]
