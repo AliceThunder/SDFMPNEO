@@ -1,10 +1,11 @@
-"""SDF-MPNEO minimal executable core."""
+"""SDF-MPNEO executable core."""
 
 from .analytic import AnalyticEvolutionGraph, AnalyticSeries
-from .thermal import ThermalSpectralModel
 from .em import ParametricEMProblem, ReducedEMModel, ResidualGreedyEMReducer
+from .model import ExecutableSDFMPNEOModel, OnlinePrediction
+from .thermal import ThermalSpectralModel
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AnalyticEvolutionGraph",
@@ -13,4 +14,6 @@ __all__ = [
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
+    "ExecutableSDFMPNEOModel",
+    "OnlinePrediction",
 ]
