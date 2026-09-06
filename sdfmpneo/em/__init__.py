@@ -8,6 +8,11 @@ from .constitutive import (
     ReciprocalLinearResistivity,
 )
 from .diagnostics import RegionLossProjector, build_region_loss_projector
+from .energy_solver import (
+    PhysicalEnergySparseApsiSolver,
+    apsi_physical_energy_metric,
+    solve_physical_energy_certified_apsi,
+)
 from .grid3d import (
     RectilinearComplex3D,
     SpatialAphiAssembly,
@@ -16,6 +21,7 @@ from .grid3d import (
 )
 from .nonlinear import NonlinearSpatialAphiProblem
 from .ports import (
+    CertifiedEnergySparseMultiPortResult,
     CertifiedSparseMultiPortResult,
     ImpressedCurrentPortSet,
     MultiPortImpedanceResult,
@@ -29,9 +35,13 @@ from .reduced import (
 )
 from .sparse_solver import (
     ApsiBlockTriangularPreconditioner,
+    ApsiEnergyMetric,
+    CertifiedEnergySparseApsiSolver,
     CertifiedSparseApsiSolver,
+    SparseEnergyLinearSolveCertificate,
     SparseLinearSolveCertificate,
     solve_certified_sparse_apsi,
+    solve_energy_certified_sparse_apsi,
 )
 from .tetra import (
     TetrahedralApsiDiscretization,
@@ -63,14 +73,22 @@ __all__ = [
     "ImpressedCurrentPortSet",
     "MultiPortImpedanceResult",
     "CertifiedSparseMultiPortResult",
+    "CertifiedEnergySparseMultiPortResult",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
     "RieszFactor",
     "ApsiBlockTriangularPreconditioner",
+    "ApsiEnergyMetric",
     "CertifiedSparseApsiSolver",
+    "CertifiedEnergySparseApsiSolver",
     "SparseLinearSolveCertificate",
+    "SparseEnergyLinearSolveCertificate",
     "solve_certified_sparse_apsi",
+    "solve_energy_certified_sparse_apsi",
+    "PhysicalEnergySparseApsiSolver",
+    "apsi_physical_energy_metric",
+    "solve_physical_energy_certified_apsi",
     "TetrahedralApsiDiscretization",
     "build_tetrahedral_apsi_from_thermal_modes",
     "tetra_face_loop_source",
