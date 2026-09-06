@@ -1,0 +1,429 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable
+
+import numpy as np
+import scipy.linalg
+import scipy.sparse as sp
+
+
+@dataclass(frozen=True)
+class RectilinearComplex3D:
+    """Oriented orthogonal 3-D cell complex on a rectilinear grid.
+
+    Edges are oriented in +x,+y,+z. Faces are oriented by +x,+y,+z normals.
+    The incidence matrices satisfy curl @ grad == 0 exactly (up to sparse
+    arithmetic). Material Hodge matrices are assembled from cellwise physical
+    coefficients by integrating over the orthogonal primal/dual support.
+    """
+
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+    grad: sp.csr_matrix
+    curl: sp.csr_matrix
+    edge_axis: np.ndarray
+    edge_ijk: np.ndarray
+    face_axis: np.ndarray
+    face_ijk: np.ndarray
+
+    @classmethod
+    def build(
+        cls,
+        x: Iterable[float],
+        y: Iterable[float],
+        z: Iterable[float],
+    ) -> "RectilinearComplex3D":
+        x = np.asarray(tuple(x), dtype=float)
+        y = np.asarray(tuple(y), dtype=float)
+        z = np.asarray(tuple(z), dtype=float)
+        if min(x.size, y.size, z.size) < 2:
+            raise ValueError("Each coordinate axis requires at least two nodes")
+        if np.any(np.diff(x) <= 0) or np.any(np.diff(y) <= 0) or np.any(np.diff(z) <= 0):
+            raise ValueError("Coordinates must be strictly increasing")
+
+        nx, ny, nz = x.size, y.size, z.size
+
+        def nidx(i: int, j: int, k: int) -> int:
+            return (i * ny + j) * nz + k
+
+        edge_map: dict[tuple[int, int, int, int], int] = {}
+        edge_axis: list[int] = []
+        edge_ijk: list[tuple[int, int, int]] = []
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[int] = []
+        e = 0
+
+        for i in range(nx - 1):
+            for j in range(ny):
+                for k in range(nz):
+                    edge_map[(0, i, j, k)] = e
+                    edge_axis.append(0)
+                    edge_ijk.append((i, j, k))
+                    rows += [e, e]
+                    cols += [nidx(i, j, k), nidx(i + 1, j, k)]
+                    data += [-1, 1]
+                    e += 1
+        for i in range(nx):
+            for j in range(ny - 1):
+                for k in range(nz):
+                    edge_map[(1, i, j, k)] = e
+                    edge_axis.append(1)
+                    edge_ijk.append((i, j, k))
+                    rows += [e, e]
+                    cols += [nidx(i, j, k), nidx(i, j + 1, k)]
+                    data += [-1, 1]
+                    e += 1
+        for i in range(nx):
+            for j in range(ny):
+                for k in range(nz - 1):
+                    edge_map[(2, i, j, k)] = e
+                    edge_axis.append(2)
+                    edge_ijk.append((i, j, k))
+                    rows += [e, e]
+                    cols += [nidx(i, j, k), nidx(i, j, k + 1)]
+                    data += [-1, 1]
+                    e += 1
+
+        grad = sp.coo_matrix(
+            (data, (rows, cols)),
+            shape=(e, nx * ny * nz),
+            dtype=float,
+        ).tocsr()
+
+        frows: list[int] = []
+        fcols: list[int] = []
+        fdata: list[int] = []
+        face_axis: list[int] = []
+        face_ijk: list[tuple[int, int, int]] = []
+        f = 0
+
+        def add_face(entries, axis: int, ijk: tuple[int, int, int]) -> None:
+            nonlocal f
+            for edge, sign in entries:
+                frows.append(f)
+                fcols.append(edge)
+                fdata.append(sign)
+            face_axis.append(axis)
+            face_ijk.append(ijk)
+            f += 1
+
+        # +x normal: +y(z-low), +z(y-high), -y(z-high), -z(y-low)
+        for i in range(nx):
+            for j in range(ny - 1):
+                for k in range(nz - 1):
+                    add_face(
+                        [
+                            (edge_map[(1, i, j, k)], 1),
+                            (edge_map[(2, i, j + 1, k)], 1),
+                            (edge_map[(1, i, j, k + 1)], -1),
+                            (edge_map[(2, i, j, k)], -1),
+                        ],
+                        0,
+                        (i, j, k),
+                    )
+
+        # +y normal: +z(x-low), +x(z-high), -z(x-high), -x(z-low)
+        for i in range(nx - 1):
+            for j in range(ny):
+                for k in range(nz - 1):
+                    add_face(
+                        [
+                            (edge_map[(2, i, j, k)], 1),
+                            (edge_map[(0, i, j, k + 1)], 1),
+                            (edge_map[(2, i + 1, j, k)], -1),
+                            (edge_map[(0, i, j, k)], -1),
+                        ],
+                        1,
+                        (i, j, k),
+                    )
+
+        # +z normal: +x(y-low), +y(x-high), -x(y-high), -y(x-low)
+        for i in range(nx - 1):
+            for j in range(ny - 1):
+                for k in range(nz):
+                    add_face(
+                        [
+                            (edge_map[(0, i, j, k)], 1),
+                            (edge_map[(1, i + 1, j, k)], 1),
+                            (edge_map[(0, i, j + 1, k)], -1),
+                            (edge_map[(1, i, j, k)], -1),
+                        ],
+                        2,
+                        (i, j, k),
+                    )
+
+        curl = sp.coo_matrix(
+            (fdata, (frows, fcols)),
+            shape=(f, e),
+            dtype=float,
+        ).tocsr()
+
+        return cls(
+            x=x,
+            y=y,
+            z=z,
+            grad=grad,
+            curl=curl,
+            edge_axis=np.asarray(edge_axis, dtype=int),
+            edge_ijk=np.asarray(edge_ijk, dtype=int),
+            face_axis=np.asarray(face_axis, dtype=int),
+            face_ijk=np.asarray(face_ijk, dtype=int),
+        )
+
+    @property
+    def shape_cells(self) -> tuple[int, int, int]:
+        return (self.x.size - 1, self.y.size - 1, self.z.size - 1)
+
+    @property
+    def n_nodes(self) -> int:
+        return self.x.size * self.y.size * self.z.size
+
+    @property
+    def n_edges(self) -> int:
+        return self.grad.shape[0]
+
+    @property
+    def n_faces(self) -> int:
+        return self.curl.shape[0]
+
+    @property
+    def n_cells(self) -> int:
+        return int(np.prod(self.shape_cells))
+
+    def _cell_array(self, values) -> np.ndarray:
+        a = np.asarray(values, dtype=float)
+        if a.shape != self.shape_cells:
+            raise ValueError(f"cell field must have shape {self.shape_cells}")
+        return a
+
+    def edge_hodge(self, cell_values) -> sp.csr_matrix:
+        """Diagonal 1-form Hodge from a cellwise coefficient.
+
+        For an x edge, for example, the coefficient is integrated on the
+        orthogonal dual face and divided by the primal x-edge length. The four
+        quarter-cell contributions are retained separately, so discontinuous
+        conductor/package/seawater coefficients are represented without
+        arithmetic averaging across material interfaces.
+        """
+
+        q = self._cell_array(cell_values)
+        dx, dy, dz = np.diff(self.x), np.diff(self.y), np.diff(self.z)
+        nx, ny, nz = self.shape_cells
+        weights = np.zeros(self.n_edges, dtype=float)
+
+        for e, (axis, ijk) in enumerate(zip(self.edge_axis, self.edge_ijk)):
+            i, j, k = map(int, ijk)
+            value = 0.0
+            if axis == 0:
+                for jj in (j - 1, j):
+                    if 0 <= jj < ny:
+                        for kk in (k - 1, k):
+                            if 0 <= kk < nz:
+                                value += q[i, jj, kk] * (0.5 * dy[jj]) * (0.5 * dz[kk])
+                weights[e] = value / dx[i]
+            elif axis == 1:
+                for ii in (i - 1, i):
+                    if 0 <= ii < nx:
+                        for kk in (k - 1, k):
+                            if 0 <= kk < nz:
+                                value += q[ii, j, kk] * (0.5 * dx[ii]) * (0.5 * dz[kk])
+                weights[e] = value / dy[j]
+            else:
+                for ii in (i - 1, i):
+                    if 0 <= ii < nx:
+                        for jj in (j - 1, j):
+                            if 0 <= jj < ny:
+                                value += q[ii, jj, k] * (0.5 * dx[ii]) * (0.5 * dy[jj])
+                weights[e] = value / dz[k]
+
+        return sp.diags(weights, format="csr")
+
+    def face_hodge(self, cell_values) -> sp.csr_matrix:
+        """Diagonal 2-form Hodge from a cellwise coefficient."""
+
+        q = self._cell_array(cell_values)
+        dx, dy, dz = np.diff(self.x), np.diff(self.y), np.diff(self.z)
+        nx, ny, nz = self.shape_cells
+        weights = np.zeros(self.n_faces, dtype=float)
+
+        for f, (axis, ijk) in enumerate(zip(self.face_axis, self.face_ijk)):
+            i, j, k = map(int, ijk)
+            value = 0.0
+            if axis == 0:
+                if i > 0:
+                    value += q[i - 1, j, k] * 0.5 * dx[i - 1]
+                if i < nx:
+                    value += q[i, j, k] * 0.5 * dx[i]
+                weights[f] = value / (dy[j] * dz[k])
+            elif axis == 1:
+                if j > 0:
+                    value += q[i, j - 1, k] * 0.5 * dy[j - 1]
+                if j < ny:
+                    value += q[i, j, k] * 0.5 * dy[j]
+                weights[f] = value / (dx[i] * dz[k])
+            else:
+                if k > 0:
+                    value += q[i, j, k - 1] * 0.5 * dz[k - 1]
+                if k < nz:
+                    value += q[i, j, k] * 0.5 * dz[k]
+                weights[f] = value / (dx[i] * dy[j])
+
+        return sp.diags(weights, format="csr")
+
+    def gauge_basis(self) -> np.ndarray:
+        """Explicit algebraic Coulomb gauge basis: range(R_A)=ker(G^T)."""
+
+        return scipy.linalg.null_space(self.grad.toarray().T)
+
+    def conductive_gradient(self, conductivity_support_cells) -> np.ndarray:
+        """Gradient restricted to conducting connected components.
+
+        One deterministic reference node (the smallest global node index) is
+        removed from every conducting connected component. This eliminates the
+        scalar-potential nullspace by coordinates, not by a penalty.
+        """
+
+        support = self._cell_array(conductivity_support_cells).astype(bool)
+        edge_active = np.asarray(self.edge_hodge(support.astype(float)).diagonal() > 0)
+        if not np.any(edge_active):
+            return np.zeros((self.n_edges, 0), dtype=float)
+
+        G = self.grad.tocsr()
+        adjacency = [set() for _ in range(self.n_nodes)]
+        active_nodes: set[int] = set()
+        for edge in np.flatnonzero(edge_active):
+            nodes = G.indices[G.indptr[edge] : G.indptr[edge + 1]]
+            if len(nodes) == 2:
+                a, b = map(int, nodes)
+                adjacency[a].add(b)
+                adjacency[b].add(a)
+                active_nodes.update((a, b))
+
+        seen: set[int] = set()
+        kept_nodes: list[int] = []
+        for root in sorted(active_nodes):
+            if root in seen:
+                continue
+            stack = [root]
+            component: list[int] = []
+            seen.add(root)
+            while stack:
+                u = stack.pop()
+                component.append(u)
+                for v in adjacency[u]:
+                    if v not in seen:
+                        seen.add(v)
+                        stack.append(v)
+            reference = min(component)
+            kept_nodes.extend(v for v in sorted(component) if v != reference)
+
+        return G[:, kept_nodes].toarray()
+
+    def topology_defect(self) -> float:
+        product = self.curl @ self.grad
+        return 0.0 if product.nnz == 0 else float(np.max(np.abs(product.data)))
+
+
+@dataclass(frozen=True)
+class SpatialAphiAssembly:
+    complex3d: RectilinearComplex3D
+    discretization: object
+
+
+def build_compatible_aphi_from_cells(
+    complex3d: RectilinearComplex3D,
+    *,
+    omega: float,
+    reluctivity_cell: np.ndarray,
+    conductivity0_cell: np.ndarray,
+    conductivity_state_cell: np.ndarray,
+    thermal_test_cell: np.ndarray,
+    source_current: np.ndarray,
+) -> SpatialAphiAssembly:
+    """Assemble the compatible A-phi model from spatial cell fields.
+
+    `conductivity_state_cell[k]` is the k-th *certified affine constitutive
+    coefficient* in reduced thermal coordinates. This routine only performs
+    spatial compatible assembly; it deliberately does not fit or invent the
+    constitutive expansion.
+    """
+
+    from .compatible import CompatibleAphiDiscretization
+
+    grid = complex3d
+    nu = np.asarray(reluctivity_cell, dtype=float)
+    sigma0 = np.asarray(conductivity0_cell, dtype=float)
+    sigma_state = np.asarray(conductivity_state_cell, dtype=float)
+    thermal_test = np.asarray(thermal_test_cell, dtype=float)
+
+    if nu.shape != grid.shape_cells or sigma0.shape != grid.shape_cells:
+        raise ValueError("cell material field shape mismatch")
+    if sigma_state.ndim != 4 or sigma_state.shape[1:] != grid.shape_cells:
+        raise ValueError("conductivity_state_cell must have shape (n_thermal,*shape_cells)")
+    if thermal_test.shape != sigma_state.shape:
+        raise ValueError("thermal_test_cell must match conductivity_state_cell shape")
+    n_thermal = sigma_state.shape[0]
+    if np.asarray(source_current).shape != (grid.n_edges,):
+        raise ValueError("source_current shape mismatch")
+
+    reluctivity_hodge = grid.face_hodge(nu).toarray()
+    conductivity0 = grid.edge_hodge(sigma0).toarray()
+    conductivity_state = np.stack(
+        [grid.edge_hodge(sigma_state[k]).toarray() for k in range(n_thermal)],
+        axis=0,
+    )
+
+    support = (np.abs(sigma0) + np.sum(np.abs(sigma_state), axis=0)) > 0
+    grad_c = grid.conductive_gradient(support)
+    a_basis = grid.gauge_basis()
+
+    # Deterministic coordinate Riesz metric. It is topological rather than a
+    # tunable penalty: the A block is the Euclidean Gram of the explicit gauge
+    # basis and the phi block is the graph-gradient Gram after nullspace removal.
+    H_A = a_basis.T @ a_basis
+    H_phi = grad_c.T @ grad_c
+    riesz_metric = scipy.linalg.block_diag(H_A, H_phi) if grad_c.shape[1] else H_A
+
+    thermal_loss_hodge0 = np.stack(
+        [grid.edge_hodge(sigma0 * thermal_test[j]).toarray() for j in range(n_thermal)],
+        axis=0,
+    )
+    thermal_loss_hodge_state = np.empty(
+        (n_thermal, n_thermal, grid.n_edges, grid.n_edges),
+        dtype=float,
+    )
+    for j in range(n_thermal):
+        for k in range(n_thermal):
+            thermal_loss_hodge_state[j, k] = grid.edge_hodge(
+                sigma_state[k] * thermal_test[j]
+            ).toarray()
+
+    discretization = CompatibleAphiDiscretization(
+        curl=grid.curl.toarray(),
+        grad_c=grad_c,
+        a_basis=a_basis,
+        reluctivity_hodge=reluctivity_hodge,
+        conductivity0=conductivity0,
+        conductivity_state=conductivity_state,
+        source_current=np.asarray(source_current, dtype=complex),
+        omega=omega,
+        riesz_metric=riesz_metric,
+        thermal_loss_hodge0=thermal_loss_hodge0,
+        thermal_loss_hodge_state=thermal_loss_hodge_state,
+    )
+    return SpatialAphiAssembly(grid, discretization)
+
+
+def face_loop_source(
+    complex3d: RectilinearComplex3D,
+    face_index: int,
+    amplitude: complex = 1.0,
+) -> np.ndarray:
+    """Divergence-free edge source equal to the oriented boundary of one face."""
+
+    if not 0 <= face_index < complex3d.n_faces:
+        raise ValueError("face_index out of range")
+    return amplitude * complex3d.curl.getrow(face_index).toarray().ravel().astype(complex)
