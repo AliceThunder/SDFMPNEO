@@ -51,6 +51,17 @@ from .ports import (
     certify_multiport_impedance,
     electromagnetic_stability_constant,
 )
+from .spatial_error import (
+    HomogeneousConductiveExterior,
+    MeshApproximationProof,
+    MeshErrorCertificate,
+    OuterDomainErrorCertificate,
+    SpatialOutputErrorCertificate,
+    certify_conductive_outer_domain,
+    certify_mesh_error,
+    propagate_spatial_state_error,
+    tetrahedral_h_max,
+)
 
 __all__ = [
     "AlgebraicHeatSourceErrorCertificate",
@@ -86,4 +97,13 @@ __all__ = [
     "AnalyticResidualBoxBound",
     "bound_analytic_residual_on_box",
     "certify_analytic_residual_domain",
+    "MeshApproximationProof",
+    "MeshErrorCertificate",
+    "HomogeneousConductiveExterior",
+    "OuterDomainErrorCertificate",
+    "SpatialOutputErrorCertificate",
+    "tetrahedral_h_max",
+    "certify_mesh_error",
+    "certify_conductive_outer_domain",
+    "propagate_spatial_state_error",
 ]
