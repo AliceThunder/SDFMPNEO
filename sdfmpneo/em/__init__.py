@@ -33,6 +33,7 @@ from .tetra_nonlinear import (
     NonlinearTetrahedralApsiProblem,
     TetrahedralConstitutiveCertificate,
 )
+from .tetra_nonlinear_diagnostics import NonlinearTetrahedralRegionLossEvaluator
 
 __all__ = [
     "CompatibleAphiDiscretization",
@@ -63,4 +64,5 @@ __all__ = [
     "certified_reciprocal_polynomials",
     "NonlinearTetrahedralApsiProblem",
     "TetrahedralConstitutiveCertificate",
+    "NonlinearTetrahedralRegionLossEvaluator",
 ]
