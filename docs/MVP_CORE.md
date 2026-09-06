@@ -21,16 +21,21 @@ The repository now contains:
 - first-order Nedelec tetrahedral electromagnetic assembly;
 - P1 tetrahedral thermal mass/conduction assembly on the same mesh;
 - reciprocal scaled `A-psi` magnetoquasistatic coordinates;
-- native sparse nonlinear tetrahedral `A(a)`, `dA/da`, loss operators, and physical energy metric;
-- physical electromagnetic energy metric `H=K+D` for `A=K+iD`;
+- native sparse nonlinear tetrahedral `A(a)`, `dA/da`, loss operators, port projection, and physical energy metric;
+- physical electromagnetic energy metric `H(a)=K+D(a)` for `A(a)=K+iD(a)`;
 - structural energy coercivity `beta_H >= 1/sqrt(2)`, independent of copper/seawater conductivity contrast;
 - energy-preconditioned sparse BiCGSTAB with true residual certification;
 - deterministic complete sparse-LU fallback when the short-recurrence iteration is insufficient, without drop tolerances or relaxed error targets;
 - reusable sparse factorisations across multiple port right-hand sides at one thermal state;
 - sparse algebraic field-error propagation to `Z/R/L/M` and projected heat source;
 - high-contrast regression with `sigma_Cu/sigma_seawater > 1e7`;
-- physical electromagnetic Riesz metric and Cholesky-Riesz residual coordinates for the verification-scale reduced model;
-- snapshot-free single- and multi-RHS electromagnetic reduction;
+- **fully sparse physical-energy snapshot-free single- and multi-RHS electromagnetic reduction for the certified nonlinear path**;
+- local `H(a)^-1 r` residual-Riesz enrichment without full-order solution snapshots;
+- reference-energy `H0=H(0)` reduced-basis whitening using only a small dense Gram matrix, with no dense full-order Cholesky factor;
+- finite-candidate reduction certificates in the local physical energy norm;
+- certified reduced multiport `Z/R/L/M` from a reduced equilibrium solve plus sparse residual certification, without a full-order field equilibrium solve;
+- sparse reduced Joule source and exact reduced heat-source Jacobian;
+- legacy dense Cholesky-Riesz reduction retained only for affine/orthogonal verification paths;
 - thermal generalized eigenmodes with spectral-tail certified rank selection;
 - exact barycentric polynomial integration against Nedelec fields;
 - affine tetrahedral temperature-feedback correctness path;
@@ -50,7 +55,7 @@ The repository now contains:
 - fast polynomial-exponential compilation plus an independent exact state-space realization backend with no near-resonance threshold;
 - fixed and parameter-conditioned arbitrary-time online query interfaces.
 
-No FEM/Maxwell solution snapshots or transient solution labels are used by the training/reduction method.
+No FEM/Maxwell solution snapshots or transient solution labels are used by the production training/reduction method.
 
 ## Current unstructured physical chain
 
@@ -68,17 +73,20 @@ tetrahedral geometry + material regions
         +--> Nedelec magnetic operator K
         +--> certified conductivity operator D(a)
                 |
-                +--> sparse reciprocal A=K+iD
+                +--> sparse reciprocal A(a)=K+iD(a)
                 |       |
-                |       +--> H=K+D
+                |       +--> local H(a)=K+D(a)
                 |       +--> beta_H >= 1/sqrt(2)
-                |       +--> certified sparse solve
-                |       +--> algebraic Z/R/L/M bounds
-                |       +--> algebraic q_em,r bounds
+                |       +--> certified sparse correctness solve
+                |       +--> sparse residual-Riesz ROM growth
+                |                 |
+                |                 +--> y=H(a)^-1 r
+                |                 +--> H0-orthonormal global basis
+                |                 +--> reduced A_r(a)
+                |                 +--> reduced q_em,r,dq_em,r/da
+                |                 +--> certified reduced Z/R/L/M
+                |       +--> algebraic/reduction output bounds
                 |
-                +--> snapshot-free EM reduction
-                +--> q_em,r(a), dq_em,r/da
-                +--> Z/R/L/M
                 +--> P_Cu/P_sea
                 +--> constitutive/reduction/solve certificates
                           |
@@ -158,9 +166,81 @@ For reduced thermal test mode `phi_j`, with `m_j=||phi_j||_infinity`, the same e
 
 This is the executable algebraic-solve contribution to `eta_EM`.
 
-The current energy-preconditioned Krylov implementation uses exact sparse `H^-1`; if it does not meet the physical residual certificate within the dimension-derived work bound, the correctness path uses complete sparse LU on `A`. That fallback is deterministic and certificate-preserving but is not the final memory-scalable production algorithm.
+The current energy Riesz action uses exact sparse `H^-1`; if the full-order correctness solver does not meet its physical residual certificate within the dimension-derived Krylov work bound, complete sparse LU on `A` is used. These are deterministic correctness baselines but are not the final memory-scalable production algorithms.
 
-See `docs/SPARSE_ENERGY_SOLVER.md` for the full derivation.
+See `docs/SPARSE_ENERGY_SOLVER.md` for the full-order derivation.
+
+## Sparse snapshot-free electromagnetic reduction
+
+For a reduced basis `V`,
+
+```text
+A_r(a) = V^H A(a) V,
+b_r = V^H b,
+x_r(a) = V A_r(a)^-1 b_r.
+```
+
+The sparse full-order residual is
+
+```text
+r(a) = b - A(a) x_r(a).
+```
+
+Reduction error is certified in the **state-dependent physical metric**
+
+```text
+eta(a) = sqrt(2) ||r(a)||_(H(a)^-1).
+```
+
+The worst unresolved state/excitation provides the next basis direction
+
+```text
+y = H(a)^-1 r(a).
+```
+
+No full-order solution `A(a)^-1 b` is used as a basis snapshot.
+
+A single global basis is stored using
+
+```text
+H0 = H(0).
+```
+
+`H0` is only a coordinate metric. The error theorem remains local in `H(a)`. For candidate basis `W`, the small Gram matrix
+
+```text
+G = W^H H0 W = L L^H
+```
+
+gives
+
+```text
+V = W L^(-H),
+V^H H0 V = I
+```
+
+up to floating-point backward error. No full-order dense Cholesky factor is created.
+
+For a joint port source matrix `B`,
+
+```text
+A_r C = V^H B,
+X_r = V C,
+Z_r = j*w B^T X_r.
+```
+
+Each residual column `r_j=b_j-Ax_r,j` gives
+
+```text
+epsilon_j = sqrt(2)||r_j||_(H^-1),
+|Delta Z_ij| <= w||b_i||_(H^-1)epsilon_j.
+```
+
+Thus the equilibrium solve is reduced-order, while sparse full-order operations are used only for deterministic certification. Regression tests disable the full-order equilibrium solve and confirm that certified reduced multiport output remains executable.
+
+The finite candidate-state set certifies those states/excitations only. It is not a continuous-domain certificate.
+
+See `docs/SPARSE_ENERGY_REDUCTION.md` for the complete reduction derivation.
 
 ## Exact barycentric loss projection
 
@@ -215,12 +295,12 @@ The code selects the minimum order satisfying the declared constitutive error al
 
 ## Electromagnetic error decomposition
 
-The code now distinguishes at least the following error sources:
+The code distinguishes
 
 ```text
 eta_constitutive : certified nonlinear material-series error,
-eta_algebraic    : certified sparse linear-solve error,
-eta_EM-ROM       : electromagnetic reduced-space error.
+eta_algebraic    : certified sparse linear/Riesz action error where applicable,
+eta_EM-ROM       : certified reduced-space residual error on the declared domain.
 ```
 
 Future certified terms are
@@ -306,19 +386,18 @@ A continuous branch-and-bound certificate is implemented for strictly affine EM 
 certified / violated / indeterminate.
 ```
 
-The certified nonlinear tetrahedral material path has pointwise constitutive and a-posteriori output bounds, but a **continuous state/geometry/frequency-domain certificate for that nonlinear operator family is still pending**.
+The certified nonlinear tetrahedral material path and sparse reducer have pointwise/a-posteriori certificates, but a **continuous state/geometry/frequency/source-domain certificate for the nonlinear reduced operator family is still pending**. A finite candidate set is not treated as proof of the continuous domain.
 
 ## Remaining production obligations
 
 1. CAD/mesh import and conforming meshing for actual round/rounded-square conductors, package, and seawater domains.
-2. Replace exact sparse `H^-1` and complete sparse-LU fallback with a memory-scalable multilevel/auxiliary-space solver while retaining a verified inexact-preconditioner and field-error certificate.
-3. Make snapshot-free electromagnetic reduction fully sparse/Riesz-scalable without production dense Cholesky factors.
-4. Continuous-domain certification for nonlinear tetrahedral material, geometry, frequency, and source parameters.
-5. Mesh-discretization and certified outer-domain truncation terms in the unified output/state certificate.
-6. Certified open/infinite seawater electromagnetic and thermal outer-domain treatment.
-7. Scalable partial thermal eigensolution with a certified lower bound on the first omitted eigenvalue.
-8. Solid-conductor terminal-current constrained ports when impressed closed-current sources are not the intended excitation.
-9. Parameterization across geometry/operator families that change the thermal spectrum; current intrinsic `U` parameterization assumes a fixed operator family.
-10. Certified compression/minimalization of large analytic state-space realizations and a global convergence certificate for residual-grown analytic-network construction.
+2. Replace exact sparse `H^-1` Riesz actions and the complete sparse-LU correctness fallback with a memory-scalable multilevel/auxiliary-space solver while retaining an independently checkable residual/error certificate.
+3. Continuous-domain certification for nonlinear tetrahedral material, reduced-space residual, geometry, frequency, and source parameters.
+4. Mesh-discretization and certified outer-domain truncation terms in the unified output/state certificate.
+5. Certified open/infinite seawater electromagnetic and thermal outer-domain treatment.
+6. Scalable partial thermal eigensolution with a certified lower bound on the first omitted eigenvalue.
+7. Solid-conductor terminal-current constrained ports when impressed closed-current sources are not the intended excitation.
+8. Parameterization across geometry/operator families that change the thermal spectrum; current intrinsic `U` parameterization assumes a fixed operator family.
+9. Certified compression/minimalization of large analytic state-space realizations and a global convergence certificate for residual-grown analytic-network construction.
 
 These limits are explicit implementation obligations, not empirical safety factors.
