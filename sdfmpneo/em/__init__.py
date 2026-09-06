@@ -33,6 +33,10 @@ from .grid3d import (
     build_compatible_aphi_from_cells,
     face_loop_source,
 )
+from .magnetic_auxiliary import (
+    MagneticCurlSubsetEnergyPreconditioner,
+    build_gauge_restricted_magnetic_curl_factor,
+)
 from .nonlinear import NonlinearSpatialAphiProblem
 from .pair_block import CoupledPairEnergyPreconditioner
 from .ports import (
@@ -93,6 +97,8 @@ __all__ = [
     "CertifiedRieszActionResult",
     "DiagonalGershgorinEnergyPreconditioner",
     "CoupledPairEnergyPreconditioner",
+    "MagneticCurlSubsetEnergyPreconditioner",
+    "build_gauge_restricted_magnetic_curl_factor",
     "RieszNormDecision",
     "CertifiedRieszAction",
     "RieszActionFactory",
