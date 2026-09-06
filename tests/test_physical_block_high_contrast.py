@@ -1,16 +1,17 @@
 import numpy as np
 import pytest
+import scipy.sparse.linalg as spla
 
 from sdfmpneo.em import (
     AdaptiveAggregateEnergyPreconditioner,
     ConductivityRegion,
     ConstantConductivity,
     CoupledPairEnergyPreconditioner,
+    CurlAuxiliaryPhysicalBlockPreconditioner,
     MagneticCurlSubsetEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
     ReciprocalLinearResistivity,
     SparseEnergyResidualGreedyEMReducer,
-    SparseLUExactBlockPreconditioner,
     apsi_physical_energy_metric,
     build_gauge_restricted_magnetic_curl_factor,
     make_curl_auxiliary_physical_pcg_riesz_factory,
@@ -114,9 +115,9 @@ def test_certificate_driven_aggregates_are_correct_but_expose_global_magnetic_fa
     magnetic = AdaptiveAggregateEnergyPreconditioner.build(K_A)
     assert magnetic.lower_spectral_equivalence_bound > 0.0
     assert magnetic.aggregation_steps > 0
-    # This regression deliberately exposes the limitation: for this real
-    # high-contrast tetrahedral magnetic block, block-Gershgorin aggregation
-    # collapses to the whole magnetic space and therefore is not scalable.
+    # The certificate is correct, but on this real magnetic block the local
+    # aggregation route collapses to the whole block.  Keep this limitation
+    # visible rather than calling it scalable.
     assert magnetic.maximum_block_size == K_A.shape[0]
 
 
@@ -135,7 +136,9 @@ def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxil
     S = F_A[auxiliary.selected_rows, :].toarray()
     P = S.conj().T @ S
     remainder = K_A.toarray() - P
-    minimum_remainder = float(np.min(np.linalg.eigvalsh(0.5 * (remainder + remainder.conj().T)).real))
+    minimum_remainder = float(
+        np.min(np.linalg.eigvalsh(0.5 * (remainder + remainder.conj().T)).real)
+    )
     scale = float(np.linalg.norm(K_A.toarray(), ord=2))
     assert minimum_remainder >= -128.0 * np.finfo(float).eps * max(scale, 1.0)
 
@@ -152,15 +155,21 @@ def test_physical_curl_factor_reproduces_magnetic_energy_and_selects_local_auxil
         assert scalar.lower_spectral_equivalence_bound > 0.0
 
 
-def test_curl_auxiliary_physical_riesz_certifies_high_contrast_rom_without_block_lu(monkeypatch):
-    def forbidden_block_lu(*_args, **_kwargs):
-        raise AssertionError("complete magnetic/scalar block sparse LU backend was used")
+def test_curl_auxiliary_gamma_certificate_uses_factorization_free_trace_bound():
+    problem = build_high_contrast_problem()
+    H = apsi_physical_energy_metric(problem.operator_sparse(np.zeros(problem.n_thermal)))
+    preconditioner = CurlAuxiliaryPhysicalBlockPreconditioner.build(H, problem=problem)
 
-    monkeypatch.setattr(
-        SparseLUExactBlockPreconditioner,
-        "build",
-        forbidden_block_lu,
-    )
+    assert preconditioner.gamma_certificate_method == "curl_auxiliary_residual_certified_trace"
+    assert preconditioner.gamma_upper_bound >= 0.0
+    assert preconditioner.magnetic_action.maximum_scc_size < problem.n_A
+
+
+def test_curl_auxiliary_high_contrast_rom_runs_with_splu_globally_disabled(monkeypatch):
+    def forbidden_sparse_lu(*_args, **_kwargs):
+        raise AssertionError("scipy sparse LU was used by the curl-auxiliary ROM path")
+
+    monkeypatch.setattr(spla, "splu", forbidden_sparse_lu)
     problem = build_high_contrast_problem()
     factory = make_curl_auxiliary_physical_pcg_riesz_factory(problem)
     model = _certify_reduction(problem, factory)
