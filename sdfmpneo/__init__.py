@@ -16,7 +16,7 @@ from .model import (
 from .tetra_core import TetrahedralElectroThermalCore
 from .thermal import ThermalSpectralModel
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "AnalyticEvolutionGraph",
