@@ -1,3 +1,7 @@
+from .block_riesz import (
+    PhysicalBlockEnergyPreconditioner,
+    make_physical_block_pcg_riesz_factory,
+)
 from .certified_riesz import (
     CertifiedEnergyPreconditioner,
     CertifiedPCGRieszAction,
@@ -75,6 +79,8 @@ from .tetra_nonlinear import (
 from .tetra_nonlinear_diagnostics import NonlinearTetrahedralRegionLossEvaluator
 
 __all__ = [
+    "PhysicalBlockEnergyPreconditioner",
+    "make_physical_block_pcg_riesz_factory",
     "CertifiedEnergyPreconditioner",
     "CertifiedPCGRieszAction",
     "CertifiedRieszActionResult",
