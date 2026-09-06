@@ -47,6 +47,10 @@ from .magnetic_auxiliary import (
     build_gauge_restricted_magnetic_curl_factor,
 )
 from .magnetic_face_auxiliary import MagneticFaceCirculationEnergyPreconditioner
+from .morse_block_riesz import (
+    MorseAuxiliaryPhysicalBlockPreconditioner,
+    make_morse_auxiliary_physical_pcg_riesz_factory,
+)
 from .morse_face_auxiliary import MorseFaceCirculationEnergyPreconditioner
 from .nonlinear import NonlinearSpatialAphiProblem
 from .pair_block import CoupledPairEnergyPreconditioner
@@ -107,6 +111,8 @@ __all__ = [
     "make_curl_auxiliary_physical_pcg_riesz_factory",
     "FaceAuxiliaryPhysicalBlockPreconditioner",
     "make_face_auxiliary_physical_pcg_riesz_factory",
+    "MorseAuxiliaryPhysicalBlockPreconditioner",
+    "make_morse_auxiliary_physical_pcg_riesz_factory",
     "CertifiedEnergyPreconditioner",
     "CertifiedPCGRieszAction",
     "CertifiedRieszActionResult",
