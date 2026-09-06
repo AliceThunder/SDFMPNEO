@@ -5,7 +5,6 @@ import math
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 from .adaptive_block import AdaptiveAggregateEnergyPreconditioner
 from .block_riesz import (
@@ -16,29 +15,41 @@ from .block_riesz import (
     _positive_real_diagonal,
 )
 from .certified_riesz import CertifiedEnergyPreconditioner, CertifiedPCGRieszAction
-from .magnetic_auxiliary import MagneticCurlSubsetEnergyPreconditioner
+from .magnetic_auxiliary import (
+    MagneticCurlSubsetEnergyPreconditioner,
+    build_gauge_restricted_magnetic_curl_factor,
+)
 
 
 @dataclass(frozen=True)
 class CurlAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
-    """Physical H preconditioner with distinct magnetic and scalar actions.
+    """Physical H preconditioner with curl-factor magnetic auxiliary action.
 
-    The magnetic block is not factorized from K_A.  It uses the physical
-    tetrahedral curl factor F_A and a matched subset S:
+    The magnetic block is represented by the physical tetrahedral curl factor
 
-        K_A = F_A^H F_A >= S^H S = P_A,
+        K_A = F_A^H F_A.
 
-    hence m_K=1 exactly at operator level.
+    A structurally matched square row subset S defines
 
-    The scalar conductive block uses a separately certified action.  The outer
-    A-psi physical theorem remains
+        P_A = S^H S,
+        K_A >= P_A,
 
-        H >= m(gamma) min(m_K,m_E) diag(P_A,P_E).
+    so the magnetic block spectral constant is exactly m_K=1 at operator level.
+    The scalar conductive block is handled by an independent certified action.
 
-    Gamma certification is logically separate from the block actions.  The
-    current non-diagonally-dominant fallback may still use sparse LU solely to
-    construct a rigorous bound on gamma; this class therefore removes magnetic
-    *block solve* factorization, not yet the gamma-certificate factorization.
+    The conductive/magnetic coupling constant gamma satisfies
+
+        gamma = lambda_max(K_A^-1/2 D_AA K_A^-1/2).
+
+    If direct normalized Gershgorin cannot certify gamma, this implementation no
+    longer factorizes K_A.  Since K_A>=P_A implies K_A^-1<=P_A^-1 and D_AA>=0,
+
+        gamma <= trace(K_A^-1 D_AA)
+              <= trace(P_A^-1 D_AA).
+
+    The final trace upper bound is computed through the same curl auxiliary
+    action with explicit residual envelopes.  Thus neither the magnetic block
+    action nor the gamma fallback requires a sparse factorization of K_A.
     """
 
     n_A: int
@@ -74,6 +85,11 @@ class CurlAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
         if K.shape != (n_A, n_A):
             raise ValueError("magnetic gauge block dimension mismatch")
 
+        magnetic = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
+        magnetic_lower = float(magnetic.lower_spectral_equivalence_bound)
+        if magnetic_lower != 1.0:
+            raise RuntimeError("physical curl-subset magnetic lower bound must be one")
+
         H11 = metric[:n_A, :n_A].tocsr()
         D_AA = (0.5 * ((H11 - K) + (H11 - K).conj().T)).tocsr()
         D_AA.sum_duplicates()
@@ -86,27 +102,22 @@ class CurlAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
             gamma_upper = float(np.nextafter(d_upper / k_lower, np.inf))
             gamma_method = "normalized_gershgorin"
         else:
-            # This is certificate construction only.  It will be removed in the
-            # next stage by a factorization-free gamma proof.
-            try:
-                lu_K_certificate = spla.splu(K.tocsc())
-            except RuntimeError as exc:
-                raise ValueError("magnetic gamma-certificate factorization failed") from exc
-            inverse_inf_upper = _certified_inverse_inf_upper(K, lu_K_certificate)
+            F_A = build_gauge_restricted_magnetic_curl_factor(problem)
+            S = F_A[magnetic.selected_rows, :].tocsr()
+            P_A = (S.conj().T @ S).tocsr()
+            P_A.sum_duplicates()
+            P_A.eliminate_zeros()
+
+            inverse_inf_upper = _certified_inverse_inf_upper(P_A, magnetic)
             gamma_upper = _certified_generalized_trace_upper(
-                K,
+                P_A,
                 D_AA,
-                lu_K_certificate,
+                magnetic,
                 inverse_inf_upper,
             )
-            gamma_method = "residual_certified_generalized_trace"
+            gamma_method = "curl_auxiliary_residual_certified_trace"
         if gamma_upper < 0.0 or not np.isfinite(gamma_upper):
             raise ValueError("failed to certify finite non-negative D_AA/K_A bound")
-
-        magnetic = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
-        magnetic_lower = float(magnetic.lower_spectral_equivalence_bound)
-        if magnetic_lower != 1.0:
-            raise RuntimeError("physical curl-subset magnetic lower bound must be one")
 
         n_scalar = n - n_A
         scalar = None
