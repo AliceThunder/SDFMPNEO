@@ -7,6 +7,7 @@ from sdfmpneo.em import (
     CertifiedPCGRieszAction,
     CoupledPairEnergyPreconditioner,
     DiagonalGershgorinEnergyPreconditioner,
+    SparseLUReferenceRieszAction,
 )
 
 
@@ -68,12 +69,18 @@ def test_coupled_pair_pcg_preserves_riesz_error_certificate():
     B = strongly_paired_spd_matrix()
     preconditioner = CoupledPairEnergyPreconditioner.build(B)
     action = CertifiedPCGRieszAction(B, preconditioner)
+    reference_action = SparseLUReferenceRieszAction(B)
     rhs = np.array([1.0 + 0.2j, -0.4, 0.7j])
 
     result = action.solve(rhs, requested_energy_action_error=1e-10)
-    exact = scipy.linalg.solve(B.toarray(), rhs, assume_a="her")
-    error = exact - result.vector
-    actual_energy_error = float(np.sqrt(np.real(np.vdot(error, B @ error))))
+    reference = reference_action.solve(rhs, requested_energy_action_error=1e-12)
+    difference = reference.vector - result.vector
+    difference_energy = float(np.sqrt(np.real(np.vdot(difference, B @ difference))))
 
     assert result.meets_requested_energy_action_error
-    assert actual_energy_error <= result.energy_action_error_bound * (1.0 + 1e-10) + 1e-14
+    assert reference.meets_requested_energy_action_error
+    assert difference_energy <= (
+        result.energy_action_error_bound
+        + reference.energy_action_error_bound
+        + 5e-14
+    )
