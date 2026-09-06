@@ -33,6 +33,12 @@ from .reduced import (
     ResidualGreedyEMReducer,
     RieszFactor,
 )
+from .sparse_reduced import (
+    SparseEnergyReducedEMModel,
+    SparseEnergyReductionCertificate,
+    SparseEnergyResidualCertificate,
+    SparseEnergyResidualGreedyEMReducer,
+)
 from .sparse_solver import (
     ApsiBlockTriangularPreconditioner,
     ApsiEnergyMetric,
@@ -78,6 +84,10 @@ __all__ = [
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
     "RieszFactor",
+    "SparseEnergyReducedEMModel",
+    "SparseEnergyReductionCertificate",
+    "SparseEnergyResidualCertificate",
+    "SparseEnergyResidualGreedyEMReducer",
     "ApsiBlockTriangularPreconditioner",
     "ApsiEnergyMetric",
     "CertifiedSparseApsiSolver",
