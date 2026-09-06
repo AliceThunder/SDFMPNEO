@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class AffineOperatingRHSMap:
+    """Exact electromagnetic excitation map b(U)=b0+B_U U for real U."""
+
+    offset: np.ndarray
+    matrix: np.ndarray
+
+    def __post_init__(self) -> None:
+        b0 = np.asarray(self.offset, dtype=complex)
+        B = np.asarray(self.matrix, dtype=complex)
+        if b0.ndim != 1:
+            raise ValueError("offset must be one-dimensional")
+        if B.ndim != 2 or B.shape[0] != b0.size:
+            raise ValueError("matrix must have shape (n_em,n_operating)")
+        object.__setattr__(self, "offset", b0)
+        object.__setattr__(self, "matrix", B)
+
+    @property
+    def n_em(self) -> int:
+        return self.offset.size
+
+    @property
+    def n_operating(self) -> int:
+        return self.matrix.shape[1]
+
+    def evaluate(self, operating: np.ndarray) -> np.ndarray:
+        u = np.asarray(operating, dtype=float)
+        if u.shape != (self.n_operating,):
+            raise ValueError("operating parameter dimension mismatch")
+        return self.offset + self.matrix @ u
+
+
+@dataclass(frozen=True)
+class ParametricResidualSample:
+    time: float
+    a: np.ndarray
+    da: np.ndarray
+    rhs: np.ndarray
+    g_em: np.ndarray
+    residual: np.ndarray
+    norm: float
+    state_operating_jacobian: np.ndarray
+    derivative_operating_jacobian: np.ndarray
+    heat_source_operating_jacobian: np.ndarray
+    residual_operating_jacobian: np.ndarray
+
+
+class ParametricElectroThermalResidual:
+    """Exact residual sensitivity for static U entering an affine EM RHS.
+
+    The analytic graph supplies a(a0,U,t), da/dt and their exact derivatives
+    with respect to U. The electromagnetic solve supplies dg/da. Since the
+    field problem is linear in its RHS for a fixed thermal state, the explicit
+    heat-source derivative with respect to U is obtained from directional field
+    solves for the columns of B_U. No finite-difference parameter sensitivity is
+    used.
+    """
+
+    def __init__(self, graph, electromagnetic_model, rhs_map: AffineOperatingRHSMap):
+        self.graph = graph
+        self.em_model = electromagnetic_model
+        self.rhs_map = rhs_map
+        if rhs_map.n_em != electromagnetic_model.problem.n_em:
+            raise ValueError("rhs map/electromagnetic dimension mismatch")
+        if rhs_map.n_operating != len(graph.operating_names):
+            raise ValueError("rhs map/analytic operating dimension mismatch")
+        if graph.n_modes != electromagnetic_model.problem.n_thermal:
+            raise ValueError("analytic/electromagnetic thermal dimension mismatch")
+
+    def _graph_operating_jacobians(
+        self,
+        t: float,
+        a0: np.ndarray,
+        operating: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        compiled = self.graph.compile()
+        p = compiled.parameter_vector(a0, operating)
+        offset = len(compiled.initial_names)
+        n_modes = len(compiled.mode_series)
+        n_u = len(compiled.operating_names)
+        J_a = np.zeros((n_modes, n_u), dtype=float)
+        J_da = np.zeros((n_modes, n_u), dtype=float)
+
+        for i, series in enumerate(compiled.mode_series):
+            for j in range(n_u):
+                dseries = series.parameter_derivative(offset + j)
+                J_a[i, j] = np.real(dseries.evaluate(t, compiled.lambdas, p))
+                J_da[i, j] = np.real(
+                    dseries.derivative(compiled.lambdas).evaluate(t, compiled.lambdas, p)
+                )
+        return J_a, J_da
+
+    def _explicit_heat_source_operating_jacobian(
+        self,
+        a: np.ndarray,
+        rhs: np.ndarray,
+    ) -> np.ndarray:
+        x = self.em_model.state_for_rhs(a, rhs)
+        n_out = self.em_model.problem.n_thermal
+        n_u = self.rhs_map.n_operating
+        J = np.zeros((n_out, n_u), dtype=float)
+
+        for ell in range(n_u):
+            direction_rhs = self.rhs_map.matrix[:, ell]
+            dx = self.em_model.state_for_rhs(a, direction_rhs)
+            for j in range(n_out):
+                H = self.em_model.problem.loss_operator(j, a)
+                J[j, ell] = 2.0 * np.real(np.vdot(dx, H @ x))
+        return J
+
+    def evaluate(
+        self,
+        t: float,
+        *,
+        a0: np.ndarray,
+        operating: np.ndarray,
+    ) -> ParametricResidualSample:
+        u = np.asarray(operating, dtype=float)
+        a, da = self.graph.evaluate(float(t), a0=np.asarray(a0, dtype=float), operating=u)
+        rhs = self.rhs_map.evaluate(u)
+
+        g, J_g_a = self.em_model.heat_source_and_jacobian_for_rhs(a, rhs)
+        g = np.asarray(g, dtype=float)
+        J_g_a = np.asarray(J_g_a, dtype=float)
+        J_a, J_da = self._graph_operating_jacobians(float(t), np.asarray(a0, dtype=float), u)
+        J_g_u_explicit = self._explicit_heat_source_operating_jacobian(a, rhs)
+
+        residual = da + self.graph.lambdas * a - g
+        J_residual = (
+            J_da
+            + self.graph.lambdas[:, None] * J_a
+            - J_g_a @ J_a
+            - J_g_u_explicit
+        )
+
+        return ParametricResidualSample(
+            time=float(t),
+            a=np.asarray(a, dtype=float),
+            da=np.asarray(da, dtype=float),
+            rhs=rhs,
+            g_em=g,
+            residual=np.asarray(residual, dtype=float),
+            norm=float(np.linalg.norm(residual)),
+            state_operating_jacobian=J_a,
+            derivative_operating_jacobian=J_da,
+            heat_source_operating_jacobian=J_g_a @ J_a + J_g_u_explicit,
+            residual_operating_jacobian=J_residual,
+        )
