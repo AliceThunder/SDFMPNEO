@@ -4,7 +4,7 @@ The electromagnetic reduced interface no longer requires conductivity to be affi
 
 ## Generic operator interface
 
-`ReducedEMModel` now requires an electromagnetic problem to provide
+`ReducedEMModel` accepts any electromagnetic problem that provides
 
 ```text
 operator(a)
@@ -17,87 +17,108 @@ n_thermal
 n_em
 ```
 
-The original `ParametricEMProblem` still implements this interface for affine verification problems, but it is no longer the only admissible backend.
+`ParametricEMProblem` remains the affine verification backend, while `NonlinearSpatialAphiProblem` is the direct nonlinear spatial correctness backend. The legacy class name is retained for API compatibility; its internal field coordinate is the reciprocal scaled `A-psi` formulation.
 
 ## Direct nonlinear spatial problem
 
-`NonlinearSpatialAphiProblem` reconstructs the cell temperature field
+The nonlinear problem reconstructs
 
 ```text
 T(a) = T_ref + sum_k a_k Phi_k
 ```
 
-and evaluates the cell conductivity directly from analytic material laws. It then rebuilds the conductivity Hodge matrix and compatible `A-phi` operator at that state.
+on material cells, evaluates each analytic material law, assembles `M_sigma(T(a))`, and rebuilds the reciprocal compatible field operator. The scalar coordinate is
 
-The derivative is also analytic,
+```text
+psi = phi/(j omega),
+E = -j omega (R_A alpha + G_c psi).
+```
+
+The material derivative is analytic,
 
 ```text
 d sigma / d a_k = (d sigma / d T) Phi_k,
 ```
 
-which is propagated through the Hodge assembly into `dA/da_k` and the projected loss derivative.
+and is propagated through Hodge assembly to `dA/da_k` and the projected heat-source derivative.
 
 ## Copper law supported exactly
 
-For a linear resistivity law
+For
 
 ```text
 rho(T) = rho_ref [1 + alpha (T-T_ref)],
 ```
 
-the code uses the exact reciprocal conductivity
+the implementation uses
 
 ```text
 sigma(T) = sigma_ref / [1 + alpha (T-T_ref)]
 ```
 
-with exact derivative
+with
 
 ```text
 dsigma/dT = -sigma_ref alpha / [1 + alpha (T-T_ref)]^2.
 ```
 
-This is not replaced by an affine conductivity approximation. The implementation rejects states for which the resistivity denominator is non-positive.
+No affine conductivity approximation is introduced. States with non-positive resistivity denominator are rejected as physically inadmissible.
 
 ## Other material laws
 
-The executable core also includes:
+The executable material library includes:
 
 - `ConstantConductivity`;
-- `AffineConductivity` for a material law that is itself physically specified as affine over the certified range;
-- `CompositeCellConductivity`, which combines disjoint conductor/seawater/package masks with different analytic laws.
+- `AffineConductivity` when the constitutive law itself is physically specified as affine over its admissible range;
+- `ReciprocalLinearResistivity`;
+- `CompositeCellConductivity`, which assigns different analytic laws to disjoint conductor/seawater/package cell masks.
 
-Additional material laws can implement the same `evaluate(T)` and `derivative(T)` interface.
+Additional laws implement the same `evaluate(T)` and `derivative(T)` contract.
 
-## Heat-source Jacobian
+## Exact heat-source Jacobian
 
-For reduced electromagnetic state `x(a)`,
+For reduced electromagnetic coordinate state `x(a)`,
 
 ```text
 q_j(a) = x^H H_j(a) x.
 ```
 
-The code evaluates
+The derivative is
 
 ```text
-dq_j/da_k = 2 Re[(dx/da_k)^H H_j x] + x^H (dH_j/da_k) x,
+dq_j/da_k
+= 2 Re[(dx/da_k)^H H_j x]
+  + x^H (dH_j/da_k) x,
 ```
 
-where
+with reduced field sensitivity
 
 ```text
-dx/da_k = -A_r(a)^(-1) [dA_r/da_k] x_r.
+dc/da_k = -A_r(a)^(-1) [dA_r/da_k] c.
 ```
 
-The nonlinear regression tests compare both `dA/da_k` and `dq/da_k` against centred finite differences.
+Regression tests compare `dA/da_k` and the final `dq/da_k` against stable centred finite differences. The finite-difference step is only a regression cross-check and is not a model or training parameter.
 
-## What remains
+## Excitation dependence
 
-This solves the architectural problem of nonlinear temperature feedback: no empirical linearization is required. It does **not** by itself certify a chosen empirical seawater conductivity law. For production use, each material law still requires:
+The reduced electromagnetic model now supports arbitrary RHS vectors. Thus the heat source can be evaluated as
 
-1. a physically justified constitutive relation and admissible temperature range;
-2. parameter-domain verification that conductivity remains physically admissible;
-3. output-error propagation of any uncertainty in material constants;
-4. a fast separated/compressed online representation if rebuilding cell Hodge matrices becomes the dominant cost on large meshes.
+```text
+q_em,r(a; b)
+```
 
-The direct nonlinear path is therefore the correctness reference implementation; later operator compression must reproduce it within a certified remainder bound.
+for a declared port-current excitation rather than being permanently tied to one nominal source `problem.b`. Joint multi-RHS reduction ensures that the reduced field space spans all declared excitations before the same space is used for impedance or heat-source queries.
+
+## Certification status
+
+The nonlinear constitutive path solves the architectural temperature-feedback problem without empirical linearization. Current rigorous domain certification is stronger for the affine verification backend: continuous thermal-state boxes can be proved by branch-and-bound there. Extending this to nonlinear material laws requires verified interval/remainder bounds for `sigma(T)`, `d sigma/dT`, and the resulting field stability constants over the full admissible domain.
+
+For production use each material law still requires:
+
+1. a physically justified relation and admissible temperature range;
+2. verified positivity/admissibility over the certified domain;
+3. uncertainty/error propagation for material constants;
+4. continuous-domain operator and output bounds;
+5. a certified separated/compressed online representation if direct cell-Hodge rebuilding dominates large-mesh cost.
+
+The direct nonlinear path remains the correctness reference; future compression must reproduce it within a verified remainder bound.
