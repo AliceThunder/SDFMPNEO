@@ -13,9 +13,10 @@ from .model import (
     ParametricExecutableSDFMPNEOModel,
     ParametricOnlinePrediction,
 )
+from .tetra_core import TetrahedralElectroThermalCore
 from .thermal import ThermalSpectralModel
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "AnalyticEvolutionGraph",
@@ -30,4 +31,5 @@ __all__ = [
     "OnlinePrediction",
     "ParametricExecutableSDFMPNEOModel",
     "ParametricOnlinePrediction",
+    "TetrahedralElectroThermalCore",
 ]
