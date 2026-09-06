@@ -232,11 +232,10 @@ def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
     assert np.allclose(actual, expected, rtol=5e-12, atol=5e-12)
 
 
-def test_cartesian_curl_factor_locality_under_refinement_is_measured_explicitly():
+def test_cartesian_curl_factor_is_rejected_after_refinement_when_selected_scc_is_singular():
     problem = build_refined_magnetic_problem(cells_per_axis=2)
-    auxiliary = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
-    assert auxiliary.lower_spectral_equivalence_bound == 1.0
-    assert auxiliary.maximum_scc_size < problem.n_A
+    with pytest.raises(ValueError, match="selected magnetic SCC block is singular"):
+        MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
 
 
 def test_curl_auxiliary_gamma_certificate_uses_factorization_free_trace_bound():
