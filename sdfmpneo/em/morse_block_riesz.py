@@ -12,43 +12,19 @@ from .block_riesz import (
     _normalized_gershgorin_upper,
     _positive_real_diagonal,
 )
-from .certified_riesz import (
-    CertifiedEnergyPreconditioner,
-    CertifiedPCGRieszAction,
-    DiagonalGershgorinEnergyPreconditioner,
-)
+from .certified_riesz import CertifiedEnergyPreconditioner, CertifiedPCGRieszAction
 from .morse_face_auxiliary import MorseFaceCirculationEnergyPreconditioner
+from .scalar_tree_auxiliary import ConductiveScalarTreeEnergyPreconditioner
 
 
 @dataclass(frozen=True)
 class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
-    """Factorization-free physical H preconditioner with topology-generated magnetic coarse space.
+    """Certified factorization-free physical H preconditioner.
 
-    For the reciprocal A-psi physical metric
-
-        H = [[K_A + D_AA, D_Apsi],
-             [D_psiA,       D_psipsi]],
-
-    the magnetic action constructs a face-circulation auxiliary operator P_A and
-    proves exactly
-
-        K_A >= P_A,
-
-    hence m_K=1.  P_A^{-1} is applied by topology-generated fine triangular
-    elimination plus a strictly smaller coarse Schur solve.
-
-    The conductive/magnetic coupling is certified without K_A factorization:
-
-        gamma = lambda_max(K_A^-1/2 D_AA K_A^-1/2)
-              <= trace(P_A^-1 D_AA).
-
-    For the scalar conductive block this first production candidate accepts only
-    a diagonal action for which normalized Gershgorin proves
-
-        D_psipsi >= m_E diag(D_psipsi),  m_E>0.
-
-    If that proof fails the constructor rejects the path; it never silently falls
-    back to a complete scalar factorization.
+    Magnetic energy uses the topology-generated Morse face-circulation auxiliary
+    space, while scalar conductive energy uses a state-aware conductive spanning
+    tree.  Both certify unit lower spectral-equivalence constants before the
+    magnetic/scalar coupling bound is applied.
     """
 
     n_A: int
@@ -61,7 +37,13 @@ class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
     scalar_action: CertifiedEnergyPreconditioner | None
 
     @classmethod
-    def build(cls, H: sp.spmatrix, *, problem) -> "MorseAuxiliaryPhysicalBlockPreconditioner":
+    def build(
+        cls,
+        H: sp.spmatrix,
+        *,
+        problem,
+        state: np.ndarray | None = None,
+    ) -> "MorseAuxiliaryPhysicalBlockPreconditioner":
         metric = sp.csr_matrix(H, dtype=complex)
         n = metric.shape[0]
         if metric.shape != (n, n):
@@ -70,13 +52,15 @@ class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
         if not 0 < n_A <= n:
             raise ValueError("problem.n_A does not match H")
 
+        a = np.zeros(problem.n_thermal, dtype=float) if state is None else np.asarray(state, dtype=float)
+        if a.shape != (problem.n_thermal,):
+            raise ValueError("thermal state dimension mismatch")
+
         R = sp.csr_matrix(problem.a_basis, dtype=complex)
         K = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
         K = (0.5 * (K + K.conj().T)).tocsr()
         K.sum_duplicates()
         K.eliminate_zeros()
-        if K.shape != (n_A, n_A):
-            raise ValueError("magnetic gauge block dimension mismatch")
 
         magnetic = MorseFaceCirculationEnergyPreconditioner.build_from_problem(problem)
         if magnetic.lower_spectral_equivalence_bound != 1.0:
@@ -104,20 +88,16 @@ class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
             gamma_method = "morse_face_auxiliary_residual_certified_trace"
 
         if gamma_upper < 0.0 or not np.isfinite(gamma_upper):
-            raise ValueError("failed to certify a finite non-negative conductive/magnetic coupling bound")
+            raise ValueError("failed to certify a finite non-negative coupling bound")
 
         n_scalar = n - n_A
         scalar = None
-        m_E = 1.0
         if n_scalar:
-            E = metric[n_A:, n_A:].tocsr()
-            E = (0.5 * (E + E.conj().T)).tocsr()
-            E.sum_duplicates()
-            E.eliminate_zeros()
-            scalar = DiagonalGershgorinEnergyPreconditioner.build(E)
-            m_E = float(scalar.lower_spectral_equivalence_bound)
-            if m_E <= 0.0:
-                raise ValueError("scalar conductive action must have a positive certified lower bound")
+            scalar = ConductiveScalarTreeEnergyPreconditioner.build_from_problem(problem, a)
+            if scalar.dimension != n_scalar:
+                raise ValueError("scalar auxiliary dimension mismatch")
+            if scalar.lower_spectral_equivalence_bound != 1.0:
+                raise RuntimeError("scalar tree auxiliary must certify m_E=1")
 
         if n_scalar == 0 or gamma_upper == 0.0:
             physical_lower = 1.0
@@ -125,7 +105,7 @@ class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
             root = math.sqrt(gamma_upper * gamma_upper + 4.0 * gamma_upper)
             physical_lower = float(np.nextafter(2.0 / (2.0 + gamma_upper + root), 0.0))
 
-        lower = float(np.nextafter(physical_lower * min(1.0, m_E), 0.0))
+        lower = float(np.nextafter(physical_lower, 0.0))
         if lower <= 0.0:
             raise ValueError("Morse physical block lower bound is non-positive")
 
@@ -152,10 +132,14 @@ class MorseAuxiliaryPhysicalBlockPreconditioner(CertifiedEnergyPreconditioner):
 
 
 def make_morse_auxiliary_physical_pcg_riesz_factory(problem):
-    """Create local-H certified PCG Riesz actions with Morse magnetic auxiliary space."""
+    """Create state-aware certified PCG Riesz actions for the production path."""
 
-    def factory(H: sp.spmatrix):
-        preconditioner = MorseAuxiliaryPhysicalBlockPreconditioner.build(H, problem=problem)
+    def factory(H: sp.spmatrix, *, state: np.ndarray | None = None):
+        preconditioner = MorseAuxiliaryPhysicalBlockPreconditioner.build(
+            H,
+            problem=problem,
+            state=state,
+        )
         return CertifiedPCGRieszAction(H, preconditioner)
 
     return factory
