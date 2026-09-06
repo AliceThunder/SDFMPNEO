@@ -2,112 +2,140 @@
 
 **Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator for Underwater WPT**
 
-SDF-MPNEO is a solution-data-free electromagnetic–thermal surrogate framework for underwater wireless power transfer. The current baseline retains conductor, package, seawater, and passive media in the spatial electromagnetic and thermal physics; fluid velocity is outside the present scope.
+SDF-MPNEO is a solution-data-free electromagnetic–thermal surrogate framework for underwater wireless power transfer. Conductor, package, seawater, and passive media remain explicit spatial physics; fluid velocity is outside the present scope.
 
-The method does **not** depend on any geometry-specific impedance solver. The electromagnetic branch is derived from compatible magnetoquasistatic field equations, reduced deterministically without solution snapshots, quasi-statically eliminated inside the slower thermal dynamics, and coupled to an analytic neural evolution operator.
-
-## Unified map
+The method has no geometry-specific impedance-solver dependency. Its current executable path is
 
 ```text
-3-D geometry/materials + operating condition + T0 + arbitrary query time
-                              |
-                              v
-                 compatible EM + thermal spatial operators
-                              |
-                 +------------+------------+
-                 |                         |
-                 v                         v
-        snapshot-free reduced EM      certified thermal spectrum
-                 |                         |
-                 +------ quasi-static -----+
-                         EM elimination
-                              |
-                              v
-                  q_em,r(a), dq_em,r/da
-                              |
-                              v
-                 analytic neural evolution
-                              |
-                              v
-          a(t), T(x,t), Z/R/L/M, P_Cu, P_sea
-                              |
-                              v
-              state + electromagnetic output certificates
+3-D geometry/materials + a0 + operating condition U + arbitrary time t
+                                  |
+                                  v
+                 compatible electromagnetic + thermal physics
+                                  |
+                +-----------------+-----------------+
+                |                                   |
+                v                                   v
+       snapshot-free reduced EM          certified thermal spectrum
+                |                                   |
+                +---------- quasi-static -----------+
+                             EM elimination
+                                  |
+                                  v
+                     q_em,r(a,U), dq_em,r/da
+                                  |
+                                  v
+                 intrinsic parametric analytic network
+                                  |
+                                  v
+               a(t), T(x,t), Z/R/L/M, P_Cu, P_sea
+                                  |
+                                  v
+                     deterministic error certificates
 ```
 
-## Core design
+## What is implemented
 
-1. **Full-equation electromagnetic origin.** Copper skin/proximity effects and seawater induced-current losses originate from the field solution rather than from add-on resistance formulas.
-2. **Deterministic electromagnetic reduction without solution snapshots.** The electromagnetic reduced space is generated from the physical operator and residual Riesz lifts; no Maxwell/FEM solution snapshot is required.
-3. **Shared 3-D spatial media.** The executable core constructs an orthogonal 3-D cell complex shared by electromagnetic and thermal physics, with cellwise conductor/package/seawater material fields.
-4. **Exact compatible topology and gauges.** The incidence matrices satisfy `C @ G = 0`; a deterministic tree-cotree magnetic gauge and one scalar-potential reference per conducting component remove nullspaces without penalty parameters or rank thresholds.
-5. **Reciprocal electromagnetic coordinates.** With `psi = phi/(j omega)`, the gauge-eliminated `A-psi` field matrix is complex symmetric for reciprocal real material Hodge operators, so reciprocity is structural rather than imposed afterwards.
-6. **Exact nonlinear temperature feedback.** The nonlinear spatial core reconstructs `T(a)` and evaluates analytic material laws directly, including the reciprocal copper conductivity induced by a linear resistivity law. An affine conductivity approximation is not required.
-7. **Physical residual norm.** The electromagnetic Riesz metric is magnetic energy plus Joule energy dissipated per electrical radian. Residual lifts and basis orthogonalisation are performed in Cholesky Riesz coordinates.
-8. **Direct heat-source and loss outputs.** Joule losses are projected directly to thermal coordinates, while `P_Cu` and `P_sea` are obtained from the same field state and regional Hodge operators.
-9. **Multiport field outputs.** Joint multi-RHS reduction supports reciprocal `Z`, `R`, `L`, and `M` matrices; passivity, reciprocity, port-power/Joule-power consistency, and residual-to-output error bounds are executable checks.
-10. **Analytic neural dynamics.** Response neurons form arbitrary-depth analytic DAGs. A fast polynomial-exponential compiler and an independent resonance-stable state-space realization backend evaluate the same network with no time stepping.
-11. **Residual-grown topology.** Candidate analytic neurons are selected from unresolved physical residual directions using the exact reduced heat-source Jacobian and full nonlinear residual re-evaluation.
-12. **Certified ranks/domains.** Thermal rank can be selected from a spectral-tail bound; affine electromagnetic thermal-state boxes can be certified by branch-and-bound residual upper bounds. Unresolved work budgets return `indeterminate`, never a false certificate.
+1. **Compatible 3-D electromagnetic physics.** Both an orthogonal correctness grid and an unstructured tetrahedral path are implemented. The tetrahedral path uses first-order Nedelec edge elements; the shared thermal path uses P1 finite elements.
+2. **Exact topology and gauges.** `C @ G = 0` is constructed exactly. Tree-cotree magnetic gauge elimination and one scalar-potential reference per conducting component remove nullspaces without penalty parameters or numerical rank thresholds.
+3. **Reciprocal `A-psi` coordinates.** With `psi=phi/(j omega)`, reciprocal real materials produce a complex-symmetric field matrix, so reciprocity is structural.
+4. **Snapshot-free electromagnetic reduction.** The reduced EM space is grown from physical residual Riesz lifts; no FEM/Maxwell solution snapshots are used.
+5. **Certified thermal rank selection.** Thermal modes come from the generalized heat eigenproblem. The retained rank is either the complete discrete spectrum or the smallest rank satisfying the spectral-tail error certificate.
+6. **Nonlinear copper temperature law without conductivity linearization.** On tetrahedra, the reciprocal conductivity induced by linear copper resistivity is represented by a barycentric geometric series whose minimal order is determined by a rigorous relative remainder bound. Retained terms are integrated exactly against Nedelec fields.
+7. **Exact P1-weighted Joule projection.** `q_em,r` and its Jacobian use analytic barycentric integration; no tetrahedron-centre loss sampling is required.
+8. **Copper/seawater loss separation from the same field state.** Both affine and certified nonlinear tetrahedral paths support `P_Cu` and `P_sea` without add-on resistance formulas.
+9. **Field-derived multiport outputs.** Joint multi-RHS reduction returns reciprocal `Z`, `R`, `L`, and `M`, with passivity and port-power/Joule-power checks.
+10. **Constitutive remainder propagated to outputs.** The certified conductivity-series error is propagated through the EM inverse to deterministic bounds on `Z/R/L/M`, electromagnetic state, and projected heat source `q_em,r`. If the inverse perturbation condition fails, the result is explicitly uncertified rather than weakened heuristically.
+11. **Intrinsic analytic neural evolution.** Initial coordinates and static operating parameters are network-internal zero-dynamics analytic nodes. One graph represents `(a0,U,t) -> a(t)` for a fixed spatial/thermal operator family; no external condition encoder generates network weights.
+12. **Residual-grown analytic topology.** Candidate response neurons are selected by the unresolved physical residual and exact heat-source Jacobian, followed by full nonlinear residual re-evaluation.
+13. **Resonance-stable analytic evaluation.** The fast polynomial-exponential compiler has an independent exact state-space realization backend, so exact/near resonance requires no closeness threshold.
+14. **Continuous affine-domain certification.** For affine EM parameter dependence, branch-and-bound proves a residual bound over a continuous parameter box or returns `violated` / `indeterminate`.
 
-## Reduced coupled system
+## Core equations
 
-After spatial reduction,
+The reduced electromagnetic equilibrium is
 
 ```text
-A_em,r(a; mu) c = b_em,r(mu),
-c(a;mu) = A_em,r(a;mu)^(-1) b_em,r(mu),
-q_em,r(a;mu) = q_Cu,r + q_sea,r,
-da/dt + Lambda_T a = g_em(a;mu).
+A_em,r(a;U) c = b_em,r(U),
+q_em,r(a;U) = q_Cu,r + q_sea,r.
 ```
 
-The analytic network evaluates
+The thermal dynamics are
 
 ```text
-a(t) = N_analytic(mu, a0, t)
+da/dt + Lambda_T a = g_em(a;U).
 ```
 
-directly at arbitrary `t`, with no thermal time marching during inference. Training/growth uses
+The analytic neural operator evaluates
 
 ```text
-R = da/dt + Lambda_T a - g_em(a;mu).
+a(t) = N_analytic(a0,U,t)
 ```
 
-## Electromagnetic reduction and certification
-
-For `H = L L^H`, the residual dual norm is
+directly at arbitrary `t`, without thermal time marching during inference. Its physical residual is
 
 ```text
-||r||_(H^-1) = ||L^-1 r||_2.
+R = da/dt + Lambda_T a - g_em(a;U).
 ```
 
-One common reduced space is grown over the joint set
+For a contraction margin `kappa>0`, the current error architecture uses
 
 ```text
-thermal state x port/excitation RHS.
+||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa,
 ```
 
-For affine thermal-state dependence, the current branch-and-bound certificate proves a residual upper bound over a continuous parameter box or returns `violated` / `indeterminate` rather than treating a finite sample set as a proof.
+where the nonlinear tetrahedral constitutive remainder now provides an executable contribution to `eta_EM` through the certified heat-source error bound.
 
-For multiport outputs, the field stability constant
+## Multiport field output
+
+For closed one-ampere impressed-current port cochains collected in `B`,
 
 ```text
-beta_em = sigma_min(L^-1 A L^-H)
+A X = B,
+Z = j*omega*B^T X,
+R = Re(Z),
+L = Im(Z)/omega.
 ```
 
-converts port residuals into entrywise bounds for `Z`, `R`, and `L/M`.
-
-## Thermal rank certificate
-
-For the M-orthonormal thermal spectrum, if the first omitted eigenvalue is `lambda_(r+1)`, the omitted initial M-norm is `E0`, and the certified source dual bound is `Q`, then
+Regression tests enforce
 
 ```text
-||T_tail(t)||_M
-<= exp(-lambda_(r+1)t) E0
- + (1-exp(-lambda_(r+1)t)) Q/lambda_(r+1).
+Z^T = Z,
+R is passive within numerical error,
+1/2 Re(I^H Z I) = 1/2 E^H M_sigma E = P_Cu + P_sea.
 ```
 
-The verification implementation chooses the smallest rank satisfying the requested state or output tolerance. The additional nonlinear reduced-dynamics error is certified separately by the coupled residual/contraction analysis.
+## Certified nonlinear copper representation
+
+Inside each tetrahedron,
+
+```text
+d(x) = 1 + alpha [T(x)-T_ref]
+```
+
+is P1. With
+
+```text
+d_bar = (d_max+d_min)/2,
+z = d/d_bar - 1,
+q = (d_max-d_min)/(d_max+d_min) < 1,
+```
+
+the code uses
+
+```text
+1/d = d_bar^-1 sum_{n=0}^N (-z)^n + R_N,
+|R_N|/|1/d| <= q^(N+1),
+```
+
+and the corresponding certified `1/d^2` series for derivatives. The smallest `N` satisfying the declared constitutive error allocation is selected; `N` is not tuned empirically.
+
+The resulting pointwise conductivity error is propagated to field/output bounds via the inverse perturbation condition
+
+```text
+||A_tilde^-1|| ||Delta A|| < 1.
+```
+
+Failure of this condition produces an uncertified result, as verified by regression tests.
 
 ## Run
 
@@ -118,42 +146,55 @@ python examples/spatial_core.py
 pytest -q
 ```
 
-GitHub Actions also runs the full test suite on every push to `main` and every pull request targeting `main`.
+GitHub Actions runs the repository-wide test suite on every push to `main` and pull request targeting `main`.
 
 ## Documentation
 
-- [`docs/SDFMPNEO_theory.tex`](docs/SDFMPNEO_theory.tex): governing equations, deterministic reduction, analytic-neuron theory, stability, residual growth, and unified error framework.
+- [`docs/SDFMPNEO_theory.tex`](docs/SDFMPNEO_theory.tex): governing equations and complete theory.
 - [`docs/SDFMPNEO_implementation.md`](docs/SDFMPNEO_implementation.md): software architecture and implementation contract.
-- [`docs/MVP_CORE.md`](docs/MVP_CORE.md): exact current executable status and remaining obligations.
-- [`docs/COMPATIBLE_EM.md`](docs/COMPATIBLE_EM.md): reciprocal gauge-eliminated `A-psi` electromagnetic formulation, multiport outputs, and field certificates.
-- [`docs/SPATIAL_3D.md`](docs/SPATIAL_3D.md): shared 3-D electromagnetic–thermal spatial discretization.
-- [`docs/NONLINEAR_CONSTITUTIVE.md`](docs/NONLINEAR_CONSTITUTIVE.md): direct nonlinear temperature-dependent material laws.
+- [`docs/MVP_CORE.md`](docs/MVP_CORE.md): exact executable status and remaining obligations.
+- [`docs/TETRAHEDRAL_CORE.md`](docs/TETRAHEDRAL_CORE.md): unstructured Nedelec/P1 field chain, certified nonlinear material integration, and output error propagation.
+- [`docs/COMPATIBLE_EM.md`](docs/COMPATIBLE_EM.md): reciprocal `A-psi` electromagnetic formulation and multiport field outputs.
+- [`docs/SPATIAL_3D.md`](docs/SPATIAL_3D.md): shared spatial-discretization foundations.
+- [`docs/NONLINEAR_CONSTITUTIVE.md`](docs/NONLINEAR_CONSTITUTIVE.md): nonlinear temperature-dependent material laws.
+- [`docs/PARAMETRIC_ANALYTIC.md`](docs/PARAMETRIC_ANALYTIC.md): intrinsic `(a0,U,t)` analytic network and parameter-domain residual growth.
 
-## Current implementation layers
+## Main implementation layers
 
-- `sdfmpneo/em/grid3d.py`: orthogonal 3-D node-edge-face complex, tree-cotree gauge, and material Hodge assembly
-- `sdfmpneo/em/compatible.py`: reciprocal gauge-eliminated magnetoquasistatic `A-psi` operator
-- `sdfmpneo/em/nonlinear.py`: exact nonlinear temperature-dependent spatial electromagnetic problem
-- `sdfmpneo/em/reduced.py`: Cholesky-Riesz snapshot-free single/multi-RHS electromagnetic reduction
+- `sdfmpneo/spatial/tetra3d.py`: unstructured tetrahedral topology, Nedelec geometry, and P1 thermal assembly
+- `sdfmpneo/spatial/barycentric_polynomial.py`: exact barycentric polynomial algebra/integration
+- `sdfmpneo/em/tetra.py`: affine tetrahedral reciprocal `A-psi` correctness path
+- `sdfmpneo/em/tetra_nonlinear.py`: certified nonlinear tetrahedral material/field path
+- `sdfmpneo/em/reciprocal_series.py`: rigorous reciprocal copper series and remainder bounds
+- `sdfmpneo/em/tetra_nonlinear_diagnostics.py`: nonlinear material-region Joule powers
+- `sdfmpneo/em/reduced.py`: Cholesky-Riesz snapshot-free single/multi-RHS EM reduction
 - `sdfmpneo/em/ports.py`: field-derived multiport `Z/R/L/M`
-- `sdfmpneo/em/diagnostics.py`: region-separated Joule diagnostics
-- `sdfmpneo/thermal/grid3d.py`: heterogeneous 3-D finite-volume thermal operator
-- `sdfmpneo/thermal/spectral.py`: deterministic thermal spectrum and tail-certified rank selection
-- `sdfmpneo/analytic`: analytic neural DAG, fast compiler, and resonance-stable state-space realization
+- `sdfmpneo/thermal/spectral.py`: thermal spectrum and tail-certified rank selection
+- `sdfmpneo/analytic`: intrinsic analytic DAG, parameter algebra, fast compiler, and stable realization
 - `sdfmpneo/training`: physical residual and residual-driven analytic-network growth
-- `sdfmpneo/certification`: contraction/state bounds, affine continuous-domain EM residual bounds, and residual-to-port-output bounds
-- `sdfmpneo/model.py`: unified executable fixed-operating-condition online query interface
+- `sdfmpneo/certification`: state, EM-domain, multiport, and constitutive-to-output certificates
+- `sdfmpneo/tetra_core.py`: one-call affine or certified-nonlinear tetrahedral electrothermal core
+- `sdfmpneo/model.py`: fixed and parameter-conditioned arbitrary-time online query interfaces
 
-## Non-negotiable scope rules
+## Non-negotiable rules
 
 - No labelled FEM/Maxwell/experimental solution data in training.
-- No full-order solution snapshots are required to construct the reduced electromagnetic space.
+- No full-order solution snapshots are required for EM basis construction.
 - No geometry-specific impedance solver is a core dependency.
-- No empirical near/far split, fixed neural width/depth, artificial thermal time constant, or empirical constitutive correction is part of the method definition.
-- Copper and seawater losses originate from the electromagnetic field solution and conductivity Hodge operators.
-- Fluid velocity is outside the current model scope; seawater remains an explicit electromagnetic and thermal medium.
-- Full-order simulations and experiments are validation tools only, not training-label generators.
+- No empirical near/far split, fixed neural width/depth, artificial thermal time constant, gauge penalty, or empirical constitutive correction defines the method.
+- Free approximation orders/ranks must be set by governing physics or explicit error/convergence certificates.
+- Full-order simulations and experiments are validation tools only.
 
-## Important current limits
+## Remaining production obligations
 
-The current real 3-D geometry engine is rectilinear, not yet a curved unstructured coil/package mesh. End-to-end sparse high-contrast field solution with verified linear-solve error, continuous certification for nonlinear constitutive/geometry/frequency parameters, scalable low-spectrum extraction with a verified first-omitted eigenvalue bound, certified open/seawater outer-domain treatment, solid-conductor terminal-current ports, and a fully parameter-conditioned analytic network over arbitrary operating condition `U` remain active implementation tasks. See `docs/MVP_CORE.md` for the precise status.
+The mathematical unstructured core is present, but production-scale underwater WPT still requires:
+
+1. CAD/mesh import and conforming mesh generation for actual round/rounded-square coils, package, and seawater domains;
+2. sparse end-to-end Nedelec assembly/solve and a verified high-contrast preconditioner for realistic copper/seawater ratios;
+3. continuous-domain certification for the nonlinear tetrahedral material problem, geometry, and frequency;
+4. mesh-discretization and linear-solver error contributions in the unified output/state certificate;
+5. certified open/infinite seawater electromagnetic and thermal outer-boundary treatment;
+6. scalable partial thermal eigensolution with a certified lower bound for the first omitted eigenvalue;
+7. terminal-current constrained solid-conductor ports where impressed closed-current ports are not the intended excitation;
+8. parameterization across geometry/operator families that alter the thermal spectrum, beyond the already implemented static-`U` analytic network at a fixed operator family;
+9. certified compression/minimalization of large analytic state-space realizations and a globally convergent network-growth proof.
