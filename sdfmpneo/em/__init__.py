@@ -15,7 +15,11 @@ from .grid3d import (
     face_loop_source,
 )
 from .nonlinear import NonlinearSpatialAphiProblem
-from .ports import ImpressedCurrentPortSet, MultiPortImpedanceResult
+from .ports import (
+    CertifiedSparseMultiPortResult,
+    ImpressedCurrentPortSet,
+    MultiPortImpedanceResult,
+)
 from .reciprocal_series import ReciprocalSeriesCertificate, certified_reciprocal_polynomials
 from .reduced import (
     ParametricEMProblem,
@@ -58,6 +62,7 @@ __all__ = [
     "NonlinearSpatialAphiProblem",
     "ImpressedCurrentPortSet",
     "MultiPortImpedanceResult",
+    "CertifiedSparseMultiPortResult",
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
