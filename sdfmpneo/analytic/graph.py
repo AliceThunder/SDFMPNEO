@@ -6,6 +6,7 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 
 from .algebra import AnalyticSeries, solve_response_series
+from .compiler import CompiledAnalyticKernel
 
 
 @dataclass(frozen=True)
@@ -32,14 +33,10 @@ class CompiledAnalyticGraph:
     node_series: Mapping[str, AnalyticSeries]
     node_sources: Mapping[str, AnalyticSeries]
     mode_series: Tuple[AnalyticSeries, ...]
+    kernel: CompiledAnalyticKernel
 
     def evaluate(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
-        a = np.array([np.real(s.evaluate(t, self.lambdas)) for s in self.mode_series], dtype=float)
-        da = np.array(
-            [np.real(s.derivative(self.lambdas).evaluate(t, self.lambdas)) for s in self.mode_series],
-            dtype=float,
-        )
-        return a, da
+        return self.kernel.evaluate(t)
 
     def series_for_node(self, name: str) -> AnalyticSeries:
         return self.node_series[name]
@@ -104,11 +101,13 @@ class AnalyticEvolutionGraph:
             node_series[node.name] = response
             mode_series[node.target_mode] = mode_series[node.target_mode] + response
 
+        mode_tuple = tuple(mode_series)
         self._compiled = CompiledAnalyticGraph(
             lambdas=self.lambdas.copy(),
             node_series=dict(node_series),
             node_sources=dict(node_sources),
-            mode_series=tuple(mode_series),
+            mode_series=mode_tuple,
+            kernel=CompiledAnalyticKernel.build(mode_tuple, self.lambdas),
         )
         return self._compiled
 
