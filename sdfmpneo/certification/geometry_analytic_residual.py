@@ -11,14 +11,13 @@ from .em_domain import ParameterBox
 
 @dataclass(frozen=True)
 class GeometryPhysicalLipschitzProof:
-    """Certified physical vector-field bounds on one ``[G,a,U]`` box.
+    """Certified physical vector-field bounds on one ``[a0,G,U,t]`` branch.
 
-    All entries must be theorem-derived upper/lower bounds on the declared box.
+    The proof provider is responsible for enclosing the *induced thermal state
+    domain* of that complete branch.  All entries are theorem-derived bounds:
     ``geometry_jacobian_entry_bounds[i,k]`` bounds ``|dF_i/dG_k|``;
-    ``state_jacobian_norm_bound`` bounds ``||dF/da||_2`` and
+    ``state_jacobian_norm_bound`` bounds ``||dF/da||_2``; and
     ``operating_jacobian_entry_bounds[i,k]`` bounds ``|dF_i/dU_k|``.
-    The class stores proof data only; it never estimates these constants from
-    finite differences or sampled trajectories.
     """
 
     geometry_jacobian_entry_bounds: np.ndarray
@@ -189,13 +188,14 @@ def certify_geometry_analytic_residual_domain(
     time_upper: float,
     tolerance: float,
     work_budget: int,
-    physical_proof_factory: Callable[[ParameterBox, np.ndarray, np.ndarray], GeometryPhysicalLipschitzProof],
+    physical_proof_factory: Callable[[ParameterBox], GeometryPhysicalLipschitzProof],
 ) -> ContinuousGeometryAnalyticResidualCertificate:
     """Branch proof of ``sup_[a0,G,U,t] ||R||`` without geometry sampling.
 
-    ``physical_proof_factory`` is evaluated for each branch and must provide a
-    certified theorem bound on the corresponding physical ``[G,a,U]`` domain.
-    If it returns an uncertified proof, that branch can never be marked resolved.
+    For every full branch ``[a0,G,U,t]``, ``physical_proof_factory`` must return
+    a theorem-derived proof covering the physical vector field on the entire
+    thermal-state image induced by that branch.  An uncertified proof leaves the
+    branch unresolved; it is never replaced by finite differences or grid tests.
     """
 
     if tolerance <= 0.0 or work_budget <= 0:
@@ -210,24 +210,12 @@ def certify_geometry_analytic_residual_domain(
     processed = 0
     resolved: list[float] = []
     observed = 0.0
-    n = operator.graph.n_modes
-    nG = operator.n_geometry
-    nU = operator.n_operating
 
     while pending and processed < work_budget:
         box = pending.pop()
-        # First bound analytic state motion; the physical proof factory receives
-        # the geometry branch and a conservative state box derived around center.
         center = box.midpoint
-        gbox = ParameterBox(box.lower[n : n + nG], box.upper[n : n + nG])
-        ubox = ParameterBox(
-            box.lower[n + nG : n + nG + nU],
-            box.upper[n + nG : n + nG + nU],
-        )
         try:
-            # A first certified physical proof can be independent of the thermal
-            # state box or internally compute its own analytic enclosure.
-            proof = physical_proof_factory(gbox, box.lower[:n], box.upper[:n])
+            proof = physical_proof_factory(box)
             bound = bound_geometry_analytic_residual_on_box(operator, box, proof)
         except (ValueError, np.linalg.LinAlgError, FloatingPointError):
             bound = None
