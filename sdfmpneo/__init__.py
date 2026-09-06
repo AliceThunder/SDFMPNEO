@@ -6,7 +6,13 @@ from .analytic import (
     ParametricAnalyticEvolutionGraph,
     ParametricAnalyticSeries,
 )
-from .em import ParametricEMProblem, ReducedEMModel, ResidualGreedyEMReducer
+from .em import (
+    ParametricEMProblem,
+    ReducedEMModel,
+    ResidualGreedyEMReducer,
+    SparseEnergyReducedEMModel,
+    SparseEnergyResidualGreedyEMReducer,
+)
 from .model import (
     ExecutableSDFMPNEOModel,
     OnlinePrediction,
@@ -16,7 +22,7 @@ from .model import (
 from .tetra_core import TetrahedralElectroThermalCore
 from .thermal import ThermalSpectralModel
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "AnalyticEvolutionGraph",
@@ -27,6 +33,8 @@ __all__ = [
     "ParametricEMProblem",
     "ReducedEMModel",
     "ResidualGreedyEMReducer",
+    "SparseEnergyReducedEMModel",
+    "SparseEnergyResidualGreedyEMReducer",
     "ExecutableSDFMPNEOModel",
     "OnlinePrediction",
     "ParametricExecutableSDFMPNEOModel",
