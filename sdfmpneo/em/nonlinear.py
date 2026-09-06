@@ -17,8 +17,12 @@ class NonlinearSpatialAphiProblem:
 
         T(a) = T_ref + sum_k a_k Phi_k.
 
-    The conductivity field is then evaluated directly through analytic material
-    laws. No affine-in-temperature approximation is required by this class.
+    The scalar-potential coordinate is psi = phi/(j*omega), so
+
+        E = -j*omega (R_A alpha + G psi).
+
+    For reciprocal real material Hodge matrices this makes the discrete field
+    operator complex symmetric and preserves reciprocity structurally.
     """
 
     grid: RectilinearComplex3D
@@ -74,7 +78,7 @@ class NonlinearSpatialAphiProblem:
         S0 = grid.edge_hodge(sigma_ref).toarray().astype(complex)
 
         K_A = R.conj().T @ (C.conj().T @ Nu @ C) @ R
-        L_E = np.hstack([-1j * omega * R, -G])
+        L_E = -1j * omega * np.hstack([R, G])
         n_total = R.shape[1] + G.shape[1]
         H_mag = np.zeros((n_total, n_total), dtype=complex)
         H_mag[: R.shape[1], : R.shape[1]] = 0.5 * K_A
@@ -114,6 +118,18 @@ class NonlinearSpatialAphiProblem:
     def n_A(self) -> int:
         return self.a_basis.shape[1]
 
+    @property
+    def n_scalar(self) -> int:
+        return self.grad_c.shape[1]
+
+    def source_coordinate(self, source_current: np.ndarray) -> np.ndarray:
+        source = np.asarray(source_current, dtype=complex)
+        if source.shape != (self.grid.n_edges,):
+            raise ValueError("source_current shape mismatch")
+        return np.concatenate(
+            [self.a_basis.conj().T @ source, np.zeros(self.n_scalar, dtype=complex)]
+        )
+
     def temperature(self, a: np.ndarray) -> np.ndarray:
         state = np.asarray(a, dtype=float)
         if state.shape != (self.n_thermal,):
@@ -137,14 +153,15 @@ class NonlinearSpatialAphiProblem:
         else:
             K_A = np.zeros((self.n_A, self.n_A), dtype=complex)
 
-        top_left = K_A + 1j * self.omega * (R.conj().T @ S @ R)
-        top_right = R.conj().T @ S @ G
-        bottom_left = 1j * self.omega * G.conj().T @ S @ R
-        bottom_right = G.conj().T @ S @ G
+        jw = 1j * self.omega
+        top_left = K_A + jw * (R.conj().T @ S @ R)
+        top_right = jw * (R.conj().T @ S @ G)
+        bottom_left = jw * (G.conj().T @ S @ R)
+        bottom_right = jw * (G.conj().T @ S @ G)
         return np.block([[top_left, top_right], [bottom_left, bottom_right]])
 
     def electric_extraction(self) -> np.ndarray:
-        return np.hstack([-1j * self.omega * self.a_basis, -self.grad_c])
+        return -1j * self.omega * np.hstack([self.a_basis, self.grad_c])
 
     def operator(self, a: np.ndarray) -> np.ndarray:
         sigma, _ = self.conductivity_and_derivatives(a)
