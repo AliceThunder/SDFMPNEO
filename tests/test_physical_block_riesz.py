@@ -63,7 +63,7 @@ def test_physical_block_pcg_action_preserves_riesz_error_certificate():
     assert actual_energy_error <= result.energy_action_error_bound * (1.0 + 1e-10) + 1e-14
 
 
-def test_physical_block_preconditioner_refuses_unprovable_magnetic_bound():
+def test_physical_block_uses_residual_certified_trace_when_magnetic_gershgorin_fails():
     # K is SPD but normalized Gershgorin cannot prove it for this dense coupling.
     K = sp.csr_matrix(
         np.array(
@@ -74,10 +74,27 @@ def test_physical_block_preconditioner_refuses_unprovable_magnetic_bound():
             ]
         )
     )
-    H = sp.block_diag((K + sp.eye(3) * 0.1, sp.eye(1)), format="csr")
-    with pytest.raises(ValueError, match="magnetic block has no positive certified"):
+    Daa = sp.eye(3, format="csr") * 0.1
+    H = sp.block_diag((K + Daa, sp.eye(1)), format="csr")
+    preconditioner = PhysicalBlockEnergyPreconditioner.build(
+        H,
+        magnetic_block=K,
+        n_A=3,
+    )
+
+    assert preconditioner.magnetic_normalized_lower_bound <= 0.0
+    assert preconditioner.gamma_certificate_method == "residual_certified_generalized_trace"
+    assert np.isfinite(preconditioner.magnetic_inverse_inf_upper_bound)
+    assert preconditioner.gamma_upper_bound > 0.0
+    assert preconditioner.lower_spectral_equivalence_bound > 0.0
+
+
+def test_physical_block_rejects_singular_magnetic_energy():
+    K = sp.csr_matrix([[1.0, 1.0], [1.0, 1.0]])
+    H = sp.block_diag((K + sp.eye(2) * 0.1, sp.eye(1)), format="csr")
+    with pytest.raises(ValueError, match="magnetic block factorization failed"):
         PhysicalBlockEnergyPreconditioner.build(
             H,
             magnetic_block=K,
-            n_A=3,
+            n_A=2,
         )
