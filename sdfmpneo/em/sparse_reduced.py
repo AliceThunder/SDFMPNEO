@@ -12,6 +12,7 @@ from .riesz_action import (
     CertifiedRieszAction,
     RieszActionFactory,
     SparseLUReferenceRieszAction,
+    instantiate_riesz_action,
 )
 from .sparse_solver import CertifiedEnergySparseApsiSolver
 
@@ -23,7 +24,7 @@ _COERCIVITY = CertifiedEnergySparseApsiSolver.COERCIVITY_LOWER_BOUND
 class SparseEnergyResidualCertificate:
     """A-posteriori reduced-state certificate in the local physical energy.
 
-    The dual norm may be obtained from an inexact Riesz action.  Therefore the
+    The dual norm may be obtained from an inexact Riesz action. Therefore the
     certificate stores a rigorous enclosure; the state-error bound always uses
     the upper endpoint.
     """
@@ -34,15 +35,11 @@ class SparseEnergyResidualCertificate:
 
     @property
     def residual_dual_energy_norm(self) -> float:
-        """Backward-compatible conservative value: the certified upper bound."""
-
         return self.residual_dual_energy_norm_upper_bound
 
 
 @dataclass(frozen=True)
 class SparseEnergyReductionCertificate:
-    """Finite-candidate certificate for snapshot-free sparse EM reduction."""
-
     requested_energy_state_error: float
     maximum_energy_state_error_bound: float
     worst_state_index: int
@@ -61,12 +58,7 @@ class _StateContext:
 
 
 class SparseEnergyReducedEMModel:
-    """Reduced EM model whose full-order operations remain sparse.
-
-    The reduced matrices are dense only after projection to the intentionally
-    small reduced space.  Residual certification consumes a CertifiedRieszAction
-    and does not require an exact H^{-1} implementation.
-    """
+    """Sparse full-order / dense reduced electromagnetic model."""
 
     def __init__(
         self,
@@ -138,23 +130,23 @@ class SparseEnergyReducedEMModel:
         a: np.ndarray,
         rhs: np.ndarray,
     ) -> SparseEnergyResidualCertificate:
-        A = self._operator_sparse(a)
+        state = np.asarray(a, dtype=float)
+        A = self._operator_sparse(state)
         H = apsi_physical_energy_metric(A)
-        action = self.riesz_action_factory(H)
-        residual = np.asarray(rhs, dtype=complex) - A @ self.state_for_rhs(a, rhs)
+        action = instantiate_riesz_action(
+            self.riesz_action_factory,
+            H,
+            state=state,
+        )
+        residual = np.asarray(rhs, dtype=complex) - A @ self.state_for_rhs(state, rhs)
         threshold = 0.0
         if self.reduction_certificate is not None:
-            threshold = (
-                self.reduction_certificate.requested_energy_state_error * _COERCIVITY
-            )
-        decision = action.decide_dual_norm(residual, threshold=threshold)
-        result = decision.result
+            threshold = self.reduction_certificate.requested_energy_state_error * _COERCIVITY
+        result = action.decide_dual_norm(residual, threshold=threshold).result
         return SparseEnergyResidualCertificate(
             residual_dual_energy_norm_lower_bound=float(result.dual_norm_lower_bound),
             residual_dual_energy_norm_upper_bound=float(result.dual_norm_upper_bound),
-            energy_state_error_bound=float(
-                result.dual_norm_upper_bound / _COERCIVITY
-            ),
+            energy_state_error_bound=float(result.dual_norm_upper_bound / _COERCIVITY),
         )
 
     def residual_certificate(self, a: np.ndarray) -> SparseEnergyResidualCertificate:
@@ -206,8 +198,10 @@ class SparseEnergyReducedEMModel:
                     self.problem.loss_operator_derivative_sparse(j, k, state),
                     dtype=complex,
                 )
-                explicit = np.real(np.vdot(x, dH @ x))
-                J[j, k] = 2.0 * np.real(np.vdot(dx, Hj @ x)) + explicit
+                J[j, k] = (
+                    2.0 * np.real(np.vdot(dx, Hj @ x))
+                    + np.real(np.vdot(x, dH @ x))
+                )
         return q, J
 
     def heat_source_and_jacobian(self, a: np.ndarray):
@@ -215,16 +209,7 @@ class SparseEnergyReducedEMModel:
 
 
 class SparseEnergyResidualGreedyEMReducer:
-    """Snapshot-free sparse residual-Riesz reduction in physical energy metrics.
-
-    For every candidate state a, the local physical metric is H(a)=K+D(a).  The
-    reducer itself never assumes an exact inverse.  It asks a CertifiedRieszAction
-    for an enclosure of ||r||_{H(a)^-1} and an admissible lift vector.
-
-    A single global basis is stored H0-orthonormally, where H0 is the metric at
-    the intrinsic thermal-coordinate origin a=0.  H0 is used only as a coordinate
-    metric; local residual certification always uses the state-dependent H(a).
-    """
+    """Snapshot-free residual-Riesz reduction in state-dependent physical energy."""
 
     def __init__(
         self,
@@ -239,7 +224,11 @@ class SparseEnergyResidualGreedyEMReducer:
         self.reference_state = np.zeros(problem.n_thermal, dtype=float)
         A0 = sp.csr_matrix(problem.operator_sparse(self.reference_state), dtype=complex)
         self.H0 = apsi_physical_energy_metric(A0)
-        self.reference_riesz_action = self.riesz_action_factory(self.H0)
+        self.reference_riesz_action = instantiate_riesz_action(
+            self.riesz_action_factory,
+            self.H0,
+            state=self.reference_state,
+        )
 
     @staticmethod
     def _energy_norm(H: sp.csr_matrix, vector: np.ndarray) -> float:
@@ -270,8 +259,6 @@ class SparseEnergyResidualGreedyEMReducer:
         return y - V @ coeff
 
     def _whiten_h0(self, vectors: np.ndarray) -> np.ndarray:
-        """Return a small-Gram-whitened basis in the H0 inner product."""
-
         W = np.asarray(vectors, dtype=complex)
         if W.ndim != 2 or W.shape[0] != self.problem.n_em or W.shape[1] == 0:
             raise ValueError("vectors must have shape (n_em,n_vectors) with n_vectors>0")
@@ -298,13 +285,11 @@ class SparseEnergyResidualGreedyEMReducer:
         if operation_count * eps >= 1.0:
             raise FloatingPointError("basis dimension is too large for gamma_k bound")
         gamma = operation_count * eps / (1.0 - operation_count * eps)
-        dependence_bound = gamma * original_norm
-        if norm <= dependence_bound:
+        if norm <= gamma * original_norm:
             raise np.linalg.LinAlgError(
                 "candidate lift is H0-dependent at the floating-point backward-error scale"
             )
-        W = np.column_stack([V, y / norm])
-        return self._whiten_h0(W)
+        return self._whiten_h0(np.column_stack([V, y / norm]))
 
     def _initial_basis_from_rhs(self, rhs_matrix: np.ndarray) -> np.ndarray:
         B = np.asarray(rhs_matrix, dtype=complex)
@@ -317,10 +302,9 @@ class SparseEnergyResidualGreedyEMReducer:
 
         V = np.empty((self.problem.n_em, 0), dtype=complex)
         for p in range(B.shape[1]):
-            decision = self.reference_riesz_action.decide_dual_norm(
+            lift = self.reference_riesz_action.decide_dual_norm(
                 B[:, p], threshold=0.0
-            )
-            lift = decision.result.vector
+            ).result.vector
             try:
                 V = self._append_h0_independent(lift, V)
             except np.linalg.LinAlgError:
@@ -337,7 +321,8 @@ class SparseEnergyResidualGreedyEMReducer:
             raise ValueError("candidate thermal state dimension mismatch")
         A = sp.csr_matrix(self.problem.operator_sparse(a), dtype=complex)
         H = apsi_physical_energy_metric(A)
-        return _StateContext(a.copy(), A, H, self.riesz_action_factory(H))
+        action = instantiate_riesz_action(self.riesz_action_factory, H, state=a)
+        return _StateContext(a.copy(), A, H, action)
 
     @staticmethod
     def _residual(context: _StateContext, rhs: np.ndarray, V: np.ndarray) -> np.ndarray:
