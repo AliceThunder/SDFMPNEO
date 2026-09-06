@@ -1,6 +1,7 @@
 from .algebra import AnalyticSeries, DeferredResponseSeries, ResponseTerm, solve_response_series
 from .compiler import CompiledAnalyticKernel
 from .graph import AnalyticEvolutionGraph, CompiledAnalyticGraph
+from .realization import AnalyticRealization, CompiledRealizationGraph
 
 __all__ = [
     "AnalyticSeries",
@@ -10,4 +11,6 @@ __all__ = [
     "AnalyticEvolutionGraph",
     "CompiledAnalyticGraph",
     "CompiledAnalyticKernel",
+    "AnalyticRealization",
+    "CompiledRealizationGraph",
 ]
