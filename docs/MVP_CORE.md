@@ -9,172 +9,204 @@ python examples/spatial_core.py
 pytest -q
 ```
 
-The repository also runs the full `pytest` suite in GitHub Actions on pushes and pull requests to `main`.
+GitHub Actions runs the complete test suite for every push to `main` and pull request targeting `main`.
 
-## Implemented core
+## Implemented executable chain
 
-The executable chain now contains:
+The repository now contains:
 
-- shared orthogonal 3-D electromagnetic/thermal material cells;
-- exact node-edge-face incidence with `C @ G = 0`;
-- deterministic tree-cotree magnetic gauge and conducting-component scalar gauge;
-- conductor/package/seawater reluctivity/conductivity Hodge assembly;
-- reciprocal scaled `A-psi` magnetoquasistatic formulation with `psi=phi/(j omega)`;
-- physical electromagnetic Riesz metric from magnetic energy plus Joule energy per electrical radian;
-- Cholesky-Riesz residual norms, lifts, and basis enrichment;
+- orthogonal 3-D and unstructured tetrahedral electromagnetic–thermal correctness paths;
+- exact compatible incidence with `C @ G = 0`;
+- deterministic tree-cotree magnetic gauge and conducting-component scalar-potential gauge;
+- first-order Nedelec tetrahedral electromagnetic assembly;
+- P1 tetrahedral thermal mass/conduction assembly on the same mesh;
+- reciprocal scaled `A-psi` magnetoquasistatic coordinates;
+- physical electromagnetic Riesz metric and Cholesky-Riesz residual coordinates;
 - snapshot-free single- and multi-RHS electromagnetic reduction;
-- exact nonlinear cell conductivity through analytic material laws and exact operator derivatives;
-- reciprocal copper conductivity induced by a linear copper resistivity law without conductivity linearization;
-- reduced electromagnetic heat-source projection and exact heat-source Jacobian;
-- copper/seawater regional Joule loss diagnostics from the same field solution;
-- field-derived multiport `Z`, `R`, `L`, and `M` outputs;
-- executable reciprocity, passivity, and port-power/Joule-power consistency checks;
-- residual-to-`Z/R/L/M` output error bounds using an electromagnetic stability constant;
-- continuous thermal-state box residual certification for affine electromagnetic operators by branch-and-bound;
-- heterogeneous 3-D thermal finite-volume mass/conduction assembly;
-- thermal generalized eigenmodes and a spectral-tail rank certificate derived from initial-tail energy, a source dual bound, and requested output/state accuracy;
-- analytic polynomial-exponential neural algebra with arbitrary-depth response DAGs;
-- compressed fast analytic evaluation using unique basis functions;
-- an independent exact state-space analytic realization backend that handles exact and near resonance without a closeness threshold;
-- deterministic product-candidate generation and residual-driven neuron scoring;
-- closed-form tangent-optimal candidate weight plus full nonlinear residual re-evaluation;
-- contraction and uniform-in-time coupled state-error certificate interfaces;
-- a unified fixed-operating-condition online query interface returning thermal state, temperature, heat source, physical residual, multiport impedance, and optional regional losses.
+- thermal generalized eigenmodes with spectral-tail certified rank selection;
+- exact barycentric polynomial integration against Nedelec fields;
+- affine tetrahedral temperature-feedback correctness path;
+- certified nonlinear tetrahedral material path with reciprocal copper conductivity induced by linear resistivity, without conductivity linearization;
+- rigorously selected reciprocal-series order from pointwise remainder bounds for both `1/d` and `1/d^2`;
+- exact/certified `dA/da` and projected Joule-source Jacobians;
+- field-derived `Z/R/L/M` and copper/seawater regional powers;
+- reciprocity, passivity, and port-power/Joule-power/material-region power closure checks;
+- residual-to-port-output error certificates;
+- constitutive-series remainder propagated to deterministic `Z/R/L/M` bounds;
+- constitutive-series remainder propagated to projected heat-source error bounds usable as `eta_EM` in the coupled state certificate;
+- continuous affine thermal-state EM residual certification by branch-and-bound;
+- intrinsic analytic neural DAGs with arbitrary-depth response chains;
+- intrinsic parameter nodes for `(a0,U,t) -> a(t)` at a fixed spatial/operator family;
+- exact operating-parameter residual sensitivities;
+- residual-driven network growth over state/operating-parameter analytic dictionaries;
+- fast polynomial-exponential compilation plus an independent exact state-space realization backend with no near-resonance threshold;
+- fixed and parameter-conditioned arbitrary-time online query interfaces.
 
-The code has no geometry-specific impedance-solver dependency and uses no FEM/Maxwell solution snapshots or transient solution labels.
+No FEM/Maxwell solution snapshots or transient solution labels are used by the training/reduction method.
 
-## Current physical chain
+## Current unstructured physical chain
 
 ```text
-3-D cell geometry/materials
+tetrahedral geometry + material regions
         |
-        +--> thermal FV: M_T, K_T
-        |        |
-        |        +--> thermal spectrum Phi_T, Lambda_T
-        |        +--> certified retained rank r
-        |                    |
-        |                    +--> T(a) on cells
-        |                    +--> sigma_Cu(T), sigma_sea(T), ...
+        +--> exact G,C + tree/cotree gauges
         |
-        +--> exact topology: G_full, C
-                 |
-                 +--> tree-cotree R_A + conducting G_c
-                 |
-                 +--> M_nu, M_sigma(T(a))
-                         |
-                         +--> reciprocal A-psi field system
-                                   |
-                                   +--> multi-RHS snapshot-free EM reduction
-                                   |
-                                   +--> q_em,r(a), d q_em,r/da
-                                   +--> P_Cu, P_sea
-                                   +--> Z/R/L/M + output certificates
-                                             |
-                                             +--> analytic neural residual/growth
-                                             +--> arbitrary-time online query
+        +--> P1 thermal M_T,K_T
+        |       |
+        |       +--> thermal spectrum
+        |       +--> certified retained rank
+        |       +--> local P1 thermal modes
+        |
+        +--> Nedelec magnetic operator
+        +--> certified sigma(T) integration
+                |
+                +--> reciprocal A-psi field system
+                +--> snapshot-free EM reduction
+                +--> q_em,r(a), dq_em,r/da
+                +--> Z/R/L/M
+                +--> P_Cu/P_sea
+                +--> residual/output/material certificates
+                          |
+                          +--> analytic residual-driven network
+                          +--> direct arbitrary-time query
 ```
 
-## Reciprocal electromagnetic core
+## Reciprocal tetrahedral electromagnetic system
 
-The scalar-potential coordinate is
+With
 
 ```text
-psi = phi/(j omega).
+A = R_A alpha,
+psi = phi/(j omega),
+E = -j omega (R_A alpha + G_c psi),
 ```
 
-The gauge-eliminated field system is
+the tetrahedral Nedelec field system is
 
 ```text
-[ K_A + j*w R_A^H M_sigma R_A,  j*w R_A^H M_sigma G_c ] [alpha]   [R_A^H J_s]
-[ j*w G_c^H M_sigma R_A,         j*w G_c^H M_sigma G_c ] [ psi ] = [    0     ],
+[ K_A + j*w R_A^T M_sigma R_A,  j*w R_A^T M_sigma G_c ] [alpha]   [R_A^T J_s]
+[ j*w G_c^T M_sigma R_A,         j*w G_c^T M_sigma G_c ] [ psi ] = [    0      ].
 ```
 
-where
+For reciprocal real material matrices it is complex symmetric. The code does not symmetrize `Z` afterwards.
+
+## Exact barycentric loss projection
+
+For barycentric monomials on a tetrahedron,
 
 ```text
-K_A = R_A^H C^H M_nu C R_A,
-E   = -j*w (R_A alpha + G_c psi).
+int_T prod_i lambda_i^(alpha_i) dV
+= 6 |T| prod_i alpha_i! / (3 + sum_i alpha_i)!.
 ```
 
-For reciprocal real Hodge operators this matrix is complex symmetric. Multiport reciprocity therefore follows from the field structure rather than post-processing.
+This identity is used to assemble polynomial-weighted Nedelec mass matrices. P1 conductivity, P1 thermal tests, and P1×P1 derivative weights are integrated analytically rather than sampled at element centres.
 
-The Riesz metric is
+## Certified reciprocal copper law
+
+For
 
 ```text
-H_em = blockdiag(1/2 K_A, 0)
-       + (1/(2*w)) L_E^H M_sigma,ref L_E.
+rho(T)=rho_ref[1+alpha(T-T_ref)],
+sigma(T)=sigma_ref/d(T),
+d(T)=1+alpha(T-T_ref),
 ```
 
-For `H_em=L L^H`,
+`d(x)` is P1 inside each tetrahedron. Defining
 
 ```text
-||r||_(H^-1) = ||L^-1 r||_2,
-H^-1 r       = L^-H L^-1 r.
+d_bar=(d_max+d_min)/2,
+z=d/d_bar-1,
+q=(d_max-d_min)/(d_max+d_min)<1,
 ```
 
-## Multiport outputs
-
-For one-ampere divergence-free impressed-current port cochains collected in `B`,
+gives
 
 ```text
-A(a) X = B,
-Psi = B^T X,
-Z = j*w*Psi,
-R = Re(Z),
-L = Im(Z)/w.
+1/d = d_bar^-1 sum_{n=0}^N (-z)^n + R_N,
+|R_N|/|1/d| <= q^(N+1).
 ```
 
-Off-diagonal `L` entries are mutual inductances for this port definition. The code verifies
+For the derivative,
+
+```text
+1/d^2 = d_bar^-2 sum_{n=0}^N (n+1)(-z)^n + R_N^(2),
+```
+
+with
+
+```text
+|R_N^(2)|/|1/d^2|
+<= q^(N+1)[(N+2)+(N+1)q].
+```
+
+The code selects the minimum order satisfying the declared constitutive error allocation. A too-coarse series is allowed to become **uncertified**; no stability condition is relaxed to force a result.
+
+## Constitutive error propagation
+
+The pointwise conductivity certificate gives
+
+```text
+|sigma_tilde-sigma| <= eps_sigma sigma
+```
+
+and therefore
+
+```text
+|sigma_tilde-sigma|
+<= eps_sigma/(1-eps_sigma) sigma_tilde.
+```
+
+This is propagated to a field-operator perturbation bound `||Delta A||`. If
+
+```text
+||A_tilde^-1|| ||Delta A|| < 1,
+```
+
+the inverse perturbation theorem yields finite bounds on the EM state and
+
+```text
+||Delta Z||_2,
+|Delta R_ij|,
+|Delta L_ij|.
+```
+
+The state bound and a loss-operator remainder bound additionally give each
+
+```text
+|Delta q_em,r,j|
+```
+
+and the vector norm `||Delta q_em,r||_2`. This is the executable constitutive contribution to `eta_EM` in
+
+```text
+||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa.
+```
+
+If the inverse perturbation condition fails, these certificates return an uncertified/infinite bound instead of weakening the theorem.
+
+## Multiport and regional power closure
+
+For closed impressed-current ports collected in `B`,
+
+```text
+A X = B,
+Z = j*w B^T X.
+```
+
+The tetrahedral affine and certified nonlinear paths are regression-tested for
 
 ```text
 Z^T = Z,
-R >= 0,
-1/2 Re(I^H Z I) = 1/2 E^H M_sigma E.
+1/2 Re(I^H Z I)
+= 1/2 E^H M_sigma E
+= P_Cu + P_sea.
 ```
 
-One reduced space is grown over all declared thermal states and port RHS columns. With electromagnetic stability
-
-```text
-beta_em = sigma_min(L^-1 A L^-H),
-```
-
-entrywise output errors obey
-
-```text
-|Delta Z_ij|
-<= w ||b_i||_(H^-1) ||r_j||_(H^-1) / beta_em,
-```
-
-with corresponding `R` and `L/M` bounds.
-
-## Exact nonlinear conductivity path
-
-`NonlinearSpatialAphiProblem` (legacy class name retained for API compatibility) now uses the reciprocal `A-psi` coordinates internally. It reconstructs
-
-```text
-T(a) = T_ref + sum_k a_k Phi_k
-```
-
-and evaluates analytic material laws directly.
-
-For linear copper resistivity,
-
-```text
-rho(T) = rho_ref [1 + alpha(T-T_ref)],
-sigma(T) = sigma_ref / [1 + alpha(T-T_ref)],
-```
-
-with exact derivatives propagated through `dA/da` and `dq_em,r/da`.
+The nonlinear regional power evaluator uses the same constitutive series and exact barycentric integration as the coupled field operator.
 
 ## Thermal rank certificate
 
-For first omitted eigenvalue `lambda_(r+1)`, omitted initial M-norm `E0`, and a certified source bound
-
-```text
-||q(t)||_(M^-1) <= Q,
-```
-
-the projection tail satisfies
+For first omitted thermal eigenvalue `lambda_(r+1)`, omitted initial M-norm `E0`, and certified source dual bound `Q`,
 
 ```text
 ||T_tail(t)||_M
@@ -182,74 +214,50 @@ the projection tail satisfies
  + (1-exp(-lambda_(r+1)t)) Q/lambda_(r+1).
 ```
 
-The current verification implementation computes the complete spectrum and chooses the smallest `r` satisfying the requested state or output tolerance. Coupling error due to evaluating the nonlinear source on the reduced state is handled separately by the physical residual/contraction certificate.
+The verification implementation currently computes the full discrete spectrum and chooses the smallest retained rank meeting the requested accuracy. A scalable production eigensolver must retain the same certificate without computing the full spectrum.
 
-## Continuous affine electromagnetic-domain certificate
+## Intrinsic parameter-conditioned analytic network
 
-For strictly affine thermal-state dependence, a parameter box is bounded using the center residual, a lower bound on the reduced operator singular value, and explicit residual derivative bounds. Branch-and-bound returns exactly one of:
-
-```text
-certified
-violated
-indeterminate
-```
-
-Exhausting a computational work budget produces `indeterminate`; it never produces a certificate.
-
-This is currently a continuous certificate for affine thermal-state boxes, not yet for nonlinear constitutive, geometry, or frequency parameters.
-
-## Analytic network and resonance-stable realization
-
-The fast compiler represents nodes as finite sums
+The analytic algebra has network-internal zero-dynamics nodes for initial state and declared static operating parameters. For a fixed spatial/operator family the network directly represents
 
 ```text
-sum_k c_k t^(m_k) exp(-rho_k t).
+(a0,U,t) -> a(t)
 ```
 
-The same DAG can independently compile to finite-dimensional exact realizations
+without an external conditioning network that generates coefficients.
+
+The same graph has two evaluators:
 
 ```text
-h(t) = c^T exp(A t) b.
+fast polynomial-exponential compiler,
+exact state-space realization h(t)=c^T exp(A t)b.
 ```
 
-Addition uses block diagonals, products use Kronecker sums, and a response neuron adds one linear state. Repeated or nearly repeated decay rates therefore become ordinary confluent/Jordan structure and require no empirical near-resonance threshold.
+The state-space realization handles repeated and nearly repeated decay rates as ordinary confluent/Jordan structure, so no empirical resonance threshold is needed.
 
-The realization backend serves as a stable correctness/reference path for the much faster canonical polynomial-exponential kernel.
+Parameter-domain residual growth can select products containing `a0`, `U`, and existing response nodes. Candidate weights come from the tangent physical residual and are accepted only after full nonlinear residual re-evaluation.
 
-## Residual-driven growth
+## Continuous-domain status
 
-For a unit candidate response in target mode `i`,
+A continuous branch-and-bound certificate is implemented for strictly affine EM thermal-state dependence. It returns
 
 ```text
-(d/dt + lambda_i) h = psi,
+certified / violated / indeterminate.
 ```
 
-with heat-source Jacobian `J_g`, the first residual variation is
+The new certified nonlinear tetrahedral material path has pointwise constitutive and a-posteriori output bounds, but a **continuous state/geometry/frequency-domain certificate for that nonlinear operator family is still pending**.
 
-```text
-D = e_i psi - J_g[:,i] h.
-```
+## Remaining production obligations
 
-For a supplied deterministic quadrature rule,
+1. CAD/mesh import and conforming meshing for actual round/rounded-square conductors, package, and seawater domains.
+2. Sparse end-to-end Nedelec assembly/solve and verified high-contrast preconditioning for realistic copper/seawater conductivity ratios.
+3. Continuous-domain certification for nonlinear tetrahedral material, geometry, frequency, and source parameters.
+4. Mesh-discretization and linear-solver error terms in the unified output/state certificate.
+5. Certified open/infinite seawater electromagnetic and thermal outer-domain treatment.
+6. Scalable partial thermal eigensolution with a certified lower bound on the first omitted eigenvalue.
+7. Solid-conductor terminal-current constrained ports when impressed closed-current sources are not the intended excitation.
+8. Parameterization across geometry/operator families that change the thermal spectrum; current intrinsic `U` parameterization assumes a fixed operator family.
+9. Certified compression/minimalization of large analytic state-space realizations.
+10. A global convergence proof/certificate for the complete residual-grown analytic-network construction over the full parameter domain.
 
-```text
-w*    = -<R,D>/<D,D>,
-Delta =  <R,D>^2/<D,D>.
-```
-
-The complete nonlinear residual is then recomputed before accepting the candidate.
-
-## Deliberate current limits
-
-1. **Curved geometry:** the spatial correctness core is rectilinear. Real round/rounded-square coil and package boundaries require an unstructured compatible mesh or rigorously structure-preserving mapped complex.
-2. **Sparse large-scale field solution:** tree-cotree construction is scalable, but the current verification assemblers still densify major matrices. A production sparse high-contrast solver/preconditioner with a verified linear-solve error bound is required.
-3. **Material validation:** the nonlinear constitutive interface is implemented; production still requires physically validated seawater laws, admissible ranges, and uncertainty propagation for material constants.
-4. **General continuous-domain certification:** continuous affine thermal-state certification exists. Nonlinear constitutive, geometry, frequency, and source domains still need verified interval/remainder bounds.
-5. **Scalable thermal eigenspectrum:** the rank certificate exists, but current verification obtains the full spectrum. Production needs low-mode extraction plus a verified lower bound on the first omitted eigenvalue.
-6. **Outer domain:** physical open/seawater electromagnetic and thermal boundary treatment and any finite-domain truncation still require independent certification.
-7. **Solid-conductor terminals:** the current multiport implementation is an impressed-current/stranded-source formulation. Terminal-current constrained solid-conductor ports are a separate formulation still to implement.
-8. **Parameter-conditioned analytic network:** the executable online model currently represents one fixed operating condition. Geometry/operating condition `U` must become an explicit analytic-network parameter for one trained model to answer arbitrary conditions.
-9. **Analytic realization scaling:** the resonance-stable realization is exact but Kronecker product dimensions can grow rapidly; certified realization compression/minimalization remains to be implemented.
-10. **Global growth convergence:** the tangent-optimal update plus nonlinear residual safeguard is executable, but a globally convergent certified network-growth loop over the full parameter domain remains to be completed.
-
-These limits are part of the implementation contract; the repository does not claim that the final curved-geometry, large-scale globally certified underwater WPT surrogate is already complete.
+These limits are explicit implementation obligations, not empirical safety factors.
