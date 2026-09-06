@@ -10,6 +10,7 @@ from sdfmpneo.em import (
     ConstantConductivity,
     CoupledPairEnergyPreconditioner,
     CurlAuxiliaryPhysicalBlockPreconditioner,
+    HierarchicalEnergyPreconditioner,
     MagneticCurlSubsetEnergyPreconditioner,
     MagneticFaceCirculationEnergyPreconditioner,
     NonlinearTetrahedralApsiProblem,
@@ -200,18 +201,41 @@ def test_single_level_face_energy_is_correct_but_not_scalable_after_refinement()
     assert problem.mesh.n_tetrahedra == 48
     assert problem.n_A == 72
     assert auxiliary.lower_spectral_equivalence_bound > 0.0
-    # Deliberate failure-mode regression: one-level block Gershgorin aggregates
-    # all 72 magnetic coordinates.  This route is not the final W1 solution.
     assert auxiliary.maximum_block_size == problem.n_A
     assert auxiliary.final_block_count == 1
+
+
+def test_hierarchical_energy_coordinates_localize_refined_magnetic_problem():
+    problem = build_refined_magnetic_problem(cells_per_axis=2)
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).tocsr()
+    hierarchy = HierarchicalEnergyPreconditioner.build(K_A)
+
+    assert hierarchy.dimension == problem.n_A == 72
+    assert hierarchy.hierarchy_depth >= 2
+    assert hierarchy.final_coarse_dimension < problem.n_A
+    assert hierarchy.maximum_transformed_block_size < problem.n_A
+    assert hierarchy.transformed_final_block_count > 1
+    assert hierarchy.lower_spectral_equivalence_bound > 0.0
+
+    B_h = hierarchy.transformed_matrix().toarray()
+    Q_h = hierarchy.transformed_preconditioner_matrix().toarray()
+    m = hierarchy.lower_spectral_equivalence_bound
+    remainder = 0.5 * ((B_h - m * Q_h) + (B_h - m * Q_h).conj().T)
+    scale = float(np.linalg.norm(B_h, 2))
+    assert np.min(np.linalg.eigvalsh(remainder).real) >= -1024.0 * np.finfo(float).eps * max(scale, 1.0)
+
+    T = hierarchy.transform_matrix().toarray()
+    rhs = np.arange(1, problem.n_A + 1, dtype=float).astype(complex)
+    expected = T @ np.linalg.solve(Q_h, T.conj().T @ rhs)
+    actual = hierarchy.solve(rhs)
+    assert np.allclose(actual, expected, rtol=5e-12, atol=5e-12)
 
 
 def test_cartesian_curl_factor_locality_under_refinement_is_measured_explicitly():
     problem = build_refined_magnetic_problem(cells_per_axis=2)
     auxiliary = MagneticCurlSubsetEnergyPreconditioner.build_from_problem(problem)
     assert auxiliary.lower_spectral_equivalence_bound == 1.0
-    # If this fails, the Cartesian factor also becomes globally irreducible and
-    # must remain verification-only.  No threshold is tuned to make it pass.
     assert auxiliary.maximum_scc_size < problem.n_A
 
 
