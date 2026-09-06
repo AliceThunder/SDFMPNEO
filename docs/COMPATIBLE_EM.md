@@ -1,123 +1,206 @@
-# Compatible magnetoquasistatic A-phi core
+# Compatible magnetoquasistatic A-psi core
 
-The executable electromagnetic core now has both an algebraic compatible-discretization layer and a first real 3-D orthogonal spatial assembler. It does not require a geometry-specific impedance solver and does not introduce a gauge penalty parameter.
+The executable electromagnetic core is derived from the magnetoquasistatic field equations and uses compatible discrete topology. It has no geometry-specific impedance-solver dependency and introduces no gauge penalty parameter.
 
-## Discrete variables
+## 1. Discrete variables and gauges
 
 Let
 
 - `C` be the edge-to-face discrete curl matrix;
-- `G` be the conducting-region scalar-potential gradient matrix after removal of the conductor-wise constant-potential nullspace;
-- `R_A` be an explicit magnetic-vector-potential gauge-elimination basis, so the full edge potential is `A = R_A alpha`;
+- `G_c` be the conducting-region scalar-potential gradient after removal of one constant-potential null mode per connected conducting component;
+- `R_A` be the deterministic tree-cotree magnetic-vector-potential gauge basis, so `A = R_A alpha`;
 - `M_nu` be the face reluctivity Hodge matrix;
 - `M_sigma(a)` be the edge conductivity Hodge matrix.
 
 Compatibility requires
 
 ```text
-C G = 0.
+C G_c = 0.
 ```
 
-The present temperature dependence is represented algebraically as
+The tree-cotree gauge fixes the vector-potential coordinates on a deterministic spanning tree and retains cotree-edge coordinates. No SVD rank threshold and no gauge-penalty coefficient is part of the method.
+
+## 2. Reciprocal scaled scalar-potential coordinate
+
+With harmonic convention `exp(j omega t)`, define
 
 ```text
-M_sigma(a) = M_sigma,0 + sum_k a_k M_sigma,k.
+psi = phi / (j omega).
 ```
 
-This is an executable affine core. The constitutive layer must either provide an exact separated representation or a certified expansion with a remainder bound; the spatial assembler does not fit constitutive laws itself.
-
-## Gauge-eliminated A-phi system
-
-With harmonic convention `exp(j omega t)`, the unknown is
+The unknown is
 
 ```text
-x = [alpha; phi]
+x = [alpha; psi]
 ```
 
-and the assembled system is
+and the electric field is
 
 ```text
-[ R_A^H C^H M_nu C R_A + j omega R_A^H M_sigma R_A,   R_A^H M_sigma G ] [alpha]   [R_A^H J_s]
-[ j omega G^H M_sigma R_A,                              G^H M_sigma G       ] [ phi ] = [    0     ].
+E = -j omega (R_A alpha + G_c psi)
+  = L_E x,
+L_E = -j omega [R_A, G_c].
 ```
 
-The magnetic-vector-potential gauge is removed by the coordinate basis `R_A`, not by adding an empirical penalty. The scalar-potential constant nullspace is likewise removed separately in every connected conducting component.
-
-## Electric field and loss projection
-
-The full edge electric field is
+The gauge-eliminated system is
 
 ```text
-E = -j omega R_A alpha - G phi = L_E x,
+[ K_A + j omega R_A^H M_sigma R_A,  j omega R_A^H M_sigma G_c ] [alpha]   [R_A^H J_s]
+[ j omega G_c^H M_sigma R_A,         j omega G_c^H M_sigma G_c ] [ psi ] = [    0     ],
 ```
 
 with
 
 ```text
-L_E = [-j omega R_A, -G].
+K_A = R_A^H C^H M_nu C R_A.
 ```
 
-For each retained thermal coordinate `j`, a conductivity-weighted loss Hodge matrix `W_j(a)` produces the reduced heat-source component
+For real reciprocal material Hodge matrices this operator is complex symmetric. Reciprocity is therefore a structural property of the field discretization rather than a post-processing symmetrization.
+
+## 3. Physical Riesz metric
+
+The residual norm is based on magnetic energy plus Joule energy dissipated per electrical radian:
+
+```text
+H_em = blockdiag(1/2 K_A, 0)
+       + (1/(2 omega)) L_E^H M_sigma,ref L_E.
+```
+
+The implementation factors
+
+```text
+H_em = L L^H
+```
+
+and computes
+
+```text
+||r||_(H_em^-1) = ||L^-1 r||_2,
+H_em^-1 r        = L^-H L^-1 r.
+```
+
+Thus Riesz lifting and basis orthogonalization are carried out in physical energy coordinates without explicitly forming an inverse.
+
+## 4. Temperature-dependent constitutive laws
+
+Two executable paths exist:
+
+1. an affine verification path,
+   ```text
+   M_sigma(a) = M_sigma,0 + sum_k a_k M_sigma,k;
+   ```
+2. an exact nonlinear path in which
+   ```text
+   T(a) = T_ref + sum_k a_k Phi_k
+   ```
+   is reconstructed on material cells and the conductivity law is evaluated directly.
+
+For copper the current core supports the analytic relation
+
+```text
+rho_Cu(T) = rho_ref [1 + alpha (T-T_ref)],
+sigma_Cu(T) = sigma_ref / [1 + alpha (T-T_ref)],
+```
+
+with exact derivatives. Other analytic material laws can implement the same constitutive interface. No affine temperature approximation is required by the nonlinear field core.
+
+## 5. Heat-source projection and regional losses
+
+For retained thermal coordinate `j`,
 
 ```text
 q_j(a) = 1/2 x^H L_E^H W_j(a) L_E x.
 ```
 
-The executable core supports
+The heat-source Jacobian includes both the implicit derivative of the electromagnetic field and the explicit derivative of the conductivity/loss operator.
+
+Separate copper and seawater diagnostics are formed from the same field solution:
 
 ```text
-W_j(a) = W_j,0 + sum_k a_k W_j,k,
+P_Cu  = 1/2 E^H M_sigma,Cu E,
+P_sea = 1/2 E^H M_sigma,sea E.
 ```
 
-so the heat-source Jacobian contains both:
+These are not add-on resistance models. The thermal equation continues to use the unified spatially projected Joule source.
 
-1. the implicit field-state derivative through the electromagnetic solve; and
-2. the explicit temperature derivative of the loss operator itself.
+## 6. Snapshot-free electromagnetic reduction
 
-## Real 3-D orthogonal spatial assembly
-
-`RectilinearComplex3D` now generates the oriented node/edge/face complex directly from x/y/z coordinates. Its integer incidence matrices satisfy
+The reduced space is constructed from residual Riesz lifts. For multiple ports, one common basis is grown over the joint set
 
 ```text
-C @ G_full = 0
+thermal state x port RHS.
 ```
 
-by construction.
+At each enrichment step the worst residual over all supplied states and excitations is lifted and added. A basis certified only for one port is never assumed to represent another port.
 
-`build_compatible_aphi_from_cells(...)` constructs `C`, the conducting-region `G`, the explicit gauge basis `R_A`, and the material Hodge matrices from cellwise reluctivity and conductivity fields. The 1-form and 2-form Hodge coefficients integrate the cell coefficients over the corresponding orthogonal dual portions, so conductor/package/seawater jumps are retained spatially.
+The reduced electromagnetic model also supports arbitrary RHS vectors directly, so the operating excitation is not permanently tied to the nominal `problem.b`.
 
-The physical residual Riesz metric is assembled from magnetic energy plus Joule energy dissipated per electrical radian,
+## 7. Multiport impedance from the field equation
+
+For one-ampere divergence-free impressed-current source cochains collected in `B`, the unit-port field states satisfy
 
 ```text
-H_em = blockdiag(1/2 K_A, 0)
-       + (1/(2 omega)) L_E^H M_sigma,0 L_E.
+A(a) X = B.
 ```
 
-No arbitrary diagonal shift is added if this metric is singular; the assembler instead reports a gauge/topology/material-support failure.
+The flux-linkage and impedance matrices are
 
-See [`SPATIAL_3D.md`](SPATIAL_3D.md) for the spatial formulas and present scope.
+```text
+Psi = B^T X,
+Z   = j omega Psi,
+R   = Re(Z),
+L   = Im(Z)/omega.
+```
 
-## Connection to snapshot-free reduction
+For reciprocal media,
 
-`CompatibleAphiDiscretization.to_parametric_problem()` produces the existing `ParametricEMProblem`. The residual-Riesz reducer then builds the electromagnetic reduced space without full-order solution snapshots.
+```text
+Z^T = Z.
+```
 
-The current chain is therefore
+For passive positive conductivity,
+
+```text
+R >= 0
+```
+
+in the positive-semidefinite sense. For arbitrary complex port-current vector `I`, the average input real power obeys
+
+```text
+1/2 Re(I^H Z I)
+= 1/2 E^H M_sigma E,
+```
+
+which is used as an executable power-consistency regression.
+
+The off-diagonal entries of `L` are the mutual inductances for this impressed-current port definition.
+
+## 8. Real 3-D orthogonal spatial assembly
+
+`RectilinearComplex3D` constructs nodes, edges, faces, exact incidence matrices, tree-cotree gauge coordinates, and orthogonal material Hodge matrices from x/y/z cell coordinates. The electromagnetic and thermal cores can share the same cellwise conductor/package/seawater material description.
+
+This rectilinear complex is the current real spatial implementation. Curved coil/package boundaries still require an unstructured compatible mesh or a rigorously structure-preserving mapped complex.
+
+## 9. Current chain
 
 ```text
 3-D material cells
-       -> exact discrete topology and material Hodge operators
-       -> compatible gauge-eliminated A-phi system
-       -> snapshot-free residual-Riesz EM reduction
-       -> reduced temperature-dependent loss map and exact Jacobian
-       -> electro-thermal residual
-       -> analytic neural evolution/growth.
+  -> exact discrete topology C,G
+  -> tree-cotree R_A and conductor G_c
+  -> material Hodge operators
+  -> reciprocal gauge-eliminated A-psi field system
+  -> snapshot-free multi-RHS EM reduction
+  -> q_em,r(a), dq_em,r/da
+  -> P_Cu, P_sea and Z/R/L/M outputs
+  -> electro-thermal residual
+  -> analytic neural evolution and residual-grown topology.
 ```
 
-## Remaining implementation obligations
+## Remaining obligations
 
-- generalize the spatial core from an orthogonal rectilinear complex to curved/unstructured compatible meshes needed by real coil and package boundaries;
-- replace the dense null-space gauge basis by a sparse scalable tree/cotree or equivalent exact construction;
-- distinguish copper and seawater local loss contributions before projection when output diagnostics require them separately;
-- replace finite candidate-state EM verification by continuous parameter-domain certification;
-- add certified non-affine constitutive separation for actual temperature-dependent copper and seawater conductivity;
-- add scalable certified thermal-rank selection for the shared 3-D thermal operator.
+- curved/unstructured compatible geometry for realistic round and rounded-square coils and package interfaces;
+- scalable sparse high-contrast field solution with a verified linear-solve error bound;
+- continuous geometry/temperature/frequency-domain electromagnetic certification rather than a finite candidate set;
+- rigorous thermal spectral-tail/output estimator for scalable thermal rank selection;
+- certified treatment of the outer seawater thermal/electromagnetic truncation or open-domain boundary;
+- solid-conductor terminal-current ports when terminal-driven conductor current, rather than impressed stranded-current excitation, is required.
