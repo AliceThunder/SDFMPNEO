@@ -200,6 +200,11 @@ class HierarchicalEnergyPreconditioner(CertifiedEnergyPreconditioner):
         local = float(self._local_action.inverse_inf_upper_bound)
         return float(np.nextafter(norm_inf_T * local * norm_inf_TH, np.inf))
 
+    def transform_matrix(self) -> sp.csr_matrix:
+        """Return the hierarchy transform used by the represented preconditioner."""
+
+        return self._transform.copy()
+
     def transformed_matrix(self) -> sp.csr_matrix:
         return self._transformed_matrix.copy()
 
