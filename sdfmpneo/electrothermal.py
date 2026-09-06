@@ -19,12 +19,12 @@ class ElectroThermalFieldEvaluation:
 class CertifiedElectroThermalVectorField:
     """Single reduced electrothermal dynamics callable.
 
-    The object owns no transient solver.  It only evaluates the autonomous/static-
-    parameter vector field required by the analytic evolution network:
+    The object owns no transient solver. It only evaluates
 
         da/dt = -Lambda a + g_em(a,U) + f_T.
 
-    ``rhs_map`` may be omitted for a fixed excitation or may provide ``rhs(U)``.
+    ``rhs_map`` may be omitted for a fixed excitation or may provide an exact
+    static operating map through ``rhs_map.evaluate(U)``.
     """
 
     def __init__(
@@ -38,6 +38,7 @@ class CertifiedElectroThermalVectorField:
     ) -> None:
         self.thermal_model = thermal_model
         self.electromagnetic_model = electromagnetic_model
+        self.em_model = electromagnetic_model
         self.rhs_map = rhs_map
         n = int(len(thermal_model.lambdas))
         if electromagnetic_model.problem.n_thermal != n:
@@ -71,7 +72,7 @@ class CertifiedElectroThermalVectorField:
             return self.fixed_rhs.copy()
         if operating is None:
             raise ValueError("operating parameters are required")
-        return np.asarray(self.rhs_map.rhs(np.asarray(operating, dtype=float)), dtype=complex)
+        return np.asarray(self.rhs_map.evaluate(np.asarray(operating, dtype=float)), dtype=complex)
 
     def evaluate(
         self,
