@@ -58,6 +58,29 @@ def build_high_contrast_problem():
     return problem
 
 
+def _gram_roundoff_envelope(H, V):
+    """Conditioning-aware standard-model bound for forming V^H H V.
+
+    A fixed multiple of machine epsilon is invalid for the high-contrast energy
+    metric because large positive contributions can cancel in the final Gram
+    entries. The absolute arithmetic scale is |V|^T |H| |V|. The gamma_k factor
+    accounts conservatively for sparse row accumulation, the length-n dense dot
+    product, and the small dense Cholesky/triangular whitening work.
+    """
+
+    Habs = H.copy().tocsr()
+    Habs.data = np.abs(Habs.data)
+    Vabs = np.abs(V)
+    absolute_scale = Vabs.T @ (Habs @ Vabs)
+    max_row_nnz = int(np.max(np.diff(Habs.indptr))) if Habs.shape[0] else 0
+    n = V.shape[0]
+    r = V.shape[1]
+    operation_depth = max_row_nnz + n + 4 * r * r
+    eps = np.finfo(float).eps
+    gamma = operation_depth * eps / (1.0 - operation_depth * eps)
+    return float(gamma * np.linalg.norm(absolute_scale, ord="fro"))
+
+
 def test_sparse_energy_reducer_never_materializes_dense_riesz_metric():
     problem = build_high_contrast_problem()
     assert problem._H_metric is None
@@ -73,13 +96,11 @@ def test_sparse_energy_reducer_never_materializes_dense_riesz_metric():
 
     gram = model.V.conj().T @ (model.reference_energy_metric @ model.V)
     defect = np.linalg.norm(gram - np.eye(model.n_reduced), ord="fro")
-    backward = (
-        128.0
-        * np.finfo(float).eps
-        * max(1, problem.n_em, model.n_reduced)
-        * max(1.0, np.linalg.norm(gram, ord="fro"))
+    roundoff_envelope = _gram_roundoff_envelope(
+        model.reference_energy_metric,
+        model.V,
     )
-    assert defect <= backward
+    assert defect <= roundoff_envelope
 
     for state in states:
         cert = model.residual_certificate(state)
