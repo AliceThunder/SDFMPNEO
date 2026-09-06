@@ -66,6 +66,12 @@ class AnalyticEvolutionGraph:
     def _invalidate(self) -> None:
         self._compiled = None
 
+    def clone(self) -> "AnalyticEvolutionGraph":
+        out = AnalyticEvolutionGraph(self.lambdas.copy(), self.a0.copy())
+        for node in self.response_nodes:
+            out.add_product_response(node.name, node.target_mode, node.parents, node.weight)
+        return out
+
     def add_product_response(self, name: str, target_mode: int, parents: Sequence[str], weight: complex) -> None:
         known = {n.name for n in self.base_nodes} | {n.name for n in self.response_nodes}
         if name in known:
