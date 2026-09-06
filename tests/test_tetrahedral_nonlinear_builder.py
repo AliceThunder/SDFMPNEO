@@ -65,9 +65,13 @@ def test_one_call_nonlinear_builder_uses_certified_material_backend():
     assert core.conductivity_regions is not None
     certificate = core.electromagnetic_problem.constitutive_certificate(np.zeros(core.thermal_model.rank))
     assert certificate.certified
+    assert core.electromagnetic_problem._H_metric is None
 
+    requested = 1e-8
     reduced = core.build_reduced_electromagnetics(
         [np.array([-0.1]), np.array([0.0]), np.array([0.1])],
-        residual_tolerance=1e-10,
+        requested_energy_state_error=requested,
     )
-    assert reduced.residual_dual_norm(np.array([0.02])) < 1e-8
+    assert reduced.reduction_certificate.certified
+    assert reduced.residual_certificate(np.array([0.02])).energy_state_error_bound <= requested
+    assert core.electromagnetic_problem._H_metric is None
