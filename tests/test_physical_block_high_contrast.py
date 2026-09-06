@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import scipy.sparse.linalg as spla
@@ -65,6 +67,61 @@ def build_high_contrast_problem():
         thermal_modes_local=modes,
         conductivity_regions=regions,
         constitutive_relative_error_budget=1e-10,
+    )
+
+
+def build_refined_magnetic_problem(cells_per_axis=2):
+    """Contractible Freudenthal tetrahedral cube used only for W1 scalability regression."""
+
+    n = int(cells_per_axis)
+    if n < 1:
+        raise ValueError("cells_per_axis must be positive")
+    coordinates = np.linspace(0.0, 1.0, n + 1)
+    vertices = np.array(
+        [[coordinates[i], coordinates[j], coordinates[k]] for i in range(n + 1) for j in range(n + 1) for k in range(n + 1)],
+        dtype=float,
+    )
+
+    def vid(i, j, k):
+        return (i * (n + 1) + j) * (n + 1) + k
+
+    tetrahedra = []
+    for i in range(n):
+        for j in range(n):
+            for k in range(n):
+                v000 = vid(i, j, k)
+                v100 = vid(i + 1, j, k)
+                v010 = vid(i, j + 1, k)
+                v001 = vid(i, j, k + 1)
+                v110 = vid(i + 1, j + 1, k)
+                v101 = vid(i + 1, j, k + 1)
+                v011 = vid(i, j + 1, k + 1)
+                v111 = vid(i + 1, j + 1, k + 1)
+                tetrahedra.extend(
+                    [
+                        [v000, v100, v110, v111],
+                        [v000, v100, v101, v111],
+                        [v000, v010, v110, v111],
+                        [v000, v010, v011, v111],
+                        [v000, v001, v101, v111],
+                        [v000, v001, v011, v111],
+                    ]
+                )
+
+    mesh = TetrahedralComplex3D.build(vertices, np.asarray(tetrahedra, dtype=int))
+    mu0 = 4.0e-7 * np.pi
+    reluctivity = np.ones(mesh.n_tetrahedra) / mu0
+    magnetic_stiffness, _ = mesh.assemble_nedelec_edge_matrices(
+        reluctivity,
+        np.zeros(mesh.n_tetrahedra),
+    )
+    a_basis = mesh.gauge_basis()
+    return SimpleNamespace(
+        mesh=mesh,
+        reluctivity_tetra=reluctivity,
+        a_basis=a_basis,
+        n_A=a_basis.shape[1],
+        magnetic_stiffness=magnetic_stiffness,
     )
 
 
@@ -141,7 +198,7 @@ def test_cartesian_curl_subset_is_correct_but_near_global_on_high_contrast_mesh(
     assert minimum_remainder >= -128.0 * np.finfo(float).eps * max(scale, 1.0)
 
 
-def test_face_circulation_auxiliary_proves_two_stage_local_energy_chain():
+def test_face_circulation_auxiliary_proves_two_stage_energy_chain_on_coarse_mesh():
     problem = build_high_contrast_problem()
     R = problem.a_basis
     K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).toarray()
@@ -154,7 +211,9 @@ def test_face_circulation_auxiliary_proves_two_stage_local_energy_chain():
     )
     assert np.max(counts) <= 3
     assert auxiliary.lower_spectral_equivalence_bound > 0.0
-    assert auxiliary.maximum_block_size < problem.n_A
+    # This four-cell problem is itself a coarse level.  A full local block here
+    # is visible and allowed; scalability is tested separately after refinement.
+    assert auxiliary.maximum_block_size <= problem.n_A
 
     P_face = auxiliary.face_energy_matrix().toarray()
     Q = auxiliary.preconditioner_matrix().toarray()
@@ -176,6 +235,33 @@ def test_face_circulation_auxiliary_proves_two_stage_local_energy_chain():
     assert np.allclose(actual, expected, rtol=2e-12, atol=2e-12)
     assert np.isfinite(auxiliary.inverse_inf_upper_bound)
     assert auxiliary.inverse_inf_upper_bound > 0.0
+
+
+def test_face_circulation_auxiliary_remains_strictly_local_after_mesh_refinement():
+    problem = build_refined_magnetic_problem(cells_per_axis=2)
+    auxiliary = MagneticFaceCirculationEnergyPreconditioner.build_from_problem(problem)
+
+    assert problem.mesh.n_tetrahedra == 48
+    assert problem.n_A > 6
+    assert auxiliary.lower_spectral_equivalence_bound > 0.0
+    assert auxiliary.maximum_block_size < problem.n_A
+    assert auxiliary.final_block_count > 1
+
+    R = problem.a_basis
+    K_A = (R.conj().T @ problem.magnetic_stiffness.astype(complex) @ R).toarray()
+    P_face = auxiliary.face_energy_matrix().toarray()
+    Q = auxiliary.preconditioner_matrix().toarray()
+    m = auxiliary.lower_spectral_equivalence_bound
+    scale = float(np.linalg.norm(K_A, ord=2))
+    minimum_face = float(
+        np.min(np.linalg.eigvalsh(0.5 * ((K_A - P_face) + (K_A - P_face).conj().T)).real)
+    )
+    assert minimum_face >= -512.0 * np.finfo(float).eps * max(scale, 1.0)
+    pscale = float(np.linalg.norm(P_face, ord=2))
+    minimum_local = float(
+        np.min(np.linalg.eigvalsh(0.5 * ((P_face - m * Q) + (P_face - m * Q).conj().T)).real)
+    )
+    assert minimum_local >= -512.0 * np.finfo(float).eps * max(pscale, 1.0)
 
 
 def test_curl_auxiliary_gamma_certificate_uses_factorization_free_trace_bound():
