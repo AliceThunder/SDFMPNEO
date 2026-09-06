@@ -7,6 +7,7 @@ import numpy as np
 import scipy.linalg
 
 from .grid3d import RectilinearComplex3D
+from .reduced import RieszFactor
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class MultiPortImpedanceResult:
     inductance: np.ndarray
     reciprocity_defect: float
     minimum_resistance_eigenvalue: float
+    maximum_residual_dual_norm: float
 
     @property
     def self_inductance(self) -> np.ndarray:
@@ -26,6 +28,14 @@ class MultiPortImpedanceResult:
     @property
     def mutual_inductance(self) -> np.ndarray:
         return self.inductance - np.diag(np.diag(self.inductance))
+
+    def average_input_power(self, currents: np.ndarray) -> float:
+        """Time-average real port power, 0.5 Re(I^H Z I)."""
+
+        I = np.asarray(currents, dtype=complex)
+        if I.shape != (len(self.names),):
+            raise ValueError("currents must have shape (n_ports,)")
+        return float(0.5 * np.real(np.vdot(I, self.impedance @ I)))
 
 
 @dataclass(frozen=True)
@@ -81,17 +91,18 @@ class ImpressedCurrentPortSet:
             if len(port_names) != n_ports or len(set(port_names)) != n_ports:
                 raise ValueError("port names must be unique and match n_ports")
 
-        # Divergence-free validation uses a backward-error scale derived only
-        # from machine precision and the actual incidence/source norms.
-        Gt = grid.grad.T.tocsr()
-        Gnorm = float(np.linalg.norm(grid.grad.toarray(), ord=2))
+        # Divergence-free validation uses only sparse incidence data. The scale
+        # is a floating-point backward-error bound, not a model tolerance.
+        G = grid.grad.tocsr()
+        Gt = G.T.tocsr()
+        Gnorm_fro = float(np.sqrt(np.sum(np.abs(G.data) ** 2)))
         for p in range(n_ports):
             current = currents[:, p]
             defect = np.asarray(Gt @ current).ravel()
             scale = (
                 np.finfo(float).eps
                 * max(grid.n_nodes, grid.n_edges)
-                * max(1.0, Gnorm * float(np.linalg.norm(current)))
+                * max(1.0, Gnorm_fro * float(np.linalg.norm(current)))
             )
             if float(np.linalg.norm(defect)) > scale:
                 raise ValueError(
@@ -112,6 +123,37 @@ class ImpressedCurrentPortSet:
     @property
     def n_ports(self) -> int:
         return self.edge_currents.shape[1]
+
+    def rhs_for_currents(self, currents: np.ndarray) -> np.ndarray:
+        I = np.asarray(currents, dtype=complex)
+        if I.shape != (self.n_ports,):
+            raise ValueError("currents must have shape (n_ports,)")
+        return self.coordinate_rhs @ I
+
+    def solve_coordinate_states(
+        self,
+        problem,
+        thermal_state: np.ndarray,
+        *,
+        reduced_basis: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return one coordinate-state column for every unit port excitation."""
+
+        a = np.asarray(thermal_state, dtype=float)
+        A = np.asarray(problem.operator(a), dtype=complex)
+        B = self.coordinate_rhs
+        if A.shape[0] != B.shape[0]:
+            raise ValueError("port coordinates do not match electromagnetic problem")
+
+        if reduced_basis is None:
+            return scipy.linalg.solve(A, B, assume_a="gen")
+
+        V = np.asarray(reduced_basis, dtype=complex)
+        if V.ndim != 2 or V.shape[0] != A.shape[0]:
+            raise ValueError("reduced_basis shape mismatch")
+        Ar = V.conj().T @ A @ V
+        Br = V.conj().T @ B
+        return V @ scipy.linalg.solve(Ar, Br, assume_a="gen")
 
     def evaluate(
         self,
@@ -139,18 +181,7 @@ class ImpressedCurrentPortSet:
         a = np.asarray(thermal_state, dtype=float)
         A = np.asarray(problem.operator(a), dtype=complex)
         B = self.coordinate_rhs
-        if A.shape[0] != B.shape[0]:
-            raise ValueError("port coordinates do not match electromagnetic problem")
-
-        if reduced_basis is None:
-            X = scipy.linalg.solve(A, B, assume_a="gen")
-        else:
-            V = np.asarray(reduced_basis, dtype=complex)
-            if V.ndim != 2 or V.shape[0] != A.shape[0]:
-                raise ValueError("reduced_basis shape mismatch")
-            Ar = V.conj().T @ A @ V
-            Br = V.conj().T @ B
-            X = V @ scipy.linalg.solve(Ar, Br, assume_a="gen")
+        X = self.solve_coordinate_states(problem, a, reduced_basis=reduced_basis)
 
         flux = B.T @ X
         Z = 1j * self.omega * flux
@@ -164,6 +195,13 @@ class ImpressedCurrentPortSet:
         resistance_symmetric = 0.5 * (Rmat + Rmat.T)
         minimum_resistance = float(np.min(np.linalg.eigvalsh(resistance_symmetric)))
 
+        residuals = B - A @ X
+        riesz = RieszFactor.build(problem.H_metric)
+        maximum_residual = max(
+            (riesz.dual_norm(residuals[:, p]) for p in range(self.n_ports)),
+            default=0.0,
+        )
+
         return MultiPortImpedanceResult(
             names=self.names,
             flux_linkage=flux,
@@ -172,4 +210,5 @@ class ImpressedCurrentPortSet:
             inductance=Lmat,
             reciprocity_defect=reciprocity,
             minimum_resistance_eigenvalue=minimum_resistance,
+            maximum_residual_dual_norm=float(maximum_residual),
         )
