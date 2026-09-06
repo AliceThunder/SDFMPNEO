@@ -18,11 +18,6 @@
 
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\C}{\mathbb{C}}
-\newcommand{\I}{\mathbf I}
-\newcommand{\Aem}{\mathbf A_{\rm em}}
-\newcommand{\bem}{\mathbf b_{\rm em}}
-\newcommand{\Mem}{\mathbf M_{\rm em}}
-\newcommand{\Kem}{\mathbf K_{\rm em}}
 \newcommand{\Mt}{\mathbf M_T}
 \newcommand{\Kt}{\mathbf K_T}
 \newcommand{\PhiT}{\boldsymbol\Phi_T}
@@ -31,15 +26,12 @@
 \newcommand{\cE}{\mathbf c}
 \newcommand{\mupar}{\boldsymbol\mu}
 \newcommand{\etaPar}{\boldsymbol\eta}
-\newcommand{\Res}{\mathbf r}
 \newcommand{\norm}[1]{\left\lVert #1\right\rVert}
 \newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
 \newcommand{\sym}{\operatorname{sym}}
-\newcommand{\spanop}{\operatorname{span}}
 \newcommand{\diag}{\operatorname{diag}}
 \newcommand{\argmax}{\operatorname*{arg\,max}}
-\newcommand{\argmin}{\operatorname*{arg\,min}}
-\newcommand{\dist}{\operatorname{dist}}
+\newcommand{\tr}{\operatorname{tr}}
 
 \title{SDF-MPNEO: Complete Theory of a Solution-Data-Free\\
 Electromagnetic--Thermal Analytic Neural Evolution Operator}
@@ -50,50 +42,53 @@ Electromagnetic--Thermal Analytic Neural Evolution Operator}
 \maketitle
 
 \begin{abstract}
-This document fixes the theoretical baseline of SDF-MPNEO for underwater wireless power transfer. The method is derived directly from the spatial magnetoquasistatic electromagnetic equations and the conjugate heat equation. It contains no geometry-specific impedance solver as a core dependency. Electromagnetic and thermal spaces are reduced deterministically without full-solution snapshots. Geometry variation and temperature-dependent copper/seawater conductivity are included in a common certified parameter domain. The electromagnetic state is quasi-statically eliminated from the slower thermal dynamics, and copper/seawater Joule losses are projected directly to reduced thermal coordinates. Time evolution is represented by an analytic neural network whose neurons are themselves closed-form dissipative response operators. The network topology grows from unresolved physical residuals. Electromagnetic reduction error, operator-separation error, thermal reduction error, analytic-network residual, and numerical solve error are propagated into one a posteriori output certificate. All free approximation orders are selected from rigorous output-error requirements rather than empirical rules.
+This document fixes the production theoretical baseline of SDF-MPNEO for underwater wireless power transfer. The retained physics are magnetoquasistatic electromagnetics and heat transfer in conductor, package and seawater. The method contains no geometry-specific impedance solver and uses no labelled full-order electromagnetic or thermal trajectories for training. A compatible tetrahedral Nedelec--P1 discretization, deterministic gauges, certified nonlinear constitutive integration, state-dependent electromagnetic energy certification, solution-data-free residual--Riesz reduction, deterministic thermal spectral reduction and an intrinsic analytic neural evolution graph form one closed method. The electromagnetic equilibrium is quasi-statically eliminated from the thermal dynamics. The network represents only the resulting continuous-time reduced flow and is trained from its exact physical residual. Arbitrary query times are evaluated directly without online thermal time stepping. Constitutive, algebraic, electromagnetic-reduction, thermal-reduction, analytic-network, spatial-mesh and outer-domain errors remain separate and are combined only through proved a posteriori bounds. Approximation orders, reduced ranks and network size are selected from engineering-output error requirements rather than empirical constants.
 \end{abstract}
 
 \tableofcontents
 
-\section{Scope and non-empirical rules}
+\section{Scope, online map and non-empirical rules}
 
-The retained physics are
+The retained physical system is
 \[
 \boxed{\text{magnetoquasistatic electromagnetics}\longleftrightarrow\text{heat transfer}}.
 \]
-The physical domain is partitioned into conductor, package/insulator, seawater, and optional passive subdomains,
+The spatial domain is partitioned into
 \[
-\Omega(\mupar)=\Omega_{\rm Cu}\cup\Omega_{\rm p}\cup\Omega_{\rm sea}\cup\Omega_{\rm other}.
+\Omega(\mu_g)=\Omega_{\rm Cu}\cup\Omega_{\rm pkg}\cup\Omega_{\rm sea}\cup\Omega_{\rm passive}.
 \]
-Fluid velocity is outside the current model scope; seawater remains an electromagnetic and thermal spatial medium.
+Fluid velocity and pressure are outside the current model. Seawater remains an explicit electromagnetic and thermal spatial medium.
 
-The parameter vector
+The parameter vector is
 \[
-\mupar=(\mu_g,\mu_u,\mu_m)\in\mathcal P
+\mupar=(\mu_g,\mu_u,\mu_m),
 \]
-contains geometry, fixed operating conditions, and material parameters. The online map is
-\[
+where \(\mu_g\) denotes geometry, \(\mu_u\) fixed operating conditions such as frequency and port excitation, and \(\mu_m\) material parameters. The target online map is
+\begin{equation}
+\boxed{
 (\mupar,T_0,t_q)\mapsto
-\{T(\mathbf x,t_q),\mathbf Z(t_q),R,L,M,P_{\rm Cu},P_{\rm sea},\mathcal C\},
-\]
-where \(\mathcal C\) denotes the numerical/physical certificate and no time marching from \(0\) to \(t_q\) is permitted online.
+\{T(\mathbf x,t_q),\mathbf Z(t_q),R(t_q),L(t_q),M(t_q),P_{\rm Cu}(t_q),P_{\rm sea}(t_q),\mathcal C(t_q)\}.
+}
+\label{eq:online_map}
+\end{equation}
+No online time marching from \(0\) to \(t_q\) is permitted in the final evolution operator.
 
-\paragraph{Method rules.}
+\paragraph{Scientific rules.}
 \begin{enumerate}[label=(R\arabic*)]
-\item No labelled full-order electromagnetic, thermal, or experimental solution is used to train the analytic evolution network.
-\item No full-order solution snapshots are required to construct the reduced electromagnetic or thermal spaces.
+\item No labelled full-order electromagnetic, thermal or experimental solution trajectory trains the analytic evolution network.
+\item No solved full-order state snapshot is required to construct the production electromagnetic reduced space.
 \item No geometry-specific impedance solver is a core dependency.
-\item No empirical near/far split, fixed reduced rank, fixed neural depth/width, artificial time constant, or fitted correction coefficient defines the method.
-\item Copper skin/proximity effects and seawater conductive reaction arise from the spatial electromagnetic field equations.
-\item Temperature enters electromagnetics through constitutive laws such as \(\sigma_{\rm Cu}(T)\) and \(\sigma_{\rm sea}(T)\), not through empirical impedance corrections.
-\item Non-affine operator compression is accepted only with a deterministic remainder bound entering the final certificate.
-\item A parameter point outside the certified stability/geometry/material domain is reported as non-certified rather than silently extrapolated.
+\item No empirical fixed electromagnetic rank, thermal rank, neural width/depth, near/far split, fitted time constant, block damping, drop tolerance or unexplained solver tolerance defines the method.
+\item Copper skin/proximity effects and seawater conductive reaction arise from the spatial field equations.
+\item Temperature enters electromagnetics through constitutive laws such as \(\sigma_{\rm Cu}(T)\) and \(\sigma_{\rm sea}(T)\), not through fitted impedance corrections.
+\item Every accepted constitutive, operator, tensor, spectral or neural truncation carries an explicit error contribution.
+\item A point outside the certified geometry/material/stability domain is returned as non-certified rather than silently extrapolated.
 \end{enumerate}
 
 \section{Full coupled field equations}
 
 \subsection{Magnetoquasistatic electromagnetic problem}
-For harmonic angular frequency \(\omega\), define magnetic vector potential \(\mathbf A\), electric scalar potential \(\phi\),
+For harmonic angular frequency \(\omega>0\), let
 \[
 \mathbf B=\nabla\times\mathbf A,
 \qquad
@@ -103,518 +98,703 @@ For harmonic angular frequency \(\omega\), define magnetic vector potential \(\m
 \]
 The magnetoquasistatic equations are
 \begin{align}
-\nabla\times\bigl(\nu(T)\nabla\times\mathbf A\bigr)
-+\sigma(T)(j\omega\mathbf A+\nabla\phi)&=\mathbf J_s,
-\label{eq:mqsa}\\
-\nabla\cdot\{\sigma(T)(j\omega\mathbf A+\nabla\phi)\}&=0,
-\label{eq:mqsphi}
+\nabla\times\bigl(\nu\nabla\times\mathbf A\bigr)
++\sigma(T)(j\omega\mathbf A+\nabla\phi)&=\mathbf J_s,\\
+\nabla\cdot\{\sigma(T)(j\omega\mathbf A+\nabla\phi)\}&=0.
 \end{align}
-with a compatible gauge and port/excitation constraints. In insulating subdomains \(\sigma=0\). In copper and seawater,
+In insulating material \(\sigma=0\); in conductor and seawater
 \[
-\sigma_{\rm Cu}=\sigma_{\rm Cu}(T),
-\qquad
-\sigma_{\rm sea}=\sigma_{\rm sea}(T).
+\sigma=\sigma_{\rm Cu}(T)
+\quad\text{or}\quad
+\sigma_{\rm sea}(T).
 \]
-Resolving the conductor cross-section in \eqref{eq:mqsa}--\eqref{eq:mqsphi} automatically includes current redistribution, skin effect, and proximity effect; no separate AC-resistance correction is required.
+Resolving the conductor cross-section makes skin and proximity effects part of the field solution.
 
-A compatible edge/nodal discretization gives a gauge-stabilized complex linear system
+\subsection{Reciprocal scaled potential}
+Define
+\[
+\psi=\frac{\phi}{j\omega}.
+\]
+Then
+\[
+\mathbf E=-j\omega(\mathbf A+\nabla\psi).
+\]
+After compatible discretization and gauge elimination the electromagnetic state is
+\[
+\mathbf x=\begin{bmatrix}\boldsymbol\alpha\\\boldsymbol\psi\end{bmatrix},
+\qquad
+\mathbf A_h=R_A\boldsymbol\alpha,
+\]
+where \(R_A\) is the deterministic tree--cotree magnetic gauge basis. The production discrete system has the reciprocal form
 \begin{equation}
 \boxed{
-\Aem(\etaPar)\mathbf u=\bem(\mupar),
+\mathbf A_{\rm em}(\aT;\mupar)\mathbf x=\mathbf b(\mupar),
+\qquad
+\mathbf A_{\rm em}=\mathbf K+j\mathbf D.
 }
-\label{eq:em_full_discrete}
+\label{eq:apsi_system}
 \end{equation}
-where \(\mathbf u\) contains discrete \(\mathbf A\), \(\phi\), and required constraint variables, and
-\[
-\etaPar=(\mupar,\aT)
-\]
-includes the thermal reduced coordinates because the conductivity field depends on temperature.
+Here \(\mathbf K=\mathbf K^H\succeq0\) is the gauge-reduced magnetic curl energy and \(\mathbf D=\mathbf D^H\succeq0\) is the conductive electric energy in the scaled coordinates. After gauge removal their sum is positive definite on the physical state space.
 
 \subsection{Joule loss and electromagnetic outputs}
-Using RMS phasors, local Joule heating is
+Using one fixed phasor convention throughout the implementation,
 \[
-Q_J(\mathbf x)=\sigma(T)|\mathbf E(\mathbf x)|^2.
+Q_J(\mathbf x,T)=\tfrac12\sigma(T)|\mathbf E|^2.
 \]
-Hence
+Consequently
 \begin{align}
-P_{\rm Cu}&=\int_{\Omega_{\rm Cu}}\sigma_{\rm Cu}(T)|\mathbf E|^2\,d\Omega,\\
-P_{\rm sea}&=\int_{\Omega_{\rm sea}}\sigma_{\rm sea}(T)|\mathbf E|^2\,d\Omega.
+P_{\rm Cu}&=\tfrac12\int_{\Omega_{\rm Cu}}\sigma_{\rm Cu}(T)|\mathbf E|^2\,d\Omega,\\
+P_{\rm sea}&=\tfrac12\int_{\Omega_{\rm sea}}\sigma_{\rm sea}(T)|\mathbf E|^2\,d\Omega.
 \end{align}
-Port voltage/current functionals of \(\mathbf u\) give the impedance matrix \(\mathbf Z\) and therefore \(R,L,M\). The exact prefactor is fixed once a single peak/RMS phasor convention is selected and is used consistently throughout the code.
+For closed impressed-current port columns \(B=[\mathbf b_1,\ldots,\mathbf b_p]\),
+\begin{equation}
+\boxed{
+\mathbf Z=j\omega B^T\mathbf A_{\rm em}^{-1}B,
+\qquad
+\mathbf R=\Re\mathbf Z,
+\qquad
+\mathbf L=\frac{\Im\mathbf Z}{\omega}.
+}
+\label{eq:multiport_z}
+\end{equation}
+Mutual inductance is an off-diagonal entry of \(\mathbf L\). Reciprocity follows from the complex-symmetric field operator; \(\mathbf Z\) is not symmetrized after the solve.
 
 \subsection{Thermal problem}
 The temperature satisfies
 \begin{equation}
-\rho c_p\partial_tT-\nabla\cdot(k\nabla T)=Q_J(\mathbf u,T;\mupar)
-\quad\text{in }\Omega(\mupar),
+\rho c_p\partial_tT-\nabla\cdot(k\nabla T)
+=Q_J(\mathbf x,T;\mupar)
+\quad\text{in }\Omega(\mu_g),
 \label{eq:heat_full}
 \end{equation}
-with interface continuity of temperature and heat flux unless a physically specified contact resistance is present. Boundary conditions are physical inputs or are accompanied by an independently certified domain-truncation/open-boundary error.
+with physical boundary conditions and continuity of temperature and heat flux across perfect interfaces. Contact resistance is included only when it is a declared physical parameter. Spatial truncation and open/infinite-domain errors remain explicit certificate terms.
 
-\subsection{Multirate closure}
-The electromagnetic relaxation time is assumed much smaller than the thermal time scale,
+\subsection{Quasi-static electromagnetic closure}
+The model assumes a verified scale separation
 \[
 \tau_{\rm em}\ll\tau_T.
 \]
-Therefore electromagnetics is quasi-steady at each instantaneous thermal state. This is a scale separation, not a decoupling: temperature modifies conductivity, which modifies electromagnetic fields and losses, which feed back into the heat equation.
+Electromagnetics is therefore an instantaneous algebraic equilibrium at each thermal state. This is not one-way decoupling: temperature changes conductivity, conductivity changes fields and loss, and loss drives temperature.
 
-\section{Unified reference domain and compatible coordinates}
+\section{Compatible tetrahedral spatial discretization}
 
-Let \(F_{\mupar}:\widehat\Omega\to\Omega(\mupar)\) be a deterministic geometry map from a fixed reference domain.
-
-\begin{assumption}[Uniform non-degeneracy]
-For the certified geometry domain,
-\[
-0<J_-\le |\det DF_{\mupar}|\le J_+<\infty,
-\qquad
-\norm{DF_{\mupar}}+\norm{DF_{\mupar}^{-1}}\le C_F.
-\]
-\end{assumption}
-
-Thermal scalar fields use the standard \(H^1\) pullback. Electromagnetic vector potentials use the covariant Piola transformation
-\[
-\mathbf A(\mathbf x)=DF_{\mupar}^{-T}\widehat{\mathbf A}(\widehat{\mathbf x}),
-\]
-which preserves the \(H(\mathrm{curl})\) structure and curl conformity. Consequently all geometries are represented in common reference finite-element spaces, and geometry dependence appears only in transformed coefficient tensors and boundary/port functionals.
-
-This removes the need for geometry-specific solvers and makes one reduced electromagnetic space meaningful over a parameterized family of coil/package/seawater geometries, provided the map remains non-degenerate and topology does not change. Topology changes define a different certified chart/model.
-
-\section{Deterministic thermal reduction}
-
-After boundary lifting \(T=T_b+\widetilde T\), let the reference-domain thermal matrices be \(\Mt(\mupar)\) and \(\Kt(\mupar)\). Solve
+\subsection{Discrete de Rham structure}
+On a conforming tetrahedral complex let \(G\) be the node-to-edge gradient incidence and \(C\) the edge-to-face curl incidence. They satisfy the exact topological identity
 \begin{equation}
-\Kt(\mupar)\boldsymbol\phi_i
-=\lambda_i(\mupar)\Mt(\mupar)\boldsymbol\phi_i,
+\boxed{CG=0.}
+\label{eq:cg0}
+\end{equation}
+First-order Nedelec edge functions represent the magnetic vector potential and P1 nodal functions represent temperature and conducting-region scalar potential. The same tetrahedral material partition is shared by electromagnetic and thermal operators.
+
+\subsection{Gauge elimination}
+A deterministic spanning tree fixes magnetic gradient freedom. Tree-edge magnetic coefficients are removed and cotree edges form \(R_A\). In each connected conducting component one scalar-potential reference node is removed. Gauge freedom is therefore eliminated structurally; no penalty or fitted gauge parameter is introduced.
+
+\subsection{Geometry charts}
+For a continuous geometry family, a certified chart uses a non-degenerate map
+\[
+F_{\mu_g}:\widehat\Omega\rightarrow\Omega(\mu_g),
+\]
+with
+\[
+0<J_-\le |\det DF_{\mu_g}|\le J_+,
 \qquad
-\boldsymbol\phi_i^T\Mt\boldsymbol\phi_j=\delta_{ij}.
+\norm{DF_{\mu_g}}+\norm{DF_{\mu_g}^{-1}}\le C_F.
+\]
+Thermal fields use the \(H^1\) pullback and electromagnetic vector fields the covariant Piola transform. A topology change defines a different chart. The current production code already supports unstructured tetrahedra for one chart; certified multi-geometry chart transport remains an implementation obligation.
+
+\section{Certified nonlinear constitutive integration}
+
+\subsection{Copper law}
+For copper with linear resistivity
+\[
+\rho_{\rm Cu}(T)=\rho_{\rm ref}[1+\alpha(T-T_{\rm ref})],
+\]
+the conductivity is
+\begin{equation}
+\boxed{
+\sigma_{\rm Cu}(T)=\frac{\sigma_{\rm ref}}{1+\alpha(T-T_{\rm ref})}.
+}
+\label{eq:copper_sigma}
+\end{equation}
+Inside one P1 tetrahedron the denominator \(d(x)\) is affine. Let
+\[
+\bar d=\frac{d_{\max}+d_{\min}}{2},
+\qquad
+z=\frac{d}{\bar d}-1,
+\qquad
+|z|\le q<1.
+\]
+Then
+\begin{align}
+\frac1d&=\frac1{\bar d}\sum_{n=0}^{N}(-z)^n+R_N,\\
+\frac1{d^2}&=\frac1{\bar d^2}\sum_{n=0}^{N}(n+1)(-z)^n+R_N^{(2)},
+\end{align}
+with certified relative bounds
+\begin{align}
+\frac{|R_N|}{|1/d|}&\le q^{N+1},\\
+\frac{|R_N^{(2)}|}{|1/d^2|}&\le q^{N+1}[(N+2)+(N+1)q].
+\end{align}
+The smallest \(N\) satisfying the allocated constitutive error is used.
+
+\subsection{Exact tetrahedral polynomial integration}
+For barycentric coordinates \(\lambda_i\),
+\begin{equation}
+\int_T\prod_{i=1}^4\lambda_i^{\alpha_i}\,dV
+=6|T|\frac{\prod_i\alpha_i!}{(3+\sum_i\alpha_i)!}.
+\label{eq:barycentric_integral}
+\end{equation}
+All retained constitutive polynomial terms are therefore integrated exactly against Nedelec basis functions. The same material representation is used for \(\mathbf A_{\rm em}\), its thermal derivatives, loss operators and loss derivatives.
+
+\section{Physical electromagnetic energy theorem}
+
+For one thermal/parameter state define
+\begin{equation}
+\boxed{
+\mathbf H(\etaPar)=\mathbf K(\etaPar)+\mathbf D(\etaPar).
+}
+\label{eq:physical_H}
+\end{equation}
+It induces
+\[
+\norm{\mathbf v}_{H}^2=\mathbf v^H\mathbf H\mathbf v,
+\qquad
+\norm{\mathbf r}_{H^{-1}}^2=\mathbf r^H\mathbf H^{-1}\mathbf r.
+\]
+
+\begin{theorem}[Contrast-independent electromagnetic coercivity]
+For \(\mathbf A_{\rm em}=\mathbf K+j\mathbf D\) with \(\mathbf K,\mathbf D\succeq0\) and \(\mathbf H=\mathbf K+\mathbf D\succ0\),
+\begin{equation}
+\boxed{
+|\mathbf v^H\mathbf A_{\rm em}\mathbf v|
+\ge\frac1{\sqrt2}\mathbf v^H\mathbf H\mathbf v.
+}
+\label{eq:energy_coercivity}
+\end{equation}
+Hence the physical energy stability constant satisfies
+\[
+\boxed{\beta_H\ge1/\sqrt2}
+\]
+independently of the copper/seawater conductivity ratio.
+\end{theorem}
+\begin{proof}
+Set \(k=\mathbf v^H\mathbf K\mathbf v\ge0\) and \(d=\mathbf v^H\mathbf D\mathbf v\ge0\). Then
+\[
+|\mathbf v^H\mathbf A_{\rm em}\mathbf v|=\sqrt{k^2+d^2}
+\ge(k+d)/\sqrt2.
+\]
+\end{proof}
+
+\begin{corollary}[Residual-to-state bound]
+If \(\widetilde{\mathbf x}\) has residual \(\mathbf r=\mathbf b-\mathbf A_{\rm em}\widetilde{\mathbf x}\), then
+\begin{equation}
+\boxed{
+\norm{\mathbf x-\widetilde{\mathbf x}}_H
+\le\sqrt2\,\norm{\mathbf r}_{H^{-1}}.
+}
+\label{eq:residual_state_bound}
+\end{equation}
+\end{corollary}
+
+This state-dependent physical metric is the production error metric. A fixed reference metric \(H_0=H(0)\) is used only to provide stable coordinates for one global reduced basis; it does not replace the local error theorem.
+
+\section{Certified Riesz actions and scalable dual norms}
+
+The production method does not require an exact global \(H^{-1}\). Let
+\[
+\mathbf y=\mathbf H^{-1}\mathbf r,
+\qquad
+\widetilde{\mathbf y}\approx\mathbf y.
+\]
+A certified Riesz action returns \(\widetilde{\mathbf y}\) and \(\delta\) such that
+\begin{equation}
+\boxed{
+\norm{\mathbf y-\widetilde{\mathbf y}}_H\le\delta.
+}
+\label{eq:riesz_action_error}
+\end{equation}
+Therefore
+\begin{equation}
+\boxed{
+\max(0,\norm{\widetilde{\mathbf y}}_H-\delta)
+\le\norm{\mathbf r}_{H^{-1}}
+\le\norm{\widetilde{\mathbf y}}_H+\delta.
+}
+\label{eq:dual_interval}
+\end{equation}
+
+\begin{theorem}[Certified inexact Riesz action]
+Let \(P\succ0\) be a preconditioner satisfying
+\[
+H\succeq mP,
+\qquad m>0.
+\]
+For an approximate Riesz solution \(\widetilde y\) with action residual \(s=r-H\widetilde y\),
+\begin{equation}
+\boxed{
+\norm{H^{-1}r-\widetilde y}_H^2
+\le\frac1m s^HP^{-1}s.
+}
+\label{eq:pcg_action_bound}
+\end{equation}
+\end{theorem}
+Thus Krylov iteration stops only after an engineering error requirement or a dual-norm threshold has been proved. An internal relative residual tolerance is not a scientific parameter.
+
+\section{Physical block Riesz theorem}
+
+Partition the energy metric into gauge-reduced magnetic and conductive scalar coordinates:
+\[
+H=
+\begin{bmatrix}
+K_A+D_{AA}&D_{A\psi}\\
+D_{\psi A}&D_{\psi\psi}
+\end{bmatrix}.
+\]
+Suppose
+\begin{equation}
+D_{AA}\preceq\gamma K_A.
+\label{eq:gamma_domination}
+\end{equation}
+Positivity of the conductive block gives a Cauchy--Schwarz relation for the off-diagonal coupling. The optimal Young inequality yields
+\begin{equation}
+\boxed{
+H\succeq m_{\rm phys}(\gamma)\diag(K_A,D_{\psi\psi}),
+}
+\label{eq:block_bound}
+\end{equation}
+where
+\begin{equation}
+\boxed{
+m_{\rm phys}(\gamma)=
+\frac{2}{2+\gamma+\sqrt{\gamma^2+4\gamma}}.
+}
+\label{eq:mphys}
+\end{equation}
+If certified block actions satisfy
+\[
+K_A\succeq m_KP_K,
+\qquad
+D_{\psi\psi}\succeq m_EP_E,
+\]
+then
+\begin{equation}
+\boxed{
+H\succeq
+m_{\rm phys}(\gamma)\min(m_K,m_E)\diag(P_K,P_E).
+}
+\label{eq:block_action_bound}
+\end{equation}
+This is the scalability contract: magnetic and scalar block solvers may be replaced independently as long as their spectral constants are proved.
+
+\subsection{Magnetic face-circulation auxiliary space}
+Let \(C\) be the exact edge-to-face incidence and define the gauge-restricted face circulation
+\[
+y=CR_A\alpha.
+\]
+For a tetrahedron \(T_q\), the first-order Nedelec curl \(c_q=\nabla\times A_h|_{T_q}\) is constant. For selected faces assigned to that tetrahedron define
+\[
+B_q=
+\begin{bmatrix}
+|f_1|n_1^T\\
+\vdots\\
+|f_m|n_m^T
+\end{bmatrix},
+\qquad
+y_q=B_qc_q.
+\]
+If \(B_q\) has full row rank,
+\[
+\norm{c_q}^2\ge y_q^T(B_qB_q^T)^{-1}y_q.
+\]
+Hence
+\begin{equation}
+\nu_q|T_q|\norm{c_q}^2
+\ge y_q^T\left[\nu_q|T_q|(B_qB_q^T)^{-1}\right]y_q.
+\end{equation}
+Assign each selected global face to one adjacent tetrahedron and assemble the corresponding exact integer topology row matrix \(S\) from \(CR_A\). Then
+\begin{equation}
+\boxed{
+P_A=S^TWS\preceq K_A.
+}
+\label{eq:face_aux_bound}
+\end{equation}
+Therefore the magnetic lower spectral constant is exactly
+\[
+\boxed{m_K=1.}
+\]
+The selected square row set must be proved nonsingular using exact topological/integer rank logic, not a floating magnitude threshold. Its inverse action may be organized by topology-derived blocks or a certified multilevel auxiliary solve. A construction that collapses to the entire magnetic space is correctness-only and is not called scalable.
+
+\subsection{Factorization-free coupling bound}
+Because \(P_A\preceq K_A\),
+\[
+K_A^{-1}\preceq P_A^{-1}.
+\]
+For \(D_{AA}\succeq0\),
+\begin{equation}
+\gamma
+\le\tr(K_A^{-1}D_{AA})
+\le\tr(P_A^{-1}D_{AA}).
+\label{eq:gamma_trace_aux}
+\end{equation}
+Thus a certified auxiliary action for \(P_A^{-1}\) gives a factorization-free upper bound for \(\gamma\), with its numerical residual propagated into the trace bound. No diagonal shift is permitted when a certificate fails.
+
+\section{Solution-data-free sparse electromagnetic reduction}
+
+Define the complete electromagnetic parameter
+\[
+\etaPar=(\mu_g,\mu_u,\mu_m,\aT)\in\mathcal D_{\rm em}.
+\]
+Let \(V_n\) be the current global basis. At a parameter/state point, the production reduced equilibrium is the Galerkin system
+\begin{equation}
+A_r(\etaPar)c=V_n^H b,
+\qquad
+A_r=V_n^HA_{\rm em}(\etaPar)V_n,
+\qquad
+x_r=V_nc.
+\label{eq:em_rom}
+\end{equation}
+Only \(A_r\) is dense. Full-order operators remain sparse.
+
+The sparse full residual is
+\[
+r(\etaPar)=b-A_{\rm em}(\etaPar)x_r.
+\]
+Using the local physical metric,
+\begin{equation}
+\boxed{
+\Delta_{\rm em}(\etaPar)
+=\sqrt2\,\overline{\norm{r(\etaPar)}_{H(\etaPar)^{-1}}}
+}
+\label{eq:em_rom_certificate}
+\end{equation}
+is a certified electromagnetic state-error upper bound, where the overline denotes the upper endpoint returned by a certified Riesz action.
+
+\subsection{Residual--Riesz enrichment without solution snapshots}
+For an unresolved point, compute only a certified approximate lift
+\[
+\widetilde y\approx H(\etaPar)^{-1}r(\etaPar)
+\]
+and append it to the span. No full-order state \(A_{\rm em}^{-1}b\) is used as a basis snapshot.
+
+The basis is stored in coordinates orthonormal with respect to the fixed reference metric \(H_0=H(0)\). For candidate basis matrix \(W\), form only the small Gram matrix
+\[
+G=W^HH_0W=LL^H,
+\]
+and whiten
+\[
+V=WL^{-H}.
+\]
+The error certificate nevertheless always uses the local \(H(\etaPar)\).
+
+\subsection{Joint multiport reduction}
+All unit-port source columns are included in one residual-greedy construction. At a thermal state,
+\[
+A_rC=V^HB,
+\qquad
+X_r=VC,
+\qquad
+Z_r=j\omega B^TX_r.
+\]
+For residual column \(r_j\),
+\begin{equation}
+|\Delta Z_{ij}|
+\le
+\omega\,\overline{\norm{b_i}_{H^{-1}}}\,
+\sqrt2\,\overline{\norm{r_j}_{H^{-1}}}.
+\label{eq:Z_rom_bound}
+\end{equation}
+Therefore
+\[
+|\Delta R_{ij}|\le|\Delta Z_{ij}|,
+\qquad
+|\Delta L_{ij}|\le|\Delta Z_{ij}|/\omega.
+\]
+
+\subsection{Finite-set versus continuous-domain certification}
+A finite candidate set certifies only those declared points. The production model requires deterministic continuous-domain certification over the declared thermal/geometry/frequency/source domain. For affine families this may use branch-and-bound with exact derivative/Lipschitz bounds. For the nonlinear tetrahedral family the same logic must use analytic constitutive derivatives and interval bounds; failure to close a branch returns indeterminate rather than certified.
+
+\section{Reduced losses and electromagnetic--thermal closure}
+
+For thermal test mode \(k\), let \(H_k^{\rm Cu}(\aT)\) and \(H_k^{\rm sea}(\aT)\) be the reduced quadratic loss operators assembled from the same constitutive representation used by the field equation. Then
+\begin{equation}
+[q_{\rm em,r}]_k
+=\Re\left\{c^H[H_k^{\rm Cu}(\aT)+H_k^{\rm sea}(\aT)]c\right\}.
+\label{eq:reduced_heat_source}
+\end{equation}
+No full three-dimensional loss field is reconstructed online.
+
+Differentiating the reduced electromagnetic equilibrium gives
+\[
+A_r\frac{\partial c}{\partial a_j}
+=-\frac{\partial A_r}{\partial a_j}c
++\frac{\partial b_r}{\partial a_j}.
+\]
+Hence
+\begin{align}
+\frac{\partial q_k}{\partial a_j}
+={}&2\Re\left[\left(\frac{\partial x_r}{\partial a_j}\right)^HH_kx_r\right]
++\Re\left[x_r^H\frac{\partial H_k}{\partial a_j}x_r\right].
+\label{eq:heat_jacobian}
+\end{align}
+The production impressed-current model has \(\partial b_r/\partial a_j=0\); other physical port models may add the explicit source derivative.
+
+\section{Deterministic thermal spectral reduction}
+
+After boundary lifting, solve
+\begin{equation}
+K_T\phi_i=\lambda_iM_T\phi_i,
+\qquad
+\phi_i^TM_T\phi_j=\delta_{ij}.
 \label{eq:thermal_eig}
 \end{equation}
-The selected spectral subspace is tracked by its Riesz projector rather than by individual eigenvectors, so eigenvalue crossings inside a retained cluster do not create coordinate permutations.
-
-With a deterministic canonical basis \(\PhiT_r\),
-\begin{equation}
-T=T_b+\PhiT_r\aT,
-\label{eq:thermal_rom_state}
-\end{equation}
-and after mass normalization
+Let
+\[
+T=T_b+\Phi_{T,r}a.
+\]
+No rank is fixed a priori. If the first omitted eigenvalue is \(\lambda_{r+1}\), the omitted initial energy is \(E_0\), and the omitted source dual norm is bounded by \(Q\), then
 \begin{equation}
 \boxed{
-\dot\aT+\LamT\aT=\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T(\mupar).
+\norm{T_{\rm tail}(t)}_{M_T}
+\le e^{-\lambda_{r+1}t}E_0
++\frac{1-e^{-\lambda_{r+1}t}}{\lambda_{r+1}}Q.
 }
-\label{eq:thermal_closed_template}
+\label{eq:thermal_tail}
 \end{equation}
-No reduced dimension is fixed a priori. The smallest spectral cluster satisfying the final output-error requirement is retained; if a truncation boundary intersects a multiple/near-crossing cluster, the entire cluster is retained.
+The smallest \(r\) satisfying the propagated output requirement is retained. A production partial eigensolver must also certify a lower bound for \(\lambda_{r+1}\); computing the full spectrum is a correctness implementation, not the final scalable method.
 
-\section{Solution-data-free electromagnetic reduction}
-
-This section resolves the first major difficulty: construction of a fast electromagnetic reduced space without full-order solution snapshots.
-
-\subsection{Common parameter domain}
-Define
-\[
-\etaPar=(\mupar,\aT)\in\mathcal D_{\rm em}.
-\]
-The thermal coordinate set is not arbitrary. It is the certified reachable/allowable set implied by the initial-condition domain, material-temperature validity interval, and thermal energy bounds. Therefore geometry, excitation, load, frequency, copper temperature, and seawater temperature all enter one compact electromagnetic parameter domain.
-
-\subsection{Riesz map and inf-sup stability}
-Choose a fixed Hermitian positive-definite reference Riesz matrix \(\mathbf H\) on the gauge-stabilized electromagnetic state space. Define
-\[
-\norm{\mathbf v}_H^2=\mathbf v^*\mathbf H\mathbf v,
-\qquad
-\norm{\mathbf r}_{H^{-1}}^2=\mathbf r^*\mathbf H^{-1}\mathbf r.
-\]
-For \eqref{eq:em_full_discrete}, define the stability factor
-\begin{equation}
-\beta(\etaPar)=
-\inf_{\mathbf v\ne0}
-\frac{\norm{\Aem(\etaPar)\mathbf v}_{H^{-1}}}{\norm{\mathbf v}_H}.
-\label{eq:beta}
-\end{equation}
-The certified domain requires a computable lower bound
-\[
-\beta(\etaPar)\ge\beta_{\rm LB}(\etaPar)>0.
-\]
-A verified lower bound may be obtained from the minimum singular value of the scaled operator \(\mathbf H^{-1/2}\Aem\mathbf H^{-1/2}\), combined with the certified operator-separation representation introduced later. Global minimization over a compact parameter box is performed by deterministic interval/branch-and-bound bounds, not random sampling.
-
-\subsection{Initial reduced space from operators and excitations}
-Suppose the excitation family has a deterministic separated representation
-\[
-\bem(\mupar)=\sum_{q=1}^{Q_b}\vartheta_q^b(\mupar)\mathbf b_q+\mathbf e_b,
-\qquad
-\norm{\mathbf e_b}_{H^{-1}}\le\varepsilon_b.
-\]
-Define
-\begin{equation}
-V_0=\operatorname{orth}_H\{\mathbf H^{-1}\mathbf b_1,\ldots,\mathbf H^{-1}\mathbf b_{Q_b},\text{required constraint/port modes}\}.
-\label{eq:V0}
-\end{equation}
-This uses only physical operators, excitations, and constraints; no field solution snapshot appears.
-
-\subsection{Minimum-residual reduced solve}
-For an \(H\)-orthonormal basis \(V_n\), define
-\begin{equation}
-\mathbf c_n(\etaPar)=
-\argmin_{\mathbf c}
-\norm{\bem(\mupar)-\Aem(\etaPar)V_n\mathbf c}_{H^{-1}}.
-\label{eq:minres_rom}
-\end{equation}
-The reduced electromagnetic field is \(\mathbf u_n=V_n\mathbf c_n\), with residual
-\begin{equation}
-\mathbf r_n(\etaPar)=\bem(\mupar)-\Aem(\etaPar)V_n\mathbf c_n.
-\end{equation}
-From \eqref{eq:beta},
+For mass-normalized retained coordinates,
 \begin{equation}
 \boxed{
-\norm{\mathbf u-\mathbf u_n}_H
-\le
-\Delta_n^{\rm em}(\etaPar)
-:=\frac{\norm{\mathbf r_n}_{H^{-1}}+\varepsilon_{\rm op}\norm{\mathbf u_n}_H+\varepsilon_b}{\beta_{\rm LB}(\etaPar)}.
+\dot a+\Lambda_Ta=g_{\rm em}(a;\mupar)+f_T(\mupar).
 }
-\label{eq:em_error_bound}
+\label{eq:closed_reduced}
 \end{equation}
-Here \(\varepsilon_{\rm op}\) is the certified operator-separation error defined later.
+This is the exact reduced electromagnetic--thermal dynamics up to the separately certified spatial, constitutive and reduction errors.
 
-\subsection{Worst-residual Riesz enrichment}
-Determine
-\begin{equation}
-\etaPar_n^*=\argmax_{\etaPar\in\mathcal D_{\rm em}}
-\Delta_n^{\rm em}(\etaPar),
-\label{eq:worst_eta}
-\end{equation}
-using global branch-and-bound with certified upper/lower bounds. Then compute only the Riesz lift of the residual,
-\begin{equation}
-\mathbf w_n=\mathbf H^{-1}\mathbf r_n(\etaPar_n^*),
-\label{eq:riesz_lift}
-\end{equation}
-and enrich
-\begin{equation}
-V_{n+1}=\operatorname{orth}_H[V_n,\mathbf w_n].
-\label{eq:em_enrich}
-\end{equation}
-Equation \eqref{eq:riesz_lift} uses one solve with the fixed reference Riesz matrix, not the physical full-order electromagnetic operator at \(\etaPar_n^*\). Hence it is an operator-residual correction, not a labelled solution snapshot.
+\section{Intrinsic analytic neural evolution operator}
 
-\begin{proposition}[Monotone electromagnetic residual]
-Because \(V_n\subset V_{n+1}\) and \eqref{eq:minres_rom} is a minimum-residual problem,
+\subsection{Analytic algebra}
+For one fixed operator chart with decay vector \(\lambda\), define
 \[
-\norm{\mathbf r_{n+1}(\etaPar)}_{H^{-1}}
-\le
-\norm{\mathbf r_n(\etaPar)}_{H^{-1}}
+\mathscr A_\lambda
+=\operatorname{span}\{t^me^{-\rho t}:m\in\mathbb N_0,\ \rho=n^T\lambda,\ n\in\mathbb N_0^r\}.
 \]
-for every \(\etaPar\).
-\end{proposition}
-\begin{proof}
-The old minimizer remains feasible in the enlarged reduced space, so the minimum over the enlarged space cannot be larger.
-\end{proof}
+The algebra is closed under addition, multiplication, differentiation and the stable response operator \((\partial_t+\lambda_i)^{-1}\).
 
-\begin{theorem}[Uniform data-free electromagnetic convergence]
-Assume: (i) \(\mathcal D_{\rm em}\) is compact; (ii) \(\beta_{\rm LB}\ge\beta_0>0\); (iii) \(\Aem(\etaPar)\) and \(\bem(\mupar)\) vary continuously; (iv) the closure of the operator-generated enrichment dictionary contains the solution manifold. If each enrichment solves \eqref{eq:worst_eta} to certified global accuracy and adds a nonzero Riesz residual direction, then
-\[
-\sup_{\etaPar\in\mathcal D_{\rm em}}\Delta_n^{\rm em}(\etaPar)\to0
-\]
-up to the explicitly retained operator/excitation remainder bounds.
-\end{theorem}
-\begin{proof}[Proof structure]
-Monotonicity gives a non-increasing worst residual. If its limit were positive, compactness and continuity would provide a parameter point with nonzero limiting residual. Density of the enrichment dictionary gives a state direction producing a strict reduction of the minimum residual, contradicting stagnation. Uniform inf-sup stability converts residual convergence to state convergence. Operator/excitation remainder terms form the nonzero certified floor and are reduced independently until the output target is met.
-\end{proof}
-
-This theorem resolves both the ``no snapshot basis'' problem and the ``temperature changes the electromagnetic operator'' problem: thermal coordinates are part of \(\etaPar\), so the same worst-case enrichment certifies the reduced electromagnetic space over the complete allowed temperature field family.
-
-\section{Certified non-affine operator separation}
-
-Fast online evaluation requires reduced matrices to be assembled without traversing the full spatial mesh. No empirical interpolation is required.
-
-\subsection{Temperature-dependent constitutive laws}
-Let the certified temperature interval be \([T_-,T_+]\). For a constitutive coefficient, e.g. \(\sigma_{\rm sea}(T)\), use either its exact algebraic form or a deterministic polynomial/Chebyshev approximation
-\begin{equation}
-\sigma(T)=\sum_{m=0}^{p}s_m\chi_m(T)+r_p(T),
-\qquad
-\sup_{T\in[T_-,T_+]}|r_p(T)|\le\varepsilon_\sigma(p).
-\label{eq:sigma_cheb}
-\end{equation}
-The smallest \(p\) satisfying the propagated output-error budget is selected. The remainder bound follows from derivative/Bernstein-ellipse bounds for analytic laws or verified interval interpolation bounds for certified tabulated material data.
-
-Since
-\[
-T=T_b+\PhiT_r\aT,
-\]
-\eqref{eq:sigma_cheb} becomes a finite tensor polynomial in \(\aT\) plus a certified remainder. The same construction is used for copper conductivity and any temperature-dependent permeability when physically required.
-
-\subsection{Geometry dependence}
-After the reference-domain pullback, Jacobian and metric tensors depend on geometry parameters. Exact rational/algebraic dependence is retained when available; otherwise deterministic multivariate Chebyshev approximation with interval-certified remainder is used. Consequently
+Initial-state and operating-condition nodes are zero-dynamics analytic nodes. Thus one chart represents
 \begin{equation}
 \boxed{
-\Aem(\etaPar)=\sum_{q=1}^{Q_A}\theta_q(\etaPar)\mathbf A_q+\mathbf E_A(\etaPar),
-\qquad
-\norm{\mathbf E_A}_{H\to H^{-1}}\le\varepsilon_{\rm op}.
+(a_0,U,t)\mapsto a_\theta(t)
 }
-\label{eq:affine_em}
+\label{eq:parametric_analytic_map}
 \end{equation}
-The reduced matrices \(V^*\mathbf A_qV\) are precomputed offline.
-
-\subsection{Certified tensor compression}
-If direct polynomial expansion produces many coefficient tensors, deterministic matrix/tensor SVD or hierarchical factorization may be used. Terms are discarded only if a rigorous spectral/Frobenius-to-operator norm bound proves their aggregate contribution is below the remaining operator-error budget. No weight-magnitude pruning rule defines the scientific method.
-
-\section{Quasi-static electromagnetic elimination and reduced heat source}
-
-For the final electromagnetic basis \(V_{\rm em}\), define
-\begin{equation}
-\mathbf A_{{\rm em},r}(\etaPar)=V_{\rm em}^*\Aem(\etaPar)V_{\rm em},
-\qquad
-\mathbf b_{{\rm em},r}=V_{\rm em}^*\bem.
-\end{equation}
-At a thermal state \(\aT\), solve only
-\begin{equation}
-\boxed{
-\mathbf A_{{\rm em},r}(\mupar,\aT)\cE
-=\mathbf b_{{\rm em},r}(\mupar).
-}
-\label{eq:em_rom_solve}
-\end{equation}
-The electromagnetic coefficients are therefore an algebraic function
-\[
-\cE=\mathcal C_{\rm em}(\mupar,\aT).
-\]
-There is no electromagnetic time stepping inside the thermal evolution.
-
-\subsection{Direct reduced loss projection}
-Let \(D_E\) map electromagnetic state coefficients to discrete electric-field degrees of freedom. For the \(k\)-th thermal mode, define preassembled reduced quadratic forms
-\begin{align}
-\mathbf H_{k}^{\rm Cu}(\etaPar)
-&=V_{\rm em}^*D_E^*\mathbf C_{\sigma\Phi_k}^{\rm Cu}(\etaPar)D_EV_{\rm em},\\
-\mathbf H_{k}^{\rm sea}(\etaPar)
-&=V_{\rm em}^*D_E^*\mathbf C_{\sigma\Phi_k}^{\rm sea}(\etaPar)D_EV_{\rm em}.
-\end{align}
-They use the same certified operator-separation machinery as \eqref{eq:affine_em}. The reduced thermal source is evaluated directly as
-\begin{equation}
-\boxed{
-[q_{\rm em,r}]_k
-=\cE^*\bigl(\mathbf H_k^{\rm Cu}+\mathbf H_k^{\rm sea}\bigr)\cE.
-}
-\label{eq:heat_tensor}
-\end{equation}
-Hence online evaluation does not reconstruct the full three-dimensional Joule-loss field. Copper and seawater losses remain spatially distinct because their coupling tensors are assembled on different physical subdomains.
-
-The total powers are analogous quadratic forms,
-\[
-P_{\rm Cu}=\cE^*\mathbf H_P^{\rm Cu}\cE,
-\qquad
-P_{\rm sea}=\cE^*\mathbf H_P^{\rm sea}\cE.
-\]
-Port functionals evaluated on \(V_{\rm em}\cE\) provide \(\mathbf Z,R,L,M\).
-
-\section{Closed reduced electromagnetic--thermal dynamics}
-
-After electromagnetic elimination, define
-\begin{equation}
-\mathbf g_{\rm em}(\aT;\mupar)
-=\Mt_r^{-1}\mathbf q_{\rm em,r}
-\bigl(\mathcal C_{\rm em}(\mupar,\aT),\aT;\mupar\bigr).
-\end{equation}
-With mass-normalized thermal modes, the exact reduced closure is
-\begin{equation}
-\boxed{
-\dot\aT+\LamT\aT
-=\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T(\mupar).
-}
-\label{eq:closed_et}
-\end{equation}
-All spatial copper loss, skin/proximity effect, seawater induced current, geometry dependence, and temperature feedback enter through \(\mathbf g_{\rm em}\). The analytic neural network approximates only the continuous-time solution map of \eqref{eq:closed_et}; it does not replace the electromagnetic or thermal operators.
-
-\section{Analytic neural evolution network}
-
-\subsection{Analytic function algebra}
-For a fixed parameter point, let \(\lambda_1,\ldots,\lambda_r>0\) be the thermal decay rates and define
-\begin{equation}
-\mathscr A_\Lambda=
-\operatorname{span}
-\left\{t^m e^{-\rho t}:m\in\mathbb N_0,\ \rho=\mathbf n^T\boldsymbol\lambda,\ \mathbf n\in\mathbb N_0^r\right\}.
-\end{equation}
-This set is closed under addition, multiplication, time differentiation, and the stable response operator \((\partial_t+\lambda_i)^{-1}\) with zero initial condition.
+inside the network itself; no external conditioning network generates weights.
 
 \subsection{Analytic neuron}
-An analytic neuron is defined by
+A neuron is the exactly solvable dissipative response
 \begin{equation}
-(\partial_t+\lambda_i)h_\nu(t)=S_\nu(t),
+(\partial_t+\lambda_i)h_\nu=S_\nu,
 \qquad
 h_\nu(0)=h_{\nu,0},
 \label{eq:analytic_neuron}
 \end{equation}
-where the source \(S_\nu\) is an algebraic combination of static parameter nodes, initial-state nodes, and preceding analytic neurons. Its forward map is the closed form
-\begin{equation}
-h_\nu(t)=e^{-\lambda_i t}h_{\nu,0}
-+\int_0^t e^{-\lambda_i(t-\tau)}S_\nu(\tau)\,d\tau.
-\end{equation}
-For an atom \(t^m e^{-\rho t}\), use the entire function
+where \(S_\nu\) is an algebraic combination of parameter nodes, initial-state nodes and preceding analytic neurons. Therefore
 \[
-\varphi_{m+1}(z)=\int_0^1 e^{(1-s)z}\frac{s^m}{m!}\,ds
+h_\nu(t)=e^{-\lambda_it}h_{\nu,0}
++\int_0^te^{-\lambda_i(t-\tau)}S_\nu(\tau)\,d\tau.
 \]
-to evaluate resonant and non-resonant cases without an empirical denominator threshold. Thus each neuron, its time derivative, and any finite network composition remain explicitly analytic in time.
+Network depth represents nonlinear interaction order, not time steps.
 
-\begin{theorem}[Analytic closure]
-If all source nodes belong to \(\mathscr A_\Lambda\), every finite analytic-neuron directed acyclic graph produces outputs in \(\mathscr A_\Lambda\). Its time derivative is available symbolically/recursively without numerical time differentiation.
-\end{theorem}
-\begin{proof}
-The base decay nodes belong to \(\mathscr A_\Lambda\). Closure under algebraic source construction and under \((\partial_t+\lambda_i)^{-1}\) yields the claim by induction over the directed acyclic graph.
-\end{proof}
+\subsection{Stable evaluation}
+A fast compiler reduces a finite graph to unique polynomial--exponential atoms. An independent exact realization writes each scalar graph output as
+\begin{equation}
+\boxed{h(t)=c^Te^{At}b.}
+\label{eq:state_space_realization}
+\end{equation}
+Repeated and nearly repeated decay rates are represented by ordinary Jordan/confluent structure; no near-resonance threshold is introduced. Large realizations may be compressed only with a certified output/residual error bound.
 
-\subsection{Approximation capacity}
-Choose any \(\lambda_*>0\) from the thermal spectrum and set \(x=e^{-\lambda_*t}\). The compactified time interval \(t\in[0,\infty]\) maps to \(x\in[0,1]\). For any continuous stable response component with a finite steady-state limit, polynomial approximation in \(x\) yields finite sums of \(e^{-n\lambda_*t}\), which are contained in \(\mathscr A_\Lambda\). With static parameter and initial-state nodes, the generated algebra separates points on a compact certified parameter/initial-state/time domain. Therefore the analytic network is dense in the continuous stable solution maps on that domain. This is an approximation statement; finite networks retain a certified residual rather than being asserted exact.
+\section{Solution-data-free closed-loop training}
 
-\section{Solution-data-free training and residual-grown topology}
-
-The network returns \(\aT_\theta(t)\) and its exact analytic derivative. Define
+The analytic graph supplies both \(a_\theta\) and \(\dot a_\theta\) exactly. The true training residual is the closed electromagnetic--thermal residual
 \begin{equation}
 \boxed{
-\mathbf R_\theta
-=\dot\aT_\theta+\LamT\aT_\theta
--\mathbf g_{\rm em}(\aT_\theta;\mupar)-\mathbf f_T.
+R_\theta(a_0,U,t)
+=\dot a_\theta+\Lambda_Ta_\theta
+-g_{\rm em}(a_\theta;U)-f_T(U).
 }
 \label{eq:nn_residual}
 \end{equation}
-The primary training objective is the physical dual/energy norm of \(\mathbf R_\theta\), integrated over the certified parameter/initial-state/time domain with deterministic error-controlled quadrature. No transient field solution appears as a label.
+The call to \(g_{\rm em}\) uses the actual reduced electromagnetic equilibrium, nonlinear material law and reduced Joule source; it is not replaced by labelled trajectories. The primary objective is the natural reduced thermal energy/dual norm integrated or maximized over the certified initial-state/operating/time domain with deterministic error-controlled quadrature or branch-and-bound.
 
-Network size is not fixed. Let \(\mathcal D_N\) be the current analytic-neuron dictionary. Candidate sources are generated hierarchically from admissible products of active nodes and static parameter nodes. For candidate \(\psi\), define the Riesz residual correlation
+\subsection{Residual-grown topology}
+Network width and depth are not prescribed. For a candidate response \(h\) targeting thermal coordinate \(i\), let its source satisfy
 \[
-I(\psi)=\frac{|\ip{\mathcal R^{-1}\mathbf R_\theta}{\psi}|^2}{\norm{\psi}_{\mathcal R}^2}.
+(\partial_t+\lambda_i)h=\psi.
 \]
-Add the candidate with certified maximum correlation, re-optimize all active weights without increasing the physical residual, and repeat until the final output certificate is satisfied.
+The first variation of the physical residual is
+\begin{equation}
+D=e_i\psi-J_g(a_\theta)e_i h,
+\qquad
+J_g=\frac{\partial g_{\rm em}}{\partial a}.
+\label{eq:candidate_direction}
+\end{equation}
+For the selected deterministic quadrature/inner product, the tangent optimal candidate weight is
+\begin{equation}
+\boxed{
+w^*=-\frac{\ip{R_\theta}{D}}{\ip{D}{D}}.
+}
+\label{eq:candidate_weight}
+\end{equation}
+The candidate is accepted only after recomputing the complete nonlinear residual. A tangent prediction alone is never a certificate.
 
-Under compactness, density of the analytic dictionary, and exact/controlled greedy selection, the monotone residual sequence converges to zero up to independent electromagnetic/thermal/operator-discretization error floors. Thus network topology is generated by unresolved physics rather than by empirical depth/width selection.
+Candidate dictionaries grow hierarchically from active response nodes, initial-state nodes and static parameter nodes. Global growth terminates only when the propagated engineering-output certificate is met or the domain is declared uncertified.
 
-\section{Stability and unified error certification}
+\section{Stability and unified electromagnetic--thermal certificate}
 
-\subsection{Contractive domain}
-For the exact closed reduced vector field
+For the exact reduced vector field
 \[
-F(\aT;\mupar)=-\LamT\aT+\mathbf g_{\rm em}(\aT;\mupar)+\mathbf f_T,
+F(a;\mupar)=-\Lambda_Ta+g_{\rm em}(a;\mupar)+f_T(\mupar),
 \]
 define
 \begin{equation}
 \kappa=
-\lambda_{\min}(\LamT)
--\sup_{(\aT,\mupar)\in\mathcal D}
-\lambda_{\max}\left[
-\sym\left(\frac{\partial\mathbf g_{\rm em}}{\partial\aT}\right)
-\right].
+\lambda_{\min}(\Lambda_T)
+-\sup_{(a,\mupar)\in\mathcal D}
+\lambda_{\max}\left[\sym\left(\frac{\partial g_{\rm em}}{\partial a}\right)\right].
 \label{eq:kappa}
 \end{equation}
-If a verified lower bound gives \(\kappa>0\), the reduced electrothermal system is contractive on the certified domain. The Jacobian of \(\mathbf g_{\rm em}\) is obtained by differentiating the small reduced electromagnetic system and the preassembled loss tensors; no finite-difference perturbation is required.
+If a verified lower bound proves \(\kappa>0\), the reduced dynamics is contractive on the certified domain.
 
-\subsection{Error decomposition}
-Let
+Keep the error causes separate:
 \begin{align*}
-\eta_T&=\text{thermal spatial-reduction/truncation residual},\\
-\eta_{\rm em}&=\text{electromagnetic reduced-state residual bound},\\
-\eta_{\rm sep}&=\text{constitutive/geometry operator-separation remainder},\\
-\eta_{\rm lin}&=\text{reduced linear-solve residual},\\
-\eta_{\rm nn}&=\norm{\mathbf R_\theta}.
+\eta_{\rm constitutive}&:\ \text{material-series/tabulation remainder},\\
+\eta_{\rm algebraic}&:\ \text{certified linear/Riesz action error},\\
+\eta_{\rm EM-ROM}&:\ \text{electromagnetic reduced-state residual error},\\
+\eta_{\rm mesh}&:\ \text{spatial discretization error},\\
+\eta_{\rm outer}&:\ \text{open/infinite-domain truncation error},\\
+\eta_{\rm T-ROM}&:\ \text{thermal spectral tail},\\
+\eta_{\rm NN}&=\norm{R_\theta}:\ \text{analytic evolution residual}.
 \end{align*}
-Propagating electromagnetic state/operator errors through the loss functional gives a thermal-source perturbation bound
+Electromagnetic errors are first propagated to a reduced heat-source bound \(\eta_Q\). Define
 \[
-\eta_Q\le C_{Q,u}\eta_{\rm em}+C_{Q,A}\eta_{\rm sep}+C_{Q,\rm lin}\eta_{\rm lin}.
+\eta_{\rm total}=\eta_{\rm T-ROM}+\eta_Q+\eta_{\rm NN}.
 \]
-Define
-\[
-\eta_{\rm tot}=\eta_T+\eta_Q+\eta_{\rm nn}.
-\]
-For exact initial-condition embedding, the thermal-state error satisfies
+For exact initial-condition embedding and \(\kappa>0\),
 \begin{equation}
 \boxed{
-\norm{\aT_\theta(t)-\aT(t)}
-\le
-\int_0^t e^{-\kappa(t-s)}\eta_{\rm tot}(s)\,ds
-\le
-\frac{\sup_{s\le t}\eta_{\rm tot}(s)}{\kappa}.
+\norm{a_\theta(t)-a(t)}
+\le\int_0^te^{-\kappa(t-s)}\eta_{\rm total}(s)\,ds
+\le\frac{\sup_{s\le t}\eta_{\rm total}(s)}{\kappa}.
 }
 \label{eq:uniform_error}
 \end{equation}
-Hence the certificate does not deteriorate merely because a large query time is requested. If \(\kappa\le0\), only a finite-time Gr\"onwall bound is claimed; long-time contractive certification is withheld.
+If \(\kappa\le0\), only a finite-time Gronwall bound is returned.
 
-\subsection{Output bounds}
-For any differentiable output functional \(Q(T,\mathbf u)\),
+For any differentiable engineering output \(Q\),
 \[
 |Q-Q_\theta|
-\le
-L_{Q,T}\norm{T-T_\theta}
-+L_{Q,u}\norm{\mathbf u-\mathbf u_r}
-+\eta_{Q,\rm sep}+\eta_{Q,\rm lin}.
+\le L_{Q,T}\eta_T+L_{Q,u}\eta_{\rm em}
++\eta_{Q,{\rm constitutive}}+\eta_{Q,{\rm algebraic}}
++\eta_{Q,{\rm mesh}}+\eta_{Q,{\rm outer}}.
 \]
-This produces explicit certificates for \(T_{\max}\), \(\mathbf Z\), \(R,L,M\), \(P_{\rm Cu}\), and \(P_{\rm sea}\). The user-facing accuracy target is specified on these engineering outputs; internal ranks and tolerances are then chosen by minimizing online cost subject to the propagated output bound.
+The user specifies accuracy on outputs such as \(T_{\max},Z,R,L,M,P_{\rm Cu},P_{\rm sea}\); internal ranks, constitutive orders and network size are then chosen to satisfy that budget.
 
-\section{Resolution of the three implementation difficulties}
+\section{Continuous parameter-domain certification}
 
-\subsection{Difficulty I: electromagnetic basis without data}
-\textbf{Resolved by:} source/constraint Riesz initialization \eqref{eq:V0}, minimum-residual reduced solve \eqref{eq:minres_rom}, worst-case certified residual search \eqref{eq:worst_eta}, and Riesz-lift enrichment \eqref{eq:riesz_lift}. No physical full-order state snapshot is required.
+The production certified domain may include thermal coordinates, initial state, excitation, frequency, material values and geometry chart parameters. A finite sample set is never identified with this continuous domain.
 
-\subsection{Difficulty II: temperature and geometry change the electromagnetic operator}
-\textbf{Resolved by:} common reference-domain compatible spaces, one parameter domain \(\etaPar=(\mupar,\aT)\), and uniform worst-case residual enrichment over that complete domain. The basis is not assumed valid after temperature changes; validity is proved by the supremum residual certificate. If the geometry map degenerates, topology changes, or material laws leave their certified interval, the point is outside the model chart and is explicitly non-certified.
-
-\subsection{Difficulty III: reduced electromagnetics must be extremely fast online}
-\textbf{Resolved by:}
+For each branch box \(\mathcal B\), deterministic interval/analytic derivative bounds must provide upper/lower envelopes for:
 \begin{enumerate}
-\item deterministic separated operator \eqref{eq:affine_em} with certified remainder;
-\item all full-order coefficient matrices projected offline to \(V_{\rm em}\);
-\item online solve only of the small dense complex system \eqref{eq:em_rom_solve};
-\item one factorization reused for all ports/right-hand sides at the same thermal state;
-\item copper/seawater heat sources evaluated by reduced quadratic tensors \eqref{eq:heat_tensor}, not by reconstructing full fields;
-\item deterministic tensor compression with discarded-norm certificate when required.
+\item material validity and reciprocal-series contraction factors;
+\item electromagnetic residual dual norm;
+\item reduced operator nonsingularity through the physical energy theorem;
+\item thermal-source Jacobian and contractivity contribution;
+\item analytic-network residual;
+\item geometry-map Jacobian and mesh validity.
 \end{enumerate}
-If \(r_{\rm em}=\dim V_{\rm em}\), the dominant dense solve is \(O(r_{\rm em}^3)\), while separated assembly and loss evaluation scale only with reduced/tensor dimensions. The value of \(r_{\rm em}\) is not prescribed; it is the smallest dimension meeting the output certificate.
+A branch is certified only if its complete upper bound satisfies the output target. A branch proving violation is rejected; a branch that cannot be closed within the declared computational proof budget remains indeterminate.
 
-\section{Offline and online algorithms}
+\section{Offline physics compiler and online evaluator}
 
-\subsection{Offline physics compiler}
+\subsection{Offline compiler}
 \begin{enumerate}
-\item Build reference-domain geometry maps and verify Jacobian bounds.
-\item Assemble compatible full electromagnetic and thermal operators.
+\item Build/import conforming conductor--package--seawater geometry and tetrahedral topology.
+\item Verify geometry-chart non-degeneracy and material-region consistency.
+\item Assemble compatible Nedelec electromagnetic and P1 thermal operators.
 \item Build the certified thermal spectral space and canonical coordinates.
-\item Derive the allowable thermal-coordinate/material-temperature domain.
-\item Construct deterministic separated geometry/constitutive operators and certify their remainders.
-\item Initialize the electromagnetic reduced space from excitation/constraint Riesz lifts.
-\item Repeat worst-case electromagnetic residual enrichment until electromagnetic output bounds are satisfied on the complete \((\mupar,\aT)\) domain.
-\item Project electromagnetic operators, port functionals, and copper/seawater loss tensors to the final reduced space.
+\item Build certified nonlinear constitutive operators and derivatives.
+\item Build scalable certified Riesz actions for the state-dependent electromagnetic energy metric.
+\item Construct one joint-port snapshot-free electromagnetic reduced space over the declared parameter domain.
+\item Project field, port, regional-loss and thermal-source operators to reduced coordinates.
+\item Form the closed reduced electromagnetic--thermal vector field and analytic Jacobian.
 \item Build the base analytic thermal decay graph.
-\item Train from \eqref{eq:nn_residual}; grow analytic neurons by residual correlation until the total output certificate is satisfied.
-\item Compile the sparse analytic directed acyclic graph and reduced electromagnetic tensors to deployment code.
+\item Train exclusively from the closed residual \eqref{eq:nn_residual}; grow analytic neurons until the global output certificate is satisfied.
+\item Compress only with certified remainder and compile the final sparse analytic DAG/reduced tensors for deployment.
 \end{enumerate}
 
-\subsection{Online arbitrary-time evaluation}
+\subsection{Online arbitrary-time query}
 Given \((\mupar,T_0,t_q)\):
 \begin{enumerate}
-\item project \(T_0\) to \(\aT_0\);
-\item evaluate the analytic graph once at \(t_q\) to obtain \(\aT(t_q)\) and, if needed, \(\dot\aT(t_q)\);
-\item assemble the small reduced electromagnetic matrix from precomputed separated tensors;
-\item solve \eqref{eq:em_rom_solve};
-\item evaluate impedance, copper loss, seawater loss, and reduced heat-source/output tensors;
-\item evaluate the stored certificate bounds and return certified/non-certified status.
+\item project \(T_0\) to reduced thermal coordinates \(a_0\);
+\item evaluate the analytic graph once at \(t_q\) to obtain \(a_\theta(t_q)\) and, if required, \(\dot a_\theta(t_q)\);
+\item assemble and solve only the small reduced electromagnetic equilibrium;
+\item evaluate \(Z,R,L,M,P_{\rm Cu},P_{\rm sea}\) and reduced heat-source functionals;
+\item evaluate stored/local certificate bounds and return certified/non-certified status.
 \end{enumerate}
-There is no thermal time-step loop and no full-order electromagnetic solve online.
+There is no thermal time-step loop and no full-order electromagnetic equilibrium solve in the final online path.
 
 \section{Core theorem chain and proof obligations}
 
-The complete mathematical framework rests on the following chain.
+The final method rests on the following theorem chain.
 
-\begin{theorem}[Compatible parameter-coordinate theorem]
-Under uniform non-degenerate reference mappings and isolated thermal spectral clusters, thermal coordinates and compatible electromagnetic spaces can be transported to a common reference domain continuously over each certified geometry chart.
+\begin{theorem}[Compatible field theorem]
+A non-degenerate geometry chart with Nedelec--P1 compatible spaces, tree--cotree magnetic gauge and conducting-component scalar gauge preserves the required discrete de Rham structure and yields a physical gauge-reduced electromagnetic state space.
 \end{theorem}
 
-\begin{theorem}[Uniform electromagnetic reduced-space theorem]
-Under compact parameter domain, uniform inf-sup stability, continuous operators, and density of the residual-enrichment dictionary, the solution-data-free worst-residual Riesz enrichment drives the supremum electromagnetic state estimator to the independently controlled operator-remainder floor.
+\begin{theorem}[Physical electromagnetic energy theorem]
+The reciprocal scaled \(A-\psi\) operator obeys \eqref{eq:energy_coercivity}, giving \(\beta_H\ge1/\sqrt2\) independently of conductivity contrast.
 \end{theorem}
 
-\begin{theorem}[Analytic-neuron closure and density theorem]
-Finite analytic-neuron graphs remain in the polynomial--exponential algebra and are dense in continuous stable reduced evolution maps on compactified time and compact parameter/initial-state domains.
+\begin{theorem}[Certified inexact Riesz theorem]
+Any approximate Riesz action satisfying \eqref{eq:pcg_action_bound} provides rigorous dual-norm intervals and therefore cannot create a false electromagnetic residual certificate.
 \end{theorem}
 
-\begin{theorem}[Residual-grown analytic-network convergence theorem]
-If the analytic dictionary is dense and each greedy enrichment selects a certified nonzero residual-correlated direction followed by non-increasing residual optimization, the analytic-network physical residual converges to the independent spatial/operator error floor.
+\begin{theorem}[Solution-data-free electromagnetic reduction theorem]
+On a compact continuously certified parameter domain, if each unresolved worst-case point supplies a nonzero certified residual-Riesz enrichment direction and the nested spaces are dense in the solution manifold, the supremum electromagnetic residual certificate converges to the independent constitutive/spatial/operator error floor without solved-state snapshots.
 \end{theorem}
 
-\begin{theorem}[Unified a posteriori certificate]
-On a verified contractive domain \(\kappa>0\), thermal reduction, electromagnetic reduction, operator separation, reduced linear solve, and analytic-network residual errors combine through \eqref{eq:uniform_error} into a uniform-in-time thermal-state bound and hence into certified impedance, loss, mutual-inductance, and maximum-temperature output bounds.
+\begin{theorem}[Thermal spectral-tail theorem]
+The deterministic thermal spectral projection satisfies \eqref{eq:thermal_tail}; therefore retained rank is selected by error budget rather than configuration.
 \end{theorem}
 
-The theorem statements above identify the exact implementation proof obligations. Numerical code must provide: verified geometry Jacobian bounds; electromagnetic inf-sup lower bounds; constitutive/operator approximation remainders; residual dual norms; thermal spectral-tail or higher-space residual estimators; contractivity bounds; and output sensitivity bounds. Claims are made only on parameter regions where these quantities are available.
+\begin{theorem}[Analytic-neuron closure theorem]
+Finite analytic response DAGs remain closed under the polynomial--exponential response algebra and possess exact time derivatives; a state-space realization handles resonant limits without empirical thresholds.
+\end{theorem}
+
+\begin{theorem}[Residual-grown evolution theorem]
+If the analytic candidate dictionary is dense on the certified reduced-flow domain, candidate selection has certified nonzero residual correlation and each accepted update does not increase the exact nonlinear residual, the residual-grown network converges to the independent electromagnetic/thermal/spatial error floor.
+\end{theorem}
+
+\begin{theorem}[Unified a posteriori theorem]
+On a verified contractive domain \(\kappa>0\), the separate constitutive, algebraic, electromagnetic-ROM, thermal-ROM, mesh, outer-domain and analytic-network residual errors propagate through \eqref{eq:uniform_error} to uniform-in-time state and engineering-output bounds.
+\end{theorem}
+
+The implementation must therefore provide, rather than assume: geometry Jacobian bounds; exact compatible topology; constitutive remainder bounds; scalable certified Riesz actions; continuous-domain electromagnetic residual bounds; mesh and outer-domain error estimators; a lower bound for the first omitted thermal eigenvalue; contractivity bounds; analytic-network residual bounds; and output sensitivity/propagation bounds.
+
+\section{Implementation work tree fixed by the theory}
+
+The remaining production work is not a request for new model concepts. It is the completion of the following theorem obligations:
+\begin{enumerate}
+\item finish scalable electromagnetic Riesz actions, including a topology-exact magnetic face-circulation auxiliary action and a scalable certified scalar-conductive action;
+\item complete continuous nonlinear electromagnetic-domain certification over thermal state, source, frequency and geometry parameters;
+\item complete CAD-to-conforming-tetrahedral geometry charts for real underwater WPT conductors, package and seawater;
+\item add certified mesh-discretization and open/infinite-domain electromagnetic error terms;
+\item complete scalable partial thermal eigensolution with a certified first omitted eigenvalue and physical outer-boundary error;
+\item complete solid-conductor terminal-current port constraints where impressed-current cochains are not the desired physical port model;
+\item complete the production closed electromagnetic--thermal reduced vector field over the full declared parameter family;
+\item complete the continuous-time analytic neural evolution operator over the full initial-state/operating/geometry chart domain, including certified realization compression;
+\item complete solution-data-free electromagnetic--thermal closed-loop residual training and residual-grown topology over the continuous certified domain;
+\item close the full \(\eta_{\rm total}\) certificate and perform large-scale Maxwell/COMSOL/experimental validation without using those solutions as training labels.
+\end{enumerate}
 
 \section{Final architecture}
 
@@ -622,23 +802,27 @@ The final SDF-MPNEO architecture is
 \[
 \boxed{
 \begin{array}{c}
-\text{parameterized full electromagnetic and thermal field equations}\\
+\text{conforming parameterized EM--thermal field equations}\\
 \downarrow\\
-\text{compatible reference-domain discretization}\\
+\text{compatible Nedelec--P1 discretization and physical gauges}\\
 \downarrow\\
-\text{solution-data-free deterministic EM/thermal reduction}\\
+\text{certified nonlinear constitutive integration}\\
 \downarrow\\
-\text{quasi-static reduced EM elimination and reduced loss tensors}\\
+\text{state-dependent physical energy and certified Riesz actions}\\
 \downarrow\\
-\dot\aT+\LamT\aT=\mathbf g_{\rm em}(\aT;\mupar)\\
+\text{solution-data-free sparse joint-port EM reduction}\\
 \downarrow\\
-\text{residual-grown analytic neural evolution}\\
+\text{deterministic certified thermal spectral reduction}\\
 \downarrow\\
-\text{arbitrary-time direct query}\\
+\dot a+\Lambda_Ta=g_{\rm em}(a;\mupar)+f_T\\
 \downarrow\\
-\text{unified physical/numerical output certificate.}
+\text{solution-data-free residual-grown analytic neural evolution}\\
+\downarrow\\
+\text{direct arbitrary-time query}\\
+\downarrow\\
+\text{unified certified }T,Z,R,L,M,P_{\rm Cu},P_{\rm sea}.
 \end{array}}
 \]
-The neural network does not generate spatial bases, does not replace the electromagnetic field equations, and does not learn from transient solution labels. Its role is exclusively to represent the certified continuous-time flow of the already reduced, physically closed electromagnetic--thermal system.
+The neural network does not generate spatial bases, replace the electromagnetic equations, or learn from transient solution labels. Its only role is to represent the certified continuous-time flow of the already reduced and physically closed electromagnetic--thermal system.
 
 \end{document}
