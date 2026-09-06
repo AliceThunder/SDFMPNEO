@@ -45,7 +45,7 @@ def test_one_call_tetrahedral_core_builds_shared_thermal_and_em_spaces():
     assert core.electromagnetic_problem.n_thermal == core.thermal_model.rank
     assert core.thermal_mode_local_values.shape == (1, mesh.n_tetrahedra, 4)
 
-    reduced = core.build_reduced_electromagnetics(
+    reduced = core.build_affine_verification_reduced_electromagnetics(
         [np.array([-0.1]), np.array([0.0]), np.array([0.1])],
         residual_tolerance=1e-11,
     )
