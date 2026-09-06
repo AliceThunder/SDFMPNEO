@@ -5,7 +5,9 @@ from .basic import (
     state_error_certificate,
 )
 from .constitutive_output import (
+    ConstitutiveHeatSourceErrorCertificate,
     ConstitutivePortErrorCertificate,
+    certify_constitutive_heat_source_error,
     certify_constitutive_multiport_error,
 )
 from .em_domain import (
@@ -36,4 +38,6 @@ __all__ = [
     "certify_multiport_impedance",
     "ConstitutivePortErrorCertificate",
     "certify_constitutive_multiport_error",
+    "ConstitutiveHeatSourceErrorCertificate",
+    "certify_constitutive_heat_source_error",
 ]
