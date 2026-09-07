@@ -10,7 +10,7 @@ import scipy.sparse as sp
 from .energy_solver import PhysicalEnergySparseApsiSolver, apsi_physical_energy_metric
 from .grid3d import RectilinearComplex3D
 from .reduced import RieszFactor
-from .riesz_action import RieszActionFactory, SparseLUReferenceRieszAction
+from .riesz_action import RieszActionFactory, SparseLUReferenceRieszAction, instantiate_riesz_action
 from .sparse_solver import (
     CertifiedEnergySparseApsiSolver,
     CertifiedSparseApsiSolver,
@@ -179,7 +179,10 @@ class ImpressedCurrentPortSet:
         edge_currents: np.ndarray,
         names: Sequence[str] | None = None,
     ) -> "ImpressedCurrentPortSet":
-        currents = np.asarray(edge_currents, dtype=float)
+        raw_currents = np.asarray(edge_currents)
+        if np.iscomplexobj(raw_currents) and np.any(raw_currents.imag != 0):
+            raise ValueError("unit port cochains must be real; phases belong in drive currents")
+        currents = np.asarray(raw_currents.real, dtype=float)
         if currents.ndim == 1:
             currents = currents[:, None]
         if currents.ndim != 2 or currents.shape[0] != grid.n_edges:
@@ -479,7 +482,7 @@ class ImpressedCurrentPortSet:
                 "riesz_action_factory",
                 SparseLUReferenceRieszAction,
             )
-        action = riesz_action_factory(H)
+        action = instantiate_riesz_action(riesz_action_factory, H, state=a)
         B = np.asarray(self.coordinate_rhs, dtype=complex)
         V = np.asarray(reduced_model.V, dtype=complex)
         if A.shape[0] != B.shape[0] or V.shape[0] != A.shape[0]:

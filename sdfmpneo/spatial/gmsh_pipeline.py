@@ -82,40 +82,41 @@ def _add_oriented_box(occ, half_extent: np.ndarray, pose) -> int:
 
 
 def _add_rectangular_pipe(gmsh, coil, geometry_tolerance: float) -> tuple[int, np.ndarray, np.ndarray]:
-    """Sweep the declared rectangular conductor section along a certified polyline."""
+    """Extrude a miter-joined planar conductor ribbon with rectangular section.
 
+    OCC's pipe along a C0 polyline can overlap successive top/bottom faces.
+    A single planar ribbon has shared miter vertices and one top/bottom face,
+    so planar spiral conductors remain conforming even at polyline corners.
+    """
     occ = gmsh.model.occ
-    points = np.asarray(coil.sample_for_geometric_tolerance(geometry_tolerance), dtype=float)
-    if points.shape[0] < 2:
-        raise RuntimeError("coil centerline meshing requires at least two points")
-
-    p_tags = [occ.addPoint(*map(float, point)) for point in points]
-    lines = [occ.addLine(p_tags[k], p_tags[k + 1]) for k in range(len(p_tags) - 1)]
-    wire = occ.addWire(lines)
-
-    tangent = _normalized(points[1] - points[0])
-    thickness_axis = _normalized(coil.pose.rotation @ np.array([0.0, 0.0, 1.0]))
-    width_axis = _normalized(np.cross(thickness_axis, tangent))
-    center = points[0]
-    hw = 0.5 * float(coil.conductor_width)
-    ht = 0.5 * float(coil.conductor_thickness)
-    corners = np.array(
-        [
-            center - hw * width_axis - ht * thickness_axis,
-            center + hw * width_axis - ht * thickness_axis,
-            center + hw * width_axis + ht * thickness_axis,
-            center - hw * width_axis + ht * thickness_axis,
-        ]
-    )
-    ctags = [occ.addPoint(*map(float, point)) for point in corners]
-    boundary = [occ.addLine(ctags[k], ctags[(k + 1) % 4]) for k in range(4)]
-    loop = occ.addCurveLoop(boundary)
-    section = occ.addPlaneSurface([loop])
-    swept = occ.addPipe([(2, section)], wire, "DiscreteTrihedron")
-    volumes = [tag for dim, tag in swept if dim == 3]
-    if len(volumes) != 1:
-        raise RuntimeError("Gmsh pipe sweep did not produce exactly one conductor volume")
-    return int(volumes[0]), points[0].copy(), points[-1].copy()
+    world = np.asarray(coil.sample_for_geometric_tolerance(geometry_tolerance), float)
+    points = (world - coil.pose.translation) @ coil.pose.rotation
+    direction = np.diff(points[:, :2], axis=0)
+    length = np.linalg.norm(direction, axis=1)
+    if np.any(length <= 0):
+        raise ValueError("coil polyline contains a zero-length segment")
+    direction /= length[:, None]
+    normal = np.column_stack([-direction[:, 1], direction[:, 0]])
+    offsets = np.empty_like(points[:, :2])
+    offsets[0], offsets[-1] = normal[0], normal[-1]
+    for i in range(1, len(points)-1):
+        denominator = 1.0 + float(direction[i-1] @ direction[i])
+        if denominator <= 0:
+            raise ValueError("coil polyline reverses direction at a miter")
+        offsets[i] = (normal[i-1] + normal[i]) / denominator
+    offsets *= .5*coil.conductor_width
+    outline = np.vstack([points[:, :2]+offsets, (points[:, :2]-offsets)[::-1]])
+    lower = np.column_stack([outline, np.full(len(outline), -.5*coil.conductor_thickness)])
+    lower = coil.pose.apply(lower)
+    tags = [occ.addPoint(*map(float, point)) for point in lower]
+    lines = [occ.addLine(tags[i], tags[(i+1)%len(tags)]) for i in range(len(tags))]
+    surface = occ.addPlaneSurface([occ.addCurveLoop(lines)])
+    displacement = coil.pose.rotation @ np.array([0.,0.,coil.conductor_thickness])
+    extrusion = occ.extrude([(2,surface)], *map(float,displacement))
+    volumes = [tag for dim,tag in extrusion if dim==3]
+    if len(volumes)!=1:
+        raise RuntimeError("conductor extrusion did not produce one volume")
+    return int(volumes[0]), world[0].copy(), world[-1].copy()
 
 
 def _terminal_surface_at_endpoint(model, occ, volume_tag: int, point: np.ndarray) -> int:

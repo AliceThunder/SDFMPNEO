@@ -64,3 +64,8 @@ __all__ = [
     "ParametricOnlinePrediction",
     "TetrahedralElectroThermalCore",
 ]
+
+from .research import ResearchElectroThermalModel, demo_research_model, model_from_config
+from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
+__all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
+            "demo_research_model", "model_from_config", "train_research_graph"]

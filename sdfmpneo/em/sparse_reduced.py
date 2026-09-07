@@ -152,6 +152,13 @@ class SparseEnergyReducedEMModel:
     def residual_certificate(self, a: np.ndarray) -> SparseEnergyResidualCertificate:
         return self.residual_certificate_for_rhs(a, self.problem.b)
 
+    def residual_dual_norm_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> float:
+        """Physical dual-norm upper endpoint, shared by training and inference."""
+        return self.residual_certificate_for_rhs(a, rhs).residual_dual_energy_norm_upper_bound
+
+    def residual_dual_norm(self, a: np.ndarray) -> float:
+        return self.residual_dual_norm_for_rhs(a, self.problem.b)
+
     def heat_source_for_rhs(self, a: np.ndarray, rhs: np.ndarray) -> np.ndarray:
         if not hasattr(self.problem, "loss_operator_sparse"):
             raise TypeError("problem must provide loss_operator_sparse for sparse heat projection")
@@ -184,16 +191,18 @@ class SparseEnergyReducedEMModel:
         Ar = self.V.conj().T @ (A @ self.V)
         c = scipy.linalg.solve(Ar, self.V.conj().T @ source, assume_a="gen")
         x = self.V @ c
-        q = self.heat_source_for_rhs(state, source)
+        losses = [self.problem.loss_operator_sparse(j, state) for j in range(self.problem.n_thermal)]
+        q = np.array([np.real(np.vdot(x, H @ x)) for H in losses])
         J = np.zeros((self.problem.n_thermal, self.problem.n_thermal), dtype=float)
+        factor = scipy.linalg.lu_factor(Ar)
 
         for k in range(self.problem.n_thermal):
             Ak = sp.csr_matrix(self.problem.operator_derivative_sparse(state, k), dtype=complex)
             Akr = self.V.conj().T @ (Ak @ self.V)
-            dc = scipy.linalg.solve(Ar, -(Akr @ c), assume_a="gen")
+            dc = scipy.linalg.lu_solve(factor, -(Akr @ c))
             dx = self.V @ dc
             for j in range(self.problem.n_thermal):
-                Hj = sp.csr_matrix(self.problem.loss_operator_sparse(j, state), dtype=complex)
+                Hj = losses[j]
                 dH = sp.csr_matrix(
                     self.problem.loss_operator_derivative_sparse(j, k, state),
                     dtype=complex,

@@ -352,8 +352,8 @@ class ParametricAnalyticEvolutionGraph:
             raise ValueError(f"duplicate node name: {name}")
         if not 0 <= target_mode < self.n_modes:
             raise ValueError("target_mode out of range")
-        if not parents:
-            raise ValueError("response node requires at least one parent")
+        # Empty product is the constant source 1 (needed for fixed excitation
+        # and prescribed thermal forcing, including the zero-parameter case).
         known = set(self.known_names())
         missing = [parent for parent in parents if parent not in known]
         if missing:

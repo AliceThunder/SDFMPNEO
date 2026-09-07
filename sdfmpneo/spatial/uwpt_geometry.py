@@ -115,11 +115,35 @@ class SpiralCoilGeometry:
         return points[0], points[1]
 
     def sample_for_geometric_tolerance(self, chord_error: float) -> np.ndarray:
+        """Polyline with ||curve-linear interpolant|| <= chord_error.
+
+        For a C1, piecewise C2 curve the interpolation remainder is bounded by
+        sup||x''(theta)|| * delta_theta**2 / 8. Rounded-square radial segments
+        require their own derivative bound; a circle sagitta is insufficient.
+        """
         error = float(chord_error)
         if not 0.0 < error < self.outer_half_size:
             raise ValueError("chord_error must lie in (0, outer_half_size)")
-        ratio = max(-1.0, min(1.0, 1.0 - error / self.outer_half_size))
-        dtheta = 2.0 * np.arccos(ratio)
+        a = self.pitch / (2.0 * np.pi)
+        h = self.outer_half_size
+        if self.shape == "circle":
+            second_derivative = np.hypot(h, 2.0 * a)
+        else:
+            # In each octant straight pieces are (h-a*theta,
+            # (h-a*theta)*tan(theta)). Corner radial distance is
+            # b+sqrt(d), b=c(cos+sin), d=r**2-c**2(cos-sin)**2.
+            # On the corner sqrt(d)>=r/sqrt(2); h-r=c is constant.
+            rmax = float(self.corner_radius)
+            rmin = rmax - self.pitch * self.turns
+            c = h - rmax
+            root_min = rmin / np.sqrt(2.0)
+            cos2_max = (h*h - c*c) / (h*h + c*c)
+            d1 = 2.0*a*rmax + 2.0*c*c*cos2_max
+            d2 = 2.0*a*a + 4.0*c*c
+            radial1 = np.sqrt(2.0)*c + d1/(2.0*root_min)
+            radial2 = np.sqrt(2.0)*c + d2/(2.0*root_min) + d1*d1/(4.0*root_min**3)
+            second_derivative = max(4.0*(a+h), radial2 + 2.0*radial1 + np.sqrt(2.0)*h)
+        dtheta = np.sqrt(8.0 * error / second_derivative)
         count = max(2, int(np.ceil(self.theta_end / dtheta)) + 1)
         return self.centerline(np.linspace(0.0, self.theta_end, count))
 

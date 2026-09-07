@@ -80,5 +80,7 @@ def analyze_realization_redundancy(
         original_dimension=n,
         controllability_rank=c_rank,
         observability_rank=o_rank,
-        redundant_dimension=max(0, n - min(c_rank, o_rank)),
+        # The effective dimension is the rank of the Hankel map O C, not
+        # min(rank(O), rank(C)): reachable directions can all be unobservable.
+        redundant_dimension=max(0, n - _rank(obsv @ ctrb, rtol)),
     )

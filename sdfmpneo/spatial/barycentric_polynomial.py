@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from math import factorial
+from functools import lru_cache
 from typing import Dict, Iterable, Mapping, Tuple
 
 import numpy as np
@@ -71,14 +72,19 @@ def polynomial_power(poly: Mapping[MultiIndex, float], exponent: int) -> Polynom
     return result
 
 
-def simplex_barycentric_monomial_integral(volume: float, powers: MultiIndex) -> float:
+@lru_cache(maxsize=8192)
+def _unit_simplex_moment(powers: MultiIndex) -> float:
     degree = int(sum(powers))
-    numerator = 6.0 * float(volume)
+    numerator = 6.0
     for power in powers:
         if power < 0:
             raise ValueError("barycentric powers must be non-negative")
         numerator *= factorial(int(power))
     return numerator / factorial(3 + degree)
+
+
+def simplex_barycentric_monomial_integral(volume: float, powers: MultiIndex) -> float:
+    return float(volume) * _unit_simplex_moment(tuple(powers))
 
 
 def integrate_polynomial_times_lambda_pair(
@@ -119,22 +125,17 @@ def assemble_polynomial_weighted_nedelec_mass(
         gradients = _barycentric_gradients(mesh.vertices, tet)
         local_pairs = mesh._local_edge_vertex_indices(tet)
         volume = float(mesh.volumes[q])
-        local = np.zeros((6, 6), dtype=float)
-
+        # Only ten independent moments are needed, not four recomputations for
+        # each of the 36 edge pairs. This is the same exact polynomial integral.
+        moments = np.empty((4, 4))
+        for i in range(4):
+            for j in range(i, 4):
+                moments[i, j] = moments[j, i] = integrate_polynomial_times_lambda_pair(volume, poly, i, j)
+        coefficients = np.zeros((6, 4, 3))
         for p, (i, j) in enumerate(local_pairs):
-            gi, gj = gradients[i], gradients[j]
-            for r, (k, ell) in enumerate(local_pairs):
-                gk, gl = gradients[k], gradients[ell]
-                local[p, r] = (
-                    np.dot(gj, gl)
-                    * integrate_polynomial_times_lambda_pair(volume, poly, i, k)
-                    - np.dot(gj, gk)
-                    * integrate_polynomial_times_lambda_pair(volume, poly, i, ell)
-                    - np.dot(gi, gl)
-                    * integrate_polynomial_times_lambda_pair(volume, poly, j, k)
-                    + np.dot(gi, gk)
-                    * integrate_polynomial_times_lambda_pair(volume, poly, j, ell)
-                )
+            coefficients[p, i] = gradients[j]
+            coefficients[p, j] = -gradients[i]
+        local = np.einsum('pik,ij,qjk->pq', coefficients, moments, coefficients)
 
         edges = mesh.tet_edge_indices[q]
         for p, ep in enumerate(edges):

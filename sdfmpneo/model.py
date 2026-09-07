@@ -12,6 +12,30 @@ from .training import (
 )
 
 
+def _temperature(model, a, assembly, reference):
+    deviation = np.asarray(model.reconstruct(a), dtype=float)
+    if assembly is not None:
+        deviation = assembly.expand_free(deviation)
+    if reference is None:
+        return deviation
+    baseline = np.asarray(reference, dtype=float)
+    if baseline.shape not in ((), deviation.shape):
+        raise ValueError("temperature_reference must be scalar or match reconstructed nodes")
+    return deviation + baseline
+
+
+def _port_outputs(ports, model, a, requested_error):
+    if hasattr(model, "residual_certificate_for_rhs"):
+        result = ports.evaluate_reduced_physical_certified(
+            model.problem, a, model,
+            requested_impedance_element_error=requested_error,
+        )
+        return result, result
+    result = ports.evaluate(model.problem, a, reduced_basis=model.V)
+    certificate = certify_multiport_impedance(model.problem, ports, a, model.V)
+    return result, certificate
+
+
 @dataclass(frozen=True)
 class OnlinePrediction:
     time: float
@@ -24,6 +48,10 @@ class OnlinePrediction:
     impedance: object | None
     region_losses: dict[str, float] | None
     drive_rhs_residual_dual_norm: float
+
+    @property
+    def maximum_temperature(self) -> float:
+        return float(np.max(self.temperature_field))
 
 
 @dataclass(frozen=True)
@@ -47,6 +75,10 @@ class ParametricOnlinePrediction:
     impedance_certificate: object | None
     region_losses: dict[str, float] | None
 
+    @property
+    def maximum_temperature(self) -> float:
+        return float(np.max(self.temperature_field))
+
 
 class ExecutableSDFMPNEOModel:
     """Executable arbitrary-time map for one fixed geometry and operating point."""
@@ -60,12 +92,18 @@ class ExecutableSDFMPNEOModel:
         ports=None,
         drive_currents: np.ndarray | None = None,
         region_loss_projector=None,
+        thermal_assembly=None,
+        temperature_reference=None,
+        requested_impedance_error: float = 1e-6,
     ) -> None:
         self.evolution = evolution
         self.thermal_model = thermal_model
         self.electromagnetic_model = electromagnetic_model
         self.ports = ports
         self.region_loss_projector = region_loss_projector
+        self.thermal_assembly = thermal_assembly
+        self.temperature_reference = temperature_reference
+        self.requested_impedance_error = requested_impedance_error
 
         if len(self.thermal_model.lambdas) != self.electromagnetic_model.problem.n_thermal:
             raise ValueError("thermal/electromagnetic reduced dimensions do not match")
@@ -94,16 +132,14 @@ class ExecutableSDFMPNEOModel:
         da = np.asarray(da, dtype=float)
 
         residual = self.residual_evaluator.evaluate(a, da)
-        temperature = self.thermal_model.reconstruct(a)
+        temperature = _temperature(self.thermal_model, a, self.thermal_assembly, self.temperature_reference)
         heat_source = self.electromagnetic_model.heat_source_for_rhs(a, self.drive_rhs)
         drive_residual = self.electromagnetic_model.residual_dual_norm_for_rhs(a, self.drive_rhs)
 
         port_result = None
         if self.ports is not None:
-            port_result = self.ports.evaluate(
-                self.electromagnetic_model.problem,
-                a,
-                reduced_basis=self.electromagnetic_model.V,
+            port_result, _ = _port_outputs(
+                self.ports, self.electromagnetic_model, a, self.requested_impedance_error,
             )
 
         region_losses = None
@@ -150,6 +186,9 @@ class ParametricExecutableSDFMPNEOModel:
         rhs_map: AffineOperatingRHSMap,
         ports=None,
         region_loss_projector=None,
+        thermal_assembly=None,
+        temperature_reference=None,
+        requested_impedance_error: float = 1e-6,
     ) -> None:
         self.evolution = evolution
         self.thermal_model = thermal_model
@@ -157,6 +196,9 @@ class ParametricExecutableSDFMPNEOModel:
         self.rhs_map = rhs_map
         self.ports = ports
         self.region_loss_projector = region_loss_projector
+        self.thermal_assembly = thermal_assembly
+        self.temperature_reference = temperature_reference
+        self.requested_impedance_error = requested_impedance_error
 
         if evolution.n_modes != len(thermal_model.lambdas):
             raise ValueError("analytic/thermal dimensions do not match")
@@ -188,7 +230,7 @@ class ParametricExecutableSDFMPNEOModel:
         u = np.asarray(operating, dtype=float)
         sample = self.residual_evaluator.evaluate(float(t), a0=initial, operating=u)
 
-        temperature = self.thermal_model.reconstruct(sample.a)
+        temperature = _temperature(self.thermal_model, sample.a, self.thermal_assembly, self.temperature_reference)
         drive_residual = self.electromagnetic_model.residual_dual_norm_for_rhs(
             sample.a,
             sample.rhs,
@@ -197,16 +239,8 @@ class ParametricExecutableSDFMPNEOModel:
         port_result = None
         port_certificate = None
         if self.ports is not None:
-            port_result = self.ports.evaluate(
-                self.electromagnetic_model.problem,
-                sample.a,
-                reduced_basis=self.electromagnetic_model.V,
-            )
-            port_certificate = certify_multiport_impedance(
-                self.electromagnetic_model.problem,
-                self.ports,
-                sample.a,
-                self.electromagnetic_model.V,
+            port_result, port_certificate = _port_outputs(
+                self.ports, self.electromagnetic_model, sample.a, self.requested_impedance_error,
             )
 
         region_losses = None

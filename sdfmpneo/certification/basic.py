@@ -56,7 +56,11 @@ def residual_to_state_gain(kappa: float, time_horizon: float | None = None) -> f
     if k == 0.0:
         return T
     # expm1 is stable both near zero and for moderate negative kappa.
-    return float(-np.expm1(-k * T) / k)
+    with np.errstate(over="ignore", invalid="ignore"):
+        gain = float(-np.expm1(-k * T) / k)
+    if not np.isfinite(gain):
+        raise FloatingPointError("residual-to-state gain exceeds floating-point range")
+    return gain
 
 
 def state_error_from_residual(
