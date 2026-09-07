@@ -2,213 +2,128 @@
 
 **Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator for Underwater WPT**
 
-SDF-MPNEO is a solution-data-free electromagnetic–thermal surrogate framework for underwater wireless power transfer. Conductor, package, seawater, and passive media remain explicit spatial physics; fluid velocity is outside the present scope.
+SDF-MPNEO is a solution-data-free electromagnetic–thermal surrogate framework for underwater wireless power transfer. Conductor, package, seawater and passive media remain explicit spatial physics. Fluid velocity is outside the present scope.
 
-The method has no geometry-specific impedance-solver dependency. Its current executable path is
+Version **0.9.0** closes the main software-integration gaps identified after 0.8.1: factorization-free Riesz is now the nonlinear production default, top-level thermal truncation can use a certified partial eigenspectrum, geometry can be organized as a discrete union of independently certified charts, error propagation is typed by physical layer/norm, CAD boundary heuristics have been removed, and external validation cases require traceable provenance.
 
-```text
-3-D geometry/materials + a0 + operating condition U + arbitrary time t
-                                  |
-                                  v
-                 compatible electromagnetic + thermal physics
-                                  |
-                +-----------------+-----------------+
-                |                                   |
-                v                                   v
- sparse physical-energy reduced EM       certified thermal spectrum
-                |                                   |
-                +---------- quasi-static -----------+
-                             EM elimination
-                                  |
-                                  v
-                     q_em,r(a,U), dq_em,r/da
-                                  |
-                                  v
-                 intrinsic parametric analytic network
-                                  |
-                                  v
-               a(t), T(x,t), Z/R/L/M, P_Cu, P_sea
-                                  |
-                                  v
-                     deterministic error certificates
-```
-
-## What is implemented
-
-1. **Compatible 3-D electromagnetic physics.** Both an orthogonal correctness grid and an unstructured tetrahedral path are implemented. The tetrahedral path uses first-order Nedelec edge elements; the shared thermal path uses P1 finite elements.
-2. **Exact topology and gauges.** `C @ G = 0` is constructed exactly. Tree-cotree magnetic gauge elimination and one scalar-potential reference per conducting component remove nullspaces without penalty parameters or numerical rank thresholds.
-3. **Reciprocal `A-psi` coordinates.** With `psi=phi/(j omega)`, reciprocal real materials produce a complex-symmetric field matrix, so reciprocity is structural.
-4. **Fully sparse snapshot-free electromagnetic reduction for the nonlinear production path.** At each thermal state, the local physical metric `H(a)=K+D(a)` certifies the reduced residual. Enrichment and dual norms consume a certified Riesz action with explicit upper/lower bounds; an exact full-order `H^-1` is not part of the reduction theorem. No FEM/Maxwell solution snapshots are used.
-5. **Certified thermal rank selection.** Thermal modes come from the generalized heat eigenproblem. The retained rank is either the complete discrete spectrum or the smallest rank satisfying the spectral-tail error certificate.
-6. **Nonlinear copper temperature law without conductivity linearization.** On tetrahedra, the reciprocal conductivity induced by linear copper resistivity is represented by a barycentric geometric series whose minimal order is determined by a rigorous relative remainder bound. Retained terms are integrated exactly against Nedelec fields.
-7. **Exact P1-weighted Joule projection.** `q_em,r` and its Jacobian use analytic barycentric integration; no tetrahedron-centre loss sampling is required.
-8. **Copper/seawater loss separation from the same field state.** Both affine and certified nonlinear tetrahedral paths support `P_Cu` and `P_sea` without add-on resistance formulas.
-9. **Jointly certified multiport production entry.** `TetrahedralElectroThermalCore.build_reduced_electromagnetics(..., port_set=...)` includes all unit port right-hand sides in one residual-greedy basis. The same reduced model directly supplies certified reciprocal `Z`, `R`, `L`, and `M` without a full-order electromagnetic equilibrium solve.
-10. **Constitutive remainder propagated to outputs.** The certified conductivity-series error is propagated through the EM inverse to deterministic bounds on `Z/R/L/M`, electromagnetic state, and projected heat source `q_em,r`. If the inverse perturbation condition fails, the result is explicitly uncertified rather than weakened heuristically.
-11. **Native sparse high-contrast tetrahedral field path.** Nonlinear tetrahedral `A(a)`, `dA/da`, loss operators, port projection, and energy metrics remain sparse. Regression cases use copper/seawater conductivity ratios above `1e7`.
-12. **Contrast-independent physical energy certificate.** For the physical sparse operator `A=K+iD`, `K,D>=0`, the metric `H=K+D` gives the structural coercivity bound `beta_H >= 1/sqrt(2)`, independent of conductivity contrast. Hence `||e||_H <= sqrt(2)||r||_(H^-1)`.
-13. **Output-driven sparse solve accuracy.** Requested `Z` accuracy is converted directly into the required field energy accuracy; the user does not choose an unrelated Krylov tolerance or minimum singular-value estimate. Linear-solve and reduced-space errors propagate to `Z/R/L/M` and projected heat-source bounds.
-14. **Certified physical-block Riesz action.** For the gauge-reduced metric
-
-   ```text
-   H = [[K_A + D_AA, D_Apsi],
-        [D_psiA,       D_psipsi]],
-   ```
-
-   a certified bound `D_AA <= gamma K_A` gives
-
-   ```text
-   H >= m(gamma) diag(K_A,D_psipsi),
-   m(gamma)=2/[2+gamma+sqrt(gamma^2+4 gamma)].
-   ```
-
-   If replaceable block actions satisfy `K_A >= m_K P_K` and `D_psipsi >= m_E P_E`, the actual preconditioner satisfies `H >= m(gamma) min(m_K,m_E) diag(P_K,P_E)`. No damping or fitted block weight is introduced.
-15. **Proof-driven gamma certification beyond diagonal dominance.** The fast path uses normalized Gershgorin. If the magnetic block is not diagonally dominant, the code uses an explicitly residual-certified sparse-factorization calculation to bound `gamma <= trace(K_A^-1 D_AA)`. Failure is reported rather than repaired by a shift.
-16. **Replaceable block-action implementation.** The default magnetic/scalar block actions use complete sparse LU as a correctness backend, but the theorem only consumes each block action and its proved spectral-equivalence constant. Regression tests replace both blocks with non-LU certified actions and disable `splu` successfully when the block certificate permits it.
-17. **Deterministic full-order correctness fallback.** The separate full-order `A x=b` verification solver uses energy-preconditioned BiCGSTAB and, when necessary, complete sparse LU without ILU drop parameters. This is not used as the reduced equilibrium in the online ROM path.
-18. **Intrinsic analytic neural evolution.** Initial coordinates and static operating parameters are network-internal zero-dynamics analytic nodes. One graph represents `(a0,U,t) -> a(t)` for a fixed spatial/thermal operator family; no external condition encoder generates network weights.
-19. **Residual-grown analytic topology.** Candidate response neurons are selected by the unresolved physical residual and exact heat-source Jacobian, followed by full nonlinear residual re-evaluation.
-20. **Resonance-stable analytic evaluation.** The fast polynomial-exponential compiler has an independent exact state-space realization backend, so exact/near resonance requires no closeness threshold.
-21. **Continuous affine-domain certification.** For affine EM parameter dependence, branch-and-bound proves a residual bound over a continuous parameter box or returns `violated` / `indeterminate`.
-
-## Core equations
-
-The reduced electromagnetic equilibrium is
+The current executable path is
 
 ```text
-A_em,r(a;U) c = b_em,r(U),
-q_em,r(a;U) = q_Cu,r + q_sea,r.
+UWPT chart / CAD / materials + a0 + U + arbitrary t
+                         |
+                         v
+              tagged tetrahedral physics
+                         |
+          +--------------+--------------+
+          |                             |
+          v                             v
+ compatible nonlinear EM          P1 thermal operator
+          |                             |
+          v                             v
+ H=K+D physical metric        certified partial spectrum
+          |                             |
+          v                             |
+ factorization-free Riesz              |
+          |                             |
+          v                             |
+ snapshot-free EM ROM -----------------+
+          |
+          v
+ q_em(a,U), dq_em/da, Z/R/L/M, P_Cu, P_sea
+          |
+          v
+ electrothermal vector field F_G(a,U)
+          |
+          v
+ residual-grown intrinsic analytic DAG
+          |
+          v
+       (G,U,a0,t) -> a(t)
+          |
+          v
+ T(x,t), Tmax and certified outputs
+          |
+          v
+ typed deterministic error propagation
 ```
 
-The thermal dynamics are
+## Scientific rules
+
+The implementation follows these non-negotiable rules:
+
+- no labelled FEM/Maxwell/COMSOL/experimental solution data are used for training;
+- no full-order electromagnetic solution snapshots are required for the production ROM basis;
+- no geometry-specific impedance solver is a core dependency;
+- ranks, approximation orders and acceptance criteria are driven by governing physics or explicit certificates rather than unexplained hyperparameters;
+- a missing proof returns an uncertified/indeterminate result instead of being repaired by a fitted factor;
+- external solver/experimental data are validation-only and must remain excluded from training.
+
+## 0.9 production defaults
+
+### Factorization-free nonlinear Riesz path
+
+For the gauge-reduced reciprocal tetrahedral operator
 
 ```text
-da/dt + Lambda_T a = g_em(a;U).
+A(a) = K + i D(a),
+H(a) = K + D(a),
+K,D >= 0,
 ```
 
-The analytic neural operator evaluates
-
-```text
-a(t) = N_analytic(a0,U,t)
-```
-
-directly at arbitrary `t`, without thermal time marching during inference. Its physical residual is
-
-```text
-R = da/dt + Lambda_T a - g_em(a;U).
-```
-
-For a contraction margin `kappa>0`, the current error architecture uses
-
-```text
-||e_T|| <= (eta_NN + eta_ROM + eta_EM) / kappa.
-```
-
-The nonlinear constitutive remainder, electromagnetic reduced-space residual, and algebraic sparse field-solve error provide separate executable contributions to `eta_EM`; mesh and outer-domain errors remain explicit pending terms rather than hidden tolerances.
-
-## Sparse physical-energy field certificate
-
-For the gauge-reduced reciprocal tetrahedral operator,
-
-```text
-A = K + i D,
-K >= 0,
-D >= 0,
-H = K + D.
-```
-
-For any complex field state `x`,
-
-```text
-|x^H A x|
-= sqrt[(x^H K x)^2 + (x^H D x)^2]
->= x^H H x / sqrt(2).
-```
-
-Therefore
+physical coercivity gives
 
 ```text
 beta_H >= 1/sqrt(2),
-||x-x_h||_H <= sqrt(2) ||b-Ax_h||_(H^-1).
+||e||_H <= sqrt(2) ||r||_(H^-1).
 ```
 
-This stability bound contains no fitted conductivity-ratio correction. For closed port sources `b_i`,
+`TetrahedralElectroThermalCore.build_reduced_electromagnetics()` now selects the **Morse face-circulation magnetic auxiliary + state-aware conductive scalar-tree** preconditioner by default. The resulting outer `CertifiedPCGRieszAction` is factorization-free in the production ROM path. Complete sparse LU is retained only for explicit compatibility/correctness backends and separate verification fallbacks.
+
+The production default is regression-tested with `scipy.sparse.linalg.splu` disabled.
+
+### Certified partial thermal spectrum
+
+When a thermal truncation request supplies all of
 
 ```text
-|Delta Z_ij|
-<= omega ||b_i||_(H^-1) ||Delta x_j||_H.
+initial_temperature_deviation_free,
+source_dual_bound,
+requested_state_tolerance,
 ```
 
-A requested per-entry impedance accuracy therefore determines the field-solve requirement automatically. The same energy-state certificate is propagated to the reduced Joule heat source.
+the top-level core first tries a **partial sparse eigensolve**. Retained rank is not supplied as a free hyperparameter: the code starts from the smallest admissible rank and accepts the first rank whose rigorous thermal-tail bound is below the requested tolerance.
 
-See [`docs/SPARSE_ENERGY_SOLVER.md`](docs/SPARSE_ENERGY_SOLVER.md) for the full-order solve theorem.
+The first omitted thermal eigenvalue has an independent lower bound. The built-in path uses a conservative Li-Yau bound from domain volume and material extrema. If that proof cannot certify the request, the implementation falls back to the full discrete spectrum rather than weakening the theorem.
 
-## Certified Riesz action and physical blocks
-
-A Riesz action does not need to return the exact vector `H^-1 r`. It returns an approximate vector plus a certified action-error radius and a certified interval for the dual norm. With a preconditioner `P` satisfying
+The selected backend is recorded as
 
 ```text
-H >= m P,
+partial_certified
+full_certified_fallback
+full_discrete
 ```
 
-PCG residual `s=r-Hy_h` gives
+so downstream studies can report exactly how the thermal basis was obtained.
+
+## Compatible electromagnetic–thermal core
+
+The unstructured path uses first-order Nedelec edge elements for electromagnetics and P1 finite elements for thermal physics on the same tetrahedral mesh. Exact incidence satisfies
 
 ```text
-||H^-1 r-y_h||_H^2
-= s^H H^-1 s
-<= (1/m) s^H P^-1 s.
+C @ G = 0.
 ```
 
-Hence the dual norm is enclosed without a user-selected algebraic tolerance. The formal tetrahedral core builds this outer action from the magnetic/scalar physical block theorem above. Complete block LU is only the current default action implementation and is not embedded in the outer theorem.
+Tree-cotree magnetic gauge elimination and one scalar-potential reference per conducting component remove nullspaces without penalty parameters or numerical rank tuning.
 
-See [`docs/CERTIFIED_RIESZ_ACTION.md`](docs/CERTIFIED_RIESZ_ACTION.md) for the action contract.
-
-## Sparse physical-energy reduction
-
-For reduced basis `V`,
+With
 
 ```text
-A_r(a) = V^H A(a) V,
-b_r = V^H b,
-x_r = V A_r(a)^-1 b_r.
+psi = phi/(j omega),
 ```
 
-The unresolved residual is
+reciprocal real materials yield a complex-symmetric `A-psi` field matrix, making reciprocity structural instead of an output post-processing operation.
 
-```text
-r(a) = b - A(a) x_r(a).
-```
-
-At every candidate state, reduction error is certified with the **local** metric
-
-```text
-eta(a) = sqrt(2) ||r(a)||_(H(a)^-1),
-H(a)=K+D(a).
-```
-
-The worst unresolved state/excitation generates the next enrichment from a certified local Riesz action. A single global coordinate system is stored in the intrinsic reference metric `H0=H(0)`. After each enrichment, only the small Gram matrix
-
-```text
-G = W^H H0 W
-```
-
-is Cholesky-whitened so that `V^H H0 V=I` up to backward error. Neither `H0` nor `A(a)` is densified.
-
-For multiple ports,
-
-```text
-A_r C = V^H B,
-X_r = V C,
-Z_r = j*omega*B^T X_r.
-```
-
-All columns of `B` participate in the same greedy construction when a `port_set` is supplied to the tetrahedral core. Each reduced column is independently certified from its sparse full-order residual, yielding deterministic bounds on every entry of `Z/R/L/M` without solving the full-order electromagnetic equilibrium.
-
-See [`docs/SPARSE_ENERGY_REDUCTION.md`](docs/SPARSE_ENERGY_REDUCTION.md) for the derivation and implementation contract.
-
-## Multiport field output
-
-For closed one-ampere impressed-current port cochains collected in `B`,
+For closed one-ampere port sources collected in `B`,
 
 ```text
 A X = B,
@@ -217,57 +132,199 @@ R = Re(Z),
 L = Im(Z)/omega.
 ```
 
-Regression tests enforce
+The same field state supplies copper and seawater Joule powers, and regression tests enforce reciprocity, passivity and port-power/Joule-power closure.
+
+`SolidTerminalPortSet` additionally supports terminal-current constrained solid conductors through P1-consistent terminal surface loads with exact zero-net-current balance.
+
+## Nonlinear material coupling
+
+Copper uses reciprocal conductivity induced by linear resistivity,
 
 ```text
-Z^T = Z,
-R is passive within numerical error,
-1/2 Re(I^H Z I) = 1/2 E^H M_sigma E = P_Cu + P_sea.
+rho(T) = rho_ref [1 + alpha(T-T_ref)],
+sigma(T) = sigma_ref / [1 + alpha(T-T_ref)].
 ```
 
-The top-level nonlinear-core regression additionally executes
+Inside each tetrahedron the denominator is P1. The reciprocal and its derivative are represented by certified barycentric geometric series. The minimum series order is chosen from the declared pointwise remainder budget, and retained polynomial terms are integrated analytically against Nedelec fields.
+
+The same constitutive representation is used by
+
+- nonlinear field assembly;
+- `dA/da`;
+- projected Joule heat source `q_em`;
+- exact heat-source Jacobian `dq_em/da`;
+- regional copper/seawater loss evaluation.
+
+Constitutive remainder is propagated through an inverse-perturbation theorem. If the perturbation condition fails, the result remains uncertified.
+
+## Snapshot-free electromagnetic reduction
+
+For reduced basis `V`,
 
 ```text
-build_ports
--> joint multi-RHS build_reduced_electromagnetics
--> evaluate_reduced_physical_certified
--> certified Z/R/L/M
+A_r(a) = V^H A(a) V,
+b_r = V^H b,
+x_r(a) = V A_r(a)^-1 b_r.
 ```
 
-while the old global sparse-LU Riesz reference backend is disabled.
-
-## Certified nonlinear copper representation
-
-Inside each tetrahedron,
+The unresolved full-space residual is
 
 ```text
-d(x) = 1 + alpha [T(x)-T_ref]
+r(a) = b - A(a) x_r(a),
 ```
 
-is P1. With
+and the local physical metric gives
 
 ```text
-d_bar = (d_max+d_min)/2,
-z = d/d_bar - 1,
-q = (d_max-d_min)/(d_max+d_min) < 1,
+eta(a) = sqrt(2) ||r(a)||_(H(a)^-1).
 ```
 
-the code uses
+A certified Riesz action supplies both an approximate lift and a rigorous dual-norm interval. The unresolved state/excitation generates the next enrichment; no full-order equilibrium solution `A(a)^-1 b` is used as a basis snapshot.
+
+For a joint multiport source matrix, every port column participates in one residual-greedy basis construction, and each reduced column is independently certified. The same ROM directly supplies certified `Z/R/L/M` and projected heat-source quantities.
+
+## Intrinsic analytic neural evolution
+
+The analytic model is not a time-stepper and not a hypernetwork. Initial coordinates and static parameters are zero-dynamics analytic nodes inside one fixed DAG. Within one continuous geometry chart the graph represents
 
 ```text
-1/d = d_bar^-1 sum_{n=0}^N (-z)^n + R_N,
-|R_N|/|1/d| <= q^(N+1),
+(G,U,a0,t) -> a(t)
 ```
 
-and the corresponding certified `1/d^2` series for derivatives. The smallest `N` satisfying the declared constitutive error allocation is selected; `N` is not tuned empirically.
+directly at arbitrary `t`.
 
-The resulting pointwise conductivity error is propagated to field/output bounds via the inverse perturbation condition
+The physical residual is
 
 ```text
-||A_tilde^-1|| ||Delta A|| < 1.
+R = da/dt - F_G(a,U)
+  = da/dt + Lambda_G a - g_em,G(a,U).
 ```
 
-Failure of this condition produces an uncertified result, as verified by regression tests.
+Candidate response neurons are proposed from unresolved physical residual/tangent information and accepted only after complete nonlinear residual re-evaluation. Discrete construction samples may propose candidates, but the stopping criterion is a caller-supplied continuous-domain certificate.
+
+The graph has both a fast polynomial-exponential compiler and an independent state-space realization backend, so exact and near resonance do not rely on a closeness threshold.
+
+## Multi-chart geometry
+
+A single fixed-connectivity affine chart is not treated as a universal geometry model. SDF-MPNEO 0.9 introduces
+
+```text
+CertifiedMultiChartGeometryFamily
+MultiChartGeometryAnalyticEvolutionOperator
+```
+
+to represent
+
+```text
+G = union_s G_s.
+```
+
+Each chart may own a different reference mesh, FE dimension and geometry parameter list. It keeps its own certified local thermal atlas and analytic operator. Charts must expose a compatible retained thermal rank and physical operating interface before they can be combined.
+
+This allows, for example, circle and rounded-square/remeshed geometry families to remain distinct certified charts instead of forcing a topology change into one fictitious affine deformation. The implementation deliberately performs **no cross-chart interpolation of network weights**.
+
+Within a chart, the existing `AffineTetrahedralGeometryChart` proves non-degeneracy and H(curl)/P1 quadratic-form distortion bounds over continuous parameter boxes. `CertifiedGeometryElectroThermalFamily` aligns retained thermal spectral subspaces within compatible reference-domain charts.
+
+## Continuous-domain certification
+
+Executable continuous-domain certificates include:
+
+- affine reduced EM parameter boxes;
+- nonlinear thermal-state EM boxes;
+- thermal state + source + frequency operating boxes;
+- fixed-topology affine geometry families;
+- electrothermal state/operating Jacobian and contraction bounds;
+- continuous analytic residual bounds;
+- continuous `[a0,G,U,t]` cross-geometry analytic residual branches when the required physical geometry derivative proof is supplied.
+
+`certify_electrothermal_domain_bounds()` provides a certified bound for the complete physical state Jacobian
+
+```text
+F(a,U) = -Lambda a + q_em(a,U),
+||dF/da|| <= ||Lambda|| + ||dq_em/da||.
+```
+
+`GeometryDerivativeProof` carries theorem-derived `|dF/dG|` bounds for a declared chart/domain, and `compose_geometry_physical_lipschitz_proof()` combines geometry, state, operating and contraction bounds into the proof object consumed by the cross-geometry branch-and-bound certifier.
+
+A missing chart-wise geometry derivative theorem remains an explicit proof obligation; the composer does not infer one from finite differences.
+
+## Typed error propagation
+
+Error terms are no longer allowed to be added merely because they are finite scalars. `ProofNode` carries
+
+```text
+name,
+physical layer,
+norm,
+bound,
+provenance,
+optional proved propagation target.
+```
+
+`compose_typed_error_certificate()` rejects incompatible accumulation layers/norms.
+
+For electrothermal propagation, EM/constitutive/algebraic/mesh/outer terms must first be converted by proved sensitivities to a common thermal-residual/heat-source norm. Analytic residual is accumulated in that same norm, then the exact comparison-equation gain is applied:
+
+```text
+G(T,kappa) = (1-exp(-kappa*T))/kappa,
+G(T,0) = T.
+```
+
+Only after this residual-to-state propagation may direct thermal-ROM/thermal-outer state errors be added in the thermal-state norm. Output sensitivities then propagate to `T(x,t)`, `Tmax`, or other requested quantities.
+
+The long-time gain is accepted only when the contraction margin is positive.
+
+## Spatial and infinite-domain certificates
+
+The spatial layer includes fail-closed interfaces for
+
+- conforming H(curl)-P1 mesh approximation error;
+- propagation of field-energy error to multiport and Joule outputs;
+- conductive infinite-seawater electromagnetic outer-domain truncation;
+- homogeneous infinite-seawater thermal truncation via heat-kernel/Newton-potential bounds and the parabolic maximum principle.
+
+A mesh refinement sequence is **not** automatically promoted to a mathematical mesh-error certificate. Problem-specific regularity and reliability/interpolation constants must have theorem-level provenance.
+
+## CAD and mesh pipeline
+
+The optional automatic CAD dependency is declared as
+
+```bash
+python -m pip install -e '.[cad]'
+```
+
+The Gmsh pipeline builds round or rounded-square spiral conductors, rectangular conductor sections, package volumes, seawater domain and terminal/outer physical groups.
+
+The old center-of-mass threshold for seawater outer-boundary identification has been removed. The outer artificial boundary is identified from the OCC spherical surface type. Terminal entities are resolved on preserved conductor CAD before Boolean operations, checked for uniqueness, and verified to remain part of the conductor boundary afterwards. Ambiguous topology is rejected instead of resolved by an empirical distance cutoff.
+
+## Independent validation
+
+External validation is explicitly separated from training. Maxwell, COMSOL or experiment cases require a `ValidationEvidenceManifest` with
+
+```text
+reference_kind
+source_identifier
+source_version
+provenance
+used_for_training = False
+```
+
+and cannot be marked as training data. Validation reports preserve source identity/version and can test whether external references lie inside declared model certificates.
+
+The repository does **not** fabricate Maxwell/COMSOL/experimental evidence. The harness is implemented; real independent datasets remain a publication/experimental deliverable.
+
+## Numerical fail-closed policy
+
+The CI suite treats
+
+```text
+numpy.exceptions.ComplexWarning
+scipy.linalg.LinAlgWarning
+```
+
+as errors.
+
+Complex-dtype topology matrices are verified to be exactly real integer matrices before conversion to integer sparse form. Any imaginary or non-integer entry is rejected. Exact singular local LU pivots are converted to deterministic `ValueError` instead of allowing a warning and a corrupted factor to continue.
 
 ## Run
 
@@ -275,70 +332,67 @@ Failure of this condition produces an uncertified result, as verified by regress
 python -m pip install -e '.[dev]'
 python examples/minimal_core.py
 python examples/spatial_core.py
-pytest -q
+pytest -q \
+  -W error::numpy.exceptions.ComplexWarning \
+  -W error::scipy.linalg.LinAlgWarning
 ```
 
-GitHub Actions runs the repository-wide test suite on every push to `main` and pull request targeting `main`.
+For optional automatic Gmsh CAD/meshing:
 
-## Documentation
+```bash
+python -m pip install -e '.[dev,cad]'
+```
 
-- [`docs/SDFMPNEO_theory.tex`](docs/SDFMPNEO_theory.tex): governing equations and complete theory.
-- [`docs/SDFMPNEO_implementation.md`](docs/SDFMPNEO_implementation.md): software architecture and implementation contract.
-- [`docs/MVP_CORE.md`](docs/MVP_CORE.md): exact executable status and remaining obligations.
-- [`docs/TETRAHEDRAL_CORE.md`](docs/TETRAHEDRAL_CORE.md): unstructured Nedelec/P1 field chain and nonlinear material integration.
-- [`docs/SPARSE_ENERGY_SOLVER.md`](docs/SPARSE_ENERGY_SOLVER.md): sparse high-contrast field solve, `1/sqrt(2)` energy coercivity, and algebraic output certificates.
-- [`docs/CERTIFIED_RIESZ_ACTION.md`](docs/CERTIFIED_RIESZ_ACTION.md): certified inexact Riesz actions without arbitrary solver tolerance.
-- [`docs/SPARSE_ENERGY_REDUCTION.md`](docs/SPARSE_ENERGY_REDUCTION.md): fully sparse snapshot-free residual-Riesz reduction and certified reduced multiport outputs.
-- [`docs/COMPATIBLE_EM.md`](docs/COMPATIBLE_EM.md): reciprocal `A-psi` electromagnetic formulation and multiport field outputs.
-- [`docs/SPATIAL_3D.md`](docs/SPATIAL_3D.md): shared spatial-discretization foundations.
-- [`docs/NONLINEAR_CONSTITUTIVE.md`](docs/NONLINEAR_CONSTITUTIVE.md): nonlinear temperature-dependent material laws.
-- [`docs/PARAMETRIC_ANALYTIC.md`](docs/PARAMETRIC_ANALYTIC.md): intrinsic `(a0,U,t)` analytic network and parameter-domain residual growth.
+GitHub Actions runs the strict repository-wide regression suite on every push to `main` and pull request targeting `main`.
 
 ## Main implementation layers
 
-- `sdfmpneo/spatial/tetra3d.py`: unstructured tetrahedral topology, Nedelec geometry, and P1 thermal assembly
-- `sdfmpneo/spatial/barycentric_polynomial.py`: exact barycentric polynomial algebra/integration
-- `sdfmpneo/em/tetra.py`: affine tetrahedral reciprocal `A-psi` verification path
-- `sdfmpneo/em/tetra_nonlinear.py`: certified nonlinear tetrahedral sparse material/field path
-- `sdfmpneo/em/reciprocal_series.py`: rigorous reciprocal copper series and remainder bounds
-- `sdfmpneo/em/sparse_solver.py`: reusable certified sparse field solvers and physical energy residual norms
-- `sdfmpneo/em/energy_solver.py`: physical `H=K+D` construction and contrast-independent A-psi solve wrapper
-- `sdfmpneo/em/riesz_action.py`: Riesz-action interface and sparse-LU reference implementation
-- `sdfmpneo/em/certified_riesz.py`: certified PCG Riesz action and preconditioner contract
-- `sdfmpneo/em/block_riesz.py`: physical magnetic/scalar block theorem, gamma certificate, and replaceable block actions
-- `sdfmpneo/em/sparse_reduced.py`: production sparse physical-energy snapshot-free single/multi-RHS EM reduction
-- `sdfmpneo/em/reduced.py`: legacy dense Cholesky-Riesz reducer retained for affine/orthogonal verification only
-- `sdfmpneo/em/ports.py`: sparse port projection, full-order certificates, and certified reduced multiport `Z/R/L/M`
-- `sdfmpneo/em/tetra_nonlinear_diagnostics.py`: nonlinear material-region Joule powers
-- `sdfmpneo/thermal/spectral.py`: thermal spectrum and tail-certified rank selection
-- `sdfmpneo/analytic`: intrinsic analytic DAG, parameter algebra, fast compiler, and stable realization
-- `sdfmpneo/training`: physical residual and residual-driven analytic-network growth
-- `sdfmpneo/certification`: state, EM-domain, constitutive, algebraic-solve, multiport, and heat-source certificates
-- `sdfmpneo/tetra_core.py`: one-call certified nonlinear sparse-energy core with joint multiport reduction plus explicitly named affine verification path
-- `sdfmpneo/model.py`: fixed and parameter-conditioned arbitrary-time online query interfaces
+- `sdfmpneo/spatial/tetra3d.py`: unstructured tetrahedral topology, Nedelec geometry and P1 thermal assembly
+- `sdfmpneo/spatial/uwpt_geometry.py`: round/rounded-square UWPT geometry definitions and tagged mesh import
+- `sdfmpneo/spatial/gmsh_pipeline.py`: optional automatic OCC/Gmsh CAD and conforming meshing
+- `sdfmpneo/spatial/geometry_chart.py`: certified fixed-connectivity affine geometry chart
+- `sdfmpneo/em/tetra_nonlinear.py`: certified nonlinear sparse tetrahedral `A-psi` material/field path
+- `sdfmpneo/em/reciprocal_series.py`: rigorous reciprocal copper series and derivative remainder bounds
+- `sdfmpneo/em/sparse_reduced.py`: snapshot-free sparse physical-energy EM reduction
+- `sdfmpneo/em/certified_riesz.py`: certified PCG Riesz action
+- `sdfmpneo/em/morse_face_auxiliary.py`: topology-generated Morse face-circulation magnetic auxiliary
+- `sdfmpneo/em/scalar_tree_auxiliary.py`: state-aware conductive scalar-tree auxiliary
+- `sdfmpneo/em/morse_block_riesz.py`: factorization-free physical Riesz composition
+- `sdfmpneo/em/terminal_ports.py`: solid-conductor terminal-current ports
+- `sdfmpneo/thermal/partial_spectral.py`: sparse low-mode solve and omitted-eigenvalue certificate
+- `sdfmpneo/thermal/atlas.py`: certified retained thermal spectral-subspace alignment
+- `sdfmpneo/analytic`: intrinsic analytic DAG, compiler and stable realization
+- `sdfmpneo/analytic/multichart_operator.py`: chart-dispatched analytic evolution
+- `sdfmpneo/training`: residual/tangent growth and closed-loop solution-data-free trainer
+- `sdfmpneo/geometry_family.py`: continuous chart electrothermal family
+- `sdfmpneo/geometry_multichart.py`: finite union of independently certified geometry charts
+- `sdfmpneo/certification`: continuous-domain, output, spatial, proof-composition and typed propagation certificates
+- `sdfmpneo/validation.py`: independent validation evidence/provenance contract
+- `sdfmpneo/tetra_core.py`: top-level tetrahedral electrothermal construction and production EM reduction
+- `sdfmpneo/model.py`: fixed/parametric arbitrary-time online query interfaces
 
-## Non-negotiable rules
+## Documentation
 
-- No labelled FEM/Maxwell/experimental solution data in training.
-- No full-order solution snapshots are required for production EM basis construction.
-- No geometry-specific impedance solver is a core dependency.
-- No empirical near/far split, fixed neural width/depth, artificial thermal time constant, gauge penalty, empirical constitutive correction, ILU drop tolerance, or unexplained solver tolerance defines the method.
-- Free approximation orders/ranks and acceptance thresholds must be set by governing physics or explicit error/convergence certificates.
-- Full-order simulations and experiments are validation tools only.
+- `docs/PRODUCTION_STATUS_0_9.md`: authoritative 0.9 implementation status and remaining real obligations
+- `docs/SDFMPNEO_theory.tex`: governing equations and theory
+- `docs/SDFMPNEO_implementation.md`: software architecture and implementation contract
+- `docs/MVP_CORE.md`: executable-core status, retained for continuity but synchronized with 0.9
+- `docs/TETRAHEDRAL_CORE.md`: unstructured Nedelec/P1 field chain
+- `docs/SPARSE_ENERGY_SOLVER.md`: physical-energy full-order solve theorem
+- `docs/CERTIFIED_RIESZ_ACTION.md`: certified inexact Riesz action contract
+- `docs/SPARSE_ENERGY_REDUCTION.md`: snapshot-free sparse residual-Riesz reduction
+- `docs/NONLINEAR_CONSTITUTIVE.md`: nonlinear temperature-dependent material laws
+- `docs/PARAMETRIC_ANALYTIC.md`: intrinsic analytic network and parameter-domain residual growth
 
-## Remaining production obligations
+## Remaining real obligations
 
-The mathematical unstructured sparse core and snapshot-free multiport reduction are present, but production-scale underwater WPT still requires:
+The software architecture is substantially closed, but the following are still genuine research/evidence tasks:
 
-1. CAD/mesh import and conforming mesh generation for actual round/rounded-square coils, package, and seawater domains;
-2. memory-scalable certified multilevel/auxiliary-space block actions for `K_A` and `D_psipsi`; the outer physical-block/Riesz theorem is already independent of the current exact block-LU implementation;
-3. a scalable proof of the magnetic domination constant `gamma` that removes the current residual-certified sparse-LU trace fallback when normalized Gershgorin is insufficient;
-4. continuous-domain certification for the nonlinear tetrahedral material/reduction problem over thermal state, geometry, frequency, and source parameters; the present finite candidate-set certificate is not treated as a continuous-domain proof;
-5. spatial mesh-discretization error and certified outer-domain truncation contributions in the unified output/state certificate;
-6. certified open/infinite seawater electromagnetic and thermal outer-boundary treatment;
-7. scalable partial thermal eigensolution with a certified lower bound for the first omitted eigenvalue;
-8. terminal-current constrained solid-conductor ports where impressed closed-current ports are not the intended excitation;
-9. parameterization across geometry/operator families that alter the thermal spectrum, beyond the implemented static-`U` analytic network at a fixed operator family;
-10. certified compression/minimalization of large analytic state-space realizations and a globally convergent network-growth proof.
+1. populate traceable independent Maxwell/COMSOL and experimental UWPT validation evidence, kept strictly outside training;
+2. provide problem-specific H(curl)-P1 regularity/reliability constants for each declared material/geometry chart;
+3. provide theorem-derived chart-wise geometry derivative bounds needed to close every intended `[a0,G,U,t]` physical proof automatically;
+4. demonstrate memory/iteration/rank/certificate scaling on realistically sized UWPT CAD meshes;
+5. add certified compression/minimalization of large analytic state-space realizations;
+6. establish a global convergence/completeness theorem for residual-grown analytic-network construction.
 
-Complete sparse LU is now confined to correctness-scale components: the default magnetic/scalar block actions, the non-diagonally-dominant `gamma` certificate fallback, and the separate full-order `A` verification fallback. The formal nonlinear ROM and multiport output path no longer requires an exact global `H^-1` Riesz solve.
+These are explicit obligations, not hidden safety factors. Unsupported claims remain uncertified.
