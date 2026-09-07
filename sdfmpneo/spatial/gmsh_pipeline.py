@@ -118,17 +118,66 @@ def _add_rectangular_pipe(gmsh, coil, geometry_tolerance: float) -> tuple[int, n
     return int(volumes[0]), points[0].copy(), points[-1].copy()
 
 
-def _surface_nearest_to(model, occ, volume_tag: int, point: np.ndarray) -> int:
+def _terminal_surface_at_endpoint(model, occ, volume_tag: int, point: np.ndarray) -> int:
+    """Resolve an end cap without a geometric acceptance threshold.
+
+    The pipe is synchronized before Boolean operations, so the endpoint is the
+    exact centerline endpoint of the conductor.  We choose the unique boundary
+    face whose CAD center of mass is nearest to that endpoint.  A floating-point
+    tie is rejected rather than resolved by an arbitrary distance cutoff.
+    """
+
     boundary = model.getBoundary([(3, int(volume_tag))], combined=False, oriented=False, recursive=False)
-    candidates = [tag for dim, tag in boundary if dim == 2]
+    candidates = [int(tag) for dim, tag in boundary if dim == 2]
     if not candidates:
         raise RuntimeError("volume has no terminal surface candidates")
     target = np.asarray(point, dtype=float)
-    distances = []
-    for surface in candidates:
-        center = np.asarray(occ.getCenterOfMass(2, int(surface)), dtype=float)
-        distances.append(float(np.linalg.norm(center - target)))
-    return int(candidates[int(np.argmin(distances))])
+    distances = np.array(
+        [
+            np.linalg.norm(np.asarray(occ.getCenterOfMass(2, surface), dtype=float) - target)
+            for surface in candidates
+        ],
+        dtype=float,
+    )
+    order = np.argsort(distances)
+    if len(order) > 1:
+        d0 = float(distances[order[0]])
+        d1 = float(distances[order[1]])
+        scale = max(1.0, d0, d1, float(np.linalg.norm(target)))
+        backward = 128.0 * np.finfo(float).eps * scale
+        if d1 - d0 <= backward:
+            raise RuntimeError("terminal surface is not uniquely identified by the CAD endpoint")
+    return candidates[int(order[0])]
+
+
+def _validate_boundary_entity(model, volume_tag: int, surface_tag: int, name: str) -> None:
+    boundary = model.getBoundary([(3, int(volume_tag))], combined=False, oriented=False, recursive=False)
+    current = {int(tag) for dim, tag in boundary if dim == 2}
+    if int(surface_tag) not in current:
+        raise RuntimeError(f"persistent CAD entity {name!r} was changed by Boolean operations")
+
+
+def _spherical_outer_boundary_surfaces(model, water_volumes: list[int]) -> list[int]:
+    """Return only OCC spherical boundary entities of the seawater domain.
+
+    The artificial exterior is created by ``addSphere``.  Package/conductor hole
+    boundaries are planar/swept entities; therefore CAD surface type, rather than
+    a center-of-mass/radius threshold, is the persistent topological identifier.
+    """
+
+    surfaces: set[int] = set()
+    for volume in water_volumes:
+        for dim, surface in model.getBoundary(
+            [(3, int(volume))], combined=False, oriented=False, recursive=False
+        ):
+            if dim != 2:
+                continue
+            kind = str(model.getType(2, int(surface))).strip().lower()
+            if kind.startswith("sphere"):
+                surfaces.add(int(surface))
+    if not surfaces:
+        raise RuntimeError("seawater domain has no spherical artificial outer-boundary entity")
+    return sorted(surfaces)
 
 
 def _physical_group(model, dim: int, entities: list[int], tag: int, name: str) -> None:
@@ -151,7 +200,7 @@ def mesh_underwater_wpt_geometry(
     ``gmsh`` is imported only inside this function, keeping it an optional CAD
     dependency. ``geometry_tolerance`` is the declared centerline polyline
     chord-error budget; no hidden segment count is introduced. ``mesh_size`` is
-    explicit and is expected to come from the W4 spatial error budget.
+    explicit and is expected to come from the spatial error budget.
     """
 
     tol = float(geometry_tolerance)
@@ -182,6 +231,18 @@ def mesh_underwater_wpt_geometry(
 
         tx_copper, tx_start, tx_end = _add_rectangular_pipe(gmsh, geometry.transmitter, tol)
         rx_copper, rx_start, rx_end = _add_rectangular_pipe(gmsh, geometry.receiver, tol)
+
+        # Resolve and persist terminal CAD entities before any Boolean operation.
+        # Copper is subsequently used with removeTool=False, so changing one of
+        # these entity tags is treated as a topology failure rather than guessed.
+        occ.synchronize()
+        tx_s0 = _terminal_surface_at_endpoint(model, occ, tx_copper, tx_start)
+        tx_s1 = _terminal_surface_at_endpoint(model, occ, tx_copper, tx_end)
+        rx_s0 = _terminal_surface_at_endpoint(model, occ, rx_copper, rx_start)
+        rx_s1 = _terminal_surface_at_endpoint(model, occ, rx_copper, rx_end)
+        if len({tx_s0, tx_s1}) != 2 or len({rx_s0, rx_s1}) != 2:
+            raise RuntimeError("terminal surface identification collapsed")
+
         tx_box = _add_oriented_box(occ, geometry.package_half_extent, geometry.transmitter.pose)
         rx_box = _add_oriented_box(occ, geometry.package_half_extent, geometry.receiver.pose)
 
@@ -210,25 +271,11 @@ def mesh_underwater_wpt_geometry(
             raise RuntimeError("seawater Boolean subtraction failed")
 
         occ.synchronize()
-
-        tx_s0 = _surface_nearest_to(model, occ, tx_copper, tx_start)
-        tx_s1 = _surface_nearest_to(model, occ, tx_copper, tx_end)
-        rx_s0 = _surface_nearest_to(model, occ, rx_copper, rx_start)
-        rx_s1 = _surface_nearest_to(model, occ, rx_copper, rx_end)
-        if len({tx_s0, tx_s1}) != 2 or len({rx_s0, rx_s1}) != 2:
-            raise RuntimeError("terminal surface identification collapsed")
-
-        outer_surfaces: list[int] = []
-        for volume in water:
-            for dim, surface in model.getBoundary(
-                [(3, int(volume))], combined=False, oriented=False, recursive=False
-            ):
-                if dim != 2:
-                    continue
-                com = np.asarray(occ.getCenterOfMass(2, int(surface)), dtype=float)
-                if float(np.linalg.norm(com - center)) > 0.75 * water_radius:
-                    outer_surfaces.append(int(surface))
-        outer_surfaces = sorted(set(outer_surfaces))
+        _validate_boundary_entity(model, tx_copper, tx_s0, "tx_terminal_start")
+        _validate_boundary_entity(model, tx_copper, tx_s1, "tx_terminal_end")
+        _validate_boundary_entity(model, rx_copper, rx_s0, "rx_terminal_start")
+        _validate_boundary_entity(model, rx_copper, rx_s1, "rx_terminal_end")
+        outer_surfaces = _spherical_outer_boundary_surfaces(model, [int(v) for v in water])
 
         _physical_group(model, 3, [tx_copper], physical_tags.tx_copper, "tx_copper")
         _physical_group(model, 3, [rx_copper], physical_tags.rx_copper, "rx_copper")
