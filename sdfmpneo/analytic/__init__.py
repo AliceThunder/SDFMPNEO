@@ -5,6 +5,10 @@ from .geometry_operator import (
     GeometryConditionedAnalyticEvolutionOperator,
 )
 from .graph import AnalyticEvolutionGraph, CompiledAnalyticGraph
+from .multichart_operator import (
+    MultiChartGeometryAnalyticEvolutionOperator,
+    MultiChartGeometryAnalyticPrediction,
+)
 from .operator import (
     AnalyticOperatorPrediction,
     CanonicalAnalyticIR,
@@ -47,4 +51,6 @@ __all__ = [
     "CertifiedAnalyticEvolutionOperator",
     "GeometryAnalyticPrediction",
     "GeometryConditionedAnalyticEvolutionOperator",
+    "MultiChartGeometryAnalyticPrediction",
+    "MultiChartGeometryAnalyticEvolutionOperator",
 ]
