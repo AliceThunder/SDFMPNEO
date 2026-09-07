@@ -17,7 +17,7 @@ from .magnetic_face_auxiliary import (
     _dual_tree_complement_faces,
     _face_area_vector,
 )
-from .topology_numeric import certified_integer_topology_matrix
+from .topology_numeric import certified_integer_topology_matrix, fail_closed_lu_factor
 
 
 def _pattern_adjacency(S: sp.csr_matrix, indices: np.ndarray) -> sp.csr_matrix:
@@ -266,9 +266,10 @@ class MorseFaceCirculationEnergyPreconditioner(CertifiedEnergyPreconditioner):
                 Schur = D - np.asarray(C @ X, dtype=complex)
             else:
                 Schur = D.copy()
-            factor, pivots = scipy.linalg.lu_factor(Schur, check_finite=False)
-            if np.any(np.diag(factor) == 0.0):
-                raise ValueError("topology-generated coarse face-curl Schur complement is singular")
+            factor, pivots = fail_closed_lu_factor(
+                Schur,
+                singular_message="topology-generated coarse face-curl Schur complement is singular",
+            )
             schur_factor = (factor, pivots)
 
         provisional = cls(
