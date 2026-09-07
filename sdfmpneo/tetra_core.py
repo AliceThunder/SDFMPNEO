@@ -16,31 +16,28 @@ from .em import (
     TetrahedralApsiDiscretization,
     build_tetrahedral_apsi_from_thermal_modes,
     build_tetrahedral_region_loss_projector,
+    make_morse_auxiliary_physical_pcg_riesz_factory,
     make_physical_block_pcg_riesz_factory,
 )
 from .spatial import TetrahedralComplex3D, TetrahedralThermalAssembly
-from .thermal import ThermalSpectralModel, ThermalTailCertificate
+from .thermal import (
+    ThermalSpectralModel,
+    ThermalTailCertificate,
+    build_partial_thermal_spectrum,
+)
 
 
-def _build_thermal_components(
+def _select_thermal_spectrum(
     mesh: TetrahedralComplex3D,
+    thermal_assembly: TetrahedralThermalAssembly,
     *,
     rho_cp_tetra: np.ndarray,
     thermal_conductivity_tetra: np.ndarray,
     initial_temperature_deviation_free: np.ndarray | None,
     source_dual_bound: float | None,
     requested_state_tolerance: float | None,
+    prefer_partial_spectrum: bool,
 ):
-    thermal_assembly = mesh.assemble_p1_thermal(
-        rho_cp_tetra=rho_cp_tetra,
-        conductivity_tetra=thermal_conductivity_tetra,
-        homogeneous_dirichlet_boundary=True,
-    )
-    full_spectrum = ThermalSpectralModel.build(
-        thermal_assembly.M,
-        thermal_assembly.K,
-    )
-
     certificate_inputs = (
         initial_temperature_deviation_free,
         source_dual_bound,
@@ -53,17 +50,85 @@ def _build_thermal_components(
             "source_dual_bound, and requested_state_tolerance together"
         )
 
+    n_free = int(thermal_assembly.M.shape[0])
+    if n_free <= 0:
+        raise ValueError("thermal boundary treatment produced no free degrees of freedom")
+
+    if all(supplied) and prefer_partial_spectrum and n_free > 1:
+        initial = np.asarray(initial_temperature_deviation_free, dtype=float)
+        if initial.shape != (n_free,):
+            raise ValueError("initial_temperature_deviation_free dimension mismatch")
+        volume = float(np.sum(np.asarray(mesh.volumes, dtype=float)))
+        kappa_min = float(np.min(np.asarray(thermal_conductivity_tetra, dtype=float)))
+        rho_cp_max = float(np.max(np.asarray(rho_cp_tetra, dtype=float)))
+        if volume <= 0.0 or kappa_min <= 0.0 or rho_cp_max <= 0.0:
+            raise ValueError("partial thermal certification requires positive volume/material bounds")
+
+        # The retained rank is not supplied as a free hyperparameter.  Starting
+        # from the smallest admissible rank, compute only low modes and use the
+        # Li-Yau omitted-eigenvalue lower bound.  The first rank whose rigorous
+        # tail certificate meets the requested state tolerance is accepted.
+        for rank in range(1, n_free):
+            partial = build_partial_thermal_spectrum(
+                thermal_assembly.M,
+                thermal_assembly.K,
+                rank=rank,
+                domain_volume=volume,
+                thermal_conductivity_min=kappa_min,
+                volumetric_heat_capacity_max=rho_cp_max,
+            )
+            certificate = partial.tail_certificate(
+                initial_field=initial,
+                source_dual_bound=float(source_dual_bound),
+                requested_state_tolerance=float(requested_state_tolerance),
+            )
+            if certificate.certified:
+                return None, partial.model, certificate, "partial_certified"
+
+    # Correctness fallback: either no truncation certificate was requested, the
+    # discrete thermal dimension is one, partial selection was explicitly
+    # disabled, or the conservative omitted-mode bound could not prove the
+    # requested tolerance.  The full discrete spectrum then gives an exact
+    # verification fallback rather than weakening the certificate.
+    full_spectrum = ThermalSpectralModel.build(
+        thermal_assembly.M,
+        thermal_assembly.K,
+    )
     if all(supplied):
         selection = full_spectrum.select_certified_rank(
             initial_field=np.asarray(initial_temperature_deviation_free, dtype=float),
             source_dual_bound=float(source_dual_bound),
             requested_state_tolerance=float(requested_state_tolerance),
         )
-        thermal_model = selection.model
-        certificate = selection.certificate
-    else:
-        thermal_model = full_spectrum
-        certificate = None
+        return full_spectrum, selection.model, selection.certificate, "full_certified_fallback"
+    return full_spectrum, full_spectrum, None, "full_discrete"
+
+
+def _build_thermal_components(
+    mesh: TetrahedralComplex3D,
+    *,
+    rho_cp_tetra: np.ndarray,
+    thermal_conductivity_tetra: np.ndarray,
+    initial_temperature_deviation_free: np.ndarray | None,
+    source_dual_bound: float | None,
+    requested_state_tolerance: float | None,
+    prefer_partial_spectrum: bool = True,
+):
+    thermal_assembly = mesh.assemble_p1_thermal(
+        rho_cp_tetra=rho_cp_tetra,
+        conductivity_tetra=thermal_conductivity_tetra,
+        homogeneous_dirichlet_boundary=True,
+    )
+    full_spectrum, thermal_model, certificate, spectrum_backend = _select_thermal_spectrum(
+        mesh,
+        thermal_assembly,
+        rho_cp_tetra=rho_cp_tetra,
+        thermal_conductivity_tetra=thermal_conductivity_tetra,
+        initial_temperature_deviation_free=initial_temperature_deviation_free,
+        source_dual_bound=source_dual_bound,
+        requested_state_tolerance=requested_state_tolerance,
+        prefer_partial_spectrum=bool(prefer_partial_spectrum),
+    )
 
     local_modes = []
     for k in range(thermal_model.rank):
@@ -75,26 +140,27 @@ def _build_thermal_components(
         thermal_model,
         certificate,
         np.asarray(local_modes, dtype=float),
+        spectrum_backend,
     )
 
 
 @dataclass(frozen=True)
 class TetrahedralElectroThermalCore:
-    """One-call construction of the current unstructured electrothermal core.
+    """One-call construction of the unstructured electrothermal production core.
 
-    The retained thermal rank is never supplied as an arbitrary integer. With no
-    truncation request the full discrete thermal spectrum is retained. If a
-    physically meaningful initial state, source dual bound, and state tolerance
-    are supplied, the smallest rank satisfying the spectral-tail certificate is
-    selected.
+    Thermal rank is certificate-selected.  When a thermal truncation tolerance is
+    supplied, the production default first tries a scalable partial eigensolve
+    with an independently proved omitted-eigenvalue lower bound.  Full-spectrum
+    construction is retained only as a deterministic correctness fallback.
     """
 
     mesh: TetrahedralComplex3D
     thermal_assembly: TetrahedralThermalAssembly
-    full_thermal_spectrum: ThermalSpectralModel
+    full_thermal_spectrum: ThermalSpectralModel | None
     thermal_model: ThermalSpectralModel
     thermal_tail_certificate: ThermalTailCertificate | None
     thermal_mode_local_values: np.ndarray
+    thermal_spectrum_backend: str
     material_backend: str
     conductivity_reference_tetra: np.ndarray | None
     conductivity_temperature_slope_tetra: np.ndarray | None
@@ -117,6 +183,7 @@ class TetrahedralElectroThermalCore:
         initial_temperature_deviation_free: np.ndarray | None = None,
         source_dual_bound: float | None = None,
         requested_state_tolerance: float | None = None,
+        prefer_partial_thermal_spectrum: bool = True,
     ) -> "TetrahedralElectroThermalCore":
         (
             thermal_assembly,
@@ -124,6 +191,7 @@ class TetrahedralElectroThermalCore:
             thermal_model,
             certificate,
             local_modes_array,
+            spectrum_backend,
         ) = _build_thermal_components(
             mesh,
             rho_cp_tetra=rho_cp_tetra,
@@ -131,6 +199,7 @@ class TetrahedralElectroThermalCore:
             initial_temperature_deviation_free=initial_temperature_deviation_free,
             source_dual_bound=source_dual_bound,
             requested_state_tolerance=requested_state_tolerance,
+            prefer_partial_spectrum=prefer_partial_thermal_spectrum,
         )
 
         sigma0 = np.asarray(conductivity_reference_tetra, dtype=float).copy()
@@ -156,6 +225,7 @@ class TetrahedralElectroThermalCore:
             thermal_model=thermal_model,
             thermal_tail_certificate=certificate,
             thermal_mode_local_values=local_modes_array,
+            thermal_spectrum_backend=spectrum_backend,
             material_backend="affine_verification",
             conductivity_reference_tetra=sigma0,
             conductivity_temperature_slope_tetra=slope,
@@ -180,6 +250,7 @@ class TetrahedralElectroThermalCore:
         initial_temperature_deviation_free: np.ndarray | None = None,
         source_dual_bound: float | None = None,
         requested_state_tolerance: float | None = None,
+        prefer_partial_thermal_spectrum: bool = True,
     ) -> "TetrahedralElectroThermalCore":
         """Build the real nonlinear material path without conductivity linearization."""
 
@@ -189,6 +260,7 @@ class TetrahedralElectroThermalCore:
             thermal_model,
             certificate,
             local_modes_array,
+            spectrum_backend,
         ) = _build_thermal_components(
             mesh,
             rho_cp_tetra=rho_cp_tetra,
@@ -196,6 +268,7 @@ class TetrahedralElectroThermalCore:
             initial_temperature_deviation_free=initial_temperature_deviation_free,
             source_dual_bound=source_dual_bound,
             requested_state_tolerance=requested_state_tolerance,
+            prefer_partial_spectrum=prefer_partial_thermal_spectrum,
         )
 
         reference_nodal = np.asarray(temperature_reference_nodal, dtype=float)
@@ -224,6 +297,7 @@ class TetrahedralElectroThermalCore:
             thermal_model=thermal_model,
             thermal_tail_certificate=certificate,
             thermal_mode_local_values=local_modes_array,
+            thermal_spectrum_backend=spectrum_backend,
             material_backend="certified_nonlinear",
             conductivity_reference_tetra=None,
             conductivity_temperature_slope_tetra=None,
@@ -242,25 +316,16 @@ class TetrahedralElectroThermalCore:
     ):
         """Build the certified nonlinear sparse physical-energy EM reduced space.
 
-        The production path always uses the same physical-block PCG Riesz
-        architecture.  For H=K+D, the outer action is certified by
-
-            H >= m(gamma) min(m_K,m_E) P,
-
-        where m_K and m_E come from replaceable magnetic/scalar block actions.
-        The default block action is complete sparse LU strictly as a correctness
-        backend; a certified multilevel/auxiliary-space action can replace it
-        without changing the scientific method or error theorem.
+        The production default is the factorization-free Morse magnetic auxiliary
+        plus state-aware conductive scalar-tree Riesz action.  Complete sparse LU
+        is no longer selected implicitly.  ``block_action_factory`` is retained
+        only as an explicit compatibility hook for a caller that deliberately
+        supplies the older physical-block theorem implementation.
 
         If ``port_set`` is supplied, every unit port excitation is included in
-        one joint multi-RHS residual-greedy construction.  The returned basis is
-        therefore certified simultaneously for all declared WPT ports and can be
-        used directly by ``port_set.evaluate_reduced_physical_certified``.
-
-            ||e||_H <= sqrt(2) ||r||_(H^-1).
-
-        The finite candidate set is an offline construction/certification set; it
-        is not silently reinterpreted as a continuous-domain proof.
+        one joint multi-RHS residual-greedy construction.  The finite candidate
+        set is an offline construction set; continuous-domain proof remains a
+        separate certificate.
         """
 
         if self.material_backend != "certified_nonlinear":
@@ -268,10 +333,15 @@ class TetrahedralElectroThermalCore:
                 "build_reduced_electromagnetics is the certified nonlinear sparse-energy path; "
                 "use build_affine_verification_reduced_electromagnetics for the affine verification backend"
             )
-        riesz_factory = make_physical_block_pcg_riesz_factory(
-            self.electromagnetic_problem,
-            block_action_factory=block_action_factory,
-        )
+        if block_action_factory is None:
+            riesz_factory = make_morse_auxiliary_physical_pcg_riesz_factory(
+                self.electromagnetic_problem
+            )
+        else:
+            riesz_factory = make_physical_block_pcg_riesz_factory(
+                self.electromagnetic_problem,
+                block_action_factory=block_action_factory,
+            )
         reducer = SparseEnergyResidualGreedyEMReducer(
             self.electromagnetic_problem,
             riesz_action_factory=riesz_factory,
