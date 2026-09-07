@@ -27,6 +27,12 @@ from .parametric_realization import (
     parametric_backend_consistency_defect,
 )
 from .realization import AnalyticRealization, CompiledRealizationGraph
+from .realization_compression import (
+    RealizationCompressionReport,
+    analyze_realization_redundancy,
+    controllability_matrix,
+    observability_matrix,
+)
 
 __all__ = [
     "AnalyticSeries",
@@ -38,6 +44,10 @@ __all__ = [
     "CompiledAnalyticKernel",
     "AnalyticRealization",
     "CompiledRealizationGraph",
+    "RealizationCompressionReport",
+    "analyze_realization_redundancy",
+    "controllability_matrix",
+    "observability_matrix",
     "ParametricAnalyticSeries",
     "ParametricResponseNode",
     "CompiledParametricAnalyticGraph",
