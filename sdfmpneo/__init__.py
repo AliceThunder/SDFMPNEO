@@ -9,6 +9,7 @@ from .analytic import (
     ParametricAnalyticSeries,
 )
 from .electrothermal import CertifiedElectroThermalVectorField
+from .electrothermal_pipeline import ElectroThermalSurrogate, ElectroThermalSurrogateState
 from .em import (
     ParametricEMProblem,
     ReducedEMModel,
@@ -38,6 +39,8 @@ __all__ = [
     "CertifiedAnalyticEvolutionOperator",
     "GeometryConditionedAnalyticEvolutionOperator",
     "CertifiedElectroThermalVectorField",
+    "ElectroThermalSurrogate",
+    "ElectroThermalSurrogateState",
     "CertifiedGeometryElectroThermalFamily",
     "GeometryElectroThermalResidual",
     "SolutionDataFreeClosedLoopTrainer",
