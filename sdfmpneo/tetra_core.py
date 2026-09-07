@@ -37,6 +37,7 @@ def _select_thermal_spectrum(
     source_dual_bound: float | None,
     requested_state_tolerance: float | None,
     prefer_partial_spectrum: bool,
+    thermal_rank: int | None = None,
 ):
     certificate_inputs = (
         initial_temperature_deviation_free,
@@ -53,6 +54,22 @@ def _select_thermal_spectrum(
     n_free = int(thermal_assembly.M.shape[0])
     if n_free <= 0:
         raise ValueError("thermal boundary treatment produced no free degrees of freedom")
+
+    if thermal_rank is not None:
+        if any(supplied):
+            raise ValueError("choose an explicit research rank or certificate-selected truncation, not both")
+        if int(thermal_rank) != thermal_rank or not 1 <= thermal_rank <= n_free:
+            raise ValueError("thermal_rank must be an integer between one and the free thermal dimension")
+        if thermal_rank < n_free:
+            partial = build_partial_thermal_spectrum(
+                thermal_assembly.M, thermal_assembly.K, rank=int(thermal_rank),
+                domain_volume=float(np.sum(mesh.volumes)),
+                thermal_conductivity_min=float(np.min(thermal_conductivity_tetra)),
+                volumetric_heat_capacity_max=float(np.max(rho_cp_tetra)),
+            )
+            # Explicit rank is a numerical approximation for a convergence
+            # study, not a claim that the thermal tail meets any error target.
+            return None, partial.model, None, "partial_numerical_rank"
 
     if all(supplied) and prefer_partial_spectrum and n_free > 1:
         initial = np.asarray(initial_temperature_deviation_free, dtype=float)
@@ -113,6 +130,7 @@ def _build_thermal_components(
     source_dual_bound: float | None,
     requested_state_tolerance: float | None,
     prefer_partial_spectrum: bool = True,
+    thermal_rank: int | None = None,
 ):
     thermal_assembly = mesh.assemble_p1_thermal(
         rho_cp_tetra=rho_cp_tetra,
@@ -128,6 +146,7 @@ def _build_thermal_components(
         source_dual_bound=source_dual_bound,
         requested_state_tolerance=requested_state_tolerance,
         prefer_partial_spectrum=bool(prefer_partial_spectrum),
+        thermal_rank=thermal_rank,
     )
 
     local_modes = []
@@ -251,6 +270,7 @@ class TetrahedralElectroThermalCore:
         source_dual_bound: float | None = None,
         requested_state_tolerance: float | None = None,
         prefer_partial_thermal_spectrum: bool = True,
+        thermal_rank: int | None = None,
     ) -> "TetrahedralElectroThermalCore":
         """Build the real nonlinear material path without conductivity linearization."""
 
@@ -269,6 +289,7 @@ class TetrahedralElectroThermalCore:
             source_dual_bound=source_dual_bound,
             requested_state_tolerance=requested_state_tolerance,
             prefer_partial_spectrum=prefer_partial_thermal_spectrum,
+            thermal_rank=thermal_rank,
         )
 
         reference_nodal = np.asarray(temperature_reference_nodal, dtype=float)

@@ -51,18 +51,21 @@ class NonlinearTetrahedralRegionLossEvaluator:
                 )
         return out
 
-    def operator(self, name: str, a: np.ndarray) -> np.ndarray:
+    def operator_sparse(self, name: str, a: np.ndarray):
         W = assemble_polynomial_weighted_nedelec_mass(
             self.problem.mesh,
             self._region_polynomials(name, a),
-        ).toarray()
-        L = self.problem.electric_extraction()
+        )
+        L = self.problem.electric_extraction_sparse()
         return 0.5 * (L.conj().T @ W @ L)
+
+    def operator(self, name: str, a: np.ndarray) -> np.ndarray:
+        return self.operator_sparse(name, a).toarray()
 
     def evaluate_state(self, coordinate_state: np.ndarray, a: np.ndarray) -> dict[str, float]:
         x = np.asarray(coordinate_state, dtype=complex)
         return {
-            name: float(np.real(np.vdot(x, self.operator(name, a) @ x)))
+            name: float(np.real(np.vdot(x, self.operator_sparse(name, a) @ x)))
             for name in self.names
         }
 

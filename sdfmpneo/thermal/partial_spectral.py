@@ -61,8 +61,12 @@ class PartialThermalSpectrum:
         if self.first_omitted_lambda_lower_bound <= 0.0:
             raise ValueError("a positive certified omitted-eigenvalue lower bound is required")
         u0 = np.asarray(initial_field, dtype=float)
-        if u0.shape != (self.model.full_dimension,):
+        if u0.shape != (self.model.full_dimension,) or np.any(~np.isfinite(u0)):
             raise ValueError("initial_field dimension mismatch")
+        if not np.isfinite(source_dual_bound) or source_dual_bound < 0:
+            raise ValueError("source_dual_bound must be finite and non-negative")
+        if not np.isfinite(requested_state_tolerance) or requested_state_tolerance <= 0:
+            raise ValueError("requested_state_tolerance must be finite and positive")
         modal = self.model.Phi.T @ self.model.M @ u0
         tail = u0 - self.model.Phi @ modal
         initial_tail = float(np.sqrt(max(0.0, tail @ (self.model.M @ tail))))

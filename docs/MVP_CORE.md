@@ -1,3 +1,5 @@
+> 版本说明：本文保留先前版本的架构/证明背景。0.10 科研训练与推理入口、修复及运行方式见 [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md)；其中的旧完成状态不作为当前验收结论。
+
 # Executable core status — 0.9
 
 The repository has moved beyond the original MVP. This file is retained for continuity; the authoritative production-status document is `PRODUCTION_STATUS_0_9.md`.

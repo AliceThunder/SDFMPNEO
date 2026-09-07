@@ -1,3 +1,5 @@
+> 版本说明：本文保留先前版本的架构/证明背景。0.10 科研训练与推理入口、修复及运行方式见 [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md)；其中的旧完成状态不作为当前验收结论。
+
 # SDF-MPNEO implementation specification
 
 This document is the executable architecture contract for the current SDF-MPNEO electromagnetic–thermal core. It must remain consistent with `docs/SDFMPNEO_theory.tex`, `docs/SPARSE_ENERGY_SOLVER.md`, `docs/CERTIFIED_RIESZ_ACTION.md`, and `docs/SPARSE_ENERGY_REDUCTION.md`.

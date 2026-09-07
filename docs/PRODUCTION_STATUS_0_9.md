@@ -1,3 +1,5 @@
+> 版本说明：本文保留先前版本的架构/证明背景。0.10 科研训练与推理入口、修复及运行方式见 [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md)；其中的旧完成状态不作为当前验收结论。
+
 # SDF-MPNEO 0.9 production status
 
 This document is the authoritative implementation-status snapshot for the 0.9.x code path. It distinguishes executable/certified code from proof or validation evidence that still has to be supplied for a specific underwater-WPT study.

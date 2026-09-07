@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from sdfmpneo.analytic.parametric_realization import evaluate_parametric_stable_with_jacobians
 
 
 @dataclass(frozen=True)
@@ -142,7 +143,9 @@ class ParametricElectroThermalResidual:
             direction_rhs = self.rhs_map.matrix[:, ell]
             dx = self.em_model.state_for_rhs(a, direction_rhs)
             for j in range(n_out):
-                H = self.em_model.problem.loss_operator(j, a)
+                problem = self.em_model.problem
+                loss = getattr(problem, "loss_operator_sparse", None)
+                H = problem.loss_operator(j, a) if loss is None else loss(j, a)
                 J[j, ell] = 2.0 * np.real(np.vdot(dx, H @ x))
         return J
 
@@ -155,13 +158,13 @@ class ParametricElectroThermalResidual:
     ) -> ParametricResidualSample:
         u = np.asarray(operating, dtype=float)
         initial = np.asarray(a0, dtype=float)
-        a, da = self.graph.evaluate(float(t), a0=initial, operating=u)
+        a, da, J_a, J_da = evaluate_parametric_stable_with_jacobians(
+            self.graph, float(t), a0=initial, operating=u)
         rhs = self.rhs_map.evaluate(u)
 
         g, J_g_a = self.em_model.heat_source_and_jacobian_for_rhs(a, rhs)
         g = np.asarray(g, dtype=float)
         J_g_a = np.asarray(J_g_a, dtype=float)
-        J_a, J_da = self._graph_operating_jacobians(float(t), initial, u)
         J_g_u_explicit = self._explicit_heat_source_operating_jacobian(a, rhs)
 
         residual = da + self.graph.lambdas * a - g - self.thermal_forcing

@@ -62,7 +62,7 @@ class TypedPropagationCertificate:
 
     @property
     def certified(self) -> bool:
-        return self.output_error_bound is not None
+        return self.output_error_bound is not None and bool(np.isfinite(self.output_error_bound))
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ class ElectroThermalPropagationCertificate:
 
     @property
     def certified(self) -> bool:
-        return self.output_error_bound is not None
+        return self.output_error_bound is not None and bool(np.isfinite(self.output_error_bound))
 
 
 def _require_unique_names(nodes: Sequence[ProofNode]) -> None:

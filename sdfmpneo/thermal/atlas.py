@@ -111,7 +111,12 @@ def canonicalize_thermal_subspaces(reference_model, target_model) -> CanonicalTh
         raise ValueError("spectral atlas requires the same reference-domain discrete dimension")
     ref_intervals = certified_eigenvalue_intervals(reference_model)
     tgt_intervals = certified_eigenvalue_intervals(target_model)
-    clusters = common_certified_clusters(ref_intervals, tgt_intervals)
+    # Transport the entire retained subspace. Endpoint eigenvalue gaps do not
+    # prove separation along a geometry path and cannot define persistent
+    # one-dimensional clusters across crossings. The canonical vector field
+    # transforms the full local thermal operator Q.T Lambda Q, so mixing
+    # distinct retained eigenvectors introduces no dynamical approximation.
+    clusters = (SpectralCluster(0, reference_model.rank),)
     M = sp.csr_matrix(target_model.M, dtype=float)
     aligned = np.zeros_like(np.asarray(target_model.Phi, dtype=float))
 
@@ -120,7 +125,9 @@ def canonicalize_thermal_subspaces(reference_model, target_model) -> CanonicalTh
         R = _mass_orthonormalize(reference_model.Phi[:, sl], M)
         T = _mass_orthonormalize(target_model.Phi[:, sl], M)
         cross = T.T @ (M @ R)
-        U, _, Vh = scipy.linalg.svd(cross, full_matrices=False)
+        U, singular, Vh = scipy.linalg.svd(cross, full_matrices=False)
+        if singular[-1] <= np.finfo(float).eps * max(cross.shape) * singular[0]:
+            raise ValueError("retained thermal subspace leaves this reference chart; use a new chart")
         Q = U @ Vh
         aligned[:, sl] = T @ Q
 

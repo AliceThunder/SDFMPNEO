@@ -1,3 +1,5 @@
+> 版本说明：本文保留先前版本的架构/证明背景。0.10 科研训练与推理入口、修复及运行方式见 [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md)；其中的旧完成状态不作为当前验收结论。
+
 # SDF-MPNEO completion work tree
 
 This file is the execution order for finishing the production SDF-MPNEO method. It is subordinate to `docs/SDFMPNEO_theory.tex` and `docs/SDFMPNEO_implementation.md`. A task is not marked complete because a prototype runs; it is complete only when its production exit criteria are satisfied and the full repository CI passes.

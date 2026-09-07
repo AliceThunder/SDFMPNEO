@@ -1,0 +1,45 @@
+{
+  "mesh": "uwpt.msh",
+  "geometry": {
+    "shape": "circle",
+    "turns": 0.5,
+    "outer_half_size": 0.015,
+    "pitch": 0.002,
+    "conductor_width": 0.001,
+    "conductor_thickness": 0.001,
+    "corner_radius": 0.006,
+    "receiver_translation": [0.0, 0.0, 0.01],
+    "receiver_angles": [0.0, 0.0, 0.0],
+    "package_half_extent": [0.019, 0.019, 0.003],
+    "seawater_padding": 0.006,
+    "geometry_tolerance": 0.0005,
+    "mesh_size": 0.01
+  },
+  "frequency_hz": 100000.0,
+  "ambient_temperature": 293.15,
+  "constitutive_relative_error": 1e-8,
+  "em_energy_error": 1e-6,
+  "thermal_rank": 2,
+  "materials": {
+    "101": {"name": "tx_copper", "electrical_conductivity": 58000000.0, "resistivity_temperature_coefficient": 0.00393, "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3450000.0},
+    "102": {"name": "rx_copper", "electrical_conductivity": 58000000.0, "resistivity_temperature_coefficient": 0.00393, "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3450000.0},
+    "201": {"name": "tx_package", "electrical_conductivity": 0.0, "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1500000.0},
+    "202": {"name": "rx_package", "electrical_conductivity": 0.0, "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1500000.0},
+    "301": {"name": "seawater", "electrical_conductivity": 5.0, "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4100000.0}
+  },
+  "terminal_pairs": [[1001, 1002], [1003, 1004]],
+  "port_names": ["tx", "rx"],
+  "em_candidate_states": [[-0.1,-0.1],[-0.1,0.1],[0.1,-0.1],[0.1,0.1],[0.0,0.0]],
+  "training": {
+    "initial_lower": [-0.1,-0.1],
+    "initial_upper": [0.1,0.1],
+    "operating_lower": [0.0,0.0],
+    "operating_upper": [10.0,10.0],
+    "time_horizon": 1.0,
+    "residual_tolerance": 1e-5,
+    "sample_count": 16,
+    "validation_count": 16,
+    "max_nodes": 16,
+    "max_degree": 2
+  }
+}
