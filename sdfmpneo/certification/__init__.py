@@ -38,6 +38,11 @@ from .ledger import (
     build_unified_error_certificate,
     certified_difference_term,
 )
+from .proof_composer import (
+    ProofNode,
+    TypedPropagationCertificate,
+    compose_typed_error_certificate,
+)
 from .nonlinear_em_domain import (
     bound_nonlinear_reduced_residual_on_box,
     certify_nonlinear_reduced_residual_domain,
@@ -92,6 +97,9 @@ __all__ = [
     "UnifiedErrorCertificate",
     "certified_difference_term",
     "build_unified_error_certificate",
+    "ProofNode",
+    "TypedPropagationCertificate",
+    "compose_typed_error_certificate",
     "ElectroThermalDomainBounds",
     "certify_electrothermal_domain_bounds",
     "AnalyticResidualBoxBound",
