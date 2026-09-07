@@ -125,9 +125,19 @@ def test_fixed_source_and_thermal_forcing_without_operating_parameters():
     assert np.allclose(value,[.3*np.exp(-1.4)+.75*(1-np.exp(-1.4))],atol=1e-12)
 
 
-def test_run_script_inference_paths_and_nodal_initial_temperature(trained, tmp_path, monkeypatch):
+@pytest.fixture
+def run_script():
+    from importlib.util import module_from_spec, spec_from_file_location
+    from pathlib import Path
+    spec = spec_from_file_location('uwpt_run_script', Path(__file__).resolve().parents[1]/'run.py')
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_run_script_inference_paths_and_nodal_initial_temperature(trained, tmp_path, monkeypatch, run_script):
     import json
-    import run
+    run = run_script
 
     monkeypatch.setattr(run, 'ROOT', tmp_path)
     monkeypatch.chdir(tmp_path.parent)
@@ -151,9 +161,9 @@ def test_run_script_inference_paths_and_nodal_initial_temperature(trained, tmp_p
     assert np.allclose(settings['effective_a0'], [.7])
 
 
-def test_run_script_training_preserves_nonconvergence_exit_and_checkpoint(tmp_path, monkeypatch):
+def test_run_script_training_preserves_nonconvergence_exit_and_checkpoint(tmp_path, monkeypatch, run_script):
     import json
-    import run
+    run = run_script
 
     monkeypatch.setattr(run, 'ROOT', tmp_path)
     seed = demo_research_model()
