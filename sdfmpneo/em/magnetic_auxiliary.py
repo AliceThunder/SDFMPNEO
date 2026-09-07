@@ -10,6 +10,7 @@ import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
 
 from .certified_riesz import CertifiedEnergyPreconditioner
+from .topology_numeric import fail_closed_lu_factor
 
 
 def _gamma(operation_count: int) -> float:
@@ -241,9 +242,10 @@ class MagneticCurlSubsetEnergyPreconditioner(CertifiedEnergyPreconditioner):
             size = int(component.size)
             positions = np.arange(offset, offset + size, dtype=int)
             block = Sperm[np.ix_(positions, positions)]
-            factor, pivots = scipy.linalg.lu_factor(block, check_finite=False)
-            if np.any(np.diag(factor) == 0.0):
-                raise ValueError("selected magnetic SCC block is singular")
+            factor, pivots = fail_closed_lu_factor(
+                block,
+                singular_message="selected magnetic SCC block is singular",
+            )
             factors.append(_LocalLU(positions, factor, pivots))
             offset += size
 
