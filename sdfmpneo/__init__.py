@@ -5,6 +5,8 @@ from .analytic import (
     AnalyticSeries,
     CertifiedAnalyticEvolutionOperator,
     GeometryConditionedAnalyticEvolutionOperator,
+    MultiChartGeometryAnalyticEvolutionOperator,
+    MultiChartGeometryAnalyticPrediction,
     ParametricAnalyticEvolutionGraph,
     ParametricAnalyticSeries,
 )
@@ -18,6 +20,10 @@ from .em import (
     SparseEnergyResidualGreedyEMReducer,
 )
 from .geometry_family import CertifiedGeometryElectroThermalFamily
+from .geometry_multichart import (
+    CertifiedMultiChartGeometryFamily,
+    MultiChartGeometrySelection,
+)
 from .model import (
     ExecutableSDFMPNEOModel,
     OnlinePrediction,
@@ -37,8 +43,12 @@ __all__ = [
     "ParametricAnalyticSeries",
     "CertifiedAnalyticEvolutionOperator",
     "GeometryConditionedAnalyticEvolutionOperator",
+    "MultiChartGeometryAnalyticPrediction",
+    "MultiChartGeometryAnalyticEvolutionOperator",
     "CertifiedElectroThermalVectorField",
     "CertifiedGeometryElectroThermalFamily",
+    "CertifiedMultiChartGeometryFamily",
+    "MultiChartGeometrySelection",
     "GeometryElectroThermalResidual",
     "SolutionDataFreeClosedLoopTrainer",
     "ThermalSpectralModel",
