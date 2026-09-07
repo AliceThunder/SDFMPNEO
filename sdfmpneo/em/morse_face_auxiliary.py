@@ -17,6 +17,7 @@ from .magnetic_face_auxiliary import (
     _dual_tree_complement_faces,
     _face_area_vector,
 )
+from .topology_numeric import certified_integer_topology_matrix
 
 
 def _pattern_adjacency(S: sp.csr_matrix, indices: np.ndarray) -> sp.csr_matrix:
@@ -112,7 +113,7 @@ def _topological_fine_order(S: sp.csr_matrix, fine: np.ndarray) -> np.ndarray:
 def _build_matched_face_system(problem):
     mesh = problem.mesh
     n_A = int(problem.n_A)
-    R = sp.csr_matrix(problem.a_basis, dtype=int)
+    R = certified_integer_topology_matrix(problem.a_basis, name="magnetic gauge basis")
     C_R = (mesh.curl @ R).tocsr()
     C_R.sum_duplicates()
     C_R.eliminate_zeros()
