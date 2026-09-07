@@ -23,6 +23,7 @@ class ElectroThermalDomainBounds:
     source_dual_energy_bound: float
     heat_source_jacobian_entry_bounds: np.ndarray
     heat_source_jacobian_norm_bound: float
+    vector_field_state_jacobian_norm_bound: float
     explicit_operating_jacobian_entry_bounds: np.ndarray
     explicit_operating_jacobian_norm_bound: float
     contraction_margin_lower_bound: float
@@ -45,6 +46,15 @@ def certify_electrothermal_domain_bounds(
     The proof uses only the physical coercivity ``beta_H>=1/sqrt(2)``, certified
     nonlinear material ratios, source dual-energy norms and the exact quadratic
     structure of projected Joule heat.  It does not sample a Hessian.
+
+    In addition to the Joule-source Jacobian, the returned object now exposes a
+    certified norm bound for the complete state Jacobian of
+
+        F(a,U) = -Lambda a + q_em(a,U),
+
+    namely ``||dF/da|| <= ||Lambda|| + ||dq_em/da||``.  This is the quantity
+    required by the cross-geometry residual proof composer; callers no longer
+    need to re-derive it manually and risk mixing incompatible bounds.
     """
 
     if vector_field.rhs_map is None:
@@ -103,14 +113,18 @@ def certify_electrothermal_domain_bounds(
             Ju[j, k] = omega * mode_inf[j] * source_bound * (direction_dual[k] / np.sqrt(mu)) / (_BETA**2)
     Junorm = float(np.linalg.norm(Ju, ord="fro"))
 
-    lambda_min = float(np.min(np.asarray(vector_field.thermal_model.lambdas, dtype=float)))
+    lambdas = np.asarray(vector_field.thermal_model.lambdas, dtype=float)
+    lambda_min = float(np.min(lambdas))
+    lambda_max = float(np.max(lambdas))
     kappa = float(lambda_min - Jnorm)
+    state_jacobian_norm = float(np.nextafter(lambda_max + Jnorm, np.inf))
     return ElectroThermalDomainBounds(
         thermal_box=tbox,
         operating_box=ubox,
         source_dual_energy_bound=source_bound,
         heat_source_jacobian_entry_bounds=J,
         heat_source_jacobian_norm_bound=Jnorm,
+        vector_field_state_jacobian_norm_bound=state_jacobian_norm,
         explicit_operating_jacobian_entry_bounds=Ju,
         explicit_operating_jacobian_norm_bound=Junorm,
         contraction_margin_lower_bound=kappa,
