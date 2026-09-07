@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
+import scipy.linalg
 import scipy.sparse as sp
 
 
@@ -43,3 +46,27 @@ def certified_integer_topology_matrix(matrix, *, name: str = "topology matrix") 
     out.sum_duplicates()
     out.eliminate_zeros()
     return out
+
+
+def fail_closed_lu_factor(matrix: np.ndarray, *, singular_message: str):
+    """Factor a local dense block while turning LAPACK singularity into failure.
+
+    ``scipy.linalg.lu_factor`` reports an exactly zero U pivot as
+    ``LinAlgWarning`` instead of raising.  A certified path must not continue with
+    such a factor and must not rely on warning filters.  This wrapper promotes
+    that LAPACK diagnosis to the declared deterministic ``ValueError`` and also
+    checks the returned factor defensively.
+    """
+
+    A = np.asarray(matrix, dtype=complex)
+    if A.ndim != 2 or A.shape[0] != A.shape[1] or A.shape[0] == 0:
+        raise ValueError("local LU block must be non-empty and square")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", scipy.linalg.LinAlgWarning)
+            factor, pivots = scipy.linalg.lu_factor(A, check_finite=False)
+    except scipy.linalg.LinAlgWarning as exc:
+        raise ValueError(singular_message) from exc
+    if np.any(np.diag(factor) == 0.0):
+        raise ValueError(singular_message)
+    return factor, pivots
