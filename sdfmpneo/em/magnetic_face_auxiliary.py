@@ -9,6 +9,7 @@ import scipy.sparse as sp
 
 from .adaptive_block import AdaptiveAggregateEnergyPreconditioner
 from .certified_riesz import CertifiedEnergyPreconditioner
+from .topology_numeric import certified_integer_topology_matrix
 
 
 def _face_area_vector(vertices: np.ndarray, face: np.ndarray) -> np.ndarray:
@@ -127,7 +128,7 @@ def _build_face_energy_lower_matrix(problem, selected_faces: np.ndarray, assignm
     """Build P_A=S^T W S with P_A <= K_A from local Stokes energy bounds."""
 
     mesh = problem.mesh
-    R = sp.csr_matrix(problem.a_basis, dtype=int)
+    R = certified_integer_topology_matrix(problem.a_basis, name="magnetic gauge basis")
     C_R = (mesh.curl @ R).tocsr()
     S = C_R[selected_faces, :].astype(complex).tocsr()
     n_A = int(problem.n_A)
