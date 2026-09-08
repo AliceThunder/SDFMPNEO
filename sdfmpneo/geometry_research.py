@@ -24,8 +24,14 @@ from .em.tetra_nonlinear_diagnostics import NonlinearTetrahedralRegionLossEvalua
 from .spatial import TaggedTetrahedralMesh
 from .spatial.geometry_chart import AffineTetrahedralGeometryChart
 from .training import AffineOperatingRHSMap
-from .training.research import ResearchTrainingConfig, train_research_graph
+from .training.research import ResearchTrainingConfig, _evaluate, _metrics, train_research_graph
 from .research import ResearchElectroThermalModel
+
+
+_GEOMETRY_SEED_BATCH = 8
+_GEOMETRY_SEED_MIN_NODES = 16
+_GEOMETRY_SEED_MIN_RELATIVE_GAIN = 1e-3
+_GEOMETRY_SEED_STALE_BATCHES = 2
 
 
 def _geometry_seed_budget(max_nodes):
@@ -149,8 +155,9 @@ class GeometryResearchModel:
 
         Probe zero-temperature Joule quadratic forms and the pulled-back linear
         thermal operator at geometric axes. Fit their constant/linear geometry
-        coefficients; residual fitting still accepts against independent full
-        nonlinear operators, not these polynomial approximations.
+        coefficients, then grow the ranked seed in small prefixes. Full coupled
+        residual evaluations stop seeding after two negligible-gain batches;
+        discarded physics terms remain available to later residual search.
         """
         n, r = len(self.geometry_names), graph.n_modes
         anchors = np.vstack([np.zeros(n), np.eye(n), -np.eye(n)])
@@ -191,16 +198,42 @@ class GeometryResearchModel:
                     weight = decay[k,target,j]
                     if weight and len(parents)<=config.max_degree:
                         candidates.append((abs(weight)*magnitude[graph.initial_names[j]],target,parents,weight))
-        # Seed only the strongest equation-derived terms. The remainder stays in
-        # the physical residual and can be selected later if it is actually useful.
+        # Rank by equation-derived scale, but choose the prefix length from the
+        # actual nonlinear coupled residual instead of mechanically filling it.
         candidates.sort(key=lambda item:item[0],reverse=True)
-        budget = _geometry_seed_budget(config.max_nodes)
-        result = ParametricAnalyticEvolutionGraph(graph.lambdas,graph.operating_names)
-        for score,target,parents,weight in candidates[:budget]:
-            if score == 0:
-                continue
-            result.add_product_response(f'response_{len(result.response_nodes)}',target,parents,weight)
-        return result
+        budget = min(_geometry_seed_budget(config.max_nodes), len(candidates))
+        if budget == 0:
+            return graph
+        points = config.points()
+        try:
+            best_objective, _ = _metrics(_evaluate(graph, self, points, monitor=monitor))
+        except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+            best_objective = float('inf')
+        best_graph = graph
+        stale_batches = 0
+        minimum = min(_GEOMETRY_SEED_MIN_NODES, budget)
+        ends = list(range(min(_GEOMETRY_SEED_BATCH, budget), budget+1, _GEOMETRY_SEED_BATCH))
+        if not ends or ends[-1] != budget:
+            ends.append(budget)
+        for prefix in ends:
+            trial = ParametricAnalyticEvolutionGraph(graph.lambdas,graph.operating_names)
+            for score,target,parents,weight in candidates[:prefix]:
+                if score == 0:
+                    continue
+                trial.add_product_response(f'response_{len(trial.response_nodes)}',target,parents,weight)
+            try:
+                trial_objective, _ = _metrics(_evaluate(trial, self, points, monitor=monitor))
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                trial_objective = float('inf')
+            scale = max(abs(best_objective), np.finfo(float).tiny)
+            relative_gain = (best_objective-trial_objective)/scale
+            if trial_objective < best_objective:
+                best_graph, best_objective = trial, trial_objective
+            if prefix >= minimum:
+                stale_batches = stale_batches+1 if relative_gain < _GEOMETRY_SEED_MIN_RELATIVE_GAIN else 0
+                if stale_batches >= _GEOMETRY_SEED_STALE_BATCHES:
+                    break
+        return best_graph
 
     def build_joint_em_basis(self, states, *, requested_error, anchor_count=4, monitor=None):
         """One shared physical-energy residual-greedy space; no solution labels."""
