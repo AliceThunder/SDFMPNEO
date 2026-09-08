@@ -123,3 +123,66 @@ def test_fixed_source_and_thermal_forcing_without_operating_parameters():
     assert report.numerical_tolerance_met
     value=evaluate_parametric_stable_with_jacobians(graph,.7,a0=[.3],operating=[])[0]
     assert np.allclose(value,[.3*np.exp(-1.4)+.75*(1-np.exp(-1.4))],atol=1e-12)
+
+
+@pytest.fixture
+def run_script():
+    from importlib.util import module_from_spec, spec_from_file_location
+    from pathlib import Path
+    spec = spec_from_file_location('uwpt_run_script', Path(__file__).resolve().parents[1]/'run.py')
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_run_script_inference_paths_and_nodal_initial_temperature(trained, tmp_path, monkeypatch, run_script):
+    import json
+    run = run_script
+
+    monkeypatch.setattr(run, 'ROOT', tmp_path)
+    monkeypatch.chdir(tmp_path.parent)
+    trained.save(tmp_path/'saved'/'model.npz')
+    initial = trained.temperature(np.array([.7]))
+    np.save(tmp_path/'initial.npy', initial)
+    monkeypatch.setattr(run, 'FILES', {
+        'model': 'saved/model.npz', 'predictions': 'output/predictions.json',
+        'settings_dir': 'output', 'resume_model': None,
+    })
+    monkeypatch.setattr(run, 'PREDICTION', {
+        'a0': [999.], 'operating': [1723., 423.], 'times': [.2, 0., .1],
+        'initial_temperature_file': 'initial.npy',
+        'state_only': True, 'allow_extrapolation': False,
+    })
+    assert run.main(['--mode', 'predict']) == 0
+    predictions = json.loads((tmp_path/'output'/'predictions.json').read_text())
+    assert [p['time'] for p in predictions] == [.2, 0., .1]
+    assert np.allclose(predictions[1]['temperature_field'], initial)
+    settings = json.loads((tmp_path/'output'/'predict.settings.json').read_text())
+    assert np.allclose(settings['effective_a0'], [.7])
+
+
+def test_run_script_training_preserves_nonconvergence_exit_and_checkpoint(tmp_path, monkeypatch, run_script):
+    import json
+    run = run_script
+
+    monkeypatch.setattr(run, 'ROOT', tmp_path)
+    seed = demo_research_model()
+    seed.graph = ParametricAnalyticEvolutionGraph(seed.core.thermal_model.lambdas, ['u0', 'u1'])
+    seed.save(tmp_path/'seed.npz')
+    monkeypatch.setattr(run, 'FILES', {
+        'model': 'results/model.npz', 'predictions': 'unused.json',
+        'settings_dir': 'results', 'resume_model': 'seed.npz',
+    })
+    monkeypatch.setattr(run, 'TRAINING', {
+        'initial_lower': [0.], 'initial_upper': [2.],
+        'operating_lower': [1000., 0.], 'operating_upper': [3000., 1000.],
+        'time_horizon': .25, 'sample_count': 4, 'validation_count': 4,
+        'max_nodes': 1, 'residual_tolerance': 1e-10,
+    })
+    assert run.main(['--mode', 'train']) == 2
+    output = tmp_path/'results'
+    report = json.loads((output/'training.report.json').read_text())
+    assert report['status'] == 'budget_exhausted'
+    assert not report['numerical_tolerance_met']
+    model = ResearchElectroThermalModel.load(output/'model.npz')
+    assert len(model.graph.response_nodes) == 1

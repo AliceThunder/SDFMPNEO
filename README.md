@@ -8,22 +8,21 @@
 
 ## 快速运行
 
-```bash
-python -m pip install -e '.[dev]'
-python -m sdfmpneo train --demo --output results/demo.npz
-python -m sdfmpneo predict results/demo.npz --a0 1 --operating 2000 500 --times 0 .05 .1 .2 .25 --output results/predictions.json
-python -m sdfmpneo validate results/demo.npz --a0 1 --operating 2000 500 --times 0 .05 .1 .2 .25 --output results/validation.json
-```
-
-或者一次运行：
+推荐直接使用根目录的 [run.py](run.py)。所有运行配置集中在文件顶部，按模式/路径、几何网格、材料与电磁、热截断、训练和推理分类，并附单位说明。
 
 ```bash
-python examples/research_workflow.py
+python -m pip install -e '.[cad]'
+python run.py --mode train
+python run.py --mode predict
 ```
 
-演示使用四个体四面体、一个内部热自由度、铜/海水和两个闭合电流端口，用于快速核对全链路；它不是实际线圈性能的标定案例。大电流数值用于在这个极小离散例子中激发可见的电热反馈，不是设备工作电流建议。
+直接运行 UWPT 线圈—封装—海水算例，模型与输出保存在 `results/uwpt/`。也可以直接修改 `MODE="train"` 或 `MODE="predict"` 后运行 `python run.py`，适用于 IDE 的运行按钮。
 
-训练仅评估给定输入上的控制方程残差，不使用瞬态轨迹、FEM/Maxwell/COMSOL 或实验解标签。`validate` 才调用独立 Radau 积分和全阶稀疏电磁求解，用于检查训练后的模型。
+训练会自动生成网格、构建物理模型、训练并保存。设置 `MESH["generate"]=False` 可导入已有网格。相对路径统一以 `run.py` 所在目录为基准，无需手动切换目录或编辑另一份 JSON。
+
+推理参数在 `PREDICTION` 中设置；仅加载保存模型，不会重新训练或生成网格。`FILES["resume_model"]` 可指定继续训练的模型。每次运行自动保存配置，训练另保存残差报告。
+
+训练仅评估给定输入上的控制方程残差，不使用瞬态轨迹、FEM/Maxwell/COMSOL 或实验解标签。原有 `python -m sdfmpneo` 接口也保留，其中 `validate` 才调用独立 Radau 积分和全阶稀疏电磁求解；一键脚本不自动执行这类验证。
 
 `train` 在达到给定数值残差目标时退出码为 0；预算耗尽时仍保存模型和报告，退出码为 2，并明确记录未收敛。
 
