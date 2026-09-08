@@ -175,9 +175,10 @@ TRAINING = {
     "time_horizon": 100000.0, "residual_tolerance": 1e-5,
     "time_sampling": "mixed_log", "time_min": 1e-6, "include_steady_state": True,
     "sample_count": 64, "validation_count": 64,
-    "max_nodes": 48, "max_degree": 3,
+    "max_nodes": 64, "max_degree": 3,
     "max_parent_responses": 1, "max_realization_dimension": 64,
 }
+# 几何物理初始种子最多使用约 75% 的节点预算，其余容量留给残差驱动修正。
 # validation_count 仅为无标签物理残差的独立输入检查点数量，不做瞬态参考积分。
 
 
