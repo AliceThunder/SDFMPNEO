@@ -8,6 +8,11 @@ from sdfmpneo.spatial import TaggedTetrahedralMesh
 from sdfmpneo.spatial.geometry_chart import AffineTetrahedralGeometryChart
 from sdfmpneo.analytic import ParametricAnalyticEvolutionGraph, evaluate_parametric_stable
 from sdfmpneo.training.research import ResearchTrainingConfig, train_research_graph
+from sdfmpneo.certification import (
+    certify_geometry_mass_residual_equivalence,
+    local_geometry_dynamics_diagnostic,
+    validate_geometry_trajectory,
+)
 
 
 @pytest.fixture(scope='module')
@@ -42,6 +47,45 @@ def test_geometry_uses_mass_and_stiffness_pullback_and_physical_jacobian(family)
     assert np.allclose(m.evaluate(a,static).vector_field_jacobian[:,0],J,rtol=1e-6,atol=1e-9)
     T=m.reference.temperature(a)
     assert np.allclose(m.project_initial_temperature(T,geometry=[s]),a)
+
+
+def test_continuous_mass_residual_equivalence_and_mass_contractivity(family):
+    m = family
+    cert = certify_geometry_mass_residual_equivalence(m)
+    # Uniform scale s in [0.8,1.2] gives M_r=s^3 at this one-mode test model.
+    assert cert.continuous_geometry_box
+    assert cert.minimum_mass_eigenvalue <= .8**3
+    assert cert.maximum_mass_eigenvalue >= 1.2**3
+
+    s = 1.137
+    state = np.array([.31])
+    current = np.array([0.,0.])
+    static = np.r_[m.normalize([s]),current]
+    physical = m.evaluate(state,static)
+    diagnostic = local_geometry_dynamics_diagnostic(
+        m, geometry=[s], a=state, operating=current,
+        da=physical.vector_field, mass_certificate=cert)
+    assert diagnostic.vector_residual_norm < 1e-14
+    assert diagnostic.mass_residual_norm < 1e-14
+    assert diagnostic.local_mass_contractivity_margin > 0.
+
+
+def test_geometry_full_em_radau_validation_is_independent_and_exact_for_zero_drive(family):
+    m = family
+    old_graph, old_config = m.graph, m.training_config
+    try:
+        m.graph = ParametricAnalyticEvolutionGraph(
+            m.thermal_model.lambdas,['scale','current_0','current_1'])
+        m.training_config = None
+        result = validate_geometry_trajectory(
+            m,[0.,.001,.01],geometry=[1.0],a0=[.2],operating=[0.,0.],
+            full_electromagnetics=True)
+        assert result['used_for_training'] is False
+        assert result['reference'] == 'Radau + full sparse EM on queried geometry'
+        assert result['maximum_coordinate_error'] < 1e-8
+        assert result['maximum_temperature_error'] < 1e-8
+    finally:
+        m.graph, m.training_config = old_graph, old_config
 
 
 def test_single_graph_checkpoint_unseen_geometry_and_no_online_reassembly(family,tmp_path,monkeypatch):
