@@ -69,3 +69,6 @@ from .research import ResearchElectroThermalModel, demo_research_model, model_fr
 from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
             "demo_research_model", "model_from_config", "train_research_graph"]
+
+from .geometry_research import GeometryResearchModel, geometry_model_from_config
+__all__ += ["GeometryResearchModel", "geometry_model_from_config"]
