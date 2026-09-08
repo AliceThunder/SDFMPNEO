@@ -1,10 +1,15 @@
 """Paper-grade held-out checks for a saved geometry-family SDF-MPNEO model.
 
-This script never trains the model.  It draws deterministic interior held-out
-geometry/initial/current cases, compares the analytic surrogate against an
-independent Radau trajectory with full sparse electromagnetic equilibrium, and
-reports the exact geometry-box mass-residual norm equivalence plus sampled
-M-energy contractivity diagnostics.
+This script never trains the model. It draws deterministic interior held-out
+geometry/initial/current cases and compares three paths on exactly the same
+thermal ROM:
+
+1. SDF-MPNEO analytic DAG,
+2. independent Radau + shared EM ROM,
+3. independent Radau + full sparse EM.
+
+The two Radau references separate analytic-evolution error from accumulated
+EM-ROM error. Thermal-rank, mesh and outer-domain errors remain separate studies.
 """
 from __future__ import annotations
 
@@ -58,8 +63,8 @@ def main() -> int:
     n_geometry = len(model.geometry_names)
     n_current = model.current_matrix.shape[1]
 
-    # Deliberately use a seed distinct from training/validation/EM-anchor seeds,
-    # and keep samples away from box faces/axis probes used by geometry seeding.
+    # Deliberately distinct from training/validation/EM-anchor seeds and kept
+    # away from box faces/axis probes used by geometry seeding.
     engine = qmc.Halton(n_geometry + n_modes + n_current, scramble=True, seed=911)
     unit = 0.15 + 0.70 * engine.random(args.cases)
 
@@ -78,7 +83,8 @@ def main() -> int:
         initial = a_lo + row[cursor:cursor+n_modes] * (a_hi-a_lo)
         cursor += n_modes
         current = u_lo + row[cursor:cursor+n_current] * (u_hi-u_lo)
-        validation = validate_geometry_trajectory(
+
+        full_reference = validate_geometry_trajectory(
             model,
             args.times,
             geometry=geometry,
@@ -86,7 +92,29 @@ def main() -> int:
             operating=current,
             full_electromagnetics=True,
         )
-        cases.append(validation)
+        rom_reference = validate_geometry_trajectory(
+            model,
+            args.times,
+            geometry=geometry,
+            a0=initial,
+            operating=current,
+            full_electromagnetics=False,
+        )
+        em_rom_coordinate_gap = np.asarray(rom_reference["reference_coordinates"]) - np.asarray(
+            full_reference["reference_coordinates"]
+        )
+        cases.append(
+            {
+                "geometry": full_reference["geometry"],
+                "a0": initial,
+                "operating": current,
+                "analytic_vs_full_em_radau": full_reference,
+                "analytic_vs_em_rom_radau": rom_reference,
+                "maximum_em_rom_accumulated_coordinate_gap": float(
+                    np.max(np.linalg.norm(em_rom_coordinate_gap, axis=1))
+                ),
+            }
+        )
 
     result = {
         "used_for_training": False,
@@ -95,7 +123,7 @@ def main() -> int:
         "sampled_contractivity": sampled_geometry_contractivity(model, validation=True, seed=701),
         "held_out_cases": cases,
         "limitations": [
-            "full sparse EM + Radau uses the saved thermal ROM and therefore does not validate thermal-rank truncation",
+            "both Radau references use the saved thermal ROM and therefore do not validate thermal-rank truncation",
             "mesh and outer-domain convergence require separate studies",
             "sampled contractivity is not a continuous-domain kappa certificate",
         ],
