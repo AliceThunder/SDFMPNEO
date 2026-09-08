@@ -41,6 +41,16 @@ def _geometry_seed_budget(max_nodes):
     return max(1, total-reserve)
 
 
+def _geometry_seed_relative_gain(previous, current):
+    """Relative MSE gain, robust when an evaluated seed prefix is inadmissible."""
+    previous, current = float(previous), float(current)
+    if not np.isfinite(previous):
+        return float('inf') if np.isfinite(current) else -float('inf')
+    if not np.isfinite(current):
+        return -float('inf')
+    return (previous-current)/max(abs(previous), np.finfo(float).tiny)
+
+
 class GeometryResearchModel:
     def __init__(self, reference, tagged, chart, geometry_reference, lower, upper,
                  capacity, conductivity, terminal_pairs, current_offset, current_matrix,
@@ -225,8 +235,7 @@ class GeometryResearchModel:
                 trial_objective, _ = _metrics(_evaluate(trial, self, points, monitor=monitor))
             except (ValueError, FloatingPointError, np.linalg.LinAlgError):
                 trial_objective = float('inf')
-            scale = max(abs(best_objective), np.finfo(float).tiny)
-            relative_gain = (best_objective-trial_objective)/scale
+            relative_gain = _geometry_seed_relative_gain(best_objective, trial_objective)
             if trial_objective < best_objective:
                 best_graph, best_objective = trial, trial_objective
             if prefix >= minimum:
