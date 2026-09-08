@@ -91,8 +91,17 @@ class ResearchElectroThermalModel:
             raise ValueError("initial boundary temperature differs from the prescribed ambient")
         return self.core.thermal_model.project((T-baseline)[assembly.free_nodes])
 
-    def train(self, config: ResearchTrainingConfig, *, progress=None):
-        graph, report = train_research_graph(self.field, config, graph=self.graph, progress=progress)
+    def train(self, config: ResearchTrainingConfig, *, progress=None, monitor=None):
+        from .training.monitor import TrainingStopped
+        try:
+            graph, report = train_research_graph(self.field, config, graph=self.graph,
+                                                progress=progress, monitor=monitor)
+        except TrainingStopped:
+            if monitor is not None and monitor.best_graph is not None:
+                self.graph = monitor.best_graph
+                self.training_config = config
+                self.training_report = None
+            raise
         self.graph, self.training_config, self.training_report = graph, config, report
         return report
 
