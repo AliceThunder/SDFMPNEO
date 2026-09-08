@@ -26,8 +26,8 @@ class GeometryMassResidualCertificate:
 
     minimum_mass_eigenvalue: float
     maximum_mass_eigenvalue: float
-    reference_minimum_mass_eigenvalue: float
-    reference_maximum_mass_eigenvalue: float
+    center_minimum_mass_eigenvalue: float
+    center_maximum_mass_eigenvalue: float
     p1_mass_ratio_lower: float
     p1_mass_ratio_upper: float
     continuous_geometry_box: bool
@@ -60,7 +60,7 @@ def certify_geometry_mass_residual_equivalence(model) -> GeometryMassResidualCer
 
     ``AffineTetrahedralGeometryChart.certify_box`` already proves P1 mass-form
     ratios on the full parameter box. Restricting the quadratic form to the
-    shared thermal subspace preserves those Löwner bounds exactly.
+    shared thermal subspace preserves those Loewner bounds exactly.
     """
 
     center = 0.5 * (np.asarray(model.lower, float) + np.asarray(model.upper, float))
@@ -76,8 +76,8 @@ def certify_geometry_mass_residual_equivalence(model) -> GeometryMassResidualCer
     return GeometryMassResidualCertificate(
         minimum_mass_eigenvalue=minimum,
         maximum_mass_eigenvalue=maximum,
-        reference_minimum_mass_eigenvalue=float(eig0[0]),
-        reference_maximum_mass_eigenvalue=float(eig0[-1]),
+        center_minimum_mass_eigenvalue=float(eig0[0]),
+        center_maximum_mass_eigenvalue=float(eig0[-1]),
         p1_mass_ratio_lower=lo_ratio,
         p1_mass_ratio_upper=hi_ratio,
         continuous_geometry_box=bool(model.certificate.certified_nondegenerate),
