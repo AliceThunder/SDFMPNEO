@@ -20,6 +20,18 @@ def training_point_workers() -> int:
             return max(1, int(raw))
         except ValueError as exc:
             raise ValueError("SDFMPNEO_POINT_WORKERS must be a positive integer") from exc
+    # If a caller explicitly chose multi-threaded BLAS, let that setting own the
+    # CPU instead of multiplying it by another outer pool. The normal SDFMPNEO
+    # entry point keeps BLAS at one thread and therefore uses point parallelism.
+    for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        try:
+            if int(value) > 1:
+                return 1
+        except ValueError:
+            continue
     return max(1, min(8, os.cpu_count() or 1))
 
 
@@ -47,7 +59,7 @@ def _ordered_map(function, items, *, monitor=None):
     out = []
     # Small ordered batches preserve pause/stop responsiveness while keeping
     # deterministic collection and reduction order.
-    batch_size = max(workers, 2 * workers)
+    batch_size = 2 * workers
     for start in range(0, len(items), batch_size):
         if monitor is not None:
             monitor.checkpoint()
