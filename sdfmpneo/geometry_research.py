@@ -28,6 +28,13 @@ from .training.research import ResearchTrainingConfig, train_research_graph
 from .research import ResearchElectroThermalModel
 
 
+def _geometry_seed_budget(max_nodes):
+    """Cap physics seeding so residual-driven corrections retain useful capacity."""
+    total = int(max_nodes)
+    reserve = max(8, (total + 3)//4)  # ceil(25%); small budgets still keep one seed slot.
+    return max(1, total-reserve)
+
+
 class GeometryResearchModel:
     def __init__(self, reference, tagged, chart, geometry_reference, lower, upper,
                  capacity, conductivity, terminal_pairs, current_offset, current_matrix,
@@ -184,10 +191,10 @@ class GeometryResearchModel:
                     weight = decay[k,target,j]
                     if weight and len(parents)<=config.max_degree:
                         candidates.append((abs(weight)*magnitude[graph.initial_names[j]],target,parents,weight))
-        # Leave space for nonlinear feedback corrections. All discarded terms
-        # remain in the physical residual, so this is only a work-budget choice.
+        # Seed only the strongest equation-derived terms. The remainder stays in
+        # the physical residual and can be selected later if it is actually useful.
         candidates.sort(key=lambda item:item[0],reverse=True)
-        budget = max(1,config.max_nodes-4)
+        budget = _geometry_seed_budget(config.max_nodes)
         result = ParametricAnalyticEvolutionGraph(graph.lambdas,graph.operating_names)
         for score,target,parents,weight in candidates[:budget]:
             if score == 0:
