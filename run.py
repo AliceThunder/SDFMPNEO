@@ -4,7 +4,8 @@
     python run.py --mode train
     python run.py --mode predict
 
-首次使用安装依赖：python -m pip install -e '.[cad]'
+首次使用安装依赖：python -m pip install -e '.[cad,gui]'
+训练默认打开 PyQt 窗口；无界面运行使用 --headless。
 所有相对路径均相对于本文件，支持从 IDE 或其他工作目录启动。
 """
 from __future__ import annotations
@@ -165,6 +166,21 @@ PREDICTION = {
 # 推理始终使用 .npz 内保存的物理参数，不使用本文件的几何/材料构建配置。
 
 
+# ==================== 8. PyQt 实时训练窗口与日志 ====================
+MONITOR = {
+    "enabled": True,                    # 训练打开窗口；推理不受影响
+    "auto_start": False,                # False：窗口打开后点击“启动”
+    "log_dir": "results/uwpt/logs",      # 每次任务独立子目录，保留全部 JSONL/文本日志
+    "log_interval_s": 1.0,              # 训练侧周期写日志，接受更新时也立即记录
+    "refresh_ms": 300,                  # 日志读取线程轮询周期
+    "max_plot_points": 4000,            # 窗口最多保留的曲线点数，日志不截断
+    "compute_threads": 1,               # 后台进程 BLAS/OpenMP 线程数
+}
+# 窗口主线程只绘图；QThread 读日志；独立进程训练，其日志线程周期写盘。
+# 暂停/停止在当前不可拆分运算结束后的检查点生效。暂停不退出进程，恢复继续原任务。
+# 停止后保存 model.stopped.npz（若已有有效网络），不会覆盖上次正常完成的模型。
+
+
 # ==================== 运行实现（通常无需修改） ====================
 ROOT = Path(__file__).resolve().parent
 
@@ -207,7 +223,7 @@ def generate_mesh(path):
     print(f"网格已生成：{mesh.mesh.n_nodes} 节点，{mesh.mesh.n_tetrahedra} 四面体", flush=True)
 
 
-def train(model_path, settings_dir):
+def train(model_path, settings_dir, monitor=None):
     from sdfmpneo import ResearchElectroThermalModel, ResearchTrainingConfig
     from sdfmpneo.research import model_from_config
 
@@ -216,6 +232,8 @@ def train(model_path, settings_dir):
     settings = {"case": "uwpt", "mode": "train", "model": str(model_path),
                 "training": TRAINING, "resume_model": None}
     if resume is not None:
+        if monitor is not None:
+            monitor.phase("loading")
         resume_path = resolve_path(resume)
         settings["resume_model"] = str(resume_path)
         print(f"加载模型继续训练：{resume_path}", flush=True)
@@ -232,6 +250,8 @@ def train(model_path, settings_dir):
         settings.update(physics=physical, mesh=MESH, transmitter=TRANSMITTER,
                         receiver=RECEIVER, environment=ENVIRONMENT, physical_tags=PHYSICAL_TAGS)
         if MESH["generate"]:
+            if monitor is not None:
+                monitor.phase("mesh")
             print("生成线圈、封装和海水网格……", flush=True)
             generate_mesh(mesh_path)
         elif not mesh_path.is_file():
@@ -240,17 +260,40 @@ def train(model_path, settings_dir):
         config_path = settings_dir / "model.config.json"
         write_json(config_path, physical)
         print("组装物理模型并构建电磁降阶空间……", flush=True)
+        if monitor is not None:
+            monitor.phase("assembly")
         model, config = model_from_config(config_path)
     write_json(settings_dir / "train.settings.json", settings)
     print("开始无解标签残差训练……", flush=True)
-    report = model.train(config, progress=lambda n, r, m: print(
-        f"响应节点={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
+    from sdfmpneo.training.monitor import TrainingStopped
+    try:
+        report = model.train(config, monitor=monitor, progress=lambda n, r, m: print(
+            f"响应节点={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
+    except TrainingStopped:
+        checkpoint = model_path.with_name(model_path.stem+".stopped"+model_path.suffix)
+        if model.graph is not None:
+            model.save(checkpoint)
+            print(f"训练已停止，有效模型已保存：{checkpoint}", flush=True)
+        else:
+            checkpoint = None
+        stopped = {"status": "stopped", "checkpoint": None if checkpoint is None else str(checkpoint),
+                   "numerical_tolerance_met": False}
+        write_json(settings_dir / "training.stopped.json", stopped)
+        if monitor is not None:
+            monitor.finish("stopped", **stopped)
+        return 130
+    # Saving is allowed to finish even if stop arrives after training completed.
+    if monitor is not None:
+        monitor.phase("saving", check=False)
     model.save(model_path)
     write_json(settings_dir / "training.report.json", report)
     print(f"训练状态：{report.status}；独立检查最大残差={report.maximum_validation_residual:.6g}")
     print(f"模型已保存：{model_path}")
     if not report.numerical_tolerance_met:
         print("本次尚未达到残差目标；已保存当前模型和报告，退出码为 2。")
+    if monitor is not None:
+        monitor.finish("completed" if report.numerical_tolerance_met else report.status,
+                       model=str(model_path), numerical_tolerance_met=report.numerical_tolerance_met)
     return 0 if report.numerical_tolerance_met else 2
 
 
@@ -290,18 +333,73 @@ def predict(model_path, output_path, settings_dir):
     return 0
 
 
+CONFIG_NAMES = ("FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
+                "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
+                "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR")
+
+
+def configuration_snapshot(model_path):
+    return {"root": str(ROOT), "model_path": str(model_path),
+            "parameters": {name: globals()[name] for name in CONFIG_NAMES}}
+
+
+def execute_training(model_path, settings_dir, session_dir=None):
+    from datetime import datetime
+    import uuid
+    from sdfmpneo.training.monitor import TrainingMonitor, TrainingStopped
+    if session_dir is None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:8]
+        session_dir = resolve_path(MONITOR["log_dir"])/stamp
+    session_dir = Path(session_dir)
+    write_json(session_dir/"settings.json", configuration_snapshot(model_path))
+    print(f"训练日志：{session_dir}", flush=True)
+    with TrainingMonitor(session_dir/"metrics.jsonl", session_dir/"control.json",
+                         interval=MONITOR["log_interval_s"]) as monitor:
+        try:
+            return train(model_path, settings_dir, monitor)
+        except TrainingStopped:
+            print("已停止：物理模型构建尚未完成，暂无可保存的训练网络。", flush=True)
+            monitor.finish("stopped", checkpoint=None, message="模型构建阶段停止，暂无网络检查点")
+            return 130
+
+
+def training_worker(snapshot_path):
+    global ROOT
+    payload = json.loads(Path(snapshot_path).read_text(encoding="utf-8"))
+    settings = payload["settings"]
+    ROOT = Path(settings["root"])
+    for name in CONFIG_NAMES:
+        globals()[name] = settings["parameters"][name]
+    return execute_training(Path(settings["model_path"]), resolve_path(FILES["settings_dir"]),
+                            payload["session_dir"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="一键运行电磁–热代理；参数集中在 run.py 顶部。")
     parser.add_argument("--mode", choices=("train", "predict"), default=MODE,
                         help="train=训练，predict=推理；覆盖顶部 MODE")
     parser.add_argument("--model", help="覆盖 FILES['model']，指定保存/加载的模型路径")
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument("--gui", action="store_true", help="打开 PyQt 训练窗口")
+    display.add_argument("--headless", action="store_true", help="仅后台训练及日志，不打开窗口")
+    parser.add_argument("--worker-config", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.worker_config:
+        return training_worker(args.worker_config)
     if args.mode not in ("train", "predict"):
         parser.error("MODE 应为 train/predict")
     model_path = resolve_path(args.model or FILES["model"])
     settings_dir = resolve_path(FILES["settings_dir"])
     if args.mode == "train":
-        return train(model_path, settings_dir)
+        if not args.headless and (args.gui or MONITOR["enabled"]):
+            try:
+                from sdfmpneo.training.qt_monitor import launch_window
+            except ImportError as exc:
+                raise SystemExit('请安装图形依赖：python -m pip install -e ".[cad,gui]"；'
+                                 '或使用 --headless 仅训练并记录日志。') from exc
+            return launch_window(__file__, configuration_snapshot(model_path),
+                                 resolve_path(MONITOR["log_dir"]), MONITOR)
+        return execute_training(model_path, settings_dir)
     return predict(model_path, resolve_path(FILES["predictions"]), settings_dir)
 
 

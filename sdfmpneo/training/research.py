@@ -88,10 +88,12 @@ def _clone(graph):
     return out
 
 
-def _evaluate(graph, field, points, *, jacobian=False):
+def _evaluate(graph, field, points, *, jacobian=False, monitor=None):
     records = []
     n = graph.n_modes
     for point in points:
+        if monitor is not None:
+            monitor.checkpoint()
         initial, u, time = point[:n], point[n:-1], float(point[-1])
         a, da = evaluate_parametric_stable(graph, time, a0=initial, operating=u)
         if jacobian:
@@ -111,13 +113,17 @@ def _metrics(records):
     return float(np.mean(norms**2)), float(np.max(norms))
 
 
-def _refine_weights(graph, field, points, max_iterations=12):
+def _refine_weights(graph, field, points, max_iterations=12, monitor=None):
     """Joint Gauss--Newton correction using exact DAG and physical Jacobians."""
     if not graph.response_nodes:
         return graph
     for _ in range(max_iterations):
+        if monitor is not None:
+            monitor.phase("weight_refinement")
         residuals, jacobians = [], []
         for point in points:
+            if monitor is not None:
+                monitor.checkpoint()
             n = graph.n_modes
             a, da, ja, jda = evaluate_parametric_stable_with_jacobians(
                 graph, float(point[-1]), a0=point[:n], operating=point[n:-1], weight_derivatives=True)
@@ -137,12 +143,15 @@ def _refine_weights(graph, field, points, max_iterations=12):
             for node, change in zip(graph.response_nodes, delta):
                 trial.add_product_response(node.name,node.target_mode,node.parents,node.weight+change)
             try:
-                values = _evaluate(trial,field,points)
+                values = _evaluate(trial,field,points,monitor=monitor)
                 trial_objective = sum(float(r.residual @ r.residual) for r in values)
             except (ValueError, FloatingPointError, np.linalg.LinAlgError):
                 trial_objective = float('inf')
             if trial_objective < objective:
                 graph = trial
+                if monitor is not None:
+                    obj, maximum = _metrics(values)
+                    monitor.record(graph, obj, maximum, len(points))
                 accepted = True
                 break
             delta *= .5
@@ -151,7 +160,7 @@ def _refine_weights(graph, field, points, max_iterations=12):
     return graph
 
 
-def _quadratic_heating_seed(graph, field):
+def _quadratic_heating_seed(graph, field, monitor=None):
     """Exact reference-state Joule polynomial in the affine current inputs.
 
     For x(0,U)=x0+sum U_k*xk, q_j=x^H H_j x is quadratic. These response
@@ -165,6 +174,8 @@ def _quadratic_heating_seed(graph, field):
     trial = _clone(graph)
     problem = field.em_model.problem
     for j in range(graph.n_modes):
+        if monitor is not None:
+            monitor.checkpoint()
         loss = getattr(problem,'loss_operator_sparse',None)
         H = problem.loss_operator(j,state) if loss is None else loss(j,state)
         Q = np.real(X.conj().T @ (H @ X))
@@ -180,7 +191,7 @@ def _quadratic_heating_seed(graph, field):
     return trial
 
 
-def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, progress=None):
+def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, progress=None, monitor=None):
     """Grow analytic response neurons using the exact coupled residual tangent.
 
     Polynomial degree and node counts are computational budgets; a run that
@@ -196,31 +207,47 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
         raise ValueError("training domain does not match the physical model")
     if len(graph.response_nodes) > config.max_nodes:
         raise ValueError("existing graph exceeds the requested node budget")
+    if monitor is not None:
+        monitor.retain(graph)
+        monitor.phase("initial_residual")
     points = config.points()
     checks = config.points(validation=True)
-    records = _evaluate(graph, field, points, jacobian=True)
+    records = _evaluate(graph, field, points, jacobian=True, monitor=monitor)
     objective, maximum = _metrics(records)
     initial_rms = np.sqrt(objective)
     history = [objective]
     accepted = len(graph.response_nodes)
-    seed = _quadratic_heating_seed(graph,field) if config.max_degree >= 2 else graph
+    if monitor is not None:
+        monitor.record(graph, objective, maximum, len(points))
+        monitor.phase("quadratic_seed")
+    seed = _quadratic_heating_seed(graph,field,monitor=monitor) if config.max_degree >= 2 else graph
     if len(seed.response_nodes) <= config.max_nodes and seed is not graph:
         try:
-            seed_objective,_ = _metrics(_evaluate(seed,field,points))
+            seed_objective,seed_max = _metrics(_evaluate(seed,field,points,monitor=monitor))
         except (ValueError,FloatingPointError,np.linalg.LinAlgError):
             seed_objective = float('inf')
         if seed_objective < objective:
-            graph = _refine_weights(seed,field,points)
-            records = _evaluate(graph,field,points,jacobian=True)
+            if monitor is not None:
+                monitor.record(seed, seed_objective, seed_max, len(points))
+            graph = _refine_weights(seed,field,points,monitor=monitor)
+            records = _evaluate(graph,field,points,jacobian=True,monitor=monitor)
             objective,maximum = _metrics(records)
             accepted = len(graph.response_nodes)
             history.append(objective)
+            if monitor is not None:
+                monitor.record(graph, objective, maximum, len(points))
             if progress is not None:
                 progress(accepted,np.sqrt(objective),maximum)
     check_max = float('inf')
     while True:
+        if monitor is not None:
+            monitor.checkpoint()
         if maximum <= config.residual_tolerance or accepted >= config.max_nodes:
-            _, check_max = _metrics(_evaluate(graph, field, checks))
+            if monitor is not None:
+                monitor.phase("validation")
+            _, check_max = _metrics(_evaluate(graph, field, checks, monitor=monitor))
+            if monitor is not None:
+                monitor.validation(check_max, len(checks))
             if check_max <= config.residual_tolerance and maximum <= config.residual_tolerance:
                 status = 'numerically_converged'
                 break
@@ -235,12 +262,16 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
             lo = np.array(config.initial_lower+config.operating_lower+(0.,))
             hi = np.array(config.initial_upper+config.operating_upper+(config.time_horizon,))
             checks = lo + engine.random(config.validation_count)*(hi-lo)
-            records = _evaluate(graph, field, points, jacobian=True)
+            records = _evaluate(graph, field, points, jacobian=True, monitor=monitor)
             objective, maximum = _metrics(records)
             # A new sample set changes the objective, so start a new monotone
             # history on that set; do not compare unlike quadrature objectives.
             history = [objective]
+            if monitor is not None:
+                monitor.record(graph, objective, maximum, len(points), new_points=True)
 
+        if monitor is not None:
+            monitor.phase("candidate_search")
         compiled = [compile_parametric_realization(graph, a0=r.initial, operating=r.u) for r in records]
         names = graph.known_names()
         existing = {(n.target_mode, tuple(sorted(n.parents))) for n in graph.response_nodes}
@@ -253,6 +284,8 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
                         continue
                     inner = norm2 = 0.
                     for r, realization in zip(records, compiled):
+                        if monitor is not None:
+                            monitor.checkpoint()
                         source = AnalyticRealization.constant(1.)
                         for parent in parents:
                             source = source.product(realization.node_realizations[parent])
@@ -276,15 +309,19 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
                 trial = _clone(graph)
                 trial.add_product_response(f"response_{len(graph.response_nodes)}", target, parents, weight)
                 try:
-                    trial_records = _evaluate(trial, field, points)
+                    trial_records = _evaluate(trial, field, points, monitor=monitor)
                     trial_objective, trial_max = _metrics(trial_records)
                 except (ValueError, FloatingPointError, np.linalg.LinAlgError):
                     trial_objective = float('inf')
                 if np.isfinite(trial_objective) and trial_objective < objective:
-                    graph = _refine_weights(trial, field, points)
-                    objective, maximum = _metrics(_evaluate(graph,field,points))
+                    if monitor is not None:
+                        monitor.record(trial, trial_objective, trial_max, len(points))
+                    graph = _refine_weights(trial, field, points, monitor=monitor)
+                    objective, maximum = _metrics(_evaluate(graph,field,points,monitor=monitor))
                     history.append(objective)
                     accepted += 1
+                    if monitor is not None:
+                        monitor.record(graph, objective, maximum, len(points))
                     success = True
                     if progress is not None:
                         progress(accepted, np.sqrt(objective), maximum)
@@ -294,9 +331,13 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
                 break
         if not success:
             status = 'stalled'
-            _, check_max = _metrics(_evaluate(graph, field, checks))
+            if monitor is not None:
+                monitor.phase("validation")
+            _, check_max = _metrics(_evaluate(graph, field, checks, monitor=monitor))
+            if monitor is not None:
+                monitor.validation(check_max, len(checks))
             break
-        records = _evaluate(graph, field, points, jacobian=True)
+        records = _evaluate(graph, field, points, jacobian=True, monitor=monitor)
     report = ResearchTrainingReport(status, accepted, float(initial_rms), float(np.sqrt(objective)),
                                     maximum, check_max, tuple(history), status=='numerically_converged')
     return graph, report

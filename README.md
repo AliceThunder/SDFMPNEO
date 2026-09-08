@@ -11,16 +11,20 @@
 推荐直接使用根目录的 [run.py](run.py)。所有运行配置集中在文件顶部，按模式/路径、几何网格、材料与电磁、热截断、训练和推理分类，并附单位说明。
 
 ```bash
-python -m pip install -e '.[cad]'
+python -m pip install -e '.[cad,gui]'
 python run.py --mode train
 python run.py --mode predict
 ```
 
 直接运行 UWPT 线圈—封装—海水算例，模型与输出保存在 `results/uwpt/`。也可以直接修改 `MODE="train"` 或 `MODE="predict"` 后运行 `python run.py`，适用于 IDE 的运行按钮。
 
+训练默认打开 **PyQt6 实时窗口**，点击“启动”后执行任务；窗口提供暂停、恢复和停止按钮。`MONITOR` 配置控制日志周期、曲线刷新、显示点数和计算线程数。使用 `python run.py --mode train --headless` 可仅训练并记录日志，推理模式保持原有命令行输出。
+
 训练会自动生成网格、构建物理模型、训练并保存。设置 `MESH["generate"]=False` 可导入已有网格。相对路径统一以 `run.py` 所在目录为基准，无需手动切换目录或编辑另一份 JSON。
 
 推理参数在 `PREDICTION` 中设置；仅加载保存模型，不会重新训练或生成网格。`FILES["resume_model"]` 可指定继续训练的模型。每次运行自动保存配置，训练另保存残差报告。
+
+实时曲线包括 MSE、训练 RMS/最大残差、独立检查最大残差、响应节点数和训练配点数。后台训练进程的日志线程周期性写入 JSONL；另一个 `QThread` 增量读取文件，通过信号通知主线程绘图。每次任务的日志保存在 `results/uwpt/logs/<时间_编号>/`。完整操作和日志格式见 [训练监控说明](docs/TRAINING_MONITOR.md)。
 
 训练仅评估给定输入上的控制方程残差，不使用瞬态轨迹、FEM/Maxwell/COMSOL 或实验解标签。原有 `python -m sdfmpneo` 接口也保留，其中 `validate` 才调用独立 Radau 积分和全阶稀疏电磁求解；一键脚本不自动执行这类验证。
 

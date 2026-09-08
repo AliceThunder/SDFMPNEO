@@ -179,10 +179,41 @@ def test_run_script_training_preserves_nonconvergence_exit_and_checkpoint(tmp_pa
         'time_horizon': .25, 'sample_count': 4, 'validation_count': 4,
         'max_nodes': 1, 'residual_tolerance': 1e-10,
     })
-    assert run.main(['--mode', 'train']) == 2
+    assert run.main(['--mode', 'train', '--headless']) == 2
     output = tmp_path/'results'
     report = json.loads((output/'training.report.json').read_text())
     assert report['status'] == 'budget_exhausted'
     assert not report['numerical_tolerance_met']
     model = ResearchElectroThermalModel.load(output/'model.npz')
     assert len(model.graph.response_nodes) == 1
+
+
+def test_stop_saves_an_accepted_graph_and_it_can_resume(tmp_path, monkeypatch, run_script):
+    from sdfmpneo.training.monitor import TrainingMonitor, write_command
+    run = run_script
+    monkeypatch.setattr(run, 'ROOT', tmp_path)
+    seed = demo_research_model()
+    seed.graph = ParametricAnalyticEvolutionGraph(seed.core.thermal_model.lambdas, ['u0', 'u1'])
+    seed.save(tmp_path/'seed.npz')
+    monkeypatch.setattr(run, 'FILES', {'resume_model': 'seed.npz'})
+    config = dict(initial_lower=[0.], initial_upper=[2.], operating_lower=[1000., 0.],
+                  operating_upper=[3000., 1000.], time_horizon=.25, residual_tolerance=.002,
+                  sample_count=16, validation_count=16, max_nodes=12, max_degree=2)
+    monkeypatch.setattr(run, 'TRAINING', config)
+    control = tmp_path/'control.json'
+    write_command(control, 'run')
+    class StopAfterSeed(TrainingMonitor):
+        def record(self, graph, *args, **kwargs):
+            super().record(graph, *args, **kwargs)
+            if graph.response_nodes:
+                write_command(control, 'stop')
+    with StopAfterSeed(tmp_path/'metrics.jsonl', control) as monitor:
+        assert run.train(tmp_path/'model.npz', tmp_path, monitor) == 130
+    assert not (tmp_path/'model.npz').exists()
+    model = ResearchElectroThermalModel.load(tmp_path/'model.stopped.npz')
+    assert len(model.graph.response_nodes) > 0
+    assert model.training_report is None
+    assert model.predict(0., a0=[1.], operating=[2000., 500.]).maximum_temperature > 293.15
+    # Continuation restores the saved graph, without solution labels.
+    report = model.train(ResearchTrainingConfig(**config))
+    assert report.numerical_tolerance_met
