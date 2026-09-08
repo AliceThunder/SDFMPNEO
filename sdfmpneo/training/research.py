@@ -222,7 +222,10 @@ def _refine_weights(graph, field, points, max_iterations=12, monitor=None, toler
                 accepted = True
                 break
             delta *= .5
-        if not accepted or objective-trial_objective <= 1e-10*max(objective,np.finfo(float).tiny):
+        # Keep the accepted step, but stop spending full Jacobian passes once
+        # the relative objective improvement is below 1e-8; candidate search
+        # can then add missing response structure instead of polishing roundoff.
+        if not accepted or objective-trial_objective <= 1e-8*max(objective,np.finfo(float).tiny):
             break
     return graph
 
