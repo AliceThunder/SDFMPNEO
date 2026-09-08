@@ -1,11 +1,66 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+import os
 
 import numpy as np
 import scipy.linalg
 
 from .long_time import realization_action
+
+
+_STRUCTURE_CACHE_SIZE = max(0, int(os.environ.get("SDFMPNEO_STRUCTURE_CACHE_ENTRIES", "1024")))
+
+
+def _matrix_from_bytes(shape: tuple[int, int], data: bytes) -> np.ndarray:
+    return np.frombuffer(data, dtype=np.complex128).reshape(shape)
+
+
+def _vector_from_bytes(data: bytes) -> np.ndarray:
+    return np.frombuffer(data, dtype=np.complex128)
+
+
+@lru_cache(maxsize=_STRUCTURE_CACHE_SIZE)
+def _cached_add_structure(shape1, A1_bytes, c1_bytes, shape2, A2_bytes, c2_bytes):
+    A1 = _matrix_from_bytes(shape1, A1_bytes)
+    A2 = _matrix_from_bytes(shape2, A2_bytes)
+    c1 = _vector_from_bytes(c1_bytes)
+    c2 = _vector_from_bytes(c2_bytes)
+    return scipy.linalg.block_diag(A1, A2), np.concatenate([c1, c2])
+
+
+@lru_cache(maxsize=_STRUCTURE_CACHE_SIZE)
+def _cached_product_structure(shape1, A1_bytes, c1_bytes, shape2, A2_bytes, c2_bytes):
+    A1 = _matrix_from_bytes(shape1, A1_bytes)
+    A2 = _matrix_from_bytes(shape2, A2_bytes)
+    c1 = _vector_from_bytes(c1_bytes)
+    c2 = _vector_from_bytes(c2_bytes)
+    I1 = np.eye(shape1[0], dtype=complex)
+    I2 = np.eye(shape2[0], dtype=complex)
+    A = np.kron(A1, I2) + np.kron(I1, A2)
+    c = np.kron(c1, c2)
+    return A, c
+
+
+@lru_cache(maxsize=_STRUCTURE_CACHE_SIZE)
+def _cached_response_structure(shape, A_bytes, c_bytes, decay_rate):
+    source_A = _matrix_from_bytes(shape, A_bytes)
+    source_c = _vector_from_bytes(c_bytes)
+    n = shape[0]
+    A = np.zeros((n + 1, n + 1), dtype=complex)
+    A[:n, :n] = source_A
+    A[n, :n] = source_c
+    A[n, n] = -float(decay_rate)
+    c = np.zeros(n + 1, dtype=complex)
+    c[n] = 1.0
+    return A, c
+
+
+def clear_realization_structure_cache() -> None:
+    _cached_add_structure.cache_clear()
+    _cached_product_structure.cache_clear()
+    _cached_response_structure.cache_clear()
 
 
 @dataclass(frozen=True)
@@ -70,22 +125,26 @@ class AnalyticRealization:
     def add(self, other: "AnalyticRealization") -> "AnalyticRealization":
         if not isinstance(other, AnalyticRealization):
             raise TypeError("other must be AnalyticRealization")
-        A = scipy.linalg.block_diag(self.A, other.A)
+        A, c = _cached_add_structure(
+            self.A.shape, self.A.tobytes(), self.c.tobytes(),
+            other.A.shape, other.A.tobytes(), other.c.tobytes(),
+        )
         b = np.concatenate([self.b, other.b])
-        c = np.concatenate([self.c, other.c])
-        return AnalyticRealization(A, b, c)
+        # Copy cached structure arrays so public realization arrays remain
+        # independently mutable exactly as before this optimization.
+        return AnalyticRealization(A.copy(), b, c.copy())
 
     def product(self, other: "AnalyticRealization") -> "AnalyticRealization":
         """Exact product via the Kronecker-sum realization."""
 
         if not isinstance(other, AnalyticRealization):
             raise TypeError("other must be AnalyticRealization")
-        I1 = np.eye(self.dimension, dtype=complex)
-        I2 = np.eye(other.dimension, dtype=complex)
-        A = np.kron(self.A, I2) + np.kron(I1, other.A)
+        A, c = _cached_product_structure(
+            self.A.shape, self.A.tobytes(), self.c.tobytes(),
+            other.A.shape, other.A.tobytes(), other.c.tobytes(),
+        )
         b = np.kron(self.b, other.b)
-        c = np.kron(self.c, other.c)
-        return AnalyticRealization(A, b, c)
+        return AnalyticRealization(A.copy(), b, c.copy())
 
     def response(self, decay_rate: float) -> "AnalyticRealization":
         """Exact y'+lambda*y=f, y(0)=0 response realization."""
@@ -93,15 +152,11 @@ class AnalyticRealization:
         lam = float(decay_rate)
         if lam < 0:
             raise ValueError("response decay rate must be non-negative")
-        n = self.dimension
-        A = np.zeros((n + 1, n + 1), dtype=complex)
-        A[:n, :n] = self.A
-        A[n, :n] = self.c
-        A[n, n] = -lam
+        A, c = _cached_response_structure(
+            self.A.shape, self.A.tobytes(), self.c.tobytes(), lam
+        )
         b = np.concatenate([self.b, np.zeros(1, dtype=complex)])
-        c = np.zeros(n + 1, dtype=complex)
-        c[n] = 1.0
-        return AnalyticRealization(A, b, c)
+        return AnalyticRealization(A.copy(), b, c.copy())
 
     def evaluate(self, t: float) -> complex:
         if t < 0:
