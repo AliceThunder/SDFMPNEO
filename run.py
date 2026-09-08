@@ -74,6 +74,29 @@ PHYSICAL_TAGS = {
 }
 
 
+# 几何参数族：一次训练覆盖整个连续参数盒；推理输入保存模型内的这些参数。
+# 形状、匝数、材料拓扑固定。planar_scale 同比例改变外径、匝距和导体宽度；
+# thickness_scale 独立改变厚度；package_scale 仅改变封装外表面尺寸。
+# 位移/间距单位 m，seawater_radius 是实际网格外球半径（包含几何容差）。
+GEOMETRY_FAMILY = {
+    "enabled": True,
+    "parameters": {
+        "tx_planar_scale": {"bounds": [0.97, 1.03]},
+        "rx_planar_scale": {"bounds": [0.97, 1.03]},
+        "tx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_offset_x": {"bounds": [-0.0002, 0.0002]},
+        "rx_offset_y": {"bounds": [-0.0002, 0.0002]},
+        "rx_gap": {"bounds": [0.0098, 0.0102]},
+        "tx_package_scale": {"bounds": [0.98, 1.02]},
+        "rx_package_scale": {"bounds": [0.98, 1.02]},
+        "seawater_radius": {"relative": [0.98, 1.02]},
+    },
+    "em_anchor_count": 4,       # 额外 Halton 几何锚点；另含中心、上下角点及各轴端点
+    "cache_size": 128,          # 缓存几何物理算子，减少残差训练中的重复组装
+}
+
+
 # ==================== 4. UWPT 材料与电磁参数（SI 单位） ====================
 PHYSICS = {
     "frequency_hz": 100000.0,
@@ -146,9 +169,11 @@ THERMAL_TRUNCATION = {
 TRAINING = {
     "initial_lower": [-0.1, -0.1], "initial_upper": [0.1, 0.1],
     "operating_lower": [0.0, 0.0], "operating_upper": [10.0, 10.0],
-    "time_horizon": 1.0, "residual_tolerance": 1e-5,
-    "sample_count": 16, "validation_count": 16,
-    "max_nodes": 16, "max_degree": 2,
+    "time_horizon": 100000.0, "residual_tolerance": 1e-5,
+    "time_sampling": "mixed_log", "time_min": 1e-6, "include_steady_state": True,
+    "sample_count": 64, "validation_count": 64,
+    "max_nodes": 48, "max_degree": 3,
+    "max_parent_responses": 1, "max_realization_dimension": 64,
 }
 # validation_count 仅为无标签物理残差的独立输入检查点数量，不做瞬态参考积分。
 
@@ -156,13 +181,16 @@ TRAINING = {
 # ==================== 7. 推理配置 ====================
 PREDICTION = {
     "a0": [0.0, 0.0], "operating": [5.0, 0.0],
-    "times": [0.0, 0.1, 0.5, 1.0],
+    "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, 1000000.0, "inf"],
+    "geometry": None,                   # None：保存几何域的中心；或填写完整参数字典
+    "allow_time_extrapolation": True,   # 时间可超出训练窗；"inf" 查询解析稳态极限
     "initial_temperature_file": None,
     "state_only": False, "allow_extrapolation": False,
 }
 # initial_temperature_file：可选的一维 .npy 全节点开尔文温度；设置后投影得到 a0。
 # state_only=True：仅解析网络与温度重构；False：另输出阻抗、电感和材料损耗。
-# allow_extrapolation=True：明确允许超出训练域查询；默认检查训练域。
+# allow_extrapolation 仅放开初态/电流域；几何必须处于保存的有效网格参数域。
+# 任意非负有限时间及 "inf" 均可查询；域外时间精度不由有限残差检查保证。
 # 推理始终使用 .npz 内保存的物理参数，不使用本文件的几何/材料构建配置。
 
 
@@ -245,6 +273,9 @@ def train(model_path, settings_dir, monitor=None):
             "thermal_rank": THERMAL_RANK, "thermal_truncation": THERMAL_TRUNCATION,
             "training": TRAINING,
         }
+        if GEOMETRY_FAMILY["enabled"]:
+            physical["geometry_family"] = {**GEOMETRY_FAMILY, "transmitter": TRANSMITTER,
+                "receiver": RECEIVER, "physical_tags": PHYSICAL_TAGS}
         if EM_CANDIDATE_STATES is not None:
             physical["em_candidate_states"] = EM_CANDIDATE_STATES
         settings.update(physics=physical, mesh=MESH, transmitter=TRANSMITTER,
@@ -262,7 +293,17 @@ def train(model_path, settings_dir, monitor=None):
         print("组装物理模型并构建电磁降阶空间……", flush=True)
         if monitor is not None:
             monitor.phase("assembly")
-        model, config = model_from_config(config_path)
+        if GEOMETRY_FAMILY["enabled"]:
+            from sdfmpneo.geometry_research import geometry_model_from_config
+            model, config = geometry_model_from_config(config_path, monitor=monitor)
+            write_json(settings_dir / "geometry.domain.json", {
+                "names": model.geometry_names, "reference": model.geometry_reference,
+                "lower": model.lower, "upper": model.upper,
+                "mesh_certificate": model.certificate, "em_basis": model.em_basis_report,
+            })
+            print(f"共享几何代理：{len(model.geometry_names)} 个几何输入，EM 基维数={model.reference.em.n_reduced}", flush=True)
+        else:
+            model, config = model_from_config(config_path)
     write_json(settings_dir / "train.settings.json", settings)
     print("开始无解标签残差训练……", flush=True)
     from sdfmpneo.training.monitor import TrainingStopped
@@ -306,10 +347,17 @@ def predict(model_path, output_path, settings_dir):
     model = ResearchElectroThermalModel.load(model_path)
     parameters = dict(PREDICTION)
     initial = parameters["a0"]
+    geometry_args = {}
+    if hasattr(model, "geometry_names"):
+        g = parameters.get("geometry")
+        if g is None:
+            g = dict(zip(model.geometry_names, (model.lower+model.upper)/2))
+        parameters["geometry"] = g
+        geometry_args = {"geometry": g}
     temperature_file = parameters["initial_temperature_file"]
     if temperature_file is not None:
         temperature_path = resolve_path(temperature_file)
-        initial = model.project_initial_temperature(np.load(temperature_path, allow_pickle=False))
+        initial = model.project_initial_temperature(np.load(temperature_path, allow_pickle=False), **geometry_args)
         parameters["initial_temperature_file"] = str(temperature_path)
     if not parameters["times"]:
         raise ValueError("推理 times 至少需要一个时间点")
@@ -317,6 +365,7 @@ def predict(model_path, output_path, settings_dir):
     results = [model.predict(
         t, a0=initial, operating=parameters["operating"],
         diagnostics=not parameters["state_only"], allow_extrapolation=parameters["allow_extrapolation"],
+        allow_time_extrapolation=parameters.get("allow_time_extrapolation", True), **geometry_args,
     ) for t in parameters["times"]]
     write_json(output_path, results)
     write_json(settings_dir / "predict.settings.json", {
@@ -328,14 +377,14 @@ def predict(model_path, output_path, settings_dir):
             time, maximum = result["time"], result["maximum_temperature"]
         else:
             time, maximum = result.time, result.maximum_temperature
-        print(f"t={time:g} s，最高温度={maximum:.8g} K")
+        print(f"t={float(time):g} s，最高温度={maximum:.8g} K")
     print(f"推理结果已保存：{output_path}")
     return 0
 
 
 CONFIG_NAMES = ("FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
                 "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
-                "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR")
+                "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR", "GEOMETRY_FAMILY")
 
 
 def configuration_snapshot(model_path):

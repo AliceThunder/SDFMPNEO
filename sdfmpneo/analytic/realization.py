@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.linalg
 
+from .long_time import realization_action
+
 
 @dataclass(frozen=True)
 class AnalyticRealization:
@@ -104,14 +106,14 @@ class AnalyticRealization:
     def evaluate(self, t: float) -> complex:
         if t < 0:
             raise ValueError("time must be non-negative")
-        state = scipy.linalg.expm(self.A * float(t)) @ self.b
+        state = realization_action(self.A, self.b, t)
         return complex(self.c @ state)
 
     def derivative_value(self, t: float) -> complex:
         if t < 0:
             raise ValueError("time must be non-negative")
-        state = scipy.linalg.expm(self.A * float(t)) @ self.b
-        return complex(self.c @ (self.A @ state))
+        state = realization_action(self.A, self.b, t)
+        return 0j if np.isposinf(t) else complex(self.c @ (self.A @ state))
 
 
 @dataclass(frozen=True)

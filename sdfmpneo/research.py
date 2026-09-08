@@ -105,21 +105,24 @@ class ResearchElectroThermalModel:
         self.graph, self.training_config, self.training_report = graph, config, report
         return report
 
-    def predict(self, time, *, a0, operating, diagnostics=True, allow_extrapolation=False):
+    def predict(self, time, *, a0, operating, diagnostics=True, allow_extrapolation=False,
+                allow_time_extrapolation=True):
         if self.graph is None:
             raise ValueError("train or load a trained model first")
         initial = np.asarray(a0, float)
         u = np.asarray(operating, float)
         time = float(time)
-        if not np.isfinite(time) or time < 0 or np.any(~np.isfinite(initial)) or np.any(~np.isfinite(u)):
-            raise ValueError("inference inputs must be finite and time non-negative")
+        if np.isnan(time) or time < 0 or np.any(~np.isfinite(initial)) or np.any(~np.isfinite(u)):
+            raise ValueError("initial/current inputs must be finite; time non-negative or positive infinity")
         if self.training_config is not None and not allow_extrapolation:
             c = self.training_config
-            p = np.concatenate([initial, u, [time]])
-            lo = np.array(c.initial_lower+c.operating_lower+(0.,))
-            hi = np.array(c.initial_upper+c.operating_upper+(c.time_horizon,))
+            p = np.concatenate([initial, u])
+            lo = np.array(c.initial_lower+c.operating_lower)
+            hi = np.array(c.initial_upper+c.operating_upper)
             if p.shape != lo.shape or np.any(p < lo) or np.any(p > hi):
                 raise ValueError("query is outside the trained box; set allow_extrapolation=True for an explicit study")
+        if self.training_config is not None and not allow_time_extrapolation and time > self.training_config.time_horizon:
+            raise ValueError('time is outside the trained finite time window')
         if not diagnostics:
             a, da = evaluate_parametric_stable(self.graph, time, a0=initial, operating=u)
             T = self.temperature(a)
@@ -212,6 +215,9 @@ class ResearchElectroThermalModel:
         from .spatial.tetra3d import TetrahedralThermalAssembly
         with np.load(path,allow_pickle=False) as data:
             meta=json.loads(str(data['metadata']))
+            if meta.get('model_type') == 'geometry_research':
+                from .geometry_research import GeometryResearchModel
+                return GeometryResearchModel.load(path)
             if meta['format_version'] != 1:
                 raise ValueError('unsupported model format version')
             mesh=TetrahedralComplex3D.build(data['vertices'],data['tetrahedra'])

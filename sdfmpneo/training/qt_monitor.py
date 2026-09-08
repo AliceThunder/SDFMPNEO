@@ -27,7 +27,8 @@ PHASES = {
     "loading": "加载已有模型", "initial_residual": "计算初始残差",
     "quadratic_seed": "构造二次热源响应", "weight_refinement": "联合更新权重",
     "candidate_search": "搜索响应节点", "validation": "独立残差检查",
-    "saving": "保存模型",
+    "saving": "保存模型", "geometry_em_basis": "构建跨几何共享电磁空间",
+    "geometry_seed": "构造跨几何物理初始网络",
 }
 
 

@@ -30,6 +30,11 @@ class ResearchTrainingConfig:
     validation_count: int = 32
     max_nodes: int = 24
     max_degree: int = 3
+    time_sampling: str = "linear"
+    time_min: float = 1e-6
+    include_steady_state: bool = False
+    max_parent_responses: int = 3
+    max_realization_dimension: int = 64
 
     def __post_init__(self):
         for key in ('initial_lower','initial_upper','operating_lower','operating_upper'):
@@ -38,7 +43,7 @@ class ResearchTrainingConfig:
             raise ValueError("lower and upper dimensions must match")
         if not np.isfinite(self.time_horizon+self.residual_tolerance):
             raise ValueError("time horizon and residual tolerance must be finite")
-        for key in ('sample_count','validation_count','max_nodes','max_degree'):
+        for key in ('sample_count','validation_count','max_nodes','max_degree','max_parent_responses','max_realization_dimension'):
             if int(getattr(self,key))!=getattr(self,key):
                 raise ValueError("sample and work budgets must be integers")
             object.__setattr__(self,key,int(getattr(self,key)))
@@ -48,21 +53,39 @@ class ResearchTrainingConfig:
             raise ValueError("invalid training parameter box")
         if self.time_horizon <= 0 or self.residual_tolerance <= 0:
             raise ValueError("time_horizon and residual_tolerance must be positive")
+        if self.max_parent_responses < 0 or self.max_realization_dimension < 2:
+            raise ValueError("invalid analytic candidate complexity budget")
         if min(self.sample_count, self.validation_count, self.max_nodes, self.max_degree) < 1:
             raise ValueError("sample and work budgets must be positive")
 
-    def points(self, validation=False):
+        if self.time_sampling not in ('linear', 'mixed_log'):
+            raise ValueError('time_sampling must be linear or mixed_log')
+        if not np.isfinite(self.time_min) or self.time_min <= 0 or (
+                self.time_sampling == 'mixed_log' and self.time_min > self.time_horizon):
+            raise ValueError('time_min must be positive and no larger than time_horizon for mixed_log')
+
+    def points(self, validation=False, seed=None):
         # Two distinct deterministic low-discrepancy sets; these are numerical
         # checks, never continuous-domain certificates. Include t=0 explicitly.
         lo = np.array(self.initial_lower + self.operating_lower + (0.,))
         hi = np.array(self.initial_upper + self.operating_upper + (self.time_horizon,))
         count = self.validation_count if validation else self.sample_count
-        engine = qmc.Halton(len(lo), scramble=True, seed=1 if validation else 0)
+        engine = qmc.Halton(len(lo), scramble=True, seed=(1 if validation else 0) if seed is None else seed)
         unit = engine.random(count)
         if not validation:
             unit = np.vstack([unit, np.full(len(lo), .5), np.zeros(len(lo)), np.ones(len(lo))])
             unit[-3, -1] = 0.
-        return lo + unit * (hi-lo)
+        points = lo + unit * (hi-lo)
+        if self.time_sampling == 'mixed_log':
+            # Half linear for late transients, half logarithmic for early scales.
+            ids = np.arange(0, count, 2)
+            points[ids, -1] = np.exp(np.log(self.time_min) + unit[ids, -1] *
+                                    (np.log(self.time_horizon)-np.log(self.time_min)))
+        if self.include_steady_state:
+            steady = points[:count].copy()
+            steady[:, -1] = np.inf
+            points = np.vstack([points, steady])
+        return points
 
 
 @dataclass(frozen=True)
@@ -99,6 +122,9 @@ def _evaluate(graph, field, points, *, jacobian=False, monitor=None):
         if jacobian:
             physical = field.evaluate(a, u)
             F, J = physical.vector_field, physical.vector_field_jacobian
+        elif hasattr(field, "vector_field"):
+            F = field.vector_field(a, u)
+            J = None
         else:
             rhs = field.rhs(u)
             q = field.em_model.heat_source_for_rhs(a, rhs)
@@ -113,7 +139,7 @@ def _metrics(records):
     return float(np.mean(norms**2)), float(np.max(norms))
 
 
-def _refine_weights(graph, field, points, max_iterations=12, monitor=None):
+def _refine_weights(graph, field, points, max_iterations=12, monitor=None, tolerance=0.):
     """Joint Gauss--Newton correction using exact DAG and physical Jacobians."""
     if not graph.response_nodes:
         return graph
@@ -130,6 +156,8 @@ def _refine_weights(graph, field, points, max_iterations=12, monitor=None):
             physical = field.evaluate(a, point[n:-1])
             residuals.append(da-physical.vector_field)
             jacobians.append(jda-physical.vector_field_jacobian @ ja)
+        if max(np.linalg.norm(r) for r in residuals) <= tolerance:
+            break
         residual = np.concatenate(residuals)
         J = np.vstack(jacobians)
         scales = np.linalg.norm(J, axis=0)
@@ -166,6 +194,8 @@ def _quadratic_heating_seed(graph, field, monitor=None):
     For x(0,U)=x0+sum U_k*xk, q_j=x^H H_j x is quadratic. These response
     neurons come from the governing equation, not from solution trajectories.
     """
+    if hasattr(field, "seed_graph") and not graph.response_nodes:
+        return field.seed_graph(graph, monitor=monitor)
     if graph.response_nodes or field.rhs_map is None:
         return graph
     source = np.column_stack([field.rhs_map.offset,field.rhs_map.matrix])
@@ -220,6 +250,13 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
     if monitor is not None:
         monitor.record(graph, objective, maximum, len(points))
         monitor.phase("quadratic_seed")
+    if graph.response_nodes and maximum > config.residual_tolerance:
+        graph = _refine_weights(graph,field,points,monitor=monitor,tolerance=config.residual_tolerance)
+        records = _evaluate(graph,field,points,jacobian=True,monitor=monitor)
+        objective,maximum = _metrics(records)
+        history.append(objective)
+        if monitor is not None:
+            monitor.record(graph,objective,maximum,len(points))
     seed = _quadratic_heating_seed(graph,field,monitor=monitor) if config.max_degree >= 2 else graph
     if len(seed.response_nodes) <= config.max_nodes and seed is not graph:
         try:
@@ -229,7 +266,7 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
         if seed_objective < objective:
             if monitor is not None:
                 monitor.record(seed, seed_objective, seed_max, len(points))
-            graph = _refine_weights(seed,field,points,monitor=monitor)
+            graph = _refine_weights(seed,field,points,monitor=monitor,tolerance=config.residual_tolerance)
             records = _evaluate(graph,field,points,jacobian=True,monitor=monitor)
             objective,maximum = _metrics(records)
             accepted = len(graph.response_nodes)
@@ -257,11 +294,7 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
             # Refine collocation at the independent violating points, then
             # reserve a fresh independent validation set for the next check.
             points = np.vstack([points, checks])
-            checks = config.points(validation=True).copy()
-            engine = qmc.Halton(checks.shape[1], scramble=True, seed=2+accepted)
-            lo = np.array(config.initial_lower+config.operating_lower+(0.,))
-            hi = np.array(config.initial_upper+config.operating_upper+(config.time_horizon,))
-            checks = lo + engine.random(config.validation_count)*(hi-lo)
+            checks = config.points(validation=True, seed=2+accepted)
             records = _evaluate(graph, field, points, jacobian=True, monitor=monitor)
             objective, maximum = _metrics(records)
             # A new sample set changes the objective, so start a new monotone
@@ -276,9 +309,15 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
         names = graph.known_names()
         existing = {(n.target_mode, tuple(sorted(n.parents))) for n in graph.response_nodes}
         scored = []
+        response_names = {node.name for node in graph.response_nodes}
         # Empty product includes static heating even when the RHS has an offset.
         for degree in range(config.max_degree+1):
             for parents in combinations_with_replacement(names, degree):
+                if sum(p in response_names for p in parents) > config.max_parent_responses:
+                    continue
+                dimension = int(np.prod([compiled[0].node_realizations[p].dimension for p in parents]))+1
+                if dimension > config.max_realization_dimension:
+                    continue
                 for target in range(graph.n_modes):
                     if (target, tuple(sorted(parents))) in existing:
                         continue
@@ -316,7 +355,7 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
                 if np.isfinite(trial_objective) and trial_objective < objective:
                     if monitor is not None:
                         monitor.record(trial, trial_objective, trial_max, len(points))
-                    graph = _refine_weights(trial, field, points, monitor=monitor)
+                    graph = _refine_weights(trial, field, points, monitor=monitor, tolerance=config.residual_tolerance)
                     objective, maximum = _metrics(_evaluate(graph,field,points,monitor=monitor))
                     history.append(objective)
                     accepted += 1

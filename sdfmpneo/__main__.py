@@ -18,7 +18,7 @@ def jsonable(value):
     if isinstance(value,np.ndarray):
         if np.iscomplexobj(value):
             return {'real':value.real.tolist(),'imag':value.imag.tolist()}
-        return value.tolist()
+        return jsonable(value.tolist())
     if isinstance(value,complex):
         return {'real':value.real,'imag':value.imag}
     if isinstance(value,dict):
@@ -26,7 +26,9 @@ def jsonable(value):
     if isinstance(value,(tuple,list)):
         return [jsonable(v) for v in value]
     if isinstance(value,np.generic):
-        return value.item()
+        return jsonable(value.item())
+    if isinstance(value, float) and np.isposinf(value):
+        return "inf"
     return value
 
 
@@ -50,6 +52,8 @@ def main(argv=None):
         if command=='predict':
             sub.add_argument('--state-only',action='store_true',help='DAG-only inference; skip EM diagnostics')
             sub.add_argument('--allow-extrapolation',action='store_true')
+            sub.add_argument('--geometry',type=Path,help='JSON dictionary of saved geometry inputs')
+            sub.add_argument('--strict-time-window',action='store_true')
         else:
             sub.add_argument('--rom-reference',action='store_true',help='use EM ROM in the validation integrator')
     args=parser.parse_args(argv)
@@ -59,7 +63,12 @@ def main(argv=None):
             config=ResearchTrainingConfig((0.,),(2.,),(1000.,0.),(3000.,1000.),.25,.002,
                                            sample_count=16,validation_count=16,max_nodes=12,max_degree=2)
         else:
-            model,config=model_from_config(args.config)
+            raw=json.loads(args.config.read_text())
+            if raw.get('geometry_family',{}).get('enabled',False):
+                from .geometry_research import geometry_model_from_config
+                model,config=geometry_model_from_config(args.config)
+            else:
+                model,config=model_from_config(args.config)
         if args.max_nodes is not None or args.residual_tolerance is not None:
             from dataclasses import replace
             config=replace(config,**({} if args.max_nodes is None else {'max_nodes':args.max_nodes}),
@@ -72,9 +81,17 @@ def main(argv=None):
         return 0 if report.numerical_tolerance_met else 2
     model=ResearchElectroThermalModel.load(args.model)
     if args.command=='predict':
+        geometry_args={}
+        if hasattr(model,'geometry_names'):
+            geometry=(dict(zip(model.geometry_names,(model.lower+model.upper)/2)) if args.geometry is None
+                      else json.loads(args.geometry.read_text()))
+            geometry_args={'geometry':geometry}
         result=[model.predict(t,a0=args.a0,operating=args.operating,diagnostics=not args.state_only,
-                               allow_extrapolation=args.allow_extrapolation) for t in args.times]
+                               allow_extrapolation=args.allow_extrapolation,
+                               allow_time_extrapolation=not args.strict_time_window, **geometry_args) for t in args.times]
     else:
+        if hasattr(model,'geometry_names'):
+            parser.error('geometry-family validation uses physical residuals in predict; trajectory validation is for fixed models')
         result=model.validate_trajectory(args.times,a0=args.a0,operating=args.operating,
                                          full_electromagnetics=not args.rom_reference)
     text=json.dumps(jsonable(result),indent=2,allow_nan=False)

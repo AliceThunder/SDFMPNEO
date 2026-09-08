@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-import scipy.linalg
+from .long_time import realization_action
 
 from .realization import AnalyticRealization, CompiledRealizationGraph
 
@@ -78,17 +78,29 @@ def evaluate_parametric_stable_with_jacobians(graph, t, *, a0, operating, weight
     Static parameters enter the realization's initial vector b. Product-rule
     derivatives of b share the same matrix exponential as the state.
     """
-    if t < 0 or not np.isfinite(t):
-        raise ValueError("time must be finite and non-negative")
+    if t < 0 or np.isnan(t):
+        raise ValueError("time must be non-negative or positive infinity")
     compiled, db = _compile_with_operating_derivatives(
         graph, a0=a0, operating=operating, weight_derivatives=weight_derivatives)
     a, da, ja, jda = [], [], [], []
-    for r, jac in zip(compiled.mode_realizations, db):
-        x = scipy.linalg.expm(r.A * t) @ np.column_stack([r.b, jac])
-        values = np.real(r.c @ x)
-        slopes = np.real(r.c @ (r.A @ x))
-        a.append(values[0]); da.append(slopes[0])
-        ja.append(values[1:]); jda.append(slopes[1:])
+    # Mode realizations are direct sums. Exponentiate each DAG node block
+    # separately instead of a large block-diagonal matrix for the whole mode.
+    for mode, jac in enumerate(db):
+        parts = [compiled.node_realizations[graph.initial_names[mode]]]
+        parts += [compiled.node_realizations[node.name] for node in graph.response_nodes
+                  if node.target_mode == mode]
+        value = np.zeros(1+jac.shape[1])
+        slope = np.zeros_like(value)
+        offset = 1  # the identically zero initial direct-sum block
+        for r in parts:
+            block = jac[offset:offset+r.dimension]
+            x = realization_action(r.A, np.column_stack([r.b, block]), t)
+            value += np.real(r.c @ x)
+            if not np.isposinf(t):
+                slope += np.real(r.c @ (r.A @ x))
+            offset += r.dimension
+        a.append(value[0]); da.append(slope[0])
+        ja.append(value[1:]); jda.append(slope[1:])
     return tuple(np.asarray(v) for v in (a, da, ja, jda))
 
 
@@ -99,7 +111,24 @@ def evaluate_parametric_stable(
     a0: np.ndarray,
     operating: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    return compile_parametric_realization(graph, a0=a0, operating=operating).evaluate(t)
+    if t < 0 or np.isnan(t):
+        raise ValueError('time must be non-negative or positive infinity')
+    compiled = compile_parametric_realization(graph, a0=a0, operating=operating)
+    a = np.zeros(graph.n_modes)
+    da = np.zeros_like(a)
+    for mode, name in enumerate(graph.initial_names):
+        r = compiled.node_realizations[name]
+        x = realization_action(r.A,r.b,t)
+        a[mode] += np.real(r.c@x)
+        if not np.isposinf(t):
+            da[mode] += np.real(r.c@(r.A@x))
+    for node in graph.response_nodes:
+        r = compiled.node_realizations[node.name]
+        x = realization_action(r.A,r.b,t)
+        a[node.target_mode] += np.real(r.c@x)
+        if not np.isposinf(t):
+            da[node.target_mode] += np.real(r.c@(r.A@x))
+    return a, da
 
 
 def parametric_backend_consistency_defect(
