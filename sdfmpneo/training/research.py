@@ -13,6 +13,7 @@ import numpy as np
 from scipy.stats import qmc
 
 from sdfmpneo.analytic import ParametricAnalyticEvolutionGraph, evaluate_parametric_stable
+from sdfmpneo.analytic.long_time import realization_action
 from sdfmpneo.analytic.parametric_realization import (compile_parametric_realization,
     evaluate_parametric_stable_with_jacobians)
 from sdfmpneo.analytic.realization import AnalyticRealization
@@ -137,6 +138,44 @@ def _evaluate(graph, field, points, *, jacobian=False, monitor=None):
 def _metrics(records):
     norms = np.array([np.linalg.norm(x.residual) for x in records])
     return float(np.mean(norms**2)), float(np.max(norms))
+
+
+def _source_response_values(source, lambdas, time):
+    """Evaluate a candidate source and every modal response in one exact block action."""
+    lambdas = np.asarray(lambdas, dtype=float)
+    n_source = source.dimension
+    n_modes = len(lambdas)
+    A = np.zeros((n_source+n_modes, n_source+n_modes), dtype=complex)
+    A[:n_source, :n_source] = source.A
+    A[n_source:, :n_source] = source.c
+    A[n_source:, n_source:] = -np.diag(lambdas)
+    b = np.concatenate([source.b, np.zeros(n_modes, dtype=complex)])
+    state = realization_action(A, b, time)
+    psi = float(np.real(source.c @ state[:n_source]))
+    responses = np.asarray(np.real(state[n_source:]), dtype=float)
+    return psi, responses
+
+
+def _candidate_tangent_scores(graph, records, compiled, parents, monitor=None):
+    """Score all target modes for one parent tuple without duplicated realizations."""
+    n = graph.n_modes
+    inner = np.zeros(n, dtype=float)
+    norm2 = np.zeros(n, dtype=float)
+    identity = np.eye(n, dtype=float)
+    linear = np.diag(np.asarray(graph.lambdas, dtype=float))
+    for r, realization in zip(records, compiled):
+        if monitor is not None:
+            monitor.checkpoint()
+        source = AnalyticRealization.constant(1.)
+        for parent in parents:
+            source = source.product(realization.node_realizations[parent])
+        psi, h = _source_response_values(source, graph.lambdas, r.time)
+        # Column j is exactly the original tangent for target mode j:
+        # e_j*psi - (lambda_j*e_j + J[:,j])*h_j.
+        tangent = identity*psi - (r.J + linear)*h[np.newaxis, :]
+        inner += r.residual @ tangent
+        norm2 += np.sum(tangent*tangent, axis=0)
+    return inner, norm2
 
 
 def _refine_weights(graph, field, points, max_iterations=12, monitor=None, tolerance=0.):
@@ -318,25 +357,16 @@ def train_research_graph(field, config: ResearchTrainingConfig, *, graph=None, p
                 dimension = int(np.prod([compiled[0].node_realizations[p].dimension for p in parents]))+1
                 if dimension > config.max_realization_dimension:
                     continue
-                for target in range(graph.n_modes):
-                    if (target, tuple(sorted(parents))) in existing:
-                        continue
-                    inner = norm2 = 0.
-                    for r, realization in zip(records, compiled):
-                        if monitor is not None:
-                            monitor.checkpoint()
-                        source = AnalyticRealization.constant(1.)
-                        for parent in parents:
-                            source = source.product(realization.node_realizations[parent])
-                        response = source.response(graph.lambdas[target])
-                        h = response.evaluate(r.time).real
-                        psi = source.evaluate(r.time).real
-                        e = np.zeros(graph.n_modes); e[target] = 1.
-                        tangent = e*psi - (graph.lambdas[target]*e + r.J[:, target])*h
-                        inner += float(r.residual @ tangent)
-                        norm2 += float(tangent @ tangent)
-                    if norm2 > 0 and np.isfinite(norm2 + inner):
-                        scored.append((inner*inner/norm2, -inner/norm2, target, parents))
+                parent_key = tuple(sorted(parents))
+                active_targets = [target for target in range(graph.n_modes)
+                                  if (target, parent_key) not in existing]
+                if not active_targets:
+                    continue
+                inner, norm2 = _candidate_tangent_scores(graph, records, compiled, parents, monitor=monitor)
+                for target in active_targets:
+                    if norm2[target] > 0 and np.isfinite(norm2[target] + inner[target]):
+                        scored.append((inner[target]*inner[target]/norm2[target],
+                                       -inner[target]/norm2[target], target, parents))
         scored.sort(key=lambda item: item[0], reverse=True)
         success = False
         # Nonlinear re-evaluation with backtracking, including the material
