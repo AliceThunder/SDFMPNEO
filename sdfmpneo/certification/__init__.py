@@ -47,6 +47,15 @@ from .geometry_domain import (
     bound_geometry_em_family_on_box,
     certify_geometry_em_family_domain,
 )
+from .geometry_dynamics import (
+    GeometryMassResidualCertificate,
+    LocalGeometryDynamicsDiagnostic,
+    SampledContractivityReport,
+    certify_geometry_mass_residual_equivalence,
+    local_geometry_dynamics_diagnostic,
+    sampled_geometry_contractivity,
+    validate_geometry_trajectory,
+)
 from .geometry_proof_composer import (
     GeometryDerivativeProof,
     compose_geometry_physical_lipschitz_proof,
@@ -129,6 +138,13 @@ __all__ = [
     "ContinuousGeometryAnalyticResidualCertificate",
     "bound_geometry_analytic_residual_on_box",
     "certify_geometry_analytic_residual_domain",
+    "GeometryMassResidualCertificate",
+    "LocalGeometryDynamicsDiagnostic",
+    "SampledContractivityReport",
+    "certify_geometry_mass_residual_equivalence",
+    "local_geometry_dynamics_diagnostic",
+    "sampled_geometry_contractivity",
+    "validate_geometry_trajectory",
     "GeometryDerivativeProof",
     "compose_geometry_physical_lipschitz_proof",
     "make_geometry_physical_proof_factory",
