@@ -11,8 +11,11 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 from pathlib import Path
+import threading
+import time
 
 
 # ==================== 1. 运行模式（直接使用 UWPT 算例） ====================
@@ -203,6 +206,7 @@ MONITOR = {
     "refresh_ms": 300,                  # 日志读取线程轮询周期
     "max_plot_points": 4000,            # 窗口最多保留的曲线点数，日志不截断
     "compute_threads": 1,               # 后台进程 BLAS/OpenMP 线程数
+    "assembly_progress_interval_s": 5.0, # 物理组装/EM 降阶期间控制台心跳周期
 }
 # 窗口主线程只绘图；QThread 读日志；独立进程训练，其日志线程周期写盘。
 # 暂停/停止在当前不可拆分运算结束后的检查点生效。暂停不退出进程，恢复继续原任务。
@@ -223,6 +227,86 @@ def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(jsonable(value), ensure_ascii=False, indent=2,
                                allow_nan=False) + "\n", encoding="utf-8")
+
+
+@contextmanager
+def assembly_progress(monitor=None):
+    """Keep long physical assembly visibly alive in GUI/headless console output."""
+    interval = float(MONITOR.get("assembly_progress_interval_s", 5.0))
+    if not 0 < interval < float("inf"):
+        raise ValueError("MONITOR['assembly_progress_interval_s'] 必须为有限正数")
+    stop = threading.Event()
+    started = time.monotonic()
+    labels = {
+        "assembly": "组装物理模型与参考电磁空间",
+        "geometry_em_basis": "构建跨几何共享电磁空间",
+        "geometry_seed": "构造跨几何物理初始网络",
+    }
+
+    def current_label():
+        if monitor is None:
+            return labels["assembly"]
+        try:
+            phase = monitor.data.get("phase", "assembly")
+        except Exception:
+            phase = "assembly"
+        return labels.get(phase, phase or labels["assembly"])
+
+    def reporter():
+        previous = None
+        next_heartbeat = started
+        while not stop.wait(0.2):
+            now = time.monotonic()
+            label = current_label()
+            if label != previous:
+                print(f"[组装进度] {label}", flush=True)
+                previous = label
+            if now >= next_heartbeat:
+                print(f"[组装进度] {label} · 已耗时 {now-started:.1f} s", flush=True)
+                next_heartbeat = now + interval
+
+    thread = threading.Thread(target=reporter, name="assembly-progress", daemon=True)
+    thread.start()
+    succeeded = False
+    try:
+        yield
+        succeeded = True
+    finally:
+        stop.set()
+        thread.join(timeout=max(1.0, interval))
+        elapsed = time.monotonic() - started
+        status = "完成" if succeeded else "中断"
+        print(f"[组装进度] {status} · 总耗时 {elapsed:.1f} s", flush=True)
+
+
+def print_training_sample_ranges(model, config):
+    """Print the actual parameter box used to generate training/validation samples."""
+    print("\n训练样本参数范围：", flush=True)
+    if hasattr(model, "geometry_names"):
+        print("  几何参数 G（物理值；网络内部归一化到 [-1, 1]）：", flush=True)
+        for name, lower, upper, reference in zip(
+                model.geometry_names, model.lower, model.upper, model.geometry_reference):
+            print(f"    {name}: [{float(lower):.8g}, {float(upper):.8g}]"
+                  f"  参考值={float(reference):.8g}", flush=True)
+    else:
+        print("  几何参数 G：固定几何", flush=True)
+    print("  初始热坐标 a0：", flush=True)
+    for index, (lower, upper) in enumerate(zip(config.initial_lower, config.initial_upper)):
+        print(f"    a0[{index}]: [{float(lower):.8g}, {float(upper):.8g}]", flush=True)
+    print("  工况参数 U：", flush=True)
+    for index, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)):
+        print(f"    U[{index}]: [{float(lower):.8g}, {float(upper):.8g}]", flush=True)
+    sampling = getattr(config, "time_sampling", "linear")
+    time_min = getattr(config, "time_min", None)
+    time_detail = f"采样={sampling}"
+    if time_min is not None:
+        time_detail += f"，time_min={float(time_min):.8g} s"
+    print(f"  有限时间 t: [0, {float(config.time_horizon):.8g}] s；{time_detail}", flush=True)
+    print(f"  稳态残差点: {'包含' if getattr(config, 'include_steady_state', False) else '不包含'}",
+          flush=True)
+    print(f"  配点数量: 训练={int(config.sample_count)}，独立检查={int(config.validation_count)}",
+          flush=True)
+    print(f"  残差目标: {float(config.residual_tolerance):.8g}\n", flush=True)
 
 
 def generate_mesh(path):
@@ -293,18 +377,21 @@ def train(model_path, settings_dir, monitor=None):
         print("组装物理模型并构建电磁降阶空间……", flush=True)
         if monitor is not None:
             monitor.phase("assembly")
+        with assembly_progress(monitor):
+            if GEOMETRY_FAMILY["enabled"]:
+                from sdfmpneo.geometry_research import geometry_model_from_config
+                model, config = geometry_model_from_config(config_path, monitor=monitor)
+            else:
+                model, config = model_from_config(config_path)
         if GEOMETRY_FAMILY["enabled"]:
-            from sdfmpneo.geometry_research import geometry_model_from_config
-            model, config = geometry_model_from_config(config_path, monitor=monitor)
             write_json(settings_dir / "geometry.domain.json", {
                 "names": model.geometry_names, "reference": model.geometry_reference,
                 "lower": model.lower, "upper": model.upper,
                 "mesh_certificate": model.certificate, "em_basis": model.em_basis_report,
             })
             print(f"共享几何代理：{len(model.geometry_names)} 个几何输入，EM 基维数={model.reference.em.n_reduced}", flush=True)
-        else:
-            model, config = model_from_config(config_path)
     write_json(settings_dir / "train.settings.json", settings)
+    print_training_sample_ranges(model, config)
     print("开始无解标签残差训练……", flush=True)
     from sdfmpneo.training.monitor import TrainingStopped
     try:
