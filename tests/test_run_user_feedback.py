@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+import time
 
 import numpy as np
 
@@ -44,16 +45,37 @@ def test_training_sample_ranges_print_geometry_initial_current_and_time(capsys):
     assert "训练=64，独立检查=32" in text
 
 
-def test_assembly_progress_emits_start_and_finish(capsys):
+def test_assembly_progress_reports_heartbeat_and_phase_change(capsys):
     run = load_run_module()
+    monitor = SimpleNamespace(data={"phase": "assembly"})
     old = run.MONITOR["assembly_progress_interval_s"]
-    run.MONITOR["assembly_progress_interval_s"] = 0.01
+    run.MONITOR["assembly_progress_interval_s"] = 0.05
     try:
-        with run.assembly_progress():
-            pass
+        with run.assembly_progress(monitor):
+            time.sleep(0.25)
+            monitor.data["phase"] = "geometry_em_basis"
+            time.sleep(0.25)
     finally:
         run.MONITOR["assembly_progress_interval_s"] = old
     text = capsys.readouterr().out
-    assert "[组装进度]" in text
+    assert "组装物理模型与参考电磁空间" in text
+    assert "构建跨几何共享电磁空间" in text
+    assert "已耗时" in text
     assert "完成" in text
     assert "总耗时" in text
+
+
+def test_assembly_progress_rejects_invalid_interval():
+    run = load_run_module()
+    old = run.MONITOR["assembly_progress_interval_s"]
+    run.MONITOR["assembly_progress_interval_s"] = 0
+    try:
+        try:
+            with run.assembly_progress():
+                pass
+        except ValueError as exc:
+            assert "有限正数" in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+    finally:
+        run.MONITOR["assembly_progress_interval_s"] = old
