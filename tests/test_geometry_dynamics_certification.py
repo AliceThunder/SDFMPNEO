@@ -47,8 +47,8 @@ class _Model:
 def test_continuous_geometry_mass_residual_equivalence_uses_chart_form_bounds():
     cert = certify_geometry_mass_residual_equivalence(_Model())
     assert cert.continuous_geometry_box
-    assert np.isclose(cert.reference_minimum_mass_eigenvalue, 2.0)
-    assert np.isclose(cert.reference_maximum_mass_eigenvalue, 3.0)
+    assert np.isclose(cert.center_minimum_mass_eigenvalue, 2.0)
+    assert np.isclose(cert.center_maximum_mass_eigenvalue, 3.0)
     assert cert.minimum_mass_eigenvalue <= 1.6
     assert cert.maximum_mass_eigenvalue >= 3.6
 
