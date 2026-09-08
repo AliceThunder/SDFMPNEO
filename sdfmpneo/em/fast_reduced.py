@@ -7,7 +7,10 @@ import scipy.sparse as sp
 from sdfmpneo.spatial.barycentric_polynomial import integrate_polynomial_times_lambda_pair
 from sdfmpneo.spatial.tetra3d import _barycentric_gradients
 
-from .sparse_reduced import SparseEnergyReducedEMModel as _BaseSparseEnergyReducedEMModel
+from .sparse_reduced import (
+    SparseEnergyReducedEMModel as _BaseSparseEnergyReducedEMModel,
+    SparseEnergyResidualGreedyEMReducer as _BaseSparseEnergyResidualGreedyEMReducer,
+)
 
 
 class _ReducedNedelecAssembler:
@@ -54,7 +57,7 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
     """Sparse reduced EM model with an exact direct-reduced tetrahedral fast path.
 
     For the nonlinear tetrahedral UWPT problem, the training path needs only
-    V^H A V and V^H H_j V.  Those matrices are assembled element-by-element
+    V^H A V and V^H H_j V. Those matrices are assembled element-by-element
     directly in the reduced coordinates instead of first materializing the
     full global conductivity/loss matrices and projecting them afterwards.
     Generic sparse EM problems transparently fall back to the base class.
@@ -169,3 +172,21 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
                     + np.real(np.vdot(c, dH @ c))
                 )
         return q, J
+
+
+class SparseEnergyResidualGreedyEMReducer(_BaseSparseEnergyResidualGreedyEMReducer):
+    """Certified reducer that returns the fast model without changing basis construction."""
+
+    def build_multi_rhs(self, candidate_states, rhs_matrix, *, requested_energy_state_error):
+        model = super().build_multi_rhs(
+            candidate_states,
+            rhs_matrix,
+            requested_energy_state_error=requested_energy_state_error,
+        )
+        return SparseEnergyReducedEMModel(
+            model.problem,
+            model.V,
+            reference_energy_metric=model.reference_energy_metric,
+            reduction_certificate=model.reduction_certificate,
+            riesz_action_factory=model.riesz_action_factory,
+        )
