@@ -41,6 +41,11 @@ from .geometry_analytic_residual import (
     bound_geometry_analytic_residual_on_box,
     certify_geometry_analytic_residual_domain,
 )
+from .geometry_contractivity import (
+    CertifiedGeometryHeatFeedbackBound,
+    ContinuousGeometryContractivityCertificate,
+    certify_geometry_contractivity,
+)
 from .geometry_domain import (
     ContinuousGeometryEMCertificate,
     GeometryEMBoxBound,
@@ -138,6 +143,9 @@ __all__ = [
     "ContinuousGeometryAnalyticResidualCertificate",
     "bound_geometry_analytic_residual_on_box",
     "certify_geometry_analytic_residual_domain",
+    "CertifiedGeometryHeatFeedbackBound",
+    "ContinuousGeometryContractivityCertificate",
+    "certify_geometry_contractivity",
     "GeometryMassResidualCertificate",
     "LocalGeometryDynamicsDiagnostic",
     "SampledContractivityReport",
