@@ -35,7 +35,7 @@ from .face_block_riesz import (
     FaceAuxiliaryPhysicalBlockPreconditioner,
     make_face_auxiliary_physical_pcg_riesz_factory,
 )
-from .fast_reduced import SparseEnergyReducedEMModel
+from .fast_reduced import SparseEnergyReducedEMModel, SparseEnergyResidualGreedyEMReducer
 from .grid3d import (
     RectilinearComplex3D,
     SpatialAphiAssembly,
@@ -78,7 +78,6 @@ from .riesz_action import (
 from .sparse_reduced import (
     SparseEnergyReductionCertificate,
     SparseEnergyResidualCertificate,
-    SparseEnergyResidualGreedyEMReducer,
 )
 from .sparse_solver import (
     ApsiBlockTriangularPreconditioner,
