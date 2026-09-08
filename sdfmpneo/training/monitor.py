@@ -22,6 +22,131 @@ def write_command(path, command):
     temporary.replace(path)
 
 
+def read_jsonl(path):
+    """Read complete dictionary rows from a JSONL journal, ignoring bad tail lines."""
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, UnicodeError):
+        return []
+    rows = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _resolved_path(value, root):
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path(root) / path
+    return path.resolve(strict=False)
+
+
+def _session_matches_model(session_dir, target, root):
+    rows = read_jsonl(Path(session_dir) / "metrics.jsonl")
+    for row in reversed(rows):
+        for key in ("checkpoint", "model"):
+            value = row.get(key)
+            if value is None:
+                continue
+            try:
+                if _resolved_path(value, root) == target:
+                    return True
+            except (OSError, TypeError, ValueError):
+                continue
+    return False
+
+
+def find_resume_sessions(log_root, resume_model, *, root=None):
+    """Find the newest journal that produced ``resume_model`` and its lineage.
+
+    Old sessions did not store lineage; those are still recognized from their
+    final ``checkpoint``/``model`` journal fields. New resumed sessions record
+    ``history_sessions`` in worker.settings.json so repeated stop/resume cycles
+    recover the complete plotting/log history rather than only the last segment.
+    """
+    if resume_model is None:
+        return []
+    root = Path(root or ".").resolve(strict=False)
+    target = _resolved_path(resume_model, root)
+    log_root = Path(log_root)
+    try:
+        directories = [path for path in log_root.iterdir() if path.is_dir()]
+    except FileNotFoundError:
+        return []
+    matches = []
+    for directory in directories:
+        if _session_matches_model(directory, target, root):
+            try:
+                stamp = directory.stat().st_mtime_ns
+            except OSError:
+                stamp = 0
+            matches.append((stamp, directory))
+    if not matches:
+        return []
+    previous = max(matches, key=lambda item: item[0])[1]
+    lineage = []
+    try:
+        payload = json.loads((previous / "worker.settings.json").read_text(encoding="utf-8"))
+        stored = payload.get("history_sessions", [])
+        if isinstance(stored, list):
+            for value in stored:
+                path = Path(value)
+                if path.is_dir():
+                    lineage.append(path)
+    except (OSError, ValueError, TypeError):
+        pass
+    lineage.append(previous)
+    result, seen = [], set()
+    for path in lineage:
+        key = str(path.resolve(strict=False))
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return result
+
+
+def build_resume_history(log_root, resume_model, *, root=None):
+    """Load prior sessions and make their local counters globally continuous."""
+    sessions = find_resume_sessions(log_root, resume_model, root=root)
+    revision_offset = 0
+    elapsed_offset = 0.0
+    collocation_offset = 0
+    combined = []
+    for session in sessions:
+        rows = read_jsonl(session / "metrics.jsonl")
+        local_revision = 0
+        local_elapsed = 0.0
+        local_collocation = 0
+        for row in rows:
+            revision = int(row.get("revision") or 0)
+            elapsed = float(row.get("elapsed_s") or 0.0)
+            collocation = int(row.get("collocation_epoch") or 0)
+            local_revision = max(local_revision, revision)
+            local_elapsed = max(local_elapsed, elapsed)
+            local_collocation = max(local_collocation, collocation)
+            adjusted = dict(row)
+            adjusted["revision"] = revision_offset + revision
+            adjusted["elapsed_s"] = elapsed_offset + elapsed
+            adjusted["collocation_epoch"] = collocation_offset + collocation
+            combined.append(adjusted)
+        revision_offset += local_revision
+        elapsed_offset += local_elapsed
+        collocation_offset += local_collocation
+    return {
+        "sessions": sessions,
+        "rows": combined,
+        "revision_offset": revision_offset,
+        "elapsed_offset_s": elapsed_offset,
+        "collocation_offset": collocation_offset,
+    }
+
+
 class TrainingMonitor:
     """One writer thread emits periodic JSONL snapshots, even during assembly.
 
@@ -87,7 +212,6 @@ class TrainingMonitor:
         if command not in {"run", "pause", "stop"}:
             return
         with self._lock:
-            # Stop is latched; a late resume cannot undo a stop request.
             if self._command == "stop":
                 return
             self._command = command

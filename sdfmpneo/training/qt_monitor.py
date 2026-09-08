@@ -13,7 +13,7 @@ import uuid
 from PyQt6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
-from .monitor import JsonlTail, write_command
+from .monitor import JsonlTail, build_resume_history, write_command
 
 
 STATES = {
@@ -94,6 +94,10 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self._last_validation = None
         self._current_state = "idle"
         self._current_phase = ""
+        self._history_sessions = []
+        self._revision_offset = 0
+        self._elapsed_offset_s = 0.0
+        self._collocation_offset = 0
         self._limit = max(10, int(options["max_plot_points"]))
         self.series = {key: deque(maxlen=self._limit) for key in
                        ("revision", "mse", "rms", "train_max", "nodes", "training_points",
@@ -180,6 +184,40 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self.resume_button.setEnabled(active and state in {"paused", "pausing"})
         self.stop_button.setEnabled(active and state != "stopping")
 
+    def _resume_model(self):
+        try:
+            return self.settings["parameters"]["FILES"].get("resume_model")
+        except (KeyError, TypeError, AttributeError):
+            return None
+
+    def _root(self):
+        try:
+            return Path(self.settings["root"])
+        except (KeyError, TypeError):
+            return self.runner_path.parent
+
+    def _restore_history(self):
+        history = build_resume_history(
+            self.log_root, self._resume_model(), root=self._root())
+        self._history_sessions = list(history["sessions"])
+        self._revision_offset = int(history["revision_offset"])
+        self._elapsed_offset_s = float(history["elapsed_offset_s"])
+        self._collocation_offset = int(history["collocation_offset"])
+        if history["rows"]:
+            self._consume_rows(history["rows"], update_status=False)
+        for session in self._history_sessions:
+            try:
+                text = (session/"worker.log").read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if text:
+                self.output.appendPlainText(f"===== 历史训练日志：{session.name} =====")
+                self.output.insertPlainText(text)
+                if not text.endswith("\n"):
+                    self.output.insertPlainText("\n")
+        if self._history_sessions:
+            self.output.appendPlainText("===== 继续训练：以下为本次会话 =====")
+
     def start_training(self):
         if self._active() or self._closing:
             return
@@ -196,17 +234,26 @@ class TrainingWindow(QtWidgets.QMainWindow):
             self._exit_code = None
             self._stop_requested = False
             self._last_revision = self._last_validation = None
+            self._history_sessions = []
+            self._revision_offset = 0
+            self._elapsed_offset_s = 0.0
+            self._collocation_offset = 0
             for values in self.series.values():
                 values.clear()
             for curve in self.curves.values():
                 curve.setData([], [])
             self.output.clear()
+            self._restore_history()
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:8]
             self.run_dir = self.log_root/stamp
             self.run_dir.mkdir(parents=True)
             control = self.run_dir/"control.json"
             write_command(control, "run")
-            worker_settings = {"settings": self.settings, "session_dir": str(self.run_dir)}
+            worker_settings = {
+                "settings": self.settings,
+                "session_dir": str(self.run_dir),
+                "history_sessions": [str(path.resolve(strict=False)) for path in self._history_sessions],
+            }
             snapshot = self.run_dir/"worker.settings.json"
             snapshot.write_text(json.dumps(worker_settings, ensure_ascii=False, indent=2), encoding="utf-8")
             if self.reader is not None:
@@ -234,8 +281,13 @@ class TrainingWindow(QtWidgets.QMainWindow):
             self.process.finished.connect(self._process_finished)
             self.process.errorOccurred.connect(self._process_error)
             self._current_state = "running"
-            self.status_label.setText("启动 UWPT 训练进程……")
-            self.path_label.setText(f"本次日志：{self.run_dir}")
+            restored = (f"；已恢复 {len(self._history_sessions)} 段历史日志"
+                        if self._history_sessions else "")
+            self.status_label.setText("启动 UWPT 训练进程……"+restored)
+            path_text = f"本次日志：{self.run_dir}"
+            if self._history_sessions:
+                path_text += f"\n历史日志：{len(self._history_sessions)} 段，最近 {self._history_sessions[-1]}"
+            self.path_label.setText(path_text)
             self._buttons(True)
             self.process.start()
         except Exception as exc:
@@ -259,8 +311,7 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self.status_label.setText(STATES[self._current_state])
         self._buttons(True, self._current_state)
 
-    @QtCore.pyqtSlot(list)
-    def consume(self, rows):
+    def _consume_rows(self, rows, *, update_status=True):
         for row in rows:
             revision = row.get("revision")
             if row.get("mse") is not None and revision != self._last_revision:
@@ -278,7 +329,7 @@ class TrainingWindow(QtWidgets.QMainWindow):
             if key in {"mse", "rms", "train_max", "validation_max"}:
                 y = [max(value, 1e-30) for value in y]
             curve.setData(list(x), list(y))
-        if rows:
+        if update_status and rows:
             row = rows[-1]
             self._current_state = row.get("state", "running")
             self._current_phase = row.get("phase", "")
@@ -297,6 +348,18 @@ class TrainingWindow(QtWidgets.QMainWindow):
                 f"独立残差 {validation_text}"
             )
             self._buttons(self._active(), self._current_state)
+
+    @QtCore.pyqtSlot(list)
+    def consume(self, rows):
+        adjusted = []
+        for row in rows:
+            item = dict(row)
+            item["revision"] = self._revision_offset + int(item.get("revision") or 0)
+            item["elapsed_s"] = self._elapsed_offset_s + float(item.get("elapsed_s") or 0.0)
+            item["collocation_epoch"] = (
+                self._collocation_offset + int(item.get("collocation_epoch") or 0))
+            adjusted.append(item)
+        self._consume_rows(adjusted)
 
     def _process_finished(self, code, exit_status):
         self._exit_code = code
