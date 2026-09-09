@@ -67,6 +67,8 @@ __all__ = [
 
 from .research import ResearchElectroThermalModel, demo_research_model, model_from_config
 from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
+from .training.cpp_guard import install_cpp_auto_build_guard
+from .training.cpp_runtime import install_cpp_training_backend
 from .training.parallel_runtime import install_training_acceleration
 from .training.adaptive_runtime import (
     ResearchTrainingContinuation,
@@ -75,15 +77,21 @@ from .training.adaptive_runtime import (
 )
 from .training.late_stage_runtime import install_late_stage_training
 from .training.late_stage_batch import install_late_stage_batching
+from .training.cpp_visibility import install_cpp_training_visibility
 from .training.node_compile_runtime import install_node_only_training_compile
 from .training.observation_runtime import install_observation_training_acceleration
 from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
+# Install the one-shot auto-build guard before any runtime can invoke a compiled
+# kernel. The C++ layer stays lazy: importing sdfmpneo never launches a compiler.
+install_cpp_auto_build_guard()
+install_cpp_training_backend()
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
+install_cpp_training_visibility()
 install_node_only_training_compile()
 install_observation_training_acceleration()
 install_high_dimensional_collocation()

@@ -19,3 +19,6 @@ gui = ["PyQt6>=6.5", "pyqtgraph>=0.13.3"]
 
 [tool.setuptools.packages.find]
 include = ["sdfmpneo*"]
+
+[tool.setuptools.package-data]
+sdfmpneo = ["cpp_training_backend.cpp"]

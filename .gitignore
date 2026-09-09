@@ -6,5 +6,6 @@ build/
 dist/
 .venv/
 results/
+sdfmpneo/_cpp_training_build/
 
 examples/configs/*.msh
