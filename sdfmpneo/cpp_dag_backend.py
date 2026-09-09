@@ -32,6 +32,7 @@ def _signature() -> str:
         "cpp_training_backend.cpp",
         "cpp_dag_values.inc",
         "cpp_dag_backend.inc",
+        "cpp_thread_probe.inc",
     ):
         path = root / name
         h.update(name.encode("utf-8"))
@@ -74,6 +75,8 @@ def _configure(lib) -> None:
         pd, pd, ctypes.c_int,
     ]
     lib.sdfmpneo_gn_linearize_f64.restype = ctypes.c_int
+    lib.sdfmpneo_native_thread_probe.argtypes = [ctypes.c_int]
+    lib.sdfmpneo_native_thread_probe.restype = ctypes.c_int
 
 
 def _load(*, auto_build: bool = True):
@@ -112,6 +115,7 @@ def _load(*, auto_build: bool = True):
                 "sdfmpneo_dag_batch_values_f64",
                 "sdfmpneo_dag_batch_sparse_jacobian_f64",
                 "sdfmpneo_gn_linearize_f64",
+                "sdfmpneo_native_thread_probe",
             ):
                 getattr(lib, name)
             _LIB = lib
