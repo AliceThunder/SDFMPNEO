@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 from threading import Barrier, get_ident
 
+import numpy as np
+from threadpoolctl import threadpool_info
+
 from sdfmpneo.training.parallel_runtime import (
     _ordered_map,
     training_blas_threads,
@@ -42,3 +45,20 @@ def test_ordered_map_really_uses_multiple_worker_threads(monkeypatch):
     out = _ordered_map(one, range(workers))
     assert [value for value, _ in out] == list(range(workers))
     assert len({thread_id for _, thread_id in out}) == workers
+
+
+def test_outer_parallel_region_caps_loaded_blas_at_runtime(monkeypatch):
+    # Force BLAS to be loaded before SDFMPNEO enters its limiter. This is the
+    # common IDE/Conda case that environment-only controls cannot fix reliably.
+    matrix = np.ones((16, 16), dtype=float)
+    matrix @ matrix
+    monkeypatch.setenv("SDFMPNEO_POINT_WORKERS", "2")
+    monkeypatch.setenv("SDFMPNEO_BLAS_THREADS", "1")
+
+    def one(_):
+        counts = [int(info["num_threads"]) for info in threadpool_info()
+                  if info.get("user_api") == "blas"]
+        return max(counts, default=1)
+
+    counts = _ordered_map(one, range(2))
+    assert all(value <= 1 for value in counts)
