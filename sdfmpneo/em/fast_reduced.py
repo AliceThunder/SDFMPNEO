@@ -119,9 +119,10 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
         super().__init__(problem, basis, **kwargs)
         required = (
             "mesh", "a_basis", "grad_c", "magnetic_stiffness", "omega",
-            "n_A", "_weighted_polynomials", "thermal_test_local",
+            "n_A", "_weighted_polynomials",
         )
         self._direct_reduced = all(hasattr(problem, name) for name in required)
+        self._fused_reduced = self._direct_reduced and hasattr(problem, "thermal_test_local")
         if not self._direct_reduced:
             self._conductivity_reduced = None
             self._loss_reduced_assembler = None
@@ -145,13 +146,16 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
         self._magnetic_reduced = magnetic_fields.conj().T @ (
             problem.magnetic_stiffness @ magnetic_fields
         )
-        # Thermal test functions are geometry/context fixed. Build their P1
-        # polynomial representation once instead of once per state/Jacobian.
-        self._thermal_test_polynomials = tuple(
-            tuple(polynomial_p1(problem.thermal_test_local[j, q])
-                  for q in range(problem.mesh.n_tetrahedra))
-            for j in range(problem.n_thermal)
-        )
+        if self._fused_reduced:
+            # Thermal test functions are geometry/context fixed. Build their P1
+            # polynomial representation once instead of once per state/Jacobian.
+            self._thermal_test_polynomials = tuple(
+                tuple(polynomial_p1(problem.thermal_test_local[j, q])
+                      for q in range(problem.mesh.n_tetrahedra))
+                for j in range(problem.n_thermal)
+            )
+        else:
+            self._thermal_test_polynomials = None
 
     def _state_polynomial_family(self, state, *, derivatives: bool):
         base, _ = self.problem._weighted_polynomials(state)
@@ -213,6 +217,18 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
         if source.shape != (self.problem.n_em,):
             raise ValueError("rhs dimension mismatch")
 
+        if not self._fused_reduced:
+            c = scipy.linalg.solve(
+                self.operator_reduced(state), self.rhs_reduced(source), assume_a="gen"
+            )
+            return np.array(
+                [
+                    np.real(np.vdot(c, self._loss_operator_reduced(j, state) @ c))
+                    for j in range(self.problem.n_thermal)
+                ],
+                dtype=float,
+            )
+
         conductivity, loss_family = self._assembled_state_family(
             state, derivatives=False
         )
@@ -233,6 +249,27 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
             raise ValueError("thermal state dimension mismatch")
         if source.shape != (self.problem.n_em,):
             raise ValueError("rhs dimension mismatch")
+
+        if not self._fused_reduced:
+            Ar = self.operator_reduced(state)
+            factor = scipy.linalg.lu_factor(Ar)
+            c = scipy.linalg.lu_solve(factor, self.rhs_reduced(source))
+            losses = [
+                self._loss_operator_reduced(j, state)
+                for j in range(self.problem.n_thermal)
+            ]
+            q = np.array([np.real(np.vdot(c, H @ c)) for H in losses], dtype=float)
+            J = np.zeros((self.problem.n_thermal, self.problem.n_thermal), dtype=float)
+            for k in range(self.problem.n_thermal):
+                Akr = self._operator_derivative_reduced(state, k)
+                dc = scipy.linalg.lu_solve(factor, -(Akr @ c))
+                for j, Hj in enumerate(losses):
+                    dH = self._loss_operator_reduced(j, state, derivative_mode=k)
+                    J[j, k] = (
+                        2.0 * np.real(np.vdot(dc, Hj @ c))
+                        + np.real(np.vdot(c, dH @ c))
+                    )
+            return q, J
 
         conductivity, loss_family = self._assembled_state_family(
             state, derivatives=True
