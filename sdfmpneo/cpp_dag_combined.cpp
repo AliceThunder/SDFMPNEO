@@ -4,3 +4,4 @@
 #include "cpp_training_backend.cpp"
 #include "cpp_dag_values.inc"
 #include "cpp_dag_backend.inc"
+#include "cpp_thread_probe.inc"
