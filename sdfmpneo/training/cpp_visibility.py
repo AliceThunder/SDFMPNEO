@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
+
 _INSTALLED = False
 
 
@@ -20,6 +22,8 @@ def install_cpp_training_visibility() -> None:
         if not hasattr(field, "prepare_training_contexts"):
             return original(field, *point_sets)
         if not getattr(field, "_sdfmpneo_cpp_status_reported", False):
+            # Build/load exactly once before worker fan-out, so threads never race
+            # through compiler discovery or the backend build lock.
             info = backend_info(auto_build=True)
             parallel = training_parallelism()
             if info["available"]:
@@ -36,6 +40,16 @@ def install_cpp_training_visibility() -> None:
                     f"{info['error']}；point workers={parallel['point_workers']}",
                     flush=True,
                 )
+            # The geometry family is topology preserving. Build the reference
+            # topology once before parallel context construction so every worker
+            # reuses the same edge/face/incidence/tree-cotree objects.
+            chart = getattr(field, "chart", None)
+            if chart is not None and getattr(chart, "_sdfmpneo_topology_mesh", None) is None:
+                try:
+                    chart.mesh(np.zeros(chart.n_parameters, dtype=float))
+                except Exception:
+                    # Invalid/custom charts retain their historical per-call path.
+                    pass
             try:
                 setattr(field, "_sdfmpneo_cpp_status_reported", True)
             except Exception:
