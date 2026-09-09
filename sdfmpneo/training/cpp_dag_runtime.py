@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-import time
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 
 from ..analytic.long_time import realization_observation_action
 from ..analytic.parametric_realization import compile_parametric_nodes
@@ -37,20 +37,21 @@ class NativeDAGPlan:
         key = tuple(float(value) for value in np.asarray(times, dtype=float))
         if key == self._row_times and self._rows is not None:
             return self._rows
-        identities = {}
+        offsets = self._native_arrays["state_offsets"]
+        identities = {
+            int(dim): np.eye(int(dim), dtype=complex)
+            for dim in np.unique(self._native_arrays["dimensions"])
+        }
 
         def one(t):
             values = np.empty(self.total_state, dtype=float)
             slopes = np.empty_like(values)
-            offsets = self._native_arrays["state_offsets"]
             for index, realization in enumerate(self.structural_nodes):
-                dim = int(realization.dimension)
-                identity = identities.get(dim)
-                if identity is None:
-                    identity = np.eye(dim, dtype=complex)
-                    identities[dim] = identity
                 v, s = realization_observation_action(
-                    realization.A, identity, realization.c, float(t)
+                    realization.A,
+                    identities[int(realization.dimension)],
+                    realization.c,
+                    float(t),
                 )
                 lo, hi = int(offsets[index]), int(offsets[index + 1])
                 values[lo:hi] = np.real(v)
@@ -59,17 +60,21 @@ class NativeDAGPlan:
 
         packed = _ordered_map(one, key, monitor=None)
         if packed:
-            value_rows = np.ascontiguousarray(np.vstack([item[0] for item in packed]))
-            slope_rows = np.ascontiguousarray(np.vstack([item[1] for item in packed]))
+            rows = (
+                np.ascontiguousarray(np.vstack([item[0] for item in packed])),
+                np.ascontiguousarray(np.vstack([item[1] for item in packed])),
+            )
         else:
-            value_rows = np.empty((0, self.total_state), dtype=float)
-            slope_rows = np.empty_like(value_rows)
+            empty = np.empty((0, self.total_state), dtype=float)
+            rows = (empty, empty.copy())
         self._row_times = key
-        self._rows = (value_rows, slope_rows)
-        return self._rows
+        self._rows = rows
+        return rows
 
 
 def _graph_signature(graph) -> tuple:
+    # Weights are intentionally excluded: A/c realization structure depends on
+    # topology/decay rates only, so every GN trial reuses the same observation rows.
     return (
         tuple(float(value) for value in graph.lambdas),
         tuple(graph.initial_names),
@@ -84,24 +89,28 @@ def _make_offsets(groups) -> tuple[np.ndarray, np.ndarray]:
     for values in groups:
         flat.extend(int(value) for value in values)
         offsets.append(len(flat))
-    return np.asarray(offsets, dtype=np.int64), np.asarray(flat, dtype=np.int32)
+    return np.asarray(offsets, np.int64), np.asarray(flat, np.int32)
+
+
+def _real_weights(graph) -> np.ndarray | None:
+    values = np.asarray([complex(node.weight) for node in graph.response_nodes], dtype=np.complex128)
+    # Historical/custom complex-weight graphs keep the exact Python path. Current
+    # residual growth generates real weights, so production graphs use C++.
+    if np.any(values.imag != 0.0):
+        return None
+    return np.ascontiguousarray(values.real, dtype=float)
 
 
 def _build_plan(graph) -> NativeDAGPlan | None:
-    if not graph.response_nodes:
+    if not graph.response_nodes or _real_weights(graph) is None:
         return None
     initial_lookup = {name: i for i, name in enumerate(graph.initial_names)}
     operating_lookup = {name: i for i, name in enumerate(graph.operating_names)}
     response_lookup = {node.name: i for i, node in enumerate(graph.response_nodes)}
+    initial_factors, operating_factors, response_parent, ancestors = [], [], [], []
 
-    initial_factors = []
-    operating_factors = []
-    response_parent = []
-    ancestors = []
     for index, node in enumerate(graph.response_nodes):
-        initial = []
-        operating = []
-        response = []
+        initial, operating, response = [], [], []
         for parent in node.parents:
             if parent in initial_lookup:
                 initial.append(initial_lookup[parent])
@@ -117,15 +126,12 @@ def _build_plan(graph) -> NativeDAGPlan | None:
         response_parent.append(parent)
         initial_factors.append(tuple(initial))
         operating_factors.append(tuple(operating))
-        if parent < 0:
-            ancestors.append((index,))
-        else:
-            ancestors.append(tuple(ancestors[parent]) + (index,))
+        ancestors.append((index,) if parent < 0 else tuple(ancestors[parent]) + (index,))
 
     compiled = compile_parametric_nodes(
         graph,
-        a0=np.ones(graph.n_modes, dtype=float),
-        operating=np.ones(len(graph.operating_names), dtype=float),
+        a0=np.ones(graph.n_modes),
+        operating=np.ones(len(graph.operating_names)),
     )
     structural = tuple(compiled.node_realizations[node.name] for node in graph.response_nodes)
     dimensions = np.asarray([item.dimension for item in structural], dtype=np.int32)
@@ -147,22 +153,18 @@ def _build_plan(graph) -> NativeDAGPlan | None:
         "targets": np.ascontiguousarray([node.target_mode for node in graph.response_nodes], dtype=np.int32),
         "response_parent": np.ascontiguousarray(response_parent, dtype=np.int32),
         "dimensions": np.ascontiguousarray(dimensions, dtype=np.int32),
-        "state_offsets": np.ascontiguousarray(state_offsets, dtype=np.int64),
-        "derivative_offsets": np.ascontiguousarray(derivative_offsets, dtype=np.int64),
-        "ancestor_offsets": np.ascontiguousarray(ancestor_offsets, dtype=np.int64),
-        "ancestors": np.ascontiguousarray(ancestor_flat, dtype=np.int32),
-        "initial_factor_offsets": np.ascontiguousarray(initial_offsets, dtype=np.int64),
-        "initial_factor_indices": np.ascontiguousarray(initial_flat, dtype=np.int32),
-        "operating_factor_offsets": np.ascontiguousarray(operating_offsets, dtype=np.int64),
-        "operating_factor_indices": np.ascontiguousarray(operating_flat, dtype=np.int32),
+        "state_offsets": np.ascontiguousarray(state_offsets),
+        "derivative_offsets": np.ascontiguousarray(derivative_offsets),
+        "ancestor_offsets": np.ascontiguousarray(ancestor_offsets),
+        "ancestors": np.ascontiguousarray(ancestor_flat),
+        "initial_factor_offsets": np.ascontiguousarray(initial_offsets),
+        "initial_factor_indices": np.ascontiguousarray(initial_flat),
+        "operating_factor_offsets": np.ascontiguousarray(operating_offsets),
+        "operating_factor_indices": np.ascontiguousarray(operating_flat),
     }
     return NativeDAGPlan(
-        signature=_graph_signature(graph),
-        structural_nodes=structural,
-        _native_arrays=arrays,
-        total_state=int(state_offsets[-1]),
-        n_modes=graph.n_modes,
-        n_operating=len(graph.operating_names),
+        _graph_signature(graph), structural, arrays, int(state_offsets[-1]),
+        graph.n_modes, len(graph.operating_names),
     )
 
 
@@ -170,19 +172,20 @@ def _plan(graph) -> NativeDAGPlan | None:
     global _CURRENT_SIGNATURE, _CURRENT_PLAN
     signature = _graph_signature(graph)
     if signature == _CURRENT_SIGNATURE:
-        return _CURRENT_PLAN
-    plan = _build_plan(graph)
+        # Complex weights can be introduced by custom callers without topology
+        # changing, so re-check before returning a cached native plan.
+        return _CURRENT_PLAN if _real_weights(graph) is not None else None
     _CURRENT_SIGNATURE = signature
-    _CURRENT_PLAN = plan
-    return plan
+    _CURRENT_PLAN = _build_plan(graph)
+    return _CURRENT_PLAN
 
 
 def _point_arrays(graph, points):
     points = np.ascontiguousarray(points, dtype=float)
     n = graph.n_modes
-    initial = np.ascontiguousarray(points[:, :n], dtype=float)
-    operating = np.ascontiguousarray(points[:, n:-1], dtype=float)
-    times = np.ascontiguousarray(points[:, -1], dtype=float)
+    initial = np.ascontiguousarray(points[:, :n])
+    operating = np.ascontiguousarray(points[:, n:-1])
+    times = np.ascontiguousarray(points[:, -1])
     lambdas = np.asarray(graph.lambdas, dtype=float)
     decay = np.empty((len(points), n), dtype=float)
     finite = np.isfinite(times)
@@ -196,35 +199,27 @@ def _point_arrays(graph, points):
     return initial, operating, times, initial_values, initial_slopes
 
 
-def _weights(graph):
-    return np.asarray([node.weight for node in graph.response_nodes], dtype=float)
-
-
 def _native_values(graph, points):
     plan = _plan(graph)
-    if plan is None:
-        return None
-    info = dag_backend_info(auto_build=True)
-    if not info["available"]:
+    weights = _real_weights(graph)
+    if plan is None or weights is None or not dag_backend_info(auto_build=True)["available"]:
         return None
     initial, operating, times, initial_values, initial_slopes = _point_arrays(graph, points)
-    rows = plan.observation_rows(times)
     return dag_batch_values(
-        plan, initial, operating, _weights(graph), rows, initial_values, initial_slopes
+        plan, initial, operating, weights, plan.observation_rows(times),
+        initial_values, initial_slopes,
     )
 
 
 def _native_value_jacobian_batch(graph, points):
     plan = _plan(graph)
-    if plan is None:
-        return None
-    info = dag_backend_info(auto_build=True)
-    if not info["available"]:
+    weights = _real_weights(graph)
+    if plan is None or weights is None or not dag_backend_info(auto_build=True)["available"]:
         return None
     initial, operating, times, initial_values, initial_slopes = _point_arrays(graph, points)
-    rows = plan.observation_rows(times)
     return dag_batch_sparse_jacobian(
-        plan, initial, operating, _weights(graph), rows, initial_values, initial_slopes
+        plan, initial, operating, weights, plan.observation_rows(times),
+        initial_values, initial_slopes,
     )
 
 
@@ -247,17 +242,13 @@ def install_native_dag_training() -> None:
         n = graph.n_modes
 
         def one(index):
-            if monitor is not None:
-                monitor.checkpoint()
             a = a_all[index]
             u = points_array[index, n:-1]
             if jacobian:
                 physical = field.evaluate(a, u)
-                F = physical.vector_field
-                J = physical.vector_field_jacobian
+                F, J = physical.vector_field, physical.vector_field_jacobian
             elif hasattr(field, "vector_field"):
-                F = field.vector_field(a, u)
-                J = None
+                F, J = field.vector_field(a, u), None
             else:
                 rhs = field.rhs(u)
                 q = field.em_model.heat_source_for_rhs(a, rhs)
@@ -274,9 +265,7 @@ def install_native_dag_training() -> None:
     def refine(graph, field, points, max_iterations=12, monitor=None, tolerance=0.0):
         if not graph.response_nodes:
             return graph
-        plan = _plan(graph)
-        info = dag_backend_info(auto_build=True)
-        if plan is None or not info["available"]:
+        if _plan(graph) is None or not dag_backend_info(auto_build=True)["available"]:
             return original_refine(
                 graph, field, points, max_iterations=max_iterations,
                 monitor=monitor, tolerance=tolerance,
@@ -295,29 +284,25 @@ def install_native_dag_training() -> None:
             a_all, da_all, ja_all, jda_all = analytic
 
             def physical_one(index):
-                if monitor is not None:
-                    monitor.checkpoint()
                 value = field.evaluate(a_all[index], points_array[index, n:-1])
                 return value.vector_field, value.vector_field_jacobian
 
             physical = _ordered_map(physical_one, range(len(points_array)), monitor=monitor)
             F = np.ascontiguousarray(np.vstack([item[0] for item in physical]), dtype=float)
             JF = np.ascontiguousarray(np.stack([item[1] for item in physical]), dtype=float)
-            linearized = gn_linearize(da_all, F, ja_all, jda_all, JF)
-            if linearized is None:
-                return original_refine(
-                    graph, field, points_array, max_iterations=max_iterations,
-                    monitor=monitor, tolerance=tolerance,
-                )
-            residual_matrix, jacobian_tensor = linearized
+            residual_matrix, jacobian_tensor = gn_linearize(da_all, F, ja_all, jda_all, JF)
             norms = np.linalg.norm(residual_matrix, axis=1)
-            if float(np.max(norms, initial=0.0)) <= tolerance:
+            if (float(np.max(norms)) if norms.size else 0.0) <= tolerance:
                 break
             residual = residual_matrix.reshape(-1)
             J = jacobian_tensor.reshape(-1, len(graph.response_nodes))
             scales = np.linalg.norm(J, axis=0)
             scales[scales == 0] = 1.0
-            delta = np.linalg.lstsq(J / scales, -residual, rcond=None)[0] / scales
+            # The GUI historically starts BLAS with one thread. Temporarily lift
+            # that limit for the dense least-squares solve; outer point workers are
+            # idle here, so this cannot create nested oversubscription.
+            with threadpool_limits(limits=native_threads()):
+                delta = np.linalg.lstsq(J / scales, -residual, rcond=None)[0] / scales
             objective = float(residual @ residual)
             accepted = False
             for _ in range(20):
@@ -328,9 +313,7 @@ def install_native_dag_training() -> None:
                     )
                 try:
                     trial_values = evaluate(trial, field, points_array, monitor=monitor)
-                    trial_objective = sum(
-                        float(value.residual @ value.residual) for value in trial_values
-                    )
+                    trial_objective = sum(float(v.residual @ v.residual) for v in trial_values)
                 except (ValueError, FloatingPointError, np.linalg.LinAlgError):
                     trial_objective = float("inf")
                 if trial_objective < objective:
