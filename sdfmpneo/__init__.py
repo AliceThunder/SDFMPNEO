@@ -67,6 +67,7 @@ __all__ = [
 
 from .research import ResearchElectroThermalModel, demo_research_model, model_from_config
 from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
+from .training.cpp_runtime import install_cpp_training_backend
 from .training.parallel_runtime import install_training_acceleration
 from .training.adaptive_runtime import (
     ResearchTrainingContinuation,
@@ -80,6 +81,10 @@ from .training.observation_runtime import install_observation_training_accelerat
 from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
+# Install low-level compiled/vectorized kernels before the trainer/context runtime
+# captures any historical Python implementations. The C++ layer is lazy: no
+# compiler is invoked at import time, and every kernel has an exact Python fallback.
+install_cpp_training_backend()
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
