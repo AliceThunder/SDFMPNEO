@@ -83,31 +83,35 @@ from .training.observation_runtime import install_observation_training_accelerat
 from .training.cpp_dag_runtime import install_native_dag_training
 from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.max_residual_runtime import install_max_residual_training
+from .analytic.state_runtime import install_analytic_state_graph
+from .training.residual_state_runtime import install_residual_driven_state_training
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
 # kernel. The C++ layer stays lazy: importing sdfmpneo never launches a compiler.
 install_cpp_auto_build_guard()
 install_cpp_training_backend()
+# Upgrade the public parametric graph before training wrappers capture evaluator
+# bindings. Old add_product_response() remains a single-source special case.
+install_analytic_state_graph()
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
 install_node_only_training_compile()
 install_observation_training_acceleration()
-# Native DAG/GN replaces the remaining Python response/Jacobian hot loops.
+# Native DAG/GN remains the fast path while every state is single-source.
 install_native_dag_training()
-# Install collocation semantics before the max-aligned trainer so the latter sees
-# the final residual-search selector and continuation signature.
+# Install final residual-search semantics before structural state construction.
 install_high_dimensional_collocation()
-# Final training policy: focus Gauss--Newton and candidate growth on residual
-# violations of the same max-norm tolerance used by the stopping criterion.
 install_max_residual_training()
-# Timing wrappers are last so they report the actual max-aligned/native paths.
+# Final policy: residual-driven Enrich/Grow/Split with no fixed source count K.
+install_residual_driven_state_training()
+# Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
-# Export the trainer after runtime installation so callers receive the selective,
-# structurally accelerated implementation rather than a historical function object.
+# Export the trainer after runtime installation so callers receive the final
+# residual-driven state-construction implementation.
 from .training.research import train_research_graph as train_research_graph
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
