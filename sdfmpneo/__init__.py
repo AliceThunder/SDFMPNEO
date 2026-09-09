@@ -1,13 +1,5 @@
 """SDF-MPNEO executable core."""
 
-import os as _os
-
-# Independent collocation parallelism is the outer level; keep dense BLAS kernels
-# single-threaded by default to avoid nested oversubscription. Explicit caller
-# environment settings still win.
-for _thread_env in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
-    _os.environ.setdefault(_thread_env, "1")
-
 from .analytic import (
     AnalyticEvolutionGraph,
     AnalyticSeries,
