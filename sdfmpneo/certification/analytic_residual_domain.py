@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_CEILING, localcontext
 
 import numpy as np
 
@@ -8,32 +9,102 @@ from .electrothermal_domain import certify_electrothermal_domain_bounds
 from .em_domain import ContinuousEMResidualCertificate, ParameterBox
 
 
-def _time_factor_sup(power: int, rho: float, lower: float, upper: float) -> float:
+_DECIMAL_CERT_PRECISION = 80
+
+
+def _decimal_float(value: float) -> Decimal:
+    return Decimal.from_float(float(value))
+
+
+def _decimal_to_upper_float(value: Decimal) -> float:
+    if value.is_nan():
+        return float("nan")
+    if value.is_infinite():
+        return float("inf") if value > 0 else -float("inf")
+    result = float(value)
+    if np.isinf(result):
+        return result
+    if Decimal.from_float(result) < value:
+        result = float(np.nextafter(result, np.inf))
+    return result
+
+
+def _time_factor_sup_decimal(
+    power: int,
+    rho: Decimal,
+    lower: float,
+    upper: float,
+) -> Decimal:
     if lower < 0.0 or upper < lower:
         raise ValueError("time interval must satisfy 0 <= lower <= upper")
-    candidates = [lower, upper]
-    if power > 0 and rho > 0.0:
-        stationary = power / rho
-        if lower <= stationary <= upper:
-            candidates.append(stationary)
-    return float(max((t**power) * np.exp(-rho * t) for t in candidates))
+    with localcontext() as ctx:
+        ctx.prec = _DECIMAL_CERT_PRECISION
+        ctx.rounding = ROUND_CEILING
+        lo = _decimal_float(lower)
+        hi = _decimal_float(upper)
+        candidates = [lo, hi]
+        if power > 0 and rho > 0:
+            stationary = Decimal(int(power)) / rho
+            if lo <= stationary <= hi:
+                candidates.append(stationary)
+        values = []
+        for time in candidates:
+            if time == 0 and power > 0:
+                value = Decimal(0)
+            else:
+                value = (time ** int(power)) * (-rho * time).exp()
+            # Decimal.exp is correctly rounded at the active high precision.
+            # Move one Decimal ulp outward before conversion to binary64.
+            values.append(ctx.next_plus(value))
+        return max(values)
+
+
+def _time_factor_sup(power: int, rho: float, lower: float, upper: float) -> float:
+    value = _time_factor_sup_decimal(int(power), _decimal_float(rho), lower, upper)
+    return _decimal_to_upper_float(value)
+
+
+def _complex_abs_decimal(value: complex) -> Decimal:
+    z = complex(value)
+    with localcontext() as ctx:
+        ctx.prec = _DECIMAL_CERT_PRECISION
+        ctx.rounding = ROUND_CEILING
+        real = _decimal_float(z.real)
+        imag = _decimal_float(z.imag)
+        magnitude = (real * real + imag * imag).sqrt()
+        return ctx.next_plus(magnitude)
 
 
 def _series_sup_abs(series, lambdas, parameter_lower, parameter_upper, t_lower, t_upper) -> float:
     lo = np.asarray(parameter_lower, dtype=float)
     hi = np.asarray(parameter_upper, dtype=float)
-    pmax = np.maximum(np.abs(lo), np.abs(hi))
-    total = 0.0
-    for (power, decay, params), coefficient in series.terms.items():
-        monomial = 1.0
-        for bound, exponent in zip(pmax, params):
-            if exponent:
-                monomial *= bound**exponent
-        rho = float(np.dot(np.asarray(decay, dtype=float), lambdas))
-        total += abs(complex(coefficient)) * monomial * _time_factor_sup(
-            int(power), rho, t_lower, t_upper
-        )
-    return float(np.nextafter(total, np.inf))
+    lam = np.asarray(lambdas, dtype=float)
+    if lo.shape != hi.shape:
+        raise ValueError("parameter bounds must have matching shapes")
+    with localcontext() as ctx:
+        ctx.prec = _DECIMAL_CERT_PRECISION
+        ctx.rounding = ROUND_CEILING
+        pmax = [
+            max(abs(_decimal_float(a)), abs(_decimal_float(b)))
+            for a, b in zip(lo, hi)
+        ]
+        total = Decimal(0)
+        for (power, decay, params), coefficient in series.terms.items():
+            monomial = Decimal(1)
+            for bound, exponent in zip(pmax, params):
+                if exponent:
+                    monomial *= bound ** int(exponent)
+            rho = Decimal(0)
+            for count, decay_rate in zip(decay, lam):
+                if count:
+                    rho += Decimal(int(count)) * _decimal_float(decay_rate)
+            term = (
+                _complex_abs_decimal(coefficient)
+                * monomial
+                * _time_factor_sup_decimal(int(power), rho, t_lower, t_upper)
+            )
+            total += term
+        return _decimal_to_upper_float(ctx.next_plus(total))
 
 
 @dataclass(frozen=True)
