@@ -85,10 +85,12 @@ from .training.late_stage_runtime import (
     install_geometry_working_set_cache,
     install_late_stage_training,
 )
+from .training.late_stage_batch import install_late_stage_batching
 
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
+install_late_stage_batching()
 
 # Export the trainer after runtime installation so callers receive the selective,
 # structurally accelerated implementation rather than a historical function object.
