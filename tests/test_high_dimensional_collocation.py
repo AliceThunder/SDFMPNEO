@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 
 from sdfmpneo import ResearchTrainingConfig
@@ -24,16 +26,17 @@ def _high_dimensional_config():
     )
 
 
-def test_high_dimensional_policy_doubles_qmc_and_adds_axis_anchors():
+def test_high_dimensional_policy_keeps_training_compact_and_broadens_search():
     config = _high_dimensional_config()
     training = config.points()
-    validation = config.points(validation=True)
+    search = config.points(validation=True)
 
-    # Expanded QMC: 16 finite + 3 historical special points + 16 steady.
-    # Axis coverage: 14 parameters * 2 bounds * {t=0, t=inf} = 56.
-    assert training.shape == (91, 15)
-    # Validation remains independent QMC: 16 finite + 16 steady, no training anchors.
-    assert validation.shape == (32, 15)
+    # Persistent set: historical 8 finite + 3 special + 8 steady = 19,
+    # plus 14 parameters * 2 bounds * {t=0, t=inf} = 56 anchors.
+    assert training.shape == (75, 15)
+    # Search pool: 8x validation QMC => 64 finite + 64 steady = 128,
+    # plus 14 * 2 bounds * {0, time_min, geometric-middle, horizon, inf}=140.
+    assert search.shape == (268, 15)
 
     lower = np.asarray(config.initial_lower + config.operating_lower, dtype=float)
     upper = np.asarray(config.initial_upper + config.operating_upper, dtype=float)
@@ -44,6 +47,22 @@ def test_high_dimensional_policy_doubles_qmc_and_adds_axis_anchors():
             target[parameter] = value
             assert np.any(np.all(training[:, :-1] == target, axis=1) & (training[:, -1] == 0.0))
             assert np.any(np.all(training[:, :-1] == target, axis=1) & np.isposinf(training[:, -1]))
+            assert np.any(np.all(search[:, :-1] == target, axis=1) & (search[:, -1] == config.time_horizon))
+
+
+def test_high_dimensional_exchange_keeps_only_four_worst_failed_points():
+    config = _high_dimensional_config()
+    points = config.points(validation=True)[:10]
+    norms = np.array([2e-6, 8e-5, 3e-5, 4e-6, 1.2e-4, 7e-5, 9e-6, 5e-5, 2e-5, 1e-7])
+    records = [SimpleNamespace(residual=np.array([value, 0.0])) for value in norms]
+
+    selected, guards, measured = adaptive_runtime._select_adaptive_validation_points(
+        records, points, tolerance=1e-5
+    )
+    expected_indices = [4, 1, 5, 7]  # descending residual among failed points
+    assert np.array_equal(selected, points[expected_indices])
+    assert guards.shape == (0, points.shape[1])
+    assert np.array_equal(measured, norms)
 
 
 def test_low_dimensional_sampling_semantics_are_unchanged():
@@ -57,8 +76,17 @@ def test_low_dimensional_sampling_semantics_are_unchanged():
     assert training.shape == (19, 3)  # 8 + centre/lower/upper + 8 steady
     assert validation.shape == (16, 3)
 
+    points = validation[:4]
+    norms = [2e-5, 5e-6, 3e-5, 1e-6]
+    records = [SimpleNamespace(residual=np.array([value])) for value in norms]
+    failed, passed, _ = adaptive_runtime._select_adaptive_validation_points(
+        records, points, tolerance=1e-5
+    )
+    assert np.array_equal(failed, points[[0, 2]])
+    assert np.array_equal(passed, points[[1, 3]])
 
-def test_high_dimensional_coverage_changes_continuation_signature():
+
+def test_high_dimensional_exchange_changes_continuation_signature():
     high = _high_dimensional_config()
     low = ResearchTrainingConfig(
         (0.0,), (1.0,), (0.0,), (1.0,), 100.0, 1e-5,
