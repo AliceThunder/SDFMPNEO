@@ -180,7 +180,9 @@ def _split_proposals(
             split_graph = split_response_source(
                 graph, dynamic, source_index, split_name
             )
-            if len(split_graph.response_nodes) >= int(config.max_nodes):
+            # Equality is allowed: an exact split can consume the final state slot
+            # and still be followed by Enrich, which does not create another state.
+            if len(split_graph.response_nodes) > int(config.max_nodes):
                 continue
             split_parents = replace_parent_once(parents, dynamic, split_name)
             compiled = [
