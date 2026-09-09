@@ -28,7 +28,7 @@ FILES = {
     "model": "results/uwpt/model.npz",          # 训练保存 / 推理加载
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",           # 实际配置和训练报告所在目录
-    "resume_model": None,                       # 可选：已有 .npz，继续训练
+    "resume_model": "results/uwpt/model.stopped.npz",                       # 可选：已有 .npz，继续训练
 }
 # 继续训练使用文件内保存的物理模型/空间基/网络，以及下方当前 TRAINING；
 # 此时不会重新生成网格，几何/材料等构建参数不参与本次继续训练。
@@ -175,7 +175,7 @@ TRAINING = {
     "time_horizon": 100000.0, "residual_tolerance": 1e-5,
     "time_sampling": "mixed_log", "time_min": 1e-6, "include_steady_state": True,
     "sample_count": 64, "validation_count": 64,
-    "max_nodes": 64, "max_degree": 3,
+    "max_nodes": 256, "max_degree": 3,
     "max_parent_responses": 1, "max_realization_dimension": 64,
 }
 # 几何物理初始种子最多使用约 75% 的节点预算，其余容量留给残差驱动修正。
