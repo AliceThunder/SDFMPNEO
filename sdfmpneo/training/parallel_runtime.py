@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import os
 from threading import Lock
 
 import numpy as np
+
+try:
+    from threadpoolctl import threadpool_limits
+except ImportError:  # pragma: no cover - dependency is declared; fail-soft for source-only use.
+    threadpool_limits = None
 
 
 _EXECUTORS: dict[int, ThreadPoolExecutor] = {}
@@ -13,26 +19,43 @@ _INSTALLED = False
 
 
 def training_point_workers() -> int:
-    """Number of independent collocation workers; override with an environment variable."""
+    """Number of independent collocation workers.
+
+    Point-level parallelism is the primary CPU parallel layer.  A pre-existing
+    multi-threaded BLAS environment must not silently disable it; BLAS is capped
+    separately while an outer point batch is active.
+    """
     raw = os.environ.get("SDFMPNEO_POINT_WORKERS")
     if raw is not None:
         try:
             return max(1, int(raw))
         except ValueError as exc:
             raise ValueError("SDFMPNEO_POINT_WORKERS must be a positive integer") from exc
-    # If a caller explicitly chose multi-threaded BLAS, let that setting own the
-    # CPU instead of multiplying it by another outer pool. The normal SDFMPNEO
-    # entry point keeps BLAS at one thread and therefore uses point parallelism.
-    for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
-        value = os.environ.get(name)
-        if value is None:
-            continue
-        try:
-            if int(value) > 1:
-                return 1
-        except ValueError:
-            continue
-    return max(1, min(8, os.cpu_count() or 1))
+    return max(1, min(32, os.cpu_count() or 1))
+
+
+def training_blas_threads() -> int:
+    """BLAS threads used inside an outer collocation-parallel region."""
+    raw = os.environ.get("SDFMPNEO_BLAS_THREADS", "1")
+    try:
+        return max(1, int(raw))
+    except ValueError as exc:
+        raise ValueError("SDFMPNEO_BLAS_THREADS must be a positive integer") from exc
+
+
+def training_parallelism() -> dict[str, int]:
+    """Runtime parallelism settings for diagnostics and GUI/CLI reporting."""
+    return {
+        "cpu_count": int(os.cpu_count() or 1),
+        "point_workers": int(training_point_workers()),
+        "blas_threads_per_point": int(training_blas_threads()),
+    }
+
+
+def _blas_limit_context():
+    if threadpool_limits is None:
+        return nullcontext()
+    return threadpool_limits(limits=training_blas_threads())
 
 
 def _executor(workers: int) -> ThreadPoolExecutor:
@@ -58,15 +81,19 @@ def _ordered_map(function, items, *, monitor=None):
     pool = _executor(workers)
     out = []
     # Small ordered batches preserve pause/stop responsiveness while keeping
-    # deterministic collection and reduction order.
+    # deterministic collection and reduction order.  While the outer pool is
+    # active, cap BLAS per task to avoid N_point x N_BLAS oversubscription.  The
+    # limiter is runtime-based, so it also works when NumPy/SciPy were imported
+    # before sdfmpneo or when Conda/system launchers pre-set BLAS env variables.
     batch_size = 2 * workers
-    for start in range(0, len(items), batch_size):
-        if monitor is not None:
-            monitor.checkpoint()
-        batch = items[start : start + batch_size]
-        out.extend(pool.map(function, batch))
-        if monitor is not None:
-            monitor.checkpoint()
+    with _blas_limit_context():
+        for start in range(0, len(items), batch_size):
+            if monitor is not None:
+                monitor.checkpoint()
+            batch = items[start : start + batch_size]
+            out.extend(pool.map(function, batch))
+            if monitor is not None:
+                monitor.checkpoint()
     return out
 
 

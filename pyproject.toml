@@ -7,7 +7,7 @@ name = "sdfmpneo"
 version = "0.10.0"
 description = "Solution-data-free electromagnetic-thermal surrogate training and arbitrary-time inference for research"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.24", "scipy>=1.10"]
+dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
 
 [project.scripts]
 sdfmpneo = "sdfmpneo.__main__:main"
