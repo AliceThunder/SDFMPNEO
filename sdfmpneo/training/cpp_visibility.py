@@ -16,6 +16,7 @@ def install_cpp_training_visibility() -> None:
     from . import late_stage_runtime as late
     from . import research as training_research
     from .parallel_runtime import training_parallelism
+    from .native_thread_probe import observed_native_threads
     from ..cpp_training_backend import backend_info
     from ..cpp_dag_backend import backend_info as dag_backend_info
 
@@ -46,11 +47,13 @@ def install_cpp_training_visibility() -> None:
                     flush=True,
                 )
             if dag["available"]:
+                observed = observed_native_threads(dag["native_threads"])
                 print(
                     "C++解析DAG/Gauss-Newton后端已启用："
                     f"OpenMP={'是' if dag['openmp'] else '否'}，"
-                    f"native threads={dag['native_threads']}；"
-                    "批量DAG/Jacobian阶段直接使用原生OS线程",
+                    f"请求native threads={dag['native_threads']}，"
+                    f"实际OpenMP线程={observed}；"
+                    "批量DAG/Jacobian/GN阶段直接使用原生OS线程",
                     flush=True,
                 )
             else:
