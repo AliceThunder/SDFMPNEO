@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from .long_time import realization_action
+from .long_time import realization_observation_action
 
 from .realization import AnalyticRealization, CompiledRealizationGraph
 
@@ -143,15 +143,15 @@ def evaluate_parametric_stable_with_jacobians(graph, t, *, a0, operating, weight
     """Stable values and exact operating sensitivities, also at resonance.
 
     Static parameters enter the realization's initial vector b. Product-rule
-    derivatives of b share the same matrix exponential as the state.
+    derivatives of b share the same analytic propagator observation rows.
     """
     if t < 0 or np.isnan(t):
         raise ValueError("time must be non-negative or positive infinity")
     compiled, db = _compile_with_operating_derivatives(
         graph, a0=a0, operating=operating, weight_derivatives=weight_derivatives)
     a, da, ja, jda = [], [], [], []
-    # Mode realizations are direct sums. Exponentiate each DAG node block
-    # separately instead of a large block-diagonal matrix for the whole mode.
+    # Mode realizations are direct sums. Evaluate each DAG node block separately
+    # and cache only the output rows rather than complete d-by-d propagators.
     for mode, jac in enumerate(db):
         parts = [compiled.node_realizations[graph.initial_names[mode]]]
         parts += [compiled.node_realizations[node.name] for node in graph.response_nodes
@@ -161,10 +161,11 @@ def evaluate_parametric_stable_with_jacobians(graph, t, *, a0, operating, weight
         offset = 1  # the identically zero initial direct-sum block
         for r in parts:
             block = jac[offset:offset+r.dimension]
-            x = realization_action(r.A, np.column_stack([r.b, block]), t)
-            value += np.real(r.c @ x)
-            if not np.isposinf(t):
-                slope += np.real(r.c @ (r.A @ x))
+            values, slopes = realization_observation_action(
+                r.A, np.column_stack([r.b, block]), r.c, t
+            )
+            value += np.real(values)
+            slope += np.real(slopes)
             offset += r.dimension
         a.append(value[0]); da.append(slope[0])
         ja.append(value[1:]); jda.append(slope[1:])
@@ -185,16 +186,14 @@ def evaluate_parametric_stable(
     da = np.zeros_like(a)
     for mode, name in enumerate(graph.initial_names):
         r = compiled.node_realizations[name]
-        x = realization_action(r.A,r.b,t)
-        a[mode] += np.real(r.c@x)
-        if not np.isposinf(t):
-            da[mode] += np.real(r.c@(r.A@x))
+        value, slope = realization_observation_action(r.A, r.b, r.c, t)
+        a[mode] += np.real(value)
+        da[mode] += np.real(slope)
     for node in graph.response_nodes:
         r = compiled.node_realizations[node.name]
-        x = realization_action(r.A,r.b,t)
-        a[node.target_mode] += np.real(r.c@x)
-        if not np.isposinf(t):
-            da[node.target_mode] += np.real(r.c@(r.A@x))
+        value, slope = realization_observation_action(r.A, r.b, r.c, t)
+        a[node.target_mode] += np.real(value)
+        da[node.target_mode] += np.real(slope)
     return a, da
 
 
