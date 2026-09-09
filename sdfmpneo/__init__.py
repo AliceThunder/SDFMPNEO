@@ -82,6 +82,7 @@ from .training.node_compile_runtime import install_node_only_training_compile
 from .training.observation_runtime import install_observation_training_acceleration
 from .training.cpp_dag_runtime import install_native_dag_training
 from .training.coverage_runtime import install_high_dimensional_collocation
+from .training.max_residual_runtime import install_max_residual_training
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
@@ -95,10 +96,15 @@ install_late_stage_batching()
 install_node_only_training_compile()
 install_observation_training_acceleration()
 # Native DAG/GN replaces the remaining Python response/Jacobian hot loops.
-# Install timing wrappers afterwards so reported timings cover the native path.
 install_native_dag_training()
-install_cpp_training_visibility()
+# Install collocation semantics before the max-aligned trainer so the latter sees
+# the final residual-search selector and continuation signature.
 install_high_dimensional_collocation()
+# Final training policy: focus Gauss--Newton and candidate growth on residual
+# violations of the same max-norm tolerance used by the stopping criterion.
+install_max_residual_training()
+# Timing wrappers are last so they report the actual max-aligned/native paths.
+install_cpp_training_visibility()
 
 # Export the trainer after runtime installation so callers receive the selective,
 # structurally accelerated implementation rather than a historical function object.
