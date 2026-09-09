@@ -14,7 +14,7 @@ For analytic state `nu`,
 
 ## Dynamic family
 
-A state has one target thermal mode and at most one response-state parent shared by all active source columns. Initial-coordinate decays and declared static geometry/current factors may differ between columns. Thus a dynamic family is identified by
+A newly aggregated state has one target thermal mode and at most one response-state parent shared by all active source columns. Initial-coordinate decays and declared static geometry/current factors may differ between columns. Thus a dynamic family is identified by
 
 \[
 (j_\nu,p_\nu),
@@ -23,6 +23,8 @@ A state has one target thermal mode and at most one response-state parent shared
 where `p_nu=None` denotes a direct response with no response-state parent.
 
 The existing `max_degree` and `max_realization_dimension` still describe admissible candidate columns. `max_nodes` remains a budget on **independent dynamic states**. None of these quantities acts as a source-count limit inside one state.
+
+For backward compatibility, a historical **single-source** node created under `max_parent_responses > 1` may still contain several response parents. Such a legacy source remains evaluable, cloneable and loadable, and uses the existing generic candidate path. It is not merged into a new multi-source state, because the Enrich/Split algebra intentionally uses the production one-dynamic-parent family rule.
 
 ## The three structural actions
 
@@ -76,7 +78,7 @@ For split branches, the graph is first split exactly, then that branch's own tan
 
 The public `ParametricAnalyticEvolutionGraph` type and `add_product_response()` API remain valid. A legacy scalar response is represented internally as an analytic state with one active source.
 
-Fixed-geometry model files containing multi-source states use research model format version 2 for graph metadata. Version 1 files remain loadable. Geometry-family checkpoints keep their outer format and embed the upgraded reference checkpoint, so old geometry checkpoints also remain loadable.
+Fixed-geometry model files containing multi-source states use research model format version 2 for graph metadata. Version 1 files remain loadable. Geometry-family checkpoints keep their outer format and embed the upgraded reference checkpoint, so old geometry checkpoints also remain loadable. Regression coverage exercises both fixed-geometry and geometry-family save/load paths with true multi-source states.
 
 ## What is intentionally unchanged
 
