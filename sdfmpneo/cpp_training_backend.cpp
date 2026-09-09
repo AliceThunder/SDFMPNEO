@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <cstring>
 #include <vector>
+#include <limits>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -60,7 +63,6 @@ static inline bool tet_geometry(const double* vertices, const int64_t* tet, doub
     double inv[9], det;
     if (!inv3(J, inv, det) || det <= 0.0) return false;
     volume = det / 6.0;
-    // grad(lambda_1..3) are rows of J^{-1}; lambda_0 is minus their sum.
     for (int k=0;k<3;++k) {
         grad[1*3+k] = inv[0*3+k];
         grad[2*3+k] = inv[1*3+k];
@@ -142,10 +144,25 @@ SDF_EXPORT int sdfmpneo_nedelec_local_f64(
     return failed ? 2 : 0;
 }
 
+static inline double factorial_value(int n) {
+    static const std::array<double, 171> table = [] {
+        std::array<double, 171> out{};
+        out[0] = 1.0;
+        for (int k=1;k<=170;++k) out[k] = out[k-1] * (double)k;
+        return out;
+    }();
+    return (n >= 0 && n <= 170) ? table[(size_t)n] : std::numeric_limits<double>::infinity();
+}
+
 static inline double factorial_ratio_moment(const int32_t* p, int first, int second) {
     int a[4]={p[0],p[1],p[2],p[3]};
     ++a[first]; ++a[second];
     const int degree=a[0]+a[1]+a[2]+a[3];
+    if (degree + 3 <= 170) {
+        double numerator = 6.0;
+        for (int k=0;k<4;++k) numerator *= factorial_value(a[k]);
+        return numerator / factorial_value(degree + 3);
+    }
     long double logv=std::log(6.0L);
     for (int k=0;k<4;++k) logv += std::lgamma((long double)a[k]+1.0L);
     logv -= std::lgamma((long double)degree+4.0L);
@@ -160,8 +177,11 @@ static inline void moments_from_terms(
     for (int64_t s=begin;s<end;++s) {
         const int32_t* p=powers+4*s;
         const double c=coeffs[s]*volume;
-        for (int i=0;i<4;++i) for (int j=0;j<4;++j)
-            moments[4*i+j] += c*factorial_ratio_moment(p,i,j);
+        for (int i=0;i<4;++i) for (int j=i;j<4;++j) {
+            const double value = c*factorial_ratio_moment(p,i,j);
+            moments[4*i+j] += value;
+            if (i != j) moments[4*j+i] += value;
+        }
     }
 }
 
@@ -176,8 +196,11 @@ static inline void moments_from_product_terms(
     for (int64_t s=ab;s<ae;++s) for (int64_t t=bb;t<be;++t) {
         for (int k=0;k<4;++k) p[k]=apow[4*s+k]+bpow[4*t+k];
         const double c=acoef[s]*bcoef[t]*volume;
-        for (int i=0;i<4;++i) for (int j=0;j<4;++j)
-            moments[4*i+j] += c*factorial_ratio_moment(p,i,j);
+        for (int i=0;i<4;++i) for (int j=i;j<4;++j) {
+            const double value = c*factorial_ratio_moment(p,i,j);
+            moments[4*i+j] += value;
+            if (i != j) moments[4*j+i] += value;
+        }
     }
 }
 
@@ -194,18 +217,24 @@ static inline void reduced_add(
         }
         local[p*6+r]=v;
     }
+    std::vector<double> tmp_re((size_t)6*nred, 0.0), tmp_im((size_t)6*nred, 0.0);
+    for (int p=0;p<6;++p) for (int b=0;b<nred;++b) {
+        double re=0.0, im=0.0;
+        for (int r=0;r<6;++r) {
+            const double l=local[p*6+r];
+            re += l*fields_interleaved[2*(r*nred+b)+0];
+            im += l*fields_interleaved[2*(r*nred+b)+1];
+        }
+        tmp_re[p*nred+b]=re; tmp_im[p*nred+b]=im;
+    }
     for (int a=0;a<nred;++a) for (int b=0;b<nred;++b) {
         double re=0.0, im=0.0;
         for (int p=0;p<6;++p) {
-            const double fpa_re=fields_interleaved[2*(p*nred+a)+0];
-            const double fpa_im=fields_interleaved[2*(p*nred+a)+1];
-            for (int r=0;r<6;++r) {
-                const double l=local[p*6+r];
-                const double frb_re=fields_interleaved[2*(r*nred+b)+0];
-                const double frb_im=fields_interleaved[2*(r*nred+b)+1];
-                re += l*(fpa_re*frb_re + fpa_im*frb_im);
-                im += l*(fpa_re*frb_im - fpa_im*frb_re);
-            }
+            const double fa_re=fields_interleaved[2*(p*nred+a)+0];
+            const double fa_im=fields_interleaved[2*(p*nred+a)+1];
+            const double y_re=tmp_re[p*nred+b], y_im=tmp_im[p*nred+b];
+            re += fa_re*y_re + fa_im*y_im;
+            im += fa_re*y_im - fa_im*y_re;
         }
         out_interleaved[2*(a*nred+b)+0] += re;
         out_interleaved[2*(a*nred+b)+1] += im;
@@ -219,7 +248,6 @@ SDF_EXPORT int sdfmpneo_reduced_assemble_many_f64(
     double* out_interleaved) {
     const int64_t outn=(int64_t)nfamily*nred*nred*2;
     std::fill(out_interleaved,out_interleaved+outn,0.0);
-    // Preserve tetrahedron accumulation order. Python point/context parallelism supplies concurrency.
     for (int64_t q=0;q<n_tet;++q) {
         const double* cq=coefficients + q*6*4*3;
         const double* fq=fields_interleaved + q*6*nred*2;
