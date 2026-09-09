@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
 import numpy as np
 
 from sdfmpneo.analytic.long_time import realization_action
 from sdfmpneo.analytic.realization import AnalyticRealization
 from .parallel_runtime import _ordered_map
 from . import late_stage_runtime as _late
+
+
+_PLAN_GRAPH = None
+_PLAN_CACHE = {}
+_PLAN_INITIAL_LOOKUP = {}
+_PLAN_OPERATING_LOOKUP = {}
+_PLAN_RESPONSE_NAMES = set()
 
 
 def _iter_admissible_parent_tuples(names, response_names, degree, max_parent_responses):
@@ -39,42 +44,54 @@ def _iter_admissible_parent_tuples(names, response_names, degree, max_parent_res
     yield from visit(0, int(degree), 0, [])
 
 
-@lru_cache(maxsize=65536)
-def _cached_parent_plan(initial_names, operating_names, response_names, lambdas, parents):
-    initial_lookup = {name: index for index, name in enumerate(initial_names)}
-    operating_lookup = {name: index for index, name in enumerate(operating_names)}
-    response_set = set(response_names)
+def _reset_parent_plan_cache(graph):
+    global _PLAN_GRAPH, _PLAN_CACHE, _PLAN_INITIAL_LOOKUP, _PLAN_OPERATING_LOOKUP, _PLAN_RESPONSE_NAMES
+    _PLAN_GRAPH = graph
+    _PLAN_CACHE = {}
+    _PLAN_INITIAL_LOOKUP = {
+        name: index for index, name in enumerate(graph.initial_names)
+    }
+    _PLAN_OPERATING_LOOKUP = {
+        name: index for index, name in enumerate(graph.operating_names)
+    }
+    _PLAN_RESPONSE_NAMES = {node.name for node in graph.response_nodes}
+
+
+def _parent_plan(graph, parents):
+    global _PLAN_GRAPH
+    if graph is not _PLAN_GRAPH:
+        _reset_parent_plan_cache(graph)
+    parents = tuple(parents)
+    cached = _PLAN_CACHE.get(parents)
+    if cached is not None:
+        return cached
+
     initial = []
     operating = []
     response = []
     decay = 0.0
     for parent in parents:
-        if parent in initial_lookup:
-            index = initial_lookup[parent]
+        if parent in _PLAN_INITIAL_LOOKUP:
+            index = _PLAN_INITIAL_LOOKUP[parent]
             initial.append(index)
-            decay += float(lambdas[index])
-        elif parent in operating_lookup:
-            operating.append(operating_lookup[parent])
-        elif parent in response_set:
+            decay += float(graph.lambdas[index])
+        elif parent in _PLAN_OPERATING_LOOKUP:
+            operating.append(_PLAN_OPERATING_LOOKUP[parent])
+        elif parent in _PLAN_RESPONSE_NAMES:
             response.append(parent)
         else:
             raise KeyError(parent)
     if len(response) > 1:
-        return _late._ParentPlan(tuple(parents), tuple(initial), tuple(operating), None, float("nan"))
-    return _late._ParentPlan(
-        tuple(parents), tuple(initial), tuple(operating),
-        None if not response else response[0], decay,
-    )
-
-
-def _parent_plan(graph, parents):
-    return _cached_parent_plan(
-        tuple(graph.initial_names),
-        tuple(graph.operating_names),
-        tuple(node.name for node in graph.response_nodes),
-        tuple(float(value) for value in graph.lambdas),
-        tuple(parents),
-    )
+        result = _late._ParentPlan(
+            parents, tuple(initial), tuple(operating), None, float("nan")
+        )
+    else:
+        result = _late._ParentPlan(
+            parents, tuple(initial), tuple(operating),
+            None if not response else response[0], decay,
+        )
+    _PLAN_CACHE[parents] = result
+    return result
 
 
 def _candidate_source_response(source, lambdas, time):
@@ -219,3 +236,5 @@ def install_late_stage_batching() -> None:
     _late._parent_plan = _parent_plan
     _late._score_parent_batch = _score_parent_batch
     _late._prepare_working_set = _prepare_working_set
+    from . import adaptive_runtime
+    adaptive_runtime.adaptive_train_research_graph = _late.optimized_adaptive_train_research_graph
