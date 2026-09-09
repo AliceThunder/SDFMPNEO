@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from .long_time import realization_action
 
 from .realization import AnalyticRealization, CompiledRealizationGraph
+
+
+@dataclass(frozen=True)
+class CompiledParametricNodeGraph:
+    """Lightweight exact DAG compile for hot paths that never use mode direct sums."""
+    lambdas: np.ndarray
+    node_realizations: dict[str, AnalyticRealization]
+    source_realizations: dict[str, AnalyticRealization]
 
 
 def _validated_inputs(graph, a0, operating):
@@ -16,17 +26,17 @@ def _validated_inputs(graph, a0, operating):
     return initial, u
 
 
-def _compile_value_only(graph, *, a0, operating):
-    """Instantiate the exact DAG without building derivative arrays that are not requested."""
+def _compile_value_components(graph, *, a0, operating, build_modes):
     initial, u = _validated_inputs(graph, a0, operating)
     nodes: dict[str, AnalyticRealization] = {}
     sources: dict[str, AnalyticRealization] = {}
-    modes = [AnalyticRealization.zero() for _ in range(graph.n_modes)]
+    modes = [AnalyticRealization.zero() for _ in range(graph.n_modes)] if build_modes else None
 
     for i, name in enumerate(graph.initial_names):
         realization = AnalyticRealization.decay(graph.lambdas[i], initial[i])
         nodes[name] = realization
-        modes[i] = modes[i].add(realization)
+        if modes is not None:
+            modes[i] = modes[i].add(realization)
 
     for j, name in enumerate(graph.operating_names):
         nodes[name] = AnalyticRealization.constant(u[j])
@@ -38,13 +48,34 @@ def _compile_value_only(graph, *, a0, operating):
         response = source.response(graph.lambdas[node.target_mode])
         sources[node.name] = source
         nodes[node.name] = response
-        modes[node.target_mode] = modes[node.target_mode].add(response)
+        if modes is not None:
+            modes[node.target_mode] = modes[node.target_mode].add(response)
 
+    return nodes, sources, modes
+
+
+def _compile_value_only(graph, *, a0, operating):
+    """Instantiate the exact full DAG without derivative arrays that are not requested."""
+    nodes, sources, modes = _compile_value_components(
+        graph, a0=a0, operating=operating, build_modes=True
+    )
     return CompiledRealizationGraph(
         lambdas=np.asarray(graph.lambdas, dtype=float).copy(),
         node_realizations=nodes,
         source_realizations=sources,
         mode_realizations=tuple(modes),
+    )
+
+
+def compile_parametric_nodes(graph, *, a0: np.ndarray, operating: np.ndarray) -> CompiledParametricNodeGraph:
+    """Compile only node/source realizations for residual, candidate and sparse-Jacobian hot paths."""
+    nodes, sources, _ = _compile_value_components(
+        graph, a0=a0, operating=operating, build_modes=False
+    )
+    return CompiledParametricNodeGraph(
+        lambdas=np.asarray(graph.lambdas, dtype=float).copy(),
+        node_realizations=nodes,
+        source_realizations=sources,
     )
 
 
@@ -149,7 +180,7 @@ def evaluate_parametric_stable(
 ) -> tuple[np.ndarray, np.ndarray]:
     if t < 0 or np.isnan(t):
         raise ValueError('time must be non-negative or positive infinity')
-    compiled = compile_parametric_realization(graph, a0=a0, operating=operating)
+    compiled = compile_parametric_nodes(graph, a0=a0, operating=operating)
     a = np.zeros(graph.n_modes)
     da = np.zeros_like(a)
     for mode, name in enumerate(graph.initial_names):
