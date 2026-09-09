@@ -61,6 +61,16 @@ from .geometry_dynamics import (
     sampled_geometry_contractivity,
     validate_geometry_trajectory,
 )
+from .geometry_mass_residual_domain import (
+    ContinuousGeometryMassResidualCertificate,
+    GeometryJouleDerivativeBounds,
+    GeometryMassResidualBoxBound,
+    GeometryMassResidualPhysicalProof,
+    GeometryThermalOperatorBounds,
+    bound_geometry_mass_residual_on_box,
+    certify_geometry_mass_residual_domain,
+    compose_geometry_mass_residual_physical_proof,
+)
 from .geometry_proof_composer import (
     GeometryDerivativeProof,
     compose_geometry_physical_lipschitz_proof,
@@ -153,6 +163,14 @@ __all__ = [
     "local_geometry_dynamics_diagnostic",
     "sampled_geometry_contractivity",
     "validate_geometry_trajectory",
+    "GeometryThermalOperatorBounds",
+    "GeometryJouleDerivativeBounds",
+    "GeometryMassResidualPhysicalProof",
+    "GeometryMassResidualBoxBound",
+    "ContinuousGeometryMassResidualCertificate",
+    "compose_geometry_mass_residual_physical_proof",
+    "bound_geometry_mass_residual_on_box",
+    "certify_geometry_mass_residual_domain",
     "GeometryDerivativeProof",
     "compose_geometry_physical_lipschitz_proof",
     "make_geometry_physical_proof_factory",
