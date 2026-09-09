@@ -10,20 +10,26 @@ import numpy as np
 from scipy.linalg import expm, solve
 
 
-_PROPAGATOR_CACHE_LIMIT = max(
-    0, int(os.environ.get("SDFMPNEO_PROPAGATOR_CACHE_MB", "96"))
-) * 1024 * 1024
-_PROPAGATOR_CACHE: OrderedDict[tuple, tuple[np.ndarray, np.ndarray, int]] = OrderedDict()
-_PROPAGATOR_CACHE_BYTES = 0
+_PROPAGATOR_CACHE_LIMITS = {
+    "main": max(0, int(os.environ.get("SDFMPNEO_PROPAGATOR_CACHE_MB", "96"))) * 1024 * 1024,
+    "candidate": max(0, int(os.environ.get("SDFMPNEO_CANDIDATE_PROPAGATOR_CACHE_MB", "128"))) * 1024 * 1024,
+}
+_PROPAGATOR_CACHES: dict[str, OrderedDict] = {
+    name: OrderedDict() for name in _PROPAGATOR_CACHE_LIMITS
+}
+_PROPAGATOR_CACHE_BYTES = {name: 0 for name in _PROPAGATOR_CACHE_LIMITS}
 _PROPAGATOR_CACHE_LOCK = RLock()
 
 
-def clear_realization_propagator_cache() -> None:
-    """Clear cached exp(A t) actions; useful for tests and memory-sensitive callers."""
-    global _PROPAGATOR_CACHE_BYTES
+def clear_realization_propagator_cache(namespace: str | None = None) -> None:
+    """Clear exact propagator LRUs; ``None`` clears main and candidate caches."""
+    names = tuple(_PROPAGATOR_CACHES) if namespace is None else (str(namespace),)
     with _PROPAGATOR_CACHE_LOCK:
-        _PROPAGATOR_CACHE.clear()
-        _PROPAGATOR_CACHE_BYTES = 0
+        for name in names:
+            if name not in _PROPAGATOR_CACHES:
+                raise ValueError(f"unknown realization cache namespace: {name}")
+            _PROPAGATOR_CACHES[name].clear()
+            _PROPAGATOR_CACHE_BYTES[name] = 0
 
 
 def _uncached_realization_action(A: np.ndarray, B: np.ndarray, t: float) -> np.ndarray:
@@ -64,50 +70,53 @@ def _propagator_key(A: np.ndarray, t: float) -> tuple:
     return contiguous.shape, contiguous.dtype.str, float(t), digest
 
 
-def _cached_propagator(A: np.ndarray, t: float) -> np.ndarray:
-    """Return the exact linear map B -> exp(A t)B with bounded LRU reuse."""
-    global _PROPAGATOR_CACHE_BYTES
-    if _PROPAGATOR_CACHE_LIMIT <= 0:
+def _cached_propagator(A: np.ndarray, t: float, namespace: str = "main") -> np.ndarray:
+    """Return the exact B -> exp(A t)B map from a bounded namespace-local LRU."""
+    name = str(namespace)
+    if name not in _PROPAGATOR_CACHES:
+        raise ValueError(f"unknown realization cache namespace: {name}")
+    limit = _PROPAGATOR_CACHE_LIMITS[name]
+    cache = _PROPAGATOR_CACHES[name]
+    if limit <= 0:
         return _uncached_realization_action(A, np.eye(A.shape[0], dtype=complex), t)
 
     key = _propagator_key(A, t)
     with _PROPAGATOR_CACHE_LOCK:
-        entry = _PROPAGATOR_CACHE.get(key)
+        entry = cache.get(key)
         if entry is not None and np.array_equal(entry[0], A):
-            _PROPAGATOR_CACHE.move_to_end(key)
+            cache.move_to_end(key)
             return entry[1]
 
     identity = np.eye(A.shape[0], dtype=complex)
     propagator = _uncached_realization_action(A, identity, t)
     stored_A = np.array(A, copy=True)
     size = int(stored_A.nbytes + propagator.nbytes)
-    if size > _PROPAGATOR_CACHE_LIMIT:
+    if size > limit:
         return propagator
 
     with _PROPAGATOR_CACHE_LOCK:
-        existing = _PROPAGATOR_CACHE.get(key)
+        existing = cache.get(key)
         if existing is not None and np.array_equal(existing[0], A):
-            _PROPAGATOR_CACHE.move_to_end(key)
+            cache.move_to_end(key)
             return existing[1]
         if existing is not None:
-            _PROPAGATOR_CACHE_BYTES -= existing[2]
-        _PROPAGATOR_CACHE[key] = (stored_A, propagator, size)
-        _PROPAGATOR_CACHE_BYTES += size
-        _PROPAGATOR_CACHE.move_to_end(key)
-        while _PROPAGATOR_CACHE_BYTES > _PROPAGATOR_CACHE_LIMIT:
-            _, (_, _, removed) = _PROPAGATOR_CACHE.popitem(last=False)
-            _PROPAGATOR_CACHE_BYTES -= removed
+            _PROPAGATOR_CACHE_BYTES[name] -= existing[2]
+        cache[key] = (stored_A, propagator, size)
+        _PROPAGATOR_CACHE_BYTES[name] += size
+        cache.move_to_end(key)
+        while _PROPAGATOR_CACHE_BYTES[name] > limit:
+            _, (_, _, removed) = cache.popitem(last=False)
+            _PROPAGATOR_CACHE_BYTES[name] -= removed
     return propagator
 
 
-def realization_action(A, B, time):
-    """Compute exp(A*t) B stably, reusing exact propagators across training passes.
+def realization_action(A, B, time, *, cache_namespace="main"):
+    """Compute exp(A*t) B stably, reusing exact propagators across passes.
 
-    DAG realizations are triangular, with stationary constant rows and strictly
-    decaying remaining states. Repeated decay rates are retained, not
-    diagonalized. Infinity denotes the exact stationary limit, never a
-    training-window clamp. Caching changes only reuse: the returned action is
-    the same linear semigroup/stationary map as the uncached implementation.
+    ``cache_namespace`` changes only LRU ownership. The normal DAG and
+    Gauss--Newton path uses ``main``; large temporary candidate scans may use
+    ``candidate`` so they cannot evict the formal-network working set. Both
+    namespaces store the same exact semigroup/stationary linear maps.
     """
     t = float(time)
     if np.isnan(t) or t < 0:
@@ -116,4 +125,4 @@ def realization_action(A, B, time):
     norm = float(np.linalg.norm(A, np.inf))
     if t == 0 or norm == 0:
         return B.copy()
-    return _cached_propagator(A, t) @ B
+    return _cached_propagator(A, t, namespace=cache_namespace) @ B
