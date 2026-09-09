@@ -35,14 +35,21 @@ from .state_structure_policy import (
 _INSTALLED = False
 
 
-def _real_weight_vector(graph) -> np.ndarray | None:
-    values = []
-    for node in graph.response_nodes:
-        for source in response_sources(graph, node):
-            if source.weight.imag != 0.0:
-                return None
-            values.append(source.weight.real)
-    return np.asarray(values, dtype=float)
+def _weight_vector(graph) -> np.ndarray:
+    """Flatten every source coefficient without discarding complex components.
+
+    Gauss--Newton computes real coefficient increments because the physical
+    residual is real. Existing imaginary components are preserved exactly by
+    adding those real increments to the full complex vector.
+    """
+    return np.asarray(
+        [
+            source.weight
+            for node in graph.response_nodes
+            for source in response_sources(graph, node)
+        ],
+        dtype=np.complex128,
+    )
 
 
 def _state_linearization(graph, field, points, monitor=None):
@@ -86,17 +93,6 @@ def state_refine_weights(
 
     if not graph.response_nodes:
         return graph
-    if _real_weight_vector(graph) is None:
-        # Historical complex-weight graphs retain the established exact fallback.
-        from .max_residual_runtime import max_residual_refine_weights
-        return max_residual_refine_weights(
-            graph,
-            field,
-            points,
-            max_iterations=max_iterations,
-            monitor=monitor,
-            tolerance=tolerance,
-        )
 
     stale_steps = 0
     for _ in range(max_iterations):
@@ -128,7 +124,7 @@ def state_refine_weights(
                 J / scales, -residual, rcond=None
             )[0] / scales
 
-        current = _real_weight_vector(graph)
+        current = _weight_vector(graph)
         accepted = False
         accepted_norms = old_norms
         for _ in range(20):
@@ -369,12 +365,13 @@ def residual_driven_state_train(
                 ) + 1
                 dynamic = dynamic_response_parent(graph, parents)
                 split_possible = (
-                    dynamic is not None
+                    isinstance(dynamic, str)
                     and response_source_count(graph, dynamic) > 1
-                    and len(graph.response_nodes) + 2 <= config.max_nodes
+                    and len(graph.response_nodes) < config.max_nodes
                 )
                 # An over-dimension aggregate parent may still become admissible
-                # after an exact split, so keep such a column in the search pool.
+                # after an exact split, so never prune it when any state-budget
+                # slot remains; the exact split policy enforces the final budget.
                 if (
                     direct_dimension > config.max_realization_dimension
                     and not split_possible
