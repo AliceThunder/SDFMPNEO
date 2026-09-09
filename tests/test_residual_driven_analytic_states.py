@@ -145,6 +145,77 @@ def test_state_metadata_roundtrip_preserves_every_active_source():
         assert np.allclose(left[1], right[1], rtol=2e-12, atol=2e-13)
 
 
+def test_legacy_single_source_with_multiple_response_parents_stays_supported():
+    graph = ParametricAnalyticEvolutionGraph([0.6, 1.1], ["u"])
+    graph.add_product_response("left", 0, ("u",), 0.3)
+    graph.add_product_response("right", 1, ("u",), -0.2)
+    # Historical max_parent_responses > 1 graphs are still legal when this is a
+    # single source column. The one-dynamic-parent restriction only applies to
+    # aggregation of several source columns into one analytic state.
+    graph.add_product_response("mixed", 0, ("left", "right"), 0.07)
+
+    cloned = clone_state_graph(graph)
+    restored = load_graph_from_metadata(
+        graph.lambdas, graph.operating_names, serialize_graph(graph)
+    )
+    assert response_source_count(cloned, "mixed") == 1
+    assert response_source_count(restored, "mixed") == 1
+    for time in (0.03, 0.8, 50.0, np.inf):
+        expected = evaluate_state_stable(graph, time, a0=[0.1, -0.05], operating=[1.2])
+        for candidate in (cloned, restored):
+            actual = evaluate_state_stable(
+                candidate, time, a0=[0.1, -0.05], operating=[1.2]
+            )
+            assert np.allclose(actual[0], expected[0], rtol=3e-12, atol=3e-13)
+            assert np.allclose(actual[1], expected[1], rtol=3e-12, atol=3e-13)
+
+
+def test_fixed_research_checkpoint_roundtrip_keeps_multi_source_states(tmp_path):
+    from sdfmpneo import ResearchElectroThermalModel, demo_research_model
+
+    model = demo_research_model()
+    graph = ParametricAnalyticEvolutionGraph(
+        model.core.thermal_model.lambdas, ["u0", "u1"]
+    )
+    graph.add_response_state(
+        "heating",
+        0,
+        (
+            (("u0",), 2.0e-5),
+            (("u1",), -3.0e-5),
+            (("u0", "u1"), 1.0e-8),
+        ),
+    )
+    model.graph = graph
+    model.training_config = None
+    model.training_report = None
+
+    path = model.save(tmp_path / "multi_source_fixed.npz")
+    loaded = ResearchElectroThermalModel.load(path)
+    assert serialize_graph(loaded.graph) == serialize_graph(graph)
+    assert loaded.graph.response_source_count("heating") == 3
+
+    for time in (0.0, 0.2, 1000.0, np.inf):
+        expected = model.predict(
+            time, a0=[0.4], operating=[20.0, 8.0], diagnostics=False
+        )
+        actual = loaded.predict(
+            time, a0=[0.4], operating=[20.0, 8.0], diagnostics=False
+        )
+        assert np.allclose(
+            actual["thermal_coordinates"],
+            expected["thermal_coordinates"],
+            rtol=2e-12,
+            atol=2e-13,
+        )
+        assert np.allclose(
+            actual["thermal_derivative"],
+            expected["thermal_derivative"],
+            rtol=2e-12,
+            atol=2e-13,
+        )
+
+
 def test_package_routes_training_to_residual_driven_state_runtime():
     from sdfmpneo.training import research as training_research
     from sdfmpneo.training.residual_state_runtime import (
