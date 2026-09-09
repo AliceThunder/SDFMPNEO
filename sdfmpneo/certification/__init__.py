@@ -71,6 +71,12 @@ from .geometry_mass_residual_domain import (
     certify_geometry_mass_residual_domain,
     compose_geometry_mass_residual_physical_proof,
 )
+from .geometry_mass_providers import (
+    certify_geometry_joule_derivative_bounds,
+    certify_geometry_thermal_operator_bounds,
+    certify_trained_geometry_model_finite_domain,
+    make_uwpt_mass_residual_physical_proof_factory,
+)
 from .geometry_proof_composer import (
     GeometryDerivativeProof,
     compose_geometry_physical_lipschitz_proof,
@@ -171,6 +177,10 @@ __all__ = [
     "compose_geometry_mass_residual_physical_proof",
     "bound_geometry_mass_residual_on_box",
     "certify_geometry_mass_residual_domain",
+    "certify_geometry_thermal_operator_bounds",
+    "certify_geometry_joule_derivative_bounds",
+    "make_uwpt_mass_residual_physical_proof_factory",
+    "certify_trained_geometry_model_finite_domain",
     "GeometryDerivativeProof",
     "compose_geometry_physical_lipschitz_proof",
     "make_geometry_physical_proof_factory",

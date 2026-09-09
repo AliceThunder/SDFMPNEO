@@ -2,53 +2,42 @@
 
 ## Purpose
 
-SDF-MPNEO is solution-data-free, but finite collocation does not by itself prove uniform validity on a continuous parameter domain. The final reliability target is therefore not a statistical test-set statement. It is the deterministic physical-domain statement
+SDF-MPNEO is solution-data-free, but finite collocation does not prove uniform validity on a continuous parameter domain. The final target is therefore
 
 \[
-\sup_{(a_0,G,U,t)\in\Omega}\|R_v(a_0,G,U,t)\|_2\le \varepsilon,
+\sup_{(a_0,G,U,t)\in\Omega}\|R_v(a_0,G,U,t)\|_2\le\varepsilon,
 \qquad \varepsilon=10^{-5},
 \]
 
-where
+with
 
 \[
 R_v=\dot a_\theta-M_r(G)^{-1}\{-K_r(G)a_\theta+q_r(G,a_\theta,U)\}.
 \]
 
-The code now contains a fail-closed first-order branch-and-bound implementation for finite time intervals. It is intended to replace dependence on an ever-growing number of random validation points once all physical derivative proof obligations are available.
+The implementation is deterministic and fail-closed: unresolved proof obligations return `indeterminate`; random validation is never promoted to a continuous-domain proof.
 
-## Why certify the mass residual
+## Mass-residual formulation
 
 Define
 
 \[
-r_M=M_r(G)\dot a_\theta+K_r(G)a_\theta-q_r(G,a_\theta,U).
+r_M=M_r(G)\dot a_\theta+K_r(G)a_\theta-q_r(G,a_\theta,U)=M_r(G)R_v.
 \]
 
-Then
+If a branch proof gives
 
 \[
-r_M=M_rR_v.
-\]
-
-If a branch proof supplies
-
-\[
-\lambda_{\min}(M_r(G))\ge m_-(B)>0
-\quad\forall G\in B,
+\lambda_{\min}(M_r(G))\ge m_-(B)>0,
 \]
 
 then
 
 \[
-\|R_v\|_2\le \frac{\|r_M\|_2}{m_-(B)}.
+\|R_v\|_2\le \|r_M\|_2/m_-(B).
 \]
 
-This formulation avoids differentiating an interval-valued matrix inverse. The physical proof obligations become bounds on the thermal matrices and on the Joule source itself.
-
-## First-order branch bound
-
-For a physical parameter box
+For a physical box
 
 \[
 B=\{x:|x_i-x_i^c|\le h_i\},\qquad x=(a_0,G,U,t),
@@ -57,162 +46,199 @@ B=\{x:|x_i-x_i^c|\le h_i\},\qquad x=(a_0,G,U,t),
 the mean-value theorem gives
 
 \[
-\|r_M(x)\|_2
-\le
-\|r_M(x^c)\|_2+
+\|r_M(x)\|_2\le\|r_M(x^c)\|_2+
 \sum_i h_i\sup_{x\in B}\|\partial_i r_M(x)\|_2.
 \]
 
-The analytic DAG supplies rigorous bounds for
+The analytic DAG encloses `a`, `a_dot` and every first parameter/time derivative exactly in its polynomial-exponential algebra. Geometry derivatives are converted from normalized graph coordinates back to the physical geometry coordinates by the exact affine chain rule.
+
+For physical bounds
 
 \[
-a_\theta,\quad \dot a_\theta,\quad
-\partial_i a_\theta,\quad
-\partial_i\dot a_\theta
-\]
-
-because every compiled term has the form
-
-\[
-c\,p^\gamma t^m e^{-\rho t}.
-\]
-
-For physical geometry coordinates the graph derivative with respect to normalized geometry is converted exactly by the affine normalization chain rule.
-
-Let a branch-local physical proof provide
-
-\[
-\|M\|\le \bar M,\quad
-\|K\|\le \bar K,\quad
-\|\partial_{G_k}M\|\le M_k',\quad
-\|\partial_{G_k}K\|\le K_k',
+\|M\|\le\bar M,\quad\|K\|\le\bar K,\quad
+\|M_{,G_k}\|\le M'_k,\quad\|K_{,G_k}\|\le K'_k,
 \]
 
 and Joule bounds
 
 \[
-\|\partial_a q\|\le L_q,\quad
-\|\partial_{G_k}^{\rm explicit}q\|\le Q_{G_k},\quad
-\|\partial_{U_k}^{\rm explicit}q\|\le Q_{U_k}.
+\|q_{,a}\|\le L_q,\qquad
+\|q^{\rm explicit}_{,G_k}\|\le Q_{G_k},\qquad
+\|q^{\rm explicit}_{,U_k}\|\le Q_{U_k},
 \]
 
-Then each coordinate derivative of the mass residual is bounded by
+each coordinate obeys
 
 \[
 \|\partial_i r_M\|
 \le
-\bar M\,\|\partial_i\dot a_\theta\|
-+(\bar K+L_q)\,\|\partial_i a_\theta\|
-+E_i,
+\bar M\|\partial_i\dot a\|
++(\bar K+L_q)\|\partial_i a\|+E_i,
 \]
 
-with
+where
 
 \[
 E_i=
 \begin{cases}
-M_k'\,\|\dot a_\theta\|+K_k'\,\|a_\theta\|+Q_{G_k}, & i=G_k,\\
-Q_{U_k}, & i=U_k,\\
-0, & i\in\{a_0,t\}.
+M'_k\|\dot a\|+K'_k\|a\|+Q_{G_k},&i=G_k,\\
+Q_{U_k},&i=U_k,\\
+0,&i\in\{a_0,t\}.
 \end{cases}
 \]
 
-Therefore
+Hence
 
 \[
-\overline r_M(B)=
-\|r_M(x^c)\|+
-\sum_i h_iL_i(B)
+\overline R_v(B)=
+\frac{\|r_M(x^c)\|+\sum_i h_iL_i(B)}{m_-(B)}
 \]
 
-is a rigorous branch upper bound, and
+is the branch upper bound. The branch is permanently resolved when this is below tolerance and every physical ingredient is certified. Otherwise the coordinate with the largest contribution `h_i L_i(B)` is bisected.
+
+## Production thermal-operator theorem provider
+
+`certify_geometry_thermal_operator_bounds()` now closes the thermal geometry obligation directly from `AffineTetrahedralGeometryChart.certify_box()`.
+
+For a branch-center affine tetrahedral deformation `F=I+E`, define
 
 \[
-\boxed{
-\overline R_v(B)=\overline r_M(B)/m_-(B)
-}
+\eta_k=\sup_B\|F^{-1}\partial_{G_k}F\|_2.
 \]
 
-is the corresponding vector-residual upper bound.
-
-## Adaptive certification tree
-
-A branch is permanently resolved when
+The chart supplies a certified perturbation radius `rho<1` and directional center derivatives, giving
 
 \[
-\overline R_v(B)\le\varepsilon
+\eta_k\le \frac{\|\partial_{G_k}F\|_2}{1-\rho}.
 \]
 
-and its physical proof is certified. Otherwise the implementation splits the coordinate with the largest certified contribution
+P1 mass transforms only by `det(F)`, so
 
 \[
-h_iL_i(B).
+|\partial_{G_k}M|\preceq3\eta_k M.
 \]
 
-Thus increasing proof resolution is not the same as increasing a validation sample count. The algorithm refines a mathematical enclosure only where the current proof is too loose.
+P1 stiffness transforms as `det(F)F^{-1}F^{-T}`, giving
 
-Possible outcomes are:
+\[
+|\partial_{G_k}K|\preceq5\eta_k K.
+\]
 
-- `certified`: every branch has a certified upper bound below tolerance;
+The existing whole-branch P1 mass/stiffness form ratios then produce certified `m_-`, `||M||`, `||K||`, `||M_,G||` and `||K_,G||`. Projection to the fixed shared thermal basis preserves these quadratic-form inequalities.
+
+## Production reduced-EM/Joule theorem provider
+
+`certify_geometry_joule_derivative_bounds()` closes the nonlinear Joule obligation in the fixed shared reduced EM space used by the training residual itself.
+
+At the branch center, let
+
+\[
+H_c=V^H H V,
+\]
+
+where `H=K_em+D_em` is the physical A-psi energy metric. The affine Nedelec chart supplies whole-branch curl and conductive-mass ratios. The constitutive theorem `_material_energy_ratios()` supplies certified thermal conductivity ratios and directional conductivity derivatives over the induced thermal-state box. Combining them gives
+
+\[
+\mu H_c\preceq H(G,a)\preceq\nu H_c.
+\]
+
+Physical A-psi coercivity remains
+
+\[
+|x^HAx|\ge\beta x^HHx,\qquad\beta\ge1/\sqrt2.
+\]
+
+Therefore source dual-energy bounds give a branch-wide reduced EM state bound without solution snapshots.
+
+For each geometry direction, Nedelec curl-curl and covariant mass forms satisfy the conservative differential estimate
+
+\[
+\|A_{,G_k}\|_{H_c}\le5\eta_k\nu.
+\]
+
+The same affine factor controls each reduced loss form. Thermal derivatives use the certified constitutive directional bounds.
+
+### Terminal-current geometry dependence
+
+Solid-terminal RHS vectors are normalized P1 surface-area loads. For one transported terminal surface,
+
+\[
+|\partial_{G_k}A_f|\le2\eta_k A_f,
+\]
+
+and normalization gives
+
+\[
+|\partial_{G_k}w_i|\le4\eta_k w_i.
+\]
+
+A positive-minus-negative two-terminal port column therefore has Euclidean derivative norm at most `8 eta_k`. Projection through the fixed reduced basis gives a certified reduced RHS geometry derivative. Thus explicit `dq/dG` includes both operator/loss deformation and terminal-source deformation; no term is silently omitted.
+
+The resulting provider returns certified bounds for
+
+\[
+\|dq/da\|_2,\qquad
+\|\partial^{\rm explicit}_{G_k}q\|_2,\qquad
+\|\partial^{\rm explicit}_{U_k}q\|_2.
+\]
+
+No finite difference or sampled Jacobian maximum is used by the proof.
+
+## Public API
+
+The low-level continuous certifier remains in `geometry_mass_residual_domain.py`:
+
+- `GeometryThermalOperatorBounds`
+- `GeometryJouleDerivativeBounds`
+- `GeometryMassResidualPhysicalProof`
+- `bound_geometry_mass_residual_on_box`
+- `certify_geometry_mass_residual_domain`
+
+Production theorem providers are in `geometry_mass_providers.py`:
+
+- `certify_geometry_thermal_operator_bounds(model, box)`
+- `certify_geometry_joule_derivative_bounds(model, box)`
+- `make_uwpt_mass_residual_physical_proof_factory(model)`
+- `certify_trained_geometry_model_finite_domain(model, work_budget=...)`
+
+The final convenience function automatically reads the saved initial-condition range, physical geometry chart, current range, time horizon and residual tolerance from a trained `GeometryResearchModel`.
+
+## Status outcomes
+
+- `certified`: every continuous branch has a theorem-derived upper bound below tolerance;
 - `violated`: an explicitly evaluated branch center already exceeds tolerance;
-- `indeterminate`: the work budget is exhausted, a proof provider is uncertified, or a required bound cannot be constructed.
+- `indeterminate`: the branch budget is exhausted or a theorem bound cannot be constructed.
 
-There is deliberately no fallback from `indeterminate` to random sampling.
-
-## Current implementation
-
-The public API is in `sdfmpneo.certification.geometry_mass_residual_domain`:
-
-- `GeometryThermalOperatorBounds`;
-- `GeometryJouleDerivativeBounds`;
-- `GeometryMassResidualPhysicalProof`;
-- `compose_geometry_mass_residual_physical_proof`;
-- `bound_geometry_mass_residual_on_box`;
-- `certify_geometry_mass_residual_domain`.
-
-The public branch coordinates are physical `[a0, G, U, t]`. The implementation converts physical geometry to the normalized graph coordinates internally and applies the exact derivative scale factor.
-
-## What is already rigorous and what remains
-
-The branch-and-bound logic, analytic DAG derivative enclosure, mass-to-vector residual conversion, and fail-closed proof composition are implemented.
-
-The production UWPT model still needs theorem-derived branch providers for two physical pieces before a full 10-D geometry certificate can close automatically:
-
-1. spectral-norm bounds for `M_r(G)`, `K_r(G)` and their geometry derivatives on each branch;
-2. continuous reduced-EM/Joule bounds for `dq/da`, explicit `dq/dG`, and explicit `dq/dU` on the induced thermal-state domain.
-
-These must come from geometry/energy/constitutive analysis, not finite differences or sampled maxima. Until both providers mark their results certified, the domain result remains `indeterminate`.
-
-The existing whole-box P1 mass/stiffness form ratios and physical-energy EM machinery are the intended ingredients for these providers.
+`indeterminate` never falls back to a statistical claim.
 
 ## Finite time and steady state
 
-The first implementation certifies finite intervals
+The current continuous residual certifier covers
 
 \[
-0\le t_{\min}\le t\le t_{\max}<\infty.
+0\le t\le T<\infty.
 \]
 
-It intentionally rejects `time_upper=inf`. The exact steady-state query `t=+inf` is a separate proof obligation and should receive its own stationary branch certificate rather than being silently identified with a very large finite time.
+It explicitly rejects `time_upper=inf`. Exact stationary certification remains a separate proof obligation; a large finite time is not silently identified with `t=+inf`.
 
 ## Relationship to training
 
-The desired long-term workflow is
+The intended workflow is
 
 \[
 \text{residual-grown training}
 \rightarrow
 \text{continuous-domain certification}
 \rightarrow
-\text{refine only an unresolved/worst proof box if necessary}.
+\text{refine only unresolved/worst proof boxes}.
 \]
 
-The current worst-residual exchange search remains useful as a numerical counterexample finder while the complete physical proof providers are being finished. It is evidence and training guidance, not the final certification mechanism.
+Worst-residual exchange remains useful as a counterexample finder and training accelerator, but it is no longer the theoretical validity criterion.
 
 ## Claim language
 
 A suitable final positioning is:
 
-> SDF-MPNEO replaces test-set statistical generalization as the final validity criterion with continuous physical-domain residual certification. Training remains numerical, while the accepted surrogate is required to satisfy a deterministic governing-residual bound over the declared parameter domain.
+> SDF-MPNEO replaces test-set statistical generalization as the final validity criterion with continuous physical-domain residual certification. Training remains numerical, while acceptance is based on a deterministic governing-residual bound over the declared parameter domain.
 
-Do not claim a full-domain UWPT residual certificate until all unresolved boxes are zero and every physical proof component is certified.
+A full-domain UWPT claim is made only when `status == "certified"` and `unresolved_boxes == 0` for the declared finite-time domain.
