@@ -87,12 +87,14 @@ from .training.late_stage_runtime import (
 )
 from .training.late_stage_batch import install_late_stage_batching
 from .training.node_compile_runtime import install_node_only_training_compile
+from .training.coverage_runtime import install_high_dimensional_collocation
 
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
 install_node_only_training_compile()
+install_high_dimensional_collocation()
 
 # Export the trainer after runtime installation so callers receive the selective,
 # structurally accelerated implementation rather than a historical function object.
