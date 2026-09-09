@@ -91,12 +91,16 @@ def test_geometry_full_em_radau_validation_is_independent_and_exact_for_zero_dri
 def test_single_graph_checkpoint_unseen_geometry_and_no_online_reassembly(family,tmp_path,monkeypatch):
     m=family
     graph=ParametricAnalyticEvolutionGraph(m.thermal_model.lambdas,['scale','current_0','current_1'])
-    graph.add_product_response('geometric_heating',0,['scale','current_0','current_0'],.01)
+    graph.add_response_state('geometric_heating',0,(
+        (('scale','current_0','current_0'),.01),
+        (('scale','current_1','current_1'),.004),
+    ))
     m.graph=graph
     m.training_config=m.training_domain(ResearchTrainingConfig((0.,),(2.,),(0.,0.),(30.,30.),1.,1e-5))
     path=m.save(tmp_path/'family.npz')
     loaded=ResearchElectroThermalModel.load(path)
     assert isinstance(loaded,GeometryResearchModel)
+    assert loaded.graph.response_source_count('geometric_heating') == 2
     assert np.array_equal(loaded.reference.em.V,m.reference.em.V)
     assert loaded.em_basis_report==m.em_basis_report
     expected=m.predict(1000.,geometry=[1.137],a0=[.3],operating=[20.,8.],diagnostics=False)
