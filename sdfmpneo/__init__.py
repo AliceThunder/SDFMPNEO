@@ -86,11 +86,13 @@ from .training.late_stage_runtime import (
     install_late_stage_training,
 )
 from .training.late_stage_batch import install_late_stage_batching
+from .training.node_compile_runtime import install_node_only_training_compile
 
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
+install_node_only_training_compile()
 
 # Export the trainer after runtime installation so callers receive the selective,
 # structurally accelerated implementation rather than a historical function object.
