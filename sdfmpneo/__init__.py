@@ -76,11 +76,24 @@ __all__ = [
 from .research import ResearchElectroThermalModel, demo_research_model, model_from_config
 from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
 from .training.parallel_runtime import install_training_acceleration
+from .training.adaptive_runtime import (
+    ResearchTrainingContinuation,
+    install_adaptive_training,
+    install_geometry_continuation_persistence,
+)
 
 install_training_acceleration()
+install_adaptive_training()
+
+# Export the trainer after runtime installation so callers receive the selective
+# adaptive-collocation implementation rather than the historical bulk-refinement
+# function object imported above.
+from .training.research import train_research_graph as train_research_graph
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
-            "demo_research_model", "model_from_config", "train_research_graph"]
+            "ResearchTrainingContinuation", "demo_research_model", "model_from_config",
+            "train_research_graph"]
 
 from .geometry_research import GeometryResearchModel, geometry_model_from_config
+install_geometry_continuation_persistence(GeometryResearchModel)
 __all__ += ["GeometryResearchModel", "geometry_model_from_config"]
