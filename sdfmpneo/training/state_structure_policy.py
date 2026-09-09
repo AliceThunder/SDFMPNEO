@@ -11,7 +11,11 @@ from sdfmpneo.analytic.state_graph import (
     split_response_source,
 )
 from sdfmpneo.analytic.state_realization import compile_state_realization
-from .max_residual_runtime import hard_point_weights, max_first_accept
+from .max_residual_runtime import (
+    hard_point_weights,
+    max_first_accept,
+    weighted_score_parent_batch,
+)
 
 
 @dataclass(frozen=True)
@@ -27,11 +31,13 @@ def residual_norms(records) -> np.ndarray:
     )
 
 
-def dynamic_response_parent(graph, parents) -> str | None:
+def dynamic_response_parent(graph, parents):
     names = {node.name for node in graph.response_nodes}
     dynamic = [name for name in parents if name in names]
     if len(dynamic) > 1:
-        return None
+        # Historical graphs may have a larger response-parent budget. Keep that
+        # family distinct and never merge it with the no-dynamic-parent family.
+        return tuple(dynamic)
     return None if not dynamic else dynamic[0]
 
 
@@ -115,13 +121,14 @@ def direct_actions(
         return []
 
     existing = family_nodes(graph, target, parents)
-    actions = []
     if existing:
-        # Same dynamic role: enrich, do not grow a redundant state merely because
-        # another source column is required.
+        actions = []
         for node in existing:
             trial = clone_state_graph(graph)
-            trial.enrich_response_state(node.name, parents, weight)
+            try:
+                trial.enrich_response_state(node.name, parents, weight)
+            except ValueError:
+                continue
             actions.append(
                 StructuralAction(
                     "enrich",
@@ -149,102 +156,112 @@ def direct_actions(
     ]
 
 
-def split_actions(graph, target, parents, weight, *, config, record):
+def _split_proposals(
+    graph,
+    records,
+    config,
+    target,
+    parents,
+    point_weights,
+    *,
+    monitor=None,
+):
+    """Return exact split graphs with candidate-specific tangent weights."""
+    from . import late_stage_runtime as late
+
     dynamic = dynamic_response_parent(graph, parents)
-    if dynamic is None or response_source_count(graph, dynamic) < 2:
+    if not isinstance(dynamic, str) or response_source_count(graph, dynamic) < 2:
         return []
 
-    actions = []
+    proposals = []
     for source_index in range(response_source_count(graph, dynamic)):
         split_name = next_state_name(graph, prefix=f"{dynamic}_split")
         try:
             split_graph = split_response_source(
                 graph, dynamic, source_index, split_name
             )
-            # Exact split propagation can clone several descendants. Those are
-            # real dynamic states and therefore consume the existing state budget.
             if len(split_graph.response_nodes) >= int(config.max_nodes):
                 continue
             split_parents = replace_parent_once(parents, dynamic, split_name)
-            candidates = direct_actions(
-                split_graph,
-                target,
-                split_parents,
-                weight,
-                max_nodes=config.max_nodes,
-                max_realization_dimension=config.max_realization_dimension,
-                record=record,
-            )
-            for action in candidates:
-                actions.append(
-                    StructuralAction(
-                        "split+" + action.kind,
-                        action.graph,
-                        {
-                            **action.detail,
-                            "split_state": dynamic,
-                            "split_source_index": source_index,
-                            "split_child": split_name,
-                            "split_added_states": (
-                                len(split_graph.response_nodes)
-                                - len(graph.response_nodes)
-                            ),
-                        },
-                    )
+            compiled = [
+                compile_state_realization(
+                    split_graph, a0=record.initial, operating=record.u
                 )
-        except (ValueError, KeyError, FloatingPointError):
+                for record in records
+            ]
+            plan = late._parent_plan(split_graph, split_parents)
+            inner, norm2 = weighted_score_parent_batch(
+                split_graph,
+                records,
+                compiled,
+                [plan],
+                point_weights=point_weights,
+                monitor=monitor,
+            )[0]
+            if norm2[target] <= 0 or not np.isfinite(
+                norm2[target] + inner[target]
+            ):
+                continue
+            split_weight = -inner[target] / norm2[target]
+            proposals.append(
+                (
+                    split_graph,
+                    tuple(split_parents),
+                    float(split_weight),
+                    {
+                        "split_state": dynamic,
+                        "split_source_index": source_index,
+                        "split_child": split_name,
+                        "split_added_states": (
+                            len(split_graph.response_nodes)
+                            - len(graph.response_nodes)
+                        ),
+                    },
+                )
+            )
+        except (ValueError, KeyError, FloatingPointError, np.linalg.LinAlgError):
             continue
-    return actions
+    return proposals
 
 
-def candidate_actions(graph, target, parents, weight, *, config, record):
-    return direct_actions(
-        graph,
-        target,
-        parents,
-        weight,
-        max_nodes=config.max_nodes,
-        max_realization_dimension=config.max_realization_dimension,
-        record=record,
-    ) + split_actions(
-        graph, target, parents, weight, config=config, record=record
-    )
-
-
-def select_candidate_action(
-    graph,
+def _best_line_search_action(
+    base_graph,
     field,
     points,
-    records,
+    old_records,
     config,
     target,
     parents,
     initial_weight,
+    frozen_weights,
     *,
+    prefix=None,
+    detail=None,
     monitor=None,
 ):
-    """Choose Enrich/Grow/Split by actual max-residual improvement.
-
-    Candidate tangent score only proposes a column. The structural action itself
-    is selected by evaluating the true nonlinear residual, so no K or empirical
-    enrich-vs-grow threshold is introduced.
-    """
     from . import research as r
 
-    frozen_weights = hard_point_weights(records, config.residual_tolerance)
-    old_norms = residual_norms(records)
+    old_norms = residual_norms(old_records)
+    sample_record = old_records[0]
     weight = float(initial_weight)
-    sample_record = records[0]
     for _ in range(24):
         best = None
-        for action in candidate_actions(
-            graph,
+        actions = direct_actions(
+            base_graph,
             target,
             parents,
             weight,
-            config=config,
+            max_nodes=config.max_nodes,
+            max_realization_dimension=config.max_realization_dimension,
             record=sample_record,
-        ):
+        )
+        for action in actions:
+            if prefix is not None:
+                action = StructuralAction(
+                    prefix + "+" + action.kind,
+                    action.graph,
+                    {**(detail or {}), **action.detail},
+                )
             try:
                 trial_records = r._evaluate(
                     action.graph, field, points, monitor=monitor
@@ -268,6 +285,75 @@ def select_candidate_action(
             if best is None or key < best[0]:
                 best = (key, action, trial_records)
         if best is not None:
-            return best[1], best[2]
+            return best
         weight *= 0.5
-    return None, None
+    return None
+
+
+def select_candidate_action(
+    graph,
+    field,
+    points,
+    records,
+    config,
+    target,
+    parents,
+    initial_weight,
+    *,
+    monitor=None,
+):
+    """Choose Enrich/Grow/Split using actual nonlinear max residual.
+
+    Direct and split branches each receive their own exact residual-tangent
+    coefficient before line search. Therefore Split is not biased by the tangent
+    of the pre-split aggregate parent, and no empirical structural threshold or
+    fixed K is needed.
+    """
+    frozen_weights = hard_point_weights(records, config.residual_tolerance)
+    candidates = []
+
+    direct = _best_line_search_action(
+        graph,
+        field,
+        points,
+        records,
+        config,
+        target,
+        parents,
+        initial_weight,
+        frozen_weights,
+        monitor=monitor,
+    )
+    if direct is not None:
+        candidates.append(direct)
+
+    for split_graph, split_parents, split_weight, detail in _split_proposals(
+        graph,
+        records,
+        config,
+        target,
+        parents,
+        frozen_weights,
+        monitor=monitor,
+    ):
+        candidate = _best_line_search_action(
+            split_graph,
+            field,
+            points,
+            records,
+            config,
+            target,
+            split_parents,
+            split_weight,
+            frozen_weights,
+            prefix="split",
+            detail=detail,
+            monitor=monitor,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+
+    if not candidates:
+        return None, None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1], candidates[0][2]
