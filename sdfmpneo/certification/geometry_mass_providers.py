@@ -315,3 +315,52 @@ def make_uwpt_mass_residual_physical_proof_factory(model):
         )
 
     return factory
+
+
+def certify_trained_geometry_model_finite_domain(
+    model,
+    *,
+    work_budget: int,
+    tolerance: float | None = None,
+    time_upper: float | None = None,
+):
+    """Certify the saved training box with the production UWPT theorem providers.
+
+    This is the convenience entry point for a trained ``GeometryResearchModel``.
+    Geometry is converted back to its physical chart bounds; the current range is
+    taken from the non-geometry tail of ``training_config.operating_*``.  The
+    first certificate remains finite-time only by design.
+    """
+
+    from .geometry_mass_residual_domain import certify_geometry_mass_residual_domain
+
+    config = model.training_config
+    if model.graph is None or config is None:
+        raise ValueError("trained graph and training configuration are required")
+    ng = len(model.geometry_names)
+    nu = int(model.current_matrix.shape[1])
+    operating_lower = np.asarray(config.operating_lower, dtype=float)
+    operating_upper = np.asarray(config.operating_upper, dtype=float)
+    if operating_lower.shape != (ng + nu,) or operating_upper.shape != operating_lower.shape:
+        raise ValueError("saved geometry training domain does not match model dimensions")
+    current_lower = operating_lower[ng:]
+    current_upper = operating_upper[ng:]
+    eps = float(config.residual_tolerance if tolerance is None else tolerance)
+    tmax = float(config.time_horizon if time_upper is None else time_upper)
+    if not np.isfinite(tmax) or tmax < 0.0:
+        raise ValueError("finite non-negative time_upper is required")
+
+    return certify_geometry_mass_residual_domain(
+        model,
+        initial_lower=np.asarray(config.initial_lower, dtype=float),
+        initial_upper=np.asarray(config.initial_upper, dtype=float),
+        geometry_lower=np.asarray(model.lower, dtype=float),
+        geometry_upper=np.asarray(model.upper, dtype=float),
+        operating_lower=current_lower,
+        operating_upper=current_upper,
+        time_lower=0.0,
+        time_upper=tmax,
+        tolerance=eps,
+        work_budget=int(work_budget),
+        physical_proof_factory=make_uwpt_mass_residual_physical_proof_factory(model),
+    )
