@@ -38,6 +38,8 @@ def install_analytic_state_graph() -> None:
 
     from .parametric import ParametricAnalyticEvolutionGraph
     from . import parametric_realization as pr
+    from . import operator as operator_module
+    from . import geometry_operator as geometry_operator_module
     import sdfmpneo.analytic as analytic_api
     from sdfmpneo.training import research as training_research
     import sdfmpneo.research as research_module
@@ -86,12 +88,15 @@ def install_analytic_state_graph() -> None:
     )
     analytic_api.compile_parametric_realization = compile_state_realization
     analytic_api.evaluate_parametric_stable = evaluate_state_stable
+    analytic_api.AnalyticStateSource = AnalyticStateSource
+    operator_module.evaluate_parametric_stable = evaluate_state_stable
+    geometry_operator_module.evaluate_parametric_stable = evaluate_state_stable
     training_research.compile_parametric_realization = compile_state_realization
     training_research.evaluate_parametric_stable = evaluate_state_stable
     training_research._clone = clone_state_graph
     research_module.evaluate_parametric_stable = evaluate_state_stable
 
-    # Parametric residual imported its evaluator by value before installation.
+    # Modules below imported the evaluator by value before installation.
     try:
         from sdfmpneo.training import parametric_residual
         parametric_residual.evaluate_parametric_stable_with_jacobians = (
@@ -99,6 +104,18 @@ def install_analytic_state_graph() -> None:
         )
     except ImportError:
         pass
+
+    for module_name in (
+        "sdfmpneo.certification.geometry_mass_providers",
+        "sdfmpneo.certification.geometry_mass_residual_domain",
+        "sdfmpneo.certification.geometry_dynamics",
+    ):
+        try:
+            module = __import__(module_name, fromlist=["evaluate_parametric_stable"])
+            if hasattr(module, "evaluate_parametric_stable"):
+                module.evaluate_parametric_stable = evaluate_state_stable
+        except ImportError:
+            pass
 
     install_state_persistence(research_module.ResearchElectroThermalModel)
     _INSTALLED = True
