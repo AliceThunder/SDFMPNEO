@@ -114,11 +114,33 @@ def compile_state_realization(graph, *, a0, operating):
     )
 
 
-def evaluate_state_stable(graph, t, *, a0, operating):
-    a, da, _, _ = evaluate_state_stable_with_jacobians(
-        graph, t, a0=a0, operating=operating, derivative_kind=None
-    )
+def _evaluate_values(graph, nodes, t):
+    a = np.zeros(graph.n_modes)
+    da = np.zeros(graph.n_modes)
+    for mode, name in enumerate(graph.initial_names):
+        realization = nodes[name]
+        values, slopes = realization_observation_action(
+            realization.A, realization.b, realization.c, float(t)
+        )
+        a[mode] += float(np.real(values))
+        da[mode] += float(np.real(slopes))
+    for node in graph.response_nodes:
+        realization = nodes[node.name]
+        values, slopes = realization_observation_action(
+            realization.A, realization.b, realization.c, float(t)
+        )
+        a[node.target_mode] += float(np.real(values))
+        da[node.target_mode] += float(np.real(slopes))
     return a, da
+
+
+def evaluate_state_stable(graph, t, *, a0, operating):
+    if t < 0 or np.isnan(t):
+        raise ValueError("time must be non-negative or positive infinity")
+    nodes, _, _, _ = _compile_nodes_with_derivatives(
+        graph, a0=a0, operating=operating, derivative_kind=None
+    )
+    return _evaluate_values(graph, nodes, float(t))
 
 
 def evaluate_state_stable_with_jacobians(
