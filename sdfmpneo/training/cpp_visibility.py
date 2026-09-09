@@ -16,7 +16,9 @@ def install_cpp_training_visibility() -> None:
     from . import late_stage_runtime as late
     from . import research as training_research
     from .parallel_runtime import training_parallelism
+    from .native_thread_probe import observed_native_threads
     from ..cpp_training_backend import backend_info
+    from ..cpp_dag_backend import backend_info as dag_backend_info
 
     original_prepare = late._prepare_working_set
     original_evaluate = training_research._evaluate
@@ -26,27 +28,40 @@ def install_cpp_training_visibility() -> None:
         if not hasattr(field, "prepare_training_contexts"):
             return original_prepare(field, *point_sets)
         if not getattr(field, "_sdfmpneo_cpp_status_reported", False):
-            # Build/load exactly once before worker fan-out, so threads never race
-            # through compiler discovery or the backend build lock.
+            # Build/load both native libraries exactly once before worker fan-out.
             info = backend_info(auto_build=True)
+            dag = dag_backend_info(auto_build=True)
             parallel = training_parallelism()
             if info["available"]:
                 print(
-                    "C++训练后端已启用："
+                    "C++物理训练后端已启用："
                     f"{info['version']}，OpenMP={'是' if info['openmp'] else '否'}，"
                     f"point workers={parallel['point_workers']}，"
-                    f"C++内部线程={info['threads']}",
+                    f"单点C++线程={info['threads']}",
                     flush=True,
                 )
             else:
                 print(
-                    "C++训练后端不可用，回退Python实现："
+                    "C++物理训练后端不可用，回退Python实现："
                     f"{info['error']}；point workers={parallel['point_workers']}",
                     flush=True,
                 )
-            # The geometry family is topology preserving. Build the reference
-            # topology once before parallel context construction so every worker
-            # reuses the same edge/face/incidence/tree-cotree objects.
+            if dag["available"]:
+                observed = observed_native_threads(dag["native_threads"])
+                print(
+                    "C++解析DAG/Gauss-Newton后端已启用："
+                    f"OpenMP={'是' if dag['openmp'] else '否'}，"
+                    f"请求native threads={dag['native_threads']}，"
+                    f"实际OpenMP线程={observed}；"
+                    "批量DAG/Jacobian/GN阶段直接使用原生OS线程",
+                    flush=True,
+                )
+            else:
+                print(
+                    "C++解析DAG/Gauss-Newton后端不可用，回退Python实现："
+                    f"{dag['error']}",
+                    flush=True,
+                )
             chart = getattr(field, "chart", None)
             if chart is not None and getattr(chart, "_sdfmpneo_topology_mesh", None) is None:
                 try:

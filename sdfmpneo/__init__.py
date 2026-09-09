@@ -80,6 +80,7 @@ from .training.late_stage_batch import install_late_stage_batching
 from .training.cpp_visibility import install_cpp_training_visibility
 from .training.node_compile_runtime import install_node_only_training_compile
 from .training.observation_runtime import install_observation_training_acceleration
+from .training.cpp_dag_runtime import install_native_dag_training
 from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
@@ -91,9 +92,12 @@ install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
-install_cpp_training_visibility()
 install_node_only_training_compile()
 install_observation_training_acceleration()
+# Native DAG/GN replaces the remaining Python response/Jacobian hot loops.
+# Install timing wrappers afterwards so reported timings cover the native path.
+install_native_dag_training()
+install_cpp_training_visibility()
 install_high_dimensional_collocation()
 
 # Export the trainer after runtime installation so callers receive the selective,

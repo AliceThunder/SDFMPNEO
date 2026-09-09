@@ -7,5 +7,6 @@ dist/
 .venv/
 results/
 sdfmpneo/_cpp_training_build/
+sdfmpneo/_cpp_dag_build/
 
 examples/configs/*.msh
