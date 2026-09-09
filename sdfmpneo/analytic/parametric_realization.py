@@ -1,9 +1,82 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from .long_time import realization_action
 
 from .realization import AnalyticRealization, CompiledRealizationGraph
+
+
+@dataclass(frozen=True)
+class CompiledParametricNodeGraph:
+    """Lightweight exact DAG compile for hot paths that never use mode direct sums."""
+    lambdas: np.ndarray
+    node_realizations: dict[str, AnalyticRealization]
+    source_realizations: dict[str, AnalyticRealization]
+
+
+def _validated_inputs(graph, a0, operating):
+    initial = np.asarray(a0, dtype=float)
+    u = np.asarray(operating, dtype=float)
+    if initial.shape != (graph.n_modes,):
+        raise ValueError("initial coordinate dimension mismatch")
+    if u.shape != (len(graph.operating_names),):
+        raise ValueError("operating parameter dimension mismatch")
+    return initial, u
+
+
+def _compile_value_components(graph, *, a0, operating, build_modes):
+    initial, u = _validated_inputs(graph, a0, operating)
+    nodes: dict[str, AnalyticRealization] = {}
+    sources: dict[str, AnalyticRealization] = {}
+    modes = [AnalyticRealization.zero() for _ in range(graph.n_modes)] if build_modes else None
+
+    for i, name in enumerate(graph.initial_names):
+        realization = AnalyticRealization.decay(graph.lambdas[i], initial[i])
+        nodes[name] = realization
+        if modes is not None:
+            modes[i] = modes[i].add(realization)
+
+    for j, name in enumerate(graph.operating_names):
+        nodes[name] = AnalyticRealization.constant(u[j])
+
+    for node in graph.response_nodes:
+        source = AnalyticRealization.constant(node.weight)
+        for parent in node.parents:
+            source = source.product(nodes[parent])
+        response = source.response(graph.lambdas[node.target_mode])
+        sources[node.name] = source
+        nodes[node.name] = response
+        if modes is not None:
+            modes[node.target_mode] = modes[node.target_mode].add(response)
+
+    return nodes, sources, modes
+
+
+def _compile_value_only(graph, *, a0, operating):
+    """Instantiate the exact full DAG without derivative arrays that are not requested."""
+    nodes, sources, modes = _compile_value_components(
+        graph, a0=a0, operating=operating, build_modes=True
+    )
+    return CompiledRealizationGraph(
+        lambdas=np.asarray(graph.lambdas, dtype=float).copy(),
+        node_realizations=nodes,
+        source_realizations=sources,
+        mode_realizations=tuple(modes),
+    )
+
+
+def compile_parametric_nodes(graph, *, a0: np.ndarray, operating: np.ndarray) -> CompiledParametricNodeGraph:
+    """Compile only node/source realizations for residual, candidate and sparse-Jacobian hot paths."""
+    nodes, sources, _ = _compile_value_components(
+        graph, a0=a0, operating=operating, build_modes=False
+    )
+    return CompiledParametricNodeGraph(
+        lambdas=np.asarray(graph.lambdas, dtype=float).copy(),
+        node_realizations=nodes,
+        source_realizations=sources,
+    )
 
 
 def _compile_with_operating_derivatives(graph, *, a0, operating, weight_derivatives=False):
@@ -15,13 +88,7 @@ def _compile_with_operating_derivatives(graph, *, a0, operating, weight_derivati
     rates require no near-resonance threshold.
     """
 
-    initial = np.asarray(a0, dtype=float)
-    u = np.asarray(operating, dtype=float)
-    if initial.shape != (graph.n_modes,):
-        raise ValueError("initial coordinate dimension mismatch")
-    if u.shape != (len(graph.operating_names),):
-        raise ValueError("operating parameter dimension mismatch")
-
+    initial, u = _validated_inputs(graph, a0, operating)
     nd = len(graph.response_nodes) if weight_derivatives else u.size
     nodes: dict[str, AnalyticRealization] = {}
     derivatives = {}
@@ -69,7 +136,7 @@ def _compile_with_operating_derivatives(graph, *, a0, operating, weight_derivati
 
 
 def compile_parametric_realization(graph, *, a0: np.ndarray, operating: np.ndarray) -> CompiledRealizationGraph:
-    return _compile_with_operating_derivatives(graph, a0=a0, operating=operating)[0]
+    return _compile_value_only(graph, a0=a0, operating=operating)
 
 
 def evaluate_parametric_stable_with_jacobians(graph, t, *, a0, operating, weight_derivatives=False):
@@ -113,7 +180,7 @@ def evaluate_parametric_stable(
 ) -> tuple[np.ndarray, np.ndarray]:
     if t < 0 or np.isnan(t):
         raise ValueError('time must be non-negative or positive infinity')
-    compiled = compile_parametric_realization(graph, a0=a0, operating=operating)
+    compiled = compile_parametric_nodes(graph, a0=a0, operating=operating)
     a = np.zeros(graph.n_modes)
     da = np.zeros_like(a)
     for mode, name in enumerate(graph.initial_names):

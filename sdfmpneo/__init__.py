@@ -81,13 +81,21 @@ from .training.adaptive_runtime import (
     install_adaptive_training,
     install_geometry_continuation_persistence,
 )
+from .training.late_stage_runtime import (
+    install_geometry_working_set_cache,
+    install_late_stage_training,
+)
+from .training.late_stage_batch import install_late_stage_batching
+from .training.node_compile_runtime import install_node_only_training_compile
 
 install_training_acceleration()
 install_adaptive_training()
+install_late_stage_training()
+install_late_stage_batching()
+install_node_only_training_compile()
 
-# Export the trainer after runtime installation so callers receive the selective
-# adaptive-collocation implementation rather than the historical bulk-refinement
-# function object imported above.
+# Export the trainer after runtime installation so callers receive the selective,
+# structurally accelerated implementation rather than a historical function object.
 from .training.research import train_research_graph as train_research_graph
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
@@ -96,4 +104,5 @@ __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTr
 
 from .geometry_research import GeometryResearchModel, geometry_model_from_config
 install_geometry_continuation_persistence(GeometryResearchModel)
+install_geometry_working_set_cache(GeometryResearchModel)
 __all__ += ["GeometryResearchModel", "geometry_model_from_config"]
