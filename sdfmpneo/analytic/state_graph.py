@@ -113,7 +113,12 @@ def _validate_sources(graph, target_mode: int, sources) -> tuple[AnalyticStateSo
         missing = [parent for parent in source.parents if parent not in known]
         if missing:
             raise ValueError(f"unknown parent nodes: {missing}")
-    source_family_parent(graph, normalized)
+    # Historical single-source graphs may legitimately use the old
+    # max_parent_responses > 1 capability.  Preserve that representation exactly;
+    # the one-dynamic-parent rule is only required when several source columns
+    # are aggregated into one independently addressable analytic state.
+    if len(normalized) > 1:
+        source_family_parent(graph, normalized)
     return normalized
 
 
