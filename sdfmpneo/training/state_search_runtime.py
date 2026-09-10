@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import replace
 
 import numpy as np
 
@@ -455,7 +456,34 @@ def install_geometry_seed_coalescing(geometry_model_cls) -> None:
     geometry_model_cls._sdfmpneo_scalar_seed_graph = original
 
     def seed_graph(self, graph, monitor=None):
-        seeded = original(self, graph, monitor=monitor)
+        # The legacy geometry seed used max_nodes to cap scalar source columns.
+        # In the state model max_nodes budgets independent dynamics, not source
+        # cardinality. Temporarily raise only that legacy intermediate budget so
+        # all equation-derived source prefixes can participate in its existing
+        # residual-based stale-batch selection, then restore the real state
+        # budget before returning the coalesced graph.
+        config = self.training_config
+        if config is None:
+            return coalesce_unreferenced_state_families(
+                original(self, graph, monitor=monitor)
+            )
+        n_geometry = len(self.geometry_names)
+        n_modes = graph.n_modes
+        n_rhs_columns = 1 + self.current_matrix.shape[1]
+        source_upper = (
+            (n_geometry + 1)
+            * n_modes
+            * (n_rhs_columns * (n_rhs_columns + 1) // 2 + n_modes)
+        )
+        legacy_budget = max(
+            int(config.max_nodes),
+            int(np.ceil(4.0 * max(1, source_upper) / 3.0)) + 8,
+        )
+        self.training_config = replace(config, max_nodes=legacy_budget)
+        try:
+            seeded = original(self, graph, monitor=monitor)
+        finally:
+            self.training_config = config
         return coalesce_unreferenced_state_families(seeded)
 
     geometry_model_cls.seed_graph = seed_graph
