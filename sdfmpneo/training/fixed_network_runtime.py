@@ -24,6 +24,33 @@ def _setting(config, attr, env, default):
     return int(os.environ.get(env, default))
 
 
+def _setting_float(config, attr, env, default):
+    value = getattr(config, attr, None)
+    if value is not None:
+        return float(value)
+    return float(os.environ.get(env, default))
+
+
+def _capacity_setting(config, new_attr, legacy_attr, env, default):
+    value = getattr(config, new_attr, None)
+    if value is None:
+        value = getattr(config, legacy_attr, None)
+    if value is not None:
+        return int(value)
+    return int(os.environ.get(env, default))
+
+
+def _default_capacity(n_modes, n_operating):
+    """Problem-size dependent safety caps; effective capacity is pruned later."""
+    input_dimension = 1 + int(n_modes) + int(n_operating)
+    depth = 5 if n_modes <= 8 else 4
+    channels = 2
+    quadratic = min(12, max(4, (input_dimension + 1) // 2))
+    cross = min(6, max(2, int(np.ceil(np.sqrt(input_dimension)))))
+    state = min(4, max(2, int(np.ceil(np.sqrt(max(1, n_modes))))))
+    return depth, channels, quadratic, cross, state
+
+
 def _make_network(field, config, graph):
     if isinstance(graph, FixedAnalyticResponseNetwork):
         return graph
@@ -39,20 +66,28 @@ def _make_network(field, config, graph):
     center = 0.5 * (lo + hi)
     scale = 0.5 * (hi - lo)
     scale[scale <= 0.0] = 1.0
+
+    defaults = _default_capacity(len(lambdas), len(operating_names))
+    depth = _capacity_setting(
+        config, "fixed_network_max_depth", "fixed_network_depth",
+        "SDFMPNEO_FIXED_NETWORK_DEPTH", defaults[0])
+    channels = _capacity_setting(
+        config, "fixed_network_max_channels_per_mode", "fixed_network_channels_per_mode",
+        "SDFMPNEO_FIXED_NETWORK_CHANNELS_PER_MODE", defaults[1])
+    quadratic = _capacity_setting(
+        config, "fixed_network_max_quadratic_rank", "fixed_network_quadratic_rank",
+        "SDFMPNEO_FIXED_NETWORK_QUADRATIC_RANK", defaults[2])
+    cross = _capacity_setting(
+        config, "fixed_network_max_cross_rank", "fixed_network_cross_rank",
+        "SDFMPNEO_FIXED_NETWORK_CROSS_RANK", defaults[3])
+    state = _capacity_setting(
+        config, "fixed_network_max_state_rank", "fixed_network_state_rank",
+        "SDFMPNEO_FIXED_NETWORK_STATE_RANK", defaults[4])
+
     return FixedAnalyticResponseNetwork(
         lambdas, operating_names, input_center=center, input_scale=scale,
-        depth=_setting(config, "fixed_network_depth", "SDFMPNEO_FIXED_NETWORK_DEPTH", 4),
-        channels_per_mode=_setting(
-            config, "fixed_network_channels_per_mode",
-            "SDFMPNEO_FIXED_NETWORK_CHANNELS_PER_MODE", 2),
-        quadratic_rank=_setting(
-            config, "fixed_network_quadratic_rank",
-            "SDFMPNEO_FIXED_NETWORK_QUADRATIC_RANK", 8),
-        cross_rank=_setting(
-            config, "fixed_network_cross_rank", "SDFMPNEO_FIXED_NETWORK_CROSS_RANK", 4),
-        state_rank=_setting(
-            config, "fixed_network_state_rank", "SDFMPNEO_FIXED_NETWORK_STATE_RANK", 3),
-    )
+        depth=depth, channels_per_mode=channels, quadratic_rank=quadratic,
+        cross_rank=cross, state_rank=state)
 
 
 def _prepare(field, points):
@@ -162,18 +197,86 @@ def _fresh_checks(config, seed, excluded):
     return np.vstack(rows) if rows else np.empty((0, candidate.shape[1]), dtype=float)
 
 
+def _zero_gate_indices(network, indices):
+    theta = network.parameters.copy()
+    theta[np.asarray(indices, dtype=int)] = 0.0
+    return network.with_parameters(theta)
+
+
+def _residual_sensitivity_prune(
+    network, field, points, *, tolerance, monitor=None,
+    relative_budget=0.10, max_rounds=3,
+):
+    """Prune existing gates by residual sensitivity, then verify nonlinear residual.
+
+    This is not topology search: the maximum graph is fixed before training. The
+    local residual Jacobian ranks already-existing continuous gates, and a small
+    number of monotone zeroing trials only compresses a converged network.
+    """
+    tolerance = float(tolerance)
+    relative_budget = max(0.0, float(relative_budget))
+    current = network
+    if len(points) == 0:
+        return current
+
+    for _ in range(max(0, int(max_rounds))):
+        entries = [entry for entry in current.structure_gate_entries()
+                   if entry["value"] != 0.0]
+        if not entries:
+            break
+        linearized = _evaluate_network(
+            current, field, points, jacobian=True, monitor=monitor)
+        _, current_max, _ = _metrics(linearized)
+        jacobian = np.stack([record.parameter_jacobian for record in linearized])
+        scored = []
+        for entry in entries:
+            index = entry["parameter_index"]
+            column = jacobian[:, :, index]
+            point_effect = np.linalg.norm(column, axis=1)
+            effect = abs(entry["value"]) * float(np.max(point_effect, initial=0.0))
+            scored.append((effect, entry))
+        scored.sort(key=lambda item: item[0])
+
+        budget = max(0.0, tolerance - current_max) + relative_budget * tolerance
+        selected = []
+        accumulated = 0.0
+        for effect, entry in scored:
+            if effect == 0.0 or accumulated + effect <= budget:
+                selected.append(entry["parameter_index"])
+                accumulated += effect
+            else:
+                break
+        if not selected:
+            break
+
+        accepted = None
+        count = len(selected)
+        while count:
+            trial = _zero_gate_indices(current, selected[:count])
+            records = _evaluate_network(
+                trial, field, points, jacobian=False, monitor=monitor)
+            _, maximum, _ = _metrics(records)
+            if maximum <= tolerance:
+                accepted = trial
+                break
+            count //= 2
+        if accepted is None:
+            break
+        current = accepted
+
+    return current
+
+
 def train_fixed_analytic_response_network(
     field, config, *, graph=None, progress=None, monitor=None
 ):
-    """Train one fixed analytic network using only continuous residual optimization."""
+    """Train one maximum-capacity analytic network using continuous residual optimization."""
     global _ORIGINAL_TRAIN
     from .max_residual_runtime import hard_point_weights_from_norms, max_first_accept
     from .research import ResearchTrainingReport
 
     network = _make_network(field, config, graph)
     if network is None:
-        # Old non-empty DAG checkpoints remain resumable through the legacy
-        # adaptive trainer. Fresh or empty models always use the fixed network.
         return _ORIGINAL_TRAIN(
             field, config, graph=graph, progress=progress, monitor=monitor)
 
@@ -201,17 +304,29 @@ def train_fixed_analytic_response_network(
     max_validation_epochs = _setting(
         config, "fixed_network_validation_epochs",
         "SDFMPNEO_FIXED_NETWORK_VALIDATION_EPOCHS", 5)
+    gate_shrink = _setting_float(
+        config, "fixed_network_gate_shrink",
+        "SDFMPNEO_FIXED_NETWORK_GATE_SHRINK", 0.0)
+    prune_budget = _setting_float(
+        config, "fixed_network_prune_relative_budget",
+        "SDFMPNEO_FIXED_NETWORK_PRUNE_RELATIVE_BUDGET", 0.10)
+    prune_rounds = _setting(
+        config, "fixed_network_prune_rounds",
+        "SDFMPNEO_FIXED_NETWORK_PRUNE_ROUNDS", 3)
+
     damping = 1.0e-3
     epoch = 0
     status = "stalled"
     validation_max = float("inf")
     iteration = 0
+    final_validation_points = np.empty((0, points.shape[1]), dtype=float)
 
     while True:
         if maximum <= config.residual_tolerance:
             if monitor is not None:
                 monitor.phase("validation")
             validation_points = _unique_rows(guards, checks, width=points.shape[1])
+            final_validation_points = validation_points
             _prepare(field, validation_points)
             validation_records = _evaluate_network(
                 network, field, validation_points, jacobian=False, monitor=monitor)
@@ -265,6 +380,8 @@ def train_fixed_analytic_response_network(
             factor = 1.0
             for _ in range(5):
                 trial = network.with_parameters(network.parameters + factor * delta)
+                if gate_shrink > 0.0:
+                    trial = trial.soft_threshold_structure(gate_shrink * factor)
                 try:
                     trial_records = _evaluate_network(
                         trial, field, points, jacobian=False, monitor=monitor)
@@ -298,7 +415,27 @@ def train_fixed_analytic_response_network(
             status = "stalled"
             break
 
-    if status != "numerically_converged":
+    if status == "numerically_converged":
+        if monitor is not None:
+            monitor.phase("structure_pruning")
+        prune_points = _unique_rows(points, final_validation_points, width=points.shape[1])
+        _prepare(field, prune_points)
+        network = _residual_sensitivity_prune(
+            network, field, prune_points, tolerance=config.residual_tolerance,
+            monitor=monitor, relative_budget=prune_budget, max_rounds=prune_rounds)
+        records = _evaluate_network(
+            network, field, points, jacobian=False, monitor=monitor)
+        objective, maximum, norms = _metrics(records)
+        validation_records = _evaluate_network(
+            network, field, final_validation_points, jacobian=False, monitor=monitor)
+        _, validation_max, _ = _metrics(validation_records)
+        if monitor is not None:
+            monitor.record(network, objective, maximum, len(points))
+            monitor.validation(validation_max, len(final_validation_points))
+        if (maximum > config.residual_tolerance
+                or validation_max > config.residual_tolerance):
+            raise RuntimeError("validated structure pruning violated the residual tolerance")
+    else:
         if monitor is not None:
             monitor.phase("validation")
         validation_points = _unique_rows(guards, checks, width=points.shape[1])
@@ -313,8 +450,7 @@ def train_fixed_analytic_response_network(
     return network, ResearchTrainingReport(
         status, len(network.response_nodes), initial_rms,
         float(np.sqrt(objective)), float(maximum), float(validation_max),
-        tuple(float(value) for value in history),
-        status == "numerically_converged")
+        tuple(float(value) for value in history), status == "numerically_converged")
 
 
 def _install_evaluator_dispatch():
@@ -389,8 +525,7 @@ def _install_persistence(model_class):
         from sdfmpneo.analytic import ParametricAnalyticEvolutionGraph
 
         network = self.graph
-        dummy = ParametricAnalyticEvolutionGraph(network.lambdas,
-                                                 network.operating_names)
+        dummy = ParametricAnalyticEvolutionGraph(network.lambdas, network.operating_names)
         with TemporaryDirectory() as directory:
             temporary = Path(directory) / "base.npz"
             self.graph = dummy
@@ -461,4 +596,6 @@ def install_fixed_analytic_response_network() -> None:
 __all__ = [
     "train_fixed_analytic_response_network",
     "install_fixed_analytic_response_network",
+    "_default_capacity",
+    "_residual_sensitivity_prune",
 ]
