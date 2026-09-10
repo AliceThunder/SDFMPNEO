@@ -96,6 +96,7 @@ from .training.block_sparse_search_runtime import install_block_sparse_state_sea
 from .training.convergence_rescue_runtime import install_convergence_rescue
 from .training.state_linearization_runtime import install_independent_state_native_linearization
 from .training.fixed_network_runtime import install_fixed_analytic_response_network
+from .training.automatic_thermal_rank_runtime import install_automatic_thermal_rank
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
@@ -120,17 +121,22 @@ install_screened_split_policy()
 install_block_sparse_state_search()
 install_convergence_rescue()
 install_independent_state_native_linearization()
-# Fresh/empty models use a fixed-depth low-rank analytic response network. This
-# final training binding removes normal Grow/Enrich/Split/candidate search: all
-# network parameters exist from the start and are optimized continuously. A
-# loaded non-empty legacy DAG deliberately falls back to its historical trainer.
+# Fresh/empty models use one fixed maximum analytic response network. Continuous
+# channel/component gates let the residual choose effective capacity; there is no
+# normal Grow/Enrich/Split/candidate-search phase. Loaded non-empty legacy DAGs
+# deliberately retain their historical trainer for checkpoint compatibility.
 install_fixed_analytic_response_network()
+# When thermal_rank is omitted, the normal research builder can now resolve the
+# spatial rank automatically before the EM ROM and analytic network are created.
+# Strict theorem-level projection-tail inputs remain supported; the default
+# physics-envelope selector is explicitly reported as a finite anchor criterion.
+install_automatic_thermal_rank()
 # Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
-# Export the trainer after runtime installation so callers receive the fixed
-# analytic-network trainer for fresh models.
+# Export the trainer and config builder after runtime installation.
 from .training.research import train_research_graph as train_research_graph
+from .research import model_from_config as model_from_config
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
             "ResearchTrainingContinuation", "demo_research_model", "model_from_config",
