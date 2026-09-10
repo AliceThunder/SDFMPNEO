@@ -83,31 +83,53 @@ from .training.observation_runtime import install_observation_training_accelerat
 from .training.cpp_dag_runtime import install_native_dag_training
 from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.max_residual_runtime import install_max_residual_training
+from .analytic.state_runtime import install_analytic_state_graph
+from .training.residual_state_runtime import install_residual_driven_state_training
+from .training.state_search_runtime import (
+    install_geometry_seed_coalescing,
+    install_state_search_policy,
+)
+from .training.state_split_runtime import install_screened_split_policy
+from .training.state_linearization_runtime import install_independent_state_native_linearization
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
 # kernel. The C++ layer stays lazy: importing sdfmpneo never launches a compiler.
 install_cpp_auto_build_guard()
 install_cpp_training_backend()
+# Upgrade the public parametric graph before training wrappers capture evaluator
+# bindings. Old add_product_response() remains a single-source special case.
+install_analytic_state_graph()
 install_training_acceleration()
 install_adaptive_training()
 install_late_stage_training()
 install_late_stage_batching()
 install_node_only_training_compile()
 install_observation_training_acceleration()
-# Native DAG/GN replaces the remaining Python response/Jacobian hot loops.
+# Native DAG/GN remains the fast path while every state is single-source.
 install_native_dag_training()
-# Install collocation semantics before the max-aligned trainer so the latter sees
-# the final residual-search selector and continuation signature.
+# Install final residual-search semantics before structural state construction.
 install_high_dimensional_collocation()
-# Final training policy: focus Gauss--Newton and candidate growth on residual
-# violations of the same max-norm tolerance used by the stopping criterion.
 install_max_residual_training()
-# Timing wrappers are last so they report the actual max-aligned/native paths.
+# Final policy: residual-driven Enrich/Grow/Split with no fixed source count K.
+install_residual_driven_state_training()
+# Align structural ranking with the actual L-infinity stopping metric and bound
+# expensive nonlinear candidate trials. This patches only runtime search policy;
+# physical equations, tolerance and public configuration stay unchanged.
+install_state_search_policy()
+# Aggregate states can expose many source-specific split choices. Screen those
+# exact tangents first and materialize only the best few function-preserving DAG
+# splits instead of duplicating every branch for every weak candidate.
+install_screened_split_policy()
+# A coalesced equation seed is multi-source but has no dynamic descendants. For
+# its weight Jacobian, expand the sources transiently into an exactly equivalent
+# scalar graph so the existing native C++ GN kernel remains usable.
+install_independent_state_native_linearization()
+# Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
-# Export the trainer after runtime installation so callers receive the selective,
-# structurally accelerated implementation rather than a historical function object.
+# Export the trainer after runtime installation so callers receive the final
+# residual-driven state-construction implementation.
 from .training.research import train_research_graph as train_research_graph
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
@@ -115,6 +137,11 @@ __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTr
             "train_research_graph"]
 
 from .geometry_research import GeometryResearchModel, geometry_model_from_config
+# Geometry seeding predates analytic multi-source states. Coalesce the pure seed
+# after its unchanged equation-based selection so equivalent same-mode source
+# columns start in one state and are split only when residual evidence requires
+# independent downstream addressability.
+install_geometry_seed_coalescing(GeometryResearchModel)
 install_geometry_continuation_persistence(GeometryResearchModel)
 install_concurrent_geometry_context_cache(GeometryResearchModel)
 __all__ += ["GeometryResearchModel", "geometry_model_from_config"]
