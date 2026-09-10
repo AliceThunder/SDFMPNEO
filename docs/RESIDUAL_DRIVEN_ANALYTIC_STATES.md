@@ -128,7 +128,7 @@ The rescue path permits an exact realization dimension up to 512 so the product 
 
 If the complete normal-plus-interaction search still returns `stalled`, training automatically continues twice. Each continuation adds one static polynomial degree and keeps the rescue realization allowance, so a default degree-3 run attempts degree 4 and then degree 5 before returning a genuine structural stall. The physical equations, collocation domain and requested residual tolerance are unchanged throughout these continuation passes.
 
-This policy intentionally distinguishes **search budgets** from the **success criterion**: search complexity may be expanded automatically after a proven stall, but numerical success is reported only when both training and independent validation residuals satisfy the configured tolerance.
+This policy intentionally distinguishes **search budgets** from the **success criterion**: search complexity may be expanded automatically after a proven stall, but numerical success is reported only when both training and independent validation residuals satisfy the configured tolerance. The command-line training entry therefore retains a nonzero exit status if every rescue path is exhausted above tolerance; changing that exit status to zero would only hide a real non-convergence and is intentionally not used as a substitute for successful training.
 
 ## Geometry seed
 
