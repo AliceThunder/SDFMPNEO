@@ -22,21 +22,33 @@ def _network():
     )
 
 
+def _finite_difference_parameter(network, index, time, a0, operating, epsilon=1.0e-7):
+    a, da, ja, jda = network.evaluate_parameter_jacobian(
+        time, a0=a0, operating=operating)
+    parameters = network.parameters.copy()
+    parameters[index] += epsilon
+    trial = network.with_parameters(parameters)
+    a1, da1 = trial.evaluate(time, a0=a0, operating=operating)
+    assert np.allclose((a1 - a) / epsilon, ja[:, index], rtol=2e-5, atol=2e-8)
+    assert np.allclose((da1 - da) / epsilon, jda[:, index], rtol=2e-5, atol=2e-8)
+
+
 def test_fixed_network_parameter_jacobian_matches_finite_difference():
     network = _network()
     a0 = np.array([0.2, -0.1])
     operating = np.array([0.3, 0.6])
-    time = 0.4
-    a, da, ja, jda = network.evaluate_parameter_jacobian(
-        time, a0=a0, operating=operating)
     for index in (0, network.parameter_count // 3, network.parameter_count - 1):
-        epsilon = 1.0e-7
-        parameters = network.parameters.copy()
-        parameters[index] += epsilon
-        trial = network.with_parameters(parameters)
-        a1, da1 = trial.evaluate(time, a0=a0, operating=operating)
-        assert np.allclose((a1 - a) / epsilon, ja[:, index], rtol=2e-5, atol=2e-8)
-        assert np.allclose((da1 - da) / epsilon, jda[:, index], rtol=2e-5, atol=2e-8)
+        _finite_difference_parameter(network, index, 0.4, a0, operating)
+
+
+def test_structure_gate_and_deep_bias_jacobians_are_exact():
+    network = _network()
+    a0 = np.array([0.2, -0.1])
+    operating = np.array([0.3, 0.6])
+    gate_index = network.structure_gate_entries()[0]["parameter_index"]
+    bias_index = int(network._indices("hidden_bias_1")[0])
+    _finite_difference_parameter(network, gate_index, 0.4, a0, operating)
+    _finite_difference_parameter(network, bias_index, 0.4, a0, operating)
 
 
 def test_fixed_network_operating_jacobian_matches_finite_difference():
@@ -53,6 +65,18 @@ def test_fixed_network_operating_jacobian_matches_finite_difference():
         a1, da1 = network.evaluate(time, a0=a0, operating=trial_u)
         assert np.allclose((a1 - a) / epsilon, ja[:, index], rtol=2e-5, atol=2e-8)
         assert np.allclose((da1 - da) / epsilon, jda[:, index], rtol=2e-5, atol=2e-8)
+
+
+def test_zero_channel_gate_removes_the_response_channel_without_topology_search():
+    network = _network()
+    before = len(network.response_nodes)
+    entry = next(item for item in network.structure_gate_entries()
+                 if item["kind"] == "channel")
+    theta = network.parameters.copy()
+    theta[entry["parameter_index"]] = 0.0
+    pruned = network.with_parameters(theta)
+    assert len(pruned.response_nodes) == before - 1
+    assert pruned.structure_summary()["active_response_channels"] == before - 1
 
 
 def test_fixed_network_stationary_query_is_direct_and_has_zero_slope():
@@ -80,6 +104,28 @@ def test_fixed_network_metadata_roundtrip_preserves_response():
     restored = FixedAnalyticResponseNetwork.from_metadata(
         network.to_metadata(), network.parameters.copy())
     for time in (0.0, 1.0e-4, 0.4, 30.0, 1.0e300, np.inf):
+        expected = network.evaluate(
+            time, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
+        actual = restored.evaluate(
+            time, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
+        assert np.allclose(actual[0], expected[0], rtol=2e-13, atol=2e-13)
+        assert np.allclose(actual[1], expected[1], rtol=2e-13, atol=2e-13)
+
+
+def test_v1_fixed_network_metadata_upgrades_with_unit_gates_and_zero_deep_bias():
+    network = _network()
+    metadata = network.to_metadata()
+    metadata["format_version"] = 1
+    metadata.pop("structure", None)
+    old_parameters = network.parameters[:network.legacy_parameter_count].copy()
+    restored = FixedAnalyticResponseNetwork.from_metadata(metadata, old_parameters)
+    assert np.all(restored._array("channel_gate") == 1.0)
+    assert np.all(restored._array("quadratic_gate") == 1.0)
+    for layer in range(1, restored.depth):
+        assert np.all(restored._array(f"hidden_bias_{layer}") == 0.0)
+        assert np.all(restored._array(f"cross_gate_{layer}") == 1.0)
+        assert np.all(restored._array(f"state_gate_{layer}") == 1.0)
+    for time in (0.0, 0.4, 30.0, np.inf):
         expected = network.evaluate(
             time, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
         actual = restored.evaluate(
@@ -124,6 +170,7 @@ def test_fixed_research_checkpoint_roundtrip_preserves_network(tmp_path):
         depth=2, channels_per_mode=1, quadratic_rank=2,
         cross_rank=1, state_rank=1,
     )
+    network = network.prune_structure(0.0)
     model.graph = network
     model.training_config = None
     model.training_report = None
