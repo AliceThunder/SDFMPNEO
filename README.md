@@ -10,6 +10,8 @@
 
 根目录的 [`run.py`](run.py) 是默认入口。它把网格、几何族、材料、电磁参数、训练域、保存路径和推理输入集中在文件顶部；通常只需修改这些配置块，不需要维护额外 JSON。
 
+**新的 fresh 训练默认使用固定深度、低秩的解析响应网络。** 网络拓扑和全部连续参数从训练开始就存在，训练只做控制方程残差的连续 LM/Gauss–Newton 优化和独立验证，不再逐个搜索响应神经元，也不再执行正常的 Grow / Enrich / Split / `candidate_search`。时间表示仍是解析的，有限任意时间和 `t=inf` 都直接计算。实现细节见 [`docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md`](docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md)。
+
 ### 1. 安装
 
 完整 UWPT 几何训练推荐安装 CAD 和 GUI 依赖：
@@ -41,11 +43,13 @@ sudo apt-get install libgl1 libglu1-mesa
 | `GEOMETRY_FAMILY` | 一次训练覆盖的连续几何参数域 |
 | `PHYSICS` / `MATERIALS` / `PORTS` | 频率、材料与端口电流映射 |
 | `THERMAL_RANK` | 热空间截断阶数 |
-| `TRAINING` | 初态、电流、时间窗、残差目标和训练预算 |
+| `TRAINING` | 初态、电流、时间窗、残差目标和训练/验证配点 |
 | `PREDICTION` | 已保存模型的查询输入 |
 | `MONITOR` | 训练窗口、日志与计算线程 |
 
 默认 `GEOMETRY_FAMILY` 同时覆盖 10 个连续几何参数。形状类别、匝数、材料拓扑和频率固定；域内改变线圈尺寸、厚度、接收位置、封装尺寸和海水半径时，使用的是**同一个保存模型**，不需要重新训练。
+
+固定解析网络的默认容量为 4 层、每个热模态 2 个通道、输入二次低秩 8、输入–响应交互秩 4、响应–响应交互秩 3。通常不需要在 `run.py` 增加额外配置；高级容量实验可通过文档中列出的 `SDFMPNEO_FIXED_NETWORK_*` 环境变量覆盖。
 
 ### 3. 训练并保存模型
 
@@ -69,6 +73,19 @@ python run.py --mode train --headless
 python run.py --mode train --headless --model results/uwpt/model.npz
 ```
 
+fresh 固定网络训练的正常阶段应主要是：
+
+```text
+initial_residual
+weight_refinement
+weight_refinement
+...
+validation
+saving
+```
+
+fresh 训练日志中不应出现 `candidate_search`。如果出现，说明加载的是旧版非空解析 DAG checkpoint，程序正在使用兼容的历史训练器，而不是把旧模型静默解释成另一种网络。要使用新的无搜索结构，请从 fresh 模型开始训练。
+
 默认输出：
 
 ```text
@@ -86,9 +103,9 @@ results/uwpt/logs/...               # 训练日志
 FILES["resume_model"] = "results/uwpt/model.npz"
 ```
 
-继续训练会使用 NPZ 中保存的物理模型、空间基、几何域和已有网络，只采用当前 `TRAINING` 作为新的训练设置；不会重新生成网格。
+继续训练会使用 NPZ 中保存的物理模型、空间基、几何域和已有网络，只采用当前 `TRAINING` 作为新的训练设置；不会重新生成网格。新版 fixed-network checkpoint 会继续优化同一组连续参数；旧版 v1/v2 非空 DAG checkpoint 仍可加载，并继续使用历史 DAG 训练器。
 
-训练达到 `TRAINING["residual_tolerance"]` 时退出码为 `0`。预算耗尽但尚未达到目标时仍会保存当前模型和报告，退出码为 `2`，不会把未收敛写成成功。
+训练达到 `TRAINING["residual_tolerance"]` 时退出码为 `0`。连续优化和独立验证确实仍未达到目标时会保存当前模型和报告并返回退出码 `2`，不会把未收敛写成成功。
 
 ### 4. 加载模型并查询
 
@@ -190,7 +207,7 @@ for t in [0.0, 1.0, 1e6, np.inf]:
     print(t, result.maximum_temperature)
 ```
 
-这段代码不会重新训练模型。改变 `geometry` 后仍使用同一个网络、共享电磁基和共享热坐标。
+这段代码不会重新训练模型。改变 `geometry` 后仍使用同一个固定解析网络、共享电磁基和共享热坐标。
 
 ### 6. 长时间与稳态查询
 
@@ -240,7 +257,7 @@ python -m sdfmpneo predict results/uwpt.npz \
 
 训练默认打开 **PyQt6 实时窗口**，点击“启动”后执行任务；窗口提供暂停、恢复和停止按钮。`MONITOR` 配置控制日志周期、曲线刷新、显示点数和计算线程数。使用 `python run.py --mode train --headless` 可仅训练并记录日志，推理模式保持命令行输出。
 
-实时曲线包括 MSE、训练 RMS/最大残差、独立检查最大残差、响应节点数和训练配点数。后台训练进程的日志线程周期性写入 JSONL；另一个 `QThread` 增量读取文件，通过信号通知主线程绘图。每次任务的日志保存在 `results/uwpt/logs/<时间_编号>/`。完整操作和日志格式见 [训练监控说明](docs/TRAINING_MONITOR.md)。
+实时曲线包括 MSE、训练 RMS/最大残差、独立检查最大残差、固定解析网络逻辑响应通道数和训练配点数。后台训练进程的日志线程周期性写入 JSONL；另一个 `QThread` 增量读取文件，通过信号通知主线程绘图。每次任务的日志保存在 `results/uwpt/logs/<时间_编号>/`。完整操作和日志格式见 [训练监控说明](docs/TRAINING_MONITOR.md)。
 
 训练仅评估给定输入上的控制方程残差，不使用瞬态轨迹、FEM/Maxwell/COMSOL 或实验解标签。原有 `python -m sdfmpneo` 接口也保留，其中固定几何的 `validate` 才调用独立 Radau 积分和全阶稀疏电磁求解；一键脚本不自动执行这类验证。
 
@@ -258,42 +275,5 @@ python -m sdfmpneo predict results/uwpt.npz \
 2. 温度相关铜电阻率、海水损耗、热源及其导数由同一材料定义计算。
 3. 残差–Riesz 增广建立电磁降阶空间，不采集全阶电磁解快照。
 4. 几何族使用共享热坐标，电磁平衡消元后得到 `M_r(G) da/dt = -K_r(G) a + q_em(G,a,U)`；固定几何谱坐标是其特例。
-5. 几何、初始热坐标、静态电流参数和响应神经元组成一个解析 DAG。几何算子与焦耳热二次结构初始化响应节点，随后根据耦合残差增长并联合更新权重。
-6. 加载保存的网络和空间基后，可直接查询任意时间，无需从零逐步积分。
-
-`predict --state-only` 只执行解析网络和温度重构，不调用电磁求解。默认完整推理还返回 `Z/R/L`、互感所在的电感矩阵、各材料焦耳损耗、物理残差及电磁误差诊断。
-
-默认保存模型覆盖 `GEOMETRY_FAMILY` 声明的线圈缩放/厚度、接收位置、封装尺寸和海水半径参数盒。一个网络、一个共享电磁基及一个共享热基服务整个几何族。当前平面缩放使外径、匝距和宽度联动；形状类别、匝数、材料拓扑及频率固定。旧固定几何模型仍可使用。
-
-默认训练时间覆盖 `0–100000 s`，混合对数/线性配点，并加入稳态残差检查。推理默认允许训练窗以外的有限时间，`"inf"` 查询解析稳态极限；不将时间截断到训练上限。具体配置、统一物理坐标、几何范围与外推含义见 [几何与时间代理说明](docs/GEOMETRY_TIME_SURROGATE.md)。
-
-## 科研误差的含义
-
-- 新工作流的 `numerically_converged` 表示训练点和独立参数检查点达到数值残差目标，不等同于连续域或真实设备误差证明。
-- `thermal_rank` 是显式的科研截断阶数；应通过增加阶数检查结果收敛。原有按误差证书选秩的接口也保留。
-- 示例独立瞬态对照默认使用完整电磁空间，但保持相同热空间；它检验解析演化与电磁降阶误差，不替代热秩/网格收敛性研究或实验验证。
-- 端口电流采用峰值相量；平均功率为 `0.5 * Re(I^H Z I)`。温度输出为包含边界和参考温度的全节点开尔文温度。
-
-## 代码与说明
-
-- [几何与任意时间代理说明](docs/GEOMETRY_TIME_SURROGATE.md)
-- [科研工作流、数学关系和配置说明](docs/RESEARCH_WORKFLOW.md)
-- [训练监控说明](docs/TRAINING_MONITOR.md)
-- [完整 Python 算例](examples/research_workflow.py)
-- [真实 UWPT 配置](examples/configs/uwpt_research.json)
-- [科研模型构建、保存、加载和推理](sdfmpneo/research.py)
-- [几何族代理](sdfmpneo/geometry_research.py)
-- [无标签残差训练](sdfmpneo/training/research.py)
-- [原有理论推导](docs/SDFMPNEO_theory.tex)
-
-`docs/PRODUCTION_STATUS_0_9.md` 等文件保留为先前版本的研究背景；当前运行入口和完成状态以本文及 `docs/RESEARCH_WORKFLOW.md` 为准。
-
-## 测试
-
-```bash
-python -m pytest -q \
-  -W error::numpy.exceptions.ComplexWarning \
-  -W error::scipy.linalg.LinAlgWarning
-```
-
-安装 `cad` 后，测试会实际初始化 Gmsh，并生成圆形与圆角方形导体、封装和海水网格，检查材料界面共形、端子标签以及默认几何参数盒内的网格非退化性。
+5. fresh 训练使用固定深度低秩解析响应网络表示 `(G,a0,U,t) -> a(t)`；所有网络参数同时连续优化，结构不随训练动态生长。
+6. 时间信号直接保持在 `t^k exp(-mu t)` 解析闭包中，因此不需要瞬态时间步进，也不需要为结构候选构造大规模矩阵指数。
