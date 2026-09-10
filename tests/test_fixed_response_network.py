@@ -41,8 +41,7 @@ def test_fixed_network_parameter_jacobian_matches_finite_difference():
 
 def test_fixed_network_operating_jacobian_matches_finite_difference():
     network = _network()
-    a0 = np.array([0.2, -0.1])
-    operating = np.array([0.3, 0.6])
+    a0 = np.array([0.2, -0.1])n    operating = np.array([0.3, 0.6])
     time = 0.4
     a, da, ja, jda = network.evaluate_operating_jacobian(
         time, a0=a0, operating=operating)
@@ -63,11 +62,23 @@ def test_fixed_network_stationary_query_is_direct_and_has_zero_slope():
     assert np.array_equal(da, np.zeros(2))
 
 
+def test_fixed_network_extreme_finite_time_is_stable():
+    network = _network()
+    a, da = network.evaluate(
+        1.0e300, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
+    steady, steady_da = network.evaluate(
+        np.inf, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
+    assert np.all(np.isfinite(a))
+    assert np.all(np.isfinite(da))
+    assert np.allclose(a, steady, rtol=2e-13, atol=2e-13)
+    assert np.allclose(da, steady_da, rtol=2e-13, atol=2e-13)
+
+
 def test_fixed_network_metadata_roundtrip_preserves_response():
     network = _network()
     restored = FixedAnalyticResponseNetwork.from_metadata(
         network.to_metadata(), network.parameters.copy())
-    for time in (0.0, 1.0e-4, 0.4, 30.0, np.inf):
+    for time in (0.0, 1.0e-4, 0.4, 30.0, 1.0e300, np.inf):
         expected = network.evaluate(
             time, a0=np.array([0.2, -0.1]), operating=np.array([0.3, 0.6]))
         actual = restored.evaluate(
