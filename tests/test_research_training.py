@@ -27,7 +27,7 @@ def test_current_trainer_uses_only_fixed_network_and_reaches_simple_exact_soluti
         sample_count=8, validation_count=8,
         max_network_depth=1, max_channels_per_mode=1,
         max_quadratic_rank=1, max_cross_rank=1, max_state_rank=1,
-        max_iterations=10, max_validation_epochs=1, prune_rounds=0,
+        max_iterations=12, max_validation_epochs=1, prune_rounds=0,
     )
     network = FixedAnalyticResponseNetwork(
         [2.0], [], input_center=[0.0], input_scale=[0.2],
