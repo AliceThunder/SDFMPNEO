@@ -98,5 +98,37 @@ def test_fresh_empty_graph_becomes_fixed_network_but_trained_legacy_graph_does_n
     assert _make_network(field, config, empty) is None
 
 
+def test_fixed_research_checkpoint_roundtrip_preserves_network(tmp_path):
+    from sdfmpneo import ResearchElectroThermalModel, demo_research_model
+
+    model = demo_research_model()
+    rank = model.core.thermal_model.rank
+    n_operating = model.rhs_map.n_operating
+    network = FixedAnalyticResponseNetwork(
+        model.core.thermal_model.lambdas,
+        [f"u{i}" for i in range(n_operating)],
+        input_center=np.zeros(rank + n_operating),
+        input_scale=np.ones(rank + n_operating),
+        depth=2, channels_per_mode=1, quadratic_rank=2,
+        cross_rank=1, state_rank=1,
+    )
+    model.graph = network
+    model.training_config = None
+    model.training_report = None
+    path = model.save(tmp_path / "fixed_network.npz")
+    loaded = ResearchElectroThermalModel.load(path)
+    assert isinstance(loaded.graph, FixedAnalyticResponseNetwork)
+    assert loaded.graph.to_metadata() == network.to_metadata()
+    assert np.array_equal(loaded.graph.parameters, network.parameters)
+
+    a0 = np.full(rank, 0.1)
+    operating = np.full(n_operating, 0.2)
+    for time in (0.0, 0.2, 1000.0, np.inf):
+        expected = model.predict(time, a0=a0, operating=operating, diagnostics=False)
+        actual = loaded.predict(time, a0=a0, operating=operating, diagnostics=False)
+        assert np.allclose(actual["thermal_coordinates"], expected["thermal_coordinates"])
+        assert np.allclose(actual["thermal_derivative"], expected["thermal_derivative"])
+
+
 def test_package_fresh_training_binding_has_no_candidate_search_driver():
     assert training_research.train_research_graph is train_fixed_analytic_response_network
