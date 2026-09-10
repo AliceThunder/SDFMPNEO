@@ -130,10 +130,18 @@ class _ExpPoly:
                 basis = 1.0 if power == 0 else 0.0
                 dbasis = 1.0 if power == 1 else (-mu if power == 0 else 0.0)
             else:
-                decay = 0.0 if -mu * t < -745.0 else math.exp(-mu * t)
-                basis = (t ** power) * decay
-                dbasis = (((power * (t ** (power - 1))) if power else 0.0) * decay
-                          - mu * basis)
+                # Evaluate t**power * exp(-mu*t) in the log domain. This keeps
+                # finite but enormous queries such as t=1e300 stable instead of
+                # overflowing t**power before the exponentially decaying factor
+                # has a chance to drive the exact basis value to zero.
+                log_basis = power * math.log(t) - mu * t
+                if log_basis < -745.0:
+                    basis = 0.0
+                elif log_basis > 709.0:
+                    basis = math.inf
+                else:
+                    basis = math.exp(log_basis)
+                dbasis = basis * (power / t - mu) if np.isfinite(basis) else math.copysign(math.inf, power / t - mu)
             value += coefficient * basis
             slope += coefficient * dbasis
             if self.nd:
