@@ -62,8 +62,10 @@ def test_stagnation_threshold_is_tied_to_max_residual_improvement():
     assert relative_max_improvement(old, negligible, tol) < _MAX_STAGNATION_REL
 
 
-def test_package_installation_routes_training_to_max_aligned_runtime():
+def test_max_residual_components_remain_available_beneath_fixed_network_trainer():
     from sdfmpneo.training import research as training_research
+    from sdfmpneo.training.fixed_network_runtime import train_fixed_analytic_response_network
 
-    assert training_research._refine_weights is max_residual_refine_weights
-    assert training_research.train_research_graph is max_aligned_train_research_graph
+    assert callable(max_residual_refine_weights)
+    assert callable(max_aligned_train_research_graph)
+    assert training_research.train_research_graph is train_fixed_analytic_response_network
