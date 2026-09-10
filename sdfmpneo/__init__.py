@@ -89,6 +89,7 @@ from .training.state_search_runtime import (
     install_geometry_seed_coalescing,
     install_state_search_policy,
 )
+from .training.state_split_runtime import install_screened_split_policy
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
@@ -115,6 +116,10 @@ install_residual_driven_state_training()
 # expensive nonlinear candidate trials. This patches only runtime search policy;
 # physical equations, tolerance and public configuration stay unchanged.
 install_state_search_policy()
+# Aggregate states can expose many source-specific split choices. Screen those
+# exact tangents first and materialize only the best few function-preserving DAG
+# splits instead of duplicating every branch for every weak candidate.
+install_screened_split_policy()
 # Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
