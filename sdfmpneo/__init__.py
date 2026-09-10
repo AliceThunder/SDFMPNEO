@@ -90,6 +90,7 @@ from .training.state_search_runtime import (
     install_state_search_policy,
 )
 from .training.state_split_runtime import install_screened_split_policy
+from .training.state_linearization_runtime import install_independent_state_native_linearization
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
@@ -120,6 +121,10 @@ install_state_search_policy()
 # exact tangents first and materialize only the best few function-preserving DAG
 # splits instead of duplicating every branch for every weak candidate.
 install_screened_split_policy()
+# A coalesced equation seed is multi-source but has no dynamic descendants. For
+# its weight Jacobian, expand the sources transiently into an exactly equivalent
+# scalar graph so the existing native C++ GN kernel remains usable.
+install_independent_state_native_linearization()
 # Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
