@@ -85,6 +85,10 @@ from .training.coverage_runtime import install_high_dimensional_collocation
 from .training.max_residual_runtime import install_max_residual_training
 from .analytic.state_runtime import install_analytic_state_graph
 from .training.residual_state_runtime import install_residual_driven_state_training
+from .training.state_search_runtime import (
+    install_geometry_seed_coalescing,
+    install_state_search_policy,
+)
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
@@ -107,6 +111,10 @@ install_high_dimensional_collocation()
 install_max_residual_training()
 # Final policy: residual-driven Enrich/Grow/Split with no fixed source count K.
 install_residual_driven_state_training()
+# Align structural ranking with the actual L-infinity stopping metric and bound
+# expensive nonlinear candidate trials. This patches only runtime search policy;
+# physical equations, tolerance and public configuration stay unchanged.
+install_state_search_policy()
 # Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
@@ -119,6 +127,11 @@ __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTr
             "train_research_graph"]
 
 from .geometry_research import GeometryResearchModel, geometry_model_from_config
+# Geometry seeding predates analytic multi-source states. Coalesce the pure seed
+# after its unchanged equation-based selection so equivalent same-mode source
+# columns start in one state and are split only when residual evidence requires
+# independent downstream addressability.
+install_geometry_seed_coalescing(GeometryResearchModel)
 install_geometry_continuation_persistence(GeometryResearchModel)
 install_concurrent_geometry_context_cache(GeometryResearchModel)
 __all__ += ["GeometryResearchModel", "geometry_model_from_config"]
