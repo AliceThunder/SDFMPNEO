@@ -173,7 +173,7 @@ class FixedAnalyticResponseNetwork:
                 or np.any(self.lambdas <= 0.0)):
             raise ValueError("thermal decay rates must be finite and positive")
         self.operating_names = tuple(str(value) for value in operating_names)
-        self.initial_names = tuple(f"initial_{i}" for i in range(self.lambdas.size))
+        self.initial_names = tuple(f"a0_{i}" for i in range(self.lambdas.size))
         self.depth = int(depth)
         self.channels_per_mode = int(channels_per_mode)
         self.quadratic_rank = int(quadratic_rank)
@@ -226,7 +226,13 @@ class FixedAnalyticResponseNetwork:
             rng = np.random.default_rng(int(seed))
             theta = np.zeros(self.parameter_count, dtype=float)
             sl, shape = self._slices["input_linear"]
-            theta[sl] = rng.normal(scale=1.0e-5, size=shape).reshape(-1)
+            # A constant source produces a steady response proportional to
+            # source/lambda. Scale the seed by the slowest physical pole so long
+            # UWPT time constants do not turn a nominally small random source into
+            # a large initial thermal state. The nonzero seed still activates
+            # deeper fixed layers for the first continuous Gauss--Newton step.
+            initial_source_scale = 1.0e-4 * float(np.min(self.lambdas))
+            theta[sl] = rng.normal(scale=initial_source_scale, size=shape).reshape(-1)
             for name in ("quadratic_u", "quadratic_v"):
                 sl, shape = self._slices[name]
                 theta[sl] = rng.normal(scale=1.0 / math.sqrt(self.input_dimension),
