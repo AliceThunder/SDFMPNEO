@@ -1,144 +1,169 @@
-# 自动热秩 + Fixed Analytic Response Network
+# 自动热秩 + Finite-Horizon Fixed Analytic Response Network
 
-当前 SDF-MPNEO 训练架构只有一条路径：
-
-\[
-\boxed{\text{自动热秩}\rightarrow\text{固定最大解析响应网络}\rightarrow\text{连续残差训练}\rightarrow\text{独立验证剪枝}}
-\]
-
-控制方程残差为
+当前 SDF-MPNEO 的生产训练路径只有一条：
 
 \[
-R(a,\dot a,G,U)=\dot a-F(a,G,U).
+\boxed{
+\text{自动热秩}
+\rightarrow
+\text{固定最大解析响应网络}
+\rightarrow
+\text{有限时间物理残差训练}
+\rightarrow
+\text{restart consistency}
+\rightarrow
+\text{独立验证剪枝}
+\rightarrow
+\text{分段 rollout}
+}
 \]
 
-训练不使用瞬态解标签。只有训练配点和独立验证配点的最大残差都低于用户容差，才报告 `numerically_converged`。
+训练不使用瞬态解标签。热动力学目标始终来自真实降阶物理场
 
-## 1. 热空间选择
+\[
+\dot a=F(a,G,U),
+\qquad
+R_{phys}=\dot{\hat a}-F(\hat a,G,U).
+\]
+
+## 1. 热空间
 
 温度场写为
 
 \[
-T(x,t)\approx T_{ref}(x)+\sum_{j=1}^{r}a_j(t)\phi_j(x).
+T(x,t)\approx T_{ref}(x)+\sum_{j=1}^{r}a_j(t)\phi_j(x),
+\qquad
+K\phi_j=\lambda_jM\phi_j.
 \]
 
-`r` 是空间热降阶维数，与网络 depth 无关。默认 `THERMAL_RANK=None`。
-
-`automatic_physics_envelope` 从低阶热谱逐步扩展，并在确定性的物理锚点上用全阶电磁平衡估计
+默认 `THERMAL_RANK=None`。自动选择器通过全阶电磁平衡在确定性锚点上估计模态响应包络
 
 \[
 E_j\approx \max\frac{|q_j|}{\lambda_j}.
 \]
 
-接受部分秩必须同时满足已解析尾部和探测边界衰减条件。若到 `max_probe_rank` 仍无法确认尾部，结果回退完整离散热空间，而不是接受一个未解析的部分秩。
+探测会继续扩大到更高热谱，必要时一直到完整离散热空间；不存在“探测到 32 阶仍不确定就直接把 full rank 带进网络”的固定上限。只有完整诊断后确实无法满足尾部标准，才使用全热空间。
 
-默认 envelope 是有限锚点判据，所以报告明确写 `certified_continuous_domain=false`。如果 `initial_temperature_deviation_free`、`source_dual_bound`、`requested_state_tolerance` 三项严格证书输入同时存在，则直接使用 theorem-level thermal-tail certificate。
+有限锚点 envelope 只是一种可复现的数值/物理选秩判据，报告中保持 `certified_continuous_domain=false`。当严格 thermal-tail certificate 所需输入齐全时，仍可使用严格证书路径。
 
-## 2. 解析响应层
+自动选秩同时生成 restart-state box：初始扰动允许量与安全放大的稳态响应包络共同给出每个保留模态的 `initial_lower/upper`。因此第二段及以后使用上一段终态作为初值时，不会默认只在环境附近的任意小盒子上训练。
 
-记归一化输入
+## 2. 单段有限时间解析网络
+
+网络只定义
 
 \[
-x=(a_0,G,U).
+\hat\Phi_t(a_0,G,U),\qquad 0\le t\le H,
 \]
 
-每个响应通道绑定一个真实热衰减率：
+其中 `H=max_response_time`，默认入口使用 `100 s`。
+
+每个响应通道绑定真实热衰减率：
 
 \[
 (\partial_t+\lambda_j)h_{jc}^{(\ell)}=S_{jc}^{(\ell)},
 \qquad h_{jc}^{(\ell)}(0)=0.
 \]
 
-第一层 source 为
+第一层 source 包含
 
 \[
-S=b+W_xx+\sum_r g_r^{xx}\alpha_r
-(u_r^Tx)(v_r^Tx).
+S=b+W_xx+\sum_r g_r^{xx}\alpha_r(u_r^Tx)(v_r^Tx),
 \]
 
 后续层增加上一层响应、输入–响应和响应–响应作用：
 
 \[
-\begin{aligned}
-S={}&b+W_hH\\
-&+\sum_r g^{xH}_{\ell r}\beta_r(p_r^Tx)(q_r^TH)\\
-&+\sum_r g^{HH}_{\ell r}\gamma_r(s_r^TH)(t_r^TH).
-\end{aligned}
+S=b+W_hH+\Phi_{xH}(x,H)+\Phi_{HH}(H,H).
 \]
 
-每一层都有显式 bias。动态层不使用 ReLU；非线性由低秩乘积产生，时间记忆由解析响应算子
+每层都有显式 bias；动态层不使用 ReLU。非线性由低秩乘法项提供，时间记忆由
 
 \[
 \mathcal R_\lambda=(\partial_t+\lambda)^{-1}
 \]
 
-产生。
+提供。
 
-## 3. 不再进行离散结构搜索
+网络内部只允许有限单段时间。`FixedAnalyticResponseNetwork.evaluate()` 对 `t>H` 或 `t=inf` 明确拒绝；长时间组合和稳态由更高层模型负责。
 
-训练开始时最大网络已经固定。所有 channel gate、`xx/xH/HH` component gate、bias、投影和低秩因子都是连续参数。
+## 3. 两阶段无标签训练
 
-训练循环只做：
+第一阶段只训练 governing-equation residual，直到
 
 \[
-\theta_{k+1}=\theta_k+\Delta\theta,
+\max\|R_{phys}\|\le\varepsilon.
 \]
 
-其中 `Δθ` 由硬残差加权的 LM/Gauss–Newton 子问题得到。接受步必须重新计算完整非线性物理残差，并优先改善最大残差。
+然后开启 restart/semigroup consistency：
 
-不存在：
+\[
+R_{sg}=\frac{
+\hat\Phi_{t_1+t_2}(a_0)
+-\hat\Phi_{t_2}(\hat\Phi_{t_1}(a_0))
+}{H},
+\qquad t_1+t_2\le H.
+\]
+
+使用 rate defect 是为了与物理残差保持相同的状态/时间量纲。参数 Jacobian 使用解析链式法则
+
+\[
+J_{sg}=J_\theta\Phi_{t_1+t_2}-\left(J_\theta\Phi_{t_2}+J_{a_0}\Phi_{t_2}J_\theta\Phi_{t_1}\right).
+\]
+
+先物理、后联合约束可以避免随机初始网络因为“错误动力学也可能自洽”而妨碍物理学习。
+
+训练和独立验证都要求 physics residual 与 restart-rate defect 不超过同一用户容差，报告同时保留未经除以 `H` 的 state defect。
+
+## 4. 长时间 rollout
+
+对任意有限查询时间 `T`，模型自动分段：
+
+\[
+T=N H+\Delta t,
+\qquad 0\le\Delta t<H,
+\]
+
+\[
+\hat\Phi_T=\hat\Phi_{\Delta t}\circ\underbrace{\hat\Phi_H\circ\cdots\circ\hat\Phi_H}_{N\text{ 次}}.
+\]
+
+例如 `H=100 s`、查询 `350 s`：
 
 ```text
-candidate enumeration
-Grow
-Enrich
-Split
-candidate_search
+0 -> 100 -> 200 -> 300 -> 350
 ```
 
-## 4. 残差验证剪枝
+每段结束后，终态成为下一段新的 `a0`。除非显式设置 `allow_extrapolation=True`，每次 restart 前都会检查状态仍在训练的 restart-state box 内。
 
-达到目标后，对当前 gate 的残差 Jacobian 列估计局部影响：
+## 5. 稳态
 
-\[
-I_i\approx |g_i|\max_p\left\|\frac{\partial R_p}{\partial g_i}\right\|_2.
-\]
-
-程序从低影响 gate 开始尝试置零，并在训练集 + 独立验证集上重新计算完整非线性残差。只有仍满足用户容差的剪枝才保留。
-
-因此最终有效 depth、channel 数和低秩 rank 是残差验证后的结果，而不是预先指定的最终网络大小。
-
-## 5. 解析时间闭包
-
-网络所有动态信号保持在有限指数–多项式闭包：
+真正的稳态不通过网络的 `t=inf` 求值，而是直接对当前物理场做 damped Newton：
 
 \[
-t^k e^{-\mu t}.
+F(a_\infty,G,U)=0.
 \]
 
-加法、乘法和一阶响应保持闭合；共振产生更高阶 `t^k` 因子。有限超长时间采用指数对数域保护，`t=inf` 直接计算稳态极限。
+接口为 `model.steady_state(...)`。为方便调用，`model.predict(float("inf"), ...)` 只作为路由语法，内部仍调用物理稳态求解器，不调用无限时间网络表达。
 
-因此训练窗口只定义残差采样范围，不是推理时间上限。
+## 6. 连续结构稀疏化
 
-## 6. 几何族
+训练开始时最大网络已经固定。channel gate、`xx/xH/HH` component gate、bias、投影和低秩因子都是连续参数，不进行候选结构枚举。
 
-连续几何族使用同一个固定网络和同一个参考热坐标系。几何变化后，物理残差仍使用对应几何的
+达到联合容差后，用残差 Jacobian 估计 gate 的局部影响，尝试将低影响结构置零，并在 physics + restart 的训练/验证集合上重新计算完整非线性残差。只有仍满足容差的剪枝才保留。
+
+因此不存在 `candidate_search`、Grow、Enrich 或 Split。
+
+## 7. 几何族
+
+连续几何族共享参考热坐标、跨几何 EM 基和同一个 finite-horizon network，但每个几何仍使用自己的
 
 \[
-M_r(G)\dot a+K_r(G)a=q_r(G,a,U).
+M_r(G),\quad K_r(G),\quad A_{EM}(G,a).
 \]
 
-同时使用对应几何的电磁算子；不会把参考几何的 `M/K/EM` 算子错误复用到其他几何。
+几何模型的长时间 rollout 与稳态求解同样分别使用网络分段组合和该几何的真实降阶物理场。
 
-## 7. 持久化
+## 8. 当前格式
 
-当前模型只保存：
-
-- 当前 fixed analytic network metadata；
-- 当前参数向量；
-- 热/电磁空间基和物理离散数据；
-- 当前训练域、训练报告和自动热秩报告。
-
-加载时 model format 和 fixed-network format 必须精确匹配当前实现。历史 DAG、历史 fixed-network 参数排列和旧 checkpoint 不做升级或转换。
-
-同一当前格式的 checkpoint 可以正常继续训练，这是 resume 功能，不是历史兼容层。
+当前模型格式只支持 segmented fixed-network 架构；历史 DAG、旧 fixed-network 参数排列和旧无限时间模型不转换。当前格式的 checkpoint 可以正常 resume。

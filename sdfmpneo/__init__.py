@@ -28,6 +28,12 @@ from .model import (
     ParametricExecutableSDFMPNEOModel,
     ParametricOnlinePrediction,
 )
+from .rollout import (
+    SegmentedRolloutResult,
+    SteadyStateSolveResult,
+    rollout_fixed_network,
+    solve_physical_steady_state,
+)
 from .tetra_core import TetrahedralElectroThermalCore
 from .thermal import ThermalSpectralModel
 from .training import AffineOperatingRHSMap, ElectroThermalResidual, ParametricElectroThermalResidual
@@ -53,4 +59,6 @@ __all__ = [
     "ResearchTrainingConfig", "ResearchTrainingReport", "make_fixed_network",
     "train_research_network", "ResearchElectroThermalModel", "demo_research_model",
     "model_from_config", "GeometryResearchModel", "geometry_model_from_config",
+    "SegmentedRolloutResult", "SteadyStateSolveResult", "rollout_fixed_network",
+    "solve_physical_steady_state",
 ]

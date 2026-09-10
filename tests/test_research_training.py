@@ -19,31 +19,37 @@ class _LinearField:
         )
 
 
-def test_current_trainer_uses_only_fixed_network_and_reaches_simple_exact_solution():
+def test_current_trainer_reaches_physics_and_restart_consistency():
     config = ResearchTrainingConfig(
-        initial_lower=(-0.2,), initial_upper=(0.2,),
+        initial_lower=(-0.2,), initial_upper=(2.2,),
         operating_lower=(), operating_upper=(),
-        time_horizon=2.0, residual_tolerance=2e-7,
+        max_response_time=2.0, residual_tolerance=2e-7,
         sample_count=8, validation_count=8,
+        semigroup_sample_count=4, semigroup_validation_count=4,
         max_network_depth=1, max_channels_per_mode=1,
         max_quadratic_rank=1, max_cross_rank=1, max_state_rank=1,
-        max_iterations=12, max_validation_epochs=1, prune_rounds=0,
+        max_iterations=16, max_validation_epochs=1, prune_rounds=0,
     )
     network = FixedAnalyticResponseNetwork(
-        [2.0], [], input_center=[0.0], input_scale=[0.2],
+        [2.0], [], max_response_time=2.0,
+        input_center=[1.0], input_scale=[1.2],
         depth=1, channels_per_mode=1, quadratic_rank=1, cross_rank=1, state_rank=1,
     )
     trained, report = train_research_network(_LinearField(), config, network=network)
     assert isinstance(trained, FixedAnalyticResponseNetwork)
     assert report.numerical_tolerance_met
-    assert report.maximum_training_residual <= config.residual_tolerance
-    assert report.maximum_validation_residual <= config.residual_tolerance
+    assert report.maximum_training_physics_residual <= config.residual_tolerance
+    assert report.maximum_validation_physics_residual <= config.residual_tolerance
+    assert report.maximum_training_semigroup_rate_defect <= config.residual_tolerance
+    assert report.maximum_validation_semigroup_rate_defect <= config.residual_tolerance
 
 
 def test_trainer_rejects_non_fixed_checkpoint():
     config = ResearchTrainingConfig(
         initial_lower=(0.0,), initial_upper=(0.0,), operating_lower=(), operating_upper=(),
-        time_horizon=1.0, residual_tolerance=1e-5, sample_count=1, validation_count=1,
+        max_response_time=1.0, residual_tolerance=1e-5,
+        sample_count=1, validation_count=1,
+        semigroup_sample_count=0, semigroup_validation_count=0,
     )
     try:
         train_research_network(_LinearField(), config, network=object())

@@ -1,38 +1,38 @@
 import numpy as np
-import pytest
-from sdfmpneo.analytic import ParametricAnalyticEvolutionGraph, evaluate_parametric_stable
-from sdfmpneo.analytic.parametric_realization import evaluate_parametric_stable_with_jacobians
+
 from sdfmpneo.training.research import ResearchTrainingConfig
 
 
-def test_stationary_limit_extreme_finite_times_and_weight_sensitivities():
-    graph=ParametricAnalyticEvolutionGraph([.001,.001],['u'])
-    graph.add_product_response('first',0,['u'],.2)
-    graph.add_product_response('second',1,['first','u'],.3)
-    for t in [0.,1e-8,1.,1e3,1e5,1e12,1e300,np.finfo(float).max,np.inf]:
-        a,da,ja,jda=evaluate_parametric_stable_with_jacobians(
-            graph,t,a0=[0.,0.],operating=[2.],weight_derivatives=True)
-        e=np.exp(-.001*t)
-        te=0. if e==0 else t*e
-        expected=np.array([400*(1-e),240000*(1-e)-240*te])
-        assert np.allclose(a,expected,rtol=1e-10,atol=1e-8)
-        assert np.all(np.isfinite(da))
-        assert np.all(np.isfinite(ja))
-        if t>=1e12:
-            assert np.allclose(da,0,atol=1e-10)
-            assert np.allclose(ja,[[2000,0],[1200000,800000]],rtol=1e-10)
-            assert np.allclose(jda,0,atol=1e-10)
-    with pytest.raises(ValueError):
-        evaluate_parametric_stable(graph,np.nan,a0=[0.,0.],operating=[2.])
+def test_finite_horizon_sampling_keeps_early_and_endpoint_checks():
+    config = ResearchTrainingConfig(
+        initial_lower=(0.0,), initial_upper=(1.0,),
+        operating_lower=(0.0,), operating_upper=(1.0,),
+        max_response_time=100.0, residual_tolerance=1e-5,
+        sample_count=64, validation_count=64,
+        semigroup_sample_count=32, semigroup_validation_count=32,
+        time_sampling="mixed_log", time_min=1e-6,
+    )
+    train = config.points()
+    check1 = config.points(True)
+    check2 = config.points(True, seed=3)
+    assert np.any(train[:, -1] == 0.0)
+    assert np.any(train[:, -1] == config.max_response_time)
+    assert np.count_nonzero((train[:, -1] > 0) & (train[:, -1] < 0.01)) > 5
+    assert np.all(np.isfinite(train[:, -1]))
+    assert np.all(train[:, -1] <= config.max_response_time)
+    assert not np.array_equal(check1, check2)
 
 
-def test_mixed_time_sampling_keeps_early_late_and_infinite_checks_independent():
-    c=ResearchTrainingConfig((0.,),(1.,),(0.,),(1.,),1e5,1e-5,
-             sample_count=64,validation_count=64,time_sampling='mixed_log',include_steady_state=True)
-    p,c1,c2=c.points(),c.points(True),c.points(True,seed=3)
-    assert np.any(p[:,-1]==0)
-    assert np.count_nonzero((p[:,-1]>0)&(p[:,-1]<.01))>5
-    assert np.count_nonzero(np.isfinite(p[:,-1])&(p[:,-1]>1e4))>10
-    assert np.isposinf(p[:,-1]).sum()==64
-    assert np.isposinf(c2[:,-1]).sum()==64
-    assert not np.array_equal(c1,c2)
+def test_semigroup_samples_are_finite_and_fit_inside_one_segment():
+    config = ResearchTrainingConfig(
+        initial_lower=(-1.0,), initial_upper=(1.0,),
+        operating_lower=(), operating_upper=(),
+        max_response_time=100.0, residual_tolerance=1e-5,
+        sample_count=4, validation_count=4,
+        semigroup_sample_count=64, semigroup_validation_count=64,
+    )
+    rows = config.semigroup_points()
+    assert np.all(np.isfinite(rows))
+    assert np.all(rows[:, -2] >= 0.0)
+    assert np.all(rows[:, -1] >= 0.0)
+    assert np.all(rows[:, -2] + rows[:, -1] <= config.max_response_time + 1e-12)

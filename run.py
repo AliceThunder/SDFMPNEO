@@ -19,82 +19,162 @@ FILES = {
     "model": "results/uwpt/model.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
-    "resume_model": None,  # 仅支持当前 fixed-network 格式
+    "resume_model": None,
 }
-MESH = {"generate": True, "path": "results/uwpt/uwpt.msh", "geometry_tolerance": 0.0005, "mesh_size": 0.01}
-TRANSMITTER = {"shape":"circle","turns":0.5,"outer_half_size":0.015,"pitch":0.002,"conductor_width":0.001,"conductor_thickness":0.001,"corner_radius":0.006,"translation":[0.0,0.0,0.0],"angles":[0.0,0.0,0.0]}
-RECEIVER = {"shape":"circle","turns":0.5,"outer_half_size":0.015,"pitch":0.002,"conductor_width":0.001,"conductor_thickness":0.001,"corner_radius":0.006,"translation":[0.0,0.0,0.01],"angles":[0.0,0.0,0.0]}
-ENVIRONMENT = {"package_half_extent":[0.019,0.019,0.003],"seawater_padding":0.006}
-PHYSICAL_TAGS = {"tx_copper":101,"rx_copper":102,"tx_package":201,"rx_package":202,"seawater":301,"tx_terminal_start":1001,"tx_terminal_end":1002,"rx_terminal_start":1003,"rx_terminal_end":1004,"outer_boundary":2001}
+MESH = {
+    "generate": True,
+    "path": "results/uwpt/uwpt.msh",
+    "geometry_tolerance": 0.0005,
+    "mesh_size": 0.01,
+}
+TRANSMITTER = {
+    "shape": "circle", "turns": 0.5, "outer_half_size": 0.015,
+    "pitch": 0.002, "conductor_width": 0.001, "conductor_thickness": 0.001,
+    "corner_radius": 0.006, "translation": [0.0, 0.0, 0.0], "angles": [0.0, 0.0, 0.0],
+}
+RECEIVER = {
+    "shape": "circle", "turns": 0.5, "outer_half_size": 0.015,
+    "pitch": 0.002, "conductor_width": 0.001, "conductor_thickness": 0.001,
+    "corner_radius": 0.006, "translation": [0.0, 0.0, 0.01], "angles": [0.0, 0.0, 0.0],
+}
+ENVIRONMENT = {"package_half_extent": [0.019, 0.019, 0.003], "seawater_padding": 0.006}
+PHYSICAL_TAGS = {
+    "tx_copper": 101, "rx_copper": 102, "tx_package": 201, "rx_package": 202,
+    "seawater": 301, "tx_terminal_start": 1001, "tx_terminal_end": 1002,
+    "rx_terminal_start": 1003, "rx_terminal_end": 1004, "outer_boundary": 2001,
+}
 GEOMETRY_FAMILY = {
     "enabled": True,
     "parameters": {
-        "tx_planar_scale":{"bounds":[0.97,1.03]}, "rx_planar_scale":{"bounds":[0.97,1.03]},
-        "tx_thickness_scale":{"bounds":[0.95,1.05]}, "rx_thickness_scale":{"bounds":[0.95,1.05]},
-        "rx_offset_x":{"bounds":[-0.0002,0.0002]}, "rx_offset_y":{"bounds":[-0.0002,0.0002]},
-        "rx_gap":{"bounds":[0.0098,0.0102]}, "tx_package_scale":{"bounds":[0.98,1.02]},
-        "rx_package_scale":{"bounds":[0.98,1.02]}, "seawater_radius":{"relative":[0.98,1.02]},
+        "tx_planar_scale": {"bounds": [0.97, 1.03]},
+        "rx_planar_scale": {"bounds": [0.97, 1.03]},
+        "tx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_offset_x": {"bounds": [-0.0002, 0.0002]},
+        "rx_offset_y": {"bounds": [-0.0002, 0.0002]},
+        "rx_gap": {"bounds": [0.0098, 0.0102]},
+        "tx_package_scale": {"bounds": [0.98, 1.02]},
+        "rx_package_scale": {"bounds": [0.98, 1.02]},
+        "seawater_radius": {"relative": [0.98, 1.02]},
     },
-    "em_anchor_count": 4, "cache_size": 128,
+    "em_anchor_count": 4,
+    "cache_size": 128,
 }
-PHYSICS = {"frequency_hz":100000.0,"ambient_temperature":293.15,"constitutive_relative_error":1e-8,"em_energy_error":1e-6}
+PHYSICS = {
+    "frequency_hz": 100000.0,
+    "ambient_temperature": 293.15,
+    "constitutive_relative_error": 1e-8,
+    "em_energy_error": 1e-6,
+}
 MATERIALS = {
-    "101":{"name":"tx_copper","electrical_conductivity":5.8e7,"resistivity_temperature_coefficient":0.00393,"reference_temperature":293.15,"relative_permeability":1.0,"thermal_conductivity":400.0,"volumetric_heat_capacity":3.45e6},
-    "102":{"name":"rx_copper","electrical_conductivity":5.8e7,"resistivity_temperature_coefficient":0.00393,"reference_temperature":293.15,"relative_permeability":1.0,"thermal_conductivity":400.0,"volumetric_heat_capacity":3.45e6},
-    "201":{"name":"tx_package","electrical_conductivity":0.0,"resistivity_temperature_coefficient":0.0,"reference_temperature":293.15,"relative_permeability":1.0,"thermal_conductivity":0.2,"volumetric_heat_capacity":1.5e6},
-    "202":{"name":"rx_package","electrical_conductivity":0.0,"resistivity_temperature_coefficient":0.0,"reference_temperature":293.15,"relative_permeability":1.0,"thermal_conductivity":0.2,"volumetric_heat_capacity":1.5e6},
-    "301":{"name":"seawater","electrical_conductivity":5.0,"resistivity_temperature_coefficient":0.0,"reference_temperature":293.15,"relative_permeability":1.0,"thermal_conductivity":0.6,"volumetric_heat_capacity":4.1e6},
+    "101": {"name": "tx_copper", "electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393, "reference_temperature": 293.15, "relative_permeability": 1.0, "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "102": {"name": "rx_copper", "electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393, "reference_temperature": 293.15, "relative_permeability": 1.0, "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "201": {"name": "tx_package", "electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0, "reference_temperature": 293.15, "relative_permeability": 1.0, "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "202": {"name": "rx_package", "electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0, "reference_temperature": 293.15, "relative_permeability": 1.0, "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "301": {"name": "seawater", "electrical_conductivity": 5.0, "resistivity_temperature_coefficient": 0.0, "reference_temperature": 293.15, "relative_permeability": 1.0, "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6},
 }
-PORTS = {"terminal_pairs":[[1001,1002],[1003,1004]],"port_names":["tx","rx"],"current_offset":None,"current_matrix":None}
+PORTS = {
+    "terminal_pairs": [[1001, 1002], [1003, 1004]],
+    "port_names": ["tx", "rx"],
+    "current_offset": None,
+    "current_matrix": None,
+}
 EM_CANDIDATE_STATES = None
 
 THERMAL_RANK = None
 THERMAL_TRUNCATION = {
-    "mode":"automatic_physics_envelope", "relative_tolerance":1e-3, "absolute_tolerance":0.0,
-    "initial_coordinate_bound":0.1, "probe_start_rank":4, "max_probe_rank":32,
-    "source_bound_safety_factor":2.0, "boundary_fraction":0.25, "temperature_probe_axes":4,
-    "initial_temperature_deviation_free":None, "source_dual_bound":None,
-    "requested_state_tolerance":None, "prefer_partial_thermal_spectrum":True,
+    "mode": "automatic_physics_envelope",
+    "relative_tolerance": 1e-3,
+    "absolute_tolerance": 0.0,
+    "initial_coordinate_bound": 0.1,
+    "probe_start_rank": 4,
+    "source_bound_safety_factor": 2.0,
+    "restart_state_safety_factor": 1.5,
+    "boundary_fraction": 0.25,
+    "temperature_probe_axes": 4,
+    "initial_temperature_deviation_free": None,
+    "source_dual_bound": None,
+    "requested_state_tolerance": None,
+    "prefer_partial_thermal_spectrum": True,
 }
+
+MAX_RESPONSE_TIME = 100.0
 TRAINING = {
-    "initial_lower":[], "initial_upper":[],
-    "operating_lower":[0.0,0.0], "operating_upper":[10.0,10.0],
-    "time_horizon":100000.0, "residual_tolerance":1e-5,
-    "time_sampling":"mixed_log", "time_min":1e-6, "include_steady_state":True,
-    "sample_count":64, "validation_count":64,
-    "max_network_depth":None, "max_channels_per_mode":None,
-    "max_quadratic_rank":None, "max_cross_rank":None, "max_state_rank":None,
-    "max_iterations":36, "max_validation_epochs":5,
-    "gate_shrink":0.0, "prune_relative_budget":0.10, "prune_rounds":3,
+    "initial_lower": [],
+    "initial_upper": [],
+    "operating_lower": [0.0, 0.0],
+    "operating_upper": [10.0, 10.0],
+    "max_response_time": MAX_RESPONSE_TIME,
+    "residual_tolerance": 1e-5,
+    "time_sampling": "mixed_log",
+    "time_min": 1e-6,
+    "sample_count": 64,
+    "validation_count": 64,
+    "semigroup_sample_count": 8,
+    "semigroup_validation_count": 8,
+    "max_network_depth": None,
+    "max_channels_per_mode": None,
+    "max_quadratic_rank": None,
+    "max_cross_rank": None,
+    "max_state_rank": None,
+    "max_iterations": 36,
+    "max_validation_epochs": 5,
+    "gate_shrink": 0.0,
+    "prune_relative_budget": 0.10,
+    "prune_rounds": 3,
 }
 PREDICTION = {
-    "a0":None, "operating":[5.0,0.0],
-    "times":[0.0,0.001,1.0,1000.0,100000.0,1000000.0,"inf"],
-    "geometry":None, "allow_time_extrapolation":True,
-    "initial_temperature_file":None, "state_only":False, "allow_extrapolation":False,
+    "a0": None,
+    "operating": [5.0, 0.0],
+    "times": [0.0, 1.0, 100.0, 350.0, "inf"],
+    "geometry": None,
+    "initial_temperature_file": None,
+    "state_only": False,
+    "allow_extrapolation": False,
 }
-MONITOR = {"enabled":True,"auto_start":False,"log_dir":"results/uwpt/logs","log_interval_s":1.0,"refresh_ms":300,"max_plot_points":4000,"compute_threads":1,"assembly_progress_interval_s":5.0}
+MONITOR = {
+    "enabled": True,
+    "auto_start": False,
+    "log_dir": "results/uwpt/logs",
+    "log_interval_s": 1.0,
+    "refresh_ms": 300,
+    "max_plot_points": 4000,
+    "compute_threads": 1,
+    "assembly_progress_interval_s": 5.0,
+}
 
 ROOT = Path(__file__).resolve().parent
 
 
 def resolve_path(value):
-    path = Path(value).expanduser(); return path if path.is_absolute() else ROOT / path
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else ROOT / path
 
 
 def write_json(path, value):
     from sdfmpneo.__main__ import jsonable
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(jsonable(value), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(jsonable(value), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
 
 
-def resolve_training_rank(config, rank):
+def resolve_training_rank(config, rank, saved_config=None):
     rank = int(rank)
     if len(config.initial_lower) == len(config.initial_upper) == 0:
+        if saved_config is not None and len(saved_config.initial_lower) == rank:
+            return replace(
+                config,
+                initial_lower=tuple(saved_config.initial_lower),
+                initial_upper=tuple(saved_config.initial_upper),
+            )
         bound = float(THERMAL_TRUNCATION.get("initial_coordinate_bound", 0.1))
         return replace(config, initial_lower=(-bound,) * rank, initial_upper=(bound,) * rank)
     if len(config.initial_lower) != rank or len(config.initial_upper) != rank:
-        raise ValueError(f"训练初态维数与 thermal rank={rank} 不一致；自动模式请将 initial_lower/upper 留空")
+        raise ValueError(
+            f"训练初态维数与 thermal rank={rank} 不一致；自动模式请将 initial_lower/upper 留空"
+        )
     return config
 
 
@@ -103,32 +183,60 @@ def thermal_rank_owner(model):
 
 
 def thermal_rank_summary(model):
-    owner = thermal_rank_owner(model); rank = int(owner.core.thermal_model.rank)
+    owner = thermal_rank_owner(model)
+    rank = int(owner.core.thermal_model.rank)
     report = getattr(owner, "thermal_rank_report", None)
     if report is None:
-        report = {"method":"saved_or_explicit_basis","selected_rank":rank,"certified_continuous_domain":bool(owner.core.thermal_tail_certificate is not None)}
+        report = {
+            "method": "saved_or_explicit_basis",
+            "selected_rank": rank,
+            "certified_continuous_domain": bool(owner.core.thermal_tail_certificate is not None),
+        }
     return rank, report
 
 
 @contextmanager
 def assembly_progress(monitor=None):
     interval = float(MONITOR.get("assembly_progress_interval_s", 5.0))
-    if not 0 < interval < float("inf"): raise ValueError("assembly_progress_interval_s 必须为有限正数")
-    stop = threading.Event(); started = time.monotonic()
-    labels = {"assembly":"组装物理模型与参考电磁空间","thermal_rank_selection":"自动选择热空间阶数","geometry_em_basis":"构建跨几何共享电磁空间"}
+    if not 0 < interval < float("inf"):
+        raise ValueError("assembly_progress_interval_s 必须为有限正数")
+    stop = threading.Event()
+    started = time.monotonic()
+    labels = {
+        "assembly": "组装物理模型与参考电磁空间",
+        "thermal_rank_selection": "自动选择热空间阶数",
+        "geometry_em_basis": "构建跨几何共享电磁空间",
+    }
+
     def current_label():
-        if monitor is None: return labels["assembly"]
-        phase = monitor.data.get("phase", "assembly"); return labels.get(phase, phase or labels["assembly"])
+        if monitor is None:
+            return labels["assembly"]
+        phase = monitor.data.get("phase", "assembly")
+        return labels.get(phase, phase or labels["assembly"])
+
     def reporter():
-        previous = None; next_heartbeat = started
+        previous = None
+        next_heartbeat = started
         while not stop.wait(0.2):
-            now = time.monotonic(); label = current_label()
-            if label != previous: print(f"[组装进度] {label}", flush=True); previous = label
-            if now >= next_heartbeat: print(f"[组装进度] {label} · 已耗时 {now-started:.1f} s", flush=True); next_heartbeat = now + interval
-    thread = threading.Thread(target=reporter, name="assembly-progress", daemon=True); thread.start(); succeeded = False
-    try: yield; succeeded = True
+            now = time.monotonic()
+            label = current_label()
+            if label != previous:
+                print(f"[组装进度] {label}", flush=True)
+                previous = label
+            if now >= next_heartbeat:
+                print(f"[组装进度] {label} · 已耗时 {now-started:.1f} s", flush=True)
+                next_heartbeat = now + interval
+
+    thread = threading.Thread(target=reporter, name="assembly-progress", daemon=True)
+    thread.start()
+    succeeded = False
+    try:
+        yield
+        succeeded = True
     finally:
-        stop.set(); thread.join(timeout=max(1.0, interval)); elapsed = time.monotonic() - started
+        stop.set()
+        thread.join(timeout=max(1.0, interval))
+        elapsed = time.monotonic() - started
         print(f"[组装进度] {'完成' if succeeded else '中断'} · 总耗时 {elapsed:.1f} s", flush=True)
 
 
@@ -136,55 +244,116 @@ def print_training_sample_ranges(model, config):
     print("\n训练样本参数范围：", flush=True)
     if hasattr(model, "geometry_names"):
         print("  几何参数 G（网络内部归一化到 [-1,1]）：", flush=True)
-        for name, lower, upper, reference in zip(model.geometry_names, model.lower, model.upper, model.geometry_reference):
+        for name, lower, upper, reference in zip(
+            model.geometry_names, model.lower, model.upper, model.geometry_reference
+        ):
             print(f"    {name}: [{float(lower):.8g}, {float(upper):.8g}]  参考值={float(reference):.8g}", flush=True)
-    else: print("  几何参数 G：固定几何", flush=True)
-    print("  初始热坐标 a0：", flush=True)
-    for i, (lower, upper) in enumerate(zip(config.initial_lower, config.initial_upper)): print(f"    a0[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
+    else:
+        print("  几何参数 G：固定几何", flush=True)
+    print("  restart 热坐标 a0：", flush=True)
+    for i, (lower, upper) in enumerate(zip(config.initial_lower, config.initial_upper)):
+        print(f"    a0[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
     print("  工况参数 U：", flush=True)
-    for i, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)): print(f"    U[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
-    print(f"  时间: [0,{config.time_horizon:.8g}] s；采样={config.time_sampling}；稳态={'包含' if config.include_steady_state else '不包含'}", flush=True)
-    print(f"  配点: 训练={config.sample_count}，验证={config.validation_count}；残差目标={config.residual_tolerance:.8g}\n", flush=True)
+    for i, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)):
+        print(f"    U[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
+    print(
+        f"  单段时间: [0,{config.max_response_time:.8g}] s；采样={config.time_sampling}",
+        flush=True,
+    )
+    print(
+        f"  配点: physics 训练/验证={config.sample_count}/{config.validation_count}；"
+        f"restart 训练/验证={config.semigroup_sample_count}/{config.semigroup_validation_count}；"
+        f"残差目标={config.residual_tolerance:.8g}\n",
+        flush=True,
+    )
 
 
 def generate_mesh(path):
     import numpy as np
     from sdfmpneo.spatial import RigidPose, SpiralCoilGeometry, UnderwaterWPTGeometry
     from sdfmpneo.spatial.gmsh_pipeline import UWPTPhysicalTags, mesh_underwater_wpt_geometry
+
     def coil(settings):
-        parameters = dict(settings); pose = RigidPose(np.asarray(parameters.pop("translation")), *parameters.pop("angles"))
-        if parameters["shape"] == "circle": parameters.pop("corner_radius")
+        parameters = dict(settings)
+        pose = RigidPose(np.asarray(parameters.pop("translation")), *parameters.pop("angles"))
+        if parameters["shape"] == "circle":
+            parameters.pop("corner_radius")
         return SpiralCoilGeometry(**parameters, pose=pose)
-    geometry = UnderwaterWPTGeometry(coil(TRANSMITTER), coil(RECEIVER), np.asarray(ENVIRONMENT["package_half_extent"]), ENVIRONMENT["seawater_padding"])
-    result = mesh_underwater_wpt_geometry(geometry, path, geometry_tolerance=MESH["geometry_tolerance"], mesh_size=MESH["mesh_size"], physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS))
+
+    geometry = UnderwaterWPTGeometry(
+        coil(TRANSMITTER), coil(RECEIVER),
+        np.asarray(ENVIRONMENT["package_half_extent"]),
+        ENVIRONMENT["seawater_padding"],
+    )
+    result = mesh_underwater_wpt_geometry(
+        geometry, path,
+        geometry_tolerance=MESH["geometry_tolerance"],
+        mesh_size=MESH["mesh_size"],
+        physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS),
+    )
     mesh = result.tagged_mesh
-    if not np.array_equal(mesh.mesh.boundary_nodes(), mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"])): raise RuntimeError("材料界面网格不共形")
+    if not np.array_equal(
+        mesh.mesh.boundary_nodes(), mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"])
+    ):
+        raise RuntimeError("材料界面网格不共形")
     print(f"网格已生成：{mesh.mesh.n_nodes} 节点，{mesh.mesh.n_tetrahedra} 四面体", flush=True)
 
 
 def train(model_path, settings_dir, monitor=None):
     from sdfmpneo import ResearchElectroThermalModel, ResearchTrainingConfig
     from sdfmpneo.research import model_from_config
-    config = ResearchTrainingConfig(**TRAINING); resume = FILES["resume_model"]
-    settings = {"case":"uwpt","mode":"train","model":str(model_path),"training":TRAINING,"resume_model":None}
+
+    config = ResearchTrainingConfig(**TRAINING)
+    resume = FILES["resume_model"]
+    settings = {
+        "case": "uwpt", "mode": "train", "model": str(model_path),
+        "training": TRAINING, "resume_model": None,
+    }
     if resume is not None:
-        if monitor is not None: monitor.phase("loading")
-        resume_path = resolve_path(resume); settings["resume_model"] = str(resume_path)
-        print(f"加载当前格式模型继续训练：{resume_path}", flush=True)
+        if monitor is not None:
+            monitor.phase("loading")
+        resume_path = resolve_path(resume)
+        settings["resume_model"] = str(resume_path)
+        print(f"加载当前 segmented fixed-network 模型继续训练：{resume_path}", flush=True)
         model = ResearchElectroThermalModel.load(resume_path)
-        rank, _ = thermal_rank_summary(model); config = resolve_training_rank(config, rank)
+        rank, _ = thermal_rank_summary(model)
+        config = resolve_training_rank(config, rank, getattr(model, "training_config", None))
+        if model.network.max_response_time != config.max_response_time:
+            raise ValueError("继续训练时 MAX_RESPONSE_TIME 必须与已保存网络一致")
     else:
         mesh_path = resolve_path(MESH["path"])
-        physical = {**PHYSICS, **PORTS, "mesh":str(mesh_path), "materials":MATERIALS, "thermal_rank":THERMAL_RANK, "thermal_truncation":THERMAL_TRUNCATION, "training":TRAINING}
-        if GEOMETRY_FAMILY["enabled"]: physical["geometry_family"] = {**GEOMETRY_FAMILY,"transmitter":TRANSMITTER,"receiver":RECEIVER,"physical_tags":PHYSICAL_TAGS}
-        if EM_CANDIDATE_STATES is not None: physical["em_candidate_states"] = EM_CANDIDATE_STATES
-        settings.update(physics=physical, mesh=MESH, transmitter=TRANSMITTER, receiver=RECEIVER, environment=ENVIRONMENT, physical_tags=PHYSICAL_TAGS)
+        physical = {
+            **PHYSICS, **PORTS,
+            "mesh": str(mesh_path),
+            "materials": MATERIALS,
+            "thermal_rank": THERMAL_RANK,
+            "thermal_truncation": THERMAL_TRUNCATION,
+            "training": TRAINING,
+        }
+        if GEOMETRY_FAMILY["enabled"]:
+            physical["geometry_family"] = {
+                **GEOMETRY_FAMILY,
+                "transmitter": TRANSMITTER,
+                "receiver": RECEIVER,
+                "physical_tags": PHYSICAL_TAGS,
+            }
+        if EM_CANDIDATE_STATES is not None:
+            physical["em_candidate_states"] = EM_CANDIDATE_STATES
+        settings.update(
+            physics=physical, mesh=MESH, transmitter=TRANSMITTER,
+            receiver=RECEIVER, environment=ENVIRONMENT, physical_tags=PHYSICAL_TAGS,
+        )
         if MESH["generate"]:
-            if monitor is not None: monitor.phase("mesh")
-            print("生成线圈、封装和海水网格……", flush=True); generate_mesh(mesh_path)
-        elif not mesh_path.is_file(): raise FileNotFoundError(f"网格不存在：{mesh_path}")
-        config_path = settings_dir / "model.config.json"; write_json(config_path, physical)
-        if monitor is not None: monitor.phase("assembly")
+            if monitor is not None:
+                monitor.phase("mesh")
+            print("生成线圈、封装和海水网格……", flush=True)
+            generate_mesh(mesh_path)
+        elif not mesh_path.is_file():
+            raise FileNotFoundError(f"网格不存在：{mesh_path}")
+        config_path = settings_dir / "model.config.json"
+        write_json(config_path, physical)
+        if monitor is not None:
+            monitor.phase("assembly")
         print("自动热秩、物理组装与电磁降阶……", flush=True)
         with assembly_progress(monitor):
             if GEOMETRY_FAMILY["enabled"]:
@@ -193,93 +362,220 @@ def train(model_path, settings_dir, monitor=None):
             else:
                 model, config = model_from_config(config_path, monitor=monitor)
         if GEOMETRY_FAMILY["enabled"]:
-            write_json(settings_dir / "geometry.domain.json", {"names":model.geometry_names,"reference":model.geometry_reference,"lower":model.lower,"upper":model.upper,"mesh_certificate":model.certificate,"em_basis":model.em_basis_report})
-    rank, rank_report = thermal_rank_summary(model); config = resolve_training_rank(config, rank)
-    settings["selected_thermal_rank"] = rank; settings["training_resolved"] = config
-    write_json(settings_dir / "thermal.rank.json", rank_report); write_json(settings_dir / "train.settings.json", settings)
+            write_json(
+                settings_dir / "geometry.domain.json",
+                {
+                    "names": model.geometry_names,
+                    "reference": model.geometry_reference,
+                    "lower": model.lower,
+                    "upper": model.upper,
+                    "mesh_certificate": model.certificate,
+                    "em_basis": model.em_basis_report,
+                },
+            )
+    rank, rank_report = thermal_rank_summary(model)
+    config = resolve_training_rank(config, rank, getattr(model, "training_config", None))
+    settings["selected_thermal_rank"] = rank
+    settings["training_resolved"] = config
+    write_json(settings_dir / "thermal.rank.json", rank_report)
+    write_json(settings_dir / "train.settings.json", settings)
     print(f"最终热空间阶数：rank={rank}；选择方法={rank_report.get('method','unknown')}", flush=True)
     print_training_sample_ranges(model, config)
-    print("开始 fixed analytic network 连续残差训练……", flush=True)
+    print("开始 finite-horizon fixed analytic network 残差训练……", flush=True)
     from sdfmpneo.training.monitor import TrainingStopped
     try:
-        report = model.train(config, monitor=monitor, progress=lambda n,r,m: print(f"迭代={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
+        report = model.train(
+            config,
+            monitor=monitor,
+            progress=lambda n, r, m: print(
+                f"迭代={n}  RMS联合残差={r:.6g}  最大联合残差={m:.6g}", flush=True
+            ),
+        )
     except TrainingStopped:
         checkpoint = model_path.with_name(model_path.stem + ".stopped" + model_path.suffix)
-        if model.network is not None: model.save(checkpoint); print(f"训练已停止，当前网络已保存：{checkpoint}", flush=True)
-        else: checkpoint = None
-        stopped = {"status":"stopped","checkpoint":None if checkpoint is None else str(checkpoint),"numerical_tolerance_met":False}
+        if model.network is not None:
+            model.save(checkpoint)
+            print(f"训练已停止，当前网络已保存：{checkpoint}", flush=True)
+        else:
+            checkpoint = None
+        stopped = {
+            "status": "stopped",
+            "checkpoint": None if checkpoint is None else str(checkpoint),
+            "numerical_tolerance_met": False,
+        }
         write_json(settings_dir / "training.stopped.json", stopped)
-        if monitor is not None: monitor.finish("stopped", **stopped)
+        if monitor is not None:
+            monitor.finish("stopped", **stopped)
         return 130
-    if monitor is not None: monitor.phase("saving", check=False)
-    model.save(model_path); write_json(settings_dir / "training.report.json", report)
-    structure = model.network.structure_summary(0.0); write_json(settings_dir / "network.structure.json", structure)
+    if monitor is not None:
+        monitor.phase("saving", check=False)
+    model.save(model_path)
+    write_json(settings_dir / "training.report.json", report)
+    structure = model.network.structure_summary(0.0)
+    write_json(settings_dir / "network.structure.json", structure)
     print("最终网络有效结构：" + json.dumps(structure, ensure_ascii=False), flush=True)
-    print(f"训练状态：{report.status}；验证最大残差={report.maximum_validation_residual:.6g}")
+    print(
+        f"训练状态：{report.status}；physics 验证最大残差={report.maximum_validation_physics_residual:.6g}；"
+        f"restart-rate 验证最大缺陷={report.maximum_validation_semigroup_rate_defect:.6g}",
+        flush=True,
+    )
     print(f"模型已保存：{model_path}")
-    if monitor is not None: monitor.finish("completed" if report.numerical_tolerance_met else report.status, model=str(model_path), numerical_tolerance_met=report.numerical_tolerance_met)
+    if monitor is not None:
+        monitor.finish(
+            "completed" if report.numerical_tolerance_met else report.status,
+            model=str(model_path),
+            numerical_tolerance_met=report.numerical_tolerance_met,
+        )
     return 0 if report.numerical_tolerance_met else 2
 
 
 def predict(model_path, output_path, settings_dir):
     import numpy as np
     from sdfmpneo import ResearchElectroThermalModel
-    if not model_path.is_file(): raise FileNotFoundError(f"模型不存在：{model_path}；请先训练")
-    model = ResearchElectroThermalModel.load(model_path); parameters = dict(PREDICTION)
+
+    if not model_path.is_file():
+        raise FileNotFoundError(f"模型不存在：{model_path}；请先训练")
+    model = ResearchElectroThermalModel.load(model_path)
+    parameters = dict(PREDICTION)
     initial = parameters["a0"]
-    if initial is None: initial = np.zeros(model.network.n_modes, dtype=float)
+    if initial is None:
+        initial = np.zeros(model.network.n_modes, dtype=float)
     geometry_args = {}
     if hasattr(model, "geometry_names"):
         g = parameters.get("geometry")
-        if g is None: g = dict(zip(model.geometry_names, (model.lower + model.upper) / 2))
-        parameters["geometry"] = g; geometry_args = {"geometry":g}
+        if g is None:
+            g = dict(zip(model.geometry_names, (model.lower + model.upper) / 2))
+        parameters["geometry"] = g
+        geometry_args = {"geometry": g}
     if parameters["initial_temperature_file"] is not None:
         temperature_path = resolve_path(parameters["initial_temperature_file"])
-        initial = model.project_initial_temperature(np.load(temperature_path, allow_pickle=False), **geometry_args)
+        initial = model.project_initial_temperature(
+            np.load(temperature_path, allow_pickle=False), **geometry_args
+        )
         parameters["initial_temperature_file"] = str(temperature_path)
-    if not parameters["times"]: raise ValueError("推理 times 至少需要一个时间点")
-    print(f"加载模型推理：{model_path}；thermal rank={model.network.n_modes}", flush=True)
-    results = [model.predict(t, a0=initial, operating=parameters["operating"], diagnostics=not parameters["state_only"], allow_extrapolation=parameters["allow_extrapolation"], allow_time_extrapolation=parameters.get("allow_time_extrapolation", True), **geometry_args) for t in parameters["times"]]
-    write_json(output_path, results); write_json(settings_dir / "predict.settings.json", {"case":"uwpt","mode":"predict","model":str(model_path),"predictions":str(output_path),"prediction":parameters,"effective_a0":initial})
+    if not parameters["times"]:
+        raise ValueError("推理 times 至少需要一个时间点")
+    print(
+        f"加载模型推理：{model_path}；thermal rank={model.network.n_modes}；"
+        f"单段上限={model.network.max_response_time:g} s",
+        flush=True,
+    )
+    results = [
+        model.predict(
+            t,
+            a0=initial,
+            operating=parameters["operating"],
+            diagnostics=not parameters["state_only"],
+            allow_extrapolation=parameters["allow_extrapolation"],
+            **geometry_args,
+        )
+        for t in parameters["times"]
+    ]
+    write_json(output_path, results)
+    write_json(
+        settings_dir / "predict.settings.json",
+        {
+            "case": "uwpt", "mode": "predict", "model": str(model_path),
+            "predictions": str(output_path), "prediction": parameters,
+            "effective_a0": initial,
+        },
+    )
     for result in results:
-        display_time = "inf" if result["time"] == "inf" else f"{float(result['time']):g}"
-        print(f"t={display_time} s，最高温度={result['maximum_temperature']:.8g} K")
-    print(f"推理结果已保存：{output_path}"); return 0
+        if result.get("steady_state"):
+            label = "steady"
+        else:
+            label = f"{float(result['time']):g} s"
+        print(
+            f"t={label}，最高温度={result['maximum_temperature']:.8g} K，"
+            f"segments={result.get('segment_count', 0)}",
+            flush=True,
+        )
+    print(f"推理结果已保存：{output_path}")
+    return 0
 
 
-CONFIG_NAMES = ("FILES","MESH","TRANSMITTER","RECEIVER","ENVIRONMENT","PHYSICAL_TAGS","PHYSICS","MATERIALS","PORTS","EM_CANDIDATE_STATES","THERMAL_RANK","THERMAL_TRUNCATION","TRAINING","PREDICTION","MONITOR","GEOMETRY_FAMILY")
+CONFIG_NAMES = (
+    "FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
+    "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
+    "THERMAL_TRUNCATION", "MAX_RESPONSE_TIME", "TRAINING", "PREDICTION", "MONITOR",
+    "GEOMETRY_FAMILY",
+)
 
-def configuration_snapshot(model_path): return {"root":str(ROOT),"model_path":str(model_path),"parameters":{name:globals()[name] for name in CONFIG_NAMES}}
+
+def configuration_snapshot(model_path):
+    return {
+        "root": str(ROOT),
+        "model_path": str(model_path),
+        "parameters": {name: globals()[name] for name in CONFIG_NAMES},
+    }
+
 
 def execute_training(model_path, settings_dir, session_dir=None):
     from datetime import datetime
     import uuid
     from sdfmpneo.training.monitor import TrainingMonitor, TrainingStopped
-    if session_dir is None: session_dir = resolve_path(MONITOR["log_dir"]) / (datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8])
-    session_dir = Path(session_dir); write_json(session_dir / "settings.json", configuration_snapshot(model_path)); print(f"训练日志：{session_dir}", flush=True)
-    with TrainingMonitor(session_dir / "metrics.jsonl", session_dir / "control.json", interval=MONITOR["log_interval_s"]) as monitor:
-        try: return train(model_path, settings_dir, monitor)
+
+    if session_dir is None:
+        session_dir = resolve_path(MONITOR["log_dir"]) / (
+            datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+        )
+    session_dir = Path(session_dir)
+    write_json(session_dir / "settings.json", configuration_snapshot(model_path))
+    print(f"训练日志：{session_dir}", flush=True)
+    with TrainingMonitor(
+        session_dir / "metrics.jsonl",
+        session_dir / "control.json",
+        interval=MONITOR["log_interval_s"],
+    ) as monitor:
+        try:
+            return train(model_path, settings_dir, monitor)
         except TrainingStopped:
-            monitor.finish("stopped", checkpoint=None, message="模型构建阶段停止，暂无网络检查点"); return 130
+            monitor.finish("stopped", checkpoint=None, message="模型构建阶段停止，暂无网络检查点")
+            return 130
+
 
 def training_worker(snapshot_path):
     global ROOT
-    payload = json.loads(Path(snapshot_path).read_text(encoding="utf-8")); settings = payload["settings"]; ROOT = Path(settings["root"])
-    for name in CONFIG_NAMES: globals()[name] = settings["parameters"][name]
-    return execute_training(Path(settings["model_path"]), resolve_path(FILES["settings_dir"]), payload["session_dir"])
+    payload = json.loads(Path(snapshot_path).read_text(encoding="utf-8"))
+    settings = payload["settings"]
+    ROOT = Path(settings["root"])
+    for name in CONFIG_NAMES:
+        globals()[name] = settings["parameters"][name]
+    return execute_training(
+        Path(settings["model_path"]),
+        resolve_path(FILES["settings_dir"]),
+        payload["session_dir"],
+    )
+
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="SDF-MPNEO fixed analytic network")
-    parser.add_argument("--mode", choices=("train","predict"), default=MODE); parser.add_argument("--model"); display = parser.add_mutually_exclusive_group(); display.add_argument("--gui", action="store_true"); display.add_argument("--headless", action="store_true"); parser.add_argument("--worker-config", help=argparse.SUPPRESS)
+    parser = argparse.ArgumentParser(description="SDF-MPNEO segmented fixed analytic network")
+    parser.add_argument("--mode", choices=("train", "predict"), default=MODE)
+    parser.add_argument("--model")
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument("--gui", action="store_true")
+    display.add_argument("--headless", action="store_true")
+    parser.add_argument("--worker-config", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.worker_config: return training_worker(args.worker_config)
-    model_path = resolve_path(args.model or FILES["model"]); settings_dir = resolve_path(FILES["settings_dir"])
+    if args.worker_config:
+        return training_worker(args.worker_config)
+    model_path = resolve_path(args.model or FILES["model"])
+    settings_dir = resolve_path(FILES["settings_dir"])
     if args.mode == "train":
         if not args.headless and (args.gui or MONITOR["enabled"]):
-            try: from sdfmpneo.training.qt_monitor import launch_window
-            except ImportError as exc: raise SystemExit('请安装图形依赖：python -m pip install -e ".[cad,gui]"；或使用 --headless。') from exc
-            return launch_window(__file__, configuration_snapshot(model_path), resolve_path(MONITOR["log_dir"]), MONITOR)
+            try:
+                from sdfmpneo.training.qt_monitor import launch_window
+            except ImportError as exc:
+                raise SystemExit(
+                    '请安装图形依赖：python -m pip install -e ".[cad,gui]"；或使用 --headless。'
+                ) from exc
+            return launch_window(
+                __file__, configuration_snapshot(model_path),
+                resolve_path(MONITOR["log_dir"]), MONITOR,
+            )
         return execute_training(model_path, settings_dir)
     return predict(model_path, resolve_path(FILES["predictions"]), settings_dir)
 
-if __name__ == "__main__": raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())

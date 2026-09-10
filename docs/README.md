@@ -4,8 +4,8 @@
 
 推荐阅读顺序：
 
-1. **`../README.md`**：安装、`run.py` 调用、自动热秩、训练/保存/加载/几何查询和任意时间推理。
-2. **`FIXED_ANALYTIC_RESPONSE_NETWORK.md`**：当前 fixed analytic response network 的数学结构、连续残差训练、验证剪枝和持久化格式。
+1. **`../README.md`**：安装、`run.py` 调用、自动热秩、100 s 默认单段训练、长时间 rollout、稳态物理解和几何查询。
+2. **`FIXED_ANALYTIC_RESPONSE_NETWORK.md`**：finite-horizon fixed analytic response network、physics residual、restart/semigroup consistency、验证剪枝和持久化格式。
 3. **`THEORY_CORRECTIONS_AND_VALIDATION.md`**：理论勘误、跨几何 residual/稳定性定义以及论文级验证边界。
 4. **`NOVELTY_POSITIONING.md`**：文献定位、可安全主打的组合创新和 novelty ablation 要求。
 5. **`SDFMPNEO_theory.tex`**：更完整的理论背景；如与当前可执行架构冲突，以前四项和当前代码为准。
