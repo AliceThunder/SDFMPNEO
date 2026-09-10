@@ -41,7 +41,8 @@ def test_fixed_network_parameter_jacobian_matches_finite_difference():
 
 def test_fixed_network_operating_jacobian_matches_finite_difference():
     network = _network()
-    a0 = np.array([0.2, -0.1])n    operating = np.array([0.3, 0.6])
+    a0 = np.array([0.2, -0.1])
+    operating = np.array([0.3, 0.6])
     time = 0.4
     a, da, ja, jda = network.evaluate_operating_jacobian(
         time, a0=a0, operating=operating)
