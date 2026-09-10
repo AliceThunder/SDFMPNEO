@@ -1,36 +1,40 @@
-# SDF-MPNEO — 电磁–热多物理代理模型
+# SDF-MPNEO
 
 **Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator**
 
-SDF-MPNEO 面向水下 WPT 的磁准静态电磁–瞬态热耦合。训练不使用瞬态解标签；网络通过控制方程残差训练，电磁平衡、温度相关电导率、焦耳热和热方程仍来自物理模型。
+SDF-MPNEO 用于 UWPT 磁准静态电磁–瞬态热耦合代理。训练不使用瞬态解标签，而是直接最小化控制方程残差；温度相关电导率、电磁平衡、焦耳热和热扩散都由物理模型计算。
 
-当前 fresh 训练主架构是：
+当前代码只有一条训练主路径：
 
 \[
-\boxed{\text{自动热秩}\rightarrow\text{固定最大解析响应网络}\rightarrow\text{连续残差训练}\rightarrow\text{验证剪枝}}
+\boxed{\text{自动热秩}\rightarrow\text{固定解析响应网络}\rightarrow\text{连续残差优化}\rightarrow\text{独立验证与剪枝}}
 \]
 
-正常 fresh 训练不再逐个搜索响应神经元，不执行 Grow / Enrich / Split / `candidate_search`。完整原理见 [`docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md`](docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md)。
+不再存在候选神经元枚举、Grow / Enrich / Split 或 `candidate_search`。历史 DAG/checkpoint 不做兼容转换；继续训练只支持当前 fixed-network 格式。
 
-## 1. 安装
+## 安装
+
+UWPT 几何和训练窗口：
 
 ```bash
 python -m pip install -e '.[cad,gui]'
 ```
 
-测试环境：
+开发测试：
 
 ```bash
 python -m pip install -e '.[dev,cad,gui]'
 ```
 
-Linux 的 Gmsh wheel 可能还需要：
+Linux 的 Gmsh wheel 如缺少 OpenGL/GLU，可安装：
 
 ```bash
 sudo apt-get install libgl1 libglu1-mesa
 ```
 
-## 2. 推荐入口：`run.py`
+## 推荐入口：`run.py`
+
+通常只修改 `run.py` 顶部的几何、材料、误差目标、训练域和推理输入。
 
 训练：
 
@@ -38,7 +42,7 @@ sudo apt-get install libgl1 libglu1-mesa
 python run.py --mode train
 ```
 
-无界面：
+无界面训练：
 
 ```bash
 python run.py --mode train --headless
@@ -56,40 +60,34 @@ python run.py --mode predict
 python run.py --mode predict --model results/uwpt/model.npz
 ```
 
-几何、材料、频率、端口、误差目标和推理输入都集中在 `run.py` 顶部。默认一次训练覆盖 10 个连续几何参数，域内换几何仍使用同一个保存模型。
+默认训练结果包括：
 
-## 3. 用户主要指定误差，而不是内部阶数
-
-默认不再写死：
-
-```python
-THERMAL_RANK = 2
+```text
+results/uwpt/model.npz
+results/uwpt/model.config.json
+results/uwpt/train.settings.json
+results/uwpt/training.report.json
+results/uwpt/thermal.rank.json
+results/uwpt/network.structure.json
+results/uwpt/geometry.domain.json    # 启用几何族时
+results/uwpt/logs/
 ```
 
-而是：
+训练只有在训练配点和独立验证配点的最大物理残差都达到 `residual_tolerance` 时返回成功；否则保存当前结果并返回非零退出码。
+
+## 自动热秩
+
+默认：
 
 ```python
 THERMAL_RANK = None
-THERMAL_TRUNCATION = {
-    "mode": "automatic_physics_envelope",
-    "relative_tolerance": 1e-3,
-    "absolute_tolerance": 0.0,
-    "initial_coordinate_bound": 0.1,
-    "probe_start_rank": 4,
-    "max_probe_rank": 32,
-    "source_bound_safety_factor": 2.0,
-    "boundary_fraction": 0.25,
-    "temperature_probe_axes": 4,
-    "initial_temperature_deviation_free": None,
-    "source_dual_bound": None,
-    "requested_state_tolerance": None,
-    "prefer_partial_thermal_spectrum": True,
-}
 ```
 
-程序从低阶热谱开始扩大，用真实全阶 EM 平衡估计各热模态的稳态响应包络。只有高阶尾部已经足够小才截断。默认包络是有限物理锚点收敛判据，程序会在报告中明确写 `certified_continuous_domain=false`，不会把它冒充严格连续域证书。
+并由 `THERMAL_TRUNCATION` 指定物理截断目标。默认 `automatic_physics_envelope` 从低阶热谱开始扩展，用全阶电磁平衡估计各热模态的稳态响应包络。只有已解析尾部足够小且探测边界已经衰减时才接受部分秩。
 
-如果能提供严格的：
+如果到 `max_probe_rank` 仍不能确认尾部，程序不会把未解析的部分秩当成成功，而是回退到完整离散热空间。
+
+如果同时提供：
 
 ```text
 initial_temperature_deviation_free
@@ -97,187 +95,124 @@ source_dual_bound
 requested_state_tolerance
 ```
 
-则继续使用原有 theorem-level thermal-tail certificate。
+则使用 theorem-level thermal-tail certificate 路径；三项必须同时给出。
 
-自动选出最终 rank 后，训练初态域自动展开：
+自动得到最终热秩 `r` 后，`TRAINING["initial_lower"]` / `initial_upper` 可以留空，程序会按 `initial_coordinate_bound` 自动扩展为 `r` 维。
+
+## Fixed analytic response network
+
+网络不是普通时间步进 MLP。每个解析响应通道绑定一个热衰减率：
+
+\[
+(\partial_t+\lambda_j)h=S,\qquad h(0)=0.
+\]
+
+source 由显式 bias、输入线性项、低秩 `x^2`、`xH` 和 `H^2` 组成。网络最大结构在训练开始时一次性建立，所有普通参数与 channel/component gate 一起连续优化，不执行离散结构搜索。
+
+默认容量会根据最终热秩和输入维数确定；也可以在 `TRAINING` 中直接限制：
 
 ```python
 TRAINING = {
-    "initial_lower": [],
-    "initial_upper": [],
     ...
+    "max_network_depth": None,
+    "max_channels_per_mode": None,
+    "max_quadratic_rank": None,
+    "max_cross_rank": None,
+    "max_state_rank": None,
+    "max_iterations": 36,
+    "max_validation_epochs": 5,
+    "gate_shrink": 0.0,
+    "prune_relative_budget": 0.10,
+    "prune_rounds": 3,
 }
 ```
 
-空列表表示使用 `initial_coordinate_bound` 生成最终 `r` 维模态坐标盒。因此不会再发生“自动选成 6 阶，但配置仍只有两个 a0”的情况。
+达到残差目标后，程序根据完整残差 Jacobian 对 gate 做影响排序；只有置零后训练点和独立验证点仍满足目标的剪枝才会保留。
 
-## 4. 网络结构如何自动适应
+详细数学结构见 [`docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md`](docs/FIXED_ANALYTIC_RESPONSE_NETWORK.md)。
 
-网络先创建一个根据最终热秩和输入维数确定的**最大容量**。每个热模态有若干候选解析响应通道；每个通道满足
+## 任意时间与稳态查询
 
-\[
-(\partial_t+\lambda_j)h=S.
-\]
-
-source 包含：
-
-\[
-S=b+W_xx+W_hH+\Phi_{xx}+\Phi_{xH}+\Phi_{HH}.
-\]
-
-所以每个响应神经元仍然拥有多个系数，并且有显式 bias。动态层不使用 ReLU；`x^2`、`xH`、`H^2` 提供非线性，而解析响应算子提供物理时间尺度和记忆。
-
-每个响应通道和低秩 `xx/xH/HH` 分量都有连续 gate。所有 gate 与普通权重一起由物理残差优化。达到残差目标后，程序根据完整残差 Jacobian 对已有 gate 做影响排序，尝试将低影响 gate 置零，并重新执行完整非线性训练/验证残差检查。只有仍满足容差的剪枝才保留。
-
-因此仍然是“残差决定需要哪些响应神经元”，但不再通过候选结构搜索完成。
-
-高级实验可以用 `SDFMPNEO_FIXED_NETWORK_*` 环境变量修改最大容量；正常使用无需手工指定最终 depth、每模态 channel 数或低秩 rank。
-
-## 5. 训练配置
-
-默认核心设置类似：
-
-```python
-TRAINING = {
-    "initial_lower": [],
-    "initial_upper": [],
-    "operating_lower": [0.0, 0.0],
-    "operating_upper": [10.0, 10.0],
-    "time_horizon": 100000.0,
-    "residual_tolerance": 1e-5,
-    "time_sampling": "mixed_log",
-    "time_min": 1e-6,
-    "include_steady_state": True,
-    "sample_count": 64,
-    "validation_count": 64,
-    "max_nodes": 256,
-    "max_degree": 3,
-    "max_parent_responses": 1,
-    "max_realization_dimension": 64,
-}
-```
-
-最后四个结构预算只用于旧 v1/v2 非空 DAG checkpoint 的兼容继续训练；fresh fixed network 不使用它们进行 candidate search。
-
-fresh 训练阶段大致为：
-
-```text
-thermal_rank_selection
-initial_residual
-weight_refinement
-...
-validation
-structure_pruning
-saving
-```
-
-如果 fresh 日志出现 `candidate_search`，应检查是否实际上加载了旧的非空 DAG checkpoint。
-
-## 6. 输出文件
-
-默认训练后生成：
-
-```text
-results/uwpt/model.npz
-results/uwpt/model.config.json
-results/uwpt/geometry.domain.json
-results/uwpt/thermal.rank.json
-results/uwpt/network.structure.json
-results/uwpt/train.settings.json
-results/uwpt/training.report.json
-results/uwpt/logs/...
-```
-
-其中：
-
-- `thermal.rank.json`：最终热秩、选择方法、探测阶数和模态响应尾部信息；
-- `network.structure.json`：最大/有效 depth、各层有效通道数、各热模态有效通道数以及有效 `xx/xH/HH` rank；
-- `training.report.json`：训练/验证最大残差及是否真正达到容差。
-
-达到残差目标时退出码为 `0`；未达到时仍保存当前模型和报告，但退出码为 `2`，不会伪装成成功。
-
-## 7. 推理
-
-自动热秩后默认不再手写两个零初态：
-
-```python
-PREDICTION = {
-    "a0": None,
-    "operating": [5.0, 0.0],
-    "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, 1000000.0, "inf"],
-    "geometry": None,
-    "allow_time_extrapolation": True,
-    "initial_temperature_file": None,
-    "state_only": False,
-    "allow_extrapolation": False,
-}
-```
-
-`a0=None` 自动生成保存模型最终 thermal rank 对应的全零初态。也可以显式传入最终 `r` 维模态坐标，或通过 `initial_temperature_file` 提供全节点开尔文温度 `.npy` 后自动投影。
-
-`geometry=None` 查询保存几何域中心；指定几何时必须给出完整参数字典且位于保存域内。
-
-## 8. 任意时间和稳态
-
-解析时间表示保持为
+解析网络中的时间信号保持在有限指数–多项式闭包中：
 
 \[
 t^k e^{-\mu t}.
 \]
 
-因此不需要时间步进，可以直接查询：
+因此推理不是把时间截断到训练窗，也不需要逐步时间积分。有限超长时间直接稳定评估，`t=inf` 直接求解析稳态极限。
+
+例如：
 
 ```python
-PREDICTION["times"] = [0.0, 1.0, 1e5, 1e6, 1e300, "inf"]
+PREDICTION = {
+    "a0": None,
+    "operating": [5.0, 0.0],
+    "times": [0.0, 1.0, 1e5, 1e6, "inf"],
+    "geometry": None,
+    "allow_time_extrapolation": True,
+    ...
+}
 ```
 
-- `1e300` 等超长有限时间使用稳定解析计算；
-- `"inf"` 直接计算稳态极限；
-- `allow_time_extrapolation=False` 可禁止有限时间超出训练窗。
+## 连续几何族
 
-有限训练窗外的查询可以计算，但训练残差本身不自动构成域外精度证书。
+`GEOMETRY_FAMILY["enabled"] = True` 时，不同几何共用：
 
-## 9. Python API：换几何直接查询
+- 同一参考热坐标系；
+- 同一跨几何 EM 降阶基；
+- 同一个 fixed analytic response network。
+
+每个几何仍使用自己的质量矩阵、导热矩阵和电磁算子计算物理残差。训练后，域内换几何直接查询同一个模型，不需要重新训练。
+
+几何输入必须位于保存模型的非退化 affine chart 内。超出训练域不会默认静默外推。
+
+## 暂停和继续训练
+
+训练窗口支持暂停、恢复和停止。停止时如果已经存在 fixed network，会保存 `.stopped.npz` 检查点。
+
+继续训练时：
 
 ```python
-import numpy as np
-from sdfmpneo import ResearchElectroThermalModel
-
-model = ResearchElectroThermalModel.load("results/uwpt/model.npz")
-geometry = dict(zip(
-    model.geometry_names,
-    ((model.lower + model.upper) / 2).tolist(),
-))
-geometry["rx_gap"] = 0.0101
-geometry["rx_offset_x"] = 0.0001
-
-a0 = np.zeros(model.graph.n_modes)
-for t in [0.0, 1.0, 1e6, np.inf]:
-    result = model.predict(
-        t,
-        geometry=geometry,
-        a0=a0,
-        operating=[5.0, 0.0],
-        diagnostics=True,
-        allow_time_extrapolation=True,
-    )
-    print(t, result.maximum_temperature)
+FILES["resume_model"] = "results/uwpt/model.stopped.npz"
 ```
 
-改变几何后不会重新训练；仍使用同一个解析网络、共享电磁基和共享热坐标。
+resume 只接受**当前 model format + 当前 fixed-network format**。历史格式会明确报错，要求重新训练；代码中不保留转换器或旧训练器。
 
-## 10. 继续训练和兼容性
+## 直接 Python 调用
 
 ```python
-FILES["resume_model"] = "results/uwpt/model.npz"
+from sdfmpneo import ResearchElectroThermalModel, ResearchTrainingConfig
+from sdfmpneo.research import model_from_config
+
+model, config = model_from_config("examples/configs/uwpt_research.json")
+report = model.train(config)
+model.save("model.npz")
+
+loaded = ResearchElectroThermalModel.load("model.npz")
+result = loaded.predict(
+    1e6,
+    a0=[0.0] * loaded.network.n_modes,
+    operating=[5.0, 0.0],
+)
 ```
 
-新版 fixed-network checkpoint 继续优化同一组连续参数和 gate。历史 v1/v2 非空解析 DAG checkpoint 仍能加载，并故意继续走旧 DAG trainer，避免静默改变旧模型含义。
+几何族使用：
 
-默认 `FILES["resume_model"] = None`，因此 `python run.py --mode train` 是 fresh 自动热秩 + fixed-network 训练。
+```python
+from sdfmpneo.geometry_research import geometry_model_from_config
 
-## 11. 物理范围
+model, config = geometry_model_from_config("case.json")
+report = model.train(config)
+model.save("geometry_model.npz")
 
-当前一次几何族训练内保持线圈形状类别、匝数、材料拓扑和频率固定。几何参数可以连续变化，但不是“任意换一个 CAD 拓扑都无需重训”。
+result = model.predict(
+    float("inf"),
+    geometry={name: value for name, value in zip(model.geometry_names, model.geometry_reference)},
+    a0=[0.0] * model.network.n_modes,
+    operating=[5.0, 0.0],
+)
+```
 
-电磁变量没有被删除：对于当前固定频率时谐 MQS 问题，它们作为快速平衡变量在每个物理残差点求解并生成焦耳热；网络代理的是慢时间热状态。若未来研究开关瞬态、变频或电路包络动态，再把 EM/circuit 动态状态显式加入演化系统。
+## 代码边界
+
+当前包保留通用解析代数、热/电磁/网格和误差证书模块，因为它们是独立的数学/物理内核。已经废弃的 DAG 搜索训练器、runtime monkey-patch、DAG 专用 C++ 后端和历史 checkpoint 迁移代码不属于当前架构，不再保留。
