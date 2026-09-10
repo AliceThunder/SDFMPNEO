@@ -29,9 +29,15 @@ _SOURCE_RELATIVE_CUTOFF = 1.0e-4
 _BLOCK_LINE_SEARCH_STEPS = 6
 _BLOCK_GOOD_PREDICTED_GAIN = 5.0e-3
 
+_ACTIVE_CONFIG = None
+_ORIGINAL_TRAIN = None
 _BLOCK_RECORDS = None
 _BLOCK_PROPOSAL = None
 _BLOCK_ATTEMPTED = False
+_BLOCK_PLANS = ()
+_BLOCK_COMPILED = ()
+_BLOCK_POINT_WEIGHTS = None
+_FALLBACK_ATTEMPTED = False
 
 
 @dataclass(frozen=True)
@@ -53,13 +59,7 @@ class _OperatorBlock:
 
 
 class _StructuredTangentOperator:
-    """Matrix-free weighted candidate tangent operator.
-
-    Candidate columns are not materialized as one giant
-    ``(points * modes) x candidates`` matrix. Static monomial amplitudes are
-    stored in compact scale matrices and multiplied by one shared dynamic
-    unit-tangent table per analytic response key.
-    """
+    """Matrix-free weighted candidate tangent operator."""
 
     def __init__(self, records, point_weights, candidates, blocks):
         self.records = records
@@ -67,8 +67,8 @@ class _StructuredTangentOperator:
         self.sqrt_weights = np.sqrt(self.weights)
         self.candidates = tuple(candidates)
         self.blocks = tuple(blocks)
-        residual_width = 0 if not records else len(records[0].residual)
-        self.shape = (len(records) * residual_width, len(candidates))
+        width = 0 if not records else len(records[0].residual)
+        self.shape = (len(records) * width, len(candidates))
 
     def physical_matvec(self, z):
         z = np.asarray(z, dtype=float)
@@ -120,7 +120,19 @@ def _unit_tangent_table(graph, records, compiled, key):
     return out
 
 
-def _build_operator(graph, records, compiled, plans, point_weights, monitor=None):
+def _direct_dimension(compiled, parents):
+    if not compiled:
+        return 1
+    value = 1
+    realization = compiled[0]
+    for parent in parents:
+        value *= realization.node_realizations[parent].dimension
+    return int(value + 1)
+
+
+def _build_operator(
+    graph, records, compiled, plans, point_weights, config=None, monitor=None
+):
     from . import late_stage_batch as batch
 
     plans = list(plans)
@@ -135,7 +147,15 @@ def _build_operator(graph, records, compiled, plans, point_weights, monitor=None
     keys, seen = [], set()
     for plan in plans:
         key = batch._structured_key(plan)
-        if key is not None and key not in seen:
+        if key is None:
+            continue
+        if (
+            config is not None
+            and _direct_dimension(compiled, plan.parents)
+            > int(config.max_realization_dimension)
+        ):
+            continue
+        if key not in seen:
             seen.add(key)
             keys.append(key)
     if not keys:
@@ -152,7 +172,7 @@ def _build_operator(graph, records, compiled, plans, point_weights, monitor=None
     raw = []
     for plan_index, plan in enumerate(plans):
         key = batch._structured_key(plan)
-        if key is None:
+        if key not in table_by_key:
             continue
         scale = batch._plan_scale(plan, initial, operating)
         table = table_by_key[key]
@@ -187,19 +207,15 @@ def _build_operator(graph, records, compiled, plans, point_weights, monitor=None
         grouped.setdefault((item[4], item[1]), []).append(
             (index, item[5], item[6])
         )
-
-    blocks = []
-    for (key, target), values in grouped.items():
-        blocks.append(
-            _OperatorBlock(
-                candidate_indices=np.asarray(
-                    [value[0] for value in values], dtype=int
-                ),
-                scales=np.column_stack([value[1] for value in values]),
-                norms=np.asarray([value[2] for value in values], dtype=float),
-                unit_tangent=table_by_key[key][:, :, target],
-            )
+    blocks = [
+        _OperatorBlock(
+            np.asarray([value[0] for value in values], dtype=int),
+            np.column_stack([value[1] for value in values]),
+            np.asarray([value[2] for value in values], dtype=float),
+            table_by_key[key][:, :, target],
         )
+        for (key, target), values in grouped.items()
+    ]
     return _StructuredTangentOperator(records, weights, candidates, blocks), candidates
 
 
@@ -218,8 +234,7 @@ def _prox_sparse_group(values, step, lambda_l1, lambda_group, groups):
         np.abs(values) - step * lambda_l1, 0.0
     )
     for indices in groups.values():
-        local = out[indices]
-        norm = float(np.linalg.norm(local))
+        norm = float(np.linalg.norm(out[indices]))
         if norm <= 0.0:
             continue
         threshold = step * lambda_group * np.sqrt(len(indices))
@@ -234,8 +249,7 @@ def _estimate_lipschitz(operator):
     vector = np.full(size, 1.0 / np.sqrt(size), dtype=float)
     value = 1.0
     for _ in range(_POWER_STEPS):
-        image = operator.matvec(vector)
-        adjoint = operator.rmatvec(image)
+        adjoint = operator.rmatvec(operator.matvec(vector))
         norm = float(np.linalg.norm(adjoint))
         if not np.isfinite(norm) or norm <= np.finfo(float).tiny:
             return 1.0
@@ -253,8 +267,8 @@ def _sparse_group_solve(operator, residual, groups, fraction, initial=None):
     individual_max = float(np.max(np.abs(gradient0), initial=0.0))
     group_max = max(
         (
-            float(np.linalg.norm(gradient0[indices])) / np.sqrt(len(indices))
-            for indices in groups.values()
+            float(np.linalg.norm(gradient0[index])) / np.sqrt(len(index))
+            for index in groups.values()
         ),
         default=0.0,
     )
@@ -264,11 +278,11 @@ def _sparse_group_solve(operator, residual, groups, fraction, initial=None):
     lambda_l1 = float(fraction) * 0.35 * individual_max
     lambda_group = float(fraction) * 0.65 * group_max
     lipschitz = _estimate_lipschitz(operator)
-
-    if initial is None or np.asarray(initial).shape != gradient0.shape:
-        x = np.zeros_like(gradient0)
-    else:
-        x = np.asarray(initial, dtype=float).copy()
+    x = (
+        np.zeros_like(gradient0)
+        if initial is None or np.asarray(initial).shape != gradient0.shape
+        else np.asarray(initial, dtype=float).copy()
+    )
     y = x.copy()
     momentum = 1.0
 
@@ -276,7 +290,6 @@ def _sparse_group_solve(operator, residual, groups, fraction, initial=None):
         Ay = operator.matvec(y)
         smooth_y = 0.5 * float(np.sum((weighted_residual + Ay) ** 2))
         gradient = operator.rmatvec(weighted_residual + Ay)
-
         local_lipschitz = lipschitz
         while True:
             trial = _prox_sparse_group(
@@ -315,8 +328,33 @@ def _sparse_group_solve(operator, residual, groups, fraction, initial=None):
     return x
 
 
-def _proposal_from_z(graph, records, operator, candidates, groups, z):
+def _prune_z_to_state_budget(graph, candidates, groups, z, max_nodes):
     z = np.asarray(z, dtype=float).copy()
+    available = max(0, int(max_nodes) - len(graph.response_nodes))
+    new_groups = []
+    for family, indices in groups.items():
+        if not np.any(z[indices]):
+            continue
+        candidate = candidates[int(indices[0])]
+        if family_nodes(graph, candidate.target, candidate.parents):
+            continue
+        new_groups.append((float(np.linalg.norm(z[indices])), str(family), family))
+    if len(new_groups) <= available:
+        return z
+    new_groups.sort(reverse=True)
+    keep = {family for _, _, family in new_groups[:available]}
+    for _, _, family in new_groups:
+        if family not in keep:
+            z[groups[family]] = 0.0
+    return z
+
+
+def _proposal_from_z(graph, records, operator, candidates, groups, z, config=None):
+    z = np.asarray(z, dtype=float).copy()
+    if config is not None:
+        z = _prune_z_to_state_budget(
+            graph, candidates, groups, z, config.max_nodes
+        )
     peak = float(np.max(np.abs(z), initial=0.0))
     if peak <= 0.0:
         return None
@@ -367,10 +405,16 @@ def _proposal_from_z(graph, records, operator, candidates, groups, z):
 
 
 def _compute_block_proposal(
-    graph, records, compiled, plans, point_weights, monitor=None
+    graph, records, compiled, plans, point_weights, config=None, monitor=None
 ):
     operator, candidates = _build_operator(
-        graph, records, compiled, plans, point_weights, monitor=monitor
+        graph,
+        records,
+        compiled,
+        plans,
+        point_weights,
+        config=config,
+        monitor=monitor,
     )
     if operator is None or not candidates:
         return None
@@ -386,7 +430,7 @@ def _compute_block_proposal(
             operator, residual, groups, fraction, initial=warm
         )
         proposal = _proposal_from_z(
-            graph, records, operator, candidates, groups, warm
+            graph, records, operator, candidates, groups, warm, config=config
         )
         if proposal is None:
             continue
@@ -400,16 +444,28 @@ def _compute_block_proposal(
 def block_sparse_score_parent_batch(
     graph, records, compiled, plans, *, point_weights=None, monitor=None
 ):
-    """Solve one sparse block proposal instead of ranking candidates independently."""
+    """Select source families jointly with one sparse-group linearized solve."""
     global _BLOCK_RECORDS, _BLOCK_PROPOSAL, _BLOCK_ATTEMPTED
+    global _BLOCK_PLANS, _BLOCK_COMPILED, _BLOCK_POINT_WEIGHTS
+    global _FALLBACK_ATTEMPTED
+
     plans = list(plans)
     if point_weights is None:
         point_weights = np.ones(len(records), dtype=float)
-
     _BLOCK_RECORDS = records
+    _BLOCK_PLANS = tuple(plans)
+    _BLOCK_COMPILED = tuple(compiled)
+    _BLOCK_POINT_WEIGHTS = np.asarray(point_weights, dtype=float).copy()
     _BLOCK_ATTEMPTED = False
+    _FALLBACK_ATTEMPTED = False
     _BLOCK_PROPOSAL = _compute_block_proposal(
-        graph, records, compiled, plans, point_weights, monitor=monitor
+        graph,
+        records,
+        compiled,
+        plans,
+        point_weights,
+        config=_ACTIVE_CONFIG,
+        monitor=monitor,
     )
     if _BLOCK_PROPOSAL is None:
         return _fallback_score(
@@ -435,10 +491,9 @@ def block_sparse_score_parent_batch(
             continue
         desired_score = block_score * (1.0 + 1.0e-9 / (1 + rank))
         norm2 = desired_score / (weight * weight)
-        inner = -weight * norm2
         plan_index = int(item["plan_index"])
         target = int(item["target"])
-        out[plan_index][0][target] = inner
+        out[plan_index][0][target] = -weight * norm2
         out[plan_index][1][target] = norm2
     return out
 
@@ -451,7 +506,6 @@ def _fit_proposal_to_budget(graph, proposal, max_nodes):
             existing.append(item)
         else:
             new.setdefault(item["family"], []).append(item)
-
     if len(new) <= available:
         return proposal
 
@@ -472,16 +526,13 @@ def _fit_proposal_to_budget(graph, proposal, max_nodes):
             for item in values
         ]
     )
-    if not sources:
-        return None
-    return {**proposal, "sources": sources}
+    return None if not sources else {**proposal, "sources": sources}
 
 
 def _add_block_sources(graph, proposal, factor, config):
     trial = clone_state_graph(graph)
     added = 0
     families_added = set()
-
     for item in proposal["sources"]:
         weight = factor * float(item["weight"])
         if weight == 0.0:
@@ -491,16 +542,14 @@ def _add_block_sources(graph, proposal, factor, config):
         if source_active(trial, target, parents):
             continue
 
-        existing = family_nodes(trial, target, parents)
         enriched = False
-        for node in existing:
+        for node in family_nodes(trial, target, parents):
             try:
                 trial.enrich_response_state(node.name, parents, weight)
                 enriched = True
                 break
             except ValueError:
                 continue
-
         if not enriched:
             if len(trial.response_nodes) >= int(config.max_nodes):
                 return None
@@ -535,9 +584,8 @@ def _try_block_action(
     proposal = _fit_proposal_to_budget(graph, proposal, config.max_nodes)
     if proposal is None:
         return None, None
-
     old_norms = residual_norms(records)
-    frozen_weights = hard_point_weights(records, config.residual_tolerance)
+    frozen = hard_point_weights(records, config.residual_tolerance)
     factor = 1.0
     for _ in range(_BLOCK_LINE_SEARCH_STEPS):
         action = _add_block_sources(graph, proposal, factor, config)
@@ -551,12 +599,11 @@ def _try_block_action(
         except (ValueError, FloatingPointError, np.linalg.LinAlgError):
             trial_records = None
             new_norms = np.full_like(old_norms, np.inf)
-
         if trial_records is not None and max_first_accept(
             old_norms,
             new_norms,
             config.residual_tolerance,
-            frozen_weights,
+            frozen,
         ):
             old_max = float(np.max(old_norms, initial=0.0))
             new_max = float(np.max(new_norms, initial=0.0))
@@ -574,6 +621,54 @@ def _try_block_action(
     return None, None
 
 
+def _fallback_best_action(graph, field, points, records, config, monitor=None):
+    if not _BLOCK_PLANS or not _BLOCK_COMPILED:
+        return None, None
+    scores = _fallback_score(
+        graph,
+        records,
+        _BLOCK_COMPILED,
+        _BLOCK_PLANS,
+        point_weights=_BLOCK_POINT_WEIGHTS,
+        monitor=monitor,
+    )
+    ranked = []
+    for plan, (inner, norm2) in zip(_BLOCK_PLANS, scores):
+        for target in range(graph.n_modes):
+            if source_active(graph, target, plan.parents):
+                continue
+            if norm2[target] <= 0 or not np.isfinite(
+                norm2[target] + inner[target]
+            ):
+                continue
+            ranked.append(
+                (
+                    float(inner[target] * inner[target] / norm2[target]),
+                    float(-inner[target] / norm2[target]),
+                    int(target),
+                    tuple(plan.parents),
+                )
+            )
+    ranked.sort(reverse=True)
+    for score, weight, target, parents in ranked:
+        if score <= 0.0:
+            continue
+        action, trial_records = _fallback_select(
+            graph,
+            field,
+            points,
+            records,
+            config,
+            target,
+            parents,
+            weight,
+            monitor=monitor,
+        )
+        if action is not None:
+            return action, trial_records
+    return None, None
+
+
 def block_sparse_select_candidate_action(
     graph,
     field,
@@ -586,26 +681,29 @@ def block_sparse_select_candidate_action(
     *,
     monitor=None,
 ):
-    """Validate one whole sparse block; fall back to scalar/Split search."""
-    global _BLOCK_ATTEMPTED
+    """Validate one sparse block, using exact scalar/Split search only on failure."""
+    global _BLOCK_ATTEMPTED, _FALLBACK_ATTEMPTED
 
-    if (
-        records is _BLOCK_RECORDS
-        and _BLOCK_PROPOSAL is not None
-        and not _BLOCK_ATTEMPTED
-    ):
-        _BLOCK_ATTEMPTED = True
-        action, trial_records = _try_block_action(
-            graph,
-            field,
-            points,
-            records,
-            config,
-            _BLOCK_PROPOSAL,
-            monitor=monitor,
-        )
-        if action is not None:
-            return action, trial_records
+    if records is _BLOCK_RECORDS and _BLOCK_PROPOSAL is not None:
+        if not _BLOCK_ATTEMPTED:
+            _BLOCK_ATTEMPTED = True
+            action, trial_records = _try_block_action(
+                graph,
+                field,
+                points,
+                records,
+                config,
+                _BLOCK_PROPOSAL,
+                monitor=monitor,
+            )
+            if action is not None:
+                return action, trial_records
+        if not _FALLBACK_ATTEMPTED:
+            _FALLBACK_ATTEMPTED = True
+            return _fallback_best_action(
+                graph, field, points, records, config, monitor=monitor
+            )
+        return None, None
 
     return _fallback_select(
         graph,
@@ -620,11 +718,41 @@ def block_sparse_select_candidate_action(
     )
 
 
+def _block_sparse_train(field, config, *, graph=None, progress=None, monitor=None):
+    global _ACTIVE_CONFIG
+    previous = _ACTIVE_CONFIG
+    _ACTIVE_CONFIG = config
+    try:
+        return _ORIGINAL_TRAIN(
+            field,
+            config,
+            graph=graph,
+            progress=progress,
+            monitor=monitor,
+        )
+    finally:
+        _ACTIVE_CONFIG = previous
+
+
 def install_block_sparse_state_search() -> None:
+    global _ORIGINAL_TRAIN
+    from . import adaptive_runtime as adaptive
+    from . import research as research
     from . import residual_state_runtime as runtime
 
+    if _ORIGINAL_TRAIN is not None:
+        return
+    _ORIGINAL_TRAIN = runtime.residual_driven_state_train
     runtime.weighted_score_parent_batch = block_sparse_score_parent_batch
     runtime.select_candidate_action = block_sparse_select_candidate_action
+    runtime.residual_driven_state_train = _block_sparse_train
+    research.train_research_graph = _block_sparse_train
+    adaptive.adaptive_train_research_graph = _block_sparse_train
+    try:
+        import sdfmpneo.research as public_research
+        public_research.train_research_graph = _block_sparse_train
+    except ImportError:
+        pass
 
 
 __all__ = [
