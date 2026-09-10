@@ -10,6 +10,7 @@ from .analytic import (
     ParametricAnalyticEvolutionGraph,
     ParametricAnalyticSeries,
 )
+from .analytic.fixed_response_network import FixedAnalyticResponseNetwork
 from .electrothermal import CertifiedElectroThermalVectorField
 from .em import (
     ParametricEMProblem,
@@ -41,6 +42,7 @@ __all__ = [
     "AnalyticSeries",
     "ParametricAnalyticEvolutionGraph",
     "ParametricAnalyticSeries",
+    "FixedAnalyticResponseNetwork",
     "CertifiedAnalyticEvolutionOperator",
     "GeometryConditionedAnalyticEvolutionOperator",
     "MultiChartGeometryAnalyticPrediction",
@@ -93,14 +95,15 @@ from .training.state_split_runtime import install_screened_split_policy
 from .training.block_sparse_search_runtime import install_block_sparse_state_search
 from .training.convergence_rescue_runtime import install_convergence_rescue
 from .training.state_linearization_runtime import install_independent_state_native_linearization
+from .training.fixed_network_runtime import install_fixed_analytic_response_network
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
 # Install the one-shot auto-build guard before any runtime can invoke a compiled
 # kernel. The C++ layer stays lazy: importing sdfmpneo never launches a compiler.
 install_cpp_auto_build_guard()
 install_cpp_training_backend()
-# Upgrade the public parametric graph before training wrappers capture evaluator
-# bindings. Old add_product_response() remains a single-source special case.
+# Upgrade the public parametric graph before legacy training wrappers capture
+# evaluator bindings. Old checkpoints and the adaptive DAG remain loadable.
 install_analytic_state_graph()
 install_training_acceleration()
 install_adaptive_training()
@@ -108,40 +111,25 @@ install_late_stage_training()
 install_late_stage_batching()
 install_node_only_training_compile()
 install_observation_training_acceleration()
-# Native DAG/GN remains the fast path while every state is single-source.
 install_native_dag_training()
-# Install final residual-search semantics before structural state construction.
 install_high_dimensional_collocation()
 install_max_residual_training()
-# Final policy: residual-driven Enrich/Grow/Split with no fixed source count K.
 install_residual_driven_state_training()
-# Align structural ranking with the actual L-infinity stopping metric and bound
-# expensive nonlinear candidate trials. This patches only runtime search policy;
-# physical equations, tolerance and public configuration stay unchanged.
 install_state_search_policy()
-# Aggregate states can expose many source-specific split choices. Screen those
-# exact tangents first and materialize only the best few function-preserving DAG
-# splits instead of duplicating every branch for every weak candidate.
 install_screened_split_policy()
-# Replace per-candidate greedy ranking with one matrix-free sparse-group solve.
-# The shared physical Jacobian scores a whole admissible source dictionary at
-# once; only the resulting sparse block receives full nonlinear EM-thermal
-# validation. Exact scalar/Split search remains a fail-closed compatibility path.
 install_block_sparse_state_search()
-# A normal dictionary stall is not treated as a finished training result. First
-# try a small sparse block of two-response thermal interactions, then continue
-# with two progressively richer static polynomial dictionaries. Only a genuine
-# exhausted rescue path is allowed to return stalled above the residual target.
 install_convergence_rescue()
-# A coalesced equation seed is multi-source but has no dynamic descendants. For
-# its weight Jacobian, expand the sources transiently into an exactly equivalent
-# scalar graph so the existing native C++ GN kernel remains usable.
 install_independent_state_native_linearization()
+# Fresh/empty models use a fixed-depth low-rank analytic response network. This
+# final training binding removes normal Grow/Enrich/Split/candidate search: all
+# network parameters exist from the start and are optimized continuously. A
+# loaded non-empty legacy DAG deliberately falls back to its historical trainer.
+install_fixed_analytic_response_network()
 # Timing wrappers are last so they observe the actual final training path.
 install_cpp_training_visibility()
 
-# Export the trainer after runtime installation so callers receive the final
-# residual-driven state-construction implementation.
+# Export the trainer after runtime installation so callers receive the fixed
+# analytic-network trainer for fresh models.
 from .training.research import train_research_graph as train_research_graph
 
 __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
@@ -149,10 +137,9 @@ __all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTr
             "train_research_graph"]
 
 from .geometry_research import GeometryResearchModel, geometry_model_from_config
-# Geometry seeding predates analytic multi-source states. Coalesce the pure seed
-# after its unchanged equation-based selection so equivalent same-mode source
-# columns start in one state and are split only when residual evidence requires
-# independent downstream addressability.
+# Geometry models create an empty compatibility graph carrying the declared
+# geometry/current names; fixed-network training replaces that empty graph while
+# retaining the same input ordering and physical geometry context.
 install_geometry_seed_coalescing(GeometryResearchModel)
 install_geometry_continuation_persistence(GeometryResearchModel)
 install_concurrent_geometry_context_cache(GeometryResearchModel)
