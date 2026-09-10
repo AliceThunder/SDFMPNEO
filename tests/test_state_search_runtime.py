@@ -15,8 +15,13 @@ from sdfmpneo.training.block_sparse_search_runtime import (
     _groups,
     _sparse_group_solve,
     block_sparse_score_parent_batch,
-    block_sparse_select_candidate_action,
 )
+from sdfmpneo.training.convergence_rescue_runtime import (
+    _rescue_parent_pairs,
+    convergence_required_train,
+    convergence_rescue_select_candidate_action,
+)
+from sdfmpneo.training.research import ResearchTrainingConfig, ResearchTrainingReport
 from sdfmpneo.training.state_linearization_runtime import scalarize_independent_sources
 from sdfmpneo.training.state_search_runtime import (
     _max_aligned_target,
@@ -25,6 +30,7 @@ from sdfmpneo.training.state_search_runtime import (
     max_aligned_score_parent_batch,
 )
 from sdfmpneo.training.state_split_runtime import screened_split_proposals
+import sdfmpneo.training.convergence_rescue_runtime as convergence_rescue_runtime
 import sdfmpneo.training.state_search_runtime as state_search_runtime
 
 
@@ -173,11 +179,66 @@ def test_block_proposal_respects_dynamic_state_budget_not_source_count():
     assert len(fitted["sources"]) == 2
 
 
-def test_package_uses_block_sparse_search_with_exact_fallbacks_available():
+def test_convergence_rescue_includes_cross_and_square_state_interactions():
+    graph = ParametricAnalyticEvolutionGraph([0.7, 1.1], ["u"])
+    graph.add_product_response("a", 0, ("u",), 0.3)
+    graph.add_product_response("b", 1, ("u", "u"), -0.2)
+    assert _rescue_parent_pairs(graph) == (
+        ("a", "a"),
+        ("a", "b"),
+        ("b", "b"),
+    )
+
+
+def _report(status, met):
+    return ResearchTrainingReport(
+        status=status,
+        accepted_nodes=0,
+        initial_rms_residual=1.0,
+        final_rms_residual=0.1 if not met else 1.0e-6,
+        maximum_training_residual=0.2 if not met else 1.0e-6,
+        maximum_validation_residual=0.2 if not met else 1.0e-6,
+        objective_history=(1.0,),
+        numerical_tolerance_met=met,
+    )
+
+
+def test_stalled_training_automatically_expands_dictionary_before_returning():
+    config = ResearchTrainingConfig(
+        initial_lower=(0.0,),
+        initial_upper=(1.0,),
+        operating_lower=(0.0,),
+        operating_upper=(1.0,),
+        time_horizon=1.0,
+        residual_tolerance=1.0e-5,
+        max_degree=3,
+        max_realization_dimension=64,
+    )
+    seen = []
+    original = convergence_rescue_runtime._ORIGINAL_TRAIN
+
+    def fake_train(field, local, *, graph=None, progress=None, monitor=None):
+        seen.append((local.max_degree, local.max_realization_dimension))
+        return graph, _report(
+            "numerically_converged" if len(seen) == 3 else "stalled",
+            len(seen) == 3,
+        )
+
+    convergence_rescue_runtime._ORIGINAL_TRAIN = fake_train
+    try:
+        _, report = convergence_required_train(object(), config, graph=object())
+    finally:
+        convergence_rescue_runtime._ORIGINAL_TRAIN = original
+
+    assert report.numerical_tolerance_met
+    assert seen == [(3, 64), (4, 512), (5, 512)]
+
+
+def test_package_uses_block_sparse_search_with_convergence_rescue():
     assert residual_state_runtime.weighted_score_parent_batch is block_sparse_score_parent_batch
     assert (
         residual_state_runtime.select_candidate_action
-        is block_sparse_select_candidate_action
+        is convergence_rescue_select_candidate_action
     )
     assert state_search_runtime._split_proposals is screened_split_proposals
     assert callable(max_aligned_score_parent_batch)
