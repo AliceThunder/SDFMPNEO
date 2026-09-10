@@ -22,9 +22,9 @@ A newly aggregated state has one target thermal mode and at most one response-st
 
 where `p_nu=None` denotes a direct response with no response-state parent.
 
-The existing `max_degree` and `max_realization_dimension` still describe admissible candidate columns. `max_nodes` remains a budget on **independent dynamic states**. None of these quantities acts as a source-count limit inside one state.
+The normal dictionary uses the configured `max_degree`, `max_parent_responses` and `max_realization_dimension`. `max_nodes` remains a budget on **independent dynamic states**. None of these quantities acts as a source-count limit inside one state.
 
-For backward compatibility, a historical **single-source** node created under `max_parent_responses > 1` may still contain several response parents. Such a legacy source remains evaluable, cloneable and loadable, and uses the existing generic candidate path. It is not merged into a new multi-source state, because the Enrich/Split algebra intentionally uses the production one-dynamic-parent family rule.
+For backward compatibility, a historical **single-source** node created under `max_parent_responses > 1` may still contain several response parents. Such a source remains evaluable, cloneable and loadable. The same representation is used by the selective convergence-rescue path for two-response interaction states; it is deliberately not aggregated into a multi-source dynamic family.
 
 ## The three structural actions
 
@@ -42,7 +42,7 @@ If an activated source belongs to a dynamic family that does not yet exist, crea
 
 An aggregated state can later need independent downstream addressability. Split selects one active source and exposes it as a new state. A naive local split would change all existing descendants, so the implementation recursively duplicates every affected downstream state along the split branch.
 
-Under the production `max_parent_responses <= 1` rule this is exactly the distributive identity
+Under the production one-dynamic-parent family rule this is exactly the distributive identity
 
 \[
 m(h_a+h_b)=mh_a+mh_b,
@@ -93,9 +93,9 @@ The resulting joint direction is then rescaled by the existing hard-point linear
 
 The sparse problem is only a structure proposal mechanism. It does **not** replace the governing physics or relax convergence.
 
-The complete proposed block is evaluated against the true nonlinear collocation residual with the same max-first acceptance rule and the same configured `residual_tolerance`. The block line search performs only a small bounded number of full physical evaluations. If the predicted block fails, training falls back to the previous exact max-aligned scalar candidate path, including screened function-preserving Split proposals. Thus the new fast path can fail closed without removing legacy capability.
+The complete proposed block is evaluated against the true nonlinear collocation residual with the same max-first acceptance rule and the same configured `residual_tolerance`. The block line search performs only a small bounded number of full physical evaluations. If the predicted block fails, training falls back to the previous exact max-aligned scalar candidate path, including screened function-preserving Split proposals. Thus the fast path can fail closed without removing legacy capability.
 
-Candidates whose direct analytic realization exceeds `max_realization_dimension` are excluded from the block solve. They remain reachable through the exact fallback when a Split can make the downstream realization admissible.
+Candidates whose direct analytic realization exceeds the normal `max_realization_dimension` are excluded from the normal block solve. They remain reachable through Split when that makes the downstream realization admissible, or through the bounded convergence-rescue allowance described below.
 
 This changes the dominant cost from
 
@@ -111,6 +111,24 @@ N_{shared\ tangent\ keys}+N_{matrix\!\!-\!vector\ iterations}
 \]
 
 so a larger admissible dictionary mainly widens cheap matrix-vector work instead of multiplying full EM-thermal solves.
+
+## Automatic convergence rescue
+
+A structural stall above the requested residual tolerance is no longer treated as a completed training result immediately.
+
+The normal path first exhausts the configured one-response-parent block dictionary and its exact scalar/Split fallback. If no accepted structure remains, a small rescue dictionary is formed from at most eight representative response states. It contains only square and cross products of two response states,
+
+\[
+h_i^2,\qquad h_i h_j,
+\]
+
+which supply the second-order thermal-state interactions that the normal one-response-parent production dictionary cannot represent directly. These rescue candidates are again solved jointly as a sparse block, at most four sources are proposed, and the same exact nonlinear EM-thermal residual decides acceptance.
+
+The rescue path permits an exact realization dimension up to 512 so the product of two aggregated seed states is not discarded merely because the normal fast-path budget is 64. It does not raise `max_nodes`; independent-state capacity remains a hard budget.
+
+If the complete normal-plus-interaction search still returns `stalled`, training automatically continues twice. Each continuation adds one static polynomial degree and keeps the rescue realization allowance, so a default degree-3 run attempts degree 4 and then degree 5 before returning a genuine structural stall. The physical equations, collocation domain and requested residual tolerance are unchanged throughout these continuation passes.
+
+This policy intentionally distinguishes **search budgets** from the **success criterion**: search complexity may be expanded automatically after a proven stall, but numerical success is reported only when both training and independent validation residuals satisfy the configured tolerance.
 
 ## Geometry seed
 
@@ -129,9 +147,11 @@ This architecture does not change:
 - residual tolerance (`1e-5` in the current UWPT configuration);
 - physical EM or thermal equations;
 - collocation and independent residual-search domains;
-- `max_nodes`, `max_degree`, `max_parent_responses` or `max_realization_dimension` semantics;
+- `max_nodes` as the hard independent-dynamic-state budget;
 - long-time / stationary semantics;
 - continuous-domain certification target;
 - inference inputs or the physical thermal spectrum.
+
+The configured `max_degree`, `max_parent_responses` and `max_realization_dimension` define the **normal** search dictionary. After a proven stall, the convergence-rescue path may temporarily use two response parents, realization dimension 512, and up to two additional static degrees. Those allowances affect search expressivity only; they do not relax the governing residual or the success criterion.
 
 The structural change is that admissible source columns are selected jointly by a sparse continuous optimization, while the true nonlinear governing residual remains the final acceptance criterion.
