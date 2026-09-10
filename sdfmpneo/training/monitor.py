@@ -29,10 +29,8 @@ def read_jsonl(path):
         return []
     rows = []
     for line in lines:
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
+        try: row = json.loads(line)
+        except ValueError: continue
         if isinstance(row, dict): rows.append(row)
     return rows
 
@@ -56,13 +54,10 @@ def _session_matches_model(session_dir, target, root):
 
 
 def find_resume_sessions(log_root, resume_model, *, root=None):
-    """Find the newest current-format training journal and its resume lineage."""
     if resume_model is None: return []
     root = Path(root or ".").resolve(strict=False); target = _resolved_path(resume_model, root)
-    try:
-        directories = [path for path in Path(log_root).iterdir() if path.is_dir()]
-    except FileNotFoundError:
-        return []
+    try: directories = [path for path in Path(log_root).iterdir() if path.is_dir()]
+    except FileNotFoundError: return []
     matches = []
     for directory in directories:
         if _session_matches_model(directory, target, root):
@@ -94,39 +89,68 @@ def build_resume_history(log_root, resume_model, *, root=None):
     for session in sessions:
         local_revision = 0; local_elapsed = 0.0; local_collocation = 0
         for row in read_jsonl(session / "metrics.jsonl"):
-            revision = int(row.get("revision") or 0); elapsed = float(row.get("elapsed_s") or 0.0); collocation = int(row.get("collocation_epoch") or 0)
-            local_revision = max(local_revision, revision); local_elapsed = max(local_elapsed, elapsed); local_collocation = max(local_collocation, collocation)
-            adjusted = dict(row); adjusted["revision"] = revision_offset + revision; adjusted["elapsed_s"] = elapsed_offset + elapsed; adjusted["collocation_epoch"] = collocation_offset + collocation
+            revision = int(row.get("revision") or 0)
+            elapsed = float(row.get("elapsed_s") or 0.0)
+            collocation = int(row.get("collocation_epoch") or 0)
+            local_revision = max(local_revision, revision)
+            local_elapsed = max(local_elapsed, elapsed)
+            local_collocation = max(local_collocation, collocation)
+            adjusted = dict(row)
+            adjusted["revision"] = revision_offset + revision
+            adjusted["elapsed_s"] = elapsed_offset + elapsed
+            adjusted["collocation_epoch"] = collocation_offset + collocation
             combined.append(adjusted)
-        revision_offset += local_revision; elapsed_offset += local_elapsed; collocation_offset += local_collocation
-    return {"sessions": sessions, "rows": combined, "revision_offset": revision_offset, "elapsed_offset_s": elapsed_offset, "collocation_offset": collocation_offset}
+        revision_offset += local_revision
+        elapsed_offset += local_elapsed
+        collocation_offset += local_collocation
+    return {
+        "sessions": sessions, "rows": combined,
+        "revision_offset": revision_offset, "elapsed_offset_s": elapsed_offset,
+        "collocation_offset": collocation_offset,
+    }
 
 
 class TrainingMonitor:
     def __init__(self, log_path, control_path=None, *, interval=1.0):
-        if not math.isfinite(interval) or interval <= 0: raise ValueError("log interval must be finite and positive")
-        self.log_path = Path(log_path); self.control_path = None if control_path is None else Path(control_path); self.interval = interval
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("log interval must be finite and positive")
+        self.log_path = Path(log_path)
+        self.control_path = None if control_path is None else Path(control_path)
+        self.interval = interval
         self.best_network = None
-        self._lock = threading.RLock(); self._done = threading.Event(); self._command = "run"; self._start = time.monotonic(); self._sequence = 0
+        self._lock = threading.RLock(); self._done = threading.Event()
+        self._command = "run"; self._start = time.monotonic(); self._sequence = 0
         self._thread = None; self._file = None; self._error = None
-        self.data = {"state":"running","phase":"starting","revision":0,"collocation_epoch":0,"nodes":0,"mse":None,"rms":None,"train_max":None,"validation_max":None,"training_points":None,"validation_points":None}
+        self.data = {
+            "state":"running", "phase":"starting", "revision":0,
+            "collocation_epoch":0, "nodes":0, "mse":None, "rms":None,
+            "train_max":None, "validation_max":None, "training_points":None,
+            "validation_points":None, "work_label":None,
+            "work_completed":0, "work_total":0,
+        }
 
     def __enter__(self):
-        self.log_path.parent.mkdir(parents=True, exist_ok=True); self._file = self.log_path.open("w", encoding="utf-8", buffering=1)
-        self._read_command(); self._write(); self._thread = threading.Thread(target=self._heartbeat, name="training-journal", daemon=True); self._thread.start(); return self
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self.log_path.open("w", encoding="utf-8", buffering=1)
+        self._read_command(); self._write()
+        self._thread = threading.Thread(target=self._heartbeat, name="training-journal", daemon=True)
+        self._thread.start(); return self
 
     def __exit__(self, exc_type, exc, tb):
-        if exc is not None: self.finish("stopped" if isinstance(exc, TrainingStopped) else "failed", message=str(exc))
+        if exc is not None:
+            self.finish("stopped" if isinstance(exc, TrainingStopped) else "failed", message=str(exc))
         self._done.set()
         if self._thread is not None: self._thread.join()
         self._write(); self._file.close()
-        if self._error is not None and exc is None: raise RuntimeError("training log could not be written") from self._error
+        if self._error is not None and exc is None:
+            raise RuntimeError("training log could not be written") from self._error
 
     def _write(self):
         with self._lock:
             self._sequence += 1
             row = {**self.data, "sequence": self._sequence, "elapsed_s": time.monotonic()-self._start, "timestamp": time.time()}
-            self._file.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n"); self._file.flush()
+            self._file.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
+            self._file.flush()
 
     def _read_command(self):
         if self.control_path is None: return
@@ -146,13 +170,15 @@ class TrainingMonitor:
         while not self._done.wait(min(.1, self.interval)):
             try:
                 self._read_command()
-                if time.monotonic() - last >= self.interval: self._write(); last = time.monotonic()
+                if time.monotonic() - last >= self.interval:
+                    self._write(); last = time.monotonic()
             except Exception as exc:
                 self._error = exc; return
 
     def checkpoint(self):
         while True:
-            if self._error is not None: raise RuntimeError("training log could not be written") from self._error
+            if self._error is not None:
+                raise RuntimeError("training log could not be written") from self._error
             self._read_command()
             with self._lock:
                 command = self._command
@@ -162,8 +188,16 @@ class TrainingMonitor:
             self._done.wait(.05)
 
     def phase(self, name, *, check=True):
-        with self._lock: self.data["phase"] = name
+        with self._lock:
+            self.data.update(phase=name, work_label=None, work_completed=0, work_total=0)
         if check: self.checkpoint()
+
+    def activity(self, label, completed, total):
+        completed = int(completed); total = int(total)
+        if total < 0 or completed < 0 or completed > total:
+            raise ValueError("invalid monitor work progress")
+        with self._lock:
+            self.data.update(work_label=str(label), work_completed=completed, work_total=total)
 
     def retain(self, network):
         self.best_network = network
@@ -172,13 +206,18 @@ class TrainingMonitor:
     def record(self, network, objective, maximum, count, *, new_points=False):
         with self._lock:
             self.best_network = network
-            self.data.update(nodes=len(network.response_nodes), mse=float(objective), rms=math.sqrt(objective), train_max=float(maximum), training_points=int(count), validation_max=None)
+            self.data.update(
+                nodes=len(network.response_nodes), mse=float(objective), rms=math.sqrt(objective),
+                train_max=float(maximum), training_points=int(count), validation_max=None,
+                work_label=None, work_completed=0, work_total=0,
+            )
             self.data["revision"] += 1
             if new_points: self.data["collocation_epoch"] += 1
         self._write()
 
     def validation(self, maximum, count):
-        with self._lock: self.data.update(validation_max=float(maximum), validation_points=int(count))
+        with self._lock:
+            self.data.update(validation_max=float(maximum), validation_points=int(count), work_label=None, work_completed=0, work_total=0)
         self._write()
 
     def finish(self, state, **details):
@@ -200,3 +239,9 @@ class JsonlTail:
                 if isinstance(row, dict): result.append(row)
             except (ValueError, UnicodeError): pass
         return result
+
+
+__all__ = [
+    "TrainingStopped", "TrainingMonitor", "JsonlTail", "write_command", "read_jsonl",
+    "find_resume_sessions", "build_resume_history",
+]

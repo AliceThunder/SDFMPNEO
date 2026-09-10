@@ -269,14 +269,29 @@ class TrainingWindow(QtWidgets.QMainWindow):
             phase = PHASES.get(row.get("phase"), row.get("phase", ""))
             state = STATES.get(row.get("state"), row.get("state", ""))
             self.status_label.setText(f"{state} · {phase}")
+            work_total = int(row.get("work_total") or 0)
+            work_completed = int(row.get("work_completed") or 0)
+            work_label = row.get("work_label")
             if row.get("rms") is None:
-                self.details_label.setText(
-                    f"{phase}：当前还没有训练残差数据；残差曲线会在 initial residual 计算完成后出现"
-                )
+                if work_label and work_total:
+                    percent = 100.0 * work_completed / work_total
+                    self.details_label.setText(
+                        f"{phase}：{work_label} {work_completed}/{work_total} ({percent:.1f}%)；"
+                        "首个残差点完成后曲线会出现"
+                    )
+                else:
+                    self.details_label.setText(
+                        f"{phase}：当前还没有训练残差数据；残差曲线会在 initial residual 计算完成后出现"
+                    )
             else:
+                suffix = (
+                    f"  {work_label}={work_completed}/{work_total}"
+                    if work_label and work_total else ""
+                )
                 self.details_label.setText(
                     f"有效响应通道={row.get('nodes', 0)}  RMS={row.get('rms')}  "
-                    f"训练最大残差={row.get('train_max')}  验证最大残差={row.get('validation_max')}")
+                    f"训练最大残差={row.get('train_max')}  验证最大残差={row.get('validation_max')}"
+                    + suffix)
 
     def _finished(self, exit_code, _status):
         if self.reader is not None:
