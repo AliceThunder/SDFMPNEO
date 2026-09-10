@@ -2,7 +2,7 @@
 
 **Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator**
 
-SDF-MPNEO 面向 UWPT 磁准静态电磁–瞬态热耦合代理。训练不使用瞬态解标签，而是直接最小化控制方程残差。温度相关电导率、电磁平衡、焦耳热和热扩散始终由物理模型计算。
+SDF-MPNEO 面向 UWPT 磁准静态电磁–瞬态热耦合代理。训练不使用瞬态解标签，而是直接最小化控制方程残差；温度相关电导率、电磁平衡、焦耳热和热扩散始终由物理模型计算。
 
 当前生产路径只有一条：
 
@@ -58,7 +58,7 @@ python run.py --mode predict
 
 通常只需要修改 `run.py` 顶部的几何、材料、误差目标、训练域和推理输入。
 
-## 1. 自动热秩
+## 1. 自动热秩与分层缓存
 
 默认：
 
@@ -74,28 +74,59 @@ T(x,t)\approx T_{\rm ref}(x)+\sum_{j=1}^{r}a_j(t)\phi_j(x),
 K\phi_j=\lambda_jM\phi_j.
 \]
 
-自动选择器从低阶热谱开始扩展，通过真实电磁平衡估计模态稳态响应包络
+自动选择器现在不再按 `4 -> 8 -> 16 -> ...` 重复构建多个不同阶数的热/电磁探测模型。首次运行会：
+
+1. 构建一次完整离散热谱，得到 `Phi` 与 `lambdas`；
+2. 在完整热谱上只做一次确定性的全阶 EM response-envelope 诊断；
+3. 从完整 envelope 中纯代数扫描满足尾部误差要求的最小 `rank`；
+4. 最终代理网络只保留该前缀，不会因为完整谱参与诊断就训练全部热自由度。
+
+模态稳态响应包络采用
 
 \[
 E_j\sim \max\frac{|q_j|}{\lambda_j}.
 \]
 
-探测不再在固定的 32 阶上限处直接回退到全热空间，而是继续倍增直到找到可信尾部，必要时一直检查完整离散热谱。完整谱只用于**选秩诊断**；最终网络只保留满足目标的最小前缀 `r`。只有完整谱本身仍不能截断时，才真正使用全热空间。
+零热态下所有 operating anchors 共用同一个 EM 分解；每个模态的 loss operator 只组装一次，再同时评估全部 operating anchors，避免重复组装。
 
-如果提供严格 thermal-tail certificate 所需的全部输入，则使用严格证书路径；有限锚点物理包络不会被标记成连续域严格证明。
+默认启用三层缓存：
+
+```text
+model.config.thermal_rank.cache.spectrum.npz   # 完整热谱 Phi/lambdas
+model.config.thermal_rank.cache.envelope.npz   # 完整物理 response envelope
+model.config.thermal_rank.cache.json            # 当前 tolerance 下的最终 rank/report
+```
+
+缓存按内容指纹自动失效：
+
+- mesh、热导率或热容量变化：热谱与后续缓存全部失效；
+- 频率、电学材料、端口映射、电流范围或温度 probe 策略变化：只重算 EM envelope，热谱可复用；
+- 只修改 `relative_tolerance`、`absolute_tolerance`、`source_bound_safety_factor` 或 restart safety factor：直接复用完整 envelope，只重新扫描 rank，通常接近瞬时完成。
+
+因此第一次自动选秩仍需要实际物理计算；相同物理配置下后续训练不会重复做这部分工作。
+
+如果已经生成稳定网格，建议：
+
+```python
+MESH["generate"] = False
+```
+
+避免每次重新生成 `.msh` 导致 mesh 内容指纹变化。
+
+有限锚点物理 envelope 是可复现的数值/物理选秩判据，不会被标记成连续几何域的严格数学证书。若提供 strict thermal-tail certificate 所需全部输入，则仍走严格证书路径。
 
 ## 2. restart 状态域
 
-分段 rollout 中，第 2 段以后网络输入的 `a0` 是上一段的终态，因此训练域必须覆盖可达热状态，而不只是环境初态附近。
+分段 rollout 中，第 2 段以后网络输入的 `a0` 是上一段终态，因此训练域必须覆盖可达热状态，而不只是环境初态附近。
 
-默认把：
+默认：
 
 ```python
 TRAINING["initial_lower"] = []
 TRAINING["initial_upper"] = []
 ```
 
-留空。自动热秩阶段会把允许的初始扰动与安全放大的热响应包络组合，生成每个保留热模态的 restart-state box。预测时每次进入下一段前都会检查当前状态是否仍在该训练盒内；默认不静默外推。
+留空后，自动热秩阶段会将允许的初始扰动与安全放大的热响应 envelope 组合，生成每个保留热模态的 restart-state box。预测时每次进入下一段前都会检查当前状态是否仍在训练盒内；默认不静默外推。
 
 ## 3. 有限时间解析响应网络
 
@@ -113,17 +144,19 @@ TRAINING["initial_upper"] = []
 MAX_RESPONSE_TIME = 100.0
 ```
 
-每个响应神经元满足
+每个响应通道满足
 
 \[
-(\partial_t+\lambda_j)h_{jc}^{(\ell)}=S_{jc}^{(\ell)},
+(\partial_t+\lambda_j)h_{jc}^{(\ell)}
+=
+S_{jc}^{(\ell)},
 \qquad
 h_{jc}^{(\ell)}(0)=0.
 \]
 
-source 包含显式 bias、线性项以及低秩 `x²`、`xH`、`H²` 交互。动态层不使用 ReLU；解析响应算子本身承担时间记忆，乘法项提供非线性。
+source 包含显式 bias、低秩线性项、动态热态×静态几何/工况项，以及逐模态热态平方项。动态层不使用 ReLU；解析响应算子负责时间记忆。
 
-网络最大容量在训练开始时固定，channel/component gate 与其余系数一起连续优化。达到误差目标后，仅保留重新验证仍满足容差的剪枝。
+高 thermal rank 时网络容量自动收紧。当前默认在 `rank >= 96` 时使用 `depth=1`、`channels_per_mode=1`，避免响应通道和 Jacobian 随 thermal rank 二次膨胀。例如 `rank=198` 时默认产生 198 个响应通道，而不是旧结构中的 1584 个。
 
 ## 4. 两阶段无标签训练
 
@@ -135,7 +168,7 @@ R_{\rm phys}
 \dot{\hat a}-F(\hat a,G,U).
 \]
 
-物理残差达到目标后，再开启 restart/semigroup consistency：
+达到物理残差目标后，再加入 restart/semigroup consistency：
 
 \[
 R_{\rm sg}
@@ -149,24 +182,7 @@ R_{\rm sg}
 t_1+t_2\le H.
 \]
 
-这样避免随机初始网络因为“零/错误动力学也可能自洽”而阻碍物理残差优化。
-
-semigroup 参数 Jacobian 使用解析链式法则：
-
-\[
-J_{\rm sg}
-=
-J_\theta\Phi_{t_1+t_2}
--
-\left(
-J_\theta\Phi_{t_2}
-+
-J_{a_0}\Phi_{t_2}\,
-J_\theta\Phi_{t_1}
-\right).
-\]
-
-训练和独立验证都必须同时满足物理残差与 restart-rate defect 的目标。
+训练使用 hard-point 联合 Gauss–Newton：Jacobian 只在当前最难配点上构造以限制内存，但每个候选更新仍用完整训练 residual 集合接受或拒绝。GUI 在首个 RMS 点出现前会显示逐点 residual/Jacobian 组装进度。
 
 ## 5. 长时间自动 rollout
 
@@ -205,11 +221,9 @@ result = model.predict(
 
 结果会报告 `segment_count`、`segment_durations` 和 `max_response_time`。
 
-因此训练窗口不再等于最大可查询时间。网络从不单次外推到 `1e300`。
+## 6. 稳态
 
-## 6. 稳态单独解物理方程
-
-真正的稳态不由网络做 `t=\infty` 外推，而是直接解：
+真正稳态不通过网络做 `t=\infty` 外推，而是直接求解
 
 \[
 F(a_\infty,G,U)=0.
@@ -224,7 +238,7 @@ steady = model.steady_state(
 )
 ```
 
-为了方便，`model.predict(float("inf"), ...)` 也会路由到同一个物理稳态 Newton 求解器，而不是调用网络的无限时间表达。
+`model.predict(float("inf"), ...)` 只是方便路由到同一个物理稳态 Newton 求解器。
 
 ## 7. 连续几何族
 
@@ -234,13 +248,11 @@ steady = model.steady_state(
 GEOMETRY_FAMILY["enabled"] = True
 ```
 
-不同几何共用参考热坐标系、跨几何 EM 基和同一个 finite-horizon network，但每个几何的残差仍使用自己的
+不同几何共用参考热坐标系、跨几何 EM 基和同一个 finite-horizon network，但每个几何残差仍使用自己的
 
 \[
 M_r(G),\quad K_r(G),\quad A_{\rm EM}(G,a).
 \]
-
-长时间 rollout 和稳态物理解对几何族使用完全相同的接口。
 
 ## 8. 关键训练配置
 
@@ -266,7 +278,7 @@ TRAINING = {
 }
 ```
 
-用户主要控制的是精度目标和单段时间，而不是内部神经元数量。
+用户主要控制精度目标与单段时间，而不是内部神经元数量。
 
 ## 9. 输出
 
@@ -278,12 +290,15 @@ results/uwpt/model.config.json
 results/uwpt/train.settings.json
 results/uwpt/training.report.json
 results/uwpt/thermal.rank.json
+results/uwpt/model.config.thermal_rank.cache.json
+results/uwpt/model.config.thermal_rank.cache.spectrum.npz
+results/uwpt/model.config.thermal_rank.cache.envelope.npz
 results/uwpt/network.structure.json
 results/uwpt/geometry.domain.json    # 几何族启用时
 results/uwpt/logs/
 ```
 
-`training.report.json` 同时报告 physics training/validation residual、semigroup training/validation rate defect、原始 semigroup state defect、最终有效网络结构和单段最大时间。
+`thermal.rank.json` 会报告 `selection_cache_hit`、`envelope_cache_hit`、`spectrum_cache_hit` 和各缓存路径，便于判断本次是否真的复用了昂贵计算。
 
 ## 10. 模型格式
 
