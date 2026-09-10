@@ -15,15 +15,43 @@ from .state_structure_policy import (
     residual_norms,
 )
 from .state_search_runtime import (
-    _MAX_ALIGNMENT_HARD_POINTS,
     _MIN_PREDICTED_RELATIVE_GAIN,
     _max_aligned_target,
 )
 
 
-# Split cardinality stays unbounded in the model.  This is only the number of
+# Split cardinality stays unbounded in the model. This is only the number of
 # expensive graph-duplication trials retained after exact tangent screening.
 _MAX_EXACT_SPLIT_TRIALS = 3
+
+_CACHE_GRAPH = None
+_CACHE_RECORDS = None
+_CACHE_COMPILED = None
+_CACHE_ISOLATED = {}
+
+
+def _reset_cache(graph, records):
+    global _CACHE_GRAPH, _CACHE_RECORDS, _CACHE_COMPILED, _CACHE_ISOLATED
+    if graph is _CACHE_GRAPH and records is _CACHE_RECORDS:
+        return
+    _CACHE_GRAPH = graph
+    _CACHE_RECORDS = records
+    _CACHE_COMPILED = None
+    _CACHE_ISOLATED = {}
+
+
+def _compiled_for(graph, records, monitor=None):
+    global _CACHE_COMPILED
+    _reset_cache(graph, records)
+    if _CACHE_COMPILED is None:
+        _CACHE_COMPILED = _ordered_map(
+            lambda record: compile_state_realization(
+                graph, a0=record.initial, operating=record.u
+            ),
+            records,
+            monitor=monitor,
+        )
+    return _CACHE_COMPILED
 
 
 def _isolated_source_response(graph, compiled, node, source):
@@ -33,12 +61,29 @@ def _isolated_source_response(graph, compiled, node, source):
     return term.response(graph.lambdas[node.target_mode])
 
 
+def _isolated_for_dynamic(graph, records, compiled, dynamic_node):
+    _reset_cache(graph, records)
+    cached = _CACHE_ISOLATED.get(dynamic_node.name)
+    if cached is not None:
+        return cached
+    sources = response_sources(graph, dynamic_node)
+    values = tuple(
+        tuple(
+            _isolated_source_response(graph, realization, dynamic_node, source)
+            for realization in compiled
+        )
+        for source in sources
+    )
+    _CACHE_ISOLATED[dynamic_node.name] = values
+    return values
+
+
 def _split_source_score(
     graph,
     records,
     compiled,
+    isolated,
     dynamic_node,
-    source,
     parents,
     target,
     point_weights,
@@ -49,9 +94,6 @@ def _split_source_score(
     tangent_norm2 = np.zeros(len(records), dtype=float)
 
     for index, (record, realization) in enumerate(zip(records, compiled)):
-        isolated = _isolated_source_response(
-            graph, realization, dynamic_node, source
-        )
         candidate_source = AnalyticRealization.constant(1.0)
         used_dynamic = False
         for parent in parents:
@@ -60,7 +102,7 @@ def _split_source_score(
                     raise ValueError(
                         "split candidate requires exactly one response-parent occurrence"
                     )
-                right = isolated
+                right = isolated[index]
                 used_dynamic = True
             else:
                 right = realization.node_realizations[parent]
@@ -95,10 +137,12 @@ def screened_split_proposals(
     """Screen source-specific Split tangents before duplicating any DAG branch.
 
     Under the production one-response-parent rule, isolating source s from an
-    aggregate state gives an exact scalar realization h_s.  The candidate
-    tangent using h_s can therefore be scored without first materializing the
-    function-preserving descendant duplication.  Only the best few source
-    choices pay that graph-construction/nonlinear-evaluation cost.
+    aggregate state gives an exact scalar realization h_s. The candidate tangent
+    using h_s can therefore be scored without first materializing the
+    function-preserving descendant duplication. Compiled current-graph and
+    isolated-source realizations are cached for the whole candidate-search
+    iteration. Only the best few source choices pay the graph construction and
+    nonlinear full-point evaluation cost.
     """
     dynamic = dynamic_response_parent(graph, parents)
     if not isinstance(dynamic, str):
@@ -112,26 +156,21 @@ def screened_split_proposals(
     if len(sources) < 2:
         return []
 
-    compiled = _ordered_map(
-        lambda record: compile_state_realization(
-            graph, a0=record.initial, operating=record.u
-        ),
-        records,
-        monitor=monitor,
-    )
+    compiled = _compiled_for(graph, records, monitor=monitor)
+    isolated = _isolated_for_dynamic(graph, records, compiled, dynamic_node)
     weights = np.asarray(point_weights, dtype=float)
     if weights.shape != (len(records),):
         weights = hard_point_weights(records, config.residual_tolerance)
 
     scored = []
-    for source_index, source in enumerate(sources):
+    for source_index in range(len(sources)):
         try:
             relative, alpha = _split_source_score(
                 graph,
                 records,
                 compiled,
+                isolated[source_index],
                 dynamic_node,
-                source,
                 tuple(parents),
                 int(target),
                 weights,
