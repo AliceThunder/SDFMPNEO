@@ -1,10 +1,10 @@
 """一键训练/推理：修改下方配置后直接运行 python run.py。
 
-也可临时覆盖模式：
+推荐：
     python run.py --mode train
     python run.py --mode predict
 
-首次使用安装依赖：python -m pip install -e '.[cad,gui]'
+首次使用：python -m pip install -e '.[cad,gui]'
 训练默认打开 PyQt 窗口；无界面运行使用 --headless。
 所有相对路径均相对于本文件，支持从 IDE 或其他工作目录启动。
 """
@@ -12,56 +12,43 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from dataclasses import replace
 import json
 from pathlib import Path
 import threading
 import time
 
 
-# ==================== 1. 运行模式（直接使用 UWPT 算例） ====================
+# ==================== 1. 运行模式 ====================
 MODE = "train"                  # "train" 训练；"predict" 推理
 
 
 # ==================== 2. 输入输出路径 ====================
-# 可填写相对于 run.py 的路径，也可直接写绝对路径。
 FILES = {
-    "model": "results/uwpt/model.npz",          # 训练保存 / 推理加载
+    "model": "results/uwpt/model.npz",
     "predictions": "results/uwpt/predictions.json",
-    "settings_dir": "results/uwpt",           # 实际配置和训练报告所在目录
-    "resume_model": "results/uwpt/model.stopped.npz",                       # 可选：已有 .npz，继续训练
+    "settings_dir": "results/uwpt",
+    "resume_model": None,       # 继续旧模型时显式填写 .npz；None 表示 fresh training
 }
-# 继续训练使用文件内保存的物理模型/空间基/网络，以及下方当前 TRAINING；
-# 此时不会重新生成网格，几何/材料等构建参数不参与本次继续训练。
 
 
-# ==================== 3. UWPT 几何与网格（长度单位 m） ====================
+# ==================== 3. UWPT 几何与网格（m） ====================
 MESH = {
-    "generate": True,                   # True：每次新训练按配置生成；False：导入已有网格
-    "path": "results/uwpt/uwpt.msh",     # Gmsh 2.2 ASCII 四面体网格
-    "geometry_tolerance": 0.0005,        # 中心线折线弦误差
+    "generate": True,
+    "path": "results/uwpt/uwpt.msh",
+    "geometry_tolerance": 0.0005,
     "mesh_size": 0.01,
 }
-# 发射/接收线圈可独立配置。角度为弧度，依次绕 x/y/z 旋转。
 TRANSMITTER = {
-    "shape": "circle",                  # "circle" / "rounded_square"
-    "turns": 0.5,
-    "outer_half_size": 0.015,
-    "pitch": 0.002,
-    "conductor_width": 0.001,
-    "conductor_thickness": 0.001,
-    "corner_radius": 0.006,             # 仅 rounded_square 使用
-    "translation": [0.0, 0.0, 0.0],
+    "shape": "circle", "turns": 0.5, "outer_half_size": 0.015,
+    "pitch": 0.002, "conductor_width": 0.001, "conductor_thickness": 0.001,
+    "corner_radius": 0.006, "translation": [0.0, 0.0, 0.0],
     "angles": [0.0, 0.0, 0.0],
 }
 RECEIVER = {
-    "shape": "circle",
-    "turns": 0.5,
-    "outer_half_size": 0.015,
-    "pitch": 0.002,
-    "conductor_width": 0.001,
-    "conductor_thickness": 0.001,
-    "corner_radius": 0.006,
-    "translation": [0.0, 0.0, 0.01],
+    "shape": "circle", "turns": 0.5, "outer_half_size": 0.015,
+    "pitch": 0.002, "conductor_width": 0.001, "conductor_thickness": 0.001,
+    "corner_radius": 0.006, "translation": [0.0, 0.0, 0.01],
     "angles": [0.0, 0.0, 0.0],
 }
 ENVIRONMENT = {
@@ -75,12 +62,6 @@ PHYSICAL_TAGS = {
     "rx_terminal_start": 1003, "rx_terminal_end": 1004,
     "outer_boundary": 2001,
 }
-
-
-# 几何参数族：一次训练覆盖整个连续参数盒；推理输入保存模型内的这些参数。
-# 形状、匝数、材料拓扑固定。planar_scale 同比例改变外径、匝距和导体宽度；
-# thickness_scale 独立改变厚度；package_scale 仅改变封装外表面尺寸。
-# 位移/间距单位 m，seawater_radius 是实际网格外球半径（包含几何容差）。
 GEOMETRY_FAMILY = {
     "enabled": True,
     "parameters": {
@@ -95,20 +76,18 @@ GEOMETRY_FAMILY = {
         "rx_package_scale": {"bounds": [0.98, 1.02]},
         "seawater_radius": {"relative": [0.98, 1.02]},
     },
-    "em_anchor_count": 4,       # 额外 Halton 几何锚点；另含中心、上下角点及各轴端点
-    "cache_size": 128,          # 缓存几何物理算子，减少残差训练中的重复组装
+    "em_anchor_count": 4,
+    "cache_size": 128,
 }
 
 
-# ==================== 4. UWPT 材料与电磁参数（SI 单位） ====================
+# ==================== 4. 材料与电磁参数 ====================
 PHYSICS = {
     "frequency_hz": 100000.0,
-    "ambient_temperature": 293.15,      # K，固定环境/边界参考温度
+    "ambient_temperature": 293.15,
     "constitutive_relative_error": 1e-8,
-    "em_energy_error": 1e-6,            # 单位端口源的 EM 降阶误差目标
+    "em_energy_error": 1e-6,
 }
-# 键是网格的体物理标签；修改 PHYSICAL_TAGS 后也应对应修改这里及 PORTS。
-# 电导率 S/m；电阻率温度系数 1/K；热导率 W/(m K)；体积热容量 J/(m³ K)。
 MATERIALS = {
     "101": {
         "name": "tx_copper", "electrical_conductivity": 5.8e7,
@@ -144,74 +123,78 @@ MATERIALS = {
 PORTS = {
     "terminal_pairs": [[1001, 1002], [1003, 1004]],
     "port_names": ["tx", "rx"],
-    "current_offset": None,             # I = I0 + C U；None 表示零偏置
-    "current_matrix": None,             # None 表示单位阵，即 I=U
+    "current_offset": None,
+    "current_matrix": None,
 }
-# 电流采用峰值相量 A；复系数写为字符串，例如 [["1", "0"], ["0", "1j"]]。
-EM_CANDIDATE_STATES = [
-    [-0.1, -0.1], [-0.1, 0.1], [0.1, -0.1], [0.1, 0.1], [0.0, 0.0],
-]  # 热坐标维数须等于保留热秩；None 表示由训练域上下界及中点生成
+# 自动热秩下不手写定长热坐标候选；EM ROM 会从最终训练坐标域生成候选状态。
+EM_CANDIDATE_STATES = None
 
 
-# ==================== 5. UWPT 热空间截断 ====================
-THERMAL_RANK = 2                     # 数值截断阶数；None 表示全空间或下方证书选秩
+# ==================== 5. 自动热空间截断 ====================
+# None = 自动选热秩。显式整数仅用于收敛研究/复现实验。
+THERMAL_RANK = None
 THERMAL_TRUNCATION = {
+    "mode": "automatic_physics_envelope",
+    # 主要用户精度旋钮：舍弃模态稳态响应包络相对总包络的允许比例。
+    "relative_tolerance": 1e-3,
+    "absolute_tolerance": 0.0,
+    # 训练初始模态坐标域；最终选到 r 阶后自动扩展成 [-bound,+bound]^r。
+    "initial_coordinate_bound": 0.1,
+    # 自动探测从低阶开始逐步扩大；若 32 阶仍不能确认尾部衰减，则退回全热空间。
+    "probe_start_rank": 4,
+    "max_probe_rank": 32,
+    "source_bound_safety_factor": 2.0,
+    "boundary_fraction": 0.25,
+    "temperature_probe_axes": 4,
+    # 若有严格的全域热源 M^-1 对偶范数界，可同时提供以下三项；程序会改走
+    # 原有 theorem-level thermal tail certificate，而不是有限锚点包络判据。
     "initial_temperature_deviation_free": None,
     "source_dual_bound": None,
     "requested_state_tolerance": None,
     "prefer_partial_thermal_spectrum": True,
 }
-# 常规运行仅修改 THERMAL_RANK。若使用原有证书选秩，将其设为 None，
-# 同时填入以上前三项：自由节点初温偏差数组、热源对偶范数界和状态误差目标。
 
 
-# ==================== 6. 训练配置 ====================
-# initial_* 是质量正交热模态坐标，不是摄氏温度；长度等于热秩。
-# operating_* 对应实工况 U；time_horizon 单位 s。
-# residual_tolerance 是模态方程残差目标，不是温度误差目标。
+# ==================== 6. 无解标签残差训练 ====================
 TRAINING = {
-    "initial_lower": [-0.1, -0.1], "initial_upper": [0.1, 0.1],
+    # 空列表表示按自动热秩和 initial_coordinate_bound 自动展开，不再写死 2 个 a0。
+    "initial_lower": [], "initial_upper": [],
     "operating_lower": [0.0, 0.0], "operating_upper": [10.0, 10.0],
     "time_horizon": 100000.0, "residual_tolerance": 1e-5,
     "time_sampling": "mixed_log", "time_min": 1e-6, "include_steady_state": True,
     "sample_count": 64, "validation_count": 64,
+    # 以下仅为旧 v1/v2 非空 DAG checkpoint 的兼容预算；fresh fixed network 不使用
+    # candidate search，但 ResearchTrainingConfig 仍保留这些字段用于旧模型继续训练。
     "max_nodes": 256, "max_degree": 3,
     "max_parent_responses": 1, "max_realization_dimension": 64,
 }
-# 几何物理初始种子最多使用约 75% 的节点预算，其余容量留给残差驱动修正。
-# validation_count 仅为无标签物理残差的独立输入检查点数量，不做瞬态参考积分。
 
 
-# ==================== 7. 推理配置 ====================
+# ==================== 7. 推理 ====================
 PREDICTION = {
-    "a0": [0.0, 0.0], "operating": [5.0, 0.0],
+    # None = 按保存模型的最终热秩自动创建全零初态；也可显式给最终 r 维 a0。
+    "a0": None,
+    "operating": [5.0, 0.0],
     "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, 1000000.0, "inf"],
-    "geometry": None,                   # None：保存几何域的中心；或填写完整参数字典
-    "allow_time_extrapolation": True,   # 时间可超出训练窗；"inf" 查询解析稳态极限
+    "geometry": None,
+    "allow_time_extrapolation": True,
     "initial_temperature_file": None,
-    "state_only": False, "allow_extrapolation": False,
+    "state_only": False,
+    "allow_extrapolation": False,
 }
-# initial_temperature_file：可选的一维 .npy 全节点开尔文温度；设置后投影得到 a0。
-# state_only=True：仅解析网络与温度重构；False：另输出阻抗、电感和材料损耗。
-# allow_extrapolation 仅放开初态/电流域；几何必须处于保存的有效网格参数域。
-# 任意非负有限时间及 "inf" 均可查询；域外时间精度不由有限残差检查保证。
-# 推理始终使用 .npz 内保存的物理参数，不使用本文件的几何/材料构建配置。
 
 
-# ==================== 8. PyQt 实时训练窗口与日志 ====================
+# ==================== 8. 训练窗口与日志 ====================
 MONITOR = {
-    "enabled": True,                    # 训练打开窗口；推理不受影响
-    "auto_start": False,                # False：窗口打开后点击“启动”
-    "log_dir": "results/uwpt/logs",      # 每次任务独立子目录，保留全部 JSONL/文本日志
-    "log_interval_s": 1.0,              # 训练侧周期写日志，接受更新时也立即记录
-    "refresh_ms": 300,                  # 日志读取线程轮询周期
-    "max_plot_points": 4000,            # 窗口最多保留的曲线点数，日志不截断
-    "compute_threads": 1,               # 后台进程 BLAS/OpenMP 线程数
-    "assembly_progress_interval_s": 5.0, # 物理组装/EM 降阶期间控制台心跳周期
+    "enabled": True,
+    "auto_start": False,
+    "log_dir": "results/uwpt/logs",
+    "log_interval_s": 1.0,
+    "refresh_ms": 300,
+    "max_plot_points": 4000,
+    "compute_threads": 1,
+    "assembly_progress_interval_s": 5.0,
 }
-# 窗口主线程只绘图；QThread 读日志；独立进程训练，其日志线程周期写盘。
-# 暂停/停止在当前不可拆分运算结束后的检查点生效。暂停不退出进程，恢复继续原任务。
-# 停止后保存 model.stopped.npz（若已有有效网络），不会覆盖上次正常完成的模型。
 
 
 # ==================== 运行实现（通常无需修改） ====================
@@ -230,9 +213,37 @@ def write_json(path, value):
                                allow_nan=False) + "\n", encoding="utf-8")
 
 
+def resolve_training_rank(config, rank):
+    """Resolve an empty user a0 box after the saved/automatic thermal rank is known."""
+    rank = int(rank)
+    if len(config.initial_lower) == len(config.initial_upper) == 0:
+        bound = float(THERMAL_TRUNCATION.get("initial_coordinate_bound", 0.1))
+        return replace(config, initial_lower=(-bound,) * rank, initial_upper=(bound,) * rank)
+    if len(config.initial_lower) != rank or len(config.initial_upper) != rank:
+        raise ValueError(
+            f"训练初态维数与最终 thermal rank={rank} 不一致；自动模式请将 initial_lower/upper 留空")
+    return config
+
+
+def thermal_rank_owner(model):
+    return model.reference if hasattr(model, "reference") else model
+
+
+def thermal_rank_summary(model):
+    owner = thermal_rank_owner(model)
+    rank = int(owner.core.thermal_model.rank)
+    report = getattr(owner, "thermal_rank_report", None)
+    if report is None:
+        report = {
+            "method": "saved_or_explicit_basis",
+            "selected_rank": rank,
+            "certified_continuous_domain": bool(owner.core.thermal_tail_certificate is not None),
+        }
+    return rank, report
+
+
 @contextmanager
 def assembly_progress(monitor=None):
-    """Keep long physical assembly visibly alive in GUI/headless console output."""
     interval = float(MONITOR.get("assembly_progress_interval_s", 5.0))
     if not 0 < interval < float("inf"):
         raise ValueError("MONITOR['assembly_progress_interval_s'] 必须为有限正数")
@@ -240,6 +251,7 @@ def assembly_progress(monitor=None):
     started = time.monotonic()
     labels = {
         "assembly": "组装物理模型与参考电磁空间",
+        "thermal_rank_selection": "自动选择热空间阶数",
         "geometry_em_basis": "构建跨几何共享电磁空间",
         "geometry_seed": "构造跨几何物理初始网络",
     }
@@ -276,12 +288,10 @@ def assembly_progress(monitor=None):
         stop.set()
         thread.join(timeout=max(1.0, interval))
         elapsed = time.monotonic() - started
-        status = "完成" if succeeded else "中断"
-        print(f"[组装进度] {status} · 总耗时 {elapsed:.1f} s", flush=True)
+        print(f"[组装进度] {'完成' if succeeded else '中断'} · 总耗时 {elapsed:.1f} s", flush=True)
 
 
 def print_training_sample_ranges(model, config):
-    """Print the actual parameter box used to generate training/validation samples."""
     print("\n训练样本参数范围：", flush=True)
     if hasattr(model, "geometry_names"):
         print("  几何参数 G（物理值；网络内部归一化到 [-1, 1]）：", flush=True)
@@ -298,15 +308,12 @@ def print_training_sample_ranges(model, config):
     for index, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)):
         print(f"    U[{index}]: [{float(lower):.8g}, {float(upper):.8g}]", flush=True)
     sampling = getattr(config, "time_sampling", "linear")
-    time_min = getattr(config, "time_min", None)
-    time_detail = f"采样={sampling}"
-    if time_min is not None:
-        time_detail += f"，time_min={float(time_min):.8g} s"
-    print(f"  有限时间 t: [0, {float(config.time_horizon):.8g}] s；{time_detail}", flush=True)
-    print(f"  稳态残差点: {'包含' if getattr(config, 'include_steady_state', False) else '不包含'}",
-          flush=True)
-    print(f"  配点数量: 训练={int(config.sample_count)}，独立检查={int(config.validation_count)}",
-          flush=True)
+    detail = f"采样={sampling}"
+    if getattr(config, "time_min", None) is not None:
+        detail += f"，time_min={float(config.time_min):.8g} s"
+    print(f"  有限时间 t: [0, {float(config.time_horizon):.8g}] s；{detail}", flush=True)
+    print(f"  稳态残差点: {'包含' if getattr(config, 'include_steady_state', False) else '不包含'}", flush=True)
+    print(f"  配点数量: 训练={int(config.sample_count)}，独立检查={int(config.validation_count)}", flush=True)
     print(f"  残差目标: {float(config.residual_tolerance):.8g}\n", flush=True)
 
 
@@ -324,12 +331,10 @@ def generate_mesh(path):
 
     geometry = UnderwaterWPTGeometry(
         coil(TRANSMITTER), coil(RECEIVER),
-        np.asarray(ENVIRONMENT["package_half_extent"]), ENVIRONMENT["seawater_padding"],
-    )
+        np.asarray(ENVIRONMENT["package_half_extent"]), ENVIRONMENT["seawater_padding"])
     result = mesh_underwater_wpt_geometry(
         geometry, path, geometry_tolerance=MESH["geometry_tolerance"],
-        mesh_size=MESH["mesh_size"], physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS),
-    )
+        mesh_size=MESH["mesh_size"], physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS))
     mesh = result.tagged_mesh
     if not np.array_equal(mesh.mesh.boundary_nodes(), mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"])):
         raise RuntimeError("材料界面网格不共形")
@@ -351,6 +356,7 @@ def train(model_path, settings_dir, monitor=None):
         settings["resume_model"] = str(resume_path)
         print(f"加载模型继续训练：{resume_path}", flush=True)
         model = ResearchElectroThermalModel.load(resume_path)
+        config = resolve_training_rank(config, model.thermal_model.rank)
     else:
         mesh_path = resolve_path(MESH["path"])
         physical = {
@@ -359,7 +365,8 @@ def train(model_path, settings_dir, monitor=None):
             "training": TRAINING,
         }
         if GEOMETRY_FAMILY["enabled"]:
-            physical["geometry_family"] = {**GEOMETRY_FAMILY, "transmitter": TRANSMITTER,
+            physical["geometry_family"] = {
+                **GEOMETRY_FAMILY, "transmitter": TRANSMITTER,
                 "receiver": RECEIVER, "physical_tags": PHYSICAL_TAGS}
         if EM_CANDIDATE_STATES is not None:
             physical["em_candidate_states"] = EM_CANDIDATE_STATES
@@ -372,10 +379,9 @@ def train(model_path, settings_dir, monitor=None):
             generate_mesh(mesh_path)
         elif not mesh_path.is_file():
             raise FileNotFoundError(f"网格不存在：{mesh_path}；可设置 MESH['generate']=True")
-        # 由本文件自动生成底层入口所需配置，无需另行维护 JSON。
         config_path = settings_dir / "model.config.json"
         write_json(config_path, physical)
-        print("组装物理模型并构建电磁降阶空间……", flush=True)
+        print("自动选择热秩、组装物理模型并构建电磁降阶空间……", flush=True)
         if monitor is not None:
             monitor.phase("assembly")
         with assembly_progress(monitor):
@@ -383,23 +389,32 @@ def train(model_path, settings_dir, monitor=None):
                 from sdfmpneo.geometry_research import geometry_model_from_config
                 model, config = geometry_model_from_config(config_path, monitor=monitor)
             else:
-                model, config = model_from_config(config_path)
+                model, config = model_from_config(config_path, monitor=monitor)
         if GEOMETRY_FAMILY["enabled"]:
             write_json(settings_dir / "geometry.domain.json", {
                 "names": model.geometry_names, "reference": model.geometry_reference,
                 "lower": model.lower, "upper": model.upper,
-                "mesh_certificate": model.certificate, "em_basis": model.em_basis_report,
-            })
+                "mesh_certificate": model.certificate, "em_basis": model.em_basis_report})
             print(f"共享几何代理：{len(model.geometry_names)} 个几何输入，EM 基维数={model.reference.em.n_reduced}", flush=True)
+
+    rank, rank_report = thermal_rank_summary(model)
+    config = resolve_training_rank(config, rank)
+    settings["selected_thermal_rank"] = rank
+    settings["training_resolved"] = config
+    write_json(settings_dir / "thermal.rank.json", rank_report)
+    print(f"最终热空间阶数：rank={rank}；选择方法={rank_report.get('method', 'unknown')}", flush=True)
+    if not rank_report.get("certified_continuous_domain", False):
+        print("热秩说明：当前自动结果是有限物理锚点收敛判据，不冒充连续域严格证书。", flush=True)
+
     write_json(settings_dir / "train.settings.json", settings)
     print_training_sample_ranges(model, config)
-    print("开始无解标签残差训练……", flush=True)
+    print("开始无解标签残差训练（fresh fixed network 不进行 candidate search）……", flush=True)
     from sdfmpneo.training.monitor import TrainingStopped
     try:
         report = model.train(config, monitor=monitor, progress=lambda n, r, m: print(
-            f"响应节点={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
+            f"有效响应通道={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
     except TrainingStopped:
-        checkpoint = model_path.with_name(model_path.stem+".stopped"+model_path.suffix)
+        checkpoint = model_path.with_name(model_path.stem + ".stopped" + model_path.suffix)
         if model.graph is not None:
             model.save(checkpoint)
             print(f"训练已停止，有效模型已保存：{checkpoint}", flush=True)
@@ -411,11 +426,15 @@ def train(model_path, settings_dir, monitor=None):
         if monitor is not None:
             monitor.finish("stopped", **stopped)
         return 130
-    # Saving is allowed to finish even if stop arrives after training completed.
+
     if monitor is not None:
         monitor.phase("saving", check=False)
     model.save(model_path)
     write_json(settings_dir / "training.report.json", report)
+    if hasattr(model.graph, "structure_summary"):
+        structure = model.graph.structure_summary(0.0)
+        write_json(settings_dir / "network.structure.json", structure)
+        print("最终网络有效结构：" + json.dumps(structure, ensure_ascii=False), flush=True)
     print(f"训练状态：{report.status}；独立检查最大残差={report.maximum_validation_residual:.6g}")
     print(f"模型已保存：{model_path}")
     if not report.numerical_tolerance_met:
@@ -435,44 +454,49 @@ def predict(model_path, output_path, settings_dir):
     model = ResearchElectroThermalModel.load(model_path)
     parameters = dict(PREDICTION)
     initial = parameters["a0"]
+    if initial is None:
+        initial = np.zeros(model.graph.n_modes, dtype=float)
     geometry_args = {}
     if hasattr(model, "geometry_names"):
         g = parameters.get("geometry")
         if g is None:
-            g = dict(zip(model.geometry_names, (model.lower+model.upper)/2))
+            g = dict(zip(model.geometry_names, (model.lower + model.upper) / 2))
         parameters["geometry"] = g
         geometry_args = {"geometry": g}
     temperature_file = parameters["initial_temperature_file"]
     if temperature_file is not None:
         temperature_path = resolve_path(temperature_file)
-        initial = model.project_initial_temperature(np.load(temperature_path, allow_pickle=False), **geometry_args)
+        initial = model.project_initial_temperature(
+            np.load(temperature_path, allow_pickle=False), **geometry_args)
         parameters["initial_temperature_file"] = str(temperature_path)
     if not parameters["times"]:
         raise ValueError("推理 times 至少需要一个时间点")
-    print(f"加载模型推理：{model_path}", flush=True)
+    print(f"加载模型推理：{model_path}；thermal rank={model.graph.n_modes}", flush=True)
     results = [model.predict(
         t, a0=initial, operating=parameters["operating"],
-        diagnostics=not parameters["state_only"], allow_extrapolation=parameters["allow_extrapolation"],
-        allow_time_extrapolation=parameters.get("allow_time_extrapolation", True), **geometry_args,
-    ) for t in parameters["times"]]
+        diagnostics=not parameters["state_only"],
+        allow_extrapolation=parameters["allow_extrapolation"],
+        allow_time_extrapolation=parameters.get("allow_time_extrapolation", True),
+        **geometry_args) for t in parameters["times"]]
     write_json(output_path, results)
     write_json(settings_dir / "predict.settings.json", {
         "case": "uwpt", "mode": "predict", "model": str(model_path),
-        "predictions": str(output_path), "prediction": parameters, "effective_a0": initial,
-    })
+        "predictions": str(output_path), "prediction": parameters, "effective_a0": initial})
     for result in results:
         if isinstance(result, dict):
-            time, maximum = result["time"], result["maximum_temperature"]
+            time_value, maximum = result["time"], result["maximum_temperature"]
         else:
-            time, maximum = result.time, result.maximum_temperature
-        print(f"t={float(time):g} s，最高温度={maximum:.8g} K")
+            time_value, maximum = result.time, result.maximum_temperature
+        display_time = "inf" if time_value == "inf" else f"{float(time_value):g}"
+        print(f"t={display_time} s，最高温度={maximum:.8g} K")
     print(f"推理结果已保存：{output_path}")
     return 0
 
 
-CONFIG_NAMES = ("FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
-                "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
-                "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR", "GEOMETRY_FAMILY")
+CONFIG_NAMES = (
+    "FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
+    "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
+    "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR", "GEOMETRY_FAMILY")
 
 
 def configuration_snapshot(model_path):
@@ -485,12 +509,12 @@ def execute_training(model_path, settings_dir, session_dir=None):
     import uuid
     from sdfmpneo.training.monitor import TrainingMonitor, TrainingStopped
     if session_dir is None:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:8]
-        session_dir = resolve_path(MONITOR["log_dir"])/stamp
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+        session_dir = resolve_path(MONITOR["log_dir"]) / stamp
     session_dir = Path(session_dir)
-    write_json(session_dir/"settings.json", configuration_snapshot(model_path))
+    write_json(session_dir / "settings.json", configuration_snapshot(model_path))
     print(f"训练日志：{session_dir}", flush=True)
-    with TrainingMonitor(session_dir/"metrics.jsonl", session_dir/"control.json",
+    with TrainingMonitor(session_dir / "metrics.jsonl", session_dir / "control.json",
                          interval=MONITOR["log_interval_s"]) as monitor:
         try:
             return train(model_path, settings_dir, monitor)
@@ -512,7 +536,7 @@ def training_worker(snapshot_path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="一键运行电磁–热代理；参数集中在 run.py 顶部。")
+    parser = argparse.ArgumentParser(description="一键运行电磁–热代理；用户主要指定物理域和误差目标。")
     parser.add_argument("--mode", choices=("train", "predict"), default=MODE,
                         help="train=训练，predict=推理；覆盖顶部 MODE")
     parser.add_argument("--model", help="覆盖 FILES['model']，指定保存/加载的模型路径")
@@ -523,8 +547,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.worker_config:
         return training_worker(args.worker_config)
-    if args.mode not in ("train", "predict"):
-        parser.error("MODE 应为 train/predict")
     model_path = resolve_path(args.model or FILES["model"])
     settings_dir = resolve_path(FILES["settings_dir"])
     if args.mode == "train":
@@ -532,8 +554,7 @@ def main(argv=None):
             try:
                 from sdfmpneo.training.qt_monitor import launch_window
             except ImportError as exc:
-                raise SystemExit('请安装图形依赖：python -m pip install -e ".[cad,gui]"；'
-                                 '或使用 --headless 仅训练并记录日志。') from exc
+                raise SystemExit('请安装图形依赖：python -m pip install -e ".[cad,gui]"；或使用 --headless。') from exc
             return launch_window(__file__, configuration_snapshot(model_path),
                                  resolve_path(MONITOR["log_dir"]), MONITOR)
         return execute_training(model_path, settings_dir)
