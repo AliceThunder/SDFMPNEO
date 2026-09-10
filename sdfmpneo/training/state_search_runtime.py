@@ -6,57 +6,55 @@ import numpy as np
 
 from .max_residual_runtime import (
     hard_point_weights,
+    max_first_accept,
     relative_max_improvement,
     weighted_score_parent_batch as _weighted_l2_score_parent_batch,
 )
 from .parallel_runtime import _ordered_map
 from .state_structure_policy import (
-    _best_line_search_action,
+    StructuralAction,
     _split_proposals,
+    direct_actions,
     residual_norms,
 )
 
 
 # Structural growth must buy a meaningful decrease of the actual stopping
-# metric.  This is intentionally the same scale already used to detect a stale
+# metric. This is intentionally the same scale already used to detect a stale
 # fixed-topology Gauss--Newton solve.
 _STRUCTURAL_MIN_RELATIVE_GAIN = 1.0e-3
 # A clearly useful direct action does not justify enumerating every exact split
-# alternative.  Weak direct actions still fall through to Split.
+# alternative. Weak direct actions still fall through to Split.
 _STRONG_DIRECT_RELATIVE_GAIN = 5.0e-3
-# This is a search-work budget, not a source/state cardinality limit.  Candidate
-# ranking is max-aligned before this expensive nonlinear stage.
+# These are search-work budgets, never state/source cardinality limits.
 _MAX_NONLINEAR_CANDIDATE_TRIALS = 16
+_MAX_LINE_SEARCH_STEPS = 8
 _MAX_ALIGNMENT_HARD_POINTS = 8
 _MIN_PREDICTED_RELATIVE_GAIN = 1.0e-4
 
-_LAST_RECORDS_TOKEN = None
+_LAST_RECORDS = None
 _NONLINEAR_TRIALS = 0
 
 
 def _candidate_alpha_set(old_sq, correlation, tangent_norm2, weights):
-    """Small deterministic set containing the relevant 1-D minimax breakpoints."""
+    """Small deterministic set containing useful 1-D minimax breakpoints."""
     valid = tangent_norm2 > np.finfo(float).tiny
     if not np.any(valid):
         return np.array([0.0], dtype=float)
 
-    order = np.argsort(old_sq)
-    hard = order[-min(_MAX_ALIGNMENT_HARD_POINTS, len(order)):]
     values = [0.0]
-
     denom = float(np.dot(weights, tangent_norm2))
     if denom > np.finfo(float).tiny:
         values.append(-float(np.dot(weights, correlation)) / denom)
 
-    for index in hard:
+    for index in range(len(old_sq)):
         if valid[index]:
             values.append(-float(correlation[index]) / float(tangent_norm2[index]))
 
     # The minimizer of max_i q_i(alpha) is commonly an intersection of two
-    # active residual quadratics.  Add the real intersections of only the hard
-    # residual set; this stays cheap while aligning ranking to L-infinity.
-    for left_pos, left in enumerate(hard):
-        for right in hard[left_pos + 1:]:
+    # active residual quadratics. The caller passes only the current hard set.
+    for left in range(len(old_sq)):
+        for right in range(left + 1, len(old_sq)):
             A = float(tangent_norm2[left] - tangent_norm2[right])
             B = 2.0 * float(correlation[left] - correlation[right])
             C = float(old_sq[left] - old_sq[right])
@@ -74,11 +72,14 @@ def _candidate_alpha_set(old_sq, correlation, tangent_norm2, weights):
     base = np.asarray([value for value in values if np.isfinite(value)], dtype=float)
     if base.size == 0:
         return np.array([0.0], dtype=float)
-    # Wild pairwise roots are irrelevant to a local tangent step and can create
-    # overflow in the predicted quadratics.  Keep a generous neighborhood of
-    # the individual/weighted least-squares minimizers.
+
     individual = np.asarray(
-        [-correlation[i] / tangent_norm2[i] for i in hard if valid[i]], dtype=float
+        [
+            -correlation[index] / tangent_norm2[index]
+            for index in range(len(old_sq))
+            if valid[index]
+        ],
+        dtype=float,
     )
     radius = float(np.max(np.abs(individual), initial=0.0))
     if denom > np.finfo(float).tiny:
@@ -91,14 +92,29 @@ def _candidate_alpha_set(old_sq, correlation, tangent_norm2, weights):
 
 
 def _max_aligned_target(old_sq, correlation, tangent_norm2, weights):
+    """Cheap hard-point proxy for the linearized L-infinity candidate gain."""
+    old_sq = np.asarray(old_sq, dtype=float)
+    correlation = np.asarray(correlation, dtype=float)
+    tangent_norm2 = np.asarray(tangent_norm2, dtype=float)
+    weights = np.asarray(weights, dtype=float)
     old_max = float(np.sqrt(np.max(old_sq, initial=0.0)))
-    if old_max <= 0.0:
+    if old_max <= 0.0 or old_sq.size == 0:
         return 0.0, 0.0
-    alphas = _candidate_alpha_set(old_sq, correlation, tangent_norm2, weights)
+
+    hard_count = min(_MAX_ALIGNMENT_HARD_POINTS, old_sq.size)
+    hard = np.argpartition(old_sq, old_sq.size - hard_count)[-hard_count:]
+    hard_old = old_sq[hard]
+    hard_correlation = correlation[hard]
+    hard_norm2 = tangent_norm2[hard]
+    hard_weights = weights[hard]
+
+    alphas = _candidate_alpha_set(
+        hard_old, hard_correlation, hard_norm2, hard_weights
+    )
     predicted = (
-        old_sq[:, None]
-        + 2.0 * correlation[:, None] * alphas[None, :]
-        + tangent_norm2[:, None] * (alphas[None, :] ** 2)
+        hard_old[:, None]
+        + 2.0 * hard_correlation[:, None] * alphas[None, :]
+        + hard_norm2[:, None] * (alphas[None, :] ** 2)
     )
     predicted = np.maximum(predicted, 0.0)
     maxima = np.max(predicted, axis=0, initial=0.0)
@@ -112,16 +128,12 @@ def _max_aligned_target(old_sq, correlation, tangent_norm2, weights):
 def max_aligned_score_parent_batch(
     graph, records, compiled, plans, *, point_weights=None, monitor=None
 ):
-    """Rank structured source columns by their linearized L-infinity decrease.
+    """Rank structured columns by a hard-point linearized L-infinity proxy.
 
     Existing batching already provides, per collocation point, r.T@T and
-    ||T||^2.  Those two quantities are sufficient to predict
-
-        ||r + alpha T||^2
-
-    for any scalar candidate coefficient alpha.  Ranking the resulting minimax
-    quadratic is much better aligned with the actual max-first acceptance rule
-    than collapsing the same data into a weighted L2 projection first.
+    ||T||^2. The screen uses only the few currently largest residual points,
+    while the subsequent nonlinear acceptance still checks every training
+    point. This keeps the screen cheap without relaxing the actual criterion.
     """
     from . import late_stage_batch as batch
 
@@ -185,21 +197,24 @@ def max_aligned_score_parent_batch(
                 or alpha == 0.0
             ):
                 continue
+            alpha2 = alpha * alpha
+            if alpha2 <= np.finfo(float).tiny or not np.isfinite(alpha2):
+                continue
             # residual_state_runtime consumes the legacy (inner,norm2) contract
-            # only through score=inner^2/norm2 and weight=-inner/norm2.  Encode
-            # the max-aligned score/weight into that contract without changing
-            # any public API.
-            synthetic_norm2 = relative / (alpha * alpha)
+            # only through score=inner^2/norm2 and weight=-inner/norm2.
+            synthetic_norm2 = relative / alpha2
             synthetic_inner = -alpha * synthetic_norm2
-            if np.isfinite(synthetic_norm2 + synthetic_inner) and synthetic_norm2 > 0.0:
+            if (
+                np.isfinite(synthetic_norm2 + synthetic_inner)
+                and synthetic_norm2 > 0.0
+            ):
                 inner[target] = synthetic_inner
                 norm2[target] = synthetic_norm2
         out[index] = (inner, norm2)
 
     if generic:
         # Backward-compatible >1-response-parent graphs keep their exact generic
-        # scorer.  Production UWPT uses max_parent_responses=1, so the expensive
-        # generic path is not part of the normal search.
+        # scorer. Production UWPT uses max_parent_responses=1.
         values = _weighted_l2_score_parent_batch(
             graph,
             records,
@@ -219,6 +234,73 @@ def _actual_relative_gain(old_records, new_records, tolerance):
     return relative_max_improvement(old_max, new_max, tolerance)
 
 
+def _bounded_line_search_action(
+    base_graph,
+    field,
+    points,
+    old_records,
+    config,
+    target,
+    parents,
+    initial_weight,
+    frozen_weights,
+    *,
+    prefix=None,
+    detail=None,
+    monitor=None,
+):
+    """Exact full-point acceptance with a bounded local backtracking budget."""
+    from . import research as r
+
+    old_norms = residual_norms(old_records)
+    sample_record = old_records[0]
+    weight = float(initial_weight)
+    for _ in range(_MAX_LINE_SEARCH_STEPS):
+        best = None
+        actions = direct_actions(
+            base_graph,
+            target,
+            parents,
+            weight,
+            max_nodes=config.max_nodes,
+            max_realization_dimension=config.max_realization_dimension,
+            record=sample_record,
+        )
+        for action in actions:
+            if prefix is not None:
+                action = StructuralAction(
+                    prefix + "+" + action.kind,
+                    action.graph,
+                    {**(detail or {}), **action.detail},
+                )
+            try:
+                trial_records = r._evaluate(
+                    action.graph, field, points, monitor=monitor
+                )
+                norms = residual_norms(trial_records)
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                continue
+            if not max_first_accept(
+                old_norms,
+                norms,
+                config.residual_tolerance,
+                frozen_weights,
+            ):
+                continue
+            key = (
+                float(np.max(norms, initial=0.0)),
+                float(np.dot(frozen_weights, norms * norms)),
+                len(action.graph.response_nodes),
+                action.kind,
+            )
+            if best is None or key < best[0]:
+                best = (key, action, trial_records)
+        if best is not None:
+            return best
+        weight *= 0.5
+    return None
+
+
 def bounded_max_aligned_select_candidate_action(
     graph,
     field,
@@ -232,11 +314,10 @@ def bounded_max_aligned_select_candidate_action(
     monitor=None,
 ):
     """Bound nonlinear trials and lazily invoke Split only when Direct is weak."""
-    global _LAST_RECORDS_TOKEN, _NONLINEAR_TRIALS
+    global _LAST_RECORDS, _NONLINEAR_TRIALS
 
-    token = id(records)
-    if token != _LAST_RECORDS_TOKEN:
-        _LAST_RECORDS_TOKEN = token
+    if records is not _LAST_RECORDS:
+        _LAST_RECORDS = records
         _NONLINEAR_TRIALS = 0
     if _NONLINEAR_TRIALS >= _MAX_NONLINEAR_CANDIDATE_TRIALS:
         return None, None
@@ -244,7 +325,7 @@ def bounded_max_aligned_select_candidate_action(
 
     frozen_weights = hard_point_weights(records, config.residual_tolerance)
     candidates = []
-    direct = _best_line_search_action(
+    direct = _bounded_line_search_action(
         graph,
         field,
         points,
@@ -267,7 +348,7 @@ def bounded_max_aligned_select_candidate_action(
 
     # Exact Split can be materially better when an aggregate state needs
     # downstream addressability, but it is too expensive to enumerate for every
-    # already-good Direct action.  Evaluate it only in the weak/stalled regime.
+    # already-good Direct action. Evaluate it only in the weak/stalled regime.
     for split_graph, split_parents, split_weight, detail in _split_proposals(
         graph,
         records,
@@ -277,7 +358,7 @@ def bounded_max_aligned_select_candidate_action(
         frozen_weights,
         monitor=monitor,
     ):
-        candidate = _best_line_search_action(
+        candidate = _bounded_line_search_action(
             split_graph,
             field,
             points,
@@ -293,7 +374,12 @@ def bounded_max_aligned_select_candidate_action(
         )
         if candidate is None:
             continue
-        if _actual_relative_gain(records, candidate[2], config.residual_tolerance) >= _STRUCTURAL_MIN_RELATIVE_GAIN:
+        if (
+            _actual_relative_gain(
+                records, candidate[2], config.residual_tolerance
+            )
+            >= _STRUCTURAL_MIN_RELATIVE_GAIN
+        ):
             candidates.append(candidate)
 
     if not candidates:
@@ -306,7 +392,7 @@ def coalesce_unreferenced_state_families(graph):
     """Function-preservingly aggregate a pure equation seed by target family.
 
     Geometry seeding predates multi-source analytic states and therefore emits
-    one scalar response node per equation-derived source.  Before descendants
+    one scalar response node per equation-derived source. Before descendants
     exist, all same-target seed responses share the same pole and their sum is
     exactly one analytic state with multiple source columns.
     """
