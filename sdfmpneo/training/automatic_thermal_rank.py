@@ -1,11 +1,14 @@
 """Automatic thermal-rank selection and restart-state box construction."""
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
 import scipy.sparse.linalg as spla
 
+_CACHE_FORMAT_VERSION = 1
 _AUTO_KEYS = {
     "mode",
     "relative_tolerance",
@@ -16,6 +19,8 @@ _AUTO_KEYS = {
     "restart_state_safety_factor",
     "boundary_fraction",
     "temperature_probe_axes",
+    "cache",
+    "cache_file",
 }
 
 
@@ -265,12 +270,128 @@ def _restart_bounds(envelope, rank, initial_bound, restart_safety):
     return np.maximum(bounds, float(initial_bound))
 
 
+def _mesh_file(config_path, config):
+    mesh_path = Path(config["mesh"]).expanduser()
+    if not mesh_path.is_absolute():
+        mesh_path = Path(config_path).parent / mesh_path
+    return mesh_path.resolve(strict=False)
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _thermal_rank_cache_path(config_path, truncation):
+    configured = truncation.get("cache_file")
+    if configured:
+        result = Path(configured).expanduser()
+        if not result.is_absolute():
+            result = Path(config_path).parent / result
+        return result
+    path = Path(config_path)
+    return path.with_name(path.stem + ".thermal_rank.cache.json")
+
+
+def _thermal_rank_cache_key(config_path, config):
+    """Hash exactly the inputs that affect the automatic rank/restart-box probe."""
+    truncation = {
+        key: value
+        for key, value in dict(config.get("thermal_truncation") or {}).items()
+        if key not in {"cache", "cache_file"}
+    }
+    training = dict(config["training"])
+    payload = {
+        "cache_format_version": _CACHE_FORMAT_VERSION,
+        "mesh_sha256": _file_sha256(_mesh_file(config_path, config)),
+        "frequency_hz": config["frequency_hz"],
+        "ambient_temperature": config.get("ambient_temperature", 293.15),
+        "constitutive_relative_error": config.get("constitutive_relative_error", 1e-8),
+        "materials": config["materials"],
+        "terminal_pairs": config["terminal_pairs"],
+        "port_names": config.get("port_names"),
+        "current_offset": config.get("current_offset"),
+        "current_matrix": config.get("current_matrix"),
+        "thermal_truncation": truncation,
+        "operating_lower": training["operating_lower"],
+        "operating_upper": training["operating_upper"],
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_thermal_rank_cache(path, cache_key):
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        if (
+            payload.get("format_version") != _CACHE_FORMAT_VERSION
+            or payload.get("cache_key") != cache_key
+        ):
+            return None
+        rank = int(payload["selected_rank"])
+        report = dict(payload["report"])
+        if rank < 1 or int(report.get("selected_rank", rank)) != rank:
+            return None
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    report.update(
+        cache_hit=True,
+        cache_key=cache_key,
+        cache_path=str(Path(path)),
+    )
+    return rank, report
+
+
+def _save_thermal_rank_cache(path, cache_key, rank, report):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stored_report = dict(report)
+    stored_report.update(
+        cache_hit=False,
+        cache_key=cache_key,
+        cache_path=str(path),
+    )
+    payload = {
+        "format_version": _CACHE_FORMAT_VERSION,
+        "cache_key": cache_key,
+        "selected_rank": int(rank),
+        "report": stored_report,
+    }
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def automatic_thermal_rank(config_path, config, *, monitor=None):
     """Expand the physical probe until a resolved tail is found or the full spectrum is reached."""
     from sdfmpneo.spatial import read_gmsh_v22_ascii
 
     path = Path(config_path)
-    tagged = read_gmsh_v22_ascii(path.parent / config["mesh"])
+    truncation = dict(config.get("thermal_truncation") or {})
+    cache_enabled = bool(truncation.get("cache", True))
+    cache_path = _thermal_rank_cache_path(path, truncation)
+    cache_key = None
+    if cache_enabled:
+        cache_key = _thermal_rank_cache_key(path, config)
+        cached = _load_thermal_rank_cache(cache_path, cache_key)
+        if cached is not None:
+            if monitor is not None:
+                monitor.phase("thermal_rank_cache_hit")
+            return cached
+
+    tagged = read_gmsh_v22_ascii(_mesh_file(path, config))
     mesh = tagged.mesh
     _, _, capacity, conductivity, _ = _parse_materials(tagged, config)
     assembly = mesh.assemble_p1_thermal(
@@ -282,7 +403,6 @@ def automatic_thermal_rank(config_path, config, *, monitor=None):
     if n_free < 1:
         raise ValueError("thermal boundary treatment produced no free degrees of freedom")
 
-    truncation = dict(config.get("thermal_truncation") or {})
     relative = float(truncation.get("relative_tolerance", 1e-3))
     absolute = float(truncation.get("absolute_tolerance", 0.0))
     coordinate_bound = float(truncation.get("initial_coordinate_bound", 0.1))
@@ -294,9 +414,20 @@ def automatic_thermal_rank(config_path, config, *, monitor=None):
     if not np.isfinite(restart_safety) or restart_safety < 1.0:
         raise ValueError("restart_state_safety_factor must be finite and at least one")
 
+    def finish(rank, report):
+        result = dict(report)
+        result.update(
+            cache_hit=False,
+            cache_key=cache_key,
+            cache_path=str(cache_path) if cache_enabled else None,
+        )
+        if cache_enabled:
+            _save_thermal_rank_cache(cache_path, cache_key, rank, result)
+        return int(rank), result
+
     if n_free == 1:
         bounds = [coordinate_bound]
-        return 1, {
+        return finish(1, {
             "method": "automatic_physics_envelope",
             "selected_rank": 1,
             "full_dimension": 1,
@@ -304,7 +435,7 @@ def automatic_thermal_rank(config_path, config, *, monitor=None):
             "certified_continuous_domain": False,
             "recommended_restart_coordinate_bound": bounds,
             "scope": "single free thermal degree of freedom; no truncation",
-        }
+        })
 
     probe = min(n_free, start)
     while True:
@@ -349,7 +480,7 @@ def automatic_thermal_rank(config_path, config, *, monitor=None):
             **details,
         }
         if rank < probe:
-            return int(rank), report
+            return finish(rank, report)
         if probe >= n_free:
             report.update(
                 selected_rank=n_free,
@@ -358,7 +489,7 @@ def automatic_thermal_rank(config_path, config, *, monitor=None):
             report["recommended_restart_coordinate_bound"] = _restart_bounds(
                 envelope, n_free, coordinate_bound, restart_safety
             ).tolist()
-            return n_free, report
+            return finish(n_free, report)
         probe = min(n_free, max(probe + 1, 2 * probe))
 
 

@@ -23,10 +23,21 @@ STATES = {
 PHASES = {
     "starting": "启动", "mesh": "生成 UWPT 网格", "assembly": "组装物理模型",
     "thermal_rank_selection": "自动选择热空间阶数",
+    "thermal_rank_cache_hit": "复用热空间阶数缓存",
     "geometry_em_basis": "构建跨几何共享电磁空间", "loading": "加载当前模型",
     "initial_residual": "计算初始物理残差",
-    "weight_refinement": "连续优化解析网络参数", "validation": "独立物理残差验证",
+    "weight_refinement": "连续优化解析网络参数",
+    "restart_consistency": "优化分段重启一致性",
+    "validation": "独立物理残差验证",
     "structure_pruning": "残差验证剪枝", "saving": "保存模型",
+}
+
+_CURVE_STYLES = {
+    "rms": {"pen": "#2563eb", "width": 2.4},
+    "train_max": {"pen": "#dc2626", "width": 2.4},
+    "validation_max": {"pen": "#16a34a", "width": 2.4},
+    "nodes": {"pen": "#7c3aed", "width": 2.4},
+    "training_points": {"pen": "#d97706", "width": 2.4},
 }
 
 
@@ -109,7 +120,9 @@ class TrainingWindow(QtWidgets.QMainWindow):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self.status_label = QtWidgets.QLabel("就绪")
-        self.details_label = QtWidgets.QLabel("等待自动热秩选择和物理残差训练")
+        self.details_label = QtWidgets.QLabel(
+            "自动热秩/电磁组装阶段尚无残差曲线；进入训练后会自动显示"
+        )
         layout.addWidget(self.status_label)
         layout.addWidget(self.details_label)
 
@@ -126,8 +139,16 @@ class TrainingWindow(QtWidgets.QMainWindow):
             plot.showGrid(x=True, y=True, alpha=0.2)
             plot.addLegend()
             plot.setLogMode(y=logarithmic)
+            for axis_name in ("left", "bottom"):
+                axis = plot.getAxis(axis_name)
+                axis.setPen(pg.mkPen("#4b5563"))
+                axis.setTextPen(pg.mkPen("#111827"))
             for key, label in curves:
-                self.curves[key] = plot.plot(name=label)
+                style = _CURVE_STYLES[key]
+                self.curves[key] = plot.plot(
+                    name=label,
+                    pen=pg.mkPen(style["pen"], width=style["width"]),
+                )
             grid.addWidget(plot, index // 2, index % 2)
 
         self.output = QtWidgets.QPlainTextEdit()
@@ -163,11 +184,16 @@ class TrainingWindow(QtWidgets.QMainWindow):
         if self._active():
             return
         self._stop_requested = False
+        self._last_revision = None
+        self._last_validation = None
         for values in self.series.values():
             values.clear()
         for curve in self.curves.values():
             curve.setData([], [])
         self.output.clear()
+        self.details_label.setText(
+            "自动热秩/电磁组装阶段尚无残差曲线；进入训练后会自动显示"
+        )
 
         history = build_resume_history(
             self.log_root, self._resume_model(),
@@ -243,9 +269,14 @@ class TrainingWindow(QtWidgets.QMainWindow):
             phase = PHASES.get(row.get("phase"), row.get("phase", ""))
             state = STATES.get(row.get("state"), row.get("state", ""))
             self.status_label.setText(f"{state} · {phase}")
-            self.details_label.setText(
-                f"有效响应通道={row.get('nodes', 0)}  RMS={row.get('rms')}  "
-                f"训练最大残差={row.get('train_max')}  验证最大残差={row.get('validation_max')}")
+            if row.get("rms") is None:
+                self.details_label.setText(
+                    f"{phase}：当前还没有训练残差数据；残差曲线会在 initial residual 计算完成后出现"
+                )
+            else:
+                self.details_label.setText(
+                    f"有效响应通道={row.get('nodes', 0)}  RMS={row.get('rms')}  "
+                    f"训练最大残差={row.get('train_max')}  验证最大残差={row.get('validation_max')}")
 
     def _finished(self, exit_code, _status):
         if self.reader is not None:
