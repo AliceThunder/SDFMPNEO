@@ -91,6 +91,7 @@ from .training.state_search_runtime import (
 )
 from .training.state_split_runtime import install_screened_split_policy
 from .training.block_sparse_search_runtime import install_block_sparse_state_search
+from .training.convergence_rescue_runtime import install_convergence_rescue
 from .training.state_linearization_runtime import install_independent_state_native_linearization
 from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
 
@@ -127,6 +128,11 @@ install_screened_split_policy()
 # once; only the resulting sparse block receives full nonlinear EM-thermal
 # validation. Exact scalar/Split search remains a fail-closed compatibility path.
 install_block_sparse_state_search()
+# A normal dictionary stall is not treated as a finished training result. First
+# try a small sparse block of two-response thermal interactions, then continue
+# with two progressively richer static polynomial dictionaries. Only a genuine
+# exhausted rescue path is allowed to return stalled above the residual target.
+install_convergence_rescue()
 # A coalesced equation seed is multi-source but has no dynamic descendants. For
 # its weight Jacobian, expand the sources transiently into an exactly equivalent
 # scalar graph so the existing native C++ GN kernel remains usable.
