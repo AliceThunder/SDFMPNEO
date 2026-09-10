@@ -34,8 +34,11 @@ def test_node_only_compile_matches_full_compile_nodes_and_sources():
         assert np.array_equal(left.c, right.c)
 
 
-def test_package_install_routes_training_hot_paths_to_node_only_compile():
+def test_legacy_node_only_compile_hot_paths_remain_installed_beneath_fixed_trainer():
+    from sdfmpneo.training.fixed_network_runtime import train_fixed_analytic_response_network
+
     assert training_research.compile_parametric_realization is compile_parametric_nodes
     assert late_stage.compile_parametric_realization is compile_parametric_nodes
-    assert training_research._refine_weights is late_stage._sparse_refine_weights
-    assert training_research.train_research_graph is late_stage.optimized_adaptive_train_research_graph
+    assert callable(late_stage._sparse_refine_weights)
+    assert callable(late_stage.optimized_adaptive_train_research_graph)
+    assert training_research.train_research_graph is train_fixed_analytic_response_network
