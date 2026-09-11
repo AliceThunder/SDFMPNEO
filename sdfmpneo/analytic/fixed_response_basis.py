@@ -30,7 +30,7 @@ def _merge_signatures(a, b):
 class _ExpPoly:
     """Finite sums c*t^k*exp(-sum(lambda[idx])*t), with optional dense tangents.
 
-    Exponential signatures store only participating modal indices.  This keeps
+    Exponential signatures store only participating modal indices. This keeps
     symbolic bookkeeping proportional to nonlinear polynomial degree instead of
     proportional to the full thermal rank.
     """
@@ -56,6 +56,14 @@ class _ExpPoly:
         out.add_term((), 0, coefficient, derivative)
         return out
 
+    def copy(self):
+        out = _ExpPoly(self.n_modes, self.nd)
+        out.terms = {
+            key: (float(value), np.asarray(gradient, float).copy())
+            for key, (value, gradient) in self.terms.items()
+        }
+        return out
+
     def add_term(self, signature, power, coefficient, derivative=None):
         signature = tuple(int(v) for v in signature)
         power = int(power)
@@ -79,6 +87,8 @@ class _ExpPoly:
         if self.n_modes != other.n_modes or self.nd != other.nd:
             raise ValueError("signal dimensions do not match")
         scale = float(scale)
+        if scale == 0.0 and parameter_index is None:
+            return self
         for (signature, power), (coefficient, gradient) in other.terms.items():
             local = scale * gradient
             if parameter_index is not None:
@@ -99,6 +109,35 @@ class _ExpPoly:
                     va * vb,
                     ga * vb + gb * va,
                 )
+        return out
+
+    def dominant_terms(self, limit):
+        """Return a bounded analytic signal containing the largest coefficient terms.
+
+        This is used only for hidden-state products in high-rank deeper response
+        layers.  Earlier layers are frozen before the next residual-correction
+        layer is trained, so the selected analytic feature bank remains fixed
+        throughout that layer's trust-region solve.
+        """
+        limit = int(limit)
+        if limit < 1:
+            raise ValueError("term limit must be positive")
+        if len(self.terms) <= limit:
+            return self
+        ranked = sorted(
+            self.terms.items(),
+            key=lambda item: (
+                abs(float(item[1][0])) + float(np.linalg.norm(item[1][1])),
+                -len(item[0][0]),
+                -item[0][1],
+            ),
+            reverse=True,
+        )[:limit]
+        out = _ExpPoly(self.n_modes, self.nd)
+        out.terms = {
+            key: (float(value), np.asarray(gradient, float).copy())
+            for key, (value, gradient) in ranked
+        }
         return out
 
     def _rate(self, signature, rates):
@@ -166,6 +205,8 @@ def _weighted_sum(signals, weights, parameter_indices, nd):
     out = _ExpPoly.zero(signals[0].n_modes, nd)
     for i, (signal, weight) in enumerate(zip(signals, np.asarray(weights).reshape(-1))):
         index = None if parameter_indices is None else int(parameter_indices[i])
+        if float(weight) == 0.0 and index is None:
+            continue
         out.add_scaled(signal, weight, index)
     return out
 
@@ -176,3 +217,4 @@ def _gated(signal, value, parameter_index, nd):
     return out
 
 
+__all__ = ["_LogicalNode", "_ExpPoly", "_weighted_sum", "_gated"]
