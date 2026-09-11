@@ -1,3 +1,4 @@
+from .fixed_response_physical_init import _PhysicalFeatureInitMixin
 from .fixed_response_init import _NetworkInitMixin
 from .fixed_response_structure import _NetworkStructureMixin
 from .fixed_response_fast import _DepthOneFastMixin
@@ -8,6 +9,7 @@ from .fixed_response_metadata import _NetworkMetadataMixin
 
 
 class FixedAnalyticResponseNetwork(
+    _PhysicalFeatureInitMixin,
     _NetworkInitMixin, _NetworkStructureMixin, _DepthOneFastMixin,
     _LayerActivationMixin, _FunnelFastMixin, _GenericAnalyticMixin,
     _NetworkMetadataMixin,
