@@ -109,16 +109,16 @@ class _NetworkStructureMixin:
     def layer_amplitude_parameter_indices(self, layer):
         """Return the stable linear-amplitude block for one response layer.
 
-        Factor projections and all gates are deliberately frozen during residual
-        training. The first layer includes its bias/source amplitudes. Deeper
-        layers are residual correctors and train only feature-output amplitudes.
+        Factor projections and all gates stay frozen during residual training.
+        Every layer trains its constant source bias plus feature-output amplitudes;
+        only the input/factor directions themselves are frozen after Stage 0.
         """
         layer = int(layer)
         if layer < 0 or layer >= self.depth:
             raise ValueError("response layer index is out of range")
-        names = []
+        names = [f"bias_{layer}"]
         if layer == 0:
-            names.extend(("bias_0", "input_linear_out", "quadratic_out", "square_out"))
+            names.extend(("input_linear_out", "quadratic_out", "square_out"))
         else:
             names.extend((
                 f"hidden_linear_out_{layer}",
@@ -142,11 +142,7 @@ class _NetworkStructureMixin:
     def zero_layer_amplitudes(self, layer):
         layer = int(layer)
         theta = self.parameters.copy()
-        ids = self.layer_amplitude_parameter_indices(layer)
-        theta[ids] = 0.0
-        if layer > 0:
-            sl, _ = self._slices[f"bias_{layer}"]
-            theta[sl] = 0.0
+        theta[self.layer_amplitude_parameter_indices(layer)] = 0.0
         return self.with_parameters(theta)
 
     def structure_gate_entries(self):
