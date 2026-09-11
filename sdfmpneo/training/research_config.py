@@ -150,18 +150,28 @@ class ResearchTrainingReport:
 
 
 def _default_capacity(n_modes, n_operating):
-    """Choose a fixed maximum capacity that remains tractable at high thermal rank."""
+    """Choose scalable capacity without starving geometry/current dependence."""
     n_modes = int(n_modes)
+    n_operating = int(n_operating)
     if n_modes >= 96:
-        # High-rank thermal ROM: one analytic response per retained thermal mode.
-        # Static geometry/current factors still provide nonlinear forcing, while
-        # the exact initial thermal decay already carries every retained mode.
-        return 1, 1, 4, 1, 8, 4, 1, 1
+        # Keep one response channel per retained thermal mode so the time-domain
+        # evaluator stays on the high-rank depth-one fast path, but scale the
+        # shared static feature ranks with the number of geometry/current inputs.
+        # For the default UWPT geometry family (10 geometry + 2 currents), this
+        # gives linear_rank=6 and quadratic_rank=14 rather than 4/8, while the
+        # total parameter count remains O(n_modes * feature_rank), not O(r^2).
+        linear_rank = min(8, max(4, (n_operating + 1) // 2))
+        quadratic_rank = min(16, max(8, n_operating + 2))
+        square_rank = min(8, max(4, 2 + n_operating // 3))
+        return 1, 1, linear_rank, 1, quadratic_rank, square_rank, 1, 1
     if n_modes >= 32:
-        return 1, 1, 4, 1, 6, 3, 1, 1
+        linear_rank = min(6, max(4, (n_operating + 2) // 3))
+        quadratic_rank = min(12, max(6, n_operating + 1))
+        square_rank = min(6, max(3, 2 + n_operating // 4))
+        return 1, 1, linear_rank, 1, quadratic_rank, square_rank, 1, 1
     if n_modes >= 9:
-        return 2, 1, 3, 2, 4, 2, 2, 1
-    return 2, 1, 2, 1, 2, 2, 1, 1
+        return 2, 1, 3, 2, max(4, min(8, n_operating + 1)), 2, 2, 1
+    return 2, 1, 2, 1, max(2, min(6, n_operating + 1)), 2, 1, 1
 
 
 def make_fixed_network(field, config: ResearchTrainingConfig, *, operating_names=None):
@@ -195,8 +205,6 @@ def make_fixed_network(field, config: ResearchTrainingConfig, *, operating_names
         quadratic_rank=capacity[4], square_rank=capacity[5],
         cross_rank=capacity[6], state_rank=capacity[7],
     )
-
-
 
 
 __all__ = ["ResearchTrainingConfig", "ResearchTrainingReport", "make_fixed_network"]
