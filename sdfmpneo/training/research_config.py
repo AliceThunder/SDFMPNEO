@@ -32,7 +32,7 @@ class ResearchTrainingConfig:
     max_square_rank: int | None = None
     max_cross_rank: int | None = None
     max_state_rank: int | None = None
-    jacobian_point_budget: int = 8
+    jacobian_point_budget: int = 12
     semigroup_jacobian_point_budget: int = 4
     max_iterations: int = 36
     max_validation_epochs: int = 5
@@ -144,6 +144,7 @@ class ResearchTrainingReport:
     objective_history: tuple[float, ...]
     numerical_tolerance_met: bool
     structure: dict
+    validation_performed: bool = True
 
     def to_dict(self):
         return asdict(self)
@@ -154,12 +155,6 @@ def _default_capacity(n_modes, n_operating):
     n_modes = int(n_modes)
     n_operating = int(n_operating)
     if n_modes >= 96:
-        # Keep one response channel per retained thermal mode so the time-domain
-        # evaluator stays on the high-rank depth-one fast path, but scale the
-        # shared static feature ranks with the number of geometry/current inputs.
-        # For the default UWPT geometry family (10 geometry + 2 currents), this
-        # gives linear_rank=6 and quadratic_rank=14 rather than 4/8, while the
-        # total parameter count remains O(n_modes * feature_rank), not O(r^2).
         linear_rank = min(8, max(4, (n_operating + 1) // 2))
         quadratic_rank = min(16, max(8, n_operating + 2))
         square_rank = min(8, max(4, 2 + n_operating // 3))
