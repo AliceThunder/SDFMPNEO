@@ -6,18 +6,18 @@ import numpy as np
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
 from .research_config import ResearchTrainingConfig, ResearchTrainingReport, make_fixed_network
 from .research_helpers import (
-    _accept,
     _combined_metrics,
     _evaluate_all,
     _evaluate_network,
     _evaluate_semigroup,
     _hard_weights,
-    _linearization,
     _metrics,
+    _physics_vector_field,
     _prune,
     _solve_direction,
     _unique_rows,
 )
+from .research_linearization import linearization as _linearization
 
 _MAX_EXACT_TRIALS_PER_ITERATION = 3
 _TRIAL_FACTORS = (1.0, 0.5, 0.25, 0.125, 0.0625)
@@ -47,14 +47,7 @@ def _rank_trial_candidates(
     *,
     parameter_ids,
 ):
-    """Generate many cheap LM candidates but return only a few exact trials.
-
-    A full physical residual sweep is expensive for a geometry family.  The
-    previous optimizer evaluated every damping/backtracking combination on the
-    complete training set (up to 15 sweeps per parameter block).  We instead
-    rank all combinations with the existing hard-point Jacobian and only send
-    the best few to exact residual evaluation.
-    """
+    """Generate many cheap LM candidates but return only a few exact trials."""
     candidates = []
     for multiplier in _DAMPING_MULTIPLIERS:
         local_damping = max(float(damping) * multiplier, 1e-12)
@@ -84,6 +77,84 @@ def _exact_trial_result(trial, field, points, semigroup_points, semigroup_active
     return _combined_metrics(physics, [])
 
 
+def _initialize_center_source(network, field, config):
+    """Match the exact t=0 physical source at the center of the training box.
+
+    A fresh high-rank network previously started with source amplitudes close to
+    zero.  For a forced electrothermal system this leaves the optimizer several
+    orders of magnitude away from the actual Joule-heating scale.  At the
+    normalized box center every non-bias depth-one feature vanishes, so the
+    first-layer bias can be set directly from the physical vector field without
+    any transient labels or nonlinear solve.
+    """
+    if int(network.depth) != 1:
+        return network
+    a0 = 0.5 * (
+        np.asarray(config.initial_lower, dtype=float)
+        + np.asarray(config.initial_upper, dtype=float)
+    )
+    operating = 0.5 * (
+        np.asarray(config.operating_lower, dtype=float)
+        + np.asarray(config.operating_upper, dtype=float)
+    )
+    physical = _physics_vector_field(field, a0, operating)
+    source = np.asarray(physical, dtype=float) + np.asarray(network.lambdas) * a0
+    gates = np.asarray(network._array("channel_gate")[0], dtype=float)
+    targets = np.asarray(network.targets, dtype=int)
+    gate_sum = np.bincount(targets, weights=gates, minlength=network.n_modes)
+    if np.any(np.abs(gate_sum) < 1e-14):
+        return network
+    bias = source[targets] / gate_sum[targets]
+    theta = network.parameters.copy()
+    theta[network._indices("bias_0")] = bias
+    return network.with_parameters(theta)
+
+
+def _accept_progressive(old_norms, new_norms, tolerance, weights):
+    """Filter LM trials without forcing strict max monotonicity far from target.
+
+    When the maximum residual is thousands of times above tolerance, requiring
+    every step to reduce the single worst point can reject directions that make
+    the global physics fit substantially better.  Far from convergence we use a
+    small trust-region filter: weighted RMS may improve while max residual moves
+    by at most 2%.  Once within 20x tolerance, strict max-residual monotonicity is
+    restored.  Points already below tolerance remain protected at all stages.
+    """
+    old = np.asarray(old_norms, dtype=float)
+    new = np.asarray(new_norms, dtype=float)
+    tol = float(tolerance)
+    if old.shape != new.shape or np.any(~np.isfinite(new)):
+        return False
+    protected = old <= tol
+    margin = 64.0 * np.finfo(float).eps * max(tol, 1e-30)
+    if np.any(new[protected] > tol + margin):
+        return False
+
+    old_max = float(np.max(old, initial=0.0))
+    new_max = float(np.max(new, initial=0.0))
+    w = np.asarray(weights, dtype=float)
+    old_merit = float(np.dot(w, old * old))
+    new_merit = float(np.dot(w, new * new))
+    numerical = 64.0 * np.finfo(float).eps * max(old_merit, 1.0)
+
+    if old_max <= 20.0 * tol:
+        if new_max < old_max - margin:
+            return new_merit <= 1.02 * old_merit + numerical
+        if new_max <= old_max + margin:
+            return new_merit < old_merit - numerical
+        return False
+
+    # Early/global-fit regime.  Prefer reducing the worst residual, but also
+    # allow a meaningful weighted-RMS improvement if the worst point remains
+    # inside a narrow trust filter.
+    if new_max < old_max * (1.0 - 1e-6) and new_merit <= 1.05 * old_merit + numerical:
+        return True
+    return (
+        new_merit < old_merit * (1.0 - 1e-4) - numerical
+        and new_max <= 1.02 * old_max + margin
+    )
+
+
 def train_research_network(
     field,
     config: ResearchTrainingConfig,
@@ -96,6 +167,7 @@ def train_research_network(
     resumed = network is not None
     if network is None:
         network = make_fixed_network(field, config, operating_names=operating_names)
+        network = _initialize_center_source(network, field, config)
     if not isinstance(network, FixedAnalyticResponseNetwork):
         raise TypeError("only FixedAnalyticResponseNetwork checkpoints are supported")
     if len(config.initial_lower) != network.n_modes or len(config.operating_lower) != len(network.operating_names):
@@ -129,9 +201,8 @@ def train_research_network(
     semigroup_active = False
     final_validation = checks
     final_semigroup_validation = semigroup_checks
-    # A supplied network is a resume/fine-tune operation.  Its source amplitudes
-    # have already been trained, so replaying the amplitude-only warm start is
-    # both wasteful and can consume an entire iteration with rejected trials.
+    # A supplied network is a resume/fine-tune operation. Its amplitudes have
+    # already been trained, so never replay the amplitude-only warm start.
     amplitude_warm_start_done = resumed
 
     while True:
@@ -274,7 +345,7 @@ def train_research_network(
                 np.linalg.LinAlgError,
             ):
                 trial_result = None
-            if trial_result is not None and _accept(
+            if trial_result is not None and _accept_progressive(
                 evaluated.norms,
                 trial_result.norms,
                 config.residual_tolerance,
@@ -302,8 +373,6 @@ def train_research_network(
 
         if not amplitude_warm_start_done and not semigroup_active:
             amplitude_warm_start_done = True
-            # Whether or not the amplitude-only trial was accepted, release the
-            # complete parameter vector on the following iteration.
             if not accepted:
                 continue
         if not accepted:
