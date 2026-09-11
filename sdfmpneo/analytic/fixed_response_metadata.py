@@ -50,6 +50,9 @@ class _NetworkMetadataMixin:
             state_rank=metadata["state_rank"],
             parameters=parameters,
         )
+        # v6 checkpoints used one common width/rank per layer. Constructing the
+        # network without v7 funnel fields reproduces that exact legacy layout,
+        # so their parameter vectors remain loadable without migration.
         if version >= 7:
             kwargs.update(
                 layer_widths=metadata.get("layer_widths"),
