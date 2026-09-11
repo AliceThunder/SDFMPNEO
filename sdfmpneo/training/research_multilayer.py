@@ -14,10 +14,11 @@ from .research_helpers import (
     _work,
 )
 from .research_linearization import _balanced_physics_subset
+from .source_prefit_factorization import fit_source_factors
 
 
 def source_prefit(network, field, config, monitor=None):
-    """Fit the complete first-layer t=0 source by independent linear least squares."""
+    """Learn the first-layer source subspace and amplitudes from t=0 physics."""
     samples = np.asarray(config.source_points(), dtype=float)
     n = network.n_modes
     desired = []
@@ -31,7 +32,7 @@ def source_prefit(network, field, config, monitor=None):
             np.asarray(physical, float) + np.asarray(network.lambdas, float) * a0
         )
     _work(monitor, "source_prefit", total, total)
-    fitted, residual = network.fit_first_layer_source(samples, np.vstack(desired))
+    fitted, residual = fit_source_factors(network, samples, np.vstack(desired))
     norms = np.linalg.norm(residual, axis=1)
     rms = float(np.sqrt(np.mean(norms * norms))) if len(norms) else 0.0
     maximum = float(np.max(norms, initial=0.0))
@@ -124,7 +125,7 @@ def evaluate_layer_semigroup(
 ):
     """Inexact but bounded layer-amplitude semigroup Jacobian.
 
-    The direct and restarted explicit parameter dependences are exact.  The
+    The direct and restarted explicit parameter dependences are exact. The
     indirect derivative through the first segment's restart state is omitted and
     handled by physical trust-region acceptance on the full semigroup defect.
     """
@@ -235,7 +236,6 @@ def combined_layer_linearization(
     sg_records = []
     if len(semigroup_points):
         sg_budget = min(int(config.semigroup_jacobian_point_budget), len(semigroup_points))
-        # Semigroup sets are already small and reachable by construction.
         rows = np.asarray(semigroup_points, float)[:sg_budget]
         sg_records, sg_ids = evaluate_layer_semigroup(
             network, rows, layer, monitor=monitor
