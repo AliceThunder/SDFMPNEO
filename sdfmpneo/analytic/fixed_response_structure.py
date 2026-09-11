@@ -10,14 +10,33 @@ class _NetworkStructureMixin:
     def n_modes(self):
         return int(self.lambdas.size)
 
+    def _channel_amplitude_strength(self, layer, channel):
+        layer = int(layer); channel = int(channel)
+        values = [float(self._array(f"bias_{layer}")[channel])]
+        if layer == 0:
+            names = ("input_linear_out", "quadratic_out", "square_out")
+        else:
+            names = (
+                f"hidden_linear_out_{layer}",
+                f"cross_out_{layer}",
+                f"state_out_{layer}",
+            )
+        for name in names:
+            values.extend(np.asarray(self._array(name)[channel], float).reshape(-1).tolist())
+        return float(np.linalg.norm(values))
+
+    def _channel_is_active(self, layer, channel, threshold=0.0):
+        if self._array("channel_gate")[int(layer), int(channel)] == 0.0:
+            return False
+        return self._channel_amplitude_strength(layer, channel) > float(threshold)
+
     @property
     def response_nodes(self):
-        gates = self._array("channel_gate")
         result = []
         offset = 0
         for layer, width in enumerate(self.layer_widths):
             for channel in range(width):
-                if gates[layer, channel] != 0.0:
+                if self._channel_is_active(layer, channel, 0.0):
                     result.append(self._logical_nodes[offset + channel])
             offset += width
         return tuple(result)
@@ -91,9 +110,8 @@ class _NetworkStructureMixin:
         """Return the stable linear-amplitude block for one response layer.
 
         Factor projections and all gates are deliberately frozen during residual
-        training.  The first layer includes its bias/source amplitudes.  Deeper
-        layers are pure residual correctors, so their constant biases remain zero
-        and only response-feature output amplitudes are trained.
+        training. The first layer includes its bias/source amplitudes. Deeper
+        layers are residual correctors and train only feature-output amplitudes.
         """
         layer = int(layer)
         if layer < 0 or layer >= self.depth:
@@ -119,7 +137,6 @@ class _NetworkStructureMixin:
         return np.concatenate(blocks) if blocks else np.empty(0, dtype=int)
 
     def amplitude_parameter_indices(self):
-        # Backward-compatible alias used by older trainer helpers.
         return self.trainable_parameter_indices()
 
     def zero_layer_amplitudes(self, layer):
@@ -127,8 +144,6 @@ class _NetworkStructureMixin:
         theta = self.parameters.copy()
         ids = self.layer_amplitude_parameter_indices(layer)
         theta[ids] = 0.0
-        # Deeper biases are frozen at zero even though they remain serialized for
-        # uniform-width v6 layout compatibility.
         if layer > 0:
             sl, _ = self._slices[f"bias_{layer}"]
             theta[sl] = 0.0
@@ -166,18 +181,23 @@ class _NetworkStructureMixin:
 
     def structure_summary(self, threshold=0.0):
         threshold = float(threshold)
-        gates = np.abs(self._array("channel_gate")) > threshold
-        by_layer = [
-            int(np.count_nonzero(gates[layer, :width]))
-            for layer, width in enumerate(self.layer_widths)
-        ]
+        by_layer = []
+        for layer, width in enumerate(self.layer_widths):
+            by_layer.append(sum(
+                1 for channel in range(width)
+                if self._channel_is_active(layer, channel, threshold)
+            ))
         active_layers = [i for i, count in enumerate(by_layer) if count]
         per_mode = []
         for mode in range(self.n_modes):
             count = 0
             for layer, width in enumerate(self.layer_widths):
-                mask = self.layer_targets[layer] == mode
-                count += int(np.count_nonzero(gates[layer, :width][mask]))
+                for channel in range(width):
+                    if (
+                        int(self.layer_targets[layer][channel]) == mode
+                        and self._channel_is_active(layer, channel, threshold)
+                    ):
+                        count += 1
             per_mode.append(count)
         return {
             "maximum_depth": self.depth,
