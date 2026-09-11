@@ -1,6 +1,8 @@
 """Finite-horizon diagnostics for an already-computed steady modal envelope."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from .automatic_thermal_rank import select_rank_from_modal_response_envelope
@@ -20,9 +22,8 @@ def finite_horizon_rank_diagnostic(
 
     If ``E_inf[j] = |q_j| / lambda_j`` is the existing steady response envelope,
     then a constant modal source reaches ``E_inf[j] * (1-exp(-lambda_j H))`` by
-    time H.  This is a diagnostic only: the production truncation rule remains
-    the conservative steady-envelope selection until the user explicitly opts
-    into a finite-horizon certificate.
+    time H.  This is a design diagnostic only: production truncation remains the
+    conservative steady-envelope criterion.
     """
     rates = np.asarray(lambdas, dtype=float).reshape(-1)
     steady = np.asarray(steady_response_envelope, dtype=float).reshape(-1)
@@ -50,32 +51,70 @@ def finite_horizon_rank_diagnostic(
         result[f"{horizon:g}s"] = {
             "rank": int(rank),
             "horizon_s": horizon,
-            "maximum_modal_response": finite.tolist(),
-            **details,
+            "total_response_norm": float(details["total_response_norm"]),
+            "resolved_tail_norm": float(details["resolved_tail_norm"]),
+            "selection_limit": float(details["selection_limit"]),
         }
     return result
 
 
-def diagnostic_from_rank_report(model, report, horizons=(1.0, 10.0, 30.0, 100.0)):
-    """Build a horizon comparison when the saved report contains the full envelope.
+def _full_decay_rates(core, report, full_dimension):
+    cache_path = report.get("spectrum_cache_path") if isinstance(report, dict) else None
+    if cache_path:
+        try:
+            with np.load(Path(cache_path), allow_pickle=False) as data:
+                rates = np.asarray(data["lambdas"], dtype=float).reshape(-1)
+            if (
+                rates.size == int(full_dimension)
+                and np.all(np.isfinite(rates))
+                and np.all(rates > 0.0)
+            ):
+                return rates, None
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
 
-    Older layered caches do not store the discarded full-spectrum lambdas.  The
-    diagnostic is therefore exact only when the retained thermal model already
-    equals the report's full diagnostic dimension.  In all other cases return a
-    clear unavailable reason instead of underestimating the required rank.
+    try:
+        rates = np.asarray(core.thermal_model.lambdas, dtype=float).reshape(-1)
+    except (AttributeError, TypeError, ValueError):
+        return None, "full_spectrum_decay_rates_unavailable"
+    if (
+        rates.size != int(full_dimension)
+        or np.any(~np.isfinite(rates))
+        or np.any(rates <= 0.0)
+    ):
+        return None, "full_spectrum_decay_rates_unavailable"
+    return rates, None
+
+
+def diagnostic_from_rank_report(core, report, horizons=(1.0, 10.0, 30.0, 100.0)):
+    """Build a horizon comparison from the saved full envelope and spectrum cache.
+
+    The retained surrogate model normally stores only the selected thermal
+    prefix.  The layered automatic-rank cache, however, already contains the
+    complete spectrum.  Reusing it makes this diagnostic cheap and avoids
+    invalidating the existing rank cache.
     """
-    envelope = report.get("maximum_modal_steady_response") if isinstance(report, dict) else None
+    if not isinstance(report, dict):
+        return {"available": False, "reason": "thermal_rank_report_missing"}
+    envelope = report.get("maximum_modal_steady_response")
     if envelope is None:
         return {"available": False, "reason": "steady_response_envelope_missing"}
-    rates = np.asarray(model.thermal_model.lambdas, dtype=float).reshape(-1)
     envelope = np.asarray(envelope, dtype=float).reshape(-1)
     full_dimension = int(report.get("full_dimension", envelope.size))
-    if envelope.size != full_dimension or rates.size != full_dimension:
+    if envelope.size != full_dimension:
         return {
             "available": False,
-            "reason": "full_spectrum_decay_rates_not_retained_in_this_checkpoint",
-            "retained_rank": int(rates.size),
-            "full_dimension": int(full_dimension),
+            "reason": "steady_response_envelope_incomplete",
+            "full_dimension": full_dimension,
+            "envelope_dimension": int(envelope.size),
+        }
+    rates, reason = _full_decay_rates(core, report, full_dimension)
+    if rates is None:
+        return {
+            "available": False,
+            "reason": reason,
+            "retained_rank": int(getattr(core.thermal_model, "rank", 0)),
+            "full_dimension": full_dimension,
         }
     values = finite_horizon_rank_diagnostic(
         rates,
@@ -88,8 +127,15 @@ def diagnostic_from_rank_report(model, report, horizons=(1.0, 10.0, 30.0, 100.0)
     )
     return {
         "available": True,
-        "selection_remains_steady_envelope": True,
+        "method": "steady_envelope_times_exact_first_order_horizon_factor",
+        "production_rank_unchanged": True,
+        "steady_selected_rank": int(report.get("selected_rank", full_dimension)),
+        "full_dimension": full_dimension,
         "horizons": values,
+        "scope": (
+            "design diagnostic from the cached steady-response envelope; "
+            "not a replacement for the production steady-envelope rank criterion"
+        ),
     }
 
 
