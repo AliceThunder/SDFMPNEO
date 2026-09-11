@@ -9,10 +9,10 @@ class FixedAnalyticResponseNetwork(
     _NetworkInitMixin, _NetworkStructureMixin, _DepthOneFastMixin,
     _GenericAnalyticMixin, _NetworkMetadataMixin,
 ):
-    """Finite-horizon analytic flow with low-rank capacity that scales to high thermal rank."""
+    """Finite-horizon multilayer analytic response network with low-rank coupling."""
 
     kind = "fixed_analytic_response_network"
-    format_version = 6
+    format_version = 7
 
 
 __all__ = ["FixedAnalyticResponseNetwork"]
