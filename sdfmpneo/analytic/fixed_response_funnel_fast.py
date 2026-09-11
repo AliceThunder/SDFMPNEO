@@ -1,8 +1,6 @@
 """Fast-path routing for funnel-shaped multilayer response networks."""
 from __future__ import annotations
 
-import numpy as np
-
 
 class _FunnelFastMixin:
     def _deeper_layers_zero(self):
@@ -14,7 +12,8 @@ class _FunnelFastMixin:
         # While residual-correction layers are still zero, the depth-three model
         # is exactly the first response layer. Preserve the vectorized high-rank
         # evaluator for values and input sensitivities. Full parameter tangents
-        # are excluded because zero deeper amplitudes still have nonzero tangent.
+        # are intentionally excluded: high-rank training uses the dedicated
+        # layer-amplitude Jacobian below the funnel mixins.
         if (
             self.depth > 1
             and derivative_kind != "parameter"
@@ -28,13 +27,11 @@ class _FunnelFastMixin:
         )
 
     def evaluate_layer_amplitude_jacobian(self, t, *, a0, operating, layer):
-        layer = int(layer)
-        if layer == 0 and self.depth > 1 and self._deeper_layers_zero():
-            a, da, ja, jda = self._depth_one_evaluate(
-                t, a0=a0, operating=operating, derivative_kind="parameter"
-            )
-            ids = np.asarray(self.layer_amplitude_parameter_indices(0), dtype=int)
-            return a, da, ja[:, ids], jda[:, ids], ids
+        # Do not obtain Layer-1 derivatives by constructing the depth-one *full*
+        # parameter Jacobian and slicing it afterwards.  In a v7 funnel that
+        # would allocate columns for inactive Layer 2/3 factor banks as well.
+        # The generic method builds only the current layer's linear-amplitude
+        # tangent and is therefore the bounded-memory primitive we want.
         return super().evaluate_layer_amplitude_jacobian(
             t, a0=a0, operating=operating, layer=layer
         )
