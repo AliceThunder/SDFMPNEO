@@ -81,7 +81,9 @@ def test_high_rank_default_is_multilayer_funnel_and_uses_local_jacobian():
     assert net.depth == 3
     assert net.channels_per_mode == 1
     assert net.layer_widths == (198, 64, 32)
-    assert len(net.response_nodes) == 198 + 64 + 32
+    # Only Layer 1 is amplitude-active at initialization; Layer 2/3 gates are
+    # frozen at one but their source amplitudes are exactly zero until activated.
+    assert len(net.response_nodes) == 198
     assert net.parameter_count < 30000
     rng=np.random.default_rng(0); a0=rng.normal(scale=0.05,size=198); u=rng.uniform(-1,1,12)
     start=time.perf_counter()
@@ -106,7 +108,6 @@ def test_multilayer_amplitude_jacobian_matches_finite_difference():
     )
     p = net.parameters.copy()
     rng = np.random.default_rng(4)
-    # Activate layer 1 and layer 2 amplitudes while keeping gates fixed.
     for layer in (0, 1):
         ids = net.layer_amplitude_parameter_indices(layer)
         p[ids] = rng.normal(scale=0.03, size=len(ids))
