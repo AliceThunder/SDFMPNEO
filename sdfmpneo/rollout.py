@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .em.modal_heat import heat_source_for_reduced_model
+
 
 @dataclass(frozen=True)
 class SegmentedRolloutResult:
@@ -83,6 +85,34 @@ def rollout_fixed_network(
     )
 
 
+def _steady_residual_and_direction_jacobian(field, state, operating):
+    """Exact physical residual plus a cheap dissipative Newton Jacobian."""
+    a = np.asarray(state, dtype=float)
+    u = np.asarray(operating, dtype=float)
+
+    if hasattr(field, "split") and hasattr(field, "thermal_model"):
+        context, current = field.split(u)
+        rhs = context.rhs.evaluate(current)
+        heat = heat_source_for_reduced_model(context.em, a, rhs)
+        residual = np.linalg.solve(context.M, -context.K @ a + heat)
+        jacobian = np.linalg.solve(context.M, -context.K)
+        return residual, jacobian
+
+    if hasattr(field, "em_model") and hasattr(field, "thermal_model") and hasattr(field, "rhs"):
+        rhs = field.rhs(u if getattr(field, "rhs_map", None) is not None else None)
+        heat = heat_source_for_reduced_model(field.em_model, a, rhs)
+        lambdas = np.asarray(field.thermal_model.lambdas, dtype=float)
+        forcing = np.asarray(getattr(field, "thermal_forcing", np.zeros_like(a)), dtype=float)
+        residual = -lambdas * a + heat + forcing
+        return residual, -np.diag(lambdas)
+
+    evaluation = field.evaluate(a, u)
+    return (
+        np.asarray(evaluation.vector_field, dtype=float),
+        np.asarray(evaluation.vector_field_jacobian, dtype=float),
+    )
+
+
 def solve_physical_steady_state(
     field,
     operating,
@@ -91,7 +121,14 @@ def solve_physical_steady_state(
     tolerance=1e-10,
     max_iterations=40,
 ):
-    """Damped Newton solve of F(a, operating)=0 using the physical reduced field."""
+    """Solve F(a,operating)=0 with exact residual and damped inexact Newton steps.
+
+    The line search always evaluates the complete electromagnetic Joule-heating
+    residual. For nonlinear tetrahedral UWPT models the search direction freezes
+    d(q_EM)/da and uses only the exact dissipative thermal Jacobian. This avoids
+    O(r^2) loss-operator derivative assembly at high thermal rank without
+    changing the steady-state equation being solved.
+    """
     tolerance = float(tolerance)
     max_iterations = int(max_iterations)
     if not np.isfinite(tolerance) or tolerance <= 0:
@@ -104,14 +141,14 @@ def solve_physical_steady_state(
         raise ValueError("steady-state inputs must be finite")
 
     for iteration in range(max_iterations + 1):
-        evaluation = field.evaluate(state, operating)
-        residual = np.asarray(evaluation.vector_field, dtype=float)
+        residual, jacobian = _steady_residual_and_direction_jacobian(
+            field, state, operating
+        )
         norm = float(np.linalg.norm(residual))
         if norm <= tolerance:
             return SteadyStateSolveResult(state, norm, iteration, True)
         if iteration == max_iterations:
             break
-        jacobian = np.asarray(evaluation.vector_field_jacobian, dtype=float)
         try:
             step = np.linalg.solve(jacobian, -residual)
         except np.linalg.LinAlgError:
@@ -123,9 +160,16 @@ def solve_physical_steady_state(
         for _ in range(12):
             trial = state + factor * step
             try:
-                trial_residual = np.asarray(field.evaluate(trial, operating).vector_field, dtype=float)
+                trial_residual, _ = _steady_residual_and_direction_jacobian(
+                    field, trial, operating
+                )
                 trial_norm = float(np.linalg.norm(trial_residual))
-            except (ValueError, FloatingPointError, OverflowError, np.linalg.LinAlgError):
+            except (
+                ValueError,
+                FloatingPointError,
+                OverflowError,
+                np.linalg.LinAlgError,
+            ):
                 trial_norm = float("inf")
             if np.isfinite(trial_norm) and trial_norm < norm:
                 state = trial
@@ -135,7 +179,7 @@ def solve_physical_steady_state(
         if not accepted:
             break
 
-    final = np.asarray(field.evaluate(state, operating).vector_field, dtype=float)
+    final, _ = _steady_residual_and_direction_jacobian(field, state, operating)
     return SteadyStateSolveResult(
         state,
         float(np.linalg.norm(final)),
