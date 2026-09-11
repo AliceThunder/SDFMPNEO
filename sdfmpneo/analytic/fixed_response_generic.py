@@ -60,28 +60,28 @@ class _GenericAnalyticMixin:
             self.n_modes, self._array(f"bias_{layer}")[channel], nd=nd, derivative=d
         )
 
-    def _forward_signals(self, a0, operating, derivative_kind=None):
-        initial, base, static, nd = self._base_signals(a0, operating, derivative_kind)
+    def _first_layer_groups(self, base, static, derivative_kind, nd):
         pm = derivative_kind == "parameter"
-        channel_gates = self._array("channel_gate")
-        channel_ids = self._indices("channel_gate") if pm else None
-
         linear_features = [
             self._projection(base, "input_linear_in", r, derivative_kind, nd)
             for r in range(self.linear_rank)
         ]
-        linear_out = self._array("input_linear_out")
-        linear_out_ids = self._indices("input_linear_out") if pm else None
-        qu = [self._projection(base, "quadratic_u", r, derivative_kind, nd) for r in range(self.quadratic_rank)]
-        qv = [self._projection(static, "quadratic_v", r, derivative_kind, nd) for r in range(self.quadratic_rank)]
+
+        qu = [
+            self._projection(base, "quadratic_u", r, derivative_kind, nd)
+            for r in range(self.quadratic_rank)
+        ]
+        qv = [
+            self._projection(static, "quadratic_v", r, derivative_kind, nd)
+            for r in range(self.quadratic_rank)
+        ]
         qg = self._array("quadratic_gate")
         qids = self._indices("quadratic_gate") if pm else None
         quadratic = [
             _gated(a.product(b), qg[r], None if qids is None else qids[r], nd)
             for r, (a, b) in enumerate(zip(qu, qv))
         ]
-        qout = self._array("quadratic_out")
-        qout_ids = self._indices("quadratic_out") if pm else None
+
         thermal_squared = [signal.product(signal) for signal in base[:self.n_modes]]
         square_features = [
             self._projection(thermal_squared, "square_in", r, derivative_kind, nd)
@@ -93,89 +93,121 @@ class _GenericAnalyticMixin:
             _gated(feature, square_gates[r], None if square_gate_ids is None else square_gate_ids[r], nd)
             for r, feature in enumerate(square_features)
         ]
-        square_out = self._array("square_out")
-        square_out_ids = self._indices("square_out") if pm else None
+        return (
+            ("input_linear_out", linear_features),
+            ("quadratic_out", quadratic),
+            ("square_out", square_features),
+        )
 
-        previous = []
-        layers = []
-        for c in range(self.width):
-            source = self._bias(0, c, derivative_kind, nd)
-            source.add_scaled(_weighted_sum(
-                linear_features, linear_out[c],
-                None if linear_out_ids is None else linear_out_ids[c], nd
-            ), 1.0)
-            source.add_scaled(_weighted_sum(
-                quadratic, qout[c], None if qout_ids is None else qout_ids[c], nd
-            ), 1.0)
-            source.add_scaled(_weighted_sum(
-                square_features, square_out[c],
-                None if square_out_ids is None else square_out_ids[c], nd
-            ), 1.0)
-            response = source.response(self.targets[c], self.lambdas)
-            previous.append(_gated(
-                response, channel_gates[0, c],
-                None if channel_ids is None else channel_ids[0, c], nd
-            ))
-        layers.append(tuple(previous))
-
-        for layer in range(1, self.depth):
-            hidden_features = [
+    def _deeper_layer_groups(self, previous, static, layer, derivative_kind, nd):
+        pm = derivative_kind == "parameter"
+        groups = []
+        hr = self.layer_hidden_ranks[layer - 1]
+        if hr:
+            hidden = [
                 self._projection(previous, f"hidden_linear_in_{layer}", r, derivative_kind, nd)
-                for r in range(self.hidden_rank)
+                for r in range(hr)
             ]
-            hidden_out = self._array(f"hidden_linear_out_{layer}")
-            hidden_out_ids = self._indices(f"hidden_linear_out_{layer}") if pm else None
-            ci = [self._projection(static, f"cross_input_{layer}", r, derivative_kind, nd) for r in range(self.cross_rank)]
-            ch = [self._projection(previous, f"cross_hidden_{layer}", r, derivative_kind, nd) for r in range(self.cross_rank)]
+            groups.append((f"hidden_linear_out_{layer}", hidden))
+
+        cr = self.layer_cross_ranks[layer - 1]
+        if cr:
+            ci = [
+                self._projection(static, f"cross_input_{layer}", r, derivative_kind, nd)
+                for r in range(cr)
+            ]
+            ch = [
+                self._projection(previous, f"cross_hidden_{layer}", r, derivative_kind, nd)
+                for r in range(cr)
+            ]
             cg = self._array(f"cross_gate_{layer}")
             cgids = self._indices(f"cross_gate_{layer}") if pm else None
             cross = [
                 _gated(a.product(b), cg[r], None if cgids is None else cgids[r], nd)
                 for r, (a, b) in enumerate(zip(ci, ch))
             ]
-            co = self._array(f"cross_out_{layer}")
-            coids = self._indices(f"cross_out_{layer}") if pm else None
-            su = [self._projection(previous, f"state_u_{layer}", r, derivative_kind, nd) for r in range(self.state_rank)]
-            sv = [self._projection(previous, f"state_v_{layer}", r, derivative_kind, nd) for r in range(self.state_rank)]
+            groups.append((f"cross_out_{layer}", cross))
+
+        sr = self.layer_state_ranks[layer - 1]
+        if sr:
+            su = [
+                self._projection(previous, f"state_u_{layer}", r, derivative_kind, nd)
+                for r in range(sr)
+            ]
+            sv = [
+                self._projection(previous, f"state_v_{layer}", r, derivative_kind, nd)
+                for r in range(sr)
+            ]
+            # Hidden-state products are the only operation whose signature count
+            # can grow combinatorially. Compress each frozen predecessor feature
+            # before multiplying; the result is still an analytic response signal.
+            budget = self.state_feature_term_budget
+            su = [signal.dominant_terms(budget) for signal in su]
+            sv = [signal.dominant_terms(budget) for signal in sv]
             sg = self._array(f"state_gate_{layer}")
             sgids = self._indices(f"state_gate_{layer}") if pm else None
             state = [
                 _gated(a.product(b), sg[r], None if sgids is None else sgids[r], nd)
                 for r, (a, b) in enumerate(zip(su, sv))
             ]
-            so = self._array(f"state_out_{layer}")
-            soids = self._indices(f"state_out_{layer}") if pm else None
-            current = []
-            for c in range(self.width):
-                source = self._bias(layer, c, derivative_kind, nd)
-                source.add_scaled(_weighted_sum(
-                    hidden_features, hidden_out[c],
-                    None if hidden_out_ids is None else hidden_out_ids[c], nd
-                ), 1.0)
-                source.add_scaled(_weighted_sum(
-                    cross, co[c], None if coids is None else coids[c], nd
-                ), 1.0)
-                source.add_scaled(_weighted_sum(
-                    state, so[c], None if soids is None else soids[c], nd
-                ), 1.0)
-                response = source.response(self.targets[c], self.lambdas)
-                current.append(_gated(
-                    response, channel_gates[layer, c],
-                    None if channel_ids is None else channel_ids[layer, c], nd
-                ))
+            groups.append((f"state_out_{layer}", state))
+        return tuple(groups)
+
+    def _layer_groups(self, base, static, previous, layer, derivative_kind, nd):
+        if layer == 0:
+            return self._first_layer_groups(base, static, derivative_kind, nd)
+        return self._deeper_layer_groups(previous, static, layer, derivative_kind, nd)
+
+    def _make_layer(self, base, static, previous, layer, derivative_kind, nd):
+        pm = derivative_kind == "parameter"
+        groups = self._layer_groups(base, static, previous, layer, derivative_kind, nd)
+        gate_values = self._array("channel_gate")[layer]
+        gate_ids = self._indices("channel_gate")[layer] if pm else None
+        current = []
+        for c in range(self.layer_widths[layer]):
+            source = self._bias(layer, c, derivative_kind, nd)
+            for out_name, features in groups:
+                if not features:
+                    continue
+                out = self._array(out_name)
+                out_ids = self._indices(out_name) if pm else None
+                source.add_scaled(
+                    _weighted_sum(
+                        features,
+                        out[c],
+                        None if out_ids is None else out_ids[c],
+                        nd,
+                    ),
+                    1.0,
+                )
+            target = int(self.layer_targets[layer][c])
+            response = source.response(target, self.lambdas)
+            current.append(_gated(
+                response,
+                gate_values[c],
+                None if gate_ids is None else gate_ids[c],
+                nd,
+            ))
+        return tuple(current)
+
+    def _forward_signals(self, a0, operating, derivative_kind=None, stop_layer=None):
+        initial, base, static, nd = self._base_signals(a0, operating, derivative_kind)
+        if stop_layer is None:
+            stop_layer = self.depth - 1
+        stop_layer = int(stop_layer)
+        if stop_layer < 0 or stop_layer >= self.depth:
+            raise ValueError("stop_layer is outside the response network")
+        previous = None
+        layers = []
+        for layer in range(stop_layer + 1):
+            current = self._make_layer(
+                base, static, previous, layer, derivative_kind, nd
+            )
+            layers.append(current)
             previous = current
-            layers.append(tuple(current))
         return initial, tuple(layers), nd
 
-    def evaluate_with_jacobians(self, t, *, a0, operating, derivative_kind):
-        t = float(t)
-        if not np.isfinite(t) or t < 0 or t > self.max_response_time:
-            raise ValueError(f"segment time must be in [0, {self.max_response_time:g}]")
-        if self.depth == 1:
-            return self._depth_one_evaluate(
-                t, a0=a0, operating=operating, derivative_kind=derivative_kind
-            )
-        initial, layers, nd = self._forward_signals(a0, operating, derivative_kind)
+    def _evaluate_layers(self, t, initial, layers, nd, derivative_kind):
         a = np.zeros(self.n_modes)
         da = np.zeros(self.n_modes)
         ja = np.zeros((self.n_modes, nd))
@@ -187,28 +219,159 @@ class _GenericAnalyticMixin:
             if derivative_kind == "initial":
                 ja[mode, mode] += decay
                 jda[mode, mode] -= self.lambdas[mode] * decay
-        for layer in layers:
+        for layer_index, layer in enumerate(layers):
+            targets = self.layer_targets[layer_index]
             for c, signal in enumerate(layer):
                 value, slope, g, sg = signal.evaluate(t, self.lambdas)
-                target = self.targets[c]
+                target = int(targets[c])
                 a[target] += value
                 da[target] += slope
-                ja[target] += g
-                jda[target] += sg
+                if nd:
+                    ja[target] += g
+                    jda[target] += sg
         return a, da, ja, jda
 
+    def evaluate_with_jacobians(self, t, *, a0, operating, derivative_kind):
+        t = float(t)
+        if not np.isfinite(t) or t < 0 or t > self.max_response_time:
+            raise ValueError(f"segment time must be in [0, {self.max_response_time:g}]")
+        if self.depth == 1:
+            return self._depth_one_evaluate(
+                t, a0=a0, operating=operating, derivative_kind=derivative_kind
+            )
+        if derivative_kind == "parameter" and self.n_modes >= 96:
+            raise RuntimeError(
+                "high-rank multilayer training must use the exact layer-amplitude Jacobian"
+            )
+        initial, layers, nd = self._forward_signals(a0, operating, derivative_kind)
+        return self._evaluate_layers(t, initial, layers, nd, derivative_kind)
+
+    def _layer_context(self, a0, operating, layer):
+        initial, base, static, nd = self._base_signals(a0, operating, None)
+        previous = None
+        layers = []
+        for index in range(layer + 1):
+            current = self._make_layer(base, static, previous, index, None, nd)
+            layers.append(current)
+            if index == layer:
+                break
+            previous = current
+        return initial, base, static, previous, tuple(layers)
+
+    def evaluate_layer_amplitude_jacobian(self, t, *, a0, operating, layer):
+        """Exact Jacobian for one response layer's linear amplitude block.
+
+        Earlier layers are treated as frozen analytic features and later layers
+        are not part of this stage. This is the scalable training primitive for
+        high-rank funnel networks: no exponential term carries a dense global
+        parameter tangent.
+        """
+        t = float(t)
+        layer = int(layer)
+        if not np.isfinite(t) or t < 0 or t > self.max_response_time:
+            raise ValueError(f"segment time must be in [0, {self.max_response_time:g}]")
+        if layer < 0 or layer >= self.depth:
+            raise ValueError("response layer index is out of range")
+        initial, base, static, previous, layers = self._layer_context(a0, operating, layer)
+        a, da, _, _ = self._evaluate_layers(t, initial, layers, 0, None)
+        groups = self._layer_groups(base, static, previous, layer, None, 0)
+        ids = self.layer_amplitude_parameter_indices(layer)
+        id_to_column = {int(value): i for i, value in enumerate(ids)}
+        ja = np.zeros((self.n_modes, len(ids)))
+        jda = np.zeros_like(ja)
+        gates = self._array("channel_gate")[layer]
+
+        for c in range(self.layer_widths[layer]):
+            target = int(self.layer_targets[layer][c])
+            gate = float(gates[c])
+            if layer == 0:
+                pid = int(self._indices("bias_0")[c])
+                column = id_to_column[pid]
+                signal = _ExpPoly.constant_term(self.n_modes, 1.0).response(target, self.lambdas)
+                value, slope, _, _ = signal.evaluate(t, self.lambdas)
+                ja[target, column] += gate * value
+                jda[target, column] += gate * slope
+            for out_name, features in groups:
+                out_ids = self._indices(out_name)
+                for r, feature in enumerate(features):
+                    pid = int(out_ids[c, r])
+                    column = id_to_column.get(pid)
+                    if column is None:
+                        continue
+                    signal = feature.response(target, self.lambdas)
+                    value, slope, _, _ = signal.evaluate(t, self.lambdas)
+                    ja[target, column] += gate * value
+                    jda[target, column] += gate * slope
+        return a, da, ja, jda, ids
+
+    def first_layer_source_design(self, *, a0, operating):
+        """Return the t=0 source feature vector for least-squares initialization."""
+        _, base, static, _ = self._base_signals(a0, operating, None)
+        groups = self._first_layer_groups(base, static, None, 0)
+        values = [1.0]
+        sizes = []
+        for out_name, features in groups:
+            local = []
+            for feature in features:
+                value, _, _, _ = feature.evaluate(0.0, self.lambdas)
+                local.append(float(value))
+            values.extend(local)
+            sizes.append((out_name, len(local)))
+        return np.asarray(values, dtype=float), tuple(sizes)
+
+    def fit_first_layer_source(self, samples, desired_source):
+        """Least-squares fit the complete first response source at t=0."""
+        samples = np.asarray(samples, dtype=float)
+        desired = np.asarray(desired_source, dtype=float)
+        if samples.ndim != 2 or samples.shape[1] != self.input_dimension:
+            raise ValueError("source prefit samples do not match network inputs")
+        if desired.shape != (len(samples), self.n_modes):
+            raise ValueError("source prefit target shape does not match thermal rank")
+        if self.channels_per_mode != 1 or self.layer_widths[0] != self.n_modes:
+            raise ValueError("source prefit requires one first-layer response channel per thermal mode")
+        rows = []
+        layout = None
+        for row in samples:
+            design, local_layout = self.first_layer_source_design(
+                a0=row[:self.n_modes], operating=row[self.n_modes:]
+            )
+            rows.append(design)
+            if layout is None:
+                layout = local_layout
+        X = np.vstack(rows)
+        coefficients, *_ = np.linalg.lstsq(X, desired, rcond=None)
+        theta = self.parameters.copy()
+        targets = self.layer_targets[0]
+        theta[self._indices("bias_0")] = coefficients[0, targets]
+        offset = 1
+        for out_name, width in layout:
+            values = coefficients[offset:offset + width]
+            target_values = values[:, targets].T
+            theta[self._indices(out_name)] = target_values
+            offset += width
+        fitted = X @ coefficients
+        residual = desired - fitted
+        return self.with_parameters(theta), residual
+
     def evaluate(self, t, *, a0, operating):
-        return self.evaluate_with_jacobians(t, a0=a0, operating=operating, derivative_kind=None)[:2]
+        return self.evaluate_with_jacobians(
+            t, a0=a0, operating=operating, derivative_kind=None
+        )[:2]
 
     def evaluate_parameter_jacobian(self, t, *, a0, operating):
-        return self.evaluate_with_jacobians(t, a0=a0, operating=operating, derivative_kind="parameter")
+        return self.evaluate_with_jacobians(
+            t, a0=a0, operating=operating, derivative_kind="parameter"
+        )
 
     def evaluate_initial_jacobian(self, t, *, a0, operating):
-        return self.evaluate_with_jacobians(t, a0=a0, operating=operating, derivative_kind="initial")
+        return self.evaluate_with_jacobians(
+            t, a0=a0, operating=operating, derivative_kind="initial"
+        )
 
     def evaluate_operating_jacobian(self, t, *, a0, operating):
-        return self.evaluate_with_jacobians(t, a0=a0, operating=operating, derivative_kind="operating")
-
+        return self.evaluate_with_jacobians(
+            t, a0=a0, operating=operating, derivative_kind="operating"
+        )
 
 
 __all__ = ["_GenericAnalyticMixin"]
