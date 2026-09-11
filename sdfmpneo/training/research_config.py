@@ -118,12 +118,19 @@ class ResearchTrainingConfig:
             raise ValueError("prune_relative_budget must be finite and non-negative")
 
     def initial_active_indices(self):
-        """Modes used to parameterize training initial states, not a Cartesian r-box."""
+        """Modes used to parameterize restart seeds instead of a Cartesian r-box.
+
+        Automatic restart bounds are usually similar across modes, so sorting by
+        span alone can accidentally choose high-index fast modes on ties.  Prefer
+        larger spans first and, for equal spans, lower thermal indices.  Thermal
+        modes are ordered by increasing decay rate, making this deterministic
+        tie-break favor the slow modes that dominate reachable long-time states.
+        """
         n = len(self.initial_lower)
         rank = min(n, max(1, int(self.initial_training_rank)))
         span = np.asarray(self.initial_upper, float) - np.asarray(self.initial_lower, float)
-        ids = np.argsort(span)[-rank:]
-        return np.sort(ids.astype(int))
+        order = np.lexsort((np.arange(n, dtype=int), -span))
+        return np.sort(order[:rank].astype(int))
 
     def _sample_initial_operating(self, count, seed, extra_dimensions=0):
         count = int(count)
@@ -142,8 +149,6 @@ class ResearchTrainingConfig:
         if len(active):
             local = 2.0 * unit[:, cursor:cursor + len(active)] - 1.0
             cursor += len(active)
-            # Sample an ellipsoidal low-dimensional restart neighborhood rather
-            # than impossible simultaneous corners of the full thermal box.
             local /= np.sqrt(max(1, len(active)))
             initial[:, active] += local * half[active][None, :]
 
