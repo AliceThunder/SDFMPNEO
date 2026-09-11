@@ -1,4 +1,4 @@
-"""Training loop for finite-horizon fixed analytic response networks."""
+"""Training loop for finite-horizon multilayer analytic response networks."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -14,74 +14,22 @@ from .research_helpers import (
     _hard_weights,
     _metrics,
     _physics_vector_field,
-    _prune,
-    _solve_direction,
     _unique_rows,
 )
-from .research_linearization import linearization as _linearization
+from .research_multilayer import (
+    combined_layer_linearization,
+    layer_linearization,
+    predicted_layer_metrics,
+    residual_target_modes,
+    solve_layer_direction,
+    source_prefit,
+)
 from .research_telemetry import trial_event
-
-_MAX_EXACT_TRIALS_PER_ITERATION = 3
-_TRIAL_FACTORS = (1.0, 0.5, 0.25, 0.125, 0.0625)
-_DAMPING_MULTIPLIERS = (1.0, 10.0, 100.0)
-
-
-def _predicted_trial_score(records, weights, delta, factor):
-    """Rank trial steps using the already-built representative linear model."""
-    values = []
-    for record in records:
-        predicted = np.asarray(record.residual, dtype=float) + float(factor) * (
-            np.asarray(record.parameter_jacobian, dtype=float) @ delta
-        )
-        values.append(float(np.linalg.norm(predicted)))
-    norms = np.asarray(values, dtype=float)
-    if norms.size == 0 or np.any(~np.isfinite(norms)):
-        return (float("inf"), float("inf"))
-    w = np.asarray(weights, dtype=float)
-    return float(np.max(norms)), float(np.dot(w, norms * norms))
-
-
-def _rank_trial_candidates(
-    linearized,
-    solve_weights,
-    damping,
-    network,
-    *,
-    parameter_ids=None,
-):
-    """Generate many cheap LM candidates but return only a few exact trials."""
-    candidates = []
-    for multiplier in _DAMPING_MULTIPLIERS:
-        local_damping = max(float(damping) * multiplier, 1e-12)
-        delta = _solve_direction(
-            linearized.records,
-            solve_weights,
-            local_damping,
-            network,
-            parameter_indices=parameter_ids,
-        )
-        if not np.all(np.isfinite(delta)) or not np.any(delta):
-            continue
-        for factor in _TRIAL_FACTORS:
-            score = _predicted_trial_score(
-                linearized.records, solve_weights, delta, factor
-            )
-            if np.all(np.isfinite(score)):
-                candidates.append((score, local_damping, factor, delta))
-    candidates.sort(key=lambda item: item[0])
-    return candidates[:_MAX_EXACT_TRIALS_PER_ITERATION]
-
-
-def _exact_trial_result(trial, field, points, semigroup_points, semigroup_active, monitor):
-    if semigroup_active:
-        return _evaluate_all(trial, field, points, semigroup_points, monitor=monitor)
-    physics = _evaluate_network(trial, field, points, monitor=monitor)
-    return _combined_metrics(physics, [])
 
 
 def _initialize_center_source(network, field, config):
-    """Match the exact t=0 physical source at the center of the training box."""
-    if int(network.depth) != 1:
+    """Backward-compatible one-point source initializer used by unit tests/tools."""
+    if network.channels_per_mode != 1 or network.layer_widths[0] != network.n_modes:
         return network
     a0 = 0.5 * (
         np.asarray(config.initial_lower, dtype=float)
@@ -93,19 +41,13 @@ def _initialize_center_source(network, field, config):
     )
     physical = _physics_vector_field(field, a0, operating)
     source = np.asarray(physical, dtype=float) + np.asarray(network.lambdas) * a0
-    gates = np.asarray(network._array("channel_gate")[0], dtype=float)
-    targets = np.asarray(network.targets, dtype=int)
-    gate_sum = np.bincount(targets, weights=gates, minlength=network.n_modes)
-    if np.any(np.abs(gate_sum) < 1e-14):
-        return network
-    bias = source[targets] / gate_sum[targets]
     theta = network.parameters.copy()
-    theta[network._indices("bias_0")] = bias
+    theta[network._indices("bias_0")] = source[network.layer_targets[0]]
     return network.with_parameters(theta)
 
 
 def _accept_progressive_reason(old_norms, new_norms, tolerance, weights):
-    """Return ``(accepted, reason)`` for the progressive global-fit filter."""
+    """Physical trust filter without turning temporarily-good points into hard constraints."""
     old = np.asarray(old_norms, dtype=float)
     new = np.asarray(new_norms, dtype=float)
     tol = float(tolerance)
@@ -113,34 +55,30 @@ def _accept_progressive_reason(old_norms, new_norms, tolerance, weights):
         return False, "shape_mismatch"
     if np.any(~np.isfinite(new)):
         return False, "nonfinite_residual"
-    protected = old <= tol
-    margin = 64.0 * np.finfo(float).eps * max(tol, 1e-30)
-    if np.any(new[protected] > tol + margin):
-        return False, "regressed_converged_point"
-
     old_max = float(np.max(old, initial=0.0))
     new_max = float(np.max(new, initial=0.0))
     w = np.asarray(weights, dtype=float)
     old_merit = float(np.dot(w, old * old))
     new_merit = float(np.dot(w, new * new))
     numerical = 64.0 * np.finfo(float).eps * max(old_merit, 1.0)
+    margin = 64.0 * np.finfo(float).eps * max(tol, old_max, 1e-30)
 
+    # Close to the target, make the maximum residual genuinely monotone.
     if old_max <= 20.0 * tol:
-        if new_max < old_max - margin:
-            if new_merit <= 1.02 * old_merit + numerical:
-                return True, "near_target_max_reduced"
-            return False, "near_target_merit_regressed"
-        if new_max <= old_max + margin:
-            if new_merit < old_merit - numerical:
-                return True, "near_target_merit_reduced"
-            return False, "near_target_no_progress"
-        return False, "near_target_max_regressed"
+        if new_max < old_max - margin and new_merit <= 1.02 * old_merit + numerical:
+            return True, "near_target_max_reduced"
+        if new_max <= old_max + margin and new_merit < old_merit - numerical:
+            return True, "near_target_merit_reduced"
+        return False, "near_target_no_progress"
 
+    # Far from convergence, allow the optimizer to redistribute error between
+    # points. A large global fit improvement may temporarily raise one point,
+    # but the worst residual stays inside a 10% trust filter.
     if new_max < old_max * (1.0 - 1e-6):
         if new_merit <= 1.05 * old_merit + numerical:
             return True, "max_reduced"
         return False, "max_reduced_but_merit_regressed"
-    if new_max > 1.02 * old_max + margin:
+    if new_max > 1.10 * old_max + margin:
         return False, "max_filter_exceeded"
     if new_merit < old_merit * (1.0 - 1e-4) - numerical:
         return True, "global_merit_reduced"
@@ -152,12 +90,91 @@ def _accept_progressive(old_norms, new_norms, tolerance, weights):
 
 
 def _validation_proxy(evaluated):
-    """Typed placeholder for a report when independent validation was skipped."""
     return SimpleNamespace(
         maximum=float(evaluated.maximum),
         physics_max=float(evaluated.physics_max),
         semigroup_max=float(evaluated.semigroup_max),
     )
+
+
+def _exact_result(network, field, points, semigroup_points, include_semigroup, monitor):
+    if include_semigroup:
+        return _evaluate_all(
+            network, field, points, semigroup_points, monitor=monitor
+        )
+    physics = _evaluate_network(network, field, points, monitor=monitor)
+    return _combined_metrics(physics, [])
+
+
+def _channel_strength(network, layer, channel):
+    values = []
+    if layer == 0:
+        values.append(float(network._array("bias_0")[channel]))
+        for name in ("input_linear_out", "quadratic_out", "square_out"):
+            values.extend(np.asarray(network._array(name)[channel], float).tolist())
+    else:
+        for name in (
+            f"hidden_linear_out_{layer}",
+            f"cross_out_{layer}",
+            f"state_out_{layer}",
+        ):
+            values.extend(np.asarray(network._array(name)[channel], float).tolist())
+    return float(np.linalg.norm(values))
+
+
+def _verified_channel_prune(
+    network,
+    field,
+    points,
+    semigroup_points,
+    validation_points,
+    validation_semigroup,
+    tolerance,
+    rounds,
+    monitor,
+):
+    """Post-training pruning only; every removed response neuron is physically verified."""
+    current = network
+    training = _evaluate_all(current, field, points, semigroup_points, monitor=monitor)
+    validation = _evaluate_all(
+        current, field, validation_points, validation_semigroup, monitor=monitor
+    )
+    for _ in range(int(rounds)):
+        gates = current._array("channel_gate")
+        candidates = []
+        for layer in range(current.depth - 1, -1, -1):
+            for channel in range(current.layer_widths[layer]):
+                if gates[layer, channel] != 0.0:
+                    candidates.append((
+                        _channel_strength(current, layer, channel), layer, channel
+                    ))
+        if not candidates:
+            break
+        candidates.sort()
+        accepted = False
+        for _, layer, channel in candidates[:max(1, min(8, len(candidates)))]:
+            theta = current.parameters.copy()
+            pid = int(current._indices("channel_gate")[layer, channel])
+            theta[pid] = 0.0
+            trial = current.with_parameters(theta)
+            trial_training = _evaluate_all(
+                trial, field, points, semigroup_points, monitor=monitor
+            )
+            if trial_training.maximum > tolerance:
+                continue
+            trial_validation = _evaluate_all(
+                trial, field, validation_points, validation_semigroup, monitor=monitor
+            )
+            if trial_validation.maximum > tolerance:
+                continue
+            current = trial
+            training = trial_training
+            validation = trial_validation
+            accepted = True
+            break
+        if not accepted:
+            break
+    return current, training, validation
 
 
 def train_research_network(
@@ -169,9 +186,9 @@ def train_research_network(
     progress=None,
     monitor=None,
 ):
+    fresh = network is None
     if network is None:
         network = make_fixed_network(field, config, operating_names=operating_names)
-        network = _initialize_center_source(network, field, config)
     if not isinstance(network, FixedAnalyticResponseNetwork):
         raise TypeError("only FixedAnalyticResponseNetwork checkpoints are supported")
     if len(config.initial_lower) != network.n_modes or len(config.operating_lower) != len(network.operating_names):
@@ -183,61 +200,250 @@ def train_research_network(
     checks = np.asarray(config.points(validation=True), dtype=float)
     semigroup_points = np.asarray(config.semigroup_points(validation=False), dtype=float)
     semigroup_checks = np.asarray(config.semigroup_points(validation=True), dtype=float)
-    guards = np.empty((0, points.shape[1]), dtype=float)
-    sg_width = len(config.initial_lower) + len(config.operating_lower) + 2
-    sg_guards = np.empty((0, sg_width), dtype=float)
+    source_report = None
 
     if monitor is not None:
         monitor.retain(network)
+    if fresh:
+        if monitor is not None:
+            monitor.phase("source_prefit")
+        network, source_report = source_prefit(network, field, config, monitor)
+        if monitor is not None:
+            monitor.retain(network)
+        trial_event(
+            monitor,
+            event="source_prefit",
+            status="completed",
+            actual_rms=float(source_report.rms),
+            actual_max=float(source_report.maximum),
+            sample_count=int(source_report.sample_count),
+        )
+
+    if monitor is not None:
         monitor.phase("initial_residual")
-    physics_records = _evaluate_network(
-        network, field, points, monitor=monitor, work_label="initial_residual"
+    evaluated = _exact_result(
+        network, field, points, semigroup_points, False, monitor
     )
-    evaluated = _combined_metrics(physics_records, [])
     initial_rms = float(np.sqrt(evaluated.objective))
     history = [evaluated.objective]
     if monitor is not None:
         monitor.record(network, evaluated.objective, evaluated.maximum, len(points))
 
-    damping, epoch, iteration = 1e-3, 0, 0
-    validation = None
-    validation_performed = False
+    total_accepted = 0
+    trained_depth = 0
     status = "stalled"
     semigroup_active = False
-    final_validation = checks
-    final_semigroup_validation = semigroup_checks
+    validation = None
+    validation_performed = False
 
-    while True:
-        if not semigroup_active and evaluated.physics_max <= config.residual_tolerance:
-            semigroup_active = True
-            if monitor is not None:
-                monitor.phase("restart_consistency")
-            evaluated = _evaluate_all(
-                network, field, points, semigroup_points, monitor=monitor
+    def optimize_layer(layer, include_semigroup):
+        nonlocal network, evaluated, total_accepted, trained_depth
+        damping = 1e-3
+        accepted_any = False
+        for local_iteration in range(int(config.max_iterations_per_layer)):
+            target_met = (
+                evaluated.maximum <= config.residual_tolerance
+                if include_semigroup
+                else evaluated.physics_max <= config.residual_tolerance
             )
-            history.append(evaluated.objective)
-            iteration = 0
-            damping = max(damping, 1e-3)
+            if target_met:
+                break
             if monitor is not None:
-                monitor.record(network, evaluated.objective, evaluated.maximum, len(points))
+                monitor.phase(
+                    "restart_consistency" if include_semigroup
+                    else f"response_layer_{layer + 1}"
+                )
+            linearized = (
+                combined_layer_linearization(
+                    network, field, points, semigroup_points, evaluated,
+                    layer, config, monitor
+                )
+                if include_semigroup
+                else layer_linearization(
+                    network, field, points, evaluated, layer, config, monitor
+                )
+            )
+            ids = np.asarray(linearized.parameter_indices, dtype=int)
+            if ids.size == 0:
+                trial_event(
+                    monitor, event="iteration", layer=layer + 1,
+                    iteration=local_iteration + 1, status="rejected",
+                    reason="empty_amplitude_block",
+                )
+                break
+            solve_weights = _hard_weights(
+                linearized.norms, config.residual_tolerance
+            )
+            acceptance_weights = _hard_weights(
+                evaluated.norms, config.residual_tolerance
+            )
+            accepted = False
+            for retry in range(int(config.max_damping_retries)):
+                delta = solve_layer_direction(
+                    linearized.records, solve_weights, damping, network, ids
+                )
+                if not np.all(np.isfinite(delta)) or not np.any(delta[ids]):
+                    trial_event(
+                        monitor, event="direction", layer=layer + 1,
+                        iteration=local_iteration + 1, retry=retry + 1,
+                        status="rejected", reason="zero_or_nonfinite_direction",
+                        damping=float(damping),
+                    )
+                    damping *= 10.0
+                    continue
 
-        if semigroup_active and evaluated.maximum <= config.residual_tolerance:
+                for backtrack in range(int(config.max_backtracks)):
+                    factor = float(config.backtrack_factor) ** backtrack
+                    predicted_max, predicted_wrms, _ = predicted_layer_metrics(
+                        linearized.records, solve_weights, delta, ids, factor
+                    )
+                    trial_event(
+                        monitor, event="candidate", layer=layer + 1,
+                        iteration=local_iteration + 1, retry=retry + 1,
+                        backtrack=backtrack, status="evaluating",
+                        damping=float(damping), factor=float(factor),
+                        predicted_max=float(predicted_max),
+                        predicted_weighted_rms=float(predicted_wrms),
+                    )
+                    trial = network.with_parameters(
+                        network.parameters + factor * delta
+                    )
+                    try:
+                        trial_result = _exact_result(
+                            trial, field, points, semigroup_points,
+                            include_semigroup, monitor
+                        )
+                    except (
+                        ValueError, FloatingPointError, OverflowError,
+                        np.linalg.LinAlgError,
+                    ) as exc:
+                        trial_event(
+                            monitor, event="candidate", layer=layer + 1,
+                            iteration=local_iteration + 1,
+                            retry=retry + 1, backtrack=backtrack,
+                            status="error", reason=type(exc).__name__,
+                            damping=float(damping), factor=float(factor),
+                        )
+                        continue
+                    accepted_now, reason = _accept_progressive_reason(
+                        evaluated.norms,
+                        trial_result.norms,
+                        config.residual_tolerance,
+                        acceptance_weights,
+                    )
+                    if include_semigroup:
+                        physics_guard = max(
+                            1.05 * config.residual_tolerance,
+                            1.02 * evaluated.physics_max,
+                        )
+                        if trial_result.physics_max > physics_guard:
+                            accepted_now = False
+                            reason = "physics_guard_exceeded"
+                    trial_event(
+                        monitor, event="candidate", layer=layer + 1,
+                        iteration=local_iteration + 1, retry=retry + 1,
+                        backtrack=backtrack,
+                        status="accepted" if accepted_now else "rejected",
+                        reason=reason, damping=float(damping), factor=float(factor),
+                        predicted_max=float(predicted_max),
+                        predicted_weighted_rms=float(predicted_wrms),
+                        actual_rms=float(np.sqrt(trial_result.objective)),
+                        actual_max=float(trial_result.maximum),
+                        actual_physics_max=float(trial_result.physics_max),
+                        actual_restart_max=float(trial_result.semigroup_max),
+                    )
+                    if not accepted_now:
+                        continue
+                    network = trial
+                    evaluated = trial_result
+                    history.append(evaluated.objective)
+                    accepted = accepted_any = True
+                    total_accepted += 1
+                    trained_depth = max(trained_depth, layer + 1)
+                    damping = max(
+                        damping / 3.0 if factor >= 0.5 else damping * 2.0,
+                        1e-12,
+                    )
+                    if monitor is not None:
+                        monitor.record(
+                            network, evaluated.objective, evaluated.maximum,
+                            len(points)
+                        )
+                    if progress is not None:
+                        progress(
+                            total_accepted,
+                            float(np.sqrt(evaluated.objective)),
+                            evaluated.maximum,
+                        )
+                    break
+                if accepted:
+                    break
+                damping *= 10.0
+                trial_event(
+                    monitor, event="trust_region", layer=layer + 1,
+                    iteration=local_iteration + 1, retry=retry + 1,
+                    status="contracted", reason="all_physical_backtracks_rejected",
+                    damping=float(damping),
+                )
+            if not accepted:
+                break
+        return accepted_any
+
+    # Stage 1: train a fixed three-layer response funnel. Deeper layers start at
+    # zero and are activated only after the preceding residual corrector stalls.
+    for layer in range(network.depth):
+        if evaluated.physics_max <= config.residual_tolerance:
+            break
+        if layer > 0:
+            targets, energy = residual_target_modes(
+                evaluated.records, network.layer_widths[layer]
+            )
+            network = network.zero_layer_amplitudes(layer)
+            network = network.with_layer_targets(layer, targets)
+            if monitor is not None:
+                monitor.retain(network)
+            trial_event(
+                monitor,
+                event="layer_activation",
+                layer=layer + 1,
+                status="activated",
+                target_modes=targets.tolist(),
+                captured_modal_residual_fraction=float(
+                    np.sum(energy[targets]) / max(np.sum(energy), np.finfo(float).tiny)
+                ),
+            )
+            evaluated = _exact_result(
+                network, field, points, semigroup_points, False, monitor
+            )
+        optimize_layer(layer, False)
+
+    # Stage 2: only after the physical flow residual is controlled, train the
+    # segmented restart defect on states generated by the network itself.
+    if evaluated.physics_max <= config.residual_tolerance:
+        semigroup_active = True
+        if monitor is not None:
+            monitor.phase("restart_consistency")
+        evaluated = _exact_result(
+            network, field, points, semigroup_points, True, monitor
+        )
+        history.append(evaluated.objective)
+        if monitor is not None:
+            monitor.record(network, evaluated.objective, evaluated.maximum, len(points))
+        if evaluated.maximum > config.residual_tolerance:
+            optimize_layer(network.depth - 1, True)
+
+    # Stage 3: independent validation. Failed physics training does not pay for
+    # an expensive validation sweep and never presents training values as checks.
+    if semigroup_active and evaluated.maximum <= config.residual_tolerance:
+        for epoch in range(int(config.max_validation_epochs) + 1):
             if monitor is not None:
                 monitor.phase("validation")
-            final_validation = _unique_rows(guards, checks, width=points.shape[1])
-            final_semigroup_validation = _unique_rows(
-                sg_guards, semigroup_checks, width=sg_width
-            )
             validation = _evaluate_all(
-                network,
-                field,
-                final_validation,
-                final_semigroup_validation,
-                monitor=monitor,
+                network, field, checks, semigroup_checks, monitor=monitor
             )
             validation_performed = True
             if monitor is not None:
-                monitor.validation(validation.maximum, len(final_validation))
+                monitor.validation(validation.maximum, len(checks))
             if validation.maximum <= config.residual_tolerance:
                 status = "numerically_converged"
                 break
@@ -245,194 +451,36 @@ def train_research_network(
                 break
 
             physics_records = _evaluate_network(
-                network, field, final_validation, monitor=monitor
+                network, field, checks, monitor=monitor
             )
             _, _, physics_norms = _metrics(physics_records)
-            semigroup_records = _evaluate_semigroup(
-                network, final_semigroup_validation, monitor=monitor
+            sg_records = _evaluate_semigroup(
+                network, semigroup_checks, monitor=monitor
             )
-            _, _, sg_norms = _metrics(semigroup_records)
-            violating = final_validation[physics_norms > config.residual_tolerance]
-            violating_sg = final_semigroup_validation[
-                sg_norms > config.residual_tolerance
-            ]
-            guards = _unique_rows(
-                guards,
-                final_validation[physics_norms <= config.residual_tolerance],
-                width=points.shape[1],
-            )
-            sg_guards = _unique_rows(
-                sg_guards,
-                final_semigroup_validation[sg_norms <= config.residual_tolerance],
-                width=sg_width,
-            )
+            _, _, sg_norms = _metrics(sg_records)
+            violating = checks[physics_norms > config.residual_tolerance]
+            violating_sg = semigroup_checks[sg_norms > config.residual_tolerance]
             points = _unique_rows(points, violating, width=points.shape[1])
             semigroup_points = _unique_rows(
-                semigroup_points, violating_sg, width=sg_width
+                semigroup_points, violating_sg,
+                width=semigroup_points.shape[1],
             )
-            epoch += 1
             checks = np.asarray(
                 config.points(validation=True, seed=2 + epoch), dtype=float
             )
             semigroup_checks = np.asarray(
-                config.semigroup_points(validation=True, seed=102 + epoch), dtype=float
+                config.semigroup_points(validation=True, seed=102 + epoch),
+                dtype=float,
             )
-            validation = None
-            validation_performed = False
-            evaluated = _evaluate_all(
-                network, field, points, semigroup_points, monitor=monitor
+            evaluated = _exact_result(
+                network, field, points, semigroup_points, True, monitor
             )
-            history.append(evaluated.objective)
-            iteration = 0
-            damping = max(damping, 1e-3)
-            if monitor is not None:
-                monitor.record(
-                    network,
-                    evaluated.objective,
-                    evaluated.maximum,
-                    len(points),
-                    new_points=True,
-                )
-            continue
-
-        if iteration >= config.max_iterations:
-            break
-        iteration += 1
-        if monitor is not None:
-            monitor.phase(
-                "restart_consistency" if semigroup_active else "weight_refinement"
-            )
-        linearized = _linearization(
-            network,
-            field,
-            points,
-            semigroup_points if semigroup_active else semigroup_points[:0],
-            evaluated,
-            config,
-            monitor,
-        )
-        solve_weights = _hard_weights(linearized.norms, config.residual_tolerance)
-        acceptance_weights = _hard_weights(
-            evaluated.norms, config.residual_tolerance
-        )
-        candidates = _rank_trial_candidates(
-            linearized,
-            solve_weights,
-            damping,
-            network,
-            parameter_ids=None,
-        )
-        if not candidates:
-            trial_event(
-                monitor,
-                event="iteration",
-                iteration=int(iteration),
-                status="rejected",
-                reason="no_finite_candidate",
-                jacobian_points=int(len(getattr(linearized, "physics_subset", ()))),
-                jacobian_hard_points=int(getattr(linearized, "physics_hard_count", 0)),
-            )
-            break
-
-        accepted = False
-        weight_sum = max(float(np.sum(solve_weights)), np.finfo(float).tiny)
-        for candidate_index, (score, local_damping, factor, delta) in enumerate(candidates, start=1):
-            predicted_max, predicted_merit = score
-            predicted_weighted_rms = float(np.sqrt(predicted_merit / weight_sum))
-            trial_event(
-                monitor,
-                event="candidate",
-                iteration=int(iteration),
-                candidate=int(candidate_index),
-                status="evaluating",
-                damping=float(local_damping),
-                factor=float(factor),
-                predicted_max=float(predicted_max),
-                predicted_weighted_rms=predicted_weighted_rms,
-                jacobian_points=int(len(getattr(linearized, "physics_subset", ()))),
-                jacobian_hard_points=int(getattr(linearized, "physics_hard_count", 0)),
-            )
-            trial = network.with_parameters(network.parameters + factor * delta)
-            if config.gate_shrink:
-                trial = trial.soft_threshold_structure(config.gate_shrink * factor)
-            try:
-                trial_result = _exact_trial_result(
-                    trial,
-                    field,
-                    points,
-                    semigroup_points,
-                    semigroup_active,
-                    monitor,
-                )
-            except (
-                ValueError,
-                FloatingPointError,
-                OverflowError,
-                np.linalg.LinAlgError,
-            ) as exc:
-                trial_event(
-                    monitor,
-                    event="candidate",
-                    iteration=int(iteration),
-                    candidate=int(candidate_index),
-                    status="error",
-                    reason=type(exc).__name__,
-                    damping=float(local_damping),
-                    factor=float(factor),
-                    predicted_max=float(predicted_max),
-                    predicted_weighted_rms=predicted_weighted_rms,
-                )
-                continue
-
-            accepted_now, reason = _accept_progressive_reason(
-                evaluated.norms,
-                trial_result.norms,
-                config.residual_tolerance,
-                acceptance_weights,
-            )
-            trial_event(
-                monitor,
-                event="candidate",
-                iteration=int(iteration),
-                candidate=int(candidate_index),
-                status="accepted" if accepted_now else "rejected",
-                reason=reason,
-                damping=float(local_damping),
-                factor=float(factor),
-                predicted_max=float(predicted_max),
-                predicted_weighted_rms=predicted_weighted_rms,
-                actual_rms=float(np.sqrt(trial_result.objective)),
-                actual_max=float(trial_result.maximum),
-            )
-            if accepted_now:
-                network = trial
-                evaluated = trial_result
-                history.append(evaluated.objective)
-                damping = max(local_damping / 3.0, 1e-12)
-                accepted = True
-                if monitor is not None:
-                    monitor.record(
-                        network,
-                        evaluated.objective,
-                        evaluated.maximum,
-                        len(points),
-                    )
-                if progress is not None:
-                    progress(
-                        iteration,
-                        float(np.sqrt(evaluated.objective)),
-                        evaluated.maximum,
-                    )
+            # Earlier response layers remain frozen; the final response layer is
+            # the bounded correction stage for newly discovered validation guards.
+            optimize_layer(network.depth - 1, True)
+            if evaluated.maximum > config.residual_tolerance:
                 break
-
-        if not accepted:
-            break
-
-    # ``evaluated`` is already the exact residual of the current network.  Do
-    # not spend another full training sweep merely to reproduce the same value.
-    # Independent validation is meaningful only after the training/restart
-    # criteria have actually reached their target; otherwise mark it skipped.
-    if validation is None:
+    else:
         validation = _validation_proxy(evaluated)
         validation_performed = False
         trial_event(
@@ -444,57 +492,44 @@ def train_research_network(
             actual_max=float(evaluated.maximum),
         )
 
-    if status == "numerically_converged" and config.prune_rounds > 0:
+    # Structure gates were frozen throughout training. Only now may a response
+    # neuron be removed, and every removal is checked against both training and
+    # independent validation residuals.
+    if (
+        status == "numerically_converged"
+        and validation_performed
+        and config.prune_rounds > 0
+    ):
         if monitor is not None:
             monitor.phase("structure_pruning")
-        verify = _unique_rows(points, final_validation, width=points.shape[1])
-        verify_sg = _unique_rows(
-            semigroup_points, final_semigroup_validation, width=sg_width
-        )
-        pruned = _prune(
+        network, evaluated, validation = _verified_channel_prune(
             network,
             field,
-            verify,
-            verify_sg,
+            points,
+            semigroup_points,
+            checks,
+            semigroup_checks,
             config.residual_tolerance,
-            config.prune_relative_budget,
             config.prune_rounds,
             monitor,
-            config,
         )
-        if pruned is not network:
-            network = pruned
-            evaluated = _evaluate_all(
-                network, field, points, semigroup_points, monitor=monitor
+        if monitor is not None:
+            monitor.record(
+                network, evaluated.objective, evaluated.maximum, len(points)
             )
-            validation = _evaluate_all(
-                network,
-                field,
-                final_validation,
-                final_semigroup_validation,
-                monitor=monitor,
-            )
-            validation_performed = True
-            if (
-                evaluated.maximum > config.residual_tolerance
-                or validation.maximum > config.residual_tolerance
-            ):
-                raise RuntimeError(
-                    "validated pruning violated residual/restart tolerance"
-                )
-            if monitor is not None:
-                monitor.record(
-                    network,
-                    evaluated.objective,
-                    evaluated.maximum,
-                    len(points),
-                )
-                monitor.validation(
-                    validation.maximum, len(final_validation)
-                )
+            monitor.validation(validation.maximum, len(checks))
+
+    if validation is None:
+        validation = _validation_proxy(evaluated)
+        validation_performed = False
 
     structure = dict(network.structure_summary(0.0))
-    structure["validation_performed"] = bool(validation_performed)
+    structure.update(
+        validation_performed=bool(validation_performed),
+        initial_training_rank=int(min(config.initial_training_rank, network.n_modes)),
+        initial_training_modes=config.initial_active_indices().tolist(),
+        gates_frozen_during_training=True,
+    )
     horizon = float(config.max_response_time)
     report = ResearchTrainingReport(
         status=status,
@@ -514,14 +549,18 @@ def train_research_network(
         numerical_tolerance_met=(status == "numerically_converged"),
         structure=structure,
         validation_performed=bool(validation_performed),
+        source_prefit_rms_residual=(
+            None if source_report is None else float(source_report.rms)
+        ),
+        source_prefit_max_residual=(
+            None if source_report is None else float(source_report.maximum)
+        ),
+        trained_response_depth=int(trained_depth),
     )
     return network, report
 
 
 __all__ = [
-    "train_research_network",
-    "_initialize_center_source",
-    "_accept_progressive",
-    "_accept_progressive_reason",
-    "_rank_trial_candidates",
+    "train_research_network", "_initialize_center_source",
+    "_accept_progressive", "_accept_progressive_reason",
 ]
