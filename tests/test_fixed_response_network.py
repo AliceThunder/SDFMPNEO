@@ -55,12 +55,24 @@ def test_initial_state_jacobian_matches_finite_difference():
     assert np.allclose(jda0[:, 0], (dap - dam) / (2 * eps), rtol=2e-6, atol=2e-8)
 
 
-def test_metadata_accepts_only_current_finite_horizon_format():
+def test_v7_metadata_roundtrip_and_v6_uniform_compatibility():
     network = _one_mode()
     metadata = network.to_metadata()
-    assert metadata["max_response_time"] == 1.0
+    assert metadata["format_version"] == 7
+    assert metadata["layer_widths"] == [1]
     loaded = FixedAnalyticResponseNetwork.from_metadata(metadata, network.parameters)
     assert np.allclose(loaded.parameters, network.parameters)
-    bad = dict(metadata); bad["format_version"] -= 1
+
+    legacy = dict(metadata)
+    legacy["format_version"] = 6
+    for key in (
+        "layer_widths", "layer_targets", "layer_hidden_ranks",
+        "layer_cross_ranks", "layer_state_ranks", "state_feature_term_budget",
+    ):
+        legacy.pop(key, None)
+    loaded_v6 = FixedAnalyticResponseNetwork.from_metadata(legacy, network.parameters)
+    assert np.allclose(loaded_v6.parameters, network.parameters)
+
+    bad = dict(metadata); bad["format_version"] = 5
     with pytest.raises(ValueError, match="unsupported fixed analytic response network format"):
         FixedAnalyticResponseNetwork.from_metadata(bad, network.parameters)
