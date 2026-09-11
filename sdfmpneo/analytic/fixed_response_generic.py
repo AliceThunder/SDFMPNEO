@@ -66,7 +66,6 @@ class _GenericAnalyticMixin:
             self._projection(base, "input_linear_in", r, derivative_kind, nd)
             for r in range(self.linear_rank)
         ]
-
         qu = [
             self._projection(base, "quadratic_u", r, derivative_kind, nd)
             for r in range(self.quadratic_rank)
@@ -81,7 +80,6 @@ class _GenericAnalyticMixin:
             _gated(a.product(b), qg[r], None if qids is None else qids[r], nd)
             for r, (a, b) in enumerate(zip(qu, qv))
         ]
-
         thermal_squared = [signal.product(signal) for signal in base[:self.n_modes]]
         square_features = [
             self._projection(thermal_squared, "square_in", r, derivative_kind, nd)
@@ -109,7 +107,6 @@ class _GenericAnalyticMixin:
                 for r in range(hr)
             ]
             groups.append((f"hidden_linear_out_{layer}", hidden))
-
         cr = self.layer_cross_ranks[layer - 1]
         if cr:
             ci = [
@@ -127,7 +124,6 @@ class _GenericAnalyticMixin:
                 for r, (a, b) in enumerate(zip(ci, ch))
             ]
             groups.append((f"cross_out_{layer}", cross))
-
         sr = self.layer_state_ranks[layer - 1]
         if sr:
             su = [
@@ -138,9 +134,6 @@ class _GenericAnalyticMixin:
                 self._projection(previous, f"state_v_{layer}", r, derivative_kind, nd)
                 for r in range(sr)
             ]
-            # Hidden-state products are the only operation whose signature count
-            # can grow combinatorially. Compress each frozen predecessor feature
-            # before multiplying; the result is still an analytic response signal.
             budget = self.state_feature_term_budget
             su = [signal.dominant_terms(budget) for signal in su]
             sv = [signal.dominant_terms(budget) for signal in sv]
@@ -158,7 +151,27 @@ class _GenericAnalyticMixin:
             return self._first_layer_groups(base, static, derivative_kind, nd)
         return self._deeper_layer_groups(previous, static, layer, derivative_kind, nd)
 
+    def _layer_amplitudes_are_zero(self, layer):
+        """Return whether a residual-correction layer is still completely inactive."""
+        if int(layer) <= 0:
+            return False
+        names = (
+            f"bias_{layer}",
+            f"hidden_linear_out_{layer}",
+            f"cross_out_{layer}",
+            f"state_out_{layer}",
+        )
+        return all(not np.any(self._array(name)) for name in names)
+
     def _make_layer(self, base, static, previous, layer, derivative_kind, nd):
+        # Fresh funnel layers start with exactly zero amplitudes. Avoid building
+        # hidden/state ExpPoly products until a layer is actually activated.
+        # This keeps initial residual evaluation at essentially first-layer cost.
+        if derivative_kind != "parameter" and self._layer_amplitudes_are_zero(layer):
+            return tuple(
+                _ExpPoly.zero(self.n_modes, nd)
+                for _ in range(self.layer_widths[layer])
+            )
         pm = derivative_kind == "parameter"
         groups = self._layer_groups(base, static, previous, layer, derivative_kind, nd)
         gate_values = self._array("channel_gate")[layer]
@@ -284,13 +297,14 @@ class _GenericAnalyticMixin:
         for c in range(self.layer_widths[layer]):
             target = int(self.layer_targets[layer][c])
             gate = float(gates[c])
-            if layer == 0:
-                pid = int(self._indices("bias_0")[c])
-                column = id_to_column[pid]
-                signal = _ExpPoly.constant_term(self.n_modes, 1.0).response(target, self.lambdas)
-                value, slope, _, _ = signal.evaluate(t, self.lambdas)
-                ja[target, column] += gate * value
-                jda[target, column] += gate * slope
+            pid = int(self._indices(f"bias_{layer}")[c])
+            column = id_to_column[pid]
+            signal = _ExpPoly.constant_term(
+                self.n_modes, 1.0
+            ).response(target, self.lambdas)
+            value, slope, _, _ = signal.evaluate(t, self.lambdas)
+            ja[target, column] += gate * value
+            jda[target, column] += gate * slope
             for out_name, features in groups:
                 out_ids = self._indices(out_name)
                 for r, feature in enumerate(features):
