@@ -6,9 +6,8 @@ import numpy as np
 
 class _FunnelStructureMixin:
     def _channel_amplitude(self, layer, channel):
-        values = []
+        values = [float(self._array(f"bias_{layer}")[channel])]
         if layer == 0:
-            values.append(float(self._array("bias_0")[channel]))
             names = ("input_linear_out", "quadratic_out", "square_out")
         else:
             names = (
