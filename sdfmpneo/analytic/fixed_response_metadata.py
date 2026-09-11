@@ -20,24 +20,46 @@ class _NetworkMetadataMixin:
             "square_rank": self.square_rank,
             "cross_rank": self.cross_rank,
             "state_rank": self.state_rank,
+            "layer_widths": list(self.layer_widths),
+            "layer_targets": [values.tolist() for values in self.layer_targets],
+            "layer_hidden_ranks": list(self.layer_hidden_ranks),
+            "layer_cross_ranks": list(self.layer_cross_ranks),
+            "layer_state_ranks": list(self.layer_state_ranks),
+            "state_feature_term_budget": self.state_feature_term_budget,
             "structure": self.structure_summary(0.0),
         }
 
     @classmethod
     def from_metadata(cls, metadata, parameters):
-        if metadata.get("kind") != cls.kind or metadata.get("format_version") != cls.format_version:
+        if metadata.get("kind") != cls.kind:
+            raise ValueError("unsupported fixed analytic response network kind")
+        version = int(metadata.get("format_version", -1))
+        if version not in {6, cls.format_version}:
             raise ValueError("unsupported fixed analytic response network format")
-        return cls(
-            metadata["lambdas"], metadata["operating_names"],
+        kwargs = dict(
             max_response_time=metadata["max_response_time"],
-            input_center=metadata["input_center"], input_scale=metadata["input_scale"],
-            depth=metadata["depth"], channels_per_mode=metadata["channels_per_mode"],
-            linear_rank=metadata["linear_rank"], hidden_rank=metadata["hidden_rank"],
-            quadratic_rank=metadata["quadratic_rank"], square_rank=metadata["square_rank"], cross_rank=metadata["cross_rank"],
-            state_rank=metadata["state_rank"], parameters=parameters,
+            input_center=metadata["input_center"],
+            input_scale=metadata["input_scale"],
+            depth=metadata["depth"],
+            channels_per_mode=metadata["channels_per_mode"],
+            linear_rank=metadata["linear_rank"],
+            hidden_rank=metadata["hidden_rank"],
+            quadratic_rank=metadata["quadratic_rank"],
+            square_rank=metadata["square_rank"],
+            cross_rank=metadata["cross_rank"],
+            state_rank=metadata["state_rank"],
+            parameters=parameters,
         )
-
-
+        if version >= 7:
+            kwargs.update(
+                layer_widths=metadata.get("layer_widths"),
+                layer_targets=metadata.get("layer_targets"),
+                layer_hidden_ranks=metadata.get("layer_hidden_ranks"),
+                layer_cross_ranks=metadata.get("layer_cross_ranks"),
+                layer_state_ranks=metadata.get("layer_state_ranks"),
+                state_feature_term_budget=metadata.get("state_feature_term_budget", 24),
+            )
+        return cls(metadata["lambdas"], metadata["operating_names"], **kwargs)
 
 
 __all__ = ["_NetworkMetadataMixin"]
