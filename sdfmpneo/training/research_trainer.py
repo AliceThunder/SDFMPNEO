@@ -1,6 +1,7 @@
 """Training loop for finite-horizon fixed analytic response networks."""
 from __future__ import annotations
 
+from types import SimpleNamespace
 import numpy as np
 
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
@@ -18,6 +19,7 @@ from .research_helpers import (
     _unique_rows,
 )
 from .research_linearization import linearization as _linearization
+from .research_telemetry import trial_event
 
 _MAX_EXACT_TRIALS_PER_ITERATION = 3
 _TRIAL_FACTORS = (1.0, 0.5, 0.25, 0.125, 0.0625)
@@ -25,7 +27,7 @@ _DAMPING_MULTIPLIERS = (1.0, 10.0, 100.0)
 
 
 def _predicted_trial_score(records, weights, delta, factor):
-    """Rank trial steps using the already-built hard-point linear model."""
+    """Rank trial steps using the already-built representative linear model."""
     values = []
     for record in records:
         predicted = np.asarray(record.residual, dtype=float) + float(factor) * (
@@ -45,7 +47,7 @@ def _rank_trial_candidates(
     damping,
     network,
     *,
-    parameter_ids,
+    parameter_ids=None,
 ):
     """Generate many cheap LM candidates but return only a few exact trials."""
     candidates = []
@@ -78,15 +80,7 @@ def _exact_trial_result(trial, field, points, semigroup_points, semigroup_active
 
 
 def _initialize_center_source(network, field, config):
-    """Match the exact t=0 physical source at the center of the training box.
-
-    A fresh high-rank network previously started with source amplitudes close to
-    zero.  For a forced electrothermal system this leaves the optimizer several
-    orders of magnitude away from the actual Joule-heating scale.  At the
-    normalized box center every non-bias depth-one feature vanishes, so the
-    first-layer bias can be set directly from the physical vector field without
-    any transient labels or nonlinear solve.
-    """
+    """Match the exact t=0 physical source at the center of the training box."""
     if int(network.depth) != 1:
         return network
     a0 = 0.5 * (
@@ -110,25 +104,19 @@ def _initialize_center_source(network, field, config):
     return network.with_parameters(theta)
 
 
-def _accept_progressive(old_norms, new_norms, tolerance, weights):
-    """Filter LM trials without forcing strict max monotonicity far from target.
-
-    When the maximum residual is thousands of times above tolerance, requiring
-    every step to reduce the single worst point can reject directions that make
-    the global physics fit substantially better.  Far from convergence we use a
-    small trust-region filter: weighted RMS may improve while max residual moves
-    by at most 2%.  Once within 20x tolerance, strict max-residual monotonicity is
-    restored.  Points already below tolerance remain protected at all stages.
-    """
+def _accept_progressive_reason(old_norms, new_norms, tolerance, weights):
+    """Return ``(accepted, reason)`` for the progressive global-fit filter."""
     old = np.asarray(old_norms, dtype=float)
     new = np.asarray(new_norms, dtype=float)
     tol = float(tolerance)
-    if old.shape != new.shape or np.any(~np.isfinite(new)):
-        return False
+    if old.shape != new.shape:
+        return False, "shape_mismatch"
+    if np.any(~np.isfinite(new)):
+        return False, "nonfinite_residual"
     protected = old <= tol
     margin = 64.0 * np.finfo(float).eps * max(tol, 1e-30)
     if np.any(new[protected] > tol + margin):
-        return False
+        return False, "regressed_converged_point"
 
     old_max = float(np.max(old, initial=0.0))
     new_max = float(np.max(new, initial=0.0))
@@ -139,19 +127,36 @@ def _accept_progressive(old_norms, new_norms, tolerance, weights):
 
     if old_max <= 20.0 * tol:
         if new_max < old_max - margin:
-            return new_merit <= 1.02 * old_merit + numerical
+            if new_merit <= 1.02 * old_merit + numerical:
+                return True, "near_target_max_reduced"
+            return False, "near_target_merit_regressed"
         if new_max <= old_max + margin:
-            return new_merit < old_merit - numerical
-        return False
+            if new_merit < old_merit - numerical:
+                return True, "near_target_merit_reduced"
+            return False, "near_target_no_progress"
+        return False, "near_target_max_regressed"
 
-    # Early/global-fit regime.  Prefer reducing the worst residual, but also
-    # allow a meaningful weighted-RMS improvement if the worst point remains
-    # inside a narrow trust filter.
-    if new_max < old_max * (1.0 - 1e-6) and new_merit <= 1.05 * old_merit + numerical:
-        return True
-    return (
-        new_merit < old_merit * (1.0 - 1e-4) - numerical
-        and new_max <= 1.02 * old_max + margin
+    if new_max < old_max * (1.0 - 1e-6):
+        if new_merit <= 1.05 * old_merit + numerical:
+            return True, "max_reduced"
+        return False, "max_reduced_but_merit_regressed"
+    if new_max > 1.02 * old_max + margin:
+        return False, "max_filter_exceeded"
+    if new_merit < old_merit * (1.0 - 1e-4) - numerical:
+        return True, "global_merit_reduced"
+    return False, "insufficient_global_progress"
+
+
+def _accept_progressive(old_norms, new_norms, tolerance, weights):
+    return _accept_progressive_reason(old_norms, new_norms, tolerance, weights)[0]
+
+
+def _validation_proxy(evaluated):
+    """Typed placeholder for a report when independent validation was skipped."""
+    return SimpleNamespace(
+        maximum=float(evaluated.maximum),
+        physics_max=float(evaluated.physics_max),
+        semigroup_max=float(evaluated.semigroup_max),
     )
 
 
@@ -164,7 +169,6 @@ def train_research_network(
     progress=None,
     monitor=None,
 ):
-    resumed = network is not None
     if network is None:
         network = make_fixed_network(field, config, operating_names=operating_names)
         network = _initialize_center_source(network, field, config)
@@ -197,13 +201,11 @@ def train_research_network(
 
     damping, epoch, iteration = 1e-3, 0, 0
     validation = None
+    validation_performed = False
     status = "stalled"
     semigroup_active = False
     final_validation = checks
     final_semigroup_validation = semigroup_checks
-    # A supplied network is a resume/fine-tune operation. Its amplitudes have
-    # already been trained, so never replay the amplitude-only warm start.
-    amplitude_warm_start_done = resumed
 
     while True:
         if not semigroup_active and evaluated.physics_max <= config.residual_tolerance:
@@ -233,6 +235,7 @@ def train_research_network(
                 final_semigroup_validation,
                 monitor=monitor,
             )
+            validation_performed = True
             if monitor is not None:
                 monitor.validation(validation.maximum, len(final_validation))
             if validation.maximum <= config.residual_tolerance:
@@ -272,9 +275,10 @@ def train_research_network(
                 config.points(validation=True, seed=2 + epoch), dtype=float
             )
             semigroup_checks = np.asarray(
-                config.semigroup_points(validation=True, seed=102 + epoch),
-                dtype=float,
+                config.semigroup_points(validation=True, seed=102 + epoch), dtype=float
             )
+            validation = None
+            validation_performed = False
             evaluated = _evaluate_all(
                 network, field, points, semigroup_points, monitor=monitor
             )
@@ -311,21 +315,43 @@ def train_research_network(
         acceptance_weights = _hard_weights(
             evaluated.norms, config.residual_tolerance
         )
-
-        if not amplitude_warm_start_done and not semigroup_active:
-            parameter_ids = network.amplitude_parameter_indices()
-        else:
-            parameter_ids = None
-
         candidates = _rank_trial_candidates(
             linearized,
             solve_weights,
             damping,
             network,
-            parameter_ids=parameter_ids,
+            parameter_ids=None,
         )
+        if not candidates:
+            trial_event(
+                monitor,
+                event="iteration",
+                iteration=int(iteration),
+                status="rejected",
+                reason="no_finite_candidate",
+                jacobian_points=int(len(getattr(linearized, "physics_subset", ()))),
+                jacobian_hard_points=int(getattr(linearized, "physics_hard_count", 0)),
+            )
+            break
+
         accepted = False
-        for _, local_damping, factor, delta in candidates:
+        weight_sum = max(float(np.sum(solve_weights)), np.finfo(float).tiny)
+        for candidate_index, (score, local_damping, factor, delta) in enumerate(candidates, start=1):
+            predicted_max, predicted_merit = score
+            predicted_weighted_rms = float(np.sqrt(predicted_merit / weight_sum))
+            trial_event(
+                monitor,
+                event="candidate",
+                iteration=int(iteration),
+                candidate=int(candidate_index),
+                status="evaluating",
+                damping=float(local_damping),
+                factor=float(factor),
+                predicted_max=float(predicted_max),
+                predicted_weighted_rms=predicted_weighted_rms,
+                jacobian_points=int(len(getattr(linearized, "physics_subset", ()))),
+                jacobian_hard_points=int(getattr(linearized, "physics_hard_count", 0)),
+            )
             trial = network.with_parameters(network.parameters + factor * delta)
             if config.gate_shrink:
                 trial = trial.soft_threshold_structure(config.gate_shrink * factor)
@@ -343,14 +369,42 @@ def train_research_network(
                 FloatingPointError,
                 OverflowError,
                 np.linalg.LinAlgError,
-            ):
-                trial_result = None
-            if trial_result is not None and _accept_progressive(
+            ) as exc:
+                trial_event(
+                    monitor,
+                    event="candidate",
+                    iteration=int(iteration),
+                    candidate=int(candidate_index),
+                    status="error",
+                    reason=type(exc).__name__,
+                    damping=float(local_damping),
+                    factor=float(factor),
+                    predicted_max=float(predicted_max),
+                    predicted_weighted_rms=predicted_weighted_rms,
+                )
+                continue
+
+            accepted_now, reason = _accept_progressive_reason(
                 evaluated.norms,
                 trial_result.norms,
                 config.residual_tolerance,
                 acceptance_weights,
-            ):
+            )
+            trial_event(
+                monitor,
+                event="candidate",
+                iteration=int(iteration),
+                candidate=int(candidate_index),
+                status="accepted" if accepted_now else "rejected",
+                reason=reason,
+                damping=float(local_damping),
+                factor=float(factor),
+                predicted_max=float(predicted_max),
+                predicted_weighted_rms=predicted_weighted_rms,
+                actual_rms=float(np.sqrt(trial_result.objective)),
+                actual_max=float(trial_result.maximum),
+            )
+            if accepted_now:
                 network = trial
                 evaluated = trial_result
                 history.append(evaluated.objective)
@@ -371,23 +425,23 @@ def train_research_network(
                     )
                 break
 
-        if not amplitude_warm_start_done and not semigroup_active:
-            amplitude_warm_start_done = True
-            if not accepted:
-                continue
         if not accepted:
             break
 
-    evaluated = _evaluate_all(
-        network, field, points, semigroup_points, monitor=monitor
-    )
+    # ``evaluated`` is already the exact residual of the current network.  Do
+    # not spend another full training sweep merely to reproduce the same value.
+    # Independent validation is meaningful only after the training/restart
+    # criteria have actually reached their target; otherwise mark it skipped.
     if validation is None:
-        validation = _evaluate_all(
-            network,
-            field,
-            final_validation,
-            final_semigroup_validation,
-            monitor=monitor,
+        validation = _validation_proxy(evaluated)
+        validation_performed = False
+        trial_event(
+            monitor,
+            event="validation",
+            status="skipped",
+            reason="training_residual_above_tolerance",
+            actual_rms=float(np.sqrt(evaluated.objective)),
+            actual_max=float(evaluated.maximum),
         )
 
     if status == "numerically_converged" and config.prune_rounds > 0:
@@ -420,6 +474,7 @@ def train_research_network(
                 final_semigroup_validation,
                 monitor=monitor,
             )
+            validation_performed = True
             if (
                 evaluated.maximum > config.residual_tolerance
                 or validation.maximum > config.residual_tolerance
@@ -434,9 +489,12 @@ def train_research_network(
                     evaluated.maximum,
                     len(points),
                 )
-                monitor.validation(validation.maximum, len(final_validation))
+                monitor.validation(
+                    validation.maximum, len(final_validation)
+                )
 
-    structure = network.structure_summary(0.0)
+    structure = dict(network.structure_summary(0.0))
+    structure["validation_performed"] = bool(validation_performed)
     horizon = float(config.max_response_time)
     report = ResearchTrainingReport(
         status=status,
@@ -455,8 +513,15 @@ def train_research_network(
         objective_history=tuple(float(v) for v in history),
         numerical_tolerance_met=(status == "numerically_converged"),
         structure=structure,
+        validation_performed=bool(validation_performed),
     )
     return network, report
 
 
-__all__ = ["train_research_network"]
+__all__ = [
+    "train_research_network",
+    "_initialize_center_source",
+    "_accept_progressive",
+    "_accept_progressive_reason",
+    "_rank_trial_candidates",
+]
