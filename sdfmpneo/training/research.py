@@ -6,7 +6,7 @@ from .fixed_trial_runtime import accelerated_train_research_network, install_tri
 install_physics_acceleration()
 install_trial_acceleration()
 
-from .research_runtime import train_research_network as _train_research_network
+from .resume_trainer import train_research_network as _train_research_network
 
 
 def train_research_network(field, config, **kwargs):
