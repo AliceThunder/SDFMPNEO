@@ -19,6 +19,70 @@ from .research_helpers import (
     _unique_rows,
 )
 
+_MAX_EXACT_TRIALS_PER_ITERATION = 3
+_TRIAL_FACTORS = (1.0, 0.5, 0.25, 0.125, 0.0625)
+_DAMPING_MULTIPLIERS = (1.0, 10.0, 100.0)
+
+
+def _predicted_trial_score(records, weights, delta, factor):
+    """Rank trial steps using the already-built hard-point linear model."""
+    values = []
+    for record in records:
+        predicted = np.asarray(record.residual, dtype=float) + float(factor) * (
+            np.asarray(record.parameter_jacobian, dtype=float) @ delta
+        )
+        values.append(float(np.linalg.norm(predicted)))
+    norms = np.asarray(values, dtype=float)
+    if norms.size == 0 or np.any(~np.isfinite(norms)):
+        return (float("inf"), float("inf"))
+    w = np.asarray(weights, dtype=float)
+    return float(np.max(norms)), float(np.dot(w, norms * norms))
+
+
+def _rank_trial_candidates(
+    linearized,
+    solve_weights,
+    damping,
+    network,
+    *,
+    parameter_ids,
+):
+    """Generate many cheap LM candidates but return only a few exact trials.
+
+    A full physical residual sweep is expensive for a geometry family.  The
+    previous optimizer evaluated every damping/backtracking combination on the
+    complete training set (up to 15 sweeps per parameter block).  We instead
+    rank all combinations with the existing hard-point Jacobian and only send
+    the best few to exact residual evaluation.
+    """
+    candidates = []
+    for multiplier in _DAMPING_MULTIPLIERS:
+        local_damping = max(float(damping) * multiplier, 1e-12)
+        delta = _solve_direction(
+            linearized.records,
+            solve_weights,
+            local_damping,
+            network,
+            parameter_indices=parameter_ids,
+        )
+        if not np.all(np.isfinite(delta)) or not np.any(delta):
+            continue
+        for factor in _TRIAL_FACTORS:
+            score = _predicted_trial_score(
+                linearized.records, solve_weights, delta, factor
+            )
+            if np.all(np.isfinite(score)):
+                candidates.append((score, local_damping, factor, delta))
+    candidates.sort(key=lambda item: item[0])
+    return candidates[:_MAX_EXACT_TRIALS_PER_ITERATION]
+
+
+def _exact_trial_result(trial, field, points, semigroup_points, semigroup_active, monitor):
+    if semigroup_active:
+        return _evaluate_all(trial, field, points, semigroup_points, monitor=monitor)
+    physics = _evaluate_network(trial, field, points, monitor=monitor)
+    return _combined_metrics(physics, [])
+
 
 def train_research_network(
     field,
@@ -29,6 +93,7 @@ def train_research_network(
     progress=None,
     monitor=None,
 ):
+    resumed = network is not None
     if network is None:
         network = make_fixed_network(field, config, operating_names=operating_names)
     if not isinstance(network, FixedAnalyticResponseNetwork):
@@ -64,7 +129,10 @@ def train_research_network(
     semigroup_active = False
     final_validation = checks
     final_semigroup_validation = semigroup_checks
-    amplitude_warm_start_done = False
+    # A supplied network is a resume/fine-tune operation.  Its source amplitudes
+    # have already been trained, so replaying the amplitude-only warm start is
+    # both wasteful and can consume an entire iteration with rejected trials.
+    amplitude_warm_start_done = resumed
 
     while True:
         if not semigroup_active and evaluated.physics_max <= config.residual_tolerance:
@@ -83,9 +151,7 @@ def train_research_network(
         if semigroup_active and evaluated.maximum <= config.residual_tolerance:
             if monitor is not None:
                 monitor.phase("validation")
-            final_validation = _unique_rows(
-                guards, checks, width=points.shape[1]
-            )
+            final_validation = _unique_rows(guards, checks, width=points.shape[1])
             final_semigroup_validation = _unique_rows(
                 sg_guards, semigroup_checks, width=sg_width
             )
@@ -112,9 +178,7 @@ def train_research_network(
                 network, final_semigroup_validation, monitor=monitor
             )
             _, _, sg_norms = _metrics(semigroup_records)
-            violating = final_validation[
-                physics_norms > config.residual_tolerance
-            ]
+            violating = final_validation[physics_norms > config.residual_tolerance]
             violating_sg = final_semigroup_validation[
                 sg_norms > config.residual_tolerance
             ]
@@ -128,9 +192,7 @@ def train_research_network(
                 final_semigroup_validation[sg_norms <= config.residual_tolerance],
                 width=sg_width,
             )
-            points = _unique_rows(
-                points, violating, width=points.shape[1]
-            )
+            points = _unique_rows(points, violating, width=points.shape[1])
             semigroup_points = _unique_rows(
                 semigroup_points, violating_sg, width=sg_width
             )
@@ -174,107 +236,74 @@ def train_research_network(
             config,
             monitor,
         )
-        solve_weights = _hard_weights(
-            linearized.norms, config.residual_tolerance
-        )
+        solve_weights = _hard_weights(linearized.norms, config.residual_tolerance)
         acceptance_weights = _hard_weights(
             evaluated.norms, config.residual_tolerance
         )
-        accepted = False
-        local_damping = damping
 
-        # A single amplitude-only step is useful to put source magnitudes on the
-        # right scale. Repeating that block every iteration previously caused
-        # tiny accepted improvements to prevent the nonlinear factors from ever
-        # receiving a joint update. After the one warm start, all subsequent LM
-        # steps optimize the complete continuous parameter vector.
         if not amplitude_warm_start_done and not semigroup_active:
-            amplitude_ids = network.amplitude_parameter_indices()
-            parameter_blocks = (amplitude_ids,)
+            parameter_ids = network.amplitude_parameter_indices()
         else:
-            parameter_blocks = (None,)
+            parameter_ids = None
 
-        for _ in range(3):
-            for parameter_ids in parameter_blocks:
-                delta = _solve_direction(
-                    linearized.records,
-                    solve_weights,
-                    local_damping,
-                    network,
-                    parameter_indices=parameter_ids,
+        candidates = _rank_trial_candidates(
+            linearized,
+            solve_weights,
+            damping,
+            network,
+            parameter_ids=parameter_ids,
+        )
+        accepted = False
+        for _, local_damping, factor, delta in candidates:
+            trial = network.with_parameters(network.parameters + factor * delta)
+            if config.gate_shrink:
+                trial = trial.soft_threshold_structure(config.gate_shrink * factor)
+            try:
+                trial_result = _exact_trial_result(
+                    trial,
+                    field,
+                    points,
+                    semigroup_points,
+                    semigroup_active,
+                    monitor,
                 )
-                if not np.all(np.isfinite(delta)) or not np.any(delta):
-                    continue
-                factor = 1.0
-                for _ in range(5):
-                    trial = network.with_parameters(
-                        network.parameters + factor * delta
+            except (
+                ValueError,
+                FloatingPointError,
+                OverflowError,
+                np.linalg.LinAlgError,
+            ):
+                trial_result = None
+            if trial_result is not None and _accept(
+                evaluated.norms,
+                trial_result.norms,
+                config.residual_tolerance,
+                acceptance_weights,
+            ):
+                network = trial
+                evaluated = trial_result
+                history.append(evaluated.objective)
+                damping = max(local_damping / 3.0, 1e-12)
+                accepted = True
+                if monitor is not None:
+                    monitor.record(
+                        network,
+                        evaluated.objective,
+                        evaluated.maximum,
+                        len(points),
                     )
-                    if config.gate_shrink:
-                        trial = trial.soft_threshold_structure(
-                            config.gate_shrink * factor
-                        )
-                    try:
-                        if semigroup_active:
-                            trial_result = _evaluate_all(
-                                trial,
-                                field,
-                                points,
-                                semigroup_points,
-                                monitor=monitor,
-                            )
-                        else:
-                            trial_physics = _evaluate_network(
-                                trial, field, points, monitor=monitor
-                            )
-                            trial_result = _combined_metrics(
-                                trial_physics, []
-                            )
-                    except (
-                        ValueError,
-                        FloatingPointError,
-                        OverflowError,
-                        np.linalg.LinAlgError,
-                    ):
-                        trial_result = None
-                    if trial_result is not None and _accept(
-                        evaluated.norms,
-                        trial_result.norms,
-                        config.residual_tolerance,
-                        acceptance_weights,
-                    ):
-                        network = trial
-                        evaluated = trial_result
-                        history.append(evaluated.objective)
-                        damping = max(local_damping / 3.0, 1e-12)
-                        accepted = True
-                        if not amplitude_warm_start_done and not semigroup_active:
-                            amplitude_warm_start_done = True
-                        if monitor is not None:
-                            monitor.record(
-                                network,
-                                evaluated.objective,
-                                evaluated.maximum,
-                                len(points),
-                            )
-                        if progress is not None:
-                            progress(
-                                iteration,
-                                float(np.sqrt(evaluated.objective)),
-                                evaluated.maximum,
-                            )
-                        break
-                    factor *= 0.5
-                if accepted:
-                    break
-            if accepted:
+                if progress is not None:
+                    progress(
+                        iteration,
+                        float(np.sqrt(evaluated.objective)),
+                        evaluated.maximum,
+                    )
                 break
-            local_damping *= 10.0
 
-        # If the amplitude warm start itself cannot be accepted, do not get
-        # trapped retrying it forever: release the full model on the next pass.
         if not amplitude_warm_start_done and not semigroup_active:
             amplitude_warm_start_done = True
+            # Whether or not the amplitude-only trial was accepted, release the
+            # complete parameter vector on the following iteration.
             if not accepted:
                 continue
         if not accepted:
@@ -295,13 +324,9 @@ def train_research_network(
     if status == "numerically_converged" and config.prune_rounds > 0:
         if monitor is not None:
             monitor.phase("structure_pruning")
-        verify = _unique_rows(
-            points, final_validation, width=points.shape[1]
-        )
+        verify = _unique_rows(points, final_validation, width=points.shape[1])
         verify_sg = _unique_rows(
-            semigroup_points,
-            final_semigroup_validation,
-            width=sg_width,
+            semigroup_points, final_semigroup_validation, width=sg_width
         )
         pruned = _prune(
             network,
@@ -340,9 +365,7 @@ def train_research_network(
                     evaluated.maximum,
                     len(points),
                 )
-                monitor.validation(
-                    validation.maximum, len(final_validation)
-                )
+                monitor.validation(validation.maximum, len(final_validation))
 
     structure = network.structure_summary(0.0)
     horizon = float(config.max_response_time)
@@ -358,12 +381,8 @@ def train_research_network(
         maximum_validation_physics_residual=float(validation.physics_max),
         maximum_training_semigroup_rate_defect=float(evaluated.semigroup_max),
         maximum_validation_semigroup_rate_defect=float(validation.semigroup_max),
-        maximum_training_semigroup_defect=float(
-            evaluated.semigroup_max * horizon
-        ),
-        maximum_validation_semigroup_defect=float(
-            validation.semigroup_max * horizon
-        ),
+        maximum_training_semigroup_defect=float(evaluated.semigroup_max * horizon),
+        maximum_validation_semigroup_defect=float(validation.semigroup_max * horizon),
         objective_history=tuple(float(v) for v in history),
         numerical_tolerance_met=(status == "numerically_converged"),
         structure=structure,
