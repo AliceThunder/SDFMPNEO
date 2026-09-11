@@ -10,6 +10,7 @@ from sdfmpneo.em.modal_heat import heat_source_for_reduced_model
 from .research_config import ResearchTrainingConfig, ResearchTrainingReport, make_fixed_network
 
 _HARD_WEIGHT_STRENGTH = 24.0
+_GN_FEEDBACK_SUBSPACE_RANK = 4
 
 
 def _work(monitor, label, completed, total):
@@ -26,21 +27,23 @@ def _physics_vector_field(field, state, operating):
     a = np.asarray(state, dtype=float)
     u = np.asarray(operating, dtype=float)
 
-    # GeometryResearchModel: split the normalized geometry/current input and
-    # evaluate the exact reduced thermal balance with fast modal heat projection.
     if hasattr(field, "split") and hasattr(field, "thermal_model"):
         context, current = field.split(u)
         rhs = context.rhs.evaluate(current)
         heat = heat_source_for_reduced_model(context.em, a, rhs)
         return np.linalg.solve(context.M, -context.K @ a + heat)
 
-    # CertifiedElectroThermalVectorField: exact diagonal thermal decay plus the
-    # same exact electromagnetic heat source; no Jq is needed for a residual.
     if hasattr(field, "em_model") and hasattr(field, "thermal_model") and hasattr(field, "rhs"):
         rhs = field.rhs(u if getattr(field, "rhs_map", None) is not None else None)
         heat = heat_source_for_reduced_model(field.em_model, a, rhs)
-        forcing = np.asarray(getattr(field, "thermal_forcing", np.zeros_like(a)), dtype=float)
-        return -np.asarray(field.thermal_model.lambdas, dtype=float) * a + heat + forcing
+        forcing = np.asarray(
+            getattr(field, "thermal_forcing", np.zeros_like(a)), dtype=float
+        )
+        return (
+            -np.asarray(field.thermal_model.lambdas, dtype=float) * a
+            + heat
+            + forcing
+        )
 
     if hasattr(field, "vector_field"):
         return np.asarray(field.vector_field(a, u), dtype=float)
@@ -48,14 +51,7 @@ def _physics_vector_field(field, state, operating):
 
 
 def _gn_field_jacobian(field, state, operating):
-    """Cheap stable Jacobian used only to propose a Gauss-Newton direction.
-
-    The exact residual is always used for trial acceptance. At high thermal rank
-    computing d(q_EM)/da exactly requires O(r^2) loss-operator derivatives. The
-    electromagnetic temperature feedback is therefore frozen in the local GN
-    model, leaving the exact dissipative thermal Jacobian. This is an inexact
-    Gauss-Newton/preconditioned direction, not a change to the trained physics.
-    """
+    """Cheap dissipative baseline Jacobian used in the inexact GN model."""
     u = np.asarray(operating, dtype=float)
     if hasattr(field, "split") and hasattr(field, "thermal_model"):
         context, _ = field.split(u)
@@ -65,29 +61,94 @@ def _gn_field_jacobian(field, state, operating):
     return np.asarray(field.evaluate(state, u).vector_field_jacobian, dtype=float)
 
 
+def _gn_apply_field_jacobian(
+    field,
+    state,
+    operating,
+    state_parameter_jacobian,
+    *,
+    feedback_rank=_GN_FEEDBACK_SUBSPACE_RANK,
+):
+    """Approximate ``J_F @ J_a`` in the state-sensitivity subspace.
+
+    Building the complete electromagnetic heat Jacobian is O(r^2) in FE loss
+    derivatives.  The network parameter Jacobian only needs its action on
+    ``J_a``.  Start from the exact thermal diffusion Jacobian, identify the
+    dominant left singular directions of ``J_a``, and correct the field action
+    along a few of those directions using central differences of the *exact*
+    fast physical residual.  If ``J_a`` is low rank this recovers the complete
+    action on its range, while high-rank problems pay only 2*q extra physical
+    forward evaluations per hard point (q=4 by default).
+    """
+    a = np.asarray(state, dtype=float)
+    u = np.asarray(operating, dtype=float)
+    Ja = np.asarray(state_parameter_jacobian, dtype=float)
+    baseline = _gn_field_jacobian(field, a, u)
+    action = baseline @ Ja
+    if Ja.size == 0 or int(feedback_rank) <= 0 or not np.any(Ja):
+        return action
+
+    gram = Ja @ Ja.T
+    gram = 0.5 * (gram + gram.T)
+    values, vectors = np.linalg.eigh(gram)
+    scale = float(np.max(values, initial=0.0))
+    if not np.isfinite(scale) or scale <= 0.0:
+        return action
+    threshold = 1e-12 * scale
+    ids = np.flatnonzero(values > threshold)
+    if ids.size == 0:
+        return action
+    ids = ids[-min(int(feedback_rank), ids.size):][::-1]
+
+    base_scale = max(1.0, float(np.linalg.norm(a)))
+    step0 = np.cbrt(np.finfo(float).eps) * base_scale
+    for idx in ids:
+        direction = vectors[:, idx]
+        step = step0 / max(1.0, float(np.linalg.norm(direction)))
+        plus = _physics_vector_field(field, a + step * direction, u)
+        minus = _physics_vector_field(field, a - step * direction, u)
+        exact_direction = (plus - minus) / (2.0 * step)
+        correction = exact_direction - baseline @ direction
+        coordinates = direction @ Ja
+        action += correction[:, None] * coordinates[None, :]
+    return action
+
+
 def _evaluate_network(network, field, points, *, jacobian=False, monitor=None, work_label=None):
     points = np.asarray(points, dtype=float)
     n = network.n_modes
     records = []
     total = len(points)
     for i, point in enumerate(points):
-        _work(monitor, work_label or ("physics_jacobian" if jacobian else "physics_residual"), i, total)
+        _work(
+            monitor,
+            work_label or ("physics_jacobian" if jacobian else "physics_residual"),
+            i,
+            total,
+        )
         initial, operating, time = point[:n], point[n:-1], float(point[-1])
         if jacobian:
             a, da, ja, jda = network.evaluate_parameter_jacobian(
                 time, a0=initial, operating=operating
             )
             F = _physics_vector_field(field, a, operating)
-            JF = _gn_field_jacobian(field, a, operating)
-            records.append(SimpleNamespace(
-                residual=np.asarray(da - F, dtype=float),
-                parameter_jacobian=np.asarray(jda - JF @ ja, dtype=float),
-            ))
+            JFJa = _gn_apply_field_jacobian(field, a, operating, ja)
+            records.append(
+                SimpleNamespace(
+                    residual=np.asarray(da - F, dtype=float),
+                    parameter_jacobian=np.asarray(jda - JFJa, dtype=float),
+                )
+            )
         else:
             a, da = network.evaluate(time, a0=initial, operating=operating)
             F = _physics_vector_field(field, a, operating)
             records.append(SimpleNamespace(residual=np.asarray(da - F, dtype=float)))
-    _work(monitor, work_label or ("physics_jacobian" if jacobian else "physics_residual"), total, total)
+    _work(
+        monitor,
+        work_label or ("physics_jacobian" if jacobian else "physics_residual"),
+        total,
+        total,
+    )
     return records
 
 
@@ -98,7 +159,12 @@ def _evaluate_semigroup(network, rows, *, jacobian=False, monitor=None, work_lab
     records = []
     total_rows = len(rows)
     for i, row in enumerate(rows):
-        _work(monitor, work_label or ("restart_jacobian" if jacobian else "restart_residual"), i, total_rows)
+        _work(
+            monitor,
+            work_label or ("restart_jacobian" if jacobian else "restart_residual"),
+            i,
+            total_rows,
+        )
         initial = row[:n]
         operating = row[n:-2]
         t1, t2 = float(row[-2]), float(row[-1])
@@ -107,29 +173,50 @@ def _evaluate_semigroup(network, rows, *, jacobian=False, monitor=None, work_lab
             raise ValueError("semigroup sample exceeds max_response_time")
         total = min(total, horizon)
         if jacobian:
-            direct, _, Jdirect, _ = network.evaluate_parameter_jacobian(total, a0=initial, operating=operating)
-            first, _, Jfirst, _ = network.evaluate_parameter_jacobian(t1, a0=initial, operating=operating)
-            restarted, _, Jrestart, _ = network.evaluate_parameter_jacobian(t2, a0=first, operating=operating)
-            _, _, Jinitial, _ = network.evaluate_initial_jacobian(t2, a0=first, operating=operating)
+            direct, _, Jdirect, _ = network.evaluate_parameter_jacobian(
+                total, a0=initial, operating=operating
+            )
+            first, _, Jfirst, _ = network.evaluate_parameter_jacobian(
+                t1, a0=initial, operating=operating
+            )
+            restarted, _, Jrestart, _ = network.evaluate_parameter_jacobian(
+                t2, a0=first, operating=operating
+            )
+            _, _, Jinitial, _ = network.evaluate_initial_jacobian(
+                t2, a0=first, operating=operating
+            )
             defect = np.asarray(direct - restarted, dtype=float)
-            jac = np.asarray(Jdirect - (Jrestart + Jinitial @ Jfirst), dtype=float)
-            records.append(SimpleNamespace(
-                residual=defect / horizon,
-                raw_defect=defect,
-                parameter_jacobian=jac / horizon,
-            ))
+            jac = np.asarray(
+                Jdirect - (Jrestart + Jinitial @ Jfirst), dtype=float
+            )
+            records.append(
+                SimpleNamespace(
+                    residual=defect / horizon,
+                    raw_defect=defect,
+                    parameter_jacobian=jac / horizon,
+                )
+            )
         else:
             direct, _ = network.evaluate(total, a0=initial, operating=operating)
             first, _ = network.evaluate(t1, a0=initial, operating=operating)
             restarted, _ = network.evaluate(t2, a0=first, operating=operating)
             defect = np.asarray(direct - restarted, dtype=float)
-            records.append(SimpleNamespace(residual=defect / horizon, raw_defect=defect))
-    _work(monitor, work_label or ("restart_jacobian" if jacobian else "restart_residual"), total_rows, total_rows)
+            records.append(
+                SimpleNamespace(residual=defect / horizon, raw_defect=defect)
+            )
+    _work(
+        monitor,
+        work_label or ("restart_jacobian" if jacobian else "restart_residual"),
+        total_rows,
+        total_rows,
+    )
     return records
 
 
 def _metrics(records):
-    norms = np.asarray([np.linalg.norm(record.residual) for record in records], dtype=float)
+    norms = np.asarray(
+        [np.linalg.norm(record.residual) for record in records], dtype=float
+    )
     objective = float(np.mean(norms * norms)) if norms.size else 0.0
     return objective, float(np.max(norms, initial=0.0)), norms
 
@@ -152,8 +239,12 @@ def _combined_metrics(physics_records, semigroup_records):
 
 
 def _evaluate_all(network, field, physics_points, semigroup_points, *, jacobian=False, monitor=None):
-    physics = _evaluate_network(network, field, physics_points, jacobian=jacobian, monitor=monitor)
-    semigroup = _evaluate_semigroup(network, semigroup_points, jacobian=jacobian, monitor=monitor)
+    physics = _evaluate_network(
+        network, field, physics_points, jacobian=jacobian, monitor=monitor
+    )
+    semigroup = _evaluate_semigroup(
+        network, semigroup_points, jacobian=jacobian, monitor=monitor
+    )
     return _combined_metrics(physics, semigroup)
 
 
@@ -176,11 +267,15 @@ def _accept(old_norms, new_norms, tolerance, weights):
         return False
     old_max = float(np.max(old, initial=0.0))
     new_max = float(np.max(new, initial=0.0))
-    numerical = 64.0 * np.finfo(float).eps * max(old_max, float(tolerance), 1e-30)
+    numerical = 64.0 * np.finfo(float).eps * max(
+        old_max, float(tolerance), 1e-30
+    )
     if new_max < old_max - numerical:
         return True
     if new_max <= old_max + numerical:
-        return float(np.dot(weights, new * new)) < float(np.dot(weights, old * old)) - numerical
+        return float(np.dot(weights, new * new)) < float(
+            np.dot(weights, old * old)
+        ) - numerical
     return False
 
 
@@ -205,16 +300,22 @@ def _solve_direction(records, weights, damping, network, parameter_indices=None)
     if m <= p:
         system = Jn @ Jn.T
         system.flat[::m + 1] += mu
-        y = scipy.linalg.solve(system, -rw, assume_a="pos", check_finite=False)
+        y = scipy.linalg.solve(
+            system, -rw, assume_a="pos", check_finite=False
+        )
         q = Jn.T @ y
     else:
         system = Jn.T @ Jn
         system.flat[::p + 1] += mu
-        q = scipy.linalg.solve(system, -(Jn.T @ rw), assume_a="pos", check_finite=False)
+        q = scipy.linalg.solve(
+            system, -(Jn.T @ rw), assume_a="pos", check_finite=False
+        )
     local_delta = q / scales
     delta = np.zeros(network.parameter_count)
     delta[parameter_indices] = local_delta
-    trust = 2.0 * max(1.0, float(np.linalg.norm(network.parameters[parameter_indices])))
+    trust = 2.0 * max(
+        1.0, float(np.linalg.norm(network.parameters[parameter_indices]))
+    )
     norm = float(np.linalg.norm(local_delta))
     if norm > trust:
         delta *= trust / norm
@@ -257,7 +358,9 @@ def _linearization(network, field, points, semigroup_points, evaluated, config, 
         config.jacobian_point_budget,
         max(1, 768 // max(1, network.n_modes)),
     )
-    physics_subset = _hard_subset(points, evaluated.physics_norms, physics_budget)
+    physics_subset = _hard_subset(
+        points, evaluated.physics_norms, physics_budget
+    )
     physics = _evaluate_network(
         network,
         field,
@@ -289,16 +392,34 @@ def _linearization(network, field, points, semigroup_points, evaluated, config, 
 def _prune(network, field, physics_points, semigroup_points, tolerance, relative_budget, rounds, monitor, config):
     current = network
     for _ in range(rounds):
-        entries = [entry for entry in current.structure_gate_entries() if entry["value"] != 0.0]
+        entries = [
+            entry
+            for entry in current.structure_gate_entries()
+            if entry["value"] != 0.0
+        ]
         if not entries:
             break
-        full = _evaluate_all(current, field, physics_points, semigroup_points, monitor=monitor)
-        evaluated = _linearization(current, field, physics_points, semigroup_points, full, config, monitor)
-        jac = np.stack([record.parameter_jacobian for record in evaluated.records])
+        full = _evaluate_all(
+            current, field, physics_points, semigroup_points, monitor=monitor
+        )
+        evaluated = _linearization(
+            current,
+            field,
+            physics_points,
+            semigroup_points,
+            full,
+            config,
+            monitor,
+        )
+        jac = np.stack(
+            [record.parameter_jacobian for record in evaluated.records]
+        )
         scored = []
         for entry in entries:
             column = jac[:, :, entry["parameter_index"]]
-            effect = abs(entry["value"]) * float(np.max(np.linalg.norm(column, axis=1), initial=0.0))
+            effect = abs(entry["value"]) * float(
+                np.max(np.linalg.norm(column, axis=1), initial=0.0)
+            )
             scored.append((effect, entry["parameter_index"]))
         scored.sort()
         budget = max(0.0, tolerance - full.maximum) + relative_budget * tolerance
@@ -317,7 +438,9 @@ def _prune(network, field, physics_points, semigroup_points, tolerance, relative
             theta = current.parameters.copy()
             theta[np.asarray(chosen[:count], dtype=int)] = 0.0
             trial = current.with_parameters(theta)
-            result = _evaluate_all(trial, field, physics_points, semigroup_points, monitor=monitor)
+            result = _evaluate_all(
+                trial, field, physics_points, semigroup_points, monitor=monitor
+            )
             if result.maximum <= tolerance:
                 accepted = trial
                 break
