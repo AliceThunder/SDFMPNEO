@@ -97,6 +97,7 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self._stop_requested = False
         self._last_revision = None
         self._last_validation = None
+        self._revision_offset = 0
         self._limit = max(10, int(options.get("max_plot_points", 4000)))
         self.series = {key: deque(maxlen=self._limit) for key in (
             "revision", "rms", "train_max", "nodes", "training_points",
@@ -145,9 +146,14 @@ class TrainingWindow(QtWidgets.QMainWindow):
                 axis.setTextPen(pg.mkPen("#111827"))
             for key, label in curves:
                 style = _CURVE_STYLES[key]
+                pen = pg.mkPen(style["pen"], width=style["width"])
                 self.curves[key] = plot.plot(
                     name=label,
-                    pen=pg.mkPen(style["pen"], width=style["width"]),
+                    pen=pen,
+                    symbol="o",
+                    symbolSize=6,
+                    symbolPen=pen,
+                    symbolBrush=pg.mkBrush(style["pen"]),
                 )
             grid.addWidget(plot, index // 2, index % 2)
 
@@ -180,12 +186,41 @@ class TrainingWindow(QtWidgets.QMainWindow):
         except (KeyError, TypeError, AttributeError):
             return None
 
+    def _append_metric_row(self, row, revision):
+        if row.get("rms") is not None and revision != self._last_revision:
+            self._last_revision = revision
+            self.series["revision"].append(revision)
+            for key in ("rms", "train_max", "nodes", "training_points"):
+                self.series[key].append(row.get(key))
+        validation = row.get("validation_max")
+        marker = (revision, validation)
+        if validation is not None and marker != self._last_validation:
+            self._last_validation = marker
+            self.series["val_revision"].append(revision)
+            self.series["validation_max"].append(validation)
+
+    def _refresh_curves(self):
+        for key, curve in self.curves.items():
+            x = self.series["val_revision" if key == "validation_max" else "revision"]
+            y = self.series[key]
+            if key in {"rms", "train_max", "validation_max"}:
+                y = [max(float(value), 1e-30) for value in y]
+            curve.setData(list(x), list(y))
+
+    def _load_history(self, history):
+        self._revision_offset = int(history.get("revision_offset") or 0)
+        for row in history.get("rows", []):
+            revision = int(row.get("revision") or 0)
+            self._append_metric_row(row, revision)
+        self._refresh_curves()
+
     def start_training(self):
         if self._active():
             return
         self._stop_requested = False
         self._last_revision = None
         self._last_validation = None
+        self._revision_offset = 0
         for values in self.series.values():
             values.clear()
         for curve in self.curves.values():
@@ -198,6 +233,12 @@ class TrainingWindow(QtWidgets.QMainWindow):
         history = build_resume_history(
             self.log_root, self._resume_model(),
             root=self.settings.get("root", self.runner_path.parent))
+        self._load_history(history)
+        if self._revision_offset:
+            self.details_label.setText(
+                f"已加载恢复历史：{self._revision_offset} 个训练 revision；新训练点将继续追加"
+            )
+
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
         self.run_dir = self.log_root / stamp
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -247,25 +288,18 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self._set_buttons(True)
 
     def consume(self, rows):
+        adjusted_rows = []
         for row in rows:
-            revision = row.get("revision")
-            if row.get("rms") is not None and revision != self._last_revision:
-                self._last_revision = revision
-                for key in ("revision", "rms", "train_max", "nodes", "training_points"):
-                    self.series[key].append(row.get(key))
-            validation = row.get("validation_max")
-            if validation is not None and (revision, validation) != self._last_validation:
-                self._last_validation = (revision, validation)
-                self.series["val_revision"].append(revision)
-                self.series["validation_max"].append(validation)
-        for key, curve in self.curves.items():
-            x = self.series["val_revision" if key == "validation_max" else "revision"]
-            y = self.series[key]
-            if key in {"rms", "train_max", "validation_max"}:
-                y = [max(float(value), 1e-30) for value in y]
-            curve.setData(list(x), list(y))
-        if rows:
-            row = rows[-1]
+            adjusted = dict(row)
+            local_revision = int(adjusted.get("revision") or 0)
+            revision = self._revision_offset + local_revision
+            adjusted["revision"] = revision
+            self._append_metric_row(adjusted, revision)
+            adjusted_rows.append(adjusted)
+        self._refresh_curves()
+
+        if adjusted_rows:
+            row = adjusted_rows[-1]
             phase = PHASES.get(row.get("phase"), row.get("phase", ""))
             state = STATES.get(row.get("state"), row.get("state", ""))
             self.status_label.setText(f"{state} · {phase}")
@@ -289,9 +323,9 @@ class TrainingWindow(QtWidgets.QMainWindow):
                     if work_label and work_total else ""
                 )
                 self.details_label.setText(
-                    f"有效响应通道={row.get('nodes', 0)}  RMS={row.get('rms')}  "
-                    f"训练最大残差={row.get('train_max')}  验证最大残差={row.get('validation_max')}"
-                    + suffix)
+                    f"revision={row.get('revision')}  有效响应通道={row.get('nodes', 0)}  "
+                    f"RMS={row.get('rms')}  训练最大残差={row.get('train_max')}  "
+                    f"验证最大残差={row.get('validation_max')}" + suffix)
 
     def _finished(self, exit_code, _status):
         if self.reader is not None:
