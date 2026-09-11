@@ -27,6 +27,7 @@ class _NetworkMetadataMixin:
             "layer_state_ranks": list(self.layer_state_ranks),
             "state_feature_term_budget": self.state_feature_term_budget,
             "structure": self.structure_summary(0.0),
+            "training_state": getattr(self, "training_state", None),
         }
 
     @classmethod
@@ -62,7 +63,11 @@ class _NetworkMetadataMixin:
                 layer_state_ranks=metadata.get("layer_state_ranks"),
                 state_feature_term_budget=metadata.get("state_feature_term_budget", 24),
             )
-        return cls(metadata["lambdas"], metadata["operating_names"], **kwargs)
+        result = cls(metadata["lambdas"], metadata["operating_names"], **kwargs)
+        saved_state = metadata.get("training_state")
+        if isinstance(saved_state, dict):
+            result.training_state = saved_state
+        return result
 
 
 __all__ = ["_NetworkMetadataMixin"]
