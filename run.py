@@ -112,13 +112,37 @@ TRAINING = {
     "validation_count": 64,
     "semigroup_sample_count": 8,
     "semigroup_validation_count": 8,
-    "max_network_depth": None,
-    "max_channels_per_mode": None,
+    # Stage 0: fit the t=0 physical source before finite-time residual training.
+    "source_prefit_count": 64,
+    # Restart seeds live in a low-dimensional ellipsoid; the full modal bounds
+    # remain safety limits instead of a 198-D Cartesian training box.
+    "initial_training_rank": 16,
+    # Multilayer analytic response funnel. None keeps rank-aware defaults:
+    # for rank>=96 this is depth=3, widths r -> 64 -> 32.
+    "max_network_depth": 3,
+    "max_channels_per_mode": 1,
+    "network_layer_widths": None,
+    "network_hidden_ranks": None,
+    "network_cross_ranks": None,
+    "network_state_ranks": None,
+    "max_linear_rank": None,
     "max_quadratic_rank": None,
+    "max_square_rank": None,
+    "max_hidden_rank": None,
     "max_cross_rank": None,
     "max_state_rank": None,
+    "state_feature_term_budget": 24,
+    # Inexact layer Jacobians propose directions; exact physics residuals decide
+    # every backtracking step and damping contraction.
+    "jacobian_point_budget": 12,
+    "semigroup_jacobian_point_budget": 4,
     "max_iterations": 36,
+    "max_iterations_per_layer": 12,
+    "max_damping_retries": 4,
+    "max_backtracks": 6,
+    "backtrack_factor": 0.5,
     "max_validation_epochs": 5,
+    # Gates stay frozen at one during training. Shrink/prune is post-convergence.
     "gate_shrink": 0.0,
     "prune_relative_budget": 0.10,
     "prune_rounds": 3,
@@ -192,7 +216,18 @@ def thermal_rank_summary(model):
             "selected_rank": rank,
             "certified_continuous_domain": bool(owner.core.thermal_tail_certificate is not None),
         }
-    return rank, report
+    return rank, dict(report)
+
+
+def add_horizon_rank_diagnostic(model, report):
+    from sdfmpneo.training.thermal_horizon import diagnostic_from_rank_report
+
+    owner = thermal_rank_owner(model)
+    updated = dict(report)
+    updated["finite_horizon_diagnostic"] = diagnostic_from_rank_report(
+        owner.core, updated, horizons=(1.0, 10.0, 30.0, 100.0)
+    )
+    return updated
 
 
 @contextmanager
@@ -205,6 +240,7 @@ def assembly_progress(monitor=None):
     labels = {
         "assembly": "组装物理模型与参考电磁空间",
         "thermal_rank_selection": "自动选择热空间阶数",
+        "thermal_rank_cache_hit": "命中自动热秩缓存",
         "geometry_em_basis": "构建跨几何共享电磁空间",
     }
 
@@ -241,6 +277,8 @@ def assembly_progress(monitor=None):
 
 
 def print_training_sample_ranges(model, config):
+    import numpy as np
+
     print("\n训练样本参数范围：", flush=True)
     if hasattr(model, "geometry_names"):
         print("  几何参数 G（网络内部归一化到 [-1,1]）：", flush=True)
@@ -250,20 +288,37 @@ def print_training_sample_ranges(model, config):
             print(f"    {name}: [{float(lower):.8g}, {float(upper):.8g}]  参考值={float(reference):.8g}", flush=True)
     else:
         print("  几何参数 G：固定几何", flush=True)
-    print("  restart 热坐标 a0：", flush=True)
-    for i, (lower, upper) in enumerate(zip(config.initial_lower, config.initial_upper)):
-        print(f"    a0[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
+    lower = np.asarray(config.initial_lower, float)
+    upper = np.asarray(config.initial_upper, float)
+    active = config.initial_active_indices()
+    print(
+        f"  restart 热坐标安全边界：{len(lower)} 维；训练种子只参数化 {len(active)} 个慢/大幅模态，"
+        f"索引={active.tolist()}",
+        flush=True,
+    )
+    if len(lower):
+        print(
+            f"    全模态下界范围=[{float(np.min(lower)):.6g},{float(np.max(lower)):.6g}]；"
+            f"上界范围=[{float(np.min(upper)):.6g},{float(np.max(upper)):.6g}]",
+            flush=True,
+        )
     print("  工况参数 U：", flush=True)
-    for i, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)):
-        print(f"    U[{i}]: [{lower:.8g}, {upper:.8g}]", flush=True)
+    for i, (lo, hi) in enumerate(zip(config.operating_lower, config.operating_upper)):
+        print(f"    U[{i}]: [{lo:.8g}, {hi:.8g}]", flush=True)
     print(
         f"  单段时间: [0,{config.max_response_time:.8g}] s；采样={config.time_sampling}",
         flush=True,
     )
     print(
-        f"  配点: physics 训练/验证={config.sample_count}/{config.validation_count}；"
+        f"  source prefit={config.source_prefit_count}；physics 训练/验证={config.sample_count}/{config.validation_count}；"
         f"restart 训练/验证={config.semigroup_sample_count}/{config.semigroup_validation_count}；"
-        f"残差目标={config.residual_tolerance:.8g}\n",
+        f"残差目标={config.residual_tolerance:.8g}",
+        flush=True,
+    )
+    print(
+        f"  响应网络：depth={config.max_network_depth or 'auto'}；"
+        f"layer widths={config.network_layer_widths or 'rank-aware auto (高秩默认 r→64→32)'}；"
+        f"每层最大迭代={config.max_iterations_per_layer}；backtracks={config.max_backtracks}\n",
         flush=True,
     )
 
@@ -314,12 +369,17 @@ def train(model_path, settings_dir, monitor=None):
             monitor.phase("loading")
         resume_path = resolve_path(resume)
         settings["resume_model"] = str(resume_path)
-        print(f"加载当前 segmented fixed-network 模型继续训练：{resume_path}", flush=True)
+        print(f"加载 segmented fixed-network 模型继续训练：{resume_path}", flush=True)
         model = ResearchElectroThermalModel.load(resume_path)
         rank, _ = thermal_rank_summary(model)
         config = resolve_training_rank(config, rank, getattr(model, "training_config", None))
         if model.network.max_response_time != config.max_response_time:
             raise ValueError("继续训练时 MAX_RESPONSE_TIME 必须与已保存网络一致")
+        if model.network.depth != int(config.max_network_depth or model.network.depth):
+            print(
+                "注意：resume checkpoint 保留其原有响应网络深度；要使用新的三层漏斗结构请将 FILES['resume_model']=None。",
+                flush=True,
+            )
     else:
         mesh_path = resolve_path(MESH["path"])
         physical = {
@@ -374,21 +434,30 @@ def train(model_path, settings_dir, monitor=None):
                 },
             )
     rank, rank_report = thermal_rank_summary(model)
+    rank_report = add_horizon_rank_diagnostic(model, rank_report)
     config = resolve_training_rank(config, rank, getattr(model, "training_config", None))
     settings["selected_thermal_rank"] = rank
     settings["training_resolved"] = config
     write_json(settings_dir / "thermal.rank.json", rank_report)
     write_json(settings_dir / "train.settings.json", settings)
     print(f"最终热空间阶数：rank={rank}；选择方法={rank_report.get('method','unknown')}", flush=True)
+    horizon_diag = rank_report.get("finite_horizon_diagnostic", {})
+    if horizon_diag.get("available"):
+        ranks = horizon_diag["horizons"]
+        print(
+            "有限时间热秩诊断（仅诊断，生产选秩仍采用稳态包络）："
+            + "，".join(f"{name}→{value['rank']}" for name, value in ranks.items()),
+            flush=True,
+        )
     print_training_sample_ranges(model, config)
-    print("开始 finite-horizon fixed analytic network 残差训练……", flush=True)
+    print("开始多层 finite-horizon analytic-response 残差训练……", flush=True)
     from sdfmpneo.training.monitor import TrainingStopped
     try:
         report = model.train(
             config,
             monitor=monitor,
             progress=lambda n, r, m: print(
-                f"迭代={n}  RMS联合残差={r:.6g}  最大联合残差={m:.6g}", flush=True
+                f"accepted revision={n}  RMS联合残差={r:.6g}  最大联合残差={m:.6g}", flush=True
             ),
         )
     except TrainingStopped:
@@ -414,17 +483,35 @@ def train(model_path, settings_dir, monitor=None):
     structure = model.network.structure_summary(0.0)
     write_json(settings_dir / "network.structure.json", structure)
     print("最终网络有效结构：" + json.dumps(structure, ensure_ascii=False), flush=True)
-    print(
-        f"训练状态：{report.status}；physics 验证最大残差={report.maximum_validation_physics_residual:.6g}；"
-        f"restart-rate 验证最大缺陷={report.maximum_validation_semigroup_rate_defect:.6g}",
-        flush=True,
-    )
+    if report.source_prefit_rms_residual is not None:
+        print(
+            f"source prefit：RMS={report.source_prefit_rms_residual:.6g}；"
+            f"max={report.source_prefit_max_residual:.6g}",
+            flush=True,
+        )
+    if report.validation_performed:
+        print(
+            f"训练状态：{report.status}；训练 physics max={report.maximum_training_physics_residual:.6g}；"
+            f"独立验证 physics max={report.maximum_validation_physics_residual:.6g}；"
+            f"restart-rate max={report.maximum_validation_semigroup_rate_defect:.6g}；"
+            f"实际训练响应深度={report.trained_response_depth}",
+            flush=True,
+        )
+    else:
+        print(
+            f"训练状态：{report.status}；训练 physics max={report.maximum_training_physics_residual:.6g}；"
+            "尚未达到进入独立验证的条件，因此未执行独立 validation；"
+            f"实际训练响应深度={report.trained_response_depth}",
+            flush=True,
+        )
     print(f"模型已保存：{model_path}")
     if monitor is not None:
         monitor.finish(
             "completed" if report.numerical_tolerance_met else report.status,
             model=str(model_path),
             numerical_tolerance_met=report.numerical_tolerance_met,
+            validation_performed=report.validation_performed,
+            trained_response_depth=report.trained_response_depth,
         )
     return 0 if report.numerical_tolerance_met else 2
 
@@ -457,7 +544,7 @@ def predict(model_path, output_path, settings_dir):
         raise ValueError("推理 times 至少需要一个时间点")
     print(
         f"加载模型推理：{model_path}；thermal rank={model.network.n_modes}；"
-        f"单段上限={model.network.max_response_time:g} s",
+        f"response depth={model.network.depth}；单段上限={model.network.max_response_time:g} s",
         flush=True,
     )
     results = [
@@ -549,7 +636,7 @@ def training_worker(snapshot_path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="SDF-MPNEO segmented fixed analytic network")
+    parser = argparse.ArgumentParser(description="SDF-MPNEO multilayer segmented analytic response network")
     parser.add_argument("--mode", choices=("train", "predict"), default=MODE)
     parser.add_argument("--model")
     display = parser.add_mutually_exclusive_group()
