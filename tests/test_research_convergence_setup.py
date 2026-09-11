@@ -34,6 +34,7 @@ def _config():
         residual_tolerance=1e-5,
         sample_count=8,
         validation_count=8,
+        max_network_depth=1,
     )
 
 
