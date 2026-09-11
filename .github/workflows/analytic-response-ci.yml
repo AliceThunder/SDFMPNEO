@@ -29,3 +29,4 @@ jobs:
           tests/test_high_rank_fixed_response.py
           tests/test_research_training.py
           tests/test_research_trial_telemetry.py
+          tests/test_modal_heat_projection.py
