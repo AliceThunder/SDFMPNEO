@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-import sdfmpneo.training.research_trainer as trainer
 from sdfmpneo.training.research_helpers import _gn_apply_field_jacobian
+from sdfmpneo.training.research_multilayer import predicted_layer_metrics
 
 
 class _QuadraticHeatEM:
@@ -46,23 +46,18 @@ def test_low_rank_feedback_action_recovers_rank_one_state_sensitivity():
     np.testing.assert_allclose(observed, exact, rtol=2e-5, atol=2e-7)
 
 
-def test_trial_prescreen_caps_full_candidates(monkeypatch):
+def test_predicted_layer_metrics_respect_actual_backtrack_factor():
     record = SimpleNamespace(
         residual=np.array([1.0, -0.5]),
         parameter_jacobian=np.array([[1.0, 0.2], [0.1, 0.8]]),
     )
-    linearized = SimpleNamespace(records=[record])
-
-    def fake_direction(records, weights, damping, network, parameter_indices=None):
-        return np.array([-0.4, 0.1]) / (1.0 + float(damping))
-
-    monkeypatch.setattr(trainer, "_solve_direction", fake_direction)
-    candidates = trainer._rank_trial_candidates(
-        linearized,
-        np.ones(1),
-        1e-3,
-        SimpleNamespace(),
-        parameter_ids=None,
-    )
-    assert len(candidates) == trainer._MAX_EXACT_TRIALS_PER_ITERATION == 3
-    assert all(np.isfinite(candidate[0][0]) for candidate in candidates)
+    ids = np.array([2, 5])
+    delta = np.zeros(7)
+    delta[ids] = np.array([-0.4, 0.1])
+    full = predicted_layer_metrics([record], np.ones(1), delta, ids, 1.0)
+    half = predicted_layer_metrics([record], np.ones(1), delta, ids, 0.5)
+    expected_full = np.linalg.norm(record.residual + record.parameter_jacobian @ delta[ids])
+    expected_half = np.linalg.norm(record.residual + 0.5 * record.parameter_jacobian @ delta[ids])
+    assert np.isclose(full[0], expected_full)
+    assert np.isclose(half[0], expected_half)
+    assert full[0] != half[0]
