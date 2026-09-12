@@ -1,14 +1,16 @@
 """UWPT 一键训练/推理。
 
-只需要修改本文件顶部配置，然后运行：
+只修改本文件顶部配置，然后运行：
 
     python run.py --mode train
     python run.py --mode predict
 
-不需要手写任何额外 JSON。run.py 会自动生成底层物理配置、训练数据、模型和报告。
+训练默认使用原有 PyQt 非阻塞窗口，支持启动、暂停、恢复和停止；
+``--headless`` 可关闭 GUI。run.py 会自动生成底层物理配置，不需要手写 JSON。
+
 首次使用：
 
-    python -m pip install -e '.[cad,neural,dev]'
+    python -m pip install -e '.[cad,gui,neural,dev]'
 """
 from __future__ import annotations
 
@@ -29,6 +31,14 @@ FILES = {
     "model": "results/uwpt/model.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
+
+    # None：新训练；填写已有神经 ROM 时，从该模型权重 + 原 POD 继续训练。
+    # 续训会复用 settings_dir 中已冻结的 quadratic_joule_dataset，不重新生成 EM 标签。
+    "resume_model": None,
+
+    # GUI“停止”期间自动写入。再次启动 train 时若文件存在，会自动续上
+    # POD、网络权重和 AdamW 动量；训练正常完成后自动删除。
+    "training_checkpoint": "results/uwpt/model.training.pt",
 }
 
 
@@ -171,12 +181,10 @@ TRAINING = {
     "operating_lower": [0.0, 0.0],
     "operating_upper": [10.0, 10.0],
 
-    # 物理标签数量。固定 (a,g) 一次 multi-RHS EM solve 会得到整个电流二次型。
     "n_snapshots": 2048,
     "seed": 17,
     "snapshot_workers": 1,
 
-    # Joule tensor POD；pod_rank=None 时按尾部容差自动选秩。
     "pod_rank": None,
     "pod_relative_tail_tolerance": 1e-4,
 
@@ -189,6 +197,7 @@ TRAINING = {
         "activation": "silu",
     },
     "optimizer": {
+        # 对 resume_model / training checkpoint，epochs 表示本次追加的最大 epoch 数。
         "epochs": 500,
         "batch_size": 256,
         "learning_rate": 1e-3,
@@ -207,11 +216,7 @@ PREDICTION = {
     "a0": [0.0, 0.0],
     "operating": [5.0, 0.0],
     "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, "inf"],
-
-    # 几何族：None=几何盒中心；也可填写物理参数字典，例如
-    # {"rx_gap": 0.01, ...}，未填写的参数取参考值。
     "geometry": None,
-
     "method": "etd2_adaptive",          # etd2_adaptive / etd2 / imex
     "max_step": 100.0,
     "initial_step": 0.001,
@@ -220,6 +225,18 @@ PREDICTION = {
     "steady_tolerance": 1e-10,
     "steady_max_iterations": 40,
     "allow_extrapolation": False,
+}
+
+
+# ==================== 8. PyQt 非阻塞训练窗口 ====================
+MONITOR = {
+    "enabled": True,
+    "auto_start": False,
+    "log_dir": "results/uwpt/logs",
+    "log_interval_s": 1.0,
+    "refresh_ms": 300,
+    "max_plot_points": 4000,
+    "compute_threads": 1,
 }
 
 
@@ -267,29 +284,25 @@ def generate_mesh(path):
         return SpiralCoilGeometry(**parameters, pose=pose)
 
     geometry = UnderwaterWPTGeometry(
-        coil(TRANSMITTER),
-        coil(RECEIVER),
-        np.asarray(ENVIRONMENT["package_half_extent"]),
-        ENVIRONMENT["seawater_padding"],
+        coil(TRANSMITTER), coil(RECEIVER),
+        np.asarray(ENVIRONMENT["package_half_extent"]), ENVIRONMENT["seawater_padding"],
     )
     result = mesh_underwater_wpt_geometry(
-        geometry,
-        path,
+        geometry, path,
         geometry_tolerance=MESH["geometry_tolerance"],
         mesh_size=MESH["mesh_size"],
         physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS),
     )
     mesh = result.tagged_mesh
     if not np.array_equal(
-        mesh.mesh.boundary_nodes(),
-        mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"]),
+        mesh.mesh.boundary_nodes(), mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"])
     ):
         raise RuntimeError("材料界面网格不共形")
     print(f"网格已生成：{mesh.mesh.n_nodes} 节点，{mesh.mesh.n_tetrahedra} 四面体", flush=True)
 
 
 def _legacy_physical_training_config():
-    """model_from_config 仍需要旧训练 dataclass，只用于物理模型/EM 空间构建。"""
+    """旧物理构建器仍需要该 dataclass；这里只用于构造 EM/thermal ROM。"""
     return {
         "initial_lower": TRAINING["initial_lower"],
         "initial_upper": TRAINING["initial_upper"],
@@ -306,8 +319,7 @@ def _legacy_physical_training_config():
 
 def _physical_config(mesh_path):
     physical = {
-        **PHYSICS,
-        **PORTS,
+        **PHYSICS, **PORTS,
         "mesh": str(mesh_path),
         "materials": MATERIALS,
         "thermal_rank": THERMAL_RANK,
@@ -326,46 +338,45 @@ def _physical_config(mesh_path):
     return physical
 
 
-def _build_physical_model(config_path):
+def _build_physical_model(config_path, monitor=None):
     if GEOMETRY_FAMILY["enabled"]:
         from sdfmpneo.geometry_research import geometry_model_from_config
-        model, _ = geometry_model_from_config(config_path)
-        return model
+        return geometry_model_from_config(config_path, monitor=monitor)[0]
     from sdfmpneo.research import model_from_config
-    model, _ = model_from_config(config_path)
-    return model
+    return model_from_config(config_path)[0]
+
+
+def _dataset_candidates(settings_dir):
+    return (
+        settings_dir / "quadratic_joule_dataset.npz",
+        settings_dir / "quadratic_joule_dataset.store",
+    )
+
+
+def _existing_dataset_path(settings_dir):
+    existing = [path for path in _dataset_candidates(settings_dir) if path.exists()]
+    if not existing:
+        return None
+    if len(existing) != 1:
+        raise ValueError("同时存在 NPZ 和 store 数据集，请删除过期的一个")
+    return existing[0]
 
 
 def _dataset_path(dataset, settings_dir):
     directory = getattr(dataset, "directory", None)
-    if directory is not None:
-        return Path(directory)
-    return settings_dir / "quadratic_joule_dataset.npz"
+    return Path(directory) if directory is not None else settings_dir / "quadratic_joule_dataset.npz"
 
 
-def train(model_path, settings_dir):
-    from sdfmpneo.electrothermal_tensor.pipeline import (
-        build_fixed_neural_rom,
-        build_geometry_neural_rom,
+def _continuation_requested(settings_dir, training_checkpoint):
+    return (
+        training_checkpoint.is_file()
+        or (settings_dir / "quadratic_joule.partial.npz").is_file()
+        or _existing_dataset_path(settings_dir) is not None
     )
 
-    settings_dir.mkdir(parents=True, exist_ok=True)
-    mesh_path = resolve_path(MESH["path"])
-    if MESH["generate"]:
-        print("生成线圈、封装和海水网格……", flush=True)
-        generate_mesh(mesh_path)
-    elif not mesh_path.is_file():
-        raise FileNotFoundError(f"网格不存在：{mesh_path}；可设置 MESH['generate']=True")
 
-    # run.py 自动生成；用户无需维护这个 JSON。
-    config_path = settings_dir / "model.config.json"
-    physical = _physical_config(mesh_path)
-    write_json(config_path, physical)
-
-    print("组装物理模型并构建电磁降阶空间……", flush=True)
-    physical_model = _build_physical_model(config_path)
-
-    common = dict(
+def _pipeline_common(settings_dir):
+    return dict(
         state_lower=np.asarray(TRAINING["initial_lower"], dtype=float),
         state_upper=np.asarray(TRAINING["initial_upper"], dtype=float),
         operating_lower=np.asarray(TRAINING["operating_lower"], dtype=float),
@@ -374,9 +385,7 @@ def train(model_path, settings_dir):
         work_directory=settings_dir,
         seed=int(TRAINING.get("seed", 0)),
         pod_rank=TRAINING.get("pod_rank"),
-        pod_relative_tail_tolerance=float(
-            TRAINING.get("pod_relative_tail_tolerance", 1e-4)
-        ),
+        pod_relative_tail_tolerance=float(TRAINING.get("pod_relative_tail_tolerance", 1e-4)),
         network_config=TRAINING.get("network"),
         training_config=TRAINING.get("optimizer"),
         device=TRAINING.get("device"),
@@ -384,52 +393,148 @@ def train(model_path, settings_dir):
         snapshot_workers=int(TRAINING.get("snapshot_workers", 1)),
     )
 
-    print(
-        f"生成 Joule tensor 标签：{common['n_snapshots']} 个 (a,g) 样本……",
-        flush=True,
+
+def train(model_path, settings_dir, monitor=None):
+    from sdfmpneo.electrothermal_tensor.dataset import QuadraticJouleDataset
+    from sdfmpneo.electrothermal_tensor.model import StructurePreservingNeuralElectroThermalROM
+    from sdfmpneo.electrothermal_tensor.neural_control import NeuralTrainingRuntime
+    from sdfmpneo.electrothermal_tensor.pipeline import (
+        build_fixed_neural_rom,
+        build_geometry_neural_rom,
+        retrain_neural_rom,
     )
-    if hasattr(physical_model, "geometry_names"):
-        result = build_geometry_neural_rom(
-            physical_model,
-            thermal_cache_size=int(GEOMETRY_FAMILY.get("cache_size", 128)),
-            **common,
+    from sdfmpneo.training.monitor import TrainingStopped
+
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    training_checkpoint = resolve_path(FILES["training_checkpoint"])
+    resume_value = FILES.get("resume_model")
+    resume_path = None if resume_value is None else resolve_path(resume_value)
+    runtime = None
+
+    try:
+        if resume_path is not None:
+            if not resume_path.is_file():
+                raise FileNotFoundError(f"续训模型不存在：{resume_path}")
+            dataset_path = _existing_dataset_path(settings_dir)
+            if dataset_path is None:
+                raise FileNotFoundError(
+                    "resume_model 续训需要原冻结数据集 quadratic_joule_dataset.npz/.store"
+                )
+            if monitor is not None:
+                monitor.phase("loading")
+            print(f"加载已有神经 ROM 继续训练：{resume_path}", flush=True)
+            template = StructurePreservingNeuralElectroThermalROM.load(resume_path, device="cpu")
+            dataset = QuadraticJouleDataset.load(dataset_path)
+            runtime = NeuralTrainingRuntime(
+                monitor,
+                training_checkpoint,
+                initial_network_state=template.surrogate.network.state_dict(),
+                initial_pod=template.surrogate.pod,
+            )
+            with runtime.installed():
+                result = retrain_neural_rom(
+                    dataset,
+                    template,
+                    work_directory=settings_dir,
+                    pod_rank=TRAINING.get("pod_rank"),
+                    pod_relative_tail_tolerance=float(
+                        TRAINING.get("pod_relative_tail_tolerance", 1e-4)
+                    ),
+                    network_config=TRAINING.get("network"),
+                    training_config=TRAINING.get("optimizer"),
+                    device=TRAINING.get("device"),
+                    save_model=False,
+                )
+            physical = None
+        else:
+            mesh_path = resolve_path(MESH["path"])
+            continuing = _continuation_requested(settings_dir, training_checkpoint)
+            if MESH["generate"] and not (continuing and mesh_path.is_file()):
+                if monitor is not None:
+                    monitor.phase("mesh")
+                print("生成线圈、封装和海水网格……", flush=True)
+                generate_mesh(mesh_path)
+            elif not mesh_path.is_file():
+                raise FileNotFoundError(
+                    f"网格不存在：{mesh_path}；可设置 MESH['generate']=True"
+                )
+            elif continuing:
+                print("检测到训练断点/冻结数据，复用现有网格。", flush=True)
+
+            config_path = settings_dir / "model.config.json"
+            physical = _physical_config(mesh_path)
+            write_json(config_path, physical)
+
+            if monitor is not None:
+                monitor.phase("assembly")
+            print("组装物理模型并构建电磁降阶空间……", flush=True)
+            physical_model = _build_physical_model(config_path, monitor=monitor)
+            runtime = NeuralTrainingRuntime(monitor, training_checkpoint)
+            common = _pipeline_common(settings_dir)
+            print(
+                f"生成/复用 Joule tensor 标签：{common['n_snapshots']} 个 (a,g) 样本……",
+                flush=True,
+            )
+            with runtime.installed():
+                if hasattr(physical_model, "geometry_names"):
+                    result = build_geometry_neural_rom(
+                        physical_model,
+                        thermal_cache_size=int(GEOMETRY_FAMILY.get("cache_size", 128)),
+                        **common,
+                    )
+                else:
+                    result = build_fixed_neural_rom(physical_model, **common)
+
+        if monitor is not None:
+            monitor.phase("saving", check=False)
+        result.model.save(
+            model_path,
+            metadata={
+                "dataset_hash": result.dataset.manifest().dataset_hash,
+                "pod_rank": result.pod.rank,
+                "training_report": result.training_report.__dict__,
+            },
         )
-    else:
-        result = build_fixed_neural_rom(physical_model, **common)
+        runtime.clear_checkpoint()
 
-    result.model.save(
-        model_path,
-        metadata={
-            "dataset_hash": result.dataset.manifest().dataset_hash,
+        report = {
+            "model": str(model_path),
+            "dataset": str(_dataset_path(result.dataset, settings_dir)),
             "pod_rank": result.pod.rank,
-            "training_report": result.training_report.__dict__,
-        },
-    )
+            "pod_energy_fraction": result.pod.energy_fraction(),
+            "training": result.training_report,
+            "resumed_from": None if resume_path is None else str(resume_path),
+        }
+        write_json(settings_dir / "training.report.json", report)
+        write_json(settings_dir / "train.settings.json", {
+            "case": "uwpt",
+            "mode": "train",
+            "model": str(model_path),
+            "training": TRAINING,
+            "resume_model": None if resume_path is None else str(resume_path),
+            "physics": physical,
+        })
+        print(f"POD rank={result.pod.rank}，能量比例={result.pod.energy_fraction():.8g}")
+        print(
+            f"NN 最佳 epoch={result.training_report.best_epoch}，"
+            f"validation loss={result.training_report.best_validation_loss:.6g}"
+        )
+        print(f"模型已保存：{model_path}")
+        if monitor is not None:
+            monitor.finish("completed", model=str(model_path), checkpoint=None)
+        return 0
 
-    report = {
-        "model": str(model_path),
-        "dataset": str(_dataset_path(result.dataset, settings_dir)),
-        "pod_rank": result.pod.rank,
-        "pod_energy_fraction": result.pod.energy_fraction(),
-        "training": result.training_report,
-    }
-    write_json(settings_dir / "training.report.json", report)
-    write_json(settings_dir / "train.settings.json", {
-        "case": "uwpt",
-        "mode": "train",
-        "model": str(model_path),
-        "training": TRAINING,
-        "physics": physical,
-    })
-
-    print(f"POD rank={result.pod.rank}，能量比例={result.pod.energy_fraction():.8g}")
-    print(
-        f"NN 最佳 epoch={result.training_report.best_epoch}，"
-        f"validation loss={result.training_report.best_validation_loss:.6g}"
-    )
-    print(f"模型已保存：{model_path}")
-    print(f"训练报告：{settings_dir / 'training.report.json'}")
-    return 0
+    except TrainingStopped:
+        checkpoint = training_checkpoint if training_checkpoint.is_file() else settings_dir / "quadratic_joule.partial.npz"
+        write_json(settings_dir / "training.stopped.json", {
+            "status": "stopped",
+            "checkpoint": str(checkpoint),
+            "resume_model": None if resume_path is None else str(resume_path),
+        })
+        print(f"训练已停止；续训状态：{checkpoint}", flush=True)
+        if monitor is not None:
+            monitor.finish("stopped", checkpoint=str(checkpoint))
+        return 130
 
 
 def _normalized_geometry(model, configured):
@@ -454,22 +559,18 @@ def _normalized_geometry(model, configured):
 
 
 def predict(model_path, output_path, settings_dir):
-    from sdfmpneo.electrothermal_tensor.model import (
-        StructurePreservingNeuralElectroThermalROM,
-    )
+    from sdfmpneo.electrothermal_tensor.model import StructurePreservingNeuralElectroThermalROM
 
     if not model_path.is_file():
         raise FileNotFoundError(
             f"模型不存在：{model_path}；请先运行 python run.py --mode train"
         )
-
     device = TRAINING.get("device") or "cpu"
     model = StructurePreservingNeuralElectroThermalROM.load(model_path, device=str(device))
     initial = np.asarray(PREDICTION["a0"], dtype=float)
     operating = np.asarray(PREDICTION["operating"], dtype=float)
     geometry = _normalized_geometry(model, PREDICTION.get("geometry"))
     allow_extrapolation = bool(PREDICTION.get("allow_extrapolation", False))
-
     if not PREDICTION["times"]:
         raise ValueError("PREDICTION['times'] 至少需要一个时间点")
 
@@ -505,10 +606,7 @@ def predict(model_path, output_path, settings_dir):
                 initial_step=PREDICTION.get("initial_step"),
             )
             results.append(result)
-            print(
-                f"t={t:g} s，||a||={np.linalg.norm(result.state):.8g}，"
-                f"步数={result.steps}"
-            )
+            print(f"t={t:g} s，||a||={np.linalg.norm(result.state):.8g}，步数={result.steps}")
 
     write_json(output_path, {
         "model": str(model_path),
@@ -519,49 +617,99 @@ def predict(model_path, output_path, settings_dir):
         "results": results,
     })
     write_json(settings_dir / "predict.settings.json", {
-        "case": "uwpt",
-        "mode": "predict",
-        "model": str(model_path),
-        "predictions": str(output_path),
-        "prediction": PREDICTION,
+        "case": "uwpt", "mode": "predict", "model": str(model_path),
+        "predictions": str(output_path), "prediction": PREDICTION,
     })
     print(f"推理结果已保存：{output_path}")
     return 0
+
+
+CONFIG_NAMES = (
+    "FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
+    "GEOMETRY_FAMILY", "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES",
+    "THERMAL_RANK", "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR",
+)
+
+
+def configuration_snapshot(model_path):
+    return {
+        "root": str(ROOT),
+        "model_path": str(model_path),
+        "parameters": {name: globals()[name] for name in CONFIG_NAMES},
+    }
+
+
+def execute_training(model_path, settings_dir, session_dir=None):
+    from datetime import datetime
+    import uuid
+    from sdfmpneo.training.monitor import TrainingMonitor
+
+    if session_dir is None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+        session_dir = resolve_path(MONITOR["log_dir"]) / stamp
+    session_dir = Path(session_dir)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    write_json(session_dir / "settings.json", configuration_snapshot(model_path))
+    print(f"训练日志：{session_dir}", flush=True)
+    with TrainingMonitor(
+        session_dir / "metrics.jsonl",
+        session_dir / "control.json",
+        interval=float(MONITOR["log_interval_s"]),
+    ) as monitor:
+        return train(model_path, settings_dir, monitor)
+
+
+def training_worker(snapshot_path):
+    global ROOT
+    payload = json.loads(Path(snapshot_path).read_text(encoding="utf-8"))
+    settings = payload["settings"]
+    ROOT = Path(settings["root"])
+    for name in CONFIG_NAMES:
+        globals()[name] = settings["parameters"][name]
+    return execute_training(
+        Path(settings["model_path"]),
+        resolve_path(FILES["settings_dir"]),
+        payload["session_dir"],
+    )
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="UWPT 结构保持神经电热 ROM；所有参数集中在 run.py 顶部。"
     )
-    parser.add_argument(
-        "--mode",
-        choices=("train", "predict"),
-        default=MODE,
-        help="train=训练，predict=推理；覆盖顶部 MODE",
-    )
-    parser.add_argument(
-        "--model",
-        help="覆盖 FILES['model']，指定保存/加载模型路径",
-    )
-    # 兼容旧命令行；新神经训练直接在当前进程运行，不再依赖旧 PyQt 残差训练窗口。
-    parser.add_argument("--headless", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--gui", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--mode", choices=("train", "predict"), default=MODE)
+    parser.add_argument("--model", help="覆盖 FILES['model']")
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument("--gui", action="store_true", help="打开 PyQt 非阻塞训练窗口")
+    display.add_argument("--headless", action="store_true", help="不打开 GUI")
+    parser.add_argument("--worker-config", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
-    if args.gui:
-        print("新神经 ROM 训练使用标准控制台输出；--gui 已保留兼容但不再启动旧残差训练窗口。")
+    if args.worker_config:
+        return training_worker(args.worker_config)
 
     model_path = resolve_path(args.model or FILES["model"])
     settings_dir = resolve_path(FILES["settings_dir"])
     settings_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "train":
-        return train(model_path, settings_dir)
-    return predict(
-        model_path,
-        resolve_path(FILES["predictions"]),
-        settings_dir,
-    )
+        if not args.headless and (args.gui or MONITOR["enabled"]):
+            try:
+                from sdfmpneo.training.qt_monitor import launch_window
+            except ImportError as exc:
+                raise SystemExit(
+                    '请安装 GUI 依赖：python -m pip install -e ".[cad,gui,neural]"；'
+                    '或使用 --headless。'
+                ) from exc
+            return launch_window(
+                __file__,
+                configuration_snapshot(model_path),
+                resolve_path(MONITOR["log_dir"]),
+                MONITOR,
+            )
+        return execute_training(model_path, settings_dir)
+
+    return predict(model_path, resolve_path(FILES["predictions"]), settings_dir)
 
 
 if __name__ == "__main__":
