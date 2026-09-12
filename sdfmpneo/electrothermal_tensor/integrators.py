@@ -43,7 +43,7 @@ class GeneralizedETD2Stepper:
     """Second-order ETD for ``M a' = -K a + q(a)``.
 
     A generalized symmetric eigendecomposition is built once per thermal
-    operator.  Thus no assumption ``M=I`` or diagonal ``K`` is made for geometry
+    operator. Thus no assumption ``M=I`` or diagonal ``K`` is made for geometry
     families.
     """
 
@@ -106,8 +106,6 @@ def integrate_etd2(
     operator = field.thermal_operators.operator(g)
     elapsed = 0.0
     sizes = []
-    # One full-size stepper is reused; only the final fractional step gets a new
-    # propagator. Geometry is static along the autonomous trajectory.
     full_stepper = GeneralizedETD2Stepper(operator, min(hmax, t))
 
     def source(x):
@@ -138,20 +136,35 @@ def integrate_imex_euler(
 ) -> IntegrationResult:
     """First-order robust reference: implicit thermal diffusion, explicit NN source."""
     t = float(time)
+    hmax = float(max_step)
     if not np.isfinite(t) or t < 0:
         raise ValueError("integration time must be finite and non-negative")
+    if not np.isfinite(hmax) or hmax <= 0:
+        raise ValueError("max_step must be finite and positive")
     a = np.asarray(initial_state, dtype=float).copy()
     g = np.asarray(geometry, dtype=float)
     u = np.asarray(operating, dtype=float)
+    if t == 0.0:
+        return IntegrationResult(a, 0.0, 0, ())
     operator = field.thermal_operators.operator(g)
     elapsed, sizes = 0.0, []
+    factor_cache: dict[float, tuple[np.ndarray, bool]] = {}
     while elapsed < t:
-        h = min(float(max_step), t - elapsed)
+        h = min(hmax, t - elapsed)
         q = field.heat_source(a, g, u)
-        a = scipy.linalg.solve(
-            operator.mass + h * operator.stiffness,
+        # Cache Cholesky factors for the repeated full step and optional final step.
+        key = float(h)
+        factor = factor_cache.get(key)
+        if factor is None:
+            factor = scipy.linalg.cho_factor(
+                operator.mass + h * operator.stiffness,
+                lower=True,
+                check_finite=True,
+            )
+            factor_cache[key] = factor
+        a = scipy.linalg.cho_solve(
+            factor,
             operator.mass @ a + h * q,
-            assume_a="pos",
             check_finite=True,
         )
         elapsed = min(t, elapsed + h)
@@ -171,6 +184,8 @@ def integrate_reference(
 ) -> IntegrationResult:
     """High-accuracy solve_ivp oracle for validating production integrators."""
     t = float(time)
+    if not np.isfinite(t) or t < 0:
+        raise ValueError("integration time must be finite and non-negative")
     a0 = np.asarray(initial_state, dtype=float)
     if t == 0.0:
         return IntegrationResult(a0.copy(), 0.0, 0, ())
