@@ -7,6 +7,7 @@ from sdfmpneo.electrothermal_tensor.generator import generate_snapshots_resumabl
 from sdfmpneo.electrothermal_tensor.network import ResidualMLPConfig
 from sdfmpneo.electrothermal_tensor.pod import fit_dataset_pod
 from sdfmpneo.electrothermal_tensor.trainer import NeuralTrainingConfig, train_tensor_surrogate
+from sdfmpneo.electrothermal_tensor.validation import validate_surrogate_on_dataset
 
 
 def _tensor(state, geometry):
@@ -62,7 +63,7 @@ def test_disk_dataset_out_of_core_pod_matches_low_rank_structure(tmp_path):
     np.testing.assert_allclose(reconstruction, block, rtol=1e-8, atol=1e-9)
 
 
-def test_memmapped_dataset_trains_without_full_output_materialization(tmp_path):
+def test_memmapped_dataset_trains_and_batches_gate5(tmp_path):
     pytest.importorskip("torch")
     dataset = _disk_dataset(tmp_path)
     pod = fit_dataset_pod(
@@ -103,6 +104,20 @@ def test_memmapped_dataset_trains_without_full_output_materialization(tmp_path):
     q = surrogate.heat_source_numpy(state, geometry, operating)
     assert q.shape == (2,)
     assert np.all(np.isfinite(q))
+
+    validation = validate_surrogate_on_dataset(
+        surrogate,
+        dataset,
+        operating_lower=np.array([-1.0]),
+        operating_upper=np.array([1.0]),
+        split="test",
+        operating_samples_per_state=3,
+        seed=17,
+        batch_size=3,
+    )
+    assert validation.sample_count == len(dataset.indices("test"))
+    assert np.isfinite(validation.packed_relative_rms)
+    assert np.isfinite(validation.heat_relative_rms)
 
 
 def test_standard_dataset_loader_dispatches_to_verified_disk_backend(tmp_path):
