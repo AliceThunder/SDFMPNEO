@@ -1,0 +1,53 @@
+\documentclass[UTF8,a4paper,11pt]{ctexart}
+
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{margin=2.4cm}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist[itemize]{leftmargin=2.2em}
+\setlist[enumerate]{leftmargin=2.2em}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\vv}[1]{\bm{#1}}
+\newcommand{\mat}[1]{\bm{#1}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\abs}[1]{\left|#1\right|}
+\newcommand{\SPQNN}{\textsc{SP-QCNEROM}}
+
+\title{结构保持的电流二次型神经电热降阶动力系统\\
+\large 最终理论方案与实施规范}
+\author{SDFMPNEO Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本文冻结 SDFMPNEO 下一阶段的主路线：以传统残差 MLP 学习温度--几何到电磁 Joule 二次型系数的低维映射，以真实降阶热质量矩阵、导热矩阵、电流二次型结构和连续时间动力学作为硬物理结构，并使用结构保持的时间积分器完成有限时间预测。该方案取代解析响应网络作为主路线；解析响应网络仅保留为历史基线与对照实验。本文档只定义理论、接口、验证标准和实施路线，不依赖 \texttt{feat/fixed-analytic-response-network} 分支中的实现。
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+\input{sections/01_scope_and_requirements}
+\input{sections/02_governing_model}
+\input{sections/03_quadratic_current_structure}
+\input{sections/04_neural_surrogate}
+\input{sections/05_training_and_dataset}
+\input{sections/06_time_integration_and_inference}
+\input{sections/07_stability_and_error_budget}
+\input{sections/08_validation_and_go_no_go}
+\input{sections/09_implementation_plan}
+\input{sections/10_innovation_and_positioning}
+
+\appendix
+\input{sections/A_decisions_and_non_goals}
+
+\end{document}
