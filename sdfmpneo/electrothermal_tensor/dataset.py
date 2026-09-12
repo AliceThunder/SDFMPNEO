@@ -107,8 +107,10 @@ class SnapshotManifest:
 class QuadraticJouleDataset:
     """Offline samples of ``(thermal state, geometry) -> svec(G)``.
 
-    ``outputs`` is flattened as ``(n_samples, thermal_rank * n_sym)``.  The
+    ``outputs`` is flattened as ``(n_samples, thermal_rank * n_sym)``. The
     representation is Frobenius-isometric because it is produced by ``svec``.
+    For large datasets, :meth:`load` transparently returns the compatible
+    directory-backed ``DiskQuadraticJouleDataset`` instead.
     """
 
     states: np.ndarray
@@ -227,8 +229,26 @@ class QuadraticJouleDataset:
         return npz_path, json_path
 
     @classmethod
-    def load(cls, path: str | Path) -> "QuadraticJouleDataset":
+    def load(cls, path: str | Path):
         base = Path(path)
+        # Delay the import to avoid a module cycle: disk_dataset imports the
+        # manifest definition above but can safely be imported after this module
+        # has finished initialization.
+        if base.is_dir() or base.suffix == ".store":
+            from .disk_dataset import DiskQuadraticJouleDataset
+
+            return DiskQuadraticJouleDataset.load(base, verify=True)
+        if base.suffix not in {"", ".npz"}:
+            raise ValueError("quadratic Joule dataset must be an .npz file or .store directory")
+        if base.suffix == "":
+            npz_candidate = base.with_suffix(".npz")
+            store_candidate = base.with_suffix(".store")
+            if npz_candidate.exists():
+                base = npz_candidate
+            elif store_candidate.exists():
+                from .disk_dataset import DiskQuadraticJouleDataset
+
+                return DiskQuadraticJouleDataset.load(store_candidate, verify=True)
         npz_path = base if base.suffix == ".npz" else base.with_suffix(".npz")
         json_path = npz_path.with_suffix(".json")
         manifest = json.loads(json_path.read_text(encoding="utf-8"))
