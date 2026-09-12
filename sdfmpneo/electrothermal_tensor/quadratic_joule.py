@@ -1,22 +1,21 @@
 """Exact current-quadratic Joule tensors for reduced electromagnetic models.
 
 For a fixed thermal/geometry state, the reduced electromagnetic solve is linear
-in the real operating parameters.  With
+in the real operating parameters. With
 
     b(u) = b0 + B u = B_aug zeta,   zeta = [1, u]^T,
 
-the reduced electromagnetic state is
+the electromagnetic state is
 
-    x_r(u) = C zeta,
+    x(u) = X zeta,
 
 and every modal Joule source is exactly
 
-    q_j(u) = zeta^T G_j zeta,
+    q_j(u) = zeta^T G_j zeta.
 
-where G_j is the real symmetric part of C^H H_{r,j} C.  No positivity is
-imposed on individual modal G_j because a signed thermal test/mode can produce a
-negative modal projection even though the underlying physical Joule density is
-non-negative.
+No positivity is imposed on individual modal G_j because a signed thermal
+mode/test can produce a negative modal projection even though the physical
+Joule density itself is non-negative.
 """
 from __future__ import annotations
 
@@ -66,22 +65,11 @@ def _loss_operator(problem, mode: int, state: np.ndarray):
 def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
     """Construct the exact reduced-model current-quadratic Joule tensor.
 
-    Parameters
-    ----------
-    em_model:
-        Reduced electromagnetic model with ``V``, ``operator_reduced`` and a
-        problem exposing modal loss operators.
-    state:
-        Thermal reduced coordinates.
-    rhs_map:
-        Affine real-operating excitation map ``b(u)=b0+B u``.
-
-    Returns
-    -------
-    numpy.ndarray
-        Real array with shape ``(n_thermal, 1+n_operating, 1+n_operating)``.
-        Each slice is symmetric and reconstructs the modal heat source exactly
-        for the same reduced electromagnetic model up to floating-point error.
+    One reduced multi-RHS solve covers the whole real operating space. When the
+    number of augmented excitations is smaller than the EM ROM rank, modal loss
+    contractions are evaluated on the solved response matrix ``X=V*C`` rather
+    than assembling every full reduced loss matrix ``V^H H_j V``. This changes
+    cost, not mathematics.
     """
     a = _validated_state(em_model, state)
     rhs_map = _validated_rhs_map(em_model, rhs_map)
@@ -90,7 +78,6 @@ def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
     if V.ndim != 2 or V.shape[0] != int(em_model.problem.n_em):
         raise ValueError("invalid electromagnetic reduction basis")
 
-    # One augmented excitation basis covers the entire real operating space.
     B_aug = np.column_stack(
         [np.asarray(rhs_map.offset, dtype=complex), np.asarray(rhs_map.matrix, dtype=complex)]
     )
@@ -106,16 +93,16 @@ def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
     p = B_aug.shape[1]
     n_thermal = int(em_model.problem.n_thermal)
     tensor = np.empty((n_thermal, p, p), dtype=float)
+    use_response_space = p <= V.shape[1]
+    response_matrix = V @ coefficients if use_response_space else None
 
     for mode in range(n_thermal):
         H = _loss_operator(em_model.problem, mode, a)
-        # Work in the reduced electromagnetic space.  This is algebraically
-        # identical to forming X=V*C and X^H H X, but avoids a full-state matrix.
-        reduced_loss = V.conj().T @ (H @ V)
-        complex_form = coefficients.conj().T @ reduced_loss @ coefficients
-        # For real zeta only the real symmetric part contributes to
-        # real(zeta^T complex_form zeta).  Symmetrizing also removes harmless
-        # roundoff-level anti-symmetry without changing the represented heat.
+        if use_response_space:
+            complex_form = response_matrix.conj().T @ (H @ response_matrix)
+        else:
+            reduced_loss = V.conj().T @ (H @ V)
+            complex_form = coefficients.conj().T @ reduced_loss @ coefficients
         real_form = np.real(complex_form)
         tensor[mode] = 0.5 * (real_form + real_form.T)
 
