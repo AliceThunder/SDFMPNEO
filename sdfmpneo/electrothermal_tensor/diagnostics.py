@@ -86,12 +86,14 @@ def diagnose_neural_state(
     operating,
     geometry=None,
     requested_impedance_error: float = 1e-6,
+    allow_extrapolation: bool = False,
 ) -> NeuralStateEMDiagnostics:
     """Audit one neural thermal state with the matching real reduced EM model.
 
     ``geometry`` is normalized ``[-1,1]^d`` for a geometry-family model and is
-    omitted/empty for a fixed model.  The physical compatibility signature is
-    checked before any diagnostic solve.
+    omitted/empty for a fixed model. The physical compatibility signature and
+    the saved neural training domain are checked before any diagnostic EM solve.
+    Set ``allow_extrapolation=True`` only for an explicit extrapolation study.
     """
     requested = float(requested_impedance_error)
     if not np.isfinite(requested) or requested <= 0.0:
@@ -106,6 +108,12 @@ def diagnose_neural_state(
         z = np.zeros(n_geometry) if geometry is None else np.asarray(geometry, dtype=float).reshape(-1)
         if z.shape != (n_geometry,) or np.any(~np.isfinite(z)) or np.any(z < -1.0) or np.any(z > 1.0):
             raise ValueError("geometry diagnostics require normalized coordinates in [-1,1]")
+        a, z, u = neural_model._check_domain(
+            a,
+            z,
+            u,
+            allow_extrapolation=bool(allow_extrapolation),
+        )
         context = physical_model.context(physical_model.denormalize(z))
         temperature = geometry_research_temperature_reconstructor(
             physical_model,
@@ -129,6 +137,12 @@ def diagnose_neural_state(
     g = np.empty(0, dtype=float)
     if geometry is not None and np.asarray(geometry).size != 0:
         raise ValueError("fixed-model diagnostics do not accept geometry coordinates")
+    a, g, u = neural_model._check_domain(
+        a,
+        g,
+        u,
+        allow_extrapolation=bool(allow_extrapolation),
+    )
     return _evaluate_context(
         neural_model=neural_model,
         em=physical_model.em,
