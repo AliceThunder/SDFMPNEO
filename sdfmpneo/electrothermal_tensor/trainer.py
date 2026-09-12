@@ -75,6 +75,18 @@ def _dtype(torch, name: str):
     return torch.float32 if name == "float32" else torch.float64
 
 
+def _encode_dataset_outputs(dataset, pod, *, chunk_rows: int) -> np.ndarray:
+    """Project wide frozen outputs to small POD coefficients without full RAM copy."""
+    n = int(dataset.n_samples)
+    beta = np.empty((n, pod.rank), dtype=np.float64)
+    chunk = max(1, int(chunk_rows))
+    for start in range(0, n, chunk):
+        stop = min(n, start + chunk)
+        block = np.asarray(dataset.outputs[start:stop], dtype=np.float64)
+        beta[start:stop] = pod.encode(block)
+    return beta
+
+
 def train_tensor_surrogate(
     dataset,
     pod,
@@ -87,11 +99,10 @@ def train_tensor_surrogate(
 ):
     """Train only the local map ``(a,g)->beta`` with ordinary AdamW.
 
-    Electromagnetic physics is absent from this loop. POD targets are computed
-    once before optimization; they are never reprojected per mini-batch. The
-    optional heat loss contracts the compressed POD basis directly with current
-    features and stored tensor labels, so it adds no EM solves and does not
-    decode the predicted full tensor.
+    Electromagnetic physics is absent from this loop.  Wide packed tensor labels
+    may remain on a read-only memmap: POD targets are projected once in chunks,
+    then ordinary mini-batches load only the rows needed by the auxiliary heat
+    loss.  No full ``N x dim(G)`` RAM copy is formed.
     """
     try:
         import torch
@@ -108,10 +119,9 @@ def train_tensor_surrogate(
     val_ids = dataset.indices("validation")
     test_ids = dataset.indices("test")
     inputs_all = np.asarray(dataset.inputs, dtype=float)
-    outputs_all = np.asarray(dataset.outputs, dtype=float)
-    # This matrix multiplication can be substantial for wide G tensors, but it
-    # is static and is therefore performed exactly once per training run.
-    beta_all = pod.encode(outputs_all)
+    output_source = dataset.outputs
+    projection_chunk = max(32, int(cfg.evaluation_batch_size or cfg.batch_size))
+    beta_all = _encode_dataset_outputs(dataset, pod, chunk_rows=projection_chunk)
     beta_mean, beta_scale = _coefficient_normalization(beta_all[train_ids])
     input_normalizer = FeatureNormalizer.fit(inputs_all[train_ids])
 
@@ -123,9 +133,8 @@ def train_tensor_surrogate(
     if network_config.input_dimension != inputs_all.shape[1] or network_config.output_dimension != pod.rank:
         raise ValueError("network dimensions do not match dataset/POD")
 
-    # Seed before constructing the network.  Seeding after initialization would
-    # make repeated runs with the same training seed start from different weights
-    # and would invalidate any later reproducibility audit.
+    # Seed before constructing the network. Repeated CPU runs with the same
+    # frozen dataset/config therefore have deterministic initialization.
     rng = np.random.default_rng(int(cfg.seed))
     torch.manual_seed(int(cfg.seed))
     if torch.cuda.is_available():
@@ -162,7 +171,7 @@ def train_tensor_surrogate(
         index = np.asarray(ids, dtype=int)
         return (
             torch.as_tensor(inputs_all[index], dtype=dtype, device=resolved_device),
-            torch.as_tensor(outputs_all[index], dtype=dtype, device=resolved_device),
+            torch.as_tensor(np.asarray(output_source[index], dtype=np.float64), dtype=dtype, device=resolved_device),
             torch.as_tensor(beta_all[index], dtype=dtype, device=resolved_device),
         )
 
@@ -287,10 +296,11 @@ def train_tensor_surrogate(
         coefficient_scale=beta_scale,
     )
 
-    # Test metrics are evaluated in coefficient space. Orthogonality of the POD
-    # basis gives the exact packed-tensor error norm without materializing the
-    # predicted full tensor: ||e_y||^2 = ||e_beta||^2 + ||P_perp(y-mean)||^2.
-    predicted_beta_parts = []
+    # Test metrics are accumulated by block. Orthogonality gives the exact
+    # packed-tensor error norm without materializing predicted full G tensors.
+    coefficient_sq = 0.0
+    coefficient_count = 0
+    maximum_relative_packed = 0.0
     with torch.no_grad():
         for start in range(0, len(test_ids), evaluation_batch):
             ids = test_ids[start:start + evaluation_batch]
@@ -298,22 +308,32 @@ def train_tensor_surrogate(
             with autocast_context():
                 predicted_normalized = model(xb)
                 predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
-            predicted_beta_parts.append(predicted_beta.detach().cpu().double().numpy())
-    predicted_beta_test = np.vstack(predicted_beta_parts)
-    true_beta_test = beta_all[test_ids]
-    beta_error = predicted_beta_test - true_beta_test
-    coefficient_rmse = float(np.sqrt(np.mean(beta_error**2)))
-    centered = outputs_all[test_ids] - pod.mean
-    centered_sq = np.einsum("ij,ij->i", centered, centered, optimize=True)
-    projected_sq = np.einsum("ij,ij->i", true_beta_test, true_beta_test, optimize=True)
-    orthogonal_sq = np.maximum(centered_sq - projected_sq, 0.0)
-    prediction_sq = orthogonal_sq + np.einsum("ij,ij->i", beta_error, beta_error, optimize=True)
-    packed_scale = np.maximum(
-        np.linalg.norm(outputs_all[test_ids], axis=1),
-        np.finfo(float).tiny,
-    )
-    relative_packed = np.sqrt(prediction_sq) / packed_scale
+            predicted = predicted_beta.detach().cpu().double().numpy()
+            true_beta = beta_all[ids]
+            beta_error = predicted - true_beta
+            coefficient_sq += float(np.sum(beta_error**2))
+            coefficient_count += int(beta_error.size)
 
+            true_outputs = np.asarray(output_source[ids], dtype=np.float64)
+            centered = true_outputs - pod.mean
+            centered_sq = np.einsum("ij,ij->i", centered, centered, optimize=True)
+            projected_sq = np.einsum("ij,ij->i", true_beta, true_beta, optimize=True)
+            orthogonal_sq = np.maximum(centered_sq - projected_sq, 0.0)
+            prediction_sq = orthogonal_sq + np.einsum(
+                "ij,ij->i", beta_error, beta_error, optimize=True
+            )
+            packed_scale = np.maximum(
+                np.linalg.norm(true_outputs, axis=1),
+                np.finfo(float).tiny,
+            )
+            maximum_relative_packed = max(
+                maximum_relative_packed,
+                float(np.max(np.sqrt(prediction_sq) / packed_scale)),
+            )
+
+    coefficient_rmse = float(
+        np.sqrt(coefficient_sq / max(1, coefficient_count))
+    )
     report = NeuralTrainingReport(
         epochs_completed=epochs_completed,
         best_epoch=best_epoch,
@@ -321,7 +341,7 @@ def train_tensor_surrogate(
         train_loss=float(last_train),
         validation_loss=float(last_validation),
         test_coefficient_rmse=coefficient_rmse,
-        test_relative_packed_error=float(np.max(relative_packed)),
+        test_relative_packed_error=float(maximum_relative_packed),
         stopped_early=epochs_completed < int(cfg.epochs),
         device=resolved_device,
         mixed_precision=use_amp,
