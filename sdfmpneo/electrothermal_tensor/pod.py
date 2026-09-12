@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .symmetric import quadratic_feature
+
 
 @dataclass(frozen=True)
 class TensorPOD:
@@ -82,6 +84,17 @@ class TensorPOD:
         return float(np.sum(self.singular_values[: self.rank] ** 2) / all_energy)
 
 
+@dataclass(frozen=True)
+class PODRankDiagnostic:
+    rank: int
+    energy_fraction: float
+    validation_relative_rms: float
+    validation_percentile_99: float
+    validation_maximum_relative_error: float
+    sampled_heat_relative_rms: float
+    sampled_heat_maximum_relative_error: float
+
+
 def _select_rank(singular_values: np.ndarray, relative_tail_tolerance: float) -> int:
     singular = np.asarray(singular_values, dtype=float)
     tolerance = float(relative_tail_tolerance)
@@ -144,4 +157,77 @@ def fit_dataset_pod(dataset, *, rank: int | None = None, relative_tail_tolerance
     )
 
 
-__all__ = ["TensorPOD", "fit_dataset_pod", "fit_tensor_pod"]
+def pod_rank_sweep(
+    dataset,
+    ranks,
+    *,
+    operating_lower: np.ndarray,
+    operating_upper: np.ndarray,
+    operating_samples_per_state: int = 4,
+    seed: int = 0,
+) -> tuple[PODRankDiagnostic, ...]:
+    """Gate 2: one SVD, many held-out rank diagnostics.
+
+    The sweep reports both tensor reconstruction and sampled worst-current heat
+    errors. It never fits to validation/test rows.
+    """
+    train_ids = dataset.indices("train")
+    validation_ids = dataset.indices("validation")
+    train = dataset.outputs[train_ids]
+    validation = dataset.outputs[validation_ids]
+    mean = np.mean(train, axis=0)
+    _, singular, vt = np.linalg.svd(train - mean, full_matrices=False)
+    requested = sorted(set(int(rank) for rank in ranks))
+    if not requested or requested[0] < 1 or requested[-1] > vt.shape[0]:
+        raise ValueError("POD sweep ranks are outside available SVD rank")
+    lo = np.asarray(operating_lower, dtype=float).reshape(-1)
+    hi = np.asarray(operating_upper, dtype=float).reshape(-1)
+    if lo.shape != (dataset.current_dimension,) or hi.shape != lo.shape or np.any(hi <= lo):
+        raise ValueError("operating bounds mismatch")
+    rng = np.random.default_rng(int(seed))
+    operating_draws = rng.uniform(lo, hi, size=(max(1, int(operating_samples_per_state)), dataset.current_dimension))
+    features = np.asarray([quadratic_feature(u) for u in operating_draws])
+    total_energy = max(float(np.sum(singular**2)), np.finfo(float).tiny)
+    diagnostics = []
+    n_sym = dataset.packed_symmetric_size
+    true_modes = validation.reshape(len(validation), dataset.thermal_rank, n_sym)
+
+    for rank in requested:
+        basis = vt[:rank].T
+        beta = (validation - mean) @ basis
+        reconstructed = mean + beta @ basis.T
+        sample_error = np.linalg.norm(reconstructed - validation, axis=1)
+        sample_scale = np.maximum(np.linalg.norm(validation, axis=1), np.finfo(float).tiny)
+        relative = sample_error / sample_scale
+        reconstructed_modes = reconstructed.reshape(len(validation), dataset.thermal_rank, n_sym)
+        heat_relative = []
+        heat_sq_error = heat_sq_scale = 0.0
+        for feature in features:
+            q_true = np.einsum("nrs,s->nr", true_modes, feature, optimize=True)
+            q_pred = np.einsum("nrs,s->nr", reconstructed_modes, feature, optimize=True)
+            err = np.linalg.norm(q_pred - q_true, axis=1)
+            scale = np.maximum(np.linalg.norm(q_true, axis=1), np.finfo(float).tiny)
+            heat_relative.extend((err / scale).tolist())
+            heat_sq_error += float(np.sum(err**2))
+            heat_sq_scale += float(np.sum(scale**2))
+        diagnostics.append(
+            PODRankDiagnostic(
+                rank=rank,
+                energy_fraction=float(np.sum(singular[:rank] ** 2) / total_energy),
+                validation_relative_rms=float(np.linalg.norm(reconstructed - validation) / max(np.linalg.norm(validation), np.finfo(float).tiny)),
+                validation_percentile_99=float(np.percentile(relative, 99)),
+                validation_maximum_relative_error=float(np.max(relative)),
+                sampled_heat_relative_rms=float(np.sqrt(heat_sq_error / max(heat_sq_scale, np.finfo(float).tiny))),
+                sampled_heat_maximum_relative_error=float(max(heat_relative, default=0.0)),
+            )
+        )
+    return tuple(diagnostics)
+
+
+__all__ = [
+    "PODRankDiagnostic",
+    "TensorPOD",
+    "fit_dataset_pod",
+    "fit_tensor_pod",
+    "pod_rank_sweep",
+]
