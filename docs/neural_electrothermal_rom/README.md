@@ -262,7 +262,7 @@ python -m pytest -q \
   tests/test_neural_snapshot_sampling.py \
   tests/test_reachable_state_domain.py \
   tests/test_neural_batch_inference.py \
-  tests/test_neural_provenance.py \
+  tests/test_neural_physical_metadata.py \
   tests/test_neural_certification.py \
   tests/test_neural_gate_suite.py
 ```
