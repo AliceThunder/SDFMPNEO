@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .quadratic_joule import quadratic_joule_tensor
 from .vector_field import CallableThermalOperatorFamily, FixedThermalOperatorFamily
 
@@ -145,6 +146,14 @@ def geometry_research_thermal_family(model, *, normalized_geometry: bool = True)
     return CallableThermalOperatorFamily(n, callback)
 
 
+def geometry_research_embedded_thermal_family(model, *, cache_size: int = 64):
+    """Serializable exact online thermal family; contains no EM model."""
+    return AffineGeometryThermalOperatorFamily.from_geometry_research_model(
+        model,
+        cache_size=cache_size,
+    )
+
+
 __all__ = [
     "fixed_research_direct_heat_factory",
     "fixed_research_jacobian_factory",
@@ -153,6 +162,7 @@ __all__ = [
     "fixed_research_thermal_family",
     "fixed_research_vector_field_factory",
     "geometry_research_direct_heat_factory",
+    "geometry_research_embedded_thermal_family",
     "geometry_research_jacobian_factory",
     "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
