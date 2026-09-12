@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import json
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -14,6 +15,18 @@ from .symmetric import tensor_svec
 
 _CHECKPOINT_FORMAT_VERSION = 3
 _DEFAULT_DISK_BACKED_THRESHOLD_BYTES = 256 << 20
+_CRITICAL_METADATA_KEYS = (
+    "kind",
+    "physical_signature",
+    "state_lower",
+    "state_upper",
+    "geometry_lower",
+    "geometry_upper",
+    "operating_lower",
+    "operating_upper",
+    "sampling",
+    "state_domain_report_hash",
+)
 
 
 def _sha256_array(value: np.ndarray) -> str:
@@ -39,7 +52,6 @@ def _atomic_checkpoint(
     output_width: int,
     physical_signature: str | None,
 ) -> None:
-    """Atomically update only small checkpoint metadata/bitmap."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("wb") as output:
@@ -99,6 +111,46 @@ def _final_paths(final_path: str | Path):
     return base.with_suffix(".npz"), base.with_suffix(".store")
 
 
+def _critical_metadata(value: Mapping[str, object] | None) -> dict:
+    source = {} if value is None else dict(value)
+    return {key: source.get(key) for key in _CRITICAL_METADATA_KEYS if key in source}
+
+
+def _metadata_equal(left: Mapping[str, object], right: Mapping[str, object]) -> bool:
+    return json.dumps(
+        _critical_metadata(left),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ) == json.dumps(
+        _critical_metadata(right),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def _existing_frozen_dataset(final_path, *, states, geometries, split, metadata):
+    if final_path is None:
+        return None
+    npz_path, store_path = _final_paths(final_path)
+    existing = [path for path in (npz_path, store_path) if path.exists()]
+    if not existing:
+        return None
+    if len(existing) != 1:
+        raise ValueError("both NPZ and disk-store frozen datasets exist; remove the stale artifact")
+    dataset = QuadraticJouleDataset.load(existing[0])
+    if not np.array_equal(np.asarray(dataset.states), np.asarray(states)):
+        raise ValueError("existing frozen dataset belongs to a different state sample set")
+    if not np.array_equal(np.asarray(dataset.geometries), np.asarray(geometries)):
+        raise ValueError("existing frozen dataset belongs to a different geometry sample set")
+    if not np.array_equal(np.asarray(dataset.split, dtype=np.int8), np.asarray(split, dtype=np.int8)):
+        raise ValueError("existing frozen dataset uses a different frozen split")
+    if not _metadata_equal(dataset.metadata, {} if metadata is None else dict(metadata)):
+        raise ValueError("existing frozen dataset critical metadata differs from current training request")
+    return dataset
+
+
 def generate_snapshots_resumable(
     states: np.ndarray,
     geometries: np.ndarray,
@@ -116,11 +168,10 @@ def generate_snapshots_resumable(
 ):
     """Generate ``svec(G(a,g))`` snapshots with bounded RAM and checkpoint I/O.
 
-    Each physics tensor is packed immediately and written once to a memmapped NPY
-    sidecar. Resume is bound to the exact sample arrays and physical signature.
-    On completion, small datasets freeze to the compact NPZ backend; datasets
-    whose packed output matrix exceeds ``disk_backed_threshold_bytes`` are frozen
-    as a directory-backed read-only memmap store.
+    A matching completed frozen dataset is reused before any physics call. During
+    generation each tensor is packed immediately and written once to a memmapped
+    NPY sidecar. Small completed datasets freeze to NPZ; wide datasets freeze to
+    a verified directory-backed store.
     """
     a = np.asarray(states, dtype=np.float64)
     g = np.asarray(geometries, dtype=np.float64)
@@ -131,10 +182,28 @@ def generate_snapshots_resumable(
     threshold = int(disk_backed_threshold_bytes)
     if checkpoint_every < 1 or max_workers < 1 or threshold < 0:
         raise ValueError("checkpoint_every/max_workers must be positive and threshold non-negative")
+
+    split = frozen_split_indices(
+        len(a),
+        validation_fraction=validation_fraction,
+        test_fraction=test_fraction,
+        seed=split_seed,
+    )
     partial = Path(checkpoint_path)
     sidecar = _sidecar_path(partial)
-    expected_signature = _physical_signature(metadata)
+    existing = _existing_frozen_dataset(
+        final_path,
+        states=a,
+        geometries=g,
+        split=split,
+        metadata=metadata,
+    )
+    if existing is not None:
+        partial.unlink(missing_ok=True)
+        sidecar.unlink(missing_ok=True)
+        return existing
 
+    expected_signature = _physical_signature(metadata)
     packed = None
     completed = np.zeros(len(a), dtype=bool)
     tensor_shape = None
@@ -243,12 +312,6 @@ def generate_snapshots_resumable(
     if not np.all(completed):
         raise RuntimeError("snapshot generation did not complete")
     current_dimension = int(tensor_shape[-1] - 1)
-    split = frozen_split_indices(
-        len(a),
-        validation_fraction=validation_fraction,
-        test_fraction=test_fraction,
-        seed=split_seed,
-    )
     output_bytes = int(len(a)) * int(output_width) * np.dtype(np.float64).itemsize
     use_disk = output_bytes > threshold
 
