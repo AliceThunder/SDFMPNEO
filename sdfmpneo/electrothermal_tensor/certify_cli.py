@@ -12,8 +12,8 @@ from .certification import (
     save_audited_model,
     training_reproducibility_evidence,
     verify_model_persistence_roundtrip,
-    verify_training_reproduction,
 )
+from .certification_streaming import verify_training_reproduction_streaming
 from .cli import _adapters, _build_physical_model, _path_from_config, _read_json, _write_json
 
 
@@ -50,6 +50,8 @@ def command_audit(config_file: str | Path) -> int:
         expected_physical_signature=adapters["signature"],
         device=device,
     )
+    # QuadraticJouleDataset.load transparently dispatches to the read-only
+    # directory-backed store for wide datasets and verifies its file hashes.
     dataset = QuadraticJouleDataset.load(dataset_path)
     manifest = dataset.manifest()
     if manifest.metadata.get("physical_signature") != adapters["signature"]:
@@ -58,14 +60,11 @@ def command_audit(config_file: str | Path) -> int:
     if trained_dataset_hash is not None and str(trained_dataset_hash) != manifest.dataset_hash:
         raise ValueError("model was trained from a different frozen tensor dataset")
 
-    # Formal certification separates three evidence strengths.  Persisted
-    # provenance is necessary but not sufficient; reproducibility only passes
-    # after a real frozen-dataset retraining experiment.
     provenance = training_reproducibility_evidence(
         model,
         expected_dataset_hash=manifest.dataset_hash,
     )
-    reproduction = verify_training_reproduction(
+    reproduction = verify_training_reproduction_streaming(
         model,
         dataset,
         device=config.get("reproduction_device"),
@@ -74,6 +73,7 @@ def command_audit(config_file: str | Path) -> int:
         heat_rtol=float(config.get("reproduction_heat_rtol", 1e-6)),
         heat_atol=float(config.get("reproduction_heat_atol", 1e-7)),
         operating_samples=int(config.get("reproduction_operating_samples", 2)),
+        comparison_batch_size=int(config.get("reproduction_batch_size", 64)),
     )
     roundtrip = verify_model_persistence_roundtrip(
         model,
