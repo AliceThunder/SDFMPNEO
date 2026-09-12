@@ -8,7 +8,7 @@ from contextlib import nullcontext
 import numpy as np
 
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
-from .physical_layer import decode_heat_source_torch, torch_quadratic_feature
+from .physical_layer import decode_heat_source_torch
 from .runtime_metadata import training_environment_summary
 from .surrogate import NeuralTensorSurrogate
 
@@ -99,10 +99,15 @@ def train_tensor_surrogate(
 ):
     """Train only the local map ``(a,g)->beta`` with ordinary AdamW.
 
-    Electromagnetic physics is absent from this loop.  Wide packed tensor labels
-    may remain on a read-only memmap: POD targets are projected once in chunks,
-    then ordinary mini-batches load only the rows needed by the auxiliary heat
-    loss.  No full ``N x dim(G)`` RAM copy is formed.
+    Electromagnetic physics is absent from this loop. Wide frozen G labels are
+    read exactly once (in chunks) to obtain the small POD coefficient targets.
+    Every optimization epoch then uses only state/geometry inputs and ``beta``.
+
+    The optional heat loss compares the predicted and target POD coefficients
+    after the same hard quadratic-current decoder. It deliberately does *not*
+    compare against the unprojected G tensor: POD truncation is an irreducible
+    representation error measured separately by Gate 2 and must not be pushed
+    into the neural optimization problem.
     """
     try:
         import torch
@@ -119,7 +124,6 @@ def train_tensor_surrogate(
     val_ids = dataset.indices("validation")
     test_ids = dataset.indices("test")
     inputs_all = np.asarray(dataset.inputs, dtype=float)
-    output_source = dataset.outputs
     projection_chunk = max(32, int(cfg.evaluation_batch_size or cfg.batch_size))
     beta_all = _encode_dataset_outputs(dataset, pod, chunk_rows=projection_chunk)
     beta_mean, beta_scale = _coefficient_normalization(beta_all[train_ids])
@@ -133,8 +137,6 @@ def train_tensor_surrogate(
     if network_config.input_dimension != inputs_all.shape[1] or network_config.output_dimension != pod.rank:
         raise ValueError("network dimensions do not match dataset/POD")
 
-    # Seed before constructing the network. Repeated CPU runs with the same
-    # frozen dataset/config therefore have deterministic initialization.
     rng = np.random.default_rng(int(cfg.seed))
     torch.manual_seed(int(cfg.seed))
     if torch.cuda.is_available():
@@ -171,7 +173,6 @@ def train_tensor_surrogate(
         index = np.asarray(ids, dtype=int)
         return (
             torch.as_tensor(inputs_all[index], dtype=dtype, device=resolved_device),
-            torch.as_tensor(np.asarray(output_source[index], dtype=np.float64), dtype=dtype, device=resolved_device),
             torch.as_tensor(beta_all[index], dtype=dtype, device=resolved_device),
         )
 
@@ -183,7 +184,7 @@ def train_tensor_surrogate(
             return nullcontext()
         return torch.autocast(device_type="cuda", dtype=torch.float16)
 
-    def batch_loss(xb, yb, beta_b, *, random_operating: bool):
+    def batch_loss(xb, beta_b, *, random_operating: bool):
         with autocast_context():
             predicted_normalized = model(xb)
             target_normalized = normalized_target(beta_b)
@@ -207,13 +208,15 @@ def train_tensor_surrogate(
                 dataset.thermal_rank,
                 u,
             )
-            true_packed = yb.reshape(
-                xb.shape[0], dataset.thermal_rank, dataset.packed_symmetric_size
+            target_q = decode_heat_source_torch(
+                beta_b,
+                mean_t,
+                basis_t,
+                dataset.thermal_rank,
+                u,
             )
-            feature = torch_quadratic_feature(u)
-            true_q = torch.einsum("brs,bs->br", true_packed, feature)
-            heat_scale = torch.sqrt(torch.mean(true_q**2)).clamp_min(torch.finfo(dtype).eps)
-            heat_loss = torch.mean(((predicted_q - true_q) / heat_scale) ** 2)
+            heat_scale = torch.sqrt(torch.mean(target_q**2)).clamp_min(torch.finfo(dtype).eps)
+            heat_loss = torch.mean(((predicted_q - target_q) / heat_scale) ** 2)
             return coefficient_loss + float(cfg.heat_loss_weight) * heat_loss
 
     evaluation_batch = int(cfg.evaluation_batch_size or cfg.batch_size)
@@ -225,8 +228,8 @@ def train_tensor_surrogate(
         with torch.no_grad():
             for start in range(0, len(ids), evaluation_batch):
                 batch_ids = ids[start:start + evaluation_batch]
-                xb, yb, beta_b = tensors(batch_ids)
-                loss = batch_loss(xb, yb, beta_b, random_operating=False)
+                xb, beta_b = tensors(batch_ids)
+                loss = batch_loss(xb, beta_b, random_operating=False)
                 total += float(loss.detach().cpu()) * len(batch_ids)
                 count += len(batch_ids)
         return total / max(count, 1)
@@ -246,9 +249,9 @@ def train_tensor_surrogate(
         count = 0
         for start in range(0, len(shuffled), int(cfg.batch_size)):
             ids = shuffled[start:start + int(cfg.batch_size)]
-            xb, yb, beta_b = tensors(ids)
+            xb, beta_b = tensors(ids)
             optimizer.zero_grad(set_to_none=True)
-            loss = batch_loss(xb, yb, beta_b, random_operating=True)
+            loss = batch_loss(xb, beta_b, random_operating=True)
             if use_amp:
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
@@ -296,15 +299,15 @@ def train_tensor_surrogate(
         coefficient_scale=beta_scale,
     )
 
-    # Test metrics are accumulated by block. Orthogonality gives the exact
-    # packed-tensor error norm without materializing predicted full G tensors.
+    # Test metrics read the wide frozen labels only once after training, in
+    # blocks, to add the irreducible POD residual to the neural beta error.
     coefficient_sq = 0.0
     coefficient_count = 0
     maximum_relative_packed = 0.0
     with torch.no_grad():
         for start in range(0, len(test_ids), evaluation_batch):
             ids = test_ids[start:start + evaluation_batch]
-            xb, _, _ = tensors(ids)
+            xb, _ = tensors(ids)
             with autocast_context():
                 predicted_normalized = model(xb)
                 predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
@@ -314,7 +317,7 @@ def train_tensor_surrogate(
             coefficient_sq += float(np.sum(beta_error**2))
             coefficient_count += int(beta_error.size)
 
-            true_outputs = np.asarray(output_source[ids], dtype=np.float64)
+            true_outputs = np.asarray(dataset.outputs[ids], dtype=np.float64)
             centered = true_outputs - pod.mean
             centered_sq = np.einsum("ij,ij->i", centered, centered, optimize=True)
             projected_sq = np.einsum("ij,ij->i", true_beta, true_beta, optimize=True)
@@ -331,9 +334,7 @@ def train_tensor_surrogate(
                 float(np.max(np.sqrt(prediction_sq) / packed_scale)),
             )
 
-    coefficient_rmse = float(
-        np.sqrt(coefficient_sq / max(1, coefficient_count))
-    )
+    coefficient_rmse = float(np.sqrt(coefficient_sq / max(1, coefficient_count)))
     report = NeuralTrainingReport(
         epochs_completed=epochs_completed,
         best_epoch=best_epoch,
