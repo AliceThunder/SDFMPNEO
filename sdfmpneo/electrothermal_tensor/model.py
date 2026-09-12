@@ -56,6 +56,20 @@ def _merge_metadata(base: dict, update: dict) -> dict:
     return result
 
 
+class _IntegrationFieldView:
+    """Expose total thermal source to generic integrators while preserving APIs."""
+
+    def __init__(self, field: NeuralElectroThermalVectorField) -> None:
+        self._field = field
+        self.thermal_operators = field.thermal_operators
+
+    def heat_source(self, state, geometry, operating):
+        return self._field.thermal_source(state, geometry, operating)
+
+    def vector_field(self, state, geometry, operating):
+        return self._field.vector_field(state, geometry, operating)
+
+
 class StructurePreservingNeuralElectroThermalROM:
     def __init__(
         self,
@@ -65,10 +79,16 @@ class StructurePreservingNeuralElectroThermalROM:
         physical_signature: str | None = None,
         training_domain: dict | None = None,
         artifact_metadata: dict | None = None,
+        thermal_rhs_forcing: np.ndarray | None = None,
     ) -> None:
         self.surrogate = surrogate
         self.thermal_operators = thermal_operators
-        self.field = NeuralElectroThermalVectorField(surrogate, thermal_operators)
+        self.field = NeuralElectroThermalVectorField(
+            surrogate,
+            thermal_operators,
+            thermal_rhs_forcing=thermal_rhs_forcing,
+        )
+        self._integration_field = _IntegrationFieldView(self.field)
         self.physical_signature = None if physical_signature is None else str(physical_signature)
         self.training_domain = {} if training_domain is None else {
             key: np.asarray(value, dtype=float) for key, value in training_domain.items()
@@ -169,7 +189,7 @@ class StructurePreservingNeuralElectroThermalROM:
             spectrum = self._spectrum_for_geometry(g)
         if method == "etd2":
             result = integrate_etd2(
-                self.field,
+                self._integration_field,
                 t,
                 initial_state=a0,
                 geometry=g,
@@ -180,7 +200,7 @@ class StructurePreservingNeuralElectroThermalROM:
             )
         elif method in {"etd2_adaptive", "adaptive_etd2"}:
             result = integrate_etd2_adaptive(
-                self.field,
+                self._integration_field,
                 t,
                 initial_state=a0,
                 geometry=g,
@@ -195,7 +215,7 @@ class StructurePreservingNeuralElectroThermalROM:
             )
         elif method == "imex":
             result = integrate_imex_euler(
-                self.field,
+                self._integration_field,
                 t,
                 initial_state=a0,
                 geometry=g,
@@ -205,7 +225,7 @@ class StructurePreservingNeuralElectroThermalROM:
             )
         elif method == "reference":
             result = integrate_reference(
-                self.field,
+                self._integration_field,
                 t,
                 initial_state=a0,
                 geometry=g,
@@ -365,6 +385,7 @@ class StructurePreservingNeuralElectroThermalROM:
             "pod_singular_values": self.surrogate.pod.singular_values,
             "coefficient_mean": self.surrogate.coefficient_mean,
             "coefficient_scale": self.surrogate.coefficient_scale,
+            "thermal_rhs_forcing": self.field.thermal_rhs_forcing,
         }
         for key, tensor in state_dict.items():
             arrays["network__" + key.replace(".", "__DOT__")] = tensor.detach().cpu().numpy()
@@ -447,6 +468,11 @@ class StructurePreservingNeuralElectroThermalROM:
                 )
             if int(thermal_operators.geometry_dimension) != int(meta["geometry_dimension"]):
                 raise ValueError("saved neural and thermal geometry dimensions differ")
+            forcing = (
+                np.asarray(data["thermal_rhs_forcing"], dtype=float)
+                if "thermal_rhs_forcing" in data.files
+                else np.zeros(int(meta["state_dimension"]), dtype=float)
+            )
             return cls(
                 surrogate,
                 thermal_operators,
@@ -456,6 +482,7 @@ class StructurePreservingNeuralElectroThermalROM:
                     for key, value in meta.get("training_domain", {}).items()
                 },
                 artifact_metadata=dict(meta.get("metadata") or {}),
+                thermal_rhs_forcing=forcing,
             )
 
 
