@@ -9,9 +9,11 @@ import numpy as np
 from .adapters import (
     fixed_research_tensor_factory,
     fixed_research_thermal_family,
+    fixed_research_thermal_rhs_forcing,
     fixed_research_vector_field_factory,
     geometry_research_embedded_thermal_family,
     geometry_research_tensor_factory,
+    geometry_research_thermal_rhs_forcing,
     geometry_research_vector_field_factory,
 )
 from .generator import generate_snapshots_resumable
@@ -225,9 +227,10 @@ def retrain_neural_rom(
 ) -> PipelineResult:
     """Retrain POD/MLP from a frozen tensor dataset without any EM rebuild.
 
-    ``template_model`` contributes only its persisted thermal operator family.
-    Certification evidence from the template is deliberately not inherited,
-    because retraining changes the neural approximation and invalidates it.
+    ``template_model`` contributes its persisted exact thermal operator family
+    and deterministic thermal RHS forcing. Certification evidence from the
+    template is deliberately not inherited because retraining changes the
+    neural approximation and invalidates it.
     """
     if dataset.thermal_rank != template_model.surrogate.state_dimension:
         raise ValueError("dataset/template thermal dimensions differ")
@@ -261,6 +264,7 @@ def retrain_neural_rom(
         physical_signature=str(signature),
         training_domain=domain,
         artifact_metadata=artifact_metadata,
+        thermal_rhs_forcing=template_model.field.thermal_rhs_forcing,
     )
     work = Path(work_directory)
     work.mkdir(parents=True, exist_ok=True)
@@ -377,6 +381,7 @@ def build_fixed_neural_rom(
         physical_signature=signature,
         training_domain=domain,
         artifact_metadata=base_metadata,
+        thermal_rhs_forcing=fixed_research_thermal_rhs_forcing(physical_model),
     )
     if save_model:
         model.save(
@@ -491,6 +496,7 @@ def build_geometry_neural_rom(
         physical_signature=signature,
         training_domain=domain,
         artifact_metadata=base_metadata,
+        thermal_rhs_forcing=geometry_research_thermal_rhs_forcing(geometry_model),
     )
     if save_model:
         model.save(
