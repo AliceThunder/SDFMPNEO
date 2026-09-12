@@ -1,6 +1,8 @@
 """Scalable training primitives for funnel-shaped analytic response networks."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from threading import local
 from types import SimpleNamespace
 import numpy as np
 import scipy.linalg
@@ -15,6 +17,20 @@ from .research_helpers import (
 )
 from .research_linearization import _balanced_physics_subset
 from .source_prefit_factorization import fit_source_factors
+
+
+_SOLVE_STATE = local()
+
+
+@dataclass(frozen=True)
+class _PreparedLayerLeastSquares:
+    ids: np.ndarray
+    rw: np.ndarray
+    normalized_jacobian: np.ndarray
+    scales: np.ndarray
+    gram: np.ndarray
+    rhs: np.ndarray
+    row_space: bool
 
 
 def source_prefit(network, field, config, monitor=None):
@@ -166,35 +182,83 @@ def evaluate_layer_semigroup(
     )
 
 
-def solve_layer_direction(records, weights, damping, network, parameter_indices):
-    """Levenberg-Marquardt direction in one exact response-amplitude block."""
+def _prepare_layer_least_squares(records, weights, parameter_indices):
     ids = np.asarray(parameter_indices, dtype=int).reshape(-1)
-    if ids.size == 0 or not records:
-        return np.zeros(network.parameter_count)
-    residual = np.vstack([record.residual for record in records])
-    jacobian = np.stack([record.parameter_jacobian for record in records])
+    residual = np.vstack([np.asarray(record.residual, float) for record in records])
+    jacobian = np.stack([
+        np.asarray(record.parameter_jacobian, float) for record in records
+    ])
     if jacobian.shape[2] != ids.size:
         raise ValueError("local layer Jacobian does not match amplitude block")
-    root = np.sqrt(np.asarray(weights, dtype=float))[:, None]
-    rw = (root * residual).reshape(-1)
-    Jw = (root[:, :, None] * jacobian).reshape(-1, ids.size)
+    w = np.asarray(weights, dtype=float)
+    if w.shape != (len(records),):
+        raise ValueError("least-squares weights do not match residual records")
+    root = np.sqrt(w)[:, None]
+    rw = np.ascontiguousarray((root * residual).reshape(-1))
+    Jw = np.ascontiguousarray(
+        (root[:, :, None] * jacobian).reshape(-1, ids.size)
+    )
     scales = np.linalg.norm(Jw, axis=0)
     scales[scales < 1e-14] = 1.0
-    Jn = Jw / scales
+    Jn = np.ascontiguousarray(Jw / scales)
     m, p = Jn.shape
-    mu = max(float(damping), 1e-12)
-    if m <= p:
-        system = Jn @ Jn.T
-        system.flat[::m + 1] += mu
-        y = scipy.linalg.solve(system, -rw, assume_a="pos", check_finite=False)
-        q = Jn.T @ y
+    row_space = m <= p
+    if row_space:
+        gram = np.ascontiguousarray(Jn @ Jn.T)
+        rhs = -rw
     else:
-        system = Jn.T @ Jn
-        system.flat[::p + 1] += mu
-        q = scipy.linalg.solve(
-            system, -(Jn.T @ rw), assume_a="pos", check_finite=False
-        )
-    local = q / scales
+        gram = np.ascontiguousarray(Jn.T @ Jn)
+        rhs = np.ascontiguousarray(-(Jn.T @ rw))
+    return _PreparedLayerLeastSquares(
+        ids=ids.copy(),
+        rw=rw,
+        normalized_jacobian=Jn,
+        scales=np.ascontiguousarray(scales),
+        gram=gram,
+        rhs=np.ascontiguousarray(rhs),
+        row_space=bool(row_space),
+    )
+
+
+def _prepared_layer_least_squares(records, weights, parameter_indices):
+    """Reuse one normalized normal system across all damping retries."""
+    ids = np.asarray(parameter_indices, dtype=int).reshape(-1)
+    cached = getattr(_SOLVE_STATE, "last", None)
+    if (
+        cached is not None
+        and cached.records is records
+        and cached.weights is weights
+        and np.array_equal(cached.prepared.ids, ids)
+    ):
+        return cached.prepared
+    prepared = _prepare_layer_least_squares(records, weights, ids)
+    _SOLVE_STATE.last = SimpleNamespace(
+        records=records,
+        weights=weights,
+        prepared=prepared,
+    )
+    return prepared
+
+
+def _solve_prepared_layer_direction(prepared, damping, network):
+    ids = prepared.ids
+    if ids.size == 0:
+        return np.zeros(network.parameter_count)
+    mu = max(float(damping), 1e-12)
+    system = prepared.gram.copy()
+    size = system.shape[0]
+    system.flat[::size + 1] += mu
+    solved = scipy.linalg.solve(
+        system,
+        prepared.rhs,
+        assume_a="pos",
+        check_finite=False,
+    )
+    if prepared.row_space:
+        q = prepared.normalized_jacobian.T @ solved
+    else:
+        q = solved
+    local = q / prepared.scales
     trust = 2.0 * max(1.0, float(np.linalg.norm(network.parameters[ids])))
     norm = float(np.linalg.norm(local))
     if norm > trust:
@@ -204,16 +268,31 @@ def solve_layer_direction(records, weights, damping, network, parameter_indices)
     return delta
 
 
+def solve_layer_direction(records, weights, damping, network, parameter_indices):
+    """LM direction with one normal-system build per linearization.
+
+    Damping retries change only ``mu I``.  The weighted residual, column scaling,
+    normalized Jacobian, Gram matrix and right-hand side are invariant throughout
+    that retry loop and are therefore prepared once and reused.
+    """
+    ids = np.asarray(parameter_indices, dtype=int).reshape(-1)
+    if ids.size == 0 or not records:
+        return np.zeros(network.parameter_count)
+    prepared = _prepared_layer_least_squares(records, weights, ids)
+    return _solve_prepared_layer_direction(prepared, damping, network)
+
+
 def predicted_layer_metrics(records, weights, delta, parameter_indices, factor):
     ids = np.asarray(parameter_indices, dtype=int)
     local = np.asarray(delta, dtype=float)[ids]
-    values = []
-    for record in records:
-        predicted = np.asarray(record.residual, float) + float(factor) * (
-            np.asarray(record.parameter_jacobian, float) @ local
-        )
-        values.append(float(np.linalg.norm(predicted)))
-    norms = np.asarray(values, float)
+    residual = np.stack([np.asarray(record.residual, float) for record in records])
+    jacobian = np.stack([
+        np.asarray(record.parameter_jacobian, float) for record in records
+    ])
+    predicted = residual + float(factor) * np.einsum(
+        "nrp,p->nr", jacobian, local, optimize=True
+    )
+    norms = np.linalg.norm(predicted, axis=1)
     w = np.asarray(weights, float)
     merit = float(np.dot(w, norms * norms))
     wrms = float(np.sqrt(merit / max(float(np.sum(w)), np.finfo(float).tiny)))
