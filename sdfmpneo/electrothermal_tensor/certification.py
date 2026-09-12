@@ -21,6 +21,24 @@ class PersistenceRoundtripReport:
     detail: str
 
 
+@dataclass(frozen=True)
+class TrainingReproductionReport:
+    passed: bool
+    attempted: bool
+    provenance_complete: bool
+    device: str | None
+    sample_count: int
+    maximum_packed_tensor_absolute_error: float | None
+    maximum_packed_tensor_relative_error: float | None
+    maximum_heat_source_absolute_error: float | None
+    maximum_heat_source_relative_error: float | None
+    original_best_epoch: int | None
+    reproduced_best_epoch: int | None
+    original_epochs_completed: int | None
+    reproduced_epochs_completed: int | None
+    detail: str
+
+
 def _compact(value):
     if is_dataclass(value):
         return _compact(asdict(value))
@@ -40,7 +58,12 @@ def gate_report_hash(report) -> str:
 
 
 def training_reproducibility_evidence(model, *, expected_dataset_hash: str | None = None) -> dict:
-    """Check whether the saved model contains the documented training provenance."""
+    """Check whether the saved model contains the documented training provenance.
+
+    This checks provenance completeness only.  It is deliberately not sufficient
+    to pass the formal reproducibility gate; use ``verify_training_reproduction``
+    to perform an actual frozen-dataset retraining experiment.
+    """
     metadata = dict(getattr(model, "artifact_metadata", {}) or {})
     report = metadata.get("training_report")
     missing: list[str] = []
@@ -100,6 +123,171 @@ def training_reproducibility_evidence(model, *, expected_dataset_hash: str | Non
         "mixed_precision_used": report.get("mixed_precision"),
         "environment": environment,
     }
+
+
+def _relative_rows(error: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    numerator = np.linalg.norm(error, axis=1)
+    denominator = np.maximum(
+        np.linalg.norm(reference, axis=1),
+        np.finfo(float).tiny,
+    )
+    return numerator / denominator
+
+
+def verify_training_reproduction(
+    model,
+    dataset,
+    *,
+    device: str | None = None,
+    packed_rtol: float = 1e-6,
+    packed_atol: float = 1e-7,
+    heat_rtol: float = 1e-6,
+    heat_atol: float = 1e-7,
+    operating_samples: int = 2,
+) -> TrainingReproductionReport:
+    """Retrain from the frozen dataset and compare basis-independent outputs.
+
+    The POD is refit from the train split at the saved rank and the ordinary MLP
+    is retrained with the persisted configuration/seed.  Comparison is performed
+    after decoding back to packed ``G`` tensors and Joule heat so POD sign or a
+    numerically equivalent basis representation cannot create a false failure.
+    """
+    manifest = dataset.manifest()
+    provenance = training_reproducibility_evidence(
+        model,
+        expected_dataset_hash=manifest.dataset_hash,
+    )
+    metadata = dict(getattr(model, "artifact_metadata", {}) or {})
+    saved_report = metadata.get("training_report")
+    if not provenance["complete"] or not isinstance(saved_report, dict):
+        return TrainingReproductionReport(
+            passed=False,
+            attempted=False,
+            provenance_complete=False,
+            device=None,
+            sample_count=0,
+            maximum_packed_tensor_absolute_error=None,
+            maximum_packed_tensor_relative_error=None,
+            maximum_heat_source_absolute_error=None,
+            maximum_heat_source_relative_error=None,
+            original_best_epoch=None,
+            reproduced_best_epoch=None,
+            original_epochs_completed=None,
+            reproduced_epochs_completed=None,
+            detail="frozen model lacks complete training provenance or matching dataset hash",
+        )
+
+    try:
+        from .network import ResidualMLPConfig
+        from .pod import fit_dataset_pod
+        from .trainer import NeuralTrainingConfig, train_tensor_surrogate
+
+        network_config = ResidualMLPConfig(**dict(saved_report["network_config"]))
+        training_config = NeuralTrainingConfig(**dict(saved_report["training_config"]))
+        resolved_device = str(device or saved_report.get("device") or "cpu")
+        pod = fit_dataset_pod(dataset, rank=model.surrogate.pod.rank)
+        lower = np.asarray(dataset.metadata["operating_lower"], dtype=float)
+        upper = np.asarray(dataset.metadata["operating_upper"], dtype=float)
+        reproduced, reproduced_report = train_tensor_surrogate(
+            dataset,
+            pod,
+            operating_lower=lower,
+            operating_upper=upper,
+            network_config=network_config,
+            training_config=training_config,
+            device=resolved_device,
+        )
+
+        test_ids = dataset.indices("test")
+        states = dataset.states[test_ids]
+        geometries = dataset.geometries[test_ids]
+        original_beta = model.surrogate.predict_coefficients_batch_numpy(states, geometries)
+        reproduced_beta = reproduced.predict_coefficients_batch_numpy(states, geometries)
+        original_packed = model.surrogate.pod.mean[None, :] + original_beta @ model.surrogate.pod.basis.T
+        reproduced_packed = pod.mean[None, :] + reproduced_beta @ pod.basis.T
+        packed_error = reproduced_packed - original_packed
+        packed_abs = float(np.max(np.abs(packed_error))) if packed_error.size else 0.0
+        packed_rel = float(np.max(_relative_rows(packed_error, original_packed))) if len(test_ids) else 0.0
+        packed_ok = bool(
+            np.allclose(
+                reproduced_packed,
+                original_packed,
+                rtol=float(packed_rtol),
+                atol=float(packed_atol),
+            )
+        )
+
+        rng = np.random.default_rng(int(training_config.seed) + 104729)
+        count = max(1, int(operating_samples))
+        heat_abs = 0.0
+        heat_rel = 0.0
+        heat_ok = True
+        for _ in range(count):
+            operating = rng.uniform(lower, upper, size=(len(test_ids), dataset.current_dimension))
+            original_heat = model.surrogate.heat_source_batch_numpy(states, geometries, operating)
+            reproduced_heat = reproduced.heat_source_batch_numpy(states, geometries, operating)
+            error = reproduced_heat - original_heat
+            if error.size:
+                heat_abs = max(heat_abs, float(np.max(np.abs(error))))
+                heat_rel = max(heat_rel, float(np.max(_relative_rows(error, original_heat))))
+            heat_ok = heat_ok and bool(
+                np.allclose(
+                    reproduced_heat,
+                    original_heat,
+                    rtol=float(heat_rtol),
+                    atol=float(heat_atol),
+                )
+            )
+
+        original_best = saved_report.get("best_epoch")
+        original_completed = saved_report.get("epochs_completed")
+        epoch_match = (
+            original_best is not None
+            and original_completed is not None
+            and int(original_best) == int(reproduced_report.best_epoch)
+            and int(original_completed) == int(reproduced_report.epochs_completed)
+        )
+        passed = bool(packed_ok and heat_ok and epoch_match)
+        detail = (
+            "frozen-dataset retraining reproduced POD-decoded tensors, heat outputs and epoch selection"
+            if passed
+            else "frozen-dataset retraining changed decoded tensors, heat outputs or epoch selection"
+        )
+        return TrainingReproductionReport(
+            passed=passed,
+            attempted=True,
+            provenance_complete=True,
+            device=resolved_device,
+            sample_count=int(len(test_ids)),
+            maximum_packed_tensor_absolute_error=packed_abs,
+            maximum_packed_tensor_relative_error=packed_rel,
+            maximum_heat_source_absolute_error=heat_abs,
+            maximum_heat_source_relative_error=heat_rel,
+            original_best_epoch=None if original_best is None else int(original_best),
+            reproduced_best_epoch=int(reproduced_report.best_epoch),
+            original_epochs_completed=(
+                None if original_completed is None else int(original_completed)
+            ),
+            reproduced_epochs_completed=int(reproduced_report.epochs_completed),
+            detail=detail,
+        )
+    except Exception as exc:
+        return TrainingReproductionReport(
+            passed=False,
+            attempted=True,
+            provenance_complete=True,
+            device=None if device is None else str(device),
+            sample_count=0,
+            maximum_packed_tensor_absolute_error=None,
+            maximum_packed_tensor_relative_error=None,
+            maximum_heat_source_absolute_error=None,
+            maximum_heat_source_relative_error=None,
+            original_best_epoch=None,
+            reproduced_best_epoch=None,
+            original_epochs_completed=None,
+            reproduced_epochs_completed=None,
+            detail=f"retraining reproduction failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def _domain_center(model, name: str, dimension: int) -> np.ndarray:
@@ -195,7 +383,8 @@ def audit_evidence(
     *,
     dataset_hash: str | None = None,
     report_path=None,
-    reproducibility_evidence: dict | None = None,
+    provenance_evidence: dict | None = None,
+    training_reproduction: TrainingReproductionReport | None = None,
     persistence_roundtrip: PersistenceRoundtripReport | None = None,
 ) -> dict:
     """Build a bounded model-metadata summary from a frozen Gate 1--7 report."""
@@ -223,8 +412,10 @@ def audit_evidence(
         "vector_field_seconds": report.vector_field_seconds,
         "trajectory_query_seconds": report.trajectory_query_seconds,
     }
-    if reproducibility_evidence is not None:
-        result["training_reproducibility"] = _compact(reproducibility_evidence)
+    if provenance_evidence is not None:
+        result["training_provenance"] = _compact(provenance_evidence)
+    if training_reproduction is not None:
+        result["training_reproduction"] = _compact(training_reproduction)
     if persistence_roundtrip is not None:
         result["persistence_roundtrip"] = _compact(persistence_roundtrip)
     return result
@@ -238,7 +429,8 @@ def save_audited_model(
     dataset_hash: str | None = None,
     report_path=None,
     require_ready: bool = False,
-    reproducibility_evidence: dict | None = None,
+    provenance_evidence: dict | None = None,
+    training_reproduction: TrainingReproductionReport | None = None,
     persistence_roundtrip: PersistenceRoundtripReport | None = None,
 ):
     """Save a copy with frozen audit evidence while preserving training metadata."""
@@ -248,7 +440,8 @@ def save_audited_model(
         report,
         dataset_hash=dataset_hash,
         report_path=report_path,
-        reproducibility_evidence=reproducibility_evidence,
+        provenance_evidence=provenance_evidence,
+        training_reproduction=training_reproduction,
         persistence_roundtrip=persistence_roundtrip,
     )
     return model.save(
@@ -259,9 +452,11 @@ def save_audited_model(
 
 __all__ = [
     "PersistenceRoundtripReport",
+    "TrainingReproductionReport",
     "audit_evidence",
     "gate_report_hash",
     "save_audited_model",
     "training_reproducibility_evidence",
     "verify_model_persistence_roundtrip",
+    "verify_training_reproduction",
 ]
