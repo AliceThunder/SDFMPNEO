@@ -21,7 +21,7 @@ def _update_json(digest, name: str, value) -> None:
 
 
 def fixed_research_physical_signature(model) -> str:
-    """Hash the fixed geometry, thermal/EM spaces and current parameterization."""
+    """Hash fixed geometry, thermal/EM spaces, forcing and current parameterization."""
     digest = hashlib.sha256()
     core = model.core
     problem = model.em.problem
@@ -29,6 +29,14 @@ def fixed_research_physical_signature(model) -> str:
     _update_array(digest, "mesh_tetrahedra", core.mesh.tetrahedra)
     _update_array(digest, "thermal_phi", core.thermal_model.Phi)
     _update_array(digest, "thermal_lambdas", core.thermal_model.lambdas)
+    _update_array(
+        digest,
+        "thermal_forcing",
+        np.asarray(
+            getattr(model.field, "thermal_forcing", np.zeros(len(core.thermal_model.lambdas))),
+            dtype=float,
+        ),
+    )
     _update_array(digest, "em_basis", model.em.V)
     _update_array(digest, "rhs_offset", model.rhs_map.offset)
     _update_array(digest, "rhs_matrix", model.rhs_map.matrix)
