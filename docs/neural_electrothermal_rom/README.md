@@ -14,13 +14,14 @@ python -m pip install -e '.[neural,dev]'
 
 ```bash
 sdfmpneo-neural train   --config examples/neural_electrothermal_rom/train.example.json
+sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
 sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
 sdfmpneo-neural audit   --config examples/neural_electrothermal_rom/audit.example.json
 ```
 
 项目不使用 GitHub Actions；验证入口保留为本地 `pytest` 与 `audit`。
 
-## 1. Train
+## 1. Train：只生成局部物理张量标签
 
 `train` 从现有物理 JSON 构建 EM/thermal ROM，但 EM 只用于离线生成
 
@@ -33,30 +34,69 @@ sdfmpneo-neural audit   --config examples/neural_electrothermal_rom/audit.exampl
 - `quadratic_joule.partial.npz`：可恢复标签生成检查点；
 - `quadratic_joule_dataset.npz/.json`：冻结 train/validation/test 数据集；
 - neural `.npz`：POD、归一化、MLP、训练域、物理签名和在线热算子；
-- `training.report.json`：训练与数据版本摘要。
+- `training.report.json`：训练、采样和数据版本摘要。
 
-网络训练阶段不会调用 EM solver，也不生成瞬态轨迹标签。
+网络训练阶段不会调用 EM solver，也不使用瞬态轨迹作为监督标签。
 
-### 最重要的训练域约束
+### 1.1 完整 state box，而不是 initial-state box
 
-`state_lower/state_upper` 表示 **NN 允许看到的完整热状态域**，不是只表示初始条件范围。
-必须覆盖目标初值、工况和几何下的可达状态以及稳态附近区域。模型默认在每个 ETD/IMEX 中间阶段检查该盒；轨迹一旦离开训练状态域立即报错。
+`state_lower/state_upper` 表示 **NN 允许看到的完整热状态域**。它必须覆盖目标初值、工况和几何下的可达状态以及稳态附近区域。
 
-因此不要机械地把旧 `initial_lower/initial_upper` 复制为 state box，除非已经证明目标轨迹始终留在其中。
+模型默认在 ETD/IMEX 的每个中间阶段检查该盒；轨迹一旦离开训练状态域立即报错。因此不要机械复制旧 `initial_lower/initial_upper`，除非已经证明整个目标轨迹都留在其中。
 
-几何族训练时网络几何坐标固定为归一化 `[-1,1]^d`；模型文件内保存 affine geometry chart、热材料参数和共享热基，在线精确重组 `M_r(g),K_r(g)`，不依赖 EM。
+### 1.2 高维状态推荐 hybrid reachable sampling
 
-## 2. Predict
+默认 `sampling.strategy="box"` 使用整个 state/geometry box 的 LHS。对于约 198 维热状态，这通常样本效率很低。
 
-`predict` 只加载 neural `.npz`。对于固定几何和当前 affine geometry family 都不需要物理 JSON。
+推荐先声明一个足够保守的完整 state box，然后用：
 
-有限时间默认使用广义 ETD2：
+```json
+"sampling": {
+  "strategy": "hybrid_reachable",
+  "initial_lower": [-0.1, -0.1],
+  "initial_upper": [0.1, 0.1],
+  "box_fraction": 0.25,
+  "trajectory_count": 32,
+  "samples_per_trajectory": 16,
+  "time_horizon": 1000.0,
+  "time_min": 1e-6
+}
+```
+
+其中真实 reduced physics 轨迹**只用于选择在哪里采样 $G$**，轨迹状态不会成为 NN 的监督 target。仍保留 `box_fraction` 的全盒样本以覆盖 off-manifold / restart 区域。
+
+若任何真实采样轨迹离开声明的 state box，训练直接抛出 `StateDomainInsufficientError`，并提供观测到的 state envelope；实现不会通过 clip 偷偷隐藏训练域设计错误。
+
+几何族训练时网络几何坐标固定为归一化 `[-1,1]^d`；模型文件保存 affine geometry chart、热材料参数和共享热基，在线精确重组 `M_r(g),K_r(g)`，不依赖 EM。
+
+## 2. Retrain：调网络/POD 不再重建 EM
+
+物理 tensor dataset 一旦生成，可以反复做：
+
+```bash
+sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
+```
+
+`retrain` 只读取：
+
+- 冻结 `quadratic_joule_dataset.npz`；
+- 一个已经保存的 neural model 作为在线 thermal operator / physical signature 模板。
+
+它不会构建 EM problem、不会重新生成标签。POD rank、MLP width/depth、optimizer、mixed precision 等实验都应该走这条路径。
+
+## 3. Predict：自包含在线模型
+
+`predict` 只加载 neural `.npz`。固定几何和当前 affine geometry family 都不需要物理 JSON 或 EM ROM。
+
+连续时间模型始终是
 
 \[
 M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 \]
 
-`times` 中字符串 `"inf"` 会调用独立稳态求解器，而不是把有限时间积分无限延长。
+推荐有限时间方法为 `etd2_adaptive`：广义谱分解每个 geometry 只做一次，之后用 ETD1/ETD2 嵌入误差指标自动调整步长。热响应进入慢尾部后会自然使用大步长；`rtol/atol/max_step` 仍由用户显式控制。
+
+固定步长 `etd2` 和鲁棒参考 `imex` 仍保留。`times` 中字符串 `"inf"` 调用独立稳态求解器，不把有限时间积分无限延长。
 
 默认 `allow_extrapolation=false`：
 
@@ -64,9 +104,9 @@ M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 - operating 必须在训练工况盒；
 - geometry 必须在已认证的归一化 `[-1,1]^d` chart 内。
 
-即使显式打开 state/operating extrapolation，embedded geometry family 仍不会允许超出已保存几何 chart。
+即使显式打开 state/operating extrapolation，embedded geometry family 仍不会允许超出保存的几何 chart。
 
-## 3. Audit / Gate 1--7
+## 4. Audit / Gate 1--7
 
 `audit` 会重新构建真实物理模型，仅用于独立对照，并验证 neural 模型保存的物理签名。
 
@@ -77,33 +117,29 @@ M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 3. **Gate 3**：真实 `G(a,g)` 的有限差分敏感度与 active-subspace spectrum；
 4. **Gate 4**：真实物理 Jacobian 在 `M(g)` 能量范数下的 logarithmic norm；
 5. **Gate 5**：冻结 test split 上 `G/q/F` 的 RMS、95/99 percentile 和 maximum；
-6. **Gate 6**：neural ETD 与真实 EM-ROM + Radau 轨迹对照，可同时重构节点温度；
-7. **Gate 7**：真实 wall-clock vector-field / trajectory benchmark。
+6. **Gate 6**：配置指定的 neural ETD/IMEX 与真实 EM-ROM + Radau 轨迹对照，可同时重构节点温度；
+7. **Gate 7**：使用与 Gate 6 相同 production integrator 的真实 wall-clock vector-field / trajectory benchmark。
 
-Production readiness 是 fail-closed：没有 Gate 7 的明确时间预算和实际测量，结果不会被判为 ready。
+Production readiness 是 fail-closed：没有 Gate 7 的明确时间预算和实际测量，结果不会判为 ready。
 
 `reproducible_training` 与 `persistence_roundtrip` 也必须由正式实验明确填写，不能自动假定为真。
 
-## 4. 模型物理结构
-
-在线链条固定为：
+## 5. 在线结构
 
 ```text
 (a, normalized geometry)
         -> ordinary residual MLP
         -> normalized POD coefficients
-        -> POD decode in Frobenius-isometric svec coordinates
-        -> exact current quadratic contraction zeta^T G zeta
+        -> direct POD/current contraction (不还原完整 G)
+        -> exact current quadratic layer zeta^T G zeta
         -> q_theta
         -> exact M_r(g) a_dot = -K_r(g) a + q_theta
-        -> generalized ETD2 / IMEX
+        -> generalized fixed/adaptive ETD2 / IMEX
 ```
 
 网络不直接输入时间，也不直接输入电流；电流只进入 hard quadratic physics layer。
 
-## 5. 本地测试
-
-新模块测试：
+## 6. 本地测试
 
 ```bash
 python -m pytest -q \
@@ -115,6 +151,7 @@ python -m pytest -q \
   tests/test_neural_training_smoke.py \
   tests/test_neural_model_persistence.py \
   tests/test_neural_geometry_persistence.py \
+  tests/test_neural_snapshot_sampling.py \
   tests/test_neural_gate_suite.py
 ```
 
@@ -124,7 +161,6 @@ python -m pytest -q \
 python -m pytest -q
 ```
 
-## 6. Production 切换原则
+## 7. Production 切换原则
 
-当前实现分支提供完整训练、推理和 audit 能力，但不会自动替换旧 production 默认入口。
-只有正式 UWPT 数据上的 Gate 1--7 全部满足预先给定的工程预算后，才允许切换默认模型。
+当前实现分支提供训练、无 EM retrain、自包含推理和 Gate audit 能力，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算后，才允许切换默认模型。
