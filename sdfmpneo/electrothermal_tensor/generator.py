@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -9,19 +10,82 @@ import numpy as np
 
 from .dataset import QuadraticJouleDataset
 
+_CHECKPOINT_FORMAT_VERSION = 2
 
-def _atomic_partial(path: Path, *, states, geometries, tensors, completed) -> None:
+
+def _sha256_array(value: np.ndarray) -> str:
+    array = np.ascontiguousarray(np.asarray(value))
+    digest = hashlib.sha256()
+    digest.update(str(array.dtype).encode("ascii"))
+    digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+    digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
+def _sidecar_path(path: Path) -> Path:
+    return path.with_name(path.name + ".tensors.npy")
+
+
+def _atomic_checkpoint(
+    path: Path,
+    *,
+    states: np.ndarray,
+    geometries: np.ndarray,
+    completed: np.ndarray,
+    tensor_shape,
+    physical_signature: str | None,
+) -> None:
+    """Atomically update only small checkpoint metadata/bitmap.
+
+    Tensor values live in a separately flushed NPY memmap and are never
+    recompressed/re-written at each checkpoint boundary.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("wb") as output:
         np.savez_compressed(
             output,
-            states=np.asarray(states, dtype=float),
-            geometries=np.asarray(geometries, dtype=float),
-            tensors=np.asarray(tensors, dtype=float),
+            format_version=np.array(_CHECKPOINT_FORMAT_VERSION, dtype=np.int64),
+            state_shape=np.asarray(states.shape, dtype=np.int64),
+            geometry_shape=np.asarray(geometries.shape, dtype=np.int64),
+            state_hash=np.array(_sha256_array(states)),
+            geometry_hash=np.array(_sha256_array(geometries)),
+            tensor_shape=np.asarray(tuple(int(v) for v in tensor_shape), dtype=np.int64),
             completed=np.asarray(completed, dtype=bool),
+            physical_signature=np.array("" if physical_signature is None else str(physical_signature)),
         )
     temporary.replace(path)
+
+
+def _validate_checkpoint_samples(data, states: np.ndarray, geometries: np.ndarray) -> None:
+    version = int(data["format_version"]) if "format_version" in data.files else -1
+    if version != _CHECKPOINT_FORMAT_VERSION:
+        raise ValueError(
+            "legacy snapshot checkpoint is not provenance-safe; delete it and regenerate"
+        )
+    if tuple(np.asarray(data["state_shape"], dtype=int)) != states.shape:
+        raise ValueError("partial snapshot checkpoint belongs to a different state sample set")
+    if tuple(np.asarray(data["geometry_shape"], dtype=int)) != geometries.shape:
+        raise ValueError("partial snapshot checkpoint belongs to a different geometry sample set")
+    if str(data["state_hash"]) != _sha256_array(states):
+        raise ValueError("partial snapshot checkpoint belongs to a different state sample set")
+    if str(data["geometry_hash"]) != _sha256_array(geometries):
+        raise ValueError("partial snapshot checkpoint belongs to a different geometry sample set")
+
+
+def _physical_signature(metadata: Mapping[str, object] | None) -> str | None:
+    if metadata is None:
+        return None
+    value = metadata.get("physical_signature")
+    return None if value is None else str(value)
+
+
+def _close_memmap(value) -> None:
+    if isinstance(value, np.memmap):
+        value.flush()
+        mmap = getattr(value, "_mmap", None)
+        if mmap is not None:
+            mmap.close()
 
 
 def generate_snapshots_resumable(
@@ -38,13 +102,13 @@ def generate_snapshots_resumable(
     metadata: Mapping[str, object] | None = None,
     final_path: str | Path | None = None,
 ) -> QuadraticJouleDataset:
-    """Generate ``G(a,g)`` snapshots and resume from a safe disk boundary.
+    """Generate ``G(a,g)`` snapshots with bounded checkpoint I/O.
 
-    The input sample set is immutable across resume.  A partial checkpoint is
-    rejected if states or geometries differ, preventing accidental relabeling of
-    a previously generated dataset.  Threads operate only across independent
-    snapshots; callers should use ``max_workers=1`` for application models whose
-    geometry/context cache is not thread-safe.
+    Resume is bound to the exact state/geometry sample arrays and, when present,
+    the physical signature. Tensor values are stored once in an NPY memmap;
+    checkpoint updates rewrite only a small completed bitmap and hashes. Threads
+    operate only across independent snapshots. Use ``max_workers=1`` for
+    application models whose geometry/context cache is not thread-safe.
     """
     a = np.asarray(states, dtype=float)
     g = np.asarray(geometries, dtype=float)
@@ -55,30 +119,62 @@ def generate_snapshots_resumable(
     if checkpoint_every < 1 or max_workers < 1:
         raise ValueError("checkpoint_every and max_workers must be positive")
     partial = Path(checkpoint_path)
+    sidecar = _sidecar_path(partial)
+    expected_signature = _physical_signature(metadata)
 
     tensors = None
     completed = np.zeros(len(a), dtype=bool)
     if partial.exists():
+        if not sidecar.exists():
+            raise ValueError("snapshot checkpoint tensor sidecar is missing")
         with np.load(partial, allow_pickle=False) as data:
-            saved_a = np.asarray(data["states"], dtype=float)
-            saved_g = np.asarray(data["geometries"], dtype=float)
-            if not np.array_equal(saved_a, a) or not np.array_equal(saved_g, g):
-                raise ValueError("partial snapshot checkpoint belongs to a different sample set")
-            tensors = np.asarray(data["tensors"], dtype=float)
+            _validate_checkpoint_samples(data, a, g)
+            saved_signature = str(data["physical_signature"])
+            if saved_signature != ("" if expected_signature is None else expected_signature):
+                raise ValueError("partial snapshot checkpoint physical signature differs")
+            tensor_shape = tuple(np.asarray(data["tensor_shape"], dtype=int).tolist())
             completed = np.asarray(data["completed"], dtype=bool)
-        if completed.shape != (len(a),) or tensors.shape[0] != len(a):
+        if completed.shape != (len(a),):
             raise ValueError("partial snapshot checkpoint is malformed")
+        tensors = np.lib.format.open_memmap(
+            sidecar,
+            mode="r+",
+            dtype=np.float64,
+            shape=(len(a),) + tensor_shape,
+        )
+        if tensors.shape[0] != len(a):
+            raise ValueError("partial snapshot tensor sidecar is malformed")
 
     pending = np.flatnonzero(~completed)
     if tensors is None:
         first = int(pending[0])
         first_tensor = np.asarray(tensor_factory(a[first], g[first]), dtype=float)
-        if first_tensor.ndim != 3 or first_tensor.shape[0] != a.shape[1] or first_tensor.shape[-1] != first_tensor.shape[-2]:
+        if (
+            first_tensor.ndim != 3
+            or first_tensor.shape[0] != a.shape[1]
+            or first_tensor.shape[-1] != first_tensor.shape[-2]
+            or np.any(~np.isfinite(first_tensor))
+        ):
             raise ValueError("tensor_factory returned an incompatible tensor")
-        tensors = np.empty((len(a),) + first_tensor.shape, dtype=float)
+        tensor_shape = first_tensor.shape
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        tensors = np.lib.format.open_memmap(
+            sidecar,
+            mode="w+",
+            dtype=np.float64,
+            shape=(len(a),) + tensor_shape,
+        )
         tensors[first] = first_tensor
         completed[first] = True
-        _atomic_partial(partial, states=a, geometries=g, tensors=tensors, completed=completed)
+        tensors.flush()
+        _atomic_checkpoint(
+            partial,
+            states=a,
+            geometries=g,
+            completed=completed,
+            tensor_shape=tensor_shape,
+            physical_signature=expected_signature,
+        )
         pending = np.flatnonzero(~completed)
 
     expected_shape = tensors.shape[1:]
@@ -102,12 +198,28 @@ def generate_snapshots_resumable(
             completed[index] = True
             since_checkpoint += 1
             if since_checkpoint >= checkpoint_every:
-                _atomic_partial(partial, states=a, geometries=g, tensors=tensors, completed=completed)
+                tensors.flush()
+                _atomic_checkpoint(
+                    partial,
+                    states=a,
+                    geometries=g,
+                    completed=completed,
+                    tensor_shape=expected_shape,
+                    physical_signature=expected_signature,
+                )
                 since_checkpoint = 0
     finally:
         if executor is not None:
             executor.shutdown(wait=True, cancel_futures=True)
-        _atomic_partial(partial, states=a, geometries=g, tensors=tensors, completed=completed)
+        tensors.flush()
+        _atomic_checkpoint(
+            partial,
+            states=a,
+            geometries=g,
+            completed=completed,
+            tensor_shape=expected_shape,
+            physical_signature=expected_signature,
+        )
 
     if not np.all(completed):
         raise RuntimeError("snapshot generation did not complete")
@@ -122,6 +234,12 @@ def generate_snapshots_resumable(
     )
     if final_path is not None:
         dataset.save(final_path)
+        # A successfully written frozen dataset supersedes the resumable working
+        # files. Remove the large duplicate sidecar only after save succeeds.
+        _close_memmap(tensors)
+        tensors = None
+        partial.unlink(missing_ok=True)
+        sidecar.unlink(missing_ok=True)
     return dataset
 
 
