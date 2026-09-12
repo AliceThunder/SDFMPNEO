@@ -59,17 +59,13 @@ def torch_quadratic_feature(operating):
     zeta = torch.cat([ones, operating], dim=-1)
     p = zeta.shape[-1]
     i, j = torch.triu_indices(p, p, device=zeta.device)
-    result = zeta[:, i] * zeta[:, j]
-    off = i != j
-    if bool(torch.any(off)):
-        result[:, off] = result[:, off] * np.sqrt(2.0)
+    weights = torch.where(i == j, torch.ones_like(i, dtype=operating.dtype), torch.full_like(i, np.sqrt(2.0), dtype=operating.dtype))
+    result = (zeta[:, i] * zeta[:, j]) * weights.unsqueeze(0)
     return result[0] if squeeze else result
 
 
 def decode_heat_source_torch(coefficients, mean, basis, thermal_rank: int, operating):
     """Differentiable POD decode + exact current-quadratic contraction."""
-    import torch
-
     beta = coefficients
     if beta.ndim == 1:
         beta = beta.unsqueeze(0)
@@ -88,7 +84,7 @@ def decode_heat_source_torch(coefficients, mean, basis, thermal_rank: int, opera
         raise ValueError("POD width is incompatible with thermal rank")
     modes = packed.reshape(beta.shape[0], int(thermal_rank), n_sym)
     feature = torch_quadratic_feature(u)
-    result = torch.einsum("brs,bs->br", modes, feature)
+    result = __import__("torch").einsum("brs,bs->br", modes, feature)
     return result[0] if squeeze else result
 
 
