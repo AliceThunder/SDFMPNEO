@@ -4,6 +4,7 @@ from .research_config import ResearchTrainingConfig, ResearchTrainingReport, mak
 from .fixed_physics_runtime import install_physics_acceleration
 from .fixed_layer_cache_runtime import install_layer_cache_acceleration
 from .fixed_trial_runtime import accelerated_train_research_network, install_trial_acceleration
+from .geometry_context_runtime import enable_concurrent_geometry_context_cache
 from .research_telemetry import trial_event
 
 install_physics_acceleration()
@@ -94,12 +95,13 @@ def train_research_network(field, config, **kwargs):
     network = kwargs.get("network")
     if network is not None and not isinstance(network, FixedAnalyticResponseNetwork):
         raise TypeError("only FixedAnalyticResponseNetwork checkpoints are supported")
+
+    # Geometry collocation contexts are immutable for a fixed geometry key during
+    # training.  Make the expensive mesh/M/K/EM construction a concurrent one-time
+    # working-set preparation instead of a serial operation repeated by candidates.
+    enable_concurrent_geometry_context_cache(field)
+
     if network is not None:
-        # Checkpoints written by the previous implementation may already carry
-        # ``phase='stalled'`` solely because an accepted block ended exactly at
-        # max_iterations_per_layer.  Reopen that cursor before resume_trainer sees
-        # the terminal marker, preserving the saved damping/history instead of
-        # resetting a perfectly healthy optimization trajectory.
         _reopen_soft_iteration_budget(
             network, config, monitor=kwargs.get("monitor")
         )
