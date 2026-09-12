@@ -8,7 +8,6 @@ from .vector_field import CallableThermalOperatorFamily, FixedThermalOperatorFam
 
 
 def fixed_research_tensor_factory(model):
-    """Return ``factory(state, empty_geometry) -> G`` for ResearchElectroThermalModel."""
     if not hasattr(model, "em") or not hasattr(model, "rhs_map"):
         raise TypeError("model does not expose the fixed research EM/rhs interface")
 
@@ -22,7 +21,6 @@ def fixed_research_tensor_factory(model):
 
 
 def fixed_research_direct_heat_factory(model):
-    """Direct reduced-EM modal heat for Gate 1."""
     def factory(state, geometry, operating):
         g = np.asarray(geometry, dtype=float).reshape(-1)
         if g.size != 0:
@@ -34,12 +32,25 @@ def fixed_research_direct_heat_factory(model):
 
 
 def fixed_research_vector_field_factory(model):
-    """Original reduced physical vector field in the generic Gate signature."""
     def factory(state, geometry, operating):
         g = np.asarray(geometry, dtype=float).reshape(-1)
         if g.size != 0:
             raise ValueError("fixed-geometry vector field expects empty geometry")
-        return model.field.vector_field(np.asarray(state, dtype=float), np.asarray(operating, dtype=float))
+        return model.field.evaluate(
+            np.asarray(state, dtype=float), np.asarray(operating, dtype=float)
+        ).vector_field
+
+    return factory
+
+
+def fixed_research_jacobian_factory(model):
+    def factory(state, geometry, operating):
+        g = np.asarray(geometry, dtype=float).reshape(-1)
+        if g.size != 0:
+            raise ValueError("fixed-geometry Jacobian expects empty geometry")
+        return model.field.evaluate(
+            np.asarray(state, dtype=float), np.asarray(operating, dtype=float)
+        ).vector_field_jacobian
 
     return factory
 
@@ -70,7 +81,6 @@ def _geometry_context(model, coordinates, *, normalized_geometry: bool):
 
 
 def geometry_research_tensor_factory(model, *, normalized_geometry: bool = True):
-    """Return an exact tensor factory over a GeometryResearchModel family."""
     def factory(state, geometry):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         return quadratic_joule_tensor(context.em, state, context.rhs)
@@ -98,14 +108,20 @@ def geometry_research_vector_field_factory(model, *, normalized_geometry: bool =
     return factory
 
 
+def geometry_research_jacobian_factory(model, *, normalized_geometry: bool = True):
+    def factory(state, geometry, operating):
+        context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
+        a = np.asarray(state, dtype=float)
+        u = np.asarray(operating, dtype=float)
+        _, jq = context.em.heat_source_and_jacobian_for_rhs(a, context.rhs.evaluate(u))
+        return np.linalg.solve(context.M, -context.K + np.asarray(jq, dtype=float))
+
+    return factory
+
+
 def geometry_research_temperature_reconstructor(model, *, normalized_geometry: bool = True):
-    """Reconstruct physical nodal temperature on the queried deformed geometry."""
     def reconstruct(state, geometry):
-        context, physical_geometry = _geometry_context(
-            model, geometry, normalized_geometry=normalized_geometry
-        )
-        # The shared pullback thermal coordinates use the reference nodal basis;
-        # the geometry context changes M/K but not the coefficient-to-nodal map.
+        context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         if hasattr(model, "reference") and hasattr(model.reference, "temperature"):
             return model.reference.temperature(np.asarray(state, dtype=float))
         phi = model.thermal_model.Phi
@@ -131,11 +147,13 @@ def geometry_research_thermal_family(model, *, normalized_geometry: bool = True)
 
 __all__ = [
     "fixed_research_direct_heat_factory",
+    "fixed_research_jacobian_factory",
     "fixed_research_temperature_reconstructor",
     "fixed_research_tensor_factory",
     "fixed_research_thermal_family",
     "fixed_research_vector_field_factory",
     "geometry_research_direct_heat_factory",
+    "geometry_research_jacobian_factory",
     "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
     "geometry_research_thermal_family",
