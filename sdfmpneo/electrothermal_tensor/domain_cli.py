@@ -9,6 +9,7 @@ import numpy as np
 from .cli import (
     _adapters,
     _build_physical_model,
+    _dataset_artifact_path,
     _jsonable,
     _path_from_config,
     _read_json,
@@ -108,14 +109,15 @@ def command_train(config_file: str | Path) -> int:
         seed=int(config.get("seed", 0)),
         pod_rank=config.get("pod_rank"),
         pod_relative_tail_tolerance=float(config.get("pod_relative_tail_tolerance", 1e-4)),
+        pod_config=config.get("pod"),
         network_config=config.get("network"),
         training_config=config.get("training"),
         save_model=False,
         snapshot_workers=int(config.get("snapshot_workers", 1)),
         checkpoint_every=int(config.get("checkpoint_every", 16)),
+        snapshot_disk_threshold_bytes=int(config.get("snapshot_disk_threshold_bytes", 256 << 20)),
         sampling_config=config.get("sampling"),
     )
-    from .dataset import QuadraticJouleDataset
     from .domain_pipeline import (
         build_fixed_neural_rom_from_domain_report,
         build_geometry_neural_rom_from_domain_report,
@@ -135,30 +137,16 @@ def command_train(config_file: str | Path) -> int:
             **common,
         )
 
-    dataset_metadata = dict(result.dataset.metadata)
-    dataset_metadata.update(
-        {
-            "state_domain_report": str(domain_report),
-            "state_domain_report_hash": domain_hash,
-            "physical_provenance": physical_provenance,
-        }
-    )
-    dataset = QuadraticJouleDataset(
-        states=result.dataset.states,
-        geometries=result.dataset.geometries,
-        outputs=result.dataset.outputs,
-        split=result.dataset.split,
-        thermal_rank=result.dataset.thermal_rank,
-        current_dimension=result.dataset.current_dimension,
-        metadata=dataset_metadata,
-    )
-    dataset.save(work / "quadratic_joule_dataset.npz")
-    manifest = dataset.manifest()
+    manifest = result.dataset.manifest()
+    if result.dataset.metadata.get("state_domain_report_hash") != domain_hash:
+        raise RuntimeError("frozen dataset did not retain the verified state-domain report hash")
+    dataset_path = _dataset_artifact_path(result.dataset, work)
 
     result.model.save(
         model_path,
         metadata={
             "dataset_hash": manifest.dataset_hash,
+            "dataset_path": str(dataset_path),
             "pod_rank": result.pod.rank,
             "training_report": _jsonable(result.training_report),
             "sampling": _jsonable(result.sampling_report),
@@ -172,6 +160,7 @@ def command_train(config_file: str | Path) -> int:
         training_report_path,
         {
             "model": str(model_path),
+            "dataset": str(dataset_path),
             "work_directory": str(work),
             "physical_signature": result.physical_signature,
             "state_domain_report": str(domain_report),
@@ -185,6 +174,7 @@ def command_train(config_file: str | Path) -> int:
         },
     )
     print(f"neural ROM saved: {model_path}")
+    print(f"frozen tensor dataset: {dataset_path}")
     print(f"dataset hash: {manifest.dataset_hash}")
     print(f"state-domain hash: {domain_hash}")
     print(f"training report: {training_report_path}")
