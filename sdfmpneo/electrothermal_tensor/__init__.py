@@ -8,6 +8,7 @@ from .adapters import (
     fixed_research_thermal_family,
     fixed_research_vector_field_factory,
     geometry_research_direct_heat_factory,
+    geometry_research_embedded_thermal_family,
     geometry_research_jacobian_factory,
     geometry_research_temperature_reconstructor,
     geometry_research_tensor_factory,
@@ -37,6 +38,7 @@ from .gates import (
     evaluate_production_readiness,
 )
 from .generator import generate_snapshots_resumable
+from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .integrators import (
     GeneralizedETD2Stepper,
     IntegrationResult,
@@ -104,6 +106,7 @@ from .vector_field import (
 
 __all__ = [
     "ActiveSubspaceReport",
+    "AffineGeometryThermalOperatorFamily",
     "CallableThermalOperatorFamily",
     "FeatureNormalizer",
     "FixedThermalOperatorFamily",
@@ -165,6 +168,7 @@ __all__ = [
     "generate_snapshot_dataset",
     "generate_snapshots_resumable",
     "geometry_research_direct_heat_factory",
+    "geometry_research_embedded_thermal_family",
     "geometry_research_jacobian_factory",
     "geometry_research_physical_signature",
     "geometry_research_temperature_reconstructor",
