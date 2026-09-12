@@ -1,13 +1,8 @@
 """Dense compiled programs for layerwise fixed-response training.
 
 A response layer is linear in its trainable amplitude block while all earlier
-layers and feature directions are frozen.  The expensive symbolic ExpPoly work
-therefore belongs to a *compile* step, not to every LM iteration/candidate.
-
-This module compiles one contiguous numeric program per active layer and working
-collocation set.  Jacobian assembly and exact candidate evaluation consume the
-same arrays.  Accepted amplitude updates do not invalidate the program because
-the signature deliberately excludes the active amplitude block.
+layers and feature directions are frozen. The expensive symbolic ExpPoly work
+therefore belongs to a compile step, not to every LM iteration/candidate.
 """
 from __future__ import annotations
 
@@ -59,7 +54,6 @@ class CompiledLayerProgram:
         return out
 
     def reconstruct(self, network, points):
-        """Return exact ``a`` and ``da/dt`` for the current amplitude vector."""
         index = self.indices_for(points)
         theta = np.asarray(network.parameters, dtype=float)[self.ids]
         a = np.asarray(self.base_a[index], dtype=float).copy()
@@ -74,7 +68,6 @@ class CompiledLayerProgram:
         return a, da
 
     def state_parameter_jacobian(self, points):
-        """Materialize the sparse-in-modes current-layer state Jacobian."""
         index = self.indices_for(points)
         count = len(index)
         n_modes = self.base_a.shape[1]
@@ -110,7 +103,6 @@ def _affine_supported(network, layer: int) -> bool:
 
 
 def layer_feature_signature(network, layer: int, ids=None) -> bytes:
-    """Hash every quantity that fixes a layer basis, excluding its amplitudes."""
     layer = int(layer)
     if ids is None:
         ids = np.asarray(network.layer_amplitude_parameter_indices(layer), dtype=int)
@@ -138,7 +130,6 @@ def _point_set_digest(points) -> bytes:
 
 
 def _activate_feature_signature(signature: bytes) -> None:
-    """Keep only programs for the currently active frozen feature bank."""
     global _ACTIVE_FEATURE_SIGNATURE
     if _ACTIVE_FEATURE_SIGNATURE != signature:
         _PROGRAM_CACHE.clear()
@@ -151,7 +142,6 @@ def _compile_program(network, points, layer, ids, signature, *, monitor=None, wo
     values = np.ascontiguousarray(np.asarray(points, dtype=float))
     targets = np.unique(np.asarray(network.layer_targets[layer], dtype=int))
     theta = np.asarray(network.parameters, dtype=float)[ids]
-    total = len(values)
     label = work_label or f"physics_layer_{layer + 1}_basis"
 
     def one(point):
@@ -208,7 +198,6 @@ def _compile_program(network, points, layer, ids, signature, *, monitor=None, wo
 
 
 def layer_program(network, points, layer, *, monitor=None, work_label=None):
-    """Return a dense exact program, compiling it once if necessary."""
     layer = int(layer)
     values = np.asarray(points, dtype=float)
     if not _affine_supported(network, layer) or len(values) == 0:
@@ -220,13 +209,8 @@ def layer_program(network, points, layer, *, monitor=None, work_label=None):
     program = _PROGRAM_CACHE.get(key)
     if program is None:
         program = _compile_program(
-            network,
-            values,
-            layer,
-            ids,
-            signature,
-            monitor=monitor,
-            work_label=work_label,
+            network, values, layer, ids, signature,
+            monitor=monitor, work_label=work_label,
         )
         _PROGRAM_CACHE[key] = program
     return program
@@ -238,16 +222,30 @@ def prewarm_layer_basis(network, points, layer, *, monitor=None, work_label=None
     ) is not None
 
 
+def _semigroup_endpoint_points(network, rows):
+    rows = np.asarray(rows, dtype=float)
+    n = network.n_modes
+    horizon = float(network.max_response_time)
+    direct = []
+    first = []
+    for row in rows:
+        initial = row[:n]
+        operating = row[n:-2]
+        t1, t2 = float(row[-2]), float(row[-1])
+        total = min(t1 + t2, horizon)
+        direct.append(np.concatenate([initial, operating, [total]]))
+        first.append(np.concatenate([initial, operating, [t1]]))
+    width = n + len(network.operating_names) + 1
+    return (
+        np.asarray(direct, dtype=float).reshape(-1, width),
+        np.asarray(first, dtype=float).reshape(-1, width),
+    )
+
+
 def evaluate_layer_physics(
-    network,
-    field,
-    points,
-    layer,
-    *,
-    monitor=None,
+    network, field, points, layer, *, monitor=None,
     work_label="physics_layer_jacobian",
 ):
-    """Exact residual plus inexact-GN Jacobian using one compiled layer program."""
     from . import research_helpers as rh
 
     points = np.asarray(points, dtype=float)
@@ -262,12 +260,8 @@ def evaluate_layer_physics(
     if program is None:
         from .fixed_physics_runtime import evaluate_layer_physics as fallback
         return fallback(
-            network,
-            field,
-            points,
-            layer,
-            monitor=monitor,
-            work_label=work_label,
+            network, field, points, layer,
+            monitor=monitor, work_label=work_label,
         )
 
     a_batch, da_batch = program.reconstruct(network, points)
@@ -277,14 +271,12 @@ def evaluate_layer_physics(
         point = points[index]
         operating = point[n:-1]
         a = a_batch[index]
-        da = da_batch[index]
         ja = ja_batch[index]
-        jda = jda_batch[index]
         F = physics_vector_field(field, a, operating)
         JFJa = rh._gn_apply_field_jacobian(field, a, operating, ja)
         return SimpleNamespace(
-            residual=np.asarray(da - F, dtype=float),
-            parameter_jacobian=np.asarray(jda - JFJa, dtype=float),
+            residual=np.asarray(da_batch[index] - F, dtype=float),
+            parameter_jacobian=np.asarray(jda_batch[index] - JFJa, dtype=float),
             parameter_indices=ids,
         )
 
@@ -295,31 +287,87 @@ def evaluate_layer_physics(
     return records, ids
 
 
-def layer_linearization(
+def evaluate_layer_semigroup(
     network,
-    field,
-    points,
-    evaluated,
+    rows,
     layer,
-    config,
+    *,
     monitor=None,
+    work_label="restart_layer_jacobian",
 ):
-    """Compile the active layer once, then select a bounded Jacobian subset."""
+    """Reuse compiled direct/first endpoints; rebuild only the dynamic restart leg.
+
+    This preserves the historical inexact restart Jacobian exactly: the explicit
+    parameter derivatives of the direct and restarted segments are included while
+    the indirect derivative through the first segment's restart state is omitted.
+    """
+    rows = np.asarray(rows, dtype=float)
+    layer = int(layer)
+    if len(rows) == 0:
+        return [], np.asarray(network.layer_amplitude_parameter_indices(layer), dtype=int)
+    direct_points, first_points = _semigroup_endpoint_points(network, rows)
+    endpoints = np.vstack([direct_points, first_points])
+    program = layer_program(
+        network,
+        endpoints,
+        layer,
+        monitor=monitor,
+        work_label=f"restart_layer_{layer + 1}_basis",
+    )
+    if program is None:
+        from .fixed_physics_runtime import evaluate_layer_semigroup as fallback
+        return fallback(
+            network, rows, layer, monitor=monitor, work_label=work_label
+        )
+
+    direct, _ = program.reconstruct(network, direct_points)
+    first, _ = program.reconstruct(network, first_points)
+    Jdirect, _ = program.state_parameter_jacobian(direct_points)
+    ids = program.ids
+    n = network.n_modes
+    horizon = float(network.max_response_time)
+
+    def one(index):
+        row = rows[index]
+        operating = row[n:-2]
+        t2 = float(row[-1])
+        restarted, _, Jrestart, _, restart_ids = network.evaluate_layer_amplitude_jacobian(
+            t2,
+            a0=first[index],
+            operating=operating,
+            layer=layer,
+        )
+        if not np.array_equal(ids, np.asarray(restart_ids, dtype=int)):
+            raise RuntimeError("restart layer parameter block changed")
+        defect = np.asarray(direct[index] - restarted, dtype=float)
+        return SimpleNamespace(
+            residual=defect / horizon,
+            raw_defect=defect,
+            parameter_jacobian=np.asarray(Jdirect[index] - Jrestart, dtype=float) / horizon,
+            parameter_indices=ids,
+        )
+
+    from . import research_helpers as rh
+    progress = None
+    if monitor is not None:
+        progress = lambda completed, total: rh._work(monitor, work_label, completed, total)
+    records = _ordered_map(one, range(len(rows)), monitor=monitor, progress=progress)
+    return records, ids
+
+
+def layer_linearization(
+    network, field, points, evaluated, layer, config, monitor=None,
+):
     from . import research_helpers as rh
 
     points = np.asarray(points, dtype=float)
     layer = int(layer)
-    # Compile the *whole* training set before selecting the Jacobian subset so
-    # candidate acceptance and every later iteration reuse the exact same arrays.
     prewarm_layer_basis(network, points, layer, monitor=monitor)
 
     budget = min(int(config.jacobian_point_budget), len(points))
-    subset = _balanced_physics_subset(
-        points, evaluated.physics_norms, budget, config
-    )
+    subset = _balanced_physics_subset(points, evaluated.physics_norms, budget, config)
     program = layer_program(network, points, layer)
     if program is not None:
-        # Evaluate a subset through the full-set program; no symbolic rebuild.
         n = network.n_modes
         _prepare_working_set(field, points)
         if len(points):
@@ -332,14 +380,12 @@ def layer_linearization(
             point = subset[index]
             operating = point[n:-1]
             a = a_batch[index]
-            da = da_batch[index]
             ja = ja_batch[index]
-            jda = jda_batch[index]
             F = physics_vector_field(field, a, operating)
             JFJa = rh._gn_apply_field_jacobian(field, a, operating, ja)
             return SimpleNamespace(
-                residual=np.asarray(da - F, dtype=float),
-                parameter_jacobian=np.asarray(jda - JFJa, dtype=float),
+                residual=np.asarray(da_batch[index] - F, dtype=float),
+                parameter_jacobian=np.asarray(jda_batch[index] - JFJa, dtype=float),
                 parameter_indices=ids,
             )
 
@@ -348,17 +394,11 @@ def layer_linearization(
             progress = lambda completed, total: rh._work(
                 monitor, f"physics_layer_{layer + 1}_jacobian", completed, total
             )
-        records = _ordered_map(
-            one, range(len(subset)), monitor=monitor, progress=progress
-        )
+        records = _ordered_map(one, range(len(subset)), monitor=monitor, progress=progress)
     else:
         records, ids = evaluate_layer_physics(
-            network,
-            field,
-            subset,
-            layer,
-            monitor=monitor,
-            work_label=f"physics_layer_{layer + 1}_jacobian",
+            network, field, subset, layer,
+            monitor=monitor, work_label=f"physics_layer_{layer + 1}_jacobian",
         )
     result = rh._combined_metrics(records, [])
     result.physics_subset = subset
@@ -372,6 +412,7 @@ def install_layer_cache_acceleration() -> None:
     if getattr(rm, "_sdfmpneo_layer_cache_acceleration", False):
         return
     rm.evaluate_layer_physics = evaluate_layer_physics
+    rm.evaluate_layer_semigroup = evaluate_layer_semigroup
     rm.layer_linearization = layer_linearization
     rm._sdfmpneo_layer_cache_acceleration = True
 
@@ -380,6 +421,7 @@ __all__ = [
     "CompiledLayerProgram",
     "clear_layer_program_cache",
     "evaluate_layer_physics",
+    "evaluate_layer_semigroup",
     "install_layer_cache_acceleration",
     "layer_feature_signature",
     "layer_linearization",
