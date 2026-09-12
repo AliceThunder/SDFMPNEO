@@ -39,6 +39,11 @@ def _etd_coefficients(lambdas: np.ndarray, step: float):
     return E, b1, b2
 
 
+def _validate_state(validator, state: np.ndarray) -> None:
+    if validator is not None:
+        validator(np.asarray(state, dtype=float))
+
+
 class GeneralizedETD2Stepper:
     """Second-order ETD for ``M a' = -K a + q(a)``.
 
@@ -71,16 +76,21 @@ class GeneralizedETD2Stepper:
     def to_modal_source(self, source: np.ndarray) -> np.ndarray:
         return self.vectors.T @ np.asarray(source, dtype=float)
 
-    def step_once(self, state: np.ndarray, source) -> np.ndarray:
-        c0 = self.to_modal_state(state)
-        q0 = np.asarray(source(np.asarray(state, dtype=float)), dtype=float)
+    def step_once(self, state: np.ndarray, source, *, state_validator=None) -> np.ndarray:
+        current = np.asarray(state, dtype=float)
+        _validate_state(state_validator, current)
+        c0 = self.to_modal_state(current)
+        q0 = np.asarray(source(current), dtype=float)
         s0 = self.to_modal_source(q0)
         c_stage = self.E * c0 + self.b1 * s0
         stage = self.from_modal_state(c_stage)
+        _validate_state(state_validator, stage)
         q1 = np.asarray(source(stage), dtype=float)
         s1 = self.to_modal_source(q1)
         c1 = c_stage + self.b2 * (s1 - s0)
-        return self.from_modal_state(c1)
+        result = self.from_modal_state(c1)
+        _validate_state(state_validator, result)
+        return result
 
 
 def integrate_etd2(
@@ -91,6 +101,7 @@ def integrate_etd2(
     geometry: np.ndarray,
     operating: np.ndarray,
     max_step: float,
+    state_validator=None,
 ) -> IntegrationResult:
     t = float(time)
     if not np.isfinite(t) or t < 0:
@@ -98,14 +109,15 @@ def integrate_etd2(
     a = np.asarray(initial_state, dtype=float).copy()
     g = np.asarray(geometry, dtype=float)
     u = np.asarray(operating, dtype=float)
-    if t == 0.0:
-        return IntegrationResult(a, 0.0, 0, ())
+    _validate_state(state_validator, a)
     hmax = float(max_step)
     if not np.isfinite(hmax) or hmax <= 0:
         raise ValueError("max_step must be finite and positive")
+    if t == 0.0:
+        return IntegrationResult(a, 0.0, 0, ())
     operator = field.thermal_operators.operator(g)
     elapsed = 0.0
-    sizes = []
+    sizes: list[float] = []
     full_stepper = GeneralizedETD2Stepper(operator, min(hmax, t))
 
     def source(x):
@@ -117,7 +129,7 @@ def integrate_etd2(
             stepper = full_stepper
         else:
             stepper = GeneralizedETD2Stepper(operator, h)
-        a = stepper.step_once(a, source)
+        a = stepper.step_once(a, source, state_validator=state_validator)
         if np.any(~np.isfinite(a)):
             raise FloatingPointError("ETD2 produced a non-finite thermal state")
         elapsed = min(t, elapsed + h)
@@ -133,40 +145,36 @@ def integrate_imex_euler(
     geometry: np.ndarray,
     operating: np.ndarray,
     max_step: float,
+    state_validator=None,
 ) -> IntegrationResult:
     """First-order robust reference: implicit thermal diffusion, explicit NN source."""
     t = float(time)
-    hmax = float(max_step)
     if not np.isfinite(t) or t < 0:
         raise ValueError("integration time must be finite and non-negative")
-    if not np.isfinite(hmax) or hmax <= 0:
+    hmax = float(max_step)
+    if not np.isfinite(hmax) or hmax <= 0.0:
         raise ValueError("max_step must be finite and positive")
     a = np.asarray(initial_state, dtype=float).copy()
     g = np.asarray(geometry, dtype=float)
     u = np.asarray(operating, dtype=float)
+    _validate_state(state_validator, a)
     if t == 0.0:
         return IntegrationResult(a, 0.0, 0, ())
     operator = field.thermal_operators.operator(g)
-    elapsed, sizes = 0.0, []
-    factor_cache: dict[float, tuple[np.ndarray, bool]] = {}
+    elapsed = 0.0
+    sizes: list[float] = []
     while elapsed < t:
         h = min(hmax, t - elapsed)
         q = field.heat_source(a, g, u)
-        # Cache Cholesky factors for the repeated full step and optional final step.
-        key = float(h)
-        factor = factor_cache.get(key)
-        if factor is None:
-            factor = scipy.linalg.cho_factor(
-                operator.mass + h * operator.stiffness,
-                lower=True,
-                check_finite=True,
-            )
-            factor_cache[key] = factor
-        a = scipy.linalg.cho_solve(
-            factor,
+        a = scipy.linalg.solve(
+            operator.mass + h * operator.stiffness,
             operator.mass @ a + h * q,
+            assume_a="pos",
             check_finite=True,
         )
+        _validate_state(state_validator, a)
+        if np.any(~np.isfinite(a)):
+            raise FloatingPointError("IMEX produced a non-finite thermal state")
         elapsed = min(t, elapsed + h)
         sizes.append(float(h))
     return IntegrationResult(a, t, len(sizes), tuple(sizes))
@@ -181,23 +189,30 @@ def integrate_reference(
     operating: np.ndarray,
     rtol: float = 1e-9,
     atol: float = 1e-11,
+    state_validator=None,
 ) -> IntegrationResult:
     """High-accuracy solve_ivp oracle for validating production integrators."""
     t = float(time)
-    if not np.isfinite(t) or t < 0:
+    if not np.isfinite(t) or t < 0.0:
         raise ValueError("integration time must be finite and non-negative")
     a0 = np.asarray(initial_state, dtype=float)
+    g = np.asarray(geometry, dtype=float)
+    u = np.asarray(operating, dtype=float)
+    _validate_state(state_validator, a0)
     if t == 0.0:
         return IntegrationResult(a0.copy(), 0.0, 0, ())
 
     def rhs(_t, state):
-        return field.vector_field(state, geometry, operating)
+        _validate_state(state_validator, state)
+        return field.vector_field(state, g, u)
 
     solution = solve_ivp(rhs, (0.0, t), a0, method="Radau", rtol=rtol, atol=atol)
     if not solution.success:
         raise RuntimeError(solution.message)
+    final = np.asarray(solution.y[:, -1], dtype=float)
+    _validate_state(state_validator, final)
     return IntegrationResult(
-        np.asarray(solution.y[:, -1], dtype=float),
+        final,
         t,
         max(0, len(solution.t) - 1),
         tuple(float(v) for v in np.diff(solution.t)),
