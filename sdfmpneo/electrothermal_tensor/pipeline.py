@@ -70,7 +70,16 @@ def _fit_pod(dataset, *, rank, tolerance, pod_config=None):
     )
 
 
-def _train(dataset, pod, operating_lower, operating_upper, network_config, training_config):
+def _train(
+    dataset,
+    pod,
+    operating_lower,
+    operating_upper,
+    network_config,
+    training_config,
+    *,
+    device: str | None = None,
+):
     network = _network_config(
         network_config,
         input_dimension=dataset.thermal_rank + dataset.geometry_dimension,
@@ -83,6 +92,7 @@ def _train(dataset, pod, operating_lower, operating_upper, network_config, train
         operating_upper=np.asarray(operating_upper, dtype=float),
         network_config=network,
         training_config=_training_config(training_config),
+        device=device,
     )
 
 
@@ -125,6 +135,7 @@ def retrain_neural_rom(
     pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
+    device: str | None = None,
     save_model: bool = True,
     model_filename: str = "neural_electrothermal_rom.retrained.npz",
 ) -> PipelineResult:
@@ -153,6 +164,7 @@ def retrain_neural_rom(
         domain["operating_upper"],
         network_config,
         training_config,
+        device=device,
     )
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
@@ -187,6 +199,7 @@ def build_fixed_neural_rom(
     pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
+    device: str | None = None,
     save_model: bool = True,
     snapshot_workers: int = 1,
     checkpoint_every: int = 16,
@@ -227,7 +240,15 @@ def build_fixed_neural_rom(
         ),
     )
     pod = _fit_pod(dataset, rank=pod_rank, tolerance=pod_relative_tail_tolerance, pod_config=pod_config)
-    surrogate, report = _train(dataset, pod, operating_lower, operating_upper, network_config, training_config)
+    surrogate, report = _train(
+        dataset,
+        pod,
+        operating_lower,
+        operating_upper,
+        network_config,
+        training_config,
+        device=device,
+    )
     domain = _training_domain(dataset)
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
@@ -260,6 +281,7 @@ def build_geometry_neural_rom(
     pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
+    device: str | None = None,
     save_model: bool = True,
     snapshot_workers: int = 1,
     checkpoint_every: int = 16,
@@ -302,7 +324,15 @@ def build_geometry_neural_rom(
         ),
     )
     pod = _fit_pod(dataset, rank=pod_rank, tolerance=pod_relative_tail_tolerance, pod_config=pod_config)
-    surrogate, report = _train(dataset, pod, operating_lower, operating_upper, network_config, training_config)
+    surrogate, report = _train(
+        dataset,
+        pod,
+        operating_lower,
+        operating_upper,
+        network_config,
+        training_config,
+        device=device,
+    )
     domain = _training_domain(dataset)
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
