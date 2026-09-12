@@ -69,7 +69,6 @@ def benchmark_vector_field(field, state, geometry, operating, *, repeats: int = 
     a = np.asarray(state, dtype=float)
     g = np.asarray(geometry, dtype=float)
     u = np.asarray(operating, dtype=float)
-    # One unmeasured warmup is useful for torch kernel/module initialization.
     field.vector_field(a, g, u)
     return benchmark_calls(
         (lambda: field.vector_field(a, g, u) for _ in range(repeats))
@@ -84,19 +83,32 @@ def benchmark_trajectory_queries(
     geometry,
     operating,
     max_step,
+    method: str = "etd2",
+    predict_options: dict | None = None,
+    repeats: int = 3,
 ) -> dict[float, TimingStats]:
+    """Benchmark exactly the integrator/options intended for deployment."""
+    repeats = int(repeats)
+    if repeats < 1:
+        raise ValueError("repeats must be positive")
+    options = {} if predict_options is None else dict(predict_options)
     result = {}
     for time in times:
         t = float(time)
-        call = lambda t=t: model.predict(
-            t,
-            initial_state=initial_state,
-            geometry=geometry,
-            operating=operating,
-            max_step=max_step,
-        )
+
+        def call(t=t):
+            return model.predict(
+                t,
+                initial_state=initial_state,
+                geometry=geometry,
+                operating=operating,
+                max_step=max_step,
+                method=method,
+                **options,
+            )
+
         call()
-        result[t] = benchmark_calls([call, call, call])
+        result[t] = benchmark_calls([call for _ in range(repeats)])
     return result
 
 
