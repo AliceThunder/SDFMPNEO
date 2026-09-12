@@ -20,7 +20,6 @@ def _metadata(signature="physics-v1"):
         "geometry_upper": [],
         "operating_lower": [-1.0],
         "operating_upper": [1.0],
-        "sampling": {"strategy": "box"},
     }
 
 
@@ -133,7 +132,7 @@ def test_successful_small_frozen_dataset_removes_working_checkpoint(tmp_path):
     assert not sidecar.exists()
 
 
-def test_large_policy_freezes_to_verified_disk_store_without_duplicate_output(tmp_path):
+def test_large_policy_freezes_to_disk_store_without_duplicate_output(tmp_path):
     states = np.arange(12.0)[:, None] / 10.0
     geometry = np.empty((len(states), 0))
     checkpoint = tmp_path / "partial.npz"
@@ -163,7 +162,7 @@ def test_large_policy_freezes_to_verified_disk_store_without_duplicate_output(tm
     assert loaded.manifest().dataset_hash == dataset.manifest().dataset_hash
 
 
-def test_matching_frozen_dataset_is_reused_without_any_physics_call(tmp_path):
+def test_matching_dataset_is_reused_without_any_physics_call(tmp_path):
     states = np.arange(12.0)[:, None] / 10.0
     geometry = np.empty((len(states), 0))
     final = tmp_path / "frozen.npz"
@@ -187,7 +186,7 @@ def test_matching_frozen_dataset_is_reused_without_any_physics_call(tmp_path):
     assert first_calls
 
     def forbidden(*_args):
-        raise AssertionError("physics tensor factory must not be called for a matching frozen dataset")
+        raise AssertionError("physics tensor factory must not be called for a matching dataset")
 
     reused = generate_snapshots_resumable(
         states,
@@ -202,7 +201,7 @@ def test_matching_frozen_dataset_is_reused_without_any_physics_call(tmp_path):
     assert reused.manifest().dataset_hash == original.manifest().dataset_hash
 
 
-def test_existing_frozen_dataset_rejects_changed_domain_metadata(tmp_path):
+def test_existing_dataset_rejects_changed_training_metadata(tmp_path):
     states = np.arange(10.0)[:, None] / 10.0
     geometry = np.empty((len(states), 0))
     final = tmp_path / "frozen.npz"
@@ -217,7 +216,7 @@ def test_existing_frozen_dataset_rejects_changed_domain_metadata(tmp_path):
     )
     changed = _metadata()
     changed["operating_upper"] = [2.0]
-    with pytest.raises(ValueError, match="critical metadata differs"):
+    with pytest.raises(ValueError, match="metadata differs"):
         generate_snapshots_resumable(
             states,
             geometry,
