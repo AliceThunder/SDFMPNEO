@@ -26,6 +26,18 @@ def _sidecar_path(path: Path) -> Path:
     return path.with_name(path.name + ".tensors.npy")
 
 
+def _validate_tensor_shape(tensor_shape, thermal_rank: int) -> tuple[int, int, int]:
+    shape = tuple(int(v) for v in tensor_shape)
+    if (
+        len(shape) != 3
+        or shape[0] != int(thermal_rank)
+        or shape[1] < 1
+        or shape[1] != shape[2]
+    ):
+        raise ValueError("partial snapshot checkpoint tensor shape is incompatible")
+    return shape
+
+
 def _atomic_checkpoint(
     path: Path,
     *,
@@ -114,6 +126,8 @@ def generate_snapshots_resumable(
     g = np.asarray(geometries, dtype=float)
     if a.ndim != 2 or g.ndim != 2 or len(a) != len(g) or len(a) < 1:
         raise ValueError("states/geometries must be aligned nonempty matrices")
+    if np.any(~np.isfinite(a)) or np.any(~np.isfinite(g)):
+        raise ValueError("snapshot sample locations must be finite")
     checkpoint_every = int(checkpoint_every)
     max_workers = int(max_workers)
     if checkpoint_every < 1 or max_workers < 1:
@@ -132,18 +146,18 @@ def generate_snapshots_resumable(
             saved_signature = str(data["physical_signature"])
             if saved_signature != ("" if expected_signature is None else expected_signature):
                 raise ValueError("partial snapshot checkpoint physical signature differs")
-            tensor_shape = tuple(np.asarray(data["tensor_shape"], dtype=int).tolist())
+            tensor_shape = _validate_tensor_shape(
+                np.asarray(data["tensor_shape"], dtype=int).tolist(),
+                a.shape[1],
+            )
             completed = np.asarray(data["completed"], dtype=bool)
         if completed.shape != (len(a),):
             raise ValueError("partial snapshot checkpoint is malformed")
-        tensors = np.lib.format.open_memmap(
-            sidecar,
-            mode="r+",
-            dtype=np.float64,
-            shape=(len(a),) + tensor_shape,
-        )
-        if tensors.shape[0] != len(a):
-            raise ValueError("partial snapshot tensor sidecar is malformed")
+        tensors = np.lib.format.open_memmap(sidecar, mode="r+")
+        expected_full_shape = (len(a),) + tensor_shape
+        if tensors.dtype != np.dtype(np.float64) or tensors.shape != expected_full_shape:
+            _close_memmap(tensors)
+            raise ValueError("partial snapshot tensor sidecar shape/dtype is malformed")
 
     pending = np.flatnonzero(~completed)
     if tensors is None:
@@ -152,11 +166,12 @@ def generate_snapshots_resumable(
         if (
             first_tensor.ndim != 3
             or first_tensor.shape[0] != a.shape[1]
+            or first_tensor.shape[1] < 1
             or first_tensor.shape[-1] != first_tensor.shape[-2]
             or np.any(~np.isfinite(first_tensor))
         ):
             raise ValueError("tensor_factory returned an incompatible tensor")
-        tensor_shape = first_tensor.shape
+        tensor_shape = _validate_tensor_shape(first_tensor.shape, a.shape[1])
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         tensors = np.lib.format.open_memmap(
             sidecar,
