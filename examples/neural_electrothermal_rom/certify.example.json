@@ -1,0 +1,58 @@
+{
+  "physical_config": "../../results/uwpt/model.config.json",
+  "model_path": "../../results/uwpt/neural_rom/model.npz",
+  "dataset_path": "../../results/uwpt/neural_rom/quadratic_joule_dataset.npz",
+  "output": "../../results/uwpt/neural_rom/certification.report.json",
+  "audited_model_output": "../../results/uwpt/neural_rom/model.audited.npz",
+  "certified_model_output": "../../results/uwpt/neural_rom/model.certified.npz",
+  "device": "cpu",
+  "operating_lower": [0.0, 0.0],
+  "operating_upper": [10.0, 10.0],
+  "budgets": {
+    "quadratic_identity_max_relative": 1e-10,
+    "heat_max_relative": 0.01,
+    "vector_field_max_relative": 0.01,
+    "trajectory_max_coordinate_error": 0.01,
+    "trajectory_max_temperature_error": 0.5,
+    "vector_field_seconds": 0.01,
+    "trajectory_query_seconds": 1.0
+  },
+  "gate_config": {
+    "pod_ranks": [8, 16, 32, 64, 128],
+    "operating_samples_per_state": 4,
+    "active_subspace_sample_count": 2,
+    "active_subspace_relative_step": 1e-5,
+    "active_subspace_mode": "full",
+    "benchmark_repeats": 50,
+    "trajectory_benchmark_repeats": 3,
+    "seed": 31
+  },
+  "trajectory_cases": [
+    {
+      "name": "center-short",
+      "times": [0.0, 0.001, 0.01, 0.1, 1.0],
+      "initial_state": [0.0, 0.0],
+      "operating": [5.0, 0.0],
+      "neural_max_step": 1.0,
+      "neural_method": "etd2_adaptive",
+      "neural_rtol": 1e-6,
+      "neural_atol": 1e-9,
+      "neural_initial_step": 0.0001,
+      "long_time_check": false
+    },
+    {
+      "name": "corner-long",
+      "times": [0.0, 1.0, 10.0, 100.0, 1000.0],
+      "initial_state": [0.0, 0.0],
+      "operating": [10.0, 10.0],
+      "neural_max_step": 100.0,
+      "neural_method": "etd2_adaptive",
+      "neural_rtol": 1e-5,
+      "neural_atol": 1e-8,
+      "neural_initial_step": 0.001,
+      "long_time_check": true
+    }
+  ],
+  "reproducible_training": false,
+  "persistence_roundtrip": false
+}
