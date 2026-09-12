@@ -102,6 +102,8 @@ def _require_zero_geometry_reference_forcing(model) -> None:
     ).reshape(-1)
     if forcing.shape != (model.thermal_model.rank,):
         raise ValueError("geometry reference thermal forcing dimension mismatch")
+    if np.any(~np.isfinite(forcing)):
+        raise ValueError("geometry reference thermal forcing must be finite")
     if np.any(forcing != 0.0):
         raise NotImplementedError(
             "geometry-dependent mapping of nonzero thermal forcing has not been derived; "
@@ -110,6 +112,8 @@ def _require_zero_geometry_reference_forcing(model) -> None:
 
 
 def geometry_research_tensor_factory(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
+
     def factory(state, geometry):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         return quadratic_joule_tensor(context.em, state, context.rhs)
@@ -118,6 +122,8 @@ def geometry_research_tensor_factory(model, *, normalized_geometry: bool = True)
 
 
 def geometry_research_direct_heat_factory(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
+
     def factory(state, geometry, operating):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         rhs = context.rhs.evaluate(np.asarray(operating, dtype=float))
@@ -153,6 +159,8 @@ def geometry_research_jacobian_factory(model, *, normalized_geometry: bool = Tru
 
 
 def geometry_research_temperature_reconstructor(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
+
     def reconstruct(state, geometry):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         if hasattr(model, "reference") and hasattr(model.reference, "temperature"):
