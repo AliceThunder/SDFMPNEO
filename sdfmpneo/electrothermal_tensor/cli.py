@@ -67,6 +67,13 @@ def _build_physical_model(config_path: str | Path):
     return model
 
 
+def _dataset_artifact_path(dataset, work: Path) -> Path:
+    directory = getattr(dataset, "directory", None)
+    if directory is not None:
+        return Path(directory)
+    return work / "quadratic_joule_dataset.npz"
+
+
 def _adapters(physical_model):
     from .adapters import (
         fixed_research_direct_heat_factory,
@@ -125,11 +132,13 @@ def command_train(config_file: str | Path) -> int:
         seed=int(config.get("seed", 0)),
         pod_rank=config.get("pod_rank"),
         pod_relative_tail_tolerance=float(config.get("pod_relative_tail_tolerance", 1e-4)),
+        pod_config=config.get("pod"),
         network_config=config.get("network"),
         training_config=config.get("training"),
         save_model=False,
         snapshot_workers=int(config.get("snapshot_workers", 1)),
         checkpoint_every=int(config.get("checkpoint_every", 16)),
+        snapshot_disk_threshold_bytes=int(config.get("snapshot_disk_threshold_bytes", 256 << 20)),
         sampling_config=config.get("sampling"),
     )
     from .pipeline import build_fixed_neural_rom, build_geometry_neural_rom
@@ -142,10 +151,12 @@ def command_train(config_file: str | Path) -> int:
         )
     else:
         result = build_fixed_neural_rom(physical, **common)
+    dataset_path = _dataset_artifact_path(result.dataset, work)
     result.model.save(
         model_path,
         metadata={
             "dataset_hash": result.dataset.manifest().dataset_hash,
+            "dataset_path": str(dataset_path),
             "pod_rank": result.pod.rank,
             "training_report": _jsonable(result.training_report),
             "sampling": _jsonable(result.sampling_report),
@@ -156,6 +167,7 @@ def command_train(config_file: str | Path) -> int:
         report_path,
         {
             "model": str(model_path),
+            "dataset": str(dataset_path),
             "work_directory": str(work),
             "physical_signature": result.physical_signature,
             "dataset_manifest": result.dataset.manifest(),
@@ -166,6 +178,7 @@ def command_train(config_file: str | Path) -> int:
         },
     )
     print(f"neural ROM saved: {model_path}")
+    print(f"frozen tensor dataset: {dataset_path}")
     print(f"training report: {report_path}")
     return 0
 
@@ -202,6 +215,7 @@ def command_retrain(config_file: str | Path) -> int:
         work_directory=work,
         pod_rank=config.get("pod_rank"),
         pod_relative_tail_tolerance=float(config.get("pod_relative_tail_tolerance", 1e-4)),
+        pod_config=config.get("pod"),
         network_config=config.get("network"),
         training_config=config.get("training"),
         save_model=False,
@@ -210,6 +224,7 @@ def command_retrain(config_file: str | Path) -> int:
         model_path,
         metadata={
             "dataset_hash": dataset.manifest().dataset_hash,
+            "dataset_path": str(dataset_path),
             "pod_rank": result.pod.rank,
             "training_report": _jsonable(result.training_report),
             "retrained_without_em": True,
