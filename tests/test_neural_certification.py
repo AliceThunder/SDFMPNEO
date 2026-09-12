@@ -6,6 +6,7 @@ from sdfmpneo.electrothermal_tensor.certification import (
     audit_evidence,
     gate_report_hash,
     save_audited_model,
+    training_reproducibility_evidence,
 )
 
 
@@ -46,8 +47,9 @@ class _Report:
 
 
 class _FakeModel:
-    def __init__(self):
+    def __init__(self, artifact_metadata=None):
         self.calls = []
+        self.artifact_metadata = {} if artifact_metadata is None else dict(artifact_metadata)
 
     def save(self, path, *, metadata=None):
         self.calls.append((path, metadata))
@@ -73,6 +75,35 @@ def _report(*, ready: bool):
     )
 
 
+def _complete_training_metadata(dataset_hash="dataset-123"):
+    return {
+        "dataset_hash": dataset_hash,
+        "training_report": {
+            "optimizer": "AdamW",
+            "learning_rate_schedule": "constant",
+            "training_config": {
+                "seed": 7,
+                "epochs": 20,
+                "batch_size": 8,
+                "learning_rate": 1e-3,
+                "weight_decay": 1e-6,
+                "dtype": "float32",
+                "mixed_precision": False,
+            },
+            "network_config": {"width": 16, "blocks": 2},
+            "mixed_precision": False,
+            "environment": {
+                "git_revision": "abc123",
+                "python": "3.12.0",
+                "numpy": "2.0.0",
+                "scipy": "1.14.0",
+                "torch": "2.4.0",
+                "requested_device": "cpu",
+            },
+        },
+    }
+
+
 def test_gate_report_hash_is_deterministic_and_evidence_binds_dataset():
     report = _report(ready=True)
     first = gate_report_hash(report)
@@ -90,6 +121,34 @@ def test_gate_report_hash_is_deterministic_and_evidence_binds_dataset():
     assert evidence["production_ready"] is True
     assert evidence["incomplete"] is False
     assert evidence["active_subspace"]["method"] == "full"
+
+
+def test_training_reproducibility_is_derived_from_saved_evidence_and_dataset_hash():
+    model = _FakeModel(_complete_training_metadata())
+    evidence = training_reproducibility_evidence(
+        model,
+        expected_dataset_hash="dataset-123",
+    )
+    assert evidence["complete"] is True
+    assert evidence["missing"] == []
+    assert evidence["dataset_hash_matches"] is True
+    assert evidence["training_seed"] == 7
+    assert evidence["optimizer"] == "AdamW"
+
+    mismatch = training_reproducibility_evidence(
+        model,
+        expected_dataset_hash="different-dataset",
+    )
+    assert mismatch["complete"] is False
+    assert mismatch["dataset_hash_matches"] is False
+    assert "dataset_hash_match" in mismatch["missing"]
+
+
+def test_training_reproducibility_fails_closed_when_provenance_is_missing():
+    evidence = training_reproducibility_evidence(_FakeModel(), expected_dataset_hash="dataset-123")
+    assert evidence["complete"] is False
+    assert "training_report" in evidence["missing"]
+    assert "dataset_hash_match" in evidence["missing"]
 
 
 def test_certified_model_requires_ready_report_but_audited_copy_does_not():
@@ -121,6 +180,7 @@ def test_certified_model_requires_ready_report_but_audited_copy_does_not():
 def test_ready_report_can_create_certified_model_metadata():
     report = _report(ready=True)
     model = _FakeModel()
+    reproducibility = {"complete": True, "training_seed": 7}
     saved = save_audited_model(
         model,
         "certified.npz",
@@ -128,8 +188,10 @@ def test_ready_report_can_create_certified_model_metadata():
         dataset_hash="dataset-123",
         report_path="report.json",
         require_ready=True,
+        reproducibility_evidence=reproducibility,
     )
     assert saved == "certified.npz"
     metadata = model.calls[-1][1]["certification"]
     assert metadata["production_ready"] is True
     assert metadata["dataset_hash"] == "dataset-123"
+    assert metadata["training_reproducibility"]["complete"] is True
