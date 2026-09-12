@@ -117,10 +117,10 @@ def generate_snapshots_resumable(
     """Generate ``svec(G(a,g))`` snapshots with bounded RAM and checkpoint I/O.
 
     Each physics tensor is packed immediately and written once to a memmapped NPY
-    sidecar.  Resume is bound to the exact sample arrays and physical signature.
-    On completion, small datasets freeze to the legacy compact NPZ backend;
-    datasets whose packed output matrix exceeds ``disk_backed_threshold_bytes``
-    are frozen as a directory-backed read-only memmap store.
+    sidecar. Resume is bound to the exact sample arrays and physical signature.
+    On completion, small datasets freeze to the compact NPZ backend; datasets
+    whose packed output matrix exceeds ``disk_backed_threshold_bytes`` are frozen
+    as a directory-backed read-only memmap store.
     """
     a = np.asarray(states, dtype=np.float64)
     g = np.asarray(geometries, dtype=np.float64)
@@ -262,7 +262,7 @@ def generate_snapshots_resumable(
             store_path,
             states=a,
             geometries=g,
-            outputs=np.empty((len(a), output_width), dtype=np.float64),
+            outputs=None,
             split=split,
             thermal_rank=a.shape[1],
             current_dimension=current_dimension,
