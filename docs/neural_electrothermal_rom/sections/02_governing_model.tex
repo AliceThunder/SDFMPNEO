@@ -1,0 +1,74 @@
+\section{完整物理系统与降阶动力学}
+
+\subsection{频域电磁问题}
+对给定热状态 $a$、几何参数 $g$ 和电流参数 $u$，频域电磁问题抽象为
+\begin{equation}
+A_{\mathrm{em}}(a,g)x=b(g,u),
+\end{equation}
+其中 $x\in\C^{n_{\mathrm{em}}}$ 为电磁自由度。温度通过材料电导率 $\sigma(T)$ 进入 $A_{\mathrm{em}}$。对目标工作域假设：
+\begin{equation}
+\sigma_{\min}(A_{\mathrm{em}}(a,g))\ge \eta>0,
+\end{equation}
+从而电磁解在该域内唯一且对 $(a,g)$ 平滑依赖。
+
+\subsection{热方程与热降阶坐标}
+完整热方程写为
+\begin{equation}
+M_T(g)\dot T+K_T(g)T=Q(T,g,u).
+\end{equation}
+采用共享热基 $\Phi$，令
+\begin{equation}
+T=T_{\mathrm{ref}}+\Phi a.
+\end{equation}
+投影后得到
+\begin{equation}
+\boxed{
+M_r(g)\dot a=-K_r(g)a+q(a,g,u)
+}
+\label{eq:reduced-thermal}
+\end{equation}
+其中
+\begin{equation}
+M_r(g)=\Phi^\top M_T(g)\Phi,
+\qquad
+K_r(g)=\Phi^\top K_T(g)\Phi.
+\end{equation}
+
+在参考几何下，如果 $\Phi$ 为 $M$-正交热特征模态，则
+\begin{equation}
+M_r=I,
+\qquad
+K_r=\Lambda=\operatorname{diag}(\lambda_1,\ldots,\lambda_r).
+\end{equation}
+对变化几何，不要求 $M_r(g)=I$ 或 $K_r(g)=\Lambda$；真实几何依赖应保留在动力学中，而不是让神经网络重新学习。
+
+\subsection{统一向量场}
+定义真实降阶向量场
+\begin{equation}
+F(a,g,u)
+=
+M_r(g)^{-1}\left[-K_r(g)a+q(a,g,u)\right].
+\end{equation}
+新方案的目标不是直接学习其流映射，而是仅学习其中计算代价高、但结构明确的 Joule 热源部分 $q$。
+
+\subsection{共享热基跨几何使用的理论要求}
+为了使参考热坐标在几何参数域 $\mathcal G$ 内具有统一意义，应验证存在常数
+$m_-,m_+,k_-,k_+>0$ 使
+\begin{equation}
+m_-M_0\preceq M_T(g)\preceq m_+M_0,
+\qquad
+k_-K_0\preceq K_T(g)\preceq k_+K_0,
+\quad \forall g\in\mathcal G.
+\end{equation}
+该谱等价条件不是神经网络训练的前提代码接口，但它是跨几何误差界、统一范数和稳定性分析的重要理论基础。
+
+\subsection{热模态截断误差}
+热 ROM 误差与神经网络误差必须分开管理。若第一被截断特征值为 $\lambda_{r+1}$，并有统一热源对偶范数上界 $Q_*$，则典型尾部估计为
+\begin{equation}
+\norm{T_{\mathrm{tail}}(t)}_M
+\le
+\mathrm e^{-\lambda_{r+1}t}E_0
++
+\frac{1-\mathrm e^{-\lambda_{r+1}t}}{\lambda_{r+1}}Q_*.
+\end{equation}
+只有当 $Q_*$ 是目标参数域上的严格上界时，该式才构成严格 certificate；有限采样 envelope 只能称为经验 rank diagnostic。
