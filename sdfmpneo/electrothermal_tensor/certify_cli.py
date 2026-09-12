@@ -6,7 +6,13 @@ from pathlib import Path
 
 import numpy as np
 
-from .certification import audit_evidence, gate_report_hash, save_audited_model
+from .certification import (
+    audit_evidence,
+    gate_report_hash,
+    save_audited_model,
+    training_reproducibility_evidence,
+    verify_model_persistence_roundtrip,
+)
 from .cli import _adapters, _build_physical_model, _path_from_config, _read_json, _write_json
 
 
@@ -37,10 +43,11 @@ def command_audit(config_file: str | Path) -> int:
     from .gates import ProductionBudgets
     from .model import StructurePreservingNeuralElectroThermalROM
 
+    device = str(config.get("device", "cpu"))
     model = StructurePreservingNeuralElectroThermalROM.load(
         model_path,
         expected_physical_signature=adapters["signature"],
-        device=str(config.get("device", "cpu")),
+        device=device,
     )
     dataset = QuadraticJouleDataset.load(dataset_path)
     manifest = dataset.manifest()
@@ -49,6 +56,20 @@ def command_audit(config_file: str | Path) -> int:
     trained_dataset_hash = model.artifact_metadata.get("dataset_hash")
     if trained_dataset_hash is not None and str(trained_dataset_hash) != manifest.dataset_hash:
         raise ValueError("model was trained from a different frozen tensor dataset")
+
+    # Formal certification never trusts manually supplied booleans for these two
+    # gates.  Reproducibility is inferred from the persisted training evidence,
+    # and persistence is tested by a real save -> load -> numerical comparison.
+    reproducibility = training_reproducibility_evidence(
+        model,
+        expected_dataset_hash=manifest.dataset_hash,
+    )
+    roundtrip = verify_model_persistence_roundtrip(
+        model,
+        device=device,
+        rtol=float(config.get("roundtrip_rtol", 1e-12)),
+        atol=float(config.get("roundtrip_atol", 1e-12)),
+    )
 
     cases = tuple(
         TrajectoryAuditCase(
@@ -87,14 +108,16 @@ def command_audit(config_file: str | Path) -> int:
         budgets=ProductionBudgets(**config["budgets"]),
         temperature_reconstructor=adapters["temperature"],
         config=GateSuiteConfig(**config.get("gate_config", {})),
-        reproducible_training=bool(config.get("reproducible_training", False)),
-        persistence_roundtrip=bool(config.get("persistence_roundtrip", False)),
+        reproducible_training=bool(reproducibility["complete"]),
+        persistence_roundtrip=bool(roundtrip.passed),
     )
     report_hash = gate_report_hash(report)
     evidence = audit_evidence(
         report,
         dataset_hash=manifest.dataset_hash,
         report_path=output_path,
+        reproducibility_evidence=reproducibility,
+        persistence_roundtrip=roundtrip,
     )
     envelope = {
         "kind": "neural_electrothermal_certification",
@@ -105,19 +128,26 @@ def command_audit(config_file: str | Path) -> int:
         "dataset_hash": manifest.dataset_hash,
         "gate_report_hash": report_hash,
         "production_ready": bool(report.readiness.ready),
+        "training_reproducibility": reproducibility,
+        "persistence_roundtrip": roundtrip,
         "evidence": evidence,
         "report": report,
     }
     _write_json(output_path, envelope)
 
+    save_kwargs = dict(
+        dataset_hash=manifest.dataset_hash,
+        report_path=output_path,
+        reproducibility_evidence=reproducibility,
+        persistence_roundtrip=roundtrip,
+    )
     if audited_model_path is not None:
         save_audited_model(
             model,
             audited_model_path,
             report,
-            dataset_hash=manifest.dataset_hash,
-            report_path=output_path,
             require_ready=False,
+            **save_kwargs,
         )
         print(f"audited model saved: {audited_model_path}")
     if certified_model_path is not None:
@@ -126,9 +156,8 @@ def command_audit(config_file: str | Path) -> int:
                 model,
                 certified_model_path,
                 report,
-                dataset_hash=manifest.dataset_hash,
-                report_path=output_path,
                 require_ready=True,
+                **save_kwargs,
             )
             print(f"certified model saved: {certified_model_path}")
         else:
@@ -136,6 +165,8 @@ def command_audit(config_file: str | Path) -> int:
 
     print(f"certification report saved: {output_path}")
     print(f"gate report hash: {report_hash}")
+    print(f"training provenance complete: {reproducibility['complete']}")
+    print(f"persistence roundtrip passed: {roundtrip.passed}")
     print(f"production ready: {report.readiness.ready}")
     return 0 if report.readiness.ready else 2
 
