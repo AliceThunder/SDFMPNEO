@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 import scipy.linalg
 import scipy.sparse as sp
 
 from sdfmpneo.spatial.barycentric_polynomial import (
-    integrate_polynomial_times_lambda_pair,
+    _unit_simplex_moment,
     polynomial_multiply,
     polynomial_p1,
 )
@@ -17,8 +19,24 @@ from .sparse_reduced import (
 )
 
 
+@lru_cache(maxsize=8192)
+def _unit_pair_moment_matrix(powers: tuple[int, int, int, int]) -> np.ndarray:
+    """Unit-volume matrix of integral lambda_i lambda_j lambda^powers."""
+    result = np.empty((4, 4), dtype=float)
+    for i in range(4):
+        for j in range(i, 4):
+            augmented = list(powers)
+            augmented[i] += 1
+            augmented[j] += 1
+            value = _unit_simplex_moment(tuple(int(v) for v in augmented))
+            result[i, j] = value
+            result[j, i] = value
+    result.setflags(write=False)
+    return result
+
+
 class _ReducedNedelecAssembler:
-    """Exact element assembly of W^H M(sigma) W without building global M."""
+    """Exact direct-reduced Nedelec assembly with vectorized element chunks."""
 
     def __init__(self, mesh, edge_fields: np.ndarray) -> None:
         fields = np.asarray(edge_fields, dtype=complex)
@@ -26,56 +44,78 @@ class _ReducedNedelecAssembler:
             raise ValueError("edge_fields must have shape (n_edges,n_reduced)")
         self.mesh = mesh
         self.fields = fields
-        self._local = []
+        coefficients = np.zeros((mesh.n_tetrahedra, 6, 4, 3), dtype=float)
         for q, tet in enumerate(mesh.tetrahedra):
             gradients = _barycentric_gradients(mesh.vertices, tet)
-            local_pairs = mesh._local_edge_vertex_indices(tet)
-            coefficients = np.zeros((6, 4, 3))
-            for p, (i, j) in enumerate(local_pairs):
-                coefficients[p, i] = gradients[j]
-                coefficients[p, j] = -gradients[i]
-            edges = mesh.tet_edge_indices[q]
-            self._local.append((float(mesh.volumes[q]), coefficients, fields[edges]))
+            for p, (i, j) in enumerate(mesh._local_edge_vertex_indices(tet)):
+                coefficients[q, p, i] = gradients[j]
+                coefficients[q, p, j] = -gradients[i]
+        self._coefficients = np.ascontiguousarray(coefficients)
+        self._volumes = np.ascontiguousarray(mesh.volumes, dtype=float)
+        self._local_fields = np.ascontiguousarray(
+            fields[np.asarray(mesh.tet_edge_indices, dtype=int)], dtype=complex
+        )
 
     @staticmethod
     def _moments(volume, poly):
-        moments = np.empty((4, 4))
-        for i in range(4):
-            for j in range(i, 4):
-                moments[i, j] = moments[j, i] = integrate_polynomial_times_lambda_pair(
-                    volume, poly, i, j
-                )
-        return moments
+        # Geometry contributes only the scalar volume.  Every polynomial monomial
+        # reuses a cached unit-simplex 4x4 pair-moment kernel instead of performing
+        # ten Python-level integrations independently.
+        moments = np.zeros((4, 4), dtype=float)
+        for powers, coefficient in poly.items():
+            moments += float(coefficient) * _unit_pair_moment_matrix(
+                tuple(int(v) for v in powers)
+            )
+        return float(volume) * moments
 
     @staticmethod
     def _reduced_local(coefficients, fields, moments):
         local = np.einsum("pik,ij,qjk->pq", coefficients, moments, coefficients)
         return fields.conj().T @ (local @ fields)
 
-    def assemble_many(self, tetra_polynomial_families) -> np.ndarray:
-        """Assemble several exact polynomial weights in one tetrahedral sweep."""
-        families = tuple(tuple(values) for values in tetra_polynomial_families)
-        for polynomials in families:
-            if len(polynomials) != self.mesh.n_tetrahedra:
-                raise ValueError("one polynomial is required for every tetrahedron")
+    def _assemble_family(self, polynomials) -> np.ndarray:
+        if len(polynomials) != self.mesh.n_tetrahedra:
+            raise ValueError("one polynomial is required for every tetrahedron")
         n = self.fields.shape[1]
-        reduced = np.zeros((len(families), n, n), dtype=complex)
-        for q, (volume, coefficients, fields) in enumerate(self._local):
-            for family, polynomials in enumerate(families):
-                poly = polynomials[q]
-                if not poly:
-                    continue
-                moments = self._moments(volume, poly)
-                reduced[family] += self._reduced_local(coefficients, fields, moments)
+        reduced = np.zeros((n, n), dtype=complex)
+        # Keep temporary arrays bounded even for large UWPT meshes.  The expensive
+        # FE contractions run as dense NumPy kernels while constitutive polynomial
+        # generation remains exact and state dependent.
+        chunk = 128
+        for start in range(0, self.mesh.n_tetrahedra, chunk):
+            stop = min(start + chunk, self.mesh.n_tetrahedra)
+            active = [q for q in range(start, stop) if polynomials[q]]
+            if not active:
+                continue
+            index = np.asarray(active, dtype=int)
+            moments = np.stack([
+                self._moments(self._volumes[q], polynomials[q]) for q in active
+            ])
+            coefficients = self._coefficients[index]
+            local = np.einsum(
+                "qpik,qij,qrjk->qpr",
+                coefficients,
+                moments,
+                coefficients,
+                optimize=True,
+            )
+            fields = self._local_fields[index]
+            weighted = np.einsum("qpr,qrb->qpb", local, fields, optimize=True)
+            reduced += np.einsum(
+                "qpa,qpb->ab", np.conj(fields), weighted, optimize=True
+            )
         return reduced
 
-    def assemble_products(self, tetra_polynomial_families, multiplier_families) -> np.ndarray:
-        """Assemble products of base/derivative weights with fixed test polynomials.
+    def assemble_many(self, tetra_polynomial_families) -> np.ndarray:
+        """Assemble exact reduced weights; each family uses vectorized cell chunks."""
+        families = tuple(tuple(values) for values in tetra_polynomial_families)
+        if not families:
+            n = self.fields.shape[1]
+            return np.empty((0, n, n), dtype=complex)
+        return np.stack([self._assemble_family(values) for values in families])
 
-        The output has shape (n_multiplier,n_family,n_reduced,n_reduced).  This
-        keeps the exact barycentric multiplication/integration order while
-        avoiding repeated full mesh sweeps for every (output, derivative) pair.
-        """
+    def assemble_products(self, tetra_polynomial_families, multiplier_families) -> np.ndarray:
+        """Assemble products of state weights with fixed test polynomials."""
         families = tuple(tuple(values) for values in tetra_polynomial_families)
         multipliers = tuple(tuple(values) for values in multiplier_families)
         for values in families + multipliers:
@@ -83,26 +123,17 @@ class _ReducedNedelecAssembler:
                 raise ValueError("one polynomial is required for every tetrahedron")
         n = self.fields.shape[1]
         reduced = np.zeros((len(multipliers), len(families), n, n), dtype=complex)
-        for q, (volume, coefficients, fields) in enumerate(self._local):
-            for output, tests in enumerate(multipliers):
-                test = tests[q]
-                if not test:
-                    continue
-                for family, polynomials in enumerate(families):
-                    poly = polynomials[q]
-                    if not poly:
-                        continue
-                    weighted = polynomial_multiply(poly, test)
-                    if not weighted:
-                        continue
-                    moments = self._moments(volume, weighted)
-                    reduced[output, family] += self._reduced_local(
-                        coefficients, fields, moments
-                    )
+        for output, tests in enumerate(multipliers):
+            for family, polynomials in enumerate(families):
+                weighted = [
+                    polynomial_multiply(poly, test) if poly and test else {}
+                    for poly, test in zip(polynomials, tests)
+                ]
+                reduced[output, family] = self._assemble_family(weighted)
         return reduced
 
     def assemble(self, tetra_polynomials) -> np.ndarray:
-        return self.assemble_many([tetra_polynomials])[0]
+        return self._assemble_family(tuple(tetra_polynomials))
 
 
 class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
@@ -147,8 +178,6 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
             problem.magnetic_stiffness @ magnetic_fields
         )
         if self._fused_reduced:
-            # Thermal test functions are geometry/context fixed. Build their P1
-            # polynomial representation once instead of once per state/Jacobian.
             self._thermal_test_polynomials = tuple(
                 tuple(polynomial_p1(problem.thermal_test_local[j, q])
                       for q in range(problem.mesh.n_tetrahedra))
@@ -170,7 +199,6 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
         return tuple(family)
 
     def _assembled_state_family(self, state, *, derivatives: bool):
-        """Prepare all reduced conductivity/loss matrices for one thermal state."""
         polynomials = self._state_polynomial_family(state, derivatives=derivatives)
         conductivity = self._conductivity_reduced.assemble_many(polynomials)
         losses = 0.5 * self._loss_reduced_assembler.assemble_products(
@@ -275,7 +303,6 @@ class SparseEnergyReducedEMModel(_BaseSparseEnergyReducedEMModel):
             state, derivatives=True
         )
         Ar = self._magnetic_reduced + 1j * self.problem.omega * conductivity[0]
-        # One LU serves both the state solve and every thermal sensitivity solve.
         factor = scipy.linalg.lu_factor(Ar)
         c = scipy.linalg.lu_solve(factor, self.rhs_reduced(source))
         losses = loss_family[:, 0]
