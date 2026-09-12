@@ -116,42 +116,64 @@ def validate_surrogate_on_dataset(
     split: str = "test",
     operating_samples_per_state: int = 4,
     seed: int = 0,
+    batch_size: int = 256,
 ) -> SurrogateValidationReport:
-    """Gate 5: audit a frozen split without feeding it back into training."""
+    """Gate 5: audit a frozen split in bounded-memory vectorized batches.
+
+    Wide packed tensors may remain on a read-only memmap. Each block is loaded
+    once, while the MLP is evaluated once per state/geometry block instead of
+    once per sample. Random-current heat checks are also vectorized. The test
+    split remains read-only and is never fed back into training.
+    """
     ids = dataset.indices(split)
     lo = np.asarray(operating_lower, dtype=float).reshape(-1)
     hi = np.asarray(operating_upper, dtype=float).reshape(-1)
+    samples_per_state = int(operating_samples_per_state)
+    batch_size = int(batch_size)
     if lo.shape != (dataset.current_dimension,) or hi.shape != lo.shape or np.any(hi <= lo):
         raise ValueError("operating bounds mismatch")
+    if samples_per_state < 1 or batch_size < 1:
+        raise ValueError("operating_samples_per_state and batch_size must be positive")
     rng = np.random.default_rng(int(seed))
     packed_sq_error = packed_sq_scale = 0.0
-    packed_relative = []
+    packed_relative: list[float] = []
     heat_sq_error = heat_sq_scale = 0.0
-    heat_relative = []
+    heat_relative: list[float] = []
+    n_sym = dataset.packed_symmetric_size
 
-    for index in ids:
-        state = dataset.states[index]
-        geometry = dataset.geometries[index]
-        true_packed = dataset.outputs[index]
-        predicted_packed = surrogate.predict_packed_numpy(state, geometry)
-        packed_error = float(np.linalg.norm(predicted_packed - true_packed))
-        packed_scale = max(float(np.linalg.norm(true_packed)), np.finfo(float).tiny)
-        packed_sq_error += packed_error**2
-        packed_sq_scale += packed_scale**2
-        packed_relative.append(packed_error / packed_scale)
+    for start in range(0, len(ids), batch_size):
+        block_ids = np.asarray(ids[start:start + batch_size], dtype=int)
+        states = np.asarray(dataset.states[block_ids], dtype=float)
+        geometries = np.asarray(dataset.geometries[block_ids], dtype=float)
+        true_packed = np.asarray(dataset.outputs[block_ids], dtype=float)
+        beta = surrogate.predict_coefficients_batch_numpy(states, geometries)
+        predicted_packed = surrogate.pod.decode(beta)
 
-        true_modes = true_packed.reshape(dataset.thermal_rank, dataset.packed_symmetric_size)
-        predicted_modes = predicted_packed.reshape(dataset.thermal_rank, dataset.packed_symmetric_size)
-        for _ in range(int(operating_samples_per_state)):
-            u = rng.uniform(lo, hi)
-            feature = quadratic_feature(u)
-            q_true = true_modes @ feature
-            q_pred = predicted_modes @ feature
-            err = float(np.linalg.norm(q_pred - q_true))
-            scale = max(float(np.linalg.norm(q_true)), np.finfo(float).tiny)
-            heat_sq_error += err**2
-            heat_sq_scale += scale**2
-            heat_relative.append(err / scale)
+        packed_error_rows = np.linalg.norm(predicted_packed - true_packed, axis=1)
+        packed_scale_rows = np.maximum(
+            np.linalg.norm(true_packed, axis=1),
+            np.finfo(float).tiny,
+        )
+        packed_sq_error += float(np.sum(packed_error_rows**2))
+        packed_sq_scale += float(np.sum(packed_scale_rows**2))
+        packed_relative.extend((packed_error_rows / packed_scale_rows).tolist())
+
+        true_modes = true_packed.reshape(len(block_ids), dataset.thermal_rank, n_sym)
+        operating_draws = rng.uniform(
+            lo,
+            hi,
+            size=(len(block_ids), samples_per_state, dataset.current_dimension),
+        )
+        for draw in range(samples_per_state):
+            operating = operating_draws[:, draw, :]
+            predicted_q = surrogate.heat_source_batch_numpy(states, geometries, operating)
+            features = np.asarray([quadratic_feature(u) for u in operating], dtype=float)
+            true_q = np.einsum("brs,bs->br", true_modes, features, optimize=True)
+            error_rows = np.linalg.norm(predicted_q - true_q, axis=1)
+            scale_rows = np.maximum(np.linalg.norm(true_q, axis=1), np.finfo(float).tiny)
+            heat_sq_error += float(np.sum(error_rows**2))
+            heat_sq_scale += float(np.sum(scale_rows**2))
+            heat_relative.extend((error_rows / scale_rows).tolist())
 
     return SurrogateValidationReport(
         sample_count=len(ids),
