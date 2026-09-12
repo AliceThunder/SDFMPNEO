@@ -1,0 +1,88 @@
+\section{时间推进与推理}
+
+\subsection{连续时间模型}
+神经热源进入真实降阶动力系统：
+\begin{equation}
+\boxed{
+M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
+}
+\end{equation}
+初值
+\begin{equation}
+a(0)=a_0
+\end{equation}
+由 ODE 初值条件严格满足，不通过损失函数学习。
+
+\subsection{固定几何的指数积分}
+在参考/固定几何下 $M_r=I,K_r=\Lambda$，定义
+\begin{equation}
+f_\theta(a,u)=q_\theta(a,u),
+\end{equation}
+则
+\begin{equation}
+\dot a=-\Lambda a+f_\theta(a,u).
+\end{equation}
+线性耗散部分应解析推进。首版目标方法为二阶 exponential time differencing（ETD2）。定义
+\begin{equation}
+E=\mathrm e^{-h\Lambda},
+\qquad
+\varphi_1(z)=\frac{\mathrm e^z-1}{z},
+\qquad
+\varphi_2(z)=\frac{\mathrm e^z-z-1}{z^2}.
+\end{equation}
+可采用标准 ETD2 predictor-corrector，使 stiff 线性热衰减不限制显式步长。
+
+\subsection{变化几何}
+对一个 trajectory，几何 $g$ 固定，因此
+\begin{equation}
+L(g)=M_r(g)^{-1}K_r(g)
+\end{equation}
+也是时间不变的。可选两种实现：
+\begin{enumerate}
+  \item 对中低热 rank，预计算/缓存 $E_h(g)=\exp[-hL(g)]$ 及 $\varphi_k[-hL(g)]$，使用 ETD2；
+  \item 若矩阵函数成本或几何查询频率不合适，则采用 linearly implicit IMEX：
+  \begin{equation}
+  (M_r+hK_r)a_{n+1}=M_ra_n+hq_\theta(a_n,g,u),
+  \end{equation}
+  并缓存固定 $(g,h)$ 的 Cholesky/LU。
+\end{enumerate}
+最终实现由 benchmark 决定，但必须保持真实 $M_r,K_r$ 不被 NN 吸收。
+
+\subsection{步长控制}
+首版支持固定步长集合 $h\in\mathcal H$，便于缓存矩阵函数并保证可预测的推理成本。随后可增加 embedded error estimator。时间离散误差 $E_{\mathrm{time}}$ 必须与神经误差分开报告。
+
+\subsection{连续流与半群性质}
+因为模型首先定义向量场
+\begin{equation}
+\dot a=F_\theta(a,g,u),
+\end{equation}
+其精确连续流天然满足
+\begin{equation}
+\Phi_{t+s}^\theta=\Phi_s^\theta\circ\Phi_t^\theta.
+\end{equation}
+因此不再把 semigroup consistency 作为必须学习的网络性质。离散求解器只产生标准数值积分误差；必要时用 step-doubling 检查组合一致性。
+
+\subsection{有限时间与无限时间分离}
+有限时间查询使用上述 ODE/ETD/IMEX。对于 $t=\infty$，不做超长 rollout，而直接求神经稳态
+\begin{equation}
+-K_r(g)a_*+q_\theta(a_*,g,u)=0.
+\end{equation}
+得到候选稳态后，必须用真实 reduced physics 计算
+\begin{equation}
+r_*=-K_r(g)a_*+q_{\mathrm{phys}}(a_*,g,u)
+\end{equation}
+进行 audit；必要时从 $a_*$ 出发做真实 reduced Newton 修正。
+
+\subsection{电磁输出查询}
+神经模型只负责温度动力学。若用户需要阻抗、端口量、区域损耗或 EM certificate，则使用预测热状态调用现有 reduced EM model：
+\begin{equation}
+(a(t),g,u)\xrightarrow{\mathrm{EM\ ROM}} Z,P,\text{diagnostics}.
+\end{equation}
+首版不训练第二个黑箱网络同时预测全部 EM 输出，从而避免破坏输出一致性和已有 EM 认证链。
+
+\subsection{推理性能目标}
+推理核心成本应近似为
+\begin{equation}
+N_t\times(\text{one MLP forward}+\text{small dense quadratic contractions}+\text{ROM linear algebra}).
+\end{equation}
+目标是在 CPU 上满足交互式查询，在 GPU 上满足大批量参数扫描。最终性能验收以真实 UWPT rank、几何数和查询长度为准，不预先承诺固定倍数加速。
