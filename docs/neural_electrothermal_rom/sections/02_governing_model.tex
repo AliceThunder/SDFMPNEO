@@ -14,16 +14,16 @@ A_{\mathrm{em}}(a,g)x=b(g,u),
 \subsection{热方程与热降阶坐标}
 完整热方程写为
 \begin{equation}
-M_T(g)\dot T+K_T(g)T=Q(T,g,u).
+M_T(g)\dot T+K_T(g)T=Q_{\mathrm J}(T,g,u)+F_T(g),
 \end{equation}
-采用共享热基 $\Phi$，令
+其中 $Q_{\mathrm J}$ 表示由电磁平衡产生的 Joule 热源，$F_T$ 表示与电磁状态无关、且由物理模型明确给定的确定性热源或边界等效源。采用共享热基 $\Phi$，令
 \begin{equation}
 T=T_{\mathrm{ref}}+\Phi a.
 \end{equation}
 投影后得到
 \begin{equation}
 \boxed{
-M_r(g)\dot a=-K_r(g)a+q(a,g,u)
+M_r(g)\dot a=-K_r(g)a+q(a,g,u)+f_T(g)
 }
 \label{eq:reduced-thermal}
 \end{equation}
@@ -31,8 +31,9 @@ M_r(g)\dot a=-K_r(g)a+q(a,g,u)
 \begin{equation}
 M_r(g)=\Phi^\top M_T(g)\Phi,
 \qquad
-K_r(g)=\Phi^\top K_T(g)\Phi.
+K_r(g)=\Phi^\top K_T(g)\Phi,
 \end{equation}
+而 $f_T(g)$ 为已知的降阶确定性热源。它是 hard physics 的一部分，不进入神经网络，也不与 Joule tensor 混合训练。若当前物理模型不存在该项，则 $f_T=0$。
 
 在参考几何下，如果 $\Phi$ 为 $M$-正交热特征模态，则
 \begin{equation}
@@ -47,9 +48,15 @@ K_r=\Lambda=\operatorname{diag}(\lambda_1,\ldots,\lambda_r).
 \begin{equation}
 F(a,g,u)
 =
-M_r(g)^{-1}\left[-K_r(g)a+q(a,g,u)\right].
+M_r(g)^{-1}\left[-K_r(g)a+q(a,g,u)+f_T(g)\right].
 \end{equation}
-新方案的目标不是直接学习其流映射，而是仅学习其中计算代价高、但结构明确的 Joule 热源部分 $q$。
+新方案的目标不是直接学习其流映射，而是仅学习其中计算代价高、但结构明确的 Joule 热源部分 $q$。因此模型中应严格区分
+\begin{equation}
+q_\theta(a,g,u)
+\quad\text{与}\quad
+s_\theta(a,g,u)=q_\theta(a,g,u)+f_T(g),
+\end{equation}
+前者用于与真实电磁热源直接比较，后者才进入时间积分。该区分也是误差预算与在线诊断的基础：外部确定性热源不能被计入神经 Joule 误差。
 
 \subsection{共享热基跨几何使用的理论要求}
 为了使参考热坐标在几何参数域 $\mathcal G$ 内具有统一意义，应验证存在常数
@@ -63,7 +70,7 @@ k_-K_0\preceq K_T(g)\preceq k_+K_0,
 该谱等价条件不是神经网络训练的前提代码接口，但它是跨几何误差界、统一范数和稳定性分析的重要理论基础。
 
 \subsection{热模态截断误差}
-热 ROM 误差与神经网络误差必须分开管理。若第一被截断特征值为 $\lambda_{r+1}$，并有统一热源对偶范数上界 $Q_*$，则典型尾部估计为
+热 ROM 误差与神经网络误差必须分开管理。若第一被截断特征值为 $\lambda_{r+1}$，并有统一总热源对偶范数上界 $Q_*$，则典型尾部估计为
 \begin{equation}
 \norm{T_{\mathrm{tail}}(t)}_M
 \le
@@ -71,4 +78,4 @@ k_-K_0\preceq K_T(g)\preceq k_+K_0,
 +
 \frac{1-\mathrm e^{-\lambda_{r+1}t}}{\lambda_{r+1}}Q_*.
 \end{equation}
-只有当 $Q_*$ 是目标参数域上的严格上界时，该式才构成严格 certificate；有限采样 envelope 只能称为经验 rank diagnostic。
+这里 $Q_*$ 必须覆盖 Joule 热源与任何确定性热源 $f_T$。只有当 $Q_*$ 是目标参数域上的严格上界时，该式才构成严格 certificate；有限采样 envelope 只能称为经验 rank diagnostic。
