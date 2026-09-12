@@ -1,0 +1,49 @@
+\section{问题定义、目标与设计约束}
+
+\subsection{核心目标}
+本项目的最终目标不是训练一个直接回归温度轨迹的黑箱神经网络，而是构造一个可解释、可验证、可高效训练和推理的参数化电热降阶动力系统。目标映射为
+\begin{equation}
+(a_0,g,u,t)\longmapsto a(t)\longmapsto T(x,t),Z(t),P(t),\ldots,
+\end{equation}
+其中 $a$ 为热降阶坐标，$g$ 为几何参数，$u$ 为工况/电流参数。
+
+新的主路线必须同时满足以下要求：
+\begin{itemize}
+  \item \textbf{理论正确性：}不把本已知的 Maxwell 线性结构、Joule 二次结构和热耗散结构交给神经网络重新学习。
+  \item \textbf{可实现性：}训练应能使用标准 PyTorch/GPU/mini-batch/AdamW 工具链，不依赖专用符号展开、LM 候选回溯或定制解析网络优化器。
+  \item \textbf{训练速度：}昂贵物理计算只用于生成可缓存、可并行的局部训练样本；网络优化过程不再反复调用电磁求解器。
+  \item \textbf{学习能力：}网络只拟合平滑的温度--几何到电磁热耦合系数映射，并保留足够容量处理高维热状态。
+  \item \textbf{推理速度：}有限时间预测使用低维神经向量场和结构保持时间积分；稳态独立求解，不用长时间逐步积分逼近无限时间。
+  \item \textbf{物理性：}初值、质量矩阵、导热矩阵、电流二次性、连续时间动力学全部由模型结构硬编码，而非仅通过损失函数惩罚。
+  \item \textbf{可验证性：}误差来源分层管理，区分严格证书、数值验证和经验诊断。
+  \item \textbf{创新性：}创新点放在 Maxwell 消元后的电流二次型张量、神经张量降阶和误差传播链，而不是特殊激活函数本身。
+\end{itemize}
+
+\subsection{冻结的总体路线}
+本文档冻结如下主路线：
+\begin{equation}
+(a,g)\xrightarrow{\text{Residual MLP}}\beta_\theta
+\xrightarrow{\text{output POD}}G_\theta
+\xrightarrow{\zeta^\top G_\theta\zeta}q_\theta
+\xrightarrow{M_r(g)\dot a=-K_r(g)a+q_\theta}a(t).
+\end{equation}
+其中神经网络只预测低维系数 $\beta_\theta$。所有后续运算均为固定物理层或确定性数值算法。
+
+\subsection{明确放弃的主路线}
+以下方案不作为主路线：
+\begin{enumerate}
+  \item 直接学习 $(a_0,g,u,t)\mapsto a(t)$ 的黑箱 MLP；
+  \item 继续扩展现有 Fixed Analytic Response Network 作为生产模型；
+  \item 依赖 PDE/ODE residual loss 才能维持基本物理结构的 PINN 风格设计；
+  \item 以特殊激活函数作为主要物理归纳偏置；
+  \item 在未验证真实系统收缩性的情况下，强行把网络约束为全域 contractive。
+\end{enumerate}
+
+\subsection{与旧解析响应网络的关系}
+旧解析响应网络不再作为新架构的实现依赖。其定位固定为：
+\begin{itemize}
+  \item 历史研究基线；
+  \item 推理速度上界参考；
+  \item 消融实验与论文对比对象。
+\end{itemize}
+本文档所在分支基于 \texttt{main} 创建，不继承 \texttt{feat/fixed-analytic-response-network} 的代码历史。
