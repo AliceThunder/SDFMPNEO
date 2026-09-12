@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from sdfmpneo.electrothermal_tensor.batch import predict_batch_fixed_etd2
 from sdfmpneo.electrothermal_tensor.model import StructurePreservingNeuralElectroThermalROM
 from sdfmpneo.electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from sdfmpneo.electrothermal_tensor.pod import TensorPOD
@@ -55,8 +54,7 @@ def test_batched_fixed_etd2_matches_independent_predictions():
     model = _model()
     initial = np.array([[0.1, -0.2], [0.4, 0.05], [-0.3, 0.2]])
     operating = np.array([[0.1], [0.8], [-0.6]])
-    batch = predict_batch_fixed_etd2(
-        model,
+    batch = model.predict_batch_fixed_etd2(
         0.7,
         initial_states=initial,
         geometry=np.empty(0),
@@ -98,8 +96,7 @@ def test_batched_fixed_etd2_matches_independent_predictions():
 def test_batched_inference_rejects_domain_violation():
     model = _model()
     with pytest.raises(ValueError, match="outside the trained domain"):
-        predict_batch_fixed_etd2(
-            model,
+        model.predict_batch_fixed_etd2(
             0.1,
             initial_states=np.array([[0.0, 0.0], [0.0, 0.0]]),
             geometry=np.empty(0),
