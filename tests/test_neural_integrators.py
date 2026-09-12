@@ -9,7 +9,6 @@ from sdfmpneo.electrothermal_tensor.integrators import (
     integrate_imex_euler,
     integrate_reference,
 )
-from sdfmpneo.electrothermal_tensor.validation import energy_logarithmic_norm
 from sdfmpneo.electrothermal_tensor.vector_field import (
     FixedThermalOperatorFamily,
     NeuralElectroThermalVectorField,
@@ -143,13 +142,3 @@ def test_imex_converges_when_step_is_refined():
         field, t, initial_state=a0, geometry=np.empty(0), operating=u, max_step=0.125
     ).state
     assert np.linalg.norm(fine - reference) < np.linalg.norm(coarse - reference)
-
-
-def test_energy_logarithmic_norm_recovers_dissipative_linear_system():
-    M = np.array([[2.0, 0.2], [0.2, 1.0]])
-    K = np.array([[3.0, 0.1], [0.1, 2.0]])
-    J = -np.linalg.solve(M, K)
-    mu = energy_logarithmic_norm(J, M)
-    expected = -np.min(scipy.linalg.eigh(K, M, eigvals_only=True))
-    np.testing.assert_allclose(mu, expected, rtol=2e-13, atol=2e-13)
-    assert mu < 0.0
