@@ -23,14 +23,36 @@ def _array_summary(value: np.ndarray) -> dict:
     }
 
 
+def _small_array_json(value: np.ndarray):
+    array = np.asarray(value)
+    if np.iscomplexobj(array):
+        return {
+            "kind": "complex_ndarray",
+            "shape": list(array.shape),
+            "real": np.asarray(array.real).tolist(),
+            "imag": np.asarray(array.imag).tolist(),
+        }
+    if np.issubdtype(array.dtype, np.floating) and np.any(~np.isfinite(array)):
+        raise ValueError("physical provenance contains a non-finite floating-point array")
+    return array.tolist()
+
+
 def compact_summary(value):
-    if value is None or isinstance(value, (str, bool, int, float)):
+    if value is None or isinstance(value, (str, bool, int)):
         return value
+    if isinstance(value, float):
+        if not np.isfinite(value):
+            raise ValueError("physical provenance contains a non-finite floating-point value")
+        return value
+    if isinstance(value, complex):
+        if not np.isfinite(value.real) or not np.isfinite(value.imag):
+            raise ValueError("physical provenance contains a non-finite complex value")
+        return {"kind": "complex", "real": float(value.real), "imag": float(value.imag)}
     if isinstance(value, np.generic):
-        return value.item()
+        return compact_summary(value.item())
     if isinstance(value, np.ndarray):
         if value.size <= 32:
-            return np.asarray(value).tolist()
+            return _small_array_json(value)
         return _array_summary(value)
     if is_dataclass(value):
         return compact_summary(asdict(value))
