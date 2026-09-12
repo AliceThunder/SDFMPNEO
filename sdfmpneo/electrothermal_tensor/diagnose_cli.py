@@ -97,6 +97,7 @@ def command_diagnose(config_file: str | Path) -> int:
             geometry=geometry,
             operating=operating,
             requested_impedance_error=requested_impedance_error,
+            allow_extrapolation=allow_extrapolation,
         )
         rows.append(
             {
