@@ -10,18 +10,48 @@
 python -m pip install -e '.[neural,dev]'
 ```
 
-新路线使用独立命令，不经过旧解析响应网络训练器：
+新路线使用独立命令，不经过旧解析响应网络训练器。推荐顺序是**先探测可达热状态域，再训练**：
 
 ```bash
-sdfmpneo-neural train   --config examples/neural_electrothermal_rom/train.example.json
+sdfmpneo-domain probe --config examples/neural_electrothermal_rom/domain_probe.example.json
+sdfmpneo-domain train --config examples/neural_electrothermal_rom/train_from_domain.example.json
 sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
 sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
-sdfmpneo-neural audit   --config examples/neural_electrothermal_rom/audit.example.json
+sdfmpneo-neural audit --config examples/neural_electrothermal_rom/audit.example.json
 ```
+
+仍保留直接指定 `state_lower/state_upper` 的 `sdfmpneo-neural train`，主要用于低维研究和调试。
 
 项目不使用 GitHub Actions；验证入口保留为本地 `pytest` 与 `audit`。
 
-## 1. Train：只生成局部物理张量标签
+## 1. Domain probe：先用真实物理确定 neural state box
+
+对于高维热 ROM，不建议人工填写几十到上百维的 `state_lower/state_upper`。`sdfmpneo-domain probe` 使用真实 reduced electrothermal vector field 在：
+
+- initial-state box；
+- 完整 operating box；
+- 固定几何或完整归一化 geometry box `[-1,1]^d`；
+
+上采样多条 Radau 物理轨迹，并可从每条轨迹末端继续求真实稳态根。它输出：
+
+- transient + initial + successful steady-state 的观测 envelope；
+- 每个 thermal coordinate 的安全 margin；
+- 建议的 `suggested_state_lower/upper`；
+- 成功/失败的 steady-state 数量；
+- 物理签名、工况域和几何域。
+
+Domain report 是冻结工件。后续 `sdfmpneo-domain train` 会同时检查：
+
+1. `physical_signature` 完全匹配；
+2. thermal rank 匹配；
+3. geometry 域匹配；
+4. operating 域匹配。
+
+任一不一致都拒绝复用，不会只复制 bounds。
+
+Domain probe 仍然只是**采样覆盖证据**，不是数学可达集证明；最终独立 Gate 6 长时间轨迹仍必须覆盖目标工况。
+
+## 2. Train：只生成局部物理张量标签
 
 `train` 从现有物理 JSON 构建 EM/thermal ROM，但 EM 只用于离线生成
 
@@ -38,17 +68,17 @@ sdfmpneo-neural audit   --config examples/neural_electrothermal_rom/audit.exampl
 
 网络训练阶段不会调用 EM solver，也不使用瞬态轨迹作为监督标签。
 
-### 1.1 完整 state box，而不是 initial-state box
+### 2.1 完整 state box，而不是 initial-state box
 
-`state_lower/state_upper` 表示 **NN 允许看到的完整热状态域**。它必须覆盖目标初值、工况和几何下的可达状态以及稳态附近区域。
+训练域表示 **NN 允许看到的完整热状态域**。它必须覆盖目标初值、工况和几何下的可达状态以及稳态附近区域。
 
-模型默认在 ETD/IMEX 的每个中间阶段检查该盒；轨迹一旦离开训练状态域立即报错。因此不要机械复制旧 `initial_lower/initial_upper`，除非已经证明整个目标轨迹都留在其中。
+模型默认在 ETD/IMEX 的每个中间阶段检查该盒；轨迹一旦离开训练状态域立即报错。
 
-### 1.2 高维状态推荐 hybrid reachable sampling
+推荐通过 domain report 获得这个盒，而不是机械复制旧 `initial_lower/initial_upper`。
 
-默认 `sampling.strategy="box"` 使用整个 state/geometry box 的 LHS。对于约 198 维热状态，这通常样本效率很低。
+### 2.2 高维状态推荐 hybrid reachable sampling
 
-推荐先声明一个足够保守的完整 state box，然后用：
+即使已经得到保守 state box，在约 198 维里对整个盒纯 LHS 的样本效率仍可能很低。因此正式训练推荐：
 
 ```json
 "sampling": {
@@ -56,20 +86,20 @@ sdfmpneo-neural audit   --config examples/neural_electrothermal_rom/audit.exampl
   "initial_lower": [-0.1, -0.1],
   "initial_upper": [0.1, 0.1],
   "box_fraction": 0.25,
-  "trajectory_count": 32,
-  "samples_per_trajectory": 16,
-  "time_horizon": 1000.0,
+  "trajectory_count": 64,
+  "samples_per_trajectory": 24,
+  "time_horizon": 100000.0,
   "time_min": 1e-6
 }
 ```
 
-其中真实 reduced physics 轨迹**只用于选择在哪里采样 $G$**，轨迹状态不会成为 NN 的监督 target。仍保留 `box_fraction` 的全盒样本以覆盖 off-manifold / restart 区域。
+真实 reduced physics 轨迹**只用于选择在哪里采样 $G$**，轨迹状态不会成为 NN 的监督 target。仍保留 `box_fraction` 的全盒样本以覆盖 off-manifold / restart 区域。
 
-若任何真实采样轨迹离开声明的 state box，训练直接抛出 `StateDomainInsufficientError`，并提供观测到的 state envelope；实现不会通过 clip 偷偷隐藏训练域设计错误。
+若任何真实采样轨迹离开已冻结的 state box，训练直接抛出 `StateDomainInsufficientError`；实现不会通过 clip 隐藏训练域设计错误。此时应重新运行更保守的 domain probe，而不是强行继续训练。
 
 几何族训练时网络几何坐标固定为归一化 `[-1,1]^d`；模型文件保存 affine geometry chart、热材料参数和共享热基，在线精确重组 `M_r(g),K_r(g)`，不依赖 EM。
 
-## 2. Retrain：调网络/POD 不再重建 EM
+## 3. Retrain：调网络/POD 不再重建 EM
 
 物理 tensor dataset 一旦生成，可以反复做：
 
@@ -84,7 +114,7 @@ sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.exam
 
 它不会构建 EM problem、不会重新生成标签。POD rank、MLP width/depth、optimizer、mixed precision 等实验都应该走这条路径。
 
-## 3. Predict：自包含在线模型
+## 4. Predict：自包含在线模型
 
 `predict` 只加载 neural `.npz`。固定几何和当前 affine geometry family 都不需要物理 JSON 或 EM ROM。
 
@@ -106,7 +136,7 @@ M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 
 即使显式打开 state/operating extrapolation，embedded geometry family 仍不会允许超出保存的几何 chart。
 
-## 4. Audit / Gate 1--7
+## 5. Audit / Gate 1--7
 
 `audit` 会重新构建真实物理模型，仅用于独立对照，并验证 neural 模型保存的物理签名。
 
@@ -114,17 +144,22 @@ M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 
 1. **Gate 1**：`zeta^T G zeta` 与直接 EM-ROM Joule heat 数值恒等；
 2. **Gate 2**：只用 train split 拟合 SVD，对 validation split 做 POD rank sweep，并报告 tensor/heat error；
-3. **Gate 3**：真实 `G(a,g)` 的有限差分敏感度与 active-subspace spectrum；
+3. **Gate 3**：真实 `G(a,g)` 的热状态敏感度；
 4. **Gate 4**：真实物理 Jacobian 在 `M(g)` 能量范数下的 logarithmic norm；
 5. **Gate 5**：冻结 test split 上 `G/q/F` 的 RMS、95/99 percentile 和 maximum；
 6. **Gate 6**：配置指定的 neural ETD/IMEX 与真实 EM-ROM + Radau 轨迹对照，可同时重构节点温度；
 7. **Gate 7**：使用与 Gate 6 相同 production integrator 的真实 wall-clock vector-field / trajectory benchmark。
 
-Production readiness 是 fail-closed：没有 Gate 7 的明确时间预算和实际测量，结果不会判为 ready。
+Gate 3 有两档：
+
+- `active_subspace_mode="randomized_screening"`：只在随机输入子空间做低成本筛查，适合 198 维开发阶段；**不能让 production readiness 通过**；
+- `active_subspace_mode="full"`：逐热坐标做完整中心有限差分，是正式 Gate 3 证据。
+
+Production readiness 是 fail-closed：没有完整 Gate 3、Gate 7 的明确时间预算和实际测量，结果不会判为 ready。
 
 `reproducible_training` 与 `persistence_roundtrip` 也必须由正式实验明确填写，不能自动假定为真。
 
-## 5. 在线结构
+## 6. 在线结构
 
 ```text
 (a, normalized geometry)
@@ -139,7 +174,7 @@ Production readiness 是 fail-closed：没有 Gate 7 的明确时间预算和实
 
 网络不直接输入时间，也不直接输入电流；电流只进入 hard quadratic physics layer。
 
-## 6. 本地测试
+## 7. 本地测试
 
 ```bash
 python -m pytest -q \
@@ -152,6 +187,7 @@ python -m pytest -q \
   tests/test_neural_model_persistence.py \
   tests/test_neural_geometry_persistence.py \
   tests/test_neural_snapshot_sampling.py \
+  tests/test_reachable_state_domain.py \
   tests/test_neural_gate_suite.py
 ```
 
@@ -161,6 +197,6 @@ python -m pytest -q \
 python -m pytest -q
 ```
 
-## 7. Production 切换原则
+## 8. Production 切换原则
 
-当前实现分支提供训练、无 EM retrain、自包含推理和 Gate audit 能力，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算后，才允许切换默认模型。
+当前实现分支提供物理域探测、训练、无 EM retrain、自包含推理和 Gate audit 能力，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算后，才允许切换默认模型。
