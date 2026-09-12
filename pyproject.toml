@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
 [project.scripts]
 sdfmpneo = "sdfmpneo.__main__:main"
 sdfmpneo-neural = "sdfmpneo.electrothermal_tensor.cli:main"
+sdfmpneo-domain = "sdfmpneo.electrothermal_tensor.domain_cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
