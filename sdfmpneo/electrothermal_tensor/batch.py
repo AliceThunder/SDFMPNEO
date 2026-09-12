@@ -51,7 +51,9 @@ def predict_batch_fixed_etd2(
     Time stepping remains sequential because the ODE is causal. Parallelism is
     across independent trajectories: each ETD2 stage evaluates the entire batch
     with one neural-network forward. The model-level generalized thermal
-    eigenspectrum cache is reused by single and batched inference.
+    eigenspectrum cache is reused by single and batched inference. Deterministic
+    non-EM thermal forcing is added only to the integration source; returned
+    ``heat_sources`` remain the neural Joule contribution for EM comparability.
     """
     t = float(time)
     hmax = float(max_step)
@@ -83,6 +85,7 @@ def predict_batch_fixed_etd2(
     spectrum = model._spectrum_for_geometry(g)
     operator = spectrum.operator
     mass_vectors = operator.mass @ spectrum.vectors
+    forcing = np.asarray(model.field.thermal_rhs_forcing, dtype=float).reshape(1, -1)
 
     def to_modal_state(batch_states):
         return np.asarray(batch_states, dtype=float) @ mass_vectors
@@ -93,9 +96,12 @@ def predict_batch_fixed_etd2(
     def to_modal_source(batch_source):
         return np.asarray(batch_source, dtype=float) @ spectrum.vectors
 
-    def heat(batch_states):
+    def joule(batch_states):
         geometries = np.repeat(g[None, :], len(batch_states), axis=0)
         return model.surrogate.heat_source_batch_numpy(batch_states, geometries, u)
+
+    def thermal(batch_states):
+        return joule(batch_states) + forcing
 
     current = states.copy()
     elapsed = 0.0
@@ -104,12 +110,12 @@ def predict_batch_fixed_etd2(
         h = min(hmax, t - elapsed)
         E, b1, b2 = _etd_coefficients(spectrum.lambdas, h)
         c0 = to_modal_state(current)
-        q0 = heat(current)
+        q0 = thermal(current)
         s0 = to_modal_source(q0)
         c_stage = E[None, :] * c0 + b1[None, :] * s0
         stage = from_modal_state(c_stage)
         _validate_batch_states(model, stage, allow_extrapolation=allow_extrapolation)
-        q1 = heat(stage)
+        q1 = thermal(stage)
         s1 = to_modal_source(q1)
         c1 = c_stage + b2[None, :] * (s1 - s0)
         current = from_modal_state(c1)
@@ -119,8 +125,8 @@ def predict_batch_fixed_etd2(
         elapsed = min(t, elapsed + h)
         sizes.append(float(h))
 
-    final_heat = heat(current)
-    rhs = -current @ operator.stiffness.T + final_heat
+    final_heat = joule(current)
+    rhs = -current @ operator.stiffness.T + final_heat + forcing
     derivatives = scipy.linalg.solve(
         operator.mass,
         rhs.T,
