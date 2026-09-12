@@ -1,11 +1,16 @@
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
 
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
 from sdfmpneo.training.monitor import TrainingStopped
-from sdfmpneo.training.research import ResearchTrainingConfig, train_research_network
+from sdfmpneo.training.research import (
+    ResearchTrainingConfig,
+    _reopen_soft_iteration_budget,
+    train_research_network,
+)
 
 
 class _LinearField:
@@ -82,6 +87,38 @@ def test_current_trainer_reaches_physics_and_restart_consistency():
     assert report.maximum_validation_physics_residual <= config.residual_tolerance
     assert report.maximum_training_semigroup_rate_defect <= config.residual_tolerance
     assert report.maximum_validation_semigroup_rate_defect <= config.residual_tolerance
+
+
+def test_iteration_limit_is_a_soft_block_not_a_stall_condition():
+    config = replace(_config(), max_iterations_per_layer=1)
+    trained, report = train_research_network(
+        _LinearField(), config, network=_network()
+    )
+    assert report.numerical_tolerance_met
+    assert trained.training_state["phase"] == "completed"
+    assert len(report.objective_history) > 2
+
+
+def test_soft_iteration_block_reopens_only_after_an_accepted_block_tail():
+    config = replace(_config(), max_iterations_per_layer=1)
+    network = _network()
+    network.training_state = {
+        "phase": "stalled",
+        "layer": 0,
+        "total_accepted": 7,
+        "optimizer": {
+            "phase": "physics", "layer": 0, "iteration": 1,
+            "damping": 0.25, "retry": 0, "backtrack": 0,
+        },
+    }
+    assert _reopen_soft_iteration_budget(network, config)
+    assert network.training_state["phase"] == "physics"
+    assert network.training_state["optimizer"]["iteration"] == 0
+    assert network.training_state["optimizer"]["damping"] == 0.25
+
+    network.training_state["phase"] = "stalled"
+    network.training_state["optimizer"]["iteration"] = 0
+    assert not _reopen_soft_iteration_budget(network, config)
 
 
 def test_training_state_roundtrip_in_network_metadata():
