@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from sdfmpneo.electrothermal_tensor.dataset import QuadraticJouleDataset
 from sdfmpneo.electrothermal_tensor.disk_dataset import DiskQuadraticJouleDataset
 from sdfmpneo.electrothermal_tensor.generator import generate_snapshots_resumable
 from sdfmpneo.electrothermal_tensor.network import ResidualMLPConfig
@@ -11,7 +12,6 @@ from sdfmpneo.electrothermal_tensor.trainer import NeuralTrainingConfig, train_t
 def _tensor(state, geometry):
     a0, a1 = np.asarray(state, dtype=float)
     g0 = float(np.asarray(geometry, dtype=float)[0])
-    # Two thermal outputs, one operating variable => 2x2 symmetric matrices.
     G0 = np.array([[1.0 + 0.4 * a0, 0.15 + 0.1 * g0], [0.15 + 0.1 * g0, 0.6 + 0.2 * a1]])
     G1 = np.array([[0.2 - 0.1 * a1, -0.05 + 0.08 * a0], [-0.05 + 0.08 * a0, 0.3 + 0.1 * g0]])
     return np.stack([G0, G1])
@@ -103,3 +103,23 @@ def test_memmapped_dataset_trains_without_full_output_materialization(tmp_path):
     q = surrogate.heat_source_numpy(state, geometry, operating)
     assert q.shape == (2,)
     assert np.all(np.isfinite(q))
+
+
+def test_standard_dataset_loader_dispatches_to_verified_disk_backend(tmp_path):
+    dataset = _disk_dataset(tmp_path)
+    loaded = QuadraticJouleDataset.load(dataset.directory)
+    assert isinstance(loaded, DiskQuadraticJouleDataset)
+    assert isinstance(loaded.outputs, np.memmap)
+    assert loaded.manifest().dataset_hash == dataset.manifest().dataset_hash
+
+
+def test_disk_dataset_integrity_check_rejects_modified_output(tmp_path):
+    dataset = _disk_dataset(tmp_path)
+    store = dataset.directory
+    del dataset
+    output = np.load(store / "outputs.npy", mmap_mode="r+", allow_pickle=False)
+    output[0, 0] += 1.0
+    output.flush()
+    del output
+    with pytest.raises(ValueError, match="file hash mismatch"):
+        DiskQuadraticJouleDataset.load(store, verify=True)
