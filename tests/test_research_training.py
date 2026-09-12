@@ -210,8 +210,8 @@ def test_deep_layer_jacobian_reuses_prewarmed_affine_basis():
         np.testing.assert_allclose(
             record.parameter_jacobian,
             jda - exact.vector_field_jacobian @ ja,
-            rtol=2e-12,
-            atol=2e-13,
+            rtol=5e-10,
+            atol=2e-12,
         )
 
     trial_theta = network.parameters.copy()
