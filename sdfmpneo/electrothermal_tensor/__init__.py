@@ -58,13 +58,25 @@ from .physical_layer import (
     decode_heat_source_torch,
     torch_quadratic_feature,
 )
-from .pipeline import PipelineResult, build_fixed_neural_rom, build_geometry_neural_rom
+from .pipeline import (
+    PipelineResult,
+    build_fixed_neural_rom,
+    build_geometry_neural_rom,
+    retrain_neural_rom,
+)
 from .pod import PODRankDiagnostic, TensorPOD, fit_dataset_pod, fit_tensor_pod, pod_rank_sweep
 from .quadratic_joule import (
     augmented_operating_vector,
     quadratic_heat_source,
     quadratic_heat_source_batch,
     quadratic_joule_tensor,
+)
+from .sampling import (
+    SnapshotSamplingReport,
+    SnapshotSamplingResult,
+    StateDomainInsufficientError,
+    box_state_geometry_samples,
+    hybrid_reachable_state_geometry_samples,
 )
 from .signatures import fixed_research_physical_signature, geometry_research_physical_signature
 from .stability import analyze_stability_callbacks
@@ -130,7 +142,10 @@ __all__ = [
     "ReducedThermalOperator",
     "ResidualMLPConfig",
     "SnapshotManifest",
+    "SnapshotSamplingReport",
+    "SnapshotSamplingResult",
     "StabilityReport",
+    "StateDomainInsufficientError",
     "StructurePreservingNeuralElectroThermalROM",
     "SurrogateValidationReport",
     "TensorPOD",
@@ -146,6 +161,7 @@ __all__ = [
     "benchmark_snapshot_generation",
     "benchmark_trajectory_queries",
     "benchmark_vector_field",
+    "box_state_geometry_samples",
     "build_fixed_neural_rom",
     "build_geometry_neural_rom",
     "build_residual_mlp",
@@ -175,6 +191,7 @@ __all__ = [
     "geometry_research_tensor_factory",
     "geometry_research_thermal_family",
     "geometry_research_vector_field_factory",
+    "hybrid_reachable_state_geometry_samples",
     "integrate_etd2",
     "integrate_imex_euler",
     "integrate_reference",
@@ -186,6 +203,7 @@ __all__ = [
     "quadratic_heat_source",
     "quadratic_heat_source_batch",
     "quadratic_joule_tensor",
+    "retrain_neural_rom",
     "run_gate_suite",
     "smat",
     "svec",
