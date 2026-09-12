@@ -16,11 +16,12 @@ from .integrators import (
 )
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .pod import TensorPOD
+from .runtime_metadata import git_revision, software_environment_summary
 from .surrogate import NeuralTensorSurrogate
 from .vector_field import FixedThermalOperatorFamily, NeuralElectroThermalVectorField
 
-_MODEL_FORMAT_VERSION = 2
-_SUPPORTED_MODEL_FORMAT_VERSIONS = (1, 2)
+_MODEL_FORMAT_VERSION = 3
+_SUPPORTED_MODEL_FORMAT_VERSIONS = (1, 2, 3)
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,17 @@ class NeuralROMSteadyState:
     converged: bool
 
 
+def _merge_metadata(base: dict, update: dict) -> dict:
+    """Recursively merge JSON-compatible artifact metadata without mutation."""
+    result = dict(base)
+    for key, value in dict(update).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _merge_metadata(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 class StructurePreservingNeuralElectroThermalROM:
     def __init__(
         self,
@@ -50,6 +62,7 @@ class StructurePreservingNeuralElectroThermalROM:
         *,
         physical_signature: str | None = None,
         training_domain: dict | None = None,
+        artifact_metadata: dict | None = None,
     ) -> None:
         self.surrogate = surrogate
         self.thermal_operators = thermal_operators
@@ -58,6 +71,7 @@ class StructurePreservingNeuralElectroThermalROM:
         self.training_domain = {} if training_domain is None else {
             key: np.asarray(value, dtype=float) for key, value in training_domain.items()
         }
+        self.artifact_metadata = {} if artifact_metadata is None else dict(artifact_metadata)
 
     def _check_domain(self, state, geometry, operating, *, allow_extrapolation: bool):
         a = np.asarray(state, dtype=float).reshape(-1)
@@ -243,7 +257,12 @@ class StructurePreservingNeuralElectroThermalROM:
         )
 
     def save(self, path: str | Path, *, metadata: dict | None = None) -> Path:
-        """Save a pickle-free, fail-closed neural ROM artifact."""
+        """Save a pickle-free, fail-closed neural ROM artifact.
+
+        ``metadata`` is merged into metadata loaded from any prior artifact, so
+        a later frozen audit can append certification evidence without erasing
+        training provenance.
+        """
         try:
             import torch
         except ImportError as exc:
@@ -260,9 +279,15 @@ class StructurePreservingNeuralElectroThermalROM:
             operator_kind = "affine_geometry"
         else:
             operator_kind = "external"
+        artifact_metadata = _merge_metadata(
+            self.artifact_metadata,
+            {} if metadata is None else dict(metadata),
+        )
         payload = {
             "format_version": _MODEL_FORMAT_VERSION,
             "architecture": "structure-preserving-quadratic-current-neural-rom",
+            "source_revision": git_revision(),
+            "software_environment": software_environment_summary(),
             "network_config": network.config.to_dict(),
             "state_dimension": self.surrogate.state_dimension,
             "geometry_dimension": self.surrogate.geometry_dimension,
@@ -270,7 +295,7 @@ class StructurePreservingNeuralElectroThermalROM:
             "network_dtype": dtype_name,
             "physical_signature": self.physical_signature,
             "training_domain": {key: value.tolist() for key, value in self.training_domain.items()},
-            "metadata": {} if metadata is None else dict(metadata),
+            "metadata": artifact_metadata,
             "operator_kind": operator_kind,
         }
         arrays = {
@@ -293,6 +318,7 @@ class StructurePreservingNeuralElectroThermalROM:
             arrays.update(self.thermal_operators.persistence_arrays())
         with path.open("wb") as output:
             np.savez_compressed(output, **arrays)
+        self.artifact_metadata = artifact_metadata
         return path
 
     @classmethod
@@ -369,6 +395,7 @@ class StructurePreservingNeuralElectroThermalROM:
                     key: np.asarray(value, dtype=float)
                     for key, value in meta.get("training_domain", {}).items()
                 },
+                artifact_metadata=dict(meta.get("metadata") or {}),
             )
 
 
