@@ -72,6 +72,19 @@ def fixed_research_thermal_family(model):
     return FixedThermalOperatorFamily(M, K, geometry_dimension=0)
 
 
+def fixed_research_thermal_rhs_forcing(model) -> np.ndarray:
+    """Convert legacy additive ``a_dot`` forcing to generalized thermal RHS."""
+    family = fixed_research_thermal_family(model)
+    operator = family.operator(np.empty(0))
+    derivative_forcing = np.asarray(
+        getattr(model.field, "thermal_forcing", np.zeros(operator.rank)),
+        dtype=float,
+    ).reshape(-1)
+    if derivative_forcing.shape != (operator.rank,) or np.any(~np.isfinite(derivative_forcing)):
+        raise ValueError("fixed research thermal forcing is incompatible")
+    return operator.mass @ derivative_forcing
+
+
 def _geometry_context(model, coordinates, *, normalized_geometry: bool):
     n = len(model.geometry_names)
     z = np.asarray(coordinates, dtype=float).reshape(-1)
@@ -79,6 +92,21 @@ def _geometry_context(model, coordinates, *, normalized_geometry: bool):
         raise ValueError("geometry coordinate dimension mismatch")
     geometry = model.denormalize(z) if normalized_geometry else z
     return model.context(geometry), geometry
+
+
+def _require_zero_geometry_reference_forcing(model) -> None:
+    reference_field = getattr(getattr(model, "reference", None), "field", None)
+    forcing = np.asarray(
+        getattr(reference_field, "thermal_forcing", np.zeros(model.thermal_model.rank)),
+        dtype=float,
+    ).reshape(-1)
+    if forcing.shape != (model.thermal_model.rank,):
+        raise ValueError("geometry reference thermal forcing dimension mismatch")
+    if np.any(forcing != 0.0):
+        raise NotImplementedError(
+            "geometry-dependent mapping of nonzero thermal forcing has not been derived; "
+            "do not absorb it into the neural Joule surrogate"
+        )
 
 
 def geometry_research_tensor_factory(model, *, normalized_geometry: bool = True):
@@ -99,6 +127,8 @@ def geometry_research_direct_heat_factory(model, *, normalized_geometry: bool = 
 
 
 def geometry_research_vector_field_factory(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
+
     def factory(state, geometry, operating):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         a = np.asarray(state, dtype=float)
@@ -110,6 +140,8 @@ def geometry_research_vector_field_factory(model, *, normalized_geometry: bool =
 
 
 def geometry_research_jacobian_factory(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
+
     def factory(state, geometry, operating):
         context, _ = _geometry_context(model, geometry, normalized_geometry=normalized_geometry)
         a = np.asarray(state, dtype=float)
@@ -137,6 +169,7 @@ def geometry_research_temperature_reconstructor(model, *, normalized_geometry: b
 
 
 def geometry_research_thermal_family(model, *, normalized_geometry: bool = True):
+    _require_zero_geometry_reference_forcing(model)
     n = len(model.geometry_names)
 
     def callback(coordinates):
@@ -148,10 +181,16 @@ def geometry_research_thermal_family(model, *, normalized_geometry: bool = True)
 
 def geometry_research_embedded_thermal_family(model, *, cache_size: int = 64):
     """Serializable exact online thermal family; contains no EM model."""
+    _require_zero_geometry_reference_forcing(model)
     return AffineGeometryThermalOperatorFamily.from_geometry_research_model(
         model,
         cache_size=cache_size,
     )
+
+
+def geometry_research_thermal_rhs_forcing(model) -> np.ndarray:
+    _require_zero_geometry_reference_forcing(model)
+    return np.zeros(model.thermal_model.rank, dtype=float)
 
 
 __all__ = [
@@ -160,6 +199,7 @@ __all__ = [
     "fixed_research_temperature_reconstructor",
     "fixed_research_tensor_factory",
     "fixed_research_thermal_family",
+    "fixed_research_thermal_rhs_forcing",
     "fixed_research_vector_field_factory",
     "geometry_research_direct_heat_factory",
     "geometry_research_embedded_thermal_family",
@@ -167,5 +207,6 @@ __all__ = [
     "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
     "geometry_research_thermal_family",
+    "geometry_research_thermal_rhs_forcing",
     "geometry_research_vector_field_factory",
 ]
