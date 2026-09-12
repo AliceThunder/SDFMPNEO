@@ -64,6 +64,20 @@ def _resolved_training_config(training_config):
     return NeuralTrainingConfig(**dict(training_config))
 
 
+def _fit_pod(dataset, *, rank, relative_tail_tolerance, pod_config=None):
+    settings = {} if pod_config is None else dict(pod_config)
+    allowed = {"exact_svd_max_bytes", "out_of_core_max_rank", "chunk_rows"}
+    unknown = sorted(set(settings) - allowed)
+    if unknown:
+        raise ValueError(f"unknown POD configuration keys: {unknown}")
+    return fit_dataset_pod(
+        dataset,
+        rank=rank,
+        relative_tail_tolerance=relative_tail_tolerance,
+        **settings,
+    )
+
+
 def _train_from_dataset(
     dataset,
     pod,
@@ -220,18 +234,13 @@ def retrain_neural_rom(
     work_directory: str | Path,
     pod_rank: int | None = None,
     pod_relative_tail_tolerance: float = 1e-4,
+    pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
     save_model: bool = True,
     model_filename: str = "neural_electrothermal_rom.retrained.npz",
 ) -> PipelineResult:
-    """Retrain POD/MLP from a frozen tensor dataset without any EM rebuild.
-
-    ``template_model`` contributes its persisted exact thermal operator family
-    and deterministic thermal RHS forcing. Certification evidence from the
-    template is deliberately not inherited because retraining changes the
-    neural approximation and invalidates it.
-    """
+    """Retrain POD/MLP from a frozen tensor dataset without any EM rebuild."""
     if dataset.thermal_rank != template_model.surrogate.state_dimension:
         raise ValueError("dataset/template thermal dimensions differ")
     if dataset.geometry_dimension != template_model.surrogate.geometry_dimension:
@@ -244,10 +253,11 @@ def retrain_neural_rom(
     if str(signature) != str(template_model.physical_signature):
         raise ValueError("dataset/template physical signatures differ")
     domain = _training_domain_from_dataset(dataset)
-    pod = fit_dataset_pod(
+    pod = _fit_pod(
         dataset,
         rank=pod_rank,
         relative_tail_tolerance=pod_relative_tail_tolerance,
+        pod_config=pod_config,
     )
     surrogate, report = _train_from_dataset(
         dataset,
@@ -277,15 +287,7 @@ def retrain_neural_rom(
                 "retrained_without_em": True,
             },
         )
-    return PipelineResult(
-        dataset,
-        pod,
-        surrogate,
-        report,
-        model,
-        str(signature),
-        None,
-    )
+    return PipelineResult(dataset, pod, surrogate, report, model, str(signature), None)
 
 
 def build_fixed_neural_rom(
@@ -300,12 +302,14 @@ def build_fixed_neural_rom(
     seed: int = 0,
     pod_rank: int | None = None,
     pod_relative_tail_tolerance: float = 1e-4,
+    pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
     physical_signature: str | None = None,
     save_model: bool = True,
     snapshot_workers: int = 1,
     checkpoint_every: int = 16,
+    snapshot_disk_threshold_bytes: int = 256 << 20,
     sampling_config: dict | None = None,
 ) -> PipelineResult:
     """End-to-end fixed-geometry pipeline without transient supervision labels."""
@@ -352,11 +356,13 @@ def build_fixed_neural_rom(
             physical_provenance=physical_provenance,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
+        disk_backed_threshold_bytes=int(snapshot_disk_threshold_bytes),
     )
-    pod = fit_dataset_pod(
+    pod = _fit_pod(
         dataset,
         rank=pod_rank,
         relative_tail_tolerance=pod_relative_tail_tolerance,
+        pod_config=pod_config,
     )
     surrogate, report = _train_from_dataset(
         dataset,
@@ -407,12 +413,14 @@ def build_geometry_neural_rom(
     seed: int = 0,
     pod_rank: int | None = None,
     pod_relative_tail_tolerance: float = 1e-4,
+    pod_config: dict | None = None,
     network_config: ResidualMLPConfig | dict | None = None,
     training_config: NeuralTrainingConfig | dict | None = None,
     physical_signature: str | None = None,
     save_model: bool = True,
     snapshot_workers: int = 1,
     checkpoint_every: int = 16,
+    snapshot_disk_threshold_bytes: int = 256 << 20,
     thermal_cache_size: int = 64,
     sampling_config: dict | None = None,
 ) -> PipelineResult:
@@ -464,11 +472,13 @@ def build_geometry_neural_rom(
             physical_provenance=physical_provenance,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
+        disk_backed_threshold_bytes=int(snapshot_disk_threshold_bytes),
     )
-    pod = fit_dataset_pod(
+    pod = _fit_pod(
         dataset,
         rank=pod_rank,
         relative_tail_tolerance=pod_relative_tail_tolerance,
+        pod_config=pod_config,
     )
     surrogate, report = _train_from_dataset(
         dataset,
