@@ -1,0 +1,28 @@
+name: Neural electrothermal ROM CI
+
+on:
+  push:
+    branches:
+      - feat/structure-preserving-neural-electrothermal-rom
+  pull_request:
+    paths:
+      - 'sdfmpneo/electrothermal_tensor/**'
+      - 'tests/test_quadratic_joule_tensor.py'
+      - 'docs/neural_electrothermal_rom/**'
+      - '.github/workflows/neural-electrothermal-rom-ci.yml'
+
+jobs:
+  phase-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Compile
+        run: python -m compileall -q sdfmpneo/electrothermal_tensor
+      - name: Phase A tests
+        run: python -m pytest -q tests/test_quadratic_joule_tensor.py
