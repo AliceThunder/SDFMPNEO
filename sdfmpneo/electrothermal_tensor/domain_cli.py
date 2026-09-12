@@ -1,4 +1,4 @@
-"""CLI for reproducible physical reachable-state domain probing."""
+"""CLI for reproducible physical reachable-state domain design and training."""
 from __future__ import annotations
 
 import argparse
@@ -6,7 +6,14 @@ from pathlib import Path
 
 import numpy as np
 
-from .cli import _adapters, _build_physical_model, _path_from_config, _read_json, _write_json
+from .cli import (
+    _adapters,
+    _build_physical_model,
+    _jsonable,
+    _path_from_config,
+    _read_json,
+    _write_json,
+)
 from .domain import probe_reachable_state_domain
 
 
@@ -65,16 +72,102 @@ def command_probe(config_file: str | Path) -> int:
     return 0
 
 
+def command_train(config_file: str | Path) -> int:
+    """Train from a frozen, signature-checked state-domain report."""
+    config_path, config = _read_json(config_file)
+    physical_config = _path_from_config(config_path, config.get("physical_config"))
+    domain_report = _path_from_config(config_path, config.get("state_domain_report"))
+    work = _path_from_config(config_path, config.get("work_directory"), "neural_rom_work")
+    model_path = _path_from_config(
+        config_path,
+        config.get("model_path"),
+        work / "neural_electrothermal_rom.npz",
+    )
+    training_report_path = _path_from_config(
+        config_path,
+        config.get("training_report"),
+        work / "training.report.json",
+    )
+    physical = _build_physical_model(physical_config)
+    operating_lower = np.asarray(config["operating_lower"], dtype=float)
+    operating_upper = np.asarray(config["operating_upper"], dtype=float)
+    common = dict(
+        operating_lower=operating_lower,
+        operating_upper=operating_upper,
+        n_snapshots=int(config["n_snapshots"]),
+        work_directory=work,
+        seed=int(config.get("seed", 0)),
+        pod_rank=config.get("pod_rank"),
+        pod_relative_tail_tolerance=float(config.get("pod_relative_tail_tolerance", 1e-4)),
+        network_config=config.get("network"),
+        training_config=config.get("training"),
+        save_model=False,
+        snapshot_workers=int(config.get("snapshot_workers", 1)),
+        checkpoint_every=int(config.get("checkpoint_every", 16)),
+        sampling_config=config.get("sampling"),
+    )
+    from .domain_pipeline import (
+        build_fixed_neural_rom_from_domain_report,
+        build_geometry_neural_rom_from_domain_report,
+    )
+
+    if hasattr(physical, "geometry_names"):
+        result = build_geometry_neural_rom_from_domain_report(
+            physical,
+            domain_report,
+            thermal_cache_size=int(config.get("thermal_cache_size", 64)),
+            **common,
+        )
+    else:
+        result = build_fixed_neural_rom_from_domain_report(
+            physical,
+            domain_report,
+            **common,
+        )
+    result.model.save(
+        model_path,
+        metadata={
+            "dataset_hash": result.dataset.manifest().dataset_hash,
+            "pod_rank": result.pod.rank,
+            "training_report": _jsonable(result.training_report),
+            "sampling": _jsonable(result.sampling_report),
+            "state_domain_report": str(domain_report),
+            "physical_config": str(physical_config),
+        },
+    )
+    _write_json(
+        training_report_path,
+        {
+            "model": str(model_path),
+            "work_directory": str(work),
+            "physical_signature": result.physical_signature,
+            "state_domain_report": str(domain_report),
+            "dataset_manifest": result.dataset.manifest(),
+            "sampling": result.sampling_report,
+            "pod_rank": result.pod.rank,
+            "pod_energy_fraction": result.pod.energy_fraction(),
+            "training": result.training_report,
+        },
+    )
+    print(f"neural ROM saved: {model_path}")
+    print(f"training report: {training_report_path}")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Probe a neural thermal-state domain using the real reduced physics"
+        description="Design and consume a physical reachable thermal-state domain"
     )
     sub = parser.add_subparsers(dest="command", required=True)
     probe = sub.add_parser("probe")
     probe.add_argument("--config", required=True, help="JSON configuration for physical domain probing")
+    train = sub.add_parser("train")
+    train.add_argument("--config", required=True, help="JSON training configuration with state_domain_report")
     args = parser.parse_args(argv)
     if args.command == "probe":
         return command_probe(args.config)
+    if args.command == "train":
+        return command_train(args.config)
     raise AssertionError("unreachable")
 
 
