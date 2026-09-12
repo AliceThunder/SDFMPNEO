@@ -52,6 +52,7 @@ def evaluate_production_readiness(
     persistence_roundtrip: bool,
     vector_field_seconds: float | None = None,
     trajectory_query_seconds: float | None = None,
+    active_subspace_detail: str | None = None,
 ) -> ProductionReadinessReport:
     """Evaluate documented gates without silently inventing engineering limits.
 
@@ -60,9 +61,9 @@ def evaluate_production_readiness(
     legitimately be non-contractive. They pass when the corresponding analysis
     has actually been performed, not when a preferred outcome was obtained.
 
-    Gate 7 is deliberately fail-closed.  A model cannot be declared production
+    Gate 7 is deliberately fail-closed. A model cannot be declared production
     ready until at least one real wall-clock performance budget is supplied and
-    the corresponding measurement has been recorded.  Missing performance data
+    the corresponding measurement has been recorded. Missing performance data
     yields ``passed=None`` rather than an accidental pass.
     """
     records: list[GateRecord] = []
@@ -82,11 +83,18 @@ def evaluate_production_readiness(
             "POD/SVD assessment completed" if pod_assessed else "missing POD/SVD assessment",
         )
     )
+    gate3_detail = active_subspace_detail
+    if gate3_detail is None:
+        gate3_detail = (
+            "sensitivity spectrum assessed"
+            if active_subspace_assessed
+            else "missing full sensitivity spectrum"
+        )
     records.append(
         GateRecord(
             "Gate 3: thermal active subspace",
             bool(active_subspace_assessed),
-            "sensitivity spectrum assessed" if active_subspace_assessed else "missing sensitivity spectrum",
+            str(gate3_detail),
         )
     )
     records.append(
