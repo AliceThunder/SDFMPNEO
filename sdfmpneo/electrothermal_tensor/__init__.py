@@ -16,6 +16,7 @@ from .adapters import (
     geometry_research_vector_field_factory,
 )
 from .audit import GateSuiteConfig, GateSuiteReport, TrajectoryAuditCase, run_gate_suite
+from .batch import BatchedNeuralROMPrediction, predict_batch_fixed_etd2
 from .benchmark import (
     TimingStats,
     benchmark_calls,
@@ -24,6 +25,7 @@ from .benchmark import (
     benchmark_vector_field,
     model_file_size,
 )
+from .certification import audit_evidence, gate_report_hash, save_audited_model
 from .dataset import (
     QuadraticJouleDataset,
     SnapshotManifest,
@@ -31,6 +33,7 @@ from .dataset import (
     generate_snapshot_dataset,
     latin_hypercube_box,
 )
+from .diagnostics import NeuralStateEMDiagnostics, diagnose_neural_state
 from .domain import (
     ReachableStateDomainReport,
     load_reachable_state_domain_report,
@@ -131,6 +134,7 @@ from .vector_field import (
 __all__ = [
     "ActiveSubspaceReport",
     "AffineGeometryThermalOperatorFamily",
+    "BatchedNeuralROMPrediction",
     "CallableThermalOperatorFamily",
     "FeatureNormalizer",
     "FixedThermalOperatorFamily",
@@ -143,6 +147,7 @@ __all__ = [
     "NeuralElectroThermalVectorField",
     "NeuralROMPrediction",
     "NeuralROMSteadyState",
+    "NeuralStateEMDiagnostics",
     "NeuralTensorSurrogate",
     "NeuralTrainingConfig",
     "NeuralTrainingReport",
@@ -170,6 +175,7 @@ __all__ = [
     "active_subspace_spectrum",
     "analyze_stability",
     "analyze_stability_callbacks",
+    "audit_evidence",
     "augmented_operating_vector",
     "benchmark_calls",
     "benchmark_snapshot_generation",
@@ -184,6 +190,7 @@ __all__ = [
     "decode_heat_source_batch_numpy",
     "decode_heat_source_numpy",
     "decode_heat_source_torch",
+    "diagnose_neural_state",
     "energy_logarithmic_norm",
     "evaluate_production_readiness",
     "finite_difference_tensor_jacobian",
@@ -197,6 +204,7 @@ __all__ = [
     "fixed_research_thermal_family",
     "fixed_research_vector_field_factory",
     "frozen_split_indices",
+    "gate_report_hash",
     "generate_snapshot_dataset",
     "generate_snapshots_resumable",
     "geometry_research_direct_heat_factory",
@@ -216,6 +224,7 @@ __all__ = [
     "load_reachable_state_domain_report",
     "model_file_size",
     "pod_rank_sweep",
+    "predict_batch_fixed_etd2",
     "probe_reachable_state_domain",
     "quadratic_feature",
     "quadratic_from_svec",
@@ -224,6 +233,7 @@ __all__ = [
     "quadratic_joule_tensor",
     "retrain_neural_rom",
     "run_gate_suite",
+    "save_audited_model",
     "smat",
     "svec",
     "symmetric_packed_size",
