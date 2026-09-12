@@ -2,12 +2,14 @@
 
 The neural state box is a scientific input, not an optimizer hyperparameter.
 This module derives a reproducible suggested box from sampled physical
-trajectories and, optionally, nearby physical steady states.  No neural model
-or Joule-tensor label is involved.
+trajectories and, optionally, nearby physical steady states. No neural model or
+Joule-tensor label is involved.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -120,12 +122,12 @@ def probe_reachable_state_domain(
     """Probe a conservative neural state box from real reduced dynamics.
 
     Trajectories are sampled jointly over the declared initial, geometry and
-    operating boxes.  When requested, a physical steady-state root is attempted
-    from every trajectory endpoint.  Failed steady solves are recorded and never
+    operating boxes. When requested, a physical steady-state root is attempted
+    from every trajectory endpoint. Failed steady solves are recorded and never
     silently substituted by neural or clipped values.
 
     The returned suggested box is the observed/initial envelope plus a per-mode
-    margin.  It is intentionally a *suggestion*: final production coverage still
+    margin. It is intentionally a suggestion: final production coverage still
     has to be verified by independent trajectories in Gate 6.
     """
     init_lo, init_hi = _finite_bounds(initial_lower, initial_upper, name="initial")
@@ -270,4 +272,84 @@ def probe_reachable_state_domain(
     )
 
 
-__all__ = ["ReachableStateDomainReport", "probe_reachable_state_domain"]
+def _report_from_mapping(value: dict) -> ReachableStateDomainReport:
+    payload = dict(value)
+    array_names = (
+        "observed_state_lower",
+        "observed_state_upper",
+        "suggested_state_lower",
+        "suggested_state_upper",
+        "margin",
+        "initial_lower",
+        "initial_upper",
+        "geometry_lower",
+        "geometry_upper",
+        "operating_lower",
+        "operating_upper",
+    )
+    for name in array_names:
+        if name not in payload:
+            raise ValueError(f"state-domain report is missing {name}")
+        payload[name] = np.asarray(payload[name], dtype=float)
+    return ReachableStateDomainReport(**payload)
+
+
+def load_reachable_state_domain_report(path: str | Path) -> ReachableStateDomainReport:
+    """Load either a direct report mapping or the CLI wrapper JSON."""
+    source = Path(path).expanduser().resolve()
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if payload.get("kind") == "reachable_state_domain":
+        payload = payload.get("report")
+    if not isinstance(payload, dict):
+        raise ValueError("invalid reachable-state domain report")
+    report = _report_from_mapping(payload)
+    if report.thermal_rank != report.suggested_state_lower.size:
+        raise ValueError("state-domain report thermal rank is inconsistent")
+    if report.geometry_dimension != report.geometry_lower.size:
+        raise ValueError("state-domain report geometry dimension is inconsistent")
+    if report.operating_dimension != report.operating_lower.size:
+        raise ValueError("state-domain report operating dimension is inconsistent")
+    return report
+
+
+def _same_domain(saved: np.ndarray, expected: np.ndarray) -> bool:
+    saved = np.asarray(saved, dtype=float).reshape(-1)
+    expected = np.asarray(expected, dtype=float).reshape(-1)
+    if saved.shape != expected.shape:
+        return False
+    scale = max(1.0, float(np.max(np.abs(expected))) if expected.size else 1.0)
+    return bool(np.allclose(saved, expected, rtol=0.0, atol=64.0 * np.finfo(float).eps * scale))
+
+
+def validated_state_bounds(
+    report: ReachableStateDomainReport,
+    *,
+    expected_physical_signature: str,
+    geometry_lower,
+    geometry_upper,
+    operating_lower,
+    operating_upper,
+    thermal_rank: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return suggested bounds only after fail-closed physical-domain checks."""
+    if report.physical_signature is None or str(report.physical_signature) != str(expected_physical_signature):
+        raise ValueError("state-domain report physical signature does not match the training physics")
+    if thermal_rank is not None and int(report.thermal_rank) != int(thermal_rank):
+        raise ValueError("state-domain report thermal rank does not match the training physics")
+    if not _same_domain(report.geometry_lower, geometry_lower) or not _same_domain(report.geometry_upper, geometry_upper):
+        raise ValueError("state-domain report geometry domain does not match training")
+    if not _same_domain(report.operating_lower, operating_lower) or not _same_domain(report.operating_upper, operating_upper):
+        raise ValueError("state-domain report operating domain does not match training")
+    lower = np.asarray(report.suggested_state_lower, dtype=float).copy()
+    upper = np.asarray(report.suggested_state_upper, dtype=float).copy()
+    if lower.shape != (report.thermal_rank,) or upper.shape != lower.shape or np.any(upper <= lower):
+        raise ValueError("state-domain report suggested bounds are invalid")
+    return lower, upper
+
+
+__all__ = [
+    "ReachableStateDomainReport",
+    "load_reachable_state_domain_report",
+    "probe_reachable_state_domain",
+    "validated_state_bounds",
+]
