@@ -5,6 +5,14 @@ from types import SimpleNamespace
 import numpy as np
 
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
+from sdfmpneo.training.fixed_physics_runtime import evaluate_physics_batch
+from sdfmpneo.training.fixed_trial_runtime import (
+    _AFFINE_POINT_CACHE,
+    _activate_affine_signature,
+    _affine_physics_record,
+    _affine_signature,
+    _candidate_amplitude_layer,
+)
 from sdfmpneo.training.monitor import TrainingStopped
 from sdfmpneo.training.research import (
     ResearchTrainingConfig,
@@ -24,6 +32,17 @@ class _LinearField:
             vector_field=self.vector_field(a, operating),
             vector_field_jacobian=np.array([[-2.0]]),
         )
+
+
+class _NonlinearTwoModeField:
+    thermal_model = SimpleNamespace(lambdas=np.array([1.0, 2.0]))
+
+    def vector_field(self, a, operating):
+        a = np.asarray(a, dtype=float)
+        return np.asarray([
+            -a[0] + 0.4 + 0.2 * a[0] * a[0],
+            -2.0 * a[1] - 0.3 + 0.15 * a[0] * a[1],
+        ])
 
 
 class _StopAfterFirstAccepted:
@@ -76,6 +95,18 @@ def _network():
     )
 
 
+def _deep_network():
+    return FixedAnalyticResponseNetwork(
+        [1.0, 2.0], [], max_response_time=2.0,
+        input_center=[0.0, 0.0], input_scale=[1.0, 1.0],
+        depth=2, channels_per_mode=1,
+        linear_rank=1, hidden_rank=1, quadratic_rank=1, square_rank=1,
+        cross_rank=1, state_rank=1,
+        layer_widths=(2, 1),
+        layer_hidden_ranks=(1,), layer_cross_ranks=(1,), layer_state_ranks=(1,),
+    )
+
+
 def test_current_trainer_reaches_physics_and_restart_consistency():
     config = _config()
     trained, report = train_research_network(
@@ -87,6 +118,47 @@ def test_current_trainer_reaches_physics_and_restart_consistency():
     assert report.maximum_validation_physics_residual <= config.residual_tolerance
     assert report.maximum_training_semigroup_rate_defect <= config.residual_tolerance
     assert report.maximum_validation_semigroup_rate_defect <= config.residual_tolerance
+
+
+def test_deep_candidate_affine_cache_matches_full_exact_residual():
+    base = _deep_network()
+    theta = base.parameters.copy()
+    theta[base._indices("bias_1")[0]] = 0.12
+    theta[base._indices("hidden_linear_out_1")[0, 0]] = -0.08
+    parent = base.with_parameters(theta)
+
+    ids = np.asarray(parent.layer_amplitude_parameter_indices(1), dtype=int)
+    trial_theta = parent.parameters.copy()
+    trial_theta[ids] += np.linspace(-2e-3, 3e-3, len(ids))
+    trial = parent.with_parameters(trial_theta)
+    layer, detected_ids = _candidate_amplitude_layer(parent, trial)
+    assert layer == 1
+    np.testing.assert_array_equal(detected_ids, ids)
+
+    signature = _affine_signature(trial, layer, ids)
+    _activate_affine_signature(signature)
+    _AFFINE_POINT_CACHE.clear()
+    field = _NonlinearTwoModeField()
+    point = np.asarray([0.25, -0.15, 0.7])
+
+    fast = _affine_physics_record(trial, field, point, layer, ids, signature)
+    exact = evaluate_physics_batch(trial, field, point[None, :])[0]
+    np.testing.assert_allclose(fast.residual, exact.residual, rtol=2e-12, atol=2e-13)
+    assert len(_AFFINE_POINT_CACHE) == 1
+
+    next_theta = trial.parameters.copy()
+    next_theta[ids] += np.linspace(1e-3, -1.5e-3, len(ids))
+    next_trial = trial.with_parameters(next_theta)
+    next_signature = _affine_signature(next_trial, layer, ids)
+    assert next_signature == signature
+    fast_next = _affine_physics_record(
+        next_trial, field, point, layer, ids, next_signature
+    )
+    exact_next = evaluate_physics_batch(next_trial, field, point[None, :])[0]
+    np.testing.assert_allclose(
+        fast_next.residual, exact_next.residual, rtol=2e-12, atol=2e-13
+    )
+    assert len(_AFFINE_POINT_CACHE) == 1
 
 
 def test_iteration_limit_is_a_soft_block_not_a_stall_condition():
