@@ -9,6 +9,7 @@ from .parallel_runtime import _ordered_map, training_point_workers
 from .fixed_physics_runtime import (
     _prepare_operating_contexts,
     _prepare_working_set,
+    clear_physics_runtime_caches,
     evaluate_physics_batch,
     evaluate_semigroup_batch,
     physics_vector_field,
@@ -42,7 +43,6 @@ def _candidate_thresholds(parent, tolerance):
 
 
 def _candidate_amplitude_layer(parent_network, network):
-    """Return the sole changed amplitude layer, or ``None`` for a general trial."""
     old = np.asarray(parent_network.parameters, dtype=float)
     new = np.asarray(network.parameters, dtype=float)
     if old.shape != new.shape:
@@ -60,7 +60,6 @@ def _candidate_amplitude_layer(parent_network, network):
 
 
 def _compiled_physics_records(network, field, rows, program):
-    """Evaluate exact physics on a candidate without rebuilding analytic signals."""
     values = np.asarray(rows, dtype=float)
     if len(values) == 0:
         return []
@@ -88,13 +87,6 @@ def _candidate_exact_result(
     tolerance,
     parent_network=None,
 ):
-    """Exact trust-region result with batched early rejection.
-
-    Expensive analytic structure is compiled once by ``layer_program``.  A trial
-    candidate then performs only dense state reconstruction plus the real physical
-    vector field.  Physics points are processed from worst parent residual to best
-    in small batches so hopeless candidates still exit early.
-    """
     from . import research_helpers as rh
 
     points = np.asarray(points, dtype=float)
@@ -120,9 +112,6 @@ def _candidate_exact_result(
         if affine is not None:
             layer, ids = affine
             if layer > 0 and len(ids) <= 4096:
-                # The preceding Jacobian step normally prewarms this exact program.
-                # If a caller reaches candidate evaluation directly, compile once
-                # here and reuse it for every subsequent backtrack/iteration.
                 program = layer_program(parent_network, points, layer, monitor=monitor)
 
     items = [(float(parent.norms[i]), 0, i, row) for i, row in enumerate(points)]
@@ -141,9 +130,6 @@ def _candidate_exact_result(
     if include_semigroup:
         physics_guard = max(1.05 * tolerance, 1.02 * float(parent.physics_max))
 
-    # Small batches preserve early-reject power; each batch is internally point
-    # parallel.  Using at most one worker wave avoids the old nested thread/batch
-    # overhead where evaluate_physics_batch was invoked once per point.
     batch_size = min(training_point_workers(), max(1, expected))
     completed = 0
     for start in range(0, len(items), batch_size):
@@ -156,9 +142,7 @@ def _candidate_exact_result(
             if program is not None:
                 batch_records = _compiled_physics_records(network, field, rows, program)
             else:
-                batch_records = evaluate_physics_batch(
-                    network, field, rows, monitor=None
-                )
+                batch_records = evaluate_physics_batch(network, field, rows, monitor=None)
             for item, record in zip(physics_items, batch_records):
                 index = item[2]
                 records[index] = record
@@ -180,9 +164,7 @@ def _candidate_exact_result(
         completed += len(batch)
         rh._work(monitor, "candidate_exact_residual", completed, expected)
         if partial_max > max_limit or partial_merit > merit_limit:
-            raise CandidateEarlyRejected(
-                "candidate cannot satisfy exact trust acceptance"
-            )
+            raise CandidateEarlyRejected("candidate cannot satisfy exact trust acceptance")
         if physics_guard is not None and partial_physics_max > physics_guard:
             raise CandidateEarlyRejected("candidate exceeds exact physics guard")
 
@@ -256,6 +238,7 @@ def accelerated_train_research_network(original, field, config, **kwargs):
     _NETWORKS.clear()
     _EVALUATED.clear()
     clear_layer_program_cache()
+    clear_physics_runtime_caches()
     try:
         return original(field, config, **kwargs)
     finally:
@@ -263,6 +246,7 @@ def accelerated_train_research_network(original, field, config, **kwargs):
         _NETWORKS.clear()
         _EVALUATED.clear()
         clear_layer_program_cache()
+        clear_physics_runtime_caches()
         if previous is None:
             try:
                 delattr(_STATE, "tolerance")
