@@ -24,8 +24,6 @@ _CRITICAL_METADATA_KEYS = (
     "geometry_upper",
     "operating_lower",
     "operating_upper",
-    "sampling",
-    "state_domain_report_hash",
 )
 
 
@@ -73,10 +71,7 @@ def _atomic_checkpoint(
 def _validate_checkpoint_samples(data, states: np.ndarray, geometries: np.ndarray) -> None:
     version = int(data["format_version"]) if "format_version" in data.files else -1
     if version != _CHECKPOINT_FORMAT_VERSION:
-        raise ValueError(
-            "legacy snapshot checkpoint is not provenance-safe for packed out-of-core labels; "
-            "delete it and regenerate"
-        )
+        raise ValueError("unsupported snapshot checkpoint format; delete it and regenerate")
     if tuple(np.asarray(data["state_shape"], dtype=int)) != states.shape:
         raise ValueError("partial snapshot checkpoint belongs to a different state sample set")
     if tuple(np.asarray(data["geometry_shape"], dtype=int)) != geometries.shape:
@@ -138,16 +133,16 @@ def _existing_frozen_dataset(final_path, *, states, geometries, split, metadata)
     if not existing:
         return None
     if len(existing) != 1:
-        raise ValueError("both NPZ and disk-store frozen datasets exist; remove the stale artifact")
+        raise ValueError("both NPZ and disk-store datasets exist; remove the stale artifact")
     dataset = QuadraticJouleDataset.load(existing[0])
     if not np.array_equal(np.asarray(dataset.states), np.asarray(states)):
-        raise ValueError("existing frozen dataset belongs to a different state sample set")
+        raise ValueError("existing dataset belongs to a different state sample set")
     if not np.array_equal(np.asarray(dataset.geometries), np.asarray(geometries)):
-        raise ValueError("existing frozen dataset belongs to a different geometry sample set")
+        raise ValueError("existing dataset belongs to a different geometry sample set")
     if not np.array_equal(np.asarray(dataset.split, dtype=np.int8), np.asarray(split, dtype=np.int8)):
-        raise ValueError("existing frozen dataset uses a different frozen split")
+        raise ValueError("existing dataset uses a different split")
     if not _metadata_equal(dataset.metadata, {} if metadata is None else dict(metadata)):
-        raise ValueError("existing frozen dataset critical metadata differs from current training request")
+        raise ValueError("existing dataset metadata differs from the current training request")
     return dataset
 
 
@@ -168,10 +163,10 @@ def generate_snapshots_resumable(
 ):
     """Generate ``svec(G(a,g))`` snapshots with bounded RAM and checkpoint I/O.
 
-    A matching completed frozen dataset is reused before any physics call. During
+    A matching completed dataset is reused before any physics call. During
     generation each tensor is packed immediately and written once to a memmapped
-    NPY sidecar. Small completed datasets freeze to NPZ; wide datasets freeze to
-    a verified directory-backed store.
+    NPY sidecar. Small completed datasets use NPZ; larger datasets use a
+    directory-backed store.
     """
     a = np.asarray(states, dtype=np.float64)
     g = np.asarray(geometries, dtype=np.float64)
@@ -317,7 +312,7 @@ def generate_snapshots_resumable(
 
     if use_disk:
         if final_path is None:
-            raise ValueError("large out-of-core snapshot datasets require final_path")
+            raise ValueError("large snapshot datasets require final_path")
         _, store_path = _final_paths(final_path)
         _close_memmap(packed)
         packed = None
