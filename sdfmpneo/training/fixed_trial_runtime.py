@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from threading import local
 from types import SimpleNamespace
 
 import numpy as np
@@ -19,13 +18,6 @@ from .fixed_layer_cache_runtime import (
     clear_layer_program_cache,
     layer_program,
 )
-
-_STATE = local()
-_TRIAL_PARENTS: dict[int, int] = {}
-_NETWORKS: dict[int, object] = {}
-_EVALUATED: dict[int, object] = {}
-_ORIGINAL_WITH_PARAMETERS = None
-_INSTALLED = False
 
 
 class CandidateEarlyRejected(ValueError):
@@ -47,6 +39,7 @@ def _candidate_thresholds(parent, tolerance):
 
 
 def _candidate_amplitude_layer(parent_network, network):
+    """Return the sole changed amplitude layer, or ``None`` for a general trial."""
     old = np.asarray(parent_network.parameters, dtype=float)
     new = np.asarray(network.parameters, dtype=float)
     if old.shape != new.shape:
@@ -106,19 +99,28 @@ def _compiled_semigroup_records(network, rows, program):
     return _ordered_map(one, range(len(values)), monitor=None)
 
 
-def _candidate_exact_result(
-    network,
+def evaluate_candidate_exact(
+    trial,
+    parent_network,
+    parent_result,
     field,
     points,
     semigroup_points,
     include_semigroup,
     monitor,
-    parent,
     tolerance,
-    parent_network=None,
 ):
+    """Evaluate one LM/backtracking candidate with explicit parent state.
+
+    The old acceleration layer monkey-patched ``with_parameters`` and recovered
+    parent/result objects through process-global ``id(network)`` maps.  The trainer
+    already owns those objects, so pass them directly instead.  This removes hidden
+    object-lifetime coupling while preserving the same exact trust-region test.
+    """
     from . import research_helpers as rh
 
+    network = trial
+    parent = parent_result
     points = np.asarray(points, dtype=float)
     semigroup_points = np.asarray(semigroup_points, dtype=float)
     _prepare_working_set(field, points)
@@ -131,30 +133,31 @@ def _candidate_exact_result(
     expected = n_physics + n_semigroup
     if weights.shape != (expected,):
         if include_semigroup:
-            return rh._evaluate_all(network, field, points, semigroup_points, monitor=monitor)
+            physics = evaluate_physics_batch(network, field, points, monitor=monitor)
+            restart = evaluate_semigroup_batch(network, semigroup_points, monitor=monitor)
+            return rh._combined_metrics(physics, restart)
         return rh._combined_metrics(
             evaluate_physics_batch(network, field, points, monitor=monitor), []
         )
 
     program = None
     restart_program = None
-    if parent_network is not None:
-        affine = _candidate_amplitude_layer(parent_network, network)
-        if affine is not None:
-            layer, ids = affine
-            if layer > 0 and len(ids) <= 4096:
-                program = layer_program(parent_network, points, layer, monitor=monitor)
-                if include_semigroup and len(semigroup_points):
-                    direct_points, first_points = _semigroup_endpoint_points(
-                        parent_network, semigroup_points
-                    )
-                    restart_program = layer_program(
-                        parent_network,
-                        np.vstack([direct_points, first_points]),
-                        layer,
-                        monitor=monitor,
-                        work_label=f"restart_layer_{layer + 1}_basis",
-                    )
+    affine = _candidate_amplitude_layer(parent_network, network)
+    if affine is not None:
+        layer, ids = affine
+        if layer > 0 and len(ids) <= 4096:
+            program = layer_program(parent_network, points, layer, monitor=monitor)
+            if include_semigroup and len(semigroup_points):
+                direct_points, first_points = _semigroup_endpoint_points(
+                    parent_network, semigroup_points
+                )
+                restart_program = layer_program(
+                    parent_network,
+                    np.vstack([direct_points, first_points]),
+                    layer,
+                    monitor=monitor,
+                    work_label=f"restart_layer_{layer + 1}_basis",
+                )
 
     items = [(float(parent.norms[i]), 0, i, row) for i, row in enumerate(points)]
     if include_semigroup:
@@ -220,84 +223,25 @@ def _candidate_exact_result(
     )
 
 
-def _install_trial_tracking(network_class):
-    global _ORIGINAL_WITH_PARAMETERS
-    if getattr(network_class, "_sdfmpneo_trial_tracking_installed", False):
-        return
-    _ORIGINAL_WITH_PARAMETERS = network_class.with_parameters
-
-    def with_parameters(self, parameters):
-        result = _ORIGINAL_WITH_PARAMETERS(self, parameters)
-        _TRIAL_PARENTS[id(result)] = id(self)
-        _NETWORKS[id(self)] = self
-        _NETWORKS[id(result)] = result
-        return result
-
-    network_class.with_parameters = with_parameters
-    network_class._sdfmpneo_trial_tracking_installed = True
-
-
 def install_trial_acceleration() -> None:
-    global _INSTALLED
-    if _INSTALLED:
-        return
-    from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
-    from . import research_trainer as rt
-
-    _install_trial_tracking(FixedAnalyticResponseNetwork)
-    original_exact_result = rt._exact_result
-
-    def exact_result(network, field, points, semigroup_points, include_semigroup, monitor):
-        tolerance = getattr(_STATE, "tolerance", None)
-        network_id = id(network)
-        _NETWORKS[network_id] = network
-        parent_id = _TRIAL_PARENTS.get(network_id)
-        parent = _EVALUATED.get(parent_id) if parent_id is not None else None
-        parent_network = _NETWORKS.get(parent_id) if parent_id is not None else None
-        if tolerance is not None and parent is not None:
-            result = _candidate_exact_result(
-                network,
-                field,
-                points,
-                semigroup_points,
-                include_semigroup,
-                monitor,
-                parent,
-                float(tolerance),
-                parent_network=parent_network,
-            )
-        else:
-            result = original_exact_result(
-                network, field, points, semigroup_points, include_semigroup, monitor
-            )
-        _EVALUATED[network_id] = result
-        return result
-
-    rt._exact_result = exact_result
-    _INSTALLED = True
+    """Compatibility no-op: trial acceleration is now an explicit trainer call."""
+    return None
 
 
 def accelerated_train_research_network(original, field, config, **kwargs):
-    install_trial_acceleration()
-    previous = getattr(_STATE, "tolerance", None)
-    _STATE.tolerance = float(config.residual_tolerance)
-    _TRIAL_PARENTS.clear()
-    _NETWORKS.clear()
-    _EVALUATED.clear()
+    """Scope compiled numeric caches to exactly one public training call."""
     clear_layer_program_cache()
     clear_physics_runtime_caches()
     try:
         return original(field, config, **kwargs)
     finally:
-        _TRIAL_PARENTS.clear()
-        _NETWORKS.clear()
-        _EVALUATED.clear()
         clear_layer_program_cache()
         clear_physics_runtime_caches()
-        if previous is None:
-            try:
-                delattr(_STATE, "tolerance")
-            except AttributeError:
-                pass
-        else:
-            _STATE.tolerance = previous
+
+
+__all__ = [
+    "CandidateEarlyRejected",
+    "accelerated_train_research_network",
+    "evaluate_candidate_exact",
+    "install_trial_acceleration",
+]
