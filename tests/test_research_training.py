@@ -6,17 +6,13 @@ import numpy as np
 
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
 from sdfmpneo.training.fixed_layer_cache_runtime import (
+    clear_layer_program_cache,
     evaluate_layer_physics as evaluate_cached_layer_physics,
+    layer_program,
     prewarm_layer_basis,
 )
 from sdfmpneo.training.fixed_physics_runtime import evaluate_physics_batch
-from sdfmpneo.training.fixed_trial_runtime import (
-    _AFFINE_POINT_CACHE,
-    _activate_affine_signature,
-    _affine_physics_record,
-    _affine_signature,
-    _candidate_amplitude_layer,
-)
+from sdfmpneo.training.fixed_trial_runtime import _candidate_amplitude_layer
 from sdfmpneo.training.monitor import TrainingStopped
 from sdfmpneo.training.research import (
     ResearchTrainingConfig,
@@ -134,7 +130,7 @@ def test_current_trainer_reaches_physics_and_restart_consistency():
     assert report.maximum_validation_semigroup_rate_defect <= config.residual_tolerance
 
 
-def test_deep_candidate_affine_cache_matches_full_exact_residual():
+def test_deep_candidate_compiled_program_matches_full_exact_residual():
     base = _deep_network()
     theta = base.parameters.copy()
     theta[base._indices("bias_1")[0]] = 0.12
@@ -149,33 +145,32 @@ def test_deep_candidate_affine_cache_matches_full_exact_residual():
     assert layer == 1
     np.testing.assert_array_equal(detected_ids, ids)
 
-    signature = _affine_signature(trial, layer, ids)
-    _activate_affine_signature(signature)
-    _AFFINE_POINT_CACHE.clear()
     field = _NonlinearTwoModeField()
-    point = np.asarray([0.25, -0.15, 0.7])
-
-    fast = _affine_physics_record(trial, field, point, layer, ids, signature)
-    exact = evaluate_physics_batch(trial, field, point[None, :])[0]
-    np.testing.assert_allclose(fast.residual, exact.residual, rtol=2e-12, atol=2e-13)
-    assert len(_AFFINE_POINT_CACHE) == 1
+    point = np.asarray([[0.25, -0.15, 0.7]])
+    clear_layer_program_cache()
+    program = layer_program(parent, point, layer)
+    assert program is not None
+    state, derivative = program.reconstruct(trial, point)
+    fast_residual = derivative[0] - field.vector_field(state[0], ())
+    exact = evaluate_physics_batch(trial, field, point)[0]
+    np.testing.assert_allclose(
+        fast_residual, exact.residual, rtol=2e-12, atol=2e-13
+    )
 
     next_theta = trial.parameters.copy()
     next_theta[ids] += np.linspace(1e-3, -1.5e-3, len(ids))
     next_trial = trial.with_parameters(next_theta)
-    next_signature = _affine_signature(next_trial, layer, ids)
-    assert next_signature == signature
-    fast_next = _affine_physics_record(
-        next_trial, field, point, layer, ids, next_signature
-    )
-    exact_next = evaluate_physics_batch(next_trial, field, point[None, :])[0]
+    reused = layer_program(next_trial, point, layer)
+    assert reused is program
+    state_next, derivative_next = reused.reconstruct(next_trial, point)
+    fast_next = derivative_next[0] - field.vector_field(state_next[0], ())
+    exact_next = evaluate_physics_batch(next_trial, field, point)[0]
     np.testing.assert_allclose(
-        fast_next.residual, exact_next.residual, rtol=2e-12, atol=2e-13
+        fast_next, exact_next.residual, rtol=2e-12, atol=2e-13
     )
-    assert len(_AFFINE_POINT_CACHE) == 1
 
 
-def test_deep_layer_jacobian_reuses_prewarmed_affine_basis():
+def test_deep_layer_jacobian_reuses_compiled_program_after_amplitude_update():
     base = _deep_network()
     theta = base.parameters.copy()
     theta[base._indices("bias_1")[0]] = 0.09
@@ -188,13 +183,14 @@ def test_deep_layer_jacobian_reuses_prewarmed_affine_basis():
     ])
     field = _NonlinearTwoModeField()
 
-    _AFFINE_POINT_CACHE.clear()
+    clear_layer_program_cache()
     assert prewarm_layer_basis(network, points, 1)
-    cache_size = len(_AFFINE_POINT_CACHE)
-    assert cache_size == len(points)
+    program = layer_program(network, points, 1)
+    assert program is not None
+    assert program.n_points == len(points)
 
     records, ids = evaluate_cached_layer_physics(network, field, points, 1)
-    assert len(_AFFINE_POINT_CACHE) == cache_size
+    assert layer_program(network, points, 1) is program
     for point, record in zip(points, records):
         a, da, ja, jda, direct_ids = network.evaluate_layer_amplitude_jacobian(
             float(point[-1]), a0=point[:2], operating=(), layer=1
@@ -219,7 +215,7 @@ def test_deep_layer_jacobian_reuses_prewarmed_affine_basis():
     trial = network.with_parameters(trial_theta)
     next_records, next_ids = evaluate_cached_layer_physics(trial, field, points, 1)
     np.testing.assert_array_equal(next_ids, ids)
-    assert len(_AFFINE_POINT_CACHE) == cache_size
+    assert layer_program(trial, points, 1) is program
     assert any(
         not np.allclose(old.residual, new.residual)
         for old, new in zip(records, next_records)
