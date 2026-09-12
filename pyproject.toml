@@ -16,6 +16,7 @@ sdfmpneo = "sdfmpneo.__main__:main"
 dev = ["pytest>=7"]
 cad = ["gmsh>=4.11"]
 gui = ["PyQt6>=6.5", "pyqtgraph>=0.13.3"]
+neural = ["torch>=2.2"]
 
 [tool.setuptools.packages.find]
 include = ["sdfmpneo*"]
