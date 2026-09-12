@@ -18,9 +18,13 @@ class _FakeGeometryModel:
         self.geometry_names = ("g",)
         self.thermal_model = SimpleNamespace(rank=1)
         self._stats_lock = Lock()
-        self._active = 0
-        self.maximum_active = 0
-        self.build_counts = {}
+        # A shallow proxy intentionally shares this dictionary, matching the kind
+        # of immutable/heavy state the production proxy shares with its parent.
+        self.stats = {"active": 0, "maximum": 0, "counts": {}}
+
+    @property
+    def build_counts(self):
+        return self.stats["counts"]
 
     def geometry_vector(self, geometry):
         value = np.asarray(geometry, dtype=float)
@@ -39,13 +43,16 @@ class _FakeGeometryModel:
             self._cache.move_to_end(key)
             return cached
         with self._stats_lock:
-            self._active += 1
-            self.maximum_active = max(self.maximum_active, self._active)
-            self.build_counts[key] = self.build_counts.get(key, 0) + 1
+            self.stats["active"] += 1
+            self.stats["maximum"] = max(
+                self.stats["maximum"], self.stats["active"]
+            )
+            counts = self.stats["counts"]
+            counts[key] = counts.get(key, 0) + 1
         time.sleep(0.03)
         result = object()
         with self._stats_lock:
-            self._active -= 1
+            self.stats["active"] -= 1
         self._cache[key] = result
         if len(self._cache) > self.cache_size:
             self._cache.popitem(last=False)
@@ -58,7 +65,6 @@ def test_geometry_working_set_is_prewarmed_once_and_kept_resident(monkeypatch):
     model = _FakeGeometryModel()
     assert enable_concurrent_geometry_context_cache(model)
 
-    # one initial coordinate, one geometry coordinate, one current, time
     points = np.asarray([
         [0.0, -1.0, 0.2, 0.0],
         [0.1, 0.0, 0.4, 1.0],
@@ -69,10 +75,9 @@ def test_geometry_working_set_is_prewarmed_once_and_kept_resident(monkeypatch):
     assert required == 3
     assert model.cache_size >= 3
     assert len(model._cache) == 3
-    assert model.maximum_active >= 2
+    assert model.stats["maximum"] >= 2
     assert model.build_counts == {(-1.0,): 1, (0.0,): 1, (1.0,): 1}
 
-    # A second candidate over the identical collocation set performs no builds.
     model.prepare_training_contexts(points)
     assert model.build_counts == {(-1.0,): 1, (0.0,): 1, (1.0,): 1}
 
