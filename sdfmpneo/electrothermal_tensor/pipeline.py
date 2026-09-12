@@ -170,8 +170,9 @@ def _dataset_metadata(
     operating_upper,
     sampling_report,
     physical_provenance: dict,
+    extra_metadata: dict | None = None,
 ) -> dict:
-    return {
+    metadata = {
         "kind": kind,
         "physical_signature": signature,
         "physical_provenance": dict(physical_provenance),
@@ -183,6 +184,13 @@ def _dataset_metadata(
         "operating_upper": np.asarray(operating_upper, dtype=float).tolist(),
         "sampling": _report_metadata(sampling_report),
     }
+    if extra_metadata:
+        reserved = set(metadata)
+        conflict = sorted(reserved.intersection(extra_metadata))
+        if conflict:
+            raise ValueError(f"extra dataset metadata cannot override reserved keys: {conflict}")
+        metadata.update(dict(extra_metadata))
+    return metadata
 
 
 def _training_domain_from_dataset(dataset) -> dict[str, np.ndarray]:
@@ -214,9 +222,7 @@ def _training_domain_from_dataset(dataset) -> dict[str, np.ndarray]:
 def _dataset_artifact_metadata(dataset) -> dict:
     """Carry only immutable physical/data provenance into a newly trained model."""
     metadata = dict(dataset.metadata)
-    result = {
-        "dataset_hash": dataset.manifest().dataset_hash,
-    }
+    result = {"dataset_hash": dataset.manifest().dataset_hash}
     for key in (
         "physical_provenance",
         "state_domain_report",
@@ -311,6 +317,7 @@ def build_fixed_neural_rom(
     checkpoint_every: int = 16,
     snapshot_disk_threshold_bytes: int = 256 << 20,
     sampling_config: dict | None = None,
+    dataset_metadata_extra: dict | None = None,
 ) -> PipelineResult:
     """End-to-end fixed-geometry pipeline without transient supervision labels."""
     work = Path(work_directory)
@@ -354,6 +361,7 @@ def build_fixed_neural_rom(
             operating_upper=operating_upper,
             sampling_report=sampled.report,
             physical_provenance=physical_provenance,
+            extra_metadata=dataset_metadata_extra,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
         disk_backed_threshold_bytes=int(snapshot_disk_threshold_bytes),
@@ -423,6 +431,7 @@ def build_geometry_neural_rom(
     snapshot_disk_threshold_bytes: int = 256 << 20,
     thermal_cache_size: int = 64,
     sampling_config: dict | None = None,
+    dataset_metadata_extra: dict | None = None,
 ) -> PipelineResult:
     """End-to-end geometry-family pipeline using normalized geometry coordinates."""
     work = Path(work_directory)
@@ -470,6 +479,7 @@ def build_geometry_neural_rom(
             operating_upper=operating_upper,
             sampling_report=sampled.report,
             physical_provenance=physical_provenance,
+            extra_metadata=dataset_metadata_extra,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
         disk_backed_threshold_bytes=int(snapshot_disk_threshold_bytes),
