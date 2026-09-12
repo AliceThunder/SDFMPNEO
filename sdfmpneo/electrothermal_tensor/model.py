@@ -194,6 +194,36 @@ class StructurePreservingNeuralElectroThermalROM:
             rejected_steps=result.rejected_steps,
         )
 
+    def predict_batch_fixed_etd2(
+        self,
+        time: float,
+        *,
+        initial_states: np.ndarray,
+        geometry: np.ndarray,
+        operating: np.ndarray,
+        max_step: float,
+        allow_extrapolation: bool = False,
+    ):
+        """Batch independent fixed-step ETD2 queries sharing one geometry/time.
+
+        The implementation shares one generalized thermal eigenspectrum, uses
+        one MLP forward per ETD stage for the whole batch, and performs the final
+        thermal derivative solve as a dense multi-RHS solve. Adaptive stepping
+        remains intentionally per-trajectory because different error histories
+        would otherwise couple independent queries.
+        """
+        from .batch import predict_batch_fixed_etd2
+
+        return predict_batch_fixed_etd2(
+            self,
+            time,
+            initial_states=initial_states,
+            geometry=geometry,
+            operating=operating,
+            max_step=max_step,
+            allow_extrapolation=allow_extrapolation,
+        )
+
     def steady_state(
         self,
         *,
