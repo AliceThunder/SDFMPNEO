@@ -1,0 +1,47 @@
+{
+  "physical_config": "../../results/uwpt/model.config.json",
+  "work_directory": "../../results/uwpt/neural_rom_hybrid",
+  "model_path": "../../results/uwpt/neural_rom_hybrid/model.npz",
+  "training_report": "../../results/uwpt/neural_rom_hybrid/training.report.json",
+  "state_lower": [-1.0, -1.0],
+  "state_upper": [1.0, 1.0],
+  "operating_lower": [0.0, 0.0],
+  "operating_upper": [10.0, 10.0],
+  "n_snapshots": 4096,
+  "seed": 17,
+  "sampling": {
+    "strategy": "hybrid_reachable",
+    "initial_lower": [-0.1, -0.1],
+    "initial_upper": [0.1, 0.1],
+    "box_fraction": 0.25,
+    "trajectory_count": 32,
+    "samples_per_trajectory": 16,
+    "time_horizon": 1000.0,
+    "time_min": 0.000001,
+    "rtol": 1e-7,
+    "atol": 1e-9
+  },
+  "pod_rank": null,
+  "pod_relative_tail_tolerance": 0.0001,
+  "snapshot_workers": 1,
+  "checkpoint_every": 16,
+  "thermal_cache_size": 64,
+  "network": {
+    "width": 256,
+    "blocks": 4,
+    "activation": "silu"
+  },
+  "training": {
+    "epochs": 500,
+    "batch_size": 256,
+    "evaluation_batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.000001,
+    "heat_loss_weight": 0.25,
+    "patience": 50,
+    "seed": 17,
+    "dtype": "float32",
+    "mixed_precision": false,
+    "gradient_clip_norm": 10.0
+  }
+}
