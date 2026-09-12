@@ -75,10 +75,15 @@ def _fixed_summary(model) -> dict:
     em = model.em
     problem = em.problem
     rhs_matrix = np.asarray(model.rhs_map.matrix)
+    thermal_forcing = np.asarray(
+        getattr(model.field, "thermal_forcing", np.zeros(core.thermal_model.rank)),
+        dtype=float,
+    )
     return {
         "model_kind": "fixed",
         "thermal_rank": int(core.thermal_model.rank),
         "thermal_backend": str(getattr(core, "thermal_spectrum_backend", "unknown")),
+        "thermal_forcing": compact_summary(thermal_forcing),
         "em_full_dimension": int(problem.n_em),
         "em_reduced_rank": int(em.n_reduced),
         "em_reduction_certificate": compact_summary(getattr(em, "reduction_certificate", None)),
