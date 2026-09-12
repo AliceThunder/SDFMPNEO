@@ -15,7 +15,7 @@ from .surrogate import NeuralTensorSurrogate
 @dataclass(frozen=True)
 class NeuralTrainingConfig:
     epochs: int = 500
-    batch_size: int = 256
+    batch_size: int = 512
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
     heat_loss_weight: float = 0.25
@@ -24,7 +24,10 @@ class NeuralTrainingConfig:
     dtype: str = "float32"
     gradient_clip_norm: float | None = 10.0
     evaluation_batch_size: int | None = None
-    mixed_precision: bool = False
+    mixed_precision: bool = True
+    validation_interval: int = 5
+    preload_to_device: bool = True
+    enable_tf32: bool = True
 
     def __post_init__(self) -> None:
         if int(self.epochs) < 1 or int(self.batch_size) < 1 or int(self.patience) < 1:
@@ -39,6 +42,8 @@ class NeuralTrainingConfig:
             raise ValueError("gradient_clip_norm must be positive when supplied")
         if self.evaluation_batch_size is not None and int(self.evaluation_batch_size) < 1:
             raise ValueError("evaluation_batch_size must be positive when supplied")
+        if int(self.validation_interval) < 1:
+            raise ValueError("validation_interval must be positive")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -85,6 +90,26 @@ def _encode_dataset_outputs(dataset, pod, *, chunk_rows: int) -> np.ndarray:
     return beta
 
 
+def _resolve_device(torch, requested: str | None) -> str:
+    if requested is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    value = str(requested)
+    if value.startswith("cuda") and not torch.cuda.is_available():
+        print("CUDA 不可用，自动退回 CPU。", flush=True)
+        return "cpu"
+    return value
+
+
+def _adamw(torch, parameters, *, device: str, learning_rate: float, weight_decay: float):
+    kwargs = {"lr": float(learning_rate), "weight_decay": float(weight_decay)}
+    if device.startswith("cuda"):
+        try:
+            return torch.optim.AdamW(parameters, fused=True, **kwargs), "AdamW(fused)"
+        except (TypeError, RuntimeError):
+            pass
+    return torch.optim.AdamW(parameters, **kwargs), "AdamW"
+
+
 def train_tensor_surrogate(
     dataset,
     pod,
@@ -95,16 +120,12 @@ def train_tensor_surrogate(
     training_config: NeuralTrainingConfig | None = None,
     device: str | None = None,
 ):
-    """Train only the local map ``(a,g)->beta`` with ordinary AdamW.
+    """Train only ``(a,g)->beta`` with a conventional mini-batch optimizer.
 
-    Electromagnetic physics is absent from this loop. Wide frozen G labels are
-    read exactly once (in chunks) to obtain the small POD coefficient targets.
-    Every optimization epoch then uses only state/geometry inputs and ``beta``.
-
-    The optional heat loss compares predicted and target POD coefficients after
-    the same hard quadratic-current decoder. It deliberately does not compare
-    against the unprojected G tensor, so POD truncation and neural learning
-    errors remain separate.
+    EM physics is absent from this loop.  The wide frozen tensor data are read
+    once to obtain POD coefficients.  By default the compact input/coefficient
+    tensors then remain resident on the training device, avoiding a CPU->GPU
+    copy for every mini-batch.
     """
     try:
         import torch
@@ -121,8 +142,10 @@ def train_tensor_surrogate(
     val_ids = dataset.indices("validation")
     test_ids = dataset.indices("test")
     inputs_all = np.asarray(dataset.inputs, dtype=float)
-    projection_chunk = max(32, int(cfg.evaluation_batch_size or cfg.batch_size))
+    projection_chunk = max(64, int(cfg.evaluation_batch_size or cfg.batch_size))
+    print("训练准备：投影 Joule tensor 到 POD 系数……0%", flush=True)
     beta_all = _encode_dataset_outputs(dataset, pod, chunk_rows=projection_chunk)
+    print("训练准备：投影 Joule tensor 到 POD 系数……100%", flush=True)
     beta_mean, beta_scale = _coefficient_normalization(beta_all[train_ids])
     input_normalizer = FeatureNormalizer.fit(inputs_all[train_ids])
 
@@ -139,14 +162,24 @@ def train_tensor_surrogate(
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(int(cfg.seed))
 
-    model = build_residual_mlp(network_config, input_normalizer)
-    resolved_device = str(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    resolved_device = _resolve_device(torch, device)
     dtype = _dtype(torch, cfg.dtype)
+    if resolved_device.startswith("cuda") and dtype == torch.float32 and cfg.enable_tf32:
+        try:
+            torch.set_float32_matmul_precision("high")
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        except (AttributeError, RuntimeError):
+            pass
+
+    model = build_residual_mlp(network_config, input_normalizer)
     model = model.to(device=resolved_device, dtype=dtype)
-    optimizer = torch.optim.AdamW(
+    optimizer, optimizer_name = _adamw(
+        torch,
         model.parameters(),
-        lr=float(cfg.learning_rate),
-        weight_decay=float(cfg.weight_decay),
+        device=resolved_device,
+        learning_rate=cfg.learning_rate,
+        weight_decay=cfg.weight_decay,
     )
 
     use_amp = bool(
@@ -166,8 +199,18 @@ def train_tensor_surrogate(
     lo_t = torch.as_tensor(lo, dtype=dtype, device=resolved_device)
     hi_t = torch.as_tensor(hi, dtype=dtype, device=resolved_device)
 
+    resident = bool(cfg.preload_to_device)
+    if resident:
+        inputs_t = torch.as_tensor(inputs_all, dtype=dtype, device=resolved_device)
+        beta_t = torch.as_tensor(beta_all, dtype=dtype, device=resolved_device)
+    else:
+        inputs_t = beta_t = None
+
     def tensors(ids):
-        index = np.asarray(ids, dtype=int)
+        index = np.asarray(ids, dtype=np.int64)
+        if resident:
+            index_t = torch.as_tensor(index, dtype=torch.long, device=resolved_device)
+            return inputs_t.index_select(0, index_t), beta_t.index_select(0, index_t)
         return (
             torch.as_tensor(inputs_all[index], dtype=dtype, device=resolved_device),
             torch.as_tensor(beta_all[index], dtype=dtype, device=resolved_device),
@@ -216,7 +259,7 @@ def train_tensor_surrogate(
             heat_loss = torch.mean(((predicted_q - target_q) / heat_scale) ** 2)
             return coefficient_loss + float(cfg.heat_loss_weight) * heat_loss
 
-    evaluation_batch = int(cfg.evaluation_batch_size or cfg.batch_size)
+    evaluation_batch = int(cfg.evaluation_batch_size or max(cfg.batch_size, 1024))
 
     def split_loss(ids) -> float:
         model.eval()
@@ -236,8 +279,15 @@ def train_tensor_surrogate(
     best_epoch = 0
     last_train = float("inf")
     last_validation = float("inf")
-    stale = 0
+    stale_epochs = 0
     epochs_completed = 0
+    validation_interval = max(1, int(cfg.validation_interval))
+
+    print(
+        f"开始 MLP 训练：device={resolved_device}, optimizer={optimizer_name}, "
+        f"AMP={'on' if use_amp else 'off'}, batch={cfg.batch_size}",
+        flush=True,
+    )
 
     for epoch in range(int(cfg.epochs)):
         model.train()
@@ -268,21 +318,36 @@ def train_tensor_surrogate(
             total += float(loss.detach().cpu()) * len(ids)
             count += len(ids)
         last_train = total / max(count, 1)
-        last_validation = split_loss(val_ids)
         epochs_completed = epoch + 1
-        threshold = (
-            best_validation - 1e-10 * max(1.0, abs(best_validation))
-            if np.isfinite(best_validation)
-            else float("inf")
+
+        validate_now = (
+            epoch == 0
+            or epochs_completed % validation_interval == 0
+            or epochs_completed == int(cfg.epochs)
         )
-        if not np.isfinite(best_validation) or last_validation < threshold:
-            best_validation = last_validation
-            best_epoch = epoch + 1
-            best_state = copy.deepcopy(model.state_dict())
-            stale = 0
-        else:
-            stale += 1
-        if stale >= int(cfg.patience):
+        if validate_now:
+            last_validation = split_loss(val_ids)
+            threshold = (
+                best_validation - 1e-10 * max(1.0, abs(best_validation))
+                if np.isfinite(best_validation)
+                else float("inf")
+            )
+            if not np.isfinite(best_validation) or last_validation < threshold:
+                best_validation = last_validation
+                best_epoch = epochs_completed
+                best_state = copy.deepcopy(model.state_dict())
+                stale_epochs = 0
+            else:
+                stale_epochs += validation_interval
+
+        percent = 100.0 * epochs_completed / int(cfg.epochs)
+        val_text = "--" if not np.isfinite(last_validation) else f"{last_validation:.5g}"
+        print(
+            f"训练神经网络……{percent:5.1f}%  epoch={epochs_completed}/{cfg.epochs}  "
+            f"train={last_train:.5g}  val={val_text}",
+            flush=True,
+        )
+        if stale_epochs >= int(cfg.patience):
             break
 
     model.load_state_dict(best_state)
@@ -330,6 +395,9 @@ def train_tensor_surrogate(
             )
 
     coefficient_rmse = float(np.sqrt(coefficient_sq / max(1, coefficient_count)))
+    if not np.isfinite(best_validation):
+        best_validation = split_loss(val_ids)
+        best_epoch = epochs_completed
     report = NeuralTrainingReport(
         epochs_completed=epochs_completed,
         best_epoch=best_epoch,
@@ -341,7 +409,7 @@ def train_tensor_surrogate(
         stopped_early=epochs_completed < int(cfg.epochs),
         device=resolved_device,
         mixed_precision=use_amp,
-        optimizer="AdamW",
+        optimizer=optimizer_name,
         learning_rate_schedule="constant",
         training_config=cfg.to_dict(),
         network_config=network_config.to_dict(),
