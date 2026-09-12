@@ -174,7 +174,7 @@ def _randomized_projected_tensor_jacobian(
 ) -> np.ndarray:
     """Approximate ``J`` by ``J QQ^T`` using central directional differences.
 
-    This is a screening diagnostic only.  Its spectrum is the sensitivity seen
+    This is a screening diagnostic only. Its spectrum is the sensitivity seen
     in the chosen random input subspace and cannot certify that directions
     orthogonal to that subspace are unimportant.
     """
@@ -185,7 +185,8 @@ def _randomized_projected_tensor_jacobian(
         raise ValueError("randomized sensitivity directions have wrong dimension")
     output_dimension = tensor_svec(np.asarray(tensor_factory(a, g), dtype=float)).size
     directional = np.empty((output_dimension, Q.shape[1]), dtype=float)
-    state_scale = max(1.0, float(np.linalg.norm(a)))
+    rms_state_scale = float(np.linalg.norm(a)) / np.sqrt(max(1, a.size))
+    state_scale = max(1.0, rms_state_scale)
     for k in range(Q.shape[1]):
         direction = Q[:, k]
         h = float(relative_step) * state_scale
@@ -357,6 +358,7 @@ def run_gate_suite(
         query_seconds = timing[float(case.times[-1])].median_seconds
 
     long_time_checked = any(case.long_time_check for case in trajectory_cases)
+    full_active_subspace_completed = cfg.active_subspace_mode == "full"
     readiness = evaluate_production_readiness(
         budgets=budgets,
         quadratic_identity_report=quadratic,
@@ -364,7 +366,7 @@ def run_gate_suite(
         vector_field_report=vector_report,
         trajectory_report=aggregate,
         pod_assessed=bool(pod_diagnostics),
-        active_subspace_assessed=True,
+        active_subspace_assessed=full_active_subspace_completed,
         stability_assessed=True,
         long_time_checked=long_time_checked,
         reproducible_training=reproducible_training,
