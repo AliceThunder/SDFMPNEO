@@ -340,8 +340,8 @@ class StructurePreservingNeuralElectroThermalROM:
 
         ``metadata`` is merged into metadata loaded from any prior artifact, so
         a later frozen audit can append certification evidence without erasing
-        training provenance. Runtime spectrum caches are intentionally not
-        persisted; they are rebuilt lazily from the saved exact thermal operators.
+        training provenance. Runtime spectrum/operating caches are intentionally
+        not persisted; they are rebuilt lazily from saved deterministic arrays.
         """
         try:
             import torch
@@ -383,6 +383,9 @@ class StructurePreservingNeuralElectroThermalROM:
             "pod_mean": self.surrogate.pod.mean,
             "pod_basis": self.surrogate.pod.basis,
             "pod_singular_values": self.surrogate.pod.singular_values,
+            "pod_total_centered_energy": np.array(
+                float(self.surrogate.pod.total_centered_energy), dtype=np.float64
+            ),
             "coefficient_mean": self.surrogate.coefficient_mean,
             "coefficient_scale": self.surrogate.coefficient_scale,
             "thermal_rhs_forcing": self.field.thermal_rhs_forcing,
@@ -438,12 +441,18 @@ class StructurePreservingNeuralElectroThermalROM:
                     name = key[len("network__"):].replace("__DOT__", ".")
                     torch_state[name] = torch.as_tensor(data[key], dtype=dtype, device=device)
             network.load_state_dict(torch_state, strict=True)
+            total_energy = (
+                float(data["pod_total_centered_energy"])
+                if "pod_total_centered_energy" in data.files
+                else None
+            )
             pod = TensorPOD(
                 mean=data["pod_mean"],
                 basis=data["pod_basis"],
                 singular_values=data["pod_singular_values"],
                 thermal_rank=int(meta["state_dimension"]),
                 current_dimension=int(meta["current_dimension"]),
+                total_centered_energy=total_energy,
             )
             surrogate = NeuralTensorSurrogate(
                 network,
