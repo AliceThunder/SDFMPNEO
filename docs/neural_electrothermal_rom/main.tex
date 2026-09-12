@@ -30,7 +30,7 @@
 \maketitle
 
 \begin{abstract}
-本文冻结 SDFMPNEO 下一阶段的主路线：以传统残差 MLP 学习温度--几何到电磁 Joule 二次型系数的低维映射，以真实降阶热质量矩阵、导热矩阵、电流二次型结构和连续时间动力学作为硬物理结构，并使用结构保持的时间积分器完成有限时间预测。该方案取代解析响应网络作为主路线；解析响应网络仅保留为历史基线与对照实验。本文档只定义理论、接口、验证标准和实施路线，不依赖 \texttt{feat/fixed-analytic-response-network} 分支中的实现。
+本文冻结 SDFMPNEO 下一阶段的主路线：以传统残差 MLP 学习温度--几何到电磁 Joule 二次型系数的低维映射，以真实降阶热质量矩阵、导热矩阵、电流二次型结构和连续时间动力学作为硬物理结构，并使用结构保持的时间积分器完成有限时间预测。该方案取代解析响应网络作为主路线；解析响应网络仅保留为历史基线与对照实验。本文档定义理论、训练、推理与实现边界，不引入额外的认证或流程层。
 \end{abstract}
 
 \tableofcontents
@@ -43,7 +43,6 @@
 \input{sections/05_training_and_dataset}
 \input{sections/06_time_integration_and_inference}
 \input{sections/07_stability_and_error_budget}
-\input{sections/08_validation_and_go_no_go}
 \input{sections/09_implementation_plan}
 \input{sections/10_innovation_and_positioning}
 
