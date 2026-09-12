@@ -123,6 +123,14 @@ def train_tensor_surrogate(
     if network_config.input_dimension != inputs_all.shape[1] or network_config.output_dimension != pod.rank:
         raise ValueError("network dimensions do not match dataset/POD")
 
+    # Seed before constructing the network.  Seeding after initialization would
+    # make repeated runs with the same training seed start from different weights
+    # and would invalidate any later reproducibility audit.
+    rng = np.random.default_rng(int(cfg.seed))
+    torch.manual_seed(int(cfg.seed))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(cfg.seed))
+
     model = build_residual_mlp(network_config, input_normalizer)
     resolved_device = str(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     dtype = _dtype(torch, cfg.dtype)
@@ -149,10 +157,6 @@ def train_tensor_surrogate(
     beta_scale_t = torch.as_tensor(beta_scale, dtype=dtype, device=resolved_device)
     lo_t = torch.as_tensor(lo, dtype=dtype, device=resolved_device)
     hi_t = torch.as_tensor(hi, dtype=dtype, device=resolved_device)
-    rng = np.random.default_rng(int(cfg.seed))
-    torch.manual_seed(int(cfg.seed))
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(int(cfg.seed))
 
     def tensors(ids):
         index = np.asarray(ids, dtype=int)
