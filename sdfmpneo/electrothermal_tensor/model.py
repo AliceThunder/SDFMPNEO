@@ -1,6 +1,7 @@
 """Deployable structure-preserving neural electrothermal ROM facade."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ import numpy as np
 
 from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .integrators import (
+    GeneralizedThermalSpectrum,
     integrate_etd2,
     integrate_etd2_adaptive,
     integrate_imex_euler,
@@ -72,6 +74,12 @@ class StructurePreservingNeuralElectroThermalROM:
             key: np.asarray(value, dtype=float) for key, value in training_domain.items()
         }
         self.artifact_metadata = {} if artifact_metadata is None else dict(artifact_metadata)
+        self._spectrum_cache_size = max(1, int(getattr(thermal_operators, "cache_size", 64)))
+        self._spectrum_cache: OrderedDict[tuple[float, ...], GeneralizedThermalSpectrum] = OrderedDict()
+        self._spectrum_cache_enabled = isinstance(
+            thermal_operators,
+            (FixedThermalOperatorFamily, AffineGeometryThermalOperatorFamily),
+        )
 
     def _check_domain(self, state, geometry, operating, *, allow_extrapolation: bool):
         a = np.asarray(state, dtype=float).reshape(-1)
@@ -114,6 +122,28 @@ class StructurePreservingNeuralElectroThermalROM:
 
         return validate
 
+    def _spectrum_for_geometry(self, geometry: np.ndarray) -> GeneralizedThermalSpectrum:
+        """Return a bounded per-model cached generalized thermal spectrum.
+
+        Only persisted deterministic operator families are cached. Application-
+        owned callable families may legally change their operator for the same
+        geometry, so they are deliberately recomputed on every request.
+        """
+        g = np.asarray(geometry, dtype=float).reshape(-1)
+        operator = self.thermal_operators.operator(g)
+        if not self._spectrum_cache_enabled:
+            return GeneralizedThermalSpectrum(operator)
+        key = tuple(float(v) for v in g)
+        cached = self._spectrum_cache.get(key)
+        if cached is not None:
+            self._spectrum_cache.move_to_end(key)
+            return cached
+        spectrum = GeneralizedThermalSpectrum(operator)
+        self._spectrum_cache[key] = spectrum
+        if len(self._spectrum_cache) > self._spectrum_cache_size:
+            self._spectrum_cache.popitem(last=False)
+        return spectrum
+
     def predict(
         self,
         time: float,
@@ -133,20 +163,25 @@ class StructurePreservingNeuralElectroThermalROM:
             initial_state, geometry, operating, allow_extrapolation=allow_extrapolation
         )
         state_validator = self._state_validator(allow_extrapolation=allow_extrapolation)
+        t = float(time)
+        spectrum = None
+        if t > 0.0 and method in {"etd2", "etd2_adaptive", "adaptive_etd2"}:
+            spectrum = self._spectrum_for_geometry(g)
         if method == "etd2":
             result = integrate_etd2(
                 self.field,
-                time,
+                t,
                 initial_state=a0,
                 geometry=g,
                 operating=u,
                 max_step=max_step,
                 state_validator=state_validator,
+                spectrum=spectrum,
             )
         elif method in {"etd2_adaptive", "adaptive_etd2"}:
             result = integrate_etd2_adaptive(
                 self.field,
-                time,
+                t,
                 initial_state=a0,
                 geometry=g,
                 operating=u,
@@ -156,11 +191,12 @@ class StructurePreservingNeuralElectroThermalROM:
                 initial_step=initial_step,
                 max_attempts=max_attempts,
                 state_validator=state_validator,
+                spectrum=spectrum,
             )
         elif method == "imex":
             result = integrate_imex_euler(
                 self.field,
-                time,
+                t,
                 initial_state=a0,
                 geometry=g,
                 operating=u,
@@ -170,7 +206,7 @@ class StructurePreservingNeuralElectroThermalROM:
         elif method == "reference":
             result = integrate_reference(
                 self.field,
-                time,
+                t,
                 initial_state=a0,
                 geometry=g,
                 operating=u,
@@ -185,7 +221,7 @@ class StructurePreservingNeuralElectroThermalROM:
         derivative = self.field.vector_field(result.state, g, u)
         heat = self.field.heat_source(result.state, g, u)
         return NeuralROMPrediction(
-            time=float(time),
+            time=t,
             state=result.state,
             derivative=derivative,
             heat_source=heat,
@@ -204,14 +240,7 @@ class StructurePreservingNeuralElectroThermalROM:
         max_step: float,
         allow_extrapolation: bool = False,
     ):
-        """Batch independent fixed-step ETD2 queries sharing one geometry/time.
-
-        The implementation shares one generalized thermal eigenspectrum, uses
-        one MLP forward per ETD stage for the whole batch, and performs the final
-        thermal derivative solve as a dense multi-RHS solve. Adaptive stepping
-        remains intentionally per-trajectory because different error histories
-        would otherwise couple independent queries.
-        """
+        """Batch independent fixed-step ETD2 queries sharing one geometry/time."""
         from .batch import predict_batch_fixed_etd2
 
         return predict_batch_fixed_etd2(
@@ -291,7 +320,8 @@ class StructurePreservingNeuralElectroThermalROM:
 
         ``metadata`` is merged into metadata loaded from any prior artifact, so
         a later frozen audit can append certification evidence without erasing
-        training provenance.
+        training provenance. Runtime spectrum caches are intentionally not
+        persisted; they are rebuilt lazily from the saved exact thermal operators.
         """
         try:
             import torch
