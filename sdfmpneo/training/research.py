@@ -2,10 +2,12 @@
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
 from .research_config import ResearchTrainingConfig, ResearchTrainingReport, make_fixed_network
 from .fixed_physics_runtime import install_physics_acceleration
+from .fixed_layer_cache_runtime import install_layer_cache_acceleration
 from .fixed_trial_runtime import accelerated_train_research_network, install_trial_acceleration
 from .research_telemetry import trial_event
 
 install_physics_acceleration()
+install_layer_cache_acceleration()
 install_trial_acceleration()
 
 from .resume_trainer import train_research_network as _train_research_network
