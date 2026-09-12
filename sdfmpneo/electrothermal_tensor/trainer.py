@@ -9,7 +9,6 @@ import numpy as np
 
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .physical_layer import decode_heat_source_torch
-from .runtime_metadata import training_environment_summary
 from .surrogate import NeuralTensorSurrogate
 
 
@@ -61,7 +60,6 @@ class NeuralTrainingReport:
     learning_rate_schedule: str
     training_config: dict
     network_config: dict
-    environment: dict
 
 
 def _coefficient_normalization(beta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -103,11 +101,10 @@ def train_tensor_surrogate(
     read exactly once (in chunks) to obtain the small POD coefficient targets.
     Every optimization epoch then uses only state/geometry inputs and ``beta``.
 
-    The optional heat loss compares the predicted and target POD coefficients
-    after the same hard quadratic-current decoder. It deliberately does *not*
-    compare against the unprojected G tensor: POD truncation is an irreducible
-    representation error measured separately by Gate 2 and must not be pushed
-    into the neural optimization problem.
+    The optional heat loss compares predicted and target POD coefficients after
+    the same hard quadratic-current decoder. It deliberately does not compare
+    against the unprojected G tensor, so POD truncation and neural learning
+    errors remain separate.
     """
     try:
         import torch
@@ -299,8 +296,6 @@ def train_tensor_surrogate(
         coefficient_scale=beta_scale,
     )
 
-    # Test metrics read the wide frozen labels only once after training, in
-    # blocks, to add the irreducible POD residual to the neural beta error.
     coefficient_sq = 0.0
     coefficient_count = 0
     maximum_relative_packed = 0.0
@@ -350,7 +345,6 @@ def train_tensor_surrogate(
         learning_rate_schedule="constant",
         training_config=cfg.to_dict(),
         network_config=network_config.to_dict(),
-        environment=training_environment_summary(resolved_device),
     )
     return surrogate, report
 
