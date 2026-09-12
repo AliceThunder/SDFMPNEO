@@ -44,11 +44,62 @@ def _sample_state_geometry(
     state_hi = np.asarray(state_upper, dtype=float).reshape(-1)
     geom_lo = np.asarray(geometry_lower, dtype=float).reshape(-1)
     geom_hi = np.asarray(geometry_upper, dtype=float).reshape(-1)
+    if state_lo.shape != state_hi.shape or np.any(~np.isfinite(state_lo + state_hi)) or np.any(state_hi <= state_lo):
+        raise ValueError("state sampling bounds must be finite and strictly ordered")
+    if geom_lo.shape != geom_hi.shape or np.any(~np.isfinite(geom_lo + geom_hi)) or np.any(geom_hi <= geom_lo):
+        raise ValueError("geometry sampling bounds must be finite and strictly ordered")
     lower = np.concatenate([state_lo, geom_lo])
     upper = np.concatenate([state_hi, geom_hi])
     sampled = latin_hypercube_box(lower, upper, int(n_samples), seed=int(seed))
     r = state_lo.size
     return sampled[:, :r], sampled[:, r:]
+
+
+def _resolved_network_config(network_config, *, input_dimension: int, output_dimension: int):
+    if network_config is None:
+        return ResidualMLPConfig(input_dimension=input_dimension, output_dimension=output_dimension)
+    if isinstance(network_config, ResidualMLPConfig):
+        if network_config.input_dimension != input_dimension or network_config.output_dimension != output_dimension:
+            raise ValueError("explicit network dimensions do not match dataset/POD")
+        return network_config
+    settings = dict(network_config)
+    settings.pop("input_dimension", None)
+    settings.pop("output_dimension", None)
+    return ResidualMLPConfig(
+        input_dimension=input_dimension,
+        output_dimension=output_dimension,
+        **settings,
+    )
+
+
+def _resolved_training_config(training_config):
+    if training_config is None or isinstance(training_config, NeuralTrainingConfig):
+        return training_config
+    return NeuralTrainingConfig(**dict(training_config))
+
+
+def _train_from_dataset(
+    dataset,
+    pod,
+    *,
+    operating_lower,
+    operating_upper,
+    network_config,
+    training_config,
+):
+    resolved_network = _resolved_network_config(
+        network_config,
+        input_dimension=dataset.thermal_rank + dataset.geometry_dimension,
+        output_dimension=pod.rank,
+    )
+    return train_tensor_surrogate(
+        dataset,
+        pod,
+        operating_lower=np.asarray(operating_lower, dtype=float),
+        operating_upper=np.asarray(operating_upper, dtype=float),
+        network_config=resolved_network,
+        training_config=_resolved_training_config(training_config),
+    )
 
 
 def build_fixed_neural_rom(
@@ -63,10 +114,12 @@ def build_fixed_neural_rom(
     seed: int = 0,
     pod_rank: int | None = None,
     pod_relative_tail_tolerance: float = 1e-4,
-    network_config: ResidualMLPConfig | None = None,
-    training_config: NeuralTrainingConfig | None = None,
+    network_config: ResidualMLPConfig | dict | None = None,
+    training_config: NeuralTrainingConfig | dict | None = None,
     physical_signature: str | None = None,
     save_model: bool = True,
+    snapshot_workers: int = 1,
+    checkpoint_every: int = 16,
 ) -> PipelineResult:
     """End-to-end fixed-geometry pipeline without trajectory labels."""
     work = Path(work_directory)
@@ -85,6 +138,8 @@ def build_fixed_neural_rom(
         geometries,
         fixed_research_tensor_factory(physical_model),
         checkpoint_path=work / "quadratic_joule.partial.npz",
+        checkpoint_every=checkpoint_every,
+        max_workers=snapshot_workers,
         split_seed=seed,
         metadata={"kind": "fixed", "physical_signature": signature},
         final_path=work / "quadratic_joule_dataset.npz",
@@ -94,11 +149,11 @@ def build_fixed_neural_rom(
         rank=pod_rank,
         relative_tail_tolerance=pod_relative_tail_tolerance,
     )
-    surrogate, report = train_tensor_surrogate(
+    surrogate, report = _train_from_dataset(
         dataset,
         pod,
-        operating_lower=np.asarray(operating_lower, dtype=float),
-        operating_upper=np.asarray(operating_upper, dtype=float),
+        operating_lower=operating_lower,
+        operating_upper=operating_upper,
         network_config=network_config,
         training_config=training_config,
     )
@@ -140,10 +195,12 @@ def build_geometry_neural_rom(
     seed: int = 0,
     pod_rank: int | None = None,
     pod_relative_tail_tolerance: float = 1e-4,
-    network_config: ResidualMLPConfig | None = None,
-    training_config: NeuralTrainingConfig | None = None,
+    network_config: ResidualMLPConfig | dict | None = None,
+    training_config: NeuralTrainingConfig | dict | None = None,
     physical_signature: str | None = None,
     save_model: bool = True,
+    snapshot_workers: int = 1,
+    checkpoint_every: int = 16,
 ) -> PipelineResult:
     """End-to-end geometry-family pipeline using normalized geometry coordinates."""
     work = Path(work_directory)
@@ -165,6 +222,10 @@ def build_geometry_neural_rom(
         geometries,
         geometry_research_tensor_factory(geometry_model, normalized_geometry=True),
         checkpoint_path=work / "quadratic_joule.partial.npz",
+        checkpoint_every=checkpoint_every,
+        # GeometryResearchModel keeps an LRU context cache that is not guaranteed
+        # thread-safe.  Parallel snapshot generation remains opt-in.
+        max_workers=snapshot_workers,
         split_seed=seed,
         metadata={"kind": "geometry", "physical_signature": signature},
         final_path=work / "quadratic_joule_dataset.npz",
@@ -174,11 +235,11 @@ def build_geometry_neural_rom(
         rank=pod_rank,
         relative_tail_tolerance=pod_relative_tail_tolerance,
     )
-    surrogate, report = train_tensor_surrogate(
+    surrogate, report = _train_from_dataset(
         dataset,
         pod,
-        operating_lower=np.asarray(operating_lower, dtype=float),
-        operating_upper=np.asarray(operating_upper, dtype=float),
+        operating_lower=operating_lower,
+        operating_upper=operating_upper,
         network_config=network_config,
         training_config=training_config,
     )
@@ -197,7 +258,6 @@ def build_geometry_neural_rom(
         training_domain=domain,
     )
     if save_model:
-        # Geometry M/K remain application-owned; load requires the same operator family.
         model.save(
             work / "neural_electrothermal_rom.npz",
             metadata={
