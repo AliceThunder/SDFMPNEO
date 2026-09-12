@@ -9,6 +9,7 @@ import numpy as np
 
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .physical_layer import decode_heat_source_torch, torch_quadratic_feature
+from .runtime_metadata import training_environment_summary
 from .surrogate import NeuralTensorSurrogate
 
 
@@ -56,6 +57,11 @@ class NeuralTrainingReport:
     stopped_early: bool
     device: str
     mixed_precision: bool
+    optimizer: str
+    learning_rate_schedule: str
+    training_config: dict
+    network_config: dict
+    environment: dict
 
 
 def _coefficient_normalization(beta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -81,8 +87,8 @@ def train_tensor_surrogate(
 ):
     """Train only the local map ``(a,g)->beta`` with ordinary AdamW.
 
-    Electromagnetic physics is absent from this loop.  POD targets are computed
-    once before optimization; they are never reprojected per mini-batch.  The
+    Electromagnetic physics is absent from this loop. POD targets are computed
+    once before optimization; they are never reprojected per mini-batch. The
     optional heat loss contracts the compressed POD basis directly with current
     features and stored tensor labels, so it adds no EM solves and does not
     decode the predicted full tensor.
@@ -277,7 +283,7 @@ def train_tensor_surrogate(
         coefficient_scale=beta_scale,
     )
 
-    # Test metrics are evaluated in coefficient space.  Orthogonality of the POD
+    # Test metrics are evaluated in coefficient space. Orthogonality of the POD
     # basis gives the exact packed-tensor error norm without materializing the
     # predicted full tensor: ||e_y||^2 = ||e_beta||^2 + ||P_perp(y-mean)||^2.
     predicted_beta_parts = []
@@ -315,6 +321,11 @@ def train_tensor_surrogate(
         stopped_early=epochs_completed < int(cfg.epochs),
         device=resolved_device,
         mixed_precision=use_amp,
+        optimizer="AdamW",
+        learning_rate_schedule="constant",
+        training_config=cfg.to_dict(),
+        network_config=network_config.to_dict(),
+        environment=training_environment_summary(resolved_device),
     )
     return surrogate, report
 
