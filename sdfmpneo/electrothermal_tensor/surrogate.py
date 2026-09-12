@@ -3,14 +3,18 @@ from __future__ import annotations
 
 import numpy as np
 
-from .physical_layer import decode_heat_source_numpy, decode_heat_source_torch
+from .physical_layer import (
+    decode_heat_source_batch_numpy,
+    decode_heat_source_numpy,
+    decode_heat_source_torch,
+)
 from .pod import TensorPOD
 
 
 class NeuralTensorSurrogate:
     """Map ``(thermal state, geometry)`` to Joule heat through POD coefficients.
 
-    The network predicts normalized POD coefficients only.  Current variables
+    The network predicts normalized POD coefficients only. Current variables
     never enter the MLP; they enter exclusively through the quadratic physics
     layer after coefficient de-normalization and POD decoding.
     """
@@ -53,6 +57,21 @@ class NeuralTensorSurrogate:
             raise ValueError("state and geometry must be finite")
         return np.concatenate([a, g])
 
+    def _input_batch_numpy(self, states, geometries) -> np.ndarray:
+        a = np.asarray(states, dtype=float)
+        g = np.asarray(geometries, dtype=float)
+        if a.ndim != 2 or a.shape[1] != self.state_dimension:
+            raise ValueError("batched states have wrong shape")
+        if g.ndim == 1:
+            if g.shape != (self.geometry_dimension,):
+                raise ValueError("shared batch geometry has wrong shape")
+            g = np.repeat(g[None, :], len(a), axis=0)
+        if g.ndim != 2 or g.shape != (len(a), self.geometry_dimension):
+            raise ValueError("batched geometries have wrong shape")
+        if np.any(~np.isfinite(a)) or np.any(~np.isfinite(g)):
+            raise ValueError("batched state/geometry values must be finite")
+        return np.hstack([a, g])
+
     def predict_coefficients_numpy(self, state, geometry) -> np.ndarray:
         import torch
 
@@ -63,12 +82,33 @@ class NeuralTensorSurrogate:
             normalized = self.network(xt).detach().cpu().numpy().astype(float)
         return self.coefficient_mean + self.coefficient_scale * normalized
 
+    def predict_coefficients_batch_numpy(self, states, geometries) -> np.ndarray:
+        """One network forward for a batch of state/geometry points."""
+        import torch
+
+        x = self._input_batch_numpy(states, geometries)
+        parameter = next(self.network.parameters())
+        with torch.no_grad():
+            xt = torch.as_tensor(x, dtype=parameter.dtype, device=parameter.device)
+            normalized = self.network(xt).detach().cpu().numpy().astype(float)
+        return self.coefficient_mean[None, :] + self.coefficient_scale[None, :] * normalized
+
     def predict_packed_numpy(self, state, geometry) -> np.ndarray:
         return self.pod.decode(self.predict_coefficients_numpy(state, geometry))
 
     def heat_source_numpy(self, state, geometry, operating) -> np.ndarray:
         beta = self.predict_coefficients_numpy(state, geometry)
         return decode_heat_source_numpy(beta, self.pod, operating)
+
+    def heat_source_batch_numpy(self, states, geometries, operating) -> np.ndarray:
+        """Vectorized heat source for aligned state/geometry/operating batches."""
+        beta = self.predict_coefficients_batch_numpy(states, geometries)
+        u = np.asarray(operating, dtype=float)
+        if u.ndim != 2 or u.shape != (len(beta), self.pod.current_dimension):
+            raise ValueError("batched operating values have wrong shape")
+        if np.any(~np.isfinite(u)):
+            raise ValueError("batched operating values must be finite")
+        return decode_heat_source_batch_numpy(beta, self.pod, u)
 
     def coefficients_torch(self, state, geometry):
         import torch
