@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
-from types import SimpleNamespace
+import hashlib
 import os
+from threading import RLock
+from types import SimpleNamespace
 
 import numpy as np
 import scipy.linalg
@@ -13,10 +16,49 @@ os.environ.setdefault("SDFMPNEO_POINT_WORKERS", str(max(1, min(8, os.cpu_count()
 os.environ.setdefault("SDFMPNEO_BLAS_THREADS", "1")
 
 
+@dataclass(frozen=True)
+class _PreparedOperating:
+    context: object | None
+    current: np.ndarray | None
+    rhs: np.ndarray | None
+    reduced_rhs: np.ndarray | None
+
+
+_RUNTIME_LOCK = RLock()
+_PREPARED_OPERATING: dict[tuple[int, bytes], _PreparedOperating] = {}
+_PREPARED_WORKING_SETS: set[tuple[int, bytes]] = set()
+
+
+def clear_physics_runtime_caches() -> None:
+    """Drop training-run-local operating/work-set references."""
+    with _RUNTIME_LOCK:
+        _PREPARED_OPERATING.clear()
+        _PREPARED_WORKING_SETS.clear()
+
+
+def _rows_digest(*point_sets) -> bytes:
+    digest = hashlib.blake2b(digest_size=16)
+    for values in point_sets:
+        if values is None:
+            digest.update(b"none")
+            continue
+        array = np.ascontiguousarray(np.asarray(values, dtype=np.float64))
+        digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+        digest.update(array.tobytes())
+    return digest.digest()
+
+
 def _prepare_working_set(field, *point_sets) -> None:
     prepare = getattr(field, "prepare_training_contexts", None)
-    if prepare is not None:
-        prepare(*point_sets)
+    if prepare is None:
+        return
+    key = (id(field), _rows_digest(*point_sets))
+    with _RUNTIME_LOCK:
+        if key in _PREPARED_WORKING_SETS:
+            return
+    prepare(*point_sets)
+    with _RUNTIME_LOCK:
+        _PREPARED_WORKING_SETS.add(key)
 
 
 def _thermal_factor(context):
@@ -41,22 +83,83 @@ def _thermal_diffusion_jacobian(context):
     return cached
 
 
-def _prepare_operating_contexts(field, operating_rows) -> None:
-    if not (hasattr(field, "split") and hasattr(field, "thermal_model")):
-        return
+def _operating_key(field, operating) -> tuple[int, bytes]:
+    values = np.ascontiguousarray(np.asarray(operating, dtype=np.float64))
+    return id(field), values.tobytes()
+
+
+def _project_rhs(em_model, rhs):
+    if em_model is None or rhs is None or not hasattr(em_model, "rhs_reduced"):
+        return None
+    return np.ascontiguousarray(em_model.rhs_reduced(rhs), dtype=complex)
+
+
+def _build_prepared_operating(field, operating) -> _PreparedOperating:
     from sdfmpneo.em import modal_heat as mh
 
-    seen = set()
-    for operating in np.asarray(operating_rows, dtype=float):
-        key = tuple(float(v) for v in operating)
-        if key in seen:
-            continue
-        seen.add(key)
-        context, _ = field.split(operating)
+    u = np.asarray(operating, dtype=float)
+    if hasattr(field, "split") and hasattr(field, "thermal_model"):
+        context, current = field.split(u)
+        current = np.asarray(current, dtype=float).copy()
+        rhs = np.asarray(context.rhs.evaluate(current), dtype=complex)
         _thermal_factor(context)
         _thermal_diffusion_jacobian(context)
         if mh._supported(context.em.problem):
             mh._geometry_cache(context.em.problem)
+        return _PreparedOperating(
+            context=context,
+            current=current,
+            rhs=rhs,
+            reduced_rhs=_project_rhs(context.em, rhs),
+        )
+
+    if hasattr(field, "em_model") and hasattr(field, "thermal_model") and hasattr(field, "rhs"):
+        rhs = np.asarray(
+            field.rhs(u if getattr(field, "rhs_map", None) is not None else None),
+            dtype=complex,
+        )
+        em_model = field.em_model
+        if mh._supported(em_model.problem):
+            mh._geometry_cache(em_model.problem)
+        return _PreparedOperating(
+            context=None,
+            current=u.copy(),
+            rhs=rhs,
+            reduced_rhs=_project_rhs(em_model, rhs),
+        )
+    return _PreparedOperating(None, None, None, None)
+
+
+def _prepared_operating(field, operating) -> _PreparedOperating:
+    key = _operating_key(field, operating)
+    with _RUNTIME_LOCK:
+        cached = _PREPARED_OPERATING.get(key)
+    if cached is not None:
+        return cached
+    built = _build_prepared_operating(field, operating)
+    with _RUNTIME_LOCK:
+        # If another worker prepared the same operating row concurrently, keep
+        # the first canonical object and discard the duplicate exact preparation.
+        return _PREPARED_OPERATING.setdefault(key, built)
+
+
+def _prepare_operating_contexts(field, operating_rows) -> None:
+    rows = np.asarray(operating_rows, dtype=float)
+    if rows.ndim != 2 or len(rows) == 0:
+        return
+    if not (
+        (hasattr(field, "split") and hasattr(field, "thermal_model"))
+        or (hasattr(field, "em_model") and hasattr(field, "thermal_model") and hasattr(field, "rhs"))
+    ):
+        return
+    unique = []
+    seen = set()
+    for row in rows:
+        key = np.ascontiguousarray(row, dtype=np.float64).tobytes()
+        if key not in seen:
+            seen.add(key)
+            unique.append(np.asarray(row, dtype=float).copy())
+    _ordered_map(lambda row: _prepared_operating(field, row), unique, monitor=None)
 
 
 def physics_vector_field(field, state, operating):
@@ -65,17 +168,27 @@ def physics_vector_field(field, state, operating):
     a = np.asarray(state, dtype=float)
     u = np.asarray(operating, dtype=float)
     if hasattr(field, "split") and hasattr(field, "thermal_model"):
-        context, current = field.split(u)
-        rhs = context.rhs.evaluate(current)
-        heat = heat_source_for_reduced_model(context.em, a, rhs)
+        prepared = _prepared_operating(field, u)
+        context = prepared.context
+        heat = heat_source_for_reduced_model(
+            context.em,
+            a,
+            prepared.rhs,
+            reduced_rhs=prepared.reduced_rhs,
+        )
         return scipy.linalg.cho_solve(
             _thermal_factor(context),
             -np.asarray(context.K, dtype=float) @ a + heat,
             check_finite=False,
         )
     if hasattr(field, "em_model") and hasattr(field, "thermal_model") and hasattr(field, "rhs"):
-        rhs = field.rhs(u if getattr(field, "rhs_map", None) is not None else None)
-        heat = heat_source_for_reduced_model(field.em_model, a, rhs)
+        prepared = _prepared_operating(field, u)
+        heat = heat_source_for_reduced_model(
+            field.em_model,
+            a,
+            prepared.rhs,
+            reduced_rhs=prepared.reduced_rhs,
+        )
         forcing = np.asarray(getattr(field, "thermal_forcing", np.zeros_like(a)), dtype=float)
         return -np.asarray(field.thermal_model.lambdas, dtype=float) * a + heat + forcing
     if hasattr(field, "vector_field"):
@@ -86,8 +199,7 @@ def physics_vector_field(field, state, operating):
 def gn_field_jacobian(field, state, operating):
     u = np.asarray(operating, dtype=float)
     if hasattr(field, "split") and hasattr(field, "thermal_model"):
-        context, _ = field.split(u)
-        return _thermal_diffusion_jacobian(context)
+        return _thermal_diffusion_jacobian(_prepared_operating(field, u).context)
     if hasattr(field, "em_model") and hasattr(field, "thermal_model"):
         return -np.diag(np.asarray(field.thermal_model.lambdas, dtype=float))
     return np.asarray(field.evaluate(state, u).vector_field_jacobian, dtype=float)
@@ -332,3 +444,15 @@ def install_physics_acceleration() -> None:
     rt._evaluate_all = rh._evaluate_all
     rt.source_prefit = source_prefit
     rh._sdfmpneo_fixed_acceleration = True
+
+
+__all__ = [
+    "clear_physics_runtime_caches",
+    "evaluate_physics_batch",
+    "evaluate_semigroup_batch",
+    "fast_exact_modal_heat_source",
+    "fast_third_moment_tensor",
+    "gn_field_jacobian",
+    "install_physics_acceleration",
+    "physics_vector_field",
+]
