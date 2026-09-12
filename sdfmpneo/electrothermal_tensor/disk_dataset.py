@@ -54,6 +54,11 @@ def _write_npy(path: Path, value: np.ndarray) -> None:
     temporary.replace(path)
 
 
+def _remove_tree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+
+
 class DiskQuadraticJouleDataset:
     """Frozen directory-backed ``(a,g)->svec(G)`` dataset.
 
@@ -108,8 +113,6 @@ class DiskQuadraticJouleDataset:
 
     @property
     def inputs(self) -> np.ndarray:
-        # State/geometry inputs are narrow compared with G and are safe to form
-        # in memory for ordinary network training.
         return np.hstack([np.asarray(self.states), np.asarray(self.geometries)])
 
     def indices(self, split: str) -> np.ndarray:
@@ -183,8 +186,20 @@ class DiskQuadraticJouleDataset:
         metadata: Mapping[str, object] | None = None,
         move_outputs_file: str | Path | None = None,
     ) -> "DiskQuadraticJouleDataset":
+        """Atomically freeze a directory store.
+
+        When ``move_outputs_file`` is supplied, the potentially huge working NPY
+        file is moved into a temporary sibling directory. If any later hashing or
+        manifest step fails, it is moved back so the resumable generator remains
+        usable. The completed temporary directory is finally renamed atomically.
+        """
         root = Path(directory)
-        root.mkdir(parents=True, exist_ok=True)
+        if root.exists():
+            raise FileExistsError(f"disk dataset store already exists: {root}")
+        temporary_root = root.with_name(root.name + ".tmp")
+        _remove_tree(temporary_root)
+        temporary_root.mkdir(parents=True, exist_ok=False)
+
         a = np.asarray(states, dtype=np.float64)
         g = np.asarray(geometries, dtype=np.float64)
         n = len(a)
@@ -192,12 +207,15 @@ class DiskQuadraticJouleDataset:
         n_sym = p * (p + 1) // 2
         width = int(thermal_rank) * n_sym
         if a.shape != (n, int(thermal_rank)) or g.ndim != 2 or g.shape[0] != n:
+            _remove_tree(temporary_root)
             raise ValueError("disk dataset states/geometries are incompatible")
         if move_outputs_file is None:
             if outputs is None:
+                _remove_tree(temporary_root)
                 raise ValueError("outputs are required when no packed-output file is supplied")
             y = np.asarray(outputs)
             if y.shape != (n, width):
+                _remove_tree(temporary_root)
                 raise ValueError("disk dataset packed output shape mismatch")
         else:
             y = None
@@ -212,50 +230,61 @@ class DiskQuadraticJouleDataset:
             else np.asarray(split, dtype=np.int8)
         )
         if labels.shape != (n,):
+            _remove_tree(temporary_root)
             raise ValueError("disk dataset split shape mismatch")
 
-        _write_npy(root / "states.npy", a)
-        _write_npy(root / "geometries.npy", g)
-        _write_npy(root / "split.npy", labels.astype(np.int8, copy=False))
-        output_path = root / "outputs.npy"
-        if move_outputs_file is not None:
-            source = Path(move_outputs_file)
-            # Verify the NPY header before moving the potentially huge file.
-            probe = np.load(source, mmap_mode="r", allow_pickle=False)
-            if probe.shape != (n, width) or probe.dtype != np.float64:
-                raise ValueError("working packed-output file has incompatible shape/dtype")
-            del probe
-            shutil.move(str(source), str(output_path))
-        else:
-            with output_path.open("wb") as handle:
-                np.save(handle, y.astype(np.float64, copy=False), allow_pickle=False)
+        source = None if move_outputs_file is None else Path(move_outputs_file)
+        moved = False
+        try:
+            _write_npy(temporary_root / "states.npy", a)
+            _write_npy(temporary_root / "geometries.npy", g)
+            _write_npy(temporary_root / "split.npy", labels.astype(np.int8, copy=False))
+            output_path = temporary_root / "outputs.npy"
+            if source is not None:
+                probe = np.load(source, mmap_mode="r", allow_pickle=False)
+                if probe.shape != (n, width) or probe.dtype != np.float64:
+                    raise ValueError("working packed-output file has incompatible shape/dtype")
+                del probe
+                shutil.move(str(source), str(output_path))
+                moved = True
+            else:
+                with output_path.open("wb") as handle:
+                    np.save(handle, y.astype(np.float64, copy=False), allow_pickle=False)
 
-        metadata_dict = {} if metadata is None else dict(metadata)
-        file_hashes = {
-            name: _sha256_file(root / name)
-            for name in ("states.npy", "geometries.npy", "outputs.npy", "split.npy")
-        }
-        dataset_hash = _canonical_dataset_hash(file_hashes, metadata_dict)
-        manifest = SnapshotManifest(
-            format_version=_DISK_DATASET_FORMAT_VERSION,
-            n_samples=n,
-            thermal_rank=int(thermal_rank),
-            geometry_dimension=g.shape[1],
-            current_dimension=int(current_dimension),
-            packed_symmetric_size=n_sym,
-            train_count=int(np.count_nonzero(labels == 0)),
-            validation_count=int(np.count_nonzero(labels == 1)),
-            test_count=int(np.count_nonzero(labels == 2)),
-            dataset_hash=dataset_hash,
-            metadata=metadata_dict,
-        )
-        payload = asdict(manifest)
-        payload["file_hashes"] = file_hashes
-        (root / "manifest.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
-            encoding="utf-8",
-        )
-        return cls(root, manifest, verify=False)
+            metadata_dict = {} if metadata is None else dict(metadata)
+            file_hashes = {
+                name: _sha256_file(temporary_root / name)
+                for name in ("states.npy", "geometries.npy", "outputs.npy", "split.npy")
+            }
+            dataset_hash = _canonical_dataset_hash(file_hashes, metadata_dict)
+            manifest = SnapshotManifest(
+                format_version=_DISK_DATASET_FORMAT_VERSION,
+                n_samples=n,
+                thermal_rank=int(thermal_rank),
+                geometry_dimension=g.shape[1],
+                current_dimension=int(current_dimension),
+                packed_symmetric_size=n_sym,
+                train_count=int(np.count_nonzero(labels == 0)),
+                validation_count=int(np.count_nonzero(labels == 1)),
+                test_count=int(np.count_nonzero(labels == 2)),
+                dataset_hash=dataset_hash,
+                metadata=metadata_dict,
+            )
+            payload = asdict(manifest)
+            payload["file_hashes"] = file_hashes
+            (temporary_root / "manifest.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
+            temporary_root.replace(root)
+            return cls(root, manifest, verify=False)
+        except Exception:
+            temporary_output = temporary_root / "outputs.npy"
+            if moved and source is not None and temporary_output.exists() and not source.exists():
+                source.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(temporary_output), str(source))
+            _remove_tree(temporary_root)
+            raise
 
 
 __all__ = ["DiskQuadraticJouleDataset"]
