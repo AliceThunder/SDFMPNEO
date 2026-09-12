@@ -9,6 +9,9 @@
   "operating_upper": [10.0, 10.0],
   "n_snapshots": 2048,
   "seed": 17,
+  "sampling": {
+    "strategy": "box"
+  },
   "pod_rank": null,
   "pod_relative_tail_tolerance": 0.0001,
   "snapshot_workers": 1,
@@ -22,12 +25,14 @@
   "training": {
     "epochs": 500,
     "batch_size": 256,
+    "evaluation_batch_size": 256,
     "learning_rate": 0.001,
     "weight_decay": 0.000001,
     "heat_loss_weight": 0.25,
     "patience": 50,
     "seed": 17,
     "dtype": "float32",
+    "mixed_precision": false,
     "gradient_clip_norm": 10.0
   }
 }
