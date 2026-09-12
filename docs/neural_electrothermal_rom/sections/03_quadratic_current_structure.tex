@@ -1,0 +1,88 @@
+\section{Maxwell 消元与电流二次型结构}
+
+\subsection{仿射激励参数化}
+对实 operating 参数 $u\in\R^m$，定义
+\begin{equation}
+\zeta=
+\begin{bmatrix}
+1\\u
+\end{bmatrix}\in\R^{p},
+\qquad p=m+1,
+\end{equation}
+其中常数分量用于吸收 current offset。将全部端口激励写成
+\begin{equation}
+b(g,u)=\mathcal B(g)\zeta.
+\end{equation}
+固定 $(a,g)$ 后，电磁方程对激励是线性的，因此
+\begin{equation}
+X(a,g)=A_{\mathrm{em}}(a,g)^{-1}\mathcal B(g),
+\qquad
+x=X(a,g)\zeta.
+\end{equation}
+一次 multi-RHS solve 即得到整个电流参数空间的响应基。
+
+\subsection{Joule 模态源的精确二次型}
+令第 $j$ 个热模态的 Joule 投影算子为 Hermitian 矩阵 $H_j(a,g)$。则
+\begin{equation}
+q_j(a,g,u)
+=
+\operatorname{Re}\!\left[x^H H_j(a,g)x\right].
+\end{equation}
+代入 $x=X\zeta$ 得
+\begin{equation}
+\boxed{
+q_j(a,g,u)=\zeta^\top G_j(a,g)\zeta
+}
+\label{eq:quadratic-current}
+\end{equation}
+其中
+\begin{equation}
+\boxed{
+G_j(a,g)
+=
+\operatorname{Re}\!\left[X(a,g)^H H_j(a,g)X(a,g)\right]
+}
+\label{eq:G-def}
+\end{equation}
+可取为实对称矩阵。式 \eqref{eq:quadratic-current} 是由电磁线性性和 Joule 二次性推出的结构恒等式，不是学习假设。
+
+如果未来将独立复数相位作为输入参数，则应使用一般 Hermitian 形式
+\begin{equation}
+q_j=c^H G_j c,
+\end{equation}
+而不能错误地继续使用普通转置。
+
+\subsection{不能对每个热模态矩阵强制正定}
+物理 Joule 密度和总耗散非负，但热模态 $\phi_j(x)$ 可以变号。因此
+\begin{equation}
+q_j=\int_\Omega \phi_j(x)Q(x)\,\mathrm dx
+\end{equation}
+可以为负，故单个 $G_j$ 一般不要求
+\begin{equation}
+G_j\succeq0.
+\end{equation}
+把所有 $G_j$ 参数化为 Cholesky/PSD 会改变真实物理，禁止作为默认设计。
+
+\subsection{可硬编码的对称性与缩放性质}
+在无 offset 的纯线性电流激励下，二次型结构自动给出
+\begin{equation}
+q(a,g,-u)=q(a,g,u),
+\end{equation}
+以及
+\begin{equation}
+q(a,g,\alpha u)=\alpha^2q(a,g,u).
+\end{equation}
+存在 offset 时，线性和常数交叉项由 $\zeta=[1;u]$ 的完整二次型精确表示，无需神经网络自行发现。
+
+\subsection{训练标签的高效生成}
+对一个状态--几何样本 $(a,g)$：
+\begin{enumerate}
+  \item 组装/获取 $A_{\mathrm{em}}(a,g)$；
+  \item 对 $\mathcal B(g)$ 做一次 multi-RHS solve 得到 $X$；
+  \item 对所有保留热模态计算 $G_j=\operatorname{Re}(X^H H_jX)$；
+  \item 保存对称独立元素，而不是保存大量随机电流样本的 $q$。
+\end{enumerate}
+因此单个昂贵物理样本覆盖整个当前 operating-current 空间。
+
+\subsection{V1 与更强物理 V2 的边界}
+V1 直接学习 modal quadratic tensors $G_j$。更强的 V2 可学习非负空间热源基系数，再投影到热模态，从而显式保证空间 Joule 密度非负；但该方案增加输出维数和实现复杂度，不作为首版主路线。只有当 V1 在能量一致性或外推上出现明确问题时再升级。
