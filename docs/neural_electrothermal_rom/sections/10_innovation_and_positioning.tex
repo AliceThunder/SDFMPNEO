@@ -1,0 +1,83 @@
+\section{创新定位与综合评价}
+
+\subsection{创新点不应表述为 ``用了 Neural ODE''}
+单独使用 MLP、Neural ODE、残差网络或物理损失都不足以构成本项目的核心创新。建议将贡献集中在以下完整链条：
+\begin{equation}
+\boxed{
+\text{Maxwell elimination}
+\rightarrow
+\text{current-quadratic Joule tensor}
+\rightarrow
+\text{neural tensor ROM}
+\rightarrow
+\text{exact reduced thermal dynamics}
+}
+\end{equation}
+以及
+\begin{equation}
+\boxed{
+E_G
+\rightarrow
+E_q
+\rightarrow
+E_F
+\rightarrow
+E_{\mathrm{trajectory}}
+\rightarrow
+E_{\mathrm{output}}.
+}
+\end{equation}
+即：网络并非替代整个多物理系统，而是替代最昂贵且最适合学习的参数化电磁热耦合张量。
+
+\subsection{与直接 trajectory surrogate 的区别}
+直接学习
+\begin{equation}
+(a_0,g,u,t)\mapsto a(t)
+\end{equation}
+虽然训练接口简单，但必须同时学习初值、时间、半群结构、热耗散和电流缩放。本文方案把这些已知结构从学习问题中删除，使网络任务降为静态平滑映射
+\begin{equation}
+(a,g)\mapsto G(a,g).
+\end{equation}
+因此创新不是 ``NN 更复杂''，而是通过物理消元使学习问题更简单。
+
+\subsection{与 PINN 风格方法的区别}
+本方案不依赖 residual loss 才使模型满足基本物理。即使训练 loss 只剩普通监督误差，模型仍然严格具有：
+\begin{itemize}
+  \item 正确初值接口；
+  \item 真实 reduced thermal mass/conduction；
+  \item current quadratic dependence；
+  \item autonomous continuous-time vector field；
+  \item 与 existing EM ROM 分层组合的输出一致性。
+\end{itemize}
+物理 residual 的主要职责转为 validation/audit，而不是创造这些结构。
+
+\subsection{综合指标评价}
+\begin{center}
+\begin{tabular}{p{0.19\linewidth}p{0.72\linewidth}}
+\toprule
+指标 & 方案评价与风险 \\
+\midrule
+理论正确性 & 强。由 Maxwell 线性性推导电流二次型；热动力学使用真实 $M_r,K_r$。主要待证明项是跨几何谱等价、状态域平滑性与稳定性常数。 \\
+可实现性 & 强。物理数据生成、POD、PyTorch MLP、ETD/IMEX 都有成熟数值实现；不存在必须依赖定制符号网络的环节。 \\
+训练速度 & 预期强。昂贵 EM 只在离线 snapshot 阶段运行；网络训练是标准 GPU supervised learning。总成本仍取决于需要多少 $(a,g)$ 样本。 \\
+学习能力 & 中到强。$G(a,g)$ 在无 EM 奇异点时应平滑，但高维热状态是否具有低有效复杂度必须通过数据验证。POD 失败不否定总体架构。 \\
+推理速度 & 强但不一定达到旧解析网络的一次调用极限。需要若干 ODE steps；每步仅含小 MLP、quadratic contraction 和低维线性代数。 \\
+物理性 & 强。主要物理结构为硬编码；但 V1 不显式保证空间 Joule 密度非负，仅保证正确 modal quadratic representation 的可学习近似。 \\
+稳定性 & 条件强。若真实系统可证明 contractive，可得到统一 long-time bound；否则采用有限时间误差界和数值稳定积分器。 \\
+可认证性 & 分层。已有 constitutive/EM/geometry 严格证书可保留；NN 全域误差除非进一步做 verified bounds，否则只能称 frozen-test validation。 \\
+创新性 & 有潜力。核心在 quadratic-current tensor elimination + neural coefficient ROM + structure-preserving dynamics + error chain；正式论文声称 novelty 前需单独系统文献检索。 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{论文/技术报告建议的核心问题}
+未来论文不应以 ``一个新的神经网络'' 为主问题，而应回答：
+\begin{enumerate}
+  \item 电热耦合在消除电磁状态后具有何种可利用的代数结构？
+  \item 该结构如何把高维 operating dependence 消除为低维状态--几何学习问题？
+  \item 学习张量误差如何传播到热轨迹和最终工程输出？
+  \item 与 trajectory NN、PINN、传统 ROM 和旧解析响应网络相比，精度--训练成本--推理成本的 Pareto 前沿如何？
+\end{enumerate}
+
+\subsection{当前冻结结论}
+除非 Gate 1 的电流二次型恒等式在现有物理定义下失败，或者 $G(a,g)$ 被实验证明存在无法由合理容量模型学习的严重非平滑结构，否则不再改变顶层架构。后续研究集中在：POD rank、采样策略、网络容量、稳定性条件、时间积分和误差认证，而不是重新选择另一类主网络。
