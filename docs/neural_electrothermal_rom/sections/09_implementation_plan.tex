@@ -1,89 +1,56 @@
 \section{实施路线与软件边界}
 
-\subsection{阶段划分}
-实现必须按依赖顺序推进，避免再次出现理论、优化器和性能补丁同时演化的情况。
-
-\paragraph{Phase A：物理数据接口。}
-只新增产生 $G(a,g)$ 的确定性 API 和测试，不引入神经网络。目标接口应接近：
+实现只保留一条主链：
 \begin{equation}
-\texttt{quadratic\_joule\_tensor(state, geometry)}\rightarrow G.
+(a,g)\rightarrow G(a,g)\rightarrow \mathrm{POD}\rightarrow \beta_\theta(a,g)
+\rightarrow q_\theta(a,g,u)\rightarrow a(t).
 \end{equation}
-该层负责 multi-RHS EM solve、对称张量构造、数值等价测试和缓存。
 
-\paragraph{Phase B：数据集与 POD。}
-实现可重启的数据生成器、数据 manifest、train/validation/test split、POD 构建和版本签名。数据格式至少保存：状态、几何、$G/y$、solver/ROM 版本、误差证书摘要。
-
-\paragraph{Phase C：独立神经模块。}
-引入 PyTorch residual MLP、归一化器、POD decoder 和 quadratic-current layer。该模块仅依赖离线数据，不依赖时间积分和生产模型入口。
-
-\paragraph{Phase D：神经电热向量场。}
-实现
-\begin{equation}
-F_\theta(a,g,u)=M_r(g)^{-1}[-K_r(g)a+q_\theta(a,g,u)]
-\end{equation}
-以及与真实 reduced vector field 的逐点对照测试。
-
-\paragraph{Phase E：时间积分。}
-先实现参考可靠版（例如高精度 solve\_ivp 调神经向量场）作为测试 oracle，再实现 ETD2/IMEX production integrator。两者在步长收敛区内必须一致。
-
-\paragraph{Phase F：模型封装。}
-接入 train/save/load/predict/steady-state API；保留旧模型读取兼容层，但新格式必须显式记录 architecture version、POD basis、normalization、network state 和训练域。
-
-\paragraph{Phase G：性能与生产切换。}
-完成 Gate 1--7 后才切换默认训练入口；在此之前不删除旧实现。
-
-\subsection{建议模块边界}
-最终软件结构建议按职责划分，而非按训练技巧划分：
+\subsection{核心模块}
+软件职责保持简单清晰：
 \begin{verbatim}
-sdfmpneo/
-  electrothermal_tensor/
-    quadratic_joule.py       # G(a,g) exact/reduced physics construction
-    dataset.py               # snapshot generation and manifests
-    pod.py                   # output compression
-    network.py               # residual MLP only
-    physical_layer.py        # beta -> G -> q
-    vector_field.py          # M,K,q composition
-    integrators.py           # ETD2 / IMEX
-    model.py                 # save/load/predict facade
-    validation.py            # G/q/F/trajectory audits
+sdfmpneo/electrothermal_tensor/
+  quadratic_joule.py   # reduced EM -> exact G(a,g)
+  dataset.py           # train/validation/test snapshots
+  pod.py               # tensor compression
+  network.py           # ordinary residual MLP
+  physical_layer.py    # quadratic-current hard physics
+  vector_field.py      # M,K,q,f_T composition
+  integrators.py       # ETD2 / adaptive ETD2 / IMEX
+  model.py             # save/load/predict
+  pipeline.py          # train/retrain assembly
+  cli.py               # train/retrain/predict
 \end{verbatim}
-具体目录名可在编码时调整，但职责边界应保持。
+
+\subsection{训练流程}
+训练只做以下步骤：
+\begin{enumerate}
+  \item 在给定的 thermal-state 与 geometry 参数盒中采样 $(a,g)$；
+  \item 用 reduced EM multi-RHS solve 构造 $G(a,g)$；
+  \item 在 training split 上拟合 POD；
+  \item 用普通 mini-batch AdamW 训练 $(a,g)\mapsto\beta$；
+  \item 保存 POD、网络参数、thermal operator 和训练范围。
+\end{enumerate}
+
+标签一旦生成，调整网络或 POD 参数时可直接 retrain，不重新运行 EM。
 
 \subsection{禁止的耦合}
-实现中禁止以下设计回归：
+实现中不允许：
 \begin{itemize}
-  \item 网络 forward 内部调用 EM solver；
-  \item 优化器 candidate acceptance 调用 full physics；
-  \item 把 $M_r,K_r$ 当作网络输出；
-  \item 网络直接输入时间并绕过 ODE；
-  \item 在数据生成时把大量 $u$ 当成独立昂贵样本，而不利用 quadratic-current 消元；
-  \item 将 validation set hard points 自动回流后仍继续称其为 validation；应创建新的冻结 test set。
+  \item 网络 forward 调用 EM solver；
+  \item 将时间作为黑箱网络输入绕过 ODE；
+  \item 让网络学习 $M_r(g)$ 或 $K_r(g)$；
+  \item 放弃已知的 current-quadratic 结构而直接黑箱学习 $u$；
+  \item 把外部确定性热源 $f_T$ 混进 Joule surrogate。
 \end{itemize}
 
-\subsection{模型持久化}
-新模型文件必须保存：
+\subsection{验证}
+验证不引入额外的软件体系。只保留普通数值检查：
 \begin{itemize}
-  \item 模型格式版本与 Git revision；
-  \item thermal basis / geometry chart 的兼容签名；
-  \item $\bar y,U_K$；
-  \item input/output normalization；
-  \item 网络结构配置和参数；
-  \item training domain；
-  \item 数据集 manifest/hash；
-  \item 训练指标和 frozen test 摘要；
-  \item 可选 stability analysis 摘要。
+  \item quadratic tensor 与原 Joule heat 的数值等价；
+  \item validation/test split 上的 tensor/heat-source 误差；
+  \item 若需要，对典型工况比较 neural ODE 与原 reduced electrothermal ODE 的轨迹。
 \end{itemize}
-加载时任何关键维度/签名不一致必须 fail closed，不能静默重解释。
 
-\subsection{训练可复现性}
-每次正式训练记录：随机种子、数据版本、POD rank、batch size、optimizer、learning-rate schedule、precision、hardware summary 和 early-stopping checkpoint。标签数据版本与网络训练版本分离，使网络超参数实验不重复生成昂贵物理数据。
-
-\subsection{并行化策略}
-并行化优先级固定为：
-\begin{enumerate}
-  \item 物理 snapshot 之间的 embarrassingly-parallel 并行；
-  \item 单 snapshot 内 multi-RHS EM solve；
-  \item GPU mini-batch NN training；
-  \item inference batch 并行。
-\end{enumerate}
-不在首版为单条 trajectory 设计复杂跨步并行，因为时间积分存在自然数据依赖。
+\subsection{性能实现}
+大数据时可以在不改变接口的前提下使用 memmap、out-of-core POD、GPU mini-batch 和 batch inference。这些都只是内部性能优化，不引入新的用户流程或理论层级。
