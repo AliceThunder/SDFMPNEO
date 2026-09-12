@@ -1,0 +1,91 @@
+\section{神经张量代理的最终参数化}
+
+\subsection{输出对象}
+将所有保留热模态的对称二次型矩阵独立元素拼接为
+\begin{equation}
+y(a,g)
+=
+\operatorname{vec}_{\mathrm{sym}}\bigl(G_1(a,g),\ldots,G_r(a,g)\bigr)
+\in\R^{d_G},
+\end{equation}
+其中
+\begin{equation}
+d_G=r\,\frac{p(p+1)}{2}.
+\end{equation}
+直接预测 $d_G$ 维输出理论上可行，但默认首先对真实物理 snapshots 做中心化 POD/SVD：
+\begin{equation}
+y(a,g)\approx \bar y+U_K\beta(a,g),
+\qquad U_K^\top U_K=I.
+\end{equation}
+网络只学习
+\begin{equation}
+\boxed{
+\beta_\theta:(a,g)\mapsto\R^K.
+}
+\end{equation}
+POD 仅为输出压缩，不是模型成立的理论前提。若谱衰减不足，可提高 $K$ 或直接预测完整 $y$，但不改变顶层动力学架构。
+
+\subsection{输入表示}
+首版输入保留完整热状态和几何参数：
+\begin{equation}
+z=\operatorname{Normalize}(a,g).
+\end{equation}
+不预先压缩 $a\in\R^r$。只有在真实灵敏度/Jacobian active-subspace 分析证明存在稳定低维输入子空间后，才允许加入输入投影。
+
+归一化应由训练域固定：
+\begin{equation}
+\tilde a_i=\frac{a_i-c_i^{(a)}}{s_i^{(a)}},
+\qquad
+\tilde g_k=\frac{g_k-c_k^{(g)}}{s_k^{(g)}},
+\end{equation}
+并随模型持久化，禁止推理时重新估计。
+
+\subsection{网络结构}
+默认使用普通 residual MLP，不发明专用时间神经元：
+\begin{align}
+h_0 &= W_{\mathrm{in}}z+b_{\mathrm{in}},\\
+h_{\ell+1}
+&=
+ h_\ell
+ +W_{\ell,2}\,\sigma(W_{\ell,1}h_\ell+b_{\ell,1}),\\
+\beta_\theta&=W_{\mathrm{out}}h_L+b_{\mathrm{out}},
+\end{align}
+其中默认 $\sigma=\operatorname{SiLU}$；Softplus 可作为平滑性对照。首版容量建议从 4--6 个 residual blocks、hidden width 256--512 起步，通过验证误差和训练成本调整。
+
+\subsection{为什么不把物理性放在激活函数上}
+本方案的主要物理归纳偏置来自：
+\begin{enumerate}
+  \item 网络不输入电流 $u$，因此无法破坏电流二次结构；
+  \item 输出必须经过固定 POD 解码和 symmetric-unvec；
+  \item Joule 源必须经过 $\zeta^\top G_j\zeta$ 物理层；
+  \item 动力学必须经过真实 $M_r(g),K_r(g)$；
+  \item 初始条件由 ODE 初值严格给定。
+\end{enumerate}
+激活函数只需提供良好的优化和平滑导数性质，不承担主要物理约束职责。
+
+\subsection{重构物理层}
+由网络输出得到
+\begin{equation}
+\hat y_\theta(a,g)=\bar y+U_K\beta_\theta(a,g),
+\end{equation}
+再恢复全部对称矩阵
+\begin{equation}
+G_{\theta,j}(a,g)=\operatorname{unvec}_{\mathrm{sym},j}(\hat y_\theta).
+\end{equation}
+最终热源为
+\begin{equation}
+\boxed{
+q_{\theta,j}(a,g,u)=\zeta^\top G_{\theta,j}(a,g)\zeta.
+}
+\end{equation}
+网络参数永远不直接输出 $a(t)$、$\dot a$、温度轨迹或时间变量。
+
+\subsection{可选 Jacobian 结构}
+由于稳定性和时间积分可能需要 $\partial q_\theta/\partial a$，网络应使用自动微分友好的平滑激活。首版不要求额外 Jacobian head；必要时通过 autodiff 得到
+\begin{equation}
+\frac{\partial q_\theta}{\partial a}
+=
+\frac{\partial q_\theta}{\partial G_\theta}
+\frac{\partial G_\theta}{\partial \beta_\theta}
+\frac{\partial \beta_\theta}{\partial a}.
+\end{equation}
