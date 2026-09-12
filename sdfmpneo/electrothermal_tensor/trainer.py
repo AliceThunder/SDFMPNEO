@@ -200,7 +200,8 @@ def train_tensor_surrogate(
             val_loss = batch_loss(x_val, y_val, beta_val, random_operating=False)
             last_validation = float(val_loss.detach().cpu())
         epochs_completed = epoch + 1
-        if last_validation < best_validation - 1e-10 * max(1.0, abs(best_validation)):
+        threshold = best_validation - 1e-10 * max(1.0, abs(best_validation)) if np.isfinite(best_validation) else float("inf")
+        if not np.isfinite(best_validation) or last_validation < threshold:
             best_validation = last_validation
             best_epoch = epoch + 1
             best_state = copy.deepcopy(model.state_dict())
