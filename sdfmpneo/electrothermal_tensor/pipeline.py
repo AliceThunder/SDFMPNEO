@@ -9,8 +9,8 @@ import numpy as np
 from .adapters import (
     fixed_research_tensor_factory,
     fixed_research_thermal_family,
+    geometry_research_embedded_thermal_family,
     geometry_research_tensor_factory,
-    geometry_research_thermal_family,
 )
 from .dataset import latin_hypercube_box
 from .generator import generate_snapshots_resumable
@@ -201,6 +201,7 @@ def build_geometry_neural_rom(
     save_model: bool = True,
     snapshot_workers: int = 1,
     checkpoint_every: int = 16,
+    thermal_cache_size: int = 64,
 ) -> PipelineResult:
     """End-to-end geometry-family pipeline using normalized geometry coordinates."""
     work = Path(work_directory)
@@ -223,8 +224,6 @@ def build_geometry_neural_rom(
         geometry_research_tensor_factory(geometry_model, normalized_geometry=True),
         checkpoint_path=work / "quadratic_joule.partial.npz",
         checkpoint_every=checkpoint_every,
-        # GeometryResearchModel keeps an LRU context cache that is not guaranteed
-        # thread-safe.  Parallel snapshot generation remains opt-in.
         max_workers=snapshot_workers,
         split_seed=seed,
         metadata={"kind": "geometry", "physical_signature": signature},
@@ -253,7 +252,10 @@ def build_geometry_neural_rom(
     }
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
-        geometry_research_thermal_family(geometry_model, normalized_geometry=True),
+        geometry_research_embedded_thermal_family(
+            geometry_model,
+            cache_size=thermal_cache_size,
+        ),
         physical_signature=signature,
         training_domain=domain,
     )
