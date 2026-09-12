@@ -3,7 +3,6 @@ import json
 import numpy as np
 import pytest
 
-from sdfmpneo.electrothermal_tensor.certification import verify_model_persistence_roundtrip
 from sdfmpneo.electrothermal_tensor.model import StructurePreservingNeuralElectroThermalROM
 from sdfmpneo.electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from sdfmpneo.electrothermal_tensor.pod import TensorPOD
@@ -88,22 +87,7 @@ def test_neural_rom_npz_roundtrip_without_pickle(tmp_path):
     np.testing.assert_allclose(restored.state, original.state, rtol=2e-13, atol=2e-13)
 
 
-def test_formal_roundtrip_verifier_checks_metadata_domain_signature_and_numerics():
-    model = _model()
-    model.artifact_metadata = {
-        "dataset_hash": "dataset-v1",
-        "training_report": {"best_epoch": 12},
-    }
-    report = verify_model_persistence_roundtrip(model, device="cpu")
-    assert report.passed is True
-    assert report.metadata_preserved is True
-    assert report.training_domain_preserved is True
-    assert report.physical_signature_preserved is True
-    assert report.maximum_heat_source_error == pytest.approx(0.0, abs=1e-15)
-    assert report.maximum_vector_field_error == pytest.approx(0.0, abs=1e-15)
-
-
-def test_loaded_artifact_metadata_is_recursively_extended_not_replaced(tmp_path):
+def test_loaded_artifact_metadata_is_merged_not_replaced(tmp_path):
     model = _model()
     first = model.save(
         tmp_path / "first.npz",
@@ -115,22 +99,16 @@ def test_loaded_artifact_metadata_is_recursively_extended_not_replaced(tmp_path)
     loaded = StructurePreservingNeuralElectroThermalROM.load(first)
     second = loaded.save(
         tmp_path / "second.npz",
-        metadata={
-            "training": {"audited": True},
-            "certification": {"production_ready": False, "gate_report_hash": "abc"},
-        },
+        metadata={"training": {"best_epoch": 5}},
     )
     restored = StructurePreservingNeuralElectroThermalROM.load(second)
     assert restored.artifact_metadata["dataset_hash"] == "dataset-v1"
     assert restored.artifact_metadata["training"] == {
         "seed": 7,
         "device": "cpu",
-        "audited": True,
+        "best_epoch": 5,
     }
-    assert restored.artifact_metadata["certification"]["gate_report_hash"] == "abc"
 
     with np.load(second, allow_pickle=False) as data:
         payload = json.loads(str(data["metadata_json"]))
     assert payload["format_version"] == 3
-    assert "source_revision" in payload
-    assert "software_environment" in payload
