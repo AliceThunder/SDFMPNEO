@@ -10,7 +10,7 @@ from sdfmpneo.electrothermal_tensor.vector_field import FixedThermalOperatorFami
 
 def _model():
     torch = pytest.importorskip("torch")
-    # Two thermal modes, one current.  The zero MLP leaves beta=0, so the mean
+    # Two thermal modes, one current. The zero MLP leaves beta=0, so the mean
     # tensor defines a nontrivial current-dependent but state-independent source.
     pod = TensorPOD(
         mean=np.array([
@@ -91,6 +91,33 @@ def test_batched_fixed_etd2_matches_independent_predictions():
         atol=2e-12,
     )
     assert batch.steps == independent[0].steps
+
+
+def test_single_and_batch_etd_share_same_cached_generalized_spectrum():
+    model = _model()
+    geometry = np.empty(0)
+    first = model._spectrum_for_geometry(geometry)
+    second = model._spectrum_for_geometry(geometry)
+    assert first is second
+    assert len(model._spectrum_cache) == 1
+
+    model.predict(
+        0.2,
+        initial_state=np.array([0.1, -0.1]),
+        geometry=geometry,
+        operating=np.array([0.2]),
+        max_step=0.1,
+        method="etd2_adaptive",
+    )
+    model.predict_batch_fixed_etd2(
+        0.2,
+        initial_states=np.array([[0.1, -0.1], [0.0, 0.1]]),
+        geometry=geometry,
+        operating=np.array([[0.2], [0.4]]),
+        max_step=0.1,
+    )
+    assert model._spectrum_for_geometry(geometry) is first
+    assert len(model._spectrum_cache) == 1
 
 
 def test_batched_inference_rejects_domain_violation():
