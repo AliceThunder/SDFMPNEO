@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -32,11 +31,12 @@ def test_monitor_pause_resume_and_stop(tmp_path):
             monitor.checkpoint()
 
 
-def test_neural_checkpoint_preserves_pod_network_and_optimizer(tmp_path):
+def test_neural_checkpoint_preserves_dataset_pod_network_and_optimizer(tmp_path):
     torch = pytest.importorskip("torch")
     checkpoint = tmp_path / "training.pt"
     runtime = NeuralTrainingRuntime(None, checkpoint)
     runtime.pod = _pod()
+    runtime.dataset_hash = "dataset-123"
 
     model = torch.nn.Linear(2, 2).double()
     model.config = SimpleNamespace(to_dict=lambda: {
@@ -52,7 +52,8 @@ def test_neural_checkpoint_preserves_pod_network_and_optimizer(tmp_path):
 
     restored = NeuralTrainingRuntime(None, checkpoint)
     payload = restored._load_payload()
-    assert payload["format_version"] == 2
+    assert payload["format_version"] == 3
+    assert payload["dataset_hash"] == "dataset-123"
     saved_pod = restored._saved_pod()
     assert saved_pod is not None
     assert np.array_equal(saved_pod.mean, runtime.pod.mean)
