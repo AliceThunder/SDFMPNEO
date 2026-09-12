@@ -45,6 +45,17 @@ def _validate_state(validator, state: np.ndarray) -> None:
         validator(np.asarray(state, dtype=float))
 
 
+def _resolved_spectrum(
+    operator: ReducedThermalOperator,
+    spectrum: "GeneralizedThermalSpectrum | None",
+) -> "GeneralizedThermalSpectrum":
+    if spectrum is None:
+        return GeneralizedThermalSpectrum(operator)
+    if spectrum.operator.mass.shape != operator.mass.shape:
+        raise ValueError("ETD spectrum/operator dimensions differ")
+    return spectrum
+
+
 class GeneralizedThermalSpectrum:
     """One generalized eigendecomposition reused by all ETD step sizes."""
 
@@ -98,12 +109,7 @@ class GeneralizedETD2Stepper:
     ):
         self.operator = operator
         self.step = float(step)
-        self.spectrum = GeneralizedThermalSpectrum(operator) if spectrum is None else spectrum
-        if self.spectrum.operator is not operator:
-            # Equality of dense operators is expensive and unnecessary; callers
-            # should explicitly share a spectrum only for the same operator.
-            if self.spectrum.operator.mass.shape != operator.mass.shape:
-                raise ValueError("ETD spectrum/operator dimensions differ")
+        self.spectrum = _resolved_spectrum(operator, spectrum)
         self.lambdas = self.spectrum.lambdas
         self.vectors = self.spectrum.vectors
         self.E, self.b1, self.b2 = _etd_coefficients(self.lambdas, self.step)
@@ -143,6 +149,7 @@ def integrate_etd2(
     operating: np.ndarray,
     max_step: float,
     state_validator=None,
+    spectrum: GeneralizedThermalSpectrum | None = None,
 ) -> IntegrationResult:
     t = float(time)
     if not np.isfinite(t) or t < 0:
@@ -157,7 +164,7 @@ def integrate_etd2(
     if t == 0.0:
         return IntegrationResult(a, 0.0, 0, ())
     operator = field.thermal_operators.operator(g)
-    spectrum = GeneralizedThermalSpectrum(operator)
+    spectrum = _resolved_spectrum(operator, spectrum)
     elapsed = 0.0
     sizes: list[float] = []
     full_h = min(hmax, t)
@@ -193,13 +200,13 @@ def integrate_etd2_adaptive(
     initial_step: float | None = None,
     max_attempts: int = 100000,
     state_validator=None,
+    spectrum: GeneralizedThermalSpectrum | None = None,
 ) -> IntegrationResult:
     """Adaptive ETD2 with an embedded exponential-Euler error indicator.
 
-    The expensive generalized eigendecomposition is performed once.  Each trial
-    only recomputes scalar exponential coefficients and two neural heat-source
-    evaluations.  The ETD2/ETD1 difference is an O(h^2) embedded indicator; it
-    is intentionally conservative and uses a square-root controller.
+    A supplied generalized eigendecomposition is reused verbatim.  Otherwise it
+    is built once for this integration.  Each trial only recomputes scalar
+    exponential coefficients and two neural heat-source evaluations.
     """
     t = float(time)
     if not np.isfinite(t) or t < 0.0:
@@ -229,7 +236,7 @@ def integrate_etd2_adaptive(
         h = min(h, hmax, t)
 
     operator = field.thermal_operators.operator(g)
-    spectrum = GeneralizedThermalSpectrum(operator)
+    spectrum = _resolved_spectrum(operator, spectrum)
 
     def source(x):
         return field.heat_source(x, g, u)
@@ -268,8 +275,6 @@ def integrate_etd2_adaptive(
             rejected += 1
             h *= 0.5
             if h < minimum_step:
-                # Re-run validation to expose the scientifically meaningful
-                # state-domain error instead of a generic step-size failure.
                 _validate_state(state_validator, stage)
             continue
 
