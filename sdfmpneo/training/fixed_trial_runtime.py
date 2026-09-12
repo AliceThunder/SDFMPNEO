@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from threading import local
 from types import SimpleNamespace
 
@@ -14,13 +13,12 @@ from .fixed_physics_runtime import (
     evaluate_semigroup_batch,
     physics_vector_field,
 )
+from .fixed_layer_cache_runtime import clear_layer_program_cache, layer_program
 
 _STATE = local()
 _TRIAL_PARENTS: dict[int, int] = {}
 _NETWORKS: dict[int, object] = {}
 _EVALUATED: dict[int, object] = {}
-_AFFINE_POINT_CACHE: dict[tuple[bytes, bytes], tuple] = {}
-_ACTIVE_AFFINE_SIGNATURE: bytes | None = None
 _ORIGINAL_WITH_PARAMETERS = None
 _INSTALLED = False
 
@@ -55,91 +53,48 @@ def _candidate_amplitude_layer(parent_network, network):
     for layer in range(network.depth):
         ids = np.asarray(network.layer_amplitude_parameter_indices(layer), dtype=int)
         if ids.size and np.all(np.isin(changed, ids, assume_unique=False)):
-            # The affine reconstruction is exact only when no later active layer
-            # consumes the current layer as an input feature.
             if any(not network._layer_is_zero(k) for k in range(layer + 1, network.depth)):
                 return None
             return int(layer), ids
     return None
 
 
-def _affine_signature(network, layer, ids):
-    """Signature of every quantity that fixes a layer's analytic feature basis."""
-    theta = np.asarray(network.parameters, dtype=np.float64).copy()
-    theta[np.asarray(ids, dtype=int)] = 0.0
-    digest = hashlib.blake2b(digest_size=20)
-    digest.update(theta.tobytes())
-    digest.update(np.asarray(network.lambdas, dtype=np.float64).tobytes())
-    digest.update(np.asarray(network.input_center, dtype=np.float64).tobytes())
-    digest.update(np.asarray(network.input_scale, dtype=np.float64).tobytes())
-    digest.update(np.asarray(network.layer_widths[: layer + 1], dtype=np.int64).tobytes())
-    for targets in network.layer_targets[: layer + 1]:
-        digest.update(np.asarray(targets, dtype=np.int64).tobytes())
-    return digest.digest()
-
-
-def _activate_affine_signature(signature):
-    global _ACTIVE_AFFINE_SIGNATURE
-    if _ACTIVE_AFFINE_SIGNATURE != signature:
-        _AFFINE_POINT_CACHE.clear()
-        _ACTIVE_AFFINE_SIGNATURE = signature
-
-
-def _affine_basis_for_point(network, point, layer, ids, signature):
-    """Cache the exact response basis for one collocation point.
-
-    During layerwise training only output amplitudes of the active layer change.
-    The source features and response poles therefore stay fixed, making ``a`` and
-    ``da/dt`` exactly affine in that amplitude block.  We store only target rows
-    of the Jacobians to keep the cache compact for high thermal rank.
-    """
-    point = np.ascontiguousarray(np.asarray(point, dtype=np.float64))
-    key = (signature, point.tobytes())
-    cached = _AFFINE_POINT_CACHE.get(key)
-    if cached is not None:
-        return cached
-
+def _compiled_physics_records(network, field, rows, program):
+    """Evaluate exact physics on a candidate without rebuilding analytic signals."""
+    values = np.asarray(rows, dtype=float)
+    if len(values) == 0:
+        return []
     n = network.n_modes
-    initial, operating, time = point[:n], point[n:-1], float(point[-1])
-    a, da, ja, jda, actual_ids = network.evaluate_layer_amplitude_jacobian(
-        time, a0=initial, operating=operating, layer=layer
-    )
-    actual_ids = np.asarray(actual_ids, dtype=int)
-    if not np.array_equal(actual_ids, ids):
-        raise RuntimeError("layer amplitude block changed while building exact candidate cache")
+    states, derivatives = program.reconstruct(network, values)
 
-    targets = np.unique(np.asarray(network.layer_targets[layer], dtype=int))
-    theta = np.asarray(network.parameters, dtype=float)[ids]
-    ja_rows = np.ascontiguousarray(np.asarray(ja, dtype=float)[targets])
-    jda_rows = np.ascontiguousarray(np.asarray(jda, dtype=float)[targets])
-    base_a = np.asarray(a, dtype=float).copy()
-    base_da = np.asarray(da, dtype=float).copy()
-    base_a[targets] -= ja_rows @ theta
-    base_da[targets] -= jda_rows @ theta
-    cached = (targets, base_a, base_da, ja_rows, jda_rows)
-    _AFFINE_POINT_CACHE[key] = cached
-    return cached
+    def one(index):
+        operating = values[index, n:-1]
+        physical = physics_vector_field(field, states[index], operating)
+        return SimpleNamespace(
+            residual=np.asarray(derivatives[index] - physical, dtype=float)
+        )
 
-
-def _affine_physics_record(network, field, point, layer, ids, signature):
-    targets, base_a, base_da, ja_rows, jda_rows = _affine_basis_for_point(
-        network, point, layer, ids, signature
-    )
-    theta = np.asarray(network.parameters, dtype=float)[ids]
-    a = base_a.copy()
-    da = base_da.copy()
-    a[targets] += ja_rows @ theta
-    da[targets] += jda_rows @ theta
-    n = network.n_modes
-    operating = np.asarray(point, dtype=float)[n:-1]
-    F = physics_vector_field(field, a, operating)
-    return SimpleNamespace(residual=np.asarray(da - F, dtype=float))
+    return _ordered_map(one, range(len(values)), monitor=None)
 
 
 def _candidate_exact_result(
-    network, field, points, semigroup_points, include_semigroup,
-    monitor, parent, tolerance, parent_network=None,
+    network,
+    field,
+    points,
+    semigroup_points,
+    include_semigroup,
+    monitor,
+    parent,
+    tolerance,
+    parent_network=None,
 ):
+    """Exact trust-region result with batched early rejection.
+
+    Expensive analytic structure is compiled once by ``layer_program``.  A trial
+    candidate then performs only dense state reconstruction plus the real physical
+    vector field.  Physics points are processed from worst parent residual to best
+    in small batches so hopeless candidates still exit early.
+    """
     from . import research_helpers as rh
 
     points = np.asarray(points, dtype=float)
@@ -147,6 +102,7 @@ def _candidate_exact_result(
     _prepare_working_set(field, points)
     if len(points):
         _prepare_operating_contexts(field, points[:, network.n_modes:-1])
+
     weights, max_limit, merit_limit = _candidate_thresholds(parent, tolerance)
     n_physics = len(points)
     n_semigroup = len(semigroup_points) if include_semigroup else 0
@@ -158,18 +114,16 @@ def _candidate_exact_result(
             evaluate_physics_batch(network, field, points, monitor=monitor), []
         )
 
-    affine = None
+    program = None
     if parent_network is not None:
         affine = _candidate_amplitude_layer(parent_network, network)
-    if affine is not None:
-        layer, ids = affine
-        # Layer 1 is already fast and its amplitude block can be very wide; the
-        # compressed cache is aimed at the expensive deeper funnel layers.
-        if layer <= 0 or len(ids) > 2048:
-            affine = None
-        else:
-            signature = _affine_signature(network, layer, ids)
-            _activate_affine_signature(signature)
+        if affine is not None:
+            layer, ids = affine
+            if layer > 0 and len(ids) <= 4096:
+                # The preceding Jacobian step normally prewarms this exact program.
+                # If a caller reaches candidate evaluation directly, compile once
+                # here and reuse it for every subsequent backtrack/iteration.
+                program = layer_program(parent_network, points, layer, monitor=monitor)
 
     items = [(float(parent.norms[i]), 0, i, row) for i, row in enumerate(points)]
     if include_semigroup:
@@ -186,39 +140,44 @@ def _candidate_exact_result(
     physics_guard = None
     if include_semigroup:
         physics_guard = max(1.05 * tolerance, 1.02 * float(parent.physics_max))
+
+    # Small batches preserve early-reject power; each batch is internally point
+    # parallel.  Using at most one worker wave avoids the old nested thread/batch
+    # overhead where evaluate_physics_batch was invoked once per point.
     batch_size = min(training_point_workers(), max(1, expected))
-
-    def evaluate_item(item):
-        _, kind, index, values = item
-        if kind == 0:
-            if affine is not None:
-                layer, ids = affine
-                record = _affine_physics_record(
-                    network, field, values, layer, ids, signature
-                )
-            else:
-                record = evaluate_physics_batch(
-                    network, field, np.asarray(values, float)[None, :], monitor=None
-                )[0]
-        else:
-            # Restart composition is not affine in the layer amplitudes because
-            # the first segment becomes the second segment's initial condition.
-            record = evaluate_semigroup_batch(
-                network, np.asarray(values, float)[None, :], monitor=None
-            )[0]
-        return index, kind, record
-
     completed = 0
     for start in range(0, len(items), batch_size):
-        values = _ordered_map(evaluate_item, items[start:start + batch_size], monitor=monitor)
-        for index, kind, record in values:
-            records[index] = record
-            norm = float(np.linalg.norm(record.residual))
-            partial_merit += float(weights[index]) * norm * norm
-            partial_max = max(partial_max, norm)
-            if kind == 0:
+        batch = items[start:start + batch_size]
+        physics_items = [item for item in batch if item[1] == 0]
+        restart_items = [item for item in batch if item[1] == 1]
+
+        if physics_items:
+            rows = np.asarray([item[3] for item in physics_items], dtype=float)
+            if program is not None:
+                batch_records = _compiled_physics_records(network, field, rows, program)
+            else:
+                batch_records = evaluate_physics_batch(
+                    network, field, rows, monitor=None
+                )
+            for item, record in zip(physics_items, batch_records):
+                index = item[2]
+                records[index] = record
+                norm = float(np.linalg.norm(record.residual))
+                partial_merit += float(weights[index]) * norm * norm
+                partial_max = max(partial_max, norm)
                 partial_physics_max = max(partial_physics_max, norm)
-        completed += len(values)
+
+        if restart_items:
+            rows = np.asarray([item[3] for item in restart_items], dtype=float)
+            batch_records = evaluate_semigroup_batch(network, rows, monitor=None)
+            for item, record in zip(restart_items, batch_records):
+                index = item[2]
+                records[index] = record
+                norm = float(np.linalg.norm(record.residual))
+                partial_merit += float(weights[index]) * norm * norm
+                partial_max = max(partial_max, norm)
+
+        completed += len(batch)
         rh._work(monitor, "candidate_exact_residual", completed, expected)
         if partial_max > max_limit or partial_merit > merit_limit:
             raise CandidateEarlyRejected(
@@ -268,8 +227,15 @@ def install_trial_acceleration() -> None:
         parent_network = _NETWORKS.get(parent_id) if parent_id is not None else None
         if tolerance is not None and parent is not None:
             result = _candidate_exact_result(
-                network, field, points, semigroup_points, include_semigroup,
-                monitor, parent, float(tolerance), parent_network=parent_network,
+                network,
+                field,
+                points,
+                semigroup_points,
+                include_semigroup,
+                monitor,
+                parent,
+                float(tolerance),
+                parent_network=parent_network,
             )
         else:
             result = original_exact_result(
@@ -283,23 +249,20 @@ def install_trial_acceleration() -> None:
 
 
 def accelerated_train_research_network(original, field, config, **kwargs):
-    global _ACTIVE_AFFINE_SIGNATURE
     install_trial_acceleration()
     previous = getattr(_STATE, "tolerance", None)
     _STATE.tolerance = float(config.residual_tolerance)
     _TRIAL_PARENTS.clear()
     _NETWORKS.clear()
     _EVALUATED.clear()
-    _AFFINE_POINT_CACHE.clear()
-    _ACTIVE_AFFINE_SIGNATURE = None
+    clear_layer_program_cache()
     try:
         return original(field, config, **kwargs)
     finally:
         _TRIAL_PARENTS.clear()
         _NETWORKS.clear()
         _EVALUATED.clear()
-        _AFFINE_POINT_CACHE.clear()
-        _ACTIVE_AFFINE_SIGNATURE = None
+        clear_layer_program_cache()
         if previous is None:
             try:
                 delattr(_STATE, "tolerance")
