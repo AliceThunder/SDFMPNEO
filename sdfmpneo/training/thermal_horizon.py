@@ -22,7 +22,7 @@ def finite_horizon_rank_diagnostic(
 
     If ``E_inf[j] = |q_j| / lambda_j`` is the existing steady response envelope,
     then a constant modal source reaches ``E_inf[j] * (1-exp(-lambda_j H))`` by
-    time H.  This is a design diagnostic only: production truncation remains the
+    time H. This is a design diagnostic only: production truncation remains the
     conservative steady-envelope criterion.
     """
     rates = np.asarray(lambdas, dtype=float).reshape(-1)
@@ -51,6 +51,11 @@ def finite_horizon_rank_diagnostic(
         result[f"{horizon:g}s"] = {
             "rank": int(rank),
             "horizon_s": horizon,
+            # Keep the actual modal envelope in the diagnostic.  Besides being
+            # useful to callers, this is the quantity from which the rank summary
+            # below was computed and lets tests/users verify monotone convergence
+            # to the steady envelope without re-running the analysis.
+            "maximum_modal_response": finite.tolist(),
             "total_response_norm": float(details["total_response_norm"]),
             "resolved_tail_norm": float(details["resolved_tail_norm"]),
             "selection_limit": float(details["selection_limit"]),
@@ -87,13 +92,6 @@ def _full_decay_rates(core, report, full_dimension):
 
 
 def diagnostic_from_rank_report(core, report, horizons=(1.0, 10.0, 30.0, 100.0)):
-    """Build a horizon comparison from the saved full envelope and spectrum cache.
-
-    The retained surrogate model normally stores only the selected thermal
-    prefix.  The layered automatic-rank cache, however, already contains the
-    complete spectrum.  Reusing it makes this diagnostic cheap and avoids
-    invalidating the existing rank cache.
-    """
     if not isinstance(report, dict):
         return {"available": False, "reason": "thermal_rank_report_missing"}
     envelope = report.get("maximum_modal_steady_response")
