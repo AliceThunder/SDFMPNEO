@@ -14,6 +14,7 @@ sdfmpneo = "sdfmpneo.__main__:main"
 sdfmpneo-neural = "sdfmpneo.electrothermal_tensor.cli:main"
 sdfmpneo-domain = "sdfmpneo.electrothermal_tensor.domain_cli:main"
 sdfmpneo-certify = "sdfmpneo.electrothermal_tensor.certify_cli:main"
+sdfmpneo-diagnose = "sdfmpneo.electrothermal_tensor.diagnose_cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
