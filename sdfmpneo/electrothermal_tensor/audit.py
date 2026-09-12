@@ -34,6 +34,10 @@ class TrajectoryAuditCase:
     operating: np.ndarray
     neural_max_step: float
     long_time_check: bool = False
+    neural_method: str = "etd2"
+    neural_rtol: float = 1e-5
+    neural_atol: float = 1e-8
+    neural_initial_step: float | None = None
 
     def __post_init__(self) -> None:
         times = np.asarray(self.times, dtype=float).reshape(-1)
@@ -48,10 +52,25 @@ class TrajectoryAuditCase:
             raise ValueError("trajectory neural_max_step must be finite and positive")
         if np.any(~np.isfinite(state)) or np.any(~np.isfinite(geometry)) or np.any(~np.isfinite(operating)):
             raise ValueError("trajectory audit inputs must be finite")
+        if self.neural_method not in {"etd2", "etd2_adaptive", "adaptive_etd2", "imex"}:
+            raise ValueError("unsupported trajectory audit neural_method")
+        if float(self.neural_rtol) <= 0.0 or float(self.neural_atol) <= 0.0:
+            raise ValueError("trajectory neural tolerances must be positive")
+        if self.neural_initial_step is not None and float(self.neural_initial_step) <= 0.0:
+            raise ValueError("neural_initial_step must be positive when supplied")
         object.__setattr__(self, "times", times)
         object.__setattr__(self, "initial_state", state)
         object.__setattr__(self, "geometry", geometry)
         object.__setattr__(self, "operating", operating)
+
+    def predict_options(self) -> dict:
+        if self.neural_method in {"etd2_adaptive", "adaptive_etd2"}:
+            return {
+                "rtol": float(self.neural_rtol),
+                "atol": float(self.neural_atol),
+                "initial_step": self.neural_initial_step,
+            }
+        return {}
 
 
 @dataclass(frozen=True)
@@ -61,6 +80,7 @@ class GateSuiteConfig:
     active_subspace_sample_count: int = 4
     active_subspace_relative_step: float = 1e-5
     benchmark_repeats: int = 100
+    trajectory_benchmark_repeats: int = 3
     seed: int = 0
 
     def __post_init__(self) -> None:
@@ -70,8 +90,8 @@ class GateSuiteConfig:
             raise ValueError("active_subspace_sample_count must be positive")
         if float(self.active_subspace_relative_step) <= 0.0:
             raise ValueError("active_subspace_relative_step must be positive")
-        if int(self.benchmark_repeats) < 1:
-            raise ValueError("benchmark_repeats must be positive")
+        if int(self.benchmark_repeats) < 1 or int(self.trajectory_benchmark_repeats) < 1:
+            raise ValueError("benchmark repeat counts must be positive")
 
 
 @dataclass(frozen=True)
@@ -87,6 +107,26 @@ class GateSuiteReport:
     vector_field_seconds: float | None
     trajectory_query_seconds: float | None
     readiness: ProductionReadinessReport
+
+
+class _TrajectoryMethodProxy:
+    """Force Gate 6 to exercise exactly the requested production integrator."""
+
+    def __init__(self, model, case: TrajectoryAuditCase):
+        self.model = model
+        self.case = case
+
+    def predict(self, time, *, initial_state, geometry, operating, max_step, method="etd2"):
+        del method
+        return self.model.predict(
+            time,
+            initial_state=initial_state,
+            geometry=geometry,
+            operating=operating,
+            max_step=max_step,
+            method=self.case.neural_method,
+            **self.case.predict_options(),
+        )
 
 
 def _aggregate_trajectories(reports: list[TrajectoryValidationReport]) -> TrajectoryValidationReport:
@@ -136,14 +176,10 @@ def run_gate_suite(
     reproducible_training: bool,
     persistence_roundtrip: bool,
 ) -> GateSuiteReport:
-    """Run all documented gates on frozen data and explicit trajectory cases.
-
-    The routine never feeds validation/test failures back into training.  It is
-    therefore safe to archive the returned report as frozen evidence.  Expensive
-    Gate 3 finite differences and Gate 4 physical Jacobians use the real physics
-    callbacks supplied by the application, not derivatives of the neural model.
-    """
+    """Run all documented gates on frozen data and explicit trajectory cases."""
     cfg = GateSuiteConfig() if config is None else config
+    if not trajectory_cases:
+        raise ValueError("at least one trajectory audit case is required")
     test_ids = dataset.indices("test")
     if len(test_ids) < 1:
         raise ValueError("frozen test split is empty")
@@ -216,7 +252,7 @@ def run_gate_suite(
     trajectory_pairs: list[tuple[str, TrajectoryValidationReport]] = []
     for case in trajectory_cases:
         report = validate_trajectory(
-            model,
+            _TrajectoryMethodProxy(model, case),
             physical_vector_field,
             case.times,
             initial_state=case.initial_state,
@@ -248,6 +284,9 @@ def run_gate_suite(
             geometry=case.geometry,
             operating=case.operating,
             max_step=case.neural_max_step,
+            method=case.neural_method,
+            predict_options=case.predict_options(),
+            repeats=cfg.trajectory_benchmark_repeats,
         )
         query_seconds = timing[float(case.times[-1])].median_seconds
 
