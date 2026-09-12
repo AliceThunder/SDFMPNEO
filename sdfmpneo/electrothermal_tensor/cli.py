@@ -129,6 +129,7 @@ def command_train(config_file: str | Path) -> int:
         save_model=False,
         snapshot_workers=int(config.get("snapshot_workers", 1)),
         checkpoint_every=int(config.get("checkpoint_every", 16)),
+        sampling_config=config.get("sampling"),
     )
     from .pipeline import build_fixed_neural_rom, build_geometry_neural_rom
 
@@ -146,6 +147,7 @@ def command_train(config_file: str | Path) -> int:
             "dataset_hash": result.dataset.manifest().dataset_hash,
             "pod_rank": result.pod.rank,
             "training_report": _jsonable(result.training_report),
+            "sampling": _jsonable(result.sampling_report),
             "physical_config": str(physical_config),
         },
     )
@@ -156,6 +158,7 @@ def command_train(config_file: str | Path) -> int:
             "work_directory": str(work),
             "physical_signature": result.physical_signature,
             "dataset_manifest": result.dataset.manifest(),
+            "sampling": result.sampling_report,
             "pod_rank": result.pod.rank,
             "pod_energy_fraction": result.pod.energy_fraction(),
             "training": result.training_report,
