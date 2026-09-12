@@ -31,6 +31,16 @@ from .dataset import (
     generate_snapshot_dataset,
     latin_hypercube_box,
 )
+from .domain import (
+    ReachableStateDomainReport,
+    load_reachable_state_domain_report,
+    probe_reachable_state_domain,
+    validated_state_bounds,
+)
+from .domain_pipeline import (
+    build_fixed_neural_rom_from_domain_report,
+    build_geometry_neural_rom_from_domain_report,
+)
 from .gates import (
     GateRecord,
     ProductionBudgets,
@@ -142,6 +152,7 @@ __all__ = [
     "ProductionReadinessReport",
     "QuadraticIdentityReport",
     "QuadraticJouleDataset",
+    "ReachableStateDomainReport",
     "ReducedThermalOperator",
     "ResidualMLPConfig",
     "SnapshotManifest",
@@ -166,7 +177,9 @@ __all__ = [
     "benchmark_vector_field",
     "box_state_geometry_samples",
     "build_fixed_neural_rom",
+    "build_fixed_neural_rom_from_domain_report",
     "build_geometry_neural_rom",
+    "build_geometry_neural_rom_from_domain_report",
     "build_residual_mlp",
     "decode_heat_source_batch_numpy",
     "decode_heat_source_numpy",
@@ -200,8 +213,10 @@ __all__ = [
     "integrate_imex_euler",
     "integrate_reference",
     "latin_hypercube_box",
+    "load_reachable_state_domain_report",
     "model_file_size",
     "pod_rank_sweep",
+    "probe_reachable_state_domain",
     "quadratic_feature",
     "quadratic_from_svec",
     "quadratic_heat_source",
@@ -222,4 +237,5 @@ __all__ = [
     "validate_surrogate_on_dataset",
     "validate_trajectory",
     "validate_vector_field",
+    "validated_state_bounds",
 ]
