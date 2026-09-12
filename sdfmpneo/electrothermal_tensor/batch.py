@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.linalg
 
-from .integrators import GeneralizedThermalSpectrum, _etd_coefficients
+from .integrators import _etd_coefficients
 
 
 @dataclass(frozen=True)
@@ -48,10 +48,10 @@ def predict_batch_fixed_etd2(
 ) -> BatchedNeuralROMPrediction:
     """Run aligned queries with one shared geometry/time using batched MLP calls.
 
-    Time stepping remains sequential because the ODE is causal.  Parallelism is
+    Time stepping remains sequential because the ODE is causal. Parallelism is
     across independent trajectories: each ETD2 stage evaluates the entire batch
-    with one neural-network forward.  The generalized thermal eigenspectrum is
-    built once and shared by every query in the batch.
+    with one neural-network forward. The model-level generalized thermal
+    eigenspectrum cache is reused by single and batched inference.
     """
     t = float(time)
     hmax = float(max_step)
@@ -71,8 +71,6 @@ def predict_batch_fixed_etd2(
     if np.any(~np.isfinite(states)) or np.any(~np.isfinite(g)) or np.any(~np.isfinite(u)):
         raise ValueError("batch prediction inputs must be finite")
 
-    # Reuse the model's full fail-closed domain logic for every independent
-    # operating point.  Geometry is shared, so this also checks it once per row.
     for state, operating_row in zip(states, u):
         model._check_domain(
             state,
@@ -82,10 +80,8 @@ def predict_batch_fixed_etd2(
         )
     _validate_batch_states(model, states, allow_extrapolation=allow_extrapolation)
 
-    operator = model.thermal_operators.operator(g)
-    spectrum = GeneralizedThermalSpectrum(operator)
-    # For row-major batches, column formulas c=V^T M a and s=V^T q become
-    # A M V and Q V respectively.
+    spectrum = model._spectrum_for_geometry(g)
+    operator = spectrum.operator
     mass_vectors = operator.mass @ spectrum.vectors
 
     def to_modal_state(batch_states):
