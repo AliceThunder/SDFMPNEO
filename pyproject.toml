@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sdfmpneo"
 version = "0.10.0"
-description = "Solution-data-free electromagnetic-thermal surrogate training and arbitrary-time inference for research"
+description = "Solution-data-free electromagnetic-thermal surrogate training with finite-horizon analytic rollout"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
 
@@ -19,12 +19,3 @@ gui = ["PyQt6>=6.5", "pyqtgraph>=0.13.3"]
 
 [tool.setuptools.packages.find]
 include = ["sdfmpneo*"]
-
-[tool.setuptools.package-data]
-sdfmpneo = [
-    "cpp_training_backend.cpp",
-    "cpp_dag_combined.cpp",
-    "cpp_dag_values.inc",
-    "cpp_dag_backend.inc",
-    "cpp_thread_probe.inc",
-]

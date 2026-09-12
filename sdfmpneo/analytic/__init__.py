@@ -1,5 +1,6 @@
 from .algebra import AnalyticSeries, DeferredResponseSeries, ResponseTerm, solve_response_series
 from .compiler import CompiledAnalyticKernel
+from .fixed_response_network import FixedAnalyticResponseNetwork
 from .geometry_operator import (
     GeometryAnalyticPrediction,
     GeometryConditionedAnalyticEvolutionOperator,
@@ -44,6 +45,7 @@ __all__ = [
     "CompiledAnalyticKernel",
     "AnalyticRealization",
     "CompiledRealizationGraph",
+    "FixedAnalyticResponseNetwork",
     "RealizationCompressionReport",
     "analyze_realization_redundancy",
     "controllability_matrix",

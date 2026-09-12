@@ -1,11 +1,15 @@
 # SDF-MPNEO 文档入口
 
-当前科研实现的理论与验收请按以下优先级阅读：
+当前可执行 UWPT 科研工作流以根目录 `README.md` 和本目录的 `FIXED_ANALYTIC_RESPONSE_NETWORK.md` 为准。
 
-1. **`THEORY_CORRECTIONS_AND_VALIDATION.md`**：当前理论勘误、跨几何 residual/稳定性定义、可声明与不可声明的结论、论文级验证矩阵。若旧理论稿存在冲突，以此文件和可执行 certification 代码为准。
-2. **`NOVELTY_POSITIONING.md`**：截至 2026-09-08 的文献定位、禁止使用的“首次”表述、可安全主打的组合创新与必须完成的 novelty ablation。
-3. **`SDFMPNEO_implementation.md`**：可执行架构契约与已实现/待实现证书。
-4. **`GEOMETRY_TIME_SURROGATE.md` / `RESEARCH_WORKFLOW.md`**：当前一次训练几何代理及科研运行方式。
-5. **`SDFMPNEO_theory.tex`**：完整理论背景和证明链；其中旧版 unified-error 与无条件 convergence 的强表述由第 1 项勘误文件修正，后续论文重排时再整体合并。
+推荐阅读顺序：
 
-模型物理范围固定为**磁准静态电磁场 + 导热**；海水是显式导电/导热材料，但不包含水流、CFD、自然或强迫对流。
+1. **`../README.md`**：安装、`run.py` 调用、自动热秩、100 s 默认单段训练、长时间 rollout、稳态物理解和几何查询。
+2. **`FIXED_ANALYTIC_RESPONSE_NETWORK.md`**：finite-horizon fixed analytic response network、physics residual、restart/semigroup consistency、验证剪枝和持久化格式。
+3. **`THEORY_CORRECTIONS_AND_VALIDATION.md`**：理论勘误、跨几何 residual/稳定性定义以及论文级验证边界。
+4. **`NOVELTY_POSITIONING.md`**：文献定位、可安全主打的组合创新和 novelty ablation 要求。
+5. **`SDFMPNEO_theory.tex`**：更完整的理论背景；如与当前可执行架构冲突，以前四项和当前代码为准。
+
+当前训练实现不使用候选神经元枚举、Grow / Enrich / Split、DAG search 或 DAG/C++ training runtime。历史实现文档已经从当前文档入口移除。
+
+模型物理范围为磁准静态电磁场 + 导热；海水是显式导电/导热材料，但不包含水流、CFD、自然或强迫对流。

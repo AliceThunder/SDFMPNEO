@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import numpy as np
+
+from .parallel_runtime import _ordered_map, training_point_workers
+from .fixed_physics_runtime import (
+    _prepare_operating_contexts,
+    _prepare_working_set,
+    clear_physics_runtime_caches,
+    evaluate_physics_batch,
+    evaluate_semigroup_batch,
+    physics_vector_field,
+)
+from .fixed_layer_cache_runtime import (
+    _semigroup_endpoint_points,
+    clear_layer_program_cache,
+    layer_program,
+)
+
+
+class CandidateEarlyRejected(ValueError):
+    pass
+
+
+def _candidate_thresholds(parent, tolerance):
+    from . import research_helpers as rh
+
+    old = np.asarray(parent.norms, dtype=float)
+    weights = rh._hard_weights(old, tolerance)
+    old_max = float(np.max(old, initial=0.0))
+    old_merit = float(np.dot(weights, old * old))
+    numerical = 64.0 * np.finfo(float).eps * max(old_merit, 1.0)
+    margin = 64.0 * np.finfo(float).eps * max(float(tolerance), old_max, 1e-30)
+    if old_max <= 20.0 * tolerance:
+        return weights, old_max + margin, 1.02 * old_merit + numerical
+    return weights, 1.10 * old_max + margin, 1.05 * old_merit + numerical
+
+
+def _candidate_amplitude_layer(parent_network, network):
+    """Return the sole changed amplitude layer, or ``None`` for a general trial."""
+    old = np.asarray(parent_network.parameters, dtype=float)
+    new = np.asarray(network.parameters, dtype=float)
+    if old.shape != new.shape:
+        return None
+    changed = np.flatnonzero(old != new)
+    if changed.size == 0:
+        return None
+    for layer in range(network.depth):
+        ids = np.asarray(network.layer_amplitude_parameter_indices(layer), dtype=int)
+        if ids.size and np.all(np.isin(changed, ids, assume_unique=False)):
+            if any(not network._layer_is_zero(k) for k in range(layer + 1, network.depth)):
+                return None
+            return int(layer), ids
+    return None
+
+
+def _compiled_physics_records(network, field, rows, program):
+    values = np.asarray(rows, dtype=float)
+    if len(values) == 0:
+        return []
+    n = network.n_modes
+    states, derivatives = program.reconstruct(network, values)
+
+    def one(index):
+        operating = values[index, n:-1]
+        physical = physics_vector_field(field, states[index], operating)
+        return SimpleNamespace(
+            residual=np.asarray(derivatives[index] - physical, dtype=float)
+        )
+
+    return _ordered_map(one, range(len(values)), monitor=None)
+
+
+def _compiled_semigroup_records(network, rows, program):
+    """Exact restart residual with only the dynamic second leg left symbolic."""
+    values = np.asarray(rows, dtype=float)
+    if len(values) == 0:
+        return []
+    direct_points, first_points = _semigroup_endpoint_points(network, values)
+    direct, _ = program.reconstruct(network, direct_points)
+    first, _ = program.reconstruct(network, first_points)
+    n = network.n_modes
+    horizon = float(network.max_response_time)
+
+    def one(index):
+        row = values[index]
+        operating = row[n:-2]
+        t2 = float(row[-1])
+        restarted, _ = network.evaluate(
+            t2,
+            a0=first[index],
+            operating=operating,
+        )
+        defect = np.asarray(direct[index] - restarted, dtype=float)
+        return SimpleNamespace(residual=defect / horizon, raw_defect=defect)
+
+    return _ordered_map(one, range(len(values)), monitor=None)
+
+
+def evaluate_candidate_exact(
+    trial,
+    parent_network,
+    parent_result,
+    field,
+    points,
+    semigroup_points,
+    include_semigroup,
+    monitor,
+    tolerance,
+):
+    """Evaluate one LM/backtracking candidate with explicit parent state.
+
+    The old acceleration layer monkey-patched ``with_parameters`` and recovered
+    parent/result objects through process-global ``id(network)`` maps.  The trainer
+    already owns those objects, so pass them directly instead.  This removes hidden
+    object-lifetime coupling while preserving the same exact trust-region test.
+    """
+    from . import research_helpers as rh
+
+    network = trial
+    parent = parent_result
+    points = np.asarray(points, dtype=float)
+    semigroup_points = np.asarray(semigroup_points, dtype=float)
+    _prepare_working_set(field, points)
+    if len(points):
+        _prepare_operating_contexts(field, points[:, network.n_modes:-1])
+
+    weights, max_limit, merit_limit = _candidate_thresholds(parent, tolerance)
+    n_physics = len(points)
+    n_semigroup = len(semigroup_points) if include_semigroup else 0
+    expected = n_physics + n_semigroup
+    if weights.shape != (expected,):
+        if include_semigroup:
+            physics = evaluate_physics_batch(network, field, points, monitor=monitor)
+            restart = evaluate_semigroup_batch(network, semigroup_points, monitor=monitor)
+            return rh._combined_metrics(physics, restart)
+        return rh._combined_metrics(
+            evaluate_physics_batch(network, field, points, monitor=monitor), []
+        )
+
+    program = None
+    restart_program = None
+    affine = _candidate_amplitude_layer(parent_network, network)
+    if affine is not None:
+        layer, ids = affine
+        if layer > 0 and len(ids) <= 4096:
+            program = layer_program(parent_network, points, layer, monitor=monitor)
+            if include_semigroup and len(semigroup_points):
+                direct_points, first_points = _semigroup_endpoint_points(
+                    parent_network, semigroup_points
+                )
+                restart_program = layer_program(
+                    parent_network,
+                    np.vstack([direct_points, first_points]),
+                    layer,
+                    monitor=monitor,
+                    work_label=f"restart_layer_{layer + 1}_basis",
+                )
+
+    items = [(float(parent.norms[i]), 0, i, row) for i, row in enumerate(points)]
+    if include_semigroup:
+        items.extend(
+            (float(parent.norms[n_physics + i]), 1, n_physics + i, row)
+            for i, row in enumerate(semigroup_points)
+        )
+    items.sort(key=lambda item: item[0], reverse=True)
+
+    records = [None] * expected
+    partial_merit = 0.0
+    partial_max = 0.0
+    partial_physics_max = 0.0
+    physics_guard = None
+    if include_semigroup:
+        physics_guard = max(1.05 * tolerance, 1.02 * float(parent.physics_max))
+
+    batch_size = min(training_point_workers(), max(1, expected))
+    completed = 0
+    for start in range(0, len(items), batch_size):
+        batch = items[start:start + batch_size]
+        physics_items = [item for item in batch if item[1] == 0]
+        restart_items = [item for item in batch if item[1] == 1]
+
+        if physics_items:
+            rows = np.asarray([item[3] for item in physics_items], dtype=float)
+            if program is not None:
+                batch_records = _compiled_physics_records(network, field, rows, program)
+            else:
+                batch_records = evaluate_physics_batch(network, field, rows, monitor=None)
+            for item, record in zip(physics_items, batch_records):
+                index = item[2]
+                records[index] = record
+                norm = float(np.linalg.norm(record.residual))
+                partial_merit += float(weights[index]) * norm * norm
+                partial_max = max(partial_max, norm)
+                partial_physics_max = max(partial_physics_max, norm)
+
+        if restart_items:
+            rows = np.asarray([item[3] for item in restart_items], dtype=float)
+            if restart_program is not None:
+                batch_records = _compiled_semigroup_records(
+                    network, rows, restart_program
+                )
+            else:
+                batch_records = evaluate_semigroup_batch(network, rows, monitor=None)
+            for item, record in zip(restart_items, batch_records):
+                index = item[2]
+                records[index] = record
+                norm = float(np.linalg.norm(record.residual))
+                partial_merit += float(weights[index]) * norm * norm
+                partial_max = max(partial_max, norm)
+
+        completed += len(batch)
+        rh._work(monitor, "candidate_exact_residual", completed, expected)
+        if partial_max > max_limit or partial_merit > merit_limit:
+            raise CandidateEarlyRejected("candidate cannot satisfy exact trust acceptance")
+        if physics_guard is not None and partial_physics_max > physics_guard:
+            raise CandidateEarlyRejected("candidate exceeds exact physics guard")
+
+    return rh._combined_metrics(
+        records[:n_physics], records[n_physics:] if include_semigroup else []
+    )
+
+
+def install_trial_acceleration() -> None:
+    """Compatibility no-op: trial acceleration is now an explicit trainer call."""
+    return None
+
+
+def accelerated_train_research_network(original, field, config, **kwargs):
+    """Scope compiled numeric caches to exactly one public training call."""
+    clear_layer_program_cache()
+    clear_physics_runtime_caches()
+    try:
+        return original(field, config, **kwargs)
+    finally:
+        clear_layer_program_cache()
+        clear_physics_runtime_caches()
+
+
+__all__ = [
+    "CandidateEarlyRejected",
+    "accelerated_train_research_network",
+    "evaluate_candidate_exact",
+    "install_trial_acceleration",
+]

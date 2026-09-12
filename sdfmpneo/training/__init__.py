@@ -1,46 +1,10 @@
-from .closed_loop import ClosedLoopTrainingResult, SolutionDataFreeClosedLoopTrainer
-from .geometry_residual import GeometryElectroThermalResidual, GeometryResidualSample
-from .growth import (
-    AnalyticGrowthCandidate,
-    GrowthProposal,
-    GrowthScore,
-    TangentResidualGrower,
-    product_candidates,
-)
-from .parametric_growth import (
-    ParametricGrowthCandidate,
-    ParametricGrowthProposal,
-    ParametricGrowthScore,
-    ParametricQuadratureSample,
-    ParametricTangentResidualGrower,
-    parametric_product_candidates,
-)
-from .parametric_residual import (
-    AffineOperatingRHSMap,
-    ParametricElectroThermalResidual,
-    ParametricResidualSample,
-)
+from .parametric_residual import AffineOperatingRHSMap, ParametricElectroThermalResidual, ParametricResidualSample
 from .residual import ElectroThermalResidual, ResidualSample
+from .research import ResearchTrainingConfig, ResearchTrainingReport, make_fixed_network, train_research_network
 
 __all__ = [
-    "ElectroThermalResidual",
-    "ResidualSample",
-    "AffineOperatingRHSMap",
-    "ParametricElectroThermalResidual",
-    "ParametricResidualSample",
-    "GeometryElectroThermalResidual",
-    "GeometryResidualSample",
-    "AnalyticGrowthCandidate",
-    "GrowthProposal",
-    "GrowthScore",
-    "TangentResidualGrower",
-    "product_candidates",
-    "ParametricQuadratureSample",
-    "ParametricGrowthCandidate",
-    "ParametricGrowthScore",
-    "ParametricGrowthProposal",
-    "ParametricTangentResidualGrower",
-    "parametric_product_candidates",
-    "ClosedLoopTrainingResult",
-    "SolutionDataFreeClosedLoopTrainer",
+    "ElectroThermalResidual", "ResidualSample", "AffineOperatingRHSMap",
+    "ParametricElectroThermalResidual", "ParametricResidualSample",
+    "ResearchTrainingConfig", "ResearchTrainingReport", "make_fixed_network",
+    "train_research_network",
 ]

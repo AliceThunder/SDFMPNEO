@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""Concurrent exact geometry-context cache for training working sets.
+
+Geometry construction (deformed mesh, thermal M/K, ports and reduced EM helpers)
+is independent for distinct geometry keys.  Training used to build these contexts
+serially and could also evict them while repeatedly visiting the same collocation
+set.  This runtime keeps the working set resident when practical, coalesces
+same-key construction, and builds distinct geometries concurrently.
+"""
+
 from collections import OrderedDict
 from copy import copy
 import os
@@ -11,14 +20,9 @@ from .parallel_runtime import _ordered_map
 
 
 def install_concurrent_geometry_context_cache(model_class) -> None:
-    """Install exact per-key geometry caching without serializing construction.
-
-    The original ``context`` method is executed on a shallow proxy with a private
-    cache, so its expensive mesh/thermal/EM construction touches no shared LRU.
-    The real model cache is accessed only under a short lock.  One Event per key
-    coalesces duplicate builds while different geometries construct concurrently.
-    """
     if getattr(model_class, "_concurrent_context_cache_installed", False):
+        return
+    if not all(hasattr(model_class, name) for name in ("context", "geometry_vector")):
         return
 
     original_init = model_class.__init__
@@ -29,10 +33,16 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
         self._context_cache_lock = RLock()
         self._context_inflight = {}
 
+    def _ensure_runtime(self):
+        if not hasattr(self, "_context_cache_lock"):
+            self._context_cache_lock = RLock()
+        if not hasattr(self, "_context_inflight"):
+            self._context_inflight = {}
+
     def _uncached_build(self, geometry):
-        # original_context owns cache mutation as part of its historical API.
-        # Give it a private one-entry cache so the expensive construction can
-        # run outside the shared model lock with exactly the original equations.
+        # The historical context() mutates an LRU while constructing.  Give it a
+        # private one-entry cache on a shallow proxy so expensive construction can
+        # happen outside the shared lock and distinct geometries can overlap.
         proxy = copy(self)
         proxy._cache = OrderedDict()
         proxy.cache_size = 1
@@ -41,13 +51,10 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
         return original_context(proxy, geometry)
 
     def context(self, geometry):
+        _ensure_runtime(self)
         g = self.geometry_vector(geometry)
         key = tuple(float(value) for value in g)
-        lock = getattr(self, "_context_cache_lock", None)
-        if lock is None:
-            self._context_cache_lock = RLock()
-            self._context_inflight = {}
-            lock = self._context_cache_lock
+        lock = self._context_cache_lock
 
         while True:
             with lock:
@@ -76,8 +83,6 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
             raise
 
         with lock:
-            # No other builder can own this key, but a defensive cache check
-            # preserves deterministic identity if a custom subclass inserted it.
             cached = self._cache.get(key)
             if cached is None:
                 self._cache[key] = result
@@ -93,12 +98,15 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
             return cached
 
     def prepare_training_contexts(self, *point_sets):
+        _ensure_runtime(self)
         arrays = []
         for values in point_sets:
             if values is None:
                 continue
             array = np.asarray(values, dtype=float)
             if array.size:
+                if array.ndim != 2:
+                    raise ValueError("training point sets must be matrices")
                 arrays.append(array)
         if not arrays:
             return 0
@@ -108,10 +116,8 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
         normalized = []
         seen = set()
         for values in arrays:
-            if values.ndim != 2:
-                raise ValueError("training point sets must be matrices")
             for row in values:
-                z = tuple(float(value) for value in row[n_initial:n_initial+n_geometry])
+                z = tuple(float(v) for v in row[n_initial:n_initial + n_geometry])
                 if z not in seen:
                     seen.add(z)
                     normalized.append(np.asarray(z, dtype=float))
@@ -124,8 +130,6 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
                 self.cache_size = target
             fits = required <= self.cache_size
 
-        # Prewarm independent geometry contexts concurrently. Collection order
-        # is deterministic; only the expensive construction overlaps in time.
         if fits and normalized:
             _ordered_map(
                 lambda z: self.context(self.denormalize(z)),
@@ -138,3 +142,24 @@ def install_concurrent_geometry_context_cache(model_class) -> None:
     model_class.context = context
     model_class.prepare_training_contexts = prepare_training_contexts
     model_class._concurrent_context_cache_installed = True
+
+
+def enable_concurrent_geometry_context_cache(model) -> bool:
+    """Enable the runtime for an already-created geometry model instance."""
+    if not all(
+        hasattr(model, name)
+        for name in ("context", "geometry_vector", "geometry_names", "denormalize")
+    ):
+        return False
+    install_concurrent_geometry_context_cache(type(model))
+    if not hasattr(model, "_context_cache_lock"):
+        model._context_cache_lock = RLock()
+    if not hasattr(model, "_context_inflight"):
+        model._context_inflight = {}
+    return True
+
+
+__all__ = [
+    "enable_concurrent_geometry_context_cache",
+    "install_concurrent_geometry_context_cache",
+]

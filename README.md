@@ -1,61 +1,50 @@
-# SDF-MPNEO — 电磁–热多物理代理模型
+# SDF-MPNEO
 
 **Solution-Data-Free Multirate Physics-Embedded Neural Evolution Operator**
 
-0.10.0 面向科学研究，提供从三维材料/网格到无解标签训练、模型保存与加载、任意时间推理及独立数值对照的完整工作流。
+SDF-MPNEO 面向 UWPT 磁准静态电磁–瞬态热耦合代理。训练不使用瞬态解标签，而是直接最小化控制方程残差；温度相关电导率、电磁平衡、焦耳热和热扩散始终由物理模型计算。
 
-研究对象是水下 WPT 的磁准静态电磁场与瞬态热场：铜、封装和海水保留为空间材料，温度改变电导率，电磁焦耳热反馈到热方程。当前范围是电磁–热耦合。
+当前生产路径只有一条：
 
-## 推荐调用方式：训练一次，换几何直接查询
+\[
+\boxed{
+\text{自动热秩}
+\rightarrow
+\text{三层解析响应网络}
+\rightarrow
+\text{t=0 source-factor prefit}
+\rightarrow
+\text{逐层有限时间物理残差训练}
+\rightarrow
+\text{reachable restart consistency}
+\rightarrow
+\text{独立验证/物理验证剪枝}
+\rightarrow
+\text{长时间分段 rollout}
+}
+\]
 
-根目录的 [`run.py`](run.py) 是默认入口。它把网格、几何族、材料、电磁参数、训练域、保存路径和推理输入集中在文件顶部；通常只需修改这些配置块，不需要维护额外 JSON。
+网络主体始终由解析 response neurons 构成，不使用普通 MLP 时间网络。
 
-### 1. 安装
-
-完整 UWPT 几何训练推荐安装 CAD 和 GUI 依赖：
+## 安装
 
 ```bash
 python -m pip install -e '.[cad,gui]'
 ```
 
-只运行测试可额外安装 `dev`：
+开发测试：
 
 ```bash
 python -m pip install -e '.[dev,cad,gui]'
 ```
 
-Linux 下 Gmsh Python wheel 可能还需要系统 OpenGL/GLU 运行库，例如 Ubuntu：
+## 推荐入口：`run.py`
 
-```bash
-sudo apt-get install libgl1 libglu1-mesa
-```
-
-### 2. 配置 `run.py`
-
-最常修改的是下面几组配置：
-
-| 配置块 | 用途 |
-|---|---|
-| `FILES` | 模型、预测结果、日志与继续训练模型路径 |
-| `TRANSMITTER` / `RECEIVER` / `ENVIRONMENT` | 参考 UWPT 几何 |
-| `GEOMETRY_FAMILY` | 一次训练覆盖的连续几何参数域 |
-| `PHYSICS` / `MATERIALS` / `PORTS` | 频率、材料与端口电流映射 |
-| `THERMAL_RANK` | 热空间截断阶数 |
-| `TRAINING` | 初态、电流、时间窗、残差目标和训练预算 |
-| `PREDICTION` | 已保存模型的查询输入 |
-| `MONITOR` | 训练窗口、日志与计算线程 |
-
-默认 `GEOMETRY_FAMILY` 同时覆盖 10 个连续几何参数。形状类别、匝数、材料拓扑和频率固定；域内改变线圈尺寸、厚度、接收位置、封装尺寸和海水半径时，使用的是**同一个保存模型**，不需要重新训练。
-
-### 3. 训练并保存模型
-
-默认训练入口：
+训练：
 
 ```bash
 python run.py --mode train
 ```
-
-默认会打开 PyQt 训练窗口，点击“启动”开始；窗口支持暂停、恢复和停止。
 
 无界面训练：
 
@@ -63,237 +52,318 @@ python run.py --mode train
 python run.py --mode train --headless
 ```
 
-临时覆盖模型保存路径：
-
-```bash
-python run.py --mode train --headless --model results/uwpt/model.npz
-```
-
-默认输出：
-
-```text
-results/uwpt/model.npz              # 保存模型
-results/uwpt/model.config.json      # 实际物理配置
-results/uwpt/geometry.domain.json   # 几何参数名、参考值、上下界和网格证书
-results/uwpt/train.settings.json    # 本次训练设置
-results/uwpt/training.report.json   # 残差训练报告
-results/uwpt/logs/...               # 训练日志
-```
-
-继续训练已有模型时，在 `run.py` 中设置：
-
-```python
-FILES["resume_model"] = "results/uwpt/model.npz"
-```
-
-继续训练会使用 NPZ 中保存的物理模型、空间基、几何域和已有网络，只采用当前 `TRAINING` 作为新的训练设置；不会重新生成网格。
-
-训练达到 `TRAINING["residual_tolerance"]` 时退出码为 `0`。预算耗尽但尚未达到目标时仍会保存当前模型和报告，退出码为 `2`，不会把未收敛写成成功。
-
-### 4. 加载模型并查询
-
-最简单的推理：
+推理：
 
 ```bash
 python run.py --mode predict
 ```
 
-也可显式指定模型：
-
-```bash
-python run.py --mode predict --model results/uwpt/model.npz
-```
-
-`run.py` 的查询输入全部位于 `PREDICTION`：
+通常只需要修改 `run.py` 顶部的几何、材料、误差目标、训练域和推理输入。要使用当前 v7 三层漏斗网络重新训练，请保持：
 
 ```python
-PREDICTION = {
-    "a0": [0.0, 0.0],
-    "operating": [5.0, 0.0],
-    "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, 1000000.0, "inf"],
-    "geometry": None,
-    "allow_time_extrapolation": True,
-    "initial_temperature_file": None,
-    "state_only": False,
-    "allow_extrapolation": False,
-}
+FILES["resume_model"] = None
 ```
 
-其中：
+v6 checkpoint 可以读取；resume 会保留 checkpoint 自身的网络深度/宽度，不会静默扩成新的三层结构。v7 checkpoint resume 会从当前最深 active response layer 继续，不会清零或重新选择已经训练过的深层 target modes。
 
-- `a0`：质量正交热模态初始坐标，长度等于热秩；也可用 `initial_temperature_file` 提供全节点开尔文温度 `.npy`，程序会自动投影。
-- `operating`：静态工况 `U`；默认端口映射为 `I=U`，单位为峰值相量 A。
-- `times`：任意非负有限时间；可以超过训练时间窗。`"inf"` 表示解析稳态极限，不是一个人为设置的超大有限时间。
-- `geometry=None`：查询保存几何域的中心。
-- `geometry={...}`：查询指定几何；必须给出保存模型的完整几何参数字典，并位于有效几何域内。
-- `state_only=True`：只执行解析网络和温度重构，不组装查询点的电磁诊断；适合大量快速温度查询。
-- `allow_extrapolation`：只控制初态/工况是否允许超出训练域；几何仍必须位于保存的有效网格参数域。
+## 1. 自动热秩与有限时间诊断
 
-推理结果默认写入：
+默认：
 
-```text
-results/uwpt/predictions.json
-results/uwpt/predict.settings.json
+```python
+THERMAL_RANK = None
 ```
 
-完整推理会返回温度、最高温度、阻抗/电感、各材料焦耳损耗、物理残差和电磁误差诊断。`state_only=True` 时只保留快速状态推理所需路径。
-
-### 5. 查询不同几何
-
-训练完成后，实际几何参数名、参考值和上下界保存在：
+自动选秩先计算完整离散热谱和完整物理 modal-response envelope，再选出满足尾部判据的最小 thermal prefix。缓存分成：
 
 ```text
+thermal spectrum
+→ EM/modal response envelope
+→ tolerance-dependent rank/report
+```
+
+热空间写为
+
+\[
+T(x,t)\approx T_{\rm ref}(x)+\sum_{j=1}^{r}a_j(t)\phi_j(x),
+\qquad K\phi_j=\lambda_jM\phi_j.
+\]
+
+自动 envelope 给出的逐模态 restart bounds 只作为安全边界，不再把它们的 Cartesian product 当成训练分布。训练初态默认只参数化少数慢/大幅热模态：
+
+```python
+TRAINING["initial_training_rank"] = 16
+```
+
+这些坐标在低维椭球邻域采样；其他 thermal coordinates 保持在中心值。这样 thermal rank 可以保持物理精度，而训练域不会变成 198 维随机超盒。
+
+`thermal.rank.json` 会复用 full-spectrum cache，额外输出 1/10/30/100 s 的 finite-horizon rank 诊断：
+
+\[
+E_j(H)=E_j(\infty)\left(1-e^{-\lambda_jH}\right).
+\]
+
+该结果只用于判断缩短 `MAX_RESPONSE_TIME` 是否真的能显著降热秩。生产 thermal rank 仍采用保守稳态 envelope，不会静默降低物理空间精度。
+
+## 2. 三层 analytic response funnel
+
+网络只学习一个有限段：
+
+\[
+\hat\Phi_{\Delta t}(a_0,G,U),\qquad 0\le\Delta t\le H.
+\]
+
+默认：
+
+```python
+MAX_RESPONSE_TIME = 100.0
+```
+
+自由热响应始终精确保留：
+
+\[
+a^{(0)}(t)=e^{-\Lambda t}a_0.
+\]
+
+在此基础上叠加三层解析响应修正：
+
+\[
+a^{(1)}=a^{(0)}+\mathcal R_1[S_1],
+\]
+
+\[
+a^{(2)}=a^{(1)}+\mathcal R_2[S_2],
+\]
+
+\[
+a^{(3)}=a^{(2)}+\mathcal R_3[S_3].
+\]
+
+每个 response neuron 对应一个目标 thermal pole：
+
+\[
+\mathcal R_{\lambda_i}[s](t)
+=
+\int_0^t e^{-\lambda_i(t-\tau)}s(\tau)\,d\tau.
+\]
+
+时间信号保持为有限 exponential-polynomial 组合，响应与时间导数均解析计算，不把 `t` 输入普通神经网络。
+
+高热秩默认采用漏斗宽度。若 `rank=198`：
+
+```text
+Response Layer 1: 198 neurons
+Response Layer 2:  64 neurons
+Response Layer 3:  32 neurons
+channels_per_mode: 1
+```
+
+Layer 1 覆盖所有 retained thermal modes；Layer 2/3 根据上一阶段的 modal residual energy 自动选择 target modes。
+
+默认低秩 source coupling：
+
+```text
+Layer 1:
+  linear rank              = 8
+  thermal/static rank      = 16
+  modewise-square rank     = 8
+
+Layer 2:
+  hidden-linear rank       = 6
+  hidden/static rank       = 6
+  hidden-nonlinear rank    = 4
+
+Layer 3:
+  hidden-linear rank       = 4
+  hidden/static rank       = 4
+  hidden-nonlinear rank    = 2
+```
+
+因此 thermal rank 决定物理温度场精度，而网络训练复杂度主要由少量 source factors 控制。
+
+## 3. Stage 0：t=0 source-factor prefit
+
+解析结构严格满足
+
+\[
+\hat a(0)=a_0.
+\]
+
+fresh training 首先拟合
+
+\[
+S_1(a_0,G,U)
+\approx
+F(a_0,G,U)+\Lambda a_0.
+\]
+
+这一步不是“随机 features + 只调 output amplitude”。source snapshots 会直接学习低秩输入方向：
+
+- affine/linear source：完整线性回归后做 truncated SVD；
+- modewise thermal square：平方坐标回归后做 truncated SVD；
+- thermal/static 与 static/static 双线性 source：回归后做低秩 CP 分解；
+- 最后固定这些数据驱动 factor directions，再统一做一次 output-amplitude least squares。
+
+因此 Stage 0 真正识别的是物理 source 子空间。训练报告单独写出：
+
+```text
+source_prefit_rms_residual
+source_prefit_max_residual
+```
+
+如果连 `t=0` source 都无法达到需要的精度，就可以在进入昂贵 finite-time training 前直接看到容量瓶颈。
+
+## 4. Stage 1：逐层物理 residual correction
+
+控制方程残差：
+
+\[
+R_{\rm phys}=\dot{\hat a}-F(\hat a,G,U).
+\]
+
+高秩训练不构造所有解析项对全部参数的 dense tangent。训练按 response layer 分块：
+
+```text
+Layer 1 amplitude block
+→ Layer 2 residual-corrector block
+→ Layer 3 residual-corrector block
+```
+
+前层固定；当前层只构造其解析 amplitude Jacobian。Layer 2/3 的 target modes 由上一层的 modal residual energy 自动选择。
+
+未激活的深层 amplitude 为 0，前向会直接短路，不构造无用 hidden/state exponential products；只有该层真正开始训练时才展开对应 source bank。
+
+焦耳热前向使用批量局部投影。电磁温度反馈 Jacobian 使用热扩散基线 + 少量 exact directional corrections，只负责提出搜索方向。
+
+真正的步长接受完全由完整真实物理 residual 决定。每个 LM 方向按：
+
+```text
+1 → 1/2 → 1/4 → 1/8 → ...
+```
+
+做 actual-physics backtracking；一个方向全部失败后增大 damping 并重新求方向。只有连续多次 trust-region contraction 仍失败，才停止当前层。
+
+不存在“某个点一旦低于 tolerance 就永远不能重新升高”的硬约束，也不再用预测排序提前删除所有小步长。
+
+`metrics.jsonl` 会记录：
+
+```text
+layer
+iteration
+retry
+backtrack
+factor
+damping
+predicted_max
+predicted_weighted_rms
+actual_rms
+actual_max
+actual_physics_max
+actual_restart_max
+accept/reject reason
+```
+
+## 5. Stage 2：reachable restart consistency
+
+只有 physics residual 达到目标后才开启：
+
+\[
+R_{\rm sg}
+=
+\frac{
+\hat\Phi_{t_1+t_2}(a_0)
+-
+\hat\Phi_{t_2}(\hat\Phi_{t_1}(a_0))
+}{H},
+\qquad t_1+t_2\le H.
+\]
+
+第一段 seed 位于低维 restart 邻域；第二段初态由第一段网络输出产生，所以真正施加 consistency 的 restart state 是可达状态，而不是 198 维超盒角点。
+
+restart 优化使用当前最深 active response layer 作为有界修正层，并设置 physics guard，不能为了降低 restart defect 明显破坏 governing-equation residual。
+
+## 6. Gate 与剪枝
+
+训练期间所有结构 gate 固定为 1，不同时训练 `gate × output_weight`，避免尺度不唯一造成 Jacobian 病态。
+
+未激活 response layer 虽然 gate=1，但 amplitude=0，因此 GUI 和结构报告不会把它计作 active neuron。
+
+只有训练和独立验证都达到 tolerance 后才允许 pruning。每个候选 response neuron 删除后都会重新计算训练 residual 和独立 validation residual；任一超标就拒绝删除。
+
+## 7. Validation
+
+只有 physics residual 与 restart residual 都达到训练目标后才执行独立 validation。
+
+如果训练尚未达到进入 validation 的条件：
+
+```text
+validation_performed = false
+```
+
+不会用训练残差冒充验证结果，也不会白跑昂贵的独立 validation sweep。
+
+## 8. 长时间 rollout 与稳态
+
+长时间查询通过有限段自动组合。例如 `H=100 s`、查询 `350 s`：
+
+```text
+0 → 100 → 200 → 300 → 350
+```
+
+真正稳态不调用网络 `t=inf`，而是直接解
+
+\[
+F(a_\infty,G,U)=0.
+\]
+
+`model.predict(float("inf"), ...)` 只是路由到物理稳态求解器。
+
+## 9. GUI 与监控
+
+GUI 会显示：
+
+```text
+source_prefit
+response_layer_1
+response_layer_2
+response_layer_3
+restart_consistency
+validation
+structure_pruning
+```
+
+残差曲线保留 point marker，即使只有一个 revision 也可见。resume 会加载历史曲线；当前 run 的 revision 接在历史之后。
+
+## 10. 主要输出
+
+默认训练输出：
+
+```text
+results/uwpt/model.npz
+results/uwpt/model.config.json
+results/uwpt/train.settings.json
+results/uwpt/training.report.json
+results/uwpt/thermal.rank.json
+results/uwpt/network.structure.json
 results/uwpt/geometry.domain.json
+results/uwpt/logs/
 ```
 
-默认 10 维几何参数为：
+自动热秩缓存另外生成 spectrum / envelope / selection 三层缓存文件。
 
-| 参数 | 含义 | 默认训练范围 |
-|---|---|---|
-| `tx_planar_scale` / `rx_planar_scale` | 发射/接收线圈局部平面缩放 | 0.97–1.03 |
-| `tx_thickness_scale` / `rx_thickness_scale` | 各线圈厚度缩放 | 0.95–1.05 |
-| `rx_offset_x` / `rx_offset_y` | 接收线圈横向偏移，m | −0.0002–0.0002 |
-| `rx_gap` | 两线圈中心的 z 间距，m | 0.0098–0.0102 |
-| `tx_package_scale` / `rx_package_scale` | 各封装外表面缩放 | 0.98–1.02 |
-| `seawater_radius` | 实际海水外球半径，m | 参考网格半径的 0.98–1.02 倍 |
+## 11. 模型格式
 
-`planar_scale` 会联动改变线圈外径、匝距和导体宽度；厚度、接收位置、封装尺寸和海水半径独立变化。
+当前 fixed analytic response network metadata 为 **v7**；fixed-geometry / geometry research model 仍为 v5。
 
-若直接使用 Python API，可以从保存模型自动取得几何域中心，再只修改感兴趣的参数：
+v7 新增：
+
+- per-layer widths；
+- per-layer target modes；
+- per-layer hidden/cross/state coupling ranks；
+- analytic state-feature term budget。
+
+v6 等宽 fixed-response checkpoint 仍可读取。要验证当前默认 `r→64→32` 架构，使用 fresh training：
 
 ```python
-import numpy as np
-from sdfmpneo import ResearchElectroThermalModel
-
-model = ResearchElectroThermalModel.load("results/uwpt/model.npz")
-
-# 保存几何域中心；避免手工填写 seawater_radius 等参考值。
-geometry = dict(zip(
-    model.geometry_names,
-    ((model.lower + model.upper) / 2.0).tolist(),
-))
-
-# 在训练几何域内修改任意参数。
-geometry["rx_gap"] = 0.0101
-geometry["rx_offset_x"] = 0.0001
-geometry["tx_planar_scale"] = 1.01
-
-for t in [0.0, 1.0, 1e6, np.inf]:
-    result = model.predict(
-        t,
-        a0=[0.0, 0.0],
-        operating=[5.0, 0.0],
-        geometry=geometry,
-        diagnostics=True,
-        allow_time_extrapolation=True,
-    )
-    print(t, result.maximum_temperature)
+FILES["resume_model"] = None
 ```
-
-这段代码不会重新训练模型。改变 `geometry` 后仍使用同一个网络、共享电磁基和共享热坐标。
-
-### 6. 长时间与稳态查询
-
-默认训练时间窗是 `0–100000 s`，但推理不会把时间截断到训练上限：
-
-```python
-PREDICTION["times"] = [0.0, 1.0, 1e5, 1e6, 1e300, "inf"]
-```
-
-- `1e6`、`1e300` 等有限时间直接计算解析响应。
-- `"inf"` 直接计算稳态极限。
-- `allow_time_extrapolation=False` 可强制有限时间不得超过训练窗。
-- 超出训练时间窗属于时间外推；程序会计算，但有限训练残差检查并不自动构成域外精度证书。
-
-### 7. 另一套命令行入口
-
-如果更适合用 JSON 配置和纯 CLI，也可以使用 `python -m sdfmpneo`：
-
-```bash
-python -m pip install -e '.[dev,cad]'
-python examples/create_uwpt_mesh.py examples/configs/uwpt_research.json
-python -m sdfmpneo train \
-  --config examples/configs/uwpt_research.json \
-  --output results/uwpt.npz
-
-python -m sdfmpneo predict results/uwpt.npz \
-  --a0 0 0 \
-  --operating 5 0 \
-  --times 0 0.1 1 1000 1000000 inf \
-  --output results/uwpt_predictions.json
-```
-
-几何模型还可通过 `--geometry geometry.json` 指定保存几何域内的**完整参数字典**：
-
-```bash
-python -m sdfmpneo predict results/uwpt.npz \
-  --a0 0 0 \
-  --operating 5 0 \
-  --times 0 1 1000000 inf \
-  --geometry geometry.json \
-  --output results/uwpt_predictions.json
-```
-
-`--state-only` 跳过完整电磁诊断；`--strict-time-window` 禁止有限时间超出训练窗。旧固定几何模型仍可通过该入口使用 `validate` 做独立 Radau / 全阶稀疏电磁对照。
-
-## 训练窗口与日志
-
-训练默认打开 **PyQt6 实时窗口**，点击“启动”后执行任务；窗口提供暂停、恢复和停止按钮。`MONITOR` 配置控制日志周期、曲线刷新、显示点数和计算线程数。使用 `python run.py --mode train --headless` 可仅训练并记录日志，推理模式保持命令行输出。
-
-实时曲线包括 MSE、训练 RMS/最大残差、独立检查最大残差、响应节点数和训练配点数。后台训练进程的日志线程周期性写入 JSONL；另一个 `QThread` 增量读取文件，通过信号通知主线程绘图。每次任务的日志保存在 `results/uwpt/logs/<时间_编号>/`。完整操作和日志格式见 [训练监控说明](docs/TRAINING_MONITOR.md)。
-
-训练仅评估给定输入上的控制方程残差，不使用瞬态轨迹、FEM/Maxwell/COMSOL 或实验解标签。原有 `python -m sdfmpneo` 接口也保留，其中固定几何的 `validate` 才调用独立 Radau 积分和全阶稀疏电磁求解；一键脚本不自动执行这类验证。
-
-## 真实线圈、封装与海水网格
-
-`run.py` 默认会自动生成参考 UWPT 网格。设置 `MESH["generate"]=False` 时可导入已有网格；相对路径统一以 `run.py` 所在目录为基准。
-
-配置包含几何尺寸、接收线圈平移/旋转、材料参数、频率、实体端子、热空间截断及训练域。将线圈 `shape` 改为 `rounded_square` 可生成圆角方形线圈。自有 Gmsh 2.2 ASCII 四面体网格也可以直接通过材料和端子物理标签导入。
-
-当前几何代理的形状类别、匝数和材料连接拓扑在一次训练内保持固定；圆形与圆角方形应分别建立自己的参考几何族。它不是“任意换一个 CAD 拓扑都无需重新训练”的代理。
-
-## 模型如何工作
-
-1. 同一四面体网格上的 Nédélec/P1 离散提供电磁算子和热质量/刚度矩阵。
-2. 温度相关铜电阻率、海水损耗、热源及其导数由同一材料定义计算。
-3. 残差–Riesz 增广建立电磁降阶空间，不采集全阶电磁解快照。
-4. 几何族使用共享热坐标，电磁平衡消元后得到 `M_r(G) da/dt = -K_r(G) a + q_em(G,a,U)`；固定几何谱坐标是其特例。
-5. 几何、初始热坐标、静态电流参数和响应神经元组成一个解析 DAG。几何算子与焦耳热二次结构初始化响应节点，随后根据耦合残差增长并联合更新权重。
-6. 加载保存的网络和空间基后，可直接查询任意时间，无需从零逐步积分。
-
-`predict --state-only` 只执行解析网络和温度重构，不调用电磁求解。默认完整推理还返回 `Z/R/L`、互感所在的电感矩阵、各材料焦耳损耗、物理残差及电磁误差诊断。
-
-默认保存模型覆盖 `GEOMETRY_FAMILY` 声明的线圈缩放/厚度、接收位置、封装尺寸和海水半径参数盒。一个网络、一个共享电磁基及一个共享热基服务整个几何族。当前平面缩放使外径、匝距和宽度联动；形状类别、匝数、材料拓扑及频率固定。旧固定几何模型仍可使用。
-
-默认训练时间覆盖 `0–100000 s`，混合对数/线性配点，并加入稳态残差检查。推理默认允许训练窗以外的有限时间，`"inf"` 查询解析稳态极限；不将时间截断到训练上限。具体配置、统一物理坐标、几何范围与外推含义见 [几何与时间代理说明](docs/GEOMETRY_TIME_SURROGATE.md)。
-
-## 科研误差的含义
-
-- 新工作流的 `numerically_converged` 表示训练点和独立参数检查点达到数值残差目标，不等同于连续域或真实设备误差证明。
-- `thermal_rank` 是显式的科研截断阶数；应通过增加阶数检查结果收敛。原有按误差证书选秩的接口也保留。
-- 示例独立瞬态对照默认使用完整电磁空间，但保持相同热空间；它检验解析演化与电磁降阶误差，不替代热秩/网格收敛性研究或实验验证。
-- 端口电流采用峰值相量；平均功率为 `0.5 * Re(I^H Z I)`。温度输出为包含边界和参考温度的全节点开尔文温度。
-
-## 代码与说明
-
-- [几何与任意时间代理说明](docs/GEOMETRY_TIME_SURROGATE.md)
-- [科研工作流、数学关系和配置说明](docs/RESEARCH_WORKFLOW.md)
-- [训练监控说明](docs/TRAINING_MONITOR.md)
-- [完整 Python 算例](examples/research_workflow.py)
-- [真实 UWPT 配置](examples/configs/uwpt_research.json)
-- [科研模型构建、保存、加载和推理](sdfmpneo/research.py)
-- [几何族代理](sdfmpneo/geometry_research.py)
-- [无标签残差训练](sdfmpneo/training/research.py)
-- [原有理论推导](docs/SDFMPNEO_theory.tex)
-
-`docs/PRODUCTION_STATUS_0_9.md` 等文件保留为先前版本的研究背景；当前运行入口和完成状态以本文及 `docs/RESEARCH_WORKFLOW.md` 为准。
-
-## 测试
-
-```bash
-python -m pytest -q \
-  -W error::numpy.exceptions.ComplexWarning \
-  -W error::scipy.linalg.LinAlgWarning
-```
-
-安装 `cad` 后，测试会实际初始化 Gmsh，并生成圆形与圆角方形导体、封装和海水网格，检查材料界面共形、端子标签以及默认几何参数盒内的网格非退化性。
