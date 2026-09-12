@@ -1,11 +1,10 @@
 """Bridge the existing file-based training monitor to the neural ROM pipeline.
 
-The PyQt window already controls the worker through ``control.json``.  This
+The PyQt window already controls the worker through ``control.json``. This
 module keeps that UI/control layer independent of the neural mathematics while
 making snapshot generation and AdamW training cooperatively pausable/stoppable.
 A stop during neural training writes a continuation checkpoint containing the
-POD coordinates, network weights and AdamW state so a later run resumes in the
-same output coordinates.
+frozen-dataset identity, POD coordinates, network weights and AdamW state.
 """
 from __future__ import annotations
 
@@ -35,6 +34,7 @@ class NeuralTrainingRuntime:
         self.model = None
         self.optimizer = None
         self.pod = None
+        self.dataset_hash = None
         self._resume_payload = None
         self._snapshot_count = 0
         self._counter_lock = threading.Lock()
@@ -51,7 +51,7 @@ class NeuralTrainingRuntime:
         except TypeError:  # older PyTorch without weights_only
             import torch
             payload = torch.load(self.checkpoint_path, map_location="cpu")
-        if not isinstance(payload, dict) or int(payload.get("format_version", -1)) != 2:
+        if not isinstance(payload, dict) or int(payload.get("format_version", -1)) != 3:
             raise ValueError(
                 f"unsupported neural training checkpoint: {self.checkpoint_path}"
             )
@@ -109,14 +109,15 @@ class NeuralTrainingRuntime:
         return self.initial_pod if pod is None else pod
 
     def _save_training_state(self, model) -> None:
-        """Persist POD coordinates, network weights and AdamW momentum."""
+        """Persist dataset identity, POD, network weights and AdamW momentum."""
         try:
             import torch
         except ImportError:
             return
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "format_version": 2,
+            "format_version": 3,
+            "dataset_hash": self.dataset_hash,
             "network_config": model.config.to_dict(),
             "pod": self._pod_payload(self.pod),
             "network_state": {
@@ -166,6 +167,15 @@ class NeuralTrainingRuntime:
         def controlled_fit_pod(dataset, *, rank, tolerance, pod_config=None):
             self._monitor_phase("neural_pod")
             self._checkpoint_control()
+            current_hash = dataset.manifest().dataset_hash
+            payload = self._load_payload()
+            saved_hash = payload.get("dataset_hash")
+            if saved_hash is not None and str(saved_hash) != str(current_hash):
+                raise ValueError(
+                    "neural continuation checkpoint belongs to a different frozen dataset; "
+                    "delete the stale training checkpoint or restore the original dataset"
+                )
+            self.dataset_hash = str(current_hash)
             saved = self._saved_pod()
             if saved is not None:
                 if saved.thermal_rank != dataset.thermal_rank or saved.current_dimension != dataset.current_dimension:
