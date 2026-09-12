@@ -17,6 +17,7 @@ from .adapters import (
 from .generator import generate_snapshots_resumable
 from .model import StructurePreservingNeuralElectroThermalROM
 from .network import ResidualMLPConfig
+from .physical_metadata import physical_dataset_metadata
 from .pod import fit_dataset_pod
 from .sampling import (
     SnapshotSamplingResult,
@@ -152,10 +153,12 @@ def _dataset_metadata(
     operating_lower,
     operating_upper,
     sampling_report,
+    physical_provenance: dict,
 ) -> dict:
     return {
         "kind": kind,
         "physical_signature": signature,
+        "physical_provenance": dict(physical_provenance),
         "state_lower": np.asarray(state_lower, dtype=float).tolist(),
         "state_upper": np.asarray(state_upper, dtype=float).tolist(),
         "geometry_lower": np.asarray(geometry_lower, dtype=float).tolist(),
@@ -192,6 +195,22 @@ def _training_domain_from_dataset(dataset) -> dict[str, np.ndarray]:
     return domain
 
 
+def _dataset_artifact_metadata(dataset) -> dict:
+    """Carry only immutable physical/data provenance into a newly trained model."""
+    metadata = dict(dataset.metadata)
+    result = {
+        "dataset_hash": dataset.manifest().dataset_hash,
+    }
+    for key in (
+        "physical_provenance",
+        "state_domain_report",
+        "state_domain_report_hash",
+    ):
+        if key in metadata:
+            result[key] = metadata[key]
+    return result
+
+
 def retrain_neural_rom(
     dataset,
     template_model: StructurePreservingNeuralElectroThermalROM,
@@ -206,9 +225,9 @@ def retrain_neural_rom(
 ) -> PipelineResult:
     """Retrain POD/MLP from a frozen tensor dataset without any EM rebuild.
 
-    ``template_model`` contributes only the already-persisted online thermal
-    operator family and physical signature.  No electromagnetic object is
-    accessed.  This is the intended path for hyperparameter/POD experiments.
+    ``template_model`` contributes only its persisted thermal operator family.
+    Certification evidence from the template is deliberately not inherited,
+    because retraining changes the neural approximation and invalidates it.
     """
     if dataset.thermal_rank != template_model.surrogate.state_dimension:
         raise ValueError("dataset/template thermal dimensions differ")
@@ -235,11 +254,13 @@ def retrain_neural_rom(
         network_config=network_config,
         training_config=training_config,
     )
+    artifact_metadata = _dataset_artifact_metadata(dataset)
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
         template_model.thermal_operators,
         physical_signature=str(signature),
         training_domain=domain,
+        artifact_metadata=artifact_metadata,
     )
     work = Path(work_directory)
     work.mkdir(parents=True, exist_ok=True)
@@ -247,7 +268,6 @@ def retrain_neural_rom(
         model.save(
             work / model_filename,
             metadata={
-                "dataset_hash": dataset.manifest().dataset_hash,
                 "training_report": report.__dict__,
                 "pod_rank": pod.rank,
                 "retrained_without_em": True,
@@ -294,6 +314,7 @@ def build_fixed_neural_rom(
     geometry_lower = np.empty(0)
     geometry_upper = np.empty(0)
     signature = physical_signature or fixed_research_physical_signature(physical_model)
+    physical_provenance = physical_dataset_metadata(physical_model)
     sampled = _sample_locations(
         physical_vector_field=fixed_research_vector_field_factory(physical_model),
         state_lower=state_lower,
@@ -324,6 +345,7 @@ def build_fixed_neural_rom(
             operating_lower=operating_lower,
             operating_upper=operating_upper,
             sampling_report=sampled.report,
+            physical_provenance=physical_provenance,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
     )
@@ -348,17 +370,18 @@ def build_fixed_neural_rom(
         "operating_lower": operating_lower,
         "operating_upper": operating_upper,
     }
+    base_metadata = _dataset_artifact_metadata(dataset)
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
         fixed_research_thermal_family(physical_model),
         physical_signature=signature,
         training_domain=domain,
+        artifact_metadata=base_metadata,
     )
     if save_model:
         model.save(
             work / "neural_electrothermal_rom.npz",
             metadata={
-                "dataset_hash": dataset.manifest().dataset_hash,
                 "training_report": report.__dict__,
                 "pod_rank": pod.rank,
                 "sampling": _report_metadata(sampled.report),
@@ -396,6 +419,7 @@ def build_geometry_neural_rom(
     operating_lower = np.asarray(operating_lower, dtype=float)
     operating_upper = np.asarray(operating_upper, dtype=float)
     signature = physical_signature or geometry_research_physical_signature(geometry_model)
+    physical_provenance = physical_dataset_metadata(geometry_model)
     n_geometry = len(geometry_model.geometry_names)
     geometry_lower = -np.ones(n_geometry)
     geometry_upper = np.ones(n_geometry)
@@ -432,6 +456,7 @@ def build_geometry_neural_rom(
             operating_lower=operating_lower,
             operating_upper=operating_upper,
             sampling_report=sampled.report,
+            physical_provenance=physical_provenance,
         ),
         final_path=work / "quadratic_joule_dataset.npz",
     )
@@ -456,6 +481,7 @@ def build_geometry_neural_rom(
         "operating_lower": operating_lower,
         "operating_upper": operating_upper,
     }
+    base_metadata = _dataset_artifact_metadata(dataset)
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
         geometry_research_embedded_thermal_family(
@@ -464,12 +490,12 @@ def build_geometry_neural_rom(
         ),
         physical_signature=signature,
         training_domain=domain,
+        artifact_metadata=base_metadata,
     )
     if save_model:
         model.save(
             work / "neural_electrothermal_rom.npz",
             metadata={
-                "dataset_hash": dataset.manifest().dataset_hash,
                 "training_report": report.__dict__,
                 "pod_rank": pod.rank,
                 "sampling": _report_metadata(sampled.report),
