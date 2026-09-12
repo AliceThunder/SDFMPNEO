@@ -15,6 +15,7 @@ from .cli import (
     _write_json,
 )
 from .domain import probe_reachable_state_domain
+from .provenance import state_domain_report_hash, verified_state_domain_report
 
 
 def command_probe(config_file: str | Path) -> int:
@@ -58,25 +59,29 @@ def command_probe(config_file: str | Path) -> int:
         absolute_margin=np.asarray(config.get("absolute_margin", 1e-8), dtype=float),
         physical_signature=adapters["signature"],
     )
+    report_hash = state_domain_report_hash(report)
     _write_json(
         output,
         {
             "kind": "reachable_state_domain",
             "physical_config": str(physical_config),
             "physical_signature": adapters["signature"],
+            "report_hash": report_hash,
             "report": report,
         },
     )
     print(f"state-domain report saved: {output}")
+    print(f"state-domain hash: {report_hash}")
     print(f"successful steady states: {report.successful_steady_states}/{report.trajectory_count}")
     return 0
 
 
 def command_train(config_file: str | Path) -> int:
-    """Train from a frozen, signature-checked state-domain report."""
+    """Train from a frozen, signature-checked and hash-checked state-domain report."""
     config_path, config = _read_json(config_file)
     physical_config = _path_from_config(config_path, config.get("physical_config"))
     domain_report = _path_from_config(config_path, config.get("state_domain_report"))
+    _, domain_hash = verified_state_domain_report(domain_report)
     work = _path_from_config(config_path, config.get("work_directory"), "neural_rom_work")
     model_path = _path_from_config(
         config_path,
@@ -106,6 +111,7 @@ def command_train(config_file: str | Path) -> int:
         checkpoint_every=int(config.get("checkpoint_every", 16)),
         sampling_config=config.get("sampling"),
     )
+    from .dataset import QuadraticJouleDataset
     from .domain_pipeline import (
         build_fixed_neural_rom_from_domain_report,
         build_geometry_neural_rom_from_domain_report,
@@ -124,14 +130,35 @@ def command_train(config_file: str | Path) -> int:
             domain_report,
             **common,
         )
+
+    dataset_metadata = dict(result.dataset.metadata)
+    dataset_metadata.update(
+        {
+            "state_domain_report": str(domain_report),
+            "state_domain_report_hash": domain_hash,
+        }
+    )
+    dataset = QuadraticJouleDataset(
+        states=result.dataset.states,
+        geometries=result.dataset.geometries,
+        outputs=result.dataset.outputs,
+        split=result.dataset.split,
+        thermal_rank=result.dataset.thermal_rank,
+        current_dimension=result.dataset.current_dimension,
+        metadata=dataset_metadata,
+    )
+    dataset.save(work / "quadratic_joule_dataset.npz")
+    manifest = dataset.manifest()
+
     result.model.save(
         model_path,
         metadata={
-            "dataset_hash": result.dataset.manifest().dataset_hash,
+            "dataset_hash": manifest.dataset_hash,
             "pod_rank": result.pod.rank,
             "training_report": _jsonable(result.training_report),
             "sampling": _jsonable(result.sampling_report),
             "state_domain_report": str(domain_report),
+            "state_domain_report_hash": domain_hash,
             "physical_config": str(physical_config),
         },
     )
@@ -142,7 +169,8 @@ def command_train(config_file: str | Path) -> int:
             "work_directory": str(work),
             "physical_signature": result.physical_signature,
             "state_domain_report": str(domain_report),
-            "dataset_manifest": result.dataset.manifest(),
+            "state_domain_report_hash": domain_hash,
+            "dataset_manifest": manifest,
             "sampling": result.sampling_report,
             "pod_rank": result.pod.rank,
             "pod_energy_fraction": result.pod.energy_fraction(),
@@ -150,6 +178,8 @@ def command_train(config_file: str | Path) -> int:
         },
     )
     print(f"neural ROM saved: {model_path}")
+    print(f"dataset hash: {manifest.dataset_hash}")
+    print(f"state-domain hash: {domain_hash}")
     print(f"training report: {training_report_path}")
     return 0
 
