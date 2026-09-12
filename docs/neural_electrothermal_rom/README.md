@@ -258,7 +258,7 @@ python -m pytest -q \
   tests/test_neural_training_smoke.py \
   tests/test_neural_model_persistence.py \
   tests/test_neural_geometry_persistence.py \
-  tests/test_neural_hard_thermal_forcing.py \
+  tests/test_neural_thermal_forcing.py \
   tests/test_neural_snapshot_sampling.py \
   tests/test_reachable_state_domain.py \
   tests/test_neural_batch_inference.py \
