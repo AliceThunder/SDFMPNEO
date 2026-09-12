@@ -79,7 +79,7 @@ def test_snapshot_generation_resumes_without_recomputing_completed_rows(tmp_path
     assert dataset.n_samples == len(states)
 
 
-def test_snapshot_resume_rejects_changed_physical_signature(tmp_path):
+def test_snapshot_resume_archives_changed_physical_signature_and_regenerates(tmp_path):
     states = np.arange(8.0)[:, None] / 10.0
     geometry = np.empty((len(states), 0))
     checkpoint = tmp_path / "partial.npz"
@@ -99,14 +99,23 @@ def test_snapshot_resume_rejects_changed_physical_signature(tmp_path):
             metadata=_metadata("physics-v1"),
         )
 
-    with pytest.raises(ValueError, match="physical signature differs"):
-        generate_snapshots_resumable(
-            states,
-            geometry,
-            lambda state, geometry: _tensor(state),
-            checkpoint_path=checkpoint,
-            metadata=_metadata("physics-v2"),
-        )
+    calls = []
+
+    def factory(state, _geometry):
+        calls.append(float(state[0]))
+        return _tensor(state)
+
+    dataset = generate_snapshots_resumable(
+        states,
+        geometry,
+        factory,
+        checkpoint_path=checkpoint,
+        metadata=_metadata("physics-v2"),
+    )
+    assert dataset.n_samples == len(states)
+    assert len(calls) == len(states)
+    assert any(tmp_path.glob("partial.stale-*.npz"))
+    assert any(tmp_path.glob("partial.npz.packed.stale-*.npy"))
 
 
 def test_successful_small_frozen_dataset_removes_working_checkpoint(tmp_path):
@@ -201,7 +210,7 @@ def test_matching_dataset_is_reused_without_any_physics_call(tmp_path):
     assert reused.manifest().dataset_hash == original.manifest().dataset_hash
 
 
-def test_existing_dataset_rejects_changed_training_metadata(tmp_path):
+def test_existing_dataset_archives_changed_training_metadata_and_regenerates(tmp_path):
     states = np.arange(10.0)[:, None] / 10.0
     geometry = np.empty((len(states), 0))
     final = tmp_path / "frozen.npz"
@@ -216,12 +225,57 @@ def test_existing_dataset_rejects_changed_training_metadata(tmp_path):
     )
     changed = _metadata()
     changed["operating_upper"] = [2.0]
-    with pytest.raises(ValueError, match="metadata differs"):
-        generate_snapshots_resumable(
-            states,
-            geometry,
-            lambda state, _geometry: _tensor(state),
-            checkpoint_path=checkpoint,
-            metadata=changed,
-            final_path=final,
-        )
+    calls = []
+
+    def factory(state, _geometry):
+        calls.append(float(state[0]))
+        return _tensor(state)
+
+    regenerated = generate_snapshots_resumable(
+        states,
+        geometry,
+        factory,
+        checkpoint_path=checkpoint,
+        metadata=changed,
+        final_path=final,
+    )
+    assert regenerated.metadata["operating_upper"] == [2.0]
+    assert len(calls) == len(states)
+    assert any(tmp_path.glob("frozen.stale-*.npz"))
+    assert any(tmp_path.glob("frozen.stale-*.json"))
+
+
+def test_existing_dataset_archives_changed_state_sample_set_and_regenerates(tmp_path):
+    states = np.arange(10.0)[:, None] / 10.0
+    geometry = np.empty((len(states), 0))
+    final = tmp_path / "frozen.npz"
+    checkpoint = tmp_path / "partial.npz"
+    generate_snapshots_resumable(
+        states,
+        geometry,
+        lambda state, _geometry: _tensor(state),
+        checkpoint_path=checkpoint,
+        metadata=_metadata(),
+        final_path=final,
+        split_seed=3,
+    )
+
+    changed_states = states + 0.01
+    calls = []
+
+    def factory(state, _geometry):
+        calls.append(float(state[0]))
+        return _tensor(state)
+
+    regenerated = generate_snapshots_resumable(
+        changed_states,
+        geometry,
+        factory,
+        checkpoint_path=checkpoint,
+        metadata=_metadata(),
+        final_path=final,
+        split_seed=3,
+    )
+    np.testing.assert_allclose(regenerated.states, changed_states)
+    assert len(calls) == len(states)
+    assert any(tmp_path.glob("frozen.stale-*.npz"))
