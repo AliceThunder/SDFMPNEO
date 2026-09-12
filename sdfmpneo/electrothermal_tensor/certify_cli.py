@@ -12,6 +12,7 @@ from .certification import (
     save_audited_model,
     training_reproducibility_evidence,
     verify_model_persistence_roundtrip,
+    verify_training_reproduction,
 )
 from .cli import _adapters, _build_physical_model, _path_from_config, _read_json, _write_json
 
@@ -57,12 +58,22 @@ def command_audit(config_file: str | Path) -> int:
     if trained_dataset_hash is not None and str(trained_dataset_hash) != manifest.dataset_hash:
         raise ValueError("model was trained from a different frozen tensor dataset")
 
-    # Formal certification never trusts manually supplied booleans for these two
-    # gates.  Reproducibility is inferred from the persisted training evidence,
-    # and persistence is tested by a real save -> load -> numerical comparison.
-    reproducibility = training_reproducibility_evidence(
+    # Formal certification separates three evidence strengths.  Persisted
+    # provenance is necessary but not sufficient; reproducibility only passes
+    # after a real frozen-dataset retraining experiment.
+    provenance = training_reproducibility_evidence(
         model,
         expected_dataset_hash=manifest.dataset_hash,
+    )
+    reproduction = verify_training_reproduction(
+        model,
+        dataset,
+        device=config.get("reproduction_device"),
+        packed_rtol=float(config.get("reproduction_packed_rtol", 1e-6)),
+        packed_atol=float(config.get("reproduction_packed_atol", 1e-7)),
+        heat_rtol=float(config.get("reproduction_heat_rtol", 1e-6)),
+        heat_atol=float(config.get("reproduction_heat_atol", 1e-7)),
+        operating_samples=int(config.get("reproduction_operating_samples", 2)),
     )
     roundtrip = verify_model_persistence_roundtrip(
         model,
@@ -108,7 +119,7 @@ def command_audit(config_file: str | Path) -> int:
         budgets=ProductionBudgets(**config["budgets"]),
         temperature_reconstructor=adapters["temperature"],
         config=GateSuiteConfig(**config.get("gate_config", {})),
-        reproducible_training=bool(reproducibility["complete"]),
+        reproducible_training=bool(reproduction.passed),
         persistence_roundtrip=bool(roundtrip.passed),
     )
     report_hash = gate_report_hash(report)
@@ -116,7 +127,8 @@ def command_audit(config_file: str | Path) -> int:
         report,
         dataset_hash=manifest.dataset_hash,
         report_path=output_path,
-        reproducibility_evidence=reproducibility,
+        provenance_evidence=provenance,
+        training_reproduction=reproduction,
         persistence_roundtrip=roundtrip,
     )
     envelope = {
@@ -128,7 +140,8 @@ def command_audit(config_file: str | Path) -> int:
         "dataset_hash": manifest.dataset_hash,
         "gate_report_hash": report_hash,
         "production_ready": bool(report.readiness.ready),
-        "training_reproducibility": reproducibility,
+        "training_provenance": provenance,
+        "training_reproduction": reproduction,
         "persistence_roundtrip": roundtrip,
         "evidence": evidence,
         "report": report,
@@ -138,7 +151,8 @@ def command_audit(config_file: str | Path) -> int:
     save_kwargs = dict(
         dataset_hash=manifest.dataset_hash,
         report_path=output_path,
-        reproducibility_evidence=reproducibility,
+        provenance_evidence=provenance,
+        training_reproduction=reproduction,
         persistence_roundtrip=roundtrip,
     )
     if audited_model_path is not None:
@@ -165,7 +179,8 @@ def command_audit(config_file: str | Path) -> int:
 
     print(f"certification report saved: {output_path}")
     print(f"gate report hash: {report_hash}")
-    print(f"training provenance complete: {reproducibility['complete']}")
+    print(f"training provenance complete: {provenance['complete']}")
+    print(f"training reproduction passed: {reproduction.passed}")
     print(f"persistence roundtrip passed: {roundtrip.passed}")
     print(f"production ready: {report.readiness.ready}")
     return 0 if report.readiness.ready else 2
