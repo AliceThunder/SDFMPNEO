@@ -35,7 +35,7 @@ class PipelineResult:
     training_report: object
     model: StructurePreservingNeuralElectroThermalROM
     physical_signature: str
-    sampling_report: object
+    sampling_report: object | None
 
 
 def _resolved_network_config(network_config, *, input_dimension: int, output_dimension: int):
@@ -164,6 +164,104 @@ def _dataset_metadata(
         "operating_upper": np.asarray(operating_upper, dtype=float).tolist(),
         "sampling": _report_metadata(sampling_report),
     }
+
+
+def _training_domain_from_dataset(dataset) -> dict[str, np.ndarray]:
+    meta = dict(dataset.metadata)
+    required = (
+        "state_lower",
+        "state_upper",
+        "geometry_lower",
+        "geometry_upper",
+        "operating_lower",
+        "operating_upper",
+    )
+    missing = [name for name in required if name not in meta]
+    if missing:
+        raise ValueError(
+            "dataset predates complete domain metadata; retraining requires explicit "
+            f"domain information, missing {missing}"
+        )
+    domain = {name: np.asarray(meta[name], dtype=float) for name in required}
+    if domain["state_lower"].shape != (dataset.thermal_rank,) or domain["state_upper"].shape != (dataset.thermal_rank,):
+        raise ValueError("dataset state-domain metadata is incompatible with thermal rank")
+    if domain["geometry_lower"].shape != (dataset.geometry_dimension,) or domain["geometry_upper"].shape != (dataset.geometry_dimension,):
+        raise ValueError("dataset geometry-domain metadata is incompatible")
+    if domain["operating_lower"].shape != (dataset.current_dimension,) or domain["operating_upper"].shape != (dataset.current_dimension,):
+        raise ValueError("dataset operating-domain metadata is incompatible")
+    return domain
+
+
+def retrain_neural_rom(
+    dataset,
+    template_model: StructurePreservingNeuralElectroThermalROM,
+    *,
+    work_directory: str | Path,
+    pod_rank: int | None = None,
+    pod_relative_tail_tolerance: float = 1e-4,
+    network_config: ResidualMLPConfig | dict | None = None,
+    training_config: NeuralTrainingConfig | dict | None = None,
+    save_model: bool = True,
+    model_filename: str = "neural_electrothermal_rom.retrained.npz",
+) -> PipelineResult:
+    """Retrain POD/MLP from a frozen tensor dataset without any EM rebuild.
+
+    ``template_model`` contributes only the already-persisted online thermal
+    operator family and physical signature.  No electromagnetic object is
+    accessed.  This is the intended path for hyperparameter/POD experiments.
+    """
+    if dataset.thermal_rank != template_model.surrogate.state_dimension:
+        raise ValueError("dataset/template thermal dimensions differ")
+    if dataset.geometry_dimension != template_model.surrogate.geometry_dimension:
+        raise ValueError("dataset/template geometry dimensions differ")
+    if dataset.current_dimension != template_model.surrogate.pod.current_dimension:
+        raise ValueError("dataset/template current dimensions differ")
+    signature = dataset.metadata.get("physical_signature")
+    if signature is None or template_model.physical_signature is None:
+        raise ValueError("dataset and template model must both contain a physical signature")
+    if str(signature) != str(template_model.physical_signature):
+        raise ValueError("dataset/template physical signatures differ")
+    domain = _training_domain_from_dataset(dataset)
+    pod = fit_dataset_pod(
+        dataset,
+        rank=pod_rank,
+        relative_tail_tolerance=pod_relative_tail_tolerance,
+    )
+    surrogate, report = _train_from_dataset(
+        dataset,
+        pod,
+        operating_lower=domain["operating_lower"],
+        operating_upper=domain["operating_upper"],
+        network_config=network_config,
+        training_config=training_config,
+    )
+    model = StructurePreservingNeuralElectroThermalROM(
+        surrogate,
+        template_model.thermal_operators,
+        physical_signature=str(signature),
+        training_domain=domain,
+    )
+    work = Path(work_directory)
+    work.mkdir(parents=True, exist_ok=True)
+    if save_model:
+        model.save(
+            work / model_filename,
+            metadata={
+                "dataset_hash": dataset.manifest().dataset_hash,
+                "training_report": report.__dict__,
+                "pod_rank": pod.rank,
+                "retrained_without_em": True,
+            },
+        )
+    return PipelineResult(
+        dataset,
+        pod,
+        surrogate,
+        report,
+        model,
+        str(signature),
+        None,
+    )
 
 
 def build_fixed_neural_rom(
@@ -380,4 +478,9 @@ def build_geometry_neural_rom(
     return PipelineResult(dataset, pod, surrogate, report, model, signature, sampled.report)
 
 
-__all__ = ["PipelineResult", "build_fixed_neural_rom", "build_geometry_neural_rom"]
+__all__ = [
+    "PipelineResult",
+    "build_fixed_neural_rom",
+    "build_geometry_neural_rom",
+    "retrain_neural_rom",
+]
