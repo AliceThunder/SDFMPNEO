@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import copy
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -22,6 +23,8 @@ class NeuralTrainingConfig:
     seed: int = 0
     dtype: str = "float32"
     gradient_clip_norm: float | None = 10.0
+    evaluation_batch_size: int | None = None
+    mixed_precision: bool = False
 
     def __post_init__(self) -> None:
         if int(self.epochs) < 1 or int(self.batch_size) < 1 or int(self.patience) < 1:
@@ -32,6 +35,10 @@ class NeuralTrainingConfig:
             raise ValueError("heat_loss_weight must be non-negative")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("dtype must be float32 or float64")
+        if self.gradient_clip_norm is not None and float(self.gradient_clip_norm) <= 0.0:
+            raise ValueError("gradient_clip_norm must be positive when supplied")
+        if self.evaluation_batch_size is not None and int(self.evaluation_batch_size) < 1:
+            raise ValueError("evaluation_batch_size must be positive when supplied")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -48,6 +55,7 @@ class NeuralTrainingReport:
     test_relative_packed_error: float
     stopped_early: bool
     device: str
+    mixed_precision: bool
 
 
 def _coefficient_normalization(beta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -73,9 +81,11 @@ def train_tensor_surrogate(
 ):
     """Train only the local map ``(a,g)->beta`` with ordinary AdamW.
 
-    Expensive electromagnetic physics is absent from this loop.  The optional
-    heat loss uses the already stored tensor labels and a freshly sampled real
-    operating vector, so it adds no EM solves.
+    Electromagnetic physics is absent from this loop.  POD targets are computed
+    once before optimization; they are never reprojected per mini-batch.  The
+    optional heat loss contracts the compressed POD basis directly with current
+    features and stored tensor labels, so it adds no EM solves and does not
+    decode the predicted full tensor.
     """
     try:
         import torch
@@ -91,22 +101,24 @@ def train_tensor_surrogate(
     train_ids = dataset.indices("train")
     val_ids = dataset.indices("validation")
     test_ids = dataset.indices("test")
-    x_train = dataset.inputs[train_ids]
-    y_train = dataset.outputs[train_ids]
-    beta_train = pod.encode(y_train)
-    beta_mean, beta_scale = _coefficient_normalization(beta_train)
-    input_normalizer = FeatureNormalizer.fit(x_train)
+    inputs_all = np.asarray(dataset.inputs, dtype=float)
+    outputs_all = np.asarray(dataset.outputs, dtype=float)
+    # This matrix multiplication can be substantial for wide G tensors, but it
+    # is static and is therefore performed exactly once per training run.
+    beta_all = pod.encode(outputs_all)
+    beta_mean, beta_scale = _coefficient_normalization(beta_all[train_ids])
+    input_normalizer = FeatureNormalizer.fit(inputs_all[train_ids])
 
     if network_config is None:
         network_config = ResidualMLPConfig(
             input_dimension=dataset.thermal_rank + dataset.geometry_dimension,
             output_dimension=pod.rank,
         )
-    if network_config.input_dimension != dataset.inputs.shape[1] or network_config.output_dimension != pod.rank:
+    if network_config.input_dimension != inputs_all.shape[1] or network_config.output_dimension != pod.rank:
         raise ValueError("network dimensions do not match dataset/POD")
 
     model = build_residual_mlp(network_config, input_normalizer)
-    resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    resolved_device = str(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     dtype = _dtype(torch, cfg.dtype)
     model = model.to(device=resolved_device, dtype=dtype)
     optimizer = torch.optim.AdamW(
@@ -114,6 +126,16 @@ def train_tensor_surrogate(
         lr=float(cfg.learning_rate),
         weight_decay=float(cfg.weight_decay),
     )
+
+    use_amp = bool(
+        cfg.mixed_precision
+        and resolved_device.startswith("cuda")
+        and dtype == torch.float32
+    )
+    try:
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     mean_t = torch.as_tensor(pod.mean, dtype=dtype, device=resolved_device)
     basis_t = torch.as_tensor(pod.basis, dtype=dtype, device=resolved_device)
@@ -127,47 +149,68 @@ def train_tensor_surrogate(
         torch.cuda.manual_seed_all(int(cfg.seed))
 
     def tensors(ids):
+        index = np.asarray(ids, dtype=int)
         return (
-            torch.as_tensor(dataset.inputs[ids], dtype=dtype, device=resolved_device),
-            torch.as_tensor(dataset.outputs[ids], dtype=dtype, device=resolved_device),
-            torch.as_tensor(pod.encode(dataset.outputs[ids]), dtype=dtype, device=resolved_device),
+            torch.as_tensor(inputs_all[index], dtype=dtype, device=resolved_device),
+            torch.as_tensor(outputs_all[index], dtype=dtype, device=resolved_device),
+            torch.as_tensor(beta_all[index], dtype=dtype, device=resolved_device),
         )
-
-    x_val, y_val, beta_val = tensors(val_ids)
-    x_test, y_test, beta_test = tensors(test_ids)
 
     def normalized_target(beta):
         return (beta - beta_mean_t) / beta_scale_t
 
+    def autocast_context():
+        if not use_amp:
+            return nullcontext()
+        return torch.autocast(device_type="cuda", dtype=torch.float16)
+
     def batch_loss(xb, yb, beta_b, *, random_operating: bool):
-        predicted_normalized = model(xb)
-        target_normalized = normalized_target(beta_b)
-        coefficient_loss = torch.mean((predicted_normalized - target_normalized) ** 2)
-        if cfg.heat_loss_weight == 0.0:
-            return coefficient_loss
-        predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
-        if random_operating:
-            u = lo_t + (hi_t - lo_t) * torch.rand(
-                (xb.shape[0], dataset.current_dimension), dtype=dtype, device=resolved_device
+        with autocast_context():
+            predicted_normalized = model(xb)
+            target_normalized = normalized_target(beta_b)
+            coefficient_loss = torch.mean((predicted_normalized - target_normalized) ** 2)
+            if cfg.heat_loss_weight == 0.0:
+                return coefficient_loss
+            predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
+            if random_operating:
+                u = lo_t + (hi_t - lo_t) * torch.rand(
+                    (xb.shape[0], dataset.current_dimension),
+                    dtype=dtype,
+                    device=resolved_device,
+                )
+            else:
+                center = 0.5 * (lo_t + hi_t)
+                u = center.unsqueeze(0).expand(xb.shape[0], -1)
+            predicted_q = decode_heat_source_torch(
+                predicted_beta,
+                mean_t,
+                basis_t,
+                dataset.thermal_rank,
+                u,
             )
-        else:
-            center = 0.5 * (lo_t + hi_t)
-            u = center.unsqueeze(0).expand(xb.shape[0], -1)
-        predicted_q = decode_heat_source_torch(
-            predicted_beta,
-            mean_t,
-            basis_t,
-            dataset.thermal_rank,
-            u,
-        )
-        true_packed = yb.reshape(
-            xb.shape[0], dataset.thermal_rank, dataset.packed_symmetric_size
-        )
-        feature = torch_quadratic_feature(u)
-        true_q = torch.einsum("brs,bs->br", true_packed, feature)
-        heat_scale = torch.sqrt(torch.mean(true_q**2)).clamp_min(torch.finfo(dtype).eps)
-        heat_loss = torch.mean(((predicted_q - true_q) / heat_scale) ** 2)
-        return coefficient_loss + float(cfg.heat_loss_weight) * heat_loss
+            true_packed = yb.reshape(
+                xb.shape[0], dataset.thermal_rank, dataset.packed_symmetric_size
+            )
+            feature = torch_quadratic_feature(u)
+            true_q = torch.einsum("brs,bs->br", true_packed, feature)
+            heat_scale = torch.sqrt(torch.mean(true_q**2)).clamp_min(torch.finfo(dtype).eps)
+            heat_loss = torch.mean(((predicted_q - true_q) / heat_scale) ** 2)
+            return coefficient_loss + float(cfg.heat_loss_weight) * heat_loss
+
+    evaluation_batch = int(cfg.evaluation_batch_size or cfg.batch_size)
+
+    def split_loss(ids) -> float:
+        model.eval()
+        total = 0.0
+        count = 0
+        with torch.no_grad():
+            for start in range(0, len(ids), evaluation_batch):
+                batch_ids = ids[start:start + evaluation_batch]
+                xb, yb, beta_b = tensors(batch_ids)
+                loss = batch_loss(xb, yb, beta_b, random_operating=False)
+                total += float(loss.detach().cpu()) * len(batch_ids)
+                count += len(batch_ids)
+        return total / max(count, 1)
 
     best_state = copy.deepcopy(model.state_dict())
     best_validation = float("inf")
@@ -187,20 +230,32 @@ def train_tensor_surrogate(
             xb, yb, beta_b = tensors(ids)
             optimizer.zero_grad(set_to_none=True)
             loss = batch_loss(xb, yb, beta_b, random_operating=True)
-            loss.backward()
-            if cfg.gradient_clip_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg.gradient_clip_norm))
-            optimizer.step()
+            if use_amp:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                if cfg.gradient_clip_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), float(cfg.gradient_clip_norm)
+                    )
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                if cfg.gradient_clip_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), float(cfg.gradient_clip_norm)
+                    )
+                optimizer.step()
             total += float(loss.detach().cpu()) * len(ids)
             count += len(ids)
         last_train = total / max(count, 1)
-
-        model.eval()
-        with torch.no_grad():
-            val_loss = batch_loss(x_val, y_val, beta_val, random_operating=False)
-            last_validation = float(val_loss.detach().cpu())
+        last_validation = split_loss(val_ids)
         epochs_completed = epoch + 1
-        threshold = best_validation - 1e-10 * max(1.0, abs(best_validation)) if np.isfinite(best_validation) else float("inf")
+        threshold = (
+            best_validation - 1e-10 * max(1.0, abs(best_validation))
+            if np.isfinite(best_validation)
+            else float("inf")
+        )
         if not np.isfinite(best_validation) or last_validation < threshold:
             best_validation = last_validation
             best_epoch = epoch + 1
@@ -222,14 +277,32 @@ def train_tensor_surrogate(
         coefficient_scale=beta_scale,
     )
 
+    # Test metrics are evaluated in coefficient space.  Orthogonality of the POD
+    # basis gives the exact packed-tensor error norm without materializing the
+    # predicted full tensor: ||e_y||^2 = ||e_beta||^2 + ||P_perp(y-mean)||^2.
+    predicted_beta_parts = []
     with torch.no_grad():
-        predicted_normalized = model(x_test)
-        predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
-        coefficient_rmse = torch.sqrt(torch.mean((predicted_beta - beta_test) ** 2))
-        predicted_packed = mean_t.unsqueeze(0) + predicted_beta @ basis_t.T
-        packed_error = torch.linalg.vector_norm(predicted_packed - y_test, dim=1)
-        packed_scale = torch.linalg.vector_norm(y_test, dim=1).clamp_min(torch.finfo(dtype).eps)
-        relative_packed = torch.max(packed_error / packed_scale)
+        for start in range(0, len(test_ids), evaluation_batch):
+            ids = test_ids[start:start + evaluation_batch]
+            xb, _, _ = tensors(ids)
+            with autocast_context():
+                predicted_normalized = model(xb)
+                predicted_beta = beta_mean_t + beta_scale_t * predicted_normalized
+            predicted_beta_parts.append(predicted_beta.detach().cpu().double().numpy())
+    predicted_beta_test = np.vstack(predicted_beta_parts)
+    true_beta_test = beta_all[test_ids]
+    beta_error = predicted_beta_test - true_beta_test
+    coefficient_rmse = float(np.sqrt(np.mean(beta_error**2)))
+    centered = outputs_all[test_ids] - pod.mean
+    centered_sq = np.einsum("ij,ij->i", centered, centered, optimize=True)
+    projected_sq = np.einsum("ij,ij->i", true_beta_test, true_beta_test, optimize=True)
+    orthogonal_sq = np.maximum(centered_sq - projected_sq, 0.0)
+    prediction_sq = orthogonal_sq + np.einsum("ij,ij->i", beta_error, beta_error, optimize=True)
+    packed_scale = np.maximum(
+        np.linalg.norm(outputs_all[test_ids], axis=1),
+        np.finfo(float).tiny,
+    )
+    relative_packed = np.sqrt(prediction_sq) / packed_scale
 
     report = NeuralTrainingReport(
         epochs_completed=epochs_completed,
@@ -237,10 +310,11 @@ def train_tensor_surrogate(
         best_validation_loss=float(best_validation),
         train_loss=float(last_train),
         validation_loss=float(last_validation),
-        test_coefficient_rmse=float(coefficient_rmse.cpu()),
-        test_relative_packed_error=float(relative_packed.cpu()),
+        test_coefficient_rmse=coefficient_rmse,
+        test_relative_packed_error=float(np.max(relative_packed)),
         stopped_early=epochs_completed < int(cfg.epochs),
-        device=str(resolved_device),
+        device=resolved_device,
+        mixed_precision=use_amp,
     )
     return surrogate, report
 
