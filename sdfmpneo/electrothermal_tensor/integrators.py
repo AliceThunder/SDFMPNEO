@@ -16,6 +16,7 @@ class IntegrationResult:
     time: float
     steps: int
     step_sizes: tuple[float, ...]
+    rejected_steps: int = 0
 
 
 def _etd_coefficients(lambdas: np.ndarray, step: float):
@@ -44,17 +45,11 @@ def _validate_state(validator, state: np.ndarray) -> None:
         validator(np.asarray(state, dtype=float))
 
 
-class GeneralizedETD2Stepper:
-    """Second-order ETD for ``M a' = -K a + q(a)``.
+class GeneralizedThermalSpectrum:
+    """One generalized eigendecomposition reused by all ETD step sizes."""
 
-    A generalized symmetric eigendecomposition is built once per thermal
-    operator. Thus no assumption ``M=I`` or diagonal ``K`` is made for geometry
-    families.
-    """
-
-    def __init__(self, operator: ReducedThermalOperator, step: float):
+    def __init__(self, operator: ReducedThermalOperator):
         self.operator = operator
-        self.step = float(step)
         eigenvalues, vectors = scipy.linalg.eigh(
             operator.stiffness,
             operator.mass,
@@ -64,7 +59,6 @@ class GeneralizedETD2Stepper:
             raise ValueError("thermal generalized eigenvalues must be positive")
         self.lambdas = np.asarray(eigenvalues, dtype=float)
         self.vectors = np.asarray(vectors, dtype=float)
-        self.E, self.b1, self.b2 = _etd_coefficients(self.lambdas, self.step)
 
     def to_modal_state(self, state: np.ndarray) -> np.ndarray:
         a = np.asarray(state, dtype=float)
@@ -75,6 +69,53 @@ class GeneralizedETD2Stepper:
 
     def to_modal_source(self, source: np.ndarray) -> np.ndarray:
         return self.vectors.T @ np.asarray(source, dtype=float)
+
+    def etd2_trial(self, state: np.ndarray, source, step: float):
+        """Return ETD2 state, embedded ETD1 state and nonlinear stage."""
+        current = np.asarray(state, dtype=float)
+        E, b1, b2 = _etd_coefficients(self.lambdas, step)
+        c0 = self.to_modal_state(current)
+        q0 = np.asarray(source(current), dtype=float)
+        s0 = self.to_modal_source(q0)
+        c_stage = E * c0 + b1 * s0
+        stage = self.from_modal_state(c_stage)
+        q1 = np.asarray(source(stage), dtype=float)
+        s1 = self.to_modal_source(q1)
+        c2 = c_stage + b2 * (s1 - s0)
+        result = self.from_modal_state(c2)
+        return result, stage, stage
+
+
+class GeneralizedETD2Stepper:
+    """Fixed-step second-order ETD for ``M a' = -K a + q(a)``."""
+
+    def __init__(
+        self,
+        operator: ReducedThermalOperator,
+        step: float,
+        *,
+        spectrum: GeneralizedThermalSpectrum | None = None,
+    ):
+        self.operator = operator
+        self.step = float(step)
+        self.spectrum = GeneralizedThermalSpectrum(operator) if spectrum is None else spectrum
+        if self.spectrum.operator is not operator:
+            # Equality of dense operators is expensive and unnecessary; callers
+            # should explicitly share a spectrum only for the same operator.
+            if self.spectrum.operator.mass.shape != operator.mass.shape:
+                raise ValueError("ETD spectrum/operator dimensions differ")
+        self.lambdas = self.spectrum.lambdas
+        self.vectors = self.spectrum.vectors
+        self.E, self.b1, self.b2 = _etd_coefficients(self.lambdas, self.step)
+
+    def to_modal_state(self, state: np.ndarray) -> np.ndarray:
+        return self.spectrum.to_modal_state(state)
+
+    def from_modal_state(self, modal: np.ndarray) -> np.ndarray:
+        return self.spectrum.from_modal_state(modal)
+
+    def to_modal_source(self, source: np.ndarray) -> np.ndarray:
+        return self.spectrum.to_modal_source(source)
 
     def step_once(self, state: np.ndarray, source, *, state_validator=None) -> np.ndarray:
         current = np.asarray(state, dtype=float)
@@ -116,9 +157,11 @@ def integrate_etd2(
     if t == 0.0:
         return IntegrationResult(a, 0.0, 0, ())
     operator = field.thermal_operators.operator(g)
+    spectrum = GeneralizedThermalSpectrum(operator)
     elapsed = 0.0
     sizes: list[float] = []
-    full_stepper = GeneralizedETD2Stepper(operator, min(hmax, t))
+    full_h = min(hmax, t)
+    full_stepper = GeneralizedETD2Stepper(operator, full_h, spectrum=spectrum)
 
     def source(x):
         return field.heat_source(x, g, u)
@@ -128,13 +171,150 @@ def integrate_etd2(
         if abs(h - full_stepper.step) <= 8.0 * np.finfo(float).eps * max(1.0, h):
             stepper = full_stepper
         else:
-            stepper = GeneralizedETD2Stepper(operator, h)
+            stepper = GeneralizedETD2Stepper(operator, h, spectrum=spectrum)
         a = stepper.step_once(a, source, state_validator=state_validator)
         if np.any(~np.isfinite(a)):
             raise FloatingPointError("ETD2 produced a non-finite thermal state")
         elapsed = min(t, elapsed + h)
         sizes.append(float(h))
     return IntegrationResult(a, t, len(sizes), tuple(sizes))
+
+
+def integrate_etd2_adaptive(
+    field,
+    time: float,
+    *,
+    initial_state: np.ndarray,
+    geometry: np.ndarray,
+    operating: np.ndarray,
+    max_step: float,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
+    initial_step: float | None = None,
+    max_attempts: int = 100000,
+    state_validator=None,
+) -> IntegrationResult:
+    """Adaptive ETD2 with an embedded exponential-Euler error indicator.
+
+    The expensive generalized eigendecomposition is performed once.  Each trial
+    only recomputes scalar exponential coefficients and two neural heat-source
+    evaluations.  The ETD2/ETD1 difference is an O(h^2) embedded indicator; it
+    is intentionally conservative and uses a square-root controller.
+    """
+    t = float(time)
+    if not np.isfinite(t) or t < 0.0:
+        raise ValueError("integration time must be finite and non-negative")
+    hmax = float(max_step)
+    rtol = float(rtol)
+    atol = float(atol)
+    attempts_limit = int(max_attempts)
+    if not np.isfinite(hmax) or hmax <= 0.0:
+        raise ValueError("max_step must be finite and positive")
+    if not np.isfinite(rtol) or rtol <= 0.0 or not np.isfinite(atol) or atol <= 0.0:
+        raise ValueError("adaptive ETD tolerances must be finite and positive")
+    if attempts_limit < 1:
+        raise ValueError("max_attempts must be positive")
+    a = np.asarray(initial_state, dtype=float).copy()
+    g = np.asarray(geometry, dtype=float)
+    u = np.asarray(operating, dtype=float)
+    _validate_state(state_validator, a)
+    if t == 0.0:
+        return IntegrationResult(a, 0.0, 0, ())
+    if initial_step is None:
+        h = min(hmax, t)
+    else:
+        h = float(initial_step)
+        if not np.isfinite(h) or h <= 0.0:
+            raise ValueError("initial_step must be finite and positive")
+        h = min(h, hmax, t)
+
+    operator = field.thermal_operators.operator(g)
+    spectrum = GeneralizedThermalSpectrum(operator)
+
+    def source(x):
+        return field.heat_source(x, g, u)
+
+    elapsed = 0.0
+    accepted_sizes: list[float] = []
+    rejected = 0
+    attempts = 0
+    minimum_step = max(
+        np.finfo(float).eps * max(1.0, t) * 32.0,
+        np.nextafter(0.0, 1.0),
+    )
+
+    while elapsed < t:
+        attempts += 1
+        if attempts > attempts_limit:
+            raise RuntimeError("adaptive ETD2 exceeded max_attempts")
+        h = min(h, hmax, t - elapsed)
+        if h < minimum_step:
+            raise RuntimeError("adaptive ETD2 step underflow before reaching requested tolerance")
+
+        E, b1, b2 = _etd_coefficients(spectrum.lambdas, h)
+        c0 = spectrum.to_modal_state(a)
+        q0 = np.asarray(source(a), dtype=float)
+        s0 = spectrum.to_modal_source(q0)
+        c_euler = E * c0 + b1 * s0
+        stage = spectrum.from_modal_state(c_euler)
+
+        domain_rejected = False
+        try:
+            _validate_state(state_validator, stage)
+        except ValueError:
+            domain_rejected = True
+
+        if domain_rejected:
+            rejected += 1
+            h *= 0.5
+            if h < minimum_step:
+                # Re-run validation to expose the scientifically meaningful
+                # state-domain error instead of a generic step-size failure.
+                _validate_state(state_validator, stage)
+            continue
+
+        q1 = np.asarray(source(stage), dtype=float)
+        s1 = spectrum.to_modal_source(q1)
+        c2 = c_euler + b2 * (s1 - s0)
+        trial = spectrum.from_modal_state(c2)
+        try:
+            _validate_state(state_validator, trial)
+        except ValueError:
+            rejected += 1
+            h *= 0.5
+            if h < minimum_step:
+                _validate_state(state_validator, trial)
+            continue
+        if np.any(~np.isfinite(trial)):
+            raise FloatingPointError("adaptive ETD2 produced a non-finite thermal state")
+
+        error = trial - stage
+        scale = atol + rtol * np.maximum(np.abs(a), np.abs(trial))
+        error_ratio = float(np.sqrt(np.mean((error / scale) ** 2)))
+        if not np.isfinite(error_ratio):
+            raise FloatingPointError("adaptive ETD2 error indicator became non-finite")
+
+        if error_ratio <= 1.0:
+            a = trial
+            elapsed = min(t, elapsed + h)
+            accepted_sizes.append(float(h))
+            if error_ratio == 0.0:
+                factor = 5.0
+            else:
+                factor = float(np.clip(0.9 * error_ratio ** -0.5, 0.5, 5.0))
+            h = min(hmax, h * factor)
+        else:
+            rejected += 1
+            factor = float(np.clip(0.9 * error_ratio ** -0.5, 0.1, 0.5))
+            h *= factor
+
+    return IntegrationResult(
+        a,
+        t,
+        len(accepted_sizes),
+        tuple(accepted_sizes),
+        rejected_steps=rejected,
+    )
 
 
 def integrate_imex_euler(
@@ -221,8 +401,10 @@ def integrate_reference(
 
 __all__ = [
     "GeneralizedETD2Stepper",
+    "GeneralizedThermalSpectrum",
     "IntegrationResult",
     "integrate_etd2",
+    "integrate_etd2_adaptive",
     "integrate_imex_euler",
     "integrate_reference",
 ]
