@@ -121,15 +121,18 @@ def command_audit(config_file: str | Path) -> int:
         )
         print(f"audited model saved: {audited_model_path}")
     if certified_model_path is not None:
-        save_audited_model(
-            model,
-            certified_model_path,
-            report,
-            dataset_hash=manifest.dataset_hash,
-            report_path=output_path,
-            require_ready=True,
-        )
-        print(f"certified model saved: {certified_model_path}")
+        if report.readiness.ready:
+            save_audited_model(
+                model,
+                certified_model_path,
+                report,
+                dataset_hash=manifest.dataset_hash,
+                report_path=output_path,
+                require_ready=True,
+            )
+            print(f"certified model saved: {certified_model_path}")
+        else:
+            print("certified model not written: Gate report is failing or incomplete")
 
     print(f"certification report saved: {output_path}")
     print(f"gate report hash: {report_hash}")
