@@ -6,6 +6,7 @@ from .adapters import (
     fixed_research_temperature_reconstructor,
     fixed_research_tensor_factory,
     fixed_research_thermal_family,
+    fixed_research_thermal_rhs_forcing,
     fixed_research_vector_field_factory,
     geometry_research_direct_heat_factory,
     geometry_research_embedded_thermal_family,
@@ -13,6 +14,7 @@ from .adapters import (
     geometry_research_temperature_reconstructor,
     geometry_research_tensor_factory,
     geometry_research_thermal_family,
+    geometry_research_thermal_rhs_forcing,
     geometry_research_vector_field_factory,
 )
 from .audit import GateSuiteConfig, GateSuiteReport, TrajectoryAuditCase, run_gate_suite
@@ -213,6 +215,7 @@ __all__ = [
     "fixed_research_temperature_reconstructor",
     "fixed_research_tensor_factory",
     "fixed_research_thermal_family",
+    "fixed_research_thermal_rhs_forcing",
     "fixed_research_vector_field_factory",
     "frozen_split_indices",
     "gate_report_hash",
@@ -225,6 +228,7 @@ __all__ = [
     "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
     "geometry_research_thermal_family",
+    "geometry_research_thermal_rhs_forcing",
     "geometry_research_vector_field_factory",
     "hybrid_reachable_state_geometry_samples",
     "integrate_etd2",
