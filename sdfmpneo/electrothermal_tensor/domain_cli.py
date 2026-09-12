@@ -15,6 +15,7 @@ from .cli import (
     _write_json,
 )
 from .domain import probe_reachable_state_domain
+from .physical_metadata import physical_dataset_metadata
 from .provenance import state_domain_report_hash, verified_state_domain_report
 
 
@@ -60,6 +61,7 @@ def command_probe(config_file: str | Path) -> int:
         physical_signature=adapters["signature"],
     )
     report_hash = state_domain_report_hash(report)
+    physical_provenance = physical_dataset_metadata(physical)
     _write_json(
         output,
         {
@@ -67,6 +69,7 @@ def command_probe(config_file: str | Path) -> int:
             "physical_config": str(physical_config),
             "physical_signature": adapters["signature"],
             "report_hash": report_hash,
+            "physical_provenance": physical_provenance,
             "report": report,
         },
     )
@@ -94,6 +97,7 @@ def command_train(config_file: str | Path) -> int:
         work / "training.report.json",
     )
     physical = _build_physical_model(physical_config)
+    physical_provenance = physical_dataset_metadata(physical)
     operating_lower = np.asarray(config["operating_lower"], dtype=float)
     operating_upper = np.asarray(config["operating_upper"], dtype=float)
     common = dict(
@@ -136,6 +140,7 @@ def command_train(config_file: str | Path) -> int:
         {
             "state_domain_report": str(domain_report),
             "state_domain_report_hash": domain_hash,
+            "physical_provenance": physical_provenance,
         }
     )
     dataset = QuadraticJouleDataset(
@@ -159,6 +164,7 @@ def command_train(config_file: str | Path) -> int:
             "sampling": _jsonable(result.sampling_report),
             "state_domain_report": str(domain_report),
             "state_domain_report_hash": domain_hash,
+            "physical_provenance": physical_provenance,
             "physical_config": str(physical_config),
         },
     )
@@ -170,6 +176,7 @@ def command_train(config_file: str | Path) -> int:
             "physical_signature": result.physical_signature,
             "state_domain_report": str(domain_report),
             "state_domain_report_hash": domain_hash,
+            "physical_provenance": physical_provenance,
             "dataset_manifest": manifest,
             "sampling": result.sampling_report,
             "pod_rank": result.pod.rank,
