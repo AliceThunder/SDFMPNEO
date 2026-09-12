@@ -72,6 +72,7 @@ def command_train(config_file: str | Path) -> int:
     work = _path(config_path, config.get("work_directory"), "neural_rom_work")
     model_path = _path(config_path, config.get("model_path"), work / "neural_electrothermal_rom.npz")
     report_path = _path(config_path, config.get("training_report"), work / "training.report.json")
+    device = None if config.get("device") is None else str(config["device"])
 
     common = dict(
         state_lower=np.asarray(config["state_lower"], dtype=float),
@@ -86,6 +87,7 @@ def command_train(config_file: str | Path) -> int:
         pod_config=config.get("pod"),
         network_config=config.get("network"),
         training_config=config.get("training"),
+        device=device,
         save_model=False,
         snapshot_workers=int(config.get("snapshot_workers", 1)),
         checkpoint_every=int(config.get("checkpoint_every", 16)),
@@ -134,6 +136,7 @@ def command_retrain(config_file: str | Path) -> int:
     template_path = _path(config_path, config.get("template_model_path"))
     work = _path(config_path, config.get("work_directory"), "neural_rom_retrain")
     model_path = _path(config_path, config.get("model_path"), work / "neural_electrothermal_rom.retrained.npz")
+    device = None if config.get("device") is None else str(config["device"])
 
     from .dataset import QuadraticJouleDataset
     from .model import StructurePreservingNeuralElectroThermalROM
@@ -143,7 +146,7 @@ def command_retrain(config_file: str | Path) -> int:
     template = StructurePreservingNeuralElectroThermalROM.load(
         template_path,
         expected_physical_signature=dataset.metadata.get("physical_signature"),
-        device=str(config.get("device", "cpu")),
+        device=device or "cpu",
     )
     result = retrain_neural_rom(
         dataset,
@@ -154,6 +157,7 @@ def command_retrain(config_file: str | Path) -> int:
         pod_config=config.get("pod"),
         network_config=config.get("network"),
         training_config=config.get("training"),
+        device=device,
         save_model=False,
     )
     result.model.save(
