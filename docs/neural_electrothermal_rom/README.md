@@ -10,7 +10,7 @@
 python -m pip install -e '.[neural,dev]'
 ```
 
-新路线使用独立命令，不经过旧解析响应网络训练器。推荐顺序是**先探测可达热状态域，再训练**：
+新路线使用独立命令，不经过旧解析响应网络训练器。推荐顺序是**先探测可达热状态域，再训练，再做冻结认证**：
 
 ```bash
 sdfmpneo-domain probe --config examples/neural_electrothermal_rom/domain_probe.example.json
@@ -18,11 +18,13 @@ sdfmpneo-domain train --config examples/neural_electrothermal_rom/train_from_dom
 sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
 sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
 sdfmpneo-neural audit --config examples/neural_electrothermal_rom/audit.example.json
+sdfmpneo-certify audit --config examples/neural_electrothermal_rom/certify.example.json
+sdfmpneo-diagnose --config examples/neural_electrothermal_rom/diagnose.example.json
 ```
 
 仍保留直接指定 `state_lower/state_upper` 的 `sdfmpneo-neural train`，主要用于低维研究和调试。
 
-项目不使用 GitHub Actions；验证入口保留为本地 `pytest` 与 `audit`。
+项目不使用 GitHub Actions；验证入口保留为本地 `pytest`、开发 `audit` 和正式 `sdfmpneo-certify audit`。
 
 ## 1. Domain probe：先用真实物理确定 neural state box
 
@@ -38,16 +40,18 @@ sdfmpneo-neural audit --config examples/neural_electrothermal_rom/audit.example.
 - 每个 thermal coordinate 的安全 margin；
 - 建议的 `suggested_state_lower/upper`；
 - 成功/失败的 steady-state 数量；
-- 物理签名、工况域和几何域。
+- 物理签名、工况域和几何域；
+- 对 report 内容本身的 SHA-256。
 
 Domain report 是冻结工件。后续 `sdfmpneo-domain train` 会同时检查：
 
-1. `physical_signature` 完全匹配；
-2. thermal rank 匹配；
-3. geometry 域匹配；
-4. operating 域匹配。
+1. report SHA-256 未被修改；
+2. `physical_signature` 完全匹配；
+3. thermal rank 匹配；
+4. geometry 域匹配；
+5. operating 域匹配。
 
-任一不一致都拒绝复用，不会只复制 bounds。
+任一不一致都拒绝复用，不会只复制 bounds。Domain report hash 会继续写入冻结 tensor dataset 和最终 neural model metadata，形成 report → dataset → model 的 provenance 链。
 
 Domain probe 仍然只是**采样覆盖证据**，不是数学可达集证明；最终独立 Gate 6 长时间轨迹仍必须覆盖目标工况。
 
@@ -67,6 +71,10 @@ Domain probe 仍然只是**采样覆盖证据**，不是数学可达集证明；
 - `training.report.json`：训练、采样和数据版本摘要。
 
 网络训练阶段不会调用 EM solver，也不使用瞬态轨迹作为监督标签。
+
+冻结 dataset 会记录 physical/ROM provenance，包括 thermal backend/rank、EM reduced rank、频率、constitutive error budget、current dimension、EM reduction certificate 摘要、geometry certificate 摘要和源码 revision。大数组不直接塞进 manifest，而记录 shape/dtype/hash。
+
+训练报告除 loss 外还记录随机种子、network/training config、AdamW/learning-rate 设置、precision/mixed precision、Python/NumPy/SciPy/PyTorch 版本、设备/GPU 信息和 Git revision。
 
 ### 2.1 完整 state box，而不是 initial-state box
 
@@ -114,6 +122,8 @@ sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.exam
 
 它不会构建 EM problem、不会重新生成标签。POD rank、MLP width/depth、optimizer、mixed precision 等实验都应该走这条路径。
 
+重新训练会继承 dataset/physics provenance，但**不会继承旧模型的 certification**；网络权重改变后必须重新跑 Gate 1--7。
+
 ## 4. Predict：自包含在线模型
 
 `predict` 只加载 neural `.npz`。固定几何和当前 affine geometry family 都不需要物理 JSON 或 EM ROM。
@@ -124,7 +134,7 @@ sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.exam
 M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 \]
 
-推荐有限时间方法为 `etd2_adaptive`：广义谱分解每个 geometry 只做一次，之后用 ETD1/ETD2 嵌入误差指标自动调整步长。热响应进入慢尾部后会自然使用大步长；`rtol/atol/max_step` 仍由用户显式控制。
+推荐有限时间方法为 `etd2_adaptive`：广义谱分解每个 geometry 只做一次，之后用 ETD1/ETD2 嵌入误差指标自动调整步长。热响应进入慢尾部后会自然使用大步长；`rtol/atol/max_step/max_attempts` 仍由用户显式控制。
 
 固定步长 `etd2` 和鲁棒参考 `imex` 仍保留。`times` 中字符串 `"inf"` 调用独立稳态求解器，不把有限时间积分无限延长。
 
@@ -136,9 +146,25 @@ M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
 
 即使显式打开 state/operating extrapolation，embedded geometry family 仍不会允许超出保存的几何 chart。
 
-## 5. Audit / Gate 1--7
+### 4.1 批量固定步长 ETD2
 
-`audit` 会重新构建真实物理模型，仅用于独立对照，并验证 neural 模型保存的物理签名。
+独立查询若共享同一 geometry 和同一目标时间，可用模型 facade 的：
+
+```python
+batch = model.predict_batch_fixed_etd2(
+    100.0,
+    initial_states=A0,      # (batch, thermal_rank)
+    geometry=g,             # shared geometry
+    operating=U,            # (batch, current_dimension)
+    max_step=1.0,
+)
+```
+
+批量实现共享一次 generalized thermal spectrum；每个 ETD stage 对整批状态只做一次 MLP forward，最终导数使用 dense multi-RHS thermal solve。时间步之间仍保持串行，因为动力学有真实因果依赖。自适应 ETD 不强行把不同轨迹绑定到同一 error history。
+
+## 5. 开发 Audit / Gate 1--7
+
+`sdfmpneo-neural audit` 会重新构建真实物理模型，仅用于独立对照，并验证 neural 模型保存的物理签名。
 
 当前自动执行：
 
@@ -159,7 +185,46 @@ Production readiness 是 fail-closed：没有完整 Gate 3、Gate 7 的明确时
 
 `reproducible_training` 与 `persistence_roundtrip` 也必须由正式实验明确填写，不能自动假定为真。
 
-## 6. 在线结构
+## 6. 正式 Certification：冻结报告并写回模型证据
+
+正式生产判定使用：
+
+```bash
+sdfmpneo-certify audit --config examples/neural_electrothermal_rom/certify.example.json
+```
+
+它在普通 audit 基础上额外执行 fail-closed 绑定：
+
+- physical signature 必须与当前真实物理模型一致；
+- dataset physical signature 必须一致；
+- 如果 neural model 已记录训练 dataset hash，则待认证 dataset 必须是同一个冻结 dataset；
+- Gate report 本身生成内容 hash；
+- `audited_model_output` 可保存成功或失败的冻结审计证据；
+- `certified_model_output` **只有全部 Gate 真正通过时才生成**。
+
+模型格式当前为 v3；v1/v2 仍可只读加载。v3 在 load → save 时保留原训练 metadata，并递归追加 certification，而不会覆盖 dataset hash、training report、domain provenance 等历史证据。
+
+`examples/.../certify.example.json` 默认把 `reproducible_training` 与 `persistence_roundtrip` 留为 `false`，因此示例本身不会误生成认证模型；必须先有真实证据再显式改为 `true`。
+
+## 7. EM 输出诊断：按需算阻抗/损耗，不污染快速在线路径
+
+普通 `predict` 始终是 neural + exact thermal operators，不加载 EM。只有需要阻抗、互感/电感、区域损耗或 EM residual 时才运行：
+
+```bash
+sdfmpneo-diagnose --config examples/neural_electrothermal_rom/diagnose.example.json
+```
+
+流程是：
+
+1. neural model 给出指定时间的热状态 `a(t)` 或稳态；
+2. 检查 neural/physical signature 一致；
+3. 在该 `a(t)` 上调用真实 reduced EM；
+4. 输出真实 EM heat source、drive-RHS residual、端口阻抗/证书、区域损耗；
+5. 同时报告 `q_theta` 与真实 EM heat source 的误差。
+
+因此阻抗不是第二个独立神经网络，也不会在训练时引入额外输出拟合；它始终由与该热状态一致的真实 reduced EM 计算。
+
+## 8. 在线结构
 
 ```text
 (a, normalized geometry)
@@ -174,7 +239,7 @@ Production readiness 是 fail-closed：没有完整 Gate 3、Gate 7 的明确时
 
 网络不直接输入时间，也不直接输入电流；电流只进入 hard quadratic physics layer。
 
-## 7. 本地测试
+## 9. 本地测试
 
 ```bash
 python -m pytest -q \
@@ -188,6 +253,7 @@ python -m pytest -q \
   tests/test_neural_geometry_persistence.py \
   tests/test_neural_snapshot_sampling.py \
   tests/test_reachable_state_domain.py \
+  tests/test_neural_batch_inference.py \
   tests/test_neural_gate_suite.py
 ```
 
@@ -197,6 +263,6 @@ python -m pytest -q \
 python -m pytest -q
 ```
 
-## 8. Production 切换原则
+## 10. Production 切换原则
 
-当前实现分支提供物理域探测、训练、无 EM retrain、自包含推理和 Gate audit 能力，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算后，才允许切换默认模型。
+当前实现分支提供物理域探测、训练、无 EM retrain、自包含推理、批量推理、Gate audit、正式认证和按需 EM 输出诊断，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算，并由 `sdfmpneo-certify audit` 产出 certified model 后，才允许切换默认模型。
