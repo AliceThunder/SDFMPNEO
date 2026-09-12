@@ -1,0 +1,13 @@
+{
+  "model_path": "../../results/uwpt/neural_rom/model.npz",
+  "output": "../../results/uwpt/neural_rom/predictions.json",
+  "device": "cpu",
+  "initial_state": [0.0, 0.0],
+  "operating": [5.0, 0.0],
+  "times": [0.0, 0.001, 1.0, 1000.0, "inf"],
+  "max_step": 1.0,
+  "method": "etd2",
+  "allow_extrapolation": false,
+  "steady_tolerance": 1e-10,
+  "steady_max_iterations": 40
+}
