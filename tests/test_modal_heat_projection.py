@@ -76,3 +76,30 @@ def test_fused_reduced_modal_heat_avoids_full_em_state_reconstruction(monkeypatc
     monkeypatch.setattr(model, "state_for_rhs", forbidden)
     observed = heat_source_for_reduced_model(model, state, rhs)
     np.testing.assert_allclose(observed, expected, rtol=5e-12, atol=1e-9)
+
+
+def test_fused_reduced_modal_heat_reuses_preprojected_rhs(monkeypatch):
+    problem = _problem()
+    basis = np.eye(problem.n_em, dtype=complex)
+    model = SparseEnergyReducedEMModel(
+        problem,
+        basis,
+        reference_energy_metric=sp.eye(problem.n_em, dtype=complex, format="csr"),
+    )
+    state = np.array([-0.04, 0.09])
+    rhs = np.linspace(-0.5, 0.7, problem.n_em).astype(complex)
+    rhs += 1j * np.linspace(0.25, -0.15, problem.n_em)
+    prepared = model.rhs_reduced(rhs)
+    expected = heat_source_for_reduced_model(model, state, rhs)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("prepared candidate recomputed V^H b")
+
+    monkeypatch.setattr(model, "rhs_reduced", forbidden)
+    observed = heat_source_for_reduced_model(
+        model,
+        state,
+        rhs,
+        reduced_rhs=prepared,
+    )
+    np.testing.assert_allclose(observed, expected, rtol=5e-12, atol=1e-9)
