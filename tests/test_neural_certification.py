@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 from sdfmpneo.electrothermal_tensor.certification import (
+    TrainingReproductionReport,
     audit_evidence,
     gate_report_hash,
     save_audited_model,
@@ -104,6 +105,25 @@ def _complete_training_metadata(dataset_hash="dataset-123"):
     }
 
 
+def _successful_reproduction():
+    return TrainingReproductionReport(
+        passed=True,
+        attempted=True,
+        provenance_complete=True,
+        device="cpu",
+        sample_count=5,
+        maximum_packed_tensor_absolute_error=0.0,
+        maximum_packed_tensor_relative_error=0.0,
+        maximum_heat_source_absolute_error=0.0,
+        maximum_heat_source_relative_error=0.0,
+        original_best_epoch=3,
+        reproduced_best_epoch=3,
+        original_epochs_completed=5,
+        reproduced_epochs_completed=5,
+        detail="ok",
+    )
+
+
 def test_gate_report_hash_is_deterministic_and_evidence_binds_dataset():
     report = _report(ready=True)
     first = gate_report_hash(report)
@@ -123,7 +143,7 @@ def test_gate_report_hash_is_deterministic_and_evidence_binds_dataset():
     assert evidence["active_subspace"]["method"] == "full"
 
 
-def test_training_reproducibility_is_derived_from_saved_evidence_and_dataset_hash():
+def test_training_provenance_is_derived_from_saved_evidence_and_dataset_hash():
     model = _FakeModel(_complete_training_metadata())
     evidence = training_reproducibility_evidence(
         model,
@@ -144,7 +164,7 @@ def test_training_reproducibility_is_derived_from_saved_evidence_and_dataset_has
     assert "dataset_hash_match" in mismatch["missing"]
 
 
-def test_training_reproducibility_fails_closed_when_provenance_is_missing():
+def test_training_provenance_fails_closed_when_evidence_is_missing():
     evidence = training_reproducibility_evidence(_FakeModel(), expected_dataset_hash="dataset-123")
     assert evidence["complete"] is False
     assert "training_report" in evidence["missing"]
@@ -177,10 +197,11 @@ def test_certified_model_requires_ready_report_but_audited_copy_does_not():
         )
 
 
-def test_ready_report_can_create_certified_model_metadata():
+def test_ready_report_can_create_certified_model_metadata_with_separate_evidence_levels():
     report = _report(ready=True)
     model = _FakeModel()
-    reproducibility = {"complete": True, "training_seed": 7}
+    provenance = {"complete": True, "training_seed": 7}
+    reproduction = _successful_reproduction()
     saved = save_audited_model(
         model,
         "certified.npz",
@@ -188,10 +209,12 @@ def test_ready_report_can_create_certified_model_metadata():
         dataset_hash="dataset-123",
         report_path="report.json",
         require_ready=True,
-        reproducibility_evidence=reproducibility,
+        provenance_evidence=provenance,
+        training_reproduction=reproduction,
     )
     assert saved == "certified.npz"
     metadata = model.calls[-1][1]["certification"]
     assert metadata["production_ready"] is True
     assert metadata["dataset_hash"] == "dataset-123"
-    assert metadata["training_reproducibility"]["complete"] is True
+    assert metadata["training_provenance"]["complete"] is True
+    assert metadata["training_reproduction"]["passed"] is True
