@@ -1,0 +1,123 @@
+\section{稳定性、误差传播与证书层级}
+
+\subsection{真实与神经动力系统}
+真实 reduced model 为
+\begin{equation}
+M\dot a=-Ka+q(a,g,u),
+\end{equation}
+神经模型为
+\begin{equation}
+M\dot{\hat a}=-K\hat a+q_\theta(\hat a,g,u),
+\end{equation}
+两者使用完全相同的 $M(g),K(g)$ 和初值。
+
+\subsection{热源张量误差到热源误差}
+由二次型结构
+\begin{equation}
+q_j=\zeta^\top G_j\zeta,
+\qquad
+q_{\theta,j}=\zeta^\top G_{\theta,j}\zeta,
+\end{equation}
+得到
+\begin{equation}
+\abs{q_{\theta,j}-q_j}
+\le
+\norm{G_{\theta,j}-G_j}_2\,\norm{\zeta}_2^2.
+\end{equation}
+若 operating 域给出 $\norm{\zeta}\le C_u$，并有统一张量误差界
+\begin{equation}
+\norm{G_\theta-G}\le \varepsilon_G,
+\end{equation}
+则可写成
+\begin{equation}
+\norm{q_\theta-q}\le C_G C_u^2\varepsilon_G,
+\end{equation}
+其中 $C_G$ 只由所选张量范数和 thermal rank 约定决定。
+
+\subsection{有限时间一般误差界}
+令 $e=\hat a-a$。若真实/神经向量场在目标域内对状态满足 Lipschitz 上界 $L_F$，且
+\begin{equation}
+\norm{M^{-1}(q_\theta-q)}\le\varepsilon_F,
+\end{equation}
+则由 Gr\"onwall 不等式，在 $e(0)=0$ 时
+\begin{equation}
+\boxed{
+\norm{e(t)}
+\le
+\begin{cases}
+\varepsilon_F\dfrac{\mathrm e^{L_Ft}-1}{L_F}, & L_F>0,\\[0.7em]
+\varepsilon_F t, & L_F=0.
+\end{cases}
+}
+\end{equation}
+该界可能保守，但在不存在全域收缩证明时是正确的理论基线。
+
+\subsection{收缩情形的统一长时间界}
+若在某一能量范数下真实动力系统满足 one-sided Lipschitz/对数范数条件
+\begin{equation}
+\mu(J_F(a,g,u))\le-\gamma<0
+\quad \forall(a,g,u)\in\mathcal D,
+\end{equation}
+则
+\begin{equation}
+\boxed{
+\norm{e(t)}
+\le
+\frac{\varepsilon_F}{\gamma}
+\left(1-\mathrm e^{-\gamma t}\right)
+\le
+\frac{\varepsilon_F}{\gamma}.
+}
+\end{equation}
+这给出最有价值的 long-time error saturation。注意：只有在真实物理 Jacobian 的目标域分析确认 $\gamma>0$ 后，才允许宣称该结论。
+
+\subsection{禁止未经验证的硬收缩约束}
+热扩散项本身耗散，但
+\begin{equation}
+J_F=-M^{-1}K+M^{-1}\frac{\partial q}{\partial a}
+\end{equation}
+可能因电热正反馈接近或进入不稳定区。因此 V1 不强制网络全域 contractive。若真实系统分析得到 uniform contraction margin，再考虑 spectral normalization、Lipschitz-constrained layers 等结构作为 V2，加强而不是改变真实动力学。
+
+\subsection{总误差预算}
+生产误差必须分解为独立来源：
+\begin{equation}
+\boxed{
+E_{\mathrm{total}}
+\lesssim
+E_{\mathrm{constitutive}}
++E_{\mathrm{EM-ROM}}
++E_{\mathrm{thermal-ROM}}
++E_{\mathrm{POD}}
++E_{\mathrm{NN}}
++E_{\mathrm{time}}.
+}
+\end{equation}
+这里 ``$\lesssim$'' 表示还需通过相应 stability/sensitivity 常数传播，不能把不同量纲和范数的误差直接数值相加。
+
+\subsection{温度场与输出误差传播}
+由于
+\begin{equation}
+T=T_{\mathrm{ref}}+\Phi a+T_{\mathrm{tail}},
+\end{equation}
+可得
+\begin{equation}
+\norm{T_\theta-T}_\infty
+\le
+\norm{\Phi}_{2\to\infty}\norm{e}_2
++\norm{T_{\mathrm{tail}}}_\infty.
+\end{equation}
+对阻抗或其他输出 $Y=\mathcal O(a,g,u)$，若能建立
+\begin{equation}
+\abs{\mathcal O(\hat a,g,u)-\mathcal O(a,g,u)}
+\le L_\mathcal O\norm{\hat a-a},
+\end{equation}
+则可继续得到输出误差界。否则使用 frozen audit set 数值验证，不虚构严格 Lipschitz certificate。
+
+\subsection{证书层级必须严格区分}
+项目中所有 ``certificate'' 或 ``validated'' 字样按以下层级使用：
+\begin{enumerate}
+  \item \textbf{严格证书：}数学上覆盖完整声明参数域，例如几何非翻转证明、材料多项式截断界、满足前提的 ROM residual bound。
+  \item \textbf{条件定理：}如上述 contraction error bound；仅在已验证假设成立时生效。
+  \item \textbf{冻结测试验证：}有限 test set 上的 $G/q/F$/trajectory 最大误差，不称为全域 certificate。
+  \item \textbf{经验诊断：}POD 能量、active-subspace 谱、采样 envelope 等，用于设计选择而非严格保证。
+\end{enumerate}
