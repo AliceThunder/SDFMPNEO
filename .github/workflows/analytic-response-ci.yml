@@ -32,3 +32,4 @@ jobs:
           tests/test_modal_heat_projection.py
           tests/test_geometry_context_runtime.py
           tests/test_fast_reduced_equivalence.py
+          tests/test_compiled_restart_runtime.py
