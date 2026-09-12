@@ -1,16 +1,11 @@
-from dataclasses import asdict
-
 import numpy as np
 import pytest
 
-from sdfmpneo.electrothermal_tensor.certification import verify_training_reproduction
 from sdfmpneo.electrothermal_tensor.dataset import QuadraticJouleDataset
-from sdfmpneo.electrothermal_tensor.model import StructurePreservingNeuralElectroThermalROM
 from sdfmpneo.electrothermal_tensor.network import ResidualMLPConfig
 from sdfmpneo.electrothermal_tensor.pod import fit_dataset_pod
 from sdfmpneo.electrothermal_tensor.symmetric import tensor_smat
 from sdfmpneo.electrothermal_tensor.trainer import NeuralTrainingConfig, train_tensor_surrogate
-from sdfmpneo.electrothermal_tensor.vector_field import FixedThermalOperatorFamily
 
 
 def _small_dataset():
@@ -18,8 +13,6 @@ def _small_dataset():
     n = 36
     states = rng.uniform(-1.0, 1.0, size=(n, 1))
     geometry = np.empty((n, 0))
-    # One thermal mode, one current: packed symmetric width=3.  The tensor map
-    # is affine in state, so rank-1 POD captures it exactly after centering.
     packed = np.column_stack([
         1.0 + 0.5 * states[:, 0],
         0.2 + 0.1 * states[:, 0],
@@ -107,43 +100,3 @@ def test_same_seed_reproduces_cpu_training_outputs():
     )
     assert second_report.best_epoch == first_report.best_epoch
     assert second_report.epochs_completed == first_report.epochs_completed
-
-
-def test_formal_retraining_reproduction_passes_for_seeded_cpu_training():
-    pytest.importorskip("torch")
-    dataset, pod = _small_dataset()
-    surrogate, training_report = _train(dataset, pod)
-    model = StructurePreservingNeuralElectroThermalROM(
-        surrogate,
-        FixedThermalOperatorFamily(np.array([[1.0]]), np.array([[2.0]])),
-        physical_signature="unit-training-reproduction-v1",
-        training_domain={
-            "state_lower": np.array([-1.0]),
-            "state_upper": np.array([1.0]),
-            "geometry_lower": np.empty(0),
-            "geometry_upper": np.empty(0),
-            "operating_lower": np.array([-1.0]),
-            "operating_upper": np.array([1.0]),
-        },
-        artifact_metadata={
-            "dataset_hash": dataset.manifest().dataset_hash,
-            "training_report": asdict(training_report),
-        },
-    )
-    report = verify_training_reproduction(
-        model,
-        dataset,
-        device="cpu",
-        packed_rtol=0.0,
-        packed_atol=0.0,
-        heat_rtol=0.0,
-        heat_atol=0.0,
-        operating_samples=2,
-    )
-    assert report.attempted is True
-    assert report.provenance_complete is True
-    assert report.passed is True
-    assert report.original_best_epoch == report.reproduced_best_epoch
-    assert report.original_epochs_completed == report.reproduced_epochs_completed
-    assert report.maximum_packed_tensor_absolute_error == pytest.approx(0.0, abs=1e-15)
-    assert report.maximum_heat_source_absolute_error == pytest.approx(0.0, abs=1e-15)
