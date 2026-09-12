@@ -1,14 +1,40 @@
 """Neural tensor surrogate: ordinary MLP coefficients plus hard physics decoder."""
 from __future__ import annotations
 
+from collections import OrderedDict
+from dataclasses import dataclass
+
 import numpy as np
 
 from .physical_layer import (
     decode_heat_source_batch_numpy,
-    decode_heat_source_numpy,
     decode_heat_source_torch,
 )
 from .pod import TensorPOD
+from .symmetric import quadratic_feature
+
+
+@dataclass(frozen=True)
+class PreparedOperatingQuadraticLayer:
+    """Exact operating-specific contraction of the POD Joule tensor.
+
+    For fixed operating parameters ``u`` the expensive current-feature
+    contraction is state independent:
+
+        q(a,g,u) = mean_q(u) + basis_q(u) beta(a,g).
+
+    A trajectory can therefore reuse these two small arrays for every ETD stage.
+    """
+
+    operating: np.ndarray
+    mean_heat: np.ndarray
+    coefficient_to_heat: np.ndarray
+
+    def evaluate(self, coefficients: np.ndarray) -> np.ndarray:
+        beta = np.asarray(coefficients, dtype=float).reshape(-1)
+        if beta.shape != (self.coefficient_to_heat.shape[1],) or np.any(~np.isfinite(beta)):
+            raise ValueError("prepared operating layer coefficient dimension mismatch")
+        return self.mean_heat + self.coefficient_to_heat @ beta
 
 
 class NeuralTensorSurrogate:
@@ -43,6 +69,8 @@ class NeuralTensorSurrogate:
             raise ValueError("surrogate state/geometry dimensions are invalid")
         self.coefficient_mean = mean
         self.coefficient_scale = scale
+        self._operating_cache: OrderedDict[tuple[float, ...], PreparedOperatingQuadraticLayer] = OrderedDict()
+        self._operating_cache_size = 16
 
     @property
     def input_dimension(self) -> int:
@@ -96,9 +124,36 @@ class NeuralTensorSurrogate:
     def predict_packed_numpy(self, state, geometry) -> np.ndarray:
         return self.pod.decode(self.predict_coefficients_numpy(state, geometry))
 
+    def prepare_operating_numpy(self, operating) -> PreparedOperatingQuadraticLayer:
+        """Precontract the exact quadratic-current POD layer for one operating point."""
+        u = np.asarray(operating, dtype=float).reshape(-1)
+        if u.shape != (self.pod.current_dimension,) or np.any(~np.isfinite(u)):
+            raise ValueError("operating/current dimension mismatch")
+        key = tuple(float(v) for v in u)
+        cached = self._operating_cache.get(key)
+        if cached is not None:
+            self._operating_cache.move_to_end(key)
+            return cached
+        feature = quadratic_feature(u)
+        n_sym = self.pod.packed_symmetric_size
+        mean_modes = self.pod.mean.reshape(self.pod.thermal_rank, n_sym)
+        basis_modes = self.pod.basis.reshape(self.pod.thermal_rank, n_sym, self.pod.rank)
+        prepared = PreparedOperatingQuadraticLayer(
+            operating=u.copy(),
+            mean_heat=np.asarray(mean_modes @ feature, dtype=float),
+            coefficient_to_heat=np.asarray(
+                np.einsum("rsk,s->rk", basis_modes, feature, optimize=True),
+                dtype=float,
+            ),
+        )
+        self._operating_cache[key] = prepared
+        if len(self._operating_cache) > self._operating_cache_size:
+            self._operating_cache.popitem(last=False)
+        return prepared
+
     def heat_source_numpy(self, state, geometry, operating) -> np.ndarray:
         beta = self.predict_coefficients_numpy(state, geometry)
-        return decode_heat_source_numpy(beta, self.pod, operating)
+        return self.prepare_operating_numpy(operating).evaluate(beta)
 
     def heat_source_batch_numpy(self, states, geometries, operating) -> np.ndarray:
         """Vectorized heat source for aligned state/geometry/operating batches."""
@@ -130,4 +185,4 @@ class NeuralTensorSurrogate:
         return decode_heat_source_torch(beta, mean, basis, self.pod.thermal_rank, operating)
 
 
-__all__ = ["NeuralTensorSurrogate"]
+__all__ = ["NeuralTensorSurrogate", "PreparedOperatingQuadraticLayer"]
