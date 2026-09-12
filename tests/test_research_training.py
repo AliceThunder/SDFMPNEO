@@ -5,6 +5,10 @@ from types import SimpleNamespace
 import numpy as np
 
 from sdfmpneo.analytic.fixed_response_network import FixedAnalyticResponseNetwork
+from sdfmpneo.training.fixed_layer_cache_runtime import (
+    evaluate_layer_physics as evaluate_cached_layer_physics,
+    prewarm_layer_basis,
+)
 from sdfmpneo.training.fixed_physics_runtime import evaluate_physics_batch
 from sdfmpneo.training.fixed_trial_runtime import (
     _AFFINE_POINT_CACHE,
@@ -43,6 +47,16 @@ class _NonlinearTwoModeField:
             -a[0] + 0.4 + 0.2 * a[0] * a[0],
             -2.0 * a[1] - 0.3 + 0.15 * a[0] * a[1],
         ])
+
+    def evaluate(self, a, operating):
+        a = np.asarray(a, dtype=float)
+        return SimpleNamespace(
+            vector_field=self.vector_field(a, operating),
+            vector_field_jacobian=np.asarray([
+                [-1.0 + 0.4 * a[0], 0.0],
+                [0.15 * a[1], -2.0 + 0.15 * a[0]],
+            ]),
+        )
 
 
 class _StopAfterFirstAccepted:
@@ -159,6 +173,57 @@ def test_deep_candidate_affine_cache_matches_full_exact_residual():
         fast_next.residual, exact_next.residual, rtol=2e-12, atol=2e-13
     )
     assert len(_AFFINE_POINT_CACHE) == 1
+
+
+def test_deep_layer_jacobian_reuses_prewarmed_affine_basis():
+    base = _deep_network()
+    theta = base.parameters.copy()
+    theta[base._indices("bias_1")[0]] = 0.09
+    theta[base._indices("hidden_linear_out_1")[0, 0]] = -0.06
+    network = base.with_parameters(theta)
+    points = np.asarray([
+        [0.25, -0.15, 0.7],
+        [-0.10, 0.35, 1.2],
+        [0.40, 0.05, 1.7],
+    ])
+    field = _NonlinearTwoModeField()
+
+    _AFFINE_POINT_CACHE.clear()
+    assert prewarm_layer_basis(network, points, 1)
+    cache_size = len(_AFFINE_POINT_CACHE)
+    assert cache_size == len(points)
+
+    records, ids = evaluate_cached_layer_physics(network, field, points, 1)
+    assert len(_AFFINE_POINT_CACHE) == cache_size
+    for point, record in zip(points, records):
+        a, da, ja, jda, direct_ids = network.evaluate_layer_amplitude_jacobian(
+            float(point[-1]), a0=point[:2], operating=(), layer=1
+        )
+        exact = field.evaluate(a, ())
+        np.testing.assert_array_equal(ids, direct_ids)
+        np.testing.assert_allclose(
+            record.residual,
+            da - exact.vector_field,
+            rtol=2e-12,
+            atol=2e-13,
+        )
+        np.testing.assert_allclose(
+            record.parameter_jacobian,
+            jda - exact.vector_field_jacobian @ ja,
+            rtol=2e-12,
+            atol=2e-13,
+        )
+
+    trial_theta = network.parameters.copy()
+    trial_theta[ids] += np.linspace(-1e-3, 2e-3, len(ids))
+    trial = network.with_parameters(trial_theta)
+    next_records, next_ids = evaluate_cached_layer_physics(trial, field, points, 1)
+    np.testing.assert_array_equal(next_ids, ids)
+    assert len(_AFFINE_POINT_CACHE) == cache_size
+    assert any(
+        not np.allclose(old.residual, new.residual)
+        for old, new in zip(records, next_records)
+    )
 
 
 def test_iteration_limit_is_a_soft_block_not_a_stall_condition():
