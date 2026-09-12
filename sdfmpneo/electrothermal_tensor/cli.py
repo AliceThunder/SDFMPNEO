@@ -1,8 +1,9 @@
 """Command line entry point for the structure-preserving neural electrothermal ROM.
 
 The CLI is intentionally independent from the legacy analytic-response trainer.
-It consumes the same physical JSON model configuration, but electromagnetic
-physics is used only for offline tensor labels and audit references.
+It consumes the same physical JSON model configuration for initial tensor-label
+training and audits, but electromagnetic physics is absent from neural retraining
+and online prediction.
 """
 from __future__ import annotations
 
@@ -169,6 +170,71 @@ def command_train(config_file: str | Path) -> int:
     return 0
 
 
+def command_retrain(config_file: str | Path) -> int:
+    """Retrain POD/MLP from frozen tensors with no physical/EM model construction."""
+    config_path, config = _read_json(config_file)
+    dataset_path = _path_from_config(config_path, config.get("dataset_path"))
+    template_path = _path_from_config(config_path, config.get("template_model_path"))
+    work = _path_from_config(config_path, config.get("work_directory"), "neural_rom_retrain")
+    model_path = _path_from_config(
+        config_path,
+        config.get("model_path"),
+        work / "neural_electrothermal_rom.retrained.npz",
+    )
+    report_path = _path_from_config(
+        config_path,
+        config.get("training_report"),
+        work / "retraining.report.json",
+    )
+    from .dataset import QuadraticJouleDataset
+    from .model import StructurePreservingNeuralElectroThermalROM
+    from .pipeline import retrain_neural_rom
+
+    dataset = QuadraticJouleDataset.load(dataset_path)
+    template = StructurePreservingNeuralElectroThermalROM.load(
+        template_path,
+        expected_physical_signature=dataset.metadata.get("physical_signature"),
+        device=str(config.get("device", "cpu")),
+    )
+    result = retrain_neural_rom(
+        dataset,
+        template,
+        work_directory=work,
+        pod_rank=config.get("pod_rank"),
+        pod_relative_tail_tolerance=float(config.get("pod_relative_tail_tolerance", 1e-4)),
+        network_config=config.get("network"),
+        training_config=config.get("training"),
+        save_model=False,
+    )
+    result.model.save(
+        model_path,
+        metadata={
+            "dataset_hash": dataset.manifest().dataset_hash,
+            "pod_rank": result.pod.rank,
+            "training_report": _jsonable(result.training_report),
+            "retrained_without_em": True,
+            "template_model": str(template_path),
+        },
+    )
+    _write_json(
+        report_path,
+        {
+            "model": str(model_path),
+            "template_model": str(template_path),
+            "dataset": str(dataset_path),
+            "dataset_manifest": dataset.manifest(),
+            "physical_signature": result.physical_signature,
+            "pod_rank": result.pod.rank,
+            "pod_energy_fraction": result.pod.energy_fraction(),
+            "training": result.training_report,
+            "retrained_without_em": True,
+        },
+    )
+    print(f"retrained neural ROM saved: {model_path}")
+    print("electromagnetic model was not constructed")
+    return 0
+
+
 def command_predict(config_file: str | Path) -> int:
     config_path, config = _read_json(config_file)
     from .model import StructurePreservingNeuralElectroThermalROM
@@ -293,12 +359,14 @@ def main(argv=None) -> int:
         description="Structure-preserving quadratic-current neural electrothermal ROM"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("train", "predict", "audit"):
+    for name in ("train", "retrain", "predict", "audit"):
         command = sub.add_parser(name)
         command.add_argument("--config", required=True, help=f"JSON configuration for {name}")
     args = parser.parse_args(argv)
     if args.command == "train":
         return command_train(args.config)
+    if args.command == "retrain":
+        return command_retrain(args.config)
     if args.command == "predict":
         return command_predict(args.config)
     if args.command == "audit":
