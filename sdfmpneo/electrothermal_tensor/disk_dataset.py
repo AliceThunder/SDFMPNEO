@@ -1,8 +1,8 @@
 """Out-of-core frozen datasets for wide quadratic Joule tensors.
 
 The in-memory ``QuadraticJouleDataset`` remains the convenient backend for small
-problems.  This module provides the same public data interface while keeping the
-wide packed tensor matrix in a read-only NPY memmap.  A directory store contains
+problems. This module provides the same public data interface while keeping the
+wide packed tensor matrix in a read-only NPY memmap. A directory store contains
 four NPY arrays plus a JSON manifest with per-file SHA-256 digests and a canonical
 dataset hash.
 """
@@ -58,7 +58,7 @@ class DiskQuadraticJouleDataset:
     """Frozen directory-backed ``(a,g)->svec(G)`` dataset.
 
     ``states``, ``geometries``, ``outputs`` and ``split`` are loaded with
-    ``mmap_mode='r'``.  The class intentionally mirrors the subset of
+    ``mmap_mode='r'``. The class intentionally mirrors the subset of
     ``QuadraticJouleDataset`` used by POD, training, validation and certification.
     """
 
@@ -173,7 +173,7 @@ class DiskQuadraticJouleDataset:
         *,
         states: np.ndarray,
         geometries: np.ndarray,
-        outputs: np.ndarray,
+        outputs: np.ndarray | None = None,
         split: np.ndarray | None = None,
         split_seed: int = 0,
         validation_fraction: float = 0.1,
@@ -187,15 +187,20 @@ class DiskQuadraticJouleDataset:
         root.mkdir(parents=True, exist_ok=True)
         a = np.asarray(states, dtype=np.float64)
         g = np.asarray(geometries, dtype=np.float64)
-        y = np.asarray(outputs)
         n = len(a)
         p = int(current_dimension) + 1
         n_sym = p * (p + 1) // 2
         width = int(thermal_rank) * n_sym
         if a.shape != (n, int(thermal_rank)) or g.ndim != 2 or g.shape[0] != n:
             raise ValueError("disk dataset states/geometries are incompatible")
-        if y.shape != (n, width):
-            raise ValueError("disk dataset packed output shape mismatch")
+        if move_outputs_file is None:
+            if outputs is None:
+                raise ValueError("outputs are required when no packed-output file is supplied")
+            y = np.asarray(outputs)
+            if y.shape != (n, width):
+                raise ValueError("disk dataset packed output shape mismatch")
+        else:
+            y = None
         labels = (
             frozen_split_indices(
                 n,
@@ -222,8 +227,6 @@ class DiskQuadraticJouleDataset:
             del probe
             shutil.move(str(source), str(output_path))
         else:
-            # ``np.save`` can stream a memmap/ndarray without creating another
-            # centered or packed copy in memory.
             with output_path.open("wb") as handle:
                 np.save(handle, y.astype(np.float64, copy=False), allow_pickle=False)
 
