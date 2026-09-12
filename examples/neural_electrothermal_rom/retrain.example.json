@@ -3,10 +3,8 @@
   "template_model_path": "../../results/uwpt/neural_rom/model.npz",
   "work_directory": "../../results/uwpt/neural_rom_retrain",
   "model_path": "../../results/uwpt/neural_rom_retrain/model.npz",
-  "training_report": "../../results/uwpt/neural_rom_retrain/training.report.json",
   "device": "cpu",
   "pod_rank": 64,
-  "pod_relative_tail_tolerance": 0.0001,
   "network": {
     "width": 384,
     "blocks": 5,
@@ -15,14 +13,11 @@
   "training": {
     "epochs": 800,
     "batch_size": 256,
-    "evaluation_batch_size": 256,
     "learning_rate": 0.0005,
     "weight_decay": 0.000001,
     "heat_loss_weight": 0.25,
     "patience": 80,
     "seed": 23,
-    "dtype": "float32",
-    "mixed_precision": false,
-    "gradient_clip_norm": 10.0
+    "dtype": "float32"
   }
 }
