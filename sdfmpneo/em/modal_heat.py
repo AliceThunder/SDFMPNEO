@@ -1,15 +1,19 @@
-"""Exact batched projection of Joule heat onto all retained thermal modes.
+"""Exact batched projection of Joule heat onto retained thermal modes.
 
-This module evaluates the same quantity as ``x^H H_j(a) x`` for every thermal
-mode, but avoids assembling one global sparse loss operator per output mode.
-The electric Nedelec field is reconstructed once on each tetrahedron, its local
-quadratic energy polynomial is integrated against the certified conductivity
-polynomial, and the four P1 moments are projected to all thermal test modes in
-one dense contraction.
+The training hot path has two exact implementations:
+
+* a generic full-state path for arbitrary reduced EM models; and
+* a fused tetrahedral reduced path that reuses the same certified conductivity
+  polynomial family for both the reduced EM operator and the Joule projection.
+
+The fused path avoids reconstructing the full electromagnetic coordinate vector,
+avoids applying the full electric extraction matrix, and most importantly avoids
+building the nonlinear conductivity polynomials twice for one physical residual.
 """
 from __future__ import annotations
 
 import numpy as np
+import scipy.linalg
 
 from sdfmpneo.spatial.barycentric_polynomial import (
     simplex_barycentric_monomial_integral,
@@ -48,9 +52,6 @@ def _geometry_cache(problem):
         np.asarray(mesh.volumes, dtype=float),
         problem.electric_extraction_sparse().tocsr(),
     )
-    # NonlinearTetrahedralApsiProblem is intentionally mutable for lazily built
-    # FE caches. Keeping this geometry-only tensor on the problem avoids
-    # recomputing barycentric gradients on every residual evaluation.
     setattr(problem, "_modal_heat_geometry_cache", cached)
     return cached
 
@@ -77,21 +78,32 @@ def _third_moment_tensor(volume: float, poly) -> np.ndarray:
     return tensor
 
 
+def _modal_heat_from_edge_field(problem, edge_field, conductivity_polynomials) -> np.ndarray:
+    """Project exact Joule heat once the electric edge field is already known."""
+    coefficients, edge_ids, volumes, _ = _geometry_cache(problem)
+    edge_field = np.asarray(edge_field, dtype=complex).reshape(-1)
+    if edge_field.shape != (problem.mesh.n_edges,):
+        raise ValueError("electric edge field dimension mismatch")
+
+    local_edge = edge_field[edge_ids]
+    C = np.einsum("qp,qpic->qic", local_edge, coefficients, optimize=True)
+    gram = np.real(np.einsum("qic,qjc->qij", np.conj(C), C, optimize=True))
+
+    moments = np.zeros((problem.mesh.n_tetrahedra, 4), dtype=float)
+    for q, poly in enumerate(conductivity_polynomials):
+        if not poly:
+            continue
+        tensor = _third_moment_tensor(float(volumes[q]), poly)
+        moments[q] = np.einsum("ab,lab->l", gram[q], tensor, optimize=True)
+
+    tests = np.asarray(problem.thermal_test_local, dtype=float)
+    if tests.shape != (problem.n_thermal, problem.mesh.n_tetrahedra, 4):
+        raise ValueError("thermal test-mode shape mismatch")
+    return 0.5 * np.einsum("rqi,qi->r", tests, moments, optimize=True)
+
+
 def exact_modal_heat_source(problem, electromagnetic_state, thermal_state) -> np.ndarray:
-    """Evaluate every modal Joule source exactly without per-mode FE assembly.
-
-    For a tetrahedron, the first-order Nedelec field has the barycentric form
-
-        E(lambda) = sum_i lambda_i C_i.
-
-    Therefore ``|E|^2`` is quadratic in the four barycentric coordinates.  For
-    each cell we compute only the four moments
-
-        m_l = integral sigma(T) |E|^2 lambda_l,
-
-    then project them to all thermal P1 test modes at once. This is algebraically
-    identical to assembling ``H_j`` and evaluating ``x^H H_j x`` separately.
-    """
+    """Evaluate every modal Joule source exactly without per-mode FE assembly."""
     if not _supported(problem):
         raise TypeError("problem does not expose the nonlinear tetrahedral modal-heat interface")
 
@@ -102,36 +114,81 @@ def exact_modal_heat_source(problem, electromagnetic_state, thermal_state) -> np
     if x.shape != (problem.n_em,):
         raise ValueError("electromagnetic state dimension mismatch")
 
-    coefficients, edge_ids, volumes, extraction = _geometry_cache(problem)
+    _, _, _, extraction = _geometry_cache(problem)
     conductivity_polynomials, _ = problem._weighted_polynomials(state)
     edge_field = np.asarray(extraction @ x, dtype=complex).reshape(-1)
-    local_edge = edge_field[edge_ids]
-    # C[q,i,c] is the Cartesian vector multiplying lambda_i in cell q.
-    C = np.einsum("qp,qpic->qic", local_edge, coefficients, optimize=True)
+    return _modal_heat_from_edge_field(problem, edge_field, conductivity_polynomials)
 
-    moments = np.zeros((problem.mesh.n_tetrahedra, 4), dtype=float)
-    for q, poly in enumerate(conductivity_polynomials):
-        if not poly:
-            continue
-        gram = np.real(
-            np.einsum("ic,jc->ij", np.conj(C[q]), C[q], optimize=True)
-        )
-        tensor = _third_moment_tensor(float(volumes[q]), poly)
-        moments[q] = np.einsum("ab,lab->l", gram, tensor, optimize=True)
 
-    tests = np.asarray(problem.thermal_test_local, dtype=float)
-    if tests.shape != (problem.n_thermal, problem.mesh.n_tetrahedra, 4):
-        raise ValueError("thermal test-mode shape mismatch")
-    return 0.5 * np.einsum("rqi,qi->r", tests, moments, optimize=True)
+def _can_fuse_reduced_modal_heat(em_model) -> bool:
+    problem = getattr(em_model, "problem", None)
+    return bool(
+        problem is not None
+        and _supported(problem)
+        and getattr(em_model, "_direct_reduced", False)
+        and getattr(em_model, "_conductivity_reduced", None) is not None
+        and getattr(em_model, "_loss_reduced_assembler", None) is not None
+        and getattr(em_model, "_magnetic_reduced", None) is not None
+    )
+
+
+def _fused_reduced_modal_heat_source(em_model, thermal_state, rhs) -> np.ndarray:
+    """Solve the reduced EM system and project Joule heat in one constitutive pass.
+
+    ``SparseEnergyReducedEMModel`` already stores the electric reduced basis on
+    mesh edges.  Reusing it here gives exactly
+
+        E_edge = electric_extraction @ V @ c
+
+    without constructing ``V @ c`` in the full EM coordinate space.  The same
+    conductivity polynomials are also used to assemble ``V^H A(a) V`` and the
+    Joule moments, so the nonlinear constitutive expansion is performed once.
+    """
+    problem = em_model.problem
+    state = np.asarray(thermal_state, dtype=float)
+    source = np.asarray(rhs, dtype=complex)
+    if state.shape != (problem.n_thermal,):
+        raise ValueError("thermal state dimension mismatch")
+    if source.shape != (problem.n_em,):
+        raise ValueError("rhs dimension mismatch")
+
+    conductivity_polynomials, _ = problem._weighted_polynomials(state)
+    conductivity = em_model._conductivity_reduced.assemble(conductivity_polynomials)
+    reduced_operator = (
+        np.asarray(em_model._magnetic_reduced, dtype=complex)
+        + 1j * float(problem.omega) * np.asarray(conductivity, dtype=complex)
+    )
+    reduced_rhs = em_model.rhs_reduced(source)
+    coefficients = scipy.linalg.solve(
+        reduced_operator,
+        reduced_rhs,
+        assume_a="gen",
+        check_finite=False,
+    )
+    reduced_edge_fields = np.asarray(
+        em_model._loss_reduced_assembler.fields,
+        dtype=complex,
+    )
+    edge_field = reduced_edge_fields @ coefficients
+    return _modal_heat_from_edge_field(
+        problem,
+        edge_field,
+        conductivity_polynomials,
+    )
 
 
 def heat_source_for_reduced_model(em_model, thermal_state, rhs) -> np.ndarray:
-    """Fast exact heat source when supported, otherwise use the model fallback."""
+    """Fast exact heat source with a fused UWPT reduced-coordinate path."""
     problem = em_model.problem
+    if _can_fuse_reduced_modal_heat(em_model):
+        return _fused_reduced_modal_heat_source(em_model, thermal_state, rhs)
     if _supported(problem):
         x = em_model.state_for_rhs(thermal_state, rhs)
         return exact_modal_heat_source(problem, x, thermal_state)
     return np.asarray(em_model.heat_source_for_rhs(thermal_state, rhs), dtype=float)
 
 
-__all__ = ["exact_modal_heat_source", "heat_source_for_reduced_model"]
+__all__ = [
+    "exact_modal_heat_source",
+    "heat_source_for_reduced_model",
+]
