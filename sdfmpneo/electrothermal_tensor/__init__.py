@@ -41,8 +41,10 @@ from .generator import generate_snapshots_resumable
 from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .integrators import (
     GeneralizedETD2Stepper,
+    GeneralizedThermalSpectrum,
     IntegrationResult,
     integrate_etd2,
+    integrate_etd2_adaptive,
     integrate_imex_euler,
     integrate_reference,
 )
@@ -126,6 +128,7 @@ __all__ = [
     "GateSuiteConfig",
     "GateSuiteReport",
     "GeneralizedETD2Stepper",
+    "GeneralizedThermalSpectrum",
     "IntegrationResult",
     "NeuralElectroThermalVectorField",
     "NeuralROMPrediction",
@@ -193,6 +196,7 @@ __all__ = [
     "geometry_research_vector_field_factory",
     "hybrid_reachable_state_geometry_samples",
     "integrate_etd2",
+    "integrate_etd2_adaptive",
     "integrate_imex_euler",
     "integrate_reference",
     "latin_hypercube_box",
