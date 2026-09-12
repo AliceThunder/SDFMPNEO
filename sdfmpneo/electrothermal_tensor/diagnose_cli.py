@@ -54,6 +54,7 @@ def command_diagnose(config_file: str | Path) -> int:
     atol = float(config.get("atol", 1e-8))
     initial_step = config.get("initial_step")
     initial_step = None if initial_step is None else float(initial_step)
+    max_attempts = int(config.get("max_attempts", 100000))
     allow_extrapolation = bool(config.get("allow_extrapolation", False))
     requested_impedance_error = float(config.get("requested_impedance_error", 1e-6))
 
@@ -84,6 +85,7 @@ def command_diagnose(config_file: str | Path) -> int:
                 rtol=rtol,
                 atol=atol,
                 initial_step=initial_step,
+                max_attempts=max_attempts,
             )
             state = pred.state
             time_value = finite_time
