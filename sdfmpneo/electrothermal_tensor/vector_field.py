@@ -69,13 +69,27 @@ class CallableThermalOperatorFamily:
 
 
 class NeuralElectroThermalVectorField:
-    """Hard ``M a_dot = -K a + q_theta`` composition."""
+    """Hard ``M a_dot = -K a + q_theta + f_T`` composition.
 
-    def __init__(self, surrogate, thermal_operators) -> None:
+    ``thermal_rhs_forcing`` is a deterministic reduced thermal RHS term.  It is
+    deliberately outside the neural surrogate and outside the Joule tensor so
+    EM diagnostics can compare ``q_theta`` against the physical Joule source
+    without mixing in non-electromagnetic heating/boundary forcing.
+    """
+
+    def __init__(self, surrogate, thermal_operators, *, thermal_rhs_forcing=None) -> None:
         self.surrogate = surrogate
         self.thermal_operators = thermal_operators
         if int(thermal_operators.geometry_dimension) != int(surrogate.geometry_dimension):
             raise ValueError("surrogate and thermal operator geometry dimensions differ")
+        forcing = (
+            np.zeros(int(surrogate.state_dimension), dtype=float)
+            if thermal_rhs_forcing is None
+            else np.asarray(thermal_rhs_forcing, dtype=float).reshape(-1)
+        )
+        if forcing.shape != (int(surrogate.state_dimension),) or np.any(~np.isfinite(forcing)):
+            raise ValueError("thermal_rhs_forcing dimension mismatch or non-finite values")
+        self.thermal_rhs_forcing = forcing
 
     @property
     def thermal_rank(self) -> int:
@@ -104,27 +118,32 @@ class NeuralElectroThermalVectorField:
         return a, g, u
 
     def heat_source(self, state, geometry, operating) -> np.ndarray:
+        """Neural Joule source only, excluding deterministic thermal forcing."""
         a, g, u = self._validate(state, geometry, operating)
         q = np.asarray(self.surrogate.heat_source_numpy(a, g, u), dtype=float)
         if q.shape != (self.thermal_rank,) or np.any(~np.isfinite(q)):
             raise FloatingPointError("neural heat source is invalid")
         return q
 
+    def thermal_source(self, state, geometry, operating) -> np.ndarray:
+        """Total reduced thermal RHS source ``q_theta + f_T``."""
+        return self.heat_source(state, geometry, operating) + self.thermal_rhs_forcing
+
     def rhs(self, state, geometry, operating) -> np.ndarray:
         a, g, u = self._validate(state, geometry, operating)
         operator = self.thermal_operators.operator(g)
         if operator.rank != self.thermal_rank:
             raise ValueError("thermal operator rank does not match surrogate")
-        return -operator.stiffness @ a + self.heat_source(a, g, u)
+        return -operator.stiffness @ a + self.thermal_source(a, g, u)
 
     def vector_field(self, state, geometry, operating) -> np.ndarray:
         a, g, u = self._validate(state, geometry, operating)
         operator = self.thermal_operators.operator(g)
-        rhs = -operator.stiffness @ a + self.heat_source(a, g, u)
+        rhs = -operator.stiffness @ a + self.thermal_source(a, g, u)
         return np.linalg.solve(operator.mass, rhs)
 
     def state_jacobian(self, state, geometry, operating) -> np.ndarray:
-        """Differentiate only the neural heat source; M and K remain exact."""
+        """Differentiate only the neural Joule source; hard forcing has zero Jacobian."""
         try:
             import torch
         except ImportError as exc:
