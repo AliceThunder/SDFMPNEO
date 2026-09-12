@@ -17,6 +17,7 @@ from .generator import generate_snapshots_resumable
 from .model import StructurePreservingNeuralElectroThermalROM
 from .network import ResidualMLPConfig
 from .pod import fit_dataset_pod
+from .signatures import fixed_research_physical_signature, geometry_research_physical_signature
 from .trainer import NeuralTrainingConfig, train_tensor_surrogate
 
 
@@ -27,6 +28,7 @@ class PipelineResult:
     surrogate: object
     training_report: object
     model: StructurePreservingNeuralElectroThermalROM
+    physical_signature: str
 
 
 def _sample_state_geometry(
@@ -64,9 +66,12 @@ def build_fixed_neural_rom(
     network_config: ResidualMLPConfig | None = None,
     training_config: NeuralTrainingConfig | None = None,
     physical_signature: str | None = None,
+    save_model: bool = True,
 ) -> PipelineResult:
     """End-to-end fixed-geometry pipeline without trajectory labels."""
     work = Path(work_directory)
+    work.mkdir(parents=True, exist_ok=True)
+    signature = physical_signature or fixed_research_physical_signature(physical_model)
     states, geometries = _sample_state_geometry(
         state_lower,
         state_upper,
@@ -81,7 +86,7 @@ def build_fixed_neural_rom(
         fixed_research_tensor_factory(physical_model),
         checkpoint_path=work / "quadratic_joule.partial.npz",
         split_seed=seed,
-        metadata={"kind": "fixed", "physical_signature": physical_signature},
+        metadata={"kind": "fixed", "physical_signature": signature},
         final_path=work / "quadratic_joule_dataset.npz",
     )
     pod = fit_dataset_pod(
@@ -108,10 +113,19 @@ def build_fixed_neural_rom(
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
         fixed_research_thermal_family(physical_model),
-        physical_signature=physical_signature,
+        physical_signature=signature,
         training_domain=domain,
     )
-    return PipelineResult(dataset, pod, surrogate, report, model)
+    if save_model:
+        model.save(
+            work / "neural_electrothermal_rom.npz",
+            metadata={
+                "dataset_hash": dataset.manifest().dataset_hash,
+                "training_report": report.__dict__,
+                "pod_rank": pod.rank,
+            },
+        )
+    return PipelineResult(dataset, pod, surrogate, report, model, signature)
 
 
 def build_geometry_neural_rom(
@@ -129,9 +143,12 @@ def build_geometry_neural_rom(
     network_config: ResidualMLPConfig | None = None,
     training_config: NeuralTrainingConfig | None = None,
     physical_signature: str | None = None,
+    save_model: bool = True,
 ) -> PipelineResult:
     """End-to-end geometry-family pipeline using normalized geometry coordinates."""
     work = Path(work_directory)
+    work.mkdir(parents=True, exist_ok=True)
+    signature = physical_signature or geometry_research_physical_signature(geometry_model)
     n_geometry = len(geometry_model.geometry_names)
     geometry_lower = -np.ones(n_geometry)
     geometry_upper = np.ones(n_geometry)
@@ -149,7 +166,7 @@ def build_geometry_neural_rom(
         geometry_research_tensor_factory(geometry_model, normalized_geometry=True),
         checkpoint_path=work / "quadratic_joule.partial.npz",
         split_seed=seed,
-        metadata={"kind": "geometry", "physical_signature": physical_signature},
+        metadata={"kind": "geometry", "physical_signature": signature},
         final_path=work / "quadratic_joule_dataset.npz",
     )
     pod = fit_dataset_pod(
@@ -176,10 +193,20 @@ def build_geometry_neural_rom(
     model = StructurePreservingNeuralElectroThermalROM(
         surrogate,
         geometry_research_thermal_family(geometry_model, normalized_geometry=True),
-        physical_signature=physical_signature,
+        physical_signature=signature,
         training_domain=domain,
     )
-    return PipelineResult(dataset, pod, surrogate, report, model)
+    if save_model:
+        # Geometry M/K remain application-owned; load requires the same operator family.
+        model.save(
+            work / "neural_electrothermal_rom.npz",
+            metadata={
+                "dataset_hash": dataset.manifest().dataset_hash,
+                "training_report": report.__dict__,
+                "pod_rank": pod.rank,
+            },
+        )
+    return PipelineResult(dataset, pod, surrogate, report, model, signature)
 
 
 __all__ = ["PipelineResult", "build_fixed_neural_rom", "build_geometry_neural_rom"]
