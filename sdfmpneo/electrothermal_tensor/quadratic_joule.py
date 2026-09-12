@@ -62,14 +62,81 @@ def _loss_operator(problem, mode: int, state: np.ndarray):
     return np.asarray(dense(int(mode), state), dtype=complex)
 
 
+def _symmetrized_real_quadratic_form(complex_form: np.ndarray) -> np.ndarray:
+    """Return the real symmetric matrix representing a real-parameter form.
+
+    The physical Joule factor 1/2, when required, is already contained in the
+    electromagnetic problem's loss operator.  The factor 1/2 below is only the
+    algebraic symmetrization ``(G + G^T)/2`` and must not be interpreted as an
+    additional Joule-power factor.
+    """
+    real_form = np.real(np.asarray(complex_form, dtype=complex))
+    return 0.5 * (real_form + real_form.T)
+
+
+def _direct_reduced_tensor(em_model, state: np.ndarray, reduced_rhs: np.ndarray):
+    """Use the UWPT direct-reduced loss assembly when available.
+
+    ``fast_reduced.SparseEnergyReducedEMModel`` already owns exact reduced
+    conductivity and Joule-loss assemblers.  Reusing those internals avoids
+    materializing full sparse loss operators or full electromagnetic response
+    vectors during offline label generation.  This is an acceleration only;
+    the returned quadratic form is mathematically identical to the generic
+    ``X^H H_j X`` path and remains covered by Gate 1.
+    """
+    if not bool(getattr(em_model, "_direct_reduced", False)):
+        return None
+
+    n_thermal = int(em_model.problem.n_thermal)
+    fused = bool(getattr(em_model, "_fused_reduced", False))
+    assembled_family = getattr(em_model, "_assembled_state_family", None)
+    loss_reduced = getattr(em_model, "_loss_operator_reduced", None)
+
+    if fused and callable(assembled_family):
+        conductivity, loss_family = assembled_family(state, derivatives=False)
+        magnetic = np.asarray(em_model._magnetic_reduced, dtype=complex)
+        Ar = magnetic + 1j * float(em_model.problem.omega) * np.asarray(
+            conductivity[0], dtype=complex
+        )
+        coefficients = scipy.linalg.solve(
+            Ar,
+            reduced_rhs,
+            assume_a="gen",
+            check_finite=True,
+        )
+        losses = np.asarray(loss_family[:, 0], dtype=complex)
+        tensor = np.empty((n_thermal, reduced_rhs.shape[1], reduced_rhs.shape[1]))
+        for mode in range(n_thermal):
+            form = coefficients.conj().T @ losses[mode] @ coefficients
+            tensor[mode] = _symmetrized_real_quadratic_form(form)
+        return tensor
+
+    if callable(loss_reduced):
+        Ar = np.asarray(em_model.operator_reduced(state), dtype=complex)
+        coefficients = scipy.linalg.solve(
+            Ar,
+            reduced_rhs,
+            assume_a="gen",
+            check_finite=True,
+        )
+        tensor = np.empty((n_thermal, reduced_rhs.shape[1], reduced_rhs.shape[1]))
+        for mode in range(n_thermal):
+            Hred = np.asarray(loss_reduced(mode, state), dtype=complex)
+            form = coefficients.conj().T @ Hred @ coefficients
+            tensor[mode] = _symmetrized_real_quadratic_form(form)
+        return tensor
+
+    return None
+
+
 def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
     """Construct the exact reduced-model current-quadratic Joule tensor.
 
-    One reduced multi-RHS solve covers the whole real operating space. When the
-    number of augmented excitations is smaller than the EM ROM rank, modal loss
-    contractions are evaluated on the solved response matrix ``X=V*C`` rather
-    than assembling every full reduced loss matrix ``V^H H_j V``. This changes
-    cost, not mathematics.
+    One reduced multi-RHS solve covers the whole real operating space.  On the
+    UWPT direct-reduced backend, loss contractions stay entirely in reduced
+    coordinates.  Generic models fall back to exact full-space loss action on
+    only the solved augmented excitation responses, which is preferable when
+    the number of current parameters is smaller than the EM ROM rank.
     """
     a = _validated_state(em_model, state)
     rhs_map = _validated_rhs_map(em_model, rhs_map)
@@ -82,6 +149,11 @@ def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
         [np.asarray(rhs_map.offset, dtype=complex), np.asarray(rhs_map.matrix, dtype=complex)]
     )
     reduced_rhs = V.conj().T @ B_aug
+
+    direct = _direct_reduced_tensor(em_model, a, reduced_rhs)
+    if direct is not None:
+        return direct
+
     reduced_operator = np.asarray(em_model.operator_reduced(a), dtype=complex)
     coefficients = scipy.linalg.solve(
         reduced_operator,
@@ -103,8 +175,7 @@ def quadratic_joule_tensor(em_model, state, rhs_map) -> np.ndarray:
         else:
             reduced_loss = V.conj().T @ (H @ V)
             complex_form = coefficients.conj().T @ reduced_loss @ coefficients
-        real_form = np.real(complex_form)
-        tensor[mode] = 0.5 * (real_form + real_form.T)
+        tensor[mode] = _symmetrized_real_quadratic_form(complex_form)
 
     return tensor
 
