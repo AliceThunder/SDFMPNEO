@@ -14,7 +14,11 @@ from .fixed_physics_runtime import (
     evaluate_semigroup_batch,
     physics_vector_field,
 )
-from .fixed_layer_cache_runtime import clear_layer_program_cache, layer_program
+from .fixed_layer_cache_runtime import (
+    _semigroup_endpoint_points,
+    clear_layer_program_cache,
+    layer_program,
+)
 
 _STATE = local()
 _TRIAL_PARENTS: dict[int, int] = {}
@@ -76,6 +80,32 @@ def _compiled_physics_records(network, field, rows, program):
     return _ordered_map(one, range(len(values)), monitor=None)
 
 
+def _compiled_semigroup_records(network, rows, program):
+    """Exact restart residual with only the dynamic second leg left symbolic."""
+    values = np.asarray(rows, dtype=float)
+    if len(values) == 0:
+        return []
+    direct_points, first_points = _semigroup_endpoint_points(network, values)
+    direct, _ = program.reconstruct(network, direct_points)
+    first, _ = program.reconstruct(network, first_points)
+    n = network.n_modes
+    horizon = float(network.max_response_time)
+
+    def one(index):
+        row = values[index]
+        operating = row[n:-2]
+        t2 = float(row[-1])
+        restarted, _ = network.evaluate(
+            t2,
+            a0=first[index],
+            operating=operating,
+        )
+        defect = np.asarray(direct[index] - restarted, dtype=float)
+        return SimpleNamespace(residual=defect / horizon, raw_defect=defect)
+
+    return _ordered_map(one, range(len(values)), monitor=None)
+
+
 def _candidate_exact_result(
     network,
     field,
@@ -107,12 +137,24 @@ def _candidate_exact_result(
         )
 
     program = None
+    restart_program = None
     if parent_network is not None:
         affine = _candidate_amplitude_layer(parent_network, network)
         if affine is not None:
             layer, ids = affine
             if layer > 0 and len(ids) <= 4096:
                 program = layer_program(parent_network, points, layer, monitor=monitor)
+                if include_semigroup and len(semigroup_points):
+                    direct_points, first_points = _semigroup_endpoint_points(
+                        parent_network, semigroup_points
+                    )
+                    restart_program = layer_program(
+                        parent_network,
+                        np.vstack([direct_points, first_points]),
+                        layer,
+                        monitor=monitor,
+                        work_label=f"restart_layer_{layer + 1}_basis",
+                    )
 
     items = [(float(parent.norms[i]), 0, i, row) for i, row in enumerate(points)]
     if include_semigroup:
@@ -153,7 +195,12 @@ def _candidate_exact_result(
 
         if restart_items:
             rows = np.asarray([item[3] for item in restart_items], dtype=float)
-            batch_records = evaluate_semigroup_batch(network, rows, monitor=None)
+            if restart_program is not None:
+                batch_records = _compiled_semigroup_records(
+                    network, rows, restart_program
+                )
+            else:
+                batch_records = evaluate_semigroup_batch(network, rows, monitor=None)
             for item, record in zip(restart_items, batch_records):
                 index = item[2]
                 records[index] = record
