@@ -127,9 +127,7 @@ sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.exam
 
 ## 验证
 
-不使用额外的 Gate/certification 体系。
-
-开发时只做普通的三类检查：
+验证就是普通数值检查，不增加额外流程：
 
 1. `zeta^T G zeta` 与原 EM Joule heat 是否一致；
 2. validation/test split 上 `G` 和 heat-source 误差；
