@@ -45,18 +45,15 @@ def test_resume_rejects_changed_physical_signature(tmp_path):
         )
 
 
-def test_resume_rejects_corrupted_tensor_sidecar_shape(tmp_path):
+def test_resume_rejects_corrupted_packed_sidecar_shape(tmp_path):
     states, geometry, checkpoint = _interrupting_checkpoint(tmp_path)
-    sidecar = checkpoint.with_name(checkpoint.name + ".tensors.npy")
+    sidecar = checkpoint.with_name(checkpoint.name + ".packed.npy")
 
-    # Replace the NPY sidecar with a valid NPY file of the wrong shape.  The
-    # checkpoint bitmap/hashes remain untouched, so resume must detect the
-    # sidecar header mismatch before evaluating any new physics snapshot.
     wrong = np.lib.format.open_memmap(
         sidecar,
         mode="w+",
         dtype=np.float64,
-        shape=(len(states), 1, 3, 3),
+        shape=(len(states), 4),
     )
     wrong[:] = 0.0
     wrong.flush()
@@ -68,7 +65,7 @@ def test_resume_rejects_corrupted_tensor_sidecar_shape(tmp_path):
         calls.append(float(state[0]))
         return _tensor(state)
 
-    with pytest.raises(ValueError, match="sidecar shape/dtype is malformed"):
+    with pytest.raises(ValueError, match="packed-output sidecar shape/dtype mismatch"):
         generate_snapshots_resumable(
             states,
             geometry,
