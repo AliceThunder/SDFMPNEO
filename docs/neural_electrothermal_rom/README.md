@@ -1,16 +1,22 @@
 # 结构保持神经电热 ROM：实现使用说明
 
-本目录的 LaTeX 文档定义理论；本页说明当前实现的可执行工作流。
+本目录中的 LaTeX 文档定义冻结理论；本页说明当前实现工作流。新路线与旧解析响应网络完全分离，主模型为
+
+\[
+M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u),
+\]
+
+其中普通 residual MLP 只学习 `(a,g) -> POD coefficients`，电流只进入严格二次型物理层，`M_r(g),K_r(g)` 始终来自真实热降阶模型。
 
 ## 安装
-
-神经训练额外依赖 PyTorch：
 
 ```bash
 python -m pip install -e '.[neural,dev]'
 ```
 
-新路线使用独立命令，不经过旧解析响应网络训练器。推荐顺序是**先探测可达热状态域，再训练，再做冻结认证**：
+项目不使用 GitHub Actions。验证统一通过本地 `pytest`、开发 audit 和正式 certification 完成。
+
+推荐工作流：
 
 ```bash
 sdfmpneo-domain probe --config examples/neural_electrothermal_rom/domain_probe.example.json
@@ -22,71 +28,85 @@ sdfmpneo-certify audit --config examples/neural_electrothermal_rom/certify.examp
 sdfmpneo-diagnose --config examples/neural_electrothermal_rom/diagnose.example.json
 ```
 
-仍保留直接指定 `state_lower/state_upper` 的 `sdfmpneo-neural train`，主要用于低维研究和调试。
+---
 
-项目不使用 GitHub Actions；验证入口保留为本地 `pytest`、开发 `audit` 和正式 `sdfmpneo-certify audit`。
+## 1. Domain probe：先确定完整 neural state domain
 
-## 1. Domain probe：先用真实物理确定 neural state box
+高维热 ROM 不推荐人工填写几十到上百维 `state_lower/state_upper`。`sdfmpneo-domain probe` 使用真实 reduced electrothermal vector field，在初值盒、完整 operating box、固定几何或归一化 geometry box `[-1,1]^d` 上运行真实 Radau 轨迹，并可从轨迹末端继续求稳态。
 
-对于高维热 ROM，不建议人工填写几十到上百维的 `state_lower/state_upper`。`sdfmpneo-domain probe` 使用真实 reduced electrothermal vector field 在：
+输出包含：
 
-- initial-state box；
-- 完整 operating box；
-- 固定几何或完整归一化 geometry box `[-1,1]^d`；
-
-上采样多条 Radau 物理轨迹，并可从每条轨迹末端继续求真实稳态根。它输出：
-
-- transient + initial + successful steady-state 的观测 envelope；
+- initial + transient + successful steady-state 的观测 envelope；
 - 每个 thermal coordinate 的安全 margin；
-- 建议的 `suggested_state_lower/upper`；
-- 成功/失败的 steady-state 数量；
-- 物理签名、工况域和几何域；
-- 对 report 内容本身的 SHA-256。
+- `suggested_state_lower/upper`；
+- steady-state 成功/失败统计；
+- physical signature；
+- geometry / operating domain；
+- report 内容 SHA-256。
 
-Domain report 是冻结工件。后续 `sdfmpneo-domain train` 会同时检查：
+Domain report 是冻结工件。`sdfmpneo-domain train` 会检查：
 
-1. report SHA-256 未被修改；
-2. `physical_signature` 完全匹配；
+1. report hash 未被修改；
+2. physical signature 匹配；
 3. thermal rank 匹配；
-4. geometry 域匹配；
-5. operating 域匹配。
+4. geometry domain 匹配；
+5. operating domain 匹配。
 
-任一不一致都拒绝复用，不会只复制 bounds。Domain report hash 会继续写入冻结 tensor dataset 和最终 neural model metadata，形成 report → dataset → model 的 provenance 链。
+report hash 会继续进入 dataset 和 model metadata，形成
 
-Domain probe 仍然只是**采样覆盖证据**，不是数学可达集证明；最终独立 Gate 6 长时间轨迹仍必须覆盖目标工况。
+```text
+domain report -> frozen tensor dataset -> neural model
+```
 
-## 2. Train：只生成局部物理张量标签
+的 provenance 链。
 
-`train` 从现有物理 JSON 构建 EM/thermal ROM，但 EM 只用于离线生成
+Domain probe 是采样覆盖证据，不是数学可达集证明。正式 Gate 6 仍必须独立覆盖目标短时、长时和边界工况。
+
+---
+
+## 2. Train：生成局部物理 tensor 标签
+
+离线标签是
 
 \[
-(a,g)\mapsto G(a,g).
+(a,g)\mapsto G(a,g),
 \]
 
-随后保存：
+其中每个 thermal modal Joule source 满足
 
-- `quadratic_joule.partial.npz`：可恢复标签生成检查点；
-- `quadratic_joule_dataset.npz/.json`：冻结 train/validation/test 数据集；
-- neural `.npz`：POD、归一化、MLP、训练域、物理签名和在线热算子；
-- `training.report.json`：训练、采样和数据版本摘要。
+\[
+q_j(a,g,u)=\zeta^T G_j(a,g)\zeta.
+\]
 
-网络训练阶段不会调用 EM solver，也不使用瞬态轨迹作为监督标签。
+固定 `(a,g)` 时使用一次 multi-RHS reduced EM solve 构造整个 current quadratic tensor，不需要逐电流采样。
 
-冻结 dataset 会记录 physical/ROM provenance，包括 thermal backend/rank、EM reduced rank、频率、constitutive error budget、current dimension、EM reduction certificate 摘要、geometry certificate 摘要和源码 revision。大数组不直接塞进 manifest，而记录 shape/dtype/hash。
+训练输出包括：
 
-训练报告除 loss 外还记录随机种子、network/training config、AdamW/learning-rate 设置、precision/mixed precision、Python/NumPy/SciPy/PyTorch 版本、设备/GPU 信息和 Git revision。
+- `quadratic_joule.partial.npz`：可恢复 snapshot 检查点；
+- `quadratic_joule_dataset.npz/.json`：冻结 train/validation/test dataset；
+- neural `.npz`：POD、MLP、训练域、物理签名和在线 thermal operators；
+- training report：loss、配置、随机种子、precision、软件/硬件信息等。
 
-### 2.1 完整 state box，而不是 initial-state box
+冻结 dataset 同时保存 physical/ROM provenance：thermal backend/rank、EM reduced rank、频率、constitutive budget、current dimension、EM reduction certificate 摘要、geometry certificate 摘要和源码 revision。大数组保存 shape/dtype/hash，不复制到 manifest。
 
-训练域表示 **NN 允许看到的完整热状态域**。它必须覆盖目标初值、工况和几何下的可达状态以及稳态附近区域。
+网络训练阶段**不调用 EM solver**，也不使用瞬态轨迹值作为监督 target。
 
-模型默认在 ETD/IMEX 的每个中间阶段检查该盒；轨迹一旦离开训练状态域立即报错。
+### 2.1 完整 state box，不是 initial-state box
 
-推荐通过 domain report 获得这个盒，而不是机械复制旧 `initial_lower/initial_upper`。
+训练域是 NN 允许出现的完整 thermal state 域，必须覆盖目标初值、真实轨迹、restart/off-manifold 区域和稳态附近区域。
 
-### 2.2 高维状态推荐 hybrid reachable sampling
+ETD/IMEX 在每个实际 stage 检查该盒。默认一旦离开训练域立即失败；不会 silently clip。
 
-即使已经得到保守 state box，在约 198 维里对整个盒纯 LHS 的样本效率仍可能很低。因此正式训练推荐：
+### 2.2 高维推荐 hybrid reachable sampling
+
+在约 198 维 thermal coordinate 中对完整 box 纯 LHS 会浪费大量样本。正式训练推荐同时使用：
+
+- 一部分 full-box samples；
+- 一部分真实 reduced-physics trajectory states。
+
+轨迹仅决定“在哪里生成 G 标签”，不是 trajectory supervision。
+
+示例：
 
 ```json
 "sampling": {
@@ -101,128 +121,157 @@ Domain probe 仍然只是**采样覆盖证据**，不是数学可达集证明；
 }
 ```
 
-真实 reduced physics 轨迹**只用于选择在哪里采样 $G$**，轨迹状态不会成为 NN 的监督 target。仍保留 `box_fraction` 的全盒样本以覆盖 off-manifold / restart 区域。
+如果真实采样轨迹离开冻结 state box，抛出 `StateDomainInsufficientError`，应重新做更保守的 domain probe。
 
-若任何真实采样轨迹离开已冻结的 state box，训练直接抛出 `StateDomainInsufficientError`；实现不会通过 clip 隐藏训练域设计错误。此时应重新运行更保守的 domain probe，而不是强行继续训练。
+---
 
-几何族训练时网络几何坐标固定为归一化 `[-1,1]^d`；模型文件保存 affine geometry chart、热材料参数和共享热基，在线精确重组 `M_r(g),K_r(g)`，不依赖 EM。
+## 3. Retrain：调 POD/MLP 不再生成 EM 标签
 
-## 3. Retrain：调网络/POD 不再重建 EM
-
-物理 tensor dataset 一旦生成，可以反复做：
+冻结 tensor dataset 一旦生成，POD rank、MLP width/depth、optimizer、mixed precision 等实验走：
 
 ```bash
 sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
 ```
 
-`retrain` 只读取：
+`retrain` 只读取 frozen dataset 和一个 neural model 作为在线 thermal operator 模板，不构建 EM，不生成新标签。
 
-- 冻结 `quadratic_joule_dataset.npz`；
-- 一个已经保存的 neural model 作为在线 thermal operator / physical signature 模板。
+重新训练继承 dataset / physics provenance，但不会继承旧 certification；任何权重变化后必须重新 audit/certify。
 
-它不会构建 EM problem、不会重新生成标签。POD rank、MLP width/depth、optimizer、mixed precision 等实验都应该走这条路径。
-
-重新训练会继承 dataset/physics provenance，但**不会继承旧模型的 certification**；网络权重改变后必须重新跑 Gate 1--7。
+---
 
 ## 4. Predict：自包含在线模型
 
-`predict` 只加载 neural `.npz`。固定几何和当前 affine geometry family 都不需要物理 JSON 或 EM ROM。
+```bash
+sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
+```
 
-连续时间模型始终是
+在线 `.npz` 不需要物理 JSON 或 EM-ROM。固定几何和 affine geometry family 都保存足够的 thermal operator 信息来在线构造
 
 \[
-M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
+M_r(g),\quad K_r(g).
 \]
 
-推荐有限时间方法为 `etd2_adaptive`：广义谱分解每个 geometry 只做一次，之后用 ETD1/ETD2 嵌入误差指标自动调整步长。热响应进入慢尾部后会自然使用大步长；`rtol/atol/max_step/max_attempts` 仍由用户显式控制。
+有限时间默认推荐 `etd2_adaptive`：每个 geometry 做一次 generalized thermal eigendecomposition，随后用 ETD1/ETD2 嵌入误差指标调整步长。长时间进入慢尾部后可自动增大步长。
 
-固定步长 `etd2` 和鲁棒参考 `imex` 仍保留。`times` 中字符串 `"inf"` 调用独立稳态求解器，不把有限时间积分无限延长。
+其他方法：
 
-默认 `allow_extrapolation=false`：
+- `etd2`：固定步长二阶指数积分；
+- `imex`：线性热扩散隐式、NN source 显式；
+- `reference`：仅研究/验证用的通用参考积分器。
 
-- state 必须留在训练 state box；
-- operating 必须在训练工况盒；
-- geometry 必须在已认证的归一化 `[-1,1]^d` chart 内。
+`"inf"` 使用独立 steady-state solver，不把有限时间积分无限延长。
 
-即使显式打开 state/operating extrapolation，embedded geometry family 仍不会允许超出保存的几何 chart。
+默认 `allow_extrapolation=false`：state、operating 和 geometry 均须留在训练/认证域内。
 
 ### 4.1 批量固定步长 ETD2
 
-独立查询若共享同一 geometry 和同一目标时间，可用模型 facade 的：
+共享 geometry 和目标时间的独立查询可以：
 
 ```python
 batch = model.predict_batch_fixed_etd2(
     100.0,
-    initial_states=A0,      # (batch, thermal_rank)
-    geometry=g,             # shared geometry
-    operating=U,            # (batch, current_dimension)
+    initial_states=A0,
+    geometry=g,
+    operating=U,
     max_step=1.0,
 )
 ```
 
-批量实现共享一次 generalized thermal spectrum；每个 ETD stage 对整批状态只做一次 MLP forward，最终导数使用 dense multi-RHS thermal solve。时间步之间仍保持串行，因为动力学有真实因果依赖。自适应 ETD 不强行把不同轨迹绑定到同一 error history。
+批量路径共享一次 generalized thermal spectrum；每个 ETD stage 对整批状态做一次 MLP forward，最终导数用 multi-RHS thermal solve。时间步本身仍严格串行，保持真实因果依赖。
 
-## 5. 开发 Audit / Gate 1--7
+---
 
-`sdfmpneo-neural audit` 会重新构建真实物理模型，仅用于独立对照，并验证 neural 模型保存的物理签名。
+## 5. 开发 Audit：Gate 1--7
 
-当前自动执行：
+```bash
+sdfmpneo-neural audit --config examples/neural_electrothermal_rom/audit.example.json
+```
 
-1. **Gate 1**：`zeta^T G zeta` 与直接 EM-ROM Joule heat 数值恒等；
-2. **Gate 2**：只用 train split 拟合 SVD，对 validation split 做 POD rank sweep，并报告 tensor/heat error；
-3. **Gate 3**：真实 `G(a,g)` 的热状态敏感度；
-4. **Gate 4**：真实物理 Jacobian 在 `M(g)` 能量范数下的 logarithmic norm；
-5. **Gate 5**：冻结 test split 上 `G/q/F` 的 RMS、95/99 percentile 和 maximum；
-6. **Gate 6**：配置指定的 neural ETD/IMEX 与真实 EM-ROM + Radau 轨迹对照，可同时重构节点温度；
-7. **Gate 7**：使用与 Gate 6 相同 production integrator 的真实 wall-clock vector-field / trajectory benchmark。
+开发 audit 重新加载真实物理模型，仅用于独立对照：
 
-Gate 3 有两档：
+1. **Gate 1**：`zeta^T G zeta` 与直接 EM-ROM Joule heat 恒等；
+2. **Gate 2**：train split 拟合 POD，validation split 做 rank sweep；
+3. **Gate 3**：真实 `G(a,g)` 对 thermal state 的 sensitivity / active-subspace 分析；
+4. **Gate 4**：真实 physical Jacobian 在 `M(g)` energy norm 下的 logarithmic norm；
+5. **Gate 5**：冻结 test split 的 `G/q/F` RMS、95/99 percentile、maximum；
+6. **Gate 6**：neural integrator 与真实 EM-ROM + Radau trajectory 对照；
+7. **Gate 7**：production integrator 的真实 wall-clock benchmark。
 
-- `active_subspace_mode="randomized_screening"`：只在随机输入子空间做低成本筛查，适合 198 维开发阶段；**不能让 production readiness 通过**；
-- `active_subspace_mode="full"`：逐热坐标做完整中心有限差分，是正式 Gate 3 证据。
+Gate 3 两档：
 
-Production readiness 是 fail-closed：没有完整 Gate 3、Gate 7 的明确时间预算和实际测量，结果不会判为 ready。
+- `randomized_screening`：低成本开发筛查，不能让 production readiness 通过；
+- `full`：逐 thermal coordinate 中心差分，是正式 Gate 3 证据。
 
-`reproducible_training` 与 `persistence_roundtrip` 也必须由正式实验明确填写，不能自动假定为真。
+Gate 7 没有明确预算或真实测量时，readiness fail closed。
 
-## 6. 正式 Certification：冻结报告并写回模型证据
+---
 
-正式生产判定使用：
+## 6. 正式 Certification：真实 retrain + roundtrip + Gate 1--7
 
 ```bash
 sdfmpneo-certify audit --config examples/neural_electrothermal_rom/certify.example.json
 ```
 
-它在普通 audit 基础上额外执行 fail-closed 绑定：
+正式认证比开发 audit 更严格，不能通过手填布尔值绕过证据。
 
-- physical signature 必须与当前真实物理模型一致；
-- dataset physical signature 必须一致；
-- 如果 neural model 已记录训练 dataset hash，则待认证 dataset 必须是同一个冻结 dataset；
-- Gate report 本身生成内容 hash；
-- `audited_model_output` 可保存成功或失败的冻结审计证据；
-- `certified_model_output` **只有全部 Gate 真正通过时才生成**。
+认证过程会自动执行：
 
-模型格式当前为 v3；v1/v2 仍可只读加载。v3 在 load → save 时保留原训练 metadata，并递归追加 certification，而不会覆盖 dataset hash、training report、domain provenance 等历史证据。
+1. physical signature 校验；
+2. dataset physical signature / dataset hash 校验；
+3. training provenance completeness 检查；
+4. **真实 frozen-dataset retrain reproduction**：
+   - 从 train split 重新拟合同 rank POD；
+   - 使用保存的 network/training config 和 seed 重新训练；
+   - 在冻结 test split 比较 POD-decoded `G` tensor；
+   - 在固定随机 operating samples 比较 quadratic heat；
+   - 比较 best epoch / epochs completed；
+5. **真实 model persistence roundtrip**：save -> load -> 比较 metadata、training domain、physical signature、heat source、vector field；
+6. 完整 Gate 1--7；
+7. Gate report 内容 hash。
 
-`examples/.../certify.example.json` 默认把 `reproducible_training` 与 `persistence_roundtrip` 留为 `false`，因此示例本身不会误生成认证模型；必须先有真实证据再显式改为 `true`。
+因此“保存了 seed”只说明 provenance 完整，**不等于训练可复现**。只有实际 retrain reproduction 通过后，reproducibility Gate 才通过。
 
-## 7. EM 输出诊断：按需算阻抗/损耗，不污染快速在线路径
+配置中可单独设置 reproduction/roundtrip tolerance，例如：
 
-普通 `predict` 始终是 neural + exact thermal operators，不加载 EM。只有需要阻抗、互感/电感、区域损耗或 EM residual 时才运行：
+```json
+"reproduction_device": "cpu",
+"reproduction_packed_rtol": 1e-6,
+"reproduction_packed_atol": 1e-7,
+"reproduction_heat_rtol": 1e-6,
+"reproduction_heat_atol": 1e-7,
+"reproduction_operating_samples": 2,
+"roundtrip_rtol": 1e-12,
+"roundtrip_atol": 1e-12
+```
+
+`audited_model_output` 可以保存失败或成功的完整冻结证据；`certified_model_output` 只有全部 Gate 通过时才生成。
+
+模型格式当前为 v3。v1/v2 可只读加载；v3 的 load -> save 会保留历史 training/dataset/domain metadata，并递归追加 certification evidence。
+
+---
+
+## 7. EM 输出诊断：按需计算阻抗/损耗
+
+快速 `predict` 始终只运行 neural surrogate + exact thermal operators，不加载 EM。
+
+需要阻抗、互感/电感、区域损耗或 EM residual 时：
 
 ```bash
 sdfmpneo-diagnose --config examples/neural_electrothermal_rom/diagnose.example.json
 ```
 
-流程是：
+流程：
 
-1. neural model 给出指定时间的热状态 `a(t)` 或稳态；
-2. 检查 neural/physical signature 一致；
-3. 在该 `a(t)` 上调用真实 reduced EM；
-4. 输出真实 EM heat source、drive-RHS residual、端口阻抗/证书、区域损耗；
-5. 同时报告 `q_theta` 与真实 EM heat source 的误差。
+1. neural model 给出 `a(t)` 或 steady state；
+2. 检查 neural/physical signature；
+3. 检查 state/geometry/operating 是否仍在 neural training domain；
+4. 在该状态调用真实 reduced EM；
+5. 输出 physical heat source、drive-RHS residual、端口阻抗/证书、区域损耗；
+6. 同时比较 `q_theta` 与真实 EM heat source。
 
-因此阻抗不是第二个独立神经网络，也不会在训练时引入额外输出拟合；它始终由与该热状态一致的真实 reduced EM 计算。
+阻抗始终来自与 neural thermal state 一致的真实 reduced EM，不训练第二个独立输出网络。
+
+---
 
 ## 8. 在线结构
 
@@ -230,16 +279,20 @@ sdfmpneo-diagnose --config examples/neural_electrothermal_rom/diagnose.example.j
 (a, normalized geometry)
         -> ordinary residual MLP
         -> normalized POD coefficients
-        -> direct POD/current contraction (不还原完整 G)
-        -> exact current quadratic layer zeta^T G zeta
+        -> direct POD/current contraction
+        -> exact quadratic-current physics layer
         -> q_theta
         -> exact M_r(g) a_dot = -K_r(g) a + q_theta
         -> generalized fixed/adaptive ETD2 / IMEX
 ```
 
-网络不直接输入时间，也不直接输入电流；电流只进入 hard quadratic physics layer。
+网络不直接输入时间，也不直接输入 current；current 只进入 hard quadratic layer。
+
+---
 
 ## 9. 本地测试
+
+新路线的核心回归：
 
 ```bash
 python -m pytest -q \
@@ -254,15 +307,34 @@ python -m pytest -q \
   tests/test_neural_snapshot_sampling.py \
   tests/test_reachable_state_domain.py \
   tests/test_neural_batch_inference.py \
+  tests/test_neural_provenance.py \
+  tests/test_neural_certification.py \
   tests/test_neural_gate_suite.py
 ```
 
-完整仓库回归仍应运行：
+完整仓库回归：
 
 ```bash
 python -m pytest -q
 ```
 
+---
+
 ## 10. Production 切换原则
 
-当前实现分支提供物理域探测、训练、无 EM retrain、自包含推理、批量推理、Gate audit、正式认证和按需 EM 输出诊断，但不会自动替换旧 production 默认入口。只有正式 UWPT 数据上的 Gate 1--7 全部满足**预先给定**的工程预算，并由 `sdfmpneo-certify audit` 产出 certified model 后，才允许切换默认模型。
+当前实现分支提供：
+
+- state-domain probe；
+- resumable tensor dataset generation；
+- POD + ordinary residual MLP training；
+- no-EM retrain；
+- self-contained fixed/geometry inference；
+- fixed/adaptive ETD2 / IMEX；
+- batch inference；
+- Gate 1--7；
+- actual retrain reproducibility verification；
+- model roundtrip verification；
+- formal certification；
+- on-demand true EM diagnostics。
+
+但不会自动替换旧 production 默认入口。只有真实 UWPT 数据上的全部 Gate 满足**预先给定**工程预算，并由 `sdfmpneo-certify audit` 实际产出 certified model 后，才允许切换默认模型。
