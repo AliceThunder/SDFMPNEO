@@ -1,0 +1,109 @@
+\section{数据生成与训练协议}
+
+\subsection{训练对象从轨迹改为局部物理映射}
+训练数据单位固定为
+\begin{equation}
+(a,g)\longmapsto G(a,g),
+\end{equation}
+而不是
+\begin{equation}
+(a_0,g,u,t)\longmapsto a(t).
+\end{equation}
+这使同一个昂贵电磁样本能覆盖全部电流参数，并使网络训练与时间积分完全解耦。
+
+\subsection{物理样本生成流程}
+对每个样本 $(a^{(s)},g^{(s)})$：
+\begin{enumerate}
+  \item 构建/读取该几何的 reduced EM context；
+  \item 组装 $A_{\mathrm{em}}(a^{(s)},g^{(s)})$；
+  \item 对全部端口基激励一次求解 $A X=\mathcal B$；
+  \item 计算全部 $G_j=\operatorname{Re}(X^H H_jX)$；
+  \item 对称向量化得到 $y^{(s)}$；
+  \item 保存物理元数据、ROM/certificate 状态和数值质量指标。
+\end{enumerate}
+样本之间独立，可进程/节点并行，可永久缓存，且与后续网络超参数搜索无关。
+
+\subsection{采样域}
+训练域应覆盖生产使用的热状态盒和几何盒：
+\begin{equation}
+(a,g)\in\mathcal A\times\mathcal G.
+\end{equation}
+首版采样采用分层策略：
+\begin{itemize}
+  \item 几何：中心点、边界/轴向 anchors、低差异序列；
+  \item 热状态：参考状态、主要低频模态轴向扰动、低差异随机组合；
+  \item 后续根据 held-out 误差增加 active-learning hard points。
+\end{itemize}
+不使用完整 Cartesian product。
+
+\subsection{数据划分}
+必须按 $(a,g)$ 样本划分 train/validation/test，而不能把同一物理状态的不同电流 $u$ 分到不同集合，因为电流维已被解析消元。建议保留：
+\begin{itemize}
+  \item 训练集：网络优化；
+  \item 验证集：early stopping、POD rank 和容量选择；
+  \item 冻结测试集：最终报告，永不回流训练；
+  \item 少量 full-order audit set：检查 EM-ROM 与 neural surrogate 的叠加误差。
+\end{itemize}
+
+\subsection{POD 构建}
+只用训练集构造 $\bar y,U_K$，避免数据泄漏。POD rank 不能只按总能量选取，还必须同时监控 held-out 最大重构误差：
+\begin{equation}
+\epsilon_{\mathrm{POD,max}}
+=
+\max_s
+\norm{y^{(s)}-\bar y-U_KU_K^\top(y^{(s)}-\bar y)}.
+\end{equation}
+候选 $K\in\{16,32,64,128,\ldots\}$，由验证标准选择。
+
+\subsection{主训练损失}
+网络主损失为归一化 POD 系数回归：
+\begin{equation}
+\mathcal L_\beta
+=
+\frac{1}{N}
+\sum_s
+\norm{W_\beta(\beta_\theta^{(s)}-\beta^{(s)})}_2^2,
+\end{equation}
+其中 $W_\beta$ 用训练集尺度固定。
+
+为防止 POD 坐标小误差在特定电流方向上放大，加入物理辅助损失。对每个 $(a,g)$ mini-batch 随机生成若干 $u$：
+\begin{equation}
+\mathcal L_q
+=
+\frac{1}{N_u}
+\sum
+\norm{W_q(q_\theta-q_{\mathrm{phys}})}_2^2.
+\end{equation}
+总损失
+\begin{equation}
+\boxed{
+\mathcal L=\mathcal L_\beta+\lambda_q\mathcal L_q.
+}
+\end{equation}
+物理结构本身不依赖该损失；该项只改善数值拟合质量。
+
+\subsection{可选 Sobolev/Jacobian 监督}
+若真实 Jacobian $\partial q/\partial a$ 可以低成本产生，则可增加
+\begin{equation}
+\mathcal L_J
+=
+\norm{
+\frac{\partial q_\theta}{\partial a}
+-
+\frac{\partial q}{\partial a}
+}_F^2.
+\end{equation}
+该项只在实验确认明显改善 trajectory/stability 后加入 V1；不作为首版必要条件。
+
+\subsection{优化器与训练流程}
+默认使用标准 GPU 训练：AdamW + mini-batch + validation early stopping。允许 mixed precision，但最终模型验证必须用 float64 重算关键误差。网络训练期间禁止调用 full EM/FEM 求解器；所有物理标签必须来自预生成/增量生成的数据层。
+
+\subsection{主动学习}
+初始网络训练后，在候选 $(a,g)$ 池上使用以下指标寻找 hard points：
+\begin{itemize}
+  \item ensemble/MC dropout disagreement（若启用）；
+  \item 距离训练集的 feature-space novelty；
+  \item 物理 spot-check 的 $G/q$ 误差；
+  \item trajectory audit 中访问频率高但误差大的状态。
+\end{itemize}
+新增样本后重新构建 POD 必须有版本控制；若 POD 基不变，则可增量训练网络。
