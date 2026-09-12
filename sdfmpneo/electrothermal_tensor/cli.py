@@ -252,8 +252,13 @@ def command_predict(config_file: str | Path) -> int:
     )
     operating = np.asarray(config["operating"], dtype=float)
     max_step = float(config["max_step"])
-    method = str(config.get("method", "etd2"))
+    method = str(config.get("method", "etd2_adaptive"))
     allow_extrapolation = bool(config.get("allow_extrapolation", False))
+    rtol = float(config.get("rtol", 1e-5))
+    atol = float(config.get("atol", 1e-8))
+    initial_step = config.get("initial_step")
+    initial_step = None if initial_step is None else float(initial_step)
+    max_attempts = int(config.get("max_attempts", 100000))
     results = []
     for value in config["times"]:
         if isinstance(value, str) and value.lower() in {"inf", "infinity"}:
@@ -275,6 +280,10 @@ def command_predict(config_file: str | Path) -> int:
                 max_step=max_step,
                 method=method,
                 allow_extrapolation=allow_extrapolation,
+                rtol=rtol,
+                atol=atol,
+                initial_step=initial_step,
+                max_attempts=max_attempts,
             )
             results.append(prediction)
     _write_json(
@@ -285,6 +294,8 @@ def command_predict(config_file: str | Path) -> int:
             "operating": operating,
             "initial_state": initial,
             "method": method,
+            "rtol": rtol,
+            "atol": atol,
             "results": results,
         },
     )
@@ -327,6 +338,13 @@ def command_audit(config_file: str | Path) -> int:
             operating=np.asarray(item["operating"], dtype=float),
             neural_max_step=float(item["neural_max_step"]),
             long_time_check=bool(item.get("long_time_check", False)),
+            neural_method=str(item.get("neural_method", "etd2_adaptive")),
+            neural_rtol=float(item.get("neural_rtol", 1e-5)),
+            neural_atol=float(item.get("neural_atol", 1e-8)),
+            neural_initial_step=(
+                None if item.get("neural_initial_step") is None
+                else float(item["neural_initial_step"])
+            ),
         )
         for item in config["trajectory_cases"]
     )
