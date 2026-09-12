@@ -21,6 +21,7 @@
     "active_subspace_sample_count": 2,
     "active_subspace_relative_step": 1e-5,
     "benchmark_repeats": 50,
+    "trajectory_benchmark_repeats": 3,
     "seed": 31
   },
   "trajectory_cases": [
@@ -29,7 +30,11 @@
       "times": [0.0, 0.001, 0.01, 0.1, 1.0],
       "initial_state": [0.0, 0.0],
       "operating": [5.0, 0.0],
-      "neural_max_step": 0.01,
+      "neural_max_step": 1.0,
+      "neural_method": "etd2_adaptive",
+      "neural_rtol": 1e-6,
+      "neural_atol": 1e-9,
+      "neural_initial_step": 0.0001,
       "long_time_check": false
     },
     {
@@ -37,7 +42,11 @@
       "times": [0.0, 1.0, 10.0, 100.0, 1000.0],
       "initial_state": [0.0, 0.0],
       "operating": [10.0, 10.0],
-      "neural_max_step": 1.0,
+      "neural_max_step": 100.0,
+      "neural_method": "etd2_adaptive",
+      "neural_rtol": 1e-5,
+      "neural_atol": 1e-8,
+      "neural_initial_step": 0.001,
       "long_time_check": true
     }
   ],
