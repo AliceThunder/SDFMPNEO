@@ -25,7 +25,16 @@ from .benchmark import (
     benchmark_vector_field,
     model_file_size,
 )
-from .certification import audit_evidence, gate_report_hash, save_audited_model
+from .certification import (
+    PersistenceRoundtripReport,
+    TrainingReproductionReport,
+    audit_evidence,
+    gate_report_hash,
+    save_audited_model,
+    training_reproducibility_evidence,
+    verify_model_persistence_roundtrip,
+    verify_training_reproduction,
+)
 from .dataset import (
     QuadraticJouleDataset,
     SnapshotManifest,
@@ -152,6 +161,7 @@ __all__ = [
     "NeuralTrainingConfig",
     "NeuralTrainingReport",
     "PODRankDiagnostic",
+    "PersistenceRoundtripReport",
     "PipelineResult",
     "ProductionBudgets",
     "ProductionReadinessReport",
@@ -169,6 +179,7 @@ __all__ = [
     "SurrogateValidationReport",
     "TensorPOD",
     "TimingStats",
+    "TrainingReproductionReport",
     "TrajectoryAuditCase",
     "TrajectoryValidationReport",
     "VectorFieldValidationReport",
@@ -242,10 +253,13 @@ __all__ = [
     "tensor_to_heat_error_bound",
     "torch_quadratic_feature",
     "train_tensor_surrogate",
+    "training_reproducibility_evidence",
     "trajectory_error_bound",
     "validate_quadratic_identity",
     "validate_surrogate_on_dataset",
     "validate_trajectory",
     "validate_vector_field",
     "validated_state_bounds",
+    "verify_model_persistence_roundtrip",
+    "verify_training_reproduction",
 ]
