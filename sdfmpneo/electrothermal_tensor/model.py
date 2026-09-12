@@ -1,19 +1,21 @@
 """Deployable structure-preserving neural electrothermal ROM facade."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 from pathlib import Path
 
 import numpy as np
 
+from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .integrators import integrate_etd2, integrate_imex_euler, integrate_reference
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .pod import TensorPOD
 from .surrogate import NeuralTensorSurrogate
 from .vector_field import FixedThermalOperatorFamily, NeuralElectroThermalVectorField
 
-_MODEL_FORMAT_VERSION = 1
+_MODEL_FORMAT_VERSION = 2
+_SUPPORTED_MODEL_FORMAT_VERSIONS = (1, 2)
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,8 @@ class StructurePreservingNeuralElectroThermalROM:
         a = np.asarray(state, dtype=float).reshape(-1)
         g = np.asarray(geometry, dtype=float).reshape(-1)
         u = np.asarray(operating, dtype=float).reshape(-1)
+        if np.any(~np.isfinite(a)) or np.any(~np.isfinite(g)) or np.any(~np.isfinite(u)):
+            raise ValueError("state, geometry and operating inputs must be finite")
         if allow_extrapolation or not self.training_domain:
             return a, g, u
         for name, value in (("state", a), ("geometry", g), ("operating", u)):
@@ -67,6 +71,28 @@ class StructurePreservingNeuralElectroThermalROM:
             if np.any(value < lower) or np.any(value > upper):
                 raise ValueError(f"{name} is outside the trained domain")
         return a, g, u
+
+    def _state_validator(self, *, allow_extrapolation: bool):
+        if allow_extrapolation or not self.training_domain:
+            return None
+        lower = self.training_domain.get("state_lower")
+        upper = self.training_domain.get("state_upper")
+        if lower is None or upper is None:
+            return None
+        lo = np.asarray(lower, dtype=float).reshape(-1)
+        hi = np.asarray(upper, dtype=float).reshape(-1)
+
+        def validate(state):
+            value = np.asarray(state, dtype=float).reshape(-1)
+            if value.shape != lo.shape or np.any(~np.isfinite(value)):
+                raise ValueError("trajectory state is incompatible with the trained state domain")
+            if np.any(value < lo) or np.any(value > hi):
+                raise ValueError(
+                    "trajectory left the trained thermal-state domain; "
+                    "expand the snapshot state box or set allow_extrapolation=True explicitly"
+                )
+
+        return validate
 
     def predict(
         self,
@@ -82,17 +108,35 @@ class StructurePreservingNeuralElectroThermalROM:
         a0, g, u = self._check_domain(
             initial_state, geometry, operating, allow_extrapolation=allow_extrapolation
         )
+        state_validator = self._state_validator(allow_extrapolation=allow_extrapolation)
         if method == "etd2":
             result = integrate_etd2(
-                self.field, time, initial_state=a0, geometry=g, operating=u, max_step=max_step
+                self.field,
+                time,
+                initial_state=a0,
+                geometry=g,
+                operating=u,
+                max_step=max_step,
+                state_validator=state_validator,
             )
         elif method == "imex":
             result = integrate_imex_euler(
-                self.field, time, initial_state=a0, geometry=g, operating=u, max_step=max_step
+                self.field,
+                time,
+                initial_state=a0,
+                geometry=g,
+                operating=u,
+                max_step=max_step,
+                state_validator=state_validator,
             )
         elif method == "reference":
             result = integrate_reference(
-                self.field, time, initial_state=a0, geometry=g, operating=u
+                self.field,
+                time,
+                initial_state=a0,
+                geometry=g,
+                operating=u,
+                state_validator=state_validator,
             )
         else:
             raise ValueError("method must be 'etd2', 'imex' or 'reference'")
@@ -117,27 +161,43 @@ class StructurePreservingNeuralElectroThermalROM:
         max_iterations: int = 40,
         allow_extrapolation: bool = False,
     ) -> NeuralROMSteadyState:
+        tolerance = float(tolerance)
+        max_iterations = int(max_iterations)
+        if not np.isfinite(tolerance) or tolerance <= 0.0:
+            raise ValueError("steady-state tolerance must be finite and positive")
+        if max_iterations < 1:
+            raise ValueError("steady-state max_iterations must be positive")
         state, g, u = self._check_domain(
             initial_guess, geometry, operating, allow_extrapolation=allow_extrapolation
         )
+        validator = self._state_validator(allow_extrapolation=allow_extrapolation)
         state = state.copy()
-        for iteration in range(int(max_iterations) + 1):
+        last_iteration = 0
+        for iteration in range(max_iterations + 1):
+            last_iteration = iteration
             residual = self.field.vector_field(state, g, u)
             norm = float(np.linalg.norm(residual))
-            if norm <= float(tolerance):
+            if norm <= tolerance:
                 return NeuralROMSteadyState(state, norm, iteration, True)
-            if iteration == int(max_iterations):
+            if iteration == max_iterations:
                 break
             jacobian = self.field.state_jacobian(state, g, u)
             try:
                 step = np.linalg.solve(jacobian, -residual)
             except np.linalg.LinAlgError:
                 step = np.linalg.lstsq(jacobian, -residual, rcond=None)[0]
+            if np.any(~np.isfinite(step)):
+                break
             accepted = False
             factor = 1.0
             for _ in range(14):
                 trial = state + factor * step
-                trial_norm = float(np.linalg.norm(self.field.vector_field(trial, g, u)))
+                try:
+                    if validator is not None:
+                        validator(trial)
+                    trial_norm = float(np.linalg.norm(self.field.vector_field(trial, g, u)))
+                except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                    trial_norm = float("inf")
                 if np.isfinite(trial_norm) and trial_norm < norm:
                     state = trial
                     accepted = True
@@ -146,10 +206,15 @@ class StructurePreservingNeuralElectroThermalROM:
             if not accepted:
                 break
         residual = self.field.vector_field(state, g, u)
-        return NeuralROMSteadyState(state, float(np.linalg.norm(residual)), int(max_iterations), False)
+        return NeuralROMSteadyState(
+            state,
+            float(np.linalg.norm(residual)),
+            last_iteration,
+            False,
+        )
 
     def save(self, path: str | Path, *, metadata: dict | None = None) -> Path:
-        """Save without pickle; geometry operator families remain application-owned."""
+        """Save a pickle-free, fail-closed neural ROM artifact."""
         try:
             import torch
         except ImportError as exc:
@@ -160,6 +225,12 @@ class StructurePreservingNeuralElectroThermalROM:
         state_dict = network.state_dict()
         first_parameter = next(network.parameters())
         dtype_name = "float64" if first_parameter.dtype == torch.float64 else "float32"
+        if isinstance(self.thermal_operators, FixedThermalOperatorFamily):
+            operator_kind = "fixed"
+        elif isinstance(self.thermal_operators, AffineGeometryThermalOperatorFamily):
+            operator_kind = "affine_geometry"
+        else:
+            operator_kind = "external"
         payload = {
             "format_version": _MODEL_FORMAT_VERSION,
             "architecture": "structure-preserving-quadratic-current-neural-rom",
@@ -171,7 +242,7 @@ class StructurePreservingNeuralElectroThermalROM:
             "physical_signature": self.physical_signature,
             "training_domain": {key: value.tolist() for key, value in self.training_domain.items()},
             "metadata": {} if metadata is None else dict(metadata),
-            "operator_kind": "fixed" if isinstance(self.thermal_operators, FixedThermalOperatorFamily) else "external",
+            "operator_kind": operator_kind,
         }
         arrays = {
             "metadata_json": np.array(json.dumps(payload, sort_keys=True, allow_nan=False)),
@@ -183,10 +254,14 @@ class StructurePreservingNeuralElectroThermalROM:
         }
         for key, tensor in state_dict.items():
             arrays["network__" + key.replace(".", "__DOT__")] = tensor.detach().cpu().numpy()
-        if isinstance(self.thermal_operators, FixedThermalOperatorFamily):
-            operator = self.thermal_operators.operator(np.zeros(self.thermal_operators.geometry_dimension))
+        if operator_kind == "fixed":
+            operator = self.thermal_operators.operator(
+                np.zeros(self.thermal_operators.geometry_dimension)
+            )
             arrays["fixed_mass"] = operator.mass
             arrays["fixed_stiffness"] = operator.stiffness
+        elif operator_kind == "affine_geometry":
+            arrays.update(self.thermal_operators.persistence_arrays())
         with path.open("wb") as output:
             np.savez_compressed(output, **arrays)
         return path
@@ -206,8 +281,11 @@ class StructurePreservingNeuralElectroThermalROM:
             raise ImportError("install sdfmpneo[neural] to load neural models") from exc
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("format_version", -1)) != _MODEL_FORMAT_VERSION:
+            version = int(meta.get("format_version", -1))
+            if version not in _SUPPORTED_MODEL_FORMAT_VERSIONS:
                 raise ValueError("unsupported neural electrothermal ROM format")
+            if meta.get("architecture") != "structure-preserving-quadratic-current-neural-rom":
+                raise ValueError("unexpected neural ROM architecture")
             signature = meta.get("physical_signature")
             if expected_physical_signature is not None and signature != expected_physical_signature:
                 raise ValueError("physical model signature mismatch")
@@ -239,19 +317,29 @@ class StructurePreservingNeuralElectroThermalROM:
                 coefficient_mean=data["coefficient_mean"],
                 coefficient_scale=data["coefficient_scale"],
             )
-            if meta.get("operator_kind") == "fixed":
+            operator_kind = meta.get("operator_kind")
+            if operator_kind == "fixed":
                 thermal_operators = FixedThermalOperatorFamily(
                     data["fixed_mass"],
                     data["fixed_stiffness"],
                     geometry_dimension=int(meta["geometry_dimension"]),
                 )
+            elif operator_kind == "affine_geometry":
+                thermal_operators = AffineGeometryThermalOperatorFamily.from_persistence(data)
             elif thermal_operators is None:
-                raise ValueError("geometry-family model load requires thermal_operators")
+                raise ValueError(
+                    "model uses an external thermal operator family; provide thermal_operators explicitly"
+                )
+            if int(thermal_operators.geometry_dimension) != int(meta["geometry_dimension"]):
+                raise ValueError("saved neural and thermal geometry dimensions differ")
             return cls(
                 surrogate,
                 thermal_operators,
                 physical_signature=signature,
-                training_domain={key: np.asarray(value, dtype=float) for key, value in meta.get("training_domain", {}).items()},
+                training_domain={
+                    key: np.asarray(value, dtype=float)
+                    for key, value in meta.get("training_domain", {}).items()
+                },
             )
 
 
