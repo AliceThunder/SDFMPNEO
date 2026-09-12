@@ -1,10 +1,27 @@
 """Structure-preserving quadratic-current neural electrothermal ROM."""
 
 from .adapters import (
+    fixed_research_direct_heat_factory,
+    fixed_research_jacobian_factory,
+    fixed_research_temperature_reconstructor,
     fixed_research_tensor_factory,
     fixed_research_thermal_family,
+    fixed_research_vector_field_factory,
+    geometry_research_direct_heat_factory,
+    geometry_research_jacobian_factory,
+    geometry_research_temperature_reconstructor,
     geometry_research_tensor_factory,
     geometry_research_thermal_family,
+    geometry_research_vector_field_factory,
+)
+from .audit import GateSuiteConfig, GateSuiteReport, TrajectoryAuditCase, run_gate_suite
+from .benchmark import (
+    TimingStats,
+    benchmark_calls,
+    benchmark_snapshot_generation,
+    benchmark_trajectory_queries,
+    benchmark_vector_field,
+    model_file_size,
 )
 from .dataset import (
     QuadraticJouleDataset,
@@ -12,6 +29,12 @@ from .dataset import (
     frozen_split_indices,
     generate_snapshot_dataset,
     latin_hypercube_box,
+)
+from .gates import (
+    GateRecord,
+    ProductionBudgets,
+    ProductionReadinessReport,
+    evaluate_production_readiness,
 )
 from .generator import generate_snapshots_resumable
 from .integrators import (
@@ -31,15 +54,18 @@ from .physical_layer import (
     decode_heat_source_batch_numpy,
     decode_heat_source_numpy,
     decode_heat_source_torch,
+    torch_quadratic_feature,
 )
 from .pipeline import PipelineResult, build_fixed_neural_rom, build_geometry_neural_rom
-from .pod import TensorPOD, fit_dataset_pod, fit_tensor_pod
+from .pod import PODRankDiagnostic, TensorPOD, fit_dataset_pod, fit_tensor_pod, pod_rank_sweep
 from .quadratic_joule import (
     augmented_operating_vector,
     quadratic_heat_source,
     quadratic_heat_source_batch,
     quadratic_joule_tensor,
 )
+from .signatures import fixed_research_physical_signature, geometry_research_physical_signature
+from .stability import analyze_stability_callbacks
 from .surrogate import NeuralTensorSurrogate
 from .symmetric import (
     quadratic_feature,
@@ -52,14 +78,21 @@ from .symmetric import (
 )
 from .trainer import NeuralTrainingConfig, NeuralTrainingReport, train_tensor_surrogate
 from .validation import (
+    ActiveSubspaceReport,
+    QuadraticIdentityReport,
     StabilityReport,
     SurrogateValidationReport,
+    TrajectoryValidationReport,
     VectorFieldValidationReport,
+    active_subspace_spectrum,
     analyze_stability,
     energy_logarithmic_norm,
+    finite_difference_tensor_jacobian,
     tensor_to_heat_error_bound,
     trajectory_error_bound,
+    validate_quadratic_identity,
     validate_surrogate_on_dataset,
+    validate_trajectory,
     validate_vector_field,
 )
 from .vector_field import (
@@ -70,9 +103,13 @@ from .vector_field import (
 )
 
 __all__ = [
+    "ActiveSubspaceReport",
     "CallableThermalOperatorFamily",
     "FeatureNormalizer",
     "FixedThermalOperatorFamily",
+    "GateRecord",
+    "GateSuiteConfig",
+    "GateSuiteReport",
     "GeneralizedETD2Stepper",
     "IntegrationResult",
     "NeuralElectroThermalVectorField",
@@ -81,7 +118,11 @@ __all__ = [
     "NeuralTensorSurrogate",
     "NeuralTrainingConfig",
     "NeuralTrainingReport",
+    "PODRankDiagnostic",
     "PipelineResult",
+    "ProductionBudgets",
+    "ProductionReadinessReport",
+    "QuadraticIdentityReport",
     "QuadraticJouleDataset",
     "ReducedThermalOperator",
     "ResidualMLPConfig",
@@ -90,9 +131,18 @@ __all__ = [
     "StructurePreservingNeuralElectroThermalROM",
     "SurrogateValidationReport",
     "TensorPOD",
+    "TimingStats",
+    "TrajectoryAuditCase",
+    "TrajectoryValidationReport",
     "VectorFieldValidationReport",
+    "active_subspace_spectrum",
     "analyze_stability",
+    "analyze_stability_callbacks",
     "augmented_operating_vector",
+    "benchmark_calls",
+    "benchmark_snapshot_generation",
+    "benchmark_trajectory_queries",
+    "benchmark_vector_field",
     "build_fixed_neural_rom",
     "build_geometry_neural_rom",
     "build_residual_mlp",
@@ -100,32 +150,50 @@ __all__ = [
     "decode_heat_source_numpy",
     "decode_heat_source_torch",
     "energy_logarithmic_norm",
+    "evaluate_production_readiness",
+    "finite_difference_tensor_jacobian",
     "fit_dataset_pod",
     "fit_tensor_pod",
+    "fixed_research_direct_heat_factory",
+    "fixed_research_jacobian_factory",
+    "fixed_research_physical_signature",
+    "fixed_research_temperature_reconstructor",
     "fixed_research_tensor_factory",
     "fixed_research_thermal_family",
+    "fixed_research_vector_field_factory",
     "frozen_split_indices",
     "generate_snapshot_dataset",
     "generate_snapshots_resumable",
+    "geometry_research_direct_heat_factory",
+    "geometry_research_jacobian_factory",
+    "geometry_research_physical_signature",
+    "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
     "geometry_research_thermal_family",
+    "geometry_research_vector_field_factory",
     "integrate_etd2",
     "integrate_imex_euler",
     "integrate_reference",
     "latin_hypercube_box",
+    "model_file_size",
+    "pod_rank_sweep",
     "quadratic_feature",
     "quadratic_from_svec",
     "quadratic_heat_source",
     "quadratic_heat_source_batch",
     "quadratic_joule_tensor",
+    "run_gate_suite",
     "smat",
     "svec",
     "symmetric_packed_size",
     "tensor_smat",
     "tensor_svec",
     "tensor_to_heat_error_bound",
+    "torch_quadratic_feature",
     "train_tensor_surrogate",
     "trajectory_error_bound",
+    "validate_quadratic_identity",
     "validate_surrogate_on_dataset",
+    "validate_trajectory",
     "validate_vector_field",
 ]
