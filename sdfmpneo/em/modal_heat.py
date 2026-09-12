@@ -132,18 +132,14 @@ def _can_fuse_reduced_modal_heat(em_model) -> bool:
     )
 
 
-def _fused_reduced_modal_heat_source(em_model, thermal_state, rhs) -> np.ndarray:
-    """Solve the reduced EM system and project Joule heat in one constitutive pass.
-
-    ``SparseEnergyReducedEMModel`` already stores the electric reduced basis on
-    mesh edges.  Reusing it here gives exactly
-
-        E_edge = electric_extraction @ V @ c
-
-    without constructing ``V @ c`` in the full EM coordinate space.  The same
-    conductivity polynomials are also used to assemble ``V^H A(a) V`` and the
-    Joule moments, so the nonlinear constitutive expansion is performed once.
-    """
+def _fused_reduced_modal_heat_source(
+    em_model,
+    thermal_state,
+    rhs,
+    *,
+    reduced_rhs=None,
+) -> np.ndarray:
+    """Solve reduced EM and project Joule heat in one constitutive pass."""
     problem = em_model.problem
     state = np.asarray(thermal_state, dtype=float)
     source = np.asarray(rhs, dtype=complex)
@@ -158,10 +154,16 @@ def _fused_reduced_modal_heat_source(em_model, thermal_state, rhs) -> np.ndarray
         np.asarray(em_model._magnetic_reduced, dtype=complex)
         + 1j * float(problem.omega) * np.asarray(conductivity, dtype=complex)
     )
-    reduced_rhs = em_model.rhs_reduced(source)
+    if reduced_rhs is None:
+        reduced_source = em_model.rhs_reduced(source)
+    else:
+        reduced_source = np.asarray(reduced_rhs, dtype=complex)
+        expected = (em_model.V.shape[1],)
+        if reduced_source.shape != expected:
+            raise ValueError("prepared reduced RHS dimension mismatch")
     coefficients = scipy.linalg.solve(
         reduced_operator,
-        reduced_rhs,
+        reduced_source,
         assume_a="gen",
         check_finite=False,
     )
@@ -177,11 +179,22 @@ def _fused_reduced_modal_heat_source(em_model, thermal_state, rhs) -> np.ndarray
     )
 
 
-def heat_source_for_reduced_model(em_model, thermal_state, rhs) -> np.ndarray:
-    """Fast exact heat source with a fused UWPT reduced-coordinate path."""
+def heat_source_for_reduced_model(
+    em_model,
+    thermal_state,
+    rhs,
+    *,
+    reduced_rhs=None,
+) -> np.ndarray:
+    """Fast exact heat source, optionally reusing the operating-only ``V^H b``."""
     problem = em_model.problem
     if _can_fuse_reduced_modal_heat(em_model):
-        return _fused_reduced_modal_heat_source(em_model, thermal_state, rhs)
+        return _fused_reduced_modal_heat_source(
+            em_model,
+            thermal_state,
+            rhs,
+            reduced_rhs=reduced_rhs,
+        )
     if _supported(problem):
         x = em_model.state_for_rhs(thermal_state, rhs)
         return exact_modal_heat_source(problem, x, thermal_state)
