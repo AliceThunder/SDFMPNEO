@@ -9,6 +9,7 @@ from .benchmark import benchmark_trajectory_queries, benchmark_vector_field
 from .gates import ProductionBudgets, ProductionReadinessReport, evaluate_production_readiness
 from .pod import PODRankDiagnostic, pod_rank_sweep
 from .stability import analyze_stability_callbacks
+from .symmetric import tensor_svec
 from .validation import (
     ActiveSubspaceReport,
     QuadraticIdentityReport,
@@ -79,6 +80,8 @@ class GateSuiteConfig:
     operating_samples_per_state: int = 4
     active_subspace_sample_count: int = 4
     active_subspace_relative_step: float = 1e-5
+    active_subspace_mode: str = "full"
+    randomized_direction_count: int = 16
     benchmark_repeats: int = 100
     trajectory_benchmark_repeats: int = 3
     seed: int = 0
@@ -90,6 +93,10 @@ class GateSuiteConfig:
             raise ValueError("active_subspace_sample_count must be positive")
         if float(self.active_subspace_relative_step) <= 0.0:
             raise ValueError("active_subspace_relative_step must be positive")
+        if self.active_subspace_mode not in {"full", "randomized_screening"}:
+            raise ValueError("active_subspace_mode must be 'full' or 'randomized_screening'")
+        if int(self.randomized_direction_count) < 1:
+            raise ValueError("randomized_direction_count must be positive")
         if int(self.benchmark_repeats) < 1 or int(self.trajectory_benchmark_repeats) < 1:
             raise ValueError("benchmark repeat counts must be positive")
 
@@ -99,6 +106,8 @@ class GateSuiteReport:
     quadratic_identity: QuadraticIdentityReport
     pod_diagnostics: tuple[PODRankDiagnostic, ...]
     active_subspace: ActiveSubspaceReport
+    active_subspace_method: str
+    active_subspace_direction_count: int
     physical_stability: StabilityReport
     surrogate: SurrogateValidationReport
     vector_field: VectorFieldValidationReport
@@ -110,8 +119,6 @@ class GateSuiteReport:
 
 
 class _TrajectoryMethodProxy:
-    """Force Gate 6 to exercise exactly the requested production integrator."""
-
     def __init__(self, model, case: TrajectoryAuditCase):
         self.model = model
         self.case = case
@@ -155,6 +162,73 @@ def _available_pod_ranks(dataset, requested: tuple[int, ...]) -> tuple[int, ...]
     if not ranks:
         ranks = (maximum,)
     return ranks
+
+
+def _randomized_projected_tensor_jacobian(
+    tensor_factory,
+    state,
+    geometry,
+    directions: np.ndarray,
+    *,
+    relative_step: float,
+) -> np.ndarray:
+    """Approximate ``J`` by ``J QQ^T`` using central directional differences.
+
+    This is a screening diagnostic only.  Its spectrum is the sensitivity seen
+    in the chosen random input subspace and cannot certify that directions
+    orthogonal to that subspace are unimportant.
+    """
+    a = np.asarray(state, dtype=float).reshape(-1)
+    g = np.asarray(geometry, dtype=float).reshape(-1)
+    Q = np.asarray(directions, dtype=float)
+    if Q.ndim != 2 or Q.shape[0] != a.size:
+        raise ValueError("randomized sensitivity directions have wrong dimension")
+    output_dimension = tensor_svec(np.asarray(tensor_factory(a, g), dtype=float)).size
+    directional = np.empty((output_dimension, Q.shape[1]), dtype=float)
+    state_scale = max(1.0, float(np.linalg.norm(a)))
+    for k in range(Q.shape[1]):
+        direction = Q[:, k]
+        h = float(relative_step) * state_scale
+        yp = tensor_svec(
+            np.asarray(tensor_factory(a + h * direction, g), dtype=float)
+        ).reshape(-1)
+        ym = tensor_svec(
+            np.asarray(tensor_factory(a - h * direction, g), dtype=float)
+        ).reshape(-1)
+        directional[:, k] = (yp - ym) / (2.0 * h)
+    return directional @ Q.T
+
+
+def _gate3_jacobians(tensor_factory, dataset, active_ids, cfg: GateSuiteConfig):
+    if cfg.active_subspace_mode == "full":
+        return np.asarray(
+            [
+                finite_difference_tensor_jacobian(
+                    tensor_factory,
+                    dataset.states[index],
+                    dataset.geometries[index],
+                    relative_step=cfg.active_subspace_relative_step,
+                )
+                for index in active_ids
+            ]
+        ), dataset.thermal_rank
+    count = min(int(cfg.randomized_direction_count), dataset.thermal_rank)
+    rng = np.random.default_rng(int(cfg.seed) + 101)
+    raw = rng.normal(size=(dataset.thermal_rank, count))
+    directions, _ = np.linalg.qr(raw, mode="reduced")
+    jacobians = np.asarray(
+        [
+            _randomized_projected_tensor_jacobian(
+                tensor_factory,
+                dataset.states[index],
+                dataset.geometries[index],
+                directions,
+                relative_step=cfg.active_subspace_relative_step,
+            )
+            for index in active_ids
+        ]
+    )
+    return jacobians, count
 
 
 def run_gate_suite(
@@ -211,16 +285,8 @@ def run_gate_suite(
     )
 
     active_ids = test_ids[: min(len(test_ids), int(cfg.active_subspace_sample_count))]
-    jacobians = np.asarray(
-        [
-            finite_difference_tensor_jacobian(
-                tensor_factory,
-                dataset.states[index],
-                dataset.geometries[index],
-                relative_step=cfg.active_subspace_relative_step,
-            )
-            for index in active_ids
-        ]
+    jacobians, direction_count = _gate3_jacobians(
+        tensor_factory, dataset, active_ids, cfg
     )
     active = active_subspace_spectrum(jacobians)
 
@@ -310,6 +376,8 @@ def run_gate_suite(
         quadratic_identity=quadratic,
         pod_diagnostics=pod_diagnostics,
         active_subspace=active,
+        active_subspace_method=cfg.active_subspace_mode,
+        active_subspace_direction_count=direction_count,
         physical_stability=physical_stability,
         surrogate=surrogate_report,
         vector_field=vector_report,
