@@ -1,276 +1,89 @@
 """Structure-preserving quadratic-current neural electrothermal ROM."""
 
 from .adapters import (
-    fixed_research_direct_heat_factory,
-    fixed_research_jacobian_factory,
-    fixed_research_temperature_reconstructor,
     fixed_research_tensor_factory,
     fixed_research_thermal_family,
     fixed_research_thermal_rhs_forcing,
-    fixed_research_vector_field_factory,
-    geometry_research_direct_heat_factory,
     geometry_research_embedded_thermal_family,
-    geometry_research_jacobian_factory,
-    geometry_research_temperature_reconstructor,
     geometry_research_tensor_factory,
-    geometry_research_thermal_family,
     geometry_research_thermal_rhs_forcing,
-    geometry_research_vector_field_factory,
 )
-from .audit import GateSuiteConfig, GateSuiteReport, TrajectoryAuditCase, run_gate_suite
 from .batch import BatchedNeuralROMPrediction, predict_batch_fixed_etd2
-from .benchmark import (
-    TimingStats,
-    benchmark_calls,
-    benchmark_snapshot_generation,
-    benchmark_trajectory_queries,
-    benchmark_vector_field,
-    model_file_size,
-)
-from .certification import (
-    PersistenceRoundtripReport,
-    TrainingReproductionReport,
-    audit_evidence,
-    gate_report_hash,
-    save_audited_model,
-    training_reproducibility_evidence,
-    verify_model_persistence_roundtrip,
-    verify_training_reproduction,
-)
-from .certification_streaming import verify_training_reproduction_streaming
-from .dataset import (
-    QuadraticJouleDataset,
-    SnapshotManifest,
-    frozen_split_indices,
-    generate_snapshot_dataset,
-    latin_hypercube_box,
-)
-from .dataset_io import load_quadratic_joule_dataset
-from .diagnostics import NeuralStateEMDiagnostics, diagnose_neural_state
+from .dataset import QuadraticJouleDataset, SnapshotManifest, frozen_split_indices, latin_hypercube_box
 from .disk_dataset import DiskQuadraticJouleDataset
-from .domain import (
-    ReachableStateDomainReport,
-    load_reachable_state_domain_report,
-    probe_reachable_state_domain,
-    validated_state_bounds,
-)
-from .domain_pipeline import (
-    build_fixed_neural_rom_from_domain_report,
-    build_geometry_neural_rom_from_domain_report,
-)
-from .gates import (
-    GateRecord,
-    ProductionBudgets,
-    ProductionReadinessReport,
-    evaluate_production_readiness,
-)
 from .generator import generate_snapshots_resumable
 from .geometry_thermal import AffineGeometryThermalOperatorFamily
 from .integrators import (
-    GeneralizedETD2Stepper,
     GeneralizedThermalSpectrum,
     IntegrationResult,
     integrate_etd2,
     integrate_etd2_adaptive,
     integrate_imex_euler,
-    integrate_reference,
 )
-from .model import (
-    NeuralROMPrediction,
-    NeuralROMSteadyState,
-    StructurePreservingNeuralElectroThermalROM,
-)
+from .model import NeuralROMPrediction, NeuralROMSteadyState, StructurePreservingNeuralElectroThermalROM
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
-from .physical_layer import (
-    decode_heat_source_batch_numpy,
-    decode_heat_source_numpy,
-    decode_heat_source_torch,
-    torch_quadratic_feature,
-)
-from .pipeline import (
-    PipelineResult,
-    build_fixed_neural_rom,
-    build_geometry_neural_rom,
-    retrain_neural_rom,
-)
-from .pod import PODRankDiagnostic, TensorPOD, fit_dataset_pod, fit_tensor_pod, pod_rank_sweep
-from .quadratic_joule import (
-    augmented_operating_vector,
-    quadratic_heat_source,
-    quadratic_heat_source_batch,
-    quadratic_joule_tensor,
-)
-from .sampling import (
-    SnapshotSamplingReport,
-    SnapshotSamplingResult,
-    StateDomainInsufficientError,
-    box_state_geometry_samples,
-    hybrid_reachable_state_geometry_samples,
-)
-from .signatures import fixed_research_physical_signature, geometry_research_physical_signature
-from .stability import analyze_stability_callbacks
+from .physical_layer import decode_heat_source_batch_numpy, decode_heat_source_numpy, decode_heat_source_torch
+from .pipeline import PipelineResult, build_fixed_neural_rom, build_geometry_neural_rom, retrain_neural_rom
+from .pod import TensorPOD, fit_dataset_pod, fit_tensor_pod
+from .quadratic_joule import augmented_operating_vector, quadratic_heat_source, quadratic_heat_source_batch, quadratic_joule_tensor
 from .surrogate import NeuralTensorSurrogate, PreparedOperatingQuadraticLayer
-from .symmetric import (
-    quadratic_feature,
-    quadratic_from_svec,
-    smat,
-    svec,
-    symmetric_packed_size,
-    tensor_smat,
-    tensor_svec,
-)
+from .symmetric import quadratic_feature, smat, svec, symmetric_packed_size, tensor_smat, tensor_svec
 from .trainer import NeuralTrainingConfig, NeuralTrainingReport, train_tensor_surrogate
-from .validation import (
-    ActiveSubspaceReport,
-    QuadraticIdentityReport,
-    StabilityReport,
-    SurrogateValidationReport,
-    TrajectoryValidationReport,
-    VectorFieldValidationReport,
-    active_subspace_spectrum,
-    analyze_stability,
-    energy_logarithmic_norm,
-    finite_difference_tensor_jacobian,
-    tensor_to_heat_error_bound,
-    trajectory_error_bound,
-    validate_quadratic_identity,
-    validate_surrogate_on_dataset,
-    validate_trajectory,
-    validate_vector_field,
-)
-from .vector_field import (
-    CallableThermalOperatorFamily,
-    FixedThermalOperatorFamily,
-    NeuralElectroThermalVectorField,
-    ReducedThermalOperator,
-)
+from .vector_field import FixedThermalOperatorFamily, NeuralElectroThermalVectorField, ReducedThermalOperator
 
 __all__ = [
-    "ActiveSubspaceReport",
     "AffineGeometryThermalOperatorFamily",
     "BatchedNeuralROMPrediction",
-    "CallableThermalOperatorFamily",
     "DiskQuadraticJouleDataset",
     "FeatureNormalizer",
     "FixedThermalOperatorFamily",
-    "GateRecord",
-    "GateSuiteConfig",
-    "GateSuiteReport",
-    "GeneralizedETD2Stepper",
     "GeneralizedThermalSpectrum",
     "IntegrationResult",
     "NeuralElectroThermalVectorField",
     "NeuralROMPrediction",
     "NeuralROMSteadyState",
-    "NeuralStateEMDiagnostics",
     "NeuralTensorSurrogate",
     "NeuralTrainingConfig",
     "NeuralTrainingReport",
-    "PODRankDiagnostic",
-    "PersistenceRoundtripReport",
     "PipelineResult",
     "PreparedOperatingQuadraticLayer",
-    "ProductionBudgets",
-    "ProductionReadinessReport",
-    "QuadraticIdentityReport",
     "QuadraticJouleDataset",
-    "ReachableStateDomainReport",
     "ReducedThermalOperator",
     "ResidualMLPConfig",
     "SnapshotManifest",
-    "SnapshotSamplingReport",
-    "SnapshotSamplingResult",
-    "StabilityReport",
-    "StateDomainInsufficientError",
     "StructurePreservingNeuralElectroThermalROM",
-    "SurrogateValidationReport",
     "TensorPOD",
-    "TimingStats",
-    "TrainingReproductionReport",
-    "TrajectoryAuditCase",
-    "TrajectoryValidationReport",
-    "VectorFieldValidationReport",
-    "active_subspace_spectrum",
-    "analyze_stability",
-    "analyze_stability_callbacks",
-    "audit_evidence",
     "augmented_operating_vector",
-    "benchmark_calls",
-    "benchmark_snapshot_generation",
-    "benchmark_trajectory_queries",
-    "benchmark_vector_field",
-    "box_state_geometry_samples",
     "build_fixed_neural_rom",
-    "build_fixed_neural_rom_from_domain_report",
     "build_geometry_neural_rom",
-    "build_geometry_neural_rom_from_domain_report",
     "build_residual_mlp",
     "decode_heat_source_batch_numpy",
     "decode_heat_source_numpy",
     "decode_heat_source_torch",
-    "diagnose_neural_state",
-    "energy_logarithmic_norm",
-    "evaluate_production_readiness",
-    "finite_difference_tensor_jacobian",
     "fit_dataset_pod",
     "fit_tensor_pod",
-    "fixed_research_direct_heat_factory",
-    "fixed_research_jacobian_factory",
-    "fixed_research_physical_signature",
-    "fixed_research_temperature_reconstructor",
     "fixed_research_tensor_factory",
     "fixed_research_thermal_family",
     "fixed_research_thermal_rhs_forcing",
-    "fixed_research_vector_field_factory",
     "frozen_split_indices",
-    "gate_report_hash",
-    "generate_snapshot_dataset",
     "generate_snapshots_resumable",
-    "geometry_research_direct_heat_factory",
     "geometry_research_embedded_thermal_family",
-    "geometry_research_jacobian_factory",
-    "geometry_research_physical_signature",
-    "geometry_research_temperature_reconstructor",
     "geometry_research_tensor_factory",
-    "geometry_research_thermal_family",
     "geometry_research_thermal_rhs_forcing",
-    "geometry_research_vector_field_factory",
-    "hybrid_reachable_state_geometry_samples",
     "integrate_etd2",
     "integrate_etd2_adaptive",
     "integrate_imex_euler",
-    "integrate_reference",
     "latin_hypercube_box",
-    "load_quadratic_joule_dataset",
-    "load_reachable_state_domain_report",
-    "model_file_size",
-    "pod_rank_sweep",
     "predict_batch_fixed_etd2",
-    "probe_reachable_state_domain",
     "quadratic_feature",
-    "quadratic_from_svec",
     "quadratic_heat_source",
     "quadratic_heat_source_batch",
     "quadratic_joule_tensor",
     "retrain_neural_rom",
-    "run_gate_suite",
-    "save_audited_model",
     "smat",
     "svec",
     "symmetric_packed_size",
     "tensor_smat",
     "tensor_svec",
-    "tensor_to_heat_error_bound",
-    "torch_quadratic_feature",
     "train_tensor_surrogate",
-    "training_reproducibility_evidence",
-    "trajectory_error_bound",
-    "validate_quadratic_identity",
-    "validate_surrogate_on_dataset",
-    "validate_trajectory",
-    "validate_vector_field",
-    "validated_state_bounds",
-    "verify_model_persistence_roundtrip",
-    "verify_training_reproduction",
-    "verify_training_reproduction_streaming",
 ]
