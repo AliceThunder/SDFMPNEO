@@ -37,6 +37,7 @@ from .certification import (
     verify_model_persistence_roundtrip,
     verify_training_reproduction,
 )
+from .certification_streaming import verify_training_reproduction_streaming
 from .dataset import (
     QuadraticJouleDataset,
     SnapshotManifest,
@@ -44,7 +45,9 @@ from .dataset import (
     generate_snapshot_dataset,
     latin_hypercube_box,
 )
+from .dataset_io import load_quadratic_joule_dataset
 from .diagnostics import NeuralStateEMDiagnostics, diagnose_neural_state
+from .disk_dataset import DiskQuadraticJouleDataset
 from .domain import (
     ReachableStateDomainReport,
     load_reachable_state_domain_report,
@@ -106,7 +109,7 @@ from .sampling import (
 )
 from .signatures import fixed_research_physical_signature, geometry_research_physical_signature
 from .stability import analyze_stability_callbacks
-from .surrogate import NeuralTensorSurrogate
+from .surrogate import NeuralTensorSurrogate, PreparedOperatingQuadraticLayer
 from .symmetric import (
     quadratic_feature,
     quadratic_from_svec,
@@ -147,6 +150,7 @@ __all__ = [
     "AffineGeometryThermalOperatorFamily",
     "BatchedNeuralROMPrediction",
     "CallableThermalOperatorFamily",
+    "DiskQuadraticJouleDataset",
     "FeatureNormalizer",
     "FixedThermalOperatorFamily",
     "GateRecord",
@@ -165,6 +169,7 @@ __all__ = [
     "PODRankDiagnostic",
     "PersistenceRoundtripReport",
     "PipelineResult",
+    "PreparedOperatingQuadraticLayer",
     "ProductionBudgets",
     "ProductionReadinessReport",
     "QuadraticIdentityReport",
@@ -236,6 +241,7 @@ __all__ = [
     "integrate_imex_euler",
     "integrate_reference",
     "latin_hypercube_box",
+    "load_quadratic_joule_dataset",
     "load_reachable_state_domain_report",
     "model_file_size",
     "pod_rank_sweep",
@@ -266,4 +272,5 @@ __all__ = [
     "validated_state_bounds",
     "verify_model_persistence_roundtrip",
     "verify_training_reproduction",
+    "verify_training_reproduction_streaming",
 ]
