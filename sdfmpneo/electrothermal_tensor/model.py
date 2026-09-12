@@ -8,7 +8,12 @@ from pathlib import Path
 import numpy as np
 
 from .geometry_thermal import AffineGeometryThermalOperatorFamily
-from .integrators import integrate_etd2, integrate_imex_euler, integrate_reference
+from .integrators import (
+    integrate_etd2,
+    integrate_etd2_adaptive,
+    integrate_imex_euler,
+    integrate_reference,
+)
 from .network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .pod import TensorPOD
 from .surrogate import NeuralTensorSurrogate
@@ -26,6 +31,7 @@ class NeuralROMPrediction:
     heat_source: np.ndarray
     steps: int
     step_sizes: tuple[float, ...]
+    rejected_steps: int = 0
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,10 @@ class StructurePreservingNeuralElectroThermalROM:
         max_step: float,
         method: str = "etd2",
         allow_extrapolation: bool = False,
+        rtol: float = 1e-5,
+        atol: float = 1e-8,
+        initial_step: float | None = None,
+        max_attempts: int = 100000,
     ) -> NeuralROMPrediction:
         a0, g, u = self._check_domain(
             initial_state, geometry, operating, allow_extrapolation=allow_extrapolation
@@ -117,6 +127,20 @@ class StructurePreservingNeuralElectroThermalROM:
                 geometry=g,
                 operating=u,
                 max_step=max_step,
+                state_validator=state_validator,
+            )
+        elif method in {"etd2_adaptive", "adaptive_etd2"}:
+            result = integrate_etd2_adaptive(
+                self.field,
+                time,
+                initial_state=a0,
+                geometry=g,
+                operating=u,
+                max_step=max_step,
+                rtol=rtol,
+                atol=atol,
+                initial_step=initial_step,
+                max_attempts=max_attempts,
                 state_validator=state_validator,
             )
         elif method == "imex":
@@ -136,10 +160,14 @@ class StructurePreservingNeuralElectroThermalROM:
                 initial_state=a0,
                 geometry=g,
                 operating=u,
+                rtol=rtol,
+                atol=atol,
                 state_validator=state_validator,
             )
         else:
-            raise ValueError("method must be 'etd2', 'imex' or 'reference'")
+            raise ValueError(
+                "method must be 'etd2', 'etd2_adaptive', 'imex' or 'reference'"
+            )
         derivative = self.field.vector_field(result.state, g, u)
         heat = self.field.heat_source(result.state, g, u)
         return NeuralROMPrediction(
@@ -149,6 +177,7 @@ class StructurePreservingNeuralElectroThermalROM:
             heat_source=heat,
             steps=result.steps,
             step_sizes=result.step_sizes,
+            rejected_steps=result.rejected_steps,
         )
 
     def steady_state(
