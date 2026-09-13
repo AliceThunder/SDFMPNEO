@@ -30,11 +30,26 @@ def random_problem(seed=5):
 def test_residual_features_are_full_edge_local_and_have_jacobi_baseline():
     A, B = random_problem()
     features, jacobi, scale = residual_features(A, B)
-    assert features.shape == (B.shape[1], A.shape[0], 7)
+    assert features.shape == (B.shape[1], A.shape[0], 9)
     assert jacobi.shape == B.shape
     assert scale.shape == (B.shape[1],)
     assert np.allclose(A.diagonal()[:, None] * jacobi, B)
     assert np.all(np.isfinite(features))
+
+
+def test_residual_features_see_offdiagonal_sparse_coupling_not_only_the_diagonal():
+    n = TinyTopology.n_edges
+    diagonal = (2.0 + 0.4j) * np.ones(n)
+    A0 = sp.diags(diagonal, format="csr")
+    A1 = A0 + sp.diags([0.7 * np.ones(n - 1), 0.7 * np.ones(n - 1)], [-1, 1], format="csr")
+    residual = np.ones((n, 1), complex)
+
+    f0, _, _ = residual_features(A0, residual)
+    f1, _, _ = residual_features(A1, residual)
+
+    # Columns 7/8 are coupling ratio and normalized sparse row degree.
+    assert np.allclose(f0[..., :7], f1[..., :7])
+    assert np.max(np.abs(f1[..., 7:] - f0[..., 7:])) > 0.0
 
 
 def test_zero_initialized_network_reduces_to_physical_jacobi_then_fgmres_closes_true_residual():
