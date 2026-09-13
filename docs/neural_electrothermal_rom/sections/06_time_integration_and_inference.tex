@@ -18,7 +18,15 @@
 热状态相关性只通过真实的 wire-temperature functional 与 $R_{\rm wire}(a,g)$ 进入线圈热源和总阻抗。
 
 \subsection{初始条件接口}
-生产 ODE 的直接初值 $a_0$ 定义为 reduced coordinates，因此 $\theta_0=\Phi a_0$ 按构造位于 reduced space。若用户接口接受 full temperature field，则必须先做定义明确的 projection 得到 $a_0$，并把 projection error 作为 $E_{\rm init}$ 单独报告；不能悄悄把任意 full initial field 当成无误差的 reduced state。
+若用户直接提供 reduced coordinates $a_0$，生产 ODE 初值定义为 $a(0)=a_0$。这只保证 reduced model 内部状态被精确定义；只有当对应 $\Phi a_0$ 属于构建/审计过的 initial-condition family 时，才携带相对于 full thermal model 的精度声明。
+
+若用户接口接受 full temperature-rise field $\theta_0$，默认按 thermal mass inner product 做
+\begin{equation}
+\boxed{
+a_0=(\Phi^TM_T\Phi)^{-1}\Phi^TM_T\theta_0,
+}
+\end{equation}
+并报告 initial projection error。还必须确认该 initial-condition family 的 homogeneous response 已通过 $(K+sM)^{-1}M\theta_0$ resolvent anchors 和 full-vs-ROM trajectory audit 覆盖；仅 $t=0$ 投影误差小不足以保证后续 transient 精度。
 
 \subsection{规定电流工况下的连续时间热模型}
 如果 operating condition 直接规定端口电流 $c$，生产在线模型为
@@ -58,14 +66,16 @@ P_{\rm in}=\frac12\operatorname{Re}(c^H\widehat Zc).
 \begin{equation}
 P_{\rm vol}=\frac12c^H\widehat D_{\rm vol}c,
 \qquad
-P_{\rm out}=\frac12c^H\widehat D_{\rm out}c,
+P_{\rm out}^{\rm imp}=\frac12c^H\widehat D_{\rm out}^{\rm imp}c,
 \end{equation}
 其中
 \begin{equation}
-\widehat D_{\rm out}
+\widehat D_{\rm out}^{\rm imp}
 =\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol},
 \end{equation}
 wire loss 为 $P_{\rm wire}=\frac12c^HR_{\rm wire}c$。
+
+$P_{\rm out}^{\rm imp}$ 是 surrogate energy-feasibility layer 导出的 implied outward power，不是独立 truth Poynting-flux measurement。只有在 validation/audit geometry 上与独立 $D_{\rm out}^{\rm phys}$ 一致到目标误差时，才把它作为可信 outward-loss prediction。
 
 \subsection{ETD2 与 IMEX}
 当前 thermal constitutive model 下，对固定几何 $M_r(g),K_r(g)$ 在时间上不变。定义
