@@ -1,49 +1,70 @@
-\section{问题定义、目标与设计约束}
+\section{问题定义、目标与系统边界}
 
 \subsection{核心目标}
-本项目的最终目标不是训练一个直接回归温度轨迹的黑箱神经网络，而是构造一个可解释、可验证、可高效训练和推理的参数化电热降阶动力系统。目标映射为
+本项目的生产目标是构造一个参数化、可验证的水下无线电能传输（UWPT）电热代理系统。用户输入为几何 $g$、复端口电流 $c$、初始热状态 $a_0$ 与查询时间 $t$，输出包括热状态、温度、端口阻抗和功率等工程量：
 \begin{equation}
-(a_0,g,u,t)\longmapsto a(t)\longmapsto T(x,t),Z(t),P(t),\ldots,
+(g,c,a_0,t)\longmapsto a(t)\longmapsto T(x,t),Z(t),P(t),\ldots.
 \end{equation}
-其中 $a$ 为热降阶坐标，$g$ 为几何参数，$u$ 为工况/电流参数。
+系统不以黑箱方式直接学习时间轨迹，也不要求神经网络学习完整 Maxwell 逆算子。已知的 Maxwell 线性性、电流二次型、热质量/导热算子和连续时间动力学必须保留为硬结构。
 
-新的主路线必须同时满足以下要求：
+\subsection{冻结的生产主架构}
+生产主链冻结为
+\begin{equation}
+\boxed{
+ g
+ \xrightarrow{\text{validated Maxwell truth data}}
+ \{Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\}
+ \xrightarrow{\text{neural parametric surrogate}}
+ \{\widehat Z_{\rm field},\widehat H_j\}
+ \xrightarrow{\text{exact current contraction}}
+ q(a,g,c)
+ \xrightarrow{\text{true thermal ROM}}
+ a(t).
+}
+\end{equation}
+其中 $Z_{\rm field}$ 为不含线圈集中电阻项的场阻抗矩阵，$H_j$ 为第 $j$ 个热模态对应的复 Hermitian Joule 二次型矩阵。神经网络仅逼近几何到这些低维参数化物理对象的映射；端口电流 $c$ 不进入网络，而通过解析二次型进入功率和热源。
+
+\subsection{当前材料模型下的进一步简化}
+当前正式材料模型中，线圈铜不作为 Maxwell 体导电区域处理，海水电导率未设置温度系数，介电常数和磁导率也未设置温度依赖。因此当前版本满足
+\begin{equation}
+\boxed{A_{\rm em}=A_{\rm em}(g),}
+\end{equation}
+而不是 $A_{\rm em}(a,g)$。因此一个固定几何的 Maxwell 场响应只需要求解一次；热状态只通过线圈集中电阻 $R_{\rm wire}(a,g)$ 进入线圈损耗和端口阻抗。
+
+若未来引入温度相关的海水/介质电磁参数，则主架构自然扩展为
+\begin{equation}
+(a_{\rm em},g)\mapsto\{Z_{\rm field},H_j\},
+\end{equation}
+其中 $a_{\rm em}$ 只包含真正影响 Maxwell constitutive law 的状态变量，而不是默认把完整热状态塞入网络。
+
+\subsection{truth solver 与生产代理必须分层}
+Maxwell truth solver 的职责是生成可信的 $X(g)$、$Z_{\rm field}(g)$ 和 $H_j(g)$，并承担 full-field audit。它可以采用直接稀疏求解器、经过验证的迭代求解器，或研究型 neural-preconditioned FGMRES；但这些求解器细节不是生产代理的顶层理论结构。
+
+因此 full-space neural Maxwell/Flexible GMRES 被定位为：
 \begin{itemize}
-  \item \textbf{理论正确性：}不把本已知的 Maxwell 线性结构、Joule 二次结构和热耗散结构交给神经网络重新学习。
-  \item \textbf{可实现性：}训练应能使用标准 PyTorch/GPU/mini-batch/AdamW 工具链，不依赖专用符号展开、LM 候选回溯或定制解析网络优化器。
-  \item \textbf{训练速度：}昂贵物理计算只用于生成可缓存、可并行的局部训练样本；网络优化过程不再反复调用电磁求解器。
-  \item \textbf{学习能力：}网络只拟合平滑的温度--几何到电磁热耦合系数映射，并保留足够容量处理高维热状态。
-  \item \textbf{推理速度：}有限时间预测使用低维神经向量场和结构保持时间积分；稳态独立求解，不用长时间逐步积分逼近无限时间。
-  \item \textbf{物理性：}初值、质量矩阵、导热矩阵、电流二次性、连续时间动力学全部由模型结构硬编码，而非仅通过损失函数惩罚。
-  \item \textbf{可验证性：}误差来源分层管理，区分严格证书、数值验证和经验诊断。
-  \item \textbf{创新性：}创新点放在 Maxwell 消元后的电流二次型张量、神经张量降阶和误差传播链，而不是特殊激活函数本身。
+  \item truth snapshot 生成加速器；
+  \item full-field/audit solver；
+  \item 独立的神经线性求解研究方向。
 \end{itemize}
+它不再作为每个 thermal ODE stage 必须调用的生产主链。
 
-\subsection{冻结的总体路线}
-本文档冻结如下主路线：
-\begin{equation}
-(a,g)\xrightarrow{\text{Residual MLP}}\beta_\theta
-\xrightarrow{\text{output POD}}G_\theta
-\xrightarrow{\zeta^\top G_\theta\zeta}q_\theta
-\xrightarrow{M_r(g)\dot a=-K_r(g)a+q_\theta}a(t).
-\end{equation}
-其中神经网络只预测低维系数 $\beta_\theta$。所有后续运算均为固定物理层或确定性数值算法。
+\subsection{理论正确性的前置 Gate}
+生产训练开始前，底层离散物理必须通过以下前置条件：
+\begin{itemize}
+  \item Maxwell 外边界/计算域经过开放域或域扩展收敛验证，不能把有限 PEC 盒默认视为真实海水边界；
+  \item 端口电压方向、阻抗符号、reciprocity/passivity 与离散功率守恒一致；
+  \item Joule 热与 Maxwell 导电 Hodge 使用同一个离散能量二次型，并支持一般复电流相位；
+  \item 几何样本满足包封、无穿透和背景边界裕量要求，source/material deposition 对小几何变化保持守恒和足够连续；
+  \item thermal basis 的 rank 判据直接检查实际在线 Galerkin 方程 residual。
+\end{itemize}
+这些条件没有通过时，神经网络误差不能被解释为最终物理误差。
 
-\subsection{明确放弃的主路线}
-以下方案不作为主路线：
+\subsection{明确非目标}
+本项目不把以下方案作为生产主路线：
 \begin{enumerate}
-  \item 直接学习 $(a_0,g,u,t)\mapsto a(t)$ 的黑箱 MLP；
-  \item 继续扩展现有 Fixed Analytic Response Network 作为生产模型；
-  \item 依赖 PDE/ODE residual loss 才能维持基本物理结构的 PINN 风格设计；
-  \item 以特殊激活函数作为主要物理归纳偏置；
-  \item 在未验证真实系统收缩性的情况下，强行把网络约束为全域 contractive。
+  \item 直接学习 $(g,c,a_0,t)\mapsto T(t)$ 的黑箱 trajectory network；
+  \item 让网络学习完整 $A_{\rm em}^{-1}$ 后再把它作为 thermal surrogate 的必要环节；
+  \item 用网络直接输出最终温度、Joule heat 或阻抗而绕过已知的电流二次结构；
+  \item 在底层 PDE/边界/功率恒等式未通过 Physics Gate 前，以训练 loss 下降替代物理验证；
+  \item 把有限测试集经验误差称为全参数域严格 certificate。
 \end{enumerate}
-
-\subsection{与旧解析响应网络的关系}
-旧解析响应网络不再作为新架构的实现依赖。其定位固定为：
-\begin{itemize}
-  \item 历史研究基线；
-  \item 推理速度上界参考；
-  \item 消融实验与论文对比对象。
-\end{itemize}
-本文档所在分支基于 \texttt{main} 创建，不继承 \texttt{feat/fixed-analytic-response-network} 的代码历史。
