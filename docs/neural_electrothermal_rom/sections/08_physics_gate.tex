@@ -12,8 +12,10 @@
 \end{enumerate}
 只有通过该 Gate 后，才冻结 truth electromagnetic model。
 
-\subsection{Gate 0B：端口定义、量纲、reciprocity 与独立功率闭合}
-必须冻结 peak-phasor convention、端口电流方向、端口电压反应定义与 source normalization，并检查 $-S^TE$ 具有电压量纲且
+\subsection{Gate 0B：端口定义、reaction voltage、量纲与独立功率闭合}
+必须冻结 peak-phasor convention、端口电流方向、source normalization、terminal/feed/return-path 定义与 reaction-voltage convention。$v_{\rm field}=-S^TE$ 首先是与 source mode 功率共轭的广义 reaction voltage；只有在 source/terminal formulation 已校准时才解释为物理 terminal voltage。应至少通过独立 terminal voltage extraction、已知参考模型、reciprocity/功率恒等式或实验/高保真端口结果验证这一等价关系。
+
+检查 $-S^TE$ 具有电压量纲且
 \begin{equation}
 \frac12\operatorname{Re}(c^Hv)
 \end{equation}
@@ -49,8 +51,15 @@ D_{\rm out}^{\rm phys}&\succeq-\varepsilon I,\\
 \end{equation}
 在 validation/audit geometry 上必须把该 implied matrix 与独立 truth $D_{\rm out}^{\rm phys}$ 比较，并监控联合可行投影 correction norm。
 
-\subsection{Gate 0C：Joule 与 thermal projection 一致性}
-从 Maxwell 使用的同一 loss Hodge 构造空间 cycle-averaged body heat，并验证
+\subsection{Gate 0C：Joule 双线性型、总损耗与 thermal projection 一致性}
+conductivity loss operator 必须由统一的 edge-space 双线性型组装。对 thermal mode $\phi_j$，加权 operator 必须使用同一 finite-element basis 与同一 quadrature 直接组装
+\begin{equation}
+[W_j]_{mn}
+=\int_\Omega\sigma\,\phi_j\,N_m\cdot N_n\,\mathrm dx,
+\end{equation}
+而不能假定对一个一般 consistent $H_\sigma$ 做任意单侧逐点加权仍然保持 Hermitian。
+
+从同一 loss bilinear form 构造空间 cycle-averaged body heat，并验证
 \begin{equation}
 \sum_k Q_{{\rm vol},k}
 \approx\frac12E^HH_\sigma E,
@@ -64,7 +73,7 @@ D_{\rm out}^{\rm phys}&\succeq-\varepsilon I,\\
 P_{\rm vol}
 \approx\frac12c^HD_{\rm vol}c.
 \end{equation}
-禁止使用不能满足这些闭合关系的独立 field reconstruction 定义 Joule heat。
+若令 test function $\phi\equiv1$，对应加权 operator 必须与 $H_\sigma$ 一致到组装容差。禁止使用不能满足这些闭合关系的独立 field reconstruction 定义 Joule heat。
 
 \subsection{Gate 0D：端口 source、几何合法性与参数连续性}
 每个生产几何必须满足 conductor/package 的设计包封、无非法穿透/最小间隙、人工边界裕量以及 material-fraction closure。
@@ -84,7 +93,7 @@ Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j,\quad P_{
 \end{equation}
 训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。小 linear residual 不能替代 mesh convergence。
 
-\subsection{Gate 0F：thermal well-posedness、边界和 transient-aware ROM}
+\subsection{Gate 0F：thermal well-posedness、初值族、边界与 transient-aware ROM}
 当前 finite-time ETD 与 $t=\infty$ steady-state 理论默认在 temperature-rise space 上
 \begin{equation}
 M_T(g)\succ0,
@@ -95,15 +104,23 @@ K_T(g)\succ0
 
 热边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
 
-thermal basis 的自动 rank 必须覆盖 geometry、完整 current-induced heat-source span、wire/source patterns 与目标时间尺度。对 representative shifts $s_\ell\ge0$，直接检查在线 Galerkin resolvent residual
+thermal basis 的自动 rank 必须覆盖 geometry、完整 current-induced heat-source span、wire/source patterns、允许的 initial-condition family 与目标时间尺度。对 source anchor $Q_\alpha$ 和 representative shifts $s_\ell\ge0$，检查
 \begin{equation}
 r_{\alpha\ell}
 =Q_\alpha-(K+s_\ell M)\Phi
 \left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
 \end{equation}
-冻结 audit geometries 上还必须比较 full thermal 与 ROM 的短时、中间时间和接近稳态 outputs。
 
-生产 API 中若 $a_0$ 是 reduced coordinates，则初值按构造位于 $\operatorname{span}(\Phi)$。若允许输入任意 full temperature field $T_0(x)$，则必须显式投影并报告 initial projection error；若目标 initial-condition family 不能被当前 basis 表示，应把该 family 加入 basis enrichment。
+对允许的 full-order initial condition anchor $\theta_{0,\beta}$，其 homogeneous response 的 Laplace/resolvent RHS 是 $M\theta_{0,\beta}$，因此还应加入
+\begin{equation}
+\boxed{
+(K+s_\ell M)u_{0,\beta\ell}
+=M\theta_{0,\beta}
+}
+\end{equation}
+及相应 Galerkin residual。只要求 $\theta_0$ 在 $t=0$ 被投影得好，不足以保证 $e^{-M^{-1}Kt}\theta_0$ 的整个 homogeneous evolution 被 ROM 准确表示。
+
+冻结 audit geometries 上还必须比较 full thermal 与 ROM 的短时、中间时间和接近稳态 outputs。生产 API 若接受 reduced coordinates $a_0$，必须明确：只有属于已定义/已审计 initial-condition family 的状态才携带 full-order accuracy claim；超出该 family 的任意 reduced $a_0$ 只能视为 ROM 内部状态查询。若允许输入任意 full temperature field $T_0(x)$，必须显式投影、报告 initial projection error，并在需要时扩展 initial-condition family/basis。
 
 wire-resistance temperature functional $\bar\theta_p(a,g)$ 也必须在 full-vs-ROM audit 中验证。非线性 steady candidate 还必须通过 local stability 检查；存在多稳态或 thermal runaway 时不得把任意 root 宣称为唯一/稳定 $t=\infty$ 解。
 
@@ -121,11 +138,11 @@ frequency--transient 分层必须验证电磁载波周期远短于 thermal/opera
 \subsection{Gate 通过后的数据冻结}
 Physics Gate 通过后，应冻结并版本化：
 \begin{itemize}
-  \item 工作频率、相量幅值/符号与端口定义；
+  \item 工作频率、相量幅值/符号与端口/reaction-voltage 定义；
   \item PDE formulation、计算域、网格与边界；
   \item source/terminal/return-path 与 material deposition；
   \item constitutive parameters；
-  \item $Z/D_{\rm vol}/D_{\rm out}^{\rm phys}/H_j$ extraction 与功率 conventions；
+  \item $H_\sigma/W_j/Z/D_{\rm vol}/D_{\rm out}^{\rm phys}/H_j$ extraction 与功率 conventions；
   \item thermal full model、coercivity/nullspace policy、wire-temperature functional、source/initial-condition family 与 ROM residual definition；
   \item current-controlled/circuit-controlled operating-mode definition。
 \end{itemize}
