@@ -20,7 +20,9 @@ from .unified_maxwell import NeuralMaxwellAccelerator
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_trainer import train_maxwell_accelerator
 
-_CACHE_FORMAT = 3
+# 4 = automatic-rank global greedy + minimum-residual image-space projection.
+# Any older cache may contain a Galerkin-built basis and must not be reused.
+_CACHE_FORMAT = 4
 
 
 def jsonable(value):
@@ -73,8 +75,7 @@ def _signature(settings):
     )
     payload = {k: settings[k] for k in keys}
     payload["TRAINING"] = {
-        k: v
-        for k, v in payload["TRAINING"].items()
+        k: v for k, v in payload["TRAINING"].items()
         if k not in {"network", "optimizer", "device"}
     }
     payload["cache_format"] = _CACHE_FORMAT
@@ -149,17 +150,12 @@ def _require_effective_basis(report):
         else float(report.target_relative_residual)
     )
     rank = int(report.get("basis_dimension")) if isinstance(report, dict) else int(report.basis_dimension)
-    reason = (
-        str(report.get("stop_reason", "unknown"))
-        if isinstance(report, dict)
-        else str(report.stop_reason)
-    )
+    reason = str(report.get("stop_reason", "unknown")) if isinstance(report, dict) else str(report.stop_reason)
     raise RuntimeError(
-        "Maxwell 公共空间无法达到训练所要求的初解残差："
+        "Maxwell 公共空间未达到训练所要求的初解残差："
         f"自动 rank={rank}, maximum anchor residual={residual:.3e}, "
         f"target={target:.3e}, stop={reason}。"
-        "rank 已由物理 residual 自动增加；停止意味着没有新的数值独立 residual 方向，"
-        "而不是需要手工调大某个 rank 参数。"
+        "神经网络无法弥补一个不能表示训练物理解的公共空间，因此本次训练在进入 epoch 前停止。"
     )
 
 
@@ -180,7 +176,6 @@ def train(settings, model_path, settings_dir, monitor=None):
             f"thermal rank={settings['THERMAL_RANK']}",
             flush=True,
         )
-
         valid_cache = False
         cache_meta = {}
         if meta_path.is_file() and basis_path.is_file() and data_path.is_file():
@@ -192,7 +187,6 @@ def train(settings, model_path, settings_dir, monitor=None):
                 )
             except (OSError, ValueError, TypeError):
                 valid_cache = False
-
         if valid_cache:
             _progress("复用统一物理算子训练数据", 35, monitor)
             basis_report = cache_meta.get("basis_report", {})
@@ -218,27 +212,17 @@ def train(settings, model_path, settings_dir, monitor=None):
             _require_effective_basis(basis_obj)
             np.save(basis_path, V)
             _progress("构建 residual-driven Maxwell 公共空间", 30, monitor)
-
             nd = int(settings["TRAINING"].get("n_operator_samples", 512))
             geoms = _sample_geometries(settings, nd, rng, bg)
             states = _sample_states(settings, nd, int(settings["TRAINING"].get("seed", 17)) + 2)
             dataset = generate_operator_dataset(
-                bg,
-                V,
-                geoms,
-                states,
-                seed=int(settings["TRAINING"].get("seed", 17)),
-                monitor=monitor,
+                bg, V, geoms, states, seed=int(settings["TRAINING"].get("seed", 17)), monitor=monitor
             )
             dataset.save(data_path)
             basis_report = asdict(basis_obj)
             write_json(
                 meta_path,
-                {
-                    "cache_format": _CACHE_FORMAT,
-                    "signature": sig,
-                    "basis_report": basis_report,
-                },
+                {"cache_format": _CACHE_FORMAT, "signature": sig, "basis_report": basis_report},
             )
             _progress("生成 Maxwell residual 训练数据", 55, monitor)
 
@@ -285,7 +269,7 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
         _progress("训练完成", 100, monitor)
         print(
-            f"训练完成：自动 EM rank={V.shape[1]}，best epoch={report.best_epoch}，"
+            f"训练完成：best epoch={report.best_epoch}，"
             f"validation residual loss={report.best_validation_residual_loss:.6g} "
             f"(RMS={np.sqrt(report.best_validation_residual_loss):.6g})，"
             f"test residual loss={report.test_residual_loss:.6g} "
@@ -315,7 +299,6 @@ def _device(requested):
     if value.startswith("cuda"):
         try:
             import torch
-
             if not torch.cuda.is_available():
                 return "cpu"
         except ImportError:
@@ -403,22 +386,18 @@ def launch(settings, argv=None):
     args = parser.parse_args(argv)
     if args.worker_config:
         return _worker_from_file(args.worker_config)
-
     root = Path(settings["ROOT"])
     model_path = Path(args.model or settings["FILES"]["model"])
     model_path = model_path if model_path.is_absolute() else root / model_path
     settings_dir = Path(settings["FILES"]["settings_dir"])
     settings_dir = settings_dir if settings_dir.is_absolute() else root / settings_dir
     settings_dir.mkdir(parents=True, exist_ok=True)
-
     if args.mode == "predict":
         out = Path(settings["FILES"]["predictions"])
         out = out if out.is_absolute() else root / out
         return predict(settings, model_path, out, settings_dir)
-
     if not args.headless and (args.gui or settings["MONITOR"].get("enabled", True)):
         from .training.qt_monitor import launch_window
-
         log_root = Path(settings["MONITOR"]["log_dir"])
         log_root = log_root if log_root.is_absolute() else root / log_root
         worker_settings = jsonable(
@@ -438,11 +417,7 @@ def execute_training(settings, model_path, settings_dir, session_dir=None):
 
     if session_dir is None:
         log_root = Path(settings["MONITOR"]["log_dir"])
-        log_root = (
-            log_root
-            if log_root.is_absolute()
-            else Path(settings["ROOT"]) / log_root
-        )
+        log_root = log_root if log_root.is_absolute() else Path(settings["ROOT"]) / log_root
         session_dir = log_root / (
             datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
         )
@@ -457,12 +432,4 @@ def execute_training(settings, model_path, settings_dir, session_dir=None):
         return train(settings, Path(model_path), Path(settings_dir), monitor)
 
 
-__all__ = [
-    "build_background",
-    "execute_training",
-    "jsonable",
-    "launch",
-    "predict",
-    "train",
-    "write_json",
-]
+__all__ = ["build_background", "execute_training", "jsonable", "launch", "predict", "train", "write_json"]
