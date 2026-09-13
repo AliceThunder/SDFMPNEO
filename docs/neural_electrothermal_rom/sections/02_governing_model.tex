@@ -1,81 +1,92 @@
 \section{完整物理系统与降阶动力学}
 
-\subsection{频域电磁问题}
-对给定热状态 $a$、几何参数 $g$ 和电流参数 $u$，频域电磁问题抽象为
+\subsection{相量约定与 Maxwell 方程}
+全文采用 $e^{+i\omega t}$ 相量约定。对给定几何 $g$ 和真正进入电磁 constitutive law 的状态 $s_{\rm em}$，电场满足
 \begin{equation}
-A_{\mathrm{em}}(a,g)x=b(g,u),
+\nabla\times\mu^{-1}\nabla\times E
+-\omega^2\epsilon E
++i\omega\sigma E
+=-i\omega J_s.
 \end{equation}
-其中 $x\in\C^{n_{\mathrm{em}}}$ 为电磁自由度。温度通过材料电导率 $\sigma(T)$ 进入 $A_{\mathrm{em}}$。对目标工作域假设：
-\begin{equation}
-\sigma_{\min}(A_{\mathrm{em}}(a,g))\ge \eta>0,
-\end{equation}
-从而电磁解在该域内唯一且对 $(a,g)$ 平滑依赖。
-
-\subsection{热方程与热降阶坐标}
-完整热方程写为
-\begin{equation}
-M_T(g)\dot T+K_T(g)T=Q_{\mathrm J}(T,g,u)+F_T(g),
-\end{equation}
-其中 $Q_{\mathrm J}$ 表示由电磁平衡产生的 Joule 热源，$F_T$ 表示与电磁状态无关、且由物理模型明确给定的确定性热源或边界等效源。采用共享热基 $\Phi$，令
-\begin{equation}
-T=T_{\mathrm{ref}}+\Phi a.
-\end{equation}
-投影后得到
+采用兼容 edge-space 离散后写成
 \begin{equation}
 \boxed{
-M_r(g)\dot a=-K_r(g)a+q(a,g,u)+f_T(g)
+A_{\rm em}(s_{\rm em},g)X=B(g),
 }
-\label{eq:reduced-thermal}
+\end{equation}
+其中 $X\in\C^{n_E\times n_p}$ 为所有端口基激励的电场响应，$B=-i\omega S$，$S(g)$ 为端口电流 source-shape 矩阵。
+
+当前材料模型中没有任何体电磁参数依赖温度，因此
+\begin{equation}
+\boxed{
+A_{\rm em}(s_{\rm em},g)=A_{\rm em}(g).
+}
+\end{equation}
+这一定义必须与实现、缓存和训练数据一致。未来若加入温度相关海水电导率、介电参数或其他 constitutive state，只需恢复 $s_{\rm em}$ 依赖，不改变后续代数结构。
+
+\subsection{离散算子的结构要求}
+离散系统应保持 curl--curl 与 material Hodge 的结构
+\begin{equation}
+A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
+\end{equation}
+其中 $C$ 是离散 curl，$H_{\mu^{-1}},H_\epsilon,H_\sigma$ 为与同一离散能量定义一致的 Hodge/material operators。Joule、端口功率和后续 thermal heat 必须从同一 $H_\sigma$ 体系构造，禁止一套离散用于 Maxwell、另一套独立重构用于功率。
+
+\subsection{外边界不是默认 PEC 物理}
+有限计算域上的 essential tangential-$E$ 边界对应 PEC 型截断。它可以作为数值截断手段，但不能未经验证就解释为真实海水开放域边界。因此 truth model 必须通过至少一种开放域/域扩展收敛程序：扩大计算域或采用经过验证的 absorbing/PML/open-boundary 处理，并检查阻抗、互感和体损耗对边界位置的敏感性。
+
+\subsection{低频 formulation Gate}
+目标工作频率和器件尺度处于明显低频/磁准静态 regime。$E$-curl-curl formulation 在物理上可用，但其低频 conditioning 与绝缘区域 gradient modes 必须通过数值实验审计。正式实现应保留 formulation Gate：在代表性几何上比较当前 $E$ formulation 与适当的 $A$--$\phi$ 或其他低频兼容 formulation 的阻抗、损耗、网格收敛、线性系统条件性和总求解成本。只有通过该 Gate 后才冻结 truth solver formulation。
+
+\subsection{热方程采用温升变量}
+令
+\begin{equation}
+\theta=T-T_{\rm amb}.
+\end{equation}
+完整热模型写成
+\begin{equation}
+M_T(g)\dot\theta+K_T(g)\theta
+=Q_{\rm vol}(g,c)+Q_{\rm wire}(\theta,g,c)+F_T(g).
+\end{equation}
+这里 $Q_{\rm vol}$ 是由 Maxwell 场产生的体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或边界等效源；若不存在则为零。
+
+采用共享热基 $\Phi$：
+\begin{equation}
+\theta\approx\Phi a.
+\end{equation}
+Galerkin 投影后
+\begin{equation}
+\boxed{
+M_r(g)\dot a
+=-K_r(g)a
++q_{\rm vol}(g,c)
++q_{\rm wire}(a,g,c)
++f_T(g),
+}
 \end{equation}
 其中
 \begin{equation}
-M_r(g)=\Phi^\top M_T(g)\Phi,
+M_r=\Phi^TM_T\Phi,
 \qquad
-K_r(g)=\Phi^\top K_T(g)\Phi,
+K_r=\Phi^TK_T\Phi.
 \end{equation}
-而 $f_T(g)$ 为已知的降阶确定性热源。它是 hard physics 的一部分，不进入神经网络，也不与 Joule tensor 混合训练。若当前物理模型不存在该项，则 $f_T=0$。
+真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。
 
-在参考几何下，如果 $\Phi$ 为 $M$-正交热特征模态，则
+\subsection{热 ROM 的 rank 判据必须对应在线 Galerkin 方程}
+对于 steady anchor $Q$，给定候选基 $\Phi$ 后应先求
 \begin{equation}
-M_r=I,
+a_r=(\Phi^TK\Phi)^{-1}\Phi^TQ,
+\end{equation}
+再检查真实在线 Galerkin residual
+\begin{equation}
+\boxed{r_K=Q-K\Phi a_r.}
+\end{equation}
+对初始动态 anchor 同理：
+\begin{equation}
+\dot a_r=(\Phi^TM\Phi)^{-1}\Phi^TQ,
 \qquad
-K_r=\Lambda=\operatorname{diag}(\lambda_1,\ldots,\lambda_r).
+\boxed{r_M=Q-M\Phi\dot a_r.}
 \end{equation}
-对变化几何，不要求 $M_r(g)=I$ 或 $K_r(g)=\Lambda$；真实几何依赖应保留在动力学中，而不是让神经网络重新学习。
-
-\subsection{统一向量场}
-定义真实降阶向量场
-\begin{equation}
-F(a,g,u)
-=
-M_r(g)^{-1}\left[-K_r(g)a+q(a,g,u)+f_T(g)\right].
-\end{equation}
-新方案的目标不是直接学习其流映射，而是仅学习其中计算代价高、但结构明确的 Joule 热源部分 $q$。因此模型中应严格区分
-\begin{equation}
-q_\theta(a,g,u)
-\quad\text{与}\quad
-s_\theta(a,g,u)=q_\theta(a,g,u)+f_T(g),
-\end{equation}
-前者用于与真实电磁热源直接比较，后者才进入时间积分。该区分也是误差预算与在线诊断的基础：外部确定性热源不能被计入神经 Joule 误差。
+自动 rank 的停止标准必须基于这些实际 residual，而不是基于与在线 Galerkin 方程不同的 image-space least-squares residual。
 
 \subsection{共享热基跨几何使用的理论要求}
-为了使参考热坐标在几何参数域 $\mathcal G$ 内具有统一意义，应验证存在常数
-$m_-,m_+,k_-,k_+>0$ 使
-\begin{equation}
-m_-M_0\preceq M_T(g)\preceq m_+M_0,
-\qquad
-k_-K_0\preceq K_T(g)\preceq k_+K_0,
-\quad \forall g\in\mathcal G.
-\end{equation}
-该谱等价条件不是神经网络训练的前提代码接口，但它是跨几何误差界、统一范数和稳定性分析的重要理论基础。
-
-\subsection{热模态截断误差}
-热 ROM 误差与神经网络误差必须分开管理。若第一被截断特征值为 $\lambda_{r+1}$，并有统一总热源对偶范数上界 $Q_*$，则典型尾部估计为
-\begin{equation}
-\norm{T_{\mathrm{tail}}(t)}_M
-\le
-\mathrm e^{-\lambda_{r+1}t}E_0
-+
-\frac{1-\mathrm e^{-\lambda_{r+1}t}}{\lambda_{r+1}}Q_*.
-\end{equation}
-这里 $Q_*$ 必须覆盖 Joule 热源与任何确定性热源 $f_T$。只有当 $Q_*$ 是目标参数域上的严格上界时，该式才构成严格 certificate；有限采样 envelope 只能称为经验 rank diagnostic。
+共享热基只有在目标几何域内具有可控逼近误差时才有统一意义。除 anchor residual 外，还应在冻结测试几何上检查实际 Galerkin steady/dynamic residual 和温度输出误差。若要给出全域严格界，还需进一步证明跨几何质量/刚度算子的谱等价或其他稳定性条件；有限几何采样只能称为数值验证。
