@@ -22,6 +22,12 @@ Z_{\rm field}^T&\approx Z_{\rm field},\\
 \end{align}
 测试电流必须覆盖单端口、同相、反相和 $\pm\pi/2$ 相位差。阻抗符号、source orientation、Joule Hodge 或 complex phase handling 任何一项错误都会在该 Gate 暴露。
 
+除 truth audit 外，生产 surrogate 解码也必须按构造保证
+\begin{equation}
+\operatorname{Herm}(\widehat Z_{\rm field})\succeq0,
+\end{equation}
+不能只在有限 validation points 上检查后放任网络在域内其他点产生主动端口。
+
 \subsection{Gate 0C：Joule 与 thermal projection 一致性}
 从 Maxwell 使用的同一 $H_\sigma$ 构造空间体 Joule heat，并验证
 \begin{equation}
@@ -35,15 +41,17 @@ Z_{\rm field}^T&\approx Z_{\rm field},\\
 \end{equation}
 禁止使用不能满足该能量闭合的独立 field reconstruction 定义 Joule heat。
 
-\subsection{Gate 0D：几何合法性与参数连续性}
+\subsection{Gate 0D：几何合法性、source continuity 与参数连续性}
 每个生产几何必须满足：
 \begin{itemize}
   \item conductor 位于其设计包封/允许区域内；
   \item TX/RX conductor、package 等实体满足规定的无穿透/最小间隙约束；
   \item 与人工电磁/热边界保持足够裕量；
-  \item source deposition 守恒；
-  \item material fraction 闭合且无非法重叠解释。
+  \item material fraction 闭合且无非法重叠解释；
+  \item source deposition 保持端口总电流归一、闭合回路拓扑与相应离散电流连续性。
 \end{itemize}
+
+对于闭合 filament coil，应显式验证离散 source 不产生非物理净电流端点；若离散体系具有 current-divergence/incidence operator，则相应闭合回路 source residual 应达到离散容差。仅保证 source 向量非零或积分幅值正确不足以证明 source 物理兼容。
 
 此外，对几何参数做小扰动 $g\to g+\delta g$，检查 $B(g)$、material operators、$Z(g)$ 和 $H_j(g)$ 不出现由 cell midpoint assignment、离散采样点数量突变等造成的非物理跳跃。若存在 staircasing，应先改用连续、守恒的 line/source deposition 和足够平滑的 sub-cell quadrature，再训练代理。
 
@@ -54,19 +62,25 @@ Z_{\rm field},\quad P_{\rm vol},\quad H_j,\quad T_{\max},\quad a_*.
 \end{equation}
 训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。小 linear residual 不能替代 mesh convergence。
 
-\subsection{Gate 0F：thermal 边界和 thermal ROM}
+\subsection{Gate 0F：thermal 边界和 transient-aware ROM}
 热模型边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
 
-thermal basis 的自动 rank 必须直接使用在线 Galerkin residual：
+thermal basis 的自动 rank 必须覆盖 geometry、source pattern 与目标时间尺度。对 representative shifts $s_\ell\ge0$，直接检查在线 Galerkin resolvent residual
 \begin{equation}
-r_K=Q-K\Phi(\Phi^TK\Phi)^{-1}\Phi^TQ,
+r_{\alpha\ell}
+=Q_\alpha-(K+s_\ell M)\Phi
+\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
 \end{equation}
-以及对应 dynamic residual。冻结 test geometries 上还必须比较 full thermal 与 ROM 的 trajectory/steady-state outputs。
+shift 集必须包含 steady limit，并覆盖生产查询中的主要 inverse-time scales；只检查 $K^{-1}Q$ 与 $M^{-1}Q$ 两个端点不构成完整 transient 验证。
+
+冻结 audit geometries 上还必须比较 full thermal 与 ROM 的 trajectory/steady-state outputs，包括至少一个短时、中间时间和接近稳态的时间尺度。若 wire heating 或其他热源幅值依赖温度，应在其生产状态范围内做 end-to-end trajectory audit。
 
 \subsection{Gate 0G：模型假设边界}
 当前线圈采用 filament current + 集中 AC resistance，而不是 full solid-conductor eddy-current model。因此必须明确其适用范围，并用更高保真或实验参考确认 skin/proximity effect 近似是否足够。
 
 当前海水热模型若不含流体对流，只能代表所定义的 conduction/boundary heat-transfer model。若目标是长期真实海水温升，应单独验证自然/强制对流是否可以忽略或由有效边界/材料模型吸收。
+
+当前 operating variable $c$ 表示规定的复端口电流。若真实系统由电压源、谐振补偿网络或负载闭环决定电流，则必须在 $Z(a,g)$ 外再接显式 circuit equations 求解 $c$；不能把任意固定电流结果直接解释为完整 WPT 电路工作点。
 
 \subsection{Gate 通过后的数据冻结}
 Physics Gate 通过后，应冻结并版本化：
@@ -76,6 +90,6 @@ Physics Gate 通过后，应冻结并版本化：
   \item source/material deposition；
   \item constitutive parameters；
   \item Joule/impedance extraction；
-  \item thermal full model 与 ROM residual definition。
+  \item thermal full model、source family 与 ROM residual definition。
 \end{itemize}
 只有在上述版本固定后生成的 truth snapshots 才属于同一个可学习函数族。任何一项基础物理改变都应触发 truth dataset 版本更新，而不是直接在旧标签上继续训练。
