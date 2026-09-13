@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .unified_neural_operator import neural_correction
+from .unified_neural_operator import neural_correction, operator_feature_statistics
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,8 @@ def _fgmres(A, b, apply_preconditioner, *, tolerance, max_iterations, restart):
             for i in range(j + 1):
                 H[i, j] = np.vdot(V[:, i], w)
                 w -= H[i, j] * V[:, i]
+            # Re-orthogonalize once; this is important for the indefinite complex
+            # Maxwell systems where a single MGS pass can lose orthogonality.
             for i in range(j + 1):
                 correction = np.vdot(V[:, i], w)
                 H[i, j] += correction
@@ -91,17 +93,19 @@ class NeuralMaxwellAccelerator:
         if self.residual_tolerance <= 0 or self.max_iterations < 1 or self.restart < 1:
             raise ValueError("invalid Maxwell correction settings")
 
-    def precondition(self, A, residual):
+    def precondition(self, A, residual, *, operator_stats=None):
         R = np.asarray(residual, complex)
         vector = R.ndim == 1
         if vector:
             R = R[:, None]
-        correction = neural_correction(self.network, A, R)
+        correction = neural_correction(
+            self.network, A, R, operator_stats=operator_stats
+        )
         return correction[:, 0] if vector else correction
 
-    def guess(self, A, B):
+    def guess(self, A, B, *, operator_stats=None):
         B = np.asarray(B, complex)
-        X = self.precondition(A, B)
+        X = self.precondition(A, B, operator_stats=operator_stats)
         if np.any(~np.isfinite(X)):
             return np.zeros_like(B)
         return X
@@ -118,7 +122,10 @@ class NeuralMaxwellAccelerator:
         if int(n_edges) != A.shape[0]:
             raise ValueError("neural edge topology does not match the Maxwell background")
 
-        X = self.guess(A, B)
+        # Geometry/material state fixes A for this solve. Extract O(n_edges)
+        # neural operator statistics once, then reuse them for every FGMRES step.
+        operator_stats = operator_feature_statistics(A)
+        X = self.guess(A, B, operator_stats=operator_stats)
         denominator = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
         residual = B - A @ X
         initial = np.linalg.norm(residual, axis=0) / denominator
@@ -137,7 +144,7 @@ class NeuralMaxwellAccelerator:
             correction, count, restart_count = _fgmres(
                 A,
                 residual[:, port],
-                lambda r: self.precondition(A, r),
+                lambda r: self.precondition(A, r, operator_stats=operator_stats),
                 tolerance=self.residual_tolerance,
                 max_iterations=self.max_iterations,
                 restart=self.restart,
