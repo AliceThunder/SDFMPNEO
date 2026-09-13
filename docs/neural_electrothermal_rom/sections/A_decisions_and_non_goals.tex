@@ -1,45 +1,44 @@
 \section{冻结决策与非目标}
 
-本附录用于防止后续实现阶段重新引入已经否决的复杂度。除非有新的物理证据或 Gate 实验明确推翻前提，下列决策视为冻结。
+本附录用于防止后续实现阶段重新引入与主理论不一致的耦合。除非新的物理证据直接推翻前提，下列决策视为冻结。
 
 \subsection{冻结决策}
 \begin{enumerate}
-  \item 主模型学习对象固定为 $(a,g)\mapsto G(a,g)$ 或其 POD 系数，不直接学习轨迹。
-  \item 电流 $u$ 不进入主 MLP；通过 $\zeta^\top G\zeta$ 物理层进入热源。
-  \item 热质量矩阵 $M_r(g)$ 和导热矩阵 $K_r(g)$ 使用真实 reduced operators，不由网络预测。
-  \item 网络采用普通 smooth residual MLP；SiLU 为默认激活。
-  \item 输出 POD 是优化项而非理论前提；POD 不够低秩时扩大 $K$ 或输出完整 $G$。
-  \item 热状态首版不做 learned encoder/autoencoder；先保留完整 thermal coordinates。
-  \item finite-time 使用 ODE + ETD2/IMEX；$t=\infty$ 使用独立稳态求解。
-  \item impedance、区域损耗和 EM diagnostics 首版仍调用真实 EM ROM，不并入主 NN 输出。
-  \item stability hard constraint 只有在真实物理证明 uniform contraction 后才启用。
-  \item NN 验证与严格 certificate 明确分层，不将有限 validation set 误称为全域认证。
+  \item 当前材料模型下，Maxwell 参数映射的生产输入固定为几何 $g$；只有真正影响电磁 constitutive law 的状态才允许未来加入输入。
+  \item 神经网络学习对象固定为低维 $Z_{\rm field}(g)$ 与 Hermitian Joule tensors $H_j(g)$ 的结构化表示或其 POD 系数。
+  \item 端口电流 $c$ 不进入主网络；通过 $c^H H_jc$ 与 $c^H Zc$ 解析进入热源和端口功率。
+  \item reciprocal 条件成立时 $Z_{\rm field}$ 使用复对称结构；$H_j$ 始终使用复 Hermitian 结构。
+  \item $M_r(g)$、$K_r(g)$、wire resistance model 和 thermal boundary model 使用真实物理/ROM，不由网络预测。
+  \item thermal basis rank 由实际 Galerkin steady/dynamic residual 自动决定，不手工指定。
+  \item finite-time 使用真实 thermal ODE + ETD/IMEX；$t=\infty$ 使用独立 steady solve。
+  \item output POD 是数值压缩而非理论前提；POD 不够低秩时扩大 rank 或直接输出完整结构化 tensors。
+  \item Physics Gate 先于正式 surrogate dataset/training；底层物理版本变化必须使旧 dataset/model 版本失效。
+  \item NN validation、Physics Gate 数值收敛与严格 certificate 明确分层。
 \end{enumerate}
 
-\subsection{首版非目标}
-首版明确不追求：
+\subsection{明确非目标}
+主路线不追求：
 \begin{itemize}
-  \item 发明新的通用神经网络激活函数；
-  \item 端到端替代 Maxwell + thermal solver 的黑箱网络；
-  \item 对任意训练域外 geometry/current/temperature 做无条件外推；
-  \item 在没有 verified neural bound 的情况下宣称全参数域严格 neural certificate；
-  \item 同时学习高保真 EM 场分布；
-  \item 将空间 Joule 非负性强行投射到每个 thermal modal coefficient 的正定性；
-  \item 为追求单次极限推理速度重新引入复杂符号 ExpPoly flow network。
+  \item 黑箱学习完整 temperature trajectory；
+  \item 让网络重新学习 current quadratic/phase law；
+  \item 用 unrestricted dense matrices 代替对称/Hermitian 输出结构；
+  \item 把线性系统 residual 当作 Maxwell mesh/domain/model correctness 的证明；
+  \item 在没有 full-domain 数学证明时宣称 surrogate 全参数域严格证书；
+  \item 用 neural loss 掩盖 filament-conductor、boundary、thermal-convection 等模型误差。
 \end{itemize}
 
 \subsection{允许的后续增强}
-在 V1 完成并通过 Gate 后，允许按证据增加：
+在主架构不变的前提下允许：
 \begin{itemize}
-  \item Jacobian/Sobolev supervision；
-  \item active-subspace 输入压缩；
-  \item verified Lipschitz/contraction layers；
-  \item 非负空间 heat-source basis 的 V2；
-  \item adaptive ETD/IMEX step control；
-  \item secondary impedance/output surrogate；
-  \item verified neural error bounds 或 interval/branch-and-bound certification。
+  \item 分块/加权 POD、低秩 tensor factorization；
+  \item active learning 与 geometry hard-point enrichment；
+  \item ensemble/uncertainty diagnostics；
+  \item Sobolev/geometry-gradient supervision；
+  \item verified neural error bounds；
+  \item adaptive ETD/IMEX 与更稳健 steady solver；
+  \item 若 constitutive evidence 支持，引入低维 $s_{\rm em}$ 作为额外代理输入；
+  \item 在保持同一 $Z/H$ 输出接口的情况下升级 truth Maxwell formulation、边界和 conductor fidelity。
 \end{itemize}
-这些增强不得改变 V1 的核心物理分层：神经网络近似昂贵耦合张量，真实热算子负责动力学骨架。
 
-\subsection{分支与历史说明}
-本设计文档分支从 \texttt{main} 创建。此前 \texttt{feat/fixed-analytic-response-network} 中针对解析响应网络的训练与性能改动不作为本方案的代码基础。需要对比时，应把该分支视为独立历史 baseline，而不是继续向新架构合并其训练器设计。
+\subsection{模型升级原则}
+未来若从 filament conductor 升级到 full solid-conductor model，或加入温度相关海水电导率、流体热对流等物理，首先修改 truth model 和 Physics Gate，再重新生成 tensors。生产 neural/thermal 接口只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
