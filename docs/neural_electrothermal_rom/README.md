@@ -1,174 +1,149 @@
-# 结构保持神经电热 ROM
+# 几何参数化电磁张量神经电热 ROM
 
-这一实现只做一件事：用普通神经网络替代最难训练的解析响应网络，同时把已知物理结构保留下来。
-
-核心方程：
-
-\[
-M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u)+f_T,
-\]
-
-其中
-
-\[
-q_{\theta,j}(a,g,u)=\zeta^T G_{\theta,j}(a,g)\zeta.
-\]
-
-神经网络只学习
-
-\[
-(a,g)\rightarrow \beta_\theta\rightarrow G_\theta.
-\]
-
-它不学习时间、不学习热扩散算子，也不学习电流的二次关系。
-
-## 安装
-
-```bash
-python -m pip install -e '.[neural,dev]'
-```
-
-项目不使用 GitHub Actions。
-
-## 使用方式
-
-只有三个命令：
-
-```bash
-sdfmpneo-neural train --config examples/neural_electrothermal_rom/train.example.json
-sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
-sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
-```
-
-### 1. train
-
-配置直接给出训练状态范围和 operating 范围：
-
-```json
-{
-  "physical_config": "../configs/uwpt_research.json",
-  "state_lower": [-1.0, -1.0],
-  "state_upper": [1.0, 1.0],
-  "operating_lower": [-1.0],
-  "operating_upper": [1.0],
-  "n_snapshots": 10000,
-  "work_directory": "results/neural_rom",
-  "pod_relative_tail_tolerance": 1e-4,
-  "network": {
-    "width": 256,
-    "blocks": 4
-  },
-  "training": {
-    "epochs": 500,
-    "batch_size": 256,
-    "learning_rate": 0.001
-  }
-}
-```
-
-流程就是：
+本目录冻结一条干净的生产理论主线：
 
 ```text
-sample (a,g)
--> reduced EM multi-RHS solve
--> exact quadratic Joule tensor G(a,g)
--> POD
--> residual MLP learns (a,g) -> beta
--> save neural ROM
+validated Maxwell truth physics
+-> geometry-dependent Z_field / Hermitian Joule tensors H_j
+-> neural geometry surrogate
+-> exact complex-current quadratic contraction
+-> true thermal ROM / ODE
+-> T(t), Z(t), power, steady state
 ```
 
-固定 `(a,g)` 时一次 multi-RHS EM solve 会得到整个 current quadratic tensor，因此不需要对每个电流工况分别生成标签。
+神经网络只学习几何到低维电磁参数的映射。它不学习时间、不学习 thermal mass/stiffness、不把端口电流当普通网络输入，也不直接学习最终温度轨迹。
 
-训练阶段 MLP 不调用 EM solver。
+## 当前材料模型下的关键简化
 
-### 2. retrain
+当前正式模型中，体 Maxwell constitutive parameters 不随温度变化，因此
 
-如果 tensor dataset 已经生成，调整 POD rank、网络宽度、深度或 optimizer 时可以直接：
+\[
+A_{\rm em}=A_{\rm em}(g).
+\]
 
-```bash
-sdfmpneo-neural retrain --config examples/neural_electrothermal_rom/retrain.example.json
-```
+固定几何只需一组 Maxwell truth response。thermal state 只通过线圈集中电阻模型进入 wire heating 和总阻抗：
 
-这一步不会重新生成 EM 标签。
+\[
+Z(a,g)=Z_{\rm field}(g)+R_{\rm wire}(a,g).
+\]
 
-### 3. predict
+体 Joule modal source 为
 
-```bash
-sdfmpneo-neural predict --config examples/neural_electrothermal_rom/predict.example.json
-```
+\[
+q_{{\rm vol},j}(g,c)=\operatorname{Re}(c^H H_j(g)c),
+\qquad H_j=H_j^H.
+\]
 
-有限时间默认使用 `etd2_adaptive`。也可使用 `etd2` 或 `imex`。
+因此任意电流幅值与相位都由解析二次型覆盖，无需对每个 operating current 单独训练。
 
-`"inf"` 单独求稳态，不靠无限延长时间积分。
+## 生产主架构
 
-在线模型包含真实 thermal operator，因此预测时不需要重新运行 EM。
+神经代理学习
 
-## 物理结构
+\[
+g\rightarrow \beta_\theta(g)
+\rightarrow \{\widehat Z_{\rm field}(g),\widehat H_j(g)\}.
+\]
 
-保留的 hard physics 只有必要部分：
+其中 output POD 只是数值压缩，不是理论前提。解码器必须按构造恢复：
 
-- 真实 thermal mass/stiffness：`M_r(g), K_r(g)`；
-- 已知 deterministic thermal forcing：`f_T`；
-- 电流二次型：`q_j = zeta^T G_j zeta`；
-- ODE 初值和连续时间演化；
-- 几何变化时重新组装真实 reduced thermal matrices。
+- reciprocal 情况下的复对称 `Z_field`；
+- 每个 thermal mode 的复 Hermitian `H_j`。
 
-网络只是普通 residual MLP，没有特殊解析神经元，也不靠复杂 loss 强行制造物理性。
+在线 thermal model 为
 
-## 数据量较大时
+\[
+M_r(g)\dot a
+=-K_r(g)a
++\widehat q_{\rm vol}(g,c)
++q_{\rm wire}(a,g,c)
++f_T(g).
+\]
 
-这部分只是内部性能实现，不改变使用流程：
+有限时间使用 ETD2 / adaptive ETD2 / IMEX；`t = inf` 单独求稳态。
 
-- tensor 较大时自动用 memmap 存储；
-- POD 较大时自动用 out-of-core truncated SVD；
-- MLP 训练 epoch 只读取低维 POD coefficients，不反复读取完整 `G`。
+## Physics Gate
 
-如果不需要调整，配置里完全不用关心这些细节。
+正式 tensor dataset 和 neural training 之前，底层 truth model 必须先通过：
 
-## 验证
+1. Maxwell formulation、开放域/域扩展和 mesh convergence；
+2. 端口符号、reciprocity、passivity 和 Poynting/power balance；
+3. Joule heat 与 Maxwell conductivity Hodge 的离散能量一致性；
+4. 任意复端口相位下的 Hermitian quadratic contraction；
+5. 几何无穿透、包封、边界裕量和连续守恒 source/material deposition；
+6. thermal boundary/domain sensitivity；
+7. thermal basis 的真实 Galerkin steady/dynamic residual；
+8. filament-conductor、AC resistance、海水热传递等模型假设的适用性。
 
-验证就是普通数值检查，不增加额外流程：
+没有通过这些 Gate 时，降低 neural loss 没有物理意义。
 
-1. `zeta^T G zeta` 与原 EM Joule heat 是否一致；
-2. validation/test split 上 `G` 和 heat-source 误差；
-3. 若需要，选若干典型工况与原 reduced electrothermal ODE 做 trajectory 对比。
+## Truth snapshot
 
-核心测试：
-
-```bash
-python -m pytest -q \
-  tests/test_quadratic_joule_tensor.py \
-  tests/test_quadratic_joule_direct_reduced.py \
-  tests/test_tensor_dataset_pod.py \
-  tests/test_resumable_tensor_generator.py \
-  tests/test_out_of_core_neural_tensor_pipeline.py \
-  tests/test_neural_tensor_physical_layer.py \
-  tests/test_neural_training_smoke.py \
-  tests/test_neural_integrators.py \
-  tests/test_neural_model_persistence.py \
-  tests/test_neural_geometry_persistence.py \
-  tests/test_neural_batch_inference.py \
-  tests/test_neural_thermal_forcing.py
-```
-
-完整回归：
-
-```bash
-python -m pytest -q
-```
-
-## 最终结构
+每个 geometry 的 truth sample 应包含：
 
 ```text
-(a,g)
-  -> ordinary residual MLP
-  -> beta
-  -> POD reconstruction/contraction
-  -> exact current-quadratic layer
-  -> q_theta
-  -> M_r(g) a_dot = -K_r(g) a + q_theta + f_T
-  -> ETD2 / adaptive ETD2 / IMEX
-  -> a(t)
+geometry
+-> validated Maxwell multi-RHS solve
+-> Z_field
+-> complex Hermitian H_1 ... H_r
+-> reciprocity / passivity / power-balance audit
+-> structured real encoding y(g)
 ```
 
-这就是主路线，不再增加额外流程层。
+只有 audit 通过的数据可以进入 train/validation/test。
+
+## 训练
+
+只用 training split 构造 normalization 和 POD：
+
+\[
+y\approx \bar y+U_K\beta.
+\]
+
+普通 residual MLP 学习
+
+\[
+g\mapsto\beta.
+\]
+
+validation/test 除 latent error 外，还必须检查：
+
+- decoded `Z_field` error；
+- decoded `H_j` error；
+- random/structured complex-current Joule error；
+- impedance/power error；
+- frozen electrothermal trajectory / steady-state error。
+
+## 推理
+
+对一个 geometry：
+
+```text
+geometry
+-> one neural forward
+-> cache Z_field / H_j
+-> exact current contraction
+-> update true R_wire(a,g)
+-> true thermal ROM integration / steady solve
+```
+
+同一几何的多个时间、电流和初值查询复用同一组 neural EM tensors。
+
+## 理论文档
+
+主文档：`main.tex`
+
+章节包括：
+
+- 系统边界与冻结架构；
+- Maxwell / thermal governing model；
+- passive impedance、Hermitian Joule 与功率守恒；
+- low-dimensional neural tensor surrogate；
+- dataset/training protocol；
+- thermal inference；
+- error budget；
+- Physics Gate；
+- implementation boundaries；
+- innovation positioning。
+
+这一目录中的理论只保留上述生产主链，不并列维护其他神经求解架构。
