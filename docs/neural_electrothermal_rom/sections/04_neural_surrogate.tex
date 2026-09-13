@@ -21,10 +21,8 @@ H_j=H_j^H,
 \end{equation}
 并要求
 \begin{equation}
-\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0,
+\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
 \end{equation}
-使剩余实功率可以解释为非负开放域/吸收边界外流功率。
-
 单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；禁止把全部 $H_j$ 强制成 Cholesky 形式。
 
 定义固定结构化编码
@@ -49,7 +47,7 @@ y(g)\approx \bar y+U_K\beta(g),
 
 普通线性 POD 并不自动保持 PSD cone 或联合能量可行集，因此不允许仅凭 latent reconstruction 宣称输出物理合法。结构化矩阵解码后还必须经过固定的物理可行层。
 
-\subsection{联合物理可行层}
+\subsection{联合物理可行层只作用于耗散块}
 令 raw decode 得到
 \begin{equation}
 (\widetilde Z,\widetilde D_{\rm vol},\widetilde H_j).
@@ -62,27 +60,43 @@ y(g)\approx \bar y+U_K\beta(g),
 \qquad
 \widetilde H_j=\widetilde H_j^H.
 \end{equation}
-随后对端口耗散块执行确定性的联合可行集映射/投影
+对 reciprocal $Z$ 写成
 \begin{equation}
-(\widetilde Z,\widetilde D_{\rm vol})
+\widetilde Z=\widetilde R+i\widetilde X,
+\qquad
+\widetilde R=\widetilde R^T\in\R^{n_p\times n_p},
+\qquad
+\widetilde X=\widetilde X^T\in\R^{n_p\times n_p}.
+\end{equation}
+其中 $\widetilde R=\operatorname{Herm}(\widetilde Z)$ 是耗散端口块，$\widetilde X$ 是 reactive block。
+
+固定可行层只对 $(\widetilde R,\widetilde D_{\rm vol})$ 做联合映射/投影
+\begin{equation}
+(\widetilde R,\widetilde D_{\rm vol})
 \mapsto
-(\widehat Z,\widehat D_{\rm vol})
+(\widehat R,\widehat D_{\rm vol})
 \end{equation}
 使
 \begin{equation}
 \boxed{
 \widehat D_{\rm vol}\succeq0,
 \qquad
-\operatorname{Herm}(\widehat Z)-\widehat D_{\rm vol}\succeq0.
+\widehat R-\widehat D_{\rm vol}\succeq0.
 }
 \end{equation}
-对当前小端口数，该投影成本可忽略。它必须使用固定数学定义，并与模型一起版本化。
+reactive block 不因 passivity 修正而改变：
+\begin{equation}
+\widehat X=\widetilde X,
+\qquad
+\widehat Z=\widehat R+i\widehat X.
+\end{equation}
+这样修正耗散可行性时不会无端改变 inductive/capacitive coupling。对当前小端口数，该联合投影成本可忽略；它必须使用固定数学定义并与模型一起版本化。
 
 定义 projection correction diagnostic
 \begin{equation}
 \delta_{\rm proj}
-=\left\|(\widehat Z,\widehat D_{\rm vol})
--(\widetilde Z,\widetilde D_{\rm vol})\right\|.
+=\left\|(\widehat R,\widehat D_{\rm vol})
+-(\widetilde R,\widetilde D_{\rm vol})\right\|.
 \end{equation}
 生产模型要求 validation/test 上 $\delta_{\rm proj}$ 足够小。可行集投影是安全层，不允许成为掩盖大 surrogate error 的主要修正器。
 
