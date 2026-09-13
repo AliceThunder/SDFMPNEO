@@ -368,9 +368,14 @@ training.best_validation_residual_loss
 python -m pytest -q \
   tests/test_unified_geometry.py \
   tests/test_unified_background.py \
+  tests/test_unified_thermal.py \
+  tests/test_unified_basis.py \
+  tests/test_unified_basis_minres.py \
   tests/test_unified_residual.py \
   tests/test_unified_end_to_end.py
 ```
+
+`test_unified_thermal.py` 检查 thermal rank 完全由 residual 目标自动决定、热基的体积加权正交性，以及更严格的 residual 目标不会反而得到更低 rank。
 
 `test_unified_end_to_end.py` 覆盖：自动 thermal basis → Maxwell operator 数据 → residual NN 训练 → 模型保存 → 模型加载 → `t=0` 真实 Maxwell correction / Joule / 温度推理。
 
