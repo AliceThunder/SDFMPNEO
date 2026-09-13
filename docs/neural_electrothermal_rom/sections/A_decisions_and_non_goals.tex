@@ -4,17 +4,27 @@
 
 \subsection{冻结决策}
 \begin{enumerate}
+  \item 当前体系固定在一个工作频率，采用 $e^{+i\omega t}$ 峰值复相量；所有 cycle-averaged power 公式统一含 $1/2$。
   \item 当前材料模型下，Maxwell 参数映射的生产输入固定为几何 $g$；只有真正影响电磁 constitutive law 的状态才允许未来加入输入。
-  \item 神经网络学习对象固定为低维 $Z_{\rm field}(g)$ 与 Hermitian Joule tensors $H_j(g)$ 的结构化表示或其 POD 系数。
-  \item 端口电流 $c$ 不进入主网络；通过 $c^H H_jc$ 与 $c^H Zc$ 解析进入热源和端口功率。
-  \item reciprocal 条件成立时 $Z_{\rm field}$ 使用复对称结构，并由固定解码层保证 $\operatorname{Herm}(Z_{\rm field})\succeq0$；$H_j$ 始终使用复 Hermitian 结构，但单个变号 thermal mode 对应的 $H_j$ 不强制 PSD。
+  \item 神经网络学习对象固定为 $Z_{\rm field}(g)$、总海水耗散 $D_{\rm vol}(g)$ 与 Hermitian modal Joule tensors $H_j(g)$ 的结构化表示或其 POD coefficients。
+  \item 端口电流 $c$ 不进入主网络；通过 $\frac12c^HD_{\rm vol}c$、$\frac12\operatorname{Re}(c^HH_jc)$ 和显式 circuit equations 进入功率、热源与真实工作点。
+  \item reciprocal 条件成立时 $Z_{\rm field}$ 使用复对称结构；$D_{\rm vol}$ 为 Hermitian PSD；$H_j$ 为 Hermitian，但单个变号 thermal mode 对应的 $H_j$ 不强制 PSD。
+  \item 生产解码使用联合可行层保证
+  \begin{equation}
+  D_{\rm vol}\succeq0,
+  \qquad
+  \operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
+  \end{equation}
+  projection correction 必须作为误差诊断，不能用大投影掩盖差的 raw surrogate。
   \item 几何姿态使用无周期分支跳变的编码；跨越 $\pm\pi$ 的裸 Euler angle 不直接作为连续网络输入。
-  \item $M_r(g)$、$K_r(g)$、wire resistance model 和 thermal boundary model 使用真实物理/ROM，不由网络预测。
-  \item thermal basis 必须先于最终 $H_j$ tensor labels 冻结；禁止循环地用尚未定义的 modal tensors 构建其自身 basis。
+  \item port source 必须具有明确 terminal/return-path/charge-continuity 解释；开放 spiral path 不被错误强制为闭合 divergence-free loop。
+  \item $M_r(g)$、$K_r(g)$、wire resistance law、wire-temperature functional 与 thermal boundary model 使用真实物理/ROM，不由网络预测。
+  \item thermal basis 必须先于最终 $H_j$ labels 冻结；current-induced source family 使用 Hermitian port-space basis 覆盖完整 quadratic-current heat span，而不是依赖随机 current sampling。
   \item thermal basis rank 由 geometry/source/shift resolvent residual-greedy 自动决定，并由 full-vs-ROM transient/steady audit 验证；仅 steady 与初始导数两个端点不足以宣称 transient ROM 收敛。
-  \item finite-time 使用真实 thermal ODE + ETD/IMEX；$t=\infty$ 使用独立 steady solve。
-  \item output POD 是数值压缩而非理论前提；POD 不够低秩时扩大 rank 或直接输出完整结构化 tensors。
-  \item Physics Gate 先于正式 surrogate dataset/training；底层物理或 thermal basis 版本变化必须使旧 tensor dataset/model 版本失效。
+  \item finite-time 使用真实 thermal ODE + ETD/IMEX 或其他经验证 integrator；$t=\infty$ 使用独立 steady solve。
+  \item current-controlled 与 circuit-controlled operating modes 必须明确区分；后者由显式外部网络方程求 $c(a,t)$。
+  \item output POD 是数值压缩而非理论前提；POD 不够低秩时扩大 rank、分块压缩或直接输出完整结构化 tensors。
+  \item Physics Gate 先于正式 surrogate dataset/training；底层物理、相量 convention、thermal basis 或 circuit definition 变化必须使旧 tensor dataset/model version 失效。
   \item NN validation、Physics Gate 数值收敛与严格 certificate 明确分层。
 \end{enumerate}
 
@@ -22,12 +32,13 @@
 主路线不追求：
 \begin{itemize}
   \item 黑箱学习完整 temperature trajectory；
-  \item 让网络重新学习 current quadratic/phase law；
-  \item 用 unrestricted dense matrices 代替 reciprocal/passive/Hermitian 输出结构；
+  \item 让网络重新学习 current quadratic/phase law 或 external circuit law；
+  \item 用 unrestricted dense matrices 代替 reciprocal/Hermitian/energy-feasible output；
   \item 把线性系统 residual 当作 Maxwell mesh/domain/model correctness 的证明；
-  \item 在没有 full-domain 数学证明时宣称 surrogate 全参数域严格证书；
-  \item 用 neural loss 掩盖 filament-conductor、boundary、thermal-convection 等模型误差；
-  \item 把规定电流模型的结果直接冒充为含 source/load/compensation network 的完整 WPT circuit working point。
+  \item 在没有 full-domain 数学证明时宣称 surrogate 全参数域严格 certificate；
+  \item 用 neural loss 或 feasible projection 掩盖 filament-conductor、port-source、boundary、thermal-convection 等模型误差；
+  \item 把规定电流模型的结果直接冒充为 source/load/compensation network 的完整 WPT working point；
+  \item 把单频 pointwise passivity 直接外推成 broadband causal passivity。
 \end{itemize}
 
 \subsection{允许的后续增强}
@@ -38,11 +49,11 @@
   \item ensemble/uncertainty diagnostics；
   \item Sobolev/geometry-gradient supervision；
   \item verified neural error bounds；
-  \item adaptive ETD/IMEX 与更稳健 steady solver；
-  \item 显式 external circuit layer，通过 $Z(a,g)$ 求解 voltage/load-driven current；
+  \item adaptive ETD/IMEX 与更稳健 steady/circuit solver；
   \item 若 constitutive evidence 支持，引入低维 $s_{\rm em}$ 作为额外代理输入；
-  \item 在保持同一 $Z/H$ 输出接口的情况下升级 truth Maxwell formulation、边界和 conductor fidelity。
+  \item 在保持 $Z/D/H$ 物理接口的情况下升级 truth Maxwell formulation、边界和 conductor fidelity；
+  \item 若未来扩展 frequency input，增加 positive-real/causal broadband structure。
 \end{itemize}
 
 \subsection{模型升级原则}
-未来若从 filament conductor 升级到 full solid-conductor model，或加入温度相关海水电导率、流体热对流等物理，首先修改 truth model 和 Physics Gate，再重新构建 thermal basis 与 tensors。生产 neural/thermal 接口只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
+未来若从 filament conductor 升级到 full solid-conductor model，加入温度相关海水电磁参数、流体热对流或 broadband operation，首先修改 governing truth model 和 Physics Gate，再重新构建 thermal basis 与 tensors。生产 neural/thermal/circuit interface 只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
