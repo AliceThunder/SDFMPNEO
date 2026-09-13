@@ -1,7 +1,11 @@
 \section{端口阻抗、Joule 二次型与离散功率守恒}
 
 \subsection{端口基响应}
-令端口峰值复电流相量为 $c\in\C^{n_p}$，source-shape 矩阵为 $S(g)$。在 $e^{+i\omega t}$ 约定下
+令端口峰值复电流相量为 $c\in\C^{n_p}$。当前正式 source-shape 矩阵取实值
+\begin{equation}
+S(g)\in\R^{n_E\times n_p},
+\end{equation}
+所有端口幅值和相位都由 $c$ 承担。在 $e^{+i\omega t}$ 约定下
 \begin{equation}
 B(g)=-i\omega S(g),
 \qquad
@@ -14,7 +18,7 @@ E=X(g)c.
 一次 multi-RHS truth solve 因而覆盖同一几何下的完整端口电流空间。
 
 \subsection{被动端口阻抗、reaction voltage 与物理端子电压}
-端口电压方向固定为被动符号约定，使正实部表示端口向电磁系统输入的平均功率。对当前 source orientation，定义与 source mode 功率共轭的广义 reaction voltage
+端口电压方向固定为被动符号约定，使正实部表示端口向电磁系统输入的平均功率。对当前实值 source basis 和 source orientation，定义与 source mode 功率共轭的广义 reaction voltage
 \begin{equation}
 \boxed{
 v_{\rm field}=-S^T E,
@@ -26,7 +30,7 @@ v_{\rm field}=-S^T E,
 Z_{\rm field}(g)=-S(g)^T X(g).
 }
 \end{equation}
-这里 $v_{\rm field}$ 首先是由 source/work conjugacy 定义的广义端口电压。只有当 $S$ 的 terminal、feed/return path、归一化与实际端口定义经过验证时，才允许把它直接解释为实验/电路意义上的 terminal voltage。Physics Gate 必须对这一等价关系做独立校准或功率/端口验证，不能仅凭矩阵量纲正确就默认成立。
+这里 $v_{\rm field}$ 首先是由 source/work conjugacy 定义的广义端口电压。只有当 $S$ 的 terminal、feed/return path、归一化与实际端口定义经过验证时，才允许把它直接解释为实验/电路意义上的 terminal voltage。若未来允许本身带复相位的 source basis，则 power-conjugate 定义必须重新使用相应 adjoint，不能机械沿用本式。
 
 若线圈采用独立的集中 AC resistance model，则总端口阻抗为
 \begin{equation}
@@ -36,7 +40,7 @@ Z(a,g)=Z_{\rm field}(g)+R_{\rm wire}(a,g),
 \end{equation}
 其中 $R_{\rm wire}$ 为实对角、非负矩阵。该符号定义必须与独立的离散功率恒等式同时验证。
 
-在 reciprocal material 与一致端口定义下，应有
+在 reciprocal material、reciprocal boundary treatment 与一致端口定义下，应有
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field}.
 \end{equation}
@@ -97,7 +101,35 @@ q_{{\rm vol},j}(g,c)
 
 同一 quadrature 下，若取 test function $\phi\equiv1$，对应 $W_{\mathbf1}$ 必须严格退化为 $H_\sigma$；这是 modal Joule 与总 volume loss 来自同一空间能量定义的离散一致性检查。
 
-$D_{\rm vol}$ 不能一般由有限个 $H_j$ 简单求和恢复，因为 thermal basis modes 并不构成空间常数函数的 partition of unity。故 $D_{\rm vol}$ 必须作为独立总功率对象保留，而 $H_j$ 负责 reduced thermal source projection。
+\subsection{modal Joule 与总耗散之间的 Loewner 必要约束}
+令 $\phi_j^{\min}$ 与 $\phi_j^{\max}$ 分别为 $\phi_j$ 在实际 conductivity-loss quadrature/support 上的最小值和最大值。由于
+\begin{equation}
+\phi_j^{\min}\le \phi_j(x)\le \phi_j^{\max},
+\end{equation}
+对任意 edge coefficient vector $e$ 有
+\begin{equation}
+\phi_j^{\min} e^H H_\sigma e
+\le e^H W_j e
+\le \phi_j^{\max} e^H H_\sigma e.
+\end{equation}
+因此在端口空间上必然成立
+\begin{equation}
+\boxed{
+\phi_j^{\min}D_{\rm vol}
+\preceq H_j
+\preceq
+\phi_j^{\max}D_{\rm vol}.
+}
+\end{equation}
+等价地，对任意复端口电流 $c$，
+\begin{equation}
+\phi_j^{\min}P_{\rm vol}
+\le q_{{\rm vol},j}
+\le \phi_j^{\max}P_{\rm vol}.
+\end{equation}
+这是 $H_j$ 与 $D_{\rm vol}$ 来自同一个非负空间 Joule density 的必要条件，比单独的 Hermitian 约束更强。它不意味着单个 $H_j$ 必须 PSD；当 $\phi_j^{\min}<0$ 时允许负 modal coefficient。
+
+$D_{\rm vol}$ 仍不能一般由有限个 $H_j$ 简单求和恢复，因为 thermal basis modes 并不构成空间常数函数的 partition of unity。故 $D_{\rm vol}$ 必须作为独立总功率对象保留，而 $H_j$ 负责 reduced thermal source projection。
 
 \subsection{线圈集中电阻热}
 线圈不作为 Maxwell volume conductor 时，其损耗由独立集中 resistance model 表示。若第 $p$ 个端口电阻为 $R_p(a,g)$，对应归一化空间 heat distribution 为 $\ell_p^{(Q)}(g)$，其空间积分按构造等于 $1$，则
@@ -139,7 +171,7 @@ D_{\rm out}:=\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}
 
 若 Physics Gate 证明目标精度下 outward power 可忽略，才允许使用 $D_{\rm out}^{\rm phys}\approx0$。有限 PEC 截断导致数值上 $D_{\rm out}=0$ 本身不构成开放域物理证据。
 
-\subsection{代理层的联合能量约束}
+\subsection{代理层的联合能量与 modal 可行约束}
 正式 surrogate 输出集合为
 \begin{equation}
 \boxed{
@@ -152,7 +184,16 @@ Z_{\rm field}^T=Z_{\rm field},
 \qquad
 D_{\rm vol}=D_{\rm vol}^H\succeq0,
 \qquad
-H_j=H_j^H.
+H_j=H_j^H,
+\end{equation}
+以及
+\begin{equation}
+\boxed{
+\phi_j^{\min}D_{\rm vol}
+\preceq H_j
+\preceq\phi_j^{\max}D_{\rm vol}
+\quad\forall j.
+}
 \end{equation}
 
 surrogate 侧允许定义 implied outward-loss matrix
@@ -168,12 +209,16 @@ surrogate 侧允许定义 implied outward-loss matrix
 \end{equation}
 这是一条 surrogate feasibility constraint，不是 truth outward power 的定义。validation/audit geometry 上必须把 $\widehat D_{\rm out}^{\rm imp}$ 与独立 truth $D_{\rm out}^{\rm phys}$ 比较。
 
-对当前小端口数，可只对 reciprocal impedance 的耗散块 $R=\operatorname{Herm}Z$ 与 $D_{\rm vol}$ 做联合可行投影，例如用固定 Frobenius-norm convex projection
-\begin{equation}
-\min_{R,D}\;\|R-\widetilde R\|_F^2+\lambda_D\|D-\widetilde D\|_F^2
-\quad\text{s.t.}\quad D\succeq0,\;R-D\succeq0,
-\end{equation}
-同时保持 reciprocal reactive symmetric block 不变。该投影属于固定物理层；projection correction 必须作为 surrogate error diagnostic，而不能掩盖大回归误差。
+对当前小端口数，可把耗散块、总 volume loss 与 modal bounds 放入同一个固定 convex feasible projection，例如
+\begin{align}
+\min_{R,D,\{H_j\}}\;&
+\|R-\widetilde R\|_F^2
++\lambda_D\|D-\widetilde D\|_F^2
++\sum_j\lambda_{H,j}\|H_j-\widetilde H_j\|_F^2,\\
+\text{s.t. }&D\succeq0,\qquad R-D\succeq0,\\
+&\phi_j^{\min}D\preceq H_j\preceq\phi_j^{\max}D\quad\forall j,
+\end{align}
+同时保持 reciprocal reactive symmetric block 不变。若实现采用等价的分步/解析投影，也必须验证最终确实满足同一可行集。所有 projection correction 必须作为 surrogate error diagnostic，而不能掩盖大回归误差。
 
 \subsection{固定频率适用范围}
 上述 passivity 条件针对当前冻结工作频率的 time-harmonic network。若未来把 frequency 本身加入代理输入，逐频率强制 $\operatorname{Herm}Z(\omega)\succeq0$ 仍不足以保证 causal passive broadband network；此时必须满足 matrix-valued positive-real/causality 条件和跨频率解析结构。当前单频理论不作超出该范围的声明。
