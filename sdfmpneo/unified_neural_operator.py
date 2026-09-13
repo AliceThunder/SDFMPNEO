@@ -1,9 +1,10 @@
 """Edge-space multiscale neural residual corrector for the unified Maxwell solve.
 
-The network never predicts a final Maxwell field. It maps local sparse-operator
-features and a current residual to a correction that is consumed by FGMRES.
-Topology is fixed by :class:`FixedMultiscaleBackground`; geometry and material
-changes enter only through the assembled operator features.
+The network never predicts a final Maxwell field. It maps exact local operator
+responses and a current residual to a correction direction consumed by FGMRES.
+The fixed physical baseline is a one-step minimum-residual Jacobi smoother, so
+a zero-initialized network already supplies a meaningful structure-preserving
+preconditioner.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 
-FEATURE_SCHEMA = "edge-residual-v2-coupling"
+FEATURE_SCHEMA = "edge-residual-v3-operator-action"
 
 
 @dataclass(frozen=True)
@@ -38,11 +39,23 @@ def _edge_centers(background):
     for e, (axis, i, j, k) in enumerate(background.edge_tuples):
         axes[e] = axis
         if axis == 0:
-            centers[e] = [0.5 * (background.x[i] + background.x[i + 1]), background.y[j], background.z[k]]
+            centers[e] = [
+                0.5 * (background.x[i] + background.x[i + 1]),
+                background.y[j],
+                background.z[k],
+            ]
         elif axis == 1:
-            centers[e] = [background.x[i], 0.5 * (background.y[j] + background.y[j + 1]), background.z[k]]
+            centers[e] = [
+                background.x[i],
+                0.5 * (background.y[j] + background.y[j + 1]),
+                background.z[k],
+            ]
         else:
-            centers[e] = [background.x[i], background.y[j], 0.5 * (background.z[k] + background.z[k + 1])]
+            centers[e] = [
+                background.x[i],
+                background.y[j],
+                0.5 * (background.z[k] + background.z[k + 1]),
+            ]
     return centers, axes
 
 
@@ -85,12 +98,18 @@ def build_edge_residual_operator(background, config=None):
     """Build the fixed-topology edge-space neural multigrid corrector."""
     import torch
 
-    cfg = config if isinstance(config, EdgeMultiscaleConfig) else EdgeMultiscaleConfig(**dict(config or {}))
+    cfg = (
+        config
+        if isinstance(config, EdgeMultiscaleConfig)
+        else EdgeMultiscaleConfig(**dict(config or {}))
+    )
     static = edge_static_features(background)
     groups = edge_group_ids(background, cfg.levels)
 
     class EdgeResidualOperator(torch.nn.Module):
-        dynamic_dimension = 9
+        # r, MR-Jacobi direction, post-smoother residual: 3 complex fields,
+        # followed by five scalar operator statistics.
+        dynamic_dimension = 11
         static_dimension = 6
         feature_schema = FEATURE_SCHEMA
 
@@ -98,29 +117,62 @@ def build_edge_residual_operator(background, config=None):
             super().__init__()
             self.config = cfg
             self.n_edges = int(background.n_edges)
-            self.register_buffer("static_features", torch.as_tensor(static, dtype=torch.float64), persistent=False)
+            self.register_buffer(
+                "static_features",
+                torch.as_tensor(static, dtype=torch.float64),
+                persistent=False,
+            )
             self._group_names = []
             self._group_counts = []
             for level, (ids, count) in enumerate(groups):
                 name = f"group_ids_{level}"
-                self.register_buffer(name, torch.as_tensor(ids, dtype=torch.long), persistent=False)
+                self.register_buffer(
+                    name, torch.as_tensor(ids, dtype=torch.long), persistent=False
+                )
                 self._group_names.append(name)
                 self._group_counts.append(int(count))
 
             act = lambda: _activation(torch, cfg.activation)
-            self.input = torch.nn.Linear(self.dynamic_dimension + self.static_dimension, cfg.width)
+            self.input = torch.nn.Linear(
+                self.dynamic_dimension + self.static_dimension, cfg.width
+            )
             self.local = torch.nn.ModuleList()
             self.coarse = torch.nn.ModuleList()
             for _ in range(cfg.levels):
-                self.local.append(torch.nn.Sequential(*sum(([
-                    torch.nn.Linear(cfg.width, cfg.width), act(),
-                    torch.nn.Linear(cfg.width, cfg.width), act(),
-                ] for _ in range(cfg.blocks_per_level)), [])))
-                self.coarse.append(torch.nn.Sequential(*sum(([
-                    torch.nn.Linear(cfg.width, cfg.width), act(),
-                    torch.nn.Linear(cfg.width, cfg.width), act(),
-                ] for _ in range(cfg.blocks_per_level)), [])))
+                self.local.append(
+                    torch.nn.Sequential(
+                        *sum(
+                            (
+                                [
+                                    torch.nn.Linear(cfg.width, cfg.width),
+                                    act(),
+                                    torch.nn.Linear(cfg.width, cfg.width),
+                                    act(),
+                                ]
+                                for _ in range(cfg.blocks_per_level)
+                            ),
+                            [],
+                        )
+                    )
+                )
+                self.coarse.append(
+                    torch.nn.Sequential(
+                        *sum(
+                            (
+                                [
+                                    torch.nn.Linear(cfg.width, cfg.width),
+                                    act(),
+                                    torch.nn.Linear(cfg.width, cfg.width),
+                                    act(),
+                                ]
+                                for _ in range(cfg.blocks_per_level)
+                            ),
+                            [],
+                        )
+                    )
+                )
             self.output = torch.nn.Linear(cfg.width, 2)
+            # Fresh models exactly reduce to the physical MR-Jacobi baseline.
             torch.nn.init.zeros_(self.output.weight)
             torch.nn.init.zeros_(self.output.bias)
 
@@ -135,10 +187,18 @@ def build_edge_residual_operator(background, config=None):
         def forward(self, dynamic):
             if dynamic.ndim == 2:
                 dynamic = dynamic.unsqueeze(0)
-            if dynamic.ndim != 3 or dynamic.shape[1] != self.n_edges or dynamic.shape[2] != self.dynamic_dimension:
+            if (
+                dynamic.ndim != 3
+                or dynamic.shape[1] != self.n_edges
+                or dynamic.shape[2] != self.dynamic_dimension
+            ):
                 raise ValueError("edge residual features have the wrong shape")
-            static_features = self.static_features.to(dtype=dynamic.dtype, device=dynamic.device)
-            static_batch = static_features.unsqueeze(0).expand(dynamic.shape[0], -1, -1)
+            static_features = self.static_features.to(
+                dtype=dynamic.dtype, device=dynamic.device
+            )
+            static_batch = static_features.unsqueeze(0).expand(
+                dynamic.shape[0], -1, -1
+            )
             h = self.input(torch.cat([dynamic, static_batch], dim=-1))
             multiscale = h
             for level, (local, coarse) in enumerate(zip(self.local, self.coarse)):
@@ -193,34 +253,91 @@ def operator_feature_statistics(A):
     return diagonal, row_abs_sum, row_nnz
 
 
-def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nnz=None):
-    """Local operator/residual features for a full edge-space correction."""
+def _as_residual_matrix(residual, size):
     R = np.asarray(residual, complex)
     if R.ndim == 1:
         R = R[:, None]
-    diagonal = safe_diagonal_values(diagonal)
-    if R.ndim != 2 or R.shape[0] != diagonal.size:
+    if R.ndim != 2 or R.shape[0] != size or np.any(~np.isfinite(R)):
         raise ValueError("residual dimension does not match Maxwell operator")
+    return R
+
+
+def minimum_residual_jacobi_from_action(diagonal, residual, apply_operator):
+    """Return the best scalar Jacobi correction and its true post residual.
+
+    For each right-hand side, ``alpha`` minimizes ``||r-alpha*A*D^-1*r||_2``.
+    This injects the signed/complex off-diagonal action into the physical
+    baseline while requiring only one operator application.
+    """
+    diagonal = safe_diagonal_values(diagonal)
+    R = _as_residual_matrix(residual, diagonal.size)
     jacobi = R / diagonal[:, None]
+    image = np.asarray(apply_operator(jacobi), complex)
+    if image.ndim == 1:
+        image = image[:, None]
+    if image.shape != R.shape or np.any(~np.isfinite(image)):
+        raise FloatingPointError("Maxwell operator action is invalid")
+
+    denominator = np.sum(np.abs(image) ** 2, axis=0)
+    numerator = np.sum(np.conj(image) * R, axis=0)
+    tiny = np.finfo(float).tiny
+    alpha = np.zeros(R.shape[1], complex)
+    valid = np.isfinite(denominator) & (denominator > tiny) & np.isfinite(numerator)
+    alpha[valid] = numerator[valid] / denominator[valid]
+    baseline = jacobi * alpha[None, :]
+    post = R - image * alpha[None, :]
+    if np.any(~np.isfinite(baseline)) or np.any(~np.isfinite(post)):
+        raise FloatingPointError("minimum-residual Jacobi baseline is non-finite")
+    return baseline, post
+
+
+def residual_features_from_operator_action(
+    diagonal,
+    residual,
+    apply_operator,
+    row_abs_sum=None,
+    row_nnz=None,
+):
+    """Exact local features including the signed operator response to Jacobi."""
+    diagonal = safe_diagonal_values(diagonal)
+    R = _as_residual_matrix(residual, diagonal.size)
+    baseline, post = minimum_residual_jacobi_from_action(
+        diagonal, R, apply_operator
+    )
+
     n = max(1, diagonal.size)
     tiny = np.finfo(float).tiny
     rscale = np.maximum(np.linalg.norm(R, axis=0) / np.sqrt(n), tiny)
+    jacobi = R / diagonal[:, None]
     zscale = np.maximum(np.linalg.norm(jacobi, axis=0) / np.sqrt(n), tiny)
     rn = R / rscale[None, :]
-    zn = jacobi / zscale[None, :]
+    bn = baseline / zscale[None, :]
+    pn = post / rscale[None, :]
 
     dabs = np.abs(diagonal)
     median = max(float(np.median(dabs)), tiny)
-    logdiag = np.clip(np.log(np.maximum(dabs, tiny) / median), -12.0, 12.0)
+    logdiag = np.clip(
+        np.log(np.maximum(dabs, tiny) / median), -12.0, 12.0
+    )
     phase = np.angle(diagonal) / np.pi
     loss_ratio = np.clip(
-        np.log1p(np.abs(diagonal.imag) / np.maximum(np.abs(diagonal.real), tiny)),
+        np.log1p(
+            np.abs(diagonal.imag) / np.maximum(np.abs(diagonal.real), tiny)
+        ),
         0.0,
         12.0,
     )
 
-    row_abs = dabs.copy() if row_abs_sum is None else np.asarray(row_abs_sum, float).reshape(-1)
-    nnz = np.ones(diagonal.size, float) if row_nnz is None else np.asarray(row_nnz, float).reshape(-1)
+    row_abs = (
+        dabs.copy()
+        if row_abs_sum is None
+        else np.asarray(row_abs_sum, float).reshape(-1)
+    )
+    nnz = (
+        np.ones(diagonal.size, float)
+        if row_nnz is None
+        else np.asarray(row_nnz, float).reshape(-1)
+    )
     if (
         row_abs.shape != (diagonal.size,)
         or nnz.shape != (diagonal.size,)
@@ -232,48 +349,92 @@ def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nn
         raise ValueError("invalid Maxwell row statistics")
 
     offdiag_abs = np.maximum(row_abs - dabs, 0.0)
-    coupling_ratio = np.clip(np.log1p(offdiag_abs / np.maximum(dabs, tiny)), 0.0, 12.0)
+    coupling_ratio = np.clip(
+        np.log1p(offdiag_abs / np.maximum(dabs, tiny)), 0.0, 12.0
+    )
     degree_scale = max(float(np.median(np.maximum(nnz, 1.0))), 1.0)
-    degree = np.clip(np.log1p(np.maximum(nnz - 1.0, 0.0)) / np.log1p(degree_scale), 0.0, 4.0)
-    operator = np.column_stack([logdiag, phase, loss_ratio, coupling_ratio, degree])
+    degree = np.clip(
+        np.log1p(np.maximum(nnz - 1.0, 0.0)) / np.log1p(degree_scale),
+        0.0,
+        4.0,
+    )
+    operator = np.column_stack(
+        [logdiag, phase, loss_ratio, coupling_ratio, degree]
+    )
 
     features = []
     for p in range(R.shape[1]):
         features.append(
-            np.column_stack([
-                rn[:, p].real,
-                rn[:, p].imag,
-                zn[:, p].real,
-                zn[:, p].imag,
-                operator,
-            ])
+            np.column_stack(
+                [
+                    rn[:, p].real,
+                    rn[:, p].imag,
+                    bn[:, p].real,
+                    bn[:, p].imag,
+                    pn[:, p].real,
+                    pn[:, p].imag,
+                    operator,
+                ]
+            )
         )
-    return np.asarray(features, np.float64), jacobi, zscale
+    return np.asarray(features, np.float64), baseline, zscale
+
+
+def residual_features_from_diagonal(
+    diagonal, residual, row_abs_sum=None, row_nnz=None
+):
+    """Compatibility wrapper using only the diagonal operator action.
+
+    Training and runtime use :func:`residual_features_from_operator_action` with
+    the true Maxwell action. This wrapper remains for lightweight callers.
+    """
+    diagonal = safe_diagonal_values(diagonal)
+
+    def diagonal_action(Z):
+        return diagonal[:, None] * np.asarray(Z, complex)
+
+    return residual_features_from_operator_action(
+        diagonal,
+        residual,
+        diagonal_action,
+        row_abs_sum=row_abs_sum,
+        row_nnz=row_nnz,
+    )
 
 
 def residual_features(A, residual, *, operator_stats=None):
-    """Runtime wrapper using exact sparse operator statistics."""
+    """Runtime features using exact sparse statistics and exact ``A @ z``."""
     if operator_stats is None:
         operator_stats = operator_feature_statistics(A)
     diagonal, row_abs_sum, row_nnz = operator_stats
-    return residual_features_from_diagonal(diagonal, residual, row_abs_sum, row_nnz)
+    return residual_features_from_operator_action(
+        diagonal,
+        residual,
+        lambda Z: A @ Z,
+        row_abs_sum=row_abs_sum,
+        row_nnz=row_nnz,
+    )
 
 
 def neural_correction(network, A, residual, *, operator_stats=None):
-    """Physical Jacobi correction plus the learned multiscale edge correction."""
+    """MR-Jacobi physical direction plus the learned multiscale correction."""
     import torch
 
-    features, jacobi, scale = residual_features(A, residual, operator_stats=operator_stats)
+    features, baseline, scale = residual_features(
+        A, residual, operator_stats=operator_stats
+    )
     parameter = next(network.parameters())
-    x = torch.as_tensor(features, dtype=parameter.dtype, device=parameter.device)
+    x = torch.as_tensor(
+        features, dtype=parameter.dtype, device=parameter.device
+    )
     with torch.no_grad():
         y = network(x).detach().cpu().double().numpy()
     if np.any(~np.isfinite(y)):
-        return jacobi
+        return baseline
     learned = (y[..., 0] + 1j * y[..., 1]).T * scale[None, :]
-    correction = jacobi + learned
+    correction = baseline + learned
     if np.any(~np.isfinite(correction)):
-        return jacobi
+        return baseline
     return correction
 
 
@@ -283,10 +444,12 @@ __all__ = [
     "build_edge_residual_operator",
     "edge_group_ids",
     "edge_static_features",
+    "minimum_residual_jacobi_from_action",
     "neural_correction",
     "operator_feature_statistics",
     "residual_features",
     "residual_features_from_diagonal",
+    "residual_features_from_operator_action",
     "safe_diagonal",
     "safe_diagonal_values",
     "sparse_row_statistics",
