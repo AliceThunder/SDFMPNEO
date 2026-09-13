@@ -1,10 +1,10 @@
-"""Edge-space multiscale neural residual corrector for the unified Maxwell solve.
+"""Operator-aware polynomial neural smoother for the full-space Maxwell solve.
 
-The network never predicts a final Maxwell field. It maps exact local operator
-responses and a current residual to a correction direction consumed by FGMRES.
-The fixed physical baseline is a one-step minimum-residual Jacobi smoother, so
-a zero-initialized network already supplies a meaningful structure-preserving
-preconditioner.
+The neural model does not predict a Maxwell field.  It reads exact residual and
+operator-action features, then predicts a few bounded complex coefficients for
+a short Jacobi-preconditioned operator polynomial.  FGMRES consumes the
+resulting direction and still accepts a solution only from the true sparse
+Maxwell residual.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 
-FEATURE_SCHEMA = "edge-residual-v3-operator-action"
+FEATURE_SCHEMA = "edge-residual-v4-polynomial-smoother"
 
 
 @dataclass(frozen=True)
@@ -22,12 +22,18 @@ class EdgeMultiscaleConfig:
     levels: int = 3
     blocks_per_level: int = 1
     activation: str = "silu"
+    polynomial_order: int = 3
+    coefficient_limit: float = 2.0
 
     def __post_init__(self):
         if self.width < 4 or self.levels < 1 or self.blocks_per_level < 1:
             raise ValueError("invalid edge multiscale network dimensions")
         if self.activation not in {"silu", "gelu", "tanh"}:
             raise ValueError("activation must be silu, gelu, or tanh")
+        if not 1 <= int(self.polynomial_order) <= 6:
+            raise ValueError("polynomial_order must lie in [1, 6]")
+        if not np.isfinite(self.coefficient_limit) or self.coefficient_limit <= 0:
+            raise ValueError("coefficient_limit must be finite and positive")
 
     def to_dict(self):
         return asdict(self)
@@ -95,7 +101,7 @@ def _activation(torch, name):
 
 
 def build_edge_residual_operator(background, config=None):
-    """Build the fixed-topology edge-space neural multigrid corrector."""
+    """Build the coefficient predictor for the short operator polynomial."""
     import torch
 
     cfg = (
@@ -106,9 +112,9 @@ def build_edge_residual_operator(background, config=None):
     static = edge_static_features(background)
     groups = edge_group_ids(background, cfg.levels)
 
-    class EdgeResidualOperator(torch.nn.Module):
+    class EdgePolynomialCoefficientOperator(torch.nn.Module):
         # r, MR-Jacobi direction, post-smoother residual: 3 complex fields,
-        # followed by five scalar operator statistics.
+        # followed by five scalar local operator statistics.
         dynamic_dimension = 11
         static_dimension = 6
         feature_schema = FEATURE_SCHEMA
@@ -117,6 +123,7 @@ def build_edge_residual_operator(background, config=None):
             super().__init__()
             self.config = cfg
             self.n_edges = int(background.n_edges)
+            self.polynomial_order = int(cfg.polynomial_order)
             self.register_buffer(
                 "static_features",
                 torch.as_tensor(static, dtype=torch.float64),
@@ -139,40 +146,34 @@ def build_edge_residual_operator(background, config=None):
             self.local = torch.nn.ModuleList()
             self.coarse = torch.nn.ModuleList()
             for _ in range(cfg.levels):
-                self.local.append(
-                    torch.nn.Sequential(
-                        *sum(
-                            (
-                                [
-                                    torch.nn.Linear(cfg.width, cfg.width),
-                                    act(),
-                                    torch.nn.Linear(cfg.width, cfg.width),
-                                    act(),
-                                ]
-                                for _ in range(cfg.blocks_per_level)
-                            ),
-                            [],
-                        )
+                local_layers = []
+                coarse_layers = []
+                for _ in range(cfg.blocks_per_level):
+                    local_layers.extend(
+                        [
+                            torch.nn.Linear(cfg.width, cfg.width),
+                            act(),
+                            torch.nn.Linear(cfg.width, cfg.width),
+                            act(),
+                        ]
                     )
-                )
-                self.coarse.append(
-                    torch.nn.Sequential(
-                        *sum(
-                            (
-                                [
-                                    torch.nn.Linear(cfg.width, cfg.width),
-                                    act(),
-                                    torch.nn.Linear(cfg.width, cfg.width),
-                                    act(),
-                                ]
-                                for _ in range(cfg.blocks_per_level)
-                            ),
-                            [],
-                        )
+                    coarse_layers.extend(
+                        [
+                            torch.nn.Linear(cfg.width, cfg.width),
+                            act(),
+                            torch.nn.Linear(cfg.width, cfg.width),
+                            act(),
+                        ]
                     )
-                )
-            self.output = torch.nn.Linear(cfg.width, 2)
-            # Fresh models exactly reduce to the physical MR-Jacobi baseline.
+                self.local.append(torch.nn.Sequential(*local_layers))
+                self.coarse.append(torch.nn.Sequential(*coarse_layers))
+
+            self.head_norm = torch.nn.LayerNorm(cfg.width)
+            self.head_hidden = torch.nn.Sequential(
+                torch.nn.Linear(cfg.width, cfg.width), act()
+            )
+            self.output = torch.nn.Linear(cfg.width, 2 * self.polynomial_order)
+            # A fresh network is exactly the physical MR-Jacobi baseline.
             torch.nn.init.zeros_(self.output.weight)
             torch.nn.init.zeros_(self.output.bias)
 
@@ -207,9 +208,17 @@ def build_edge_residual_operator(background, config=None):
                 pooled = self._pool(h, ids, self._group_counts[level])
                 pooled = pooled + coarse(pooled)
                 multiscale = multiscale + pooled[:, ids, :]
-            return self.output(multiscale)
 
-    return EdgeResidualOperator()
+            # Only a handful of global complex coefficients are learned.  The
+            # spatial directions themselves are generated by the exact A and D.
+            summary = multiscale.mean(dim=1)
+            summary = self.head_hidden(self.head_norm(summary))
+            raw = self.output(summary).reshape(
+                dynamic.shape[0], self.polynomial_order, 2
+            )
+            return float(cfg.coefficient_limit) * torch.tanh(raw)
+
+    return EdgePolynomialCoefficientOperator()
 
 
 def safe_diagonal_values(diagonal):
@@ -247,7 +256,7 @@ def sparse_row_statistics(A):
 
 
 def operator_feature_statistics(A):
-    """Compute immutable O(n_edges) feature statistics once for one assembled A."""
+    """Compute immutable O(n_edges) statistics once for one assembled A."""
     diagonal = safe_diagonal(A)
     row_abs_sum, row_nnz = sparse_row_statistics(A)
     return diagonal, row_abs_sum, row_nnz
@@ -262,13 +271,7 @@ def _as_residual_matrix(residual, size):
     return R
 
 
-def minimum_residual_jacobi_from_action(diagonal, residual, apply_operator):
-    """Return the best scalar Jacobi correction and its true post residual.
-
-    For each right-hand side, ``alpha`` minimizes ``||r-alpha*A*D^-1*r||_2``.
-    This injects the signed/complex off-diagonal action into the physical
-    baseline while requiring only one operator application.
-    """
+def _mr_jacobi_state(diagonal, residual, apply_operator):
     diagonal = safe_diagonal_values(diagonal)
     R = _as_residual_matrix(residual, diagonal.size)
     jacobi = R / diagonal[:, None]
@@ -277,7 +280,6 @@ def minimum_residual_jacobi_from_action(diagonal, residual, apply_operator):
         image = image[:, None]
     if image.shape != R.shape or np.any(~np.isfinite(image)):
         raise FloatingPointError("Maxwell operator action is invalid")
-
     denominator = np.sum(np.abs(image) ** 2, axis=0)
     numerator = np.sum(np.conj(image) * R, axis=0)
     tiny = np.finfo(float).tiny
@@ -288,46 +290,28 @@ def minimum_residual_jacobi_from_action(diagonal, residual, apply_operator):
     post = R - image * alpha[None, :]
     if np.any(~np.isfinite(baseline)) or np.any(~np.isfinite(post)):
         raise FloatingPointError("minimum-residual Jacobi baseline is non-finite")
+    return R, jacobi, image, baseline, post
+
+
+def minimum_residual_jacobi_from_action(diagonal, residual, apply_operator):
+    """Best scalar Jacobi correction and its true post-correction residual."""
+    _, _, _, baseline, post = _mr_jacobi_state(
+        diagonal, residual, apply_operator
+    )
     return baseline, post
 
 
-def residual_features_from_operator_action(
-    diagonal,
-    residual,
-    apply_operator,
-    row_abs_sum=None,
-    row_nnz=None,
-):
-    """Exact local features including the signed operator response to Jacobi."""
-    diagonal = safe_diagonal_values(diagonal)
-    R = _as_residual_matrix(residual, diagonal.size)
-    baseline, post = minimum_residual_jacobi_from_action(
-        diagonal, R, apply_operator
-    )
-
-    n = max(1, diagonal.size)
-    tiny = np.finfo(float).tiny
-    rscale = np.maximum(np.linalg.norm(R, axis=0) / np.sqrt(n), tiny)
-    jacobi = R / diagonal[:, None]
-    zscale = np.maximum(np.linalg.norm(jacobi, axis=0) / np.sqrt(n), tiny)
-    rn = R / rscale[None, :]
-    bn = baseline / zscale[None, :]
-    pn = post / rscale[None, :]
-
+def _operator_features(diagonal, row_abs_sum, row_nnz):
     dabs = np.abs(diagonal)
+    tiny = np.finfo(float).tiny
     median = max(float(np.median(dabs)), tiny)
-    logdiag = np.clip(
-        np.log(np.maximum(dabs, tiny) / median), -12.0, 12.0
-    )
+    logdiag = np.clip(np.log(np.maximum(dabs, tiny) / median), -12.0, 12.0)
     phase = np.angle(diagonal) / np.pi
     loss_ratio = np.clip(
-        np.log1p(
-            np.abs(diagonal.imag) / np.maximum(np.abs(diagonal.real), tiny)
-        ),
+        np.log1p(np.abs(diagonal.imag) / np.maximum(np.abs(diagonal.real), tiny)),
         0.0,
         12.0,
     )
-
     row_abs = (
         dabs.copy()
         if row_abs_sum is None
@@ -347,7 +331,6 @@ def residual_features_from_operator_action(
         or np.any(nnz < 0)
     ):
         raise ValueError("invalid Maxwell row statistics")
-
     offdiag_abs = np.maximum(row_abs - dabs, 0.0)
     coupling_ratio = np.clip(
         np.log1p(offdiag_abs / np.maximum(dabs, tiny)), 0.0, 12.0
@@ -358,9 +341,42 @@ def residual_features_from_operator_action(
         0.0,
         4.0,
     )
-    operator = np.column_stack(
+    return np.column_stack(
         [logdiag, phase, loss_ratio, coupling_ratio, degree]
     )
+
+
+def polynomial_state_from_operator_action(
+    diagonal,
+    residual,
+    apply_operator,
+    *,
+    polynomial_order=3,
+    row_abs_sum=None,
+    row_nnz=None,
+):
+    """Build exact features, MR baseline and normalized polynomial directions.
+
+    The spatial basis is
+    ``q0=D^-1 r`` and ``q{k+1}=D^-1 A qk``.  Each q is RMS-normalized to
+    the scale of q0, while the zero-neural-output baseline is the optimal
+    one-dimensional MR-Jacobi correction.
+    """
+    order = int(polynomial_order)
+    if not 1 <= order <= 6:
+        raise ValueError("polynomial_order must lie in [1, 6]")
+    diagonal = safe_diagonal_values(diagonal)
+    R, jacobi, first_image, baseline, post = _mr_jacobi_state(
+        diagonal, residual, apply_operator
+    )
+    n = max(1, diagonal.size)
+    tiny = np.finfo(float).tiny
+    rscale = np.maximum(np.linalg.norm(R, axis=0) / np.sqrt(n), tiny)
+    zscale = np.maximum(np.linalg.norm(jacobi, axis=0) / np.sqrt(n), tiny)
+    rn = R / rscale[None, :]
+    bn = baseline / zscale[None, :]
+    pn = post / rscale[None, :]
+    operator = _operator_features(diagonal, row_abs_sum, row_nnz)
 
     features = []
     for p in range(R.shape[1]):
@@ -377,17 +393,47 @@ def residual_features_from_operator_action(
                 ]
             )
         )
-    return np.asarray(features, np.float64), baseline, zscale
+
+    directions = []
+    q = jacobi
+    image = first_image
+    for k in range(order):
+        qscale = np.maximum(np.linalg.norm(q, axis=0) / np.sqrt(n), tiny)
+        directions.append(q * (zscale / qscale)[None, :])
+        if k + 1 < order:
+            q = image / diagonal[:, None]
+            image = np.asarray(apply_operator(q), complex)
+            if image.ndim == 1:
+                image = image[:, None]
+            if image.shape != R.shape or np.any(~np.isfinite(image)):
+                raise FloatingPointError("polynomial Maxwell operator action is invalid")
+
+    basis = np.stack(directions, axis=2)  # [edge, rhs, polynomial-order]
+    return np.asarray(features, np.float64), baseline, basis, zscale
+
+
+def residual_features_from_operator_action(
+    diagonal,
+    residual,
+    apply_operator,
+    row_abs_sum=None,
+    row_nnz=None,
+):
+    """Compatibility view of the exact operator-action feature state."""
+    features, baseline, _, zscale = polynomial_state_from_operator_action(
+        diagonal,
+        residual,
+        apply_operator,
+        polynomial_order=1,
+        row_abs_sum=row_abs_sum,
+        row_nnz=row_nnz,
+    )
+    return features, baseline, zscale
 
 
 def residual_features_from_diagonal(
     diagonal, residual, row_abs_sum=None, row_nnz=None
 ):
-    """Compatibility wrapper using only the diagonal operator action.
-
-    Training and runtime use :func:`residual_features_from_operator_action` with
-    the true Maxwell action. This wrapper remains for lightweight callers.
-    """
     diagonal = safe_diagonal_values(diagonal)
 
     def diagonal_action(Z):
@@ -417,21 +463,29 @@ def residual_features(A, residual, *, operator_stats=None):
 
 
 def neural_correction(network, A, residual, *, operator_stats=None):
-    """MR-Jacobi physical direction plus the learned multiscale correction."""
+    """MR-Jacobi plus a learned short exact-operator polynomial direction."""
     import torch
 
-    features, baseline, scale = residual_features(
-        A, residual, operator_stats=operator_stats
+    if operator_stats is None:
+        operator_stats = operator_feature_statistics(A)
+    diagonal, row_abs_sum, row_nnz = operator_stats
+    order = int(getattr(network, "polynomial_order", 3))
+    features, baseline, basis, _ = polynomial_state_from_operator_action(
+        diagonal,
+        residual,
+        lambda Z: A @ Z,
+        polynomial_order=order,
+        row_abs_sum=row_abs_sum,
+        row_nnz=row_nnz,
     )
     parameter = next(network.parameters())
-    x = torch.as_tensor(
-        features, dtype=parameter.dtype, device=parameter.device
-    )
+    x = torch.as_tensor(features, dtype=parameter.dtype, device=parameter.device)
     with torch.no_grad():
         y = network(x).detach().cpu().double().numpy()
-    if np.any(~np.isfinite(y)):
+    if y.shape != (features.shape[0], order, 2) or np.any(~np.isfinite(y)):
         return baseline
-    learned = (y[..., 0] + 1j * y[..., 1]).T * scale[None, :]
+    coefficients = y[..., 0] + 1j * y[..., 1]
+    learned = np.einsum("nmk,mk->nm", basis, coefficients, optimize=True)
     correction = baseline + learned
     if np.any(~np.isfinite(correction)):
         return baseline
@@ -447,6 +501,7 @@ __all__ = [
     "minimum_residual_jacobi_from_action",
     "neural_correction",
     "operator_feature_statistics",
+    "polynomial_state_from_operator_action",
     "residual_features",
     "residual_features_from_diagonal",
     "residual_features_from_operator_action",
