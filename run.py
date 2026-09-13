@@ -15,7 +15,7 @@
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
 或 full-field correction。当前固定背景的外边界仍是有限 PEC 截断，因此训练报告会明确标记
-Physics Gate 0 为 provisional，不能把它当作已完成的 open-boundary/Poynting 认证。
+Physics Gate 为 provisional，不能把它当作已完成的 open-boundary/Poynting 认证。
 """
 from __future__ import annotations
 
@@ -134,6 +134,7 @@ TRAINING = {
         "patience": 40,
         "validation_interval": 2,
         "gradient_clip_norm": 10.0,
+        "pod_relative_tail_tolerance": 1e-4,
         "physics_penalty_weight": 0.05,
         "z_weight": 1.0,
         "d_weight": 1.0,
@@ -145,7 +146,7 @@ TRAINING = {
 
 PREDICTION = {
     "initial_temperature_rise": 0.0,
-    # Current-driven: this is the complex port-current coordinate vector.  Current
+    # Current-driven: this is the complex port-current coordinate vector. Current
     # magnitude/phase changes do not require retraining.
     "operating": [5.0, 0.0],
     # Voltage-driven is also supported instead, e.g.
