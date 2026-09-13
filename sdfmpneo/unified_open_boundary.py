@@ -76,7 +76,10 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         def add(axis, key, area):
             e = self.edge_maps[axis].get(key)
             if e is not None:
-                weights[e] += float(area) / (4.0 * self.edge_lengths[e] ** 2)
+                # A rectangular face has two parallel edge basis functions per
+                # tangential component, so constant tangential fields integrate
+                # exactly with area/(2*l^2) on each of those two edges.
+                weights[e] += float(area) / (2.0 * self.edge_lengths[e] ** 2)
 
         # x-normal faces: tangential y/z edges.
         for i_face in (0, self.nx):
