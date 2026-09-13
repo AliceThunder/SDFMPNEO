@@ -14,6 +14,8 @@ from .unified_maxwell import NeuralMaxwellAccelerator
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_trainer import train_maxwell_accelerator
 
+_CACHE_FORMAT=2
+
 
 def jsonable(value):
     if is_dataclass(value): return jsonable(asdict(value))
@@ -41,13 +43,11 @@ def _progress(message,percent,monitor=None):
 
 
 def _signature(settings):
-    """Identity of the reusable physical operator data, excluding NN/optimizer choices."""
+    """Identity of reusable physical operator data, excluding NN/optimizer choices."""
     keys=("BACKGROUND","DEFAULT_GEOMETRY","GEOMETRY_SAMPLING","PHYSICS","MATERIALS","REGIONS","THERMAL_RANK","TRAINING")
     payload={k:settings[k] for k in keys}
-    payload["TRAINING"]={
-        k:v for k,v in payload["TRAINING"].items()
-        if k not in {"network","optimizer","device"}
-    }
+    payload["TRAINING"]={k:v for k,v in payload["TRAINING"].items() if k not in {"network","optimizer","device"}}
+    payload["cache_format"]=_CACHE_FORMAT
     text=json.dumps(jsonable(payload),sort_keys=True,separators=(",",":"),allow_nan=False)
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -71,7 +71,6 @@ def _sample_geometries(settings,n,rng,background):
         candidate=sample_geometry(settings["DEFAULT_GEOMETRY"],settings.get("GEOMETRY_SAMPLING"),rng)
         try:
             geometry=UnifiedUWPTGeometry.from_mapping(candidate)
-            # This checks only the physical background extent, not a learned-domain gate.
             background.validate_geometry(geometry)
         except ValueError:
             continue
@@ -90,6 +89,20 @@ def _cache_paths(directory):
     return directory/"unified.cache.json",directory/"unified.em_basis.npy",directory/"unified.operator_dataset.npz"
 
 
+def _require_effective_basis(report):
+    converged=bool(report.get("converged",False)) if isinstance(report,dict) else bool(report.converged)
+    if converged:
+        return
+    residual=float(report.get("maximum_anchor_relative_residual")) if isinstance(report,dict) else float(report.maximum_anchor_relative_residual)
+    target=float(report.get("target_relative_residual")) if isinstance(report,dict) else float(report.target_relative_residual)
+    rank=int(report.get("basis_dimension")) if isinstance(report,dict) else int(report.basis_dimension)
+    raise RuntimeError(
+        "Maxwell 公共空间未达到训练所要求的初解残差："
+        f"rank={rank}, maximum anchor residual={residual:.3e}, target={target:.3e}。"
+        "神经网络无法弥补一个不能表示训练物理解的公共空间，因此本次训练在进入 epoch 前停止。"
+    )
+
+
 def train(settings,model_path,settings_dir,monitor=None):
     from .training.monitor import TrainingStopped
     settings_dir.mkdir(parents=True,exist_ok=True)
@@ -102,14 +115,19 @@ def train(settings,model_path,settings_dir,monitor=None):
         _progress("构建固定多尺度背景物理空间",8,monitor)
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs，thermal rank={settings['THERMAL_RANK']}",flush=True)
         valid_cache=False
+        cache_meta={}
         if meta_path.is_file() and basis_path.is_file() and data_path.is_file():
-            try: valid_cache=json.loads(meta_path.read_text(encoding="utf-8")).get("signature")==sig
-            except (OSError,ValueError): valid_cache=False
+            try:
+                cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
+                valid_cache=cache_meta.get("signature")==sig and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+            except (OSError,ValueError,TypeError):
+                valid_cache=False
         if valid_cache:
             _progress("复用统一物理算子训练数据",35,monitor)
+            basis_report=cache_meta.get("basis_report",{})
+            _require_effective_basis(basis_report)
             V=np.load(basis_path,allow_pickle=False)
             dataset=MaxwellOperatorDataset.load(data_path)
-            basis_report=json.loads(meta_path.read_text(encoding="utf-8")).get("basis_report",{})
         else:
             checkpoint.unlink(missing_ok=True)
             rng=np.random.default_rng(int(settings["TRAINING"].get("seed",17)))
@@ -118,9 +136,10 @@ def train(settings,model_path,settings_dir,monitor=None):
             states=_sample_states(settings,nb,int(settings["TRAINING"].get("seed",17))+1)
             _progress("构建 residual-driven Maxwell 公共空间",10,monitor)
             V,basis_obj=build_residual_basis(
-                bg,geoms,states,max_rank=int(settings["TRAINING"].get("em_basis_max_rank",64)),
-                target_relative_residual=float(settings["TRAINING"].get("em_basis_anchor_residual",1e-2)),monitor=monitor,
+                bg,geoms,states,max_rank=int(settings["TRAINING"].get("em_basis_max_rank",96)),
+                target_relative_residual=float(settings["TRAINING"].get("em_basis_anchor_residual",2e-1)),monitor=monitor,
             )
+            _require_effective_basis(basis_obj)
             np.save(basis_path,V)
             _progress("构建 residual-driven Maxwell 公共空间",30,monitor)
             nd=int(settings["TRAINING"].get("n_operator_samples",512))
@@ -129,7 +148,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             dataset=generate_operator_dataset(bg,V,geoms,states,seed=int(settings["TRAINING"].get("seed",17)),monitor=monitor)
             dataset.save(data_path)
             basis_report=asdict(basis_obj)
-            write_json(meta_path,{"signature":sig,"basis_report":basis_report})
+            write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"basis_report":basis_report})
             _progress("生成 Maxwell residual 训练数据",55,monitor)
         _progress("训练 Maxwell 神经初解器",60,monitor)
         network,report=train_maxwell_accelerator(
@@ -220,9 +239,7 @@ def _worker_from_file(path):
     payload=json.loads(Path(path).read_text(encoding="utf-8"))
     wrapper=payload["settings"]
     settings=wrapper["parameters"]
-    return execute_training(
-        settings,Path(wrapper["model_path"]),Path(wrapper["settings_dir"]),Path(payload["session_dir"]),
-    )
+    return execute_training(settings,Path(wrapper["model_path"]),Path(wrapper["settings_dir"]),Path(payload["session_dir"]))
 
 
 def launch(settings,argv=None):
@@ -232,8 +249,7 @@ def launch(settings,argv=None):
     group=parser.add_mutually_exclusive_group(); group.add_argument("--gui",action="store_true"); group.add_argument("--headless",action="store_true")
     parser.add_argument("--worker-config",help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
-    if args.worker_config:
-        return _worker_from_file(args.worker_config)
+    if args.worker_config: return _worker_from_file(args.worker_config)
     root=Path(settings["ROOT"])
     model_path=Path(args.model or settings["FILES"]["model"]); model_path=model_path if model_path.is_absolute() else root/model_path
     settings_dir=Path(settings["FILES"]["settings_dir"]); settings_dir=settings_dir if settings_dir.is_absolute() else root/settings_dir
@@ -256,9 +272,7 @@ def execute_training(settings,model_path,settings_dir,session_dir=None):
         session_dir=log_root/(datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:8])
     session_dir=Path(session_dir); session_dir.mkdir(parents=True,exist_ok=True)
     write_json(session_dir/"settings.json",settings)
-    with TrainingMonitor(
-        session_dir/"metrics.jsonl",session_dir/"control.json",interval=float(settings["MONITOR"].get("log_interval_s",1.0))
-    ) as monitor:
+    with TrainingMonitor(session_dir/"metrics.jsonl",session_dir/"control.json",interval=float(settings["MONITOR"].get("log_interval_s",1.0))) as monitor:
         return train(settings,Path(model_path),Path(settings_dir),monitor)
 
 
