@@ -1,7 +1,13 @@
 \section{完整物理系统与降阶动力学}
 
-\subsection{相量约定与 Maxwell 方程}
-全文采用 $e^{+i\omega t}$ 相量约定。对给定几何 $g$ 和真正进入电磁 constitutive law 的状态 $s_{\rm em}$，电场满足
+\subsection{相量约定、幅值约定与 Maxwell 方程}
+全文采用 $e^{+i\omega t}$ 相量约定，并统一使用\textbf{峰值复幅值}而不是 RMS 相量。因此任意周期平均功率均带有 $1/2$ 因子。例如端口平均输入功率写成
+\begin{equation}
+P_{\rm in}=\frac12\operatorname{Re}(c^H v).
+\end{equation}
+若未来接口改为 RMS phasor，则所有功率公式必须整体同步修改，禁止混用两套幅值约定。
+
+对给定几何 $g$ 和真正进入电磁 constitutive law 的状态 $s_{\rm em}$，电场满足
 \begin{equation}
 \nabla\times\mu^{-1}\nabla\times E
 -\omega^2\epsilon E
@@ -24,6 +30,15 @@ A_{\rm em}(s_{\rm em},g)=A_{\rm em}(g).
 \end{equation}
 这一定义必须与实现、缓存和训练数据一致。未来若加入温度相关海水电导率、介电参数或其他 constitutive state，只需恢复 $s_{\rm em}$ 依赖，不改变后续代数结构。
 
+\subsection{频域电磁--瞬态热耦合的时间尺度前提}
+生产模型采用 frequency--transient 分层：电磁场在载波频率上用频域相量求解，thermal model 接收一个电磁周期上的平均 Joule heat。该分层要求电磁周期远短于 thermal state 的显著变化时间尺度，即
+\begin{equation}
+\tau_{\rm EM}=\frac{2\pi}{\omega}\ll \tau_T.
+\end{equation}
+在该条件下，thermal ODE 不解析载波周期内的温度微振荡，而只接收 cycle-averaged power。
+
+端口相量 $c$ 可以是固定工况，也可以在热时间尺度上缓慢变化为 $c(t)$；后者要求 envelope/operating variation 同样慢于电磁建立时间。若 excitation 含有与电磁瞬态同量级的快速调制、强谐波或显著非线性频谱，则当前单频相量模型不适用，应改为多频或全时域电磁模型。
+
 \subsection{离散算子的结构要求}
 离散系统应保持 curl--curl 与 material Hodge 的结构
 \begin{equation}
@@ -44,12 +59,14 @@ A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 \begin{equation}
 \theta=T-T_{\rm amb}.
 \end{equation}
-完整热模型写成
+当前 thermal constitutive model 中 $M_T(g)$ 与 $K_T(g)$ 不随温度变化，完整热模型写成
 \begin{equation}
 M_T(g)\dot\theta+K_T(g)\theta
 =Q_{\rm vol}(g,c)+Q_{\rm wire}(\theta,g,c)+F_T(g).
 \end{equation}
-这里 $Q_{\rm vol}$ 是由 Maxwell 场产生的体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或线性边界等效源；若不存在则为零。若未来加入显著的温度非线性辐射/对流边界，应将其作为显式状态相关热通量项加入 governing equation，而不能隐藏到常数 $F_T$ 中。
+这里 $Q_{\rm vol}$ 是 cycle-averaged Maxwell 体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或线性边界等效源；若不存在则为零。
+
+若未来加入显著的温度相关 thermal conductivity、heat capacity、辐射或非线性对流边界，则必须显式写成 $M_T(\theta,g)$、$K_T(\theta,g)$ 或状态相关边界/源项；此时固定 generalized eigendecomposition 的 ETD 假设不再自动成立，必须同步修改时间积分理论。
 
 采用共享热基 $\Phi$：
 \begin{equation}
@@ -72,6 +89,20 @@ M_r=\Phi^TM_T\Phi,
 K_r=\Phi^TK_T\Phi.
 \end{equation}
 真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。
+
+\subsection{线圈电阻的温度状态必须有明确定义}
+集中 wire-resistance model 不能把整个 reduced state $a$ 作为无定义黑箱输入。对每个线圈 $p$，必须先定义一个物理温度泛函，例如 conductor/line 的归一化平均温升
+\begin{equation}
+\bar\theta_p(a,g)
+=\ell^{(T)T}_p(g)\Phi a,
+\qquad
+\ell_p^{(T)T}\mathbf 1=1,
+\end{equation}
+再由已定义的 constitutive law 计算
+\begin{equation}
+R_p(a,g)=\mathcal R_p\!\left(T_{\rm amb}+\bar\theta_p(a,g),g\right).
+\end{equation}
+若更高保真电阻模型需要多个局部温度统计量，则应显式扩展该 temperature-functional map。这样 $R_{\rm wire}$ 对 thermal state 的依赖是可解释、可验证的物理映射，而不是隐藏的经验函数。
 
 \subsection{thermal source family}
 用于构造共享热基的 source family 必须覆盖生产系统中可能出现的空间热源方向，至少包括：
