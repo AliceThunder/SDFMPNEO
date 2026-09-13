@@ -14,6 +14,7 @@ def _load_run():
 def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
     run = _load_run()
     network = run.TRAINING["network"]
+    boundary = run.BACKGROUND["open_boundary_check"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
@@ -21,6 +22,9 @@ def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
     assert len(run.TRAINING["thermal_time_scales"]) >= 2
     assert network["width"] >= 16
     assert network["blocks"] >= 1
+    assert boundary["samples"] >= 1
+    assert boundary["padding"] > 0
+    assert 0 < boundary["relative_tolerance"] < 1
     assert "fine_message_steps" not in network
     assert "coarse_levels" not in network
     assert "solver_steps" not in network
