@@ -4,14 +4,15 @@
 \begin{equation}
  g
  \rightarrow A_{\rm em}(g,T),B(g)
- \rightarrow \{D^{-1},A_{\rm em}\}\text{ operator polynomial}
- \rightarrow \mathcal C_\theta(A,R)
- \rightarrow \mathrm{FGMRES}
+ \rightarrow N_\theta(A,R)
+ \rightarrow \mathrm{FGMRES\ closure}
  \rightarrow X
  \rightarrow q_{\rm Joule}
  \rightarrow a(t).
 \end{equation}
-其中 Maxwell 始终在固定背景完整 edge space 中求解；不存在全局 Maxwell solution basis、Maxwell rank、dense $Q/S$ 特征或 reduced-coefficient 网络输出。神经网络不预测完整 Maxwell correction，而只为真实 operator 生成的短阶 polynomial directions 预测少量复数混合系数。最终电磁结果必须满足真实 sparse residual 条件
+Maxwell 始终在固定背景完整 edge space 中求解；不存在全局 Maxwell solution basis、Maxwell rank、dense $Q/S$ 特征、polynomial coefficient 网络、ILU/AMG 分支或 reduced-coefficient 网络输出。
+
+神经网络是 Maxwell 加速主体。它读取当前真实 sparse Maxwell operator 的复数非对角耦合图与当前 residual，直接输出 full edge-space correction。FGMRES 只负责最终真实 residual 闭环。最终电磁结果必须满足
 \begin{equation}
  \frac{\lVert B-A_{\rm em}X\rVert_2}{\lVert B\rVert_2}\le \varepsilon_{\rm EM}.
 \end{equation}
@@ -21,71 +22,64 @@
 \begin{verbatim}
 sdfmpneo/
   unified_geometry.py         # analytic / implicit geometry
-  unified_background.py       # fixed multiscale edge/cell physics
-  unified_neural_operator.py  # MR-Jacobi + operator polynomial coefficients
-  unified_maxwell.py          # true-residual FGMRES closure
-  unified_dataset.py          # geometry/material residual sampling metadata
-  unified_trainer.py          # solution-label-free directional training + benchmark
+  unified_background.py       # fixed edge/cell physics
+  unified_neural_operator.py  # sparse complex message-passing neural solver
+  unified_maxwell.py          # neural rollout + true-residual FGMRES closure
+  unified_dataset.py          # geometry/material residual-seed metadata
+  unified_trainer.py          # solution-label-free shared-weight unroll training
   unified_thermal.py          # residual-driven automatic thermal basis
   unified_model.py            # exact Joule + thermal dynamics + save/load
   unified_runtime.py          # single train/predict runtime
 \end{verbatim}
 历史研究模块可以保留用于追溯，但不得由顶层 API、\texttt{run.py} 或正式 CLI 自动切换成另一条模型路线。
 
-\subsection{Maxwell polynomial 预条件器}
-对当前真实 residual $r$，先形成 Jacobi 方向 $q_0=D^{-1}r$，并求最优复数标量 $\alpha$：
-\begin{equation}
- \alpha=\arg\min_{\beta\in\mathbb C}\lVert r-\beta A_{\rm em}q_0\rVert_2.
-\end{equation}
-因此零网络对应的物理 baseline
-\begin{equation}
- z_{\rm MR}=\alpha D^{-1}r
-\end{equation}
-不会使一步 residual 比原 residual 更差。
+\subsection{Sparse neural Maxwell solver}
+对当前 residual $R$，节点特征包含 residual、$D^{-1}R$ 的归一化实虚部、diagonal magnitude/phase/loss ratio、row coupling 和 degree；固定特征包含 edge 位置与方向。
 
-随后只用真实 $A_{\rm em}$ 与 $D^{-1}$ 构造短阶 Krylov-like polynomial directions：
+与仅使用节点统计量的模型不同，正式网络每一层显式使用当前真实 Maxwell 非对角耦合。令 $\widehat A$ 为按行归一化的 complex off-diagonal operator，则 message-passing block 使用
 \begin{equation}
- q_{k+1}=D^{-1}A_{\rm em}q_k.
+ m^{(l)}=\widehat A h^{(l)},
 \end{equation}
-各方向按 RMS 归一化。默认三阶预条件器写成
+并把 $\Re(m^{(l)})$、$\Im(m^{(l)})$ 与当前 hidden state 一起送入共享更新网络。这样 operator coupling 的符号与复相位直接参与神经计算，而不是被压缩成 row-sum 等标量。
+
+网络最终直接给出
 \begin{equation}
- \boxed{
- z_\theta
- =z_{\rm MR}
- +\sum_{k=0}^{2}c_k(\mathcal F(A_{\rm em},r);\theta)\widehat q_k
- }.
+ \Delta X_\theta=N_\theta(A,R)\in\mathbb C^{N_E\times N_{\rm rhs}}.
 \end{equation}
-网络只输出三个有界复数系数 $c_k$；空间方向完全来自当前真实物理算子。
+Jacobi 仅作为输入尺度/reference，以及非有限或退化输出时的数值安全 fallback；它不是正式主求解器。
 
-\subsection{Maxwell 训练流程}
-训练只学习如何组合真实 operator directions，以更快地降低 Maxwell residual：
-\begin{enumerate}
-  \item 在几何与物理材料温升分布中采样 $(g,T)$；
-  \item 由固定背景装配真实 sparse $A_{\rm em}(g,T)$ 与端口 RHS $B(g)$；
-  \item 从端口 RHS、端口线性组合以及基础物理迭代产生的中间 residual 构造训练 residual bank；
-  \item 网络读取当前 residual、MR-Jacobi correction、MR 后 residual、operator diagonal/phase、sparse row coupling、edge orientation 与物理位置；
-  \item 真实算子生成 $\widehat q_k$，网络只预测 $c_k$；
-  \item 训练目标与 FGMRES 对预条件方向的实际使用方式一致：
-  \begin{equation}
-    L_{\rm EM}
-    =\min_{\alpha\in\mathbb C}
-    \frac{\lVert R-\alpha A_{\rm em}z_\theta\rVert_2^2}
-         {\lVert R\rVert_2^2};
-  \end{equation}
-  \item 推理时把同一 polynomial smoother 作为 FGMRES 的可变预条件器，且只由真实 residual 决定停止。
-\end{enumerate}
+\subsection{Solution-label-free shared unroll}
+训练不需要 Maxwell solution label。每个 operator sample 的 seed residual 来自端口 RHS 和随机 mixed-port RHS。后续 residual 完全由同一个神经网络产生：
+\begin{align}
+ R_0 &= R,\\
+ \Delta X_k &= N_\theta(A,R_k),\\
+ R_{k+1} &= R_k-A\Delta X_k.
+\end{align}
+默认共享权重 unroll 三步。训练目标对后续 residual 给予更高权重：
+\begin{equation}
+ L_{\rm EM}
+ =\frac{1}{\sum_{k=1}^{K}2^{k-1}}
+  \sum_{k=1}^{K}2^{k-1}
+  \frac{\lVert R_k\rVert_2^2}{\lVert R_0\rVert_2^2}.
+\end{equation}
+每一步 residual 都通过真实 matrix-free Maxwell operator 更新，因此网络直接学习如何连续消除 PDE residual，而不是学习某个传统预条件器的少量参数。
 
-训练缓存不保存 Maxwell 解标签，也不保存 dense reduced matrices。网络最后一层零初始化，因此未训练网络严格退化到 MR-Jacobi；神经输出出现非有限值时，同一次 correction 也退化到 MR-Jacobi，而不会返回 surrogate Maxwell 答案。
+\subsection{推理与精度闭环}
+推理首先连续应用共享 neural correction。每个直接 neural step 都以真实 residual 检查是否下降；不下降的列不会接受该步。
 
-\subsection{solver-level 验证}
-Directional loss 只衡量单个预条件方向，不能替代真实 Krylov 性能。因此每次正式训练结束后，必须在 validation/test 子集上直接比较 MR-Jacobi baseline 与 neural polynomial preconditioner，并记录：
+如果 neural rollout 尚未达到 $\varepsilon_{\rm EM}$，FGMRES 使用同一个 neural solver 作为可变 preconditioner，只闭合剩余误差。网络若输出 NaN/Inf 或近零退化方向，则该次 preconditioner 调用退化到 Jacobi，以避免数值故障；这不是另一条正式求解路径。
+
+在 \texttt{maxwell\_max\_iterations} 内真实 residual 仍未达到目标时必须明确报错，不能用 surrogate 或 silent fallback 返回答案。
+
+\subsection{训练与 solver benchmark}
+训练报告除了 train/validation/test unrolled residual loss，还必须报告 validation/test 上：
 \begin{itemize}
-  \item FGMRES iteration 的 median、90th percentile 与 maximum；
-  \item restart 统计；
-  \item final true residual 与成功率；
-  \item wall time 与 wall-time speedup。
+  \item neural rollout 后 relative residual 的 median/p90/max；
+  \item FGMRES closure iterations 与 restarts；
+  \item neural rollout wall time 与总 solve wall time；
+  \item true-residual success rate 与最大最终 residual。
 \end{itemize}
-只有这些 solver-level 指标才能说明神经模块是否真的产生端到端加速。
+因此模型是否有效最终由实际 PDE solve 指标判断，而不是只由神经 loss 判断。
 
 \subsection{Joule 与 thermal ROM}
 只有通过 Maxwell true-residual 检查后的完整场 $X$ 才允许进入 Joule 与阻抗计算。海水等体积导电区域使用
@@ -94,7 +88,7 @@ Directional loss 只衡量单个预条件方向，不能替代真实 Krylov 性�
 \end{equation}
 线圈 AC resistance heating 作为物理项加入。
 
-thermal ROM 保留，因为热扩散空间通常可压缩；thermal basis 的 rank 由真实 Joule anchor 与热方程 residual 自动决定，而不是手工固定。时间演化继续求解
+thermal ROM 保留，因为热扩散空间通常可压缩；thermal basis 的 rank 由真实 Joule anchor 与热方程 residual 自动决定。时间演化继续求解
 \begin{equation}
  M_r(g)\dot a=-K_r(g)a+q_r(a,g,u),
 \end{equation}
@@ -104,9 +98,9 @@ thermal ROM 保留，因为热扩散空间通常可压缩；thermal basis 的 ra
 正式实现中不允许：
 \begin{itemize}
   \item 用全局 Maxwell solution basis 或手工 Maxwell rank 作为神经载体；
-  \item 用网络直接预测最终 Maxwell 场、阻抗、Joule heat 或温度；
+  \item 用 polynomial coefficient、ILU、AMG 等传统预条件器取代神经网络主体；
+  \item 用网络直接预测最终阻抗、Joule heat 或温度；
   \item 把时间作为黑箱网络输入绕过 thermal ODE；
-  \item 让网络学习 $M_r(g)$ 或 $K_r(g)$；
   \item 用 domain probe、Gate、fast/general/legacy 模式切换另一套模型；
   \item 在未满足真实 Maxwell residual 时静默返回近似答案。
 \end{itemize}
@@ -114,13 +108,13 @@ thermal ROM 保留，因为热扩散空间通常可压缩；thermal basis 的 ra
 \subsection{验证与正确性边界}
 正式数值检查至少覆盖：
 \begin{itemize}
-  \item 零初始化 polynomial network 与 MR-Jacobi baseline 的一致性；
-  \item polynomial directions 的尺度有限且来自真实 operator action；
-  \item 非有限神经输出不会污染最终物理解；
-  \item FGMRES 返回结果满足真实 full-space sparse residual；
-  \item training report 含 baseline 与 neural 的 solver-level benchmark；
+  \item sparse graph 保留 Maxwell 非对角复耦合；
+  \item 网络输出维度是 full edge-space correction，而非全局系数；
+  \item 非有限/退化神经输出不会污染最终物理解；
+  \item FGMRES closure 满足真实 full-space sparse residual；
+  \item 训练与推理使用相同 sparse-message feature schema；
   \item Joule、阻抗只使用 corrected Maxwell field；
   \item thermal rank 由 residual 目标自动决定。
 \end{itemize}
 
-小 algebraic residual 只控制离散线性系统求解误差，并不自动保证连续 Maxwell 模型或空间离散误差足够小。固定背景分辨率、edge-space consistency、sub-cell geometry/source representation、材料模型和热空间 residual 仍需单独做收敛与物理验证。
+小 algebraic residual 只控制离散线性系统求解误差，并不自动保证连续 Maxwell 模型或空间离散误差足够小。固定背景分辨率、edge-space consistency、sub-cell geometry/source representation、材料模型和 thermal residual 仍需单独做收敛与物理验证。
