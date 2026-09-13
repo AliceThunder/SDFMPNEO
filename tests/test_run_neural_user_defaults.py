@@ -1,66 +1,57 @@
-import importlib
 import importlib.util
 from pathlib import Path
 
 
 def _load_run():
     path = Path(__file__).resolve().parents[1] / "run.py"
-    spec = importlib.util.spec_from_file_location("sdfmpneo_run_neural_defaults", path)
+    spec = importlib.util.spec_from_file_location("sdfmpneo_run_tensor_defaults", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
 
-def test_top_level_package_imports_after_neural_solver_rewrite():
-    package = importlib.import_module("sdfmpneo")
-    assert hasattr(package, "OperatorGraph")
-    assert hasattr(package, "build_edge_residual_operator")
-    assert not hasattr(package, "edge_group_ids")
-
-
-def test_run_defaults_use_one_multiscale_fullspace_maxwell_path():
+def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
     run = _load_run()
     network = run.TRAINING["network"]
     assert run.TRAINING["device"] == "cuda"
-    assert "em_basis_anchor_residual" not in run.TRAINING
-    assert "em_basis_max_rank" not in run.TRAINING
-    assert run.TRAINING["n_operator_samples"] == 96
-    assert run.PHYSICS["maxwell_residual_tolerance"] > 0
-    assert run.PHYSICS["maxwell_restart"] >= 1
-    assert network["fine_message_steps"] >= 1
-    assert network["coarse_levels"] >= 2
-    assert network["coarse_message_steps"] >= 1
-    assert network["fusion_message_steps"] >= 1
-    assert network["solver_steps"] == 3
-    assert "message_passing_steps" not in network
-    assert "polynomial_order" not in network
-    assert "coefficient_limit" not in network
+    assert run.TRAINING["n_tensor_samples"] >= 5
+    assert run.TRAINING["basis_validation_samples"] >= 1
+    assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
+    assert len(run.TRAINING["thermal_time_scales"]) >= 2
+    assert network["width"] >= 16
+    assert network["blocks"] >= 1
+    assert "fine_message_steps" not in network
+    assert "coarse_levels" not in network
+    assert "solver_steps" not in network
+    assert "maxwell_residual_tolerance" not in run.PHYSICS
+    assert "maxwell_max_iterations" not in run.PHYSICS
+    assert "maxwell_restart" not in run.PHYSICS
+    assert "n_operator_samples" not in run.TRAINING
+    assert "residual_training_steps" not in run.TRAINING
+    assert "em_temperature_rise_bounds" not in run.TRAINING
 
 
-def test_training_defaults_match_port_and_fgmres_krylov_residuals():
+def test_training_defaults_are_matrix_aware_not_krylov_residual_training():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
-    assert "unroll_steps" not in optimizer
-    assert optimizer["batch_size"] == 1
-    assert optimizer["gradient_accumulation_steps"] == 1
-    assert optimizer["batch_size"] * optimizer["gradient_accumulation_steps"] == 1
-    assert optimizer["krylov_vectors_per_port"] >= 2
-    assert 0.5 <= optimizer["port_loss_weight"] < 1.0
+    assert optimizer["batch_size"] > 1
+    assert optimizer["z_weight"] > 0
+    assert optimizer["d_weight"] > 0
+    assert optimizer["h_weight"] > 0
+    assert optimizer["physics_penalty_weight"] >= 0
+    assert "krylov_vectors_per_port" not in optimizer
+    assert "port_loss_weight" not in optimizer
     assert "random_residual_vectors" not in optimizer
     assert "smooth_residual_vectors" not in optimizer
-    assert optimizer["final_step_loss_weight"] >= 0.7
-    assert optimizer["learning_rate"] == 2e-3
-    assert optimizer["lr_decay_factor"] == 0.5
-    assert optimizer["lr_plateau_patience"] >= 6
-    assert optimizer["minimum_learning_rate"] <= 2.5e-4
-    assert optimizer["patience"] >= 30
-    assert optimizer["min_relative_improvement"] <= 5e-4
-    assert optimizer["benchmark_samples_per_split"] >= 1
+    assert "final_step_loss_weight" not in optimizer
 
 
-def test_temperature_input_is_physical_temperature_rise_not_modal_box():
+def test_current_magnitude_phase_are_online_inputs_not_network_inputs():
     run = _load_run()
+    assert "operating" in run.PREDICTION
     assert "initial_temperature_rise" in run.PREDICTION
     assert "state_lower" not in run.TRAINING
     assert "state_upper" not in run.TRAINING
+    assert "operating_lower" not in run.TRAINING
+    assert "operating_upper" not in run.TRAINING
