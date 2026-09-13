@@ -1,12 +1,12 @@
-"""统一几何、无解标签、residual-corrected 神经电磁-热求解器。
+"""统一几何、自动降阶、residual-corrected 神经电磁-热求解器。
 
 只修改本文件顶部配置：
 
     python run.py --mode train
     python run.py --mode predict
 
-几何不再生成贴体四面体网格。线圈/封装通过解析几何改变固定多尺度背景中的
-材料占据与激励；神经网络只预测 Maxwell 多右端项初解，最终解始终由真实背景
+Maxwell rank 和 thermal rank 都不手工指定，而由各自的真实物理 residual 目标
+自动决定。神经网络只预测 Maxwell 多右端项初解，最终电磁解始终由真实背景
 Maxwell residual 修正到指定容差。
 """
 from __future__ import annotations
@@ -149,16 +149,16 @@ REGIONS = {
 }
 PORTS = {"current_offset": None, "current_matrix": None}
 
-THERMAL_RANK = 24
 TRAINING = {
-    "state_lower": [-0.03] * THERMAL_RANK,
-    "state_upper": [0.12] * THERMAL_RANK,
     "seed": 17,
     "basis_samples": 24,
-    # Maxwell 公共空间的 rank 不手工指定。residual-greedy 从空基自动增广，
-    # 直到所有 anchor/端口的相对 residual 达到该目标；所得维数就是最终 rank。
-    # 最终推理仍由 PHYSICS 中的 1e-7 Maxwell residual 控制。
+    # thermal rank 自动增加，直到所有真实 Joule 热 anchor 的稳态 K*T=q 和
+    # 初始动态 M*dT/dt=q 相对 residual 都低于该目标。
+    "thermal_basis_anchor_residual": 5e-2,
+    # Maxwell rank 同样由所有 geometry / temperature / port anchor 的真实 residual 自动决定。
     "em_basis_anchor_residual": 2e-1,
+    # Maxwell 训练温度覆盖直接使用物理材料温升，不再依赖 thermal rank。
+    "em_temperature_rise_bounds": [0.0, 80.0],
     "n_operator_samples": 512,
     "device": "cuda",
     "network": {"width": 256, "blocks": 4, "activation": "silu"},
@@ -175,7 +175,8 @@ TRAINING = {
 }
 
 PREDICTION = {
-    "a0": [0.0] * THERMAL_RANK,
+    # 物理温升而不是 reduced-state 向量；0 表示环境温度初态。
+    "initial_temperature_rise": 0.0,
     "operating": [5.0, 0.0],
     "geometry": None,
     "times": [0.0, 0.001, 1.0, 1000.0, "inf"],
@@ -209,7 +210,6 @@ SETTINGS = {
     "MATERIALS": MATERIALS,
     "REGIONS": REGIONS,
     "PORTS": PORTS,
-    "THERMAL_RANK": THERMAL_RANK,
     "TRAINING": TRAINING,
     "PREDICTION": PREDICTION,
     "MONITOR": MONITOR,
@@ -218,7 +218,6 @@ SETTINGS = {
 
 def main(argv=None):
     from sdfmpneo.unified_runtime import launch
-
     return launch(SETTINGS, argv)
 
 
