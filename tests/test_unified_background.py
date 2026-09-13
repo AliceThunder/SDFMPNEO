@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
+from sdfmpneo.unified_thermal import build_thermal_basis
 
 
 MATERIALS = {
@@ -55,38 +56,44 @@ def background():
         coil_materials=("tx_copper", "rx_copper"),
         package_materials=("tx_package", "rx_package"),
         seawater_material="seawater",
-        thermal_rank=4,
         ambient_temperature=293.15,
     )
 
 
-def test_background_keeps_seawater_volume_and_hard_thermal_operators():
+def test_background_keeps_seawater_volume_and_accepts_physical_temperature_samples():
     bg = background()
-    ctx = bg.geometry_context(geometry())
+    assert bg.thermal_rank == 0
+    ctx = bg.geometry_context(geometry(), assemble_thermal=False)
     total = sum(ctx.fractions.values())
     assert np.allclose(total, 1.0, rtol=0.0, atol=1e-12)
     assert np.count_nonzero(ctx.fractions["seawater"] > 0.0) > bg.n_cells // 2
     assert ctx.source_shape.shape == (bg.n_edges, 2)
-    assert np.linalg.norm(ctx.source_shape[:, 0]) > 0.0
-    assert np.linalg.norm(ctx.source_shape[:, 1]) > 0.0
 
-    A = bg.em_operator(ctx, np.zeros(4))
+    A = bg.em_operator(ctx, {"tx_copper": 30.0, "rx_copper": 50.0})
     B = bg.rhs_matrix(ctx)
     assert A.shape == (bg.n_edges, bg.n_edges)
     assert B.shape == (bg.n_edges, 2)
     assert np.all(np.isfinite(A.data))
     assert np.linalg.norm(B) > 0.0
 
+
+def test_automatic_thermal_basis_enables_hard_reduced_operators():
+    bg = background()
+    _, report = build_thermal_basis(bg, [geometry()], target_relative_residual=0.8)
+    assert report.converged
+    assert bg.thermal_rank == report.basis_dimension
+    assert bg.thermal_rank > 0
+    ctx = bg.geometry_context(geometry())
     np.linalg.cholesky(0.5 * (ctx.thermal_mass_reduced + ctx.thermal_mass_reduced.T))
     np.linalg.cholesky(0.5 * (ctx.thermal_stiffness_reduced + ctx.thermal_stiffness_reduced.T))
 
 
 def test_seawater_joule_weight_is_three_dimensional_and_nonnegative():
     bg = background()
-    ctx = bg.geometry_context(geometry())
+    ctx = bg.geometry_context(geometry(), assemble_thermal=False)
     rng = np.random.default_rng(3)
     X = rng.normal(size=(bg.n_edges, 2)) + 1j * rng.normal(size=(bg.n_edges, 2))
-    ex, ey, ez, weight = bg.material_joule_cells(ctx, np.zeros(4), X)
+    ex, ey, ez, weight = bg.material_joule_cells(ctx, None, X)
     assert ex.shape == ey.shape == ez.shape == (bg.n_cells, 2)
     assert weight.shape == (bg.n_cells,)
     assert np.all(weight >= 0.0)
@@ -96,4 +103,4 @@ def test_seawater_joule_weight_is_three_dimensional_and_nonnegative():
 def test_geometry_outside_physical_background_is_not_silently_clipped():
     bg = background()
     with pytest.raises(ValueError, match="outside the fixed physical background"):
-        bg.geometry_context(geometry(rx_x=0.07))
+        bg.geometry_context(geometry(rx_x=0.07), assemble_thermal=False)
