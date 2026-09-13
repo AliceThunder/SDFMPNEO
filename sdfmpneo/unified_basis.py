@@ -1,4 +1,10 @@
-"""Residual-driven common Maxwell space for the unified background."""
+"""Residual-driven common Maxwell space for the unified background.
+
+The basis rank is not a user-chosen hyperparameter.  It is the smallest rank
+reached by residual-greedy enrichment that satisfies the requested physical
+anchor residual, subject only to the ambient Maxwell space and numerical
+linear-independence of new residual directions.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -49,7 +55,9 @@ class BasisReport:
     maximum_anchor_relative_residual: float
     target_relative_residual: float
     sample_count: int
+    enrichment_steps: int
     converged: bool
+    stop_reason: str
 
 
 def _expand_anchor(anchor, old_basis, new_vector):
@@ -91,21 +99,21 @@ def build_residual_basis(
     geometry_samples,
     state_samples,
     *,
-    max_rank=96,
     target_relative_residual=2e-1,
     monitor=None,
 ):
-    """Build one common space by repeatedly lifting the globally worst residual.
+    """Automatically determine the common Maxwell rank from physical residual.
 
-    No Maxwell solution labels are formed.  Every enrichment vector is obtained
-    from the current physical residual and a diagonal physics preconditioner.
-    Unlike the old nested loop, one anchor can no longer consume the entire rank
-    budget before the other geometries/ports participate.
+    Starting from an empty basis, repeatedly find the globally worst
+    ``(geometry, thermal-state, port)`` anchor and append an independent lift of
+    its true Maxwell residual.  Enrichment stops only when every anchor reaches
+    ``target_relative_residual`` or when the physical residuals contain no new
+    numerically independent direction.  No Maxwell solution labels and no fixed
+    rank target are used.
     """
-    max_rank = int(max_rank)
     target = float(target_relative_residual)
-    if max_rank < 1 or not 0 < target < 1:
-        raise ValueError("invalid basis settings")
+    if not 0 < target < 1:
+        raise ValueError("target_relative_residual must lie in (0, 1)")
     pairs = list(zip(geometry_samples, state_samples))
     if not pairs:
         raise ValueError("basis samples cannot be empty")
@@ -137,8 +145,10 @@ def build_residual_basis(
         )
 
     V = np.empty((background.n_edges, 0), complex)
-    worst = float("inf")
-    while V.shape[1] < max_rank:
+    enrichment_steps = 0
+    stop_reason = "target_reached"
+
+    while True:
         if monitor is not None:
             monitor.checkpoint()
 
@@ -150,25 +160,29 @@ def build_residual_basis(
         candidates.sort(key=lambda item: item[0], reverse=True)
         worst = candidates[0][0]
         if worst <= target:
+            stop_reason = "target_reached"
+            break
+        if V.shape[1] >= background.n_edges:
+            stop_reason = "ambient_space_exhausted"
             break
 
         old_basis = V
-        added = False
         chosen = None
         for relative, ai, port, residual in candidates:
             anchor = anchors[ai]
             for lift in (residual / anchor["diag"], residual):
-                trial, ok = orthonormal_append(V, lift)
-                if ok:
+                trial, added = orthonormal_append(V, lift)
+                if added:
                     V = trial
                     chosen = (relative, ai, port)
-                    added = True
                     break
-            if added:
+            if chosen is not None:
                 break
-        if not added:
+        if chosen is None:
+            stop_reason = "no_independent_residual_direction"
             break
 
+        enrichment_steps += 1
         new_vector = V[:, -1]
         for anchor in anchors:
             _expand_anchor(anchor, old_basis, new_vector)
@@ -181,10 +195,10 @@ def build_residual_basis(
                     basis_rank=V.shape[1],
                     basis_residual=float(worst),
                 )
-        if V.shape[1] == 1 or V.shape[1] % 4 == 0 or V.shape[1] == max_rank:
+        if V.shape[1] == 1 or V.shape[1] % 4 == 0:
             rel, ai, port = chosen
             print(
-                f"构建统一 Maxwell 空间……rank={V.shape[1]}/{max_rank}  "
+                f"构建统一 Maxwell 空间……rank={V.shape[1]}  "
                 f"worst residual={worst:.3e}  enriched=anchor[{ai}]/port[{port}] ({rel:.3e})",
                 flush=True,
             )
@@ -195,11 +209,14 @@ def build_residual_basis(
         final_worst = max(final_worst, float(np.max(relative)))
     converged = final_worst <= target
     print(
-        f"Maxwell 公共空间完成：rank={V.shape[1]}，"
-        f"maximum anchor residual={final_worst:.3e}，target={target:.3e}",
+        f"Maxwell 公共空间完成：自动 rank={V.shape[1]}，"
+        f"maximum anchor residual={final_worst:.3e}，target={target:.3e}，"
+        f"stop={stop_reason}",
         flush=True,
     )
-    return V, BasisReport(V.shape[1], final_worst, target, len(pairs), converged)
+    return V, BasisReport(
+        V.shape[1], final_worst, target, len(pairs), enrichment_steps, converged, stop_reason
+    )
 
 
 __all__ = ["BasisReport", "build_residual_basis", "reduced_solution", "safe_diag"]
