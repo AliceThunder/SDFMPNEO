@@ -67,6 +67,12 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert len(dataset.indices("validation")) == 1
     assert len(dataset.indices("test")) == 1
     assert len(dataset.indices("audit")) == 1
+    assert dataset.audit["maximum_linear_relative_residual"] <= 1e-8
+    assert dataset.audit["maximum_reciprocity_relative_error"] <= 1e-8
+    assert dataset.audit["maximum_closed_boundary_power_balance_relative_error"] <= 1e-7
+    assert dataset.audit["minimum_d_vol_eigenvalue"] >= -1e-9
+    assert dataset.audit["maximum_relative_loewner_violation"] <= 1e-8
+
     phi = background.thermal_basis
     surrogate, report = train_matrix_tensor_surrogate(
         dataset,
