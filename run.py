@@ -155,9 +155,9 @@ TRAINING = {
     "state_upper": [0.12] * THERMAL_RANK,
     "seed": 17,
     "basis_samples": 24,
-    # 公共空间必须在所有 anchor/端口上把相对 Maxwell residual 压到 0.2 以下，
-    # 否则不会进入神经训练。最终推理仍由 PHYSICS 中的 1e-7 residual 控制。
-    "em_basis_max_rank": 96,
+    # Maxwell 公共空间的 rank 不手工指定。residual-greedy 从空基自动增广，
+    # 直到所有 anchor/端口的相对 residual 达到该目标；所得维数就是最终 rank。
+    # 最终推理仍由 PHYSICS 中的 1e-7 Maxwell residual 控制。
     "em_basis_anchor_residual": 2e-1,
     "n_operator_samples": 512,
     "device": "cuda",
@@ -218,6 +218,7 @@ SETTINGS = {
 
 def main(argv=None):
     from sdfmpneo.unified_runtime import launch
+
     return launch(SETTINGS, argv)
 
 
