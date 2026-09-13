@@ -14,8 +14,8 @@
       -> temperature
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
-或 full-field correction。当前固定背景的外边界仍是有限 PEC 截断，因此训练报告会明确标记
-Physics Gate 为 provisional，不能把它当作已完成的 open-boundary/Poynting 认证。
+或 full-field correction。离线 Maxwell 使用匹配海水介质的一阶 Silver--Mueller 开放阻抗边界，
+训练前会自动检查独立 Poynting 功率闭合以及扩大计算域后的阻抗收敛。
 """
 from __future__ import annotations
 
@@ -40,6 +40,14 @@ BACKGROUND = {
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.03,
+    # Automatic open-domain validation.  The reference solve moves the same
+    # absorbing boundary outward by `padding`; all Re/Im/total port-impedance
+    # changes must remain below `relative_tolerance`.
+    "open_boundary_check": {
+        "samples": 3,
+        "padding": 0.12,
+        "relative_tolerance": 5e-2,
+    },
 }
 
 DEFAULT_GEOMETRY = {
