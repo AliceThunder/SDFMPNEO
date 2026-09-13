@@ -79,7 +79,7 @@ P_{\rm vol}
 \end{equation}
 若令 test function $\phi\equiv1$，对应加权 operator 必须与 $H_\sigma$ 一致到组装容差。禁止使用不能满足这些闭合关系的独立 field reconstruction 定义 Joule heat。
 
-\subsection{Gate 0D：端口 source、几何合法性与参数连续性}
+\subsection{Gate 0D：端口 source、物理正则化、几何合法性与参数连续性}
 每个生产几何必须满足 conductor/package 的设计包封、无非法穿透/最小间隙、人工边界裕量以及 material-fraction closure。
 
 端口 filament/source 必须具有明确 terminal 定义和 orientation。对于真正闭合的 current loop，可检查离散 divergence-free/闭合回路条件；对于有两个 terminals 的开放 spiral path，则必须显式表示 terminal source/sink、return path 或与外部 circuit 一致的 charge/current continuity，使
@@ -88,6 +88,8 @@ P_{\rm vol}
 \end{equation}
 在离散意义下有明确解释。禁止把所有开放端口路径简单强制成 divergence-free，也禁止忽略 endpoint/return-path physics 后仍宣称端口模型完整。
 
+理想零半径 line current 的 self field/self impedance 不能由网格尺寸充当隐式物理正则化。生产 source 必须采用与真实导体尺度绑定的 finite-cross-section impressed-current support、stranded-conductor approximation，或具有明确解析依据的 regularized filament/self-term correction。mesh size、cell midpoint assignment 或 deposition stencil 不能决定等效 wire radius。尤其 self impedance $Z_{pp}$ 必须在固定物理 wire radius/regularization 下随 mesh refinement 收敛；若不收敛，则该 truth formulation 不合格。
+
 对几何参数做小扰动 $g\to g+\delta g$，检查 $B(g)$、material operators、$Z(g)$、$D_{\rm vol}(g)$ 和 $H_j(g)$ 不出现由 midpoint assignment、采样点数量突变等造成的非物理跳跃。若存在 staircasing，应先改用连续、守恒的 source deposition 与足够平滑的 sub-cell quadrature。
 
 \subsection{Gate 0E：空间离散收敛}
@@ -95,7 +97,7 @@ P_{\rm vol}
 \begin{equation}
 Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j,\quad P_{\rm vol},\quad T_{\max},\quad a_*.
 \end{equation}
-训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。小 linear residual 不能替代 mesh convergence。
+训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。对 $Z_{pp}$ 的 mesh convergence 必须在固定物理 wire/source regularization 下检查；小 linear residual 不能替代 mesh convergence。
 
 \subsection{Gate 0F：thermal well-posedness、初值族、边界与 transient-aware ROM}
 当前 finite-time ETD 与 $t=\infty$ steady-state 理论默认在 temperature-rise space 上
@@ -133,16 +135,20 @@ r=b-A_s\tilde u.
 
 生产 API 若接受 reduced coordinates $a_0$，必须明确：只有属于已定义/已审计 initial-condition family 的状态才携带 full-order accuracy claim；超出该 family 的任意 reduced $a_0$ 只能视为 ROM 内部状态查询。若允许输入任意 full temperature field $T_0(x)$，必须显式进行 $M$-orthogonal projection、报告 initial projection error，并在需要时扩展 initial-condition family/basis。
 
-wire-resistance temperature functional $\bar\theta_p(a,g)$ 也必须在 full-vs-ROM audit 中验证。非线性 steady candidate 还必须通过 local stability 检查；存在多稳态或 thermal runaway 时不得把任意 root 宣称为唯一/稳定 $t=\infty$ 解。
+wire-resistance temperature functional $\bar\theta_p(a,g)$ 也必须在 full-vs-ROM audit 中验证。非线性 steady candidate 还必须通过 reduced closed-loop Jacobian local-stability 检查；在 frozen full-order audit geometries 上还应通过 full thermal perturbation/steady audit 验证 ROM 没有制造或删除关键稳定分支。若没有额外证明，reduced local stability 不能自动升级为 full-order global stability certificate。存在多稳态或 thermal runaway 时不得把任意 root 宣称为唯一/稳定 $t=\infty$ 解。
 
 \subsection{Gate 0G：模型假设、时间尺度与 operating-mode 边界}
-当前线圈采用 filament current + 集中 AC resistance，而不是 full solid-conductor eddy-current model。必须用更高保真或实验参考确认 skin/proximity/feed/return-path 近似在目标域内足够。
+当前线圈采用 impressed finite-support/regularized-filament current + 集中 AC resistance，而不是 full solid-conductor eddy-current model。必须用更高保真或实验参考确认 skin/proximity/feed/return-path 与 source regularization 近似在目标域内足够。
+
+当前 wire model 只增加实、对角的 $R_{\rm wire}$。如果目标频率/导体尺寸下 skin/proximity effect 造成不可忽略的 internal reactive impedance、非均匀热分布或端口间 conductor-loss coupling，则必须在 Physics Gate 阶段升级为相应的被动 complex wire-impedance/heat model后再生成 truth dataset，不能靠神经代理吸收这部分缺失物理。
 
 当前海水热模型若不含流体对流，只代表所定义的 conduction/boundary heat-transfer model；若目标是长期真实海水温升，必须单独验证自然/强制对流能否忽略或由有效模型吸收。
 
-frequency--transient 分层必须验证电磁载波周期远短于 thermal/operating-envelope 时间尺度。若 excitation 具有快速调制、宽带/多谐波或强电磁非线性，则单频 cycle-averaged 模型失效。
+frequency--transient 分层必须验证电磁载波/场建立时间远短于 thermal/operating-envelope 时间尺度。若 excitation 具有快速调制、宽带/多谐波或强电磁非线性，则单频 cycle-averaged 模型失效。
 
-当前 $c$ 表示规定的复端口电流。若真实系统由电压源、谐振补偿网络或负载决定电流，则必须显式接 circuit equations，并在 near-resonance/high-Q 区域检查 circuit conditioning。
+当前 $c$ 表示规定的复端口电流。若真实系统由电压源、谐振补偿网络或负载决定电流，则必须显式接 circuit equations，并在 near-resonance/high-Q 区域检查 circuit conditioning。把 circuit 方程当作每个 thermal stage 的代数准稳态 solve 还隐含 circuit ring-up/settling time $\tau_{\rm circ}$ 远短于 thermal 与外部 envelope 时间尺度；若这一尺度分离不成立，则必须显式引入 circuit dynamic states，而不能继续使用静态 phasor network equation。
+
+当前 geometry 在一次 thermal query 中默认静止。若存在运动、热膨胀或主动对准导致 $g=g(t)$，必须验证其时间尺度并显式更新 geometry-dependent tensors/operators；固定几何 surrogate cache 不能直接沿用。
 
 当前 passivity 约束只针对冻结工作频率。若未来 frequency 成为 surrogate input，必须升级到 broadband positive-real/causal consistency，不能只做逐频率 PSD 检查。
 
@@ -151,10 +157,10 @@ Physics Gate 通过后，应冻结并版本化：
 \begin{itemize}
   \item 工作频率、相量幅值/符号与端口/reaction-voltage 定义；
   \item PDE formulation、计算域、网格与边界；
-  \item source/terminal/return-path 与 material deposition；
+  \item source/terminal/return-path、physical wire/source regularization 与 material deposition；
   \item constitutive parameters；
   \item $H_\sigma/W_j/Z/D_{\rm vol}/D_{\rm out}^{\rm phys}/H_j$ extraction 与功率 conventions；
   \item thermal full model、coercivity/nullspace policy、wire-temperature functional、source/initial-condition family、cross-space transfer 与 ROM residual/error norm definition；
-  \item current-controlled/circuit-controlled operating-mode definition。
+  \item current-controlled/circuit-controlled operating mode、circuit timescale assumption 与 geometry-static/dynamic policy。
 \end{itemize}
 只有在上述版本固定后生成的 truth snapshots 才属于同一个可学习函数族。任何基础物理改变都应触发 truth dataset 版本更新，而不是直接在旧标签上继续训练。
