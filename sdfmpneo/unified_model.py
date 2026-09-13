@@ -26,7 +26,7 @@ from .unified_geometry import UnifiedUWPTGeometry
 from .unified_tensor_surrogate import UnifiedTensorSurrogate
 
 ARCHITECTURE = "unified-geometry-tensor-electrothermal-rom"
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 
 def _plain(value):
