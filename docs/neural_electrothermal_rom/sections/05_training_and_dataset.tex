@@ -3,10 +3,10 @@
 \subsection{数据生成必须分成两个物理阶段}
 由于第 $j$ 个 Joule tensor $H_j$ 的定义依赖已经冻结的 thermal basis mode $\phi_j$，因此不能先生成 $H_j$ tensor dataset、再构建 thermal basis。正确依赖顺序固定为：
 \begin{enumerate}
-  \item 先生成 validated Maxwell/geometry truth bank，包括端口基响应、$Z_{\rm field}$、总海水耗散 $D_{\rm vol}$、完整 current-induced spatial Joule basis、wire heat patterns 与 audit metadata；
+  \item 先生成 validated Maxwell/geometry truth bank，包括端口基响应、$Z_{\rm field}$、总海水耗散 $D_{\rm vol}$、独立 outward-loss audit $D_{\rm out}^{\rm phys}$、完整 current-induced spatial Joule basis、wire heat patterns 与 audit metadata；
   \item 使用这些空间 heat/source anchors 构建并冻结共享 thermal basis $\Phi$；
   \item 再对每个 geometry 复用或重算 Maxwell port responses，把空间 Joule bilinear form 投影到已冻结的 $\phi_j$，得到最终 $H_j$；
-  \item 最后形成用于 neural training 的结构化 $Z/D_{\rm vol}/H$ tensor dataset。
+  \item 最后形成用于 neural training 的结构化 $Z/D_{\rm vol}/H$ tensor dataset。$D_{\rm out}^{\rm phys}$ 默认作为 truth audit quantity 保留，不必作为独立 neural output，因为 surrogate implied outward loss 可由 $\operatorname{Herm}(\widehat Z)-\widehat D_{\rm vol}$ 得到。
 \end{enumerate}
 这一顺序消除了 ``tensor label 依赖尚未存在的 thermal mode'' 的循环定义。
 
@@ -17,7 +17,11 @@
   \item 组装经过 Physics Gate 冻结的 Maxwell truth model；
   \item 求解所有端口基激励得到 $X(g^{(s)})$；
   \item 构造 $Z_{\rm field}$ 与 $D_{\rm vol}=X^HH_\sigma X$；
-  \item 检查 linear residual、reciprocity、$D_{\rm vol}\succeq0$、$D_{\rm out}=\operatorname{Herm}Z-D_{\rm vol}\succeq0$ 与矩阵级功率平衡；
+  \item 从 boundary Poynting bilinear form、absorbing boundary 或 PML absorption 独立构造 $D_{\rm out}^{\rm phys}$；
+  \item 检查 linear residual、reciprocity、$D_{\rm vol}\succeq0$、$D_{\rm out}^{\rm phys}\succeq0$，以及
+  \begin{equation}
+  \operatorname{Herm}(Z_{\rm field})\approx D_{\rm vol}+D_{\rm out}^{\rm phys};
+  \end{equation}
   \item 用能够张成 Hermitian port space 的确定性 current combinations 生成完整 current-induced spatial Joule basis，并加入各 wire/source spatial patterns；
   \item 保存 geometry、truth quality、mesh/domain/formulation/constitutive version，以及后续构建 thermal basis 所需的物理信息。
 \end{enumerate}
@@ -80,14 +84,20 @@ POD rank 同时由平均能量尾部和 held-out reconstruction error 选择，�
 \end{equation}
 和 $\widehat Zc$ 与 $Zc$。测试集合必须包含 $0,\pi/2,\pi,3\pi/2$ 等相对相位组合。
 
-此外必须直接检查矩阵级条件
+此外必须直接检查 surrogate 矩阵级条件
 \begin{equation}
 \widehat D_{\rm vol}\succeq0,
 \qquad
-\widehat D_{\rm out}
+\widehat D_{\rm out}^{\rm imp}
 =\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}\succeq0,
 \end{equation}
-并在有 truth $D_{\rm out}$ 的 validation/audit geometry 上比较 $\widehat D_{\rm out}$ 的误差。随机 current tests 是补充诊断，不能代替矩阵级检查。
+并在 validation/audit geometry 上比较
+\begin{equation}
+\widehat D_{\rm out}^{\rm imp}
+\quad\text{与独立 truth}\quad
+D_{\rm out}^{\rm phys}.
+\end{equation}
+随机 current tests 是补充诊断，不能代替矩阵级检查。
 
 \subsection{优化与停止标准}
 网络训练使用标准 AdamW/mini-batch/GPU 工具链。学习率和 early stopping 只根据冻结 validation set 决定，test/audit set 不参与模型选择。
@@ -96,7 +106,7 @@ POD rank 同时由平均能量尾部和 held-out reconstruction error 选择，�
 \begin{itemize}
   \item validation latent/decoded $Z/D/H$ error 均稳定；
   \item current-space Joule/impedance/power error 达到目标；
-  \item 联合耗散可行性保持，且 $\delta_{\rm proj}$ 足够小；
+  \item 联合耗散可行性保持，$\delta_{\rm proj}$ 足够小，且 implied outward loss 与独立 truth outward loss 误差受控；
   \item 在 end-to-end frozen electrothermal audit 上，最终温度和阻抗误差满足工程目标。
 \end{itemize}
 
