@@ -36,7 +36,7 @@ python run.py --mode train --headless
 
 配置集中在 `run.py` 顶部。
 
-## 1. 离线电磁 truth
+## 1. 离线开放域 Maxwell truth
 
 固定几何后先求端口单位激励场：
 
@@ -44,7 +44,17 @@ python run.py --mode train --headless
 A_{\rm em}(g)X(g)=B(g).
 \]
 
-Maxwell 只作为离线 truth solver。由完整场构造：
+离线 Maxwell 使用匹配海水介质的一阶 Silver–Müller / Sommerfeld 开放阻抗边界。边界切向 edge DOF 不再像旧实现那样删除为 PEC，而是在弱式中加入
+
+\[
+i\omega Y M_{\partial\Omega},
+\qquad
+Y=\sqrt{\frac{\epsilon-i\sigma/\omega}{\mu}}
+\]
+
+的被动边界项，其中采用与本项目一致的 \(e^{+i\omega t}\) 相量约定，并选择 \(\operatorname{Re}Y\ge0\) 的 outgoing-wave 分支。
+
+由完整场构造：
 
 \[
 Z_{\rm field}(g),
@@ -76,7 +86,23 @@ Z_{\rm field}=-S^TX.
 Z_{\rm tot}=Z_{\rm field}+\operatorname{diag}(R_{\rm wire}(T)).
 \]
 
-truth label 在做 reciprocity 投影之前先检查 raw reaction matrix；同时检查 Maxwell algebraic residual 和当前有限 PEC 离散模型内部的 reaction/Joule power balance，避免“先投影正确再自证”。
+开放边界还直接给出独立的 outward-power quadratic form：
+
+\[
+D_{\rm out}^{\rm phys}
+=
+X^H\left(\operatorname{Re}Y\,M_{\partial\Omega}\right)X.
+\]
+
+因此 truth 侧可以直接检查矩阵级功率恒等式
+
+\[
+\operatorname{Herm}(Z_{\rm field})
+\approx
+D_{\rm vol}+D_{\rm out}^{\rm phys},
+\]
+
+而不是用 `Herm(Z_field)-D_vol` 定义 outward power 后再自证。
 
 ## 2. 神经网络只学 geometry→tensor POD coefficients
 
@@ -174,7 +200,7 @@ A_s=K+sM
 
 ## 5. 几何与离散连续性
 
-训练/推理几何现在先做最低必要的物理合法性检查：
+训练/推理几何先做最低必要的物理合法性检查：
 
 - coil 连同导体截面必须位于自己的 package 内；
 - package 不允许相交；
@@ -205,28 +231,40 @@ PREDICTION["drive"] = {
 
 `t=inf` 不再把任意 nonlinear root 直接称为稳定稳态：root 收敛后还会计算闭环 reduced vector field Jacobian 的 spectral abscissa，并单独报告 `stable`。
 
-## 7. Physics Gate 当前状态
+## 7. Physics Gate
 
-正式 tensor truth 会 fail-fast 检查：
+`python run.py --mode train` 会自动 fail-fast 检查：
 
 - Maxwell algebraic residual；
 - **raw** reaction reciprocity；
 - `D_vol` PSD；
-- 当前有限 PEC 离散模型内部的 reaction/Joule power balance；
-- modal Loewner bounds。
+- 独立边界 Poynting quadratic form 的 PSD；
+- `Herm(Z_field) = D_vol + D_out_phys` 的矩阵级功率闭合；
+- modal Loewner bounds；
+- **开放边界域扩展收敛**。
 
-但当前固定背景电磁外边界仍是**有限 PEC 截断**，还没有独立 open-boundary / PML / Poynting-flux reference。因此 artifact 会明确保持：
+域扩展检查会对独立几何样本再建一个更大的开放边界背景，并分别比较总阻抗、`Re(Z)` 和 `Im(Z)`。默认配置：
 
-```text
-open_boundary_verified = false
-independent_outward_power_verified = false
-certified = false
-status = internal_truth_passed_open_boundary_provisional
+```python
+"open_boundary_check": {
+    "samples": 3,
+    "padding": 0.12,
+    "relative_tolerance": 5e-2,
+}
 ```
 
-这不是隐藏误差。真正做 domain/open-boundary convergence 后才能升级该 Gate；本次不为了“形式完整”过度设计一个假的 PML。
+只有所有检查通过，训练才继续，并记录：
 
-另外，当前 EM source 仍属于 regularized line/filament approximation；物理 wire-radius/self-impedance convergence 仍需后续 Physics Gate 验证，不能仅凭当前 mesh residual 宣称 full conductor fidelity。
+```text
+open_boundary_verified = true
+independent_outward_power_verified = true
+certified = true
+status = certified
+```
+
+任何一项失败都会直接拒绝 surrogate training，不会再生成 `provisional` 模型。
+
+当前 EM source 仍属于 regularized line/filament approximation；物理 wire-radius/self-impedance convergence 是独立于本次开放边界修正的导体模型问题，不能仅凭 mesh residual 宣称 full solid-conductor fidelity。
 
 ## 8. 缓存与检查点
 
@@ -237,13 +275,14 @@ results/uwpt/unified.tensor_dataset.npz
 results/uwpt/model.tensor_training.pt
 ```
 
-改变 MLP 宽度/优化器时，可以复用 thermal basis 和 tensor truth 数据；改变背景、材料、geometry domain、thermal basis 定义或 tensor schema 时会使物理缓存失效。
+改变 MLP 宽度/优化器时，可以复用 thermal basis 和 tensor truth 数据；改变背景、材料、geometry domain、thermal basis 定义、开放边界设置或 tensor schema 时会使物理缓存失效。
 
 ## 9. 关键测试
 
 ```bash
 python -m pytest -q \
   tests/test_unified_geometry_physics.py \
+  tests/test_unified_open_boundary.py \
   tests/test_unified_thermal.py \
   tests/test_unified_tensor_surrogate.py \
   tests/test_unified_end_to_end.py \
