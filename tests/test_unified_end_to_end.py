@@ -133,6 +133,18 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert result.volume_power >= -1e-10
     assert result.outward_power >= -1e-10
 
+    steady = model.steady_state(
+        initial_guess=np.zeros(model.thermal_rank),
+        geometry=query_geometry,
+        operating=[0.0, 0.0],
+        tolerance=1e-11,
+        max_iterations=4,
+    )
+    assert steady.converged
+    assert steady.stable
+    assert steady.spectral_abscissa < 0.0
+    assert np.allclose(steady.state, 0.0, atol=1e-12)
+
     model_path = tmp_path / "unified_model.npz"
     model.save(model_path)
     with np.load(model_path, allow_pickle=False) as data:
