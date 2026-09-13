@@ -1,9 +1,8 @@
 """Fixed multiscale Cartesian Maxwell/thermal background.
 
 Geometry changes material occupancy and impressed coil currents, never the
-background topology. The thermal basis is installed after construction by the
-residual-driven thermal-space builder, so its rank is a physical result rather
-than a user-chosen background parameter.
+background topology.  The thermal basis is installed after construction by the
+transient residual/energy driven builder.
 """
 from __future__ import annotations
 
@@ -144,6 +143,7 @@ class FixedMultiscaleBackground:
         return self.thermal_basis
 
     def project_temperature_rise(self, rise):
+        """Legacy volume projection; production initial states use model M projection."""
         if self.thermal_basis is None:
             raise ValueError("thermal basis has not been constructed")
         value = np.asarray(rise, float)
@@ -161,6 +161,7 @@ class FixedMultiscaleBackground:
         xc = (self.x[:-1] + self.x[1:]) / 2
         yc = (self.y[:-1] + self.y[1:]) / 2
         zc = (self.z[:-1] + self.z[1:]) / 2
+        self.cell_axes = (xc, yc, zc)
         X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
         self.cell_centers = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
         DX, DY, DZ = np.meshgrid(self.dx, self.dy, self.dz, indexing="ij")
@@ -222,10 +223,12 @@ class FixedMultiscaleBackground:
         rows, cols, vals = [], [], []
         hrows, hcols, hdata = [], [], []
         face = 0
+
         def add(edge_map, key, sign):
             idx = edge_map.get(key)
             if idx is not None:
                 rows.append(face); cols.append(idx); vals.append(sign)
+
         for i in range(self.nx):
             for j in range(self.ny):
                 for k in range(self.nz + 1):
@@ -298,24 +301,106 @@ class FixedMultiscaleBackground:
             raise ValueError("geometry port count differs from configured materials")
         return g
 
+    @staticmethod
+    def _packages_overlap(a, b):
+        """Exact OBB overlap test using the standard 15 separating axes."""
+        A = np.asarray(a.pose.rotation, float)
+        B = np.asarray(b.pose.rotation, float)
+        R = A.T @ B
+        t = A.T @ (np.asarray(b.pose.translation) - np.asarray(a.pose.translation))
+        absR = np.abs(R) + 1e-14
+        ea = np.asarray(a.half_extent, float)
+        eb = np.asarray(b.half_extent, float)
+        for i in range(3):
+            if abs(t[i]) > ea[i] + np.dot(eb, absR[i, :]):
+                return False
+        for j in range(3):
+            if abs(np.dot(t, R[:, j])) > eb[j] + np.dot(ea, absR[:, j]):
+                return False
+        for i in range(3):
+            for j in range(3):
+                ra = ea[(i + 1) % 3] * absR[(i + 2) % 3, j] + ea[(i + 2) % 3] * absR[(i + 1) % 3, j]
+                rb = eb[(j + 1) % 3] * absR[i, (j + 2) % 3] + eb[(j + 2) % 3] * absR[i, (j + 1) % 3]
+                value = abs(t[(i + 2) % 3] * R[(i + 1) % 3, j] - t[(i + 1) % 3] * R[(i + 2) % 3, j])
+                if value > ra + rb:
+                    return False
+        return True
+
     def validate_geometry(self, geometry):
         g = self._geometry(geometry)
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
-        for index, coil in enumerate(g.coils):
-            self._require_inside(coil.centerline(spacing), f"coil {index} centerline")
+        for index, (coil, package) in enumerate(zip(g.coils, g.packages)):
+            points = coil.centerline(spacing)
+            self._require_inside(points, f"coil {index} centerline")
+            # Conservative cross-section margin around the centerline.  This is
+            # deliberately simple and prevents sampled coils from leaving their
+            # package without introducing a CAD boolean dependency.
+            radius = 0.5 * np.hypot(coil.conductor_width, coil.conductor_thickness)
+            local = np.abs(package.pose.inverse(points))
+            if np.any(local + radius > package.half_extent + 1e-12):
+                raise ValueError(f"coil {index} is not fully contained in its package")
         signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
         for index, package in enumerate(g.packages):
             self._require_inside(package.pose.apply(signs * package.half_extent), f"package {index}")
+        for i in range(len(g.packages)):
+            for j in range(i + 1, len(g.packages)):
+                if self._packages_overlap(g.packages[i], g.packages[j]):
+                    raise ValueError(f"packages {i} and {j} overlap")
         return g
 
     def _package_fraction(self, package):
-        signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
+        """Three-point tensor Gauss sub-cell quadrature for package occupancy."""
+        nodes, weights = np.polynomial.legendre.leggauss(3)
         fraction = np.zeros(self.n_cells)
-        for sign in signs:
-            fraction += package.contains(self.cell_centers + 0.25 * self.cell_widths * sign)
-        return fraction / len(signs)
+        normalization = 8.0  # tensor-product weights integrate 1 over [-1,1]^3
+        for ix, wx in zip(nodes, weights):
+            for iy, wy in zip(nodes, weights):
+                for iz, wz in zip(nodes, weights):
+                    offset = 0.5 * self.cell_widths * np.array([ix, iy, iz])
+                    fraction += wx * wy * wz * package.contains(self.cell_centers + offset)
+        return np.clip(fraction / normalization, 0.0, 1.0)
+
+    @staticmethod
+    def _linear_stencil(grid, value):
+        grid = np.asarray(grid, float)
+        x = float(value)
+        if x <= grid[0]:
+            return ((0, 1.0),)
+        if x >= grid[-1]:
+            return ((len(grid) - 1, 1.0),)
+        hi = int(np.searchsorted(grid, x))
+        lo = hi - 1
+        t = (x - grid[lo]) / (grid[hi] - grid[lo])
+        return ((lo, 1.0 - t), (hi, t))
+
+    def _cell_stencil(self, point):
+        stencils = [self._linear_stencil(grid, point[k]) for k, grid in enumerate(self.cell_axes)]
+        out = []
+        for (i, wi), (j, wj), (k, wk) in itertools.product(*stencils):
+            out.append((self._cell_id(i, j, k), wi * wj * wk))
+        return out
+
+    def _edge_stencil(self, axis, point):
+        xc, yc, zc = self.cell_axes
+        grids = (
+            (xc, self.y, self.z),
+            (self.x, yc, self.z),
+            (self.x, self.y, zc),
+        )[axis]
+        stencils = [self._linear_stencil(grid, point[k]) for k, grid in enumerate(grids)]
+        weighted = []
+        for a, b, c in itertools.product(*stencils):
+            key = (a[0], b[0], c[0])
+            e = self.edge_maps[axis].get(key)
+            if e is not None:
+                weighted.append((e, a[1] * b[1] * c[1]))
+        total = sum(w for _, w in weighted)
+        if total <= np.finfo(float).tiny:
+            return []
+        return [(e, w / total) for e, w in weighted]
 
     def _deposit_line(self, points):
+        """Conservative piecewise-linear cloud-in-cell line deposition."""
         self._require_inside(points, "coil centerline")
         source = np.zeros(self.n_edges, float)
         heat = np.zeros(self.n_cells, float)
@@ -325,36 +410,34 @@ class FixedMultiscaleBackground:
             if length == 0:
                 continue
             mid = 0.5 * (p0 + p1)
-            i = int(np.searchsorted(self.x, mid[0]) - 1)
-            j = int(np.searchsorted(self.y, mid[1]) - 1)
-            k = int(np.searchsorted(self.z, mid[2]) - 1)
-            heat[self._cell_id(i, j, k)] += length
+            for cell, weight in self._cell_stencil(mid):
+                heat[cell] += length * weight
             for axis, component in enumerate(d):
                 if component == 0:
                     continue
-                if axis == 0:
-                    candidates = [(i, j, k), (i, j + 1, k), (i, j, k + 1), (i, j + 1, k + 1)]
-                elif axis == 1:
-                    candidates = [(i, j, k), (i + 1, j, k), (i, j, k + 1), (i + 1, j, k + 1)]
-                else:
-                    candidates = [(i, j, k), (i + 1, j, k), (i, j + 1, k), (i + 1, j + 1, k)]
-                avail = [self.edge_maps[axis][q] for q in candidates if q in self.edge_maps[axis]]
-                for e in avail:
-                    source[e] += component / (self.edge_lengths[e] * len(avail))
+                stencil = self._edge_stencil(axis, mid)
+                if not stencil:
+                    continue
+                for e, weight in stencil:
+                    source[e] += component * weight / self.edge_lengths[e]
         if heat.sum() <= 0 or np.linalg.norm(source) == 0:
             raise ValueError("coil deposition produced a zero physical source")
         heat /= heat.sum()
         return source, heat
 
     def geometry_context(self, geometry, *, assemble_thermal=True):
-        g = self._geometry(geometry)
+        g = self.validate_geometry(geometry)
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
-        fractions = {name: np.zeros(self.n_cells) for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))}
+        fractions = {
+            name: np.zeros(self.n_cells)
+            for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))
+        }
         sources, heat_weights = [], []
         for coil, material in zip(g.coils, self.coil_materials):
             points = coil.centerline(spacing)
             source, heat = self._deposit_line(points)
-            sources.append(source); heat_weights.append(heat)
+            sources.append(source)
+            heat_weights.append(heat)
             area = coil.conductor_width * coil.conductor_thickness
             length = np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))
             fractions[material] += heat * (area * length) / self.cell_volumes
@@ -367,9 +450,7 @@ class FixedMultiscaleBackground:
         for material in self.coil_materials:
             fractions[material] *= scale
         occupied = np.minimum(copper, 1.0)
-        signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
-        for index, (package, material) in enumerate(zip(g.packages, self.package_materials)):
-            self._require_inside(package.pose.apply(signs * package.half_extent), f"package {index}")
+        for package, material in zip(g.packages, self.package_materials):
             raw = self._package_fraction(package)
             add = raw * np.clip(1.0 - occupied, 0.0, 1.0)
             fractions[material] += add
@@ -431,7 +512,10 @@ class FixedMultiscaleBackground:
         k = np.zeros(self.n_cells); cap = np.zeros(self.n_cells)
         for name, fraction in context.fractions.items():
             m = self.materials[name]
-            local_temperature = self.ambient_temperature + material_rise.get(name, 0.0) if material_rise is not None else T
+            local_temperature = (
+                self.ambient_temperature + material_rise.get(name, 0.0)
+                if material_rise is not None else T
+            )
             local_sigma = self._temperature_material(name, local_temperature)
             if em and name in self.coil_materials:
                 local_sigma = 0.0
@@ -447,7 +531,11 @@ class FixedMultiscaleBackground:
         h2 = np.asarray(self.face_cell_hodge @ mu_inv).ravel()
         hs = np.asarray(self.edge_cell_hodge @ sigma).ravel()
         he = np.asarray(self.edge_cell_hodge @ eps).ravel()
-        return (self.curl.T @ sp.diags(h2) @ self.curl - self.omega**2 * sp.diags(he) + 1j * self.omega * sp.diags(hs)).tocsr()
+        return (
+            self.curl.T @ sp.diags(h2) @ self.curl
+            - self.omega**2 * sp.diags(he)
+            + 1j * self.omega * sp.diags(hs)
+        ).tocsr()
 
     def rhs_matrix(self, context):
         return (-1j * self.omega) * np.asarray(context.source_shape, complex)
@@ -463,11 +551,13 @@ class FixedMultiscaleBackground:
         M = sp.diags(cap * self.cell_volumes, format="csr")
         rows, cols, data = [], [], []
         diag = np.zeros(self.n_cells)
+
         def pair(c1, c2, area, distance):
             kf = 2 * k[c1] * k[c2] / (k[c1] + k[c2])
             conductance = kf * area / distance
             diag[c1] += conductance; diag[c2] += conductance
             rows.extend([c1, c2]); cols.extend([c2, c1]); data.extend([-conductance, -conductance])
+
         for i in range(self.nx):
             for j in range(self.ny):
                 for kk in range(self.nz):
@@ -491,6 +581,7 @@ class FixedMultiscaleBackground:
         return tuple(R @ X for R in self.reconstruct)
 
     def material_joule_cells(self, context, state, X):
+        """Legacy visualization reconstruction; production Joule uses edge Hodge tensors."""
         sigma, _, _, _, _, _ = self.cell_properties(context, state, em=True)
         ex, ey, ez = self.field_components(X)
         return ex, ey, ez, 0.5 * sigma * self.cell_volumes
@@ -500,8 +591,13 @@ class FixedMultiscaleBackground:
         _, _, _, _, _, T = self.cell_properties(context, state)
         out = []
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
-        for coil, material, weights in zip(context.geometry.coils, self.coil_materials, context.line_heat_weights):
-            temp = self.ambient_temperature + material_rise.get(material, 0.0) if material_rise is not None else float(np.dot(weights, T))
+        for coil, material, weights in zip(
+            context.geometry.coils, self.coil_materials, context.line_heat_weights
+        ):
+            temp = (
+                self.ambient_temperature + material_rise.get(material, 0.0)
+                if material_rise is not None else float(np.dot(weights, T))
+            )
             sigma = float(self._temperature_material(material, np.array(temp)))
             length = coil.length(spacing)
             area = coil.conductor_width * coil.conductor_thickness
@@ -514,8 +610,12 @@ class FixedMultiscaleBackground:
     def save_arrays(self):
         if self.thermal_basis is None:
             raise ValueError("thermal basis has not been constructed")
-        return {"background_x": self.x, "background_y": self.y, "background_z": self.z,
-                "thermal_basis": self.thermal_basis}
+        return {
+            "background_x": self.x,
+            "background_y": self.y,
+            "background_z": self.z,
+            "thermal_basis": self.thermal_basis,
+        }
 
 
 __all__ = ["BackgroundContext", "FixedMultiscaleBackground", "stretched_axis"]
