@@ -1,9 +1,7 @@
-"""Unified online electrothermal model driven by geometry-only EM tensors.
+"""Online geometry-to-tensor electrothermal ROM.
 
-Online prediction never solves Maxwell. The neural model is evaluated once per
-geometry to obtain ``Z_field``, ``D_vol`` and thermal modal Joule matrices;
-current magnitude/phase, wire resistance and thermal dynamics then remain
-explicit physics.
+The neural model is evaluated once per geometry. Maxwell is absent online;
+current/circuit physics, wire resistance and thermal dynamics remain explicit.
 """
 from __future__ import annotations
 
@@ -28,7 +26,41 @@ from .unified_geometry import UnifiedUWPTGeometry
 from .unified_tensor_surrogate import UnifiedTensorSurrogate
 
 ARCHITECTURE = "unified-geometry-tensor-electrothermal-rom"
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
+
+
+def _plain(value):
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
+def _validate_rule(value, rule, label):
+    if not isinstance(rule, dict):
+        return
+    if "choices" in rule:
+        if value not in list(rule["choices"]):
+            raise ValueError(f"geometry {label} lies outside the production choices")
+        return
+    if "bounds" not in rule:
+        return
+    bounds = np.asarray(rule["bounds"], float)
+    x = np.asarray(value, float)
+    if bounds.shape == (2,):
+        if x.ndim != 0 or not bounds[0] <= float(x) <= bounds[1]:
+            raise ValueError(f"geometry {label} lies outside the production bounds")
+    elif bounds.shape == (3, 2):
+        x = x.reshape(-1)
+        if x.shape != (3,) or np.any(x < bounds[:, 0]) or np.any(x > bounds[:, 1]):
+            raise ValueError(f"geometry {label} lies outside the production bounds")
+    else:
+        raise ValueError(f"invalid production-domain rule for {label}")
 
 
 @dataclass(frozen=True)
@@ -44,6 +76,8 @@ class UnifiedPrediction:
     wire_power: float
     outward_power: float
     tensor_projection_correction: float
+    zd_projection_correction: float
+    h_projection_correction: float
     steps: int
     rejected_steps: int
 
@@ -61,6 +95,8 @@ class UnifiedSteadyState:
     wire_power: float
     outward_power: float
     tensor_projection_correction: float
+    zd_projection_correction: float
+    h_projection_correction: float
 
 
 class _ThermalFamily:
@@ -98,8 +134,6 @@ class _Field:
 
 
 class UnifiedNeuralElectroThermalModel:
-    """Shared thermal ROM plus static geometry-to-EM-tensor surrogate."""
-
     def __init__(
         self,
         background,
@@ -108,6 +142,7 @@ class UnifiedNeuralElectroThermalModel:
         default_geometry,
         current_offset=None,
         current_matrix=None,
+        production_domain=None,
         context_cache_size=16,
     ):
         if background.thermal_basis is None or background.thermal_rank < 1:
@@ -120,6 +155,7 @@ class UnifiedNeuralElectroThermalModel:
         self.background = background
         self.surrogate = surrogate
         self.default_geometry = dict(default_geometry)
+        self.production_domain = {} if production_domain is None else _plain(production_domain)
         self.current_offset = (
             np.zeros(n_ports, complex)
             if current_offset is None
@@ -148,9 +184,28 @@ class UnifiedNeuralElectroThermalModel:
     def current_dimension(self):
         return self.current_matrix.shape[1]
 
+    def _validate_production_geometry(self, mapping):
+        if not self.production_domain:
+            return
+        candidate = dict(mapping)
+        for section, rules in self.production_domain.items():
+            if section not in candidate:
+                raise ValueError(f"geometry is missing production-domain field {section}")
+            if isinstance(rules, dict) and isinstance(candidate[section], dict):
+                for key, rule in rules.items():
+                    if key not in candidate[section]:
+                        raise ValueError(f"geometry is missing production-domain field {section}.{key}")
+                    _validate_rule(candidate[section][key], rule, f"{section}.{key}")
+            else:
+                _validate_rule(candidate[section], rules, section)
+
     def geometry_context(self, geometry=None):
         mapping = self.default_geometry if geometry is None else geometry
-        g = mapping if isinstance(mapping, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(mapping)
+        if isinstance(mapping, UnifiedUWPTGeometry):
+            g = mapping
+        else:
+            self._validate_production_geometry(mapping)
+            g = UnifiedUWPTGeometry.from_mapping(mapping)
         key = g.canonical_json()
         if key in self._contexts:
             self._contexts.move_to_end(key)
@@ -204,7 +259,6 @@ class UnifiedNeuralElectroThermalModel:
         return z
 
     def _currents(self, state, context, tensors, operating):
-        """Resolve current-driven or voltage-driven operating conditions."""
         if isinstance(operating, dict):
             if "voltage" not in operating:
                 raise ValueError("voltage-driven operating mapping requires 'voltage'")
@@ -213,9 +267,7 @@ class UnifiedNeuralElectroThermalModel:
                 raise ValueError("drive voltage has wrong port dimension")
             resistance = self.background.wire_resistances(context, state)
             total = tensors.z_field + np.diag(resistance)
-            total = total + self._series_impedance(
-                operating.get("series_impedance"), len(resistance)
-            )
+            total += self._series_impedance(operating.get("series_impedance"), len(resistance))
             try:
                 return np.linalg.solve(total, voltage)
             except np.linalg.LinAlgError:
@@ -224,8 +276,7 @@ class UnifiedNeuralElectroThermalModel:
 
     def impedance(self, state, context, tensors=None):
         tensors = self.tensors(context.geometry) if tensors is None else tensors
-        resistance = self.background.wire_resistances(context, state)
-        return tensors.z_field + np.diag(resistance)
+        return tensors.z_field + np.diag(self.background.wire_resistances(context, state))
 
     def _wire_modal_heat(self, state, context, currents):
         resistance = self.background.wire_resistances(context, state)
@@ -245,9 +296,8 @@ class UnifiedNeuralElectroThermalModel:
         currents = self._currents(a, context, tensors, operating)
         volume_modal = tensors.modal_heat(currents)
         wire_modal, resistance, wire_power = self._wire_modal_heat(a, context, currents)
-        q = np.asarray(volume_modal + wire_modal, float)
         return (
-            q,
+            np.asarray(volume_modal + wire_modal, float),
             currents,
             resistance,
             tensors.volume_power(currents),
@@ -282,6 +332,8 @@ class UnifiedNeuralElectroThermalModel:
             "wire_power": float(wire_power),
             "outward_power": float(outward_power),
             "tensor_projection_correction": float(tensors.projection_correction),
+            "zd_projection_correction": float(tensors.zd_projection_correction),
+            "h_projection_correction": float(tensors.h_projection_correction),
         }
 
     def predict(
@@ -327,23 +379,26 @@ class UnifiedNeuralElectroThermalModel:
             )
         elif method == "reference":
             result = integrate_reference(
-                field, t, initial_state=a0, geometry=empty, operating=empty, rtol=rtol, atol=atol,
+                field, t, initial_state=a0, geometry=empty, operating=empty,
+                rtol=rtol, atol=atol,
             )
         else:
             raise ValueError("method must be etd2, etd2_adaptive, imex, or reference")
-        evaluated = self.evaluate(result.state, context.geometry, operating)
+        e = self.evaluate(result.state, context.geometry, operating)
         return UnifiedPrediction(
             time=t,
             state=result.state,
-            derivative=evaluated["derivative"],
-            heat_source=evaluated["heat_source"],
-            maximum_temperature=evaluated["maximum_temperature"],
-            impedance=evaluated["impedance"],
-            currents=evaluated["currents"],
-            volume_power=evaluated["volume_power"],
-            wire_power=evaluated["wire_power"],
-            outward_power=evaluated["outward_power"],
-            tensor_projection_correction=evaluated["tensor_projection_correction"],
+            derivative=e["derivative"],
+            heat_source=e["heat_source"],
+            maximum_temperature=e["maximum_temperature"],
+            impedance=e["impedance"],
+            currents=e["currents"],
+            volume_power=e["volume_power"],
+            wire_power=e["wire_power"],
+            outward_power=e["outward_power"],
+            tensor_projection_correction=e["tensor_projection_correction"],
+            zd_projection_correction=e["zd_projection_correction"],
+            h_projection_correction=e["h_projection_correction"],
             steps=result.steps,
             rejected_steps=result.rejected_steps,
         )
@@ -392,19 +447,21 @@ class UnifiedNeuralElectroThermalModel:
             if not accepted:
                 break
         final_residual = residual(state)
-        evaluated = self.evaluate(state, context.geometry, operating)
+        e = self.evaluate(state, context.geometry, operating)
         return UnifiedSteadyState(
             state=state,
             residual_norm=float(np.linalg.norm(final_residual)),
             iterations=last_iteration,
             converged=float(np.linalg.norm(final_residual)) <= tolerance,
-            maximum_temperature=evaluated["maximum_temperature"],
-            impedance=evaluated["impedance"],
-            currents=evaluated["currents"],
-            volume_power=evaluated["volume_power"],
-            wire_power=evaluated["wire_power"],
-            outward_power=evaluated["outward_power"],
-            tensor_projection_correction=evaluated["tensor_projection_correction"],
+            maximum_temperature=e["maximum_temperature"],
+            impedance=e["impedance"],
+            currents=e["currents"],
+            volume_power=e["volume_power"],
+            wire_power=e["wire_power"],
+            outward_power=e["outward_power"],
+            tensor_projection_correction=e["tensor_projection_correction"],
+            zd_projection_correction=e["zd_projection_correction"],
+            h_projection_correction=e["h_projection_correction"],
         )
 
     def save(self, path, *, metadata=None):
@@ -416,16 +473,17 @@ class UnifiedNeuralElectroThermalModel:
             "architecture": ARCHITECTURE,
             "frequency_hz": self.background.frequency_hz,
             "ambient_temperature": self.background.ambient_temperature,
-            "materials": self.background.materials,
-            "coil_materials": self.background.coil_materials,
-            "package_materials": self.background.package_materials,
+            "materials": _plain(self.background.materials),
+            "coil_materials": list(self.background.coil_materials),
+            "package_materials": list(self.background.package_materials),
             "seawater_material": self.background.seawater_material,
             "thermal_rank": self.thermal_rank,
-            "default_geometry": self.default_geometry,
+            "default_geometry": _plain(self.default_geometry),
+            "production_domain": _plain(self.production_domain),
             "network_config": checkpoint["network_config"],
             "network_dtype": checkpoint["dtype"],
             "n_ports": checkpoint["n_ports"],
-            "metadata": dict(metadata or {}),
+            "metadata": _plain(dict(metadata or {})),
         }
         arrays = {
             "metadata_json": np.array(json.dumps(meta, sort_keys=True, allow_nan=False)),
@@ -439,6 +497,7 @@ class UnifiedNeuralElectroThermalModel:
             "input_scale": checkpoint["input_scale"],
             "output_mean": checkpoint["output_mean"],
             "output_scale": checkpoint["output_scale"],
+            "pod_basis": checkpoint["pod_basis"],
             "phi_min": checkpoint["phi_min"],
             "phi_max": checkpoint["phi_max"],
         }
@@ -458,12 +517,12 @@ class UnifiedNeuralElectroThermalModel:
             meta = json.loads(str(data["metadata_json"]))
             if meta.get("architecture") != ARCHITECTURE or int(meta.get("format_version", -1)) != FORMAT_VERSION:
                 raise ValueError("model is not the current geometry-tensor electrothermal architecture")
-            thermal_basis = np.asarray(data["thermal_basis"], float)
             background = FixedMultiscaleBackground(
                 data["background_x"], data["background_y"], data["background_z"],
                 frequency_hz=meta["frequency_hz"], materials=meta["materials"],
                 coil_materials=meta["coil_materials"], package_materials=meta["package_materials"],
-                seawater_material=meta["seawater_material"], thermal_basis=thermal_basis,
+                seawater_material=meta["seawater_material"],
+                thermal_basis=np.asarray(data["thermal_basis"], float),
                 ambient_temperature=meta["ambient_temperature"],
             )
             config = ResidualMLPConfig(**dict(meta["network_config"]))
@@ -485,6 +544,7 @@ class UnifiedNeuralElectroThermalModel:
                 network,
                 np.asarray(data["output_mean"], float),
                 np.asarray(data["output_scale"], float),
+                np.asarray(data["pod_basis"], float),
                 int(meta["n_ports"]),
                 np.asarray(data["phi_min"], float),
                 np.asarray(data["phi_max"], float),
@@ -495,6 +555,7 @@ class UnifiedNeuralElectroThermalModel:
                 default_geometry=meta["default_geometry"],
                 current_offset=np.asarray(data["current_offset"], complex),
                 current_matrix=np.asarray(data["current_matrix"], complex),
+                production_domain=meta.get("production_domain"),
             )
 
 
