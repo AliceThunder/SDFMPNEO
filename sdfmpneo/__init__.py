@@ -22,7 +22,7 @@ from .unified_trainer import (
     train_maxwell_accelerator,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "ARCHITECTURE",
