@@ -1,13 +1,14 @@
-"""统一几何、full-space neural-FGMRES、电磁-热求解器。
+"""统一几何、full-space polynomial-neural-FGMRES、电磁-热求解器。
 
 只修改本文件顶部配置：
 
     python run.py --mode train
     python run.py --mode predict
 
-Maxwell 不再构造全局解基/Maxwell rank。神经网络只学习 full edge-space residual
-correction；FGMRES 始终以真实 sparse Maxwell residual 作为唯一停止条件。thermal
-rank 仍由真实 Joule 热源与热方程 residual 自动决定。
+Maxwell 不构造全局解基/Maxwell rank。短阶 operator polynomial 的空间方向完全由真实
+sparse Maxwell 算子生成，小网络只预测少量复数混合系数；FGMRES 始终以真实 sparse
+Maxwell residual 作为唯一停止条件。thermal rank 仍由真实 Joule 热源与热方程 residual
+自动决定。
 """
 from __future__ import annotations
 
@@ -115,10 +116,25 @@ TRAINING = {
     "n_operator_samples": 96,
     "residual_training_steps": 3,
     "device": "cuda",
-    "network": {"width": 32, "levels": 3, "blocks_per_level": 1, "activation": "silu"},
+    "network": {
+        "width": 32,
+        "levels": 3,
+        "blocks_per_level": 1,
+        "activation": "silu",
+        "polynomial_order": 3,
+        "coefficient_limit": 2.0,
+    },
     "optimizer": {
-        "epochs": 200, "batch_size": 4, "learning_rate": 2e-3, "weight_decay": 1e-6,
-        "patience": 60, "validation_interval": 2, "seed": 17, "dtype": "float32",
+        "epochs": 200,
+        "batch_size": 4,
+        "learning_rate": 2e-3,
+        "weight_decay": 1e-6,
+        "patience": 24,
+        "validation_interval": 2,
+        "min_relative_improvement": 5e-4,
+        "benchmark_samples_per_split": 6,
+        "seed": 17,
+        "dtype": "float32",
     },
 }
 
