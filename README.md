@@ -1,6 +1,6 @@
-# SDF-MPNEO — 统一几何、full-space neural-FGMRES 电磁–热求解器
+# SDF-MPNEO — 统一几何、operator-polynomial neural-FGMRES 电磁–热求解器
 
-SDF-MPNEO 现在只有一条正式模型路线：
+SDF-MPNEO 只有一条正式模型路线：
 
 \[
 \boxed{
@@ -10,7 +10,7 @@ SDF-MPNEO 现在只有一条正式模型路线：
 \rightarrow
 \text{full sparse Maxwell}
 \rightarrow
-\text{神经 residual correction}
+\text{MR-Jacobi + neural operator polynomial}
 \rightarrow
 \text{FGMRES 真 residual 闭环}
 \rightarrow
@@ -24,7 +24,7 @@ SDF-MPNEO 现在只有一条正式模型路线：
 
 核心原则：**只学习“怎么更快地解 PDE”，不学习“PDE 的答案是什么”。**
 
-神经网络不直接预测阻抗、Joule tensor、温度或最终 Maxwell 场。它只对当前真实 sparse Maxwell 算子和当前 residual 给出 full edge-space correction。最终电磁解是否接受，只由真实方程
+神经网络不直接预测阻抗、Joule tensor、温度或最终 Maxwell 场。Maxwell 的空间修正方向由真实 sparse operator 本身生成；小网络只预测少量复数 polynomial 系数。最终电磁解是否接受，只由真实方程
 
 \[
 \frac{\|B-A_{\rm em}X\|_2}{\|B\|_2}\le \varepsilon_{\rm EM}
@@ -64,7 +64,7 @@ A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 
 海水电导率、介电常数和三维体积电场都进入真实算子，因此海水涡流和海水体积 Joule 发热不会被“离线圈远就删除”的规则忽略。
 
-## Maxwell 不再做全局 solution ROM
+## Maxwell 不做全局 solution ROM
 
 正式主链已经删除：
 
@@ -75,47 +75,70 @@ A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 - dense \(S=(AV)^HB\)
 - 网络输出 reduced coefficient \(C\)
 
-广几何下 Maxwell solution family 不具备足够强的全局低秩性。继续扩大公共 \(V_E\) 会造成 basis 构造时间和 dense training memory 膨胀。因此当前 Maxwell 始终求解完整固定背景方程：
+广几何下 Maxwell solution family 不具备足够强的全局低秩性。因此当前 Maxwell 始终求解完整固定背景方程：
 
 \[
 A_{\rm em}(g,T)X=B(g).
 \]
 
-## 神经 Maxwell residual corrector
+## MR-Jacobi + neural operator polynomial
 
-神经模块实现
+对当前真实 residual \(r\)，先构造 Jacobi 方向
 
 \[
-\boxed{\mathcal P_\theta(\mathcal F(A),R)\rightarrow \Delta X}
+q_0=D^{-1}r,
 \]
 
-其中 \(A\) 是当前真实 sparse Maxwell operator，\(R\) 是当前真实 residual，\(\Delta X\) 是完整 edge-space correction。
+并求一个复数标量 \(\alpha\)，使
 
-网络使用当前 residual、Jacobi correction、operator diagonal/phase/row coupling、edge orientation 和物理位置等局部特征。细边特征经过 orientation-preserving coarse aggregation 再 prolongate 回细边，因此不是一个巨大的 `n_edges -> n_edges` 全连接网络。
+\[
+\|r-\alpha A q_0\|_2
+\]
 
-最后一层零初始化：网络未训练时，整个神经预条件器严格退化成物理 Jacobi correction。
+最小。这个 minimum-residual Jacobi 修正记为 \(z_{\rm MR}\)。因此即使网络完全为零，物理 baseline 的一步 residual 也不会比原 residual 更差。
+
+在此基础上继续由真实算子构造短阶 polynomial 空间：
+
+\[
+q_{k+1}=D^{-1}Aq_k.
+\]
+
+默认使用 3 阶。网络不再输出 25,200 个 edge correction，而只输出三个有界复数系数：
+
+\[
+\boxed{
+z_\theta=z_{\rm MR}+\sum_{k=0}^{2} c_k(\mathcal F(A,r))\,\widehat q_k
+}
+\]
+
+其中 \(\widehat q_k\) 做 RMS 归一化，避免不同 polynomial 阶之间尺度失衡。
+
+网络输入仍包含真实 residual、MR-Jacobi correction、MR 后 residual、operator diagonal/phase/row coupling、edge orientation 和物理位置。局部 edge 特征经过 orientation-preserving multiscale aggregation，最后只汇总为少量全局 polynomial 系数。
+
+这意味着：**空间结构由真实 \(A\) 生成，神经网络只决定这些物理方向应该怎样组合。**
+
+最后一层零初始化，因此未训练模型严格退化到 MR-Jacobi baseline。
 
 ## solution-label-free 训练
 
-训练没有 Maxwell solution label。对 residual \(R\)：
+训练没有 Maxwell solution label。对网络产生的方向 \(z_\theta\)，训练目标与 FGMRES 的实际使用方式一致：FGMRES 会自己选择该方向的最优复数幅值，所以训练直接最小化
 
 \[
-\Delta X_\theta=\mathcal P_\theta(A,R)
+\boxed{
+L_{\rm EM}
+=
+\min_{\alpha\in\mathbb C}
+\frac{\|r-\alpha A z_\theta\|_2^2}{\|r\|_2^2}
+}
 \]
 
-直接最小化
+而不是强迫网络同时学准方向和绝对幅值。
 
-\[
-\boxed{L_{\rm EM}=\frac{\|R-A\Delta X_\theta\|_2^2}{\|R\|_2^2}}.
-\]
+训练 residual 包含 unit-port RHS、端口组合和基础物理迭代过程中出现的中间 residual。训练缓存只保存几何、材料温升、split 和 residual-generation 设置，不保存 Maxwell solution label 或 dense reduced matrices。
 
-训练 residual 不只包含 unit-port RHS，还包含基础物理预条件过程中出现的中间 residual 和端口电流组合，从而学习“如何修正迭代 residual”。
+## FGMRES 真 residual 闭环
 
-训练缓存只保存几何、材料温升、split 和 residual-generation 设置，不再保存 dense reduced matrices。
-
-## FGMRES 物理闭环
-
-同一神经模块既用于初始 correction，也用于每一步可变预条件。因为该预条件器是非线性/可变的，正式求解器使用 **FGMRES**。
+同一 polynomial preconditioner 既用于初始方向，也用于每一步 flexible Krylov 预条件。因为预条件器随 residual 改变，正式求解器使用 **FGMRES**。
 
 FGMRES 每一步都用当前真实 sparse operator 重新计算 residual。唯一停止条件是
 
@@ -123,7 +146,7 @@ FGMRES 每一步都用当前真实 sparse operator 重新计算 residual。唯�
 \frac{\|B-AX\|_2}{\|B\|_2}\le\varepsilon_{\rm EM}.
 \]
 
-网络若输出 NaN/Inf，该次 correction 自动退化到 Jacobi。若在 `maxwell_max_iterations` 内真实 residual 仍未达到目标，则明确报错，不会用 surrogate 或 silent fallback 返回答案。
+网络若输出 NaN/Inf，该次 correction 自动退化到 MR-Jacobi。若在 `maxwell_max_iterations` 内真实 residual 仍未达到目标，则明确报错，不会用 surrogate 或 silent fallback 返回答案。
 
 `run.py` 中：
 
@@ -134,6 +157,25 @@ PHYSICS = {
     "maxwell_restart": 40,
 }
 ```
+
+## 训练报告直接 benchmark 真正的 solver
+
+单个 directional loss 不能等价代表 Krylov 加速，因此训练结束后会在 validation/test 子集上直接比较：
+
+- MR-Jacobi baseline
+- neural 3 阶 operator-polynomial preconditioner
+
+`training.report.json` 中的 `solver_benchmark` 会记录：
+
+- FGMRES iterations 的 median / p90 / max
+- restart 的 median / p90 / max
+- success rate
+- maximum final true residual
+- 总 wall time 与每 system wall time
+- median iteration speedup
+- wall-time speedup
+
+因此是否值得保留神经模块最终以**真实 FGMRES 性能**判断，而不是只看 training loss。
 
 ## Joule 与阻抗
 
@@ -155,9 +197,7 @@ G_j=\Re(X^HH_jX),\qquad q_j=\zeta^HG_j\zeta.
 
 ## thermal rank 自动决定
 
-Maxwell 全局解基被删除，但 thermal ROM 保留。热扩散通常远比广几何 Maxwell solution family 更可压缩。
-
-thermal basis \(\Phi_T\) 由真实 Joule source anchor 自动增广，同时控制
+Maxwell 全局解基被删除，但 thermal ROM 保留。thermal basis \(\Phi_T\) 由真实 Joule source anchor 自动增广，同时控制
 
 \[
 KT=q,\qquad M\dot T=q,
@@ -187,9 +227,20 @@ TRAINING = {
         "levels": 3,
         "blocks_per_level": 1,
         "activation": "silu",
+        "polynomial_order": 3,
+        "coefficient_limit": 2.0,
+    },
+    "optimizer": {
+        "epochs": 200,
+        "patience": 24,
+        "validation_interval": 2,
+        "min_relative_improvement": 5e-4,
+        "benchmark_samples_per_split": 6,
     },
 }
 ```
+
+`epochs=200` 只是上限。默认 early stopping 不再把第 5、6 位小数的抖动当成有效进展，从而避免平台期继续浪费大量训练时间。
 
 这里不存在任何 Maxwell rank 配置。
 
@@ -209,7 +260,7 @@ results/uwpt/unified.residual_dataset.npz
 results/uwpt/model.training.pt
 ```
 
-检查点身份包含 network config、training config、固定 edge topology、sample count 和 residual-generation 设置。
+检查点身份包含 network config、training config、固定 edge topology、sample count、residual-generation 设置和 feature schema。polynomial architecture/schema 改变时旧检查点会自动失效并重新训练；thermal basis 和 residual dataset 仍可复用。
 
 ## 推理日志
 
@@ -240,4 +291,4 @@ python -m pytest -q \
   tests/test_run_neural_user_defaults.py
 ```
 
-`test_unified_residual.py` 检查零初始化网络退化到 Jacobi、FGMRES 最终满足真实 full-space residual，以及非有限神经输出不会污染最终物理解。
+`test_unified_residual.py` 检查：operator-action feature、三阶 polynomial direction、零初始化退化到 MR-Jacobi、FGMRES 最终满足真实 full-space residual，以及非有限神经输出不会污染最终物理解。
