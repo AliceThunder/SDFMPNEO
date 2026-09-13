@@ -5,7 +5,7 @@
 \begin{equation}
 \boxed{
  g
- \rightarrow \text{validated Maxwell truth snapshot}
+ \rightarrow \text{validated Maxwell truth physics}
  \rightarrow \{Z_{\rm field},H_j\}
  \rightarrow \text{neural low-dimensional surrogate}
  \rightarrow q(g,c)
@@ -15,32 +15,48 @@
 \end{equation}
 网络不承担 Maxwell field solve、时间积分或 thermal operator prediction。所有端口电流依赖通过结构化矩阵 contraction 解析进入。
 
-\subsection{离线 truth-data 层}
-离线物理层对每个几何完成：
+\subsection{第一层：validated spatial truth bank}
+离线物理层首先对 geometry family 生成与 thermal mode 无关的基础 truth information：
 \begin{enumerate}
-  \item 几何合法性和 Physics Gate 检查；
+  \item 几何合法性、source continuity 和 Physics Gate 检查；
   \item 组装冻结版本的 Maxwell operator 与端口 source；
   \item 求所有端口基响应 $X$；
-  \item 计算 $Z_{\rm field}$、空间/模态 Joule tensors $H_j$；
+  \item 计算 $Z_{\rm field}$、空间体 Joule heat anchors 与 wire/source spatial patterns；
   \item 验证 reciprocity、passivity、开放域功率平衡和 linear residual；
-  \item 保存结构化 tensor label 及完整 audit metadata。
+  \item 保存后续构建 thermal basis 所需的物理数据及完整 audit metadata。
 \end{enumerate}
-truth solver 是确定性物理基础设施，不属于神经代理结构本身。
+这一层不能依赖尚未构建的 thermal mode $\phi_j$。
 
-\subsection{tensor dataset}
-数据文件至少保存：
+\subsection{第二层：thermal basis builder}
+共享 thermal basis 在 tensor labels 之前构建。source family 覆盖 representative volume Joule、wire heat 与其他生产热源模式；在 geometry/source/shift anchor set 上做 resolvent residual-greedy：
+\begin{equation}
+r_{\alpha\ell}
+=Q_\alpha-(K+s_\ell M)\Phi
+\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
+\end{equation}
+shift $s_\ell$ 覆盖 steady 与目标 transient inverse-time scales。worst residual 超过 target 时增广基，rank 是达到目标后的结果，不作为用户手工参数。
+
+basis version 必须同时记录：geometry/source anchor set、shift set、thermal operators/boundaries 和 truth-physics version。冻结 audit geometries 上还必须通过 full-vs-ROM transient/steady trajectory 验证。
+
+\subsection{第三层：冻结 basis 后生成 tensor dataset}
+只有在 $\Phi$ 冻结后，才对每个 geometry 构造第 $j$ 个 modal Joule tensor：
+\begin{equation}
+H_j(g)=X(g)^H W_j(\phi_j,g)X(g).
+\end{equation}
+因此最终 neural dataset 保存：
 \begin{itemize}
   \item canonical geometry parameters；
-  \item $Z_{\rm field}$ 的独立复对称自由度；
+  \item $Z_{\rm field}$ 的结构化物理表示；
   \item $H_j$ 的独立 Hermitian 自由度；
   \item geometry/train-validation-test split；
+  \item thermal-basis version；
   \item mesh/domain/formulation/constitutive version；
   \item truth residual、power-balance、reciprocity 等 audit 指标。
 \end{itemize}
-任何基础物理版本变化都必须使 dataset signature 失效。
+任何基础物理或 thermal basis 版本变化都必须使 tensor dataset signature 失效。
 
 \subsection{输出压缩与 neural model}
-只使用 training split 构造 output normalization 与 POD：
+只使用 neural training split 构造 output normalization 与 POD：
 \begin{equation}
 y\approx\bar y+U_K\beta.
 \end{equation}
@@ -50,12 +66,13 @@ y\approx\bar y+U_K\beta.
 \end{equation}
 模型文件必须持久化：
 \begin{itemize}
-  \item geometry encoding/normalization；
+  \item geometry encoding/normalization，包括周期/姿态编码规则；
   \item output scaling；
   \item POD mean/basis；
   \item MLP weights；
   \item tensor structural schema；
-  \item truth-dataset/physics version。
+  \item passivity-preserving $Z$ decoder；
+  \item thermal-basis 与 truth-dataset/physics version。
 \end{itemize}
 
 \subsection{结构化解码}
@@ -66,7 +83,15 @@ y\approx\bar y+U_K\beta.
 \rightarrow
 \{\widehat Z_{\rm field},\widehat H_j\}.
 \end{equation}
-解码器按构造恢复复对称/Hermitian 结构。模型 API 不允许绕过解码器直接把 unrestricted dense output 当作物理矩阵。
+解码器按构造恢复
+\begin{equation}
+\widehat Z_{\rm field}^T=\widehat Z_{\rm field},
+\qquad
+\operatorname{Herm}(\widehat Z_{\rm field})\succeq0,
+\qquad
+\widehat H_j^H=\widehat H_j.
+\end{equation}
+模型 API 不允许绕过解码器直接把 unrestricted dense output 当作物理矩阵。
 
 \subsection{在线 thermal engine}
 对一个几何查询：
@@ -77,7 +102,7 @@ y\approx\bar y+U_K\beta.
   \begin{equation}
   q_{{\rm vol},j}=\operatorname{Re}(c^H\widehat H_jc);
   \end{equation}
-  \item 根据 thermal state 更新真实 $R_{\rm wire}(a,g)$ 与 $q_{\rm wire}$；
+  \item 根据 thermal state 更新真实 $R_{\rm wire}(a,g)$ 与 wire heat amplitudes，并用确定性的 geometry-to-wire-heat projection 得到 $q_{\rm wire}$；
   \item 使用真实 $M_r(g),K_r(g)$ 推进 ODE 或直接求 steady state；
   \item 输出
   \begin{equation}
@@ -86,31 +111,34 @@ y\approx\bar y+U_K\beta.
 \end{enumerate}
 同一几何的多个时间/电流查询复用同一组 neural EM tensors。
 
-\subsection{thermal basis builder}
-thermal basis 仍采用 residual-driven 自动增广，但 residual 必须来自真正在线 Galerkin projection。对每个 geometry/heat anchor，steady 与 dynamic residual 分别计算；worst residual 超过 target 时增广基。
-
-rank 是达到目标 residual 后的结果，不作为用户手工调参。basis version 与生成它的 heat-anchor/truth-physics version 一同持久化。
+\subsection{端口工况边界}
+当前在线输入 $c$ 是规定的复端口电流。如果实际系统由外部 source/load/compensation circuit 决定工作点，则在 tensor surrogate 之外使用显式 circuit equations
+\begin{equation}
+\mathcal C\bigl(Z(a,g),c,v,\text{load}\bigr)=0
+\end{equation}
+求解真实 $c$。电路闭环属于 hard-physics system layer，不把 voltage/load dependence 重新交给 neural geometry surrogate 学习。
 
 \subsection{验证测试}
 最低测试集合必须覆盖：
 \begin{itemize}
   \item Maxwell mesh/domain convergence；
-  \item source/material geometry perturbation continuity；
+  \item source discrete continuity 与 geometry perturbation continuity；
   \item port reciprocity/passivity；
   \item $P_{\rm in}=P_{\rm vol}+P_{\rm out}+P_{\rm wire}$；
   \item $\sum Q_{\rm vol}=\frac12E^HH_\sigma E$；
   \item arbitrary complex-current Hermitian Joule contraction；
-  \item POD encode/decode and structural reconstruction；
+  \item POD encode/decode and PSD/passivity structural reconstruction；
   \item frozen validation/test $Z/H/q$ error；
-  \item true Galerkin thermal residual；
-  \item ETD/IMEX against high-accuracy thermal reference；
+  \item geometry/source/shift Galerkin resolvent residual；
+  \item full thermal versus ROM transient/steady audit；
+  \item ETD/IMEX against high-accuracy reduced/full thermal reference；
   \item end-to-end temperature/impedance trajectory audit。
 \end{itemize}
 
 \subsection{训练和推理接口原则}
 用户层只需要两个概念流程：
 \begin{itemize}
-  \item \textbf{train：}复用或生成 validated truth tensor dataset，构建 POD，训练 geometry surrogate，保存统一模型；
+  \item \textbf{train：}生成/复用 validated spatial truth bank，构建并冻结 thermal basis，生成 tensor dataset，构建 POD，训练 geometry surrogate，保存统一模型；
   \item \textbf{predict：}加载模型，对 geometry 解码 EM tensors，执行结构化电流 contraction 与 thermal dynamics。
 \end{itemize}
 是否缓存 truth data、采用 memmap 或 out-of-core SVD 都属于内部性能实现，不改变理论接口。
@@ -121,18 +149,23 @@ rank 是达到目标 residual 后的结果，不作为用户手工调参。basis
   \item 网络直接学习时间轨迹；
   \item 网络直接把 current 当普通输入并重新学习 quadratic/phase law；
   \item 网络预测 $M_r,K_r$ 替代真实 thermal operators；
-  \item 用不保持 Hermitian/reciprocal structure 的 unrestricted tensor output；
+  \item 用不保持 Hermitian/reciprocal/passive structure 的 unrestricted $Z/H$ output；
+  \item 在 thermal basis 尚未冻结时定义最终 $H_j$ training labels；
+  \item 只用 steady 与 initial derivative 两个端点宣称 thermal transient ROM 已收敛；
   \item 在 Physics Gate 失败的数据上继续优化 neural loss；
   \item 把 algebraic solve residual 当成 mesh/domain/model correctness 的替代品。
 \end{itemize}
 
 \subsection{实现顺序}
-软件实施顺序由物理依赖决定：
+软件实施顺序由物理依赖严格决定：
 \begin{enumerate}
-  \item 先修并冻结 Physics Gate；
-  \item 再生成可信 tensor snapshots；
-  \item 再实现结构化 encode/POD/decode；
-  \item 再训练 neural geometry surrogate；
-  \item 最后接入 thermal ROM、时间积分和统一 predict API。
+  \item 修并冻结 Physics Gate；
+  \item 生成 validated spatial Maxwell/Joule/source truth bank；
+  \item 构建 transient-aware shared thermal basis 并冻结 $\Phi$；
+  \item 用冻结 $\Phi$ 生成最终 $Z/H_j$ tensor dataset；
+  \item 实现结构化 encode/POD/passive decode；
+  \item 训练 neural geometry surrogate；
+  \item 接入 thermal ROM、时间积分和统一 predict API；
+  \item 用完全 held-out geometry 做 end-to-end audit。
 \end{enumerate}
-该顺序不是分阶段改变架构，而是同一冻结架构的依赖顺序；任何上游物理版本改变都必须使下游训练数据和模型版本失效。
+任何上游物理或 basis 版本改变都必须使下游 tensor labels、POD 和模型版本失效。
