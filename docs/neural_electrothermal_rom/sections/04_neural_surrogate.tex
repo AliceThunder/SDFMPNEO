@@ -10,23 +10,37 @@
 \end{equation}
 若未来存在真实的温度相关电磁 constitutive state，则输入仅扩展为 $(s_{\rm em},g)$。
 
-\subsection{结构保持的实向量编码}
-对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；每个 Joule tensor $H_j$ 为复 Hermitian 矩阵。定义固定的结构化编码算子
+\subsection{结构保持的输出编码}
+对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；每个 Joule tensor $H_j$ 为复 Hermitian 矩阵。进一步，由被动性必须有
 \begin{equation}
-y(g)=\mathcal E\!\left(Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right)\in\R^{d_y},
+\boxed{
+\operatorname{Herm}(Z_{\rm field})
+=\frac12\left(Z_{\rm field}+Z_{\rm field}^H\right)
+\succeq0.
+}
 \end{equation}
-其中只保存独立自由度：
+在 reciprocal 条件下 $Z_{\rm field}^T=Z_{\rm field}$，因此上式等价于 $\operatorname{Re}Z_{\rm field}\succeq0$。
+
+输出表示必须硬编码这些结构，而不能只依赖训练 penalty。可采用如下任一等价实现：
 \begin{itemize}
-  \item $Z_{\rm field}$：复对称矩阵上三角的实部和虚部；
-  \item $H_j$：实对角，以及严格上三角元素的实部和虚部。
+  \item 对 $\operatorname{Re}Z_{\rm field}$ 使用 PSD factorization，并对 $\operatorname{Im}Z_{\rm field}$ 使用实对称编码；
+  \item 或先解码实对称 $\operatorname{Re}Z$，再通过确定性的 PSD projection 得到生产输出；
+  \item $H_j$ 只保存实对角和严格上三角的实/虚部，并由解码器恢复 Hermitian 共轭部分。
 \end{itemize}
-解码算子 $\mathcal D$ 必须按构造恢复
+单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；禁止把全部 $H_j$ 强制成 Cholesky 形式。
+
+定义固定的结构化编码算子
+\begin{equation}
+y(g)=\mathcal E\!\left(Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right)\in\R^{d_y}.
+\end{equation}
+编码/解码层必须保证
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field},
 \qquad
+\operatorname{Herm}(Z_{\rm field})\succeq0,
+\qquad
 H_j^H=H_j.
 \end{equation}
-这些是输出表示的硬结构，而不是训练 penalty。
 
 \subsection{输出 POD 是数值压缩而非理论前提}
 对训练 truth snapshots 的结构化向量做中心化 POD/SVD：
@@ -40,16 +54,18 @@ y(g)\approx \bar y+U_K\beta(g),
 \beta_\theta:g\mapsto\R^K.
 }
 \end{equation}
-如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$ 或直接预测完整结构化 $y$；这不会改变系统架构。
+如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$ 或直接预测完整结构化 $y$；这不会改变系统架构。若采用 PSD projection，则它属于固定物理解码层并位于 POD/MLP 之后。
 
 \subsection{几何输入表示}
-几何输入只包含定义生产参数域所需的独立几何变量，并使用由训练域固定的中心和尺度归一化：
+几何输入只包含定义生产参数域所需的独立变量，并使用由训练域固定的中心和尺度归一化。普通长度/位移参数可使用
 \begin{equation}
 \tilde g_k=\frac{g_k-c_k}{s_k}.
 \end{equation}
-离散 shape 类型使用明确的离散编码；连续尺寸、位姿、间距等保持连续参数。归一化元数据必须随模型保存，推理时禁止重新估计。
+离散 shape 类型使用明确的离散编码。
 
-如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
+旋转变量不得在跨越周期边界时直接使用裸 Euler angle 标量。例如 yaw 覆盖 $[-\pi,\pi]$ 时，应采用 $(\sin\psi,\cos\psi)$、连续 quaternion/rotation-matrix 表示或其他无分支跳变的姿态编码。若使用 quaternion，必须固定等价符号约定，避免 $q$ 与 $-q$ 形成训练不连续。
+
+归一化与姿态编码元数据必须随模型保存，推理时禁止重新估计。如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
 
 \subsection{默认神经网络}
 首版使用普通 residual MLP：
@@ -70,6 +86,8 @@ h_{\ell+1}
 \left\{\widehat Z_{\rm field},\widehat H_1,\ldots,\widehat H_r\right\}
 =\mathcal D(\hat y).
 \end{equation}
+$\mathcal D$ 必须同时恢复 reciprocity/Hermitian 结构并保证 $\operatorname{Herm}(\widehat Z_{\rm field})\succeq0$。
+
 任意复端口电流 $c$ 的体 Joule modal source 为
 \begin{equation}
 \widehat q_{{\rm vol},j}(g,c)
@@ -81,5 +99,5 @@ h_{\ell+1}
 \end{equation}
 因此 current magnitude、relative phase、quadratic scaling 与 thermal-state dependence of wire resistance 均由显式物理层处理，不由网络学习。
 
-\subsection{不强制错误的正定结构}
-单个 thermal mode 可以变号，因此 $H_j$ 一般不要求半正定。不得对每个 $H_j$ 使用 Cholesky/PSD 参数化。物理非负性应在空间总 Joule heat、端口平均功率和整体功率平衡层面验证。
+\subsection{结构保持不等于完整能量一致性}
+对称、Hermitian 与 passivity 可以由输出参数化硬保证，但 $\widehat Z_{\rm field}$ 与各 $\widehat H_j$ 仍是近似量，二者之间的完整离散功率关系只能在 truth 数据与 surrogate audit 中验证。生产模型必须额外监控端口功率、总 Joule 功率和 thermal modal source 的一致性误差；不能因为矩阵结构正确就宣称 surrogate 已满足完整 Poynting 恒等式。
