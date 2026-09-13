@@ -125,8 +125,12 @@ TRAINING = {
     "optimizer": {
         "epochs": 120,
         "batch_size": 1,
+        "gradient_accumulation_steps": 4,
         "learning_rate": 2e-3,
         "weight_decay": 1e-6,
+        "lr_decay_factor": 0.5,
+        "lr_plateau_patience": 3,
+        "minimum_learning_rate": 5e-4,
         "patience": 20,
         "validation_interval": 2,
         "min_relative_improvement": 1e-3,
