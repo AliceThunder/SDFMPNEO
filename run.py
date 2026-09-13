@@ -11,6 +11,8 @@ Maxwell residual 修正到指定容差。
 """
 from __future__ import annotations
 from pathlib import Path
+import json
+import sys
 import numpy as np
 
 MODE="train"
@@ -23,7 +25,6 @@ FILES={
     "training_checkpoint":"results/uwpt/model.training.pt",
 }
 
-# 固定多尺度背景。几何变化不会改变这些自由度的拓扑。
 BACKGROUND={
     "bounds":[[-0.15,0.15],[-0.15,0.15],[-0.15,0.15]],
     "core_center":[0.0,0.0,0.02],
@@ -33,7 +34,6 @@ BACKGROUND={
     "max_step":0.03,
 }
 
-# 默认查询几何。circle / rounded_square / polyline / spline 共用同一模型。
 DEFAULT_GEOMETRY={
     "transmitter":{
         "shape":"circle","turns":1.5,"outer_half_size":0.025,"pitch":0.002,
@@ -76,8 +76,6 @@ PHYSICS={
     "maxwell_max_iterations":200,
 }
 
-# 材料全部参与固定背景热体积分；海水/封装电导率进入完整 3-D Maxwell 算子。
-# 线圈采用 sub-cell thin-wire 激励与 AC 内阻，避免为了毫米级导体重新生成 3-D 贴体网格。
 MATERIALS={
     "tx_copper":{"electrical_conductivity":5.8e7,"resistivity_temperature_coefficient":0.00393,"reference_temperature":293.15,"relative_permeability":1.0,"relative_permittivity":1.0,"thermal_conductivity":400.0,"volumetric_heat_capacity":3.45e6},
     "rx_copper":{"electrical_conductivity":5.8e7,"resistivity_temperature_coefficient":0.00393,"reference_temperature":293.15,"relative_permeability":1.0,"relative_permittivity":1.0,"thermal_conductivity":400.0,"volumetric_heat_capacity":3.45e6},
@@ -130,6 +128,11 @@ SETTINGS={
 }
 
 def main(argv=None):
+    if argv is None: argv=sys.argv[1:]
+    if "--worker-config" in argv:
+        from sdfmpneo.unified_runtime import execute_training
+        path=Path(argv[argv.index("--worker-config")+1]); payload=json.loads(path.read_text(encoding="utf-8")); wrapper=payload["settings"]; settings=dict(wrapper["parameters"]); settings["ROOT"]=wrapper["root"]
+        return execute_training(settings,Path(wrapper["model_path"]),Path(wrapper["settings_dir"]),Path(payload["session_dir"]))
     from sdfmpneo.unified_runtime import launch
     return launch(SETTINGS,argv)
 
