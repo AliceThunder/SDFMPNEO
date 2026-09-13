@@ -7,12 +7,14 @@
   \item 当前材料模型下，Maxwell 参数映射的生产输入固定为几何 $g$；只有真正影响电磁 constitutive law 的状态才允许未来加入输入。
   \item 神经网络学习对象固定为低维 $Z_{\rm field}(g)$ 与 Hermitian Joule tensors $H_j(g)$ 的结构化表示或其 POD 系数。
   \item 端口电流 $c$ 不进入主网络；通过 $c^H H_jc$ 与 $c^H Zc$ 解析进入热源和端口功率。
-  \item reciprocal 条件成立时 $Z_{\rm field}$ 使用复对称结构；$H_j$ 始终使用复 Hermitian 结构。
+  \item reciprocal 条件成立时 $Z_{\rm field}$ 使用复对称结构，并由固定解码层保证 $\operatorname{Herm}(Z_{\rm field})\succeq0$；$H_j$ 始终使用复 Hermitian 结构，但单个变号 thermal mode 对应的 $H_j$ 不强制 PSD。
+  \item 几何姿态使用无周期分支跳变的编码；跨越 $\pm\pi$ 的裸 Euler angle 不直接作为连续网络输入。
   \item $M_r(g)$、$K_r(g)$、wire resistance model 和 thermal boundary model 使用真实物理/ROM，不由网络预测。
-  \item thermal basis rank 由实际 Galerkin steady/dynamic residual 自动决定，不手工指定。
+  \item thermal basis 必须先于最终 $H_j$ tensor labels 冻结；禁止循环地用尚未定义的 modal tensors 构建其自身 basis。
+  \item thermal basis rank 由 geometry/source/shift resolvent residual-greedy 自动决定，并由 full-vs-ROM transient/steady audit 验证；仅 steady 与初始导数两个端点不足以宣称 transient ROM 收敛。
   \item finite-time 使用真实 thermal ODE + ETD/IMEX；$t=\infty$ 使用独立 steady solve。
   \item output POD 是数值压缩而非理论前提；POD 不够低秩时扩大 rank 或直接输出完整结构化 tensors。
-  \item Physics Gate 先于正式 surrogate dataset/training；底层物理版本变化必须使旧 dataset/model 版本失效。
+  \item Physics Gate 先于正式 surrogate dataset/training；底层物理或 thermal basis 版本变化必须使旧 tensor dataset/model 版本失效。
   \item NN validation、Physics Gate 数值收敛与严格 certificate 明确分层。
 \end{enumerate}
 
@@ -21,10 +23,11 @@
 \begin{itemize}
   \item 黑箱学习完整 temperature trajectory；
   \item 让网络重新学习 current quadratic/phase law；
-  \item 用 unrestricted dense matrices 代替对称/Hermitian 输出结构；
+  \item 用 unrestricted dense matrices 代替 reciprocal/passive/Hermitian 输出结构；
   \item 把线性系统 residual 当作 Maxwell mesh/domain/model correctness 的证明；
   \item 在没有 full-domain 数学证明时宣称 surrogate 全参数域严格证书；
-  \item 用 neural loss 掩盖 filament-conductor、boundary、thermal-convection 等模型误差。
+  \item 用 neural loss 掩盖 filament-conductor、boundary、thermal-convection 等模型误差；
+  \item 把规定电流模型的结果直接冒充为含 source/load/compensation network 的完整 WPT circuit working point。
 \end{itemize}
 
 \subsection{允许的后续增强}
@@ -36,9 +39,10 @@
   \item Sobolev/geometry-gradient supervision；
   \item verified neural error bounds；
   \item adaptive ETD/IMEX 与更稳健 steady solver；
+  \item 显式 external circuit layer，通过 $Z(a,g)$ 求解 voltage/load-driven current；
   \item 若 constitutive evidence 支持，引入低维 $s_{\rm em}$ 作为额外代理输入；
   \item 在保持同一 $Z/H$ 输出接口的情况下升级 truth Maxwell formulation、边界和 conductor fidelity。
 \end{itemize}
 
 \subsection{模型升级原则}
-未来若从 filament conductor 升级到 full solid-conductor model，或加入温度相关海水电导率、流体热对流等物理，首先修改 truth model 和 Physics Gate，再重新生成 tensors。生产 neural/thermal 接口只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
+未来若从 filament conductor 升级到 full solid-conductor model，或加入温度相关海水电导率、流体热对流等物理，首先修改 truth model 和 Physics Gate，再重新构建 thermal basis 与 tensors。生产 neural/thermal 接口只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
