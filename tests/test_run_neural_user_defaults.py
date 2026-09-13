@@ -1,3 +1,4 @@
+import importlib
 import importlib.util
 from pathlib import Path
 
@@ -9,6 +10,13 @@ def _load_run():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def test_top_level_package_imports_after_neural_solver_rewrite():
+    package = importlib.import_module("sdfmpneo")
+    assert hasattr(package, "OperatorGraph")
+    assert hasattr(package, "build_edge_residual_operator")
+    assert not hasattr(package, "edge_group_ids")
 
 
 def test_run_defaults_use_one_fullspace_maxwell_path():
