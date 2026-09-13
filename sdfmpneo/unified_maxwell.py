@@ -48,13 +48,15 @@ def _fgmres(A, b, apply_preconditioner, *, tolerance, max_iterations, restart):
                 break
             z = np.asarray(apply_preconditioner(V[:, j]), complex).reshape(-1)
             if z.shape != (n,) or np.any(~np.isfinite(z)):
-                raise FloatingPointError("Maxwell preconditioner produced a non-finite correction")
+                raise FloatingPointError(
+                    "Maxwell preconditioner produced a non-finite correction"
+                )
             Z[:, j] = z
             w = np.asarray(A @ z, complex).reshape(-1)
             for i in range(j + 1):
                 H[i, j] = np.vdot(V[:, i], w)
                 w -= H[i, j] * V[:, i]
-            # Re-orthogonalize once; this is important for the indefinite complex
+            # Re-orthogonalize once; this is important for indefinite complex
             # Maxwell systems where a single MGS pass can lose orthogonality.
             for i in range(j + 1):
                 correction = np.vdot(V[:, i], w)
@@ -64,10 +66,14 @@ def _fgmres(A, b, apply_preconditioner, *, tolerance, max_iterations, restart):
             if H[j + 1, j] > np.finfo(float).tiny:
                 V[:, j + 1] = w / H[j + 1, j]
 
-            y = np.linalg.lstsq(H[: j + 2, : j + 1], rhs[: j + 2], rcond=None)[0]
+            y = np.linalg.lstsq(
+                H[: j + 2, : j + 1], rhs[: j + 2], rcond=None
+            )[0]
             candidate = x + Z[:, : j + 1] @ y
             total_iterations += 1
-            true_relative = float(np.linalg.norm(b - A @ candidate) / denominator)
+            true_relative = float(
+                np.linalg.norm(b - A @ candidate) / denominator
+            )
             best = candidate
             if np.isfinite(true_relative) and true_relative <= tolerance:
                 return candidate, total_iterations, restart_count
@@ -82,15 +88,56 @@ def _fgmres(A, b, apply_preconditioner, *, tolerance, max_iterations, restart):
     return x, total_iterations, restart_count
 
 
+def _minimum_residual_guess(A, B, direction):
+    """Scale each learned direction to minimize its true one-step residual.
+
+    FGMRES is insensitive to a nonzero scalar applied to one preconditioned
+    direction, while an initial guess is not. This safeguard makes the direct
+    neural guess use the same one-dimensional residual criterion as training.
+    """
+    B = np.asarray(B, complex)
+    Z = np.asarray(direction, complex)
+    if B.shape != Z.shape or np.any(~np.isfinite(Z)):
+        return np.zeros_like(B)
+    W = np.asarray(A @ Z, complex)
+    if W.shape != B.shape or np.any(~np.isfinite(W)):
+        return np.zeros_like(B)
+    tiny = np.finfo(float).tiny
+    denominator = np.sum(np.abs(W) ** 2, axis=0)
+    numerator = np.sum(np.conj(W) * B, axis=0)
+    alpha = np.zeros(B.shape[1], complex)
+    valid = (
+        np.isfinite(denominator)
+        & (denominator > tiny)
+        & np.isfinite(numerator)
+    )
+    alpha[valid] = numerator[valid] / denominator[valid]
+    guess = Z * alpha[None, :]
+    if np.any(~np.isfinite(guess)):
+        return np.zeros_like(B)
+    return guess
+
+
 class NeuralMaxwellAccelerator:
     """One learned full-edge-space variable preconditioner used by FGMRES."""
 
-    def __init__(self, network, *, residual_tolerance=1e-7, max_iterations=200, restart=40):
+    def __init__(
+        self,
+        network,
+        *,
+        residual_tolerance=1e-7,
+        max_iterations=200,
+        restart=40,
+    ):
         self.network = network
         self.residual_tolerance = float(residual_tolerance)
         self.max_iterations = int(max_iterations)
         self.restart = int(restart)
-        if self.residual_tolerance <= 0 or self.max_iterations < 1 or self.restart < 1:
+        if (
+            self.residual_tolerance <= 0
+            or self.max_iterations < 1
+            or self.restart < 1
+        ):
             raise ValueError("invalid Maxwell correction settings")
 
     def precondition(self, A, residual, *, operator_stats=None):
@@ -105,10 +152,10 @@ class NeuralMaxwellAccelerator:
 
     def guess(self, A, B, *, operator_stats=None):
         B = np.asarray(B, complex)
-        X = self.precondition(A, B, operator_stats=operator_stats)
-        if np.any(~np.isfinite(X)):
+        direction = self.precondition(A, B, operator_stats=operator_stats)
+        if np.any(~np.isfinite(direction)):
             return np.zeros_like(B)
-        return X
+        return _minimum_residual_guess(A, B, direction)
 
     def solve(self, A, B):
         B = np.asarray(B, complex)
@@ -120,13 +167,18 @@ class NeuralMaxwellAccelerator:
             raise FloatingPointError("physical Maxwell system is non-finite")
         n_edges = getattr(self.network, "n_edges", A.shape[0])
         if int(n_edges) != A.shape[0]:
-            raise ValueError("neural edge topology does not match the Maxwell background")
+            raise ValueError(
+                "neural edge topology does not match the Maxwell background"
+            )
 
-        # Geometry/material state fixes A for this solve. Extract O(n_edges)
-        # neural operator statistics once, then reuse them for every FGMRES step.
+        # Geometry/material state fixes A for this solve. Extract immutable row
+        # statistics once; operator-action features still use the exact A @ z at
+        # every nonlinear preconditioner call.
         operator_stats = operator_feature_statistics(A)
         X = self.guess(A, B, operator_stats=operator_stats)
-        denominator = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
+        denominator = np.maximum(
+            np.linalg.norm(B, axis=0), np.finfo(float).tiny
+        )
         residual = B - A @ X
         initial = np.linalg.norm(residual, axis=0) / denominator
         if np.any(~np.isfinite(initial)):
@@ -144,19 +196,26 @@ class NeuralMaxwellAccelerator:
             correction, count, restart_count = _fgmres(
                 A,
                 residual[:, port],
-                lambda r: self.precondition(A, r, operator_stats=operator_stats),
+                lambda r: self.precondition(
+                    A, r, operator_stats=operator_stats
+                ),
                 tolerance=self.residual_tolerance,
                 max_iterations=self.max_iterations,
                 restart=self.restart,
             )
             if np.any(~np.isfinite(correction)):
-                raise FloatingPointError("FGMRES produced a non-finite Maxwell correction")
+                raise FloatingPointError(
+                    "FGMRES produced a non-finite Maxwell correction"
+                )
             X[:, port] += correction
             iterations.append(count)
             restarts.append(restart_count)
 
         final = np.linalg.norm(B - A @ X, axis=0) / denominator
-        if np.any(~np.isfinite(final)) or np.any(final > self.residual_tolerance):
+        if (
+            np.any(~np.isfinite(final))
+            or np.any(final > self.residual_tolerance)
+        ):
             value = float(np.nanmax(final)) if final.size else float("nan")
             raise RuntimeError(
                 f"FGMRES Maxwell solve failed: max relative true residual={value:.3e}, "
