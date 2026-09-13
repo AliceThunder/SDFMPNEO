@@ -8,7 +8,7 @@
 这些电磁参数在当前 constitutive model 的整个 thermal trajectory 中保持不变。随后端口峰值复电流 $c$ 通过解析二次型形成 cycle-averaged 体 Joule modal source：
 \begin{equation}
 \widehat q_{{\rm vol},j}(g,c)
-=\frac12\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right).
+=\frac12\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right),
 \end{equation}
 体总耗散为
 \begin{equation}
@@ -16,6 +16,9 @@
 =\frac12c^H\widehat D_{\rm vol}(g)c.
 \end{equation}
 热状态相关性只通过真实的 wire-temperature functional 与 $R_{\rm wire}(a,g)$ 进入线圈热源和总阻抗。
+
+\subsection{初始条件接口}
+生产 ODE 的直接初值 $a_0$ 定义为 reduced coordinates，因此 $\theta_0=\Phi a_0$ 按构造位于 reduced space。若用户接口接受 full temperature field，则必须先做定义明确的 projection 得到 $a_0$，并把 projection error 作为 $E_{\rm init}$ 单独报告；不能悄悄把任意 full initial field 当成无误差的 reduced state。
 
 \subsection{规定电流工况下的连续时间热模型}
 如果 operating condition 直接规定端口电流 $c$，生产在线模型为
@@ -28,12 +31,10 @@ M_r(g)\dot a
 +f_T(g).
 }
 \end{equation}
-初值 $a(0)=a_0$ 由 ODE 初值严格给定。网络不接收时间，不预测 $a(t)$，也不吸收 $M_r$ 或 $K_r$。
-
 若 $c=c(t)$ 在 thermal time scale 上缓慢变化，同一方程改为非自治形式并在每个 thermal stage 使用当前 $c(t)$；其适用前提仍是载波周期远短于 $c(t)$ envelope 和 thermal state 的变化时间。
 
 \subsection{电压源/补偿网络/负载控制时必须显式接 circuit equations}
-规定电流不是所有 WPT 系统的真实工作方式。若实际 operating point 由 source voltage、matching/compensation network 与 load 共同决定，则端口电流不能作为任意外部常量，而应由显式电路方程求得。例如在单频线性外部电路下可写为
+若实际 operating point 由 source voltage、matching/compensation network 与 load 共同决定，则端口电流应由显式电路方程求得。例如在单频线性外部电路下
 \begin{equation}
 \boxed{
 \left[\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g)+Z_{\rm ext}(\omega)\right]c
@@ -42,32 +43,16 @@ M_r(g)\dot a
 \end{equation}
 更一般的多端口网络可使用 MNA/网络方程，但原则不变：电路是确定性物理层，不由 neural surrogate 重新学习。
 
-此时
-\begin{equation}
-c=c(a,g,v_{\rm src},Z_{\rm ext}),
-\end{equation}
-thermal dynamics 变为闭环非线性系统
-\begin{equation}
-M_r\dot a
-=-K_ra
-+\widehat q_{\rm vol}(g,c(a))
-+q_{\rm wire}(a,g,c(a))
-+f_T.
-\end{equation}
-因此正式报告必须明确区分 current-controlled 与 circuit-controlled operating modes，不能把前者的结果直接解释成后者的完整 WPT 工作点。
+此时 $c=c(a,g,v_{\rm src},Z_{\rm ext})$，thermal dynamics 成为闭环非线性系统。正式报告必须明确区分 current-controlled 与 circuit-controlled operating modes。
 
 \subsection{端口输出与功率诊断}
-总阻抗在任意热状态下为
+总阻抗为
 \begin{equation}
-\boxed{
-\widehat Z(a,g)
-=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
-}
+\widehat Z(a,g)=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
 \end{equation}
 平均输入功率为
 \begin{equation}
-P_{\rm in}(a,g,c)
-=\frac12\operatorname{Re}\!\left(c^H\widehat Z(a,g)c\right).
+P_{\rm in}=\frac12\operatorname{Re}(c^H\widehat Zc).
 \end{equation}
 同时
 \begin{equation}
@@ -78,9 +63,9 @@ P_{\rm out}=\frac12c^H\widehat D_{\rm out}c,
 其中
 \begin{equation}
 \widehat D_{\rm out}
-=\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}.
+=\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol},
 \end{equation}
-wire loss 为 $P_{\rm wire}=\frac12c^HR_{\rm wire}c$。这些量应在在线诊断中满足矩阵级可行层所保证的非负性和功率分解。
+wire loss 为 $P_{\rm wire}=\frac12c^HR_{\rm wire}c$。
 
 \subsection{ETD2 与 IMEX}
 当前 thermal constitutive model 下，对固定几何 $M_r(g),K_r(g)$ 在时间上不变。定义
@@ -91,26 +76,37 @@ L(g)=M_r(g)^{-1}K_r(g).
 \begin{equation}
 K_rv=\lambda M_rv
 \end{equation}
-进行一次分解并复用于整个 trajectory。线性耗散项采用指数推进，非线性/非自治部分只包含 wire resistance、外部 circuit 决定的 $c(a,t)$、以及其他显式状态/时间相关热源。
-
-规定常电流时可使用标准二阶 ETD predictor-corrector。对 $c(t)$ 或 circuit-controlled mode，ETD stage 必须在正确的 stage time/state 上重新评估 $c$ 与 source；不能把非自治 source 错当常量。若实现复杂度或非线性强度不合适，则使用 linearly implicit IMEX 或高精度 stiff reference solver。
+进行一次分解并复用于整个 trajectory。规定常电流时可使用标准二阶 ETD predictor-corrector。对 $c(t)$ 或 circuit-controlled mode，ETD stage 必须在正确 stage time/state 上重新评估 $c$ 与 source；不能把非自治 source 错当常量。若实现复杂度或非线性强度不合适，则使用 linearly implicit IMEX 或高精度 stiff reference solver。
 
 数值时间积分误差必须与 surrogate、thermal ROM 和 truth discretization error 分开报告。
 
 \subsection{自适应步长}
 自适应 ETD 使用 embedded lower-order estimate 或 step-doubling 控制局部时间误差。步长控制只依赖 thermal integration error，不通过人为限制保证 surrogate 正确性。对特别长时间查询，允许步长随接近稳态而增大，但必须保持 state-domain、circuit solvability 与 constitutive validity 检查。
 
-\subsection{稳态单独求解}
-$t=\infty$ 不通过超长时间积分逼近。规定电流模式直接求
+\subsection{稳态查询不是“任意 root”}
+$t=\infty$ 不通过超长时间积分逼近。规定电流模式的 equilibrium equation 为
 \begin{equation}
-\boxed{
 -K_r(g)a_*
 +\widehat q_{\rm vol}(g,c)
 +q_{\rm wire}(a_*,g,c)
 +f_T(g)=0.
-}
 \end{equation}
-在 circuit-controlled mode 下，稳态必须与电路方程联立求解 $(a_*,c_*)$。候选稳态必须检查 reduced thermal residual、circuit residual 和温度 constitutive domain。
+在 circuit-controlled mode 下，必须与 circuit equations 联立求解 $(a_*,c_*)$。
+
+但是 $K_r\succ0$ 只保证固定热源线性问题的唯一 steady state；temperature-dependent wire heating 或 circuit feedback 可能导致多个 equilibrium、无 production-domain equilibrium 或 thermal runaway。因此 production `t=inf` 语义固定为：返回一个满足 residual、constitutive domain 且通过稳定性检查的稳定 equilibrium；若不存在已验证稳定平衡，则明确报告 ``no validated steady state''，而不是返回任意 root。
+
+对候选 equilibrium，至少计算/估计闭环 thermal Jacobian
+\begin{equation}
+J_*
+=M_r^{-1}
+\frac{\partial}{\partial a}
+\left[-K_ra+q_{\rm vol}(g,c(a))+q_{\rm wire}(a,g,c(a))+f_T\right]_{a=a_*}.
+\end{equation}
+current-controlled 模式下 $c(a)=c$。只有当所有相关 eigenvalues 满足
+\begin{equation}
+\max\operatorname{Re}\lambda(J_*)<0
+\end{equation}
+到规定 stability margin 时，才把该 root 标记为局部渐近稳定 steady state。若需要全局唯一性或全域吸引性，必须另行证明，不能由局部 Jacobian 自动推出。
 
 \subsection{批量几何查询}
 对于同一几何的多个时间、电流、外部电路或初值查询，$\widehat Z_{\rm field}$、$\widehat D_{\rm vol}$ 与 $\widehat H_j$ 只计算一次并缓存。对于批量不同几何，可直接批量执行 MLP 与结构化解码。生产推理的主要成本因此为一次 geometry surrogate forward 加小规模 thermal/circuit operations，而不是每个 thermal stage 重复求解高维 Maxwell 系统。
