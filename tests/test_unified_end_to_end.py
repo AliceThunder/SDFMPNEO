@@ -56,20 +56,23 @@ def test_unified_fullspace_training_save_load_and_predict(tmp_path):
     assert background.thermal_rank > 0
 
     states = [{"tx_copper": float(i), "rx_copper": float(11 - i)} for i in range(12)]
-    dataset = generate_residual_dataset(background, geometries, states, seed=9, residual_steps=2)
+    dataset = generate_residual_dataset(background, geometries, states, seed=9, residual_steps=1)
     network, report = train_maxwell_accelerator(
         background, dataset,
-        network_settings={"width": 8, "levels": 1, "blocks_per_level": 1, "activation": "silu"},
-        training_settings={"epochs": 2, "batch_size": 2, "learning_rate": 1e-3,
+        network_settings={"width": 8, "message_passing_steps": 1, "activation": "silu"},
+        training_settings={"epochs": 2, "batch_size": 1, "learning_rate": 1e-3,
                            "weight_decay": 0.0, "patience": 2, "validation_interval": 1,
-                           "seed": 3, "dtype": "float64"},
+                           "min_relative_improvement": 1e-3, "unroll_steps": 1,
+                           "benchmark_samples_per_split": 1, "seed": 3, "dtype": "float64"},
         device="cpu",
+        benchmark_settings={"neural_steps": 1, "residual_tolerance": 1e-8,
+                            "max_iterations": 80, "restart": 20},
     )
     assert report.epochs_completed >= 1
     assert np.isfinite(report.best_validation_residual_loss)
 
     accelerator = NeuralMaxwellAccelerator(network, residual_tolerance=1e-9,
-                                            max_iterations=80, restart=20)
+                                            max_iterations=80, restart=20, neural_steps=1)
     model = UnifiedNeuralElectroThermalModel(background, accelerator, default_geometry=geometry())
     model_path = tmp_path / "unified_model.npz"
     model.save(model_path)
