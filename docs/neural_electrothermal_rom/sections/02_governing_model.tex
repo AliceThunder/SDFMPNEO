@@ -81,6 +81,20 @@ M_T(g)\dot\theta+K_T(g)\theta
 
 若未来加入显著的温度相关 thermal conductivity、heat capacity、辐射或非线性对流边界，则必须显式写成 $M_T(\theta,g)$、$K_T(\theta,g)$ 或状态相关边界/源项；此时固定 generalized eigendecomposition 的 ETD 假设不再自动成立，必须同步修改时间积分理论。
 
+\subsection{当前热系统的 well-posedness 前提}
+当前 finite-time 与 steady-state 理论默认对所有生产几何
+\begin{equation}
+\boxed{
+M_T(g)\succ0,
+\qquad
+K_T(g)\succ0,
+}
+\end{equation}
+并在目标参数域内具有足够统一的 coercivity/conditioning。因此无源线性热系统是耗散的，$K_T^{-1}$ 与唯一线性 steady response 有定义。
+
+若未来采用 pure Neumann 等使 $K_T$ 含常数零模，则必须单独处理 nullspace、平均温度漂移/能量积累与 steady-state 可解性；此时本文中所有直接使用 $K^{-1}$、正 generalized eigenvalues 或唯一稳态的公式不能原样沿用。
+
+\subsection{共享热基与 Galerkin ROM}
 采用共享热基 $\Phi$：
 \begin{equation}
 \theta\approx\Phi a.
@@ -101,7 +115,27 @@ M_r=\Phi^TM_T\Phi,
 \qquad
 K_r=\Phi^TK_T\Phi.
 \end{equation}
-真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。
+真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。若 $\Phi$ 满列秩，则由 $M_T,K_T\succ0$ 可得 $M_r,K_r\succ0$。
+
+\subsection{初始条件必须有明确的 full/reduced 语义}
+如果用户直接提供 reduced coordinates $a_0$，则 ROM 初值定义为
+\begin{equation}
+a(0)=a_0.
+\end{equation}
+这只定义了 reduced system 内部状态；只有当该状态属于已定义并验证的 initial-condition family 时，才携带相对于 full thermal model 的精度声明。
+
+如果输入的是 full-order 温升 $\theta_0$，默认采用 thermal mass inner product 下的 Galerkin projection
+\begin{equation}
+\boxed{
+a_0
+=\left(\Phi^TM_T\Phi\right)^{-1}\Phi^TM_T\theta_0,
+}
+\end{equation}
+并单独记录
+\begin{equation}
+e_{0,\rm proj}=\theta_0-\Phi a_0.
+\end{equation}
+Euclidean least-squares projection 不能在未说明的情况下替代该定义。
 
 \subsection{线圈电阻的温度状态必须有明确定义}
 集中 wire-resistance model 不能把整个 reduced state $a$ 作为无定义黑箱输入。对每个线圈 $p$，必须先定义物理温度泛函，例如 conductor/line 的归一化平均温升
@@ -129,40 +163,50 @@ R_p(a,g)=\mathcal R_p\!\left(T_{\rm amb}+\bar\theta_p(a,g),g\right).
   \item 未来新增的任何状态相关空间热源形状。
 \end{itemize}
 
-\subsection{thermal basis 必须覆盖整个目标时间尺度}
+\subsection{thermal basis 必须覆盖受迫与初值响应的整个目标时间尺度}
 只控制 steady solution $K^{-1}Q$ 与初始导数 $M^{-1}Q$，一般不足以保证中间时间的 transient solution。对零初值、固定 $M,K$ 与常热源 $Q$，精确解为
 \begin{equation}
 \boxed{
 \theta(t)=\left(I-e^{-M^{-1}Kt}\right)K^{-1}Q.
 }
 \end{equation}
-矩阵乘法顺序不可任意交换。因此 transient solution 会访问由 $M^{-1}K$ 作用产生的整个响应子空间，自动 thermal basis 不能只用 ``steady + initial dynamic'' 两类端点 anchor 作为理论停止标准。
+矩阵乘法顺序不可任意交换。因此 transient solution 会访问由 $M^{-1}K$ 作用产生的整个响应子空间。
 
-对每个 geometry $g$、source anchor $Q_\alpha(g)$ 和覆盖目标时间尺度的非负 shift $s_\ell$，定义 resolvent anchor
+对每个 geometry $g$、source anchor $Q_\alpha(g)$ 和覆盖目标时间尺度的非负 shift $s_\ell$，定义受迫 resolvent anchor
 \begin{equation}
 \boxed{
 \left(K(g)+s_\ell M(g)\right)u_{\alpha\ell}(g)=Q_\alpha(g).
 }
 \end{equation}
-$s=0$ 覆盖 steady response；足够大的 $s$ 对应短时间/质量主导响应；中间的对数分布 shifts 覆盖目标 transient time scales。候选 reduced solution 为
+$s=0$ 覆盖 steady response；足够大的 $s$ 对应短时间/质量主导响应；中间的对数分布 shifts 覆盖目标 transient time scales。
+
+对允许的 full-order initial-condition anchor $\theta_{0,\beta}(g)$，Laplace-domain homogeneous response 满足
 \begin{equation}
-a_{\alpha\ell}
-=\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha,
+\boxed{
+\left(K(g)+s_\ell M(g)\right)u_{0,\beta\ell}(g)
+=M(g)\theta_{0,\beta}(g).
+}
+\end{equation}
+因此 initial-condition family 必须通过 RHS $M\theta_0$ 纳入同一 resolvent construction；只保证 $t=0$ 的 projection error 很小并不足以保证后续 homogeneous evolution 很小。
+
+对任意 anchor RHS $b$，候选 reduced solution为
+\begin{equation}
+a_r
+=\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^Tb,
 \end{equation}
 并直接检查实际 Galerkin resolvent residual
 \begin{equation}
 \boxed{
-r_{\alpha\ell}
-=Q_\alpha-(K+s_\ell M)\Phi a_{\alpha\ell}.}
+r=b-(K+s_\ell M)\Phi a_r.}
 \end{equation}
-residual-greedy 在 geometry/source/shift 三重 anchor 集上对 worst residual 增广，rank 为达到目标后自动得到的结果。
+residual-greedy 在 geometry/source/initial-condition/shift anchor 集上对 worst residual 增广，rank 为达到目标后的结果。
 
 \subsection{time-domain 验证仍然不可省略}
-resolvent residual 提供覆盖多个时间尺度的构造依据，但它本身不等价于完整 trajectory certificate。冻结测试几何上仍必须用 full thermal model 与 ROM 直接比较代表性 current/circuit histories 的
+resolvent residual 提供覆盖多个时间尺度的构造依据，但它本身不等价于完整 trajectory certificate。冻结测试几何上仍必须用 full thermal model 与 ROM 直接比较代表性 current/circuit histories 与 initial conditions 下的
 \begin{equation}
 T(x,t),\qquad T_{\max}(t),\qquad a(t),\qquad a_*.
 \end{equation}
-若这些 transient outputs 未达到目标，则继续扩充 geometry/source/shift anchors，而不是仅收紧神经网络误差。
+若这些 transient outputs 未达到目标，则继续扩充 geometry/source/initial-condition/shift anchors，而不是仅收紧神经网络误差。
 
 \subsection{共享热基跨几何使用的理论要求}
 共享热基只有在目标几何域内具有可控逼近误差时才有统一意义。除 resolvent residual 外，还应在冻结测试几何上检查实际 Galerkin transient/steady error。若要给出全域严格界，还需进一步证明跨几何质量/刚度算子的谱等价或其他稳定性条件；有限几何采样只能称为数值验证。
