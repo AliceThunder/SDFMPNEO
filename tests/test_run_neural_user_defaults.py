@@ -19,34 +19,41 @@ def test_top_level_package_imports_after_neural_solver_rewrite():
     assert not hasattr(package, "edge_group_ids")
 
 
-def test_run_defaults_use_one_fullspace_maxwell_path():
+def test_run_defaults_use_one_multiscale_fullspace_maxwell_path():
     run = _load_run()
+    network = run.TRAINING["network"]
     assert run.TRAINING["device"] == "cuda"
     assert "em_basis_anchor_residual" not in run.TRAINING
     assert "em_basis_max_rank" not in run.TRAINING
     assert run.TRAINING["n_operator_samples"] == 96
-    assert run.TRAINING["residual_training_steps"] >= 1
     assert run.PHYSICS["maxwell_residual_tolerance"] > 0
     assert run.PHYSICS["maxwell_restart"] >= 1
-    assert run.TRAINING["network"]["message_passing_steps"] >= 1
-    assert run.TRAINING["network"]["solver_steps"] >= 2
-    assert "polynomial_order" not in run.TRAINING["network"]
-    assert "coefficient_limit" not in run.TRAINING["network"]
+    assert network["fine_message_steps"] >= 1
+    assert network["coarse_levels"] >= 2
+    assert network["coarse_message_steps"] >= 1
+    assert network["fusion_message_steps"] >= 1
+    assert network["solver_steps"] == 3
+    assert "message_passing_steps" not in network
+    assert "polynomial_order" not in network
+    assert "coefficient_limit" not in network
 
 
-def test_training_defaults_use_effective_batch_four_and_plateau_lr_decay():
+def test_training_defaults_cover_fullspace_residuals_and_use_each_operator_update():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
     assert "unroll_steps" not in optimizer
     assert optimizer["batch_size"] == 1
-    assert optimizer["gradient_accumulation_steps"] == 4
-    assert optimizer["batch_size"] * optimizer["gradient_accumulation_steps"] == 4
+    assert optimizer["gradient_accumulation_steps"] == 1
+    assert optimizer["batch_size"] * optimizer["gradient_accumulation_steps"] == 1
+    assert optimizer["random_residual_vectors"] >= 2
+    assert optimizer["smooth_residual_vectors"] >= 2
+    assert optimizer["final_step_loss_weight"] >= 0.7
     assert optimizer["learning_rate"] == 2e-3
     assert optimizer["lr_decay_factor"] == 0.5
-    assert optimizer["lr_plateau_patience"] >= 1
-    assert optimizer["minimum_learning_rate"] == 5e-4
-    assert optimizer["patience"] <= 30
-    assert optimizer["min_relative_improvement"] >= 1e-3
+    assert optimizer["lr_plateau_patience"] >= 6
+    assert optimizer["minimum_learning_rate"] <= 2.5e-4
+    assert optimizer["patience"] >= 30
+    assert optimizer["min_relative_improvement"] <= 5e-4
     assert optimizer["benchmark_samples_per_split"] >= 1
 
 
