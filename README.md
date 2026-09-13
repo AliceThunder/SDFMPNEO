@@ -1,4 +1,4 @@
-# SDF-MPNEO — 统一几何、自动降阶、Residual-Corrected 神经电磁–热求解器
+# SDF-MPNEO — 统一几何、full-space neural-FGMRES 电磁–热求解器
 
 SDF-MPNEO 现在只有一条正式模型路线：
 
@@ -8,21 +8,29 @@ SDF-MPNEO 现在只有一条正式模型路线：
 \rightarrow
 \text{固定多尺度背景物理空间}
 \rightarrow
-\text{自动 thermal / Maxwell 公共空间}
+\text{full sparse Maxwell}
 \rightarrow
-\text{神经 Maxwell 初解}
+\text{神经 residual correction}
 \rightarrow
-\text{真实 Maxwell residual 修正}
+\text{FGMRES 真 residual 闭环}
 \rightarrow
 \text{严格 Joule 热源}
+\rightarrow
+\text{自动 thermal ROM}
 \rightarrow
 \text{结构保持热动力学}
 }
 \]
 
-核心原则：**神经网络负责速度，物理方程负责答案。**
+核心原则：**只学习“怎么更快地解 PDE”，不学习“PDE 的答案是什么”。**
 
-网络不直接预测温度、不直接预测 Joule tensor、不学习时间演化，也不决定结果是否可信。对任意合法查询几何，最终电磁解都必须满足当前真实背景 Maxwell 方程的 residual 容差。
+神经网络不直接预测阻抗、Joule tensor、温度或最终 Maxwell 场。它只对当前真实 sparse Maxwell 算子和当前 residual 给出 full edge-space correction。最终电磁解是否接受，只由真实方程
+
+\[
+\frac{\|B-A_{\rm em}X\|_2}{\|B\|_2}\le \varepsilon_{\rm EM}
+\]
+
+决定。
 
 ## 直接运行
 
@@ -30,353 +38,206 @@ SDF-MPNEO 现在只有一条正式模型路线：
 
 ```bash
 python -m pip install -e '.[gui,neural,dev]'
-
 python run.py --mode train
 python run.py --mode predict
 ```
 
-训练默认打开 PyQt 窗口；纯控制台使用：
+训练默认打开 PyQt 窗口；纯控制台：
 
 ```bash
 python run.py --mode train --headless
 ```
 
-不需要为每个线圈几何生成新的 Gmsh 四面体网格，也不需要手工填写任何 Maxwell rank 或 thermal rank。
+没有 fast/general/legacy 模式，没有 domain probe、Gate 或另一套代理模型。
 
-## 统一几何
+## 统一几何与固定背景
 
-`run.py` 中的 `DEFAULT_GEOMETRY` 是默认查询几何。线圈支持：
+`DEFAULT_GEOMETRY` 是默认查询几何。线圈支持 `circle`、`rounded_square`、`polyline`、`spline`。几何可以改变线圈尺寸、匝数、pitch、线宽、厚度、三维平移和姿态，封装尺寸/姿态也属于同一描述。
 
-- `circle`
-- `rounded_square`
-- `polyline`
-- `spline`
+几何变化只改变固定背景中的材料占据、线圈源和当前物理算子，不会创建另一套模型。`GEOMETRY_SAMPLING` 仅用于训练求解加速器，不是模型有效域。真正的几何硬边界是 `BACKGROUND['bounds']`。
 
-几何可以改变线圈尺寸、匝数、pitch、线宽、厚度、三维平移和 roll/pitch/yaw；封装尺寸和姿态也属于同一几何描述。
-
-几何变化不会创建另一套模型，也不会切换 fast/general/legacy mode。它只改变固定背景中的材料占据和激励，从而形成当前几何的真实物理算子。
-
-`GEOMETRY_SAMPLING` 只用于教网络更快找到 Maxwell 解附近的位置，同时为自动物理公共空间提供代表性几何 anchor。它不是模型有效域，推理不会因为几何离开这些采样范围而拒绝计算。
-
-唯一的几何硬边界是 `BACKGROUND['bounds']`：查询几何必须真实落在计算物理域内。若超出，应扩大背景物理域，而不是扩大所谓神经网络有效域。
-
-## 固定多尺度背景
-
-空间离散使用固定的非均匀 Cartesian 背景：核心 UWPT 区域较细，外部海水区域逐渐变粗。背景拓扑与几何无关。
-
-海水不是稀疏点近似。其电导率、介电常数和三维体积电场都进入真实 Maxwell 算子：
+背景采用固定非均匀 Cartesian edge space。完整 Maxwell 算子为
 
 \[
-A_{\rm em}
-=
-C^T H_{\mu^{-1}} C
--\omega^2H_\epsilon
-+i\omega H_\sigma.
+A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 \]
 
-因此海水涡流和海水体积 Joule 发热不会因为去掉贴体网格而被忽略。
+海水电导率、介电常数和三维体积电场都进入真实算子，因此海水涡流和海水体积 Joule 发热不会被“离线圈远就删除”的规则忽略。
 
-线圈采用 sub-cell thin-wire 电流源表示，不要求背景单元细到导体横截面的毫米尺度；导体自身 AC 电阻损耗以温度相关物理电阻项加入热源。
+## Maxwell 不再做全局 solution ROM
 
-## 两个 rank 都是结果，不是配置
+正式主链已经删除：
 
-SDF-MPNEO 不再接受：
+- 全局 Maxwell solution basis \(V_E\)
+- Maxwell rank
+- `unified.em_basis.npy`
+- dense \(Q=(AV)^H(AV)\)
+- dense \(S=(AV)^HB\)
+- 网络输出 reduced coefficient \(C\)
+
+广几何下 Maxwell solution family 不具备足够强的全局低秩性。继续扩大公共 \(V_E\) 会造成 basis 构造时间和 dense training memory 膨胀。因此当前 Maxwell 始终求解完整固定背景方程：
+
+\[
+A_{\rm em}(g,T)X=B(g).
+\]
+
+## 神经 Maxwell residual corrector
+
+神经模块实现
+
+\[
+\boxed{\mathcal P_\theta(\mathcal F(A),R)\rightarrow \Delta X}
+\]
+
+其中 \(A\) 是当前真实 sparse Maxwell operator，\(R\) 是当前真实 residual，\(\Delta X\) 是完整 edge-space correction。
+
+网络使用当前 residual、Jacobi correction、operator diagonal/phase/row coupling、edge orientation 和物理位置等局部特征。细边特征经过 orientation-preserving coarse aggregation 再 prolongate 回细边，因此不是一个巨大的 `n_edges -> n_edges` 全连接网络。
+
+最后一层零初始化：网络未训练时，整个神经预条件器严格退化成物理 Jacobi correction。
+
+## solution-label-free 训练
+
+训练没有 Maxwell solution label。对 residual \(R\)：
+
+\[
+\Delta X_\theta=\mathcal P_\theta(A,R)
+\]
+
+直接最小化
+
+\[
+\boxed{L_{\rm EM}=\frac{\|R-A\Delta X_\theta\|_2^2}{\|R\|_2^2}}.
+\]
+
+训练 residual 不只包含 unit-port RHS，还包含基础物理预条件过程中出现的中间 residual 和端口电流组合，从而学习“如何修正迭代 residual”。
+
+训练缓存只保存几何、材料温升、split 和 residual-generation 设置，不再保存 dense reduced matrices。
+
+## FGMRES 物理闭环
+
+同一神经模块既用于初始 correction，也用于每一步可变预条件。因为该预条件器是非线性/可变的，正式求解器使用 **FGMRES**。
+
+FGMRES 每一步都用当前真实 sparse operator 重新计算 residual。唯一停止条件是
+
+\[
+\frac{\|B-AX\|_2}{\|B\|_2}\le\varepsilon_{\rm EM}.
+\]
+
+网络若输出 NaN/Inf，该次 correction 自动退化到 Jacobi。若在 `maxwell_max_iterations` 内真实 residual 仍未达到目标，则明确报错，不会用 surrogate 或 silent fallback 返回答案。
+
+`run.py` 中：
 
 ```python
-THERMAL_RANK = 24
-em_basis_max_rank = 64
+PHYSICS = {
+    "maxwell_residual_tolerance": 1e-7,
+    "maxwell_max_iterations": 200,
+    "maxwell_restart": 40,
+}
 ```
 
-这类人为降阶维数。
+## Joule 与阻抗
 
-用户只提供物理 residual 目标，算法从空基开始自动增广；满足目标时当前维数就是最终 rank。
+只有通过真实 Maxwell residual 检查后的多端口场 \(X\) 才进入输出层。
 
-### 自动 Maxwell rank
-
-对于每个 `(geometry, material temperature, port)` anchor，公共 Maxwell 空间 \(V_E\) 控制：
+体积导电区域使用
 
 \[
-\min_C \frac{\|B-A_{\rm em}V_EC\|_2}{\|B\|_2}.
+q^{\rm volume}=\frac12\sigma|E|^2,
 \]
 
-每次选择全体 anchor 中 residual 最大的方向增广。空间扩大后使用 minimum-residual image projection，因此最佳 residual 在数值误差范围内只能下降。
-
-停止条件：
+因此海水体积损耗完整保留。对 thermal basis 第 \(j\) 个模式：
 
 \[
-\max_{s,p}
-\frac{\|B_{s,p}-A_sV_EC_{s,p}\|_2}{\|B_{s,p}\|_2}
-\leq \varepsilon_{E,\mathrm{basis}}.
+G_j=\Re(X^HH_jX),\qquad q_j=\zeta^HG_j\zeta.
 \]
 
-得到的：
+线圈 AC resistance heating 同样由物理项加入。阻抗也从 corrected field 与真实 source functional 计算，不由网络直接预测。
+
+## thermal rank 自动决定
+
+Maxwell 全局解基被删除，但 thermal ROM 保留。热扩散通常远比广几何 Maxwell solution family 更可压缩。
+
+thermal basis \(\Phi_T\) 由真实 Joule source anchor 自动增广，同时控制
 
 \[
-r_E=\dim(V_E)
+KT=q,\qquad M\dot T=q,
 \]
 
-就是自动 Maxwell rank。
+直到 steady/dynamic anchor residual 都低于 `thermal_basis_anchor_residual`。thermal rank 是 residual 目标的结果，不是用户填写的 rank。
 
-### 自动 thermal rank
-
-热空间 \(\Phi_T\) 也从空基开始，不使用固定正弦模态数量。
-
-对每个代表性几何，代码首先通过真实 Maxwell 方程生成包括铜损和海水体积 Joule loss 在内的物理热源 anchor \(q\)。随后同时控制两类热方程：
-
-稳态导热：
+热动力学始终由
 
 \[
-K T=q,
+M_r(g)\dot a=-K_r(g)a+q_r(a,g,u)
 \]
 
-以及初始动态：
+数值积分；时间不是网络输入。
 
-\[
-M\dot T=q.
-\]
-
-公共热空间要求：
-
-\[
-\max
-\left(
-\frac{\|q-K\Phi_T a\|_2}{\|q\|_2},
-\frac{\|q-M\Phi_T v\|_2}{\|q\|_2}
-\right)
-\leq \varepsilon_{T,\mathrm{basis}}.
-\]
-
-每次增广都选择当前全体几何/热源/方程中 residual 最大的方向。满足目标后：
-
-\[
-r_T=\dim(\Phi_T)
-\]
-
-就是自动 thermal rank。
-
-因此日志应该类似：
-
-```text
-背景空间：9261 cells，25200 Maxwell edge DOFs，thermal rank=自动计算
-...
-thermal 公共空间完成：自动 rank=...，maximum anchor residual=...，target=...
-...
-Maxwell 公共空间完成：自动 rank=...，maximum anchor residual=...，target=...
-```
-
-而不是预先打印 `thermal rank=24`。
-
-## Maxwell 网络到底学习什么
-
-固定背景上得到自动 Maxwell 公共空间 \(V_E\) 后，对于当前热状态和当前几何：
-
-\[
-X_0=V_E C_0.
-\]
-
-训练和网络特征统一使用 minimum-residual reduced physics：
-
-\[
-Q=(A V_E)^H(A V_E),
-\qquad
-S=(A V_E)^H B.
-\]
-
-神经网络预测所有端口对应的低维初始系数：
-
-\[
-C_0=\mathcal N_\theta(Q,S,\ldots).
-\]
-
-训练没有 Maxwell 解标签、没有温度解标签、没有 Joule tensor 标签。训练数据只保存真实物理 residual 二次型：
-
-\[
-\|B-AV_EC\|_2^2
-=
-\|B\|_2^2
--2\operatorname{Re}(C^HS)
-+C^HQC.
-\]
-
-网络本体可使用 float32/CUDA，但 residual 二次型收缩固定使用 float64，避免接近收敛时的大数消减造成虚假的低 loss。
-
-Maxwell 训练温度覆盖使用物理材料温升：
-
-```python
-"em_temperature_rise_bounds": [0.0, 80.0]
-```
-
-它不再依赖 thermal rank，也不存在固定长度的 `state_lower/state_upper`。
-
-## 推理中的物理闭环
-
-网络给出：
-
-\[
-X_0=V_EC_0.
-\]
-
-随后立即在完整固定背景上计算：
-
-\[
-R_0=B-A_{\rm em}X_0.
-\]
-
-如果 residual 未达到：
-
-\[
-\frac{\|B-A_{\rm em}X\|}{\|B\|}
-\leq \varepsilon_{\rm em},
-\]
-
-则继续使用同一个真实 Maxwell 矩阵进行 Krylov 修正；必要时直接完成剩余物理修正。最终停止条件只有真实物理 residual。
-
-如果极端新几何使神经网络产生 NaN/Inf，神经初解会被丢弃，求解器直接从物理 correction 继续；网络数值失效不能污染最终答案。
-
-没有 `domain probe`、`Gate` 或额外 certification 工作流。
-
-## Joule 发热
-
-修正后的多端口电磁响应 \(X\) 用于构造真实二次热源。导电体积区域，特别是海水，直接使用：
-
-\[
-q_j^{\rm volume}=X^H H_j X.
-\]
-
-对任意端口电流向量 \(\zeta\)：
-
-\[
-q_j=\zeta^T G_j\zeta.
-\]
-
-这里的 \(G_j\) 由当前已经通过 Maxwell residual 检查的电磁解构造，不由 MLP 直接预测。
-
-## 热动力学
-
-自动生成热空间后，当前几何的完整热算子仍然来自硬物理：
-
-\[
-M_r(g)=\Phi_T^TM(g)\Phi_T,
-\qquad
-K_r(g)=\Phi_T^TK(g)\Phi_T,
-\]
-
-并积分：
-
-\[
-M_r(g)\dot a=-K_r(g)a+q(a,g,u).
-\]
-
-`M_r(g)`、`K_r(g)` 不由网络学习。时间也不进入神经网络。有限时间查询使用 ETD2 / adaptive ETD2；`"inf"` 使用非线性稳态求解。
-
-## 训练配置
-
-默认配置在 `run.py -> TRAINING`：
+## 默认训练设置
 
 ```python
 TRAINING = {
-    "basis_samples": 24,
     "thermal_basis_anchor_residual": 5e-2,
-    "em_basis_anchor_residual": 2e-1,
     "em_temperature_rise_bounds": [0.0, 80.0],
-    "n_operator_samples": 512,
+    "n_operator_samples": 96,
+    "residual_training_steps": 3,
     "device": "cuda",
     "network": {
-        "width": 256,
-        "blocks": 4,
+        "width": 32,
+        "levels": 3,
+        "blocks_per_level": 1,
         "activation": "silu",
     },
-    "optimizer": {
-        "epochs": 1000,
-        "batch_size": 128,
-        "learning_rate": 1e-3,
-        "patience": 150,
-        "validation_interval": 5,
-    },
 }
 ```
 
-这里没有任何 rank 参数。
+这里不存在任何 Maxwell rank 配置。
 
-`epochs` 是最大 epoch；若 validation residual loss 连续 `patience` 个 epoch 没有改善，会提前停止并恢复 best epoch 权重。
+## 缓存与继续训练
 
-如果 thermal 或 Maxwell 公共空间本身达不到对应 residual 目标，训练会在进入 neural epoch 前直接停止，而不是让神经网络去补偿一个不充分的物理空间。
-
-## 推理配置
-
-初态也不再要求用户提供一个长度等于 thermal rank 的向量。默认使用物理温升：
-
-```python
-PREDICTION = {
-    "initial_temperature_rise": 0.0,
-    "operating": [5.0, 0.0],
-    "geometry": None,
-    "times": [0.0, 0.001, 1.0, 1000.0, "inf"],
-}
-```
-
-`initial_temperature_rise=0.0` 表示环境温度。若给标量非零温升或完整背景 cell 温升场，运行时会投影到训练得到的自动 thermal basis。
-
-运行：
-
-```bash
-python run.py --mode predict
-```
-
-输出包含温度、阻抗、热源以及 Maxwell 初始/最终 residual 和 correction iteration 数。
-
-## 缓存与模型文件
-
-物理配置不变时可复用：
+物理缓存：
 
 ```text
 results/uwpt/unified.cache.json
 results/uwpt/unified.thermal_basis.npy
-results/uwpt/unified.em_basis.npy
-results/uwpt/unified.operator_dataset.npz
+results/uwpt/unified.residual_dataset.npz
 ```
 
-神经网络训练阶段的可恢复状态：
+神经训练检查点：
 
 ```text
 results/uwpt/model.training.pt
 ```
 
-正常训练完成后 checkpoint 自动删除。
+检查点身份包含 network config、training config、固定 edge topology、sample count 和 residual-generation 设置。
 
-最终模型：
+## 推理日志
 
-```text
-results/uwpt/model.npz
-```
-
-模型文件显式保存自动得到的 thermal basis、Maxwell basis、网络 normalizer/权重和固定背景坐标。加载模型时直接恢复这些基，不会根据某个 rank 重新生成。
-
-训练报告包含：
+推理会打印真正有物理意义的指标：
 
 ```text
-thermal_basis_rank
-em_basis_rank
-thermal_basis.maximum_anchor_relative_residual
-maxwell_basis.maximum_anchor_relative_residual
-training.best_validation_residual_loss
+Maxwell initial=... -> final=...
+FGMRES iterations=...
+restarts=...
+Tmax=... K
 ```
 
-## 正式统一模型测试
+其中 `final` 是真实 sparse Maxwell residual。
+
+## 正确性边界
+
+小 algebraic residual 说明离散 Maxwell 方程被充分求解，但不自动保证连续模型或空间离散误差很小。最终精度还取决于固定背景分辨率、curl-compatible edge discretization、sub-cell geometry/source representation、材料本构、thermal residual target 和频率模型假设。必要时应做背景空间收敛检查。
+
+## 正式测试
 
 ```bash
 python -m pytest -q \
   tests/test_unified_geometry.py \
   tests/test_unified_background.py \
   tests/test_unified_thermal.py \
-  tests/test_unified_basis.py \
-  tests/test_unified_basis_minres.py \
   tests/test_unified_residual.py \
-  tests/test_unified_end_to_end.py
+  tests/test_unified_end_to_end.py \
+  tests/test_run_neural_user_defaults.py
 ```
 
-`test_unified_thermal.py` 检查 thermal rank 完全由 residual 目标自动决定、热基的体积加权正交性，以及更严格的 residual 目标不会反而得到更低 rank。
-
-`test_unified_end_to_end.py` 覆盖：自动 thermal basis → Maxwell operator 数据 → residual NN 训练 → 模型保存 → 模型加载 → `t=0` 真实 Maxwell correction / Joule / 温度推理。
-
-仓库中仍有历史研究代码文件，但它们不再由顶层 `sdfmpneo` API、`run.py` 或正式 CLI 自动加载，也不再作为当前统一模型的兼容目标。
+`test_unified_residual.py` 检查零初始化网络退化到 Jacobi、FGMRES 最终满足真实 full-space residual，以及非有限神经输出不会污染最终物理解。

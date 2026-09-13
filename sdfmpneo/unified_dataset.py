@@ -1,91 +1,67 @@
-"""Compact solution-label-free training data for the neural Maxwell accelerator."""
+"""Compact operator/residual sampling metadata for solution-label-free Maxwell training.
+
+The dataset stores geometry/material states only. Sparse Maxwell operators are
+assembled from hard physics by the trainer; no dense reduced ``Q/S`` matrices
+and no Maxwell solution labels are persisted.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 
 import numpy as np
 
-
-def operator_encoding(A, B, V):
-    """Encode the full-space minimum-residual quadratic form.
-
-    The neural input, Jacobi baseline, and training loss are all derived from
-    the same least-squares physics
-
-        min_C ||B - A V C||_2^2,
-
-    whose reduced normal data are ``Q=(AV)^H(AV)`` and ``S=(AV)^H B``.
-    No Maxwell solution labels are formed.
-    """
-    AV = np.asarray(A @ V, complex)
-    B = np.asarray(B, complex)
-    Q = AV.conj().T @ AV
-    S = AV.conj().T @ B
-    r = V.shape[1]
-    tiny = np.finfo(float).tiny
-
-    qscale = max(float(np.linalg.norm(Q)) / np.sqrt(max(r, 1)), tiny)
-    sscale = np.maximum(np.linalg.norm(S, axis=0), tiny)
-    Qh = Q / qscale
-    Sh = S / sscale[None, :]
-    features = np.concatenate(
-        [
-            Qh.real.ravel(),
-            Qh.imag.ravel(),
-            Sh.real.ravel(),
-            Sh.imag.ravel(),
-            [np.log(qscale)],
-            np.log(sscale),
-        ]
-    )
-
-    # Cheap physics-consistent initial coefficient estimate. The network learns
-    # only the correction from this Jacobi least-squares guess.
-    diagonal = np.real(np.diag(Q)).copy()
-    diagonal_scale = max(float(np.max(np.abs(diagonal))), tiny)
-    diagonal = np.where(diagonal > 1e-12 * diagonal_scale, diagonal, diagonal_scale)
-    base = S / diagonal[:, None]
-    coefficient_scale = sscale / qscale
-    baseline = np.concatenate([base.real.T, base.imag.T], axis=1)
-
-    Qr, Qi = Q.real, Q.imag
-    qblock = np.block([[Qr, -Qi], [Qi, Qr]])
-    sreal = np.concatenate([S.real.T, S.imag.T], axis=1)
-    norm2 = np.sum(np.abs(B) ** 2, axis=0).real
-    return tuple(
-        np.asarray(x, np.float64)
-        for x in (features, baseline, coefficient_scale, qblock, sreal, norm2)
-    )
+from .unified_geometry import UnifiedUWPTGeometry
 
 
 @dataclass
-class MaxwellOperatorDataset:
-    features: np.ndarray
-    baseline: np.ndarray
-    coefficient_scale: np.ndarray
-    residual_gram: np.ndarray
-    residual_linear: np.ndarray
-    rhs_norm2: np.ndarray
+class MaxwellResidualDataset:
+    geometries: tuple
+    states: tuple
     split: np.ndarray
-    reduced_rank: int
-    n_rhs: int
+    residual_steps: int = 3
+    seed: int = 0
+
+    def __post_init__(self):
+        if len(self.geometries) != len(self.states) or len(self.geometries) != len(self.split):
+            raise ValueError("geometry/state/split sample counts must match")
+        if len(self.geometries) < 10:
+            raise ValueError("at least ten operator samples are required")
+        if int(self.residual_steps) < 1:
+            raise ValueError("residual_steps must be positive")
+        self.split = np.asarray(self.split, np.int8)
+        if np.any(~np.isin(self.split, [0, 1, 2])):
+            raise ValueError("dataset split contains an unknown partition")
+
+    def indices(self, name):
+        return np.flatnonzero(self.split == {"train": 0, "validation": 1, "test": 2}[name])
 
     def save(self, path):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        geometry_json = np.asarray([
+            json.dumps(
+                (g if isinstance(g, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(g)).to_mapping(),
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            for g in self.geometries
+        ])
+        state_json = np.asarray([
+            json.dumps(s, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if s is not None else "null"
+            for s in self.states
+        ])
         with path.open("wb") as handle:
             np.savez_compressed(
                 handle,
-                features=self.features,
-                baseline=self.baseline,
-                coefficient_scale=self.coefficient_scale,
-                residual_gram=self.residual_gram,
-                residual_linear=self.residual_linear,
-                rhs_norm2=self.rhs_norm2,
+                geometry_json=geometry_json,
+                state_json=state_json,
                 split=self.split,
-                reduced_rank=np.array(self.reduced_rank),
-                n_rhs=np.array(self.n_rhs),
+                residual_steps=np.array(int(self.residual_steps)),
+                seed=np.array(int(self.seed)),
             )
         return path
 
@@ -93,53 +69,37 @@ class MaxwellOperatorDataset:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             return cls(
-                data["features"],
-                data["baseline"],
-                data["coefficient_scale"],
-                data["residual_gram"],
-                data["residual_linear"],
-                data["rhs_norm2"],
+                tuple(json.loads(str(v)) for v in data["geometry_json"]),
+                tuple(json.loads(str(v)) for v in data["state_json"]),
                 data["split"],
-                int(data["reduced_rank"]),
-                int(data["n_rhs"]),
+                int(data["residual_steps"]),
+                int(data["seed"]),
             )
 
-    def indices(self, name):
-        return np.flatnonzero(self.split == {"train": 0, "validation": 1, "test": 2}[name])
 
-
-def generate_operator_dataset(background, V, geometry_samples, state_samples, *, seed=0, monitor=None):
+def generate_residual_dataset(background, geometry_samples, state_samples, *, seed=0, residual_steps=3, monitor=None):
     pairs = list(zip(geometry_samples, state_samples))
-    n = len(pairs)
-    if n < 10:
+    if len(pairs) < 10:
         raise ValueError("at least ten operator samples are required")
-    rows = []
+    geometries, states = [], []
     for i, (geometry, state) in enumerate(pairs):
         if monitor is not None:
             monitor.checkpoint()
-        context = background.geometry_context(geometry, assemble_thermal=False)
-        A = background.em_operator(context, state)
-        B = background.rhs_matrix(context)
-        rows.append(operator_encoding(A, B, V))
+        g = background.validate_geometry(geometry)
+        geometries.append(g.to_mapping())
+        states.append(None if state is None else dict(state))
         if monitor is not None:
             with monitor._lock:
                 monitor.data.update(phase="maxwell_operator_samples", training_points=i + 1)
-        if i == 0 or (i + 1) % max(1, n // 20) == 0 or i + 1 == n:
-            print(
-                f"生成 Maxwell 残差训练算子……{100 * (i + 1) / n:5.1f}% ({i + 1}/{n})",
-                flush=True,
-            )
-    features, base, scale, Q, S, N = map(np.asarray, zip(*rows))
+
     rng = np.random.default_rng(seed)
-    order = rng.permutation(n)
-    split = np.zeros(n, np.int8)
-    n_validation = max(1, int(round(0.15 * n)))
-    n_test = max(1, int(round(0.15 * n)))
+    order = rng.permutation(len(pairs))
+    split = np.zeros(len(pairs), np.int8)
+    n_validation = max(1, int(round(0.15 * len(pairs))))
+    n_test = max(1, int(round(0.15 * len(pairs))))
     split[order[:n_validation]] = 1
     split[order[n_validation:n_validation + n_test]] = 2
-    return MaxwellOperatorDataset(
-        features, base, scale, Q, S, N, split, V.shape[1], base.shape[1]
-    )
+    return MaxwellResidualDataset(tuple(geometries), tuple(states), split, int(residual_steps), int(seed))
 
 
-__all__ = ["MaxwellOperatorDataset", "generate_operator_dataset", "operator_encoding"]
+__all__ = ["MaxwellResidualDataset", "generate_residual_dataset"]

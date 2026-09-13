@@ -1,8 +1,5 @@
 import importlib.util
 from pathlib import Path
-from types import SimpleNamespace
-
-import numpy as np
 
 
 def _load_run():
@@ -14,26 +11,19 @@ def _load_run():
     return module
 
 
-def test_run_defaults_use_cuda_and_separate_state_domain():
+def test_run_defaults_use_one_fullspace_maxwell_path():
     run = _load_run()
     assert run.TRAINING["device"] == "cuda"
-    assert "state_lower" in run.TRAINING
-    assert "state_upper" in run.TRAINING
-    assert run.TRAINING["state_lower"] != run.TRAINING["initial_lower"]
-    assert run.PREDICTION["allow_extrapolation"] is True
-    assert run.TRAINING["optimizer"]["mixed_precision"] is True
-    assert run.TRAINING["optimizer"]["validation_interval"] >= 1
+    assert "em_basis_anchor_residual" not in run.TRAINING
+    assert "em_basis_max_rank" not in run.TRAINING
+    assert run.TRAINING["residual_training_steps"] >= 1
+    assert run.PHYSICS["maxwell_residual_tolerance"] > 0
+    assert run.PHYSICS["maxwell_restart"] >= 1
+    assert run.TRAINING["network"]["levels"] >= 1
 
 
-def test_temperature_summary_is_physical_not_modal_norm():
+def test_temperature_input_is_physical_temperature_rise_not_modal_box():
     run = _load_run()
-    model = SimpleNamespace(
-        thermal_operators=SimpleNamespace(
-            thermal_basis=np.array([[1.0, 0.0], [0.0, 2.0], [-1.0, 0.0]])
-        )
-    )
-    summary = run._temperature_summary(model, np.array([0.5, 0.25]))
-    assert summary is not None
-    assert np.isclose(summary["maximum_temperature_rise"], 0.5)
-    assert np.isclose(summary["maximum_temperature"], run.PHYSICS["ambient_temperature"] + 0.5)
-    assert "maximum_temperature_celsius" in summary
+    assert "initial_temperature_rise" in run.PREDICTION
+    assert "state_lower" not in run.TRAINING
+    assert "state_upper" not in run.TRAINING

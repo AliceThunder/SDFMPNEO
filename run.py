@@ -1,13 +1,13 @@
-"""统一几何、自动降阶、residual-corrected 神经电磁-热求解器。
+"""统一几何、full-space neural-FGMRES、电磁-热求解器。
 
 只修改本文件顶部配置：
 
     python run.py --mode train
     python run.py --mode predict
 
-Maxwell rank 和 thermal rank 都不手工指定，而由各自的真实物理 residual 目标
-自动决定。神经网络只预测 Maxwell 多右端项初解，最终电磁解始终由真实背景
-Maxwell residual 修正到指定容差。
+Maxwell 不再构造全局解基/Maxwell rank。神经网络只学习 full edge-space residual
+correction；FGMRES 始终以真实 sparse Maxwell residual 作为唯一停止条件。thermal
+rank 仍由真实 Joule 热源与热方程 residual 自动决定。
 """
 from __future__ import annotations
 
@@ -36,31 +36,18 @@ BACKGROUND = {
 
 DEFAULT_GEOMETRY = {
     "transmitter": {
-        "shape": "circle",
-        "turns": 1.5,
-        "outer_half_size": 0.025,
-        "pitch": 0.002,
-        "conductor_width": 0.0015,
-        "conductor_thickness": 0.001,
-        "corner_radius": 0.012,
-        "translation": [0.0, 0.0, 0.0],
-        "angles": [0.0, 0.0, 0.0],
+        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
+        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
+        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.0], "angles": [0.0, 0.0, 0.0],
     },
     "receiver": {
-        "shape": "circle",
-        "turns": 1.5,
-        "outer_half_size": 0.025,
-        "pitch": 0.002,
-        "conductor_width": 0.0015,
-        "conductor_thickness": 0.001,
-        "corner_radius": 0.012,
-        "translation": [0.0, 0.0, 0.035],
-        "angles": [0.0, 0.0, 0.0],
+        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
+        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
+        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.035], "angles": [0.0, 0.0, 0.0],
     },
     "package_half_extent": [0.035, 0.035, 0.005],
 }
 
-# 这些范围只用于教网络“如何更快找到解”，不是模型有效域，也不参与推理拒绝。
 GEOMETRY_SAMPLING = {
     "transmitter": {
         "shape": {"choices": ["circle", "rounded_square"]},
@@ -92,54 +79,25 @@ PHYSICS = {
     "ambient_temperature": 293.15,
     "maxwell_residual_tolerance": 1e-7,
     "maxwell_max_iterations": 200,
+    "maxwell_restart": 40,
 }
 
 MATERIALS = {
-    "tx_copper": {
-        "electrical_conductivity": 5.8e7,
-        "resistivity_temperature_coefficient": 0.00393,
-        "reference_temperature": 293.15,
-        "relative_permeability": 1.0,
-        "relative_permittivity": 1.0,
-        "thermal_conductivity": 400.0,
-        "volumetric_heat_capacity": 3.45e6,
-    },
-    "rx_copper": {
-        "electrical_conductivity": 5.8e7,
-        "resistivity_temperature_coefficient": 0.00393,
-        "reference_temperature": 293.15,
-        "relative_permeability": 1.0,
-        "relative_permittivity": 1.0,
-        "thermal_conductivity": 400.0,
-        "volumetric_heat_capacity": 3.45e6,
-    },
-    "tx_package": {
-        "electrical_conductivity": 0.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15,
-        "relative_permeability": 1.0,
-        "relative_permittivity": 3.0,
-        "thermal_conductivity": 0.2,
-        "volumetric_heat_capacity": 1.5e6,
-    },
-    "rx_package": {
-        "electrical_conductivity": 0.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15,
-        "relative_permeability": 1.0,
-        "relative_permittivity": 3.0,
-        "thermal_conductivity": 0.2,
-        "volumetric_heat_capacity": 1.5e6,
-    },
-    "seawater": {
-        "electrical_conductivity": 5.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15,
-        "relative_permeability": 1.0,
-        "relative_permittivity": 80.0,
-        "thermal_conductivity": 0.6,
-        "volumetric_heat_capacity": 4.1e6,
-    },
+    "tx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
+                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "rx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
+                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "tx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
+                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "rx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
+                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "seawater": {"electrical_conductivity": 5.0, "resistivity_temperature_coefficient": 0.0,
+                 "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 80.0,
+                 "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6},
 }
 
 REGIONS = {
@@ -152,30 +110,19 @@ PORTS = {"current_offset": None, "current_matrix": None}
 TRAINING = {
     "seed": 17,
     "basis_samples": 24,
-    # thermal rank 自动增加，直到所有真实 Joule 热 anchor 的稳态 K*T=q 和
-    # 初始动态 M*dT/dt=q 相对 residual 都低于该目标。
     "thermal_basis_anchor_residual": 5e-2,
-    # Maxwell rank 同样由所有 geometry / temperature / port anchor 的真实 residual 自动决定。
-    "em_basis_anchor_residual": 2e-1,
-    # Maxwell 训练温度覆盖直接使用物理材料温升，不再依赖 thermal rank。
     "em_temperature_rise_bounds": [0.0, 80.0],
-    "n_operator_samples": 512,
+    "n_operator_samples": 96,
+    "residual_training_steps": 3,
     "device": "cuda",
-    "network": {"width": 256, "blocks": 4, "activation": "silu"},
+    "network": {"width": 32, "levels": 3, "blocks_per_level": 1, "activation": "silu"},
     "optimizer": {
-        "epochs": 1000,
-        "batch_size": 128,
-        "learning_rate": 1e-3,
-        "weight_decay": 1e-6,
-        "patience": 150,
-        "validation_interval": 5,
-        "seed": 17,
-        "dtype": "float32",
+        "epochs": 200, "batch_size": 4, "learning_rate": 2e-3, "weight_decay": 1e-6,
+        "patience": 60, "validation_interval": 2, "seed": 17, "dtype": "float32",
     },
 }
 
 PREDICTION = {
-    # 物理温升而不是 reduced-state 向量；0 表示环境温度初态。
     "initial_temperature_rise": 0.0,
     "operating": [5.0, 0.0],
     "geometry": None,
@@ -190,29 +137,15 @@ PREDICTION = {
 }
 
 MONITOR = {
-    "enabled": True,
-    "auto_start": False,
-    "log_dir": "results/uwpt/logs",
-    "log_interval_s": 1.0,
-    "refresh_ms": 300,
-    "max_plot_points": 4000,
-    "compute_threads": 1,
+    "enabled": True, "auto_start": False, "log_dir": "results/uwpt/logs",
+    "log_interval_s": 1.0, "refresh_ms": 300, "max_plot_points": 4000, "compute_threads": 1,
 }
 
 SETTINGS = {
-    "ROOT": str(ROOT),
-    "MODE": MODE,
-    "FILES": FILES,
-    "BACKGROUND": BACKGROUND,
-    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY,
-    "GEOMETRY_SAMPLING": GEOMETRY_SAMPLING,
-    "PHYSICS": PHYSICS,
-    "MATERIALS": MATERIALS,
-    "REGIONS": REGIONS,
-    "PORTS": PORTS,
-    "TRAINING": TRAINING,
-    "PREDICTION": PREDICTION,
-    "MONITOR": MONITOR,
+    "ROOT": str(ROOT), "MODE": MODE, "FILES": FILES, "BACKGROUND": BACKGROUND,
+    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY, "GEOMETRY_SAMPLING": GEOMETRY_SAMPLING,
+    "PHYSICS": PHYSICS, "MATERIALS": MATERIALS, "REGIONS": REGIONS, "PORTS": PORTS,
+    "TRAINING": TRAINING, "PREDICTION": PREDICTION, "MONITOR": MONITOR,
 }
 
 

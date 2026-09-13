@@ -15,14 +15,14 @@ from .electrothermal_tensor.integrators import (
     integrate_imex_euler,
     integrate_reference,
 )
-from .electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .electrothermal_tensor.vector_field import ReducedThermalOperator
 from .unified_background import FixedMultiscaleBackground
 from .unified_geometry import UnifiedUWPTGeometry
 from .unified_maxwell import NeuralMaxwellAccelerator
+from .unified_neural_operator import EdgeMultiscaleConfig, build_edge_residual_operator
 
-ARCHITECTURE = "unified-residual-corrected-neural-electrothermal-solver"
-FORMAT_VERSION = 2
+ARCHITECTURE = "unified-fullspace-neural-fgmres-electrothermal-solver"
+FORMAT_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ class UnifiedPrediction:
     maxwell_initial_residual: tuple
     maxwell_final_residual: tuple
     maxwell_correction_iterations: tuple
+    maxwell_restarts: tuple
     steps: int
     rejected_steps: int
 
@@ -279,6 +280,7 @@ class UnifiedNeuralElectroThermalModel:
             report.initial_relative_residual,
             report.final_relative_residual,
             report.correction_iterations,
+            report.restarts,
             result.steps,
             result.rejected_steps,
         )
@@ -361,6 +363,7 @@ class UnifiedNeuralElectroThermalModel:
             "default_geometry": self.default_geometry,
             "residual_tolerance": self.accelerator.residual_tolerance,
             "maxwell_max_iterations": self.accelerator.max_iterations,
+            "maxwell_restart": self.accelerator.restart,
             "metadata": dict(metadata or {}),
         }
         arrays = {
@@ -369,7 +372,6 @@ class UnifiedNeuralElectroThermalModel:
             "background_y": self.background.y,
             "background_z": self.background.z,
             "thermal_basis": self.background.thermal_basis,
-            "em_basis": self.accelerator.basis,
             "current_offset": self.current_offset,
             "current_matrix": self.current_matrix,
         }
@@ -388,7 +390,7 @@ class UnifiedNeuralElectroThermalModel:
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
             if meta.get("architecture") != ARCHITECTURE or int(meta.get("format_version", -1)) != FORMAT_VERSION:
-                raise ValueError("model is not the current unified residual-corrected architecture")
+                raise ValueError("model is not the current unified full-space neural-FGMRES architecture")
             saved_thermal_basis = np.asarray(data["thermal_basis"], float)
             if saved_thermal_basis.ndim != 2 or saved_thermal_basis.shape[1] < 1 or np.any(~np.isfinite(saved_thermal_basis)):
                 raise ValueError("saved thermal basis is invalid")
@@ -402,9 +404,8 @@ class UnifiedNeuralElectroThermalModel:
             if background.thermal_rank != int(meta["thermal_rank"]):
                 raise ValueError("saved thermal basis rank does not match model metadata")
 
-            config = ResidualMLPConfig(**meta["network_config"])
-            normalizer = FeatureNormalizer(data["network__input_mean"], data["network__input_scale"])
-            network = build_residual_mlp(config, normalizer)
+            config = EdgeMultiscaleConfig(**meta["network_config"])
+            network = build_edge_residual_operator(background, config)
             dtype = torch.float64 if meta.get("network_dtype") == "float64" else torch.float32
             network = network.to(device=device, dtype=dtype)
             state = {}
@@ -417,9 +418,9 @@ class UnifiedNeuralElectroThermalModel:
             network.eval()
             accelerator = NeuralMaxwellAccelerator(
                 network,
-                data["em_basis"],
                 residual_tolerance=meta["residual_tolerance"],
                 max_iterations=meta["maxwell_max_iterations"],
+                restart=meta.get("maxwell_restart", 40),
             )
             return cls(
                 background,

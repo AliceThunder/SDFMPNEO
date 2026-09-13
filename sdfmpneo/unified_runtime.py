@@ -1,4 +1,4 @@
-"""Runtime for the single unified geometry-independent neural electrothermal model."""
+"""Runtime for the single full-background neural-FGMRES electrothermal model."""
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
@@ -13,17 +13,14 @@ import numpy as np
 from scipy.stats import qmc
 
 from .unified_background import FixedMultiscaleBackground
-from .unified_basis import build_residual_basis
-from .unified_dataset import MaxwellOperatorDataset, generate_operator_dataset
+from .unified_dataset import MaxwellResidualDataset, generate_residual_dataset
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_maxwell import NeuralMaxwellAccelerator
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_thermal import build_thermal_basis
 from .unified_trainer import train_maxwell_accelerator
 
-# 5 = automatic thermal rank + material-temperature EM sampling + automatic
-# minimum-residual Maxwell rank. Older caches must not be reused.
-_CACHE_FORMAT = 5
+_CACHE_FORMAT = 6
 
 
 def jsonable(value):
@@ -49,10 +46,8 @@ def jsonable(value):
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(jsonable(value), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(jsonable(value), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                    encoding="utf-8")
 
 
 def _progress(message, percent, monitor=None):
@@ -63,15 +58,11 @@ def _progress(message, percent, monitor=None):
 
 
 def _signature(settings):
-    keys = (
-        "BACKGROUND", "DEFAULT_GEOMETRY", "GEOMETRY_SAMPLING", "PHYSICS",
-        "MATERIALS", "REGIONS", "TRAINING",
-    )
+    keys = ("BACKGROUND", "DEFAULT_GEOMETRY", "GEOMETRY_SAMPLING", "PHYSICS",
+            "MATERIALS", "REGIONS", "TRAINING")
     payload = {k: settings[k] for k in keys}
-    payload["TRAINING"] = {
-        k: v for k, v in payload["TRAINING"].items()
-        if k not in {"network", "optimizer", "device"}
-    }
+    payload["TRAINING"] = {k: v for k, v in payload["TRAINING"].items()
+                           if k not in {"network", "optimizer", "device"}}
     payload["cache_format"] = _CACHE_FORMAT
     text = json.dumps(jsonable(payload), sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(text.encode()).hexdigest()
@@ -96,13 +87,9 @@ def _sample_geometries(settings, n, rng, background):
     while len(out) < n:
         attempts += 1
         if attempts > 100 * n:
-            raise ValueError(
-                "geometry sampling produced too many invalid physical geometries; "
-                "adjust sampling ranges or BACKGROUND bounds"
-            )
-        candidate = sample_geometry(
-            settings["DEFAULT_GEOMETRY"], settings.get("GEOMETRY_SAMPLING"), rng
-        )
+            raise ValueError("geometry sampling produced too many invalid physical geometries; "
+                             "adjust sampling ranges or BACKGROUND bounds")
+        candidate = sample_geometry(settings["DEFAULT_GEOMETRY"], settings.get("GEOMETRY_SAMPLING"), rng)
         try:
             background.validate_geometry(UnifiedUWPTGeometry.from_mapping(candidate))
         except ValueError:
@@ -112,15 +99,12 @@ def _sample_geometries(settings, n, rng, background):
 
 
 def _temperature_sensitive_materials(background):
-    return [
-        name for name, material in background.materials.items()
-        if float(material.get("electrical_conductivity", 0.0)) > 0.0
-        and float(material.get("resistivity_temperature_coefficient", 0.0)) != 0.0
-    ]
+    return [name for name, material in background.materials.items()
+            if float(material.get("electrical_conductivity", 0.0)) > 0.0
+            and float(material.get("resistivity_temperature_coefficient", 0.0)) != 0.0]
 
 
 def _sample_em_states(settings, n, seed, background):
-    """Sample physical material temperature rises, independent of thermal rank."""
     names = _temperature_sensitive_materials(background)
     if not names:
         return [None] * n
@@ -140,15 +124,12 @@ def _sample_em_states(settings, n, seed, background):
 
 
 def _cache_paths(directory):
-    return (
-        directory / "unified.cache.json",
-        directory / "unified.thermal_basis.npy",
-        directory / "unified.em_basis.npy",
-        directory / "unified.operator_dataset.npz",
-    )
+    return (directory / "unified.cache.json",
+            directory / "unified.thermal_basis.npy",
+            directory / "unified.residual_dataset.npz")
 
 
-def _require_effective_basis(report, label):
+def _require_effective_thermal_basis(report):
     converged = bool(report.get("converged", False)) if isinstance(report, dict) else bool(report.converged)
     if converged:
         return
@@ -157,11 +138,8 @@ def _require_effective_basis(report, label):
     target = float(get("target_relative_residual"))
     rank = int(get("basis_dimension"))
     reason = str(get("stop_reason", "unknown"))
-    raise RuntimeError(
-        f"{label} 公共空间未达到训练要求：自动 rank={rank}, "
-        f"maximum anchor residual={residual:.3e}, target={target:.3e}, stop={reason}。"
-        "公共物理空间本身不充分，训练在神经网络 epoch 前停止。"
-    )
+    raise RuntimeError(f"thermal 公共空间未达到训练要求：自动 rank={rank}, "
+                       f"maximum anchor residual={residual:.3e}, target={target:.3e}, stop={reason}。")
 
 
 def train(settings, model_path, settings_dir, monitor=None):
@@ -169,43 +147,34 @@ def train(settings, model_path, settings_dir, monitor=None):
 
     settings_dir.mkdir(parents=True, exist_ok=True)
     sig = _signature(settings)
-    meta_path, thermal_path, em_path, data_path = _cache_paths(settings_dir)
+    meta_path, thermal_path, data_path = _cache_paths(settings_dir)
     checkpoint = Path(settings["FILES"]["training_checkpoint"])
     checkpoint = checkpoint if checkpoint.is_absolute() else Path(settings["ROOT"]) / checkpoint
     try:
         _progress("构建固定多尺度背景物理空间", 0, monitor)
         bg = build_background(settings)
         _progress("构建固定多尺度背景物理空间", 8, monitor)
-        print(
-            f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs，thermal rank=自动计算",
-            flush=True,
-        )
+        print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs，"
+              "thermal rank=自动计算；Maxwell 不做全局降阶", flush=True)
 
         valid_cache = False
         cache_meta = {}
-        if meta_path.is_file() and thermal_path.is_file() and em_path.is_file() and data_path.is_file():
+        if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
             try:
                 cache_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                valid_cache = (
-                    cache_meta.get("signature") == sig
-                    and int(cache_meta.get("cache_format", -1)) == _CACHE_FORMAT
-                )
+                valid_cache = (cache_meta.get("signature") == sig
+                               and int(cache_meta.get("cache_format", -1)) == _CACHE_FORMAT)
             except (OSError, ValueError, TypeError):
                 valid_cache = False
 
         if valid_cache:
-            _progress("复用统一物理算子训练数据", 40, monitor)
+            _progress("复用 thermal 公共空间与 residual 采样", 35, monitor)
             thermal_report = cache_meta.get("thermal_basis_report", {})
-            maxwell_report = cache_meta.get("maxwell_basis_report", {})
-            _require_effective_basis(thermal_report, "thermal")
-            _require_effective_basis(maxwell_report, "Maxwell")
+            _require_effective_thermal_basis(thermal_report)
             bg.set_thermal_basis(np.load(thermal_path, allow_pickle=False))
-            V = np.load(em_path, allow_pickle=False)
-            dataset = MaxwellOperatorDataset.load(data_path)
-            print(
-                f"复用公共空间：thermal rank={bg.thermal_rank}，Maxwell rank={V.shape[1]}",
-                flush=True,
-            )
+            dataset = MaxwellResidualDataset.load(data_path)
+            print(f"复用公共空间：thermal rank={bg.thermal_rank}；Maxwell full edge-space={bg.n_edges} DOFs",
+                  flush=True)
         else:
             checkpoint.unlink(missing_ok=True)
             rng = np.random.default_rng(int(settings["TRAINING"].get("seed", 17)))
@@ -216,57 +185,38 @@ def train(settings, model_path, settings_dir, monitor=None):
             thermal_basis, thermal_obj = build_thermal_basis(
                 bg,
                 basis_geometries,
-                target_relative_residual=float(
-                    settings["TRAINING"].get("thermal_basis_anchor_residual", 5e-2)
-                ),
+                target_relative_residual=float(settings["TRAINING"].get("thermal_basis_anchor_residual", 5e-2)),
                 monitor=monitor,
             )
-            _require_effective_basis(thermal_obj, "thermal")
+            _require_effective_thermal_basis(thermal_obj)
             np.save(thermal_path, thermal_basis)
-            _progress("构建 residual-driven thermal 公共空间", 20, monitor)
+            thermal_report = asdict(thermal_obj)
+            _progress("构建 residual-driven thermal 公共空间", 28, monitor)
 
-            em_states = _sample_em_states(
-                settings, n_basis, int(settings["TRAINING"].get("seed", 17)) + 1, bg
-            )
-            _progress("构建 residual-driven Maxwell 公共空间", 21, monitor)
-            V, maxwell_obj = build_residual_basis(
-                bg,
-                basis_geometries,
-                em_states,
-                target_relative_residual=float(
-                    settings["TRAINING"].get("em_basis_anchor_residual", 2e-1)
-                ),
-                monitor=monitor,
-            )
-            _require_effective_basis(maxwell_obj, "Maxwell")
-            np.save(em_path, V)
-            _progress("构建 residual-driven Maxwell 公共空间", 40, monitor)
-
-            n_data = int(settings["TRAINING"].get("n_operator_samples", 512))
+            n_data = int(settings["TRAINING"].get("n_operator_samples", 96))
             data_geometries = _sample_geometries(settings, n_data, rng, bg)
-            data_states = _sample_em_states(
-                settings, n_data, int(settings["TRAINING"].get("seed", 17)) + 2, bg
-            )
-            dataset = generate_operator_dataset(
-                bg, V, data_geometries, data_states,
-                seed=int(settings["TRAINING"].get("seed", 17)), monitor=monitor,
+            data_states = _sample_em_states(settings, n_data,
+                                            int(settings["TRAINING"].get("seed", 17)) + 2, bg)
+            dataset = generate_residual_dataset(
+                bg,
+                data_geometries,
+                data_states,
+                seed=int(settings["TRAINING"].get("seed", 17)),
+                residual_steps=int(settings["TRAINING"].get("residual_training_steps", 3)),
+                monitor=monitor,
             )
             dataset.save(data_path)
-            thermal_report = asdict(thermal_obj)
-            maxwell_report = asdict(maxwell_obj)
-            write_json(
-                meta_path,
-                {
-                    "cache_format": _CACHE_FORMAT,
-                    "signature": sig,
-                    "thermal_basis_report": thermal_report,
-                    "maxwell_basis_report": maxwell_report,
-                },
-            )
-            _progress("生成 Maxwell residual 训练数据", 55, monitor)
+            write_json(meta_path, {
+                "cache_format": _CACHE_FORMAT,
+                "signature": sig,
+                "thermal_basis_report": thermal_report,
+                "maxwell_representation": "full_sparse_edge_space",
+            })
+            _progress("生成 solution-label-free Maxwell residual 采样", 38, monitor)
 
-        _progress("训练 Maxwell 神经初解器", 60, monitor)
+        _progress("训练 full-edge Maxwell residual corrector", 40, monitor)
         network, report = train_maxwell_accelerator(
+            bg,
             dataset,
             network_settings=settings["TRAINING"].get("network"),
             training_settings=settings["TRAINING"].get("optimizer"),
@@ -276,9 +226,9 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
         accelerator = NeuralMaxwellAccelerator(
             network,
-            V,
             residual_tolerance=float(settings["PHYSICS"].get("maxwell_residual_tolerance", 1e-7)),
             max_iterations=int(settings["PHYSICS"].get("maxwell_max_iterations", 200)),
+            restart=int(settings["PHYSICS"].get("maxwell_restart", 40)),
         )
         model = UnifiedNeuralElectroThermalModel(
             bg,
@@ -290,38 +240,27 @@ def train(settings, model_path, settings_dir, monitor=None):
         if monitor is not None:
             monitor.phase("saving", check=False)
         _progress("保存统一神经物理模型", 98, monitor)
-        model.save(
-            model_path,
-            metadata={
-                "thermal_basis_report": thermal_report,
-                "maxwell_basis_report": maxwell_report,
-                "training_report": asdict(report),
-            },
-        )
+        model.save(model_path, metadata={
+            "thermal_basis_report": thermal_report,
+            "maxwell_representation": "full_sparse_edge_space",
+            "training_report": asdict(report),
+        })
         checkpoint.unlink(missing_ok=True)
-        write_json(
-            settings_dir / "training.report.json",
-            {
-                "model": str(model_path),
-                "background_cells": bg.n_cells,
-                "maxwell_dofs": bg.n_edges,
-                "thermal_basis_rank": bg.thermal_rank,
-                "em_basis_rank": V.shape[1],
-                "thermal_basis": thermal_report,
-                "maxwell_basis": maxwell_report,
-                "training": report,
-            },
-        )
+        write_json(settings_dir / "training.report.json", {
+            "model": str(model_path),
+            "background_cells": bg.n_cells,
+            "maxwell_dofs": bg.n_edges,
+            "maxwell_representation": "full_sparse_edge_space",
+            "thermal_basis_rank": bg.thermal_rank,
+            "thermal_basis": thermal_report,
+            "training": report,
+        })
         _progress("训练完成", 100, monitor)
-        print(
-            f"训练完成：thermal rank={bg.thermal_rank}，Maxwell rank={V.shape[1]}，"
-            f"best epoch={report.best_epoch}，validation residual loss="
-            f"{report.best_validation_residual_loss:.6g} "
-            f"(RMS={np.sqrt(report.best_validation_residual_loss):.6g})，"
-            f"test residual loss={report.test_residual_loss:.6g} "
-            f"(RMS={np.sqrt(report.test_residual_loss):.6g})",
-            flush=True,
-        )
+        print(f"训练完成：thermal rank={bg.thermal_rank}，Maxwell={bg.n_edges} full edge DOFs（无 Maxwell rank），"
+              f"best epoch={report.best_epoch}，validation residual loss="
+              f"{report.best_validation_residual_loss:.6g} (RMS={np.sqrt(report.best_validation_residual_loss):.6g})，"
+              f"test residual loss={report.test_residual_loss:.6g} (RMS={np.sqrt(report.test_residual_loss):.6g})",
+              flush=True)
         print(f"模型已保存：{model_path}", flush=True)
         if monitor is not None:
             monitor.finish("completed", model=str(model_path))
@@ -329,10 +268,8 @@ def train(settings, model_path, settings_dir, monitor=None):
     except TrainingStopped:
         if monitor is not None:
             monitor.finish("stopped", checkpoint=str(checkpoint) if checkpoint.is_file() else None)
-        print(
-            f"训练已停止；神经训练检查点：{checkpoint}" if checkpoint.is_file() else "训练已停止。",
-            flush=True,
-        )
+        print(f"训练已停止；神经训练检查点：{checkpoint}" if checkpoint.is_file() else "训练已停止。",
+              flush=True)
         return 130
 
 
@@ -368,10 +305,8 @@ def predict(settings, model_path, output_path, settings_dir):
     initial = _initial_state(model, p)
     operating = np.asarray(p["operating"], float)
     results = []
-    print(
-        f"加载统一神经物理模型：{model_path}  device={device}  thermal rank={model.thermal_rank}",
-        flush=True,
-    )
+    print(f"加载统一神经物理模型：{model_path}  device={device}  thermal rank={model.thermal_rank}  "
+          f"Maxwell={model.background.n_edges} full edge DOFs", flush=True)
     for requested in p["times"]:
         if isinstance(requested, str) and requested.lower() == "inf":
             result = model.steady_state(
@@ -381,12 +316,8 @@ def predict(settings, model_path, output_path, settings_dir):
                 tolerance=float(p.get("steady_tolerance", 1e-10)),
                 max_iterations=int(p.get("steady_max_iterations", 40)),
             )
-            print(
-                f"t=inf，Tmax={result.maximum_temperature:.6g} K，"
-                f"thermal residual={result.residual_norm:.3e}，"
-                f"Maxwell residual={max(result.maxwell_final_residual):.3e}",
-                flush=True,
-            )
+            print(f"t=inf，Tmax={result.maximum_temperature:.6g} K，thermal residual={result.residual_norm:.3e}，"
+                  f"Maxwell residual={max(result.maxwell_final_residual):.3e}", flush=True)
             results.append({"time": "inf", "steady_state": result})
         else:
             t = float(requested)
@@ -401,18 +332,14 @@ def predict(settings, model_path, output_path, settings_dir):
                 atol=float(p.get("atol", 1e-8)),
                 initial_step=p.get("initial_step"),
             )
-            print(
-                f"t={t:g}s，Tmax={result.maximum_temperature:.6g} K，steps={result.steps}，"
-                f"Maxwell initial={max(result.maxwell_initial_residual):.3e} → "
-                f"final={max(result.maxwell_final_residual):.3e}，"
-                f"correction iterations={max(result.maxwell_correction_iterations)}",
-                flush=True,
-            )
+            print(f"t={t:g}s，Tmax={result.maximum_temperature:.6g} K，steps={result.steps}，"
+                  f"Maxwell initial={max(result.maxwell_initial_residual):.3e} → "
+                  f"final={max(result.maxwell_final_residual):.3e}，"
+                  f"FGMRES iterations={max(result.maxwell_correction_iterations)}，"
+                  f"restarts={max(result.maxwell_restarts)}", flush=True)
             results.append({"time": t, "prediction": result})
-    write_json(
-        output_path,
-        {"model": str(model_path), "geometry": geometry, "operating": operating, "results": results},
-    )
+    write_json(output_path, {"model": str(model_path), "geometry": geometry,
+                             "operating": operating, "results": results})
     write_json(settings_dir / "predict.settings.json", {"model": str(model_path), "prediction": p})
     print(f"推理结果已保存：{output_path}", flush=True)
     return 0
@@ -421,14 +348,12 @@ def predict(settings, model_path, output_path, settings_dir):
 def _worker_from_file(path):
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     wrapper = payload["settings"]
-    return execute_training(
-        wrapper["parameters"], Path(wrapper["model_path"]),
-        Path(wrapper["settings_dir"]), Path(payload["session_dir"]),
-    )
+    return execute_training(wrapper["parameters"], Path(wrapper["model_path"]),
+                            Path(wrapper["settings_dir"]), Path(payload["session_dir"]))
 
 
 def launch(settings, argv=None):
-    parser = argparse.ArgumentParser(description="统一几何 residual-corrected 神经电热求解器")
+    parser = argparse.ArgumentParser(description="统一几何 full-space neural-FGMRES 神经电热求解器")
     parser.add_argument("--mode", choices=("train", "predict"), default=settings.get("MODE", "train"))
     parser.add_argument("--model")
     group = parser.add_mutually_exclusive_group()
@@ -469,10 +394,8 @@ def execute_training(settings, model_path, settings_dir, session_dir=None):
     session_dir = Path(session_dir)
     session_dir.mkdir(parents=True, exist_ok=True)
     write_json(session_dir / "settings.json", settings)
-    with TrainingMonitor(
-        session_dir / "metrics.jsonl", session_dir / "control.json",
-        interval=float(settings["MONITOR"].get("log_interval_s", 1.0)),
-    ) as monitor:
+    with TrainingMonitor(session_dir / "metrics.jsonl", session_dir / "control.json",
+                         interval=float(settings["MONITOR"].get("log_interval_s", 1.0))) as monitor:
         return train(settings, Path(model_path), Path(settings_dir), monitor)
 
 

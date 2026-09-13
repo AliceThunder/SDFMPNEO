@@ -1,13 +1,11 @@
-"""Neural initial guess plus true sparse Maxwell residual correction."""
+"""Full-background neural preconditioner plus residual-corrected FGMRES Maxwell solve."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
-import scipy.sparse.linalg as spla
 
-from .unified_basis import safe_diag
-from .unified_dataset import operator_encoding
+from .unified_neural_operator import neural_correction
 
 
 @dataclass(frozen=True)
@@ -15,57 +13,110 @@ class MaxwellSolveReport:
     initial_relative_residual: tuple
     final_relative_residual: tuple
     correction_iterations: tuple
-    direct_corrections: int
+    restarts: tuple
+
+
+def _fgmres(A, b, apply_preconditioner, *, tolerance, max_iterations, restart):
+    """Right-preconditioned flexible GMRES with an explicit true-residual stop.
+
+    The preconditioner may be nonlinear or change between iterations. Accuracy
+    is accepted only from the true sparse residual ``b-Ax``.
+    """
+    b = np.asarray(b, complex).reshape(-1)
+    n = b.size
+    x = np.zeros(n, complex)
+    denominator = max(float(np.linalg.norm(b)), np.finfo(float).tiny)
+    total_iterations = 0
+    restart_count = 0
+    m = max(1, min(int(restart), int(max_iterations), n))
+
+    while total_iterations < max_iterations:
+        r = b - A @ x
+        beta = float(np.linalg.norm(r))
+        if beta / denominator <= tolerance:
+            return x, total_iterations, restart_count
+        V = np.zeros((n, m + 1), complex)
+        Z = np.zeros((n, m), complex)
+        H = np.zeros((m + 1, m), complex)
+        V[:, 0] = r / beta
+        rhs = np.zeros(m + 1, complex)
+        rhs[0] = beta
+        best = None
+
+        for j in range(m):
+            if total_iterations >= max_iterations:
+                break
+            z = np.asarray(apply_preconditioner(V[:, j]), complex).reshape(-1)
+            if z.shape != (n,) or np.any(~np.isfinite(z)):
+                raise FloatingPointError("Maxwell preconditioner produced a non-finite correction")
+            Z[:, j] = z
+            w = np.asarray(A @ z, complex).reshape(-1)
+            for i in range(j + 1):
+                H[i, j] = np.vdot(V[:, i], w)
+                w -= H[i, j] * V[:, i]
+            for i in range(j + 1):
+                correction = np.vdot(V[:, i], w)
+                H[i, j] += correction
+                w -= correction * V[:, i]
+            H[j + 1, j] = np.linalg.norm(w)
+            if H[j + 1, j] > np.finfo(float).tiny:
+                V[:, j + 1] = w / H[j + 1, j]
+
+            y = np.linalg.lstsq(H[: j + 2, : j + 1], rhs[: j + 2], rcond=None)[0]
+            candidate = x + Z[:, : j + 1] @ y
+            total_iterations += 1
+            true_relative = float(np.linalg.norm(b - A @ candidate) / denominator)
+            best = candidate
+            if np.isfinite(true_relative) and true_relative <= tolerance:
+                return candidate, total_iterations, restart_count
+            if H[j + 1, j] <= np.finfo(float).tiny:
+                break
+
+        if best is None or np.any(~np.isfinite(best)):
+            break
+        x = best
+        restart_count += 1
+
+    return x, total_iterations, restart_count
 
 
 class NeuralMaxwellAccelerator:
-    def __init__(self, network, basis, *, residual_tolerance=1e-7, max_iterations=200):
+    """One learned full-edge-space variable preconditioner used by FGMRES."""
+
+    def __init__(self, network, *, residual_tolerance=1e-7, max_iterations=200, restart=40):
         self.network = network
-        self.basis = np.asarray(basis, complex)
         self.residual_tolerance = float(residual_tolerance)
         self.max_iterations = int(max_iterations)
-        if self.basis.ndim != 2 or self.basis.shape[1] < 1 or np.any(~np.isfinite(self.basis)):
-            raise ValueError("basis must be a finite nonempty matrix")
-        if self.residual_tolerance <= 0 or self.max_iterations < 1:
+        self.restart = int(restart)
+        if self.residual_tolerance <= 0 or self.max_iterations < 1 or self.restart < 1:
             raise ValueError("invalid Maxwell correction settings")
 
-    def guess(self, A, B):
-        """Return the neural reduced-space guess; non-finite NN output falls back to zero."""
-        import torch
+    def precondition(self, A, residual):
+        R = np.asarray(residual, complex)
+        vector = R.ndim == 1
+        if vector:
+            R = R[:, None]
+        correction = neural_correction(self.network, A, R)
+        return correction[:, 0] if vector else correction
 
-        features, base, scale, _, _, _ = operator_encoding(A, B, self.basis)
-        if np.any(~np.isfinite(features)) or np.any(~np.isfinite(base)) or np.any(~np.isfinite(scale)):
-            raise FloatingPointError("physical Maxwell operator encoding is non-finite")
-        parameter = next(self.network.parameters())
-        x = torch.as_tensor(features, dtype=parameter.dtype, device=parameter.device).unsqueeze(0)
-        with torch.no_grad():
-            y = self.network(x).detach().cpu().double().numpy()
-        expected = B.shape[1] * 2 * self.basis.shape[1]
-        if y.size != expected:
-            raise ValueError("neural Maxwell output dimension does not match the physical reduced space")
-        y = y.reshape((B.shape[1], 2 * self.basis.shape[1]))
-        if np.any(~np.isfinite(y)):
-            return np.zeros((A.shape[0], B.shape[1]), complex)
-        coefficients_real = base + scale[:, None] * y
-        if np.any(~np.isfinite(coefficients_real)):
-            return np.zeros((A.shape[0], B.shape[1]), complex)
-        rank = self.basis.shape[1]
-        coefficients = (
-            coefficients_real[:, :rank] + 1j * coefficients_real[:, rank:]
-        ).T
-        X = self.basis @ coefficients
+    def guess(self, A, B):
+        B = np.asarray(B, complex)
+        X = self.precondition(A, B)
         if np.any(~np.isfinite(X)):
-            return np.zeros((A.shape[0], B.shape[1]), complex)
+            return np.zeros_like(B)
         return X
 
     def solve(self, A, B):
         B = np.asarray(B, complex)
         if A.ndim != 2 or A.shape[0] != A.shape[1]:
             raise ValueError("Maxwell operator must be square")
-        if self.basis.shape[0] != A.shape[0] or B.ndim != 2 or B.shape[0] != A.shape[0]:
-            raise ValueError("Maxwell operator, basis, and RHS dimensions do not match")
+        if B.ndim != 2 or B.shape[0] != A.shape[0]:
+            raise ValueError("Maxwell operator and RHS dimensions do not match")
         if np.any(~np.isfinite(A.data)) or np.any(~np.isfinite(B)):
             raise FloatingPointError("physical Maxwell system is non-finite")
+        n_edges = getattr(self.network, "n_edges", A.shape[0])
+        if int(n_edges) != A.shape[0]:
+            raise ValueError("neural edge topology does not match the Maxwell background")
 
         X = self.guess(A, B)
         denominator = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
@@ -77,72 +128,38 @@ class NeuralMaxwellAccelerator:
             initial = np.linalg.norm(residual, axis=0) / denominator
 
         iterations = []
-        failed = []
-        diagonal = safe_diag(A)
-        preconditioner = spla.LinearOperator(
-            A.shape,
-            matvec=lambda vector: vector / diagonal,
-            dtype=complex,
-        )
-
+        restarts = []
         for port in range(B.shape[1]):
             if initial[port] <= self.residual_tolerance:
                 iterations.append(0)
+                restarts.append(0)
                 continue
-            counter = [0]
-
-            def callback(_):
-                counter[0] += 1
-
-            try:
-                correction, info = spla.gmres(
-                    A,
-                    residual[:, port],
-                    M=preconditioner,
-                    rtol=self.residual_tolerance * 0.25,
-                    atol=0.0,
-                    restart=min(60, A.shape[0]),
-                    maxiter=self.max_iterations,
-                    callback=callback,
-                    callback_type="pr_norm",
-                )
-            except TypeError:
-                correction, info = spla.gmres(
-                    A,
-                    residual[:, port],
-                    M=preconditioner,
-                    tol=self.residual_tolerance * 0.25,
-                    restart=min(60, A.shape[0]),
-                    maxiter=self.max_iterations,
-                    callback=callback,
-                )
-            iterations.append(counter[0])
-            if np.all(np.isfinite(correction)):
-                X[:, port] += correction
-            relative = float(np.linalg.norm(B[:, port] - A @ X[:, port]) / denominator[port])
-            if info != 0 or not np.isfinite(relative) or relative > self.residual_tolerance:
-                failed.append(port)
-
-        direct_corrections = 0
-        if failed:
-            factorization = spla.splu(A.tocsc())
-            for port in failed:
-                remaining = B[:, port] - A @ X[:, port]
-                X[:, port] += factorization.solve(remaining)
-                direct_corrections += 1
+            correction, count, restart_count = _fgmres(
+                A,
+                residual[:, port],
+                lambda r: self.precondition(A, r),
+                tolerance=self.residual_tolerance,
+                max_iterations=self.max_iterations,
+                restart=self.restart,
+            )
+            if np.any(~np.isfinite(correction)):
+                raise FloatingPointError("FGMRES produced a non-finite Maxwell correction")
+            X[:, port] += correction
+            iterations.append(count)
+            restarts.append(restart_count)
 
         final = np.linalg.norm(B - A @ X, axis=0) / denominator
-        allowed = max(5 * self.residual_tolerance, 1e-12)
-        if np.any(~np.isfinite(final)) or np.any(final > allowed):
+        if np.any(~np.isfinite(final)) or np.any(final > self.residual_tolerance):
             value = float(np.nanmax(final)) if final.size else float("nan")
             raise RuntimeError(
-                f"Maxwell residual correction failed: max relative residual={value:.3e}"
+                f"FGMRES Maxwell solve failed: max relative true residual={value:.3e}, "
+                f"target={self.residual_tolerance:.3e}"
             )
         return X, MaxwellSolveReport(
             tuple(map(float, initial)),
             tuple(map(float, final)),
             tuple(map(int, iterations)),
-            direct_corrections,
+            tuple(map(int, restarts)),
         )
 
 
