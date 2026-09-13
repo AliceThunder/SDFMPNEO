@@ -121,7 +121,6 @@ def build_edge_residual_operator(background, config=None):
                     torch.nn.Linear(cfg.width, cfg.width), act(),
                 ] for _ in range(cfg.blocks_per_level)), [])))
             self.output = torch.nn.Linear(cfg.width, 2)
-            # A fresh or disabled network is exactly the physical Jacobi baseline.
             torch.nn.init.zeros_(self.output.weight)
             torch.nn.init.zeros_(self.output.bias)
 
@@ -187,13 +186,15 @@ def sparse_row_statistics(A):
     return row_abs_sum, row_nnz
 
 
-def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nnz=None):
-    """Local operator/residual features for a full edge-space correction.
+def operator_feature_statistics(A):
+    """Compute immutable O(n_edges) feature statistics once for one assembled A."""
+    diagonal = safe_diagonal(A)
+    row_abs_sum, row_nnz = sparse_row_statistics(A)
+    return diagonal, row_abs_sum, row_nnz
 
-    ``row_abs_sum`` and ``row_nnz`` expose off-diagonal coupling while keeping
-    the feature size O(n_edges). They are computed from the exact sparse
-    operator at runtime and from the same assembled operator during training.
-    """
+
+def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nnz=None):
+    """Local operator/residual features for a full edge-space correction."""
     R = np.asarray(residual, complex)
     if R.ndim == 1:
         R = R[:, None]
@@ -218,14 +219,8 @@ def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nn
         12.0,
     )
 
-    if row_abs_sum is None:
-        row_abs = dabs.copy()
-    else:
-        row_abs = np.asarray(row_abs_sum, float).reshape(-1)
-    if row_nnz is None:
-        nnz = np.ones(diagonal.size, float)
-    else:
-        nnz = np.asarray(row_nnz, float).reshape(-1)
+    row_abs = dabs.copy() if row_abs_sum is None else np.asarray(row_abs_sum, float).reshape(-1)
+    nnz = np.ones(diagonal.size, float) if row_nnz is None else np.asarray(row_nnz, float).reshape(-1)
     if (
         row_abs.shape != (diagonal.size,)
         or nnz.shape != (diagonal.size,)
@@ -256,17 +251,19 @@ def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nn
     return np.asarray(features, np.float64), jacobi, zscale
 
 
-def residual_features(A, residual):
-    """Runtime wrapper using exact diagonal and exact sparse row coupling statistics."""
-    row_abs_sum, row_nnz = sparse_row_statistics(A)
-    return residual_features_from_diagonal(A.diagonal(), residual, row_abs_sum, row_nnz)
+def residual_features(A, residual, *, operator_stats=None):
+    """Runtime wrapper using exact sparse operator statistics."""
+    if operator_stats is None:
+        operator_stats = operator_feature_statistics(A)
+    diagonal, row_abs_sum, row_nnz = operator_stats
+    return residual_features_from_diagonal(diagonal, residual, row_abs_sum, row_nnz)
 
 
-def neural_correction(network, A, residual):
+def neural_correction(network, A, residual, *, operator_stats=None):
     """Physical Jacobi correction plus the learned multiscale edge correction."""
     import torch
 
-    features, jacobi, scale = residual_features(A, residual)
+    features, jacobi, scale = residual_features(A, residual, operator_stats=operator_stats)
     parameter = next(network.parameters())
     x = torch.as_tensor(features, dtype=parameter.dtype, device=parameter.device)
     with torch.no_grad():
@@ -287,6 +284,7 @@ __all__ = [
     "edge_group_ids",
     "edge_static_features",
     "neural_correction",
+    "operator_feature_statistics",
     "residual_features",
     "residual_features_from_diagonal",
     "safe_diagonal",
