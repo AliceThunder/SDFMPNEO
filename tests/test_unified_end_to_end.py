@@ -59,20 +59,20 @@ def test_unified_fullspace_training_save_load_and_predict(tmp_path):
     dataset = generate_residual_dataset(background, geometries, states, seed=9, residual_steps=1)
     network, report = train_maxwell_accelerator(
         background, dataset,
-        network_settings={"width": 8, "message_passing_steps": 1, "activation": "silu"},
+        network_settings={"width": 8, "message_passing_steps": 1, "solver_steps": 1, "activation": "silu"},
         training_settings={"epochs": 2, "batch_size": 1, "learning_rate": 1e-3,
                            "weight_decay": 0.0, "patience": 2, "validation_interval": 1,
-                           "min_relative_improvement": 1e-3, "unroll_steps": 1,
+                           "min_relative_improvement": 1e-3,
                            "benchmark_samples_per_split": 1, "seed": 3, "dtype": "float64"},
         device="cpu",
-        benchmark_settings={"neural_steps": 1, "residual_tolerance": 1e-8,
-                            "max_iterations": 80, "restart": 20},
+        benchmark_settings={"residual_tolerance": 1e-8, "max_iterations": 80, "restart": 20},
     )
     assert report.epochs_completed >= 1
     assert np.isfinite(report.best_validation_residual_loss)
 
     accelerator = NeuralMaxwellAccelerator(network, residual_tolerance=1e-9,
-                                            max_iterations=80, restart=20, neural_steps=1)
+                                            max_iterations=80, restart=20)
+    assert accelerator.neural_steps == 1
     model = UnifiedNeuralElectroThermalModel(background, accelerator, default_geometry=geometry())
     model_path = tmp_path / "unified_model.npz"
     model.save(model_path)
@@ -81,6 +81,7 @@ def test_unified_fullspace_training_save_load_and_predict(tmp_path):
     loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
 
     assert loaded.thermal_rank == model.thermal_rank
+    assert loaded.accelerator.neural_steps == 1
     assert np.allclose(loaded.background.thermal_basis, model.background.thermal_basis)
     result = loaded.predict(0.0, initial_state=np.zeros(loaded.thermal_rank),
                             geometry=geometry(0.001), operating=[1.0, 0.0], max_step=1.0)
