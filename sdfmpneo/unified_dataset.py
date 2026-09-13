@@ -8,37 +8,55 @@ import numpy as np
 
 
 def operator_encoding(A, B, V):
-    """Encode one physical operator and its full-space residual quadratic form."""
-    AV = A @ V
-    Ar = V.conj().T @ AV
-    br = V.conj().T @ B
-    r = V.shape[1]
-    tiny = np.finfo(float).tiny
-    ascale = max(float(np.linalg.norm(Ar)) / np.sqrt(max(r, 1)), tiny)
-    bscale = np.maximum(np.linalg.norm(br, axis=0), tiny)
-    Ah = Ar / ascale
-    Bh = br / bscale[None, :]
-    features = np.concatenate([
-        Ah.real.ravel(), Ah.imag.ravel(), Bh.real.ravel(), Bh.imag.ravel(),
-        [np.log(ascale)], np.log(bscale),
-    ])
+    """Encode the full-space minimum-residual quadratic form.
 
-    diagonal = np.diag(Ar)
-    diagonal_scale = max(float(np.max(np.abs(diagonal))), tiny)
-    diagonal = np.where(np.abs(diagonal) > 1e-12 * diagonal_scale, diagonal, diagonal_scale + 0j)
-    base = br / diagonal[:, None]
-    coefficient_scale = bscale / ascale
-    baseline = np.concatenate([base.real.T, base.imag.T], axis=1)
+    The neural input, Jacobi baseline, and training loss are all derived from
+    the same least-squares physics
 
+        min_C ||B - A V C||_2^2,
+
+    whose reduced normal data are ``Q=(AV)^H(AV)`` and ``S=(AV)^H B``.
+    No Maxwell solution labels are formed.
+    """
+    AV = np.asarray(A @ V, complex)
+    B = np.asarray(B, complex)
     Q = AV.conj().T @ AV
     S = AV.conj().T @ B
+    r = V.shape[1]
+    tiny = np.finfo(float).tiny
+
+    qscale = max(float(np.linalg.norm(Q)) / np.sqrt(max(r, 1)), tiny)
+    sscale = np.maximum(np.linalg.norm(S, axis=0), tiny)
+    Qh = Q / qscale
+    Sh = S / sscale[None, :]
+    features = np.concatenate(
+        [
+            Qh.real.ravel(),
+            Qh.imag.ravel(),
+            Sh.real.ravel(),
+            Sh.imag.ravel(),
+            [np.log(qscale)],
+            np.log(sscale),
+        ]
+    )
+
+    # Cheap physics-consistent initial coefficient estimate. The network learns
+    # only the correction from this Jacobi least-squares guess.
+    diagonal = np.real(np.diag(Q)).copy()
+    diagonal_scale = max(float(np.max(np.abs(diagonal))), tiny)
+    diagonal = np.where(diagonal > 1e-12 * diagonal_scale, diagonal, diagonal_scale)
+    base = S / diagonal[:, None]
+    coefficient_scale = sscale / qscale
+    baseline = np.concatenate([base.real.T, base.imag.T], axis=1)
+
     Qr, Qi = Q.real, Q.imag
     qblock = np.block([[Qr, -Qi], [Qi, Qr]])
     sreal = np.concatenate([S.real.T, S.imag.T], axis=1)
     norm2 = np.sum(np.abs(B) ** 2, axis=0).real
-    return tuple(np.asarray(x, np.float64) for x in (
-        features, baseline, coefficient_scale, qblock, sreal, norm2,
-    ))
+    return tuple(
+        np.asarray(x, np.float64)
+        for x in (features, baseline, coefficient_scale, qblock, sreal, norm2)
+    )
 
 
 @dataclass
@@ -75,9 +93,15 @@ class MaxwellOperatorDataset:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             return cls(
-                data["features"], data["baseline"], data["coefficient_scale"],
-                data["residual_gram"], data["residual_linear"], data["rhs_norm2"],
-                data["split"], int(data["reduced_rank"]), int(data["n_rhs"]),
+                data["features"],
+                data["baseline"],
+                data["coefficient_scale"],
+                data["residual_gram"],
+                data["residual_linear"],
+                data["rhs_norm2"],
+                data["split"],
+                int(data["reduced_rank"]),
+                int(data["n_rhs"]),
             )
 
     def indices(self, name):
@@ -114,7 +138,7 @@ def generate_operator_dataset(background, V, geometry_samples, state_samples, *,
     split[order[:n_validation]] = 1
     split[order[n_validation:n_validation + n_test]] = 2
     return MaxwellOperatorDataset(
-        features, base, scale, Q, S, N, split, V.shape[1], base.shape[1],
+        features, base, scale, Q, S, N, split, V.shape[1], base.shape[1]
     )
 
 
