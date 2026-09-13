@@ -1,88 +1,108 @@
-\section{Maxwell 消元与电流二次型结构}
+\section{端口阻抗、Joule 二次型与离散功率守恒}
 
-\subsection{仿射激励参数化}
-对实 operating 参数 $u\in\R^m$，定义
+\subsection{端口基响应}
+令端口复电流向量为 $c\in\C^{n_p}$，source-shape 矩阵为 $S(g)$。在 $e^{+i\omega t}$ 约定下
 \begin{equation}
-\zeta=
-\begin{bmatrix}
-1\\u
-\end{bmatrix}\in\R^{p},
-\qquad p=m+1,
-\end{equation}
-其中常数分量用于吸收 current offset。将全部端口激励写成
-\begin{equation}
-b(g,u)=\mathcal B(g)\zeta.
-\end{equation}
-固定 $(a,g)$ 后，电磁方程对激励是线性的，因此
-\begin{equation}
-X(a,g)=A_{\mathrm{em}}(a,g)^{-1}\mathcal B(g),
+B(g)=-i\omega S(g),
 \qquad
-x=X(a,g)\zeta.
+A_{\rm em}(g)X(g)=B(g),
 \end{equation}
-一次 multi-RHS solve 即得到整个电流参数空间的响应基。
-
-\subsection{Joule 模态源的精确二次型}
-令第 $j$ 个热模态的 Joule 投影算子为 Hermitian 矩阵 $H_j(a,g)$。则
+于是任意端口电流下的场为
 \begin{equation}
-q_j(a,g,u)
-=
-\operatorname{Re}\!\left[x^H H_j(a,g)x\right].
+E=X(g)c.
 \end{equation}
-代入 $x=X\zeta$ 得
+一次 multi-RHS truth solve 因而覆盖同一几何下的完整端口电流空间。
+
+\subsection{被动端口阻抗的符号}
+端口电压方向固定为被动符号约定，使正实部表示端口向电磁/热系统输入的平均功率。对当前 source orientation，场反应电压定义为
+\begin{equation}
+v_{\rm field}=-S^T E,
+\end{equation}
+因此
 \begin{equation}
 \boxed{
-q_j(a,g,u)=\zeta^\top G_j(a,g)\zeta
+Z_{\rm field}(g)=-S(g)^T X(g).
 }
-\label{eq:quadratic-current}
 \end{equation}
-其中
+若线圈采用独立的集中 AC resistance model，则总端口阻抗为
 \begin{equation}
 \boxed{
-G_j(a,g)
-=
-\operatorname{Re}\!\left[X(a,g)^H H_j(a,g)X(a,g)\right]
+Z(a,g)=Z_{\rm field}(g)+R_{\rm wire}(a,g),
 }
-\label{eq:G-def}
 \end{equation}
-可取为实对称矩阵。式 \eqref{eq:quadratic-current} 是由电磁线性性和 Joule 二次性推出的结构恒等式，不是学习假设。
+其中 $R_{\rm wire}$ 为实对角、非负矩阵。该符号定义不是任意后处理约定，而必须与离散功率恒等式同时验证。
 
-如果未来将独立复数相位作为输入参数，则应使用一般 Hermitian 形式
+在 reciprocal material 与一致端口定义下，应有
 \begin{equation}
-q_j=c^H G_j c,
+Z_{\rm field}^T=Z_{\rm field}
 \end{equation}
-而不能错误地继续使用普通转置。
+到离散/求解误差精度；这是 truth snapshot 的必要 audit 指标之一。
 
-\subsection{不能对每个热模态矩阵强制正定}
-物理 Joule 密度和总耗散非负，但热模态 $\phi_j(x)$ 可以变号。因此
+\subsection{与 Maxwell Hodge 一致的体 Joule 功率}
+令导电 Hodge 为 $H_\sigma\succeq0$。任意场 $E$ 的体平均导电损耗为
 \begin{equation}
-q_j=\int_\Omega \phi_j(x)Q(x)\,\mathrm dx
+\boxed{
+P_{\rm vol}(E)=\frac12 E^H H_\sigma E.
+}
 \end{equation}
-可以为负，故单个 $G_j$ 一般不要求
-\begin{equation}
-G_j\succeq0.
-\end{equation}
-把所有 $G_j$ 参数化为 Cholesky/PSD 会改变真实物理，禁止作为默认设计。
+thermal heat distribution 必须由同一个 $H_\sigma$ 分配到 cell/thermal modes，使空间 heat 的总和严格恢复上述二次型。禁止先把 edge field 任意平均到 cell center 后再平方，因为该操作一般不保持原 Maxwell 离散能量。
 
-\subsection{可硬编码的对称性与缩放性质}
-在无 offset 的纯线性电流激励下，二次型结构自动给出
+\subsection{复 Hermitian Joule 模态张量}
+对第 $j$ 个 thermal mode，令 $W_j(g)$ 为由同一导电 Hodge 与 thermal test function 构造的实对角加权算子。定义
 \begin{equation}
-q(a,g,-u)=q(a,g,u),
+\boxed{
+H_j(g)=X(g)^H W_j(g)X(g).
+}
 \end{equation}
-以及
+由于 $W_j$ 为实对角矩阵，$H_j$ 必须满足
 \begin{equation}
-q(a,g,\alpha u)=\alpha^2q(a,g,u).
+H_j=H_j^H,
 \end{equation}
-存在 offset 时，线性和常数交叉项由 $\zeta=[1;u]$ 的完整二次型精确表示，无需神经网络自行发现。
+但当 thermal mode 变号时，$H_j$ 不必半正定。
 
-\subsection{训练标签的高效生成}
-对一个状态--几何样本 $(a,g)$：
-\begin{enumerate}
-  \item 组装/获取 $A_{\mathrm{em}}(a,g)$；
-  \item 对 $\mathcal B(g)$ 做一次 multi-RHS solve 得到 $X$；
-  \item 对所有保留热模态计算 $G_j=\operatorname{Re}(X^H H_jX)$；
-  \item 保存对称独立元素，而不是保存大量随机电流样本的 $q$。
-\end{enumerate}
-因此单个昂贵物理样本覆盖整个当前 operating-current 空间。
+任意复端口电流下的体 Joule modal source 为
+\begin{equation}
+\boxed{
+q_{{\rm vol},j}(g,c)=\operatorname{Re}\!\left(c^H H_j(g)c\right).
+}
+\end{equation}
+不能在构造 $H_j$ 时提前取实部。Hermitian 矩阵虚部的反对称部分会参与有相对相位的多端口功率；提前执行 $\operatorname{Re}(H_j)$ 会丢失真实相位耦合。
 
-\subsection{V1 与更强物理 V2 的边界}
-V1 直接学习 modal quadratic tensors $G_j$。更强的 V2 可学习非负空间热源基系数，再投影到热模态，从而显式保证空间 Joule 密度非负；但该方案增加输出维数和实现复杂度，不作为首版主路线。只有当 V1 在能量一致性或外推上出现明确问题时再升级。
+\subsection{线圈集中电阻热}
+线圈不作为 Maxwell volume conductor 时，其损耗由独立的集中 resistance model 表示。若第 $p$ 个端口电阻为 $R_p(a,g)$，对应 cell heat distribution 为 $\ell_p(g)$，则
+\begin{equation}
+Q_{\rm wire}
+=\sum_p\frac12 R_p(a,g)|c_p|^2\ell_p(g).
+\end{equation}
+投影到 thermal basis 后得到 $q_{\rm wire}(a,g,c)$。线圈电阻模型可以包含温度、skin-effect 等经过明确定义的 constitutive approximation，但必须与 full-conductor Maxwell model 区分，不能称为后者意义下的 ``exact conductor loss''。
+
+\subsection{离散功率恒等式}
+truth solver 必须满足以下数值闭合关系：
+\begin{equation}
+\boxed{
+\frac12\operatorname{Re}\!\left(c^H Z(a,g)c\right)
+=P_{\rm vol}(g,c)+P_{\rm wire}(a,g,c)
+}
+\end{equation}
+到 linear-solve tolerance、quadrature/deposition tolerance 和浮点误差允许的范围。
+
+该恒等式同时验证：
+\begin{itemize}
+  \item Maxwell RHS/端口方向；
+  \item 阻抗符号；
+  \item Joule Hodge；
+  \item complex phase coupling；
+  \item 集中线圈电阻项。
+\end{itemize}
+如果该恒等式失败，则对应 snapshot 禁止进入神经训练数据集。
+
+\subsection{神经代理必须保留的代数结构}
+生产神经网络可以预测 $Z_{\rm field}$ 和 $H_j$ 的低维系数，但解码后必须显式施加：
+\begin{equation}
+\widehat Z_{\rm field}^T=\widehat Z_{\rm field}
+\end{equation}
+（在 reciprocal 假设成立时），以及
+\begin{equation}
+\widehat H_j=\widehat H_j^H.
+\end{equation}
+电流依赖始终通过 $c^H\widehat H_jc$ 和 $c^H\widehat Zc$ 解析进入，网络不得自行学习 current scaling 或 current phase law。
