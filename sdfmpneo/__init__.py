@@ -8,6 +8,7 @@ architecture.
 from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
+from .unified_open_boundary import OpenBoundaryBackground
 from .unified_tensor_surrogate import (
     DecodedTensors,
     TensorDataset,
@@ -15,6 +16,7 @@ from .unified_tensor_surrogate import (
     decode_physical_tensors,
     encode_geometry,
     pack_tensors,
+    solve_port_truth_tensors,
     solve_truth_tensors,
 )
 from .unified_tensor_training import TensorTrainingReport, train_matrix_tensor_surrogate
@@ -28,6 +30,7 @@ __all__ = [
     "CoilGeometry",
     "DecodedTensors",
     "FixedMultiscaleBackground",
+    "OpenBoundaryBackground",
     "PackageGeometry",
     "Pose",
     "TensorDataset",
@@ -43,6 +46,7 @@ __all__ = [
     "encode_geometry",
     "pack_tensors",
     "sample_geometry",
+    "solve_port_truth_tensors",
     "solve_truth_tensors",
     "stretched_axis",
     "train_matrix_tensor_surrogate",
