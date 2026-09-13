@@ -3,7 +3,7 @@ import pytest
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
-from sdfmpneo.unified_runtime import _generate_tensor_dataset
+from sdfmpneo.unified_tensor_surrogate import generate_tensor_dataset
 from sdfmpneo.unified_tensor_training import train_matrix_tensor_surrogate
 from sdfmpneo.unified_thermal import build_thermal_basis
 
@@ -62,7 +62,11 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert thermal_report.converged
     assert background.thermal_rank > 0
 
-    dataset = _generate_tensor_dataset(background, geometries[2:], seed=9)
+    dataset = generate_tensor_dataset(background, geometries[2:], seed=9)
+    assert len(dataset.indices("train")) >= 3
+    assert len(dataset.indices("validation")) == 1
+    assert len(dataset.indices("test")) == 1
+    assert len(dataset.indices("audit")) == 1
     phi = background.thermal_basis
     surrogate, report = train_matrix_tensor_surrogate(
         dataset,
@@ -81,12 +85,14 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
             "z_weight": 1.0,
             "d_weight": 1.0,
             "h_weight": 1.0,
+            "pod_relative_tail_tolerance": 0.5,
             "seed": 3,
             "dtype": "float64",
         },
         device="cpu",
     )
     assert report.epochs_completed >= 1
+    assert report.pod_rank >= 1
     assert np.isfinite(report.best_validation_loss)
 
     model = UnifiedNeuralElectroThermalModel(
@@ -94,10 +100,21 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
         surrogate,
         default_geometry=geometry(),
     )
+    query_geometry = geometry(0.001)
+    context = model.geometry_context(query_geometry)
+    full_initial = np.linspace(0.0, 1.0, background.n_cells)
+    projected = model.project_initial_temperature(full_initial, query_geometry)
+    projection_residual = background.thermal_basis.T @ (
+        context.thermal_mass_full @ (full_initial - background.thermal_basis @ projected)
+    )
+    assert np.linalg.norm(projection_residual) <= 1e-10 * max(
+        1.0, np.linalg.norm(context.thermal_mass_full @ full_initial)
+    )
+
     result = model.predict(
         0.0,
         initial_state=np.zeros(model.thermal_rank),
-        geometry=geometry(0.001),
+        geometry=query_geometry,
         operating=[1.0, 0.0],
         max_step=1.0,
     )
@@ -113,16 +130,18 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     model_path = tmp_path / "unified_model.npz"
     model.save(model_path)
     with np.load(model_path, allow_pickle=False) as data:
+        assert "pod_basis" in data.files
         assert "em_basis" not in data.files
         assert not any(name.startswith("maxwell") for name in data.files)
     loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
     loaded_result = loaded.predict(
         0.0,
         initial_state=np.zeros(loaded.thermal_rank),
-        geometry=geometry(0.001),
+        geometry=query_geometry,
         operating=[1.0, 0.0],
         max_step=1.0,
     )
     assert loaded.thermal_rank == model.thermal_rank
+    assert loaded.surrogate.pod_rank == model.surrogate.pod_rank
     assert np.allclose(loaded_result.impedance, result.impedance)
     assert np.allclose(loaded_result.heat_source, result.heat_source)
