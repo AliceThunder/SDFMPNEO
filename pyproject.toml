@@ -5,17 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sdfmpneo"
 version = "0.10.0"
-description = "Solution-data-free electromagnetic-thermal surrogate training and arbitrary-time inference for research"
+description = "Unified solution-label-free residual-corrected neural electromagnetic-thermal solver"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
 
 [project.scripts]
 sdfmpneo = "sdfmpneo.__main__:main"
-sdfmpneo-neural = "sdfmpneo.electrothermal_tensor.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
-cad = ["gmsh>=4.11"]
 gui = ["PyQt6>=6.5", "pyqtgraph>=0.13.3"]
 neural = ["torch>=2.2"]
 
