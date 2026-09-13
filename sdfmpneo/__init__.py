@@ -1,8 +1,8 @@
 """SDF-MPNEO geometry-to-tensor electrothermal ROM.
 
-The production API is the static geometry -> EM tensors -> thermal ROM path.
-Legacy full-space neural-Maxwell symbols remain importable for old research
-scripts, but are intentionally not part of the production ``__all__`` surface.
+The package production API is the single static
+``geometry -> EM tensors -> explicit current/circuit physics -> thermal ROM``
+architecture.
 """
 
 from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
@@ -19,21 +19,6 @@ from .unified_tensor_surrogate import (
 )
 from .unified_tensor_training import TensorTrainingReport, train_matrix_tensor_surrogate
 from .unified_thermal import ThermalBasisReport, build_thermal_basis
-
-# Backward-compatible research imports.  run.py and the production API do not
-# use these paths anymore.
-from .unified_dataset import MaxwellResidualDataset, generate_residual_dataset
-from .unified_maxwell import MaxwellSolveReport, NeuralMaxwellAccelerator
-from .unified_neural_operator import (
-    EdgeMultiscaleConfig,
-    OperatorGraph,
-    build_edge_residual_operator,
-    edge_multiscale_group_ids,
-    edge_static_features,
-    operator_feature_statistics,
-    residual_features,
-)
-from .unified_trainer import MaxwellTrainingConfig, MaxwellTrainingReport, train_maxwell_accelerator
 
 __version__ = "0.13.0"
 
