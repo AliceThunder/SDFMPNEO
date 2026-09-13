@@ -1,8 +1,9 @@
 """SDF-MPNEO unified residual-corrected neural electrothermal solver.
 
 The public package has one model semantics: analytic/implicit geometry on a
-fixed multiscale background, a neural Maxwell initial guess, true Maxwell
-residual correction, physical Joule heating, and hard thermal dynamics.
+fixed multiscale background, automatically ranked Maxwell/thermal physical
+spaces, a neural Maxwell initial guess, true Maxwell residual correction,
+physical Joule heating, and hard thermal dynamics.
 """
 
 from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
@@ -16,13 +17,14 @@ from .unified_model import (
     UnifiedPrediction,
     UnifiedSteadyState,
 )
+from .unified_thermal import ThermalBasisReport, build_thermal_basis
 from .unified_trainer import (
     MaxwellTrainingConfig,
     MaxwellTrainingReport,
     train_maxwell_accelerator,
 )
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     "ARCHITECTURE",
@@ -37,11 +39,13 @@ __all__ = [
     "NeuralMaxwellAccelerator",
     "PackageGeometry",
     "Pose",
+    "ThermalBasisReport",
     "UnifiedNeuralElectroThermalModel",
     "UnifiedPrediction",
     "UnifiedSteadyState",
     "UnifiedUWPTGeometry",
     "build_residual_basis",
+    "build_thermal_basis",
     "generate_operator_dataset",
     "operator_encoding",
     "sample_geometry",
