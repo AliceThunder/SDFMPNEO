@@ -1,14 +1,21 @@
-"""统一几何、full-space multiscale-neural-FGMRES、电磁-热求解器。
+"""统一 geometry→EM tensor→thermal ROM 生产入口。
 
 只修改本文件顶部配置：
 
     python run.py --mode train
     python run.py --mode predict
 
-Maxwell 不构造全局解基/Maxwell rank。神经网络直接在真实 sparse Maxwell 耦合图上做
-fine/coarse multiscale message passing，并输出 full edge-space correction；训练与推理共享
-同一组 solver steps，FGMRES 只负责最终真实 sparse residual 闭环。thermal rank 仍由真实
-Joule 热源与热方程 residual 自动决定。
+理论主链：
+
+    geometry
+      -> MLP: Z_field, D_vol, H_j
+      -> explicit current/circuit + wire resistance
+      -> shared transient-aware thermal ROM
+      -> temperature
+
+Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
+或 full-field correction。当前固定背景的外边界仍是有限 PEC 截断，因此训练报告会明确标记
+Physics Gate 0 为 provisional，不能把它当作已完成的 open-boundary/Poynting 认证。
 """
 from __future__ import annotations
 
@@ -23,7 +30,7 @@ FILES = {
     "model": "results/uwpt/model.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
-    "training_checkpoint": "results/uwpt/model.training.pt",
+    "training_checkpoint": "results/uwpt/model.tensor_training.pt",
 }
 
 BACKGROUND = {
@@ -78,9 +85,6 @@ GEOMETRY_SAMPLING = {
 PHYSICS = {
     "frequency_hz": 100000.0,
     "ambient_temperature": 293.15,
-    "maxwell_residual_tolerance": 1e-7,
-    "maxwell_max_iterations": 200,
-    "maxwell_restart": 40,
 }
 
 MATERIALS = {
@@ -110,37 +114,30 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "basis_samples": 24,
-    "thermal_basis_anchor_residual": 5e-2,
-    "em_temperature_rise_bounds": [0.0, 80.0],
-    "n_operator_samples": 96,
-    "residual_training_steps": 3,
+    "basis_samples": 20,
+    "basis_validation_samples": 6,
+    "thermal_basis_energy_tolerance": 5e-2,
+    "thermal_time_scales": [1e-3, 1.0, 1000.0],
+    "thermal_basis_max_rank": None,
+    "n_tensor_samples": 96,
     "device": "cuda",
     "network": {
-        "width": 32,
-        "fine_message_steps": 2,
-        "coarse_levels": 3,
-        "coarse_message_steps": 2,
-        "fusion_message_steps": 1,
-        "solver_steps": 3,
+        "width": 128,
+        "blocks": 3,
         "activation": "silu",
     },
     "optimizer": {
-        "epochs": 160,
-        "batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "learning_rate": 2e-3,
+        "epochs": 240,
+        "batch_size": 16,
+        "learning_rate": 1e-3,
         "weight_decay": 1e-6,
-        "lr_decay_factor": 0.5,
-        "lr_plateau_patience": 8,
-        "minimum_learning_rate": 2.5e-4,
-        "patience": 32,
+        "patience": 40,
         "validation_interval": 2,
-        "min_relative_improvement": 5e-4,
-        "krylov_vectors_per_port": 2,
-        "port_loss_weight": 0.6,
-        "final_step_loss_weight": 0.7,
-        "benchmark_samples_per_split": 4,
+        "gradient_clip_norm": 10.0,
+        "physics_penalty_weight": 0.05,
+        "z_weight": 1.0,
+        "d_weight": 1.0,
+        "h_weight": 1.0,
         "seed": 17,
         "dtype": "float32",
     },
@@ -148,7 +145,11 @@ TRAINING = {
 
 PREDICTION = {
     "initial_temperature_rise": 0.0,
+    # Current-driven: this is the complex port-current coordinate vector.  Current
+    # magnitude/phase changes do not require retraining.
     "operating": [5.0, 0.0],
+    # Voltage-driven is also supported instead, e.g.
+    # "drive": {"voltage": [10.0, 0.0], "series_impedance": [0.1, 0.1]},
     "geometry": None,
     "times": [0.0, 0.001, 1.0, 1000.0, "inf"],
     "method": "etd2_adaptive",
