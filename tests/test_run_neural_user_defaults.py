@@ -20,6 +20,16 @@ def test_run_defaults_use_one_fullspace_maxwell_path():
     assert run.PHYSICS["maxwell_residual_tolerance"] > 0
     assert run.PHYSICS["maxwell_restart"] >= 1
     assert run.TRAINING["network"]["levels"] >= 1
+    assert run.TRAINING["network"]["polynomial_order"] == 3
+    assert run.TRAINING["network"]["coefficient_limit"] > 0
+
+
+def test_training_defaults_stop_after_real_plateau_and_benchmark_solver():
+    run = _load_run()
+    optimizer = run.TRAINING["optimizer"]
+    assert optimizer["patience"] <= 30
+    assert optimizer["min_relative_improvement"] >= 5e-4
+    assert optimizer["benchmark_samples_per_split"] >= 1
 
 
 def test_temperature_input_is_physical_temperature_rise_not_modal_box():
