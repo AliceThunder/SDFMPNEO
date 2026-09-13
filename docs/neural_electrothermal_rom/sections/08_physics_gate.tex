@@ -21,20 +21,18 @@
 
 对每个 audit geometry，直接构造
 \begin{equation}
-D_{\rm vol}=X^HH_\sigma X
+D_{\rm vol}=X^HH_\sigma X,
+\qquad
+D_{\rm out}=\operatorname{Herm}(Z_{\rm field})-D_{\rm vol},
 \end{equation}
-以及
-\begin{equation}
-D_{\rm out}=\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}.
-\end{equation}
-检查
+并检查
 \begin{align}
 Z_{\rm field}^T&\approx Z_{\rm field},\\
 D_{\rm vol}&\succeq-\varepsilon I,\\
 D_{\rm out}&\succeq-\varepsilon I,\\
 \operatorname{Herm}(Z_{\rm field})&\approx D_{\rm vol}+D_{\rm out}.
 \end{align}
-该矩阵检查覆盖整个 complex current space；单端口、同相、反相与 $\pm\pi/2$ current tests 仍保留为易读的 spot checks，但不能替代矩阵级恒等式。
+该矩阵检查覆盖整个 complex current space；有限 current spot checks 不能替代矩阵级恒等式。
 
 生产 surrogate 解码同样必须按构造满足
 \begin{equation}
@@ -48,14 +46,13 @@ D_{\rm out}&\succeq-\varepsilon I,\\
 从 Maxwell 使用的同一 loss Hodge 构造空间 cycle-averaged body heat，并验证
 \begin{equation}
 \sum_k Q_{{\rm vol},k}
-\approx\frac12E^HH_\sigma E.
+\approx\frac12E^HH_\sigma E,
 \end{equation}
-对每个 thermal mode 验证直接空间投影与 Hermitian tensor contraction 一致：
 \begin{equation}
 \phi_j^TQ_{\rm vol}
-\approx\frac12\operatorname{Re}(c^HH_jc).
+\approx\frac12\operatorname{Re}(c^HH_jc),
 \end{equation}
-同时验证
+以及
 \begin{equation}
 P_{\rm vol}
 \approx\frac12c^HD_{\rm vol}c.
@@ -65,7 +62,7 @@ P_{\rm vol}
 \subsection{Gate 0D：端口 source、几何合法性与参数连续性}
 每个生产几何必须满足 conductor/package 的设计包封、无非法穿透/最小间隙、人工边界裕量以及 material-fraction closure。
 
-端口 filament/source 必须具有明确 terminal 定义和 orientation。对于真正闭合的 current loop，可检查离散 divergence-free/闭合回路条件；对于有两个 terminals 的开放 spiral path，则必须显式表示 terminal source/sink、return path 或与外部 circuit 一致的 charge/current continuity，使频域连续性关系
+端口 filament/source 必须具有明确 terminal 定义和 orientation。对于真正闭合的 current loop，可检查离散 divergence-free/闭合回路条件；对于有两个 terminals 的开放 spiral path，则必须显式表示 terminal source/sink、return path 或与外部 circuit 一致的 charge/current continuity，使
 \begin{equation}
 \nabla\cdot J_s=-i\omega\rho_s
 \end{equation}
@@ -80,8 +77,16 @@ Z_{\rm field},\quad D_{\rm vol},\quad H_j,\quad P_{\rm vol},\quad T_{\max},\quad
 \end{equation}
 训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。小 linear residual 不能替代 mesh convergence。
 
-\subsection{Gate 0F：thermal 边界和 transient-aware ROM}
-热模型边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
+\subsection{Gate 0F：thermal well-posedness、边界和 transient-aware ROM}
+当前 finite-time ETD 与 $t=\infty$ steady-state 理论默认在 temperature-rise space 上
+\begin{equation}
+M_T(g)\succ0,
+\qquad
+K_T(g)\succ0
+\end{equation}
+对生产几何成立，并具有足够统一的 conditioning/coercivity。热边界条件必须有明确物理含义，并提供所需的散热以保证唯一稳态。若采用 pure Neumann 等使 $K$ 存在零模的边界，则必须显式处理 nullspace 与能量积累，不能继续无条件使用 $K^{-1}$、唯一 steady state 或“所有 generalized eigenvalues $>0$”的现有理论。
+
+若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
 
 thermal basis 的自动 rank 必须覆盖 geometry、完整 current-induced heat-source span、wire/source patterns 与目标时间尺度。对 representative shifts $s_\ell\ge0$，直接检查在线 Galerkin resolvent residual
 \begin{equation}
@@ -90,6 +95,12 @@ r_{\alpha\ell}
 \left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
 \end{equation}
 shift 集必须包含 steady limit，并覆盖生产查询中的主要 inverse-time scales。冻结 audit geometries 上还必须比较 full thermal 与 ROM 的短时、中间时间和接近稳态 outputs。
+
+生产 API 中若 $a_0$ 被定义为 reduced coordinates，则初值按构造位于 $\operatorname{span}(\Phi)$。若允许用户直接输入任意 full temperature field $T_0(x)$，则必须显式投影并报告
+\begin{equation}
+E_{\rm init}=\|\theta_0-\Phi a_0\|,
+\end{equation}
+且若目标 initial-condition family 不能被当前 basis 表示，应把该 family 加入 basis enrichment。source-response coverage 本身不能保证任意初温的 homogeneous transient。
 
 wire-resistance temperature functional $\bar\theta_p(a,g)$ 也必须在 full-vs-ROM audit 中验证；若 ROM 能拟合整体温度但不能准确恢复 conductor-relevant temperature，则 wire feedback 仍不合格。
 
@@ -112,7 +123,7 @@ Physics Gate 通过后，应冻结并版本化：
   \item source/terminal/return-path 与 material deposition；
   \item constitutive parameters；
   \item $Z/D_{\rm vol}/H_j$ extraction 与功率 conventions；
-  \item thermal full model、wire-temperature functional、source family 与 ROM residual definition；
+  \item thermal full model、coercivity/nullspace policy、wire-temperature functional、source/initial-condition family 与 ROM residual definition；
   \item current-controlled/circuit-controlled operating-mode definition。
 \end{itemize}
 只有在上述版本固定后生成的 truth snapshots 才属于同一个可学习函数族。任何基础物理改变都应触发 truth dataset 版本更新，而不是直接在旧标签上继续训练。
