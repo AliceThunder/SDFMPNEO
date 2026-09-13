@@ -158,9 +158,6 @@ def encode_geometry(geometry):
         features.extend(_pose_features(coil.pose))
     for package in g.packages:
         features.extend(np.asarray(package.half_extent, float).tolist())
-        # Keep package pose explicit.  It is redundant for today's default
-        # family but prevents an independent package pose becoming a hidden
-        # truth variable later.
         features.extend(_pose_features(package.pose))
     out = np.asarray(features, float)
     if np.any(~np.isfinite(out)):
@@ -222,8 +219,6 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
     raw = np.asarray(packed, float).reshape(-1)
     z_raw, d_raw, h_raw = unpack_tensors(raw, n_ports, len(phi_min))
 
-    # Fixed safety layer: only dissipative blocks are corrected.  The reciprocal
-    # reactive block is retained exactly from the network decode.
     d = _psd_clip(d_raw)
     x = np.asarray(z_raw.imag, float)
     d_out = _psd_clip(np.asarray(z_raw.real, float) - d)
@@ -277,15 +272,7 @@ def _require_static_field_materials(background):
             )
 
 
-def solve_truth_tensors(background, geometry):
-    """Generate one offline tensor label from the full sparse Maxwell truth solve.
-
-    Raw solver residual, reciprocity and PEC-domain power balance are measured
-    before reciprocal projection.  Only labels that pass those audits should be
-    admitted by the runtime Physics Gate.
-    """
-    _require_static_field_materials(background)
-    context = background.geometry_context(geometry, assemble_thermal=True)
+def _solve_port_fields(background, context):
     A = background.em_operator(context, None)
     B = background.rhs_matrix(context)
     try:
@@ -295,11 +282,18 @@ def solve_truth_tensors(background, geometry):
         X = np.column_stack([spla.spsolve(A, B[:, p]) for p in range(B.shape[1])])
     if np.any(~np.isfinite(X)):
         raise FloatingPointError("Maxwell truth solve produced non-finite fields")
-
     bnorm = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
     residual = B - A @ X
     max_linear_residual = float(np.max(np.linalg.norm(residual, axis=0) / bnorm))
+    return X, max_linear_residual
 
+
+def _port_truth_from_context(background, context):
+    if not hasattr(background, "outward_loss_weights"):
+        raise ValueError(
+            "production Maxwell truth requires an open boundary with an independent outward-power form"
+        )
+    X, max_linear_residual = _solve_port_fields(background, context)
     source = np.asarray(context.source_shape, float)
     reaction = -source.T @ X
     reaction_scale = max(float(np.linalg.norm(reaction)), np.finfo(float).tiny)
@@ -307,18 +301,46 @@ def solve_truth_tensors(background, geometry):
 
     sigma, edge_loss = _edge_loss_weights(background, context)
     d = _hermitian(X.conj().T @ (edge_loss[:, None] * X))
-    # The current background deletes tangential boundary DOFs, i.e. a finite PEC
-    # truncation.  Hence outward Poynting flux is zero in this *discrete model*.
-    # This check validates internal reaction/Joule consistency only; it is not
-    # an open-domain certificate.
-    raw_herm_z = _hermitian(reaction)
-    closed_balance = float(
-        np.linalg.norm(raw_herm_z - d)
-        / max(np.linalg.norm(d), np.linalg.norm(raw_herm_z), np.finfo(float).tiny)
-    )
+    outward_weights = np.asarray(background.outward_loss_weights(), float).reshape(-1)
+    if outward_weights.shape != (background.n_edges,) or np.any(outward_weights < -1e-14):
+        raise ValueError("invalid open-boundary outward-power weights")
+    d_out = _hermitian(X.conj().T @ (outward_weights[:, None] * X))
 
-    # Only after the raw audits do we create reciprocal training labels.
+    raw_herm_z = _hermitian(reaction)
+    balance_scale = max(
+        np.linalg.norm(raw_herm_z), np.linalg.norm(d + d_out), np.finfo(float).tiny
+    )
+    power_balance = float(np.linalg.norm(raw_herm_z - d - d_out) / balance_scale)
+
+    # Reciprocity is audited before this projection.
     z = 0.5 * (reaction + reaction.T)
+    implied = _hermitian(z) - d
+    audit = {
+        "max_linear_relative_residual": max_linear_residual,
+        "reciprocity_relative_error": reciprocity,
+        "minimum_d_vol_eigenvalue": float(np.min(np.linalg.eigvalsh(d)).real),
+        "minimum_physical_outward_eigenvalue": float(np.min(np.linalg.eigvalsh(d_out)).real),
+        "minimum_implied_outward_eigenvalue": float(np.min(np.linalg.eigvalsh(implied)).real),
+        "open_boundary_power_balance_relative_error": power_balance,
+        "independent_outward_power_available": True,
+        "boundary_model": str(getattr(background, "boundary_model", "open_impedance")),
+    }
+    return z, d, d_out, X, sigma, audit
+
+
+def solve_port_truth_tensors(background, geometry):
+    """Solve only port/global-loss truth; used by the open-domain convergence Gate."""
+    _require_static_field_materials(background)
+    context = background.geometry_context(geometry, assemble_thermal=False)
+    z, d, d_out, _, _, audit = _port_truth_from_context(background, context)
+    return z, d, d_out, audit
+
+
+def solve_truth_tensors(background, geometry):
+    """Generate one offline tensor label with an independent Poynting audit."""
+    _require_static_field_materials(background)
+    context = background.geometry_context(geometry, assemble_thermal=True)
+    z, d, _, X, sigma, audit = _port_truth_from_context(background, context)
 
     phi = np.asarray(background.thermal_basis, float)
     modal = []
@@ -329,9 +351,6 @@ def solve_truth_tensors(background, geometry):
         modal.append(_hermitian(X.conj().T @ (weighted_edge[:, None] * X)))
     modal = np.asarray(modal, complex)
 
-    min_d = float(np.min(np.linalg.eigvalsh(d)).real)
-    implied = _hermitian(z) - d
-    min_out = float(np.min(np.linalg.eigvalsh(implied)).real)
     phi_min = np.min(phi, axis=0)
     phi_max = np.max(phi, axis=0)
     loewner_violation = 0.0
@@ -343,16 +362,7 @@ def solve_truth_tensors(background, geometry):
             loewner_violation,
             float(max(-low, -high, 0.0) / scale),
         )
-    audit = {
-        "max_linear_relative_residual": max_linear_residual,
-        "reciprocity_relative_error": reciprocity,
-        "minimum_d_vol_eigenvalue": min_d,
-        "minimum_implied_outward_eigenvalue": min_out,
-        "closed_boundary_power_balance_relative_error": closed_balance,
-        "maximum_relative_loewner_violation": loewner_violation,
-        "independent_outward_power_available": False,
-        "boundary_model": "finite_pec_truncation_provisional",
-    }
+    audit["maximum_relative_loewner_violation"] = loewner_violation
     return z, d, modal, audit
 
 
@@ -444,14 +454,19 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
         "maximum_linear_relative_residual": max(a["max_linear_relative_residual"] for a in audits),
         "maximum_reciprocity_relative_error": max(a["reciprocity_relative_error"] for a in audits),
         "minimum_d_vol_eigenvalue": min(a["minimum_d_vol_eigenvalue"] for a in audits),
-        "minimum_implied_outward_eigenvalue": min(a["minimum_implied_outward_eigenvalue"] for a in audits),
-        "maximum_closed_boundary_power_balance_relative_error": max(
-            a["closed_boundary_power_balance_relative_error"] for a in audits
+        "minimum_physical_outward_eigenvalue": min(
+            a["minimum_physical_outward_eigenvalue"] for a in audits
+        ),
+        "minimum_implied_outward_eigenvalue": min(
+            a["minimum_implied_outward_eigenvalue"] for a in audits
+        ),
+        "maximum_open_boundary_power_balance_relative_error": max(
+            a["open_boundary_power_balance_relative_error"] for a in audits
         ),
         "maximum_relative_loewner_violation": max(
             a["maximum_relative_loewner_violation"] for a in audits
         ),
-        "independent_outward_power_available": 0.0,
+        "independent_outward_power_available": 1.0,
     }
     return TensorDataset(
         np.asarray(inputs, float),
@@ -565,6 +580,7 @@ __all__ = [
     "DecodedTensors", "TensorDataset", "UnifiedTensorSurrogate",
     "decode_physical_tensors", "encode_geometry", "generate_tensor_dataset",
     "pack_complex_symmetric", "pack_hermitian", "pack_tensors",
-    "solve_truth_tensors", "tensor_block_sizes", "tensor_output_dimension",
-    "unpack_complex_symmetric", "unpack_hermitian", "unpack_tensors",
+    "solve_port_truth_tensors", "solve_truth_tensors", "tensor_block_sizes",
+    "tensor_output_dimension", "unpack_complex_symmetric", "unpack_hermitian",
+    "unpack_tensors",
 ]
