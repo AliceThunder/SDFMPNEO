@@ -97,6 +97,22 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
     assert np.count_nonzero(weights) > 0
 
 
+def test_boundary_mass_integrates_constant_tangential_field_exactly():
+    bg = background()
+    field = np.zeros(bg.n_edges, complex)
+    ex = 2.0
+    # Constant x-directed field.  It is tangential only to the y/z-normal faces.
+    for e, (axis, _i, _j, _k) in enumerate(bg.edge_tuples):
+        if axis == 0:
+            field[e] = ex * bg.edge_lengths[e]
+    discrete = float(np.sum(bg.boundary_edge_hodge * np.abs(field) ** 2))
+    lx = bg.x[-1] - bg.x[0]
+    ly = bg.y[-1] - bg.y[0]
+    lz = bg.z[-1] - bg.z[0]
+    exact = ex**2 * (2.0 * lx * ly + 2.0 * lx * lz)
+    assert np.isclose(discrete, exact, rtol=1e-13, atol=1e-13)
+
+
 def test_open_boundary_truth_has_independent_poynting_power_balance():
     bg = background()
     z, d, d_out, audit = solve_port_truth_tensors(bg, geometry())
