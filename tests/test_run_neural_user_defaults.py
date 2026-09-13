@@ -20,14 +20,15 @@ def test_run_defaults_use_one_fullspace_maxwell_path():
     assert run.PHYSICS["maxwell_residual_tolerance"] > 0
     assert run.PHYSICS["maxwell_restart"] >= 1
     assert run.TRAINING["network"]["message_passing_steps"] >= 1
+    assert run.TRAINING["network"]["solver_steps"] >= 2
     assert "polynomial_order" not in run.TRAINING["network"]
     assert "coefficient_limit" not in run.TRAINING["network"]
 
 
-def test_training_defaults_use_shared_neural_unroll_and_real_plateau_stop():
+def test_training_defaults_use_one_shared_solver_step_setting_and_real_plateau_stop():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
-    assert optimizer["unroll_steps"] >= 2
+    assert "unroll_steps" not in optimizer
     assert optimizer["patience"] <= 30
     assert optimizer["min_relative_improvement"] >= 1e-3
     assert optimizer["benchmark_samples_per_split"] >= 1
