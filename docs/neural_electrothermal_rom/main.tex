@@ -29,7 +29,7 @@
 \maketitle
 
 \begin{abstract}
-本文冻结 SDFMPNEO 的生产理论体系：首先以经过开放域、网格、功率守恒和几何连续性验证的 Maxwell truth model 生成几何相关端口阻抗与复 Hermitian Joule tensors；神经网络仅学习几何到这些低维电磁参数的映射；任意复端口电流通过解析二次型进入 Joule heat 与端口功率；温度演化始终由真实 reduced thermal mass/stiffness 和连续时间 ODE 控制。当前材料模型下 Maxwell operator 不随温度变化，因此固定几何只需一组电磁参数，thermal trajectory 中不重复求解高维 Maxwell 系统。本文同时定义训练前必须通过的 Physics Gate，以保证 surrogate accuracy 建立在物理闭合、离散一致和数值收敛的 truth system 上。
+本文冻结 SDFMPNEO 的单频生产理论体系。Maxwell truth model 在统一的峰值相量、端口、开放域和离散能量约定下生成复对称场阻抗 $Z_{\rm field}$、总海水体耗散矩阵 $D_{\rm vol}$ 与 thermal-modal Hermitian Joule tensors $H_j$；神经网络仅学习几何到这些低维参数化电磁对象的映射。固定物理解码层保持 reciprocity、Hermitian structure，并联合约束 $D_{\rm vol}\succeq0$ 与 $\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0$，使端口 passivity 与体/外流功率处于同一矩阵级能量框架。任意复端口电流通过显式 quadratic forms 产生 cycle-averaged Joule heat；若工作点由电压源、补偿网络或负载决定，则由确定性 circuit equations 求取端口电流。温度演化始终由真实 reduced thermal mass/stiffness、明确的 wire-temperature constitutive law 和连续时间 ODE 控制。共享 thermal basis 在最终 $H_j$ 标签之前构建，并用完整 current-induced heat-source span、多时间尺度 resolvent residual 与 full transient audit 验证。本文同时定义 Physics Gate、误差预算和模型适用边界，以保证 surrogate accuracy 建立在物理闭合、离散一致和数值收敛的 truth system 上。
 \end{abstract}
 
 \tableofcontents
