@@ -27,7 +27,9 @@ MODE = "train"
 ROOT = Path(__file__).resolve().parent
 
 FILES = {
-    "model": "results/uwpt/model.npz",
+    # Use a distinct artifact name so an older finite-PEC model can never be
+    # loaded accidentally by the new production path.
+    "model": "results/uwpt/model.open_boundary.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
     "training_checkpoint": "results/uwpt/model.tensor_training.pt",
