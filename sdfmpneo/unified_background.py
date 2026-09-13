@@ -1,11 +1,13 @@
 """Fixed multiscale Cartesian Maxwell/thermal background.
 
 Geometry changes material occupancy and impressed coil currents, never the
-background topology. Seawater remains a full three-dimensional conductive
-medium in both Maxwell and thermal operators.
+background topology. The thermal basis is installed after construction by the
+residual-driven thermal-space builder, so its rank is a physical result rather
+than a user-chosen background parameter.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import itertools
 
@@ -45,7 +47,7 @@ def stretched_axis(bounds, core_half, fine_step, growth, max_step, center=0.0):
         x2 = min(hi, x + step)
         right.append(x2)
         x = x2
-    return np.asarray(list(reversed(left)) + core.tolist() + right, dtype=float)
+    return np.asarray(list(reversed(left)) + core.tolist() + right, float)
 
 
 @dataclass
@@ -65,20 +67,9 @@ class BackgroundContext:
 
 
 class FixedMultiscaleBackground:
-    def __init__(
-        self,
-        x,
-        y,
-        z,
-        *,
-        frequency_hz,
-        materials,
-        coil_materials,
-        package_materials,
-        seawater_material,
-        thermal_rank,
-        ambient_temperature=293.15,
-    ):
+    def __init__(self, x, y, z, *, frequency_hz, materials, coil_materials,
+                 package_materials, seawater_material, thermal_basis=None,
+                 ambient_temperature=293.15):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
         self.z = np.asarray(z, float)
@@ -105,47 +96,26 @@ class FixedMultiscaleBackground:
         self._build_edges()
         self._build_curl()
         self._build_reconstruction()
-        self.thermal_basis = self._thermal_basis(int(thermal_rank))
+        self.thermal_basis = None
+        if thermal_basis is not None:
+            self.set_thermal_basis(thermal_basis)
 
     @classmethod
-    def from_config(
-        cls,
-        cfg,
-        *,
-        frequency_hz,
-        materials,
-        coil_materials,
-        package_materials,
-        seawater_material,
-        thermal_rank,
-        ambient_temperature,
-    ):
+    def from_config(cls, cfg, *, frequency_hz, materials, coil_materials,
+                    package_materials, seawater_material, ambient_temperature):
         bounds = np.asarray(cfg["bounds"], float)
         core = np.asarray(cfg["core_half_extent"], float)
         center = np.asarray(cfg.get("core_center", [0, 0, 0]), float)
         if bounds.shape != (3, 2) or core.shape != (3,) or center.shape != (3,):
             raise ValueError("BACKGROUND bounds/core dimensions are invalid")
         axes = [
-            stretched_axis(
-                bounds[k],
-                core[k],
-                cfg["fine_step"],
-                cfg.get("growth", 1.4),
-                cfg.get("max_step", 4 * cfg["fine_step"]),
-                center[k],
-            )
+            stretched_axis(bounds[k], core[k], cfg["fine_step"], cfg.get("growth", 1.4),
+                           cfg.get("max_step", 4 * cfg["fine_step"]), center[k])
             for k in range(3)
         ]
-        return cls(
-            *axes,
-            frequency_hz=frequency_hz,
-            materials=materials,
-            coil_materials=coil_materials,
-            package_materials=package_materials,
-            seawater_material=seawater_material,
-            thermal_rank=thermal_rank,
-            ambient_temperature=ambient_temperature,
-        )
+        return cls(*axes, frequency_hz=frequency_hz, materials=materials,
+                   coil_materials=coil_materials, package_materials=package_materials,
+                   seawater_material=seawater_material, ambient_temperature=ambient_temperature)
 
     @property
     def n_cells(self):
@@ -154,6 +124,35 @@ class FixedMultiscaleBackground:
     @property
     def n_edges(self):
         return len(self.edge_lengths)
+
+    @property
+    def thermal_rank(self):
+        return 0 if self.thermal_basis is None else int(self.thermal_basis.shape[1])
+
+    def set_thermal_basis(self, basis):
+        Phi = np.asarray(basis, float)
+        if Phi.ndim != 2 or Phi.shape[0] != self.n_cells or Phi.shape[1] < 1:
+            raise ValueError("thermal basis must have shape (n_cells, positive_rank)")
+        if np.any(~np.isfinite(Phi)):
+            raise ValueError("thermal basis must be finite")
+        gram = Phi.T @ (self.cell_volumes[:, None] * Phi)
+        gram = 0.5 * (gram + gram.T)
+        if np.linalg.matrix_rank(gram) != Phi.shape[1]:
+            raise ValueError("thermal basis is rank deficient")
+        L = np.linalg.cholesky(gram)
+        self.thermal_basis = Phi @ np.linalg.inv(L.T)
+        return self.thermal_basis
+
+    def project_temperature_rise(self, rise):
+        if self.thermal_basis is None:
+            raise ValueError("thermal basis has not been constructed")
+        value = np.asarray(rise, float)
+        if value.ndim == 0:
+            value = np.full(self.n_cells, float(value))
+        value = value.reshape(-1)
+        if value.shape != (self.n_cells,) or np.any(~np.isfinite(value)):
+            raise ValueError("temperature rise must be scalar or one value per background cell")
+        return self.thermal_basis.T @ (self.cell_volumes * value)
 
     def _cell_id(self, i, j, k):
         return (i * self.ny + j) * self.nz + k
@@ -169,9 +168,7 @@ class FixedMultiscaleBackground:
         self.cell_volumes = np.prod(self.cell_widths, axis=1)
 
     def _build_edges(self):
-        full = []
-        lengths = []
-        maps = []
+        full, lengths, maps = [], [], []
         for axis in range(3):
             amap = {}
             if axis == 0:
@@ -197,7 +194,6 @@ class FixedMultiscaleBackground:
         self.edge_tuples = tuple(full)
         self.edge_lengths = np.asarray(lengths)
         self.edge_maps = maps
-
         rows, cols, data = [], [], []
         for e, (axis, i, j, k) in enumerate(self.edge_tuples):
             cells = []
@@ -226,21 +222,15 @@ class FixedMultiscaleBackground:
         rows, cols, vals = [], [], []
         hrows, hcols, hdata = [], [], []
         face = 0
-
         def add(edge_map, key, sign):
             idx = edge_map.get(key)
             if idx is not None:
-                rows.append(face)
-                cols.append(idx)
-                vals.append(sign)
-
+                rows.append(face); cols.append(idx); vals.append(sign)
         for i in range(self.nx):
             for j in range(self.ny):
                 for k in range(self.nz + 1):
-                    add(self.edge_maps[0], (i, j, k), 1)
-                    add(self.edge_maps[1], (i + 1, j, k), 1)
-                    add(self.edge_maps[0], (i, j + 1, k), -1)
-                    add(self.edge_maps[1], (i, j, k), -1)
+                    add(self.edge_maps[0], (i, j, k), 1); add(self.edge_maps[1], (i + 1, j, k), 1)
+                    add(self.edge_maps[0], (i, j + 1, k), -1); add(self.edge_maps[1], (i, j, k), -1)
                     area = self.dx[i] * self.dy[j]
                     if k > 0:
                         hrows.append(face); hcols.append(self._cell_id(i, j, k - 1)); hdata.append(0.5 * self.dz[k - 1] / area)
@@ -250,10 +240,8 @@ class FixedMultiscaleBackground:
         for i in range(self.nx):
             for j in range(self.ny + 1):
                 for k in range(self.nz):
-                    add(self.edge_maps[0], (i, j, k), 1)
-                    add(self.edge_maps[2], (i + 1, j, k), 1)
-                    add(self.edge_maps[0], (i, j, k + 1), -1)
-                    add(self.edge_maps[2], (i, j, k), -1)
+                    add(self.edge_maps[0], (i, j, k), 1); add(self.edge_maps[2], (i + 1, j, k), 1)
+                    add(self.edge_maps[0], (i, j, k + 1), -1); add(self.edge_maps[2], (i, j, k), -1)
                     area = self.dx[i] * self.dz[k]
                     if j > 0:
                         hrows.append(face); hcols.append(self._cell_id(i, j - 1, k)); hdata.append(0.5 * self.dy[j - 1] / area)
@@ -263,10 +251,8 @@ class FixedMultiscaleBackground:
         for i in range(self.nx + 1):
             for j in range(self.ny):
                 for k in range(self.nz):
-                    add(self.edge_maps[1], (i, j, k), 1)
-                    add(self.edge_maps[2], (i, j + 1, k), 1)
-                    add(self.edge_maps[1], (i, j, k + 1), -1)
-                    add(self.edge_maps[2], (i, j, k), -1)
+                    add(self.edge_maps[1], (i, j, k), 1); add(self.edge_maps[2], (i, j + 1, k), 1)
+                    add(self.edge_maps[1], (i, j, k + 1), -1); add(self.edge_maps[2], (i, j, k), -1)
                     area = self.dy[j] * self.dz[k]
                     if i > 0:
                         hrows.append(face); hcols.append(self._cell_id(i - 1, j, k)); hdata.append(0.5 * self.dx[i - 1] / area)
@@ -299,34 +285,6 @@ class FixedMultiscaleBackground:
             mats.append(sp.csr_matrix((data, (rows, cols)), shape=(self.n_cells, self.n_edges)))
         self.reconstruct = tuple(mats)
 
-    def _thermal_basis(self, rank):
-        if rank < 1 or rank > self.n_cells:
-            raise ValueError("invalid thermal rank")
-        lo = np.array([self.x[0], self.y[0], self.z[0]])
-        hi = np.array([self.x[-1], self.y[-1], self.z[-1]])
-        xi = (self.cell_centers - lo) / (hi - lo)
-        candidates = []
-        m = 1
-        while len(candidates) < rank:
-            candidates = [
-                (a * a + b * b + c * c, a, b, c)
-                for a in range(1, m + 1)
-                for b in range(1, m + 1)
-                for c in range(1, m + 1)
-            ]
-            candidates.sort()
-            m += 1
-        modes = [q[1:] for q in candidates[:rank]]
-        Phi = np.column_stack([
-            np.sin(a * np.pi * xi[:, 0])
-            * np.sin(b * np.pi * xi[:, 1])
-            * np.sin(c * np.pi * xi[:, 2])
-            for a, b, c in modes
-        ])
-        gram = Phi.T @ (self.cell_volumes[:, None] * Phi)
-        L = np.linalg.cholesky(gram)
-        return Phi @ np.linalg.inv(L.T)
-
     def _require_inside(self, points, label):
         p = np.asarray(points, float)
         lo = np.array([self.x[0], self.y[0], self.z[0]])
@@ -341,23 +299,20 @@ class FixedMultiscaleBackground:
         return g
 
     def validate_geometry(self, geometry):
-        """Check only physical background containment; this is not a learned-domain gate."""
         g = self._geometry(geometry)
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
         for index, coil in enumerate(g.coils):
             self._require_inside(coil.centerline(spacing), f"coil {index} centerline")
         signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
         for index, package in enumerate(g.packages):
-            corners = package.pose.apply(signs * package.half_extent)
-            self._require_inside(corners, f"package {index}")
+            self._require_inside(package.pose.apply(signs * package.half_extent), f"package {index}")
         return g
 
     def _package_fraction(self, package):
         signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
         fraction = np.zeros(self.n_cells)
         for sign in signs:
-            points = self.cell_centers + 0.25 * self.cell_widths * sign
-            fraction += package.contains(points)
+            fraction += package.contains(self.cell_centers + 0.25 * self.cell_widths * sign)
         return fraction / len(signs)
 
     def _deposit_line(self, points):
@@ -384,8 +339,6 @@ class FixedMultiscaleBackground:
                 else:
                     candidates = [(i, j, k), (i + 1, j, k), (i, j + 1, k), (i + 1, j + 1, k)]
                 avail = [self.edge_maps[axis][q] for q in candidates if q in self.edge_maps[axis]]
-                if not avail:
-                    continue
                 for e in avail:
                     source[e] += component / (self.edge_lengths[e] * len(avail))
         if heat.sum() <= 0 or np.linalg.norm(source) == 0:
@@ -396,21 +349,15 @@ class FixedMultiscaleBackground:
     def geometry_context(self, geometry, *, assemble_thermal=True):
         g = self._geometry(geometry)
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
-        fractions = {
-            name: np.zeros(self.n_cells)
-            for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))
-        }
-        sources = []
-        heat_weights = []
+        fractions = {name: np.zeros(self.n_cells) for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))}
+        sources, heat_weights = [], []
         for coil, material in zip(g.coils, self.coil_materials):
             points = coil.centerline(spacing)
             source, heat = self._deposit_line(points)
-            sources.append(source)
-            heat_weights.append(heat)
+            sources.append(source); heat_weights.append(heat)
             area = coil.conductor_width * coil.conductor_thickness
             length = np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))
             fractions[material] += heat * (area * length) / self.cell_volumes
-
         copper = np.zeros(self.n_cells)
         for material in self.coil_materials:
             copper += fractions[material]
@@ -420,24 +367,21 @@ class FixedMultiscaleBackground:
         for material in self.coil_materials:
             fractions[material] *= scale
         occupied = np.minimum(copper, 1.0)
-
         signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
         for index, (package, material) in enumerate(zip(g.packages, self.package_materials)):
-            corners = package.pose.apply(signs * package.half_extent)
-            self._require_inside(corners, f"package {index}")
+            self._require_inside(package.pose.apply(signs * package.half_extent), f"package {index}")
             raw = self._package_fraction(package)
             add = raw * np.clip(1.0 - occupied, 0.0, 1.0)
             fractions[material] += add
             occupied += add
         fractions[self.seawater_material] = np.clip(1.0 - occupied, 0.0, 1.0)
-        total_fraction = sum(fractions.values())
-        if np.max(np.abs(total_fraction - 1.0)) > 1e-10:
+        if np.max(np.abs(sum(fractions.values()) - 1.0)) > 1e-10:
             raise FloatingPointError("material fractions do not close to unity")
-
         source_shape = np.column_stack(sources)
         if not assemble_thermal:
             return BackgroundContext(g, fractions, source_shape, tuple(heat_weights))
-
+        if self.thermal_basis is None:
+            raise ValueError("thermal basis has not been constructed")
         M, K = self.thermal_operator_full(fractions)
         Phi = self.thermal_basis
         Mr = Phi.T @ (M @ Phi)
@@ -454,22 +398,41 @@ class FixedMultiscaleBackground:
             raise ValueError("temperature-dependent conductivity left its physical constitutive range")
         return sigma / denominator
 
-    def cell_properties(self, context, state=None, *, em=False):
+    def _state_temperature(self, context, state):
+        material_rise = None
         if state is None:
-            T = np.full(self.n_cells, self.ambient_temperature)
+            rise = np.zeros(self.n_cells)
+        elif isinstance(state, Mapping):
+            material_rise = {str(name): float(value) for name, value in state.items()}
+            if any(not np.isfinite(value) for value in material_rise.values()):
+                raise ValueError("material temperature rises must be finite")
+            rise = np.zeros(self.n_cells)
+            for name, fraction in context.fractions.items():
+                rise += fraction * material_rise.get(name, 0.0)
         else:
-            state = np.asarray(state, float).reshape(-1)
-            if state.shape != (self.thermal_basis.shape[1],) or np.any(~np.isfinite(state)):
-                raise ValueError("thermal state dimension mismatch")
-            T = self.ambient_temperature + self.thermal_basis @ state
-        sigma = np.zeros(self.n_cells)
-        eps = np.zeros(self.n_cells)
-        mu_inv = np.zeros(self.n_cells)
-        k = np.zeros(self.n_cells)
-        cap = np.zeros(self.n_cells)
+            value = np.asarray(state, float)
+            if value.ndim == 0:
+                rise = np.full(self.n_cells, float(value))
+            else:
+                value = value.reshape(-1)
+                if value.shape == (self.n_cells,):
+                    rise = value
+                elif self.thermal_basis is not None and value.shape == (self.thermal_rank,):
+                    rise = self.thermal_basis @ value
+                else:
+                    raise ValueError("thermal state dimension mismatch")
+            if np.any(~np.isfinite(rise)):
+                raise ValueError("thermal state must be finite")
+        return self.ambient_temperature + rise, material_rise
+
+    def cell_properties(self, context, state=None, *, em=False):
+        T, material_rise = self._state_temperature(context, state)
+        sigma = np.zeros(self.n_cells); eps = np.zeros(self.n_cells); mu_inv = np.zeros(self.n_cells)
+        k = np.zeros(self.n_cells); cap = np.zeros(self.n_cells)
         for name, fraction in context.fractions.items():
             m = self.materials[name]
-            local_sigma = self._temperature_material(name, T)
+            local_temperature = self.ambient_temperature + material_rise.get(name, 0.0) if material_rise is not None else T
+            local_sigma = self._temperature_material(name, local_temperature)
             if em and name in self.coil_materials:
                 local_sigma = 0.0
             sigma += fraction * local_sigma
@@ -479,23 +442,18 @@ class FixedMultiscaleBackground:
             cap += fraction * float(m.get("volumetric_heat_capacity", 0))
         return sigma, eps, mu_inv, k, cap, T
 
-    def em_operator(self, context, state):
+    def em_operator(self, context, state=None):
         sigma, eps, mu_inv, _, _, _ = self.cell_properties(context, state, em=True)
         h2 = np.asarray(self.face_cell_hodge @ mu_inv).ravel()
         hs = np.asarray(self.edge_cell_hodge @ sigma).ravel()
         he = np.asarray(self.edge_cell_hodge @ eps).ravel()
-        return (
-            self.curl.T @ sp.diags(h2) @ self.curl
-            - self.omega**2 * sp.diags(he)
-            + 1j * self.omega * sp.diags(hs)
-        ).tocsr()
+        return (self.curl.T @ sp.diags(h2) @ self.curl - self.omega**2 * sp.diags(he) + 1j * self.omega * sp.diags(hs)).tocsr()
 
     def rhs_matrix(self, context):
         return (-1j * self.omega) * np.asarray(context.source_shape, complex)
 
     def thermal_operator_full(self, fractions):
-        k = np.zeros(self.n_cells)
-        cap = np.zeros(self.n_cells)
+        k = np.zeros(self.n_cells); cap = np.zeros(self.n_cells)
         for name, fraction in fractions.items():
             m = self.materials[name]
             k += fraction * float(m.get("thermal_conductivity", 0))
@@ -505,14 +463,11 @@ class FixedMultiscaleBackground:
         M = sp.diags(cap * self.cell_volumes, format="csr")
         rows, cols, data = [], [], []
         diag = np.zeros(self.n_cells)
-
         def pair(c1, c2, area, distance):
             kf = 2 * k[c1] * k[c2] / (k[c1] + k[c2])
             conductance = kf * area / distance
-            diag[c1] += conductance
-            diag[c2] += conductance
+            diag[c1] += conductance; diag[c2] += conductance
             rows.extend([c1, c2]); cols.extend([c2, c1]); data.extend([-conductance, -conductance])
-
         for i in range(self.nx):
             for j in range(self.ny):
                 for kk in range(self.nz):
@@ -540,12 +495,13 @@ class FixedMultiscaleBackground:
         ex, ey, ez = self.field_components(X)
         return ex, ey, ez, 0.5 * sigma * self.cell_volumes
 
-    def wire_resistances(self, context, state):
+    def wire_resistances(self, context, state=None):
+        _, material_rise = self._state_temperature(context, state)
         _, _, _, _, _, T = self.cell_properties(context, state)
         out = []
         spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
         for coil, material, weights in zip(context.geometry.coils, self.coil_materials, context.line_heat_weights):
-            temp = float(np.dot(weights, T))
+            temp = self.ambient_temperature + material_rise.get(material, 0.0) if material_rise is not None else float(np.dot(weights, T))
             sigma = float(self._temperature_material(material, np.array(temp)))
             length = coil.length(spacing)
             area = coil.conductor_width * coil.conductor_thickness
@@ -556,12 +512,10 @@ class FixedMultiscaleBackground:
         return np.asarray(out)
 
     def save_arrays(self):
-        return {
-            "background_x": self.x,
-            "background_y": self.y,
-            "background_z": self.z,
-            "thermal_basis": self.thermal_basis,
-        }
+        if self.thermal_basis is None:
+            raise ValueError("thermal basis has not been constructed")
+        return {"background_x": self.x, "background_y": self.y, "background_z": self.z,
+                "thermal_basis": self.thermal_basis}
 
 
 __all__ = ["BackgroundContext", "FixedMultiscaleBackground", "stretched_axis"]
