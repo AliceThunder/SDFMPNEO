@@ -1,26 +1,24 @@
-# SDF-MPNEO — 统一几何 multiscale neural Maxwell–thermal solver
+# SDF-MPNEO — geometry→tensor electrothermal ROM
 
-正式实现只保留一条模型路线：
+当前生产主链只保留一条路线：
 
 \[
 \boxed{
-\text{隐式几何}
-\rightarrow \text{固定背景物理}
-\rightarrow \text{full sparse Maxwell}
-\rightarrow \textbf{multiscale neural residual solver}
-\rightarrow \text{FGMRES true-residual closure}
-\rightarrow \text{exact Joule}
-\rightarrow \text{automatic thermal ROM}
+\text{geometry } g
+\rightarrow
+\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}
+\rightarrow
+\text{explicit current/circuit physics}
+\rightarrow
+\text{shared thermal ROM}
+\rightarrow
+T(t)
 }
 \]
 
-核心原则：**神经网络是 Maxwell 加速主体；真实 sparse Maxwell operator 提供结构与训练残差，FGMRES 只负责最终精度闭环。**
+核心原则：**神经网络只学习静态几何到低维电磁 tensor 的映射。** 电流幅值/相位、线圈温度电阻、Joule 二次型、热 ODE 和稳态方程全部保留显式物理。
 
-网络不直接预测阻抗、Joule heat、温度或最终 Maxwell 场。最终结果必须满足
-
-\[
-\frac{\|B-A_{\rm em}X\|_2}{\|B\|_2}\le \varepsilon_{\rm EM}.
-\]
+在线推理不再运行 neural Maxwell solver、Krylov residual training 或 FGMRES。Maxwell 只用于离线生成 truth tensors。
 
 ## 运行
 
@@ -36,254 +34,189 @@ python run.py --mode predict
 python run.py --mode train --headless
 ```
 
-正式主链没有 fast/general/legacy 模式，没有 Maxwell solution basis / Maxwell rank，也没有 ILU、AMG 或 polynomial 多套求解路径。
+配置仍集中在 `run.py` 顶部。
 
-## Full-space Maxwell
+## 1. 离线电磁 truth
 
-完整电磁方程始终在固定背景 edge space 中求解：
+固定几何后先求端口单位激励场：
 
 \[
-A_{\rm em}(g,T)X=B(g),
+A_{\rm em}(g)X(g)=B(g).
+\]
+
+这里 Maxwell 只作为离线 truth solver。由完整场构造：
+
+\[
+Z_{\rm field}(g),
 \qquad
-A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
+D_{\rm vol}(g),
+\qquad
+H_j(g),\ j=1,\ldots,r.
 \]
 
-海水电导率、介电常数和体积电场直接进入真实 operator，因此海水体积 Joule loss 不会被代理绕过。
-
-## Multiscale sparse neural Maxwell solver
-
-每条 edge 的动态输入包括：
-
-- 当前 residual 的实部/虚部；
-- $D^{-1}r$ 的实部/虚部，作为归一化 reference；
-- diagonal magnitude/phase/loss ratio；
-- row coupling strength 与 sparse degree。
-
-固定输入包括 edge 物理位置与方向。
-
-网络同时使用四个真实 sparse Maxwell 耦合尺度：
-
-- fine edge graph；
-- stride-2 coarse edge graph；
-- stride-4 coarse edge graph；
-- stride-8 coarse edge graph。
-
-coarse coupling 由真实 Maxwell operator 聚合得到。每个尺度都执行 complex sparse message passing，coarse hidden state 再 broadcast 回 fine edges，与 fine branch 融合，最终直接输出
+其中
 
 \[
-\Delta X_\theta\in\mathbb C^{N_E\times N_{\rm rhs}}.
+P_{\rm vol}(I)=\frac12 I^H D_{\rm vol} I,
 \]
 
-默认网络：
+且 thermal modal Joule forcing 为
+
+\[
+q_j(I)=\frac12 I^H H_j I.
+\]
+
+端口场阻抗采用统一的 **negative source reaction** 约定；线圈自身温度相关 AC 电阻不塞进网络，而是在在线阶段显式加到
+
+\[
+Z_{\rm tot}=Z_{\rm field}+\operatorname{diag}(R_{\rm wire}(T)).
+\]
+
+## 2. 神经网络只学 geometry→tensor
+
+网络是普通 residual MLP：
 
 ```python
 "network": {
-    "width": 32,
-    "fine_message_steps": 2,
-    "coarse_levels": 3,
-    "coarse_message_steps": 2,
-    "fusion_message_steps": 1,
-    "solver_steps": 3,
+    "width": 128,
+    "blocks": 3,
     "activation": "silu",
 }
 ```
 
-Jacobi 只用于输入尺度/reference，以及网络输出为 NaN/Inf 或近零退化方向时的数值安全 fallback；它不是正式主求解器。
+输入只有固定宽度 geometry encoding；不输入时间、电流、热状态或 Maxwell residual。
 
-## 训练 residual：物理端口 + FGMRES Krylov 方向
+输出按矩阵结构编码：
 
-训练仍然不需要 Maxwell solution label。
+- `Z_field`：复对称；
+- `D_vol`：Hermitian；
+- `H_j`：Hermitian。
 
-此前使用任意 full-space 白噪声 residual 会把训练目标变成与实际 FGMRES 输入分布不一致的困难问题，并且会稀释物理端口 RHS。当前实现改为：
+推理时再做结构投影：
 
-```text
-2 physical port RHS
-2 Jacobi-Arnoldi Krylov directions per port
-```
+- `D_vol >= 0`；
+- `Herm(Z_field)-D_vol >= 0`；
+- 对每个 thermal mode，利用训练 basis 的 `phi_min/phi_max` 强制 Loewner bounds。
 
-默认两端口系统因此每个 operator 有 6 条 residual seed。
+因此网络不需要学习 Hermitian/reciprocity/passivity 这些本来就已知的结构。
 
-Jacobi-Arnoldi seed 按与 FGMRES Arnoldi 过程一致的结构构造：
+## 3. Matrix-aware training
 
-\[
-v_0=\frac{b}{\|b\|},
-\qquad
-z_j=D^{-1}v_j,
-\qquad
-w_j=A z_j,
-\]
-
-随后对已有 Arnoldi basis 做两次正交化并归一化得到后续 $v_{j+1}$。这些方向比任意白噪声更接近 FGMRES 实际调用 neural preconditioner 时看到的输入分布。
-
-训练 objective 对 residual 类型显式加权：
+训练目标不是任意 flat-vector MSE，而是分别对
 
 \[
-L_{\rm seeds}
-=
-0.6\,L_{\rm port}
-+
-0.4\,L_{\rm Krylov}.
+Z_{\rm field},\quad D_{\rm vol},\quad H_j
 \]
 
-因此不会因为增加 Krylov 泛化训练而把物理端口任务稀释到只占三分之一。
+计算相对 Frobenius 误差，再加入轻量 passivity / Loewner penalty。
 
-## Shared 3-step residual unroll
-
-每个 seed 都使用同一个网络做 3 步 shared unroll：
-
-\[
-R_0=R,
-\qquad
-\Delta X_k=N_\theta(A,R_k),
-\qquad
-R_{k+1}=R_k-A\Delta X_k.
-\]
-
-三步 loss 默认使用：
-
-\[
-L=0.1L_1+0.2L_2+0.7L_3,
-\qquad
-L_k=\frac{\|R_k\|_2^2}{\|R_0\|_2^2}.
-\]
-
-最终第 3 步 residual 是主要优化目标。
-
-## 默认训练配置
+默认：
 
 ```python
-TRAINING = {
-    "n_operator_samples": 96,
-    "device": "cuda",
-    "network": {
-        "width": 32,
-        "fine_message_steps": 2,
-        "coarse_levels": 3,
-        "coarse_message_steps": 2,
-        "fusion_message_steps": 1,
-        "solver_steps": 3,
-        "activation": "silu",
-    },
-    "optimizer": {
-        "epochs": 160,
-        "batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "learning_rate": 2e-3,
-        "weight_decay": 1e-6,
-        "lr_decay_factor": 0.5,
-        "lr_plateau_patience": 8,
-        "minimum_learning_rate": 2.5e-4,
-        "patience": 32,
-        "validation_interval": 2,
-        "min_relative_improvement": 5e-4,
-        "krylov_vectors_per_port": 2,
-        "port_loss_weight": 0.6,
-        "final_step_loss_weight": 0.7,
-        "benchmark_samples_per_split": 4,
-    },
+"optimizer": {
+    "epochs": 240,
+    "batch_size": 16,
+    "learning_rate": 1e-3,
+    "weight_decay": 1e-6,
+    "patience": 40,
+    "validation_interval": 2,
+    "physics_penalty_weight": 0.05,
+    "z_weight": 1.0,
+    "d_weight": 1.0,
+    "h_weight": 1.0,
+    "dtype": "float32",
 }
 ```
 
-`batch_size=1` 且 `gradient_accumulation_steps=1`，所以每个 operator 都进行一次 optimizer update。
+电流幅值/相位不属于训练输入，因此改变 current phasor 不需要重新训练。
 
-学习率按 validation plateau 最多逐级：
+## 4. Transient-aware thermal ROM
+
+thermal rank 仍然自动决定，但判据已改成与目标动力学一致的 Galerkin energy error。
+
+对每个 geometry，热源覆盖完整有限维 port-current quadratic span，并显式加入 wire-heat directions。然后在多个 resolvent shift
 
 \[
-2\times10^{-3}
-\rightarrow 10^{-3}
-\rightarrow 5\times10^{-4}
-\rightarrow 2.5\times10^{-4}.
+A_s=K+sM
 \]
 
-## 训练监控与可比指标
+上构造 anchors，对实际 Galerkin 解误差
 
-每次 validation 都分别输出：
+\[
+\frac{\|u-u_r\|_{A_s}}{\|u\|_{A_s}}
+\]
 
-```text
-val=...  port=...  krylov=...  lr=...
+做 greedy enrichment。
+
+默认时间尺度：
+
+```python
+"thermal_time_scales": [1e-3, 1.0, 1000.0]
 ```
 
-这里：
+同时保留独立 geometry validation set，避免只在 basis construction geometries 上自洽。
 
-- `port` 才能和早期仅使用物理/端口 residual 的训练结果直接比较；
-- `krylov` 衡量网络作为 FGMRES preconditioner 对 Arnoldi 方向的泛化；
-- `val` 是按 60% port / 40% Krylov 得到的综合指标。
+## 5. 在线阶段
 
-因此不要再把不同 residual 分布下的总 validation loss 直接横向比较。
+给定新 geometry：
 
-最终 `training.report.json` 同时记录：
+1. MLP 只调用一次，得到 `Z_field / D_vol / H_j`；
+2. 给定 current phasor，直接做矩阵二次型得到 volume power 和 modal heat；
+3. 由当前温度显式计算 `R_wire(T)`；
+4. 求 reduced thermal ODE / steady state；
+5. 输出 impedance、current、volume/wire/outward power、temperature。
 
-- weighted train/validation/test residual loss；
-- validation/test port-only residual loss；
-- validation/test Krylov-only residual loss；
-- residual seed composition；
-- effective batch size 与最终学习率；
-- solver benchmark。
+也支持简单 voltage-driven 模式：
 
-## Solver benchmark
+```python
+PREDICTION["drive"] = {
+    "voltage": [10.0, 0.0],
+    "series_impedance": [0.1, 0.1],
+}
+```
 
-validation/test benchmark 记录：
+此时每个 thermal stage 只解一个端口级小线性系统，不回到 Maxwell。
 
-- 3-step neural rollout 后 relative residual median/p90/max；
-- FGMRES closure iterations 与 restarts；
-- neural rollout wall time；
-- 总 Maxwell solve wall time；
-- true-residual success rate；
-- maximum final relative residual。
+## 6. Physics Gate 0 当前状态
 
-训练是否成功不能只由神经 loss 定义。真正目标是：
+代码现在会显式检查并记录：
 
-1. physical-port neural rollout 明显降低 residual；
-2. Krylov residual loss 同时下降；
-3. FGMRES iterations 不再全部撞 `maxwell_max_iterations`；
-4. success rate 最终达到 100%；
-5. 最终 true residual 满足默认 `1e-7`。
+- reaction impedance sign；
+- reciprocity；
+- `D_vol` PSD；
+- modal Loewner bounds；
+- implied dissipative remainder。
 
-## Joule 与 thermal ROM
+但当前固定背景电磁外边界仍是**有限 PEC 截断**，还没有独立 open-boundary / PML / Poynting-flux reference。因此训练报告会写：
 
-只有通过 Maxwell true-residual 检查后的完整场 $X$ 才进入 Joule 与阻抗计算。
+```text
+status = provisional_until_open_boundary_gate
+certified = false
+```
 
-体积导电区域使用
+这不是隐藏误差，而是当前理论体系里明确保留的 Physics Gate 0 缺口。后续真正做 open-boundary reference 时再补这一层，不在本次为了“形式完整”过度设计一个假的 PML。
 
-\[
-q^{\rm volume}=\frac12\sigma|E|^2.
-\]
-
-线圈 AC resistance heating 同样作为物理项加入。
-
-Maxwell 不做全局 ROM；thermal ROM 保留。thermal basis 由真实 Joule anchor 与热方程 residual 自动增广，thermal rank 是 residual target 的结果，不是手工输入。时间演化继续求解
-
-\[
-M_r(g)\dot a=-K_r(g)a+q_r(a,g,u),
-\]
-
-时间不是神经网络输入。
-
-## 缓存与检查点
+## 7. 缓存与检查点
 
 ```text
 results/uwpt/unified.cache.json
 results/uwpt/unified.thermal_basis.npy
-results/uwpt/unified.residual_dataset.npz
-results/uwpt/model.training.pt
+results/uwpt/unified.tensor_dataset.npz
+results/uwpt/model.tensor_training.pt
 ```
 
-神经检查点身份包含 feature schema、network config、training config、edge topology 和 residual seed composition。
+改变 MLP 宽度/优化器时，可以复用 thermal basis 和 tensor truth 数据；改变背景、材料、geometry domain、thermal basis 定义或 tensor sample 定义时会使物理缓存失效。
 
-更改 residual 训练策略时旧 neural checkpoint 会自动判为不兼容并重新训练；thermal basis 和 96 个 operator 的物理缓存仍可复用。
-
-## 正确性边界
-
-小 algebraic residual 只说明离散 Maxwell 线性系统被充分求解，不自动保证连续 PDE 或空间离散误差足够小。最终物理精度还依赖背景网格、edge discretization、sub-cell geometry/source representation、材料本构和 thermal residual target。
-
-## 正式测试
+## 8. 正式测试
 
 ```bash
 python -m pytest -q \
   tests/test_unified_geometry.py \
   tests/test_unified_background.py \
   tests/test_unified_thermal.py \
-  tests/test_unified_residual.py \
+  tests/test_unified_tensor_surrogate.py \
   tests/test_unified_end_to_end.py \
   tests/test_run_neural_user_defaults.py
 ```
+
+生产入口不依赖 GitHub Actions。
