@@ -14,16 +14,11 @@ import numpy as np
 from .unified_background import FixedMultiscaleBackground
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_model import UnifiedNeuralElectroThermalModel
-from .unified_tensor_surrogate import (
-    TensorDataset,
-    encode_geometry,
-    pack_tensors,
-    solve_truth_tensors,
-)
+from .unified_tensor_surrogate import TensorDataset, encode_geometry, generate_tensor_dataset
 from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import build_thermal_basis
 
-_CACHE_FORMAT = 7
+_CACHE_FORMAT = 8
 
 
 def jsonable(value):
@@ -64,13 +59,8 @@ def _progress(message, percent, monitor=None):
 
 def _signature(settings):
     keys = (
-        "BACKGROUND",
-        "DEFAULT_GEOMETRY",
-        "GEOMETRY_SAMPLING",
-        "PHYSICS",
-        "MATERIALS",
-        "REGIONS",
-        "TRAINING",
+        "BACKGROUND", "DEFAULT_GEOMETRY", "GEOMETRY_SAMPLING", "PHYSICS",
+        "MATERIALS", "REGIONS", "TRAINING",
     )
     payload = {k: settings[k] for k in keys}
     payload["TRAINING"] = {
@@ -131,7 +121,10 @@ def _require_effective_thermal_basis(report):
         return
     error = get("maximum_validation_relative_energy_error", None)
     if error is None or float(error) == 0.0:
-        error = get("maximum_anchor_relative_energy_error", get("maximum_anchor_relative_residual", float("nan")))
+        error = get(
+            "maximum_anchor_relative_energy_error",
+            get("maximum_anchor_relative_residual", float("nan")),
+        )
     target = get("target_relative_error", get("target_relative_residual", float("nan")))
     rank = int(get("basis_dimension", 0))
     reason = str(get("stop_reason", "unknown"))
@@ -141,83 +134,32 @@ def _require_effective_thermal_basis(report):
     )
 
 
-def _split_labels(n, seed):
-    if int(n) < 5:
-        raise ValueError("至少需要 5 个 tensor geometry 样本")
-    rng = np.random.default_rng(int(seed))
-    order = rng.permutation(int(n))
-    n_test = max(1, int(round(0.1 * n)))
-    n_val = max(1, int(round(0.1 * n)))
-    if n - n_test - n_val < 3:
-        n_test = n_val = 1
-    split = np.full(int(n), "train", dtype="U16")
-    split[order[:n_test]] = "test"
-    split[order[n_test:n_test + n_val]] = "validation"
-    return split
-
-
-def _generate_tensor_dataset(background, geometries, *, seed, monitor=None):
-    inputs = []
-    outputs = []
-    audit_rows = []
-    geometries = list(geometries)
-    for index, geometry in enumerate(geometries):
-        if monitor is not None:
-            monitor.checkpoint()
-        z, d, modal, audit = solve_truth_tensors(background, geometry)
-        inputs.append(encode_geometry(geometry))
-        outputs.append(pack_tensors(z, d, modal))
-        audit_rows.append(audit)
-        print(
-            f"生成 Z_field / D_vol / H_j truth……{100.0 * (index + 1) / len(geometries):5.1f}%  "
-            f"({index + 1}/{len(geometries)})",
-            flush=True,
-        )
-    inputs = np.asarray(inputs, float)
-    outputs = np.asarray(outputs, float)
-    audit = {
-        "maximum_reciprocity_relative_error": max(
-            row["reciprocity_relative_error"] for row in audit_rows
-        ),
-        "minimum_d_vol_eigenvalue": min(
-            row["minimum_d_vol_eigenvalue"] for row in audit_rows
-        ),
-        "minimum_implied_outward_eigenvalue": min(
-            row["minimum_implied_outward_eigenvalue"] for row in audit_rows
-        ),
-        "maximum_loewner_violation": max(
-            row["maximum_loewner_violation"] for row in audit_rows
-        ),
-        "independent_outward_power_available": 0.0,
-    }
-    return TensorDataset(
-        inputs=inputs,
-        outputs=outputs,
-        split=_split_labels(len(geometries), seed),
-        audit=audit,
-        n_ports=len(background.coil_materials),
-        thermal_rank=background.thermal_rank,
-    )
-
-
 def _physics_gate(dataset):
     audit = dict(dataset.audit)
-    reciprocity_ok = audit["maximum_reciprocity_relative_error"] <= 1e-8
-    d_ok = audit["minimum_d_vol_eigenvalue"] >= -1e-9
-    loewner_ok = audit["maximum_loewner_violation"] <= 1e-8
-    # Gate 0 is intentionally explicit: the current fixed background still uses
-    # a finite PEC truncation and therefore has no independent open-boundary
-    # Poynting flux certificate.  Do not label the final model fully certified.
+    checks = {
+        "linear_solve_ok": audit["maximum_linear_relative_residual"] <= 1e-8,
+        "reciprocity_ok": audit["maximum_reciprocity_relative_error"] <= 1e-8,
+        "volume_passivity_ok": audit["minimum_d_vol_eigenvalue"] >= -1e-9,
+        "closed_boundary_power_balance_ok": (
+            audit["maximum_closed_boundary_power_balance_relative_error"] <= 1e-7
+        ),
+        "modal_loewner_ok": audit["maximum_relative_loewner_violation"] <= 1e-8,
+    }
+    internal_ok = all(bool(v) for v in checks.values())
     return {
-        "reciprocity_ok": bool(reciprocity_ok),
-        "volume_passivity_ok": bool(d_ok),
-        "modal_loewner_ok": bool(loewner_ok),
+        **{k: bool(v) for k, v in checks.items()},
+        "internal_truth_gate_passed": bool(internal_ok),
         "reaction_impedance_convention": "negative_source_reaction",
+        # The current background is still finite PEC.  This is deliberately not
+        # upgraded to a production open-boundary certificate.
         "open_boundary_verified": False,
         "independent_outward_power_verified": False,
         "boundary_model": "finite_pec_truncation_provisional",
         "certified": False,
-        "status": "provisional_until_open_boundary_gate",
+        "status": (
+            "internal_truth_passed_open_boundary_provisional"
+            if internal_ok else "internal_truth_gate_failed"
+        ),
         "audit": audit,
     }
 
@@ -289,7 +231,7 @@ def train(settings, model_path, settings_dir, monitor=None):
 
             n_tensor = int(settings["TRAINING"].get("n_tensor_samples", 96))
             tensor_geometries = _sample_geometries(settings, n_tensor, rng, bg)
-            dataset = _generate_tensor_dataset(
+            dataset = generate_tensor_dataset(
                 bg,
                 tensor_geometries,
                 seed=int(settings["TRAINING"].get("seed", 17)),
@@ -308,16 +250,22 @@ def train(settings, model_path, settings_dir, monitor=None):
             _progress("生成几何 tensor truth 数据", 52, monitor)
 
         gate = _physics_gate(dataset)
+        if not gate["internal_truth_gate_passed"]:
+            raise RuntimeError(
+                "Physics Gate internal truth checks failed; refusing surrogate training: "
+                + json.dumps(gate["audit"], sort_keys=True)
+            )
         print(
-            "Physics Gate 0：reaction sign / reciprocity / volume passivity / modal bounds 已检查；"
-            "open-boundary 独立 Poynting 证据当前仍缺失，因此模型标记为 provisional。",
+            "Physics Gate：linear residual / raw reciprocity / PEC discrete power balance / "
+            "D_vol passivity / modal Loewner bounds 已通过；open-boundary 独立 Poynting "
+            "证据仍缺失，因此 artifact 保持 provisional。",
             flush=True,
         )
 
         phi = np.asarray(bg.thermal_basis, float)
         phi_min = np.min(phi, axis=0)
         phi_max = np.max(phi, axis=0)
-        _progress("训练 geometry→tensor MLP", 55, monitor)
+        _progress("训练 geometry→tensor POD-MLP", 55, monitor)
         surrogate, report = train_matrix_tensor_surrogate(
             dataset,
             phi_min,
@@ -334,6 +282,7 @@ def train(settings, model_path, settings_dir, monitor=None):
             default_geometry=settings["DEFAULT_GEOMETRY"],
             current_offset=settings["PORTS"].get("current_offset"),
             current_matrix=settings["PORTS"].get("current_matrix"),
+            production_domain=settings.get("GEOMETRY_SAMPLING"),
         )
         _progress("保存统一 tensor-ROM 模型", 98, monitor)
         model.save(
@@ -360,8 +309,9 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
         _progress("训练完成", 100, monitor)
         print(
-            f"训练完成：thermal rank={bg.thermal_rank}，在线 Maxwell solve=0，"
-            f"best epoch={report.best_epoch}，validation matrix loss={report.best_validation_loss:.6g}，"
+            f"训练完成：thermal rank={bg.thermal_rank}，tensor POD rank={report.pod_rank}，"
+            f"在线 Maxwell solve=0，best epoch={report.best_epoch}，"
+            f"validation matrix loss={report.best_validation_loss:.6g}，"
             f"test relative tensor error={report.test_relative_tensor_error:.6g}。",
             flush=True,
         )
@@ -376,8 +326,7 @@ def train(settings, model_path, settings_dir, monitor=None):
             )
         print(
             f"训练已停止；tensor MLP 检查点：{checkpoint}"
-            if checkpoint.is_file()
-            else "训练已停止。",
+            if checkpoint.is_file() else "训练已停止。",
             flush=True,
         )
         return 130
@@ -395,14 +344,14 @@ def _device(requested):
     return value
 
 
-def _initial_state(model, prediction):
+def _initial_state(model, prediction, geometry):
     value = prediction.get("initial_temperature_rise", 0.0)
     if value is None or (isinstance(value, str) and value.lower() == "ambient"):
         return np.zeros(model.thermal_rank)
     array = np.asarray(value, float)
     if array.ndim == 0 and float(array) == 0.0:
         return np.zeros(model.thermal_rank)
-    return model.background.project_temperature_rise(array)
+    return model.project_initial_temperature(array, geometry)
 
 
 def predict(settings, model_path, output_path, settings_dir):
@@ -412,13 +361,17 @@ def predict(settings, model_path, output_path, settings_dir):
     model = UnifiedNeuralElectroThermalModel.load(model_path, device=device)
     p = settings["PREDICTION"]
     geometry = p.get("geometry") or settings["DEFAULT_GEOMETRY"]
-    initial = _initial_state(model, p)
-    operating = p.get("drive", p.get("operating", [1.0] + [0.0] * (model.current_dimension - 1)))
+    initial = _initial_state(model, p, geometry)
+    operating = p.get(
+        "drive",
+        p.get("operating", [1.0] + [0.0] * (model.current_dimension - 1)),
+    )
     results = []
     tensors = model.tensors(geometry)
     print(
         f"加载 geometry-tensor electrothermal ROM：{model_path}  device={device}  "
-        f"thermal rank={model.thermal_rank}  tensor projection correction={tensors.projection_correction:.3e}",
+        f"thermal rank={model.thermal_rank}  POD={model.surrogate.pod_rank}  "
+        f"tensor projection correction={tensors.projection_correction:.3e}",
         flush=True,
     )
     for requested in p["times"]:
@@ -433,6 +386,7 @@ def predict(settings, model_path, output_path, settings_dir):
             print(
                 f"t=inf，Tmax={result.maximum_temperature:.6g} K，"
                 f"thermal residual={result.residual_norm:.3e}，"
+                f"stable={result.stable}，spectral_abscissa={result.spectral_abscissa:.3e}，"
                 f"Pvol={result.volume_power:.6g} W，Pwire={result.wire_power:.6g} W",
                 flush=True,
             )
@@ -478,9 +432,11 @@ def _worker_from_file(path):
 
 def launch(settings, argv=None):
     parser = argparse.ArgumentParser(
-        description="统一几何 geometry→tensor 电磁-热 ROM（在线无 Maxwell/FGMRES）"
+        description="统一 geometry→tensor 电磁-热 ROM（在线无 Maxwell/FGMRES）"
     )
-    parser.add_argument("--mode", choices=("train", "predict"), default=settings.get("MODE", "train"))
+    parser.add_argument(
+        "--mode", choices=("train", "predict"), default=settings.get("MODE", "train")
+    )
     parser.add_argument("--model")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--gui", action="store_true")
@@ -503,14 +459,12 @@ def launch(settings, argv=None):
         from .training.qt_monitor import launch_window
         log_root = Path(settings["MONITOR"]["log_dir"])
         log_root = log_root if log_root.is_absolute() else root / log_root
-        worker_settings = jsonable(
-            {
-                "root": settings["ROOT"],
-                "model_path": str(model_path),
-                "settings_dir": str(settings_dir),
-                "parameters": settings,
-            }
-        )
+        worker_settings = jsonable({
+            "root": settings["ROOT"],
+            "model_path": str(model_path),
+            "settings_dir": str(settings_dir),
+            "parameters": settings,
+        })
         return launch_window(root / "run.py", worker_settings, log_root, settings["MONITOR"])
     return execute_training(settings, model_path, settings_dir)
 
