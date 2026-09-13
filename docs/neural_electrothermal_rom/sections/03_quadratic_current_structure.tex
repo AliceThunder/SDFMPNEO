@@ -1,7 +1,7 @@
 \section{端口阻抗、Joule 二次型与离散功率守恒}
 
 \subsection{端口基响应}
-令端口复电流向量为 $c\in\C^{n_p}$，source-shape 矩阵为 $S(g)$。在 $e^{+i\omega t}$ 约定下
+令端口峰值复电流相量为 $c\in\C^{n_p}$，source-shape 矩阵为 $S(g)$。在 $e^{+i\omega t}$ 约定下
 \begin{equation}
 B(g)=-i\omega S(g),
 \qquad
@@ -43,80 +43,121 @@ Z_{\rm field}^T=Z_{\rm field}
 =\frac12(Z_{\rm field}+Z_{\rm field}^H)\succeq0.
 }
 \end{equation}
-reciprocity 只给出复对称性，并不能自动保证 passivity；两者是独立必须满足的物理结构。
+reciprocity 只给出复对称性，并不能自动保证 passivity；两者是独立物理结构。
 
-\subsection{与 Maxwell Hodge 一致的体 Joule 功率}
-令导电 Hodge 为 $H_\sigma\succeq0$。任意场 $E$ 的体平均导电损耗为
+\subsection{总海水体耗散矩阵}
+令导电 Hodge 为 $H_\sigma\succeq0$。定义特殊的总 volume-loss matrix
 \begin{equation}
 \boxed{
-P_{\rm vol}(E)=\frac12 E^H H_\sigma E.
+D_{\rm vol}(g)=X(g)^H H_\sigma(g)X(g)\succeq0.
 }
 \end{equation}
-thermal heat distribution 必须由同一个 $H_\sigma$ 分配到 cell/thermal modes，使空间 heat 的总和严格恢复上述二次型。禁止先把 edge field 任意平均到 cell center 后再平方，因为该操作一般不保持原 Maxwell 离散能量。
+由于全文采用峰值 phasor，任意端口电流下的周期平均体导电损耗为
+\begin{equation}
+\boxed{
+P_{\rm vol}(g,c)
+=\frac12 c^H D_{\rm vol}(g)c.
+}
+\end{equation}
+$D_{\rm vol}$ 是端口空间上的 Hermitian PSD 矩阵，也是连接端口功率与 thermal Joule 的关键总量。它必须由与 Maxwell 方程相同的 $H_\sigma$ 构造。
 
 \subsection{复 Hermitian Joule 模态张量}
-对第 $j$ 个 thermal mode，令 $W_j(g)$ 为由同一导电 Hodge 与 thermal test function 构造的实对角加权算子。定义
+对第 $j$ 个 thermal mode，令 $W_j(g)$ 为把同一导电 Hodge 按 thermal test function $\phi_j$ 加权得到的 Hermitian operator，并保持对 heat projection 的离散一致性。定义
 \begin{equation}
 \boxed{
 H_j(g)=X(g)^H W_j(g)X(g).
 }
 \end{equation}
-由于 $W_j$ 为实对角矩阵，$H_j$ 必须满足
+因此
 \begin{equation}
 H_j=H_j^H,
 \end{equation}
-但当 thermal mode 变号时，$H_j$ 不必半正定。
+但当 thermal mode 变号时，$H_j$ 一般不半正定。
 
-任意复端口电流下的体 Joule modal source 为
+任意复端口电流下的 cycle-averaged 体 Joule modal source 为
 \begin{equation}
 \boxed{
-q_{{\rm vol},j}(g,c)=\operatorname{Re}\!\left(c^H H_j(g)c\right).
+q_{{\rm vol},j}(g,c)
+=\frac12\operatorname{Re}\!\left(c^H H_j(g)c\right).
 }
 \end{equation}
 不能在构造 $H_j$ 时提前取实部。Hermitian 矩阵虚部的反对称部分会参与有相对相位的多端口局部/modal power；提前执行 $\operatorname{Re}(H_j)$ 会丢失真实相位耦合。
 
+$D_{\rm vol}$ 不能一般由有限个 $H_j$ 简单求和恢复，因为 thermal basis mode 并不构成空间常数函数的 partition of unity。故 $D_{\rm vol}$ 必须作为独立的总功率对象保留，而 $H_j$ 负责 reduced thermal source projection；二者来自同一空间 Joule bilinear form，但承担不同作用。
+
 \subsection{线圈集中电阻热}
-线圈不作为 Maxwell volume conductor 时，其损耗由独立的集中 resistance model 表示。若第 $p$ 个端口电阻为 $R_p(a,g)$，对应 cell heat distribution 为 $\ell_p(g)$，则
+线圈不作为 Maxwell volume conductor 时，其损耗由独立的集中 resistance model 表示。若第 $p$ 个端口电阻为 $R_p(a,g)$，对应归一化 cell heat distribution 为 $\ell_p^{(Q)}(g)$，则
 \begin{equation}
 Q_{\rm wire}
-=\sum_p\frac12 R_p(a,g)|c_p|^2\ell_p(g).
+=\sum_p\frac12 R_p(a,g)|c_p|^2\ell_p^{(Q)}(g).
 \end{equation}
 投影到 thermal basis 后得到 $q_{\rm wire}(a,g,c)$。线圈电阻模型可以包含温度、skin-effect 等经过明确定义的 constitutive approximation，但必须与 full-conductor Maxwell model 区分，不能称为后者意义下的 ``exact conductor loss''。
 
-\subsection{开放域离散功率恒等式}
-对开放电磁域，端口输入功率除了体导电损耗外，还可能通过外边界以 Poynting flux 离开计算域。记该平均外流功率为 $P_{\rm out}\ge0$；若采用吸收边界/PML，则它由相应边界或吸收层能量项表示。truth model 必须满足
+\subsection{开放域矩阵级功率恒等式}
+对开放电磁域，场端口输入功率除了体导电损耗外，还可能通过外边界/PML 以平均 Poynting flux 离开计算域。由于 Maxwell system 对 $c$ 线性，这一外流功率同样是端口电流的 Hermitian quadratic form：
+\begin{equation}
+P_{\rm out}(g,c)=\frac12 c^H D_{\rm out}(g)c,
+\qquad D_{\rm out}=D_{\rm out}^H\succeq0.
+\end{equation}
+于是对\textbf{所有}复端口电流 $c$ 的功率闭合等价于矩阵恒等式
 \begin{equation}
 \boxed{
-\frac12\operatorname{Re}\!\left(c^H Z(a,g)c\right)
-=P_{\rm vol}(g,c)+P_{\rm out}(g,c)+P_{\rm wire}(a,g,c)
+\operatorname{Herm}(Z_{\rm field})
+=D_{\rm vol}+D_{\rm out}.
 }
 \end{equation}
-到 linear-solve、quadrature/deposition、边界离散和浮点误差允许的范围。
-
-只有在域扩展实验已经证明 $P_{\rm out}$ 对目标量可忽略时，才允许把它从近似工程功率平衡中省略。有限 PEC 截断使 $P_{\rm out}=0$ 只是边界条件的结果，不能因此自动证明它近似真实开放域。
-
-该恒等式同时验证：
-\begin{itemize}
-  \item Maxwell RHS/端口方向；
-  \item 阻抗符号；
-  \item Joule Hodge；
-  \item complex phase coupling；
-  \item 开放边界能流；
-  \item 集中线圈电阻项。
-\end{itemize}
-如果该恒等式失败，则对应 snapshot 禁止进入神经训练数据集。
-
-\subsection{神经代理必须保留的代数结构}
-生产神经网络预测 $Z_{\rm field}$ 和 $H_j$ 的低维系数，解码后必须显式满足
+加入 wire resistance 后
 \begin{equation}
-\widehat Z_{\rm field}^T=\widehat Z_{\rm field},
+\frac12\operatorname{Re}(c^H Zc)
+=\frac12 c^H D_{\rm vol}c
++\frac12 c^H D_{\rm out}c
++\frac12 c^H R_{\rm wire}c.
+\end{equation}
+这比有限个随机 current audit 更强：只要矩阵恒等式成立，功率平衡自动对整个 complex current space 成立。
+
+若 Physics Gate 证明在目标精度下开放域外流可以忽略，则允许使用
+\begin{equation}
+D_{\rm out}\approx0,
 \qquad
-\operatorname{Herm}(\widehat Z_{\rm field})\succeq0,
+\operatorname{Herm}(Z_{\rm field})\approx D_{\rm vol},
 \end{equation}
-以及
-\begin{equation}
-\widehat H_j=\widehat H_j^H.
-\end{equation}
-电流依赖始终通过 $c^H\widehat H_jc$ 和 $c^H\widehat Zc$ 解析进入，网络不得自行学习 current scaling 或 current phase law。
+但必须保留相应误差预算，不能仅因有限 PEC 截断令 $P_{\rm out}=0$ 就作此结论。
 
-这些结构是必要条件但不是完整 Poynting consistency 的充分条件。$\widehat Z$ 与 $\widehat H_j$ 之间的功率/热源一致性仍必须作为 surrogate-level audit 单独量化。
+\subsection{代理层的联合能量约束}
+生产代理不应只独立预测一个 passive $Z$ 和若干 Hermitian $H_j$。正式输出集合扩展为
+\begin{equation}
+\boxed{
+\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}.
+}
+\end{equation}
+解码后必须满足
+\begin{equation}
+Z_{\rm field}^T=Z_{\rm field},
+\qquad
+D_{\rm vol}=D_{\rm vol}^H\succeq0,
+\qquad
+H_j=H_j^H.
+\end{equation}
+并定义 surrogate implied outward-loss matrix
+\begin{equation}
+\boxed{
+\widehat D_{\rm out}
+=\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}.
+}
+\end{equation}
+生产输出还必须要求
+\begin{equation}
+\widehat D_{\rm out}\succeq-\varepsilon_{\rm energy}I,
+\end{equation}
+其中严格模式取 $\varepsilon_{\rm energy}=0$；数值容差模式必须把该容差计入误差预算。这样 $Z$ 的 passivity、海水体耗散和开放边界耗散不再是三个彼此独立的预测，而受到同一矩阵级能量约束。
+
+对于端口数很小的 UWPT 系统，可以在结构化解码后对 $(\operatorname{Herm}Z,D_{\rm vol})$ 做确定性的联合可行集投影，使
+\begin{equation}
+D_{\rm vol}\succeq0,
+\qquad
+\operatorname{Herm}Z-D_{\rm vol}\succeq0
+\end{equation}
+按构造成立。该投影属于固定物理层，不属于神经网络需要学习的规律。
+
+\subsection{固定频率适用范围}
+上述 passivity 条件针对当前冻结工作频率的 time-harmonic network。若未来把 frequency 本身加入代理输入，逐频率强制 $\operatorname{Herm}Z(\omega)\succeq0$ 仍不足以保证一个完整的 causal passive broadband network；此时还必须满足频率域的 positive-real/causality 条件和跨频率解析结构。当前单频理论不对 broadband causality 作超出范围的声明。
