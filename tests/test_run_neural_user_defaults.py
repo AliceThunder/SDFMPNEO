@@ -38,15 +38,17 @@ def test_run_defaults_use_one_multiscale_fullspace_maxwell_path():
     assert "coefficient_limit" not in network
 
 
-def test_training_defaults_cover_fullspace_residuals_and_use_each_operator_update():
+def test_training_defaults_match_port_and_fgmres_krylov_residuals():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
     assert "unroll_steps" not in optimizer
     assert optimizer["batch_size"] == 1
     assert optimizer["gradient_accumulation_steps"] == 1
     assert optimizer["batch_size"] * optimizer["gradient_accumulation_steps"] == 1
-    assert optimizer["random_residual_vectors"] >= 2
-    assert optimizer["smooth_residual_vectors"] >= 2
+    assert optimizer["krylov_vectors_per_port"] >= 2
+    assert 0.5 <= optimizer["port_loss_weight"] < 1.0
+    assert "random_residual_vectors" not in optimizer
+    assert "smooth_residual_vectors" not in optimizer
     assert optimizer["final_step_loss_weight"] >= 0.7
     assert optimizer["learning_rate"] == 2e-3
     assert optimizer["lr_decay_factor"] == 0.5
