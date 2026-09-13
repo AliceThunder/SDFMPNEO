@@ -24,6 +24,7 @@ def test_run_defaults_use_one_fullspace_maxwell_path():
     assert run.TRAINING["device"] == "cuda"
     assert "em_basis_anchor_residual" not in run.TRAINING
     assert "em_basis_max_rank" not in run.TRAINING
+    assert run.TRAINING["n_operator_samples"] == 96
     assert run.TRAINING["residual_training_steps"] >= 1
     assert run.PHYSICS["maxwell_residual_tolerance"] > 0
     assert run.PHYSICS["maxwell_restart"] >= 1
@@ -33,10 +34,17 @@ def test_run_defaults_use_one_fullspace_maxwell_path():
     assert "coefficient_limit" not in run.TRAINING["network"]
 
 
-def test_training_defaults_use_one_shared_solver_step_setting_and_real_plateau_stop():
+def test_training_defaults_use_effective_batch_four_and_plateau_lr_decay():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
     assert "unroll_steps" not in optimizer
+    assert optimizer["batch_size"] == 1
+    assert optimizer["gradient_accumulation_steps"] == 4
+    assert optimizer["batch_size"] * optimizer["gradient_accumulation_steps"] == 4
+    assert optimizer["learning_rate"] == 2e-3
+    assert optimizer["lr_decay_factor"] == 0.5
+    assert optimizer["lr_plateau_patience"] >= 1
+    assert optimizer["minimum_learning_rate"] == 5e-4
     assert optimizer["patience"] <= 30
     assert optimizer["min_relative_improvement"] >= 1e-3
     assert optimizer["benchmark_samples_per_split"] >= 1
