@@ -116,7 +116,7 @@ Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j,\quad P_{
 \end{equation}
 训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。对 $Z_{pp}$ 的 mesh convergence 必须在固定物理 wire/source regularization 下检查；小 linear residual 不能替代 mesh convergence。
 
-\subsection{Gate 0F：thermal well-posedness、能量耗散、点值正性与 transient-aware ROM}
+\subsection{Gate 0F：thermal well-posedness、quadratic dissipativity、点值正性与 transient-aware ROM}
 当前 finite-time ETD 与 $t=\infty$ steady-state 理论默认在 temperature-rise space 上
 \begin{equation}
 M_T(g)\succ0,
@@ -129,19 +129,21 @@ K_T(g)\succ0
 \begin{equation}
 M_r\dot a=-K_ra
 \end{equation}
-定义能量
+定义数学上的 quadratic Lyapunov functional
 \begin{equation}
+\boxed{
 V(a)=\frac12a^TM_ra.
+}
 \end{equation}
-由 $M_r,K_r\succ0$ 必须有
+由 $M_r,K_r\succ0$ 有
 \begin{equation}
 \boxed{
 \dot V=-a^TK_ra\le0.
 }
 \end{equation}
-这是 reduced thermal dissipation 的硬能量结构，应通过数值测试保持到时间积分误差范围内。
+因此零源 ROM 在 $M_r$-诱导二次范数下是 dissipative/stable。这里 $V$ 是用于稳定性分析的二次 Lyapunov functional，\textbf{不是}物理总 sensible heat；后者具有不同的线性体积分定义。文档和实现不得把两者混称为同一个“热能”。
 
-但是能量耗散并不等价于 pointwise positivity 或 discrete maximum principle。共享 Galerkin basis 可以变号，因此即使 full heat equation 对给定边界/初值满足温度正性，重构 $\Phi a$ 也可能产生局部 undershoot/overshoot。生产验证必须监控 $T_{\min}$、$T_{\max}$、conductor-temperature functional 与任何安全阈值。若应用要求数学上严格的 pointwise positivity/maximum principle，则必须升级为 positivity/bound-preserving ROM 或 limiter；普通 Galerkin ROM 不得宣称天然拥有该性质。
+quadratic dissipativity 也不等价于 pointwise positivity 或 discrete maximum principle。共享 Galerkin basis 可以变号，因此即使 full heat equation 对给定边界/初值满足温度正性，重构 $\Phi a$ 也可能产生局部 undershoot/overshoot。生产验证必须监控 $T_{\min}$、$T_{\max}$、conductor-temperature functional 与任何安全阈值。若应用要求数学上严格的 pointwise positivity/maximum principle，则必须升级为 positivity/bound-preserving ROM 或 limiter；普通 Galerkin ROM 不得宣称天然拥有该性质。
 
 热边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
 
