@@ -1,0 +1,81 @@
+\section{Physics Gate：代理训练前的物理与离散验收}
+
+本节定义生产代理训练之前必须通过的底层验证。其目的不是增加流程复杂度，而是保证神经网络学习的是一个已经物理闭合、数值收敛且定义一致的参数映射。任一关键 Gate 未通过时，不进入正式 surrogate training。
+
+\subsection{Gate 0A：电磁 formulation 与开放域}
+在代表性几何上验证 Maxwell formulation 与边界处理：
+\begin{enumerate}
+  \item 逐步扩大计算域或采用经过验证的开放边界/PML；
+  \item 比较 $Z_{\rm field}$、互阻抗、体 Joule loss 与关键场量；
+  \item 要求目标输出随边界位置/吸收层设置达到预设收敛阈值；
+  \item 在低频 regime 下，将当前 formulation 与适当的低频 formulation（例如 $A$--$\phi$）做代表性对照，确认没有明显的低频病态或错误物理分支。
+\end{enumerate}
+只有通过该 Gate 后，才冻结 truth electromagnetic model。
+
+\subsection{Gate 0B：端口定义、reciprocity、passivity 与功率闭合}
+对每个 audit geometry 和多组复端口电流 $c$，检查：
+\begin{align}
+Z_{\rm field}^T&\approx Z_{\rm field},\\
+\frac12\operatorname{Re}(c^HZc)
+&\approx P_{\rm vol}+P_{\rm out}+P_{\rm wire},\\
+\operatorname{Re}(c^HZc)&\ge -\varepsilon_{\rm passivity}.
+\end{align}
+测试电流必须覆盖单端口、同相、反相和 $\pm\pi/2$ 相位差。阻抗符号、source orientation、Joule Hodge 或 complex phase handling 任何一项错误都会在该 Gate 暴露。
+
+\subsection{Gate 0C：Joule 与 thermal projection 一致性}
+从 Maxwell 使用的同一 $H_\sigma$ 构造空间体 Joule heat，并验证
+\begin{equation}
+\sum_c Q_{{\rm vol},c}
+\approx\frac12E^HH_\sigma E.
+\end{equation}
+对每个 thermal mode 验证直接空间投影与 Hermitian tensor contraction 一致：
+\begin{equation}
+\phi_j^TQ_{\rm vol}
+\approx\operatorname{Re}(c^HH_jc).
+\end{equation}
+禁止使用不能满足该能量闭合的独立 field reconstruction 定义 Joule heat。
+
+\subsection{Gate 0D：几何合法性与参数连续性}
+每个生产几何必须满足：
+\begin{itemize}
+  \item conductor 位于其设计包封/允许区域内；
+  \item TX/RX conductor、package 等实体满足规定的无穿透/最小间隙约束；
+  \item 与人工电磁/热边界保持足够裕量；
+  \item source deposition 守恒；
+  \item material fraction 闭合且无非法重叠解释。
+\end{itemize}
+
+此外，对几何参数做小扰动 $g\to g+\delta g$，检查 $B(g)$、material operators、$Z(g)$ 和 $H_j(g)$ 不出现由 cell midpoint assignment、离散采样点数量突变等造成的非物理跳跃。若存在 staircasing，应先改用连续、守恒的 line/source deposition 和足够平滑的 sub-cell quadrature，再训练代理。
+
+\subsection{Gate 0E：空间离散收敛}
+至少选取中心、边界和困难几何做 mesh refinement。分别监控
+\begin{equation}
+Z_{\rm field},\quad P_{\rm vol},\quad H_j,\quad T_{\max},\quad a_*.
+\end{equation}
+训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。小 linear residual 不能替代 mesh convergence。
+
+\subsection{Gate 0F：thermal 边界和 thermal ROM}
+热模型边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
+
+thermal basis 的自动 rank 必须直接使用在线 Galerkin residual：
+\begin{equation}
+r_K=Q-K\Phi(\Phi^TK\Phi)^{-1}\Phi^TQ,
+\end{equation}
+以及对应 dynamic residual。冻结 test geometries 上还必须比较 full thermal 与 ROM 的 trajectory/steady-state outputs。
+
+\subsection{Gate 0G：模型假设边界}
+当前线圈采用 filament current + 集中 AC resistance，而不是 full solid-conductor eddy-current model。因此必须明确其适用范围，并用更高保真或实验参考确认 skin/proximity effect 近似是否足够。
+
+当前海水热模型若不含流体对流，只能代表所定义的 conduction/boundary heat-transfer model。若目标是长期真实海水温升，应单独验证自然/强制对流是否可以忽略或由有效边界/材料模型吸收。
+
+\subsection{Gate 通过后的数据冻结}
+Physics Gate 通过后，应冻结并版本化：
+\begin{itemize}
+  \item PDE formulation 与相量/端口符号；
+  \item 计算域、网格与边界条件；
+  \item source/material deposition；
+  \item constitutive parameters；
+  \item Joule/impedance extraction；
+  \item thermal full model 与 ROM residual definition。
+\end{itemize}
+只有在上述版本固定后生成的 truth snapshots 才属于同一个可学习函数族。任何一项基础物理改变都应触发 truth dataset 版本更新，而不是直接在旧标签上继续训练。
