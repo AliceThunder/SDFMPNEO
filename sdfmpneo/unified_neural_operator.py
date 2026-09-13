@@ -1,6 +1,6 @@
 """Edge-space multiscale neural residual corrector for the unified Maxwell solve.
 
-The network never predicts a final Maxwell field.  It maps local sparse-operator
+The network never predicts a final Maxwell field. It maps local sparse-operator
 features and a current residual to a correction that is consumed by FGMRES.
 Topology is fixed by :class:`FixedMultiscaleBackground`; geometry and material
 changes enter only through the assembled operator features.
@@ -10,6 +10,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 import numpy as np
+
+
+FEATURE_SCHEMA = "edge-residual-v2-coupling"
 
 
 @dataclass(frozen=True)
@@ -87,8 +90,9 @@ def build_edge_residual_operator(background, config=None):
     groups = edge_group_ids(background, cfg.levels)
 
     class EdgeResidualOperator(torch.nn.Module):
-        dynamic_dimension = 7
+        dynamic_dimension = 9
         static_dimension = 6
+        feature_schema = FEATURE_SCHEMA
 
         def __init__(self):
             super().__init__()
@@ -109,12 +113,15 @@ def build_edge_residual_operator(background, config=None):
             self.coarse = torch.nn.ModuleList()
             for _ in range(cfg.levels):
                 self.local.append(torch.nn.Sequential(*sum(([
-                    torch.nn.Linear(cfg.width, cfg.width), act(), torch.nn.Linear(cfg.width, cfg.width), act()
+                    torch.nn.Linear(cfg.width, cfg.width), act(),
+                    torch.nn.Linear(cfg.width, cfg.width), act(),
                 ] for _ in range(cfg.blocks_per_level)), [])))
                 self.coarse.append(torch.nn.Sequential(*sum(([
-                    torch.nn.Linear(cfg.width, cfg.width), act(), torch.nn.Linear(cfg.width, cfg.width), act()
+                    torch.nn.Linear(cfg.width, cfg.width), act(),
+                    torch.nn.Linear(cfg.width, cfg.width), act(),
                 ] for _ in range(cfg.blocks_per_level)), [])))
             self.output = torch.nn.Linear(cfg.width, 2)
+            # A fresh or disabled network is exactly the physical Jacobi baseline.
             torch.nn.init.zeros_(self.output.weight)
             torch.nn.init.zeros_(self.output.bias)
 
@@ -166,8 +173,27 @@ def safe_diagonal(A):
     return safe_diagonal_values(diagonal)
 
 
-def residual_features_from_diagonal(diagonal, residual):
-    """Local operator/residual features from the exact Maxwell diagonal."""
+def sparse_row_statistics(A):
+    """Return exact sparse row |A| sums and row nonzero counts without densifying A."""
+    matrix = A.tocsr()
+    row_abs_sum = np.asarray(np.abs(matrix).sum(axis=1), float).reshape(-1)
+    row_nnz = np.diff(matrix.indptr).astype(float, copy=False)
+    if (
+        row_abs_sum.shape != (matrix.shape[0],)
+        or row_nnz.shape != (matrix.shape[0],)
+        or np.any(~np.isfinite(row_abs_sum))
+    ):
+        raise ValueError("invalid sparse Maxwell row statistics")
+    return row_abs_sum, row_nnz
+
+
+def residual_features_from_diagonal(diagonal, residual, row_abs_sum=None, row_nnz=None):
+    """Local operator/residual features for a full edge-space correction.
+
+    ``row_abs_sum`` and ``row_nnz`` expose off-diagonal coupling while keeping
+    the feature size O(n_edges). They are computed from the exact sparse
+    operator at runtime and from the same assembled operator during training.
+    """
     R = np.asarray(residual, complex)
     if R.ndim == 1:
         R = R[:, None]
@@ -191,7 +217,30 @@ def residual_features_from_diagonal(diagonal, residual):
         0.0,
         12.0,
     )
-    operator = np.column_stack([logdiag, phase, loss_ratio])
+
+    if row_abs_sum is None:
+        row_abs = dabs.copy()
+    else:
+        row_abs = np.asarray(row_abs_sum, float).reshape(-1)
+    if row_nnz is None:
+        nnz = np.ones(diagonal.size, float)
+    else:
+        nnz = np.asarray(row_nnz, float).reshape(-1)
+    if (
+        row_abs.shape != (diagonal.size,)
+        or nnz.shape != (diagonal.size,)
+        or np.any(~np.isfinite(row_abs))
+        or np.any(~np.isfinite(nnz))
+        or np.any(row_abs < 0)
+        or np.any(nnz < 0)
+    ):
+        raise ValueError("invalid Maxwell row statistics")
+
+    offdiag_abs = np.maximum(row_abs - dabs, 0.0)
+    coupling_ratio = np.clip(np.log1p(offdiag_abs / np.maximum(dabs, tiny)), 0.0, 12.0)
+    degree_scale = max(float(np.median(np.maximum(nnz, 1.0))), 1.0)
+    degree = np.clip(np.log1p(np.maximum(nnz - 1.0, 0.0)) / np.log1p(degree_scale), 0.0, 4.0)
+    operator = np.column_stack([logdiag, phase, loss_ratio, coupling_ratio, degree])
 
     features = []
     for p in range(R.shape[1]):
@@ -208,8 +257,9 @@ def residual_features_from_diagonal(diagonal, residual):
 
 
 def residual_features(A, residual):
-    """Runtime wrapper using the exact diagonal of the assembled sparse operator."""
-    return residual_features_from_diagonal(A.diagonal(), residual)
+    """Runtime wrapper using exact diagonal and exact sparse row coupling statistics."""
+    row_abs_sum, row_nnz = sparse_row_statistics(A)
+    return residual_features_from_diagonal(A.diagonal(), residual, row_abs_sum, row_nnz)
 
 
 def neural_correction(network, A, residual):
@@ -231,6 +281,7 @@ def neural_correction(network, A, residual):
 
 
 __all__ = [
+    "FEATURE_SCHEMA",
     "EdgeMultiscaleConfig",
     "build_edge_residual_operator",
     "edge_group_ids",
@@ -240,4 +291,5 @@ __all__ = [
     "residual_features_from_diagonal",
     "safe_diagonal",
     "safe_diagonal_values",
+    "sparse_row_statistics",
 ]
