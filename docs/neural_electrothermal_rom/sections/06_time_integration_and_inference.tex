@@ -1,88 +1,87 @@
 \section{时间推进与推理}
 
-\subsection{连续时间模型}
-神经热源进入真实降阶动力系统：
+\subsection{在线查询的分层顺序}
+对一个固定几何 $g$，神经网络首先只调用一次，得到
+\begin{equation}
+\left\{\widehat Z_{\rm field}(g),\widehat H_1(g),\ldots,\widehat H_r(g)\right\}.
+\end{equation}
+这些参数在整个 thermal trajectory 中保持不变。随后端口电流 $c$ 通过解析二次型形成体 Joule modal source：
+\begin{equation}
+\widehat q_{{\rm vol},j}(g,c)
+=\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right).
+\end{equation}
+热状态相关性只通过真实的 $R_{\rm wire}(a,g)$ 进入线圈热源和总阻抗。
+
+\subsection{连续时间热模型}
+生产在线模型为
 \begin{equation}
 \boxed{
-M_r(g)\dot a=-K_r(g)a+q_\theta(a,g,u).
+M_r(g)\dot a
+=-K_r(g)a
++\widehat q_{\rm vol}(g,c)
++q_{\rm wire}(a,g,c)
++f_T(g).
 }
 \end{equation}
-初值
-\begin{equation}
-a(0)=a_0
-\end{equation}
-由 ODE 初值条件严格满足，不通过损失函数学习。
+初值 $a(0)=a_0$ 由 ODE 初值严格给定。网络不接收时间，不预测 $a(t)$，也不吸收 $M_r$ 或 $K_r$。
 
-\subsection{固定几何的指数积分}
-在参考/固定几何下 $M_r=I,K_r=\Lambda$，定义
+\subsection{端口输出}
+总阻抗在任意热状态下为
 \begin{equation}
-f_\theta(a,u)=q_\theta(a,u),
+\boxed{
+\widehat Z(a,g)
+=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
+}
 \end{equation}
-则
+因此场耦合/海水损耗对应的几何依赖与线圈温度电阻效应保持显式分离。平均输入功率由
 \begin{equation}
-\dot a=-\Lambda a+f_\theta(a,u).
+P_{\rm in}(a,g,c)
+=\frac12\operatorname{Re}\!\left(c^H\widehat Z(a,g)c\right)
 \end{equation}
-线性耗散部分应解析推进。首版目标方法为二阶 exponential time differencing（ETD2）。定义
-\begin{equation}
-E=\mathrm e^{-h\Lambda},
-\qquad
-\varphi_1(z)=\frac{\mathrm e^z-1}{z},
-\qquad
-\varphi_2(z)=\frac{\mathrm e^z-z-1}{z^2}.
-\end{equation}
-可采用标准 ETD2 predictor-corrector，使 stiff 线性热衰减不限制显式步长。
+计算，并可与 thermal heat 和开放域能流 audit 对照。
 
-\subsection{变化几何}
-对一个 trajectory，几何 $g$ 固定，因此
+\subsection{ETD2 与 IMEX}
+对固定几何，$M_r(g),K_r(g)$ 在时间上不变。定义
 \begin{equation}
-L(g)=M_r(g)^{-1}K_r(g)
+L(g)=M_r(g)^{-1}K_r(g).
 \end{equation}
-也是时间不变的。可选两种实现：
-\begin{enumerate}
-  \item 对中低热 rank，预计算/缓存 $E_h(g)=\exp[-hL(g)]$ 及 $\varphi_k[-hL(g)]$，使用 ETD2；
-  \item 若矩阵函数成本或几何查询频率不合适，则采用 linearly implicit IMEX：
-  \begin{equation}
-  (M_r+hK_r)a_{n+1}=M_ra_n+hq_\theta(a_n,g,u),
-  \end{equation}
-  并缓存固定 $(g,h)$ 的 Cholesky/LU。
-\end{enumerate}
-最终实现由 benchmark 决定，但必须保持真实 $M_r,K_r$ 不被 NN 吸收。
+中低 thermal rank 下可对 generalized eigenproblem
+\begin{equation}
+K_rv=\lambda M_rv
+\end{equation}
+进行一次分解，并复用于整个 trajectory。线性耗散项采用指数推进，非线性部分只包含温度相关 wire resistance 等明确热源项。
 
-\subsection{步长控制}
-首版支持固定步长集合 $h\in\mathcal H$，便于缓存矩阵函数并保证可预测的推理成本。随后可增加 embedded error estimator。时间离散误差 $E_{\mathrm{time}}$ 必须与神经误差分开报告。
+默认二阶 ETD predictor-corrector；若矩阵函数或 nonlinear source 处理不合适，则使用
+\begin{equation}
+(M_r+hK_r)a_{n+1}
+=M_ra_n+hq(a_n,g,c)
+\end{equation}
+的 linearly implicit IMEX 作为稳健备选。数值时间积分误差必须与 surrogate、thermal ROM 和 truth discretization error 分开报告。
 
-\subsection{连续流与半群性质}
-因为模型首先定义向量场
-\begin{equation}
-\dot a=F_\theta(a,g,u),
-\end{equation}
-其精确连续流天然满足
-\begin{equation}
-\Phi_{t+s}^\theta=\Phi_s^\theta\circ\Phi_t^\theta.
-\end{equation}
-因此不再把 semigroup consistency 作为必须学习的网络性质。离散求解器只产生标准数值积分误差；必要时用 step-doubling 检查组合一致性。
+\subsection{自适应步长}
+自适应 ETD 使用 embedded lower-order estimate 或 step-doubling 控制局部时间误差。步长控制只依赖 thermal integration error，不通过人为限制保证 surrogate 正确性。
 
-\subsection{有限时间与无限时间分离}
-有限时间查询使用上述 ODE/ETD/IMEX。对于 $t=\infty$，不做超长 rollout，而直接求神经稳态
-\begin{equation}
--K_r(g)a_*+q_\theta(a_*,g,u)=0.
-\end{equation}
-得到候选稳态后，必须用真实 reduced physics 计算
-\begin{equation}
-r_*=-K_r(g)a_*+q_{\mathrm{phys}}(a_*,g,u)
-\end{equation}
-进行 audit；必要时从 $a_*$ 出发做真实 reduced Newton 修正。
+对特别长时间查询，允许步长随接近稳态而增大，但必须保持 state-domain 与 constitutive validity 检查。
 
-\subsection{电磁输出查询}
-神经模型只负责温度动力学。若用户需要阻抗、端口量、区域损耗或 EM certificate，则使用预测热状态调用现有 reduced EM model：
+\subsection{稳态单独求解}
+$t=\infty$ 不通过超长时间积分逼近，而直接求
 \begin{equation}
-(a(t),g,u)\xrightarrow{\mathrm{EM\ ROM}} Z,P,\text{diagnostics}.
+\boxed{
+-K_r(g)a_*
++\widehat q_{\rm vol}(g,c)
++q_{\rm wire}(a_*,g,c)
++f_T(g)=0.
+}
 \end{equation}
-首版不训练第二个黑箱网络同时预测全部 EM 输出，从而避免破坏输出一致性和已有 EM 认证链。
+可采用 Newton、damped Newton 或稳健非线性 root solve。候选稳态必须检查 reduced thermal residual 和温度 constitutive domain。
 
-\subsection{推理性能目标}
-推理核心成本应近似为
+\subsection{批量几何查询}
+对于同一几何的多个时间、电流或初值查询，$\widehat Z_{\rm field}$ 与 $\widehat H_j$ 只计算一次并缓存。对于批量不同几何，可直接批量执行 MLP 与 POD 解码。生产推理的主要成本因此为
 \begin{equation}
-N_t\times(\text{one MLP forward}+\text{small dense quadratic contractions}+\text{ROM linear algebra}).
+\text{one geometry NN forward}
++N_t\times(\text{small thermal ROM operations}),
 \end{equation}
-目标是在 CPU 上满足交互式查询，在 GPU 上满足大批量参数扫描。最终性能验收以真实 UWPT rank、几何数和查询长度为准，不预先承诺固定倍数加速。
+而不是每个 thermal stage 重复求解高维 Maxwell 系统。
+
+\subsection{未来温度相关 EM 参数的扩展}
+若将来引入真正温度相关的海水电导率或介电参数，则代理输入扩展为 $(s_{\rm em},g)$，并在 thermal trajectory 中按需要更新 EM tensors。该扩展必须以 constitutive sensitivity 证明为依据；在当前材料模型下禁止人为引入不存在的热状态依赖。
