@@ -3,7 +3,7 @@
 \subsection{数据生成必须分成两个物理阶段}
 由于第 $j$ 个 Joule tensor $H_j$ 的定义依赖已经冻结的 thermal basis mode $\phi_j$，因此不能先生成 $H_j$ tensor dataset、再构建 thermal basis。正确依赖顺序固定为：
 \begin{enumerate}
-  \item 先生成 validated Maxwell/geometry truth bank，包括端口基响应、$Z_{\rm field}$、总海水耗散 $D_{\rm vol}$、空间体 Joule heat anchors、wire heat patterns 与 audit metadata；
+  \item 先生成 validated Maxwell/geometry truth bank，包括端口基响应、$Z_{\rm field}$、总海水耗散 $D_{\rm vol}$、完整 current-induced spatial Joule basis、wire heat patterns 与 audit metadata；
   \item 使用这些空间 heat/source anchors 构建并冻结共享 thermal basis $\Phi$；
   \item 再对每个 geometry 复用或重算 Maxwell port responses，把空间 Joule bilinear form 投影到已冻结的 $\phi_j$，得到最终 $H_j$；
   \item 最后形成用于 neural training 的结构化 $Z/D_{\rm vol}/H$ tensor dataset。
@@ -13,15 +13,17 @@
 \subsection{阶段一：validated physics bank}
 对每个候选几何 $g^{(s)}$：
 \begin{enumerate}
-  \item 先通过几何合法性、边界裕量、source continuity 与离散连续性检查；
+  \item 先通过几何合法性、边界裕量、terminal/source continuity 与离散连续性检查；
   \item 组装经过 Physics Gate 冻结的 Maxwell truth model；
   \item 求解所有端口基激励得到 $X(g^{(s)})$；
   \item 构造 $Z_{\rm field}$ 与 $D_{\rm vol}=X^HH_\sigma X$；
   \item 检查 linear residual、reciprocity、$D_{\rm vol}\succeq0$、$D_{\rm out}=\operatorname{Herm}Z-D_{\rm vol}\succeq0$ 与矩阵级功率平衡；
-  \item 生成 representative complex-current 下的空间体 Joule heat patterns，并生成各 wire/source spatial patterns；
+  \item 用能够张成 Hermitian port space 的确定性 current combinations 生成完整 current-induced spatial Joule basis，并加入各 wire/source spatial patterns；
   \item 保存 geometry、truth quality、mesh/domain/formulation/constitutive version，以及后续构建 thermal basis 所需的物理信息。
 \end{enumerate}
 任何未通过 truth audit 的 geometry 不得进入 thermal basis 或 neural dataset。
+
+对 $n_p$ 个端口，Hermitian port space 的实维数为 $n_p^2$，因此每个 geometry 的 current-induced heat span 可由有限组 deterministic port combinations 精确恢复；随机 current samples 只用于额外 audit，不作为 span completeness 的理论依据。
 
 \subsection{阶段二：冻结 thermal basis 后生成 tensor labels}
 thermal basis $\Phi$ 通过 geometry/source/shift resolvent residual-greedy 构建并冻结后，对每个 geometry 定义
