@@ -24,6 +24,8 @@ validated single-frequency Maxwell truth physics
 P_{\rm in}=\frac12\operatorname{Re}(c^H v).
 \]
 
+当前正式 source basis `S(g)` 是实值几何电流形状，所有端口幅值和相位都放在复向量 `c` 中。`v_field = -S^T E` 首先是与 source mode 功率共轭的 generalized reaction voltage；只有 source/terminal/feed-return 定义经过校准后，才把它解释为物理 terminal voltage。
+
 体耗散矩阵定义为
 
 \[
@@ -32,13 +34,19 @@ D_{\rm vol}=X^H H_\sigma X,
 P_{\rm vol}=\frac12c^H D_{\rm vol}c.
 \]
 
-thermal modal Joule tensor 为
+thermal modal Joule tensor 必须从同一有限元 basis 和 quadrature 直接组装加权 loss bilinear form：
 
 \[
-H_j=X^H W_jX,
+[W_j]_{mn}=\int_\Omega \sigma\,\phi_j\,N_m\cdot N_n\,dx,
 \qquad
+H_j=X^H W_jX,
+\]
+
+\[
 q_{{\rm vol},j}=\frac12\operatorname{Re}(c^HH_jc).
 \]
+
+不能对一般 consistent `H_sigma` 做任意单侧逐点加权后假设 Hermitian/energy consistency 自动保持；mass-lumped diagonal Hodge 只是上述统一定义的特殊实现。取 `phi = 1` 时，对应 weighted operator 必须退化为 `H_sigma`。
 
 禁止混用峰值与 RMS phasor convention。
 
@@ -76,14 +84,21 @@ D_{\rm vol}=D_{\rm vol}^H\succeq0,
 H_j=H_j^H,
 \]
 
-以及
+以及 surrogate implied outward-loss
 
 \[
-D_{\rm out}
+D_{\rm out}^{\rm imp}
 =\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
 \]
 
-因此 port passivity、海水体耗散和开放域 outward loss 被放进同一矩阵级能量框架。联合投影的 correction norm 必须报告；不能用大幅投影掩盖差的 raw surrogate。
+注意：`D_out^imp` 只用于 surrogate feasibility。truth 侧的 `D_out^phys` 必须从独立 Poynting-flux / absorbing-boundary / PML absorption bilinear form 计算，再验证
+
+\[
+\operatorname{Herm}(Z_{\rm field})
+\approx D_{\rm vol}+D_{\rm out}^{\rm phys}.
+\]
+
+不能把差值定义成 truth outward loss 后再声称“功率闭合”。联合投影的 correction norm 必须报告；不能用大幅投影掩盖差的 raw surrogate。投影只修耗散块，不无故改变 reciprocal reactive block。
 
 ## Frequency-transient 前提
 
@@ -113,15 +128,33 @@ validated spatial Maxwell/Joule/source truth bank
 -> POD + neural training
 ```
 
-固定 geometry 下，volume heat 对 complex current 是 Hermitian quadratic form，因此完整 current-induced heat-source span 的实维数至多为 `n_ports^2`。basis builder 使用确定性的 Hermitian port-space basis combinations 完整覆盖该 span，不依赖大量随机 current samples。
+固定 geometry 下，volume heat 对 complex current 是 Hermitian quadratic form，因此完整 current-induced heat-source span 的实维数至多为 `n_ports^2`。basis builder 使用确定性的 Hermitian port-space combinations 完整覆盖该 span，不依赖大量随机 current samples。
 
-thermal basis 还必须覆盖目标 transient time scales。使用
+当前 thermal theory 假定生产域内
 
 \[
-(K+sM)u=Q
+M_T(g)\succ0,\qquad K_T(g)\succ0.
 \]
 
-的 geometry/source/shift resolvent anchors，并检查真实 Galerkin residual；最终仍以 completely held-out full-vs-ROM transient/steady audit 为准。
+若 pure Neumann 等导致 `K` 有零模，必须单独处理 nullspace、能量积累和 steady-state solvability，不能继续原样使用 `K^-1` / 唯一稳态理论。
+
+thermal basis 还必须覆盖受迫响应、允许的 initial-condition family 与目标 transient time scales。统一 resolvent 写成
+
+\[
+A_su=b,\qquad A_s=K+sM,
+\]
+
+source anchor 取 `b = Q`，initial-condition anchor 取 `b = M theta0`。自动 rank 的理论 residual 指标使用
+
+\[
+\eta_s^2
+=\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}
+=\frac{\|u-\tilde u\|_{A_s}^2}{\|u\|_{A_s}^2},
+\]
+
+而不是未经尺度化的 Euclidean residual。最终仍以 completely held-out full-vs-ROM transient/steady audit 为准。
+
+如果输入 full initial temperature，默认做 `M`-orthogonal projection；如果直接输入任意 reduced `a0`，只有属于已定义并审计 initial-condition family 的状态才带 full-order accuracy claim。
 
 ## 热系统
 
@@ -145,21 +178,24 @@ wire resistance 不能把 `a` 当黑箱输入；必须先由 reduced temperature
 
 再把得到的 `c(a,t)` 送入 quadratic Joule layer。current-controlled 与 circuit-controlled 结果必须明确区分。
 
+`t = inf` 不是“找到任意 root”。带 temperature-dependent wire heating 或 circuit feedback 时可能存在多稳态、无稳定平衡或 thermal runaway；候选 steady state 必须通过 residual、constitutive-domain 和闭环 Jacobian stability 检查。
+
 ## Physics Gate
 
 正式 dataset/training 前，至少必须通过：
 
 1. Maxwell formulation、开放域/域扩展和 mesh convergence；
-2. phasor convention、port units/sign/orientation 与 reciprocity；
-3. `D_vol = X^H H_sigma X` 和 `D_out = Herm(Z_field)-D_vol` 的矩阵级非负/功率闭合；
-4. spatial Joule、`D_vol` 和 modal `H_j` 的统一 Hodge 能量一致性；
+2. peak-phasor、port units/sign/orientation、reaction-voltage 与 terminal calibration；
+3. truth `D_out^phys` 的独立计算，以及 `Herm(Z_field) ≈ D_vol + D_out^phys` 的矩阵级功率闭合；
+4. `H_sigma / W_j / D_vol / H_j` 的统一有限元双线性型和 quadrature 一致性；
 5. terminal/source/return-path 或 charge-continuity consistency；
 6. 几何无穿透、包封、边界裕量和连续守恒 source/material deposition；
-7. thermal boundary/domain sensitivity；
-8. complete current-induced source span + transient-aware thermal ROM；
-9. wire-temperature functional 与 full-vs-ROM conductor-temperature audit；
-10. filament conductor、AC resistance、feed/return path、海水 thermal convection 等模型假设的适用性；
-11. frequency-transient 时间尺度与 operating-mode/circuit conditioning。
+7. thermal boundary/domain sensitivity 与 `M,K` coercivity/nullspace policy；
+8. complete current-induced source span + initial-condition family + transient-aware thermal ROM；
+9. energy/dual-norm Galerkin resolvent error 与 full-vs-ROM trajectory；
+10. wire-temperature functional 与 conductor-temperature audit；
+11. filament conductor、AC resistance、feed/return path、海水 thermal convection 等模型假设的适用性；
+12. frequency-transient 时间尺度与 operating-mode/circuit conditioning。
 
 没有通过这些 Gate 时，降低 neural loss 没有物理意义。
 
@@ -171,8 +207,9 @@ wire resistance 不能把 `a` 当黑箱输入；必须先由 reduced temperature
 - decoded `Z_field / D_vol / H_j` error；
 - joint-feasible projection correction；
 - arbitrary complex-current voltage/Joule/total-loss error；
-- matrix-level `D_out` consistency；
-- thermal trajectory / steady-state error；
+- independent truth `D_out^phys` 与 surrogate `D_out^imp` consistency；
+- thermal resolvent/trajectory/steady-state error；
+- initial-condition projection/homogeneous-response error；
 - circuit-controlled error（若启用）；
 - completely held-out end-to-end geometry audit。
 
@@ -186,7 +223,7 @@ geometry
 -> prescribed current or deterministic circuit solve
 -> exact quadratic current contraction
 -> true R_wire(temperature functional)
--> true thermal ROM integration / steady solve
+-> true thermal ROM integration / stable steady solve
 ```
 
 同一 geometry 的多个时间、电流、外部电路和初值查询复用同一组 neural EM tensors。
