@@ -18,8 +18,8 @@
 \subsection{第一层：validated spatial truth bank}
 离线物理层首先对 geometry family 生成与 thermal mode 无关的基础 truth information：
 \begin{enumerate}
-  \item 几何合法性、terminal/source continuity 和 Physics Gate 检查；
-  \item 组装冻结版本的 Maxwell operator 与端口 source；
+  \item 几何合法性、physical wire/source regularization、terminal/source continuity 和 Physics Gate 检查；
+  \item 组装冻结版本的 Maxwell operator 与实值端口 source basis；
   \item 求所有端口基响应 $X$；
   \item 计算 $Z_{\rm field}$、$D_{\rm vol}=X^HH_\sigma X$、空间体 Joule bilinear information 与 wire/source spatial patterns；
   \item 从开放边界/PML 的独立物理双线性型计算 $D_{\rm out}^{\rm phys}$；
@@ -33,33 +33,49 @@
 这一层不能依赖尚未构建的 thermal mode $\phi_j$；truth outward power 也不能通过 $\operatorname{Herm}Z-D_{\rm vol}$ 反定义后自证。
 
 \subsection{第二层：thermal basis builder}
-共享 thermal basis 在 modal tensor labels 之前构建。对每个 geometry，volume Joule 对端口 current 是 Hermitian quadratic form，因此 current-induced spatial heat family 可由有限个端口 Hermitian basis combinations 精确张成；不需要依赖大量随机 current samples。再加上各 wire heat patterns、其他确定性热源以及目标 initial-condition family（若 full-field initial conditions 属于生产接口），形成完整 basis-enrichment family。
+共享 thermal basis 在 modal tensor labels 之前构建。对每个 geometry，volume Joule 对端口 current 是 Hermitian quadratic form，因此 current-induced spatial heat family 可由有限个端口 Hermitian basis combinations 精确张成；再加上各 wire heat patterns、其他确定性热源以及目标 initial-condition family，形成完整 enrichment family。
 
-在 geometry/source/shift anchor set 上做 resolvent residual-greedy：
+统一 resolvent anchor 写成
 \begin{equation}
-r_{\alpha\ell}
-=Q_\alpha-(K+s_\ell M)\Phi
-\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
+A_su=b,
+\qquad A_s=K+sM\succ0,
 \end{equation}
-shift $s_\ell$ 覆盖 steady 与目标 transient inverse-time scales。worst residual 超过 target 时增广基，rank 是达到目标后的结果，不作为用户手工参数。
+其中 source anchor 使用 $b=Q_\alpha$，initial-condition anchor 使用 $b=M\theta_{0,\beta}$。Galerkin residual 为 $r=b-A_s\Phi a$，rank/enrichment criterion 使用
+\begin{equation}
+\boxed{
+\eta_s^2
+=\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}
+=\frac{\|u-\Phi a\|_{A_s}^2}{\|u\|_{A_s}^2}.
+}
+\end{equation}
+worst $\eta_s$ 超过 target 时增广基；若实现使用 approximate estimator，必须先验证其与上述能量误差的等价关系。rank 是达到目标后的结果，不作为用户手工参数。
 
-basis version 必须记录 geometry/source anchor set、current-basis construction、shift set、initial-condition policy、thermal operators/boundaries、wire-temperature functional 和 truth-physics version。冻结 audit geometries 上还必须通过 full-vs-ROM transient/steady trajectory 验证。
+basis version 必须记录 geometry/source/initial-condition anchor set、current-basis construction、shift set、thermal operators/boundaries、cross-space transfer、wire-temperature functional、residual norm definition 和 truth-physics version。冻结 audit geometries 上还必须通过 full-vs-ROM transient/steady trajectory 验证。
 
 \subsection{第三层：冻结 basis 后生成 tensor dataset}
-只有在 $\Phi$ 冻结后，才对每个 geometry 构造第 $j$ 个 modal Joule tensor
+只有在 $\Phi$ 冻结后，才对每个 geometry 用同一 FE basis/quadrature 直接组装
 \begin{equation}
-H_j(g)=X(g)^H W_j(\phi_j,g)X(g).
+[W_j]_{mn}=\int_\Omega\sigma\,\phi_j\,N_m\cdot N_n\,\mathrm dx,
+\qquad
+H_j(g)=X(g)^H W_j(g)X(g).
+\end{equation}
+同时记录 $\phi_j^{\min},\phi_j^{\max}$ 并验证
+\begin{equation}
+\phi_j^{\min}D_{\rm vol}
+\preceq H_j
+\preceq\phi_j^{\max}D_{\rm vol}.
 \end{equation}
 最终 neural dataset 保存：
 \begin{itemize}
-  \item canonical geometry parameters；
+  \item canonical geometry parameters 与 validated production-domain definition；
   \item $Z_{\rm field}$ 的复对称独立自由度；
   \item $D_{\rm vol}$ 的 Hermitian 独立自由度；
   \item $H_j$ 的 Hermitian 独立自由度；
+  \item $\phi_j^{\min/\max}$ 与 thermal-basis metadata；
   \item geometry split 与 completely-held-out audit split；
   \item independent truth $D_{\rm out}^{\rm phys}$ 作为 audit target；
   \item thermal-basis version；
-  \item frequency/phasor/port、mesh/domain/formulation/constitutive version；
+  \item frequency/phasor/port、physical source regularization、mesh/domain/formulation/constitutive version；
   \item truth residual、matrix power-balance、reciprocity 等 audit 指标。
 \end{itemize}
 任何基础物理或 thermal basis 版本变化都必须使 tensor dataset signature 失效。
@@ -73,7 +89,7 @@ y\approx\bar y+U_K\beta.
 \begin{equation}
 \beta_\theta:g\mapsto\R^K.
 \end{equation}
-模型文件必须持久化 geometry encoding、output scaling、POD mean/basis、MLP weights、tensor schema、联合耗散可行层、thermal-basis version 和 truth-physics version。
+模型文件必须持久化 geometry encoding、$\mathcal G_{\rm prod}$、output scaling、POD mean/basis、MLP weights、tensor schema、联合可行层、$\phi_j^{\min/\max}$、thermal-basis version 和 truth-physics version。
 
 \subsection{结构化解码与联合可行层}
 解码流程固定为
@@ -85,21 +101,24 @@ y\approx\bar y+U_K\beta.
 \rightarrow
 \{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_j\}.
 \end{equation}
-联合投影只修正 reciprocal impedance 的耗散块 $R=\operatorname{Herm}Z$ 与 $D_{\rm vol}$，不改变 reactive symmetric block。最终输出满足
+联合可行层保持 reactive reciprocal block 不变，并对耗散/modal blocks 施加
 \begin{equation}
-\widehat Z_{\rm field}^T=\widehat Z_{\rm field},
-\qquad
 \widehat D_{\rm vol}\succeq0,
 \qquad
 \operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}\succeq0,
-\qquad
-\widehat H_j^H=\widehat H_j.
 \end{equation}
-同时保存/报告 projection correction norm，禁止用大幅物理投影掩盖 raw surrogate error。surrogate implied outward matrix 还必须与独立 truth $D_{\rm out}^{\rm phys}$ 做 held-out audit。
+以及
+\begin{equation}
+\phi_j^{\min}\widehat D_{\rm vol}
+\preceq\widehat H_j
+\preceq\phi_j^{\max}\widehat D_{\rm vol}\quad\forall j.
+\end{equation}
+同时保存/报告 $(Z,D)$ 与 $H$ 两类 projection correction norm，禁止用大幅物理投影掩盖 raw surrogate error。surrogate implied outward matrix 还必须与独立 truth $D_{\rm out}^{\rm phys}$ 做 held-out audit。
 
 \subsection{在线 thermal/circuit engine}
 对一个几何查询：
 \begin{enumerate}
+  \item 先检查 $g\in\mathcal G_{\rm prod}$ 与 geometry feasibility；域外输入不进入“validated prediction”路径；
   \item neural geometry forward 只执行一次并缓存 $\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_j$；
   \item current-controlled 模式直接使用给定 $c$；circuit-controlled 模式由确定性 circuit equations 求 $c(a,t)$；
   \item 解析计算
@@ -109,28 +128,31 @@ y\approx\bar y+U_K\beta.
   P_{\rm vol}=\frac12c^H\widehat D_{\rm vol}c;
   \end{equation}
   \item 通过明确的 conductor-temperature functional 更新 $R_{\rm wire}$ 与 wire heat；
-  \item 使用真实 $M_r(g),K_r(g)$ 推进 ODE 或求稳定 steady state；
+  \item 使用真实 $M_r(g),K_r(g)$ 推进 ODE 或求与初值/稳定分支一致的 steady state；
   \item 输出 $Z(a,g)=\widehat Z_{\rm field}+R_{\rm wire}$ 及功率诊断。
 \end{enumerate}
+
+若 circuit ring-up/settling time 不再远短于 thermal/envelope time scale，则在线 engine 必须包含 circuit dynamic states，而不能继续用纯代数 phasor network solve。若 geometry 在 query 中随时间变化，也必须显式更新 geometry-dependent tensors/operators。
 
 \subsection{验证测试}
 最低测试集合必须覆盖：
 \begin{itemize}
   \item Maxwell mesh/domain/formulation convergence；
-  \item terminal/source continuity、units 和 geometry perturbation continuity；
+  \item physical source regularization 与 self-impedance mesh convergence；
+  \item terminal/source continuity、units、reaction-voltage calibration 和 geometry perturbation continuity；
   \item port reciprocity；
   \item independently-computed $D_{\rm vol}$ 与 $D_{\rm out}^{\rm phys}$；
   \item $\operatorname{Herm}Z\approx D_{\rm vol}+D_{\rm out}^{\rm phys}$；
   \item $\sum Q_{\rm vol}=\frac12E^HH_\sigma E$；
-  \item $\phi_j^TQ_{\rm vol}=\frac12\operatorname{Re}(c^HH_jc)$；
+  \item direct $W_j$ assembly、$\phi_j^TQ_{\rm vol}=\frac12\operatorname{Re}(c^HH_jc)$ 与 modal Loewner bounds；
   \item arbitrary complex-current contraction；
   \item POD raw decode、joint feasible projection 和 projection-correction audit；
   \item frozen validation/test $Z/D/H/q$ error 和 implied-vs-physical outward-loss error；
-  \item geometry/source/shift Galerkin resolvent residual；
+  \item geometry/source/initial-condition/shift energy-norm resolvent error；
   \item full thermal versus ROM transient/steady audit；
-  \item initial-condition projection audit（若支持 full initial field）；
+  \item initial-condition projection/homogeneous-response audit；
   \item wire-temperature functional audit；
-  \item stable-equilibrium Jacobian audit；
+  \item reduced stable-equilibrium Jacobian 与 frozen full-order branch/perturbation audit；
   \item ETD/IMEX against high-accuracy reference；
   \item current-controlled and, when enabled, circuit-controlled end-to-end audit。
 \end{itemize}
@@ -139,7 +161,7 @@ y\approx\bar y+U_K\beta.
 用户层只需要两个概念流程：
 \begin{itemize}
   \item \textbf{train：}生成/复用 validated spatial truth bank，构建并冻结 thermal basis，生成 tensor dataset，构建 POD，训练 geometry surrogate，保存统一模型；
-  \item \textbf{predict：}加载模型，对 geometry 解码物理 tensors，执行 current/circuit physics 与 thermal dynamics。
+  \item \textbf{predict：}加载模型，检查 production domain，对 geometry 解码物理 tensors，执行 current/circuit physics 与 thermal dynamics。
 \end{itemize}
 缓存、memmap、out-of-core SVD 等都属于内部性能实现，不改变理论接口。
 
@@ -152,9 +174,11 @@ y\approx\bar y+U_K\beta.
   \item 用 unrestricted matrices 代替 reciprocal/Hermitian/energy-feasible output；
   \item 在 thermal basis 尚未冻结时定义最终 $H_j$ labels；
   \item 用随机 current sampling 代替完整 Hermitian current-source span；
+  \item 用未经尺度化的 Euclidean residual 宣称 thermal ROM 相对解误差已收敛；
   \item 只用 steady 与 initial derivative 两个端点宣称 thermal transient ROM 已收敛；
-  \item 用任意 nonlinear root 代替经稳定性验证的 steady state；
+  \item 用任意 nonlinear root 代替与 initial condition/basin 一致且经稳定性验证的 steady state；
   \item 在 Physics Gate 失败的数据上继续优化 neural loss；
+  \item 对 $\mathcal G_{\rm prod}$ 外输入宣称 validated surrogate accuracy；
   \item 把 algebraic solve residual 当成 mesh/domain/model correctness 的替代品。
 \end{itemize}
 
@@ -163,7 +187,7 @@ y\approx\bar y+U_K\beta.
 \begin{enumerate}
   \item 修并冻结 Physics Gate；
   \item 生成 validated spatial Maxwell/Joule/source truth bank；
-  \item 构建 transient-aware shared thermal basis 并冻结 $\Phi$；
+  \item 构建 transient/initial-condition-aware shared thermal basis 并冻结 $\Phi$；
   \item 用冻结 $\Phi$ 生成最终 $Z/D_{\rm vol}/H_j$ tensor dataset；
   \item 实现 structure encode/POD/joint feasible decode；
   \item 训练 neural geometry surrogate；
