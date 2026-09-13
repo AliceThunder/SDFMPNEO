@@ -15,7 +15,7 @@ def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
     run = _load_run()
     network = run.TRAINING["network"]
     assert run.TRAINING["device"] == "cuda"
-    assert run.TRAINING["n_tensor_samples"] >= 5
+    assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
     assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
     assert len(run.TRAINING["thermal_time_scales"]) >= 2
@@ -32,10 +32,11 @@ def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
     assert "em_temperature_rise_bounds" not in run.TRAINING
 
 
-def test_training_defaults_are_matrix_aware_not_krylov_residual_training():
+def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
     assert optimizer["batch_size"] > 1
+    assert 0 < optimizer["pod_relative_tail_tolerance"] < 1
     assert optimizer["z_weight"] > 0
     assert optimizer["d_weight"] > 0
     assert optimizer["h_weight"] > 0
