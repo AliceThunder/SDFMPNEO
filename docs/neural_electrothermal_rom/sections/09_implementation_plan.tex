@@ -22,13 +22,18 @@
   \item 组装冻结版本的 Maxwell operator 与端口 source；
   \item 求所有端口基响应 $X$；
   \item 计算 $Z_{\rm field}$、$D_{\rm vol}=X^HH_\sigma X$、空间体 Joule bilinear information 与 wire/source spatial patterns；
-  \item 验证 reciprocity、$D_{\rm vol}\succeq0$、$D_{\rm out}=\operatorname{Herm}Z-D_{\rm vol}\succeq0$、矩阵级功率平衡和 linear residual；
+  \item 从开放边界/PML 的独立物理双线性型计算 $D_{\rm out}^{\rm phys}$；
+  \item 验证 reciprocity、$D_{\rm vol}\succeq0$、$D_{\rm out}^{\rm phys}\succeq0$ 和
+  \begin{equation}
+  \operatorname{Herm}(Z_{\rm field})\approx D_{\rm vol}+D_{\rm out}^{\rm phys},
+  \end{equation}
+  以及 linear residual；
   \item 保存后续构建 thermal basis 所需的物理数据及完整 audit metadata。
 \end{enumerate}
-这一层不能依赖尚未构建的 thermal mode $\phi_j$。
+这一层不能依赖尚未构建的 thermal mode $\phi_j$；truth outward power 也不能通过 $\operatorname{Herm}Z-D_{\rm vol}$ 反定义后自证。
 
 \subsection{第二层：thermal basis builder}
-共享 thermal basis 在 modal tensor labels 之前构建。对每个 geometry，volume Joule 对端口 current 是 Hermitian quadratic form，因此 current-induced spatial heat family 可由有限个端口 Hermitian basis combinations 精确张成；不需要依赖大量随机 current samples。再加上各 wire heat patterns 和其他确定性热源，形成完整 source-anchor family。
+共享 thermal basis 在 modal tensor labels 之前构建。对每个 geometry，volume Joule 对端口 current 是 Hermitian quadratic form，因此 current-induced spatial heat family 可由有限个端口 Hermitian basis combinations 精确张成；不需要依赖大量随机 current samples。再加上各 wire heat patterns、其他确定性热源以及目标 initial-condition family（若 full-field initial conditions 属于生产接口），形成完整 basis-enrichment family。
 
 在 geometry/source/shift anchor set 上做 resolvent residual-greedy：
 \begin{equation}
@@ -38,20 +43,21 @@ r_{\alpha\ell}
 \end{equation}
 shift $s_\ell$ 覆盖 steady 与目标 transient inverse-time scales。worst residual 超过 target 时增广基，rank 是达到目标后的结果，不作为用户手工参数。
 
-basis version 必须记录 geometry/source anchor set、current-basis construction、shift set、thermal operators/boundaries、wire-temperature functional 和 truth-physics version。冻结 audit geometries 上还必须通过 full-vs-ROM transient/steady trajectory 验证。
+basis version 必须记录 geometry/source anchor set、current-basis construction、shift set、initial-condition policy、thermal operators/boundaries、wire-temperature functional 和 truth-physics version。冻结 audit geometries 上还必须通过 full-vs-ROM transient/steady trajectory 验证。
 
 \subsection{第三层：冻结 basis 后生成 tensor dataset}
 只有在 $\Phi$ 冻结后，才对每个 geometry 构造第 $j$ 个 modal Joule tensor
 \begin{equation}
 H_j(g)=X(g)^H W_j(\phi_j,g)X(g).
 \end{equation}
-因此最终 neural dataset 保存：
+最终 neural dataset 保存：
 \begin{itemize}
   \item canonical geometry parameters；
   \item $Z_{\rm field}$ 的复对称独立自由度；
   \item $D_{\rm vol}$ 的 Hermitian 独立自由度；
   \item $H_j$ 的 Hermitian 独立自由度；
   \item geometry split 与 completely-held-out audit split；
+  \item independent truth $D_{\rm out}^{\rm phys}$ 作为 audit target；
   \item thermal-basis version；
   \item frequency/phasor/port、mesh/domain/formulation/constitutive version；
   \item truth residual、matrix power-balance、reciprocity 等 audit 指标。
@@ -79,7 +85,7 @@ y\approx\bar y+U_K\beta.
 \rightarrow
 \{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_j\}.
 \end{equation}
-最终输出必须满足
+联合投影只修正 reciprocal impedance 的耗散块 $R=\operatorname{Herm}Z$ 与 $D_{\rm vol}$，不改变 reactive symmetric block。最终输出满足
 \begin{equation}
 \widehat Z_{\rm field}^T=\widehat Z_{\rm field},
 \qquad
@@ -89,7 +95,7 @@ y\approx\bar y+U_K\beta.
 \qquad
 \widehat H_j^H=\widehat H_j.
 \end{equation}
-同时保存/报告 projection correction norm，禁止用大幅物理投影掩盖 raw surrogate error。
+同时保存/报告 projection correction norm，禁止用大幅物理投影掩盖 raw surrogate error。surrogate implied outward matrix 还必须与独立 truth $D_{\rm out}^{\rm phys}$ 做 held-out audit。
 
 \subsection{在线 thermal/circuit engine}
 对一个几何查询：
@@ -103,7 +109,7 @@ y\approx\bar y+U_K\beta.
   P_{\rm vol}=\frac12c^H\widehat D_{\rm vol}c;
   \end{equation}
   \item 通过明确的 conductor-temperature functional 更新 $R_{\rm wire}$ 与 wire heat；
-  \item 使用真实 $M_r(g),K_r(g)$ 推进 ODE 或求 steady state；
+  \item 使用真实 $M_r(g),K_r(g)$ 推进 ODE 或求稳定 steady state；
   \item 输出 $Z(a,g)=\widehat Z_{\rm field}+R_{\rm wire}$ 及功率诊断。
 \end{enumerate}
 
@@ -113,15 +119,18 @@ y\approx\bar y+U_K\beta.
   \item Maxwell mesh/domain/formulation convergence；
   \item terminal/source continuity、units 和 geometry perturbation continuity；
   \item port reciprocity；
-  \item $D_{\rm vol}\succeq0$、$D_{\rm out}=\operatorname{Herm}Z-D_{\rm vol}\succeq0$；
+  \item independently-computed $D_{\rm vol}$ 与 $D_{\rm out}^{\rm phys}$；
+  \item $\operatorname{Herm}Z\approx D_{\rm vol}+D_{\rm out}^{\rm phys}$；
   \item $\sum Q_{\rm vol}=\frac12E^HH_\sigma E$；
   \item $\phi_j^TQ_{\rm vol}=\frac12\operatorname{Re}(c^HH_jc)$；
   \item arbitrary complex-current contraction；
   \item POD raw decode、joint feasible projection 和 projection-correction audit；
-  \item frozen validation/test $Z/D/H/q$ error；
+  \item frozen validation/test $Z/D/H/q$ error 和 implied-vs-physical outward-loss error；
   \item geometry/source/shift Galerkin resolvent residual；
   \item full thermal versus ROM transient/steady audit；
+  \item initial-condition projection audit（若支持 full initial field）；
   \item wire-temperature functional audit；
+  \item stable-equilibrium Jacobian audit；
   \item ETD/IMEX against high-accuracy reference；
   \item current-controlled and, when enabled, circuit-controlled end-to-end audit。
 \end{itemize}
@@ -142,7 +151,9 @@ y\approx\bar y+U_K\beta.
   \item 网络预测 $M_r,K_r$ 替代真实 thermal operators；
   \item 用 unrestricted matrices 代替 reciprocal/Hermitian/energy-feasible output；
   \item 在 thermal basis 尚未冻结时定义最终 $H_j$ labels；
+  \item 用随机 current sampling 代替完整 Hermitian current-source span；
   \item 只用 steady 与 initial derivative 两个端点宣称 thermal transient ROM 已收敛；
+  \item 用任意 nonlinear root 代替经稳定性验证的 steady state；
   \item 在 Physics Gate 失败的数据上继续优化 neural loss；
   \item 把 algebraic solve residual 当成 mesh/domain/model correctness 的替代品。
 \end{itemize}
