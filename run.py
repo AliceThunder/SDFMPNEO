@@ -6,7 +6,7 @@
     python run.py --mode predict
 
 Maxwell 不构造全局解基/Maxwell rank。神经网络直接在真实 sparse Maxwell 耦合图上做
-message passing，并输出 full edge-space correction；训练使用共享权重多步 residual unroll，
+message passing，并输出 full edge-space correction；训练与推理共享同一组 solver steps，
 FGMRES 只负责最终真实 sparse residual 闭环。thermal rank 仍由真实 Joule 热源与热方程
 residual 自动决定。
 """
@@ -81,7 +81,6 @@ PHYSICS = {
     "maxwell_residual_tolerance": 1e-7,
     "maxwell_max_iterations": 200,
     "maxwell_restart": 40,
-    "maxwell_neural_steps": 3,
 }
 
 MATERIALS = {
@@ -120,6 +119,7 @@ TRAINING = {
     "network": {
         "width": 32,
         "message_passing_steps": 3,
+        "solver_steps": 3,
         "activation": "silu",
     },
     "optimizer": {
@@ -130,7 +130,6 @@ TRAINING = {
         "patience": 20,
         "validation_interval": 2,
         "min_relative_improvement": 1e-3,
-        "unroll_steps": 3,
         "benchmark_samples_per_split": 4,
         "seed": 17,
         "dtype": "float32",
