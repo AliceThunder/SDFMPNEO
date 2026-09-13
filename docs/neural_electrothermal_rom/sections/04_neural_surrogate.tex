@@ -23,13 +23,24 @@ H_j=H_j^H,
 \begin{equation}
 \operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
 \end{equation}
-单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；禁止把全部 $H_j$ 强制成 Cholesky 形式。
+
+由于每个 $H_j$ 与 $D_{\rm vol}$ 来自同一个非负空间 Joule density，还存在更强的必要结构。令 $\phi_j^{\min},\phi_j^{\max}$ 为 frozen thermal mode 在 conductivity-loss quadrature/support 上的最小/最大值，则
+\begin{equation}
+\boxed{
+\phi_j^{\min}D_{\rm vol}
+\preceq H_j
+\preceq
+\phi_j^{\max}D_{\rm vol}
+\quad\forall j.
+}
+\end{equation}
+单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；上述 Loewner interval 才是与总耗散一致的正确约束。
 
 定义固定结构化编码
 \begin{equation}
 y(g)=\mathcal E\!\left(Z_{\rm field},D_{\rm vol},H_1,\ldots,H_r\right)\in\R^{d_y},
 \end{equation}
-其中仅保存独立自由度：复对称 $Z$ 的上三角实/虚部，以及 Hermitian matrices 的实对角和严格上三角实/虚部。
+其中仅保存独立自由度：复对称 $Z$ 的上三角实/虚部，以及 Hermitian matrices 的实对角和严格上三角实/虚部。$\phi_j^{\min},\phi_j^{\max}$ 属于 thermal-basis metadata，随 $\Phi$ 一起冻结并版本化。
 
 \subsection{POD 是压缩，不负责创造物理可行性}
 对 training truth snapshots 的结构化向量做中心化 POD/SVD：
@@ -45,9 +56,9 @@ y(g)\approx \bar y+U_K\beta(g),
 \end{equation}
 如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$、采用分块 POD，或直接预测完整结构化 $y$；这不会改变系统架构。
 
-普通线性 POD 并不自动保持 PSD cone 或联合能量可行集，因此不允许仅凭 latent reconstruction 宣称输出物理合法。结构化矩阵解码后还必须经过固定的物理可行层。
+普通线性 POD 并不自动保持 PSD cone、Loewner interval 或联合能量可行集，因此不允许仅凭 latent reconstruction 宣称输出物理合法。结构化矩阵解码后还必须经过固定的物理可行层。
 
-\subsection{联合物理可行层只作用于耗散块}
+\subsection{联合物理可行层只修改需要修正的耗散对象}
 令 raw decode 得到
 \begin{equation}
 (\widetilde Z,\widetilde D_{\rm vol},\widetilde H_j).
@@ -70,38 +81,48 @@ y(g)\approx \bar y+U_K\beta(g),
 \end{equation}
 其中 $\widetilde R=\operatorname{Herm}(\widetilde Z)$ 是耗散端口块，$\widetilde X$ 是 reactive block。
 
-固定可行层只对 $(\widetilde R,\widetilde D_{\rm vol})$ 做联合映射/投影
-\begin{equation}
-(\widetilde R,\widetilde D_{\rm vol})
-\mapsto
-(\widehat R,\widehat D_{\rm vol})
-\end{equation}
-使
+固定可行层对 $(\widetilde R,\widetilde D_{\rm vol},\{\widetilde H_j\})$ 做联合映射/投影，使
 \begin{equation}
 \boxed{
 \widehat D_{\rm vol}\succeq0,
 \qquad
-\widehat R-\widehat D_{\rm vol}\succeq0.
+\widehat R-\widehat D_{\rm vol}\succeq0,
 }
 \end{equation}
-reactive block 不因 passivity 修正而改变：
+以及
+\begin{equation}
+\boxed{
+\phi_j^{\min}\widehat D_{\rm vol}
+\preceq\widehat H_j
+\preceq
+\phi_j^{\max}\widehat D_{\rm vol}
+\quad\forall j.
+}
+\end{equation}
+reactive block 不因 passivity/Joule-feasibility 修正而改变：
 \begin{equation}
 \widehat X=\widetilde X,
 \qquad
 \widehat Z=\widehat R+i\widehat X.
 \end{equation}
-这样修正耗散可行性时不会无端改变 inductive/capacitive coupling。对当前小端口数，该联合投影成本可忽略；它必须使用固定数学定义并与模型一起版本化。
 
-定义 projection correction diagnostic
+对当前小端口数，上述约束构成低维 convex LMI feasible set，可使用固定 SDP/Frobenius projection 或经验证的等价解析/分步算法。无论采用何种实现，都必须验证最终输出确实满足同一可行集，并与模型一起版本化。
+
+定义 projection correction diagnostics，例如
 \begin{equation}
-\delta_{\rm proj}
+\delta_{Z,D}
 =\left\|(\widehat R,\widehat D_{\rm vol})
--(\widetilde R,\widetilde D_{\rm vol})\right\|.
+-(\widetilde R,\widetilde D_{\rm vol})\right\|,
 \end{equation}
-生产模型要求 validation/test 上 $\delta_{\rm proj}$ 足够小。可行集投影是安全层，不允许成为掩盖大 surrogate error 的主要修正器。
+以及
+\begin{equation}
+\delta_H
+=\left(\sum_j\|\widehat H_j-\widetilde H_j\|_F^2\right)^{1/2}.
+\end{equation}
+生产模型要求 validation/test 上这些 correction 足够小。可行集投影是安全层，不允许成为掩盖大 surrogate error 的主要修正器。
 
-\subsection{几何输入表示}
-几何输入只包含定义生产参数域所需的独立变量，并使用由训练域固定的中心和尺度归一化。普通长度/位移参数可使用
+\subsection{几何输入表示与生产域}
+几何输入只包含定义生产参数域所需的独立变量，并使用由 training domain 固定的中心和尺度归一化。普通长度/位移参数可使用
 \begin{equation}
 \tilde g_k=\frac{g_k-c_k}{s_k}.
 \end{equation}
@@ -109,7 +130,9 @@ reactive block 不因 passivity 修正而改变：
 
 旋转变量不得在跨越周期边界时直接使用裸 Euler angle 标量。例如 yaw 覆盖 $[-\pi,\pi]$ 时，应采用 $(\sin\psi,\cos\psi)$、连续 quaternion/rotation-matrix 表示或其他无分支跳变的姿态编码。若使用 quaternion，必须固定等价符号约定，避免 $q$ 与 $-q$ 形成训练不连续。
 
-归一化与姿态编码元数据必须随模型保存，推理时禁止重新估计。如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
+必须冻结一个明确的 validated geometry domain $\mathcal G_{\rm prod}$。生产推理在进入网络前先执行 geometry feasibility/domain check；落在 $\mathcal G_{\rm prod}$ 外的输入只能标记为 out-of-domain/unsupported，不能因为 MLP 数值上能输出结果就宣称有验证精度。
+
+归一化、姿态编码和 production-domain metadata 必须随模型保存，推理时禁止重新估计。如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
 
 \subsection{默认神经网络}
 首版使用普通 residual MLP：
@@ -142,5 +165,7 @@ h_{\ell+1}
 \end{equation}
 因此 current magnitude、relative phase、quadratic scaling 与 wire-resistance thermal dependence 均由显式物理层处理，不由网络学习。
 
-\subsection{联合可行性仍不等价于 exact truth}
-联合可行层保证了 reciprocal structure、Hermitian structure、非负体耗散和非负 implied outward loss，但它不能保证 $\widehat H_j$ 等于真实空间 Joule projection，也不能保证 surrogate 与 truth 的 $D_{\rm out}$ 数值相同。因此 production validation 仍必须比较 $Z$、$D_{\rm vol}$、$H_j$、current contractions、trajectory outputs 以及 projection correction；结构正确不等于数值误差为零。
+\subsection{联合可行性仍不等价于 exact spatial realizability}
+联合可行层保证 reciprocal structure、Hermitian structure、非负体耗散、非负 implied outward loss，以及每个 modal tensor 相对 $D_{\rm vol}$ 的必要 Loewner bounds。但这些有限 LMI 条件仍不是“存在一个与所有预测 $H_j$ 完全一致的精确非负空间 Joule density”的充分条件，也不能保证 surrogate 与 truth 的 $D_{\rm out}^{\rm phys}$ 数值相同。
+
+因此 production validation 仍必须比较 $Z$、$D_{\rm vol}$、$H_j$、current contractions、independent outward-loss audit、trajectory outputs 以及 projection corrections；结构可行不等于数值误差为零，更不等于完整 spatial realizability 已被数学证明。
