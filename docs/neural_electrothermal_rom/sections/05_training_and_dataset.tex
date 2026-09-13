@@ -4,8 +4,8 @@
 由于第 $j$ 个 Joule tensor $H_j$ 的定义依赖已经冻结的 thermal basis mode $\phi_j$，因此不能先生成 $H_j$ tensor dataset、再构建 thermal basis。正确依赖顺序固定为：
 \begin{enumerate}
   \item 先生成 validated Maxwell/geometry truth bank，包括端口基响应、$Z_{\rm field}$、总海水耗散 $D_{\rm vol}$、独立 outward-loss audit $D_{\rm out}^{\rm phys}$、完整 current-induced spatial Joule basis、wire heat patterns 与 audit metadata；
-  \item 使用这些空间 heat/source anchors 构建并冻结共享 thermal basis $\Phi$；
-  \item 再对每个 geometry 复用或重算 Maxwell port responses，把空间 Joule bilinear form 投影到已冻结的 $\phi_j$，得到最终 $H_j$；
+  \item 使用这些空间 heat/source anchors 和允许的 initial-condition family 构建并冻结共享 thermal basis $\Phi$；
+  \item 再对每个 geometry 复用或重算 Maxwell port responses，用与 $H_\sigma$ 相同的 FE basis/quadrature 直接组装每个 $W_j$ 并得到最终 $H_j=X^HW_jX$；
   \item 最后形成用于 neural training 的结构化 $Z/D_{\rm vol}/H$ tensor dataset。$D_{\rm out}^{\rm phys}$ 默认作为 truth audit quantity 保留，不必作为独立 neural output，因为 surrogate implied outward loss 可由 $\operatorname{Herm}(\widehat Z)-\widehat D_{\rm vol}$ 得到。
 \end{enumerate}
 这一顺序消除了 ``tensor label 依赖尚未存在的 thermal mode'' 的循环定义。
@@ -13,7 +13,7 @@
 \subsection{阶段一：validated physics bank}
 对每个候选几何 $g^{(s)}$：
 \begin{enumerate}
-  \item 先通过几何合法性、边界裕量、terminal/source continuity 与离散连续性检查；
+  \item 先通过几何合法性、物理 wire/source regularization、边界裕量、terminal/source continuity 与离散连续性检查；
   \item 组装经过 Physics Gate 冻结的 Maxwell truth model；
   \item 求解所有端口基激励得到 $X(g^{(s)})$；
   \item 构造 $Z_{\rm field}$ 与 $D_{\rm vol}=X^HH_\sigma X$；
@@ -23,28 +23,66 @@
   \operatorname{Herm}(Z_{\rm field})\approx D_{\rm vol}+D_{\rm out}^{\rm phys};
   \end{equation}
   \item 用能够张成 Hermitian port space 的确定性 current combinations 生成完整 current-induced spatial Joule basis，并加入各 wire/source spatial patterns；
-  \item 保存 geometry、truth quality、mesh/domain/formulation/constitutive version，以及后续构建 thermal basis 所需的物理信息。
+  \item 保存 geometry、truth quality、physical wire/source regularization、mesh/domain/formulation/constitutive version，以及后续构建 thermal basis 所需的物理信息。
 \end{enumerate}
 任何未通过 truth audit 的 geometry 不得进入 thermal basis 或 neural dataset。
 
 对 $n_p$ 个端口，Hermitian port space 的实维数为 $n_p^2$，因此每个 geometry 的 current-induced heat span 可由有限组 deterministic port combinations 精确恢复；随机 current samples 只用于额外 audit，不作为 span completeness 的理论依据。
 
+\subsection{thermal basis 构建与停止指标}
+thermal basis enrichment 同时覆盖 geometry、完整 source family、允许的 initial-condition family 与多个 time-scale shifts。统一 resolvent anchor 写成
+\begin{equation}
+A_su=b,
+\qquad A_s=K+sM\succ0,
+\end{equation}
+其中受迫 source 使用 $b=Q_\alpha$，initial-condition response 使用 $b=M\theta_{0,\beta}$。
+
+对 Galerkin approximation $\tilde u=\Phi a$ 和 residual $r=b-A_s\tilde u$，理论 rank criterion 使用
+\begin{equation}
+\boxed{
+\eta_s^2
+=\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}
+=\frac{\|u-\tilde u\|_{A_s}^2}{\|u\|_{A_s}^2}.
+}
+\end{equation}
+因此 worst-anchor enrichment 和 stopping target 基于 $\eta_s$ 或具有已知等价常数的 validated estimator，而不是未经尺度化的 Euclidean residual。basis 冻结前还必须通过 full-vs-ROM transient/steady audit。
+
 \subsection{阶段二：冻结 thermal basis 后生成 tensor labels}
-thermal basis $\Phi$ 通过 geometry/source/shift resolvent residual-greedy 构建并冻结后，对每个 geometry 定义
+thermal basis $\Phi$ 冻结后，对每个 geometry 定义
 \begin{equation}
 \boxed{
  g^{(s)}\longmapsto y^{(s)}
  =\mathcal E\!\left(Z_{\rm field}^{(s)},D_{\rm vol}^{(s)},H_1^{(s)},\ldots,H_r^{(s)}\right).
 }
 \end{equation}
-其中每个 $H_j$ 都使用同一个已冻结 $\phi_j$ 和与 Maxwell 一致的导电 Hodge 构造。一个几何只需一次 multi-RHS Maxwell truth response 即可生成全部端口级与 thermal-modal quadratic objects；若阶段一已缓存足够信息，则直接复用，否则只做确定性重算。
+每个 $H_j$ 必须由
+\begin{equation}
+[W_j]_{mn}
+=\int_\Omega\sigma\,\phi_j\,N_m\cdot N_n\,\mathrm dx,
+\qquad
+H_j=X^HW_jX
+\end{equation}
+或其严格一致的同-quadrature discrete form 生成。若 EM/thermal spaces 不同，使用 Physics Gate 已冻结的 cross-space transfer。
+
+同时保存每个 thermal mode 在 conductivity-loss quadrature/support 上的
+\begin{equation}
+\phi_j^{\min},\qquad\phi_j^{\max},
+\end{equation}
+并对 truth labels 检查
+\begin{equation}
+\phi_j^{\min}D_{\rm vol}
+\preceq H_j
+\preceq
+\phi_j^{\max}D_{\rm vol}.
+\end{equation}
+truth label 若违反该关系，说明 Joule assembly/transfer 不一致，不得进入训练集。
 
 \subsection{数据划分}
 train/validation/test 必须按几何样本划分。一个几何对应的所有端口矩阵元素和全部 thermal-mode tensors 必须属于同一 split，防止同一物理结构跨集合泄漏。
 
 thermal basis 的构建样本与 neural test set 也必须区分：若 test geometry 已参与 basis greedy，则它不能再被描述为对完整 pipeline 完全未见。正式报告应至少保留一组既未参与 neural training、也未参与 thermal-basis enrichment 的 end-to-end frozen audit geometries。
 
-冻结 audit set 必须额外覆盖几何可行域边界、强耦合/小间距/大姿态偏转区域、不同离散 shape 子域，以及与 training/basis points 有明确距离的 held-out 区域。
+冻结 audit set 必须额外覆盖几何可行域边界、强耦合/小间距/大姿态偏转区域、不同离散 shape 子域，以及与 training/basis points 有明确距离的 held-out 区域。validated production domain $\mathcal G_{\rm prod}$ 也必须随 dataset/model 版本冻结；域外点不属于 test error 声明范围。
 
 \subsection{POD 只能使用 neural training split}
 只使用 neural training tensor snapshots 构造
@@ -60,14 +98,21 @@ POD rank 同时由平均能量尾部和 held-out reconstruction error 选择，�
 =\frac1N\sum_s
 \left\|W_\beta\left(\beta_\theta(g^{(s)})-\beta^{(s)}\right)\right\|_2^2.
 \end{equation}
-同时必须在解码后的物理对象上监控
+同时必须在 raw decode 和 feasible decode 两层监控
 \begin{align}
 \mathcal E_Z&=\|\widehat Z_{\rm field}-Z_{\rm field}\|,\\
 \mathcal E_D&=\|\widehat D_{\rm vol}-D_{\rm vol}\|,\\
 \mathcal E_H&=\left(\sum_j\|\widehat H_j-H_j\|_F^2\right)^{1/2},\\
-\delta_{\rm proj}&=\|\text{post-projection}-\text{raw decode}\|.
+\delta_{Z,D}&=\|\text{projected }(R,D)-\text{raw }(R,D)\|,\\
+\delta_H&=\left(\sum_j\|\widehat H_j-\widetilde H_j\|_F^2\right)^{1/2}.
 \end{align}
-可以增加 decoded-object auxiliary losses，但它们只改善拟合质量；reciprocity/Hermitian/current-quadratic 结构与联合耗散可行性必须由固定物理层保证。
+还要在 raw decode 上报告最坏 Loewner-constraint violation，例如
+\begin{equation}
+\lambda_{\min}(\widetilde H_j-\phi_j^{\min}\widetilde D),
+\qquad
+\lambda_{\min}(\phi_j^{\max}\widetilde D-\widetilde H_j).
+\end{equation}
+可增加 decoded-object auxiliary losses，但它们只改善拟合质量；reciprocity/Hermitian/current-quadratic 结构与联合耗散/modal 可行性由固定物理层保证。
 
 \subsection{current-space validation}
 虽然电流 $c$ 不作为网络输入，但验证必须覆盖复电流方向。对固定 snapshot，选取单位球上的复电流 $c$，比较
@@ -91,13 +136,13 @@ POD rank 同时由平均能量尾部和 held-out reconstruction error 选择，�
 \widehat D_{\rm out}^{\rm imp}
 =\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}\succeq0,
 \end{equation}
-并在 validation/audit geometry 上比较
+以及所有 modal bounds
 \begin{equation}
-\widehat D_{\rm out}^{\rm imp}
-\quad\text{与独立 truth}\quad
-D_{\rm out}^{\rm phys}.
+\phi_j^{\min}\widehat D_{\rm vol}
+\preceq\widehat H_j
+\preceq\phi_j^{\max}\widehat D_{\rm vol}.
 \end{equation}
-随机 current tests 是补充诊断，不能代替矩阵级检查。
+在 validation/audit geometry 上比较 $\widehat D_{\rm out}^{\rm imp}$ 与独立 truth $D_{\rm out}^{\rm phys}$。随机 current tests 是补充诊断，不能代替矩阵级检查。
 
 \subsection{优化与停止标准}
 网络训练使用标准 AdamW/mini-batch/GPU 工具链。学习率和 early stopping 只根据冻结 validation set 决定，test/audit set 不参与模型选择。
@@ -106,11 +151,12 @@ D_{\rm out}^{\rm phys}.
 \begin{itemize}
   \item validation latent/decoded $Z/D/H$ error 均稳定；
   \item current-space Joule/impedance/power error 达到目标；
-  \item 联合耗散可行性保持，$\delta_{\rm proj}$ 足够小，且 implied outward loss 与独立 truth outward loss 误差受控；
+  \item 联合耗散/modal 可行性保持，$\delta_{Z,D}$ 与 $\delta_H$ 足够小，且 implied outward loss 与独立 truth outward loss 误差受控；
+  \item thermal resolvent/initial-condition/trajectory audits 达到目标；
   \item 在 end-to-end frozen electrothermal audit 上，最终温度和阻抗误差满足工程目标。
 \end{itemize}
 
 \subsection{active learning}
-若初始几何采样不足，active learning 应在几何空间中增加 truth snapshots。优先指标包括 ensemble/epistemic disagreement、几何 novelty、decoded $Z/D/H$ spot-check error、projection correction 和 trajectory audit error。
+若初始几何采样不足，active learning 应在 $\mathcal G_{\rm prod}$ 中增加 truth snapshots。优先指标包括 ensemble/epistemic disagreement、几何 novelty、decoded $Z/D/H$ spot-check error、projection correction、raw physical-constraint violation 和 trajectory audit error。
 
-若新增 geometry 暴露出 thermal basis 覆盖不足，应先重新执行 basis enrichment，再重新生成受影响的 $H_j$ labels。POD、basis 和归一化元数据都必须版本化，禁止无记录地改变输出坐标系。
+若新增 geometry 暴露出 thermal basis 覆盖不足，应先重新执行 basis enrichment，再重新生成受影响的 $H_j$ labels。POD、basis、$\phi_j^{\min/\max}$ 和归一化元数据都必须版本化，禁止无记录地改变输出坐标系。
