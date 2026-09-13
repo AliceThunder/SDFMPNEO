@@ -9,13 +9,7 @@ import copy
 import numpy as np
 
 from .unified_maxwell import _fgmres, _neural_rollout
-from .unified_neural_operator import (
-    FEATURE_SCHEMA,
-    EdgeMultiscaleConfig,
-    build_edge_residual_operator,
-    neural_correction,
-    operator_feature_statistics,
-)
+from .unified_neural_operator import FEATURE_SCHEMA, EdgeMultiscaleConfig, build_edge_residual_operator, neural_correction, operator_feature_statistics
 
 
 @dataclass(frozen=True)
@@ -27,24 +21,18 @@ class MaxwellTrainingConfig:
     patience: int = 20
     validation_interval: int = 2
     min_relative_improvement: float = 1e-3
-    unroll_steps: int = 3
     benchmark_samples_per_split: int = 4
     seed: int = 17
     dtype: str = "float32"
 
     def __post_init__(self):
-        if min(self.epochs, self.batch_size, self.patience, self.validation_interval,
-               self.unroll_steps, self.benchmark_samples_per_split) < 1:
+        if min(self.epochs, self.batch_size, self.patience, self.validation_interval, self.benchmark_samples_per_split) < 1:
             raise ValueError("training counts must be positive")
-        if self.learning_rate <= 0 or self.weight_decay < 0:
-            raise ValueError("invalid optimizer settings")
-        if not 0.0 <= self.min_relative_improvement < 1.0:
-            raise ValueError("min_relative_improvement must lie in [0, 1)")
-        if self.dtype not in {"float32", "float64"}:
-            raise ValueError("dtype must be float32 or float64")
+        if self.learning_rate <= 0 or self.weight_decay < 0: raise ValueError("invalid optimizer settings")
+        if not 0.0 <= self.min_relative_improvement < 1.0: raise ValueError("min_relative_improvement must lie in [0, 1)")
+        if self.dtype not in {"float32", "float64"}: raise ValueError("dtype must be float32 or float64")
 
-    def to_dict(self):
-        return asdict(self)
+    def to_dict(self): return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -69,25 +57,20 @@ def _operator_coefficients(background, context, state):
     hs = np.asarray(background.edge_cell_hodge @ sigma, float).ravel()
     he = np.asarray(background.edge_cell_hodge @ eps, float).ravel()
     diagonal_term = -background.omega**2 * he + 1j * background.omega * hs
-    A = background.em_operator(context, state)
-    graph = operator_feature_statistics(A)
-    return h2, np.asarray(diagonal_term, complex), graph
+    return h2, np.asarray(diagonal_term, complex), operator_feature_statistics(background.em_operator(context, state))
 
 
 def _rhs_residual_bank(B, mixed_count, rng):
-    """Port and mixed-port seeds; later residuals are produced by the neural unroll itself."""
     B = np.asarray(B, complex)
     columns = [B[:, p].copy() for p in range(B.shape[1])]
     if B.shape[1] > 1:
         for _ in range(max(1, int(mixed_count))):
             weights = rng.normal(size=B.shape[1]) + 1j * rng.normal(size=B.shape[1])
             norm = float(np.linalg.norm(weights))
-            if norm <= 0 or not np.isfinite(norm):
-                continue
+            if norm <= 0 or not np.isfinite(norm): continue
             columns.append(np.asarray(B @ (weights / norm), complex))
     bank = np.column_stack(columns)
-    if np.any(~np.isfinite(bank)):
-        raise FloatingPointError("Maxwell residual seed bank is non-finite")
+    if np.any(~np.isfinite(bank)): raise FloatingPointError("Maxwell residual seed bank is non-finite")
     return bank
 
 
@@ -100,162 +83,117 @@ def _torch_sparse_complex(torch, matrix, device):
 
 def _torch_apply(torch, curl_t, h2, diagonal_term, Z):
     curl_value = torch.sparse.mm(curl_t, Z)
-    weighted = h2[:, None] * curl_value
-    return torch.sparse.mm(curl_t.transpose(0, 1), weighted) + diagonal_term[:, None] * Z
+    return torch.sparse.mm(curl_t.transpose(0, 1), h2[:, None] * curl_value) + diagonal_term[:, None] * Z
 
 
 def _torch_dynamic_features(torch, R, diagonal, node_features, network_dtype):
-    n = max(1, int(R.shape[0]))
-    tiny = torch.finfo(torch.float64).tiny
+    n = max(1, int(R.shape[0])); tiny = torch.finfo(torch.float64).tiny
     jacobi = R / diagonal[:, None]
     rscale = torch.sqrt(torch.sum(torch.abs(R) ** 2, dim=0) / n).clamp_min(tiny)
     zscale = torch.sqrt(torch.sum(torch.abs(jacobi) ** 2, dim=0) / n).clamp_min(tiny)
-    rn = R / rscale[None, :]
-    zn = jacobi / zscale[None, :]
+    rn = R / rscale[None, :]; zn = jacobi / zscale[None, :]
     operator_batch = node_features.to(dtype=network_dtype).unsqueeze(0).expand(R.shape[1], -1, -1)
-    dynamic = torch.cat([
-        rn.real.transpose(0, 1).unsqueeze(-1), rn.imag.transpose(0, 1).unsqueeze(-1),
-        zn.real.transpose(0, 1).unsqueeze(-1), zn.imag.transpose(0, 1).unsqueeze(-1),
-        operator_batch,
-    ], dim=-1).to(dtype=network_dtype)
-    return dynamic, zscale
+    dynamic = torch.cat([rn.real.transpose(0, 1).unsqueeze(-1), rn.imag.transpose(0, 1).unsqueeze(-1),
+                         zn.real.transpose(0, 1).unsqueeze(-1), zn.imag.transpose(0, 1).unsqueeze(-1), operator_batch], dim=-1)
+    return dynamic.to(dtype=network_dtype), zscale
 
 
-def _unrolled_loss(torch, model, curl_t, h2_t, diagonal_term_t, diagonal_t,
-                   node_features_t, coupling_t, R0, *, unroll_steps, network_dtype):
-    """Shared neural solver unroll; every step updates the exact Maxwell residual."""
+def _unrolled_loss(torch, model, curl_t, h2_t, diagonal_term_t, diagonal_t, node_features_t, coupling_t, R0, *, network_dtype):
     residual = R0
     denominator = torch.sum(torch.abs(R0) ** 2, dim=0).clamp_min(torch.finfo(torch.float64).tiny)
-    weighted = residual.real.new_zeros((), dtype=torch.float64)
-    weight_sum = 0.0
-    final_ratio = None
-    for step in range(int(unroll_steps)):
+    weighted = residual.real.new_zeros((), dtype=torch.float64); weight_sum = 0.0; final_ratio = None
+    for step in range(int(model.solver_steps)):
         dynamic, scale = _torch_dynamic_features(torch, residual, diagonal_t, node_features_t, network_dtype)
         y = model(dynamic, coupling_t).to(dtype=torch.float64)
         correction = torch.complex(y[..., 0], y[..., 1]).transpose(0, 1).to(torch.complex128) * scale[None, :]
         residual = residual - _torch_apply(torch, curl_t, h2_t, diagonal_term_t, correction)
-        ratio = torch.sum(torch.abs(residual) ** 2, dim=0) / denominator
-        final_ratio = torch.mean(ratio)
-        weight = float(2**step)
-        weighted = weighted + weight * final_ratio
-        weight_sum += weight
+        final_ratio = torch.mean(torch.sum(torch.abs(residual) ** 2, dim=0) / denominator)
+        weight = float(2**step); weighted = weighted + weight * final_ratio; weight_sum += weight
     return weighted / weight_sum, final_ratio
 
 
 def _subset_for_benchmark(ids, maximum):
     ids = np.asarray(ids, dtype=int)
-    if ids.size <= maximum:
-        return ids
-    return ids[np.linspace(0, ids.size - 1, int(maximum), dtype=int)]
+    return ids if ids.size <= maximum else ids[np.linspace(0, ids.size - 1, int(maximum), dtype=int)]
 
 
 def _distribution(values):
     arr = np.asarray(values, float)
-    if arr.size == 0:
-        return {"median": None, "p90": None, "max": None}
+    if arr.size == 0: return {"median": None, "p90": None, "max": None}
     return {"median": float(np.median(arr)), "p90": float(np.quantile(arr, 0.9)), "max": float(np.max(arr))}
 
 
-def _benchmark_split(background, dataset, ids, model, *, neural_steps, tolerance,
-                     max_iterations, restart, sample_limit):
+def _benchmark_split(background, dataset, ids, model, *, tolerance, max_iterations, restart, sample_limit):
     chosen = _subset_for_benchmark(ids, sample_limit)
-    post_neural, iterations, restarts, final = [], [], [], []
-    neural_times, total_times = [], []
+    post_neural, iterations, restarts, final, neural_times, total_times = [], [], [], [], [], []
     model.eval()
     for idx in chosen:
         context = background.geometry_context(dataset.geometries[int(idx)], assemble_thermal=False)
-        state = dataset.states[int(idx)]
-        A = background.em_operator(context, state)
+        A = background.em_operator(context, dataset.states[int(idx)])
         B = np.asarray(background.rhs_matrix(context), complex)
         graph = operator_feature_statistics(A)
         denominator = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
         start = perf_counter()
-        X, residual, relative, _ = _neural_rollout(model, A, B, graph, neural_steps)
-        neural_elapsed = perf_counter() - start
-        post_neural.extend(map(float, relative))
+        X, residual, relative, _ = _neural_rollout(model, A, B, graph, model.solver_steps)
+        neural_elapsed = perf_counter() - start; post_neural.extend(map(float, relative))
         for port in range(B.shape[1]):
-            if relative[port] <= tolerance:
-                iterations.append(0); restarts.append(0); continue
+            if relative[port] <= tolerance: iterations.append(0); restarts.append(0); continue
             residual_norm = max(float(np.linalg.norm(residual[:, port])), np.finfo(float).tiny)
-            inner_tolerance = tolerance * denominator[port] / residual_norm
             correction, count, restart_count = _fgmres(
-                A, residual[:, port],
-                lambda r: neural_correction(model, A, r[:, None], operator_stats=graph)[:, 0],
-                tolerance=inner_tolerance, max_iterations=max_iterations, restart=restart,
-            )
-            X[:, port] += correction
-            iterations.append(int(count)); restarts.append(int(restart_count))
-        total_times.append(perf_counter() - start)
-        neural_times.append(neural_elapsed)
+                A, residual[:, port], lambda r: neural_correction(model, A, r[:, None], operator_stats=graph)[:, 0],
+                tolerance=tolerance * denominator[port] / residual_norm, max_iterations=max_iterations, restart=restart)
+            X[:, port] += correction; iterations.append(int(count)); restarts.append(int(restart_count))
+        total_times.append(perf_counter() - start); neural_times.append(neural_elapsed)
         final.extend(map(float, np.linalg.norm(B - A @ X, axis=0) / denominator))
     final_array = np.asarray(final, float)
-    return {
-        "system_count": int(len(chosen)), "rhs_count": int(len(final)), "neural_steps": int(neural_steps),
-        "post_neural_relative_residual": _distribution(post_neural),
-        "fgmres_iterations": _distribution(iterations), "fgmres_restarts": _distribution(restarts),
-        "neural_rollout_time_s": {"total": float(np.sum(neural_times)), "median_per_system": float(np.median(neural_times)) if neural_times else None},
-        "total_solve_time_s": {"total": float(np.sum(total_times)), "median_per_system": float(np.median(total_times)) if total_times else None},
-        "success_rate": float(np.mean(final_array <= tolerance)) if final_array.size else 0.0,
-        "maximum_final_relative_residual": float(np.max(final_array)) if final_array.size else None,
-    }
+    return {"system_count": int(len(chosen)), "rhs_count": int(len(final)), "neural_steps": int(model.solver_steps),
+            "post_neural_relative_residual": _distribution(post_neural), "fgmres_iterations": _distribution(iterations),
+            "fgmres_restarts": _distribution(restarts),
+            "neural_rollout_time_s": {"total": float(np.sum(neural_times)), "median_per_system": float(np.median(neural_times)) if neural_times else None},
+            "total_solve_time_s": {"total": float(np.sum(total_times)), "median_per_system": float(np.median(total_times)) if total_times else None},
+            "success_rate": float(np.mean(final_array <= tolerance)) if final_array.size else 0.0,
+            "maximum_final_relative_residual": float(np.max(final_array)) if final_array.size else None}
 
 
-def train_maxwell_accelerator(background, dataset, *, network_settings=None, training_settings=None,
-                              device="cuda", monitor=None, checkpoint_path=None, benchmark_settings=None):
-    try:
-        import torch
-    except ImportError as exc:
-        raise ImportError("install sdfmpneo[neural] to train the unified model") from exc
-
-    cfg = MaxwellTrainingConfig(**(training_settings or {}))
-    net_cfg = EdgeMultiscaleConfig(**dict(network_settings or {}))
+def train_maxwell_accelerator(background, dataset, *, network_settings=None, training_settings=None, device="cuda", monitor=None,
+                              checkpoint_path=None, benchmark_settings=None):
+    try: import torch
+    except ImportError as exc: raise ImportError("install sdfmpneo[neural] to train the unified model") from exc
+    cfg = MaxwellTrainingConfig(**(training_settings or {})); net_cfg = EdgeMultiscaleConfig(**dict(network_settings or {}))
     train_ids, validation_ids, test_ids = dataset.indices("train"), dataset.indices("validation"), dataset.indices("test")
-    if min(len(train_ids), len(validation_ids), len(test_ids)) < 1:
-        raise ValueError("operator dataset must contain train/validation/test samples")
-
+    if min(len(train_ids), len(validation_ids), len(test_ids)) < 1: raise ValueError("operator dataset must contain train/validation/test samples")
     actual_device = str(device)
-    if actual_device.startswith("cuda") and not torch.cuda.is_available():
-        print("CUDA 不可用，自动退回 CPU。", flush=True); actual_device = "cpu"
+    if actual_device.startswith("cuda") and not torch.cuda.is_available(): print("CUDA 不可用，自动退回 CPU。", flush=True); actual_device = "cpu"
     network_dtype = torch.float32 if cfg.dtype == "float32" else torch.float64
     model = build_edge_residual_operator(background, net_cfg).to(device=actual_device, dtype=network_dtype)
-    try:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay,
-                                      fused=actual_device.startswith("cuda"))
-    except (TypeError, RuntimeError):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    try: optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay, fused=actual_device.startswith("cuda"))
+    except (TypeError, RuntimeError): optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
-    systems = []
-    total = len(dataset.geometries)
+    systems = []; total = len(dataset.geometries)
     for i, (geometry, state) in enumerate(zip(dataset.geometries, dataset.states)):
         if monitor is not None: monitor.checkpoint()
         context = background.geometry_context(geometry, assemble_thermal=False)
         h2, diagonal_term, graph = _operator_coefficients(background, context, state)
         B = np.asarray(background.rhs_matrix(context), complex)
-        rng = np.random.default_rng(int(dataset.seed) + 104729 * (i + 1))
-        R = _rhs_residual_bank(B, dataset.residual_steps, rng)
+        R = _rhs_residual_bank(B, dataset.residual_steps, np.random.default_rng(int(dataset.seed) + 104729 * (i + 1)))
         systems.append((h2, diagonal_term, graph, R))
         if i == 0 or (i + 1) % max(1, total // 20) == 0 or i + 1 == total:
             print(f"缓存 sparse Maxwell graph……{100 * (i + 1) / total:5.1f}% ({i + 1}/{total})", flush=True)
 
-    curl_t = _torch_sparse_complex(torch, background.curl, actual_device)
-    torch_systems = [None] * total
+    curl_t = _torch_sparse_complex(torch, background.curl, actual_device); torch_systems = [None] * total
     def torch_system(index):
         index = int(index)
         if torch_systems[index] is None:
             h2, diagonal_term, graph, R = systems[index]
-            torch_systems[index] = (
-                torch.as_tensor(h2, dtype=torch.complex128, device=actual_device),
+            torch_systems[index] = (torch.as_tensor(h2, dtype=torch.complex128, device=actual_device),
                 torch.as_tensor(diagonal_term, dtype=torch.complex128, device=actual_device),
                 torch.as_tensor(graph.diagonal, dtype=torch.complex128, device=actual_device),
-                torch.as_tensor(graph.node_features, dtype=network_dtype, device=actual_device),
-                graph.torch_coupling(torch, actual_device, network_dtype),
-                torch.as_tensor(R, dtype=torch.complex128, device=actual_device),
-            )
+                torch.as_tensor(graph.node_features, dtype=network_dtype, device=actual_device), graph.torch_coupling(torch, actual_device, network_dtype),
+                torch.as_tensor(R, dtype=torch.complex128, device=actual_device))
         return torch_systems[index]
     def system_losses(index):
         h2_t, d_t, diagonal_t, node_t, coupling_t, R_t = torch_system(index)
-        return _unrolled_loss(torch, model, curl_t, h2_t, d_t, diagonal_t, node_t, coupling_t, R_t,
-                              unroll_steps=cfg.unroll_steps, network_dtype=network_dtype)
+        return _unrolled_loss(torch, model, curl_t, h2_t, d_t, diagonal_t, node_t, coupling_t, R_t, network_dtype=network_dtype)
     def evaluate(ids):
         model.eval(); values = []
         with torch.no_grad():
@@ -264,44 +202,35 @@ def train_maxwell_accelerator(background, dataset, *, network_settings=None, tra
         return float(np.mean(values)) if values else float("inf")
 
     checkpoint = None if checkpoint_path is None else Path(checkpoint_path)
-    start, best, best_epoch = 0, float("inf"), 0
-    best_state = copy.deepcopy(model.state_dict()); patience_reference = float("inf"); stale = 0
-    checkpoint_identity = {
-        "network_config": net_cfg.to_dict(), "training_config": cfg.to_dict(), "n_edges": int(background.n_edges),
-        "sample_count": int(total), "residual_seed_count": int(dataset.residual_steps),
-        "operator_representation": "sparse_complex_message_graph", "feature_schema": FEATURE_SCHEMA,
-        "training_objective": "shared_neural_residual_unroll_v1",
-    }
+    start, best, best_epoch, best_state, patience_reference, stale = 0, float("inf"), 0, copy.deepcopy(model.state_dict()), float("inf"), 0
+    checkpoint_identity = {"network_config": net_cfg.to_dict(), "training_config": cfg.to_dict(), "n_edges": int(background.n_edges),
+        "sample_count": int(total), "residual_seed_count": int(dataset.residual_steps), "operator_representation": "sparse_complex_message_graph",
+        "feature_schema": FEATURE_SCHEMA, "training_objective": "shared_neural_residual_unroll_v1"}
     if checkpoint is not None and checkpoint.is_file():
         try:
             try: saved = torch.load(checkpoint, map_location=actual_device, weights_only=False)
             except TypeError: saved = torch.load(checkpoint, map_location=actual_device)
-            if saved.get("identity") != checkpoint_identity:
-                raise ValueError("training configuration or neural graph schema changed")
-            model.load_state_dict(saved["network"], strict=True); optimizer.load_state_dict(saved["optimizer"])
-            start = int(saved["epoch"]); best = float(saved["best"]); best_epoch = int(saved["best_epoch"])
-            best_state = saved["best_state"]; patience_reference = float(saved.get("patience_reference", best)); stale = int(saved.get("stale", 0))
+            if saved.get("identity") != checkpoint_identity: raise ValueError("training configuration or neural graph schema changed")
+            model.load_state_dict(saved["network"], strict=True); optimizer.load_state_dict(saved["optimizer"]); start = int(saved["epoch"])
+            best = float(saved["best"]); best_epoch = int(saved["best_epoch"]); best_state = saved["best_state"]
+            patience_reference = float(saved.get("patience_reference", best)); stale = int(saved.get("stale", 0))
             print(f"恢复 sparse neural Maxwell 训练：epoch={start}", flush=True)
-        except Exception as exc:
-            print(f"训练检查点不兼容，重新训练 sparse neural solver：{exc}", flush=True); checkpoint.unlink(missing_ok=True)
+        except Exception as exc: print(f"训练检查点不兼容，重新训练 sparse neural solver：{exc}", flush=True); checkpoint.unlink(missing_ok=True)
 
     last_train, last_validation, completed = float("inf"), float("inf"), start
     for epoch in range(start, cfg.epochs):
         if monitor is not None: monitor.checkpoint()
-        model.train(); order = np.random.default_rng(cfg.seed + epoch).permutation(train_ids)
-        final_losses = []; optimizer.zero_grad(set_to_none=True); pending = []
+        model.train(); order = np.random.default_rng(cfg.seed + epoch).permutation(train_ids); final_losses = []; optimizer.zero_grad(set_to_none=True); pending = []
         for position, idx in enumerate(order):
             if monitor is not None: monitor.checkpoint()
             objective, final_loss = system_losses(int(idx)); pending.append(objective); final_losses.append(float(final_loss.detach().cpu()))
             if len(pending) >= cfg.batch_size or position + 1 == len(order):
-                torch.stack(pending).mean().backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-                optimizer.step(); optimizer.zero_grad(set_to_none=True); pending.clear()
+                torch.stack(pending).mean().backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0); optimizer.step(); optimizer.zero_grad(set_to_none=True); pending.clear()
         last_train = float(np.mean(final_losses)) if final_losses else float("inf"); completed = epoch + 1
         validate = completed == 1 or completed % cfg.validation_interval == 0 or completed == cfg.epochs
         if validate:
             last_validation = evaluate(validation_ids)
-            if last_validation < best:
-                best = last_validation; best_epoch = completed; best_state = copy.deepcopy(model.state_dict())
+            if last_validation < best: best = last_validation; best_epoch = completed; best_state = copy.deepcopy(model.state_dict())
             if not np.isfinite(patience_reference): patience_reference = last_validation; stale = 0
             else:
                 required = cfg.min_relative_improvement * max(abs(patience_reference), np.finfo(float).tiny)
@@ -309,32 +238,21 @@ def train_maxwell_accelerator(background, dataset, *, network_settings=None, tra
                 else: stale += cfg.validation_interval
         print(f"训练 sparse neural Maxwell solver……{100 * completed / cfg.epochs:5.1f}%  epoch={completed}/{cfg.epochs}  train={last_train:.5g}  val={last_validation:.5g}", flush=True)
         if monitor is not None:
-            with monitor._lock:
-                monitor.data.update(phase="neural_training", epoch=completed, epoch_total=cfg.epochs,
-                                    train_loss=last_train, validation_loss=None if not np.isfinite(last_validation) else last_validation)
+            with monitor._lock: monitor.data.update(phase="neural_training", epoch=completed, epoch_total=cfg.epochs, train_loss=last_train,
+                                                   validation_loss=None if not np.isfinite(last_validation) else last_validation)
         if checkpoint is not None:
             checkpoint.parent.mkdir(parents=True, exist_ok=True); temporary = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
-            torch.save({"identity": checkpoint_identity, "epoch": completed, "network": model.state_dict(), "optimizer": optimizer.state_dict(),
-                        "best": best, "best_epoch": best_epoch, "best_state": best_state,
-                        "patience_reference": patience_reference, "stale": stale}, temporary); temporary.replace(checkpoint)
-        if stale >= cfg.patience:
-            print("validation unrolled residual 已长期无有效相对改进，提前停止。", flush=True); break
+            torch.save({"identity": checkpoint_identity, "epoch": completed, "network": model.state_dict(), "optimizer": optimizer.state_dict(), "best": best,
+                        "best_epoch": best_epoch, "best_state": best_state, "patience_reference": patience_reference, "stale": stale}, temporary); temporary.replace(checkpoint)
+        if stale >= cfg.patience: print("validation unrolled residual 已长期无有效相对改进，提前停止。", flush=True); break
 
-    model.load_state_dict(best_state); model.eval()
-    train_loss, validation_loss, test_loss = evaluate(train_ids), evaluate(validation_ids), evaluate(test_ids)
-    bench = dict(benchmark_settings or {})
-    tolerance = float(bench.get("residual_tolerance", 1e-7)); max_iterations = int(bench.get("max_iterations", 200))
-    restart = int(bench.get("restart", 40)); neural_steps = int(bench.get("neural_steps", cfg.unroll_steps))
-    print(f"benchmark sparse neural + FGMRES：neural_steps={neural_steps}  tol={tolerance:.1e}  max_iter={max_iterations}", flush=True)
-    solver_benchmark = {
-        "validation": _benchmark_split(background, dataset, validation_ids, model, neural_steps=neural_steps, tolerance=tolerance,
-                                       max_iterations=max_iterations, restart=restart, sample_limit=cfg.benchmark_samples_per_split),
-        "test": _benchmark_split(background, dataset, test_ids, model, neural_steps=neural_steps, tolerance=tolerance,
-                                 max_iterations=max_iterations, restart=restart, sample_limit=cfg.benchmark_samples_per_split),
-    }
-    report = MaxwellTrainingReport(completed, best_epoch, float(best), float(train_loss), float(validation_loss), float(test_loss),
-                                   completed < cfg.epochs, actual_device, cfg.to_dict(), net_cfg.to_dict(), int(systems[0][3].shape[1]), solver_benchmark)
-    return model, report
+    model.load_state_dict(best_state); model.eval(); train_loss, validation_loss, test_loss = evaluate(train_ids), evaluate(validation_ids), evaluate(test_ids)
+    bench = dict(benchmark_settings or {}); tolerance = float(bench.get("residual_tolerance", 1e-7)); max_iterations = int(bench.get("max_iterations", 200)); restart = int(bench.get("restart", 40))
+    print(f"benchmark sparse neural + FGMRES：neural_steps={model.solver_steps}  tol={tolerance:.1e}  max_iter={max_iterations}", flush=True)
+    solver_benchmark = {"validation": _benchmark_split(background, dataset, validation_ids, model, tolerance=tolerance, max_iterations=max_iterations, restart=restart, sample_limit=cfg.benchmark_samples_per_split),
+                        "test": _benchmark_split(background, dataset, test_ids, model, tolerance=tolerance, max_iterations=max_iterations, restart=restart, sample_limit=cfg.benchmark_samples_per_split)}
+    return model, MaxwellTrainingReport(completed, best_epoch, float(best), float(train_loss), float(validation_loss), float(test_loss), completed < cfg.epochs,
+        actual_device, cfg.to_dict(), net_cfg.to_dict(), int(systems[0][3].shape[1]), solver_benchmark)
 
 
 __all__ = ["MaxwellTrainingConfig", "MaxwellTrainingReport", "train_maxwell_accelerator"]
