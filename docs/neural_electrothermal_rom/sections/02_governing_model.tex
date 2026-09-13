@@ -31,6 +31,8 @@ A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 \end{equation}
 其中 $C$ 是离散 curl，$H_{\mu^{-1}},H_\epsilon,H_\sigma$ 为与同一离散能量定义一致的 Hodge/material operators。Joule、端口功率和后续 thermal heat 必须从同一 $H_\sigma$ 体系构造，禁止一套离散用于 Maxwell、另一套独立重构用于功率。
 
+对闭合 filament coil，离散 impressed current/source 还必须满足相应的离散电流连续性/拓扑闭合条件，并保持端口总电流归一。source deposition 不能仅在几何上连续，还必须在离散 Maxwell 空间中与电荷连续性兼容。
+
 \subsection{外边界不是默认 PEC 物理}
 有限计算域上的 essential tangential-$E$ 边界对应 PEC 型截断。它可以作为数值截断手段，但不能未经验证就解释为真实海水开放域边界。因此 truth model 必须通过至少一种开放域/域扩展收敛程序：扩大计算域或采用经过验证的 absorbing/PML/open-boundary 处理，并检查阻抗、互感和体损耗对边界位置的敏感性。
 
@@ -47,7 +49,7 @@ A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
 M_T(g)\dot\theta+K_T(g)\theta
 =Q_{\rm vol}(g,c)+Q_{\rm wire}(\theta,g,c)+F_T(g).
 \end{equation}
-这里 $Q_{\rm vol}$ 是由 Maxwell 场产生的体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或边界等效源；若不存在则为零。
+这里 $Q_{\rm vol}$ 是由 Maxwell 场产生的体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或线性边界等效源；若不存在则为零。若未来加入显著的温度非线性辐射/对流边界，应将其作为显式状态相关热通量项加入 governing equation，而不能隐藏到常数 $F_T$ 中。
 
 采用共享热基 $\Phi$：
 \begin{equation}
@@ -71,22 +73,47 @@ K_r=\Phi^TK_T\Phi.
 \end{equation}
 真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。
 
-\subsection{热 ROM 的 rank 判据必须对应在线 Galerkin 方程}
-对于 steady anchor $Q$，给定候选基 $\Phi$ 后应先求
+\subsection{thermal source family}
+用于构造共享热基的 source family 必须覆盖生产系统中可能出现的空间热源方向，至少包括：
+\begin{itemize}
+  \item representative geometry/current 下的体 Joule heat patterns；
+  \item 各线圈的集中电阻 heat-distribution patterns；
+  \item 若存在，确定性 boundary/source patterns。
+\end{itemize}
+wire resistance 的温度依赖主要改变这些固定/缓变空间模式的幅值；若未来模型引入新的状态相关空间热源形状，则必须同步扩展 thermal basis source family。
+
+\subsection{thermal basis 必须覆盖整个目标时间尺度}
+只控制 steady solution $K^{-1}Q$ 与初始导数 $M^{-1}Q$，一般不足以保证中间时间的 transient solution，因为
 \begin{equation}
-a_r=(\Phi^TK\Phi)^{-1}\Phi^TQ,
+\theta(t)=K^{-1}\left(I-e^{-M^{-1}Kt}\right)Q
 \end{equation}
-再检查真实在线 Galerkin residual
+会访问由 $M^{-1}K$ 作用产生的整个响应子空间。因此自动 thermal basis 不能只用 ``steady + initial dynamic'' 两类端点 anchor 作为理论停止标准。
+
+对每个 geometry $g$、source anchor $Q_\alpha(g)$ 和覆盖目标时间尺度的非负 shift $s_\ell$，定义 resolvent anchor
 \begin{equation}
-\boxed{r_K=Q-K\Phi a_r.}
+\boxed{
+\left(K(g)+s_\ell M(g)\right)u_{\alpha\ell}(g)=Q_\alpha(g).
+}
 \end{equation}
-对初始动态 anchor 同理：
+$s=0$ 覆盖 steady response；足够大的 $s$ 对应短时间/质量主导响应；中间的对数分布 shifts 覆盖目标 transient time scales。候选 reduced solution 为
 \begin{equation}
-\dot a_r=(\Phi^TM\Phi)^{-1}\Phi^TQ,
-\qquad
-\boxed{r_M=Q-M\Phi\dot a_r.}
+a_{\alpha\ell}
+=\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha,
 \end{equation}
-自动 rank 的停止标准必须基于这些实际 residual，而不是基于与在线 Galerkin 方程不同的 image-space least-squares residual。
+并直接检查实际 Galerkin resolvent residual
+\begin{equation}
+\boxed{
+r_{\alpha\ell}
+=Q_\alpha-(K+s_\ell M)\Phi a_{\alpha\ell}.}
+\end{equation}
+residual-greedy 在 geometry/source/shift 三重 anchor 集上对 worst residual 增广，rank 为达到目标后自动得到的结果。
+
+\subsection{time-domain 验证仍然不可省略}
+resolvent residual 提供覆盖多个时间尺度的构造依据，但它本身不等价于完整 trajectory certificate。冻结测试几何上仍必须用 full thermal model 与 ROM 直接比较代表性 step/current histories 的
+\begin{equation}
+T(x,t),\qquad T_{\max}(t),\qquad a(t),\qquad a_*.
+\end{equation}
+若这些 transient outputs 未达到目标，则继续扩充 geometry/source/shift anchors，而不是仅收紧神经网络误差。
 
 \subsection{共享热基跨几何使用的理论要求}
-共享热基只有在目标几何域内具有可控逼近误差时才有统一意义。除 anchor residual 外，还应在冻结测试几何上检查实际 Galerkin steady/dynamic residual 和温度输出误差。若要给出全域严格界，还需进一步证明跨几何质量/刚度算子的谱等价或其他稳定性条件；有限几何采样只能称为数值验证。
+共享热基只有在目标几何域内具有可控逼近误差时才有统一意义。除 resolvent residual 外，还应在冻结测试几何上检查实际 Galerkin transient/steady error。若要给出全域严格界，还需进一步证明跨几何质量/刚度算子的谱等价或其他稳定性条件；有限几何采样只能称为数值验证。
