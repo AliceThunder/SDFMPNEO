@@ -6,9 +6,13 @@
 \boxed{
 \text{validated Maxwell physics}
 \rightarrow
-\text{energy-consistent port/Joule tensors}
+\text{energy-consistent } Z/D/H \text{ extraction}
+\rightarrow
+\text{transient-aware thermal basis}
 \rightarrow
 \text{geometry-parametric neural surrogate}
+\rightarrow
+\text{joint feasible physical decode}
 \rightarrow
 \text{exact current/circuit physics}
 \rightarrow
@@ -22,11 +26,12 @@
 \begin{equation}
 g\mapsto\{Z_{\rm field},D_{\rm vol},H_j\}
 \end{equation}
-具有四点优势：
+具有以下优势：
 \begin{enumerate}
   \item learning target 与最终 impedance、total loss 和 thermal source 直接相关；
-  \item current magnitude/phase 由解析 quadratic forms 完整覆盖，不需要额外 current sampling dimension；
-  \item $D_{\rm vol}$ 把 port dissipation 与 thermal Joule 放到同一矩阵级能量框架中；
+  \item current magnitude/phase 由解析 quadratic forms 完整覆盖，不需要把 operating current 当网络采样维度；
+  \item $D_{\rm vol}$ 把 port dissipation 与 thermal Joule 放到同一矩阵级能量框架；
+  \item $\phi_j^{\min}D_{\rm vol}\preceq H_j\preceq\phi_j^{\max}D_{\rm vol}$ 进一步把 modal source 与总耗散联系起来；
   \item thermal trajectory 中无需重复计算高维电磁场。
 \end{enumerate}
 
@@ -37,16 +42,17 @@ g\mapsto\{Z_{\rm field},D_{\rm vol},H_j\}
 \end{equation}
 需要网络同时学习初值、时间尺度、热扩散、current scaling、circuit feedback 和稳态结构。当前方案把这些已知结构移出学习问题，只留下静态 geometry-to-tensor map，从而降低学习复杂度并提高可解释性。
 
-\subsection{与直接输出工程量黑箱的区别}
-网络虽然输出低维 EM tensors，但最终 thermal source、port power、circuit current 与 thermal derivative 都由物理层计算。特别是
-\begin{equation}
-q_{{\rm vol},j}=\frac12\operatorname{Re}(c^HH_jc),
-\qquad
-P_{\rm vol}=\frac12c^HD_{\rm vol}c,
-\qquad
-Z=Z_{\rm field}+R_{\rm wire}(a,g).
-\end{equation}
-因此 current quadratic law、relative phase、temperature-dependent wire resistance 和可选 circuit equations 都不会被黑箱网络重新学习。
+\subsection{结构保持的严格含义}
+本文所称 structure-preserving 只指已经明确证明或按构造保证的有限结构：
+\begin{itemize}
+  \item 在 reciprocal assumptions 下的 $Z^T=Z$；
+  \item $D_{\rm vol}\succeq0$ 与 $\operatorname{Herm}Z-D_{\rm vol}\succeq0$；
+  \item $H_j=H_j^H$ 及 modal Loewner bounds；
+  \item peak-phasor 的 exact quadratic current scaling；
+  \item 真实 $M_r,K_r$ 和零源 thermal energy dissipation；
+  \item 显式 initial-condition/circuit/steady-state semantics。
+\end{itemize}
+这些条件不等价于完整 spatial realizability、pointwise thermal positivity、全域 surrogate certificate 或全局 nonlinear stability。后四者若需要，必须通过相应的 Physics Gate、verified bounds 或专门的 structure-preserving method 另行建立。
 
 \subsection{理论强项与风险}
 \begin{center}
@@ -54,13 +60,14 @@ Z=Z_{\rm field}+R_{\rm wire}(a,g).
 \toprule
 指标 & 评价与风险 \\
 \midrule
-理论结构 & 强。Maxwell linearity、reciprocity、matrix-level dissipation, complex-current quadratic Joule、真实 thermal operators 与 continuous-time dynamics 均显式保留。 \\
-学习任务 & 中到强。geometry-to-tensor map 远低于 full field，但可学习性仍取决于 geometry discretization continuity、POD spectrum 与 parameter-domain coverage。 \\
-推理速度 & 强。每个 geometry 只需一次 MLP/tensor decode，trajectory 只执行 small thermal/circuit operations。 \\
-物理一致性 & 条件强。联合可行层保证非负 $D_{\rm vol}$ 和 implied outward loss，但 truth accuracy 仍依赖 Physics Gate。 \\
-可验证性 & 强于 trajectory black box。$Z/D/H$、matrix power balance、current contraction、thermal residual 和 trajectory error 可逐层审计。 \\
-模型误差 & 仍存在。filament conductor、feed/return path、AC resistance、海水 thermal convection 等近似必须单独验证。 \\
-适用频率 & 当前为冻结单频。若扩展到 broadband，必须增加 positive-real/causal frequency structure，不能把单频 passivity 直接外推。 \\
+理论分层 & 强。Maxwell、端口功率、Joule、circuit 与 thermal dynamics 的责任边界明确。 \\
+能量结构 & 强。truth 使用独立 Poynting audit；surrogate 使用联合 $Z/D/H$ 可行集，而非互不相关的 tensor regression。 \\
+学习任务 & 中到强。geometry-to-tensor map 远低于 full field，但可学习性仍取决于 geometry discretization continuity、POD spectrum 与 production-domain coverage。 \\
+thermal ROM & 条件强。使用 source/initial-condition/time-scale resolvent energy error 与 full trajectory audit；普通 Galerkin 不自动保持 pointwise positivity。 \\
+推理速度 & 强。每个静态 geometry 只需一次 MLP/tensor decode，trajectory 只执行 small thermal/circuit operations。 \\
+可验证性 & 强于 trajectory black box。$Z/D/H$、独立 matrix power balance、modal bounds、ROM error 和 trajectory error 可逐层审计。 \\
+模型误差 & 仍存在。source regularization、feed/return path、wire internal impedance、海水 convection 等必须通过 Physics Gate 或高保真/实验参考验证。 \\
+适用频率 & 当前为冻结单频。若扩展到 broadband，必须增加 positive-real/causal frequency structure。 \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -68,10 +75,11 @@ Z=Z_{\rm field}+R_{\rm wire}(a,g).
 \subsection{论文/技术报告应回答的问题}
 正式报告应围绕以下问题展开：
 \begin{enumerate}
-  \item 在 UWPT 低频 Maxwell 问题中，如何建立 reciprocity、passivity 与 Poynting consistency 同时成立的端口/Joule tensors？
-  \item 如何利用 multi-RHS linearity 与 Hermitian current structure 消除 operating-current sampling dimension？
+  \item 在 UWPT 低频 Maxwell 问题中，如何建立 reciprocity、passivity、独立 Poynting audit 与 thermal Joule consistency 同时成立的 $Z/D/H$ objects？
+  \item 如何利用 multi-RHS linearity 与 Hermitian current structure 消除 operating-current sampling dimension，并完整覆盖 thermal source span？
   \item geometry-to-$Z/D/H$ map 是否具有足够低的有效复杂度，能够被紧凑神经代理学习？
-  \item tensor surrogate error 如何传播到 current-controlled 或 circuit-controlled thermal trajectory、steady state 与 impedance outputs？
+  \item 联合可行投影在多大程度上只是安全层，而不是主要误差修正器？
+  \item tensor surrogate、thermal ROM、initial-condition 与 circuit error 如何传播到 trajectory、steady state 与 impedance outputs？
   \item 与直接 trajectory NN、普通 response-surface 和高维 online Maxwell solve 相比，精度--训练成本--推理成本的 Pareto 前沿如何？
 \end{enumerate}
 
@@ -80,8 +88,9 @@ Z=Z_{\rm field}+R_{\rm wire}(a,g).
 \begin{equation}
 \boxed{
  g\rightarrow\{Z_{\rm field},D_{\rm vol},H_j\}_\theta
+ \rightarrow\text{joint physical feasibility}
  \rightarrow\text{exact current/circuit physics}
  \rightarrow\text{true thermal ROM}.
 }
 \end{equation}
-后续研究可以改进 POD、网络容量、sampling、active learning、verified error bounds 和 thermal/circuit integrators，但不得改变这条物理分层，除非新的 constitutive evidence 证明当前假设本身失效。
+后续可以改进 POD、网络容量、sampling、active learning、verified bounds、positivity-preserving thermal method 与 integrator，但不得绕过上述物理分层。若新的 constitutive、conductor、boundary、frequency、circuit 或 geometry-dynamics evidence 推翻当前假设，应先修改 truth model/Physics Gate，再重建 basis、dataset 和 surrogate，而不是让网络吸收缺失物理。
