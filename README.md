@@ -124,7 +124,11 @@ TRAINING = {
     "optimizer": {
         "epochs": 120,
         "batch_size": 1,
+        "gradient_accumulation_steps": 4,
         "learning_rate": 2e-3,
+        "lr_decay_factor": 0.5,
+        "lr_plateau_patience": 3,
+        "minimum_learning_rate": 5e-4,
         "patience": 20,
         "validation_interval": 2,
         "min_relative_improvement": 1e-3,
@@ -132,7 +136,11 @@ TRAINING = {
 }
 ```
 
-`batch_size=1` 是有意的：每个 operator sample 内已经同时处理多个 RHS，而且 shared unroll 会保留多步 sparse-message-passing autograd graph。
+`batch_size=1` 是有意的：每个 operator sample 内已经同时处理多个 RHS，而且 shared unroll 会保留多步 sparse-message-passing autograd graph。默认连续累计 4 个 operator 的梯度再执行一次 optimizer step，所以 effective batch size 为 4，但正常情况下显存里仍只保留一个 operator 的计算图。
+
+后期优化使用 validation plateau learning-rate decay。默认学习率从 `2e-3` 开始，每次 plateau 乘 `0.5`，最低降到 `5e-4`。发生实际降 LR 时会重置 early-stop stale 计数，让更小学习率有独立的观察窗口；只有在降到较低学习率后仍长期没有有效相对改善才提前停止。
+
+训练报告额外记录 `effective_batch_size`、`final_learning_rate` 和 `learning_rate_reductions`，便于直接判断后期优化是否真正受益于梯度平均和降学习率。
 
 ## Solver benchmark
 
@@ -173,7 +181,7 @@ results/uwpt/unified.residual_dataset.npz
 results/uwpt/model.training.pt
 ```
 
-神经检查点身份包含 feature schema、network config、training config、edge topology 和采样设置。旧 polynomial / 旧 edge-MLP checkpoint 不会静默续训。
+神经检查点身份包含 feature schema、network config、training config、edge topology 和采样设置。旧 polynomial / 旧 edge-MLP checkpoint 不会静默续训；gradient accumulation 或 LR schedule 改变时旧训练检查点同样会判为不兼容并重新开始神经训练，但 thermal basis 与 residual dataset 物理缓存仍可复用。
 
 ## 正确性边界
 
