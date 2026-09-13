@@ -5,7 +5,7 @@
 \begin{equation}
 (g,c,a_0,t)\longmapsto a(t)\longmapsto T(x,t),Z(t),P(t),\ldots.
 \end{equation}
-系统不以黑箱方式直接学习时间轨迹，也不要求神经网络学习完整 Maxwell 逆算子。已知的 Maxwell 线性性、电流二次型、热质量/导热算子和连续时间动力学必须保留为硬结构。
+系统不以黑箱方式直接学习时间轨迹。已知的 Maxwell 线性性、电流二次型、热质量/导热算子和连续时间动力学必须保留为硬结构。
 
 \subsection{冻结的生产主架构}
 生产主链冻结为
@@ -37,17 +37,6 @@
 \end{equation}
 其中 $a_{\rm em}$ 只包含真正影响 Maxwell constitutive law 的状态变量，而不是默认把完整热状态塞入网络。
 
-\subsection{truth solver 与生产代理必须分层}
-Maxwell truth solver 的职责是生成可信的 $X(g)$、$Z_{\rm field}(g)$ 和 $H_j(g)$，并承担 full-field audit。它可以采用直接稀疏求解器、经过验证的迭代求解器，或研究型 neural-preconditioned FGMRES；但这些求解器细节不是生产代理的顶层理论结构。
-
-因此 full-space neural Maxwell/Flexible GMRES 被定位为：
-\begin{itemize}
-  \item truth snapshot 生成加速器；
-  \item full-field/audit solver；
-  \item 独立的神经线性求解研究方向。
-\end{itemize}
-它不再作为每个 thermal ODE stage 必须调用的生产主链。
-
 \subsection{理论正确性的前置 Gate}
 生产训练开始前，底层离散物理必须通过以下前置条件：
 \begin{itemize}
@@ -63,7 +52,6 @@ Maxwell truth solver 的职责是生成可信的 $X(g)$、$Z_{\rm field}(g)$ 和
 本项目不把以下方案作为生产主路线：
 \begin{enumerate}
   \item 直接学习 $(g,c,a_0,t)\mapsto T(t)$ 的黑箱 trajectory network；
-  \item 让网络学习完整 $A_{\rm em}^{-1}$ 后再把它作为 thermal surrogate 的必要环节；
   \item 用网络直接输出最终温度、Joule heat 或阻抗而绕过已知的电流二次结构；
   \item 在底层 PDE/边界/功率恒等式未通过 Physics Gate 前，以训练 loss 下降替代物理验证；
   \item 把有限测试集经验误差称为全参数域严格 certificate。
