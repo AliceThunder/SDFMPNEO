@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from sdfmpneo.unified_background import FixedMultiscaleBackground
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
+from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_tensor_surrogate import generate_tensor_dataset
 from sdfmpneo.unified_tensor_training import train_matrix_tensor_surrogate
 from sdfmpneo.unified_thermal import build_thermal_basis
@@ -40,7 +40,7 @@ def geometry(rx_x=0.0):
 
 def small_background():
     axis = np.linspace(-0.05, 0.05, 5)
-    return FixedMultiscaleBackground(
+    return OpenBoundaryBackground(
         axis, axis, axis, frequency_hz=100000.0,
         materials=MATERIALS, coil_materials=("tx_copper", "rx_copper"),
         package_materials=("tx_package", "rx_package"), seawater_material="seawater",
@@ -69,8 +69,10 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert len(dataset.indices("audit")) == 1
     assert dataset.audit["maximum_linear_relative_residual"] <= 1e-8
     assert dataset.audit["maximum_reciprocity_relative_error"] <= 1e-8
-    assert dataset.audit["maximum_closed_boundary_power_balance_relative_error"] <= 1e-7
+    assert dataset.audit["maximum_open_boundary_power_balance_relative_error"] <= 1e-7
     assert dataset.audit["minimum_d_vol_eigenvalue"] >= -1e-9
+    assert dataset.audit["minimum_physical_outward_eigenvalue"] >= -1e-9
+    assert dataset.audit["independent_outward_power_available"] == 1.0
     assert dataset.audit["maximum_relative_loewner_violation"] <= 1e-8
 
     phi = background.thermal_basis
