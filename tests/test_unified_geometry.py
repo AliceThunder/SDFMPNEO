@@ -26,7 +26,8 @@ def test_circle_and_rounded_square_share_one_geometry_interface():
     assert pc.shape[1] == ps.shape[1] == 3
     assert len(pc) > 10 and len(ps) > 10
     assert np.all(np.isfinite(pc)) and np.all(np.isfinite(ps))
-    assert np.allclose(circle.pose.inverse(circle.pose.apply(pc[:4] - circle.pose.translation)), pc[:4] - circle.pose.translation)
+    local = np.array([[0.01, -0.02, 0.003], [-0.02, 0.01, -0.004]])
+    assert np.allclose(circle.pose.inverse(circle.pose.apply(local)), local)
 
 
 def test_custom_spline_is_supported_without_changing_model_semantics():
