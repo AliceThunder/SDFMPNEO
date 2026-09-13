@@ -14,7 +14,7 @@ E=X(g)c.
 一次 multi-RHS truth solve 因而覆盖同一几何下的完整端口电流空间。
 
 \subsection{被动端口阻抗的符号}
-端口电压方向固定为被动符号约定，使正实部表示端口向电磁/热系统输入的平均功率。对当前 source orientation，场反应电压定义为
+端口电压方向固定为被动符号约定，使正实部表示端口向电磁系统输入的平均功率。对当前 source orientation，场反应电压定义为
 \begin{equation}
 v_{\rm field}=-S^T E,
 \end{equation}
@@ -30,13 +30,13 @@ Z_{\rm field}(g)=-S(g)^T X(g).
 Z(a,g)=Z_{\rm field}(g)+R_{\rm wire}(a,g),
 }
 \end{equation}
-其中 $R_{\rm wire}$ 为实对角、非负矩阵。该符号定义不是任意后处理约定，而必须与离散功率恒等式同时验证。
+其中 $R_{\rm wire}$ 为实对角、非负矩阵。该符号定义必须与离散功率恒等式同时验证。
 
 在 reciprocal material 与一致端口定义下，应有
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field}
 \end{equation}
-到离散/求解误差精度；这是 truth snapshot 的必要 audit 指标之一。
+到离散/求解误差精度。
 
 \subsection{与 Maxwell Hodge 一致的体 Joule 功率}
 令导电 Hodge 为 $H_\sigma\succeq0$。任意场 $E$ 的体平均导电损耗为
@@ -76,15 +76,17 @@ Q_{\rm wire}
 \end{equation}
 投影到 thermal basis 后得到 $q_{\rm wire}(a,g,c)$。线圈电阻模型可以包含温度、skin-effect 等经过明确定义的 constitutive approximation，但必须与 full-conductor Maxwell model 区分，不能称为后者意义下的 ``exact conductor loss''。
 
-\subsection{离散功率恒等式}
-truth solver 必须满足以下数值闭合关系：
+\subsection{开放域离散功率恒等式}
+对开放电磁域，端口输入功率除了体导电损耗外，还可能通过外边界以 Poynting flux 离开计算域。记该平均外流功率为 $P_{\rm out}\ge0$；若采用吸收边界/PML，则它由相应边界或吸收层能量项表示。truth model 必须满足
 \begin{equation}
 \boxed{
 \frac12\operatorname{Re}\!\left(c^H Z(a,g)c\right)
-=P_{\rm vol}(g,c)+P_{\rm wire}(a,g,c)
+=P_{\rm vol}(g,c)+P_{\rm out}(g,c)+P_{\rm wire}(a,g,c)
 }
 \end{equation}
-到 linear-solve tolerance、quadrature/deposition tolerance 和浮点误差允许的范围。
+到 linear-solve、quadrature/deposition、边界离散和浮点误差允许的范围。
+
+只有在域扩展实验已经证明 $P_{\rm out}$ 对目标量可忽略时，才允许把它从近似工程功率平衡中省略。有限 PEC 截断使 $P_{\rm out}=0$ 只是边界条件的结果，不能因此自动证明它近似真实开放域。
 
 该恒等式同时验证：
 \begin{itemize}
@@ -92,12 +94,13 @@ truth solver 必须满足以下数值闭合关系：
   \item 阻抗符号；
   \item Joule Hodge；
   \item complex phase coupling；
+  \item 开放边界能流；
   \item 集中线圈电阻项。
 \end{itemize}
 如果该恒等式失败，则对应 snapshot 禁止进入神经训练数据集。
 
 \subsection{神经代理必须保留的代数结构}
-生产神经网络可以预测 $Z_{\rm field}$ 和 $H_j$ 的低维系数，但解码后必须显式施加：
+生产神经网络预测 $Z_{\rm field}$ 和 $H_j$ 的低维系数，解码后必须显式满足
 \begin{equation}
 \widehat Z_{\rm field}^T=\widehat Z_{\rm field}
 \end{equation}
