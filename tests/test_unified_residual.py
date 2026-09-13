@@ -5,6 +5,7 @@ import scipy.sparse as sp
 from sdfmpneo.unified_maxwell import NeuralMaxwellAccelerator
 from sdfmpneo.unified_neural_operator import (
     build_edge_residual_operator,
+    polynomial_state_from_operator_action,
     residual_features,
 )
 
@@ -47,6 +48,23 @@ def test_residual_features_are_operator_action_aware_and_have_mr_jacobi_baseline
     assert np.max(relative) <= 1.0 + 1e-12
 
 
+def test_polynomial_state_uses_exact_operator_actions_and_normalized_directions():
+    A, B = random_problem(seed=7)
+    features, baseline, basis, scale = polynomial_state_from_operator_action(
+        A.diagonal(),
+        B,
+        lambda value: A @ value,
+        polynomial_order=3,
+    )
+    assert features.shape == (B.shape[1], A.shape[0], 11)
+    assert baseline.shape == B.shape
+    assert basis.shape == (A.shape[0], B.shape[1], 3)
+    assert scale.shape == (B.shape[1],)
+    assert np.all(np.isfinite(basis))
+    rms = np.linalg.norm(basis, axis=0) / np.sqrt(A.shape[0])
+    assert np.allclose(rms, scale[:, None], rtol=1e-10, atol=1e-12)
+
+
 def test_operator_action_features_see_signed_offdiagonal_coupling():
     n = TinyTopology.n_edges
     diagonal = (2.0 + 0.4j) * np.ones(n)
@@ -65,12 +83,38 @@ def test_operator_action_features_see_signed_offdiagonal_coupling():
     assert np.max(np.abs(f1[..., 2:6] - f0[..., 2:6])) > 0.0
 
 
+def test_network_predicts_only_bounded_global_polynomial_coefficients():
+    torch = pytest.importorskip("torch")
+    A, B = random_problem(seed=9)
+    network = build_edge_residual_operator(
+        TinyTopology(),
+        {
+            "width": 8,
+            "levels": 1,
+            "blocks_per_level": 1,
+            "activation": "silu",
+            "polynomial_order": 3,
+            "coefficient_limit": 1.5,
+        },
+    ).double()
+    features, _, _ = residual_features(A, B)
+    output = network(torch.as_tensor(features, dtype=torch.float64))
+    assert tuple(output.shape) == (B.shape[1], 3, 2)
+    assert torch.max(torch.abs(output)).item() == 0.0
+
+
 def test_zero_initialized_network_uses_physical_mr_jacobi_then_fgmres_closes_true_residual():
     pytest.importorskip("torch")
     A, B = random_problem(seed=11)
     network = build_edge_residual_operator(
         TinyTopology(),
-        {"width": 8, "levels": 1, "blocks_per_level": 1, "activation": "silu"},
+        {
+            "width": 8,
+            "levels": 1,
+            "blocks_per_level": 1,
+            "activation": "silu",
+            "polynomial_order": 3,
+        },
     ).double()
     accelerator = NeuralMaxwellAccelerator(
         network, residual_tolerance=1e-10, max_iterations=80, restart=8
@@ -97,11 +141,12 @@ def test_nonfinite_neural_output_falls_back_to_physical_baseline_not_surrogate_a
             super().__init__()
             self.anchor = torch.nn.Parameter(torch.zeros(1, dtype=torch.float64))
             self.n_edges = A.shape[0]
+            self.polynomial_order = 3
 
         def forward(self, x):
             return (
                 torch.full(
-                    (x.shape[0], x.shape[1], 2),
+                    (x.shape[0], self.polynomial_order, 2),
                     float("nan"),
                     dtype=x.dtype,
                     device=x.device,
