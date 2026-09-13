@@ -18,11 +18,12 @@ from .unified_dataset import MaxwellOperatorDataset, generate_operator_dataset
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_maxwell import NeuralMaxwellAccelerator
 from .unified_model import UnifiedNeuralElectroThermalModel
+from .unified_thermal import build_thermal_basis
 from .unified_trainer import train_maxwell_accelerator
 
-# 4 = automatic-rank global greedy + minimum-residual image-space projection.
-# Any older cache may contain a Galerkin-built basis and must not be reused.
-_CACHE_FORMAT = 4
+# 5 = automatic thermal rank + material-temperature EM sampling + automatic
+# minimum-residual Maxwell rank. Older caches must not be reused.
+_CACHE_FORMAT = 5
 
 
 def jsonable(value):
@@ -62,16 +63,9 @@ def _progress(message, percent, monitor=None):
 
 
 def _signature(settings):
-    """Identity of reusable physical operator data, excluding NN/optimizer choices."""
     keys = (
-        "BACKGROUND",
-        "DEFAULT_GEOMETRY",
-        "GEOMETRY_SAMPLING",
-        "PHYSICS",
-        "MATERIALS",
-        "REGIONS",
-        "THERMAL_RANK",
-        "TRAINING",
+        "BACKGROUND", "DEFAULT_GEOMETRY", "GEOMETRY_SAMPLING", "PHYSICS",
+        "MATERIALS", "REGIONS", "TRAINING",
     )
     payload = {k: settings[k] for k in keys}
     payload["TRAINING"] = {
@@ -84,15 +78,14 @@ def _signature(settings):
 
 
 def build_background(settings):
-    r = settings["REGIONS"]
+    regions = settings["REGIONS"]
     return FixedMultiscaleBackground.from_config(
         settings["BACKGROUND"],
         frequency_hz=settings["PHYSICS"]["frequency_hz"],
         materials=settings["MATERIALS"],
-        coil_materials=r["coil_materials"],
-        package_materials=r["package_materials"],
-        seawater_material=r["seawater_material"],
-        thermal_rank=settings["THERMAL_RANK"],
+        coil_materials=regions["coil_materials"],
+        package_materials=regions["package_materials"],
+        seawater_material=regions["seawater_material"],
         ambient_temperature=settings["PHYSICS"]["ambient_temperature"],
     )
 
@@ -111,51 +104,63 @@ def _sample_geometries(settings, n, rng, background):
             settings["DEFAULT_GEOMETRY"], settings.get("GEOMETRY_SAMPLING"), rng
         )
         try:
-            geometry = UnifiedUWPTGeometry.from_mapping(candidate)
-            background.validate_geometry(geometry)
+            background.validate_geometry(UnifiedUWPTGeometry.from_mapping(candidate))
         except ValueError:
             continue
         out.append(candidate)
     return out
 
 
-def _sample_states(settings, n, seed):
-    lo = np.asarray(settings["TRAINING"]["state_lower"], float)
-    hi = np.asarray(settings["TRAINING"]["state_upper"], float)
-    if lo.shape != (settings["THERMAL_RANK"],) or hi.shape != lo.shape or np.any(hi <= lo):
-        raise ValueError("state bounds must match THERMAL_RANK")
-    return qmc.scale(qmc.LatinHypercube(len(lo), seed=seed).random(n), lo, hi)
+def _temperature_sensitive_materials(background):
+    return [
+        name for name, material in background.materials.items()
+        if float(material.get("electrical_conductivity", 0.0)) > 0.0
+        and float(material.get("resistivity_temperature_coefficient", 0.0)) != 0.0
+    ]
+
+
+def _sample_em_states(settings, n, seed, background):
+    """Sample physical material temperature rises, independent of thermal rank."""
+    names = _temperature_sensitive_materials(background)
+    if not names:
+        return [None] * n
+    configured = settings["TRAINING"].get("em_temperature_rise_bounds", [0.0, 80.0])
+    if isinstance(configured, dict):
+        bounds = np.asarray([configured.get(name, [0.0, 80.0]) for name in names], float)
+    else:
+        pair = np.asarray(configured, float)
+        if pair.shape != (2,):
+            raise ValueError("em_temperature_rise_bounds must be [lower, upper] or a material mapping")
+        bounds = np.tile(pair, (len(names), 1))
+    if bounds.shape != (len(names), 2) or np.any(~np.isfinite(bounds)) or np.any(bounds[:, 1] <= bounds[:, 0]):
+        raise ValueError("invalid EM material temperature-rise bounds")
+    unit = qmc.LatinHypercube(len(names), seed=seed).random(n)
+    values = qmc.scale(unit, bounds[:, 0], bounds[:, 1])
+    return [{name: float(row[j]) for j, name in enumerate(names)} for row in values]
 
 
 def _cache_paths(directory):
     return (
         directory / "unified.cache.json",
+        directory / "unified.thermal_basis.npy",
         directory / "unified.em_basis.npy",
         directory / "unified.operator_dataset.npz",
     )
 
 
-def _require_effective_basis(report):
+def _require_effective_basis(report, label):
     converged = bool(report.get("converged", False)) if isinstance(report, dict) else bool(report.converged)
     if converged:
         return
-    residual = (
-        float(report.get("maximum_anchor_relative_residual"))
-        if isinstance(report, dict)
-        else float(report.maximum_anchor_relative_residual)
-    )
-    target = (
-        float(report.get("target_relative_residual"))
-        if isinstance(report, dict)
-        else float(report.target_relative_residual)
-    )
-    rank = int(report.get("basis_dimension")) if isinstance(report, dict) else int(report.basis_dimension)
-    reason = str(report.get("stop_reason", "unknown")) if isinstance(report, dict) else str(report.stop_reason)
+    get = report.get if isinstance(report, dict) else lambda name, default=None: getattr(report, name, default)
+    residual = float(get("maximum_anchor_relative_residual"))
+    target = float(get("target_relative_residual"))
+    rank = int(get("basis_dimension"))
+    reason = str(get("stop_reason", "unknown"))
     raise RuntimeError(
-        "Maxwell 公共空间未达到训练所要求的初解残差："
-        f"自动 rank={rank}, maximum anchor residual={residual:.3e}, "
-        f"target={target:.3e}, stop={reason}。"
-        "神经网络无法弥补一个不能表示训练物理解的公共空间，因此本次训练在进入 epoch 前停止。"
+        f"{label} 公共空间未达到训练要求：自动 rank={rank}, "
+        f"maximum anchor residual={residual:.3e}, target={target:.3e}, stop={reason}。"
+        "公共物理空间本身不充分，训练在神经网络 epoch 前停止。"
     )
 
 
@@ -164,7 +169,7 @@ def train(settings, model_path, settings_dir, monitor=None):
 
     settings_dir.mkdir(parents=True, exist_ok=True)
     sig = _signature(settings)
-    meta_path, basis_path, data_path = _cache_paths(settings_dir)
+    meta_path, thermal_path, em_path, data_path = _cache_paths(settings_dir)
     checkpoint = Path(settings["FILES"]["training_checkpoint"])
     checkpoint = checkpoint if checkpoint.is_absolute() else Path(settings["ROOT"]) / checkpoint
     try:
@@ -172,13 +177,13 @@ def train(settings, model_path, settings_dir, monitor=None):
         bg = build_background(settings)
         _progress("构建固定多尺度背景物理空间", 8, monitor)
         print(
-            f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs，"
-            f"thermal rank={settings['THERMAL_RANK']}",
+            f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs，thermal rank=自动计算",
             flush=True,
         )
+
         valid_cache = False
         cache_meta = {}
-        if meta_path.is_file() and basis_path.is_file() and data_path.is_file():
+        if meta_path.is_file() and thermal_path.is_file() and em_path.is_file() and data_path.is_file():
             try:
                 cache_meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 valid_cache = (
@@ -187,42 +192,76 @@ def train(settings, model_path, settings_dir, monitor=None):
                 )
             except (OSError, ValueError, TypeError):
                 valid_cache = False
+
         if valid_cache:
-            _progress("复用统一物理算子训练数据", 35, monitor)
-            basis_report = cache_meta.get("basis_report", {})
-            _require_effective_basis(basis_report)
-            V = np.load(basis_path, allow_pickle=False)
+            _progress("复用统一物理算子训练数据", 40, monitor)
+            thermal_report = cache_meta.get("thermal_basis_report", {})
+            maxwell_report = cache_meta.get("maxwell_basis_report", {})
+            _require_effective_basis(thermal_report, "thermal")
+            _require_effective_basis(maxwell_report, "Maxwell")
+            bg.set_thermal_basis(np.load(thermal_path, allow_pickle=False))
+            V = np.load(em_path, allow_pickle=False)
             dataset = MaxwellOperatorDataset.load(data_path)
+            print(
+                f"复用公共空间：thermal rank={bg.thermal_rank}，Maxwell rank={V.shape[1]}",
+                flush=True,
+            )
         else:
             checkpoint.unlink(missing_ok=True)
             rng = np.random.default_rng(int(settings["TRAINING"].get("seed", 17)))
-            nb = int(settings["TRAINING"].get("basis_samples", 24))
-            geoms = _sample_geometries(settings, nb, rng, bg)
-            states = _sample_states(settings, nb, int(settings["TRAINING"].get("seed", 17)) + 1)
-            _progress("构建 residual-driven Maxwell 公共空间", 10, monitor)
-            V, basis_obj = build_residual_basis(
+            n_basis = int(settings["TRAINING"].get("basis_samples", 24))
+            basis_geometries = _sample_geometries(settings, n_basis, rng, bg)
+
+            _progress("构建 residual-driven thermal 公共空间", 9, monitor)
+            thermal_basis, thermal_obj = build_thermal_basis(
                 bg,
-                geoms,
-                states,
+                basis_geometries,
+                target_relative_residual=float(
+                    settings["TRAINING"].get("thermal_basis_anchor_residual", 5e-2)
+                ),
+                monitor=monitor,
+            )
+            _require_effective_basis(thermal_obj, "thermal")
+            np.save(thermal_path, thermal_basis)
+            _progress("构建 residual-driven thermal 公共空间", 20, monitor)
+
+            em_states = _sample_em_states(
+                settings, n_basis, int(settings["TRAINING"].get("seed", 17)) + 1, bg
+            )
+            _progress("构建 residual-driven Maxwell 公共空间", 21, monitor)
+            V, maxwell_obj = build_residual_basis(
+                bg,
+                basis_geometries,
+                em_states,
                 target_relative_residual=float(
                     settings["TRAINING"].get("em_basis_anchor_residual", 2e-1)
                 ),
                 monitor=monitor,
             )
-            _require_effective_basis(basis_obj)
-            np.save(basis_path, V)
-            _progress("构建 residual-driven Maxwell 公共空间", 30, monitor)
-            nd = int(settings["TRAINING"].get("n_operator_samples", 512))
-            geoms = _sample_geometries(settings, nd, rng, bg)
-            states = _sample_states(settings, nd, int(settings["TRAINING"].get("seed", 17)) + 2)
+            _require_effective_basis(maxwell_obj, "Maxwell")
+            np.save(em_path, V)
+            _progress("构建 residual-driven Maxwell 公共空间", 40, monitor)
+
+            n_data = int(settings["TRAINING"].get("n_operator_samples", 512))
+            data_geometries = _sample_geometries(settings, n_data, rng, bg)
+            data_states = _sample_em_states(
+                settings, n_data, int(settings["TRAINING"].get("seed", 17)) + 2, bg
+            )
             dataset = generate_operator_dataset(
-                bg, V, geoms, states, seed=int(settings["TRAINING"].get("seed", 17)), monitor=monitor
+                bg, V, data_geometries, data_states,
+                seed=int(settings["TRAINING"].get("seed", 17)), monitor=monitor,
             )
             dataset.save(data_path)
-            basis_report = asdict(basis_obj)
+            thermal_report = asdict(thermal_obj)
+            maxwell_report = asdict(maxwell_obj)
             write_json(
                 meta_path,
-                {"cache_format": _CACHE_FORMAT, "signature": sig, "basis_report": basis_report},
+                {
+                    "cache_format": _CACHE_FORMAT,
+                    "signature": sig,
+                    "thermal_basis_report": thermal_report,
+                    "maxwell_basis_report": maxwell_report,
+                },
             )
             _progress("生成 Maxwell residual 训练数据", 55, monitor)
 
@@ -253,7 +292,11 @@ def train(settings, model_path, settings_dir, monitor=None):
         _progress("保存统一神经物理模型", 98, monitor)
         model.save(
             model_path,
-            metadata={"basis_report": basis_report, "training_report": asdict(report)},
+            metadata={
+                "thermal_basis_report": thermal_report,
+                "maxwell_basis_report": maxwell_report,
+                "training_report": asdict(report),
+            },
         )
         checkpoint.unlink(missing_ok=True)
         write_json(
@@ -262,15 +305,18 @@ def train(settings, model_path, settings_dir, monitor=None):
                 "model": str(model_path),
                 "background_cells": bg.n_cells,
                 "maxwell_dofs": bg.n_edges,
+                "thermal_basis_rank": bg.thermal_rank,
                 "em_basis_rank": V.shape[1],
-                "basis": basis_report,
+                "thermal_basis": thermal_report,
+                "maxwell_basis": maxwell_report,
                 "training": report,
             },
         )
         _progress("训练完成", 100, monitor)
         print(
-            f"训练完成：best epoch={report.best_epoch}，"
-            f"validation residual loss={report.best_validation_residual_loss:.6g} "
+            f"训练完成：thermal rank={bg.thermal_rank}，Maxwell rank={V.shape[1]}，"
+            f"best epoch={report.best_epoch}，validation residual loss="
+            f"{report.best_validation_residual_loss:.6g} "
             f"(RMS={np.sqrt(report.best_validation_residual_loss):.6g})，"
             f"test residual loss={report.test_residual_loss:.6g} "
             f"(RMS={np.sqrt(report.test_residual_loss):.6g})",
@@ -282,13 +328,9 @@ def train(settings, model_path, settings_dir, monitor=None):
         return 0
     except TrainingStopped:
         if monitor is not None:
-            monitor.finish(
-                "stopped", checkpoint=str(checkpoint) if checkpoint.is_file() else None
-            )
+            monitor.finish("stopped", checkpoint=str(checkpoint) if checkpoint.is_file() else None)
         print(
-            f"训练已停止；神经训练检查点：{checkpoint}"
-            if checkpoint.is_file()
-            else "训练已停止。",
+            f"训练已停止；神经训练检查点：{checkpoint}" if checkpoint.is_file() else "训练已停止。",
             flush=True,
         )
         return 130
@@ -306,6 +348,16 @@ def _device(requested):
     return value
 
 
+def _initial_state(model, prediction):
+    value = prediction.get("initial_temperature_rise", 0.0)
+    if value is None or (isinstance(value, str) and value.lower() == "ambient"):
+        return np.zeros(model.thermal_rank)
+    array = np.asarray(value, float)
+    if array.ndim == 0 and float(array) == 0.0:
+        return np.zeros(model.thermal_rank)
+    return model.background.project_temperature_rise(array)
+
+
 def predict(settings, model_path, output_path, settings_dir):
     if not model_path.is_file():
         raise FileNotFoundError(f"模型不存在：{model_path}")
@@ -313,13 +365,16 @@ def predict(settings, model_path, output_path, settings_dir):
     model = UnifiedNeuralElectroThermalModel.load(model_path, device=device)
     p = settings["PREDICTION"]
     geometry = p.get("geometry") or settings["DEFAULT_GEOMETRY"]
-    initial = np.asarray(p["a0"], float)
+    initial = _initial_state(model, p)
     operating = np.asarray(p["operating"], float)
     results = []
-    print(f"加载统一神经物理模型：{model_path}  device={device}", flush=True)
+    print(
+        f"加载统一神经物理模型：{model_path}  device={device}  thermal rank={model.thermal_rank}",
+        flush=True,
+    )
     for requested in p["times"]:
         if isinstance(requested, str) and requested.lower() == "inf":
-            r = model.steady_state(
+            result = model.steady_state(
                 initial_guess=initial,
                 geometry=geometry,
                 operating=operating,
@@ -327,15 +382,15 @@ def predict(settings, model_path, output_path, settings_dir):
                 max_iterations=int(p.get("steady_max_iterations", 40)),
             )
             print(
-                f"t=inf，Tmax={r.maximum_temperature:.6g} K，"
-                f"thermal residual={r.residual_norm:.3e}，"
-                f"Maxwell residual={max(r.maxwell_final_residual):.3e}",
+                f"t=inf，Tmax={result.maximum_temperature:.6g} K，"
+                f"thermal residual={result.residual_norm:.3e}，"
+                f"Maxwell residual={max(result.maxwell_final_residual):.3e}",
                 flush=True,
             )
-            results.append({"time": "inf", "steady_state": r})
+            results.append({"time": "inf", "steady_state": result})
         else:
             t = float(requested)
-            r = model.predict(
+            result = model.predict(
                 t,
                 initial_state=initial,
                 geometry=geometry,
@@ -347,13 +402,13 @@ def predict(settings, model_path, output_path, settings_dir):
                 initial_step=p.get("initial_step"),
             )
             print(
-                f"t={t:g}s，Tmax={r.maximum_temperature:.6g} K，steps={r.steps}，"
-                f"Maxwell initial={max(r.maxwell_initial_residual):.3e} → "
-                f"final={max(r.maxwell_final_residual):.3e}，"
-                f"correction iterations={max(r.maxwell_correction_iterations)}",
+                f"t={t:g}s，Tmax={result.maximum_temperature:.6g} K，steps={result.steps}，"
+                f"Maxwell initial={max(result.maxwell_initial_residual):.3e} → "
+                f"final={max(result.maxwell_final_residual):.3e}，"
+                f"correction iterations={max(result.maxwell_correction_iterations)}",
                 flush=True,
             )
-            results.append({"time": t, "prediction": r})
+            results.append({"time": t, "prediction": result})
     write_json(
         output_path,
         {"model": str(model_path), "geometry": geometry, "operating": operating, "results": results},
@@ -366,12 +421,9 @@ def predict(settings, model_path, output_path, settings_dir):
 def _worker_from_file(path):
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     wrapper = payload["settings"]
-    settings = wrapper["parameters"]
     return execute_training(
-        settings,
-        Path(wrapper["model_path"]),
-        Path(wrapper["settings_dir"]),
-        Path(payload["session_dir"]),
+        wrapper["parameters"], Path(wrapper["model_path"]),
+        Path(wrapper["settings_dir"]), Path(payload["session_dir"]),
     )
 
 
@@ -393,40 +445,32 @@ def launch(settings, argv=None):
     settings_dir = settings_dir if settings_dir.is_absolute() else root / settings_dir
     settings_dir.mkdir(parents=True, exist_ok=True)
     if args.mode == "predict":
-        out = Path(settings["FILES"]["predictions"])
-        out = out if out.is_absolute() else root / out
-        return predict(settings, model_path, out, settings_dir)
+        output = Path(settings["FILES"]["predictions"])
+        output = output if output.is_absolute() else root / output
+        return predict(settings, model_path, output, settings_dir)
     if not args.headless and (args.gui or settings["MONITOR"].get("enabled", True)):
         from .training.qt_monitor import launch_window
         log_root = Path(settings["MONITOR"]["log_dir"])
         log_root = log_root if log_root.is_absolute() else root / log_root
-        worker_settings = jsonable(
-            {
-                "root": settings["ROOT"],
-                "model_path": str(model_path),
-                "settings_dir": str(settings_dir),
-                "parameters": settings,
-            }
-        )
+        worker_settings = jsonable({
+            "root": settings["ROOT"], "model_path": str(model_path),
+            "settings_dir": str(settings_dir), "parameters": settings,
+        })
         return launch_window(root / "run.py", worker_settings, log_root, settings["MONITOR"])
     return execute_training(settings, model_path, settings_dir)
 
 
 def execute_training(settings, model_path, settings_dir, session_dir=None):
     from .training.monitor import TrainingMonitor
-
     if session_dir is None:
         log_root = Path(settings["MONITOR"]["log_dir"])
         log_root = log_root if log_root.is_absolute() else Path(settings["ROOT"]) / log_root
-        session_dir = log_root / (
-            datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
-        )
+        session_dir = log_root / (datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8])
     session_dir = Path(session_dir)
     session_dir.mkdir(parents=True, exist_ok=True)
     write_json(session_dir / "settings.json", settings)
     with TrainingMonitor(
-        session_dir / "metrics.jsonl",
-        session_dir / "control.json",
+        session_dir / "metrics.jsonl", session_dir / "control.json",
         interval=float(settings["MONITOR"].get("log_interval_s", 1.0)),
     ) as monitor:
         return train(settings, Path(model_path), Path(settings_dir), monitor)
