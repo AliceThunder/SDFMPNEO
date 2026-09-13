@@ -8,10 +8,12 @@ import copy
 import numpy as np
 
 from .unified_neural_operator import (
+    FEATURE_SCHEMA,
     EdgeMultiscaleConfig,
     build_edge_residual_operator,
     residual_features_from_diagonal,
     safe_diagonal_values,
+    sparse_row_statistics,
 )
 
 
@@ -54,15 +56,20 @@ class MaxwellTrainingReport:
 
 
 def _operator_coefficients(background, context, state):
-    """Compact exact coefficients for A=C^T diag(h2) C + diag(d)."""
+    """Exact matrix-free coefficients plus O(n_edges) sparse row statistics."""
     sigma, eps, mu_inv, _, _, _ = background.cell_properties(context, state, em=True)
     h2 = np.asarray(background.face_cell_hodge @ mu_inv, float).ravel()
     hs = np.asarray(background.edge_cell_hodge @ sigma, float).ravel()
     he = np.asarray(background.edge_cell_hodge @ eps, float).ravel()
-    d = -background.omega**2 * he + 1j * background.omega * hs
-    curl_diag = np.asarray(background.curl.multiply(background.curl).T @ h2, float).ravel()
-    diagonal = safe_diagonal_values(curl_diag + d)
-    return h2, np.asarray(d, complex), diagonal
+    diagonal_term = -background.omega**2 * he + 1j * background.omega * hs
+
+    # The loss itself stays matrix-free below. We assemble the sparse operator
+    # only once per training state to extract exact row-coupling features that
+    # must match inference features.
+    A = background.em_operator(context, state)
+    diagonal = safe_diagonal_values(A.diagonal())
+    row_abs_sum, row_nnz = sparse_row_statistics(A)
+    return h2, np.asarray(diagonal_term, complex), diagonal, row_abs_sum, row_nnz
 
 
 def _apply_numpy(curl, h2, diagonal_term, X):
@@ -75,23 +82,55 @@ def _apply_numpy(curl, h2, diagonal_term, X):
     return np.asarray(result[:, 0] if vector else result, complex)
 
 
+def _minimum_residual_walk(curl, h2, diagonal_term, diagonal, initial, steps):
+    """Generate stable intermediate residuals using label-free 1-D minres updates."""
+    r = np.asarray(initial, complex).reshape(-1).copy()
+    out = []
+    tiny = np.finfo(float).tiny
+    for _ in range(int(steps)):
+        if np.any(~np.isfinite(r)):
+            break
+        out.append(r.copy())
+        z = r / diagonal
+        w = _apply_numpy(curl, h2, diagonal_term, z)
+        denom = float(np.vdot(w, w).real)
+        if not np.isfinite(denom) or denom <= tiny:
+            break
+        alpha = np.vdot(w, r) / denom
+        trial = r - alpha * w
+        if np.any(~np.isfinite(trial)):
+            break
+        r = trial
+    return out
+
+
 def _baseline_residual_bank(curl, h2, diagonal_term, diagonal, B, steps, rng):
-    """Build B-like and intermediate physical residuals without solution labels."""
+    """Build port, mixed-port, and intermediate physical residuals without solution labels."""
     B = np.asarray(B, complex)
     columns = []
     for p in range(B.shape[1]):
-        r = B[:, p].copy()
-        for _ in range(int(steps)):
-            columns.append(r.copy())
-            z = r / diagonal
-            r = r - _apply_numpy(curl, h2, diagonal_term, z)
+        columns.extend(_minimum_residual_walk(
+            curl, h2, diagonal_term, diagonal, B[:, p], steps
+        ))
+
     if B.shape[1] > 1:
-        for _ in range(max(1, int(steps) // 2)):
+        n_mixed = max(1, int(steps) // 2)
+        for _ in range(n_mixed):
             weights = rng.normal(size=B.shape[1]) + 1j * rng.normal(size=B.shape[1])
-            norm = np.linalg.norm(weights)
-            if norm > 0:
-                columns.append(np.asarray(B @ (weights / norm), complex))
-    return np.column_stack(columns)
+            norm = float(np.linalg.norm(weights))
+            if norm <= 0 or not np.isfinite(norm):
+                continue
+            mixed = np.asarray(B @ (weights / norm), complex)
+            columns.extend(_minimum_residual_walk(
+                curl, h2, diagonal_term, diagonal, mixed, steps
+            ))
+
+    if not columns:
+        raise FloatingPointError("could not generate finite Maxwell residual training vectors")
+    bank = np.column_stack(columns)
+    if np.any(~np.isfinite(bank)):
+        raise FloatingPointError("Maxwell residual training bank is non-finite")
+    return bank
 
 
 def _torch_sparse_complex(torch, matrix, device):
@@ -107,8 +146,23 @@ def _torch_apply(torch, curl_t, h2, diagonal_term, Z):
     return torch.sparse.mm(curl_t.transpose(0, 1), weighted) + diagonal_term[:, None] * Z
 
 
-def _system_loss(torch, model, curl_t, h2, diagonal_term, diagonal, R, *, device, network_dtype):
-    features, jacobi, scale = residual_features_from_diagonal(diagonal, R)
+def _system_loss(
+    torch,
+    model,
+    curl_t,
+    h2,
+    diagonal_term,
+    diagonal,
+    row_abs_sum,
+    row_nnz,
+    R,
+    *,
+    device,
+    network_dtype,
+):
+    features, jacobi, scale = residual_features_from_diagonal(
+        diagonal, R, row_abs_sum, row_nnz
+    )
     x = torch.as_tensor(features, dtype=network_dtype, device=device)
     y = model(x).to(dtype=torch.float64)
     learned = torch.complex(y[..., 0], y[..., 1]).transpose(0, 1)
@@ -170,9 +224,11 @@ def train_maxwell_accelerator(
         if monitor is not None:
             monitor.checkpoint()
         context = background.geometry_context(geometry, assemble_thermal=False)
-        h2, diagonal_term, diagonal = _operator_coefficients(background, context, state)
+        h2, diagonal_term, diagonal, row_abs_sum, row_nnz = _operator_coefficients(
+            background, context, state
+        )
         B = np.asarray(background.rhs_matrix(context), complex)
-        systems.append((h2, diagonal_term, diagonal, B))
+        systems.append((h2, diagonal_term, diagonal, row_abs_sum, row_nnz, B))
         if i == 0 or (i + 1) % max(1, total // 20) == 0 or i + 1 == total:
             print(
                 f"缓存 Maxwell matrix-free 系数……{100 * (i + 1) / total:5.1f}% ({i + 1}/{total})",
@@ -180,14 +236,19 @@ def train_maxwell_accelerator(
             )
 
     curl_t = _torch_sparse_complex(torch, background.curl, actual_device)
+    residual_cache = [None] * total
 
     def residual_bank(index):
-        h2, diagonal_term, diagonal, B = systems[int(index)]
-        rng = np.random.default_rng(int(dataset.seed) + 104729 * (int(index) + 1))
-        R = _baseline_residual_bank(
-            background.curl, h2, diagonal_term, diagonal, B, dataset.residual_steps, rng
-        )
-        return h2, diagonal_term, diagonal, R
+        index = int(index)
+        h2, diagonal_term, diagonal, row_abs_sum, row_nnz, B = systems[index]
+        R = residual_cache[index]
+        if R is None:
+            rng = np.random.default_rng(int(dataset.seed) + 104729 * (index + 1))
+            R = _baseline_residual_bank(
+                background.curl, h2, diagonal_term, diagonal, B, dataset.residual_steps, rng
+            )
+            residual_cache[index] = R
+        return h2, diagonal_term, diagonal, row_abs_sum, row_nnz, R
 
     checkpoint = None if checkpoint_path is None else Path(checkpoint_path)
     start = 0
@@ -201,6 +262,7 @@ def train_maxwell_accelerator(
         "sample_count": int(total),
         "residual_steps": int(dataset.residual_steps),
         "operator_representation": "matrix_free_curl_hodge",
+        "feature_schema": FEATURE_SCHEMA,
     }
     if checkpoint is not None and checkpoint.is_file():
         try:
@@ -209,7 +271,7 @@ def train_maxwell_accelerator(
             except TypeError:
                 saved = torch.load(checkpoint, map_location=actual_device)
             if saved.get("identity") != checkpoint_identity:
-                raise ValueError("training configuration or edge topology changed")
+                raise ValueError("training configuration, feature schema, or edge topology changed")
             model.load_state_dict(saved["network"], strict=True)
             optimizer.load_state_dict(saved["optimizer"])
             start = int(saved["epoch"])
@@ -222,9 +284,10 @@ def train_maxwell_accelerator(
             checkpoint.unlink(missing_ok=True)
 
     def system_loss(index):
-        h2, diagonal_term, diagonal, R = residual_bank(index)
+        h2, diagonal_term, diagonal, row_abs_sum, row_nnz, R = residual_bank(index)
         return _system_loss(
-            torch, model, curl_t, h2, diagonal_term, diagonal, R,
+            torch, model, curl_t, h2, diagonal_term, diagonal,
+            row_abs_sum, row_nnz, R,
             device=actual_device, network_dtype=network_dtype,
         )
 
@@ -309,7 +372,7 @@ def train_maxwell_accelerator(
     model.load_state_dict(best_state)
     model.eval()
     test_loss = evaluate(test_ids)
-    _, _, _, first_R = residual_bank(0)
+    _, _, _, _, _, first_R = residual_bank(0)
     report = MaxwellTrainingReport(
         completed, best_epoch, float(best), float(last_train), float(last_validation),
         float(test_loss), completed < cfg.epochs, actual_device, cfg.to_dict(),
