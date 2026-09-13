@@ -31,8 +31,8 @@ class MaxwellTrainingConfig:
     patience: int = 32
     validation_interval: int = 2
     min_relative_improvement: float = 5e-4
-    random_residual_vectors: int = 2
-    smooth_residual_vectors: int = 2
+    krylov_vectors_per_port: int = 2
+    port_loss_weight: float = 0.6
     final_step_loss_weight: float = 0.7
     benchmark_samples_per_split: int = 4
     seed: int = 17
@@ -50,8 +50,8 @@ class MaxwellTrainingConfig:
         )
         if min(counts) < 1:
             raise ValueError("training counts must be positive")
-        if self.random_residual_vectors < 0 or self.smooth_residual_vectors < 0:
-            raise ValueError("residual seed counts must be non-negative")
+        if self.krylov_vectors_per_port < 1:
+            raise ValueError("krylov_vectors_per_port must be positive")
         if self.learning_rate <= 0 or self.weight_decay < 0:
             raise ValueError("invalid optimizer settings")
         if not 0.0 < self.lr_decay_factor < 1.0:
@@ -60,6 +60,8 @@ class MaxwellTrainingConfig:
             raise ValueError("minimum_learning_rate must lie in (0, learning_rate]")
         if not 0.0 <= self.min_relative_improvement < 1.0:
             raise ValueError("min_relative_improvement must lie in [0, 1)")
+        if not 0.0 < self.port_loss_weight < 1.0:
+            raise ValueError("port_loss_weight must lie in (0, 1)")
         if not 0.0 < self.final_step_loss_weight <= 1.0:
             raise ValueError("final_step_loss_weight must lie in (0, 1]")
         if self.dtype not in {"float32", "float64"}:
@@ -79,6 +81,8 @@ class MaxwellTrainingReport:
     test_residual_loss: float
     validation_port_residual_loss: float
     test_port_residual_loss: float
+    validation_krylov_residual_loss: float
+    test_krylov_residual_loss: float
     stopped_early: bool
     device: str
     training_config: dict
@@ -91,16 +95,15 @@ class MaxwellTrainingReport:
     solver_benchmark: dict
 
 
-def _operator_coefficients(background, context, state, group_ids):
+def _operator_system(background, context, state, group_ids):
+    A = background.em_operator(context, state)
     sigma, eps, mu_inv, _, _, _ = background.cell_properties(context, state, em=True)
     h2 = np.asarray(background.face_cell_hodge @ mu_inv, float).ravel()
     hs = np.asarray(background.edge_cell_hodge @ sigma, float).ravel()
     he = np.asarray(background.edge_cell_hodge @ eps, float).ravel()
     diagonal_term = -background.omega**2 * he + 1j * background.omega * hs
-    graph = operator_feature_statistics(
-        background.em_operator(context, state), group_ids=group_ids
-    )
-    return h2, np.asarray(diagonal_term, complex), graph
+    graph = operator_feature_statistics(A, group_ids=group_ids)
+    return A, h2, np.asarray(diagonal_term, complex), graph
 
 
 def _normalize_seed(vector, target_norm):
@@ -111,40 +114,64 @@ def _normalize_seed(vector, target_norm):
     return vector * (target_norm / norm)
 
 
-def _residual_seed_bank(B, *, random_count, smooth_count, group_ids, rng):
-    """Port + full-space random + multiscale smooth residual seeds."""
+def _orthogonalize(vector, basis):
+    value = np.asarray(vector, complex).reshape(-1).copy()
+    for _ in range(2):
+        for q in basis:
+            value -= q * np.vdot(q, value)
+    return value
 
+
+def _jacobi_arnoldi_seed_bank(A, B, diagonal, *, vectors_per_port, port_weight, rng):
+    """Physical port residuals plus Jacobi-Arnoldi directions seen by FGMRES."""
+
+    A = A.tocsr().astype(complex)
     B = np.asarray(B, complex)
-    if B.ndim != 2 or B.shape[0] < 1 or B.shape[1] < 1:
-        raise ValueError("Maxwell RHS must be a non-empty matrix")
-    if np.any(~np.isfinite(B)):
-        raise FloatingPointError("Maxwell RHS is non-finite")
+    diagonal = np.asarray(diagonal, complex).reshape(-1)
+    if B.ndim != 2 or B.shape[0] != A.shape[0] or diagonal.shape != (A.shape[0],):
+        raise ValueError("Maxwell seed dimensions do not match")
+    if np.any(~np.isfinite(B)) or np.any(~np.isfinite(diagonal)):
+        raise FloatingPointError("Maxwell seed inputs are non-finite")
 
-    n = B.shape[0]
-    physical_norms = np.linalg.norm(B, axis=0)
+    port_count = int(B.shape[1])
     target_norm = max(
-        float(np.median(physical_norms)),
-        np.sqrt(n) * np.finfo(float).tiny,
+        float(np.median(np.linalg.norm(B, axis=0))),
+        np.sqrt(A.shape[0]) * np.finfo(float).tiny,
     )
-    columns = [B[:, p].copy() for p in range(B.shape[1])]
+    ports = [B[:, p].copy() for p in range(port_count)]
+    krylov = []
 
-    for _ in range(int(random_count)):
-        vector = rng.normal(size=n) + 1j * rng.normal(size=n)
-        columns.append(_normalize_seed(vector, target_norm))
+    for p in range(port_count):
+        q0 = _normalize_seed(B[:, p], 1.0)
+        basis = [q0]
+        current = q0
+        for _ in range(int(vectors_per_port)):
+            z = current / diagonal
+            candidate = _orthogonalize(A @ z, basis)
+            norm = float(np.linalg.norm(candidate))
+            if not np.isfinite(norm) or norm <= 1e-12:
+                # Only for an exact/happy Arnoldi breakdown in tiny or pathological systems.
+                for _attempt in range(8):
+                    fallback = rng.normal(size=A.shape[0]) + 1j * rng.normal(size=A.shape[0])
+                    candidate = _orthogonalize(fallback, basis)
+                    norm = float(np.linalg.norm(candidate))
+                    if np.isfinite(norm) and norm > 1e-12:
+                        break
+            if not np.isfinite(norm) or norm <= 1e-12:
+                raise FloatingPointError("unable to construct a non-degenerate Arnoldi residual seed")
+            current = candidate / norm
+            basis.append(current)
+            krylov.append(_normalize_seed(current, target_norm))
 
-    groups = tuple(np.asarray(ids, np.int64).reshape(-1) for ids in group_ids)
-    if smooth_count and not groups:
-        raise ValueError("smooth residual seeds require multiscale edge groups")
-    for seed_index in range(int(smooth_count)):
-        ids = groups[-1 - (seed_index % len(groups))]
-        group_count = int(ids.max(initial=-1)) + 1
-        coarse = rng.normal(size=group_count) + 1j * rng.normal(size=group_count)
-        columns.append(_normalize_seed(coarse[ids], target_norm))
-
-    bank = np.column_stack(columns)
+    bank = np.column_stack(ports + krylov)
     if np.any(~np.isfinite(bank)):
         raise FloatingPointError("Maxwell residual seed bank is non-finite")
-    return bank
+
+    weights = np.empty(bank.shape[1], float)
+    weights[:port_count] = float(port_weight) / port_count
+    krylov_count = bank.shape[1] - port_count
+    weights[port_count:] = (1.0 - float(port_weight)) / krylov_count
+    return bank, weights
 
 
 def _torch_sparse_complex(torch, matrix, device):
@@ -217,6 +244,7 @@ def _unrolled_loss(
     node_features_t,
     coupling_hierarchy,
     R0,
+    column_weights,
     *,
     network_dtype,
     final_step_loss_weight,
@@ -225,10 +253,14 @@ def _unrolled_loss(
     denominator = torch.sum(torch.abs(R0) ** 2, dim=0).clamp_min(
         torch.finfo(torch.float64).tiny
     )
-    weights = _step_loss_weights(model.solver_steps, final_step_loss_weight)
+    column_weights = column_weights.to(dtype=torch.float64, device=R0.device)
+    column_weights = column_weights / torch.sum(column_weights).clamp_min(
+        torch.finfo(torch.float64).tiny
+    )
+    step_weights = _step_loss_weights(model.solver_steps, final_step_loss_weight)
     objective = residual.real.new_zeros((), dtype=torch.float64)
     final_ratio = None
-    for weight in weights:
+    for weight in step_weights:
         dynamic, scale = _torch_dynamic_features(
             torch, residual, diagonal_t, node_features_t, network_dtype
         )
@@ -242,9 +274,8 @@ def _unrolled_loss(
         residual = residual - _torch_apply(
             torch, curl_t, h2_t, diagonal_term_t, correction
         )
-        final_ratio = torch.mean(
-            torch.sum(torch.abs(residual) ** 2, dim=0) / denominator
-        )
+        per_column = torch.sum(torch.abs(residual) ** 2, dim=0) / denominator
+        final_ratio = torch.sum(column_weights * per_column)
         objective = objective + float(weight) * final_ratio
     return objective, final_ratio
 
@@ -362,9 +393,7 @@ def train_maxwell_accelerator(
     try:
         import torch
     except ImportError as exc:
-        raise ImportError(
-            "install sdfmpneo[neural] to train the unified model"
-        ) from exc
+        raise ImportError("install sdfmpneo[neural] to train the unified model") from exc
 
     cfg = MaxwellTrainingConfig(**(training_settings or {}))
     net_cfg = EdgeMultiscaleConfig(**dict(network_settings or {}))
@@ -383,6 +412,7 @@ def train_maxwell_accelerator(
         device=actual_device, dtype=network_dtype
     )
     groups = tuple(model.multiscale_group_ids)
+
     try:
         optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -412,7 +442,7 @@ def train_maxwell_accelerator(
         if monitor is not None:
             monitor.checkpoint()
         context = background.geometry_context(geometry, assemble_thermal=False)
-        h2, diagonal_term, graph = _operator_coefficients(
+        A, h2, diagonal_term, graph = _operator_system(
             background, context, state, groups
         )
         B = np.asarray(background.rhs_matrix(context), complex)
@@ -420,37 +450,32 @@ def train_maxwell_accelerator(
             port_count = int(B.shape[1])
         elif int(B.shape[1]) != port_count:
             raise ValueError("Maxwell port count changed across operator samples")
-        R = _residual_seed_bank(
+        R, W = _jacobi_arnoldi_seed_bank(
+            A,
             B,
-            random_count=cfg.random_residual_vectors,
-            smooth_count=cfg.smooth_residual_vectors,
-            group_ids=groups,
+            graph.diagonal,
+            vectors_per_port=cfg.krylov_vectors_per_port,
+            port_weight=cfg.port_loss_weight,
             rng=np.random.default_rng(int(dataset.seed) + 104729 * (i + 1)),
         )
-        systems.append((h2, diagonal_term, graph, R))
-        if (
-            i == 0
-            or (i + 1) % max(1, total // 20) == 0
-            or i + 1 == total
-        ):
+        systems.append((h2, diagonal_term, graph, R, W))
+        if i == 0 or (i + 1) % max(1, total // 20) == 0 or i + 1 == total:
             print(
                 f"缓存 multiscale sparse Maxwell graph……"
                 f"{100 * (i + 1) / total:5.1f}% ({i + 1}/{total})",
                 flush=True,
             )
 
+    krylov_count = int(port_count * cfg.krylov_vectors_per_port)
     seed_composition = {
         "port": int(port_count),
-        "full_space_random": int(cfg.random_residual_vectors),
-        "multiscale_smooth": int(cfg.smooth_residual_vectors),
+        "jacobi_arnoldi_krylov": krylov_count,
     }
-    residual_vectors = int(sum(seed_composition.values()))
+    residual_vectors = int(port_count + krylov_count)
     print(
         "residual seeds/operator："
-        f"port={seed_composition['port']}  "
-        f"full-space random={seed_composition['full_space_random']}  "
-        f"multiscale smooth={seed_composition['multiscale_smooth']}  "
-        f"total={residual_vectors}",
+        f"port={port_count}  Jacobi-Arnoldi={krylov_count}  total={residual_vectors}  "
+        f"class weights={cfg.port_loss_weight:.2f}/{1.0-cfg.port_loss_weight:.2f}",
         flush=True,
     )
 
@@ -460,27 +485,28 @@ def train_maxwell_accelerator(
     def torch_system(index):
         index = int(index)
         if torch_systems[index] is None:
-            h2, diagonal_term, graph, R = systems[index]
+            h2, diagonal_term, graph, R, W = systems[index]
             torch_systems[index] = (
                 torch.as_tensor(h2, dtype=torch.complex128, device=actual_device),
-                torch.as_tensor(
-                    diagonal_term, dtype=torch.complex128, device=actual_device
-                ),
-                torch.as_tensor(
-                    graph.diagonal, dtype=torch.complex128, device=actual_device
-                ),
-                torch.as_tensor(
-                    graph.node_features, dtype=network_dtype, device=actual_device
-                ),
+                torch.as_tensor(diagonal_term, dtype=torch.complex128, device=actual_device),
+                torch.as_tensor(graph.diagonal, dtype=torch.complex128, device=actual_device),
+                torch.as_tensor(graph.node_features, dtype=network_dtype, device=actual_device),
                 graph.torch_hierarchy(torch, actual_device, network_dtype),
                 torch.as_tensor(R, dtype=torch.complex128, device=actual_device),
+                torch.as_tensor(W, dtype=torch.float64, device=actual_device),
             )
         return torch_systems[index]
 
-    def system_losses(index, *, ports_only=False):
-        h2_t, d_t, diagonal_t, node_t, hierarchy_t, R_t = torch_system(index)
-        if ports_only:
+    def system_losses(index, *, subset="all"):
+        h2_t, d_t, diagonal_t, node_t, hierarchy_t, R_t, W_t = torch_system(index)
+        if subset == "port":
             R_t = R_t[:, :port_count]
+            W_t = W_t[:port_count]
+        elif subset == "krylov":
+            R_t = R_t[:, port_count:]
+            W_t = W_t[port_count:]
+        elif subset != "all":
+            raise ValueError("unknown residual subset")
         return _unrolled_loss(
             torch,
             model,
@@ -491,16 +517,17 @@ def train_maxwell_accelerator(
             node_t,
             hierarchy_t,
             R_t,
+            W_t,
             network_dtype=network_dtype,
             final_step_loss_weight=cfg.final_step_loss_weight,
         )
 
-    def evaluate(ids, *, ports_only=False):
+    def evaluate(ids, *, subset="all"):
         model.eval()
         values = []
         with torch.no_grad():
             for idx in ids:
-                _, final_loss = system_losses(int(idx), ports_only=ports_only)
+                _, final_loss = system_losses(int(idx), subset=subset)
                 values.append(float(final_loss.detach().cpu()))
         return float(np.mean(values)) if values else float("inf")
 
@@ -520,20 +547,17 @@ def train_maxwell_accelerator(
         "residual_seed_composition": seed_composition,
         "operator_representation": "multiscale_sparse_complex_message_graph",
         "feature_schema": FEATURE_SCHEMA,
-        "training_objective": "fullspace_multiscale_shared_unroll_v2",
+        "training_objective": "weighted_port_krylov_shared_unroll_v3",
     }
+
     if checkpoint is not None and checkpoint.is_file():
         try:
             try:
-                saved = torch.load(
-                    checkpoint, map_location=actual_device, weights_only=False
-                )
+                saved = torch.load(checkpoint, map_location=actual_device, weights_only=False)
             except TypeError:
                 saved = torch.load(checkpoint, map_location=actual_device)
             if saved.get("identity") != checkpoint_identity:
-                raise ValueError(
-                    "training configuration or multiscale neural graph schema changed"
-                )
+                raise ValueError("training configuration or neural residual schema changed")
             model.load_state_dict(saved["network"], strict=True)
             optimizer.load_state_dict(saved["optimizer"])
             scheduler.load_state_dict(saved["scheduler"])
@@ -558,11 +582,11 @@ def train_maxwell_accelerator(
 
     last_train = float("inf")
     last_validation = float("inf")
+    last_validation_port = float("inf")
+    last_validation_krylov = float("inf")
     completed = start
     effective_batch_size = cfg.batch_size * cfg.gradient_accumulation_steps
-    step_weights = _step_loss_weights(
-        model.solver_steps, cfg.final_step_loss_weight
-    )
+    step_weights = _step_loss_weights(model.solver_steps, cfg.final_step_loss_weight)
     print(
         f"优化器：physical batch={cfg.batch_size}  "
         f"gradient accumulation={cfg.gradient_accumulation_steps}  "
@@ -603,9 +627,7 @@ def train_maxwell_accelerator(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
-        last_train = (
-            float(np.mean(final_losses)) if final_losses else float("inf")
-        )
+        last_train = float(np.mean(final_losses)) if final_losses else float("inf")
         completed = epoch + 1
         validate = (
             completed == 1
@@ -614,6 +636,8 @@ def train_maxwell_accelerator(
         )
         if validate:
             last_validation = evaluate(validation_ids)
+            last_validation_port = evaluate(validation_ids, subset="port")
+            last_validation_krylov = evaluate(validation_ids, subset="krylov")
             if last_validation < best:
                 best = last_validation
                 best_epoch = completed
@@ -648,7 +672,8 @@ def train_maxwell_accelerator(
             f"训练 multiscale neural Maxwell solver……"
             f"{100 * completed / cfg.epochs:5.1f}%  "
             f"epoch={completed}/{cfg.epochs}  train={last_train:.5g}  "
-            f"val={last_validation:.5g}  lr={current_lr:.3e}",
+            f"val={last_validation:.5g}  port={last_validation_port:.5g}  "
+            f"krylov={last_validation_krylov:.5g}  lr={current_lr:.3e}",
             flush=True,
         )
         if monitor is not None:
@@ -659,13 +684,20 @@ def train_maxwell_accelerator(
                     epoch_total=cfg.epochs,
                     train_loss=last_train,
                     validation_loss=(
+                        None if not np.isfinite(last_validation) else last_validation
+                    ),
+                    validation_port_loss=(
+                        None if not np.isfinite(last_validation_port) else last_validation_port
+                    ),
+                    validation_krylov_loss=(
                         None
-                        if not np.isfinite(last_validation)
-                        else last_validation
+                        if not np.isfinite(last_validation_krylov)
+                        else last_validation_krylov
                     ),
                     learning_rate=current_lr,
                     effective_batch_size=effective_batch_size,
                 )
+
         if checkpoint is not None:
             checkpoint.parent.mkdir(parents=True, exist_ok=True)
             temporary = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
@@ -686,9 +718,10 @@ def train_maxwell_accelerator(
                 temporary,
             )
             temporary.replace(checkpoint)
+
         if stale >= cfg.patience:
             print(
-                "validation full-space residual 已长期无有效相对改进，提前停止。",
+                "validation weighted port/Krylov residual 已长期无有效相对改进，提前停止。",
                 flush=True,
             )
             break
@@ -698,8 +731,11 @@ def train_maxwell_accelerator(
     train_loss = evaluate(train_ids)
     validation_loss = evaluate(validation_ids)
     test_loss = evaluate(test_ids)
-    validation_port_loss = evaluate(validation_ids, ports_only=True)
-    test_port_loss = evaluate(test_ids, ports_only=True)
+    validation_port_loss = evaluate(validation_ids, subset="port")
+    test_port_loss = evaluate(test_ids, subset="port")
+    validation_krylov_loss = evaluate(validation_ids, subset="krylov")
+    test_krylov_loss = evaluate(test_ids, subset="krylov")
+
     bench = dict(benchmark_settings or {})
     tolerance = float(bench.get("residual_tolerance", 1e-7))
     max_iterations = int(bench.get("max_iterations", 200))
@@ -732,6 +768,7 @@ def train_maxwell_accelerator(
             sample_limit=cfg.benchmark_samples_per_split,
         ),
     }
+
     return model, MaxwellTrainingReport(
         completed,
         best_epoch,
@@ -741,6 +778,8 @@ def train_maxwell_accelerator(
         float(test_loss),
         float(validation_port_loss),
         float(test_port_loss),
+        float(validation_krylov_loss),
+        float(test_krylov_loss),
         completed < cfg.epochs,
         actual_device,
         cfg.to_dict(),
