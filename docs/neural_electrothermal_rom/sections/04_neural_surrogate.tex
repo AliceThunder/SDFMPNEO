@@ -1,91 +1,85 @@
-\section{神经张量代理的最终参数化}
+\section{低维参数化电磁代理}
 
-\subsection{输出对象}
-将所有保留热模态的对称二次型矩阵独立元素拼接为
+\subsection{网络学习对象}
+在当前材料模型下，昂贵电磁依赖只来自几何 $g$。因此网络不学习场 $X$，也不学习时间或端口电流，而只学习低维参数化物理对象
 \begin{equation}
-y(a,g)
-=
-\operatorname{vec}_{\mathrm{sym}}\bigl(G_1(a,g),\ldots,G_r(a,g)\bigr)
-\in\R^{d_G},
+\boxed{
+ g\longmapsto
+ \left\{Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right\}.
+}
 \end{equation}
-其中
+若未来存在真实的温度相关电磁 constitutive state，则输入仅扩展为 $(s_{\rm em},g)$。
+
+\subsection{结构保持的实向量编码}
+对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；每个 Joule tensor $H_j$ 为复 Hermitian 矩阵。定义固定的结构化编码算子
 \begin{equation}
-d_G=r\,\frac{p(p+1)}{2}.
+y(g)=\mathcal E\!\left(Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right)\in\R^{d_y},
 \end{equation}
-直接预测 $d_G$ 维输出理论上可行，但默认首先对真实物理 snapshots 做中心化 POD/SVD：
+其中只保存独立自由度：
+\begin{itemize}
+  \item $Z_{\rm field}$：复对称矩阵上三角的实部和虚部；
+  \item $H_j$：实对角，以及严格上三角元素的实部和虚部。
+\end{itemize}
+解码算子 $\mathcal D$ 必须按构造恢复
 \begin{equation}
-y(a,g)\approx \bar y+U_K\beta(a,g),
-\qquad U_K^\top U_K=I.
+Z_{\rm field}^T=Z_{\rm field},
+\qquad
+H_j^H=H_j.
+\end{equation}
+这些是输出表示的硬结构，而不是训练 penalty。
+
+\subsection{输出 POD 是数值压缩而非理论前提}
+对训练 truth snapshots 的结构化向量做中心化 POD/SVD：
+\begin{equation}
+y(g)\approx \bar y+U_K\beta(g),
+\qquad U_K^TU_K=I.
 \end{equation}
 网络只学习
 \begin{equation}
 \boxed{
-\beta_\theta:(a,g)\mapsto\R^K.
+\beta_\theta:g\mapsto\R^K.
 }
 \end{equation}
-POD 仅为输出压缩，不是模型成立的理论前提。若谱衰减不足，可提高 $K$ 或直接预测完整 $y$，但不改变顶层动力学架构。
+如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$ 或直接预测完整结构化 $y$；这不会改变系统架构。
 
-\subsection{输入表示}
-首版输入保留完整热状态和几何参数：
+\subsection{几何输入表示}
+几何输入只包含定义生产参数域所需的独立几何变量，并使用由训练域固定的中心和尺度归一化：
 \begin{equation}
-z=\operatorname{Normalize}(a,g).
+\tilde g_k=\frac{g_k-c_k}{s_k}.
 \end{equation}
-不预先压缩 $a\in\R^r$。只有在真实灵敏度/Jacobian active-subspace 分析证明存在稳定低维输入子空间后，才允许加入输入投影。
+离散 shape 类型使用明确的离散编码；连续尺寸、位姿、间距等保持连续参数。归一化元数据必须随模型保存，推理时禁止重新估计。
 
-归一化应由训练域固定：
-\begin{equation}
-\tilde a_i=\frac{a_i-c_i^{(a)}}{s_i^{(a)}},
-\qquad
-\tilde g_k=\frac{g_k-c_k^{(g)}}{s_k^{(g)}},
-\end{equation}
-并随模型持久化，禁止推理时重新估计。
+如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
 
-\subsection{网络结构}
-默认使用普通 residual MLP，不发明专用时间神经元：
+\subsection{默认神经网络}
+首版使用普通 residual MLP：
 \begin{align}
-h_0 &= W_{\mathrm{in}}z+b_{\mathrm{in}},\\
+h_0 &= W_{\rm in}\tilde g+b_{\rm in},\\
 h_{\ell+1}
-&=
- h_\ell
- +W_{\ell,2}\,\sigma(W_{\ell,1}h_\ell+b_{\ell,1}),\\
-\beta_\theta&=W_{\mathrm{out}}h_L+b_{\mathrm{out}},
+&=h_\ell+W_{\ell,2}\,\sigma(W_{\ell,1}h_\ell+b_{\ell,1}),\\
+\beta_\theta&=W_{\rm out}h_L+b_{\rm out},
 \end{align}
-其中默认 $\sigma=\operatorname{SiLU}$；Softplus 可作为平滑性对照。首版容量建议从 4--6 个 residual blocks、hidden width 256--512 起步，通过验证误差和训练成本调整。
+默认 $\sigma=\operatorname{SiLU}$。网络容量由 validation/test 误差和推理成本选择，不承担任何 Maxwell 或 thermal 方程本身。
 
-\subsection{为什么不把物理性放在激活函数上}
-本方案的主要物理归纳偏置来自：
-\begin{enumerate}
-  \item 网络不输入电流 $u$，因此无法破坏电流二次结构；
-  \item 输出必须经过固定 POD 解码和 symmetric-unvec；
-  \item Joule 源必须经过 $\zeta^\top G_j\zeta$ 物理层；
-  \item 动力学必须经过真实 $M_r(g),K_r(g)$；
-  \item 初始条件由 ODE 初值严格给定。
-\end{enumerate}
-激活函数只需提供良好的优化和平滑导数性质，不承担主要物理约束职责。
+\subsection{物理重构层}
+网络输出经过固定 POD 解码与结构化矩阵解码：
+\begin{equation}
+\hat y=\bar y+U_K\beta_\theta(g),
+\end{equation}
+\begin{equation}
+\left\{\widehat Z_{\rm field},\widehat H_1,\ldots,\widehat H_r\right\}
+=\mathcal D(\hat y).
+\end{equation}
+任意复端口电流 $c$ 的体 Joule modal source 为
+\begin{equation}
+\widehat q_{{\rm vol},j}(g,c)
+=\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right),
+\end{equation}
+总阻抗则为
+\begin{equation}
+\widehat Z(a,g)=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
+\end{equation}
+因此 current magnitude、relative phase、quadratic scaling 与 thermal-state dependence of wire resistance 均由显式物理层处理，不由网络学习。
 
-\subsection{重构物理层}
-由网络输出得到
-\begin{equation}
-\hat y_\theta(a,g)=\bar y+U_K\beta_\theta(a,g),
-\end{equation}
-再恢复全部对称矩阵
-\begin{equation}
-G_{\theta,j}(a,g)=\operatorname{unvec}_{\mathrm{sym},j}(\hat y_\theta).
-\end{equation}
-最终热源为
-\begin{equation}
-\boxed{
-q_{\theta,j}(a,g,u)=\zeta^\top G_{\theta,j}(a,g)\zeta.
-}
-\end{equation}
-网络参数永远不直接输出 $a(t)$、$\dot a$、温度轨迹或时间变量。
-
-\subsection{可选 Jacobian 结构}
-由于稳定性和时间积分可能需要 $\partial q_\theta/\partial a$，网络应使用自动微分友好的平滑激活。首版不要求额外 Jacobian head；必要时通过 autodiff 得到
-\begin{equation}
-\frac{\partial q_\theta}{\partial a}
-=
-\frac{\partial q_\theta}{\partial G_\theta}
-\frac{\partial G_\theta}{\partial \beta_\theta}
-\frac{\partial \beta_\theta}{\partial a}.
-\end{equation}
+\subsection{不强制错误的正定结构}
+单个 thermal mode 可以变号，因此 $H_j$ 一般不要求半正定。不得对每个 $H_j$ 使用 Cholesky/PSD 参数化。物理非负性应在空间总 Joule heat、端口平均功率和整体功率平衡层面验证。
