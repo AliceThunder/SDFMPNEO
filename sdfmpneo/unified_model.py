@@ -22,7 +22,7 @@ from .unified_geometry import UnifiedUWPTGeometry
 from .unified_maxwell import NeuralMaxwellAccelerator
 
 ARCHITECTURE = "unified-residual-corrected-neural-electrothermal-solver"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -93,6 +93,8 @@ class UnifiedNeuralElectroThermalModel:
         current_matrix=None,
         context_cache_size=16,
     ):
+        if background.thermal_basis is None or background.thermal_rank < 1:
+            raise ValueError("unified model requires an automatically constructed thermal basis")
         self.background = background
         self.accelerator = accelerator
         self.default_geometry = dict(default_geometry)
@@ -119,7 +121,7 @@ class UnifiedNeuralElectroThermalModel:
 
     @property
     def thermal_rank(self):
-        return self.background.thermal_basis.shape[1]
+        return self.background.thermal_rank
 
     @property
     def current_dimension(self):
@@ -386,18 +388,19 @@ class UnifiedNeuralElectroThermalModel:
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
             if meta.get("architecture") != ARCHITECTURE or int(meta.get("format_version", -1)) != FORMAT_VERSION:
-                raise ValueError("model is not the unified residual-corrected architecture")
+                raise ValueError("model is not the current unified residual-corrected architecture")
+            saved_thermal_basis = np.asarray(data["thermal_basis"], float)
+            if saved_thermal_basis.ndim != 2 or saved_thermal_basis.shape[1] < 1 or np.any(~np.isfinite(saved_thermal_basis)):
+                raise ValueError("saved thermal basis is invalid")
             background = FixedMultiscaleBackground(
                 data["background_x"], data["background_y"], data["background_z"],
                 frequency_hz=meta["frequency_hz"], materials=meta["materials"],
                 coil_materials=meta["coil_materials"], package_materials=meta["package_materials"],
-                seawater_material=meta["seawater_material"], thermal_rank=meta["thermal_rank"],
+                seawater_material=meta["seawater_material"], thermal_basis=saved_thermal_basis,
                 ambient_temperature=meta["ambient_temperature"],
             )
-            saved_thermal_basis = np.asarray(data["thermal_basis"], float)
-            if saved_thermal_basis.shape != background.thermal_basis.shape or np.any(~np.isfinite(saved_thermal_basis)):
-                raise ValueError("saved thermal basis is invalid")
-            background.thermal_basis = saved_thermal_basis.copy()
+            if background.thermal_rank != int(meta["thermal_rank"]):
+                raise ValueError("saved thermal basis rank does not match model metadata")
 
             config = ResidualMLPConfig(**meta["network_config"])
             normalizer = FeatureNormalizer(data["network__input_mean"], data["network__input_scale"])
