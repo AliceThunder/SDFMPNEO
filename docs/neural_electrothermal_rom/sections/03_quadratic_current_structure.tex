@@ -36,7 +36,14 @@ Z(a,g)=Z_{\rm field}(g)+R_{\rm wire}(a,g),
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field}
 \end{equation}
-到离散/求解误差精度。
+到离散/求解误差精度。对被动系统还必须有
+\begin{equation}
+\boxed{
+\operatorname{Herm}(Z_{\rm field})
+=\frac12(Z_{\rm field}+Z_{\rm field}^H)\succeq0.
+}
+\end{equation}
+reciprocity 只给出复对称性，并不能自动保证 passivity；两者是独立必须满足的物理结构。
 
 \subsection{与 Maxwell Hodge 一致的体 Joule 功率}
 令导电 Hodge 为 $H_\sigma\succeq0$。任意场 $E$ 的体平均导电损耗为
@@ -66,7 +73,7 @@ H_j=H_j^H,
 q_{{\rm vol},j}(g,c)=\operatorname{Re}\!\left(c^H H_j(g)c\right).
 }
 \end{equation}
-不能在构造 $H_j$ 时提前取实部。Hermitian 矩阵虚部的反对称部分会参与有相对相位的多端口功率；提前执行 $\operatorname{Re}(H_j)$ 会丢失真实相位耦合。
+不能在构造 $H_j$ 时提前取实部。Hermitian 矩阵虚部的反对称部分会参与有相对相位的多端口局部/modal power；提前执行 $\operatorname{Re}(H_j)$ 会丢失真实相位耦合。
 
 \subsection{线圈集中电阻热}
 线圈不作为 Maxwell volume conductor 时，其损耗由独立的集中 resistance model 表示。若第 $p$ 个端口电阻为 $R_p(a,g)$，对应 cell heat distribution 为 $\ell_p(g)$，则
@@ -102,10 +109,14 @@ Q_{\rm wire}
 \subsection{神经代理必须保留的代数结构}
 生产神经网络预测 $Z_{\rm field}$ 和 $H_j$ 的低维系数，解码后必须显式满足
 \begin{equation}
-\widehat Z_{\rm field}^T=\widehat Z_{\rm field}
+\widehat Z_{\rm field}^T=\widehat Z_{\rm field},
+\qquad
+\operatorname{Herm}(\widehat Z_{\rm field})\succeq0,
 \end{equation}
-（在 reciprocal 假设成立时），以及
+以及
 \begin{equation}
 \widehat H_j=\widehat H_j^H.
 \end{equation}
 电流依赖始终通过 $c^H\widehat H_jc$ 和 $c^H\widehat Zc$ 解析进入，网络不得自行学习 current scaling 或 current phase law。
+
+这些结构是必要条件但不是完整 Poynting consistency 的充分条件。$\widehat Z$ 与 $\widehat H_j$ 之间的功率/热源一致性仍必须作为 surrogate-level audit 单独量化。
