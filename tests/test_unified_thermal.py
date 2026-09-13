@@ -86,40 +86,51 @@ def make_background():
     )
 
 
-def test_thermal_rank_is_a_residual_result_and_basis_is_volume_orthonormal():
+def test_thermal_rank_comes_from_multitime_energy_error_and_is_volume_orthonormal():
     bg = make_background()
-    assert bg.thermal_rank == 0
-
     basis, report = build_thermal_basis(
         bg,
         [make_geometry(0.0), make_geometry(0.004)],
-        target_relative_residual=0.8,
+        validation_geometries=[make_geometry(0.002)],
+        target_relative_error=0.9,
+        time_scales=(0.1, 1.0, 10.0),
     )
 
     assert report.converged
     assert report.stop_reason == "target_reached"
     assert report.basis_dimension == bg.thermal_rank == basis.shape[1]
-    assert report.maximum_anchor_relative_residual <= report.target_relative_residual
+    assert report.maximum_anchor_relative_energy_error <= report.target_relative_error
+    assert report.maximum_validation_relative_energy_error <= report.target_relative_error
+    assert report.validation_geometry_count == 1
+    assert report.source_direction_count >= 2
+    assert report.shifts[0] == 0.0
+    assert len(report.shifts) == 4
     assert 0 < bg.thermal_rank <= bg.n_cells
 
     gram = basis.T @ (bg.cell_volumes[:, None] * basis)
     assert np.allclose(gram, np.eye(bg.thermal_rank), rtol=1e-10, atol=1e-10)
 
 
-def test_tighter_thermal_residual_target_cannot_require_fewer_modes():
+def test_tighter_energy_error_target_cannot_require_fewer_modes_on_same_anchors():
     geometries = [make_geometry(0.0), make_geometry(0.004)]
 
     loose = make_background()
     _, loose_report = build_thermal_basis(
-        loose, geometries, target_relative_residual=0.9
+        loose,
+        geometries,
+        target_relative_error=0.9,
+        time_scales=(0.1, 1.0),
     )
 
     tight = make_background()
     _, tight_report = build_thermal_basis(
-        tight, geometries, target_relative_residual=0.6
+        tight,
+        geometries,
+        target_relative_error=0.6,
+        time_scales=(0.1, 1.0),
     )
 
     assert loose_report.converged
     assert tight_report.converged
     assert tight_report.basis_dimension >= loose_report.basis_dimension
-    assert tight_report.maximum_anchor_relative_residual <= 0.6
+    assert tight_report.maximum_anchor_relative_energy_error <= 0.6
