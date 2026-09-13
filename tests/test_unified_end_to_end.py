@@ -2,11 +2,10 @@ import numpy as np
 import pytest
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
-from sdfmpneo.unified_dataset import generate_residual_dataset
-from sdfmpneo.unified_maxwell import NeuralMaxwellAccelerator
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
+from sdfmpneo.unified_runtime import _generate_tensor_dataset
+from sdfmpneo.unified_tensor_training import train_matrix_tensor_surrogate
 from sdfmpneo.unified_thermal import build_thermal_basis
-from sdfmpneo.unified_trainer import train_maxwell_accelerator
 
 
 MATERIALS = {
@@ -41,59 +40,89 @@ def geometry(rx_x=0.0):
 
 def small_background():
     axis = np.linspace(-0.05, 0.05, 5)
-    return FixedMultiscaleBackground(axis, axis, axis, frequency_hz=100000.0,
+    return FixedMultiscaleBackground(
+        axis, axis, axis, frequency_hz=100000.0,
         materials=MATERIALS, coil_materials=("tx_copper", "rx_copper"),
         package_materials=("tx_package", "rx_package"), seawater_material="seawater",
-        ambient_temperature=293.15)
+        ambient_temperature=293.15,
+    )
 
 
-def test_unified_fullspace_training_save_load_and_predict(tmp_path):
+def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_path):
     pytest.importorskip("torch")
     background = small_background()
-    geometries = [geometry(0.002 * np.sin(i)) for i in range(12)]
-    _, thermal_report = build_thermal_basis(background, geometries[:2], target_relative_residual=0.8)
+    geometries = [geometry(0.0015 * np.sin(i)) for i in range(8)]
+    _, thermal_report = build_thermal_basis(
+        background,
+        geometries[:2],
+        validation_geometries=geometries[2:3],
+        target_relative_error=0.9,
+        time_scales=(0.1, 1.0),
+    )
     assert thermal_report.converged
     assert background.thermal_rank > 0
 
-    states = [{"tx_copper": float(i), "rx_copper": float(11 - i)} for i in range(12)]
-    dataset = generate_residual_dataset(background, geometries, states, seed=9, residual_steps=1)
-    network, report = train_maxwell_accelerator(
-        background, dataset,
-        network_settings={"width": 8, "fine_message_steps": 1, "coarse_levels": 2,
-                          "coarse_message_steps": 1, "fusion_message_steps": 1,
-                          "solver_steps": 1, "activation": "silu"},
-        training_settings={"epochs": 2, "batch_size": 1, "gradient_accumulation_steps": 1,
-                           "learning_rate": 1e-3, "weight_decay": 0.0, "patience": 2,
-                           "validation_interval": 1, "min_relative_improvement": 1e-3,
-                           "random_residual_vectors": 1, "smooth_residual_vectors": 1,
-                           "final_step_loss_weight": 1.0,
-                           "benchmark_samples_per_split": 1, "seed": 3, "dtype": "float64"},
+    dataset = _generate_tensor_dataset(background, geometries[2:], seed=9)
+    phi = background.thermal_basis
+    surrogate, report = train_matrix_tensor_surrogate(
+        dataset,
+        np.min(phi, axis=0),
+        np.max(phi, axis=0),
+        network_settings={"width": 8, "blocks": 1, "activation": "silu"},
+        training_settings={
+            "epochs": 2,
+            "batch_size": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "patience": 2,
+            "validation_interval": 1,
+            "gradient_clip_norm": 10.0,
+            "physics_penalty_weight": 0.01,
+            "z_weight": 1.0,
+            "d_weight": 1.0,
+            "h_weight": 1.0,
+            "seed": 3,
+            "dtype": "float64",
+        },
         device="cpu",
-        benchmark_settings={"residual_tolerance": 1e-8, "max_iterations": 80, "restart": 20},
     )
     assert report.epochs_completed >= 1
-    assert np.isfinite(report.best_validation_residual_loss)
-    assert report.residual_seed_composition["full_space_random"] == 1
-    assert report.residual_seed_composition["multiscale_smooth"] == 1
+    assert np.isfinite(report.best_validation_loss)
 
-    accelerator = NeuralMaxwellAccelerator(network, residual_tolerance=1e-9,
-                                            max_iterations=80, restart=20)
-    assert accelerator.neural_steps == 1
-    model = UnifiedNeuralElectroThermalModel(background, accelerator, default_geometry=geometry())
-    model_path = tmp_path / "unified_model.npz"
-    model.save(model_path)
-    with np.load(model_path, allow_pickle=False) as data:
-        assert "em_basis" not in data.files
-    loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
-
-    assert loaded.thermal_rank == model.thermal_rank
-    assert loaded.accelerator.neural_steps == 1
-    assert loaded.accelerator.network.config.coarse_levels == 2
-    assert np.allclose(loaded.background.thermal_basis, model.background.thermal_basis)
-    result = loaded.predict(0.0, initial_state=np.zeros(loaded.thermal_rank),
-                            geometry=geometry(0.001), operating=[1.0, 0.0], max_step=1.0)
+    model = UnifiedNeuralElectroThermalModel(
+        background,
+        surrogate,
+        default_geometry=geometry(),
+    )
+    result = model.predict(
+        0.0,
+        initial_state=np.zeros(model.thermal_rank),
+        geometry=geometry(0.001),
+        operating=[1.0, 0.0],
+        max_step=1.0,
+    )
     assert result.steps == 0
     assert np.all(np.isfinite(result.state))
     assert np.all(np.isfinite(result.heat_source))
     assert np.isfinite(result.maximum_temperature)
-    assert max(result.maxwell_final_residual) <= 1e-9
+    assert np.isfinite(result.volume_power)
+    assert np.isfinite(result.wire_power)
+    assert result.volume_power >= -1e-10
+    assert result.outward_power >= -1e-10
+
+    model_path = tmp_path / "unified_model.npz"
+    model.save(model_path)
+    with np.load(model_path, allow_pickle=False) as data:
+        assert "em_basis" not in data.files
+        assert not any(name.startswith("maxwell") for name in data.files)
+    loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
+    loaded_result = loaded.predict(
+        0.0,
+        initial_state=np.zeros(loaded.thermal_rank),
+        geometry=geometry(0.001),
+        operating=[1.0, 0.0],
+        max_step=1.0,
+    )
+    assert loaded.thermal_rank == model.thermal_rank
+    assert np.allclose(loaded_result.impedance, result.impedance)
+    assert np.allclose(loaded_result.heat_source, result.heat_source)
