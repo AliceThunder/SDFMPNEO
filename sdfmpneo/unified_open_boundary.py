@@ -36,7 +36,15 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
                     for k in ranges[2]:
                         amap[(i, j, k)] = len(full)
                         full.append((axis, i, j, k))
-                        lengths.append((self.dx[i], self.dy[j], self.dz[k])[axis])
+                        # Only the coordinate along the edge direction owns a
+                        # cell-width index. Boundary-node indices on the other
+                        # two coordinates can legitimately equal n{axis}.
+                        if axis == 0:
+                            lengths.append(self.dx[i])
+                        elif axis == 1:
+                            lengths.append(self.dy[j])
+                        else:
+                            lengths.append(self.dz[k])
             maps.append(amap)
         self.edge_tuples = tuple(full)
         self.edge_lengths = np.asarray(lengths, float)
