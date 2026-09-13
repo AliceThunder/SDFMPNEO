@@ -1,11 +1,9 @@
 \section{问题定义、目标与系统边界}
 
 \subsection{核心目标}
-本项目的生产目标是构造一个参数化、可验证的水下无线电能传输（UWPT）电热代理系统。当前 operating input 为规定的复端口电流 $c$；用户输入为几何 $g$、$c$、初始热状态 $a_0$ 与查询时间 $t$，输出包括热状态、温度、端口阻抗和功率等工程量：
-\begin{equation}
-(g,c,a_0,t)\longmapsto a(t)\longmapsto T(x,t),Z(t),P(t),\ldots.
-\end{equation}
-系统不以黑箱方式直接学习时间轨迹。已知的 Maxwell 线性性、电流二次型、端口 reciprocity/passivity、热质量/导热算子和连续时间动力学必须保留为硬结构或显式物理层。
+本项目的生产目标是构造一个参数化、可验证的水下无线电能传输（UWPT）电热代理系统。当前电磁模型在冻结工作频率 $\omega$ 下采用 $e^{+i\omega t}$ 峰值复相量；current-controlled 模式的 operating input 为规定的复端口电流 $c$。用户输入为几何 $g$、$c$、初始热状态 $a_0$ 与查询时间 $t$，输出包括热状态、温度、端口阻抗和功率等工程量。
+
+系统不以黑箱方式直接学习时间轨迹。已知的 Maxwell 线性性、电流二次型、端口 reciprocity/passivity、功率守恒、热质量/导热算子和连续时间动力学必须保留为硬结构或显式物理层。
 
 若实际工作点由电压源、谐振补偿网络或负载决定，则必须在本模型输出的 $Z(a,g)$ 外接确定性的 circuit equations 求解端口电流；规定电流模型本身不等价于完整 source--load closed-loop WPT circuit。
 
@@ -14,50 +12,60 @@
 \begin{equation}
 \boxed{
  g
- \xrightarrow{\text{validated Maxwell truth data}}
- \{Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\}
+ \xrightarrow{\text{validated Maxwell truth}}
+ \{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}
  \xrightarrow{\text{neural parametric surrogate}}
- \{\widehat Z_{\rm field},\widehat H_j\}
- \xrightarrow{\text{exact current contraction}}
+ \{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_j\}
+ \xrightarrow{\text{exact current/circuit physics}}
  q(a,g,c)
  \xrightarrow{\text{true thermal ROM}}
  a(t).
 }
 \end{equation}
-其中 $Z_{\rm field}$ 为不含线圈集中电阻项的场阻抗矩阵，$H_j$ 为第 $j$ 个热模态对应的复 Hermitian Joule 二次型矩阵。神经网络仅逼近几何到这些低维参数化物理对象的映射；端口电流 $c$ 不进入网络，而通过解析二次型进入功率和热源。
+其中 $Z_{\rm field}$ 为不含线圈集中电阻项的场阻抗，$D_{\rm vol}=X^HH_\sigma X$ 为总海水体耗散矩阵，$H_j$ 为第 $j$ 个 thermal mode 对应的复 Hermitian Joule 二次型。神经网络仅逼近几何到这些低维参数化物理对象的映射；端口电流不进入网络，而通过解析 quadratic forms 或外部 circuit equations 进入功率和热源。
 
 生产解码必须保持
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field},
 \qquad
-\operatorname{Herm}(Z_{\rm field})\succeq0,
+D_{\rm vol}=D_{\rm vol}^H\succeq0,
 \qquad
 H_j^H=H_j,
 \end{equation}
-其中第一式在 reciprocal 条件成立时使用，第二式表达被动端口约束。
+以及联合能量可行性
+\begin{equation}
+\boxed{
+\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
+}
+\end{equation}
+因此端口 passivity 与海水体耗散不是两个彼此独立的 surrogate assertions。
 
 \subsection{当前材料模型下的进一步简化}
 当前正式材料模型中，线圈铜不作为 Maxwell 体导电区域处理，海水电导率未设置温度系数，介电常数和磁导率也未设置温度依赖。因此当前版本满足
 \begin{equation}
 \boxed{A_{\rm em}=A_{\rm em}(g),}
 \end{equation}
-而不是 $A_{\rm em}(a,g)$。因此一个固定几何的 Maxwell 场响应只需要求解一次；热状态只通过线圈集中电阻 $R_{\rm wire}(a,g)$ 进入线圈损耗和端口阻抗。
+而不是 $A_{\rm em}(a,g)$。因此固定几何的 Maxwell 场响应只需求解一次；热状态只通过线圈温度泛函与集中电阻 $R_{\rm wire}(a,g)$ 进入 wire heating 和总阻抗。
 
-若未来引入温度相关的海水/介质电磁参数，则主架构自然扩展为
+若未来引入温度相关海水/介质电磁参数，则主架构扩展为
 \begin{equation}
-(s_{\rm em},g)\mapsto\{Z_{\rm field},H_j\},
+(s_{\rm em},g)\mapsto\{Z_{\rm field},D_{\rm vol},H_j\},
 \end{equation}
-其中 $s_{\rm em}$ 只包含真正影响 Maxwell constitutive law 的状态变量，而不是默认把完整热状态塞入网络。
+其中 $s_{\rm em}$ 只包含真正影响 Maxwell constitutive law 的状态变量。
+
+\subsection{理论适用范围}
+当前体系是单频、线性 time-harmonic Maxwell 与慢 thermal dynamics 的 frequency--transient 分层。cycle-averaged Joule heating 的使用要求载波周期远短于 thermal/operating-envelope 时间尺度。若未来 frequency 本身成为输入，则逐频率 passivity 不足以保证 broadband causal passivity，必须额外满足 positive-real/causality 结构；该问题不属于当前单频冻结体系。
 
 \subsection{理论正确性的前置 Gate}
 生产训练开始前，底层离散物理必须通过以下前置条件：
 \begin{itemize}
-  \item Maxwell 外边界/计算域经过开放域或域扩展收敛验证，不能把有限 PEC 盒默认视为真实海水边界；
-  \item 端口电压方向、阻抗符号、reciprocity/passivity 与离散功率守恒一致；
-  \item Joule 热与 Maxwell 导电 Hodge 使用同一个离散能量二次型，并支持一般复电流相位；
-  \item closed-loop source deposition 保持端口电流归一与离散电流连续性；
-  \item 几何样本满足包封、无穿透和背景边界裕量要求，source/material deposition 对小几何变化保持守恒和足够连续；
-  \item thermal basis 在构造最终 $H_j$ labels 之前冻结，并通过多时间尺度 resolvent residual 与 full transient audit 验证。
+  \item Maxwell 外边界/计算域经过开放域或域扩展收敛验证；
+  \item 端口电压方向、source normalization、阻抗符号、reciprocity 与矩阵级功率守恒一致；
+  \item Joule heat 与 Maxwell loss operator 使用同一离散能量体系，并支持一般复电流相位；
+  \item 端口 current path、terminal source/sink 或完整 return path 满足离散 continuity 与明确的端口定义；
+  \item 几何样本满足包封、无穿透和背景边界裕量要求，source/material deposition 守恒且对小几何变化足够连续；
+  \item thermal basis 在构造最终 $H_j$ labels 之前冻结，并通过多时间尺度 resolvent residual 与 full transient audit 验证；
+  \item wire resistance 的 temperature-functional map、thermal boundary 与 circuit operating mode 均有明确物理定义。
 \end{itemize}
 这些条件没有通过时，神经网络误差不能被解释为最终物理误差。
 
@@ -65,7 +73,7 @@ H_j^H=H_j,
 本项目不把以下方案作为生产主路线：
 \begin{enumerate}
   \item 直接学习 $(g,c,a_0,t)\mapsto T(t)$ 的黑箱 trajectory network；
-  \item 用网络直接输出最终温度、Joule heat 或阻抗而绕过已知的电流二次结构与端口物理；
-  \item 在底层 PDE/边界/功率恒等式未通过 Physics Gate 前，以训练 loss 下降替代物理验证；
+  \item 用网络直接输出最终温度/Joule heat/工作点而绕过已知的 current/circuit/thermal physics；
+  \item 在底层 PDE、端口、边界、功率恒等式未通过 Physics Gate 前，以训练 loss 下降替代物理验证；
   \item 把有限测试集经验误差称为全参数域严格 certificate。
 \end{enumerate}
