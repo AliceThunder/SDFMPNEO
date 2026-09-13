@@ -1,49 +1,40 @@
 \section{低维参数化电磁代理}
 
 \subsection{网络学习对象}
-在当前材料模型下，昂贵电磁依赖只来自几何 $g$。因此网络不学习场 $X$，也不学习时间或端口电流，而只学习低维参数化物理对象
+在当前材料模型和冻结工作频率下，昂贵电磁依赖只来自几何 $g$。因此网络不学习场 $X$，也不学习时间或端口电流，而只学习低维参数化物理对象
 \begin{equation}
 \boxed{
  g\longmapsto
- \left\{Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right\}.
+ \left\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\right\}.
 }
 \end{equation}
-若未来存在真实的温度相关电磁 constitutive state，则输入仅扩展为 $(s_{\rm em},g)$。
+其中 $D_{\rm vol}$ 是总海水体耗散矩阵，$H_j$ 是 thermal modal Joule tensors。若未来存在真实的温度相关电磁 constitutive state，则输入仅扩展为 $(s_{\rm em},g)$。
 
 \subsection{结构保持的输出编码}
-对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；每个 Joule tensor $H_j$ 为复 Hermitian 矩阵。进一步，由被动性必须有
-\begin{equation}
-\boxed{
-\operatorname{Herm}(Z_{\rm field})
-=\frac12\left(Z_{\rm field}+Z_{\rm field}^H\right)
-\succeq0.
-}
-\end{equation}
-在 reciprocal 条件下 $Z_{\rm field}^T=Z_{\rm field}$，因此上式等价于 $\operatorname{Re}Z_{\rm field}\succeq0$。
-
-输出表示必须硬编码这些结构，而不能只依赖训练 penalty。可采用如下任一等价实现：
-\begin{itemize}
-  \item 对 $\operatorname{Re}Z_{\rm field}$ 使用 PSD factorization，并对 $\operatorname{Im}Z_{\rm field}$ 使用实对称编码；
-  \item 或先解码实对称 $\operatorname{Re}Z$，再通过确定性的 PSD projection 得到生产输出；
-  \item $H_j$ 只保存实对角和严格上三角的实/虚部，并由解码器恢复 Hermitian 共轭部分。
-\end{itemize}
-单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；禁止把全部 $H_j$ 强制成 Cholesky 形式。
-
-定义固定的结构化编码算子
-\begin{equation}
-y(g)=\mathcal E\!\left(Z_{\rm field}(g),H_1(g),\ldots,H_r(g)\right)\in\R^{d_y}.
-\end{equation}
-编码/解码层必须保证
+对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；$D_{\rm vol}$ 与每个 $H_j$ 为复 Hermitian 矩阵。物理结构要求
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field},
 \qquad
-\operatorname{Herm}(Z_{\rm field})\succeq0,
+D_{\rm vol}=D_{\rm vol}^H\succeq0,
 \qquad
-H_j^H=H_j.
+H_j=H_j^H,
 \end{equation}
+并要求
+\begin{equation}
+\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0,
+\end{equation}
+使剩余实功率可以解释为非负开放域/吸收边界外流功率。
 
-\subsection{输出 POD 是数值压缩而非理论前提}
-对训练 truth snapshots 的结构化向量做中心化 POD/SVD：
+单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；禁止把全部 $H_j$ 强制成 Cholesky 形式。
+
+定义固定结构化编码
+\begin{equation}
+y(g)=\mathcal E\!\left(Z_{\rm field},D_{\rm vol},H_1,\ldots,H_r\right)\in\R^{d_y},
+\end{equation}
+其中仅保存独立自由度：复对称 $Z$ 的上三角实/虚部，以及 Hermitian matrices 的实对角和严格上三角实/虚部。
+
+\subsection{POD 是压缩，不负责创造物理可行性}
+对 training truth snapshots 的结构化向量做中心化 POD/SVD：
 \begin{equation}
 y(g)\approx \bar y+U_K\beta(g),
 \qquad U_K^TU_K=I.
@@ -54,7 +45,46 @@ y(g)\approx \bar y+U_K\beta(g),
 \beta_\theta:g\mapsto\R^K.
 }
 \end{equation}
-如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$ 或直接预测完整结构化 $y$；这不会改变系统架构。若采用 PSD projection，则它属于固定物理解码层并位于 POD/MLP 之后。
+如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$、采用分块 POD，或直接预测完整结构化 $y$；这不会改变系统架构。
+
+普通线性 POD 并不自动保持 PSD cone 或联合能量可行集，因此不允许仅凭 latent reconstruction 宣称输出物理合法。结构化矩阵解码后还必须经过固定的物理可行层。
+
+\subsection{联合物理可行层}
+令 raw decode 得到
+\begin{equation}
+(\widetilde Z,\widetilde D_{\rm vol},\widetilde H_j).
+\end{equation}
+首先按代数结构精确恢复
+\begin{equation}
+\widetilde Z^T=\widetilde Z,
+\qquad
+\widetilde D_{\rm vol}=\widetilde D_{\rm vol}^H,
+\qquad
+\widetilde H_j=\widetilde H_j^H.
+\end{equation}
+随后对端口耗散块执行确定性的联合可行集映射/投影
+\begin{equation}
+(\widetilde Z,\widetilde D_{\rm vol})
+\mapsto
+(\widehat Z,\widehat D_{\rm vol})
+\end{equation}
+使
+\begin{equation}
+\boxed{
+\widehat D_{\rm vol}\succeq0,
+\qquad
+\operatorname{Herm}(\widehat Z)-\widehat D_{\rm vol}\succeq0.
+}
+\end{equation}
+对当前小端口数，该投影成本可忽略。它必须使用固定数学定义，并与模型一起版本化。
+
+定义 projection correction diagnostic
+\begin{equation}
+\delta_{\rm proj}
+=\left\|(\widehat Z,\widehat D_{\rm vol})
+-(\widetilde Z,\widetilde D_{\rm vol})\right\|.
+\end{equation}
+生产模型要求 validation/test 上 $\delta_{\rm proj}$ 足够小。可行集投影是安全层，不允许成为掩盖大 surrogate error 的主要修正器。
 
 \subsection{几何输入表示}
 几何输入只包含定义生产参数域所需的独立变量，并使用由训练域固定的中心和尺度归一化。普通长度/位移参数可使用
@@ -75,29 +105,28 @@ h_{\ell+1}
 &=h_\ell+W_{\ell,2}\,\sigma(W_{\ell,1}h_\ell+b_{\ell,1}),\\
 \beta_\theta&=W_{\rm out}h_L+b_{\rm out},
 \end{align}
-默认 $\sigma=\operatorname{SiLU}$。网络容量由 validation/test 误差和推理成本选择，不承担任何 Maxwell 或 thermal 方程本身。
+默认 $\sigma=\operatorname{SiLU}$。网络容量由 validation/test 误差和推理成本选择，不承担 Maxwell 或 thermal 方程本身。
 
 \subsection{物理重构层}
-网络输出经过固定 POD 解码与结构化矩阵解码：
+网络输出经过 POD 解码、结构化矩阵解码和联合可行层得到
 \begin{equation}
-\hat y=\bar y+U_K\beta_\theta(g),
+\left\{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_1,\ldots,\widehat H_r\right\}.
 \end{equation}
-\begin{equation}
-\left\{\widehat Z_{\rm field},\widehat H_1,\ldots,\widehat H_r\right\}
-=\mathcal D(\hat y).
-\end{equation}
-$\mathcal D$ 必须同时恢复 reciprocity/Hermitian 结构并保证 $\operatorname{Herm}(\widehat Z_{\rm field})\succeq0$。
-
-任意复端口电流 $c$ 的体 Joule modal source 为
+任意复端口峰值电流 $c$ 的体 Joule modal source 为
 \begin{equation}
 \widehat q_{{\rm vol},j}(g,c)
-=\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right),
+=\frac12\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right),
 \end{equation}
-总阻抗则为
+体总损耗为
+\begin{equation}
+\widehat P_{\rm vol}(g,c)
+=\frac12 c^H\widehat D_{\rm vol}(g)c,
+\end{equation}
+总阻抗为
 \begin{equation}
 \widehat Z(a,g)=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
 \end{equation}
-因此 current magnitude、relative phase、quadratic scaling 与 thermal-state dependence of wire resistance 均由显式物理层处理，不由网络学习。
+因此 current magnitude、relative phase、quadratic scaling 与 wire-resistance thermal dependence 均由显式物理层处理，不由网络学习。
 
-\subsection{结构保持不等于完整能量一致性}
-对称、Hermitian 与 passivity 可以由输出参数化硬保证，但 $\widehat Z_{\rm field}$ 与各 $\widehat H_j$ 仍是近似量，二者之间的完整离散功率关系只能在 truth 数据与 surrogate audit 中验证。生产模型必须额外监控端口功率、总 Joule 功率和 thermal modal source 的一致性误差；不能因为矩阵结构正确就宣称 surrogate 已满足完整 Poynting 恒等式。
+\subsection{联合可行性仍不等价于 exact truth}
+联合可行层保证了 reciprocal structure、Hermitian structure、非负体耗散和非负 implied outward loss，但它不能保证 $\widehat H_j$ 等于真实空间 Joule projection，也不能保证 surrogate 与 truth 的 $D_{\rm out}$ 数值相同。因此 production validation 仍必须比较 $Z$、$D_{\rm vol}$、$H_j$、current contractions、trajectory outputs 以及 projection correction；结构正确不等于数值误差为零。
