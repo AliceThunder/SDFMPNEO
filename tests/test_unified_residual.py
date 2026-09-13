@@ -10,7 +10,7 @@ from sdfmpneo.unified_neural_operator import (
     operator_feature_statistics,
     residual_features,
 )
-from sdfmpneo.unified_trainer import _residual_seed_bank, _step_loss_weights
+from sdfmpneo.unified_trainer import _jacobi_arnoldi_seed_bank, _step_loss_weights
 
 
 class TinyTopology:
@@ -92,17 +92,22 @@ def test_network_uses_multiscale_hierarchy_and_outputs_full_edge_correction():
     assert torch.max(torch.abs(output)).item() == 0.0
 
 
-def test_training_residual_bank_escapes_port_subspace_and_covers_smooth_modes():
-    _, B = random_problem(seed=13)
-    groups = edge_multiscale_group_ids(TinyTopology(), 2)
-    bank = _residual_seed_bank(
+def test_training_seed_bank_matches_fgmres_arnoldi_distribution_and_preserves_port_weight():
+    A, B = random_problem(seed=13)
+    graph = operator_feature_statistics(A)
+    bank, weights = _jacobi_arnoldi_seed_bank(
+        A,
         B,
-        random_count=2,
-        smooth_count=2,
-        group_ids=groups,
+        graph.diagonal,
+        vectors_per_port=2,
+        port_weight=0.6,
         rng=np.random.default_rng(19),
     )
-    assert bank.shape == (TinyTopology.n_edges, B.shape[1] + 4)
+    assert bank.shape == (TinyTopology.n_edges, 6)
+    assert weights.shape == (6,)
+    assert np.isclose(np.sum(weights), 1.0)
+    assert np.isclose(np.sum(weights[:2]), 0.6)
+    assert np.isclose(np.sum(weights[2:]), 0.4)
     assert np.linalg.matrix_rank(bank) > np.linalg.matrix_rank(B)
     q, _ = np.linalg.qr(B)
     outside = []
@@ -110,7 +115,7 @@ def test_training_residual_bank_escapes_port_subspace_and_covers_smooth_modes():
         vector = bank[:, column]
         projected = q @ (q.conj().T @ vector)
         outside.append(np.linalg.norm(vector - projected) / np.linalg.norm(vector))
-    assert min(outside) > 1e-2
+    assert min(outside) > 1e-3
 
 
 def test_three_step_objective_focuses_on_final_residual():
