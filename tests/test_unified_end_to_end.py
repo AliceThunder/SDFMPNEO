@@ -5,6 +5,7 @@ from sdfmpneo.unified_background import FixedMultiscaleBackground
 from sdfmpneo.unified_dataset import generate_operator_dataset
 from sdfmpneo.unified_maxwell import NeuralMaxwellAccelerator
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
+from sdfmpneo.unified_thermal import build_thermal_basis
 from sdfmpneo.unified_trainer import train_maxwell_accelerator
 
 
@@ -86,7 +87,6 @@ def small_background():
         coil_materials=("tx_copper", "rx_copper"),
         package_materials=("tx_package", "rx_package"),
         seawater_material="seawater",
-        thermal_rank=3,
         ambient_temperature=293.15,
     )
 
@@ -94,10 +94,18 @@ def small_background():
 def test_unified_operator_training_save_load_and_predict(tmp_path):
     pytest.importorskip("torch")
     background = small_background()
-    basis = np.eye(background.n_edges, dtype=complex)
     geometries = [geometry(0.002 * np.sin(i)) for i in range(12)]
-    rng = np.random.default_rng(5)
-    states = rng.uniform(-1e-3, 1e-3, size=(12, 3))
+    _, thermal_report = build_thermal_basis(
+        background, geometries[:2], target_relative_residual=0.8
+    )
+    assert thermal_report.converged
+    assert background.thermal_rank > 0
+
+    basis = np.eye(background.n_edges, dtype=complex)
+    states = [
+        {"tx_copper": float(i), "rx_copper": float(11 - i)}
+        for i in range(12)
+    ]
     dataset = generate_operator_dataset(background, basis, geometries, states, seed=9)
 
     network, report = train_maxwell_accelerator(
@@ -133,10 +141,11 @@ def test_unified_operator_training_save_load_and_predict(tmp_path):
     model.save(model_path)
     loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
 
-    assert np.array_equal(loaded.background.thermal_basis, model.background.thermal_basis)
+    assert loaded.thermal_rank == model.thermal_rank
+    assert np.allclose(loaded.background.thermal_basis, model.background.thermal_basis)
     result = loaded.predict(
         0.0,
-        initial_state=np.zeros(3),
+        initial_state=np.zeros(loaded.thermal_rank),
         geometry=geometry(0.001),
         operating=[1.0, 0.0],
         max_step=1.0,
