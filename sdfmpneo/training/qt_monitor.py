@@ -1,4 +1,4 @@
-"""PyQt6 monitor for the single unified full-space neural-FGMRES training path."""
+"""PyQt6 monitor for the unified full-space neural-FGMRES training path."""
 from __future__ import annotations
 
 import codecs
@@ -37,9 +37,8 @@ PHASES = {
     "saving": "保存统一模型",
 }
 
-# Console parsing is a high-frequency supplement to metrics.jsonl.  Keep the
-# pattern intentionally independent of the human-readable training prefix so a
-# wording change cannot silently disable the plots again.
+# The prefix is deliberately not matched. Human-readable wording may change,
+# but an epoch line with these fields must keep driving the plots.
 NEURAL_LINE = re.compile(
     r"……\s*([0-9.]+)%\s+epoch=(\d+)/(\d+)\s+"
     r"train=([0-9.eE+\-]+)\s+val=([0-9.eE+\-]+|inf|nan)",
@@ -71,7 +70,6 @@ class LogReader(QtCore.QThread):
         rows = self.tail.read()
         if rows:
             self.rows.emit(rows)
-
         try:
             with self.console_path.open("rb") as source:
                 source.seek(self.console_offset)
@@ -130,10 +128,11 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self.series = {
             key: deque(maxlen=limit)
             for key in (
-                "epoch",
+                "train_epoch",
                 "train",
                 "val_epoch",
                 "validation",
+                "progress_epoch",
                 "progress",
                 "elapsed",
                 "samples",
@@ -157,7 +156,9 @@ class TrainingWindow(QtWidgets.QMainWindow):
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
-        title = QtWidgets.QLabel("统一几何 · full-space neural-FGMRES · 结构保持电磁–热求解器")
+        title = QtWidgets.QLabel(
+            "统一几何 · full-space neural-FGMRES · 结构保持电磁–热求解器"
+        )
         title.setStyleSheet("font-size:21px;font-weight:600;padding:8px")
         layout.addWidget(title)
 
@@ -350,8 +351,12 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self._buttons(True)
 
     def _set_or_append(self, x_key, y_key, x, y):
-        """Insert one curve point while de-duplicating console/JSONL telemetry."""
-        if self.series[x_key] and self.series[x_key][-1] == x:
+        """Insert one point while de-duplicating console and JSONL telemetry."""
+        if (
+            self.series[x_key]
+            and self.series[y_key]
+            and self.series[x_key][-1] == x
+        ):
             self.series[y_key][-1] = y
         else:
             self.series[x_key].append(x)
@@ -364,31 +369,31 @@ class TrainingWindow(QtWidgets.QMainWindow):
         train = float(measurement["train"])
         validation = float(measurement["validation"])
         percent = float(measurement.get("percent", 100.0 * epoch / total))
-
         if not math.isfinite(train):
             return
-        normalized = {
+
+        self._latest_neural = {
             "epoch": epoch,
             "total": total,
             "percent": percent,
             "train": train,
             "validation": validation,
         }
-        self._latest_neural = normalized
-
-        self._set_or_append("epoch", "train", epoch, max(train, 1e-30))
-        self._set_or_append("epoch", "progress", epoch, percent)
+        self._set_or_append("train_epoch", "train", epoch, max(train, 1e-30))
+        self._set_or_append("progress_epoch", "progress", epoch, percent)
         if math.isfinite(validation):
             self._set_or_append(
                 "val_epoch", "validation", epoch, max(validation, 1e-30)
             )
 
-        self.curves["train"].setData(self.series["epoch"], self.series["train"])
+        self.curves["train"].setData(
+            self.series["train_epoch"], self.series["train"]
+        )
         self.curves["validation"].setData(
             self.series["val_epoch"], self.series["validation"]
         )
         self.curves["progress"].setData(
-            self.series["epoch"], self.series["progress"]
+            self.series["progress_epoch"], self.series["progress"]
         )
         self._update_details(self._latest_row)
 
@@ -397,17 +402,17 @@ class TrainingWindow(QtWidgets.QMainWindow):
         if not rows:
             return
 
-        # metrics.jsonl is the authoritative telemetry source.  Console parsing
-        # remains enabled so short/fast epochs are not lost between heartbeats.
-        for row in rows:
-            if row.get("phase") != "neural_training":
+        # metrics.jsonl is authoritative. Console parsing supplements it so
+        # epochs faster than the heartbeat still appear on the live curves.
+        for metric in rows:
+            if metric.get("phase") != "neural_training":
                 continue
-            epoch = row.get("epoch")
-            total = row.get("epoch_total")
-            train = row.get("train_loss")
+            epoch = metric.get("epoch")
+            total = metric.get("epoch_total")
+            train = metric.get("train_loss")
             if epoch is None or total is None or train is None:
                 continue
-            validation = row.get("validation_loss")
+            validation = metric.get("validation_loss")
             self.consume_neural(
                 {
                     "epoch": int(epoch),
@@ -429,12 +434,8 @@ class TrainingWindow(QtWidgets.QMainWindow):
         samples = row.get("training_points")
         if samples is not None:
             elapsed = float(row.get("elapsed_s") or 0.0)
-            sample_count = int(samples)
-            if self.series["elapsed"] and self.series["elapsed"][-1] == elapsed:
-                self.series["samples"][-1] = sample_count
-            else:
-                self.series["elapsed"].append(elapsed)
-                self.series["samples"].append(sample_count)
+            self.series["elapsed"].append(elapsed)
+            self.series["samples"].append(int(samples))
             self.curves["samples"].setData(
                 self.series["elapsed"], self.series["samples"]
             )
@@ -451,16 +452,15 @@ class TrainingWindow(QtWidgets.QMainWindow):
         epoch = (
             "尚未开始"
             if measurement is None
-            else (
-                f"{measurement['epoch']}/{measurement['total']} "
-                f"({measurement['percent']:.1f}%)"
-            )
+            else f"{measurement['epoch']}/{measurement['total']} ({measurement['percent']:.1f}%)"
         )
         train = "--" if measurement is None else f"{measurement['train']:.5g}"
-        if measurement is None or not math.isfinite(measurement["validation"]):
-            validation = "--"
-        else:
-            validation = f"{measurement['validation']:.5g}"
+        validation = (
+            "--"
+            if measurement is None
+            or not math.isfinite(measurement["validation"])
+            else f"{measurement['validation']:.5g}"
+        )
         samples = (
             "--"
             if row is None or row.get("training_points") is None
