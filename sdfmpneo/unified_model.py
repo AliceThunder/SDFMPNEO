@@ -88,6 +88,8 @@ class UnifiedSteadyState:
     residual_norm: float
     iterations: int
     converged: bool
+    stable: bool
+    spectral_abscissa: float
     maximum_temperature: float
     impedance: np.ndarray
     currents: np.ndarray
@@ -227,6 +229,22 @@ class UnifiedNeuralElectroThermalModel:
         if len(self._tensor_cache) > self.context_cache_size:
             self._tensor_cache.popitem(last=False)
         return value
+
+    def project_initial_temperature(self, rise, geometry=None):
+        """M-orthogonally project a full temperature-rise field onto Phi."""
+        context = self.geometry_context(geometry)
+        value = np.asarray(rise, float)
+        if value.ndim == 0:
+            value = np.full(self.background.n_cells, float(value))
+        value = value.reshape(-1)
+        if value.shape != (self.background.n_cells,) or np.any(~np.isfinite(value)):
+            raise ValueError("initial temperature rise must be scalar or one value per cell")
+        phi = np.asarray(self.background.thermal_basis, float)
+        rhs = phi.T @ (context.thermal_mass_full @ value)
+        try:
+            return np.linalg.solve(context.thermal_mass_reduced, rhs)
+        except np.linalg.LinAlgError:
+            return np.linalg.lstsq(context.thermal_mass_reduced, rhs, rcond=None)[0]
 
     def temperature_field(self, state):
         a = np.asarray(state, float).reshape(-1)
@@ -403,6 +421,18 @@ class UnifiedNeuralElectroThermalModel:
             rejected_steps=result.rejected_steps,
         )
 
+    @staticmethod
+    def _numerical_jacobian(function, state, value=None):
+        a = np.asarray(state, float).reshape(-1)
+        base = np.asarray(function(a) if value is None else value, float).reshape(-1)
+        jacobian = np.empty((base.size, a.size), float)
+        epsilon = np.sqrt(np.finfo(float).eps) * (1.0 + np.abs(a))
+        for k in range(a.size):
+            trial = a.copy()
+            trial[k] += epsilon[k]
+            jacobian[:, k] = (np.asarray(function(trial), float).reshape(-1) - base) / epsilon[k]
+        return jacobian
+
     def steady_state(self, *, initial_guess, geometry, operating, tolerance=1e-10, max_iterations=40):
         state = np.asarray(initial_guess, float).reshape(-1).copy()
         if state.shape != (self.thermal_rank,) or np.any(~np.isfinite(state)):
@@ -425,12 +455,7 @@ class UnifiedNeuralElectroThermalModel:
             norm = float(np.linalg.norm(value))
             if norm <= tolerance or iteration == max_iterations:
                 break
-            jacobian = np.empty((self.thermal_rank, self.thermal_rank))
-            epsilon = np.sqrt(np.finfo(float).eps) * (1 + np.abs(state))
-            for k in range(self.thermal_rank):
-                trial = state.copy()
-                trial[k] += epsilon[k]
-                jacobian[:, k] = (residual(trial) - value) / epsilon[k]
+            jacobian = self._numerical_jacobian(residual, state, value)
             try:
                 step = np.linalg.solve(jacobian, -value)
             except np.linalg.LinAlgError:
@@ -446,13 +471,25 @@ class UnifiedNeuralElectroThermalModel:
                 factor *= 0.5
             if not accepted:
                 break
+
         final_residual = residual(state)
+        residual_norm = float(np.linalg.norm(final_residual))
+        converged = residual_norm <= tolerance
+        if converged:
+            jacobian = self._numerical_jacobian(residual, state, final_residual)
+            spectral_abscissa = float(np.max(np.real(np.linalg.eigvals(jacobian))))
+            stable = bool(np.isfinite(spectral_abscissa) and spectral_abscissa < 0.0)
+        else:
+            spectral_abscissa = float("nan")
+            stable = False
         e = self.evaluate(state, context.geometry, operating)
         return UnifiedSteadyState(
             state=state,
-            residual_norm=float(np.linalg.norm(final_residual)),
+            residual_norm=residual_norm,
             iterations=last_iteration,
-            converged=float(np.linalg.norm(final_residual)) <= tolerance,
+            converged=converged,
+            stable=stable,
+            spectral_abscissa=spectral_abscissa,
             maximum_temperature=e["maximum_temperature"],
             impedance=e["impedance"],
             currents=e["currents"],
