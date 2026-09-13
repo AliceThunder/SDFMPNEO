@@ -40,7 +40,7 @@ E_{\rm model}
 \end{equation}
 因此只要 operating domain 给出 $\|c\|\le C_c$，tensor operator-norm error 就能直接给出整个 current space 的热源误差上界，不需要枚举所有电流组合。
 
-\subsection{阻抗代理误差}
+\subsection{阻抗代理误差与被动性}
 对
 \begin{equation}
 \Delta Z_{\rm field}=\widehat Z_{\rm field}-Z_{\rm field},
@@ -55,6 +55,12 @@ E_{\rm model}
 \left|\Delta P_{\rm field}\right|
 \le\frac12\|\Delta Z_{\rm field}\|_2\|c\|_2^2.
 \end{equation}
+生产解码器还必须保证
+\begin{equation}
+\operatorname{Herm}(\widehat Z_{\rm field})\succeq0,
+\end{equation}
+因此 surrogate 不会因普通回归误差产生主动端口。需要注意：passivity、reciprocity 和 Hermitian tensor structure 只是必要结构，不能替代 $\widehat Z$ 与 $\widehat H_j$ 之间功率一致性的数值 audit。
+
 线圈电阻误差必须单独归入 constitutive/model error，不与 $Z_{\rm field}$ neural error 混合。
 
 \subsection{热动力学误差传播}
@@ -79,7 +85,7 @@ F(a)=M^{-1}\left[-Ka+q_{\rm wire}(a,g,c)+f_T\right]
 \varepsilon_F t,&L_F=0.
 \end{cases}
 \end{equation}
-该界不包含 thermal ROM/time discretization error；这些必须另行加入误差预算。
+该界只传播 tensor-source error，不包含 thermal ROM/time discretization/model error；这些必须另行加入误差预算。
 
 \subsection{收缩情形}
 若真实 reduced thermal dynamics 在目标域某能量范数下满足
@@ -96,11 +102,13 @@ F(a)=M^{-1}\left[-Ka+q_{\rm wire}(a,g,c)+f_T\right]
 只有在真实 wire-heating feedback 与 thermal operators 上验证该条件后，才允许宣称长期误差饱和；不能因为扩散项本身耗散就默认整个电热系统 contractive。
 
 \subsection{thermal ROM error}
-thermal basis 的主要数值证据必须来自实际 Galerkin residual：
+thermal basis 的构造证据来自 geometry/source/shift resolvent residual：
 \begin{equation}
-r_K=Q-K\Phi(\Phi^TK\Phi)^{-1}\Phi^TQ,
+r_{\alpha\ell}
+=Q_\alpha-(K+s_\ell M)\Phi
+\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^TQ_\alpha.
 \end{equation}
-以及相应 dynamic residual。冻结 test geometries 上还应直接比较 full thermal 与 reduced thermal 的温度、最大温升和稳态结果。
+这比只检查 $K^{-1}Q$ 和 $M^{-1}Q$ 两个端点更接近完整 transient transfer function，但仍不是全时间严格证书。冻结 audit geometries 上必须直接比较 full thermal 与 reduced thermal 的短时、中间时间、长期/稳态温度与最大温升；trajectory discrepancy 作为 $E_{\rm thermal\,ROM}$ 的主要生产验证量。
 
 \subsection{输出误差}
 温度场满足
@@ -115,7 +123,7 @@ T=T_{\rm amb}+\Phi a+T_{\rm tail}.
 +\|T_{\rm tail}\|_\infty
 +E_{\rm time,T}.
 \end{equation}
-阻抗误差则由 $Z_{\rm field}$ surrogate 与 $R_{\rm wire}$ constitutive error 分别控制。
+阻抗误差则由 $Z_{\rm field}$ surrogate 与 $R_{\rm wire}$ constitutive error 分别控制。若 operating current 由外部 circuit equations 决定，还必须把 $Z$ 误差通过 circuit sensitivity 传播到 $c$，再进入 Joule 与 thermal error；固定电流误差界不能直接复用于电压驱动/负载闭环场景。
 
 \subsection{证书层级}
 所有 ``certificate'' 或 ``validated'' 字样必须区分：
