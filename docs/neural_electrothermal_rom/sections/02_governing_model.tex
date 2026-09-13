@@ -114,11 +114,13 @@ R_p(a,g)=\mathcal R_p\!\left(T_{\rm amb}+\bar\theta_p(a,g),g\right).
 wire resistance 的温度依赖主要改变这些固定/缓变空间模式的幅值；若未来模型引入新的状态相关空间热源形状，则必须同步扩展 thermal basis source family。
 
 \subsection{thermal basis 必须覆盖整个目标时间尺度}
-只控制 steady solution $K^{-1}Q$ 与初始导数 $M^{-1}Q$，一般不足以保证中间时间的 transient solution，因为
+只控制 steady solution $K^{-1}Q$ 与初始导数 $M^{-1}Q$，一般不足以保证中间时间的 transient solution。对零初值、固定 $M,K$ 与常热源 $Q$，精确解为
 \begin{equation}
-\theta(t)=K^{-1}\left(I-e^{-M^{-1}Kt}\right)Q
+\boxed{
+\theta(t)=\left(I-e^{-M^{-1}Kt}\right)K^{-1}Q.
+}
 \end{equation}
-会访问由 $M^{-1}K$ 作用产生的整个响应子空间。因此自动 thermal basis 不能只用 ``steady + initial dynamic'' 两类端点 anchor 作为理论停止标准。
+矩阵乘法顺序不可任意交换；一般不能写成 $K^{-1}(I-e^{-M^{-1}Kt})Q$。因此 transient solution 会访问由 $M^{-1}K$ 作用产生的整个响应子空间，自动 thermal basis 不能只用 ``steady + initial dynamic'' 两类端点 anchor 作为理论停止标准。
 
 对每个 geometry $g$、source anchor $Q_\alpha(g)$ 和覆盖目标时间尺度的非负 shift $s_\ell$，定义 resolvent anchor
 \begin{equation}
