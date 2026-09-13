@@ -2,7 +2,7 @@
 
 The neural map is strictly static:
 
-    geometry -> {Z_field, D_vol, H_1, ..., H_r}.
+    geometry -> POD coefficients -> {Z_field, D_vol, H_1, ..., H_r}.
 
 Current phasors, wire resistance and thermal dynamics stay outside the network.
 """
@@ -17,7 +17,7 @@ import scipy.sparse.linalg as spla
 from .electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .unified_geometry import UnifiedUWPTGeometry
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SUPPORTED_SHAPES = ("circle", "rounded_square")
 
 
@@ -98,6 +98,11 @@ def tensor_output_dimension(n_ports, thermal_rank):
     return n * (n + 1) + n * n * (1 + r)
 
 
+def tensor_block_sizes(n_ports, thermal_rank):
+    n = int(n_ports)
+    return n * (n + 1), n * n, int(thermal_rank)
+
+
 def pack_tensors(z_field, d_vol, modal_h):
     modal = np.asarray(modal_h, complex)
     if modal.ndim != 3:
@@ -112,8 +117,7 @@ def unpack_tensors(packed, n_ports, thermal_rank):
     p = np.asarray(packed, float).reshape(-1)
     n = int(n_ports)
     r = int(thermal_rank)
-    z_size = n * (n + 1)
-    h_size = n * n
+    z_size, h_size, _ = tensor_block_sizes(n, r)
     expected = z_size + h_size * (1 + r)
     if p.size != expected:
         raise ValueError(f"tensor packed size mismatch: expected {expected}, got {p.size}")
@@ -163,7 +167,6 @@ def encode_geometry(geometry):
 
 
 def _modal_project_to_bounds(h, d, lower, upper):
-    """Project H to lower*D <= H <= upper*D on the support of PSD D."""
     d = _psd_clip(d)
     wd, ud = np.linalg.eigh(d)
     scale = max(float(np.max(wd)), 1.0)
@@ -185,7 +188,12 @@ class DecodedTensors:
     d_vol: np.ndarray
     modal_h: np.ndarray
     implied_d_out: np.ndarray
-    projection_correction: float
+    zd_projection_correction: float
+    h_projection_correction: float
+
+    @property
+    def projection_correction(self):
+        return max(self.zd_projection_correction, self.h_projection_correction)
 
     def modal_heat(self, currents):
         c = np.asarray(currents, complex).reshape(-1)
@@ -209,16 +217,14 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
     phi_max = np.asarray(phi_max, float).reshape(-1)
     if phi_min.shape != phi_max.shape or np.any(phi_max < phi_min):
         raise ValueError("invalid thermal-mode bounds")
-    z_raw, d_raw, h_raw = unpack_tensors(packed, n_ports, len(phi_min))
+    raw = np.asarray(packed, float).reshape(-1)
+    z_raw, d_raw, h_raw = unpack_tensors(raw, n_ports, len(phi_min))
 
     d = _psd_clip(d_raw)
-    # Reciprocity is encoded by complex symmetry.  For symmetric Z,
-    # Herm(Z)=Re(Z), so passivity is enforced on Re(Z)-D.
     x = np.asarray(z_raw.imag, float)
     d_out = _psd_clip(np.asarray(z_raw.real, float) - d)
     z = np.asarray((d + d_out).real, float) + 1j * x
     z = 0.5 * (z + z.T)
-
     modal = np.asarray(
         [
             _modal_project_to_bounds(h_raw[j], d, phi_min[j], phi_max[j])
@@ -227,13 +233,24 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
         complex,
     )
     implied = _hermitian(0.5 * (z + z.conj().T) - d)
+
+    n = int(n_ports)
+    z_size, h_size, r = tensor_block_sizes(n, len(phi_min))
     corrected = pack_tensors(z, d, modal)
-    raw = np.asarray(packed, float).reshape(-1)
-    correction = float(
-        np.linalg.norm(corrected - raw)
-        / max(np.linalg.norm(raw), np.finfo(float).tiny)
+    zd_stop = z_size + h_size
+    raw_zd = raw[:zd_stop]
+    raw_h = raw[zd_stop:]
+    corrected_zd = corrected[:zd_stop]
+    corrected_h = corrected[zd_stop:]
+    zd_correction = float(
+        np.linalg.norm(corrected_zd - raw_zd)
+        / max(np.linalg.norm(raw_zd), np.finfo(float).tiny)
     )
-    return DecodedTensors(z, d, modal, implied, correction)
+    h_correction = float(
+        np.linalg.norm(corrected_h - raw_h)
+        / max(np.linalg.norm(raw_h), np.finfo(float).tiny)
+    ) if r else 0.0
+    return DecodedTensors(z, d, modal, implied, zd_correction, h_correction)
 
 
 def _edge_loss_weights(background, context):
@@ -243,8 +260,22 @@ def _edge_loss_weights(background, context):
     return sigma, edge_loss
 
 
+def _require_static_field_materials(background):
+    for name, material in background.materials.items():
+        if name in background.coil_materials:
+            continue
+        sigma = float(material.get("electrical_conductivity", 0.0))
+        alpha = float(material.get("resistivity_temperature_coefficient", 0.0))
+        if sigma > 0.0 and alpha != 0.0:
+            raise ValueError(
+                f"geometry-only field tensors require temperature-independent non-wire EM materials; "
+                f"{name!r} has nonzero resistivity_temperature_coefficient"
+            )
+
+
 def solve_truth_tensors(background, geometry):
     """Generate one offline tensor label from the full sparse Maxwell solve."""
+    _require_static_field_materials(background)
     context = background.geometry_context(geometry, assemble_thermal=True)
     A = background.em_operator(context, None)
     B = background.rhs_matrix(context)
@@ -256,11 +287,9 @@ def solve_truth_tensors(background, geometry):
     if np.any(~np.isfinite(X)):
         raise FloatingPointError("Maxwell truth solve produced non-finite fields")
 
-    # Corrected reaction sign: conductivity-dominated fields then give positive
-    # dissipative port resistance.
     source = np.asarray(context.source_shape, float)
-    z = 0.5 * ((-source.T @ X) + (-source.T @ X).T)
-
+    reaction = -source.T @ X
+    z = 0.5 * (reaction + reaction.T)
     sigma, edge_loss = _edge_loss_weights(background, context)
     d = _hermitian(X.conj().T @ (edge_loss[:, None] * X))
 
@@ -273,23 +302,37 @@ def solve_truth_tensors(background, geometry):
         modal.append(_hermitian(X.conj().T @ (weighted_edge[:, None] * X)))
     modal = np.asarray(modal, complex)
 
+    bnorm = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
+    residual = B - A @ X
+    max_linear_residual = float(np.max(np.linalg.norm(residual, axis=0) / bnorm))
     scale_z = max(float(np.linalg.norm(z)), np.finfo(float).tiny)
     reciprocity = float(np.linalg.norm(z - z.T) / scale_z)
     min_d = float(np.min(np.linalg.eigvalsh(d)).real)
-    implied = _hermitian(0.5 * (z + z.conj().T) - d)
+    herm_z = _hermitian(z)
+    implied = _hermitian(herm_z - d)
     min_out = float(np.min(np.linalg.eigvalsh(implied)).real)
+    closed_balance = float(
+        np.linalg.norm(herm_z - d)
+        / max(np.linalg.norm(d), np.finfo(float).tiny)
+    )
     phi_min = np.min(phi, axis=0)
     phi_max = np.max(phi, axis=0)
     loewner_violation = 0.0
     for j, h in enumerate(modal):
         low = np.min(np.linalg.eigvalsh(_hermitian(h - phi_min[j] * d))).real
         high = np.min(np.linalg.eigvalsh(_hermitian(phi_max[j] * d - h))).real
-        loewner_violation = max(loewner_violation, float(max(-low, -high, 0.0)))
+        scale = max(np.linalg.norm(d), np.linalg.norm(h), np.finfo(float).tiny)
+        loewner_violation = max(
+            loewner_violation,
+            float(max(-low, -high, 0.0) / scale),
+        )
     audit = {
+        "max_linear_relative_residual": max_linear_residual,
         "reciprocity_relative_error": reciprocity,
         "minimum_d_vol_eigenvalue": min_d,
         "minimum_implied_outward_eigenvalue": min_out,
-        "maximum_loewner_violation": loewner_violation,
+        "closed_boundary_power_balance_relative_error": closed_balance,
+        "maximum_relative_loewner_violation": loewner_violation,
         "independent_outward_power_available": False,
         "boundary_model": "finite_pec_truncation_provisional",
     }
@@ -340,17 +383,26 @@ class TensorDataset:
 
 def _split_labels(n, seed):
     n = int(n)
-    if n < 5:
-        raise ValueError("at least five tensor geometries are required")
+    if n < 6:
+        raise ValueError("at least six tensor geometries are required")
     rng = np.random.default_rng(int(seed))
     order = rng.permutation(n)
+    n_audit = max(1, int(round(0.1 * n)))
     n_test = max(1, int(round(0.1 * n)))
     n_val = max(1, int(round(0.1 * n)))
-    if n - n_test - n_val < 3:
-        n_test = n_val = 1
+    while n - n_audit - n_test - n_val < 3:
+        if n_audit > 1:
+            n_audit -= 1
+        elif n_test > 1:
+            n_test -= 1
+        elif n_val > 1:
+            n_val -= 1
+        else:
+            break
     split = np.full(n, "train", dtype="U16")
-    split[order[:n_test]] = "test"
-    split[order[n_test:n_test + n_val]] = "validation"
+    split[order[:n_audit]] = "audit"
+    split[order[n_audit:n_audit + n_test]] = "test"
+    split[order[n_audit + n_test:n_audit + n_test + n_val]] = "validation"
     return split
 
 
@@ -372,10 +424,16 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
             flush=True,
         )
     numeric_audit = {
+        "maximum_linear_relative_residual": max(a["max_linear_relative_residual"] for a in audits),
         "maximum_reciprocity_relative_error": max(a["reciprocity_relative_error"] for a in audits),
         "minimum_d_vol_eigenvalue": min(a["minimum_d_vol_eigenvalue"] for a in audits),
         "minimum_implied_outward_eigenvalue": min(a["minimum_implied_outward_eigenvalue"] for a in audits),
-        "maximum_loewner_violation": max(a["maximum_loewner_violation"] for a in audits),
+        "maximum_closed_boundary_power_balance_relative_error": max(
+            a["closed_boundary_power_balance_relative_error"] for a in audits
+        ),
+        "maximum_relative_loewner_violation": max(
+            a["maximum_relative_loewner_violation"] for a in audits
+        ),
         "independent_outward_power_available": 0.0,
     }
     return TensorDataset(
@@ -389,21 +447,38 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
 
 
 class UnifiedTensorSurrogate:
-    def __init__(self, network, output_mean, output_scale, n_ports, phi_min, phi_max):
+    def __init__(
+        self,
+        network,
+        output_mean,
+        output_scale,
+        pod_basis,
+        n_ports,
+        phi_min,
+        phi_max,
+    ):
         self.network = network
         self.output_mean = np.asarray(output_mean, float).reshape(-1)
         self.output_scale = np.asarray(output_scale, float).reshape(-1)
+        self.pod_basis = np.asarray(pod_basis, float)
         self.n_ports = int(n_ports)
         self.phi_min = np.asarray(phi_min, float).reshape(-1)
         self.phi_max = np.asarray(phi_max, float).reshape(-1)
-        if self.output_mean.shape != self.output_scale.shape:
-            raise ValueError("output normalization dimensions differ")
-        if self.output_mean.size != tensor_output_dimension(self.n_ports, len(self.phi_min)):
-            raise ValueError("surrogate output width does not match tensor schema")
+        full = tensor_output_dimension(self.n_ports, len(self.phi_min))
+        if self.output_mean.shape != (full,) or self.output_scale.shape != (full,):
+            raise ValueError("output normalization dimensions differ from tensor schema")
+        if self.pod_basis.ndim != 2 or self.pod_basis.shape[0] != full or self.pod_basis.shape[1] < 1:
+            raise ValueError("invalid tensor POD basis")
+        if self.network.config.output_dimension != self.pod_basis.shape[1]:
+            raise ValueError("network output dimension does not match tensor POD rank")
 
     @property
     def thermal_rank(self):
         return len(self.phi_min)
+
+    @property
+    def pod_rank(self):
+        return int(self.pod_basis.shape[1])
 
     def predict_from_encoded(self, encoded):
         import torch
@@ -413,7 +488,8 @@ class UnifiedTensorSurrogate:
             np.asarray(encoded, float), dtype=parameter.dtype, device=parameter.device
         )
         with torch.no_grad():
-            normalized = self.network(x).detach().cpu().numpy().astype(float)
+            beta = self.network(x).detach().cpu().numpy().astype(float)
+        normalized = self.pod_basis @ beta
         packed = self.output_mean + self.output_scale * normalized
         return decode_physical_tensors(packed, self.n_ports, self.phi_min, self.phi_max)
 
@@ -433,6 +509,7 @@ class UnifiedTensorSurrogate:
             "input_scale": normalizer.scale,
             "output_mean": self.output_mean,
             "output_scale": self.output_scale,
+            "pod_basis": self.pod_basis,
             "n_ports": self.n_ports,
             "phi_min": self.phi_min,
             "phi_max": self.phi_max,
@@ -462,6 +539,7 @@ class UnifiedTensorSurrogate:
             network,
             payload["output_mean"],
             payload["output_scale"],
+            payload["pod_basis"],
             int(payload["n_ports"]),
             payload["phi_min"],
             payload["phi_max"],
@@ -479,6 +557,7 @@ __all__ = [
     "pack_hermitian",
     "pack_tensors",
     "solve_truth_tensors",
+    "tensor_block_sizes",
     "tensor_output_dimension",
     "unpack_complex_symmetric",
     "unpack_hermitian",
