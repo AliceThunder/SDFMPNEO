@@ -76,9 +76,40 @@ C^T H_{\mu^{-1}} C
 
 线圈采用 sub-cell thin-wire 电流源表示，不要求背景单元细到导体横截面的毫米尺度；导体自身 AC 电阻损耗以温度相关物理电阻项加入热源。
 
+## Maxwell 公共空间的 rank 自动确定
+
+固定背景上构造 residual-driven 公共电磁空间 \(V\)，但 **rank 不是配置参数**。
+
+算法从空基开始，对所有训练 anchor（几何、热状态、端口）计算真实 Maxwell 相对 residual：
+
+\[
+r_{s,p}(V)
+=
+\frac{\|B_{s,p}-A_s V c_{s,p}\|_2}{\|B_{s,p}\|_2}.
+\]
+
+每次选择当前最差的 `(geometry, state, port)` residual，将新的物理 residual lift 正交加入公共空间，然后重新检查所有 anchor。只有当
+
+\[
+\max_{s,p} r_{s,p}(V)
+\leq \varepsilon_{\rm basis}
+\]
+
+时停止。此时
+
+\[
+r=\dim V
+\]
+
+就是自动得到的 Maxwell basis rank。
+
+因此不存在 `em_basis_max_rank=64/96/128` 这类需要人工猜测的模型参数。冗余 anchor 不会无意义增加 rank；更复杂的物理解空间会自动得到更高 rank。如果 residual 中已经不存在新的数值独立方向但仍无法达到目标，训练会在进入神经 epoch 前明确失败，而不是让用户继续手工调大 rank。
+
+`em_basis_anchor_residual` 是公共空间作为**神经初解空间**的误差目标，不是最终物理解容差。最终推理始终还要满足 `PHYSICS['maxwell_residual_tolerance']`。
+
 ## 网络到底学习什么
 
-固定背景上先构造 residual-driven 公共电磁空间 \(V\)。对于当前热状态和当前几何：
+对于当前热状态和当前几何：
 
 \[
 A_r=V^H A_{\rm em}V,
@@ -168,8 +199,7 @@ M_r(g)\dot a=-K_r(g)a+q(a,g,u).
 ```python
 TRAINING = {
     "basis_samples": 24,
-    "em_basis_max_rank": 64,
-    "em_basis_anchor_residual": 1e-2,
+    "em_basis_anchor_residual": 2e-1,
     "n_operator_samples": 512,
     "device": "cuda",
     "network": {
@@ -253,10 +283,11 @@ results/uwpt/logs/
 python -m pytest -q \
   tests/test_unified_geometry.py \
   tests/test_unified_background.py \
+  tests/test_unified_basis.py \
   tests/test_unified_residual.py \
   tests/test_unified_end_to_end.py
 ```
 
-`test_unified_end_to_end.py` 覆盖：无解标签 operator 数据生成 → residual NN 训练 → 模型保存 → 模型加载 → `t=0` 真实 Maxwell correction/Joule/温度推理。
+`test_unified_basis.py` 验证公共 Maxwell rank 由 residual 自动确定；`test_unified_end_to_end.py` 覆盖：无解标签 operator 数据生成 → residual NN 训练 → 模型保存 → 模型加载 → `t=0` 真实 Maxwell correction/Joule/温度推理。
 
 仓库中仍有历史研究代码文件，但它们不再由顶层 `sdfmpneo` API、`run.py` 或正式 CLI 自动加载，也不再作为当前统一模型的兼容目标。
