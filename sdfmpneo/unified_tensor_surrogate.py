@@ -1,8 +1,8 @@
 """Geometry-only electromagnetic tensor surrogate for the unified UWPT model.
 
-The neural map is strictly static:
+The neural map is strictly static::
 
-    geometry -> POD coefficients -> {Z_field, D_vol, H_1, ..., H_r}.
+    geometry -> POD coefficients -> {Z_field, D_vol, H_1, ..., H_r}
 
 Current phasors, wire resistance and thermal dynamics stay outside the network.
 """
@@ -124,18 +124,24 @@ def unpack_tensors(packed, n_ports, thermal_rank):
     z = unpack_complex_symmetric(p[:z_size], n)
     d = unpack_hermitian(p[z_size:z_size + h_size], n)
     start = z_size + h_size
-    modal = np.asarray(
-        [
-            unpack_hermitian(p[start + j * h_size:start + (j + 1) * h_size], n)
-            for j in range(r)
-        ],
-        complex,
-    )
+    modal = np.asarray([
+        unpack_hermitian(p[start + j * h_size:start + (j + 1) * h_size], n)
+        for j in range(r)
+    ], complex)
     return z, d, modal
 
 
+def _pose_features(pose):
+    angles = np.asarray(pose.angles, float)
+    return (
+        np.asarray(pose.translation, float).tolist()
+        + np.sin(angles).tolist()
+        + np.cos(angles).tolist()
+    )
+
+
 def encode_geometry(geometry):
-    """Fixed-width encoding for the currently supported production family."""
+    """Fixed-width encoding for the supported production geometry family."""
     g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
     features = []
     for coil in g.coils:
@@ -144,22 +150,18 @@ def encode_geometry(geometry):
                 f"production tensor surrogate supports {_SUPPORTED_SHAPES}; got {coil.shape!r}"
             )
         features.extend(1.0 if coil.shape == name else 0.0 for name in _SUPPORTED_SHAPES)
-        features.extend(
-            [
-                float(coil.turns),
-                float(coil.outer_half_size),
-                float(coil.pitch),
-                float(coil.conductor_width),
-                float(coil.conductor_thickness),
-                0.0 if coil.corner_radius is None else float(coil.corner_radius),
-            ]
-        )
-        features.extend(np.asarray(coil.pose.translation, float).tolist())
-        angles = np.asarray(coil.pose.angles, float)
-        features.extend(np.sin(angles).tolist())
-        features.extend(np.cos(angles).tolist())
+        features.extend([
+            float(coil.turns), float(coil.outer_half_size), float(coil.pitch),
+            float(coil.conductor_width), float(coil.conductor_thickness),
+            0.0 if coil.corner_radius is None else float(coil.corner_radius),
+        ])
+        features.extend(_pose_features(coil.pose))
     for package in g.packages:
         features.extend(np.asarray(package.half_extent, float).tolist())
+        # Keep package pose explicit.  It is redundant for today's default
+        # family but prevents an independent package pose becoming a hidden
+        # truth variable later.
+        features.extend(_pose_features(package.pose))
     out = np.asarray(features, float)
     if np.any(~np.isfinite(out)):
         raise ValueError("geometry encoding contains non-finite values")
@@ -220,19 +222,18 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
     raw = np.asarray(packed, float).reshape(-1)
     z_raw, d_raw, h_raw = unpack_tensors(raw, n_ports, len(phi_min))
 
+    # Fixed safety layer: only dissipative blocks are corrected.  The reciprocal
+    # reactive block is retained exactly from the network decode.
     d = _psd_clip(d_raw)
     x = np.asarray(z_raw.imag, float)
     d_out = _psd_clip(np.asarray(z_raw.real, float) - d)
     z = np.asarray((d + d_out).real, float) + 1j * x
     z = 0.5 * (z + z.T)
-    modal = np.asarray(
-        [
-            _modal_project_to_bounds(h_raw[j], d, phi_min[j], phi_max[j])
-            for j in range(len(phi_min))
-        ],
-        complex,
-    )
-    implied = _hermitian(0.5 * (z + z.conj().T) - d)
+    modal = np.asarray([
+        _modal_project_to_bounds(h_raw[j], d, phi_min[j], phi_max[j])
+        for j in range(len(phi_min))
+    ], complex)
+    implied = _hermitian(z) - d
 
     n = int(n_ports)
     z_size, h_size, r = tensor_block_sizes(n, len(phi_min))
@@ -246,10 +247,13 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
         np.linalg.norm(corrected_zd - raw_zd)
         / max(np.linalg.norm(raw_zd), np.finfo(float).tiny)
     )
-    h_correction = float(
-        np.linalg.norm(corrected_h - raw_h)
-        / max(np.linalg.norm(raw_h), np.finfo(float).tiny)
-    ) if r else 0.0
+    h_correction = (
+        float(
+            np.linalg.norm(corrected_h - raw_h)
+            / max(np.linalg.norm(raw_h), np.finfo(float).tiny)
+        )
+        if r else 0.0
+    )
     return DecodedTensors(z, d, modal, implied, zd_correction, h_correction)
 
 
@@ -268,13 +272,18 @@ def _require_static_field_materials(background):
         alpha = float(material.get("resistivity_temperature_coefficient", 0.0))
         if sigma > 0.0 and alpha != 0.0:
             raise ValueError(
-                f"geometry-only field tensors require temperature-independent non-wire EM materials; "
+                "geometry-only field tensors require temperature-independent non-wire EM materials; "
                 f"{name!r} has nonzero resistivity_temperature_coefficient"
             )
 
 
 def solve_truth_tensors(background, geometry):
-    """Generate one offline tensor label from the full sparse Maxwell solve."""
+    """Generate one offline tensor label from the full sparse Maxwell truth solve.
+
+    Raw solver residual, reciprocity and PEC-domain power balance are measured
+    before reciprocal projection.  Only labels that pass those audits should be
+    admitted by the runtime Physics Gate.
+    """
     _require_static_field_materials(background)
     context = background.geometry_context(geometry, assemble_thermal=True)
     A = background.em_operator(context, None)
@@ -287,11 +296,29 @@ def solve_truth_tensors(background, geometry):
     if np.any(~np.isfinite(X)):
         raise FloatingPointError("Maxwell truth solve produced non-finite fields")
 
+    bnorm = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
+    residual = B - A @ X
+    max_linear_residual = float(np.max(np.linalg.norm(residual, axis=0) / bnorm))
+
     source = np.asarray(context.source_shape, float)
     reaction = -source.T @ X
-    z = 0.5 * (reaction + reaction.T)
+    reaction_scale = max(float(np.linalg.norm(reaction)), np.finfo(float).tiny)
+    reciprocity = float(np.linalg.norm(reaction - reaction.T) / reaction_scale)
+
     sigma, edge_loss = _edge_loss_weights(background, context)
     d = _hermitian(X.conj().T @ (edge_loss[:, None] * X))
+    # The current background deletes tangential boundary DOFs, i.e. a finite PEC
+    # truncation.  Hence outward Poynting flux is zero in this *discrete model*.
+    # This check validates internal reaction/Joule consistency only; it is not
+    # an open-domain certificate.
+    raw_herm_z = _hermitian(reaction)
+    closed_balance = float(
+        np.linalg.norm(raw_herm_z - d)
+        / max(np.linalg.norm(d), np.linalg.norm(raw_herm_z), np.finfo(float).tiny)
+    )
+
+    # Only after the raw audits do we create reciprocal training labels.
+    z = 0.5 * (reaction + reaction.T)
 
     phi = np.asarray(background.thermal_basis, float)
     modal = []
@@ -302,19 +329,9 @@ def solve_truth_tensors(background, geometry):
         modal.append(_hermitian(X.conj().T @ (weighted_edge[:, None] * X)))
     modal = np.asarray(modal, complex)
 
-    bnorm = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
-    residual = B - A @ X
-    max_linear_residual = float(np.max(np.linalg.norm(residual, axis=0) / bnorm))
-    scale_z = max(float(np.linalg.norm(z)), np.finfo(float).tiny)
-    reciprocity = float(np.linalg.norm(z - z.T) / scale_z)
     min_d = float(np.min(np.linalg.eigvalsh(d)).real)
-    herm_z = _hermitian(z)
-    implied = _hermitian(herm_z - d)
+    implied = _hermitian(z) - d
     min_out = float(np.min(np.linalg.eigvalsh(implied)).real)
-    closed_balance = float(
-        np.linalg.norm(herm_z - d)
-        / max(np.linalg.norm(d), np.finfo(float).tiny)
-    )
     phi_min = np.min(phi, axis=0)
     phi_max = np.max(phi, axis=0)
     loewner_violation = 0.0
@@ -513,9 +530,7 @@ class UnifiedTensorSurrogate:
             "n_ports": self.n_ports,
             "phi_min": self.phi_min,
             "phi_max": self.phi_max,
-            "network_state": {
-                k: v.detach().cpu() for k, v in self.network.state_dict().items()
-            },
+            "network_state": {k: v.detach().cpu() for k, v in self.network.state_dict().items()},
             "dtype": str(parameter.dtype).replace("torch.", ""),
         }
 
@@ -547,19 +562,9 @@ class UnifiedTensorSurrogate:
 
 
 __all__ = [
-    "DecodedTensors",
-    "TensorDataset",
-    "UnifiedTensorSurrogate",
-    "decode_physical_tensors",
-    "encode_geometry",
-    "generate_tensor_dataset",
-    "pack_complex_symmetric",
-    "pack_hermitian",
-    "pack_tensors",
-    "solve_truth_tensors",
-    "tensor_block_sizes",
-    "tensor_output_dimension",
-    "unpack_complex_symmetric",
-    "unpack_hermitian",
-    "unpack_tensors",
+    "DecodedTensors", "TensorDataset", "UnifiedTensorSurrogate",
+    "decode_physical_tensors", "encode_geometry", "generate_tensor_dataset",
+    "pack_complex_symmetric", "pack_hermitian", "pack_tensors",
+    "solve_truth_tensors", "tensor_block_sizes", "tensor_output_dimension",
+    "unpack_complex_symmetric", "unpack_hermitian", "unpack_tensors",
 ]
