@@ -3,7 +3,10 @@ import pytest
 import scipy.sparse as sp
 
 from sdfmpneo.unified_maxwell import NeuralMaxwellAccelerator
-from sdfmpneo.unified_neural_operator import build_edge_residual_operator, residual_features
+from sdfmpneo.unified_neural_operator import (
+    build_edge_residual_operator,
+    residual_features,
+)
 
 
 class TinyTopology:
@@ -11,9 +14,14 @@ class TinyTopology:
     y = np.array([0.0, 1.0, 2.0, 3.0])
     z = np.array([0.0, 1.0, 2.0, 3.0])
     edge_tuples = (
-        (0, 0, 1, 1), (0, 1, 1, 1), (0, 2, 1, 1),
-        (1, 1, 0, 1), (1, 1, 1, 1), (1, 1, 2, 1),
-        (2, 1, 1, 0), (2, 1, 1, 1),
+        (0, 0, 1, 1),
+        (0, 1, 1, 1),
+        (0, 2, 1, 1),
+        (1, 1, 0, 1),
+        (1, 1, 1, 1),
+        (1, 1, 2, 1),
+        (2, 1, 1, 0),
+        (2, 1, 1, 1),
     )
     n_edges = len(edge_tuples)
 
@@ -27,40 +35,51 @@ def random_problem(seed=5):
     return sp.csr_matrix(A), B
 
 
-def test_residual_features_are_full_edge_local_and_have_jacobi_baseline():
+def test_residual_features_are_operator_action_aware_and_have_mr_jacobi_baseline():
     A, B = random_problem()
-    features, jacobi, scale = residual_features(A, B)
-    assert features.shape == (B.shape[1], A.shape[0], 9)
-    assert jacobi.shape == B.shape
+    features, baseline, scale = residual_features(A, B)
+    assert features.shape == (B.shape[1], A.shape[0], 11)
+    assert baseline.shape == B.shape
     assert scale.shape == (B.shape[1],)
-    assert np.allclose(A.diagonal()[:, None] * jacobi, B)
     assert np.all(np.isfinite(features))
 
+    relative = np.linalg.norm(B - A @ baseline, axis=0) / np.linalg.norm(B, axis=0)
+    assert np.max(relative) <= 1.0 + 1e-12
 
-def test_residual_features_see_offdiagonal_sparse_coupling_not_only_the_diagonal():
+
+def test_operator_action_features_see_signed_offdiagonal_coupling():
     n = TinyTopology.n_edges
     diagonal = (2.0 + 0.4j) * np.ones(n)
     A0 = sp.diags(diagonal, format="csr")
-    A1 = A0 + sp.diags([0.7 * np.ones(n - 1), 0.7 * np.ones(n - 1)], [-1, 1], format="csr")
+    A1 = A0 + sp.diags(
+        [0.7 * np.ones(n - 1), -0.45j * np.ones(n - 1)],
+        [-1, 1],
+        format="csr",
+    )
     residual = np.ones((n, 1), complex)
 
     f0, _, _ = residual_features(A0, residual)
     f1, _, _ = residual_features(A1, residual)
 
-    # Columns 7/8 are coupling ratio and normalized sparse row degree.
-    assert np.allclose(f0[..., :7], f1[..., :7])
-    assert np.max(np.abs(f1[..., 7:] - f0[..., 7:])) > 0.0
+    assert np.allclose(f0[..., :2], f1[..., :2])
+    assert np.max(np.abs(f1[..., 2:6] - f0[..., 2:6])) > 0.0
 
 
-def test_zero_initialized_network_reduces_to_physical_jacobi_then_fgmres_closes_true_residual():
+def test_zero_initialized_network_uses_physical_mr_jacobi_then_fgmres_closes_true_residual():
     pytest.importorskip("torch")
     A, B = random_problem(seed=11)
     network = build_edge_residual_operator(
         TinyTopology(),
         {"width": 8, "levels": 1, "blocks_per_level": 1, "activation": "silu"},
     ).double()
-    accelerator = NeuralMaxwellAccelerator(network, residual_tolerance=1e-10,
-                                            max_iterations=80, restart=8)
+    accelerator = NeuralMaxwellAccelerator(
+        network, residual_tolerance=1e-10, max_iterations=80, restart=8
+    )
+
+    guess = accelerator.guess(A, B)
+    guess_relative = np.linalg.norm(B - A @ guess, axis=0) / np.linalg.norm(B, axis=0)
+    assert np.max(guess_relative) <= 1.0 + 1e-12
+
     X, report = accelerator.solve(A, B)
     relative = np.linalg.norm(B - A @ X, axis=0) / np.linalg.norm(B, axis=0)
     assert max(report.final_relative_residual) <= 1e-10
@@ -69,7 +88,7 @@ def test_zero_initialized_network_reduces_to_physical_jacobi_then_fgmres_closes_
     assert max(report.correction_iterations) > 0
 
 
-def test_nonfinite_neural_output_falls_back_to_jacobi_not_to_a_surrogate_answer():
+def test_nonfinite_neural_output_falls_back_to_physical_baseline_not_surrogate_answer():
     torch = pytest.importorskip("torch")
     A, B = random_problem(seed=17)
 
@@ -80,11 +99,23 @@ def test_nonfinite_neural_output_falls_back_to_jacobi_not_to_a_surrogate_answer(
             self.n_edges = A.shape[0]
 
         def forward(self, x):
-            return torch.full((x.shape[0], x.shape[1], 2), float("nan"),
-                              dtype=x.dtype, device=x.device) + 0.0 * self.anchor
+            return (
+                torch.full(
+                    (x.shape[0], x.shape[1], 2),
+                    float("nan"),
+                    dtype=x.dtype,
+                    device=x.device,
+                )
+                + 0.0 * self.anchor
+            )
 
-    accelerator = NeuralMaxwellAccelerator(NanNetwork().double(), residual_tolerance=1e-10,
-                                            max_iterations=80, restart=8)
+    accelerator = NeuralMaxwellAccelerator(
+        NanNetwork().double(), residual_tolerance=1e-10, max_iterations=80, restart=8
+    )
+    guess = accelerator.guess(A, B)
+    guess_relative = np.linalg.norm(B - A @ guess, axis=0) / np.linalg.norm(B, axis=0)
+    assert np.max(guess_relative) <= 1.0 + 1e-12
+
     X, report = accelerator.solve(A, B)
     relative = np.linalg.norm(B - A @ X, axis=0) / np.linalg.norm(B, axis=0)
     assert np.max(relative) <= 1e-10
