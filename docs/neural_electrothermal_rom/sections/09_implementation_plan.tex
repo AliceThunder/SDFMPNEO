@@ -85,7 +85,9 @@ canonical library 冻结后，对每个 geometry $g$：
   \end{equation}
 \end{enumerate}
 
-最终 neural dataset 保存 fixed-dimensional canonical tensor schema：geometry、$Z_{\rm field}$、$D_{\rm vol}$、$H_1\ldots H_r$、mode/basis-generator version、geometry split 与 completely-held-out audit split。$\phi_j^{\min/\max}(g)$ 是 deterministic geometry-derived metadata，可在训练标签中保存并在推理时由同一 basis generator 重算。
+最终 neural tensor dataset 保存 fixed-dimensional canonical tensor schema：geometry、$Z_{\rm field}$、$D_{\rm vol}$、$H_1\ldots H_r$、geometry-dependent modal bounds 与 neural `train/validation/test/internal-audit` split。这个 dataset 内部的 `audit` split 只用于 tensor surrogate 诊断，不等于最终 production release set。
+
+完全 held-out release geometries 不写入上述 dataset，也不参与 POD、normalization、early stopping、canonical rank 或 transport tuning；它们在 surrogate training 完成后由独立 sampling stream 生成，只用于最终 Go/No-Go。
 
 \subsection{输出压缩与 neural model}
 只使用 neural training split 构造 output normalization 与 POD：
@@ -150,8 +152,9 @@ reactive reciprocal block 不因耗散投影而改变；所有 projection correc
   \item completely-held-out geometry 上 full thermal versus geometry-aware ROM 的短时、中间、长时和 steady trajectory audit；
   \item initial-condition projection/homogeneous-response、wire-temperature functional、$T_{\min}/T_{\max}$；
   \item frozen validation/test $Z/D/H/q$ error、projection correction 与 implied-vs-physical outward-loss error；
-  \item ETD/IMEX against high-accuracy reference；
-  \item current-controlled 和 circuit-controlled end-to-end audit。
+  \item production ETD/IMEX against high-accuracy reference on the same surrogate reduced ODE；
+  \item current-controlled 和 circuit-controlled end-to-end audit；
+  \item uncertified artifact 不得由 production predict 入口加载。
 \end{itemize}
 
 特别地，如果 held-out error 随 geometry translation/rotation 激增，不优先通过增加大量 global thermal modes 修补；应先检查 transport/local-frame 设计。若 rigid transport 后主要剩余误差与尺寸变化相关，再考虑 deterministic scale-aware extension。
@@ -159,8 +162,8 @@ reactive reciprocal block 不因耗散投影而改变；所有 projection correc
 \subsection{训练和推理接口原则}
 用户层仍只有两个概念流程：
 \begin{itemize}
-  \item \textbf{train：}验证 truth physics，构建/冻结 canonical thermal library 与 basis generator，逐 geometry 生成 tensor labels，训练 geometry surrogate，保存统一模型；
-  \item \textbf{predict：}加载模型，检查 production domain，确定性生成 geometry-aware thermal ROM，对 geometry 解码 EM tensors，执行 current/circuit physics 与 thermal dynamics。
+  \item \textbf{train：}验证 truth physics，构建/冻结 canonical thermal library 与 basis generator，逐 geometry 生成 tensor labels，训练 geometry surrogate，执行 completely-held-out release Go/No-Go；只有全部通过才保存统一 production model；
+  \item \textbf{predict：}加载已通过 release metadata 验证的 production model，检查 production domain，确定性生成 geometry-aware thermal ROM，对 geometry 解码 EM tensors，执行 current/circuit physics 与 thermal dynamics。
 \end{itemize}
 
 \subsection{禁止重新引入的耦合}
@@ -175,20 +178,22 @@ reactive reciprocal block 不因耗散投影而改变；所有 projection correc
   \item 用随机 current sampling 代替完整 Hermitian current-source span；
   \item 在 diffusion length 远小于 thermal mesh resolution 时盲目把极短 time-scale anchor 当成 production rank target；
   \item 用任意 nonlinear root 代替稳定且与初值语义一致的 steady state；
-  \item 在 Physics Gate 失败的数据上继续优化 neural loss。
+  \item 在 Physics Gate 或 final release Gate 失败的数据/模型上继续发布 production artifact。
 \end{itemize}
 
 \subsection{实现顺序}
 软件实施顺序由物理依赖严格决定：
 \begin{enumerate}
-  \item 修并冻结 Physics Gate；
+  \item 修并冻结 pre-basis spatial truth Gate；
   \item 生成/验证 Maxwell/Joule/source truth physics；
   \item 构建 canonical background/TX/RX thermal mode library；
   \item 冻结 deterministic $g\mapsto\Phi(g)$ generator、固定 mode ordering 与 time-scale policy；
   \item 逐 geometry 组装 $M_r/K_r$、modal bounds 与最终 $Z/D_{\rm vol}/H_j$ tensor dataset；
+  \item 运行依赖冻结 basis/tensor 的 post-basis Physics Gate；
   \item 实现 structure encode/POD/joint feasible decode；
   \item 训练 neural geometry surrogate；
   \item 接入 geometry-aware thermal/circuit engine 和统一 predict API；
-  \item 用完全 held-out geometry 做 end-to-end audit。
+  \item 用完全 held-out geometry 做 full thermal/tensor/current/circuit/time-integrator release audit；
+  \item 全部 release Gate 通过后发布 production artifact。
 \end{enumerate}
 任何上游物理、canonical mode library 或 basis-generator 版本改变都必须使下游 tensor labels、POD 和模型版本失效。
