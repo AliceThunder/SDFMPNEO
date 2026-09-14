@@ -2,6 +2,7 @@ import numpy as np
 
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_tensor_surrogate import solve_port_truth_tensors
+from sdfmpneo.unified_truth_preflight import _source_and_loss_partition
 
 
 MATERIALS = {
@@ -97,11 +98,31 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
     assert np.count_nonzero(weights) > 0
 
 
+def test_finite_support_source_preserves_open_terminal_path_and_loss_partition():
+    bg = background()
+    context = bg.geometry_context(geometry(), assemble_thermal=False)
+    assert bg.source_model == "stranded_rectangular_cross_section_gauss3"
+    assert bg.terminal_model == "impressed_port_path_with_endpoint_charge_balance"
+    assert len(context.source_regularization) == 2
+    for row in context.source_regularization:
+        assert row["conductor_width"] > 0.0
+        assert row["conductor_thickness"] > 0.0
+        assert row["terminal_separation"] > 0.0
+        assert row["terminal_path_integral_relative_error"] <= 1e-12
+        assert np.isclose(row["heat_weight_sum"], 1.0, rtol=0.0, atol=1e-12)
+        assert row["source_norm"] > 0.0
+    audit = _source_and_loss_partition(bg, geometry())
+    assert audit["finite_support_source"]
+    assert audit["terminal_path_conservation"]
+    assert audit["maximum_terminal_path_integral_relative_error"] <= 1e-12
+    assert audit["material_fraction_closure_error"] <= 1e-10
+    assert audit["wire_loss_partition_relative_error"] <= 1e-12
+
+
 def test_boundary_mass_integrates_constant_tangential_field_exactly():
     bg = background()
     field = np.zeros(bg.n_edges, complex)
     ex = 2.0
-    # Constant x-directed field.  It is tangential only to the y/z-normal faces.
     for e, (axis, _i, _j, _k) in enumerate(bg.edge_tuples):
         if axis == 0:
             field[e] = ex * bg.edge_lengths[e]
