@@ -30,7 +30,7 @@ def jsonable(value):
         if np.iscomplexobj(value): return {"real":value.real.tolist(),"imag":value.imag.tolist()}
         return value.tolist()
     if isinstance(value,np.generic):
-        if np.iscomplexobj(value): return {"real":float(np.real(value)),"imag":float(np.imag(value)}
+        if np.iscomplexobj(value): return {"real":float(np.real(value)),"imag":float(np.imag(value))}
         return value.item()
     if isinstance(value,complex): return {"real":float(value.real),"imag":float(value.imag)}
     if isinstance(value,dict): return {str(k):jsonable(v) for k,v in value.items()}
