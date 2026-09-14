@@ -23,8 +23,6 @@ def test_local_self_defect_changes_only_diagonal_and_preserves_power_partition(m
     phi = np.ones((3, 2))
 
     def fake_local(_background, _geometry, port, step, phi=None):
-        # Fine minus coarse defects are different for each port, but obey
-        # Re(delta Z) = delta Dvol + delta Dout.
         scale = 1.0 if np.isclose(step, 0.012) else 2.0
         p = int(port) + 1
         modal_value = None if phi is None else np.array([0.2 * p * scale, -0.1 * p * scale])
@@ -35,6 +33,8 @@ def test_local_self_defect_changes_only_diagonal_and_preserves_power_partition(m
             "modal_h": modal_value,
             "linear_relative_residual": 0.0,
             "power_balance_relative_error": 0.0,
+            "joule_total_power_relative_error": 2e-13 if np.isclose(step, 0.012) else 3e-13,
+            "joule_modal_contraction_relative_error": 4e-13 if phi is not None else 0.0,
             "n_cells": 10,
             "n_edges": 20,
             "fine_step": float(step),
@@ -49,13 +49,14 @@ def test_local_self_defect_changes_only_diagonal_and_preserves_power_partition(m
     assert np.allclose(result.d_vol[0, 1], d[0, 1])
     assert np.allclose(result.modal_h[:, 0, 1], modal[:, 0, 1])
 
-    # Fine - coarse = one coarse unit in this synthetic setup.
     assert np.allclose(np.diag(result.z - z), [0.6 + 0.05j, 1.2 + 0.10j])
     assert np.allclose(np.real(np.diag(result.d_vol - d)), [0.5, 1.0])
     assert np.allclose(np.real(np.diag(result.d_out - d_out)), [0.1, 0.2])
     assert np.allclose(np.real(result.modal_h[:, 0, 0] - modal[:, 0, 0]), [0.2, -0.1])
     assert np.allclose(np.real(result.modal_h[:, 1, 1] - modal[:, 1, 1]), [0.4, -0.2])
     assert result.audit["corrected_power_balance_relative_error"] < 1e-14
+    assert result.audit["maximum_joule_total_power_relative_error"] == 3e-13
+    assert result.audit["maximum_joule_modal_contraction_relative_error"] == 4e-13
 
 
 def test_disabled_self_correction_is_identity():
