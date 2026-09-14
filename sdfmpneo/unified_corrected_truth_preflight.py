@@ -190,6 +190,36 @@ def _skipped_mesh_report(settings, reason):
     }
 
 
+def _skipped_gate_report(reason):
+    return {
+        "sample_count": 0,
+        "maximum_relative_error": float("inf"),
+        "converged": False,
+        "skipped": True,
+        "skip_reason": str(reason),
+        "samples": [],
+    }
+
+
+def _local_self_failure_diagnosis(local_self):
+    joule_error = float(local_self.get("maximum_joule_total_power_relative_error", np.inf))
+    joule_limit = float(local_self.get("joule_identity_tolerance", 1e-10))
+    if joule_error > joule_limit:
+        return {
+            "code": "local_self_joule_identity_failed",
+            "maximum_joule_total_power_relative_error": joule_error,
+            "joule_identity_tolerance": joule_limit,
+            "recommendation": "This is a local defect implementation/scaling failure, not a mesh-convergence failure. Repair the D_vol/q_cell identity; do not relax tolerance or globally refine the mesh.",
+        }
+    return {
+        "code": "local_self_reference_not_converged",
+        "maximum_relative_error": float(local_self["maximum_relative_error"]),
+        "fine_step": float(local_self["fine_step"]),
+        "validation_fine_step": float(local_self["validation_fine_step"]),
+        "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
+    }
+
+
 def run_truth_preflight(settings, background, geometries, monitor=None):
     geometries = list(geometries)
     if not geometries:
@@ -200,58 +230,81 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     mesh_n = min(len(geometries), max(1, int(cfg.get("mesh_check", {}).get("samples", 1))))
     self_n = min(len(geometries), max(1, int(cfg.get("self_correction", {}).get("samples", 1))))
 
-    # Cheap algebraic/source checks first, then certify the local correction
-    # before spending a global base+refined Maxwell pair on corrected mesh truth.
     source_rows = [_source_and_loss_partition(background, g) for g in geometries]
     max_fraction = max(row["material_fraction_closure_error"] for row in source_rows)
     max_partition = max(row["wire_loss_partition_relative_error"] for row in source_rows)
     max_terminal = max(row["maximum_terminal_path_integral_relative_error"] for row in source_rows)
-    source_ok = (
-        all(row["finite_support_source"] for row in source_rows)
-        and all(row["terminal_path_conservation"] for row in source_rows)
-        and max_fraction <= 1e-10
-        and max_partition <= 1e-12
-    )
+    source_checks = {
+        "finite_support_source_ok": all(row["finite_support_source"] for row in source_rows),
+        "terminal_source_continuity_ok": all(row["terminal_path_conservation"] for row in source_rows),
+        "material_fraction_closure_ok": max_fraction <= 1e-10,
+        "wire_loss_not_double_counted": max_partition <= 1e-12,
+    }
+    source_ok = all(source_checks.values())
 
-    local_self = audit_local_self_correction(background, geometries[:self_n], monitor)
-    domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
-    formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
-    if source_ok and local_self["converged"] and domain["converged"] and formulation["converged"]:
+    if source_ok:
+        local_self = audit_local_self_correction(background, geometries[:self_n], monitor)
+    else:
+        local_self = _skipped_gate_report("source/loss prerequisite failed")
+        print("local self correction convergence……skipped (source/loss prerequisite failed)", flush=True)
+
+    if source_ok and bool(local_self.get("converged", False)):
+        domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
+    else:
+        domain = _skipped_gate_report("local self/source prerequisite failed")
+        print("开放边界域扩展 Gate……skipped (local self/source prerequisite failed)", flush=True)
+
+    if source_ok and bool(local_self.get("converged", False)) and bool(domain.get("converged", False)):
+        formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
+    else:
+        formulation = _skipped_gate_report("open-domain/local-self prerequisite failed")
+        print("full-wave ↔ MQS formulation Gate……skipped (upstream prerequisite failed)", flush=True)
+
+    if (
+        source_ok
+        and bool(local_self.get("converged", False))
+        and bool(domain.get("converged", False))
+        and bool(formulation.get("converged", False))
+    ):
         mesh = audit_em_mesh_preflight(settings, background, geometries[:mesh_n], monitor)
     else:
         mesh = _skipped_mesh_report(settings, "upstream preflight prerequisite failed")
         print("pre-basis corrected EM mesh Gate……skipped (upstream prerequisite failed)", flush=True)
 
     checks = {
-        "finite_support_source_ok": all(row["finite_support_source"] for row in source_rows),
-        "terminal_source_continuity_ok": all(row["terminal_path_conservation"] for row in source_rows),
-        "material_fraction_closure_ok": max_fraction <= 1e-10,
-        "wire_loss_not_double_counted": max_partition <= 1e-12,
-        "open_boundary_domain_converged": bool(domain["converged"]),
-        "low_frequency_formulation_converged": bool(formulation["converged"]),
-        "em_mesh_converged": bool(mesh["converged"]),
-        "local_self_correction_converged": bool(local_self["converged"]),
+        **source_checks,
+        "open_boundary_domain_converged": bool(domain.get("converged", False)),
+        "low_frequency_formulation_converged": bool(formulation.get("converged", False)),
+        "em_mesh_converged": bool(mesh.get("converged", False)),
+        "local_self_correction_converged": bool(local_self.get("converged", False)),
     }
     certified = all(bool(value) for value in checks.values())
-    diagnosis = _mesh_failure_diagnosis(mesh)
-    if not local_self["converged"]:
-        joule_error = float(local_self.get("maximum_joule_total_power_relative_error", np.inf))
-        joule_limit = float(local_self.get("joule_identity_tolerance", 1e-10))
-        if joule_error > joule_limit:
-            diagnosis = {
-                "code": "local_self_joule_identity_failed",
-                "maximum_joule_total_power_relative_error": joule_error,
-                "joule_identity_tolerance": joule_limit,
-                "recommendation": "This is a local defect implementation/scaling failure, not a mesh-convergence failure. Repair the D_vol/q_cell identity; do not relax tolerance or globally refine the mesh.",
-            }
-        else:
-            diagnosis = {
-                "code": "local_self_reference_not_converged",
-                "maximum_relative_error": float(local_self["maximum_relative_error"]),
-                "fine_step": float(local_self["fine_step"]),
-                "validation_fine_step": float(local_self["validation_fine_step"]),
-                "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
-            }
+
+    if not source_ok:
+        diagnosis = {
+            "code": "source_or_loss_partition_failed",
+            "maximum_terminal_path_integral_relative_error": float(max_terminal),
+            "maximum_material_fraction_closure_error": float(max_fraction),
+            "maximum_wire_loss_partition_relative_error": float(max_partition),
+            "recommendation": "Repair source/terminal/material/loss partition before running any expensive Maxwell convergence Gate.",
+        }
+    elif not local_self.get("converged", False):
+        diagnosis = _local_self_failure_diagnosis(local_self)
+    elif not domain.get("converged", False):
+        diagnosis = {
+            "code": "open_boundary_domain_not_converged",
+            "maximum_relative_error": float(domain.get("maximum_relative_error", np.inf)),
+            "recommendation": "Enlarge or repair the open-domain truth before running MQS or global mesh refinement.",
+        }
+    elif not formulation.get("converged", False):
+        diagnosis = {
+            "code": "full_wave_mqs_formulation_not_converged",
+            "maximum_relative_error": float(formulation.get("maximum_relative_error", np.inf)),
+            "recommendation": "Resolve the full-wave/MQS formulation mismatch before running corrected global mesh refinement.",
+        }
+    else:
+        diagnosis = _mesh_failure_diagnosis(mesh)
+
     return {
         **{key: bool(value) for key, value in checks.items()},
         "source_model": getattr(background, "source_model", "unknown"),
