@@ -1,164 +1,128 @@
 \section{Physics Gate：代理训练前的物理与离散验收}
 
-本节定义生产代理训练之前必须通过的底层验证。任一关键 Gate 未通过时，不进入正式 surrogate training。
+本节定义正式 surrogate training 之前必须通过的底层验证。任一关键 Gate 未通过时，不进入生产训练。
 
-\subsection{Gate 0A：电磁 formulation、reciprocity 前提与开放域}
-当前 reciprocity 声明只在 reciprocal constitutive law 和 reciprocal boundary treatment 下成立。生产 truth model 必须明确验证/冻结：标量情形下的 $\epsilon,\mu,\sigma$，或张量情形下相应 constitutive tensors，满足所采用 Lorentz-reciprocity theorem 的对称性条件；不存在未建模的 gyrotropic、magneto-optic、nonreciprocal coupling。若材料或边界破坏 reciprocity，则不得继续硬编码 $Z^T=Z$。
-
-在代表性几何上验证 Maxwell formulation 与边界处理：
-\begin{enumerate}
-  \item 逐步扩大计算域或采用经过验证的开放边界/PML；
-  \item 比较 $Z_{\rm field}$、$D_{\rm vol}$、互阻抗、体 Joule loss 与关键场量；
-  \item 要求目标输出随边界位置/吸收层设置达到预设收敛阈值；
-  \item 在低频 regime 下，将当前 formulation 与适当的低频 formulation（例如 $A$--$\phi$）做代表性对照，确认没有明显低频病态或错误物理分支。
-\end{enumerate}
-只有通过该 Gate 后，才冻结 truth electromagnetic model。
-
-\subsection{Gate 0B：端口定义、reaction voltage、量纲与独立功率闭合}
-必须冻结 peak-phasor convention、端口电流方向、source normalization、terminal/feed/return-path 定义与 reaction-voltage convention。当前正式 source basis $S(g)$ 定义为\textbf{实值几何电流形状}，所有端口幅值和相位都放在复向量 $c$ 中；在此前提下 $S^T=S^H$ 对功率共轭定义没有歧义。若未来允许本身带复相位的 source basis，则必须重新使用正确的 adjoint/work-conjugate 定义，不能机械沿用 $-S^TE$。
-
-$v_{\rm field}=-S^TE$ 首先是与 source mode 功率共轭的广义 reaction voltage；只有在 source/terminal formulation 已校准时才解释为物理 terminal voltage。应至少通过独立 terminal voltage extraction、已知参考模型、reciprocity/功率恒等式或实验/高保真端口结果验证这一等价关系。
-
-检查 $-S^TE$ 具有电压量纲且
+\subsection{Gate 0A：Maxwell formulation、reciprocity 与开放域}
+生产 truth model 必须明确验证 constitutive reciprocity、open-boundary treatment、domain convergence 与 low-frequency formulation suitability。在代表性 geometry 上逐步扩大计算域或比较 validated ABC/PML/open-boundary，并监控
 \begin{equation}
-\frac12\operatorname{Re}(c^Hv)
+Z_{\rm field},\qquad D_{\rm vol},\qquad D_{\rm out}^{\rm phys},\qquad \text{mutual impedance},\qquad \text{key fields}.
 \end{equation}
-具有功率量纲。
+若材料或边界破坏 reciprocity，则不得继续硬编码 $Z^T=Z$。
 
-对每个 audit geometry，独立构造物理区域内的
+\subsection{Gate 0B：端口定义与独立功率闭合}
+冻结 peak-phasor convention、端口方向、source normalization、terminal/feed/return-path 与 reaction-voltage convention。对每个 audit geometry 独立构造
 \begin{equation}
-D_{\rm vol}=X^HH_\sigma X
+D_{\rm vol}=X^HH_\sigma X,
+\qquad
+D_{\rm out}^{\rm phys}\succeq0,
 \end{equation}
-以及来自 boundary Poynting bilinear form、absorbing boundary 或 PML absorption 的
-\begin{equation}
-D_{\rm out}^{\rm phys}=D_{\rm out}^{\rm phys,H}\succeq0.
-\end{equation}
-然后检查
+并检查
 \begin{align}
 Z_{\rm field}^T&\approx Z_{\rm field},\\
 D_{\rm vol}&\succeq-\varepsilon I,\\
 D_{\rm out}^{\rm phys}&\succeq-\varepsilon I,\\
 \operatorname{Herm}(Z_{\rm field})&\approx D_{\rm vol}+D_{\rm out}^{\rm phys}.
 \end{align}
-禁止在 truth audit 中把 $D_{\rm out}$ 定义成 $\operatorname{Herm}Z-D_{\rm vol}$ 后再声称功率闭合，因为那是恒真关系而不是独立验证。
+禁止把 $D_{\rm out}$ 定义成 $\operatorname{Herm}Z-D_{\rm vol}$ 后再声称 truth power balance 已验证。
 
-PML/absorbing layer 是开放域数值截断的一部分，其人工吸收计入 $D_{\rm out}^{\rm phys}$，不得作为真实海水 Joule heat 送入 thermal model。反之，真实物理海水即使位于扩大后的外层 domain，其导电损耗仍属于 $D_{\rm vol}$。物理耗散域与人工吸收域必须有互斥、版本化的 region mask。
+PML/ABC artificial absorption 属于 outward/domain-truncation power，不进入 physical thermal heat。physical seawater loss、wire/internal loss 与 outward loss 必须互斥分区。
 
-生产 surrogate 侧可以定义
+\subsection{Gate 0C：Joule 双线性型与 geometry-dependent modal consistency}
+conductivity loss operator 必须由统一 edge-space bilinear form 组装。对当前 geometry 的 thermal mode $\phi_j(g)$：
 \begin{equation}
-\widehat D_{\rm out}^{\rm imp}
-=\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol},
+[W_j(g)]_{mn}
+=\int_\Omega\sigma(x;g)\phi_j(x;g)N_m\cdot N_n\,dx,
 \end{equation}
-并按构造保证
 \begin{equation}
-\widehat D_{\rm vol}\succeq0,
-\qquad
-\widehat D_{\rm out}^{\rm imp}\succeq0.
+H_j(g)=X(g)^HW_j(g)X(g).
 \end{equation}
-在 validation/audit geometry 上必须把该 implied matrix 与独立 truth $D_{\rm out}^{\rm phys}$ 比较，并监控联合可行投影 correction norm。
+若 EM/thermal spaces 不同，$\phi_j(g)$ 在 EM quadrature 上的 transfer/interpolation 必须通过 constant-preservation、积分一致性和 mesh-refinement audit。
 
-\subsection{Gate 0C：Joule 双线性型、总损耗、modal bounds 与 thermal projection 一致性}
-conductivity loss operator 必须由统一的 edge-space 双线性型组装。对 thermal mode $\phi_j$，加权 operator 必须使用同一 finite-element basis 与同一 quadrature 直接组装
+必须验证
 \begin{equation}
-[W_j]_{mn}
-=\int_\Omega\sigma\,\phi_j\,N_m\cdot N_n\,\mathrm dx,
-\end{equation}
-而不能假定对一个一般 consistent $H_\sigma$ 做任意单侧逐点加权仍然保持 Hermitian。
-
-若 EM 与 thermal 使用不同空间/网格，则 $\phi_j$ 在 EM quadrature 上的评价必须通过一个冻结、可验证的 transfer/interpolation operator 定义，并做 constant-preservation、积分一致性与 mesh-refinement audit；跨网格 transfer 不能成为未计入的隐藏误差源。
-
-从同一 loss bilinear form 构造空间 cycle-averaged body heat，并验证
-\begin{equation}
-\sum_k Q_{{\rm vol},k}
+\sum_kQ_{{\rm vol},k}
 \approx\frac12E^HH_\sigma E,
 \end{equation}
 \begin{equation}
-\phi_j^TQ_{\rm vol}
-\approx\frac12\operatorname{Re}(c^HH_jc),
+\phi_j(g)^TQ_{\rm vol}
+\approx\frac12\operatorname{Re}(c^HH_j(g)c),
 \end{equation}
 以及
 \begin{equation}
-P_{\rm vol}
-\approx\frac12c^HD_{\rm vol}c.
+P_{\rm vol}\approx\frac12c^HD_{\rm vol}c.
 \end{equation}
-若令 test function $\phi\equiv1$，对应加权 operator 必须与 $H_\sigma$ 一致到组装容差。
 
-此外 truth 和 surrogate 都必须检查由同一非负 Joule density 推出的必要 Loewner bounds
+对当前 geometry 确定性计算
+\begin{equation}
+\phi_j^{\min}(g),\qquad\phi_j^{\max}(g),
+\end{equation}
+并检查 truth 与 surrogate 均满足
 \begin{equation}
 \boxed{
-\phi_j^{\min}D_{\rm vol}
-\preceq H_j
-\preceq
-\phi_j^{\max}D_{\rm vol}.
+\phi_j^{\min}(g)D_{\rm vol}(g)
+\preceq H_j(g)
+\preceq\phi_j^{\max}(g)D_{\rm vol}(g).
 }
 \end{equation}
-违反该条件说明 $H_j$ 与 $D_{\rm vol}$ 不可能来自同一空间耗散定义。禁止使用不能满足这些闭合关系的独立 field reconstruction 定义 Joule heat。
 
-\subsection{Gate 0D：端口 source、物理正则化、无双重计损与几何连续性}
-每个生产几何必须满足 conductor/package 的设计包封、无非法穿透/最小间隙、人工边界裕量以及 material-fraction closure。
+\subsection{Gate 0D：source regularization、无双重计损与几何连续性}
+每个生产 geometry 必须满足 conductor/package 包封、无非法穿透/最小间隙、边界裕量与 material-fraction closure。source 必须具有明确 terminal orientation 与 continuity interpretation。
 
-端口 filament/source 必须具有明确 terminal 定义和 orientation。对于真正闭合的 current loop，可检查离散 divergence-free/闭合回路条件；对于有两个 terminals 的开放 spiral path，则必须显式表示 terminal source/sink、return path 或与外部 circuit 一致的 charge/current continuity，使
+零半径 line current 的 self field/self impedance 不能由 mesh size 决定，必须使用与真实 conductor scale 绑定的 finite-support/stranded/regularized source model。若 wire ohmic loss 已由独立 $R_{\rm wire}$ 处理，不得在 $D_{\rm vol}$ 中再次计入同一铜损。
+
+对 $g\to g+\delta g$ 检查 source deposition、material fractions、$Z(g)$、$D_{\rm vol}(g)$、deterministic $\Phi(g)$ 和 $H_j(g)$ 不出现由 midpoint/stencil/mode-index switching 造成的非物理跳跃。
+
+\subsection{Gate 0E：空间离散与 thermal time-resolution consistency}
+至少选中心、边界和困难 geometry 做 mesh refinement，监控
 \begin{equation}
-\nabla\cdot J_s=-i\omega\rho_s
+Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j(g),\quad P_{\rm vol},\quad T_{\max},\quad a_*.
 \end{equation}
-在离散意义下有明确解释。禁止把所有开放端口路径简单强制成 divergence-free，也禁止忽略 endpoint/return-path physics 后仍宣称端口模型完整。
 
-理想零半径 line current 的 self field/self impedance 不能由网格尺寸充当隐式物理正则化。生产 source 必须采用与真实导体尺度绑定的 finite-cross-section impressed-current support、stranded-conductor approximation，或具有明确解析依据的 regularized filament/self-term correction。mesh size、cell midpoint assignment 或 deposition stencil 不能决定等效 wire radius。尤其 self impedance $Z_{pp}$ 必须在固定物理 wire radius/regularization 下随 mesh refinement 收敛；若不收敛，则该 truth formulation 不合格。
-
-若 wire ohmic loss 由独立 $R_{\rm wire}$ 处理，则 source-support/conductor region 的材料 mask 必须与此分层一致：不得同时把同一铜损计入 $H_\sigma/D_{\rm vol}$ 和 $R_{\rm wire}$；也不得把本应由 conductor 占据的 source-support region 偷偷当作海水导电损耗而造成 double counting。每一项实功率必须能唯一归属到 physical volume loss、wire/internal loss 或 outward loss。
-
-对几何参数做小扰动 $g\to g+\delta g$，检查 $B(g)$、material operators、$Z(g)$、$D_{\rm vol}(g)$ 和 $H_j(g)$ 不出现由 midpoint assignment、采样点数量突变等造成的非物理跳跃。若存在 staircasing，应先改用连续、守恒的 source deposition 与足够平滑的 sub-cell quadrature。
-
-\subsection{Gate 0E：空间离散收敛}
-至少选取中心、边界和困难几何做 mesh refinement。分别监控
+thermal basis time-scale policy 必须和 spatial resolution 匹配。对 diffusivity $\alpha$ 与 anchor time $\tau$，若
 \begin{equation}
-Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j,\quad P_{\rm vol},\quad T_{\max},\quad a_*.
+\sqrt{\alpha\tau}\ll h_T
 \end{equation}
-训练 truth 数据采用的网格必须位于工程目标所需的收敛区间。对 $Z_{pp}$ 的 mesh convergence 必须在固定物理 wire/source regularization 下检查；小 linear residual 不能替代 mesh convergence。
+其中 $h_T$ 是 relevant thermal resolution，则该 anchor 主要在解析离散 source placement。除非应用确实要求且 full-order mesh 已解析该尺度，否则不能把它作为 production basis rank 的硬目标。
 
-\subsection{Gate 0F：thermal well-posedness、quadratic dissipativity、点值正性与 transient-aware ROM}
-当前 finite-time ETD 与 $t=\infty$ steady-state 理论默认在 temperature-rise space 上
+\subsection{Gate 0F：geometry-aware thermal basis generator}
+正式 thermal approximation 为
 \begin{equation}
-M_T(g)\succ0,
-\qquad
-K_T(g)\succ0
+\boxed{\theta(x,t;g)\approx\Phi(x;g)a(t;g)}
 \end{equation}
-对生产几何成立，并具有足够统一的 conditioning/coercivity。若采用 pure Neumann 等使 $K$ 存在零模的边界，则必须显式处理 nullspace 与能量积累，不能继续无条件使用 $K^{-1}$ 或唯一 steady-state 理论。
-
-对零源 reduced linear system
-\begin{equation}
-M_r\dot a=-K_ra
-\end{equation}
-定义数学上的 quadratic Lyapunov functional
+且首版
 \begin{equation}
 \boxed{
-V(a)=\frac12a^TM_ra.
+\Phi(g)=
+[\Phi_{\rm bg},\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\mathcal T_{\rm rx}(g)\Psi_{\rm rx}].
 }
 \end{equation}
-由 $M_r,K_r\succ0$ 有
+
+Gate 必须验证：
+\begin{enumerate}
+  \item canonical block ordering 与 mode semantics 跨 geometry 不变；
+  \item rigid translation/rotation transport 正确，interpolation/conservative remap 不引入非物理 source/energy drift；
+  \item $\Phi(g)$ 对小 geometry perturbation 连续；
+  \item 对生产 geometry，$\Phi(g)$ 满列秩；
+  \item
+  \begin{equation}
+  M_r(g)=\Phi(g)^TM_T(g)\Phi(g)\succ0,
+  \qquad
+  K_r(g)=\Phi(g)^TK_T(g)\Phi(g)\succ0;
+  \end{equation}
+  \item $M_r/K_r$ conditioning 在目标域内可接受；
+  \item size/deformation variation 在首版 rigid transport 下的误差通过 held-out audit；若不通过，再增加 deterministic scale-aware transform。
+\end{enumerate}
+
+禁止用 neural network 预测 $\Phi(g)$ 作为首版补丁，也禁止通过一个固定 global basis 逐位置堆热点 mode 来掩盖 transport 失配。
+
+\subsection{Gate 0G：canonical rank、resolvent 与 held-out trajectory}
+canonical background/TX/RX modes 的自动 rank 必须覆盖完整 current-induced heat-source span、wire/source patterns、允许的 initial-condition family 与选定的可解析 time scales。
+
+对任意 source/initial-condition resolvent anchor
 \begin{equation}
-\boxed{
-\dot V=-a^TK_ra\le0.
-}
+A_su=b,\qquad A_s=K+sM\succ0,
 \end{equation}
-因此零源 ROM 在 $M_r$-诱导二次范数下是 dissipative/stable。这里 $V$ 是用于稳定性分析的二次 Lyapunov functional，\textbf{不是}物理总 sensible heat；后者具有不同的线性体积分定义。文档和实现不得把两者混称为同一个“热能”。
-
-quadratic dissipativity 也不等价于 pointwise positivity 或 discrete maximum principle。共享 Galerkin basis 可以变号，因此即使 full heat equation 对给定边界/初值满足温度正性，重构 $\Phi a$ 也可能产生局部 undershoot/overshoot。生产验证必须监控 $T_{\min}$、$T_{\max}$、conductor-temperature functional 与任何安全阈值。若应用要求数学上严格的 pointwise positivity/maximum principle，则必须升级为 positivity/bound-preserving ROM 或 limiter；普通 Galerkin ROM 不得宣称天然拥有该性质。
-
-热边界条件必须有明确物理含义。若采用有限盒子上的 ambient Dirichlet 或 Robin boundary，应通过扩大 thermal domain、改变 boundary location 或与更高保真边界模型比较，确认长期温升对人工边界不过度敏感。
-
-thermal basis 的自动 rank 必须覆盖 geometry、完整 current-induced heat-source span、wire/source patterns、允许的 initial-condition family 与目标时间尺度。对任意 source 或 initial-condition resolvent anchor，统一写成
-\begin{equation}
-A_su=b,
-\qquad
-A_s=K+sM\succ0,
-\end{equation}
-其中 source anchor 取 $b=Q_\alpha$，initial-condition anchor 取 $b=M\theta_{0,\beta}$。Galerkin approximation $\tilde u=\Phi a_r$ 的 residual 为
-\begin{equation}
-r=b-A_s\tilde u.
-\end{equation}
-
-自动 rank 的理论停止标准必须使用与 solution error 有明确关系的归一化能量/dual norm，而不是未经尺度化的 Euclidean residual。对 SPD $A_s$，有精确恒等式
+Galerkin error 使用
 \begin{equation}
 \boxed{
 \eta_s^2
@@ -166,42 +130,59 @@ r=b-A_s\tilde u.
 =\frac{\|u-\tilde u\|_{A_s}^2}{\|u\|_{A_s}^2}.
 }
 \end{equation}
-因此 anchor-wise rank criterion 应基于 $\eta_s$ 或具有已知等价常数的可认证 estimator。若为了性能使用近似/preconditioned estimator，必须验证其上下界或经验等价性，不能把任意 residual norm 直接称为严格相对解误差。
 
-只要求 $\theta_0$ 在 $t=0$ 被投影得好，不足以保证 $e^{-M^{-1}Kt}\theta_0$ 的整个 homogeneous evolution 被 ROM 准确表示。冻结 audit geometries 上还必须比较 full thermal 与 ROM 的短时、中间时间和接近稳态 outputs。
+validation 不能只报告一个 worst relative number。必须记录 worst anchor 的 geometry、source type、canonical block、shift/time scale、relative error 与 absolute energy/power scale。
 
-生产 API 若接受 reduced coordinates $a_0$，必须明确：只有属于已定义/已审计 initial-condition family 的状态才携带 full-order accuracy claim；超出该 family 的任意 reduced $a_0$ 只能视为 ROM 内部状态查询。若允许输入任意 full temperature field $T_0(x)$，必须显式进行 $M$-orthogonal projection、报告 initial projection error，并在需要时扩展 initial-condition family/basis。
+完全 held-out geometries 上必须直接比较 full thermal 与 geometry-aware ROM 的可解析短时、中间时间、长时间和 steady outputs，包括 $T_{\min}$、$T_{\max}$、wire-temperature functional 与关键安全指标。
 
-wire-resistance temperature functional $\bar\theta_p(a,g)$ 也必须在 full-vs-ROM audit 中验证。非线性 steady candidate 还必须通过 reduced closed-loop Jacobian local-stability 检查；在 frozen full-order audit geometries 上还应通过 full thermal perturbation/steady audit 验证 ROM 没有制造或删除关键稳定分支。若没有额外证明，reduced local stability 不能自动升级为 full-order global stability certificate。
+\subsection{Gate 0H：初值、点值正性与零源耗散}
+full initial field 使用当前 geometry 的 $M$-orthogonal projection。只要求 $t=0$ projection error 小不足以保证 homogeneous evolution 精确，必须额外做 trajectory audit。
 
-若存在多个稳定 equilibrium，$t=\infty$ 的物理语义必须与给定 initial condition（以及显式 circuit dynamic state，若存在）的 basin of attraction 一致；无法可靠判定 basin 时应报告 multiple/ambiguous validated steady states，而不是任选一个稳定 root。若系统趋于周期轨道、持续漂移或发生 thermal runaway，则不存在当前语义下的有限稳定 $t=\infty$ equilibrium。
+对静态 geometry 的零源 reduced system
+\begin{equation}
+M_r\dot a=-K_ra
+\end{equation}
+定义
+\begin{equation}
+V(a;g)=\frac12a^TM_r(g)a,
+\end{equation}
+则
+\begin{equation}
+\dot V=-a^TK_r(g)a\le0.
+\end{equation}
+这保证 quadratic dissipativity，不保证 pointwise positivity/maximum principle。生产验证必须监控 $T_{\min}$、$T_{\max}$；若应用要求严格 positivity/bounds，则升级 ROM/integrator。
 
-\subsection{Gate 0G：模型假设、时间尺度、生产域与 operating-mode 边界}
-当前线圈采用 impressed finite-support/regularized-filament current + 集中 AC resistance，而不是 full solid-conductor eddy-current model。必须用更高保真或实验参考确认 skin/proximity/feed/return-path 与 source regularization 近似在目标域内足够。
+\subsection{Gate 0I：wire-temperature、steady state 与 circuit feedback}
+wire resistance 必须通过明确 conductor-temperature functional
+\begin{equation}
+\bar\theta_p=\ell_p^{(T)T}(g)\Phi(g)a
+\end{equation}
+进入 constitutive law。该 functional 必须在 full-vs-ROM audit 中验证。
 
-当前 wire model 只增加实、对角的 $R_{\rm wire}$。如果目标频率/导体尺寸下 skin/proximity effect 造成不可忽略的 internal reactive impedance、非均匀热分布或端口间 conductor-loss coupling，则必须在 Physics Gate 阶段升级为相应的被动 complex wire-impedance/heat model 后再生成 truth dataset，不能靠神经代理吸收这部分缺失物理。
+非线性 steady candidate 必须通过 residual、constitutive-domain 与 closed-loop Jacobian local-stability audit。若存在多个 stable equilibria，$t=\infty$ 语义必须与 initial-condition basin 一致；无法判断时报告 ambiguity。
 
-当前海水热模型若不含流体对流，只代表所定义的 conduction/boundary heat-transfer model；若目标是长期真实海水温升，必须单独验证自然/强制对流能否忽略或由有效模型吸收。
+若实际 system 由 source/load/compensation network 决定 current，则显式接 circuit equations，并检查 near-resonance/high-Q conditioning。若 circuit ring-up time 不再远短于 thermal/envelope time scale，必须引入 circuit dynamic states。
 
-frequency--transient 分层必须验证电磁载波/场建立时间远短于 thermal/operating-envelope 时间尺度。若 excitation 具有快速调制、宽带/多谐波或强电磁非线性，则单频 cycle-averaged 模型失效。
+\subsection{Gate 0J：静态 geometry 适用边界}
+当前一次 thermal query 默认 geometry 静止。若未来 $g=g(t)$，由于
+\begin{equation}
+\theta=\Phi(g(t))a(t),
+\end{equation}
+必须加入
+\begin{equation}
+\Phi^TM_T\dot\Phi\,a
+\end{equation}
+等 transport terms，同时更新 geometry-dependent EM tensors 和 reduced operators。忽略该项的“逐步换 basis”不属于当前 validated model。
 
-当前 $c$ 表示规定的复端口电流。若真实系统由电压源、谐振补偿网络或负载决定电流，则必须显式接 circuit equations，并在 near-resonance/high-Q 区域检查 circuit conditioning。把 circuit 方程当作每个 thermal stage 的代数准稳态 solve 还隐含 circuit ring-up/settling time $\tau_{\rm circ}$ 远短于 thermal 与外部 envelope 时间尺度；若这一尺度分离不成立，则必须显式引入 circuit dynamic states，而不能继续使用静态 phasor network equation。
-
-当前 geometry 在一次 thermal query 中默认静止。若存在运动、热膨胀或主动对准导致 $g=g(t)$，必须验证其时间尺度并显式更新 geometry-dependent tensors/operators；固定几何 surrogate cache 不能直接沿用。
-
-必须冻结 validated geometry domain $\mathcal G_{\rm prod}$、current/circuit operating domain、thermal-state/constitutive domain 与 initial-condition family。域外输入只能返回 out-of-domain/unsupported 或进入单独的 unvalidated extrapolation 路径，不能继承域内误差声明。
-
-当前 passivity 约束只针对冻结工作频率。若未来 frequency 成为 surrogate input，必须升级到 broadband positive-real/causal consistency，不能只做逐频率 PSD 检查。
-
-\subsection{Gate 通过后的数据冻结}
-Physics Gate 通过后，应冻结并版本化：
+\subsection{Gate 通过后的冻结对象}
+Physics Gate 通过后应冻结并版本化：
 \begin{itemize}
-  \item 工作频率、相量幅值/符号、reciprocity constitutive assumptions 与端口/reaction-voltage 定义；
-  \item PDE formulation、physical domain、PML/absorbing region、网格与边界；
-  \item source/terminal/return-path、physical wire/source regularization、material deposition 与 loss-region masks；
-  \item constitutive parameters；
-  \item $H_\sigma/W_j/Z/D_{\rm vol}/D_{\rm out}^{\rm phys}/H_j$ extraction、modal bounds 与功率 conventions；
-  \item thermal full model、coercivity/nullspace/positivity policy、wire-temperature functional、source/initial-condition family、cross-space transfer 与 ROM residual/error norm definition；
-  \item $\mathcal G_{\rm prod}$、operating/state domains、current-controlled/circuit-controlled mode、circuit timescale assumption 与 geometry-static/dynamic policy。
+  \item frequency、phasor convention、reciprocity assumptions 与 port/reaction-voltage definition；
+  \item Maxwell formulation、domain/open-boundary、mesh、source regularization 与 material/loss masks；
+  \item $H_\sigma/Z/D_{\rm vol}/D_{\rm out}^{\rm phys}$ extraction；
+  \item canonical thermal mode library、local frames、transport/interpolation rule、mode ordering 与 time-scale policy；
+  \item $g\mapsto\Phi(g)$ generator、$W_j(g)/H_j(g)$ extraction 与 geometry-dependent modal-bound definition；
+  \item thermal full model、coercivity/nullspace/positivity policy、wire-temperature functional、initial-condition family；
+  \item $\mathcal G_{\rm prod}$、operating/state domains、current/circuit mode 与 static/dynamic geometry policy。
 \end{itemize}
-只有在上述版本固定后生成的 truth snapshots 才属于同一个可学习函数族。任何基础物理改变都应触发 truth dataset 版本更新，而不是直接在旧标签上继续训练。
+任何上述版本改变都触发 downstream tensor dataset/model invalidation。
