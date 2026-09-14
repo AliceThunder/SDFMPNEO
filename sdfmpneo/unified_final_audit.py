@@ -256,6 +256,15 @@ def _trajectory_case(model, geometry, truth, predicted, operating, times):
     }
 
 
+def _audit_operating(settings, cfg):
+    if "drive" in cfg:
+        return cfg["drive"]
+    if "operating" in cfg:
+        return cfg["operating"]
+    prediction = settings["PREDICTION"]
+    return prediction.get("drive", prediction.get("operating"))
+
+
 def run_final_held_out_audit(settings, model, geometries, monitor=None):
     """Run final audit geometries that were not used by any earlier stage."""
     geometries = list(geometries)
@@ -270,7 +279,9 @@ def run_final_held_out_audit(settings, model, geometries, monitor=None):
     dynamic_tol = float(cfg.get("reduced_dynamic_relative_tolerance", 1e-1))
     thermal_tol = float(cfg.get("full_vs_rom_thermal_tolerance", settings["TRAINING"].get("thermal_basis_energy_tolerance", 5e-2)))
     circuit_limit = float(cfg.get("circuit_condition_limit", 1e8))
-    operating = settings["PREDICTION"].get("drive", settings["PREDICTION"].get("operating"))
+    operating = _audit_operating(settings, cfg)
+    if operating is None:
+        raise ValueError("final audit requires an explicit operating or drive setting")
 
     thermal_error, thermal_worst, thermal_diag, audited_times = audit_geometry_aware_thermal_trajectories(
         model.background,
@@ -322,6 +333,7 @@ def run_final_held_out_audit(settings, model, geometries, monitor=None):
         **{key: bool(value) for key, value in checks.items()},
         "sample_count": len(rows),
         "times": [float(v) for v in times],
+        "operating": operating,
         "maximum_full_vs_rom_thermal_relative_error": float(thermal_error),
         "worst_full_vs_rom_thermal": thermal_worst,
         "full_vs_rom_thermal_diagnostics": thermal_diag,
