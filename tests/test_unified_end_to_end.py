@@ -5,7 +5,7 @@ from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_tensor_surrogate import generate_tensor_dataset
 from sdfmpneo.unified_tensor_training import train_matrix_tensor_surrogate
-from sdfmpneo.unified_thermal import build_thermal_basis
+from sdfmpneo.unified_thermal import build_geometry_aware_thermal_library
 
 
 MATERIALS = {
@@ -51,22 +51,25 @@ def small_background():
 def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_path):
     pytest.importorskip("torch")
     background = small_background()
-    geometries = [geometry(0.0015 * np.sin(i)) for i in range(8)]
-    _, thermal_report = build_thermal_basis(
+    geometries = [geometry(0.0015 * np.sin(i)) for i in range(9)]
+    library, thermal_report = build_geometry_aware_thermal_library(
         background,
+        geometry(),
         geometries[:2],
         validation_geometries=geometries[2:3],
-        target_relative_error=0.9,
+        target_relative_error=0.99,
         time_scales=(0.1, 1.0),
     )
     assert thermal_report.converged
-    assert background.thermal_rank > 0
+    background.set_thermal_library(library)
+    assert background.thermal_rank == library.rank > 0
 
-    dataset = generate_tensor_dataset(background, geometries[2:], seed=9)
+    dataset = generate_tensor_dataset(background, geometries[3:], seed=9)
     assert len(dataset.indices("train")) >= 3
     assert len(dataset.indices("validation")) == 1
     assert len(dataset.indices("test")) == 1
     assert len(dataset.indices("audit")) == 1
+    assert dataset.phi_min.shape == dataset.phi_max.shape == (6, library.rank)
     assert dataset.audit["maximum_linear_relative_residual"] <= 1e-8
     assert dataset.audit["maximum_reciprocity_relative_error"] <= 1e-8
     assert dataset.audit["maximum_open_boundary_power_balance_relative_error"] <= 1e-7
@@ -75,11 +78,8 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert dataset.audit["independent_outward_power_available"] == 1.0
     assert dataset.audit["maximum_relative_loewner_violation"] <= 1e-8
 
-    phi = background.thermal_basis
     surrogate, report = train_matrix_tensor_surrogate(
         dataset,
-        np.min(phi, axis=0),
-        np.max(phi, axis=0),
         network_settings={"width": 8, "blocks": 1, "activation": "silu"},
         training_settings={
             "epochs": 2,
@@ -103,17 +103,18 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert report.pod_rank >= 1
     assert np.isfinite(report.best_validation_loss)
 
-    model = UnifiedNeuralElectroThermalModel(
-        background,
-        surrogate,
-        default_geometry=geometry(),
-    )
+    model = UnifiedNeuralElectroThermalModel(background, surrogate, default_geometry=geometry())
     query_geometry = geometry(0.001)
     context = model.geometry_context(query_geometry)
+    reference_context = model.geometry_context(geometry())
+    assert context.thermal_basis.shape == reference_context.thermal_basis.shape
+    assert not np.allclose(context.thermal_basis, reference_context.thermal_basis)
+
     full_initial = np.linspace(0.0, 1.0, background.n_cells)
     projected = model.project_initial_temperature(full_initial, query_geometry)
-    projection_residual = background.thermal_basis.T @ (
-        context.thermal_mass_full @ (full_initial - background.thermal_basis @ projected)
+    phi = context.thermal_basis
+    projection_residual = phi.T @ (
+        context.thermal_mass_full @ (full_initial - phi @ projected)
     )
     assert np.linalg.norm(projection_residual) <= 1e-10 * max(
         1.0, np.linalg.norm(context.thermal_mass_full @ full_initial)
@@ -151,9 +152,14 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     model.save(model_path)
     with np.load(model_path, allow_pickle=False) as data:
         assert "pod_basis" in data.files
+        assert "thermal_background_modes" in data.files
+        assert "thermal_local_modes_0" in data.files
+        assert "thermal_basis" not in data.files
         assert "em_basis" not in data.files
         assert not any(name.startswith("maxwell") for name in data.files)
     loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
+    loaded_context = loaded.geometry_context(query_geometry)
+    assert np.allclose(loaded_context.thermal_basis, context.thermal_basis)
     loaded_result = loaded.predict(
         0.0,
         initial_state=np.zeros(loaded.thermal_rank),
