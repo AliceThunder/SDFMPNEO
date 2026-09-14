@@ -23,7 +23,7 @@ from .unified_tensor_surrogate import UnifiedTensorSurrogate
 from .unified_thermal import GeometryAwareThermalLibrary
 
 ARCHITECTURE = "unified-geometry-tensor-geometry-aware-thermal-rom"
-FORMAT_VERSION = 12
+FORMAT_VERSION = 13
 
 
 def _plain(value):
