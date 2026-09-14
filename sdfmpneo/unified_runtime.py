@@ -91,6 +91,30 @@ def _cache_paths(directory):
     return directory/"unified.cache.json",directory/"unified.geometry_thermal.npz",directory/"unified.tensor_dataset.npz"
 
 
+def _require_release_artifact(path):
+    """Require the production release audits before run.py is allowed to predict."""
+    try:
+        with np.load(path,allow_pickle=False) as data:
+            meta=json.loads(str(data["metadata_json"]))
+        release=dict(meta.get("metadata",{}))
+        preflight=dict(release.get("truth_preflight",{}))
+        gate=dict(release.get("physics_gate",{}))
+        final=dict(release.get("final_held_out_audit",{}))
+    except (OSError,KeyError,ValueError,TypeError) as exc:
+        raise ValueError("model artifact lacks readable production release metadata") from exc
+    checks={
+        "truth_preflight":bool(preflight.get("certified",False)),
+        "physics_gate":bool(gate.get("certified",False)),
+        "final_held_out_audit":bool(final.get("certified",False)),
+        "production_integrator":bool(final.get("production_integrator_ok",False)),
+        "certificate_level":final.get("certificate_level")=="frozen_held_out_numerical_validation",
+    }
+    if not all(checks.values()):
+        failed=[name for name,value in checks.items() if not value]
+        raise ValueError("model artifact is not a certified production release: "+", ".join(failed))
+    return release
+
+
 def _require_effective_thermal_basis(report):
     get=report.get if isinstance(report,dict) else lambda name,default=None:getattr(report,name,default)
     trajectory=get("maximum_validation_trajectory_relative_error",None)
@@ -239,6 +263,7 @@ def _initial_state(model,prediction,geometry):
 
 def predict(settings,model_path,output_path,settings_dir):
     if not model_path.is_file(): raise FileNotFoundError(f"模型不存在：{model_path}")
+    _require_release_artifact(model_path)
     device=_device(settings["TRAINING"].get("device","cuda")); model=UnifiedNeuralElectroThermalModel.load(model_path,device=device)
     p=settings["PREDICTION"]; geometry=p.get("geometry") or settings["DEFAULT_GEOMETRY"]; initial=_initial_state(model,p,geometry)
     operating=p.get("drive",p.get("operating",[1.0]+[0.0]*(model.current_dimension-1))); results=[]; tensors=model.tensors(geometry)
