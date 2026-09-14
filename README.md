@@ -158,6 +158,7 @@ local problem 在当前 coil/package 的 canonical rigid frame 中求解；trans
     "growth": 1.5,
     "max_step": 0.02,
     "relative_tolerance": 1e-1,
+    "joule_identity_tolerance": 1e-10,
 }
 ```
 
@@ -203,7 +204,7 @@ local total/modal Joule identity 默认要求到 `1e-10`，local 与 corrected g
 
 ```python
 "open_boundary_check": {
-    "samples": 3,
+    "samples": 1,
     "padding": 0.12,
     "relative_tolerance": 5e-2,
 },
@@ -219,11 +220,13 @@ local total/modal Joule identity 默认要求到 `1e-10`，local 与 corrected g
 },
 ```
 
+正式物理域已经是 ±0.27 m，expanded reference 到 ±0.39 m。默认只做 1 个昂贵 open-domain certification sample，5% 阈值不变；这样避免每次 physical cache 重建重复做三组 8万/16万 DOF 级复数稀疏 LU。
+
 \[
 P_{\rm vol}(c)=\frac12c^HD_{\rm vol}c.
 \]
 
-preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mutual error、unresolved raw self、local-reference nonconvergence 和 corrected-production nonconvergence。
+preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mutual error、unresolved raw self、local-reference nonconvergence、local Joule identity failure 和 corrected-production nonconvergence。
 
 ## 6. Geometry-aware deterministic thermal ROM
 
