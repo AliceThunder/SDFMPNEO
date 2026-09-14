@@ -76,8 +76,10 @@ def test_em_mesh_gate_reports_self_vs_mutual_without_relaxing_failure(monkeypatc
     monkeypatch.setattr(preflight, "_solve_fields", fake_solve)
     report = preflight.audit_em_mesh_preflight(settings, base, [{"case": 0}])
     sample = report["samples"][0]
+    diagnosis = preflight._mesh_failure_diagnosis(report)
 
     assert not report["converged"]
     assert sample["maximum_relative_error"] > 1e-1
     assert sample["diagnostic_z_self_relative_error"] > sample["relative_mutual_impedance_error"]
     assert sample["diagnostic_d_vol_self_relative_error"] > sample["diagnostic_d_vol_mutual_relative_error"]
+    assert diagnosis["code"] == "unresolved_source_self_response"
