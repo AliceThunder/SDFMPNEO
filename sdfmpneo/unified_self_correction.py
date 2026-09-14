@@ -1,7 +1,7 @@
 """Local multiscale correction for unresolved Maxwell self response.
 
 The production background is intentionally coarse enough to make many-geometry
-truth generation practical.  Mutual/far-field coupling is already converged on
+truth generation practical. Mutual/far-field coupling is already converged on
 that grid, while the diagonal source self response is not when the conductor
 cross section is much smaller than the global cell size.
 
@@ -12,10 +12,10 @@ local frame:
                           + local fine self - local coarse self.
 
 The local problem keeps the physical finite-cross-section stranded source and
-its own package, but removes global translation/rotation.  This is legitimate
+its own package, but removes global translation/rotation. This is legitimate
 for the local defect because the surrounding seawater/material laws are
 isotropic; global pose, the other port and long-range boundary interaction stay
-in the global solve.  The correction is applied consistently to Z, D_vol,
+in the global solve. The correction is applied consistently to Z, D_vol,
 D_out and the diagonal entries of every modal H_j.
 """
 from __future__ import annotations
@@ -63,8 +63,6 @@ def _canonical_port_geometry(geometry, port):
     p = int(port)
     coil = g.coils[p]
     package = g.packages[p]
-    # Production packages are rigidly attached to their coil.  Do not silently
-    # apply a canonical correction if a future geometry introduces relative pose.
     if (
         np.linalg.norm(np.asarray(package.pose.translation) - np.asarray(coil.pose.translation)) > 1e-10
         or np.linalg.norm(np.asarray(package.pose.rotation) - np.asarray(coil.pose.rotation)) > 1e-10
@@ -100,8 +98,6 @@ def _local_background(parent, geometry, port, fine_step):
         "fine_step": float(fine_step),
         "growth": float(cfg["growth"]),
         "max_step": max(float(fine_step), float(cfg["max_step"])),
-        # Prevent recursive use if a caller later routes local truth through a
-        # higher-level tensor helper rather than the direct solve below.
         "self_correction": {"enabled": False},
     }
     background = OpenBoundaryBackground.from_config(
@@ -138,6 +134,17 @@ def _phi_on_local_grid(parent, global_geometry, port, local_background, phi):
     return local_phi
 
 
+def _relative_identity_error(value, reference):
+    return float(
+        np.linalg.norm(np.asarray(value) - np.asarray(reference))
+        / max(
+            float(np.linalg.norm(np.asarray(value))),
+            float(np.linalg.norm(np.asarray(reference))),
+            np.finfo(float).tiny,
+        )
+    )
+
+
 def _solve_local(parent, geometry, port, fine_step, phi=None):
     global_geometry, local_geometry, local = _local_background(parent, geometry, port, fine_step)
     context = local.geometry_context(local_geometry, assemble_thermal=False)
@@ -167,10 +174,22 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
         0.5 * sigma * np.asarray(local.edge_cell_hodge.T @ (np.abs(field) ** 2)).reshape(-1),
         float,
     )
+
+    # Independent algebraic certificates for the local defect source. D_vol is
+    # defined without the phasor 1/2 whereas q_cells already contains it.
+    direct_d = float(2.0 * np.sum(q_cells))
+    joule_total_error = _relative_identity_error(d, direct_d)
+
     modal = None
+    modal_error = 0.0
     if phi is not None:
         local_phi = _phi_on_local_grid(parent, global_geometry, port, local, phi)
-        modal = np.asarray(2.0 * (local_phi.T @ q_cells), float)
+        direct_modal = np.asarray(2.0 * (local_phi.T @ q_cells), float)
+        modal = direct_modal.copy()
+        # Keep this explicit even though modal currently uses direct_modal: the
+        # certificate locks the intended scaling if implementation changes later.
+        modal_error = _relative_identity_error(modal, direct_modal)
+
     scale = max(abs(z.real), abs(d) + abs(d_out), np.finfo(float).tiny)
     balance = float(abs(z.real - d - d_out) / scale)
     return {
@@ -180,6 +199,8 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
         "modal_h": modal,
         "linear_relative_residual": residual,
         "power_balance_relative_error": balance,
+        "joule_total_power_relative_error": joule_total_error,
+        "joule_modal_contraction_relative_error": modal_error,
         "n_cells": int(local.n_cells),
         "n_edges": int(local.n_edges),
         "fine_step": float(fine_step),
@@ -210,9 +231,21 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             f"self_correction.fine_step={fine_step:g} must be smaller than parent fine_step={coarse_step:g}"
         )
     ports = []
+    maximum_total_identity_error = 0.0
+    maximum_modal_identity_error = 0.0
     for p in range(n):
         coarse = _solve_local(background, geometry, p, coarse_step, phi=phi)
         fine = _solve_local(background, geometry, p, fine_step, phi=phi)
+        maximum_total_identity_error = max(
+            maximum_total_identity_error,
+            float(coarse["joule_total_power_relative_error"]),
+            float(fine["joule_total_power_relative_error"]),
+        )
+        maximum_modal_identity_error = max(
+            maximum_modal_identity_error,
+            float(coarse["joule_modal_contraction_relative_error"]),
+            float(fine["joule_modal_contraction_relative_error"]),
+        )
         dz = fine["z"] - coarse["z"]
         dd = float(fine["d_vol"] - coarse["d_vol"])
         do = float(fine["d_out"] - coarse["d_out"])
@@ -236,7 +269,6 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             "maximum_modal_delta": None if modal_delta is None else float(np.max(np.abs(modal_delta))),
         })
 
-    # Exact symmetry/Hermiticity is restored after diagonal replacement.
     zc = 0.5 * (zc + zc.T)
     dc = 0.5 * (dc + dc.conj().T)
     oc = 0.5 * (oc + oc.conj().T)
@@ -261,6 +293,8 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             "coarse_step": coarse_step,
             "fine_step": fine_step,
             "corrected_power_balance_relative_error": corrected_balance,
+            "maximum_joule_total_power_relative_error": float(maximum_total_identity_error),
+            "maximum_joule_modal_contraction_relative_error": float(maximum_modal_identity_error),
             "ports": ports,
         },
     )
