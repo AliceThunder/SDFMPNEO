@@ -10,8 +10,102 @@ from .unified_physics_gate import (
     _relative,
     _solve_fields,
     audit_low_frequency_formulation,
-    audit_open_boundary_domain,
 )
+
+
+def _hermitian(matrix):
+    value = np.asarray(matrix, complex)
+    return 0.5 * (value + value.conj().T)
+
+
+def _diagonal(matrix):
+    value = np.asarray(matrix)
+    return np.diag(np.diag(value))
+
+
+def audit_open_boundary_domain(settings, background, geometries, monitor=None):
+    """Check domain convergence without requiring boundary flux itself to be invariant.
+
+    In conductive seawater, moving the artificial boundary outward changes the
+    physical loss partition: more power is dissipated in the newly included
+    seawater volume and less power reaches the artificial boundary.  Therefore
+    ``D_out`` is *not* a domain-invariant observable.  The hard Gate checks port
+    response / volume loss convergence and measures the change in ``D_out`` only
+    relative to the total terminal-dissipation scale.  The raw relative D_out
+    change is still reported as a diagnostic.
+    """
+    cfg = dict(settings["BACKGROUND"].get("open_boundary_check", {}))
+    tolerance = float(cfg.get("relative_tolerance", 5e-2))
+    padding = np.asarray(cfg.get("padding", 0.12), float)
+    if padding.ndim == 0:
+        padding = np.full(3, float(padding))
+    if padding.shape != (3,) or np.any(padding <= 0.0):
+        raise ValueError("open_boundary_check.padding must be positive scalar/length-3")
+
+    bounds = np.asarray(settings["BACKGROUND"]["bounds"], float)
+    expanded = bounds.copy()
+    expanded[:, 0] -= padding
+    expanded[:, 1] += padding
+    reference = _background_from_settings(settings, bounds=expanded)
+
+    rows = []
+    for index, geometry in enumerate(geometries):
+        if monitor is not None:
+            monitor.checkpoint()
+        _, _, _, z0, d0, o0 = _solve_fields(background, geometry)
+        _, _, _, z1, d1, o1 = _solve_fields(reference, geometry)
+
+        herm0 = _hermitian(z0)
+        herm1 = _hermitian(z1)
+        terminal_scale = max(
+            float(np.linalg.norm(herm1)),
+            float(np.linalg.norm(d1 + o1)),
+            np.finfo(float).tiny,
+        )
+        outward_partition_change = float(np.linalg.norm(o0 - o1) / terminal_scale)
+        outward_fraction_base = float(np.linalg.norm(o0) / terminal_scale)
+        outward_fraction_expanded = float(np.linalg.norm(o1) / terminal_scale)
+
+        row = {
+            "index": int(index),
+            "geometry": geometry,
+            "relative_z_error": _relative(z0, z1),
+            "relative_d_vol_error": _relative(d0, d1),
+            "relative_p_vol_error": _power_contraction_relative_error(d0, d1),
+            "relative_terminal_dissipation_error": _power_contraction_relative_error(herm0, herm1),
+            "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
+            "relative_outward_partition_significance": outward_partition_change,
+            "raw_relative_d_out_error": _relative(o0, o1),
+            "outward_fraction_base": outward_fraction_base,
+            "outward_fraction_expanded": outward_fraction_expanded,
+        }
+        gated = (
+            "relative_z_error",
+            "relative_d_vol_error",
+            "relative_p_vol_error",
+            "relative_terminal_dissipation_error",
+            "relative_mutual_impedance_error",
+            "relative_outward_partition_significance",
+        )
+        row["maximum_relative_error"] = max(float(row[key]) for key in gated)
+        rows.append(row)
+        print(
+            f"开放边界域扩展 Gate……{index+1}/{len(geometries)}  "
+            f"max={row['maximum_relative_error']:.3e}  "
+            f"raw ΔDout/Dout={row['raw_relative_d_out_error']:.3e}",
+            flush=True,
+        )
+
+    worst = max((row["maximum_relative_error"] for row in rows), default=0.0)
+    return {
+        "sample_count": len(rows),
+        "padding": padding.tolist(),
+        "relative_tolerance": tolerance,
+        "maximum_relative_error": float(worst),
+        "converged": bool(worst <= tolerance),
+        "loss_partition_semantics": "D_out_changes_with_artificial_boundary_in_lossy_medium",
+        "samples": rows,
+    }
 
 
 def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
@@ -36,17 +130,33 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
         _, _, _, z1, d1, o1 = _solve_fields(refined, geometry)
         row = {
             "index": int(index),
+            "geometry": geometry,
             "relative_z_error": _relative(z0, z1),
             "relative_d_vol_error": _relative(d0, d1),
             "relative_p_vol_error": _power_contraction_relative_error(d0, d1),
             "relative_d_out_error": _relative(o0, o1),
             "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
+            # Diagnostics only: these expose whether a failed full-matrix Gate is
+            # dominated by local self terms or by coupling terms.  They do not
+            # silently relax the original convergence criterion.
+            "diagnostic_z_self_relative_error": _relative(_diagonal(z0), _diagonal(z1)),
+            "diagnostic_d_vol_self_relative_error": _relative(_diagonal(d0), _diagonal(d1)),
+            "diagnostic_d_vol_mutual_relative_error": _relative(_off_diagonal(d0), _off_diagonal(d1)),
         }
-        row["maximum_relative_error"] = max(v for k, v in row.items() if k.startswith("relative_"))
+        gated = (
+            "relative_z_error",
+            "relative_d_vol_error",
+            "relative_p_vol_error",
+            "relative_d_out_error",
+            "relative_mutual_impedance_error",
+        )
+        row["maximum_relative_error"] = max(float(row[key]) for key in gated)
         rows.append(row)
         print(
             "pre-basis EM mesh Gate……"
-            f"{index + 1}/{len(geometries)}  max={row['maximum_relative_error']:.3e}",
+            f"{index + 1}/{len(geometries)}  max={row['maximum_relative_error']:.3e}  "
+            f"self-Z={row['diagnostic_z_self_relative_error']:.3e}  "
+            f"mutual-Z={row['relative_mutual_impedance_error']:.3e}",
             flush=True,
         )
     worst = max((row["maximum_relative_error"] for row in rows), default=0.0)
@@ -154,4 +264,4 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     }
 
 
-__all__ = ["audit_em_mesh_preflight", "run_truth_preflight"]
+__all__ = ["audit_open_boundary_domain", "audit_em_mesh_preflight", "run_truth_preflight"]
