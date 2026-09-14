@@ -29,7 +29,11 @@
 \maketitle
 
 \begin{abstract}
-本文冻结 SDFMPNEO 的单频生产理论体系。Maxwell truth model 在统一的 $e^{+i\omega t}$ 峰值相量、端口、开放域、物理 source regularization 和离散能量约定下生成复对称场阻抗 $Z_{\rm field}$、总海水体耗散矩阵 $D_{\rm vol}$ 与 thermal-modal Hermitian Joule tensors $H_j$；truth outward power 独立由 Poynting/吸收边界双线性型计算。神经网络仅学习几何到这些低维参数化电磁对象的映射。固定物理解码层保持 reciprocity/Hermitian structure，并联合施加 $D_{\rm vol}\succeq0$、$\operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0$ 以及 $\phi_j^{\min}D_{\rm vol}\preceq H_j\preceq\phi_j^{\max}D_{\rm vol}$，使端口 passivity、总体耗散与 modal Joule 位于同一矩阵级能量框架。任意复端口电流通过显式 quadratic forms 产生 cycle-averaged heat；若工作点由电压源、补偿网络或负载决定，则由确定性 circuit equations 求取端口电流。温度演化始终由真实 reduced thermal mass/stiffness、明确的 wire-temperature constitutive law 和连续时间 ODE 控制。共享 thermal basis 在最终 $H_j$ 标签之前构建，完整覆盖 quadratic-current source span 与声明的 initial-condition family，并以多时间尺度 resolvent 的能量/dual-norm 相对误差和 completely-held-out full transient audit 验证。本文同时冻结 Physics Gate、误差预算、production domain 与模型适用边界，明确区分能量稳定性、pointwise positivity、局部稳态稳定性和严格证书，保证 surrogate accuracy 建立在物理闭合、离散一致且数值收敛的 truth system 上。
+本文冻结 SDFMPNEO 的单频生产理论体系。Maxwell truth model 在统一的 $e^{+i\omega t}$ 峰值相量、端口、开放域、物理 source regularization 和离散能量约定下生成复对称场阻抗 $Z_{\rm field}$、总海水体耗散矩阵 $D_{\rm vol}$ 与 Hermitian modal Joule tensors $H_j$；truth outward power 独立由 Poynting/吸收边界双线性型计算。神经网络仅学习几何到这些低维电磁对象的映射。thermal side 不再使用一个跨大范围移动几何的固定共享 basis，而采用 deterministic geometry-aware coordinates
+\[
+\Phi(g)=[\Phi_{\rm bg},\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\mathcal T_{\rm rx}(g)\Psi_{\rm rx}],
+\]
+其中已知 translation/rotation 由 canonical local-mode transport 显式处理，mode ordering 在所有 geometry 上固定；真实 $M_r(g),K_r(g)$ 由 full thermal operators 确定性投影得到，不由网络预测。对当前 geometry 的 $\phi_j(g)$ 直接组装 $W_j(g)$ 与 $H_j(g)=X(g)^HW_j(g)X(g)$，并使用 geometry-dependent $\phi_j^{\min/\max}(g)$ 施加 modal Loewner bounds。任意复端口电流通过显式 quadratic forms 产生 cycle-averaged heat；若工作点由电压源、补偿网络或负载决定，则由确定性 circuit equations 求取端口电流。thermal canonical modes 只针对 full-order discretization 可解析且应用需要的短/中时间尺度与 steady limit 构建，长时间有限查询由同一个 reduced ODE 连续/链式推进。本文同时冻结 Physics Gate、transport/conditioning audit、held-out full thermal trajectory validation、误差预算、production domain 与静态 geometry 适用边界；若未来 $g=g(t)$，必须显式加入 moving-basis transport term而不能直接复用静态 ROM。
 \end{abstract}
 
 \tableofcontents
