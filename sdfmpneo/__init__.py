@@ -13,6 +13,11 @@ from .unified_transverse_source import install as _install_transverse_source
 
 _install_transverse_source(OpenBoundaryBackground)
 
+from . import unified_self_correction as _self_correction
+from .unified_certified_local_solve import install as _install_certified_local_solve
+
+_install_certified_local_solve(_self_correction)
+
 from .unified_tensor_surrogate import (
     DecodedTensors,
     TensorDataset,
