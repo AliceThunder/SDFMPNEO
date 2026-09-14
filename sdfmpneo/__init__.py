@@ -25,6 +25,11 @@ from .unified_certified_local_solve import install as _install_certified_local_s
 
 _install_certified_local_solve(_self_correction)
 
+from . import unified_truth_preflight as _truth_preflight
+from .unified_source_preflight_patch import install as _install_source_preflight
+
+_install_source_preflight(_truth_preflight)
+
 from . import unified_corrected_truth_preflight as _corrected_preflight
 from .unified_preflight_diagnosis_patch import install as _install_preflight_diagnosis
 
