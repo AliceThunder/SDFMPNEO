@@ -16,7 +16,8 @@
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
 或 full-field correction。离线 truth 使用 finite-cross-section stranded source、Silver--Mueller
-开放边界，并在 surrogate training 前通过 domain / formulation / mesh / Joule / geometry Gate。
+开放边界。训练流程先做 pre-basis truth preflight，再构造 geometry-aware thermal ROM/tensor truth，
+训练后还必须通过 completely-held-out current/circuit end-to-end Go/No-Go 才会保存模型。
 """
 from __future__ import annotations
 
@@ -52,7 +53,7 @@ BACKGROUND = {
         "samples": 1,
         "relative_tolerance": 2e-2,
     },
-    # One representative physical refinement is intentionally mandatory.  If this
+    # One representative physical refinement is intentionally mandatory. If this
     # fails, reduce fine_step/max_step rather than training through the error.
     "mesh_check": {
         "samples": 1,
@@ -150,6 +151,26 @@ TRAINING = {
     "thermal_basis_max_rank": None,
     "thermal_basis_conditioning_limit": 1e10,
     "n_tensor_samples": 96,
+    # Completely-held-out geometries are sampled only after training. They never
+    # participate in basis enrichment, POD, early stopping or optimizer updates.
+    "final_audit": {
+        "samples": 2,
+        "times": [0.1, 1.0, 10.0, 100.0],
+        "full_vs_rom_thermal_tolerance": 5e-2,
+        "tensor_relative_tolerance": 2e-1,
+        "current_space_relative_tolerance": 2e-1,
+        "outward_relative_tolerance": 2e-1,
+        "projection_correction_limit": 2e-1,
+        "reduced_dynamic_relative_tolerance": 1e-1,
+        "circuit_condition_limit": 1e8,
+        "operating_cases": [
+            {"name": "current-controlled", "operating": [5.0, 0.0]},
+            {"name": "circuit-controlled", "drive": {
+                "voltage": [10.0, 0.0],
+                "series_impedance": [0.1, 0.1],
+            }},
+        ],
+    },
     "device": "cuda",
     "network": {
         "width": 128,
