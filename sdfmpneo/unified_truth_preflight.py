@@ -122,6 +122,7 @@ def audit_open_boundary_domain(settings, background, geometries, monitor=None):
 def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
     cfg = dict(settings["BACKGROUND"].get("mesh_check", {}))
     tolerance = float(cfg.get("relative_tolerance", 1e-1))
+    path_tolerance = 1e-10
     factor = float(cfg.get("refinement_factor", 0.75))
     if not 0.0 < factor < 1.0:
         raise ValueError("mesh_check.refinement_factor must lie in (0, 1)")
@@ -175,15 +176,14 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
             "base_source_path_lengths": path0.tolist(),
             "refined_source_path_lengths": path1.tolist(),
         }
-        gated = (
+        mesh_keys = (
             "relative_z_error",
             "relative_d_vol_error",
             "relative_p_vol_error",
             "relative_d_out_error",
             "relative_mutual_impedance_error",
-            "relative_source_path_length_error",
         )
-        row["maximum_relative_error"] = max(float(row[key]) for key in gated)
+        row["maximum_relative_error"] = max(float(row[key]) for key in mesh_keys)
         rows.append(row)
         print(
             "pre-basis EM mesh Gate……"
@@ -196,14 +196,18 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
             flush=True,
         )
     worst = max((row["maximum_relative_error"] for row in rows), default=0.0)
+    worst_path = max((row["relative_source_path_length_error"] for row in rows), default=float("inf"))
     return {
         "sample_count": len(rows),
         "refinement_factor": factor,
         "base_fine_step": base_fine,
         "refined_fine_step": refined_fine,
         "relative_tolerance": tolerance,
+        "source_path_relative_tolerance": path_tolerance,
         "maximum_relative_error": float(worst),
-        "converged": bool(worst <= tolerance),
+        "maximum_source_path_length_relative_error": float(worst_path),
+        "source_geometry_invariant": bool(worst_path <= path_tolerance),
+        "converged": bool(worst <= tolerance and worst_path <= path_tolerance),
         "samples": rows,
     }
 
@@ -211,14 +215,22 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
 def _mesh_failure_diagnosis(mesh):
     if bool(mesh.get("converged", False)) or not mesh.get("samples"):
         return None
-    row = max(mesh["samples"], key=lambda item: float(item.get("maximum_relative_error", 0.0)))
+    row = max(
+        mesh["samples"],
+        key=lambda item: max(
+            float(item.get("maximum_relative_error", 0.0)),
+            float(item.get("relative_source_path_length_error", 0.0)),
+        ),
+    )
     tolerance = float(mesh.get("relative_tolerance", 0.0))
+    path_tolerance = float(mesh.get("source_path_relative_tolerance", 1e-10))
     path_error = float(row.get("relative_source_path_length_error", np.inf))
-    if path_error > 1e-10:
+    if path_error > path_tolerance:
         return {
             "code": "mesh_refinement_changed_physical_source_geometry",
             "geometry": row.get("geometry"),
             "relative_source_path_length_error": path_error,
+            "source_path_relative_tolerance": path_tolerance,
             "recommendation": (
                 "Mesh refinement must compare the same physical source geometry. "
                 "Fix centerline/source sampling before interpreting Maxwell convergence."
