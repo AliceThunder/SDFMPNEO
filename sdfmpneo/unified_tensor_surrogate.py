@@ -210,11 +210,10 @@ class DecodedTensors:
 def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
     """Decode onto the reciprocal/passive/modal-feasible set.
 
-    For reciprocal Z, Herm(Z)=Re(Z) is real symmetric.  After projecting D to
+    For reciprocal Z, Herm(Z)=Re(Z) is real symmetric. After projecting D to
     PSD we keep the imaginary part of D_out exactly equal to -Im(D) and add the
-    minimum real diagonal shift needed to make D_out PSD.  Therefore both
-    reciprocity and Herm(Z)-D >= 0 hold simultaneously; no post-hoc real-part
-    truncation can destroy passivity.
+    minimum real diagonal shift needed to make D_out PSD. Therefore both
+    reciprocity and Herm(Z)-D >= 0 hold simultaneously.
     """
     phi_min = np.asarray(phi_min, float).reshape(-1)
     phi_max = np.asarray(phi_max, float).reshape(-1)
@@ -276,6 +275,25 @@ def _conductivity_support_bounds(phi, sigma):
     return np.min(phi[support], axis=0), np.max(phi[support], axis=0)
 
 
+def _audit_current_vectors(n_ports):
+    n = int(n_ports)
+    eye = np.eye(n, dtype=complex)
+    vectors = [eye[:, p] for p in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            vectors.append(eye[:, i] + eye[:, j])
+            vectors.append(eye[:, i] + 1j * eye[:, j])
+    if len(vectors) != n * n:
+        raise AssertionError("Hermitian current audit span dimension mismatch")
+    return vectors
+
+
+def _cell_volume_heat(background, sigma, field):
+    edge_energy = np.abs(np.asarray(field, complex).reshape(-1)) ** 2
+    cell_edge_energy = np.asarray(background.edge_cell_hodge.T @ edge_energy).reshape(-1)
+    return np.asarray((0.5 * np.asarray(sigma, float) * cell_edge_energy).real, float)
+
+
 def _require_static_field_materials(background):
     for name, material in background.materials.items():
         if name in background.coil_materials:
@@ -328,17 +346,28 @@ def _port_truth_from_context(background, context):
     power_balance = float(np.linalg.norm(raw_herm_z - d - d_out) / balance_scale)
     z = 0.5 * (reaction + reaction.T)
     implied = _hermitian(z) - d
+    source_regularization = getattr(context, "source_regularization", ())
+    regularized = bool(
+        len(source_regularization) == source.shape[1]
+        and all(
+            row.get("model") == getattr(background, "source_model", None)
+            and float(row.get("conductor_width", 0.0)) > 0.0
+            and float(row.get("conductor_thickness", 0.0)) > 0.0
+            and abs(float(row.get("heat_weight_sum", 0.0)) - 1.0) <= 1e-12
+            for row in source_regularization
+        )
+    )
     audit = {
         "max_linear_relative_residual": max_linear_residual,
         "reciprocity_relative_error": reciprocity,
         "minimum_d_vol_eigenvalue": float(np.min(np.linalg.eigvalsh(d)).real),
-        "minimum_physical_outward_eigenvalue": float(
-            np.min(np.linalg.eigvalsh(d_out)).real
-        ),
-        "minimum_implied_outward_eigenvalue": float(
-            np.min(np.linalg.eigvalsh(implied)).real
-        ),
+        "minimum_physical_outward_eigenvalue": float(np.min(np.linalg.eigvalsh(d_out)).real),
+        "minimum_implied_outward_eigenvalue": float(np.min(np.linalg.eigvalsh(implied)).real),
         "open_boundary_power_balance_relative_error": power_balance,
+        "source_regularization_available": 1.0 if regularized else 0.0,
+        "material_fraction_closure_error": float(
+            getattr(context, "material_fraction_closure_error", np.inf)
+        ),
         "independent_outward_power_available": True,
         "boundary_model": str(getattr(background, "boundary_model", "open_impedance")),
     }
@@ -366,15 +395,41 @@ def solve_truth_tensors(background, geometry):
         modal.append(_hermitian(X.conj().T @ (weighted_edge[:, None] * X)))
     modal = np.asarray(modal, complex)
     phi_min, phi_max = _conductivity_support_bounds(phi, sigma)
+
     loewner_violation = 0.0
     for j, h in enumerate(modal):
         low = np.min(np.linalg.eigvalsh(_hermitian(h - phi_min[j] * d))).real
         high = np.min(np.linalg.eigvalsh(_hermitian(phi_max[j] * d - h))).real
         scale = max(np.linalg.norm(d), np.linalg.norm(h), np.finfo(float).tiny)
-        loewner_violation = max(
-            loewner_violation, float(max(-low, -high, 0.0) / scale)
+        loewner_violation = max(loewner_violation, float(max(-low, -high, 0.0) / scale))
+
+    power_consistency = 0.0
+    modal_consistency = 0.0
+    for current in _audit_current_vectors(X.shape[1]):
+        field = X @ current
+        q_cells = _cell_volume_heat(background, sigma, field)
+        direct_power = float(np.sum(q_cells))
+        tensor_power = float(0.5 * np.real(current.conj() @ d @ current))
+        pscale = max(abs(direct_power), abs(tensor_power), np.finfo(float).tiny)
+        power_consistency = max(power_consistency, abs(direct_power - tensor_power) / pscale)
+
+        direct_modal = phi.T @ q_cells
+        tensor_modal = 0.5 * np.real(
+            np.einsum("p,rpq,q->r", current.conj(), modal, current, optimize=True)
         )
+        mscale = max(
+            float(np.linalg.norm(direct_modal)),
+            float(np.linalg.norm(tensor_modal)),
+            np.finfo(float).tiny,
+        )
+        modal_consistency = max(
+            modal_consistency,
+            float(np.linalg.norm(direct_modal - tensor_modal) / mscale),
+        )
+
     audit["maximum_relative_loewner_violation"] = loewner_violation
+    audit["joule_total_power_relative_error"] = float(power_consistency)
+    audit["joule_modal_contraction_relative_error"] = float(modal_consistency)
     return z, d, modal, phi_min, phi_max, audit
 
 
@@ -471,24 +526,28 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
             flush=True,
         )
     numeric_audit = {
-        "maximum_linear_relative_residual": max(
-            a["max_linear_relative_residual"] for a in audits
-        ),
-        "maximum_reciprocity_relative_error": max(
-            a["reciprocity_relative_error"] for a in audits
-        ),
+        "maximum_linear_relative_residual": max(a["max_linear_relative_residual"] for a in audits),
+        "maximum_reciprocity_relative_error": max(a["reciprocity_relative_error"] for a in audits),
         "minimum_d_vol_eigenvalue": min(a["minimum_d_vol_eigenvalue"] for a in audits),
-        "minimum_physical_outward_eigenvalue": min(
-            a["minimum_physical_outward_eigenvalue"] for a in audits
-        ),
-        "minimum_implied_outward_eigenvalue": min(
-            a["minimum_implied_outward_eigenvalue"] for a in audits
-        ),
+        "minimum_physical_outward_eigenvalue": min(a["minimum_physical_outward_eigenvalue"] for a in audits),
+        "minimum_implied_outward_eigenvalue": min(a["minimum_implied_outward_eigenvalue"] for a in audits),
         "maximum_open_boundary_power_balance_relative_error": max(
             a["open_boundary_power_balance_relative_error"] for a in audits
         ),
         "maximum_relative_loewner_violation": max(
             a["maximum_relative_loewner_violation"] for a in audits
+        ),
+        "maximum_joule_total_power_relative_error": max(
+            a["joule_total_power_relative_error"] for a in audits
+        ),
+        "maximum_joule_modal_contraction_relative_error": max(
+            a["joule_modal_contraction_relative_error"] for a in audits
+        ),
+        "maximum_material_fraction_closure_error": max(
+            a["material_fraction_closure_error"] for a in audits
+        ),
+        "source_regularization_available": min(
+            a["source_regularization_available"] for a in audits
         ),
         "independent_outward_power_available": 1.0,
     }
