@@ -21,7 +21,7 @@ from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
 from .unified_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 14
+_CACHE_FORMAT = 15
 
 
 def jsonable(value):
