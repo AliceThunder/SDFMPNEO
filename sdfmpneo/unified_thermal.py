@@ -4,9 +4,9 @@ Production thermal reduction follows the frozen theory:
 
     Phi(g) = [Phi_bg, T_tx(g) Psi_tx, T_rx(g) Psi_rx, ...]
 
-The canonical mode count and ordering are fixed.  Geometry changes transport the
+The canonical mode count and ordering are fixed. Geometry changes transport the
 local blocks deterministically; the neural network never predicts thermal modes
-or thermal operators.  Reduced M/K are always projections of the true thermal
+or thermal operators. Reduced M/K are always projections of the true thermal
 operators for the queried geometry.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 import json
 
 import numpy as np
+import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.interpolate import RegularGridInterpolator
 
@@ -38,7 +39,7 @@ def _weighted_append(phi, vector, weights):
 
 
 def _port_current_vectors(n_ports):
-    """Deterministic real basis spanning the Hermitian current quadratic space."""
+    """Deterministic current vectors spanning the Hermitian current quadratic space."""
     n = int(n_ports)
     eye = np.eye(n, dtype=complex)
     vectors = [eye[:, p] for p in range(n)]
@@ -78,6 +79,17 @@ def _resolvent_shifts(time_scales):
     shifts = [0.0]
     shifts.extend(float(1.0 / t) for t in scales)
     return np.asarray(sorted(set(shifts)), float)
+
+
+def _trajectory_times(time_scales, requested=None):
+    if requested is None:
+        base = np.asarray(list(time_scales), float).reshape(-1)
+        values = np.r_[base, 10.0 * np.max(base)]
+    else:
+        values = np.asarray(list(requested), float).reshape(-1)
+    if values.size == 0 or np.any(~np.isfinite(values)) or np.any(values <= 0.0):
+        raise ValueError("thermal trajectory times must be finite and positive")
+    return np.asarray(sorted(set(float(v) for v in values)), float)
 
 
 def _solve(A, b):
@@ -134,7 +146,9 @@ def _geometry_anchors(
             if np.linalg.norm(q) > np.finfo(float).tiny:
                 rhs_items.append((f"wire[{p}]", f"wire[{p}]", q))
     if uniform_initial:
-        rhs_items.append(("initial[uniform]", "initial", np.asarray(M @ np.ones(background.n_cells)).reshape(-1)))
+        rhs_items.append(
+            ("initial[uniform]", "initial", np.asarray(M @ np.ones(background.n_cells)).reshape(-1))
+        )
 
     anchors = []
     for shift in shifts:
@@ -296,11 +310,8 @@ class GeometryAwareThermalLibrary:
             raise RuntimeError("geometry-aware thermal basis became rank deficient")
         condition = float(eig[-1] / eig[0])
         if not np.isfinite(condition) or condition > float(self.conditioning_limit):
-            raise RuntimeError(
-                f"geometry-aware thermal basis conditioning failed: cond={condition:.3e}"
-            )
+            raise RuntimeError(f"geometry-aware thermal basis conditioning failed: cond={condition:.3e}")
 
-        # Deterministic weighted orthonormalization in the frozen canonical order.
         phi = np.empty((background.n_cells, 0), float)
         for j in range(normalized.shape[1]):
             phi2, added = _weighted_append(phi, normalized[:, j], background.cell_volumes)
@@ -361,6 +372,7 @@ class ThermalBasisReport:
     local_ranks: tuple
     maximum_anchor_relative_energy_error: float
     maximum_validation_relative_energy_error: float
+    maximum_validation_trajectory_relative_error: float
     target_relative_error: float
     geometry_sample_count: int
     validation_geometry_count: int
@@ -368,12 +380,15 @@ class ThermalBasisReport:
     equation_anchor_count: int
     enrichment_steps: int
     shifts: tuple
+    trajectory_times: tuple
     converged: bool
     stop_reason: str
     worst_training_anchor: dict
     worst_validation_anchor: dict
+    worst_validation_trajectory: dict
     training_diagnostics: dict
     validation_diagnostics: dict
+    trajectory_diagnostics: dict
 
     @property
     def maximum_anchor_relative_residual(self):
@@ -438,6 +453,181 @@ def _audit_geometries(background, library, geometries, shifts, monitor, role):
     return worst[0], _anchor_summary(worst[1], worst[0]), diagnostics, count
 
 
+def _thermal_trajectory_cases(background, geometry):
+    context = background.geometry_context(geometry, assemble_thermal=False)
+    M, K = background.thermal_operator_full(context.fractions)
+    labels = []
+    rhs = []
+    X = _maxwell_port_fields(background, context)
+    for j, current in enumerate(_port_current_vectors(X.shape[1])):
+        q = _volume_heat(background, context, X @ current)
+        if np.linalg.norm(q) > np.finfo(float).tiny:
+            labels.append(f"volume[{j}]")
+            rhs.append(q)
+    for p, weights in enumerate(context.line_heat_weights):
+        q = np.asarray(weights, float).reshape(-1)
+        if np.linalg.norm(q) > np.finfo(float).tiny:
+            labels.append(f"wire[{p}]")
+            rhs.append(q)
+    return context, M.tocsr(), K.tocsr(), labels, rhs
+
+
+def _trajectory_metric(background, context, mass_diag, truth, approx):
+    truth = np.asarray(truth, float).reshape(-1)
+    approx = np.asarray(approx, float).reshape(-1)
+    error = approx - truth
+    denom2 = float(np.dot(mass_diag * truth, truth))
+    field = float(np.sqrt(max(float(np.dot(mass_diag * error, error)), 0.0) / max(denom2, np.finfo(float).tiny)))
+    scale = max(float(np.max(np.abs(truth))), np.finfo(float).tiny)
+    minimum = float(abs(np.min(approx) - np.min(truth)) / scale)
+    maximum = float(abs(np.max(approx) - np.max(truth)) / scale)
+    wire = 0.0
+    for weights in context.line_heat_weights:
+        weights = np.asarray(weights, float).reshape(-1)
+        full_value = float(np.dot(weights, truth))
+        rom_value = float(np.dot(weights, approx))
+        denominator = max(abs(full_value), scale * 1e-12, np.finfo(float).tiny)
+        wire = max(wire, abs(rom_value - full_value) / denominator)
+    return {
+        "field_mass_relative_error": field,
+        "minimum_temperature_relative_error": minimum,
+        "maximum_temperature_relative_error": maximum,
+        "maximum_wire_average_relative_error": float(wire),
+        "composite_relative_error": float(max(field, minimum, maximum, wire)),
+    }
+
+
+def audit_geometry_aware_thermal_trajectories(
+    background,
+    library,
+    geometries,
+    *,
+    times=None,
+    monitor=None,
+):
+    """Compare full and geometry-aware ROM thermal trajectories on held-out geometries.
+
+    The audit is independent of the resolvent construction metric. Constant physical
+    volume/wire source directions are propagated from zero initial condition, and the
+    declared uniform initial-condition family is propagated homogeneously. Full and
+    reduced linear systems use matrix exponential actions, so the reported discrepancy
+    is ROM error rather than a time-stepping tolerance artifact.
+    """
+    geometries = list(geometries)
+    audit_times = _trajectory_times(library.time_scales, times)
+    if not geometries:
+        return 0.0, {}, {}, tuple(float(v) for v in audit_times)
+
+    worst = (-1.0, {})
+    diagnostics = {}
+    for gi, geometry in enumerate(geometries):
+        if monitor is not None:
+            monitor.checkpoint()
+        g = background.validate_geometry(geometry)
+        context, M, K, labels, rhs = _thermal_trajectory_cases(background, g)
+        phi = library.basis_for_geometry(background, g)
+        mass_diag = np.asarray(M.diagonal(), float)
+        if np.any(~np.isfinite(mass_diag)) or np.any(mass_diag <= 0.0):
+            raise RuntimeError("full thermal mass must be positive for trajectory audit")
+        Mr = phi.T @ (M @ phi)
+        Kr = phi.T @ (K @ phi)
+        if np.min(np.linalg.eigvalsh(0.5 * (Mr + Mr.T))) <= 0.0:
+            raise RuntimeError("reduced thermal mass is not positive definite")
+        if np.min(np.linalg.eigvalsh(0.5 * (Kr + Kr.T))) <= 0.0:
+            raise RuntimeError("reduced thermal stiffness is not positive definite")
+
+        A_full = (-sp.diags(1.0 / mass_diag) @ K).tocsr()
+        A_red = -np.linalg.solve(Mr, Kr)
+
+        if rhs:
+            B = np.column_stack(rhs)
+            try:
+                lu = spla.splu(K.tocsc())
+                steady_full = np.column_stack([lu.solve(B[:, j]) for j in range(B.shape[1])])
+            except RuntimeError:
+                steady_full = np.column_stack([_solve(K, B[:, j]) for j in range(B.shape[1])])
+            reduced_rhs = phi.T @ B
+            steady_reduced = np.linalg.solve(Kr, reduced_rhs)
+        else:
+            steady_full = np.empty((background.n_cells, 0), float)
+            steady_reduced = np.empty((phi.shape[1], 0), float)
+
+        initial_full = np.ones(background.n_cells, float)
+        initial_reduced = np.linalg.solve(Mr, phi.T @ (M @ initial_full))
+        full_block = np.column_stack([steady_full, initial_full])
+        reduced_block = np.column_stack([steady_reduced, initial_reduced])
+        initial_index = full_block.shape[1] - 1
+
+        local_worst = 0.0
+
+        # Steady forced solutions, including the a_* coordinate comparison requested
+        # by the frozen theory.
+        for j, label in enumerate(labels):
+            truth = steady_full[:, j]
+            approx = phi @ steady_reduced[:, j]
+            metrics = _trajectory_metric(background, context, mass_diag, truth, approx)
+            projected = np.linalg.solve(Mr, phi.T @ (M @ truth))
+            coordinate_error = float(
+                np.linalg.norm(steady_reduced[:, j] - projected)
+                / max(np.linalg.norm(projected), np.finfo(float).tiny)
+            )
+            metrics["steady_coordinate_relative_error"] = coordinate_error
+            metrics["composite_relative_error"] = max(metrics["composite_relative_error"], coordinate_error)
+            key = f"{label}@steady"
+            diagnostics[key] = max(float(diagnostics.get(key, 0.0)), metrics["composite_relative_error"])
+            row = {"geometry_index": gi, "case": label, "time": "steady", **metrics}
+            if metrics["composite_relative_error"] > worst[0]:
+                worst = (metrics["composite_relative_error"], row)
+            local_worst = max(local_worst, metrics["composite_relative_error"])
+
+        # Initial projection is itself part of the declared initial-condition audit.
+        initial_metrics = _trajectory_metric(
+            background, context, mass_diag, initial_full, phi @ initial_reduced
+        )
+        diagnostics["initial[uniform]@0s"] = max(
+            float(diagnostics.get("initial[uniform]@0s", 0.0)),
+            initial_metrics["composite_relative_error"],
+        )
+        row = {"geometry_index": gi, "case": "initial[uniform]", "time": 0.0, **initial_metrics}
+        if initial_metrics["composite_relative_error"] > worst[0]:
+            worst = (initial_metrics["composite_relative_error"], row)
+        local_worst = max(local_worst, initial_metrics["composite_relative_error"])
+
+        for time in audit_times:
+            full_decay = np.asarray(spla.expm_multiply(A_full * float(time), full_block), float)
+            reduced_decay = np.asarray(spla.expm_multiply(A_red * float(time), reduced_block), float)
+            for j, label in enumerate(labels):
+                truth = steady_full[:, j] - full_decay[:, j]
+                approx = phi @ (steady_reduced[:, j] - reduced_decay[:, j])
+                metrics = _trajectory_metric(background, context, mass_diag, truth, approx)
+                key = f"{label}@{float(time):g}s"
+                diagnostics[key] = max(float(diagnostics.get(key, 0.0)), metrics["composite_relative_error"])
+                row = {"geometry_index": gi, "case": label, "time": float(time), **metrics}
+                if metrics["composite_relative_error"] > worst[0]:
+                    worst = (metrics["composite_relative_error"], row)
+                local_worst = max(local_worst, metrics["composite_relative_error"])
+
+            truth = full_decay[:, initial_index]
+            approx = phi @ reduced_decay[:, initial_index]
+            metrics = _trajectory_metric(background, context, mass_diag, truth, approx)
+            key = f"initial[uniform]@{float(time):g}s"
+            diagnostics[key] = max(float(diagnostics.get(key, 0.0)), metrics["composite_relative_error"])
+            row = {"geometry_index": gi, "case": "initial[uniform]", "time": float(time), **metrics}
+            if metrics["composite_relative_error"] > worst[0]:
+                worst = (metrics["composite_relative_error"], row)
+            local_worst = max(local_worst, metrics["composite_relative_error"])
+
+        print(
+            f"held-out full-vs-ROM thermal trajectory audit……{gi + 1}/{len(geometries)}  "
+            f"worst={local_worst:.3e}",
+            flush=True,
+        )
+
+    if worst[0] < 0.0:
+        return 0.0, {}, diagnostics, tuple(float(v) for v in audit_times)
+    return float(worst[0]), dict(worst[1]), diagnostics, tuple(float(v) for v in audit_times)
+
+
 def build_geometry_aware_thermal_library(
     background,
     reference_geometry,
@@ -446,11 +636,12 @@ def build_geometry_aware_thermal_library(
     validation_geometries=None,
     target_relative_error=5e-2,
     time_scales=(0.1, 1.0, 10.0),
+    trajectory_times=None,
     maximum_rank=None,
     conditioning_limit=1e10,
     monitor=None,
 ):
-    """Build canonical BG/local blocks, then audit the transported Phi(g)."""
+    """Build canonical BG/local blocks and run independent held-out ROM audits."""
     target = float(target_relative_error)
     if not 0.0 < target < 1.0:
         raise ValueError("thermal target_relative_error must lie in (0, 1)")
@@ -463,8 +654,6 @@ def build_geometry_aware_thermal_library(
     validation = [] if validation_geometries is None else [background.validate_geometry(g) for g in validation_geometries]
     shifts = _resolvent_shifts(time_scales)
 
-    # Fixed background block: global volume-Joule responses and the declared
-    # uniform initial-condition family over representative production geometry.
     bg_anchors = []
     for gi, geometry in enumerate(training):
         bg_anchors.extend(
@@ -486,8 +675,6 @@ def build_geometry_aware_thermal_library(
         background, bg_anchors, target, maximum_rank, monitor, "background"
     )
 
-    # Canonical local blocks: preserve shape/size variation but remove rigid
-    # translation/rotation by placing sampled geometry at the frozen reference poses.
     canonical = []
     for geometry in training:
         try:
@@ -545,20 +732,38 @@ def build_geometry_aware_thermal_library(
     training_error, worst_train, train_diag, training_anchor_count = _audit_geometries(
         background, library, training, shifts, monitor, "train"
     )
-    validation_error, worst_val, val_diag, validation_anchor_count = _audit_geometries(
-        background, library, validation, shifts, monitor, "held-out validation"
-    ) if validation else (0.0, {}, {}, 0)
+    if validation:
+        validation_error, worst_val, val_diag, validation_anchor_count = _audit_geometries(
+            background, library, validation, shifts, monitor, "held-out validation"
+        )
+        trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
+            audit_geometry_aware_thermal_trajectories(
+                background,
+                library,
+                validation,
+                times=trajectory_times,
+                monitor=monitor,
+            )
+        )
+    else:
+        validation_error, worst_val, val_diag, validation_anchor_count = 0.0, {}, {}, 0
+        trajectory_error, worst_trajectory, trajectory_diag = 0.0, {}, {}
+        audited_times = tuple(float(v) for v in _trajectory_times(time_scales, trajectory_times))
 
     if training_error > target:
         stop_reason = "training_target_not_met"
     elif validation and validation_error > target:
         stop_reason = "validation_target_not_met"
+    elif validation and trajectory_error > target:
+        stop_reason = "validation_trajectory_target_not_met"
+
     converged = (
         stop_reason == "target_reached"
         and bg_error <= target
         and max(local_errors or [0.0]) <= target
         and training_error <= target
         and (not validation or validation_error <= target)
+        and (not validation or trajectory_error <= target)
     )
     report = ThermalBasisReport(
         basis_dimension=library.rank,
@@ -566,6 +771,7 @@ def build_geometry_aware_thermal_library(
         local_ranks=tuple(m.shape[1] for m in local_modes),
         maximum_anchor_relative_energy_error=float(training_error),
         maximum_validation_relative_energy_error=float(validation_error),
+        maximum_validation_trajectory_relative_error=float(trajectory_error),
         target_relative_error=target,
         geometry_sample_count=len(training),
         validation_geometry_count=len(validation),
@@ -573,28 +779,38 @@ def build_geometry_aware_thermal_library(
         equation_anchor_count=len(bg_anchors) + training_anchor_count + validation_anchor_count,
         enrichment_steps=bg_steps + local_steps,
         shifts=tuple(float(v) for v in shifts),
+        trajectory_times=tuple(float(v) for v in audited_times),
         converged=bool(converged),
         stop_reason=stop_reason,
         worst_training_anchor=worst_train,
         worst_validation_anchor=worst_val,
+        worst_validation_trajectory=worst_trajectory,
         training_diagnostics=train_diag,
         validation_diagnostics=val_diag,
+        trajectory_diagnostics=trajectory_diag,
     )
     print(
         f"geometry-aware thermal ROM 完成：rank={library.rank} "
         f"(bg={bg_modes.shape[1]}, local={tuple(m.shape[1] for m in local_modes)})，"
         f"train={training_error:.3e}，validation={validation_error:.3e}，"
-        f"target={target:.3e}，stop={stop_reason}",
+        f"trajectory={trajectory_error:.3e}，target={target:.3e}，stop={stop_reason}",
         flush=True,
     )
     if worst_val:
         print("held-out worst anchor: " + json.dumps(worst_val, ensure_ascii=False, sort_keys=True), flush=True)
+    if worst_trajectory:
+        print(
+            "held-out worst trajectory: "
+            + json.dumps(worst_trajectory, ensure_ascii=False, sort_keys=True),
+            flush=True,
+        )
     return library, report
 
 
 __all__ = [
     "GeometryAwareThermalLibrary",
     "ThermalBasisReport",
+    "audit_geometry_aware_thermal_trajectories",
     "build_geometry_aware_thermal_library",
     "_port_current_vectors",
     "_volume_heat",
