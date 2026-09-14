@@ -6,170 +6,166 @@
 \boxed{
 E_{\rm total}
 \lesssim
-E_{\rm model}
-+E_{\rm domain}
-+E_{\rm discretization}
-+E_{\rm solve}
-+E_{\rm tensor\,surrogate}
-+E_{\rm thermal\,ROM}
-+E_{\rm init}
-+E_{\rm time}.
+E_{\rm model}+E_{\rm domain}+E_{\rm discretization}+E_{\rm solve}
++E_{\rm tensor\,surrogate}+E_{\rm thermal\,ROM}+E_{\rm transport}
++E_{\rm init}+E_{\rm time}.
 }
 \end{equation}
-其中：
-\begin{itemize}
-  \item $E_{\rm model}$：filament/stranded conductor approximation、physical source regularization、材料 constitutive law、wire impedance/resistance、feed/return path、热边界/流体简化与 quasi-steady circuit assumption 等模型误差；
-  \item $E_{\rm domain}$：有限电磁/热计算域和边界截断误差；
-  \item $E_{\rm discretization}$：Maxwell/thermal 空间离散、几何 deposition、quadrature 与跨空间 transfer 误差；
-  \item $E_{\rm solve}$：truth linear/nonlinear/circuit solve 的代数误差；
-  \item $E_{\rm tensor\,surrogate}$：$Z/D_{\rm vol}/H$ 参数代理、POD 与可行投影带来的误差；
-  \item $E_{\rm thermal\,ROM}$：thermal subspace/projection/truncation error；
-  \item $E_{\rm init}$：full initial field 到 ROM 的投影误差及其 homogeneous-response 传播；
-  \item $E_{\rm time}$：ETD/IMEX 等时间离散误差。
-\end{itemize}
-不同量纲和范数的误差不能直接数值相加；上式表示经相应稳定性/敏感度常数传播后的结构化预算。
+其中新增的
+\begin{equation}
+E_{\rm transport}
+\end{equation}
+专门表示 deterministic geometry-aware basis transport/interpolation、local-frame mapping 和必要时的 scale/deformation approximation 误差。它不能混入 neural surrogate error。
 
-\subsection{Joule tensor 误差到 thermal source 误差}
+\subsection{Joule tensor 误差到 reduced source 误差}
 令
 \begin{equation}
-\Delta H_j=\widehat H_j-H_j.
+\Delta H_j(g)=\widehat H_j(g)-H_j(g).
 \end{equation}
-由于采用峰值 phasor，任意端口电流 $c$ 下
+任意端口电流 $c$ 下
 \begin{equation}
 \left|\widehat q_{{\rm vol},j}-q_{{\rm vol},j}\right|
-=\frac12\left|\operatorname{Re}(c^H\Delta H_jc)\right|
-\le \frac12\|\Delta H_j\|_2\,\|c\|_2^2.
+\le\frac12\|\Delta H_j(g)\|_2\|c\|_2^2.
 \end{equation}
-因此只要 current-controlled operating domain 给出 $\|c\|\le C_c$，tensor operator-norm error 就直接给出整个 complex current space 的 modal-source error bound。对完整 reduced source vector 的界应按所选 reduced norm 对各 modal bounds 组合，不能把单模态 bound 直接当成全向量误差。
+因此 current-controlled operating domain 给定 $\|c\|\le C_c$ 时，可直接得到 modal-source bound。完整 source-vector error 还必须与当前 geometry 的 reduced norm 和 $M_r(g)$ conditioning 一起传播。
 
-\subsection{总耗散、outward loss 与阻抗代理误差}
+\subsection{阻抗、总耗散与 outward loss}
 令
 \begin{equation}
 \Delta D=\widehat D_{\rm vol}-D_{\rm vol},
 \qquad
 \Delta Z=\widehat Z_{\rm field}-Z_{\rm field}.
 \end{equation}
-则
+有
 \begin{equation}
-\left|\Delta P_{\rm vol}\right|
-\le\frac12\|\Delta D\|_2\|c\|_2^2,
-\end{equation}
-且
-\begin{equation}
-\|\Delta v_{\rm field}\|_2
-\le\|\Delta Z\|_2\|c\|_2,
+|\Delta P_{\rm vol}|\le\frac12\|\Delta D\|_2\|c\|_2^2,
 \end{equation}
 \begin{equation}
-\left|\Delta P_{\rm field}\right|
-\le\frac12\|\operatorname{Herm}(\Delta Z)\|_2\|c\|_2^2.
+\|\Delta v_{\rm field}\|_2\le\|\Delta Z\|_2\|c\|_2.
 \end{equation}
 
-联合可行层按构造保证
+联合可行层保证
 \begin{equation}
 \widehat D_{\rm vol}\succeq0,
 \qquad
 \widehat D_{\rm out}^{\rm imp}
-=\operatorname{Herm}(\widehat Z_{\rm field})-\widehat D_{\rm vol}\succeq0,
+=\operatorname{Herm}(\widehat Z)-\widehat D_{\rm vol}\succeq0,
 \end{equation}
-但 $\widehat D_{\rm out}^{\rm imp}$ 不是 truth outward power 的定义。validation/audit 必须与独立 $D_{\rm out}^{\rm phys}$ 比较，并把
-\begin{equation}
-\|\widehat D_{\rm out}^{\rm imp}-D_{\rm out}^{\rm phys}\|
-\end{equation}
-和 projection correction $\delta_{\rm proj}$ 一并纳入 $E_{\rm tensor\,surrogate}$。大 projection correction 说明 raw surrogate 偏离物理可行集，不能因最终输出被投影后“合法”就忽略该误差。
+但 $\widehat D_{\rm out}^{\rm imp}$ 仍必须与独立 truth $D_{\rm out}^{\rm phys}$ 比较。
 
-线圈电阻/内部阻抗模型误差归入 constitutive/model error，不与 field-tensor neural error 混合。
+\subsection{geometry-aware basis 本身的误差}
+真实 thermal field 与 ROM reconstruction 写成
+\begin{equation}
+\theta(t;g)=\Phi(g)a(t;g)+\theta_{\rm tail}(t;g).
+\end{equation}
+$\theta_{\rm tail}$ 现在包含至少三类来源：
+\begin{itemize}
+  \item canonical background/local mode truncation；
+  \item rigid transport/interpolation 不足；
+  \item 当前首版未显式建模的 size/deformation dependence。
+\end{itemize}
+因此 held-out geometry 上出现 thermal error 时，必须先分解它属于 canonical rank 还是 transport/model mismatch，而不是一律通过增加 global modes 处理。
 
-\subsection{current-controlled thermal dynamics 的误差传播}
-在相同 thermal ROM 与 wire model 下，truth reduced model 为
+生产域内必须检查
 \begin{equation}
-M\dot a=-Ka+q_{\rm vol}(g,c)+q_{\rm wire}(a,g,c)+f_T,
-\end{equation}
-代理模型只把 $q_{\rm vol}$ 换成 $\widehat q_{\rm vol}$。令 $e=\hat a-a$。若目标 state domain 内
-\begin{equation}
-F(a)=M^{-1}\left[-Ka+q_{\rm wire}(a,g,c)+f_T\right]
-\end{equation}
-具有 Lipschitz constant $L_F$，并满足
-\begin{equation}
-\|M^{-1}(\widehat q_{\rm vol}-q_{\rm vol})\|\le\varepsilon_F,
-\end{equation}
-则一般初始误差下
-\begin{equation}
-\boxed{
-\|e(t)\|
-\le
- e^{L_Ft}\|e(0)\|
-+
-\begin{cases}
-\varepsilon_F\dfrac{e^{L_Ft}-1}{L_F},&L_F>0,\\[0.7em]
-\varepsilon_F t,&L_F=0.
-\end{cases}
-}
-\end{equation}
-当两个 reduced models 使用同一 $a_0$ 时 $e(0)=0$；full initial field 的 projection/tail error 属于 $E_{\rm init}$ 与 $E_{\rm thermal\,ROM}$，不能混入 tensor-source bound。
-
-这是 current-controlled、相同 ROM/constitutive model 下的 tensor-source propagation bound，不包含 model/domain/discretization/ROM/time errors。
-
-\subsection{circuit-controlled 模式必须单独传播 $Z\to c\to q$}
-若端口电流由
-\begin{equation}
-A_c(a,g)c=v_{\rm src},
+\lambda_{\min}(M_r(g))>0,
 \qquad
-A_c=Z_{\rm field}+R_{\rm wire}(a,g)+Z_{\rm ext}
+\lambda_{\min}(K_r(g))>0,
 \end{equation}
-决定，则 surrogate impedance error 会先改变 $c$。若 truth circuit matrix 可逆且
-\begin{equation}
-\|A_c^{-1}\Delta Z\|<1,
-\end{equation}
-可使用标准线性系统扰动界控制 $\|\widehat c-c\|$；该电流误差随后通过 quadratic Joule map 进入 $q_{\rm vol}$ 和 $q_{\rm wire}$。因此 circuit-controlled 误差预算必须显式包含 circuit conditioning/sensitivity，不能直接套用固定 $c$ 的上式。
+并监控 condition numbers。若 $\Phi(g)$ 在某些 geometry 上接近线性相关，则即使 full-order thermal system 良态，reduced coordinates 也会放大误差；这种问题属于 basis-generator error，不属于 neural error。
 
-接近谐振或高-Q operating point 时，$A_c$ 可能对 $Z$ 误差非常敏感；这是系统物理灵敏度，而不是 neural loss 本身能够消除的问题。若实际 circuit ring-up/settling time 与 thermal/envelope time scale 不再分离，则代数 phasor circuit solve 本身产生额外 $E_{\rm model}$；此时必须显式引入 circuit dynamic states。
-
-\subsection{收缩情形}
-若真实 reduced thermal/circuit dynamics 在目标域某能量范数下满足
-\begin{equation}
-\mu(J_F)\le-\gamma<0,
-\end{equation}
-则对应扰动可得到长期饱和型界。只有在真实 wire-heating feedback、circuit feedback 与 thermal operators 上验证该条件后，才允许宣称长期 contraction；不能因为扩散项本身耗散就默认整个电热系统 contractive。
-
-\subsection{thermal ROM anchor error 与 trajectory error}
-对任意 source/initial-condition resolvent anchor
+\subsection{resolvent error 与 time-scale interpretation}
+对任意 source/initial-condition anchor
 \begin{equation}
 A_su=b,
 \qquad A_s=K+sM\succ0,
 \end{equation}
-Galerkin approximation $\tilde u=\Phi a$ 与 residual $r=b-A_s\tilde u$ 满足
+Galerkin approximation $\tilde u$ 满足
 \begin{equation}
 \boxed{
 \frac{\|u-\tilde u\|_{A_s}^2}{\|u\|_{A_s}^2}
-=
-\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}.
+=\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}.
 }
 \end{equation}
-因此这一 energy/dual-norm ratio 是 anchor-level relative solution error；未经尺度化的 Euclidean residual 不是 mesh/shift-independent 的相对解误差证书。
+该量是 anchor-level relative energy error，但必须结合 anchor 的绝对能量、source norm 或相关 power scale 解读。一个绝对功率极小的方向即使 relative error 接近 1，也不能自动被等同于主工程工况误差。
 
-这些 resolvent anchors 比只检查 $K^{-1}Q$ 和 $M^{-1}Q$ 两个端点更接近完整 transient transfer behavior，但仍不是全时间严格证书。冻结 audit geometries 上必须直接比较 full thermal 与 reduced thermal 的允许 initial-condition family、短时、中间时间、长期/稳态温度与最大温升；trajectory discrepancy 是 $E_{\rm thermal\,ROM}$ 与 $E_{\rm init}$ 的主要生产验证量。
+此外，只有在 $\sqrt{\alpha\tau}$ 与 thermal mesh 可解析尺度相容时，$s=1/\tau$ anchor 才能被解释为可解析 thermal dynamics 的有效约束。极短时间若主要反映离散 source placement，应归入 discretization/transport diagnosis，而不是强迫 ROM 通过堆 rank 拟合。
+
+\subsection{trajectory error 才是生产 thermal 指标}
+resolvent anchors 不是全时间 certificate。完全 held-out geometries 上必须直接比较 full thermal 与 geometry-aware ROM 的
+\begin{equation}
+T(x,t),\quad T_{\min}(t),\quad T_{\max}(t),\quad \bar T_{\rm wire}(t),\quad a_*,
+\end{equation}
+至少覆盖可解析短时、中间时间、长时间和 steady state。
+
+长时间 finite-horizon error 来自同一个 reduced ODE 的连续积分误差传播，不需要用一个与查询 horizon 数值相同的 resolvent anchor 单独定义。steady limit 由 $s=0$ anchor、trajectory audit 与稳定 equilibrium audit共同约束。
+
+\subsection{current-controlled thermal dynamics 的误差传播}
+对同一 geometry-aware ROM，truth reduced model 为
+\begin{equation}
+M_r\dot a=-K_ra+q_{\rm vol}+q_{\rm wire}+f_T,
+\end{equation}
+代理仅改变 $q_{\rm vol}$。若
+\begin{equation}
+F(a)=M_r^{-1}[-K_ra+q_{\rm wire}(a,g,c)+f_T]
+\end{equation}
+在目标 state domain 内具有 Lipschitz constant $L_F$，且
+\begin{equation}
+\|M_r^{-1}(\widehat q_{\rm vol}-q_{\rm vol})\|\le\varepsilon_F,
+\end{equation}
+则标准扰动界给出
+\begin{equation}
+\|e(t)\|
+\le e^{L_Ft}\|e(0)\|
++\begin{cases}
+\varepsilon_F\dfrac{e^{L_Ft}-1}{L_F},&L_F>0,\\
+\varepsilon_F t,&L_F=0.
+\end{cases}
+\end{equation}
+该 bound 只覆盖 tensor-source perturbation；basis truncation/transport、full initial projection、time integration 等误差必须另外计入。
+
+\subsection{circuit-controlled 模式}
+若
+\begin{equation}
+A_c(a,g)c=v_{\rm src},
+\qquad
+A_c=Z_{\rm field}+R_{\rm wire}+Z_{\rm ext},
+\end{equation}
+则 surrogate impedance error 先改变 $c$，再通过 quadratic Joule map 影响热源。near-resonance/high-Q 时 circuit conditioning 必须显式进入 error budget。
+
+\subsection{零源耗散与稳定性}
+对静态 geometry，若 $M_r(g),K_r(g)\succ0$，定义
+\begin{equation}
+V(a;g)=\frac12a^TM_r(g)a,
+\end{equation}
+则零源系统满足
+\begin{equation}
+\dot V=-a^TK_r(g)a\le0.
+\end{equation}
+这保证 reduced zero-source dissipativity，但不保证 pointwise positivity、maximum principle 或 closed-loop global stability。
+
+如果 geometry 随时间变化，则 $M_r(g(t))$ 与 basis transport 会引入额外项，上述静态 Lyapunov identity 不能直接照搬。
 
 \subsection{输出误差}
-若 full thermal field 写成
+对静态 geometry：
 \begin{equation}
-T=T_{\rm amb}+\Phi a+T_{\rm tail},
+T=T_{\rm amb}+\Phi(g)a+T_{\rm tail},
 \end{equation}
-则
+故
 \begin{equation}
 \|\widehat T-T\|_\infty
-\le
-\|\Phi\|_{2\to\infty}\|e\|_2
+\le\|\Phi(g)\|_{2\to\infty}\|\hat a-a\|_2
 +\|T_{\rm tail}\|_\infty
-+E_{\rm time,T},
++E_{\rm time,T}.
 \end{equation}
-其中 $T_{\rm tail}$ 必须明确包含 ROM truncation 与 initial-condition/full-order components，不得把未知 tail 默认为零。各项必须对应同一明确 norm/normalization。阻抗误差由 field surrogate 与 wire-impedance model 分开管理。
+其中 $T_{\rm tail}$ 必须显式包含 canonical truncation、transport/interpolation 与 initial-condition tail，不能默认为零。
 
 \subsection{证书层级}
 所有 ``certificate'' 或 ``validated'' 字样必须区分：
 \begin{enumerate}
-  \item \textbf{严格证书：}数学上覆盖完整声明参数域且前提已验证；
-  \item \textbf{条件定理：}例如 perturbation/contraction/energy-norm bound，只在条件成立时生效；
-  \item \textbf{冻结测试验证：}有限 geometry/current/state/circuit/initial-condition test set 上的最大误差；
-  \item \textbf{经验诊断：}POD 谱、训练/验证 loss、sampling envelope、projection correction 等。
+  \item 严格证书：数学上覆盖完整声明参数域且前提已验证；
+  \item 条件定理：只在 stated assumptions 成立时生效；
+  \item 冻结测试验证：有限 held-out geometry/current/state/circuit/initial-condition set 上的最大误差；
+  \item 经验诊断：POD 谱、training/validation loss、projection correction、basis conditioning 等。
 \end{enumerate}
-Physics Gate 的数值收敛实验通常属于冻结验证或数值证据，不得自动升级为全域严格证书。
+Physics Gate 和 held-out trajectory audit 通常属于冻结数值验证，不得自动升级为全域严格证书。
