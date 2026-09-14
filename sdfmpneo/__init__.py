@@ -24,12 +24,15 @@ from . import unified_self_correction as _self_correction
 from . import unified_certified_local_solve as _certified_local_solve
 from .unified_fast_local_krylov import install as _install_fast_local_krylov
 from .unified_local_solve_cache import install as _install_local_solve_cache
+from .unified_parallel_self_correction import install as _install_parallel_self_correction
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
-# Exact memoization is installed only after the certified solver exists.
+# Exact memoization and independent-port scheduling are installed only after the
+# certified solver exists, before downstream modules capture these entry points.
 _install_fast_local_krylov(_certified_local_solve)
 _certified_local_solve.install(_self_correction)
 _install_local_solve_cache(_self_correction)
+_install_parallel_self_correction(_self_correction)
 
 from . import unified_truth_preflight as _truth_preflight
 from .unified_source_preflight_patch import install as _install_source_preflight
