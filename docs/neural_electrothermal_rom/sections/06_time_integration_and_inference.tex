@@ -87,6 +87,17 @@ a(t_0)\rightarrow a(t_1)\rightarrow\cdots\rightarrow a(t_N).
 \subsection{自适应步长}
 自适应 ETD/IMEX 只控制时间离散误差。对特别长时间查询，接近稳态后允许步长增大，但必须持续检查 state-domain、circuit solvability、wire constitutive validity 和数值稳定性。时间积分误差必须与 tensor surrogate error、thermal ROM error 分开报告。
 
+\subsection{生产时间积分器的独立 reference audit}
+生产 release 不能只验证 reduced vector field 正确，而不验证实际在线 integrator。对 completely-held-out geometry 和冻结的 current-controlled/circuit-controlled operating cases，先固定同一组 surrogate tensors、$\Phi(g)$、$M_r(g)$、$K_r(g)$ 与初值，再分别用生产 integrator 和高精度 stiff reference solver 推进同一个 reduced ODE。
+
+记 reference state 为 $a_{\rm ref}(t)$、生产积分结果为 $a_{\rm prod}(t)$，至少使用当前 reduced thermal mass 定义
+\begin{equation}
+E_{\rm time}(t)
+=\frac{\|a_{\rm prod}(t)-a_{\rm ref}(t)\|_{M_r}}
+{\max(\|a_{\rm ref}(t)\|_{M_r},\varepsilon_{\rm abs})}.
+\end{equation}
+该误差只属于 time discretization，不得混入 tensor surrogate error 或 full-vs-ROM thermal error。生产 artifact 发布前必须满足冻结的 integrator tolerance；失败时拒绝发布，而不是通过放宽 neural/ROM 指标掩盖时间推进误差。
+
 \subsection{稳态查询}
 $t=\infty$ 不通过超长时间积分逼近。current-controlled equilibrium 满足
 \begin{equation}
