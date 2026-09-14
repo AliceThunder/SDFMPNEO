@@ -98,11 +98,12 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
     assert np.count_nonzero(weights) > 0
 
 
-def test_finite_support_source_preserves_open_terminal_path_and_loss_partition():
+def test_finite_support_source_preserves_path_curl_and_loss_partition():
     bg = background()
     context = bg.geometry_context(geometry(), assemble_thermal=False)
     assert bg.source_model == "stranded_rectangular_cross_section_gauss3"
-    assert bg.terminal_model == "impressed_port_path_with_endpoint_charge_balance"
+    assert bg.terminal_model == "transverse_impressed_port_external_terminal_circuit_v1"
+    assert bg.transverse_source_model == "discrete_edge_helmholtz_transverse_v1"
     assert len(context.source_regularization) == 2
     for row in context.source_regularization:
         assert row["conductor_width"] > 0.0
@@ -110,7 +111,11 @@ def test_finite_support_source_preserves_open_terminal_path_and_loss_partition()
         assert row["terminal_separation"] > 0.0
         assert row["terminal_path_integral_relative_error"] <= 1e-12
         assert np.isclose(row["heat_weight_sum"], 1.0, rtol=0.0, atol=1e-12)
+        assert row["raw_source_norm"] > 0.0
         assert row["source_norm"] > 0.0
+        assert row["projection_model"] == "discrete_edge_helmholtz_transverse_v1"
+        assert row["transverse_longitudinal_relative_norm"] <= 1e-8
+        assert row["curl_preservation_relative_error"] <= 1e-10
     audit = _source_and_loss_partition(bg, geometry())
     assert audit["finite_support_source"]
     assert audit["terminal_path_conservation"]
