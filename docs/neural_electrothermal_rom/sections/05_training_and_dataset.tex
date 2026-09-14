@@ -3,15 +3,16 @@
 \subsection{数据依赖顺序}
 最终 $H_j(g)$ 的定义依赖当前 geometry 的 deterministic thermal mode $\phi_j(g)$，因此数据生成顺序固定为：
 \begin{enumerate}
-  \item 冻结 validated Maxwell/Joule truth physics 与 Physics Gate；
+  \item 冻结 validated Maxwell/Joule truth physics，并先通过不依赖 thermal basis 的 spatial truth preflight；
   \item 构建 canonical background/TX/RX thermal mode library；
   \item 冻结 deterministic basis generator $\mathcal B:g\mapsto\Phi(g)$、mode ordering、transport/interpolation rule 与 time-scale policy；
   \item 对每个 geometry 构造 $\Phi(g),M_r(g),K_r(g)$ 与 $\phi_j^{\min/\max}(g)$；
   \item 用当前 $\phi_j(g)$ 组装 $W_j(g)$，生成 $H_j(g)=X(g)^HW_j(g)X(g)$；
-  \item 形成 fixed-dimensional $Z/D_{\rm vol}/H$ tensor dataset；
-  \item 只用 neural training split 构建 POD/normalization 并训练 surrogate。
+  \item 形成 fixed-dimensional $Z/D_{\rm vol}/H$ tensor dataset，并执行依赖冻结 basis/tensor 的 post-basis Physics Gate；
+  \item 只用 neural training split 构建 POD/normalization 并训练 surrogate；
+  \item 在新的 completely-held-out geometries 上执行最终 release Go/No-Go，全部通过后才允许发布模型 artifact。
 \end{enumerate}
-任何 truth physics、canonical mode library 或 basis-generator version 改变都必须使 tensor labels、POD 和模型 signature 失效。
+任何 truth physics、canonical mode library 或 basis-generator version 改变都必须使 tensor labels、POD 和模型 signature 失效。release threshold 的改变不要求重新求解已冻结的 physics truth，但必须重新执行相应 release acceptance。
 
 \subsection{阶段一：validated physics bank}
 对每个候选 geometry $g^{(s)}$：
@@ -97,7 +98,7 @@ train/validation/test/audit 必须按 geometry 划分。一个 geometry 的所�
   \item neural training/validation/model selection；
   \item POD construction。
 \end{itemize}
-它们只用于最终 full-vs-ROM 与 tensor surrogate audit。
+它们只用于最终 full-vs-ROM、tensor surrogate、current/circuit dynamics 与 production-integrator audit。
 
 如果一个 geometry 被用于修正 local transform、增加 canonical modes 或选择 time scales，它就不再是完全未见的 audit point。
 
@@ -142,14 +143,22 @@ physical decoder 使用当前 geometry 的 $\phi_j^{\min/\max}(g)$。这些 quan
 \end{equation}
 与 truth。随机 current tests 是补充，不能替代 matrix-level constraints。
 
-\subsection{end-to-end thermal audit}
-在 completely-held-out geometries 上直接构造 full thermal truth 与 geometry-aware ROM，比较：
-\begin{equation}
-T(x,t),\quad T_{\min}(t),\quad T_{\max}(t),\quad \bar T_{\rm wire}(t),\quad a_*,\quad Z(t).
-\end{equation}
-必须覆盖可解析短时、中间时间、长时间和 steady state。
+\subsection{completely-held-out end-to-end release audit}
+最终 release audit 在训练、POD、early stopping 全部结束后才执行，并使用完全独立的 geometry set。至少包含四层：
+\begin{enumerate}
+  \item full thermal truth 与 geometry-aware thermal ROM 的
+  \begin{equation}
+  T(x,t),\quad T_{\min}(t),\quad T_{\max}(t),\quad \bar T_{\rm wire}(t),\quad a_*
+  \end{equation}
+  比较，覆盖可解析短时、中间时间、长时间和 steady state；
+  \item truth tensors 与 surrogate tensors 的 $Z/D/H$、独立 outward loss、projection correction 与完整 complex-current contraction audit；
+  \item 在同一 reduced thermal coordinates 上，truth-tensor ROM 与 surrogate-tensor ROM 的 current-controlled 和 circuit-controlled trajectory、$Z(t)$、currents、wire temperature、steady residual/stability 与 circuit conditioning 比较；
+  \item 固定同一 surrogate reduced ODE 后，生产 time integrator 与高精度 stiff reference solver 的独立 time-discretization audit。
+\end{enumerate}
 
 若误差主要随 rigid translation/rotation 出现，应优先修正 deterministic transport/local-frame construction；若 rigid transform 已稳定而尺寸变化仍主导误差，再考虑 scale-aware deterministic extension。禁止首先通过向一个固定全局 basis 大量堆 mode 来掩盖几何移动导致的假高秩。
+
+最终 audit 属于冻结 held-out numerical validation，不自动升级为覆盖连续参数域的严格数学 certificate。任一 release Gate 未通过时，训练可以保留诊断/checkpoint，但不得把该次 surrogate 发布为 production model artifact。
 
 \subsection{active learning 与 thermal model enrichment 的边界}
 Neural active learning 可以增加 geometry truth snapshots，以改善 $g\mapsto Z/D/H$。但若新 geometry 暴露的是 thermal basis-generator error，处理顺序应为：
