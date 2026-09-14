@@ -1,4 +1,4 @@
-"""统一 geometry→EM tensor→thermal ROM 生产入口。
+"""统一 geometry→EM tensor + geometry-aware thermal ROM 生产入口。
 
 只修改本文件顶部配置：
 
@@ -8,14 +8,15 @@
 理论主链：
 
     geometry
-      -> MLP: Z_field, D_vol, H_j
+      -> deterministic Phi(g), Mr(g), Kr(g)
+      -> MLP: Z_field(g), D_vol(g), H_j(g)
       -> explicit current/circuit + wire resistance
-      -> shared transient-aware thermal ROM
+      -> true reduced thermal ODE
       -> temperature
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
 或 full-field correction。离线 Maxwell 使用匹配海水介质的一阶 Silver--Mueller 开放阻抗边界，
-训练前会自动检查独立 Poynting 功率闭合以及扩大计算域后的阻抗收敛。
+训练前自动检查独立 Poynting 功率闭合以及扩大计算域后的阻抗收敛。
 """
 from __future__ import annotations
 
@@ -27,9 +28,8 @@ MODE = "train"
 ROOT = Path(__file__).resolve().parent
 
 FILES = {
-    # Use a distinct artifact name so an older finite-PEC model can never be
-    # loaded accidentally by the new production path.
-    "model": "results/uwpt/model.open_boundary.npz",
+    # Distinct artifact: old fixed-basis/open-boundary models cannot be reused.
+    "model": "results/uwpt/model.geometry_thermal.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
     "training_checkpoint": "results/uwpt/model.tensor_training.pt",
@@ -42,9 +42,6 @@ BACKGROUND = {
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.03,
-    # Automatic open-domain validation.  The reference solve moves the same
-    # absorbing boundary outward by `padding`; all Re/Im/total port-impedance
-    # changes must remain below `relative_tolerance`.
     "open_boundary_check": {
         "samples": 3,
         "padding": 0.12,
@@ -124,15 +121,18 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    # Shared thermal basis: 20 seed geometries plus an 18-geometry reserve.
-    # The builder automatically uses about 2/3 of the reserve for basis
-    # enrichment and keeps the final 1/3 strictly held out for validation.
-    "thermal_basis_schema": "seed_enrichment_holdout_v2",
-    "basis_samples": 20,
-    "basis_validation_samples": 18,
+    # Geometry-aware thermal ROM: background modes use representative geometry;
+    # local TX/RX canonical blocks remove rigid pose before reduction. Held-out
+    # validation never enriches the library.
+    "thermal_basis_schema": "geometry_aware_bg_local_v1",
+    "basis_samples": 8,
+    "basis_validation_samples": 6,
     "thermal_basis_energy_tolerance": 5e-2,
-    "thermal_time_scales": [1e-3, 1.0, 1000.0],
+    # Do not force sub-grid 1 ms diffusion into the ROM basis. Long-time queries
+    # are obtained by continuous reduced-ODE integration plus a steady anchor.
+    "thermal_time_scales": [0.1, 1.0, 10.0],
     "thermal_basis_max_rank": None,
+    "thermal_basis_conditioning_limit": 1e10,
     "n_tensor_samples": 96,
     "device": "cuda",
     "network": {
@@ -160,16 +160,14 @@ TRAINING = {
 
 PREDICTION = {
     "initial_temperature_rise": 0.0,
-    # Current-driven: this is the complex port-current coordinate vector. Current
-    # magnitude/phase changes do not require retraining.
     "operating": [5.0, 0.0],
-    # Voltage-driven is also supported instead, e.g.
+    # Voltage-driven example:
     # "drive": {"voltage": [10.0, 0.0], "series_impedance": [0.1, 0.1]},
     "geometry": None,
-    "times": [0.0, 0.001, 1.0, 1000.0, "inf"],
+    "times": [0.0, 0.1, 1.0, 1000.0, "inf"],
     "method": "etd2_adaptive",
     "max_step": 100.0,
-    "initial_step": 0.001,
+    "initial_step": 0.01,
     "rtol": 1e-5,
     "atol": 1e-8,
     "steady_tolerance": 1e-10,
