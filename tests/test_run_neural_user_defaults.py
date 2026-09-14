@@ -11,15 +11,19 @@ def _load_run():
     return module
 
 
-def test_run_defaults_use_geometry_to_tensor_not_neural_maxwell():
+def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     run = _load_run()
     network = run.TRAINING["network"]
     boundary = run.BACKGROUND["open_boundary_check"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
+    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_bg_local_v1"
     assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
-    assert len(run.TRAINING["thermal_time_scales"]) >= 2
+    assert run.TRAINING["thermal_basis_conditioning_limit"] > 1
+    assert run.TRAINING["thermal_time_scales"] == [0.1, 1.0, 10.0]
+    assert min(run.TRAINING["thermal_time_scales"]) >= 0.1
+    assert "geometry_thermal" in run.FILES["model"]
     assert network["width"] >= 16
     assert network["blocks"] >= 1
     assert boundary["samples"] >= 1
