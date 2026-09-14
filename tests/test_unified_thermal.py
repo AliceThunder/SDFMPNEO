@@ -53,6 +53,7 @@ def test_geometry_aware_basis_has_fixed_rank_and_moves_with_geometry():
         validation_geometries=[make_geometry(0.001)],
         target_relative_error=0.99,
         time_scales=(0.1, 1.0),
+        trajectory_times=(0.1, 1.0, 10.0),
     )
     assert report.converged
     assert report.stop_reason == "target_reached"
@@ -61,8 +62,12 @@ def test_geometry_aware_basis_has_fixed_rank_and_moves_with_geometry():
     assert len(report.local_ranks) == 2
     assert all(rank > 0 for rank in report.local_ranks)
     assert report.maximum_validation_relative_energy_error <= report.target_relative_error
+    assert report.maximum_validation_trajectory_relative_error <= report.target_relative_error
     assert report.validation_geometry_count == 1
     assert report.shifts[0] == 0.0
+    assert report.trajectory_times == (0.1, 1.0, 10.0)
+    assert report.trajectory_diagnostics
+    assert report.worst_validation_trajectory
 
     phi0 = library.basis_for_geometry(bg, reference)
     phi1 = library.basis_for_geometry(bg, make_geometry(0.003, 0.2))
@@ -88,7 +93,7 @@ def test_identity_geometry_reproduces_deterministic_basis_and_bounds():
     assert np.all(hi >= lo)
 
 
-def test_held_out_diagnostics_identify_source_and_time_scale():
+def test_held_out_diagnostics_identify_source_time_and_trajectory_output():
     bg = make_background()
     library, report = build_geometry_aware_thermal_library(
         bg,
@@ -97,6 +102,7 @@ def test_held_out_diagnostics_identify_source_and_time_scale():
         validation_geometries=[make_geometry(0.001)],
         target_relative_error=0.999,
         time_scales=(0.1, 1.0),
+        trajectory_times=(0.1, 1.0),
     )
     assert library.rank > 0
     assert report.validation_diagnostics
@@ -105,3 +111,8 @@ def test_held_out_diagnostics_identify_source_and_time_scale():
         "volume", "wire[0]", "wire[1]", "initial"
     }
     assert "relative_energy_error" in report.worst_validation_anchor
+    assert report.trajectory_diagnostics
+    assert report.worst_validation_trajectory["case"].startswith(("volume", "wire", "initial"))
+    assert "field_mass_relative_error" in report.worst_validation_trajectory
+    assert "maximum_temperature_relative_error" in report.worst_validation_trajectory
+    assert "maximum_wire_average_relative_error" in report.worst_validation_trajectory
