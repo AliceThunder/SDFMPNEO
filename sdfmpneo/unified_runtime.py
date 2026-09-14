@@ -23,7 +23,7 @@ from .unified_tensor_surrogate import (
 from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
 
-_CACHE_FORMAT = 11
+_CACHE_FORMAT = 12
 
 
 def jsonable(value):
@@ -90,14 +90,23 @@ def _cache_paths(directory):
 
 def _require_effective_thermal_basis(report):
     get=report.get if isinstance(report,dict) else lambda name,default=None:getattr(report,name,default)
+    trajectory=get("maximum_validation_trajectory_relative_error",None)
+    if trajectory is None:
+        raise RuntimeError("geometry-aware thermal cache lacks the required held-out trajectory audit; regenerate training cache")
     if bool(get("converged",False)): return
-    error=get("maximum_validation_relative_energy_error",None)
-    if error is None or float(error)==0.0: error=get("maximum_anchor_relative_energy_error",float("nan"))
+    energy=get("maximum_validation_relative_energy_error",None)
+    if energy is None or float(energy)==0.0: energy=get("maximum_anchor_relative_energy_error",float("nan"))
     target=get("target_relative_error",float("nan")); rank=int(get("basis_dimension",0)); reason=str(get("stop_reason","unknown"))
-    worst=get("worst_validation_anchor",{}) or get("worst_training_anchor",{}) or {}
+    worst=(
+        get("worst_validation_trajectory",{})
+        or get("worst_validation_anchor",{})
+        or get("worst_training_anchor",{})
+        or {}
+    )
     raise RuntimeError(
-        f"geometry-aware thermal ROM 未达到训练要求：rank={rank}, energy error={float(error):.3e}, "
-        f"target={float(target):.3e}, stop={reason}, worst={json.dumps(jsonable(worst),ensure_ascii=False,sort_keys=True)}。"
+        f"geometry-aware thermal ROM 未达到训练要求：rank={rank}, energy error={float(energy):.3e}, "
+        f"trajectory error={float(trajectory):.3e}, target={float(target):.3e}, stop={reason}, "
+        f"worst={json.dumps(jsonable(worst),ensure_ascii=False,sort_keys=True)}。"
     )
 
 
@@ -177,6 +186,7 @@ def train(settings,model_path,settings_dir,monitor=None):
                 bg,settings["DEFAULT_GEOMETRY"],basis_geometries,validation_geometries=validation_geometries,
                 target_relative_error=float(settings["TRAINING"].get("thermal_basis_energy_tolerance",5e-2)),
                 time_scales=settings["TRAINING"].get("thermal_time_scales",[0.1,1.0,10.0]),
+                trajectory_times=settings["TRAINING"].get("thermal_trajectory_times"),
                 maximum_rank=settings["TRAINING"].get("thermal_basis_max_rank"),
                 conditioning_limit=float(settings["TRAINING"].get("thermal_basis_conditioning_limit",1e10)),monitor=monitor,
             )
