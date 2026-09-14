@@ -15,13 +15,14 @@ from .unified_final_audit import run_final_held_out_audit
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
-from .unified_physics_gate import run_physics_gate
-from .unified_tensor_surrogate import TensorDataset, encode_geometry, generate_tensor_dataset
+from .unified_corrected_physics_gate import run_physics_gate
+from .unified_corrected_truth import generate_tensor_dataset
+from .unified_tensor_surrogate import TensorDataset, encode_geometry
 from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
-from .unified_truth_preflight import run_truth_preflight
+from .unified_corrected_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 16
+_CACHE_FORMAT = 17
 
 
 def jsonable(value):
@@ -66,11 +67,16 @@ def _signature(settings):
 def build_background(settings,*,bounds=None):
     regions=settings["REGIONS"]; cfg=dict(settings["BACKGROUND"])
     if bounds is not None: cfg["bounds"]=np.asarray(bounds,float).tolist()
-    return OpenBoundaryBackground.from_config(
+    bg=OpenBoundaryBackground.from_config(
         cfg,frequency_hz=settings["PHYSICS"]["frequency_hz"],materials=settings["MATERIALS"],
         coil_materials=regions["coil_materials"],package_materials=regions["package_materials"],
         seawater_material=regions["seawater_material"],ambient_temperature=settings["PHYSICS"]["ambient_temperature"],
     )
+    # Offline local self correction needs the physical mesh configuration, while
+    # online artifacts only store the already-corrected learned tensors.
+    bg.background_config=dict(cfg)
+    bg.self_correction_config=dict(cfg.get("self_correction",{}))
+    return bg
 
 
 def _sample_geometries(settings,n,rng,background):
@@ -169,7 +175,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
             if not preflight["certified"]:
                 raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
-            print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
+            print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / corrected EM mesh convergence 全部通过。",flush=True)
 
         if valid_cache:
             _progress("复用 geometry-aware thermal library 与 tensor truth 数据",38,monitor)
@@ -196,7 +202,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"thermal_basis_report":thermal_report,
                                   "truth_preflight":preflight,"thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes",
                                   "em_representation":"geometry_to_port_and_joule_tensors","em_boundary":"silver_muller_impedance",
-                                  "source_model":bg.source_model})
+                                  "source_model":bg.source_model,"self_correction_model":"canonical_local_fine_minus_coarse_self_defect_v1"})
             _progress("生成几何 tensor truth 数据",52,monitor)
 
         gate_rng=np.random.default_rng(seed+104729)
@@ -205,7 +211,7 @@ def train(settings,model_path,settings_dir,monitor=None):
         gate=run_physics_gate(settings,bg,dataset,gate_geometries,preflight=preflight,monitor=monitor)
         if not gate["certified"]:
             raise RuntimeError("Physics Gate failed; refusing surrogate training: "+json.dumps(jsonable(gate),sort_keys=True))
-        print("Physics Gate：Joule identities / reciprocity / Poynting / full mesh / thermal transport continuity / trajectory 全部通过。",flush=True)
+        print("Physics Gate：corrected Joule identities / reciprocity / Poynting / full mesh / thermal transport continuity / trajectory 全部通过。",flush=True)
 
         _progress("训练 geometry→tensor POD-MLP",62,monitor)
         surrogate,report=train_matrix_tensor_surrogate(
@@ -223,14 +229,14 @@ def train(settings,model_path,settings_dir,monitor=None):
         final_audit=run_final_held_out_audit(settings,model,final_geometries,monitor=monitor)
         if not final_audit["certified"]:
             raise RuntimeError("Final held-out audit failed; refusing model artifact: "+json.dumps(jsonable(final_audit),sort_keys=True))
-        print("Final audit：full-vs-ROM thermal / tensor-current contractions / current+circuit dynamics / outward loss / production integrator / steady stability 全部通过。",flush=True)
+        print("Final audit：full-vs-ROM thermal / corrected tensor-current contractions / current+circuit dynamics / outward loss / production integrator / steady stability 全部通过。",flush=True)
 
         _progress("保存统一 geometry-aware tensor-ROM 模型",98,monitor)
         model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,
                                         "final_held_out_audit":final_audit,"training_report":asdict(report)})
         checkpoint.unlink(missing_ok=True)
         write_json(settings_dir/"training.report.json",{"model":str(model_path),"background_cells":bg.n_cells,"offline_maxwell_dofs":bg.n_edges,
-            "online_em_representation":"Z_field + D_vol + geometry-dependent modal H_j","thermal_basis_rank":bg.thermal_rank,
+            "online_em_representation":"corrected Z_field + D_vol + geometry-dependent modal H_j","thermal_basis_rank":bg.thermal_rank,
             "thermal_representation":"deterministic Phi(g) = BG + transported local blocks","thermal_basis":thermal_report,
             "truth_preflight":preflight,"physics_gate":gate,"final_held_out_audit":final_audit,"training":report})
         _progress("训练完成",100,monitor)
