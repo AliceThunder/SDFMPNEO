@@ -237,6 +237,12 @@ def run_physics_gate(settings, background, dataset, geometries, *, preflight, mo
         "modal_loewner_ok": audit["maximum_relative_loewner_violation"] <= 1e-8,
         "joule_total_power_identity_ok": audit["maximum_joule_total_power_relative_error"] <= 1e-10,
         "joule_modal_identity_ok": audit["maximum_joule_modal_contraction_relative_error"] <= 1e-10,
+        "local_self_joule_total_identity_ok": audit.get(
+            "maximum_local_self_joule_total_power_relative_error", np.inf
+        ) <= 1e-10,
+        "local_self_joule_modal_identity_ok": audit.get(
+            "maximum_local_self_joule_modal_contraction_relative_error", np.inf
+        ) <= 1e-10,
         "local_self_correction_available": audit.get("local_self_correction_available", 0.0) >= 0.5,
         "local_self_correction_power_balance_ok": audit.get(
             "maximum_local_self_correction_power_balance_relative_error", np.inf
