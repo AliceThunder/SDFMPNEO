@@ -9,7 +9,12 @@ import hashlib
 import numpy as np
 
 from .electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
-from .unified_tensor_surrogate import UnifiedTensorSurrogate, pack_tensors, tensor_block_sizes
+from .unified_tensor_surrogate import (
+    UnifiedTensorSurrogate,
+    decode_physical_tensors,
+    pack_tensors,
+    tensor_block_sizes,
+)
 
 
 @dataclass(frozen=True)
@@ -66,18 +71,16 @@ def _fit_output_pod(outputs, *, relative_tail_tolerance):
     scale = np.maximum(np.std(y, axis=0), 1e-12)
     normalized = (y - mean) / scale
     _, singular, vt = np.linalg.svd(normalized, full_matrices=False)
-    total = float(np.sum(singular**2))
+    total = float(np.sum(singular ** 2))
     if total <= np.finfo(float).tiny:
         basis = np.zeros((y.shape[1], 1), float)
         basis[0, 0] = 1.0
         return mean, scale, basis, 0.0
-    cumulative = np.cumsum(singular**2)
+    cumulative = np.cumsum(singular ** 2)
     tails = np.sqrt(np.maximum(total - cumulative, 0.0) / total)
     valid = np.flatnonzero(tails <= tol)
     rank = int(valid[0] + 1) if valid.size else len(singular)
-    basis = vt[:rank].T.copy()
-    tail = float(tails[rank - 1])
-    return mean, scale, basis, tail
+    return mean, scale, vt[:rank].T.copy(), float(tails[rank - 1])
 
 
 def _unpack_z_torch(torch, packed, n):
@@ -100,9 +103,7 @@ def _unpack_h_torch(torch, packed, n):
         h[..., i, i] = torch.complex(packed[..., i], torch.zeros_like(packed[..., i]))
     start = n
     for k, (i, j) in enumerate(pairs):
-        value = torch.complex(
-            packed[..., start + k], packed[..., start + len(pairs) + k]
-        )
+        value = torch.complex(packed[..., start + k], packed[..., start + len(pairs) + k])
         h[..., i, j] = value
         h[..., j, i] = value.conj()
     return h
@@ -116,33 +117,31 @@ def _physics_penalty(torch, physical, n_ports, thermal_rank, phi_min, phi_max):
     d = _unpack_h_torch(torch, physical[..., z_size:z_size + h_size], n)
     penalty = torch.mean(torch.relu(-torch.linalg.eigvalsh(d).real) ** 2)
     outward = z.real.to(d.dtype) - d
-    penalty = penalty + torch.mean(
-        torch.relu(-torch.linalg.eigvalsh(outward).real) ** 2
-    )
+    penalty = penalty + torch.mean(torch.relu(-torch.linalg.eigvalsh(outward).real) ** 2)
     start = z_size + h_size
     for j in range(r):
-        h = _unpack_h_torch(
-            torch,
-            physical[..., start + j * h_size:start + (j + 1) * h_size],
-            n,
-        )
-        low = h - float(phi_min[j]) * d
-        high = float(phi_max[j]) * d - h
-        penalty = penalty + torch.mean(torch.relu(-torch.linalg.eigvalsh(low).real) ** 2)
-        penalty = penalty + torch.mean(torch.relu(-torch.linalg.eigvalsh(high).real) ** 2)
+        h = _unpack_h_torch(torch, physical[..., start + j * h_size:start + (j + 1) * h_size], n)
+        lower = phi_min[..., j].reshape(-1, 1, 1).to(d.dtype)
+        upper = phi_max[..., j].reshape(-1, 1, 1).to(d.dtype)
+        penalty = penalty + torch.mean(torch.relu(-torch.linalg.eigvalsh(h - lower * d).real) ** 2)
+        penalty = penalty + torch.mean(torch.relu(-torch.linalg.eigvalsh(upper * d - h).real) ** 2)
     return penalty / max(1, 2 + 2 * r)
 
 
-def _relative_numpy(diff, truth, weights):
-    num = float(np.sum(np.asarray(diff, float) ** 2 * weights))
-    den = max(float(np.sum(np.asarray(truth, float) ** 2 * weights)), np.finfo(float).tiny)
+def _relative_numpy(diff, truth, weights=None):
+    d = np.asarray(diff, float)
+    t = np.asarray(truth, float)
+    if weights is None:
+        num = float(np.sum(d * d))
+        den = max(float(np.sum(t * t)), np.finfo(float).tiny)
+    else:
+        num = float(np.sum(d * d * weights))
+        den = max(float(np.sum(t * t * weights)), np.finfo(float).tiny)
     return float(np.sqrt(num / den))
 
 
 def train_matrix_tensor_surrogate(
     dataset,
-    phi_min,
-    phi_max,
     *,
     network_settings=None,
     training_settings=None,
@@ -150,7 +149,7 @@ def train_matrix_tensor_surrogate(
     monitor=None,
     checkpoint_path=None,
 ):
-    """Fit training-only POD and optimize per-matrix relative errors."""
+    """Fit training-only POD and MLP; modal feasibility uses per-geometry bounds."""
     import torch
 
     cfg = {
@@ -192,7 +191,6 @@ def train_matrix_tensor_surrogate(
         **net_settings,
     )
     network = build_residual_mlp(net_cfg, input_norm)
-
     resolved = _resolve_device(torch, device)
     dtype = torch.float32 if str(cfg["dtype"]) == "float32" else torch.float64
     network = network.to(device=resolved, dtype=dtype)
@@ -201,67 +199,55 @@ def train_matrix_tensor_surrogate(
         lr=float(cfg["learning_rate"]),
         weight_decay=float(cfg["weight_decay"]),
     )
+
     x = torch.as_tensor(dataset.inputs, dtype=dtype, device=resolved)
     target = torch.as_tensor(dataset.outputs, dtype=dtype, device=resolved)
+    bounds_min = torch.as_tensor(dataset.phi_min, dtype=dtype, device=resolved)
+    bounds_max = torch.as_tensor(dataset.phi_max, dtype=dtype, device=resolved)
     out_mean = torch.as_tensor(output_mean, dtype=dtype, device=resolved)
     out_scale = torch.as_tensor(output_scale, dtype=dtype, device=resolved)
     pod_t = torch.as_tensor(pod_basis, dtype=dtype, device=resolved)
     z_w_np, h_w_np = _matrix_weights(dataset.n_ports)
     z_w = torch.as_tensor(z_w_np, dtype=dtype, device=resolved)
     h_w = torch.as_tensor(h_w_np, dtype=dtype, device=resolved)
-    phi_min = np.asarray(phi_min, float).reshape(-1)
-    phi_max = np.asarray(phi_max, float).reshape(-1)
-
     n = int(dataset.n_ports)
     r = int(dataset.thermal_rank)
     z_size, h_size, _ = tensor_block_sizes(n, r)
 
     def relative_block(diff, truth, weights):
         numerator = torch.sum(diff * diff * weights, dim=-1)
-        denominator = torch.sum(truth * truth * weights, dim=-1).clamp_min(
-            torch.finfo(dtype).eps
-        )
+        denominator = torch.sum(truth * truth * weights, dim=-1).clamp_min(torch.finfo(dtype).eps)
         return numerator / denominator
 
     def physical_prediction(xb):
-        beta = network(xb)
-        normalized = beta @ pod_t.T
-        return out_mean + out_scale * normalized
+        return out_mean + out_scale * (network(xb) @ pod_t.T)
 
     def batch_loss(ids):
-        ids_t = torch.as_tensor(
-            np.asarray(ids, np.int64), dtype=torch.long, device=resolved
-        )
-        xb = x.index_select(0, ids_t)
+        ids_t = torch.as_tensor(np.asarray(ids, np.int64), dtype=torch.long, device=resolved)
+        pred = physical_prediction(x.index_select(0, ids_t))
         truth = target.index_select(0, ids_t)
-        pred = physical_prediction(xb)
         diff = pred - truth
-        loss_z = torch.mean(
-            relative_block(diff[..., :z_size], truth[..., :z_size], z_w)
-        )
-        loss_d = torch.mean(
-            relative_block(
-                diff[..., z_size:z_size + h_size],
-                truth[..., z_size:z_size + h_size],
-                h_w,
-            )
-        )
+        loss_z = torch.mean(relative_block(diff[..., :z_size], truth[..., :z_size], z_w))
+        loss_d = torch.mean(relative_block(
+            diff[..., z_size:z_size + h_size], truth[..., z_size:z_size + h_size], h_w
+        ))
         start = z_size + h_size
         h_losses = []
         for j in range(r):
             sl = slice(start + j * h_size, start + (j + 1) * h_size)
-            h_losses.append(
-                torch.mean(relative_block(diff[..., sl], truth[..., sl], h_w))
-            )
-        loss_h = torch.stack(h_losses).mean()
-        loss = (
-            float(cfg["z_weight"]) * loss_z
-            + float(cfg["d_weight"]) * loss_d
-            + float(cfg["h_weight"]) * loss_h
-        )
+            h_losses.append(torch.mean(relative_block(diff[..., sl], truth[..., sl], h_w)))
+        loss_h = torch.stack(h_losses).mean() if h_losses else torch.zeros((), dtype=dtype, device=resolved)
+        loss = float(cfg["z_weight"]) * loss_z + float(cfg["d_weight"]) * loss_d + float(cfg["h_weight"]) * loss_h
         if float(cfg["physics_penalty_weight"]) > 0.0:
             physical_scale = torch.mean(truth * truth).clamp_min(torch.finfo(dtype).eps)
-            penalty = _physics_penalty(torch, pred, n, r, phi_min, phi_max) / physical_scale
+            penalty = _physics_penalty(
+                torch,
+                pred,
+                n,
+                r,
+                bounds_min.index_select(0, ids_t),
+                bounds_max.index_select(0, ids_t),
+            ) / physical_scale
             loss = loss + float(cfg["physics_penalty_weight"]) * penalty
         return loss
 
@@ -269,7 +255,6 @@ def train_matrix_tensor_surrogate(
     torch.manual_seed(int(cfg["seed"]))
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(int(cfg["seed"]))
-
     pod_signature = hashlib.sha256(
         output_mean.tobytes() + output_scale.tobytes() + pod_basis.tobytes()
     ).hexdigest()
@@ -283,7 +268,7 @@ def train_matrix_tensor_surrogate(
         try:
             saved = torch.load(checkpoint, map_location=resolved, weights_only=False)
             compatible = (
-                int(saved.get("schema_version", -1)) == 2
+                int(saved.get("schema_version", -1)) == 3
                 and saved.get("pod_signature") == pod_signature
                 and int(saved.get("pod_rank", -1)) == pod_rank
             )
@@ -301,7 +286,6 @@ def train_matrix_tensor_surrogate(
 
     interval = max(1, int(cfg["validation_interval"]))
     epochs_completed = start_epoch
-    last_val = float("inf")
     for epoch in range(start_epoch, int(cfg["epochs"])):
         if monitor is not None:
             monitor.checkpoint()
@@ -315,9 +299,7 @@ def train_matrix_tensor_surrogate(
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             if cfg.get("gradient_clip_norm") is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    network.parameters(), float(cfg["gradient_clip_norm"])
-                )
+                torch.nn.utils.clip_grad_norm_(network.parameters(), float(cfg["gradient_clip_norm"]))
             optimizer.step()
             total += float(loss.detach().cpu()) * len(ids)
             count += len(ids)
@@ -341,21 +323,18 @@ def train_matrix_tensor_surrogate(
                 stale += interval
             if checkpoint is not None:
                 checkpoint.parent.mkdir(parents=True, exist_ok=True)
-                torch.save(
-                    {
-                        "schema_version": 2,
-                        "pod_signature": pod_signature,
-                        "pod_rank": pod_rank,
-                        "epoch": epochs_completed,
-                        "best_epoch": best_epoch,
-                        "best_validation_loss": best_val,
-                        "network": network.state_dict(),
-                        "best_network": best_state,
-                        "optimizer": optimizer.state_dict(),
-                        "stale": stale,
-                    },
-                    checkpoint,
-                )
+                torch.save({
+                    "schema_version": 3,
+                    "pod_signature": pod_signature,
+                    "pod_rank": pod_rank,
+                    "epoch": epochs_completed,
+                    "best_epoch": best_epoch,
+                    "best_validation_loss": best_val,
+                    "network": network.state_dict(),
+                    "best_network": best_state,
+                    "optimizer": optimizer.state_dict(),
+                    "stale": stale,
+                }, checkpoint)
             if monitor is not None:
                 with monitor._lock:
                     monitor.data.update(
@@ -375,84 +354,66 @@ def train_matrix_tensor_surrogate(
 
     network.load_state_dict(best_state)
     network.eval()
-    surrogate = UnifiedTensorSurrogate(
-        network,
-        output_mean,
-        output_scale,
-        pod_basis,
-        n,
-        phi_min,
-        phi_max,
-    )
+    surrogate = UnifiedTensorSurrogate(network, output_mean, output_scale, pod_basis, n, r)
     with torch.no_grad():
         test_loss = float(batch_loss(test_ids).detach().cpu())
 
-    def split_metrics(ids):
-        overall = []
-        z_errors = []
-        d_errors = []
-        h_errors = []
-        zd_projection = []
-        h_projection = []
-        for idx in ids:
-            decoded = surrogate.predict_from_encoded(dataset.inputs[idx])
-            pred = pack_tensors(decoded.z_field, decoded.d_vol, decoded.modal_h)
-            truth = dataset.outputs[idx]
-            diff = pred - truth
-            overall.append(
-                float(np.linalg.norm(diff) / max(np.linalg.norm(truth), np.finfo(float).tiny))
-            )
-            z_errors.append(_relative_numpy(diff[:z_size], truth[:z_size], z_w_np))
-            d_errors.append(
-                _relative_numpy(
-                    diff[z_size:z_size + h_size],
-                    truth[z_size:z_size + h_size],
-                    h_w_np,
+    def evaluate(ids):
+        decoded = []
+        zd = []
+        hc = []
+        with torch.no_grad():
+            for idx in ids:
+                pred = physical_prediction(x[idx:idx + 1]).detach().cpu().numpy()[0]
+                tensor = decode_physical_tensors(
+                    pred,
+                    n,
+                    dataset.phi_min[idx],
+                    dataset.phi_max[idx],
                 )
-            )
-            start = z_size + h_size
-            per_h = []
-            for j in range(r):
-                sl = slice(start + j * h_size, start + (j + 1) * h_size)
-                per_h.append(_relative_numpy(diff[sl], truth[sl], h_w_np))
-            h_errors.append(max(per_h))
-            zd_projection.append(decoded.zd_projection_correction)
-            h_projection.append(decoded.h_projection_correction)
+                decoded.append(pack_tensors(tensor.z_field, tensor.d_vol, tensor.modal_h))
+                zd.append(tensor.zd_projection_correction)
+                hc.append(tensor.h_projection_correction)
+        decoded = np.asarray(decoded, float)
+        truth = dataset.outputs[np.asarray(ids, int)]
+        diff = decoded - truth
+        start = z_size + h_size
+        h_weights = np.tile(h_w_np, r) if r else np.empty(0)
+        full_weights = np.concatenate([z_w_np, h_w_np, h_weights])
         return {
-            "overall": max(overall),
-            "z": max(z_errors),
-            "d": max(d_errors),
-            "h": max(h_errors),
-            "zd_projection": max(zd_projection),
-            "h_projection": max(h_projection),
+            "tensor": _relative_numpy(diff, truth, full_weights),
+            "z": _relative_numpy(diff[:, :z_size], truth[:, :z_size], z_w_np),
+            "d": _relative_numpy(diff[:, z_size:z_size + h_size], truth[:, z_size:z_size + h_size], h_w_np),
+            "h": _relative_numpy(diff[:, start:], truth[:, start:], h_weights) if r else 0.0,
+            "zd": max(zd or [0.0]),
+            "hc": max(hc or [0.0]),
         }
 
-    test_metrics = split_metrics(test_ids)
-    audit_metrics = split_metrics(audit_ids)
-    report = TensorTrainingReport(
+    test = evaluate(test_ids)
+    audit = evaluate(audit_ids)
+    return surrogate, TensorTrainingReport(
         epochs_completed=epochs_completed,
         best_epoch=best_epoch,
         best_validation_loss=float(best_val),
         test_loss=test_loss,
         pod_rank=pod_rank,
         pod_relative_tail_error=pod_tail,
-        test_relative_tensor_error=test_metrics["overall"],
-        test_z_relative_error=test_metrics["z"],
-        test_d_relative_error=test_metrics["d"],
-        test_h_relative_error=test_metrics["h"],
-        audit_relative_tensor_error=audit_metrics["overall"],
-        audit_z_relative_error=audit_metrics["z"],
-        audit_d_relative_error=audit_metrics["d"],
-        audit_h_relative_error=audit_metrics["h"],
-        maximum_test_zd_projection_correction=test_metrics["zd_projection"],
-        maximum_test_h_projection_correction=test_metrics["h_projection"],
-        maximum_audit_zd_projection_correction=audit_metrics["zd_projection"],
-        maximum_audit_h_projection_correction=audit_metrics["h_projection"],
+        test_relative_tensor_error=test["tensor"],
+        test_z_relative_error=test["z"],
+        test_d_relative_error=test["d"],
+        test_h_relative_error=test["h"],
+        audit_relative_tensor_error=audit["tensor"],
+        audit_z_relative_error=audit["z"],
+        audit_d_relative_error=audit["d"],
+        audit_h_relative_error=audit["h"],
+        maximum_test_zd_projection_correction=test["zd"],
+        maximum_test_h_projection_correction=test["hc"],
+        maximum_audit_zd_projection_correction=audit["zd"],
+        maximum_audit_h_projection_correction=audit["hc"],
         device=resolved,
         network_config=net_cfg.to_dict(),
         training_config=dict(cfg),
     )
-    return surrogate, report
 
 
 __all__ = ["TensorTrainingReport", "train_matrix_tensor_surrogate"]
