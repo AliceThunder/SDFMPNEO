@@ -7,13 +7,14 @@ from .unified_self_correction import apply_local_self_correction
 from .unified_tensor_surrogate import (
     TensorDataset,
     _audit_current_vectors,
+    _cell_volume_heat,
     _conductivity_support_bounds,
     _hermitian,
+    _port_truth_from_context,
+    _require_static_field_materials,
     _split_labels,
     encode_geometry,
     pack_tensors,
-    solve_port_truth_tensors as _raw_solve_port_truth_tensors,
-    solve_truth_tensors as _raw_solve_truth_tensors,
 )
 
 
@@ -44,20 +45,14 @@ def _refresh_audit(z, d, d_out, audit, correction, *, modal=None, phi_min=None, 
         out["maximum_relative_loewner_violation"] = _loewner_violation(
             modal, d, np.asarray(phi_min, float), np.asarray(phi_max, float)
         )
-        # The defect is constructed from the same local Joule field for D and H,
-        # so the existing exact contraction identities are preserved additively.
-        out["joule_total_power_relative_error"] = float(
-            audit.get("joule_total_power_relative_error", 0.0)
-        )
-        out["joule_modal_contraction_relative_error"] = float(
-            audit.get("joule_modal_contraction_relative_error", 0.0)
-        )
     out["local_self_correction"] = correction.audit
     return out
 
 
 def solve_port_truth_tensors(background, geometry):
-    z, d, d_out, audit = _raw_solve_port_truth_tensors(background, geometry)
+    _require_static_field_materials(background)
+    context = background.geometry_context(geometry, assemble_thermal=False)
+    z, d, d_out, _X, _sigma, audit = _port_truth_from_context(background, context)
     correction = apply_local_self_correction(background, geometry, z, d, d_out)
     refreshed = _refresh_audit(
         correction.z, correction.d_vol, correction.d_out, audit, correction
@@ -66,44 +61,80 @@ def solve_port_truth_tensors(background, geometry):
 
 
 def solve_truth_tensors(background, geometry):
-    z, d, modal, phi_min, phi_max, audit = _raw_solve_truth_tensors(background, geometry)
+    """Generate corrected Z/D/H using the current geometry-specific Phi(g)."""
+    _require_static_field_materials(background)
     context = background.geometry_context(geometry, assemble_thermal=True)
     phi = np.asarray(context.thermal_basis, float)
-    # D_out is needed only so the local defect remains power-balanced.  The raw
-    # tensor path does not return the independently assembled D_out; using the
-    # implied raw partition here does not certify Poynting balance.  Independent
-    # D_out is still produced by solve_port_truth_tensors and final Gate paths.
-    implied_raw_out = _hermitian(z) - d
+    z_raw, d_raw, d_out_raw, X, sigma, audit = _port_truth_from_context(background, context)
+
+    modal_raw = []
+    for j in range(phi.shape[1]):
+        weighted_edge = np.asarray(
+            background.edge_cell_hodge @ (sigma * phi[:, j])
+        ).reshape(-1)
+        modal_raw.append(_hermitian(X.conj().T @ (weighted_edge[:, None] * X)))
+    modal_raw = np.asarray(modal_raw, complex)
+
     correction = apply_local_self_correction(
         background,
         geometry,
+        z_raw,
+        d_raw,
+        d_out_raw,
+        phi=phi,
+        modal_h=modal_raw,
+    )
+    z = correction.z
+    d = correction.d_vol
+    d_out = correction.d_out
+    modal = correction.modal_h
+    phi_min, phi_max = _conductivity_support_bounds(phi, sigma)
+
+    # Verify the corrected multiscale Joule identities over a complete Hermitian
+    # current span.  The local defect contributes only |c_p|^2 diagonal terms.
+    delta_d = np.real(np.diag(d - d_raw))
+    delta_h = np.real(
+        np.stack([np.diag(modal[j] - modal_raw[j]) for j in range(modal.shape[0])], axis=0)
+    )
+    power_consistency = 0.0
+    modal_consistency = 0.0
+    for current in _audit_current_vectors(X.shape[1]):
+        c = np.asarray(current, complex)
+        field = X @ c
+        q_cells = _cell_volume_heat(background, sigma, field)
+        weights = np.abs(c) ** 2
+        direct_power = float(np.sum(q_cells) + 0.5 * np.dot(weights, delta_d))
+        tensor_power = float(0.5 * np.real(c.conj() @ d @ c))
+        pscale = max(abs(direct_power), abs(tensor_power), np.finfo(float).tiny)
+        power_consistency = max(power_consistency, abs(direct_power - tensor_power) / pscale)
+
+        direct_modal = phi.T @ q_cells + 0.5 * (delta_h @ weights)
+        tensor_modal = 0.5 * np.real(
+            np.einsum("p,rpq,q->r", c.conj(), modal, c, optimize=True)
+        )
+        mscale = max(
+            float(np.linalg.norm(direct_modal)),
+            float(np.linalg.norm(tensor_modal)),
+            np.finfo(float).tiny,
+        )
+        modal_consistency = max(
+            modal_consistency,
+            float(np.linalg.norm(direct_modal - tensor_modal) / mscale),
+        )
+
+    refreshed = _refresh_audit(
         z,
         d,
-        implied_raw_out,
-        phi=phi,
-        modal_h=modal,
-    )
-    phi_min2, phi_max2 = _conductivity_support_bounds(
-        phi, np.asarray(background.cell_properties(context, None, em=True)[0], float)
-    )
-    refreshed = _refresh_audit(
-        correction.z,
-        correction.d_vol,
-        correction.d_out,
+        d_out,
         audit,
         correction,
-        modal=correction.modal_h,
-        phi_min=phi_min2,
-        phi_max=phi_max2,
+        modal=modal,
+        phi_min=phi_min,
+        phi_max=phi_max,
     )
-    return (
-        correction.z,
-        correction.d_vol,
-        correction.modal_h,
-        phi_min2,
-        phi_max2,
-        refreshed,
-    )
+    refreshed["joule_total_power_relative_error"] = float(power_consistency)
+    refreshed["joule_modal_contraction_relative_error"] = float(modal_consistency)
+    return z, d, modal, phi_min, phi_max, refreshed
 
 
 def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
