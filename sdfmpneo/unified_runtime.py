@@ -22,7 +22,8 @@ from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
 from .unified_corrected_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 17
+_CACHE_FORMAT = 18
+_SELF_CORRECTION_MODEL = "canonical_local_fine_minus_coarse_self_defect_v1"
 
 
 def jsonable(value):
@@ -101,9 +102,15 @@ def _require_release_artifact(path):
         preflight=dict(release.get("truth_preflight",{})); gate=dict(release.get("physics_gate",{})); final=dict(release.get("final_held_out_audit",{}))
     except (OSError,KeyError,ValueError,TypeError) as exc:
         raise ValueError("model artifact lacks readable production release metadata") from exc
-    checks={"truth_preflight":bool(preflight.get("certified",False)),"physics_gate":bool(gate.get("certified",False)),
-            "final_held_out_audit":bool(final.get("certified",False)),"production_integrator":bool(final.get("production_integrator_ok",False)),
-            "certificate_level":final.get("certificate_level")=="frozen_held_out_numerical_validation"}
+    checks={
+        "truth_preflight":bool(preflight.get("certified",False)),
+        "local_self_correction":bool(preflight.get("local_self_correction_converged",False)),
+        "physics_gate":bool(gate.get("certified",False)),
+        "self_correction_model":gate.get("self_correction_model")==_SELF_CORRECTION_MODEL,
+        "final_held_out_audit":bool(final.get("certified",False)),
+        "production_integrator":bool(final.get("production_integrator_ok",False)),
+        "certificate_level":final.get("certificate_level")=="frozen_held_out_numerical_validation",
+    }
     if not all(checks.values()):
         failed=[name for name,value in checks.items() if not value]
         raise ValueError("model artifact is not a certified production release: "+", ".join(failed))
@@ -123,7 +130,8 @@ def _require_effective_thermal_basis(report):
 
 
 def _gate_sample_count(settings):
-    background=settings["BACKGROUND"]; sections=("open_boundary_check","formulation_check","mesh_check","geometry_continuity_check")
+    background=settings["BACKGROUND"]
+    sections=("open_boundary_check","formulation_check","mesh_check","geometry_continuity_check","self_correction")
     return max(1,*[int(dict(background.get(name,{})).get("samples",1)) for name in sections])
 
 
@@ -138,7 +146,14 @@ def train(settings,model_path,settings_dir,monitor=None):
         if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
             try:
                 cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
-                valid_cache=(cache_meta.get("signature")==sig and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT and bool(dict(cache_meta.get("truth_preflight",{})).get("certified",False)))
+                cached_preflight=dict(cache_meta.get("truth_preflight",{}))
+                valid_cache=(
+                    cache_meta.get("signature")==sig
+                    and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+                    and bool(cached_preflight.get("certified",False))
+                    and bool(cached_preflight.get("local_self_correction_converged",False))
+                    and cache_meta.get("self_correction_model")==_SELF_CORRECTION_MODEL
+                )
             except (OSError,ValueError,TypeError): valid_cache=False
         if valid_cache:
             preflight=dict(cache_meta["truth_preflight"]); _progress("复用已认证 pre-basis spatial truth preflight",6,monitor)
@@ -147,7 +162,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             preflight_rng=np.random.default_rng(seed+65537); preflight_geometries=_sample_geometries(settings,_gate_sample_count(settings),preflight_rng,bg)
             _progress("执行 pre-basis spatial truth preflight",6,monitor); preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
             if not preflight["certified"]: raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
-            print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / corrected EM mesh convergence 全部通过。",flush=True)
+            print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / local-self reference / corrected EM mesh convergence 全部通过。",flush=True)
         if valid_cache:
             _progress("复用 geometry-aware thermal library 与 tensor truth 数据",38,monitor)
             thermal_report=cache_meta.get("thermal_basis_report",{}); _require_effective_thermal_basis(thermal_report)
@@ -168,7 +183,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             dataset=generate_tensor_dataset(bg,tensor_geometries,seed=seed,monitor=monitor); dataset.save(data_path)
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"thermal_basis_report":thermal_report,"truth_preflight":preflight,
                                   "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors",
-                                  "em_boundary":"silver_muller_impedance","source_model":bg.source_model,"self_correction_model":"canonical_local_fine_minus_coarse_self_defect_v1"})
+                                  "em_boundary":"silver_muller_impedance","source_model":bg.source_model,"self_correction_model":_SELF_CORRECTION_MODEL})
             _progress("生成几何 tensor truth 数据",52,monitor)
         gate_rng=np.random.default_rng(seed+104729); gate_geometries=_sample_geometries(settings,_gate_sample_count(settings),gate_rng,bg)
         _progress("执行 post-basis Physics Gate",53,monitor); gate=run_physics_gate(settings,bg,dataset,gate_geometries,preflight=preflight,monitor=monitor)
