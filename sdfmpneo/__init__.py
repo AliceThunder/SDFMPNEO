@@ -9,6 +9,10 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
+from .unified_transverse_source import install as _install_transverse_source
+
+_install_transverse_source(OpenBoundaryBackground)
+
 from .unified_tensor_surrogate import (
     DecodedTensors,
     TensorDataset,
