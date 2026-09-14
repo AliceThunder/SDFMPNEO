@@ -33,7 +33,6 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         if len(library.local_modes) != len(self.coil_materials):
             raise ValueError("thermal library port count differs from background")
         self.thermal_library = library
-        # Production must not silently fall back to one fixed basis.
         self.thermal_basis = None
         return library
 
@@ -97,6 +96,13 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         heat /= heat.sum()
         return source, heat
 
+    def _deposited_path_integral(self, source):
+        """Recover the oriented vector integral represented by an edge source."""
+        value = np.zeros(3, float)
+        for edge, (axis, _i, _j, _k) in enumerate(self.edge_tuples):
+            value[axis] += float(source[edge]) * float(self.edge_lengths[edge])
+        return value
+
     def _spatial_context(self, geometry):
         """Assemble geometry/material/source data using production source regularization."""
         g = self.validate_geometry(geometry)
@@ -114,6 +120,12 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
             heat_weights.append(heat)
             area = float(coil.conductor_width * coil.conductor_thickness)
             length = float(np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1)))
+            endpoint_vector = np.asarray(points[-1] - points[0], float)
+            deposited_vector = self._deposited_path_integral(source)
+            path_integral_error = float(
+                np.linalg.norm(deposited_vector - endpoint_vector)
+                / max(length, np.finfo(float).tiny)
+            )
             fractions[material] += heat * (area * length) / self.cell_volumes
             source_audits.append({
                 "model": self.source_model,
@@ -121,6 +133,8 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
                 "conductor_width": float(coil.conductor_width),
                 "conductor_thickness": float(coil.conductor_thickness),
                 "path_length": length,
+                "terminal_separation": float(np.linalg.norm(endpoint_vector)),
+                "terminal_path_integral_relative_error": path_integral_error,
                 "source_norm": float(np.linalg.norm(source)),
                 "heat_weight_sum": float(np.sum(heat)),
             })
@@ -209,7 +223,6 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         return self.ambient_temperature + rise, material_rise
 
     def _build_edges(self):
-        # Keep every edge DOF; the absorbing boundary closes tangential E.
         full, lengths, maps = [], [], []
         for axis in range(3):
             amap = {}
