@@ -15,8 +15,8 @@
       -> temperature
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
-或 full-field correction。离线 Maxwell 使用匹配海水介质的一阶 Silver--Mueller 开放阻抗边界，
-训练前自动检查独立 Poynting 功率闭合以及扩大计算域后的阻抗收敛。
+或 full-field correction。离线 truth 使用 finite-cross-section stranded source、Silver--Mueller
+开放边界，并在 surrogate training 前通过 domain / formulation / mesh / Joule / geometry Gate。
 """
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ MODE = "train"
 ROOT = Path(__file__).resolve().parent
 
 FILES = {
-    # Distinct artifact: old fixed-basis/open-boundary models cannot be reused.
     "model": "results/uwpt/model.geometry_thermal.npz",
     "predictions": "results/uwpt/predictions.json",
     "settings_dir": "results/uwpt",
@@ -42,10 +41,30 @@ BACKGROUND = {
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.03,
+    # Expanded-domain convergence of Z, D_vol, physical D_out and mutual Z.
     "open_boundary_check": {
         "samples": 3,
         "padding": 0.12,
         "relative_tolerance": 5e-2,
+    },
+    # Full-wave truth is compared with an E-form MQS limit on held-out geometries.
+    "formulation_check": {
+        "samples": 1,
+        "relative_tolerance": 2e-2,
+    },
+    # One representative physical refinement is intentionally mandatory.  If this
+    # fails, reduce fine_step/max_step rather than training through the error.
+    "mesh_check": {
+        "samples": 1,
+        "refinement_factor": 0.75,
+        "relative_tolerance": 1e-1,
+    },
+    # Small rigid perturbations must change source/material/Phi/Z/D/H continuously.
+    "geometry_continuity_check": {
+        "samples": 1,
+        "translation_step": 1e-4,
+        "angle_step": 1e-3,
+        "relative_change_limit": 2e-1,
     },
 }
 
@@ -122,18 +141,11 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    # Geometry-aware thermal ROM: background modes use representative geometry;
-    # local TX/RX canonical blocks remove rigid pose before reduction. Held-out
-    # validation never enriches the library.
     "thermal_basis_schema": "geometry_aware_bg_local_v1",
     "basis_samples": 8,
     "basis_validation_samples": 6,
     "thermal_basis_energy_tolerance": 5e-2,
-    # Do not force sub-grid 1 ms diffusion into the ROM basis. Long-time queries
-    # are obtained by continuous reduced-ODE integration plus a steady anchor.
     "thermal_time_scales": [0.1, 1.0, 10.0],
-    # Independent full-vs-ROM trajectory Gate. 100 s is deliberately longer than
-    # the resolvent anchor scales; steady is audited separately.
     "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
     "thermal_basis_max_rank": None,
     "thermal_basis_conditioning_limit": 1e10,
