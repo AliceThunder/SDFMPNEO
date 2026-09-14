@@ -52,6 +52,10 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert 0 < final_audit["outward_relative_tolerance"] < 1
     assert 0 < final_audit["projection_correction_limit"] < 1
     assert 0 < final_audit["reduced_dynamic_relative_tolerance"] < 1
+    assert 0 < final_audit["integrator_relative_tolerance"] < 1
+    assert 0 < final_audit["integrator_rtol"] < final_audit["integrator_relative_tolerance"]
+    assert 0 < final_audit["integrator_atol"] < final_audit["integrator_rtol"]
+    assert 0 < final_audit["integrator_max_step"] <= max(final_audit["times"])
     assert final_audit["circuit_condition_limit"] > 1
     cases = final_audit["operating_cases"]
     assert any("operating" in case for case in cases)
