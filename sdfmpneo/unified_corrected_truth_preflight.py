@@ -13,6 +13,7 @@ from .unified_physics_gate import (
     audit_low_frequency_formulation,
 )
 from .unified_self_correction import apply_local_self_correction
+from .unified_self_correction_audit import audit_local_self_correction
 from .unified_truth_preflight import (
     _diagonal,
     _diag_vector,
@@ -60,7 +61,9 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
             monitor.checkpoint()
         context0, _, _, z0_raw, d0_raw, o0_raw = _solve_fields(background, geometry)
         context1, _, _, z1_raw, d1_raw, o1_raw = _solve_fields(refined, geometry)
+        print(f"local self defect……{index+1}/{len(geometries)} base mesh", flush=True)
         z0, d0, o0, correction0 = _correct(background, geometry, z0_raw, d0_raw, o0_raw)
+        print(f"local self defect……{index+1}/{len(geometries)} refined mesh", flush=True)
         z1, d1, o1, correction1 = _correct(refined, geometry, z1_raw, d1_raw, o1_raw)
 
         path0 = _source_path_lengths(context0)
@@ -175,9 +178,11 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     domain_n = min(len(geometries), max(1, int(cfg.get("open_boundary_check", {}).get("samples", 1))))
     formulation_n = min(len(geometries), max(1, int(cfg.get("formulation_check", {}).get("samples", 1))))
     mesh_n = min(len(geometries), max(1, int(cfg.get("mesh_check", {}).get("samples", 1))))
+    self_n = min(len(geometries), max(1, int(cfg.get("self_correction", {}).get("samples", 1))))
     domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
     formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
     mesh = audit_em_mesh_preflight(settings, background, geometries[:mesh_n], monitor)
+    local_self = audit_local_self_correction(background, geometries[:self_n], monitor)
     source_rows = [_source_and_loss_partition(background, g) for g in geometries]
     max_fraction = max(row["material_fraction_closure_error"] for row in source_rows)
     max_partition = max(row["wire_loss_partition_relative_error"] for row in source_rows)
@@ -190,8 +195,18 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
         "open_boundary_domain_converged": bool(domain["converged"]),
         "low_frequency_formulation_converged": bool(formulation["converged"]),
         "em_mesh_converged": bool(mesh["converged"]),
+        "local_self_correction_converged": bool(local_self["converged"]),
     }
     certified = all(bool(value) for value in checks.values())
+    diagnosis = _mesh_failure_diagnosis(mesh)
+    if not local_self["converged"]:
+        diagnosis = {
+            "code": "local_self_reference_not_converged",
+            "maximum_relative_error": float(local_self["maximum_relative_error"]),
+            "fine_step": float(local_self["fine_step"]),
+            "validation_fine_step": float(local_self["validation_fine_step"]),
+            "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
+        }
     return {
         **{key: bool(value) for key, value in checks.items()},
         "source_model": getattr(background, "source_model", "unknown"),
@@ -203,7 +218,8 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
         "open_boundary_convergence": domain,
         "formulation_convergence": formulation,
         "em_mesh_convergence": mesh,
-        "failure_diagnosis": _mesh_failure_diagnosis(mesh),
+        "local_self_correction_convergence": local_self,
+        "failure_diagnosis": diagnosis,
         "source_samples": source_rows,
         "certified": bool(certified),
         "status": "certified" if certified else "truth_preflight_failed",
