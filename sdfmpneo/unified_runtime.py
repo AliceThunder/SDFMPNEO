@@ -52,7 +52,12 @@ def _progress(message,percent,monitor=None):
 def _signature(settings):
     keys=("BACKGROUND","DEFAULT_GEOMETRY","GEOMETRY_SAMPLING","PHYSICS","MATERIALS","REGIONS","TRAINING")
     payload={k:settings[k] for k in keys}
-    payload["TRAINING"]={k:v for k,v in payload["TRAINING"].items() if k not in {"network","optimizer","device"}}
+    # Neural optimization and final release thresholds do not alter the frozen
+    # thermal/tensor truth cache. Changing physical/basis settings still invalidates it.
+    payload["TRAINING"]={
+        k:v for k,v in payload["TRAINING"].items()
+        if k not in {"network","optimizer","device","final_audit"}
+    }
     payload["cache_format"]=_CACHE_FORMAT
     text=json.dumps(jsonable(payload),sort_keys=True,separators=(",",":"),allow_nan=False)
     return hashlib.sha256(text.encode()).hexdigest()
@@ -163,12 +168,7 @@ def train(settings,model_path,settings_dir,monitor=None):
         gate_rng=np.random.default_rng(seed+104729)
         gate_geometries=_sample_geometries(settings,_gate_sample_count(settings),gate_rng,bg)
         _progress("执行 post-basis Physics Gate",53,monitor)
-        gate=run_physics_gate(settings,bg,dataset,gate_geometries,monitor=monitor)
-        gate["truth_preflight"]=preflight
-        gate["terminal_source_continuity_ok"]=bool(preflight["terminal_source_continuity_ok"])
-        gate["wire_loss_not_double_counted"]=bool(preflight["wire_loss_not_double_counted"])
-        gate["certified"]=bool(gate["certified"] and preflight["certified"])
-        gate["status"]="certified" if gate["certified"] else "physics_gate_failed"
+        gate=run_physics_gate(settings,bg,dataset,gate_geometries,preflight=preflight,monitor=monitor)
         if not gate["certified"]:
             raise RuntimeError("Physics Gate failed; refusing surrogate training: "+json.dumps(jsonable(gate),sort_keys=True))
         print("Physics Gate：Joule identities / reciprocity / Poynting / full mesh / thermal transport continuity / trajectory 全部通过。",flush=True)
@@ -189,7 +189,7 @@ def train(settings,model_path,settings_dir,monitor=None):
         final_audit=run_final_held_out_audit(settings,model,final_geometries,monitor=monitor)
         if not final_audit["certified"]:
             raise RuntimeError("Final held-out audit failed; refusing model artifact: "+json.dumps(jsonable(final_audit),sort_keys=True))
-        print("Final audit：full-vs-ROM thermal / tensor-current contractions / outward loss / reduced dynamics / steady stability 全部通过。",flush=True)
+        print("Final audit：full-vs-ROM thermal / tensor-current contractions / current+circuit dynamics / outward loss / steady stability 全部通过。",flush=True)
 
         _progress("保存统一 geometry-aware tensor-ROM 模型",98,monitor)
         model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,
