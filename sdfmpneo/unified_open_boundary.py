@@ -1,12 +1,7 @@
-"""Open electromagnetic boundary for the production Maxwell truth solve.
-
-The background keeps all tangential boundary edge degrees of freedom and adds a
-first-order Silver--Mueller/Sommerfeld impedance condition matched to seawater.
-The same boundary mass matrix provides an independent outward-power quadratic
-form for the Physics Gate.
-"""
+"""Open-boundary production Maxwell background with geometry-aware thermal ROM."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 import numpy as np
 import scipy.sparse as sp
 
@@ -14,14 +9,77 @@ from .unified_background import EPS0, MU0, FixedMultiscaleBackground
 
 
 class OpenBoundaryBackground(FixedMultiscaleBackground):
-    """Fixed Cartesian background with a passive first-order open EM boundary."""
+    """Fixed Cartesian EM background; thermal basis is generated per geometry."""
 
     boundary_model = "silver_muller_impedance"
 
+    def __init__(self, *args, thermal_library=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.thermal_library = None
+        if thermal_library is not None:
+            self.set_thermal_library(thermal_library)
+
+    @property
+    def thermal_rank(self):
+        if self.thermal_library is not None:
+            return int(self.thermal_library.rank)
+        return super().thermal_rank
+
+    def set_thermal_library(self, library):
+        if library is None or int(getattr(library, "rank", 0)) < 1:
+            raise ValueError("geometry-aware thermal library must have positive rank")
+        if len(library.local_modes) != len(self.coil_materials):
+            raise ValueError("thermal library port count differs from background")
+        self.thermal_library = library
+        # Production must not silently fall back to one fixed basis.
+        self.thermal_basis = None
+        return library
+
+    def geometry_context(self, geometry, *, assemble_thermal=True):
+        context = super().geometry_context(geometry, assemble_thermal=False)
+        if not assemble_thermal:
+            return context
+        if self.thermal_library is None:
+            raise ValueError("geometry-aware thermal library has not been constructed")
+        phi = self.thermal_library.basis_for_geometry(self, context.geometry)
+        M, K = self.thermal_operator_full(context.fractions)
+        context.thermal_basis = phi
+        context.thermal_mass_full = M
+        context.thermal_stiffness_full = K
+        context.thermal_mass_reduced = phi.T @ (M @ phi)
+        context.thermal_stiffness_reduced = phi.T @ (K @ phi)
+        return context
+
+    def _state_temperature(self, context, state):
+        material_rise = None
+        if state is None:
+            rise = np.zeros(self.n_cells)
+        elif isinstance(state, Mapping):
+            material_rise = {str(name): float(value) for name, value in state.items()}
+            if any(not np.isfinite(value) for value in material_rise.values()):
+                raise ValueError("material temperature rises must be finite")
+            rise = np.zeros(self.n_cells)
+            for name, fraction in context.fractions.items():
+                rise += fraction * material_rise.get(name, 0.0)
+        else:
+            value = np.asarray(state, float)
+            if value.ndim == 0:
+                rise = np.full(self.n_cells, float(value))
+            else:
+                value = value.reshape(-1)
+                if value.shape == (self.n_cells,):
+                    rise = value
+                else:
+                    phi = getattr(context, "thermal_basis", None)
+                    if phi is None or value.shape != (phi.shape[1],):
+                        raise ValueError("thermal state dimension mismatch")
+                    rise = np.asarray(phi, float) @ value
+            if np.any(~np.isfinite(rise)):
+                raise ValueError("thermal state must be finite")
+        return self.ambient_temperature + rise, material_rise
+
     def _build_edges(self):
-        # Unlike the legacy finite-PEC background, keep every edge DOF.  The
-        # tangential boundary field is closed by a Robin/impedance term in
-        # em_operator rather than by deleting those unknowns.
+        # Keep every edge DOF; the absorbing boundary closes tangential E.
         full, lengths, maps = [], [], []
         for axis in range(3):
             amap = {}
@@ -36,9 +94,6 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
                     for k in ranges[2]:
                         amap[(i, j, k)] = len(full)
                         full.append((axis, i, j, k))
-                        # Only the coordinate along the edge direction owns a
-                        # cell-width index. Boundary-node indices on the other
-                        # two coordinates can legitimately equal n{axis}.
                         if axis == 0:
                             lengths.append(self.dx[i])
                         elif axis == 1:
@@ -78,60 +133,36 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         self._build_boundary_edge_hodge()
 
     def _build_boundary_edge_hodge(self):
-        """Mass-lumped integral of |E_t|^2 over the six outer faces."""
         weights = np.zeros(self.n_edges, float)
 
         def add(axis, key, area):
             e = self.edge_maps[axis].get(key)
             if e is not None:
-                # A rectangular face has two parallel edge basis functions per
-                # tangential component, so constant tangential fields integrate
-                # exactly with area/(2*l^2) on each of those two edges.
                 weights[e] += float(area) / (2.0 * self.edge_lengths[e] ** 2)
 
-        # x-normal faces: tangential y/z edges.
         for i_face in (0, self.nx):
             for j in range(self.ny):
                 for k in range(self.nz):
                     area = self.dy[j] * self.dz[k]
-                    add(1, (i_face, j, k), area)
-                    add(1, (i_face, j, k + 1), area)
-                    add(2, (i_face, j, k), area)
-                    add(2, (i_face, j + 1, k), area)
-
-        # y-normal faces: tangential x/z edges.
+                    add(1, (i_face, j, k), area); add(1, (i_face, j, k + 1), area)
+                    add(2, (i_face, j, k), area); add(2, (i_face, j + 1, k), area)
         for j_face in (0, self.ny):
             for i in range(self.nx):
                 for k in range(self.nz):
                     area = self.dx[i] * self.dz[k]
-                    add(0, (i, j_face, k), area)
-                    add(0, (i, j_face, k + 1), area)
-                    add(2, (i, j_face, k), area)
-                    add(2, (i + 1, j_face, k), area)
-
-        # z-normal faces: tangential x/y edges.
+                    add(0, (i, j_face, k), area); add(0, (i, j_face, k + 1), area)
+                    add(2, (i, j_face, k), area); add(2, (i + 1, j_face, k), area)
         for k_face in (0, self.nz):
             for i in range(self.nx):
                 for j in range(self.ny):
                     area = self.dx[i] * self.dy[j]
-                    add(0, (i, j, k_face), area)
-                    add(0, (i, j + 1, k_face), area)
-                    add(1, (i, j, k_face), area)
-                    add(1, (i + 1, j, k_face), area)
-
+                    add(0, (i, j, k_face), area); add(0, (i, j + 1, k_face), area)
+                    add(1, (i, j, k_face), area); add(1, (i + 1, j, k_face), area)
         if not np.any(weights > 0.0):
             raise RuntimeError("open boundary mass matrix is empty")
         self.boundary_edge_hodge = weights
 
     def boundary_admittance(self):
-        """Passive wave admittance of the seawater surrounding medium.
-
-        With the package convention exp(+i omega t), the outgoing-wave branch is
-
-            Y = sqrt((epsilon - i sigma/omega) / mu).
-
-        Its real part is non-negative and produces outward time-average power.
-        """
         material = self.materials[self.seawater_material]
         sigma = float(self._temperature_material(self.seawater_material, self.ambient_temperature))
         epsilon = EPS0 * float(material.get("relative_permittivity", 1.0))
@@ -148,7 +179,6 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         return complex(admittance)
 
     def outward_loss_weights(self):
-        """Diagonal quadratic-form weights for independent outward Poynting power."""
         return float(self.boundary_admittance().real) * self.boundary_edge_hodge
 
     def em_operator(self, context, state=None):
