@@ -15,6 +15,9 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     run = _load_run()
     network = run.TRAINING["network"]
     boundary = run.BACKGROUND["open_boundary_check"]
+    formulation = run.BACKGROUND["formulation_check"]
+    mesh = run.BACKGROUND["mesh_check"]
+    continuity = run.BACKGROUND["geometry_continuity_check"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
@@ -31,6 +34,15 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert boundary["samples"] >= 1
     assert boundary["padding"] > 0
     assert 0 < boundary["relative_tolerance"] < 1
+    assert formulation["samples"] >= 1
+    assert 0 < formulation["relative_tolerance"] < 1
+    assert mesh["samples"] >= 1
+    assert 0 < mesh["refinement_factor"] < 1
+    assert 0 < mesh["relative_tolerance"] < 1
+    assert continuity["samples"] >= 1
+    assert continuity["translation_step"] > 0
+    assert continuity["angle_step"] > 0
+    assert 0 < continuity["relative_change_limit"] < 1
     assert "fine_message_steps" not in network
     assert "coarse_levels" not in network
     assert "solver_steps" not in network
@@ -40,6 +52,12 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert "n_operator_samples" not in run.TRAINING
     assert "residual_training_steps" not in run.TRAINING
     assert "em_temperature_rise_bounds" not in run.TRAINING
+
+
+def test_model_artifact_requires_current_spatial_gate_version():
+    from sdfmpneo.unified_model import FORMAT_VERSION
+
+    assert FORMAT_VERSION >= 11
 
 
 def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
