@@ -306,7 +306,7 @@ thermal library 和 tensor truth 完成后，训练 MLP 前继续检查：
 - Joule total/modal identities；
 - modal Loewner bounds；
 - full mesh audit：`Z/D/P_vol/D_out/H/Tmax/wire/a_*`；
-- small geometry perturbation 下 source/material/\(Phi\)/`Z/D/H` continuity；
+- small geometry perturbation 下 source/material/\(\Phi\)/`Z/D/H` continuity；
 - geometry-aware `M_r/K_r` SPD/conditioning；
 - held-out resolvent + full-vs-ROM trajectory/steady。
 
@@ -458,6 +458,7 @@ python -m pytest -q \
   tests/test_unified_thermal.py \
   tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
+  tests/test_unified_final_audit.py \
   tests/test_unified_end_to_end.py \
   tests/test_run_neural_user_defaults.py
 ```
