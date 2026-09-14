@@ -118,6 +118,9 @@ def test_finite_support_source_preserves_path_curl_and_loss_partition():
         assert row["curl_preservation_relative_error"] <= 1e-10
     audit = _source_and_loss_partition(bg, geometry())
     assert audit["finite_support_source"]
+    assert audit["transverse_source_projection"]
+    assert audit["maximum_transverse_longitudinal_relative_norm"] <= 1e-8
+    assert audit["maximum_source_curl_preservation_relative_error"] <= 1e-10
     assert audit["terminal_path_conservation"]
     assert audit["maximum_terminal_path_integral_relative_error"] <= 1e-12
     assert audit["material_fraction_closure_error"] <= 1e-10
