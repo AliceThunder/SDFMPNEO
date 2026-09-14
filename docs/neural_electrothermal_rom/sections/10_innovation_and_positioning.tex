@@ -1,16 +1,16 @@
 \section{创新定位与综合评价}
 
 \subsection{核心贡献链条}
-项目的创新不应表述为 ``使用了一个神经网络''，而应集中在以下系统性结构：
+项目的创新不应表述为“使用了一个神经网络”，而应集中在以下系统性结构：
 \begin{equation}
 \boxed{
 \text{validated Maxwell physics}
 \rightarrow
-\text{energy-consistent } Z/D/H \text{ extraction}
+\text{energy-consistent }Z/D/H\text{ extraction}
 \rightarrow
-\text{transient-aware thermal basis}
+\text{deterministic geometry-aware thermal coordinates}
 \rightarrow
-\text{geometry-parametric neural surrogate}
+\text{geometry-parametric neural EM surrogate}
 \rightarrow
 \text{joint feasible physical decode}
 \rightarrow
@@ -19,40 +19,59 @@
 \text{true thermal ROM dynamics}.
 }
 \end{equation}
-神经网络替代的是随几何变化的低维电磁参数映射，而不是 Maxwell 方程、current/circuit law 或 thermal dynamics 本身。
+
+神经网络替代的是复杂的 geometry-to-EM-tensor map；几何对局部 thermal structures 的平移/旋转作用则显式保留为 deterministic coordinate transform。这样既避免 online Maxwell solve，也避免用一个固定全局 thermal basis 记忆所有移动热点。
 
 \subsection{为什么学习 $Z/D_{\rm vol}/H$}
-当前材料模型下 Maxwell operator 只依赖几何。固定几何后，一次 multi-RHS solve 同时确定整个端口电流空间的响应。因此直接学习
+当前材料模型下 Maxwell operator 只依赖 geometry。固定 geometry 后，一次 multi-RHS solve 同时确定整个端口 current space，因此学习
 \begin{equation}
 g\mapsto\{Z_{\rm field},D_{\rm vol},H_j\}
 \end{equation}
 具有以下优势：
 \begin{enumerate}
-  \item learning target 与最终 impedance、total loss 和 thermal source 直接相关；
-  \item current magnitude/phase 由解析 quadratic forms 完整覆盖，不需要把 operating current 当网络采样维度；
-  \item $D_{\rm vol}$ 把 port dissipation 与 thermal Joule 放到同一矩阵级能量框架；
-  \item $\phi_j^{\min}D_{\rm vol}\preceq H_j\preceq\phi_j^{\max}D_{\rm vol}$ 进一步把 modal source 与总耗散联系起来；
-  \item thermal trajectory 中无需重复计算高维电磁场。
+  \item target 与 impedance、total loss 和 reduced thermal source 直接相关；
+  \item current magnitude/phase 由 exact quadratic forms 覆盖，无需把 current 当 neural sampling dimension；
+  \item $D_{\rm vol}$ 与 $H_j$ 位于统一 Joule energy structure；
+  \item geometry-dependent Loewner bounds 把 modal source 与 total dissipation 联系起来；
+  \item thermal trajectory 中不重复计算高维 electromagnetic field。
 \end{enumerate}
 
-\subsection{与 trajectory surrogate 的区别}
+\subsection{为什么 thermal basis 必须 geometry-aware}
+当 TX/RX 在固定 Eulerian grid 上发生大范围 translation/rotation 时，短时 heat source 与温度 hotspot 会跟随设备移动。若采用一个固定全局 linear basis，basis 必须同时包含“热点位于所有可能位置”的方向，导致 rank 随 geometry coverage 快速增长，并可能出现 train anchors 已被记住、held-out geometry 仍接近 span 外的现象。
+
+因此 production theory 使用
+\begin{equation}
+\boxed{
+\Phi(g)=
+[\Phi_{\rm bg},\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\mathcal T_{\rm rx}(g)\Psi_{\rm rx}].
+}
+\end{equation}
+已知 rigid motion 由 coordinate transform 处理，而不是转化成 linear-subspace rank。该设计直接对应系统的几何物理，并比 neural basis prediction、Grassmann interpolation 或大量 global-mode enrichment 更简单。
+
+\subsection{为什么不是 trajectory surrogate}
 直接学习
 \begin{equation}
 (g,c,a_0,t)\mapsto T(t)
 \end{equation}
-需要网络同时学习初值、时间尺度、热扩散、current scaling、circuit feedback 和稳态结构。当前方案把这些已知结构移出学习问题，只留下静态 geometry-to-tensor map，从而降低学习复杂度并提高可解释性。
+需要网络同时学习 initial conditions、time scales、thermal diffusion、current scaling、circuit feedback 与 steady structure。当前方案把这些已知结构移出 learning problem，只留下静态 geometry-to-tensor map；thermal dynamics 继续由真实 $M_r(g),K_r(g)$ 控制。
+
+\subsection{时间尺度处理的定位}
+thermal ROM 不以“覆盖尽可能宽的 resolvent time range”为目标，而以“覆盖 full-order discretization 真正可解析、应用真正需要的 thermal dynamics”为目标。若 $\sqrt{\alpha\tau}$ 远小于 thermal mesh resolution，则极短时 anchor 主要在逼迫 ROM 表示离散 source placement。
+
+production basis 优先覆盖可解析短/中时尺度和 $s=0$ steady limit；任意更长 finite-time horizon 由同一个 stable reduced ODE 连续/链式推进到达。这把“模型空间覆盖范围”和“用户查询时间长度”从理论上分离。
 
 \subsection{结构保持的严格含义}
-本文所称 structure-preserving 只指已经明确证明或按构造保证的有限结构：
+本文所称 structure-preserving 只指已经按构造或理论明确保证的结构：
 \begin{itemize}
-  \item 在 reciprocal assumptions 下的 $Z^T=Z$；
+  \item reciprocal assumptions 下的 $Z^T=Z$；
   \item $D_{\rm vol}\succeq0$ 与 $\operatorname{Herm}Z-D_{\rm vol}\succeq0$；
-  \item $H_j=H_j^H$ 及 modal Loewner bounds；
-  \item peak-phasor 的 exact quadratic current scaling；
-  \item 真实 $M_r,K_r$ 和零源 thermal energy dissipation；
-  \item 显式 initial-condition/circuit/steady-state semantics。
+  \item $H_j=H_j^H$ 与 geometry-dependent modal Loewner bounds；
+  \item exact complex-current quadratic scaling；
+  \item deterministic canonical mode ordering 与 geometry-aware thermal coordinate construction；
+  \item 真实 $M_r(g),K_r(g)$ 与静态 geometry 零源 thermal dissipation；
+  \item explicit initial-condition/circuit/steady-state semantics。
 \end{itemize}
-这些条件不等价于完整 spatial realizability、pointwise thermal positivity、全域 surrogate certificate 或全局 nonlinear stability。后四者若需要，必须通过相应的 Physics Gate、verified bounds 或专门的 structure-preserving method 另行建立。
+这些条件不等价于 exact spatial realizability、pointwise positivity、全参数域 surrogate certificate 或 global nonlinear stability。
 
 \subsection{理论强项与风险}
 \begin{center}
@@ -60,37 +79,42 @@ g\mapsto\{Z_{\rm field},D_{\rm vol},H_j\}
 \toprule
 指标 & 评价与风险 \\
 \midrule
-理论分层 & 强。Maxwell、端口功率、Joule、circuit 与 thermal dynamics 的责任边界明确。 \\
-能量结构 & 强。truth 使用独立 Poynting audit；surrogate 使用联合 $Z/D/H$ 可行集，而非互不相关的 tensor regression。 \\
-学习任务 & 中到强。geometry-to-tensor map 远低于 full field，但可学习性仍取决于 geometry discretization continuity、POD spectrum 与 production-domain coverage。 \\
-thermal ROM & 条件强。使用 source/initial-condition/time-scale resolvent energy error 与 full trajectory audit；普通 Galerkin 不自动保持 pointwise positivity。 \\
-推理速度 & 强。每个静态 geometry 只需一次 MLP/tensor decode，trajectory 只执行 small thermal/circuit operations。 \\
-可验证性 & 强于 trajectory black box。$Z/D/H$、独立 matrix power balance、modal bounds、ROM error 和 trajectory error 可逐层审计。 \\
-模型误差 & 仍存在。source regularization、feed/return path、wire internal impedance、海水 convection 等必须通过 Physics Gate 或高保真/实验参考验证。 \\
-适用频率 & 当前为冻结单频。若扩展到 broadband，必须增加 positive-real/causal frequency structure。 \\
+理论分层 & 强。Maxwell、EM tensors、deterministic thermal coordinates、circuit 与 thermal dynamics 的责任边界明确。 \\
+能量结构 & 强。truth 使用独立 Poynting audit；surrogate 使用联合 $Z/D/H$ feasible set。 \\
+几何 thermal 泛化 & 相比固定 global basis 更合理。rigid motion 被显式 quotient 掉，不再消耗大量 linear rank。 \\
+学习任务 & 中到强。网络只学习 geometry-to-EM-tensor map；可学习性仍取决于 geometry discretization continuity、POD spectrum 与 domain coverage。 \\
+thermal ROM & 条件强。需要 transport/interpolation、basis conditioning、canonical rank 与 held-out full trajectory audit 全部通过。 \\
+推理速度 & 强。静态 geometry 只需一次 MLP、一次 deterministic small thermal assembly，随后是 small ODE/circuit operations。 \\
+可验证性 & 强于 trajectory black box。tensor、power balance、modal bounds、transport error、ROM error 与 trajectory error 可分层审计。 \\
+模型风险 & source regularization、feed/return path、wire internal impedance、thermal convection、size/deformation beyond rigid transport 仍需验证。 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{论文/技术报告应回答的问题}
-正式报告应围绕以下问题展开：
+\subsection{正式报告应回答的问题}
 \begin{enumerate}
-  \item 在 UWPT 低频 Maxwell 问题中，如何建立 reciprocity、passivity、独立 Poynting audit 与 thermal Joule consistency 同时成立的 $Z/D/H$ objects？
-  \item 如何利用 multi-RHS linearity 与 Hermitian current structure 消除 operating-current sampling dimension，并完整覆盖 thermal source span？
-  \item geometry-to-$Z/D/H$ map 是否具有足够低的有效复杂度，能够被紧凑神经代理学习？
-  \item 联合可行投影在多大程度上只是安全层，而不是主要误差修正器？
-  \item tensor surrogate、thermal ROM、initial-condition 与 circuit error 如何传播到 trajectory、steady state 与 impedance outputs？
-  \item 与直接 trajectory NN、普通 response-surface 和高维 online Maxwell solve 相比，精度--训练成本--推理成本的 Pareto 前沿如何？
+  \item 如何建立 reciprocity、passivity、independent Poynting audit 与 thermal Joule consistency 同时成立的 $Z/D/H$ objects？
+  \item 如何利用 multi-RHS linearity 与 Hermitian current structure 消除 operating-current sampling dimension？
+  \item rigid geometry motion 从 fixed global basis 中剥离后，canonical thermal mode rank 与 held-out error 能下降多少？
+  \item geometry-aware transport 的 interpolation/conditioning error 与真正 thermal operator variation 各占多少？
+  \item geometry-to-$Z/D/H$ map 是否具有足够低的有效复杂度，可被紧凑 surrogate 学习？
+  \item tensor surrogate、thermal ROM、transport、initial-condition 与 circuit errors 如何传播到 trajectory 与 steady outputs？
+  \item 与 fixed global thermal basis、trajectory NN 和 high-dimensional online Maxwell solve 相比，精度--训练成本--推理成本的 Pareto 前沿如何？
 \end{enumerate}
 
 \subsection{冻结结论}
 在 Physics Gate 通过后，主架构固定为
 \begin{equation}
 \boxed{
- g\rightarrow\{Z_{\rm field},D_{\rm vol},H_j\}_\theta
- \rightarrow\text{joint physical feasibility}
+ g
+ \rightarrow
+ \begin{cases}
+ \Phi(g),M_r(g),K_r(g)\quad\text{deterministic},\\
+ \{Z_{\rm field},D_{\rm vol},H_j\}_\theta\quad\text{neural}
+ \end{cases}
  \rightarrow\text{exact current/circuit physics}
- \rightarrow\text{true thermal ROM}.
+ \rightarrow\text{true geometry-aware thermal ROM}.
 }
 \end{equation}
-后续可以改进 POD、网络容量、sampling、active learning、verified bounds、positivity-preserving thermal method 与 integrator，但不得绕过上述物理分层。若新的 constitutive、conductor、boundary、frequency、circuit 或 geometry-dynamics evidence 推翻当前假设，应先修改 truth model/Physics Gate，再重建 basis、dataset 和 surrogate，而不是让网络吸收缺失物理。
+
+后续可以改进 POD、network capacity、sampling、active learning、verified bounds、positivity-preserving thermal method、integrator，以及在 held-out evidence 支持时加入 deterministic scale-aware thermal transform；但不得重新把 thermal basis 交给黑箱网络，也不得退回用固定 global span 记忆所有移动 hotspot 的路线。
