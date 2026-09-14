@@ -170,6 +170,26 @@ def _mesh_failure_diagnosis(mesh):
     }
 
 
+def _skipped_mesh_report(settings, reason):
+    cfg = dict(settings["BACKGROUND"].get("mesh_check", {}))
+    return {
+        "sample_count": 0,
+        "refinement_factor": float(cfg.get("refinement_factor", 0.75)),
+        "base_fine_step": float(settings["BACKGROUND"]["fine_step"]),
+        "refined_fine_step": float(cfg.get("refinement_factor", 0.75)) * float(settings["BACKGROUND"]["fine_step"]),
+        "relative_tolerance": float(cfg.get("relative_tolerance", 1e-1)),
+        "source_path_relative_tolerance": float(cfg.get("source_path_relative_tolerance", 1e-10)),
+        "maximum_relative_error": float("inf"),
+        "maximum_source_path_length_relative_error": float("inf"),
+        "source_geometry_invariant": False,
+        "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        "converged": False,
+        "skipped": True,
+        "skip_reason": str(reason),
+        "samples": [],
+    }
+
+
 def run_truth_preflight(settings, background, geometries, monitor=None):
     geometries = list(geometries)
     if not geometries:
@@ -179,14 +199,29 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     formulation_n = min(len(geometries), max(1, int(cfg.get("formulation_check", {}).get("samples", 1))))
     mesh_n = min(len(geometries), max(1, int(cfg.get("mesh_check", {}).get("samples", 1))))
     self_n = min(len(geometries), max(1, int(cfg.get("self_correction", {}).get("samples", 1))))
-    domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
-    formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
-    mesh = audit_em_mesh_preflight(settings, background, geometries[:mesh_n], monitor)
-    local_self = audit_local_self_correction(background, geometries[:self_n], monitor)
+
+    # Cheap algebraic/source checks first, then certify the local correction
+    # before spending a global base+refined Maxwell pair on corrected mesh truth.
     source_rows = [_source_and_loss_partition(background, g) for g in geometries]
     max_fraction = max(row["material_fraction_closure_error"] for row in source_rows)
     max_partition = max(row["wire_loss_partition_relative_error"] for row in source_rows)
     max_terminal = max(row["maximum_terminal_path_integral_relative_error"] for row in source_rows)
+    source_ok = (
+        all(row["finite_support_source"] for row in source_rows)
+        and all(row["terminal_path_conservation"] for row in source_rows)
+        and max_fraction <= 1e-10
+        and max_partition <= 1e-12
+    )
+
+    local_self = audit_local_self_correction(background, geometries[:self_n], monitor)
+    domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
+    formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
+    if source_ok and local_self["converged"] and domain["converged"] and formulation["converged"]:
+        mesh = audit_em_mesh_preflight(settings, background, geometries[:mesh_n], monitor)
+    else:
+        mesh = _skipped_mesh_report(settings, "upstream preflight prerequisite failed")
+        print("pre-basis corrected EM mesh Gate……skipped (upstream prerequisite failed)", flush=True)
+
     checks = {
         "finite_support_source_ok": all(row["finite_support_source"] for row in source_rows),
         "terminal_source_continuity_ok": all(row["terminal_path_conservation"] for row in source_rows),
