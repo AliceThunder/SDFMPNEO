@@ -332,7 +332,7 @@ MLP 训练完成后，系统使用单独 seed 重新采样 final audit geometrie
 - validation/early stopping；
 - optimizer update。
 
-只有 final audit 通过才会保存模型 artifact。
+只有 final audit 通过才会保存模型 artifact。保存使用临时文件原子替换；如果本次训练或 final audit 失败，不会发布新的 artifact，也不会破坏上一版已经认证的模型文件。
 
 默认 final audit：
 
@@ -434,9 +434,9 @@ results/uwpt/model.tensor_training.pt
 results/uwpt/model.geometry_thermal.npz
 ```
 
-当前物理 cache format 已升级到包含 pre-basis spatial truth preflight 的版本；旧 cache 不能跳过新 Gate。
+当前物理 `CACHE_FORMAT = 15`。v15 cache 才包含当前 pre-basis spatial truth preflight 与 scalar `P_vol` mesh Gate 语义；旧 cache 不能跳过这些新 Gate。只要 physical-cache signature 不变且缓存中的 preflight 已 `certified`，后续重新训练 MLP 可以直接复用该 preflight 结果。
 
-当前 unified model artifact `FORMAT_VERSION = 13`。没有 finite-support source / pre-basis spatial truth preflight / post-basis Physics Gate / completely-held-out release audit / production-integrator reference audit 这一整套冻结语义的旧模型会被 `load()` fail closed，需要重新训练。
+当前 unified model artifact `FORMAT_VERSION = 13`。正式 `python run.py --mode predict` 会先检查 artifact metadata，要求 pre-basis truth preflight、post-basis Physics Gate、completely-held-out final audit 和 production-integrator audit 全部通过，并要求 `certificate_level = frozen_held_out_numerical_validation`；缺任一项都会 fail closed。低层 `UnifiedNeuralElectroThermalModel.load()` 仍保留为库级序列化/round-trip 接口，其职责是检查 artifact 架构与格式版本，不代替正式 production release gate。
 
 物理 cache signature 不包含 MLP network/optimizer/device，也不包含 final release audit 的阈值或 operating cases；只改 neural optimizer 或 final Go/No-Go 阈值会复用已经冻结的 thermal/tensor truth。改变以下任一上游对象则会使 downstream truth/POD/model 失效：
 
@@ -459,8 +459,10 @@ python -m pytest -q \
   tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
   tests/test_unified_final_audit.py \
+  tests/test_unified_release_artifact.py \
   tests/test_unified_end_to_end.py \
-  tests/test_run_neural_user_defaults.py
+  tests/test_run_neural_user_defaults.py \
+  tests/test_package_metadata.py
 ```
 
 生产训练与测试不依赖 GitHub Actions。
