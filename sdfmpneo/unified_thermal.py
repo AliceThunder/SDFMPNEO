@@ -13,9 +13,10 @@ Basis construction uses three geometry roles:
   generalize across the production geometry family;
 * validation geometries stay strictly held out and only certify the final basis.
 
-This avoids the previous failure mode where validation could report a very large
-error after basis construction had already stopped, while also avoiding the
-invalid shortcut of training on the same geometries that are called validation.
+For backwards-compatible callers that provide only ``validation_geometries``,
+a reserve with at least two geometries is deterministically split into roughly
+two-thirds enrichment and one-third held-out validation. A single validation
+geometry remains fully held out, which keeps existing unit-test semantics.
 """
 from __future__ import annotations
 
@@ -277,6 +278,11 @@ def build_thermal_basis(
     basis does not generalize. ``validation_geometries`` remain strictly held
     out: they never add basis vectors and therefore retain their meaning as an
     independent thermal-ROM audit.
+
+    If no explicit enrichment pool is supplied and the validation reserve has
+    at least two geometries, the reserve is split deterministically into about
+    two-thirds enrichment and one-third held-out validation. This preserves the
+    existing public call while fixing the old train-only greedy behavior.
     """
     if target_relative_residual is not None:
         target_relative_error = target_relative_residual
@@ -284,8 +290,16 @@ def build_thermal_basis(
     if not 0.0 < target < 1.0:
         raise ValueError("thermal target_relative_error must lie in (0, 1)")
     geometries = list(geometry_samples)
-    enrichment = [] if enrichment_geometries is None else list(enrichment_geometries)
     validation = [] if validation_geometries is None else list(validation_geometries)
+    if enrichment_geometries is None:
+        if len(validation) >= 2:
+            holdout = max(1, len(validation) // 3)
+            enrichment = validation[:-holdout]
+            validation = validation[-holdout:]
+        else:
+            enrichment = []
+    else:
+        enrichment = list(enrichment_geometries)
     if not geometries:
         raise ValueError("thermal geometry samples cannot be empty")
 
