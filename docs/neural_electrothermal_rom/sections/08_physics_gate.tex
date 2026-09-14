@@ -5,8 +5,15 @@
 \subsection{Gate 0A：Maxwell formulation、reciprocity 与开放域}
 生产 truth model 必须明确验证 constitutive reciprocity、open-boundary treatment、domain convergence 与 low-frequency formulation suitability。在代表性 geometry 上逐步扩大计算域或比较 validated ABC/PML/open-boundary，并监控
 \begin{equation}
-Z_{\rm field},\qquad D_{\rm vol},\qquad D_{\rm out}^{\rm phys},\qquad \text{mutual impedance},\qquad \text{key fields}.
+Z_{\rm field},\qquad D_{\rm vol},\qquad \operatorname{Herm}(Z_{\rm field}),\qquad \text{mutual impedance},\qquad \text{key fields}.
 \end{equation}
+
+对于有耗介质，人工边界外移会改变 volume-loss 与 outward-flux 的空间分区：新增介质体积可以吸收更多功率，因此 $D_{\rm out}^{\rm phys}$ 本身不是跨不同人工边界位置的 domain-invariant observable。domain Gate 不要求 raw $D_{\rm out}^{\rm phys}$ 数值保持不变，而应同时报告
+\begin{equation}
+\frac{\|\Delta D_{\rm out}^{\rm phys}\|}{\text{total terminal dissipation scale}}
+\end{equation}
+来判断 outward-loss partition 的变化是否仍对端口能量预算重要。raw relative $D_{\rm out}$ change 可以作为 diagnostic，但不能单独作为 domain convergence 的硬判据。
+
 若材料或边界破坏 reciprocity，则不得继续硬编码 $Z^T=Z$。
 
 \subsection{Gate 0B：端口定义与独立功率闭合}
@@ -77,6 +84,8 @@ P_{\rm vol}\approx\frac12c^HD_{\rm vol}c.
 \begin{equation}
 Z_{\rm field},\quad D_{\rm vol},\quad D_{\rm out}^{\rm phys},\quad H_j(g),\quad P_{\rm vol},\quad T_{\max},\quad a_*.
 \end{equation}
+
+EM mesh audit 应同时分解 self/diagonal 与 mutual/off-diagonal response。若 mutual coupling 已收敛，而 $Z$、$D_{\rm vol}$、$P_{\rm vol}$ 的误差主要集中在 self terms，则应将其标记为 unresolved source self response。这表示 coarse EM discretization 尚未解析局部 source self physics；正确处理是继续收敛 EM truth discretization，或引入单独经过验证的 local self-field/self-loss correction，而不是放宽 Gate。
 
 thermal basis time-scale policy 必须和 spatial resolution 匹配。对 diffusivity $\alpha$ 与 anchor time $\tau$，若
 \begin{equation}
