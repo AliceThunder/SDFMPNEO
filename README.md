@@ -171,13 +171,15 @@ truth 直接检查：
 },
 ```
 
-expanded-domain Gate 比较 `Z_field / D_vol / D_out_phys / mutual Z`。mesh Gate 除了这些矩阵量，还在完整 Hermitian current-space basis 上直接比较
+expanded-domain Gate 硬验收 `Z_field / D_vol / P_vol / Herm(Z_field) / mutual Z` 的收敛。对有耗海水，人工边界外移时更多功率会在新增海水体积中耗散、剩余 `D_out_phys` 会相应减小，因此 **不要求 raw `D_out_phys` 数值跨人工边界保持不变**。代码仍报告 `raw_relative_d_out_error`，但硬 Gate 使用 `relative_outward_partition_significance = ||ΔD_out|| / total_terminal_dissipation_scale` 判断边界功率分区变化是否对端口能量预算仍然重要。
+
+mesh Gate 在同一物理域内比较 `Z/D/P_vol/D_out/mutual Z`，并额外报告 self/mutual 分解。若 `self-Z`、`self-D_vol` 明显不收敛而 mutual 项已经收敛，preflight 会标记 `unresolved_source_self_response`；这表示 coarse EM grid 没有解析局部 source self physics，不能通过放宽 Gate 解决。
 
 \[
-P_{\rm vol}(c)=\frac12 c^H D_{\rm vol}c,
+P_{\rm vol}(c)=\frac12 c^H D_{\rm vol}c.
 \]
 
-并报告 `relative_p_vol_error`；post-basis mesh audit 还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
+post-basis mesh audit 还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
 
 ## 5. Geometry-aware deterministic thermal ROM
 
@@ -422,7 +424,7 @@ PREDICTION["drive"] = {
 
 即约 12 mm，而 conductor width/thickness 的 production range 可以明显小于该尺度。finite-cross-section Gauss source 解决的是“source support 必须绑定真实 conductor geometry”，**并不意味着 12 mm 网格自动解析了 1 mm 级 conductor self physics**。
 
-因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/P_vol/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 `fine_step/max_step` 或进一步改进局部离散/自项物理模型，而不是放宽 Gate 来获得一个伪 certified 模型。
+因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/P_vol/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 EM truth discretization，或引入单独经过验证的 local self-field/self-loss correction；不能通过放宽 Gate 获得伪 certified 模型。preflight 会同时输出 `self-Z` 与 `mutual-Z`，用于区分局部 self-resolution 问题和整体场离散问题。
 
 ## 13. 缓存与 artifact
 
@@ -434,7 +436,7 @@ results/uwpt/model.tensor_training.pt
 results/uwpt/model.geometry_thermal.npz
 ```
 
-当前物理 `CACHE_FORMAT = 15`。v15 cache 才包含当前 pre-basis spatial truth preflight 与 scalar `P_vol` mesh Gate 语义；旧 cache 不能跳过这些新 Gate。只要 physical-cache signature 不变且缓存中的 preflight 已 `certified`，后续重新训练 MLP 可以直接复用该 preflight 结果。
+当前物理 `CACHE_FORMAT = 16`。v16 cache 包含 corrected lossy-domain open-boundary Gate、scalar `P_vol` mesh Gate 与 self/mutual mesh diagnostics；旧 cache 不能跳过这些新 Gate。只要 physical-cache signature 不变且缓存中的 preflight 已 `certified`，后续重新训练 MLP 可以直接复用该 preflight 结果。
 
 当前 unified model artifact `FORMAT_VERSION = 13`。正式 `python run.py --mode predict` 会先检查 artifact metadata，要求 pre-basis truth preflight、post-basis Physics Gate、completely-held-out final audit 和 production-integrator audit 全部通过，并要求 `certificate_level = frozen_held_out_numerical_validation`；缺任一项都会 fail closed。低层 `UnifiedNeuralElectroThermalModel.load()` 仍保留为库级序列化/round-trip 接口，其职责是检查 artifact 架构与格式版本，不代替正式 production release gate。
 
@@ -455,6 +457,7 @@ python -m pytest -q \
   tests/test_unified_geometry_physics.py \
   tests/test_unified_open_boundary.py \
   tests/test_unified_physics_gate.py \
+  tests/test_unified_truth_preflight.py \
   tests/test_unified_thermal.py \
   tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
