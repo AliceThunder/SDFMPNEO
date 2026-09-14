@@ -1,9 +1,27 @@
 """Independent convergence audit for the canonical local self correction."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 
 from .unified_self_correction import _config, _parent_fine_step, _solve_local
+
+
+class _AuditParentView:
+    """Share immutable background data but keep a private warm state per port."""
+
+    def __init__(self, parent):
+        object.__setattr__(self, "_parent", parent)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_parent"), name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_local_self_"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(object.__getattribute__(self, "_parent"), name, value)
 
 
 def _relative(a, b):
@@ -25,30 +43,34 @@ def audit_local_self_correction(background, geometries, monitor=None):
         raise ValueError("self_correction.linear_relative_residual_tolerance must be positive")
     geometries = list(geometries)
     rows = []
+    n_ports = len(background.coil_materials)
+    workers = min(
+        n_ports,
+        max(1, int(cfg.get("parallel_preflight_ports", min(2, n_ports)))),
+    )
+
     for gi, geometry in enumerate(geometries):
         if monitor is not None:
             monitor.checkpoint()
-        ports = []
-        for port in range(len(background.coil_materials)):
-            # Seed only the Krylov initial field.  The parent-grid value is not
-            # used in the convergence comparison and therefore cannot weaken the
-            # independent fine-vs-validation certificate.
-            seed_step = float(_parent_fine_step(background))
+
+        def solve_port(port):
+            parent = _AuditParentView(background)
+            seed_step = float(_parent_fine_step(parent))
             if bool(cfg.get("linear_warm_start_from_parent", True)) and seed_step > fine:
                 print(
                     f"local self warm start……geometry {gi+1}/{len(geometries)} "
-                    f"port {port+1}/{len(background.coil_materials)}  {seed_step:g}m -> {fine:g}m",
+                    f"port {port+1}/{n_ports}  {seed_step:g}m -> {fine:g}m",
                     flush=True,
                 )
-                _solve_local(background, geometry, port, seed_step, phi=None)
+                _solve_local(parent, geometry, port, seed_step, phi=None)
 
             print(
                 f"local self correction convergence……geometry {gi+1}/{len(geometries)} "
-                f"port {port+1}/{len(background.coil_materials)}  {fine:g}m -> {validation:g}m",
+                f"port {port+1}/{n_ports}  {fine:g}m -> {validation:g}m",
                 flush=True,
             )
-            a = _solve_local(background, geometry, port, fine, phi=None)
-            b = _solve_local(background, geometry, port, validation, phi=None)
+            a = _solve_local(parent, geometry, port, fine, phi=None)
+            b = _solve_local(parent, geometry, port, validation, phi=None)
             dissipation_scale = max(
                 abs(float(np.real(b["z"]))),
                 abs(float(b["d_vol"] + b["d_out"])),
@@ -89,8 +111,17 @@ def audit_local_self_correction(background, geometries, monitor=None):
                 row["relative_d_vol_error"],
                 row["relative_outward_partition_significance"],
             )
-            ports.append(row)
+            return row
+
+        if workers > 1 and n_ports > 1:
+            print(f"local self convergence audit: parallel ports={workers}", flush=True)
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="local-self-audit") as pool:
+                ports = list(pool.map(solve_port, range(n_ports)))
+        else:
+            ports = [solve_port(port) for port in range(n_ports)]
+        ports.sort(key=lambda row: row["port"])
         rows.append({"geometry_index": int(gi), "geometry": geometry, "ports": ports})
+
     worst = max(
         (port["maximum_relative_error"] for row in rows for port in row["ports"]),
         default=float("inf"),
@@ -114,6 +145,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
         "relative_tolerance": tolerance,
         "joule_identity_tolerance": joule_tolerance,
         "linear_relative_residual_tolerance": linear_tolerance,
+        "parallel_ports": int(workers),
         "maximum_relative_error": float(worst),
         "maximum_joule_total_power_relative_error": float(worst_joule),
         "maximum_linear_relative_residual": float(worst_linear),
