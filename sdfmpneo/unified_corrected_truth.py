@@ -41,6 +41,12 @@ def _refresh_audit(z, d, d_out, audit, correction, *, modal=None, phi_min=None, 
     out["local_self_correction_power_balance_relative_error"] = float(
         correction.audit.get("corrected_power_balance_relative_error", 0.0)
     )
+    out["local_self_joule_total_power_relative_error"] = float(
+        correction.audit.get("maximum_joule_total_power_relative_error", np.inf)
+    )
+    out["local_self_joule_modal_contraction_relative_error"] = float(
+        correction.audit.get("maximum_joule_modal_contraction_relative_error", 0.0)
+    )
     if modal is not None:
         out["maximum_relative_loewner_violation"] = _loewner_violation(
             modal, d, np.asarray(phi_min, float), np.asarray(phi_max, float)
@@ -91,7 +97,7 @@ def solve_truth_tensors(background, geometry):
     phi_min, phi_max = _conductivity_support_bounds(phi, sigma)
 
     # Verify the corrected multiscale Joule identities over a complete Hermitian
-    # current span.  The local defect contributes only |c_p|^2 diagonal terms.
+    # current span. The local defect contributes only |c_p|^2 diagonal terms.
     delta_d = np.real(np.diag(d - d_raw))
     delta_h = np.real(
         np.stack([np.diag(modal[j] - modal_raw[j]) for j in range(modal.shape[0])], axis=0)
@@ -173,6 +179,12 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
         ),
         "maximum_joule_modal_contraction_relative_error": max(
             a["joule_modal_contraction_relative_error"] for a in audits
+        ),
+        "maximum_local_self_joule_total_power_relative_error": max(
+            a["local_self_joule_total_power_relative_error"] for a in audits
+        ),
+        "maximum_local_self_joule_modal_contraction_relative_error": max(
+            a["local_self_joule_modal_contraction_relative_error"] for a in audits
         ),
         "maximum_material_fraction_closure_error": max(
             a["material_fraction_closure_error"] for a in audits
