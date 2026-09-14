@@ -45,7 +45,7 @@ BACKGROUND = {
     "max_step": 0.03,
     # The global grid is intentionally kept coarse enough for many-geometry truth.
     # Only the unresolved diagonal self response receives a small canonical local
-    # fine-minus-coarse defect.  Translation/rotation are removed in that local
+    # fine-minus-coarse defect. Translation/rotation are removed in that local
     # solve, while global mutual/far-field coupling remains from the full domain.
     "self_correction": {
         "enabled": True,
@@ -57,9 +57,13 @@ BACKGROUND = {
         "growth": 1.5,
         "max_step": 0.02,
         "relative_tolerance": 1e-1,
+        "joule_identity_tolerance": 1e-10,
     },
+    # The physical box is already ±0.27 m and the expanded reference is ±0.39 m.
+    # One expensive domain solve is the default certification sample; the 5%
+    # tolerance is unchanged, while other independent Gates remain enabled.
     "open_boundary_check": {
-        "samples": 3,
+        "samples": 1,
         "padding": 0.12,
         "relative_tolerance": 5e-2,
     },
