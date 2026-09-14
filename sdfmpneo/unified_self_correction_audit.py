@@ -13,10 +13,13 @@ def _relative(a, b):
 def audit_local_self_correction(background, geometries, monitor=None):
     cfg = _config(background)
     tolerance = float(cfg.get("relative_tolerance", 1e-1))
+    joule_tolerance = float(cfg.get("joule_identity_tolerance", 1e-10))
     fine = float(cfg["fine_step"])
     validation = float(cfg.get("validation_fine_step", 0.75 * fine))
     if not 0.0 < validation < fine:
         raise ValueError("self_correction.validation_fine_step must be smaller than fine_step")
+    if joule_tolerance <= 0.0:
+        raise ValueError("self_correction.joule_identity_tolerance must be positive")
     geometries = list(geometries)
     rows = []
     for gi, geometry in enumerate(geometries):
@@ -45,6 +48,10 @@ def audit_local_self_correction(background, geometries, monitor=None):
                 "relative_d_vol_error": _relative(a["d_vol"], b["d_vol"]),
                 "relative_outward_partition_significance": outward_significance,
                 "raw_relative_d_out_error": _relative(a["d_out"], b["d_out"]),
+                "maximum_joule_total_power_relative_error": max(
+                    float(a["joule_total_power_relative_error"]),
+                    float(b["joule_total_power_relative_error"]),
+                ),
                 "fine": {k: v for k, v in a.items() if k != "modal_h"},
                 "validation": {k: v for k, v in b.items() if k != "modal_h"},
             }
@@ -61,14 +68,20 @@ def audit_local_self_correction(background, geometries, monitor=None):
         (port["maximum_relative_error"] for row in rows for port in row["ports"]),
         default=float("inf"),
     )
+    worst_joule = max(
+        (port["maximum_joule_total_power_relative_error"] for row in rows for port in row["ports"]),
+        default=float("inf"),
+    )
     return {
         "sample_count": len(rows),
         "fine_step": fine,
         "validation_fine_step": validation,
         "relative_tolerance": tolerance,
+        "joule_identity_tolerance": joule_tolerance,
         "maximum_relative_error": float(worst),
+        "maximum_joule_total_power_relative_error": float(worst_joule),
         "loss_partition_semantics": "D_out_is_scaled_by_total_local_self_dissipation",
-        "converged": bool(rows and worst <= tolerance),
+        "converged": bool(rows and worst <= tolerance and worst_joule <= joule_tolerance),
         "samples": rows,
     }
 
