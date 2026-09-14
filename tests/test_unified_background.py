@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
-from sdfmpneo.unified_thermal import build_thermal_basis
 
 
 MATERIALS = {
@@ -77,15 +76,23 @@ def test_background_keeps_seawater_volume_and_accepts_physical_temperature_sampl
     assert np.linalg.norm(B) > 0.0
 
 
-def test_automatic_thermal_basis_enables_hard_reduced_operators():
+def test_fixed_background_reduced_projection_remains_spd_for_low_level_use():
+    """Low-level background projection stays valid; production uses Phi(g)."""
     bg = background()
-    _, report = build_thermal_basis(bg, [geometry()], target_relative_residual=0.8)
-    assert report.converged
-    assert bg.thermal_rank == report.basis_dimension
-    assert bg.thermal_rank > 0
+    x = bg.cell_centers
+    trial = np.column_stack([
+        np.ones(bg.n_cells),
+        x[:, 0] / max(np.max(np.abs(x[:, 0])), 1e-12),
+    ])
+    bg.set_thermal_basis(trial)
+    assert bg.thermal_rank == 2
     ctx = bg.geometry_context(geometry())
-    np.linalg.cholesky(0.5 * (ctx.thermal_mass_reduced + ctx.thermal_mass_reduced.T))
-    np.linalg.cholesky(0.5 * (ctx.thermal_stiffness_reduced + ctx.thermal_stiffness_reduced.T))
+    np.linalg.cholesky(
+        0.5 * (ctx.thermal_mass_reduced + ctx.thermal_mass_reduced.T)
+    )
+    np.linalg.cholesky(
+        0.5 * (ctx.thermal_stiffness_reduced + ctx.thermal_stiffness_reduced.T)
+    )
 
 
 def test_seawater_joule_weight_is_three_dimensional_and_nonnegative():
