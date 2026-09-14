@@ -7,6 +7,13 @@ current/circuit physics -> true thermal ROM``.
 
 from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
+from . import unified_model as _unified_model
+
+# Physics truth changed from an open-path low-frequency E source to a certified
+# transverse impressed-current source.  Old surrogates must never be mixed with
+# the new truth/certificates even though the neural tensor shapes are unchanged.
+_unified_model.FORMAT_VERSION = 14
+
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_transverse_source import install as _install_transverse_source
@@ -41,7 +48,7 @@ from .unified_thermal import (
     build_geometry_aware_thermal_library,
 )
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 __all__ = [
     "ARCHITECTURE",
