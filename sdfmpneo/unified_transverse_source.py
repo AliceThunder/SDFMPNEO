@@ -22,6 +22,7 @@ import scipy.sparse.linalg as spla
 _PROJECTION_ATOL = 1e-11
 _MAX_LONGITUDINAL_RELATIVE_RESIDUAL = 1e-8
 _MAX_CURL_RELATIVE_ERROR = 1e-10
+TERMINAL_MODEL = "transverse_impressed_port_external_terminal_circuit_v1"
 
 
 def _node_id(background, i, j, k):
@@ -115,6 +116,7 @@ def install(open_boundary_class):
     if bool(getattr(open_boundary_class, "_transverse_source_projection_installed", False)):
         return open_boundary_class
     original = open_boundary_class._spatial_context
+    open_boundary_class.terminal_model = TERMINAL_MODEL
 
     def spatial_context_with_transverse_source(self, geometry):
         context = original(self, geometry)
@@ -147,4 +149,4 @@ def install(open_boundary_class):
     return open_boundary_class
 
 
-__all__ = ["install", "project_transverse"]
+__all__ = ["TERMINAL_MODEL", "install", "project_transverse"]
