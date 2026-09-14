@@ -23,6 +23,7 @@ from .unified_tensor_training import TensorTrainingReport, train_matrix_tensor_s
 from .unified_thermal import (
     GeometryAwareThermalLibrary,
     ThermalBasisReport,
+    audit_geometry_aware_thermal_trajectories,
     build_geometry_aware_thermal_library,
 )
 
@@ -46,6 +47,7 @@ __all__ = [
     "UnifiedSteadyState",
     "UnifiedTensorSurrogate",
     "UnifiedUWPTGeometry",
+    "audit_geometry_aware_thermal_trajectories",
     "build_geometry_aware_thermal_library",
     "decode_physical_tensors",
     "encode_geometry",
