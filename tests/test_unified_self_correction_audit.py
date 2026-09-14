@@ -5,6 +5,7 @@ import sdfmpneo.unified_self_correction_audit as audit
 
 class _Background:
     coil_materials = ("tx",)
+    background_config = {"fine_step": 0.012}
     self_correction_config = {
         "fine_step": 0.003,
         "validation_fine_step": 0.00225,
@@ -48,10 +49,18 @@ def _local(step, *, joule_error=0.0, residual=0.0, linear_converged=True):
 
 def test_local_self_audit_does_not_gate_on_raw_outward_relative_change(monkeypatch):
     background = _Background()
-    monkeypatch.setattr(audit, "_solve_local", lambda _b, _g, _p, step, phi=None: _local(step))
+    calls = []
+
+    def fake_local(_b, _g, _p, step, phi=None):
+        calls.append(float(step))
+        return _local(step)
+
+    monkeypatch.setattr(audit, "_solve_local", fake_local)
     report = audit.audit_local_self_correction(background, [{"case": 0}])
     port = report["samples"][0]["ports"][0]
 
+    assert np.allclose(calls, [0.012, 0.003, 0.00225])
+    assert port["warm_start_seed_step"] == 0.012
     assert port["raw_relative_d_out_error"] > 1.0
     assert port["relative_outward_partition_significance"] < 0.01
     assert report["maximum_joule_total_power_relative_error"] == 0.0
