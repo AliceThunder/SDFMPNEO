@@ -71,10 +71,10 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert "em_temperature_rise_bounds" not in run.TRAINING
 
 
-def test_model_artifact_requires_final_release_audit_version():
+def test_model_artifact_requires_integrator_certified_release_version():
     from sdfmpneo.unified_model import FORMAT_VERSION
 
-    assert FORMAT_VERSION >= 12
+    assert FORMAT_VERSION >= 13
 
 
 def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
