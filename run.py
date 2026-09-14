@@ -162,6 +162,10 @@ TRAINING = {
         "outward_relative_tolerance": 2e-1,
         "projection_correction_limit": 2e-1,
         "reduced_dynamic_relative_tolerance": 1e-1,
+        "integrator_relative_tolerance": 1e-4,
+        "integrator_rtol": 1e-7,
+        "integrator_atol": 1e-9,
+        "integrator_max_step": 10.0,
         "circuit_condition_limit": 1e8,
         "operating_cases": [
             {"name": "current-controlled", "operating": [5.0, 0.0]},
