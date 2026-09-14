@@ -18,6 +18,11 @@ from .unified_certified_local_solve import install as _install_certified_local_s
 
 _install_certified_local_solve(_self_correction)
 
+from . import unified_corrected_truth_preflight as _corrected_preflight
+from .unified_preflight_diagnosis_patch import install as _install_preflight_diagnosis
+
+_install_preflight_diagnosis(_corrected_preflight)
+
 from .unified_tensor_surrogate import (
     DecodedTensors,
     TensorDataset,
