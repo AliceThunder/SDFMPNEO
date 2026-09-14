@@ -93,7 +93,7 @@ def test_em_mesh_gate_reports_self_vs_mutual_without_relaxing_failure(monkeypatc
     assert diagnosis["code"] == "unresolved_source_self_response"
 
 
-def test_corrected_preflight_skips_global_mesh_when_local_reference_fails(monkeypatch):
+def test_corrected_preflight_skips_all_downstream_maxwell_gates_when_local_reference_fails(monkeypatch):
     import sdfmpneo.unified_corrected_truth_preflight as corrected
 
     settings = {
@@ -122,14 +122,16 @@ def test_corrected_preflight_skips_global_mesh_when_local_reference_fails(monkey
     }
     monkeypatch.setattr(corrected, "_source_and_loss_partition", lambda *_args, **_kwargs: source_row)
     monkeypatch.setattr(corrected, "audit_local_self_correction", lambda *_args, **_kwargs: local)
-    monkeypatch.setattr(corrected, "audit_open_boundary_domain", lambda *_args, **_kwargs: {"converged": True})
-    monkeypatch.setattr(corrected, "audit_low_frequency_formulation", lambda *_args, **_kwargs: {"converged": True})
 
-    def forbidden_mesh(*_args, **_kwargs):
-        raise AssertionError("global corrected mesh Gate should be skipped after local-reference failure")
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("downstream Maxwell Gate should be skipped after local-reference failure")
 
-    monkeypatch.setattr(corrected, "audit_em_mesh_preflight", forbidden_mesh)
+    monkeypatch.setattr(corrected, "audit_open_boundary_domain", forbidden)
+    monkeypatch.setattr(corrected, "audit_low_frequency_formulation", forbidden)
+    monkeypatch.setattr(corrected, "audit_em_mesh_preflight", forbidden)
     report = corrected.run_truth_preflight(settings, _Background(), [{"case": 0}])
     assert not report["certified"]
+    assert report["open_boundary_convergence"]["skipped"] is True
+    assert report["formulation_convergence"]["skipped"] is True
     assert report["em_mesh_convergence"]["skipped"] is True
     assert report["failure_diagnosis"]["code"] == "local_self_reference_not_converged"
