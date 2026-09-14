@@ -5,13 +5,15 @@ from collections.abc import Mapping
 import numpy as np
 import scipy.sparse as sp
 
-from .unified_background import EPS0, MU0, FixedMultiscaleBackground
+from .unified_background import BackgroundContext, EPS0, MU0, FixedMultiscaleBackground
 
 
 class OpenBoundaryBackground(FixedMultiscaleBackground):
-    """Fixed Cartesian EM background; thermal basis is generated per geometry."""
+    """Fixed Cartesian EM background with physically regularized stranded sources."""
 
     boundary_model = "silver_muller_impedance"
+    source_model = "stranded_rectangular_cross_section_gauss3"
+    terminal_model = "impressed_port_path_with_endpoint_charge_balance"
 
     def __init__(self, *args, thermal_library=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,8 +37,119 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         self.thermal_basis = None
         return library
 
+    @staticmethod
+    def _cross_section_frame(coil, tangent):
+        tangent = np.asarray(tangent, float)
+        tangent /= max(np.linalg.norm(tangent), np.finfo(float).tiny)
+        nominal_normal = np.asarray(coil.pose.rotation[:, 2], float)
+        width_axis = np.cross(nominal_normal, tangent)
+        if np.linalg.norm(width_axis) <= 1e-12:
+            axes = np.eye(3)
+            reference = axes[int(np.argmin(np.abs(axes @ tangent)))]
+            width_axis = np.cross(reference, tangent)
+        width_axis /= max(np.linalg.norm(width_axis), np.finfo(float).tiny)
+        thickness_axis = np.cross(tangent, width_axis)
+        thickness_axis /= max(np.linalg.norm(thickness_axis), np.finfo(float).tiny)
+        if np.dot(thickness_axis, nominal_normal) < 0.0:
+            thickness_axis = -thickness_axis
+        return width_axis, thickness_axis
+
+    def _deposit_stranded_coil(self, coil, points):
+        """Deposit one ampere over the physical rectangular conductor cross section.
+
+        Three-point Gauss quadrature in width/thickness creates a finite-support
+        stranded-current model tied to the actual conductor dimensions. The total
+        cross-section quadrature weight is one, so refinement changes resolution of
+        the same physical source rather than changing its total ampere-turns.
+        """
+        self._require_inside(points, "coil centerline")
+        nodes, weights = np.polynomial.legendre.leggauss(3)
+        source = np.zeros(self.n_edges, float)
+        heat = np.zeros(self.n_cells, float)
+        for p0, p1 in zip(points[:-1], points[1:]):
+            d = np.asarray(p1 - p0, float)
+            length = float(np.linalg.norm(d))
+            if length <= np.finfo(float).tiny:
+                continue
+            tangent = d / length
+            width_axis, thickness_axis = self._cross_section_frame(coil, tangent)
+            center = 0.5 * (p0 + p1)
+            for u, wu in zip(nodes, weights):
+                for v, wv in zip(nodes, weights):
+                    qweight = float(wu * wv / 4.0)
+                    point = (
+                        center
+                        + 0.5 * float(coil.conductor_width) * float(u) * width_axis
+                        + 0.5 * float(coil.conductor_thickness) * float(v) * thickness_axis
+                    )
+                    for cell, weight in self._cell_stencil(point):
+                        heat[cell] += length * qweight * weight
+                    for axis, component in enumerate(d):
+                        if abs(component) <= np.finfo(float).tiny:
+                            continue
+                        stencil = self._edge_stencil(axis, point)
+                        if not stencil:
+                            continue
+                        for edge, weight in stencil:
+                            source[edge] += qweight * component * weight / self.edge_lengths[edge]
+        if heat.sum() <= 0.0 or np.linalg.norm(source) <= np.finfo(float).tiny:
+            raise ValueError("finite-support coil deposition produced a zero physical source")
+        heat /= heat.sum()
+        return source, heat
+
+    def _spatial_context(self, geometry):
+        """Assemble geometry/material/source data using production source regularization."""
+        g = self.validate_geometry(geometry)
+        spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
+        fractions = {
+            name: np.zeros(self.n_cells)
+            for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))
+        }
+        sources, heat_weights = [], []
+        source_audits = []
+        for coil, material in zip(g.coils, self.coil_materials):
+            points = coil.centerline(spacing)
+            source, heat = self._deposit_stranded_coil(coil, points)
+            sources.append(source)
+            heat_weights.append(heat)
+            area = float(coil.conductor_width * coil.conductor_thickness)
+            length = float(np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1)))
+            fractions[material] += heat * (area * length) / self.cell_volumes
+            source_audits.append({
+                "model": self.source_model,
+                "terminal_model": self.terminal_model,
+                "conductor_width": float(coil.conductor_width),
+                "conductor_thickness": float(coil.conductor_thickness),
+                "path_length": length,
+                "source_norm": float(np.linalg.norm(source)),
+                "heat_weight_sum": float(np.sum(heat)),
+            })
+
+        copper = np.zeros(self.n_cells)
+        for material in self.coil_materials:
+            copper += fractions[material]
+        scale = np.ones(self.n_cells)
+        mask = copper > 1.0
+        scale[mask] = 1.0 / copper[mask]
+        for material in self.coil_materials:
+            fractions[material] *= scale
+        occupied = np.minimum(copper, 1.0)
+        for package, material in zip(g.packages, self.package_materials):
+            raw = self._package_fraction(package)
+            add = raw * np.clip(1.0 - occupied, 0.0, 1.0)
+            fractions[material] += add
+            occupied += add
+        fractions[self.seawater_material] = np.clip(1.0 - occupied, 0.0, 1.0)
+        closure = float(np.max(np.abs(sum(fractions.values()) - 1.0)))
+        if closure > 1e-10:
+            raise FloatingPointError("material fractions do not close to unity")
+        context = BackgroundContext(g, fractions, np.column_stack(sources), tuple(heat_weights))
+        context.source_regularization = tuple(source_audits)
+        context.material_fraction_closure_error = closure
+        return context
+
     def geometry_context(self, geometry, *, assemble_thermal=True):
-        context = super().geometry_context(geometry, assemble_thermal=False)
+        context = self._spatial_context(geometry)
         if not assemble_thermal:
             return context
         if self.thermal_library is None:
