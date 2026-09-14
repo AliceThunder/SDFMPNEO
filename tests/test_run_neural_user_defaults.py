@@ -18,6 +18,7 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     boundary = run.BACKGROUND["open_boundary_check"]
     formulation = run.BACKGROUND["formulation_check"]
     mesh = run.BACKGROUND["mesh_check"]
+    self_correction = run.BACKGROUND["self_correction"]
     continuity = run.BACKGROUND["geometry_continuity_check"]
     final_audit = run.TRAINING["final_audit"]
     assert run.TRAINING["device"] == "cuda"
@@ -41,6 +42,11 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert mesh["samples"] >= 1
     assert 0 < mesh["refinement_factor"] < 1
     assert 0 < mesh["relative_tolerance"] < 1
+    assert self_correction["enabled"] is True
+    assert self_correction["samples"] >= 1
+    assert 0 < self_correction["validation_fine_step"] < self_correction["fine_step"] < run.BACKGROUND["fine_step"]
+    assert 0 < self_correction["relative_tolerance"] < 1
+    assert self_correction["boundary_padding"] > 0
     assert continuity["samples"] >= 1
     assert continuity["translation_step"] > 0
     assert continuity["angle_step"] > 0
@@ -78,10 +84,23 @@ def test_model_artifact_requires_integrator_certified_release_version():
     assert FORMAT_VERSION >= 13
 
 
-def test_physical_cache_requires_current_open_boundary_gate_semantics():
+def test_physical_cache_requires_local_self_correction_certification_semantics():
     from sdfmpneo.unified_runtime import _CACHE_FORMAT
 
-    assert _CACHE_FORMAT >= 16
+    assert _CACHE_FORMAT >= 18
+
+
+def test_gate_sample_count_includes_local_self_reference_audit():
+    from sdfmpneo.unified_runtime import _gate_sample_count
+
+    run = _load_run()
+    settings = copy.deepcopy(run.SETTINGS)
+    settings["BACKGROUND"]["open_boundary_check"]["samples"] = 1
+    settings["BACKGROUND"]["formulation_check"]["samples"] = 1
+    settings["BACKGROUND"]["mesh_check"]["samples"] = 1
+    settings["BACKGROUND"]["geometry_continuity_check"]["samples"] = 1
+    settings["BACKGROUND"]["self_correction"]["samples"] = 4
+    assert _gate_sample_count(settings) == 4
 
 
 def test_final_release_settings_do_not_invalidate_physical_truth_cache():
@@ -99,6 +118,10 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     physical_change = copy.deepcopy(baseline)
     physical_change["TRAINING"]["thermal_time_scales"][0] *= 2.0
     assert _signature(baseline) != _signature(physical_change)
+
+    correction_change = copy.deepcopy(baseline)
+    correction_change["BACKGROUND"]["self_correction"]["fine_step"] *= 0.9
+    assert _signature(baseline) != _signature(correction_change)
 
 
 def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
