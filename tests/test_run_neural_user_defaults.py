@@ -23,6 +23,8 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert run.TRAINING["thermal_basis_conditioning_limit"] > 1
     assert run.TRAINING["thermal_time_scales"] == [0.1, 1.0, 10.0]
     assert min(run.TRAINING["thermal_time_scales"]) >= 0.1
+    assert run.TRAINING["thermal_trajectory_times"] == [0.1, 1.0, 10.0, 100.0]
+    assert max(run.TRAINING["thermal_trajectory_times"]) > max(run.TRAINING["thermal_time_scales"])
     assert "geometry_thermal" in run.FILES["model"]
     assert network["width"] >= 16
     assert network["blocks"] >= 1
