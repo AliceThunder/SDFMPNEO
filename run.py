@@ -36,13 +36,18 @@ FILES = {
 }
 
 BACKGROUND = {
-    "bounds": [[-0.15, 0.15], [-0.15, 0.15], [-0.15, 0.15]],
+    # The former ±0.15 m box left only a small margin for the widest/translated
+    # receive package and produced 7–9% domain sensitivity in mutual impedance.
+    # Outer cells are stretched/coarse, so enlarging the physical box is much
+    # cheaper than globally refining the EM core.
+    "bounds": [[-0.27, 0.27], [-0.27, 0.27], [-0.27, 0.27]],
     "core_center": [0.0, 0.0, 0.02],
     "core_half_extent": [0.09, 0.09, 0.09],
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.03,
-    # Expanded-domain convergence of Z, D_vol, physical D_out and mutual Z.
+    # Expanded-domain convergence of terminal response, volume loss and mutual Z.
+    # In lossy seawater raw D_out is a partition quantity and is diagnostic only.
     "open_boundary_check": {
         "samples": 3,
         "padding": 0.12,
@@ -54,7 +59,8 @@ BACKGROUND = {
         "relative_tolerance": 2e-2,
     },
     # One representative physical refinement is intentionally mandatory. If this
-    # fails, reduce fine_step/max_step rather than training through the error.
+    # fails, reduce fine_step/max_step or repair unresolved local self response
+    # rather than training through the error.
     "mesh_check": {
         "samples": 1,
         "refinement_factor": 0.75,
