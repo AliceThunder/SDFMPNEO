@@ -48,18 +48,18 @@ python run.py --mode train --headless
 python run.py --mode predict
 ```
 
-用户配置集中在 `run.py` 顶部。不需要单独运行 Gate；所有 preflight、Physics Gate 和 final Go/No-Go 都属于同一个 `--mode train` 流程。
+用户配置集中在 `run.py` 顶部。不需要单独运行 Gate；preflight、Physics Gate 和 final Go/No-Go 都属于同一个 `--mode train` 流程。
 
 ## 2. 训练执行顺序
 
 生产训练严格按物理依赖执行：
 
 1. 构建开放边界固定背景空间。
-2. 在独立几何上执行 **pre-basis spatial truth preflight**。
+2. 在独立几何上执行 **pre-basis spatial truth preflight**：source/terminal、开放域、full-wave↔MQS、local self reference、corrected global mesh convergence。
 3. 只有 preflight 通过后，才构建 geometry-aware canonical thermal library。
 4. 对 thermal library 做 held-out resolvent 与 full-vs-ROM trajectory/steady audit。
-5. 冻结 \(g\mapsto\Phi(g)\) 后，逐 geometry 生成最终 `Z_field / D_vol / H_j` tensor truth。
-6. 执行 post-basis Physics Gate：Joule identities、Loewner、thermal mesh/transport 等。
+5. 冻结 \(g\mapsto\Phi(g)\) 后，逐 geometry 生成 corrected `Z_field / D_vol / H_j` tensor truth。
+6. 执行 post-basis Physics Gate：corrected Joule identities、local-defect Joule identities、Loewner、mesh/thermal/transport 等。
 7. 只用 neural training split 构建 POD/normalization 并训练 MLP。
 8. 训练完成后重新采样 **completely-held-out** 几何，执行 final Go/No-Go。
 9. final audit 全部通过后才保存 `model.geometry_thermal.npz`。
@@ -72,45 +72,33 @@ python run.py --mode predict
 
 \[
 A_{\rm em}(g)X(g)=B(g),
-\qquad
-B=-i\omega S.
+\qquad B=-i\omega S,
+\qquad Z_{\rm field}=-S^TX.
 \]
 
-采用 `e^{+i\omega t}`、峰值复相量约定。端口场阻抗使用 negative source reaction：
-
-\[
-Z_{\rm field}=-S^TX.
-\]
+采用 `e^{+i\omega t}`、峰值复相量约定。
 
 ### 3.1 Finite-cross-section stranded source
 
-生产 source 不再使用“网格尺寸充当隐式 wire radius”的零半径 line source。`OpenBoundaryBackground` 使用
+生产 source 使用：
 
 ```text
 stranded_rectangular_cross_section_gauss3
 ```
 
-即每个 centerline segment 在真实 `conductor_width × conductor_thickness` 截面上做 3×3 Gauss 分布。截面 quadrature 总权重为 1，因此 refinement 改变的是同一个物理 source 的解析度，而不是 ampere-turns。
+每个 centerline segment 在真实 `conductor_width × conductor_thickness` 截面上做 3×3 Gauss 分布。centerline 采用固定 **1 mm physical sampling**，与 EM mesh 无关，因此 12 mm→9 mm mesh refinement 比较的是同一个物理 source、同一 wire length 和同一 terminal endpoint。
 
-当前端口语义为：
+当前端口语义：
 
 ```text
 impressed_port_path_with_endpoint_charge_balance
 ```
 
-每个端口会数值检查：
+preflight 会检查 source/heat 守恒、两端分离、deposited path integral、material-fraction closure，以及线圈铜损没有与独立 `R_wire(T)` 重复计入。
 
-- conductor width/thickness 为真实正值；
-- heat/source 权重守恒；
-- open path 两端确实分离；
-- deposited edge source 的定向积分重现真实 centerline endpoint displacement；
-- terminal-path relative error 默认要求不高于 `1e-12`。
+### 3.2 Silver–Müller open boundary
 
-铜的 EM conductivity 在 `em=True` 时被排除，wire/internal ohmic loss 由独立 `R_wire(T)` 处理。preflight 会独立重组非线圈材料的 \(\sigma_{\rm em}\) 来验证没有重复计入铜损。
-
-### 3.2 开放边界与独立 Poynting 功率
-
-离线 Maxwell 使用匹配海水介质的一阶 Silver–Müller / Sommerfeld 开放阻抗边界：
+离线 Maxwell 使用匹配海水介质的一阶开放阻抗边界：
 
 \[
 i\omega Y M_{\partial\Omega},
@@ -119,29 +107,87 @@ Y=\sqrt{\frac{\epsilon-i\sigma/\omega}{\mu}},
 \qquad \operatorname{Re}Y\ge0.
 \]
 
-volume loss：
+体耗散与独立 outward power：
 
 \[
-D_{\rm vol}=X^HH_\sigma X.
-\]
-
-开放边界独立给出：
-
-\[
+D_{\rm vol}=X^HH_\sigma X,
+\qquad
 D_{\rm out}^{\rm phys}
 =X^H\left(\operatorname{Re}Y\,M_{\partial\Omega}\right)X.
 \]
 
-truth 直接检查：
+并直接检查：
 
 \[
 \operatorname{Herm}(Z_{\rm field})
 \approx D_{\rm vol}+D_{\rm out}^{\rm phys}.
 \]
 
-禁止用 `Herm(Z)-D_vol` 反定义 outward power 后再声称 Poynting balance 已验证。
+对有耗海水，人工边界外移会把一部分原本穿边界的功率重新归入新增海水体耗散，因此 **raw `D_out` 不要求跨人工边界保持数值不变**。域扩展 Gate 硬检查端口响应、体耗散、mutual Z，以及 `ΔD_out` 相对总端口耗散的 significance。
 
-## 4. Pre-basis spatial truth preflight
+## 4. Global coarse + canonical local self defect
+
+实际 preflight 已确认：默认全局 12 mm 网格对 mutual/far-field 可以收敛，但毫米级 conductor 周围的 self response 无法直接解析。因此 production truth 使用结构化多尺度分裂：
+
+\[
+\boxed{
+Z_{pp}^{\rm corr}
+=Z_{pp}^{\rm global}
++\left(Z_{pp}^{\rm local,fine}-Z_{pp}^{\rm local,coarse}\right)
+}
+\]
+
+同样的 per-port diagonal defect 一致应用于：
+
+\[
+D_{{\rm vol},pp},\qquad D_{{\rm out},pp},\qquad H_{j,pp}.
+\]
+
+mutual/off-diagonal 项始终来自完整 global Maxwell solve，不由 local correction 修改。
+
+local problem 在当前 coil/package 的 canonical rigid frame 中求解；translation/rotation 被移除，真实 coil shape、尺寸、package、材料和 finite-cross-section source 保留。默认：
+
+```python
+"self_correction": {
+    "enabled": True,
+    "samples": 1,
+    "fine_step": 0.003,
+    "validation_fine_step": 0.00225,
+    "core_padding": 0.006,
+    "boundary_padding": 0.04,
+    "growth": 1.5,
+    "max_step": 0.02,
+    "relative_tolerance": 1e-1,
+}
+```
+
+### 4.1 三层空间验收
+
+空间 truth 不是靠“有 correction 就自动通过”，而是分三层：
+
+1. **raw global diagnostic**：报告 global coarse/refined 的 self-Z、Rself、Xself、self-D、mutual-Z 和 source-path invariance；raw unresolved self 允许作为诊断存在。
+2. **local reference Gate**：在 held-out geometry/port 上直接比较 local `3 mm -> 2.25 mm`，检查 self Z、R/X、D_vol 和 outward-partition significance；默认必须 ≤10%。
+3. **corrected global mesh Gate**：对 12 mm→9 mm global refinement 分别施加同一个经过认证的 local defect，再比较 corrected `Z/D/P_vol/D_out/mutual Z`。只有这一层也通过，production EM truth 才 certified。
+
+source path invariance 是独立硬条件，默认要求相对差异 ≤`1e-10`；不能把“物理 source 变了”伪装成 mesh error。
+
+### 4.2 Local defect 的 Joule/Poynting 证书
+
+每个 local coarse/fine solve 都独立检查：
+
+\[
+D_{\rm vol,self}=2\sum_{\rm cells}q_{\rm cell},
+\]
+
+有 thermal basis 时还检查：
+
+\[
+H_{j,self}=2\,\phi_j^T q_{\rm cell}.
+\]
+
+local total/modal Joule identity 默认要求到 `1e-10`，local 与 corrected global Poynting balance 也进入 hard Gate。这样不能只修 `Z_self` 而破坏 `D/H` 的热功率闭合。
+
+## 5. Pre-basis spatial truth preflight
 
 在 thermal basis 构造之前自动执行：
 
@@ -150,9 +196,10 @@ truth 直接检查：
 - wire/internal loss 与 seawater volume loss 分区；
 - expanded-domain convergence；
 - full-wave ↔ E-form MQS comparison；
-- EM mesh refinement convergence。
+- local self reference convergence；
+- corrected EM mesh refinement convergence。
 
-默认设置：
+默认：
 
 ```python
 "open_boundary_check": {
@@ -168,20 +215,17 @@ truth 直接检查：
     "samples": 1,
     "refinement_factor": 0.75,
     "relative_tolerance": 1e-1,
+    "source_path_relative_tolerance": 1e-10,
 },
 ```
 
-expanded-domain Gate 硬验收 `Z_field / D_vol / P_vol / Herm(Z_field) / mutual Z` 的收敛。对有耗海水，人工边界外移时更多功率会在新增海水体积中耗散、剩余 `D_out_phys` 会相应减小，因此 **不要求 raw `D_out_phys` 数值跨人工边界保持不变**。代码仍报告 `raw_relative_d_out_error`，但硬 Gate 使用 `relative_outward_partition_significance = ||ΔD_out|| / total_terminal_dissipation_scale` 判断边界功率分区变化是否对端口能量预算仍然重要。
-
-mesh Gate 在同一物理域内比较 `Z/D/P_vol/D_out/mutual Z`，并额外报告 self/mutual 分解。若 `self-Z`、`self-D_vol` 明显不收敛而 mutual 项已经收敛，preflight 会标记 `unresolved_source_self_response`；这表示 coarse EM grid 没有解析局部 source self physics，不能通过放宽 Gate 解决。
-
 \[
-P_{\rm vol}(c)=\frac12 c^H D_{\rm vol}c.
+P_{\rm vol}(c)=\frac12c^HD_{\rm vol}c.
 \]
 
-post-basis mesh audit 还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
+preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mutual error、unresolved raw self、local-reference nonconvergence 和 corrected-production nonconvergence。
 
-## 5. Geometry-aware deterministic thermal ROM
+## 6. Geometry-aware deterministic thermal ROM
 
 生产 basis：
 
@@ -194,7 +238,7 @@ post-basis mesh audit 还会继续比较 `H_j`、steady `Tmax`、wire temperatur
 
 首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
-每个 geometry 都从真实 full thermal operators 投影：
+每个 geometry 从真实 full thermal operators 投影：
 
 \[
 M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
@@ -202,72 +246,47 @@ M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
 K_r(g)=\Phi(g)^TK_T(g)\Phi(g).
 \]
 
-`M_r/K_r` 不由网络预测。每个 production thermal context 都直接检查：
+`M_r/K_r` 不由网络预测。每个 production thermal context 检查 transported basis rank/support、conditioning、\(M_r\succ0\)、\(K_r\succ0\) 和 reduced operator condition number。
 
-- transported basis support/full rank；
-- basis conditioning；
-- \(M_r(g)\succ0\)；
-- \(K_r(g)\succ0\)；
-- reduced operator condition number 未超过配置上限。
+## 7. Thermal rank、resolvent 与 trajectory Gate
 
-## 6. Thermal rank、resolvent 与 trajectory Gate
-
-canonical rank 用 resolvent anchor 自动构建：
+canonical rank 用：
 
 \[
-(K+sM)u=b.
+(K+sM)u=b
 \]
 
-默认 resolvent time scales：
+的 resolvent anchors 自动构建。默认：
 
 ```python
 "thermal_time_scales": [0.1, 1.0, 10.0]
 ```
 
-并始终包含 `s=0` steady anchor。
-
-resolvent error 使用真实 Galerkin energy error：
-
-\[
-\frac{\|u-u_r\|_{K+sM}}{\|u\|_{K+sM}}.
-\]
-
-resolvent 不是 trajectory certificate。held-out geometry 还会直接比较 full thermal 与 geometry-aware ROM，默认：
+并始终包含 `s=0` steady anchor。held-out geometry 还直接比较 full thermal 与 geometry-aware ROM：
 
 ```python
 "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
 ```
 
-比较内容包括：
+包括 thermal-mass field error、`Tmin/Tmax`、wire-average temperature、uniform initial-condition evolution、forced steady field 和 steady reduced coordinate。
 
-- field thermal-mass relative error；
-- `Tmin/Tmax`；
-- wire-average temperature；
-- uniform initial-condition homogeneous evolution；
-- forced steady field；
-- steady reduced coordinate \(a_*\)。
+100 s、1000 s 等长时间不要求相同时间尺度的专用 basis，而是由同一个 reduced ODE 连续推进。
 
-full/reduced 线性审计使用 matrix exponential action，避免把普通 time-step tolerance 混入 ROM error。
-
-## 7. Geometry-dependent Joule tensors
-
-当前 geometry 的 thermal mode \(\phi_j(g)\) 对应：
+## 8. Geometry-dependent Joule tensors
 
 \[
-[W_j(g)]_{mn}
-=\int_\Omega \sigma\,\phi_j(g)N_m\cdot N_n\,dx,
+[W_j(g)]_{mn}=\int_\Omega\sigma\,\phi_j(g)N_m\cdot N_n\,dx,
 \qquad
 H_j(g)=X(g)^HW_j(g)X(g).
 \]
 
-任意峰值复端口电流：
+任意峰值复电流：
 
 \[
-q_{{\rm vol},j}(g,c)
-=\frac12\operatorname{Re}(c^HH_j(g)c).
+q_{{\rm vol},j}(g,c)=\frac12\operatorname{Re}(c^HH_j(g)c).
 \]
 
-逐 geometry 计算 conductivity-loss support 上的 bounds：
+逐 geometry 计算 conductivity-loss support 上的 Loewner bounds：
 
 \[
 \phi_j^{\min}(g)D_{\rm vol}(g)
@@ -275,156 +294,64 @@ q_{{\rm vol},j}(g,c)
 \preceq\phi_j^{\max}(g)D_{\rm vol}(g).
 \]
 
-truth 生成还会显式审计 cell Joule total power、`D_vol` contraction 与每个 `H_j` modal contraction 的一致性。
+corrected truth 会在完整 Hermitian current span 上重新检查 total/modal Joule contractions，而不是假定 local defect 自动正确。
 
-## 8. 神经网络只学 geometry→tensor POD coefficients
+## 9. 神经网络只学 geometry→tensor POD coefficients
 
-目标：
+网络目标：
 
 \[
 g\mapsto\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}.
 \]
 
-输入不含时间、电流、热状态或 Maxwell residual。POD 与 normalization 只使用 neural training split。
+输入不含时间、电流、热状态或 Maxwell residual。POD 与 normalization 只使用 neural training split。物理解码强制 reciprocal/passive `Z/D`、Hermitian `H_j` 和 geometry-dependent modal Loewner bounds。
 
-物理解码强制：
+## 10. Post-basis Physics Gate
 
-- `Z_field` complex symmetric；
-- `D_vol` Hermitian PSD；
-- `Herm(Z_field)-D_vol` PSD；
-- `H_j` Hermitian；
-- geometry-dependent modal Loewner bounds。
+训练 MLP 前继续检查：
 
-`Z/D` 与 `H` projection correction 单独报告；final audit 对 projection correction 也设 Go/No-Go 上限。
-
-## 9. Post-basis Physics Gate
-
-thermal library 和 tensor truth 完成后，训练 MLP 前继续检查：
-
-- Maxwell algebraic residual；
-- raw reaction reciprocity；
-- `D_vol / D_out_phys` passivity；
-- independent Poynting matrix balance；
-- Joule total/modal identities；
+- Maxwell algebraic residual / reciprocity；
+- corrected `D_vol / D_out` passivity 与 Poynting balance；
+- corrected global Joule total/modal identities；
+- **local self coarse/fine Joule total/modal identities**；
 - modal Loewner bounds；
-- full mesh audit：`Z/D/P_vol/D_out/H/Tmax/wire/a_*`；
+- corrected full mesh audit：`Z/D/P_vol/D_out/H/Tmax/wire/a_*`；
 - small geometry perturbation 下 source/material/\(\Phi\)/`Z/D/H` continuity；
 - geometry-aware `M_r/K_r` SPD/conditioning；
-- held-out resolvent + full-vs-ROM trajectory/steady。
+- held-out thermal resolvent + trajectory/steady。
 
-small perturbation 默认：
+## 11. Completely-held-out final Go/No-Go
 
-```python
-"geometry_continuity_check": {
-    "samples": 1,
-    "translation_step": 1e-4,
-    "angle_step": 1e-3,
-    "relative_change_limit": 2e-1,
-}
-```
+MLP 训练结束后，用独立 seed 重新采样 final geometries。它们不参与 thermal rank、tensor dataset、POD、validation、early stopping 或 optimizer。
 
-## 10. Completely-held-out final Go/No-Go
+final audit 同时覆盖：
 
-MLP 训练完成后，系统使用单独 seed 重新采样 final audit geometries。这些 geometry 不参与：
+1. full thermal truth vs geometry-aware ROM；
+2. corrected truth tensors vs neural tensors，以及复电流方向的 `Zc/P/q` contractions；
+3. truth-tensor ROM vs surrogate-tensor ROM 的 current-controlled 和 circuit-controlled trajectories/steady；
+4. production `etd2_adaptive` vs 高精度 BDF reduced-ODE reference。
 
-- thermal canonical rank/enrichment；
-- transport 参数选择；
-- tensor dataset；
-- POD/normalization；
-- validation/early stopping；
-- optimizer update。
-
-只有 final audit 通过才会保存模型 artifact。保存使用临时文件原子替换；如果本次训练或 final audit 失败，不会发布新的 artifact，也不会破坏上一版已经认证的模型文件。
-
-默认 final audit：
-
-```python
-"final_audit": {
-    "samples": 2,
-    "times": [0.1, 1.0, 10.0, 100.0],
-    "full_vs_rom_thermal_tolerance": 5e-2,
-    "tensor_relative_tolerance": 2e-1,
-    "current_space_relative_tolerance": 2e-1,
-    "outward_relative_tolerance": 2e-1,
-    "projection_correction_limit": 2e-1,
-    "reduced_dynamic_relative_tolerance": 1e-1,
-    "integrator_relative_tolerance": 1e-4,
-    "integrator_rtol": 1e-7,
-    "integrator_atol": 1e-9,
-    "integrator_max_step": 10.0,
-    "circuit_condition_limit": 1e8,
-    "operating_cases": [
-        {"name": "current-controlled", "operating": [5.0, 0.0]},
-        {"name": "circuit-controlled", "drive": {
-            "voltage": [10.0, 0.0],
-            "series_impedance": [0.1, 0.1],
-        }},
-    ],
-}
-```
-
-final audit 分四层：
-
-1. full thermal truth vs geometry-aware thermal ROM：`T(x,t) / Tmin / Tmax / wire / steady a_*`；
-2. truth tensors vs neural tensors：`Z/D/H`、physical outward loss、decoder correction，以及复电流方向 `e_i`、`e_i±e_j`、`e_i±i e_j` 的 `Zc/P/q` contractions；
-3. truth-tensor ROM vs surrogate-tensor ROM：current-controlled 与 circuit-controlled 的 finite-time trajectories、`Z(t)`、currents、wire temperature、steady residual、closed-loop local stability 和 circuit condition number；
-4. 实际生产 `etd2_adaptive` vs 同一 surrogate-tensor reduced ODE 的高精度 BDF reference，单独报告 `maximum_integrator_relative_error`，避免把时间积分误差混入 surrogate error。
-
-报告明确标记为：
+只有 final audit 通过才原子保存新 artifact。报告标记：
 
 ```text
 frozen_held_out_numerical_validation
 ```
 
-它是冻结有限 held-out 集上的数值验证，不宣称覆盖整个连续参数域的严格数学 certificate。
+它是冻结 held-out 集上的数值验证，不宣称连续参数域的严格数学 certificate。
 
-## 11. 在线阶段
+## 12. 在线阶段
 
-给定一个静态 geometry：
+给定静态 geometry：
 
 1. 检查 production-domain 与几何合法性；
 2. 确定性生成 \(\Phi(g),M_r(g),K_r(g)\)；
-3. MLP 一次 forward 得到 raw `Z_field / D_vol / H_j`；
-4. 用当前 geometry 的 modal bounds 做 hard physical decode；
-5. current-controlled 直接使用 prescribed complex current；
-6. circuit-controlled 由显式端口 circuit system 求 current；
-7. 显式更新 `R_wire(T)` 和 wire heat；
-8. 推进 reduced thermal ODE 或求 stable steady state。
+3. MLP 一次 forward 得到 `Z_field / D_vol / H_j`；
+4. 用当前 geometry modal bounds 做 hard physical decode；
+5. current-controlled 直接使用 prescribed complex current，或由显式 circuit system 求 current；
+6. 显式更新 `R_wire(T)` 与 wire heat；
+7. 推进 reduced thermal ODE 或求 stable steady state。
 
-current-controlled 默认：
-
-```python
-PREDICTION["operating"] = [5.0, 0.0]
-```
-
-voltage-driven 示例：
-
-```python
-PREDICTION["drive"] = {
-    "voltage": [10.0, 0.0],
-    "series_impedance": [0.1, 0.1],
-}
-```
-
-一次 query 内 geometry 默认静止。若未来支持 \(g=g(t)\)，必须显式加入 moving-basis transport term
-
-\[
-\Phi(g)^TM(g)\dot\Phi(g)a,
-\]
-
-不能简单逐 time step 更换 basis。
-
-## 12. 默认网格的重要说明
-
-当前默认：
-
-```python
-"fine_step": 0.012
-```
-
-即约 12 mm，而 conductor width/thickness 的 production range 可以明显小于该尺度。finite-cross-section Gauss source 解决的是“source support 必须绑定真实 conductor geometry”，**并不意味着 12 mm 网格自动解析了 1 mm 级 conductor self physics**。
-
-因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/P_vol/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 EM truth discretization，或引入单独经过验证的 local self-field/self-loss correction；不能通过放宽 Gate 获得伪 certified 模型。preflight 会同时输出 `self-Z` 与 `mutual-Z`，用于区分局部 self-resolution 问题和整体场离散问题。
+local Maxwell correction **不在线执行**。它只属于离线 truth/certification；网络已经学习 corrected tensors。
 
 ## 13. 缓存与 artifact
 
@@ -436,19 +363,31 @@ results/uwpt/model.tensor_training.pt
 results/uwpt/model.geometry_thermal.npz
 ```
 
-当前物理 `CACHE_FORMAT = 16`。v16 cache 包含 corrected lossy-domain open-boundary Gate、scalar `P_vol` mesh Gate 与 self/mutual mesh diagnostics；旧 cache 不能跳过这些新 Gate。只要 physical-cache signature 不变且缓存中的 preflight 已 `certified`，后续重新训练 MLP 可以直接复用该 preflight 结果。
+当前物理：
 
-当前 unified model artifact `FORMAT_VERSION = 13`。正式 `python run.py --mode predict` 会先检查 artifact metadata，要求 pre-basis truth preflight、post-basis Physics Gate、completely-held-out final audit 和 production-integrator audit 全部通过，并要求 `certificate_level = frozen_held_out_numerical_validation`；缺任一项都会 fail closed。低层 `UnifiedNeuralElectroThermalModel.load()` 仍保留为库级序列化/round-trip 接口，其职责是检查 artifact 架构与格式版本，不代替正式 production release gate。
+```text
+CACHE_FORMAT = 18
+```
 
-物理 cache signature 不包含 MLP network/optimizer/device，也不包含 final release audit 的阈值或 operating cases；只改 neural optimizer 或 final Go/No-Go 阈值会复用已经冻结的 thermal/tensor truth。改变以下任一上游对象则会使 downstream truth/POD/model 失效：
+cache 只有在以下条件全部成立时才可复用：physical signature 相同、preflight 已 certified、local self reference 已 converged、self-correction model 与当前 production model 一致。修改 `self_correction` 的 mesh/padding/tolerance 会使物理 cache 自动失效。
 
-- source/terminal convention；
-- open boundary/domain；
-- mesh/material/loss masks；
-- geometry domain；
-- canonical thermal library/basis generator；
-- thermal time-scale/trajectory policy；
-- tensor schema/modal-bound convention。
+当前 unified model artifact：
+
+```text
+FORMAT_VERSION = 13
+```
+
+`FORMAT_VERSION` 表示二进制 schema；local self correction 属于 release-physics semantics，因此由正式 prediction release gate 检查。`python run.py --mode predict` 要求：
+
+- pre-basis truth preflight certified；
+- local self correction convergence certified；
+- post-basis Physics Gate certified；
+- `self_correction_model = canonical_local_fine_minus_coarse_self_defect_v1`；
+- completely-held-out final audit certified；
+- production-integrator audit passed；
+- `certificate_level = frozen_held_out_numerical_validation`。
+
+缺任一项都会 fail closed。低层 `UnifiedNeuralElectroThermalModel.load()` 只负责库级 schema/round-trip，不代替 production release gate。
 
 ## 14. 关键测试
 
@@ -456,8 +395,11 @@ results/uwpt/model.geometry_thermal.npz
 python -m pytest -q \
   tests/test_unified_geometry_physics.py \
   tests/test_unified_open_boundary.py \
-  tests/test_unified_physics_gate.py \
+  tests/test_unified_source_mesh_invariance.py \
+  tests/test_unified_self_correction.py \
+  tests/test_unified_self_correction_audit.py \
   tests/test_unified_truth_preflight.py \
+  tests/test_unified_physics_gate.py \
   tests/test_unified_thermal.py \
   tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
