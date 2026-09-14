@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .unified_self_correction import _config, _solve_local
+from .unified_self_correction import _config, _parent_fine_step, _solve_local
 
 
 def _relative(a, b):
@@ -30,6 +30,18 @@ def audit_local_self_correction(background, geometries, monitor=None):
             monitor.checkpoint()
         ports = []
         for port in range(len(background.coil_materials)):
+            # Seed only the Krylov initial field.  The parent-grid value is not
+            # used in the convergence comparison and therefore cannot weaken the
+            # independent fine-vs-validation certificate.
+            seed_step = float(_parent_fine_step(background))
+            if bool(cfg.get("linear_warm_start_from_parent", True)) and seed_step > fine:
+                print(
+                    f"local self warm start……geometry {gi+1}/{len(geometries)} "
+                    f"port {port+1}/{len(background.coil_materials)}  {seed_step:g}m -> {fine:g}m",
+                    flush=True,
+                )
+                _solve_local(background, geometry, port, seed_step, phi=None)
+
             print(
                 f"local self correction convergence……geometry {gi+1}/{len(geometries)} "
                 f"port {port+1}/{len(background.coil_materials)}  {fine:g}m -> {validation:g}m",
@@ -54,6 +66,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
             )
             row = {
                 "port": int(port),
+                "warm_start_seed_step": seed_step if seed_step > fine else None,
                 "relative_z_error": _relative(a["z"], b["z"]),
                 "relative_resistive_error": _relative(a["z"].real, b["z"].real),
                 "relative_reactive_error": _relative(a["z"].imag, b["z"].imag),
