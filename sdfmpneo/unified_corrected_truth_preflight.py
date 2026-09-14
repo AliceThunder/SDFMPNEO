@@ -200,13 +200,23 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     certified = all(bool(value) for value in checks.values())
     diagnosis = _mesh_failure_diagnosis(mesh)
     if not local_self["converged"]:
-        diagnosis = {
-            "code": "local_self_reference_not_converged",
-            "maximum_relative_error": float(local_self["maximum_relative_error"]),
-            "fine_step": float(local_self["fine_step"]),
-            "validation_fine_step": float(local_self["validation_fine_step"]),
-            "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
-        }
+        joule_error = float(local_self.get("maximum_joule_total_power_relative_error", np.inf))
+        joule_limit = float(local_self.get("joule_identity_tolerance", 1e-10))
+        if joule_error > joule_limit:
+            diagnosis = {
+                "code": "local_self_joule_identity_failed",
+                "maximum_joule_total_power_relative_error": joule_error,
+                "joule_identity_tolerance": joule_limit,
+                "recommendation": "This is a local defect implementation/scaling failure, not a mesh-convergence failure. Repair the D_vol/q_cell identity; do not relax tolerance or globally refine the mesh.",
+            }
+        else:
+            diagnosis = {
+                "code": "local_self_reference_not_converged",
+                "maximum_relative_error": float(local_self["maximum_relative_error"]),
+                "fine_step": float(local_self["fine_step"]),
+                "validation_fine_step": float(local_self["validation_fine_step"]),
+                "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
+            }
     return {
         **{key: bool(value) for key, value in checks.items()},
         "source_model": getattr(background, "source_model", "unknown"),
