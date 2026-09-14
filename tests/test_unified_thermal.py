@@ -101,6 +101,7 @@ def test_thermal_rank_comes_from_multitime_energy_error_and_is_volume_orthonorma
     assert report.basis_dimension == bg.thermal_rank == basis.shape[1]
     assert report.maximum_anchor_relative_energy_error <= report.target_relative_error
     assert report.maximum_validation_relative_energy_error <= report.target_relative_error
+    assert report.enrichment_geometry_count == 0
     assert report.validation_geometry_count == 1
     assert report.source_direction_count >= 2
     assert report.shifts[0] == 0.0
@@ -109,6 +110,25 @@ def test_thermal_rank_comes_from_multitime_energy_error_and_is_volume_orthonorma
 
     gram = basis.T @ (bg.cell_volumes[:, None] * basis)
     assert np.allclose(gram, np.eye(bg.thermal_rank), rtol=1e-10, atol=1e-10)
+
+
+def test_validation_reserve_is_split_into_enrichment_and_held_out_audit():
+    bg = make_background()
+    reserve = [make_geometry(0.001), make_geometry(0.002), make_geometry(0.003)]
+    basis, report = build_thermal_basis(
+        bg,
+        [make_geometry(0.0), make_geometry(0.004)],
+        validation_geometries=reserve,
+        target_relative_error=0.99,
+        time_scales=(0.1, 1.0),
+    )
+
+    assert basis.shape[1] > 0
+    assert report.enrichment_geometry_count == 2
+    assert report.validation_geometry_count == 1
+    assert report.equation_anchor_count > 0
+    assert np.isfinite(report.maximum_enrichment_relative_energy_error)
+    assert np.isfinite(report.maximum_validation_relative_energy_error)
 
 
 def test_tighter_energy_error_target_cannot_require_fewer_modes_on_same_anchors():
