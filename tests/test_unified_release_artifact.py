@@ -13,8 +13,14 @@ def _write_metadata(path, release):
 
 def _certified_release():
     return {
-        "truth_preflight": {"certified": True},
-        "physics_gate": {"certified": True},
+        "truth_preflight": {
+            "certified": True,
+            "local_self_correction_converged": True,
+        },
+        "physics_gate": {
+            "certified": True,
+            "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        },
         "final_held_out_audit": {
             "certified": True,
             "production_integrator_ok": True,
@@ -36,6 +42,24 @@ def test_prediction_release_gate_rejects_missing_integrator_audit(tmp_path):
     release["final_held_out_audit"]["production_integrator_ok"] = False
     _write_metadata(path, release)
     with pytest.raises(ValueError, match="production_integrator"):
+        _require_release_artifact(path)
+
+
+def test_prediction_release_gate_rejects_missing_self_correction_certificate(tmp_path):
+    path = tmp_path / "model.npz"
+    release = _certified_release()
+    release["truth_preflight"]["local_self_correction_converged"] = False
+    _write_metadata(path, release)
+    with pytest.raises(ValueError, match="local_self_correction"):
+        _require_release_artifact(path)
+
+
+def test_prediction_release_gate_rejects_wrong_self_correction_model(tmp_path):
+    path = tmp_path / "model.npz"
+    release = _certified_release()
+    release["physics_gate"]["self_correction_model"] = "legacy"
+    _write_metadata(path, release)
+    with pytest.raises(ValueError, match="self_correction_model"):
         _require_release_artifact(path)
 
 
