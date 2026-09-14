@@ -43,11 +43,28 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
             raise ValueError("geometry-aware thermal library has not been constructed")
         phi = self.thermal_library.basis_for_geometry(self, context.geometry)
         M, K = self.thermal_operator_full(context.fractions)
+        Mr = phi.T @ (M @ phi)
+        Kr = phi.T @ (K @ phi)
+        limit = float(getattr(self.thermal_library, "conditioning_limit", 1e10))
+        conditions = {}
+        for name, matrix in (("M_r", Mr), ("K_r", Kr)):
+            symmetric = 0.5 * (matrix + matrix.T)
+            eig = np.linalg.eigvalsh(symmetric)
+            if eig.size == 0 or not np.all(np.isfinite(eig)) or eig[0] <= 0.0:
+                raise RuntimeError(f"{name}(g) is not positive definite")
+            condition = float(eig[-1] / eig[0])
+            if not np.isfinite(condition) or condition > limit:
+                raise RuntimeError(
+                    f"{name}(g) conditioning failed: cond={condition:.3e}, limit={limit:.3e}"
+                )
+            conditions[name] = condition
         context.thermal_basis = phi
         context.thermal_mass_full = M
         context.thermal_stiffness_full = K
-        context.thermal_mass_reduced = phi.T @ (M @ phi)
-        context.thermal_stiffness_reduced = phi.T @ (K @ phi)
+        context.thermal_mass_reduced = Mr
+        context.thermal_stiffness_reduced = Kr
+        context.thermal_mass_condition = conditions["M_r"]
+        context.thermal_stiffness_condition = conditions["K_r"]
         return context
 
     def _state_temperature(self, context, state):
