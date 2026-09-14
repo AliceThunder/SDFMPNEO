@@ -306,7 +306,7 @@ thermal library 和 tensor truth 完成后，训练 MLP 前继续检查：
 - Joule total/modal identities；
 - modal Loewner bounds；
 - full mesh audit：`Z/D/P_vol/D_out/H/Tmax/wire/a_*`；
-- small geometry perturbation 下 source/material/\(\Phi\)/`Z/D/H` continuity；
+- small geometry perturbation 下 source/material/\(Phi\)/`Z/D/H` continuity；
 - geometry-aware `M_r/K_r` SPD/conditioning；
 - held-out resolvent + full-vs-ROM trajectory/steady。
 
@@ -436,7 +436,7 @@ results/uwpt/model.geometry_thermal.npz
 
 当前物理 cache format 已升级到包含 pre-basis spatial truth preflight 的版本；旧 cache 不能跳过新 Gate。
 
-当前 unified model artifact `FORMAT_VERSION = 12`。没有 finite-support source / pre-basis spatial truth preflight / post-basis Physics Gate / completely-held-out release audit 这一整套冻结语义的旧模型会被 `load()` fail closed，需要重新训练。
+当前 unified model artifact `FORMAT_VERSION = 13`。没有 finite-support source / pre-basis spatial truth preflight / post-basis Physics Gate / completely-held-out release audit / production-integrator reference audit 这一整套冻结语义的旧模型会被 `load()` fail closed，需要重新训练。
 
 物理 cache signature 不包含 MLP network/optimizer/device，也不包含 final release audit 的阈值或 operating cases；只改 neural optimizer 或 final Go/No-Go 阈值会复用已经冻结的 thermal/tensor truth。改变以下任一上游对象则会使 downstream truth/POD/model 失效：
 
@@ -454,6 +454,7 @@ results/uwpt/model.geometry_thermal.npz
 python -m pytest -q \
   tests/test_unified_geometry_physics.py \
   tests/test_unified_open_boundary.py \
+  tests/test_unified_physics_gate.py \
   tests/test_unified_thermal.py \
   tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
