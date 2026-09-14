@@ -1,17 +1,17 @@
 \section{低维参数化电磁代理}
 
 \subsection{网络学习对象}
-在当前材料模型和冻结工作频率下，昂贵电磁依赖只来自几何 $g$。因此网络不学习场 $X$，也不学习时间或端口电流，而只学习低维参数化物理对象
+当前材料模型和冻结工作频率下，昂贵电磁依赖主要来自几何 $g$。网络不学习场 $X$、时间、端口电流、thermal basis 或 thermal operators，而只学习固定维度的参数化物理对象
 \begin{equation}
 \boxed{
  g\longmapsto
- \left\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\right\}.
+ \{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}.
 }
 \end{equation}
-其中 $D_{\rm vol}$ 是总海水体耗散矩阵，$H_j$ 是 thermal modal Joule tensors。若未来存在真实的温度相关电磁 constitutive state，则输入仅扩展为 $(s_{\rm em},g)$。
+这里 fixed output dimension 来自冻结的 canonical thermal mode ordering。虽然每个空间 mode $\phi_j(x;g)$ 随几何确定性变化，但 mode index $j$ 在所有 geometry 上具有相同物理语义。
 
-\subsection{结构保持的输出编码}
-对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；$D_{\rm vol}$ 与每个 $H_j$ 为复 Hermitian 矩阵。物理结构要求
+\subsection{结构保持输出编码}
+对 reciprocal 系统，$Z_{\rm field}$ 为复对称矩阵；$D_{\rm vol}$ 与每个 $H_j$ 为复 Hermitian 矩阵。结构要求
 \begin{equation}
 Z_{\rm field}^T=Z_{\rm field},
 \qquad
@@ -24,117 +24,44 @@ H_j=H_j^H,
 \operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
 \end{equation}
 
-由于每个 $H_j$ 与 $D_{\rm vol}$ 来自同一个非负空间 Joule density，还存在更强的必要结构。令 $\phi_j^{\min},\phi_j^{\max}$ 为 frozen thermal mode 在 conductivity-loss quadrature/support 上的最小/最大值，则
+对当前 geometry，由 deterministic thermal basis generator 得到 $\phi_j(g)$，并在 conductivity-loss support 上计算
+\begin{equation}
+\phi_j^{\min}(g),\qquad\phi_j^{\max}(g).
+\end{equation}
+因此还必须满足
 \begin{equation}
 \boxed{
-\phi_j^{\min}D_{\rm vol}
-\preceq H_j
+\phi_j^{\min}(g)D_{\rm vol}(g)
+\preceq H_j(g)
 \preceq
-\phi_j^{\max}D_{\rm vol}
-\quad\forall j.
+\phi_j^{\max}(g)D_{\rm vol}(g).
 }
 \end{equation}
-单独的 $H_j$ 因 thermal mode 可变号而一般不要求 PSD；上述 Loewner interval 才是与总耗散一致的正确约束。
+这些 bounds 是 deterministic geometry-derived metadata，而不是 neural output，也不是全局固定常数。
 
-定义固定结构化编码
+定义结构化编码
 \begin{equation}
 y(g)=\mathcal E\!\left(Z_{\rm field},D_{\rm vol},H_1,\ldots,H_r\right)\in\R^{d_y},
 \end{equation}
-其中仅保存独立自由度：复对称 $Z$ 的上三角实/虚部，以及 Hermitian matrices 的实对角和严格上三角实/虚部。$\phi_j^{\min},\phi_j^{\max}$ 属于 thermal-basis metadata，随 $\Phi$ 一起冻结并版本化。
+只保存独立自由度：复对称矩阵上三角实/虚部，以及 Hermitian matrices 的实对角和严格上三角实/虚部。
 
-\subsection{POD 是压缩，不负责创造物理可行性}
-对 training truth snapshots 的结构化向量做中心化 POD/SVD：
+\subsection{POD 只做压缩}
+只用 training truth snapshots 对 $y(g)$ 做中心化 POD/SVD：
 \begin{equation}
-y(g)\approx \bar y+U_K\beta(g),
-\qquad U_K^TU_K=I.
+y(g)\approx\bar y+U_K\beta(g),\qquad U_K^TU_K=I,
 \end{equation}
-网络只学习
+网络学习
 \begin{equation}
-\boxed{
-\beta_\theta:g\mapsto\R^K.
-}
+\boxed{\beta_\theta:g\mapsto\R^K.}
 \end{equation}
-如果 $y(g)$ 没有足够快的谱衰减，可以提高 $K$、采用分块 POD，或直接预测完整结构化 $y$；这不会改变系统架构。
+若谱衰减不好，可提高 $K$、分块 POD 或直接预测完整结构化 $y$。POD 不负责创造 PSD、Loewner 或 passivity structure。
 
-普通线性 POD 并不自动保持 PSD cone、Loewner interval 或联合能量可行集，因此不允许仅凭 latent reconstruction 宣称输出物理合法。结构化矩阵解码后还必须经过固定的物理可行层。
+\subsection{geometry input 与 production domain}
+几何输入只包含生产参数域的独立变量，并用 training domain 固定的尺度归一化。旋转变量必须使用连续编码，例如 $(\sin\psi,\cos\psi)$、规范化 quaternion 或 rotation-matrix representation，禁止跨越 $\pm\pi$ 时直接使用有分支跳变的裸 angle 标量。
 
-\subsection{联合物理可行层只修改需要修正的耗散对象}
-令 raw decode 得到
-\begin{equation}
-(\widetilde Z,\widetilde D_{\rm vol},\widetilde H_j).
-\end{equation}
-首先按代数结构精确恢复
-\begin{equation}
-\widetilde Z^T=\widetilde Z,
-\qquad
-\widetilde D_{\rm vol}=\widetilde D_{\rm vol}^H,
-\qquad
-\widetilde H_j=\widetilde H_j^H.
-\end{equation}
-对 reciprocal $Z$ 写成
-\begin{equation}
-\widetilde Z=\widetilde R+i\widetilde X,
-\qquad
-\widetilde R=\widetilde R^T\in\R^{n_p\times n_p},
-\qquad
-\widetilde X=\widetilde X^T\in\R^{n_p\times n_p}.
-\end{equation}
-其中 $\widetilde R=\operatorname{Herm}(\widetilde Z)$ 是耗散端口块，$\widetilde X$ 是 reactive block。
+必须冻结 validated geometry domain $\mathcal G_{\rm prod}$。推理进入网络和 thermal basis generator 前都执行 geometry feasibility/domain check。域外点不能继承 validated accuracy 声明。
 
-固定可行层对 $(\widetilde R,\widetilde D_{\rm vol},\{\widetilde H_j\})$ 做联合映射/投影，使
-\begin{equation}
-\boxed{
-\widehat D_{\rm vol}\succeq0,
-\qquad
-\widehat R-\widehat D_{\rm vol}\succeq0,
-}
-\end{equation}
-以及
-\begin{equation}
-\boxed{
-\phi_j^{\min}\widehat D_{\rm vol}
-\preceq\widehat H_j
-\preceq
-\phi_j^{\max}\widehat D_{\rm vol}
-\quad\forall j.
-}
-\end{equation}
-reactive block 不因 passivity/Joule-feasibility 修正而改变：
-\begin{equation}
-\widehat X=\widetilde X,
-\qquad
-\widehat Z=\widehat R+i\widehat X.
-\end{equation}
-
-对当前小端口数，上述约束构成低维 convex LMI feasible set，可使用固定 SDP/Frobenius projection 或经验证的等价解析/分步算法。无论采用何种实现，都必须验证最终输出确实满足同一可行集，并与模型一起版本化。
-
-定义 projection correction diagnostics，例如
-\begin{equation}
-\delta_{Z,D}
-=\left\|(\widehat R,\widehat D_{\rm vol})
--(\widetilde R,\widetilde D_{\rm vol})\right\|,
-\end{equation}
-以及
-\begin{equation}
-\delta_H
-=\left(\sum_j\|\widehat H_j-\widetilde H_j\|_F^2\right)^{1/2}.
-\end{equation}
-生产模型要求 validation/test 上这些 correction 足够小。可行集投影是安全层，不允许成为掩盖大 surrogate error 的主要修正器。
-
-\subsection{几何输入表示与生产域}
-几何输入只包含定义生产参数域所需的独立变量，并使用由 training domain 固定的中心和尺度归一化。普通长度/位移参数可使用
-\begin{equation}
-\tilde g_k=\frac{g_k-c_k}{s_k}.
-\end{equation}
-离散 shape 类型使用明确的离散编码。
-
-旋转变量不得在跨越周期边界时直接使用裸 Euler angle 标量。例如 yaw 覆盖 $[-\pi,\pi]$ 时，应采用 $(\sin\psi,\cos\psi)$、连续 quaternion/rotation-matrix 表示或其他无分支跳变的姿态编码。若使用 quaternion，必须固定等价符号约定，避免 $q$ 与 $-q$ 形成训练不连续。
-
-必须冻结一个明确的 validated geometry domain $\mathcal G_{\rm prod}$。生产推理在进入网络前先执行 geometry feasibility/domain check；落在 $\mathcal G_{\rm prod}$ 外的输入只能标记为 out-of-domain/unsupported，不能因为 MLP 数值上能输出结果就宣称有验证精度。
-
-归一化、姿态编码和 production-domain metadata 必须随模型保存，推理时禁止重新估计。如果几何到离散 truth operator 的映射因 source deposition 或 material voxelization 出现人为跳变，应先修正底层几何离散，而不是让网络增加容量去拟合数值 staircasing。
-
-\subsection{默认神经网络}
+\subsection{默认网络}
 首版使用普通 residual MLP：
 \begin{align}
 h_0 &= W_{\rm in}\tilde g+b_{\rm in},\\
@@ -142,30 +69,46 @@ h_{\ell+1}
 &=h_\ell+W_{\ell,2}\,\sigma(W_{\ell,1}h_\ell+b_{\ell,1}),\\
 \beta_\theta&=W_{\rm out}h_L+b_{\rm out},
 \end{align}
-默认 $\sigma=\operatorname{SiLU}$。网络容量由 validation/test 误差和推理成本选择，不承担 Maxwell 或 thermal 方程本身。
+默认 $\sigma=\operatorname{SiLU}$。网络容量由 held-out error 与推理成本选择，不承担 Maxwell、thermal 或 circuit 方程本身。
 
-\subsection{物理重构层}
-网络输出经过 POD 解码、结构化矩阵解码和联合可行层得到
+\subsection{联合物理可行层}
+raw decode 得到 $(\widetilde Z,\widetilde D,\widetilde H_j)$ 后，先精确恢复 reciprocal/Hermitian algebraic structure。对
 \begin{equation}
-\left\{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_1,\ldots,\widehat H_r\right\}.
+\widetilde Z=\widetilde R+i\widetilde X,
 \end{equation}
-任意复端口峰值电流 $c$ 的体 Joule modal source 为
+physical feasibility layer 只修正耗散/modal blocks，使
 \begin{equation}
-\widehat q_{{\rm vol},j}(g,c)
-=\frac12\operatorname{Re}\!\left(c^H\widehat H_j(g)c\right),
+\widehat D\succeq0,
+\qquad
+\widehat R-\widehat D\succeq0,
 \end{equation}
-体总损耗为
+以及
 \begin{equation}
-\widehat P_{\rm vol}(g,c)
-=\frac12 c^H\widehat D_{\rm vol}(g)c,
+\boxed{
+\phi_j^{\min}(g)\widehat D
+\preceq\widehat H_j
+\preceq\phi_j^{\max}(g)\widehat D.
+}
 \end{equation}
-总阻抗为
-\begin{equation}
-\widehat Z(a,g)=\widehat Z_{\rm field}(g)+R_{\rm wire}(a,g).
-\end{equation}
-因此 current magnitude、relative phase、quadratic scaling 与 wire-resistance thermal dependence 均由显式物理层处理，不由网络学习。
+reactive block 保持 $\widehat X=\widetilde X$。对当前小端口数可用低维 convex projection 或经验证的等价解析/分步算法。
 
-\subsection{联合可行性仍不等价于 exact spatial realizability}
-联合可行层保证 reciprocal structure、Hermitian structure、非负体耗散、非负 implied outward loss，以及每个 modal tensor 相对 $D_{\rm vol}$ 的必要 Loewner bounds。但这些有限 LMI 条件仍不是“存在一个与所有预测 $H_j$ 完全一致的精确非负空间 Joule density”的充分条件，也不能保证 surrogate 与 truth 的 $D_{\rm out}^{\rm phys}$ 数值相同。
+必须分别报告 $(Z,D)$ 与 $H$ projection correction。可行层是安全结构，不允许成为掩盖大 regression error 的主要修正器。
 
-因此 production validation 仍必须比较 $Z$、$D_{\rm vol}$、$H_j$、current contractions、independent outward-loss audit、trajectory outputs 以及 projection corrections；结构可行不等于数值误差为零，更不等于完整 spatial realizability 已被数学证明。
+\subsection{与 geometry-aware thermal basis 的接口}
+在线推理顺序固定为：
+\begin{enumerate}
+  \item deterministic basis generator 先由 $g$ 构造 $\Phi(g)$ 与 $\phi_j^{\min/\max}(g)$；
+  \item MLP/POD decode 得到 raw $Z/D/H$；
+  \item 使用当前 geometry 的 modal bounds 做 physical feasibility projection；
+  \item 用
+  \begin{equation}
+  \widehat q_{{\rm vol},j}(g,c)
+  =\frac12\operatorname{Re}(c^H\widehat H_j(g)c)
+  \end{equation}
+  形成 reduced thermal source；
+  \item $M_r(g),K_r(g)$ 由真实 thermal operators 与 $\Phi(g)$ 投影得到。
+\end{enumerate}
+因此 network 与 thermal basis generator 是两个并行的 geometry-dependent maps：前者学习复杂 EM tensor dependence，后者执行已知的 deterministic geometry transport。
+
+\subsection{联合可行性不等于 exact spatial realizability}
+reciprocity、PSD、implied outward-loss nonnegativity 与 modal Loewner bounds 都是强必要结构，但仍不是“存在一个与所有预测 $H_j$ 完全一致的精确非负空间 Joule density”的充分证明。production validation 仍必须比较 truth $Z/D/H$、current contractions、independent outward power、thermal trajectories 与 projection corrections。
