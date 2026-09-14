@@ -63,14 +63,24 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
 def _source_and_loss_partition(background, geometry):
     context = background.geometry_context(geometry, assemble_thermal=False)
     rows = tuple(getattr(context, "source_regularization", ()))
+    matching = len(rows) == context.source_shape.shape[1]
     source_ok = bool(
-        len(rows) == context.source_shape.shape[1]
+        matching
         and all(
             row.get("model") == getattr(background, "source_model", None)
             and float(row.get("conductor_width", 0.0)) > 0.0
             and float(row.get("conductor_thickness", 0.0)) > 0.0
             and abs(float(row.get("heat_weight_sum", 0.0)) - 1.0) <= 1e-12
             and float(row.get("source_norm", 0.0)) > 0.0
+            for row in rows
+        )
+    )
+    terminal_ok = bool(
+        matching
+        and all(
+            row.get("terminal_model") == getattr(background, "terminal_model", None)
+            and float(row.get("terminal_separation", 0.0)) > np.finfo(float).tiny
+            and float(row.get("terminal_path_integral_relative_error", np.inf)) <= 1e-12
             for row in rows
         )
     )
@@ -89,6 +99,11 @@ def _source_and_loss_partition(background, geometry):
     )
     return {
         "finite_support_source": source_ok,
+        "terminal_path_conservation": terminal_ok,
+        "maximum_terminal_path_integral_relative_error": max(
+            (float(row.get("terminal_path_integral_relative_error", np.inf)) for row in rows),
+            default=float("inf"),
+        ),
         "material_fraction_closure_error": float(
             getattr(context, "material_fraction_closure_error", np.inf)
         ),
@@ -110,11 +125,10 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
     source_rows = [_source_and_loss_partition(background, g) for g in geometries]
     max_fraction = max(row["material_fraction_closure_error"] for row in source_rows)
     max_partition = max(row["wire_loss_partition_relative_error"] for row in source_rows)
+    max_terminal = max(row["maximum_terminal_path_integral_relative_error"] for row in source_rows)
     checks = {
         "finite_support_source_ok": all(row["finite_support_source"] for row in source_rows),
-        "terminal_continuity_model_declared": bool(
-            getattr(background, "terminal_model", "") == "impressed_port_path_with_endpoint_charge_balance"
-        ),
+        "terminal_source_continuity_ok": all(row["terminal_path_conservation"] for row in source_rows),
         "material_fraction_closure_ok": max_fraction <= 1e-10,
         "wire_loss_not_double_counted": max_partition <= 1e-12,
         "open_boundary_domain_converged": bool(domain["converged"]),
@@ -126,6 +140,7 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
         **{key: bool(value) for key, value in checks.items()},
         "source_model": getattr(background, "source_model", "unknown"),
         "terminal_model": getattr(background, "terminal_model", "unknown"),
+        "maximum_terminal_path_integral_relative_error": float(max_terminal),
         "maximum_material_fraction_closure_error": float(max_fraction),
         "maximum_wire_loss_partition_relative_error": float(max_partition),
         "open_boundary_convergence": domain,
