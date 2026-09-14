@@ -34,9 +34,6 @@ def test_open_boundary_gate_does_not_require_raw_outward_flux_invariance(monkeyp
     z1 = np.array([[2.01, 0.198], [0.198, 1.49]], complex)
     d0 = np.array([[1.990, 0.198], [0.198, 1.490]], complex)
     d1 = np.array([[2.008, 0.197], [0.197, 1.488]], complex)
-    # Moving the artificial boundary outward in a lossy medium can reduce the
-    # residual outward flux by a large *relative* factor even when that flux is
-    # tiny compared with total terminal dissipation.
     o0 = np.eye(2) * 1.0e-2
     o1 = np.eye(2) * 2.0e-3
 
@@ -94,3 +91,45 @@ def test_em_mesh_gate_reports_self_vs_mutual_without_relaxing_failure(monkeypatc
     assert sample["diagnostic_z_self_reactive_relative_error"] > 0.0
     assert sample["diagnostic_d_vol_self_relative_error"] > sample["diagnostic_d_vol_mutual_relative_error"]
     assert diagnosis["code"] == "unresolved_source_self_response"
+
+
+def test_corrected_preflight_skips_global_mesh_when_local_reference_fails(monkeypatch):
+    import sdfmpneo.unified_corrected_truth_preflight as corrected
+
+    settings = {
+        "BACKGROUND": {
+            "fine_step": 0.012,
+            "open_boundary_check": {"samples": 1},
+            "formulation_check": {"samples": 1},
+            "mesh_check": {"samples": 1, "refinement_factor": 0.75, "relative_tolerance": 0.1},
+            "self_correction": {"samples": 1},
+        }
+    }
+    source_row = {
+        "finite_support_source": True,
+        "terminal_path_conservation": True,
+        "material_fraction_closure_error": 0.0,
+        "wire_loss_partition_relative_error": 0.0,
+        "maximum_terminal_path_integral_relative_error": 0.0,
+    }
+    local = {
+        "converged": False,
+        "maximum_relative_error": 0.2,
+        "maximum_joule_total_power_relative_error": 0.0,
+        "joule_identity_tolerance": 1e-10,
+        "fine_step": 0.003,
+        "validation_fine_step": 0.00225,
+    }
+    monkeypatch.setattr(corrected, "_source_and_loss_partition", lambda *_args, **_kwargs: source_row)
+    monkeypatch.setattr(corrected, "audit_local_self_correction", lambda *_args, **_kwargs: local)
+    monkeypatch.setattr(corrected, "audit_open_boundary_domain", lambda *_args, **_kwargs: {"converged": True})
+    monkeypatch.setattr(corrected, "audit_low_frequency_formulation", lambda *_args, **_kwargs: {"converged": True})
+
+    def forbidden_mesh(*_args, **_kwargs):
+        raise AssertionError("global corrected mesh Gate should be skipped after local-reference failure")
+
+    monkeypatch.setattr(corrected, "audit_em_mesh_preflight", forbidden_mesh)
+    report = corrected.run_truth_preflight(settings, _Background(), [{"case": 0}])
+    assert not report["certified"]
+    assert report["em_mesh_convergence"]["skipped"] is True
+    assert report["failure_diagnosis"]["code"] == "local_self_reference_not_converged"
