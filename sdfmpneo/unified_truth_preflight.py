@@ -28,10 +28,10 @@ def audit_open_boundary_domain(settings, background, geometries, monitor=None):
 
     In conductive seawater, moving the artificial boundary outward changes the
     physical loss partition: more power is dissipated in the newly included
-    seawater volume and less power reaches the artificial boundary.  Therefore
-    ``D_out`` is *not* a domain-invariant observable.  The hard Gate checks port
+    seawater volume and less power reaches the artificial boundary. Therefore
+    ``D_out`` is not a domain-invariant observable. The hard Gate checks port
     response / volume loss convergence and measures the change in ``D_out`` only
-    relative to the total terminal-dissipation scale.  The raw relative D_out
+    relative to the total terminal-dissipation scale. The raw relative D_out
     change is still reported as a diagnostic.
     """
     cfg = dict(settings["BACKGROUND"].get("open_boundary_check", {}))
@@ -137,7 +137,7 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
             "relative_d_out_error": _relative(o0, o1),
             "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
             # Diagnostics only: these expose whether a failed full-matrix Gate is
-            # dominated by local self terms or by coupling terms.  They do not
+            # dominated by local self terms or by coupling terms. They do not
             # silently relax the original convergence criterion.
             "diagnostic_z_self_relative_error": _relative(_diagonal(z0), _diagonal(z1)),
             "diagnostic_d_vol_self_relative_error": _relative(_diagonal(d0), _diagonal(d1)),
@@ -169,6 +169,42 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
         "maximum_relative_error": float(worst),
         "converged": bool(worst <= tolerance),
         "samples": rows,
+    }
+
+
+def _mesh_failure_diagnosis(mesh):
+    if bool(mesh.get("converged", False)) or not mesh.get("samples"):
+        return None
+    row = max(mesh["samples"], key=lambda item: float(item.get("maximum_relative_error", 0.0)))
+    tolerance = float(mesh.get("relative_tolerance", 0.0))
+    self_z = float(row.get("diagnostic_z_self_relative_error", 0.0))
+    mutual_z = float(row.get("relative_mutual_impedance_error", 0.0))
+    self_d = float(row.get("diagnostic_d_vol_self_relative_error", 0.0))
+    mutual_d = float(row.get("diagnostic_d_vol_mutual_relative_error", 0.0))
+    self_dominated = (
+        self_z > max(tolerance, 3.0 * mutual_z)
+        and self_d > max(tolerance, 3.0 * mutual_d)
+    )
+    if self_dominated:
+        return {
+            "code": "unresolved_source_self_response",
+            "geometry": row.get("geometry"),
+            "self_z_relative_error": self_z,
+            "mutual_z_relative_error": mutual_z,
+            "self_d_vol_relative_error": self_d,
+            "mutual_d_vol_relative_error": mutual_d,
+            "recommendation": (
+                "The coarse EM grid resolves mutual/far-field coupling much better than the local "
+                "source self response. Do not relax the mesh Gate; either refine the EM truth "
+                "discretization around the conductor scale or introduce a separately validated "
+                "local self-field/self-loss correction before training."
+            ),
+        }
+    return {
+        "code": "general_em_mesh_nonconvergence",
+        "geometry": row.get("geometry"),
+        "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
+        "recommendation": "Refine the EM truth discretization and rerun the convergence Gate; do not relax the tolerance.",
     }
 
 
@@ -248,6 +284,7 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
         "em_mesh_converged": bool(mesh["converged"]),
     }
     certified = all(bool(value) for value in checks.values())
+    diagnosis = _mesh_failure_diagnosis(mesh)
     return {
         **{key: bool(value) for key, value in checks.items()},
         "source_model": getattr(background, "source_model", "unknown"),
@@ -258,6 +295,7 @@ def run_truth_preflight(settings, background, geometries, monitor=None):
         "open_boundary_convergence": domain,
         "formulation_convergence": formulation,
         "em_mesh_convergence": mesh,
+        "failure_diagnosis": diagnosis,
         "source_samples": source_rows,
         "certified": bool(certified),
         "status": "certified" if certified else "truth_preflight_failed",
