@@ -16,8 +16,9 @@
 
 Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
 或 full-field correction。离线 truth 使用 finite-cross-section stranded source、Silver--Mueller
-开放边界。训练流程先做 pre-basis truth preflight，再构造 geometry-aware thermal ROM/tensor truth，
-训练后还必须通过 completely-held-out current/circuit end-to-end Go/No-Go 才会保存模型。
+开放边界，并用 canonical local fine-minus-coarse defect 修正全局粗网格未解析的端口 self response。
+训练流程先做 pre-basis truth preflight，再构造 geometry-aware thermal ROM/tensor truth，训练后还必须
+通过 completely-held-out current/circuit end-to-end Go/No-Go 才会保存模型。
 """
 from __future__ import annotations
 
@@ -36,37 +37,42 @@ FILES = {
 }
 
 BACKGROUND = {
-    # The former ±0.15 m box left only a small margin for the widest/translated
-    # receive package and produced 7–9% domain sensitivity in mutual impedance.
-    # Outer cells are stretched/coarse, so enlarging the physical box is much
-    # cheaper than globally refining the EM core.
     "bounds": [[-0.27, 0.27], [-0.27, 0.27], [-0.27, 0.27]],
     "core_center": [0.0, 0.0, 0.02],
     "core_half_extent": [0.09, 0.09, 0.09],
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.03,
-    # Expanded-domain convergence of terminal response, volume loss and mutual Z.
-    # In lossy seawater raw D_out is a partition quantity and is diagnostic only.
+    # The global grid is intentionally kept coarse enough for many-geometry truth.
+    # Only the unresolved diagonal self response receives a small canonical local
+    # fine-minus-coarse defect.  Translation/rotation are removed in that local
+    # solve, while global mutual/far-field coupling remains from the full domain.
+    "self_correction": {
+        "enabled": True,
+        "samples": 1,
+        "fine_step": 0.003,
+        "validation_fine_step": 0.00225,
+        "core_padding": 0.006,
+        "boundary_padding": 0.04,
+        "growth": 1.5,
+        "max_step": 0.02,
+        "relative_tolerance": 1e-1,
+    },
     "open_boundary_check": {
         "samples": 3,
         "padding": 0.12,
         "relative_tolerance": 5e-2,
     },
-    # Full-wave truth is compared with an E-form MQS limit on held-out geometries.
     "formulation_check": {
         "samples": 1,
         "relative_tolerance": 2e-2,
     },
-    # One representative physical refinement is intentionally mandatory. If this
-    # fails, reduce fine_step/max_step or repair unresolved local self response
-    # rather than training through the error.
     "mesh_check": {
         "samples": 1,
         "refinement_factor": 0.75,
         "relative_tolerance": 1e-1,
+        "source_path_relative_tolerance": 1e-10,
     },
-    # Small rigid perturbations must change source/material/Phi/Z/D/H continuously.
     "geometry_continuity_check": {
         "samples": 1,
         "translation_step": 1e-4,
@@ -157,8 +163,6 @@ TRAINING = {
     "thermal_basis_max_rank": None,
     "thermal_basis_conditioning_limit": 1e10,
     "n_tensor_samples": 96,
-    # Completely-held-out geometries are sampled only after training. They never
-    # participate in basis enrichment, POD, early stopping or optimizer updates.
     "final_audit": {
         "samples": 2,
         "times": [0.1, 1.0, 10.0, 100.0],
