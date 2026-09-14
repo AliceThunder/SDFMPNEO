@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import itertools
 import numpy as np
 import scipy.sparse as sp
 
@@ -14,6 +15,9 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
     boundary_model = "silver_muller_impedance"
     source_model = "stranded_rectangular_cross_section_gauss3"
     terminal_model = "impressed_port_path_with_endpoint_charge_balance"
+    # This is a physical geometry-sampling resolution, not an EM mesh parameter.
+    # Mesh refinement must compare the same source polyline and the same wire length.
+    source_centerline_step = 1.0e-3
 
     def __init__(self, *args, thermal_library=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,6 +39,30 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         self.thermal_library = library
         self.thermal_basis = None
         return library
+
+    def _physical_centerline(self, coil):
+        return coil.centerline(float(self.source_centerline_step))
+
+    def validate_geometry(self, geometry):
+        """Validate geometry using a mesh-independent physical centerline."""
+        g = self._geometry(geometry)
+        for index, (coil, package) in enumerate(zip(g.coils, g.packages)):
+            points = self._physical_centerline(coil)
+            self._require_inside(points, f"coil {index} centerline")
+            radius = 0.5 * np.hypot(coil.conductor_width, coil.conductor_thickness)
+            local = np.abs(package.pose.inverse(points))
+            if np.any(local + radius > package.half_extent + 1e-12):
+                raise ValueError(f"coil {index} is not fully contained in its package")
+        signs = np.asarray(list(itertools.product((-1.0, 1.0), repeat=3)))
+        for index, package in enumerate(g.packages):
+            self._require_inside(
+                package.pose.apply(signs * package.half_extent), f"package {index}"
+            )
+        for i in range(len(g.packages)):
+            for j in range(i + 1, len(g.packages)):
+                if self._packages_overlap(g.packages[i], g.packages[j]):
+                    raise ValueError(f"packages {i} and {j} overlap")
+        return g
 
     @staticmethod
     def _cross_section_frame(coil, tangent):
@@ -106,7 +134,6 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
     def _spatial_context(self, geometry):
         """Assemble geometry/material/source data using production source regularization."""
         g = self.validate_geometry(geometry)
-        spacing = 0.45 * min(np.min(self.dx), np.min(self.dy), np.min(self.dz))
         fractions = {
             name: np.zeros(self.n_cells)
             for name in set(self.coil_materials + self.package_materials + (self.seawater_material,))
@@ -114,7 +141,7 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
         sources, heat_weights = [], []
         source_audits = []
         for coil, material in zip(g.coils, self.coil_materials):
-            points = coil.centerline(spacing)
+            points = self._physical_centerline(coil)
             source, heat = self._deposit_stranded_coil(coil, points)
             sources.append(source)
             heat_weights.append(heat)
@@ -130,6 +157,7 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
             source_audits.append({
                 "model": self.source_model,
                 "terminal_model": self.terminal_model,
+                "centerline_step": float(self.source_centerline_step),
                 "conductor_width": float(coil.conductor_width),
                 "conductor_thickness": float(coil.conductor_thickness),
                 "path_length": length,
@@ -330,6 +358,37 @@ class OpenBoundaryBackground(FixedMultiscaleBackground):
             self.boundary_edge_hodge
         )
         return (volume + boundary).tocsr()
+
+    def wire_resistances(self, context, state=None):
+        """Wire resistance with mesh-independent physical centerline length."""
+        _, material_rise = self._state_temperature(context, state)
+        _, _, _, _, _, temperature = self.cell_properties(context, state)
+        out = []
+        for coil, material, weights in zip(
+            context.geometry.coils, self.coil_materials, context.line_heat_weights
+        ):
+            temp = (
+                self.ambient_temperature + material_rise.get(material, 0.0)
+                if material_rise is not None
+                else float(np.dot(weights, temperature))
+            )
+            sigma = float(self._temperature_material(material, np.array(temp)))
+            length = coil.length(float(self.source_centerline_step))
+            area = coil.conductor_width * coil.conductor_thickness
+            mu = MU0 * float(self.materials[material].get("relative_permeability", 1))
+            delta = np.sqrt(2 / (self.omega * mu * max(sigma, np.finfo(float).tiny)))
+            effective = min(
+                area,
+                2 * (coil.conductor_width + coil.conductor_thickness) * delta,
+            )
+            out.append(
+                length
+                / (
+                    max(sigma, np.finfo(float).tiny)
+                    * max(effective, np.finfo(float).tiny)
+                )
+            )
+        return np.asarray(out)
 
 
 __all__ = ["OpenBoundaryBackground"]
