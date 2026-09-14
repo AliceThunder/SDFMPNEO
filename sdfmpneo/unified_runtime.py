@@ -11,6 +11,7 @@ import uuid
 
 import numpy as np
 
+from .unified_final_audit import run_final_held_out_audit
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
@@ -123,7 +124,7 @@ def train(settings,model_path,settings_dir,monitor=None):
         preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
         if not preflight["certified"]:
             raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
-        print("Truth preflight：finite-support source / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
+        print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
 
         valid_cache=False; cache_meta={}
         if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
@@ -164,6 +165,8 @@ def train(settings,model_path,settings_dir,monitor=None):
         _progress("执行 post-basis Physics Gate",53,monitor)
         gate=run_physics_gate(settings,bg,dataset,gate_geometries,monitor=monitor)
         gate["truth_preflight"]=preflight
+        gate["terminal_source_continuity_ok"]=bool(preflight["terminal_source_continuity_ok"])
+        gate["wire_loss_not_double_counted"]=bool(preflight["wire_loss_not_double_counted"])
         gate["certified"]=bool(gate["certified"] and preflight["certified"])
         gate["status"]="certified" if gate["certified"] else "physics_gate_failed"
         if not gate["certified"]:
@@ -177,13 +180,25 @@ def train(settings,model_path,settings_dir,monitor=None):
         )
         model=UnifiedNeuralElectroThermalModel(bg,surrogate,default_geometry=settings["DEFAULT_GEOMETRY"],
             current_offset=settings["PORTS"].get("current_offset"),current_matrix=settings["PORTS"].get("current_matrix"),production_domain=settings.get("GEOMETRY_SAMPLING"))
+
+        final_cfg=dict(settings["TRAINING"].get("final_audit",{}))
+        final_count=max(1,int(final_cfg.get("samples",2)))
+        final_rng=np.random.default_rng(seed+524287)
+        final_geometries=_sample_geometries(settings,final_count,final_rng,bg)
+        _progress("执行 completely-held-out final Go/No-Go audit",92,monitor)
+        final_audit=run_final_held_out_audit(settings,model,final_geometries,monitor=monitor)
+        if not final_audit["certified"]:
+            raise RuntimeError("Final held-out audit failed; refusing model artifact: "+json.dumps(jsonable(final_audit),sort_keys=True))
+        print("Final audit：full-vs-ROM thermal / tensor-current contractions / outward loss / reduced dynamics / steady stability 全部通过。",flush=True)
+
         _progress("保存统一 geometry-aware tensor-ROM 模型",98,monitor)
-        model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,"training_report":asdict(report)})
+        model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,
+                                        "final_held_out_audit":final_audit,"training_report":asdict(report)})
         checkpoint.unlink(missing_ok=True)
         write_json(settings_dir/"training.report.json",{"model":str(model_path),"background_cells":bg.n_cells,"offline_maxwell_dofs":bg.n_edges,
             "online_em_representation":"Z_field + D_vol + geometry-dependent modal H_j","thermal_basis_rank":bg.thermal_rank,
             "thermal_representation":"deterministic Phi(g) = BG + transported local blocks","thermal_basis":thermal_report,
-            "truth_preflight":preflight,"physics_gate":gate,"training":report})
+            "truth_preflight":preflight,"physics_gate":gate,"final_held_out_audit":final_audit,"training":report})
         _progress("训练完成",100,monitor)
         print(f"训练完成：geometry-aware thermal rank={bg.thermal_rank}，tensor POD rank={report.pod_rank}，在线 Maxwell solve=0，best epoch={report.best_epoch}，validation matrix loss={report.best_validation_loss:.6g}，test relative tensor error={report.test_relative_tensor_error:.6g}。",flush=True)
         print(f"模型已保存：{model_path}",flush=True)
