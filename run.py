@@ -124,8 +124,12 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
+    # Shared thermal basis: 20 seed geometries plus an 18-geometry reserve.
+    # The builder automatically uses about 2/3 of the reserve for basis
+    # enrichment and keeps the final 1/3 strictly held out for validation.
+    "thermal_basis_schema": "seed_enrichment_holdout_v2",
     "basis_samples": 20,
-    "basis_validation_samples": 6,
+    "basis_validation_samples": 18,
     "thermal_basis_energy_tolerance": 5e-2,
     "thermal_time_scales": [1e-3, 1.0, 1000.0],
     "thermal_basis_max_rank": None,
