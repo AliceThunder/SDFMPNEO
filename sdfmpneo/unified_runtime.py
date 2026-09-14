@@ -18,8 +18,9 @@ from .unified_physics_gate import run_physics_gate
 from .unified_tensor_surrogate import TensorDataset, encode_geometry, generate_tensor_dataset
 from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
+from .unified_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 13
+_CACHE_FORMAT = 14
 
 
 def jsonable(value):
@@ -101,18 +102,6 @@ def _require_effective_thermal_basis(report):
     )
 
 
-def _wire_loss_partition_error(background, geometry):
-    context=background.geometry_context(geometry,assemble_thermal=False)
-    sigma=np.asarray(background.cell_properties(context,None,em=True)[0],float)
-    expected=np.zeros(background.n_cells,float)
-    for name,fraction in context.fractions.items():
-        if name in background.coil_materials: continue
-        local=float(background._temperature_material(name,np.asarray(background.ambient_temperature)))
-        expected+=np.asarray(fraction,float)*local
-    scale=max(float(np.linalg.norm(expected)),np.finfo(float).tiny)
-    return float(np.linalg.norm(sigma-expected)/scale)
-
-
 def _gate_sample_count(settings):
     background=settings["BACKGROUND"]
     sections=("open_boundary_check","formulation_check","mesh_check","geometry_continuity_check")
@@ -124,8 +113,18 @@ def train(settings,model_path,settings_dir,monitor=None):
     settings_dir.mkdir(parents=True,exist_ok=True); sig=_signature(settings); meta_path,thermal_path,data_path=_cache_paths(settings_dir)
     checkpoint=Path(settings["FILES"]["training_checkpoint"]); checkpoint=checkpoint if checkpoint.is_absolute() else Path(settings["ROOT"])/checkpoint
     try:
-        _progress("构建开放边界固定背景物理空间",0,monitor); bg=build_background(settings); _progress("构建开放边界固定背景物理空间",6,monitor)
+        _progress("构建开放边界固定背景物理空间",0,monitor); bg=build_background(settings); _progress("构建开放边界固定背景物理空间",5,monitor)
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs；Maxwell 仅用于离线 open-boundary truth。",flush=True)
+
+        seed=int(settings["TRAINING"].get("seed",17))
+        preflight_rng=np.random.default_rng(seed+65537)
+        preflight_geometries=_sample_geometries(settings,_gate_sample_count(settings),preflight_rng,bg)
+        _progress("执行 pre-basis spatial truth preflight",6,monitor)
+        preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
+        if not preflight["certified"]:
+            raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
+        print("Truth preflight：finite-support source / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
+
         valid_cache=False; cache_meta={}
         if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
             try:
@@ -133,15 +132,15 @@ def train(settings,model_path,settings_dir,monitor=None):
             except (OSError,ValueError,TypeError): valid_cache=False
 
         if valid_cache:
-            _progress("复用 geometry-aware thermal library 与 tensor truth 数据",35,monitor)
+            _progress("复用 geometry-aware thermal library 与 tensor truth 数据",38,monitor)
             thermal_report=cache_meta.get("thermal_basis_report",{}); _require_effective_thermal_basis(thermal_report)
             library=GeometryAwareThermalLibrary.load(thermal_path); bg.set_thermal_library(library); dataset=TensorDataset.load(data_path)
             if dataset.thermal_rank!=bg.thermal_rank: raise RuntimeError("cached tensor dataset thermal rank 与 geometry-aware library 不一致")
         else:
-            checkpoint.unlink(missing_ok=True); rng=np.random.default_rng(int(settings["TRAINING"].get("seed",17)))
+            checkpoint.unlink(missing_ok=True); rng=np.random.default_rng(seed)
             n_basis=int(settings["TRAINING"].get("basis_samples",8)); n_basis_val=int(settings["TRAINING"].get("basis_validation_samples",6))
             basis_geometries=_sample_geometries(settings,n_basis,rng,bg); validation_geometries=_sample_geometries(settings,n_basis_val,rng,bg)
-            _progress("构建 geometry-aware canonical thermal ROM",8,monitor)
+            _progress("构建 geometry-aware canonical thermal ROM",12,monitor)
             library,thermal_obj=build_geometry_aware_thermal_library(
                 bg,settings["DEFAULT_GEOMETRY"],basis_geometries,validation_geometries=validation_geometries,
                 target_relative_error=float(settings["TRAINING"].get("thermal_basis_energy_tolerance",5e-2)),
@@ -151,28 +150,27 @@ def train(settings,model_path,settings_dir,monitor=None):
                 conditioning_limit=float(settings["TRAINING"].get("thermal_basis_conditioning_limit",1e10)),monitor=monitor,
             )
             _require_effective_thermal_basis(thermal_obj); bg.set_thermal_library(library); library.save(thermal_path); thermal_report=asdict(thermal_obj)
-            _progress("构建 geometry-aware canonical thermal ROM",28,monitor)
+            _progress("构建 geometry-aware canonical thermal ROM",32,monitor)
             n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,rng,bg)
-            dataset=generate_tensor_dataset(bg,tensor_geometries,seed=int(settings["TRAINING"].get("seed",17)),monitor=monitor); dataset.save(data_path)
+            dataset=generate_tensor_dataset(bg,tensor_geometries,seed=seed,monitor=monitor); dataset.save(data_path)
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"thermal_basis_report":thermal_report,
-                                  "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors",
-                                  "em_boundary":"silver_muller_impedance","source_model":bg.source_model})
-            _progress("生成几何 tensor truth 数据",50,monitor)
+                                  "truth_preflight":preflight,"thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes",
+                                  "em_representation":"geometry_to_port_and_joule_tensors","em_boundary":"silver_muller_impedance",
+                                  "source_model":bg.source_model})
+            _progress("生成几何 tensor truth 数据",52,monitor)
 
-        gate_rng=np.random.default_rng(int(settings["TRAINING"].get("seed",17))+104729)
+        gate_rng=np.random.default_rng(seed+104729)
         gate_geometries=_sample_geometries(settings,_gate_sample_count(settings),gate_rng,bg)
-        _progress("执行完整 spatial Physics Gate",51,monitor)
+        _progress("执行 post-basis Physics Gate",53,monitor)
         gate=run_physics_gate(settings,bg,dataset,gate_geometries,monitor=monitor)
-        partition_error=max(_wire_loss_partition_error(bg,g) for g in gate_geometries)
-        gate["wire_loss_partition_relative_error"]=float(partition_error)
-        gate["wire_loss_not_double_counted"]=bool(partition_error<=1e-12)
-        gate["certified"]=bool(gate["certified"] and gate["wire_loss_not_double_counted"])
+        gate["truth_preflight"]=preflight
+        gate["certified"]=bool(gate["certified"] and preflight["certified"])
         gate["status"]="certified" if gate["certified"] else "physics_gate_failed"
         if not gate["certified"]:
             raise RuntimeError("Physics Gate failed; refusing surrogate training: "+json.dumps(jsonable(gate),sort_keys=True))
-        print("Physics Gate：source regularization / Joule identities / reciprocity / Poynting / domain / MQS / mesh / geometry continuity 全部通过。",flush=True)
+        print("Physics Gate：Joule identities / reciprocity / Poynting / full mesh / thermal transport continuity / trajectory 全部通过。",flush=True)
 
-        _progress("训练 geometry→tensor POD-MLP",60,monitor)
+        _progress("训练 geometry→tensor POD-MLP",62,monitor)
         surrogate,report=train_matrix_tensor_surrogate(
             dataset,network_settings=settings["TRAINING"].get("network"),training_settings=settings["TRAINING"].get("optimizer"),
             device=settings["TRAINING"].get("device","cuda"),monitor=monitor,checkpoint_path=checkpoint,
@@ -180,11 +178,12 @@ def train(settings,model_path,settings_dir,monitor=None):
         model=UnifiedNeuralElectroThermalModel(bg,surrogate,default_geometry=settings["DEFAULT_GEOMETRY"],
             current_offset=settings["PORTS"].get("current_offset"),current_matrix=settings["PORTS"].get("current_matrix"),production_domain=settings.get("GEOMETRY_SAMPLING"))
         _progress("保存统一 geometry-aware tensor-ROM 模型",98,monitor)
-        model.save(model_path,metadata={"thermal_basis_report":thermal_report,"physics_gate":gate,"training_report":asdict(report)})
+        model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,"training_report":asdict(report)})
         checkpoint.unlink(missing_ok=True)
         write_json(settings_dir/"training.report.json",{"model":str(model_path),"background_cells":bg.n_cells,"offline_maxwell_dofs":bg.n_edges,
             "online_em_representation":"Z_field + D_vol + geometry-dependent modal H_j","thermal_basis_rank":bg.thermal_rank,
-            "thermal_representation":"deterministic Phi(g) = BG + transported local blocks","thermal_basis":thermal_report,"physics_gate":gate,"training":report})
+            "thermal_representation":"deterministic Phi(g) = BG + transported local blocks","thermal_basis":thermal_report,
+            "truth_preflight":preflight,"physics_gate":gate,"training":report})
         _progress("训练完成",100,monitor)
         print(f"训练完成：geometry-aware thermal rank={bg.thermal_rank}，tensor POD rank={report.pod_rank}，在线 Maxwell solve=0，best epoch={report.best_epoch}，validation matrix loss={report.best_validation_loss:.6g}，test relative tensor error={report.test_relative_tensor_error:.6g}。",flush=True)
         print(f"模型已保存：{model_path}",flush=True)
