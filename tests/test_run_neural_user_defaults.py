@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 from pathlib import Path
 
@@ -75,6 +76,23 @@ def test_model_artifact_requires_integrator_certified_release_version():
     from sdfmpneo.unified_model import FORMAT_VERSION
 
     assert FORMAT_VERSION >= 13
+
+
+def test_final_release_settings_do_not_invalidate_physical_truth_cache():
+    from sdfmpneo.unified_runtime import _signature
+
+    run = _load_run()
+    baseline = copy.deepcopy(run.SETTINGS)
+    release_only = copy.deepcopy(baseline)
+    release_only["TRAINING"]["final_audit"]["tensor_relative_tolerance"] *= 0.5
+    release_only["TRAINING"]["optimizer"]["epochs"] += 1
+    release_only["TRAINING"]["network"]["width"] += 8
+    release_only["TRAINING"]["device"] = "cpu"
+    assert _signature(baseline) == _signature(release_only)
+
+    physical_change = copy.deepcopy(baseline)
+    physical_change["TRAINING"]["thermal_time_scales"][0] *= 2.0
+    assert _signature(baseline) != _signature(physical_change)
 
 
 def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
