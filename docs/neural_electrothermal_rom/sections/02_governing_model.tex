@@ -1,212 +1,153 @@
 \section{完整物理系统与降阶动力学}
 
 \subsection{相量约定、幅值约定与 Maxwell 方程}
-全文采用 $e^{+i\omega t}$ 相量约定，并统一使用\textbf{峰值复幅值}而不是 RMS 相量。因此任意周期平均功率均带有 $1/2$ 因子。例如端口平均输入功率写成
+全文采用 $e^{+i\omega t}$ 相量约定，并统一使用峰值复幅值。因此周期平均功率均带 $1/2$：
 \begin{equation}
 P_{\rm in}=\frac12\operatorname{Re}(c^H v).
 \end{equation}
-若未来接口改为 RMS phasor，则所有功率公式必须整体同步修改，禁止混用两套幅值约定。
 
-对给定几何 $g$ 和真正进入电磁 constitutive law 的状态 $s_{\rm em}$，电场满足
+对给定几何 $g$，当前材料模型中的电磁 constitutive parameters 不随温度变化，故
 \begin{equation}
-\nabla\times\mu^{-1}\nabla\times E
--\omega^2\epsilon E
-+i\omega\sigma E
-=-i\omega J_s.
+\nabla\times\mu^{-1}\nabla\times E-\omega^2\epsilon E+i\omega\sigma E=-i\omega J_s,
 \end{equation}
-采用兼容 edge-space 离散后写成
+离散后写成
 \begin{equation}
-\boxed{
-A_{\rm em}(s_{\rm em},g)X=B(g),
-}
+\boxed{A_{\rm em}(g)X(g)=B(g),\qquad B(g)=-i\omega S(g).}
 \end{equation}
-其中 $X\in\C^{n_E\times n_p}$ 为所有端口基激励的电场响应，$B=-i\omega S$，$S(g)$ 为端口电流 source-shape 矩阵。
-
-当前材料模型中没有任何体电磁参数依赖温度，因此
-\begin{equation}
-\boxed{
-A_{\rm em}(s_{\rm em},g)=A_{\rm em}(g).
-}
-\end{equation}
-这一定义必须与实现、缓存和训练数据一致。未来若加入温度相关海水电导率、介电参数或其他 constitutive state，只需恢复 $s_{\rm em}$ 依赖，不改变后续代数结构。
+$X\in\C^{n_E\times n_p}$ 包含所有端口基激励响应。未来若加入真正影响 Maxwell constitutive law 的热状态，只需恢复 $A_{\rm em}(s_{\rm em},g)$，不改变后续端口/张量结构。
 
 \subsection{频域电磁--瞬态热耦合的时间尺度前提}
-生产模型采用 frequency--transient 分层：电磁场在载波频率上用频域相量求解，thermal model 接收一个电磁周期上的平均 Joule heat。该分层要求
+生产模型采用 frequency--transient 分层，要求载波场建立时间远短于 thermal/envelope time scale。thermal model 接收 cycle-averaged Joule heat，而不解析载波周期内温度微振荡。若 excitation 出现与电磁瞬态同量级的快速调制、宽带/多谐波或强非线性频谱，则当前单频相量模型失效。
+
+\subsection{离散算子与开放域结构}
+Maxwell 离散保持
 \begin{equation}
-\tau_{\rm EM}=\frac{2\pi}{\omega}\ll \tau_T,
+A_{\rm em}=C^TH_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma+A_{\rm open},
 \end{equation}
-并要求 operating envelope 的变化同样慢于电磁建立时间。在该条件下，thermal ODE 不解析载波周期内的温度微振荡，而只接收 cycle-averaged power。
+其中 $A_{\rm open}$ 为经过 Physics Gate 验证的 reciprocal/passive open-boundary contribution。Joule、端口功率与 thermal heat 必须从同一 loss-operator 体系构造。
 
-端口相量 $c$ 可以是固定工况，也可以在热时间尺度上缓慢变化为 $c(t)$。若 excitation 含有与电磁瞬态同量级的快速调制、强谐波或显著非线性频谱，则当前单频相量模型不适用，应改为多频或全时域电磁模型。
-
-\subsection{离散算子的结构要求}
-离散系统应保持 curl--curl 与 material Hodge 的结构
-\begin{equation}
-A_{\rm em}=C^T H_{\mu^{-1}}C-\omega^2H_\epsilon+i\omega H_\sigma.
-\end{equation}
-其中 $C$ 是离散 curl，$H_{\mu^{-1}},H_\epsilon,H_\sigma$ 为与同一离散能量定义一致的 Hodge/material operators。Joule、端口功率和后续 thermal heat 必须从同一 loss-operator 体系构造，禁止一套离散用于 Maxwell、另一套独立重构用于功率。
-
-\subsection{端口 source 必须与 continuity 和 terminal 定义一致}
-filament/source column $S_p$ 代表一个有明确 orientation 与电流归一的端口激励。若物理 current path 在电磁域内真正闭合，可要求相应离散 current divergence 为零；但实际 spiral coil 往往是有两个 terminals 的开放导体路径，此时不能错误地把它强制成闭合 divergence-free loop。
-
-对于开放 two-terminal path，必须至少采用以下一种物理闭合方式：
-\begin{itemize}
-  \item 显式建模 return/feed current path；
-  \item 在 terminal source/sink 上保留与频域 continuity
-  \begin{equation}
-  \nabla\cdot J_s=-i\omega\rho_s
-  \end{equation}
-  一致的 charge/current interpretation；
-  \item 或使用经过验证的 port formulation，使外部 circuit closure 与 field-domain source 定义一致。
-\end{itemize}
-省略 feed/return path 属于模型近似，必须进入 Physics Gate/model-error budget，而不能通过数值 source deposition 自动视为“闭合线圈”。
-
-\subsection{外边界不是默认 PEC 物理}
-有限计算域上的 essential tangential-$E$ 边界对应 PEC 型截断。它可以作为数值截断手段，但不能未经验证就解释为真实海水开放域边界。因此 truth model 必须通过至少一种开放域/域扩展收敛程序：扩大计算域或采用经过验证的 absorbing/PML/open-boundary 处理，并检查阻抗、互感和体损耗对边界位置的敏感性。
-
-\subsection{低频 formulation Gate}
-目标工作频率和器件尺度处于明显低频/磁准静态 regime。$E$-curl-curl formulation 在物理上可用，但其低频 conditioning 与绝缘区域 gradient modes 必须通过数值实验审计。正式实现应保留 formulation Gate：在代表性几何上比较当前 $E$ formulation 与适当的 $A$--$\phi$ 或其他低频兼容 formulation 的阻抗、损耗、网格收敛、线性系统条件性和总求解成本。只有通过该 Gate 后才冻结 truth solver formulation。
+端口 source $S_p$ 必须有明确 orientation、terminal 与 feed/return/charge-continuity 解释。开放 two-terminal spiral 不能错误地强制为闭合 divergence-free loop。source regularization 也必须绑定物理 conductor scale，不能让 mesh size 充当隐式 wire radius。
 
 \subsection{热方程采用温升变量}
 令
 \begin{equation}
 \theta=T-T_{\rm amb}.
 \end{equation}
-当前 thermal constitutive model 中 $M_T(g)$ 与 $K_T(g)$ 不随温度变化，完整热模型写成
-\begin{equation}
-M_T(g)\dot\theta+K_T(g)\theta
-=Q_{\rm vol}(g,c)+Q_{\rm wire}(\theta,g,c)+F_T(g).
-\end{equation}
-这里 $Q_{\rm vol}$ 是 cycle-averaged Maxwell 体导电损耗；在当前 constitutive model 下它不随温度变化。$Q_{\rm wire}$ 由线圈电阻模型产生，可随温度变化。$F_T$ 表示独立于电磁状态的确定性热源或线性边界等效源；若不存在则为零。
-
-若未来加入显著的温度相关 thermal conductivity、heat capacity、辐射或非线性对流边界，则必须显式写成 $M_T(\theta,g)$、$K_T(\theta,g)$ 或状态相关边界/源项；此时固定 generalized eigendecomposition 的 ETD 假设不再自动成立，必须同步修改时间积分理论。
-
-\subsection{当前热系统的 well-posedness 前提}
-当前 finite-time 与 steady-state 理论默认对所有生产几何
+当前 thermal constitutive model 中 $M_T(g)$ 与 $K_T(g)$ 随 geometry 变化但不随温度变化，完整热模型为
 \begin{equation}
 \boxed{
-M_T(g)\succ0,
-\qquad
-K_T(g)\succ0,
+M_T(g)\dot\theta+K_T(g)\theta
+=Q_{\rm vol}(g,c)+Q_{\rm wire}(\theta,g,c)+F_T(g).
 }
 \end{equation}
-并在目标参数域内具有足够统一的 coercivity/conditioning。因此无源线性热系统是耗散的，$K_T^{-1}$ 与唯一线性 steady response 有定义。
-
-若未来采用 pure Neumann 等使 $K_T$ 含常数零模，则必须单独处理 nullspace、平均温度漂移/能量积累与 steady-state 可解性；此时本文中所有直接使用 $K^{-1}$、正 generalized eigenvalues 或唯一稳态的公式不能原样沿用。
-
-\subsection{共享热基与 Galerkin ROM}
-采用共享热基 $\Phi$：
+理论默认生产域内
 \begin{equation}
-\theta\approx\Phi a.
+M_T(g)\succ0,\qquad K_T(g)\succ0,
 \end{equation}
-Galerkin 投影后
+且 conditioning/coercivity 足够统一。若未来采用 pure Neumann 等使 $K_T$ 含 nullspace，则必须重新处理 steady-state solvability、平均温度漂移与时间积分理论。
+
+\subsection{固定全局 thermal basis 不再作为生产假设}
+对大范围平移/旋转的 coil/package，短时热响应会携带局部热点的位置自由度。若强制
+\begin{equation}
+\theta\approx\Phi a,\qquad \Phi\text{ 与 }g\text{ 无关},
+\end{equation}
+则固定线性空间必须同时记忆所有可能的热点位置，rank 会随 geometry coverage 快速增长，并可能出现 training anchors 已收敛而 held-out geometry 仍近乎正交于该 span 的情况。
+
+因此生产理论改为 geometry-aware deterministic basis：
+\begin{equation}
+\boxed{
+\theta(x,t;g)\approx\Phi(x;g)a(t;g).
+}
+\end{equation}
+首版 basis generator 定义为
+\begin{equation}
+\boxed{
+\Phi(g)=
+[\Phi_{\rm bg},\;\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\;\mathcal T_{\rm rx}(g)\Psi_{\rm rx}].
+}
+\end{equation}
+其中 $\Phi_{\rm bg}$ 为固定 global/background modes，$\Psi_{\rm tx},\Psi_{\rm rx}$ 在各自 canonical local coordinates 中定义。$\mathcal T_{\rm tx/rx}(g)$ 首版只实施已知 rigid translation/rotation 与固定守恒插值。
+
+不同 geometry 上，列的空间位置可变，但 block 顺序、列数和 mode index 的物理语义必须固定。禁止通过 geometry-dependent arbitrary eigensolver ordering 或未对齐 POD 使 mode identity 在样本间交换。
+
+\subsection{Geometry-aware Galerkin ROM}
+对一次静态 geometry query，$g$ 在整个 thermal trajectory 中固定，因此 $\Phi(g)$ 也固定。Galerkin 投影得到
 \begin{equation}
 \boxed{
 M_r(g)\dot a
-=-K_r(g)a
-+q_{\rm vol}(g,c)
-+q_{\rm wire}(a,g,c)
-+f_T(g),
+=-K_r(g)a+q_{\rm vol}(g,c)+q_{\rm wire}(a,g,c)+f_T(g),
 }
 \end{equation}
 其中
 \begin{equation}
-M_r=\Phi^TM_T\Phi,
-\qquad
-K_r=\Phi^TK_T\Phi.
-\end{equation}
-真实 $M_r,K_r$ 永远保留在系统中，不由神经网络预测。若 $\Phi$ 满列秩，则由 $M_T,K_T\succ0$ 可得 $M_r,K_r\succ0$。
-
-\subsection{初始条件必须有明确的 full/reduced 语义}
-如果用户直接提供 reduced coordinates $a_0$，则 ROM 初值定义为
-\begin{equation}
-a(0)=a_0.
-\end{equation}
-这只定义了 reduced system 内部状态；只有当该状态属于已定义并验证的 initial-condition family 时，才携带相对于 full thermal model 的精度声明。
-
-如果输入的是 full-order 温升 $\theta_0$，默认采用 thermal mass inner product 下的 Galerkin projection
-\begin{equation}
 \boxed{
-a_0
-=\left(\Phi^TM_T\Phi\right)^{-1}\Phi^TM_T\theta_0,
+M_r(g)=\Phi(g)^TM_T(g)\Phi(g),\qquad
+K_r(g)=\Phi(g)^TK_T(g)\Phi(g).
 }
 \end{equation}
-并单独记录
-\begin{equation}
-e_{0,\rm proj}=\theta_0-\Phi a_0.
-\end{equation}
-Euclidean least-squares projection 不能在未说明的情况下替代该定义。
+真实 $M_r,K_r$ 每个 geometry 确定性组装，不由神经网络预测。生产域内必须验证 $\Phi(g)$ 满列秩、$M_r(g),K_r(g)\succ0$ 且 conditioning 可接受。
 
-\subsection{线圈电阻的温度状态必须有明确定义}
-集中 wire-resistance model 不能把整个 reduced state $a$ 作为无定义黑箱输入。对每个线圈 $p$，必须先定义物理温度泛函，例如 conductor/line 的归一化平均温升
+若未来允许 $g=g(t)$，则
+\begin{equation}
+\dot\theta=\Phi(g)\dot a+\dot\Phi(g)a,
+\end{equation}
+从而 reduced dynamics 会出现
+\begin{equation}
+\Phi^TM_T\dot\Phi\,a
+\end{equation}
+等 transport terms。当前静态 geometry ROM 不允许忽略这些项后直接用于运动几何。
+
+\subsection{Canonical thermal mode 构造}
+固定 geometry 下，volume Joule heat 对 complex current $c$ 是 Hermitian quadratic map，因此 current-induced spatial heat family 的实维数至多为 $n_p^2$。source anchors 使用能够张成完整 Hermitian port space 的确定性 current combinations，而不依赖随机 current sampling。
+
+canonical mode library 分为 background、TX-local、RX-local blocks。对 reference/global 或 local-frame thermal problems，统一使用 resolvent anchors
+\begin{equation}
+A_su=b,\qquad A_s=K+sM,
+\end{equation}
+其中 source anchor 取 $b=Q_\alpha$，initial-condition anchor 取 $b=M\theta_{0,\beta}$。Galerkin approximation 的理论相对能量误差为
+\begin{equation}
+\boxed{
+\eta_s^2
+=\frac{r^TA_s^{-1}r}{b^TA_s^{-1}b}
+=\frac{\|u-\tilde u\|_{A_s}^2}{\|u\|_{A_s}^2}.
+}
+\end{equation}
+rank 自动选择的对象是 canonical block modes，而不是把不同全局位置的局部 hotspot 逐一加入固定 basis。
+
+\subsection{时间尺度必须与可解析 thermal physics 一致}
+对 diffusion coefficient $\alpha$，时间尺度 $\tau$ 的 diffusion length 约为
+\begin{equation}
+\ell_d(\tau)=\sqrt{\alpha\tau}.
+\end{equation}
+若 $\ell_d(\tau)$ 远小于 thermal spatial discretization 可解析尺度，则 $(K+sM)^{-1}Q$ 在 $s=1/\tau$ 下主要反映离散 source placement，而非可解析热扩散。这样的极短时 anchor 不默认用于 production rank target，除非应用确实要求该时间尺度且 full-order mesh 已能解析。
+
+首版优先覆盖可解析的短/中时尺度并加入 $s=0$ steady anchor。长时间有限时刻不需要一一对应的巨大 $\tau$ anchor；同一个稳定 reduced ODE 通过连续/链式时间积分到达任意查询 horizon，steady state 则独立求解并验证稳定性。
+
+\subsection{初始条件语义}
+如果输入 full-order 温升 $\theta_0$，默认采用当前 geometry 的 thermal-mass projection
+\begin{equation}
+\boxed{
+a_0=
+[\Phi(g)^TM_T(g)\Phi(g)]^{-1}\Phi(g)^TM_T(g)\theta_0.}
+\end{equation}
+并报告 initial projection error。允许的 initial-condition family 还必须通过 homogeneous resolvent/trajectory audit 覆盖。
+
+若用户直接提供 reduced coordinates $a_0$，它只定义 ROM 内部状态；只有属于冻结/审计 initial-condition family 时才携带 full-order accuracy 声明。
+
+\subsection{线圈温度与电阻状态}
+每个线圈的 wire-temperature state 必须先由物理温度泛函定义，例如
 \begin{equation}
 \bar\theta_p(a,g)
-=\ell^{(T)T}_p(g)\Phi a,
+=\ell_p^{(T)T}(g)\Phi(g)a,
 \qquad
 \ell_p^{(T)T}\mathbf 1=1,
 \end{equation}
-再由已定义 constitutive law 计算
+再由 constitutive law 得到 $R_p(a,g)$。wire resistance 不能把整个 reduced state 当无定义黑箱输入。
+
+\subsection{time-domain 验证不可省略}
+resolvent energy error 只是 canonical basis 构造与局部诊断工具，不是完整 trajectory certificate。冻结 held-out geometries 上必须直接比较 full thermal 与 geometry-aware ROM 的可解析短时、中间时间、长时间和 steady outputs，包括
 \begin{equation}
-R_p(a,g)=\mathcal R_p\!\left(T_{\rm amb}+\bar\theta_p(a,g),g\right).
+T(x,t),\qquad T_{\min}(t),\qquad T_{\max}(t),\qquad \bar T_{\rm wire}(t),\qquad a_*.
 \end{equation}
-若更高保真电阻模型需要多个局部温度统计量，则显式扩展该 temperature-functional map。
 
-\subsection{current-induced thermal source family 可有限维精确张成}
-固定 geometry 后，空间 volume Joule heat 对端口复电流 $c$ 是 Hermitian quadratic map。因而所有 current-induced spatial heat patterns 位于一个实维数至多为 $n_p^2$ 的线性空间中。thermal-basis source anchors 不应依赖大量随机 current samples，而应使用一组能够张成 Hermitian port space 的确定性 current combinations。
-
-例如可由单端口 $e_p$ 与 pair combinations $e_p+e_q$、$e_p+i e_q$ 等恢复 diagonal、real-cross 与 imaginary-cross spatial patterns。等价地，也可以直接从 spatial Hermitian coefficient matrices 构造 basis patterns。这样在每个 sampled geometry 上，对整个 complex current space 的 volume-heat source span 是代数上完整的，而不是经验采样意义上的“代表性覆盖”。
-
-完整 thermal source family 还必须加入：
-\begin{itemize}
-  \item 各线圈的 wire heat-distribution patterns；
-  \item 若存在，确定性 boundary/source patterns；
-  \item 未来新增的任何状态相关空间热源形状。
-\end{itemize}
-
-\subsection{thermal basis 必须覆盖受迫与初值响应的整个目标时间尺度}
-只控制 steady solution $K^{-1}Q$ 与初始导数 $M^{-1}Q$，一般不足以保证中间时间的 transient solution。对零初值、固定 $M,K$ 与常热源 $Q$，精确解为
-\begin{equation}
-\boxed{
-\theta(t)=\left(I-e^{-M^{-1}Kt}\right)K^{-1}Q.
-}
-\end{equation}
-矩阵乘法顺序不可任意交换。因此 transient solution 会访问由 $M^{-1}K$ 作用产生的整个响应子空间。
-
-对每个 geometry $g$、source anchor $Q_\alpha(g)$ 和覆盖目标时间尺度的非负 shift $s_\ell$，定义受迫 resolvent anchor
-\begin{equation}
-\boxed{
-\left(K(g)+s_\ell M(g)\right)u_{\alpha\ell}(g)=Q_\alpha(g).
-}
-\end{equation}
-$s=0$ 覆盖 steady response；足够大的 $s$ 对应短时间/质量主导响应；中间的对数分布 shifts 覆盖目标 transient time scales。
-
-对允许的 full-order initial-condition anchor $\theta_{0,\beta}(g)$，Laplace-domain homogeneous response 满足
-\begin{equation}
-\boxed{
-\left(K(g)+s_\ell M(g)\right)u_{0,\beta\ell}(g)
-=M(g)\theta_{0,\beta}(g).
-}
-\end{equation}
-因此 initial-condition family 必须通过 RHS $M\theta_0$ 纳入同一 resolvent construction；只保证 $t=0$ 的 projection error 很小并不足以保证后续 homogeneous evolution 很小。
-
-对任意 anchor RHS $b$，候选 reduced solution为
-\begin{equation}
-a_r
-=\left[\Phi^T(K+s_\ell M)\Phi\right]^{-1}\Phi^Tb,
-\end{equation}
-并直接检查实际 Galerkin resolvent residual
-\begin{equation}
-\boxed{
-r=b-(K+s_\ell M)\Phi a_r.}
-\end{equation}
-residual-greedy 在 geometry/source/initial-condition/shift anchor 集上对 worst residual 增广，rank 为达到目标后的结果。
-
-\subsection{time-domain 验证仍然不可省略}
-resolvent residual 提供覆盖多个时间尺度的构造依据，但它本身不等价于完整 trajectory certificate。冻结测试几何上仍必须用 full thermal model 与 ROM 直接比较代表性 current/circuit histories 与 initial conditions 下的
-\begin{equation}
-T(x,t),\qquad T_{\max}(t),\qquad a(t),\qquad a_*.
-\end{equation}
-若这些 transient outputs 未达到目标，则继续扩充 geometry/source/initial-condition/shift anchors，而不是仅收紧神经网络误差。
-
-\subsection{共享热基跨几何使用的理论要求}
-共享热基只有在目标几何域内具有可控逼近误差时才有统一意义。除 resolvent residual 外，还应在冻结测试几何上检查实际 Galerkin transient/steady error。若要给出全域严格界，还需进一步证明跨几何质量/刚度算子的谱等价或其他稳定性条件；有限几何采样只能称为数值验证。
+如果 held-out error 主要随 rigid translation/rotation 增大，应首先修正 local-frame transport/interpolation，而不是继续向固定 global span 堆 mode。若 rigid transport 后主要剩余误差与尺寸变化相关，才考虑 deterministic scale-aware extension。
