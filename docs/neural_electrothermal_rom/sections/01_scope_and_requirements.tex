@@ -3,7 +3,7 @@
 \subsection{核心目标}
 本项目的生产目标是构造一个参数化、可验证的水下无线电能传输（UWPT）电热代理系统。当前电磁模型在冻结工作频率 $\omega$ 下采用 $e^{+i\omega t}$ 峰值复相量；current-controlled 模式的 operating input 为规定的复端口电流 $c$。用户输入为几何 $g$、$c$、初始热状态与查询时间 $t$，输出包括热状态、温度、端口阻抗和功率等工程量。
 
-系统不以黑箱方式直接学习时间轨迹。已知的 Maxwell 线性性、current-quadratic Joule structure、端口 reciprocity/passivity、矩阵级功率守恒、热质量/导热算子和连续时间动力学必须保留为硬结构或显式物理层。
+系统不以黑箱方式直接学习时间轨迹。已知的 Maxwell 线性性、current-quadratic Joule structure、端口 reciprocity/passivity、矩阵级功率守恒、几何相关 thermal operators 和连续时间动力学必须保留为硬结构或显式物理层。
 
 若实际工作点由电压源、谐振补偿网络或负载决定，则必须在本模型输出的 $Z(a,g)$ 外接确定性的 circuit equations 求解端口电流；规定电流模型本身不等价于完整 source--load closed-loop WPT circuit。
 
@@ -12,80 +12,98 @@
 \begin{equation}
 \boxed{
  g
- \xrightarrow{\text{validated Maxwell truth}}
- \{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}
- \xrightarrow{\text{neural parametric surrogate}}
- \{\widehat Z_{\rm field},\widehat D_{\rm vol},\widehat H_j\}
- \xrightarrow{\text{exact current/circuit physics}}
- q(a,g,c)
- \xrightarrow{\text{true thermal ROM}}
- a(t).
+ \rightarrow
+ \begin{cases}
+ \text{deterministic }\Phi(g),M_r(g),K_r(g),\\
+ \text{neural }\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}
+ \end{cases}
+ \rightarrow \text{exact current/circuit physics}
+ \rightarrow \text{geometry-aware thermal ROM}
+ \rightarrow a(t),T(t),Z(t).
 }
 \end{equation}
-其中 $Z_{\rm field}$ 为不含独立 wire/internal impedance model 的场阻抗，$D_{\rm vol}=X^HH_\sigma X$ 为物理海水体耗散矩阵，$H_j$ 为第 $j$ 个 thermal mode 对应的 Hermitian Joule quadratic tensor。神经网络仅逼近几何到这些低维参数化物理对象的映射；端口电流不进入网络，而通过解析 quadratic forms 或外部 circuit equations 进入功率和热源。
+其中 $Z_{\rm field}$ 为不含独立 wire/internal impedance model 的场阻抗，$D_{\rm vol}=X^HH_\sigma X$ 为物理海水体耗散矩阵，$H_j(g)$ 为当前 geometry 下第 $j$ 个 canonical thermal mode 对应的 Hermitian Joule tensor。
+
+神经网络仅逼近复杂的 geometry-to-EM-tensor map；thermal basis 不由网络预测，而由冻结的 deterministic basis generator 构造：
+\begin{equation}
+\boxed{
+\Phi(g)=
+[\Phi_{\rm bg},\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\mathcal T_{\rm rx}(g)\Psi_{\rm rx}].
+}
+\end{equation}
+首版 $\mathcal T_{\rm tx/rx}$ 只包含已知 rigid translation/rotation 与固定守恒插值。mode block ordering 和 index semantics 在所有 geometry 上保持一致。
 
 在 reciprocal constitutive/boundary assumptions 成立时，生产解码必须保持
 \begin{equation}
-Z_{\rm field}^T=Z_{\rm field},
-\qquad
-D_{\rm vol}=D_{\rm vol}^H\succeq0,
-\qquad
+Z_{\rm field}^T=Z_{\rm field},\qquad
+D_{\rm vol}=D_{\rm vol}^H\succeq0,\qquad
 H_j^H=H_j,
 \end{equation}
-以及联合能量可行性
+以及
 \begin{equation}
 \operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0.
 \end{equation}
-进一步，由 $H_j$ 与 $D_{\rm vol}$ 来自同一个非负空间 Joule density，必须满足
+进一步，由 $H_j(g)$ 与 $D_{\rm vol}(g)$ 来自同一个非负空间 Joule density，必须满足 geometry-dependent modal bounds
 \begin{equation}
 \boxed{
-\phi_j^{\min}D_{\rm vol}
-\preceq H_j
-\preceq\phi_j^{\max}D_{\rm vol}.
+\phi_j^{\min}(g)D_{\rm vol}(g)
+\preceq H_j(g)
+\preceq\phi_j^{\max}(g)D_{\rm vol}(g).
 }
 \end{equation}
-这些有限矩阵约束是生产可行性的必要结构，但不是 exact spatial realizability 的充分证明；完整正确性仍由 Physics Gate 和 held-out truth audit 约束。
+$\phi_j^{\min/\max}(g)$ 由当前 $\Phi(g)$ 在 conductivity-loss support 上确定性计算，而不是全局固定常数。
 
 \subsection{当前材料模型下的进一步简化}
-当前正式材料模型中，线圈铜不作为 Maxwell volume conductor 的完整 solid-conductor region 处理，海水电导率未设置温度系数，介电常数和磁导率也未设置温度依赖。因此当前版本满足
+当前正式材料模型中，体电磁 constitutive parameters 不随温度变化，因此
 \begin{equation}
-\boxed{A_{\rm em}=A_{\rm em}(g),}
+\boxed{A_{\rm em}=A_{\rm em}(g).}
 \end{equation}
-而不是 $A_{\rm em}(a,g)$。因此固定几何的 Maxwell 场响应只需求解一次；热状态只通过明确的 conductor-temperature functional 与独立 wire impedance/resistance model 进入 wire heating 和总端口关系。
+固定 geometry 的 Maxwell 场响应只需求解一次；热状态只通过 conductor-temperature functional 与独立 wire impedance/resistance model 进入 wire heating 和总端口关系。
 
-若未来引入温度相关海水/介质电磁参数，则主架构扩展为
+thermal full model 则本来就随 geometry 变化：
 \begin{equation}
-(s_{\rm em},g)\mapsto\{Z_{\rm field},D_{\rm vol},H_j\},
+M_T=M_T(g),\qquad K_T=K_T(g),\qquad Q=Q(g,c).
 \end{equation}
-其中 $s_{\rm em}$ 只包含真正影响 Maxwell constitutive law 的状态变量。
+因此生产 theory 不再额外强制 $\Phi$ 与 $g$ 无关，而是使用 geometry-aware deterministic coordinate system。
 
-\subsection{理论适用范围与生产域}
-当前体系是单频、线性 time-harmonic Maxwell 与慢 thermal dynamics 的 frequency--transient 分层。cycle-averaged Joule heating 要求载波/场建立时间远短于 thermal/operating-envelope 时间尺度；quasi-static phasor circuit layer 还要求 circuit settling time 足够短。若这些尺度分离失败，应升级 EM/circuit dynamics，而不是继续沿用当前方程。
+\subsection{理论适用范围与 production domain}
+当前体系是单频、线性 time-harmonic Maxwell 与慢 thermal dynamics 的 frequency--transient 分层。cycle-averaged Joule heating 要求载波/场建立时间远短于 thermal/operating-envelope 时间尺度；quasi-static phasor circuit layer还要求 circuit settling time 足够短。
 
 必须冻结 validated geometry domain $\mathcal G_{\rm prod}$、operating-current/circuit domain、thermal/constitutive state domain 与 initial-condition family。任何域外输入都不继承域内 validated accuracy 声明。
 
-若未来 frequency 本身成为输入，则逐频率 passivity 不足以保证 broadband causal passivity，必须额外满足 positive-real/causality 结构；该问题不属于当前单频冻结体系。
+当前一次 thermal query 默认 geometry 静止。若未来 $g=g(t)$，必须加入 moving-basis transport term $\Phi^TM_T\dot\Phi\,a$ 并同步更新 geometry-dependent EM/thermal objects；不能把静态 ROM 直接用于运动 geometry。
+
+\subsection{thermal 时间尺度边界}
+thermal basis/resolvent time scales 必须和 spatial discretization 的可解析物理一致。对 thermal diffusivity $\alpha$，若
+\begin{equation}
+\sqrt{\alpha\tau}
+\end{equation}
+远小于 thermal mesh 可解析长度，则该极短时间 anchor 主要编码离散 source placement，不默认用于 production rank target。首版优先覆盖可解析短/中时间和 $s=0$ steady limit；更长 finite-time 查询由同一 reduced ODE 连续/链式推进。
 
 \subsection{理论正确性的前置 Gate}
-生产训练开始前，底层离散物理必须通过以下前置条件：
+生产训练开始前，底层物理必须至少通过：
 \begin{itemize}
-  \item Maxwell formulation、reciprocity assumptions、开放域/域扩展与 mesh convergence 已验证；
-  \item peak-phasor、reaction voltage、terminal/source normalization、阻抗符号和独立 Poynting/power balance 一致；
-  \item $H_\sigma/W_j/D_{\rm vol}/H_j$ 使用统一的 FE/quadrature 能量定义，modal Loewner bounds 成立；
-  \item PML/artificial absorption、physical seawater loss 与 wire/internal loss 严格分区，无双重计损；
-  \item port current path、terminal source/sink 或 return path 满足 continuity 与明确端口定义，source self term 使用固定物理 regularization 而非 mesh regularization；
-  \item 几何样本满足包封、无穿透和边界裕量要求，source/material deposition 守恒且对小几何变化足够连续；
-  \item thermal basis 在构造最终 $H_j$ labels 前冻结，并覆盖完整 current-source span、initial-condition family 和多个时间尺度；rank criterion 使用 energy/dual-norm error，并通过 full transient audit；
+  \item Maxwell formulation、reciprocity assumptions、开放域/域扩展与 mesh convergence；
+  \item peak-phasor、reaction voltage、terminal/source normalization、阻抗符号和独立 Poynting/power balance；
+  \item $H_\sigma/W_j(g)/D_{\rm vol}/H_j(g)$ 使用统一 FE/quadrature 能量定义，geometry-dependent modal bounds 成立；
+  \item PML/artificial absorption、physical seawater loss 与 wire/internal loss 严格分区；
+  \item port current path、terminal source/sink 或 return path 满足 continuity 与明确端口定义；
+  \item geometry samples 满足包封、无穿透和边界裕量，source/material deposition 守恒且连续；
+  \item canonical thermal mode library 与 deterministic $g\mapsto\Phi(g)$ generator 在最终 $H_j$ labels 前冻结；
+  \item $\Phi(g)$ 的 transport continuity、full-rank、$M_r/K_r$ SPD 与 conditioning 在生产域内通过 audit；
+  \item time-scale selection 与 thermal mesh resolution 相容，held-out geometry 上 full-vs-ROM trajectories 达到目标；
   \item thermal coercivity/nullspace policy、pointwise temperature audit、wire-temperature functional、steady-state stability 与 circuit operating mode 均有明确定义。
 \end{itemize}
-这些条件没有通过时，神经网络误差不能被解释为最终物理误差。
+这些条件未通过时，神经网络误差不能被解释为最终物理误差。
 
 \subsection{明确非目标}
 本项目不把以下方案作为生产主路线：
 \begin{enumerate}
   \item 直接学习 $(g,c,a_0,t)\mapsto T(t)$ 的黑箱 trajectory network；
-  \item 用网络直接输出最终温度/Joule heat/工作点而绕过已知的 current/circuit/thermal physics；
-  \item 用可行投影或 neural loss 掩盖 truth-model、port/source、boundary、wire 或 thermal-model 错误；
+  \item 让网络预测 thermal basis 或 thermal reduced operators；
+  \item 用一个固定全局 thermal basis 记忆所有可能移动热点；
+  \item 用网络绕过已知 current/circuit/thermal physics；
+  \item 用可行投影或 neural loss 掩盖 truth-model、port/source、boundary、wire 或 thermal-model error；
   \item 在底层 PDE、端口、边界、功率恒等式未通过 Physics Gate 前，以训练 loss 下降替代物理验证；
   \item 把有限测试集经验误差称为全参数域严格 certificate。
 \end{enumerate}
