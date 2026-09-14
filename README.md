@@ -171,7 +171,13 @@ truth 直接检查：
 },
 ```
 
-expanded-domain 与 mesh Gate 都比较 `Z_field / D_vol / D_out_phys / mutual Z`；post-basis mesh audit还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
+expanded-domain Gate 比较 `Z_field / D_vol / D_out_phys / mutual Z`。mesh Gate 除了这些矩阵量，还在完整 Hermitian current-space basis 上直接比较
+
+\[
+P_{\rm vol}(c)=\frac12 c^H D_{\rm vol}c,
+\]
+
+并报告 `relative_p_vol_error`；post-basis mesh audit 还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
 
 ## 5. Geometry-aware deterministic thermal ROM
 
@@ -299,7 +305,7 @@ thermal library 和 tensor truth 完成后，训练 MLP 前继续检查：
 - independent Poynting matrix balance；
 - Joule total/modal identities；
 - modal Loewner bounds；
-- full mesh audit：`Z/D/D_out/H/Tmax/wire/a_*`；
+- full mesh audit：`Z/D/P_vol/D_out/H/Tmax/wire/a_*`；
 - small geometry perturbation 下 source/material/\(\Phi\)/`Z/D/H` continuity；
 - geometry-aware `M_r/K_r` SPD/conditioning；
 - held-out resolvent + full-vs-ROM trajectory/steady。
@@ -340,6 +346,10 @@ MLP 训练完成后，系统使用单独 seed 重新采样 final audit geometrie
     "outward_relative_tolerance": 2e-1,
     "projection_correction_limit": 2e-1,
     "reduced_dynamic_relative_tolerance": 1e-1,
+    "integrator_relative_tolerance": 1e-4,
+    "integrator_rtol": 1e-7,
+    "integrator_atol": 1e-9,
+    "integrator_max_step": 10.0,
     "circuit_condition_limit": 1e8,
     "operating_cases": [
         {"name": "current-controlled", "operating": [5.0, 0.0]},
@@ -351,11 +361,12 @@ MLP 训练完成后，系统使用单独 seed 重新采样 final audit geometrie
 }
 ```
 
-final audit 分三层：
+final audit 分四层：
 
 1. full thermal truth vs geometry-aware thermal ROM：`T(x,t) / Tmin / Tmax / wire / steady a_*`；
 2. truth tensors vs neural tensors：`Z/D/H`、physical outward loss、decoder correction，以及复电流方向 `e_i`、`e_i±e_j`、`e_i±i e_j` 的 `Zc/P/q` contractions；
-3. truth-tensor ROM vs surrogate-tensor ROM：current-controlled 与 circuit-controlled 的 finite-time trajectories、`Z(t)`、currents、wire temperature、steady residual、closed-loop local stability 和 circuit condition number。
+3. truth-tensor ROM vs surrogate-tensor ROM：current-controlled 与 circuit-controlled 的 finite-time trajectories、`Z(t)`、currents、wire temperature、steady residual、closed-loop local stability 和 circuit condition number；
+4. 实际生产 `etd2_adaptive` vs 同一 surrogate-tensor reduced ODE 的高精度 BDF reference，单独报告 `maximum_integrator_relative_error`，避免把时间积分误差混入 surrogate error。
 
 报告明确标记为：
 
@@ -411,7 +422,7 @@ PREDICTION["drive"] = {
 
 即约 12 mm，而 conductor width/thickness 的 production range 可以明显小于该尺度。finite-cross-section Gauss source 解决的是“source support 必须绑定真实 conductor geometry”，**并不意味着 12 mm 网格自动解析了 1 mm 级 conductor self physics**。
 
-因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 `fine_step/max_step` 或进一步改进局部离散/自项物理模型，而不是放宽 Gate 来获得一个伪 certified 模型。
+因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/P_vol/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 `fine_step/max_step` 或进一步改进局部离散/自项物理模型，而不是放宽 Gate 来获得一个伪 certified 模型。
 
 ## 13. 缓存与 artifact
 
@@ -425,9 +436,9 @@ results/uwpt/model.geometry_thermal.npz
 
 当前物理 cache format 已升级到包含 pre-basis spatial truth preflight 的版本；旧 cache 不能跳过新 Gate。
 
-当前 unified model artifact `FORMAT_VERSION = 11`。旧 geometry-aware 模型若没有 finite-support source / spatial preflight / held-out trajectory 这一套冻结语义，会被 `load()` fail closed，需要重新训练。
+当前 unified model artifact `FORMAT_VERSION = 12`。没有 finite-support source / pre-basis spatial truth preflight / post-basis Physics Gate / completely-held-out release audit 这一整套冻结语义的旧模型会被 `load()` fail closed，需要重新训练。
 
-改变以下任一上游对象都会使 downstream truth/POD/model 失效：
+物理 cache signature 不包含 MLP network/optimizer/device，也不包含 final release audit 的阈值或 operating cases；只改 neural optimizer 或 final Go/No-Go 阈值会复用已经冻结的 thermal/tensor truth。改变以下任一上游对象则会使 downstream truth/POD/model 失效：
 
 - source/terminal convention；
 - open boundary/domain；
