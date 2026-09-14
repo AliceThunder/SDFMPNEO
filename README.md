@@ -1,6 +1,6 @@
 # SDF-MPNEO — geometry→tensor + geometry-aware thermal ROM
 
-当前生产主链只保留一条路线：
+当前生产实现只保留一条正式主链：
 
 \[
 \boxed{
@@ -18,16 +18,22 @@
 }
 \]
 
-核心原则：**神经网络只学习静态 geometry→EM tensor 映射。** thermal basis、thermal mass/stiffness、电流幅值/相位、线圈温度电阻、Joule 二次型、电路方程、热 ODE 和稳态方程全部保留为显式物理。
+神经网络只学习静态 `geometry -> EM tensor` 映射。thermal basis、thermal mass/stiffness、电流幅值/相位、线圈温度电阻、Joule 二次型、电路方程、热 ODE 和稳态方程都保留为显式物理。
 
-在线推理不运行 Maxwell、neural Maxwell solver、Krylov/FGMRES 或 full-field correction。Maxwell 只用于离线 truth 生成。
+在线推理不运行 Maxwell、neural Maxwell solver、Krylov/FGMRES 或 full-field correction。Maxwell 只用于离线 truth 与训练前/训练后的物理验证。
 
-## 运行
+## 1. 运行
+
+安装：
 
 ```bash
 python -m pip install -e '.[gui,neural,dev]'
+```
+
+训练：
+
+```bash
 python run.py --mode train
-python run.py --mode predict
 ```
 
 纯控制台训练：
@@ -36,17 +42,75 @@ python run.py --mode predict
 python run.py --mode train --headless
 ```
 
-用户配置集中在 `run.py` 顶部。
+推理：
 
-## 1. 离线开放域 Maxwell truth
+```bash
+python run.py --mode predict
+```
 
-固定几何后求端口基激励场：
+用户配置集中在 `run.py` 顶部。不需要单独运行 Gate；所有 preflight、Physics Gate 和 final Go/No-Go 都属于同一个 `--mode train` 流程。
+
+## 2. 训练执行顺序
+
+生产训练严格按物理依赖执行：
+
+1. 构建开放边界固定背景空间。
+2. 在独立几何上执行 **pre-basis spatial truth preflight**。
+3. 只有 preflight 通过后，才构建 geometry-aware canonical thermal library。
+4. 对 thermal library 做 held-out resolvent 与 full-vs-ROM trajectory/steady audit。
+5. 冻结 \(g\mapsto\Phi(g)\) 后，逐 geometry 生成最终 `Z_field / D_vol / H_j` tensor truth。
+6. 执行 post-basis Physics Gate：Joule identities、Loewner、thermal mesh/transport 等。
+7. 只用 neural training split 构建 POD/normalization 并训练 MLP。
+8. 训练完成后重新采样 **completely-held-out** 几何，执行 final Go/No-Go。
+9. final audit 全部通过后才保存 `model.geometry_thermal.npz`。
+
+任何硬 Gate 失败都会 fail closed；不会用 neural loss、physical projection 或后续优化掩盖底层物理问题。
+
+## 3. 离线 Maxwell truth
+
+固定 geometry 后：
 
 \[
-A_{\rm em}(g)X(g)=B(g).
+A_{\rm em}(g)X(g)=B(g),
+\qquad
+B=-i\omega S.
 \]
 
-离线 Maxwell 使用匹配海水介质的一阶 Silver–Müller / Sommerfeld 开放阻抗边界。边界切向 edge DOF 被保留，弱式加入
+采用 `e^{+i\omega t}`、峰值复相量约定。端口场阻抗使用 negative source reaction：
+
+\[
+Z_{\rm field}=-S^TX.
+\]
+
+### 3.1 Finite-cross-section stranded source
+
+生产 source 不再使用“网格尺寸充当隐式 wire radius”的零半径 line source。`OpenBoundaryBackground` 使用
+
+```text
+stranded_rectangular_cross_section_gauss3
+```
+
+即每个 centerline segment 在真实 `conductor_width × conductor_thickness` 截面上做 3×3 Gauss 分布。截面 quadrature 总权重为 1，因此 refinement 改变的是同一个物理 source 的解析度，而不是 ampere-turns。
+
+当前端口语义为：
+
+```text
+impressed_port_path_with_endpoint_charge_balance
+```
+
+每个端口会数值检查：
+
+- conductor width/thickness 为真实正值；
+- heat/source 权重守恒；
+- open path 两端确实分离；
+- deposited edge source 的定向积分重现真实 centerline endpoint displacement；
+- terminal-path relative error 默认要求不高于 `1e-12`。
+
+铜的 EM conductivity 在 `em=True` 时被排除，wire/internal ohmic loss 由独立 `R_wire(T)` 处理。preflight 会独立重组非线圈材料的 \(\sigma_{\rm em}\) 来验证没有重复计入铜损。
+
+### 3.2 开放边界与独立 Poynting 功率
+
+离线 Maxwell 使用匹配海水介质的一阶 Silver–Müller / Sommerfeld 开放阻抗边界：
 
 \[
 i\omega Y M_{\partial\Omega},
@@ -55,45 +119,63 @@ Y=\sqrt{\frac{\epsilon-i\sigma/\omega}{\mu}},
 \qquad \operatorname{Re}Y\ge0.
 \]
 
-端口场阻抗采用 negative source reaction：
+volume loss：
 
 \[
-Z_{\rm field}=-S^TX.
+D_{\rm vol}=X^HH_\sigma X.
 \]
 
-总物理海水导电耗散矩阵为
-
-\[
-D_{\rm vol}=X^H H_\sigma X,
-\qquad
-P_{\rm vol}(c)=\frac12c^HD_{\rm vol}c.
-\]
-
-开放边界独立给出
+开放边界独立给出：
 
 \[
 D_{\rm out}^{\rm phys}
-=X^H\left(\operatorname{Re}Y\,M_{\partial\Omega}\right)X,
+=X^H\left(\operatorname{Re}Y\,M_{\partial\Omega}\right)X.
 \]
 
-因此 truth 直接检查
+truth 直接检查：
 
 \[
 \operatorname{Herm}(Z_{\rm field})
-\approx D_{\rm vol}+D_{\rm out}^{\rm phys},
+\approx D_{\rm vol}+D_{\rm out}^{\rm phys}.
 \]
 
-而不是用 `Herm(Z)-D_vol` 反定义 outward power 后自证。
+禁止用 `Herm(Z)-D_vol` 反定义 outward power 后再声称 Poynting balance 已验证。
 
-线圈温度相关 AC 电阻独立处理：
+## 4. Pre-basis spatial truth preflight
 
-\[
-Z_{\rm tot}=Z_{\rm field}+\operatorname{diag}(R_{\rm wire}(T)).
-\]
+在 thermal basis 构造之前自动执行：
 
-## 2. Geometry-aware deterministic thermal ROM
+- finite-cross-section source 与 terminal path conservation；
+- material-fraction closure；
+- wire/internal loss 与 seawater volume loss 分区；
+- expanded-domain convergence；
+- full-wave ↔ E-form MQS comparison；
+- EM mesh refinement convergence。
 
-不再假设整个 production geometry domain 共用一个固定 \(\Phi\)。生产 thermal basis 是
+默认设置：
+
+```python
+"open_boundary_check": {
+    "samples": 3,
+    "padding": 0.12,
+    "relative_tolerance": 5e-2,
+},
+"formulation_check": {
+    "samples": 1,
+    "relative_tolerance": 2e-2,
+},
+"mesh_check": {
+    "samples": 1,
+    "refinement_factor": 0.75,
+    "relative_tolerance": 1e-1,
+},
+```
+
+expanded-domain 与 mesh Gate 都比较 `Z_field / D_vol / D_out_phys / mutual Z`；post-basis mesh audit还会继续比较 `H_j`、steady `Tmax`、wire temperature 和 projected steady coordinate。
+
+## 5. Geometry-aware deterministic thermal ROM
+
+生产 basis：
 
 \[
 \boxed{
@@ -102,7 +184,7 @@ Z_{\rm tot}=Z_{\rm field}+\operatorname{diag}(R_{\rm wire}(T)).
 }
 \]
 
-首版只实现确定性的 rigid translation / rotation transport；不使用 neural basis、dynamic POD 或 Grassmann interpolation。局部 canonical blocks 在 reference pose 中构建，查询 geometry 时通过连续三线性插值 transport 到当前 pose。mode ordering 始终固定。
+首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
 每个 geometry 都从真实 full thermal operators 投影：
 
@@ -112,183 +194,197 @@ M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
 K_r(g)=\Phi(g)^TK_T(g)\Phi(g).
 \]
 
-`M_r/K_r` 不由网络预测。每次生成 \(\Phi(g)\) 都检查 support、rank 和 transport conditioning；每次组装生产 thermal context 还会直接检查真实 `M_r(g)`、`K_r(g)` 的正定性与 condition number，超限即 fail closed。
+`M_r/K_r` 不由网络预测。每个 production thermal context 都直接检查：
 
-canonical library 当前由三部分组成：
+- transported basis support/full rank；
+- basis conditioning；
+- \(M_r(g)\succ0\)；
+- \(K_r(g)\succ0\)；
+- reduced operator condition number 未超过配置上限。
 
-- `background_modes`：覆盖代表性 geometry 的 volume-Joule / uniform-initial-condition 慢热响应；
-- `local_modes[0]`：TX canonical wire/local thermal block；
-- `local_modes[1]`：RX canonical wire/local thermal block。
+## 6. Thermal rank、resolvent 与 trajectory Gate
 
-尺寸/shape 变化会进入 canonical-mode truth 构造与真实 \(M(g),K(g)\)；首版不额外引入 scale-aware transport。只有 held-out audit 证明 rigid transport 不够时才增加该结构。
+canonical rank 用 resolvent anchor 自动构建：
 
-## 3. Geometry-dependent modal Joule tensors
+\[
+(K+sM)u=b.
+\]
 
-第 \(j\) 个 modal Joule tensor 使用当前 geometry 的 mode \(\phi_j(g)\)：
+默认 resolvent time scales：
+
+```python
+"thermal_time_scales": [0.1, 1.0, 10.0]
+```
+
+并始终包含 `s=0` steady anchor。
+
+resolvent error 使用真实 Galerkin energy error：
+
+\[
+\frac{\|u-u_r\|_{K+sM}}{\|u\|_{K+sM}}.
+\]
+
+resolvent 不是 trajectory certificate。held-out geometry 还会直接比较 full thermal 与 geometry-aware ROM，默认：
+
+```python
+"thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
+```
+
+比较内容包括：
+
+- field thermal-mass relative error；
+- `Tmin/Tmax`；
+- wire-average temperature；
+- uniform initial-condition homogeneous evolution；
+- forced steady field；
+- steady reduced coordinate \(a_*\)。
+
+full/reduced 线性审计使用 matrix exponential action，避免把普通 time-step tolerance 混入 ROM error。
+
+## 7. Geometry-dependent Joule tensors
+
+当前 geometry 的 thermal mode \(\phi_j(g)\) 对应：
 
 \[
 [W_j(g)]_{mn}
-=\int_\Omega\sigma\,\phi_j(g)N_m\cdot N_n\,dx,
+=\int_\Omega \sigma\,\phi_j(g)N_m\cdot N_n\,dx,
 \qquad
-H_j(g)=X(g)^H W_j(g)X(g).
+H_j(g)=X(g)^HW_j(g)X(g).
 \]
 
-任意峰值复端口电流的 reduced volume heat 为
+任意峰值复端口电流：
 
 \[
 q_{{\rm vol},j}(g,c)
 =\frac12\operatorname{Re}(c^HH_j(g)c).
 \]
 
-由于 \(\Phi\) 随 geometry 变化，Loewner bounds 也必须逐 geometry 计算：
+逐 geometry 计算 conductivity-loss support 上的 bounds：
 
 \[
-\boxed{
 \phi_j^{\min}(g)D_{\rm vol}(g)
 \preceq H_j(g)
-\preceq
-\phi_j^{\max}(g)D_{\rm vol}(g)
-}
+\preceq\phi_j^{\max}(g)D_{\rm vol}(g).
 \]
 
-所以 tensor dataset 对每个 geometry 同时保存自己的 `phi_min / phi_max`。训练 penalty 和在线 hard physical decoder 都使用该 geometry 的 bounds，不再保存一套全局 `phi_min/max`。
+truth 生成还会显式审计 cell Joule total power、`D_vol` contraction 与每个 `H_j` modal contraction 的一致性。
 
-## 4. 神经网络只学 geometry→tensor POD coefficients
+## 8. 神经网络只学 geometry→tensor POD coefficients
 
-神经目标仍然只有
+目标：
 
 \[
 g\mapsto\{Z_{\rm field}(g),D_{\rm vol}(g),H_1(g),\ldots,H_r(g)\}.
 \]
 
-输出 tensor 仅用 training split 做 POD/SVD 压缩，residual MLP 预测 POD coefficients：
+输入不含时间、电流、热状态或 Maxwell residual。POD 与 normalization 只使用 neural training split。
 
-```python
-"network": {
-    "width": 128,
-    "blocks": 3,
-    "activation": "silu",
-}
-```
-
-输入只有固定宽度 geometry encoding，不输入时间、电流、热状态或 Maxwell residual。姿态用 `sin/cos` 编码，coil/package pose 都进入 encoding。
-
-POD 解码后物理层强制：
+物理解码强制：
 
 - `Z_field` complex symmetric；
 - `D_vol` Hermitian PSD；
 - `Herm(Z_field)-D_vol` PSD；
-- 每个 `H_j` Hermitian；
-- 当前 geometry 的 modal Loewner bounds。
+- `H_j` Hermitian；
+- geometry-dependent modal Loewner bounds。
 
-`Z/D` 与 `H` projection correction 单独报告；大 correction 不能被安全层掩盖。
+`Z/D` 与 `H` projection correction 单独报告；final audit 对 projection correction 也设 Go/No-Go 上限。
 
-## 5. Thermal basis 时间尺度与独立 trajectory 验证
+## 9. Post-basis Physics Gate
 
-thermal canonical rank 由 resolvent energy error 自动决定。统一 anchor：
+thermal library 和 tensor truth 完成后，训练 MLP 前继续检查：
 
-\[
-(K+sM)u=b,
-\]
+- Maxwell algebraic residual；
+- raw reaction reciprocity；
+- `D_vol / D_out_phys` passivity；
+- independent Poynting matrix balance；
+- Joule total/modal identities；
+- modal Loewner bounds；
+- full mesh audit：`Z/D/D_out/H/Tmax/wire/a_*`；
+- small geometry perturbation 下 source/material/\(\Phi\)/`Z/D/H` continuity；
+- geometry-aware `M_r/K_r` SPD/conditioning；
+- held-out resolvent + full-vs-ROM trajectory/steady。
 
-并用真正的 Galerkin energy error
-
-\[
-\frac{\|u-u_r\|_{K+sM}}{\|u\|_{K+sM}}
-\]
-
-作为 canonical block 构造与第一层 held-out 验收指标。
-
-默认不再强迫当前约 12 mm thermal mesh 表示 1 ms 下远小于网格的局部扩散。默认可解析 resolvent 时间尺度为：
-
-```python
-"thermal_time_scales": [0.1, 1.0, 10.0]
-```
-
-并始终加入 `s=0` steady anchor。
-
-**resolvent audit 不是 trajectory certificate。** 新版训练还会在完全 held-out geometries 上独立比较 full thermal system 与 geometry-aware ROM。默认时间为：
+small perturbation 默认：
 
 ```python
-"thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
-```
-
-constant volume-Joule 与 wire source directions 从零初值推进；声明的 uniform initial-condition family 做 homogeneous transient。full/reduced 两边直接使用线性 matrix-exponential action，因此该 Gate 不混入普通 time-step tolerance 误差。
-
-每个 held-out case 检查并记录：
-
-- full-field thermal-mass relative error；
-- `T_min / T_max` relative error；
-- 每个 wire-average temperature relative error；
-- steady full field；
-- steady reduced coordinate \(a_*\) 相对当前 geometry 的 `M`-projection error；
-- uniform initial-condition 在 `t=0` 的 projection error。
-
-trajectory 与 steady 的 composite error 必须和 resolvent error 一样低于 `thermal_basis_energy_tolerance`，否则 `stop_reason=validation_trajectory_target_not_met`，训练直接拒绝继续。
-
-1000 s、10000 s 等更长查询不需要一一增加同长度的 resolvent anchor；同一个稳定 reduced ODE 可以继续积分，`t=inf` 独立求 equilibrium 并验证稳定性。100 s trajectory audit 则专门检查“超出 resolvent anchor 时间”的实际动力学表现。
-
-held-out geometry 从不参与 canonical library enrichment。失败时会明确报告最差 geometry、source/case、时间、field/extrema/wire/steady-coordinate error，而不是只给一个不可解释的总数。
-
-full initial temperature 输入在当前 geometry 上做
-
-\[
-[\Phi(g)^TM(g)\Phi(g)]a_0
-=\Phi(g)^TM(g)\theta_0
-\]
-
-的 `M`-正交投影。
-
-## 6. Matrix-aware training
-
-数据严格分成 `train / validation / test / audit`；POD、归一化只使用 train split。训练 loss 在 POD 解码后的物理对象上分别计算 `Z_field / D_vol / H_j` 矩阵相对误差，并加轻量 passivity / geometry-dependent Loewner penalty。
-
-默认 optimizer：
-
-```python
-"optimizer": {
-    "epochs": 240,
-    "batch_size": 16,
-    "learning_rate": 1e-3,
-    "weight_decay": 1e-6,
-    "patience": 40,
-    "validation_interval": 2,
-    "pod_relative_tail_tolerance": 1e-4,
-    "physics_penalty_weight": 0.05,
-    "z_weight": 1.0,
-    "d_weight": 1.0,
-    "h_weight": 1.0,
-    "dtype": "float32",
+"geometry_continuity_check": {
+    "samples": 1,
+    "translation_step": 1e-4,
+    "angle_step": 1e-3,
+    "relative_change_limit": 2e-1,
 }
 ```
 
-电流幅值/相位不进入网络，因此改变 current phasor 不需要重新训练。
+## 10. Completely-held-out final Go/No-Go
 
-## 7. 几何与离散连续性
+MLP 训练完成后，系统使用单独 seed 重新采样 final audit geometries。这些 geometry 不参与：
 
-训练/推理 geometry 先做最低必要物理合法性检查：
+- thermal canonical rank/enrichment；
+- transport 参数选择；
+- tensor dataset；
+- POD/normalization；
+- validation/early stopping；
+- optimizer update。
 
-- coil 连同导体截面必须位于自己的 package 内；
-- package 不允许相交；
-- geometry 必须位于背景域内。
+只有 final audit 通过才会保存模型 artifact。
 
-line source / line heat 使用线性 cloud-in-cell；package fraction 使用固定 3×3×3 Gauss 子单元积分，避免 midpoint assignment 造成明显 staircasing。
+默认 final audit：
 
-thermal rigid transport 使用连续三线性 interpolation，并在 transport 后做 mode support、rank、conditioning 和 weighted orthonormality 检查。
+```python
+"final_audit": {
+    "samples": 2,
+    "times": [0.1, 1.0, 10.0, 100.0],
+    "full_vs_rom_thermal_tolerance": 5e-2,
+    "tensor_relative_tolerance": 2e-1,
+    "current_space_relative_tolerance": 2e-1,
+    "outward_relative_tolerance": 2e-1,
+    "projection_correction_limit": 2e-1,
+    "reduced_dynamic_relative_tolerance": 1e-1,
+    "circuit_condition_limit": 1e8,
+    "operating_cases": [
+        {"name": "current-controlled", "operating": [5.0, 0.0]},
+        {"name": "circuit-controlled", "drive": {
+            "voltage": [10.0, 0.0],
+            "series_impedance": [0.1, 0.1],
+        }},
+    ],
+}
+```
 
-## 8. 在线阶段
+final audit 分三层：
+
+1. full thermal truth vs geometry-aware thermal ROM：`T(x,t) / Tmin / Tmax / wire / steady a_*`；
+2. truth tensors vs neural tensors：`Z/D/H`、physical outward loss、decoder correction，以及复电流方向 `e_i`、`e_i±e_j`、`e_i±i e_j` 的 `Zc/P/q` contractions；
+3. truth-tensor ROM vs surrogate-tensor ROM：current-controlled 与 circuit-controlled 的 finite-time trajectories、`Z(t)`、currents、wire temperature、steady residual、closed-loop local stability 和 circuit condition number。
+
+报告明确标记为：
+
+```text
+frozen_held_out_numerical_validation
+```
+
+它是冻结有限 held-out 集上的数值验证，不宣称覆盖整个连续参数域的严格数学 certificate。
+
+## 11. 在线阶段
 
 给定一个静态 geometry：
 
-1. 确定性生成当前 `Phi(g)`；
-2. 用真实 `M(g), K(g)` 投影 `Mr(g), Kr(g)`，并验证 SPD/conditioning；
-3. MLP 调用一次得到 raw `Z_field / D_vol / H_j`；
-4. 用当前 `Phi(g)` 的 conductivity-loss-support `phi_min/max` 做 hard physical decode；
-5. 给定 current phasor，解析 contraction 得到 volume power / modal heat；
-6. 从当前 temperature field 显式计算 `R_wire(T)` 和 wire heat；
-7. 推进 reduced thermal ODE 或求 stable steady state。
+1. 检查 production-domain 与几何合法性；
+2. 确定性生成 \(\Phi(g),M_r(g),K_r(g)\)；
+3. MLP 一次 forward 得到 raw `Z_field / D_vol / H_j`；
+4. 用当前 geometry 的 modal bounds 做 hard physical decode；
+5. current-controlled 直接使用 prescribed complex current；
+6. circuit-controlled 由显式端口 circuit system 求 current；
+7. 显式更新 `R_wire(T)` 和 wire heat；
+8. 推进 reduced thermal ODE 或求 stable steady state。
 
-也支持 voltage-driven：
+current-controlled 默认：
+
+```python
+PREDICTION["operating"] = [5.0, 0.0]
+```
+
+voltage-driven 示例：
 
 ```python
 PREDICTION["drive"] = {
@@ -297,50 +393,27 @@ PREDICTION["drive"] = {
 }
 ```
 
-每个 thermal stage 只解端口级小 circuit system，不回到 Maxwell。
-
-一次 query 内 geometry 默认为静止，因此没有 moving-basis 项。未来若支持 \(g=g(t)\)，必须显式加入
+一次 query 内 geometry 默认静止。若未来支持 \(g=g(t)\)，必须显式加入 moving-basis transport term
 
 \[
-\Phi(g)^TM(g)\dot\Phi(g)a
+\Phi(g)^TM(g)\dot\Phi(g)a,
 \]
 
-而不能简单每个 time step 更换 basis。
+不能简单逐 time step 更换 basis。
 
-`t=inf` root 收敛后还会检查 reduced closed-loop Jacobian spectral abscissa，并单独报告 `stable`。
+## 12. 默认网格的重要说明
 
-## 9. Physics / ROM Gate
-
-`python run.py --mode train` 自动 fail-fast 检查：
-
-- Maxwell algebraic residual；
-- raw reaction reciprocity；
-- `D_vol` PSD；
-- 独立边界 Poynting quadratic form PSD；
-- `Herm(Z_field) = D_vol + D_out_phys` 的矩阵功率闭合；
-- 当前 geometry 的 modal Loewner bounds；
-- open-boundary domain expansion convergence；
-- geometry-aware transported basis support / rank / conditioning；
-- 每个 geometry 的真实 `M_r(g), K_r(g)` SPD / conditioning；
-- held-out thermal resolvent energy error；
-- held-out full-vs-ROM short/intermediate/long trajectory outputs；
-- held-out forced steady field 与 \(a_*\) consistency。
-
-开放边界默认：
+当前默认：
 
 ```python
-"open_boundary_check": {
-    "samples": 3,
-    "padding": 0.12,
-    "relative_tolerance": 5e-2,
-}
+"fine_step": 0.012
 ```
 
-任一关键检查失败都会拒绝 surrogate training。
+即约 12 mm，而 conductor width/thickness 的 production range 可以明显小于该尺度。finite-cross-section Gauss source 解决的是“source support 必须绑定真实 conductor geometry”，**并不意味着 12 mm 网格自动解析了 1 mm 级 conductor self physics**。
 
-当前 EM source 仍是 regularized line/filament approximation；physical wire-radius/self-impedance convergence 仍属于独立 conductor-model Gate，不能由 algebraic residual 替代。
+因此新版训练强制执行 EM/full mesh refinement Gate。若默认网格对 `Z/D/D_out/H/T` 未达到配置收敛阈值，`python run.py --mode train` 会直接停止。正确处理方式是收细 `fine_step/max_step` 或进一步改进局部离散/自项物理模型，而不是放宽 Gate 来获得一个伪 certified 模型。
 
-## 10. 缓存与 artifact
+## 13. 缓存与 artifact
 
 ```text
 results/uwpt/unified.cache.json
@@ -350,13 +423,21 @@ results/uwpt/model.tensor_training.pt
 results/uwpt/model.geometry_thermal.npz
 ```
 
-模型 artifact 保存 canonical thermal library（BG/local blocks + reference geometry），而不是一张固定 `thermal_basis`。
+当前物理 cache format 已升级到包含 pre-basis spatial truth preflight 的版本；旧 cache 不能跳过新 Gate。
 
-trajectory Gate 接入后物理 cache format 已升级，旧 cache 不允许跳过新验证；model artifact format 也同步升级，旧的 pre-trajectory-certification geometry-aware model 会 fail closed，需要重新训练生成。
+当前 unified model artifact `FORMAT_VERSION = 11`。旧 geometry-aware 模型若没有 finite-support source / spatial preflight / held-out trajectory 这一套冻结语义，会被 `load()` fail closed，需要重新训练。
 
-改变 MLP optimizer 时可复用通过当前版本 Gate 的物理 cache；改变背景、材料、geometry domain、canonical thermal library 定义、时间尺度、trajectory audit 时间、开放边界或 tensor schema 会使物理 cache 失效。
+改变以下任一上游对象都会使 downstream truth/POD/model 失效：
 
-## 11. 关键测试
+- source/terminal convention；
+- open boundary/domain；
+- mesh/material/loss masks；
+- geometry domain；
+- canonical thermal library/basis generator；
+- thermal time-scale/trajectory policy；
+- tensor schema/modal-bound convention。
+
+## 14. 关键测试
 
 ```bash
 python -m pytest -q \
@@ -369,4 +450,4 @@ python -m pytest -q \
   tests/test_run_neural_user_defaults.py
 ```
 
-生产入口不依赖 GitHub Actions。
+生产训练与测试不依赖 GitHub Actions。
