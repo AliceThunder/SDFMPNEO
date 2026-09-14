@@ -30,7 +30,7 @@ def jsonable(value):
         if np.iscomplexobj(value): return {"real":value.real.tolist(),"imag":value.imag.tolist()}
         return value.tolist()
     if isinstance(value,np.generic):
-        if np.iscomplexobj(value): return {"real":float(np.real(value)),"imag":float(np.imag(value))}
+        if np.iscomplexobj(value): return {"real":float(np.real(value)),"imag":float(np.imag(value)}
         return value.item()
     if isinstance(value,complex): return {"real":float(value.real),"imag":float(value.imag)}
     if isinstance(value,dict): return {str(k):jsonable(v) for k,v in value.items()}
@@ -123,19 +123,29 @@ def train(settings,model_path,settings_dir,monitor=None):
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs；Maxwell 仅用于离线 open-boundary truth。",flush=True)
 
         seed=int(settings["TRAINING"].get("seed",17))
-        preflight_rng=np.random.default_rng(seed+65537)
-        preflight_geometries=_sample_geometries(settings,_gate_sample_count(settings),preflight_rng,bg)
-        _progress("执行 pre-basis spatial truth preflight",6,monitor)
-        preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
-        if not preflight["certified"]:
-            raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
-        print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
-
         valid_cache=False; cache_meta={}
         if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
             try:
-                cache_meta=json.loads(meta_path.read_text(encoding="utf-8")); valid_cache=cache_meta.get("signature")==sig and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+                cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
+                valid_cache=(
+                    cache_meta.get("signature")==sig
+                    and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+                    and bool(dict(cache_meta.get("truth_preflight",{})).get("certified",False))
+                )
             except (OSError,ValueError,TypeError): valid_cache=False
+
+        if valid_cache:
+            preflight=dict(cache_meta["truth_preflight"])
+            _progress("复用已认证 pre-basis spatial truth preflight",6,monitor)
+            print("Truth preflight：复用当前 physical-cache signature 下已通过的验证结果。",flush=True)
+        else:
+            preflight_rng=np.random.default_rng(seed+65537)
+            preflight_geometries=_sample_geometries(settings,_gate_sample_count(settings),preflight_rng,bg)
+            _progress("执行 pre-basis spatial truth preflight",6,monitor)
+            preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
+            if not preflight["certified"]:
+                raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
+            print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / EM mesh convergence 全部通过。",flush=True)
 
         if valid_cache:
             _progress("复用 geometry-aware thermal library 与 tensor truth 数据",38,monitor)
@@ -189,7 +199,7 @@ def train(settings,model_path,settings_dir,monitor=None):
         final_audit=run_final_held_out_audit(settings,model,final_geometries,monitor=monitor)
         if not final_audit["certified"]:
             raise RuntimeError("Final held-out audit failed; refusing model artifact: "+json.dumps(jsonable(final_audit),sort_keys=True))
-        print("Final audit：full-vs-ROM thermal / tensor-current contractions / current+circuit dynamics / outward loss / steady stability 全部通过。",flush=True)
+        print("Final audit：full-vs-ROM thermal / tensor-current contractions / current+circuit dynamics / outward loss / production integrator / steady stability 全部通过。",flush=True)
 
         _progress("保存统一 geometry-aware tensor-ROM 模型",98,monitor)
         model.save(model_path,metadata={"thermal_basis_report":thermal_report,"truth_preflight":preflight,"physics_gate":gate,
