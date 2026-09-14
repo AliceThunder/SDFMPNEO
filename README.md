@@ -102,7 +102,7 @@ Z_{\rm tot}=Z_{\rm field}+\operatorname{diag}(R_{\rm wire}(T)).
 }
 \]
 
-首版只实现确定性的 rigid translation / rotation transport；不使用 neural basis、dynamic POD 或 Grassmann interpolation。局部 canonical blocks 在 reference pose 中构建，查询 geometry 时通过守恒的连续插值 transport 到当前 pose。mode ordering 始终固定。
+首版只实现确定性的 rigid translation / rotation transport；不使用 neural basis、dynamic POD 或 Grassmann interpolation。局部 canonical blocks 在 reference pose 中构建，查询 geometry 时通过连续三线性插值 transport 到当前 pose。mode ordering 始终固定。
 
 每个 geometry 都从真实 full thermal operators 投影：
 
@@ -112,7 +112,7 @@ M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
 K_r(g)=\Phi(g)^TK_T(g)\Phi(g).
 \]
 
-`M_r/K_r` 不由网络预测。每次生成 \(\Phi(g)\) 都检查 rank 和 conditioning，transport 后若 mode 丢失支撑或发生线性相关则 fail closed。
+`M_r/K_r` 不由网络预测。每次生成 \(\Phi(g)\) 都检查 support、rank 和 transport conditioning；每次组装生产 thermal context 还会直接检查真实 `M_r(g)`、`K_r(g)` 的正定性与 condition number，超限即 fail closed。
 
 canonical library 当前由三部分组成：
 
@@ -183,7 +183,7 @@ POD 解码后物理层强制：
 
 `Z/D` 与 `H` projection correction 单独报告；大 correction 不能被安全层掩盖。
 
-## 5. Thermal basis 时间尺度与验证
+## 5. Thermal basis 时间尺度与独立 trajectory 验证
 
 thermal canonical rank 由 resolvent energy error 自动决定。统一 anchor：
 
@@ -197,9 +197,9 @@ thermal canonical rank 由 resolvent energy error 自动决定。统一 anchor�
 \frac{\|u-u_r\|_{K+sM}}{\|u\|_{K+sM}}
 \]
 
-作为构造/验收指标。
+作为 canonical block 构造与第一层 held-out 验收指标。
 
-默认不再强迫当前约 12 mm thermal mesh 表示 1 ms 下远小于网格的局部扩散。默认可解析时间尺度为：
+默认不再强迫当前约 12 mm thermal mesh 表示 1 ms 下远小于网格的局部扩散。默认可解析 resolvent 时间尺度为：
 
 ```python
 "thermal_time_scales": [0.1, 1.0, 10.0]
@@ -207,17 +207,28 @@ thermal canonical rank 由 resolvent energy error 自动决定。统一 anchor�
 
 并始终加入 `s=0` steady anchor。
 
-100 s、1000 s、10000 s 等长时间查询不需要相应 long-time basis anchor；由同一个 reduced ODE 连续积分得到，`t=inf` 直接求经稳定性验证的 equilibrium。
+**resolvent audit 不是 trajectory certificate。** 新版训练还会在完全 held-out geometries 上独立比较 full thermal system 与 geometry-aware ROM。默认时间为：
 
-held-out geometry 不参与 canonical library 构造。失败时报告最差 anchor 的：
+```python
+"thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
+```
 
-- geometry index；
-- `volume / wire[0] / wire[1] / initial` source 类型；
-- shift / 对应 time scale；
-- relative energy error；
-- RHS norm 与 solution energy norm。
+constant volume-Joule 与 wire source directions 从零初值推进；声明的 uniform initial-condition family 做 homogeneous transient。full/reduced 两边直接使用线性 matrix-exponential action，因此该 Gate 不混入普通 time-step tolerance 误差。
 
-因此不会再只得到一个无法解释的 `validation=0.88`。
+每个 held-out case 检查并记录：
+
+- full-field thermal-mass relative error；
+- `T_min / T_max` relative error；
+- 每个 wire-average temperature relative error；
+- steady full field；
+- steady reduced coordinate \(a_*\) 相对当前 geometry 的 `M`-projection error；
+- uniform initial-condition 在 `t=0` 的 projection error。
+
+trajectory 与 steady 的 composite error 必须和 resolvent error 一样低于 `thermal_basis_energy_tolerance`，否则 `stop_reason=validation_trajectory_target_not_met`，训练直接拒绝继续。
+
+1000 s、10000 s 等更长查询不需要一一增加同长度的 resolvent anchor；同一个稳定 reduced ODE 可以继续积分，`t=inf` 独立求 equilibrium 并验证稳定性。100 s trajectory audit 则专门检查“超出 resolvent anchor 时间”的实际动力学表现。
+
+held-out geometry 从不参与 canonical library enrichment。失败时会明确报告最差 geometry、source/case、时间、field/extrema/wire/steady-coordinate error，而不是只给一个不可解释的总数。
 
 full initial temperature 输入在当前 geometry 上做
 
@@ -270,9 +281,9 @@ thermal rigid transport 使用连续三线性 interpolation，并在 transport �
 给定一个静态 geometry：
 
 1. 确定性生成当前 `Phi(g)`；
-2. 用真实 `M(g), K(g)` 投影 `Mr(g), Kr(g)`；
+2. 用真实 `M(g), K(g)` 投影 `Mr(g), Kr(g)`，并验证 SPD/conditioning；
 3. MLP 调用一次得到 raw `Z_field / D_vol / H_j`；
-4. 用当前 `Phi(g)` 的 `phi_min/max` 做 hard physical decode；
+4. 用当前 `Phi(g)` 的 conductivity-loss-support `phi_min/max` 做 hard physical decode；
 5. 给定 current phasor，解析 contraction 得到 volume power / modal heat；
 6. 从当前 temperature field 显式计算 `R_wire(T)` 和 wire heat；
 7. 推进 reduced thermal ODE 或求 stable steady state。
@@ -298,7 +309,7 @@ PREDICTION["drive"] = {
 
 `t=inf` root 收敛后还会检查 reduced closed-loop Jacobian spectral abscissa，并单独报告 `stable`。
 
-## 9. Physics Gate
+## 9. Physics / ROM Gate
 
 `python run.py --mode train` 自动 fail-fast 检查：
 
@@ -309,8 +320,11 @@ PREDICTION["drive"] = {
 - `Herm(Z_field) = D_vol + D_out_phys` 的矩阵功率闭合；
 - 当前 geometry 的 modal Loewner bounds；
 - open-boundary domain expansion convergence；
-- geometry-aware thermal basis rank / conditioning；
-- held-out thermal resolvent error。
+- geometry-aware transported basis support / rank / conditioning；
+- 每个 geometry 的真实 `M_r(g), K_r(g)` SPD / conditioning；
+- held-out thermal resolvent energy error；
+- held-out full-vs-ROM short/intermediate/long trajectory outputs；
+- held-out forced steady field 与 \(a_*\) consistency。
 
 开放边界默认：
 
@@ -336,9 +350,11 @@ results/uwpt/model.tensor_training.pt
 results/uwpt/model.geometry_thermal.npz
 ```
 
-模型 artifact 保存 canonical thermal library（BG/local blocks + reference geometry），而不是一张固定 `thermal_basis`。旧 fixed-basis artifact/cache 因 schema/format 改变会 fail closed。
+模型 artifact 保存 canonical thermal library（BG/local blocks + reference geometry），而不是一张固定 `thermal_basis`。
 
-改变 MLP optimizer 时可复用物理 cache；改变背景、材料、geometry domain、canonical thermal library 定义、时间尺度、开放边界或 tensor schema 会使物理 cache 失效。
+trajectory Gate 接入后物理 cache format 已升级，旧 cache 不允许跳过新验证；model artifact format 也同步升级，旧的 pre-trajectory-certification geometry-aware model 会 fail closed，需要重新训练生成。
+
+改变 MLP optimizer 时可复用通过当前版本 Gate 的物理 cache；改变背景、材料、geometry domain、canonical thermal library 定义、时间尺度、trajectory audit 时间、开放边界或 tensor schema 会使物理 cache 失效。
 
 ## 11. 关键测试
 
@@ -347,6 +363,7 @@ python -m pytest -q \
   tests/test_unified_geometry_physics.py \
   tests/test_unified_open_boundary.py \
   tests/test_unified_thermal.py \
+  tests/test_unified_thermal_trajectory_gate.py \
   tests/test_unified_tensor_surrogate.py \
   tests/test_unified_end_to_end.py \
   tests/test_run_neural_user_defaults.py
