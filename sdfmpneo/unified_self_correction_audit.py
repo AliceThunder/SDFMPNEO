@@ -31,13 +31,20 @@ def audit_local_self_correction(background, geometries, monitor=None):
             )
             a = _solve_local(background, geometry, port, fine, phi=None)
             b = _solve_local(background, geometry, port, validation, phi=None)
+            dissipation_scale = max(
+                abs(float(np.real(b["z"]))),
+                abs(float(b["d_vol"] + b["d_out"])),
+                np.finfo(float).tiny,
+            )
+            outward_significance = float(abs(a["d_out"] - b["d_out"]) / dissipation_scale)
             row = {
                 "port": int(port),
                 "relative_z_error": _relative(a["z"], b["z"]),
                 "relative_resistive_error": _relative(a["z"].real, b["z"].real),
                 "relative_reactive_error": _relative(a["z"].imag, b["z"].imag),
                 "relative_d_vol_error": _relative(a["d_vol"], b["d_vol"]),
-                "relative_d_out_error": _relative(a["d_out"], b["d_out"]),
+                "relative_outward_partition_significance": outward_significance,
+                "raw_relative_d_out_error": _relative(a["d_out"], b["d_out"]),
                 "fine": {k: v for k, v in a.items() if k != "modal_h"},
                 "validation": {k: v for k, v in b.items() if k != "modal_h"},
             }
@@ -46,7 +53,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
                 row["relative_resistive_error"],
                 row["relative_reactive_error"],
                 row["relative_d_vol_error"],
-                row["relative_d_out_error"],
+                row["relative_outward_partition_significance"],
             )
             ports.append(row)
         rows.append({"geometry_index": int(gi), "geometry": geometry, "ports": ports})
@@ -60,6 +67,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
         "validation_fine_step": validation,
         "relative_tolerance": tolerance,
         "maximum_relative_error": float(worst),
+        "loss_partition_semantics": "D_out_is_scaled_by_total_local_self_dissipation",
         "converged": bool(rows and worst <= tolerance),
         "samples": rows,
     }
