@@ -256,13 +256,33 @@ def _trajectory_case(model, geometry, truth, predicted, operating, times):
     }
 
 
-def _audit_operating(settings, cfg):
+def _audit_operating_cases(settings, cfg):
+    configured = cfg.get("operating_cases")
+    if configured is not None:
+        cases = []
+        for index, item in enumerate(list(configured)):
+            if not isinstance(item, dict):
+                raise ValueError("final_audit.operating_cases entries must be mappings")
+            name = str(item.get("name", f"case_{index}"))
+            if "drive" in item:
+                value = item["drive"]
+            elif "operating" in item:
+                value = item["operating"]
+            else:
+                raise ValueError("each final audit operating case needs 'operating' or 'drive'")
+            cases.append((name, value))
+        if not cases:
+            raise ValueError("final_audit.operating_cases cannot be empty")
+        return cases
     if "drive" in cfg:
-        return cfg["drive"]
+        return [("circuit", cfg["drive"])]
     if "operating" in cfg:
-        return cfg["operating"]
+        return [("current", cfg["operating"])]
     prediction = settings["PREDICTION"]
-    return prediction.get("drive", prediction.get("operating"))
+    value = prediction.get("drive", prediction.get("operating"))
+    if value is None:
+        raise ValueError("final audit requires an explicit operating or drive setting")
+    return [("prediction_default", value)]
 
 
 def run_final_held_out_audit(settings, model, geometries, monitor=None):
@@ -279,9 +299,7 @@ def run_final_held_out_audit(settings, model, geometries, monitor=None):
     dynamic_tol = float(cfg.get("reduced_dynamic_relative_tolerance", 1e-1))
     thermal_tol = float(cfg.get("full_vs_rom_thermal_tolerance", settings["TRAINING"].get("thermal_basis_energy_tolerance", 5e-2)))
     circuit_limit = float(cfg.get("circuit_condition_limit", 1e8))
-    operating = _audit_operating(settings, cfg)
-    if operating is None:
-        raise ValueError("final audit requires an explicit operating or drive setting")
+    operating_cases = _audit_operating_cases(settings, cfg)
 
     thermal_error, thermal_worst, thermal_diag, audited_times = audit_geometry_aware_thermal_trajectories(
         model.background,
@@ -296,27 +314,32 @@ def run_final_held_out_audit(settings, model, geometries, monitor=None):
         if monitor is not None:
             monitor.checkpoint()
         truth, predicted, tensor = _tensor_case(model, geometry)
-        trajectory = _trajectory_case(model, geometry, truth, predicted, operating, times)
-        rows.append({"index": int(index), "tensor": tensor, "trajectory": trajectory})
+        trajectories = []
+        for name, operating in operating_cases:
+            trajectory = _trajectory_case(model, geometry, truth, predicted, operating, times)
+            trajectories.append({"name": name, "operating": operating, **trajectory})
+        dynamic = max(row["maximum_relative_error"] for row in trajectories)
+        rows.append({"index": int(index), "tensor": tensor, "operating_cases": trajectories})
         print(
             "completely-held-out final audit……"
             f"{index + 1}/{len(geometries)} tensor={max(tensor['z_relative_error'],tensor['d_relative_error'],tensor['h_relative_error']):.3e} "
-            f"dynamic={trajectory['maximum_relative_error']:.3e}",
+            f"dynamic={dynamic:.3e}",
             flush=True,
         )
 
+    trajectory_rows = [case for row in rows for case in row["operating_cases"]]
     maximum_tensor = max(max(row["tensor"][key] for key in ("z_relative_error", "d_relative_error", "h_relative_error")) for row in rows)
     maximum_current = max(row["tensor"]["maximum_current_space_relative_error"] for row in rows)
     maximum_outward = max(row["tensor"]["outward_relative_error"] for row in rows)
     maximum_projection = max(max(row["tensor"]["zd_projection_correction"], row["tensor"]["h_projection_correction"]) for row in rows)
-    maximum_dynamic = max(row["trajectory"]["maximum_relative_error"] for row in rows)
-    maximum_circuit = max(row["trajectory"]["maximum_circuit_condition"] for row in rows)
+    maximum_dynamic = max(row["maximum_relative_error"] for row in trajectory_rows)
+    maximum_circuit = max(row["maximum_circuit_condition"] for row in trajectory_rows)
     steady_ok = all(
-        row["trajectory"]["truth_steady_residual"] <= 1e-10
-        and row["trajectory"]["predicted_steady_residual"] <= 1e-10
-        and row["trajectory"]["truth_steady_stable"]
-        and row["trajectory"]["predicted_steady_stable"]
-        for row in rows
+        row["truth_steady_residual"] <= 1e-10
+        and row["predicted_steady_residual"] <= 1e-10
+        and row["truth_steady_stable"]
+        and row["predicted_steady_stable"]
+        for row in trajectory_rows
     )
     checks = {
         "full_vs_rom_thermal_ok": thermal_error <= thermal_tol,
@@ -333,7 +356,7 @@ def run_final_held_out_audit(settings, model, geometries, monitor=None):
         **{key: bool(value) for key, value in checks.items()},
         "sample_count": len(rows),
         "times": [float(v) for v in times],
-        "operating": operating,
+        "operating_case_names": [name for name, _ in operating_cases],
         "maximum_full_vs_rom_thermal_relative_error": float(thermal_error),
         "worst_full_vs_rom_thermal": thermal_worst,
         "full_vs_rom_thermal_diagnostics": thermal_diag,
