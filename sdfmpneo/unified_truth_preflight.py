@@ -6,6 +6,7 @@ import numpy as np
 from .unified_physics_gate import (
     _background_from_settings,
     _off_diagonal,
+    _power_contraction_relative_error,
     _relative,
     _solve_fields,
     audit_low_frequency_formulation,
@@ -37,6 +38,7 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
             "index": int(index),
             "relative_z_error": _relative(z0, z1),
             "relative_d_vol_error": _relative(d0, d1),
+            "relative_p_vol_error": _power_contraction_relative_error(d0, d1),
             "relative_d_out_error": _relative(o0, o1),
             "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
         }
