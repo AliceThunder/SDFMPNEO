@@ -14,16 +14,12 @@ import numpy as np
 from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
-from .unified_tensor_surrogate import (
-    TensorDataset,
-    encode_geometry,
-    generate_tensor_dataset,
-    solve_port_truth_tensors,
-)
+from .unified_physics_gate import run_physics_gate
+from .unified_tensor_surrogate import TensorDataset, encode_geometry, generate_tensor_dataset
 from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
 
-_CACHE_FORMAT = 12
+_CACHE_FORMAT = 13
 
 
 def jsonable(value):
@@ -97,12 +93,7 @@ def _require_effective_thermal_basis(report):
     energy=get("maximum_validation_relative_energy_error",None)
     if energy is None or float(energy)==0.0: energy=get("maximum_anchor_relative_energy_error",float("nan"))
     target=get("target_relative_error",float("nan")); rank=int(get("basis_dimension",0)); reason=str(get("stop_reason","unknown"))
-    worst=(
-        get("worst_validation_trajectory",{})
-        or get("worst_validation_anchor",{})
-        or get("worst_training_anchor",{})
-        or {}
-    )
+    worst=(get("worst_validation_trajectory",{}) or get("worst_validation_anchor",{}) or get("worst_training_anchor",{}) or {})
     raise RuntimeError(
         f"geometry-aware thermal ROM 未达到训练要求：rank={rank}, energy error={float(energy):.3e}, "
         f"trajectory error={float(trajectory):.3e}, target={float(target):.3e}, stop={reason}, "
@@ -110,53 +101,22 @@ def _require_effective_thermal_basis(report):
     )
 
 
-def _relative_error(value,reference):
-    a=np.asarray(value); b=np.asarray(reference)
-    return float(np.linalg.norm(a-b)/max(np.linalg.norm(b),np.finfo(float).tiny))
+def _wire_loss_partition_error(background, geometry):
+    context=background.geometry_context(geometry,assemble_thermal=False)
+    sigma=np.asarray(background.cell_properties(context,None,em=True)[0],float)
+    expected=np.zeros(background.n_cells,float)
+    for name,fraction in context.fractions.items():
+        if name in background.coil_materials: continue
+        local=float(background._temperature_material(name,np.asarray(background.ambient_temperature)))
+        expected+=np.asarray(fraction,float)*local
+    scale=max(float(np.linalg.norm(expected)),np.finfo(float).tiny)
+    return float(np.linalg.norm(sigma-expected)/scale)
 
 
-def _open_boundary_convergence(settings,background,geometries,monitor=None):
-    cfg=dict(settings["BACKGROUND"].get("open_boundary_check",{})); tolerance=float(cfg.get("relative_tolerance",5e-2))
-    padding=np.asarray(cfg.get("padding",0.12),float)
-    if padding.ndim==0: padding=np.full(3,float(padding))
-    if padding.shape!=(3,) or np.any(padding<=0.0): raise ValueError("open_boundary_check.padding must be a positive scalar or length-3 vector")
-    if not 0.0<tolerance<1.0: raise ValueError("open_boundary_check.relative_tolerance must lie in (0, 1)")
-    bounds=np.asarray(settings["BACKGROUND"]["bounds"],float); reference_bounds=bounds.copy(); reference_bounds[:,0]-=padding; reference_bounds[:,1]+=padding
-    reference=build_background(settings,bounds=reference_bounds); rows=[]
-    for index,geometry in enumerate(geometries):
-        if monitor is not None: monitor.checkpoint()
-        z_base,_,_,audit_base=solve_port_truth_tensors(background,geometry); z_ref,_,_,audit_ref=solve_port_truth_tensors(reference,geometry)
-        total=_relative_error(z_base,z_ref); real=_relative_error(z_base.real,z_ref.real); imag=_relative_error(z_base.imag,z_ref.imag)
-        rows.append({"index":index,"relative_z_error":total,"relative_resistive_error":real,"relative_reactive_error":imag,
-                     "base_power_balance_error":audit_base["open_boundary_power_balance_relative_error"],
-                     "reference_power_balance_error":audit_ref["open_boundary_power_balance_relative_error"]})
-        print(f"开放边界域扩展检查……{index+1}/{len(geometries)}  Z={total:.3e} ReZ={real:.3e} ImZ={imag:.3e}",flush=True)
-    worst_total=max(row["relative_z_error"] for row in rows); worst_real=max(row["relative_resistive_error"] for row in rows); worst_imag=max(row["relative_reactive_error"] for row in rows)
-    return {"sample_count":len(rows),"padding":padding.tolist(),"relative_tolerance":tolerance,
-            "maximum_relative_z_error":worst_total,"maximum_relative_resistive_error":worst_real,
-            "maximum_relative_reactive_error":worst_imag,"converged":bool(max(worst_total,worst_real,worst_imag)<=tolerance),"samples":rows}
-
-
-def _physics_gate(dataset,open_boundary_convergence):
-    audit=dict(dataset.audit)
-    checks={
-        "linear_solve_ok":audit["maximum_linear_relative_residual"]<=1e-8,
-        "reciprocity_ok":audit["maximum_reciprocity_relative_error"]<=1e-8,
-        "volume_passivity_ok":audit["minimum_d_vol_eigenvalue"]>=-1e-9,
-        "physical_outward_passivity_ok":audit["minimum_physical_outward_eigenvalue"]>=-1e-9,
-        "implied_outward_passivity_ok":audit["minimum_implied_outward_eigenvalue"]>=-1e-9,
-        "independent_poynting_balance_ok":audit["maximum_open_boundary_power_balance_relative_error"]<=1e-7,
-        "modal_loewner_ok":audit["maximum_relative_loewner_violation"]<=1e-8,
-        "outward_power_form_available":bool(audit["independent_outward_power_available"]>=0.5),
-        "open_boundary_domain_converged":bool(open_boundary_convergence["converged"]),
-    }
-    certified=all(bool(v) for v in checks.values())
-    return {**{k:bool(v) for k,v in checks.items()},
-            "internal_truth_gate_passed":bool(all(checks[k] for k in checks if k!="open_boundary_domain_converged")),
-            "reaction_impedance_convention":"negative_source_reaction","open_boundary_verified":bool(certified),
-            "independent_outward_power_verified":bool(checks["outward_power_form_available"] and checks["independent_poynting_balance_ok"]),
-            "boundary_model":"silver_muller_impedance","open_boundary_convergence":open_boundary_convergence,
-            "certified":bool(certified),"status":"certified" if certified else "physics_gate_failed","audit":audit}
+def _gate_sample_count(settings):
+    background=settings["BACKGROUND"]
+    sections=("open_boundary_check","formulation_check","mesh_check","geometry_continuity_check")
+    return max(1,*[int(dict(background.get(name,{})).get("samples",1)) for name in sections])
 
 
 def train(settings,model_path,settings_dir,monitor=None):
@@ -195,16 +155,24 @@ def train(settings,model_path,settings_dir,monitor=None):
             n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,rng,bg)
             dataset=generate_tensor_dataset(bg,tensor_geometries,seed=int(settings["TRAINING"].get("seed",17)),monitor=monitor); dataset.save(data_path)
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"thermal_basis_report":thermal_report,
-                                  "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors","em_boundary":"silver_muller_impedance"})
+                                  "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors",
+                                  "em_boundary":"silver_muller_impedance","source_model":bg.source_model})
             _progress("生成几何 tensor truth 数据",50,monitor)
 
-        gate_cfg=dict(settings["BACKGROUND"].get("open_boundary_check",{})); gate_count=max(1,int(gate_cfg.get("samples",3)))
-        gate_rng=np.random.default_rng(int(settings["TRAINING"].get("seed",17))+104729); gate_geometries=_sample_geometries(settings,gate_count,gate_rng,bg)
-        _progress("验证开放边界与独立 Poynting 功率",51,monitor); boundary_convergence=_open_boundary_convergence(settings,bg,gate_geometries,monitor=monitor); gate=_physics_gate(dataset,boundary_convergence)
-        if not gate["certified"]: raise RuntimeError("Physics Gate failed; refusing surrogate training: "+json.dumps(jsonable(gate),sort_keys=True))
-        print("Physics Gate：linear residual / reciprocity / independent Poynting / open-boundary convergence / passivity / modal Loewner 全部通过。",flush=True)
+        gate_rng=np.random.default_rng(int(settings["TRAINING"].get("seed",17))+104729)
+        gate_geometries=_sample_geometries(settings,_gate_sample_count(settings),gate_rng,bg)
+        _progress("执行完整 spatial Physics Gate",51,monitor)
+        gate=run_physics_gate(settings,bg,dataset,gate_geometries,monitor=monitor)
+        partition_error=max(_wire_loss_partition_error(bg,g) for g in gate_geometries)
+        gate["wire_loss_partition_relative_error"]=float(partition_error)
+        gate["wire_loss_not_double_counted"]=bool(partition_error<=1e-12)
+        gate["certified"]=bool(gate["certified"] and gate["wire_loss_not_double_counted"])
+        gate["status"]="certified" if gate["certified"] else "physics_gate_failed"
+        if not gate["certified"]:
+            raise RuntimeError("Physics Gate failed; refusing surrogate training: "+json.dumps(jsonable(gate),sort_keys=True))
+        print("Physics Gate：source regularization / Joule identities / reciprocity / Poynting / domain / MQS / mesh / geometry continuity 全部通过。",flush=True)
 
-        _progress("训练 geometry→tensor POD-MLP",55,monitor)
+        _progress("训练 geometry→tensor POD-MLP",60,monitor)
         surrogate,report=train_matrix_tensor_surrogate(
             dataset,network_settings=settings["TRAINING"].get("network"),training_settings=settings["TRAINING"].get("optimizer"),
             device=settings["TRAINING"].get("device","cuda"),monitor=monitor,checkpoint_path=checkpoint,
