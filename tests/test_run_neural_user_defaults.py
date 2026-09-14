@@ -18,6 +18,7 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     formulation = run.BACKGROUND["formulation_check"]
     mesh = run.BACKGROUND["mesh_check"]
     continuity = run.BACKGROUND["geometry_continuity_check"]
+    final_audit = run.TRAINING["final_audit"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
@@ -43,6 +44,18 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert continuity["translation_step"] > 0
     assert continuity["angle_step"] > 0
     assert 0 < continuity["relative_change_limit"] < 1
+    assert final_audit["samples"] >= 1
+    assert final_audit["times"] == run.TRAINING["thermal_trajectory_times"]
+    assert 0 < final_audit["full_vs_rom_thermal_tolerance"] < 1
+    assert 0 < final_audit["tensor_relative_tolerance"] < 1
+    assert 0 < final_audit["current_space_relative_tolerance"] < 1
+    assert 0 < final_audit["outward_relative_tolerance"] < 1
+    assert 0 < final_audit["projection_correction_limit"] < 1
+    assert 0 < final_audit["reduced_dynamic_relative_tolerance"] < 1
+    assert final_audit["circuit_condition_limit"] > 1
+    cases = final_audit["operating_cases"]
+    assert any("operating" in case for case in cases)
+    assert any("drive" in case for case in cases)
     assert "fine_message_steps" not in network
     assert "coarse_levels" not in network
     assert "solver_steps" not in network
