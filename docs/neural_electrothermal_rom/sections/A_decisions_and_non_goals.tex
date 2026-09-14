@@ -5,45 +5,69 @@
 \subsection{冻结决策}
 \begin{enumerate}
   \item 当前体系固定在一个工作频率，采用 $e^{+i\omega t}$ 峰值复相量；所有 cycle-averaged power 公式统一含 $1/2$。
-  \item 当前 reciprocity 声明只在 reciprocal constitutive laws 与 reciprocal boundary treatment 下成立；若未来引入 nonreciprocal/gyrotropic material 或 boundary，禁止继续硬编码 $Z^T=Z$。
-  \item 当前正式 source basis $S(g)$ 为实值几何电流形状，端口幅值/相位全部放在复向量 $c$ 中。$v_{\rm field}=-S^TE$ 是 generalized reaction voltage；只有 terminal/feed-return/source normalization 已校准时才解释为物理 terminal voltage。
-  \item 当前材料模型下，Maxwell 参数映射的生产输入固定为几何 $g$；只有真正影响电磁 constitutive law 的状态才允许未来加入输入。
-  \item 神经网络学习对象固定为 $Z_{\rm field}(g)$、总海水耗散 $D_{\rm vol}(g)$ 与 Hermitian modal Joule tensors $H_j(g)$ 的结构化表示或其 POD coefficients。
+  \item reciprocity 只在 reciprocal constitutive laws 与 reciprocal boundary treatment 下声明；若未来引入 nonreciprocal material/boundary，禁止继续硬编码 $Z^T=Z$。
+  \item 正式 source basis $S(g)$ 为实值几何电流形状，端口幅值/相位全部放在复向量 $c$ 中。$v_{\rm field}=-S^TE$ 是 generalized reaction voltage；只有 terminal/feed-return/source normalization 已校准时才解释为物理 terminal voltage。
+  \item 当前材料模型下，Maxwell 参数映射的生产输入为几何 $g$；只有真正影响电磁 constitutive law 的状态才允许未来加入输入。
+  \item 神经网络学习对象固定为 $Z_{\rm field}(g)$、$D_{\rm vol}(g)$ 与固定 canonical mode indexing 下的 Hermitian modal Joule tensors $H_j(g)$ 的结构化表示或其 POD coefficients。
   \item 端口电流 $c$ 不进入主网络；通过 $\frac12c^HD_{\rm vol}c$、$\frac12\operatorname{Re}(c^HH_jc)$ 和显式 circuit equations 进入功率、热源与真实工作点。
-  \item $H_\sigma$ 与 $W_j$ 必须由同一 FE basis/quadrature 的 conductivity-loss bilinear form 构造；mass-lumped diagonal Hodge 只是允许的特殊实现。若 EM/thermal spaces 不同，cross-space transfer 必须冻结并验证。
+  \item $H_\sigma$ 与 $W_j(g)$ 必须由同一 FE basis/quadrature 的 conductivity-loss bilinear form 构造；若 EM/thermal spaces 不同，cross-space transfer 必须冻结并验证。
   \item 生产解码使用联合可行层保证
   \begin{equation}
   D_{\rm vol}\succeq0,
   \qquad
   \operatorname{Herm}(Z_{\rm field})-D_{\rm vol}\succeq0,
   \end{equation}
-  以及
+  以及 geometry-dependent modal bounds
   \begin{equation}
-  \phi_j^{\min}D_{\rm vol}
-  \preceq H_j
-  \preceq\phi_j^{\max}D_{\rm vol}.
+  \phi_j^{\min}(g)D_{\rm vol}(g)
+  \preceq H_j(g)
+  \preceq\phi_j^{\max}(g)D_{\rm vol}(g).
   \end{equation}
-  reciprocal reactive block 不因耗散可行投影而改变；projection correction 必须作为误差诊断，不能用大投影掩盖差的 raw surrogate。
+  $\phi_j^{\min/\max}(g)$ 由当前 deterministic thermal basis generator 计算，不再作为全局固定常数。
   \item truth outward loss 必须由独立 Poynting/ABC/PML absorption form 得到 $D_{\rm out}^{\rm phys}$；$\operatorname{Herm}Z-D_{\rm vol}$ 只能定义 surrogate implied outward loss，不能作为 truth 功率闭合的自证定义。
-  \item PML/人工吸收损耗属于 outward/domain truncation，不进入 physical thermal heat；物理海水 volume loss、wire/internal loss 与 outward loss 使用互斥 region/physics partition，禁止双重计损。
-  \item port source 必须具有明确 terminal/return-path/charge-continuity 解释；开放 spiral path 不被错误强制为闭合 divergence-free loop。零半径 filament 的 self impedance 不允许由 mesh size 隐式正则化，必须使用固定物理 wire/source regularization。
+  \item PML/人工吸收损耗属于 outward/domain truncation，不进入 physical thermal heat；物理海水 volume loss、wire/internal loss 与 outward loss 使用互斥 partition，禁止双重计损。
+  \item port source 必须具有明确 terminal/return-path/charge-continuity 解释；零半径 filament 的 self impedance 不允许由 mesh size 隐式正则化，必须使用固定物理 wire/source regularization。
   \item 若 wire loss 由独立 $R_{\rm wire}$ 处理，同一铜损不得再次进入 $D_{\rm vol}$；若 internal reactance/proximity coupling 不可忽略，则先升级 truth wire-impedance/heat model，再重建 dataset。
-  \item 几何姿态使用无周期分支跳变的编码；跨越 $\pm\pi$ 的裸 Euler angle 不直接作为连续网络输入。validated production domain $\mathcal G_{\rm prod}$ 与 operating/state domains 随模型冻结，域外输入不继承 validated accuracy 声明。
-  \item $M_r(g)$、$K_r(g)$、wire impedance/resistance law、wire-temperature functional 与 thermal boundary model 使用真实物理/ROM，不由网络预测。当前 thermal theory 假定 $M_T\succ0,K_T\succ0$；若 $K_T$ 有 nullspace，必须修改 steady/transient theory。
-  \item thermal basis 必须先于最终 $H_j$ labels 冻结；current-induced source family 使用 Hermitian port-space basis 覆盖完整 quadratic-current heat span，而不是依赖随机 current sampling。
-  \item thermal basis 同时覆盖允许的 initial-condition family。full initial field 使用 $M$-orthogonal projection，homogeneous response 通过 $(K+sM)^{-1}M\theta_0$ anchors 纳入 basis/audit。
-  \item thermal basis rank 的理论停止指标使用
+  \item validated production domain $\mathcal G_{\rm prod}$ 与 operating/state domains 随模型冻结；域外输入不继承 validated accuracy 声明。
+
+  \item thermal ROM 不再使用一个与几何无关的全局共享 basis。正式定义为
   \begin{equation}
-  \eta_s^2
-  =\frac{r^T(K+sM)^{-1}r}{b^T(K+sM)^{-1}b},
+  \boxed{
+  \theta(x,t;g)\approx\Phi(x;g)a(t;g),
+  }
   \end{equation}
-  或有已知等价常数的 validated estimator；未经尺度化的 Euclidean residual 不作为严格相对解误差标准。
-  \item ordinary Galerkin thermal ROM 在 $M_r,K_r\succ0$ 下保留零源能量耗散，但不自动保证 pointwise positivity/maximum principle。温度上下界必须审计；若需要严格 bound preservation，则升级 ROM/integrator。
-  \item finite-time 使用真实 thermal ODE + ETD/IMEX 或其他经验证 integrator；$t=\infty$ 只返回与 initial-condition basin 一致且通过 residual/constitutive/stability audit 的稳定 equilibrium。多稳态/thermal runaway/无平衡必须显式报告。
-  \item current-controlled 与 circuit-controlled operating modes 必须明确区分；后者由显式外部网络方程求 $c(a,t)$。只有 $\tau_{\rm circ}$ 远短于 thermal/envelope time scale 时才使用逐 thermal-stage 的代数 phasor circuit solve，否则引入 circuit dynamic states。
-  \item geometry 在一次 query 中默认静止；若 $g=g(t)$，必须显式更新时间相关 geometry tensors/operators。
+  且首版结构冻结为
+  \begin{equation}
+  \boxed{
+  \Phi(g)=
+  [\Phi_{\rm bg},\,\mathcal T_{\rm tx}(g)\Psi_{\rm tx},\,\mathcal T_{\rm rx}(g)\Psi_{\rm rx}].
+  }
+  \end{equation}
+  \item $\Phi_{\rm bg}$、$\Psi_{\rm tx}$、$\Psi_{\rm rx}$ 的列数和索引语义跨 geometry 固定；局部 mode 可以随 translation/rotation 移动，但 mode index 不得交换物理含义。
+  \item 首版 $\mathcal T_{\rm tx/rx}(g)$ 只负责已知 rigid translation/rotation 与守恒插值。尺寸变化先由真实 $M_T(g),K_T(g)$ 和 held-out audit 吸收；只有验证证明 rigid transport 不足时才增加 scale-aware transform。
+  \item 不使用神经网络预测 $\Phi(g)$。也不在首版引入 Grassmann interpolation、dynamic POD 或其他复杂 basis-learning 机制。
+  \item 对静态 geometry，真实 reduced operators 定义为
+  \begin{equation}
+  M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
+  \qquad
+  K_r(g)=\Phi(g)^TK_T(g)\Phi(g),
+  \end{equation}
+  并要求 $\Phi(g)$ 满列秩、$M_r,K_r\succ0$ 且 conditioning 在生产域内可接受。$M_r,K_r$ 不由网络预测。
+  \item geometry-aware basis generator 必须先于最终 $H_j(g)$ labels 冻结。对当前 geometry 的 mode $\phi_j(g)$，
+  \begin{equation}
+  H_j(g)=X(g)^H W[\phi_j(g)]X(g).
+  \end{equation}
+  \item full initial field 使用当前 geometry 的 $M$-orthogonal projection；wire-temperature functional 也使用当前 $\Phi(g)$。
+  \item current-induced source family 使用 Hermitian port-space basis 覆盖完整 quadratic-current heat span，而不是随机 current sampling。
+  \item canonical thermal mode library 的 rank 可以自动选择，但选择对象是 background/TX/RX canonical mode sets，而不是把所有全局移动热点堆进一个跨 geometry 共享 span。
+  \item resolvent anchor 的最短时间尺度必须与 thermal spatial discretization 和应用输出分辨率一致。若 $\sqrt{\alpha\tau}$ 远小于可解析网格尺度，则该极短时间 anchor 不默认用于 production basis rank target。
+  \item 当前建议用可解析短/中时尺度加 $s=0$ steady anchor 构建 canonical modes；长时间有限时刻由同一个 reduced ODE 连续/链式积分到达，不因查询到 $1000\,$s 或更长就必须增加同量级 resolvent anchor。
+  \item ordinary Galerkin thermal ROM 在 $M_r,K_r\succ0$ 下保留零源耗散，但不自动保证 pointwise positivity/maximum principle。温度上下界必须审计；若需要严格 bound preservation，则升级 ROM/integrator。
+  \item finite-time 使用真实 thermal ODE + ETD/IMEX 或其他经验证 integrator；$t=\infty$ 只返回与 initial-condition basin 一致且通过 residual/constitutive/stability audit 的稳定 equilibrium。
+  \item current-controlled 与 circuit-controlled operating modes 明确区分；后者由显式外部网络方程求 $c(a,t)$。只有 circuit ring-up 远短于 thermal/envelope time scale 时才使用逐 thermal-stage 的代数 phasor circuit solve，否则引入 circuit dynamic states。
+  \item geometry 在一次 query 中默认静止。若 $g=g(t)$，由于 $\theta=\Phi(g(t))a$，必须加入 $\Phi^TM_T\dot\Phi\,a$ 等 transport terms，并同步更新 geometry-dependent tensors/operators；静态 geometry ROM 不能直接沿用。
   \item output POD 是数值压缩而非理论前提；POD 不够低秩时扩大 rank、分块压缩或直接输出完整结构化 tensors。
-  \item Physics Gate 先于正式 surrogate dataset/training；底层物理、相量 convention、source regularization、thermal basis、loss partition 或 circuit definition 变化必须使旧 tensor dataset/model version 失效。
+  \item Physics Gate 先于正式 surrogate dataset/training；底层物理、相量 convention、source regularization、thermal basis generator、loss partition 或 circuit definition 变化必须使旧 tensor dataset/model version 失效。
   \item NN validation、Physics Gate 数值收敛与严格 certificate 明确分层。
 \end{enumerate}
 
@@ -52,6 +76,8 @@
 \begin{itemize}
   \item 黑箱学习完整 temperature trajectory；
   \item 让网络重新学习 current quadratic/phase law 或 external circuit law；
+  \item 让网络预测 thermal basis、$M_r$ 或 $K_r$；
+  \item 用一个固定全局 thermal basis 记忆所有可能的移动局部热点；
   \item 用 unrestricted dense matrices 代替 reciprocal/Hermitian/energy-feasible output；
   \item 把可行投影视为 exact spatial Joule realizability 的数学证明；
   \item 把线性系统 residual 当作 Maxwell mesh/domain/model correctness 的证明；
@@ -68,6 +94,7 @@
 \begin{itemize}
   \item 分块/加权 POD、低秩 tensor factorization；
   \item active learning 与 geometry hard-point enrichment；
+  \item 若 held-out thermal audit 证明必要，对 local thermal transform 增加 deterministic scale/deformation dependence；
   \item ensemble/uncertainty diagnostics；
   \item Sobolev/geometry-gradient supervision；
   \item verified neural error bounds；
@@ -79,4 +106,4 @@
 \end{itemize}
 
 \subsection{模型升级原则}
-未来若从 regularized/stranded filament conductor 升级到 full solid-conductor model，加入温度相关海水电磁参数、流体热对流、动态外部电路、运动几何或 broadband operation，首先修改 governing truth model 和 Physics Gate，再重新构建 thermal basis 与 tensors。生产 neural/thermal/circuit interface 只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
+未来若从 regularized/stranded filament conductor 升级到 full solid-conductor model，加入温度相关海水电磁参数、流体热对流、动态外部电路、运动几何或 broadband operation，首先修改 governing truth model 和 Physics Gate，再重新构建 canonical thermal mode library、basis generator 与 tensors。生产 neural/thermal/circuit interface 只在确有物理必要时扩展，禁止为了适配旧训练代码而扭曲新的 governing equations。
