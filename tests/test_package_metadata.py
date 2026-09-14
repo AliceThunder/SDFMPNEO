@@ -1,14 +1,20 @@
 from pathlib import Path
-import tomllib
+import re
 
 import sdfmpneo
 
 
+def _quoted_project_value(text, key):
+    match = re.search(rf'(?m)^{re.escape(key)}\s*=\s*"([^"]+)"\s*$', text)
+    assert match is not None, f"missing project metadata field: {key}"
+    return match.group(1)
+
+
 def test_package_metadata_matches_current_tensor_rom_release():
     root = Path(__file__).resolve().parents[1]
-    metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert metadata["version"] == sdfmpneo.__version__
-    description = metadata["description"].lower()
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert _quoted_project_value(text, "version") == sdfmpneo.__version__
+    description = _quoted_project_value(text, "description").lower()
     assert "geometry-to-tensor" in description
     assert "fgmres" not in description
     assert "full-space" not in description
