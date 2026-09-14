@@ -2,9 +2,20 @@
 
 The basis is built from the complete finite-dimensional current-induced heat
 span, explicit wire-heat directions, optional initial-condition directions and
-multiple resolvent shifts.  Rank selection uses the actual Galerkin solution
+multiple resolvent shifts. Rank selection uses the actual Galerkin solution
 error in the A_s=K+sM energy norm rather than an unrelated Euclidean image
 residual.
+
+Basis construction uses three geometry roles:
+
+* training geometries seed the greedy basis;
+* enrichment geometries may add directions when the seeded basis does not
+  generalize across the production geometry family;
+* validation geometries stay strictly held out and only certify the final basis.
+
+This avoids the previous failure mode where validation could report a very large
+error after basis construction had already stopped, while also avoiding the
+invalid shortcut of training on the same geometries that are called validation.
 """
 from __future__ import annotations
 
@@ -99,9 +110,18 @@ def _solve(A, b):
         return np.asarray(spla.lsmr(A, b, atol=1e-12, btol=1e-12)[0], float).reshape(-1)
 
 
-def _make_anchors(background, geometries, shifts, include_uniform_initial_condition, monitor=None):
+def _make_anchors(
+    background,
+    geometries,
+    shifts,
+    include_uniform_initial_condition,
+    monitor=None,
+    *,
+    role="geometry",
+):
     anchors = []
     source_count = 0
+    geometries = list(geometries)
     for gi, geometry in enumerate(geometries):
         if monitor is not None:
             monitor.checkpoint()
@@ -121,14 +141,20 @@ def _make_anchors(background, geometries, shifts, include_uniform_initial_condit
                 if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
                     continue
                 anchors.append({
-                    "A": A, "b": np.asarray(b, float), "u": u,
+                    "A": A,
+                    "b": np.asarray(b, float),
+                    "u": u,
                     "denom2": denom2,
-                    "label": f"geometry[{gi}]/{label}/s={shift:.6g}",
+                    "label": f"{role}[{gi}]/{label}/s={shift:.6g}",
                 })
-        print(f"准备 transient thermal anchors……{100.0 * (gi + 1) / len(geometries):5.1f}%  "
-              f"({gi + 1}/{len(geometries)})", flush=True)
-    if not anchors:
-        raise RuntimeError("thermal anchor set is empty")
+        if geometries:
+            print(
+                f"准备 {role} transient thermal anchors……"
+                f"{100.0 * (gi + 1) / len(geometries):5.1f}%  ({gi + 1}/{len(geometries)})",
+                flush=True,
+            )
+    if geometries and not anchors:
+        raise RuntimeError(f"thermal {role} anchor set is empty")
     return anchors, source_count
 
 
@@ -153,6 +179,8 @@ def _anchor_error(anchor, phi):
 
 
 def _worst_anchor(anchors, phi):
+    if not anchors:
+        return 0.0, None, None
     worst = (-1.0, None, None)
     for anchor in anchors:
         relative, error = _anchor_error(anchor, phi)
@@ -161,60 +189,8 @@ def _worst_anchor(anchors, phi):
     return worst
 
 
-@dataclass(frozen=True)
-class ThermalBasisReport:
-    basis_dimension: int
-    maximum_anchor_relative_energy_error: float
-    maximum_validation_relative_energy_error: float
-    target_relative_error: float
-    geometry_sample_count: int
-    validation_geometry_count: int
-    source_direction_count: int
-    equation_anchor_count: int
-    enrichment_steps: int
-    shifts: tuple
-    converged: bool
-    stop_reason: str
-
-    # Backwards-readable aliases; the quantity is now an energy-norm solution error.
-    @property
-    def maximum_anchor_relative_residual(self):
-        return self.maximum_anchor_relative_energy_error
-
-    @property
-    def target_relative_residual(self):
-        return self.target_relative_error
-
-
-def build_thermal_basis(
-    background,
-    geometry_samples,
-    *,
-    validation_geometries=None,
-    target_relative_error=5e-2,
-    target_relative_residual=None,
-    time_scales=(1e-3, 1.0, 1000.0),
-    include_uniform_initial_condition=True,
-    maximum_rank=None,
-    monitor=None,
-):
-    """Build, install and validate one shared automatic-rank thermal basis."""
-    if target_relative_residual is not None:
-        target_relative_error = target_relative_residual
-    target = float(target_relative_error)
-    if not 0.0 < target < 1.0:
-        raise ValueError("thermal target_relative_error must lie in (0, 1)")
-    geometries = list(geometry_samples)
-    validation = [] if validation_geometries is None else list(validation_geometries)
-    if not geometries:
-        raise ValueError("thermal geometry samples cannot be empty")
-    shifts = _resolvent_shifts(time_scales)
-    anchors, source_count = _make_anchors(
-        background, geometries, shifts, bool(include_uniform_initial_condition), monitor
-    )
-
-    phi = np.empty((background.n_cells, 0), float)
-    rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
+def _greedy_enrich(background, phi, anchors, target, rank_limit, monitor, *, phase):
+    """Enrich ``phi`` until every supplied anchor meets the energy-error target."""
     steps = 0
     stop_reason = "target_reached"
     while True:
@@ -239,42 +215,180 @@ def build_thermal_basis(
         if monitor is not None:
             with monitor._lock:
                 monitor.data.update(
-                    phase="thermal_basis", thermal_basis_rank=phi.shape[1],
+                    phase="thermal_basis",
+                    thermal_basis_stage=str(phase),
+                    thermal_basis_rank=phi.shape[1],
                     thermal_basis_energy_error=worst,
                 )
         if phi.shape[1] == 1 or phi.shape[1] % 4 == 0:
             new_worst = _worst_anchor(anchors, phi)[0]
-            print(f"构建 transient thermal 公共空间……rank={phi.shape[1]}  "
-                  f"worst energy error={new_worst:.3e}  enriched={anchor['label']}", flush=True)
+            print(
+                f"构建 transient thermal 公共空间[{phase}]……rank={phi.shape[1]}  "
+                f"worst energy error={new_worst:.3e}  enriched={anchor['label']}",
+                flush=True,
+            )
+    return phi, steps, stop_reason
 
-    if phi.shape[1] == 0:
-        raise RuntimeError("thermal residual-greedy produced an empty basis")
-    training_worst = _worst_anchor(anchors, phi)[0]
 
-    validation_worst = 0.0
-    if validation:
-        validation_anchors, _ = _make_anchors(
-            background, validation, shifts, bool(include_uniform_initial_condition), monitor
+@dataclass(frozen=True)
+class ThermalBasisReport:
+    basis_dimension: int
+    maximum_anchor_relative_energy_error: float
+    maximum_enrichment_relative_energy_error: float
+    maximum_validation_relative_energy_error: float
+    target_relative_error: float
+    geometry_sample_count: int
+    enrichment_geometry_count: int
+    validation_geometry_count: int
+    source_direction_count: int
+    equation_anchor_count: int
+    enrichment_steps: int
+    shifts: tuple
+    converged: bool
+    stop_reason: str
+
+    # Backwards-readable aliases; the quantity is now an energy-norm solution error.
+    @property
+    def maximum_anchor_relative_residual(self):
+        return self.maximum_anchor_relative_energy_error
+
+    @property
+    def target_relative_residual(self):
+        return self.target_relative_error
+
+
+def build_thermal_basis(
+    background,
+    geometry_samples,
+    *,
+    enrichment_geometries=None,
+    validation_geometries=None,
+    target_relative_error=5e-2,
+    target_relative_residual=None,
+    time_scales=(1e-3, 1.0, 1000.0),
+    include_uniform_initial_condition=True,
+    maximum_rank=None,
+    monitor=None,
+):
+    """Build, install and independently validate one shared automatic-rank basis.
+
+    ``geometry_samples`` seed the greedy space. ``enrichment_geometries`` are a
+    separate candidate pool that is allowed to add directions if the seeded
+    basis does not generalize. ``validation_geometries`` remain strictly held
+    out: they never add basis vectors and therefore retain their meaning as an
+    independent thermal-ROM audit.
+    """
+    if target_relative_residual is not None:
+        target_relative_error = target_relative_residual
+    target = float(target_relative_error)
+    if not 0.0 < target < 1.0:
+        raise ValueError("thermal target_relative_error must lie in (0, 1)")
+    geometries = list(geometry_samples)
+    enrichment = [] if enrichment_geometries is None else list(enrichment_geometries)
+    validation = [] if validation_geometries is None else list(validation_geometries)
+    if not geometries:
+        raise ValueError("thermal geometry samples cannot be empty")
+
+    shifts = _resolvent_shifts(time_scales)
+    anchors, source_count = _make_anchors(
+        background,
+        geometries,
+        shifts,
+        bool(include_uniform_initial_condition),
+        monitor,
+        role="train",
+    )
+    enrichment_anchors, enrichment_source_count = _make_anchors(
+        background,
+        enrichment,
+        shifts,
+        bool(include_uniform_initial_condition),
+        monitor,
+        role="enrichment",
+    )
+    validation_anchors, _ = _make_anchors(
+        background,
+        validation,
+        shifts,
+        bool(include_uniform_initial_condition),
+        monitor,
+        role="validation",
+    )
+
+    phi = np.empty((background.n_cells, 0), float)
+    rank_limit = (
+        background.n_cells
+        if maximum_rank is None
+        else min(int(maximum_rank), background.n_cells)
+    )
+
+    # Stage 1: fit the seed geometry bank.
+    phi, seed_steps, seed_stop = _greedy_enrich(
+        background,
+        phi,
+        anchors,
+        target,
+        rank_limit,
+        monitor,
+        phase="seed",
+    )
+
+    # Stage 2: only the designated enrichment pool may influence the basis.
+    # Rechecking the seed anchors together prevents an enrichment direction from
+    # trading accuracy away from the original geometry bank.
+    combined_anchors = anchors + enrichment_anchors
+    if enrichment_anchors and seed_stop == "target_reached":
+        phi, extra_steps, enrich_stop = _greedy_enrich(
+            background,
+            phi,
+            combined_anchors,
+            target,
+            rank_limit,
+            monitor,
+            phase="generalization",
         )
-        validation_worst = _worst_anchor(validation_anchors, phi)[0]
-        if validation_worst > target and stop_reason == "target_reached":
-            stop_reason = "validation_target_not_met"
+    else:
+        extra_steps = 0
+        enrich_stop = seed_stop
+
+    training_worst = _worst_anchor(anchors, phi)[0]
+    enrichment_worst = _worst_anchor(enrichment_anchors, phi)[0]
+    validation_worst = _worst_anchor(validation_anchors, phi)[0]
+
+    if seed_stop != "target_reached":
+        stop_reason = seed_stop
+    elif enrich_stop != "target_reached":
+        stop_reason = enrich_stop
+    elif validation and validation_worst > target:
+        stop_reason = "validation_target_not_met"
+    else:
+        stop_reason = "target_reached"
 
     background.set_thermal_basis(phi)
-    converged = training_worst <= target and (not validation or validation_worst <= target)
-    print(f"thermal 公共空间完成：自动 rank={background.thermal_rank}，"
-          f"train energy error={training_worst:.3e}，validation={validation_worst:.3e}，"
-          f"target={target:.3e}，stop={stop_reason}", flush=True)
+    converged = (
+        training_worst <= target
+        and (not enrichment or enrichment_worst <= target)
+        and (not validation or validation_worst <= target)
+    )
+    print(
+        f"thermal 公共空间完成：自动 rank={background.thermal_rank}，"
+        f"train={training_worst:.3e}，enrichment={enrichment_worst:.3e}，"
+        f"held-out validation={validation_worst:.3e}，target={target:.3e}，"
+        f"stop={stop_reason}",
+        flush=True,
+    )
     return background.thermal_basis.copy(), ThermalBasisReport(
         basis_dimension=background.thermal_rank,
         maximum_anchor_relative_energy_error=float(training_worst),
+        maximum_enrichment_relative_energy_error=float(enrichment_worst),
         maximum_validation_relative_energy_error=float(validation_worst),
         target_relative_error=target,
         geometry_sample_count=len(geometries),
+        enrichment_geometry_count=len(enrichment),
         validation_geometry_count=len(validation),
-        source_direction_count=source_count,
-        equation_anchor_count=len(anchors),
-        enrichment_steps=steps,
+        source_direction_count=source_count + enrichment_source_count,
+        equation_anchor_count=len(combined_anchors),
+        enrichment_steps=seed_steps + extra_steps,
         shifts=tuple(float(v) for v in shifts),
         converged=converged,
         stop_reason=stop_reason,
