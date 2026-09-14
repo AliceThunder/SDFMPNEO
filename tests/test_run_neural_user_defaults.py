@@ -78,6 +78,12 @@ def test_model_artifact_requires_integrator_certified_release_version():
     assert FORMAT_VERSION >= 13
 
 
+def test_physical_cache_requires_scalar_power_gate_generation():
+    from sdfmpneo.unified_runtime import _CACHE_FORMAT
+
+    assert _CACHE_FORMAT >= 15
+
+
 def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     from sdfmpneo.unified_runtime import _signature
 
