@@ -117,6 +117,7 @@ REGIONS = {
     "package_materials": ["tx_package", "rx_package"],
     "seawater_material": "seawater",
 }
+
 PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
@@ -131,6 +132,9 @@ TRAINING = {
     # Do not force sub-grid 1 ms diffusion into the ROM basis. Long-time queries
     # are obtained by continuous reduced-ODE integration plus a steady anchor.
     "thermal_time_scales": [0.1, 1.0, 10.0],
+    # Independent full-vs-ROM trajectory Gate. 100 s is deliberately longer than
+    # the resolvent anchor scales; steady is audited separately.
+    "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
     "thermal_basis_max_rank": None,
     "thermal_basis_conditioning_limit": 1e10,
     "n_tensor_samples": 96,
