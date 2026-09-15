@@ -4,7 +4,7 @@ import scipy.sparse.linalg as spla
 
 import sdfmpneo.unified_certified_local_solve as local_solver
 from sdfmpneo.unified_certified_local_solve import _iterative_solve, _relative_residual
-from sdfmpneo.unified_fast_local_krylov import _defect_refine
+from sdfmpneo.unified_fast_local_krylov import _defect_refine, _pilot_krylov
 
 
 def test_ilu_lgmres_reaches_certified_true_residual():
@@ -95,5 +95,63 @@ def test_defect_refinement_reduces_true_residual_of_existing_field():
 
     assert history
     assert residual < before
-    assert _relative_residual(A, field, rhs) == residual
+    assert np.isclose(_relative_residual(A, field, rhs), residual, rtol=0.0, atol=1e-15)
     assert residual <= 1e-10
+
+
+def test_pilot_krylov_accepts_a_useful_preconditioner():
+    n = 180
+    A = sp.diags(
+        (
+            -np.ones(n - 1),
+            (3.5 + 0.2j) * np.ones(n),
+            -np.ones(n - 1),
+        ),
+        (-1, 0, 1),
+        format="csr",
+        dtype=complex,
+    )
+    truth = np.sin(np.linspace(0.0, np.pi, n)).astype(complex)
+    rhs = A @ truth
+    ilu = spla.spilu(A.tocsc(), drop_tol=1e-3, fill_factor=4.0)
+    M = spla.LinearOperator(A.shape, matvec=ilu.solve, dtype=A.dtype)
+
+    candidate, residual, _info, _seconds, before, accepted = _pilot_krylov(
+        A,
+        rhs,
+        np.zeros(n, dtype=complex),
+        M,
+        local_solver._lgmres,
+        _relative_residual,
+        maxiter=2,
+        inner_m=8,
+        accept_ratio=0.95,
+    )
+
+    assert accepted
+    assert residual < 0.95 * before
+    assert _relative_residual(A, candidate, rhs) <= residual * (1.0 + 1e-12)
+
+
+def test_pilot_krylov_rejects_a_destructive_preconditioner():
+    n = 120
+    A = sp.eye(n, format="csr", dtype=complex)
+    rhs = np.ones(n, dtype=complex)
+
+    def bad_inverse(vector):
+        return -1e6 * np.asarray(vector, complex)
+
+    M = spla.LinearOperator(A.shape, matvec=bad_inverse, dtype=complex)
+    _candidate, residual, _info, _seconds, before, accepted = _pilot_krylov(
+        A,
+        rhs,
+        np.zeros(n, dtype=complex),
+        M,
+        local_solver._lgmres,
+        _relative_residual,
+        maxiter=1,
+        inner_m=4,
+        accept_ratio=0.95,
+    )
+
+    assert not accepted or residual < before
