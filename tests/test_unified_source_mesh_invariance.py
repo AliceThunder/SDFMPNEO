@@ -89,9 +89,9 @@ def _background(step):
     )
 
 
-def test_source_polyline_terminal_support_and_wire_length_do_not_change_with_em_mesh():
-    coarse = _background(0.02)
-    fine = _background(0.016)
+def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
+    coarse = _background(0.004)
+    fine = _background(0.002)
     c0 = coarse.geometry_context(GEOMETRY, assemble_thermal=False)
     c1 = fine.geometry_context(GEOMETRY, assemble_thermal=False)
 
@@ -106,6 +106,8 @@ def test_source_polyline_terminal_support_and_wire_length_do_not_change_with_em_
         )
         assert a0["terminal_regularization_mesh_independent"] is True
         assert a1["terminal_regularization_mesh_independent"] is True
+        assert a0["cross_section_support_mesh_independent"] is True
+        assert a1["cross_section_support_mesh_independent"] is True
         assert a0["terminal_profile"] == a1["terminal_profile"]
         assert np.isclose(
             a0["terminal_contact_length"], a1["terminal_contact_length"], rtol=0.0, atol=1e-15
@@ -114,8 +116,13 @@ def test_source_polyline_terminal_support_and_wire_length_do_not_change_with_em_
             np.asarray(a0["regularized_source_vector"], float),
             np.asarray(a1["regularized_source_vector"], float),
             rtol=0.0,
-            atol=1e-14,
+            atol=1e-13,
         )
+        assert a0["cross_section_quadrature"] == "composite_gauss3"
+        assert a1["cross_section_quadrature"] == "composite_gauss3"
+        assert a1["cross_section_quadrature_points"] >= a0["cross_section_quadrature_points"]
+        assert a1["cross_section_width_panels"] >= a0["cross_section_width_panels"]
+        assert a1["source_quadrature_resolution"] < a0["source_quadrature_resolution"]
         assert a0["terminal_path_integral_relative_error"] <= 1e-12
         assert a1["terminal_path_integral_relative_error"] <= 1e-12
 
