@@ -5,9 +5,11 @@ Maxwell field and compatible longitudinal component are unchanged.  Localized
 truth extraction is made numerically robust in two places:
 
 * the compatible scalar-gradient projection is certified and iteratively
-  refined before the tiny transverse remainder is formed;
-* the localizable port/loss outputs are contracted directly from a compensated
-  transverse remainder instead of subtracting two large full-field quantities.
+  refined;
+* the localizable port/loss outputs are contracted directly from the transverse
+  field.  Production local solves may provide that transverse field from the
+  exact compatible split instead of recovering it by subtracting two fields
+  with extreme dynamic range.
 """
 from __future__ import annotations
 
@@ -66,12 +68,15 @@ def install(self_correction_module):
         outward_weights,
         *,
         local_phi=None,
+        longitudinal=None,
+        transverse=None,
+        projection=None,
     ):
         """Evaluate the v2 localizable response without catastrophic subtraction.
 
         Let ``E = E_L + E_T`` where ``E_L`` is the exact compatible gradient
         component.  The v2 correction removes only the pure longitudinal self
-        term.  For an exact Galerkin longitudinal projection,
+        term.  Therefore
 
             Z_local = -S^T E_T
 
@@ -79,25 +84,34 @@ def install(self_correction_module):
 
             |E|^2 - |E_L|^2 = |E_T|^2 + 2 Re(E_L^* E_T).
 
-        The finest validation grid can have ``||E_T||/||E||`` of only a few
-        parts per million, so the scalar projection itself is certified before
-        these equivalent remainder contractions are evaluated.
+        Older callers may still provide only the certified full field; in that
+        case this routine computes ``E_L`` and forms a compensated remainder.
+        The production local solver now provides an independently solved
+        transverse field, which avoids asking a full-field solve dominated by a
+        terminal scalar field to resolve a transverse component that can be only
+        a few parts per million of the total field.
         """
-        del A  # Full-field physics has already been certified before extraction.
-        gradient = build_gradient_block(local, context, check_topology=True)
-        longitudinal, projection = refined_gradient_projection(
-            local,
-            gradient,
-            rhs,
-            relative_tolerance=5e-13,
-            maximum_refinements=5,
-        )
+        del A  # Full/split field physics has already been certified before extraction.
+        supplied = (longitudinal is not None, transverse is not None, projection is not None)
+        if any(supplied) and not all(supplied):
+            raise ValueError("localized response needs longitudinal, transverse and projection together")
+
+        direct_transverse = bool(all(supplied))
+        if not direct_transverse:
+            gradient = build_gradient_block(local, context, check_topology=True)
+            longitudinal, projection = refined_gradient_projection(
+                local,
+                gradient,
+                rhs,
+                relative_tolerance=5e-13,
+                maximum_refinements=5,
+            )
+            transverse = _subtract_compensated(field, longitudinal)
+
         if not np.isfinite(field_norm(longitudinal)):
             raise FloatingPointError("local Maxwell longitudinal field is invalid")
-
-        transverse = _subtract_compensated(field, longitudinal)
         if not np.isfinite(field_norm(transverse)):
-            raise FloatingPointError("local Maxwell transverse remainder is invalid")
+            raise FloatingPointError("local Maxwell transverse field is invalid")
 
         refinable_z = complex(-field_linear_dot(source, transverse))
         longitudinal_z = complex(-field_linear_dot(source, longitudinal))
@@ -141,6 +155,9 @@ def install(self_correction_module):
             "localized_modal_h": modal_refinable,
             "localized_power_balance_relative_error": balance,
             "localized_contraction": "certified_gradient_compensated_transverse_v2",
+            "localized_solution_path": (
+                "direct_compatible_transverse_rhs" if direct_transverse else "full_minus_longitudinal"
+            ),
             "localized_gradient_projection_initial_relative_residual": float(
                 projection["initial_relative_residual"]
             ),
