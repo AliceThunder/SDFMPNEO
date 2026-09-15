@@ -1,15 +1,16 @@
-"""Accurate residual-replacement cleanup for the finest local Maxwell solve.
+"""Accurate, equilibrated residual replacement for the finest Maxwell solve.
 
-The 254k-edge two-level solve can reduce the ordinary binary64 residual to the
-O(1e-7) range and then stagnate.  At that scale a curl-curl matrix may suffer
-severe cancellation in a conventional SciPy CSR ``b - A @ x`` evaluation.
-This patch therefore performs mixed-precision iterative refinement:
+The 254k-edge two-level solve can reduce the residual to O(1e-7) and then
+stagnate because the raw curl-curl equation has a very large numerical dynamic
+range.  This patch performs mixed-precision iterative refinement without
+changing the physical equation:
 
-* the main Maxwell/Krylov arithmetic and stored physical matrix remain complex128;
-* the final defect is independently accumulated from the original A, x and b;
-* on standard Windows builds this uses compensated double-double CSR arithmetic;
-* the accurately accumulated defect is solved by the existing two-level map;
-* every candidate is accepted only after another accurate residual evaluation.
+* form the fine residual accurately from the original complex128 A, x and b;
+* Ruiz-equilibrate only the correction equation ``A delta = r``;
+* map the existing two-level preconditioner into the scaled coordinates;
+* map the correction back to the original field coordinates;
+* certify both the correction equation and every updated field against the
+  original unscaled physical matrix with compensated residual accumulation.
 
 No physical operator, source, or tolerance is modified.
 """
@@ -20,6 +21,7 @@ import time
 import numpy as np
 
 from .unified_accurate_residual import accurate_residual_vector
+from .unified_equilibrated_defect import build_equilibrated_defect_system
 
 
 def _relative_norm(vector, rhs):
@@ -27,6 +29,16 @@ def _relative_norm(vector, rhs):
         np.linalg.norm(np.asarray(vector, complex).reshape(-1))
         / max(float(np.linalg.norm(np.asarray(rhs, complex).reshape(-1))), np.finfo(float).tiny)
     )
+
+
+def _accurate_relative_residual(A, field, rhs, target):
+    residual, diagnostics = accurate_residual_vector(
+        A,
+        field,
+        rhs,
+        target_relative=float(target),
+    )
+    return residual, _relative_norm(residual, rhs), diagnostics
 
 
 def install(two_level_module, local_solver_module):
@@ -50,13 +62,9 @@ def install(two_level_module, local_solver_module):
         rhs_value = np.asarray(rhs, complex).reshape(-1)
         reported = float(field_residual)
         standard = float(local_solver_module._relative_residual(A, x, rhs_value))
-        defect, diagnostics = accurate_residual_vector(
-            A,
-            x,
-            rhs_value,
-            target_relative=float(residual_tolerance),
+        defect, current, diagnostics = _accurate_relative_residual(
+            A, x, rhs_value, residual_tolerance
         )
-        current = _relative_norm(defect, rhs_value)
         history = []
 
         discrepancy = abs(current - reported) / max(
@@ -95,38 +103,101 @@ def install(two_level_module, local_solver_module):
 
         if fine_M is not None:
             steps = int(cfg.get("linear_two_level_residual_replacement_steps", 3))
-            maxiter = int(cfg.get("linear_two_level_residual_replacement_maxiter", 20))
-            inner_m = int(cfg.get("linear_two_level_residual_replacement_inner_m", 30))
-            backtracks = int(cfg.get("linear_two_level_residual_replacement_backtracks", 3))
-            if steps < 1 or maxiter < 1 or inner_m < 2 or backtracks < 0:
+            maxiter = int(cfg.get("linear_two_level_residual_replacement_maxiter", 24))
+            inner_m = int(cfg.get("linear_two_level_residual_replacement_inner_m", 36))
+            backtracks = int(cfg.get("linear_two_level_residual_replacement_backtracks", 4))
+            equilibration_iterations = int(cfg.get("linear_two_level_equilibration_iterations", 4))
+            scaled_attempts = int(cfg.get("linear_two_level_equilibrated_attempts", 2))
+            if (
+                steps < 1
+                or maxiter < 1
+                or inner_m < 2
+                or backtracks < 0
+                or equilibration_iterations < 1
+                or scaled_attempts < 1
+            ):
                 raise ValueError("two-level accurate residual replacement settings are invalid")
+
+            equilibrated = build_equilibrated_defect_system(
+                A,
+                defect,
+                fine_M,
+                iterations=equilibration_iterations,
+                scale_limit=float(cfg.get("linear_two_level_equilibration_scale_limit", 1e12)),
+            )
+            print(
+                "local Maxwell defect equilibration: "
+                f"row_span={equilibrated.row_span_before:.3e}->{equilibrated.row_span_after:.3e}, "
+                f"col_span={equilibrated.column_span_before:.3e}->{equilibrated.column_span_after:.3e}, "
+                f"R_span={equilibrated.row_scale_span:.3e}, C_span={equilibrated.column_scale_span:.3e}",
+                flush=True,
+            )
+            history.append({
+                "solver": "two-level-defect-equilibration",
+                "row_span_before": equilibrated.row_span_before,
+                "row_span_after": equilibrated.row_span_after,
+                "column_span_before": equilibrated.column_span_before,
+                "column_span_after": equilibrated.column_span_after,
+                "row_scale_span": equilibrated.row_scale_span,
+                "column_scale_span": equilibrated.column_scale_span,
+            })
 
             for k in range(1, steps + 1):
                 if current <= residual_tolerance:
                     return x, current, history
+
                 eta = min(
                     2e-2,
                     max(
-                        1e-6,
-                        0.25
+                        5e-7,
+                        0.20
                         * float(residual_tolerance)
                         / max(current, np.finfo(float).tiny),
                     ),
                 )
-                started = time.perf_counter()
-                delta, info = local_solver_module._lgmres(
-                    A,
-                    defect,
-                    x0=None,
-                    M=fine_M,
-                    rtol=float(eta),
-                    maxiter=maxiter,
-                    inner_m=inner_m,
-                )
-                delta = np.asarray(delta, complex).reshape(-1)
-                defect_norm = max(float(np.linalg.norm(defect)), np.finfo(float).tiny)
-                correction_defect = np.asarray(defect - A @ delta, complex).reshape(-1)
-                correction_relative = float(np.linalg.norm(correction_defect) / defect_norm)
+                scaled_rhs = equilibrated.row_scale * defect
+                delta = None
+                info = -1
+                correction_relative = float("inf")
+                correction_diag = None
+                scaled_rtol_used = float("nan")
+                solve_started = time.perf_counter()
+
+                # A scaled Krylov stopping rule is only a candidate certificate.
+                # Verify A*delta=r in the original coordinates, and retry with a
+                # tighter scaled target if necessary.
+                for attempt in range(scaled_attempts):
+                    scaled_rtol = max(
+                        1e-10,
+                        min(5e-3, 0.25 * eta) * (0.1**attempt),
+                    )
+                    y, info = local_solver_module._lgmres(
+                        equilibrated.operator,
+                        scaled_rhs,
+                        x0=None,
+                        M=equilibrated.preconditioner,
+                        rtol=float(scaled_rtol),
+                        maxiter=maxiter,
+                        inner_m=inner_m,
+                    )
+                    candidate_delta = equilibrated.physical_correction(y)
+                    correction_defect, correction_relative, correction_diag = (
+                        _accurate_relative_residual(
+                            A,
+                            candidate_delta,
+                            defect,
+                            eta,
+                        )
+                    )
+                    delta = np.asarray(candidate_delta, complex).reshape(-1)
+                    scaled_rtol_used = float(scaled_rtol)
+                    if np.isfinite(correction_relative) and correction_relative <= eta:
+                        break
+
+                elapsed_solve = float(time.perf_counter() - solve_started)
+                if delta is None or np.any(~np.isfinite(delta)):
+                    break
+
                 update_relative = float(
                     np.linalg.norm(delta)
                     / max(float(np.linalg.norm(x)), np.finfo(float).tiny)
@@ -136,47 +207,62 @@ def install(two_level_module, local_solver_module):
                 best_candidate_residual = float("inf")
                 best_candidate_defect = None
                 best_scale = 0.0
+                candidate_mode = "unknown"
                 for j in range(backtracks + 1):
                     scale = float(0.5**j)
                     candidate = x + scale * delta
-                    candidate_defect, candidate_diag = accurate_residual_vector(
-                        A,
-                        candidate,
-                        rhs_value,
-                        target_relative=float(residual_tolerance),
+                    candidate_defect, candidate_residual, candidate_diag = (
+                        _accurate_relative_residual(
+                            A,
+                            candidate,
+                            rhs_value,
+                            residual_tolerance,
+                        )
                     )
-                    candidate_residual = _relative_norm(candidate_defect, rhs_value)
                     if candidate_residual < best_candidate_residual:
                         best_candidate = candidate
                         best_candidate_residual = candidate_residual
                         best_candidate_defect = candidate_defect
                         best_scale = scale
+                        candidate_mode = str(candidate_diag["accumulation_mode"])
                     if candidate_residual < current:
                         break
 
-                elapsed = float(time.perf_counter() - started)
+                elapsed = float(time.perf_counter() - solve_started)
                 accepted = bool(
                     best_candidate is not None
                     and np.isfinite(best_candidate_residual)
                     and best_candidate_residual < current
                 )
+                correction_certified = bool(
+                    np.isfinite(correction_relative) and correction_relative <= eta
+                )
                 history.append({
-                    "solver": f"two-level-accurate-residual-replacement-{k}",
+                    "solver": f"two-level-equilibrated-residual-replacement-{k}",
                     "krylov_info": int(info),
+                    "scaled_krylov_rtol": scaled_rtol_used,
                     "correction_relative_target": float(eta),
                     "correction_true_relative_residual": correction_relative,
+                    "correction_certified": correction_certified,
                     "update_relative_norm": update_relative,
                     "accepted_scale": float(best_scale),
                     "seconds": elapsed,
                     "starting_relative_residual": current,
                     "relative_residual": float(best_candidate_residual),
                     "accepted": accepted,
+                    "accumulation_mode": candidate_mode,
+                    "correction_roundoff_bound_relative": (
+                        float(correction_diag["roundoff_bound_relative"])
+                        if correction_diag is not None else float("inf")
+                    ),
                 })
                 print(
-                    f"local Maxwell accurate residual replacement-{k}: "
+                    f"local Maxwell equilibrated residual replacement-{k}: "
                     f"residual={best_candidate_residual:.3e}, start={current:.3e}, "
                     f"correction_residual={correction_relative:.3e}, target={eta:.3e}, "
-                    f"update={update_relative:.3e}, scale={best_scale:.3g}, info={int(info)}, "
+                    f"scaled_rtol={scaled_rtol_used:.1e}, update={update_relative:.3e}, "
+                    f"scale={best_scale:.3g}, info={int(info)}, "
+                    f"correction_certified={'yes' if correction_certified else 'no'}, "
                     f"accepted={'yes' if accepted else 'no'}, time={elapsed:.1f}s",
                     flush=True,
                 )
@@ -188,14 +274,14 @@ def install(two_level_module, local_solver_module):
 
             if current <= residual_tolerance:
                 print(
-                    f"local Maxwell accurate residual certified after refinement: residual={current:.3e}",
+                    f"local Maxwell accurate residual certified after equilibration: residual={current:.3e}",
                     flush=True,
                 )
                 return x, current, history
 
-        # Retain the matrix-free Galerkin correction as a fallback.  It still
-        # cannot overwrite the best accurately certified fine-grid field unless
-        # its returned residual is genuinely smaller.
+        # Retain the matrix-free Galerkin correction as a fallback.  It cannot
+        # overwrite the best accurately certified fine-grid field unless a fresh
+        # compensated residual check confirms an actual improvement.
         coarse_field, coarse_residual, coarse_history = original(
             local_solver_module_arg,
             two_level,
@@ -210,13 +296,14 @@ def install(two_level_module, local_solver_module):
         history.extend(coarse_history)
         if np.isfinite(coarse_residual) and coarse_residual < current:
             candidate = np.asarray(coarse_field, complex).reshape(-1)
-            candidate_defect, _candidate_diag = accurate_residual_vector(
-                A,
-                candidate,
-                rhs_value,
-                target_relative=float(residual_tolerance),
+            candidate_defect, accurate_candidate, _candidate_diag = (
+                _accurate_relative_residual(
+                    A,
+                    candidate,
+                    rhs_value,
+                    residual_tolerance,
+                )
             )
-            accurate_candidate = _relative_norm(candidate_defect, rhs_value)
             if accurate_candidate < current:
                 x = candidate
                 current = accurate_candidate
