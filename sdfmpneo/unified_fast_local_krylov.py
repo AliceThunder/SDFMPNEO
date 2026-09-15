@@ -1,11 +1,11 @@
 """Compatible Krylov policy for large Cartesian Maxwell solves.
 
 The production source may be an open two-terminal current and therefore may
-have a genuine longitudinal component.  We must solve that component, not
-project it out.  The Cartesian exact sequence gives ``C G = 0``; consequently
-we explicitly factor the gauge-fixed scalar block ``G.T A G`` and combine it
-with a bounded-fill edge ILU.  The original Maxwell matrix/RHS are unchanged
-and every accepted field is certified with their true residual.
+have a genuine longitudinal component.  We solve that component with the exact
+scalar-gradient block.  The remaining transverse correction is preconditioned
+with a compatible grad-div stabilized ILU whose augmentation vanishes on the
+exact transverse solution.  The original Maxwell matrix/RHS are unchanged and
+every accepted field is certified with their true residual.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from .unified_gradient_block_maxwell import (
     build_gradient_block,
     compose_block_preconditioner,
 )
+from .unified_transverse_ilu import build_transverse_ilu
 
 
 def _defect_refine(
@@ -35,7 +36,7 @@ def _defect_refine(
     inner_m=20,
     label="defect",
 ):
-    """True-residual iterative refinement; retained only as a final cleanup."""
+    """True-residual iterative refinement retained only for near-certified cleanup."""
     x = np.asarray(field, complex).reshape(-1).copy()
     rhs = np.asarray(rhs, complex).reshape(-1)
     current = float(residual_fn(A, x, rhs))
@@ -124,6 +125,13 @@ def install(local_solver_module):
         defect_steps = int(cfg.get("linear_iterative_defect_steps", 2))
         defect_maxiter = int(cfg.get("linear_iterative_defect_maxiter", 12))
         defect_inner_m = int(cfg.get("linear_iterative_defect_inner_m", 20))
+        # Defect solves are useful only after the main compatible solve is
+        # genuinely near certification.  Old configurations used 5e-6, which
+        # causes expensive no-op cleanup on the 254k validation grid.
+        defect_start = min(
+            float(cfg.get("linear_iterative_defect_start_residual", 1e-8)),
+            1e-8,
+        )
         if maxiter < 1 or inner_m < 2 or defect_steps < 0:
             raise ValueError("local iterative Maxwell solver iteration limits are invalid")
 
@@ -146,24 +154,40 @@ def install(local_solver_module):
                 check_topology=True,
             )
 
+        fast_drop = float(cfg.get("linear_ilu_drop_tolerance", 5e-3))
+        fast_fill = float(cfg.get("linear_ilu_fill_factor", 4.0))
+        strong_drop = float(cfg.get("linear_ilu_strong_drop_tolerance", 1e-3))
+        strong_fill = float(cfg.get("linear_ilu_strong_fill_factor", 8.0))
+        fast_stabilization = float(cfg.get("linear_transverse_stabilization_factor", 3e-2))
+        strong_stabilization = float(
+            cfg.get("linear_transverse_strong_stabilization_factor", 1e-1)
+        )
         fast_shift = float(cfg.get("linear_ilu_shift_factor", 3e-2))
         strong_shift = float(cfg.get("linear_ilu_strong_shift_factor", 1e-1))
-        attempts = (
-            (
-                float(cfg.get("linear_ilu_drop_tolerance", 5e-3)),
-                float(cfg.get("linear_ilu_fill_factor", 4.0)),
-                fast_shift,
-                "gradient-block-ilu-fast" if gradient_block is not None else "shifted-ilu-fast",
-                True,
-            ),
-            (
-                float(cfg.get("linear_ilu_strong_drop_tolerance", 1e-3)),
-                float(cfg.get("linear_ilu_strong_fill_factor", 8.0)),
-                strong_shift,
-                "gradient-block-ilu-strong" if gradient_block is not None else "shifted-ilu-strong",
-                True,
-            ),
-        )
+
+        if gradient_block is not None:
+            attempts = (
+                (
+                    fast_drop,
+                    fast_fill,
+                    fast_stabilization,
+                    "compatible-transverse-ilu-fast",
+                    "transverse",
+                ),
+                (
+                    strong_drop,
+                    strong_fill,
+                    strong_stabilization,
+                    "compatible-transverse-ilu-strong",
+                    "transverse",
+                ),
+            )
+        else:
+            attempts = (
+                (fast_drop, fast_fill, fast_shift, "shifted-ilu-fast", "shifted"),
+                (strong_drop, strong_fill, strong_shift, "shifted-ilu-strong", "shifted"),
+            )
+
         target = max(float(residual_tolerance) * 0.2, 1e-12)
         best = None if x0 is None else np.asarray(x0, complex).reshape(-1).copy()
         best_residual = (
@@ -173,21 +197,35 @@ def install(local_solver_module):
         )
         history = []
 
-        for drop_tol, fill_factor, shift_factor, label, post_correct in attempts:
+        for drop_tol, fill_factor, stabilization, label, mode in attempts:
             t0 = time.perf_counter()
+            preconditioner_stats = {}
             try:
-                edge_M = local_solver_module._ilu_preconditioner(
-                    A,
-                    drop_tol=drop_tol,
-                    fill_factor=fill_factor,
-                    shift_factor=shift_factor,
-                )
+                if mode == "transverse":
+                    edge_M, preconditioner_stats = build_transverse_ilu(
+                        A,
+                        background,
+                        context,
+                        gradient_block,
+                        drop_tol=drop_tol,
+                        fill_factor=fill_factor,
+                        stabilization_factor=stabilization,
+                        mqs=bool(mqs),
+                        mqs_admittance=mqs_admittance,
+                    )
+                else:
+                    edge_M = local_solver_module._ilu_preconditioner(
+                        A,
+                        drop_tol=drop_tol,
+                        fill_factor=fill_factor,
+                        shift_factor=stabilization,
+                    )
                 M = (
                     compose_block_preconditioner(
                         A,
                         edge_M,
                         gradient_block,
-                        post_correct=post_correct,
+                        post_correct=True,
                     )
                     if gradient_block is not None
                     else edge_M
@@ -216,24 +254,26 @@ def install(local_solver_module):
             candidate = np.asarray(candidate, complex).reshape(-1)
             residual = local_solver_module._relative_residual(A, candidate, rhs)
             elapsed = time.perf_counter() - t0
-            history.append(
-                {
-                    "solver": label,
-                    "drop_tolerance": float(drop_tol),
-                    "fill_factor": float(fill_factor),
-                    "shift_factor": float(shift_factor),
-                    "krylov_info": int(info),
-                    "preconditioner_seconds": float(t1 - t0),
-                    "gradient_scalar_dofs": (
-                        0 if gradient_block is None else gradient_block.scalar_dofs
-                    ),
-                    "gradient_factor_seconds": (
-                        0.0 if gradient_block is None else gradient_block.build_seconds
-                    ),
-                    "seconds": float(elapsed),
-                    "relative_residual": float(residual),
-                }
-            )
+            row = {
+                "solver": label,
+                "drop_tolerance": float(drop_tol),
+                "fill_factor": float(fill_factor),
+                "krylov_info": int(info),
+                "preconditioner_seconds": float(t1 - t0),
+                "gradient_scalar_dofs": (
+                    0 if gradient_block is None else gradient_block.scalar_dofs
+                ),
+                "gradient_factor_seconds": (
+                    0.0 if gradient_block is None else gradient_block.build_seconds
+                ),
+                "seconds": float(elapsed),
+                "relative_residual": float(residual),
+            }
+            if mode == "transverse":
+                row.update({f"transverse_{k}": v for k, v in preconditioner_stats.items()})
+            else:
+                row["shift_factor"] = float(stabilization)
+            history.append(row)
             print(
                 f"local Maxwell {label}: residual={residual:.3e}, "
                 f"info={int(info)}, time={elapsed:.1f}s",
@@ -249,7 +289,7 @@ def install(local_solver_module):
                 defect_steps > 0
                 and best is not None
                 and np.isfinite(best_residual)
-                and best_residual <= float(cfg.get("linear_iterative_defect_start_residual", 1e-7))
+                and best_residual <= defect_start
             ):
                 refined, refined_residual, refinement_history = _defect_refine(
                     A,
@@ -277,6 +317,7 @@ def install(local_solver_module):
     local_solver_module._iterative_solve = iterative_solve
     local_solver_module._defect_refine = _defect_refine
     local_solver_module._compatible_gradient_block_installed = True
+    local_solver_module._compatible_transverse_ilu_installed = True
     return local_solver_module
 
 
