@@ -1,26 +1,25 @@
-"""Global scalar-gradient self reference for coarse production Maxwell truth.
+"""Certified full-domain scalar-gradient self reference for production truth.
 
 The canonical local self correction deliberately excludes the pure longitudinal
 terminal response because that response depends on the full return path,
-dielectric environment and open boundary.  At the same time, production logs
-show that this global longitudinal *self* term is the remaining mesh-sensitive
-piece after the transverse/cross local defect, mutual coupling, open-boundary
+dielectric environment and open boundary.  Production logs nevertheless show
+that this nonlocal longitudinal *self* term is the remaining mesh-sensitive
+quantity after the transverse/cross local defect, mutual coupling, open-domain
 and MQS Gates have converged.
 
-This module therefore supplies the missing global multiscale half without a
-second refined Maxwell solve.  For each port it solves only the compatible
-scalar block
+This module supplies the missing multiscale half without a second refined
+Maxwell solve.  For each port it solves only the compatible scalar block
 
     (G^T D G) phi = G^T b,      E_L = G phi,
 
-on a fixed global reference grid.  The production diagonal receives
+on a fixed full-domain reference grid and applies the diagonal defect
 
-    Q_corrected = Q_current + Q_L(reference) - Q_L(current),
+    Q_corrected = Q_current + Q_L(reference) - Q_L(current)
 
-for Z, D_vol, D_out and (when present) thermal modal Joule tensors.  Mutual
-entries remain entirely from the full Maxwell solve.  A separate scalar-only
-reference Gate compares the reference grid with a still finer global scalar
-grid, so using a common reference cannot hide nonconvergence.
+for Z, D_vol, D_out and thermal modal Joule tensors.  Mutual entries stay from
+the full Maxwell solve.  A separate scalar-only Gate compares the configured
+reference with a still finer full-domain scalar grid, so using a common
+reference cannot hide longitudinal nonconvergence.
 """
 from __future__ import annotations
 
@@ -67,10 +66,11 @@ def _config(background):
         root.get("_production_fine_step", root.get("fine_step", _background_step(background)))
     )
     mesh_factor = float(mesh.get("refinement_factor", 0.75))
+    resolved_reference = mesh.get("longitudinal_reference_fine_step")
     reference_step = float(
         own.get(
             "reference_fine_step",
-            mesh.get("longitudinal_reference_fine_step", mesh_factor * production_step),
+            resolved_reference if resolved_reference is not None else mesh_factor * production_step,
         )
     )
     validation_factor = float(
@@ -79,13 +79,19 @@ def _config(background):
             mesh.get("longitudinal_reference_validation_factor", mesh_factor),
         )
     )
-    tolerance = float(
-        own.get("relative_tolerance", mesh.get("relative_tolerance", 1e-1))
+    tolerance = float(own.get("relative_tolerance", mesh.get("relative_tolerance", 1e-1)))
+    # Do not silently make ordinary unit-test/ad-hoc backgrounds spawn a finer
+    # global scalar problem. Production preflight resolves the common reference
+    # explicitly before any corrected truth is accepted.
+    enabled = bool(
+        own.get(
+            "enabled",
+            resolved_reference is not None or "reference_fine_step" in own,
+        )
     )
-    enabled = bool(own.get("enabled", True))
-    if not (reference_step > 0.0):
+    if reference_step <= 0.0:
         raise ValueError("global longitudinal reference step must be positive")
-    if not (0.0 < validation_factor < 1.0):
+    if not 0.0 < validation_factor < 1.0:
         raise ValueError("global longitudinal validation factor must lie in (0,1)")
     return {
         "enabled": enabled,
@@ -106,6 +112,21 @@ def _geometry_key(geometry):
         return UnifiedUWPTGeometry.from_mapping(geometry).canonical_json()
     except Exception:
         return repr(geometry)
+
+
+def _remember_context(background, geometry, context):
+    background._sdfmpneo_global_longitudinal_last_context = (
+        _geometry_key(geometry),
+        context,
+    )
+
+
+def _cached_context(background, geometry):
+    row = getattr(background, "_sdfmpneo_global_longitudinal_last_context", None)
+    if not isinstance(row, tuple) or len(row) != 2:
+        return None
+    key, context = row
+    return context if key == _geometry_key(geometry) else None
 
 
 def _make_background(parent, fine_step):
@@ -184,6 +205,7 @@ class LongitudinalSelfState:
 def longitudinal_self_state(background, geometry, *, context=None, phi=None):
     if context is None:
         context = background.geometry_context(geometry, assemble_thermal=False)
+        _remember_context(background, geometry, context)
     block = build_gradient_block(background, context, check_topology=True)
     B = np.asarray(background.rhs_matrix(context), complex)
     source = np.asarray(context.source_shape, float)
@@ -201,6 +223,7 @@ def longitudinal_self_state(background, geometry, *, context=None, phi=None):
     max_projection = 0.0
     max_impedance_defect = 0.0
     max_balance = 0.0
+    max_joule_identity = 0.0
 
     for p in range(n):
         field, projection = refined_gradient_projection(
@@ -214,6 +237,18 @@ def longitudinal_self_state(background, geometry, *, context=None, phi=None):
         z[p] = complex(-field_linear_dot(source[:, p], field))
         d[p] = float(np.dot(edge_loss, abs2))
         d_out[p] = float(np.dot(outward, abs2))
+        q = np.asarray(
+            0.5
+            * sigma
+            * np.asarray(background.edge_cell_hodge.T @ abs2).reshape(-1),
+            float,
+        )
+        direct_d = float(2.0 * np.sum(q))
+        max_joule_identity = max(
+            max_joule_identity,
+            abs(d[p] - direct_d)
+            / max(abs(d[p]), abs(direct_d), np.finfo(float).tiny),
+        )
         scale = max(abs(z[p].real), abs(d[p]) + abs(d_out[p]), np.finfo(float).tiny)
         max_balance = max(max_balance, abs(z[p].real - d[p] - d_out[p]) / scale)
         max_projection = max(max_projection, float(projection["relative_residual"]))
@@ -221,12 +256,6 @@ def longitudinal_self_state(background, geometry, *, context=None, phi=None):
             max_impedance_defect, float(projection["impedance_defect"])
         )
         if modal is not None:
-            q = np.asarray(
-                0.5
-                * sigma
-                * np.asarray(background.edge_cell_hodge.T @ abs2).reshape(-1),
-                float,
-            )
             modal[:, p] = np.asarray(2.0 * (np.asarray(phi, float).T @ q), float)
 
     return LongitudinalSelfState(
@@ -238,19 +267,16 @@ def longitudinal_self_state(background, geometry, *, context=None, phi=None):
             "model": _MODEL,
             "fine_step": _background_step(background),
             "scalar_dofs": int(block.scalar_dofs),
+            "z_real": np.real(z).tolist(),
+            "z_imag": np.imag(z).tolist(),
+            "d_vol": d.tolist(),
+            "d_out": d_out.tolist(),
             "maximum_projection_relative_residual": float(max_projection),
             "maximum_projection_impedance_defect": float(max_impedance_defect),
             "maximum_power_balance_relative_error": float(max_balance),
+            "maximum_joule_identity_relative_error": float(max_joule_identity),
         },
     )
-
-
-def _cached_context(background, geometry):
-    row = getattr(background, "_sdfmpneo_global_longitudinal_last_context", None)
-    if not isinstance(row, tuple) or len(row) != 2:
-        return None
-    key, context = row
-    return context if key == _geometry_key(geometry) else None
 
 
 def _correction(background, geometry, *, phi=None):
@@ -267,27 +293,21 @@ def _correction(background, geometry, *, phi=None):
         }
 
     current_context = _cached_context(background, geometry)
-    current = longitudinal_self_state(
-        background, geometry, context=current_context, phi=phi
-    )
+    current = longitudinal_self_state(background, geometry, context=current_context, phi=phi)
     current_step = _background_step(background)
     reference_step = float(cfg["reference_fine_step"])
     target_step = min(current_step, reference_step)
     if abs(target_step - current_step) <= 1e-14 * max(current_step, 1.0):
-        reference_background = background
-        reference_context = current_context
-        reference_phi = phi
         reference = current
     else:
         reference_background = _make_background(background, target_step)
-        reference_context = _cached_context(reference_background, geometry)
         reference_phi = None if phi is None else _phi_on_background(
             background, reference_background, phi
         )
         reference = longitudinal_self_state(
             reference_background,
             geometry,
-            context=reference_context,
+            context=_cached_context(reference_background, geometry),
             phi=reference_phi,
         )
 
@@ -356,8 +376,12 @@ def audit_reference_convergence(background, geometry):
     cfg = _config(background)
     reference = _make_background(background, float(cfg["reference_fine_step"]))
     validation = _make_background(background, float(cfg["validation_fine_step"]))
-    state0 = longitudinal_self_state(reference, geometry)
-    state1 = longitudinal_self_state(validation, geometry)
+    state0 = longitudinal_self_state(
+        reference, geometry, context=_cached_context(reference, geometry)
+    )
+    state1 = longitudinal_self_state(
+        validation, geometry, context=_cached_context(validation, geometry)
+    )
     zerr = _relative(state0.z, state1.z)
     rerr = _relative(np.real(state0.z), np.real(state1.z))
     xerr = _relative(np.imag(state0.z), np.imag(state1.z))
@@ -409,15 +433,11 @@ def install(corrected_preflight_module, corrected_truth_module):
     if bool(getattr(corrected_preflight_module, "_global_longitudinal_reference_installed", False)):
         return corrected_preflight_module
 
-    # Keep the exact context used by the full Maxwell solve so the current-grid
-    # scalar factor built by the compatible solver can be reused.
     original_pf_solve = corrected_preflight_module._solve_fields
 
     def preflight_solve(background, geometry, *args, **kwargs):
         result = original_pf_solve(background, geometry, *args, **kwargs)
-        background._sdfmpneo_global_longitudinal_last_context = (
-            _geometry_key(geometry), result[0]
-        )
+        _remember_context(background, geometry, result[0])
         return result
 
     corrected_preflight_module._solve_fields = preflight_solve
@@ -427,9 +447,7 @@ def install(corrected_preflight_module, corrected_truth_module):
     def truth_port(background, context):
         geometry = getattr(context, "geometry", None)
         if geometry is not None:
-            background._sdfmpneo_global_longitudinal_last_context = (
-                _geometry_key(geometry), context
-            )
+            _remember_context(background, geometry, context)
         return original_truth_port(background, context)
 
     corrected_truth_module._port_truth_from_context = truth_port
@@ -469,6 +487,11 @@ def install(corrected_preflight_module, corrected_truth_module):
         }
         if not scalar_ok:
             cfg = dict(settings["BACKGROUND"].get("mesh_check", {}))
+            print(
+                "pre-basis corrected EM mesh Gate……skipped "
+                "(global longitudinal scalar reference failed)",
+                flush=True,
+            )
             return {
                 "sample_count": len(geometries),
                 "refinement_factor": float(cfg.get("refinement_factor", 0.75)),
@@ -514,15 +537,12 @@ def install(corrected_preflight_module, corrected_truth_module):
         if isinstance(scalar, dict) and not bool(scalar.get("converged", False)):
             return {
                 "code": "global_longitudinal_reference_not_converged",
-                "maximum_relative_error": float(
-                    scalar.get("maximum_relative_error", np.inf)
-                ),
+                "maximum_relative_error": float(scalar.get("maximum_relative_error", np.inf)),
                 "recommendation": (
-                    "The remaining mesh-sensitive self term is the full-domain "
-                    "compatible longitudinal response. Refine only the global "
-                    "scalar-gradient reference; do not refine the global Maxwell "
-                    "solve, do not reuse the canonical local box for this term, "
-                    "and do not relax the mesh Gate."
+                    "The remaining mesh-sensitive self term is the full-domain compatible "
+                    "longitudinal response. Refine only the global scalar-gradient reference; "
+                    "do not refine the global Maxwell solve, do not reuse the canonical local "
+                    "box for this term, and do not relax the mesh Gate."
                 ),
             }
         return original_diagnose(mesh)
@@ -546,7 +566,11 @@ def install(corrected_preflight_module, corrected_truth_module):
         out["minimum_implied_outward_eigenvalue"] = float(
             np.min(np.linalg.eigvalsh(_hermitian(implied))).real
         )
-        scale = max(float(np.linalg.norm(_hermitian(zc))), float(np.linalg.norm(dc + oc)), np.finfo(float).tiny)
+        scale = max(
+            float(np.linalg.norm(_hermitian(zc))),
+            float(np.linalg.norm(dc + oc)),
+            np.finfo(float).tiny,
+        )
         out["open_boundary_power_balance_relative_error"] = float(
             np.linalg.norm(_hermitian(zc) - dc - oc) / scale
         )
@@ -560,12 +584,13 @@ def install(corrected_preflight_module, corrected_truth_module):
         z, d, modal, phi_min, phi_max, audit = original_solve_truth(background, geometry)
         context = background.geometry_context(geometry, assemble_thermal=True)
         phi = np.asarray(context.thermal_basis, float)
-        zc, dc, _oc, hc, global_audit = apply_global_longitudinal_reference(
+        physical_out = _hermitian(z) - d
+        zc, dc, oc, hc, global_audit = apply_global_longitudinal_reference(
             background,
             geometry,
             z,
             d,
-            None,
+            physical_out,
             phi=phi,
             modal_h=modal,
         )
@@ -574,10 +599,19 @@ def install(corrected_preflight_module, corrected_truth_module):
         implied = _hermitian(zc) - dc
         out["minimum_d_vol_eigenvalue"] = float(np.min(np.linalg.eigvalsh(_hermitian(dc))).real)
         out["minimum_physical_outward_eigenvalue"] = float(
+            np.min(np.linalg.eigvalsh(_hermitian(oc))).real
+        )
+        out["minimum_implied_outward_eigenvalue"] = float(
             np.min(np.linalg.eigvalsh(_hermitian(implied))).real
         )
-        out["minimum_implied_outward_eigenvalue"] = out["minimum_physical_outward_eigenvalue"]
-        out["open_boundary_power_balance_relative_error"] = 0.0
+        scale = max(
+            float(np.linalg.norm(_hermitian(zc))),
+            float(np.linalg.norm(dc + oc)),
+            np.finfo(float).tiny,
+        )
+        out["open_boundary_power_balance_relative_error"] = float(
+            np.linalg.norm(_hermitian(zc) - dc - oc) / scale
+        )
         out["maximum_relative_loewner_violation"] = corrected_truth_module._loewner_violation(
             hc, dc, np.asarray(phi_min, float), np.asarray(phi_max, float)
         )
