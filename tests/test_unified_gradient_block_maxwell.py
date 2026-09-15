@@ -3,10 +3,15 @@ import numpy as np
 from sdfmpneo.unified_background import BackgroundContext
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_gradient_block_maxwell import (
+    _edge_mass_diagonal,
     build_gradient_block,
     compose_block_preconditioner,
     gradient_operator,
     source_terminal_divergence,
+)
+from sdfmpneo.unified_transverse_ilu import (
+    build_transverse_ilu,
+    build_transverse_stabilized_matrix,
 )
 import sdfmpneo.unified_certified_local_solve as local_solver
 
@@ -87,6 +92,36 @@ def test_open_path_source_has_balanced_nonzero_terminal_divergence():
     assert np.allclose(moment, expected, rtol=0.0, atol=1e-13)
 
 
+def test_transverse_stabilization_vanishes_on_compatible_transverse_space():
+    bg = _background()
+    context = _sea_context(bg)
+    A = bg.em_operator(context, None)
+    block = build_gradient_block(bg, context)
+    G = block.gradient
+    d = _edge_mass_diagonal(bg, context)
+
+    rng = np.random.default_rng(17)
+    value = rng.normal(size=bg.n_edges) + 1j * rng.normal(size=bg.n_edges)
+    scalar_rhs = np.asarray(G.T @ (d * value), complex).reshape(-1)
+    phi = np.asarray(block.factor.solve(scalar_rhs), complex).reshape(-1)
+    transverse = np.asarray(value - G @ phi, complex).reshape(-1)
+    constraint = np.linalg.norm(G.T @ (d * transverse))
+    reference = max(np.linalg.norm(G.T @ (d * value)), np.finfo(float).tiny)
+    assert constraint / reference <= 1e-10
+
+    augmented, stats = build_transverse_stabilized_matrix(
+        A,
+        bg,
+        context,
+        block,
+        stabilization_factor=3e-2,
+    )
+    added_action = np.asarray((augmented - A) @ transverse, complex).reshape(-1)
+    physical_action = np.asarray(A @ transverse, complex).reshape(-1)
+    assert stats["augmentation_gain"] >= 1.0
+    assert np.linalg.norm(added_action) / max(np.linalg.norm(physical_action), np.finfo(float).tiny) <= 1e-9
+
+
 def test_gradient_block_preconditioner_certifies_original_maxwell_equation():
     bg = _background()
     context = _sea_context(bg)
@@ -99,7 +134,15 @@ def test_gradient_block_preconditioner_certifies_original_maxwell_equation():
     rhs = A @ x_true
 
     block = build_gradient_block(bg, context)
-    edge_M = local_solver._ilu_preconditioner(A, drop_tol=1e-3, fill_factor=8.0, shift_factor=3e-2)
+    edge_M, _stats = build_transverse_ilu(
+        A,
+        bg,
+        context,
+        block,
+        drop_tol=1e-3,
+        fill_factor=8.0,
+        stabilization_factor=3e-2,
+    )
     M = compose_block_preconditioner(A, edge_M, block, post_correct=True)
     x, info = local_solver._lgmres(
         A,
