@@ -25,11 +25,19 @@ _install_maxwell_operator_metadata(OpenBoundaryBackground)
 from . import unified_self_correction as _self_correction
 from . import unified_certified_local_solve as _certified_local_solve
 from .unified_fast_local_krylov import install as _install_fast_local_krylov
+from .unified_hcurl_warm_start import install as _install_hcurl_warm_start
+from .unified_two_level_local_krylov import install as _install_two_level_local_krylov
 from .unified_local_solve_cache import install as _install_local_solve_cache
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
-# Exact memoization is installed only after the certified solver exists.
+# The one-level compatible solver remains the production policy up to ~118k
+# local edge DOFs.  The finest local validation uses a commuting H(curl)
+# prolongation and the certified previous grid as a two-level coarse space,
+# avoiding a fragile 254k-edge ILU factorization.  Exact memoization is
+# installed only after the certified solver exists.
 _install_fast_local_krylov(_certified_local_solve)
+_install_hcurl_warm_start(_certified_local_solve)
+_install_two_level_local_krylov(_certified_local_solve)
 _certified_local_solve.install(_self_correction)
 _install_local_solve_cache(_self_correction)
 
