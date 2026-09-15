@@ -9,20 +9,22 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 17 keeps the full open two-terminal source and the v2
-# localized self correction, while replacing grid-controlled endpoint truncation
-# by a distributed physical terminal contact tied to conductor dimensions.
-# Old truth tensors/certificates must not be mixed with this one.
-_unified_model.FORMAT_VERSION = 17
+# Physics truth version 18 keeps the full open two-terminal source, resolves its
+# fixed physical rectangular support with mesh-convergent composite quadrature,
+# and applies the complete local fine-minus-coarse self defect (v3).  Old truth
+# tensors/certificates must not be mixed with this one.
+_unified_model.FORMAT_VERSION = 18
+_SELF_CORRECTION_MODEL_V3 = "canonical_local_full_fine_minus_coarse_self_defect_v3"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_terminal_contact_source import install as _install_terminal_contact_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-# Install the physical source semantics before any truth/preflight path builds a
-# geometry context.  The source remains open and non-divergence-free; only its
-# terminal charge support is distributed over a fixed conductor-scale contact.
+# Install physical source semantics before any truth/preflight path constructs a
+# geometry context.  The source remains open and non-divergence-free.  Its
+# terminal/contact support is physical, while composite quadrature only improves
+# numerical integration of that unchanged support.
 _install_terminal_contact_source(OpenBoundaryBackground)
 _install_maxwell_operator_metadata(OpenBoundaryBackground)
 
@@ -36,28 +38,30 @@ from .unified_two_level_residual_replacement import install as _install_two_leve
 from .unified_localized_self_solve import install as _install_localized_self_solve
 from .unified_stable_localized_self import install as _install_stable_localized_self
 from .unified_local_solve_cache import install as _install_local_solve_cache
+from .unified_full_self_defect import install as _install_full_self_defect
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
-# The one-level compatible solver remains the production policy up to ~118k
-# local edge DOFs.  The finest local validation uses a commuting H(curl)
-# prolongation and the certified previous grid as a two-level coarse space,
-# avoiding a fragile 254k-edge ILU factorization.  Once the two-level solve
-# reaches the observed O(1e-7) plateau, recomputed fine-grid residual replacement
-# is attempted before any Galerkin coarse fallback.
 _install_fast_local_krylov(_certified_local_solve)
 _install_hcurl_warm_start(_certified_local_solve)
 _install_two_level_local_krylov(_certified_local_solve)
 _install_two_level_residual_replacement(_two_level_local_krylov, _certified_local_solve)
 _certified_local_solve.install(_self_correction)
-# The Maxwell solve above remains full-source.  Only the local defect truth
-# contraction removes pure longitudinal terminal self energy before applying
-# fine-minus-coarse correction.  Evaluate that contraction from the compensated
-# transverse remainder so high-dynamic-range terminal fields do not cause
-# catastrophic cancellation in reactive impedance or local energy defects.
+# Solve the compatible longitudinal/transverse components directly so the tiny
+# transverse field is never recovered by subtracting two huge full fields.
 _install_localized_self_solve(_self_correction, _certified_local_solve)
 _install_stable_localized_self(_self_correction)
 # Exact memoization is installed after the final local truth implementation.
 _install_local_solve_cache(_self_correction)
+# v3 changes only the object added back to the global diagonal: the complete
+# local fine-minus-coarse defect.  Absolute local terminal response is never
+# substituted for the global one.
+_install_full_self_defect(_self_correction)
+
+# Install the v3 audit before corrected preflight imports the audit function by
+# value.  It certifies the same complete defect used by production truth.
+from . import unified_self_correction_audit as _self_correction_audit
+from .unified_full_self_defect_audit import install as _install_full_self_defect_audit
+_install_full_self_defect_audit(_self_correction_audit, _self_correction)
 
 # Install the same certified large-system policy on global truth/Gate solves.
 # This must happen before corrected preflight imports _solve_fields by value.
@@ -75,6 +79,7 @@ _install_source_preflight(_truth_preflight)
 from . import unified_corrected_truth_preflight as _corrected_preflight
 from .unified_preflight_diagnosis_patch import install as _install_preflight_diagnosis
 
+_corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
 _install_preflight_diagnosis(_corrected_preflight)
 
 from .unified_tensor_surrogate import (
@@ -127,9 +132,14 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# The physical-cache signature historically did not include source_model even
-# though metadata recorded it.  Truth v17 changes S(g), so force one cache-format
-# increment without rewriting the runtime pipeline; older certified v2 physical
-# caches can therefore never bypass the new source preflight.
+# v18 changes both S(g)'s numerical integration and the production self-defect
+# semantics.  Invalidate all earlier physical caches/release metadata.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 19
+_unified_runtime._CACHE_FORMAT = 20
+_unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
+
+# These modules are imported by unified_runtime.  Their functions read the
+# module-level model tag at call time, so synchronize the release/Gate metadata
+# without duplicating the constant in multiple implementation files.
+from . import unified_corrected_physics_gate as _corrected_physics_gate
+_corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
