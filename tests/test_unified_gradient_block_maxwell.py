@@ -1,9 +1,7 @@
 import numpy as np
 import scipy.sparse as sp
 
-from sdfmpneo.unified_accurate_residual import accurate_residual_vector
 from sdfmpneo.unified_background import BackgroundContext
-from sdfmpneo.unified_compensated_field import field_parts
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_gradient_block_maxwell import (
     _edge_mass_diagonal,
@@ -12,11 +10,13 @@ from sdfmpneo.unified_gradient_block_maxwell import (
     gradient_operator,
     source_terminal_divergence,
 )
-from sdfmpneo.unified_refined_gradient_projection import refined_gradient_projection
 from sdfmpneo.unified_transverse_ilu import (
     build_transverse_ilu,
     build_transverse_stabilized_matrix,
 )
+from sdfmpneo.unified_refined_gradient_projection import refined_gradient_projection
+from sdfmpneo.unified_accurate_residual import accurate_residual_vector
+from sdfmpneo.unified_compensated_field import field_parts
 import sdfmpneo.unified_certified_local_solve as local_solver
 
 
@@ -89,8 +89,6 @@ def test_open_path_source_has_balanced_nonzero_terminal_divergence():
 
     q, net_error, moment = source_terminal_divergence(bg, source)
     expected = np.array([bg.nx, 0.0, 0.0])
-    # source[e] * edge_length == 1 for every path edge, so the first moment is
-    # the number of oriented edge steps along x.
     assert np.linalg.norm(q) > 0.0
     assert net_error <= 1e-14
     assert np.allclose(moment, expected, rtol=0.0, atol=1e-13)
@@ -172,10 +170,6 @@ def test_direct_compatible_split_recovers_small_transverse_component():
     mass = sp.diags(d, format="csr")
     rng = np.random.default_rng(29)
 
-    # Build a genuinely D-transverse field, then bury it under a longitudinal
-    # component eight orders of magnitude larger.  The physical RHS is assembled
-    # from the exact compatible split so the test probes the solve decomposition,
-    # not cancellation in a synthetic full-field matvec.
     candidate = rng.normal(size=bg.n_edges) + 1j * rng.normal(size=bg.n_edges)
     scalar_rhs = np.asarray(G.T @ (d * candidate), complex).reshape(-1)
     correction = np.asarray(block.factor.solve(scalar_rhs), complex).reshape(-1)
@@ -215,5 +209,7 @@ def test_direct_compatible_split_recovers_small_transverse_component():
 
 def test_production_open_boundary_class_is_not_transverse_source_patched():
     assert OpenBoundaryBackground.terminal_model == "distributed_terminal_contact_with_charge_balance"
-    assert OpenBoundaryBackground.source_model == "stranded_rectangular_cross_section_gauss3_terminal_contact"
+    assert OpenBoundaryBackground.source_model == (
+        "stranded_rectangular_cross_section_composite_gauss3_terminal_contact"
+    )
     assert not bool(getattr(OpenBoundaryBackground, "_transverse_source_projection_installed", False))
