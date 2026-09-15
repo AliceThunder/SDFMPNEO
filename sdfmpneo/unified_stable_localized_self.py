@@ -99,14 +99,9 @@ def install(self_correction_module):
         if not np.isfinite(field_norm(transverse)):
             raise FloatingPointError("local Maxwell transverse remainder is invalid")
 
-        # The source contraction is algebraically equal to subtracting the pure
-        # longitudinal impedance when the compatible projection is solved.  It
-        # is far better conditioned because only the small remainder is paired.
         refinable_z = complex(-field_linear_dot(source, transverse))
         longitudinal_z = complex(-field_linear_dot(source, longitudinal))
 
-        # Preserve the L/T cross term required by the v2 physical definition,
-        # but avoid |E|^2 - |E_L|^2 cancellation.
         refinable_abs2 = np.asarray(
             field_abs2(transverse) + _cross_real(longitudinal, transverse),
             float,
@@ -151,6 +146,12 @@ def install(self_correction_module):
             ),
             "localized_gradient_projection_relative_residual": float(
                 projection["relative_residual"]
+            ),
+            "localized_gradient_projection_initial_impedance_defect": float(
+                projection["initial_impedance_defect"]
+            ),
+            "localized_gradient_projection_impedance_defect": float(
+                projection["impedance_defect"]
             ),
             "localized_gradient_projection_refinements": int(projection["refinements"]),
             "localized_gradient_projection_edge_low_relative_norm": float(
