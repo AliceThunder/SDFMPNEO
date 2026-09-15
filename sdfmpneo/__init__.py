@@ -87,6 +87,7 @@ from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
 from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
+from .unified_scalar_charge_patch import install as _install_scalar_charge_patch
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
 # Start from full-geometry v2 patch semantics: every scalar patch retains the
@@ -94,8 +95,11 @@ from .unified_global_longitudinal_reference import install as _install_global_lo
 _global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudinal_nearfield_defect_v2"
 # Certify the coarse patch as the exact parent-scalar restriction, then replace
 # whole-package 3/2.25-mm refinement with nested terminal-contact-scale nodes.
+# The refined scalar-only states consume q_target directly so they do not build
+# a redundant edge-space G.T G charge-lift factor in addition to G.T D G.
 _install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_terminal_longitudinal_refinement(_global_longitudinal_reference)
+_install_scalar_charge_patch(_global_longitudinal_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 
 from .unified_tensor_surrogate import (
