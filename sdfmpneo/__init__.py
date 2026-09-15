@@ -79,6 +79,7 @@ _install_preflight_diagnosis(_corrected_preflight)
 # it on a full-domain scalar-gradient reference grid and certify that reference
 # independently before the full 12mm->9mm Maxwell mesh Gate is accepted.
 from . import unified_corrected_truth as _corrected_truth
+from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
@@ -138,6 +139,19 @@ __all__ = [
 from . import unified_runtime as _unified_runtime
 _unified_runtime._CACHE_FORMAT = 22
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
+
+# Resolve the common scalar reference every time the production background is
+# constructed, including physical-cache hits that skip preflight execution.  The
+# runtime signature is computed before build_background(), so this deterministic
+# resolution does not change cache-key semantics.
+_original_runtime_build_background = _unified_runtime.build_background
+
+def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
+    background = _original_runtime_build_background(settings, *args, **kwargs)
+    _global_longitudinal_reference._resolve_settings(settings, background)
+    return background
+
+_unified_runtime.build_background = _build_background_with_longitudinal_reference
 
 # These modules are imported by unified_runtime. Their functions read the
 # module-level model tag at call time, so synchronize the release/Gate metadata.
