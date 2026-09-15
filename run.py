@@ -39,24 +39,28 @@ FILES = {
 BACKGROUND = {
     # Open-domain convergence at ±0.27 m was not sufficient for the production
     # geometry box: the independent ±0.39 m reference changed D_vol by ~11%
-    # and mutual Z by ~22%.  Keep the same 12-mm resolved core, but move the
-    # artificial boundary to ±0.51 m.  The far seawater is deliberately allowed
-    # to stretch to 80 mm because its 100-kHz skin-depth scale is much larger;
-    # the independent mesh Gate still checks this coarsening.
+    # and mutual Z by ~22%. Keep the same 12-mm resolved core, but move the
+    # artificial boundary to ±0.51 m. Far seawater may stretch to 80 mm; the
+    # independent mesh Gate still checks this coarsening.
     "bounds": [[-0.51, 0.51], [-0.51, 0.51], [-0.51, 0.51]],
     "core_center": [0.0, 0.0, 0.02],
     "core_half_extent": [0.09, 0.09, 0.09],
     "fine_step": 0.012,
     "growth": 1.5,
     "max_step": 0.08,
-    # Large open-domain matrices use a Maxwell-aware shifted-ILU + LGMRES
-    # solve.  The shift belongs only to the preconditioner; acceptance is still
-    # based on the true residual of the original physical matrix.
+    # Large open-domain matrices use Maxwell-aware shifted-ILU + LGMRES.
+    # The shift belongs only to the preconditioner. If the main Krylov solve
+    # stalls around 1e-6--1e-7, true-residual defect correction reuses the same
+    # ILU until the original physical matrix reaches the 1e-9 certificate.
     "linear_solver": {
         "relative_residual_tolerance": 1e-9,
         "direct_max_dofs": 60000,
         "iterative_maxiter": 40,
         "iterative_inner_m": 30,
+        "iterative_defect_steps": 3,
+        "iterative_defect_maxiter": 16,
+        "iterative_defect_inner_m": 20,
+        "iterative_defect_start_residual": 5e-6,
         "ilu_drop_tolerance": 5e-3,
         "ilu_fill_factor": 4.0,
         "ilu_strong_drop_tolerance": 1e-3,
@@ -81,9 +85,14 @@ BACKGROUND = {
         "joule_identity_tolerance": 1e-10,
         "linear_relative_residual_tolerance": 1e-9,
         "linear_direct_max_dofs": 60000,
-        "linear_direct_fallback_max_dofs": 120000,
+        # Never send the 118k/254k local problems back to a fill-heavy full LU.
+        "linear_direct_fallback_max_dofs": 60000,
         "linear_iterative_maxiter": 40,
         "linear_iterative_inner_m": 30,
+        "linear_iterative_defect_steps": 3,
+        "linear_iterative_defect_maxiter": 16,
+        "linear_iterative_defect_inner_m": 20,
+        "linear_iterative_defect_start_residual": 5e-6,
         "linear_ilu_drop_tolerance": 5e-3,
         "linear_ilu_fill_factor": 4.0,
         "linear_ilu_strong_drop_tolerance": 1e-3,
@@ -93,8 +102,8 @@ BACKGROUND = {
         "parallel_ports": 2,
         "linear_result_cache_size": 64,
     },
-    # Production is ±0.51 m; the independent reference is ±0.63 m.  The 5%
-    # convergence requirement is unchanged.  D_out itself is diagnostic in
+    # Production is ±0.51 m; the independent reference is ±0.63 m. The 5%
+    # convergence requirement is unchanged. D_out itself is diagnostic in
     # conductive seawater; its change is normalized by the terminal-dissipation
     # scale, while Z/D_vol/current-space power remain hard Gate quantities.
     "open_boundary_check": {
