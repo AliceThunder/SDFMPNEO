@@ -9,14 +9,15 @@ This module performs a deterministic defect correction in each port's rigid
 local frame:
 
     global corrected self = global coarse self
-                          + local fine self - local coarse self.
+                          + local fine defect - local coarse defect.
 
-The local problem keeps the physical finite-cross-section stranded source and
-its own package, but removes global translation/rotation. This is legitimate
-for the local defect because the surrounding seawater/material laws are
-isotropic; global pose, the other port and long-range boundary interaction stay
-in the global solve. The correction is applied consistently to Z, D_vol,
-D_out and the diagonal entries of every modal H_j.
+The full global Maxwell solve always retains the theory-defined open two-terminal
+source and its longitudinal terminal/charge response.  A canonical local box
+cannot reproduce the external return path, global dielectric environment, or
+full-domain terminal capacitance, so the *local defect extractor* removes only
+the pure scalar-gradient self energy and refines the remaining localizable
+transverse/cross response.  This is deliberately not a projection of the
+physical global source.
 """
 from __future__ import annotations
 
@@ -27,7 +28,9 @@ import numpy as np
 import scipy.sparse.linalg as spla
 from scipy.interpolate import RegularGridInterpolator
 
+from .unified_compensated_field import field_abs2
 from .unified_geometry import UnifiedUWPTGeometry
+from .unified_gradient_block_maxwell import build_gradient_block
 from .unified_open_boundary import OpenBoundaryBackground
 
 
@@ -145,6 +148,98 @@ def _relative_identity_error(value, reference):
     )
 
 
+def _localized_self_response(
+    local,
+    context,
+    A,
+    rhs,
+    field,
+    source,
+    sigma,
+    edge_loss,
+    outward_weights,
+    *,
+    local_phi=None,
+):
+    """Extract the localizable self response without changing the physical solve.
+
+    The full field contains a scalar-gradient terminal response whose length
+    scale is global: it depends on the return path, dielectric environment and
+    open-domain boundary.  Replacing that term with a canonical local-box value
+    is not a legitimate local fine-minus-coarse correction.  We therefore keep
+    the full field solve intact, compute its exact compatible gradient component,
+    and subtract only the *pure longitudinal self energy* from local defect
+    quantities.  Transverse/longitudinal cross terms remain in the refinable
+    quantity, so only the nonlocal pure-gradient term is frozen at global scale.
+    """
+    gradient = build_gradient_block(local, context, check_topology=True)
+    longitudinal = np.asarray(gradient.solve(rhs), complex).reshape(-1)
+    if longitudinal.shape != (local.n_edges,) or np.any(~np.isfinite(longitudinal)):
+        raise FloatingPointError("local Maxwell longitudinal field is invalid")
+
+    full_abs2 = field_abs2(field)
+    longitudinal_abs2 = np.abs(longitudinal) ** 2
+    refinable_abs2 = np.asarray(full_abs2 - longitudinal_abs2, float)
+
+    full_z = complex(-np.asarray(source, float) @ np.asarray(field, complex))
+    grad_action = np.asarray(A @ longitudinal, complex).reshape(-1)
+    grad_energy = complex(np.vdot(longitudinal, grad_action))
+    # For e^{+i wt}, E^H A E = i w Z* on a physical one-port solution, hence
+    # Z_energy = Im(E^H A E)/w + i Re(E^H A E)/w.  Applying this to the exact
+    # gradient component identifies the pure longitudinal terminal self energy.
+    longitudinal_z = complex(
+        float(np.imag(grad_energy) / local.omega),
+        float(np.real(grad_energy) / local.omega),
+    )
+    refinable_z = complex(full_z - longitudinal_z)
+
+    full_d = float(np.dot(np.asarray(edge_loss, float), full_abs2))
+    longitudinal_d = float(np.dot(np.asarray(edge_loss, float), longitudinal_abs2))
+    refinable_d = float(full_d - longitudinal_d)
+    full_out = float(np.dot(np.asarray(outward_weights, float), full_abs2))
+    longitudinal_out = float(np.dot(np.asarray(outward_weights, float), longitudinal_abs2))
+    refinable_out = float(full_out - longitudinal_out)
+
+    q_full = np.asarray(
+        0.5
+        * np.asarray(sigma, float)
+        * np.asarray(local.edge_cell_hodge.T @ full_abs2).reshape(-1),
+        float,
+    )
+    q_longitudinal = np.asarray(
+        0.5
+        * np.asarray(sigma, float)
+        * np.asarray(local.edge_cell_hodge.T @ longitudinal_abs2).reshape(-1),
+        float,
+    )
+    q_refinable = np.asarray(q_full - q_longitudinal, float)
+
+    modal_refinable = None
+    if local_phi is not None:
+        modal_refinable = np.asarray(2.0 * (local_phi.T @ q_refinable), float)
+
+    scale = max(
+        abs(float(np.real(refinable_z))),
+        abs(refinable_d) + abs(refinable_out),
+        np.finfo(float).tiny,
+    )
+    balance = float(abs(refinable_z.real - refinable_d - refinable_out) / scale)
+    return {
+        "localized_z": refinable_z,
+        "localized_d_vol": refinable_d,
+        "localized_d_out": refinable_out,
+        "localized_modal_h": modal_refinable,
+        "localized_power_balance_relative_error": balance,
+        "longitudinal_z": longitudinal_z,
+        "longitudinal_d_vol": longitudinal_d,
+        "longitudinal_d_out": longitudinal_out,
+        "longitudinal_field_relative_norm": float(
+            np.linalg.norm(longitudinal)
+            / max(np.linalg.norm(np.asarray(field, complex)), np.finfo(float).tiny)
+        ),
+    }
+
+
 def _solve_local(parent, geometry, port, fine_step, phi=None):
     global_geometry, local_geometry, local = _local_background(parent, geometry, port, fine_step)
     context = local.geometry_context(local_geometry, assemble_thermal=False)
@@ -175,28 +270,38 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
         float,
     )
 
-    # Independent algebraic certificates for the local defect source. D_vol is
-    # defined without the phasor 1/2 whereas q_cells already contains it.
     direct_d = float(2.0 * np.sum(q_cells))
     joule_total_error = _relative_identity_error(d, direct_d)
 
+    local_phi = None
     modal = None
     modal_error = 0.0
     if phi is not None:
         local_phi = _phi_on_local_grid(parent, global_geometry, port, local, phi)
         direct_modal = np.asarray(2.0 * (local_phi.T @ q_cells), float)
         modal = direct_modal.copy()
-        # Keep this explicit even though modal currently uses direct_modal: the
-        # certificate locks the intended scaling if implementation changes later.
         modal_error = _relative_identity_error(modal, direct_modal)
 
     scale = max(abs(z.real), abs(d) + abs(d_out), np.finfo(float).tiny)
     balance = float(abs(z.real - d - d_out) / scale)
+    localized = _localized_self_response(
+        local,
+        context,
+        A,
+        rhs,
+        field,
+        source,
+        sigma,
+        edge_loss,
+        outward_weights,
+        local_phi=local_phi,
+    )
     return {
         "z": z,
         "d_vol": d,
         "d_out": d_out,
         "modal_h": modal,
+        **localized,
         "linear_relative_residual": residual,
         "power_balance_relative_error": balance,
         "joule_total_power_relative_error": joule_total_error,
@@ -208,7 +313,7 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
 
 
 def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=None, modal_h=None):
-    """Apply diagonal local fine-minus-coarse self defects to port tensors."""
+    """Apply diagonal localized fine-minus-coarse self defects to port tensors."""
     zc = np.asarray(z, complex).copy()
     dc = np.asarray(d_vol, complex).copy()
     oc = np.asarray(d_out, complex).copy()
@@ -233,6 +338,7 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
     ports = []
     maximum_total_identity_error = 0.0
     maximum_modal_identity_error = 0.0
+    maximum_localized_balance_error = 0.0
     for p in range(n):
         coarse = _solve_local(background, geometry, p, coarse_step, phi=phi)
         fine = _solve_local(background, geometry, p, fine_step, phi=phi)
@@ -246,15 +352,22 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             float(coarse["joule_modal_contraction_relative_error"]),
             float(fine["joule_modal_contraction_relative_error"]),
         )
-        dz = fine["z"] - coarse["z"]
-        dd = float(fine["d_vol"] - coarse["d_vol"])
-        do = float(fine["d_out"] - coarse["d_out"])
+        maximum_localized_balance_error = max(
+            maximum_localized_balance_error,
+            float(coarse["localized_power_balance_relative_error"]),
+            float(fine["localized_power_balance_relative_error"]),
+        )
+        dz = fine["localized_z"] - coarse["localized_z"]
+        dd = float(fine["localized_d_vol"] - coarse["localized_d_vol"])
+        do = float(fine["localized_d_out"] - coarse["localized_d_out"])
         zc[p, p] += dz
         dc[p, p] += dd
         oc[p, p] += do
         modal_delta = None
         if phi is not None:
-            modal_delta = np.asarray(fine["modal_h"] - coarse["modal_h"], float)
+            modal_delta = np.asarray(
+                fine["localized_modal_h"] - coarse["localized_modal_h"], float
+            )
             hc[:, p, p] += modal_delta
         ports.append({
             "port": int(p),
@@ -264,8 +377,8 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             "delta_z_imag": float(dz.imag),
             "delta_d_vol": dd,
             "delta_d_out": do,
-            "coarse": {k: v for k, v in coarse.items() if k != "modal_h"},
-            "fine": {k: v for k, v in fine.items() if k != "modal_h"},
+            "coarse": {k: v for k, v in coarse.items() if k not in ("modal_h", "localized_modal_h")},
+            "fine": {k: v for k, v in fine.items() if k not in ("modal_h", "localized_modal_h")},
             "maximum_modal_delta": None if modal_delta is None else float(np.max(np.abs(modal_delta))),
         })
 
@@ -289,10 +402,11 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
         hc,
         {
             "enabled": True,
-            "model": "canonical_local_fine_minus_coarse_self_defect_v1",
+            "model": "canonical_local_transverse_fine_minus_coarse_self_defect_v2",
             "coarse_step": coarse_step,
             "fine_step": fine_step,
             "corrected_power_balance_relative_error": corrected_balance,
+            "maximum_localized_power_balance_relative_error": float(maximum_localized_balance_error),
             "maximum_joule_total_power_relative_error": float(maximum_total_identity_error),
             "maximum_joule_modal_contraction_relative_error": float(maximum_modal_identity_error),
             "ports": ports,
@@ -300,4 +414,8 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
     )
 
 
-__all__ = ["SelfCorrectionResult", "apply_local_self_correction"]
+__all__ = [
+    "SelfCorrectionResult",
+    "_localized_self_response",
+    "apply_local_self_correction",
+]
