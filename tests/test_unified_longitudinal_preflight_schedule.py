@@ -61,7 +61,8 @@ def test_failed_terminal_scalar_gate_skips_original_expensive_preflight():
             "mesh_check": {"samples": 1, "refinement_factor": 0.75},
         }
     }
-    report = corrected.run_truth_preflight(settings, object(), ["g0"])
+    background = types.SimpleNamespace()
+    report = corrected.run_truth_preflight(settings, background, ["g0"])
     assert calls["audit"] == 1
     assert calls["original"] == 0
     assert report["certified"] is False
@@ -83,7 +84,7 @@ def test_passed_terminal_scalar_gate_is_cached_before_original_preflight():
             "mesh_check": {"samples": 1, "refinement_factor": 0.75},
         }
     }
-    background = object()
+    background = types.SimpleNamespace()
     report = corrected.run_truth_preflight(settings, background, ["g0"])
     assert report["status"] == "original-ran"
     assert calls["original"] == 1
