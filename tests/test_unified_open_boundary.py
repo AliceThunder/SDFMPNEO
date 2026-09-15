@@ -101,8 +101,11 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
 def test_finite_support_open_terminal_source_preserves_path_and_charge_balance():
     bg = background()
     context = bg.geometry_context(geometry(), assemble_thermal=False)
-    assert bg.source_model == "stranded_rectangular_cross_section_composite_gauss3_terminal_contact"
-    assert bg.terminal_model == "distributed_terminal_contact_with_charge_balance"
+    assert bg.source_model == (
+        "stranded_rectangular_cross_section_composite_gauss3_terminal_contact_"
+        "compatible_charge_lift"
+    )
+    assert bg.terminal_model == "distributed_terminal_contact_with_compatible_charge_balance"
     assert bg.source_cross_section_quadrature == "composite_gauss3"
     assert not bool(getattr(bg, "_transverse_source_projection_installed", False))
     assert len(context.source_regularization) == 2
@@ -120,6 +123,15 @@ def test_finite_support_open_terminal_source_preserves_path_and_charge_balance()
         assert row["terminal_profile"] == "cubic_smoothstep_distributed_terminal_contact"
         assert np.asarray(row["regularized_source_vector"], float).shape == (3,)
         assert row["terminal_path_integral_relative_error"] <= 1e-12
+        assert row["terminal_charge_model"] == "volume_integrated_cubic_terminal_charge"
+        assert row["terminal_charge_lift_model"] == "compatible_curl_free_gradient_charge_lift"
+        assert row["terminal_charge_support_mesh_independent"] is True
+        assert row["terminal_charge_curl_preserved"] is True
+        assert row["terminal_charge_target_relative_error"] <= 5e-11
+        assert row["terminal_charge_lift_relative_curl"] <= 1e-12
+        assert np.isclose(row["terminal_charge_negative_total"], 1.0, atol=1e-12)
+        assert np.isclose(row["terminal_charge_positive_total"], 1.0, atol=1e-12)
+        assert row["terminal_charge_support_nodes"] > 1
         assert np.isclose(row["heat_weight_sum"], 1.0, rtol=0.0, atol=1e-12)
         assert row["source_norm"] > 0.0
         assert "projection_model" not in row
@@ -128,10 +140,13 @@ def test_finite_support_open_terminal_source_preserves_path_and_charge_balance()
     assert audit["finite_support_source"]
     assert audit["open_two_terminal_charge_balance"]
     assert audit["terminal_support_mesh_independent"]
+    assert audit["terminal_charge_support_mesh_independent"]
     assert audit["minimum_terminal_contact_length"] > 0.0
     assert audit["minimum_terminal_divergence_relative_norm"] > 1e-12
     assert audit["maximum_net_terminal_balance_relative_error"] <= 1e-12
     assert audit["maximum_terminal_first_moment_relative_error"] <= 1e-12
+    assert audit["maximum_terminal_charge_target_relative_error"] <= 5e-11
+    assert audit["maximum_terminal_charge_lift_relative_curl"] <= 1e-12
     assert audit["terminal_path_conservation"]
     assert audit["maximum_terminal_path_integral_relative_error"] <= 1e-12
     assert audit["material_fraction_closure_error"] <= 1e-10
