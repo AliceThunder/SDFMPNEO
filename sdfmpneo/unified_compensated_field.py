@@ -54,9 +54,13 @@ class CompensatedComplexField:
     def collapsed(self):
         return np.asarray(self.high + self.low, dtype=np.complex128).reshape(-1)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         value = self.collapsed()
-        return value if dtype is None else value.astype(dtype, copy=False)
+        if dtype is not None:
+            value = value.astype(dtype, copy=False)
+        if copy is True:
+            return value.copy()
+        return value
 
 
 def as_compensated_field(value, *, copy=True):
