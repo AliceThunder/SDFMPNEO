@@ -101,14 +101,18 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
 def test_finite_support_open_terminal_source_preserves_path_and_charge_balance():
     bg = background()
     context = bg.geometry_context(geometry(), assemble_thermal=False)
-    assert bg.source_model == "stranded_rectangular_cross_section_gauss3"
-    assert bg.terminal_model == "impressed_port_path_with_endpoint_charge_balance"
+    assert bg.source_model == "stranded_rectangular_cross_section_gauss3_terminal_contact"
+    assert bg.terminal_model == "distributed_terminal_contact_with_charge_balance"
     assert not bool(getattr(bg, "_transverse_source_projection_installed", False))
     assert len(context.source_regularization) == 2
     for row in context.source_regularization:
         assert row["conductor_width"] > 0.0
         assert row["conductor_thickness"] > 0.0
         assert row["terminal_separation"] > 0.0
+        assert row["terminal_contact_length"] > 0.0
+        assert row["terminal_regularization_mesh_independent"] is True
+        assert row["terminal_profile"] == "cubic_smoothstep_distributed_terminal_contact"
+        assert np.asarray(row["regularized_source_vector"], float).shape == (3,)
         assert row["terminal_path_integral_relative_error"] <= 1e-12
         assert np.isclose(row["heat_weight_sum"], 1.0, rtol=0.0, atol=1e-12)
         assert row["source_norm"] > 0.0
@@ -117,6 +121,8 @@ def test_finite_support_open_terminal_source_preserves_path_and_charge_balance()
     audit = _source_and_loss_partition(bg, geometry())
     assert audit["finite_support_source"]
     assert audit["open_two_terminal_charge_balance"]
+    assert audit["terminal_support_mesh_independent"]
+    assert audit["minimum_terminal_contact_length"] > 0.0
     assert audit["minimum_terminal_divergence_relative_norm"] > 1e-12
     assert audit["maximum_net_terminal_balance_relative_error"] <= 1e-12
     assert audit["maximum_terminal_first_moment_relative_error"] <= 1e-12
