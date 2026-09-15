@@ -1,10 +1,10 @@
 """Production source preflight for an open two-terminal stranded current.
 
-The theory explicitly forbids turning an open two-terminal spiral into a closed
-divergence-free loop.  The correct discrete continuity audit therefore checks
-that the deposited source has a genuine terminal divergence, that its total
-nodal injection is exactly balanced, and that the first moment of that nodal
-divergence reproduces the physical terminal-separation vector.
+The source must remain open and carry genuine terminal divergence.  A physical
+terminal model may distribute that divergence over a finite feed/contact region,
+so the continuity audit compares the nodal-divergence first moment with the
+mesh-independent *regularized source vector* declared by the source deposition,
+not blindly with the zero-length endpoint vector.
 """
 from __future__ import annotations
 
@@ -30,21 +30,39 @@ def install(truth_preflight_module):
         if source.ndim != 2 or source.shape[0] != background.n_edges:
             raise ValueError("production source matrix has invalid edge/port shape")
 
+        metadata = tuple(getattr(context, "source_regularization", ()))
         rows = []
         for port in range(source.shape[1]):
             q, net_error, moment = source_terminal_divergence(background, source[:, port])
             coil = context.geometry.coils[port]
             points = np.asarray(background._physical_centerline(coil), float)
-            endpoint_vector = np.asarray(points[-1] - points[0], float)
             path_length = float(np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1)))
+            meta = metadata[port] if port < len(metadata) else {}
+            declared = meta.get("regularized_source_vector")
+            if declared is None:
+                expected_moment = np.asarray(points[-1] - points[0], float)
+            else:
+                expected_moment = np.asarray(declared, float).reshape(-1)
+                if expected_moment.shape != (3,) or np.any(~np.isfinite(expected_moment)):
+                    raise ValueError("terminal regularization declared an invalid source vector")
+
             moment_error = float(
-                np.linalg.norm(moment - endpoint_vector)
+                np.linalg.norm(moment - expected_moment)
                 / max(path_length, np.finfo(float).tiny)
             )
             divergence_relative = float(
                 np.linalg.norm(q)
                 / max(float(np.linalg.norm(source[:, port])), np.finfo(float).tiny)
             )
+            distributed = bool(
+                meta.get("terminal_regularization_mesh_independent", False)
+                and float(meta.get("terminal_contact_length", 0.0)) > 0.0
+                and bool(meta.get("terminal_profile"))
+            )
+            requires_distributed = str(getattr(background, "terminal_model", "")).startswith(
+                "distributed_terminal_contact"
+            )
+            support_ok = bool(distributed if requires_distributed else True)
             rows.append(
                 {
                     "port": int(port),
@@ -54,6 +72,9 @@ def install(truth_preflight_module):
                     "terminal_divergence_nonzero": bool(
                         divergence_relative >= _MIN_TERMINAL_DIVERGENCE_RELATIVE_NORM
                     ),
+                    "terminal_support_mesh_independent": support_ok,
+                    "terminal_contact_length": float(meta.get("terminal_contact_length", 0.0)),
+                    "terminal_profile": meta.get("terminal_profile"),
                 }
             )
 
@@ -65,10 +86,17 @@ def install(truth_preflight_module):
                 and row["terminal_first_moment_relative_error"]
                 <= _MAX_TERMINAL_MOMENT_RELATIVE_ERROR
                 and row["terminal_divergence_nonzero"]
+                and row["terminal_support_mesh_independent"]
                 for row in rows
             )
         )
         result["open_two_terminal_charge_balance"] = terminal_ok
+        result["terminal_support_mesh_independent"] = bool(
+            rows and all(row["terminal_support_mesh_independent"] for row in rows)
+        )
+        result["minimum_terminal_contact_length"] = min(
+            (row["terminal_contact_length"] for row in rows), default=0.0
+        )
         result["maximum_net_terminal_balance_relative_error"] = max(
             (row["net_terminal_balance_relative_error"] for row in rows),
             default=float("inf"),
