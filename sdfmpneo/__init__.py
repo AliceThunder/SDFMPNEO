@@ -9,15 +9,14 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 24 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, and now
-# declares terminal charge continuity independently from the incidental edge
-# cloud-in-cell stencil.  A curl-free compatible lift changes only G.T S to the
-# finite-volume cubic-contact charge target; C S and therefore magnetic /
-# transverse excitation are unchanged.  The independently converged localizable
-# transverse/cross Maxwell self defect and the certified boundary-conditioned
-# longitudinal near-field defect remain separate corrections.
-_unified_model.FORMAT_VERSION = 24
+# Physics truth version 25 keeps the full open two-terminal source, resolves its
+# physical source/package support below the production EM cell scale, declares
+# terminal charge continuity independently from incidental edge deposition, and
+# resolves the remaining longitudinal self near field by nested terminal-contact
+# refinement.  The global scalar solution still owns the nonlocal return path and
+# supplies every artificial-patch Dirichlet trace; only cells intersecting the
+# physical feed/return contact support receive sub-mm scalar refinement.
+_unified_model.FORMAT_VERSION = 25
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -87,14 +86,16 @@ _install_preflight_diagnosis(_corrected_preflight)
 from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
+from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
-# v2 patch semantics retain the complete global geometry/material problem inside
-# every scalar patch and select only the target port source column.
+# Start from full-geometry v2 patch semantics: every scalar patch retains the
+# complete global geometry/material problem and selects only the target-port RHS.
 _global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudinal_nearfield_defect_v2"
-# Certify the coarse patch as the exact parent-scalar restriction before the
-# preflight/truth adapters start consuming the near-field defect.
+# Certify the coarse patch as the exact parent-scalar restriction, then replace
+# whole-package 3/2.25-mm refinement with nested terminal-contact-scale nodes.
 _install_longitudinal_patch_consistency(_global_longitudinal_reference)
+_install_terminal_longitudinal_refinement(_global_longitudinal_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 
 from .unified_tensor_surrogate import (
@@ -147,11 +148,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v24 changes the physical longitudinal source semantics.  Invalidate every
-# earlier physical cache/release so no edge-stencil-defined terminal charge can
-# be reused with the compatible finite-volume charge target.
+# v25 changes the longitudinal reference discretization from whole-package
+# millimetre refinement to nested terminal-contact-scale refinement.  Invalidate
+# every earlier physical cache/release so no v24 defect is reused.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 26
+_unified_runtime._CACHE_FORMAT = 27
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-patch settings every time the production
