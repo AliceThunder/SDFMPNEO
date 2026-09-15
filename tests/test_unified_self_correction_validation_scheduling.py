@@ -2,7 +2,6 @@ import threading
 
 import numpy as np
 
-import sdfmpneo.unified_self_correction as correction
 import sdfmpneo.unified_self_correction_audit as audit
 
 
@@ -20,7 +19,6 @@ def _result(step):
         "localized_d_vol": 0.75,
         "localized_d_out": 0.05,
         "localized_power_balance_relative_error": 0.0,
-        "power_balance_relative_error": 0.0,
         "linear_relative_residual": 1e-12,
         "linear_solver_converged": True,
         "joule_total_power_relative_error": 0.0,
@@ -40,8 +38,8 @@ def test_fine_ports_parallel_but_large_validation_ports_serialized(monkeypatch):
         "parallel_validation_ports": 1,
         "linear_warm_start_from_parent": False,
     }
-    monkeypatch.setattr(correction, "_config", lambda background: dict(cfg))
-    monkeypatch.setattr(correction, "_parent_fine_step", lambda background: 0.012)
+    monkeypatch.setattr(audit, "_config", lambda background: dict(cfg))
+    monkeypatch.setattr(audit, "_parent_fine_step", lambda background: 0.012)
 
     calls = []
     lock = threading.Lock()
@@ -51,7 +49,7 @@ def test_fine_ports_parallel_but_large_validation_ports_serialized(monkeypatch):
             calls.append((int(port), float(step), threading.current_thread().name))
         return _result(step)
 
-    monkeypatch.setattr(correction, "_solve_local", fake_solve)
+    monkeypatch.setattr(audit, "_solve_local", fake_solve)
 
     result = audit.audit_local_self_correction(_Background(), [object()])
 
