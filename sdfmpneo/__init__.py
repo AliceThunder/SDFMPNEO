@@ -32,6 +32,7 @@ from .unified_hcurl_warm_start import install as _install_hcurl_warm_start
 from .unified_two_level_local_krylov import install as _install_two_level_local_krylov
 from .unified_two_level_residual_replacement import install as _install_two_level_residual_replacement
 from .unified_localized_self_solve import install as _install_localized_self_solve
+from .unified_stable_localized_self import install as _install_stable_localized_self
 from .unified_local_solve_cache import install as _install_local_solve_cache
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
@@ -48,8 +49,11 @@ _install_two_level_residual_replacement(_two_level_local_krylov, _certified_loca
 _certified_local_solve.install(_self_correction)
 # The Maxwell solve above remains full-source.  Only the local defect truth
 # contraction removes pure longitudinal terminal self energy before applying
-# fine-minus-coarse correction.
+# fine-minus-coarse correction.  Evaluate that contraction from the compensated
+# transverse remainder so high-dynamic-range terminal fields do not cause
+# catastrophic cancellation in reactive impedance or local energy defects.
 _install_localized_self_solve(_self_correction, _certified_local_solve)
+_install_stable_localized_self(_self_correction)
 # Exact memoization is installed after the final local truth implementation.
 _install_local_solve_cache(_self_correction)
 
