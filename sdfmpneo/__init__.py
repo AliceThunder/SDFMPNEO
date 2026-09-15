@@ -9,14 +9,15 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 21 keeps the full open two-terminal source, resolves its
+# Physics truth version 22 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, uses only
 # the independently converged localizable transverse/cross Maxwell self defect,
 # and resolves the remaining pure-longitudinal source near field with a local
 # scalar patch whose Dirichlet trace is inherited from the full-domain coarse
-# scalar solution.  The patch therefore cannot replace global return-path,
-# dielectric or open-boundary physics.
-_unified_model.FORMAT_VERSION = 21
+# scalar solution.  The coarse patch must also reproduce the parent global
+# scalar equations on the exact shared subgrid before any near-field defect is
+# allowed to modify production truth.
+_unified_model.FORMAT_VERSION = 22
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -81,8 +82,12 @@ _install_preflight_diagnosis(_corrected_preflight)
 # boundary potential is inherited from that global solution.
 from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
+from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
+# Certify the coarse patch as the exact parent-scalar restriction before the
+# preflight/truth adapters start consuming the near-field defect.
+_install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 
 from .unified_tensor_surrogate import (
@@ -135,11 +140,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v21 replaces the non-convergent whole-domain 9mm scalar reference with a
-# separately certified boundary-conditioned local longitudinal near-field
-# defect. Invalidate v20 and every earlier physical cache/release metadata.
+# v22 adds a strict parent-restriction certificate for the boundary-conditioned
+# longitudinal patch. Invalidate v21 and every earlier physical cache/release
+# metadata so no uncertified near-field defect can be reused.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 23
+_unified_runtime._CACHE_FORMAT = 24
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-patch settings every time the production
