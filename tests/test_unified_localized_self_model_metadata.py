@@ -3,7 +3,7 @@ import sdfmpneo.unified_corrected_truth_preflight as preflight
 import sdfmpneo.unified_runtime as runtime
 
 
-MODEL = "canonical_local_full_fine_minus_coarse_self_defect_v3"
+MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 
 def test_localized_self_model_metadata_is_consistent_across_release_gates():
