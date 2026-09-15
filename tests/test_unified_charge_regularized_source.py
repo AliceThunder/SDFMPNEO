@@ -129,3 +129,13 @@ def test_charge_target_moment_is_mesh_invariant_for_same_physical_contact():
         assert row1["terminal_charge_target_relative_error"] <= 5e-11
         assert row0["terminal_charge_lift_relative_curl"] <= 1e-12
         assert row1["terminal_charge_lift_relative_curl"] <= 1e-12
+
+
+def test_scalar_reference_flag_skips_redundant_graph_charge_lift():
+    bg = _background()
+    bg._sdfmpneo_scalar_charge_target_only = True
+    context = bg.geometry_context(GEOMETRY, assemble_thermal=False)
+    assert bool(
+        getattr(context, "_sdfmpneo_charge_lift_skipped_for_scalar_reference", False)
+    )
+    assert not hasattr(bg, "_sdfmpneo_charge_lift_factor")
