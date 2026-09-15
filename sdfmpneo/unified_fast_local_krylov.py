@@ -1,15 +1,11 @@
-"""Maxwell-aware Krylov policy for the accelerated local-self solver.
+"""Compatible Krylov policy for large Cartesian Maxwell solves.
 
-The physical local operator is *not* shifted.  The added diagonal appears only
-inside the ILU preconditioner.  It regularizes the curl-curl gradient near-null
-space enough for bounded-fill ILU to be useful, while acceptance is still based
-on the true residual of the original Maxwell matrix.
-
-The main Krylov iteration can stagnate around 1e-6--1e-7 on the finest local
-problems even though it has already produced an accurate field.  Rather than
-falling back to a huge sparse LU, we perform true-residual defect correction:
-for r=b-Ax, solve A*delta=r with the same preconditioner and update x+=delta.
-Only the original unmodified Maxwell residual decides acceptance.
+The production source may be an open two-terminal current and therefore may
+have a genuine longitudinal component.  We must solve that component, not
+project it out.  The Cartesian exact sequence gives ``C G = 0``; consequently
+we explicitly factor the gauge-fixed scalar block ``G.T A G`` and combine it
+with a bounded-fill edge ILU.  The original Maxwell matrix/RHS are unchanged
+and every accepted field is certified with their true residual.
 """
 from __future__ import annotations
 
@@ -18,6 +14,11 @@ import time
 
 import numpy as np
 import scipy.sparse.linalg as spla
+
+from .unified_gradient_block_maxwell import (
+    build_gradient_block,
+    compose_block_preconditioner,
+)
 
 
 def _defect_refine(
@@ -29,18 +30,12 @@ def _defect_refine(
     residual_fn,
     tolerance,
     *,
-    steps=3,
-    maxiter=16,
+    steps=2,
+    maxiter=12,
     inner_m=20,
     label="defect",
 ):
-    """Iterative refinement using true residuals and the existing ILU.
-
-    Each correction solve only needs enough *relative* accuracy to reduce the
-    current true residual below the requested absolute relative certificate.
-    This is much cheaper than asking one Krylov solve to span the whole dynamic
-    range in one run on a nearly singular curl-curl operator.
-    """
+    """True-residual iterative refinement; retained only as a final cleanup."""
     x = np.asarray(field, complex).reshape(-1).copy()
     rhs = np.asarray(rhs, complex).reshape(-1)
     current = float(residual_fn(A, x, rhs))
@@ -51,11 +46,10 @@ def _defect_refine(
         defect = np.asarray(rhs - A @ x, complex).reshape(-1)
         if np.any(~np.isfinite(defect)):
             break
-
-        # If the current global residual is rho, a correction solve with
-        # relative residual eta leaves roughly rho*eta.  Aim for half the
-        # certificate, but avoid oversolving the correction equation.
-        eta = min(5e-2, max(1e-4, 0.5 * float(tolerance) / max(current, np.finfo(float).tiny)))
+        eta = min(
+            2e-2,
+            max(1e-5, 0.25 * float(tolerance) / max(current, np.finfo(float).tiny)),
+        )
         started = time.perf_counter()
         delta, info = solve(
             A,
@@ -94,7 +88,7 @@ def _defect_refine(
 
 
 def install(local_solver_module):
-    """Patch solver policy without changing the physical operator/certificate."""
+    """Patch the certified local solver with compatible block preconditioning."""
 
     def compatible_lgmres(A, rhs, *, x0, M, rtol, maxiter, inner_m):
         params = inspect.signature(spla.lgmres).parameters
@@ -113,15 +107,35 @@ def install(local_solver_module):
             kwargs["tol"] = float(rtol)
         return spla.lgmres(A, rhs, **kwargs)
 
-    def iterative_solve(A, rhs, x0, cfg, residual_tolerance):
-        maxiter = int(cfg.get("linear_iterative_maxiter", 40))
-        inner_m = int(cfg.get("linear_iterative_inner_m", 30))
-        defect_steps = int(cfg.get("linear_iterative_defect_steps", 3))
-        defect_maxiter = int(cfg.get("linear_iterative_defect_maxiter", 16))
+    def iterative_solve(
+        A,
+        rhs,
+        x0,
+        cfg,
+        residual_tolerance,
+        *,
+        background=None,
+        context=None,
+        mqs=False,
+        mqs_admittance=None,
+    ):
+        maxiter = int(cfg.get("linear_iterative_maxiter", 24))
+        inner_m = int(cfg.get("linear_iterative_inner_m", 24))
+        defect_steps = int(cfg.get("linear_iterative_defect_steps", 2))
+        defect_maxiter = int(cfg.get("linear_iterative_defect_maxiter", 12))
         defect_inner_m = int(cfg.get("linear_iterative_defect_inner_m", 20))
-        defect_start = float(cfg.get("linear_iterative_defect_start_residual", 5e-6))
-        if maxiter < 1 or inner_m < 2 or defect_steps < 0 or defect_maxiter < 1 or defect_inner_m < 2:
+        if maxiter < 1 or inner_m < 2 or defect_steps < 0:
             raise ValueError("local iterative Maxwell solver iteration limits are invalid")
+
+        gradient_block = None
+        if background is not None and context is not None:
+            gradient_block = build_gradient_block(
+                background,
+                context,
+                mqs=bool(mqs),
+                mqs_admittance=mqs_admittance,
+                check_topology=True,
+            )
 
         fast_shift = float(cfg.get("linear_ilu_shift_factor", 3e-2))
         strong_shift = float(cfg.get("linear_ilu_strong_shift_factor", 1e-1))
@@ -130,19 +144,15 @@ def install(local_solver_module):
                 float(cfg.get("linear_ilu_drop_tolerance", 5e-3)),
                 float(cfg.get("linear_ilu_fill_factor", 4.0)),
                 fast_shift,
-                "shifted-ilu-fast",
+                "gradient-block-ilu-fast" if gradient_block is not None else "shifted-ilu-fast",
+                True,
             ),
             (
                 float(cfg.get("linear_ilu_strong_drop_tolerance", 1e-3)),
                 float(cfg.get("linear_ilu_strong_fill_factor", 8.0)),
                 strong_shift,
-                "shifted-ilu-strong",
-            ),
-            (
-                float(cfg.get("linear_ilu_strong_drop_tolerance", 1e-3)),
-                float(cfg.get("linear_ilu_strong_fill_factor", 8.0)),
-                max(5e-3, 0.5 * fast_shift),
-                "shifted-ilu-tight",
+                "gradient-block-ilu-strong" if gradient_block is not None else "shifted-ilu-strong",
+                True,
             ),
         )
         target = max(float(residual_tolerance) * 0.2, 1e-12)
@@ -154,14 +164,24 @@ def install(local_solver_module):
         )
         history = []
 
-        for drop_tol, fill_factor, shift_factor, label in attempts:
+        for drop_tol, fill_factor, shift_factor, label, post_correct in attempts:
             t0 = time.perf_counter()
             try:
-                M = local_solver_module._ilu_preconditioner(
+                edge_M = local_solver_module._ilu_preconditioner(
                     A,
                     drop_tol=drop_tol,
                     fill_factor=fill_factor,
                     shift_factor=shift_factor,
+                )
+                M = (
+                    compose_block_preconditioner(
+                        A,
+                        edge_M,
+                        gradient_block,
+                        post_correct=post_correct,
+                    )
+                    if gradient_block is not None
+                    else edge_M
                 )
             except (RuntimeError, ValueError, MemoryError) as exc:
                 history.append(
@@ -195,6 +215,12 @@ def install(local_solver_module):
                     "shift_factor": float(shift_factor),
                     "krylov_info": int(info),
                     "preconditioner_seconds": float(t1 - t0),
+                    "gradient_scalar_dofs": (
+                        0 if gradient_block is None else gradient_block.scalar_dofs
+                    ),
+                    "gradient_factor_seconds": (
+                        0.0 if gradient_block is None else gradient_block.build_seconds
+                    ),
                     "seconds": float(elapsed),
                     "relative_residual": float(residual),
                 }
@@ -210,14 +236,14 @@ def install(local_solver_module):
             if best is not None and best_residual <= residual_tolerance:
                 return best, best_residual, history
 
-            # Once the main solve is already in the few-ppm range, residual
-            # correction is substantially cheaper than building another large
-            # factorization or running a full extra Krylov solve from scratch.
+            # With the compatible block preconditioner, defect refinement is a
+            # cheap final cleanup rather than a substitute for missing gradient
+            # physics.  Do not spend cycles on it unless the main solve is close.
             if (
                 defect_steps > 0
                 and best is not None
                 and np.isfinite(best_residual)
-                and best_residual <= defect_start
+                and best_residual <= float(cfg.get("linear_iterative_defect_start_residual", 1e-7))
             ):
                 refined, refined_residual, refinement_history = _defect_refine(
                     A,
@@ -244,7 +270,7 @@ def install(local_solver_module):
     local_solver_module._lgmres = compatible_lgmres
     local_solver_module._iterative_solve = iterative_solve
     local_solver_module._defect_refine = _defect_refine
-    local_solver_module._maxwell_shifted_ilu_installed = True
+    local_solver_module._compatible_gradient_block_installed = True
     return local_solver_module
 
 
