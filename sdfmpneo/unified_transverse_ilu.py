@@ -116,24 +116,59 @@ def build_transverse_ilu(
     mqs=False,
     mqs_admittance=None,
 ):
-    """Factor the compatible transverse-stabilized matrix and return an inverse."""
+    """Factor the compatible transverse-stabilized matrix and return an inverse.
+
+    Large construction/factorization failures are printed before propagating to
+    the caller.  The Krylov policy may try a different bounded-fill attempt, but
+    a failed preconditioner must never be silently mistaken for a Krylov
+    residual failure.
+    """
     started = time.perf_counter()
-    augmented, stats = build_transverse_stabilized_matrix(
-        A,
-        background,
-        context,
-        gradient_block,
-        stabilization_factor=stabilization_factor,
-        mqs=bool(mqs),
-        mqs_admittance=mqs_admittance,
+    print(
+        "Maxwell compatible transverse ILU build: "
+        f"edges={A.shape[0]}, fill={float(fill_factor):g}, "
+        f"drop={float(drop_tol):.1e}, stabilization={float(stabilization_factor):.2e}",
+        flush=True,
     )
-    ilu = spla.spilu(
-        augmented.tocsc(),
-        drop_tol=float(drop_tol),
-        fill_factor=float(fill_factor),
-        permc_spec="MMD_AT_PLUS_A",
-        diag_pivot_thresh=0.01,
-    )
+    stage = "augmentation"
+    try:
+        augmented, stats = build_transverse_stabilized_matrix(
+            A,
+            background,
+            context,
+            gradient_block,
+            stabilization_factor=stabilization_factor,
+            mqs=bool(mqs),
+            mqs_admittance=mqs_admittance,
+        )
+        print(
+            "Maxwell compatible transverse ILU matrix: "
+            f"edges={A.shape[0]}, nnz={stats['augmented_nnz']}, "
+            f"augmentation_nnz={stats['augmentation_nnz']}, "
+            f"build={time.perf_counter()-started:.1f}s",
+            flush=True,
+        )
+        stage = "spilu"
+        ilu = spla.spilu(
+            augmented.tocsc(),
+            drop_tol=float(drop_tol),
+            fill_factor=float(fill_factor),
+            permc_spec="MMD_AT_PLUS_A",
+            diag_pivot_thresh=0.01,
+        )
+    except (RuntimeError, ValueError, MemoryError) as exc:
+        elapsed = time.perf_counter() - started
+        message = str(exc).replace("\n", " ")
+        if len(message) > 240:
+            message = message[:237] + "..."
+        print(
+            "Maxwell compatible transverse ILU FAILED: "
+            f"stage={stage}, edges={A.shape[0]}, error={type(exc).__name__}: {message}, "
+            f"time={elapsed:.1f}s",
+            flush=True,
+        )
+        raise
+
     elapsed = float(time.perf_counter() - started)
     stats = dict(stats)
     stats["seconds"] = elapsed
