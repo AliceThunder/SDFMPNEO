@@ -1,10 +1,12 @@
 import numpy as np
 import scipy.sparse.linalg as spla
 
+import sdfmpneo.unified_certified_local_solve as local_solver
 from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_gradient_block_maxwell import build_gradient_block
 from sdfmpneo.unified_hcurl_transfer import build_hcurl_prolongation
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
+from sdfmpneo.unified_two_level_local_krylov import _galerkin_defect_polish
 from sdfmpneo.unified_two_level_maxwell import build_two_level_maxwell
 
 
@@ -97,11 +99,10 @@ def _lgmres(A, rhs, x0, M):
         return spla.lgmres(A, rhs, tol=1e-10, **kwargs)
 
 
-def test_two_level_cycle_solves_small_actual_open_boundary_maxwell_problem():
+def _problem():
     geometry = _geometry()
     coarse = _background(np.array([-0.05, -0.022, 0.0, 0.026, 0.05]))
     fine = _background(np.array([-0.05, -0.033, -0.012, 0.006, 0.024, 0.039, 0.05]))
-
     coarse_context = coarse.geometry_context(geometry, assemble_thermal=False)
     fine_context = fine.geometry_context(geometry, assemble_thermal=False)
     Ac = coarse.em_operator(coarse_context, None)
@@ -109,7 +110,6 @@ def test_two_level_cycle_solves_small_actual_open_boundary_maxwell_problem():
     bc = np.asarray(coarse.rhs_matrix(coarse_context)[:, 0], complex).reshape(-1)
     bf = np.asarray(fine.rhs_matrix(fine_context)[:, 0], complex).reshape(-1)
     xc = np.asarray(spla.spsolve(Ac.tocsc(), bc), complex).reshape(-1)
-
     P = build_hcurl_prolongation((coarse.x, coarse.y, coarse.z), fine)
     state = {
         "axes": (coarse.x.copy(), coarse.y.copy(), coarse.z.copy()),
@@ -130,6 +130,11 @@ def test_two_level_cycle_solves_small_actual_open_boundary_maxwell_problem():
             "linear_two_level_jacobi_weight": 0.5,
         },
     )
+    return Af, bf, xc, P, two_level
+
+
+def test_two_level_cycle_solves_small_actual_open_boundary_maxwell_problem():
+    Af, bf, xc, P, two_level = _problem()
     M = two_level.operator(coarse_corrections=2, smoother_sweeps=1)
     x0 = np.asarray(P @ xc, complex).reshape(-1)
     before = np.linalg.norm(bf - Af @ x0) / np.linalg.norm(bf)
@@ -140,3 +145,51 @@ def test_two_level_cycle_solves_small_actual_open_boundary_maxwell_problem():
     assert info == 0
     assert after <= 1e-8
     assert after < before
+
+
+def test_matrix_free_galerkin_operator_matches_explicit_small_product():
+    Af, _bf, _xc, P, two_level = _problem()
+    explicit = (P.T @ (Af @ P)).tocsr()
+    operator = two_level.galerkin_operator()
+    rng = np.random.default_rng(7)
+    value = rng.standard_normal(P.shape[1]) + 1j * rng.standard_normal(P.shape[1])
+    expected = np.asarray(explicit @ value, complex).reshape(-1)
+    actual = np.asarray(operator @ value, complex).reshape(-1)
+    scale = max(float(np.linalg.norm(expected)), np.finfo(float).tiny)
+    assert np.linalg.norm(actual - expected) / scale <= 1e-13
+
+
+def test_galerkin_defect_polish_reduces_a_coarse_space_error():
+    Af, bf, _xc, P, two_level = _problem()
+    exact = np.asarray(spla.spsolve(Af.tocsc(), bf), complex).reshape(-1)
+    rng = np.random.default_rng(11)
+    coarse_error = (
+        rng.standard_normal(P.shape[1]) + 1j * rng.standard_normal(P.shape[1])
+    )
+    coarse_error /= max(float(np.linalg.norm(coarse_error)), np.finfo(float).tiny)
+    start = exact + 1e-3 * np.asarray(P @ coarse_error, complex).reshape(-1)
+    before = local_solver._relative_residual(Af, start, bf)
+
+    polished, after, history = _galerkin_defect_polish(
+        local_solver,
+        two_level,
+        Af,
+        bf,
+        start,
+        before,
+        None,
+        1e-10,
+        {
+            "linear_two_level_galerkin_polish_cycles": 2,
+            "linear_two_level_galerkin_coarse_rtol": 1e-8,
+            "linear_two_level_galerkin_coarse_maxiter": 12,
+            "linear_two_level_galerkin_coarse_inner_m": 20,
+            "linear_two_level_galerkin_fine_maxiter": 4,
+            "linear_two_level_galerkin_fine_inner_m": 8,
+        },
+    )
+
+    assert history
+    assert np.all(np.isfinite(polished))
+    assert after < before
+    assert local_solver._relative_residual(Af, polished, bf) == after
