@@ -9,29 +9,32 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 23 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, uses only
-# the independently converged localizable transverse/cross Maxwell self defect,
-# and resolves the remaining pure-longitudinal source near field with a local
-# scalar patch whose Dirichlet trace is inherited from the full-domain coarse
-# scalar solution.  Every scalar patch retains the complete global geometry and
-# material assembly, selects only the target-port RHS, and must reproduce the
-# parent scalar equations on the exact shared coarse subgrid before any defect is
-# allowed to modify production truth.
-_unified_model.FORMAT_VERSION = 23
+# Physics truth version 24 keeps the full open two-terminal source, resolves its
+# physical source/package support below the production EM cell scale, and now
+# declares terminal charge continuity independently from the incidental edge
+# cloud-in-cell stencil.  A curl-free compatible lift changes only G.T S to the
+# finite-volume cubic-contact charge target; C S and therefore magnetic /
+# transverse excitation are unchanged.  The independently converged localizable
+# transverse/cross Maxwell self defect and the certified boundary-conditioned
+# longitudinal near-field defect remain separate corrections.
+_unified_model.FORMAT_VERSION = 24
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_resolved_package_fraction import install as _install_resolved_package_fraction
 from .unified_terminal_contact_source import install as _install_terminal_contact_source
+from .unified_charge_regularized_source import install as _install_charge_regularized_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-# Package and source geometry are physical. Numerical subcell/quadrature
-# resolution may increase with refinement but must not change the represented
-# OBB, conductor rectangle, terminal contact or total ampere-turns.
+# Package and source geometry are physical. Numerical quadrature may become more
+# resolved with mesh refinement but must not change the represented OBB,
+# conductor rectangle, contact length or ampere-turns.  The charge-lift layer is
+# installed after physical source deposition so it can replace only the discrete
+# longitudinal continuity while preserving source curl exactly.
 _install_resolved_package_fraction(OpenBoundaryBackground)
 _install_terminal_contact_source(OpenBoundaryBackground)
+_install_charge_regularized_source(OpenBoundaryBackground)
 _install_maxwell_operator_metadata(OpenBoundaryBackground)
 
 from . import unified_self_correction as _self_correction
@@ -144,11 +147,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v23 replaces target-only scalar patch assembly with full-geometry patch
-# assembly. Invalidate v22 and every earlier physical cache/release metadata so
-# no near-field correction built from an omitted package can be reused.
+# v24 changes the physical longitudinal source semantics.  Invalidate every
+# earlier physical cache/release so no edge-stencil-defined terminal charge can
+# be reused with the compatible finite-volume charge target.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 25
+_unified_runtime._CACHE_FORMAT = 26
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-patch settings every time the production
