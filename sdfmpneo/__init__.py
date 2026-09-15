@@ -126,3 +126,10 @@ __all__ = [
     "stretched_axis",
     "train_matrix_tensor_surrogate",
 ]
+
+# The physical-cache signature historically did not include source_model even
+# though metadata recorded it.  Truth v17 changes S(g), so force one cache-format
+# increment without rewriting the runtime pipeline; older certified v2 physical
+# caches can therefore never bypass the new source preflight.
+from . import unified_runtime as _unified_runtime
+_unified_runtime._CACHE_FORMAT = 19
