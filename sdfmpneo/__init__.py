@@ -88,6 +88,7 @@ from . import unified_global_longitudinal_reference as _global_longitudinal_refe
 from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
 from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
 from .unified_scalar_charge_patch import install as _install_scalar_charge_patch
+from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
 # Start from full-geometry v2 patch semantics: every scalar patch retains the
@@ -101,6 +102,11 @@ _install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_terminal_longitudinal_refinement(_global_longitudinal_reference)
 _install_scalar_charge_patch(_global_longitudinal_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
+# Scheduling only: source continuity and the uncertain terminal-scalar Gate run
+# before 118k/254k local Maxwell. Passing scalar reports are cached/reused later.
+_install_longitudinal_preflight_schedule(
+    _corrected_preflight, _global_longitudinal_reference
+)
 
 from .unified_tensor_surrogate import (
     DecodedTensors,
