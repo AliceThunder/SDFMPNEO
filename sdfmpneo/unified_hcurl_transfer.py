@@ -15,6 +15,8 @@ and commutes with the nodal gradient interpolation up to roundoff.
 """
 from __future__ import annotations
 
+from array import array
+
 import numpy as np
 import scipy.sparse as sp
 
@@ -90,15 +92,18 @@ def _longitudinal_segments(nodes, start, stop):
         if index >= len(nodes) - 1:
             raise ValueError("coarse H(curl) segmentation exhausted before fine edge ended")
     if not out:
-        # Degenerate only at machine precision; preserve the integral rather
-        # than returning an empty row.
         index, _ = _locate_interval(nodes, 0.5 * (start + stop))
         out.append((index, stop - start))
     return out
 
 
 def build_hcurl_prolongation(coarse_axes, fine_background):
-    """Return sparse ``P`` mapping coarse edge line integrals to fine ones."""
+    """Return sparse ``P`` mapping coarse edge line integrals to fine ones.
+
+    C-backed ``array`` buffers avoid the very large temporary Python-object
+    overhead that ordinary triplet lists would create for the ~254k-edge
+    validation transfer.
+    """
     coarse_axes = _axes_tuple(coarse_axes)
     fine_axes = (fine_background.x, fine_background.y, fine_background.z)
     for coarse, fine in zip(coarse_axes, fine_axes):
@@ -108,12 +113,17 @@ def build_hcurl_prolongation(coarse_axes, fine_background):
             raise ValueError("coarse/fine H(curl) grids must share the same physical box")
 
     coarse_shape, coarse_offsets, coarse_edges = _edge_layout(coarse_axes)
-    rows, cols, data = [], [], []
+    rows = array("q")
+    cols = array("q")
+    data = array("d")
+
+    def append(row, col, value):
+        if abs(value) > 0.0:
+            rows.append(int(row)); cols.append(int(col)); data.append(float(value))
 
     for fine_edge, (axis, i, j, k) in enumerate(fine_background.edge_tuples):
         if axis == 0:
-            longitudinal = coarse_axes[0]
-            segments = _longitudinal_segments(longitudinal, fine_background.x[i], fine_background.x[i + 1])
+            segments = _longitudinal_segments(coarse_axes[0], fine_background.x[i], fine_background.x[i + 1])
             jt, eta = _locate_interval(coarse_axes[1], fine_background.y[j])
             kt, zeta = _locate_interval(coarse_axes[2], fine_background.z[k])
             transverse = ((jt, 1.0 - eta), (jt + 1, eta)), ((kt, 1.0 - zeta), (kt + 1, zeta))
@@ -121,12 +131,9 @@ def build_hcurl_prolongation(coarse_axes, fine_background):
                 longitudinal_weight = overlap / (coarse_axes[0][ic + 1] - coarse_axes[0][ic])
                 for jc, wy in transverse[0]:
                     for kc, wz in transverse[1]:
-                        weight = longitudinal_weight * wy * wz
-                        if abs(weight) > 0.0:
-                            rows.append(fine_edge); cols.append(_edge_id(0, ic, jc, kc, coarse_shape, coarse_offsets)); data.append(weight)
+                        append(fine_edge, _edge_id(0, ic, jc, kc, coarse_shape, coarse_offsets), longitudinal_weight * wy * wz)
         elif axis == 1:
-            longitudinal = coarse_axes[1]
-            segments = _longitudinal_segments(longitudinal, fine_background.y[j], fine_background.y[j + 1])
+            segments = _longitudinal_segments(coarse_axes[1], fine_background.y[j], fine_background.y[j + 1])
             it, xi = _locate_interval(coarse_axes[0], fine_background.x[i])
             kt, zeta = _locate_interval(coarse_axes[2], fine_background.z[k])
             transverse = ((it, 1.0 - xi), (it + 1, xi)), ((kt, 1.0 - zeta), (kt + 1, zeta))
@@ -134,12 +141,9 @@ def build_hcurl_prolongation(coarse_axes, fine_background):
                 longitudinal_weight = overlap / (coarse_axes[1][jc + 1] - coarse_axes[1][jc])
                 for ic, wx in transverse[0]:
                     for kc, wz in transverse[1]:
-                        weight = longitudinal_weight * wx * wz
-                        if abs(weight) > 0.0:
-                            rows.append(fine_edge); cols.append(_edge_id(1, ic, jc, kc, coarse_shape, coarse_offsets)); data.append(weight)
+                        append(fine_edge, _edge_id(1, ic, jc, kc, coarse_shape, coarse_offsets), longitudinal_weight * wx * wz)
         else:
-            longitudinal = coarse_axes[2]
-            segments = _longitudinal_segments(longitudinal, fine_background.z[k], fine_background.z[k + 1])
+            segments = _longitudinal_segments(coarse_axes[2], fine_background.z[k], fine_background.z[k + 1])
             it, xi = _locate_interval(coarse_axes[0], fine_background.x[i])
             jt, eta = _locate_interval(coarse_axes[1], fine_background.y[j])
             transverse = ((it, 1.0 - xi), (it + 1, xi)), ((jt, 1.0 - eta), (jt + 1, eta))
@@ -147,12 +151,13 @@ def build_hcurl_prolongation(coarse_axes, fine_background):
                 longitudinal_weight = overlap / (coarse_axes[2][kc + 1] - coarse_axes[2][kc])
                 for ic, wx in transverse[0]:
                     for jc, wy in transverse[1]:
-                        weight = longitudinal_weight * wx * wy
-                        if abs(weight) > 0.0:
-                            rows.append(fine_edge); cols.append(_edge_id(2, ic, jc, kc, coarse_shape, coarse_offsets)); data.append(weight)
+                        append(fine_edge, _edge_id(2, ic, jc, kc, coarse_shape, coarse_offsets), longitudinal_weight * wx * wy)
 
+    row_values = np.frombuffer(rows, dtype=np.int64)
+    col_values = np.frombuffer(cols, dtype=np.int64)
+    data_values = np.frombuffer(data, dtype=np.float64)
     P = sp.csr_matrix(
-        (np.asarray(data, float), (np.asarray(rows, int), np.asarray(cols, int))),
+        (data_values, (row_values, col_values)),
         shape=(fine_background.n_edges, coarse_edges),
     )
     P.sum_duplicates()
