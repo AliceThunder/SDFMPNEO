@@ -9,12 +9,13 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 19 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, and uses
-# only the independently converged localizable transverse/cross self defect.
-# Pure longitudinal terminal self energy remains global/nonlocal and is never
-# replaced by an isolated canonical local-box response.
-_unified_model.FORMAT_VERSION = 19
+# Physics truth version 20 keeps the full open two-terminal source, resolves its
+# physical source/package support below the production EM cell scale, uses only
+# the independently converged localizable transverse/cross self defect, and
+# evaluates the nonlocal pure-longitudinal self term on a separately certified
+# full-domain scalar-gradient reference grid. No isolated local box replaces the
+# global terminal/return-path response.
+_unified_model.FORMAT_VERSION = 20
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -73,6 +74,15 @@ from .unified_preflight_diagnosis_patch import install as _install_preflight_dia
 _corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
+# The canonical local box certifies/refines only the localizable transverse/cross
+# self defect.  The remaining pure-longitudinal self term is nonlocal, so refine
+# it on a full-domain scalar-gradient reference grid and certify that reference
+# independently before the full 12mm->9mm Maxwell mesh Gate is accepted.
+from . import unified_corrected_truth as _corrected_truth
+from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
+
+_install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
+
 from .unified_tensor_surrogate import (
     DecodedTensors,
     TensorDataset,
@@ -123,11 +133,10 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v19 keeps the mesh-stable source/material representation introduced in v18
-# but removes the disproved full-local longitudinal defect. Invalidate v18 cache
-# and every earlier physical cache/release metadata.
+# v20 adds a separately certified global compatible-longitudinal self reference.
+# Invalidate v19 and every earlier physical cache/release metadata.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 21
+_unified_runtime._CACHE_FORMAT = 22
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # These modules are imported by unified_runtime. Their functions read the
