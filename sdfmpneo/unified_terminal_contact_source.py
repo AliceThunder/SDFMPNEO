@@ -10,7 +10,9 @@ filaments and would therefore re-introduce a mesh-dependent self singularity.
 This module consequently uses composite three-point Gauss quadrature.  The
 number of panels may increase with numerical resolution, while the integrated
 physical rectangle, total ampere-turns, terminal contact length and path moment
-remain unchanged.
+remain unchanged.  At least two panels are retained in each cross-section
+direction even when the EM cell is much wider than the conductor; this prevents
+the production coarse source from collapsing back to a nine-point measure.
 """
 from __future__ import annotations
 
@@ -22,9 +24,8 @@ _CONTACT_WIDTH_MULTIPLIER = 3.0
 _PROFILE = "cubic_smoothstep_distributed_terminal_contact"
 _SOURCE_MODEL = "stranded_rectangular_cross_section_composite_gauss3_terminal_contact"
 _TERMINAL_MODEL = "distributed_terminal_contact_with_charge_balance"
-# Each composite panel is no wider than about half the finest local Cartesian
-# cell.  This controls only integration accuracy; it does not alter support.
 _QUADRATURE_PANEL_TO_MESH = 0.5
+_MIN_CROSS_SECTION_PANELS = 2
 
 
 def _smoothstep01(value):
@@ -81,7 +82,7 @@ def _composite_gauss_1d(span, panel_width):
     target = float(panel_width)
     if length <= 0.0 or target <= 0.0:
         raise ValueError("composite source quadrature requires positive lengths")
-    panels = max(1, int(math.ceil(length / target)))
+    panels = max(_MIN_CROSS_SECTION_PANELS, int(math.ceil(length / target)))
     nodes, weights = np.polynomial.legendre.leggauss(3)
     offsets = []
     normalized = []
@@ -135,8 +136,6 @@ def install(background_cls):
                 for v, wv in zip(v_offsets, v_weights):
                     qweight = float(wu * wv)
                     point = center + float(u) * width_axis + float(v) * thickness_axis
-                    # Material occupancy is the complete wire, whereas the source
-                    # amplitude additionally carries the terminal-contact profile.
                     for cell, weight in self._cell_stencil(point):
                         heat[cell] += length * qweight * weight
                     for axis, component in enumerate(d):
