@@ -89,7 +89,7 @@ def _background(step):
     )
 
 
-def test_source_polyline_and_wire_length_do_not_change_with_em_mesh():
+def test_source_polyline_terminal_support_and_wire_length_do_not_change_with_em_mesh():
     coarse = _background(0.02)
     fine = _background(0.016)
     c0 = coarse.geometry_context(GEOMETRY, assemble_thermal=False)
@@ -104,6 +104,20 @@ def test_source_polyline_and_wire_length_do_not_change_with_em_mesh():
         assert np.isclose(
             a0["terminal_separation"], a1["terminal_separation"], rtol=0.0, atol=1e-14
         )
+        assert a0["terminal_regularization_mesh_independent"] is True
+        assert a1["terminal_regularization_mesh_independent"] is True
+        assert a0["terminal_profile"] == a1["terminal_profile"]
+        assert np.isclose(
+            a0["terminal_contact_length"], a1["terminal_contact_length"], rtol=0.0, atol=1e-15
+        )
+        assert np.allclose(
+            np.asarray(a0["regularized_source_vector"], float),
+            np.asarray(a1["regularized_source_vector"], float),
+            rtol=0.0,
+            atol=1e-14,
+        )
+        assert a0["terminal_path_integral_relative_error"] <= 1e-12
+        assert a1["terminal_path_integral_relative_error"] <= 1e-12
 
     r0 = coarse.wire_resistances(c0, None)
     r1 = fine.wire_resistances(c1, None)
