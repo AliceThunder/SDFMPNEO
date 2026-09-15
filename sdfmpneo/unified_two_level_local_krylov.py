@@ -9,6 +9,36 @@ from .unified_gradient_block_maxwell import build_gradient_block
 from .unified_two_level_maxwell import build_two_level_maxwell
 
 
+def _relative_pilot(A, rhs, x0, M, solve, residual_fn, *, maxiter, inner_m, accept_ratio):
+    """Run a cheap pilot whose target is relative to the *current* residual."""
+    start = np.asarray(x0, complex).reshape(-1)
+    before = float(residual_fn(A, start, rhs))
+    # SciPy measures rtol against ||rhs||, not against the residual at x0.
+    # Therefore a fixed rtol=0.5 would immediately accept any warm start whose
+    # true relative residual is already <0.5.  Ask instead for roughly a factor
+    # two reduction from the actual starting point.
+    pilot_rtol = max(min(0.5, 0.5 * before), 1e-12)
+    started = time.perf_counter()
+    candidate, info = solve(
+        A,
+        rhs,
+        x0=start,
+        M=M,
+        rtol=pilot_rtol,
+        maxiter=int(maxiter),
+        inner_m=int(inner_m),
+    )
+    candidate = np.asarray(candidate, complex).reshape(-1)
+    after = float(residual_fn(A, candidate, rhs))
+    elapsed = float(time.perf_counter() - started)
+    accepted = bool(
+        np.isfinite(after)
+        and np.all(np.isfinite(candidate))
+        and after < before * float(accept_ratio)
+    )
+    return candidate, after, int(info), elapsed, before, accepted, pilot_rtol
+
+
 def install(local_solver_module):
     original_iterative = local_solver_module._iterative_solve
 
@@ -82,10 +112,6 @@ def install(local_solver_module):
             "coarse_consistency_error": float(two_level.consistency_error),
         })
 
-        # Every candidate reuses the same fine gradient factor, coarse 118k
-        # factor and transfer.  Pilots are therefore cheap compared with the old
-        # repeated 254k ILU constructions.  Coarse-only is included so an
-        # unstable Jacobi smoother cannot mask an otherwise useful coarse space.
         attempts = (
             (1, 0, "two-level-hcurl-coarse-only"),
             (1, 1, "two-level-hcurl-fast"),
@@ -99,8 +125,8 @@ def install(local_solver_module):
                 smoother_sweeps=smoother_sweeps,
             )
             last_M = M
-            pilot, pilot_residual, pilot_info, pilot_seconds, before, accepted = (
-                local_solver_module._pilot_krylov(
+            pilot, pilot_residual, pilot_info, pilot_seconds, before, accepted, pilot_rtol = (
+                _relative_pilot(
                     A,
                     rhs,
                     best,
@@ -117,6 +143,7 @@ def install(local_solver_module):
                 "coarse_corrections": int(coarse_corrections),
                 "smoother_sweeps": int(smoother_sweeps),
                 "krylov_info": int(pilot_info),
+                "pilot_rtol": float(pilot_rtol),
                 "seconds": float(pilot_seconds),
                 "starting_relative_residual": float(before),
                 "relative_residual": float(pilot_residual),
@@ -124,7 +151,7 @@ def install(local_solver_module):
             })
             print(
                 f"local Maxwell {label}-pilot: residual={pilot_residual:.3e}, "
-                f"start={before:.3e}, info={pilot_info}, "
+                f"start={before:.3e}, target={pilot_rtol:.3e}, info={pilot_info}, "
                 f"accepted={'yes' if accepted else 'no'}, time={pilot_seconds:.1f}s",
                 flush=True,
             )
@@ -202,4 +229,4 @@ def install(local_solver_module):
     return local_solver_module
 
 
-__all__ = ["install"]
+__all__ = ["_relative_pilot", "install"]
