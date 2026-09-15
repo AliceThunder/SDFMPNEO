@@ -101,8 +101,9 @@ def test_open_boundary_has_passive_nonzero_surface_power_form():
 def test_finite_support_open_terminal_source_preserves_path_and_charge_balance():
     bg = background()
     context = bg.geometry_context(geometry(), assemble_thermal=False)
-    assert bg.source_model == "stranded_rectangular_cross_section_gauss3_terminal_contact"
+    assert bg.source_model == "stranded_rectangular_cross_section_composite_gauss3_terminal_contact"
     assert bg.terminal_model == "distributed_terminal_contact_with_charge_balance"
+    assert bg.source_cross_section_quadrature == "composite_gauss3"
     assert not bool(getattr(bg, "_transverse_source_projection_installed", False))
     assert len(context.source_regularization) == 2
     for row in context.source_regularization:
@@ -111,6 +112,11 @@ def test_finite_support_open_terminal_source_preserves_path_and_charge_balance()
         assert row["terminal_separation"] > 0.0
         assert row["terminal_contact_length"] > 0.0
         assert row["terminal_regularization_mesh_independent"] is True
+        assert row["cross_section_support_mesh_independent"] is True
+        assert row["cross_section_quadrature"] == "composite_gauss3"
+        assert row["cross_section_width_panels"] >= 1
+        assert row["cross_section_thickness_panels"] >= 1
+        assert row["cross_section_quadrature_points"] >= 9
         assert row["terminal_profile"] == "cubic_smoothstep_distributed_terminal_contact"
         assert np.asarray(row["regularized_source_vector"], float).shape == (3,)
         assert row["terminal_path_integral_relative_error"] <= 1e-12
