@@ -8,11 +8,11 @@ to factor the 254k-edge fine operator.
 The transfer is the commuting Nedelec prolongation from
 ``unified_hcurl_transfer``.  The coarse physical operator is rediscretized on
 the previous grid and receives the same compatible gradient+transverse ILU that
-is known to work at about 118k edges.  A small scalar alignment maps that
-rediscretized inverse to the Galerkin coarse residual ``P.T A_f P``.  Fine-grid
-high-frequency error is damped only by fixed weighted Jacobi sweeps.  The
-result is a fixed linear V-cycle suitable as an LGMRES preconditioner; the
-physical fine operator and the final true-residual certificate are untouched.
+is known to work at about 118k edges.  That rediscretized inverse is used only
+as a preconditioner for the *true* matrix-free Galerkin coarse operator
+``P.T A_f P``.  Fine-grid high-frequency error is damped by fixed weighted
+Jacobi sweeps.  The physical fine operator and the final true-residual
+certificate are never modified.
 """
 from __future__ import annotations
 
@@ -76,6 +76,32 @@ class TwoLevelMaxwell:
     consistency_error: float
     coarse_edges: int
 
+    def galerkin_operator(self):
+        """Return the exact matrix-free coarse operator ``P.T A_f P``."""
+        A = self.fine_A
+        P = self.prolongation
+        n = int(P.shape[1])
+
+        def apply(vector):
+            y = np.asarray(vector, complex).reshape(-1)
+            if y.shape != (n,):
+                raise ValueError("Galerkin coarse vector has wrong dimension")
+            return np.asarray(P.T @ (A @ (P @ y)), complex).reshape(-1)
+
+        return spla.LinearOperator((n, n), matvec=apply, dtype=A.dtype)
+
+    def galerkin_preconditioner(self):
+        """Use the rediscretized 118k compatible block only as an A_c preconditioner."""
+        M = self.coarse_M
+        scale = complex(self.coarse_scale)
+        n = int(self.prolongation.shape[1])
+
+        def apply(vector):
+            value = np.asarray(M @ np.asarray(vector, complex).reshape(-1), complex).reshape(-1)
+            return scale * value
+
+        return spla.LinearOperator((n, n), matvec=apply, dtype=self.fine_A.dtype)
+
     def _smooth(self, rhs, sweeps):
         r = np.asarray(rhs, complex).reshape(-1).copy()
         z = np.zeros_like(r)
@@ -91,7 +117,7 @@ class TwoLevelMaxwell:
         y = self.coarse_scale * np.asarray(self.coarse_M @ b, complex).reshape(-1)
         # Fixed Richardson corrections against the actual fine-grid Galerkin
         # coarse operator.  Because the number of steps is fixed and x0=0, the
-        # resulting preconditioner remains a linear map.
+        # resulting V-cycle preconditioner remains a linear map.
         for _ in range(max(0, int(corrections) - 1)):
             galerkin_residual = b - P.T @ (self.fine_A @ (P @ y))
             y += self.coarse_scale * np.asarray(
