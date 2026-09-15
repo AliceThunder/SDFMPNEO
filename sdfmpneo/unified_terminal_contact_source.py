@@ -1,26 +1,30 @@
 """Mesh-independent finite-support terminal contacts for open spiral sources.
 
-The stranded source already regularizes the conductor cross section with physical
-width/thickness quadrature.  An open path also needs a physical longitudinal
-terminal model: abruptly truncating a unit path current leaves the terminal
-charge support controlled by the Maxwell mesh.  This module replaces that hard
-truncation by a distributed feed/contact region tied only to conductor geometry.
+The physical source is a uniform stranded current over the conductor's finite
+rectangular cross section, with a smooth finite-length feed/return contact.  The
+support dimensions are geometry parameters and never depend on the Maxwell
+mesh.  Numerical quadrature, however, must resolve that fixed support as the
+mesh is refined: a fixed 3x3 set of points would asymptotically become nine
+filaments and would therefore re-introduce a mesh-dependent self singularity.
 
-The impressed current amplitude rises smoothly from zero to one over the feed
-contact, remains one through the interior spiral, and falls smoothly to zero over
-the return contact.  Its divergence therefore integrates to the same balanced
-unit feed/return current while the terminal charge is distributed over a fixed
-physical length rather than a grid-dependent endpoint.
+This module consequently uses composite three-point Gauss quadrature.  The
+number of panels may increase with numerical resolution, while the integrated
+physical rectangle, total ampere-turns, terminal contact length and path moment
+remain unchanged.
 """
 from __future__ import annotations
 
+import math
 import numpy as np
 
 
 _CONTACT_WIDTH_MULTIPLIER = 3.0
 _PROFILE = "cubic_smoothstep_distributed_terminal_contact"
-_SOURCE_MODEL = "stranded_rectangular_cross_section_gauss3_terminal_contact"
+_SOURCE_MODEL = "stranded_rectangular_cross_section_composite_gauss3_terminal_contact"
 _TERMINAL_MODEL = "distributed_terminal_contact_with_charge_balance"
+# Each composite panel is no wider than about half the finest local Cartesian
+# cell.  This controls only integration accuracy; it does not alter support.
+_QUADRATURE_PANEL_TO_MESH = 0.5
 
 
 def _smoothstep01(value):
@@ -38,8 +42,6 @@ def terminal_contact_length(coil, total_length):
     total = float(total_length)
     if total <= 0.0:
         raise ValueError("terminal contact requires a positive source path length")
-    # Keep a non-contact interior even for unusually short paths.  This clipping
-    # depends only on physical geometry, never on the discretization.
     return float(min(length, 0.25 * total))
 
 
@@ -73,6 +75,36 @@ def regularized_path_vector(coil, points):
     return np.asarray(np.sum(weights[:, None] * delta, axis=0), float), float(contact)
 
 
+def _composite_gauss_1d(span, panel_width):
+    """Normalized quadrature for a fixed physical interval of length ``span``."""
+    length = float(span)
+    target = float(panel_width)
+    if length <= 0.0 or target <= 0.0:
+        raise ValueError("composite source quadrature requires positive lengths")
+    panels = max(1, int(math.ceil(length / target)))
+    nodes, weights = np.polynomial.legendre.leggauss(3)
+    offsets = []
+    normalized = []
+    width = length / panels
+    for panel in range(panels):
+        center = -0.5 * length + (panel + 0.5) * width
+        for node, weight in zip(nodes, weights):
+            offsets.append(center + 0.5 * width * float(node))
+            normalized.append(0.5 * width * float(weight) / length)
+    offsets = np.asarray(offsets, float)
+    normalized = np.asarray(normalized, float)
+    normalized /= np.sum(normalized)
+    return offsets, normalized, panels
+
+
+def _cross_section_quadrature(background, coil):
+    resolution = float(min(np.min(background.dx), np.min(background.dy), np.min(background.dz)))
+    target = max(_QUADRATURE_PANEL_TO_MESH * resolution, np.finfo(float).tiny)
+    u, wu, up = _composite_gauss_1d(float(coil.conductor_width), target)
+    v, wv, vp = _composite_gauss_1d(float(coil.conductor_thickness), target)
+    return u, wu, v, wv, int(up), int(vp), resolution
+
+
 def install(background_cls):
     if bool(getattr(background_cls, "_distributed_terminal_contact_installed", False)):
         return background_cls
@@ -80,11 +112,13 @@ def install(background_cls):
     original_spatial_context = background_cls._spatial_context
 
     def deposit_stranded_coil(self, coil, points):
-        """Deposit a unit interior current with finite physical terminal contacts."""
+        """Deposit the fixed physical rectangular source with resolved quadrature."""
         p = np.asarray(points, float)
         self._require_inside(p, "coil centerline")
         segment_weights, _contact = terminal_segment_weights(coil, p)
-        nodes, weights = np.polynomial.legendre.leggauss(3)
+        u_offsets, u_weights, v_offsets, v_weights, _up, _vp, _resolution = (
+            _cross_section_quadrature(self, coil)
+        )
         source = np.zeros(self.n_edges, float)
         heat = np.zeros(self.n_cells, float)
 
@@ -97,16 +131,12 @@ def install(background_cls):
             tangent = d / length
             width_axis, thickness_axis = self._cross_section_frame(coil, tangent)
             center = 0.5 * (p0 + p1)
-            for u, wu in zip(nodes, weights):
-                for v, wv in zip(nodes, weights):
-                    qweight = float(wu * wv / 4.0)
-                    point = (
-                        center
-                        + 0.5 * float(coil.conductor_width) * float(u) * width_axis
-                        + 0.5 * float(coil.conductor_thickness) * float(v) * thickness_axis
-                    )
-                    # Thermal/material occupancy still represents the entire wire,
-                    # not only the impressed terminal-current profile.
+            for u, wu in zip(u_offsets, u_weights):
+                for v, wv in zip(v_offsets, v_weights):
+                    qweight = float(wu * wv)
+                    point = center + float(u) * width_axis + float(v) * thickness_axis
+                    # Material occupancy is the complete wire, whereas the source
+                    # amplitude additionally carries the terminal-contact profile.
                     for cell, weight in self._cell_stencil(point):
                         heat[cell] += length * qweight * weight
                     for axis, component in enumerate(d):
@@ -142,6 +172,7 @@ def install(background_cls):
                 np.linalg.norm(deposited_vector - expected_vector)
                 / max(path_length, np.finfo(float).tiny)
             )
+            _u, _wu, _v, _wv, up, vp, resolution = _cross_section_quadrature(self, coil)
             item = dict(row)
             item.update(
                 model=self.source_model,
@@ -152,6 +183,12 @@ def install(background_cls):
                 regularized_source_vector=expected_vector.tolist(),
                 terminal_path_integral_relative_error=error,
                 terminal_regularization_mesh_independent=True,
+                cross_section_support_mesh_independent=True,
+                cross_section_quadrature="composite_gauss3",
+                cross_section_width_panels=int(up),
+                cross_section_thickness_panels=int(vp),
+                cross_section_quadrature_points=int(9 * up * vp),
+                source_quadrature_resolution=float(resolution),
                 endpoint_vector_change_relative=float(
                     np.linalg.norm(expected_vector - endpoint_vector)
                     / max(path_length, np.finfo(float).tiny)
@@ -167,6 +204,7 @@ def install(background_cls):
     background_cls.terminal_model = _TERMINAL_MODEL
     background_cls.terminal_contact_profile = _PROFILE
     background_cls.terminal_contact_width_multiplier = _CONTACT_WIDTH_MULTIPLIER
+    background_cls.source_cross_section_quadrature = "composite_gauss3"
     background_cls._distributed_terminal_contact_installed = True
     return background_cls
 
