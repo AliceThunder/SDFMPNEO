@@ -1,17 +1,20 @@
 """Stable localized self-response contractions for high-dynamic-range port fields.
 
 This patch preserves the v2 physical definition exactly.  The full open-port
-Maxwell field and compatible longitudinal component are unchanged.  It only
-changes how the localizable remainder is evaluated numerically: instead of
-subtracting two large port impedances or two large squared field magnitudes, it
-forms the transverse remainder with the existing high/low compensated field
-representation and contracts that remainder directly.
+Maxwell field and compatible longitudinal component are unchanged.  Localized
+truth extraction is made numerically robust in two places:
+
+* the compatible scalar-gradient projection is certified and iteratively
+  refined before the tiny transverse remainder is formed;
+* the localizable port/loss outputs are contracted directly from a compensated
+  transverse remainder instead of subtracting two large full-field quantities.
 """
 from __future__ import annotations
 
 import numpy as np
 
 from .unified_compensated_field import (
+    as_compensated_field,
     compensated_add,
     field_abs2,
     field_linear_dot,
@@ -19,6 +22,32 @@ from .unified_compensated_field import (
     field_parts,
 )
 from .unified_gradient_block_maxwell import build_gradient_block
+from .unified_refined_gradient_projection import refined_gradient_projection
+
+
+def _subtract_compensated(left, right):
+    out = as_compensated_field(left, copy=True)
+    right_high, right_low = field_parts(right)
+    out = compensated_add(out, right_high, scale=-1.0)
+    out = compensated_add(out, right_low, scale=-1.0)
+    return out
+
+
+def _cross_real(left, right):
+    """Return 2 Re(left^H right) edgewise from two high/low expansions."""
+    lh, ll = field_parts(left)
+    rh, rl = field_parts(right)
+    return 2.0 * np.asarray(
+        lh.real * rh.real
+        + lh.imag * rh.imag
+        + lh.real * rl.real
+        + lh.imag * rl.imag
+        + ll.real * rh.real
+        + ll.imag * rh.imag
+        + ll.real * rl.real
+        + ll.imag * rl.imag,
+        dtype=float,
+    )
 
 
 def install(self_correction_module):
@@ -42,7 +71,7 @@ def install(self_correction_module):
 
         Let ``E = E_L + E_T`` where ``E_L`` is the exact compatible gradient
         component.  The v2 correction removes only the pure longitudinal self
-        term.  Therefore
+        term.  For an exact Galerkin longitudinal projection,
 
             Z_local = -S^T E_T
 
@@ -50,41 +79,42 @@ def install(self_correction_module):
 
             |E|^2 - |E_L|^2 = |E_T|^2 + 2 Re(E_L^* E_T).
 
-        These are algebraically identical to the previous v2 formulas, but they
-        remain well conditioned when the terminal field is many orders of
-        magnitude larger than the localizable remainder.
+        The finest validation grid can have ``||E_T||/||E||`` of only a few
+        parts per million, so the scalar projection itself is certified before
+        these equivalent remainder contractions are evaluated.
         """
-        del A  # The decomposition uses the already-certified physical field.
+        del A  # Full-field physics has already been certified before extraction.
         gradient = build_gradient_block(local, context, check_topology=True)
-        longitudinal = np.asarray(gradient.solve(rhs), complex).reshape(-1)
-        if longitudinal.shape != (local.n_edges,) or np.any(~np.isfinite(longitudinal)):
+        longitudinal, projection = refined_gradient_projection(
+            local,
+            gradient,
+            rhs,
+            relative_tolerance=5e-13,
+            maximum_refinements=5,
+        )
+        if not np.isfinite(field_norm(longitudinal)):
             raise FloatingPointError("local Maxwell longitudinal field is invalid")
 
-        # Error-free high/low subtraction of the dominant longitudinal field.
-        transverse = compensated_add(field, longitudinal, scale=-1.0)
+        transverse = _subtract_compensated(field, longitudinal)
         if not np.isfinite(field_norm(transverse)):
             raise FloatingPointError("local Maxwell transverse remainder is invalid")
 
-        # Port impedance is a linear output.  Contract the small remainder
-        # directly rather than evaluating full_z - longitudinal_z.
+        # The source contraction is algebraically equal to subtracting the pure
+        # longitudinal impedance when the compatible projection is solved.  It
+        # is far better conditioned because only the small remainder is paired.
         refinable_z = complex(-field_linear_dot(source, transverse))
-        longitudinal_z = complex(-np.asarray(source, float) @ longitudinal)
+        longitudinal_z = complex(-field_linear_dot(source, longitudinal))
 
         # Preserve the L/T cross term required by the v2 physical definition,
         # but avoid |E|^2 - |E_L|^2 cancellation.
-        t_high, t_low = field_parts(transverse)
-        transverse_abs2 = field_abs2(transverse)
-        cross = 2.0 * (
-            longitudinal.real * t_high.real
-            + longitudinal.imag * t_high.imag
-            + longitudinal.real * t_low.real
-            + longitudinal.imag * t_low.imag
+        refinable_abs2 = np.asarray(
+            field_abs2(transverse) + _cross_real(longitudinal, transverse),
+            float,
         )
-        refinable_abs2 = np.asarray(transverse_abs2 + cross, float)
         if np.any(~np.isfinite(refinable_abs2)):
             raise FloatingPointError("localized Maxwell energy remainder is invalid")
 
-        longitudinal_abs2 = np.abs(longitudinal) ** 2
+        longitudinal_abs2 = field_abs2(longitudinal)
         edge_loss = np.asarray(edge_loss, float)
         outward_weights = np.asarray(outward_weights, float)
         refinable_d = float(np.dot(edge_loss, refinable_abs2))
@@ -115,13 +145,21 @@ def install(self_correction_module):
             "localized_d_out": refinable_out,
             "localized_modal_h": modal_refinable,
             "localized_power_balance_relative_error": balance,
-            "localized_contraction": "compensated_transverse_remainder_v2",
+            "localized_contraction": "certified_gradient_compensated_transverse_v2",
+            "localized_gradient_projection_initial_relative_residual": float(
+                projection["initial_relative_residual"]
+            ),
+            "localized_gradient_projection_relative_residual": float(
+                projection["relative_residual"]
+            ),
+            "localized_gradient_projection_refinements": int(projection["refinements"]),
+            "localized_gradient_projection_edge_low_relative_norm": float(
+                projection["edge_low_relative_norm"]
+            ),
             "longitudinal_z": longitudinal_z,
             "longitudinal_d_vol": longitudinal_d,
             "longitudinal_d_out": longitudinal_out,
-            "longitudinal_field_relative_norm": float(
-                np.linalg.norm(longitudinal) / full_norm
-            ),
+            "longitudinal_field_relative_norm": float(field_norm(longitudinal) / full_norm),
             "transverse_field_relative_norm": float(field_norm(transverse) / full_norm),
         }
 
