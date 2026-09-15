@@ -8,7 +8,7 @@ class _Background:
     self_correction_config = {"enabled": True, "fine_step": 0.003}
 
 
-def test_local_self_defect_uses_complete_fine_minus_coarse_response(monkeypatch):
+def test_local_self_defect_uses_localized_response_and_preserves_power_partition(monkeypatch):
     background = _Background()
     z = np.array([[5.0 + 0.2j, 0.3 + 0.1j], [0.3 + 0.1j, 6.0 + 0.25j]], complex)
     d = np.array([[4.9, 0.2 + 0.03j], [0.2 - 0.03j, 5.9]], complex)
@@ -25,22 +25,29 @@ def test_local_self_defect_uses_complete_fine_minus_coarse_response(monkeypatch)
     def fake_local(_background, _geometry, port, step, phi=None):
         p = int(port) + 1
         coarse = np.isclose(step, 0.012)
-        raw_scale = 100.0 if coarse else 120.0
-        raw_modal = None if phi is None else np.array([0.5 * p, -0.2 * p]) * raw_scale
-        # Keep a deliberately unrelated localized diagnostic so the test proves
-        # v3 is using the complete local defect rather than the old v2 object.
-        localized_scale = 1.0 if coarse else 1.1
+        # Raw terminal response deliberately changes by an unrelated huge
+        # amount. Production correction must use only localized_* values.
+        raw_scale = 100.0 if coarse else 10000.0
+        raw_modal = None if phi is None else np.array([50.0 * p, -20.0 * p]) * raw_scale
+        if coarse:
+            localized_z = complex(0.2 * p, 0.02 * p)
+            localized_d = 0.16 * p
+            localized_out = 0.04 * p
+            localized_modal = None if phi is None else np.array([0.05 * p, -0.02 * p])
+        else:
+            localized_z = complex(0.8 * p, 0.07 * p)
+            localized_d = 0.66 * p
+            localized_out = 0.14 * p
+            localized_modal = None if phi is None else np.array([0.25 * p, -0.12 * p])
         return {
             "z": complex(raw_scale * p, -0.3 * raw_scale * p),
             "d_vol": 0.9 * raw_scale * p,
             "d_out": 0.1 * raw_scale * p,
             "modal_h": raw_modal,
-            "localized_z": complex(0.2 * localized_scale * p, 0.02 * localized_scale * p),
-            "localized_d_vol": 0.16 * localized_scale * p,
-            "localized_d_out": 0.04 * localized_scale * p,
-            "localized_modal_h": (
-                None if phi is None else np.array([0.05 * p, -0.02 * p]) * localized_scale
-            ),
+            "localized_z": localized_z,
+            "localized_d_vol": localized_d,
+            "localized_d_out": localized_out,
+            "localized_modal_h": localized_modal,
             "localized_power_balance_relative_error": 0.0,
             "linear_relative_residual": 0.0,
             "power_balance_relative_error": 0.0,
@@ -60,16 +67,16 @@ def test_local_self_defect_uses_complete_fine_minus_coarse_response(monkeypatch)
     assert np.allclose(result.d_vol[0, 1], d[0, 1])
     assert np.allclose(result.modal_h[:, 0, 1], modal[:, 0, 1])
 
-    # Complete fine-minus-coarse defect: raw_scale changes by 20.
-    assert np.allclose(np.diag(result.z - z), [20.0 - 6.0j, 40.0 - 12.0j])
-    assert np.allclose(np.real(np.diag(result.d_vol - d)), [18.0, 36.0])
-    assert np.allclose(np.real(np.diag(result.d_out - d_out)), [2.0, 4.0])
-    assert np.allclose(np.real(result.modal_h[:, 0, 0] - modal[:, 0, 0]), [10.0, -4.0])
-    assert np.allclose(np.real(result.modal_h[:, 1, 1] - modal[:, 1, 1]), [20.0, -8.0])
-    assert result.audit["model"] == "canonical_local_full_fine_minus_coarse_self_defect_v3"
+    # These are exactly the localized fine-minus-coarse defects. The huge raw
+    # longitudinal values above must not leak into the production correction.
+    assert np.allclose(np.diag(result.z - z), [0.6 + 0.05j, 1.2 + 0.10j])
+    assert np.allclose(np.real(np.diag(result.d_vol - d)), [0.5, 1.0])
+    assert np.allclose(np.real(np.diag(result.d_out - d_out)), [0.1, 0.2])
+    assert np.allclose(np.real(result.modal_h[:, 0, 0] - modal[:, 0, 0]), [0.2, -0.1])
+    assert np.allclose(np.real(result.modal_h[:, 1, 1] - modal[:, 1, 1]), [0.4, -0.2])
+    assert result.audit["model"] == "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
     assert result.audit["corrected_power_balance_relative_error"] < 1e-14
     assert result.audit["maximum_localized_power_balance_relative_error"] == 0.0
-    assert result.audit["maximum_full_local_power_balance_relative_error"] == 0.0
     assert result.audit["maximum_joule_total_power_relative_error"] == 3e-13
     assert result.audit["maximum_joule_modal_contraction_relative_error"] == 4e-13
 
