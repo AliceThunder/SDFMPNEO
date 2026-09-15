@@ -9,19 +9,21 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 16 preserves the theory-defined full open two-terminal
-# source while restricting the canonical local fine-minus-coarse correction to
-# localizable transverse/cross self response.  Pure longitudinal terminal self
-# energy remains a full-domain quantity and is not replaced by a canonical box.
+# Physics truth version 17 keeps the full open two-terminal source and the v2
+# localized self correction, while replacing grid-controlled endpoint truncation
+# by a distributed physical terminal contact tied to conductor dimensions.
 # Old truth tensors/certificates must not be mixed with this one.
-_unified_model.FORMAT_VERSION = 16
+_unified_model.FORMAT_VERSION = 17
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
+from .unified_terminal_contact_source import install as _install_terminal_contact_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-# Preserve the physical open-path source.  The longitudinal terminal response is
-# solved by the compatible gradient block; it is not projected out of the RHS.
+# Install the physical source semantics before any truth/preflight path builds a
+# geometry context.  The source remains open and non-divergence-free; only its
+# terminal charge support is distributed over a fixed conductor-scale contact.
+_install_terminal_contact_source(OpenBoundaryBackground)
 _install_maxwell_operator_metadata(OpenBoundaryBackground)
 
 from . import unified_self_correction as _self_correction
