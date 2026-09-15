@@ -28,7 +28,7 @@ import numpy as np
 import scipy.sparse.linalg as spla
 from scipy.interpolate import RegularGridInterpolator
 
-from .unified_compensated_field import field_abs2
+from .unified_compensated_field import field_abs2, field_linear_dot
 from .unified_geometry import UnifiedUWPTGeometry
 from .unified_gradient_block_maxwell import build_gradient_block
 from .unified_open_boundary import OpenBoundaryBackground
@@ -179,9 +179,7 @@ def _localized_self_response(
 
     full_abs2 = field_abs2(field)
     longitudinal_abs2 = np.abs(longitudinal) ** 2
-    refinable_abs2 = np.asarray(full_abs2 - longitudinal_abs2, float)
-
-    full_z = complex(-np.asarray(source, float) @ np.asarray(field, complex))
+    full_z = -field_linear_dot(source, field)
     grad_action = np.asarray(A @ longitudinal, complex).reshape(-1)
     grad_energy = complex(np.vdot(longitudinal, grad_action))
     # For e^{+i wt}, E^H A E = i w Z* on a physical one-port solution, hence
