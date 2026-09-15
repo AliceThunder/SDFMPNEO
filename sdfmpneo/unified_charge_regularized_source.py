@@ -1,33 +1,31 @@
 """Compatible finite-volume regularization of open-terminal charge continuity.
 
-The stranded edge source already carries the intended physical path current and
-therefore the intended curl/transverse excitation.  Its terminal divergence,
-however, must not be left to the incidental cloud-in-cell edge stencil: as the
-mesh is refined that stencil can represent the same finite contact by a sharper
-and sharper nodal charge cloud, which makes the pure-longitudinal self energy
-mesh dependent.
+The stranded edge source already carries the intended physical path current. Its
+terminal divergence, however, must not be left to the incidental cloud-in-cell
+edge stencil: as the mesh is refined that stencil can represent the same finite
+contact by a sharper and sharper nodal charge cloud, which makes the
+pure-longitudinal self energy mesh dependent.
 
 This module therefore declares the terminal charge independently from the cubic
-contact profile.  ``q_target`` is the nodal Galerkin load of ``-dI/ds`` over the
+contact profile. ``q_target`` is the nodal Galerkin load of ``-dI/ds`` over the
 same fixed rectangular conductor cross section and the same fixed physical
-contact length.  The edge source is then changed only by a compatible gradient
-lift
+contact length. The edge source is changed by the minimum Euclidean compatible
+gradient lift
 
     S <- S + G psi,
     G.T G psi = q_target - G.T S.
 
-Because ``C G = 0`` exactly, this operation cannot change the source curl or any
-transverse/magnetic excitation.  It only replaces the longitudinal terminal
-continuity by the explicitly declared finite-volume charge model.  The lift is
-not a divergence-free projection: the final source retains the non-zero open
-terminal divergence ``q_target`` by construction.
+Because ``C G = 0`` exactly, the correction has identically zero discrete curl.
+This is the precise invariant certified here; in heterogeneous material it is
+not claimed that the resulting Maxwell field's transverse component is pointwise
+unchanged. The lift is not a divergence-free projection: the final source keeps
+the non-zero open-terminal divergence ``q_target`` by construction.
 """
 from __future__ import annotations
 
 import time
 
 import numpy as np
-import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from .unified_gradient_block_maxwell import (
@@ -119,16 +117,9 @@ def terminal_charge_target(background, coil):
                 continue
             for u, wu in zip(u_offsets, u_weights):
                 for v, wv in zip(v_offsets, v_weights):
-                    point = (
-                        center
-                        + float(u) * width_axis
-                        + float(v) * thickness_axis
-                    )
+                    point = center + float(u) * width_axis + float(v) * thickness_axis
                     contribution = (
-                        charge_density_1d
-                        * ds_weight
-                        * float(wu)
-                        * float(wv)
+                        charge_density_1d * ds_weight * float(wu) * float(wv)
                     )
                     for node, weight in _node_stencil(background, point):
                         q[node] += contribution * weight
@@ -195,7 +186,7 @@ def _graph_gradient_factor(background):
 
 
 def compatible_charge_lift(background, source, target):
-    """Replace only source divergence while preserving source curl exactly."""
+    """Replace source divergence by the target with an exactly curl-free lift."""
     raw = np.asarray(source, float).reshape(-1)
     q_target = np.asarray(target, float).reshape(-1)
     Gfull = gradient_operator(background, gauge_fixed=False)
@@ -276,6 +267,9 @@ def install(background_cls):
             item.update(target_meta)
             item.update(lift_meta)
             item.update(
+                model=self.source_model,
+                terminal_model=self.terminal_model,
+                source_norm=float(np.linalg.norm(lifted)),
                 regularized_source_vector=declared.tolist(),
                 terminal_path_integral_relative_error=path_error,
                 terminal_charge_moment_relative_error=moment_error,
