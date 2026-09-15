@@ -1,17 +1,10 @@
 """Fast certified multi-port Maxwell solves for global truth and Physics Gates.
 
-The global open-boundary background may contain O(1e5) edge unknowns once the
-artificial boundary is far enough away to pass the domain-convergence Gate.
-Factoring every geometry with SuperLU causes the same 3-D fill-in problem as the
-canonical local-self solve.  This module changes only the linear algebra:
-
-* small systems keep the sparse direct path;
-* large systems use the Maxwell-aware shifted-ILU preconditioner already used by
-  the certified local solver;
-* one ILU is shared by every port right-hand side for a given Maxwell matrix;
-* acceptance always uses the true residual of the unmodified physical operator.
-
-No constitutive law, source, boundary form, tolerance, or physics Gate is changed.
+Large open-domain matrices use one shared Maxwell-aware shifted-ILU per attempt
+and LGMRES for every port.  If the main Krylov solve reaches the 1e-6--1e-7
+range but not the final certificate, true-residual defect correction reuses the
+same ILU instead of building an expensive sparse LU.  Acceptance always checks
+the original unmodified physical Maxwell operator.
 """
 from __future__ import annotations
 
@@ -28,6 +21,10 @@ def _cfg(background):
     cfg.setdefault("direct_max_dofs", 60000)
     cfg.setdefault("iterative_maxiter", 40)
     cfg.setdefault("iterative_inner_m", 30)
+    cfg.setdefault("iterative_defect_steps", 3)
+    cfg.setdefault("iterative_defect_maxiter", 16)
+    cfg.setdefault("iterative_defect_inner_m", 20)
+    cfg.setdefault("iterative_defect_start_residual", 5e-6)
     cfg.setdefault("ilu_drop_tolerance", 5e-3)
     cfg.setdefault("ilu_fill_factor", 4.0)
     cfg.setdefault("ilu_strong_drop_tolerance", 1e-3)
@@ -91,6 +88,10 @@ def solve_multi_rhs(background, A, B, local_solver_module):
 
     maxiter = int(cfg["iterative_maxiter"])
     inner_m = int(cfg["iterative_inner_m"])
+    defect_steps = int(cfg["iterative_defect_steps"])
+    defect_maxiter = int(cfg["iterative_defect_maxiter"])
+    defect_inner_m = int(cfg["iterative_defect_inner_m"])
+    defect_start = float(cfg["iterative_defect_start_residual"])
     target = max(0.2 * tolerance, 1e-12)
     attempts = (
         (
@@ -108,7 +109,7 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         (
             float(cfg["ilu_strong_drop_tolerance"]),
             float(cfg["ilu_strong_fill_factor"]),
-            max(1e-2, 0.5 * float(cfg["ilu_shift_factor"])),
+            max(5e-3, 0.5 * float(cfg["ilu_shift_factor"])),
             "shifted-ilu-tight",
         ),
     )
@@ -175,10 +176,51 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
 
+        if (
+            defect_steps > 0
+            and best_X is not None
+            and np.isfinite(best_residual)
+            and best_residual <= defect_start
+        ):
+            refined = best_X.copy()
+            correction_rows = []
+            for p in range(B.shape[1]):
+                rp = float(_true_residuals(A, refined[:, [p]], B[:, [p]])[0])
+                if rp <= tolerance:
+                    continue
+                field, rp_new, rows = local_solver_module._defect_refine(
+                    A,
+                    B[:, p],
+                    refined[:, p],
+                    M,
+                    local_solver_module._lgmres,
+                    local_solver_module._relative_residual,
+                    tolerance,
+                    steps=defect_steps,
+                    maxiter=defect_maxiter,
+                    inner_m=defect_inner_m,
+                    label=f"global-{label}-p{p+1}-defect",
+                )
+                refined[:, p] = field
+                correction_rows.extend(rows)
+            history.extend(correction_rows)
+            refined_residuals = _true_residuals(A, refined, B)
+            refined_worst = float(np.max(refined_residuals))
+            if np.isfinite(refined_worst) and refined_worst < best_residual:
+                best_X = refined
+                best_residual = refined_worst
+            if best_residual <= tolerance:
+                print(
+                    f"global Maxwell {label} defect-corrected: residual={best_residual:.3e}",
+                    flush=True,
+                )
+                return best_X, best_residual, tuple(history)
+
     raise RuntimeError(
-        "large global Maxwell iterative solve did not reach the certified residual; "
+        "large global Maxwell iterative solve did not reach the certified residual after "
+        "true-residual defect correction; "
         f"edges={A.shape[0]}, residual={best_residual:.3e}, tolerance={tolerance:.3e}. "
-        "Increase iterative/ILU strength rather than using an hours-long full sparse LU."
+        "Increase Krylov/ILU strength rather than using an hours-long full sparse LU."
     )
 
 
