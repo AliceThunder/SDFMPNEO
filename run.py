@@ -37,12 +37,33 @@ FILES = {
 }
 
 BACKGROUND = {
-    "bounds": [[-0.27, 0.27], [-0.27, 0.27], [-0.27, 0.27]],
+    # Open-domain convergence at ±0.27 m was not sufficient for the production
+    # geometry box: the independent ±0.39 m reference changed D_vol by ~11%
+    # and mutual Z by ~22%.  Keep the same 12-mm resolved core, but move the
+    # artificial boundary to ±0.51 m.  The far seawater is deliberately allowed
+    # to stretch to 80 mm because its 100-kHz skin-depth scale is much larger;
+    # the independent mesh Gate still checks this coarsening.
+    "bounds": [[-0.51, 0.51], [-0.51, 0.51], [-0.51, 0.51]],
     "core_center": [0.0, 0.0, 0.02],
     "core_half_extent": [0.09, 0.09, 0.09],
     "fine_step": 0.012,
     "growth": 1.5,
-    "max_step": 0.03,
+    "max_step": 0.08,
+    # Large open-domain matrices use a Maxwell-aware shifted-ILU + LGMRES
+    # solve.  The shift belongs only to the preconditioner; acceptance is still
+    # based on the true residual of the original physical matrix.
+    "linear_solver": {
+        "relative_residual_tolerance": 1e-9,
+        "direct_max_dofs": 60000,
+        "iterative_maxiter": 40,
+        "iterative_inner_m": 30,
+        "ilu_drop_tolerance": 5e-3,
+        "ilu_fill_factor": 4.0,
+        "ilu_strong_drop_tolerance": 1e-3,
+        "ilu_strong_fill_factor": 8.0,
+        "ilu_shift_factor": 3e-2,
+        "ilu_strong_shift_factor": 1e-1,
+    },
     # The global grid is intentionally kept coarse enough for many-geometry truth.
     # Only the unresolved diagonal self response receives a small canonical local
     # fine-minus-coarse defect. Translation/rotation are removed in that local
@@ -58,10 +79,24 @@ BACKGROUND = {
         "max_step": 0.02,
         "relative_tolerance": 1e-1,
         "joule_identity_tolerance": 1e-10,
+        "linear_relative_residual_tolerance": 1e-9,
+        "linear_direct_max_dofs": 60000,
+        "linear_direct_fallback_max_dofs": 120000,
+        "linear_iterative_maxiter": 40,
+        "linear_iterative_inner_m": 30,
+        "linear_ilu_drop_tolerance": 5e-3,
+        "linear_ilu_fill_factor": 4.0,
+        "linear_ilu_strong_drop_tolerance": 1e-3,
+        "linear_ilu_strong_fill_factor": 8.0,
+        "linear_ilu_shift_factor": 3e-2,
+        "linear_ilu_strong_shift_factor": 1e-1,
+        "parallel_ports": 2,
+        "linear_result_cache_size": 64,
     },
-    # The physical box is already ±0.27 m and the expanded reference is ±0.39 m.
-    # One expensive domain solve is the default certification sample; the 5%
-    # tolerance is unchanged, while other independent Gates remain enabled.
+    # Production is ±0.51 m; the independent reference is ±0.63 m.  The 5%
+    # convergence requirement is unchanged.  D_out itself is diagnostic in
+    # conductive seawater; its change is normalized by the terminal-dissipation
+    # scale, while Z/D_vol/current-space power remain hard Gate quantities.
     "open_boundary_check": {
         "samples": 1,
         "padding": 0.12,
