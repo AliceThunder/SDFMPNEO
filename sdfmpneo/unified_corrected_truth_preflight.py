@@ -23,6 +23,9 @@ from .unified_truth_preflight import (
 )
 
 
+_SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
+
+
 def _background_from_settings(settings, *, fine_step=None, max_step=None):
     bg = _raw_background_from_settings(settings, fine_step=fine_step, max_step=max_step)
     cfg = copy.deepcopy(dict(settings["BACKGROUND"]))
@@ -135,7 +138,7 @@ def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
         "maximum_relative_error": float(worst),
         "maximum_source_path_length_relative_error": float(worst_path),
         "source_geometry_invariant": bool(worst_path <= path_tolerance),
-        "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        "self_correction_model": _SELF_CORRECTION_MODEL,
         "converged": bool(worst <= tolerance and worst_path <= path_tolerance),
         "samples": rows,
     }
@@ -163,7 +166,7 @@ def _mesh_failure_diagnosis(mesh):
         "mutual_z_relative_error": mutual_z,
         "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
         "recommendation": (
-            "The local self defect is still insufficiently converged. Reduce the configured local self-correction fine step or enlarge its canonical local core; do not relax the global mesh Gate."
+            "The localized local self defect is still insufficiently converged. Reduce the configured local self-correction fine step or enlarge its canonical local core; do not relax the global mesh Gate."
             if self_z > mutual_z
             else "Refine the remaining non-self EM truth discretization; do not relax the Gate."
         ),
@@ -182,7 +185,7 @@ def _skipped_mesh_report(settings, reason):
         "maximum_relative_error": float("inf"),
         "maximum_source_path_length_relative_error": float("inf"),
         "source_geometry_invariant": False,
-        "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        "self_correction_model": _SELF_CORRECTION_MODEL,
         "converged": False,
         "skipped": True,
         "skip_reason": str(reason),
@@ -216,7 +219,7 @@ def _local_self_failure_diagnosis(local_self):
         "maximum_relative_error": float(local_self["maximum_relative_error"]),
         "fine_step": float(local_self["fine_step"]),
         "validation_fine_step": float(local_self["validation_fine_step"]),
-        "recommendation": "Refine only the canonical local self problem until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
+        "recommendation": "Refine only the canonical localized local self defect until its independent fine-grid audit meets tolerance; do not globally refine the UWPT domain.",
     }
 
 
