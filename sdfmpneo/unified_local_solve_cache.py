@@ -7,6 +7,9 @@ coarse mesh are deliberately absent because _local_background removes them and
 they do not enter the canonical local operator.
 
 This is exact memoization, not a surrogate or rounded-parameter approximation.
+The compatible local solver also carries a compact coarse-to-fine warm state
+(edge field plus grid axes).  Cache hits restore that state so the subsequent
+validation solve sees exactly the same H(curl) coarse space as a fresh solve.
 """
 from __future__ import annotations
 
@@ -85,7 +88,17 @@ def install(self_correction_module):
         key = _cache_key(self_correction_module, parent, geometry, port, fine_step)
         if key in _CACHE:
             _CACHE.move_to_end(key)
-            result = copy.deepcopy(_CACHE[key])
+            entry = copy.deepcopy(_CACHE[key])
+            # New-format entries carry both the exact result and the compact
+            # H(curl) warm state.  Accept old-format entries defensively but do
+            # not fabricate a warm state that was never cached.
+            if isinstance(entry, dict) and "result" in entry:
+                result = entry["result"]
+                warm_state = entry.get("warm_state")
+                if warm_state is not None:
+                    parent._local_self_warm_state = warm_state
+            else:
+                result = entry
             result["linear_solver_cache_hit"] = True
             print(
                 f"local Maxwell exact cache hit: port={int(port)+1}, step={float(fine_step):g}m, "
@@ -95,16 +108,20 @@ def install(self_correction_module):
             return result
 
         result = original(parent, geometry, port, fine_step, phi=None)
-        stored = copy.deepcopy(result)
-        stored["linear_solver_cache_hit"] = False
-        _CACHE[key] = stored
+        stored_result = copy.deepcopy(result)
+        stored_result["linear_solver_cache_hit"] = False
+        warm_state = copy.deepcopy(getattr(parent, "_local_self_warm_state", None))
+        _CACHE[key] = {
+            "result": stored_result,
+            "warm_state": warm_state,
+        }
         _CACHE.move_to_end(key)
         limit = int(self_correction_module._config(parent).get("linear_result_cache_size", 64))
         if limit < 1:
             raise ValueError("self_correction.linear_result_cache_size must be positive")
         while len(_CACHE) > limit:
             _CACHE.popitem(last=False)
-        return copy.deepcopy(stored)
+        return copy.deepcopy(stored_result)
 
     self_correction_module._solve_local = cached_solve_local
     self_correction_module._exact_local_solve_cache_installed = True
