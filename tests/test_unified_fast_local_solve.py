@@ -1,7 +1,10 @@
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
+import sdfmpneo.unified_certified_local_solve as local_solver
 from sdfmpneo.unified_certified_local_solve import _iterative_solve, _relative_residual
+from sdfmpneo.unified_fast_local_krylov import _defect_refine
 
 
 def test_ilu_lgmres_reaches_certified_true_residual():
@@ -54,4 +57,43 @@ def test_iterative_solver_can_improve_a_warm_start():
     )
     assert field is not None
     assert residual < before
+    assert residual <= 1e-10
+
+
+def test_defect_refinement_reduces_true_residual_of_existing_field():
+    n = 360
+    A = sp.diags(
+        (
+            -np.ones(n - 1),
+            (2.2 + 0.03j) * np.ones(n),
+            -np.ones(n - 1),
+        ),
+        (-1, 0, 1),
+        format="csr",
+        dtype=complex,
+    )
+    x_true = np.sin(np.linspace(0.0, 4.0 * np.pi, n)).astype(complex)
+    rhs = A @ x_true
+    field0 = x_true + 2e-5 * np.cos(np.linspace(0.0, 3.0 * np.pi, n))
+    before = _relative_residual(A, field0, rhs)
+    ilu = spla.spilu(A.tocsc(), drop_tol=1e-2, fill_factor=2.0)
+    M = spla.LinearOperator(A.shape, matvec=ilu.solve, dtype=A.dtype)
+
+    field, residual, history = _defect_refine(
+        A,
+        rhs,
+        field0,
+        M,
+        local_solver._lgmres,
+        _relative_residual,
+        1e-10,
+        steps=3,
+        maxiter=12,
+        inner_m=16,
+        label="test-defect",
+    )
+
+    assert history
+    assert residual < before
+    assert _relative_residual(A, field, rhs) == residual
     assert residual <= 1e-10
