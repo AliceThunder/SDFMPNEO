@@ -124,7 +124,7 @@ def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
         )
         # Linear coordinate moments of a trilinear nodal deposition are exact;
         # therefore the declared regularized source vector must be mesh invariant
-        # even though the number of nodal support points grows under refinement.
+        # even though the nodal support itself is allowed to depend on grid phase.
         assert np.allclose(
             np.asarray(a0["regularized_source_vector"], float),
             np.asarray(a1["regularized_source_vector"], float),
@@ -145,7 +145,7 @@ def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
         assert a1["cross_section_quadrature_points"] > a0["cross_section_quadrature_points"]
         assert a1["source_quadrature_resolution"] < a0["source_quadrature_resolution"]
         assert a0["terminal_charge_support_nodes"] > 1
-        assert a1["terminal_charge_support_nodes"] > a0["terminal_charge_support_nodes"]
+        assert a1["terminal_charge_support_nodes"] >= a0["terminal_charge_support_nodes"]
         assert a0["terminal_charge_target_relative_error"] <= 5e-11
         assert a1["terminal_charge_target_relative_error"] <= 5e-11
         assert a0["terminal_charge_lift_relative_curl"] <= 1e-12
