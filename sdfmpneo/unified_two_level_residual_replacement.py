@@ -5,12 +5,13 @@ stagnate because the raw curl-curl equation has a very large numerical dynamic
 range.  This patch performs mixed-precision iterative refinement without
 changing the physical equation:
 
-* form the fine residual accurately from the original complex128 A, x and b;
+* form the fine residual accurately from the original A and b;
 * Ruiz-equilibrate only the correction equation ``A delta = r``;
 * map the existing two-level preconditioner into the scaled coordinates;
-* map the correction back to the original field coordinates;
-* certify both the correction equation and every updated field against the
-  original unscaled physical matrix with compensated residual accumulation.
+* retain the final field as a high/low complex128 expansion so a small but
+  physically important correction is not rounded away by ``x + delta``;
+* certify both the correction equation and updated field against the original
+  unscaled physical matrix with compensated residual accumulation.
 
 No physical operator, source, or tolerance is modified.
 """
@@ -21,6 +22,12 @@ import time
 import numpy as np
 
 from .unified_accurate_residual import accurate_residual_vector
+from .unified_compensated_field import (
+    as_compensated_field,
+    collapsed_field,
+    compensated_add,
+    field_norm,
+)
 from .unified_equilibrated_defect import build_equilibrated_defect_system
 
 
@@ -58,10 +65,12 @@ def install(two_level_module, local_solver_module):
         residual_tolerance,
         cfg,
     ):
-        x = np.asarray(field, complex).reshape(-1).copy()
+        x = as_compensated_field(field)
         rhs_value = np.asarray(rhs, complex).reshape(-1)
         reported = float(field_residual)
-        standard = float(local_solver_module._relative_residual(A, x, rhs_value))
+        standard = float(
+            local_solver_module._relative_residual(A, collapsed_field(x), rhs_value)
+        )
         defect, current, diagnostics = _accurate_relative_residual(
             A, x, rhs_value, residual_tolerance
         )
@@ -142,6 +151,7 @@ def install(two_level_module, local_solver_module):
                 "column_scale_span": equilibrated.column_scale_span,
             })
 
+            rhs_norm = max(float(np.linalg.norm(rhs_value)), np.finfo(float).tiny)
             for k in range(1, steps + 1):
                 if current <= residual_tolerance:
                     return x, current, history
@@ -159,6 +169,7 @@ def install(two_level_module, local_solver_module):
                 delta = None
                 info = -1
                 correction_relative = float("inf")
+                correction_defect = None
                 correction_diag = None
                 scaled_rtol_used = float("nan")
                 solve_started = time.perf_counter()
@@ -194,23 +205,24 @@ def install(two_level_module, local_solver_module):
                     if np.isfinite(correction_relative) and correction_relative <= eta:
                         break
 
-                elapsed_solve = float(time.perf_counter() - solve_started)
-                if delta is None or np.any(~np.isfinite(delta)):
+                if delta is None or np.any(~np.isfinite(delta)) or correction_defect is None:
                     break
 
                 update_relative = float(
                     np.linalg.norm(delta)
-                    / max(float(np.linalg.norm(x)), np.finfo(float).tiny)
+                    / max(field_norm(x), np.finfo(float).tiny)
                 )
 
                 best_candidate = None
                 best_candidate_residual = float("inf")
                 best_candidate_defect = None
                 best_scale = 0.0
+                best_closure = float("inf")
+                best_predicted = float("inf")
                 candidate_mode = "unknown"
                 for j in range(backtracks + 1):
                     scale = float(0.5**j)
-                    candidate = x + scale * delta
+                    candidate = compensated_add(x, delta, scale=scale)
                     candidate_defect, candidate_residual, candidate_diag = (
                         _accurate_relative_residual(
                             A,
@@ -219,11 +231,25 @@ def install(two_level_module, local_solver_module):
                             residual_tolerance,
                         )
                     )
+                    # In exact arithmetic r(x+s*delta) = (1-s)r(x) +
+                    # s*(r(x)-A*delta).  Any gap is numerical update/evaluation
+                    # error; with the high/low field it should be tiny.
+                    predicted_defect = (
+                        (1.0 - scale) * defect + scale * correction_defect
+                    )
+                    predicted_relative = float(
+                        np.linalg.norm(predicted_defect) / rhs_norm
+                    )
+                    closure = float(
+                        np.linalg.norm(candidate_defect - predicted_defect) / rhs_norm
+                    )
                     if candidate_residual < best_candidate_residual:
                         best_candidate = candidate
                         best_candidate_residual = candidate_residual
                         best_candidate_defect = candidate_defect
                         best_scale = scale
+                        best_closure = closure
+                        best_predicted = predicted_relative
                         candidate_mode = str(candidate_diag["accumulation_mode"])
                     if candidate_residual < current:
                         break
@@ -246,6 +272,8 @@ def install(two_level_module, local_solver_module):
                     "correction_certified": correction_certified,
                     "update_relative_norm": update_relative,
                     "accepted_scale": float(best_scale),
+                    "predicted_relative_residual": float(best_predicted),
+                    "linear_closure_relative_error": float(best_closure),
                     "seconds": elapsed,
                     "starting_relative_residual": current,
                     "relative_residual": float(best_candidate_residual),
@@ -259,6 +287,7 @@ def install(two_level_module, local_solver_module):
                 print(
                     f"local Maxwell equilibrated residual replacement-{k}: "
                     f"residual={best_candidate_residual:.3e}, start={current:.3e}, "
+                    f"predicted={best_predicted:.3e}, closure={best_closure:.3e}, "
                     f"correction_residual={correction_relative:.3e}, target={eta:.3e}, "
                     f"scaled_rtol={scaled_rtol_used:.1e}, update={update_relative:.3e}, "
                     f"scale={best_scale:.3g}, info={int(info)}, "
@@ -268,35 +297,46 @@ def install(two_level_module, local_solver_module):
                 )
                 if not accepted:
                     break
-                x = np.asarray(best_candidate, complex).reshape(-1)
+                x = best_candidate
                 current = float(best_candidate_residual)
                 defect = np.asarray(best_candidate_defect, complex).reshape(-1)
 
             if current <= residual_tolerance:
                 print(
-                    f"local Maxwell accurate residual certified after equilibration: residual={current:.3e}",
+                    f"local Maxwell accurate residual certified after compensated update: residual={current:.3e}",
                     flush=True,
                 )
                 return x, current, history
 
-        # Retain the matrix-free Galerkin correction as a fallback.  It cannot
-        # overwrite the best accurately certified fine-grid field unless a fresh
-        # compensated residual check confirms an actual improvement.
+        # The old Galerkin fallback only accepts an ordinary complex128 field.
+        # If compensated refinement did not certify, collapse explicitly and
+        # recompute its residual so no high/low accuracy is silently claimed.
+        collapsed = collapsed_field(x)
+        collapsed_defect, collapsed_current, _collapsed_diag = (
+            _accurate_relative_residual(
+                A,
+                collapsed,
+                rhs_value,
+                residual_tolerance,
+            )
+        )
         coarse_field, coarse_residual, coarse_history = original(
             local_solver_module_arg,
             two_level,
             A,
             rhs_value,
-            x,
-            current,
+            collapsed,
+            collapsed_current,
             fine_M,
             residual_tolerance,
             cfg,
         )
         history.extend(coarse_history)
-        if np.isfinite(coarse_residual) and coarse_residual < current:
+        best_field = collapsed
+        best_residual = collapsed_current
+        if np.isfinite(coarse_residual) and coarse_residual < best_residual:
             candidate = np.asarray(coarse_field, complex).reshape(-1)
-            candidate_defect, accurate_candidate, _candidate_diag = (
+            _candidate_defect, accurate_candidate, _candidate_diag = (
                 _accurate_relative_residual(
                     A,
                     candidate,
@@ -304,10 +344,10 @@ def install(two_level_module, local_solver_module):
                     residual_tolerance,
                 )
             )
-            if accurate_candidate < current:
-                x = candidate
-                current = accurate_candidate
-        return x, current, history
+            if accurate_candidate < best_residual:
+                best_field = candidate
+                best_residual = accurate_candidate
+        return best_field, best_residual, history
 
     two_level_module._galerkin_defect_polish = residual_replacement_then_galerkin
     two_level_module._fine_residual_replacement_installed = True
