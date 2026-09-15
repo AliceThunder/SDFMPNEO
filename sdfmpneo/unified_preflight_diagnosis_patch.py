@@ -25,16 +25,7 @@ def install(corrected_preflight_module):
                     "mesh Gate. Repair/condition the local solve or source formulation first."
                 ),
             }
-        result = original_local(local_self)
-        if isinstance(result, dict) and str(local_self.get("self_correction_model", "")).endswith("_v3"):
-            result = dict(result)
-            result["code"] = "full_local_self_defect_not_converged"
-            result["recommendation"] = (
-                "The complete canonical local fine-minus-coarse self defect has not converged. "
-                "Improve finite-support source quadrature or refine only the canonical local "
-                "reference; do not relax the Gate or globally refine the UWPT domain."
-            )
-        return result
+        return original_local(local_self)
 
     def diagnose_mesh(mesh):
         if bool(mesh.get("converged", False)) or not mesh.get("samples"):
@@ -72,10 +63,11 @@ def install(corrected_preflight_module):
             "mutual_d_vol_relative_error": mutual_d,
             "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
             "recommendation": (
-                "The independently certified local v3 defect has been applied, but the remaining "
-                "global self response is still mesh dependent. Improve the physical source "
-                "quadrature/local defect resolution and rerun the unchanged global mesh Gate; "
-                "do not relax the tolerance."
+                "The independently certified localized transverse/cross self defect has been "
+                "applied, but the remaining global self response is still mesh dependent. "
+                "The canonical local box must not be used to replace pure longitudinal terminal "
+                "response. Diagnose the remaining global longitudinal/source/material "
+                "discretization while keeping the unchanged mesh Gate."
                 if self_dominated
                 else "Refine the remaining non-self EM truth discretization and rerun the Gate; "
                 "do not relax the tolerance."
