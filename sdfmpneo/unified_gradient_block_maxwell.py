@@ -164,6 +164,20 @@ def build_gradient_block(
     because ``C G = 0``.  This avoids cancellation between a very large curl
     block and the much smaller dielectric/conductive longitudinal block.
     """
+    cache = getattr(background, "_sdfmpneo_gradient_block_cache", None)
+    if cache is None:
+        cache = {}
+        background._sdfmpneo_gradient_block_cache = cache
+    key = (
+        id(context),
+        bool(mqs),
+        None if mqs_admittance is None else complex(mqs_admittance),
+        bool(check_topology),
+    )
+    cached_block = cache.get(key)
+    if cached_block is not None:
+        return cached_block
+
     started = time.perf_counter()
     G = gradient_operator(background, gauge_fixed=True)
     topology_error = 0.0
@@ -198,12 +212,14 @@ def build_gradient_block(
     except (RuntimeError, ValueError):
         factor = spla.splu(scalar)
     elapsed = float(time.perf_counter() - started)
+    block = GradientBlock(G, scalar, factor, elapsed, topology_error)
+    cache[key] = block
     print(
         f"Maxwell scalar-gradient block: scalar_dofs={G.shape[1]}, "
         f"topology={topology_error:.1e}, factor={elapsed:.1f}s",
         flush=True,
     )
-    return GradientBlock(G, scalar, factor, elapsed, topology_error)
+    return block
 
 
 def compose_block_preconditioner(A, edge_preconditioner, gradient_block, *, post_correct=True):
