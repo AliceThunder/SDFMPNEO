@@ -241,6 +241,14 @@ def install(background_cls):
 
     def spatial_context(self, geometry):
         context = original_spatial_context(self, geometry)
+        # Refined scalar-only reference patches consume q_target directly in
+        # nodal charge space.  Building an additional global edge-space G.T G
+        # lift on those large local grids is redundant and can double peak LU
+        # memory.  Production/global Maxwell backgrounds never set this flag.
+        if bool(getattr(self, "_sdfmpneo_scalar_charge_target_only", False)):
+            context._sdfmpneo_charge_lift_skipped_for_scalar_reference = True
+            return context
+
         source = np.asarray(context.source_shape, float).copy()
         metadata = [dict(row) for row in getattr(context, "source_regularization", ())]
         if len(metadata) != source.shape[1]:
