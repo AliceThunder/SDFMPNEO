@@ -1,6 +1,8 @@
 """Install compatible coarse-to-fine warm transfer for local Maxwell solves."""
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from .unified_hcurl_transfer import build_hcurl_prolongation
@@ -32,20 +34,31 @@ def install(local_solver_module):
         coarse_field = np.asarray(state.get("field", ()), complex).reshape(-1)
         if axes is None:
             return None, False
+        started = time.perf_counter()
         try:
             P = build_hcurl_prolongation(axes, local)
             if coarse_field.shape != (P.shape[1],):
-                return None, False
+                raise ValueError("coarse warm field dimension does not match H(curl) transfer")
             guess = np.asarray(P @ coarse_field, complex).reshape(-1)
-        except (RuntimeError, ValueError, TypeError, FloatingPointError):
+        except (RuntimeError, ValueError, TypeError, FloatingPointError) as exc:
+            message = str(exc).replace("\n", " ")
+            print(
+                "local Maxwell H(curl) transfer FAILED: "
+                f"coarse_step={previous_step:g}m, fine_step={float(fine_step):g}m, "
+                f"fine_edges={local.n_edges}, error={type(exc).__name__}: {message}",
+                flush=True,
+            )
+            # The >200k validation solve deliberately no longer has a one-level
+            # ILU fallback.  Failing closed here prevents a transfer bug from
+            # silently routing back into the already disproved 254k path.
+            if local.n_edges >= 200000:
+                raise RuntimeError("required H(curl) validation transfer failed") from exc
             return None, False
         if guess.shape != (local.n_edges,) or np.any(~np.isfinite(guess)):
+            if local.n_edges >= 200000:
+                raise FloatingPointError("required H(curl) validation warm field is invalid")
             return None, False
 
-        # Keep the coarse information only on this fine background for the
-        # duration of the solve.  The two-level preconditioner can reuse P and
-        # rebuild the much smaller coarse operator without retaining it between
-        # audit stages.
         local._sdfmpneo_coarse_state = {
             **state,
             "prolongation": P,
@@ -53,7 +66,8 @@ def install(local_solver_module):
         }
         print(
             "local Maxwell H(curl) transfer: "
-            f"coarse_edges={P.shape[1]}, fine_edges={P.shape[0]}, nnz={P.nnz}",
+            f"coarse_edges={P.shape[1]}, fine_edges={P.shape[0]}, nnz={P.nnz}, "
+            f"time={time.perf_counter()-started:.1f}s",
             flush=True,
         )
         return guess, True
