@@ -9,13 +9,14 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 20 keeps the full open two-terminal source, resolves its
+# Physics truth version 21 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, uses only
-# the independently converged localizable transverse/cross self defect, and
-# evaluates the nonlocal pure-longitudinal self term on a separately certified
-# full-domain scalar-gradient reference grid. No isolated local box replaces the
-# global terminal/return-path response.
-_unified_model.FORMAT_VERSION = 20
+# the independently converged localizable transverse/cross Maxwell self defect,
+# and resolves the remaining pure-longitudinal source near field with a local
+# scalar patch whose Dirichlet trace is inherited from the full-domain coarse
+# scalar solution.  The patch therefore cannot replace global return-path,
+# dielectric or open-boundary physics.
+_unified_model.FORMAT_VERSION = 21
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -75,9 +76,9 @@ _corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
 # The canonical local box certifies/refines only the localizable transverse/cross
-# self defect. The remaining pure-longitudinal self term is nonlocal, so refine
-# it on a full-domain scalar-gradient reference grid and certify that reference
-# independently before the full 12mm->9mm Maxwell mesh Gate is accepted.
+# self defect.  The nonlocal longitudinal problem remains global, while its
+# unresolved source near field is corrected on a Cartesian scalar patch whose
+# boundary potential is inherited from that global solution.
 from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
@@ -134,16 +135,17 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v20 adds a separately certified global compatible-longitudinal self reference.
-# Invalidate v19 and every earlier physical cache/release metadata.
+# v21 replaces the non-convergent whole-domain 9mm scalar reference with a
+# separately certified boundary-conditioned local longitudinal near-field
+# defect. Invalidate v20 and every earlier physical cache/release metadata.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 22
+_unified_runtime._CACHE_FORMAT = 23
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
-# Resolve the common scalar reference every time the production background is
-# constructed, including physical-cache hits that skip preflight execution. The
-# runtime signature is computed before build_background(), so this deterministic
-# resolution does not change cache-key semantics.
+# Resolve deterministic scalar-patch settings every time the production
+# background is constructed, including physical-cache hits that skip preflight.
+# The runtime signature is computed before build_background(), so this does not
+# alter cache-key semantics beyond the explicit cache-format bump above.
 _original_runtime_build_background = _unified_runtime.build_background
 
 def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
@@ -154,8 +156,7 @@ def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
 _unified_runtime.build_background = _build_background_with_longitudinal_reference
 
 # Post-basis mesh/thermal Gates must consume the exact same corrected truth as
-# preflight and tensor-label generation; otherwise the old coarse longitudinal
-# self remainder would reappear at 53% progress.
+# preflight and tensor-label generation.
 from . import unified_corrected_physics_gate as _corrected_physics_gate
 from .unified_global_longitudinal_physics_gate import install as _install_global_longitudinal_physics_gate
 
