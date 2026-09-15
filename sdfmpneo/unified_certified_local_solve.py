@@ -29,10 +29,18 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.interpolate import RegularGridInterpolator
 
+from .unified_compensated_field import (
+    collapsed_field,
+    field_abs2,
+    field_is_finite,
+    field_linear_dot,
+)
+
 
 def _relative_residual(A, field, rhs):
+    value = collapsed_field(field)
     return float(
-        np.linalg.norm(rhs - A @ field)
+        np.linalg.norm(rhs - A @ value)
         / max(float(np.linalg.norm(rhs)), np.finfo(float).tiny)
     )
 
@@ -64,7 +72,7 @@ def _edge_component_shape(background, axis):
 
 def _pack_warm_state(local, local_geometry, port, fine_step, field):
     """Store compact E-component grids for a subsequent refined solve."""
-    field = np.asarray(field, complex).reshape(-1)
+    field = collapsed_field(field)
     components = []
     offset = 0
     for axis in range(3):
@@ -334,7 +342,7 @@ def install(self_correction_module):
                         "than falling back to an hours-long full sparse LU."
                     )
 
-        if np.any(~np.isfinite(field)):
+        if not field_is_finite(field):
             raise FloatingPointError("local self-correction Maxwell solve produced non-finite fields")
 
         initial_residual = float(residual)
@@ -346,11 +354,12 @@ def install(self_correction_module):
             for _ in range(refinement_steps):
                 if residual <= residual_tolerance:
                     break
-                defect = np.asarray(rhs - A @ field, complex).reshape(-1)
+                field_array = collapsed_field(field)
+                defect = np.asarray(rhs - A @ field_array, complex).reshape(-1)
                 delta = np.asarray(lu.solve(defect), complex).reshape(-1)
                 if np.any(~np.isfinite(delta)):
                     break
-                candidate = field + delta
+                candidate = field_array + delta
                 candidate_residual = _relative_residual(A, candidate, rhs)
                 if not np.isfinite(candidate_residual) or candidate_residual >= residual:
                     break
@@ -358,22 +367,25 @@ def install(self_correction_module):
                 residual = candidate_residual
                 refinements += 1
 
-        # Save only compact component grids for coarse->fine/refinement warm start.
+        # Save only a collapsed complex128 field for warm start.  Warm state is
+        # an initial guess only; the current certified high/low field is retained
+        # below for physical truth contraction.
         parent._local_self_warm_state = _pack_warm_state(
             local, local_geometry, port, fine_step, field
         )
 
         source = np.asarray(context.source_shape[:, 0], float)
-        z = complex(-source @ field)
+        z = -field_linear_dot(source, field)
         sigma = np.asarray(local.cell_properties(context, None, em=True)[0], float)
         edge_loss = np.asarray(local.edge_cell_hodge @ sigma).reshape(-1)
-        d = float(np.real(field.conj() @ (edge_loss * field)))
+        abs2 = field_abs2(field)
+        d = float(np.sum(edge_loss * abs2))
         outward_weights = np.asarray(local.outward_loss_weights(), float).reshape(-1)
-        d_out = float(np.real(field.conj() @ (outward_weights * field)))
+        d_out = float(np.sum(outward_weights * abs2))
         q_cells = np.asarray(
             0.5
             * sigma
-            * np.asarray(local.edge_cell_hodge.T @ (np.abs(field) ** 2)).reshape(-1),
+            * np.asarray(local.edge_cell_hodge.T @ abs2).reshape(-1),
             float,
         )
 
