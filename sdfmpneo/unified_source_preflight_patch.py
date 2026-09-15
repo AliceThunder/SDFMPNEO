@@ -1,10 +1,17 @@
 """Production source preflight for an open two-terminal stranded current.
 
-The source must remain open and carry genuine terminal divergence.  A physical
-terminal model may distribute that divergence over a finite feed/contact region,
-so the continuity audit compares the nodal-divergence first moment with the
-mesh-independent *regularized source vector* declared by the source deposition,
-not blindly with the zero-length endpoint vector.
+The source must remain open and carry genuine terminal divergence.  Both pieces
+of finite-support regularization are physical and must be independently
+certified:
+
+* feed/return divergence is distributed over a mesh-independent contact length;
+* the stranded current occupies a mesh-independent rectangular cross section.
+
+The numerical quadrature used to integrate that fixed rectangle may become more
+resolved on finer meshes; changing quadrature resolution is not a change of the
+physical source.  The continuity audit compares the nodal-divergence first
+moment with the mesh-independent regularized source vector declared by source
+deposition.
 """
 from __future__ import annotations
 
@@ -62,7 +69,22 @@ def install(truth_preflight_module):
             requires_distributed = str(getattr(background, "terminal_model", "")).startswith(
                 "distributed_terminal_contact"
             )
-            support_ok = bool(distributed if requires_distributed else True)
+            terminal_support_ok = bool(distributed if requires_distributed else True)
+
+            composite_source = str(getattr(background, "source_model", "")).startswith(
+                "stranded_rectangular_cross_section_composite_gauss3"
+            )
+            cross_section_support_ok = bool(
+                meta.get("cross_section_support_mesh_independent", False)
+                and meta.get("cross_section_quadrature") == "composite_gauss3"
+                and int(meta.get("cross_section_width_panels", 0)) >= 1
+                and int(meta.get("cross_section_thickness_panels", 0)) >= 1
+                and int(meta.get("cross_section_quadrature_points", 0)) >= 9
+                and float(meta.get("source_quadrature_resolution", 0.0)) > 0.0
+            )
+            if not composite_source:
+                cross_section_support_ok = True
+
             rows.append(
                 {
                     "port": int(port),
@@ -72,21 +94,26 @@ def install(truth_preflight_module):
                     "terminal_divergence_nonzero": bool(
                         divergence_relative >= _MIN_TERMINAL_DIVERGENCE_RELATIVE_NORM
                     ),
-                    "terminal_support_mesh_independent": support_ok,
+                    "terminal_support_mesh_independent": terminal_support_ok,
+                    "cross_section_support_mesh_independent": cross_section_support_ok,
                     "terminal_contact_length": float(meta.get("terminal_contact_length", 0.0)),
                     "terminal_profile": meta.get("terminal_profile"),
+                    "cross_section_quadrature": meta.get("cross_section_quadrature"),
+                    "cross_section_width_panels": int(meta.get("cross_section_width_panels", 0)),
+                    "cross_section_thickness_panels": int(meta.get("cross_section_thickness_panels", 0)),
+                    "cross_section_quadrature_points": int(meta.get("cross_section_quadrature_points", 0)),
+                    "source_quadrature_resolution": float(meta.get("source_quadrature_resolution", 0.0)),
                 }
             )
 
         terminal_ok = bool(
             rows
             and all(
-                row["net_terminal_balance_relative_error"]
-                <= _MAX_NET_TERMINAL_BALANCE_ERROR
-                and row["terminal_first_moment_relative_error"]
-                <= _MAX_TERMINAL_MOMENT_RELATIVE_ERROR
+                row["net_terminal_balance_relative_error"] <= _MAX_NET_TERMINAL_BALANCE_ERROR
+                and row["terminal_first_moment_relative_error"] <= _MAX_TERMINAL_MOMENT_RELATIVE_ERROR
                 and row["terminal_divergence_nonzero"]
                 and row["terminal_support_mesh_independent"]
+                and row["cross_section_support_mesh_independent"]
                 for row in rows
             )
         )
@@ -94,24 +121,34 @@ def install(truth_preflight_module):
         result["terminal_support_mesh_independent"] = bool(
             rows and all(row["terminal_support_mesh_independent"] for row in rows)
         )
+        result["cross_section_support_mesh_independent"] = bool(
+            rows and all(row["cross_section_support_mesh_independent"] for row in rows)
+        )
         result["minimum_terminal_contact_length"] = min(
             (row["terminal_contact_length"] for row in rows), default=0.0
         )
+        result["minimum_cross_section_quadrature_points"] = min(
+            (row["cross_section_quadrature_points"] for row in rows), default=0
+        )
+        result["maximum_source_quadrature_resolution"] = max(
+            (row["source_quadrature_resolution"] for row in rows), default=float("inf")
+        )
         result["maximum_net_terminal_balance_relative_error"] = max(
-            (row["net_terminal_balance_relative_error"] for row in rows),
-            default=float("inf"),
+            (row["net_terminal_balance_relative_error"] for row in rows), default=float("inf")
         )
         result["minimum_terminal_divergence_relative_norm"] = min(
-            (row["terminal_divergence_relative_norm"] for row in rows),
-            default=0.0,
+            (row["terminal_divergence_relative_norm"] for row in rows), default=0.0
         )
         result["maximum_terminal_first_moment_relative_error"] = max(
-            (row["terminal_first_moment_relative_error"] for row in rows),
-            default=float("inf"),
+            (row["terminal_first_moment_relative_error"] for row in rows), default=float("inf")
         )
         result["terminal_divergence_audit"] = rows
         result["terminal_path_conservation"] = bool(
             result.get("terminal_path_conservation", False) and terminal_ok
+        )
+        result["finite_support_source"] = bool(
+            result.get("finite_support_source", False)
+            and result["cross_section_support_mesh_independent"]
         )
         return result
 
