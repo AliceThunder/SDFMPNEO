@@ -1,10 +1,10 @@
 """Fast certified multi-port Maxwell solves for global truth and Physics Gates.
 
-Large open-domain matrices use one shared Maxwell-aware shifted-ILU per attempt
-and LGMRES for every port.  If the main Krylov solve reaches the 1e-6--1e-7
-range but not the final certificate, true-residual defect correction reuses the
-same ILU instead of building an expensive sparse LU.  Acceptance always checks
-the original unmodified physical Maxwell operator.
+Large open-domain systems use the same compatible scalar-gradient block as the
+local self solver. One gauge-fixed scalar factor and one edge ILU are shared by
+all port RHS for a geometry. The open two-terminal longitudinal response is
+solved explicitly; no source projection, gauge penalty, or tolerance relaxation
+is used. Acceptance always uses the true residual of the original matrix.
 """
 from __future__ import annotations
 
@@ -13,24 +13,27 @@ import time
 import numpy as np
 import scipy.sparse.linalg as spla
 
+from .unified_gradient_block_maxwell import (
+    build_gradient_block,
+    compose_block_preconditioner,
+)
+
 
 def _cfg(background):
     root = dict(getattr(background, "background_config", {}) or {})
     cfg = dict(root.get("linear_solver", {}) or {})
     cfg.setdefault("relative_residual_tolerance", 1e-9)
     cfg.setdefault("direct_max_dofs", 60000)
-    cfg.setdefault("iterative_maxiter", 40)
-    cfg.setdefault("iterative_inner_m", 30)
-    cfg.setdefault("iterative_defect_steps", 3)
-    cfg.setdefault("iterative_defect_maxiter", 16)
-    cfg.setdefault("iterative_defect_inner_m", 20)
-    cfg.setdefault("iterative_defect_start_residual", 5e-6)
+    cfg.setdefault("iterative_maxiter", 24)
+    cfg.setdefault("iterative_inner_m", 24)
     cfg.setdefault("ilu_drop_tolerance", 5e-3)
     cfg.setdefault("ilu_fill_factor", 4.0)
     cfg.setdefault("ilu_strong_drop_tolerance", 1e-3)
     cfg.setdefault("ilu_strong_fill_factor", 8.0)
     cfg.setdefault("ilu_shift_factor", 3e-2)
     cfg.setdefault("ilu_strong_shift_factor", 1e-1)
+    cfg.setdefault("defect_steps", 2)
+    cfg.setdefault("defect_start_residual", 1e-7)
     return cfg
 
 
@@ -56,8 +59,59 @@ def _direct(A, B):
     return np.asarray(X, complex), float(time.perf_counter() - started)
 
 
+def _defect_cleanup(A, B, X, M, local_solver_module, tolerance, steps):
+    X = np.asarray(X, complex).copy()
+    history = []
+    for sweep in range(int(steps)):
+        residuals = _true_residuals(A, X, B)
+        if float(np.max(residuals)) <= tolerance:
+            break
+        started = time.perf_counter()
+        infos = []
+        for p in range(B.shape[1]):
+            if residuals[p] <= tolerance:
+                infos.append(0)
+                continue
+            defect = np.asarray(B[:, p] - A @ X[:, p], complex).reshape(-1)
+            eta = min(
+                2e-2,
+                max(1e-5, 0.25 * tolerance / max(float(residuals[p]), np.finfo(float).tiny)),
+            )
+            delta, info = local_solver_module._lgmres(
+                A,
+                defect,
+                x0=None,
+                M=M,
+                rtol=eta,
+                maxiter=12,
+                inner_m=20,
+            )
+            candidate = X[:, p] + np.asarray(delta, complex).reshape(-1)
+            old = float(residuals[p])
+            new = float(_true_residuals(A, candidate[:, None], B[:, p : p + 1])[0])
+            if np.isfinite(new) and new < old:
+                X[:, p] = candidate
+            infos.append(int(info))
+        after = _true_residuals(A, X, B)
+        elapsed = time.perf_counter() - started
+        history.append(
+            {
+                "solver": f"gradient-block-defect-{sweep+1}",
+                "krylov_info": infos,
+                "seconds": float(elapsed),
+                "maximum_relative_residual": float(np.max(after)),
+            }
+        )
+        print(
+            f"global Maxwell gradient-block-defect-{sweep+1}: "
+            f"residual={float(np.max(after)):.3e}, info={infos}, time={elapsed:.1f}s",
+            flush=True,
+        )
+    return X, float(np.max(_true_residuals(A, X, B))), history
+
+
 def solve_multi_rhs(background, A, B, local_solver_module):
-    """Solve all port RHS with one shared preconditioner and certify true residuals."""
+    """Solve all port RHS with shared compatible preconditioners and certify them."""
     B = np.asarray(B, complex)
     if B.ndim != 2 or B.shape[0] != A.shape[0]:
         raise ValueError("global Maxwell RHS must have shape (n_edges, n_ports)")
@@ -86,31 +140,35 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             "maximum_relative_residual": float(np.max(residuals)),
         },)
 
+    context = getattr(A, "_sdfmpneo_context", None)
+    tagged_background = getattr(A, "_sdfmpneo_background", None)
+    mqs = bool(getattr(A, "_sdfmpneo_mqs", False))
+    mqs_admittance = getattr(A, "_sdfmpneo_mqs_admittance", None)
+    gradient_block = None
+    if context is not None and tagged_background is not None:
+        gradient_block = build_gradient_block(
+            tagged_background,
+            context,
+            mqs=mqs,
+            mqs_admittance=mqs_admittance,
+            check_topology=True,
+        )
+
     maxiter = int(cfg["iterative_maxiter"])
     inner_m = int(cfg["iterative_inner_m"])
-    defect_steps = int(cfg["iterative_defect_steps"])
-    defect_maxiter = int(cfg["iterative_defect_maxiter"])
-    defect_inner_m = int(cfg["iterative_defect_inner_m"])
-    defect_start = float(cfg["iterative_defect_start_residual"])
     target = max(0.2 * tolerance, 1e-12)
     attempts = (
         (
             float(cfg["ilu_drop_tolerance"]),
             float(cfg["ilu_fill_factor"]),
             float(cfg["ilu_shift_factor"]),
-            "shifted-ilu-fast",
+            "gradient-block-ilu-fast" if gradient_block is not None else "shifted-ilu-fast",
         ),
         (
             float(cfg["ilu_strong_drop_tolerance"]),
             float(cfg["ilu_strong_fill_factor"]),
             float(cfg["ilu_strong_shift_factor"]),
-            "shifted-ilu-strong",
-        ),
-        (
-            float(cfg["ilu_strong_drop_tolerance"]),
-            float(cfg["ilu_strong_fill_factor"]),
-            max(5e-3, 0.5 * float(cfg["ilu_shift_factor"])),
-            "shifted-ilu-tight",
+            "gradient-block-ilu-strong" if gradient_block is not None else "shifted-ilu-strong",
         ),
     )
     history = []
@@ -120,11 +178,16 @@ def solve_multi_rhs(background, A, B, local_solver_module):
     for drop_tol, fill_factor, shift_factor, label in attempts:
         started = time.perf_counter()
         try:
-            M = local_solver_module._ilu_preconditioner(
+            edge_M = local_solver_module._ilu_preconditioner(
                 A,
                 drop_tol=drop_tol,
                 fill_factor=fill_factor,
                 shift_factor=shift_factor,
+            )
+            M = (
+                compose_block_preconditioner(A, edge_M, gradient_block, post_correct=True)
+                if gradient_block is not None
+                else edge_M
             )
         except (RuntimeError, ValueError, MemoryError) as exc:
             history.append({
@@ -162,6 +225,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             "shift_factor": shift_factor,
             "krylov_info": infos,
             "preconditioner_seconds": float(preconditioner_seconds),
+            "gradient_scalar_dofs": 0 if gradient_block is None else gradient_block.scalar_dofs,
+            "gradient_factor_seconds": 0.0 if gradient_block is None else gradient_block.build_seconds,
             "seconds": float(elapsed),
             "maximum_relative_residual": worst,
         })
@@ -177,50 +242,30 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             return best_X, best_residual, tuple(history)
 
         if (
-            defect_steps > 0
-            and best_X is not None
-            and np.isfinite(best_residual)
-            and best_residual <= defect_start
+            best_X is not None
+            and best_residual <= float(cfg["defect_start_residual"])
+            and int(cfg["defect_steps"]) > 0
         ):
-            refined = best_X.copy()
-            correction_rows = []
-            for p in range(B.shape[1]):
-                rp = float(_true_residuals(A, refined[:, [p]], B[:, [p]])[0])
-                if rp <= tolerance:
-                    continue
-                field, rp_new, rows = local_solver_module._defect_refine(
-                    A,
-                    B[:, p],
-                    refined[:, p],
-                    M,
-                    local_solver_module._lgmres,
-                    local_solver_module._relative_residual,
-                    tolerance,
-                    steps=defect_steps,
-                    maxiter=defect_maxiter,
-                    inner_m=defect_inner_m,
-                    label=f"global-{label}-p{p+1}-defect",
-                )
-                refined[:, p] = field
-                correction_rows.extend(rows)
-            history.extend(correction_rows)
-            refined_residuals = _true_residuals(A, refined, B)
-            refined_worst = float(np.max(refined_residuals))
-            if np.isfinite(refined_worst) and refined_worst < best_residual:
+            refined, refined_residual, extra = _defect_cleanup(
+                A,
+                B,
+                best_X,
+                M,
+                local_solver_module,
+                tolerance,
+                int(cfg["defect_steps"]),
+            )
+            history.extend(extra)
+            if refined_residual < best_residual:
                 best_X = refined
-                best_residual = refined_worst
+                best_residual = refined_residual
             if best_residual <= tolerance:
-                print(
-                    f"global Maxwell {label} defect-corrected: residual={best_residual:.3e}",
-                    flush=True,
-                )
                 return best_X, best_residual, tuple(history)
 
     raise RuntimeError(
-        "large global Maxwell iterative solve did not reach the certified residual after "
-        "true-residual defect correction; "
+        "large global Maxwell iterative solve did not reach the certified residual; "
         f"edges={A.shape[0]}, residual={best_residual:.3e}, tolerance={tolerance:.3e}. "
-        "Increase Krylov/ILU strength rather than using an hours-long full sparse LU."
+        "The compatible gradient block was unable to certify this system; do not relax the Gate."
     )
 
 
@@ -231,6 +276,11 @@ def install(physics_gate_module, tensor_surrogate_module, local_solver_module):
     def solve_fields(background, geometry, *, mqs=False):
         context = background.geometry_context(geometry, assemble_thermal=False)
         A = physics_gate_module._operator(background, context, mqs=mqs)
+        A._sdfmpneo_background = background
+        A._sdfmpneo_context = context
+        A._sdfmpneo_mqs = bool(mqs)
+        if mqs:
+            A._sdfmpneo_mqs_admittance = physics_gate_module._mqs_boundary_admittance(background)
         B = np.asarray(background.rhs_matrix(context), complex)
         X, _residual, _history = solve_multi_rhs(background, A, B, local_solver_module)
         if np.any(~np.isfinite(X)):
