@@ -15,7 +15,7 @@ def _relative_pilot(A, rhs, x0, M, solve, residual_fn, *, maxiter, inner_m, acce
     before = float(residual_fn(A, start, rhs))
     # SciPy measures rtol against ||rhs||, not against the residual at x0.
     # Therefore a fixed rtol=0.5 would immediately accept any warm start whose
-    # true relative residual is already <0.5.  Ask instead for roughly a factor
+    # true relative residual is already <0.5. Ask instead for roughly a factor
     # two reduction from the actual starting point.
     pilot_rtol = max(min(0.5, 0.5 * before), 1e-12)
     started = time.perf_counter()
@@ -37,6 +37,160 @@ def _relative_pilot(A, rhs, x0, M, solve, residual_fn, *, maxiter, inner_m, acce
         and after < before * float(accept_ratio)
     )
     return candidate, after, int(info), elapsed, before, accepted, pilot_rtol
+
+
+def _galerkin_defect_polish(
+    local_solver_module,
+    two_level,
+    A,
+    rhs,
+    field,
+    field_residual,
+    fine_M,
+    residual_tolerance,
+    cfg,
+):
+    """Remove the rediscretization plateau with the true Galerkin coarse equation.
+
+    This is an outer defect-correction stage, not a nested nonlinear
+    preconditioner.  The 118k rediscretized compatible block preconditions a
+    matrix-free solve of ``P.T A_f P``.  The prolongated coarse correction is
+    line-searched against the original fine residual, then a short fine
+    two-level LGMRES polish removes the high-frequency remainder.
+    """
+    x = np.asarray(field, complex).reshape(-1).copy()
+    current = float(field_residual)
+    rhs = np.asarray(rhs, complex).reshape(-1)
+    P = two_level.prolongation
+    Ac = two_level.galerkin_operator()
+    Mc = two_level.galerkin_preconditioner()
+
+    cycles = int(cfg.get("linear_two_level_galerkin_polish_cycles", 3))
+    coarse_rtol = float(cfg.get("linear_two_level_galerkin_coarse_rtol", 1e-4))
+    coarse_maxiter = int(cfg.get("linear_two_level_galerkin_coarse_maxiter", 8))
+    coarse_inner_m = int(cfg.get("linear_two_level_galerkin_coarse_inner_m", 20))
+    fine_maxiter = int(cfg.get("linear_two_level_galerkin_fine_maxiter", 12))
+    fine_inner_m = int(cfg.get("linear_two_level_galerkin_fine_inner_m", 20))
+    if (
+        cycles < 1
+        or not 0.0 < coarse_rtol < 1.0
+        or coarse_maxiter < 1
+        or coarse_inner_m < 2
+        or fine_maxiter < 1
+        or fine_inner_m < 2
+    ):
+        raise ValueError("two-level Galerkin polish settings are invalid")
+
+    fine_target = max(float(residual_tolerance) * 0.2, 1e-12)
+    history = []
+    tiny = np.finfo(float).tiny
+
+    for cycle in range(1, cycles + 1):
+        fine_defect = np.asarray(rhs - A @ x, complex).reshape(-1)
+        coarse_rhs = np.asarray(P.T @ fine_defect, complex).reshape(-1)
+        coarse_norm = float(np.linalg.norm(coarse_rhs))
+        if not np.isfinite(coarse_norm) or coarse_norm <= tiny:
+            break
+
+        started = time.perf_counter()
+        coarse_delta, coarse_info = local_solver_module._lgmres(
+            Ac,
+            coarse_rhs,
+            x0=None,
+            M=Mc,
+            rtol=coarse_rtol,
+            maxiter=coarse_maxiter,
+            inner_m=coarse_inner_m,
+        )
+        coarse_delta = np.asarray(coarse_delta, complex).reshape(-1)
+        coarse_relative = float(
+            np.linalg.norm(coarse_rhs - Ac @ coarse_delta) / max(coarse_norm, tiny)
+        )
+        correction = np.asarray(P @ coarse_delta, complex).reshape(-1)
+        action = np.asarray(A @ correction, complex).reshape(-1)
+        denominator = complex(np.vdot(action, action))
+        if (
+            np.any(~np.isfinite(coarse_delta))
+            or np.any(~np.isfinite(correction))
+            or not np.isfinite(coarse_relative)
+            or abs(denominator) <= tiny
+        ):
+            break
+
+        # Exact one-dimensional least-squares minimizer for
+        # ||fine_defect - alpha * A*correction||_2.  This makes acceptance
+        # independent of the inner coarse solve's stopping details.
+        alpha = complex(np.vdot(action, fine_defect) / denominator)
+        if not np.isfinite(alpha.real) or not np.isfinite(alpha.imag):
+            break
+        candidate = x + alpha * correction
+        candidate_residual = float(local_solver_module._relative_residual(A, candidate, rhs))
+        elapsed = float(time.perf_counter() - started)
+        accepted = bool(np.isfinite(candidate_residual) and candidate_residual < current)
+        history.append({
+            "solver": f"two-level-galerkin-coarse-defect-{cycle}",
+            "krylov_info": int(coarse_info),
+            "coarse_relative_residual": coarse_relative,
+            "alpha_real": float(alpha.real),
+            "alpha_imag": float(alpha.imag),
+            "seconds": elapsed,
+            "starting_relative_residual": current,
+            "relative_residual": candidate_residual,
+            "accepted": accepted,
+        })
+        print(
+            f"local Maxwell two-level Galerkin coarse defect-{cycle}: "
+            f"fine_residual={candidate_residual:.3e}, start={current:.3e}, "
+            f"coarse_residual={coarse_relative:.3e}, info={int(coarse_info)}, "
+            f"alpha={alpha.real:.3e}{alpha.imag:+.3e}j, "
+            f"accepted={'yes' if accepted else 'no'}, time={elapsed:.1f}s",
+            flush=True,
+        )
+        if not accepted:
+            break
+        x = candidate
+        current = candidate_residual
+        if current <= residual_tolerance:
+            return x, current, history
+
+        if fine_M is None:
+            continue
+        started = time.perf_counter()
+        polished, polish_info = local_solver_module._lgmres(
+            A,
+            rhs,
+            x0=x,
+            M=fine_M,
+            rtol=fine_target,
+            maxiter=fine_maxiter,
+            inner_m=fine_inner_m,
+        )
+        polished = np.asarray(polished, complex).reshape(-1)
+        polished_residual = float(local_solver_module._relative_residual(A, polished, rhs))
+        elapsed = float(time.perf_counter() - started)
+        polish_accepted = bool(np.isfinite(polished_residual) and polished_residual < current)
+        history.append({
+            "solver": f"two-level-galerkin-fine-polish-{cycle}",
+            "krylov_info": int(polish_info),
+            "seconds": elapsed,
+            "starting_relative_residual": current,
+            "relative_residual": polished_residual,
+            "accepted": polish_accepted,
+        })
+        print(
+            f"local Maxwell two-level Galerkin fine polish-{cycle}: "
+            f"residual={polished_residual:.3e}, start={current:.3e}, "
+            f"info={int(polish_info)}, accepted={'yes' if polish_accepted else 'no'}, "
+            f"time={elapsed:.1f}s",
+            flush=True,
+        )
+        if polish_accepted:
+            x = polished
+            current = polished_residual
+        if current <= residual_tolerance:
+            return x, current, history
+
+    return x, current, history
 
 
 def install(local_solver_module):
@@ -63,14 +217,16 @@ def install(local_solver_module):
         pilot_maxiter = int(cfg.get("linear_two_level_pilot_maxiter", 2))
         pilot_inner_m = int(cfg.get("linear_two_level_pilot_inner_m", 8))
         pilot_accept_ratio = float(cfg.get("linear_two_level_pilot_accept_ratio", 0.8))
+        galerkin_start = float(cfg.get("linear_two_level_galerkin_polish_start_residual", 1e-4))
         if maxiter < 1 or inner_m < 2 or pilot_maxiter < 1 or pilot_inner_m < 2:
             raise ValueError("two-level Maxwell iteration limits are invalid")
-        if not 0.0 < pilot_accept_ratio < 1.0:
-            raise ValueError("linear_two_level_pilot_accept_ratio must lie in (0,1)")
+        if not 0.0 < pilot_accept_ratio < 1.0 or galerkin_start <= 0.0:
+            raise ValueError("two-level Maxwell screening settings are invalid")
 
         zero = np.zeros_like(rhs)
         best = zero.copy()
         best_residual = 1.0
+        best_M = None
         history = []
         if x0 is not None:
             warm = np.asarray(x0, complex).reshape(-1)
@@ -112,19 +268,22 @@ def install(local_solver_module):
             "coarse_consistency_error": float(two_level.consistency_error),
         })
 
+        # Coarse-only is useful as a cheap low-frequency pilot but the production
+        # log showed that running it for all 40 outer iterations costs minutes
+        # and barely improves the field.  Only V-cycles with fine smoothing get
+        # a full solve budget.
         attempts = (
-            (1, 0, "two-level-hcurl-coarse-only"),
-            (1, 1, "two-level-hcurl-fast"),
-            (2, 1, "two-level-hcurl-coarse2"),
-            (2, 2, "two-level-hcurl-strong"),
+            (1, 0, "two-level-hcurl-coarse-only", False),
+            (1, 1, "two-level-hcurl-fast", True),
+            (2, 1, "two-level-hcurl-coarse2", True),
+            (2, 2, "two-level-hcurl-strong", True),
         )
-        last_M = None
-        for coarse_corrections, smoother_sweeps, label in attempts:
+        galerkin_polished = False
+        for coarse_corrections, smoother_sweeps, label, run_full in attempts:
             M = two_level.operator(
                 coarse_corrections=coarse_corrections,
                 smoother_sweeps=smoother_sweeps,
             )
-            last_M = M
             pilot, pilot_residual, pilot_info, pilot_seconds, before, accepted, pilot_rtol = (
                 _relative_pilot(
                     A,
@@ -160,8 +319,11 @@ def install(local_solver_module):
             if pilot_residual < best_residual:
                 best = np.asarray(pilot, complex).reshape(-1)
                 best_residual = float(pilot_residual)
+                best_M = M
             if best_residual <= residual_tolerance:
                 return best, best_residual, history
+            if not run_full:
+                continue
 
             started = time.perf_counter()
             candidate, info = local_solver_module._lgmres(
@@ -192,15 +354,69 @@ def install(local_solver_module):
             if np.isfinite(residual) and residual < best_residual:
                 best = candidate
                 best_residual = residual
+                best_M = M
             if best_residual <= residual_tolerance:
                 return best, best_residual, history
 
-        if last_M is not None and best_residual <= 1e-8:
+            # Once the V-cycle reaches the observed ~1e-6 plateau, solve the
+            # actual Galerkin coarse defect instead of trying more rediscretized
+            # Richardson corrections.  This directly removes the measured
+            # coarse-consistency mismatch.
+            if (
+                not galerkin_polished
+                and best_M is not None
+                and np.isfinite(best_residual)
+                and best_residual <= galerkin_start
+            ):
+                polished, polished_residual, extra = _galerkin_defect_polish(
+                    local_solver_module,
+                    two_level,
+                    A,
+                    rhs,
+                    best,
+                    best_residual,
+                    best_M,
+                    residual_tolerance,
+                    cfg,
+                )
+                history.extend(extra)
+                galerkin_polished = True
+                if np.isfinite(polished_residual) and polished_residual < best_residual:
+                    best = polished
+                    best_residual = polished_residual
+                if best_residual <= residual_tolerance:
+                    return best, best_residual, history
+
+        if (
+            not galerkin_polished
+            and best_M is not None
+            and np.isfinite(best_residual)
+            and best_residual <= galerkin_start
+        ):
+            polished, polished_residual, extra = _galerkin_defect_polish(
+                local_solver_module,
+                two_level,
+                A,
+                rhs,
+                best,
+                best_residual,
+                best_M,
+                residual_tolerance,
+                cfg,
+            )
+            history.extend(extra)
+            if np.isfinite(polished_residual) and polished_residual < best_residual:
+                best = polished
+                best_residual = polished_residual
+            if best_residual <= residual_tolerance:
+                return best, best_residual, history
+
+        if best_M is not None and best_residual <= 1e-8:
             refined, refined_residual, extra = local_solver_module._defect_refine(
                 A,
                 rhs,
                 best,
-                last_M,
+                best_M,
                 local_solver_module._lgmres,
                 local_solver_module._relative_residual,
                 residual_tolerance,
@@ -229,4 +445,4 @@ def install(local_solver_module):
     return local_solver_module
 
 
-__all__ = ["_relative_pilot", "install"]
+__all__ = ["_galerkin_defect_polish", "_relative_pilot", "install"]
