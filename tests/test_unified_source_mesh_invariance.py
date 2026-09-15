@@ -49,33 +49,33 @@ GEOMETRY = {
     "transmitter": {
         "shape": "circle",
         "turns": 1.25,
-        "outer_half_size": 0.015,
-        "pitch": 0.002,
-        "conductor_width": 0.0015,
+        "outer_half_size": 0.012,
+        "pitch": 0.004,
+        "conductor_width": 0.003,
         "conductor_thickness": 0.001,
-        "corner_radius": 0.01,
-        "translation": [0.0, 0.0, -0.025],
+        "corner_radius": 0.008,
+        "translation": [0.0, 0.0, -0.015],
         "angles": [0.0, 0.0, 0.0],
     },
     "receiver": {
         "shape": "circle",
         "turns": 1.25,
-        "outer_half_size": 0.015,
-        "pitch": 0.002,
-        "conductor_width": 0.0015,
+        "outer_half_size": 0.012,
+        "pitch": 0.004,
+        "conductor_width": 0.003,
         "conductor_thickness": 0.001,
-        "corner_radius": 0.01,
-        "translation": [0.0, 0.0, 0.025],
+        "corner_radius": 0.008,
+        "translation": [0.0, 0.0, 0.015],
         "angles": [0.1, -0.05, 0.2],
     },
-    "package_half_extent": [0.025, 0.025, 0.004],
+    "package_half_extent": [0.020, 0.020, 0.004],
 }
 
 
 def _background(step):
-    axis = np.arange(-0.08, 0.0800001, step)
-    if axis[-1] < 0.079:
-        axis = np.r_[axis, 0.08]
+    axis = np.arange(-0.035, 0.0350001, step)
+    if axis[-1] < 0.034:
+        axis = np.r_[axis, 0.035]
     return OpenBoundaryBackground(
         axis,
         axis,
@@ -120,8 +120,10 @@ def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
         )
         assert a0["cross_section_quadrature"] == "composite_gauss3"
         assert a1["cross_section_quadrature"] == "composite_gauss3"
-        assert a1["cross_section_quadrature_points"] >= a0["cross_section_quadrature_points"]
-        assert a1["cross_section_width_panels"] >= a0["cross_section_width_panels"]
+        assert a0["cross_section_width_panels"] >= 2
+        assert a0["cross_section_thickness_panels"] >= 2
+        assert a1["cross_section_width_panels"] > a0["cross_section_width_panels"]
+        assert a1["cross_section_quadrature_points"] > a0["cross_section_quadrature_points"]
         assert a1["source_quadrature_resolution"] < a0["source_quadrature_resolution"]
         assert a0["terminal_path_integral_relative_error"] <= 1e-12
         assert a1["terminal_path_integral_relative_error"] <= 1e-12
