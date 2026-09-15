@@ -1,13 +1,12 @@
-"""Certification layer for boundary-conditioned longitudinal scalar patches.
+"""Certification/adaptation layer for boundary-conditioned scalar patches.
 
-The boundary-conditioned near-field defect is valid only if its coarse patch is
-literally the parent global scalar problem restricted to that Cartesian subgrid.
-Because the coarse patch axes are selected from the parent axes, the parent
-scalar potential can be evaluated on every patch node without approximation.
-Substituting that restricted potential into the patch interior equations gives
-an exact and cheap consistency certificate.  A large residual means that the
-patch changed source/material physics (for example by omitting another package)
-and its fine-minus-coarse defect must not be used.
+The near-field defect is valid only when its coarse patch is literally the
+parent global scalar problem restricted to the shared Cartesian subgrid.  The
+parent potential is therefore substituted into every coarse-patch interior
+equation.  If the configured artificial boundary includes omitted external
+geometry, the patch is deterministically shrunk while retaining the same global
+Dirichlet trace.  No defect is accepted unless the parent-restriction residual
+meets a strict independent tolerance.
 """
 from __future__ import annotations
 
@@ -44,12 +43,7 @@ def coarse_parent_restriction_residual(
     local_geometry,
     global_potential,
 ):
-    """Return ||r_I||/||b_I|| for the parent potential on a coarse patch.
-
-    The patch has no Silver-Muller term on its artificial boundary.  Dirichlet
-    values are inherited from the global solution, so only volume dielectric /
-    conductive edge mass belongs in the patch scalar operator.
-    """
+    """Return the parent-potential residual in the patch interior equations."""
     context = patch.geometry_context(local_geometry, assemble_thermal=False)
     B = np.asarray(patch.rhs_matrix(context), complex)
     if B.shape[1] != 1:
@@ -67,15 +61,27 @@ def coarse_parent_restriction_residual(
     parent_phi = _restricted_parent_potential(
         module, parent, global_potential, patch
     )
-    residual = scalar_rhs[interior] - np.asarray(
-        scalar[interior] @ parent_phi, complex
-    ).reshape(-1)
+    action = np.asarray(scalar[interior] @ parent_phi, complex).reshape(-1)
+    residual = scalar_rhs[interior] - action
     denominator = max(
         float(np.linalg.norm(scalar_rhs[interior])),
-        float(np.linalg.norm(scalar[interior] @ parent_phi)),
+        float(np.linalg.norm(action)),
         np.finfo(float).tiny,
     )
     return float(np.linalg.norm(residual) / denominator)
+
+
+def _padding_candidates(module, background):
+    cfg = module._config(background)
+    configured = float(cfg["boundary_padding"])
+    floor = min(configured, max(float(cfg["core_padding"]), 1e-6))
+    values = [configured, max(floor, 0.5 * configured), max(floor, 0.25 * configured), floor]
+    out = []
+    for value in values:
+        value = float(value)
+        if not any(abs(value - old) <= 1e-13 * max(abs(value), abs(old), 1.0) for old in out):
+            out.append(value)
+    return out
 
 
 def install(module):
@@ -113,10 +119,109 @@ def install(module):
 
     module._patch_state = patch_state
 
+    # The default 40 mm patch inherited from the Maxwell local-self box can
+    # overlap the other package even though the physical OBBs do not overlap.
+    # Since this scalar patch has exact global Dirichlet data, large padding is
+    # not a physical requirement.  Choose the largest deterministic patch that
+    # is actually the parent scalar restriction.
+    original_port_states = module._port_states
+
+    def port_states(background, geometry, port, global_potential, target_steps, *, phi=None):
+        del original_port_states  # implementation below intentionally controls the chosen patch
+        base_cfg = module._config(background)
+        tolerance = _consistency_tolerance(background)
+        global_geometry, local_geometry = module._single_port_geometry(geometry, port)
+        package = global_geometry.packages[int(port)]
+        attempts = []
+        for padding in _padding_candidates(module, background):
+            cfg = dict(base_cfg)
+            cfg["boundary_padding"] = float(padding)
+            coarse_axes, center, aabb_half = module._patch_axes(background, package, cfg)
+            coarse = module._make_patch_background(
+                background,
+                port,
+                coarse_axes,
+                fine_step=module._background_step(background),
+            )
+            coarse_state = module._patch_state(
+                background,
+                coarse,
+                local_geometry,
+                global_potential,
+                phi=phi,
+                fine_step=module._background_step(background),
+            )
+            consistency_value = coarse_state.get("parent_restriction_relative_residual")
+            consistency_value = float("inf") if consistency_value is None else float(consistency_value)
+            attempts.append({
+                "boundary_padding": float(padding),
+                "parent_restriction_relative_residual": consistency_value,
+            })
+            print(
+                "boundary-conditioned longitudinal patch consistency: "
+                f"port={int(port) + 1}, padding={padding:.6g}m, "
+                f"residual={consistency_value:.3e}, "
+                f"accepted={'yes' if consistency_value <= tolerance else 'no'}",
+                flush=True,
+            )
+            if consistency_value > tolerance:
+                continue
+
+            coarse_state = dict(coarse_state)
+            coarse_state["selected_boundary_padding"] = float(padding)
+            coarse_state["boundary_selection_attempts"] = attempts.copy()
+            states = {"coarse": coarse_state}
+            for step in target_steps:
+                axes = module._refined_axes(
+                    coarse_axes, center, aabb_half, cfg, float(step)
+                )
+                patch = module._make_patch_background(
+                    background, port, axes, fine_step=float(step)
+                )
+                state = dict(
+                    module._patch_state(
+                        background,
+                        patch,
+                        local_geometry,
+                        global_potential,
+                        phi=phi,
+                        fine_step=float(step),
+                    )
+                )
+                state["selected_boundary_padding"] = float(padding)
+                states[float(step)] = state
+            return states
+
+        raise RuntimeError(
+            "no boundary-conditioned longitudinal patch reproduces the parent "
+            "scalar restriction; attempts=" + repr(attempts)
+        )
+
+    module._port_states = port_states
+
     original_audit = module.audit_reference_convergence
 
     def audit_reference_convergence(background, geometry):
-        report = dict(original_audit(background, geometry))
+        try:
+            report = dict(original_audit(background, geometry))
+        except RuntimeError as exc:
+            tolerance = _consistency_tolerance(background)
+            print(
+                "boundary-conditioned longitudinal coarse consistency: "
+                f"accepted=no ({exc})",
+                flush=True,
+            )
+            return {
+                "model": module._MODEL,
+                "relative_tolerance": float(module._config(background)["relative_tolerance"]),
+                "coarse_parent_restriction_tolerance": float(tolerance),
+                "maximum_coarse_parent_restriction_relative_residual": float("inf"),
+                "coarse_parent_restriction_consistent": False,
+                "maximum_relative_error": float("inf"),
+                "converged": False,
+                "failure": str(exc),
+                "samples": [],
+            }
         tolerance = _consistency_tolerance(background)
         values = []
         for row in report.get("samples", []):
@@ -150,16 +255,19 @@ def install(module):
             return result
         tolerance = _consistency_tolerance(background)
         values = []
+        selected = []
         for row in audit.get("ports", []):
-            value = row.get("coarse", {}).get(
-                "parent_restriction_relative_residual"
-            )
+            coarse = row.get("coarse", {})
+            value = coarse.get("parent_restriction_relative_residual")
             if value is not None:
                 values.append(float(value))
+            if coarse.get("selected_boundary_padding") is not None:
+                selected.append(float(coarse["selected_boundary_padding"]))
         maximum = max(values, default=0.0)
         audit["coarse_parent_restriction_tolerance"] = float(tolerance)
         audit["maximum_coarse_parent_restriction_relative_residual"] = float(maximum)
         audit["coarse_parent_restriction_consistent"] = bool(maximum <= tolerance)
+        audit["selected_boundary_padding"] = selected
         if maximum > tolerance:
             raise RuntimeError(
                 "boundary-conditioned longitudinal patch is not the parent scalar "
