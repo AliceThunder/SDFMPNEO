@@ -1,0 +1,196 @@
+"""Certification layer for boundary-conditioned longitudinal scalar patches.
+
+The boundary-conditioned near-field defect is valid only if its coarse patch is
+literally the parent global scalar problem restricted to that Cartesian subgrid.
+Because the coarse patch axes are selected from the parent axes, the parent
+scalar potential can be evaluated on every patch node without approximation.
+Substituting that restricted potential into the patch interior equations gives
+an exact and cheap consistency certificate.  A large residual means that the
+patch changed source/material physics (for example by omitting another package)
+and its fine-minus-coarse defect must not be used.
+"""
+from __future__ import annotations
+
+import numpy as np
+import scipy.sparse as sp
+from scipy.interpolate import RegularGridInterpolator
+
+
+def _consistency_tolerance(background):
+    root = dict(getattr(background, "background_config", {}) or {})
+    cfg = dict(root.get("global_longitudinal_correction", {}) or {})
+    return float(cfg.get("coarse_consistency_tolerance", 1e-8))
+
+
+def _restricted_parent_potential(module, parent, global_potential, patch):
+    values = np.asarray(global_potential, complex).reshape(
+        parent.nx + 1, parent.ny + 1, parent.nz + 1
+    )
+    interpolation = RegularGridInterpolator(
+        (parent.x, parent.y, parent.z),
+        values,
+        method="linear",
+        bounds_error=True,
+    )
+    return np.asarray(
+        interpolation(module.node_coordinates(patch)), complex
+    ).reshape(-1)
+
+
+def coarse_parent_restriction_residual(
+    module,
+    parent,
+    patch,
+    local_geometry,
+    global_potential,
+):
+    """Return ||r_I||/||b_I|| for the parent potential on a coarse patch.
+
+    The patch has no Silver-Muller term on its artificial boundary.  Dirichlet
+    values are inherited from the global solution, so only volume dielectric /
+    conductive edge mass belongs in the patch scalar operator.
+    """
+    context = patch.geometry_context(local_geometry, assemble_thermal=False)
+    B = np.asarray(patch.rhs_matrix(context), complex)
+    if B.shape[1] != 1:
+        raise AssertionError("longitudinal consistency patch must have one port")
+    rhs = B[:, 0]
+    G = module.gradient_operator(patch, gauge_fixed=False)
+    diagonal, _sigma, _hs = module._volume_edge_diagonal(patch, context)
+    scalar = (G.T @ sp.diags(diagonal, format="csr") @ G).tocsr()
+    scalar.sum_duplicates()
+    scalar.eliminate_zeros()
+    scalar_rhs = np.asarray(G.T @ rhs, complex).reshape(-1)
+
+    boundary = module._boundary_node_mask(patch)
+    interior = ~boundary
+    parent_phi = _restricted_parent_potential(
+        module, parent, global_potential, patch
+    )
+    residual = scalar_rhs[interior] - np.asarray(
+        scalar[interior] @ parent_phi, complex
+    ).reshape(-1)
+    denominator = max(
+        float(np.linalg.norm(scalar_rhs[interior])),
+        float(np.linalg.norm(scalar[interior] @ parent_phi)),
+        np.finfo(float).tiny,
+    )
+    return float(np.linalg.norm(residual) / denominator)
+
+
+def install(module):
+    if bool(getattr(module, "_patch_consistency_installed", False)):
+        return module
+
+    original_patch_state = module._patch_state
+
+    def patch_state(parent, patch, local_geometry, global_potential, *, phi=None, fine_step):
+        state = original_patch_state(
+            parent,
+            patch,
+            local_geometry,
+            global_potential,
+            phi=phi,
+            fine_step=fine_step,
+        )
+        parent_step = module._background_step(parent)
+        step = float(fine_step)
+        if abs(step - parent_step) <= 1e-13 * max(abs(step), abs(parent_step), 1.0):
+            consistency = coarse_parent_restriction_residual(
+                module,
+                parent,
+                patch,
+                local_geometry,
+                global_potential,
+            )
+        else:
+            consistency = None
+        state = dict(state)
+        state["parent_restriction_relative_residual"] = (
+            None if consistency is None else float(consistency)
+        )
+        return state
+
+    module._patch_state = patch_state
+
+    original_audit = module.audit_reference_convergence
+
+    def audit_reference_convergence(background, geometry):
+        report = dict(original_audit(background, geometry))
+        tolerance = _consistency_tolerance(background)
+        values = []
+        for row in report.get("samples", []):
+            value = row.get("coarse", {}).get(
+                "parent_restriction_relative_residual"
+            )
+            if value is not None:
+                values.append(float(value))
+        maximum = max(values, default=0.0)
+        consistent = bool(maximum <= tolerance)
+        report["coarse_parent_restriction_tolerance"] = float(tolerance)
+        report["maximum_coarse_parent_restriction_relative_residual"] = float(maximum)
+        report["coarse_parent_restriction_consistent"] = consistent
+        report["converged"] = bool(report.get("converged", False) and consistent)
+        print(
+            "boundary-conditioned longitudinal coarse consistency: "
+            f"max={maximum:.3e}, tol={tolerance:.1e}, "
+            f"accepted={'yes' if consistent else 'no'}",
+            flush=True,
+        )
+        return report
+
+    module.audit_reference_convergence = audit_reference_convergence
+
+    original_correction = module._correction
+
+    def correction(background, geometry, *, phi=None):
+        result = original_correction(background, geometry, phi=phi)
+        audit = dict(result.get("audit", {}))
+        if not bool(audit.get("enabled", False)):
+            return result
+        tolerance = _consistency_tolerance(background)
+        values = []
+        for row in audit.get("ports", []):
+            value = row.get("coarse", {}).get(
+                "parent_restriction_relative_residual"
+            )
+            if value is not None:
+                values.append(float(value))
+        maximum = max(values, default=0.0)
+        audit["coarse_parent_restriction_tolerance"] = float(tolerance)
+        audit["maximum_coarse_parent_restriction_relative_residual"] = float(maximum)
+        audit["coarse_parent_restriction_consistent"] = bool(maximum <= tolerance)
+        if maximum > tolerance:
+            raise RuntimeError(
+                "boundary-conditioned longitudinal patch is not the parent scalar "
+                "restriction; maximum coarse consistency residual="
+                f"{maximum:.3e}, tolerance={tolerance:.3e}. Refuse to apply the "
+                "near-field defect."
+            )
+        out = dict(result)
+        out["audit"] = audit
+        return out
+
+    module._correction = correction
+
+    original_resolve = module._resolve_settings
+
+    def resolve_settings(settings, background):
+        original_resolve(settings, background)
+        own = settings["BACKGROUND"].setdefault(
+            "global_longitudinal_correction", {}
+        )
+        own.setdefault("coarse_consistency_tolerance", 1e-8)
+        if isinstance(getattr(background, "background_config", None), dict):
+            background.background_config.setdefault(
+                "global_longitudinal_correction", {}
+            )["coarse_consistency_tolerance"] = float(
+                own["coarse_consistency_tolerance"]
+            )
+
+    module._resolve_settings = resolve_settings
+    module._patch_consistency_installed = True
+    return module
+
+
+__all__ = ["coarse_parent_restriction_residual", "install"]
