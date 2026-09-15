@@ -45,8 +45,6 @@ def install(local_solver_module):
         if x0 is not None:
             warm = np.asarray(x0, complex).reshape(-1)
             warm_residual = float(local_solver_module._relative_residual(A, warm, rhs))
-            # A refined-grid initial guess should be better than the zero field;
-            # otherwise it contains more algebraic error than information.
             if np.isfinite(warm_residual) and warm_residual < 1.0:
                 best = warm.copy()
                 best_residual = warm_residual
@@ -84,7 +82,12 @@ def install(local_solver_module):
             "coarse_consistency_error": float(two_level.consistency_error),
         })
 
+        # Every candidate reuses the same fine gradient factor, coarse 118k
+        # factor and transfer.  Pilots are therefore cheap compared with the old
+        # repeated 254k ILU constructions.  Coarse-only is included so an
+        # unstable Jacobi smoother cannot mask an otherwise useful coarse space.
         attempts = (
+            (1, 0, "two-level-hcurl-coarse-only"),
             (1, 1, "two-level-hcurl-fast"),
             (2, 1, "two-level-hcurl-coarse2"),
             (2, 2, "two-level-hcurl-strong"),
@@ -165,9 +168,6 @@ def install(local_solver_module):
             if best_residual <= residual_tolerance:
                 return best, best_residual, history
 
-        # Near the certificate, use the existing true-residual defect cleanup
-        # with the last useful two-level map.  Do not invoke the known-bad 254k
-        # one-level ILU fallback.
         if last_M is not None and best_residual <= 1e-8:
             refined, refined_residual, extra = local_solver_module._defect_refine(
                 A,
@@ -186,8 +186,16 @@ def install(local_solver_module):
             if refined_residual < best_residual:
                 best = refined
                 best_residual = refined_residual
+            if best_residual <= residual_tolerance:
+                return best, best_residual, history
 
-        return best, best_residual, history
+        raise RuntimeError(
+            "two-level H(curl) local Maxwell solve did not reach the certified residual; "
+            f"fine_edges={A.shape[0]}, coarse_edges={two_level.coarse_edges}, "
+            f"best_residual={best_residual:.3e}, tolerance={float(residual_tolerance):.3e}, "
+            f"coarse_consistency={two_level.consistency_error:.3e}. "
+            "The 254k one-level ILU fallback is intentionally disabled."
+        )
 
     local_solver_module._iterative_solve = iterative_solve
     local_solver_module._two_level_hcurl_local_installed = True
