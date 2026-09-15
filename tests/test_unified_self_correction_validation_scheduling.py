@@ -10,15 +10,20 @@ class _Background:
 
 
 def _result(step):
+    step = float(step)
     return {
         "z": 1.0 + 1.0j,
         "d_vol": 1.0,
         "d_out": 0.0,
+        "localized_z": 0.8 + 0.2j,
+        "localized_d_vol": 0.75,
+        "localized_d_out": 0.05,
+        "localized_power_balance_relative_error": 0.0,
         "linear_relative_residual": 1e-12,
         "linear_solver_converged": True,
         "joule_total_power_relative_error": 0.0,
         "joule_modal_contraction_relative_error": 0.0,
-        "fine_step": float(step),
+        "fine_step": step,
     }
 
 
@@ -57,3 +62,4 @@ def test_fine_ports_parallel_but_large_validation_ports_serialized(monkeypatch):
     assert result["parallel_ports"] == 2
     assert result["parallel_validation_ports"] == 1
     assert result["linear_solver_converged"]
+    assert result["converged"]
