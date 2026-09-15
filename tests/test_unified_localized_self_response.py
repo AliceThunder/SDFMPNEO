@@ -30,6 +30,8 @@ def _install_projection(monkeypatch, longitudinal):
             {
                 "initial_relative_residual": 1e-10,
                 "relative_residual": 1e-15,
+                "initial_impedance_defect": 2e-3,
+                "impedance_defect": 3e-9,
                 "refinements": 1,
                 "edge_low_relative_norm": 0.0,
             },
@@ -84,6 +86,7 @@ def test_localized_self_response_removes_only_pure_longitudinal_energy(monkeypat
     assert np.allclose(result["localized_modal_h"], 2.0 * expected_q)
     assert result["localized_contraction"] == "certified_gradient_compensated_transverse_v2"
     assert result["localized_gradient_projection_relative_residual"] == 1e-15
+    assert result["localized_gradient_projection_impedance_defect"] == 3e-9
     assert result["localized_gradient_projection_refinements"] == 1
 
 
