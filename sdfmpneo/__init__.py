@@ -9,10 +9,12 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 15 restores the theory-defined open two-terminal source
-# and replaces transverse-source projection with a compatible scalar-gradient
-# Maxwell block. Old truth tensors/certificates must not be mixed with this one.
-_unified_model.FORMAT_VERSION = 15
+# Physics truth version 16 preserves the theory-defined full open two-terminal
+# source while restricting the canonical local fine-minus-coarse correction to
+# localizable transverse/cross self response.  Pure longitudinal terminal self
+# energy remains a full-domain quantity and is not replaced by a canonical box.
+# Old truth tensors/certificates must not be mixed with this one.
+_unified_model.FORMAT_VERSION = 16
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
@@ -29,6 +31,7 @@ from .unified_fast_local_krylov import install as _install_fast_local_krylov
 from .unified_hcurl_warm_start import install as _install_hcurl_warm_start
 from .unified_two_level_local_krylov import install as _install_two_level_local_krylov
 from .unified_two_level_residual_replacement import install as _install_two_level_residual_replacement
+from .unified_localized_self_solve import install as _install_localized_self_solve
 from .unified_local_solve_cache import install as _install_local_solve_cache
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
@@ -37,13 +40,17 @@ from .unified_local_solve_cache import install as _install_local_solve_cache
 # prolongation and the certified previous grid as a two-level coarse space,
 # avoiding a fragile 254k-edge ILU factorization.  Once the two-level solve
 # reaches the observed O(1e-7) plateau, recomputed fine-grid residual replacement
-# is attempted before any Galerkin coarse fallback.  Exact memoization is
-# installed only after the certified solver exists.
+# is attempted before any Galerkin coarse fallback.
 _install_fast_local_krylov(_certified_local_solve)
 _install_hcurl_warm_start(_certified_local_solve)
 _install_two_level_local_krylov(_certified_local_solve)
 _install_two_level_residual_replacement(_two_level_local_krylov, _certified_local_solve)
 _certified_local_solve.install(_self_correction)
+# The Maxwell solve above remains full-source.  Only the local defect truth
+# contraction removes pure longitudinal terminal self energy before applying
+# fine-minus-coarse correction.
+_install_localized_self_solve(_self_correction, _certified_local_solve)
+# Exact memoization is installed after the final local truth implementation.
 _install_local_solve_cache(_self_correction)
 
 # Install the same certified large-system policy on global truth/Gate solves.
