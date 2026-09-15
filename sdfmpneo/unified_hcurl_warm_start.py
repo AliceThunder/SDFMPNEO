@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 
+from .unified_compensated_field import collapsed_field
 from .unified_hcurl_transfer import build_hcurl_prolongation
 
 
@@ -12,7 +13,11 @@ def install(local_solver_module):
     """Replace component interpolation by a commuting H(curl) edge transfer."""
 
     def pack_warm_state(local, local_geometry, port, fine_step, field):
-        value = np.asarray(field, complex).reshape(-1)
+        # Warm state is only an initial guess for a later solve.  A compensated
+        # high/low field is therefore intentionally collapsed here; the current
+        # solve has already consumed the high/low representation for its truth
+        # certificate and physical contractions before any later reuse.
+        value = collapsed_field(field)
         if value.shape != (local.n_edges,) or np.any(~np.isfinite(value)):
             raise ValueError("local Maxwell warm state field is invalid")
         return {
