@@ -92,6 +92,14 @@ def _compensated_gradient_field(background, scalar_field):
     return edge
 
 
+def _impedance_defect(background, scalar_field, scalar_residual):
+    """Magnitude in ohms of the Galerkin energy/source identity defect."""
+    high, low = field_parts(scalar_field)
+    residual = np.asarray(scalar_residual, complex).reshape(-1)
+    defect = complex(np.vdot(high, residual) + np.vdot(low, residual))
+    return float(abs(defect) / max(float(background.omega), np.finfo(float).tiny))
+
+
 def refined_gradient_projection(
     background,
     gradient_block,
@@ -115,6 +123,7 @@ def refined_gradient_projection(
         target_relative=float(relative_tolerance),
     )
     initial = float(np.linalg.norm(residual) / norm_rhs)
+    initial_z_defect = _impedance_defect(background, phi, residual)
     current = initial
     refinements = 0
 
@@ -140,6 +149,7 @@ def refined_gradient_projection(
         current = candidate_value
         refinements += 1
 
+    final_z_defect = _impedance_defect(background, phi, residual)
     longitudinal = _compensated_gradient_field(background, phi)
     low_relative = float(
         np.linalg.norm(field_parts(longitudinal)[1])
@@ -149,6 +159,8 @@ def refined_gradient_projection(
         "initial_relative_residual": initial,
         "relative_residual": current,
         "relative_tolerance": float(relative_tolerance),
+        "initial_impedance_defect": initial_z_defect,
+        "impedance_defect": final_z_defect,
         "refinements": int(refinements),
         "accumulation_mode": str(diagnostics.get("accumulation_mode", "unknown")),
         "edge_low_relative_norm": low_relative,
@@ -157,6 +169,7 @@ def refined_gradient_projection(
     print(
         "local Maxwell localized gradient projection: "
         f"initial={initial:.3e}, final={current:.3e}, "
+        f"z_defect={initial_z_defect:.3e}->{final_z_defect:.3e}ohm, "
         f"refinements={refinements}, low={low_relative:.3e}, "
         f"mode={report['accumulation_mode']}",
         flush=True,
@@ -164,7 +177,8 @@ def refined_gradient_projection(
     if not report["converged"]:
         raise RuntimeError(
             "localized scalar-gradient projection did not reach its certified residual; "
-            f"residual={current:.3e}, tolerance={float(relative_tolerance):.3e}"
+            f"residual={current:.3e}, tolerance={float(relative_tolerance):.3e}, "
+            f"impedance_defect={final_z_defect:.3e}ohm"
         )
     return longitudinal, report
 
