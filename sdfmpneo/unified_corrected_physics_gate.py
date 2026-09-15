@@ -19,6 +19,9 @@ from .unified_physics_gate import (
 from .unified_self_correction import apply_local_self_correction
 
 
+_SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
+
+
 def _background_from_settings(settings, *, fine_step=None, max_step=None):
     bg = _raw_background_from_settings(settings, fine_step=fine_step, max_step=max_step)
     cfg = copy.deepcopy(dict(settings["BACKGROUND"]))
@@ -148,7 +151,7 @@ def audit_mesh_convergence(settings, background, geometries, monitor=None):
         "refined_fine_step": refined_fine,
         "relative_tolerance": tolerance,
         "maximum_relative_error": float(worst),
-        "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        "self_correction_model": _SELF_CORRECTION_MODEL,
         "converged": bool(worst <= tolerance),
         "samples": rows,
     }
@@ -270,7 +273,7 @@ def run_physics_gate(settings, background, dataset, geometries, *, preflight, mo
         "reaction_impedance_convention": "negative_source_reaction",
         "phasor_convention": "peak_exp_plus_iwt",
         "source_model": getattr(background, "source_model", "unknown"),
-        "self_correction_model": "canonical_local_fine_minus_coarse_self_defect_v1",
+        "self_correction_model": _SELF_CORRECTION_MODEL,
         "terminal_model": getattr(background, "terminal_model", "unknown"),
         "boundary_model": getattr(background, "boundary_model", "unknown"),
         "truth_preflight": preflight,
