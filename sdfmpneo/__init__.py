@@ -75,7 +75,7 @@ _corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
 # The canonical local box certifies/refines only the localizable transverse/cross
-# self defect.  The remaining pure-longitudinal self term is nonlocal, so refine
+# self defect. The remaining pure-longitudinal self term is nonlocal, so refine
 # it on a full-domain scalar-gradient reference grid and certify that reference
 # independently before the full 12mm->9mm Maxwell mesh Gate is accepted.
 from . import unified_corrected_truth as _corrected_truth
@@ -141,7 +141,7 @@ _unified_runtime._CACHE_FORMAT = 22
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve the common scalar reference every time the production background is
-# constructed, including physical-cache hits that skip preflight execution.  The
+# constructed, including physical-cache hits that skip preflight execution. The
 # runtime signature is computed before build_background(), so this deterministic
 # resolution does not change cache-key semantics.
 _original_runtime_build_background = _unified_runtime.build_background
@@ -153,7 +153,13 @@ def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
 
 _unified_runtime.build_background = _build_background_with_longitudinal_reference
 
-# These modules are imported by unified_runtime. Their functions read the
-# module-level model tag at call time, so synchronize the release/Gate metadata.
+# Post-basis mesh/thermal Gates must consume the exact same corrected truth as
+# preflight and tensor-label generation; otherwise the old coarse longitudinal
+# self remainder would reappear at 53% progress.
 from . import unified_corrected_physics_gate as _corrected_physics_gate
+from .unified_global_longitudinal_physics_gate import install as _install_global_longitudinal_physics_gate
+
 _corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
+_install_global_longitudinal_physics_gate(
+    _corrected_physics_gate, _global_longitudinal_reference
+)
