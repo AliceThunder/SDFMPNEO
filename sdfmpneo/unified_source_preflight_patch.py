@@ -1,13 +1,12 @@
 """Production source preflight for an open two-terminal stranded current.
 
-The source must remain open and carry genuine terminal divergence.  Its physical
+The source must remain open and carry genuine terminal divergence. Its physical
 regularization is certified at three independent levels:
 
 * feed/return current is distributed over a mesh-independent contact length;
 * stranded current occupies a mesh-independent rectangular cross section; and
 * the nodal terminal charge is the finite-volume cubic-contact target, reached
-  by a curl-free compatible gradient lift that leaves magnetic/transverse source
-  excitation unchanged.
+  by a compatible gradient lift with exactly zero discrete source curl.
 
 The numerical quadrature used to integrate the fixed support may become more
 resolved on finer meshes; changing quadrature resolution is not a change of the
@@ -90,6 +89,9 @@ def install(truth_preflight_module):
             requires_charge_lift = "compatible_charge_lift" in str(
                 getattr(background, "source_model", "")
             )
+            raw_charge_error = float(
+                meta.get("terminal_charge_raw_target_relative_error", np.inf)
+            )
             charge_target_error = float(
                 meta.get("terminal_charge_target_relative_error", np.inf)
             )
@@ -134,6 +136,7 @@ def install(truth_preflight_module):
                     "source_quadrature_resolution": float(meta.get("source_quadrature_resolution", 0.0)),
                     "terminal_charge_model": meta.get("terminal_charge_model"),
                     "terminal_charge_lift_model": meta.get("terminal_charge_lift_model"),
+                    "terminal_charge_raw_target_relative_error": raw_charge_error,
                     "terminal_charge_target_relative_error": charge_target_error,
                     "terminal_charge_lift_relative_curl": charge_lift_curl,
                     "terminal_charge_support_nodes": int(meta.get("terminal_charge_support_nodes", 0)),
@@ -182,6 +185,10 @@ def install(truth_preflight_module):
         )
         result["maximum_terminal_first_moment_relative_error"] = max(
             (row["terminal_first_moment_relative_error"] for row in rows), default=float("inf")
+        )
+        result["maximum_terminal_charge_raw_target_relative_error"] = max(
+            (row["terminal_charge_raw_target_relative_error"] for row in rows),
+            default=float("inf"),
         )
         result["maximum_terminal_charge_target_relative_error"] = max(
             (row["terminal_charge_target_relative_error"] for row in rows), default=float("inf")
