@@ -1,19 +1,21 @@
 """Terminal-scale nested refinement for the global longitudinal scalar defect.
 
 The global coarse scalar solution owns the nonlocal return path and supplies the
-Dirichlet trace on the artificial patch boundary.  Earlier near-field patches
-refined the whole package at 3 mm / 2.25 mm.  That is still much coarser than the
+Dirichlet trace on the artificial patch boundary. Earlier near-field patches
+refined the whole package at 3 mm / 2.25 mm. That is still much coarser than the
 physical terminal charge support (sub-mm conductor thickness), so the scalar
 self energy can remain strongly mesh dependent even when the patch reproduces
 the parent equations to machine precision.
 
 This adapter keeps the certified full-geometry patch and replaces only its
-refined axes.  Every coarse patch node is retained.  Extra nodes are inserted
-only inside small axis-aligned intervals containing the feed/return contact
-volumes plus a physical conductor-scale halo.  The requested 3 mm reference is
-therefore treated as an upper bound; the actual per-axis step is tied to the
-physical projected terminal support.  Validation multiplies those local steps by
-the same requested fine/validation ratio (normally 0.75).
+refined axes. Every coarse patch node is retained. Extra nodes are inserted only
+inside small intervals containing the feed/return contact volumes plus a
+physical conductor-scale halo. Per-axis resolution is derived from the physical
+contact tangent, conductor width direction and conductor thickness direction;
+therefore a rotated thin conductor cannot hide its sub-mm scale behind a much
+larger axis-aligned contact bounding box. The requested 3 mm reference remains
+an upper bound. Validation multiplies the local steps by the same requested
+fine/validation ratio (normally 0.75).
 """
 from __future__ import annotations
 
@@ -32,10 +34,7 @@ def _as_geometry(module, geometry):
     return geometry if isinstance(geometry, cls) else cls.from_mapping(geometry)
 
 
-def _contact_boxes(module, background, geometry, port):
-    """Return physical feed/return contact AABBs for one port."""
-    g = _as_geometry(module, geometry)
-    coil = g.coils[int(port)]
+def _contact_segments(background, coil):
     points = np.asarray(background._physical_centerline(coil), float)
     delta = np.diff(points, axis=0)
     lengths = np.linalg.norm(delta, axis=1)
@@ -44,9 +43,19 @@ def _contact_boxes(module, background, geometry, port):
     total = float(np.sum(lengths))
     contact = float(terminal_contact_length(coil, total))
     starts = np.concatenate(([0.0], np.cumsum(lengths[:-1])))
-    intervals = ((0.0, contact), (total - contact, total))
+    terminal_intervals = ((0.0, contact), (total - contact, total))
+    return points, delta, lengths, starts, terminal_intervals, contact
+
+
+def _contact_boxes(module, background, geometry, port):
+    """Return physical feed/return contact AABBs for one port."""
+    g = _as_geometry(module, geometry)
+    coil = g.coils[int(port)]
+    points, delta, lengths, starts, terminal_intervals, contact = _contact_segments(
+        background, coil
+    )
     boxes = []
-    for lower_s, upper_s in intervals:
+    for lower_s, upper_s in terminal_intervals:
         lo = np.full(3, np.inf)
         hi = np.full(3, -np.inf)
         for index, (p0, p1) in enumerate(zip(points[:-1], points[1:])):
@@ -56,7 +65,7 @@ def _contact_boxes(module, background, geometry, port):
             b = min(seg_hi, float(upper_s))
             if b <= a:
                 continue
-            d = np.asarray(p1 - p0, float)
+            d = np.asarray(delta[index], float)
             length = float(lengths[index])
             tangent = d / length
             width_axis, thickness_axis = background._cross_section_frame(coil, tangent)
@@ -77,11 +86,11 @@ def _contact_boxes(module, background, geometry, port):
 def _terminal_options(background):
     root = dict(getattr(background, "background_config", {}) or {})
     own = dict(root.get("global_longitudinal_correction", {}) or {})
-    cells = float(own.get("terminal_cells_per_support", 3.0))
+    cells = float(own.get("terminal_cells_per_support", 1.6))
     padding_factor = float(own.get("terminal_core_padding_factor", 1.5))
-    max_cells = int(own.get("terminal_patch_max_cells", 600000))
-    if not np.isfinite(cells) or cells < 2.0:
-        raise ValueError("terminal_cells_per_support must be >= 2")
+    max_cells = int(own.get("terminal_patch_max_cells", 575000))
+    if not np.isfinite(cells) or cells < 1.25:
+        raise ValueError("terminal_cells_per_support must be >= 1.25")
     if not np.isfinite(padding_factor) or padding_factor < 0.0:
         raise ValueError("terminal_core_padding_factor must be non-negative")
     if max_cells < 1000:
@@ -89,19 +98,47 @@ def _terminal_options(background):
     return cells, padding_factor, max_cells
 
 
+def _directional_axis_steps(background, coil, cells, requested_fine):
+    """Resolve tangent/width/thickness directions rather than only their AABB."""
+    points, delta, lengths, starts, terminal_intervals, contact = _contact_segments(
+        background, coil
+    )
+    limits = np.full(3, float(requested_fine))
+    dimensions = (
+        ("tangent", float(contact)),
+        ("width", float(coil.conductor_width)),
+        ("thickness", float(coil.conductor_thickness)),
+    )
+    for lower_s, upper_s in terminal_intervals:
+        for index, _pair in enumerate(zip(points[:-1], points[1:])):
+            seg_lo = float(starts[index])
+            seg_hi = seg_lo + float(lengths[index])
+            if min(seg_hi, float(upper_s)) <= max(seg_lo, float(lower_s)):
+                continue
+            tangent = np.asarray(delta[index], float) / float(lengths[index])
+            width_axis, thickness_axis = background._cross_section_frame(coil, tangent)
+            directions = {
+                "tangent": tangent,
+                "width": np.asarray(width_axis, float),
+                "thickness": np.asarray(thickness_axis, float),
+            }
+            for name, dimension in dimensions:
+                direction = directions[name]
+                for axis in range(3):
+                    component = abs(float(direction[axis]))
+                    if component <= 1e-10:
+                        continue
+                    candidate = dimension / (float(cells) * component)
+                    limits[axis] = min(limits[axis], candidate)
+    if np.any(~np.isfinite(limits)) or np.any(limits <= 0.0):
+        raise FloatingPointError("terminal directional refinement produced invalid steps")
+    return limits
+
+
 def _base_axis_steps(module, background, geometry, port, requested_fine):
     boxes, contact, coil = _contact_boxes(module, background, geometry, port)
     cells, padding_factor, _max_cells = _terminal_options(background)
-    minimum_dimension = min(float(coil.conductor_width), float(coil.conductor_thickness))
-    widths = np.vstack([hi - lo for lo, hi in boxes])
-    characteristic = np.min(widths, axis=0)
-    physical_floor = minimum_dimension / cells
-    steps = np.minimum(
-        float(requested_fine),
-        np.maximum(physical_floor, characteristic / cells),
-    )
-    if np.any(~np.isfinite(steps)) or np.any(steps <= 0.0):
-        raise FloatingPointError("terminal refinement produced invalid axis steps")
+    steps = _directional_axis_steps(background, coil, cells, requested_fine)
     halo = padding_factor * max(float(coil.conductor_width), float(coil.conductor_thickness))
     intervals = []
     for axis in range(3):
@@ -151,8 +188,9 @@ def _subdivide_axis(coarse_axis, intervals, target_step):
         cursor = float(a)
         for left, right in pieces:
             if left > cursor + eps:
-                out.append(float(left))
-            elif abs(left - cursor) > eps:
+                if left > out[-1] + eps:
+                    out.append(float(left))
+            elif abs(left - cursor) > eps and left > out[-1] + eps:
                 out.append(float(left))
             width = float(right - left)
             count = max(1, int(math.ceil(width / step)))
@@ -166,7 +204,6 @@ def _subdivide_axis(coarse_axis, intervals, target_step):
         elif abs(float(b) - out[-1]) <= eps:
             out[-1] = float(b)
     refined = np.asarray(out, float)
-    # Exact nesting is a hard invariant: every parent/coarse coordinate survives.
     for value in coarse:
         if np.min(np.abs(refined - value)) > 128.0 * np.finfo(float).eps * max(abs(value), 1.0):
             raise AssertionError("terminal-refined axis lost a coarse parent node")
@@ -201,7 +238,6 @@ def _refined_axes_for_request(
 def install(module):
     if bool(getattr(module, "_terminal_longitudinal_refinement_installed", False)):
         return module
-
     if not bool(getattr(module, "_patch_consistency_installed", False)):
         raise RuntimeError("terminal longitudinal refinement requires patch consistency first")
 
@@ -267,7 +303,7 @@ def install(module):
             coarse_state["terminal_nested_refinement"] = False
             states = {"coarse": coarse_state}
             requested_base = float(base_cfg["fine_step"])
-            _cells, _padding_factor, max_cells = _terminal_options(background)
+            resolution_cells, padding_factor, max_cells = _terminal_options(background)
             for requested in target_steps:
                 axes, axis_steps, boxes, contact = _refined_axes_for_request(
                     module,
@@ -279,6 +315,13 @@ def install(module):
                     requested_base,
                 )
                 n_cells = int(np.prod([len(axis) - 1 for axis in axes], dtype=np.int64))
+                print(
+                    "boundary-conditioned terminal refinement: "
+                    f"port={int(port) + 1}, requested={float(requested):.6g}m, "
+                    f"axis_steps={[float(v) for v in axis_steps]}, cells={n_cells}, "
+                    f"budget={max_cells}",
+                    flush=True,
+                )
                 if n_cells > max_cells:
                     raise RuntimeError(
                         "terminal-scale longitudinal patch exceeds the certified cell budget: "
@@ -308,6 +351,8 @@ def install(module):
                 state["terminal_nested_refinement"] = True
                 state["requested_reference_step"] = float(requested)
                 state["terminal_refinement_axis_steps"] = axis_steps.tolist()
+                state["terminal_resolution_cells_per_support"] = float(resolution_cells)
+                state["terminal_core_padding_factor"] = float(padding_factor)
                 state["terminal_contact_length"] = float(contact)
                 state["terminal_contact_boxes"] = [
                     {"lo": np.asarray(lo, float).tolist(), "hi": np.asarray(hi, float).tolist()}
@@ -315,12 +360,6 @@ def install(module):
                 ]
                 state["terminal_patch_cell_budget"] = int(max_cells)
                 states[float(requested)] = state
-                print(
-                    "boundary-conditioned terminal refinement: "
-                    f"port={int(port) + 1}, requested={float(requested):.6g}m, "
-                    f"axis_steps={[float(v) for v in axis_steps]}, cells={n_cells}",
-                    flush=True,
-                )
             return states
 
         raise RuntimeError(
@@ -336,9 +375,9 @@ def install(module):
     def resolve_settings(settings, background):
         original_resolve(settings, background)
         own = settings["BACKGROUND"].setdefault("global_longitudinal_correction", {})
-        own.setdefault("terminal_cells_per_support", 3.0)
+        own.setdefault("terminal_cells_per_support", 1.6)
         own.setdefault("terminal_core_padding_factor", 1.5)
-        own.setdefault("terminal_patch_max_cells", 600000)
+        own.setdefault("terminal_patch_max_cells", 575000)
         if isinstance(getattr(background, "background_config", None), dict):
             target = background.background_config.setdefault(
                 "global_longitudinal_correction", {}
