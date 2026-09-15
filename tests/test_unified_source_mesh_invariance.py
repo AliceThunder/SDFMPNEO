@@ -108,15 +108,34 @@ def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
         assert a1["terminal_regularization_mesh_independent"] is True
         assert a0["cross_section_support_mesh_independent"] is True
         assert a1["cross_section_support_mesh_independent"] is True
+        assert a0["terminal_charge_support_mesh_independent"] is True
+        assert a1["terminal_charge_support_mesh_independent"] is True
         assert a0["terminal_profile"] == a1["terminal_profile"]
+        assert a0["terminal_charge_model"] == a1["terminal_charge_model"]
+        assert a0["terminal_charge_lift_model"] == a1["terminal_charge_lift_model"]
         assert np.isclose(
             a0["terminal_contact_length"], a1["terminal_contact_length"], rtol=0.0, atol=1e-15
         )
+        assert np.isclose(
+            a0["terminal_charge_contact_length"],
+            a1["terminal_charge_contact_length"],
+            rtol=0.0,
+            atol=1e-15,
+        )
+        # Linear coordinate moments of a trilinear nodal deposition are exact;
+        # therefore the declared regularized source vector must be mesh invariant
+        # even though the number of nodal support points grows under refinement.
         assert np.allclose(
             np.asarray(a0["regularized_source_vector"], float),
             np.asarray(a1["regularized_source_vector"], float),
             rtol=0.0,
-            atol=1e-13,
+            atol=2e-12,
+        )
+        assert np.allclose(
+            np.asarray(a0["terminal_charge_vector"], float),
+            np.asarray(a1["terminal_charge_vector"], float),
+            rtol=0.0,
+            atol=2e-12,
         )
         assert a0["cross_section_quadrature"] == "composite_gauss3"
         assert a1["cross_section_quadrature"] == "composite_gauss3"
@@ -125,6 +144,12 @@ def test_source_support_is_fixed_while_quadrature_resolves_with_mesh():
         assert a1["cross_section_width_panels"] > a0["cross_section_width_panels"]
         assert a1["cross_section_quadrature_points"] > a0["cross_section_quadrature_points"]
         assert a1["source_quadrature_resolution"] < a0["source_quadrature_resolution"]
+        assert a0["terminal_charge_support_nodes"] > 1
+        assert a1["terminal_charge_support_nodes"] > a0["terminal_charge_support_nodes"]
+        assert a0["terminal_charge_target_relative_error"] <= 5e-11
+        assert a1["terminal_charge_target_relative_error"] <= 5e-11
+        assert a0["terminal_charge_lift_relative_curl"] <= 1e-12
+        assert a1["terminal_charge_lift_relative_curl"] <= 1e-12
         assert a0["terminal_path_integral_relative_error"] <= 1e-12
         assert a1["terminal_path_integral_relative_error"] <= 1e-12
 
