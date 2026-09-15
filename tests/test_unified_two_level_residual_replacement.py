@@ -4,6 +4,8 @@ import scipy.sparse.linalg as spla
 
 import sdfmpneo.unified_certified_local_solve as local_solver
 import sdfmpneo.unified_two_level_local_krylov as two_level_local
+from sdfmpneo.unified_accurate_residual import accurate_residual_vector
+from sdfmpneo.unified_compensated_field import field_is_finite
 
 
 def test_two_level_polish_recomputes_accurate_and_refines_fine_residual_first():
@@ -53,7 +55,15 @@ def test_two_level_polish_recomputes_accurate_and_refines_fine_residual_first():
     assert np.isclose(history[0]["relative_residual"], true_before, rtol=1e-12, atol=0.0)
     assert history[0]["reported_accurate_discrepancy"] > 0.1
     assert "roundoff_bound_relative" in history[0]
-    assert np.all(np.isfinite(polished))
+    assert field_is_finite(polished)
     assert residual < true_before
     assert residual <= 1e-11
-    assert local_solver._relative_residual(A, polished, rhs) <= 1e-11
+    final_defect, _stats = accurate_residual_vector(A, polished, rhs, target_relative=1e-11)
+    final_relative = np.linalg.norm(final_defect) / np.linalg.norm(rhs)
+    assert final_relative <= 1e-11
+    replacement_entries = [
+        item for item in history
+        if item.get("solver", "").startswith("two-level-equilibrated-residual-replacement-")
+    ]
+    if replacement_entries:
+        assert replacement_entries[-1]["linear_closure_relative_error"] <= 1e-11
