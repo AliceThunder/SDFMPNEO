@@ -20,11 +20,13 @@ regularize the weak gradient directions seen by ILU without changing the
 transverse equation that Krylov is trying to solve.  The production Maxwell
 matrix/RHS are never modified and certification still uses their true residual.
 
-SuperLU ILU may nevertheless encounter a zero pivot on very large incomplete
-factorizations even when the physical matrix is nonsingular.  Recovery is kept
-strictly inside the preconditioner: we first change the fill ordering, then add
-only a tiny row-scaled diagonal pivot regularization if required.  None of these
-fallbacks changes the physical Maxwell matrix seen by Krylov or its certificate.
+SuperLU ILU may encounter a zero pivot on very large incomplete factorizations
+even when the physical matrix is nonsingular.  The 118k production solve also
+shows that ``MMD_AT_PLUS_A`` gives a much better Maxwell approximate inverse than
+``COLAMD``.  Large-grid recovery therefore keeps the successful MMD ordering and
+adds only a tiny row-scaled diagonal inside the preconditioner before considering
+COLAMD.  None of these fallbacks changes the physical Maxwell matrix seen by
+Krylov or its certificate.
 """
 from __future__ import annotations
 
@@ -60,26 +62,28 @@ def _factor_with_pivot_recovery(matrix, *, drop_tol, fill_factor):
     """Build bounded-fill ILU with ordering/pivot recovery for numerical zero pivots.
 
     The 254k validation grid can make SuperLU's incomplete factorization report
-    ``Factor is exactly singular`` even though the original Maxwell operator is
-    certified nonsingular on coarser grids.  We therefore vary only numerical
-    factorization choices.  The final three attempts add a progressively tiny
-    row-scaled diagonal to the preconditioner matrix (never to the physical A).
+    ``Factor is exactly singular``.  We first preserve the MMD ordering that is
+    empirically effective on the 118k Maxwell system and regularize only its
+    numerical pivots.  COLAMD is a last-resort factorization path because a
+    factorization that exists is not necessarily a useful Maxwell preconditioner.
     """
     n = int(matrix.shape[0])
     if n >= 200000:
         attempts = (
+            ("MMD_AT_PLUS_A", 0.01, 0.0),
+            ("MMD_AT_PLUS_A", 0.01, 1e-10),
+            ("MMD_AT_PLUS_A", 0.01, 1e-8),
+            ("MMD_AT_PLUS_A", 0.01, 1e-6),
+            ("MMD_AT_PLUS_A", 0.01, 1e-4),
             ("COLAMD", 0.0, 0.0),
-            ("COLAMD", 0.0, 1e-10),
             ("COLAMD", 0.0, 1e-8),
-            ("COLAMD", 0.0, 1e-6),
-            ("COLAMD", 0.0, 1e-4),
         )
     else:
         attempts = (
             ("MMD_AT_PLUS_A", 0.01, 0.0),
+            ("MMD_AT_PLUS_A", 0.01, 1e-10),
+            ("MMD_AT_PLUS_A", 0.01, 1e-8),
             ("COLAMD", 0.0, 0.0),
-            ("COLAMD", 0.0, 1e-8),
-            ("COLAMD", 0.0, 1e-6),
         )
 
     failures = []
@@ -147,12 +151,7 @@ def build_transverse_stabilized_matrix(
     mqs=False,
     mqs_admittance=None,
 ):
-    """Return a preconditioner matrix whose augmentation vanishes on e_t.
-
-    ``stabilization_factor`` has the same intuitive scale as the old row-diagonal
-    shift, but the added magnitude is confined to the compatible gradient
-    directions instead of being applied to every Maxwell edge DOF.
-    """
+    """Return a preconditioner matrix whose augmentation vanishes on e_t."""
     factor = float(stabilization_factor)
     if not np.isfinite(factor) or factor <= 0.0:
         raise ValueError("transverse ILU stabilization_factor must be positive")
@@ -171,7 +170,6 @@ def build_transverse_stabilized_matrix(
     magnitude = np.abs(scalar_diag)
     reference = _positive_median(magnitude)
     floor = max(reference * 1e-12, np.finfo(float).tiny)
-    # Stable complex reciprocal.  This is used only in the preconditioner.
     inverse_diag = np.conj(scalar_diag) / (magnitude * magnitude + floor * floor)
 
     DG = (sp.diags(d, format="csr") @ G).tocsr()
@@ -184,8 +182,6 @@ def build_transverse_stabilized_matrix(
     row_reference = _positive_median(row_scale)
     mass_reference = _positive_median(np.abs(d))
     gain = factor * row_reference / mass_reference
-    # Keep pathological material data from overflowing a preconditioner while
-    # retaining enough gain to lift the weak gradient block to the curl scale.
     gain = float(np.clip(gain, 1.0, 1e12))
 
     augmented = (A + gain * lift).tocsr()
@@ -219,13 +215,7 @@ def build_transverse_ilu(
     mqs=False,
     mqs_admittance=None,
 ):
-    """Factor the compatible transverse-stabilized matrix and return an inverse.
-
-    Large construction/factorization failures are printed before propagating to
-    the caller.  The Krylov policy may try a different bounded-fill attempt, but
-    a failed preconditioner must never be silently mistaken for a Krylov
-    residual failure.
-    """
+    """Factor the compatible transverse-stabilized matrix and return an inverse."""
     started = time.perf_counter()
     print(
         "Maxwell compatible transverse ILU build: "
