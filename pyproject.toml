@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sdfmpneo"
-version = "0.15.0"
+version = "0.17.0"
 description = "Structure-preserving geometry-to-tensor electrothermal surrogate with geometry-aware thermal ROM"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
