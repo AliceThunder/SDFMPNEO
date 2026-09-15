@@ -6,6 +6,13 @@ scalar-gradient block.  The remaining transverse correction is preconditioned
 with a compatible grad-div stabilized ILU whose augmentation vanishes on the
 exact transverse solution.  The original Maxwell matrix/RHS are unchanged and
 every accepted field is certified with their true residual.
+
+On the 2.25-mm validation grid two additional safeguards are essential:
+coarse-to-fine interpolation is rejected when it is algebraically much worse
+than the zero field, and an expensive full Krylov run is started only after a
+small pilot Krylov cycle demonstrates that the chosen ILU actually reduces the
+true residual.  A SuperLU factorization that merely exists is not automatically
+accepted as a useful Maxwell preconditioner.
 """
 from __future__ import annotations
 
@@ -88,6 +95,42 @@ def _defect_refine(
     return x, current, history
 
 
+def _pilot_krylov(
+    A,
+    rhs,
+    x0,
+    M,
+    solve,
+    residual_fn,
+    *,
+    maxiter=2,
+    inner_m=8,
+    accept_ratio=0.95,
+):
+    """Cheaply reject a numerically destructive large-grid preconditioner."""
+    start = np.asarray(x0, complex).reshape(-1)
+    before = float(residual_fn(A, start, rhs))
+    started = time.perf_counter()
+    candidate, info = solve(
+        A,
+        rhs,
+        x0=start,
+        M=M,
+        rtol=0.5,
+        maxiter=int(maxiter),
+        inner_m=int(inner_m),
+    )
+    candidate = np.asarray(candidate, complex).reshape(-1)
+    after = float(residual_fn(A, candidate, rhs))
+    elapsed = float(time.perf_counter() - started)
+    accepted = bool(
+        np.isfinite(after)
+        and np.all(np.isfinite(candidate))
+        and after < before * float(accept_ratio)
+    )
+    return candidate, after, int(info), elapsed, before, accepted
+
+
 def install(local_solver_module):
     """Patch the certified local solver with compatible block preconditioning."""
 
@@ -125,14 +168,24 @@ def install(local_solver_module):
         defect_steps = int(cfg.get("linear_iterative_defect_steps", 2))
         defect_maxiter = int(cfg.get("linear_iterative_defect_maxiter", 12))
         defect_inner_m = int(cfg.get("linear_iterative_defect_inner_m", 20))
-        # Defect solves are useful only after the main compatible solve is
-        # genuinely near certification.  Old configurations used 5e-6, which
-        # causes expensive no-op cleanup on the 254k validation grid.
         defect_start = min(
             float(cfg.get("linear_iterative_defect_start_residual", 1e-8)),
             1e-8,
         )
-        if maxiter < 1 or inner_m < 2 or defect_steps < 0:
+        pilot_min_dofs = int(cfg.get("linear_preconditioner_pilot_min_dofs", 200000))
+        pilot_maxiter = int(cfg.get("linear_preconditioner_pilot_maxiter", 2))
+        pilot_inner_m = int(cfg.get("linear_preconditioner_pilot_inner_m", 8))
+        pilot_accept_ratio = float(cfg.get("linear_preconditioner_pilot_accept_ratio", 0.95))
+        warm_limit = float(cfg.get("linear_warm_start_max_relative_residual", 10.0))
+        if (
+            maxiter < 1
+            or inner_m < 2
+            or defect_steps < 0
+            or pilot_maxiter < 1
+            or pilot_inner_m < 2
+            or not 0.0 < pilot_accept_ratio < 1.0
+            or warm_limit <= 0.0
+        ):
             raise ValueError("local iterative Maxwell solver iteration limits are invalid")
 
         if background is None:
@@ -189,13 +242,31 @@ def install(local_solver_module):
             )
 
         target = max(float(residual_tolerance) * 0.2, 1e-12)
-        best = None if x0 is None else np.asarray(x0, complex).reshape(-1).copy()
-        best_residual = (
-            float("inf")
-            if best is None
-            else local_solver_module._relative_residual(A, best, rhs)
-        )
+        zero = np.zeros_like(np.asarray(rhs, complex).reshape(-1))
+        best = zero.copy()
+        best_residual = 1.0
         history = []
+        if x0 is not None:
+            warm = np.asarray(x0, complex).reshape(-1).copy()
+            warm_residual = float(local_solver_module._relative_residual(A, warm, rhs))
+            if np.isfinite(warm_residual) and warm_residual <= warm_limit:
+                best = warm
+                best_residual = warm_residual
+            else:
+                print(
+                    "local Maxwell warm start discarded: "
+                    f"residual={warm_residual:.3e}, zero_baseline=1.000e+00, "
+                    f"limit={warm_limit:.3e}",
+                    flush=True,
+                )
+                history.append(
+                    {
+                        "solver": "warm-start-screen",
+                        "discarded": True,
+                        "relative_residual": warm_residual,
+                        "zero_baseline": 1.0,
+                    }
+                )
 
         for drop_tol, fill_factor, stabilization, label, mode in attempts:
             t0 = time.perf_counter()
@@ -241,11 +312,49 @@ def install(local_solver_module):
                 )
                 continue
 
+            run_start = best
+            if A.shape[0] >= pilot_min_dofs:
+                pilot, pilot_residual, pilot_info, pilot_seconds, before, accepted = _pilot_krylov(
+                    A,
+                    rhs,
+                    best,
+                    M,
+                    compatible_lgmres,
+                    local_solver_module._relative_residual,
+                    maxiter=pilot_maxiter,
+                    inner_m=pilot_inner_m,
+                    accept_ratio=pilot_accept_ratio,
+                )
+                history.append(
+                    {
+                        "solver": f"{label}-pilot",
+                        "krylov_info": int(pilot_info),
+                        "seconds": float(pilot_seconds),
+                        "starting_relative_residual": float(before),
+                        "relative_residual": float(pilot_residual),
+                        "accepted": bool(accepted),
+                    }
+                )
+                print(
+                    f"local Maxwell {label}-pilot: residual={pilot_residual:.3e}, "
+                    f"start={before:.3e}, info={pilot_info}, "
+                    f"accepted={'yes' if accepted else 'no'}, time={pilot_seconds:.1f}s",
+                    flush=True,
+                )
+                if not accepted:
+                    continue
+                run_start = pilot
+                if pilot_residual < best_residual:
+                    best = pilot
+                    best_residual = pilot_residual
+                if best_residual <= residual_tolerance:
+                    return best, best_residual, history
+
             t1 = time.perf_counter()
             candidate, info = compatible_lgmres(
                 A,
                 rhs,
-                x0=best,
+                x0=run_start,
                 M=M,
                 rtol=target,
                 maxiter=maxiter,
@@ -282,12 +391,11 @@ def install(local_solver_module):
             if np.isfinite(residual) and residual < best_residual:
                 best = candidate
                 best_residual = residual
-            if best is not None and best_residual <= residual_tolerance:
+            if best_residual <= residual_tolerance:
                 return best, best_residual, history
 
             if (
                 defect_steps > 0
-                and best is not None
                 and np.isfinite(best_residual)
                 and best_residual <= defect_start
             ):
@@ -316,9 +424,10 @@ def install(local_solver_module):
     local_solver_module._lgmres = compatible_lgmres
     local_solver_module._iterative_solve = iterative_solve
     local_solver_module._defect_refine = _defect_refine
+    local_solver_module._pilot_krylov = _pilot_krylov
     local_solver_module._compatible_gradient_block_installed = True
     local_solver_module._compatible_transverse_ilu_installed = True
     return local_solver_module
 
 
-__all__ = ["_defect_refine", "install"]
+__all__ = ["_defect_refine", "_pilot_krylov", "install"]
