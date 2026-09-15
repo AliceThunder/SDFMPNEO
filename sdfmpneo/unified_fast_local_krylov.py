@@ -127,6 +127,15 @@ def install(local_solver_module):
         if maxiter < 1 or inner_m < 2 or defect_steps < 0:
             raise ValueError("local iterative Maxwell solver iteration limits are invalid")
 
+        if background is None:
+            background = getattr(A, "_sdfmpneo_background", None)
+        if context is None:
+            context = getattr(A, "_sdfmpneo_context", None)
+        if bool(getattr(A, "_sdfmpneo_mqs", False)):
+            mqs = True
+            if mqs_admittance is None:
+                mqs_admittance = getattr(A, "_sdfmpneo_mqs_admittance", None)
+
         gradient_block = None
         if background is not None and context is not None:
             gradient_block = build_gradient_block(
@@ -236,9 +245,6 @@ def install(local_solver_module):
             if best is not None and best_residual <= residual_tolerance:
                 return best, best_residual, history
 
-            # With the compatible block preconditioner, defect refinement is a
-            # cheap final cleanup rather than a substitute for missing gradient
-            # physics.  Do not spend cycles on it unless the main solve is close.
             if (
                 defect_steps > 0
                 and best is not None
