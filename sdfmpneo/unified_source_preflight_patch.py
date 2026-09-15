@@ -1,17 +1,17 @@
 """Production source preflight for an open two-terminal stranded current.
 
-The source must remain open and carry genuine terminal divergence.  Both pieces
-of finite-support regularization are physical and must be independently
-certified:
+The source must remain open and carry genuine terminal divergence.  Its physical
+regularization is certified at three independent levels:
 
-* feed/return divergence is distributed over a mesh-independent contact length;
-* the stranded current occupies a mesh-independent rectangular cross section.
+* feed/return current is distributed over a mesh-independent contact length;
+* stranded current occupies a mesh-independent rectangular cross section; and
+* the nodal terminal charge is the finite-volume cubic-contact target, reached
+  by a curl-free compatible gradient lift that leaves magnetic/transverse source
+  excitation unchanged.
 
-The numerical quadrature used to integrate that fixed rectangle may become more
+The numerical quadrature used to integrate the fixed support may become more
 resolved on finer meshes; changing quadrature resolution is not a change of the
-physical source.  The continuity audit compares the nodal-divergence first
-moment with the mesh-independent regularized source vector declared by source
-deposition.
+physical source.
 """
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ from .unified_gradient_block_maxwell import source_terminal_divergence
 _MAX_NET_TERMINAL_BALANCE_ERROR = 1e-12
 _MAX_TERMINAL_MOMENT_RELATIVE_ERROR = 1e-12
 _MIN_TERMINAL_DIVERGENCE_RELATIVE_NORM = 1e-12
+_MAX_CHARGE_TARGET_RELATIVE_ERROR = 5e-11
+_MAX_CHARGE_LIFT_RELATIVE_CURL = 1e-12
 
 
 def install(truth_preflight_module):
@@ -85,6 +87,32 @@ def install(truth_preflight_module):
             if not composite_source:
                 cross_section_support_ok = True
 
+            requires_charge_lift = "compatible_charge_lift" in str(
+                getattr(background, "source_model", "")
+            )
+            charge_target_error = float(
+                meta.get("terminal_charge_target_relative_error", np.inf)
+            )
+            charge_lift_curl = float(
+                meta.get("terminal_charge_lift_relative_curl", np.inf)
+            )
+            charge_support_ok = bool(
+                meta.get("terminal_charge_support_mesh_independent", False)
+                and meta.get("terminal_charge_model")
+                == "volume_integrated_cubic_terminal_charge"
+                and float(meta.get("terminal_charge_contact_length", 0.0)) > 0.0
+                and int(meta.get("terminal_charge_support_nodes", 0)) > 1
+                and abs(float(meta.get("terminal_charge_negative_total", 0.0)) - 1.0)
+                <= 1e-12
+                and abs(float(meta.get("terminal_charge_positive_total", 0.0)) - 1.0)
+                <= 1e-12
+                and charge_target_error <= _MAX_CHARGE_TARGET_RELATIVE_ERROR
+                and charge_lift_curl <= _MAX_CHARGE_LIFT_RELATIVE_CURL
+                and bool(meta.get("terminal_charge_curl_preserved", False))
+            )
+            if not requires_charge_lift:
+                charge_support_ok = True
+
             rows.append(
                 {
                     "port": int(port),
@@ -96,6 +124,7 @@ def install(truth_preflight_module):
                     ),
                     "terminal_support_mesh_independent": terminal_support_ok,
                     "cross_section_support_mesh_independent": cross_section_support_ok,
+                    "terminal_charge_support_mesh_independent": charge_support_ok,
                     "terminal_contact_length": float(meta.get("terminal_contact_length", 0.0)),
                     "terminal_profile": meta.get("terminal_profile"),
                     "cross_section_quadrature": meta.get("cross_section_quadrature"),
@@ -103,6 +132,14 @@ def install(truth_preflight_module):
                     "cross_section_thickness_panels": int(meta.get("cross_section_thickness_panels", 0)),
                     "cross_section_quadrature_points": int(meta.get("cross_section_quadrature_points", 0)),
                     "source_quadrature_resolution": float(meta.get("source_quadrature_resolution", 0.0)),
+                    "terminal_charge_model": meta.get("terminal_charge_model"),
+                    "terminal_charge_lift_model": meta.get("terminal_charge_lift_model"),
+                    "terminal_charge_target_relative_error": charge_target_error,
+                    "terminal_charge_lift_relative_curl": charge_lift_curl,
+                    "terminal_charge_support_nodes": int(meta.get("terminal_charge_support_nodes", 0)),
+                    "terminal_charge_contact_length": float(
+                        meta.get("terminal_charge_contact_length", 0.0)
+                    ),
                 }
             )
 
@@ -114,6 +151,7 @@ def install(truth_preflight_module):
                 and row["terminal_divergence_nonzero"]
                 and row["terminal_support_mesh_independent"]
                 and row["cross_section_support_mesh_independent"]
+                and row["terminal_charge_support_mesh_independent"]
                 for row in rows
             )
         )
@@ -123,6 +161,9 @@ def install(truth_preflight_module):
         )
         result["cross_section_support_mesh_independent"] = bool(
             rows and all(row["cross_section_support_mesh_independent"] for row in rows)
+        )
+        result["terminal_charge_support_mesh_independent"] = bool(
+            rows and all(row["terminal_charge_support_mesh_independent"] for row in rows)
         )
         result["minimum_terminal_contact_length"] = min(
             (row["terminal_contact_length"] for row in rows), default=0.0
@@ -142,6 +183,12 @@ def install(truth_preflight_module):
         result["maximum_terminal_first_moment_relative_error"] = max(
             (row["terminal_first_moment_relative_error"] for row in rows), default=float("inf")
         )
+        result["maximum_terminal_charge_target_relative_error"] = max(
+            (row["terminal_charge_target_relative_error"] for row in rows), default=float("inf")
+        )
+        result["maximum_terminal_charge_lift_relative_curl"] = max(
+            (row["terminal_charge_lift_relative_curl"] for row in rows), default=float("inf")
+        )
         result["terminal_divergence_audit"] = rows
         result["terminal_path_conservation"] = bool(
             result.get("terminal_path_conservation", False) and terminal_ok
@@ -149,6 +196,7 @@ def install(truth_preflight_module):
         result["finite_support_source"] = bool(
             result.get("finite_support_source", False)
             and result["cross_section_support_mesh_independent"]
+            and result["terminal_charge_support_mesh_independent"]
         )
         return result
 
