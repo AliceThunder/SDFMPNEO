@@ -124,10 +124,7 @@ def install(module):
     # Since this scalar patch has exact global Dirichlet data, large padding is
     # not a physical requirement.  Choose the largest deterministic patch that
     # is actually the parent scalar restriction.
-    original_port_states = module._port_states
-
     def port_states(background, geometry, port, global_potential, target_steps, *, phi=None):
-        del original_port_states  # implementation below intentionally controls the chosen patch
         base_cfg = module._config(background)
         tolerance = _consistency_tolerance(background)
         global_geometry, local_geometry = module._single_port_geometry(geometry, port)
