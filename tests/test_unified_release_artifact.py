@@ -6,7 +6,7 @@ import pytest
 from sdfmpneo.unified_runtime import _require_release_artifact
 
 
-_SELF_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
+_SELF_MODEL = "canonical_local_full_fine_minus_coarse_self_defect_v3"
 
 
 def _write_metadata(path, release):
@@ -60,7 +60,7 @@ def test_prediction_release_gate_rejects_missing_self_correction_certificate(tmp
 def test_prediction_release_gate_rejects_wrong_self_correction_model(tmp_path):
     path = tmp_path / "model.npz"
     release = _certified_release()
-    release["physics_gate"]["self_correction_model"] = "canonical_local_fine_minus_coarse_self_defect_v1"
+    release["physics_gate"]["self_correction_model"] = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
     _write_metadata(path, release)
     with pytest.raises(ValueError, match="self_correction_model"):
         _require_release_artifact(path)
