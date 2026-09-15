@@ -9,12 +9,13 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 18 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, and applies
-# the complete local fine-minus-coarse self defect (v3). Old truth tensors and
-# certificates must not be mixed with this one.
-_unified_model.FORMAT_VERSION = 18
-_SELF_CORRECTION_MODEL_V3 = "canonical_local_full_fine_minus_coarse_self_defect_v3"
+# Physics truth version 19 keeps the full open two-terminal source, resolves its
+# physical source/package support below the production EM cell scale, and uses
+# only the independently converged localizable transverse/cross self defect.
+# Pure longitudinal terminal self energy remains global/nonlocal and is never
+# replaced by an isolated canonical local-box response.
+_unified_model.FORMAT_VERSION = 19
+_SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
@@ -22,7 +23,7 @@ from .unified_resolved_package_fraction import install as _install_resolved_pack
 from .unified_terminal_contact_source import install as _install_terminal_contact_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-# Package and source geometry are physical.  Numerical subcell/quadrature
+# Package and source geometry are physical. Numerical subcell/quadrature
 # resolution may increase with refinement but must not change the represented
 # OBB, conductor rectangle, terminal contact or total ampere-turns.
 _install_resolved_package_fraction(OpenBoundaryBackground)
@@ -39,7 +40,6 @@ from .unified_two_level_residual_replacement import install as _install_two_leve
 from .unified_localized_self_solve import install as _install_localized_self_solve
 from .unified_stable_localized_self import install as _install_stable_localized_self
 from .unified_local_solve_cache import install as _install_local_solve_cache
-from .unified_full_self_defect import install as _install_full_self_defect
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
 _install_fast_local_krylov(_certified_local_solve)
@@ -53,16 +53,6 @@ _install_localized_self_solve(_self_correction, _certified_local_solve)
 _install_stable_localized_self(_self_correction)
 # Exact memoization is installed after the final local truth implementation.
 _install_local_solve_cache(_self_correction)
-# v3 changes only the object added back to the global diagonal: the complete
-# local fine-minus-coarse defect. Absolute local terminal response is never
-# substituted for the global one.
-_install_full_self_defect(_self_correction)
-
-# Install the v3 audit before corrected preflight imports the audit function by
-# value. It certifies the same complete defect used by production truth.
-from . import unified_self_correction_audit as _self_correction_audit
-from .unified_full_self_defect_audit import install as _install_full_self_defect_audit
-_install_full_self_defect_audit(_self_correction_audit, _self_correction)
 
 # Install the same certified large-system policy on global truth/Gate solves.
 # This must happen before corrected preflight imports _solve_fields by value.
@@ -80,7 +70,7 @@ _install_source_preflight(_truth_preflight)
 from . import unified_corrected_truth_preflight as _corrected_preflight
 from .unified_preflight_diagnosis_patch import install as _install_preflight_diagnosis
 
-_corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
+_corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
 from .unified_tensor_surrogate import (
@@ -133,13 +123,14 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v18 changes source/material subcell integration and the production self-defect
-# semantics. Invalidate all earlier physical caches/release metadata.
+# v19 keeps the mesh-stable source/material representation introduced in v18
+# but removes the disproved full-local longitudinal defect. Invalidate v18 cache
+# and every earlier physical cache/release metadata.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 20
-_unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
+_unified_runtime._CACHE_FORMAT = 21
+_unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # These modules are imported by unified_runtime. Their functions read the
 # module-level model tag at call time, so synchronize the release/Gate metadata.
 from . import unified_corrected_physics_gate as _corrected_physics_gate
-_corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL_V3
+_corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
