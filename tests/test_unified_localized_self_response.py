@@ -2,6 +2,8 @@ import numpy as np
 import scipy.sparse as sp
 
 import sdfmpneo.unified_self_correction as correction
+import sdfmpneo.unified_stable_localized_self as stable
+from sdfmpneo.unified_compensated_field import CompensatedComplexField
 
 
 class _Gradient:
@@ -35,7 +37,7 @@ def test_localized_self_response_removes_only_pure_longitudinal_energy(monkeypat
     assert np.allclose(rhs, -1j * _Local.omega * source)
 
     monkeypatch.setattr(
-        correction,
+        stable,
         "build_gradient_block",
         lambda local, context, check_topology=True: _Gradient(longitudinal),
     )
@@ -64,18 +66,11 @@ def test_localized_self_response_removes_only_pure_longitudinal_energy(monkeypat
     expected_refinable_abs2 = full_abs2 - long_abs2
     pure_transverse_abs2 = np.abs(transverse) ** 2
 
-    expected_full_z = complex(-source @ field)
-    grad_energy = complex(np.vdot(longitudinal, A @ longitudinal))
-    expected_longitudinal_z = complex(
-        np.imag(grad_energy) / _Local.omega,
-        np.real(grad_energy) / _Local.omega,
-    )
+    expected_longitudinal_z = complex(-source @ longitudinal)
+    expected_localized_z = complex(-source @ transverse)
 
     assert np.allclose(result["longitudinal_z"], expected_longitudinal_z)
-    assert np.allclose(
-        result["localized_z"],
-        expected_full_z - expected_longitudinal_z,
-    )
+    assert np.allclose(result["localized_z"], expected_localized_z)
     assert np.isclose(
         result["localized_d_vol"],
         edge_loss @ expected_refinable_abs2,
@@ -93,3 +88,37 @@ def test_localized_self_response_removes_only_pure_longitudinal_energy(monkeypat
 
     expected_q = 0.5 * expected_refinable_abs2
     assert np.allclose(result["localized_modal_h"], 2.0 * expected_q)
+    assert result["localized_contraction"] == "compensated_transverse_remainder_v2"
+
+
+def test_localized_impedance_survives_extreme_longitudinal_cancellation(monkeypatch):
+    longitudinal = np.array([1.0e20j, -2.0e20j], dtype=complex)
+    transverse = np.array([3.0j, -5.0j], dtype=complex)
+    # This represents E=E_L+E_T without rounding E_T away in complex128.
+    field = CompensatedComplexField(longitudinal.copy(), transverse.copy())
+    source = np.array([1.0, 0.25])
+    rhs = np.zeros(2, dtype=complex)
+
+    monkeypatch.setattr(
+        stable,
+        "build_gradient_block",
+        lambda local, context, check_topology=True: _Gradient(longitudinal),
+    )
+
+    result = correction._localized_self_response(
+        _Local(),
+        object(),
+        sp.eye(2, format="csr", dtype=complex),
+        rhs,
+        field,
+        source,
+        np.zeros(2),
+        np.zeros(2),
+        np.zeros(2),
+    )
+
+    expected = complex(-source @ transverse)
+    assert expected != 0.0
+    assert result["localized_z"] == expected
+    assert np.isfinite(result["transverse_field_relative_norm"])
+    assert result["localized_contraction"] == "compensated_transverse_remainder_v2"
