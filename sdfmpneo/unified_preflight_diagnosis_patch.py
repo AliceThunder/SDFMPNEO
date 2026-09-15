@@ -7,9 +7,9 @@ import numpy as np
 def install(corrected_preflight_module):
     if bool(getattr(corrected_preflight_module, "_linear_diagnosis_patch_installed", False)):
         return corrected_preflight_module
-    original = corrected_preflight_module._local_self_failure_diagnosis
+    original_local = corrected_preflight_module._local_self_failure_diagnosis
 
-    def diagnose(local_self):
+    def diagnose_local(local_self):
         if not bool(local_self.get("linear_solver_converged", True)):
             residual = float(local_self.get("maximum_linear_relative_residual", np.inf))
             tolerance = float(local_self.get("linear_relative_residual_tolerance", 1e-9))
@@ -25,9 +25,65 @@ def install(corrected_preflight_module):
                     "mesh Gate. Repair/condition the local solve or source formulation first."
                 ),
             }
-        return original(local_self)
+        result = original_local(local_self)
+        if isinstance(result, dict) and str(local_self.get("self_correction_model", "")).endswith("_v3"):
+            result = dict(result)
+            result["code"] = "full_local_self_defect_not_converged"
+            result["recommendation"] = (
+                "The complete canonical local fine-minus-coarse self defect has not converged. "
+                "Improve finite-support source quadrature or refine only the canonical local "
+                "reference; do not relax the Gate or globally refine the UWPT domain."
+            )
+        return result
 
-    corrected_preflight_module._local_self_failure_diagnosis = diagnose
+    def diagnose_mesh(mesh):
+        if bool(mesh.get("converged", False)) or not mesh.get("samples"):
+            return None
+        row = max(
+            mesh["samples"],
+            key=lambda item: float(item.get("maximum_relative_error", 0.0)),
+        )
+        path_error = float(row.get("relative_source_path_length_error", np.inf))
+        if path_error > float(mesh.get("source_path_relative_tolerance", 1e-10)):
+            return {
+                "code": "mesh_refinement_changed_physical_source_geometry",
+                "geometry": row.get("geometry"),
+                "relative_source_path_length_error": path_error,
+                "recommendation": "Mesh refinement must compare the same physical source geometry.",
+            }
+        self_z = float(row.get("diagnostic_z_self_relative_error", np.inf))
+        mutual_z = float(row.get("relative_mutual_impedance_error", np.inf))
+        self_d = float(row.get("diagnostic_d_vol_self_relative_error", np.inf))
+        mutual_d = float(row.get("diagnostic_d_vol_mutual_relative_error", np.inf))
+        self_dominated = bool(self_z > mutual_z and self_d > mutual_d)
+        return {
+            "code": (
+                "corrected_global_self_remainder_not_converged"
+                if self_dominated
+                else "general_em_mesh_nonconvergence"
+            ),
+            "geometry": row.get("geometry"),
+            "corrected_self_z_relative_error": self_z,
+            "raw_self_z_relative_error": float(
+                row.get("diagnostic_raw_z_self_relative_error", np.inf)
+            ),
+            "mutual_z_relative_error": mutual_z,
+            "corrected_self_d_vol_relative_error": self_d,
+            "mutual_d_vol_relative_error": mutual_d,
+            "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
+            "recommendation": (
+                "The independently certified local v3 defect has been applied, but the remaining "
+                "global self response is still mesh dependent. Improve the physical source "
+                "quadrature/local defect resolution and rerun the unchanged global mesh Gate; "
+                "do not relax the tolerance."
+                if self_dominated
+                else "Refine the remaining non-self EM truth discretization and rerun the Gate; "
+                "do not relax the tolerance."
+            ),
+        }
+
+    corrected_preflight_module._local_self_failure_diagnosis = diagnose_local
+    corrected_preflight_module._mesh_failure_diagnosis = diagnose_mesh
     corrected_preflight_module._linear_diagnosis_patch_installed = True
     return corrected_preflight_module
 
