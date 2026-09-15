@@ -194,6 +194,8 @@ def compatible_charge_lift(background, source, target):
         raise ValueError("charge-lift source/target dimension mismatch")
     q_raw = np.asarray(Gfull.T @ raw, float).reshape(-1)
     delta_q = q_target - q_raw
+    target_scale = max(float(np.linalg.norm(q_target)), np.finfo(float).tiny)
+    raw_target_error = float(np.linalg.norm(delta_q) / target_scale)
     if abs(float(np.sum(delta_q))) > 1e-10 * max(float(np.linalg.norm(delta_q, 1)), 1.0):
         raise FloatingPointError("charge-lift divergence correction is not globally balanced")
 
@@ -202,10 +204,7 @@ def compatible_charge_lift(background, source, target):
     correction = np.asarray(G @ psi, float).reshape(-1)
     lifted = raw + correction
     q_new = np.asarray(Gfull.T @ lifted, float).reshape(-1)
-    target_error = float(
-        np.linalg.norm(q_new - q_target)
-        / max(float(np.linalg.norm(q_target)), np.finfo(float).tiny)
-    )
+    target_error = float(np.linalg.norm(q_new - q_target) / target_scale)
     curl = np.asarray(background.curl @ correction, float).reshape(-1)
     curl_error = float(
         np.linalg.norm(curl)
@@ -223,6 +222,7 @@ def compatible_charge_lift(background, source, target):
         )
     return lifted, {
         "terminal_charge_lift_model": _LIFT_MODEL,
+        "terminal_charge_raw_target_relative_error": raw_target_error,
         "terminal_charge_target_relative_error": target_error,
         "terminal_charge_lift_relative_curl": curl_error,
         "terminal_charge_lift_relative_norm": float(
