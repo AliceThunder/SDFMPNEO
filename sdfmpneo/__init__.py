@@ -9,16 +9,18 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth changed from an open-path low-frequency E source to a certified
-# transverse impressed-current source. Old surrogates must never be mixed with
-# the new truth/certificates even though the neural tensor shapes are unchanged.
-_unified_model.FORMAT_VERSION = 14
+# Physics truth version 15 restores the theory-defined open two-terminal source
+# and replaces transverse-source projection with a compatible scalar-gradient
+# Maxwell block. Old truth tensors/certificates must not be mixed with this one.
+_unified_model.FORMAT_VERSION = 15
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
-from .unified_transverse_source import install as _install_transverse_source
+from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-_install_transverse_source(OpenBoundaryBackground)
+# Preserve the physical open-path source.  The longitudinal terminal response is
+# solved by the compatible gradient block; it is not projected out of the RHS.
+_install_maxwell_operator_metadata(OpenBoundaryBackground)
 
 from . import unified_self_correction as _self_correction
 from . import unified_certified_local_solve as _certified_local_solve
@@ -67,7 +69,7 @@ from .unified_thermal import (
     build_geometry_aware_thermal_library,
 )
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 __all__ = [
     "ARCHITECTURE",
