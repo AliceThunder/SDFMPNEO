@@ -48,12 +48,23 @@ def audit_local_self_correction(background, geometries, monitor=None):
         n_ports,
         max(1, int(cfg.get("parallel_preflight_ports", min(2, n_ports)))),
     )
+    # The validation grid is substantially larger than the certified fine grid
+    # (about 254k vs 118k edge DOFs in the production UWPT case).  Running two
+    # validation factorizations concurrently doubles the peak memory of both the
+    # scalar-gradient LU and transverse ILU.  Keep the cheap seed/fine stage
+    # parallel, but serialize only the large validation stage.  This preserves
+    # warm starts and most of the parallel speedup without turning memory
+    # pressure into a silent preconditioner failure.
+    validation_workers = min(
+        n_ports,
+        max(1, int(cfg.get("parallel_validation_ports", 1))),
+    )
 
     for gi, geometry in enumerate(geometries):
         if monitor is not None:
             monitor.checkpoint()
 
-        def solve_port(port):
+        def solve_fine(port):
             parent = _AuditParentView(background)
             seed_step = float(_parent_fine_step(parent))
             if bool(cfg.get("linear_warm_start_from_parent", True)) and seed_step > fine:
@@ -65,11 +76,28 @@ def audit_local_self_correction(background, geometries, monitor=None):
                 _solve_local(parent, geometry, port, seed_step, phi=None)
 
             print(
-                f"local self correction convergence……geometry {gi+1}/{len(geometries)} "
-                f"port {port+1}/{n_ports}  {fine:g}m -> {validation:g}m",
+                f"local self correction fine solve……geometry {gi+1}/{len(geometries)} "
+                f"port {port+1}/{n_ports}  step={fine:g}m",
                 flush=True,
             )
             a = _solve_local(parent, geometry, port, fine, phi=None)
+            return int(port), parent, seed_step, a
+
+        if workers > 1 and n_ports > 1:
+            print(f"local self convergence audit: parallel fine ports={workers}", flush=True)
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="local-self-fine") as pool:
+                fine_states = list(pool.map(solve_fine, range(n_ports)))
+        else:
+            fine_states = [solve_fine(port) for port in range(n_ports)]
+        fine_states.sort(key=lambda item: item[0])
+
+        def solve_validation(item):
+            port, parent, seed_step, a = item
+            print(
+                f"local self correction validation……geometry {gi+1}/{len(geometries)} "
+                f"port {port+1}/{n_ports}  {fine:g}m -> {validation:g}m",
+                flush=True,
+            )
             b = _solve_local(parent, geometry, port, validation, phi=None)
             dissipation_scale = max(
                 abs(float(np.real(b["z"]))),
@@ -113,12 +141,21 @@ def audit_local_self_correction(background, geometries, monitor=None):
             )
             return row
 
-        if workers > 1 and n_ports > 1:
-            print(f"local self convergence audit: parallel ports={workers}", flush=True)
-            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="local-self-audit") as pool:
-                ports = list(pool.map(solve_port, range(n_ports)))
+        if validation_workers > 1 and n_ports > 1:
+            print(
+                f"local self convergence audit: parallel validation ports={validation_workers}",
+                flush=True,
+            )
+            with ThreadPoolExecutor(
+                max_workers=validation_workers,
+                thread_name_prefix="local-self-validation",
+            ) as pool:
+                ports = list(pool.map(solve_validation, fine_states))
         else:
-            ports = [solve_port(port) for port in range(n_ports)]
+            if n_ports > 1:
+                print("local self convergence audit: validation ports serialized for memory", flush=True)
+            ports = [solve_validation(item) for item in fine_states]
+
         ports.sort(key=lambda row: row["port"])
         rows.append({"geometry_index": int(gi), "geometry": geometry, "ports": ports})
 
@@ -146,6 +183,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
         "joule_identity_tolerance": joule_tolerance,
         "linear_relative_residual_tolerance": linear_tolerance,
         "parallel_ports": int(workers),
+        "parallel_validation_ports": int(validation_workers),
         "maximum_relative_error": float(worst),
         "maximum_joule_total_power_relative_error": float(worst_joule),
         "maximum_linear_relative_residual": float(worst_linear),
