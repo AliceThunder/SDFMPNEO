@@ -10,7 +10,7 @@ from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGe
 from . import unified_model as _unified_model
 
 # Physics truth changed from an open-path low-frequency E source to a certified
-# transverse impressed-current source.  Old surrogates must never be mixed with
+# transverse impressed-current source. Old surrogates must never be mixed with
 # the new truth/certificates even though the neural tensor shapes are unchanged.
 _unified_model.FORMAT_VERSION = 14
 
@@ -24,15 +24,20 @@ from . import unified_self_correction as _self_correction
 from . import unified_certified_local_solve as _certified_local_solve
 from .unified_fast_local_krylov import install as _install_fast_local_krylov
 from .unified_local_solve_cache import install as _install_local_solve_cache
-from .unified_parallel_self_correction import install as _install_parallel_self_correction
 
 # Linear-algebra acceleration changes neither the physical operator nor any Gate.
-# Exact memoization and independent-port scheduling are installed only after the
-# certified solver exists, before downstream modules capture these entry points.
+# Exact memoization is installed only after the certified solver exists.
 _install_fast_local_krylov(_certified_local_solve)
 _certified_local_solve.install(_self_correction)
 _install_local_solve_cache(_self_correction)
-_install_parallel_self_correction(_self_correction)
+
+# Install the same certified large-system policy on global truth/Gate solves.
+# This must happen before corrected preflight imports _solve_fields by value.
+from . import unified_tensor_surrogate as _tensor_surrogate
+from . import unified_physics_gate as _physics_gate
+from .unified_fast_global_maxwell import install as _install_fast_global_maxwell
+
+_install_fast_global_maxwell(_physics_gate, _tensor_surrogate, _certified_local_solve)
 
 from . import unified_truth_preflight as _truth_preflight
 from .unified_source_preflight_patch import install as _install_source_preflight
