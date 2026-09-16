@@ -73,6 +73,34 @@ def test_failed_terminal_scalar_gate_skips_original_expensive_preflight():
     assert report["local_self_correction_convergence"]["skipped"] is True
 
 
+def test_failed_terminal_dissipative_gate_has_specific_diagnosis():
+    corrected, global_module, calls = _modules(
+        {
+            "converged": False,
+            "maximum_relative_error": 0.31,
+            "terminal_dissipative_reference": {
+                "converged": False,
+                "maximum_relative_error": 0.31,
+            },
+            "samples": [],
+        }
+    )
+    install(corrected, global_module)
+    settings = {
+        "BACKGROUND": {
+            "fine_step": 0.012,
+            "mesh_check": {"samples": 1, "refinement_factor": 0.75},
+        }
+    }
+    background = types.SimpleNamespace()
+    report = corrected.run_truth_preflight(settings, background, ["g0"])
+    assert calls["original"] == 0
+    assert report["failure_diagnosis"]["code"] == (
+        "terminal_longitudinal_dissipative_defect_not_converged"
+    )
+    assert report["failure_diagnosis"]["maximum_relative_error"] == 0.31
+
+
 def test_passed_terminal_scalar_gate_is_cached_before_original_preflight():
     corrected, global_module, calls = _modules(
         {"converged": True, "maximum_relative_error": 0.02, "samples": []}
