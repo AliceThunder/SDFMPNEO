@@ -9,13 +9,15 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 27 keeps the full open two-terminal source, resolves its
+# Physics truth version 28 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, declares
 # terminal charge continuity independently from incidental edge deposition, and
 # separates the longitudinal self correction into two independently certified
 # pieces: a terminal-scale reactive defect and a whole-domain dissipative scalar
-# reference.  No unconverged local D_vol patch is injected into production truth.
-_unified_model.FORMAT_VERSION = 27
+# reference.  The dissipative reference now integrates the insulating-package /
+# conductive-seawater interface exactly on edge-dual wedges instead of using an
+# arithmetic cut-cell conductivity mixture.
+_unified_model.FORMAT_VERSION = 28
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -89,7 +91,9 @@ from .unified_longitudinal_patch_consistency import install as _install_longitud
 from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
 from .unified_scalar_charge_patch import install as _install_scalar_charge_patch
 from .unified_reactive_longitudinal_reference import install as _install_reactive_longitudinal_reference
+from . import unified_global_dissipative_reference as _global_dissipative_reference
 from .unified_global_dissipative_reference import install as _install_global_dissipative_reference
+from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
@@ -110,6 +114,12 @@ _install_scalar_charge_patch(_global_longitudinal_reference)
 # (9->6.75 mm by default) before any expensive local Maxwell work is allowed.
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
 _install_global_dissipative_reference(_global_longitudinal_reference)
+# The refined dissipative reference replaces only its conductive Hodge by an
+# exact OBB/edge-dual integral.  The current scalar state deliberately remains
+# the legacy longitudinal component of the full-Maxwell operator, so the
+# correction is an actual replacement of unresolved coarse self loss rather
+# than a double-counted additive term.
+_install_resolved_dissipative_reference(_global_dissipative_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 # Scheduling only: source continuity plus the combined reactive/dissipative
 # scalar certificate runs before 118k/254k local Maxwell. Passing reports are
@@ -168,11 +178,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v27 adds the independently certified whole-domain longitudinal dissipative
-# reference.  Old v26 artifacts intentionally left self R/Dvol on the coarse
-# production mesh, so they cannot be mixed with this truth definition.
+# v28 replaces only the longitudinal dissipative reference with a geometry-exact
+# edge-dual conductivity integral.  Old v27 artifacts used arithmetic cut-cell
+# conductivity in that reference and therefore cannot be mixed with this truth.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 29
+_unified_runtime._CACHE_FORMAT = 30
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-reference settings every time the production
