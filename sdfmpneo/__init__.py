@@ -91,7 +91,6 @@ from .unified_longitudinal_patch_consistency import install as _install_longitud
 from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
 from .unified_scalar_charge_patch import install as _install_scalar_charge_patch
 from .unified_reactive_longitudinal_reference import install as _install_reactive_longitudinal_reference
-from . import unified_global_dissipative_reference as _global_dissipative_reference
 from .unified_global_dissipative_reference import install as _install_global_dissipative_reference
 from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
@@ -115,11 +114,9 @@ _install_scalar_charge_patch(_global_longitudinal_reference)
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
 _install_global_dissipative_reference(_global_longitudinal_reference)
 # The refined dissipative reference replaces only its conductive Hodge by an
-# exact OBB/edge-dual integral.  The current scalar state deliberately remains
-# the legacy longitudinal component of the full-Maxwell operator, so the
-# correction is an actual replacement of unresolved coarse self loss rather
-# than a double-counted additive term.
-_install_resolved_dissipative_reference(_global_dissipative_reference)
+# exact OBB/edge-dual integral.  Install it on the already-enhanced longitudinal
+# aggregate module so it wraps the scalar/reference/audit hooks created above.
+_install_resolved_dissipative_reference(_global_longitudinal_reference)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 # Scheduling only: source continuity plus the combined reactive/dissipative
 # scalar certificate runs before 118k/254k local Maxwell. Passing reports are
