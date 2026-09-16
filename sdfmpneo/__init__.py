@@ -9,15 +9,15 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 28 keeps the full open two-terminal source, resolves its
+# Physics truth version 29 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, declares
 # terminal charge continuity independently from incidental edge deposition, and
 # separates the longitudinal self correction into two independently certified
 # pieces: a terminal-scale reactive defect and a whole-domain dissipative scalar
-# reference.  The dissipative reference now integrates the insulating-package /
-# conductive-seawater interface exactly on edge-dual wedges instead of using an
-# arithmetic cut-cell conductivity mixture.
-_unified_model.FORMAT_VERSION = 28
+# reference.  The dissipative reference now integrates both conductivity and
+# permittivity on package/seawater edge-dual wedges instead of leaving either
+# material jump as an arithmetic cut-cell mixture.
+_unified_model.FORMAT_VERSION = 29
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -107,18 +107,17 @@ _global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudina
 _install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_terminal_longitudinal_refinement(_global_longitudinal_reference)
 _install_scalar_charge_patch(_global_longitudinal_reference)
-# The terminal scalar evidence certifies only the reactive defect.  Its local
-# R/Dvol remains diagnostic-only.  Whole-domain longitudinal self dissipation is
-# instead aligned to the production refined scalar mesh (12->9 mm by default)
-# and that reference is independently certified on the next scalar level
-# (9->6.75 mm by default) before any expensive local Maxwell work is allowed.
+# The terminal scalar evidence certifies only the reactive defect. Its local
+# R/Dvol remains diagnostic-only. Whole-domain longitudinal self dissipation is
+# aligned to the production refined scalar mesh (12->9 mm by default) and that
+# reference is independently certified on the next scalar level (9->6.75 mm).
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
 _install_global_dissipative_reference(_global_longitudinal_reference)
-# The refined dissipative reference replaces only its conductive Hodge by an
-# exact OBB/edge-dual integral.  The base dissipative installer above creates the
-# production correction/audit closures on the longitudinal aggregate, while the
-# closures resolve scalar helper functions in their implementation module.  Give
-# the adapter both objects so exact reference values drive both truth and Gates.
+# Upgrade only the refined dissipative scalar reference to a geometry-resolved
+# complex edge mass: exact OBB/edge-dual sigma and epsilon at package/seawater
+# interfaces, while the current scalar state remains the same legacy component
+# of full Maxwell. Give the adapter both aggregate and implementation modules so
+# the exact reference drives correction, Gate and diagnostics consistently.
 _install_resolved_dissipative_reference(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
@@ -181,11 +180,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v28 replaces only the longitudinal dissipative reference with a geometry-exact
-# edge-dual conductivity integral.  Old v27 artifacts used arithmetic cut-cell
-# conductivity in that reference and therefore cannot be mixed with this truth.
+# v29 replaces the longitudinal dissipative reference with a geometry-resolved
+# complex edge mass. Old v28 artifacts resolved sigma only and therefore cannot
+# be mixed with this truth definition.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 30
+_unified_runtime._CACHE_FORMAT = 31
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-reference settings every time the production
