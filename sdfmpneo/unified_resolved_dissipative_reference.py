@@ -30,7 +30,7 @@ from .unified_resolved_conductive_hodge import _build_conductivity_hodge
 _MODEL = "global_longitudinal_dissipative_exact_edge_dual_reference_v2"
 
 
-def _exact_scalar_state(module, parent, background, geometry, *, phi=None):
+def _exact_scalar_state(module, implementation_module, parent, background, geometry, *, phi=None):
     context = background.geometry_context(geometry, assemble_thermal=False)
     conductivity_hodge, edge_loss = _build_conductivity_hodge(background, context)
     G = gradient_operator(background, gauge_fixed=True)
@@ -61,7 +61,11 @@ def _exact_scalar_state(module, parent, background, geometry, *, phi=None):
     d = np.zeros(n, float)
     z = np.zeros(n, complex)
     modal = None if phi is None else np.zeros((np.asarray(phi).shape[1], n), float)
-    local_phi = None if phi is None else module._interpolate_basis(parent, background, phi)
+    local_phi = (
+        None
+        if phi is None
+        else implementation_module._interpolate_basis(parent, background, phi)
+    )
     residuals = []
     supports = []
 
@@ -106,17 +110,40 @@ def _exact_scalar_state(module, parent, background, geometry, *, phi=None):
     }
 
 
-def install(module):
+def install(module, implementation_module):
+    """Install the exact reference on the aggregate and implementation modules.
+
+    ``module`` is the already-enhanced longitudinal aggregate used by production
+    preflight/truth. ``implementation_module`` is the
+    ``unified_global_dissipative_reference`` module whose file-level helper
+    functions are resolved by the installed correction/audit closures at call
+    time.  Patching those helpers is required so the production correction and
+    convergence Gate both consume the exact reference rather than only exposing
+    exact values in diagnostics.
+    """
     if bool(getattr(module, "_resolved_dissipative_reference_installed", False)):
         return module
 
-    original_scalar_state = module._scalar_state
-    original_reference_state = module._reference_state
+    required = ("_scalar_state", "_reference_state", "_config", "_interpolate_basis")
+    missing = [name for name in required if not hasattr(implementation_module, name)]
+    if missing:
+        raise AttributeError(
+            "global dissipative implementation is missing required hooks: "
+            + ", ".join(missing)
+        )
+    if not hasattr(module, "audit_reference_convergence"):
+        raise AttributeError(
+            "resolved dissipative reference must be installed after the base "
+            "global dissipative reference"
+        )
+
+    original_scalar_state = implementation_module._scalar_state
+    original_reference_state = implementation_module._reference_state
     original_audit = module.audit_reference_convergence
 
     def scalar_state(module_arg, parent, background, geometry, *, phi=None):
         # The current scalar state is intentionally the same legacy longitudinal
-        # component as the full-Maxwell operator.  Refined reference backgrounds
+        # component as the full-Maxwell operator. Refined reference backgrounds
         # use the geometry-resolved dual Hodge so the correction replaces, rather
         # than double-counts, the unresolved coarse longitudinal loss.
         if background is parent:
@@ -124,10 +151,18 @@ def install(module):
                 module_arg, parent, background, geometry, phi=phi
             )
         return _exact_scalar_state(
-            module_arg, parent, background, geometry, phi=phi
+            module_arg,
+            implementation_module,
+            parent,
+            background,
+            geometry,
+            phi=phi,
         )
 
-    module._scalar_state = scalar_state
+    # Base correction/audit closures were defined in implementation_module and
+    # resolve this file-level name at call time. Replacing it here therefore
+    # changes the actual production reference, not merely a diagnostic wrapper.
+    implementation_module._scalar_state = scalar_state
 
     def reference_state(module_arg, background, geometry, *, step, max_step, phi=None):
         state = original_reference_state(
@@ -149,13 +184,16 @@ def install(module):
             )
         return state
 
-    module._reference_state = reference_state
+    implementation_module._reference_state = reference_state
 
     def audit_reference_convergence(background, geometry):
+        # original_audit now dispatches through the patched file-level reference
+        # helpers above, so its convergence decision is already based on the exact
+        # edge-dual conductivity reference.
         report = dict(original_audit(background, geometry))
-        cfg = module._config(background)
+        cfg = implementation_module._config(background)
         if cfg.get("enabled", False):
-            reference = module._reference_state(
+            reference = implementation_module._reference_state(
                 module,
                 background,
                 geometry,
@@ -163,7 +201,7 @@ def install(module):
                 max_step=cfg["reference_max_step"],
                 phi=None,
             )
-            validation = module._reference_state(
+            validation = implementation_module._reference_state(
                 module,
                 background,
                 geometry,
