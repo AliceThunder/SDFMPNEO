@@ -1,10 +1,11 @@
-"""Run the uncertain terminal-scalar certificate before expensive local Maxwell.
+"""Run longitudinal scalar certificates before expensive local Maxwell.
 
 This changes scheduling only.  Source/material continuity is checked first; then
-the boundary-conditioned terminal-scale scalar reference is audited.  A failed
-scalar certificate returns the same structured preflight failure without running
-118k/254k local-self Maxwell, open-boundary or MQS gates.  Successful scalar
-audits are cached on the background and reused by the later corrected mesh gate.
+the boundary-conditioned terminal reactive reference and the whole-domain
+longitudinal dissipative reference are audited.  A failed scalar certificate
+returns the same structured preflight failure without running 118k/254k
+local-self Maxwell, open-boundary or MQS gates.  Successful scalar audits are
+cached on the background and reused by the later corrected mesh gate.
 """
 from __future__ import annotations
 
@@ -43,9 +44,6 @@ def install(corrected_preflight_module, global_module):
         if not geometries:
             return original_run(settings, background, geometries, monitor)
 
-        # Reuse the exact enhanced source preflight used by the normal path.  If
-        # source/material continuity itself is invalid, delegate to the original
-        # scheduler, which already fails before local Maxwell.
         source_rows = [
             corrected_preflight_module._source_and_loss_partition(background, g)
             for g in geometries
@@ -101,51 +99,61 @@ def install(corrected_preflight_module, global_module):
         }
         if scalar_ok:
             print(
-                "terminal-scale longitudinal scalar prerequisite……passed; "
-                "continuing local Maxwell audit",
+                "longitudinal scalar prerequisite……passed; continuing local Maxwell audit",
                 flush=True,
             )
             return original_run(settings, background, geometries, monitor)
 
-        print(
-            "local self correction convergence……skipped "
-            "(terminal-scale longitudinal scalar prerequisite failed)",
-            flush=True,
-        )
-        print(
-            "开放边界域扩展 Gate……skipped "
-            "(terminal-scale longitudinal scalar prerequisite failed)",
-            flush=True,
-        )
-        print(
-            "full-wave ↔ MQS formulation Gate……skipped "
-            "(terminal-scale longitudinal scalar prerequisite failed)",
-            flush=True,
-        )
-        print(
-            "pre-basis corrected EM mesh Gate……skipped "
-            "(terminal-scale longitudinal scalar prerequisite failed)",
-            flush=True,
-        )
+        skip_reason = "longitudinal scalar prerequisite failed"
+        print(f"local self correction convergence……skipped ({skip_reason})", flush=True)
+        print(f"开放边界域扩展 Gate……skipped ({skip_reason})", flush=True)
+        print(f"full-wave ↔ MQS formulation Gate……skipped ({skip_reason})", flush=True)
+        print(f"pre-basis corrected EM mesh Gate……skipped ({skip_reason})", flush=True)
 
-        local_self = corrected_preflight_module._skipped_gate_report(
-            "terminal-scale longitudinal scalar prerequisite failed"
-        )
-        domain = corrected_preflight_module._skipped_gate_report(
-            "terminal-scale longitudinal scalar prerequisite failed"
-        )
-        formulation = corrected_preflight_module._skipped_gate_report(
-            "terminal-scale longitudinal scalar prerequisite failed"
-        )
-        mesh = corrected_preflight_module._skipped_mesh_report(
-            settings, "terminal-scale longitudinal scalar prerequisite failed"
-        )
+        local_self = corrected_preflight_module._skipped_gate_report(skip_reason)
+        domain = corrected_preflight_module._skipped_gate_report(skip_reason)
+        formulation = corrected_preflight_module._skipped_gate_report(skip_reason)
+        mesh = corrected_preflight_module._skipped_mesh_report(settings, skip_reason)
         mesh["global_longitudinal_reference_convergence"] = scalar_report
         mesh["maximum_relative_error"] = float(scalar_worst)
         mesh["maximum_source_path_length_relative_error"] = 0.0
         mesh["source_geometry_invariant"] = True
         mesh["skipped_full_em_mesh_gate"] = True
-        mesh["skip_reason"] = "terminal-scale longitudinal scalar prerequisite failed"
+        mesh["skip_reason"] = skip_reason
+
+        dissipative_failed = False
+        dissipative_worst = 0.0
+        for row in scalar_rows:
+            item = row.get("global_dissipative_reference")
+            if isinstance(item, dict) and not bool(item.get("converged", False)):
+                dissipative_failed = True
+                dissipative_worst = max(
+                    dissipative_worst,
+                    float(item.get("maximum_relative_error", np.inf)),
+                )
+        if dissipative_failed:
+            diagnosis = {
+                "code": "global_longitudinal_dissipative_reference_not_converged",
+                "maximum_relative_error": float(dissipative_worst),
+                "recommendation": (
+                    "Terminal charge continuity and the reactive terminal-scale defect are "
+                    "certified, but the whole-domain longitudinal dissipative scalar "
+                    "reference is not yet converged. Diagnose the package/seawater loss "
+                    "operator or its scalar reference; do not run/refine global Maxwell and "
+                    "do not relax the Gate."
+                ),
+            }
+        else:
+            diagnosis = {
+                "code": "boundary_conditioned_longitudinal_defect_not_converged",
+                "maximum_relative_error": float(scalar_worst),
+                "recommendation": (
+                    "The physical terminal charge/source continuity is certified, but the "
+                    "terminal-scale boundary-conditioned reactive scalar defect is not "
+                    "converged. Adjust only the terminal-local scalar resolution/model; do "
+                    "not run/refine global Maxwell and do not relax the Gate."
+                ),
+            }
 
         checks = {
             **source_checks,
@@ -153,16 +161,6 @@ def install(corrected_preflight_module, global_module):
             "low_frequency_formulation_converged": False,
             "em_mesh_converged": False,
             "local_self_correction_converged": False,
-        }
-        diagnosis = {
-            "code": "boundary_conditioned_longitudinal_defect_not_converged",
-            "maximum_relative_error": float(scalar_worst),
-            "recommendation": (
-                "The physical terminal charge/source continuity is certified, but the "
-                "terminal-scale boundary-conditioned scalar defect is not converged. "
-                "Do not run/refine global Maxwell and do not relax the Gate; adjust only "
-                "the terminal-local scalar resolution/model."
-            ),
         }
         return {
             **{key: bool(value) for key, value in checks.items()},
