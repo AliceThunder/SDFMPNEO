@@ -9,17 +9,18 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 30 keeps the full open two-terminal source, resolves its
+# Physics truth version 31 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, declares
 # terminal charge continuity independently from incidental edge deposition, and
 # splits longitudinal self correction into independently certified reactive and
-# dissipative near-field pieces.  The reactive term uses the inherited-boundary
-# full-port terminal patch.  Dissipative self loss is now decomposed into the
-# feed/return terminal charge components and only their local self defects are
-# refined; the smooth feed-return cross interaction remains global.  The failed
-# whole-domain 9->6.75-mm dissipative reference is retained only as diagnostic
-# implementation and is disabled by the terminal-component installer.
-_unified_model.FORMAT_VERSION = 30
+# dissipative near-field pieces. The reactive term uses the inherited-boundary
+# full-port terminal patch. Dissipative self loss now keeps the complete balanced
+# full-port q_target in every solve, refines one terminal at a time, and contracts
+# Joule energy only over disjoint parent-cell-aligned terminal windows. This
+# avoids inadmissible isolated net-charge scalar solves while leaving smooth
+# feed/return cross-field physics global. The falsified whole-domain 9->6.75-mm
+# dissipative reference remains disabled in production.
+_unified_model.FORMAT_VERSION = 31
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -29,11 +30,6 @@ from .unified_terminal_contact_source import install as _install_terminal_contac
 from .unified_charge_regularized_source import install as _install_charge_regularized_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
-# Package and source geometry are physical. Numerical quadrature may become more
-# resolved with mesh refinement but must not change the represented OBB,
-# conductor rectangle, contact length or ampere-turns.  The charge-lift layer is
-# installed after physical source deposition so it can replace only the discrete
-# longitudinal continuity while preserving source curl exactly.
 _install_resolved_package_fraction(OpenBoundaryBackground)
 _install_terminal_contact_source(OpenBoundaryBackground)
 _install_charge_regularized_source(OpenBoundaryBackground)
@@ -50,21 +46,15 @@ from .unified_localized_self_solve import install as _install_localized_self_sol
 from .unified_stable_localized_self import install as _install_stable_localized_self
 from .unified_local_solve_cache import install as _install_local_solve_cache
 
-# Linear-algebra acceleration changes neither the physical operator nor any Gate.
 _install_fast_local_krylov(_certified_local_solve)
 _install_hcurl_warm_start(_certified_local_solve)
 _install_two_level_local_krylov(_certified_local_solve)
 _install_two_level_residual_replacement(_two_level_local_krylov, _certified_local_solve)
 _certified_local_solve.install(_self_correction)
-# Solve the compatible longitudinal/transverse components directly so the tiny
-# transverse field is never recovered by subtracting two huge full fields.
 _install_localized_self_solve(_self_correction, _certified_local_solve)
 _install_stable_localized_self(_self_correction)
-# Exact memoization is installed after the final local truth implementation.
 _install_local_solve_cache(_self_correction)
 
-# Install the same certified large-system policy on global truth/Gate solves.
-# This must happen before corrected preflight imports _solve_fields by value.
 from . import unified_tensor_surrogate as _tensor_surrogate
 from . import unified_physics_gate as _physics_gate
 from .unified_fast_global_maxwell import install as _install_fast_global_maxwell
@@ -82,12 +72,6 @@ from .unified_preflight_diagnosis_patch import install as _install_preflight_dia
 _corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
-# The canonical local box certifies/refines only the localizable transverse/cross
-# self defect. Longitudinal truth stays global. Its reactive source near field is
-# certified on inherited-boundary full-port terminal patches. The dissipative
-# source near field is decomposed into feed/return terminal charge components so
-# only the two singular self pieces are refined; their smooth cross interaction
-# remains on the global scalar grid.
 from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
@@ -101,24 +85,17 @@ from .unified_terminal_dissipative_defect import install as _install_terminal_di
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
-# Start from full-geometry patch semantics: every scalar patch retains the
-# complete global geometry/material problem and selects only the target-port RHS.
 _global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudinal_nearfield_defect_v2"
-# Certify the coarse patch as the exact parent-scalar restriction, then replace
-# whole-package 3/2.25-mm refinement with nested terminal-contact-scale nodes.
-# The refined scalar-only states consume q_target directly so they do not build
-# a redundant edge-space G.T G charge-lift factor in addition to G.T D G.
 _install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_terminal_longitudinal_refinement(_global_longitudinal_reference)
 _install_scalar_charge_patch(_global_longitudinal_reference)
-# The terminal full-port scalar evidence certifies only the reactive defect. Its
-# local R/Dvol remains diagnostic-only.
+# Full-port terminal patches independently certify only the reactive longitudinal
+# defect. Their absolute local Dvol remains diagnostic-only.
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
-# Keep the historical whole-domain dissipative layer installed so old report
-# surfaces remain available, then upgrade its optional reference to exact complex
-# edge mass. The terminal-component installer below explicitly disables this
-# whole-domain reference after production evidence falsified 9->6.75-mm uniform
-# convergence, and installs the actual dissipative truth correction instead.
+# Keep the historical whole-domain dissipative implementation available for
+# diagnostics/regression, including exact sigma/epsilon reference support. The
+# balanced terminal-local installer immediately disables that uniform production
+# reference and installs the source-scale dissipative truth instead.
 _install_global_dissipative_reference(_global_longitudinal_reference)
 _install_resolved_dissipative_reference(
     _global_longitudinal_reference,
@@ -129,9 +106,6 @@ _install_terminal_dissipative_defect(
     _global_dissipative_reference_impl,
 )
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
-# Scheduling only: source continuity plus the combined reactive/terminal-self
-# scalar certificate runs before 118k/254k local Maxwell. Passing reports are
-# cached and reused by the later corrected full-EM mesh Gate.
 _install_longitudinal_preflight_schedule(
     _corrected_preflight, _global_longitudinal_reference
 )
@@ -186,17 +160,13 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v30 replaces the falsified uniform whole-domain longitudinal dissipative
-# reference by terminal-component local self defects. Old v29 artifacts used the
-# 9->6.75-mm exact-complex-mass reference and cannot be mixed with this truth.
+# v31 replaces the transient v30 net-charge-component idea with the admissible
+# balanced full-port / terminal-local energy-defect truth. Old v29/v30 artifacts
+# cannot be mixed with this definition.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 32
+_unified_runtime._CACHE_FORMAT = 33
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
-# Resolve deterministic scalar-reference settings every time the production
-# background is constructed, including physical-cache hits that skip preflight.
-# The runtime signature is computed before build_background(), so this does not
-# alter cache-key semantics beyond the explicit cache-format bump above.
 _original_runtime_build_background = _unified_runtime.build_background
 
 def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
@@ -206,8 +176,6 @@ def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
 
 _unified_runtime.build_background = _build_background_with_longitudinal_reference
 
-# Post-basis mesh/thermal Gates must consume the exact same corrected truth as
-# preflight and tensor-label generation.
 from . import unified_corrected_physics_gate as _corrected_physics_gate
 from .unified_global_longitudinal_physics_gate import install as _install_global_longitudinal_physics_gate
 
