@@ -77,11 +77,23 @@ def _interpolate_basis(parent, target, phi):
         grid,
         method="linear",
         bounds_error=False,
-        fill_value=np.nan,
+        fill_value=None,
     )
-    out = np.asarray(interpolation(target.cell_centers), float)
+    # A finer whole-domain mesh has cell centers closer to the physical boundary
+    # than the parent cell-center grid.  Clamp only those outermost coordinates
+    # to the parent center envelope before interpolation.  This is the natural
+    # constant extension of the boundary-adjacent parent cell and, unlike linear
+    # extrapolation, cannot create new extrema that would violate Phi min/max
+    # bounds used by the Joule Loewner certificate.
+    coords = np.asarray(target.cell_centers, float).copy()
+    for axis_index, axis in enumerate(parent.cell_axes):
+        values_axis = np.asarray(axis, float)
+        coords[:, axis_index] = np.clip(
+            coords[:, axis_index], values_axis[0], values_axis[-1]
+        )
+    out = np.asarray(interpolation(coords), float)
     if out.shape != (target.n_cells, values.shape[1]) or np.any(~np.isfinite(out)):
-        raise ValueError("global dissipative reference left the parent thermal-basis domain")
+        raise ValueError("global dissipative reference basis transfer is non-finite")
     return out
 
 
@@ -114,7 +126,13 @@ def _reference_background(parent, step, max_step, max_cells):
 
 
 def _scalar_state(module, parent, background, geometry, *, phi=None):
-    context = background.geometry_context(geometry, assemble_thermal=False)
+    context = None
+    if background is parent:
+        cached_context = getattr(module, "_cached_context", None)
+        if callable(cached_context):
+            context = cached_context(background, geometry)
+    if context is None:
+        context = background.geometry_context(geometry, assemble_thermal=False)
     block = build_gradient_block(background, context, check_topology=True)
     sigma = np.asarray(background.cell_properties(context, None, em=True)[0], float)
     edge_loss = np.asarray(background.edge_cell_hodge @ sigma, float).reshape(-1)
@@ -244,7 +262,6 @@ def install(module):
         )
         current_d = np.asarray(audit.get("global_scalar", {}).get("d_vol", ()), float)
         if current_d.shape != np.asarray(reference["d_vol"]).shape:
-            # With a thermal basis we additionally need the current modal heat.
             current = _scalar_state(module, background, background, geometry, phi=phi)
             current_d = np.asarray(current["d_vol"], float)
         elif phi is not None:
