@@ -1,4 +1,4 @@
-"""Use exact package/seawater edge-dual conductivity in scalar loss references.
+"""Use geometry-resolved edge-dual complex mass in scalar loss references.
 
 This adapter deliberately does *not* replace the production full-Maxwell
 operator.  The full field keeps the already-certified coarse global operator and
@@ -7,13 +7,14 @@ longitudinal dissipative reference is upgraded:
 
 * the current/background scalar state remains the legacy scalar component of the
   same operator used by full Maxwell;
-* refined whole-domain reference/validation scalar states integrate seawater
-  conductivity exactly over Cartesian edge-dual wedges cut by rotated insulating
-  package OBBs.
+* refined whole-domain reference/validation scalar states integrate the
+  package/seawater conductivity and permittivity on Cartesian edge-dual wedges.
 
 Production therefore replaces the unresolved longitudinal self-loss part by a
 common geometry-resolved reference while leaving mutual/transverse physics
-untouched.
+untouched.  The embedded stranded-coil dielectric volume keeps the existing
+conservative coil-fraction semantics; wire conductivity remains excluded from
+Maxwell exactly as in the production constitutive model.
 """
 from __future__ import annotations
 
@@ -23,27 +24,42 @@ import scipy.sparse.linalg as spla
 
 from .unified_charge_regularized_source import terminal_charge_target
 from .unified_gradient_block_maxwell import _edge_mass_diagonal, gradient_operator
-from .unified_resolved_conductive_hodge import _MODEL as _HODGE_MODEL
+from .unified_resolved_conductive_hodge import _MODEL as _SIGMA_HODGE_MODEL
 from .unified_resolved_conductive_hodge import _build_conductivity_hodge
+from .unified_resolved_admittance_hodge import _MODEL as _EPS_HODGE_MODEL
+from .unified_resolved_admittance_hodge import _build_permittivity_weights
 
 
-_MODEL = "global_longitudinal_dissipative_exact_edge_dual_reference_v2"
+_MODEL = "global_longitudinal_dissipative_exact_edge_dual_complex_mass_reference_v3"
+
+
+def _relative_difference(left, right):
+    a = np.asarray(left, float).reshape(-1)
+    b = np.asarray(right, float).reshape(-1)
+    return float(
+        np.linalg.norm(a - b)
+        / max(float(np.linalg.norm(a)), float(np.linalg.norm(b)), np.finfo(float).tiny)
+    )
 
 
 def _exact_scalar_state(module, implementation_module, parent, background, geometry, *, phi=None):
     context = background.geometry_context(geometry, assemble_thermal=False)
     conductivity_hodge, edge_loss = _build_conductivity_hodge(background, context)
+    exact_eps, legacy_eps, eps_meta = _build_permittivity_weights(background, context)
     G = gradient_operator(background, gauge_fixed=True)
 
-    # Keep every non-conductive term exactly as in the compatible scalar block;
-    # only replace the arithmetic cell-mixed H_sigma by its exact dual-volume
-    # integral.
+    # Start from the exact compatible production scalar block and replace only
+    # its material edge-mass discretization.  Open-boundary mass is untouched.
     diagonal = np.asarray(_edge_mass_diagonal(background, context), complex).reshape(-1)
     sigma, *_ = background.cell_properties(context, None, em=True)
     legacy_edge_loss = np.asarray(
         background.edge_cell_hodge @ np.asarray(sigma, float), float
     ).reshape(-1)
-    diagonal = diagonal + 1j * float(background.omega) * (edge_loss - legacy_edge_loss)
+    diagonal = (
+        diagonal
+        + 1j * float(background.omega) * (edge_loss - legacy_edge_loss)
+        - (float(background.omega) ** 2) * (exact_eps - legacy_eps)
+    )
     scalar = (G.T @ sp.diags(diagonal, format="csr") @ G).tocsc()
     scalar.sum_duplicates()
     scalar.eliminate_zeros()
@@ -68,6 +84,8 @@ def _exact_scalar_state(module, implementation_module, parent, background, geome
     )
     residuals = []
     supports = []
+    sigma_field_difference = []
+    epsilon_field_difference = []
 
     for p, coil in enumerate(context.geometry.coils):
         q_full, meta = terminal_charge_target(background, coil)
@@ -85,6 +103,19 @@ def _exact_scalar_state(module, implementation_module, parent, background, geome
         d[p] = float(np.dot(edge_loss, abs2))
         z[p] = complex(-q @ potential)
         supports.append(int(meta.get("terminal_charge_support_nodes", 0)))
+
+        legacy_d = float(np.dot(legacy_edge_loss, abs2))
+        sigma_field_difference.append(
+            abs(float(d[p]) - legacy_d)
+            / max(abs(float(d[p])), abs(legacy_d), np.finfo(float).tiny)
+        )
+        exact_e = float(np.dot(exact_eps, abs2))
+        legacy_e = float(np.dot(legacy_eps, abs2))
+        epsilon_field_difference.append(
+            abs(exact_e - legacy_e)
+            / max(abs(exact_e), abs(legacy_e), np.finfo(float).tiny)
+        )
+
         if modal is not None:
             q_cells = np.asarray(0.5 * (conductivity_hodge.T @ abs2), float).reshape(-1)
             modal[:, p] = np.asarray(2.0 * (local_phi.T @ q_cells), float)
@@ -98,15 +129,24 @@ def _exact_scalar_state(module, implementation_module, parent, background, geome
         "modal_h": modal,
         "maximum_scalar_relative_residual": max(residuals, default=0.0),
         "terminal_charge_support_nodes": supports,
-        "conductive_hodge_model": _HODGE_MODEL,
-        "conductive_hodge_legacy_relative_difference": float(
-            np.linalg.norm(edge_loss - legacy_edge_loss)
-            / max(
-                float(np.linalg.norm(edge_loss)),
-                float(np.linalg.norm(legacy_edge_loss)),
-                np.finfo(float).tiny,
-            )
+        "conductive_hodge_model": _SIGMA_HODGE_MODEL,
+        "conductive_hodge_legacy_relative_difference": _relative_difference(
+            edge_loss, legacy_edge_loss
         ),
+        "conductive_hodge_field_weighted_relative_difference": [
+            float(v) for v in sigma_field_difference
+        ],
+        "dielectric_hodge_model": str(eps_meta["dielectric_hodge_model"]),
+        "dielectric_hodge_legacy_relative_difference": float(
+            eps_meta["dielectric_hodge_legacy_relative_difference"]
+        ),
+        "dielectric_hodge_field_weighted_relative_difference": [
+            float(v) for v in epsilon_field_difference
+        ],
+        "complex_mass_models": {
+            "sigma": _SIGMA_HODGE_MODEL,
+            "epsilon": _EPS_HODGE_MODEL,
+        },
     }
 
 
@@ -117,7 +157,7 @@ def install(module, implementation_module):
     preflight/truth. ``implementation_module`` is the
     ``unified_global_dissipative_reference`` module whose file-level helper
     functions are resolved by the installed correction/audit closures at call
-    time.  Patching those helpers is required so the production correction and
+    time. Patching those helpers is required so the production correction and
     convergence Gate both consume the exact reference rather than only exposing
     exact values in diagnostics.
     """
@@ -144,8 +184,8 @@ def install(module, implementation_module):
     def scalar_state(module_arg, parent, background, geometry, *, phi=None):
         # The current scalar state is intentionally the same legacy longitudinal
         # component as the full-Maxwell operator. Refined reference backgrounds
-        # use the geometry-resolved dual Hodge so the correction replaces, rather
-        # than double-counts, the unresolved coarse longitudinal loss.
+        # use the geometry-resolved dual complex mass so the correction replaces,
+        # rather than double-counts, unresolved coarse longitudinal loss.
         if background is parent:
             return original_scalar_state(
                 module_arg, parent, background, geometry, phi=phi
@@ -159,9 +199,6 @@ def install(module, implementation_module):
             phi=phi,
         )
 
-    # Base correction/audit closures were defined in implementation_module and
-    # resolve this file-level name at call time. Replacing it here therefore
-    # changes the actual production reference, not merely a diagnostic wrapper.
     implementation_module._scalar_state = scalar_state
 
     def reference_state(module_arg, background, geometry, *, step, max_step, phi=None):
@@ -177,9 +214,12 @@ def install(module, implementation_module):
             print(
                 "global longitudinal dissipative Hodge: "
                 f"step={float(step):.6g}m, "
-                f"model={state['conductive_hodge_model']}, "
-                "legacy_relative_difference="
-                f"{float(state.get('conductive_hodge_legacy_relative_difference', 0.0)):.3e}",
+                f"sigma={state['conductive_hodge_model']}, "
+                f"sigma_legacy={float(state.get('conductive_hodge_legacy_relative_difference', 0.0)):.3e}, "
+                f"epsilon={state.get('dielectric_hodge_model', 'legacy')}, "
+                f"epsilon_legacy={float(state.get('dielectric_hodge_legacy_relative_difference', 0.0)):.3e}, "
+                f"sigma_field={state.get('conductive_hodge_field_weighted_relative_difference', [])}, "
+                f"epsilon_field={state.get('dielectric_hodge_field_weighted_relative_difference', [])}",
                 flush=True,
             )
         return state
@@ -187,9 +227,6 @@ def install(module, implementation_module):
     implementation_module._reference_state = reference_state
 
     def audit_reference_convergence(background, geometry):
-        # original_audit now dispatches through the patched file-level reference
-        # helpers above, so its convergence decision is already based on the exact
-        # edge-dual conductivity reference.
         report = dict(original_audit(background, geometry))
         cfg = implementation_module._config(background)
         if cfg.get("enabled", False):
@@ -211,15 +248,34 @@ def install(module, implementation_module):
             )
             diagnostic = report.get("global_dissipative_reference")
             if isinstance(diagnostic, dict):
-                diagnostic["conductive_hodge_model"] = _HODGE_MODEL
-                diagnostic["reference_conductive_hodge_legacy_relative_difference"] = float(
-                    reference.get("conductive_hodge_legacy_relative_difference", 0.0)
-                )
-                diagnostic["validation_conductive_hodge_legacy_relative_difference"] = float(
-                    validation.get("conductive_hodge_legacy_relative_difference", 0.0)
-                )
-                diagnostic["reference_semantics"] = (
-                    "exact_edge_dual_package_seawater_conductivity"
+                diagnostic.update(
+                    conductive_hodge_model=_SIGMA_HODGE_MODEL,
+                    dielectric_hodge_model=_EPS_HODGE_MODEL,
+                    reference_conductive_hodge_legacy_relative_difference=float(
+                        reference.get("conductive_hodge_legacy_relative_difference", 0.0)
+                    ),
+                    validation_conductive_hodge_legacy_relative_difference=float(
+                        validation.get("conductive_hodge_legacy_relative_difference", 0.0)
+                    ),
+                    reference_dielectric_hodge_legacy_relative_difference=float(
+                        reference.get("dielectric_hodge_legacy_relative_difference", 0.0)
+                    ),
+                    validation_dielectric_hodge_legacy_relative_difference=float(
+                        validation.get("dielectric_hodge_legacy_relative_difference", 0.0)
+                    ),
+                    reference_conductive_hodge_field_weighted_relative_difference=list(
+                        reference.get("conductive_hodge_field_weighted_relative_difference", [])
+                    ),
+                    validation_conductive_hodge_field_weighted_relative_difference=list(
+                        validation.get("conductive_hodge_field_weighted_relative_difference", [])
+                    ),
+                    reference_dielectric_hodge_field_weighted_relative_difference=list(
+                        reference.get("dielectric_hodge_field_weighted_relative_difference", [])
+                    ),
+                    validation_dielectric_hodge_field_weighted_relative_difference=list(
+                        validation.get("dielectric_hodge_field_weighted_relative_difference", [])
+                    ),
+                    reference_semantics="exact_edge_dual_complex_material_mass",
                 )
         report["model"] = (
             "global_boundary_conditioned_longitudinal_reactive_defect_v4+" + _MODEL
