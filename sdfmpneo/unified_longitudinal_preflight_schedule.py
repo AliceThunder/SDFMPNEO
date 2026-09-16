@@ -1,10 +1,10 @@
 """Run longitudinal scalar certificates before expensive local Maxwell.
 
-This changes scheduling only.  Source/material continuity is checked first; then
-the boundary-conditioned terminal reactive reference and the whole-domain
-longitudinal dissipative reference are audited.  A failed scalar certificate
+This changes scheduling only. Source/material continuity is checked first; then
+the boundary-conditioned terminal reactive reference and terminal-component
+longitudinal dissipative self defects are audited. A failed scalar certificate
 returns the same structured preflight failure without running 118k/254k
-local-self Maxwell, open-boundary or MQS gates.  Successful scalar audits are
+local-self Maxwell, open-boundary or MQS gates. Successful scalar audits are
 cached on the background and reused by the later corrected mesh gate.
 """
 from __future__ import annotations
@@ -121,9 +121,20 @@ def install(corrected_preflight_module, global_module):
         mesh["skipped_full_em_mesh_gate"] = True
         mesh["skip_reason"] = skip_reason
 
+        terminal_dissipative_failed = False
+        terminal_dissipative_worst = 0.0
         dissipative_failed = False
         dissipative_worst = 0.0
         for row in scalar_rows:
+            terminal_item = row.get("terminal_dissipative_reference")
+            if isinstance(terminal_item, dict) and not bool(
+                terminal_item.get("converged", False)
+            ):
+                terminal_dissipative_failed = True
+                terminal_dissipative_worst = max(
+                    terminal_dissipative_worst,
+                    float(terminal_item.get("maximum_relative_error", np.inf)),
+                )
             item = row.get("global_dissipative_reference")
             if isinstance(item, dict) and not bool(item.get("converged", False)):
                 dissipative_failed = True
@@ -131,16 +142,26 @@ def install(corrected_preflight_module, global_module):
                     dissipative_worst,
                     float(item.get("maximum_relative_error", np.inf)),
                 )
-        if dissipative_failed:
+        if terminal_dissipative_failed:
+            diagnosis = {
+                "code": "terminal_longitudinal_dissipative_defect_not_converged",
+                "maximum_relative_error": float(terminal_dissipative_worst),
+                "recommendation": (
+                    "Terminal charge continuity and the reactive terminal-scale defect are "
+                    "certified, but at least one feed/return terminal self-loss defect is "
+                    "not converged at the physical source scale. Refine only the selected "
+                    "terminal-component scalar patch or its source-support model; do not "
+                    "refine global Maxwell and do not relax the Gate."
+                ),
+            }
+        elif dissipative_failed:
             diagnosis = {
                 "code": "global_longitudinal_dissipative_reference_not_converged",
                 "maximum_relative_error": float(dissipative_worst),
                 "recommendation": (
-                    "Terminal charge continuity and the reactive terminal-scale defect are "
-                    "certified, but the whole-domain longitudinal dissipative scalar "
-                    "reference is not yet converged. Diagnose the package/seawater loss "
-                    "operator or its scalar reference; do not run/refine global Maxwell and "
-                    "do not relax the Gate."
+                    "The optional whole-domain longitudinal dissipative scalar reference is "
+                    "not converged. Do not relax the Gate; use the terminal-component "
+                    "source-resolution path rather than uniform global Maxwell refinement."
                 ),
             }
         else:
