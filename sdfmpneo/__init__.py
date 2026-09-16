@@ -9,15 +9,17 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 29 keeps the full open two-terminal source, resolves its
+# Physics truth version 30 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, declares
 # terminal charge continuity independently from incidental edge deposition, and
-# separates the longitudinal self correction into two independently certified
-# pieces: a terminal-scale reactive defect and a whole-domain dissipative scalar
-# reference.  The dissipative reference now integrates both conductivity and
-# permittivity on package/seawater edge-dual wedges instead of leaving either
-# material jump as an arithmetic cut-cell mixture.
-_unified_model.FORMAT_VERSION = 29
+# splits longitudinal self correction into independently certified reactive and
+# dissipative near-field pieces.  The reactive term uses the inherited-boundary
+# full-port terminal patch.  Dissipative self loss is now decomposed into the
+# feed/return terminal charge components and only their local self defects are
+# refined; the smooth feed-return cross interaction remains global.  The failed
+# whole-domain 9->6.75-mm dissipative reference is retained only as diagnostic
+# implementation and is disabled by the terminal-component installer.
+_unified_model.FORMAT_VERSION = 30
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -81,10 +83,11 @@ _corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_preflight_diagnosis(_corrected_preflight)
 
 # The canonical local box certifies/refines only the localizable transverse/cross
-# self defect.  Longitudinal truth stays global.  Its reactive source near field
-# is certified on inherited-boundary terminal patches, while dissipative self
-# truth is referenced to a whole-domain scalar mesh and independently validated
-# on one finer whole-domain scalar mesh.
+# self defect. Longitudinal truth stays global. Its reactive source near field is
+# certified on inherited-boundary full-port terminal patches. The dissipative
+# source near field is decomposed into feed/return terminal charge components so
+# only the two singular self pieces are refined; their smooth cross interaction
+# remains on the global scalar grid.
 from . import unified_corrected_truth as _corrected_truth
 from . import unified_global_longitudinal_reference as _global_longitudinal_reference
 from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
@@ -94,6 +97,7 @@ from .unified_reactive_longitudinal_reference import install as _install_reactiv
 from . import unified_global_dissipative_reference as _global_dissipative_reference_impl
 from .unified_global_dissipative_reference import install as _install_global_dissipative_reference
 from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
+from .unified_terminal_dissipative_defect import install as _install_terminal_dissipative_defect
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
@@ -107,23 +111,25 @@ _global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudina
 _install_longitudinal_patch_consistency(_global_longitudinal_reference)
 _install_terminal_longitudinal_refinement(_global_longitudinal_reference)
 _install_scalar_charge_patch(_global_longitudinal_reference)
-# The terminal scalar evidence certifies only the reactive defect. Its local
-# R/Dvol remains diagnostic-only. Whole-domain longitudinal self dissipation is
-# aligned to the production refined scalar mesh (12->9 mm by default) and that
-# reference is independently certified on the next scalar level (9->6.75 mm).
+# The terminal full-port scalar evidence certifies only the reactive defect. Its
+# local R/Dvol remains diagnostic-only.
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
+# Keep the historical whole-domain dissipative layer installed so old report
+# surfaces remain available, then upgrade its optional reference to exact complex
+# edge mass. The terminal-component installer below explicitly disables this
+# whole-domain reference after production evidence falsified 9->6.75-mm uniform
+# convergence, and installs the actual dissipative truth correction instead.
 _install_global_dissipative_reference(_global_longitudinal_reference)
-# Upgrade only the refined dissipative scalar reference to a geometry-resolved
-# complex edge mass: exact OBB/edge-dual sigma and epsilon at package/seawater
-# interfaces, while the current scalar state remains the same legacy component
-# of full Maxwell. Give the adapter both aggregate and implementation modules so
-# the exact reference drives correction, Gate and diagnostics consistently.
 _install_resolved_dissipative_reference(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
 )
+_install_terminal_dissipative_defect(
+    _global_longitudinal_reference,
+    _global_dissipative_reference_impl,
+)
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
-# Scheduling only: source continuity plus the combined reactive/dissipative
+# Scheduling only: source continuity plus the combined reactive/terminal-self
 # scalar certificate runs before 118k/254k local Maxwell. Passing reports are
 # cached and reused by the later corrected full-EM mesh Gate.
 _install_longitudinal_preflight_schedule(
@@ -180,11 +186,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v29 replaces the longitudinal dissipative reference with a geometry-resolved
-# complex edge mass. Old v28 artifacts resolved sigma only and therefore cannot
-# be mixed with this truth definition.
+# v30 replaces the falsified uniform whole-domain longitudinal dissipative
+# reference by terminal-component local self defects. Old v29 artifacts used the
+# 9->6.75-mm exact-complex-mass reference and cannot be mixed with this truth.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 31
+_unified_runtime._CACHE_FORMAT = 32
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 # Resolve deterministic scalar-reference settings every time the production
