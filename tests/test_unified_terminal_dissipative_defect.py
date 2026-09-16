@@ -37,13 +37,17 @@ def _fake_module():
     module._MODEL = "reactive-v4"
     module._config = lambda background: {"fine_step": 0.003}
     module._background_step = lambda background: float(background.background_config["fine_step"])
-    module._cached_context = lambda background, geometry: None
-    module._remember_context = lambda background, geometry, context: None
     module._volume_edge_diagonal = lambda background, context: (None, None, None)
     module._boundary_node_mask = lambda background: None
     module._boundary_values = lambda *args, **kwargs: None
     module._interpolate_cell_basis = lambda *args, **kwargs: None
     module._resolve_settings = lambda settings, background: None
+    module._geometry_key = lambda geometry: str(geometry)
+    module._global_scalar_potentials = lambda background, geometry: (
+        None,
+        np.zeros((1, 2), complex),
+        {"d_vol": [1.0, 1.0]},
+    )
 
     def correction(background, geometry, *, phi=None):
         modal = None if phi is None else np.zeros((np.asarray(phi).shape[1], 2), float)
@@ -65,15 +69,28 @@ def _fake_module():
     return module
 
 
-def test_terminal_charge_components_preserve_declared_unit_totals():
-    q = np.array([-0.2, -0.8, 0.0, 0.3, 0.7])
-    feed = terminal_defect._component_charge(q, 0)
-    ret = terminal_defect._component_charge(q, 1)
-    assert np.all(feed <= 0.0)
-    assert np.all(ret >= 0.0)
-    assert np.isclose(-np.sum(feed), 1.0)
-    assert np.isclose(np.sum(ret), 1.0)
-    assert np.allclose(feed + ret, q)
+def test_snapped_terminal_windows_are_coarse_aligned_and_disjoint():
+    axes = (
+        np.array([0.0, 1.0, 2.0, 3.0]),
+        np.array([0.0, 1.0, 2.0]),
+        np.array([0.0, 1.0, 2.0]),
+    )
+    first = terminal_defect._snap_window(
+        axes,
+        (np.array([0.1, 0.1, 0.1]), np.array([0.7, 0.7, 0.7])),
+        0.0,
+    )
+    second = terminal_defect._snap_window(
+        axes,
+        (np.array([2.1, 1.1, 1.1]), np.array([2.7, 1.7, 1.7])),
+        0.0,
+    )
+    for window in (first, second):
+        for axis, value in zip(axes, window[0]):
+            assert np.any(np.isclose(axis, value))
+        for axis, value in zip(axes, window[1]):
+            assert np.any(np.isclose(axis, value))
+    assert terminal_defect._windows_disjoint(first, second) is True
 
 
 def test_resolve_settings_disables_falsified_uniform_reference():
@@ -100,16 +117,38 @@ def test_resolve_settings_disables_falsified_uniform_reference():
     assert background.background_config["global_dissipative_reference"]["enabled"] is False
 
 
+def _patch_preparation(monkeypatch):
+    monkeypatch.setattr(
+        terminal_defect,
+        "_select_coarse_patch",
+        lambda module, background, geometry, port, parent_potential, phi=None: (
+            (np.array([0.0, 1.0]),) * 3,
+            "full-geometry",
+            "coarse-background",
+            {"parent_restriction_relative_residual": 1e-14},
+        ),
+    )
+
+
 def test_terminal_dissipative_correction_changes_only_real_self_and_loss(monkeypatch):
     module = _fake_module()
+    _patch_preparation(monkeypatch)
 
-    def reference(module_arg, background, geometry, port, terminal, *, cells_per_support, phi=None):
+    def reference(
+        module_arg,
+        background,
+        geometry,
+        port,
+        terminal,
+        *,
+        cells_per_support,
+        phi=None,
+        prepared=None,
+    ):
+        assert prepared is not None
         value = float((port + 1) * (terminal + 1))
         modal = None if phi is None else np.full(np.asarray(phi).shape[1], value)
-        return {
-            "delta_d_vol": value,
-            "delta_modal_h": modal,
-        }
+        return {"delta_d_vol": value, "delta_modal_h": modal}
 
     monkeypatch.setattr(terminal_defect, "_terminal_reference", reference)
     terminal_defect.install(module, types.SimpleNamespace())
@@ -125,19 +164,31 @@ def test_terminal_dissipative_correction_changes_only_real_self_and_loss(monkeyp
 
 def test_terminal_dissipative_audit_controls_combined_convergence(monkeypatch):
     module = _fake_module()
+    _patch_preparation(monkeypatch)
 
-    def reference(module_arg, background, geometry, port, terminal, *, cells_per_support, phi=None):
+    def reference(
+        module_arg,
+        background,
+        geometry,
+        port,
+        terminal,
+        *,
+        cells_per_support,
+        phi=None,
+        prepared=None,
+    ):
+        assert prepared is not None
         is_validation = cells_per_support > 4.0
         base = 10.0 + port + terminal
         delta = base if not is_validation else base + (0.2 if port == 0 else 4.0)
         return {
             "delta_d_vol": delta,
             "coarse": {
-                "d_vol": 1.0,
+                "local_d_vol": 1.0,
                 "parent_restriction_relative_residual": 1e-14,
             },
             "refined": {
-                "d_vol": 1.0 + delta,
+                "local_d_vol": 1.0 + delta,
                 "scalar_relative_residual": 1e-13,
             },
         }
