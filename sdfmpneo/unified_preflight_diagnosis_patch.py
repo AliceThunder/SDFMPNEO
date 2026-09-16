@@ -63,11 +63,12 @@ def install(corrected_preflight_module):
             "mutual_d_vol_relative_error": mutual_d,
             "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
             "recommendation": (
-                "The independently certified localized transverse/cross self defect has been "
-                "applied, but the remaining global self response is still mesh dependent. "
-                "The canonical local box must not be used to replace pure longitudinal terminal "
-                "response. Diagnose the remaining global longitudinal/source/material "
-                "discretization while keeping the unchanged mesh Gate."
+                "The localized transverse/cross self defect and the terminal-scale reactive "
+                "longitudinal defect are independently certified and applied. The remaining "
+                "global self resistance / D_vol is still mesh dependent. Keep dissipation "
+                "global: the terminal scalar patch's nonconverged local D_vol diagnostic must "
+                "not be injected into truth. Diagnose the remaining global dissipative "
+                "source/material discretization while keeping the unchanged mesh Gate."
                 if self_dominated
                 else "Refine the remaining non-self EM truth discretization and rerun the Gate; "
                 "do not relax the tolerance."
