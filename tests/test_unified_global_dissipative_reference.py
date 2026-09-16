@@ -144,3 +144,37 @@ def test_resolve_settings_tracks_existing_full_em_refinement_factor():
     assert np.isclose(own["validation_step"], 0.00675)
     assert np.isclose(own["reference_max_step"], 0.06)
     assert np.isclose(own["validation_max_step"], 0.045)
+
+
+def test_basis_transfer_clamps_only_outer_cell_centers_and_stays_bounded():
+    parent = types.SimpleNamespace(
+        nx=2,
+        ny=2,
+        nz=2,
+        n_cells=8,
+        cell_axes=(
+            np.array([0.25, 0.75]),
+            np.array([0.25, 0.75]),
+            np.array([0.25, 0.75]),
+        ),
+    )
+    X, Y, Z = np.meshgrid(*parent.cell_axes, indexing="ij")
+    phi = (X + 2.0 * Y + 3.0 * Z).reshape(-1, 1)
+    target = types.SimpleNamespace(
+        n_cells=3,
+        cell_centers=np.array(
+            [
+                [0.05, 0.50, 0.50],
+                [0.50, 0.50, 0.50],
+                [0.95, 0.50, 0.50],
+            ]
+        ),
+    )
+    out = dissipative._interpolate_basis(parent, target, phi)
+    assert out.shape == (3, 1)
+    assert np.all(np.isfinite(out))
+    assert float(np.min(out)) >= float(np.min(phi)) - 1e-14
+    assert float(np.max(out)) <= float(np.max(phi)) + 1e-14
+    assert np.isclose(out[0, 0], 0.25 + 2.0 * 0.50 + 3.0 * 0.50)
+    assert np.isclose(out[1, 0], 0.50 + 2.0 * 0.50 + 3.0 * 0.50)
+    assert np.isclose(out[2, 0], 0.75 + 2.0 * 0.50 + 3.0 * 0.50)
