@@ -1,31 +1,33 @@
-"""Terminal-component longitudinal dissipative defect correction.
+"""Balanced full-port terminal-local dissipative defect correction.
 
-Uniform whole-domain scalar refinement is inefficient for the production source:
-the physical terminal charge lives on a sub-millimetre conductor cross section,
-while the nonlocal return path is already well represented by the coarse global
-scalar solve.  Refining the complete domain therefore spends almost all DOFs far
-from the only unresolved feature.
+The physical terminal charge is globally balanced.  Splitting it into isolated
+feed/return net-charge scalar problems would introduce an implicit compensation
+at the removed gauge node and is therefore not an admissible production truth.
+This module instead keeps the complete balanced q_target in every solve and
+localizes only the *energy contraction*.
 
-This adapter keeps the already-certified reactive longitudinal correction and
-replaces the failed whole-domain dissipative reference by two independently
-resolved terminal *self* defects per port:
+For each port and each terminal contact:
 
-1. split the physical nodal terminal charge q_target into its negative/feed and
-   positive/return components (each has unit total magnitude);
-2. solve each component on the current global scalar block, so its far field and
-   material environment are exactly the production problem;
-3. restrict that component potential to a full-geometry Cartesian patch whose
-   coarse nodes are a strict subset of the global grid;
-4. retain every coarse patch node and insert fine nodes only around the selected
-   terminal contact; and
-5. add D_vol(fine)-D_vol(coarse) for that terminal component.
+1. solve/restrict the complete balanced global scalar potential;
+2. choose a terminal energy window whose faces are parent coarse-grid nodes;
+3. keep the complete global geometry/material problem and complete balanced
+   q_target, but insert extra Cartesian nodes only around the selected terminal;
+4. integrate Joule heat only inside that fixed terminal window; and
+5. add D_local(fine)-D_local(coarse).
 
-The feed/return cross interaction is deliberately left on the global grid.  It is
-a smooth nonlocal term; only the two singular/near-field terminal self energies
-are replaced.  Re(delta Z_pp) is set equal to the summed D_vol defect and D_out
-is unchanged, preserving the production power identity.  A still finer
-terminal-only solve certifies each applied defect before any expensive Maxwell
-mesh Gate is allowed to run.
+Feed and return windows must be disjoint, so their defects can be summed without
+double counting.  The smooth feed/return cross field is still present in each
+balanced solve and in the local energy where physically relevant; only the
+unresolved terminal neighbourhood is replaced.  The refined local reference uses
+geometry-resolved sigma/epsilon edge-dual mass, while the coarse baseline is the
+exact restriction of the production scalar operator.  Thus the correction also
+removes the local cut-cell material error without perturbing the certified full
+Maxwell operator.
+
+Re(delta Z_pp) is set exactly equal to the summed local D_vol defect, D_out is
+unchanged, and modal Joule heat receives the same local fine-minus-coarse
+contraction.  A still finer terminal-local solve independently certifies every
+applied defect before expensive Maxwell Gates are allowed to run.
 """
 from __future__ import annotations
 
@@ -38,16 +40,13 @@ import scipy.sparse.linalg as spla
 from . import unified_longitudinal_patch_consistency as _consistency
 from . import unified_terminal_longitudinal_refinement as _terminal_refinement
 from .unified_charge_regularized_source import terminal_charge_target
-from .unified_gradient_block_maxwell import build_gradient_block, gradient_operator
+from .unified_gradient_block_maxwell import gradient_operator
+from .unified_resolved_admittance_hodge import _build_permittivity_weights
+from .unified_resolved_conductive_hodge import _build_conductivity_hodge
 
 
-_MODEL = "global_terminal_component_longitudinal_dissipative_defect_v1"
+_MODEL = "global_balanced_terminal_local_longitudinal_dissipative_defect_v2"
 _TERMINAL_NAMES = ("feed", "return")
-
-
-def _geometry_key(module, geometry):
-    helper = getattr(module, "_geometry_key", None)
-    return helper(geometry) if callable(helper) else repr(geometry)
 
 
 def _config(background):
@@ -62,11 +61,10 @@ def _config(background):
         raise ValueError("terminal dissipative reference_cells_per_support must be >= 2")
     if not np.isfinite(validation_ratio) or not 0.0 < validation_ratio < 1.0:
         raise ValueError("terminal dissipative validation_ratio must lie in (0,1)")
-    validation_cells = reference_cells / validation_ratio
     return {
         "enabled": bool(own.get("enabled", True)),
         "reference_cells_per_support": reference_cells,
-        "validation_cells_per_support": validation_cells,
+        "validation_cells_per_support": reference_cells / validation_ratio,
         "validation_ratio": validation_ratio,
         "core_padding_factor": float(
             own.get(
@@ -89,87 +87,105 @@ def _config(background):
     }
 
 
-def _component_charge(q_target, terminal):
-    q = np.asarray(q_target, float).reshape(-1)
-    t = int(terminal)
-    if t == 0:
-        out = np.minimum(q, 0.0)
-        magnitude = float(-np.sum(out))
-    elif t == 1:
-        out = np.maximum(q, 0.0)
-        magnitude = float(np.sum(out))
-    else:
-        raise ValueError("terminal component index must be 0 or 1")
-    if not np.isfinite(magnitude) or magnitude <= np.finfo(float).tiny:
-        raise RuntimeError("terminal component charge has zero support")
-    # terminal_charge_target already normalizes each sign to unit magnitude.  Do
-    # not silently renormalize here; a failed invariant must remain visible.
-    if abs(magnitude - 1.0) > 5e-12:
-        raise RuntimeError(
-            "terminal component charge lost its unit physical normalization: "
-            f"terminal={t}, magnitude={magnitude:.16e}"
+def _snap_window(coarse_axes, box, halo):
+    lo, hi = (np.asarray(box[0], float), np.asarray(box[1], float))
+    out_lo = np.empty(3, float)
+    out_hi = np.empty(3, float)
+    for axis_index, axis_values in enumerate(coarse_axes):
+        axis = np.asarray(axis_values, float)
+        target_lo = float(lo[axis_index] - halo)
+        target_hi = float(hi[axis_index] + halo)
+        left = max(0, int(np.searchsorted(axis, target_lo, side="right")) - 1)
+        right_node = min(
+            len(axis) - 1,
+            int(np.searchsorted(axis, target_hi, side="left")),
         )
-    return out
+        if right_node <= left:
+            right_node = min(len(axis) - 1, left + 1)
+        if right_node <= left:
+            raise RuntimeError("terminal dissipative energy window has no coarse cell")
+        out_lo[axis_index] = float(axis[left])
+        out_hi[axis_index] = float(axis[right_node])
+    return out_lo, out_hi
 
 
-def _parent_component_potential(module, background, geometry, port, terminal):
-    context = module._cached_context(background, geometry)
-    if context is None:
-        context = background.geometry_context(geometry, assemble_thermal=False)
-        module._remember_context(background, geometry, context)
-    block = build_gradient_block(background, context, check_topology=True)
-    coil = context.geometry.coils[int(port)]
-    q_target, meta = terminal_charge_target(background, coil)
-    component = _component_charge(q_target, terminal)
-    rhs = (-1j * float(background.omega)) * np.asarray(component[1:], complex)
-    potential = np.asarray(block.factor.solve(rhs), complex).reshape(-1)
-    residual = float(
-        np.linalg.norm(rhs - block.scalar_matrix @ potential)
-        / max(float(np.linalg.norm(rhs)), np.finfo(float).tiny)
+def _windows_disjoint(first, second):
+    lo0, hi0 = first
+    lo1, hi1 = second
+    return bool(np.any(np.minimum(hi0, hi1) <= np.maximum(lo0, lo1) + 1e-14))
+
+
+def _cell_mask(background, window):
+    lo, hi = (np.asarray(window[0], float), np.asarray(window[1], float))
+    centers = np.asarray(background.cell_centers, float)
+    tol = 64.0 * np.finfo(float).eps * max(
+        float(np.max(np.abs(np.r_[lo, hi]))), 1.0
     )
-    full = np.zeros((background.nx + 1) * (background.ny + 1) * (background.nz + 1), complex)
-    full[1:] = potential
-    return full, {
-        "global_component_scalar_relative_residual": residual,
-        "terminal_charge_support_nodes": int(meta.get("terminal_charge_support_nodes", 0)),
-        "terminal_charge_component": _TERMINAL_NAMES[int(terminal)],
-    }
+    mask = np.all(centers >= lo[None, :] - tol, axis=1) & np.all(
+        centers <= hi[None, :] + tol, axis=1
+    )
+    if not np.any(mask):
+        raise RuntimeError("terminal dissipative energy window contains no cells")
+    return mask
 
 
-def _component_state(
+def _exact_refined_mass(background, context):
+    conductivity_hodge, edge_loss = _build_conductivity_hodge(background, context)
+    exact_eps, legacy_eps, _eps_meta = _build_permittivity_weights(background, context)
+    sigma, *_ = background.cell_properties(context, None, em=True)
+    legacy_loss = np.asarray(
+        background.edge_cell_hodge @ np.asarray(sigma, float), float
+    ).reshape(-1)
+    return conductivity_hodge, edge_loss, exact_eps, legacy_eps, legacy_loss
+
+
+def _balanced_state(
     module,
     parent,
     patch,
     geometry,
     port,
-    terminal,
-    parent_component_potential,
+    parent_potential,
+    window,
     *,
     phi=None,
     fine_step,
     certify_parent=False,
+    exact_refined=False,
 ):
-    # Pure scalar patches consume q_target directly; never build the redundant
-    # compatible edge-space charge lift on these potentially large local grids.
     patch._sdfmpneo_scalar_charge_target_only = True
     context = patch.geometry_context(geometry, assemble_thermal=False)
     p = int(port)
     if p < 0 or p >= len(context.geometry.coils):
         raise AssertionError("terminal dissipative source port is invalid")
     q_target, charge_meta = terminal_charge_target(patch, context.geometry.coils[p])
-    component = _component_charge(q_target, terminal)
+    if abs(float(np.sum(q_target))) > 5e-14:
+        raise FloatingPointError("terminal dissipative scalar source is not globally balanced")
 
     G = gradient_operator(patch, gauge_fixed=False)
     diagonal, sigma, _hs = module._volume_edge_diagonal(patch, context)
-    scalar = (G.T @ sp.diags(diagonal, format="csr") @ G).tocsc()
+    conductivity_hodge = patch.edge_cell_hodge @ sp.diags(np.asarray(sigma, float), format="csr")
+    edge_loss = np.asarray(patch.edge_cell_hodge @ np.asarray(sigma, float), float).reshape(-1)
+    material_semantics = "production_legacy_complex_mass"
+    if exact_refined:
+        conductivity_hodge, edge_loss, exact_eps, legacy_eps, legacy_loss = _exact_refined_mass(
+            patch, context
+        )
+        diagonal = np.asarray(diagonal, complex) + (
+            1j * float(patch.omega) * (edge_loss - legacy_loss)
+            - (float(patch.omega) ** 2) * (exact_eps - legacy_eps)
+        )
+        material_semantics = "exact_edge_dual_sigma_epsilon"
+
+    scalar = (G.T @ sp.diags(np.asarray(diagonal, complex), format="csr") @ G).tocsc()
     scalar.sum_duplicates()
     scalar.eliminate_zeros()
-    scalar_rhs = (-1j * float(patch.omega)) * np.asarray(component, complex)
+    scalar_rhs = (-1j * float(patch.omega)) * np.asarray(q_target, complex)
 
     boundary = module._boundary_node_mask(patch)
     interior = ~boundary
     restricted = _consistency._restricted_parent_potential(
-        module, parent, parent_component_potential, patch
+        module, parent, parent_potential, patch
     )
     consistency = None
     if certify_parent:
@@ -181,14 +197,12 @@ def _component_state(
             np.finfo(float).tiny,
         )
         consistency = float(np.linalg.norm(residual) / denominator)
-        # A certified coarse patch is exactly the restricted parent solution;
-        # using it directly avoids an unnecessary coarse LU for every terminal.
         phi_nodes = restricted
         solve_residual = consistency
     else:
         phi_nodes = np.zeros(G.shape[1], complex)
         phi_nodes[boundary] = module._boundary_values(
-            parent, parent_component_potential, patch, boundary
+            parent, parent_potential, patch, boundary
         )
         Sii = scalar[interior][:, interior].tocsc()
         Sib = scalar[interior][:, boundary].tocsr()
@@ -210,23 +224,19 @@ def _component_state(
 
     field = np.asarray(G @ phi_nodes, complex).reshape(-1)
     abs2 = np.abs(field) ** 2
-    edge_loss = np.asarray(patch.edge_cell_hodge @ np.asarray(sigma, float), float).reshape(-1)
-    d_vol = float(np.dot(edge_loss, abs2))
-    z_reaction = complex(-np.asarray(component, float) @ phi_nodes)
-    q_cells = np.asarray(
-        0.5
-        * np.asarray(sigma, float)
-        * np.asarray(patch.edge_cell_hodge.T @ abs2).reshape(-1),
-        float,
-    )
+    q_cells = np.asarray(0.5 * (conductivity_hodge.T @ abs2), float).reshape(-1)
+    mask = _cell_mask(patch, window)
+    local_q = np.where(mask, q_cells, 0.0)
+    local_d = float(2.0 * np.sum(local_q))
+    full_d = float(np.dot(edge_loss, abs2))
     modal = None
     if phi is not None:
         local_phi = module._interpolate_cell_basis(parent, patch, phi)
-        modal = np.asarray(2.0 * (local_phi.T @ q_cells), float)
+        modal = np.asarray(2.0 * (local_phi.T @ local_q), float)
 
     return {
-        "z_reaction": z_reaction,
-        "d_vol": d_vol,
+        "local_d_vol": local_d,
+        "full_d_vol": full_d,
         "modal_h": modal,
         "scalar_relative_residual": float(solve_residual),
         "parent_restriction_relative_residual": (
@@ -236,14 +246,17 @@ def _component_state(
         "scalar_dofs": int(np.count_nonzero(interior)),
         "fine_step": float(fine_step),
         "source_port": p,
-        "terminal": int(terminal),
-        "terminal_name": _TERMINAL_NAMES[int(terminal)],
         "terminal_charge_support_nodes": int(
             charge_meta.get("terminal_charge_support_nodes", 0)
         ),
         "terminal_charge_contact_length": float(
             charge_meta.get("terminal_charge_contact_length", 0.0)
         ),
+        "energy_window_lo": np.asarray(window[0], float).tolist(),
+        "energy_window_hi": np.asarray(window[1], float).tolist(),
+        "energy_window_cells": int(np.count_nonzero(mask)),
+        "material_semantics": material_semantics,
+        "balanced_terminal_charge": True,
     }
 
 
@@ -252,8 +265,6 @@ def _terminal_axes(module, background, geometry, port, terminal, coarse_axes, ce
         module, background, geometry, int(port)
     )
     t = int(terminal)
-    if t < 0 or t >= len(boxes):
-        raise AssertionError("terminal contact box index is invalid")
     requested_upper = float(module._config(background)["fine_step"])
     steps = _terminal_refinement._directional_axis_steps(
         background, coil, float(cells), requested_upper
@@ -263,18 +274,18 @@ def _terminal_axes(module, background, geometry, port, terminal, coarse_axes, ce
         float(coil.conductor_width), float(coil.conductor_thickness)
     )
     lo, hi = boxes[t]
-    axes = []
-    for axis in range(3):
-        intervals = ((float(lo[axis] - halo), float(hi[axis] + halo)),)
-        axes.append(
-            _terminal_refinement._subdivide_axis(
-                coarse_axes[axis], intervals, float(steps[axis])
-            )
+    axes = tuple(
+        _terminal_refinement._subdivide_axis(
+            coarse_axes[axis],
+            ((float(lo[axis] - halo), float(hi[axis] + halo)),),
+            float(steps[axis]),
         )
-    return tuple(axes), np.asarray(steps, float), boxes[t], float(contact)
+        for axis in range(3)
+    )
+    return axes, np.asarray(steps, float), boxes, float(contact), float(halo)
 
 
-def _select_coarse_patch(module, background, geometry, port, terminal, parent_phi, *, phi=None):
+def _select_coarse_patch(module, background, geometry, port, parent_potential, *, phi=None):
     long_cfg = module._config(background)
     tolerance = float(_config(background)["coarse_consistency_tolerance"])
     attempts = []
@@ -290,17 +301,27 @@ def _select_coarse_patch(module, background, geometry, port, terminal, parent_ph
             coarse_axes,
             fine_step=module._background_step(background),
         )
-        state = _component_state(
+        # Use the first contact only to certify the parent operator; the scalar
+        # equation/source is the same for both terminal energy windows.
+        boxes, _contact, coil = _terminal_refinement._contact_boxes(
+            module, background, full_geometry, int(port)
+        )
+        halo = float(_config(background)["core_padding_factor"]) * max(
+            float(coil.conductor_width), float(coil.conductor_thickness)
+        )
+        window = _snap_window(coarse_axes, boxes[0], halo)
+        state = _balanced_state(
             module,
             background,
             coarse,
             full_geometry,
             int(port),
-            int(terminal),
-            parent_phi,
+            parent_potential,
+            window,
             phi=phi,
             fine_step=module._background_step(background),
             certify_parent=True,
+            exact_refined=False,
         )
         value = float(state["parent_restriction_relative_residual"])
         attempts.append(
@@ -311,20 +332,18 @@ def _select_coarse_patch(module, background, geometry, port, terminal, parent_ph
         )
         print(
             "terminal dissipative coarse consistency: "
-            f"port={int(port) + 1}, terminal={_TERMINAL_NAMES[int(terminal)]}, "
-            f"padding={float(padding):.6g}m, residual={value:.3e}, "
-            f"accepted={'yes' if value <= tolerance else 'no'}",
+            f"port={int(port) + 1}, padding={float(padding):.6g}m, "
+            f"residual={value:.3e}, accepted={'yes' if value <= tolerance else 'no'}",
             flush=True,
         )
         if value <= tolerance:
             state = dict(state)
             state["selected_boundary_padding"] = float(padding)
             state["boundary_selection_attempts"] = attempts.copy()
-            return coarse_axes, full_geometry, state
+            return coarse_axes, full_geometry, coarse, state
     raise RuntimeError(
-        "no terminal-component coarse patch reproduces the parent scalar restriction; "
-        f"port={int(port) + 1}, terminal={_TERMINAL_NAMES[int(terminal)]}, "
-        f"attempts={attempts!r}"
+        "no balanced terminal dissipative coarse patch reproduces the parent scalar "
+        f"restriction; port={int(port) + 1}, attempts={attempts!r}"
     )
 
 
@@ -337,20 +356,18 @@ def _terminal_reference(
     *,
     cells_per_support,
     phi=None,
+    prepared=None,
 ):
-    parent_phi, parent_meta = _parent_component_potential(
-        module, background, geometry, int(port), int(terminal)
-    )
-    coarse_axes, full_geometry, coarse = _select_coarse_patch(
-        module,
-        background,
-        geometry,
-        int(port),
-        int(terminal),
-        parent_phi,
-        phi=phi,
-    )
-    axes, steps, box, contact = _terminal_axes(
+    if prepared is None:
+        _context, potentials, _audit = module._global_scalar_potentials(background, geometry)
+        parent_potential = np.asarray(potentials[:, int(port)], complex)
+        coarse_axes, full_geometry, coarse_background, coarse_meta = _select_coarse_patch(
+            module, background, geometry, int(port), parent_potential, phi=phi
+        )
+    else:
+        parent_potential, coarse_axes, full_geometry, coarse_background, coarse_meta = prepared
+
+    axes, steps, boxes, contact, halo = _terminal_axes(
         module,
         background,
         full_geometry,
@@ -358,6 +375,26 @@ def _terminal_reference(
         int(terminal),
         coarse_axes,
         float(cells_per_support),
+    )
+    windows = tuple(_snap_window(coarse_axes, box, halo) for box in boxes)
+    if not _windows_disjoint(windows[0], windows[1]):
+        raise RuntimeError(
+            "feed/return terminal dissipative energy windows overlap on the parent coarse "
+            f"grid for port={int(port) + 1}; refuse to double-count local Joule energy"
+        )
+    window = windows[int(terminal)]
+    coarse = _balanced_state(
+        module,
+        background,
+        coarse_background,
+        full_geometry,
+        int(port),
+        parent_potential,
+        window,
+        phi=phi,
+        fine_step=module._background_step(background),
+        certify_parent=True,
+        exact_refined=False,
     )
     n_cells = int(np.prod([len(axis) - 1 for axis in axes], dtype=np.int64))
     budget = int(_config(background)["max_cells"])
@@ -380,19 +417,20 @@ def _terminal_reference(
         axes,
         fine_step=float(np.min(steps)),
     )
-    refined = _component_state(
+    refined = _balanced_state(
         module,
         background,
         patch,
         full_geometry,
         int(port),
-        int(terminal),
-        parent_phi,
+        parent_potential,
+        window,
         phi=phi,
         fine_step=float(np.min(steps)),
         certify_parent=False,
+        exact_refined=True,
     )
-    delta_d = float(refined["d_vol"] - coarse["d_vol"])
+    delta_d = float(refined["local_d_vol"] - coarse["local_d_vol"])
     delta_modal = None
     if phi is not None:
         delta_modal = np.asarray(refined["modal_h"] - coarse["modal_h"], float)
@@ -402,16 +440,25 @@ def _terminal_reference(
         "terminal_name": _TERMINAL_NAMES[int(terminal)],
         "cells_per_support": float(cells_per_support),
         "axis_steps": steps.tolist(),
-        "terminal_box": {
-            "lo": np.asarray(box[0], float).tolist(),
-            "hi": np.asarray(box[1], float).tolist(),
-        },
         "terminal_contact_length": float(contact),
+        "energy_window": {
+            "lo": np.asarray(window[0], float).tolist(),
+            "hi": np.asarray(window[1], float).tolist(),
+        },
         "coarse": coarse,
         "refined": refined,
         "delta_d_vol": delta_d,
         "delta_modal_h": delta_modal,
-        **parent_meta,
+        "coarse_parent_metadata": coarse_meta,
+        "balanced_full_port_source": True,
+        "refined_material_semantics": "exact_edge_dual_sigma_epsilon",
+        "prepared": (
+            parent_potential,
+            coarse_axes,
+            full_geometry,
+            coarse_background,
+            coarse_meta,
+        ),
     }
 
 
@@ -421,21 +468,21 @@ def _relative_defect(reference, validation):
     scale = max(
         abs(dv),
         abs(dr),
-        abs(float(validation["refined"]["d_vol"])),
-        abs(float(validation["coarse"]["d_vol"])),
+        abs(float(validation["refined"]["local_d_vol"])),
+        abs(float(validation["coarse"]["local_d_vol"])),
         np.finfo(float).tiny,
     )
     return float(abs(dr - dv) / scale)
 
 
 def install(module, implementation_module):
+    del implementation_module  # retained in signature for a stable install surface.
     if bool(getattr(module, "_terminal_dissipative_defect_installed", False)):
         return module
     required = (
         "_config",
         "_background_step",
-        "_cached_context",
-        "_remember_context",
+        "_global_scalar_potentials",
         "_volume_edge_diagonal",
         "_boundary_node_mask",
         "_boundary_values",
@@ -454,9 +501,6 @@ def install(module, implementation_module):
     def resolve_settings(settings, background):
         original_resolve(settings, background)
         bg = settings["BACKGROUND"]
-        # The uniform 9->6.75-mm whole-domain reference has been falsified by
-        # production evidence. Keep its implementation available for diagnostics
-        # but never apply it in production once the terminal-local defect is on.
         global_cfg = bg.setdefault("global_dissipative_reference", {})
         global_cfg["enabled"] = False
         long_cfg = dict(bg.get("global_longitudinal_correction", {}) or {})
@@ -470,14 +514,8 @@ def install(module, implementation_module):
             "core_padding_factor",
             float(long_cfg.get("terminal_core_padding_factor", 1.5)),
         )
-        own.setdefault(
-            "max_cells",
-            int(long_cfg.get("terminal_patch_max_cells", 575000)),
-        )
-        own.setdefault(
-            "relative_tolerance",
-            float(mesh_cfg.get("relative_tolerance", 1e-1)),
-        )
+        own.setdefault("max_cells", int(long_cfg.get("terminal_patch_max_cells", 575000)))
+        own.setdefault("relative_tolerance", float(mesh_cfg.get("relative_tolerance", 1e-1)))
         own.setdefault(
             "coarse_consistency_tolerance",
             float(long_cfg.get("coarse_consistency_tolerance", 1e-8)),
@@ -491,6 +529,19 @@ def install(module, implementation_module):
             )
 
     module._resolve_settings = resolve_settings
+
+    def _port_prepared(background, geometry, port, *, phi=None):
+        _context, potentials, _audit = module._global_scalar_potentials(background, geometry)
+        parent_potential = np.asarray(potentials[:, int(port)], complex)
+        coarse_axes, full_geometry, coarse_background, coarse_meta = _select_coarse_patch(
+            module,
+            background,
+            geometry,
+            int(port),
+            parent_potential,
+            phi=phi,
+        )
+        return parent_potential, coarse_axes, full_geometry, coarse_background, coarse_meta
 
     def correction(background, geometry, *, phi=None):
         raw = original_correction(background, geometry, phi=phi)
@@ -508,6 +559,7 @@ def install(module, implementation_module):
         rows = []
         reference_cells = float(cfg["reference_cells_per_support"])
         for p in range(n):
+            prepared = _port_prepared(background, geometry, p, phi=phi)
             terminal_rows = []
             for terminal in range(2):
                 state = _terminal_reference(
@@ -518,17 +570,14 @@ def install(module, implementation_module):
                     terminal,
                     cells_per_support=reference_cells,
                     phi=phi,
+                    prepared=prepared,
                 )
                 delta[p] += float(state["delta_d_vol"])
                 if modal is not None:
                     modal[:, p] += np.asarray(state["delta_modal_h"], float)
                 terminal_rows.append(state)
             rows.append(
-                {
-                    "port": int(p),
-                    "delta_d_vol": float(delta[p]),
-                    "terminals": terminal_rows,
-                }
+                {"port": int(p), "delta_d_vol": float(delta[p]), "terminals": terminal_rows}
             )
 
         raw["delta_z"] = np.asarray(raw["delta_z"], complex) + delta.astype(complex)
@@ -544,7 +593,7 @@ def install(module, implementation_module):
             terminal_dissipative_delta_z_real=delta.tolist(),
             terminal_dissipative_ports=rows,
             terminal_dissipative_semantics=(
-                "sum_of_feed_return_component_self_defects_cross_interaction_global"
+                "balanced_full_port_source_terminal_local_energy_defects"
             ),
         )
         raw["audit"] = audit
@@ -555,13 +604,8 @@ def install(module, implementation_module):
     def audit_reference_convergence(background, geometry):
         report = dict(original_audit(background, geometry))
         cfg = _config(background)
-        if not cfg["enabled"]:
+        if not cfg["enabled"] or not bool(report.get("converged", False)):
             return report
-        # Do not spend additional scalar work when the independently certified
-        # terminal reactive prerequisite is already invalid.
-        if not bool(report.get("converged", False)):
-            return report
-
         reference_cells = float(cfg["reference_cells_per_support"])
         validation_cells = float(cfg["validation_cells_per_support"])
         rows = []
@@ -569,6 +613,7 @@ def install(module, implementation_module):
         max_residual = 0.0
         max_consistency = 0.0
         for p in range(len(background.coil_materials)):
+            prepared = _port_prepared(background, geometry, p, phi=None)
             terminal_rows = []
             port_reference = 0.0
             port_validation = 0.0
@@ -581,6 +626,7 @@ def install(module, implementation_module):
                     terminal,
                     cells_per_support=reference_cells,
                     phi=None,
+                    prepared=prepared,
                 )
                 validation = _terminal_reference(
                     module,
@@ -590,6 +636,7 @@ def install(module, implementation_module):
                     terminal,
                     cells_per_support=validation_cells,
                     phi=None,
+                    prepared=prepared,
                 )
                 error = _relative_defect(reference, validation)
                 worst = max(worst, error)
@@ -648,7 +695,7 @@ def install(module, implementation_module):
             "maximum_coarse_parent_restriction_relative_residual": float(max_consistency),
             "converged": converged,
             "samples": rows,
-            "semantics": "terminal_component_self_only_cross_interaction_global",
+            "semantics": "balanced_full_port_source_terminal_local_energy_defects",
         }
         report["maximum_terminal_dissipative_relative_error"] = float(worst)
         report["maximum_relative_error"] = max(
@@ -668,4 +715,4 @@ def install(module, implementation_module):
     return module
 
 
-__all__ = ["_component_charge", "_config", "install"]
+__all__ = ["_config", "_snap_window", "_windows_disjoint", "install"]
