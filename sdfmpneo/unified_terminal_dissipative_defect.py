@@ -1,6 +1,6 @@
 """Balanced full-port terminal-local dissipative defect correction.
 
-The physical terminal charge is globally balanced.  Splitting it into isolated
+The physical terminal charge is globally balanced. Splitting it into isolated
 feed/return net-charge scalar problems would introduce an implicit compensation
 at the removed gauge node and is therefore not an admissible production truth.
 This module instead keeps the complete balanced q_target in every solve and
@@ -16,17 +16,17 @@ For each port and each terminal contact:
 5. add D_local(fine)-D_local(coarse).
 
 Feed and return windows must be disjoint, so their defects can be summed without
-double counting.  The smooth feed/return cross field is still present in each
+double counting. The smooth feed/return cross field is still present in each
 balanced solve and in the local energy where physically relevant; only the
-unresolved terminal neighbourhood is replaced.  The refined local reference uses
+unresolved terminal neighbourhood is replaced. The refined local reference uses
 geometry-resolved sigma/epsilon edge-dual mass, while the coarse baseline is the
-exact restriction of the production scalar operator.  Thus the correction also
+exact restriction of the production scalar operator. Thus the correction also
 removes the local cut-cell material error without perturbing the certified full
 Maxwell operator.
 
 Re(delta Z_pp) is set exactly equal to the summed local D_vol defect, D_out is
 unchanged, and modal Joule heat receives the same local fine-minus-coarse
-contraction.  A still finer terminal-local solve independently certifies every
+contraction. A still finer terminal-local solve independently certifies every
 applied defect before expensive Maxwell Gates are allowed to run.
 """
 from __future__ import annotations
@@ -301,8 +301,6 @@ def _select_coarse_patch(module, background, geometry, port, parent_potential, *
             coarse_axes,
             fine_step=module._background_step(background),
         )
-        # Use the first contact only to certify the parent operator; the scalar
-        # equation/source is the same for both terminal energy windows.
         boxes, _contact, coil = _terminal_refinement._contact_boxes(
             module, background, full_geometry, int(port)
         )
@@ -493,6 +491,27 @@ def install(module, implementation_module):
         raise AttributeError(
             "terminal dissipative defect requires longitudinal hooks: " + ", ".join(missing)
         )
+
+    # Exact memoization of the balanced global scalar state. Reactive and
+    # dissipative longitudinal layers consume the same potentials; rebuilding
+    # the G.T D G factor for every terminal would multiply offline cost without
+    # changing any physics.
+    original_global = module._global_scalar_potentials
+
+    def cached_global_scalar_potentials(background, geometry):
+        cache = getattr(background, "_sdfmpneo_global_scalar_potential_cache", None)
+        if cache is None:
+            cache = {}
+            background._sdfmpneo_global_scalar_potential_cache = cache
+        key_helper = getattr(module, "_geometry_key", None)
+        key = key_helper(geometry) if callable(key_helper) else repr(geometry)
+        if key not in cache:
+            context, potentials, audit = original_global(background, geometry)
+            cache[key] = (context, np.asarray(potentials, complex).copy(), copy.deepcopy(audit))
+        context, potentials, audit = cache[key]
+        return context, np.asarray(potentials, complex).copy(), copy.deepcopy(audit)
+
+    module._global_scalar_potentials = cached_global_scalar_potentials
 
     original_resolve = module._resolve_settings
     original_correction = module._correction
