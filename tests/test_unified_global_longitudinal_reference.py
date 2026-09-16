@@ -27,7 +27,7 @@ class _Background:
     self_correction_config = dict(background_config["self_correction"])
 
 
-def test_boundary_conditioned_longitudinal_defect_changes_only_self_diagonal(monkeypatch):
+def test_boundary_conditioned_longitudinal_defect_changes_only_reactive_self_diagonal(monkeypatch):
     background = _Background()
     z = np.array([[4.0 + 0.2j, 0.4 + 0.1j], [0.4 + 0.1j, 5.0 + 0.3j]], complex)
     d = np.array([[3.7, 0.1 + 0.02j], [0.1 - 0.02j, 4.6]], complex)
@@ -44,13 +44,11 @@ def test_boundary_conditioned_longitudinal_defect_changes_only_self_diagonal(mon
         glr,
         "_correction",
         lambda _b, _g, phi=None: {
-            "delta_z": np.array([1.8 + 0.05j, 2.7 + 0.07j]),
-            "delta_d_vol": np.array([1.8, 2.7]),
+            "delta_z": np.array([0.05j, 0.07j]),
+            "delta_d_vol": np.zeros(2),
             "delta_d_out": np.zeros(2),
             "delta_modal_h": (
-                None
-                if phi is None
-                else np.array([[0.5, 0.8], [0.2, 0.4]], float)
+                None if phi is None else np.zeros((2, 2), float)
             ),
             "audit": {"enabled": True, "model": glr._MODEL},
         },
@@ -67,17 +65,15 @@ def test_boundary_conditioned_longitudinal_defect_changes_only_self_diagonal(mon
     )
 
     assert np.allclose(zc[0, 1], z[0, 1])
-    assert np.allclose(dc[0, 1], d[0, 1])
+    assert np.allclose(dc, d)
     assert np.allclose(oc, d_out)
-    assert np.allclose(hc[:, 0, 1], modal[:, 0, 1])
-    assert np.allclose(np.diag(zc - z), [1.8 + 0.05j, 2.7 + 0.07j])
-    assert np.allclose(np.real(np.diag(dc - d)), [1.8, 2.7])
-    assert np.allclose(np.real(hc[:, 0, 0] - modal[:, 0, 0]), [0.5, 0.2])
-    assert np.allclose(np.real(hc[:, 1, 1] - modal[:, 1, 1]), [0.8, 0.4])
+    assert np.allclose(hc, modal)
+    assert np.allclose(np.diag(zc - z), [0.05j, 0.07j])
+    assert np.allclose(0.5 * (zc + zc.conj().T), 0.5 * (z + z.conj().T))
     assert audit["model"] == glr._MODEL
 
 
-def test_defect_uses_volume_loss_for_resistive_impedance_and_never_patch_dout():
+def test_defect_applies_only_reactive_part_and_keeps_loss_as_diagnostic():
     coarse = {
         "z_reaction": 4.0 + 0.20j,
         "d_vol": 3.7,
@@ -89,12 +85,16 @@ def test_defect_uses_volume_loss_for_resistive_impedance_and_never_patch_dout():
         "modal_h": np.array([1.5, 0.7]),
     }
     defect = glr._defect(coarse, fine)
-    assert np.isclose(defect["delta_d_vol"], 1.8)
-    assert np.isclose(defect["delta_z"].real, 1.8)
+    assert np.isclose(defect["delta_d_vol"], 0.0)
+    assert np.isclose(defect["delta_z"].real, 0.0)
     assert np.isclose(defect["delta_z"].imag, 0.06)
     assert defect["delta_d_out"] == 0.0
+    assert np.allclose(defect["delta_modal_h"], 0.0)
+    assert np.isclose(defect["diagnostic_raw_delta_d_vol"], 1.8)
+    assert np.isclose(defect["diagnostic_raw_delta_z_real"], 2.5)
     assert np.isclose(defect["reaction_delta_z"].real, 2.5)
     assert np.isclose(defect["interface_real_flux_defect"], 0.7)
+    assert defect["correction_semantics"] == "reactive_only_certified_longitudinal_defect"
 
 
 def test_resolved_patch_settings_follow_certified_local_reference_steps():
