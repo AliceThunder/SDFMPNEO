@@ -143,6 +143,7 @@ def test_terminal_steps_follow_physical_support_and_validation_refines_them():
         assert len(validation) >= len(fine) >= len(coarse)
 
 
-def test_installed_model_uses_terminal_refinement_v3():
-    assert longitudinal._MODEL == "global_boundary_conditioned_longitudinal_terminal_refinement_v3"
+def test_installed_model_uses_reactive_longitudinal_v4():
+    assert longitudinal._MODEL == "global_boundary_conditioned_longitudinal_reactive_defect_v4"
     assert bool(getattr(longitudinal, "_terminal_longitudinal_refinement_installed", False))
+    assert bool(getattr(longitudinal, "_reactive_longitudinal_reference_installed", False))
