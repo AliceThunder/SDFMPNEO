@@ -111,6 +111,8 @@ def install(module):
         return module
 
     original_scalar_state = module._scalar_state
+    original_reference_state = module._reference_state
+    original_audit = module.audit_reference_convergence
 
     def scalar_state(module_arg, parent, background, geometry, *, phi=None):
         # The current scalar state is intentionally the same legacy longitudinal
@@ -126,6 +128,67 @@ def install(module):
         )
 
     module._scalar_state = scalar_state
+
+    def reference_state(module_arg, background, geometry, *, step, max_step, phi=None):
+        state = original_reference_state(
+            module_arg,
+            background,
+            geometry,
+            step=step,
+            max_step=max_step,
+            phi=phi,
+        )
+        if "conductive_hodge_model" in state:
+            print(
+                "global longitudinal dissipative Hodge: "
+                f"step={float(step):.6g}m, "
+                f"model={state['conductive_hodge_model']}, "
+                "legacy_relative_difference="
+                f"{float(state.get('conductive_hodge_legacy_relative_difference', 0.0)):.3e}",
+                flush=True,
+            )
+        return state
+
+    module._reference_state = reference_state
+
+    def audit_reference_convergence(background, geometry):
+        report = dict(original_audit(background, geometry))
+        cfg = module._config(background)
+        if cfg.get("enabled", False):
+            reference = module._reference_state(
+                module,
+                background,
+                geometry,
+                step=cfg["reference_step"],
+                max_step=cfg["reference_max_step"],
+                phi=None,
+            )
+            validation = module._reference_state(
+                module,
+                background,
+                geometry,
+                step=cfg["validation_step"],
+                max_step=cfg["validation_max_step"],
+                phi=None,
+            )
+            diagnostic = report.get("global_dissipative_reference")
+            if isinstance(diagnostic, dict):
+                diagnostic["conductive_hodge_model"] = _HODGE_MODEL
+                diagnostic["reference_conductive_hodge_legacy_relative_difference"] = float(
+                    reference.get("conductive_hodge_legacy_relative_difference", 0.0)
+                )
+                diagnostic["validation_conductive_hodge_legacy_relative_difference"] = float(
+                    validation.get("conductive_hodge_legacy_relative_difference", 0.0)
+                )
+                diagnostic["reference_semantics"] = (
+                    "exact_edge_dual_package_seawater_conductivity"
+                )
+        report["model"] = (
+            "global_boundary_conditioned_longitudinal_reactive_defect_v4+" + _MODEL
+        )
+        return report
+
+    module.audit_reference_convergence = audit_reference_convergence
     module._MODEL = _MODEL
     module._resolved_dissipative_reference_installed = True
     return module
