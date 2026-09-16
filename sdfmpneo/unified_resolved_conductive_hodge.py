@@ -66,6 +66,7 @@ def _dual_wedge_bounds(background, edge, cell):
 
 def _package_data(background, context):
     rows = []
+    active_cells = set()
     for package, material in zip(context.geometry.packages, background.package_materials):
         sigma = float(background._temperature_material(material, background.ambient_temperature))
         # The exact production specialization relies on the package and the wire
@@ -78,16 +79,22 @@ def _package_data(background, context):
             )
         half = np.asarray(package.half_extent, float).reshape(3)
         vertices = np.asarray(package.pose.apply(_SIGNS * half), float)
-        rows.append(
-            (
-                package,
-                half,
-                vertices,
-                np.min(vertices, axis=0),
-                np.max(vertices, axis=0),
+        world_lo = np.min(vertices, axis=0)
+        world_hi = np.max(vertices, axis=0)
+        rows.append((package, half, vertices, world_lo, world_hi))
+        index_sets = []
+        for grid, lower, upper in zip((background.x, background.y, background.z), world_lo, world_hi):
+            values = np.asarray(grid, float)
+            index_sets.append(
+                np.flatnonzero((values[:-1] < float(upper)) & (values[1:] > float(lower)))
             )
-        )
-    return rows
+        if all(len(values) for values in index_sets):
+            for i in index_sets[0]:
+                for j in index_sets[1]:
+                    base = (int(i) * background.ny + int(j)) * background.nz
+                    for k in index_sets[2]:
+                        active_cells.add(int(base + int(k)))
+    return rows, active_cells
 
 
 def _build_conductivity_hodge(background, context):
@@ -96,30 +103,34 @@ def _build_conductivity_hodge(background, context):
     )
     if not np.isfinite(sea_sigma) or sea_sigma < 0.0:
         raise ValueError("seawater conductivity must be finite and non-negative")
-    packages = _package_data(background, context)
+    packages, active_cells = _package_data(background, context)
     legacy = background.edge_cell_hodge.tocsr()
-    data = np.asarray(legacy.data, float).copy()
     indices = legacy.indices
     indptr = legacy.indptr
+    # Pure-seawater dual wedges need no geometric work.
+    data = sea_sigma * np.asarray(legacy.data, float).copy()
 
-    for edge in range(background.n_edges):
-        length = float(background.edge_lengths[edge])
-        l2 = length * length
-        for pos in range(indptr[edge], indptr[edge + 1]):
-            cell = int(indices[pos])
-            dual_volume = float(legacy.data[pos]) * l2
-            if dual_volume <= 0.0:
-                data[pos] = 0.0
-                continue
-            lo, hi = _dual_wedge_bounds(background, edge, cell)
-            insulating = 0.0
-            for package, half, vertices, world_lo, world_hi in packages:
-                if np.any(hi <= world_lo) or np.any(lo >= world_hi):
+    if active_cells:
+        active_cells = frozenset(active_cells)
+        for edge in range(background.n_edges):
+            length = float(background.edge_lengths[edge])
+            l2 = length * length
+            for pos in range(indptr[edge], indptr[edge + 1]):
+                cell = int(indices[pos])
+                if cell not in active_cells:
                     continue
-                insulating += _intersection_volume(package, half, vertices, lo, hi)
-            insulating = float(np.clip(insulating, 0.0, dual_volume))
-            seawater_volume = max(0.0, dual_volume - insulating)
-            data[pos] = sea_sigma * seawater_volume / l2
+                dual_volume = float(legacy.data[pos]) * l2
+                if dual_volume <= 0.0:
+                    data[pos] = 0.0
+                    continue
+                lo, hi = _dual_wedge_bounds(background, edge, cell)
+                insulating = 0.0
+                for package, half, vertices, world_lo, world_hi in packages:
+                    if np.any(hi <= world_lo) or np.any(lo >= world_hi):
+                        continue
+                    insulating += _intersection_volume(package, half, vertices, lo, hi)
+                insulating = float(np.clip(insulating, 0.0, dual_volume))
+                data[pos] = sea_sigma * max(0.0, dual_volume - insulating) / l2
 
     matrix = sp.csr_matrix(
         (data, indices.copy(), indptr.copy()), shape=legacy.shape, dtype=float
@@ -154,9 +165,6 @@ def install(background_cls):
 
     def edge_conductivity_hodge(self, context, state=None):
         if state is not None:
-            # Non-wire EM materials are production-certified temperature
-            # independent.  Keep the contract explicit rather than silently
-            # reusing an ambient matrix in a future temperature-dependent model.
             for name in self.package_materials + (self.seawater_material,):
                 if float(self.materials[name].get("resistivity_temperature_coefficient", 0.0)) != 0.0:
                     raise ValueError(
