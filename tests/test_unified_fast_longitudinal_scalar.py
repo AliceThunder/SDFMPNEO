@@ -56,14 +56,15 @@ def test_two_level_scalar_reaches_true_residual_without_direct_fallback(monkeypa
     assert true_residual <= 1e-9
 
 
-def test_production_installs_fast_scalar_paths_without_changing_truth_version():
+def test_production_installs_fast_scalar_paths_for_v33_truth():
     import sdfmpneo
     from sdfmpneo import unified_model
     from sdfmpneo import unified_runtime
 
-    assert unified_model.FORMAT_VERSION == 32
-    assert unified_runtime._CACHE_FORMAT == 34
+    assert unified_model.FORMAT_VERSION == 33
+    assert unified_runtime._CACHE_FORMAT == 35
     assert longitudinal._fast_reactive_scalar_installed is True
     assert longitudinal._longitudinal_state_cache_installed is True
     assert terminal_defect._fast_terminal_dissipative_scalar_installed is True
+    assert terminal_defect._terminal_component_lock_installed is True
     assert not bool(getattr(longitudinal, "_shared_terminal_dissipative_installed", False))
