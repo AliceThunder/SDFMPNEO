@@ -84,7 +84,10 @@ from .unified_global_dissipative_reference import install as _install_global_dis
 from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
 from . import unified_terminal_dissipative_defect as _terminal_dissipative_defect
 from .unified_terminal_dissipative_defect import install as _install_terminal_dissipative_defect
+from .unified_fast_terminal_dissipative_scalar import install as _install_fast_terminal_dissipative_scalar
 from .unified_terminal_dissipative_quadrature_fix import install as _install_terminal_dissipative_quadrature_fix
+from .unified_fast_reactive_scalar import install as _install_fast_reactive_scalar
+from .unified_longitudinal_state_cache import install as _install_longitudinal_state_cache
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
@@ -108,11 +111,33 @@ _install_terminal_dissipative_defect(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
 )
+# Pure solver acceleration: keep the exact v32 terminal dissipative physics and
+# Gate, but route large refined scalar systems through a true-residual-certified
+# two-level LGMRES solve.  The adapter adds a solver tag to _MODEL internally;
+# restore the physics model names immediately because truth semantics did not
+# change.
+_longitudinal_physics_model = _global_longitudinal_reference._MODEL
+_terminal_dissipative_physics_model = _terminal_dissipative_defect._MODEL
+_install_fast_terminal_dissipative_scalar(_global_longitudinal_reference)
+_global_longitudinal_reference._MODEL = _longitudinal_physics_model
+_terminal_dissipative_defect._MODEL = _terminal_dissipative_physics_model
+# Lock reference/validation to the same physical terminal source quadrature.
+# This wraps the fast terminal solver so its refined context receives exactly the
+# same override as the historical direct implementation.
 _install_terminal_dissipative_quadrature_fix(
     _terminal_contact_source,
     _charge_regularized_source,
     _terminal_dissipative_defect,
     _global_longitudinal_reference,
+)
+# Reactive terminal refinement keeps the original v32 discretization but uses
+# the same certified two-level scalar linear algebra for large systems.
+_install_fast_reactive_scalar(_global_longitudinal_reference)
+# Reuse compact phi=None reference states already computed by the early audit
+# when later preflight correction asks for the identical reference.
+_install_longitudinal_state_cache(
+    _global_longitudinal_reference,
+    _terminal_dissipative_defect,
 )
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 _install_longitudinal_preflight_schedule(
@@ -171,7 +196,8 @@ __all__ = [
 
 # v32 keeps the admissible v31 balanced full-port / terminal-local energy-defect
 # truth but removes source-quadrature/Galerkin co-refinement from its convergence
-# Gate. Old v31 artifacts cannot be mixed with this definition.
+# Gate. Old v31 artifacts cannot be mixed with this definition. Solver-only
+# acceleration/caching installed above does not change this truth/cache format.
 from . import unified_runtime as _unified_runtime
 _unified_runtime._CACHE_FORMAT = 34
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
