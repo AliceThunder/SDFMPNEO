@@ -9,17 +9,16 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 32 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, declares
-# terminal charge continuity independently from incidental edge deposition, and
-# splits longitudinal self correction into independently certified reactive and
-# dissipative near-field pieces. The balanced terminal-local dissipative Gate now
-# holds the physical terminal source quadrature fixed at validation resolution
-# across its reference/validation Galerkin spaces, so h-refinement no longer
-# changes the source measure being compared. Public failure audits contain only
-# serializable physics evidence. The falsified whole-domain 9->6.75-mm
-# dissipative reference remains disabled in production.
-_unified_model.FORMAT_VERSION = 32
+# Physics truth version 33 keeps the full open two-terminal source, resolves its
+# physical source/package support below the production EM cell scale, and splits
+# longitudinal self correction into independently certified reactive and
+# dissipative near-field pieces.  The dissipative terminal Gate holds source
+# quadrature fixed across h-refinement and, critically, changes only the selected
+# feed/return charge component: the opposite terminal keeps its production coarse
+# nodal load exactly.  This makes a single-terminal additive defect literal on a
+# tensor-product refinement grid.  Public failure audits remain serializable and
+# the falsified whole-domain 9->6.75-mm dissipative reference stays disabled.
+_unified_model.FORMAT_VERSION = 33
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -99,9 +98,8 @@ _install_scalar_charge_patch(_global_longitudinal_reference)
 # defect. Their absolute local Dvol remains diagnostic-only.
 _install_reactive_longitudinal_reference(_global_longitudinal_reference)
 # Keep the historical whole-domain dissipative implementation available for
-# diagnostics/regression, including exact sigma/epsilon reference support. The
-# balanced terminal-local installer immediately disables that uniform production
-# reference and installs the source-scale dissipative truth instead.
+# diagnostics/regression. The balanced terminal-local installer disables that
+# uniform production reference and installs the source-scale dissipative truth.
 _install_global_dissipative_reference(_global_longitudinal_reference)
 _install_resolved_dissipative_reference(
     _global_longitudinal_reference,
@@ -111,27 +109,25 @@ _install_terminal_dissipative_defect(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
 )
-# Pure solver acceleration: keep the exact v32 terminal dissipative physics and
-# Gate, but route large refined scalar systems through a true-residual-certified
-# two-level LGMRES solve.  The adapter adds a solver tag to _MODEL internally;
-# restore the physics model names immediately because truth semantics did not
-# change.
+# Pure solver acceleration: keep the v33 terminal dissipative physics/Gate but
+# route large refined scalar systems through true-residual-certified iterative
+# solvers. The adapter adds a solver tag internally; restore physics model names
+# immediately because linear algebra alone does not define truth semantics.
 _longitudinal_physics_model = _global_longitudinal_reference._MODEL
 _terminal_dissipative_physics_model = _terminal_dissipative_defect._MODEL
 _install_fast_terminal_dissipative_scalar(_global_longitudinal_reference)
 _global_longitudinal_reference._MODEL = _longitudinal_physics_model
 _terminal_dissipative_defect._MODEL = _terminal_dissipative_physics_model
-# Lock reference/validation to the same physical terminal source quadrature.
-# This wraps the fast terminal solver so its refined context receives exactly the
-# same override as the historical direct implementation.
+# Lock reference/validation to the same physical source quadrature. This installer
+# also applies the v33 single-terminal component lock as its outer source adapter.
 _install_terminal_dissipative_quadrature_fix(
     _terminal_contact_source,
     _charge_regularized_source,
     _terminal_dissipative_defect,
     _global_longitudinal_reference,
 )
-# Reactive terminal refinement keeps the original v32 discretization but uses
-# the same certified two-level scalar linear algebra for large systems.
+# Reactive terminal refinement keeps its existing discretization but uses the
+# same certified fast scalar linear algebra for large systems.
 _install_fast_reactive_scalar(_global_longitudinal_reference)
 # Reuse compact phi=None reference states already computed by the early audit
 # when later preflight correction asks for the identical reference.
@@ -194,12 +190,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v32 keeps the admissible v31 balanced full-port / terminal-local energy-defect
-# truth but removes source-quadrature/Galerkin co-refinement from its convergence
-# Gate. Old v31 artifacts cannot be mixed with this definition. Solver-only
-# acceleration/caching installed above does not change this truth/cache format.
+# v33 changes the dissipative single-terminal reference semantics, so v32 cached
+# preflight/tensor artifacts must not be mixed with the new certificate. Solver
+# acceleration remains semantics-neutral but shares this new physical cache key.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 34
+_unified_runtime._CACHE_FORMAT = 35
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
