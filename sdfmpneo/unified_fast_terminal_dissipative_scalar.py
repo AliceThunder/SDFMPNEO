@@ -1,18 +1,12 @@
 """Accelerate terminal dissipative scalar references without changing physics.
 
-The v32 terminal dissipative Gate intentionally uses finer 3.2 -> 4.267
-cells/support patches than the reactive certificate.  Reusing the coarser
-reactive fields would silently weaken that Gate, so this adapter keeps the
-existing terminal patch geometry, exact sigma/epsilon mass, balanced q_target,
-energy windows, source quadrature and 10% convergence test unchanged.
-
-Only the linear algebra changes.  Large refined scalar Dirichlet systems are
-solved by the same certified two-level scalar routine used by the fast reactive
-path.  The true residual of the original matrix must remain <= 1e-9; otherwise
-the routine falls back to the historical sparse direct solve.
+Large refined scalar Dirichlet systems use the certified fast scalar solver.
+Stage timings are printed because, on large terminal patches, topology/material
+assembly can dominate the linear solve and must be visible in production logs.
 """
 from __future__ import annotations
 
+import time
 import numpy as np
 import scipy.sparse as sp
 
@@ -42,8 +36,6 @@ def install(module):
         certify_parent=False,
         exact_refined=False,
     ):
-        # Preserve the production coarse-parent certificate byte-for-byte.  The
-        # expensive path is only the refined terminal reference/validation.
         if bool(certify_parent) or not bool(exact_refined):
             return original(
                 module_arg,
@@ -59,29 +51,48 @@ def install(module):
                 exact_refined=exact_refined,
             )
 
+        total_started = time.perf_counter()
         patch._sdfmpneo_scalar_charge_target_only = True
+
+        t0 = time.perf_counter()
         context = patch.geometry_context(geometry, assemble_thermal=False)
+        context_seconds = time.perf_counter() - t0
         p = int(port)
         if p < 0 or p >= len(context.geometry.coils):
             raise AssertionError("fast terminal dissipative source port is invalid")
+
+        t0 = time.perf_counter()
         q_target, charge_meta = terminal_charge_target(patch, context.geometry.coils[p])
+        charge_seconds = time.perf_counter() - t0
         if abs(float(np.sum(q_target))) > 5e-14:
             raise FloatingPointError("fast terminal dissipative source is not balanced")
 
+        t0 = time.perf_counter()
         G = gradient_operator(patch, gauge_fixed=False)
+        gradient_seconds = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         diagonal, sigma, _hs = module_arg._volume_edge_diagonal(patch, context)
+        legacy_mass_seconds = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         conductivity_hodge, edge_loss, exact_eps, legacy_eps, legacy_loss = (
             _terminal._exact_refined_mass(patch, context)
         )
+        exact_mass_seconds = time.perf_counter() - t0
         diagonal = np.asarray(diagonal, complex) + (
             1j * float(patch.omega) * (edge_loss - legacy_loss)
             - (float(patch.omega) ** 2) * (exact_eps - legacy_eps)
         )
+
+        t0 = time.perf_counter()
         scalar = (G.T @ sp.diags(np.asarray(diagonal, complex), format="csr") @ G).tocsc()
         scalar.sum_duplicates()
         scalar.eliminate_zeros()
         scalar_rhs = (-1j * float(patch.omega)) * np.asarray(q_target, complex)
+        matrix_seconds = time.perf_counter() - t0
 
+        t0 = time.perf_counter()
         boundary = module_arg._boundary_node_mask(patch)
         interior = ~boundary
         phi_nodes = np.zeros(G.shape[1], complex)
@@ -97,11 +108,16 @@ def install(module):
             module_arg, parent, parent_potential, patch
         )
         x0 = np.asarray(restricted[interior], complex).reshape(-1)
+        boundary_seconds = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         solved, solve_residual, solver_label = solve_refined(
             Sii, rhs_i, parent=parent, patch=patch, x0=x0
         )
+        solve_seconds = time.perf_counter() - t0
         phi_nodes[interior] = solved
 
+        t0 = time.perf_counter()
         field = np.asarray(G @ phi_nodes, complex).reshape(-1)
         abs2 = np.abs(field) ** 2
         q_cells = np.asarray(0.5 * (conductivity_hodge.T @ abs2), float).reshape(-1)
@@ -113,6 +129,19 @@ def install(module):
         if phi is not None:
             local_phi = module_arg._interpolate_cell_basis(parent, patch, phi)
             modal = np.asarray(2.0 * (local_phi.T @ local_q), float)
+        contraction_seconds = time.perf_counter() - t0
+        total_seconds = time.perf_counter() - total_started
+
+        print(
+            "terminal scalar stages: "
+            f"cells={patch.n_cells}, dofs={int(np.count_nonzero(interior))}, "
+            f"context={context_seconds:.1f}s, charge={charge_seconds:.1f}s, "
+            f"gradient={gradient_seconds:.1f}s, legacy_mass={legacy_mass_seconds:.1f}s, "
+            f"exact_mass={exact_mass_seconds:.1f}s, matrix={matrix_seconds:.1f}s, "
+            f"boundary={boundary_seconds:.1f}s, solve={solve_seconds:.1f}s, "
+            f"contraction={contraction_seconds:.1f}s, total={total_seconds:.1f}s",
+            flush=True,
+        )
 
         return {
             "local_d_vol": local_d,
@@ -136,6 +165,18 @@ def install(module):
             "material_semantics": "exact_edge_dual_sigma_epsilon",
             "balanced_terminal_charge": True,
             "scalar_solver": solver_label,
+            "stage_seconds": {
+                "context": float(context_seconds),
+                "charge": float(charge_seconds),
+                "gradient": float(gradient_seconds),
+                "legacy_mass": float(legacy_mass_seconds),
+                "exact_mass": float(exact_mass_seconds),
+                "matrix": float(matrix_seconds),
+                "boundary": float(boundary_seconds),
+                "solve": float(solve_seconds),
+                "contraction": float(contraction_seconds),
+                "total": float(total_seconds),
+            },
         }
 
     _terminal._balanced_state = balanced_state
