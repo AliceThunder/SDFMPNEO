@@ -14,6 +14,11 @@ The adapter also removes the internal ``prepared`` tuple from public audit
 payloads.  That tuple contains an OpenBoundaryBackground object and is an
 implementation cache, not physics evidence; retaining it made failed preflight
 reports non-JSON-serializable.
+
+After the common quadrature rule is installed, the single-terminal component
+lock is installed as the outermost source adapter: only the selected feed/return
+cloud is reprojected on the refined tensor grid, while the opposite terminal
+retains the production coarse nodal load exactly.
 """
 from __future__ import annotations
 
@@ -166,6 +171,13 @@ def install(
     terminal_defect_module._MODEL = f"{terminal_defect_module._MODEL}+{_MODEL_SUFFIX}"
     longitudinal_module._MODEL = f"{longitudinal_module._MODEL}+{_MODEL_SUFFIX}"
     terminal_defect_module._shared_source_quadrature_fix_installed = True
+
+    # Install after the quadrature wrapper so the component-lock context encloses
+    # it: selected fine charge uses the common validation quadrature while the
+    # opposite terminal remains the coarse production nodal load.
+    from .unified_terminal_component_lock import install as install_component_lock
+
+    install_component_lock(terminal_defect_module, longitudinal_module)
     return terminal_defect_module
 
 
