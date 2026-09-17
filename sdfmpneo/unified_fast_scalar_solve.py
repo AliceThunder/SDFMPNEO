@@ -1,10 +1,12 @@
-"""Certified two-level linear solver for nested Cartesian scalar patches.
+"""Certified iterative linear solver for nested Cartesian scalar patches.
 
 This module contains linear algebra only.  It does not define source, material,
-patch, correction or Gate semantics.  Large 3-D scalar Dirichlet systems use a
-parent-grid Galerkin coarse space plus damped fine Jacobi inside LGMRES.  The
-accepted field is always checked against the original fine matrix at the
-unchanged 1e-9 relative residual; sparse direct solve is the correctness fallback.
+patch, correction or Gate semantics.  Large 3-D scalar Dirichlet systems first
+use a parent-grid Galerkin coarse space plus damped fine Jacobi inside LGMRES.
+If that route does not reach the unchanged 1e-9 true-residual certificate, a
+bounded-fill fine-grid ILU + LGMRES fallback is tried before the historical
+fill-heavy sparse direct solve.  Direct solve remains the final correctness
+fallback; no physics or convergence tolerance is relaxed.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import scipy.sparse.linalg as spla
 from . import unified_certified_local_solve as _local_solve
 
 
-_DIRECT_THRESHOLD = 120000
+_DIRECT_THRESHOLD = 60000
 _RESIDUAL_TOLERANCE = 1e-9
 
 
@@ -138,6 +140,56 @@ def _two_level_operator(A, P, coarse_factor, inverse_diagonal, *, sweeps, weight
     return spla.LinearOperator(A.shape, matvec=apply, dtype=A.dtype)
 
 
+def _ilu_fallback(A, rhs, best, best_residual):
+    attempts = (
+        (2e-3, 4.0, 0.0, 28, 24, "ilu-fast"),
+        (5e-4, 7.0, 0.0, 40, 30, "ilu-strong"),
+        (5e-4, 7.0, 1e-10, 40, 30, "ilu-shifted"),
+    )
+    for drop_tol, fill_factor, shift_factor, maxiter, inner_m, label in attempts:
+        started = time.perf_counter()
+        try:
+            M = _local_solve._ilu_preconditioner(
+                A,
+                drop_tol=float(drop_tol),
+                fill_factor=float(fill_factor),
+                shift_factor=float(shift_factor),
+            )
+        except (RuntimeError, ValueError, MemoryError) as exc:
+            print(
+                "longitudinal scalar "
+                f"{label} preconditioner unavailable ({exc}); trying next solver",
+                flush=True,
+            )
+            continue
+        build_seconds = float(time.perf_counter() - started)
+        t0 = time.perf_counter()
+        candidate, info = _local_solve._lgmres(
+            A,
+            rhs,
+            x0=best,
+            M=M,
+            rtol=max(0.2 * _RESIDUAL_TOLERANCE, 1e-12),
+            maxiter=int(maxiter),
+            inner_m=int(inner_m),
+        )
+        candidate = np.asarray(candidate, complex).reshape(-1)
+        residual = float(_local_solve._relative_residual(A, candidate, rhs))
+        solve_seconds = float(time.perf_counter() - t0)
+        print(
+            "longitudinal scalar fine-ILU: "
+            f"solver={label}, dofs={A.shape[0]}, residual={residual:.3e}, "
+            f"info={int(info)}, build={build_seconds:.1f}s, solve={solve_seconds:.1f}s",
+            flush=True,
+        )
+        if np.isfinite(residual) and residual < best_residual:
+            best = candidate
+            best_residual = residual
+        if best_residual <= _RESIDUAL_TOLERANCE:
+            return best, best_residual, f"{label}-lgmres"
+    return best, best_residual, None
+
+
 def solve_refined(A, rhs, *, parent, patch, x0):
     n = int(A.shape[0])
     rhs = np.asarray(rhs, complex).reshape(-1)
@@ -154,6 +206,12 @@ def solve_refined(A, rhs, *, parent, patch, x0):
 
     coarse_axes = _coarse_axes(parent, patch)
     fine_axes = tuple(np.asarray(axis, float) for axis in (patch.x, patch.y, patch.z))
+    best = None if x0 is None else np.asarray(x0, complex).reshape(-1).copy()
+    best_residual = (
+        float("inf")
+        if best is None
+        else float(_local_solve._relative_residual(A, best, rhs))
+    )
     started = time.perf_counter()
     try:
         P = _nodal_prolongation(coarse_axes, fine_axes)
@@ -173,12 +231,6 @@ def solve_refined(A, rhs, *, parent, patch, x0):
             coarse_factor = spla.splu(Ac)
         inverse_diagonal = _inverse_diagonal(A)
         build_seconds = float(time.perf_counter() - started)
-        best = None if x0 is None else np.asarray(x0, complex).reshape(-1).copy()
-        best_residual = (
-            float("inf")
-            if best is None
-            else float(_local_solve._relative_residual(A, best, rhs))
-        )
         for sweeps, maxiter, inner_m in ((1, 24, 24), (2, 40, 30)):
             M = _two_level_operator(A, P, coarse_factor, inverse_diagonal, sweeps=sweeps)
             t0 = time.perf_counter()
@@ -208,15 +260,24 @@ def solve_refined(A, rhs, *, parent, patch, x0):
                 return best, best_residual, "two-level-lgmres"
         print(
             "longitudinal scalar two-level did not reach residual Gate; "
-            "falling back to sparse direct solve",
+            "trying bounded-fill fine-grid ILU",
             flush=True,
         )
     except (RuntimeError, ValueError, MemoryError, FloatingPointError) as exc:
         print(
-            f"longitudinal scalar two-level unavailable ({exc}); falling back to direct",
+            f"longitudinal scalar two-level unavailable ({exc}); trying fine-grid ILU",
             flush=True,
         )
 
+    best, best_residual, label = _ilu_fallback(A, rhs, best, best_residual)
+    if label is not None:
+        return best, best_residual, label
+
+    print(
+        "longitudinal scalar iterative solvers did not reach residual Gate; "
+        "falling back to sparse direct solve",
+        flush=True,
+    )
     t0 = time.perf_counter()
     field = _direct_solve(A, rhs)
     residual = float(_local_solve._relative_residual(A, field, rhs))
