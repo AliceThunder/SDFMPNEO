@@ -1,8 +1,15 @@
-"""Accelerate terminal dissipative scalar references without changing physics.
+"""Fast terminal-local dissipative scalar references.
 
-Large refined scalar Dirichlet systems use the certified fast scalar solver.
-Stage timings are printed because, on large terminal patches, topology/material
-assembly can dominate the linear solve and must be visible in production logs.
+The expensive geometry-resolved sigma/epsilon edge-dual experiment did not
+improve the certified dissipative h-convergence, while production timing showed
+that its OBB assembly dominated wall time.  The terminal dissipative Gate should
+isolate source/Galerkin resolution, not simultaneously redefine material
+geometry.  Refined patches therefore inherit the *production parent* EM
+sigma/epsilon field piecewise-constantly on parent cells and refine only the
+selected terminal charge/Galerkin space.
+
+Large refined Dirichlet systems still use the true-residual-certified fast
+scalar solver.  Stage timings remain visible in production logs.
 """
 from __future__ import annotations
 
@@ -14,6 +21,49 @@ from . import unified_terminal_dissipative_defect as _terminal
 from .unified_charge_regularized_source import terminal_charge_target
 from .unified_gradient_block_maxwell import gradient_operator
 from .unified_fast_scalar_solve import solve_refined
+
+
+_MATERIAL_SEMANTICS = "production_parent_piecewise_constant_complex_mass_v1"
+
+
+def _as_geometry(module, geometry):
+    if hasattr(geometry, "coils") and hasattr(geometry, "packages"):
+        return geometry
+    return module.UnifiedUWPTGeometry.from_mapping(geometry)
+
+
+def _parent_context(module, parent, geometry):
+    cached = module._cached_context(parent, geometry)
+    if cached is not None:
+        return cached
+    context = parent.geometry_context(geometry, assemble_thermal=False)
+    module._remember_context(parent, geometry, context)
+    return context
+
+
+def _parent_cell_ids(parent, patch):
+    """Map every refined patch cell to its containing production parent cell."""
+    ix = np.searchsorted(np.asarray(parent.x, float), np.asarray(patch.cell_axes[0], float), side="right") - 1
+    iy = np.searchsorted(np.asarray(parent.y, float), np.asarray(patch.cell_axes[1], float), side="right") - 1
+    iz = np.searchsorted(np.asarray(parent.z, float), np.asarray(patch.cell_axes[2], float), side="right") - 1
+    ix = np.clip(ix, 0, int(parent.nx) - 1).astype(np.int64)
+    iy = np.clip(iy, 0, int(parent.ny) - 1).astype(np.int64)
+    iz = np.clip(iz, 0, int(parent.nz) - 1).astype(np.int64)
+    ids = (
+        (ix[:, None, None] * int(parent.ny) + iy[None, :, None]) * int(parent.nz)
+        + iz[None, None, :]
+    )
+    out = np.asarray(ids, np.int64).reshape(-1)
+    if out.shape != (int(patch.n_cells),):
+        raise AssertionError("refined scalar parent-cell map has the wrong size")
+    return out
+
+
+def _prolong_parent_cell_values(parent, patch, values):
+    source = np.asarray(values).reshape(-1)
+    if source.shape != (int(parent.n_cells),):
+        raise ValueError("parent material field has incompatible cell count")
+    return np.asarray(source[_parent_cell_ids(parent, patch)]).reshape(-1)
 
 
 def install(module):
@@ -53,16 +103,13 @@ def install(module):
 
         total_started = time.perf_counter()
         patch._sdfmpneo_scalar_charge_target_only = True
-
-        t0 = time.perf_counter()
-        context = patch.geometry_context(geometry, assemble_thermal=False)
-        context_seconds = time.perf_counter() - t0
         p = int(port)
-        if p < 0 or p >= len(context.geometry.coils):
+        g = _as_geometry(module_arg, geometry)
+        if p < 0 or p >= len(g.coils):
             raise AssertionError("fast terminal dissipative source port is invalid")
 
         t0 = time.perf_counter()
-        q_target, charge_meta = terminal_charge_target(patch, context.geometry.coils[p])
+        q_target, charge_meta = terminal_charge_target(patch, g.coils[p])
         charge_seconds = time.perf_counter() - t0
         if abs(float(np.sum(q_target))) > 5e-14:
             raise FloatingPointError("fast terminal dissipative source is not balanced")
@@ -71,19 +118,27 @@ def install(module):
         G = gradient_operator(patch, gauge_fixed=False)
         gradient_seconds = time.perf_counter() - t0
 
+        # Freeze material geometry to the certified production parent operator.
+        # Every refined patch cell inherits sigma/epsilon from the production
+        # parent cell that contains its center.  This isolates terminal source
+        # resolution and avoids rebuilding expensive OBB material intersections.
         t0 = time.perf_counter()
-        diagonal, sigma, _hs = module_arg._volume_edge_diagonal(patch, context)
-        legacy_mass_seconds = time.perf_counter() - t0
+        parent_context = _parent_context(module_arg, parent, g)
+        parent_context_seconds = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        conductivity_hodge, edge_loss, exact_eps, legacy_eps, legacy_loss = (
-            _terminal._exact_refined_mass(patch, context)
+        parent_sigma, parent_eps, _mu_inv, _k, _cap, _temperature = parent.cell_properties(
+            parent_context, None, em=True
         )
-        exact_mass_seconds = time.perf_counter() - t0
-        diagonal = np.asarray(diagonal, complex) + (
-            1j * float(patch.omega) * (edge_loss - legacy_loss)
-            - (float(patch.omega) ** 2) * (exact_eps - legacy_eps)
+        sigma = np.asarray(_prolong_parent_cell_values(parent, patch, parent_sigma), float)
+        eps = np.asarray(_prolong_parent_cell_values(parent, patch, parent_eps), float)
+        edge_loss = np.asarray(patch.edge_cell_hodge @ sigma, float).reshape(-1)
+        edge_eps = np.asarray(patch.edge_cell_hodge @ eps, float).reshape(-1)
+        diagonal = (
+            1j * float(patch.omega) * edge_loss.astype(complex)
+            - (float(patch.omega) ** 2) * edge_eps
         )
+        material_seconds = time.perf_counter() - t0
 
         t0 = time.perf_counter()
         scalar = (G.T @ sp.diags(np.asarray(diagonal, complex), format="csr") @ G).tocsc()
@@ -120,7 +175,11 @@ def install(module):
         t0 = time.perf_counter()
         field = np.asarray(G @ phi_nodes, complex).reshape(-1)
         abs2 = np.abs(field) ** 2
-        q_cells = np.asarray(0.5 * (conductivity_hodge.T @ abs2), float).reshape(-1)
+        # Same production legacy loss operator as the scalar matrix above.
+        q_cells = np.asarray(
+            0.5 * sigma * np.asarray(patch.edge_cell_hodge.T @ abs2, float).reshape(-1),
+            float,
+        )
         mask = _terminal._cell_mask(patch, window)
         local_q = np.where(mask, q_cells, 0.0)
         local_d = float(2.0 * np.sum(local_q))
@@ -135,11 +194,11 @@ def install(module):
         print(
             "terminal scalar stages: "
             f"cells={patch.n_cells}, dofs={int(np.count_nonzero(interior))}, "
-            f"context={context_seconds:.1f}s, charge={charge_seconds:.1f}s, "
-            f"gradient={gradient_seconds:.1f}s, legacy_mass={legacy_mass_seconds:.1f}s, "
-            f"exact_mass={exact_mass_seconds:.1f}s, matrix={matrix_seconds:.1f}s, "
-            f"boundary={boundary_seconds:.1f}s, solve={solve_seconds:.1f}s, "
-            f"contraction={contraction_seconds:.1f}s, total={total_seconds:.1f}s",
+            f"parent_context={parent_context_seconds:.1f}s, charge={charge_seconds:.1f}s, "
+            f"gradient={gradient_seconds:.1f}s, material_prolong={material_seconds:.1f}s, "
+            f"matrix={matrix_seconds:.1f}s, boundary={boundary_seconds:.1f}s, "
+            f"solve={solve_seconds:.1f}s, contraction={contraction_seconds:.1f}s, "
+            f"total={total_seconds:.1f}s",
             flush=True,
         )
 
@@ -162,15 +221,14 @@ def install(module):
             "energy_window_lo": np.asarray(window[0], float).tolist(),
             "energy_window_hi": np.asarray(window[1], float).tolist(),
             "energy_window_cells": int(np.count_nonzero(mask)),
-            "material_semantics": "exact_edge_dual_sigma_epsilon",
+            "material_semantics": _MATERIAL_SEMANTICS,
             "balanced_terminal_charge": True,
             "scalar_solver": solver_label,
             "stage_seconds": {
-                "context": float(context_seconds),
+                "parent_context": float(parent_context_seconds),
                 "charge": float(charge_seconds),
                 "gradient": float(gradient_seconds),
-                "legacy_mass": float(legacy_mass_seconds),
-                "exact_mass": float(exact_mass_seconds),
+                "material_prolong": float(material_seconds),
                 "matrix": float(matrix_seconds),
                 "boundary": float(boundary_seconds),
                 "solve": float(solve_seconds),
@@ -184,4 +242,9 @@ def install(module):
     return module
 
 
-__all__ = ["install"]
+__all__ = [
+    "_MATERIAL_SEMANTICS",
+    "_parent_cell_ids",
+    "_prolong_parent_cell_values",
+    "install",
+]
