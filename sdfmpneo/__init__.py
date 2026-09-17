@@ -9,16 +9,15 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 33 keeps the full open two-terminal source, resolves its
-# physical source/package support below the production EM cell scale, and splits
-# longitudinal self correction into independently certified reactive and
-# dissipative near-field pieces.  The dissipative terminal Gate holds source
-# quadrature fixed across h-refinement and, critically, changes only the selected
-# feed/return charge component: the opposite terminal keeps its production coarse
-# nodal load exactly.  This makes a single-terminal additive defect literal on a
-# tensor-product refinement grid.  Public failure audits remain serializable and
-# the falsified whole-domain 9->6.75-mm dissipative reference stays disabled.
-_unified_model.FORMAT_VERSION = 33
+# Physics truth version 34 keeps the full open two-terminal source and the v33
+# single-terminal source-component lock, but removes the falsified expensive
+# refined-material experiment from the dissipative certificate.  Refined
+# terminal patches inherit production parent sigma/epsilon piecewise-constantly,
+# so the Gate isolates terminal source/Galerkin resolution instead of changing
+# source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
+# remain unchanged; the historical exact sigma/epsilon reference remains only as
+# diagnostic/regression code and is not used by production terminal truth.
+_unified_model.FORMAT_VERSION = 34
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -109,12 +108,14 @@ _install_terminal_dissipative_defect(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
 )
-# Pure solver acceleration: keep the v33 terminal dissipative physics/Gate but
-# route large refined scalar systems through true-residual-certified iterative
-# solvers. The adapter adds a solver tag internally; restore physics model names
-# immediately because linear algebra alone does not define truth semantics.
-_longitudinal_physics_model = _global_longitudinal_reference._MODEL
-_terminal_dissipative_physics_model = _terminal_dissipative_defect._MODEL
+# Refined dissipative patches use production-parent material coefficients rather
+# than the experimentally falsified geometry-resolved sigma/epsilon reassembly.
+# Large scalar systems still use true-residual-certified iterative solvers. The
+# material suffix is physics semantics and therefore remains in the model name;
+# the solver implementation itself does not alter the truth label.
+_material_suffix = "production_parent_piecewise_constant_complex_mass_v1"
+_longitudinal_physics_model = f"{_global_longitudinal_reference._MODEL}+{_material_suffix}"
+_terminal_dissipative_physics_model = f"{_terminal_dissipative_defect._MODEL}+{_material_suffix}"
 _install_fast_terminal_dissipative_scalar(_global_longitudinal_reference)
 _global_longitudinal_reference._MODEL = _longitudinal_physics_model
 _terminal_dissipative_defect._MODEL = _terminal_dissipative_physics_model
@@ -190,11 +191,10 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v33 changes the dissipative single-terminal reference semantics, so v32 cached
-# preflight/tensor artifacts must not be mixed with the new certificate. Solver
-# acceleration remains semantics-neutral but shares this new physical cache key.
+# v34 changes the dissipative refined-material semantics, so v33 cached
+# preflight/tensor artifacts must not be mixed with the new certificate.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 35
+_unified_runtime._CACHE_FORMAT = 36
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
