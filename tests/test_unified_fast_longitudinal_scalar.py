@@ -3,7 +3,7 @@ import types
 import numpy as np
 import scipy.sparse as sp
 
-import sdfmpneo.unified_fast_shared_longitudinal_scalar as fast_scalar
+import sdfmpneo.unified_fast_scalar_solve as fast_scalar
 import sdfmpneo.unified_global_longitudinal_reference as longitudinal
 import sdfmpneo.unified_terminal_dissipative_defect as terminal_defect
 
@@ -27,8 +27,6 @@ def _laplacian_3d(nx, ny, nz):
 
 
 def test_two_level_scalar_reaches_true_residual_without_direct_fallback(monkeypatch):
-    # Parent has two interior nodes/axis; fine patch inserts one midpoint into
-    # every parent interval while retaining exactly the same boundary nodes.
     parent_axis = np.array([0.0, 1.0, 2.0, 3.0])
     fine_axis = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
     parent = types.SimpleNamespace(x=parent_axis, y=parent_axis, z=parent_axis)
@@ -45,7 +43,7 @@ def test_two_level_scalar_reaches_true_residual_without_direct_fallback(monkeypa
         raise AssertionError("two-level scalar unexpectedly fell back to direct solve")
 
     monkeypatch.setattr(fast_scalar, "_direct_solve", forbidden_direct)
-    field, residual, label = fast_scalar._solve_refined(
+    field, residual, label = fast_scalar.solve_refined(
         A,
         rhs,
         parent=parent,
@@ -68,6 +66,4 @@ def test_production_installs_fast_scalar_paths_without_changing_truth_version():
     assert longitudinal._fast_reactive_scalar_installed is True
     assert longitudinal._longitudinal_state_cache_installed is True
     assert terminal_defect._fast_terminal_dissipative_scalar_installed is True
-    # The optional experimental shared/coarser dissipative Gate is deliberately
-    # not installed in production because it would change certification scale.
     assert not bool(getattr(longitudinal, "_shared_terminal_dissipative_installed", False))
