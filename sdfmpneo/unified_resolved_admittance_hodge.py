@@ -1,53 +1,29 @@
 """Geometry-resolved dielectric edge Hodge for longitudinal scalar references.
 
-The production scalar mass is
-
-    D = -omega**2 H_epsilon + i omega H_sigma + D_open.
-
-The package/seawater interface is an oriented box cut by a Cartesian edge-dual
-mesh.  The dissipative reference already integrates H_sigma on each quarter-cell
-dual wedge.  Doing only that still leaves H_epsilon as an arithmetic cut-cell
-mixture on the same interface.  This module evaluates the dielectric part on the
-same geometric dual wedges while preserving the existing coil-volume semantics.
-
-For the package/seawater part every dual wedge starts as seawater and exact OBB
-intersection volumes replace seawater epsilon by the corresponding package
-epsilon.  The embedded stranded-coil volume then applies the existing
-conservative cell-fraction correction from package epsilon to coil epsilon.  The
-wire conductivity remains excluded from the Maxwell volume model exactly as in
-the production constitutive law.
+The expensive package/dual OBB intersection geometry is shared with the resolved
+conductivity builder.  Pure-seawater wedges are initialized vectorially; only
+sparse edge-cell entries whose parent cells overlap a package receive geometric
+corrections.
 """
 from __future__ import annotations
 
 import numpy as np
 
 from .unified_background import EPS0
-from .unified_resolved_package_fraction import _SIGNS, _intersection_volume
-from .unified_resolved_conductive_hodge import _dual_wedge_bounds
+from .unified_resolved_conductive_hodge import _resolved_dual_package_volumes
 
 
 _MODEL = "resolved_obb_edge_dual_permittivity_v1"
 
 
-def _package_rows(background, context):
-    rows = []
-    for package, material in zip(context.geometry.packages, background.package_materials):
-        half = np.asarray(package.half_extent, float).reshape(3)
-        vertices = np.asarray(package.pose.apply(_SIGNS * half), float)
+def _package_epsilons(background):
+    values = []
+    for material in background.package_materials:
         epsilon = EPS0 * float(background.materials[material].get("relative_permittivity", 1.0))
         if not np.isfinite(epsilon) or epsilon <= 0.0:
             raise ValueError("package permittivity must be finite and positive")
-        rows.append(
-            (
-                package,
-                half,
-                vertices,
-                np.min(vertices, axis=0),
-                np.max(vertices, axis=0),
-                float(epsilon),
-            )
-        )
-    return rows
+        values.append(float(epsilon))
+    return np.asarray(values, float)
 
 
 def _build_permittivity_weights(background, context):
@@ -57,42 +33,30 @@ def _build_permittivity_weights(background, context):
     if not np.isfinite(sea_epsilon) or sea_epsilon <= 0.0:
         raise ValueError("seawater permittivity must be finite and positive")
 
-    packages = _package_rows(background, context)
     legacy_geometry = background.edge_cell_hodge.tocsr()
-    indices = legacy_geometry.indices
-    indptr = legacy_geometry.indptr
-    exact = np.zeros(background.n_edges, float)
+    geometric_row_sum = np.asarray(legacy_geometry.sum(axis=1), float).reshape(-1)
+    exact = sea_epsilon * geometric_row_sum
 
-    for edge in range(background.n_edges):
-        length = float(background.edge_lengths[edge])
-        l2 = length * length
-        total = 0.0
-        for pos in range(indptr[edge], indptr[edge + 1]):
-            cell = int(indices[pos])
-            dual_volume = float(legacy_geometry.data[pos]) * l2
-            if dual_volume <= 0.0:
-                continue
-            lo, hi = _dual_wedge_bounds(background, edge, cell)
-            integral = sea_epsilon * dual_volume
-            occupied = 0.0
-            for package, half, vertices, world_lo, world_hi, package_epsilon in packages:
-                if np.any(hi <= world_lo) or np.any(lo >= world_hi):
-                    continue
-                volume = _intersection_volume(package, half, vertices, lo, hi)
-                if volume <= 0.0:
-                    continue
-                # Packages are certified non-overlapping.  Clip only against
-                # floating-point sliver overlap at shared/tangent boundaries.
-                available = max(0.0, dual_volume - occupied)
-                use = min(float(volume), available)
-                integral += (package_epsilon - sea_epsilon) * use
-                occupied += use
-            total += integral / l2
-        exact[edge] = total
+    positions, edges, dual_volumes, package_volumes = _resolved_dual_package_volumes(
+        background, context
+    )
+    if positions.size:
+        package_eps = _package_epsilons(background)
+        if package_volumes.shape[1] != package_eps.size:
+            raise AssertionError("resolved package-volume/permittivity count mismatch")
+        delta_integral = package_volumes @ (package_eps - sea_epsilon)
+        contribution = np.zeros_like(delta_integral)
+        good = dual_volumes > np.finfo(float).tiny
+        contribution[good] = (
+            np.asarray(legacy_geometry.data[positions[good]], float)
+            * delta_integral[good]
+            / dual_volumes[good]
+        )
+        np.add.at(exact, np.asarray(edges, dtype=np.int64), contribution)
 
-    # The exact OBB replacement above treats each package as uniformly filled by
-    # package dielectric.  Restore the existing stranded-coil dielectric volume
-    # semantics as a conservative cell-fraction correction inside its package.
+    # Restore the existing stranded-coil dielectric-volume semantics inside each
+    # package as the same conservative cell-fraction correction used by the
+    # production model.
     cell_correction = np.zeros(background.n_cells, float)
     for coil_material, package_material in zip(
         background.coil_materials, background.package_materials
