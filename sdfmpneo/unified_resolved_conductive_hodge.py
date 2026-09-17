@@ -1,25 +1,9 @@
 """Geometry-resolved conductive edge Hodge for the open-domain Maxwell model.
 
-The production geometry contains conductive seawater surrounding electrically
-insulating coil packages.  A cell-volume fraction is sufficient for volume
-bookkeeping, but using the arithmetic cell mixture directly in the edge Hodge
-smears a thin 0 S/m package / 5 S/m seawater interface into an artificial
-conductive layer whose thickness changes with the Cartesian mesh.
-
-For the diagonal Cartesian edge mass used by this discretization, every
-edge--cell contribution is an axis-aligned quarter-cell dual wedge with volume
-``cell_volume/4``.  The package is an oriented box.  We can therefore integrate
-conductivity over each dual wedge geometrically, using the same exact OBB/AABB
-intersection kernel as the resolved package-volume model:
-
-    H_sigma[e,c] = (1 / edge_length[e]**2)
-                   * integral_{dual(e,c)} sigma(x) dV.
-
-In the current production material model all EM coil/package conductivity is
-zero and only seawater conducts, so the integral is simply the seawater volume
-of the dual wedge times sigma_seawater.  The sparse edge--cell matrix is retained
-rather than only its row sum so Maxwell loss, cell Joule heat and thermal modal
-heat all share exactly the same loss operator.
+Only dual wedges whose parent cells intersect a package require geometric work.
+Pure-seawater wedges are initialized vectorially.  Package/dual intersection
+volumes are cached on the geometry context and shared with the resolved
+permittivity builder, so sigma and epsilon never repeat the same OBB clipping.
 """
 from __future__ import annotations
 
@@ -66,13 +50,9 @@ def _dual_wedge_bounds(background, edge, cell):
 
 def _package_data(background, context):
     rows = []
-    active_cells = set()
+    active = np.zeros(background.n_cells, dtype=bool)
     for package, material in zip(context.geometry.packages, background.package_materials):
         sigma = float(background._temperature_material(material, background.ambient_temperature))
-        # The exact production specialization relies on the package and the wire
-        # both being insulating in the Maxwell volume model.  If a future model
-        # makes the package conductive, the embedded zero-sigma wire geometry
-        # must also be integrated explicitly before this shortcut is valid.
         if abs(sigma) > 1e-14:
             raise ValueError(
                 "exact edge-dual conductivity currently requires electrically insulating packages"
@@ -89,12 +69,58 @@ def _package_data(background, context):
                 np.flatnonzero((values[:-1] < float(upper)) & (values[1:] > float(lower)))
             )
         if all(len(values) for values in index_sets):
-            for i in index_sets[0]:
-                for j in index_sets[1]:
-                    base = (int(i) * background.ny + int(j)) * background.nz
-                    for k in index_sets[2]:
-                        active_cells.add(int(base + int(k)))
-    return rows, active_cells
+            ii, jj, kk = np.meshgrid(*index_sets, indexing="ij")
+            cells = ((ii * background.ny + jj) * background.nz + kk).reshape(-1)
+            active[np.asarray(cells, dtype=np.int64)] = True
+    return rows, active
+
+
+def _resolved_dual_package_volumes(background, context):
+    """Return active CSR positions and exact package volumes in those dual wedges.
+
+    This is the expensive OBB clipping stage.  It is performed once per spatial
+    context and reused by both the conductivity and permittivity Hodge builders.
+    """
+    cached = getattr(context, "_sdfmpneo_resolved_dual_package_volumes", None)
+    if cached is not None:
+        return cached
+
+    packages, active_cells = _package_data(background, context)
+    legacy = background.edge_cell_hodge.tocsr()
+    indices = legacy.indices
+    indptr = legacy.indptr
+    positions = np.flatnonzero(active_cells[indices]).astype(np.int64, copy=False)
+    if positions.size:
+        edges = np.searchsorted(indptr, positions, side="right") - 1
+        edges = np.asarray(edges, dtype=np.int64)
+    else:
+        edges = np.empty(0, dtype=np.int64)
+    dual_volumes = np.zeros(positions.size, float)
+    package_volumes = np.zeros((positions.size, len(packages)), float)
+
+    for n, (pos, edge) in enumerate(zip(positions, edges)):
+        cell = int(indices[int(pos)])
+        length = float(background.edge_lengths[int(edge)])
+        l2 = length * length
+        dual_volume = float(legacy.data[int(pos)]) * l2
+        dual_volumes[n] = dual_volume
+        if dual_volume <= 0.0:
+            continue
+        lo, hi = _dual_wedge_bounds(background, int(edge), cell)
+        remaining = dual_volume
+        for p, (package, half, vertices, world_lo, world_hi) in enumerate(packages):
+            if remaining <= 0.0:
+                break
+            if np.any(hi <= world_lo) or np.any(lo >= world_hi):
+                continue
+            volume = float(_intersection_volume(package, half, vertices, lo, hi))
+            use = min(max(volume, 0.0), remaining)
+            package_volumes[n, p] = use
+            remaining -= use
+
+    cached = (positions, edges, dual_volumes, package_volumes)
+    context._sdfmpneo_resolved_dual_package_volumes = cached
+    return cached
 
 
 def _build_conductivity_hodge(background, context):
@@ -103,37 +129,24 @@ def _build_conductivity_hodge(background, context):
     )
     if not np.isfinite(sea_sigma) or sea_sigma < 0.0:
         raise ValueError("seawater conductivity must be finite and non-negative")
-    packages, active_cells = _package_data(background, context)
-    legacy = background.edge_cell_hodge.tocsr()
-    indices = legacy.indices
-    indptr = legacy.indptr
-    # Pure-seawater dual wedges need no geometric work.
-    data = sea_sigma * np.asarray(legacy.data, float).copy()
 
-    if active_cells:
-        active_cells = frozenset(active_cells)
-        for edge in range(background.n_edges):
-            length = float(background.edge_lengths[edge])
-            l2 = length * length
-            for pos in range(indptr[edge], indptr[edge + 1]):
-                cell = int(indices[pos])
-                if cell not in active_cells:
-                    continue
-                dual_volume = float(legacy.data[pos]) * l2
-                if dual_volume <= 0.0:
-                    data[pos] = 0.0
-                    continue
-                lo, hi = _dual_wedge_bounds(background, edge, cell)
-                insulating = 0.0
-                for package, half, vertices, world_lo, world_hi in packages:
-                    if np.any(hi <= world_lo) or np.any(lo >= world_hi):
-                        continue
-                    insulating += _intersection_volume(package, half, vertices, lo, hi)
-                insulating = float(np.clip(insulating, 0.0, dual_volume))
-                data[pos] = sea_sigma * max(0.0, dual_volume - insulating) / l2
+    legacy = background.edge_cell_hodge.tocsr()
+    data = sea_sigma * np.asarray(legacy.data, float).copy()
+    positions, _edges, dual_volumes, package_volumes = _resolved_dual_package_volumes(
+        background, context
+    )
+    if positions.size:
+        insulating = np.minimum(
+            np.sum(package_volumes, axis=1), np.maximum(dual_volumes, 0.0)
+        )
+        ratio = np.ones_like(dual_volumes)
+        good = dual_volumes > np.finfo(float).tiny
+        ratio[good] = np.maximum(0.0, 1.0 - insulating[good] / dual_volumes[good])
+        ratio[~good] = 0.0
+        data[positions] = sea_sigma * np.asarray(legacy.data[positions], float) * ratio
 
     matrix = sp.csr_matrix(
-        (data, indices.copy(), indptr.copy()), shape=legacy.shape, dtype=float
+        (data, legacy.indices.copy(), legacy.indptr.copy()), shape=legacy.shape, dtype=float
     )
     matrix.eliminate_zeros()
     weights = np.asarray(matrix.sum(axis=1), float).reshape(-1)
@@ -215,4 +228,10 @@ def install(background_cls):
     return background_cls
 
 
-__all__ = ["install"]
+__all__ = [
+    "_MODEL",
+    "_build_conductivity_hodge",
+    "_dual_wedge_bounds",
+    "_resolved_dual_package_volumes",
+    "install",
+]
