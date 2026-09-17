@@ -12,7 +12,7 @@ import scipy.sparse as sp
 
 from . import unified_longitudinal_patch_consistency as _consistency
 from .unified_charge_regularized_source import terminal_charge_target
-from .unified_fast_shared_longitudinal_scalar import _solve_refined
+from .unified_fast_scalar_solve import solve_refined
 
 
 def install(module):
@@ -78,7 +78,7 @@ def install(module):
             module, parent, global_potential, patch
         )
         x0 = np.asarray(restricted[interior], complex).reshape(-1)
-        solved, residual, solver_label = _solve_refined(
+        solved, residual, solver_label = solve_refined(
             Sii, rhs_i, parent=parent, patch=patch, x0=x0
         )
         phi_nodes[interior] = solved
