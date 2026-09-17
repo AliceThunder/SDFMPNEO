@@ -9,7 +9,8 @@ sigma/epsilon field piecewise-constantly on parent cells and refine only the
 selected terminal charge/Galerkin space.
 
 Large refined Dirichlet systems still use the true-residual-certified fast
-scalar solver.  Stage timings remain visible in production logs.
+scalar solver.  Refined scalar backgrounds also skip Maxwell-only curl/face and
+reconstruction topology. Stage timings remain visible in production logs.
 """
 from __future__ import annotations
 
@@ -18,9 +19,11 @@ import numpy as np
 import scipy.sparse as sp
 
 from . import unified_terminal_dissipative_defect as _terminal
+from . import unified_longitudinal_patch_consistency as _consistency
 from .unified_charge_regularized_source import terminal_charge_target
 from .unified_gradient_block_maxwell import gradient_operator
 from .unified_fast_scalar_solve import solve_refined
+from .unified_scalar_patch_background import install as _install_lightweight_scalar_patch
 
 
 _MATERIAL_SEMANTICS = "production_parent_piecewise_constant_complex_mass_v1"
@@ -69,6 +72,11 @@ def _prolong_parent_cell_values(parent, patch, values):
 def install(module):
     if bool(getattr(_terminal, "_fast_terminal_dissipative_scalar_installed", False)):
         return module
+
+    # This must be installed on the shared patch factory before preflight starts;
+    # otherwise every scalar-only terminal patch still builds full Maxwell curl
+    # and reconstruction topology even though those operators are never used.
+    _install_lightweight_scalar_patch(_consistency)
 
     original = _terminal._balanced_state
     original_reference = _terminal._terminal_reference
