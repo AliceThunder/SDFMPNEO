@@ -19,10 +19,7 @@ import scipy.sparse as sp
 from . import unified_terminal_dissipative_defect as _terminal
 from .unified_charge_regularized_source import terminal_charge_target
 from .unified_gradient_block_maxwell import gradient_operator
-from .unified_fast_shared_longitudinal_scalar import _solve_refined
-
-
-_MODEL_SUFFIX = "two_level_terminal_dissipative_scalar_v1"
+from .unified_fast_scalar_solve import solve_refined
 
 
 def install(module):
@@ -100,7 +97,7 @@ def install(module):
             module_arg, parent, parent_potential, patch
         )
         x0 = np.asarray(restricted[interior], complex).reshape(-1)
-        solved, solve_residual, solver_label = _solve_refined(
+        solved, solve_residual, solver_label = solve_refined(
             Sii, rhs_i, parent=parent, patch=patch, x0=x0
         )
         phi_nodes[interior] = solved
@@ -142,8 +139,6 @@ def install(module):
         }
 
     _terminal._balanced_state = balanced_state
-    _terminal._MODEL = f"{_terminal._MODEL}+{_MODEL_SUFFIX}"
-    module._MODEL = f"{module._MODEL}+{_MODEL_SUFFIX}"
     _terminal._fast_terminal_dissipative_scalar_installed = True
     return module
 
