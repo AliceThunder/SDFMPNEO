@@ -15,10 +15,10 @@ payloads.  That tuple contains an OpenBoundaryBackground object and is an
 implementation cache, not physics evidence; retaining it made failed preflight
 reports non-JSON-serializable.
 
-After the common quadrature rule is installed, the single-terminal component
-lock is installed as the outermost source adapter: only the selected feed/return
-cloud is reprojected on the refined tensor grid, while the opposite terminal
-retains the production coarse nodal load exactly.
+After the common quadrature rule is installed, refined scalar patch construction
+is switched to a lightweight topology that omits curl/face/reconstruction data,
+and the single-terminal component lock is installed as the outermost source
+adapter.
 """
 from __future__ import annotations
 
@@ -84,10 +84,7 @@ def install(
         )
         return u, wu, v, wv, int(up), int(vp), resolution
 
-    # The terminal source installer resolves this module global dynamically.
     terminal_source_module._cross_section_quadrature = cross_section_quadrature
-    # unified_charge_regularized_source imported the helper by value, so update
-    # that binding explicitly as well.
     charge_source_module._cross_section_quadrature = cross_section_quadrature
 
     original_balanced_state = terminal_defect_module._balanced_state
@@ -157,8 +154,6 @@ def install(
                 _ACTIVE_RESOLUTION.reset(token)
 
         result = dict(result)
-        # Internal cache state is intentionally not part of the public physics
-        # audit and contains a background object that json.dumps cannot encode.
         result.pop("prepared", None)
         if resolution is not None:
             result["source_quadrature_resolution"] = float(resolution)
@@ -172,9 +167,17 @@ def install(
     longitudinal_module._MODEL = f"{longitudinal_module._MODEL}+{_MODEL_SUFFIX}"
     terminal_defect_module._shared_source_quadrature_fix_installed = True
 
-    # Install after the quadrature wrapper so the component-lock context encloses
-    # it: selected fine charge uses the common validation quadrature while the
-    # opposite terminal remains the coarse production nodal load.
+    # All genuinely refined longitudinal patches are scalar-only.  Install the
+    # lightweight factory globally for the shared consistency layer; coarse
+    # parent-consistency patches remain full production backgrounds.
+    from . import unified_longitudinal_patch_consistency as consistency
+    from .unified_scalar_patch_background import install as install_scalar_patch_background
+
+    install_scalar_patch_background(consistency)
+
+    # Install after quadrature/topology adapters so the component-lock context
+    # encloses them: selected fine charge uses the common validation quadrature
+    # while the opposite terminal remains the coarse production nodal load.
     from .unified_terminal_component_lock import install as install_component_lock
 
     install_component_lock(terminal_defect_module, longitudinal_module)
