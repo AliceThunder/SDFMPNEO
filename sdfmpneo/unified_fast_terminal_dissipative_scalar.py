@@ -71,6 +71,7 @@ def install(module):
         return module
 
     original = _terminal._balanced_state
+    original_reference = _terminal._terminal_reference
 
     def balanced_state(
         module_arg,
@@ -237,7 +238,17 @@ def install(module):
             },
         }
 
+    def terminal_reference(*args, **kwargs):
+        result = dict(original_reference(*args, **kwargs))
+        refined = result.get("refined")
+        if isinstance(refined, dict):
+            result["refined_material_semantics"] = refined.get(
+                "material_semantics", _MATERIAL_SEMANTICS
+            )
+        return result
+
     _terminal._balanced_state = balanced_state
+    _terminal._terminal_reference = terminal_reference
     _terminal._fast_terminal_dissipative_scalar_installed = True
     return module
 
