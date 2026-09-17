@@ -9,24 +9,25 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 31 keeps the full open two-terminal source, resolves its
+# Physics truth version 32 keeps the full open two-terminal source, resolves its
 # physical source/package support below the production EM cell scale, declares
 # terminal charge continuity independently from incidental edge deposition, and
 # splits longitudinal self correction into independently certified reactive and
-# dissipative near-field pieces. The reactive term uses the inherited-boundary
-# full-port terminal patch. Dissipative self loss now keeps the complete balanced
-# full-port q_target in every solve, refines one terminal at a time, and contracts
-# Joule energy only over disjoint parent-cell-aligned terminal windows. This
-# avoids inadmissible isolated net-charge scalar solves while leaving smooth
-# feed/return cross-field physics global. The falsified whole-domain 9->6.75-mm
+# dissipative near-field pieces. The balanced terminal-local dissipative Gate now
+# holds the physical terminal source quadrature fixed at validation resolution
+# across its reference/validation Galerkin spaces, so h-refinement no longer
+# changes the source measure being compared. Public failure audits contain only
+# serializable physics evidence. The falsified whole-domain 9->6.75-mm
 # dissipative reference remains disabled in production.
-_unified_model.FORMAT_VERSION = 31
+_unified_model.FORMAT_VERSION = 32
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_resolved_package_fraction import install as _install_resolved_package_fraction
+from . import unified_terminal_contact_source as _terminal_contact_source
 from .unified_terminal_contact_source import install as _install_terminal_contact_source
+from . import unified_charge_regularized_source as _charge_regularized_source
 from .unified_charge_regularized_source import install as _install_charge_regularized_source
 from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
 
@@ -81,7 +82,9 @@ from .unified_reactive_longitudinal_reference import install as _install_reactiv
 from . import unified_global_dissipative_reference as _global_dissipative_reference_impl
 from .unified_global_dissipative_reference import install as _install_global_dissipative_reference
 from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
+from . import unified_terminal_dissipative_defect as _terminal_dissipative_defect
 from .unified_terminal_dissipative_defect import install as _install_terminal_dissipative_defect
+from .unified_terminal_dissipative_quadrature_fix import install as _install_terminal_dissipative_quadrature_fix
 from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
 from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
 
@@ -104,6 +107,12 @@ _install_resolved_dissipative_reference(
 _install_terminal_dissipative_defect(
     _global_longitudinal_reference,
     _global_dissipative_reference_impl,
+)
+_install_terminal_dissipative_quadrature_fix(
+    _terminal_contact_source,
+    _charge_regularized_source,
+    _terminal_dissipative_defect,
+    _global_longitudinal_reference,
 )
 _install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
 _install_longitudinal_preflight_schedule(
@@ -160,11 +169,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v31 replaces the transient v30 net-charge-component idea with the admissible
-# balanced full-port / terminal-local energy-defect truth. Old v29/v30 artifacts
-# cannot be mixed with this definition.
+# v32 keeps the admissible v31 balanced full-port / terminal-local energy-defect
+# truth but removes source-quadrature/Galerkin co-refinement from its convergence
+# Gate. Old v31 artifacts cannot be mixed with this definition.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 33
+_unified_runtime._CACHE_FORMAT = 34
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
