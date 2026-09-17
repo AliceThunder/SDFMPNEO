@@ -1,13 +1,10 @@
 """Exact Cartesian-cell / rotated-package intersection fractions.
 
-The package is an oriented rectangular box (OBB), while the Maxwell material
-grid is Cartesian.  A fixed indicator quadrature aliases a thin rotated package
-when its thickness is below the EM cell size.  Because both regions are convex
-boxes, their intersection fraction can instead be evaluated geometrically:
-collect corners lying in the opposite box plus both sets of edge/face
-intersections, then take the convex-hull volume.  The represented package is
-therefore independent of mesh resolution, rotation and sub-cell phase up to
-floating-point geometry error.
+Most cells in a refined terminal patch are either wholly inside a package or
+clearly outside it.  Those cases are classified vectorially in package-local
+coordinates.  The expensive convex-polyhedron intersection is reserved only for
+true boundary cells, preserving the exact geometric fraction while avoiding
+hundreds of thousands of Python/Qhull calls on refined scalar patches.
 """
 from __future__ import annotations
 
@@ -58,7 +55,6 @@ def _intersection_volume(package, half, obb_vertices, cell_lo, cell_hi):
     )
     tolerance = 2.0e-12 * scale
 
-    # Entire Cartesian cell is inside the OBB.
     if all(_inside_obb(package, half, point, tolerance) for point in cell_vertices):
         return float(np.prod(cell_hi - cell_lo))
 
@@ -70,7 +66,6 @@ def _intersection_volume(package, half, obb_vertices, cell_lo, cell_hi):
         if _inside_obb(package, half, point, tolerance):
             _append_unique(points, point, tolerance)
 
-    # OBB edges against the six Cartesian cell faces.
     for first, second in _EDGE_PAIRS:
         p0 = obb_vertices[first]
         p1 = obb_vertices[second]
@@ -86,8 +81,6 @@ def _intersection_volume(package, half, obb_vertices, cell_lo, cell_hi):
                     if _inside_aabb(point, cell_lo, cell_hi, tolerance):
                         _append_unique(points, point, tolerance)
 
-    # Cartesian cell edges against the six OBB faces.  Transform each edge to
-    # package coordinates, where the OBB faces are simply q_axis=+/-half_axis.
     for first, second in _EDGE_PAIRS:
         p0 = cell_vertices[first]
         p1 = cell_vertices[second]
@@ -118,9 +111,6 @@ def _intersection_volume(package, half, obb_vertices, cell_lo, cell_hi):
     try:
         volume = float(ConvexHull(values).volume)
     except QhullError:
-        # A genuinely three-dimensional box intersection should be hullable. If
-        # Qhull encounters a near-degenerate sliver, its volume is below the
-        # geometric tolerance and may safely be treated as zero.
         return 0.0
     cell_volume = float(np.prod(cell_hi - cell_lo))
     return float(np.clip(volume, 0.0, cell_volume))
@@ -149,13 +139,41 @@ def install(background_cls):
         out = np.zeros(self.n_cells, float)
         if any(len(active) == 0 for active in index_sets):
             return out
-        for i, j, k in itertools.product(*index_sets):
-            lo = np.array([self.x[i], self.y[j], self.z[k]], float)
-            hi = np.array([self.x[i + 1], self.y[j + 1], self.z[k + 1]], float)
+
+        ii, jj, kk = np.meshgrid(*index_sets, indexing="ij")
+        i = ii.reshape(-1).astype(np.int64, copy=False)
+        j = jj.reshape(-1).astype(np.int64, copy=False)
+        k = kk.reshape(-1).astype(np.int64, copy=False)
+        ids = ((i * self.ny + j) * self.nz + k).astype(np.int64, copy=False)
+        centers = np.column_stack(
+            (self.cell_axes[0][i], self.cell_axes[1][j], self.cell_axes[2][k])
+        )
+        world_half = 0.5 * np.column_stack((self.dx[i], self.dy[j], self.dz[k]))
+        rotation = np.asarray(package.pose.rotation, float)
+        local_centers = np.asarray(package.pose.inverse(centers), float)
+        local_radius = world_half @ np.abs(rotation)
+        tolerance = 2.0e-12 * max(float(np.linalg.norm(2.0 * half)), 1.0)
+
+        fully_inside = np.all(
+            np.abs(local_centers) + local_radius <= half[None, :] + tolerance,
+            axis=1,
+        )
+        definitely_outside = np.any(
+            np.abs(local_centers) - local_radius >= half[None, :] + tolerance,
+            axis=1,
+        )
+        out[ids[fully_inside]] = 1.0
+
+        candidates = np.flatnonzero(~fully_inside & ~definitely_outside)
+        for n in candidates:
+            ci, cj, ck = int(i[n]), int(j[n]), int(k[n])
+            lo = np.array([self.x[ci], self.y[cj], self.z[ck]], float)
+            hi = np.array([self.x[ci + 1], self.y[cj + 1], self.z[ck + 1]], float)
             volume = _intersection_volume(package, half, obb_vertices, lo, hi)
             if volume <= 0.0:
                 continue
-            out[self._cell_id(i, j, k)] = volume / float(self.cell_volumes[self._cell_id(i, j, k)])
+            cell = int(ids[n])
+            out[cell] = volume / float(self.cell_volumes[cell])
         return np.clip(out, 0.0, 1.0)
 
     background_cls._package_fraction = package_fraction
@@ -164,4 +182,4 @@ def install(background_cls):
     return background_cls
 
 
-__all__ = ["install"]
+__all__ = ["_EDGE_PAIRS", "_SIGNS", "_intersection_volume", "install"]
