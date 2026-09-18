@@ -508,13 +508,26 @@ def _trajectory_metric(background, context, mass_diag, truth, approx):
     scale = max(float(np.max(np.abs(truth))), np.finfo(float).tiny)
     minimum = float(abs(np.min(approx) - np.min(truth)) / scale)
     maximum = float(abs(np.max(approx) - np.max(truth)) / scale)
-    wire = 0.0
+    wire_truth = []
+    wire_approx = []
     for weights in context.line_heat_weights:
         weights = np.asarray(weights, float).reshape(-1)
-        full_value = float(np.dot(weights, truth))
-        rom_value = float(np.dot(weights, approx))
-        denominator = max(abs(full_value), scale * 1e-12, np.finfo(float).tiny)
-        wire = max(wire, abs(rom_value - full_value) / denominator)
+        wire_truth.append(float(np.dot(weights, truth)))
+        wire_approx.append(float(np.dot(weights, approx)))
+    if wire_truth:
+        wire_truth = np.asarray(wire_truth, float)
+        wire_approx = np.asarray(wire_approx, float)
+        # Treat wire temperatures as one observable vector. Component-wise
+        # relative error is ill-posed when an unexcited remote wire is
+        # physically near zero and previously produced 1e9-scale false errors.
+        denominator = max(
+            float(np.max(np.abs(wire_truth))),
+            scale * 1e-12,
+            np.finfo(float).tiny,
+        )
+        wire = float(np.max(np.abs(wire_approx - wire_truth)) / denominator)
+    else:
+        wire = 0.0
     return {
         "field_mass_relative_error": field,
         "minimum_temperature_relative_error": minimum,
