@@ -426,22 +426,38 @@ def _anchor_summary(anchor, error):
     }
 
 
-def _audit_geometries(background, library, geometries, shifts, monitor, role):
+def _audit_geometries(
+    background,
+    library,
+    geometries,
+    shifts,
+    monitor,
+    role,
+    *,
+    anchor_sets=None,
+):
     worst = (-1.0, None)
     diagnostics = {}
     count = 0
+    geometries = list(geometries)
+    if anchor_sets is not None and len(anchor_sets) != len(geometries):
+        raise ValueError("precomputed thermal anchor set count does not match geometries")
     for gi, geometry in enumerate(geometries):
         if monitor is not None:
             monitor.checkpoint()
         phi = library.basis_for_geometry(background, geometry)
-        anchors = _geometry_anchors(
-            background,
-            geometry,
-            shifts,
-            gi,
-            volume=True,
-            wire=True,
-            uniform_initial=True,
+        anchors = (
+            list(anchor_sets[gi])
+            if anchor_sets is not None
+            else _geometry_anchors(
+                background,
+                geometry,
+                shifts,
+                gi,
+                volume=True,
+                wire=True,
+                uniform_initial=True,
+            )
         )
         count += len(anchors)
         local_worst = 0.0
