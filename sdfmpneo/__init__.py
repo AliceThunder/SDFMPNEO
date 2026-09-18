@@ -9,7 +9,14 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 34 keeps the full open two-terminal source and the v33
+# Physics truth version 35 keeps the v34 EM truth and upgrades the deterministic
+# thermal ROM construction: each K+sM factorization solves the complete source
+# block once, training anchors are reused by the audit, and the background block
+# is certified against the same volume+wire+initial source family required by the
+# training Gate.  Wire trajectory error is measured as a vector observable so an
+# unexcited near-zero remote wire cannot create a meaningless 1e9 relative error.
+#
+# EM/source semantics remain those of v34.  The v33
 # single-terminal source-component lock, but removes the falsified expensive
 # refined-material experiment from the dissipative certificate.  Refined
 # terminal patches inherit production parent sigma/epsilon piecewise-constantly,
@@ -17,7 +24,7 @@ from . import unified_model as _unified_model
 # source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
 # remain unchanged; the historical exact sigma/epsilon reference remains only as
 # diagnostic/regression code and is not used by production terminal truth.
-_unified_model.FORMAT_VERSION = 34
+_unified_model.FORMAT_VERSION = 35
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -191,11 +198,10 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v34 production truth is unchanged, but cache format 37 also records the corrected
-# mesh-Gate semantics: validation grids reuse the production terminal dissipative
-# subgrid correction instead of silently redefining it.
+# v35 changes the deterministic thermal basis source family and trajectory metric;
+# cache format 38 also retains the corrected mesh-Gate semantics from v34.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 37
+_unified_runtime._CACHE_FORMAT = 38
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
