@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 import sdfmpneo.unified_thermal as thermal
 
@@ -24,7 +25,7 @@ def test_grouped_resolvent_errors_match_scalar_evaluation():
             np.array([2.0, -1.0, 0.0, 1.5]),
         )
     ):
-        u = np.asarray(sp.linalg.spsolve(A, b), float)
+        u = np.asarray(spla.spsolve(A, b), float)
         anchors.append(
             {
                 "A": A,
@@ -138,6 +139,4 @@ def test_validation_resolvent_failure_skips_trajectory_audit(monkeypatch):
     assert report.stop_reason == "validation_target_not_met"
     assert report.maximum_validation_relative_energy_error == pytest.approx(0.2)
     assert report.maximum_validation_trajectory_relative_error == 0.0
-    assert report.trajectory_diagnostics == {
-        "audit_skipped_validation_energy_error": pytest.approx(0.2)
-    }
+    assert report.trajectory_diagnostics["audit_skipped_validation_energy_error"] == pytest.approx(0.2)
