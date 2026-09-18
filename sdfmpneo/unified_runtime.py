@@ -122,11 +122,16 @@ def _require_effective_thermal_basis(report):
     trajectory=get("maximum_validation_trajectory_relative_error",None)
     if trajectory is None: raise RuntimeError("geometry-aware thermal cache lacks the required held-out trajectory audit; regenerate training cache")
     if bool(get("converged",False)): return
-    energy=get("maximum_validation_relative_energy_error",None)
-    if energy is None or float(energy)==0.0: energy=get("maximum_anchor_relative_energy_error",float("nan"))
+    train_energy=float(get("maximum_anchor_relative_energy_error",float("nan")))
+    validation_energy=float(get("maximum_validation_relative_energy_error",float("nan")))
     target=get("target_relative_error",float("nan")); rank=int(get("basis_dimension",0)); reason=str(get("stop_reason","unknown"))
     worst=(get("worst_validation_trajectory",{}) or get("worst_validation_anchor",{}) or get("worst_training_anchor",{}) or {})
-    raise RuntimeError(f"geometry-aware thermal ROM 未达到训练要求：rank={rank}, energy error={float(energy):.3e}, trajectory error={float(trajectory):.3e}, target={float(target):.3e}, stop={reason}, worst={json.dumps(jsonable(worst),ensure_ascii=False,sort_keys=True)}。")
+    raise RuntimeError(
+        f"geometry-aware thermal ROM 未达到训练要求：rank={rank}, "
+        f"train energy={train_energy:.3e}, validation energy={validation_energy:.3e}, "
+        f"trajectory error={float(trajectory):.3e}, target={float(target):.3e}, "
+        f"stop={reason}, worst={json.dumps(jsonable(worst),ensure_ascii=False,sort_keys=True)}。"
+    )
 
 
 def _gate_sample_count(settings):
