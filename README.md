@@ -275,6 +275,8 @@ canonical rank 用：
 
 包括 thermal-mass field error、`Tmin/Tmax`、wire-average temperature、uniform initial-condition evolution、forced steady field 和 steady reduced coordinate。
 
+为避免坏基底在失败后继续消耗数分钟做指数传播，held-out resolvent energy Gate 会先执行；若该 Gate 已超出目标，trajectory audit 直接跳过并 fail closed。只有 resolvent 通过后才执行完整 trajectory/steady audit。thermal resolvent 构建和 held-out energy audit 还会按 geometry/shift 批量共享降阶矩阵分解；wire anchors 也在端口之间共享同一次 full thermal factorization。
+
 100 s、1000 s 等长时间不要求相同时间尺度的专用 basis，而是由同一个 reduced ODE 连续推进。
 
 ## 8. Geometry-dependent Joule tensors
