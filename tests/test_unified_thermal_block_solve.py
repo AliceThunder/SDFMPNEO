@@ -3,7 +3,7 @@ import types
 import numpy as np
 import scipy.sparse as sp
 
-from sdfmpneo.unified_thermal import _solve_block, _trajectory_metric
+from sdfmpneo.unified_thermal import _maxwell_port_fields, _solve_block, _trajectory_metric
 
 
 def test_thermal_block_solve_matches_dense_multiple_rhs():
@@ -40,3 +40,24 @@ def test_wire_trajectory_metric_uses_observable_vector_scale():
     )
     assert metrics["maximum_wire_average_relative_error"] < 0.02
     assert metrics["composite_relative_error"] < 0.02
+
+
+def test_thermal_anchor_maxwell_uses_installed_truth_solver(monkeypatch):
+    import sdfmpneo.unified_tensor_surrogate as tensor_truth
+
+    expected = np.array([[1.0 + 2.0j], [3.0 - 1.0j]])
+    called = {}
+
+    def fake(background, context):
+        called["background"] = background
+        called["context"] = context
+        return expected.copy(), 1.0e-12
+
+    monkeypatch.setattr(tensor_truth, "_solve_port_fields", fake)
+    background = types.SimpleNamespace(
+        background_config={"linear_solver": {"relative_residual_tolerance": 1e-9}}
+    )
+    context = object()
+    got = _maxwell_port_fields(background, context)
+    np.testing.assert_allclose(got, expected)
+    assert called == {"background": background, "context": context}
