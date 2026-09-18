@@ -36,8 +36,15 @@ def _cfg(background):
     cfg.setdefault("ilu_strong_shift_factor", 1e-1)
     cfg.setdefault("transverse_stabilization_factor", 3e-2)
     cfg.setdefault("transverse_strong_stabilization_factor", 1e-1)
-    cfg.setdefault("defect_steps", 2)
-    cfg.setdefault("defect_start_residual", 1e-8)
+    # Keep compatibility with run.py's iterative_defect_* names.  These are
+    # solver-policy aliases only; the physical residual certificate is unchanged.
+    cfg.setdefault("defect_steps", cfg.get("iterative_defect_steps", 2))
+    cfg.setdefault("defect_maxiter", cfg.get("iterative_defect_maxiter", 12))
+    cfg.setdefault("defect_inner_m", cfg.get("iterative_defect_inner_m", 20))
+    cfg.setdefault(
+        "defect_start_residual",
+        cfg.get("iterative_defect_start_residual", 1e-8),
+    )
     return cfg
 
 
@@ -63,7 +70,18 @@ def _direct(A, B):
     return np.asarray(X, complex), float(time.perf_counter() - started)
 
 
-def _defect_cleanup(A, B, X, M, local_solver_module, tolerance, steps):
+def _defect_cleanup(
+    A,
+    B,
+    X,
+    M,
+    local_solver_module,
+    tolerance,
+    steps,
+    *,
+    maxiter,
+    inner_m,
+):
     X = np.asarray(X, complex).copy()
     history = []
     for sweep in range(int(steps)):
@@ -87,8 +105,8 @@ def _defect_cleanup(A, B, X, M, local_solver_module, tolerance, steps):
                 x0=None,
                 M=M,
                 rtol=eta,
-                maxiter=12,
-                inner_m=20,
+                maxiter=int(maxiter),
+                inner_m=int(inner_m),
             )
             candidate = X[:, p] + np.asarray(delta, complex).reshape(-1)
             old = float(residuals[p])
@@ -282,7 +300,10 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
 
-        defect_start = min(float(cfg["defect_start_residual"]), 1e-8)
+        defect_start = max(
+            float(cfg["defect_start_residual"]),
+            float(tolerance),
+        )
         if (
             best_X is not None
             and best_residual <= defect_start
@@ -296,6 +317,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 local_solver_module,
                 tolerance,
                 int(cfg["defect_steps"]),
+                maxiter=int(cfg["defect_maxiter"]),
+                inner_m=int(cfg["defect_inner_m"]),
             )
             history.extend(extra)
             if refined_residual < best_residual:
