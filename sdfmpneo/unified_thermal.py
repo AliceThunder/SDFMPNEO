@@ -224,6 +224,96 @@ def _worst_anchor(anchors, phi):
     return worst
 
 
+def _joint_geometry_worst(background, reference, bg_modes, local_modes, geometries, anchor_sets, time_scales, conditioning_limit):
+    library = GeometryAwareThermalLibrary(
+        reference,
+        np.asarray(bg_modes, float),
+        tuple(np.asarray(m, float) for m in local_modes),
+        tuple(float(v) for v in time_scales),
+        float(conditioning_limit),
+    )
+    worst = (-1.0, None, None, None)
+    for geometry, anchors in zip(geometries, anchor_sets):
+        phi = library.basis_for_geometry(background, geometry)
+        for anchor in anchors:
+            relative, error = _anchor_error(anchor, phi)
+            if relative > worst[0]:
+                worst = (float(relative), anchor, error, geometry)
+    return worst
+
+
+def _enrich_background_against_full_library(
+    background,
+    reference,
+    bg_modes,
+    local_modes,
+    geometries,
+    anchor_sets,
+    target,
+    maximum_rank,
+    time_scales,
+    conditioning_limit,
+    monitor,
+):
+    """Add only the global residual left after transported local blocks act."""
+    phi_bg = np.asarray(bg_modes, float)
+    steps = 0
+    stop = "target_reached"
+    while True:
+        if monitor is not None:
+            monitor.checkpoint()
+        worst, anchor, error, _geometry = _joint_geometry_worst(
+            background,
+            reference,
+            phi_bg,
+            local_modes,
+            geometries,
+            anchor_sets,
+            time_scales,
+            conditioning_limit,
+        )
+        if worst <= target:
+            break
+        total_rank = int(phi_bg.shape[1] + sum(m.shape[1] for m in local_modes))
+        if maximum_rank is not None and total_rank >= int(maximum_rank):
+            stop = "maximum_rank_reached"
+            break
+        phi2, added = _weighted_append(phi_bg, error, background.cell_volumes)
+        if not added:
+            # This should be rare: a nonzero Galerkin error cannot be exactly in
+            # the current full span.  Keep the failure explicit rather than
+            # silently weakening the training certificate.
+            stop = "no_independent_background_residual"
+            break
+        phi_bg = phi2
+        steps += 1
+        if monitor is not None:
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="background-residual",
+                    thermal_basis_rank=phi_bg.shape[1],
+                    thermal_basis_energy_error=worst,
+                )
+        if steps == 1 or steps % 4 == 0:
+            print(
+                "构建 geometry-aware thermal background residual……"
+                f"rank={phi_bg.shape[1]}  worst full-library energy error={worst:.3e}",
+                flush=True,
+            )
+    final = _joint_geometry_worst(
+        background,
+        reference,
+        phi_bg,
+        local_modes,
+        geometries,
+        anchor_sets,
+        time_scales,
+        conditioning_limit,
+    )[0]
+    return phi_bg, steps, stop, float(final)
+
+
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     phi = np.empty((background.n_cells, 0), float)
     rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
@@ -751,9 +841,22 @@ def build_geometry_aware_thermal_library(
             uniform_initial=True,
         )
         training_anchor_sets.append(anchors)
-        bg_anchors.extend(
-            anchor for anchor in anchors if anchor["source_kind"] in {"volume", "initial"}
-        )
+        n_ports = reference.n_ports
+        for anchor in anchors:
+            label = str(anchor.get("case_label", ""))
+            if anchor["source_kind"] == "initial":
+                bg_anchors.append(anchor)
+            elif anchor["source_kind"] == "volume":
+                # volume[0:n_ports] are unit-port self-heating directions and
+                # belong to the transported local blocks.  The remaining
+                # Hermitian cross-port directions start in the fixed background.
+                if label.startswith("volume["):
+                    try:
+                        index = int(label[7:-1])
+                    except ValueError:
+                        index = -1
+                    if index >= n_ports:
+                        bg_anchors.append(anchor)
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
@@ -795,12 +898,19 @@ def build_geometry_aware_thermal_library(
     local_stop = "target_reached"
     local_errors = []
     for p in range(reference.n_ports):
-        source_kind = f"wire[{p}]"
+        wire_kind = f"wire[{p}]"
+        volume_label = f"volume[{p}]"
         anchors = [
             anchor
             for anchor_set in canonical_anchor_sets
             for anchor in anchor_set
-            if anchor["source_kind"] == source_kind
+            if (
+                anchor["source_kind"] == wire_kind
+                or (
+                    anchor["source_kind"] == "volume"
+                    and anchor.get("case_label") == volume_label
+                )
+            )
         ]
         modes, steps, stop, error = _greedy_basis(
             background, anchors, target, maximum_rank, monitor, f"local-port-{p}"
@@ -810,6 +920,29 @@ def build_geometry_aware_thermal_library(
         local_errors.append(error)
         if stop != "target_reached":
             local_stop = stop
+
+    # The local blocks carry the moving self-hotspots.  Enrich the fixed
+    # background only with whatever global residual remains when the complete
+    # transported library is used on the training geometries.
+    bg_modes, residual_steps, residual_stop, residual_error = (
+        _enrich_background_against_full_library(
+            background,
+            reference,
+            bg_modes,
+            tuple(local_modes),
+            training,
+            training_anchor_sets,
+            target,
+            maximum_rank,
+            time_scales,
+            conditioning_limit,
+            monitor,
+        )
+    )
+    bg_steps += residual_steps
+    bg_error = max(float(bg_error), float(residual_error))
+    if residual_stop != "target_reached":
+        bg_stop = residual_stop
 
     library = GeometryAwareThermalLibrary(
         reference,
