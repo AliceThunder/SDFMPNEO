@@ -87,7 +87,7 @@ def test_model_artifact_requires_integrator_certified_release_version():
 def test_physical_cache_requires_local_self_correction_certification_semantics():
     from sdfmpneo.unified_runtime import _CACHE_FORMAT
 
-    assert _CACHE_FORMAT >= 18
+    assert _CACHE_FORMAT >= 19
 
 
 def test_gate_sample_count_includes_local_self_reference_audit():
