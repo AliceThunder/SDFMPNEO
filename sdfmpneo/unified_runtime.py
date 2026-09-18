@@ -23,6 +23,7 @@ from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_t
 from .unified_corrected_truth_preflight import run_truth_preflight
 
 _CACHE_FORMAT = 18
+_PREFLIGHT_CACHE_FORMAT = 37
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 
@@ -51,14 +52,29 @@ def _progress(message,percent,monitor=None):
         with monitor._lock: monitor.data.update(progress_percent=float(percent),progress_message=str(message))
 
 
-def _signature(settings):
+def _signature(settings, *, cache_format=None):
     keys=("BACKGROUND","DEFAULT_GEOMETRY","GEOMETRY_SAMPLING","PHYSICS","MATERIALS","REGIONS","TRAINING")
     payload={k:settings[k] for k in keys}
     payload["TRAINING"]={
         k:v for k,v in payload["TRAINING"].items()
         if k not in {"network","optimizer","device","final_audit"}
     }
-    payload["cache_format"]=_CACHE_FORMAT
+    payload["cache_format"]=_CACHE_FORMAT if cache_format is None else int(cache_format)
+    text=json.dumps(jsonable(payload),sort_keys=True,separators=(",",":"),allow_nan=False)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _preflight_signature(settings):
+    payload={
+        "BACKGROUND":settings["BACKGROUND"],
+        "DEFAULT_GEOMETRY":settings["DEFAULT_GEOMETRY"],
+        "GEOMETRY_SAMPLING":settings.get("GEOMETRY_SAMPLING"),
+        "PHYSICS":settings["PHYSICS"],
+        "MATERIALS":settings["MATERIALS"],
+        "REGIONS":settings["REGIONS"],
+        "seed":int(settings["TRAINING"].get("seed",17)),
+        "preflight_cache_format":int(_PREFLIGHT_CACHE_FORMAT),
+    }
     text=json.dumps(jsonable(payload),sort_keys=True,separators=(",",":"),allow_nan=False)
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -148,19 +164,28 @@ def train(settings,model_path,settings_dir,monitor=None):
         _progress("构建开放边界固定背景物理空间",0,monitor); bg=build_background(settings); _progress("构建开放边界固定背景物理空间",5,monitor)
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs；Maxwell 仅用于离线 open-boundary truth。",flush=True)
         seed=int(settings["TRAINING"].get("seed",17)); preflight_cache_valid=False; valid_cache=False; cache_meta={}
+        preflight_sig=_preflight_signature(settings)
         if meta_path.is_file():
             try:
                 cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
                 cached_preflight=dict(cache_meta.get("truth_preflight",{}))
+                legacy_v35_preflight=(
+                    int(cache_meta.get("cache_format",-1))==38
+                    and cache_meta.get("signature")==_signature(settings,cache_format=38)
+                )
                 preflight_cache_valid=(
-                    cache_meta.get("signature")==sig
-                    and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+                    (
+                        cache_meta.get("preflight_signature")==preflight_sig
+                        or legacy_v35_preflight
+                    )
                     and bool(cached_preflight.get("certified",False))
                     and bool(cached_preflight.get("local_self_correction_converged",False))
                     and cache_meta.get("self_correction_model")==_SELF_CORRECTION_MODEL
                 )
                 valid_cache=(
-                    preflight_cache_valid
+                    cache_meta.get("signature")==sig
+                    and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
+                    and preflight_cache_valid
                     and thermal_path.is_file()
                     and data_path.is_file()
                     and bool(cache_meta.get("thermal_basis_report"))
@@ -181,6 +206,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             cache_meta={
                 "cache_format":_CACHE_FORMAT,
                 "signature":sig,
+                "preflight_signature":preflight_sig,
                 "truth_preflight":preflight,
                 "self_correction_model":_SELF_CORRECTION_MODEL,
             }
@@ -203,7 +229,8 @@ def train(settings,model_path,settings_dir,monitor=None):
             _progress("构建 geometry-aware canonical thermal ROM",32,monitor)
             n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,rng,bg)
             dataset=generate_tensor_dataset(bg,tensor_geometries,seed=seed,monitor=monitor); dataset.save(data_path)
-            write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"thermal_basis_report":thermal_report,"truth_preflight":preflight,
+            write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"preflight_signature":preflight_sig,
+                                  "thermal_basis_report":thermal_report,"truth_preflight":preflight,
                                   "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors",
                                   "em_boundary":"silver_muller_impedance","source_model":bg.source_model,"self_correction_model":_SELF_CORRECTION_MODEL})
             _progress("生成几何 tensor truth 数据",52,monitor)
