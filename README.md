@@ -241,6 +241,8 @@ preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mu
 
 首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
+canonical local block 不只包含 wire heat，还包含对应端口的 unit-port self-volume Joule resolvent；这部分随 coil pose 一起运输。cross-port volume response 与 uniform initial response 从固定 background block 开始，再只对完整 transported library 尚未覆盖的 global residual 做 enrichment。这样移动热点不需要由大量固定 background modes 逐位置记忆。
+
 每个 geometry 从真实 full thermal operators 投影：
 
 \[
@@ -265,7 +267,9 @@ canonical rank 用：
 "thermal_time_scales": [0.1, 1.0, 10.0]
 ```
 
-并始终包含 `s=0` steady anchor。held-out geometry 还直接比较 full thermal 与 geometry-aware ROM：
+并始终包含 `s=0` steady anchor。同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
+
+held-out geometry 先执行较便宜的 resolvent energy Gate；如果它已经超过目标误差，训练立即 fail closed，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有 resolvent Gate 通过时才继续：
 
 ```python
 "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
