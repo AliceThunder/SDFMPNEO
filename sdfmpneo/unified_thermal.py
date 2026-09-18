@@ -32,7 +32,11 @@ def _weighted_append(phi, vector, weights):
         for _ in range(2):
             q -= phi @ (phi.T @ (weights * q))
     norm = float(np.sqrt(max(np.dot(q, weights * q), 0.0)))
-    if norm <= 1e-11 * max(reference, 1.0):
+    # Linear independence must be scale invariant.  Using max(reference,1)
+    # imposed an absolute 1e-11 field-amplitude floor and could reject valid
+    # thermal directions solely because the physical temperature response was
+    # numerically small.
+    if norm <= 1e-11 * reference:
         return phi, False
     q /= norm
     return (q[:, None] if phi.size == 0 else np.column_stack([phi, q])), True
