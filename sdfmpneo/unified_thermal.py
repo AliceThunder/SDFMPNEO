@@ -694,21 +694,26 @@ def build_geometry_aware_thermal_library(
     validation = [] if validation_geometries is None else [background.validate_geometry(g) for g in validation_geometries]
     shifts = _resolvent_shifts(time_scales)
 
+    # Prepare the complete training source family once.  The background block
+    # must satisfy the same volume + wire + initial family that the training Gate
+    # later audits; excluding wire anchors here made the previous construction
+    # structurally incapable of meeting its own 5% training criterion.
+    training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
-        bg_anchors.extend(
-            _geometry_anchors(
-                background,
-                geometry,
-                shifts,
-                gi,
-                volume=True,
-                wire=False,
-                uniform_initial=True,
-            )
+        anchors = _geometry_anchors(
+            background,
+            geometry,
+            shifts,
+            gi,
+            volume=True,
+            wire=True,
+            uniform_initial=True,
         )
+        training_anchor_sets.append(anchors)
+        bg_anchors.extend(anchors)
         print(
-            f"准备 background thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
+            f"准备 complete background thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
         )
     bg_modes, bg_steps, bg_stop, bg_error = _greedy_basis(
@@ -725,25 +730,36 @@ def build_geometry_aware_thermal_library(
     if not canonical:
         canonical = [reference]
 
+    # Canonical wire anchors are also prepared once for both ports.  The old
+    # implementation repeated the same K+sM factorization independently for
+    # local-port-0 and local-port-1.
+    canonical_anchor_sets = []
+    for gi, geometry in enumerate(canonical):
+        canonical_anchor_sets.append(
+            _geometry_anchors(
+                background,
+                geometry,
+                shifts,
+                gi,
+                volume=False,
+                wire=True,
+                uniform_initial=False,
+                wire_port=None,
+            )
+        )
+
     local_modes = []
     local_steps = 0
     local_stop = "target_reached"
     local_errors = []
     for p in range(reference.n_ports):
-        anchors = []
-        for gi, geometry in enumerate(canonical):
-            anchors.extend(
-                _geometry_anchors(
-                    background,
-                    geometry,
-                    shifts,
-                    gi,
-                    volume=False,
-                    wire=True,
-                    uniform_initial=False,
-                    wire_port=p,
-                )
-            )
+        source_kind = f"wire[{p}]"
+        anchors = [
+            anchor
+            for anchor_set in canonical_anchor_sets
+            for anchor in anchor_set
+            if anchor["source_kind"] == source_kind
+        ]
         modes, steps, stop, error = _greedy_basis(
             background, anchors, target, maximum_rank, monitor, f"local-port-{p}"
         )
@@ -770,11 +786,40 @@ def build_geometry_aware_thermal_library(
         stop_reason = "target_reached"
 
     training_error, worst_train, train_diag, training_anchor_count = _audit_geometries(
-        background, library, training, shifts, monitor, "train"
+        background,
+        library,
+        training,
+        shifts,
+        monitor,
+        "train",
+        anchor_sets=training_anchor_sets,
     )
     if validation:
+        validation_anchor_sets = []
+        for gi, geometry in enumerate(validation):
+            validation_anchor_sets.append(
+                _geometry_anchors(
+                    background,
+                    geometry,
+                    shifts,
+                    gi,
+                    volume=True,
+                    wire=True,
+                    uniform_initial=True,
+                )
+            )
+            print(
+                f"准备 held-out thermal anchors……{100.0 * (gi + 1) / len(validation):5.1f}%",
+                flush=True,
+            )
         validation_error, worst_val, val_diag, validation_anchor_count = _audit_geometries(
-            background, library, validation, shifts, monitor, "held-out validation"
+            background,
+            library,
+            validation,
+            shifts,
+            monitor,
+            "held-out validation",
+            anchor_sets=validation_anchor_sets,
         )
         trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
             audit_geometry_aware_thermal_trajectories(
