@@ -22,7 +22,7 @@ from .unified_tensor_training import train_matrix_tensor_surrogate
 from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
 from .unified_corrected_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 18
+_CACHE_FORMAT = 19
 _SELF_CORRECTION_MODEL = "canonical_local_fine_minus_coarse_self_defect_v1"
 
 
