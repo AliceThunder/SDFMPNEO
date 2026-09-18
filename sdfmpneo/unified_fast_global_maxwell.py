@@ -304,10 +304,15 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             if best_residual <= tolerance:
                 return best_X, best_residual, tuple(history)
 
+    preconditioner_name = (
+        "compatible gradient/transverse"
+        if gradient_block is not None
+        else "shifted-ILU fallback"
+    )
     raise RuntimeError(
         "large global Maxwell iterative solve did not reach the certified residual; "
         f"edges={A.shape[0]}, residual={best_residual:.3e}, tolerance={tolerance:.3e}. "
-        "The compatible gradient/transverse preconditioner was unable to certify this system; "
+        f"The {preconditioner_name} preconditioner was unable to certify this system; "
         "do not relax the Gate."
     )
 
@@ -347,6 +352,13 @@ def install(physics_gate_module, tensor_surrogate_module, local_solver_module):
 
     def solve_port_fields(background, context):
         A = background.em_operator(context, None)
+        # Thermal-anchor/tensor truth must use the same certified compatible
+        # gradient+transverse solver path as the Physics Gate.  solve_multi_rhs
+        # discovers that path from operator metadata; without these tags this
+        # entry point silently falls back to the older shifted-ILU preconditioner.
+        A._sdfmpneo_background = background
+        A._sdfmpneo_context = context
+        A._sdfmpneo_mqs = False
         B = np.asarray(background.rhs_matrix(context), complex)
         X, residual, _history = solve_multi_rhs(background, A, B, local_solver_module)
         if np.any(~np.isfinite(X)):
