@@ -959,6 +959,15 @@ def build_geometry_aware_thermal_library(
     # factorization is shared by every port instead of being repeated per port.
     wire_anchors_by_port = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(canonical):
+        if monitor is not None:
+            monitor.checkpoint()
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="local-anchor-prep",
+                    thermal_basis_rank=0,
+                    thermal_basis_energy_error=None,
+                )
         shared_wire_anchors = _geometry_anchors(
             background,
             geometry,
@@ -973,6 +982,11 @@ def build_geometry_aware_thermal_library(
             p = anchor.get("port_index")
             if p is not None and 0 <= int(p) < reference.n_ports:
                 wire_anchors_by_port[int(p)].append(anchor)
+        print(
+            f"准备 transported-local wire thermal anchors……"
+            f"{100.0 * (gi + 1) / len(canonical):5.1f}%",
+            flush=True,
+        )
 
     local_modes = []
     local_steps = 0
