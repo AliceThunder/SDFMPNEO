@@ -741,27 +741,19 @@ def build_geometry_aware_thermal_library(
     training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
-        background_anchors = _geometry_anchors(
+        anchors = _geometry_anchors(
             background,
             geometry,
             shifts,
             gi,
             volume=True,
-            wire=False,
+            wire=True,
             uniform_initial=True,
         )
-        audit_anchors = _geometry_anchors(
-            background,
-            geometry,
-            shifts,
-            gi,
-            volume=False,
-            wire=True,
-            uniform_initial=False,
-        )
-        anchors = list(background_anchors) + list(audit_anchors)
         training_anchor_sets.append(anchors)
-        bg_anchors.extend(background_anchors)
+        bg_anchors.extend(
+            anchor for anchor in anchors if anchor["source_kind"] in {"volume", "initial"}
+        )
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
