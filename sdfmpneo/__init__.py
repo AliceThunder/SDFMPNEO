@@ -191,10 +191,11 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v34 changes the dissipative refined-material semantics, so v33 cached
-# preflight/tensor artifacts must not be mixed with the new certificate.
+# v34 production truth is unchanged, but cache format 37 also records the corrected
+# mesh-Gate semantics: validation grids reuse the production terminal dissipative
+# subgrid correction instead of silently redefining it.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 36
+_unified_runtime._CACHE_FORMAT = 37
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
@@ -212,4 +213,15 @@ from .unified_global_longitudinal_physics_gate import install as _install_global
 _corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 _install_global_longitudinal_physics_gate(
     _corrected_physics_gate, _global_longitudinal_reference
+)
+
+# Mesh refinement must compare the same production subgrid truth.  Freeze the
+# certified terminal dissipative correction from the production background while
+# the 12->9 mm pre/post-basis mesh Gates run; reactive/transverse corrections are
+# still recomputed on each Maxwell grid.
+from .unified_mesh_gate_terminal_dissipation import install as _install_mesh_gate_terminal_dissipation
+_install_mesh_gate_terminal_dissipation(
+    _corrected_preflight,
+    _corrected_physics_gate,
+    _global_longitudinal_reference,
 )
