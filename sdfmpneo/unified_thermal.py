@@ -1162,6 +1162,15 @@ def build_geometry_aware_thermal_library(
     if validation:
         validation_anchor_sets = []
         for gi, geometry in enumerate(validation):
+            if monitor is not None:
+                monitor.checkpoint()
+                with monitor._lock:
+                    monitor.data.update(
+                        phase="geometry_aware_thermal_basis",
+                        thermal_basis_stage="validation-anchor-prep",
+                        thermal_basis_rank=library.rank,
+                        thermal_basis_energy_error=None,
+                    )
             validation_anchor_sets.append(
                 _geometry_anchors(
                     background,
