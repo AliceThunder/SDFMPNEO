@@ -99,23 +99,21 @@ def _solve(A, b):
         return np.asarray(spla.lsmr(A, b, atol=1e-12, btol=1e-12)[0], float).reshape(-1)
 
 
-def _anchor(A, b, label, *, source_kind, shift, geometry_index):
-    b = np.asarray(b, float).reshape(-1)
-    u = _solve(A, b)
-    denom2 = float(np.real(u @ (A @ u)))
-    if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
-        return None
-    return {
-        "A": A,
-        "b": b,
-        "u": u,
-        "denom2": denom2,
-        "label": str(label),
-        "source_kind": str(source_kind),
-        "shift": float(shift),
-        "geometry_index": int(geometry_index),
-        "rhs_norm": float(np.linalg.norm(b)),
-    }
+def _solve_block(A, B):
+    """Factor one thermal matrix once and solve all source directions."""
+    rhs = np.asarray(B, float)
+    if rhs.ndim == 1:
+        rhs = rhs[:, None]
+    if rhs.ndim != 2 or rhs.shape[0] != A.shape[0]:
+        raise ValueError("thermal block RHS has incompatible shape")
+    try:
+        lu = spla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A")
+        out = np.asarray(lu.solve(rhs), float)
+    except RuntimeError:
+        out = np.column_stack([_solve(A, rhs[:, j]) for j in range(rhs.shape[1])])
+    if out.shape != rhs.shape or np.any(~np.isfinite(out)):
+        raise FloatingPointError("thermal block solve produced invalid values")
+    return out
 
 
 def _geometry_anchors(
@@ -149,21 +147,34 @@ def _geometry_anchors(
         rhs_items.append(
             ("initial[uniform]", "initial", np.asarray(M @ np.ones(background.n_cells)).reshape(-1))
         )
+    if not rhs_items:
+        return []
 
+    B = np.column_stack([np.asarray(item[2], float).reshape(-1) for item in rhs_items])
     anchors = []
     for shift in shifts:
         A = (K + float(shift) * M).tocsr()
-        for label, kind, b in rhs_items:
-            item = _anchor(
-                A,
-                b,
-                f"geometry[{geometry_index}]/{label}/s={shift:.6g}",
-                source_kind=kind,
-                shift=shift,
-                geometry_index=geometry_index,
+        U = _solve_block(A, B)
+        for j, (label, kind, b) in enumerate(rhs_items):
+            b = np.asarray(b, float).reshape(-1)
+            u = np.asarray(U[:, j], float).reshape(-1)
+            # A u = b, so u^T A u = u^T b without another sparse matvec.
+            denom2 = float(np.real(np.dot(u, b)))
+            if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
+                continue
+            anchors.append(
+                {
+                    "A": A,
+                    "b": b,
+                    "u": u,
+                    "denom2": denom2,
+                    "label": f"geometry[{geometry_index}]/{label}/s={shift:.6g}",
+                    "source_kind": str(kind),
+                    "shift": float(shift),
+                    "geometry_index": int(geometry_index),
+                    "rhs_norm": float(np.linalg.norm(b)),
+                }
             )
-            if item is not None:
-                anchors.append(item)
     return anchors
 
 
