@@ -61,8 +61,8 @@ def test_production_installs_fast_scalar_paths_for_v34_truth():
     from sdfmpneo import unified_model
     from sdfmpneo import unified_runtime
 
-    assert unified_model.FORMAT_VERSION == 34
-    assert unified_runtime._CACHE_FORMAT == 37
+    assert unified_model.FORMAT_VERSION == 35
+    assert unified_runtime._CACHE_FORMAT == 38
     assert longitudinal._fast_reactive_scalar_installed is True
     assert longitudinal._longitudinal_state_cache_installed is True
     assert terminal_defect._fast_terminal_dissipative_scalar_installed is True
