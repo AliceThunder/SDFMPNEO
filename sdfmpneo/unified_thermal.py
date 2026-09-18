@@ -99,9 +99,9 @@ def _solve(A, b):
         return np.asarray(spla.lsmr(A, b, atol=1e-12, btol=1e-12)[0], float).reshape(-1)
 
 
-def _anchor(A, b, label, *, source_kind, shift, geometry_index, port_index=None):
+def _anchor(A, b, label, *, source_kind, shift, geometry_index, port_index=None, solution=None):
     b = np.asarray(b, float).reshape(-1)
-    u = _solve(A, b)
+    u = _solve(A, b) if solution is None else np.asarray(solution, float).reshape(-1)
     denom2 = float(np.real(u @ (A @ u)))
     if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
         return None
@@ -162,9 +162,17 @@ def _geometry_anchors(
         )
 
     anchors = []
+    if not rhs_items:
+        return anchors
+    B = np.column_stack([np.asarray(item[2], float).reshape(-1) for item in rhs_items])
     for shift in shifts:
         A = (K + float(shift) * M).tocsr()
-        for label, kind, b, port_index in rhs_items:
+        try:
+            lu = spla.splu(A.tocsc())
+            U = np.asarray(lu.solve(B), float)
+        except RuntimeError:
+            U = np.column_stack([_solve(A, B[:, j]) for j in range(B.shape[1])])
+        for column, (label, kind, b, port_index) in enumerate(rhs_items):
             item = _anchor(
                 A,
                 b,
@@ -173,6 +181,7 @@ def _geometry_anchors(
                 shift=shift,
                 geometry_index=geometry_index,
                 port_index=port_index,
+                solution=U[:, column],
             )
             if item is not None:
                 anchors.append(item)
