@@ -169,6 +169,7 @@ def _geometry_anchors(
                     "u": u,
                     "denom2": denom2,
                     "label": f"geometry[{geometry_index}]/{label}/s={shift:.6g}",
+                    "case_label": str(label),
                     "source_kind": str(kind),
                     "shift": float(shift),
                     "geometry_index": int(geometry_index),
@@ -480,23 +481,39 @@ def _audit_geometries(
     return worst[0], _anchor_summary(worst[1], worst[0]), diagnostics, count
 
 
-def _thermal_trajectory_cases(background, geometry):
+def _thermal_trajectory_cases(background, geometry, prepared_anchors=None):
     context = background.geometry_context(geometry, assemble_thermal=False)
     M, K = background.thermal_operator_full(context.fractions)
     labels = []
     rhs = []
-    X = _maxwell_port_fields(background, context)
-    for j, current in enumerate(_port_current_vectors(X.shape[1])):
-        q = _volume_heat(background, context, X @ current)
-        if np.linalg.norm(q) > np.finfo(float).tiny:
-            labels.append(f"volume[{j}]")
-            rhs.append(q)
-    for p, weights in enumerate(context.line_heat_weights):
-        q = np.asarray(weights, float).reshape(-1)
-        if np.linalg.norm(q) > np.finfo(float).tiny:
-            labels.append(f"wire[{p}]")
-            rhs.append(q)
-    return context, M.tocsr(), K.tocsr(), labels, rhs
+    steady = None
+    if prepared_anchors is not None:
+        rows = [
+            anchor
+            for anchor in prepared_anchors
+            if abs(float(anchor["shift"])) <= 1e-15
+            and anchor["source_kind"] != "initial"
+        ]
+        labels = [str(anchor.get("case_label", anchor["source_kind"])) for anchor in rows]
+        rhs = [np.asarray(anchor["b"], float).reshape(-1) for anchor in rows]
+        steady = (
+            np.column_stack([np.asarray(anchor["u"], float).reshape(-1) for anchor in rows])
+            if rows
+            else np.empty((background.n_cells, 0), float)
+        )
+    else:
+        X = _maxwell_port_fields(background, context)
+        for j, current in enumerate(_port_current_vectors(X.shape[1])):
+            q = _volume_heat(background, context, X @ current)
+            if np.linalg.norm(q) > np.finfo(float).tiny:
+                labels.append(f"volume[{j}]")
+                rhs.append(q)
+        for p, weights in enumerate(context.line_heat_weights):
+            q = np.asarray(weights, float).reshape(-1)
+            if np.linalg.norm(q) > np.finfo(float).tiny:
+                labels.append(f"wire[{p}]")
+                rhs.append(q)
+    return context, M.tocsr(), K.tocsr(), labels, rhs, steady
 
 
 def _trajectory_metric(background, context, mass_diag, truth, approx):
@@ -544,6 +561,7 @@ def audit_geometry_aware_thermal_trajectories(
     *,
     times=None,
     monitor=None,
+    anchor_sets=None,
 ):
     """Compare full and geometry-aware ROM thermal trajectories on held-out geometries.
 
@@ -557,6 +575,8 @@ def audit_geometry_aware_thermal_trajectories(
     audit_times = _trajectory_times(library.time_scales, times)
     if not geometries:
         return 0.0, {}, {}, tuple(float(v) for v in audit_times)
+    if anchor_sets is not None and len(anchor_sets) != len(geometries):
+        raise ValueError("trajectory anchor set count does not match geometries")
 
     worst = (-1.0, {})
     diagnostics = {}
@@ -564,7 +584,10 @@ def audit_geometry_aware_thermal_trajectories(
         if monitor is not None:
             monitor.checkpoint()
         g = background.validate_geometry(geometry)
-        context, M, K, labels, rhs = _thermal_trajectory_cases(background, g)
+        prepared = None if anchor_sets is None else anchor_sets[gi]
+        context, M, K, labels, rhs, prepared_steady = _thermal_trajectory_cases(
+            background, g, prepared
+        )
         phi = library.basis_for_geometry(background, g)
         mass_diag = np.asarray(M.diagonal(), float)
         if np.any(~np.isfinite(mass_diag)) or np.any(mass_diag <= 0.0):
@@ -581,11 +604,11 @@ def audit_geometry_aware_thermal_trajectories(
 
         if rhs:
             B = np.column_stack(rhs)
-            try:
-                lu = spla.splu(K.tocsc())
-                steady_full = np.column_stack([lu.solve(B[:, j]) for j in range(B.shape[1])])
-            except RuntimeError:
-                steady_full = np.column_stack([_solve(K, B[:, j]) for j in range(B.shape[1])])
+            steady_full = (
+                np.asarray(prepared_steady, float)
+                if prepared_steady is not None
+                else _solve_block(K, B)
+            )
             reduced_rhs = phi.T @ B
             steady_reduced = np.linalg.solve(Kr, reduced_rhs)
         else:
@@ -828,6 +851,7 @@ def build_geometry_aware_thermal_library(
                 validation,
                 times=trajectory_times,
                 monitor=monitor,
+                anchor_sets=validation_anchor_sets,
             )
         )
     else:
