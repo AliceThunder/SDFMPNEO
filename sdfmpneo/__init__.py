@@ -9,13 +9,14 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 36 keeps the v34 EM truth and restores the theoretical
-# thermal block split Phi=[Phi_bg,T_tx Psi_tx,T_rx Psi_rx].  Thermal anchors use
-# the already-installed certified multi-port Maxwell solver instead of a separate
-# fill-heavy sparse LU.  Each K+sM factorization solves all source RHS together,
-# prepared anchors are reused by audits, and wire trajectory error is measured as
-# one physical observable vector so a near-zero remote wire cannot create a
-# meaningless component-wise 1e9 relative error.
+# Physics truth version 37 keeps the v34 EM truth and completes the theoretical
+# geometry-aware thermal split Phi=[Phi_bg,T_tx Psi_tx,T_rx Psi_rx].  Unit-port
+# self-volume Joule hotspots now live in their transported local block together
+# with wire heating; only cross-port volume/initial response starts in Phi_bg.
+# Phi_bg is then enriched by the global residual left by the complete transported
+# library on training geometries. Thermal anchors use the installed certified
+# multi-port Maxwell solver, each K+sM factorization solves all RHS together, and
+# prepared anchors are reused by the audits.
 #
 # EM/source semantics remain those of v34.  The v33
 # single-terminal source-component lock, but removes the falsified expensive
@@ -25,7 +26,7 @@ from . import unified_model as _unified_model
 # source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
 # remain unchanged; the historical exact sigma/epsilon reference remains only as
 # diagnostic/regression code and is not used by production terminal truth.
-_unified_model.FORMAT_VERSION = 36
+_unified_model.FORMAT_VERSION = 37
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -199,10 +200,10 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v36 changes the thermal basis construction/solver path and cache format.  The
+# v37 changes only the thermal block/source partition and thermal cache.  The
 # certified EM preflight has its own physical signature and remains reusable.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 39
+_unified_runtime._CACHE_FORMAT = 40
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
