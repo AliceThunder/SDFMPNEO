@@ -199,6 +199,13 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 "compatible-transverse-ilu-strong",
                 "transverse",
             ),
+            (
+                strong_drop,
+                strong_fill,
+                max(5e-3, 0.5 * float(cfg["ilu_shift_factor"])),
+                "compatible-shifted-ilu-tight-recovery",
+                "shifted",
+            ),
         )
     else:
         attempts = (
