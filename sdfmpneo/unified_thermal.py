@@ -953,15 +953,29 @@ def build_geometry_aware_thermal_library(
         validation_error, worst_val, val_diag, validation_anchor_count = _audit_geometries(
             background, library, validation, shifts, monitor, "held-out validation"
         )
-        trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
-            audit_geometry_aware_thermal_trajectories(
-                background,
-                library,
-                validation,
-                times=trajectory_times,
-                monitor=monitor,
+        # A badly missed resolvent space already proves this basis cannot pass.
+        # Do not spend another several minutes on expm-based trajectory audits
+        # merely to rediscover the same failure; trajectory validation resumes as
+        # soon as the cheaper independent energy gate passes.
+        if validation_error > target:
+            trajectory_error, worst_trajectory = 0.0, {}
+            trajectory_diag = {"audit_skipped_validation_energy_error": float(validation_error)}
+            audited_times = tuple(float(v) for v in _trajectory_times(time_scales, trajectory_times))
+            print(
+                "held-out thermal trajectory audit skipped: "
+                f"resolvent validation error={validation_error:.3e} > target={target:.3e}",
+                flush=True,
             )
-        )
+        else:
+            trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
+                audit_geometry_aware_thermal_trajectories(
+                    background,
+                    library,
+                    validation,
+                    times=trajectory_times,
+                    monitor=monitor,
+                )
+            )
     else:
         validation_error, worst_val, val_diag, validation_anchor_count = 0.0, {}, {}, 0
         trajectory_error, worst_trajectory, trajectory_diag = 0.0, {}, {}
