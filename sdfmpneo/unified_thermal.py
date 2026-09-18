@@ -209,15 +209,61 @@ def _worst_anchor(anchors, phi):
     return worst
 
 
+def _group_anchors(anchors):
+    """Group resolvent anchors that share one geometry and one operator shift."""
+    groups = {}
+    for anchor in anchors:
+        key = (int(anchor["geometry_index"]), float(anchor["shift"]))
+        groups.setdefault(key, []).append(anchor)
+    return tuple(groups.values())
+
+
+def _worst_anchor_grouped(groups, phi):
+    """Evaluate many RHS against one reduced resolvent factorization per group."""
+    if not groups:
+        return 0.0, None, None
+    worst = (-1.0, None, None)
+    for group in groups:
+        if not group:
+            continue
+        if phi.shape[1] == 0:
+            for anchor in group:
+                relative = 1.0
+                if relative > worst[0]:
+                    worst = (relative, anchor, np.asarray(anchor["u"], float).copy())
+            continue
+        A = group[0]["A"]
+        APhi = A @ phi
+        Ar = phi.T @ APhi
+        B = np.column_stack([anchor["b"] for anchor in group])
+        Br = phi.T @ B
+        try:
+            coeff = np.linalg.solve(Ar, Br)
+        except np.linalg.LinAlgError:
+            coeff = np.linalg.lstsq(Ar, Br, rcond=None)[0]
+        U = np.column_stack([anchor["u"] for anchor in group])
+        E = U - phi @ coeff
+        AE = A @ E
+        numerators = np.maximum(np.real(np.sum(E * AE, axis=0)), 0.0)
+        denominators = np.asarray([anchor["denom2"] for anchor in group], float)
+        relatives = np.sqrt(numerators / denominators)
+        index = int(np.argmax(relatives))
+        relative = float(relatives[index])
+        if relative > worst[0]:
+            worst = (relative, group[index], E[:, index].copy())
+    return worst
+
+
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     phi = np.empty((background.n_cells, 0), float)
     rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
     steps = 0
     stop = "target_reached"
+    groups = _group_anchors(anchors)
     while True:
         if monitor is not None:
             monitor.checkpoint()
-        worst, anchor, error = _worst_anchor(anchors, phi)
+        worst, anchor, error = _worst_anchor_grouped(groups, phi)
         if worst <= target:
             break
         if phi.shape[1] >= rank_limit:
@@ -240,13 +286,13 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
                     thermal_basis_energy_error=worst,
                 )
         if phi.shape[1] == 1 or phi.shape[1] % 4 == 0:
-            after = _worst_anchor(anchors, phi)[0]
+            after = _worst_anchor_grouped(groups, phi)[0]
             print(
                 f"构建 geometry-aware thermal canonical block[{label}]……"
                 f"rank={phi.shape[1]}  worst energy error={after:.3e}",
                 flush=True,
             )
-    return phi, steps, stop, float(_worst_anchor(anchors, phi)[0])
+    return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
 def _canonicalize_poses(geometry, reference):
@@ -374,22 +420,30 @@ def _greedy_background_residual(
 ):
     """Build only the non-transportable residual after local physical modes.
 
-    Pure-port self-volume and wire responses move with their coils and belong to
-    transported local blocks.  The fixed background block is therefore selected
-    against the residual left after those blocks, rather than relearning moving
-    heat sources at every sampled pose.
+    The expensive part is repeated reduced resolvent evaluation at increasing
+    rank.  Keep each geometry's transported local span resident and batch every
+    RHS that shares the same thermal operator/shift, so each greedy step needs
+    one reduced factorization per geometry/shift rather than one per source.
     """
     geometries = list(geometries)
     local_columns = [
         _transported_local_columns(background, reference, local_modes, geometry)
         for geometry in geometries
     ]
-    by_geometry = [[] for _ in geometries]
+    anchors_by_geometry = [[] for _ in geometries]
     for anchor in anchors:
         gi = int(anchor["geometry_index"])
-        if 0 <= gi < len(by_geometry):
-            by_geometry[gi].append(anchor)
+        if 0 <= gi < len(anchors_by_geometry):
+            anchors_by_geometry[gi].append(anchor)
+    groups_by_geometry = [_group_anchors(items) for items in anchors_by_geometry]
 
+    # The span is what matters for Galerkin error.  Start from the local span,
+    # then append every accepted fixed-background direction incrementally instead
+    # of rebuilding/orthogonalizing the whole [BG, local] matrix on every trial.
+    spans = [
+        _combined_basis(background, np.empty((background.n_cells, 0), float), local)
+        for local in local_columns
+    ]
     phi_bg = np.empty((background.n_cells, 0), float)
     local_rank = int(sum(m.shape[1] for m in local_modes))
     rank_limit = background.n_cells
@@ -400,12 +454,10 @@ def _greedy_background_residual(
 
     def worst_state():
         worst = (-1.0, None, None)
-        for gi, local in enumerate(local_columns):
-            phi = _combined_basis(background, phi_bg, local)
-            for anchor in by_geometry[gi]:
-                relative, error = _anchor_error(anchor, phi)
-                if relative > worst[0]:
-                    worst = (relative, anchor, error)
+        for gi, groups in enumerate(groups_by_geometry):
+            relative, anchor, error = _worst_anchor_grouped(groups, spans[gi])
+            if relative > worst[0]:
+                worst = (relative, anchor, error)
         return worst
 
     while True:
@@ -423,7 +475,12 @@ def _greedy_background_residual(
         if not added:
             stop = "no_independent_thermal_direction"
             break
+        new_direction = phi2[:, -1]
         phi_bg = phi2
+        for gi, span in enumerate(spans):
+            span2, span_added = _weighted_append(span, new_direction, background.cell_volumes)
+            if span_added:
+                spans[gi] = span2
         steps += 1
         if monitor is not None:
             with monitor._lock:
