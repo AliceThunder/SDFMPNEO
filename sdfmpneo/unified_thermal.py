@@ -955,25 +955,31 @@ def build_geometry_aware_thermal_library(
     if not canonical:
         canonical = [reference]
 
+    # Build all wire resolvents together so each geometry/shift thermal
+    # factorization is shared by every port instead of being repeated per port.
+    wire_anchors_by_port = [[] for _ in range(reference.n_ports)]
+    for gi, geometry in enumerate(canonical):
+        shared_wire_anchors = _geometry_anchors(
+            background,
+            geometry,
+            shifts,
+            gi,
+            volume=False,
+            wire=True,
+            uniform_initial=False,
+            wire_port=None,
+        )
+        for anchor in shared_wire_anchors:
+            p = anchor.get("port_index")
+            if p is not None and 0 <= int(p) < reference.n_ports:
+                wire_anchors_by_port[int(p)].append(anchor)
+
     local_modes = []
     local_steps = 0
     local_stop = "target_reached"
     local_errors = []
     for p in range(reference.n_ports):
-        wire_anchors = []
-        for gi, geometry in enumerate(canonical):
-            wire_anchors.extend(
-                _geometry_anchors(
-                    background,
-                    geometry,
-                    shifts,
-                    gi,
-                    volume=False,
-                    wire=True,
-                    uniform_initial=False,
-                    wire_port=p,
-                )
-            )
+        wire_anchors = wire_anchors_by_port[p]
         modes, steps, stop, error = _greedy_basis(
             background, wire_anchors, target, maximum_rank, monitor, f"local-port-{p}"
         )
