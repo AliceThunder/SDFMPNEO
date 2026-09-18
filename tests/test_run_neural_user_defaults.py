@@ -24,7 +24,7 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_validation_samples"] >= 1
-    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_bg_local_v1"
+    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_bg_local_transport_v2"
     assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
     assert run.TRAINING["thermal_basis_conditioning_limit"] > 1
     assert run.TRAINING["thermal_time_scales"] == [0.1, 1.0, 10.0]
