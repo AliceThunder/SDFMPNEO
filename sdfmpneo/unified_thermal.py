@@ -213,7 +213,7 @@ def _group_anchors(anchors):
     """Group resolvent anchors that share one geometry and one operator shift."""
     groups = {}
     for anchor in anchors:
-        key = (int(anchor["geometry_index"]), float(anchor["shift"]))
+        key = (int(anchor["geometry_index"]), float(anchor["shift"]), id(anchor["A"]))
         groups.setdefault(key, []).append(anchor)
     return tuple(groups.values())
 
