@@ -322,6 +322,8 @@ def _transported_local_columns(background, reference, local_modes, geometry):
     g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
     columns = []
     for p, modes in enumerate(local_modes):
+        if modes.shape[1] == 0:
+            continue
         source_pose = reference.coils[p].pose
         target_pose = g.coils[p].pose
         for j in range(modes.shape[1]):
