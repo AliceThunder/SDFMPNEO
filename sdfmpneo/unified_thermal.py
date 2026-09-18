@@ -218,6 +218,34 @@ def _group_anchors(anchors):
     return tuple(groups.values())
 
 
+def _anchor_relative_errors_grouped(groups, phi):
+    """Return (anchor, relative_error) while sharing reduced solves per A/shift."""
+    rows = []
+    for group in groups:
+        if not group:
+            continue
+        if phi.shape[1] == 0:
+            rows.extend((anchor, 1.0) for anchor in group)
+            continue
+        A = group[0]["A"]
+        APhi = A @ phi
+        Ar = phi.T @ APhi
+        B = np.column_stack([anchor["b"] for anchor in group])
+        Br = phi.T @ B
+        try:
+            coeff = np.linalg.solve(Ar, Br)
+        except np.linalg.LinAlgError:
+            coeff = np.linalg.lstsq(Ar, Br, rcond=None)[0]
+        U = np.column_stack([anchor["u"] for anchor in group])
+        E = U - phi @ coeff
+        AE = A @ E
+        numerators = np.maximum(np.real(np.sum(E * AE, axis=0)), 0.0)
+        denominators = np.asarray([anchor["denom2"] for anchor in group], float)
+        relatives = np.sqrt(numerators / denominators)
+        rows.extend((anchor, float(relative)) for anchor, relative in zip(group, relatives))
+    return rows
+
+
 def _worst_anchor_grouped(groups, phi):
     """Evaluate many RHS against one reduced resolvent factorization per group."""
     if not groups:
@@ -668,8 +696,7 @@ def _audit_geometries(background, library, geometries, shifts, monitor, role):
         )
         count += len(anchors)
         local_worst = 0.0
-        for anchor in anchors:
-            error, _ = _anchor_error(anchor, phi)
+        for anchor, error in _anchor_relative_errors_grouped(_group_anchors(anchors), phi):
             shift = float(anchor["shift"])
             tau = "steady" if shift == 0.0 else f"{1.0 / shift:g}s"
             key = f"{anchor['source_kind']}@{tau}"
