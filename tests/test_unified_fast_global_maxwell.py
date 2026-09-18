@@ -88,3 +88,22 @@ def test_tensor_port_truth_tags_operator_for_compatible_solver(monkeypatch):
     assert A._sdfmpneo_background is background
     assert A._sdfmpneo_context is context
     assert A._sdfmpneo_mqs is False
+
+
+
+def test_global_solver_honors_run_iterative_defect_aliases():
+    class Background:
+        background_config = {
+            "linear_solver": {
+                "iterative_defect_steps": 3,
+                "iterative_defect_maxiter": 16,
+                "iterative_defect_inner_m": 21,
+                "iterative_defect_start_residual": 5e-6,
+            }
+        }
+
+    cfg = fast_global._cfg(Background())
+    assert cfg["defect_steps"] == 3
+    assert cfg["defect_maxiter"] == 16
+    assert cfg["defect_inner_m"] == 21
+    assert cfg["defect_start_residual"] == 5e-6
