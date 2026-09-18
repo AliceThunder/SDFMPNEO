@@ -53,15 +53,30 @@ def _port_current_vectors(n_ports):
 
 
 def _maxwell_port_fields(background, context):
-    A = background.em_operator(context, None)
-    B = background.rhs_matrix(context)
-    try:
-        lu = spla.splu(A.tocsc())
-        X = np.column_stack([lu.solve(B[:, p]) for p in range(B.shape[1])])
-    except RuntimeError:
-        X = np.column_stack([spla.spsolve(A, B[:, p]) for p in range(B.shape[1])])
-    if np.any(~np.isfinite(X)):
+    """Use the production-certified shared multi-port Maxwell solver.
+
+    Thermal anchor generation previously bypassed the installed global solver and
+    performed a fresh fill-heavy sparse LU for every geometry.  Calling the
+    tensor-truth solve surface keeps exactly the same A/B physics while reusing
+    the compatible-gradient/transverse Krylov path and its 1e-9 true-residual
+    certificate.
+    """
+    from . import unified_tensor_surrogate as _tensor_truth
+
+    X, residual = _tensor_truth._solve_port_fields(background, context)
+    X = np.asarray(X, complex)
+    tolerance = float(
+        dict(getattr(background, "background_config", {}) or {})
+        .get("linear_solver", {})
+        .get("relative_residual_tolerance", 1e-9)
+    )
+    if np.any(~np.isfinite(X)) or not np.isfinite(residual):
         raise FloatingPointError("Maxwell truth solve produced non-finite fields")
+    if float(residual) > tolerance:
+        raise RuntimeError(
+            "thermal anchor Maxwell solve failed residual certificate: "
+            f"{float(residual):.3e} > {tolerance:.3e}"
+        )
     return X
 
 
@@ -717,26 +732,38 @@ def build_geometry_aware_thermal_library(
     validation = [] if validation_geometries is None else [background.validate_geometry(g) for g in validation_geometries]
     shifts = _resolvent_shifts(time_scales)
 
-    # Prepare the complete training source family once.  The background block
-    # must satisfy the same volume + wire + initial family that the training Gate
-    # later audits; excluding wire anchors here made the previous construction
-    # structurally incapable of meeting its own 5% training criterion.
+    # Preserve the theoretical block split:
+    #   Phi(g) = [Phi_bg, T_tx Psi_tx, T_rx Psi_rx].
+    # Phi_bg is trained on global volume/initial response only; wire-local
+    # response belongs to the transported canonical local blocks.  The v35
+    # experiment that also inserted wire anchors into Phi_bg duplicated the
+    # local blocks and made the assembled basis rank deficient.
     training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
-        anchors = _geometry_anchors(
+        background_anchors = _geometry_anchors(
             background,
             geometry,
             shifts,
             gi,
             volume=True,
-            wire=True,
+            wire=False,
             uniform_initial=True,
         )
+        audit_anchors = _geometry_anchors(
+            background,
+            geometry,
+            shifts,
+            gi,
+            volume=False,
+            wire=True,
+            uniform_initial=False,
+        )
+        anchors = list(background_anchors) + list(audit_anchors)
         training_anchor_sets.append(anchors)
-        bg_anchors.extend(anchors)
+        bg_anchors.extend(background_anchors)
         print(
-            f"准备 complete background thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
+            f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
         )
     bg_modes, bg_steps, bg_stop, bg_error = _greedy_basis(
