@@ -376,7 +376,7 @@ results/uwpt/model.geometry_thermal.npz
 CACHE_FORMAT = 19
 ```
 
-cache 只有在以下条件全部成立时才可复用：physical signature 相同、preflight 已 certified、local self reference 已 converged、self-correction model 与当前 production model 一致。修改 `self_correction` 的 mesh/padding/tolerance 会使物理 cache 自动失效。
+cache 只有在以下条件全部成立时才可复用：physical signature 相同、preflight 已 certified、local self reference 已 converged、self-correction model 与当前 production model 一致。修改 `self_correction` 的 mesh/padding/tolerance 会使物理 cache 自动失效。`CACHE_FORMAT = 19` 同时强制淘汰旧的 v18 thermal cache，因为 local block 已新增 self-volume Joule response transport，旧基底不能与新构造语义混用。
 
 当前 unified model artifact：
 
