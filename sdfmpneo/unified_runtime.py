@@ -142,20 +142,27 @@ def train(settings,model_path,settings_dir,monitor=None):
     try:
         _progress("构建开放边界固定背景物理空间",0,monitor); bg=build_background(settings); _progress("构建开放边界固定背景物理空间",5,monitor)
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs；Maxwell 仅用于离线 open-boundary truth。",flush=True)
-        seed=int(settings["TRAINING"].get("seed",17)); valid_cache=False; cache_meta={}
-        if meta_path.is_file() and thermal_path.is_file() and data_path.is_file():
+        seed=int(settings["TRAINING"].get("seed",17)); preflight_cache_valid=False; valid_cache=False; cache_meta={}
+        if meta_path.is_file():
             try:
                 cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
                 cached_preflight=dict(cache_meta.get("truth_preflight",{}))
-                valid_cache=(
+                preflight_cache_valid=(
                     cache_meta.get("signature")==sig
                     and int(cache_meta.get("cache_format",-1))==_CACHE_FORMAT
                     and bool(cached_preflight.get("certified",False))
                     and bool(cached_preflight.get("local_self_correction_converged",False))
                     and cache_meta.get("self_correction_model")==_SELF_CORRECTION_MODEL
                 )
-            except (OSError,ValueError,TypeError): valid_cache=False
-        if valid_cache:
+                valid_cache=(
+                    preflight_cache_valid
+                    and thermal_path.is_file()
+                    and data_path.is_file()
+                    and bool(cache_meta.get("thermal_basis_report"))
+                )
+            except (OSError,ValueError,TypeError):
+                preflight_cache_valid=False; valid_cache=False; cache_meta={}
+        if preflight_cache_valid:
             preflight=dict(cache_meta["truth_preflight"]); _progress("复用已认证 pre-basis spatial truth preflight",6,monitor)
             print("Truth preflight：复用当前 physical-cache signature 下已通过的验证结果。",flush=True)
         else:
@@ -163,6 +170,16 @@ def train(settings,model_path,settings_dir,monitor=None):
             _progress("执行 pre-basis spatial truth preflight",6,monitor); preflight=run_truth_preflight(settings,bg,preflight_geometries,monitor=monitor)
             if not preflight["certified"]: raise RuntimeError("Spatial truth preflight failed; refusing thermal-basis construction: "+json.dumps(jsonable(preflight),sort_keys=True))
             print("Truth preflight：finite-support source / terminal continuity / loss partition / open-domain / MQS / local-self reference / corrected EM mesh convergence 全部通过。",flush=True)
+            # Persist the expensive certified EM preflight immediately.  Thermal
+            # ROM construction may still fail; that must not force another 20+
+            # minute Maxwell preflight on the next run.
+            cache_meta={
+                "cache_format":_CACHE_FORMAT,
+                "signature":sig,
+                "truth_preflight":preflight,
+                "self_correction_model":_SELF_CORRECTION_MODEL,
+            }
+            write_json(meta_path,cache_meta)
         if valid_cache:
             _progress("复用 geometry-aware thermal library 与 tensor truth 数据",38,monitor)
             thermal_report=cache_meta.get("thermal_basis_report",{}); _require_effective_thermal_basis(thermal_report)
