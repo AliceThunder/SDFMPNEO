@@ -3,7 +3,12 @@ import types
 import numpy as np
 import scipy.sparse as sp
 
-from sdfmpneo.unified_thermal import _maxwell_port_fields, _solve_block, _trajectory_metric
+from sdfmpneo.unified_thermal import (
+    _maxwell_port_fields,
+    _solve_block,
+    _trajectory_metric,
+    _weighted_append,
+)
 
 
 def test_thermal_block_solve_matches_dense_multiple_rhs():
@@ -61,3 +66,12 @@ def test_thermal_anchor_maxwell_uses_installed_truth_solver(monkeypatch):
     got = _maxwell_port_fields(background, context)
     np.testing.assert_allclose(got, expected)
     assert called == {"background": background, "context": context}
+
+
+def test_weighted_append_is_scale_invariant_for_small_thermal_fields():
+    phi = np.empty((3, 0), float)
+    weights = np.ones(3)
+    vector = np.array([1.0e-20, 0.0, 0.0])
+    out, added = _weighted_append(phi, vector, weights)
+    assert added is True
+    np.testing.assert_allclose(out.T @ (weights[:, None] * out), np.eye(1), rtol=1e-12, atol=1e-12)
