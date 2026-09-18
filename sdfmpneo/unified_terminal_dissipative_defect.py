@@ -18,11 +18,11 @@ For each port and each terminal contact:
 Feed and return windows must be disjoint, so their defects can be summed without
 double counting. The smooth feed/return cross field is still present in each
 balanced solve and in the local energy where physically relevant; only the
-unresolved terminal neighbourhood is replaced. The refined local reference uses
-geometry-resolved sigma/epsilon edge-dual mass, while the coarse baseline is the
-exact restriction of the production scalar operator. Thus the correction also
-removes the local cut-cell material error without perturbing the certified full
-Maxwell operator.
+unresolved terminal neighbourhood is replaced. Production v34 keeps refined
+sigma/epsilon frozen to the production parent field, piecewise-constant on
+parent cells. This isolates terminal source/Galerkin resolution from material
+re-discretization. The earlier geometry-resolved sigma/epsilon experiment remains
+diagnostic-only because it did not improve convergence and dominated wall time.
 
 Re(delta Z_pp) is set exactly equal to the summed local D_vol defect, D_out is
 unchanged, and modal Joule heat receives the same local fine-minus-coarse
