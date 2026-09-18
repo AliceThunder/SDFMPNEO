@@ -339,9 +339,19 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         if gradient_block is not None
         else "shifted-ILU fallback"
     )
+    attempt_summary = []
+    for row in history:
+        label = str(row.get("solver", "unknown"))
+        if row.get("preconditioner_failed", False):
+            attempt_summary.append(f"{label}=preconditioner_failed")
+        elif "maximum_relative_residual" in row:
+            attempt_summary.append(
+                f"{label}={float(row['maximum_relative_residual']):.3e}"
+            )
     raise RuntimeError(
         "large global Maxwell iterative solve did not reach the certified residual; "
-        f"edges={A.shape[0]}, residual={best_residual:.3e}, tolerance={tolerance:.3e}. "
+        f"edges={A.shape[0]}, residual={best_residual:.3e}, tolerance={tolerance:.3e}, "
+        f"attempts=[{'; '.join(attempt_summary)}]. "
         f"The {preconditioner_name} preconditioner was unable to certify this system; "
         "do not relax the Gate."
     )
