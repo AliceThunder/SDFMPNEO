@@ -317,6 +317,83 @@ def _joint_geometry_worst(background, reference, bg_modes, local_modes, geometri
     return worst
 
 
+def _transported_local_columns(background, reference, local_modes, geometry):
+    """Transport and normalize the local block once for one training geometry."""
+    g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+    columns = []
+    for p, modes in enumerate(local_modes):
+        source_pose = reference.coils[p].pose
+        target_pose = g.coils[p].pose
+        for j in range(modes.shape[1]):
+            q = _transport_field(background, modes[:, j], source_pose, target_pose)
+            norm = float(np.sqrt(max(np.dot(q, background.cell_volumes * q), 0.0)))
+            if not np.isfinite(norm) or norm <= 1e-14:
+                raise RuntimeError("transported thermal mode lost support inside the physical domain")
+            columns.append(q / norm)
+    if not columns:
+        return np.empty((background.n_cells, 0), float)
+    return np.column_stack(columns)
+
+
+def _check_cached_basis_conditioning(
+    background,
+    background_modes,
+    transported_local,
+    conditioning_limit,
+):
+    """Apply the same raw-basis conditioning gate as basis_for_geometry."""
+    blocks = []
+    for block in (background_modes, transported_local):
+        block = np.asarray(block, float)
+        if block.size:
+            blocks.append(block)
+    if not blocks:
+        raise RuntimeError("geometry-aware thermal library is empty")
+    raw = np.column_stack(blocks)
+    norms = np.sqrt(
+        np.maximum(
+            np.sum(background.cell_volumes[:, None] * raw * raw, axis=0),
+            0.0,
+        )
+    )
+    if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
+        raise RuntimeError("transported thermal mode lost support inside the physical domain")
+    normalized = raw / norms
+    gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
+    gram = 0.5 * (gram + gram.T)
+    eig = np.linalg.eigvalsh(gram)
+    if eig[0] <= 0.0:
+        raise RuntimeError("geometry-aware thermal basis became rank deficient")
+    condition = float(eig[-1] / eig[0])
+    if not np.isfinite(condition) or condition > float(conditioning_limit):
+        raise RuntimeError(
+            f"geometry-aware thermal basis conditioning failed: cond={condition:.3e}"
+        )
+    return normalized
+
+
+def _combined_cached_basis(
+    background,
+    background_modes,
+    transported_local,
+    conditioning_limit,
+):
+    """Build the exact production span once, then update it incrementally."""
+    normalized = _check_cached_basis_conditioning(
+        background,
+        background_modes,
+        transported_local,
+        conditioning_limit,
+    )
+    phi = np.empty((background.n_cells, 0), float)
+    for j in range(normalized.shape[1]):
+        phi2, added = _weighted_append(phi, normalized[:, j], background.cell_volumes)
+        if not added:
+            raise RuntimeError(f"geometry-aware thermal mode {j} became linearly dependent")
+        phi = phi2
+    return phi
+
+
 def _enrich_background_against_full_library(
     background,
     reference,
@@ -330,36 +407,81 @@ def _enrich_background_against_full_library(
     conditioning_limit,
     monitor,
 ):
-    """Add only the global residual left after transported local blocks act."""
+    """Add global residual modes without rebuilding transported local spans each step."""
+    del time_scales  # The cached span already contains the complete production block.
+    geometries = list(geometries)
     phi_bg = np.asarray(bg_modes, float)
+
+    local_columns = [
+        _transported_local_columns(background, reference, local_modes, geometry)
+        for geometry in geometries
+    ]
+    anchors_by_geometry = [[] for _ in geometries]
+    for anchors in anchor_sets:
+        for anchor in anchors:
+            gi = int(anchor["geometry_index"])
+            if 0 <= gi < len(anchors_by_geometry):
+                anchors_by_geometry[gi].append(anchor)
+    groups_by_geometry = [_group_anchors(items) for items in anchors_by_geometry]
+
+    spans = [
+        _combined_cached_basis(
+            background,
+            phi_bg,
+            local_columns[gi],
+            conditioning_limit,
+        )
+        for gi in range(len(geometries))
+    ]
+
     steps = 0
     stop = "target_reached"
+
+    def worst_state():
+        worst = (-1.0, None, None)
+        for gi, groups in enumerate(groups_by_geometry):
+            relative, anchor, error = _worst_anchor_grouped(groups, spans[gi])
+            if relative > worst[0]:
+                worst = (relative, anchor, error)
+        return worst
+
     while True:
         if monitor is not None:
             monitor.checkpoint()
-        worst, anchor, error, _geometry = _joint_geometry_worst(
-            background,
-            reference,
-            phi_bg,
-            local_modes,
-            geometries,
-            anchor_sets,
-            time_scales,
-            conditioning_limit,
-        )
+        worst, anchor, error = worst_state()
         if worst <= target:
             break
         total_rank = int(phi_bg.shape[1] + sum(m.shape[1] for m in local_modes))
         if maximum_rank is not None and total_rank >= int(maximum_rank):
             stop = "maximum_rank_reached"
             break
+
         phi2, added = _weighted_append(phi_bg, error, background.cell_volumes)
         if not added:
-            # This should be rare: a nonzero Galerkin error cannot be exactly in
-            # the current full span.  Keep the failure explicit rather than
-            # silently weakening the training certificate.
+            phi2, added = _weighted_append(phi_bg, anchor["u"], background.cell_volumes)
+        if not added:
             stop = "no_independent_background_residual"
             break
+
+        new_direction = phi2[:, -1]
+        for gi, local in enumerate(local_columns):
+            _check_cached_basis_conditioning(
+                background,
+                phi2,
+                local,
+                conditioning_limit,
+            )
+            span2, span_added = _weighted_append(
+                spans[gi],
+                new_direction,
+                background.cell_volumes,
+            )
+            if not span_added:
+                raise RuntimeError(
+                    "geometry-aware thermal background residual became linearly dependent"
+                )
+            spans[gi] = span2
+
         phi_bg = phi2
         steps += 1
         if monitor is not None:
@@ -376,17 +498,8 @@ def _enrich_background_against_full_library(
                 f"rank={phi_bg.shape[1]}  worst full-library energy error={worst:.3e}",
                 flush=True,
             )
-    final = _joint_geometry_worst(
-        background,
-        reference,
-        phi_bg,
-        local_modes,
-        geometries,
-        anchor_sets,
-        time_scales,
-        conditioning_limit,
-    )[0]
-    return phi_bg, steps, stop, float(final)
+
+    return phi_bg, steps, stop, float(worst_state()[0])
 
 
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
