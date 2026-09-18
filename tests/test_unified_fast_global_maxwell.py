@@ -2,6 +2,7 @@ import numpy as np
 import scipy.sparse as sp
 
 import sdfmpneo.unified_certified_local_solve as local_solver
+import sdfmpneo.unified_fast_global_maxwell as fast_global
 from sdfmpneo.unified_fast_global_maxwell import solve_multi_rhs
 
 
@@ -47,3 +48,43 @@ def test_global_multi_rhs_iterative_solver_shares_policy_and_certifies_true_resi
     scale = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
     actual = np.linalg.norm(B - A @ X, axis=0) / scale
     assert float(np.max(actual)) <= 1e-10
+
+
+
+def test_tensor_port_truth_tags_operator_for_compatible_solver(monkeypatch):
+    class PhysicsGate:
+        pass
+
+    class TensorSurrogate:
+        pass
+
+    class Background:
+        def em_operator(self, context, temperature):
+            assert temperature is None
+            return sp.eye(4, format="csr", dtype=complex)
+
+        def rhs_matrix(self, context):
+            return np.ones((4, 2), complex)
+
+    seen = {}
+
+    def fake_solve_multi_rhs(background, A, B, local_solver_module):
+        seen["background"] = background
+        seen["A"] = A
+        seen["B"] = np.asarray(B)
+        seen["local_solver"] = local_solver_module
+        return np.ones_like(B), 1e-12, ()
+
+    monkeypatch.setattr(fast_global, "solve_multi_rhs", fake_solve_multi_rhs)
+    fast_global.install(PhysicsGate, TensorSurrogate, local_solver)
+
+    background = Background()
+    context = object()
+    X, residual = TensorSurrogate._solve_port_fields(background, context)
+
+    assert X.shape == (4, 2)
+    assert residual == 1e-12
+    A = seen["A"]
+    assert A._sdfmpneo_background is background
+    assert A._sdfmpneo_context is context
+    assert A._sdfmpneo_mqs is False
