@@ -875,9 +875,9 @@ def build_geometry_aware_thermal_library(
     if not canonical:
         canonical = [reference]
 
-    # Canonical wire anchors are also prepared once for both ports.  The old
-    # implementation repeated the same K+sM factorization independently for
-    # local-port-0 and local-port-1.
+    # Canonical local anchors are prepared once for both ports.  Each local
+    # block receives its own self-volume hotspot plus wire source; cross-port
+    # volume directions remain global/background.
     canonical_anchor_sets = []
     for gi, geometry in enumerate(canonical):
         canonical_anchor_sets.append(
@@ -886,7 +886,7 @@ def build_geometry_aware_thermal_library(
                 geometry,
                 shifts,
                 gi,
-                volume=False,
+                volume=True,
                 wire=True,
                 uniform_initial=False,
                 wire_port=None,
