@@ -241,6 +241,8 @@ preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mu
 
 首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
+local thermal blocks 同时吸收两类随线圈姿态移动的响应：wire heat 与各端口 pure-current 的 self-volume Joule thermal response。后者直接复用已经计算的 full-physics resolvent anchors，拉回 reference pose 后做 greedy compression，不增加额外 Maxwell truth solve。固定 background block 只拟合这些 transported local blocks 之后剩余的 uniform / mutual / nonlocal residual，避免用大量固定模式记忆移动热源。
+
 每个 geometry 从真实 full thermal operators 投影：
 
 \[
@@ -369,7 +371,7 @@ results/uwpt/model.geometry_thermal.npz
 当前物理：
 
 ```text
-CACHE_FORMAT = 18
+CACHE_FORMAT = 19
 ```
 
 cache 只有在以下条件全部成立时才可复用：physical signature 相同、preflight 已 certified、local self reference 已 converged、self-correction model 与当前 production model 一致。修改 `self_correction` 的 mesh/padding/tolerance 会使物理 cache 自动失效。
