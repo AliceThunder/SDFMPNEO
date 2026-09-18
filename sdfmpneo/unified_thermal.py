@@ -99,7 +99,7 @@ def _solve(A, b):
         return np.asarray(spla.lsmr(A, b, atol=1e-12, btol=1e-12)[0], float).reshape(-1)
 
 
-def _anchor(A, b, label, *, source_kind, shift, geometry_index):
+def _anchor(A, b, label, *, source_kind, shift, geometry_index, port_index=None):
     b = np.asarray(b, float).reshape(-1)
     u = _solve(A, b)
     denom2 = float(np.real(u @ (A @ u)))
@@ -114,6 +114,7 @@ def _anchor(A, b, label, *, source_kind, shift, geometry_index):
         "source_kind": str(source_kind),
         "shift": float(shift),
         "geometry_index": int(geometry_index),
+        "port_index": None if port_index is None else int(port_index),
         "rhs_norm": float(np.linalg.norm(b)),
     }
 
@@ -128,32 +129,42 @@ def _geometry_anchors(
     wire=True,
     uniform_initial=True,
     wire_port=None,
+    volume_port=None,
 ):
     context = background.geometry_context(geometry, assemble_thermal=False)
     M, K = background.thermal_operator_full(context.fractions)
     rhs_items = []
     if volume:
         X = _maxwell_port_fields(background, context)
-        for j, current in enumerate(_port_current_vectors(X.shape[1])):
+        currents = _port_current_vectors(X.shape[1])
+        if volume_port is None:
+            volume_items = list(enumerate(currents))
+        else:
+            p = int(volume_port)
+            if p < 0 or p >= X.shape[1]:
+                raise ValueError("volume_port is out of range")
+            volume_items = [(p, currents[p])]
+        for j, current in volume_items:
             q = _volume_heat(background, context, X @ current)
             if np.linalg.norm(q) > np.finfo(float).tiny:
-                rhs_items.append((f"volume[{j}]", "volume", q))
+                pure_port = j if j < X.shape[1] else None
+                rhs_items.append((f"volume[{j}]", "volume", q, pure_port))
     if wire:
         for p, weights in enumerate(context.line_heat_weights):
             if wire_port is not None and p != int(wire_port):
                 continue
             q = np.asarray(weights, float).reshape(-1)
             if np.linalg.norm(q) > np.finfo(float).tiny:
-                rhs_items.append((f"wire[{p}]", f"wire[{p}]", q))
+                rhs_items.append((f"wire[{p}]", f"wire[{p}]", q, p))
     if uniform_initial:
         rhs_items.append(
-            ("initial[uniform]", "initial", np.asarray(M @ np.ones(background.n_cells)).reshape(-1))
+            ("initial[uniform]", "initial", np.asarray(M @ np.ones(background.n_cells)).reshape(-1), None)
         )
 
     anchors = []
     for shift in shifts:
         A = (K + float(shift) * M).tocsr()
-        for label, kind, b in rhs_items:
+        for label, kind, b, port_index in rhs_items:
             item = _anchor(
                 A,
                 b,
@@ -161,6 +172,7 @@ def _geometry_anchors(
                 source_kind=kind,
                 shift=shift,
                 geometry_index=geometry_index,
+                port_index=port_index,
             )
             if item is not None:
                 anchors.append(item)
@@ -265,6 +277,170 @@ def _transport_field(background, field, source_pose, target_pose):
     if np.any(~np.isfinite(out)):
         raise FloatingPointError("thermal rigid transport produced non-finite values")
     return out
+
+
+def _snapshot_relative_error(vector, phi, weights):
+    vector = np.asarray(vector, float).reshape(-1)
+    denom2 = float(np.dot(vector, weights * vector))
+    if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
+        return 0.0, np.zeros_like(vector)
+    if phi.size:
+        approximation = phi @ (phi.T @ (weights * vector))
+    else:
+        approximation = np.zeros_like(vector)
+    error = vector - approximation
+    num2 = max(float(np.dot(error, weights * error)), 0.0)
+    return float(np.sqrt(num2 / denom2)), error
+
+
+def _augment_snapshot_basis(background, phi, vectors, target, maximum_rank, monitor, label):
+    """Greedily compress transported physical snapshots in the volume metric."""
+    phi = np.asarray(phi, float)
+    vectors = [np.asarray(v, float).reshape(-1) for v in vectors]
+    vectors = [v for v in vectors if np.linalg.norm(v) > np.finfo(float).tiny]
+    if not vectors:
+        return phi, 0, "target_reached", 0.0
+    rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
+    steps = 0
+    stop = "target_reached"
+    while True:
+        if monitor is not None:
+            monitor.checkpoint()
+        worst = (-1.0, None)
+        for vector in vectors:
+            relative, error = _snapshot_relative_error(vector, phi, background.cell_volumes)
+            if relative > worst[0]:
+                worst = (relative, error)
+        if worst[0] <= target:
+            break
+        if phi.shape[1] >= rank_limit:
+            stop = "maximum_rank_reached"
+            break
+        phi2, added = _weighted_append(phi, worst[1], background.cell_volumes)
+        if not added:
+            stop = "no_independent_thermal_direction"
+            break
+        phi = phi2
+        steps += 1
+        if monitor is not None:
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage=str(label),
+                    thermal_basis_rank=phi.shape[1],
+                    thermal_basis_energy_error=worst[0],
+                )
+    final = max((_snapshot_relative_error(v, phi, background.cell_volumes)[0] for v in vectors), default=0.0)
+    return phi, steps, stop, float(final)
+
+
+def _transported_local_columns(background, reference, local_modes, geometry):
+    """Return normalized transported local columns without a background block."""
+    g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+    columns = []
+    for p, modes in enumerate(local_modes):
+        source_pose = reference.coils[p].pose
+        target_pose = g.coils[p].pose
+        for j in range(modes.shape[1]):
+            q = _transport_field(background, modes[:, j], source_pose, target_pose)
+            norm = float(np.sqrt(max(np.dot(q, background.cell_volumes * q), 0.0)))
+            if not np.isfinite(norm) or norm <= 1e-14:
+                raise RuntimeError("transported thermal mode lost support inside the physical domain")
+            columns.append(q / norm)
+    return np.empty((background.n_cells, 0), float) if not columns else np.column_stack(columns)
+
+
+def _combined_basis(background, background_modes, transported_local):
+    """Volume-orthonormalize the exact span used by the production library."""
+    phi = np.empty((background.n_cells, 0), float)
+    for block in (background_modes, transported_local):
+        block = np.asarray(block, float)
+        for j in range(block.shape[1]):
+            phi2, added = _weighted_append(phi, block[:, j], background.cell_volumes)
+            if added:
+                phi = phi2
+    return phi
+
+
+def _greedy_background_residual(
+    background,
+    anchors,
+    geometries,
+    reference,
+    local_modes,
+    target,
+    maximum_total_rank,
+    monitor,
+):
+    """Build only the non-transportable residual after local physical modes.
+
+    Pure-port self-volume and wire responses move with their coils and belong to
+    transported local blocks.  The fixed background block is therefore selected
+    against the residual left after those blocks, rather than relearning moving
+    heat sources at every sampled pose.
+    """
+    geometries = list(geometries)
+    local_columns = [
+        _transported_local_columns(background, reference, local_modes, geometry)
+        for geometry in geometries
+    ]
+    by_geometry = [[] for _ in geometries]
+    for anchor in anchors:
+        gi = int(anchor["geometry_index"])
+        if 0 <= gi < len(by_geometry):
+            by_geometry[gi].append(anchor)
+
+    phi_bg = np.empty((background.n_cells, 0), float)
+    local_rank = int(sum(m.shape[1] for m in local_modes))
+    rank_limit = background.n_cells
+    if maximum_total_rank is not None:
+        rank_limit = max(0, min(background.n_cells, int(maximum_total_rank) - local_rank))
+    steps = 0
+    stop = "target_reached"
+
+    def worst_state():
+        worst = (-1.0, None, None)
+        for gi, local in enumerate(local_columns):
+            phi = _combined_basis(background, phi_bg, local)
+            for anchor in by_geometry[gi]:
+                relative, error = _anchor_error(anchor, phi)
+                if relative > worst[0]:
+                    worst = (relative, anchor, error)
+        return worst
+
+    while True:
+        if monitor is not None:
+            monitor.checkpoint()
+        worst, anchor, error = worst_state()
+        if worst <= target:
+            break
+        if phi_bg.shape[1] >= rank_limit:
+            stop = "maximum_rank_reached"
+            break
+        phi2, added = _weighted_append(phi_bg, error, background.cell_volumes)
+        if not added:
+            phi2, added = _weighted_append(phi_bg, anchor["u"], background.cell_volumes)
+        if not added:
+            stop = "no_independent_thermal_direction"
+            break
+        phi_bg = phi2
+        steps += 1
+        if monitor is not None:
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="background-residual",
+                    thermal_basis_rank=phi_bg.shape[1],
+                    thermal_basis_energy_error=worst,
+                )
+        if phi_bg.shape[1] == 1 or phi_bg.shape[1] % 4 == 0:
+            after = worst_state()[0]
+            print(
+                "构建 geometry-aware thermal canonical block[background-residual]……"
+                f"rank={phi_bg.shape[1]}  worst energy error={after:.3e}",
+                flush=True,
+            )
+    return phi_bg, steps, stop, float(worst_state()[0])
 
 
 @dataclass(frozen=True)
@@ -407,6 +583,7 @@ def _anchor_summary(anchor, error):
         "label": anchor["label"],
         "geometry_index": int(anchor["geometry_index"]),
         "source_kind": anchor["source_kind"],
+        "port_index": anchor.get("port_index"),
         "shift": shift,
         "time_scale": None if shift == 0.0 else float(1.0 / shift),
         "relative_energy_error": float(error),
@@ -654,6 +831,9 @@ def build_geometry_aware_thermal_library(
     validation = [] if validation_geometries is None else [background.validate_geometry(g) for g in validation_geometries]
     shifts = _resolvent_shifts(time_scales)
 
+    # Full physical anchors are solved once and reused.  In particular, the
+    # pure-port volume responses become geometry-following local snapshots instead
+    # of forcing the fixed background block to memorize every coil pose.
     bg_anchors = []
     for gi, geometry in enumerate(training):
         bg_anchors.extend(
@@ -668,12 +848,9 @@ def build_geometry_aware_thermal_library(
             )
         )
         print(
-            f"准备 background thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
+            f"准备 thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
         )
-    bg_modes, bg_steps, bg_stop, bg_error = _greedy_basis(
-        background, bg_anchors, target, maximum_rank, monitor, "background"
-    )
 
     canonical = []
     for geometry in training:
@@ -690,9 +867,9 @@ def build_geometry_aware_thermal_library(
     local_stop = "target_reached"
     local_errors = []
     for p in range(reference.n_ports):
-        anchors = []
+        wire_anchors = []
         for gi, geometry in enumerate(canonical):
-            anchors.extend(
+            wire_anchors.extend(
                 _geometry_anchors(
                     background,
                     geometry,
@@ -705,13 +882,53 @@ def build_geometry_aware_thermal_library(
                 )
             )
         modes, steps, stop, error = _greedy_basis(
-            background, anchors, target, maximum_rank, monitor, f"local-port-{p}"
+            background, wire_anchors, target, maximum_rank, monitor, f"local-port-{p}"
+        )
+
+        # Reuse already-solved pure-port volume thermal responses and pull them
+        # back to the reference pose.  This is the critical geometry-generalization
+        # step: self-volume Joule heat follows the coil instead of being encoded as
+        # dozens of fixed global modes for each sampled translation/rotation.
+        self_volume_snapshots = []
+        for anchor in bg_anchors:
+            if anchor.get("source_kind") != "volume" or anchor.get("port_index") != p:
+                continue
+            gi = int(anchor["geometry_index"])
+            source_pose = training[gi].coils[p].pose
+            target_pose = reference.coils[p].pose
+            self_volume_snapshots.append(
+                _transport_field(background, anchor["u"], source_pose, target_pose)
+            )
+        modes, extra_steps, snapshot_stop, snapshot_error = _augment_snapshot_basis(
+            background,
+            modes,
+            self_volume_snapshots,
+            target,
+            maximum_rank,
+            monitor,
+            f"local-port-{p}-self-volume",
         )
         local_modes.append(modes)
-        local_steps += steps
-        local_errors.append(error)
+        local_steps += steps + extra_steps
+        local_errors.append(max(error, snapshot_error))
         if stop != "target_reached":
             local_stop = stop
+        if snapshot_stop != "target_reached":
+            local_stop = snapshot_stop
+
+    # Only the part that cannot follow either coil is represented by a fixed
+    # background block.  This includes uniform/global diffusion and mutual/nonlocal
+    # volume-heating residuals.
+    bg_modes, bg_steps, bg_stop, bg_error = _greedy_background_residual(
+        background,
+        bg_anchors,
+        training,
+        reference,
+        tuple(local_modes),
+        target,
+        maximum_rank,
+        monitor,
+    )
 
     library = GeometryAwareThermalLibrary(
         reference,
