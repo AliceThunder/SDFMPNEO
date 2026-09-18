@@ -1,7 +1,12 @@
 import numpy as np
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
-from sdfmpneo.unified_thermal import build_geometry_aware_thermal_library
+from sdfmpneo.unified_thermal import (
+    _greedy_background_residual,
+    _transport_field,
+    build_geometry_aware_thermal_library,
+)
+from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 
 
 MATERIALS = {
@@ -116,3 +121,56 @@ def test_held_out_diagnostics_identify_source_time_and_trajectory_output():
     assert "field_mass_relative_error" in report.worst_validation_trajectory
     assert "maximum_temperature_relative_error" in report.worst_validation_trajectory
     assert "maximum_wire_average_relative_error" in report.worst_validation_trajectory
+
+
+def test_transported_self_volume_response_does_not_consume_fixed_background_rank():
+    """A translated self-heating mode belongs to the local transported span."""
+    bg = make_background()
+    reference = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
+    shifted_mapping = reference.to_mapping()
+    shifted_mapping["coils"][0]["translation"][0] += 0.025
+    shifted_mapping["packages"][0]["translation"][0] += 0.025
+    shifted = UnifiedUWPTGeometry.from_mapping(shifted_mapping)
+
+    x, y, z = bg.cell_centers.T
+    canonical = np.exp(-((x / 0.018) ** 2 + (y / 0.018) ** 2 + (z / 0.018) ** 2))
+    canonical /= np.sqrt(np.dot(canonical, bg.cell_volumes * canonical))
+    moved = _transport_field(
+        bg,
+        canonical,
+        reference.coils[0].pose,
+        shifted.coils[0].pose,
+    )
+
+    identity = sp.eye(bg.n_cells, format="csr")
+    anchors = []
+    for gi, vector in enumerate((canonical, moved)):
+        anchors.append(
+            {
+                "A": identity,
+                "b": vector.copy(),
+                "u": vector.copy(),
+                "denom2": float(np.dot(vector, vector)),
+                "label": f"geometry[{gi}]/volume[0]/s=0",
+                "source_kind": "volume",
+                "shift": 0.0,
+                "geometry_index": gi,
+                "port_index": 0,
+                "rhs_norm": float(np.linalg.norm(vector)),
+            }
+        )
+
+    empty = np.empty((bg.n_cells, 0), float)
+    background_modes, _steps, stop, error = _greedy_background_residual(
+        bg,
+        anchors,
+        [reference, shifted],
+        reference,
+        (canonical[:, None], empty),
+        5e-2,
+        None,
+        None,
+    )
+    assert stop == "target_reached"
+    assert background_modes.shape[1] == 0
+    assert error <= 5e-2
