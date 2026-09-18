@@ -228,6 +228,78 @@ def _worst_anchor(anchors, phi):
     return worst
 
 
+def _group_anchors(anchors):
+    """Group anchors that share one full operator so reduced RHS solves can be batched."""
+    groups = {}
+    for anchor in anchors:
+        key = (int(anchor["geometry_index"]), float(anchor["shift"]), id(anchor["A"]))
+        groups.setdefault(key, []).append(anchor)
+    return tuple(groups.values())
+
+
+def _anchor_relative_errors_grouped(groups, phi):
+    """Evaluate all RHS for each shared resolvent with one reduced solve."""
+    rows = []
+    for group in groups:
+        if not group:
+            continue
+        if phi.shape[1] == 0:
+            rows.extend((anchor, 1.0) for anchor in group)
+            continue
+        A = group[0]["A"]
+        APhi = A @ phi
+        Ar = phi.T @ APhi
+        B = np.column_stack([anchor["b"] for anchor in group])
+        Br = phi.T @ B
+        try:
+            coeff = np.linalg.solve(Ar, Br)
+        except np.linalg.LinAlgError:
+            coeff = np.linalg.lstsq(Ar, Br, rcond=None)[0]
+        U = np.column_stack([anchor["u"] for anchor in group])
+        E = U - phi @ coeff
+        AE = A @ E
+        numerators = np.maximum(np.real(np.sum(E * AE, axis=0)), 0.0)
+        denominators = np.asarray([anchor["denom2"] for anchor in group], float)
+        relatives = np.sqrt(numerators / denominators)
+        rows.extend((anchor, float(relative)) for anchor, relative in zip(group, relatives))
+    return rows
+
+
+def _worst_anchor_grouped(groups, phi):
+    """Return the worst anchor while sharing one reduced solve per operator group."""
+    if not groups:
+        return 0.0, None, None
+    worst = (-1.0, None, None)
+    for group in groups:
+        if not group:
+            continue
+        if phi.shape[1] == 0:
+            anchor = group[0]
+            if 1.0 > worst[0]:
+                worst = (1.0, anchor, np.asarray(anchor["u"], float).copy())
+            continue
+        A = group[0]["A"]
+        APhi = A @ phi
+        Ar = phi.T @ APhi
+        B = np.column_stack([anchor["b"] for anchor in group])
+        Br = phi.T @ B
+        try:
+            coeff = np.linalg.solve(Ar, Br)
+        except np.linalg.LinAlgError:
+            coeff = np.linalg.lstsq(Ar, Br, rcond=None)[0]
+        U = np.column_stack([anchor["u"] for anchor in group])
+        E = U - phi @ coeff
+        AE = A @ E
+        numerators = np.maximum(np.real(np.sum(E * AE, axis=0)), 0.0)
+        denominators = np.asarray([anchor["denom2"] for anchor in group], float)
+        relatives = np.sqrt(numerators / denominators)
+        index = int(np.argmax(relatives))
+        relative = float(relatives[index])
+        if relative > worst[0]:
+            worst = (relative, group[index], E[:, index].copy())
+    return worst
+
+
 def _joint_geometry_worst(background, reference, bg_modes, local_modes, geometries, anchor_sets, time_scales, conditioning_limit):
     library = GeometryAwareThermalLibrary(
         reference,
@@ -239,10 +311,9 @@ def _joint_geometry_worst(background, reference, bg_modes, local_modes, geometri
     worst = (-1.0, None, None, None)
     for geometry, anchors in zip(geometries, anchor_sets):
         phi = library.basis_for_geometry(background, geometry)
-        for anchor in anchors:
-            relative, error = _anchor_error(anchor, phi)
-            if relative > worst[0]:
-                worst = (float(relative), anchor, error, geometry)
+        relative, anchor, error = _worst_anchor_grouped(_group_anchors(anchors), phi)
+        if anchor is not None and relative > worst[0]:
+            worst = (float(relative), anchor, error, geometry)
     return worst
 
 
@@ -323,10 +394,11 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
     steps = 0
     stop = "target_reached"
+    groups = _group_anchors(anchors)
     while True:
         if monitor is not None:
             monitor.checkpoint()
-        worst, anchor, error = _worst_anchor(anchors, phi)
+        worst, anchor, error = _worst_anchor_grouped(groups, phi)
         if worst <= target:
             break
         if phi.shape[1] >= rank_limit:
@@ -349,13 +421,13 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
                     thermal_basis_energy_error=worst,
                 )
         if phi.shape[1] == 1 or phi.shape[1] % 4 == 0:
-            after = _worst_anchor(anchors, phi)[0]
+            after = _worst_anchor_grouped(groups, phi)[0]
             print(
                 f"构建 geometry-aware thermal canonical block[{label}]……"
                 f"rank={phi.shape[1]}  worst energy error={after:.3e}",
                 flush=True,
             )
-    return phi, steps, stop, float(_worst_anchor(anchors, phi)[0])
+    return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
 def _canonicalize_poses(geometry, reference):
@@ -571,8 +643,7 @@ def _audit_geometries(
         )
         count += len(anchors)
         local_worst = 0.0
-        for anchor in anchors:
-            error, _ = _anchor_error(anchor, phi)
+        for anchor, error in _anchor_relative_errors_grouped(_group_anchors(anchors), phi):
             shift = float(anchor["shift"])
             tau = "steady" if shift == 0.0 else f"{1.0 / shift:g}s"
             key = f"{anchor['source_kind']}@{tau}"
@@ -1000,16 +1071,29 @@ def build_geometry_aware_thermal_library(
             "held-out validation",
             anchor_sets=validation_anchor_sets,
         )
-        trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
-            audit_geometry_aware_thermal_trajectories(
-                background,
-                library,
-                validation,
-                times=trajectory_times,
-                monitor=monitor,
-                anchor_sets=validation_anchor_sets,
+        if validation_error > target:
+            trajectory_error = 0.0
+            worst_trajectory = {}
+            trajectory_diag = {
+                "audit_skipped_validation_energy_error": float(validation_error),
+            }
+            audited_times = tuple(float(v) for v in _trajectory_times(time_scales, trajectory_times))
+            print(
+                "held-out resolvent audit already exceeds target; "
+                "skipping expensive full-vs-ROM trajectory audit.",
+                flush=True,
             )
-        )
+        else:
+            trajectory_error, worst_trajectory, trajectory_diag, audited_times = (
+                audit_geometry_aware_thermal_trajectories(
+                    background,
+                    library,
+                    validation,
+                    times=trajectory_times,
+                    monitor=monitor,
+                    anchor_sets=validation_anchor_sets,
+                )
+            )
     else:
         validation_error, worst_val, val_diag, validation_anchor_count = 0.0, {}, {}, 0
         trajectory_error, worst_trajectory, trajectory_diag = 0.0, {}, {}
