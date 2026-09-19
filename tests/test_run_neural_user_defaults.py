@@ -155,3 +155,20 @@ def test_current_magnitude_phase_are_online_inputs_not_network_inputs():
 def test_thermal_component_target_policy_is_explicit():
     run = _load_run()
     assert run.TRAINING["thermal_component_target_multiplier"] == 2.0
+
+
+
+def test_thermal_basis_policy_does_not_invalidate_em_preflight_signature():
+    from sdfmpneo.unified_runtime import _preflight_signature
+
+    run = _load_run()
+    baseline = copy.deepcopy(run.SETTINGS)
+
+    thermal_policy = copy.deepcopy(baseline)
+    thermal_policy["TRAINING"]["thermal_component_target_multiplier"] = 3.0
+    thermal_policy["TRAINING"]["thermal_basis_conditioning_limit"] *= 0.5
+    assert _preflight_signature(baseline) == _preflight_signature(thermal_policy)
+
+    em_physics = copy.deepcopy(baseline)
+    em_physics["PHYSICS"]["frequency_hz"] *= 1.01
+    assert _preflight_signature(baseline) != _preflight_signature(em_physics)
