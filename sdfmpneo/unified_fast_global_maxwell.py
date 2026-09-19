@@ -45,6 +45,25 @@ def _cfg(background):
         "defect_start_residual",
         cfg.get("iterative_defect_start_residual", 1e-8),
     )
+    # A final true-residual rescue is allowed from a wider basin only after
+    # every primary preconditioned solve has failed.  This changes solver
+    # policy, not the physical operator or the 1e-9 acceptance certificate.
+    cfg.setdefault(
+        "defect_rescue_start_residual",
+        cfg.get("iterative_defect_rescue_start_residual", 2e-2),
+    )
+    cfg.setdefault(
+        "defect_rescue_steps",
+        cfg.get("iterative_defect_rescue_steps", max(4, int(cfg["defect_steps"]))),
+    )
+    cfg.setdefault(
+        "defect_rescue_maxiter",
+        cfg.get("iterative_defect_rescue_maxiter", max(24, int(cfg["defect_maxiter"]))),
+    )
+    cfg.setdefault(
+        "defect_rescue_inner_m",
+        cfg.get("iterative_defect_rescue_inner_m", max(30, int(cfg["defect_inner_m"]))),
+    )
     return cfg
 
 
@@ -81,6 +100,7 @@ def _defect_cleanup(
     *,
     maxiter,
     inner_m,
+    label_prefix="compatible-transverse-defect",
 ):
     X = np.asarray(X, complex).copy()
     history = []
@@ -118,14 +138,14 @@ def _defect_cleanup(
         elapsed = time.perf_counter() - started
         history.append(
             {
-                "solver": f"compatible-transverse-defect-{sweep+1}",
+                "solver": f"{label_prefix}-{sweep+1}",
                 "krylov_info": infos,
                 "seconds": float(elapsed),
                 "maximum_relative_residual": float(np.max(after)),
             }
         )
         print(
-            f"global Maxwell compatible-transverse-defect-{sweep+1}: "
+            f"global Maxwell {label_prefix}-{sweep+1}: "
             f"residual={float(np.max(after)):.3e}, info={infos}, time={elapsed:.1f}s",
             flush=True,
         )
@@ -221,6 +241,7 @@ def solve_multi_rhs(background, A, B, local_solver_module):
 
     history = []
     best_X = None
+    best_M = None
     best_residual = float("inf")
 
     for drop_tol, fill_factor, stabilization, label, mode in attempts:
@@ -303,6 +324,7 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         )
         if np.isfinite(worst) and worst < best_residual:
             best_X = X
+            best_M = M
             best_residual = worst
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
@@ -330,9 +352,40 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             history.extend(extra)
             if refined_residual < best_residual:
                 best_X = refined
+                best_M = M
                 best_residual = refined_residual
             if best_residual <= tolerance:
                 return best_X, best_residual, tuple(history)
+
+    rescue_start = max(
+        float(cfg["defect_rescue_start_residual"]),
+        float(tolerance),
+    )
+    if (
+        best_X is not None
+        and best_M is not None
+        and np.isfinite(best_residual)
+        and best_residual <= rescue_start
+        and int(cfg["defect_rescue_steps"]) > 0
+    ):
+        rescued, rescued_residual, extra = _defect_cleanup(
+            A,
+            B,
+            best_X,
+            best_M,
+            local_solver_module,
+            tolerance,
+            int(cfg["defect_rescue_steps"]),
+            maxiter=int(cfg["defect_rescue_maxiter"]),
+            inner_m=int(cfg["defect_rescue_inner_m"]),
+            label_prefix="certified-defect-rescue",
+        )
+        history.extend(extra)
+        if rescued_residual < best_residual:
+            best_X = rescued
+            best_residual = rescued_residual
+        if best_residual <= tolerance:
+            return best_X, best_residual, tuple(history)
 
     preconditioner_name = (
         "compatible gradient/transverse"
