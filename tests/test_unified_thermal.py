@@ -359,3 +359,51 @@ def test_geometry_aware_thermal_library_schema_v2_round_trip(tmp_path):
     assert np.allclose(loaded.background_modes, library.background_modes)
     for got, expected in zip(loaded.local_modes, library.local_modes):
         assert np.allclose(got, expected)
+
+
+
+def test_component_stabilization_does_not_trim_below_production_condition_limit():
+    bg = make_background()
+    reference = bg.validate_geometry(make_geometry(0.0))
+    weights = np.asarray(bg.cell_volumes, float)
+    n = bg.n_cells
+
+    def normalized(vector):
+        value = np.asarray(vector, float).reshape(n)
+        return value / np.sqrt(np.dot(value, weights * value))
+
+    e0 = np.zeros(n); e0[0] = 1.0
+    e1 = np.zeros(n); e1[1] = 1.0
+    e2 = np.zeros(n); e2[2] = 1.0
+    e3 = np.zeros(n); e3[3] = 1.0
+
+    background_modes = np.column_stack((normalized(e0),))
+    local0 = np.column_stack((normalized(e2),))
+    # For two normalized nearly parallel directions cond ~= 4/eps^2.
+    # eps=3e-5 puts the raw span safely above 1e9 but below the production
+    # 1e10 Gate; stabilization must therefore leave it untouched.
+    near = normalized(e0 + 3e-5 * e1)
+    local1 = np.column_stack((normalized(e3), near))
+
+    before = _raw_block_condition(
+        bg,
+        background_modes,
+        (local0, local1),
+    )
+    assert 1e9 < before < 1e10
+
+    stable_bg, stable_local, info = _stabilize_component_blocks(
+        bg,
+        reference,
+        background_modes,
+        (local0, local1),
+        [reference],
+        1e10,
+    )
+
+    assert stable_bg.shape == background_modes.shape
+    assert stable_local[0].shape == local0.shape
+    assert stable_local[1].shape == local1.shape
+    assert info["trimmed_background"] == 0
+    assert info["trimmed_local"] == [0, 0]
+    assert info["conditioning_stabilization_target"] == 1e10
