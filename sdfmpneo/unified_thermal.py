@@ -248,10 +248,16 @@ def _self_volume_local_window(background, geometry, port):
     package_local = coil.pose.inverse(package_corners)
     package_extent = np.max(np.abs(package_local), axis=0)
 
-    # Keep at least ~1.5 fine cells of guaranteed local support and another
-    # ~2 cells of cosine taper.  The exact complement is retained globally.
-    core = np.maximum(coil_extent, package_extent) + 1.5 * minimum_step
-    outer = core + 2.0 * minimum_step
+    # The conductive-seawater Joule lobe is wider than the physical package.
+    # Keep a geometry-scaled mid field with the moving port instead of forcing
+    # that dominant pose-dependent heat into a fixed global block.  The cutoff
+    # stays well inside the artificial boundary; its exact complement remains
+    # in the fixed background, so no source power is dropped.
+    physical_radius = float(coil.outer_half_size)
+    core_margin = max(2.0 * physical_radius, 3.0 * minimum_step)
+    taper_width = max(2.0 * physical_radius, 2.0 * minimum_step)
+    core = np.maximum(coil_extent, package_extent) + core_margin
+    outer = core + taper_width
     local = np.abs(coil.pose.inverse(background.cell_centers))
 
     axis_windows = []
