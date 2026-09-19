@@ -19,7 +19,11 @@ from .unified_corrected_physics_gate import run_physics_gate
 from .unified_corrected_truth import generate_tensor_dataset
 from .unified_tensor_surrogate import TensorDataset, encode_geometry
 from .unified_tensor_training import train_matrix_tensor_surrogate
-from .unified_thermal import GeometryAwareThermalLibrary, build_geometry_aware_thermal_library
+from .unified_thermal import (
+    GeometryAwareThermalLibrary,
+    build_geometry_aware_thermal_library,
+    configure_maxwell_field_cache,
+)
 from .unified_corrected_truth_preflight import run_truth_preflight
 
 _CACHE_FORMAT = 18
@@ -200,6 +204,11 @@ def train(settings,model_path,settings_dir,monitor=None):
         print(f"背景空间：{bg.n_cells} cells，{bg.n_edges} Maxwell edge DOFs；Maxwell 仅用于离线 open-boundary truth。",flush=True)
         seed=int(settings["TRAINING"].get("seed",17)); preflight_cache_valid=False; valid_cache=False; cache_meta={}
         preflight_sig=_preflight_signature(settings)
+        configure_maxwell_field_cache(
+            bg,
+            settings_dir/"unified.thermal_maxwell_fields.npz",
+            preflight_sig,
+        )
         if meta_path.is_file():
             try:
                 cache_meta=json.loads(meta_path.read_text(encoding="utf-8"))
