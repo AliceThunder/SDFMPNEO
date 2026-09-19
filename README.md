@@ -268,10 +268,14 @@ canonical rank 用：
 ```python
 "basis_samples": 8,
 "basis_design_pool_multiplier": 16,
+"thermal_basis_energy_tolerance": 5e-2,
+"thermal_component_target_multiplier": 2.0,
 "thermal_time_scales": [0.1, 1.0, 10.0]
 ```
 
-并始终包含 `s=0` steady anchor。同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
+并始终包含 `s=0` steady anchor。background / TX-local / RX-local 是完整 ROM 的**初始化分块**，不是三个必须各自达到最终 5% 的独立 ROM；默认 component target 为 `2 × 5% = 10%`。component greedy 完成后会检查所有 training geometry 上 transported raw span 的 conditioning；如果超过 `thermal_basis_conditioning_limit`，只从 greedy 顺序末尾裁掉最冗余的 component mode。随后 background-residual enrichment 对完整 `[Phi_bg, T_tx Psi_tx, T_rx Psi_rx]` 重新追到原始 5% target，因此 component trimming 不会放宽最终训练/held-out Gate。
+
+同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
 
 held-out geometry 按“生成一个 truth anchor set → 立刻做一个 resolvent energy Gate”的顺序流式检查；任意一个 geometry 超过目标误差就立即 fail closed，不再生成剩余 held-out Maxwell truth，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有全部 held-out resolvent Gate 通过时才继续：
 
