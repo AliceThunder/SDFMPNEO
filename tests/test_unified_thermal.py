@@ -137,13 +137,15 @@ def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blo
     e1 = np.zeros(n); e1[1] = 1.0
     e2 = np.zeros(n); e2[2] = 1.0
     e3 = np.zeros(n); e3[3] = 1.0
+    e4 = np.zeros(n); e4[4] = 1.0
+    e5 = np.zeros(n); e5[5] = 1.0
 
     background_modes = np.column_stack((normalized(e0), normalized(e1)))
     local0 = np.column_stack((normalized(e2), normalized(e3)))
     # The first RX mode is independent; the trailing greedy mode is almost a
     # duplicate of a background direction and should be the one trimmed.
-    near_duplicate = normalized(e0 + 1e-7 * e3)
-    local1 = np.column_stack((normalized(e3 + e2), near_duplicate))
+    near_duplicate = normalized(e0 + 1e-7 * e5)
+    local1 = np.column_stack((normalized(e4), near_duplicate))
 
     before = _raw_block_condition(
         bg,
