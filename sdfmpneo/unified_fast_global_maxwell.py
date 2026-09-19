@@ -26,6 +26,11 @@ def _cfg(background):
     cfg = dict(root.get("linear_solver", {}) or {})
     cfg.setdefault("relative_residual_tolerance", 1e-9)
     cfg.setdefault("direct_max_dofs", 60000)
+    # The 95k-edge production global grid is small enough to retain sparse LU
+    # as a correctness fallback when Krylov/ILU stalls on a rare valid geometry.
+    # Keep this below the 118k/254k local-validation systems, which must remain
+    # on the scalable iterative/two-level paths.
+    cfg.setdefault("direct_fallback_max_dofs", 100000)
     cfg.setdefault("iterative_maxiter", 24)
     cfg.setdefault("iterative_inner_m", 24)
     cfg.setdefault("ilu_drop_tolerance", 5e-3)
@@ -140,7 +145,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
     cfg = _cfg(background)
     tolerance = float(cfg["relative_residual_tolerance"])
     direct_max = int(cfg["direct_max_dofs"])
-    if tolerance <= 0.0 or direct_max < 1:
+    direct_fallback_max = int(cfg["direct_fallback_max_dofs"])
+    if tolerance <= 0.0 or direct_max < 1 or direct_fallback_max < direct_max:
         raise ValueError("invalid global Maxwell linear solver configuration")
 
     if A.shape[0] <= direct_max:
@@ -306,6 +312,50 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             best_residual = worst
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
+
+        if (
+            label == "compatible-transverse-ilu-strong"
+            and A.shape[0] <= direct_fallback_max
+        ):
+            direct_started = time.perf_counter()
+            try:
+                direct_X, direct_seconds = _direct(A, B)
+                direct_residuals = _true_residuals(A, direct_X, B)
+                direct_worst = float(np.max(direct_residuals))
+                history.append(
+                    {
+                        "solver": "sparse-direct-correctness-fallback",
+                        "seconds": float(direct_seconds),
+                        "maximum_relative_residual": direct_worst,
+                    }
+                )
+                print(
+                    "global Maxwell sparse-direct-correctness-fallback: "
+                    f"edges={A.shape[0]}, ports={B.shape[1]}, "
+                    f"residual={direct_worst:.3e}, time={direct_seconds:.1f}s",
+                    flush=True,
+                )
+                if np.isfinite(direct_worst) and direct_worst <= tolerance:
+                    return direct_X, direct_worst, tuple(history)
+                if np.isfinite(direct_worst) and direct_worst < best_residual:
+                    best_X = direct_X
+                    best_residual = direct_worst
+            except (RuntimeError, ValueError, MemoryError) as exc:
+                elapsed_direct = time.perf_counter() - direct_started
+                history.append(
+                    {
+                        "solver": "sparse-direct-correctness-fallback",
+                        "preconditioner_failed": True,
+                        "error": type(exc).__name__,
+                        "seconds": float(elapsed_direct),
+                    }
+                )
+                print(
+                    "global Maxwell sparse-direct-correctness-fallback FAILED: "
+                    f"edges={A.shape[0]}, error={type(exc).__name__}, "
+                    f"time={elapsed_direct:.1f}s",
+                    flush=True,
+                )
 
         defect_start = max(
             float(cfg["defect_start_residual"]),
