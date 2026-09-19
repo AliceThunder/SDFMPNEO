@@ -1183,13 +1183,19 @@ def _enrich_background_against_full_library(
     conditioning_limit,
     monitor,
 ):
-    """Add global residual modes without rebuilding transported local spans each step."""
-    del time_scales  # The cached span already contains the complete production block.
+    """Add globally stable residual modes to the complete transported library."""
+    del time_scales
     geometries = list(geometries)
     phi_bg = np.asarray(bg_modes, float)
+    weights = np.asarray(background.cell_volumes, float)
 
     local_columns = [
-        _transported_local_columns(background, reference, local_modes, geometry)
+        _transported_local_columns(
+            background,
+            reference,
+            local_modes,
+            geometry,
+        )
         for geometry in geometries
     ]
     anchors_by_geometry = [[] for _ in geometries]
@@ -1198,7 +1204,10 @@ def _enrich_background_against_full_library(
             gi = int(anchor["geometry_index"])
             if 0 <= gi < len(anchors_by_geometry):
                 anchors_by_geometry[gi].append(anchor)
-    groups_by_geometry = [_group_anchors(items) for items in anchors_by_geometry]
+    groups_by_geometry = [
+        _group_anchors(items)
+        for items in anchors_by_geometry
+    ]
 
     spans = [
         _combined_cached_basis(
@@ -1210,16 +1219,90 @@ def _enrich_background_against_full_library(
         for gi in range(len(geometries))
     ]
 
+    # phi_bg is produced by weighted Gram-Schmidt, hence its weighted Gram is
+    # identity.  Cache only the geometry-dependent local Gram and BG/local
+    # cross block.  Appending one fixed background direction then needs one new
+    # cross row rather than rebuilding an n_cells-by-rank Gram matrix.
+    local_grams = []
+    bg_local_cross = []
+    for local in local_columns:
+        if local.shape[1] == 0:
+            local_grams.append(np.empty((0, 0), float))
+            bg_local_cross.append(
+                np.empty((phi_bg.shape[1], 0), float)
+            )
+            continue
+        weighted_local = weights[:, None] * local
+        gram = local.T @ weighted_local
+        local_grams.append(0.5 * (gram + gram.T))
+        bg_local_cross.append(phi_bg.T @ weighted_local)
+
+    def block_condition(cross, local_gram):
+        bg_rank = int(cross.shape[0])
+        local_rank = int(local_gram.shape[0])
+        if local_rank == 0:
+            return 1.0
+        gram = np.block(
+            [
+                [np.eye(bg_rank), cross],
+                [cross.T, local_gram],
+            ]
+        )
+        gram = 0.5 * (gram + gram.T)
+        eig = np.linalg.eigvalsh(gram)
+        if (
+            eig.size == 0
+            or np.any(~np.isfinite(eig))
+            or eig[0] <= 0.0
+        ):
+            return float("inf")
+        return float(eig[-1] / eig[0])
+
     steps = 0
     stop = "target_reached"
 
     def worst_state():
         worst = (-1.0, None, None)
         for gi, groups in enumerate(groups_by_geometry):
-            relative, anchor, error = _worst_anchor_grouped(groups, spans[gi])
+            relative, anchor, error = _worst_anchor_grouped(
+                groups,
+                spans[gi],
+            )
             if relative > worst[0]:
                 worst = (relative, anchor, error)
         return worst
+
+    def conditioned_append(vector):
+        phi2, added = _weighted_append(
+            phi_bg,
+            vector,
+            weights,
+        )
+        if not added:
+            return None
+        direction = np.asarray(phi2[:, -1], float)
+        candidate_cross = []
+        worst_condition = 1.0
+        for gi, local in enumerate(local_columns):
+            if local.shape[1] == 0:
+                cross = np.empty((phi2.shape[1], 0), float)
+            else:
+                row = direction @ (weights[:, None] * local)
+                cross = np.vstack(
+                    [
+                        bg_local_cross[gi],
+                        np.asarray(row, float)[None, :],
+                    ]
+                )
+            condition = block_condition(
+                cross,
+                local_grams[gi],
+            )
+            if not np.isfinite(condition) or condition > float(conditioning_limit):
+                return None
+            worst_condition = max(worst_condition, float(condition))
+            candidate_cross.append(cross)
+        return phi2, direction, candidate_cross, worst_condition
 
     while True:
         if monitor is not None:
@@ -1227,38 +1310,63 @@ def _enrich_background_against_full_library(
         worst, anchor, error = worst_state()
         if worst <= target:
             break
-        total_rank = int(phi_bg.shape[1] + sum(m.shape[1] for m in local_modes))
-        if maximum_rank is not None and total_rank >= int(maximum_rank):
+        total_rank = int(
+            phi_bg.shape[1]
+            + sum(m.shape[1] for m in local_modes)
+        )
+        if (
+            maximum_rank is not None
+            and total_rank >= int(maximum_rank)
+        ):
             stop = "maximum_rank_reached"
             break
 
-        phi2, added = _weighted_append(phi_bg, error, background.cell_volumes)
-        if not added:
-            phi2, added = _weighted_append(phi_bg, anchor["u"], background.cell_volumes)
-        if not added:
-            stop = "no_independent_background_residual"
+        gi = int(anchor["geometry_index"])
+        candidates = [np.asarray(error, float)]
+        if 0 <= gi < len(spans):
+            span = spans[gi]
+            projected_error = np.asarray(error, float).copy()
+            if span.size:
+                projected_error -= span @ (
+                    span.T @ (weights * projected_error)
+                )
+            candidates.append(projected_error)
+        candidates.append(np.asarray(anchor["u"], float))
+        if 0 <= gi < len(spans):
+            projected_solution = np.asarray(anchor["u"], float).copy()
+            span = spans[gi]
+            if span.size:
+                projected_solution -= span @ (
+                    span.T @ (weights * projected_solution)
+                )
+            candidates.append(projected_solution)
+
+        accepted = None
+        for candidate in candidates:
+            accepted = conditioned_append(candidate)
+            if accepted is not None:
+                break
+
+        if accepted is None:
+            stop = "no_conditioned_background_residual"
             break
 
-        new_direction = phi2[:, -1]
-        for gi, local in enumerate(local_columns):
-            _check_cached_basis_conditioning(
-                background,
-                phi2,
-                local,
-                conditioning_limit,
-            )
+        phi2, new_direction, candidate_cross, candidate_condition = accepted
+        for gi, _local in enumerate(local_columns):
             span2, span_added = _weighted_append(
                 spans[gi],
                 new_direction,
-                background.cell_volumes,
+                weights,
             )
             if not span_added:
-                raise RuntimeError(
-                    "geometry-aware thermal background residual became linearly dependent"
-                )
+                stop = "no_conditioned_background_residual"
+                break
             spans[gi] = span2
+        if stop != "target_reached":
+            break
 
         phi_bg = phi2
+        bg_local_cross = candidate_cross
         steps += 1
         if monitor is not None:
             with monitor._lock:
@@ -1267,11 +1375,14 @@ def _enrich_background_against_full_library(
                     thermal_basis_stage="background-residual",
                     thermal_basis_rank=phi_bg.shape[1],
                     thermal_basis_energy_error=worst,
+                    thermal_basis_condition=float(candidate_condition),
                 )
         if steps == 1 or steps % 4 == 0:
             print(
                 "构建 geometry-aware thermal background residual……"
-                f"rank={phi_bg.shape[1]}  worst full-library energy error={worst:.3e}",
+                f"rank={phi_bg.shape[1]}  "
+                f"worst full-library energy error={worst:.3e}  "
+                f"raw_cond={candidate_condition:.3e}",
                 flush=True,
             )
 
