@@ -746,6 +746,184 @@ def _combined_cached_basis(
     return phi
 
 
+
+def _raw_block_condition(
+    background,
+    background_modes,
+    transported_blocks,
+):
+    """Condition number of normalized raw component columns before final M-QR."""
+    blocks = []
+    bg = np.asarray(background_modes, float)
+    if bg.size:
+        blocks.append(bg)
+    for block in transported_blocks:
+        value = np.asarray(block, float)
+        if value.size:
+            blocks.append(value)
+    if not blocks:
+        return float("inf")
+    raw = np.column_stack(blocks)
+    norms = np.sqrt(
+        np.maximum(
+            np.sum(background.cell_volumes[:, None] * raw * raw, axis=0),
+            0.0,
+        )
+    )
+    if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
+        return float("inf")
+    normalized = raw / norms
+    gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
+    gram = 0.5 * (gram + gram.T)
+    eig = np.linalg.eigvalsh(gram)
+    if eig.size == 0 or eig[0] <= 0.0 or np.any(~np.isfinite(eig)):
+        return float("inf")
+    return float(eig[-1] / eig[0])
+
+
+def _stabilize_component_blocks(
+    background,
+    reference,
+    background_modes,
+    local_modes,
+    geometries,
+    conditioning_limit,
+    monitor=None,
+):
+    """Trim only low-priority greedy tails until the transported raw span is stable.
+
+    Component blocks are an initialization for the full-library residual greedy,
+    not independent certified ROMs.  Their late greedy modes often represent the
+    same long-range diffusion tail in several moving blocks.  Keeping all of
+    those tails makes the raw geometry map nearly singular before the final
+    weighted orthonormalization.  Because greedy order is importance order, trim
+    only trailing modes, choosing the block whose one-mode trim most improves the
+    worst training-geometry condition number.  The full-library residual stage
+    then recovers any globally important direction against the unchanged final
+    target.
+    """
+    geometries = list(geometries)
+    bg = np.asarray(background_modes, float)
+    local = [np.asarray(block, float) for block in local_modes]
+    if not geometries:
+        return bg, tuple(local), {"trimmed_background": 0, "trimmed_local": [0] * len(local)}
+
+    # Transport every complete local block once.  Trimming is tail-only, so all
+    # candidate conditions below are cheap column slices with no interpolation.
+    transported = []
+    for geometry in geometries:
+        g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+        per_port = []
+        for p, modes in enumerate(local):
+            cols = []
+            source_pose = reference.coils[p].pose
+            target_pose = g.coils[p].pose
+            for j in range(modes.shape[1]):
+                q = _transport_field(background, modes[:, j], source_pose, target_pose)
+                norm = float(np.sqrt(max(np.dot(q, background.cell_volumes * q), 0.0)))
+                if not np.isfinite(norm) or norm <= 1e-14:
+                    raise RuntimeError("transported thermal mode lost support inside the physical domain")
+                cols.append(q / norm)
+            per_port.append(
+                np.column_stack(cols) if cols else np.empty((background.n_cells, 0), float)
+            )
+        transported.append(per_port)
+
+    bg_rank = int(bg.shape[1])
+    local_ranks = [int(block.shape[1]) for block in local]
+    initial_bg_rank = bg_rank
+    initial_local_ranks = list(local_ranks)
+
+    def worst_condition(candidate_bg_rank, candidate_local_ranks):
+        worst = 0.0
+        for per_port in transported:
+            blocks = [
+                per_port[p][:, : candidate_local_ranks[p]]
+                for p in range(len(candidate_local_ranks))
+            ]
+            value = _raw_block_condition(
+                background,
+                bg[:, :candidate_bg_rank],
+                blocks,
+            )
+            worst = max(worst, float(value))
+        return worst
+
+    condition = worst_condition(bg_rank, local_ranks)
+    while not np.isfinite(condition) or condition > float(conditioning_limit):
+        candidates = []
+        if bg_rank > 1:
+            candidates.append(("background", None, bg_rank - 1, list(local_ranks)))
+        for p, rank in enumerate(local_ranks):
+            if rank > 1:
+                reduced = list(local_ranks)
+                reduced[p] -= 1
+                candidates.append(("local", p, bg_rank, reduced))
+        if not candidates:
+            raise RuntimeError(
+                "geometry-aware thermal component span cannot satisfy conditioning limit"
+            )
+
+        scored = []
+        for kind, port, candidate_bg_rank, candidate_local_ranks in candidates:
+            candidate_condition = worst_condition(
+                candidate_bg_rank,
+                candidate_local_ranks,
+            )
+            scored.append(
+                (
+                    float(candidate_condition),
+                    0 if kind == "local" else 1,
+                    -1 if port is None else int(port),
+                    kind,
+                    port,
+                    candidate_bg_rank,
+                    candidate_local_ranks,
+                )
+            )
+        scored.sort(key=lambda row: row[:3])
+        (
+            condition,
+            _kind_priority,
+            _port_priority,
+            kind,
+            port,
+            bg_rank,
+            local_ranks,
+        ) = scored[0]
+
+        if monitor is not None:
+            monitor.checkpoint()
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="conditioning-stabilization",
+                    thermal_basis_rank=int(bg_rank + sum(local_ranks)),
+                    thermal_basis_energy_error=None,
+                )
+
+    trimmed = {
+        "trimmed_background": int(initial_bg_rank - bg_rank),
+        "trimmed_local": [
+            int(before - after)
+            for before, after in zip(initial_local_ranks, local_ranks)
+        ],
+        "maximum_training_raw_condition": float(condition),
+    }
+    if trimmed["trimmed_background"] or any(trimmed["trimmed_local"]):
+        print(
+            "stabilized thermal component span: "
+            f"bg {initial_bg_rank}->{bg_rank}, "
+            f"local {tuple(initial_local_ranks)}->{tuple(local_ranks)}, "
+            f"worst_cond={condition:.3e}",
+            flush=True,
+        )
+    return (
+        bg[:, :bg_rank],
+        tuple(block[:, :rank] for block, rank in zip(local, local_ranks)),
+        trimmed,
+    )
+
 def _enrich_background_against_full_library(
     background,
     reference,
@@ -1406,8 +1584,13 @@ def build_geometry_aware_thermal_library(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
         )
-    bg_modes, bg_steps, bg_stop, bg_error = _greedy_basis(
-        background, bg_anchors, target, maximum_rank, monitor, "background"
+    # Component blocks are only an initialization.  Give them a looser
+    # target so common long-range diffusion is not independently memorized in
+    # every moving block; the complete transported library is still enriched
+    # and certified against the original final target below.
+    component_target = min(0.25, max(float(target), 2.0 * float(target)))
+    bg_modes, bg_steps, bg_component_stop, bg_component_error = _greedy_basis(
+        background, bg_anchors, component_target, maximum_rank, monitor, "background"
     )
 
     canonical = []
@@ -1465,7 +1648,7 @@ def build_geometry_aware_thermal_library(
     for p in range(reference.n_ports):
         anchors = list(canonical_wire[p]) + list(canonical_local_volume[p])
         modes, steps, stop, error = _greedy_basis(
-            background, anchors, target, maximum_rank, monitor, f"local-port-{p}"
+            background, anchors, component_target, maximum_rank, monitor, f"local-port-{p}"
         )
         local_modes.append(modes)
         local_steps += steps
@@ -1473,9 +1656,23 @@ def build_geometry_aware_thermal_library(
         if stop != "target_reached":
             local_stop = stop
 
-    # The local blocks carry the moving self-hotspots.  Enrich the fixed
-    # background only with whatever global residual remains when the complete
-    # transported library is used on the training geometries.
+    # Remove only redundant late component modes before the full-library
+    # greedy.  This preserves the important moving directions while preventing
+    # duplicated long-range tails from making the geometry map nearly singular.
+    bg_modes, local_modes, conditioning_trim = _stabilize_component_blocks(
+        background,
+        reference,
+        bg_modes,
+        tuple(local_modes),
+        training,
+        conditioning_limit,
+        monitor,
+    )
+    local_modes = list(local_modes)
+
+    # The local blocks carry the moving hotspots.  Enrich the fixed background
+    # only with whatever global residual remains when the complete transported
+    # library is used on the training geometries.
     bg_modes, residual_steps, residual_stop, residual_error = (
         _enrich_background_against_full_library(
             background,
@@ -1492,9 +1689,9 @@ def build_geometry_aware_thermal_library(
         )
     )
     bg_steps += residual_steps
-    bg_error = max(float(bg_error), float(residual_error))
-    if residual_stop != "target_reached":
-        bg_stop = residual_stop
+    # Only the complete-library residual stage is a final-target requirement.
+    # Individual component errors/stops are diagnostics, not release Gates.
+    bg_error = float(residual_error)
 
     library = GeometryAwareThermalLibrary(
         reference,
@@ -1505,10 +1702,8 @@ def build_geometry_aware_thermal_library(
     )
     if maximum_rank is not None and library.rank > int(maximum_rank):
         stop_reason = "maximum_rank_reached"
-    elif bg_stop != "target_reached":
-        stop_reason = bg_stop
-    elif local_stop != "target_reached":
-        stop_reason = local_stop
+    elif residual_stop != "target_reached":
+        stop_reason = residual_stop
     else:
         stop_reason = "target_reached"
 
@@ -1617,7 +1812,6 @@ def build_geometry_aware_thermal_library(
     converged = (
         stop_reason == "target_reached"
         and bg_error <= target
-        and max(local_errors or [0.0]) <= target
         and training_error <= target
         and (not validation or validation_error <= target)
         and (not validation or trajectory_error <= target)
@@ -1648,7 +1842,8 @@ def build_geometry_aware_thermal_library(
     )
     print(
         f"geometry-aware thermal ROM 完成：rank={library.rank} "
-        f"(bg={bg_modes.shape[1]}, local={tuple(m.shape[1] for m in local_modes)})，"
+        f"(bg={bg_modes.shape[1]}, local={tuple(m.shape[1] for m in local_modes)}, "
+        f"component_target={component_target:.3e}, trim={conditioning_trim})，"
         f"train={training_error:.3e}，validation={validation_error:.3e}，"
         f"trajectory={trajectory_error:.3e}，target={target:.3e}，stop={stop_reason}",
         flush=True,
