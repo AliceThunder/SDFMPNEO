@@ -1168,11 +1168,37 @@ def _stabilize_component_blocks(
         "maximum_training_raw_condition": float(condition),
         "conditioning_stabilization_target": float(stabilization_target),
     }
+    if monitor is not None:
+        with monitor._lock:
+            monitor.data.update(
+                phase="geometry_aware_thermal_basis",
+                thermal_basis_stage="conditioning-stabilization",
+                thermal_basis_rank=int(bg_rank + sum(local_ranks)),
+                thermal_basis_energy_error=None,
+                thermal_basis_condition=float(condition),
+                thermal_basis_conditioning_trims=int(trims),
+                thermal_basis_initial_background_rank=int(initial_bg_rank),
+                thermal_basis_initial_local_ranks=[
+                    int(v) for v in initial_local_ranks
+                ],
+                thermal_basis_stabilized_background_rank=int(bg_rank),
+                thermal_basis_stabilized_local_ranks=[
+                    int(v) for v in local_ranks
+                ],
+            )
     if trimmed["trimmed_background"] or any(trimmed["trimmed_local"]):
         print(
             "stabilized thermal component span: "
             f"bg {initial_bg_rank}->{bg_rank}, "
             f"local {tuple(initial_local_ranks)}->{tuple(local_ranks)}, "
+            f"worst_cond={condition:.3e}, "
+            f"target={stabilization_target:.3e}",
+            flush=True,
+        )
+    else:
+        print(
+            "thermal component span already satisfies conditioning Gate: "
+            f"bg={bg_rank}, local={tuple(local_ranks)}, "
             f"worst_cond={condition:.3e}, "
             f"target={stabilization_target:.3e}",
             flush=True,
