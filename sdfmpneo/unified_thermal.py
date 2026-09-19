@@ -275,20 +275,44 @@ def _self_volume_local_window(background, geometry, port):
     return window
 
 
-def _pure_volume_port_index(anchor, n_ports):
+def _volume_case_index(anchor):
     if anchor.get("source_kind") != "volume":
         return None
     label = str(anchor.get("case_label", ""))
     if not (label.startswith("volume[") and label.endswith("]")):
         return None
     try:
-        index = int(label[7:-1])
+        return int(label[7:-1])
     except ValueError:
         return None
-    return index if 0 <= index < int(n_ports) else None
 
 
-def _partitioned_anchor(template, b, u, *, component, port):
+def _volume_case_description(index, n_ports):
+    index = int(index)
+    n = int(n_ports)
+    if 0 <= index < n:
+        return ("self", index)
+    cursor = n
+    for i in range(n):
+        for j in range(i + 1, n):
+            if index == cursor:
+                return ("cross-real", i, j)
+            cursor += 1
+            if index == cursor:
+                return ("cross-quadrature", i, j)
+            cursor += 1
+    return ("unknown", index)
+
+
+def _pure_volume_port_index(anchor, n_ports):
+    index = _volume_case_index(anchor)
+    if index is None:
+        return None
+    description = _volume_case_description(index, n_ports)
+    return int(description[1]) if description[0] == "self" else None
+
+
+def _derived_anchor(template, b, u, *, case_label, source_kind, metadata=None):
     b = np.asarray(b, float).reshape(-1)
     u = np.asarray(u, float).reshape(-1)
     if np.linalg.norm(b) <= np.finfo(float).tiny:
@@ -301,22 +325,35 @@ def _partitioned_anchor(template, b, u, *, component, port):
         b=b,
         u=u,
         denom2=denom2,
-        label=f"{template['label']}::{component}",
-        case_label=f"volume-{component}[{int(port)}]",
-        source_kind=f"volume-{component}",
+        label=f"{template['label']}::{case_label}",
+        case_label=str(case_label),
+        source_kind=str(source_kind),
         rhs_norm=float(np.linalg.norm(b)),
-        port_index=int(port),
     )
+    if metadata:
+        row.update(dict(metadata))
     return row
 
 
-def _partition_self_volume_anchors(background, geometry, anchors):
-    """Split pure-port volume anchors into transportable near and fixed far parts.
+def _partitioned_anchor(template, b, u, *, component, port):
+    return _derived_anchor(
+        template,
+        b,
+        u,
+        case_label=f"volume-{component}[{int(port)}]",
+        source_kind=f"volume-{component}",
+        metadata={"port_index": int(port)},
+    )
 
-    For every pure-port source b, b_local + b_far == b exactly.  Thermal
-    linearity gives the same exact decomposition for the resolvent solution.
-    Cross-port volume response and uniform initial response remain global.
-    Wire anchors are intentionally handled by the existing local-block path.
+
+def _partition_self_volume_anchors(background, geometry, anchors):
+    """Build a non-overlapping Hermitian thermal source basis.
+
+    Diagonal unit-port heat is split exactly into a transported near source and
+    fixed far complement.  Raw combined-current anchors contain those diagonal
+    sources again, so off-diagonal background anchors subtract the two matching
+    self sources first and retain only the signed Hermitian cross component.
+    The original physical anchors are untouched and remain the audit family.
     """
     g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
     windows = tuple(
@@ -328,44 +365,90 @@ def _partition_self_volume_anchors(background, geometry, anchors):
     grouped = {}
 
     for anchor in anchors:
-        port = _pure_volume_port_index(anchor, g.n_ports)
-        if port is not None:
-            key = (float(anchor["shift"]), id(anchor["A"]))
-            grouped.setdefault(key, []).append((port, anchor))
-            continue
-        if anchor.get("source_kind") in {"volume", "initial"}:
+        if anchor.get("source_kind") == "initial":
             background_anchors.append(anchor)
+            continue
+        if anchor.get("source_kind") != "volume":
+            continue
+        index = _volume_case_index(anchor)
+        if index is None:
+            background_anchors.append(anchor)
+            continue
+        key = (float(anchor["shift"]), id(anchor["A"]))
+        grouped.setdefault(key, {})[int(index)] = anchor
 
     for group in grouped.values():
-        A = group[0][1]["A"]
-        B_local = np.column_stack(
-            [windows[port] * np.asarray(anchor["b"], float) for port, anchor in group]
-        )
-        U_local = _solve_block(A, B_local)
-        for column, (port, anchor) in enumerate(group):
-            b_local = np.asarray(B_local[:, column], float)
-            u_local = np.asarray(U_local[:, column], float)
-            local_row = _partitioned_anchor(
-                anchor,
-                b_local,
-                u_local,
-                component="local",
-                port=port,
-            )
-            if local_row is not None:
-                local_anchors[port].append(local_row)
+        self_anchors = {
+            p: group[p]
+            for p in range(g.n_ports)
+            if p in group
+        }
 
-            b_far = np.asarray(anchor["b"], float) - b_local
-            u_far = np.asarray(anchor["u"], float) - u_local
-            far_row = _partitioned_anchor(
-                anchor,
-                b_far,
-                u_far,
-                component="far",
-                port=port,
+        local_items = []
+        for port, anchor in self_anchors.items():
+            local_items.append(
+                (port, anchor, windows[port] * np.asarray(anchor["b"], float))
             )
-            if far_row is not None:
-                background_anchors.append(far_row)
+        if local_items:
+            A = local_items[0][1]["A"]
+            B_local = np.column_stack([item[2] for item in local_items])
+            U_local = _solve_block(A, B_local)
+            for column, (port, anchor, b_local) in enumerate(local_items):
+                u_local = np.asarray(U_local[:, column], float)
+                local_row = _partitioned_anchor(
+                    anchor,
+                    b_local,
+                    u_local,
+                    component="local",
+                    port=port,
+                )
+                if local_row is not None:
+                    local_anchors[port].append(local_row)
+
+                b_far = np.asarray(anchor["b"], float) - np.asarray(b_local, float)
+                u_far = np.asarray(anchor["u"], float) - u_local
+                far_row = _partitioned_anchor(
+                    anchor,
+                    b_far,
+                    u_far,
+                    component="far",
+                    port=port,
+                )
+                if far_row is not None:
+                    background_anchors.append(far_row)
+
+        for index, anchor in sorted(group.items()):
+            description = _volume_case_description(index, g.n_ports)
+            if description[0] == "self":
+                continue
+            if description[0] not in {"cross-real", "cross-quadrature"}:
+                background_anchors.append(anchor)
+                continue
+            _, i, j = description
+            if i not in self_anchors or j not in self_anchors:
+                background_anchors.append(anchor)
+                continue
+            b_cross = (
+                np.asarray(anchor["b"], float)
+                - np.asarray(self_anchors[i]["b"], float)
+                - np.asarray(self_anchors[j]["b"], float)
+            )
+            u_cross = (
+                np.asarray(anchor["u"], float)
+                - np.asarray(self_anchors[i]["u"], float)
+                - np.asarray(self_anchors[j]["u"], float)
+            )
+            kind = description[0]
+            cross_row = _derived_anchor(
+                anchor,
+                b_cross,
+                u_cross,
+                case_label=f"volume-{kind}[{i},{j}]",
+                source_kind="volume-cross",
+                metadata={"port_pair": (int(i), int(j)), "cross_kind": kind},
+            )
+            if cross_row is not None:
+                background_anchors.append(cross_row)
 
     return background_anchors, tuple(tuple(rows) for rows in local_anchors)
 
