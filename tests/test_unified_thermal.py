@@ -73,6 +73,8 @@ def test_geometry_aware_basis_has_fixed_rank_and_moves_with_geometry():
     assert all(rank > 0 for rank in report.local_ranks)
     assert report.maximum_validation_relative_energy_error <= report.target_relative_error
     assert report.maximum_validation_trajectory_relative_error <= report.target_relative_error
+    assert report.component_target_relative_error >= report.target_relative_error
+    assert report.conditioning_trim_diagnostics
     assert report.validation_geometry_count == 1
     assert report.shifts[0] == 0.0
     assert report.trajectory_times == (0.1, 1.0, 10.0)
