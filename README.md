@@ -241,7 +241,7 @@ preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mu
 
 首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
-canonical local block 包含 wire heat，以及对应端口 unit-port self-volume Joule source 的**近场部分**。pure-port volume source 用随 coil pose 移动的平滑局部窗严格拆成 \(q_{\rm near}+q_{\rm far}=q\)：只运输 \(q_{\rm near}\) 的 resolvent，\(q_{\rm far}\)、cross-port volume response 与 uniform initial response 留在 fixed background block。这个分解不删除或重标定任何 Joule heat；held-out Gate 仍然对原始完整 \(q\) 做验证。这样既避免固定 background 逐位置记忆移动热点，也避免把海水/封装的远场热响应错误地整体刚体搬动。
+canonical local block 包含 wire heat，以及对应端口 unit-port self-volume Joule source 的**近场部分**。pure-port volume source 用随 coil pose 移动的平滑局部窗严格拆成 \(q_{\rm near}+q_{\rm far}=q\)：只运输 \(q_{\rm near}\) 的 resolvent，\(q_{\rm far}\) 与 uniform initial response 留在 fixed background block。对 \(e_i+e_j\) / \(e_i+i e_j\) 产生的组合热源，background 不再直接保存整份正热源，而是先减去两个 diagonal self source，只保留真正的 signed Hermitian cross component，避免 self hotspot 在 local/background 两边重复出现。这个分解不删除或重标定任何 Joule heat；held-out Gate 仍然对原始完整物理 current directions 做验证。
 
 每个 geometry 从真实 full thermal operators 投影：
 
