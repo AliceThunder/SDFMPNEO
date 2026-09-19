@@ -1352,6 +1352,7 @@ def _enrich_background_against_full_library(
             break
 
         phi2, new_direction, candidate_cross, candidate_condition = accepted
+        candidate_spans = []
         for gi, _local in enumerate(local_columns):
             span2, span_added = _weighted_append(
                 spans[gi],
@@ -1361,11 +1362,12 @@ def _enrich_background_against_full_library(
             if not span_added:
                 stop = "no_conditioned_background_residual"
                 break
-            spans[gi] = span2
+            candidate_spans.append(span2)
         if stop != "target_reached":
             break
 
         phi_bg = phi2
+        spans = candidate_spans
         bg_local_cross = candidate_cross
         steps += 1
         if monitor is not None:
