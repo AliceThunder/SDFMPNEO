@@ -841,6 +841,23 @@ def _transported_local_columns(background, reference, local_modes, geometry):
     return np.column_stack(columns)
 
 
+def _basis_condition_from_gram(gram):
+    """Return weighted basis condition from its normalized Gram matrix.
+
+    For a normalized generator V in the thermal-mass inner product,
+    cond(V.T @ M @ V) = cond_M(V)**2.  The configured conditioning limit
+    applies to the basis/generator itself, so the Gram spectral ratio must be
+    square-rooted.  A non-positive smallest eigenvalue remains an explicit rank
+    deficiency.
+    """
+    value = np.asarray(gram, float)
+    value = 0.5 * (value + value.T)
+    eig = np.linalg.eigvalsh(value)
+    if eig.size == 0 or np.any(~np.isfinite(eig)) or eig[0] <= 0.0:
+        return float("inf")
+    return float(np.sqrt(eig[-1] / eig[0]))
+
+
 def _check_cached_basis_conditioning(
     background,
     background_modes,
@@ -866,12 +883,10 @@ def _check_cached_basis_conditioning(
         raise RuntimeError("transported thermal mode lost support inside the physical domain")
     normalized = raw / norms
     gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-    gram = 0.5 * (gram + gram.T)
-    eig = np.linalg.eigvalsh(gram)
-    if eig[0] <= 0.0:
+    condition = _basis_condition_from_gram(gram)
+    if not np.isfinite(condition):
         raise RuntimeError("geometry-aware thermal basis became rank deficient")
-    condition = float(eig[-1] / eig[0])
-    if not np.isfinite(condition) or condition > float(conditioning_limit):
+    if condition > float(conditioning_limit):
         raise RuntimeError(
             f"geometry-aware thermal basis conditioning failed: cond={condition:.3e}"
         )
@@ -928,11 +943,7 @@ def _raw_block_condition(
         return float("inf")
     normalized = raw / norms
     gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-    gram = 0.5 * (gram + gram.T)
-    eig = np.linalg.eigvalsh(gram)
-    if eig.size == 0 or eig[0] <= 0.0 or np.any(~np.isfinite(eig)):
-        return float("inf")
-    return float(eig[-1] / eig[0])
+    return _basis_condition_from_gram(gram)
 
 
 def _stabilize_component_blocks(
@@ -1059,7 +1070,7 @@ def _stabilize_component_blocks(
             ):
                 condition = float("inf")
             else:
-                condition = float(eig[-1] / eig[0])
+                condition = float(np.sqrt(eig[-1] / eig[0]))
             rows.append((condition, gi, eig, vec, active))
         return rows
 
@@ -1291,15 +1302,7 @@ def _enrich_background_against_full_library(
                 [cross.T, local_gram],
             ]
         )
-        gram = 0.5 * (gram + gram.T)
-        eig = np.linalg.eigvalsh(gram)
-        if (
-            eig.size == 0
-            or np.any(~np.isfinite(eig))
-            or eig[0] <= 0.0
-        ):
-            return float("inf")
-        return float(eig[-1] / eig[0])
+        return _basis_condition_from_gram(gram)
 
     steps = 0
     stop = "target_reached"
@@ -1542,12 +1545,10 @@ class GeometryAwareThermalLibrary:
             raise RuntimeError("transported thermal mode lost support inside the physical domain")
         normalized = raw / norms
         gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-        gram = 0.5 * (gram + gram.T)
-        eig = np.linalg.eigvalsh(gram)
-        if eig[0] <= 0.0:
+        condition = _basis_condition_from_gram(gram)
+        if not np.isfinite(condition):
             raise RuntimeError("geometry-aware thermal basis became rank deficient")
-        condition = float(eig[-1] / eig[0])
-        if not np.isfinite(condition) or condition > float(self.conditioning_limit):
+        if condition > float(self.conditioning_limit):
             raise RuntimeError(f"geometry-aware thermal basis conditioning failed: cond={condition:.3e}")
 
         phi = np.empty((background.n_cells, 0), float)
