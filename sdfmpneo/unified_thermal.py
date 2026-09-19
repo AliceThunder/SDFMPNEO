@@ -1569,7 +1569,7 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 2,
+            "schema_version": 3,
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1589,7 +1589,7 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 2:
+            if int(meta.get("schema_version", -1)) != 3:
                 raise ValueError("unsupported geometry-aware thermal library version")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
