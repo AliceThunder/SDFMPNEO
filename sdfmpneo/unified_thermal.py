@@ -166,7 +166,7 @@ def _save_maxwell_field_cache(background):
         temporary.unlink(missing_ok=True)
 
 
-def _certify_cached_port_fields(background, context, field, tolerance):
+def _certify_cached_port_fields(background, context, field):
     X = np.asarray(field, complex)
     B = np.asarray(background.rhs_matrix(context), complex)
     if X.shape != B.shape or np.any(~np.isfinite(X)):
@@ -198,7 +198,6 @@ def _maxwell_port_fields(background, context):
             background,
             context,
             cached_X,
-            tolerance,
         )
         if cached_residual <= tolerance:
             print(
@@ -225,7 +224,6 @@ def _maxwell_port_fields(background, context):
         background,
         context,
         X,
-        tolerance,
     )
     if certified_residual > tolerance:
         raise RuntimeError(
@@ -2013,7 +2011,7 @@ def build_geometry_aware_thermal_library(
     local_steps = 0
     for p in range(reference.n_ports):
         anchors = list(canonical_wire[p]) + list(canonical_local_volume[p])
-        modes, steps, stop, error = _greedy_basis(
+        modes, steps, _stop, _error = _greedy_basis(
             background, anchors, component_target, maximum_rank, monitor, f"local-port-{p}"
         )
         local_modes.append(modes)
