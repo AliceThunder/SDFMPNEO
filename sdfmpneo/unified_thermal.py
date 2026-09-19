@@ -198,6 +198,178 @@ def _geometry_anchors(
     return anchors
 
 
+def _self_volume_local_window(background, geometry, port):
+    """Smooth pose-following window for the genuinely local part of self-volume heat.
+
+    Pure-port Maxwell Joule heating contains both a near-coil hotspot and a broad
+    environmental tail.  Only the near field is rigidly transportable with the
+    coil.  The complementary source remains in the fixed background block.
+    """
+    g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+    p = int(port)
+    if p < 0 or p >= g.n_ports:
+        raise ValueError("thermal self-volume port index is out of range")
+    coil = g.coils[p]
+    package = g.packages[p]
+
+    minimum_step = float(
+        min(
+            np.min(np.asarray(background.dx, float)),
+            np.min(np.asarray(background.dy, float)),
+            np.min(np.asarray(background.dz, float)),
+        )
+    )
+    if not np.isfinite(minimum_step) or minimum_step <= 0.0:
+        raise ValueError("thermal background has invalid cell spacing")
+
+    spacing = max(minimum_step, min(float(coil.pitch), float(coil.outer_half_size)) / 4.0)
+    centerline = np.asarray(coil.centerline(spacing), float)
+    coil_local = coil.pose.inverse(centerline)
+    conductor_extent = np.array(
+        [
+            0.5 * float(coil.conductor_width),
+            0.5 * float(coil.conductor_width),
+            0.5 * float(coil.conductor_thickness),
+        ],
+        float,
+    )
+    coil_extent = np.max(np.abs(coil_local), axis=0) + conductor_extent
+
+    signs = np.asarray(
+        [
+            [sx, sy, sz]
+            for sx in (-1.0, 1.0)
+            for sy in (-1.0, 1.0)
+            for sz in (-1.0, 1.0)
+        ],
+        float,
+    )
+    package_corners = package.pose.apply(signs * np.asarray(package.half_extent, float))
+    package_local = coil.pose.inverse(package_corners)
+    package_extent = np.max(np.abs(package_local), axis=0)
+
+    # Keep at least ~1.5 fine cells of guaranteed local support and another
+    # ~2 cells of cosine taper.  The exact complement is retained globally.
+    core = np.maximum(coil_extent, package_extent) + 1.5 * minimum_step
+    outer = core + 2.0 * minimum_step
+    local = np.abs(coil.pose.inverse(background.cell_centers))
+
+    axis_windows = []
+    for axis in range(3):
+        d = local[:, axis]
+        t = np.clip(
+            (d - core[axis]) / max(float(outer[axis] - core[axis]), np.finfo(float).tiny),
+            0.0,
+            1.0,
+        )
+        taper = 0.5 * (1.0 + np.cos(np.pi * t))
+        taper[d <= core[axis]] = 1.0
+        taper[d >= outer[axis]] = 0.0
+        axis_windows.append(taper)
+    window = np.prod(np.column_stack(axis_windows), axis=1)
+    window = np.clip(np.asarray(window, float), 0.0, 1.0)
+    if window.shape != (background.n_cells,) or np.any(~np.isfinite(window)):
+        raise FloatingPointError("thermal self-volume local window is invalid")
+    if float(np.max(window)) <= 0.0:
+        raise RuntimeError("thermal self-volume local window lost all support")
+    return window
+
+
+def _pure_volume_port_index(anchor, n_ports):
+    if anchor.get("source_kind") != "volume":
+        return None
+    label = str(anchor.get("case_label", ""))
+    if not (label.startswith("volume[") and label.endswith("]")):
+        return None
+    try:
+        index = int(label[7:-1])
+    except ValueError:
+        return None
+    return index if 0 <= index < int(n_ports) else None
+
+
+def _partitioned_anchor(template, b, u, *, component, port):
+    b = np.asarray(b, float).reshape(-1)
+    u = np.asarray(u, float).reshape(-1)
+    if np.linalg.norm(b) <= np.finfo(float).tiny:
+        return None
+    denom2 = float(np.real(np.dot(u, b)))
+    if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
+        return None
+    row = dict(template)
+    row.update(
+        b=b,
+        u=u,
+        denom2=denom2,
+        label=f"{template['label']}::{component}",
+        case_label=f"volume-{component}[{int(port)}]",
+        source_kind=f"volume-{component}",
+        rhs_norm=float(np.linalg.norm(b)),
+        port_index=int(port),
+    )
+    return row
+
+
+def _partition_self_volume_anchors(background, geometry, anchors):
+    """Split pure-port volume anchors into transportable near and fixed far parts.
+
+    For every pure-port source b, b_local + b_far == b exactly.  Thermal
+    linearity gives the same exact decomposition for the resolvent solution.
+    Cross-port volume response and uniform initial response remain global.
+    Wire anchors are intentionally handled by the existing local-block path.
+    """
+    g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+    windows = tuple(
+        _self_volume_local_window(background, g, p)
+        for p in range(g.n_ports)
+    )
+    background_anchors = []
+    local_anchors = [[] for _ in range(g.n_ports)]
+    grouped = {}
+
+    for anchor in anchors:
+        port = _pure_volume_port_index(anchor, g.n_ports)
+        if port is not None:
+            key = (float(anchor["shift"]), id(anchor["A"]))
+            grouped.setdefault(key, []).append((port, anchor))
+            continue
+        if anchor.get("source_kind") in {"volume", "initial"}:
+            background_anchors.append(anchor)
+
+    for group in grouped.values():
+        A = group[0][1]["A"]
+        B_local = np.column_stack(
+            [windows[port] * np.asarray(anchor["b"], float) for port, anchor in group]
+        )
+        U_local = _solve_block(A, B_local)
+        for column, (port, anchor) in enumerate(group):
+            b_local = np.asarray(B_local[:, column], float)
+            u_local = np.asarray(U_local[:, column], float)
+            local_row = _partitioned_anchor(
+                anchor,
+                b_local,
+                u_local,
+                component="local",
+                port=port,
+            )
+            if local_row is not None:
+                local_anchors[port].append(local_row)
+
+            b_far = np.asarray(anchor["b"], float) - b_local
+            u_far = np.asarray(anchor["u"], float) - u_local
+            far_row = _partitioned_anchor(
+                anchor,
+                b_far,
+                u_far,
+                component="far",
+                port=port,
+            )
+            if far_row is not None:
+                background_anchors.append(far_row)
+
+    return background_anchors, tuple(tuple(rows) for rows in local_anchors)
+
+
 def _anchor_error(anchor, phi):
     A = anchor["A"]
     b = anchor["b"]
@@ -1031,22 +1203,12 @@ def build_geometry_aware_thermal_library(
             uniform_initial=True,
         )
         training_anchor_sets.append(anchors)
-        n_ports = reference.n_ports
-        for anchor in anchors:
-            label = str(anchor.get("case_label", ""))
-            if anchor["source_kind"] == "initial":
-                bg_anchors.append(anchor)
-            elif anchor["source_kind"] == "volume":
-                # volume[0:n_ports] are unit-port self-heating directions and
-                # belong to the transported local blocks.  The remaining
-                # Hermitian cross-port directions start in the fixed background.
-                if label.startswith("volume["):
-                    try:
-                        index = int(label[7:-1])
-                    except ValueError:
-                        index = -1
-                    if index >= n_ports:
-                        bg_anchors.append(anchor)
+        partitioned_background, _local_unused = _partition_self_volume_anchors(
+            background,
+            geometry,
+            anchors,
+        )
+        bg_anchors.extend(partitioned_background)
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
@@ -1069,39 +1231,39 @@ def build_geometry_aware_thermal_library(
     # block receives its own self-volume hotspot plus wire source; cross-port
     # volume directions remain global/background.
     canonical_anchor_sets = []
+    canonical_local_volume = [[] for _ in range(reference.n_ports)]
+    canonical_wire = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(canonical):
-        canonical_anchor_sets.append(
-            _geometry_anchors(
-                background,
-                geometry,
-                shifts,
-                gi,
-                volume=True,
-                wire=True,
-                uniform_initial=False,
-                wire_port=None,
-            )
+        anchors = _geometry_anchors(
+            background,
+            geometry,
+            shifts,
+            gi,
+            volume=True,
+            wire=True,
+            uniform_initial=False,
+            wire_port=None,
         )
+        canonical_anchor_sets.append(anchors)
+        _background_unused, local_volume = _partition_self_volume_anchors(
+            background,
+            geometry,
+            anchors,
+        )
+        for p in range(reference.n_ports):
+            canonical_local_volume[p].extend(local_volume[p])
+            wire_kind = f"wire[{p}]"
+            canonical_wire[p].extend(
+                anchor for anchor in anchors
+                if anchor.get("source_kind") == wire_kind
+            )
 
     local_modes = []
     local_steps = 0
     local_stop = "target_reached"
     local_errors = []
     for p in range(reference.n_ports):
-        wire_kind = f"wire[{p}]"
-        volume_label = f"volume[{p}]"
-        anchors = [
-            anchor
-            for anchor_set in canonical_anchor_sets
-            for anchor in anchor_set
-            if (
-                anchor["source_kind"] == wire_kind
-                or (
-                    anchor["source_kind"] == "volume"
-                    and anchor.get("case_label") == volume_label
-                )
-            )
-        ]
+        anchors = list(canonical_wire[p]) + list(canonical_local_volume[p])
         modes, steps, stop, error = _greedy_basis(
             background, anchors, target, maximum_rank, monitor, f"local-port-{p}"
         )
