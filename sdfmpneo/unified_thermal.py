@@ -150,7 +150,18 @@ def _geometry_anchors(
     M, K = background.thermal_operator_full(context.fractions)
     rhs_items = []
     if volume:
-        X = _maxwell_port_fields(background, context)
+        try:
+            X = _maxwell_port_fields(background, context)
+        except RuntimeError as exc:
+            geometry_text = json.dumps(
+                context.geometry.to_mapping(),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            raise RuntimeError(
+                "thermal anchor Maxwell truth failed for "
+                f"geometry_index={int(geometry_index)}, geometry={geometry_text}: {exc}"
+            ) from exc
         for j, current in enumerate(_port_current_vectors(X.shape[1])):
             q = _volume_heat(background, context, X @ current)
             if np.linalg.norm(q) > np.finfo(float).tiny:
@@ -1365,6 +1376,16 @@ def build_geometry_aware_thermal_library(
     training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
+        if monitor is not None:
+            monitor.checkpoint()
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="training-anchor-prep",
+                    thermal_basis_rank=0,
+                    thermal_basis_energy_error=None,
+                    thermal_basis_geometry_index=int(gi),
+                )
         anchors = _geometry_anchors(
             background,
             geometry,
@@ -1404,6 +1425,16 @@ def build_geometry_aware_thermal_library(
     canonical_local_volume = [[] for _ in range(reference.n_ports)]
     canonical_wire = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(canonical):
+        if monitor is not None:
+            monitor.checkpoint()
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="canonical-anchor-prep",
+                    thermal_basis_rank=0,
+                    thermal_basis_energy_error=None,
+                    thermal_basis_geometry_index=int(gi),
+                )
         anchors = _geometry_anchors(
             background,
             geometry,
