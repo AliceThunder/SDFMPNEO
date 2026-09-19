@@ -313,9 +313,15 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
 
+        defect_start = max(
+            float(cfg["defect_start_residual"]),
+            float(tolerance),
+        )
+
         if (
             label == "compatible-transverse-ilu-strong"
             and A.shape[0] <= direct_fallback_max
+            and (best_X is None or best_residual > defect_start)
         ):
             direct_started = time.perf_counter()
             try:
@@ -357,10 +363,6 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                     flush=True,
                 )
 
-        defect_start = max(
-            float(cfg["defect_start_residual"]),
-            float(tolerance),
-        )
         if (
             best_X is not None
             and best_residual <= defect_start
