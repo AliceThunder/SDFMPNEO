@@ -1596,7 +1596,7 @@ def build_geometry_aware_thermal_library(
         float(target),
         min(0.25, component_multiplier * float(target)),
     )
-    bg_modes, bg_steps, bg_component_stop, bg_component_error = _greedy_basis(
+    bg_modes, bg_steps, _bg_component_stop, _bg_component_error = _greedy_basis(
         background, bg_anchors, component_target, maximum_rank, monitor, "background"
     )
 
@@ -1650,8 +1650,6 @@ def build_geometry_aware_thermal_library(
 
     local_modes = []
     local_steps = 0
-    local_stop = "target_reached"
-    local_errors = []
     for p in range(reference.n_ports):
         anchors = list(canonical_wire[p]) + list(canonical_local_volume[p])
         modes, steps, stop, error = _greedy_basis(
@@ -1659,9 +1657,6 @@ def build_geometry_aware_thermal_library(
         )
         local_modes.append(modes)
         local_steps += steps
-        local_errors.append(error)
-        if stop != "target_reached":
-            local_stop = stop
 
     # Remove only redundant late component modes before the full-library
     # greedy.  This preserves the important moving directions while preventing
