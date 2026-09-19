@@ -91,13 +91,17 @@ def test_self_volume_partition_is_exact_and_keeps_cross_port_response_global():
     x = background.cell_centers
     b0 = np.exp(-np.sum((x - np.array([0.02, 0.0, 0.0])) ** 2, axis=1) / 0.003)
     b1 = np.exp(-np.sum((x - np.array([0.0, 0.0, 0.06])) ** 2, axis=1) / 0.003)
-    cross = 0.25 * (b0 + b1)
+    cross_real = 0.25 * (b0 + b1)
+    cross_quadrature = 0.1 * (b0 - b1)
+    combined_real = b0 + b1 + cross_real
+    combined_quadrature = b0 + b1 + cross_quadrature
     initial = np.ones(n)
 
     full = [
         _anchor(A, b0, "volume[0]", "volume"),
         _anchor(A, b1, "volume[1]", "volume"),
-        _anchor(A, cross, "volume[2]", "volume"),
+        _anchor(A, combined_real, "volume[2]", "volume"),
+        _anchor(A, combined_quadrature, "volume[3]", "volume"),
         _anchor(A, initial, "initial[uniform]", "initial"),
     ]
 
@@ -112,10 +116,22 @@ def test_self_volume_partition_is_exact_and_keeps_cross_port_response_global():
     assert len(local[1]) == 1
 
     labels = {row["case_label"] for row in background_anchors}
-    assert "volume[2]" in labels
+    assert "volume-cross-real[0,1]" in labels
+    assert "volume-cross-quadrature[0,1]" in labels
     assert "initial[uniform]" in labels
     assert "volume-far[0]" in labels
     assert "volume-far[1]" in labels
+
+    real_row = next(
+        row for row in background_anchors
+        if row["case_label"] == "volume-cross-real[0,1]"
+    )
+    quadrature_row = next(
+        row for row in background_anchors
+        if row["case_label"] == "volume-cross-quadrature[0,1]"
+    )
+    assert np.allclose(real_row["b"], cross_real)
+    assert np.allclose(quadrature_row["b"], cross_quadrature)
 
     for port, original in enumerate((full[0], full[1])):
         local_row = local[port][0]
