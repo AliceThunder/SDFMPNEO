@@ -202,7 +202,7 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "thermal_basis_schema": "geometry_aware_bg_local_v1",
+    "thermal_basis_schema": "geometry_aware_bg_local_near_far_v2",
     "basis_samples": 8,
     "basis_validation_samples": 6,
     "thermal_basis_energy_tolerance": 5e-2,
