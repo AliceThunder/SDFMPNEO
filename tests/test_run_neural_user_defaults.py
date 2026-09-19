@@ -153,4 +153,5 @@ def test_current_magnitude_phase_are_online_inputs_not_network_inputs():
 
 
 def test_thermal_component_target_policy_is_explicit():
+    run = _load_run()
     assert run.TRAINING["thermal_component_target_multiplier"] == 2.0
