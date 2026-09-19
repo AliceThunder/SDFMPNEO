@@ -1408,6 +1408,11 @@ def build_geometry_aware_thermal_library(
     )
     if validation:
         validation_anchor_sets = []
+        validation_evaluated = []
+        validation_error = 0.0
+        worst_val = {}
+        val_diag = {}
+        validation_anchor_count = 0
         for gi, geometry in enumerate(validation):
             if monitor is not None:
                 monitor.checkpoint()
@@ -1418,35 +1423,51 @@ def build_geometry_aware_thermal_library(
                         thermal_basis_rank=library.rank,
                         thermal_basis_energy_error=None,
                     )
-            validation_anchor_sets.append(
-                _geometry_anchors(
-                    background,
-                    geometry,
-                    shifts,
-                    gi,
-                    volume=True,
-                    wire=True,
-                    uniform_initial=True,
-                )
+            anchors = _geometry_anchors(
+                background,
+                geometry,
+                shifts,
+                gi,
+                volume=True,
+                wire=True,
+                uniform_initial=True,
             )
+            validation_anchor_sets.append(anchors)
+            validation_evaluated.append(geometry)
             print(
                 f"准备 held-out thermal anchors……{100.0 * (gi + 1) / len(validation):5.1f}%",
                 flush=True,
             )
-        validation_error, worst_val, val_diag, validation_anchor_count = _audit_geometries(
-            background,
-            library,
-            validation,
-            shifts,
-            monitor,
-            "held-out validation",
-            anchor_sets=validation_anchor_sets,
-        )
+            local_error, local_worst, local_diag, local_count = _audit_geometries(
+                background,
+                library,
+                [geometry],
+                shifts,
+                monitor,
+                "held-out validation",
+                anchor_sets=[anchors],
+            )
+            validation_anchor_count += int(local_count)
+            for key, value in local_diag.items():
+                val_diag[key] = max(float(val_diag.get(key, 0.0)), float(value))
+            if local_error > validation_error:
+                validation_error = float(local_error)
+                worst_val = dict(local_worst)
+            if local_error > target:
+                print(
+                    "held-out resolvent audit already exceeds target; "
+                    "stopping remaining held-out anchor preparation.",
+                    flush=True,
+                )
+                break
+
         if validation_error > target:
             trajectory_error = 0.0
             worst_trajectory = {}
             trajectory_diag = {
                 "audit_skipped_validation_energy_error": float(validation_error),
+                "validation_geometries_evaluated": int(len(validation_evaluated)),
+                "validation_geometries_requested": int(len(validation)),
             }
             audited_times = tuple(float(v) for v in _trajectory_times(time_scales, trajectory_times))
             print(
@@ -1459,13 +1480,14 @@ def build_geometry_aware_thermal_library(
                 audit_geometry_aware_thermal_trajectories(
                     background,
                     library,
-                    validation,
+                    validation_evaluated,
                     times=trajectory_times,
                     monitor=monitor,
                     anchor_sets=validation_anchor_sets,
                 )
             )
     else:
+        validation_evaluated = []
         validation_error, worst_val, val_diag, validation_anchor_count = 0.0, {}, {}, 0
         trajectory_error, worst_trajectory, trajectory_diag = 0.0, {}, {}
         audited_times = tuple(float(v) for v in _trajectory_times(time_scales, trajectory_times))
@@ -1494,7 +1516,7 @@ def build_geometry_aware_thermal_library(
         maximum_validation_trajectory_relative_error=float(trajectory_error),
         target_relative_error=target,
         geometry_sample_count=len(training),
-        validation_geometry_count=len(validation),
+        validation_geometry_count=len(validation_evaluated),
         source_direction_count=reference.n_ports * reference.n_ports + reference.n_ports,
         equation_anchor_count=len(bg_anchors) + training_anchor_count + validation_anchor_count,
         enrichment_steps=bg_steps + local_steps,
