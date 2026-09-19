@@ -1,10 +1,15 @@
+import types
 import numpy as np
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
+import sdfmpneo.unified_tensor_surrogate as tensor_truth
+from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_thermal import (
+    _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
     build_geometry_aware_thermal_library,
+    configure_maxwell_field_cache,
 )
 
 
@@ -174,3 +179,98 @@ def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blo
         stable_local,
     )
     assert after <= 1e10
+
+
+
+def test_certified_maxwell_field_cache_survives_background_rebuild(tmp_path, monkeypatch):
+    geometry = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
+    context = types.SimpleNamespace(geometry=geometry)
+    A = np.eye(4, dtype=complex)
+    B = np.column_stack(
+        (
+            np.array([1.0, 2.0, -1.0, 0.5], complex),
+            np.array([0.25, -0.5, 1.5, 2.0], complex),
+        )
+    )
+
+    class Background:
+        background_config = {
+            "linear_solver": {"relative_residual_tolerance": 1e-9}
+        }
+
+        @staticmethod
+        def em_operator(context, temperature):
+            assert temperature is None
+            return A
+
+        @staticmethod
+        def rhs_matrix(context):
+            return B
+
+    calls = {"count": 0}
+
+    def solve_once(background, context):
+        calls["count"] += 1
+        return B.copy(), 0.0
+
+    monkeypatch.setattr(tensor_truth, "_solve_port_fields", solve_once)
+    cache_path = tmp_path / "thermal-fields.npz"
+
+    first_background = Background()
+    configure_maxwell_field_cache(first_background, cache_path, "physics-signature")
+    first = _maxwell_port_fields(first_background, context)
+    assert calls["count"] == 1
+    assert cache_path.is_file()
+    assert np.allclose(first, B)
+
+    def forbidden_resolve(background, context):
+        raise AssertionError("certified Maxwell field cache unexpectedly missed")
+
+    monkeypatch.setattr(tensor_truth, "_solve_port_fields", forbidden_resolve)
+    rebuilt_background = Background()
+    configure_maxwell_field_cache(
+        rebuilt_background,
+        cache_path,
+        "physics-signature",
+    )
+    second = _maxwell_port_fields(rebuilt_background, context)
+    assert np.allclose(second, B)
+
+
+def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch):
+    geometry = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
+    context = types.SimpleNamespace(geometry=geometry)
+    A = np.eye(3, dtype=complex)
+    B = np.ones((3, 2), complex)
+
+    class Background:
+        background_config = {
+            "linear_solver": {"relative_residual_tolerance": 1e-9}
+        }
+
+        @staticmethod
+        def em_operator(context, temperature):
+            return A
+
+        @staticmethod
+        def rhs_matrix(context):
+            return B
+
+    calls = {"count": 0}
+
+    def solve(background, context):
+        calls["count"] += 1
+        return B.copy(), 0.0
+
+    monkeypatch.setattr(tensor_truth, "_solve_port_fields", solve)
+    cache_path = tmp_path / "thermal-fields.npz"
+
+    first_background = Background()
+    configure_maxwell_field_cache(first_background, cache_path, "signature-a")
+    _maxwell_port_fields(first_background, context)
+
+    second_background = Background()
+    configure_maxwell_field_cache(second_background, cache_path, "signature-b")
+    _maxwell_port_fields(second_background, context)
+
+    assert calls["count"] == 2
