@@ -1569,6 +1569,8 @@ class ThermalBasisReport:
     maximum_validation_relative_energy_error: float
     maximum_validation_trajectory_relative_error: float
     target_relative_error: float
+    component_target_relative_error: float
+    conditioning_trim_diagnostics: dict
     geometry_sample_count: int
     validation_geometry_count: int
     source_direction_count: int
@@ -2185,6 +2187,8 @@ def build_geometry_aware_thermal_library(
         maximum_validation_relative_energy_error=float(validation_error),
         maximum_validation_trajectory_relative_error=float(trajectory_error),
         target_relative_error=target,
+        component_target_relative_error=float(component_target),
+        conditioning_trim_diagnostics=dict(conditioning_trim),
         geometry_sample_count=len(training),
         validation_geometry_count=len(validation_evaluated),
         source_direction_count=reference.n_ports * reference.n_ports + reference.n_ports,
