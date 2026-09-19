@@ -47,6 +47,12 @@ class CoilGeometry:
         if min(float(self.conductor_width),float(self.conductor_thickness))<=0: raise ValueError("conductor dimensions must be positive")
         if self.shape in {"circle","rounded_square"}:
             if min(float(self.turns),float(self.outer_half_size),float(self.pitch))<=0: raise ValueError("spiral dimensions must be positive")
+            # pitch is the radial centerline spacing between successive turns.
+            # Once the chart reaches one full turn, pitch <= conductor width
+            # makes adjacent copper strips touch or overlap even though the
+            # centerline itself is finite/nondegenerate.
+            if float(self.turns) >= 1.0 and float(self.pitch) <= float(self.conductor_width):
+                raise ValueError("spiral pitch must exceed conductor_width to prevent turn overlap")
             if self.outer_half_size-self.pitch*self.turns<=0.5*self.conductor_width: raise ValueError("spiral collapses")
             if self.shape=="rounded_square" and (
                 self.corner_radius is None
