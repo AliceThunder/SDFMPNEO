@@ -1273,10 +1273,11 @@ def build_geometry_aware_thermal_library(
 
     # Preserve the theoretical block split:
     #   Phi(g) = [Phi_bg, T_tx Psi_tx, T_rx Psi_rx].
-    # Phi_bg is trained on global volume/initial response only; wire-local
-    # response belongs to the transported canonical local blocks.  The v35
-    # experiment that also inserted wire anchors into Phi_bg duplicated the
-    # local blocks and made the assembled basis rank deficient.
+    # Pure-port volume heat is split exactly into pose-following near and fixed
+    # far sources; only the near source enters the transported local block.
+    # Combined-current volume anchors are converted to signed Hermitian cross
+    # components by subtracting their two diagonal self sources, so Phi_bg does
+    # not duplicate the same moving self hotspot through off-diagonal anchors.
     training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
@@ -1315,9 +1316,7 @@ def build_geometry_aware_thermal_library(
         canonical = [reference]
 
     # Canonical local anchors are prepared once for both ports.  Each local
-    # block receives its own self-volume hotspot plus wire source; cross-port
-    # volume directions remain global/background.
-    canonical_anchor_sets = []
+    # block receives wire heat plus only the near part of its self-volume source.
     canonical_local_volume = [[] for _ in range(reference.n_ports)]
     canonical_wire = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(canonical):
@@ -1331,7 +1330,6 @@ def build_geometry_aware_thermal_library(
             uniform_initial=False,
             wire_port=None,
         )
-        canonical_anchor_sets.append(anchors)
         _background_unused, local_volume = _partition_self_volume_anchors(
             background,
             geometry,
