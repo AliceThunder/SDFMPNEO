@@ -879,11 +879,11 @@ class ThermalBasisReport:
         return self.target_relative_error
 
 
-def _anchor_summary(anchor, error):
+def _anchor_summary(anchor, error, geometry=None):
     if anchor is None:
         return {}
     shift = float(anchor["shift"])
-    return {
+    row = {
         "label": anchor["label"],
         "geometry_index": int(anchor["geometry_index"]),
         "source_kind": anchor["source_kind"],
@@ -893,6 +893,10 @@ def _anchor_summary(anchor, error):
         "rhs_norm": float(anchor["rhs_norm"]),
         "solution_energy_norm": float(np.sqrt(anchor["denom2"])),
     }
+    if geometry is not None:
+        g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
+        row["geometry"] = g.to_mapping()
+    return row
 
 
 def _audit_geometries(
@@ -905,7 +909,7 @@ def _audit_geometries(
     *,
     anchor_sets=None,
 ):
-    worst = (-1.0, None)
+    worst = (-1.0, None, None)
     diagnostics = {}
     count = 0
     geometries = list(geometries)
@@ -936,7 +940,7 @@ def _audit_geometries(
             key = f"{anchor['source_kind']}@{tau}"
             diagnostics[key] = max(float(diagnostics.get(key, 0.0)), float(error))
             if error > worst[0]:
-                worst = (float(error), anchor)
+                worst = (float(error), anchor, geometry)
             local_worst = max(local_worst, float(error))
         print(
             f"{role} geometry-aware thermal audit……{gi + 1}/{len(geometries)}  "
@@ -945,7 +949,7 @@ def _audit_geometries(
         )
     if worst[0] < 0.0:
         return 0.0, {}, diagnostics, count
-    return worst[0], _anchor_summary(worst[1], worst[0]), diagnostics, count
+    return worst[0], _anchor_summary(worst[1], worst[0], worst[2]), diagnostics, count
 
 
 def _thermal_trajectory_cases(background, geometry, prepared_anchors=None):
