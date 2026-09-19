@@ -125,6 +125,8 @@ D_{\rm out}^{\rm phys}
 
 对有耗海水，人工边界外移会把一部分原本穿边界的功率重新归入新增海水体耗散，因此 **raw `D_out` 不要求跨人工边界保持数值不变**。域扩展 Gate 硬检查端口响应、体耗散、mutual Z，以及 `ΔD_out` 相对总端口耗散的 significance。
 
+大尺寸 global truth 默认使用 compatible gradient + transverse ILU，并始终按原始物理矩阵的 true residual 做 `1e-9` 认证。少数合法 geometry 若在约 95k-edge production global grid 上无法由 iterative path 认证，且 `n_edges <= 100000`，允许一次共享 sparse-LU correctness fallback；118k/254k 的 local validation 系统明确在该上限之外，仍必须走 iterative/two-level 路径。fallback 不改变方程、source、boundary 或 Gate，只改变求解 backend。
+
 ## 4. Global coarse + canonical local self defect
 
 实际 preflight 已确认：默认全局 12 mm 网格对 mutual/far-field 可以收敛，但毫米级 conductor 周围的 self response 无法直接解析。因此 production truth 使用结构化多尺度分裂：
