@@ -1,7 +1,11 @@
 import numpy as np
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
-from sdfmpneo.unified_thermal import build_geometry_aware_thermal_library
+from sdfmpneo.unified_thermal import (
+    _raw_block_condition,
+    _stabilize_component_blocks,
+    build_geometry_aware_thermal_library,
+)
 
 
 MATERIALS = {
@@ -116,3 +120,55 @@ def test_held_out_diagnostics_identify_source_time_and_trajectory_output():
     assert "field_mass_relative_error" in report.worst_validation_trajectory
     assert "maximum_temperature_relative_error" in report.worst_validation_trajectory
     assert "maximum_wire_average_relative_error" in report.worst_validation_trajectory
+
+
+
+def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blocks():
+    bg = make_background()
+    reference = bg.validate_geometry(make_geometry(0.0))
+    weights = np.asarray(bg.cell_volumes, float)
+    n = bg.n_cells
+
+    def normalized(vector):
+        value = np.asarray(vector, float).reshape(n)
+        return value / np.sqrt(np.dot(value, weights * value))
+
+    e0 = np.zeros(n); e0[0] = 1.0
+    e1 = np.zeros(n); e1[1] = 1.0
+    e2 = np.zeros(n); e2[2] = 1.0
+    e3 = np.zeros(n); e3[3] = 1.0
+
+    background_modes = np.column_stack((normalized(e0), normalized(e1)))
+    local0 = np.column_stack((normalized(e2), normalized(e3)))
+    # The first RX mode is independent; the trailing greedy mode is almost a
+    # duplicate of a background direction and should be the one trimmed.
+    near_duplicate = normalized(e0 + 1e-7 * e3)
+    local1 = np.column_stack((normalized(e3 + e2), near_duplicate))
+
+    before = _raw_block_condition(
+        bg,
+        background_modes,
+        (local0, local1),
+    )
+    assert before > 1e10
+
+    stable_bg, stable_local, info = _stabilize_component_blocks(
+        bg,
+        reference,
+        background_modes,
+        (local0, local1),
+        [reference],
+        1e10,
+    )
+
+    assert stable_bg.shape[1] == 2
+    assert stable_local[0].shape[1] == 2
+    assert stable_local[1].shape[1] == 1
+    assert info["trimmed_background"] == 0
+    assert info["trimmed_local"] == [0, 1]
+    after = _raw_block_condition(
+        bg,
+        stable_bg,
+        stable_local,
+    )
+    assert after <= 1e10
