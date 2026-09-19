@@ -10,12 +10,12 @@ from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGe
 from . import unified_model as _unified_model
 
 # Physics truth version 40 keeps the v34 EM truth and corrects the geometry-aware
-# thermal source split.  Unit-port volume Joule heating is decomposed exactly into
-# a smooth geometry-scaled pose-following near/mid-field source and its fixed
-# boundary/far complement.  Only the moving source is rigidly transported;
-# Hermitian cross response, the far complement, and uniform initial response stay
-# in Phi_bg.  The two source pieces
-# sum exactly to the original Maxwell Joule source, so no thermal power is removed.
+# thermal source split.  Every independent Hermitian volume-source component is
+# partitioned exactly into one smooth pose-following near/mid-field contribution
+# per physical port plus a fixed boundary/far complement.  Self and cross heat can
+# therefore move with either coil instead of being assigned by excitation index.
+# All moving pieces plus the far piece sum pointwise to the original source, so no
+# thermal power is removed.
 # Thermal anchors use the installed certified multi-port Maxwell solver, each K+sM
 # factorization solves all RHS together, and prepared anchors are reused by audits.
 #
