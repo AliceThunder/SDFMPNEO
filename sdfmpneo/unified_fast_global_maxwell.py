@@ -36,6 +36,11 @@ def _cfg(background):
     cfg.setdefault("ilu_strong_shift_factor", 1e-1)
     cfg.setdefault("transverse_stabilization_factor", 3e-2)
     cfg.setdefault("transverse_strong_stabilization_factor", 1e-1)
+    cfg.setdefault("ilu_ultra_drop_tolerance", 2e-4)
+    cfg.setdefault("ilu_ultra_fill_factor", 16.0)
+    cfg.setdefault("transverse_ultra_stabilization_factor", 1e-1)
+    cfg.setdefault("iterative_ultra_maxiter", max(60, int(cfg["iterative_maxiter"])))
+    cfg.setdefault("iterative_ultra_inner_m", max(36, int(cfg["iterative_inner_m"])))
     # Keep compatibility with run.py's iterative_defect_* names.  These are
     # solver-policy aliases only; the physical residual certificate is unchanged.
     cfg.setdefault("defect_steps", cfg.get("iterative_defect_steps", 2))
@@ -50,19 +55,19 @@ def _cfg(background):
     # policy, not the physical operator or the 1e-9 acceptance certificate.
     cfg.setdefault(
         "defect_rescue_start_residual",
-        cfg.get("iterative_defect_rescue_start_residual", 2e-2),
+        cfg.get("iterative_defect_rescue_start_residual", 2e-4),
     )
     cfg.setdefault(
         "defect_rescue_steps",
-        cfg.get("iterative_defect_rescue_steps", max(4, int(cfg["defect_steps"]))),
+        cfg.get("iterative_defect_rescue_steps", max(2, int(cfg["defect_steps"]))),
     )
     cfg.setdefault(
         "defect_rescue_maxiter",
-        cfg.get("iterative_defect_rescue_maxiter", max(24, int(cfg["defect_maxiter"]))),
+        cfg.get("iterative_defect_rescue_maxiter", max(40, int(cfg["defect_maxiter"]))),
     )
     cfg.setdefault(
         "defect_rescue_inner_m",
-        cfg.get("iterative_defect_rescue_inner_m", max(30, int(cfg["defect_inner_m"]))),
+        cfg.get("iterative_defect_rescue_inner_m", max(36, int(cfg["defect_inner_m"]))),
     )
     return cfg
 
@@ -203,6 +208,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
     fast_fill = float(cfg["ilu_fill_factor"])
     strong_drop = float(cfg["ilu_strong_drop_tolerance"])
     strong_fill = float(cfg["ilu_strong_fill_factor"])
+    ultra_drop = float(cfg["ilu_ultra_drop_tolerance"])
+    ultra_fill = float(cfg["ilu_ultra_fill_factor"])
     if gradient_block is not None:
         attempts = (
             (
@@ -218,6 +225,13 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 float(cfg["transverse_strong_stabilization_factor"]),
                 "compatible-transverse-ilu-strong",
                 "transverse",
+            ),
+            (
+                ultra_drop,
+                ultra_fill,
+                float(cfg["transverse_ultra_stabilization_factor"]),
+                "compatible-transverse-ilu-ultra",
+                "transverse-ultra",
             ),
             (
                 strong_drop,
@@ -248,7 +262,7 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         started = time.perf_counter()
         preconditioner_stats = {}
         try:
-            if mode == "transverse":
+            if mode in {"transverse", "transverse-ultra"}:
                 edge_M, preconditioner_stats = build_transverse_ilu(
                     A,
                     tagged_background,
@@ -284,6 +298,16 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         preconditioner_seconds = time.perf_counter() - started
         columns = []
         infos = []
+        attempt_maxiter = (
+            int(cfg["iterative_ultra_maxiter"])
+            if mode == "transverse-ultra"
+            else maxiter
+        )
+        attempt_inner_m = (
+            int(cfg["iterative_ultra_inner_m"])
+            if mode == "transverse-ultra"
+            else inner_m
+        )
         for p in range(B.shape[1]):
             x0 = None if best_X is None else best_X[:, p]
             candidate, info = local_solver_module._lgmres(
@@ -292,8 +316,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 x0=x0,
                 M=M,
                 rtol=target,
-                maxiter=maxiter,
-                inner_m=inner_m,
+                maxiter=attempt_maxiter,
+                inner_m=attempt_inner_m,
             )
             columns.append(np.asarray(candidate, complex).reshape(-1))
             infos.append(int(info))
@@ -311,8 +335,10 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             "gradient_factor_seconds": 0.0 if gradient_block is None else gradient_block.build_seconds,
             "seconds": float(elapsed),
             "maximum_relative_residual": worst,
+            "krylov_maxiter": int(attempt_maxiter),
+            "krylov_inner_m": int(attempt_inner_m),
         }
-        if mode == "transverse":
+        if mode in {"transverse", "transverse-ultra"}:
             row.update({f"transverse_{k}": v for k, v in preconditioner_stats.items()})
         else:
             row["shift_factor"] = float(stabilization)
