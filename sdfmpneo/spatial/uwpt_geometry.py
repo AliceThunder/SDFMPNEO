@@ -59,6 +59,10 @@ class SpiralCoilGeometry:
         ], dtype=float)
         if np.any(~np.isfinite(values)) or np.any(values <= 0.0):
             raise ValueError("coil geometric dimensions must be finite and positive")
+        if self.turns >= 1.0 and self.pitch <= self.conductor_width:
+            raise ValueError(
+                "spiral pitch must exceed conductor_width to prevent adjacent-turn overlap"
+            )
         inward = self.pitch * self.turns
         clearance = 0.5 * self.conductor_width
         if self.outer_half_size - inward <= clearance:
