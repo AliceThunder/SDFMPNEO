@@ -252,10 +252,16 @@ def train(settings,model_path,settings_dir,monitor=None):
             library=GeometryAwareThermalLibrary.load(thermal_path); bg.set_thermal_library(library); dataset=TensorDataset.load(data_path)
             if dataset.thermal_rank!=bg.thermal_rank: raise RuntimeError("cached tensor dataset thermal rank 与 geometry-aware library 不一致")
         else:
-            checkpoint.unlink(missing_ok=True); rng=np.random.default_rng(seed)
+            checkpoint.unlink(missing_ok=True)
+            # Freeze expensive truth sets independently: changing the basis
+            # candidate-pool policy must not silently change held-out validation
+            # or the later tensor dataset.
+            basis_rng=np.random.default_rng(seed)
+            validation_rng=np.random.default_rng(seed+65537)
+            tensor_rng=np.random.default_rng(seed+131071)
             n_basis=int(settings["TRAINING"].get("basis_samples",8)); n_basis_val=int(settings["TRAINING"].get("basis_validation_samples",6))
-            basis_geometries=_basis_design_geometries(settings,n_basis,rng,bg)
-            validation_geometries=_sample_geometries(settings,n_basis_val,rng,bg)
+            basis_geometries=_basis_design_geometries(settings,n_basis,basis_rng,bg)
+            validation_geometries=_sample_geometries(settings,n_basis_val,validation_rng,bg)
             _progress("构建 geometry-aware canonical thermal ROM",12,monitor)
             library,thermal_obj=build_geometry_aware_thermal_library(bg,settings["DEFAULT_GEOMETRY"],basis_geometries,validation_geometries=validation_geometries,
                 target_relative_error=float(settings["TRAINING"].get("thermal_basis_energy_tolerance",5e-2)),time_scales=settings["TRAINING"].get("thermal_time_scales",[0.1,1.0,10.0]),
@@ -263,7 +269,7 @@ def train(settings,model_path,settings_dir,monitor=None):
                 conditioning_limit=float(settings["TRAINING"].get("thermal_basis_conditioning_limit",1e10)),monitor=monitor)
             _require_effective_thermal_basis(thermal_obj); bg.set_thermal_library(library); library.save(thermal_path); thermal_report=asdict(thermal_obj)
             _progress("构建 geometry-aware canonical thermal ROM",32,monitor)
-            n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,rng,bg)
+            n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,tensor_rng,bg)
             dataset=generate_tensor_dataset(bg,tensor_geometries,seed=seed,monitor=monitor); dataset.save(data_path)
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"preflight_signature":preflight_sig,
                                   "thermal_basis_report":thermal_report,"truth_preflight":preflight,
