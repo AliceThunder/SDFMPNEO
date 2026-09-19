@@ -946,108 +946,190 @@ def _stabilize_component_blocks(
     conditioning_limit,
     monitor=None,
 ):
-    """Trim only low-priority greedy tails until the transported raw span is stable.
+    """Trim low-priority greedy tails using precomputed transported Gram matrices.
 
-    Component blocks are an initialization for the full-library residual greedy,
-    not independent certified ROMs.  Their late greedy modes often represent the
-    same long-range diffusion tail in several moving blocks.  Keeping all of
-    those tails makes the raw geometry map nearly singular before the final
-    weighted orthonormalization.  Because greedy order is importance order, trim
-    only trailing modes, choosing the block whose one-mode trim most improves the
-    worst training-geometry condition number.  The full-library residual stage
-    then recovers any globally important direction against the unchanged final
-    target.
+    Component blocks initialize the final ROM; their late modes often encode the
+    same broad diffusion tail in several blocks.  Compute each training
+    geometry's complete normalized raw Gram once, then trim only block tails.
+    The smallest-eigenvalue vector of the worst Gram identifies which removable
+    tail participates most strongly in the near dependence.  This avoids
+    repeatedly rebuilding n_cells-by-rank matrices during stabilization.
     """
     geometries = list(geometries)
     bg = np.asarray(background_modes, float)
     local = [np.asarray(block, float) for block in local_modes]
     if not geometries:
-        return bg, tuple(local), {"trimmed_background": 0, "trimmed_local": [0] * len(local)}
+        return bg, tuple(local), {
+            "trimmed_background": 0,
+            "trimmed_local": [0] * len(local),
+            "maximum_training_raw_condition": 1.0,
+            "conditioning_stabilization_target": float(conditioning_limit),
+        }
 
-    # Transport every complete local block once.  Trimming is tail-only, so all
-    # candidate conditions below are cheap column slices with no interpolation.
-    transported = []
+    initial_bg_rank = int(bg.shape[1])
+    initial_local_ranks = [int(block.shape[1]) for block in local]
+    bg_rank = initial_bg_rank
+    local_ranks = list(initial_local_ranks)
+
+    block_offsets = [0]
+    block_offsets.append(initial_bg_rank)
+    for rank in initial_local_ranks:
+        block_offsets.append(block_offsets[-1] + rank)
+
+    full_grams = []
     for geometry in geometries:
-        g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
-        per_port = []
+        g = (
+            geometry
+            if isinstance(geometry, UnifiedUWPTGeometry)
+            else UnifiedUWPTGeometry.from_mapping(geometry)
+        )
+        blocks = [bg]
         for p, modes in enumerate(local):
             cols = []
             source_pose = reference.coils[p].pose
             target_pose = g.coils[p].pose
             for j in range(modes.shape[1]):
-                q = _transport_field(background, modes[:, j], source_pose, target_pose)
-                norm = float(np.sqrt(max(np.dot(q, background.cell_volumes * q), 0.0)))
+                q = _transport_field(
+                    background,
+                    modes[:, j],
+                    source_pose,
+                    target_pose,
+                )
+                norm = float(
+                    np.sqrt(
+                        max(
+                            np.dot(q, background.cell_volumes * q),
+                            0.0,
+                        )
+                    )
+                )
                 if not np.isfinite(norm) or norm <= 1e-14:
-                    raise RuntimeError("transported thermal mode lost support inside the physical domain")
+                    raise RuntimeError(
+                        "transported thermal mode lost support inside the physical domain"
+                    )
                 cols.append(q / norm)
-            per_port.append(
-                np.column_stack(cols) if cols else np.empty((background.n_cells, 0), float)
+            blocks.append(
+                np.column_stack(cols)
+                if cols
+                else np.empty((background.n_cells, 0), float)
             )
-        transported.append(per_port)
 
-    bg_rank = int(bg.shape[1])
-    local_ranks = [int(block.shape[1]) for block in local]
-    initial_bg_rank = bg_rank
-    initial_local_ranks = list(local_ranks)
-
-    def worst_condition(candidate_bg_rank, candidate_local_ranks):
-        worst = 0.0
-        for per_port in transported:
-            blocks = [
-                per_port[p][:, : candidate_local_ranks[p]]
-                for p in range(len(candidate_local_ranks))
-            ]
-            value = _raw_block_condition(
-                background,
-                bg[:, :candidate_bg_rank],
-                blocks,
+        raw_blocks = [block for block in blocks if block.size]
+        if not raw_blocks:
+            raise RuntimeError("geometry-aware thermal component span is empty")
+        raw = np.column_stack(raw_blocks)
+        norms = np.sqrt(
+            np.maximum(
+                np.sum(
+                    background.cell_volumes[:, None] * raw * raw,
+                    axis=0,
+                ),
+                0.0,
             )
-            worst = max(worst, float(value))
-        return worst
+        )
+        if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
+            raise RuntimeError(
+                "transported thermal mode lost support inside the physical domain"
+            )
+        normalized = raw / norms
+        gram = normalized.T @ (
+            background.cell_volumes[:, None] * normalized
+        )
+        full_grams.append(0.5 * (gram + gram.T))
 
-    condition = worst_condition(bg_rank, local_ranks)
-    while not np.isfinite(condition) or condition > float(conditioning_limit):
-        candidates = []
+    def active_indices():
+        indices = list(range(bg_rank))
+        for p, rank in enumerate(local_ranks):
+            begin = block_offsets[p + 1]
+            indices.extend(range(begin, begin + rank))
+        return np.asarray(indices, int)
+
+    def condition_rows(with_vectors=False):
+        active = active_indices()
+        rows = []
+        for gi, full in enumerate(full_grams):
+            sub = full[np.ix_(active, active)]
+            if with_vectors:
+                eig, vec = np.linalg.eigh(sub)
+            else:
+                eig = np.linalg.eigvalsh(sub)
+                vec = None
+            if (
+                eig.size == 0
+                or np.any(~np.isfinite(eig))
+                or eig[0] <= 0.0
+            ):
+                condition = float("inf")
+            else:
+                condition = float(eig[-1] / eig[0])
+            rows.append((condition, gi, eig, vec, active))
+        return rows
+
+    hard_limit = float(conditioning_limit)
+    stabilization_target = min(
+        hard_limit,
+        max(1.0 + 1e-12, 0.1 * hard_limit),
+    )
+
+    rows = condition_rows()
+    condition = max(row[0] for row in rows)
+    trims = 0
+    while not np.isfinite(condition) or condition > stabilization_target:
+        removable = []
         if bg_rank > 1:
-            candidates.append(("background", None, bg_rank - 1, list(local_ranks)))
+            removable.append(("background", None, bg_rank - 1))
         for p, rank in enumerate(local_ranks):
             if rank > 1:
-                reduced = list(local_ranks)
-                reduced[p] -= 1
-                candidates.append(("local", p, bg_rank, reduced))
-        if not candidates:
+                global_index = block_offsets[p + 1] + rank - 1
+                removable.append(("local", p, global_index))
+
+        if not removable:
+            if np.isfinite(condition) and condition <= hard_limit:
+                break
             raise RuntimeError(
                 "geometry-aware thermal component span cannot satisfy conditioning limit"
             )
 
-        scored = []
-        for kind, port, candidate_bg_rank, candidate_local_ranks in candidates:
-            candidate_condition = worst_condition(
-                candidate_bg_rank,
-                candidate_local_ranks,
-            )
-            scored.append(
-                (
-                    float(candidate_condition),
-                    0 if kind == "local" else 1,
-                    -1 if port is None else int(port),
-                    kind,
-                    port,
-                    candidate_bg_rank,
-                    candidate_local_ranks,
-                )
-            )
-        scored.sort(key=lambda row: row[:3])
-        (
-            condition,
-            _kind_priority,
-            _port_priority,
-            kind,
-            port,
-            bg_rank,
-            local_ranks,
-        ) = scored[0]
+        worst_gi = int(max(rows, key=lambda row: row[0])[1])
+        full = full_grams[worst_gi]
+        active = active_indices()
+        sub = full[np.ix_(active, active)]
+        eig, vec = np.linalg.eigh(sub)
+        if eig.size == 0 or np.any(~np.isfinite(eig)):
+            coefficients = np.ones(len(active), float)
+        else:
+            coefficients = np.abs(np.asarray(vec[:, 0], float))
 
+        active_position = {
+            int(global_index): position
+            for position, global_index in enumerate(active)
+        }
+        scored = []
+        for kind, port, global_index in removable:
+            position = active_position.get(int(global_index))
+            participation = (
+                0.0
+                if position is None
+                else float(coefficients[position])
+            )
+            # Prefer trimming a moving block over the fixed background on an
+            # exact participation tie; both choices are still tail-only.
+            priority = 1 if kind == "local" else 0
+            scored.append(
+                (participation, priority, kind, port)
+            )
+        _participation, _priority, kind, port = max(
+            scored,
+            key=lambda row: (row[0], row[1]),
+        )
+        if kind == "background":
+            bg_rank -= 1
+        else:
+            local_ranks[int(port)] -= 1
+
+        trims += 1
+        rows = condition_rows()
+        condition = max(row[0] for row in rows)
         if monitor is not None:
             monitor.checkpoint()
             with monitor._lock:
@@ -1056,6 +1138,8 @@ def _stabilize_component_blocks(
                     thermal_basis_stage="conditioning-stabilization",
                     thermal_basis_rank=int(bg_rank + sum(local_ranks)),
                     thermal_basis_energy_error=None,
+                    thermal_basis_condition=float(condition),
+                    thermal_basis_conditioning_trims=int(trims),
                 )
 
     trimmed = {
@@ -1065,20 +1149,26 @@ def _stabilize_component_blocks(
             for before, after in zip(initial_local_ranks, local_ranks)
         ],
         "maximum_training_raw_condition": float(condition),
+        "conditioning_stabilization_target": float(stabilization_target),
     }
     if trimmed["trimmed_background"] or any(trimmed["trimmed_local"]):
         print(
             "stabilized thermal component span: "
             f"bg {initial_bg_rank}->{bg_rank}, "
             f"local {tuple(initial_local_ranks)}->{tuple(local_ranks)}, "
-            f"worst_cond={condition:.3e}",
+            f"worst_cond={condition:.3e}, "
+            f"target={stabilization_target:.3e}",
             flush=True,
         )
     return (
         bg[:, :bg_rank],
-        tuple(block[:, :rank] for block, rank in zip(local, local_ranks)),
+        tuple(
+            block[:, :rank]
+            for block, rank in zip(local, local_ranks)
+        ),
         trimmed,
     )
+
 
 def _enrich_background_against_full_library(
     background,
