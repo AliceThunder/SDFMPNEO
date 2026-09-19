@@ -279,6 +279,8 @@ canonical rank 用：
 
 同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
 
+昂贵的 thermal-anchor Maxwell port fields 另有独立持久化 cache：每个 geometry 的 X(g) 一旦通过当前 `A(g)X=B(g)` 的 `1e-9` true-residual certificate 就立即原子写盘。thermal basis 构造即使随后 fail closed，下一次运行仍可复用这些 field；cache 命中时会针对当前重新组装的 `A/B` 再计算一次 true residual，只有仍满足 Gate 才使用。因此调整 component target、conditioning trimming 或其它纯 thermal-basis 策略不会强迫重复数十分钟的 Maxwell truth solve，也不会让旧 field 绕过当前物理验收。
+
 held-out geometry 按“生成一个 truth anchor set → 立刻做一个 resolvent energy Gate”的顺序流式检查；任意一个 geometry 超过目标误差就立即 fail closed，不再生成剩余 held-out Maxwell truth，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有全部 held-out resolvent Gate 通过时才继续：
 
 ```python
