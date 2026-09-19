@@ -26,7 +26,7 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert run.TRAINING["basis_samples"] == 8
     assert run.TRAINING["basis_design_pool_multiplier"] >= 2
     assert run.TRAINING["basis_validation_samples"] >= 1
-    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_multiport_midfield_v4"
+    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_multiport_midfield_v5"
     assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
     assert run.TRAINING["thermal_basis_conditioning_limit"] > 1
     assert run.TRAINING["thermal_time_scales"] == [0.1, 1.0, 10.0]
@@ -150,3 +150,7 @@ def test_current_magnitude_phase_are_online_inputs_not_network_inputs():
     assert "state_upper" not in run.TRAINING
     assert "operating_lower" not in run.TRAINING
     assert "operating_upper" not in run.TRAINING
+
+
+def test_thermal_component_target_policy_is_explicit():
+    assert run.TRAINING["thermal_component_target_multiplier"] == 2.0
