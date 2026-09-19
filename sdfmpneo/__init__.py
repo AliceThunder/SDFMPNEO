@@ -11,9 +11,10 @@ from . import unified_model as _unified_model
 
 # Physics truth version 39 keeps the v34 EM truth and corrects the geometry-aware
 # thermal source split.  Unit-port volume Joule heating is decomposed exactly into
-# a smooth pose-following near source and its fixed-background far complement.
-# Only the near source is rigidly transported; cross-port volume response, the far
-# complement, and uniform initial response stay in Phi_bg.  The two source pieces
+# a smooth geometry-scaled pose-following near/mid-field source and its fixed
+# boundary/far complement.  Only the moving source is rigidly transported;
+# Hermitian cross response, the far complement, and uniform initial response stay
+# in Phi_bg.  The two source pieces
 # sum exactly to the original Maxwell Joule source, so no thermal power is removed.
 # Thermal anchors use the installed certified multi-port Maxwell solver, each K+sM
 # factorization solves all RHS together, and prepared anchors are reused by audits.
