@@ -82,7 +82,7 @@ def test_self_volume_local_window_keeps_near_field_and_removes_far_field():
     assert window[far] == 0.0
 
 
-def test_self_volume_partition_is_exact_and_keeps_cross_port_response_global():
+def test_volume_partition_is_exact_across_all_moving_ports():
     background = _Background()
     geometry = _geometry()
     n = background.n_cells
@@ -112,35 +112,83 @@ def test_self_volume_partition_is_exact_and_keeps_cross_port_response_global():
     )
 
     assert len(local) == 2
-    assert len(local[0]) == 1
-    assert len(local[1]) == 1
+    assert all(len(rows) >= 4 for rows in local)
 
-    labels = {row["case_label"] for row in background_anchors}
-    assert "volume-cross-real[0,1]" in labels
-    assert "volume-cross-quadrature[0,1]" in labels
-    assert "initial[uniform]" in labels
-    assert "volume-far[0]" in labels
-    assert "volume-far[1]" in labels
+    background_by_component = {
+        row.get("volume_component"): row
+        for row in background_anchors
+        if row.get("source_kind") == "volume-far"
+    }
+    assert "initial[uniform]" in {
+        row["case_label"] for row in background_anchors
+    }
 
-    real_row = next(
-        row for row in background_anchors
-        if row["case_label"] == "volume-cross-real[0,1]"
-    )
-    quadrature_row = next(
-        row for row in background_anchors
-        if row["case_label"] == "volume-cross-quadrature[0,1]"
-    )
-    assert np.allclose(real_row["b"], cross_real)
-    assert np.allclose(quadrature_row["b"], cross_quadrature)
+    components = {
+        "volume-self[0]": b0,
+        "volume-self[1]": b1,
+        "volume-cross-real[0,1]": cross_real,
+        "volume-cross-quadrature[0,1]": cross_quadrature,
+    }
 
-    for port, original in enumerate((full[0], full[1])):
-        local_row = local[port][0]
-        far_row = next(
+    for component, expected in components.items():
+        local_rows = [
             row
-            for row in background_anchors
-            if row["case_label"] == f"volume-far[{port}]"
-        )
-        assert np.allclose(local_row["b"] + far_row["b"], original["b"])
-        assert np.allclose(local_row["u"] + far_row["u"], original["u"])
-        assert local_row["source_kind"] == "volume-local"
+            for rows in local
+            for row in rows
+            if row.get("volume_component") == component
+        ]
+        assert {row["thermal_local_port"] for row in local_rows} == {0, 1}
+        far_row = background_by_component[component]
+
+        reconstructed_b = np.asarray(far_row["b"], float).copy()
+        reconstructed_u = np.asarray(far_row["u"], float).copy()
+        for row in local_rows:
+            reconstructed_b += np.asarray(row["b"], float)
+            reconstructed_u += np.asarray(row["u"], float)
+
+        assert np.allclose(reconstructed_b, expected)
+        assert np.allclose(reconstructed_u, expected)
+        assert all(row["source_kind"] == "volume-local" for row in local_rows)
         assert far_row["source_kind"] == "volume-far"
+
+
+def test_cross_components_remove_diagonal_self_heat_before_spatial_split():
+    background = _Background()
+    geometry = _geometry()
+    n = background.n_cells
+    A = sp.eye(n, format="csr")
+    x = background.cell_centers
+
+    b0 = np.exp(-np.sum((x - np.array([0.02, 0.0, 0.0])) ** 2, axis=1) / 0.003)
+    b1 = np.exp(-np.sum((x - np.array([0.0, 0.0, 0.06])) ** 2, axis=1) / 0.003)
+    cross = 0.2 * np.sin(7.0 * x[:, 0]) * np.exp(-np.sum(x * x, axis=1) / 0.02)
+    combined = b0 + b1 + cross
+
+    full = [
+        _anchor(A, b0, "volume[0]", "volume"),
+        _anchor(A, b1, "volume[1]", "volume"),
+        _anchor(A, combined, "volume[2]", "volume"),
+    ]
+
+    background_anchors, local = _partition_self_volume_anchors(
+        background,
+        geometry,
+        full,
+    )
+
+    cross_local = [
+        row
+        for rows in local
+        for row in rows
+        if row.get("volume_component") == "volume-cross-real[0,1]"
+    ]
+    cross_far = next(
+        row
+        for row in background_anchors
+        if row.get("volume_component") == "volume-cross-real[0,1]"
+    )
+    reconstructed = np.asarray(cross_far["b"], float).copy()
+    for row in cross_local:
+        reconstructed += np.asarray(row["b"], float)
+
+    assert np.allclose(reconstructed, cross)
