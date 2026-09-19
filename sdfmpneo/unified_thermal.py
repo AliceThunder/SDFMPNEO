@@ -1064,10 +1064,11 @@ def _stabilize_component_blocks(
         return rows
 
     hard_limit = float(conditioning_limit)
-    stabilization_target = min(
-        hard_limit,
-        max(1.0 + 1e-12, 0.1 * hard_limit),
-    )
+    # The residual enrichment stage now certifies every subsequent fixed-mode
+    # append against the same hard limit, so pre-trimming does not need an
+    # artificial extra decade of headroom.  Preserve as much moving span as
+    # possible and trim only until the actual production Gate is satisfied.
+    stabilization_target = hard_limit
 
     rows = condition_rows()
     condition = max(row[0] for row in rows)
@@ -1148,9 +1149,17 @@ def _stabilize_component_blocks(
                     thermal_basis_energy_error=None,
                     thermal_basis_condition=float(condition),
                     thermal_basis_conditioning_trims=int(trims),
+                    thermal_basis_stabilized_background_rank=int(bg_rank),
+                    thermal_basis_stabilized_local_ranks=[
+                        int(v) for v in local_ranks
+                    ],
                 )
 
     trimmed = {
+        "initial_background_rank": int(initial_bg_rank),
+        "initial_local_ranks": [int(v) for v in initial_local_ranks],
+        "stabilized_background_rank": int(bg_rank),
+        "stabilized_local_ranks": [int(v) for v in local_ranks],
         "trimmed_background": int(initial_bg_rank - bg_rank),
         "trimmed_local": [
             int(before - after)
