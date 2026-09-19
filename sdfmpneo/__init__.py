@@ -9,7 +9,7 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 43 keeps the v34 EM truth and uses the stabilized v5
+# Physics truth version 43 keeps the v34 EM truth and uses the stabilized v6
 # geometry-aware thermal construction.  Spiral geometry rejects adjacent-turn
 # overlap; every Hermitian volume-source component is split across all moving
 # ports; component blocks use a looser initialization target and are condition-
