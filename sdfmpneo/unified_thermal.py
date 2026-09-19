@@ -1166,7 +1166,7 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 1,
+            "schema_version": 2,
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1186,7 +1186,7 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 1:
+            if int(meta.get("schema_version", -1)) != 2:
                 raise ValueError("unsupported geometry-aware thermal library version")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
@@ -1529,12 +1529,16 @@ def build_geometry_aware_thermal_library(
     trajectory_times=None,
     maximum_rank=None,
     conditioning_limit=1e10,
+    component_target_multiplier=2.0,
     monitor=None,
 ):
     """Build canonical BG/local blocks and run independent held-out ROM audits."""
     target = float(target_relative_error)
     if not 0.0 < target < 1.0:
         raise ValueError("thermal target_relative_error must lie in (0, 1)")
+    component_multiplier = float(component_target_multiplier)
+    if not np.isfinite(component_multiplier) or component_multiplier < 1.0:
+        raise ValueError("thermal component_target_multiplier must be finite and >= 1")
     reference = background.validate_geometry(reference_geometry)
     training = [background.validate_geometry(g) for g in list(geometry_samples)]
     if not training:
@@ -1588,7 +1592,10 @@ def build_geometry_aware_thermal_library(
     # target so common long-range diffusion is not independently memorized in
     # every moving block; the complete transported library is still enriched
     # and certified against the original final target below.
-    component_target = min(0.25, max(float(target), 2.0 * float(target)))
+    component_target = max(
+        float(target),
+        min(0.25, component_multiplier * float(target)),
+    )
     bg_modes, bg_steps, bg_component_stop, bg_component_error = _greedy_basis(
         background, bg_anchors, component_target, maximum_rank, monitor, "background"
     )
