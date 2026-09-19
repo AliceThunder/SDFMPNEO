@@ -5,6 +5,7 @@ from sdfmpneo.unified_background import FixedMultiscaleBackground
 import sdfmpneo.unified_tensor_surrogate as tensor_truth
 from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_thermal import (
+    _basis_condition_from_gram,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -162,7 +163,7 @@ def test_component_stabilization_prefers_fixed_background_tail_over_moving_modes
         background_modes,
         (local0, local1),
     )
-    assert before > 1e10
+    assert before > 1e6
 
     stable_bg, stable_local, info = _stabilize_component_blocks(
         bg,
@@ -170,7 +171,7 @@ def test_component_stabilization_prefers_fixed_background_tail_over_moving_modes
         background_modes,
         (local0, local1),
         [reference],
-        1e10,
+        1e6,
     )
 
     assert stable_bg.shape[1] == 1
@@ -185,7 +186,7 @@ def test_component_stabilization_prefers_fixed_background_tail_over_moving_modes
         stable_bg,
         stable_local,
     )
-    assert after <= 1e10
+    assert after <= 1e6
 
 
 def test_component_stabilization_can_trim_local_tail_after_background_floor():
@@ -219,7 +220,7 @@ def test_component_stabilization_can_trim_local_tail_after_background_floor():
         background_modes,
         (local0, local1),
         [reference],
-        1e10,
+        1e6,
     )
 
     assert stable_bg.shape[1] == 1
@@ -229,7 +230,7 @@ def test_component_stabilization_can_trim_local_tail_after_background_floor():
         bg,
         stable_bg,
         stable_local,
-    ) <= 1e10
+    ) <= 1e6
 
 
 def test_certified_maxwell_field_cache_survives_background_rebuild(tmp_path, monkeypatch):
@@ -379,10 +380,11 @@ def test_component_stabilization_does_not_trim_below_production_condition_limit(
 
     background_modes = np.column_stack((normalized(e0),))
     local0 = np.column_stack((normalized(e2),))
-    # For two normalized nearly parallel directions cond ~= 4/eps^2.
-    # eps=3e-5 puts the raw span safely above 1e9 but below the production
-    # 1e10 Gate; stabilization must therefore leave it untouched.
-    near = normalized(e0 + 3e-5 * e1)
+    # For two normalized nearly parallel directions the basis condition is
+    # approximately 2/eps, while the Gram condition is its square.
+    # eps=3e-7 gives a basis condition of order 1e6--1e7: far above the old
+    # accidental 1e5 effective Gate but safely below the declared 1e10 Gate.
+    near = normalized(e0 + 3e-7 * e1)
     local1 = np.column_stack((normalized(e3), near))
 
     before = _raw_block_condition(
@@ -390,7 +392,7 @@ def test_component_stabilization_does_not_trim_below_production_condition_limit(
         background_modes,
         (local0, local1),
     )
-    assert 1e9 < before < 1e10
+    assert 1e6 < before < 1e10
 
     stable_bg, stable_local, info = _stabilize_component_blocks(
         bg,
@@ -407,3 +409,9 @@ def test_component_stabilization_does_not_trim_below_production_condition_limit(
     assert info["trimmed_background"] == 0
     assert info["trimmed_local"] == [0, 0]
     assert info["conditioning_stabilization_target"] == 1e10
+
+
+
+def test_basis_condition_is_square_root_of_gram_condition():
+    gram = np.diag([1.0, 1e-12])
+    assert np.isclose(_basis_condition_from_gram(gram), 1e6)
