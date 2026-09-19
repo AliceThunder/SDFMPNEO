@@ -261,7 +261,7 @@ canonical rank 用：
 (K+sM)u=b
 \]
 
-的 resolvent anchors 自动构建。thermal basis 的昂贵 geometry truth 不再直接取少量 iid 随机点。默认先生成廉价候选池，并在构造 truth 前做物理几何合法性过滤：多匝 spiral 必须满足 `pitch > conductor_width`，避免相邻铜带接触/重叠；已有的 inner-radius、rounded-corner 与 background-domain 检查继续保留。随后在归一化 `encode_geometry` 空间中用 farthest-point/maximin 选择 8 个覆盖点；held-out validation 与 tensor dataset 使用独立固定 RNG 流；改变 basis 候选池不会再悄悄改变 held-out 集，且 validation 始终不参与 basis enrichment。
+的 resolvent anchors 自动构建。thermal basis 的昂贵 geometry truth 不再直接取少量 iid 随机点。默认先生成廉价候选池，并在构造 truth 前做物理几何合法性过滤：`turns >= 1` 的 spiral 必须满足 `pitch > conductor_width`，避免相邻铜带接触/重叠；已有的 inner-radius、rounded-corner 与 background-domain 检查继续保留。随后在归一化 `encode_geometry` 空间中用 farthest-point/maximin 选择 8 个覆盖点；held-out validation 与 tensor dataset 使用独立固定 RNG 流；改变 basis 候选池不会再悄悄改变 held-out 集，且 validation 始终不参与 basis enrichment。
 
 默认：
 
