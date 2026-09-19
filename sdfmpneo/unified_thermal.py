@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import json
 
 import numpy as np
@@ -56,24 +57,160 @@ def _port_current_vectors(n_ports):
     return vectors
 
 
-def _maxwell_port_fields(background, context):
-    """Use the production-certified shared multi-port Maxwell solver.
 
-    Thermal anchor generation previously bypassed the installed global solver and
-    performed a fresh fill-heavy sparse LU for every geometry.  Calling the
-    tensor-truth solve surface keeps exactly the same A/B physics while reusing
-    the compatible-gradient/transverse Krylov path and its 1e-9 true-residual
-    certificate.
+_THERMAL_MAXWELL_FIELD_CACHE_FORMAT = 1
+
+
+def configure_maxwell_field_cache(background, path, signature):
+    """Attach a persistent certified port-field cache to one training background.
+
+    The cache stores only full Maxwell port fields X(g), never thermal modes or
+    reduced operators.  A hit is re-certified against the current physical A/B
+    before use, so stale/corrupt numerical data cannot weaken the 1e-9 Gate.
     """
+    cache_path = Path(path)
+    background._sdfmpneo_thermal_maxwell_cache_path = cache_path
+    background._sdfmpneo_thermal_maxwell_cache_signature = str(signature)
+    background._sdfmpneo_thermal_maxwell_cache_entries = None
+    return cache_path
+
+
+def _geometry_cache_key(geometry):
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    text = json.dumps(
+        g.to_mapping(),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest(), text
+
+
+def _load_maxwell_field_cache(background):
+    entries = getattr(background, "_sdfmpneo_thermal_maxwell_cache_entries", None)
+    if entries is not None:
+        return entries
+
+    entries = {}
+    path = getattr(background, "_sdfmpneo_thermal_maxwell_cache_path", None)
+    signature = str(
+        getattr(background, "_sdfmpneo_thermal_maxwell_cache_signature", "")
+    )
+    if path is not None and signature:
+        path = Path(path)
+        if path.is_file():
+            try:
+                with np.load(path, allow_pickle=False) as data:
+                    meta = json.loads(str(data["metadata_json"]))
+                    if (
+                        int(meta.get("format", -1))
+                        == int(_THERMAL_MAXWELL_FIELD_CACHE_FORMAT)
+                        and str(meta.get("signature", "")) == signature
+                    ):
+                        for key, row in dict(meta.get("entries", {})).items():
+                            name = str(row["array"])
+                            field = np.asarray(data[name], complex)
+                            entries[str(key)] = {
+                                "geometry_json": str(row["geometry_json"]),
+                                "field": field.copy(),
+                            }
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                entries = {}
+
+    background._sdfmpneo_thermal_maxwell_cache_entries = entries
+    return entries
+
+
+def _save_maxwell_field_cache(background):
+    path = getattr(background, "_sdfmpneo_thermal_maxwell_cache_path", None)
+    signature = str(
+        getattr(background, "_sdfmpneo_thermal_maxwell_cache_signature", "")
+    )
+    if path is None or not signature:
+        return
+    entries = _load_maxwell_field_cache(background)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    arrays = {}
+    meta_entries = {}
+    for index, key in enumerate(sorted(entries)):
+        name = f"field_{index}"
+        row = entries[key]
+        arrays[name] = np.asarray(row["field"], complex)
+        meta_entries[key] = {
+            "array": name,
+            "geometry_json": str(row["geometry_json"]),
+        }
+    metadata = {
+        "format": int(_THERMAL_MAXWELL_FIELD_CACHE_FORMAT),
+        "signature": signature,
+        "entries": meta_entries,
+    }
+    arrays["metadata_json"] = np.asarray(
+        json.dumps(metadata, sort_keys=True, allow_nan=False)
+    )
+
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        with temporary.open("wb") as handle:
+            np.savez_compressed(handle, **arrays)
+        temporary.replace(path)
+    except OSError:
+        # This cache is a performance optimization only.  A write failure must
+        # not turn a certified physics solve into a training failure.
+        temporary.unlink(missing_ok=True)
+
+
+def _certify_cached_port_fields(background, context, field, tolerance):
+    X = np.asarray(field, complex)
+    B = np.asarray(background.rhs_matrix(context), complex)
+    if X.shape != B.shape or np.any(~np.isfinite(X)):
+        return float("inf")
+    A = background.em_operator(context, None)
+    scale = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
+    residuals = np.linalg.norm(B - A @ X, axis=0) / scale
+    if np.any(~np.isfinite(residuals)):
+        return float("inf")
+    return float(np.max(residuals))
+
+
+def _maxwell_port_fields(background, context):
+    """Use/reuse the production-certified shared multi-port Maxwell solve."""
     from . import unified_tensor_surrogate as _tensor_truth
 
-    X, residual = _tensor_truth._solve_port_fields(background, context)
-    X = np.asarray(X, complex)
     tolerance = float(
         dict(getattr(background, "background_config", {}) or {})
         .get("linear_solver", {})
         .get("relative_residual_tolerance", 1e-9)
     )
+
+    key, geometry_json = _geometry_cache_key(context.geometry)
+    entries = _load_maxwell_field_cache(background)
+    cached = entries.get(key)
+    if cached is not None and cached.get("geometry_json") == geometry_json:
+        cached_X = np.asarray(cached["field"], complex)
+        cached_residual = _certify_cached_port_fields(
+            background,
+            context,
+            cached_X,
+            tolerance,
+        )
+        if cached_residual <= tolerance:
+            print(
+                "thermal Maxwell field cache hit: "
+                f"geometry={key[:12]}, residual={cached_residual:.3e}",
+                flush=True,
+            )
+            return cached_X
+        entries.pop(key, None)
+
+    X, residual = _tensor_truth._solve_port_fields(background, context)
+    X = np.asarray(X, complex)
     if np.any(~np.isfinite(X)) or not np.isfinite(residual):
         raise FloatingPointError("Maxwell truth solve produced non-finite fields")
     if float(residual) > tolerance:
@@ -81,6 +218,25 @@ def _maxwell_port_fields(background, context):
             "thermal anchor Maxwell solve failed residual certificate: "
             f"{float(residual):.3e} > {tolerance:.3e}"
         )
+
+    # Recheck the returned field on the same public A/B surface before
+    # persisting it.  This makes cache admission independent of solver labels.
+    certified_residual = _certify_cached_port_fields(
+        background,
+        context,
+        X,
+        tolerance,
+    )
+    if certified_residual > tolerance:
+        raise RuntimeError(
+            "thermal anchor Maxwell solve failed cache-admission certificate: "
+            f"{certified_residual:.3e} > {tolerance:.3e}"
+        )
+    entries[key] = {
+        "geometry_json": geometry_json,
+        "field": X.copy(),
+    }
+    _save_maxwell_field_cache(background)
     return X
 
 
@@ -1868,4 +2024,5 @@ __all__ = [
     "build_geometry_aware_thermal_library",
     "_port_current_vectors",
     "_volume_heat",
+    "configure_maxwell_field_cache",
 ]
