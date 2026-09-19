@@ -275,7 +275,7 @@ canonical rank 用：
 "thermal_time_scales": [0.1, 1.0, 10.0]
 ```
 
-并始终包含 `s=0` steady anchor。background / TX-local / RX-local 是完整 ROM 的**初始化分块**，不是三个必须各自达到最终 5% 的独立 ROM；默认 component target 为 `2 × 5% = 10%`。component greedy 完成后会检查所有 training geometry 上 transported raw span 的 conditioning；如果超过 `thermal_basis_conditioning_limit`，优先从 **fixed-background greedy tail** 裁剪，因为这类方向可由后续 full-library residual enrichment 重新生成；TX/RX moving-local tail 只在 background 已到最小保留 rank、conditioning 仍不合格时才允许裁剪。随后 background-residual enrichment 对完整 `[Phi_bg, T_tx Psi_tx, T_rx Psi_rx]` 重新追到原始 5% target，并在每次加入 fixed direction 前预检所有 training geometry 的 raw condition，因此既不放宽最终训练/held-out Gate，也避免用 fixed modes 替代本应随几何移动的 local span。
+并始终包含 `s=0` steady anchor。background / TX-local / RX-local 是完整 ROM 的**初始化分块**，不是三个必须各自达到最终 5% 的独立 ROM；默认 component target 为 `2 × 5% = 10%`。component greedy 完成后会检查所有 training geometry 上 transported raw span 的 conditioning；只有真正超过 `thermal_basis_conditioning_limit` 时才裁剪，不再额外人为预留一个数量级的 condition headroom。裁剪优先从 **fixed-background greedy tail** 开始，因为这类方向可由后续 full-library residual enrichment 重新生成；TX/RX moving-local tail 只在 background 已到最小保留 rank、conditioning 仍不合格时才允许裁剪。随后 background-residual enrichment 对完整 `[Phi_bg, T_tx Psi_tx, T_rx Psi_rx]` 重新追到原始 5% target，并在每次加入 fixed direction 前预检所有 training geometry 的 raw condition，因此既不放宽最终训练/held-out Gate，也避免用 fixed modes 替代本应随几何移动的 local span。
 
 同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
 
