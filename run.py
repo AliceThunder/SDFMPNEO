@@ -202,8 +202,8 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "thermal_basis_schema": "geometry_aware_bg_local_midfield_v3",
-    "basis_samples": 12,
+    "thermal_basis_schema": "geometry_aware_multiport_midfield_v4",
+    "basis_samples": 8,
     "basis_design_pool_multiplier": 16,
     "basis_validation_samples": 6,
     "thermal_basis_energy_tolerance": 5e-2,
