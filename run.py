@@ -202,7 +202,7 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "thermal_basis_schema": "geometry_aware_multiport_midfield_v4",
+    "thermal_basis_schema": "geometry_aware_multiport_midfield_v5",
     "basis_samples": 8,
     "basis_design_pool_multiplier": 16,
     "basis_validation_samples": 6,
@@ -211,6 +211,7 @@ TRAINING = {
     "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
     "thermal_basis_max_rank": None,
     "thermal_basis_conditioning_limit": 1e10,
+    "thermal_component_target_multiplier": 2.0,
     "n_tensor_samples": 96,
     "final_audit": {
         "samples": 2,
