@@ -9,8 +9,11 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 42 keeps the v40 EM/thermal truth and tightens the geometry
-# admissibility contract: spirals with turns >= 1 must have pitch > conductor width.
+# Physics truth version 42 keeps the v34 EM truth and uses the stabilized v5
+# geometry-aware thermal construction.  Spiral geometry rejects adjacent-turn
+# overlap; every Hermitian volume-source component is split across all moving
+# ports; component blocks use a looser initialization target and are condition-
+# stabilized before the complete library is enriched/certified at the final target.
 # Every independent Hermitian volume-source component remains partitioned exactly
 # into one smooth pose-following contribution per physical port plus a fixed
 # boundary/far complement; self and cross heat can move with either coil.
