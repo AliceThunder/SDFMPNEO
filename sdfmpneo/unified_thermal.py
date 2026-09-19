@@ -1110,16 +1110,26 @@ def _stabilize_component_blocks(
                 if position is None
                 else float(coefficients[position])
             )
-            # Prefer trimming a moving block over the fixed background on an
-            # exact participation tie; both choices are still tail-only.
-            priority = 1 if kind == "local" else 0
-            scored.append(
-                (participation, priority, kind, port)
+            scored.append((participation, kind, port))
+
+        # Fixed-background tails are expendable initialization directions: the
+        # full-library residual greedy below can regenerate whatever global
+        # component is genuinely needed.  Moving local tails, in contrast, are
+        # the only directions that can follow unseen coil geometry.  Preserve
+        # them unless the fixed block is already at its one-mode floor.
+        background_candidates = [
+            row for row in scored if row[1] == "background"
+        ]
+        if background_candidates:
+            _participation, kind, port = max(
+                background_candidates,
+                key=lambda row: row[0],
             )
-        _participation, _priority, kind, port = max(
-            scored,
-            key=lambda row: (row[0], row[1]),
-        )
+        else:
+            _participation, kind, port = max(
+                scored,
+                key=lambda row: row[0],
+            )
         if kind == "background":
             bg_rank -= 1
         else:
