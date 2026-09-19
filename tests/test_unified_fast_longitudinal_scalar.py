@@ -66,6 +66,8 @@ def test_production_installs_fast_scalar_paths_for_v34_truth():
     assert longitudinal._fast_reactive_scalar_installed is True
     assert longitudinal._longitudinal_state_cache_installed is True
     assert terminal_defect._fast_terminal_dissipative_scalar_installed is True
-    import sdfmpneo.unified_longitudinal_patch_consistency as consistency\n    assert consistency._lightweight_scalar_patch_installed is True\n    assert terminal_defect._terminal_component_lock_installed is True
+    import sdfmpneo.unified_longitudinal_patch_consistency as consistency
+    assert consistency._lightweight_scalar_patch_installed is True
+    assert terminal_defect._terminal_component_lock_installed is True
     assert "production_parent_piecewise_constant_complex_mass_v1" in longitudinal._MODEL
     assert not bool(getattr(longitudinal, "_shared_terminal_dissipative_installed", False))
