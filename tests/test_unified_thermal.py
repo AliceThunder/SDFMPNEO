@@ -131,7 +131,7 @@ def test_held_out_diagnostics_identify_source_time_and_trajectory_output():
 
 
 
-def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blocks():
+def test_component_stabilization_prefers_fixed_background_tail_over_moving_modes():
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     weights = np.asarray(bg.cell_volumes, float)
@@ -148,10 +148,12 @@ def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blo
     e4 = np.zeros(n); e4[4] = 1.0
     e5 = np.zeros(n); e5[5] = 1.0
 
+    # The actual near-dependence is between background e0 and the trailing RX
+    # mode.  Stabilization deliberately sacrifices the fixed-background tail
+    # first because full-library residual enrichment can regenerate fixed
+    # directions, whereas a trimmed moving mode cannot follow held-out geometry.
     background_modes = np.column_stack((normalized(e0), normalized(e1)))
     local0 = np.column_stack((normalized(e2), normalized(e3)))
-    # The first RX mode is independent; the trailing greedy mode is almost a
-    # duplicate of a background direction and should be the one trimmed.
     near_duplicate = normalized(e0 + 1e-7 * e5)
     local1 = np.column_stack((normalized(e4), near_duplicate))
 
@@ -171,11 +173,13 @@ def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blo
         1e10,
     )
 
-    assert stable_bg.shape[1] == 2
+    assert stable_bg.shape[1] == 1
+    assert info["trimmed_background"] == 1
+    # A moving tail may still need trimming after the fixed block reaches its
+    # one-mode floor, but it must never be trimmed while a fixed tail remains.
     assert stable_local[0].shape[1] == 2
-    assert stable_local[1].shape[1] == 1
-    assert info["trimmed_background"] == 0
-    assert info["trimmed_local"] == [0, 1]
+    assert stable_local[1].shape[1] in {1, 2}
+    assert info["trimmed_local"][0] == 0
     after = _raw_block_condition(
         bg,
         stable_bg,
@@ -183,6 +187,49 @@ def test_component_stabilization_trims_only_greedy_tails_and_preserves_fixed_blo
     )
     assert after <= 1e10
 
+
+def test_component_stabilization_can_trim_local_tail_after_background_floor():
+    bg = make_background()
+    reference = bg.validate_geometry(make_geometry(0.0))
+    weights = np.asarray(bg.cell_volumes, float)
+    n = bg.n_cells
+
+    def normalized(vector):
+        value = np.asarray(vector, float).reshape(n)
+        return value / np.sqrt(np.dot(value, weights * value))
+
+    e0 = np.zeros(n); e0[0] = 1.0
+    e1 = np.zeros(n); e1[1] = 1.0
+    e2 = np.zeros(n); e2[2] = 1.0
+    e3 = np.zeros(n); e3[3] = 1.0
+    e4 = np.zeros(n); e4[4] = 1.0
+
+    background_modes = np.column_stack((normalized(e0),))
+    local0 = np.column_stack((normalized(e1), normalized(e2)))
+    local1 = np.column_stack(
+        (
+            normalized(e3),
+            normalized(e0 + 1e-7 * e4),
+        )
+    )
+
+    stable_bg, stable_local, info = _stabilize_component_blocks(
+        bg,
+        reference,
+        background_modes,
+        (local0, local1),
+        [reference],
+        1e10,
+    )
+
+    assert stable_bg.shape[1] == 1
+    assert info["trimmed_background"] == 0
+    assert sum(info["trimmed_local"]) >= 1
+    assert _raw_block_condition(
+        bg,
+        stable_bg,
+        stable_local,
+    ) <= 1e10
 
 
 def test_certified_maxwell_field_cache_survives_background_rebuild(tmp_path, monkeypatch):
