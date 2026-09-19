@@ -241,7 +241,7 @@ preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mu
 
 首版只使用确定性的 rigid translation/rotation transport 和连续插值；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
 
-canonical local block 包含 wire heat，以及对应端口 unit-port self-volume Joule source 的**pose-following 近/中场部分**。pure-port volume source 用随 coil 尺寸缩放的平滑局部窗严格拆成 \(q_{\rm moving}+q_{\rm far}=q\)：窗口覆盖 package 以及数个 coil radius 的 conductive-seawater Joule lobe，只运输 \(q_{\rm moving}\) 的 resolvent；真正靠近固定人工边界的 \(q_{\rm far}\) 与 uniform initial response 留在 fixed background block。对 \(e_i+e_j\) / \(e_i+i e_j\) 产生的组合热源，background 不再直接保存整份正热源，而是先减去两个 diagonal self source，只保留真正的 signed Hermitian cross component，避免 self hotspot 在 local/background 两边重复出现。这个分解不删除或重标定任何 Joule heat；held-out Gate 仍然对原始完整物理 current directions 做验证。
+canonical local block 包含 wire heat，以及**所有独立 Hermitian volume-source component 在该物理端口附近的 pose-following 近/中场部分**。一个 electrical port 的单位电流会在 TX、RX 以及 seawater 中同时产生 Joule heat，因此不再按“激励端口编号”决定 thermal local block。每个 self/cross volume component 都先由 TX/RX 平滑窗口做空间 partition-of-unity：\(q=q_{\rm tx}+q_{\rm rx}+q_{\rm far}\)，TX/RX 两个 moving component 分别随对应 coil pose 运输，只有真正靠近固定人工边界的 complement 留在 fixed background。对 \(e_i+e_j\) / \(e_i+i e_j\) 的组合热源仍先减去两个 diagonal self source，得到真正的 signed Hermitian cross component，再进行同样的多端口空间分解。逐点和严格等于原始 source，held-out Gate 仍对未分解的完整物理 current directions 做验证。
 
 每个 geometry 从真实 full thermal operators 投影：
 
@@ -261,12 +261,12 @@ canonical rank 用：
 (K+sM)u=b
 \]
 
-的 resolvent anchors 自动构建。thermal basis 的昂贵 geometry truth 不再直接取少量 iid 随机点。默认先生成廉价候选池，在归一化 `encode_geometry` 空间中用 farthest-point/maximin 选择 12 个覆盖点；held-out validation 仍然由独立随机样本组成，不参与 basis enrichment。
+的 resolvent anchors 自动构建。thermal basis 的昂贵 geometry truth 不再直接取少量 iid 随机点。默认先生成廉价候选池，在归一化 `encode_geometry` 空间中用 farthest-point/maximin 选择 8 个覆盖点；held-out validation 与 tensor dataset 使用独立固定 RNG 流；改变 basis 候选池不会再悄悄改变 held-out 集，且 validation 始终不参与 basis enrichment。
 
 默认：
 
 ```python
-"basis_samples": 12,
+"basis_samples": 8,
 "basis_design_pool_multiplier": 16,
 "thermal_time_scales": [0.1, 1.0, 10.0]
 ```
