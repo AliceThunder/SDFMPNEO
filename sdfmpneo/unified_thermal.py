@@ -356,10 +356,7 @@ def _partition_self_volume_anchors(background, geometry, anchors):
     The original physical anchors are untouched and remain the audit family.
     """
     g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
-    windows = tuple(
-        _self_volume_local_window(background, g, p)
-        for p in range(g.n_ports)
-    )
+    windows = None
     background_anchors = []
     local_anchors = [[] for _ in range(g.n_ports)]
     grouped = {}
@@ -385,6 +382,11 @@ def _partition_self_volume_anchors(background, geometry, anchors):
         }
 
         local_items = []
+        if self_anchors and windows is None:
+            windows = tuple(
+                _self_volume_local_window(background, g, p)
+                for p in range(g.n_ports)
+            )
         for port, anchor in self_anchors.items():
             local_items.append(
                 (port, anchor, windows[port] * np.asarray(anchor["b"], float))
