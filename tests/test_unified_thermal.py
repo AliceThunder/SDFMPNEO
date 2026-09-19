@@ -8,6 +8,7 @@ from sdfmpneo.unified_thermal import (
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
+    GeometryAwareThermalLibrary,
     build_geometry_aware_thermal_library,
     configure_maxwell_field_cache,
 )
@@ -274,3 +275,38 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
     _maxwell_port_fields(second_background, context)
 
     assert calls["count"] == 2
+
+
+
+def test_geometry_aware_thermal_library_schema_v2_round_trip(tmp_path):
+    bg = make_background()
+    reference = bg.validate_geometry(make_geometry(0.0))
+    n = bg.n_cells
+    weights = np.asarray(bg.cell_volumes, float)
+
+    def unit(index):
+        value = np.zeros(n, float)
+        value[index] = 1.0
+        return value / np.sqrt(np.dot(value, weights * value))
+
+    library = GeometryAwareThermalLibrary(
+        reference,
+        np.column_stack((unit(0), unit(1))),
+        (
+            np.column_stack((unit(2),)),
+            np.column_stack((unit(3),)),
+        ),
+        (0.1, 1.0, 10.0),
+        1e10,
+    )
+    path = tmp_path / "thermal-library.npz"
+    library.save(path)
+    loaded = GeometryAwareThermalLibrary.load(path)
+
+    assert loaded.rank == library.rank
+    assert loaded.block_ranks == library.block_ranks
+    assert loaded.time_scales == library.time_scales
+    assert loaded.conditioning_limit == library.conditioning_limit
+    assert np.allclose(loaded.background_modes, library.background_modes)
+    for got, expected in zip(loaded.local_modes, library.local_modes):
+        assert np.allclose(got, expected)
