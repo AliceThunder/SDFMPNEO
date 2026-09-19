@@ -106,6 +106,41 @@ def _sample_geometries(settings,n,rng,background):
     return out
 
 
+def _basis_design_geometries(settings, n, rng, background):
+    """Choose a deterministic maximin subset from a cheap random candidate pool."""
+    count = int(n)
+    if count < 1:
+        return []
+    training = dict(settings.get("TRAINING", {}) or {})
+    multiplier = max(2, int(training.get("basis_design_pool_multiplier", 16)))
+    pool = _sample_geometries(settings, max(count, multiplier * count), rng, background)
+    encoded = np.vstack([encode_geometry(candidate) for candidate in pool])
+    reference = encode_geometry(settings["DEFAULT_GEOMETRY"])
+
+    combined = np.vstack((encoded, reference[None, :]))
+    lo = np.min(combined, axis=0)
+    span = np.ptp(combined, axis=0)
+    scale = np.where(span > 1e-12, span, 1.0)
+    normalized = (encoded - lo) / scale
+    reference_n = (reference - lo) / scale
+
+    minimum_distance2 = np.sum((normalized - reference_n[None, :]) ** 2, axis=1)
+    selected = []
+    used = np.zeros(len(pool), dtype=bool)
+    for _ in range(min(count, len(pool))):
+        score = np.where(used, -np.inf, minimum_distance2)
+        index = int(np.argmax(score))
+        if not np.isfinite(score[index]):
+            break
+        selected.append(pool[index])
+        used[index] = True
+        distance2 = np.sum((normalized - normalized[index][None, :]) ** 2, axis=1)
+        minimum_distance2 = np.minimum(minimum_distance2, distance2)
+    if len(selected) != count:
+        raise RuntimeError("thermal basis maximin design did not produce the requested geometry count")
+    return selected
+
+
 def _cache_paths(directory):
     return directory/"unified.cache.json",directory/"unified.geometry_thermal.npz",directory/"unified.tensor_dataset.npz"
 
@@ -219,7 +254,8 @@ def train(settings,model_path,settings_dir,monitor=None):
         else:
             checkpoint.unlink(missing_ok=True); rng=np.random.default_rng(seed)
             n_basis=int(settings["TRAINING"].get("basis_samples",8)); n_basis_val=int(settings["TRAINING"].get("basis_validation_samples",6))
-            basis_geometries=_sample_geometries(settings,n_basis,rng,bg); validation_geometries=_sample_geometries(settings,n_basis_val,rng,bg)
+            basis_geometries=_basis_design_geometries(settings,n_basis,rng,bg)
+            validation_geometries=_sample_geometries(settings,n_basis_val,rng,bg)
             _progress("构建 geometry-aware canonical thermal ROM",12,monitor)
             library,thermal_obj=build_geometry_aware_thermal_library(bg,settings["DEFAULT_GEOMETRY"],basis_geometries,validation_geometries=validation_geometries,
                 target_relative_error=float(settings["TRAINING"].get("thermal_basis_energy_tolerance",5e-2)),time_scales=settings["TRAINING"].get("thermal_time_scales",[0.1,1.0,10.0]),
