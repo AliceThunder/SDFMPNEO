@@ -10,7 +10,7 @@ from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGe
 from . import unified_model as _unified_model
 
 # Physics truth version 41 keeps the v40 EM/thermal truth and tightens the geometry
-# admissibility contract: multi-turn spirals must have pitch > conductor width.
+# admissibility contract: spirals with turns >= 1 must have pitch > conductor width.
 # Every independent Hermitian volume-source component remains partitioned exactly
 # into one smooth pose-following contribution per physical port plus a fixed
 # boundary/far complement; self and cross heat can move with either coil.
