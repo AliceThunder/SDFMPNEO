@@ -66,3 +66,62 @@ def test_basis_design_geometry_count_is_exact(monkeypatch):
 
     assert len(selected) == 4
     assert len({row["x"] for row in selected}) == 4
+
+
+def test_geometry_sampling_rejects_adjacent_turn_overlap(monkeypatch):
+    invalid = {
+        "transmitter": {
+            "shape": "circle",
+            "turns": 1.5,
+            "outer_half_size": 0.03,
+            "pitch": 0.0012,
+            "conductor_width": 0.0020,
+            "conductor_thickness": 0.0010,
+            "corner_radius": 0.012,
+            "translation": [0.0, 0.0, 0.0],
+            "angles": [0.0, 0.0, 0.0],
+        },
+        "receiver": {
+            "shape": "circle",
+            "turns": 1.5,
+            "outer_half_size": 0.03,
+            "pitch": 0.0012,
+            "conductor_width": 0.0020,
+            "conductor_thickness": 0.0010,
+            "corner_radius": 0.012,
+            "translation": [0.0, 0.0, 0.04],
+            "angles": [0.0, 0.0, 0.0],
+        },
+        "package_half_extent": [0.04, 0.04, 0.006],
+    }
+    valid = {
+        **invalid,
+        "transmitter": {**invalid["transmitter"], "pitch": 0.0025},
+        "receiver": {**invalid["receiver"], "pitch": 0.0025},
+    }
+    candidates = iter((invalid, valid))
+
+    monkeypatch.setattr(
+        runtime,
+        "sample_geometry",
+        lambda base, sampling, rng: next(candidates),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "encode_geometry",
+        lambda geometry: np.asarray([1.0], float),
+    )
+
+    class Background:
+        @staticmethod
+        def validate_geometry(geometry):
+            return geometry
+
+    selected = runtime._sample_geometries(
+        {"DEFAULT_GEOMETRY": valid, "GEOMETRY_SAMPLING": {}},
+        1,
+        np.random.default_rng(17),
+        Background(),
+    )
+
+    assert selected == [valid]
