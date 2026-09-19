@@ -269,7 +269,7 @@ canonical rank 用：
 
 并始终包含 `s=0` steady anchor。同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
 
-held-out geometry 先执行较便宜的 resolvent energy Gate；如果它已经超过目标误差，训练立即 fail closed，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有 resolvent Gate 通过时才继续：
+held-out geometry 按“生成一个 truth anchor set → 立刻做一个 resolvent energy Gate”的顺序流式检查；任意一个 geometry 超过目标误差就立即 fail closed，不再生成剩余 held-out Maxwell truth，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有全部 held-out resolvent Gate 通过时才继续：
 
 ```python
 "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
