@@ -1954,11 +1954,10 @@ def build_geometry_aware_thermal_library(
 
     # Preserve the theoretical block split:
     #   Phi(g) = [Phi_bg, T_tx Psi_tx, T_rx Psi_rx].
-    # Pure-port volume heat is split exactly into pose-following near and fixed
-    # far sources; only the near source enters the transported local block.
-    # Combined-current volume anchors are converted to signed Hermitian cross
-    # components by subtracting their two diagonal self sources, so Phi_bg does
-    # not duplicate the same moving self hotspot through off-diagonal anchors.
+    # Every independent Hermitian volume-source component (diagonal self and
+    # signed real/quadrature cross) is split spatially across every moving port
+    # plus an exact fixed far complement.  Source excitation index therefore
+    # never decides which thermal local block receives a Joule hotspot.
     training_anchor_sets = []
     bg_anchors = []
     for gi, geometry in enumerate(training):
