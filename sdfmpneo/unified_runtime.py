@@ -266,7 +266,8 @@ def train(settings,model_path,settings_dir,monitor=None):
             library,thermal_obj=build_geometry_aware_thermal_library(bg,settings["DEFAULT_GEOMETRY"],basis_geometries,validation_geometries=validation_geometries,
                 target_relative_error=float(settings["TRAINING"].get("thermal_basis_energy_tolerance",5e-2)),time_scales=settings["TRAINING"].get("thermal_time_scales",[0.1,1.0,10.0]),
                 trajectory_times=settings["TRAINING"].get("thermal_trajectory_times"),maximum_rank=settings["TRAINING"].get("thermal_basis_max_rank"),
-                conditioning_limit=float(settings["TRAINING"].get("thermal_basis_conditioning_limit",1e10)),monitor=monitor)
+                conditioning_limit=float(settings["TRAINING"].get("thermal_basis_conditioning_limit",1e10)),
+                component_target_multiplier=float(settings["TRAINING"].get("thermal_component_target_multiplier",2.0)),monitor=monitor)
             _require_effective_thermal_basis(thermal_obj); bg.set_thermal_library(library); library.save(thermal_path); thermal_report=asdict(thermal_obj)
             _progress("构建 geometry-aware canonical thermal ROM",32,monitor)
             n_tensor=int(settings["TRAINING"].get("n_tensor_samples",96)); tensor_geometries=_sample_geometries(settings,n_tensor,tensor_rng,bg)
