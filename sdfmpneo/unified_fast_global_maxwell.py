@@ -36,11 +36,6 @@ def _cfg(background):
     cfg.setdefault("ilu_strong_shift_factor", 1e-1)
     cfg.setdefault("transverse_stabilization_factor", 3e-2)
     cfg.setdefault("transverse_strong_stabilization_factor", 1e-1)
-    cfg.setdefault("ilu_ultra_drop_tolerance", 2e-4)
-    cfg.setdefault("ilu_ultra_fill_factor", 16.0)
-    cfg.setdefault("transverse_ultra_stabilization_factor", 1e-1)
-    cfg.setdefault("iterative_ultra_maxiter", max(60, int(cfg["iterative_maxiter"])))
-    cfg.setdefault("iterative_ultra_inner_m", max(36, int(cfg["iterative_inner_m"])))
     # Keep compatibility with run.py's iterative_defect_* names.  These are
     # solver-policy aliases only; the physical residual certificate is unchanged.
     cfg.setdefault("defect_steps", cfg.get("iterative_defect_steps", 2))
@@ -49,25 +44,6 @@ def _cfg(background):
     cfg.setdefault(
         "defect_start_residual",
         cfg.get("iterative_defect_start_residual", 1e-8),
-    )
-    # A final true-residual rescue is allowed from a wider basin only after
-    # every primary preconditioned solve has failed.  This changes solver
-    # policy, not the physical operator or the 1e-9 acceptance certificate.
-    cfg.setdefault(
-        "defect_rescue_start_residual",
-        cfg.get("iterative_defect_rescue_start_residual", 2e-4),
-    )
-    cfg.setdefault(
-        "defect_rescue_steps",
-        cfg.get("iterative_defect_rescue_steps", max(2, int(cfg["defect_steps"]))),
-    )
-    cfg.setdefault(
-        "defect_rescue_maxiter",
-        cfg.get("iterative_defect_rescue_maxiter", max(40, int(cfg["defect_maxiter"]))),
-    )
-    cfg.setdefault(
-        "defect_rescue_inner_m",
-        cfg.get("iterative_defect_rescue_inner_m", max(36, int(cfg["defect_inner_m"]))),
     )
     return cfg
 
@@ -105,7 +81,6 @@ def _defect_cleanup(
     *,
     maxiter,
     inner_m,
-    label_prefix="compatible-transverse-defect",
 ):
     X = np.asarray(X, complex).copy()
     history = []
@@ -143,14 +118,14 @@ def _defect_cleanup(
         elapsed = time.perf_counter() - started
         history.append(
             {
-                "solver": f"{label_prefix}-{sweep+1}",
+                "solver": f"compatible-transverse-defect-{sweep+1}",
                 "krylov_info": infos,
                 "seconds": float(elapsed),
                 "maximum_relative_residual": float(np.max(after)),
             }
         )
         print(
-            f"global Maxwell {label_prefix}-{sweep+1}: "
+            f"global Maxwell compatible-transverse-defect-{sweep+1}: "
             f"residual={float(np.max(after)):.3e}, info={infos}, time={elapsed:.1f}s",
             flush=True,
         )
@@ -208,8 +183,6 @@ def solve_multi_rhs(background, A, B, local_solver_module):
     fast_fill = float(cfg["ilu_fill_factor"])
     strong_drop = float(cfg["ilu_strong_drop_tolerance"])
     strong_fill = float(cfg["ilu_strong_fill_factor"])
-    ultra_drop = float(cfg["ilu_ultra_drop_tolerance"])
-    ultra_fill = float(cfg["ilu_ultra_fill_factor"])
     if gradient_block is not None:
         attempts = (
             (
@@ -225,13 +198,6 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 float(cfg["transverse_strong_stabilization_factor"]),
                 "compatible-transverse-ilu-strong",
                 "transverse",
-            ),
-            (
-                ultra_drop,
-                ultra_fill,
-                float(cfg["transverse_ultra_stabilization_factor"]),
-                "compatible-transverse-ilu-ultra",
-                "transverse-ultra",
             ),
             (
                 strong_drop,
@@ -255,14 +221,13 @@ def solve_multi_rhs(background, A, B, local_solver_module):
 
     history = []
     best_X = None
-    best_M = None
     best_residual = float("inf")
 
     for drop_tol, fill_factor, stabilization, label, mode in attempts:
         started = time.perf_counter()
         preconditioner_stats = {}
         try:
-            if mode in {"transverse", "transverse-ultra"}:
+            if mode == "transverse":
                 edge_M, preconditioner_stats = build_transverse_ilu(
                     A,
                     tagged_background,
@@ -298,16 +263,6 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         preconditioner_seconds = time.perf_counter() - started
         columns = []
         infos = []
-        attempt_maxiter = (
-            int(cfg["iterative_ultra_maxiter"])
-            if mode == "transverse-ultra"
-            else maxiter
-        )
-        attempt_inner_m = (
-            int(cfg["iterative_ultra_inner_m"])
-            if mode == "transverse-ultra"
-            else inner_m
-        )
         for p in range(B.shape[1]):
             x0 = None if best_X is None else best_X[:, p]
             candidate, info = local_solver_module._lgmres(
@@ -316,8 +271,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
                 x0=x0,
                 M=M,
                 rtol=target,
-                maxiter=attempt_maxiter,
-                inner_m=attempt_inner_m,
+                maxiter=maxiter,
+                inner_m=inner_m,
             )
             columns.append(np.asarray(candidate, complex).reshape(-1))
             infos.append(int(info))
@@ -335,10 +290,8 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             "gradient_factor_seconds": 0.0 if gradient_block is None else gradient_block.build_seconds,
             "seconds": float(elapsed),
             "maximum_relative_residual": worst,
-            "krylov_maxiter": int(attempt_maxiter),
-            "krylov_inner_m": int(attempt_inner_m),
         }
-        if mode in {"transverse", "transverse-ultra"}:
+        if mode == "transverse":
             row.update({f"transverse_{k}": v for k, v in preconditioner_stats.items()})
         else:
             row["shift_factor"] = float(stabilization)
@@ -350,7 +303,6 @@ def solve_multi_rhs(background, A, B, local_solver_module):
         )
         if np.isfinite(worst) and worst < best_residual:
             best_X = X
-            best_M = M
             best_residual = worst
         if best_X is not None and best_residual <= tolerance:
             return best_X, best_residual, tuple(history)
@@ -378,40 +330,9 @@ def solve_multi_rhs(background, A, B, local_solver_module):
             history.extend(extra)
             if refined_residual < best_residual:
                 best_X = refined
-                best_M = M
                 best_residual = refined_residual
             if best_residual <= tolerance:
                 return best_X, best_residual, tuple(history)
-
-    rescue_start = max(
-        float(cfg["defect_rescue_start_residual"]),
-        float(tolerance),
-    )
-    if (
-        best_X is not None
-        and best_M is not None
-        and np.isfinite(best_residual)
-        and best_residual <= rescue_start
-        and int(cfg["defect_rescue_steps"]) > 0
-    ):
-        rescued, rescued_residual, extra = _defect_cleanup(
-            A,
-            B,
-            best_X,
-            best_M,
-            local_solver_module,
-            tolerance,
-            int(cfg["defect_rescue_steps"]),
-            maxiter=int(cfg["defect_rescue_maxiter"]),
-            inner_m=int(cfg["defect_rescue_inner_m"]),
-            label_prefix="certified-defect-rescue",
-        )
-        history.extend(extra)
-        if rescued_residual < best_residual:
-            best_X = rescued
-            best_residual = rescued_residual
-        if best_residual <= tolerance:
-            return best_X, best_residual, tuple(history)
 
     preconditioner_name = (
         "compatible gradient/transverse"
