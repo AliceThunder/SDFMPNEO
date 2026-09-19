@@ -196,9 +196,10 @@ def test_global_solver_uses_shifted_recovery_after_transverse_attempts_stall(mon
     assert residual <= 1e-10
     assert np.allclose(X, truth)
     labels = [row["solver"] for row in history]
-    assert labels[:2] == [
+    assert labels[:3] == [
         "compatible-transverse-ilu-fast",
         "compatible-transverse-ilu-strong",
+        "compatible-transverse-ilu-ultra",
     ]
     assert labels[-1] == "compatible-shifted-ilu-tight-recovery"
 
@@ -316,7 +317,11 @@ def test_global_solver_defect_rescue_defaults_cover_observed_hard_geometry_basin
         }
 
     cfg = fast_global._cfg(Background())
-    assert cfg["defect_rescue_start_residual"] >= 1e-2
-    assert cfg["defect_rescue_steps"] >= 4
-    assert cfg["defect_rescue_maxiter"] >= 24
-    assert cfg["defect_rescue_inner_m"] >= 30
+    assert 1e-4 <= cfg["defect_rescue_start_residual"] <= 1e-3
+    assert cfg["defect_rescue_steps"] >= 2
+    assert cfg["defect_rescue_maxiter"] >= 40
+    assert cfg["defect_rescue_inner_m"] >= 36
+    assert cfg["ilu_ultra_drop_tolerance"] < cfg["ilu_strong_drop_tolerance"]
+    assert cfg["ilu_ultra_fill_factor"] > cfg["ilu_strong_fill_factor"]
+    assert cfg["iterative_ultra_maxiter"] >= cfg["iterative_maxiter"]
+    assert cfg["iterative_ultra_inner_m"] >= cfg["iterative_inner_m"]
