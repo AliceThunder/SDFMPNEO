@@ -199,6 +199,17 @@ def _basis_design_geometries(settings, n, rng, background):
     if count < 1:
         return []
     training = dict(settings.get("TRAINING", {}) or {})
+    design_model = str(
+        training.get(
+            "thermal_basis_design",
+            "intrinsic_relative_pose_v1",
+        )
+    )
+    if design_model != "intrinsic_relative_pose_v1":
+        raise ValueError(
+            "unsupported thermal_basis_design; expected "
+            "'intrinsic_relative_pose_v1'"
+        )
     multiplier = max(2, int(training.get("basis_design_pool_multiplier", 16)))
     pool = _sample_geometries(settings, max(count, multiplier * count), rng, background)
     encoded = np.vstack([
@@ -230,6 +241,12 @@ def _basis_design_geometries(settings, n, rng, background):
         minimum_distance2 = np.minimum(minimum_distance2, distance2)
     if len(selected) != count:
         raise RuntimeError("thermal basis maximin design did not produce the requested geometry count")
+    print(
+        "thermal basis maximin design: "
+        f"model={design_model}, feature_dim={encoded.shape[1]}, "
+        f"pool={len(pool)}, selected={len(selected)}",
+        flush=True,
+    )
     return selected
 
 
