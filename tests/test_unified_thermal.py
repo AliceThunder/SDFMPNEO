@@ -1,6 +1,7 @@
 import types
 import inspect
 import numpy as np
+import scipy.sparse as sp
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
 import sdfmpneo.unified_tensor_surrogate as tensor_truth
@@ -556,7 +557,7 @@ def test_residual_enrichment_routes_near_state_error_into_local_atlas():
 
     u = np.asarray(allocations[:, 0], float)
     assert np.linalg.norm(u) > 0.0
-    A = np.eye(bg.n_cells)
+    A = sp.eye(bg.n_cells, format="csr")
     b = u.copy()
     anchor = {
         "A": A,
