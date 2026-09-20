@@ -1850,27 +1850,6 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
-def _canonicalize_poses(geometry, reference):
-    """Move all ports to reference poses while preserving geometry/material sizes."""
-    g = (
-        geometry
-        if isinstance(geometry, UnifiedUWPTGeometry)
-        else UnifiedUWPTGeometry.from_mapping(geometry)
-    )
-    ref = (
-        reference
-        if isinstance(reference, UnifiedUWPTGeometry)
-        else UnifiedUWPTGeometry.from_mapping(reference)
-    )
-    mapping = g.to_mapping()
-    for i in range(g.n_ports):
-        mapping["coils"][i]["translation"] = ref.coils[i].pose.translation.tolist()
-        mapping["coils"][i]["angles"] = ref.coils[i].pose.angles.tolist()
-        mapping["packages"][i]["translation"] = ref.packages[i].pose.translation.tolist()
-        mapping["packages"][i]["angles"] = ref.packages[i].pose.angles.tolist()
-    return UnifiedUWPTGeometry.from_mapping(mapping)
-
-
 def _transport_field(background, field, source_pose, target_pose):
     """Rigidly pull a scalar cell field from one port pose to another."""
     values = np.asarray(field, float).reshape(
@@ -1991,8 +1970,10 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 6,
-            "transport_model": "pose_rigid_canonical_source_v3",
+            "schema_version": 7,
+            "transport_model": "pose_rigid_partitioned_state_v4",
+            "state_partition_model": "moving_state_plus_fixed_far_v1",
+            "residual_enrichment_model": "partitioned_moving_local_v1",
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -2012,10 +1993,14 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 6:
+            if int(meta.get("schema_version", -1)) != 7:
                 raise ValueError("unsupported geometry-aware thermal library version")
-            if meta.get("transport_model") != "pose_rigid_canonical_source_v3":
+            if meta.get("transport_model") != "pose_rigid_partitioned_state_v4":
                 raise ValueError("unsupported geometry-aware thermal transport model")
+            if meta.get("state_partition_model") != "moving_state_plus_fixed_far_v1":
+                raise ValueError("unsupported geometry-aware thermal state partition")
+            if meta.get("residual_enrichment_model") != "partitioned_moving_local_v1":
+                raise ValueError("unsupported geometry-aware thermal residual enrichment")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
                 for p in range(int(meta["local_count"]))
