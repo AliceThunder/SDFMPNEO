@@ -841,21 +841,63 @@ def _transported_local_columns(background, reference, local_modes, geometry):
     return np.column_stack(columns)
 
 
-def _basis_condition_from_gram(gram):
-    """Return weighted basis condition from its normalized Gram matrix.
+_GRAM_BASIS_CONDITION_DIRECT_THRESHOLD = 1e7
 
-    For a normalized generator V in the thermal-mass inner product,
-    cond(V.T @ M @ V) = cond_M(V)**2.  The configured conditioning limit
-    applies to the basis/generator itself, so the Gram spectral ratio must be
-    square-rooted.  A non-positive smallest eigenvalue remains an explicit rank
-    deficiency.
+
+def _basis_condition_from_gram(gram):
+    """Fast basis-condition estimate from a normalized weighted Gram matrix.
+
+    Mathematically cond(V.T @ M @ V) = cond_M(V)**2.  Taking the square root is
+    correct, but a high-condition Gate cannot rely only on a squared Gram
+    spectrum in double precision.  Production Gates therefore use this as the
+    cheap estimate and fall back to generator-level QR/SVD when needed.
     """
     value = np.asarray(gram, float)
     value = 0.5 * (value + value.T)
-    eig = np.linalg.eigvalsh(value)
+    try:
+        eig = np.linalg.eigvalsh(value)
+    except np.linalg.LinAlgError:
+        return float("inf")
     if eig.size == 0 or np.any(~np.isfinite(eig)) or eig[0] <= 0.0:
         return float("inf")
     return float(np.sqrt(eig[-1] / eig[0]))
+
+
+def _weighted_generator_condition(normalized, weights):
+    """Stable weighted 2-norm condition of normalized generator columns."""
+    value = np.asarray(normalized, float)
+    mass = np.asarray(weights, float).reshape(-1)
+    if value.ndim != 2 or value.shape[0] != mass.size or value.shape[1] == 0:
+        return float("inf")
+    if np.any(~np.isfinite(value)) or np.any(~np.isfinite(mass)) or np.any(mass <= 0.0):
+        return float("inf")
+    weighted = np.sqrt(mass)[:, None] * value
+    try:
+        r = np.linalg.qr(weighted, mode="r")
+        singular = np.linalg.svd(r, compute_uv=False)
+    except np.linalg.LinAlgError:
+        return float("inf")
+    if (
+        singular.size == 0
+        or np.any(~np.isfinite(singular))
+        or singular[-1] <= 0.0
+    ):
+        return float("inf")
+    return float(singular[0] / singular[-1])
+
+
+def _certified_basis_condition(normalized, weights):
+    """Use Gram cheaply when safe, otherwise certify the generator directly."""
+    value = np.asarray(normalized, float)
+    mass = np.asarray(weights, float).reshape(-1)
+    gram = value.T @ (mass[:, None] * value)
+    estimate = _basis_condition_from_gram(gram)
+    if (
+        np.isfinite(estimate)
+        and estimate <= _GRAM_BASIS_CONDITION_DIRECT_THRESHOLD
+    ):
+        return float(estimate)
+    return _weighted_generator_condition(value, mass)
 
 
 def _check_cached_basis_conditioning(
@@ -882,8 +924,10 @@ def _check_cached_basis_conditioning(
     if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
         raise RuntimeError("transported thermal mode lost support inside the physical domain")
     normalized = raw / norms
-    gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-    condition = _basis_condition_from_gram(gram)
+    condition = _certified_basis_condition(
+        normalized,
+        background.cell_volumes,
+    )
     if not np.isfinite(condition):
         raise RuntimeError("geometry-aware thermal basis became rank deficient")
     if condition > float(conditioning_limit):
@@ -942,8 +986,10 @@ def _raw_block_condition(
     if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
         return float("inf")
     normalized = raw / norms
-    gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-    return _basis_condition_from_gram(gram)
+    return _certified_basis_condition(
+        normalized,
+        background.cell_volumes,
+    )
 
 
 def _stabilize_component_blocks(
@@ -986,6 +1032,7 @@ def _stabilize_component_blocks(
         block_offsets.append(block_offsets[-1] + rank)
 
     full_grams = []
+    full_generators = []
     for geometry in geometries:
         g = (
             geometry
@@ -1045,6 +1092,7 @@ def _stabilize_component_blocks(
             background.cell_volumes[:, None] * normalized
         )
         full_grams.append(0.5 * (gram + gram.T))
+        full_generators.append(normalized)
 
     def active_indices():
         indices = list(range(bg_rank))
@@ -1068,9 +1116,19 @@ def _stabilize_component_blocks(
                 or np.any(~np.isfinite(eig))
                 or eig[0] <= 0.0
             ):
-                condition = float("inf")
+                estimate = float("inf")
             else:
-                condition = float(np.sqrt(eig[-1] / eig[0]))
+                estimate = float(np.sqrt(eig[-1] / eig[0]))
+            if (
+                np.isfinite(estimate)
+                and estimate <= _GRAM_BASIS_CONDITION_DIRECT_THRESHOLD
+            ):
+                condition = estimate
+            else:
+                condition = _weighted_generator_condition(
+                    full_generators[gi][:, active],
+                    background.cell_volumes,
+                )
             rows.append((condition, gi, eig, vec, active))
         return rows
 
@@ -1291,7 +1349,7 @@ def _enrich_background_against_full_library(
         local_grams.append(0.5 * (gram + gram.T))
         bg_local_cross.append(phi_bg.T @ weighted_local)
 
-    def block_condition(cross, local_gram):
+    def block_condition(cross, local_gram, phi_candidate, local):
         bg_rank = int(cross.shape[0])
         local_rank = int(local_gram.shape[0])
         if local_rank == 0:
@@ -1302,7 +1360,16 @@ def _enrich_background_against_full_library(
                 [cross.T, local_gram],
             ]
         )
-        return _basis_condition_from_gram(gram)
+        estimate = _basis_condition_from_gram(gram)
+        if (
+            np.isfinite(estimate)
+            and estimate <= _GRAM_BASIS_CONDITION_DIRECT_THRESHOLD
+        ):
+            return float(estimate)
+        return _weighted_generator_condition(
+            np.column_stack((phi_candidate, local)),
+            weights,
+        )
 
     steps = 0
     stop = "target_reached"
@@ -1343,6 +1410,8 @@ def _enrich_background_against_full_library(
             condition = block_condition(
                 cross,
                 local_grams[gi],
+                phi2,
+                local,
             )
             if not np.isfinite(condition) or condition > float(conditioning_limit):
                 return None
@@ -1544,8 +1613,10 @@ class GeometryAwareThermalLibrary:
         if np.any(~np.isfinite(norms)) or np.any(norms <= 1e-14):
             raise RuntimeError("transported thermal mode lost support inside the physical domain")
         normalized = raw / norms
-        gram = normalized.T @ (background.cell_volumes[:, None] * normalized)
-        condition = _basis_condition_from_gram(gram)
+        condition = _certified_basis_condition(
+            normalized,
+            background.cell_volumes,
+        )
         if not np.isfinite(condition):
             raise RuntimeError("geometry-aware thermal basis became rank deficient")
         if condition > float(self.conditioning_limit):
