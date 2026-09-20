@@ -1653,18 +1653,6 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
-def _canonicalize_poses(geometry, reference):
-    g = geometry if isinstance(geometry, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(geometry)
-    ref = reference if isinstance(reference, UnifiedUWPTGeometry) else UnifiedUWPTGeometry.from_mapping(reference)
-    mapping = g.to_mapping()
-    for i in range(g.n_ports):
-        mapping["coils"][i]["translation"] = ref.coils[i].pose.translation.tolist()
-        mapping["coils"][i]["angles"] = ref.coils[i].pose.angles.tolist()
-        mapping["packages"][i]["translation"] = ref.packages[i].pose.translation.tolist()
-        mapping["packages"][i]["angles"] = ref.packages[i].pose.angles.tolist()
-    return UnifiedUWPTGeometry.from_mapping(mapping)
-
-
 def _local_thermal_scale(geometry, port):
     """One robust scalar length for the port-local thermal chart.
 
@@ -1824,7 +1812,7 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 3,
+            "schema_version": 4,
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1844,7 +1832,7 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 3:
+            if int(meta.get("schema_version", -1)) != 4:
                 raise ValueError("unsupported geometry-aware thermal library version")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
@@ -2192,7 +2180,7 @@ def build_geometry_aware_thermal_library(
     component_target_multiplier=2.0,
     monitor=None,
 ):
-    """Build canonical BG/local blocks and run independent held-out ROM audits."""
+    """Build fixed-background plus normalized moving-local blocks and held-out audits."""
     target = float(target_relative_error)
     if not 0.0 < target < 1.0:
         raise ValueError("thermal target_relative_error must lie in (0, 1)")
