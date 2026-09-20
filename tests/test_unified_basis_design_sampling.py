@@ -225,3 +225,53 @@ def test_thermal_basis_design_features_ignore_common_yaw():
         runtime._thermal_basis_design_features(rotated),
         atol=1e-12,
     )
+
+
+
+def test_hybrid_basis_design_unions_full_and_intrinsic_maximin(monkeypatch):
+    candidates = [
+        {"x": 0.0, "y": 0.5},
+        {"x": 0.2, "y": 1.0},
+        {"x": 0.4, "y": 0.0},
+        {"x": 0.6, "y": 0.9},
+        {"x": 0.8, "y": 0.1},
+        {"x": 1.0, "y": 0.6},
+        {"x": 0.1, "y": 0.2},
+        {"x": 0.9, "y": 0.8},
+    ]
+
+    monkeypatch.setattr(
+        runtime,
+        "_sample_geometries",
+        lambda settings, n, rng, background: candidates[: int(n)],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "encode_geometry",
+        lambda geometry: np.asarray([float(geometry["x"])], float),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_thermal_basis_design_features",
+        lambda geometry: np.asarray([float(geometry["y"])], float),
+    )
+
+    settings = {
+        "DEFAULT_GEOMETRY": {"x": 0.5, "y": 0.5},
+        "TRAINING": {
+            "basis_design_pool_multiplier": 2,
+            "thermal_basis_design": "hybrid_full_intrinsic_union_v1",
+        },
+    }
+    selected = runtime._basis_design_geometries(
+        settings,
+        4,
+        np.random.default_rng(17),
+        object(),
+    )
+
+    assert len(selected) == 4
+    assert len({(row["x"], row["y"]) for row in selected}) == 4
+    # Full-space and intrinsic-space extremes must both be represented.
+    assert any(row["x"] in {0.0, 1.0} for row in selected)
+    assert any(row["y"] in {0.0, 1.0} for row in selected)
