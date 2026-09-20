@@ -11,6 +11,8 @@ from sdfmpneo.unified_thermal import (
     _weighted_generator_condition,
     _transport_local_field,
     _partition_solution_states,
+    _moving_local_allocations,
+    _enrich_full_library_residual,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -543,3 +545,60 @@ def test_partition_solution_states_reconstructs_full_state_and_equation():
         row["source_kind"] in {"state-far", "initial"}
         for row in background_rows
     )
+
+
+
+def test_residual_enrichment_routes_near_state_error_into_local_atlas():
+    bg = make_background()
+    reference = bg.validate_geometry(make_geometry(0.0))
+    weights = np.asarray(bg.cell_volumes, float)
+    allocations, _far = _moving_local_allocations(bg, reference)
+
+    u = np.asarray(allocations[:, 0], float)
+    assert np.linalg.norm(u) > 0.0
+    A = np.eye(bg.n_cells)
+    b = u.copy()
+    anchor = {
+        "A": A,
+        "b": b,
+        "u": u,
+        "denom2": float(np.dot(u, b)),
+        "label": "geometry[0]/synthetic-near/s=1",
+        "case_label": "synthetic-near",
+        "source_kind": "wire[0]",
+        "shift": 1.0,
+        "geometry_index": 0,
+        "rhs_norm": float(np.linalg.norm(b)),
+    }
+
+    seed_index = int(np.argmin(allocations[:, 0]))
+    seed = np.zeros(bg.n_cells, float)
+    seed[seed_index] = 1.0
+    seed /= np.sqrt(np.dot(seed, weights * seed))
+
+    empty = np.empty((bg.n_cells, 0), float)
+    (
+        _bg_modes,
+        local_modes,
+        _steps,
+        stop,
+        final_error,
+        diagnostics,
+    ) = _enrich_full_library_residual(
+        bg,
+        reference,
+        seed[:, None],
+        (empty.copy(), empty.copy()),
+        [reference],
+        [[anchor]],
+        1e-8,
+        None,
+        (0.1, 1.0, 10.0),
+        1e10,
+        None,
+    )
+
+    assert stop == "target_reached"
+    assert final_error <= 1e-8
+    assert sum(block.shape[1] for block in local_modes) > 0
+    assert sum(diagnostics["residual_local_additions"]) > 0
