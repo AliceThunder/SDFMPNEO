@@ -11,6 +11,7 @@ from sdfmpneo.unified_thermal import (
     _weighted_generator_condition,
     _local_thermal_scale,
     _transport_local_field,
+    _greedy_snapshot_basis,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -497,3 +498,34 @@ def test_scale_aware_local_transport_expands_with_port_size():
 def test_v8_build_path_has_no_second_canonical_truth_stage():
     source = inspect.getsource(build_geometry_aware_thermal_library)
     assert "canonical-anchor-prep" not in source
+
+
+
+def test_reference_energy_snapshot_greedy_respects_shift_metric():
+    bg = make_background()
+    n = bg.n_cells
+    e0 = np.zeros(n, float); e0[0] = 1.0
+    e1 = np.zeros(n, float); e1[1] = 1.0
+    e2 = np.zeros(n, float); e2[2] = 1.0
+
+    metric0 = np.eye(n)
+    metric1 = np.eye(n)
+    metric1[1, 1] = 25.0
+
+    modes, steps, stop, error = _greedy_snapshot_basis(
+        bg,
+        [
+            (e0 + 0.2 * e1, 0.0),
+            (e0 + 0.2 * e2, 1.0),
+        ],
+        {0.0: metric0, 1.0: metric1},
+        1e-8,
+        None,
+        None,
+        "local-test",
+    )
+
+    assert stop == "target_reached"
+    assert error <= 1e-8
+    assert modes.shape[1] == 2
+    assert steps == 2
