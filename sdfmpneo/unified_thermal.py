@@ -2216,6 +2216,7 @@ def build_geometry_aware_thermal_library(
     # never decides which thermal local block receives a Joule hotspot.
     training_anchor_sets = []
     bg_anchors = []
+    local_snapshot_rows = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(training):
         if monitor is not None:
             monitor.checkpoint()
@@ -2237,12 +2238,23 @@ def build_geometry_aware_thermal_library(
             uniform_initial=True,
         )
         training_anchor_sets.append(anchors)
-        partitioned_background, _local_unused = _partition_self_volume_anchors(
+        partitioned_background, local_volume = _partition_self_volume_anchors(
             background,
             geometry,
             anchors,
         )
         bg_anchors.extend(partitioned_background)
+        for p in range(reference.n_ports):
+            for anchor in local_volume[p]:
+                local_snapshot_rows[p].append(
+                    (geometry, np.asarray(anchor["u"], float))
+                )
+            wire_kind = f"wire[{p}]"
+            for anchor in anchors:
+                if anchor.get("source_kind") == wire_kind:
+                    local_snapshot_rows[p].append(
+                        (geometry, np.asarray(anchor["u"], float))
+                    )
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
@@ -2259,60 +2271,31 @@ def build_geometry_aware_thermal_library(
         background, bg_anchors, component_target, maximum_rank, monitor, "background"
     )
 
-    canonical = []
-    for geometry in training:
-        try:
-            candidate = _canonicalize_poses(geometry, reference)
-            canonical.append(background.validate_geometry(candidate))
-        except ValueError:
-            continue
-    if not canonical:
-        canonical = [reference]
-
-    # Canonical local anchors are prepared once for both ports.  Each local
-    # block receives wire heat plus only the near part of its self-volume source.
-    canonical_local_volume = [[] for _ in range(reference.n_ports)]
-    canonical_wire = [[] for _ in range(reference.n_ports)]
-    for gi, geometry in enumerate(canonical):
-        if monitor is not None:
-            monitor.checkpoint()
-            with monitor._lock:
-                monitor.data.update(
-                    phase="geometry_aware_thermal_basis",
-                    thermal_basis_stage="canonical-anchor-prep",
-                    thermal_basis_rank=0,
-                    thermal_basis_energy_error=None,
-                    thermal_basis_geometry_index=int(gi),
-                )
-        anchors = _geometry_anchors(
-            background,
-            geometry,
-            shifts,
-            gi,
-            volume=True,
-            wire=True,
-            uniform_initial=False,
-            wire_port=None,
-        )
-        _background_unused, local_volume = _partition_self_volume_anchors(
-            background,
-            geometry,
-            anchors,
-        )
-        for p in range(reference.n_ports):
-            canonical_local_volume[p].extend(local_volume[p])
-            wire_kind = f"wire[{p}]"
-            canonical_wire[p].extend(
-                anchor for anchor in anchors
-                if anchor.get("source_kind") == wire_kind
-            )
-
+    # Build each moving block in one normalized reference chart.  The original
+    # full-operator snapshots are reused from training-anchor preparation, then
+    # pulled back by inverse pose/scale transport.  This avoids a second
+    # canonical Maxwell/thermal truth pass and gives the online affine transport
+    # a consistent source chart.
     local_modes = []
     local_steps = 0
     for p in range(reference.n_ports):
-        anchors = list(canonical_wire[p]) + list(canonical_local_volume[p])
-        modes, steps, _stop, _error = _greedy_basis(
-            background, anchors, component_target, maximum_rank, monitor, f"local-port-{p}"
+        snapshots = [
+            _transport_local_field(
+                background,
+                field,
+                geometry,
+                reference,
+                p,
+            )
+            for geometry, field in local_snapshot_rows[p]
+        ]
+        modes, steps, _stop, _error = _greedy_snapshot_basis(
+            background,
+            snapshots,
+            component_target,
+            maximum_rank,
+            monitor,
+            f"local-port-{p}",
         )
         local_modes.append(modes)
         local_steps += steps
