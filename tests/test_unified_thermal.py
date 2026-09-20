@@ -1,4 +1,5 @@
 import types
+from pathlib import Path
 import numpy as np
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
@@ -332,7 +333,7 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
 
 
 
-def test_geometry_aware_thermal_library_schema_v3_round_trip(tmp_path):
+def test_geometry_aware_thermal_library_schema_v4_round_trip(tmp_path):
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     n = bg.n_cells
@@ -468,6 +469,7 @@ def test_scale_aware_local_transport_expands_with_port_size():
     source = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
     target_mapping = make_geometry(0.0)
     target_mapping["transmitter"]["outer_half_size"] = 0.024
+    target_mapping["package_half_extent"] = [0.03, 0.03, 0.004]
     target = UnifiedUWPTGeometry.from_mapping(target_mapping)
 
     assert _local_thermal_scale(target, 0) > _local_thermal_scale(source, 0)
@@ -489,3 +491,9 @@ def test_scale_aware_local_transport_expands_with_port_size():
     source_second = np.dot(weight, radius2 * field) / source_mass
     expanded_second = np.dot(weight, radius2 * expanded) / expanded_mass
     assert expanded_second > source_second
+
+
+
+def test_v8_build_path_has_no_second_canonical_truth_stage():
+    source = Path("sdfmpneo/unified_thermal.py").read_text(encoding="utf-8")
+    assert "canonical-anchor-prep" not in source
