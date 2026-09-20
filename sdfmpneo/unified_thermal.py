@@ -2285,13 +2285,21 @@ def build_geometry_aware_thermal_library(
         for p in range(reference.n_ports):
             for anchor in local_volume[p]:
                 local_snapshot_rows[p].append(
-                    (geometry, np.asarray(anchor["u"], float))
+                    (
+                        geometry,
+                        np.asarray(anchor["u"], float),
+                        float(anchor["shift"]),
+                    )
                 )
             wire_kind = f"wire[{p}]"
             for anchor in anchors:
                 if anchor.get("source_kind") == wire_kind:
                     local_snapshot_rows[p].append(
-                        (geometry, np.asarray(anchor["u"], float))
+                        (
+                            geometry,
+                            np.asarray(anchor["u"], float),
+                            float(anchor["shift"]),
+                        )
                     )
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
@@ -2311,25 +2319,44 @@ def build_geometry_aware_thermal_library(
 
     # Build each moving block in one normalized reference chart.  The original
     # full-operator snapshots are reused from training-anchor preparation, then
-    # pulled back by inverse pose/scale transport.  This avoids a second
-    # canonical Maxwell/thermal truth pass and gives the online affine transport
-    # a consistent source chart.
+    # pulled back by inverse pose/scale transport.  Approximation is measured in
+    # the common reference resolvent metric K_ref+s*M_ref matching each shift.
+    reference_context = background.geometry_context(
+        reference,
+        assemble_thermal=False,
+    )
+    reference_M, reference_K = background.thermal_operator_full(
+        reference_context.fractions
+    )
+    reference_metrics = {
+        float(s): (
+            reference_K
+            if abs(float(s)) <= 1e-15
+            else (reference_K + float(s) * reference_M).tocsr()
+        )
+        for s in shifts
+    }
+
     local_modes = []
     local_steps = 0
     for p in range(reference.n_ports):
         snapshots = [
-            _transport_local_field(
-                background,
-                field,
-                geometry,
-                reference,
-                p,
+            (
+                _transport_local_field(
+                    background,
+                    field,
+                    geometry,
+                    reference,
+                    p,
+                ),
+                float(shift),
             )
-            for geometry, field in local_snapshot_rows[p]
+            for geometry, field, shift in local_snapshot_rows[p]
         ]
         modes, steps, _stop, _error = _greedy_snapshot_basis(
             background,
             snapshots,
+            reference_metrics,
             component_target,
             maximum_rank,
             monitor,
@@ -2339,6 +2366,9 @@ def build_geometry_aware_thermal_library(
         local_steps += steps
     del snapshots
     del local_snapshot_rows
+    del reference_metrics
+    del reference_M
+    del reference_K
 
     # Remove only redundant late component modes before the full-library
     # greedy.  This preserves the important moving directions while preventing
