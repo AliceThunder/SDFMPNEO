@@ -10,6 +10,7 @@ from sdfmpneo.unified_thermal import (
     _certified_basis_condition,
     _weighted_generator_condition,
     _transport_local_field,
+    _partition_solution_states,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -332,7 +333,7 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
 
 
 
-def test_geometry_aware_thermal_library_schema_v6_round_trip(tmp_path):
+def test_geometry_aware_thermal_library_schema_v7_round_trip(tmp_path):
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     n = bg.n_cells
@@ -487,12 +488,58 @@ def test_rigid_local_transport_does_not_hardcode_size_deformation():
     assert np.allclose(transported, field, rtol=1e-12, atol=1e-12)
 
 
-def test_v11_build_path_uses_canonical_source_solve_without_second_maxwell_truth():
+def test_v14_build_path_partitions_state_and_enriches_moving_residuals():
     source = inspect.getsource(build_geometry_aware_thermal_library)
-    assert "canonical-anchor-prep" not in source
-    assert "canonical-source-solve" in source
-    canonical_block = source.split("canonical-source-solve", 1)[1]
-    assert "_maxwell_port_fields" not in canonical_block
+    assert "_partition_solution_states" in source
+    assert "_enrich_full_library_residual" in source
+    assert "canonical-source-solve" not in source
+    assert "_enrich_background_against_full_library" not in source
 
 
 
+
+
+
+def test_partition_solution_states_reconstructs_full_state_and_equation():
+    bg = make_background()
+    geometry = bg.validate_geometry(make_geometry(0.0))
+    n = bg.n_cells
+    A = np.eye(n)
+    u = np.linspace(0.25, 1.25, n)
+    b = A @ u
+    anchor = {
+        "A": A,
+        "b": b,
+        "u": u,
+        "denom2": float(np.dot(u, b)),
+        "label": "geometry[0]/wire[1]/s=10",
+        "case_label": "wire[1]",
+        "source_kind": "wire[1]",
+        "shift": 10.0,
+        "geometry_index": 0,
+        "rhs_norm": float(np.linalg.norm(b)),
+    }
+
+    background_rows, local_rows = _partition_solution_states(
+        bg,
+        geometry,
+        [anchor],
+    )
+
+    pieces = [row["u"] for rows in local_rows for row in rows]
+    pieces.extend(row["u"] for row in background_rows)
+    rhs_pieces = [row["b"] for rows in local_rows for row in rows]
+    rhs_pieces.extend(row["b"] for row in background_rows)
+
+    assert pieces
+    assert np.allclose(np.sum(np.column_stack(pieces), axis=1), u)
+    assert np.allclose(np.sum(np.column_stack(rhs_pieces), axis=1), b)
+    assert all(
+        row["source_kind"] == "state-local"
+        for rows in local_rows
+        for row in rows
+    )
+    assert all(
+        row["source_kind"] in {"state-far", "initial"}
+        for row in background_rows
+    )
