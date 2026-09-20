@@ -6,6 +6,7 @@ import sdfmpneo.unified_tensor_surrogate as tensor_truth
 from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_thermal import (
     _basis_condition_from_gram,
+    _weighted_generator_condition,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -328,7 +329,7 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
 
 
 
-def test_geometry_aware_thermal_library_schema_v2_round_trip(tmp_path):
+def test_geometry_aware_thermal_library_schema_v3_round_trip(tmp_path):
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     n = bg.n_cells
@@ -415,3 +416,23 @@ def test_component_stabilization_does_not_trim_below_production_condition_limit(
 def test_basis_condition_is_square_root_of_gram_condition():
     gram = np.diag([1.0, 1e-12])
     assert np.isclose(_basis_condition_from_gram(gram), 1e6)
+
+
+
+def test_weighted_generator_condition_stays_resolved_beyond_gram_safe_range():
+    weights = np.ones(4, float)
+    first = np.array([1.0, 0.0, 0.0, 0.0])
+    second = np.array([1.0, 3e-10, 0.0, 0.0])
+    second /= np.linalg.norm(second)
+    generator = np.column_stack((first, second))
+
+    condition = _weighted_generator_condition(generator, weights)
+    assert np.isfinite(condition)
+    assert 1e9 < condition < 1e10
+
+    gram = generator.T @ generator
+    # The direct generator certificate remains meaningful even if the squared
+    # Gram spectrum is at or beyond ordinary double-precision comfort.
+    gram_estimate = _basis_condition_from_gram(gram)
+    assert condition >= 1e9
+    assert not np.isfinite(gram_estimate) or gram_estimate > 1e8
