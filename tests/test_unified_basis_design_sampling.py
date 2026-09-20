@@ -18,7 +18,7 @@ def test_basis_design_geometries_use_maximin_distance_from_reference(monkeypatch
     )
     monkeypatch.setattr(
         runtime,
-        "encode_geometry",
+        "_thermal_basis_design_features",
         lambda geometry: np.asarray([float(geometry["x"])], float),
     )
 
@@ -46,7 +46,7 @@ def test_basis_design_geometry_count_is_exact(monkeypatch):
     )
     monkeypatch.setattr(
         runtime,
-        "encode_geometry",
+        "_thermal_basis_design_features",
         lambda geometry: np.asarray(
             [float(geometry["x"]), float(geometry["x"]) ** 2],
             float,
@@ -125,3 +125,103 @@ def test_geometry_sampling_rejects_adjacent_turn_overlap(monkeypatch):
     )
 
     assert selected == [valid]
+
+
+
+def test_thermal_basis_design_features_ignore_common_pose_but_keep_relative_pose():
+    base = {
+        "transmitter": {
+            "shape": "circle",
+            "turns": 1.5,
+            "outer_half_size": 0.025,
+            "pitch": 0.002,
+            "conductor_width": 0.0015,
+            "conductor_thickness": 0.001,
+            "corner_radius": 0.012,
+            "translation": [0.0, 0.0, 0.0],
+            "angles": [0.0, 0.0, 0.0],
+        },
+        "receiver": {
+            "shape": "rounded_square",
+            "turns": 1.8,
+            "outer_half_size": 0.03,
+            "pitch": 0.0025,
+            "conductor_width": 0.0012,
+            "conductor_thickness": 0.0008,
+            "corner_radius": 0.018,
+            "translation": [0.0, 0.0, 0.04],
+            "angles": [0.0, 0.0, 0.2],
+        },
+        "package_half_extent": [0.04, 0.035, 0.006],
+    }
+
+    shifted = {
+        **base,
+        "transmitter": {
+            **base["transmitter"],
+            "translation": [0.01, -0.02, 0.03],
+        },
+        "receiver": {
+            **base["receiver"],
+            "translation": [0.01, -0.02, 0.07],
+        },
+    }
+    relative_changed = {
+        **base,
+        "receiver": {
+            **base["receiver"],
+            "translation": [0.01, 0.0, 0.04],
+        },
+    }
+
+    f0 = runtime._thermal_basis_design_features(base)
+    f_shifted = runtime._thermal_basis_design_features(shifted)
+    f_relative = runtime._thermal_basis_design_features(relative_changed)
+
+    assert np.allclose(f0, f_shifted)
+    assert not np.allclose(f0, f_relative)
+
+
+def test_thermal_basis_design_features_ignore_common_yaw():
+    base = {
+        "transmitter": {
+            "shape": "circle",
+            "turns": 1.5,
+            "outer_half_size": 0.025,
+            "pitch": 0.002,
+            "conductor_width": 0.0015,
+            "conductor_thickness": 0.001,
+            "corner_radius": 0.012,
+            "translation": [0.0, 0.0, 0.0],
+            "angles": [0.0, 0.0, 0.0],
+        },
+        "receiver": {
+            "shape": "circle",
+            "turns": 1.5,
+            "outer_half_size": 0.025,
+            "pitch": 0.002,
+            "conductor_width": 0.0015,
+            "conductor_thickness": 0.001,
+            "corner_radius": 0.012,
+            "translation": [0.0, 0.0, 0.04],
+            "angles": [0.0, 0.0, 0.3],
+        },
+        "package_half_extent": [0.04, 0.04, 0.006],
+    }
+    rotated = {
+        **base,
+        "transmitter": {
+            **base["transmitter"],
+            "angles": [0.0, 0.0, 0.7],
+        },
+        "receiver": {
+            **base["receiver"],
+            "angles": [0.0, 0.0, 1.0],
+        },
+    }
+
+    assert np.allclose(
+        runtime._thermal_basis_design_features(base),
+        runtime._thermal_basis_design_features(rotated),
+        atol=1e-12,
+    )
