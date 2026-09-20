@@ -2160,6 +2160,8 @@ def build_geometry_aware_thermal_library(
     # physics that was incorrectly moved with u in v10, without a second Maxwell
     # truth pass.
     canonical_local_anchors = [[] for _ in range(reference.n_ports)]
+    canonical_source_solved = 0
+    canonical_source_skipped = []
     for gi, geometry in enumerate(training):
         try:
             canonical_geometry = background.validate_geometry(
@@ -2170,6 +2172,7 @@ def build_geometry_aware_thermal_library(
             # training geometry can become invalid when all large packages are
             # moved to the reference poses.  It still participates in the final
             # full-library residual stage through its original anchors.
+            canonical_source_skipped.append(int(gi))
             continue
 
         if monitor is not None:
@@ -2242,6 +2245,27 @@ def build_geometry_aware_thermal_library(
                     rhs_norm=float(np.linalg.norm(b)),
                 )
                 canonical_local_anchors[p].append(row)
+
+        canonical_source_solved += 1
+        print(
+            "准备 canonical-source thermal anchors……"
+            f"{canonical_source_solved}/{len(training)} "
+            f"(geometry_index={gi})",
+            flush=True,
+        )
+
+    if monitor is not None:
+        with monitor._lock:
+            monitor.data.update(
+                phase="geometry_aware_thermal_basis",
+                thermal_basis_stage="canonical-source-solve",
+                thermal_basis_rank=0,
+                thermal_basis_energy_error=None,
+                thermal_basis_canonical_source_solved=int(canonical_source_solved),
+                thermal_basis_canonical_source_skipped=[
+                    int(v) for v in canonical_source_skipped
+                ],
+            )
 
     local_modes = []
     local_steps = 0
