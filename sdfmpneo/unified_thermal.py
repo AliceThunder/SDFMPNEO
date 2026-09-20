@@ -1091,8 +1091,17 @@ def _stabilize_component_blocks(
         gram = normalized.T @ (
             background.cell_volumes[:, None] * normalized
         )
-        full_grams.append(0.5 * (gram + gram.T))
-        full_generators.append(normalized)
+        gram = 0.5 * (gram + gram.T)
+        full_grams.append(gram)
+        initial_estimate = _basis_condition_from_gram(gram)
+        full_generators.append(
+            normalized
+            if (
+                not np.isfinite(initial_estimate)
+                or initial_estimate > _GRAM_BASIS_CONDITION_DIRECT_THRESHOLD
+            )
+            else None
+        )
 
     def active_indices():
         indices = list(range(bg_rank))
@@ -1125,9 +1134,14 @@ def _stabilize_component_blocks(
             ):
                 condition = estimate
             else:
-                condition = _weighted_generator_condition(
-                    full_generators[gi][:, active],
-                    background.cell_volumes,
+                generator = full_generators[gi]
+                condition = (
+                    _weighted_generator_condition(
+                        generator[:, active],
+                        background.cell_volumes,
+                    )
+                    if generator is not None
+                    else estimate
                 )
             rows.append((condition, gi, eig, vec, active))
         return rows
