@@ -1573,9 +1573,57 @@ def _canonicalize_poses(geometry, reference):
     return UnifiedUWPTGeometry.from_mapping(mapping)
 
 
-def _transport_field(background, field, source_pose, target_pose):
-    """Rigidly pull a scalar cell field from source pose to target pose."""
-    values = np.asarray(field, float).reshape(background.nx, background.ny, background.nz)
+def _local_thermal_scale(geometry, port):
+    """One robust scalar length for the port-local thermal chart.
+
+    The moving near/mid-field partition scales primarily with coil size while
+    package dimensions alter the surrounding thermal body.  Use the larger of
+    the coil outer half-size and the package volume-equivalent half-extent.
+    This stays shape-agnostic and positive across circle/rounded-square charts
+    while avoiding an unstable axis-by-axis deformation in the first affine
+    transport implementation.
+    """
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    p = int(port)
+    if p < 0 or p >= g.n_ports:
+        raise ValueError("thermal local transport port index is out of range")
+    coil = g.coils[p]
+    half = np.asarray(g.packages[p].half_extent, float).reshape(3)
+    package_scale = float(np.cbrt(np.prod(half)))
+    scale = max(float(coil.outer_half_size), package_scale)
+    if not np.isfinite(scale) or scale <= 0.0:
+        raise ValueError("thermal local transport scale must be positive")
+    return scale
+
+
+def _transport_field(
+    background,
+    field,
+    source_pose,
+    target_pose,
+    *,
+    source_scale=1.0,
+    target_scale=1.0,
+):
+    """Pull a scalar field through rigid pose plus one isotropic local scale."""
+    source_scale = float(source_scale)
+    target_scale = float(target_scale)
+    if (
+        not np.isfinite(source_scale)
+        or not np.isfinite(target_scale)
+        or source_scale <= 0.0
+        or target_scale <= 0.0
+    ):
+        raise ValueError("thermal transport scales must be positive and finite")
+    values = np.asarray(field, float).reshape(
+        background.nx,
+        background.ny,
+        background.nz,
+    )
     interp = RegularGridInterpolator(
         background.cell_axes,
         values,
@@ -1583,12 +1631,36 @@ def _transport_field(background, field, source_pose, target_pose):
         bounds_error=False,
         fill_value=0.0,
     )
-    local = target_pose.inverse(background.cell_centers)
-    sample_points = source_pose.apply(local)
+    target_local = target_pose.inverse(background.cell_centers)
+    source_local = target_local * (source_scale / target_scale)
+    sample_points = source_pose.apply(source_local)
     out = np.asarray(interp(sample_points), float).reshape(-1)
     if np.any(~np.isfinite(out)):
-        raise FloatingPointError("thermal rigid transport produced non-finite values")
+        raise FloatingPointError("thermal affine local transport produced non-finite values")
     return out
+
+
+def _transport_local_field(background, field, source_geometry, target_geometry, port):
+    """Transport one port-local thermal field between geometry charts."""
+    source = (
+        source_geometry
+        if isinstance(source_geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(source_geometry)
+    )
+    target = (
+        target_geometry
+        if isinstance(target_geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(target_geometry)
+    )
+    p = int(port)
+    return _transport_field(
+        background,
+        field,
+        source.coils[p].pose,
+        target.coils[p].pose,
+        source_scale=_local_thermal_scale(source, p),
+        target_scale=_local_thermal_scale(target, p),
+    )
 
 
 @dataclass(frozen=True)
