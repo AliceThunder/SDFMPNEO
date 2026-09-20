@@ -110,16 +110,104 @@ def _sample_geometries(settings,n,rng,background):
     return out
 
 
+_THERMAL_BASIS_SHAPES = ("circle", "rounded_square")
+
+
+def _thermal_basis_design_features(geometry):
+    """Geometry features modulo a common/global rigid pose.
+
+    Thermal local transport already handles absolute pose deterministically, so
+    maximin design should not spend scarce truth samples covering that quotient
+    direction.  Intrinsic coil/package parameters and all *relative* port/package
+    poses remain because they change mutual EM/Joule and thermal material physics.
+    """
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    if not g.coils:
+        raise ValueError("thermal basis design requires at least one port")
+
+    features = []
+    reference_pose = g.coils[0].pose
+    reference_rotation = np.asarray(reference_pose.rotation, float)
+
+    for i, coil in enumerate(g.coils):
+        if coil.shape not in _THERMAL_BASIS_SHAPES:
+            raise ValueError(
+                "thermal basis design supports "
+                f"{_THERMAL_BASIS_SHAPES}; got {coil.shape!r}"
+            )
+        features.extend(
+            1.0 if coil.shape == name else 0.0
+            for name in _THERMAL_BASIS_SHAPES
+        )
+        features.extend(
+            [
+                float(coil.turns),
+                float(coil.outer_half_size),
+                float(coil.pitch),
+                float(coil.conductor_width),
+                float(coil.conductor_thickness),
+                0.0
+                if coil.corner_radius is None
+                else float(coil.corner_radius),
+            ]
+        )
+        if i > 0:
+            relative_translation = reference_pose.inverse(
+                coil.pose.translation
+            )
+            relative_rotation = (
+                reference_rotation.T
+                @ np.asarray(coil.pose.rotation, float)
+            )
+            features.extend(
+                np.asarray(relative_translation, float).reshape(3).tolist()
+            )
+            features.extend(
+                np.asarray(relative_rotation, float).reshape(-1).tolist()
+            )
+
+    for i, package in enumerate(g.packages):
+        features.extend(
+            np.asarray(package.half_extent, float).reshape(3).tolist()
+        )
+        coil_pose = g.coils[i].pose
+        relative_translation = coil_pose.inverse(package.pose.translation)
+        relative_rotation = (
+            np.asarray(coil_pose.rotation, float).T
+            @ np.asarray(package.pose.rotation, float)
+        )
+        features.extend(
+            np.asarray(relative_translation, float).reshape(3).tolist()
+        )
+        features.extend(
+            np.asarray(relative_rotation, float).reshape(-1).tolist()
+        )
+
+    out = np.asarray(features, float)
+    if out.ndim != 1 or np.any(~np.isfinite(out)):
+        raise ValueError("thermal basis design encoding contains non-finite values")
+    return out
+
+
 def _basis_design_geometries(settings, n, rng, background):
-    """Choose a deterministic maximin subset from a cheap random candidate pool."""
+    """Choose maximin truth geometries in the pose-quotiented thermal space."""
     count = int(n)
     if count < 1:
         return []
     training = dict(settings.get("TRAINING", {}) or {})
     multiplier = max(2, int(training.get("basis_design_pool_multiplier", 16)))
     pool = _sample_geometries(settings, max(count, multiplier * count), rng, background)
-    encoded = np.vstack([encode_geometry(candidate) for candidate in pool])
-    reference = encode_geometry(settings["DEFAULT_GEOMETRY"])
+    encoded = np.vstack([
+        _thermal_basis_design_features(candidate)
+        for candidate in pool
+    ])
+    reference = _thermal_basis_design_features(
+        settings["DEFAULT_GEOMETRY"]
+    )
 
     combined = np.vstack((encoded, reference[None, :]))
     lo = np.min(combined, axis=0)
