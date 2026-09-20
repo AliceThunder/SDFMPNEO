@@ -1813,6 +1813,7 @@ class GeometryAwareThermalLibrary:
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
             "schema_version": 4,
+            "transport_model": "pose_isotropic_scale_v1",
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1834,6 +1835,8 @@ class GeometryAwareThermalLibrary:
             meta = json.loads(str(data["metadata_json"]))
             if int(meta.get("schema_version", -1)) != 4:
                 raise ValueError("unsupported geometry-aware thermal library version")
+            if meta.get("transport_model") != "pose_isotropic_scale_v1":
+                raise ValueError("unsupported geometry-aware thermal transport model")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
                 for p in range(int(meta["local_count"]))
