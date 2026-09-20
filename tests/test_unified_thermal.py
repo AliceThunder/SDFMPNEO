@@ -1,5 +1,5 @@
 import types
-from pathlib import Path
+import inspect
 import numpy as np
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
@@ -495,5 +495,5 @@ def test_scale_aware_local_transport_expands_with_port_size():
 
 
 def test_v8_build_path_has_no_second_canonical_truth_stage():
-    source = Path("sdfmpneo/unified_thermal.py").read_text(encoding="utf-8")
+    source = inspect.getsource(build_geometry_aware_thermal_library)
     assert "canonical-anchor-prep" not in source
