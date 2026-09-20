@@ -2473,25 +2473,36 @@ def build_geometry_aware_thermal_library(
     )
     local_modes = list(local_modes)
 
-    # The local blocks carry the moving hotspots.  Enrich the fixed background
-    # only with whatever global residual remains when the complete transported
-    # library is used on the training geometries.
-    bg_modes, residual_steps, residual_stop, residual_error = (
-        _enrich_background_against_full_library(
-            background,
-            reference,
-            bg_modes,
-            tuple(local_modes),
-            training,
-            training_anchor_sets,
-            target,
-            maximum_rank,
-            time_scales,
-            conditioning_limit,
-            monitor,
-        )
+    # Full-library residuals are geometry-aware.  Partition each unresolved
+    # training error into the same moving TX/RX supports plus fixed far
+    # complement used by the physical source split.  Moving residual directions
+    # enrich local atlases; only the far remainder may enrich fixed background.
+    (
+        bg_modes,
+        local_modes,
+        residual_steps,
+        residual_stop,
+        residual_error,
+        residual_diagnostics,
+    ) = _enrich_full_library_residual(
+        background,
+        reference,
+        bg_modes,
+        tuple(local_modes),
+        training,
+        training_anchor_sets,
+        target,
+        maximum_rank,
+        time_scales,
+        conditioning_limit,
+        monitor,
     )
+    local_modes = list(local_modes)
     bg_steps += residual_steps
+    conditioning_trim = dict(conditioning_trim)
+    conditioning_trim["residual_enrichment"] = dict(
+        residual_diagnostics
+    )
     # Only the complete-library residual stage is a final-target requirement.
     # Individual component errors/stops are diagnostics, not release Gates.
     bg_error = float(residual_error)
