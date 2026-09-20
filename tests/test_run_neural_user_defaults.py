@@ -24,6 +24,7 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
     assert run.TRAINING["basis_samples"] == 16
+    assert run.TRAINING["basis_design_pool_multiplier"] == 8
     assert run.TRAINING["basis_design_pool_multiplier"] >= 2
     assert run.TRAINING["basis_validation_samples"] >= 1
     assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_hybrid_design_atlas_v13"
