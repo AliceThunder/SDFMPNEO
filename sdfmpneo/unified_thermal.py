@@ -446,6 +446,43 @@ def _self_volume_local_window(background, geometry, port):
     return window
 
 
+
+def _moving_local_allocations(background, geometry):
+    """Exact TX/RX/far partition used by sources and residual enrichment."""
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    windows = np.column_stack(
+        [
+            _self_volume_local_window(background, g, p)
+            for p in range(g.n_ports)
+        ]
+    )
+    windows = np.clip(np.asarray(windows, float), 0.0, 1.0)
+    union = 1.0 - np.prod(1.0 - windows, axis=1)
+    total = np.sum(windows, axis=1)
+    allocations = np.zeros_like(windows)
+    active = total > np.finfo(float).tiny
+    allocations[active] = (
+        union[active, None]
+        * windows[active]
+        / total[active, None]
+    )
+    far = 1.0 - np.sum(allocations, axis=1)
+    far = np.clip(np.asarray(far, float), 0.0, 1.0)
+    if np.any(~np.isfinite(allocations)) or np.any(~np.isfinite(far)):
+        raise FloatingPointError("thermal moving/far partition is invalid")
+    if not np.allclose(
+        np.sum(allocations, axis=1) + far,
+        1.0,
+        rtol=0.0,
+        atol=5e-13,
+    ):
+        raise RuntimeError("thermal moving/far partition lost exact unity")
+    return allocations, far
+
 def _volume_case_index(anchor):
     if anchor.get("source_kind") != "volume":
         return None
@@ -606,25 +643,10 @@ def _partition_self_volume_anchors(background, geometry, anchors):
         if not components:
             continue
 
-        if windows is None:
-            windows = np.column_stack(
-                [
-                    _self_volume_local_window(background, g, p)
-                    for p in range(g.n_ports)
-                ]
-            )
-            windows = np.clip(np.asarray(windows, float), 0.0, 1.0)
-            # Smooth union of all moving supports.  In overlap regions allocate
-            # the union among ports in proportion to their local windows.  Thus
-            # sum_p alpha_p + alpha_far == 1 pointwise without double counting.
-            union = 1.0 - np.prod(1.0 - windows, axis=1)
-            total = np.sum(windows, axis=1)
-            allocations = np.zeros_like(windows)
-            active = total > np.finfo(float).tiny
-            allocations[active] = (
-                union[active, None]
-                * windows[active]
-                / total[active, None]
+        if allocations is None:
+            allocations, _far_allocation = _moving_local_allocations(
+                background,
+                g,
             )
 
         local_rhs = []
@@ -1299,7 +1321,7 @@ def _stabilize_component_blocks(
     )
 
 
-def _enrich_background_against_full_library(
+def _enrich_full_library_residual(
     background,
     reference,
     bg_modes,
@@ -1312,21 +1334,26 @@ def _enrich_background_against_full_library(
     conditioning_limit,
     monitor,
 ):
-    """Add globally stable residual modes to the complete transported library."""
+    """Residual-driven enrichment of the *correct* fixed/moving subspaces.
+
+    Previous revisions appended every full-library training residual to the
+    fixed background block.  That guarantees training interpolation but turns
+    geometry-dependent local transport error into world-coordinate memorization.
+    Here each worst residual is partitioned with the same exact TX/RX/far
+    windows as the physical source split: moving pieces are pulled back into the
+    corresponding reference local atlas, while only the far complement is
+    allowed to enrich the fixed background.
+
+    One sweep processes the worst anchor of every under-resolved training
+    geometry before recomputing the global Gate, avoiding one-mode-at-a-time
+    fixed-background memorization.
+    """
     del time_scales
     geometries = list(geometries)
     phi_bg = np.asarray(bg_modes, float)
+    local = [np.asarray(block, float) for block in local_modes]
     weights = np.asarray(background.cell_volumes, float)
 
-    local_columns = [
-        _transported_local_columns(
-            background,
-            reference,
-            local_modes,
-            geometry,
-        )
-        for geometry in geometries
-    ]
     anchors_by_geometry = [[] for _ in geometries]
     for anchors in anchor_sets:
         for anchor in anchors:
@@ -1338,6 +1365,15 @@ def _enrich_background_against_full_library(
         for items in anchors_by_geometry
     ]
 
+    local_columns = [
+        _transported_local_columns(
+            background,
+            reference,
+            tuple(local),
+            geometry,
+        )
+        for geometry in geometries
+    ]
     spans = [
         _combined_cached_basis(
             background,
@@ -1347,181 +1383,321 @@ def _enrich_background_against_full_library(
         )
         for gi in range(len(geometries))
     ]
+    partitions = [
+        _moving_local_allocations(background, geometry)
+        for geometry in geometries
+    ]
 
-    # phi_bg is produced by weighted Gram-Schmidt, hence its weighted Gram is
-    # identity.  Cache only the geometry-dependent local Gram and BG/local
-    # cross block.  Appending one fixed background direction then needs one new
-    # cross row rather than rebuilding an n_cells-by-rank Gram matrix.
-    local_grams = []
-    bg_local_cross = []
-    for local in local_columns:
-        if local.shape[1] == 0:
-            local_grams.append(np.empty((0, 0), float))
-            bg_local_cross.append(
-                np.empty((phi_bg.shape[1], 0), float)
-            )
-            continue
-        weighted_local = weights[:, None] * local
-        gram = local.T @ weighted_local
-        local_grams.append(0.5 * (gram + gram.T))
-        bg_local_cross.append(phi_bg.T @ weighted_local)
-
-    def block_condition(cross, local_gram, phi_candidate, local):
-        bg_rank = int(cross.shape[0])
-        local_rank = int(local_gram.shape[0])
-        if local_rank == 0:
-            return 1.0
-        gram = np.block(
-            [
-                [np.eye(bg_rank), cross],
-                [cross.T, local_gram],
-            ]
-        )
-        estimate = _basis_condition_from_gram(gram)
-        if (
-            np.isfinite(estimate)
-            and estimate <= _GRAM_BASIS_CONDITION_DIRECT_THRESHOLD
-        ):
-            return float(estimate)
-        return _weighted_generator_condition(
-            np.column_stack((phi_candidate, local)),
-            weights,
-        )
-
+    additions_bg = 0
+    additions_local = [0] * len(local)
+    sweeps = 0
     steps = 0
     stop = "target_reached"
+    worst_condition = max(
+        [
+            _raw_block_condition(
+                background,
+                phi_bg,
+                [local_columns[gi]],
+            )
+            for gi in range(len(geometries))
+        ]
+        or [1.0]
+    )
 
-    def worst_state():
-        worst = (-1.0, None, None)
+    def total_rank():
+        return int(
+            phi_bg.shape[1]
+            + sum(block.shape[1] for block in local)
+        )
+
+    def geometry_worst_rows():
+        rows = []
+        global_worst = (-1.0, None, None, None)
         for gi, groups in enumerate(groups_by_geometry):
             relative, anchor, error = _worst_anchor_grouped(
                 groups,
                 spans[gi],
             )
-            if relative > worst[0]:
-                worst = (relative, anchor, error)
-        return worst
+            rows.append((gi, float(relative), anchor, error))
+            if anchor is not None and relative > global_worst[0]:
+                global_worst = (
+                    float(relative),
+                    anchor,
+                    error,
+                    gi,
+                )
+        return rows, global_worst
 
-    def conditioned_append(vector):
-        phi2, added = _weighted_append(
+    def can_add_rank():
+        return (
+            maximum_rank is None
+            or total_rank() < int(maximum_rank)
+        )
+
+    def try_append_background(candidate):
+        nonlocal phi_bg, spans, additions_bg, steps
+        if not can_add_rank():
+            return False
+        trial, added = _weighted_append(
             phi_bg,
-            vector,
+            candidate,
             weights,
         )
         if not added:
-            return None
-        direction = np.asarray(phi2[:, -1], float)
-        candidate_cross = []
-        worst_condition = 1.0
-        for gi, local in enumerate(local_columns):
-            if local.shape[1] == 0:
-                cross = np.empty((phi2.shape[1], 0), float)
-            else:
-                row = direction @ (weights[:, None] * local)
-                cross = np.vstack(
-                    [
-                        bg_local_cross[gi],
-                        np.asarray(row, float)[None, :],
-                    ]
-                )
-            condition = block_condition(
-                cross,
-                local_grams[gi],
-                phi2,
-                local,
+            return False
+        direction = np.asarray(trial[:, -1], float)
+        trial_spans = []
+        for gi in range(len(geometries)):
+            span2, span_added = _weighted_append(
+                spans[gi],
+                direction,
+                weights,
             )
-            if not np.isfinite(condition) or condition > float(conditioning_limit):
-                return None
-            worst_condition = max(worst_condition, float(condition))
-            candidate_cross.append(cross)
-        return phi2, direction, candidate_cross, worst_condition
+            if not span_added:
+                return False
+            trial_spans.append(span2)
+        phi_bg = trial
+        spans = trial_spans
+        additions_bg += 1
+        steps += 1
+        return True
+
+    def try_append_local(port, candidate_reference):
+        nonlocal spans, local_columns, steps
+        p = int(port)
+        if not can_add_rank():
+            return False
+        trial, added = _weighted_append(
+            local[p],
+            candidate_reference,
+            weights,
+        )
+        if not added:
+            return False
+        direction_reference = np.asarray(trial[:, -1], float)
+
+        transported = []
+        trial_spans = []
+        for gi, geometry in enumerate(geometries):
+            q = _transport_local_field(
+                background,
+                direction_reference,
+                reference,
+                geometry,
+                p,
+            )
+            norm = float(
+                np.sqrt(max(np.dot(q, weights * q), 0.0))
+            )
+            if not np.isfinite(norm) or norm <= 1e-14:
+                return False
+            q = np.asarray(q / norm, float)
+            span2, span_added = _weighted_append(
+                spans[gi],
+                q,
+                weights,
+            )
+            if not span_added:
+                return False
+            transported.append(q)
+            trial_spans.append(span2)
+
+        local[p] = trial
+        for gi, q in enumerate(transported):
+            local_columns[gi] = (
+                q[:, None]
+                if local_columns[gi].shape[1] == 0
+                else np.column_stack((local_columns[gi], q))
+            )
+        spans = trial_spans
+        additions_local[p] += 1
+        steps += 1
+        return True
 
     while True:
         if monitor is not None:
             monitor.checkpoint()
-        worst, anchor, error = worst_state()
+
+        rows, global_worst = geometry_worst_rows()
+        worst = float(global_worst[0])
         if worst <= target:
             break
-        total_rank = int(
-            phi_bg.shape[1]
-            + sum(m.shape[1] for m in local_modes)
-        )
-        if (
-            maximum_rank is not None
-            and total_rank >= int(maximum_rank)
-        ):
+        if not can_add_rank():
             stop = "maximum_rank_reached"
             break
 
-        gi = int(anchor["geometry_index"])
-        candidates = [np.asarray(error, float)]
-        if 0 <= gi < len(spans):
-            span = spans[gi]
-            projected_error = np.asarray(error, float).copy()
-            if span.size:
-                projected_error -= span @ (
-                    span.T @ (weights * projected_error)
-                )
-            candidates.append(projected_error)
-        candidates.append(np.asarray(anchor["u"], float))
-        if 0 <= gi < len(spans):
-            projected_solution = np.asarray(anchor["u"], float).copy()
-            span = spans[gi]
-            if span.size:
-                projected_solution -= span @ (
-                    span.T @ (weights * projected_solution)
-                )
-            candidates.append(projected_solution)
+        # Roll back the whole sweep if its raw transported generator violates
+        # the unchanged production conditioning Gate.
+        before_bg = phi_bg
+        before_local = list(local)
+        before_columns = list(local_columns)
+        before_spans = list(spans)
+        before_bg_count = additions_bg
+        before_local_count = list(additions_local)
+        before_steps = steps
 
-        accepted = None
-        for candidate in candidates:
-            accepted = conditioned_append(candidate)
-            if accepted is not None:
+        sweep_added = 0
+        hit_rank_limit = False
+        for gi, relative, anchor, error in rows:
+            if anchor is None or relative <= target:
+                continue
+            if not can_add_rank():
+                hit_rank_limit = True
                 break
 
-        if accepted is None:
-            stop = "no_conditioned_background_residual"
-            break
+            geometry = geometries[gi]
+            allocations, far = partitions[gi]
 
-        phi2, new_direction, candidate_cross, candidate_condition = accepted
-        candidate_spans = []
-        for gi, _local in enumerate(local_columns):
-            span2, span_added = _weighted_append(
-                spans[gi],
-                new_direction,
-                weights,
+            # Uniform initial-condition error is global by construction.  Forced
+            # source errors use the exact moving/far spatial partition.
+            fields = [np.asarray(error, float)]
+            if anchor.get("source_kind") != "initial":
+                fields.append(np.asarray(anchor["u"], float))
+
+            geometry_added = False
+            for field_index, field in enumerate(fields):
+                added_this_field = False
+
+                if anchor.get("source_kind") != "initial":
+                    for p in range(len(local)):
+                        local_piece = np.asarray(
+                            allocations[:, p] * field,
+                            float,
+                        )
+                        if np.linalg.norm(local_piece) <= np.finfo(float).tiny:
+                            continue
+                        reference_piece = _transport_local_field(
+                            background,
+                            local_piece,
+                            geometry,
+                            reference,
+                            p,
+                        )
+                        if try_append_local(p, reference_piece):
+                            sweep_added += 1
+                            added_this_field = True
+                            geometry_added = True
+                            if not can_add_rank():
+                                hit_rank_limit = True
+                                break
+                    if hit_rank_limit:
+                        break
+                    far_piece = np.asarray(far * field, float)
+                else:
+                    far_piece = field
+
+                if (
+                    np.linalg.norm(far_piece) > np.finfo(float).tiny
+                    and try_append_background(far_piece)
+                ):
+                    sweep_added += 1
+                    added_this_field = True
+                    geometry_added = True
+
+                # error is the preferred correction; only use the full solution
+                # as a fallback when its partition produced no independent mode.
+                if added_this_field or field_index == len(fields) - 1:
+                    break
+
+            if hit_rank_limit:
+                break
+
+        if sweep_added == 0:
+            stop = (
+                "maximum_rank_reached"
+                if hit_rank_limit
+                else "no_independent_partitioned_residual"
             )
-            if not span_added:
-                stop = "no_conditioned_background_residual"
-                break
-            candidate_spans.append(span2)
-        if stop != "target_reached":
             break
 
-        phi_bg = phi2
-        spans = candidate_spans
-        bg_local_cross = candidate_cross
-        steps += 1
+        trial_condition = 1.0
+        condition_ok = True
+        for gi in range(len(geometries)):
+            condition = _raw_block_condition(
+                background,
+                phi_bg,
+                [local_columns[gi]],
+            )
+            if (
+                not np.isfinite(condition)
+                or condition > float(conditioning_limit)
+            ):
+                condition_ok = False
+                trial_condition = float(condition)
+                break
+            trial_condition = max(
+                trial_condition,
+                float(condition),
+            )
+
+        if not condition_ok:
+            phi_bg = before_bg
+            local = before_local
+            local_columns = before_columns
+            spans = before_spans
+            additions_bg = before_bg_count
+            additions_local = before_local_count
+            steps = before_steps
+            stop = "residual_enrichment_conditioning_failed"
+            break
+
+        worst_condition = max(
+            worst_condition,
+            float(trial_condition),
+        )
+        sweeps += 1
+        after_rows, after_global = geometry_worst_rows()
+        after_worst = float(after_global[0])
+
         if monitor is not None:
             with monitor._lock:
                 monitor.data.update(
                     phase="geometry_aware_thermal_basis",
-                    thermal_basis_stage="background-residual",
-                    thermal_basis_rank=phi_bg.shape[1],
-                    thermal_basis_energy_error=worst,
-                    thermal_basis_condition=float(candidate_condition),
+                    thermal_basis_stage="residual-driven-enrichment",
+                    thermal_basis_rank=total_rank(),
+                    thermal_basis_energy_error=after_worst,
+                    thermal_basis_condition=float(trial_condition),
+                    thermal_basis_residual_sweeps=int(sweeps),
+                    thermal_basis_residual_background_additions=int(
+                        additions_bg
+                    ),
+                    thermal_basis_residual_local_additions=[
+                        int(v) for v in additions_local
+                    ],
                 )
-        if steps == 1 or steps % 4 == 0:
-            print(
-                "构建 geometry-aware thermal background residual……"
-                f"rank={phi_bg.shape[1]}  "
-                f"worst full-library energy error={worst:.3e}  "
-                f"basis_cond={candidate_condition:.3e}",
-                flush=True,
-            )
 
-    return phi_bg, steps, stop, float(worst_state()[0])
+        print(
+            "构建 geometry-aware thermal residual-driven atlas……"
+            f"sweep={sweeps}  rank={total_rank()}  "
+            f"added(bg={additions_bg}, local={tuple(additions_local)})  "
+            f"worst={after_worst:.3e}  "
+            f"basis_cond={trial_condition:.3e}",
+            flush=True,
+        )
 
+        if hit_rank_limit and after_worst > target:
+            stop = "maximum_rank_reached"
+            break
+
+    final_worst = float(geometry_worst_rows()[1][0])
+    diagnostics = {
+        "residual_enrichment_model": "partitioned_moving_local_v1",
+        "residual_sweeps": int(sweeps),
+        "residual_background_additions": int(additions_bg),
+        "residual_local_additions": [
+            int(v) for v in additions_local
+        ],
+        "maximum_residual_enrichment_condition": float(worst_condition),
+    }
+    return (
+        phi_bg,
+        tuple(local),
+        steps,
+        stop,
+        final_worst,
+        diagnostics,
+    )
 
 
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
