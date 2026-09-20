@@ -1017,7 +1017,7 @@ def _stabilize_component_blocks(
         return bg, tuple(local), {
             "trimmed_background": 0,
             "trimmed_local": [0] * len(local),
-            "maximum_training_raw_condition": 1.0,
+            "maximum_training_basis_condition": 1.0,
             "conditioning_stabilization_target": float(conditioning_limit),
         }
 
@@ -1248,7 +1248,7 @@ def _stabilize_component_blocks(
             int(before - after)
             for before, after in zip(initial_local_ranks, local_ranks)
         ],
-        "maximum_training_raw_condition": float(condition),
+        "maximum_training_basis_condition": float(condition),
         "conditioning_stabilization_target": float(stabilization_target),
     }
     if monitor is not None:
@@ -1274,7 +1274,7 @@ def _stabilize_component_blocks(
             "stabilized thermal component span: "
             f"bg {initial_bg_rank}->{bg_rank}, "
             f"local {tuple(initial_local_ranks)}->{tuple(local_ranks)}, "
-            f"worst_cond={condition:.3e}, "
+            f"worst_basis_cond={condition:.3e}, "
             f"target={stabilization_target:.3e}",
             flush=True,
         )
@@ -1513,7 +1513,7 @@ def _enrich_background_against_full_library(
                 "构建 geometry-aware thermal background residual……"
                 f"rank={phi_bg.shape[1]}  "
                 f"worst full-library energy error={worst:.3e}  "
-                f"raw_cond={candidate_condition:.3e}",
+                f"basis_cond={candidate_condition:.3e}",
                 flush=True,
             )
 
