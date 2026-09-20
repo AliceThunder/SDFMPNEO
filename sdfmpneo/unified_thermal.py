@@ -1700,52 +1700,8 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
-def _local_thermal_scale(geometry, port):
-    """One robust scalar length for the port-local thermal chart.
-
-    The moving near/mid-field partition scales primarily with coil size while
-    package dimensions alter the surrounding thermal body.  Use the larger of
-    the coil outer half-size and the package volume-equivalent half-extent.
-    This stays shape-agnostic and positive across circle/rounded-square charts
-    while avoiding an unstable axis-by-axis deformation in the first affine
-    transport implementation.
-    """
-    g = (
-        geometry
-        if isinstance(geometry, UnifiedUWPTGeometry)
-        else UnifiedUWPTGeometry.from_mapping(geometry)
-    )
-    p = int(port)
-    if p < 0 or p >= g.n_ports:
-        raise ValueError("thermal local transport port index is out of range")
-    coil = g.coils[p]
-    half = np.asarray(g.packages[p].half_extent, float).reshape(3)
-    package_scale = float(np.cbrt(np.prod(half)))
-    scale = max(float(coil.outer_half_size), package_scale)
-    if not np.isfinite(scale) or scale <= 0.0:
-        raise ValueError("thermal local transport scale must be positive")
-    return scale
-
-
-def _transport_field(
-    background,
-    field,
-    source_pose,
-    target_pose,
-    *,
-    source_scale=1.0,
-    target_scale=1.0,
-):
-    """Pull a scalar field through rigid pose plus one isotropic local scale."""
-    source_scale = float(source_scale)
-    target_scale = float(target_scale)
-    if (
-        not np.isfinite(source_scale)
-        or not np.isfinite(target_scale)
-        or source_scale <= 0.0
-        or target_scale <= 0.0
-    ):
-        raise ValueError("thermal transport scales must be positive and finite")
+def _transport_field(background, field, source_pose, target_pose):
+    """Rigidly pull a scalar cell field from one port pose to another."""
     values = np.asarray(field, float).reshape(
         background.nx,
         background.ny,
@@ -1759,16 +1715,21 @@ def _transport_field(
         fill_value=0.0,
     )
     target_local = target_pose.inverse(background.cell_centers)
-    source_local = target_local * (source_scale / target_scale)
-    sample_points = source_pose.apply(source_local)
+    sample_points = source_pose.apply(target_local)
     out = np.asarray(interp(sample_points), float).reshape(-1)
     if np.any(~np.isfinite(out)):
-        raise FloatingPointError("thermal affine local transport produced non-finite values")
+        raise FloatingPointError("thermal rigid local transport produced non-finite values")
     return out
 
 
-def _transport_local_field(background, field, source_geometry, target_geometry, port):
-    """Transport one port-local thermal field between geometry charts."""
+def _transport_local_field(
+    background,
+    field,
+    source_geometry,
+    target_geometry,
+    port,
+):
+    """Rigidly transport one port-local field between normalized atlas poses."""
     source = (
         source_geometry
         if isinstance(source_geometry, UnifiedUWPTGeometry)
@@ -1780,13 +1741,13 @@ def _transport_local_field(background, field, source_geometry, target_geometry, 
         else UnifiedUWPTGeometry.from_mapping(target_geometry)
     )
     p = int(port)
+    if p < 0 or p >= source.n_ports or p >= target.n_ports:
+        raise ValueError("thermal local transport port index is out of range")
     return _transport_field(
         background,
         field,
         source.coils[p].pose,
         target.coils[p].pose,
-        source_scale=_local_thermal_scale(source, p),
-        target_scale=_local_thermal_scale(target, p),
     )
 
 
@@ -1859,8 +1820,8 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 4,
-            "transport_model": "pose_isotropic_scale_v1",
+            "schema_version": 5,
+            "transport_model": "pose_rigid_normalized_atlas_v2",
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1880,9 +1841,9 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 4:
+            if int(meta.get("schema_version", -1)) != 5:
                 raise ValueError("unsupported geometry-aware thermal library version")
-            if meta.get("transport_model") != "pose_isotropic_scale_v1":
+            if meta.get("transport_model") != "pose_rigid_normalized_atlas_v2":
                 raise ValueError("unsupported geometry-aware thermal transport model")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
