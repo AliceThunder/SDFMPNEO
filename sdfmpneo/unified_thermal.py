@@ -2290,6 +2290,8 @@ def build_geometry_aware_thermal_library(
         )
         local_modes.append(modes)
         local_steps += steps
+    del snapshots
+    del local_snapshot_rows
 
     # Remove only redundant late component modes before the full-library
     # greedy.  This preserves the important moving directions while preventing
