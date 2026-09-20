@@ -1700,6 +1700,27 @@ def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     return phi, steps, stop, float(_worst_anchor_grouped(groups, phi)[0])
 
 
+def _canonicalize_poses(geometry, reference):
+    """Move all ports to reference poses while preserving geometry/material sizes."""
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    ref = (
+        reference
+        if isinstance(reference, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(reference)
+    )
+    mapping = g.to_mapping()
+    for i in range(g.n_ports):
+        mapping["coils"][i]["translation"] = ref.coils[i].pose.translation.tolist()
+        mapping["coils"][i]["angles"] = ref.coils[i].pose.angles.tolist()
+        mapping["packages"][i]["translation"] = ref.packages[i].pose.translation.tolist()
+        mapping["packages"][i]["angles"] = ref.packages[i].pose.angles.tolist()
+    return UnifiedUWPTGeometry.from_mapping(mapping)
+
+
 def _transport_field(background, field, source_pose, target_pose):
     """Rigidly pull a scalar cell field from one port pose to another."""
     values = np.asarray(field, float).reshape(
@@ -1820,8 +1841,8 @@ class GeometryAwareThermalLibrary:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
-            "schema_version": 5,
-            "transport_model": "pose_rigid_normalized_atlas_v2",
+            "schema_version": 6,
+            "transport_model": "pose_rigid_canonical_source_v3",
             "reference_geometry": self.reference_geometry.to_mapping(),
             "time_scales": list(self.time_scales),
             "conditioning_limit": float(self.conditioning_limit),
@@ -1841,9 +1862,9 @@ class GeometryAwareThermalLibrary:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata_json"]))
-            if int(meta.get("schema_version", -1)) != 5:
+            if int(meta.get("schema_version", -1)) != 6:
                 raise ValueError("unsupported geometry-aware thermal library version")
-            if meta.get("transport_model") != "pose_rigid_normalized_atlas_v2":
+            if meta.get("transport_model") != "pose_rigid_canonical_source_v3":
                 raise ValueError("unsupported geometry-aware thermal transport model")
             local = tuple(
                 np.asarray(data[f"local_modes_{p}"], float)
@@ -2215,7 +2236,7 @@ def build_geometry_aware_thermal_library(
     # never decides which thermal local block receives a Joule hotspot.
     training_anchor_sets = []
     bg_anchors = []
-    local_snapshot_rows = [[] for _ in range(reference.n_ports)]
+    local_source_rows = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(training):
         if monitor is not None:
             monitor.checkpoint()
@@ -2245,23 +2266,11 @@ def build_geometry_aware_thermal_library(
         bg_anchors.extend(partitioned_background)
         for p in range(reference.n_ports):
             for anchor in local_volume[p]:
-                local_snapshot_rows[p].append(
-                    (
-                        geometry,
-                        np.asarray(anchor["u"], float),
-                        float(anchor["shift"]),
-                    )
-                )
+                local_source_rows[p].append((geometry, anchor))
             wire_kind = f"wire[{p}]"
             for anchor in anchors:
                 if anchor.get("source_kind") == wire_kind:
-                    local_snapshot_rows[p].append(
-                        (
-                            geometry,
-                            np.asarray(anchor["u"], float),
-                            float(anchor["shift"]),
-                        )
-                    )
+                    local_source_rows[p].append((geometry, anchor))
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
@@ -2278,46 +2287,103 @@ def build_geometry_aware_thermal_library(
         background, bg_anchors, component_target, maximum_rank, monitor, "background"
     )
 
-    # Build each moving block in one normalized reference chart.  The original
-    # full-operator snapshots are reused from training-anchor preparation, then
-    # pulled back by inverse pose/scale transport.  Approximation is measured in
-    # the common reference resolvent metric K_ref+s*M_ref matching each shift.
-    reference_context = background.geometry_context(
-        reference,
-        assemble_thermal=False,
-    )
-    reference_M, reference_K = background.thermal_operator_full(
-        reference_context.fractions
-    )
-    reference_metrics = {
-        float(s): (
-            reference_K
-            if abs(float(s)) <= 1e-15
-            else (reference_K + float(s) * reference_M).tocsr()
+    # Build each moving block from canonicalized *sources*, not transported
+    # full solutions.  Reuse the already-certified Maxwell/Joule and wire RHS
+    # from training-anchor preparation, rigidly move only that local source to
+    # the reference poses, then solve it with the geometry-size/material-aware
+    # canonical thermal operator.  This preserves the fixed boundary/diffusion
+    # physics that was incorrectly moved with u in v10, without a second Maxwell
+    # truth pass.
+    canonical_local_anchors = [[] for _ in range(reference.n_ports)]
+    for gi, geometry in enumerate(training):
+        try:
+            canonical_geometry = background.validate_geometry(
+                _canonicalize_poses(geometry, reference)
+            )
+        except ValueError:
+            # Match the historical canonical-truth behavior: an otherwise valid
+            # training geometry can become invalid when all large packages are
+            # moved to the reference poses.  It still participates in the final
+            # full-library residual stage through its original anchors.
+            continue
+
+        if monitor is not None:
+            monitor.checkpoint()
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage="canonical-source-solve",
+                    thermal_basis_rank=0,
+                    thermal_basis_energy_error=None,
+                    thermal_basis_geometry_index=int(gi),
+                )
+
+        context = background.geometry_context(
+            canonical_geometry,
+            assemble_thermal=False,
         )
-        for s in shifts
-    }
+        canonical_M, canonical_K = background.thermal_operator_full(
+            context.fractions
+        )
+
+        for shift in shifts:
+            items = []
+            rhs = []
+            for p in range(reference.n_ports):
+                for source_geometry, anchor in local_source_rows[p]:
+                    if source_geometry is not geometry:
+                        continue
+                    if abs(float(anchor["shift"]) - float(shift)) > 1e-15:
+                        continue
+                    b = _transport_local_field(
+                        background,
+                        anchor["b"],
+                        geometry,
+                        canonical_geometry,
+                        p,
+                    )
+                    if np.linalg.norm(b) <= np.finfo(float).tiny:
+                        continue
+                    items.append((p, anchor, b))
+                    rhs.append(b)
+
+            if not rhs:
+                continue
+            A = (
+                canonical_K
+                if abs(float(shift)) <= 1e-15
+                else (canonical_K + float(shift) * canonical_M).tocsr()
+            )
+            solved = _solve_block(A, np.column_stack(rhs))
+            for j, (p, template, b) in enumerate(items):
+                u = np.asarray(solved[:, j], float)
+                denom2 = float(np.real(np.dot(u, b)))
+                if (
+                    not np.isfinite(denom2)
+                    or denom2 <= np.finfo(float).tiny
+                ):
+                    continue
+                row = dict(template)
+                row.update(
+                    A=A,
+                    b=np.asarray(b, float),
+                    u=u,
+                    denom2=denom2,
+                    geometry_index=int(gi),
+                    label=(
+                        f"canonical-source[{gi}]/{template['case_label']}"
+                        f"/s={float(shift):.6g}"
+                    ),
+                    rhs_norm=float(np.linalg.norm(b)),
+                )
+                canonical_local_anchors[p].append(row)
 
     local_modes = []
     local_steps = 0
     for p in range(reference.n_ports):
-        snapshots = [
-            (
-                _transport_local_field(
-                    background,
-                    field,
-                    geometry,
-                    reference,
-                    p,
-                ),
-                float(shift),
-            )
-            for geometry, field, shift in local_snapshot_rows[p]
-        ]
-        modes, steps, _stop, _error = _greedy_snapshot_basis(
+        modes, steps, _stop, _error = _greedy_basis(
             background,
-            snapshots,
-            reference_metrics,
+            canonical_local_anchors[p],
             component_target,
             maximum_rank,
             monitor,
@@ -2325,11 +2391,8 @@ def build_geometry_aware_thermal_library(
         )
         local_modes.append(modes)
         local_steps += steps
-    del snapshots
-    del local_snapshot_rows
-    del reference_metrics
-    del reference_M
-    del reference_K
+    del canonical_local_anchors
+    del local_source_rows
 
     # Remove only redundant late component modes before the full-library
     # greedy.  This preserves the important moving directions while preventing
