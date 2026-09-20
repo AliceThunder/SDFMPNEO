@@ -828,10 +828,14 @@ def _transported_local_columns(background, reference, local_modes, geometry):
     for p, modes in enumerate(local_modes):
         if modes.shape[1] == 0:
             continue
-        source_pose = reference.coils[p].pose
-        target_pose = g.coils[p].pose
         for j in range(modes.shape[1]):
-            q = _transport_field(background, modes[:, j], source_pose, target_pose)
+            q = _transport_local_field(
+                background,
+                modes[:, j],
+                reference,
+                g,
+                p,
+            )
             norm = float(np.sqrt(max(np.dot(q, background.cell_volumes * q), 0.0)))
             if not np.isfinite(norm) or norm <= 1e-14:
                 raise RuntimeError("transported thermal mode lost support inside the physical domain")
@@ -1042,14 +1046,13 @@ def _stabilize_component_blocks(
         blocks = [bg]
         for p, modes in enumerate(local):
             cols = []
-            source_pose = reference.coils[p].pose
-            target_pose = g.coils[p].pose
             for j in range(modes.shape[1]):
-                q = _transport_field(
+                q = _transport_local_field(
                     background,
                     modes[:, j],
-                    source_pose,
-                    target_pose,
+                    reference,
+                    g,
+                    p,
                 )
                 norm = float(
                     np.sqrt(
@@ -1687,10 +1690,16 @@ class GeometryAwareThermalLibrary:
         if self.background_modes.size:
             columns.extend(self.background_modes[:, j] for j in range(self.background_modes.shape[1]))
         for p, modes in enumerate(self.local_modes):
-            source_pose = self.reference_geometry.coils[p].pose
-            target_pose = g.coils[p].pose
             for j in range(modes.shape[1]):
-                columns.append(_transport_field(background, modes[:, j], source_pose, target_pose))
+                columns.append(
+                    _transport_local_field(
+                        background,
+                        modes[:, j],
+                        self.reference_geometry,
+                        g,
+                        p,
+                    )
+                )
         if not columns:
             raise RuntimeError("geometry-aware thermal library is empty")
 
