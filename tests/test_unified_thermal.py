@@ -9,7 +9,6 @@ from sdfmpneo.unified_thermal import (
     _basis_condition_from_gram,
     _certified_basis_condition,
     _weighted_generator_condition,
-    _local_thermal_scale,
     _transport_local_field,
     _greedy_snapshot_basis,
     _maxwell_port_fields,
@@ -334,7 +333,7 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
 
 
 
-def test_geometry_aware_thermal_library_schema_v4_round_trip(tmp_path):
+def test_geometry_aware_thermal_library_schema_v5_round_trip(tmp_path):
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     n = bg.n_cells
@@ -447,7 +446,7 @@ def test_weighted_generator_condition_stays_resolved_beyond_gram_safe_range():
 
 
 
-def test_scale_aware_local_transport_is_identity_at_reference_geometry():
+def test_rigid_local_transport_is_identity_at_reference_geometry():
     bg = make_background()
     reference = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
     center = reference.coils[0].pose.translation
@@ -465,7 +464,7 @@ def test_scale_aware_local_transport_is_identity_at_reference_geometry():
     assert np.allclose(transported, field, rtol=1e-12, atol=1e-12)
 
 
-def test_scale_aware_local_transport_expands_with_port_size():
+def test_rigid_local_transport_does_not_hardcode_size_deformation():
     bg = make_background()
     source = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
     target_mapping = make_geometry(0.0)
@@ -473,12 +472,10 @@ def test_scale_aware_local_transport_expands_with_port_size():
     target_mapping["package_half_extent"] = [0.03, 0.03, 0.004]
     target = UnifiedUWPTGeometry.from_mapping(target_mapping)
 
-    assert _local_thermal_scale(target, 0) > _local_thermal_scale(source, 0)
-
     center = source.coils[0].pose.translation
     radius2 = np.sum((bg.cell_centers - center[None, :]) ** 2, axis=1)
     field = np.exp(-radius2 / (2.0 * 0.012 ** 2))
-    expanded = _transport_local_field(
+    transported = _transport_local_field(
         bg,
         field,
         source,
@@ -486,16 +483,12 @@ def test_scale_aware_local_transport_expands_with_port_size():
         0,
     )
 
-    weight = np.asarray(bg.cell_volumes, float)
-    source_mass = np.dot(weight, field)
-    expanded_mass = np.dot(weight, expanded)
-    source_second = np.dot(weight, radius2 * field) / source_mass
-    expanded_second = np.dot(weight, radius2 * expanded) / expanded_mass
-    assert expanded_second > source_second
+    # Geometry-size variation lives in the normalized local span assembled from
+    # multiple training snapshots; transport itself only changes pose.
+    assert np.allclose(transported, field, rtol=1e-12, atol=1e-12)
 
 
-
-def test_v9_build_path_has_no_second_canonical_truth_stage():
+def test_v10_build_path_has_no_second_canonical_truth_stage():
     source = inspect.getsource(build_geometry_aware_thermal_library)
     assert "canonical-anchor-prep" not in source
 
