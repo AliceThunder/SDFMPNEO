@@ -202,7 +202,8 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "thermal_basis_schema": "geometry_aware_canonical_source_atlas_v11",
+    "thermal_basis_schema": "geometry_aware_intrinsic_design_atlas_v12",
+    "thermal_basis_design": "intrinsic_relative_pose_v1",
     "basis_samples": 8,
     "basis_design_pool_multiplier": 16,
     "basis_validation_samples": 6,
