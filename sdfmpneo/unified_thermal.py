@@ -1523,6 +1523,95 @@ def _enrich_background_against_full_library(
     return phi_bg, steps, stop, float(worst_state()[0])
 
 
+
+def _greedy_snapshot_basis(
+    background,
+    snapshots,
+    target,
+    maximum_rank,
+    monitor,
+    label,
+):
+    """Weighted snapshot greedy used only to initialize moving local blocks.
+
+    Local snapshots are first mapped into the common reference chart.  Their
+    original geometry operators no longer live in those normalized coordinates,
+    so using the resolvent Galerkin residual there would be inconsistent.
+    Instead use a deterministic thermal-mass projection greedy.  The complete
+    geometry-aware library is still trained and certified against the original
+    full operators by the downstream background-residual stage.
+    """
+    weights = np.asarray(background.cell_volumes, float).reshape(-1)
+    normalized = []
+    for snapshot in snapshots:
+        value = np.asarray(snapshot, float).reshape(-1)
+        norm = float(np.sqrt(max(np.dot(value, weights * value), 0.0)))
+        if np.isfinite(norm) and norm > 1e-14:
+            normalized.append(value / norm)
+
+    if not normalized:
+        return np.empty((background.n_cells, 0), float), 0, "target_reached", 0.0
+
+    phi = np.empty((background.n_cells, 0), float)
+    rank_limit = (
+        background.n_cells
+        if maximum_rank is None
+        else min(int(maximum_rank), background.n_cells)
+    )
+    steps = 0
+    stop = "target_reached"
+
+    def worst_state():
+        worst = (-1.0, None)
+        for snapshot in normalized:
+            if phi.shape[1] == 0:
+                residual = snapshot
+                relative = 1.0
+            else:
+                coeff = phi.T @ (weights * snapshot)
+                residual = snapshot - phi @ coeff
+                relative = float(
+                    np.sqrt(
+                        max(np.dot(residual, weights * residual), 0.0)
+                    )
+                )
+            if relative > worst[0]:
+                worst = (relative, residual)
+        return worst
+
+    while True:
+        if monitor is not None:
+            monitor.checkpoint()
+        worst, residual = worst_state()
+        if worst <= target:
+            break
+        if phi.shape[1] >= rank_limit:
+            stop = "maximum_rank_reached"
+            break
+        phi2, added = _weighted_append(phi, residual, weights)
+        if not added:
+            stop = "no_independent_thermal_direction"
+            break
+        phi = phi2
+        steps += 1
+        if monitor is not None:
+            with monitor._lock:
+                monitor.data.update(
+                    phase="geometry_aware_thermal_basis",
+                    thermal_basis_stage=str(label),
+                    thermal_basis_rank=phi.shape[1],
+                    thermal_basis_energy_error=float(worst),
+                )
+        if phi.shape[1] == 1 or phi.shape[1] % 4 == 0:
+            after = worst_state()[0]
+            print(
+                f"构建 geometry-aware thermal normalized snapshot block[{label}]……"
+                f"rank={phi.shape[1]}  worst mass-projection error={after:.3e}",
+                flush=True,
+            )
+
+    return phi, steps, stop, float(worst_state()[0])
+
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     phi = np.empty((background.n_cells, 0), float)
     rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
