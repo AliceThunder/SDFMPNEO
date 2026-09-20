@@ -483,6 +483,115 @@ def _moving_local_allocations(background, geometry):
         raise RuntimeError("thermal moving/far partition lost exact unity")
     return allocations, far
 
+
+def _partition_solution_states(background, geometry, anchors):
+    """Exact fixed/moving partition of full thermal *states*.
+
+    A local thermal source has a global diffusion tail.  Moving the complete
+    solution with a coil therefore violates the fixed-background/local-atlas
+    ansatz.  Partition each forced full solution itself with the same smooth
+    TX/RX/far unity decomposition.  Because A is linear, defining
+    b_piece=A@u_piece preserves an exact equation/state decomposition too.
+    Uniform initial conditions remain wholly fixed-background.
+    """
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    allocations, far = _moving_local_allocations(background, g)
+    background_rows = []
+    local_rows = [[] for _ in range(g.n_ports)]
+
+    for anchor in anchors:
+        if anchor.get("source_kind") == "initial":
+            background_rows.append(anchor)
+            continue
+
+        A = anchor["A"]
+        u = np.asarray(anchor["u"], float).reshape(-1)
+        reconstructed = np.zeros_like(u)
+
+        for p in range(g.n_ports):
+            u_local = np.asarray(allocations[:, p] * u, float)
+            reconstructed += u_local
+            if np.linalg.norm(u_local) <= np.finfo(float).tiny:
+                continue
+            b_local = np.asarray(A @ u_local, float).reshape(-1)
+            row = _derived_anchor(
+                anchor,
+                b_local,
+                u_local,
+                case_label=f"{anchor['case_label']}/state-local[{p}]",
+                source_kind="state-local",
+                metadata={
+                    "thermal_local_port": int(p),
+                    "physical_source_kind": str(anchor.get("source_kind", "")),
+                },
+            )
+            if row is not None:
+                local_rows[p].append(row)
+
+        u_far = np.asarray(u - reconstructed, float)
+        # Use the exact remainder instead of far*u so floating-point unity of
+        # the state decomposition is preserved even after many anchors.
+        if np.linalg.norm(u_far) > np.finfo(float).tiny:
+            b_far = np.asarray(A @ u_far, float).reshape(-1)
+            row = _derived_anchor(
+                anchor,
+                b_far,
+                u_far,
+                case_label=f"{anchor['case_label']}/state-far",
+                source_kind="state-far",
+                metadata={
+                    "physical_source_kind": str(anchor.get("source_kind", "")),
+                },
+            )
+            if row is not None:
+                background_rows.append(row)
+
+    return background_rows, tuple(tuple(rows) for rows in local_rows)
+
+
+def _reference_local_anchor(
+    background,
+    reference_geometry,
+    source_geometry,
+    port,
+    anchor,
+    reference_metrics,
+):
+    """Pull one localized state to the reference pose with a consistent metric."""
+    p = int(port)
+    u_ref = _transport_local_field(
+        background,
+        anchor["u"],
+        source_geometry,
+        reference_geometry,
+        p,
+    )
+    shift = float(anchor["shift"])
+    A_ref = reference_metrics[shift]
+    b_ref = np.asarray(A_ref @ u_ref, float).reshape(-1)
+    denom2 = float(np.real(np.dot(u_ref, b_ref)))
+    if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
+        return None
+    row = dict(anchor)
+    row.update(
+        A=A_ref,
+        b=b_ref,
+        u=np.asarray(u_ref, float),
+        denom2=denom2,
+        label=(
+            f"reference-state/{anchor['case_label']}"
+            f"/port={p}/s={shift:.6g}"
+        ),
+        source_kind="state-local-reference",
+        rhs_norm=float(np.linalg.norm(b_ref)),
+        thermal_local_port=p,
+    )
+    return row
+
 def _volume_case_index(anchor):
     if anchor.get("source_kind") != "volume":
         return None
