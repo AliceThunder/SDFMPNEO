@@ -10,7 +10,6 @@ from sdfmpneo.unified_thermal import (
     _certified_basis_condition,
     _weighted_generator_condition,
     _transport_local_field,
-    _greedy_snapshot_basis,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -333,7 +332,7 @@ def test_maxwell_field_cache_signature_mismatch_recomputes(tmp_path, monkeypatch
 
 
 
-def test_geometry_aware_thermal_library_schema_v5_round_trip(tmp_path):
+def test_geometry_aware_thermal_library_schema_v6_round_trip(tmp_path):
     bg = make_background()
     reference = bg.validate_geometry(make_geometry(0.0))
     n = bg.n_cells
@@ -488,37 +487,12 @@ def test_rigid_local_transport_does_not_hardcode_size_deformation():
     assert np.allclose(transported, field, rtol=1e-12, atol=1e-12)
 
 
-def test_v10_build_path_has_no_second_canonical_truth_stage():
+def test_v11_build_path_uses_canonical_source_solve_without_second_maxwell_truth():
     source = inspect.getsource(build_geometry_aware_thermal_library)
     assert "canonical-anchor-prep" not in source
+    assert "canonical-source-solve" in source
+    canonical_block = source.split("canonical-source-solve", 1)[1]
+    assert "_maxwell_port_fields" not in canonical_block
 
 
 
-def test_reference_energy_snapshot_greedy_respects_shift_metric():
-    bg = make_background()
-    n = bg.n_cells
-    e0 = np.zeros(n, float); e0[0] = 1.0
-    e1 = np.zeros(n, float); e1[1] = 1.0
-    e2 = np.zeros(n, float); e2[2] = 1.0
-
-    metric0 = np.eye(n)
-    metric1 = np.eye(n)
-    metric1[1, 1] = 25.0
-
-    modes, steps, stop, error = _greedy_snapshot_basis(
-        bg,
-        [
-            (e0 + 0.2 * e1, 0.0),
-            (e0 + 0.2 * e2, 1.0),
-        ],
-        {0.0: metric0, 1.0: metric1},
-        1e-8,
-        None,
-        None,
-        "local-test",
-    )
-
-    assert stop == "target_reached"
-    assert error <= 1e-8
-    assert modes.shape[1] == 2
-    assert steps == 2
