@@ -9,7 +9,7 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 48 keeps the v34 EM truth and uses the canonical-source-atlas v11
+# Physics truth version 49 keeps the v34 EM truth and uses the intrinsic-design-atlas v12
 # geometry-aware thermal construction.  Spiral geometry rejects adjacent-turn
 # overlap; every Hermitian volume-source component is split across all moving
 # ports; component blocks use a looser initialization target and are condition-
@@ -30,7 +30,7 @@ from . import unified_model as _unified_model
 # source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
 # remain unchanged; the historical exact sigma/epsilon reference remains only as
 # diagnostic/regression code and is not used by production terminal truth.
-_unified_model.FORMAT_VERSION = 48
+_unified_model.FORMAT_VERSION = 49
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -204,10 +204,10 @@ __all__ = [
     "train_matrix_tensor_surrogate",
 ]
 
-# v48 solves transported local sources on geometry-size/material-aware canonical thermal operators without replaying Maxwell truth.  The
+# v49 keeps canonical-source local truth and selects thermal training geometries modulo common rigid pose.  The
 # certified EM preflight has its own physical signature and remains reusable.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 51
+_unified_runtime._CACHE_FORMAT = 52
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
