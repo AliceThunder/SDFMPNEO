@@ -692,7 +692,6 @@ def _partition_self_volume_anchors(background, geometry, anchors):
         key = (float(anchor["shift"]), id(anchor["A"]))
         grouped.setdefault(key, {})[int(index)] = anchor
 
-    windows = None
     allocations = None
 
     for group in grouped.values():
@@ -2347,7 +2346,7 @@ def build_geometry_aware_thermal_library(
     component_target_multiplier=2.0,
     monitor=None,
 ):
-    """Build fixed-background plus normalized moving-local blocks and held-out audits."""
+    """Build fixed-far plus transported localized-state blocks and held-out audits."""
     target = float(target_relative_error)
     if not 0.0 < target < 1.0:
         raise ValueError("thermal target_relative_error must lie in (0, 1)")
