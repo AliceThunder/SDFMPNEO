@@ -1282,7 +1282,7 @@ def _stabilize_component_blocks(
         print(
             "thermal component span already satisfies conditioning Gate: "
             f"bg={bg_rank}, local={tuple(local_ranks)}, "
-            f"worst_cond={condition:.3e}, "
+            f"worst_basis_cond={condition:.3e}, "
             f"target={stabilization_target:.3e}",
             flush=True,
         )
