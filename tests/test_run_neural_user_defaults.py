@@ -175,6 +175,6 @@ def test_thermal_basis_policy_does_not_invalidate_em_preflight_signature():
     assert _preflight_signature(baseline) != _preflight_signature(em_physics)
 
 
-def test_thermal_basis_design_quotients_common_pose():
+def test_thermal_basis_design_combines_full_and_intrinsic_coverage():
     run = _load_run()
     assert run.TRAINING["thermal_basis_design"] == "hybrid_full_intrinsic_union_v1"
