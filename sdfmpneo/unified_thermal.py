@@ -2378,15 +2378,14 @@ def build_geometry_aware_thermal_library(
     validation = [] if validation_geometries is None else [background.validate_geometry(g) for g in validation_geometries]
     shifts = _resolvent_shifts(time_scales)
 
-    # Preserve the theoretical block split:
+    # The production ansatz moves only genuinely local *state* content:
     #   Phi(g) = [Phi_bg, T_tx Psi_tx, T_rx Psi_rx].
-    # Every independent Hermitian volume-source component (diagonal self and
-    # signed real/quadrature cross) is split spatially across every moving port
-    # plus an exact fixed far complement.  Source excitation index therefore
-    # never decides which thermal local block receives a Joule hotspot.
+    # A localized source still produces a global diffusion tail, so partition
+    # each full thermal solution itself into TX/RX moving supports plus an exact
+    # fixed far remainder before any transport is applied.
     training_anchor_sets = []
     bg_anchors = []
-    local_source_rows = [[] for _ in range(reference.n_ports)]
+    local_state_rows = [[] for _ in range(reference.n_ports)]
     for gi, geometry in enumerate(training):
         if monitor is not None:
             monitor.checkpoint()
@@ -2397,6 +2396,9 @@ def build_geometry_aware_thermal_library(
                     thermal_basis_rank=0,
                     thermal_basis_energy_error=None,
                     thermal_basis_geometry_index=int(gi),
+                    thermal_basis_state_partition_model=(
+                        "partitioned_moving_state_v1"
+                    ),
                 )
         anchors = _geometry_anchors(
             background,
@@ -2408,156 +2410,75 @@ def build_geometry_aware_thermal_library(
             uniform_initial=True,
         )
         training_anchor_sets.append(anchors)
-        partitioned_background, local_volume = _partition_self_volume_anchors(
+        state_background, state_local = _partition_solution_states(
             background,
             geometry,
             anchors,
         )
-        bg_anchors.extend(partitioned_background)
+        bg_anchors.extend(state_background)
         for p in range(reference.n_ports):
-            for anchor in local_volume[p]:
-                local_source_rows[p].append((int(gi), anchor))
-            wire_kind = f"wire[{p}]"
-            for anchor in anchors:
-                if anchor.get("source_kind") == wire_kind:
-                    local_source_rows[p].append((int(gi), anchor))
+            local_state_rows[p].extend(
+                (geometry, anchor)
+                for anchor in state_local[p]
+            )
         print(
-            f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
+            "准备 fixed/moving state-partition thermal anchors……"
+            f"{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
         )
-    # Component blocks are only an initialization.  Give them a looser
-    # target so common long-range diffusion is not independently memorized in
-    # every moving block; the complete transported library is still enriched
-    # and certified against the original final target below.
+
+    # Component blocks initialize the final ROM at a looser target.  The final
+    # full-library residual stage below still enforces the original 5% Gate.
     component_target = max(
         float(target),
         min(0.25, component_multiplier * float(target)),
     )
     bg_modes, bg_steps, _bg_component_stop, _bg_component_error = _greedy_basis(
-        background, bg_anchors, component_target, maximum_rank, monitor, "background"
+        background,
+        bg_anchors,
+        component_target,
+        maximum_rank,
+        monitor,
+        "background",
     )
 
-    # Build each moving block from canonicalized *sources*, not transported
-    # full solutions.  Reuse the already-certified Maxwell/Joule and wire RHS
-    # from training-anchor preparation, rigidly move only that local source to
-    # the reference poses, then solve it with the geometry-size/material-aware
-    # canonical thermal operator.  This preserves the fixed boundary/diffusion
-    # physics that was incorrectly moved with u in v10, without a second Maxwell
-    # truth pass.
-    canonical_local_anchors = [[] for _ in range(reference.n_ports)]
-    canonical_source_solved = 0
-    canonical_source_skipped = []
-    for gi, geometry in enumerate(training):
-        try:
-            canonical_geometry = background.validate_geometry(
-                _canonicalize_poses(geometry, reference)
-            )
-        except ValueError:
-            # Match the historical canonical-truth behavior: an otherwise valid
-            # training geometry can become invalid when all large packages are
-            # moved to the reference poses.  It still participates in the final
-            # full-library residual stage through its original anchors.
-            canonical_source_skipped.append(int(gi))
-            continue
-
-        if monitor is not None:
-            monitor.checkpoint()
-            with monitor._lock:
-                monitor.data.update(
-                    phase="geometry_aware_thermal_basis",
-                    thermal_basis_stage="canonical-source-solve",
-                    thermal_basis_rank=0,
-                    thermal_basis_energy_error=None,
-                    thermal_basis_geometry_index=int(gi),
-                )
-
-        context = background.geometry_context(
-            canonical_geometry,
-            assemble_thermal=False,
+    # Localized state snapshots from different physical geometries now share a
+    # common reference pose.  Give them one consistent reference resolvent
+    # metric per shift; no second Maxwell or thermal truth solve is required.
+    reference_context = background.geometry_context(
+        reference,
+        assemble_thermal=False,
+    )
+    reference_M, reference_K = background.thermal_operator_full(
+        reference_context.fractions
+    )
+    reference_metrics = {
+        float(shift): (
+            reference_K
+            if abs(float(shift)) <= 1e-15
+            else (reference_K + float(shift) * reference_M).tocsr()
         )
-        canonical_M, canonical_K = background.thermal_operator_full(
-            context.fractions
-        )
-
-        for shift in shifts:
-            items = []
-            rhs = []
-            for p in range(reference.n_ports):
-                for source_geometry_index, anchor in local_source_rows[p]:
-                    if int(source_geometry_index) != int(gi):
-                        continue
-                    if abs(float(anchor["shift"]) - float(shift)) > 1e-15:
-                        continue
-                    b = _transport_local_field(
-                        background,
-                        anchor["b"],
-                        geometry,
-                        canonical_geometry,
-                        p,
-                    )
-                    if np.linalg.norm(b) <= np.finfo(float).tiny:
-                        continue
-                    items.append((p, anchor, b))
-                    rhs.append(b)
-
-            if not rhs:
-                continue
-            A = (
-                canonical_K
-                if abs(float(shift)) <= 1e-15
-                else (canonical_K + float(shift) * canonical_M).tocsr()
-            )
-            solved = _solve_block(A, np.column_stack(rhs))
-            for j, (p, template, b) in enumerate(items):
-                u = np.asarray(solved[:, j], float)
-                denom2 = float(np.real(np.dot(u, b)))
-                if (
-                    not np.isfinite(denom2)
-                    or denom2 <= np.finfo(float).tiny
-                ):
-                    continue
-                row = dict(template)
-                row.update(
-                    A=A,
-                    b=np.asarray(b, float),
-                    u=u,
-                    denom2=denom2,
-                    geometry_index=int(gi),
-                    label=(
-                        f"canonical-source[{gi}]/{template['case_label']}"
-                        f"/s={float(shift):.6g}"
-                    ),
-                    rhs_norm=float(np.linalg.norm(b)),
-                )
-                canonical_local_anchors[p].append(row)
-
-        canonical_source_solved += 1
-        print(
-            "准备 canonical-source thermal anchors……"
-            f"{canonical_source_solved}/{len(training)} "
-            f"(geometry_index={gi})",
-            flush=True,
-        )
-
-    if monitor is not None:
-        with monitor._lock:
-            monitor.data.update(
-                phase="geometry_aware_thermal_basis",
-                thermal_basis_stage="canonical-source-solve",
-                thermal_basis_rank=0,
-                thermal_basis_energy_error=None,
-                thermal_basis_canonical_source_solved=int(canonical_source_solved),
-                thermal_basis_canonical_source_skipped=[
-                    int(v) for v in canonical_source_skipped
-                ],
-            )
+        for shift in shifts
+    }
 
     local_modes = []
     local_steps = 0
     for p in range(reference.n_ports):
+        reference_anchors = []
+        for geometry, anchor in local_state_rows[p]:
+            row = _reference_local_anchor(
+                background,
+                reference,
+                geometry,
+                p,
+                anchor,
+                reference_metrics,
+            )
+            if row is not None:
+                reference_anchors.append(row)
         modes, steps, _stop, _error = _greedy_basis(
             background,
-            canonical_local_anchors[p],
+            reference_anchors,
             component_target,
             maximum_rank,
             monitor,
@@ -2565,8 +2486,11 @@ def build_geometry_aware_thermal_library(
         )
         local_modes.append(modes)
         local_steps += steps
-    del canonical_local_anchors
-    del local_source_rows
+
+    del local_state_rows
+    del reference_metrics
+    del reference_M
+    del reference_K
 
     # Remove only redundant late component modes before the full-library
     # greedy.  This preserves the important moving directions while preventing
