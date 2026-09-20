@@ -241,11 +241,25 @@ preflight 会同时保留 raw 与 corrected diagnostics，便于区分 global mu
 }
 \]
 
-v13 使用确定性的 rigid-pose local transport 和连续插值；moving local block 不再直接运输完整 thermal solution。每个 training geometry 已认证的 local Joule/wire RHS 只做逆刚体运输到 reference pose，然后在**保留该 geometry 尺寸、材料分布和 package/coil 参数**的 canonical thermal operator 上重新求解。这样 fixed boundary / diffusion tail 不会被错误跟随 coil 一起搬动，同时也无需第二遍 Maxwell truth。fixed background 不运输；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
+v14 修正了此前 geometry generalization 的根本结构问题：**被 rigid transport 的必须是局部 thermal state，而不是“局部 source 产生的整幅 full-domain solution”**。局部热源的解同样带有延伸到固定背景和人工边界的 diffusion tail；如果把整幅解随 coil 搬动，就会把本应固定的全局尾巴一起移动，之后只能靠 fixed-background modes 在训练几何上逐点抵消，形成明显的 train memorization。
 
-canonical-source local block 包含 wire heat，以及**所有独立 Hermitian volume-source component 在该物理端口附近的 pose-following 近/中场部分**。local RHS 直接复用 training geometries 第一次 Maxwell truth 产生的 source；只把 source 刚体搬到 canonical pose，再用该 geometry 自己的 thermal `M/K` 重新求解。因此 v11 恢复 geometry-dependent thermal material/operator 语义，但不重复 Maxwell。一个 electrical port 的单位电流会在 TX、RX 以及 seawater 中同时产生 Joule heat，因此不再按“激励端口编号”决定 thermal local block。每个 self/cross volume component 都先由 TX/RX 平滑窗口做空间 partition-of-unity：\(q=q_{\rm tx}+q_{\rm rx}+q_{\rm far}\)，TX/RX 两个 moving component 分别随对应 coil pose 运输，只有真正靠近固定人工边界的 complement 留在 fixed background。对 \(e_i+e_j\) / \(e_i+i e_j\) 的组合热源仍先减去两个 diagonal self source，得到真正的 signed Hermitian cross component，再进行同样的多端口空间分解。逐点和严格等于原始 source，held-out Gate 仍对未分解的完整物理 current directions 做验证。
+现在每个真实 full-order forced thermal state \(u(g)\) 先使用与 moving supports 一致的平滑 partition-of-unity 做**状态分解**：
 
-每个 geometry 从真实 full thermal operators 投影：
+\[
+u(g)
+=
+u_{\rm tx}(g)
++
+u_{\rm rx}(g)
++
+u_{\rm far}(g).
+\]
+
+其中 TX/RX state pieces 才允许通过 deterministic rigid-pose transport 进入 moving local atlas；far remainder 永远属于 fixed background。分解逐 cell 精确和回原始 full state。为了保持 energy greedy 的方程语义，对每个 state piece 定义 \(b_{\rm piece}=A(g)u_{\rm piece}\)，因此各 piece 仍是同一 SPD thermal resolvent 下的严格解，并且由线性性保持完整 equation/state decomposition。uniform initial condition 是全局量，始终全部留在 fixed background。
+
+local state pieces 逆 rigid transport 到共同 reference pose 后，按相同 shift 使用 reference 'K_ref + s M_ref' 做 resolvent-energy greedy；不需要第二遍 Maxwell truth，也不再需要 canonical full-tail thermal solves。尺寸、turns、pitch、conductor/package 变化作为不同 localized state directions 留在同一 fixed-rank moving span 内。fixed background 不运输；不使用 neural basis、dynamic POD 或 Grassmann interpolation。
+
+每个 geometry 仍从真实 full thermal operators 投影：
 
 \[
 M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
@@ -253,44 +267,63 @@ M_r(g)=\Phi(g)^TM_T(g)\Phi(g),
 K_r(g)=\Phi(g)^TK_T(g)\Phi(g).
 \]
 
-`M_r/K_r` 不由网络预测。每个 production thermal context 检查 transported basis rank/support、conditioning、\(M_r\succ0\)、\(K_r\succ0\) 和 reduced operator condition number。
+'M_r/K_r' 不由网络预测。每个 production thermal context 检查 transported basis rank/support、conditioning、\(M_r\succ0\)、\(K_r\succ0\) 和 reduced operator condition number。
 
 ## 7. Thermal rank、resolvent 与 trajectory Gate
 
-canonical rank 用：
+full truth anchors 仍由
 
 \[
 (K+sM)u=b
 \]
 
-的 resolvent anchors 自动构建。thermal basis 的昂贵 geometry truth 不再直接取少量 iid 随机点。默认先生成廉价候选池，并在构造 truth 前做物理几何合法性过滤：`turns >= 1` 的 spiral 必须满足 `pitch > conductor_width`，避免相邻铜带接触/重叠；已有的 inner-radius、rounded-corner 与 background-domain 检查继续保留。v13 的 thermal truth design 同时保留两类互补覆盖：一半样本按完整 `encode_geometry` 做 maximin，覆盖 absolute pose / fixed-background / far-source / 边界效应；另一半按 `intrinsic_relative_pose_v1` 做 maximin，只保留 coil shape / turns / outer size / pitch / conductor dimensions、package half-extent、package 相对本 coil 的 pose，以及各端口相对 port-0 的 translation/rotation，把共同刚体位姿 quotient 掉。默认 `basis_samples=16`，其中 8 个来自 full-geometry maximin、8 个来自 intrinsic/relative-pose maximin；若两组有重复，则在同一个候选池内按两个归一化空间的联合未覆盖距离补足。候选池仍是 128 个（`16 × 8`），与此前 `8 × 16` 相同，因此可以最大化复用 persistent Maxwell field cache。tensor surrogate 仍使用完整 `encode_geometry`。held-out validation 与 tensor dataset 使用独立固定 RNG 流，validation 始终不参与 basis enrichment。
+自动构建，并包含 's=0' steady anchor。昂贵 geometry truth 的选点使用 v13 已引入的 hybrid coverage：默认 16 个 training geometries，其中 8 个来自完整 'encode_geometry' maximin，覆盖 absolute pose / fixed-background / boundary effects；另外 8 个来自 'intrinsic_relative_pose_v1' maximin，覆盖 shape / turns / outer size / pitch / conductor/package dimensions 与端口 relative pose。两组若重复，则在同一个 128-candidate pool 中按两个归一化空间的联合未覆盖距离补足。held-out validation、tensor dataset 和 final audit 使用独立固定 RNG 流，validation 从不参与 basis enrichment。
 
 默认：
 
-```python
+~~~python
 "basis_samples": 16,
 "basis_design_pool_multiplier": 8,
 "thermal_basis_design": "hybrid_full_intrinsic_union_v1",
 "thermal_basis_energy_tolerance": 5e-2,
 "thermal_component_target_multiplier": 2.0,
 "thermal_time_scales": [0.1, 1.0, 10.0]
-```
+~~~
 
-并始终包含 `s=0` steady anchor。background / TX-local / RX-local 是完整 ROM 的**初始化分块**，不是三个必须各自达到最终 5% 的独立 ROM；默认 component target 为 `2 × 5% = 10%`。moving-local block 使用 canonical-source resolvent anchors：每个 training local source 先刚体搬到 reference pose，再由保持该 geometry 尺寸/材料的 `K_g^{can}+sM_g^{can}` block-solve 得到 canonical response；所有 geometry/shift 的 anchors 仍在同一 reference pose 坐标上做 resolvent-energy greedy。尺寸/形状差异由 source 与 canonical thermal operator共同进入 local span。这样 local 初始化与最终 resolvent-energy Gate 使用同类能量度量，同时不会错误地把 transported snapshot 继续代入原 geometry operator。最终完整 library 仍由原始 full operators 的 resolvent residual 追到 5%，所以这个 atlas 初始化不会替代最终物理 Gate。component greedy 完成后会检查所有 training geometry 上 transported raw span 的 conditioning；`thermal_basis_conditioning_limit` 定义的是 **weighted raw basis/generator 的 2-norm condition**，不是 Gram 矩阵 `V^T M V` 的条件数。后者等于 basis condition 的平方，直接拿来比较会把 `1e10` 配置误实现成约 `1e5` 的有效 Gate。v13 继续对低/中等 condition 使用 Gram 的平方根快速估计；接近高 condition 区间或 Gram 谱数值不可靠时，自动切换到 weighted generator 的 thin-QR + 小型 SVD 证书。只有真实 basis condition 超过 `thermal_basis_conditioning_limit` 时才裁剪。裁剪优先从 **fixed-background greedy tail** 开始，因为这类方向可由后续 full-library residual enrichment 重新生成；TX/RX moving-local tail 只在 background 已到最小保留 rank、conditioning 仍不合格时才允许裁剪。随后 background-residual enrichment 对完整 `[Phi_bg, T_tx Psi_tx, T_rx Psi_rx]` 重新追到原始 5% target，并在每次加入 fixed direction 前预检所有 training geometry 的 basis condition，因此既不放宽最终训练/held-out Gate，也避免用 fixed modes 替代本应随几何移动的 local span。
+background / TX-local / RX-local 只是完整 ROM 的初始化分块，默认 component target 仍为 '2 × 5% = 10%'。component greedy 后继续检查所有 training geometry 上 transported raw generator 的真实 weighted basis condition；'thermal_basis_conditioning_limit=1e10' 指 basis/generator condition，不是平方后的 Gram condition。低/中 condition 使用 Gram spectrum 的平方根快速估计，高 condition 自动切换到 weighted generator thin-QR + 小型 SVD certificate。5% Gate 与 '1e10' conditioning Gate 都没有放宽。
 
-同一 geometry/shift 的多个 thermal RHS 共用一次 full factorization 和一次 reduced solve；background residual enrichment 会缓存各训练 geometry 的 transported-local span，只增量加入新的 fixed-background direction，不会每升一阶 rank 都重新运输并正交化整套 local basis。
+v14 同时修正第二个结构问题：**full-library residual 不再全部写入 fixed background**。每一轮会同时检查所有未达到 5% 的 training geometries，把各自最坏 full-ROM state error 用同一 TX/RX/far partition 拆开：
 
-昂贵的 thermal-anchor Maxwell port fields 另有独立持久化 cache：每个 geometry 的 X(g) 一旦通过当前 `A(g)X=B(g)` 的 `1e-9` true-residual certificate 就立即原子写盘。thermal basis 构造即使随后 fail closed，下一次运行仍可复用这些 field；cache 命中时会针对当前重新组装的 `A/B` 再计算一次 true residual，只有仍满足 Gate 才使用。因此调整 component target、conditioning trimming 或其它纯 thermal-basis 策略不会强迫重复数十分钟的 Maxwell truth solve，也不会让旧 field 绕过当前物理验收。
+\[
+e(g)
+=
+e_{\rm tx}(g)
++
+e_{\rm rx}(g)
++
+e_{\rm far}(g).
+\]
 
-held-out geometry 按“生成一个 truth anchor set → 立刻做一个 resolvent energy Gate”的顺序流式检查；任意一个 geometry 超过目标误差就立即 fail closed，不再生成剩余 held-out Maxwell truth，并跳过更昂贵且已不可能改变结论的 full-vs-ROM trajectory audit。只有全部 held-out resolvent Gate 通过时才继续：
+'e_tx/e_rx' 逆 transport 回 reference local atlas 后分别 enrich moving TX/RX blocks；只有 'e_far' 可以 enrich fixed background。每一 sweep 批量处理所有 under-resolved training geometries，然后重新计算完整 full-library energy Gate，并重新检查所有 training geometry 的 raw-basis conditioning。若 conditioning 超过原 '1e10' Gate，整轮原子回滚并 fail closed。日志会直接报告：
 
-```python
+~~~text
+thermal_basis_stage = residual-driven-enrichment
+thermal_basis_residual_sweeps
+thermal_basis_residual_background_additions
+thermal_basis_residual_local_additions
+~~~
+
+这避免了旧实现中“training sample 越多，fixed background residual rank 越线性增长”的世界坐标记忆行为，也把此前一条 residual 加一个 fixed mode 的串行 enrichment 改成多 geometry 批量 sweep。
+
+昂贵的 thermal-anchor Maxwell port fields 继续使用独立 persistent cache：每个 geometry 的 \(X(g)\) 只有通过当前 'A(g)X=B(g)' 的 '1e-9' true-residual certificate 才写盘，命中时也会重新对当前 'A/B' 认证。thermal atlas/schema 改动不会清除此 EM-only cache；因此 v14 仍可复用此前已经算过的 16-point hybrid truth Maxwell fields。
+
+held-out geometry 仍按“生成一个 truth anchor set → 立即做 resolvent energy Gate”的顺序流式检查；任意 geometry 超过 5% 就 fail closed，并跳过已经没有意义的昂贵 trajectory audit。只有全部 held-out resolvent Gate 通过才继续：
+
+~~~python
 "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0]
-```
+~~~
 
-包括 thermal-mass field error、`Tmin/Tmax`、wire-average temperature、uniform initial-condition evolution、forced steady field 和 steady reduced coordinate。
-
-100 s、1000 s 等长时间不要求相同时间尺度的专用 basis，而是由同一个 reduced ODE 连续推进。
+trajectory audit 覆盖 thermal-mass field error、'Tmin/Tmax'、wire-average temperature、uniform initial-condition evolution、forced steady field 和 steady reduced coordinate。100 s、1000 s 等长时间仍由同一个 reduced ODE 连续推进，不靠专用长时 basis。
 
 ## 8. Geometry-dependent Joule tensors
 
