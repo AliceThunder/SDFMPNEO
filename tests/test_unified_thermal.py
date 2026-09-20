@@ -6,6 +6,7 @@ import sdfmpneo.unified_tensor_surrogate as tensor_truth
 from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_thermal import (
     _basis_condition_from_gram,
+    _certified_basis_condition,
     _weighted_generator_condition,
     _maxwell_port_fields,
     _raw_block_condition,
@@ -427,8 +428,11 @@ def test_weighted_generator_condition_stays_resolved_beyond_gram_safe_range():
     generator = np.column_stack((first, second))
 
     condition = _weighted_generator_condition(generator, weights)
+    certified = _certified_basis_condition(generator, weights)
     assert np.isfinite(condition)
+    assert np.isfinite(certified)
     assert 1e9 < condition < 1e10
+    assert np.isclose(certified, condition, rtol=1e-10)
 
     gram = generator.T @ generator
     # The direct generator certificate remains meaningful even if the squared
