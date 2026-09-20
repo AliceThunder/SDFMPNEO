@@ -194,7 +194,7 @@ def _thermal_basis_design_features(geometry):
 
 
 def _basis_design_geometries(settings, n, rng, background):
-    """Choose maximin truth geometries in the pose-quotiented thermal space."""
+    """Choose deterministic thermal truth points with complementary coverage."""
     count = int(n)
     if count < 1:
         return []
@@ -205,46 +205,165 @@ def _basis_design_geometries(settings, n, rng, background):
             "intrinsic_relative_pose_v1",
         )
     )
-    if design_model != "intrinsic_relative_pose_v1":
+    supported = {
+        "intrinsic_relative_pose_v1",
+        "hybrid_full_intrinsic_union_v1",
+    }
+    if design_model not in supported:
         raise ValueError(
-            "unsupported thermal_basis_design; expected "
-            "'intrinsic_relative_pose_v1'"
+            "unsupported thermal_basis_design; expected one of "
+            f"{sorted(supported)}"
         )
-    multiplier = max(2, int(training.get("basis_design_pool_multiplier", 16)))
-    pool = _sample_geometries(settings, max(count, multiplier * count), rng, background)
-    encoded = np.vstack([
-        _thermal_basis_design_features(candidate)
-        for candidate in pool
-    ])
-    reference = _thermal_basis_design_features(
-        settings["DEFAULT_GEOMETRY"]
+    multiplier = max(
+        2,
+        int(training.get("basis_design_pool_multiplier", 16)),
+    )
+    pool = _sample_geometries(
+        settings,
+        max(count, multiplier * count),
+        rng,
+        background,
     )
 
-    combined = np.vstack((encoded, reference[None, :]))
-    lo = np.min(combined, axis=0)
-    span = np.ptp(combined, axis=0)
-    scale = np.where(span > 1e-12, span, 1.0)
-    normalized = (encoded - lo) / scale
-    reference_n = (reference - lo) / scale
+    def normalized_features(encoder):
+        encoded = np.vstack([encoder(candidate) for candidate in pool])
+        reference = np.asarray(
+            encoder(settings["DEFAULT_GEOMETRY"]),
+            float,
+        ).reshape(-1)
+        combined = np.vstack((encoded, reference[None, :]))
+        lo = np.min(combined, axis=0)
+        span = np.ptp(combined, axis=0)
+        scale = np.where(span > 1e-12, span, 1.0)
+        return (
+            (encoded - lo) / scale,
+            (reference - lo) / scale,
+        )
 
-    minimum_distance2 = np.sum((normalized - reference_n[None, :]) ** 2, axis=1)
-    selected = []
-    used = np.zeros(len(pool), dtype=bool)
-    for _ in range(min(count, len(pool))):
-        score = np.where(used, -np.inf, minimum_distance2)
-        index = int(np.argmax(score))
-        if not np.isfinite(score[index]):
-            break
-        selected.append(pool[index])
-        used[index] = True
-        distance2 = np.sum((normalized - normalized[index][None, :]) ** 2, axis=1)
-        minimum_distance2 = np.minimum(minimum_distance2, distance2)
-    if len(selected) != count:
-        raise RuntimeError("thermal basis maximin design did not produce the requested geometry count")
+    def maximin_indices(normalized, reference_n, quota):
+        quota = min(int(quota), len(pool))
+        minimum_distance2 = np.sum(
+            (normalized - reference_n[None, :]) ** 2,
+            axis=1,
+        )
+        selected_indices = []
+        used = np.zeros(len(pool), dtype=bool)
+        for _ in range(quota):
+            score = np.where(used, -np.inf, minimum_distance2)
+            index = int(np.argmax(score))
+            if not np.isfinite(score[index]):
+                break
+            selected_indices.append(index)
+            used[index] = True
+            distance2 = np.sum(
+                (normalized - normalized[index][None, :]) ** 2,
+                axis=1,
+            )
+            minimum_distance2 = np.minimum(
+                minimum_distance2,
+                distance2,
+            )
+        return selected_indices
+
+    intrinsic, intrinsic_reference = normalized_features(
+        _thermal_basis_design_features
+    )
+
+    if design_model == "intrinsic_relative_pose_v1":
+        indices = maximin_indices(
+            intrinsic,
+            intrinsic_reference,
+            count,
+        )
+        full_dim = None
+        intrinsic_quota = count
+        full_quota = 0
+        overlap = 0
+    else:
+        full, full_reference = normalized_features(encode_geometry)
+        full_quota = count // 2
+        intrinsic_quota = count - full_quota
+        full_indices = maximin_indices(
+            full,
+            full_reference,
+            full_quota,
+        )
+        intrinsic_indices = maximin_indices(
+            intrinsic,
+            intrinsic_reference,
+            intrinsic_quota,
+        )
+
+        indices = list(full_indices)
+        used = set(indices)
+        overlap = sum(index in used for index in intrinsic_indices)
+        for index in intrinsic_indices:
+            if index not in used:
+                indices.append(index)
+                used.add(index)
+
+        # Independent designs can overlap.  Fill any missing slots by maximizing
+        # combined uncovered distance in both normalized spaces, with the
+        # reference point acting as an additional fixed design anchor.
+        full_min = np.sum(
+            (full - full_reference[None, :]) ** 2,
+            axis=1,
+        )
+        intrinsic_min = np.sum(
+            (intrinsic - intrinsic_reference[None, :]) ** 2,
+            axis=1,
+        )
+        for index in indices:
+            full_min = np.minimum(
+                full_min,
+                np.sum((full - full[index][None, :]) ** 2, axis=1),
+            )
+            intrinsic_min = np.minimum(
+                intrinsic_min,
+                np.sum(
+                    (intrinsic - intrinsic[index][None, :]) ** 2,
+                    axis=1,
+                ),
+            )
+
+        while len(indices) < min(count, len(pool)):
+            score = full_min + intrinsic_min
+            if used:
+                score[np.asarray(sorted(used), int)] = -np.inf
+            index = int(np.argmax(score))
+            if not np.isfinite(score[index]):
+                break
+            indices.append(index)
+            used.add(index)
+            full_min = np.minimum(
+                full_min,
+                np.sum((full - full[index][None, :]) ** 2, axis=1),
+            )
+            intrinsic_min = np.minimum(
+                intrinsic_min,
+                np.sum(
+                    (intrinsic - intrinsic[index][None, :]) ** 2,
+                    axis=1,
+                ),
+            )
+        full_dim = int(full.shape[1])
+
+    if len(indices) != count:
+        raise RuntimeError(
+            "thermal basis maximin design did not produce the requested "
+            "geometry count"
+        )
+    selected = [pool[index] for index in indices]
     print(
         "thermal basis maximin design: "
-        f"model={design_model}, feature_dim={encoded.shape[1]}, "
-        f"pool={len(pool)}, selected={len(selected)}",
+        f"model={design_model}, pool={len(pool)}, selected={len(selected)}, "
+        f"full_quota={full_quota}, intrinsic_quota={intrinsic_quota}, "
+        f"overlap={overlap}, intrinsic_dim={intrinsic.shape[1]}"
+        + (
+            ""
+            if full_dim is None
+            else f", full_dim={full_dim}"
+        ),
         flush=True,
     )
     return selected
