@@ -507,7 +507,7 @@ def train(settings,model_path,settings_dir,monitor=None):
             dataset=generate_tensor_dataset(bg,tensor_geometries,seed=seed,monitor=monitor); dataset.save(data_path)
             write_json(meta_path,{"cache_format":_CACHE_FORMAT,"signature":sig,"preflight_signature":preflight_sig,
                                   "thermal_basis_report":thermal_report,"truth_preflight":preflight,
-                                  "thermal_representation":"geometry_aware_bg_tx_rx_canonical_modes","em_representation":"geometry_to_port_and_joule_tensors",
+                                  "thermal_representation":"geometry_aware_partitioned_state_transport_modes","em_representation":"geometry_to_port_and_joule_tensors",
                                   "em_boundary":"silver_muller_impedance","source_model":bg.source_model,"self_correction_model":_SELF_CORRECTION_MODEL})
             _progress("生成几何 tensor truth 数据",52,monitor)
         gate_rng=np.random.default_rng(seed+104729); gate_geometries=_sample_geometries(settings,_gate_sample_count(settings),gate_rng,bg)
