@@ -2411,6 +2411,19 @@ def build_geometry_aware_thermal_library(
             flush=True,
         )
 
+    if monitor is not None:
+        with monitor._lock:
+            monitor.data.update(
+                phase="geometry_aware_thermal_basis",
+                thermal_basis_stage="state-partition-ready",
+                thermal_basis_state_background_anchor_count=int(
+                    len(bg_anchors)
+                ),
+                thermal_basis_state_local_anchor_counts=[
+                    int(len(rows)) for rows in local_state_rows
+                ],
+            )
+
     # Component blocks initialize the final ROM at a looser target.  The final
     # full-library residual stage below still enforces the original 5% Gate.
     component_target = max(
