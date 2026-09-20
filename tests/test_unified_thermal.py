@@ -8,6 +8,8 @@ from sdfmpneo.unified_thermal import (
     _basis_condition_from_gram,
     _certified_basis_condition,
     _weighted_generator_condition,
+    _local_thermal_scale,
+    _transport_local_field,
     _maxwell_port_fields,
     _raw_block_condition,
     _stabilize_component_blocks,
@@ -440,3 +442,50 @@ def test_weighted_generator_condition_stays_resolved_beyond_gram_safe_range():
     gram_estimate = _basis_condition_from_gram(gram)
     assert condition >= 1e9
     assert not np.isfinite(gram_estimate) or gram_estimate > 1e8
+
+
+
+def test_scale_aware_local_transport_is_identity_at_reference_geometry():
+    bg = make_background()
+    reference = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
+    center = reference.coils[0].pose.translation
+    radius2 = np.sum((bg.cell_centers - center[None, :]) ** 2, axis=1)
+    field = np.exp(-radius2 / (2.0 * 0.012 ** 2))
+
+    transported = _transport_local_field(
+        bg,
+        field,
+        reference,
+        reference,
+        0,
+    )
+
+    assert np.allclose(transported, field, rtol=1e-12, atol=1e-12)
+
+
+def test_scale_aware_local_transport_expands_with_port_size():
+    bg = make_background()
+    source = UnifiedUWPTGeometry.from_mapping(make_geometry(0.0))
+    target_mapping = make_geometry(0.0)
+    target_mapping["transmitter"]["outer_half_size"] = 0.024
+    target = UnifiedUWPTGeometry.from_mapping(target_mapping)
+
+    assert _local_thermal_scale(target, 0) > _local_thermal_scale(source, 0)
+
+    center = source.coils[0].pose.translation
+    radius2 = np.sum((bg.cell_centers - center[None, :]) ** 2, axis=1)
+    field = np.exp(-radius2 / (2.0 * 0.012 ** 2))
+    expanded = _transport_local_field(
+        bg,
+        field,
+        source,
+        target,
+        0,
+    )
+
+    weight = np.asarray(bg.cell_volumes, float)
+    source_mass = np.dot(weight, field)
+    expanded_mass = np.dot(weight, expanded)
+    source_second = np.dot(weight, radius2 * field) / source_mass
+    expanded_second = np.dot(weight, radius2 * expanded) / expanded_mass
+    assert expanded_second > source_second
