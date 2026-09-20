@@ -495,7 +495,7 @@ def test_scale_aware_local_transport_expands_with_port_size():
 
 
 
-def test_v8_build_path_has_no_second_canonical_truth_stage():
+def test_v9_build_path_has_no_second_canonical_truth_stage():
     source = inspect.getsource(build_geometry_aware_thermal_library)
     assert "canonical-anchor-prep" not in source
 
