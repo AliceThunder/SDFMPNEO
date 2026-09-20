@@ -1524,141 +1524,6 @@ def _enrich_background_against_full_library(
 
 
 
-def _greedy_snapshot_basis(
-    background,
-    snapshots,
-    metric_by_shift,
-    target,
-    maximum_rank,
-    monitor,
-    label,
-):
-    """Reference-chart energy greedy for moving local initialization.
-
-    Every snapshot has already been pulled into the same reference pose/scale
-    chart.  Measure its approximation in the reference resolvent metric
-    K_ref+s*M_ref matching that snapshot's physical shift.  This keeps the local
-    initialization metric aligned with the final resolvent-energy Gate without
-    pretending that a transported snapshot still belongs to its original
-    geometry operator.
-    """
-    mass_weights = np.asarray(background.cell_volumes, float).reshape(-1)
-    grouped = {}
-    for snapshot, shift in snapshots:
-        value = np.asarray(snapshot, float).reshape(-1)
-        s = float(shift)
-        A = metric_by_shift.get(s)
-        if A is None:
-            raise KeyError(f"missing reference thermal metric for shift={s:g}")
-        Av = np.asarray(A @ value, float).reshape(-1)
-        denom2 = float(np.dot(value, Av))
-        if not np.isfinite(denom2) or denom2 <= np.finfo(float).tiny:
-            continue
-        value = value / np.sqrt(denom2)
-        Av = Av / np.sqrt(denom2)
-        row = grouped.setdefault(
-            s,
-            {
-                "A": A,
-                "values": [],
-                "Avalues": [],
-            },
-        )
-        row["values"].append(value)
-        row["Avalues"].append(Av)
-
-    prepared = []
-    for s in sorted(grouped):
-        row = grouped[s]
-        if not row["values"]:
-            continue
-        prepared.append(
-            {
-                "shift": float(s),
-                "A": row["A"],
-                "U": np.column_stack(row["values"]),
-                "AU": np.column_stack(row["Avalues"]),
-            }
-        )
-
-    if not prepared:
-        return np.empty((background.n_cells, 0), float), 0, "target_reached", 0.0
-
-    phi = np.empty((background.n_cells, 0), float)
-    rank_limit = (
-        background.n_cells
-        if maximum_rank is None
-        else min(int(maximum_rank), background.n_cells)
-    )
-    steps = 0
-    stop = "target_reached"
-
-    def worst_state():
-        worst = (-1.0, None)
-        for row in prepared:
-            U = row["U"]
-            if phi.shape[1] == 0:
-                index = 0
-                relative = 1.0
-                residual = U[:, index].copy()
-            else:
-                A = row["A"]
-                APhi = A @ phi
-                Ar = phi.T @ APhi
-                Br = phi.T @ row["AU"]
-                try:
-                    coeff = np.linalg.solve(Ar, Br)
-                except np.linalg.LinAlgError:
-                    coeff = np.linalg.lstsq(Ar, Br, rcond=None)[0]
-                # U columns are unit energy and this is the A-orthogonal
-                # projection, so ||U-Phi*c||_A^2 = 1 - Br^T c.
-                captured = np.real(np.sum(Br * coeff, axis=0))
-                errors2 = np.maximum(1.0 - captured, 0.0)
-                index = int(np.argmax(errors2))
-                relative = float(np.sqrt(errors2[index]))
-                residual = U[:, index] - phi @ coeff[:, index]
-            if relative > worst[0]:
-                worst = (relative, residual)
-        return worst
-
-    while True:
-        if monitor is not None:
-            monitor.checkpoint()
-        worst, residual = worst_state()
-        if worst <= target:
-            break
-        if phi.shape[1] >= rank_limit:
-            stop = "maximum_rank_reached"
-            break
-        phi2, added = _weighted_append(
-            phi,
-            residual,
-            mass_weights,
-        )
-        if not added:
-            stop = "no_independent_thermal_direction"
-            break
-        phi = phi2
-        steps += 1
-        if monitor is not None:
-            with monitor._lock:
-                monitor.data.update(
-                    phase="geometry_aware_thermal_basis",
-                    thermal_basis_stage=str(label),
-                    thermal_basis_rank=phi.shape[1],
-                    thermal_basis_energy_error=float(worst),
-                )
-        if phi.shape[1] == 1 or phi.shape[1] % 4 == 0:
-            after = worst_state()[0]
-            print(
-                f"构建 geometry-aware thermal reference-energy block[{label}]……"
-                f"rank={phi.shape[1]}  worst energy error={after:.3e}",
-                flush=True,
-            )
-
-    return phi, steps, stop, float(worst_state()[0])
-
-
 def _greedy_basis(background, anchors, target, maximum_rank, monitor, label):
     phi = np.empty((background.n_cells, 0), float)
     rank_limit = background.n_cells if maximum_rank is None else min(int(maximum_rank), background.n_cells)
@@ -2266,11 +2131,11 @@ def build_geometry_aware_thermal_library(
         bg_anchors.extend(partitioned_background)
         for p in range(reference.n_ports):
             for anchor in local_volume[p]:
-                local_source_rows[p].append((geometry, anchor))
+                local_source_rows[p].append((int(gi), anchor))
             wire_kind = f"wire[{p}]"
             for anchor in anchors:
                 if anchor.get("source_kind") == wire_kind:
-                    local_source_rows[p].append((geometry, anchor))
+                    local_source_rows[p].append((int(gi), anchor))
         print(
             f"准备 background/local thermal anchors……{100.0 * (gi + 1) / len(training):5.1f}%",
             flush=True,
@@ -2330,8 +2195,8 @@ def build_geometry_aware_thermal_library(
             items = []
             rhs = []
             for p in range(reference.n_ports):
-                for source_geometry, anchor in local_source_rows[p]:
-                    if source_geometry is not geometry:
+                for source_geometry_index, anchor in local_source_rows[p]:
+                    if int(source_geometry_index) != int(gi):
                         continue
                     if abs(float(anchor["shift"]) - float(shift)) > 1e-15:
                         continue
