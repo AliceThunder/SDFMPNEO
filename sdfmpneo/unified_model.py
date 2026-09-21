@@ -322,16 +322,40 @@ class UnifiedNeuralElectroThermalModel:
         phi = np.asarray(context.thermal_basis, float)
         rhs = phi.T @ (context.thermal_mass_full @ value)
         try:
-            return np.linalg.solve(
+            coordinates = np.linalg.solve(
                 context.thermal_mass_reduced,
                 rhs,
             )
         except np.linalg.LinAlgError:
-            return np.linalg.lstsq(
+            coordinates = np.linalg.lstsq(
                 context.thermal_mass_reduced,
                 rhs,
                 rcond=None,
             )[0]
+
+        reconstructed = phi @ coordinates
+        difference = value - reconstructed
+        mass = context.thermal_mass_full
+        numerator = max(
+            float(difference @ (mass @ difference)),
+            0.0,
+        )
+        denominator = max(
+            float(value @ (mass @ value)),
+            np.finfo(float).tiny,
+        )
+        relative_error = float(np.sqrt(numerator / denominator))
+        if (
+            np.linalg.norm(value) > np.finfo(float).tiny
+            and relative_error > self.thermal_target_relative_error
+        ):
+            raise ValueError(
+                "initial temperature field lies outside the certified online "
+                "thermal ROM family: "
+                f"mass-relative projection error={relative_error:.3e}, "
+                f"limit={self.thermal_target_relative_error:.3e}"
+            )
+        return np.asarray(coordinates, float)
 
     def temperature_field(
         self,
