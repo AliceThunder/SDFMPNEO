@@ -866,6 +866,144 @@ def cell_joule_tensors_from_port_fields(background, sigma, fields):
     return 0.5 * (cells + np.swapaxes(cells.conj(), 1, 2))
 
 
+
+def _pack_hermitian_batch(matrices):
+    a = np.asarray(matrices, complex)
+    if a.ndim != 3 or a.shape[1] != a.shape[2]:
+        raise ValueError("Hermitian batch must have shape (count,n,n)")
+    a = 0.5 * (a + np.swapaxes(a.conj(), 1, 2))
+    n = a.shape[1]
+    pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    out = [np.asarray(a[:, i, i].real, float) for i in range(n)]
+    out.extend(np.asarray(a[:, i, j].real, float) for i, j in pairs)
+    out.extend(np.asarray(a[:, i, j].imag, float) for i, j in pairs)
+    return np.column_stack(out)
+
+
+def _unpack_hermitian_batch(packed, n):
+    p = np.asarray(packed, float)
+    n = int(n)
+    pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    expected = n + 2 * len(pairs)
+    if p.ndim != 2 or p.shape[1] != expected:
+        raise ValueError(
+            f"Hermitian batch packed size mismatch: expected {expected}"
+        )
+    h = np.zeros((p.shape[0], n, n), complex)
+    for i in range(n):
+        h[:, i, i] = p[:, i]
+    start = n
+    for k, (i, j) in enumerate(pairs):
+        value = p[:, start + k] + 1j * p[:, start + len(pairs) + k]
+        h[:, i, j] = value
+        h[:, j, i] = value.conj()
+    return h
+
+
+def whiten_cell_joule_tensors(cell_h, d_vol):
+    """Return dimensionless PSD cell tensors whose sum is identity."""
+    d = _psd_clip(d_vol)
+    inv = _psd_sqrt_and_inverse(d, inverse=True)
+    cells = np.asarray(cell_h, complex)
+    whitened = np.einsum(
+        "ab,kbc,dc->kad",
+        inv,
+        cells,
+        inv.conj(),
+        optimize=True,
+    )
+    whitened = 0.5 * (
+        whitened + np.swapaxes(whitened.conj(), 1, 2)
+    )
+    _, whitened = normalize_cell_joule_tensors(
+        whitened,
+        np.eye(d.shape[0], dtype=complex),
+    )
+    return whitened
+
+
+def spatial_cell_features(background, geometry, cell_indices=None):
+    """Coordinate features adapted to moving coils/packages, not world-grid POD."""
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    if len(g.coils) != len(g.packages):
+        raise ValueError("spatial neural field requires one package per port")
+    if cell_indices is None:
+        centers = np.asarray(background.cell_centers, float)
+    else:
+        ids = np.asarray(cell_indices, int).reshape(-1)
+        centers = np.asarray(background.cell_centers, float)[ids]
+
+    geom = encode_geometry(g)
+    repeated = np.broadcast_to(
+        geom[None, :],
+        (centers.shape[0], geom.size),
+    )
+    pieces = [np.asarray(repeated, float)]
+
+    lo = np.array(
+        [background.x[0], background.y[0], background.z[0]],
+        float,
+    )
+    hi = np.array(
+        [background.x[-1], background.y[-1], background.z[-1]],
+        float,
+    )
+    mid = 0.5 * (lo + hi)
+    half = np.maximum(0.5 * (hi - lo), np.finfo(float).tiny)
+    pieces.append((centers - mid[None, :]) / half[None, :])
+
+    def signed_log(value):
+        a = np.asarray(value, float)
+        return np.sign(a) * np.log1p(np.abs(a))
+
+    for coil, package in zip(g.coils, g.packages):
+        local = np.asarray(coil.pose.inverse(centers), float)
+        z_scale = max(
+            float(package.half_extent[2]),
+            float(coil.conductor_thickness),
+            float(coil.pitch),
+            np.finfo(float).tiny,
+        )
+        scale = np.array(
+            [
+                max(float(coil.outer_half_size), np.finfo(float).tiny),
+                max(float(coil.outer_half_size), np.finfo(float).tiny),
+                z_scale,
+            ],
+            float,
+        )
+        normalized = local / scale[None, :]
+        pieces.append(signed_log(normalized))
+        radial = np.sqrt(
+            normalized[:, 0] ** 2 + normalized[:, 1] ** 2
+        )
+        pieces.append(np.log1p(radial)[:, None])
+        pieces.append(np.log1p(np.abs(normalized[:, 2]))[:, None])
+
+        package_local = np.asarray(
+            package.pose.inverse(centers),
+            float,
+        )
+        package_scale = np.maximum(
+            np.asarray(package.half_extent, float),
+            np.finfo(float).tiny,
+        )
+        pieces.append(
+            signed_log(package_local / package_scale[None, :])
+        )
+
+    out = np.column_stack(pieces)
+    if np.any(~np.isfinite(out)):
+        raise FloatingPointError(
+            "spatial neural-field features contain non-finite values"
+        )
+    return np.asarray(out, float)
+
+
 @dataclass(frozen=True)
 class SpatialDecodedTensors:
     z_field: np.ndarray
@@ -1052,41 +1190,33 @@ class SpatialTensorDataset:
 
 
 class UnifiedSpatialTensorSurrogate:
+    """Two-head surrogate: global Z/D MLP + coordinate-conditioned Joule field."""
+
+    representation = "cellwise_joule_neural_field_v2"
+
     def __init__(
         self,
-        network,
-        output_mean,
-        output_scale,
-        pod_basis,
+        global_network,
+        field_network,
         n_ports,
         n_cells,
+        *,
+        field_chunk_size=65536,
     ):
-        self.network = network
-        self.output_mean = np.asarray(output_mean, float).reshape(-1)
-        self.output_scale = np.asarray(output_scale, float).reshape(-1)
-        self.pod_basis = np.asarray(pod_basis, float)
+        self.global_network = global_network
+        self.field_network = field_network
         self.n_ports = int(n_ports)
         self.n_cells = int(n_cells)
-        full = spatial_tensor_output_dimension(
-            self.n_ports,
-            self.n_cells,
-        )
-        if (
-            self.output_mean.shape != (full,)
-            or self.output_scale.shape != (full,)
-        ):
+        self.field_chunk_size = max(1, int(field_chunk_size))
+        global_dim = tensor_output_dimension(self.n_ports, 0)
+        field_dim = self.n_ports * self.n_ports
+        if self.global_network.config.output_dimension != global_dim:
             raise ValueError(
-                "spatial output normalization dimensions differ from schema"
+                "global spatial surrogate output dimension differs from Z/D schema"
             )
-        if (
-            self.pod_basis.ndim != 2
-            or self.pod_basis.shape[0] != full
-            or self.pod_basis.shape[1] < 1
-        ):
-            raise ValueError("invalid spatial tensor POD basis")
-        if self.network.config.output_dimension != self.pod_basis.shape[1]:
+        if self.field_network.config.output_dimension != field_dim:
             raise ValueError(
-                "network output dimension does not match spatial POD rank"
+                "spatial neural-field output dimension differs from Hermitian schema"
             )
 
     @property
@@ -1095,58 +1225,156 @@ class UnifiedSpatialTensorSurrogate:
 
     @property
     def pod_rank(self):
-        return int(self.pod_basis.shape[1])
+        # Compatibility field in reports/UI: production v2 has no spatial POD.
+        return 0
 
-    def predict_from_encoded(self, encoded):
+    def _network_numpy(self, network, values):
         import torch
 
-        parameter = next(self.network.parameters())
+        parameter = next(network.parameters())
         x = torch.as_tensor(
-            np.asarray(encoded, float),
+            np.asarray(values, float),
             dtype=parameter.dtype,
             device=parameter.device,
         )
         with torch.no_grad():
-            beta = (
-                self.network(x)
+            return (
+                network(x)
                 .detach()
                 .cpu()
                 .numpy()
                 .astype(float)
             )
-        packed = (
-            self.output_mean
-            + self.output_scale * (self.pod_basis @ beta)
-        )
-        return decode_spatial_tensors(
+
+    def _global_tensors(self, geometry):
+        encoded = encode_geometry(geometry)[None, :]
+        packed = self._network_numpy(
+            self.global_network,
+            encoded,
+        )[0]
+        return decode_physical_tensors(
             packed,
             self.n_ports,
-            self.n_cells,
+            0,
         )
 
-    def predict(self, geometry):
-        return self.predict_from_encoded(encode_geometry(geometry))
+    def predict(self, geometry, *, background):
+        g = (
+            geometry
+            if isinstance(geometry, UnifiedUWPTGeometry)
+            else UnifiedUWPTGeometry.from_mapping(geometry)
+        )
+        if int(background.n_cells) != self.n_cells:
+            raise ValueError(
+                "spatial surrogate background cell count differs from artifact"
+            )
+
+        global_tensors = self._global_tensors(g)
+        raw_rows = []
+        for start in range(0, self.n_cells, self.field_chunk_size):
+            stop = min(self.n_cells, start + self.field_chunk_size)
+            ids = np.arange(start, stop, dtype=int)
+            features = spatial_cell_features(
+                background,
+                g,
+                ids,
+            )
+            raw_rows.append(
+                self._network_numpy(
+                    self.field_network,
+                    features,
+                )
+            )
+        raw_packed = np.vstack(raw_rows)
+        raw_shape = _unpack_hermitian_batch(
+            raw_packed,
+            self.n_ports,
+        )
+
+        identity = np.eye(self.n_ports, dtype=complex)
+        _, normalized_shape = normalize_cell_joule_tensors(
+            raw_shape,
+            identity,
+        )
+        d_half = _psd_sqrt_and_inverse(
+            global_tensors.d_vol,
+            inverse=False,
+        )
+        cells = np.einsum(
+            "ab,kbc,dc->kad",
+            d_half,
+            normalized_shape,
+            d_half.conj(),
+            optimize=True,
+        )
+        cells = 0.5 * (
+            cells + np.swapaxes(cells.conj(), 1, 2)
+        )
+
+        corrected_packed = _pack_hermitian_batch(
+            normalized_shape
+        )
+        spatial_correction = float(
+            np.linalg.norm(corrected_packed - raw_packed)
+            / max(
+                float(np.linalg.norm(raw_packed)),
+                np.finfo(float).tiny,
+            )
+        )
+        total_error = float(
+            np.linalg.norm(
+                np.sum(cells, axis=0)
+                - global_tensors.d_vol
+            )
+            / max(
+                float(np.linalg.norm(global_tensors.d_vol)),
+                np.finfo(float).tiny,
+            )
+        )
+        if total_error > 1e-10:
+            raise FloatingPointError(
+                "spatial neural field lost exact sum-to-D invariant: "
+                f"{total_error:.3e}"
+            )
+
+        return SpatialDecodedTensors(
+            np.asarray(global_tensors.z_field, complex),
+            np.asarray(global_tensors.d_vol, complex),
+            np.asarray(cells, complex),
+            np.asarray(global_tensors.implied_d_out, complex),
+            float(global_tensors.zd_projection_correction),
+            spatial_correction,
+        )
 
     def checkpoint(self):
-        parameter = next(self.network.parameters())
-        normalizer = FeatureNormalizer(
-            self.network.input_mean.detach().cpu().numpy(),
-            self.network.input_scale.detach().cpu().numpy(),
+        parameter = next(self.global_network.parameters())
+        global_normalizer = FeatureNormalizer(
+            self.global_network.input_mean.detach().cpu().numpy(),
+            self.global_network.input_scale.detach().cpu().numpy(),
+        )
+        field_normalizer = FeatureNormalizer(
+            self.field_network.input_mean.detach().cpu().numpy(),
+            self.field_network.input_scale.detach().cpu().numpy(),
         )
         return {
-            "schema_version": _SPATIAL_SCHEMA_VERSION,
-            "representation": "cellwise_joule_tensor_v1",
-            "network_config": self.network.config.to_dict(),
-            "input_mean": normalizer.mean,
-            "input_scale": normalizer.scale,
-            "output_mean": self.output_mean,
-            "output_scale": self.output_scale,
-            "pod_basis": self.pod_basis,
+            "schema_version": 2,
+            "representation": self.representation,
+            "global_network_config": self.global_network.config.to_dict(),
+            "field_network_config": self.field_network.config.to_dict(),
+            "global_input_mean": global_normalizer.mean,
+            "global_input_scale": global_normalizer.scale,
+            "field_input_mean": field_normalizer.mean,
+            "field_input_scale": field_normalizer.scale,
             "n_ports": self.n_ports,
             "n_cells": self.n_cells,
-            "network_state": {
+            "field_chunk_size": self.field_chunk_size,
+            "global_network_state": {
                 k: v.detach().cpu()
-                for k, v in self.network.state_dict().items()
+                for k, v in self.global_network.state_dict().items()
+            },
+            "field_network_state": {
+                k: v.detach().cpu()
+                for k, v in self.field_network.state_dict().items()
             },
             "dtype": str(parameter.dtype).replace("torch.", ""),
         }
@@ -1156,37 +1384,59 @@ class UnifiedSpatialTensorSurrogate:
         import torch
 
         if (
-            int(payload.get("schema_version", -1))
-            != _SPATIAL_SCHEMA_VERSION
+            int(payload.get("schema_version", -1)) != 2
             or payload.get("representation")
-            != "cellwise_joule_tensor_v1"
+            != "cellwise_joule_neural_field_v2"
         ):
             raise ValueError(
-                "unsupported spatial tensor-surrogate artifact version"
+                "unsupported spatial neural-field artifact version"
             )
-        config = ResidualMLPConfig(
-            **dict(payload["network_config"])
-        )
-        normalizer = FeatureNormalizer(
-            np.asarray(payload["input_mean"], float),
-            np.asarray(payload["input_scale"], float),
-        )
-        network = build_residual_mlp(config, normalizer)
         dtype = (
             torch.float32
             if payload.get("dtype") == "float32"
             else torch.float64
         )
-        network = network.to(device=device, dtype=dtype)
-        network.load_state_dict(payload["network_state"])
-        network.eval()
+
+        global_config = ResidualMLPConfig(
+            **dict(payload["global_network_config"])
+        )
+        global_normalizer = FeatureNormalizer(
+            np.asarray(payload["global_input_mean"], float),
+            np.asarray(payload["global_input_scale"], float),
+        )
+        global_network = build_residual_mlp(
+            global_config,
+            global_normalizer,
+        ).to(device=device, dtype=dtype)
+        global_network.load_state_dict(
+            payload["global_network_state"]
+        )
+        global_network.eval()
+
+        field_config = ResidualMLPConfig(
+            **dict(payload["field_network_config"])
+        )
+        field_normalizer = FeatureNormalizer(
+            np.asarray(payload["field_input_mean"], float),
+            np.asarray(payload["field_input_scale"], float),
+        )
+        field_network = build_residual_mlp(
+            field_config,
+            field_normalizer,
+        ).to(device=device, dtype=dtype)
+        field_network.load_state_dict(
+            payload["field_network_state"]
+        )
+        field_network.eval()
+
         return cls(
-            network,
-            payload["output_mean"],
-            payload["output_scale"],
-            payload["pod_basis"],
+            global_network,
+            field_network,
             int(payload["n_ports"]),
             int(payload["n_cells"]),
+            field_chunk_size=int(
+                payload.get("field_chunk_size", 65536)
+            ),
         )
 
 
@@ -1212,6 +1462,8 @@ __all__ = [
     "spatial_tensor_output_dimension",
     "normalize_cell_joule_tensors",
     "cell_joule_tensors_from_port_fields",
+    "spatial_cell_features",
+    "whiten_cell_joule_tensors",
     "unpack_complex_symmetric",
     "unpack_hermitian",
     "unpack_tensors",
