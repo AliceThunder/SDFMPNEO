@@ -506,7 +506,7 @@ def apply_local_self_correction(
                     "modal_h",
                     "localized_modal_h",
                     "localized_heat_cells",
-                    "local_background",
+                    "local_cell_centers",
                 )
             },
             "maximum_modal_delta": None if modal_delta is None else float(np.max(np.abs(modal_delta))),
