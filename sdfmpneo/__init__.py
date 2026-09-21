@@ -9,27 +9,18 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 51 keeps the v34 EM truth and uses the partitioned-state-atlas v14
-# geometry-aware thermal construction.  Spiral geometry rejects adjacent-turn
-# overlap; every Hermitian volume-source component is split across all moving
-# ports; component blocks use a looser initialization target and are condition-
-# stabilized before the complete library is enriched/certified at the final target.
-# Every independent Hermitian volume-source component remains partitioned exactly
-# into one smooth pose-following contribution per physical port plus a fixed
-# boundary/far complement; self and cross heat can move with either coil.
-# All moving pieces plus the far piece sum pointwise to the original source, so no
-# thermal power is removed.
-# Thermal anchors use the installed certified multi-port Maxwell solver, each K+sM
-# factorization solves all RHS together, and prepared anchors are reused by audits.
+# Physics truth version 52 keeps the certified v34 EM/source semantics and
+# replaces the failed cross-geometry thermal state atlas with a thermal-rank-free
+# spatial Joule surrogate.  The network predicts corrected Z_field, D_vol and one
+# Hermitian Joule tensor per background cell.  Decoder projection enforces cell
+# PSD and exact sum-to-D; each query geometry then assembles its true M(g), K(g)
+# and builds a small local rational-Krylov thermal ROM.  No Maxwell solve is used
+# during prediction.
 #
-# EM/source semantics remain those of v34.  The v33
-# single-terminal source-component lock, but removes the falsified expensive
-# refined-material experiment from the dissipative certificate.  Refined
-# terminal patches inherit production parent sigma/epsilon piecewise-constantly,
-# so the Gate isolates terminal source/Galerkin resolution instead of changing
-# source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
-# remain unchanged; the historical exact sigma/epsilon reference remains only as
-# diagnostic/regression code and is not used by production terminal truth.
+# EM/source semantics remain unchanged: spiral geometry rejects adjacent-turn
+# overlap; the corrected global truth uses the same finite-support terminal source,
+# open-boundary power form, canonical local fine-minus-coarse self defect and
+# unchanged true-residual certificates.
 _unified_model.FORMAT_VERSION = 52
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
