@@ -236,8 +236,8 @@ run.py 当前 production TRAINING 关键字段：
 
 当前 production schema：
 
-    MODEL FORMAT_VERSION = 52
-    RUNTIME CACHE_FORMAT = 55
+    MODEL FORMAT_VERSION = 53
+    RUNTIME CACHE_FORMAT = 56
     spatial tensor = cellwise_joule_tensor_v1
     online thermal = geometry_local_rational_krylov_v1
 
