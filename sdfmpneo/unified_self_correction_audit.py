@@ -178,9 +178,36 @@ def audit_local_self_correction(background, geometries, monitor=None):
                 ),
                 "maximum_linear_relative_residual": linear_residual,
                 "linear_solver_converged": linear_converged,
-                "coarse": {k: v for k, v in seed.items() if k not in ("modal_h", "localized_modal_h")},
-                "fine": {k: v for k, v in a.items() if k not in ("modal_h", "localized_modal_h")},
-                "validation": {k: v for k, v in b.items() if k not in ("modal_h", "localized_modal_h")},
+                "coarse": {
+                    k: v
+                    for k, v in seed.items()
+                    if k not in (
+                        "modal_h",
+                        "localized_modal_h",
+                        "localized_heat_cells",
+                        "local_background",
+                    )
+                },
+                "fine": {
+                    k: v
+                    for k, v in a.items()
+                    if k not in (
+                        "modal_h",
+                        "localized_modal_h",
+                        "localized_heat_cells",
+                        "local_background",
+                    )
+                },
+                "validation": {
+                    k: v
+                    for k, v in b.items()
+                    if k not in (
+                        "modal_h",
+                        "localized_modal_h",
+                        "localized_heat_cells",
+                        "local_background",
+                    )
+                },
             }
             row["maximum_relative_error"] = max(
                 row["relative_z_error"],
