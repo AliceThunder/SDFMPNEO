@@ -72,6 +72,30 @@ def _certify_transverse(A, field, rhs_transverse, rhs_full, tolerance):
     )
 
 
+def _solver_limits(cfg):
+    """Localized transverse solve limits, separate from legacy full-field policy."""
+    direct = int(
+        cfg.get(
+            "linear_transverse_direct_max_dofs",
+            cfg.get("linear_direct_max_dofs", 60000),
+        )
+    )
+    fallback = int(
+        cfg.get(
+            "linear_transverse_direct_fallback_max_dofs",
+            max(
+                direct,
+                int(cfg.get("linear_direct_fallback_max_dofs", 120000)),
+            ),
+        )
+    )
+    if direct < 1 or fallback < direct:
+        raise ValueError(
+            "invalid localized transverse Maxwell direct-solve limits"
+        )
+    return direct, fallback
+
+
 def install(self_correction_module, certified_module):
     if bool(getattr(self_correction_module, "_localized_self_solve_installed", False)):
         return self_correction_module
@@ -91,11 +115,10 @@ def install(self_correction_module, certified_module):
         cfg = self_correction_module._config(parent)
         residual_tolerance = float(cfg.get("linear_relative_residual_tolerance", 1e-9))
         refinement_steps = int(cfg.get("linear_refinement_steps", 3))
-        direct_max_dofs = int(cfg.get("linear_direct_max_dofs", 60000))
-        direct_fallback_max_dofs = int(cfg.get("linear_direct_fallback_max_dofs", 120000))
+        direct_max_dofs, direct_fallback_max_dofs = _solver_limits(cfg)
         if residual_tolerance <= 0.0:
             raise ValueError("self_correction.linear_relative_residual_tolerance must be positive")
-        if refinement_steps < 0 or direct_max_dofs < 1 or direct_fallback_max_dofs < direct_max_dofs:
+        if refinement_steps < 0:
             raise ValueError("invalid local Maxwell linear solver configuration")
 
         # Exact compatible split.  The scalar solve retains the genuine terminal
@@ -358,6 +381,10 @@ def install(self_correction_module, certified_module):
             "n_cells": int(local.n_cells),
             "n_edges": int(local.n_edges),
             "fine_step": float(fine_step),
+            # Lightweight spatial mapping payload used by the v52 cellwise
+            # Joule self-defect path.  Do not retain the full local background
+            # object in the exact LRU cache.
+            "local_cell_centers": np.asarray(local.cell_centers, float),
         }
 
     self_correction_module._solve_local = solve_local
