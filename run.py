@@ -1,4 +1,4 @@
-"""统一 geometry→EM tensor + geometry-aware thermal ROM 生产入口。
+"""统一 geometry→spatial Joule tensor + geometry-local thermal ROM 生产入口。
 
 只修改本文件顶部配置：
 
@@ -8,17 +8,20 @@
 理论主链：
 
     geometry
-      -> deterministic Phi(g), Mr(g), Kr(g)
-      -> MLP: Z_field(g), D_vol(g), H_j(g)
+      -> MLP: Z_field(g), D_vol(g), H_cell(g)
+      -> cellwise PSD + exact sum(H_cell)=D_vol
+      -> query geometry 的真实 M(g), K(g)
+      -> 小型 geometry-local rational-Krylov thermal ROM
       -> explicit current/circuit + wire resistance
-      -> true reduced thermal ODE
       -> temperature
 
-Maxwell 只在离线 truth 生成时求解；在线推理没有 neural Maxwell solver、Krylov/FGMRES
-或 full-field correction。离线 truth 使用 finite-cross-section stranded source、Silver--Mueller
-开放边界，并用 canonical local fine-minus-coarse defect 修正全局粗网格未解析的端口 self response。
-训练流程先做 pre-basis truth preflight，再构造 geometry-aware thermal ROM/tensor truth，训练后还必须
-通过 completely-held-out current/circuit end-to-end Go/No-Go 才会保存模型。
+Maxwell 只在离线 truth 生成时求解；在线推理没有 Maxwell/FGMRES/full-field
+electromagnetic correction。离线 truth 使用 finite-cross-section stranded source、
+Silver--Mueller 开放边界和 canonical local fine-minus-coarse self correction。
+训练前只做 EM truth preflight，不再构造跨 geometry 的全局 thermal state basis。
+训练/发布前的独立 Gate 会直接比较 full-cell thermal transient 与在线小 ROM，
+并在 completely-held-out geometry 上检查 spatial Joule、current/circuit dynamics、
+production integrator 和 steady state。
 """
 from __future__ import annotations
 
@@ -202,17 +205,13 @@ PORTS = {"current_offset": None, "current_matrix": None}
 
 TRAINING = {
     "seed": 17,
-    "thermal_basis_schema": "geometry_aware_partitioned_state_atlas_v14",
-    "thermal_basis_design": "hybrid_full_intrinsic_union_v1",
-    "basis_samples": 16,
-    "basis_design_pool_multiplier": 8,
-    "basis_validation_samples": 6,
-    "thermal_basis_energy_tolerance": 5e-2,
+    "spatial_tensor_schema": "cellwise_joule_tensor_v1",
+    # Online thermal ROM is built independently for each query geometry from
+    # true M(g), K(g) and the predicted complete Hermitian current-source span.
+    "online_thermal_relative_tolerance": 5e-2,
+    "online_thermal_conditioning_limit": 1e10,
     "thermal_time_scales": [0.1, 1.0, 10.0],
     "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
-    "thermal_basis_max_rank": None,
-    "thermal_basis_conditioning_limit": 1e10,
-    "thermal_component_target_multiplier": 2.0,
     "n_tensor_samples": 96,
     "final_audit": {
         "samples": 2,
@@ -254,7 +253,7 @@ TRAINING = {
         "physics_penalty_weight": 0.05,
         "z_weight": 1.0,
         "d_weight": 1.0,
-        "h_weight": 1.0,
+        "spatial_weight": 1.0,
         "seed": 17,
         "dtype": "float32",
     },
