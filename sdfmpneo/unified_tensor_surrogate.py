@@ -326,7 +326,24 @@ def _solve_port_fields(background, context):
 def _port_truth_from_context(background, context):
     if not hasattr(background, "outward_loss_weights"):
         raise ValueError("production Maxwell truth requires an independent outward-power form")
-    X, max_linear_residual = _solve_port_fields(background, context)
+    if getattr(background, "_sdfmpneo_thermal_maxwell_cache_path", None) is not None:
+        # The cache lives in unified_thermal because it predates the spatial-Joule
+        # representation.  Reuse it here as a generic certified port-field cache:
+        # cache hits are rechecked against the current physical A/B and misses
+        # still call this module's production _solve_port_fields implementation.
+        from .unified_thermal import (
+            _certify_cached_port_fields,
+            _maxwell_port_fields,
+        )
+
+        X = _maxwell_port_fields(background, context)
+        max_linear_residual = _certify_cached_port_fields(
+            background,
+            context,
+            X,
+        )
+    else:
+        X, max_linear_residual = _solve_port_fields(background, context)
     source = np.asarray(context.source_shape, float)
     reaction = -source.T @ X
     reciprocity = float(
