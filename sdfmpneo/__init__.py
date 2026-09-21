@@ -226,7 +226,7 @@ __all__ = [
 # The certified EM preflight/port-field cache keeps its physical signature and
 # remains reusable across this thermal architecture change.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 55
+_unified_runtime._CACHE_FORMAT = 56
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
