@@ -22,7 +22,7 @@ from .unified_tensor_training import train_spatial_tensor_surrogate
 from .unified_thermal import configure_maxwell_field_cache
 from .unified_corrected_truth_preflight import run_truth_preflight
 
-_CACHE_FORMAT = 55
+_CACHE_FORMAT = 56
 _PREFLIGHT_CACHE_FORMAT = 37
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
