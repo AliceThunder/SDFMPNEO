@@ -200,11 +200,35 @@ def solve_spatial_truth_tensors(
         raise RuntimeError(
             "local self correction did not provide a valid spatial D defect"
         )
-    cells = (
+    raw_corrected_d = np.asarray(d, complex).copy()
+    raw_corrected_cells = (
         np.asarray(cells_raw, complex)
         + np.asarray(spatial_delta, complex)
     )
-    d, cells = normalize_cell_joule_tensors(cells, d)
+    d, cells = normalize_cell_joule_tensors(
+        raw_corrected_cells,
+        raw_corrected_d,
+    )
+    d_projection_correction = float(
+        np.linalg.norm(d - raw_corrected_d)
+        / max(
+            float(np.linalg.norm(raw_corrected_d)),
+            np.finfo(float).tiny,
+        )
+    )
+    spatial_projection_correction = float(
+        np.linalg.norm(cells - raw_corrected_cells)
+        / max(
+            float(np.linalg.norm(raw_corrected_cells)),
+            np.finfo(float).tiny,
+        )
+    )
+    truth_projection_correction = float(
+        max(
+            d_projection_correction,
+            spatial_projection_correction,
+        )
+    )
 
     minimum_cell_eigenvalue = float(
         np.min(np.linalg.eigvalsh(cells).real)
@@ -257,6 +281,15 @@ def solve_spatial_truth_tensors(
         maximum_spatial_joule_power_relative_error=float(power_error),
         minimum_spatial_joule_cell_power=float(minimum_cell_power),
         spatial_joule_representation="cellwise_hermitian_psd_v1",
+        spatial_truth_d_projection_correction=float(
+            d_projection_correction
+        ),
+        spatial_truth_cell_projection_correction=float(
+            spatial_projection_correction
+        ),
+        spatial_truth_projection_correction=float(
+            truth_projection_correction
+        ),
     )
     if bool(return_outward):
         return z, d, cells, d_out, refreshed
@@ -316,6 +349,9 @@ def generate_spatial_tensor_dataset(
         ),
         "maximum_spatial_joule_total_mismatch": max(
             a["maximum_spatial_joule_total_mismatch"] for a in audits
+        ),
+        "maximum_spatial_truth_projection_correction": max(
+            a["spatial_truth_projection_correction"] for a in audits
         ),
         "minimum_spatial_joule_cell_power": min(
             a["minimum_spatial_joule_cell_power"] for a in audits
