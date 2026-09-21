@@ -118,6 +118,12 @@ def build_online_thermal_context(
 
     weights = np.asarray(background.cell_volumes, float)
     phi = np.empty((background.n_cells, 0), float)
+    # Preserve a spatially uniform supplied initial temperature exactly at t=0.
+    # The shifted resolvent snapshots alone approximate its decay but do not
+    # generally contain the initial vector itself.
+    phi, initial_added = _weighted_append(phi, initial, weights)
+    if not initial_added:
+        raise RuntimeError("online thermal ROM rejected uniform initial direction")
     anchors = []
     geometry_index = 0
 
