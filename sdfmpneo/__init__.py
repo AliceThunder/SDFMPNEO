@@ -220,7 +220,7 @@ __all__ = [
     "audit_online_thermal_trajectories",
 ]
 
-# v52 removes the falsified cross-geometry thermal state atlas.  The neural
+# v53 production removes the falsified cross-geometry thermal state atlas.  The
 # surrogate predicts corrected Z/D plus a PSD cellwise Joule tensor field; each
 # query geometry constructs a small thermal ROM directly from its true M(g),K(g).
 # The certified EM preflight/port-field cache keeps its physical signature and
