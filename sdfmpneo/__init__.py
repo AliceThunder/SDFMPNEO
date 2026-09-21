@@ -9,9 +9,11 @@ from .unified_background import BackgroundContext, FixedMultiscaleBackground, st
 from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
 from . import unified_model as _unified_model
 
-# Physics truth version 52 keeps the certified v34 EM/source semantics and
+# Physics truth version 53 keeps the certified v34 EM/source semantics and
 # replaces the failed cross-geometry thermal state atlas with a thermal-rank-free
-# spatial Joule surrogate.  The network predicts corrected Z_field, D_vol and one
+# spatial Joule surrogate.  v53 additionally carries the spatially resolved
+# canonical local self defect into parent-grid truth and hard-gates the physical
+# PSD/sum-to-D projection.  The network predicts corrected Z_field, D_vol and one
 # Hermitian Joule tensor per background cell.  Decoder projection enforces cell
 # PSD and exact sum-to-D; each query geometry then assembles its true M(g), K(g)
 # and builds a small local rational-Krylov thermal ROM.  No Maxwell solve is used
@@ -21,7 +23,7 @@ from . import unified_model as _unified_model
 # overlap; the corrected global truth uses the same finite-support terminal source,
 # open-boundary power form, canonical local fine-minus-coarse self defect and
 # unchanged true-residual certificates.
-_unified_model.FORMAT_VERSION = 52
+_unified_model.FORMAT_VERSION = 53
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
