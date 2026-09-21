@@ -103,6 +103,17 @@ def run_spatial_physics_gate(
                         "open_boundary_power_balance_relative_error"
                     ]
                 ),
+                "linear_relative_residual": float(
+                    truth_audit["max_linear_relative_residual"]
+                ),
+                "local_self_available": float(
+                    truth_audit["local_self_correction_enabled"]
+                ),
+                "local_self_power_balance_relative_error": float(
+                    truth_audit[
+                        "local_self_correction_power_balance_relative_error"
+                    ]
+                ),
             }
         )
 
@@ -141,6 +152,30 @@ def run_spatial_physics_gate(
     )
     minimum_heldout_cell_eigenvalue = min(
         row["minimum_cell_eigenvalue"]
+        for row in heldout_spatial_rows
+    )
+    minimum_heldout_d_eigenvalue = min(
+        row["minimum_d_eigenvalue"]
+        for row in heldout_spatial_rows
+    )
+    maximum_heldout_reciprocity = max(
+        row["reciprocity_relative_error"]
+        for row in heldout_spatial_rows
+    )
+    maximum_heldout_poynting = max(
+        row["poynting_relative_error"]
+        for row in heldout_spatial_rows
+    )
+    maximum_heldout_linear_residual = max(
+        row["linear_relative_residual"]
+        for row in heldout_spatial_rows
+    )
+    minimum_heldout_local_self_available = min(
+        row["local_self_available"]
+        for row in heldout_spatial_rows
+    )
+    maximum_heldout_local_self_balance = max(
+        row["local_self_power_balance_relative_error"]
         for row in heldout_spatial_rows
     )
 
@@ -218,6 +253,22 @@ def run_spatial_physics_gate(
         ),
         "em_mesh_converged": bool(
             preflight["em_mesh_converged"]
+        ),
+        "heldout_truth_linear_solve_ok": (
+            maximum_heldout_linear_residual <= 1e-8
+        ),
+        "heldout_truth_reciprocity_ok": (
+            maximum_heldout_reciprocity <= 1e-8
+        ),
+        "heldout_truth_volume_passivity_ok": (
+            minimum_heldout_d_eigenvalue >= -1e-9
+        ),
+        "heldout_truth_poynting_balance_ok": (
+            maximum_heldout_poynting <= 1e-7
+        ),
+        "heldout_truth_local_self_ok": (
+            minimum_heldout_local_self_available >= 0.5
+            and maximum_heldout_local_self_balance <= 1e-7
         ),
         "online_thermal_resolvent_ok": (
             maximum_online_resolvent <= thermal_target
