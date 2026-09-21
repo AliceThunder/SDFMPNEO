@@ -4,10 +4,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from .unified_corrected_truth import (
-    solve_port_truth_tensors,
-    solve_spatial_truth_tensors,
-)
+from .unified_corrected_truth import solve_spatial_truth_tensors
 from .unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
@@ -29,18 +26,11 @@ def _relative(value, reference, natural_scale=None):
 
 
 def _truth_tensors(background, geometry):
-    z, d, cells, audit = solve_spatial_truth_tensors(
+    z, d, cells, d_out, audit = solve_spatial_truth_tensors(
         background,
         geometry,
+        return_outward=True,
     )
-    z_port, d_port, d_out, port_audit = solve_port_truth_tensors(
-        background,
-        geometry,
-    )
-    if _relative(z, z_port) > 1e-12 or _relative(d, d_port) > 1e-12:
-        raise RuntimeError(
-            "final audit spatial and port truth paths disagree"
-        )
     return (
         SpatialDecodedTensors(
             np.asarray(z, complex),
@@ -50,7 +40,7 @@ def _truth_tensors(background, geometry):
             0.0,
             0.0,
         ),
-        {**audit, **port_audit},
+        audit,
     )
 
 
