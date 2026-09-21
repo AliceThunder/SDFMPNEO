@@ -311,9 +311,9 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
         "n_cells": int(local.n_cells),
         "n_edges": int(local.n_edges),
         "fine_step": float(fine_step),
-        # Internal-only object used by the optional spatial correction path.
-        # apply_local_self_correction removes it from serialized audit rows.
-        "local_background": local,
+        # Lightweight spatial mapping payload used by the optional v52
+        # cellwise-Joule correction path.
+        "local_cell_centers": np.asarray(local.cell_centers, float),
     }
 
 
@@ -324,17 +324,26 @@ def _deposit_local_heat_to_parent(parent, geometry, port, local_result):
         if isinstance(geometry, UnifiedUWPTGeometry)
         else UnifiedUWPTGeometry.from_mapping(geometry)
     )
-    local = local_result.get("local_background")
-    if local is None:
-        raise RuntimeError("local self solve lacks its spatial background")
+    centers = np.asarray(
+        local_result.get("local_cell_centers"),
+        float,
+    )
     heat = np.asarray(
         local_result.get("localized_heat_cells"),
         float,
     ).reshape(-1)
-    if heat.shape != (local.n_cells,) or np.any(~np.isfinite(heat)):
-        raise RuntimeError("local self solve lacks a finite spatial Joule field")
+    if (
+        centers.ndim != 2
+        or centers.shape[1] != 3
+        or centers.shape[0] != heat.size
+        or np.any(~np.isfinite(centers))
+        or np.any(~np.isfinite(heat))
+    ):
+        raise RuntimeError(
+            "local self solve lacks a finite spatial Joule mapping payload"
+        )
 
-    global_points = g.coils[int(port)].pose.apply(local.cell_centers)
+    global_points = g.coils[int(port)].pose.apply(centers)
     parent._require_inside(
         global_points,
         "local self-correction Joule support",
@@ -487,7 +496,7 @@ def apply_local_self_correction(
                     "modal_h",
                     "localized_modal_h",
                     "localized_heat_cells",
-                    "local_background",
+                    "local_cell_centers",
                 )
             },
             "fine": {
