@@ -52,6 +52,18 @@ def _progress(message,percent,monitor=None):
         with monitor._lock: monitor.data.update(progress_percent=float(percent),progress_message=str(message))
 
 
+def _background_signature_view(settings):
+    """Physical BACKGROUND payload with solver-only v53 knobs removed.
+
+    The two localized-transverse direct thresholds change only how the same
+    certified linear system is solved.  Omitting them preserves compatibility
+    with caches created before those knobs existed while keeping all physical
+    geometry/material/self-correction settings in the signature.
+    """
+    background=_background_signature_view(settings)
+    return background
+
+
 def _signature(settings, *, cache_format=None):
     # Spatial-Joule truth is thermal-rank free.  Dataset cache identity depends
     # only on physical geometry/material settings plus the frozen truth sample
@@ -65,6 +77,7 @@ def _signature(settings, *, cache_format=None):
         "REGIONS",
     )
     payload = {k: settings[k] for k in keys}
+    payload["BACKGROUND"] = _background_signature_view(settings)
     training = settings["TRAINING"]
     payload["TRAINING"] = {
         "seed": int(training.get("seed", 17)),
