@@ -41,6 +41,7 @@ class SelfCorrectionResult:
     d_out: np.ndarray
     modal_h: np.ndarray | None
     audit: dict
+    spatial_d_vol: np.ndarray | None = None
 
 
 def _config(background):
@@ -227,6 +228,9 @@ def _localized_self_response(
         "localized_d_vol": refinable_d,
         "localized_d_out": refinable_out,
         "localized_modal_h": modal_refinable,
+        # Integrated cell heat for the refinable transverse/cross contribution.
+        # Its sum obeys 2*sum(q)=localized_d_vol under the peak-phasor convention.
+        "localized_heat_cells": q_refinable,
         "localized_power_balance_relative_error": balance,
         "longitudinal_z": longitudinal_z,
         "longitudinal_d_vol": longitudinal_d,
@@ -307,11 +311,72 @@ def _solve_local(parent, geometry, port, fine_step, phi=None):
         "n_cells": int(local.n_cells),
         "n_edges": int(local.n_edges),
         "fine_step": float(fine_step),
+        # Internal-only object used by the optional spatial correction path.
+        # apply_local_self_correction removes it from serialized audit rows.
+        "local_background": local,
     }
 
 
-def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=None, modal_h=None):
-    """Apply diagonal localized fine-minus-coarse self defects to port tensors."""
+def _deposit_local_heat_to_parent(parent, geometry, port, local_result):
+    """Conservatively move canonical local integrated cell heat to parent cells."""
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    local = local_result.get("local_background")
+    if local is None:
+        raise RuntimeError("local self solve lacks its spatial background")
+    heat = np.asarray(
+        local_result.get("localized_heat_cells"),
+        float,
+    ).reshape(-1)
+    if heat.shape != (local.n_cells,) or np.any(~np.isfinite(heat)):
+        raise RuntimeError("local self solve lacks a finite spatial Joule field")
+
+    global_points = g.coils[int(port)].pose.apply(local.cell_centers)
+    parent._require_inside(
+        global_points,
+        "local self-correction Joule support",
+    )
+    mapped = np.zeros(parent.n_cells, float)
+    for point, value in zip(global_points, heat):
+        if value == 0.0:
+            continue
+        for cell, weight in parent._cell_stencil(point):
+            mapped[cell] += float(value) * float(weight)
+
+    source_total = float(np.sum(heat))
+    mapped_total = float(np.sum(mapped))
+    scale = max(
+        abs(source_total),
+        abs(mapped_total),
+        np.finfo(float).tiny,
+    )
+    if abs(mapped_total - source_total) / scale > 1e-12:
+        raise FloatingPointError(
+            "local self-correction spatial deposition lost Joule power"
+        )
+    return mapped
+
+
+def apply_local_self_correction(
+    background,
+    geometry,
+    z,
+    d_vol,
+    d_out,
+    *,
+    phi=None,
+    modal_h=None,
+    spatial=False,
+):
+    """Apply diagonal localized fine-minus-coarse self defects to port tensors.
+
+    With spatial=True, also return the corrected D-convention cell tensor defect
+    on the parent grid.  Only diagonal port self terms are present because the
+    canonical local correction never changes mutual/off-diagonal physics.
+    """
     zc = np.asarray(z, complex).copy()
     dc = np.asarray(d_vol, complex).copy()
     oc = np.asarray(d_out, complex).copy()
@@ -320,8 +385,20 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
     n = zc.shape[0]
     if zc.shape != (n, n) or dc.shape != (n, n) or oc.shape != (n, n):
         raise ValueError("self correction requires shape-compatible square port tensors")
+    spatial_delta = (
+        np.zeros((background.n_cells, n, n), complex)
+        if bool(spatial)
+        else None
+    )
     if not bool(cfg.get("enabled", True)):
-        return SelfCorrectionResult(zc, dc, oc, hc, {"enabled": False, "ports": []})
+        return SelfCorrectionResult(
+            zc,
+            dc,
+            oc,
+            hc,
+            {"enabled": False, "ports": []},
+            spatial_delta,
+        )
     if phi is not None and hc is None:
         raise ValueError("modal_h is required when phi is supplied to self correction")
     if hc is not None and (hc.ndim != 3 or hc.shape[1:] != (n, n)):
@@ -361,6 +438,34 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
         zc[p, p] += dz
         dc[p, p] += dd
         oc[p, p] += do
+
+        if spatial_delta is not None:
+            coarse_heat = _deposit_local_heat_to_parent(
+                background,
+                geometry,
+                p,
+                coarse,
+            )
+            fine_heat = _deposit_local_heat_to_parent(
+                background,
+                geometry,
+                p,
+                fine,
+            )
+            # H_cell uses the D convention: q_cell(e_p)=0.5*H_cell[p,p].
+            spatial_pp = 2.0 * (fine_heat - coarse_heat)
+            spatial_delta[:, p, p] += spatial_pp
+            spatial_total = float(np.sum(spatial_pp))
+            scale = max(
+                abs(dd),
+                abs(spatial_total),
+                np.finfo(float).tiny,
+            )
+            if abs(spatial_total - dd) / scale > 1e-10:
+                raise FloatingPointError(
+                    "local self-correction spatial defect does not match delta D"
+                )
+
         modal_delta = None
         if phi is not None:
             modal_delta = np.asarray(
@@ -375,8 +480,26 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             "delta_z_imag": float(dz.imag),
             "delta_d_vol": dd,
             "delta_d_out": do,
-            "coarse": {k: v for k, v in coarse.items() if k not in ("modal_h", "localized_modal_h")},
-            "fine": {k: v for k, v in fine.items() if k not in ("modal_h", "localized_modal_h")},
+            "coarse": {
+                k: v
+                for k, v in coarse.items()
+                if k not in (
+                    "modal_h",
+                    "localized_modal_h",
+                    "localized_heat_cells",
+                    "local_background",
+                )
+            },
+            "fine": {
+                k: v
+                for k, v in fine.items()
+                if k not in (
+                    "modal_h",
+                    "localized_modal_h",
+                    "localized_heat_cells",
+                    "local_background",
+                )
+            },
             "maximum_modal_delta": None if modal_delta is None else float(np.max(np.abs(modal_delta))),
         })
 
@@ -409,6 +532,7 @@ def apply_local_self_correction(background, geometry, z, d_vol, d_out, *, phi=No
             "maximum_joule_modal_contraction_relative_error": float(maximum_modal_identity_error),
             "ports": ports,
         },
+        spatial_delta,
     )
 
 
