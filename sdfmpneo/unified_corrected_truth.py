@@ -147,7 +147,12 @@ def solve_truth_tensors(background, geometry):
     return z, d, modal, phi_min, phi_max, refreshed
 
 
-def solve_spatial_truth_tensors(background, geometry):
+def solve_spatial_truth_tensors(
+    background,
+    geometry,
+    *,
+    return_outward=False,
+):
     """Corrected Z/D plus cellwise Hermitian Joule tensor field.
 
     This truth representation is independent of any thermal basis.  The global
@@ -253,6 +258,8 @@ def solve_spatial_truth_tensors(background, geometry):
         minimum_spatial_joule_cell_power=float(minimum_cell_power),
         spatial_joule_representation="cellwise_hermitian_psd_v1",
     )
+    if bool(return_outward):
+        return z, d, cells, d_out, refreshed
     return z, d, cells, refreshed
 
 
