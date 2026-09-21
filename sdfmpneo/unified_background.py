@@ -498,10 +498,24 @@ class FixedMultiscaleBackground:
                 value = value.reshape(-1)
                 if value.shape == (self.n_cells,):
                     rise = value
-                elif self.thermal_basis is not None and value.shape == (self.thermal_rank,):
-                    rise = self.thermal_basis @ value
                 else:
-                    raise ValueError("thermal state dimension mismatch")
+                    context_basis = getattr(context, "thermal_basis", None)
+                    basis = (
+                        np.asarray(context_basis, float)
+                        if context_basis is not None
+                        else (
+                            None
+                            if self.thermal_basis is None
+                            else np.asarray(self.thermal_basis, float)
+                        )
+                    )
+                    if (
+                        basis is not None
+                        and value.shape == (basis.shape[1],)
+                    ):
+                        rise = basis @ value
+                    else:
+                        raise ValueError("thermal state dimension mismatch")
             if np.any(~np.isfinite(rise)):
                 raise ValueError("thermal state must be finite")
         return self.ambient_temperature + rise, material_rise
