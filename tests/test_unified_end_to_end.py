@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from sdfmpneo.unified_geometry import UnifiedUWPTGeometry
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
 from sdfmpneo.unified_tensor_surrogate import (
@@ -187,6 +188,17 @@ def test_spatial_tensor_training_save_load_and_predict_without_online_maxwell(tm
         background,
         surrogate,
         default_geometry=geometry(),
+        production_domain={
+            "receiver": {
+                "translation": {
+                    "bounds": [
+                        [-0.002, 0.002],
+                        [-0.001, 0.001],
+                        [0.009, 0.011],
+                    ]
+                }
+            }
+        },
         thermal_time_scales=(0.1, 1.0),
         thermal_target_relative_error=0.99,
     )
@@ -196,6 +208,14 @@ def test_spatial_tensor_training_save_load_and_predict_without_online_maxwell(tm
     assert rank == context.thermal_basis.shape[1]
     assert 1 <= rank <= 1 + 3 * 7
     assert context.online_thermal_report.source_count == 6
+
+    query_object = UnifiedUWPTGeometry.from_mapping(query_geometry)
+    assert model.thermal_rank_for(query_object) == rank
+    outside_object = UnifiedUWPTGeometry.from_mapping(
+        geometry(0.003)
+    )
+    with pytest.raises(ValueError, match="production bounds"):
+        model.tensors(outside_object)
 
     projected_uniform = model.project_initial_temperature(
         1.0,
