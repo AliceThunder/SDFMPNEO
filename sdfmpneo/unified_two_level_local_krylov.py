@@ -12,7 +12,7 @@ from .unified_two_level_maxwell import build_two_level_maxwell
 def _two_level_minimum_dofs(cfg):
     """First local size that must use the coarse H(curl) hierarchy by default.
 
-    Keep this boundary adjacent to the localized transverse direct band.  The
+    Keep this boundary adjacent to the localized transverse direct-fallback band.  The
     previous hard-coded 200k threshold left a 100k--200k one-level ILU/LGMRES
     gap; production geometry sampling can land in that gap (for example 108327
     edges) and then make essentially no residual progress.
@@ -26,7 +26,16 @@ def _two_level_minimum_dofs(cfg):
                 cfg.get("linear_direct_max_dofs", 60000),
             )
         )
-        minimum = direct + 1
+        fallback = int(
+            cfg.get(
+                "linear_transverse_direct_fallback_max_dofs",
+                max(
+                    direct,
+                    int(cfg.get("linear_direct_fallback_max_dofs", 120000)),
+                ),
+            )
+        )
+        minimum = fallback + 1
     if minimum < 1:
         raise ValueError("linear_two_level_min_dofs must be positive")
     return minimum
