@@ -195,7 +195,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
                         "modal_h",
                         "localized_modal_h",
                         "localized_heat_cells",
-                        "local_background",
+                        "local_cell_centers",
                     )
                 },
                 "validation": {
@@ -205,7 +205,7 @@ def audit_local_self_correction(background, geometries, monitor=None):
                         "modal_h",
                         "localized_modal_h",
                         "localized_heat_cells",
-                        "local_background",
+                        "local_cell_centers",
                     )
                 },
             }
