@@ -88,8 +88,13 @@ BACKGROUND = {
         "joule_identity_tolerance": 1e-10,
         "linear_relative_residual_tolerance": 1e-9,
         "linear_direct_max_dofs": 60000,
-        # Never send the 118k/254k local problems back to a fill-heavy full LU.
         "linear_direct_fallback_max_dofs": 60000,
+        # The compatible transverse solve can use a bounded direct factorization
+        # for medium local systems.  The 64k-edge case observed in production
+        # stalls completely under ILU/LGMRES, while this 100k cap still excludes
+        # the 118k/254k refined validation systems that must stay iterative.
+        "linear_transverse_direct_max_dofs": 100000,
+        "linear_transverse_direct_fallback_max_dofs": 100000,
         "linear_iterative_maxiter": 40,
         "linear_iterative_inner_m": 30,
         "linear_iterative_defect_steps": 3,
