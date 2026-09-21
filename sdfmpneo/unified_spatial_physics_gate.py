@@ -70,6 +70,12 @@ def run_spatial_physics_gate(
             ),
         )
     )
+    truth_projection_limit = float(
+        settings["TRAINING"].get("final_audit", {}).get(
+            "projection_correction_limit",
+            2e-1,
+        )
+    )
 
     online_rows = []
     heldout_spatial_rows = []
@@ -112,6 +118,11 @@ def run_spatial_physics_gate(
                 "local_self_power_balance_relative_error": float(
                     truth_audit[
                         "local_self_correction_power_balance_relative_error"
+                    ]
+                ),
+                "truth_projection_correction": float(
+                    truth_audit[
+                        "spatial_truth_projection_correction"
                     ]
                 ),
             }
@@ -178,6 +189,10 @@ def run_spatial_physics_gate(
         row["local_self_power_balance_relative_error"]
         for row in heldout_spatial_rows
     )
+    maximum_heldout_truth_projection = max(
+        row["truth_projection_correction"]
+        for row in heldout_spatial_rows
+    )
 
     checks = {
         "linear_solve_ok": (
@@ -206,6 +221,12 @@ def run_spatial_physics_gate(
         "spatial_sum_to_d_ok": (
             audit["maximum_spatial_joule_total_mismatch"] <= 1e-10
             and maximum_heldout_total_error <= 1e-10
+        ),
+        "spatial_truth_projection_ok": (
+            audit["maximum_spatial_truth_projection_correction"]
+            <= truth_projection_limit
+            and maximum_heldout_truth_projection
+            <= truth_projection_limit
         ),
         "joule_total_power_identity_ok": (
             audit["maximum_joule_total_power_relative_error"] <= 1e-10
@@ -295,6 +316,15 @@ def run_spatial_physics_gate(
         ),
         "maximum_online_thermal_condition": float(
             maximum_online_condition
+        ),
+        "maximum_spatial_truth_projection_correction": float(
+            max(
+                audit["maximum_spatial_truth_projection_correction"],
+                maximum_heldout_truth_projection,
+            )
+        ),
+        "spatial_truth_projection_limit": float(
+            truth_projection_limit
         ),
         "online_thermal_samples": online_rows,
         "heldout_spatial_samples": heldout_spatial_rows,
