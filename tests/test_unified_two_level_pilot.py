@@ -3,7 +3,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 import sdfmpneo.unified_certified_local_solve as local_solver
-from sdfmpneo.unified_two_level_local_krylov import _relative_pilot
+from sdfmpneo.unified_two_level_local_krylov import _relative_pilot, _two_level_minimum_dofs
 
 
 def test_two_level_pilot_target_is_relative_to_warm_start_residual():
@@ -31,3 +31,21 @@ def test_two_level_pilot_target_is_relative_to_warm_start_residual():
     assert after < before * 0.8
     assert accepted
     assert np.all(np.isfinite(candidate))
+
+
+def test_two_level_default_starts_immediately_after_transverse_direct_band():
+    cfg = {
+        "linear_direct_max_dofs": 60000,
+        "linear_transverse_direct_max_dofs": 100000,
+    }
+    assert _two_level_minimum_dofs(cfg) == 100001
+    assert 108327 >= _two_level_minimum_dofs(cfg)
+    assert 118000 >= _two_level_minimum_dofs(cfg)
+
+
+def test_two_level_explicit_threshold_still_overrides_default_policy():
+    cfg = {
+        "linear_transverse_direct_max_dofs": 100000,
+        "linear_two_level_min_dofs": 120000,
+    }
+    assert _two_level_minimum_dofs(cfg) == 120000
