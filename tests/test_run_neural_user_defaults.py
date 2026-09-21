@@ -86,13 +86,13 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
 def test_model_artifact_requires_integrator_certified_release_version():
     from sdfmpneo.unified_model import FORMAT_VERSION
 
-    assert FORMAT_VERSION == 52
+    assert FORMAT_VERSION == 53
 
 
 def test_physical_cache_requires_local_self_correction_certification_semantics():
     from sdfmpneo.unified_runtime import _CACHE_FORMAT
 
-    assert _CACHE_FORMAT == 55
+    assert _CACHE_FORMAT == 56
 
 
 def test_gate_sample_count_includes_local_self_reference_audit():
