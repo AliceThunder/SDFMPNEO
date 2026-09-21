@@ -61,7 +61,8 @@ production truth 继续使用以下物理语义，不因 thermal 架构切换而
 - independent outward-power form；
 - canonical local fine-minus-coarse self correction；
 - 原始物理 Maxwell matrix 的 true relative residual 必须满足 1e-9 Gate；
-- 少数合法、约 95k-edge global problem 在 iterative path 无法认证时，可以使用受限 sparse-LU correctness fallback；更大的 local validation problem 不走该 fallback。
+- 少数合法、约 95k-edge global problem 在 iterative path 无法认证时，可以使用受限 sparse-LU correctness fallback；
+- localized compatible-transverse self solve 对 <=100k-edge 的中等 local system 直接使用 bounded sparse solve；这覆盖实测会在 ILU/LGMRES 上完全停滞的约 64k-edge 情形，同时仍明确排除 118k/254k refined validation systems。
 
 ### 3.1 Persistent certified Maxwell field cache
 
