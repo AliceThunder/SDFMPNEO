@@ -36,7 +36,9 @@ def test_two_level_pilot_target_is_relative_to_warm_start_residual():
 def test_two_level_default_starts_immediately_after_transverse_direct_band():
     cfg = {
         "linear_direct_max_dofs": 60000,
+        "linear_direct_fallback_max_dofs": 60000,
         "linear_transverse_direct_max_dofs": 100000,
+        "linear_transverse_direct_fallback_max_dofs": 100000,
     }
     assert _two_level_minimum_dofs(cfg) == 100001
     assert 108327 >= _two_level_minimum_dofs(cfg)
@@ -49,3 +51,11 @@ def test_two_level_explicit_threshold_still_overrides_default_policy():
         "linear_two_level_min_dofs": 120000,
     }
     assert _two_level_minimum_dofs(cfg) == 120000
+
+
+def test_two_level_default_respects_transverse_direct_fallback_band():
+    cfg = {
+        "linear_transverse_direct_max_dofs": 80000,
+        "linear_transverse_direct_fallback_max_dofs": 110000,
+    }
+    assert _two_level_minimum_dofs(cfg) == 110001
