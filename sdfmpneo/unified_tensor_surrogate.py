@@ -729,9 +729,15 @@ def _batch_psd_clip(value, floor=0.0):
     a = 0.5 * (a + np.swapaxes(a.conj(), 1, 2))
     w, v = np.linalg.eigh(a)
     w = np.maximum(np.asarray(w.real, float), float(floor))
+    projected = np.einsum(
+        "...ik,...k,...jk->...ij",
+        v,
+        w,
+        v.conj(),
+        optimize=True,
+    )
     return 0.5 * (
-        np.einsum("...ik,...k,...jk->...ij", v, w, v.conj(), optimize=True)
-        + np.einsum("...ik,...k,...jk->...ij", v, w, v.conj(), optimize=True).conj().transpose(0, 2, 1)
+        projected + np.swapaxes(projected.conj(), 1, 2)
     )
 
 
@@ -800,6 +806,38 @@ def normalize_cell_joule_tensors(cell_h, d_vol):
         )
         corrected = 0.5 * (
             corrected + np.swapaxes(corrected.conj(), 1, 2)
+        )
+
+    final_total = _hermitian(np.sum(corrected, axis=0))
+    final_scale = max(
+        float(np.linalg.norm(d)),
+        np.finfo(float).tiny,
+    )
+    final_mismatch = float(
+        np.linalg.norm(final_total - d) / final_scale
+    )
+    final_minimum = float(
+        np.min(np.linalg.eigvalsh(corrected).real)
+    )
+    eigen_scale = max(
+        float(np.max(np.abs(np.linalg.eigvalsh(d).real))),
+        1.0,
+    )
+    if (
+        not np.isfinite(final_mismatch)
+        or final_mismatch > 1e-9
+    ):
+        raise FloatingPointError(
+            "cell Joule congruence failed exact sum-to-D invariant: "
+            f"relative mismatch={final_mismatch:.3e}"
+        )
+    if (
+        not np.isfinite(final_minimum)
+        or final_minimum < -1e-10 * eigen_scale
+    ):
+        raise FloatingPointError(
+            "cell Joule PSD projection lost nonnegativity: "
+            f"minimum eigenvalue={final_minimum:.3e}"
         )
 
     return d, corrected
