@@ -52,6 +52,10 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
     assert 0 < self_correction["validation_fine_step"] < self_correction["fine_step"] < run.BACKGROUND["fine_step"]
     assert 0 < self_correction["relative_tolerance"] < 1
     assert self_correction["boundary_padding"] > 0
+    assert self_correction["linear_transverse_direct_max_dofs"] == 100000
+    assert self_correction["linear_transverse_direct_fallback_max_dofs"] == 100000
+    assert self_correction["linear_direct_max_dofs"] < self_correction["linear_transverse_direct_max_dofs"]
+    assert self_correction["linear_transverse_direct_fallback_max_dofs"] < 118000
     assert continuity["samples"] >= 1
     assert continuity["translation_step"] > 0
     assert continuity["angle_step"] > 0
@@ -129,6 +133,11 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     truth_sampling_change["TRAINING"]["n_tensor_samples"] += 1
     assert _signature(baseline) != _signature(truth_sampling_change)
 
+    solver_policy = copy.deepcopy(baseline)
+    solver_policy["BACKGROUND"]["self_correction"]["linear_transverse_direct_max_dofs"] = 90000
+    solver_policy["BACKGROUND"]["self_correction"]["linear_transverse_direct_fallback_max_dofs"] = 95000
+    assert _signature(baseline) == _signature(solver_policy)
+
     correction_change = copy.deepcopy(baseline)
     correction_change["BACKGROUND"]["self_correction"]["fine_step"] *= 0.9
     assert _signature(baseline) != _signature(correction_change)
@@ -187,6 +196,11 @@ def test_online_thermal_policy_does_not_invalidate_em_preflight_signature():
     thermal_policy["TRAINING"]["online_thermal_conditioning_limit"] *= 0.5
     thermal_policy["TRAINING"]["thermal_time_scales"][0] *= 2.0
     assert _preflight_signature(baseline) == _preflight_signature(thermal_policy)
+
+    solver_policy = copy.deepcopy(baseline)
+    solver_policy["BACKGROUND"]["self_correction"]["linear_transverse_direct_max_dofs"] = 90000
+    solver_policy["BACKGROUND"]["self_correction"]["linear_transverse_direct_fallback_max_dofs"] = 95000
+    assert _preflight_signature(baseline) == _preflight_signature(solver_policy)
 
     em_physics = copy.deepcopy(baseline)
     em_physics["PHYSICS"]["frequency_hz"] *= 1.01
