@@ -46,8 +46,11 @@ def run_spatial_physics_gate(
     audit = dict(dataset.audit)
     thermal_target = float(
         settings["TRAINING"].get(
-            "thermal_basis_energy_tolerance",
-            5e-2,
+            "online_thermal_relative_tolerance",
+            settings["TRAINING"].get(
+                "thermal_basis_energy_tolerance",
+                5e-2,
+            ),
         )
     )
     time_scales = settings["TRAINING"].get(
@@ -60,8 +63,11 @@ def run_spatial_physics_gate(
     )
     condition_limit = float(
         settings["TRAINING"].get(
-            "thermal_basis_conditioning_limit",
-            1e10,
+            "online_thermal_conditioning_limit",
+            settings["TRAINING"].get(
+                "thermal_basis_conditioning_limit",
+                1e10,
+            ),
         )
     )
 
