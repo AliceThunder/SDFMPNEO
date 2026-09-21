@@ -11,8 +11,11 @@ import numpy as np
 from .electrothermal_tensor.network import FeatureNormalizer, ResidualMLPConfig, build_residual_mlp
 from .unified_tensor_surrogate import (
     UnifiedTensorSurrogate,
+    UnifiedSpatialTensorSurrogate,
     decode_physical_tensors,
+    decode_spatial_tensors,
     pack_tensors,
+    pack_spatial_tensors,
     tensor_block_sizes,
 )
 
@@ -81,6 +84,50 @@ def _fit_output_pod(outputs, *, relative_tail_tolerance):
     valid = np.flatnonzero(tails <= tol)
     rank = int(valid[0] + 1) if valid.size else len(singular)
     return mean, scale, vt[:rank].T.copy(), float(tails[rank - 1])
+
+
+def _fit_output_pod_dual(outputs, *, relative_tail_tolerance):
+    """Training-only POD via the sample Gram matrix for very wide outputs."""
+    y = np.asarray(outputs, float)
+    if y.ndim != 2 or y.shape[0] < 1:
+        raise ValueError("tensor POD requires a nonempty output matrix")
+    tol = float(relative_tail_tolerance)
+    if not 0.0 < tol < 1.0:
+        raise ValueError("pod_relative_tail_tolerance must lie in (0, 1)")
+    mean = np.mean(y, axis=0)
+    scale = np.maximum(np.std(y, axis=0), 1e-12)
+    normalized = (y - mean) / scale
+    gram = normalized @ normalized.T
+    gram = 0.5 * (gram + gram.T)
+    eigenvalues, vectors = np.linalg.eigh(gram)
+    order = np.argsort(eigenvalues)[::-1]
+    eigenvalues = np.maximum(eigenvalues[order], 0.0)
+    vectors = vectors[:, order]
+    singular = np.sqrt(eigenvalues)
+    total = float(np.sum(eigenvalues))
+    if total <= np.finfo(float).tiny:
+        basis = np.zeros((y.shape[1], 1), float)
+        basis[0, 0] = 1.0
+        return mean, scale, basis, 0.0
+
+    positive = singular > np.sqrt(np.finfo(float).eps) * singular[0]
+    singular = singular[positive]
+    vectors = vectors[:, positive]
+    if singular.size == 0:
+        basis = np.zeros((y.shape[1], 1), float)
+        basis[0, 0] = 1.0
+        return mean, scale, basis, 0.0
+
+    cumulative = np.cumsum(singular ** 2)
+    tails = np.sqrt(np.maximum(total - cumulative, 0.0) / total)
+    valid = np.flatnonzero(tails <= tol)
+    rank = int(valid[0] + 1) if valid.size else len(singular)
+    u = vectors[:, :rank]
+    s = singular[:rank]
+    basis = normalized.T @ (u / s[None, :])
+    # Re-orthogonalize the small POD span to remove dual-form roundoff.
+    basis, _ = np.linalg.qr(basis, mode="reduced")
+    return mean, scale, np.asarray(basis, float), float(tails[rank - 1])
 
 
 def _unpack_z_torch(torch, packed, n):
@@ -416,4 +463,372 @@ def train_matrix_tensor_surrogate(
     )
 
 
-__all__ = ["TensorTrainingReport", "train_matrix_tensor_surrogate"]
+def train_spatial_tensor_surrogate(
+    dataset,
+    *,
+    network_settings=None,
+    training_settings=None,
+    device="cuda",
+    monitor=None,
+    checkpoint_path=None,
+):
+    """Fit geometry -> Z/D/cell-Joule POD-MLP with no thermal-rank coupling."""
+    import torch
+
+    cfg = {
+        "epochs": 240,
+        "batch_size": 16,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-6,
+        "patience": 40,
+        "validation_interval": 2,
+        "gradient_clip_norm": 10.0,
+        "physics_penalty_weight": 0.05,
+        "z_weight": 1.0,
+        "d_weight": 1.0,
+        "spatial_weight": 1.0,
+        "pod_relative_tail_tolerance": 1e-4,
+        "seed": 17,
+        "dtype": "float32",
+    }
+    incoming = dict(training_settings or {})
+    # Preserve old config files: h_weight is the spatial-Joule block weight in V2.
+    if "spatial_weight" not in incoming and "h_weight" in incoming:
+        incoming["spatial_weight"] = incoming["h_weight"]
+    cfg.update(incoming)
+
+    train_ids = dataset.indices("train")
+    val_ids = dataset.indices("validation")
+    test_ids = dataset.indices("test")
+    audit_ids = dataset.indices("audit")
+    if min(len(train_ids), len(val_ids), len(test_ids), len(audit_ids)) < 1:
+        raise ValueError(
+            "spatial tensor dataset requires nonempty train/validation/test/audit splits"
+        )
+
+    input_norm = FeatureNormalizer.fit(dataset.inputs[train_ids])
+    output_mean, output_scale, pod_basis, pod_tail = _fit_output_pod_dual(
+        dataset.outputs[train_ids],
+        relative_tail_tolerance=float(cfg["pod_relative_tail_tolerance"]),
+    )
+    pod_rank = int(pod_basis.shape[1])
+    net_settings = dict(network_settings or {})
+    net_settings.pop("input_dimension", None)
+    net_settings.pop("output_dimension", None)
+    net_cfg = ResidualMLPConfig(
+        input_dimension=dataset.inputs.shape[1],
+        output_dimension=pod_rank,
+        **net_settings,
+    )
+    network = build_residual_mlp(net_cfg, input_norm)
+    resolved = _resolve_device(torch, device)
+    dtype = torch.float32 if str(cfg["dtype"]) == "float32" else torch.float64
+    network = network.to(device=resolved, dtype=dtype)
+    optimizer = torch.optim.AdamW(
+        network.parameters(),
+        lr=float(cfg["learning_rate"]),
+        weight_decay=float(cfg["weight_decay"]),
+    )
+
+    x = torch.as_tensor(dataset.inputs, dtype=dtype, device=resolved)
+    target = torch.as_tensor(dataset.outputs, dtype=dtype, device=resolved)
+    out_mean = torch.as_tensor(output_mean, dtype=dtype, device=resolved)
+    out_scale = torch.as_tensor(output_scale, dtype=dtype, device=resolved)
+    pod_t = torch.as_tensor(pod_basis, dtype=dtype, device=resolved)
+    z_w_np, h_w_np = _matrix_weights(dataset.n_ports)
+    z_w = torch.as_tensor(z_w_np, dtype=dtype, device=resolved)
+    h_w = torch.as_tensor(h_w_np, dtype=dtype, device=resolved)
+
+    n = int(dataset.n_ports)
+    m = int(dataset.n_cells)
+    z_size, h_size, _ = tensor_block_sizes(n, 0)
+    spatial_start = z_size + h_size
+    spatial_weights_np = np.tile(h_w_np, m)
+    spatial_weights = torch.as_tensor(
+        spatial_weights_np,
+        dtype=dtype,
+        device=resolved,
+    )
+
+    def relative_block(diff, truth, weights):
+        numerator = torch.sum(diff * diff * weights, dim=-1)
+        denominator = torch.sum(truth * truth * weights, dim=-1).clamp_min(
+            torch.finfo(dtype).eps
+        )
+        return numerator / denominator
+
+    def physical_prediction(xb):
+        return out_mean + out_scale * (network(xb) @ pod_t.T)
+
+    empty_bounds = torch.empty((0, 0), dtype=dtype, device=resolved)
+
+    def batch_loss(ids):
+        ids_t = torch.as_tensor(
+            np.asarray(ids, np.int64),
+            dtype=torch.long,
+            device=resolved,
+        )
+        pred = physical_prediction(x.index_select(0, ids_t))
+        truth = target.index_select(0, ids_t)
+        diff = pred - truth
+        loss_z = torch.mean(
+            relative_block(
+                diff[..., :z_size],
+                truth[..., :z_size],
+                z_w,
+            )
+        )
+        loss_d = torch.mean(
+            relative_block(
+                diff[..., z_size:spatial_start],
+                truth[..., z_size:spatial_start],
+                h_w,
+            )
+        )
+        loss_spatial = torch.mean(
+            relative_block(
+                diff[..., spatial_start:],
+                truth[..., spatial_start:],
+                spatial_weights,
+            )
+        )
+        loss = (
+            float(cfg["z_weight"]) * loss_z
+            + float(cfg["d_weight"]) * loss_d
+            + float(cfg["spatial_weight"]) * loss_spatial
+        )
+        if float(cfg["physics_penalty_weight"]) > 0.0:
+            physical_scale = torch.mean(truth * truth).clamp_min(
+                torch.finfo(dtype).eps
+            )
+            # V2 physics penalty keeps reciprocal/passive Z/D during training.
+            # Cellwise PSD and exact sum-to-D are imposed by the decoder.
+            penalty = _physics_penalty(
+                torch,
+                pred,
+                n,
+                0,
+                empty_bounds,
+                empty_bounds,
+            ) / physical_scale
+            loss = loss + float(cfg["physics_penalty_weight"]) * penalty
+        return loss
+
+    rng = np.random.default_rng(int(cfg["seed"]))
+    torch.manual_seed(int(cfg["seed"]))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(cfg["seed"]))
+
+    pod_signature = hashlib.sha256(
+        output_mean.tobytes()
+        + output_scale.tobytes()
+        + pod_basis.tobytes()
+        + b"cellwise_joule_tensor_v1"
+    ).hexdigest()
+    checkpoint = None if checkpoint_path is None else Path(checkpoint_path)
+    best_state = copy.deepcopy(network.state_dict())
+    best_val = float("inf")
+    best_epoch = 0
+    stale = 0
+    start_epoch = 0
+
+    if checkpoint is not None and checkpoint.is_file():
+        try:
+            saved = torch.load(
+                checkpoint,
+                map_location=resolved,
+                weights_only=False,
+            )
+            compatible = (
+                int(saved.get("schema_version", -1)) == 4
+                and saved.get("representation") == "cellwise_joule_tensor_v1"
+                and saved.get("pod_signature") == pod_signature
+                and int(saved.get("pod_rank", -1)) == pod_rank
+            )
+            if compatible:
+                network.load_state_dict(saved["network"])
+                optimizer.load_state_dict(saved["optimizer"])
+                best_state = saved["best_network"]
+                best_val = float(saved["best_validation_loss"])
+                best_epoch = int(saved["best_epoch"])
+                stale = int(saved.get("stale", 0))
+                start_epoch = int(saved["epoch"])
+                print(
+                    f"恢复 geometry→spatial-Joule 检查点：epoch={start_epoch}",
+                    flush=True,
+                )
+        except (OSError, RuntimeError, ValueError, KeyError):
+            print("spatial-Joule 检查点不兼容，重新训练。", flush=True)
+
+    interval = max(1, int(cfg["validation_interval"]))
+    epochs_completed = start_epoch
+    for epoch in range(start_epoch, int(cfg["epochs"])):
+        if monitor is not None:
+            monitor.checkpoint()
+        network.train()
+        order = rng.permutation(train_ids)
+        total = 0.0
+        count = 0
+        for start in range(0, len(order), int(cfg["batch_size"])):
+            ids = order[start:start + int(cfg["batch_size"])]
+            loss = batch_loss(ids)
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            if cfg.get("gradient_clip_norm") is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    network.parameters(),
+                    float(cfg["gradient_clip_norm"]),
+                )
+            optimizer.step()
+            total += float(loss.detach().cpu()) * len(ids)
+            count += len(ids)
+        train_loss = total / max(count, 1)
+        epochs_completed = epoch + 1
+        validate = (
+            epochs_completed == 1
+            or epochs_completed % interval == 0
+            or epochs_completed == int(cfg["epochs"])
+        )
+        if validate:
+            network.eval()
+            with torch.no_grad():
+                last_val = float(batch_loss(val_ids).detach().cpu())
+            if last_val < best_val - 1e-10 * max(1.0, abs(best_val)):
+                best_val = last_val
+                best_epoch = epochs_completed
+                best_state = copy.deepcopy(network.state_dict())
+                stale = 0
+            else:
+                stale += interval
+            if checkpoint is not None:
+                checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(
+                    {
+                        "schema_version": 4,
+                        "representation": "cellwise_joule_tensor_v1",
+                        "pod_signature": pod_signature,
+                        "pod_rank": pod_rank,
+                        "epoch": epochs_completed,
+                        "best_epoch": best_epoch,
+                        "best_validation_loss": best_val,
+                        "network": network.state_dict(),
+                        "best_network": best_state,
+                        "optimizer": optimizer.state_dict(),
+                        "stale": stale,
+                    },
+                    checkpoint,
+                )
+            if monitor is not None:
+                with monitor._lock:
+                    monitor.data.update(
+                        phase="spatial_tensor_training",
+                        epoch=epochs_completed,
+                        train_loss=train_loss,
+                        validation_loss=last_val,
+                        tensor_pod_rank=pod_rank,
+                        tensor_representation="cellwise_joule_tensor_v1",
+                    )
+            print(
+                "训练 geometry→spatial-Joule POD-MLP……"
+                f"epoch={epochs_completed}/{cfg['epochs']}  "
+                f"train={train_loss:.5g} val={last_val:.5g} "
+                f"POD={pod_rank}",
+                flush=True,
+            )
+            if stale >= int(cfg["patience"]):
+                break
+
+    network.load_state_dict(best_state)
+    network.eval()
+    surrogate = UnifiedSpatialTensorSurrogate(
+        network,
+        output_mean,
+        output_scale,
+        pod_basis,
+        n,
+        m,
+    )
+    with torch.no_grad():
+        test_loss = float(batch_loss(test_ids).detach().cpu())
+
+    def evaluate(ids):
+        decoded = []
+        zd = []
+        spatial_correction = []
+        with torch.no_grad():
+            for idx in ids:
+                pred = (
+                    physical_prediction(x[idx:idx + 1])
+                    .detach()
+                    .cpu()
+                    .numpy()[0]
+                )
+                tensor = decode_spatial_tensors(pred, n, m)
+                decoded.append(
+                    pack_spatial_tensors(
+                        tensor.z_field,
+                        tensor.d_vol,
+                        tensor.cell_h,
+                    )
+                )
+                zd.append(tensor.zd_projection_correction)
+                spatial_correction.append(
+                    tensor.spatial_projection_correction
+                )
+        decoded = np.asarray(decoded, float)
+        truth = dataset.outputs[np.asarray(ids, int)]
+        diff = decoded - truth
+        full_weights = np.concatenate(
+            [z_w_np, h_w_np, spatial_weights_np]
+        )
+        return {
+            "tensor": _relative_numpy(diff, truth, full_weights),
+            "z": _relative_numpy(
+                diff[:, :z_size],
+                truth[:, :z_size],
+                z_w_np,
+            ),
+            "d": _relative_numpy(
+                diff[:, z_size:spatial_start],
+                truth[:, z_size:spatial_start],
+                h_w_np,
+            ),
+            "spatial": _relative_numpy(
+                diff[:, spatial_start:],
+                truth[:, spatial_start:],
+                spatial_weights_np,
+            ),
+            "zd": max(zd or [0.0]),
+            "spatial_correction": max(spatial_correction or [0.0]),
+        }
+
+    test = evaluate(test_ids)
+    audit = evaluate(audit_ids)
+    report_cfg = dict(cfg)
+    report_cfg["representation"] = "cellwise_joule_tensor_v1"
+    return surrogate, TensorTrainingReport(
+        epochs_completed=epochs_completed,
+        best_epoch=best_epoch,
+        best_validation_loss=float(best_val),
+        test_loss=test_loss,
+        pod_rank=pod_rank,
+        pod_relative_tail_error=pod_tail,
+        test_relative_tensor_error=test["tensor"],
+        test_z_relative_error=test["z"],
+        test_d_relative_error=test["d"],
+        test_h_relative_error=test["spatial"],
+        audit_relative_tensor_error=audit["tensor"],
+        audit_z_relative_error=audit["z"],
+        audit_d_relative_error=audit["d"],
+        audit_h_relative_error=audit["spatial"],
+        maximum_test_zd_projection_correction=test["zd"],
+        maximum_test_h_projection_correction=test["spatial_correction"],
+        maximum_audit_zd_projection_correction=audit["zd"],
+        maximum_audit_h_projection_correction=audit["spatial_correction"],
+        device=resolved,
+        network_config=net_cfg.to_dict(),
+        training_config=report_cfg,
+    )
+
+
+__all__ = ["TensorTrainingReport", "train_matrix_tensor_surrogate", "train_spatial_tensor_surrogate"]
