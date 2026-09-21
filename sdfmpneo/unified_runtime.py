@@ -89,8 +89,17 @@ def _signature(settings, *, cache_format=None):
 
 
 def _preflight_signature(settings):
+    # Numerical solver-policy knobs must not invalidate already certified
+    # physical truth/preflight data.  Keep the historical signature stable when
+    # only the new medium-system transverse direct threshold changes.
+    background=jsonable(settings["BACKGROUND"])
+    self_correction=dict(background.get("self_correction",{}) or {})
+    self_correction.pop("linear_transverse_direct_max_dofs",None)
+    self_correction.pop("linear_transverse_direct_fallback_max_dofs",None)
+    if "self_correction" in background:
+        background["self_correction"]=self_correction
     payload={
-        "BACKGROUND":settings["BACKGROUND"],
+        "BACKGROUND":background,
         "DEFAULT_GEOMETRY":settings["DEFAULT_GEOMETRY"],
         "GEOMETRY_SAMPLING":settings.get("GEOMETRY_SAMPLING"),
         "PHYSICS":settings["PHYSICS"],
