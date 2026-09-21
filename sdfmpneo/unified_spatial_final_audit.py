@@ -150,6 +150,58 @@ def _tensor_case(model, geometry):
     row["maximum_current_space_power_error"] = float(
         power_error
     )
+    truth_checks = {
+        "linear_solve_ok": (
+            float(truth_audit["max_linear_relative_residual"]) <= 1e-8
+        ),
+        "reciprocity_ok": (
+            float(truth_audit["reciprocity_relative_error"]) <= 1e-8
+        ),
+        "volume_passivity_ok": (
+            float(truth_audit["minimum_d_vol_eigenvalue"]) >= -1e-9
+        ),
+        "physical_outward_passivity_ok": (
+            float(truth_audit["minimum_physical_outward_eigenvalue"])
+            >= -1e-9
+        ),
+        "implied_outward_passivity_ok": (
+            float(truth_audit["minimum_implied_outward_eigenvalue"])
+            >= -1e-9
+        ),
+        "poynting_balance_ok": (
+            float(
+                truth_audit[
+                    "open_boundary_power_balance_relative_error"
+                ]
+            )
+            <= 1e-7
+        ),
+        "local_self_ok": (
+            float(truth_audit["local_self_correction_enabled"]) >= 0.5
+            and float(
+                truth_audit[
+                    "local_self_correction_power_balance_relative_error"
+                ]
+            )
+            <= 1e-7
+        ),
+        "cell_psd_ok": (
+            float(
+                truth_audit["minimum_cell_joule_tensor_eigenvalue"]
+            )
+            >= -1e-10
+        ),
+        "cell_sum_to_d_ok": (
+            float(
+                truth_audit["maximum_spatial_joule_total_mismatch"]
+            )
+            <= 1e-10
+        ),
+    }
+    row["truth_physics"] = {
+        **{k: bool(v) for k, v in truth_checks.items()},
+        "certified": bool(all(truth_checks.values())),
+    }
     row["truth_audit"] = truth_audit
     return truth, predicted, row
 
@@ -906,7 +958,12 @@ def run_spatial_final_held_out_audit(
         and row["predicted_steady_stable"]
         for row in trajectory_rows
     )
+    heldout_truth_ok = all(
+        bool(row["tensor"]["truth_physics"]["certified"])
+        for row in rows
+    )
     checks = {
+        "heldout_truth_physics_ok": heldout_truth_ok,
         "full_vs_rom_thermal_ok": maximum_thermal <= thermal_tol,
         "tensor_surrogate_ok": maximum_tensor <= tensor_tol,
         "current_space_contractions_ok": maximum_current <= current_tol,
