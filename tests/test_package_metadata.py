@@ -15,6 +15,7 @@ def test_package_metadata_matches_current_tensor_rom_release():
     text = (root / "pyproject.toml").read_text(encoding="utf-8")
     assert _quoted_project_value(text, "version") == sdfmpneo.__version__
     description = _quoted_project_value(text, "description").lower()
-    assert "geometry-to-tensor" in description
+    assert "geometry-to-spatial-joule" in description
+    assert "geometry-local thermal" in description
     assert "fgmres" not in description
     assert "full-space" not in description
