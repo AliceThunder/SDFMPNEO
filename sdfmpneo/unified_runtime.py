@@ -713,14 +713,20 @@ def train(settings, model_path, settings_dir, monitor=None):
             ),
             thermal_conditioning_limit=float(
                 settings["TRAINING"].get(
-                    "thermal_basis_conditioning_limit",
-                    1e10,
+                    "online_thermal_conditioning_limit",
+                    settings["TRAINING"].get(
+                        "thermal_basis_conditioning_limit",
+                        1e10,
+                    ),
                 )
             ),
             thermal_target_relative_error=float(
                 settings["TRAINING"].get(
-                    "thermal_basis_energy_tolerance",
-                    5e-2,
+                    "online_thermal_relative_tolerance",
+                    settings["TRAINING"].get(
+                        "thermal_basis_energy_tolerance",
+                        5e-2,
+                    ),
                 )
             ),
         )
