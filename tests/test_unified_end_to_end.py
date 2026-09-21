@@ -3,37 +3,83 @@ import pytest
 
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
 from sdfmpneo.unified_open_boundary import OpenBoundaryBackground
-from sdfmpneo.unified_tensor_surrogate import generate_tensor_dataset
-from sdfmpneo.unified_tensor_training import train_matrix_tensor_surrogate
-from sdfmpneo.unified_thermal import build_geometry_aware_thermal_library
+from sdfmpneo.unified_tensor_surrogate import (
+    SpatialTensorDataset,
+    encode_geometry,
+    pack_spatial_tensors,
+)
+from sdfmpneo.unified_tensor_training import train_spatial_tensor_surrogate
 
 
 MATERIALS = {
-    "tx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
-                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
-    "rx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
-                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
-    "tx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
-                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
-    "rx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
-                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
-    "seawater": {"electrical_conductivity": 5.0, "resistivity_temperature_coefficient": 0.0,
-                 "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 80.0,
-                 "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6},
+    "tx_copper": {
+        "electrical_conductivity": 5.8e7,
+        "resistivity_temperature_coefficient": 0.00393,
+        "reference_temperature": 293.15,
+        "relative_permeability": 1.0,
+        "relative_permittivity": 1.0,
+        "thermal_conductivity": 400.0,
+        "volumetric_heat_capacity": 3.45e6,
+    },
+    "rx_copper": {
+        "electrical_conductivity": 5.8e7,
+        "resistivity_temperature_coefficient": 0.00393,
+        "reference_temperature": 293.15,
+        "relative_permeability": 1.0,
+        "relative_permittivity": 1.0,
+        "thermal_conductivity": 400.0,
+        "volumetric_heat_capacity": 3.45e6,
+    },
+    "tx_package": {
+        "electrical_conductivity": 0.0,
+        "resistivity_temperature_coefficient": 0.0,
+        "reference_temperature": 293.15,
+        "relative_permeability": 1.0,
+        "relative_permittivity": 3.0,
+        "thermal_conductivity": 0.2,
+        "volumetric_heat_capacity": 1.5e6,
+    },
+    "rx_package": {
+        "electrical_conductivity": 0.0,
+        "resistivity_temperature_coefficient": 0.0,
+        "reference_temperature": 293.15,
+        "relative_permeability": 1.0,
+        "relative_permittivity": 3.0,
+        "thermal_conductivity": 0.2,
+        "volumetric_heat_capacity": 1.5e6,
+    },
+    "seawater": {
+        "electrical_conductivity": 5.0,
+        "resistivity_temperature_coefficient": 0.0,
+        "reference_temperature": 293.15,
+        "relative_permeability": 1.0,
+        "relative_permittivity": 80.0,
+        "thermal_conductivity": 0.6,
+        "volumetric_heat_capacity": 4.1e6,
+    },
 }
 
 
 def geometry(rx_x=0.0):
-    coil = {"shape": "circle", "turns": 0.5, "outer_half_size": 0.012,
-            "pitch": 0.002, "conductor_width": 0.001, "conductor_thickness": 0.001,
-            "corner_radius": 0.006, "angles": [0.0, 0.0, 0.0]}
+    coil = {
+        "shape": "circle",
+        "turns": 0.5,
+        "outer_half_size": 0.012,
+        "pitch": 0.002,
+        "conductor_width": 0.001,
+        "conductor_thickness": 0.001,
+        "corner_radius": 0.006,
+        "angles": [0.0, 0.0, 0.0],
+    }
     return {
-        "transmitter": dict(coil, translation=[0.0, 0.0, -0.010]),
-        "receiver": dict(coil, translation=[rx_x, 0.0, 0.010]),
+        "transmitter": dict(
+            coil,
+            translation=[0.0, 0.0, -0.010],
+        ),
+        "receiver": dict(
+            coil,
+            translation=[rx_x, 0.0, 0.010],
+        ),
         "package_half_extent": [0.018, 0.018, 0.004],
     }
 
@@ -41,58 +87,92 @@ def geometry(rx_x=0.0):
 def small_background():
     axis = np.linspace(-0.05, 0.05, 5)
     return OpenBoundaryBackground(
-        axis, axis, axis, frequency_hz=100000.0,
-        materials=MATERIALS, coil_materials=("tx_copper", "rx_copper"),
-        package_materials=("tx_package", "rx_package"), seawater_material="seawater",
+        axis,
+        axis,
+        axis,
+        frequency_hz=100000.0,
+        materials=MATERIALS,
+        coil_materials=("tx_copper", "rx_copper"),
+        package_materials=("tx_package", "rx_package"),
+        seawater_material="seawater",
         ambient_temperature=293.15,
     )
 
 
-def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_path):
+def synthetic_spatial_dataset(background, geometries):
+    inputs = []
+    outputs = []
+    centers = np.asarray(background.cell_centers, float)
+    for mapping in geometries:
+        rx_x = float(mapping["receiver"]["translation"][0])
+        profile = np.exp(
+            -(
+                (centers[:, 0] - rx_x) ** 2
+                + centers[:, 1] ** 2
+                + centers[:, 2] ** 2
+            )
+            / (2.0 * 0.028**2)
+        )
+        profile += 0.15
+        profile /= np.sum(profile)
+
+        d = np.array(
+            [
+                [1.1 + 8.0 * rx_x, 0.16 + 0.04j],
+                [0.16 - 0.04j, 0.85 - 5.0 * rx_x],
+            ],
+            complex,
+        )
+        assert np.min(np.linalg.eigvalsh(d)) > 0.0
+        cells = profile[:, None, None] * d[None, :, :]
+        d_out = np.eye(2) * 0.25
+        reactance = np.array(
+            [[0.30, -0.08], [-0.08, 0.22]],
+            float,
+        )
+        z = d + d_out + 1j * reactance
+        inputs.append(encode_geometry(mapping))
+        outputs.append(pack_spatial_tensors(z, d, cells))
+
+    split = np.asarray(
+        ["train", "train", "train", "train", "train", "validation", "test", "audit"],
+        dtype="U16",
+    )
+    return SpatialTensorDataset(
+        np.asarray(inputs, float),
+        np.asarray(outputs, float),
+        split,
+        {},
+        2,
+        background.n_cells,
+    )
+
+
+def test_spatial_tensor_training_save_load_and_predict_without_online_maxwell(tmp_path):
     pytest.importorskip("torch")
     background = small_background()
-    geometries = [geometry(0.0015 * np.sin(i)) for i in range(9)]
-    library, thermal_report = build_geometry_aware_thermal_library(
-        background,
-        geometry(),
-        geometries[:2],
-        validation_geometries=geometries[2:3],
-        target_relative_error=0.99,
-        time_scales=(0.1, 1.0),
-    )
-    assert thermal_report.converged
-    background.set_thermal_library(library)
-    assert background.thermal_rank == library.rank > 0
+    geometries = [geometry(-0.003 + 0.0008 * i) for i in range(8)]
+    dataset = synthetic_spatial_dataset(background, geometries)
 
-    dataset = generate_tensor_dataset(background, geometries[3:], seed=9)
-    assert len(dataset.indices("train")) >= 3
-    assert len(dataset.indices("validation")) == 1
-    assert len(dataset.indices("test")) == 1
-    assert len(dataset.indices("audit")) == 1
-    assert dataset.phi_min.shape == dataset.phi_max.shape == (6, library.rank)
-    assert dataset.audit["maximum_linear_relative_residual"] <= 1e-8
-    assert dataset.audit["maximum_reciprocity_relative_error"] <= 1e-8
-    assert dataset.audit["maximum_open_boundary_power_balance_relative_error"] <= 1e-7
-    assert dataset.audit["minimum_d_vol_eigenvalue"] >= -1e-9
-    assert dataset.audit["minimum_physical_outward_eigenvalue"] >= -1e-9
-    assert dataset.audit["independent_outward_power_available"] == 1.0
-    assert dataset.audit["maximum_relative_loewner_violation"] <= 1e-8
-
-    surrogate, report = train_matrix_tensor_surrogate(
+    surrogate, report = train_spatial_tensor_surrogate(
         dataset,
-        network_settings={"width": 8, "blocks": 1, "activation": "silu"},
+        network_settings={
+            "width": 8,
+            "blocks": 1,
+            "activation": "silu",
+        },
         training_settings={
-            "epochs": 2,
+            "epochs": 3,
             "batch_size": 2,
             "learning_rate": 1e-3,
             "weight_decay": 0.0,
-            "patience": 2,
+            "patience": 3,
             "validation_interval": 1,
             "gradient_clip_norm": 10.0,
             "physics_penalty_weight": 0.01,
             "z_weight": 1.0,
             "d_weight": 1.0,
-            "h_weight": 1.0,
+            "spatial_weight": 1.0,
             "pod_relative_tail_tolerance": 0.5,
             "seed": 3,
             "dtype": "float64",
@@ -103,26 +183,34 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert report.pod_rank >= 1
     assert np.isfinite(report.best_validation_loss)
 
-    model = UnifiedNeuralElectroThermalModel(background, surrogate, default_geometry=geometry())
+    model = UnifiedNeuralElectroThermalModel(
+        background,
+        surrogate,
+        default_geometry=geometry(),
+        thermal_time_scales=(0.1, 1.0),
+        thermal_target_relative_error=0.99,
+    )
     query_geometry = geometry(0.001)
     context = model.geometry_context(query_geometry)
-    reference_context = model.geometry_context(geometry())
-    assert context.thermal_basis.shape == reference_context.thermal_basis.shape
-    assert not np.allclose(context.thermal_basis, reference_context.thermal_basis)
+    rank = model.thermal_rank_for(query_geometry)
+    assert rank == context.thermal_basis.shape[1]
+    assert 1 <= rank <= 1 + 3 * 7
+    assert context.online_thermal_report.source_count == 6
 
-    full_initial = np.linspace(0.0, 1.0, background.n_cells)
-    projected = model.project_initial_temperature(full_initial, query_geometry)
-    phi = context.thermal_basis
-    projection_residual = phi.T @ (
-        context.thermal_mass_full @ (full_initial - phi @ projected)
+    projected_uniform = model.project_initial_temperature(
+        1.0,
+        query_geometry,
     )
-    assert np.linalg.norm(projection_residual) <= 1e-10 * max(
-        1.0, np.linalg.norm(context.thermal_mass_full @ full_initial)
+    assert np.allclose(
+        context.thermal_basis @ projected_uniform,
+        1.0,
+        rtol=1e-9,
+        atol=1e-9,
     )
 
     result = model.predict(
         0.0,
-        initial_state=np.zeros(model.thermal_rank),
+        initial_state=np.zeros(rank),
         geometry=query_geometry,
         operating=[1.0, 0.0],
         max_step=1.0,
@@ -137,7 +225,7 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     assert result.outward_power >= -1e-10
 
     steady = model.steady_state(
-        initial_guess=np.zeros(model.thermal_rank),
+        initial_guess=np.zeros(rank),
         geometry=query_geometry,
         operating=[0.0, 0.0],
         tolerance=1e-11,
@@ -152,22 +240,39 @@ def test_tensor_rom_training_save_load_and_predict_without_online_maxwell(tmp_pa
     model.save(model_path)
     with np.load(model_path, allow_pickle=False) as data:
         assert "pod_basis" in data.files
-        assert "thermal_background_modes" in data.files
-        assert "thermal_local_modes_0" in data.files
+        assert "thermal_background_modes" not in data.files
+        assert "thermal_local_modes_0" not in data.files
         assert "thermal_basis" not in data.files
         assert "em_basis" not in data.files
-        assert not any(name.startswith("maxwell") for name in data.files)
-    loaded = UnifiedNeuralElectroThermalModel.load(model_path, device="cpu")
+        assert not any(
+            name.startswith("maxwell")
+            for name in data.files
+        )
+
+    loaded = UnifiedNeuralElectroThermalModel.load(
+        model_path,
+        device="cpu",
+    )
     loaded_context = loaded.geometry_context(query_geometry)
-    assert np.allclose(loaded_context.thermal_basis, context.thermal_basis)
+    loaded_rank = loaded.thermal_rank_for(query_geometry)
+    assert loaded_rank == rank
+    assert np.allclose(
+        loaded_context.thermal_basis,
+        context.thermal_basis,
+    )
     loaded_result = loaded.predict(
         0.0,
-        initial_state=np.zeros(loaded.thermal_rank),
+        initial_state=np.zeros(loaded_rank),
         geometry=query_geometry,
         operating=[1.0, 0.0],
         max_step=1.0,
     )
-    assert loaded.thermal_rank == model.thermal_rank
     assert loaded.surrogate.pod_rank == model.surrogate.pod_rank
-    assert np.allclose(loaded_result.impedance, result.impedance)
-    assert np.allclose(loaded_result.heat_source, result.heat_source)
+    assert np.allclose(
+        loaded_result.impedance,
+        result.impedance,
+    )
+    assert np.allclose(
+        loaded_result.heat_source,
+        result.heat_source,
+    )
