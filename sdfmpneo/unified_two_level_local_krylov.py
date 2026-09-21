@@ -9,6 +9,29 @@ from .unified_gradient_block_maxwell import build_gradient_block
 from .unified_two_level_maxwell import build_two_level_maxwell
 
 
+def _two_level_minimum_dofs(cfg):
+    """First local size that must use the coarse H(curl) hierarchy by default.
+
+    Keep this boundary adjacent to the localized transverse direct band.  The
+    previous hard-coded 200k threshold left a 100k--200k one-level ILU/LGMRES
+    gap; production geometry sampling can land in that gap (for example 108327
+    edges) and then make essentially no residual progress.
+    """
+    if "linear_two_level_min_dofs" in cfg:
+        minimum = int(cfg["linear_two_level_min_dofs"])
+    else:
+        direct = int(
+            cfg.get(
+                "linear_transverse_direct_max_dofs",
+                cfg.get("linear_direct_max_dofs", 60000),
+            )
+        )
+        minimum = direct + 1
+    if minimum < 1:
+        raise ValueError("linear_two_level_min_dofs must be positive")
+    return minimum
+
+
 def _relative_pilot(A, rhs, x0, M, solve, residual_fn, *, maxiter, inner_m, accept_ratio):
     """Run a cheap pilot whose target is relative to the *current* residual."""
     start = np.asarray(x0, complex).reshape(-1)
@@ -199,7 +222,7 @@ def install(local_solver_module):
     def iterative_solve(A, rhs, x0, cfg, residual_tolerance, **kwargs):
         background = kwargs.get("background") or getattr(A, "_sdfmpneo_background", None)
         context = kwargs.get("context") or getattr(A, "_sdfmpneo_context", None)
-        minimum_dofs = int(cfg.get("linear_two_level_min_dofs", 200000))
+        minimum_dofs = _two_level_minimum_dofs(cfg)
         coarse_state = None if background is None else getattr(background, "_sdfmpneo_coarse_state", None)
         if (
             A.shape[0] < minimum_dofs
@@ -445,4 +468,4 @@ def install(local_solver_module):
     return local_solver_module
 
 
-__all__ = ["_galerkin_defect_polish", "_relative_pilot", "install"]
+__all__ = ["_galerkin_defect_polish", "_relative_pilot", "_two_level_minimum_dofs", "install"]
