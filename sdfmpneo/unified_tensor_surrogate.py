@@ -825,7 +825,7 @@ def normalize_cell_joule_tensors(cell_h, d_vol):
     )
     if (
         not np.isfinite(final_mismatch)
-        or final_mismatch > 1e-9
+        or final_mismatch > 1e-10
     ):
         raise FloatingPointError(
             "cell Joule congruence failed exact sum-to-D invariant: "
@@ -904,7 +904,22 @@ class SpatialDecodedTensors:
         scale = max(float(np.max(np.abs(heat))), 1.0)
         if float(np.min(heat)) < -1e-11 * scale:
             raise RuntimeError("decoded cell Joule field lost nonnegativity")
-        return np.maximum(np.asarray(heat, float), 0.0)
+        heat = np.maximum(np.asarray(heat, float), 0.0)
+        target = max(
+            float(0.5 * np.real(c.conj() @ self.d_vol @ c)),
+            0.0,
+        )
+        total = float(np.sum(heat))
+        if target <= np.finfo(float).tiny:
+            return np.zeros_like(heat)
+        if total <= np.finfo(float).tiny:
+            raise RuntimeError(
+                "decoded cell Joule field lost positive total-power support"
+            )
+        # Removing tiny negative roundoff must not weaken the exact D-volume
+        # identity used by the circuit/thermal coupling.
+        heat *= target / total
+        return heat
 
     def volume_power(self, currents):
         c = np.asarray(currents, complex).reshape(-1)
