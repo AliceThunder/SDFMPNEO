@@ -153,6 +153,7 @@ def install(self_correction_module):
             "localized_d_vol": refinable_d,
             "localized_d_out": refinable_out,
             "localized_modal_h": modal_refinable,
+            "localized_heat_cells": q_refinable,
             "localized_power_balance_relative_error": balance,
             "localized_contraction": "certified_gradient_compensated_transverse_v2",
             "localized_solution_path": (
