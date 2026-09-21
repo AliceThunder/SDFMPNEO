@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 from .unified_geometry import UnifiedUWPTGeometry
 from .unified_thermal import (
@@ -199,7 +201,141 @@ def build_online_thermal_context(
     return context
 
 
+def audit_online_thermal_trajectories(
+    background,
+    geometry,
+    cell_h,
+    *,
+    times=(0.1, 1.0, 10.0, 100.0),
+    time_scales=(0.1, 1.0, 10.0),
+    conditioning_limit=1e10,
+    target_relative_error=5e-2,
+):
+    """Full-cell vs geometry-local ROM transient audit for the physical source span."""
+    audit_times = np.asarray(times, float).reshape(-1)
+    if (
+        audit_times.size == 0
+        or np.any(~np.isfinite(audit_times))
+        or np.any(audit_times <= 0.0)
+    ):
+        raise ValueError("online thermal audit times must be positive")
+    audit_times = np.unique(np.sort(audit_times))
+
+    context = build_online_thermal_context(
+        background,
+        geometry,
+        cell_h,
+        time_scales=time_scales,
+        conditioning_limit=conditioning_limit,
+        target_relative_error=target_relative_error,
+    )
+    M = context.thermal_mass_full
+    K = context.thermal_stiffness_full
+    phi = np.asarray(context.thermal_basis, float)
+    Mr = np.asarray(context.thermal_mass_reduced, float)
+    Kr = np.asarray(context.thermal_stiffness_reduced, float)
+    B_heat, labels = _source_block(background, context, cell_h)
+
+    steady_full = _solve_block(K, B_heat)
+    reduced_rhs = phi.T @ B_heat
+    try:
+        steady_reduced = np.linalg.solve(Kr, reduced_rhs)
+    except np.linalg.LinAlgError:
+        steady_reduced = np.linalg.lstsq(Kr, reduced_rhs, rcond=None)[0]
+
+    initial_full = np.ones(background.n_cells, float)
+    try:
+        initial_reduced = np.linalg.solve(
+            Mr,
+            phi.T @ (M @ initial_full),
+        )
+    except np.linalg.LinAlgError:
+        initial_reduced = np.linalg.lstsq(
+            Mr,
+            phi.T @ (M @ initial_full),
+            rcond=None,
+        )[0]
+
+    mass_diag = np.asarray(M.diagonal(), float)
+    if np.any(~np.isfinite(mass_diag)) or np.any(mass_diag <= 0.0):
+        raise RuntimeError("full thermal mass diagonal is invalid")
+    A_full = (-sp.diags(1.0 / mass_diag) @ K).tocsr()
+    A_red = -np.linalg.solve(Mr, Kr)
+
+    full_block = np.column_stack((steady_full, initial_full))
+    reduced_block = np.column_stack(
+        (steady_reduced, initial_reduced)
+    )
+    initial_index = full_block.shape[1] - 1
+    worst = 0.0
+    worst_row = {}
+
+    def mass_error(truth, approx):
+        diff = np.asarray(truth - approx, float)
+        ref = np.asarray(truth, float)
+        num = float(np.dot(diff, mass_diag * diff))
+        den = float(np.dot(ref, mass_diag * ref))
+        return float(
+            np.sqrt(
+                max(num, 0.0)
+                / max(den, np.finfo(float).tiny)
+            )
+        )
+
+    for time in audit_times:
+        full_decay = np.asarray(
+            spla.expm_multiply(A_full * float(time), full_block),
+            float,
+        )
+        reduced_decay = np.asarray(
+            spla.expm_multiply(A_red * float(time), reduced_block),
+            float,
+        )
+        for j, label in enumerate(labels):
+            truth = steady_full[:, j] - full_decay[:, j]
+            approx = phi @ (
+                steady_reduced[:, j] - reduced_decay[:, j]
+            )
+            error = mass_error(truth, approx)
+            if error > worst:
+                worst = error
+                worst_row = {
+                    "case": str(label),
+                    "time": float(time),
+                    "mass_relative_error": float(error),
+                }
+
+        truth_initial = full_decay[:, initial_index]
+        approx_initial = phi @ reduced_decay[:, initial_index]
+        error = mass_error(truth_initial, approx_initial)
+        if error > worst:
+            worst = error
+            worst_row = {
+                "case": "initial[uniform]",
+                "time": float(time),
+                "mass_relative_error": float(error),
+            }
+
+    return {
+        "maximum_mass_relative_error": float(worst),
+        "worst": worst_row,
+        "rank": int(phi.shape[1]),
+        "resolvent_error": float(
+            context.online_thermal_report.maximum_anchor_relative_energy_error
+        ),
+        "conditioning": float(
+            context.online_thermal_report.conditioning
+        ),
+        "source_count": int(
+            context.online_thermal_report.source_count
+        ),
+        "times": audit_times.tolist(),
+        "converged": bool(worst <= float(target_relative_error)),
+    }
+
+
 __all__ = [
     "OnlineThermalReport",
     "build_online_thermal_context",
+    "audit_online_thermal_trajectories",
 ]
