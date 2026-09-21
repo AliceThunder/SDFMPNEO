@@ -7,6 +7,7 @@ import numpy as np
 
 from .unified_compensated_field import collapsed_field
 from .unified_hcurl_transfer import build_hcurl_prolongation
+from .unified_two_level_local_krylov import _two_level_minimum_dofs
 
 
 def install(local_solver_module):
@@ -29,6 +30,8 @@ def install(local_solver_module):
         }
 
     def warm_start(parent, local, local_geometry, port, fine_step):
+        cfg = dict(getattr(parent, "self_correction_config", {}) or {})
+        two_level_required = local.n_edges >= _two_level_minimum_dofs(cfg)
         state = getattr(parent, "_local_self_warm_state", None)
         if not isinstance(state, dict) or state.get("key") != local_solver_module._canonical_key(local_geometry, port):
             return None, False
@@ -53,15 +56,15 @@ def install(local_solver_module):
                 f"fine_edges={local.n_edges}, error={type(exc).__name__}: {message}",
                 flush=True,
             )
-            # The >200k validation solve deliberately no longer has a one-level
-            # ILU fallback.  Failing closed here prevents a transfer bug from
-            # silently routing back into the already disproved 254k path.
-            if local.n_edges >= 200000:
-                raise RuntimeError("required H(curl) validation transfer failed") from exc
+            # Once the direct band ends, the two-level hierarchy is the robust
+            # iterative path.  Do not silently route a failed transfer back into
+            # the one-level ILU/LGMRES gap that production geometry can hit.
+            if two_level_required:
+                raise RuntimeError("required H(curl) local transfer failed") from exc
             return None, False
         if guess.shape != (local.n_edges,) or np.any(~np.isfinite(guess)):
-            if local.n_edges >= 200000:
-                raise FloatingPointError("required H(curl) validation warm field is invalid")
+            if two_level_required:
+                raise FloatingPointError("required H(curl) local warm field is invalid")
             return None, False
 
         local._sdfmpneo_coarse_state = {
