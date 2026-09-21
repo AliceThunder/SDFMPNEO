@@ -268,11 +268,18 @@ class UnifiedNeuralElectroThermalModel:
                 _validate_rule(candidate[section], rules, section)
 
     def _geometry(self, geometry=None):
-        mapping = self.default_geometry if geometry is None else geometry
-        if isinstance(mapping, UnifiedUWPTGeometry):
-            return mapping
+        value = self.default_geometry if geometry is None else geometry
+        mapping = (
+            value.to_mapping()
+            if isinstance(value, UnifiedUWPTGeometry)
+            else dict(value)
+        )
         self._validate_production_geometry(mapping)
-        return UnifiedUWPTGeometry.from_mapping(mapping)
+        # Apply the same geometric/physical validity checks for every public
+        # path, including tensors() calls that do not immediately build a
+        # thermal context.  Passing an already-built geometry object must not
+        # bypass the production-domain certificate.
+        return self.background.validate_geometry(mapping)
 
     def tensors(self, geometry=None):
         g = self._geometry(geometry)
