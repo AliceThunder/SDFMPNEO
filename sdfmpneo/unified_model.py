@@ -27,7 +27,7 @@ from .unified_open_boundary import OpenBoundaryBackground
 from .unified_tensor_surrogate import UnifiedSpatialTensorSurrogate
 
 ARCHITECTURE = "unified-geometry-spatial-joule-online-thermal-rom"
-FORMAT_VERSION = 52
+FORMAT_VERSION = 53
 
 
 def _plain(value):
