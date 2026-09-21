@@ -1,4 +1,4 @@
-"""Geometry-only EM tensor surrogate with geometry-aware thermal modal labels."""
+"""Geometry-only tensor surrogates, including production cellwise Joule truth."""
 from __future__ import annotations
 
 from dataclasses import dataclass
