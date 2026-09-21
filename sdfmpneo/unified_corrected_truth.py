@@ -6,15 +6,19 @@ import numpy as np
 from .unified_self_correction import apply_local_self_correction
 from .unified_tensor_surrogate import (
     TensorDataset,
+    SpatialTensorDataset,
     _audit_current_vectors,
     _cell_volume_heat,
     _conductivity_support_bounds,
     _hermitian,
     _port_truth_from_context,
+    cell_joule_tensors_from_port_fields,
+    normalize_cell_joule_tensors,
     _require_static_field_materials,
     _split_labels,
     encode_geometry,
     pack_tensors,
+    pack_spatial_tensors,
 )
 
 
@@ -143,6 +147,196 @@ def solve_truth_tensors(background, geometry):
     return z, d, modal, phi_min, phi_max, refreshed
 
 
+def solve_spatial_truth_tensors(background, geometry):
+    """Corrected Z/D plus cellwise Hermitian Joule tensor field.
+
+    This truth representation is independent of any thermal basis.  The global
+    Maxwell solve supplies the coarse spatial tensor field.  The existing
+    localized fine-minus-coarse correction changes only diagonal self terms; its
+    D defect is deposited on the corresponding physical line-heat support before
+    one PSD/total-D normalization.
+    """
+    _require_static_field_materials(background)
+    context = background.geometry_context(
+        geometry,
+        assemble_thermal=False,
+    )
+    z_raw, d_raw, d_out_raw, X, sigma, audit = _port_truth_from_context(
+        background,
+        context,
+    )
+    cells_raw = cell_joule_tensors_from_port_fields(
+        background,
+        sigma,
+        X,
+    )
+
+    correction = apply_local_self_correction(
+        background,
+        geometry,
+        z_raw,
+        d_raw,
+        d_out_raw,
+    )
+    z = correction.z
+    d = correction.d_vol
+    d_out = correction.d_out
+
+    cells = np.asarray(cells_raw, complex).copy()
+    delta_diag = np.real(np.diag(d - d_raw))
+    for p, delta in enumerate(delta_diag):
+        weights = np.asarray(context.line_heat_weights[p], float).reshape(-1)
+        if weights.shape != (background.n_cells,):
+            raise ValueError(
+                "line-heat support has incompatible spatial shape"
+            )
+        total = float(np.sum(weights))
+        if not np.isfinite(total) or total <= 0.0:
+            raise ValueError("line-heat support is empty")
+        cells[:, p, p] += float(delta) * (weights / total)
+
+    d, cells = normalize_cell_joule_tensors(cells, d)
+
+    minimum_cell_eigenvalue = float(
+        np.min(np.linalg.eigvalsh(cells).real)
+    )
+    aggregate_error = float(
+        np.linalg.norm(np.sum(cells, axis=0) - d)
+        / max(float(np.linalg.norm(d)), np.finfo(float).tiny)
+    )
+    power_error = 0.0
+    minimum_cell_power = float("inf")
+    for current in _audit_current_vectors(X.shape[1]):
+        current = np.asarray(current, complex)
+        q = 0.5 * np.real(
+            np.einsum(
+                "p,kpq,q->k",
+                current.conj(),
+                cells,
+                current,
+                optimize=True,
+            )
+        )
+        direct = float(np.sum(q))
+        tensor = float(
+            0.5 * np.real(current.conj() @ d @ current)
+        )
+        scale = max(
+            abs(direct),
+            abs(tensor),
+            np.finfo(float).tiny,
+        )
+        power_error = max(
+            power_error,
+            abs(direct - tensor) / scale,
+        )
+        minimum_cell_power = min(
+            minimum_cell_power,
+            float(np.min(q)),
+        )
+
+    refreshed = _refresh_audit(
+        z,
+        d,
+        d_out,
+        audit,
+        correction,
+    )
+    refreshed.update(
+        minimum_cell_joule_tensor_eigenvalue=minimum_cell_eigenvalue,
+        maximum_spatial_joule_total_mismatch=aggregate_error,
+        maximum_spatial_joule_power_relative_error=float(power_error),
+        minimum_spatial_joule_cell_power=float(minimum_cell_power),
+        spatial_joule_representation="cellwise_hermitian_psd_v1",
+    )
+    return z, d, cells, refreshed
+
+
+def generate_spatial_tensor_dataset(
+    background,
+    geometries,
+    *,
+    seed=0,
+    monitor=None,
+):
+    geometries = list(geometries)
+    inputs, outputs, audits = [], [], []
+    for index, geometry in enumerate(geometries):
+        if monitor is not None:
+            monitor.checkpoint()
+        z, d, cells, audit = solve_spatial_truth_tensors(
+            background,
+            geometry,
+        )
+        inputs.append(encode_geometry(geometry))
+        outputs.append(pack_spatial_tensors(z, d, cells))
+        audits.append(audit)
+        print(
+            "生成 corrected geometry→Z/D/cell-Joule truth……"
+            f"{100.0 * (index + 1) / len(geometries):5.1f}%  "
+            f"({index + 1}/{len(geometries)})",
+            flush=True,
+        )
+
+    numeric_audit = {
+        "maximum_linear_relative_residual": max(
+            a["max_linear_relative_residual"] for a in audits
+        ),
+        "maximum_reciprocity_relative_error": max(
+            a["reciprocity_relative_error"] for a in audits
+        ),
+        "minimum_d_vol_eigenvalue": min(
+            a["minimum_d_vol_eigenvalue"] for a in audits
+        ),
+        "minimum_physical_outward_eigenvalue": min(
+            a["minimum_physical_outward_eigenvalue"] for a in audits
+        ),
+        "minimum_implied_outward_eigenvalue": min(
+            a["minimum_implied_outward_eigenvalue"] for a in audits
+        ),
+        "maximum_open_boundary_power_balance_relative_error": max(
+            a["open_boundary_power_balance_relative_error"] for a in audits
+        ),
+        "maximum_joule_total_power_relative_error": max(
+            a["maximum_spatial_joule_power_relative_error"] for a in audits
+        ),
+        "minimum_cell_joule_tensor_eigenvalue": min(
+            a["minimum_cell_joule_tensor_eigenvalue"] for a in audits
+        ),
+        "maximum_spatial_joule_total_mismatch": max(
+            a["maximum_spatial_joule_total_mismatch"] for a in audits
+        ),
+        "minimum_spatial_joule_cell_power": min(
+            a["minimum_spatial_joule_cell_power"] for a in audits
+        ),
+        "maximum_local_self_joule_total_power_relative_error": max(
+            a["local_self_joule_total_power_relative_error"] for a in audits
+        ),
+        "maximum_material_fraction_closure_error": max(
+            a["material_fraction_closure_error"] for a in audits
+        ),
+        "source_regularization_available": min(
+            a["source_regularization_available"] for a in audits
+        ),
+        "independent_outward_power_available": 1.0,
+        "local_self_correction_available": min(
+            a["local_self_correction_enabled"] for a in audits
+        ),
+        "maximum_local_self_correction_power_balance_relative_error": max(
+            a["local_self_correction_power_balance_relative_error"]
+            for a in audits
+        ),
+    }
+    return SpatialTensorDataset(
+        np.asarray(inputs, float),
+        np.asarray(outputs, float),
+        _split_labels(len(geometries), seed),
+        numeric_audit,
+        len(background.coil_materials),
+        int(background.n_cells),
+    )
+
+
 def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
     geometries = list(geometries)
     if getattr(background, "thermal_library", None) is None:
@@ -212,4 +406,4 @@ def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
     )
 
 
-__all__ = ["generate_tensor_dataset", "solve_port_truth_tensors", "solve_truth_tensors"]
+__all__ = ["generate_tensor_dataset", "generate_spatial_tensor_dataset", "solve_port_truth_tensors", "solve_truth_tensors", "solve_spatial_truth_tensors"]
