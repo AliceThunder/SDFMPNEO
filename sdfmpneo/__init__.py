@@ -1,8 +1,8 @@
-"""SDF-MPNEO geometry-to-tensor electrothermal ROM.
+"""SDF-MPNEO geometry-to-spatial-Joule electrothermal ROM.
 
 Production API:
-``geometry -> deterministic Phi(g),Mr(g),Kr(g) + neural EM tensors -> explicit
-current/circuit physics -> true thermal ROM``.
+``geometry -> neural Z/D/cellwise Joule tensors -> geometry-local thermal ROM
+from true M(g),K(g) -> explicit current/circuit physics -> temperature``.
 """
 
 from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
@@ -30,7 +30,7 @@ from . import unified_model as _unified_model
 # source and material geometry at once.  The 10% Gate and 1e-9 scalar residual
 # remain unchanged; the historical exact sigma/epsilon reference remains only as
 # diagnostic/regression code and is not used by production terminal truth.
-_unified_model.FORMAT_VERSION = 51
+_unified_model.FORMAT_VERSION = 52
 _SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
 
 from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
@@ -156,15 +156,29 @@ _install_longitudinal_preflight_schedule(
 
 from .unified_tensor_surrogate import (
     DecodedTensors,
+    SpatialDecodedTensors,
+    SpatialTensorDataset,
     TensorDataset,
+    UnifiedSpatialTensorSurrogate,
     UnifiedTensorSurrogate,
     decode_physical_tensors,
+    decode_spatial_tensors,
     encode_geometry,
+    pack_spatial_tensors,
     pack_tensors,
     solve_port_truth_tensors,
     solve_truth_tensors,
 )
-from .unified_tensor_training import TensorTrainingReport, train_matrix_tensor_surrogate
+from .unified_tensor_training import (
+    TensorTrainingReport,
+    train_matrix_tensor_surrogate,
+    train_spatial_tensor_surrogate,
+)
+from .unified_online_thermal import (
+    OnlineThermalReport,
+    audit_online_thermal_trajectories,
+    build_online_thermal_context,
+)
 from .unified_thermal import (
     GeometryAwareThermalLibrary,
     ThermalBasisReport,
@@ -179,6 +193,8 @@ __all__ = [
     "BackgroundContext",
     "CoilGeometry",
     "DecodedTensors",
+    "SpatialDecodedTensors",
+    "SpatialTensorDataset",
     "FixedMultiscaleBackground",
     "GeometryAwareThermalLibrary",
     "OpenBoundaryBackground",
@@ -186,28 +202,38 @@ __all__ = [
     "Pose",
     "TensorDataset",
     "TensorTrainingReport",
+    "OnlineThermalReport",
     "ThermalBasisReport",
     "UnifiedNeuralElectroThermalModel",
     "UnifiedPrediction",
     "UnifiedSteadyState",
     "UnifiedTensorSurrogate",
+    "UnifiedSpatialTensorSurrogate",
     "UnifiedUWPTGeometry",
     "audit_geometry_aware_thermal_trajectories",
     "build_geometry_aware_thermal_library",
     "decode_physical_tensors",
+    "decode_spatial_tensors",
     "encode_geometry",
     "pack_tensors",
+    "pack_spatial_tensors",
     "sample_geometry",
     "solve_port_truth_tensors",
     "solve_truth_tensors",
     "stretched_axis",
     "train_matrix_tensor_surrogate",
+    "train_spatial_tensor_surrogate",
+    "build_online_thermal_context",
+    "audit_online_thermal_trajectories",
 ]
 
-# v51 partitions thermal states before transport and enriches moving-local residuals instead of memorizing them in fixed background.  The
-# certified EM preflight has its own physical signature and remains reusable.
+# v52 removes the falsified cross-geometry thermal state atlas.  The neural
+# surrogate predicts corrected Z/D plus a PSD cellwise Joule tensor field; each
+# query geometry constructs a small thermal ROM directly from its true M(g),K(g).
+# The certified EM preflight/port-field cache keeps its physical signature and
+# remains reusable across this thermal architecture change.
 from . import unified_runtime as _unified_runtime
-_unified_runtime._CACHE_FORMAT = 54
+_unified_runtime._CACHE_FORMAT = 55
 _unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
 
 _original_runtime_build_background = _unified_runtime.build_background
