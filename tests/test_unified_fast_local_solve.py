@@ -5,6 +5,7 @@ import scipy.sparse.linalg as spla
 import sdfmpneo.unified_certified_local_solve as local_solver
 from sdfmpneo.unified_certified_local_solve import _iterative_solve, _relative_residual
 from sdfmpneo.unified_fast_local_krylov import _defect_refine, _pilot_krylov
+from sdfmpneo.unified_localized_self_solve import _solver_limits
 
 
 def test_ilu_lgmres_reaches_certified_true_residual():
@@ -155,3 +156,19 @@ def test_pilot_krylov_rejects_a_destructive_preconditioner():
     )
 
     assert not accepted or residual < before
+
+
+
+def test_localized_transverse_solver_uses_medium_direct_band():
+    direct, fallback = _solver_limits(
+        {
+            "linear_direct_max_dofs": 60000,
+            "linear_direct_fallback_max_dofs": 60000,
+            "linear_transverse_direct_max_dofs": 100000,
+            "linear_transverse_direct_fallback_max_dofs": 100000,
+        }
+    )
+    assert direct == 100000
+    assert fallback == 100000
+    assert 64107 <= direct
+    assert fallback < 118000
