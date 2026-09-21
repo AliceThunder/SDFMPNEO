@@ -83,6 +83,7 @@ def test_localized_self_response_removes_only_pure_longitudinal_energy(monkeypat
     assert not np.isclose(result["localized_d_vol"], edge_loss @ pure_transverse_abs2)
 
     expected_q = 0.5 * expected_refinable_abs2
+    assert np.allclose(result["localized_heat_cells"], expected_q)
     assert np.allclose(result["localized_modal_h"], 2.0 * expected_q)
     assert result["localized_contraction"] == "certified_gradient_compensated_transverse_v2"
     assert result["localized_gradient_projection_relative_residual"] == 1e-15
