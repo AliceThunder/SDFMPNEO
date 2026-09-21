@@ -177,24 +177,26 @@ def solve_spatial_truth_tensors(background, geometry):
         z_raw,
         d_raw,
         d_out_raw,
+        spatial=True,
     )
     z = correction.z
     d = correction.d_vol
     d_out = correction.d_out
 
-    cells = np.asarray(cells_raw, complex).copy()
-    delta_diag = np.real(np.diag(d - d_raw))
-    for p, delta in enumerate(delta_diag):
-        weights = np.asarray(context.line_heat_weights[p], float).reshape(-1)
-        if weights.shape != (background.n_cells,):
-            raise ValueError(
-                "line-heat support has incompatible spatial shape"
-            )
-        total = float(np.sum(weights))
-        if not np.isfinite(total) or total <= 0.0:
-            raise ValueError("line-heat support is empty")
-        cells[:, p, p] += float(delta) * (weights / total)
-
+    spatial_delta = correction.spatial_d_vol
+    if (
+        spatial_delta is None
+        or spatial_delta.shape
+        != (background.n_cells, X.shape[1], X.shape[1])
+        or np.any(~np.isfinite(spatial_delta))
+    ):
+        raise RuntimeError(
+            "local self correction did not provide a valid spatial D defect"
+        )
+    cells = (
+        np.asarray(cells_raw, complex)
+        + np.asarray(spatial_delta, complex)
+    )
     d, cells = normalize_cell_joule_tensors(cells, d)
 
     minimum_cell_eigenvalue = float(
