@@ -44,7 +44,7 @@ def _truth_tensors(background, geometry):
     )
 
 
-def _tensor_case(model, geometry):
+def _tensor_case(model, geometry, *, truth_projection_limit=2e-1):
     truth, truth_audit = _truth_tensors(
         model.background,
         geometry,
@@ -186,6 +186,14 @@ def _tensor_case(model, geometry):
                 truth_audit["maximum_spatial_joule_total_mismatch"]
             )
             <= 1e-10
+        ),
+        "truth_projection_ok": (
+            float(
+                truth_audit[
+                    "spatial_truth_projection_correction"
+                ]
+            )
+            <= float(truth_projection_limit)
         ),
     }
     row["truth_physics"] = {
@@ -841,6 +849,7 @@ def run_spatial_final_held_out_audit(
         truth, predicted, tensor = _tensor_case(
             model,
             geometry,
+            truth_projection_limit=projection_limit,
         )
         thermal = audit_online_thermal_trajectories(
             model.background,
