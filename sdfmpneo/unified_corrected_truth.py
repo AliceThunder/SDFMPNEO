@@ -152,9 +152,11 @@ def solve_spatial_truth_tensors(background, geometry):
 
     This truth representation is independent of any thermal basis.  The global
     Maxwell solve supplies the coarse spatial tensor field.  The existing
-    localized fine-minus-coarse correction changes only diagonal self terms; its
-    D defect is deposited on the corresponding physical line-heat support before
-    one PSD/total-D normalization.
+    localized fine-minus-coarse correction changes only diagonal self terms.
+    Its canonical local refinable Joule field is conservatively mapped back to
+    the parent grid, so the spatial fine-minus-coarse defect preserves both its
+    local distribution and the corrected delta-D power before one PSD/total-D
+    normalization.
     """
     _require_static_field_materials(background)
     context = background.geometry_context(
