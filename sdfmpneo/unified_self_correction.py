@@ -357,7 +357,12 @@ def _deposit_local_heat_to_parent(parent, geometry, port, local_result):
 
     source_total = float(np.sum(heat))
     mapped_total = float(np.sum(mapped))
+    # The refinable localized contribution is signed because it contains the
+    # transverse/longitudinal cross term.  A near-zero net defect must therefore
+    # be checked against its L1 magnitude, not divided by a cancellation-small
+    # total.
     scale = max(
+        float(np.sum(np.abs(heat))),
         abs(source_total),
         abs(mapped_total),
         np.finfo(float).tiny,
@@ -468,6 +473,7 @@ def apply_local_self_correction(
             scale = max(
                 abs(dd),
                 abs(spatial_total),
+                float(np.sum(np.abs(spatial_pp))),
                 np.finfo(float).tiny,
             )
             if abs(spatial_total - dd) / scale > 1e-10:
