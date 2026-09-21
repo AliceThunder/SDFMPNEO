@@ -12,7 +12,7 @@ def _load_run():
     return module
 
 
-def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
+def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
     run = _load_run()
     network = run.TRAINING["network"]
     boundary = run.BACKGROUND["open_boundary_check"]
@@ -23,13 +23,15 @@ def test_run_defaults_use_geometry_to_tensor_and_geometry_aware_thermal_rom():
     final_audit = run.TRAINING["final_audit"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
-    assert run.TRAINING["basis_samples"] == 16
-    assert run.TRAINING["basis_design_pool_multiplier"] == 8
-    assert run.TRAINING["basis_design_pool_multiplier"] >= 2
-    assert run.TRAINING["basis_validation_samples"] >= 1
-    assert run.TRAINING["thermal_basis_schema"] == "geometry_aware_partitioned_state_atlas_v14"
-    assert run.TRAINING["thermal_basis_energy_tolerance"] > 0
-    assert run.TRAINING["thermal_basis_conditioning_limit"] > 1
+    assert run.TRAINING["spatial_tensor_schema"] == "cellwise_joule_tensor_v1"
+    assert run.TRAINING["online_thermal_relative_tolerance"] > 0
+    assert run.TRAINING["online_thermal_conditioning_limit"] > 1
+    assert "basis_samples" not in run.TRAINING
+    assert "basis_design_pool_multiplier" not in run.TRAINING
+    assert "basis_validation_samples" not in run.TRAINING
+    assert "thermal_basis_schema" not in run.TRAINING
+    assert "thermal_basis_design" not in run.TRAINING
+    assert "thermal_basis_max_rank" not in run.TRAINING
     assert run.TRAINING["thermal_time_scales"] == [0.1, 1.0, 10.0]
     assert min(run.TRAINING["thermal_time_scales"]) >= 0.1
     assert run.TRAINING["thermal_trajectory_times"] == [0.1, 1.0, 10.0, 100.0]
@@ -118,9 +120,14 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     release_only["TRAINING"]["device"] = "cpu"
     assert _signature(baseline) == _signature(release_only)
 
-    physical_change = copy.deepcopy(baseline)
-    physical_change["TRAINING"]["thermal_time_scales"][0] *= 2.0
-    assert _signature(baseline) != _signature(physical_change)
+    online_policy_change = copy.deepcopy(baseline)
+    online_policy_change["TRAINING"]["thermal_time_scales"][0] *= 2.0
+    online_policy_change["TRAINING"]["online_thermal_relative_tolerance"] *= 0.5
+    assert _signature(baseline) == _signature(online_policy_change)
+
+    truth_sampling_change = copy.deepcopy(baseline)
+    truth_sampling_change["TRAINING"]["n_tensor_samples"] += 1
+    assert _signature(baseline) != _signature(truth_sampling_change)
 
     correction_change = copy.deepcopy(baseline)
     correction_change["BACKGROUND"]["self_correction"]["fine_step"] *= 0.9
@@ -134,7 +141,8 @@ def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
     assert 0 < optimizer["pod_relative_tail_tolerance"] < 1
     assert optimizer["z_weight"] > 0
     assert optimizer["d_weight"] > 0
-    assert optimizer["h_weight"] > 0
+    assert optimizer["spatial_weight"] > 0
+    assert "h_weight" not in optimizer
     assert optimizer["physics_penalty_weight"] >= 0
     assert "krylov_vectors_per_port" not in optimizer
     assert "port_loss_weight" not in optimizer
@@ -153,28 +161,33 @@ def test_current_magnitude_phase_are_online_inputs_not_network_inputs():
     assert "operating_upper" not in run.TRAINING
 
 
-def test_thermal_component_target_policy_is_explicit():
+def test_online_thermal_policy_is_explicit_and_global_atlas_is_absent():
     run = _load_run()
-    assert run.TRAINING["thermal_component_target_multiplier"] == 2.0
+    assert run.TRAINING["spatial_tensor_schema"] == "cellwise_joule_tensor_v1"
+    assert 0 < run.TRAINING["online_thermal_relative_tolerance"] < 1
+    assert run.TRAINING["online_thermal_conditioning_limit"] > 1
+    for key in (
+        "thermal_component_target_multiplier",
+        "thermal_basis_design",
+        "thermal_basis_schema",
+        "basis_samples",
+        "basis_validation_samples",
+    ):
+        assert key not in run.TRAINING
 
 
-
-def test_thermal_basis_policy_does_not_invalidate_em_preflight_signature():
+def test_online_thermal_policy_does_not_invalidate_em_preflight_signature():
     from sdfmpneo.unified_runtime import _preflight_signature
 
     run = _load_run()
     baseline = copy.deepcopy(run.SETTINGS)
 
     thermal_policy = copy.deepcopy(baseline)
-    thermal_policy["TRAINING"]["thermal_component_target_multiplier"] = 3.0
-    thermal_policy["TRAINING"]["thermal_basis_conditioning_limit"] *= 0.5
+    thermal_policy["TRAINING"]["online_thermal_relative_tolerance"] *= 0.5
+    thermal_policy["TRAINING"]["online_thermal_conditioning_limit"] *= 0.5
+    thermal_policy["TRAINING"]["thermal_time_scales"][0] *= 2.0
     assert _preflight_signature(baseline) == _preflight_signature(thermal_policy)
 
     em_physics = copy.deepcopy(baseline)
     em_physics["PHYSICS"]["frequency_hz"] *= 1.01
     assert _preflight_signature(baseline) != _preflight_signature(em_physics)
-
-
-def test_thermal_basis_design_combines_full_and_intrinsic_coverage():
-    run = _load_run()
-    assert run.TRAINING["thermal_basis_design"] == "hybrid_full_intrinsic_union_v1"
