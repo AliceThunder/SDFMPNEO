@@ -269,16 +269,43 @@ class UnifiedNeuralElectroThermalModel:
 
     def _geometry(self, geometry=None):
         value = self.default_geometry if geometry is None else geometry
-        mapping = (
-            value.to_mapping()
-            if isinstance(value, UnifiedUWPTGeometry)
-            else dict(value)
-        )
+        if isinstance(value, UnifiedUWPTGeometry):
+            g = self.background.validate_geometry(value)
+            if self.production_domain:
+                if len(g.coils) != 2 or len(g.packages) != 2:
+                    raise ValueError(
+                        "production geometry domain expects transmitter/receiver"
+                    )
+                candidate = {
+                    "transmitter": g.coils[0].to_mapping(),
+                    "receiver": g.coils[1].to_mapping(),
+                    "package_half_extent": (
+                        g.packages[0].half_extent.tolist()
+                    ),
+                    "tx_package_half_extent": (
+                        g.packages[0].half_extent.tolist()
+                    ),
+                    "rx_package_half_extent": (
+                        g.packages[1].half_extent.tolist()
+                    ),
+                }
+                self._validate_production_geometry(candidate)
+                common_rule = self.production_domain.get(
+                    "package_half_extent"
+                )
+                if common_rule is not None:
+                    _validate_rule(
+                        g.packages[1].half_extent,
+                        common_rule,
+                        "package_half_extent[receiver]",
+                    )
+            return g
+
+        mapping = dict(value)
         self._validate_production_geometry(mapping)
         # Apply the same geometric/physical validity checks for every public
         # path, including tensors() calls that do not immediately build a
-        # thermal context.  Passing an already-built geometry object must not
-        # bypass the production-domain certificate.
+        # thermal context.
         return self.background.validate_geometry(mapping)
 
     def tensors(self, geometry=None):
