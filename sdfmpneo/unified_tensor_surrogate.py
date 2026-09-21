@@ -658,21 +658,492 @@ class UnifiedTensorSurrogate:
         )
 
 
+_SPATIAL_SCHEMA_VERSION = 1
+
+
+def spatial_tensor_output_dimension(n_ports, n_cells):
+    n = int(n_ports)
+    m = int(n_cells)
+    if n < 1 or m < 1:
+        raise ValueError("spatial tensor dimensions must be positive")
+    return n * (n + 1) + n * n * (1 + m)
+
+
+def pack_spatial_tensors(z_field, d_vol, cell_h):
+    cells = np.asarray(cell_h, complex)
+    if cells.ndim != 3 or cells.shape[1] != cells.shape[2]:
+        raise ValueError("cell Joule tensors must have shape (n_cells, ports, ports)")
+    return np.concatenate(
+        [pack_complex_symmetric(z_field), pack_hermitian(d_vol)]
+        + [pack_hermitian(h) for h in cells]
+    )
+
+
+def unpack_spatial_tensors(packed, n_ports, n_cells):
+    p = np.asarray(packed, float).reshape(-1)
+    n = int(n_ports)
+    m = int(n_cells)
+    z_size, h_size, _ = tensor_block_sizes(n, 0)
+    expected = z_size + h_size * (1 + m)
+    if p.size != expected:
+        raise ValueError(
+            f"spatial tensor packed size mismatch: expected {expected}, got {p.size}"
+        )
+    z = unpack_complex_symmetric(p[:z_size], n)
+    d = unpack_hermitian(p[z_size:z_size + h_size], n)
+    start = z_size + h_size
+    cells = np.asarray(
+        [
+            unpack_hermitian(
+                p[start + j * h_size:start + (j + 1) * h_size],
+                n,
+            )
+            for j in range(m)
+        ],
+        complex,
+    )
+    return z, d, cells
+
+
+def _batch_psd_clip(value, floor=0.0):
+    a = np.asarray(value, complex)
+    if a.ndim != 3 or a.shape[1] != a.shape[2]:
+        raise ValueError("batch PSD projection expects (count,n,n)")
+    a = 0.5 * (a + np.swapaxes(a.conj(), 1, 2))
+    w, v = np.linalg.eigh(a)
+    w = np.maximum(np.asarray(w.real, float), float(floor))
+    return 0.5 * (
+        np.einsum("...ik,...k,...jk->...ij", v, w, v.conj(), optimize=True)
+        + np.einsum("...ik,...k,...jk->...ij", v, w, v.conj(), optimize=True).conj().transpose(0, 2, 1)
+    )
+
+
+def _psd_sqrt_and_inverse(value, *, inverse=False):
+    a = _hermitian(value)
+    w, v = np.linalg.eigh(a)
+    scale = max(float(np.max(np.abs(w))), 1.0)
+    floor = scale * 1e-12
+    if inverse:
+        coeff = 1.0 / np.sqrt(np.maximum(w.real, floor))
+    else:
+        coeff = np.sqrt(np.maximum(w.real, 0.0))
+    return _hermitian((v * coeff) @ v.conj().T)
+
+
+def normalize_cell_joule_tensors(cell_h, d_vol):
+    """Project each cell PSD and enforce sum(cell_h)==D by congruence.
+
+    Cell tensors represent the *D* convention, i.e. for a peak phasor current
+    c the cell power is 0.5*c^H H_cell c.  PSD clipping guarantees nonnegative
+    spatial Joule density for every current.  A single port-space congruence
+    then restores the exact corrected total D tensor without changing PSD.
+    """
+    d = _psd_clip(d_vol)
+    cells = _batch_psd_clip(cell_h)
+    n_cells, n, _ = cells.shape
+    if n_cells < 1:
+        raise ValueError("cell Joule tensor field is empty")
+
+    # Make the aggregate full-support before whitening.  The added amount is at
+    # machine-scale relative to D and is removed by the exact congruence target.
+    trace = max(float(np.trace(d).real), np.finfo(float).tiny)
+    regularization = trace * 1e-14 / float(n_cells * n)
+    if regularization > 0.0:
+        cells = cells + regularization * np.eye(n, dtype=complex)[None, :, :]
+
+    total = _hermitian(np.sum(cells, axis=0))
+    d_half = _psd_sqrt_and_inverse(d, inverse=False)
+    total_inv_half = _psd_sqrt_and_inverse(total, inverse=True)
+    transform = d_half @ total_inv_half
+    corrected = np.einsum(
+        "ab,kbc,dc->kad",
+        transform,
+        cells,
+        transform.conj(),
+        optimize=True,
+    )
+    corrected = 0.5 * (corrected + np.swapaxes(corrected.conj(), 1, 2))
+
+    # Remove only roundoff-level total mismatch with one final congruence.  This
+    # also covers near-singular D without introducing signed cell corrections.
+    total2 = _hermitian(np.sum(corrected, axis=0))
+    err = float(
+        np.linalg.norm(total2 - d)
+        / max(float(np.linalg.norm(d)), np.finfo(float).tiny)
+    )
+    if err > 5e-11:
+        total2_inv_half = _psd_sqrt_and_inverse(total2, inverse=True)
+        transform2 = d_half @ total2_inv_half
+        corrected = np.einsum(
+            "ab,kbc,dc->kad",
+            transform2,
+            corrected,
+            transform2.conj(),
+            optimize=True,
+        )
+        corrected = 0.5 * (
+            corrected + np.swapaxes(corrected.conj(), 1, 2)
+        )
+
+    return d, corrected
+
+
+def cell_joule_tensors_from_port_fields(background, sigma, fields):
+    """Exact coarse-grid cellwise Hermitian Joule tensors from port fields."""
+    X = np.asarray(fields, complex)
+    sigma = np.asarray(sigma, float).reshape(-1)
+    if X.ndim != 2 or X.shape[0] != background.n_edges:
+        raise ValueError("port-field matrix has incompatible shape")
+    if sigma.shape != (background.n_cells,):
+        raise ValueError("cell conductivity has incompatible shape")
+    n_ports = X.shape[1]
+    cells = np.zeros(
+        (background.n_cells, n_ports, n_ports),
+        complex,
+    )
+    hodge_t = background.edge_cell_hodge.T
+    for i in range(n_ports):
+        for j in range(i, n_ports):
+            edge_product = X[:, i].conj() * X[:, j]
+            values = sigma * np.asarray(hodge_t @ edge_product).reshape(-1)
+            cells[:, i, j] = values
+            cells[:, j, i] = values.conj()
+    return 0.5 * (cells + np.swapaxes(cells.conj(), 1, 2))
+
+
+@dataclass(frozen=True)
+class SpatialDecodedTensors:
+    z_field: np.ndarray
+    d_vol: np.ndarray
+    cell_h: np.ndarray
+    implied_d_out: np.ndarray
+    zd_projection_correction: float
+    spatial_projection_correction: float
+
+    @property
+    def projection_correction(self):
+        return max(
+            float(self.zd_projection_correction),
+            float(self.spatial_projection_correction),
+        )
+
+    @property
+    def h_projection_correction(self):
+        # Compatibility name used by existing diagnostics/model containers.
+        return float(self.spatial_projection_correction)
+
+    def cell_heat(self, currents):
+        c = np.asarray(currents, complex).reshape(-1)
+        if c.shape != (self.z_field.shape[0],):
+            raise ValueError("current vector has wrong port dimension")
+        heat = 0.5 * np.real(
+            np.einsum(
+                "p,kpq,q->k",
+                c.conj(),
+                self.cell_h,
+                c,
+                optimize=True,
+            )
+        )
+        # PSD projection should make this nonnegative; tolerate only roundoff.
+        scale = max(float(np.max(np.abs(heat))), 1.0)
+        if float(np.min(heat)) < -1e-11 * scale:
+            raise RuntimeError("decoded cell Joule field lost nonnegativity")
+        return np.maximum(np.asarray(heat, float), 0.0)
+
+    def volume_power(self, currents):
+        c = np.asarray(currents, complex).reshape(-1)
+        return float(0.5 * np.real(c.conj() @ self.d_vol @ c))
+
+    def implied_outward_power(self, currents):
+        c = np.asarray(currents, complex).reshape(-1)
+        return float(0.5 * np.real(c.conj() @ self.implied_d_out @ c))
+
+
+def decode_spatial_tensors(packed, n_ports, n_cells):
+    raw = np.asarray(packed, float).reshape(-1)
+    z_raw, d_raw, cells_raw = unpack_spatial_tensors(
+        raw,
+        n_ports,
+        n_cells,
+    )
+    d, cells = normalize_cell_joule_tensors(cells_raw, d_raw)
+
+    r0 = 0.5 * (
+        np.asarray(z_raw.real, float)
+        + np.asarray(z_raw.real, float).T
+    )
+    d_out_candidate = _hermitian(r0.astype(complex) - d)
+    minimum = float(np.min(np.linalg.eigvalsh(d_out_candidate)).real)
+    shift = max(0.0, -minimum)
+    d_out = _hermitian(
+        d_out_candidate + shift * np.eye(int(n_ports))
+    )
+    r = np.asarray((d + d_out).real, float)
+    x = 0.5 * (
+        np.asarray(z_raw.imag, float)
+        + np.asarray(z_raw.imag, float).T
+    )
+    z = r + 1j * x
+    implied = _hermitian(z) - d
+
+    corrected = pack_spatial_tensors(z, d, cells)
+    z_size, h_size, _ = tensor_block_sizes(int(n_ports), 0)
+    zd_stop = z_size + h_size
+    zd_correction = float(
+        np.linalg.norm(corrected[:zd_stop] - raw[:zd_stop])
+        / max(np.linalg.norm(raw[:zd_stop]), np.finfo(float).tiny)
+    )
+    spatial_correction = float(
+        np.linalg.norm(corrected[zd_stop:] - raw[zd_stop:])
+        / max(
+            np.linalg.norm(raw[zd_stop:]),
+            np.finfo(float).tiny,
+        )
+    )
+    return SpatialDecodedTensors(
+        z,
+        d,
+        cells,
+        implied,
+        zd_correction,
+        spatial_correction,
+    )
+
+
+@dataclass
+class SpatialTensorDataset:
+    inputs: np.ndarray
+    outputs: np.ndarray
+    split: np.ndarray
+    audit: dict
+    n_ports: int
+    n_cells: int
+
+    representation: str = "cellwise_joule_tensor_v1"
+
+    def indices(self, name):
+        return np.flatnonzero(self.split == name)
+
+    @property
+    def thermal_rank(self):
+        # Compatibility: production spatial source surrogate is thermal-rank free.
+        return 0
+
+    @property
+    def phi_min(self):
+        return np.empty((len(self.inputs), 0), float)
+
+    @property
+    def phi_max(self):
+        return np.empty((len(self.inputs), 0), float)
+
+    def save(self, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        keys = list(self.audit)
+        np.savez_compressed(
+            path,
+            representation=np.asarray(self.representation),
+            inputs=np.asarray(self.inputs, float),
+            outputs=np.asarray(self.outputs, float),
+            split=np.asarray(self.split, "U16"),
+            n_ports=np.asarray(self.n_ports),
+            n_cells=np.asarray(self.n_cells),
+            audit_keys=np.asarray(keys, "U96"),
+            audit_values=np.asarray(
+                [float(self.audit[k]) for k in keys],
+                float,
+            ),
+        )
+
+    @classmethod
+    def load(cls, path):
+        with np.load(path, allow_pickle=False) as data:
+            representation = (
+                str(data["representation"])
+                if "representation" in data
+                else ""
+            )
+            if representation != "cellwise_joule_tensor_v1":
+                raise ValueError(
+                    "unsupported spatial tensor dataset representation"
+                )
+            keys = data["audit_keys"].astype(str).tolist()
+            values = data["audit_values"].astype(float).tolist()
+            return cls(
+                np.asarray(data["inputs"], float),
+                np.asarray(data["outputs"], float),
+                data["split"].astype(str),
+                dict(zip(keys, values)),
+                int(data["n_ports"]),
+                int(data["n_cells"]),
+            )
+
+
+class UnifiedSpatialTensorSurrogate:
+    def __init__(
+        self,
+        network,
+        output_mean,
+        output_scale,
+        pod_basis,
+        n_ports,
+        n_cells,
+    ):
+        self.network = network
+        self.output_mean = np.asarray(output_mean, float).reshape(-1)
+        self.output_scale = np.asarray(output_scale, float).reshape(-1)
+        self.pod_basis = np.asarray(pod_basis, float)
+        self.n_ports = int(n_ports)
+        self.n_cells = int(n_cells)
+        full = spatial_tensor_output_dimension(
+            self.n_ports,
+            self.n_cells,
+        )
+        if (
+            self.output_mean.shape != (full,)
+            or self.output_scale.shape != (full,)
+        ):
+            raise ValueError(
+                "spatial output normalization dimensions differ from schema"
+            )
+        if (
+            self.pod_basis.ndim != 2
+            or self.pod_basis.shape[0] != full
+            or self.pod_basis.shape[1] < 1
+        ):
+            raise ValueError("invalid spatial tensor POD basis")
+        if self.network.config.output_dimension != self.pod_basis.shape[1]:
+            raise ValueError(
+                "network output dimension does not match spatial POD rank"
+            )
+
+    @property
+    def thermal_rank(self):
+        return 0
+
+    @property
+    def pod_rank(self):
+        return int(self.pod_basis.shape[1])
+
+    def predict_from_encoded(self, encoded):
+        import torch
+
+        parameter = next(self.network.parameters())
+        x = torch.as_tensor(
+            np.asarray(encoded, float),
+            dtype=parameter.dtype,
+            device=parameter.device,
+        )
+        with torch.no_grad():
+            beta = (
+                self.network(x)
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(float)
+            )
+        packed = (
+            self.output_mean
+            + self.output_scale * (self.pod_basis @ beta)
+        )
+        return decode_spatial_tensors(
+            packed,
+            self.n_ports,
+            self.n_cells,
+        )
+
+    def predict(self, geometry):
+        return self.predict_from_encoded(encode_geometry(geometry))
+
+    def checkpoint(self):
+        parameter = next(self.network.parameters())
+        normalizer = FeatureNormalizer(
+            self.network.input_mean.detach().cpu().numpy(),
+            self.network.input_scale.detach().cpu().numpy(),
+        )
+        return {
+            "schema_version": _SPATIAL_SCHEMA_VERSION,
+            "representation": "cellwise_joule_tensor_v1",
+            "network_config": self.network.config.to_dict(),
+            "input_mean": normalizer.mean,
+            "input_scale": normalizer.scale,
+            "output_mean": self.output_mean,
+            "output_scale": self.output_scale,
+            "pod_basis": self.pod_basis,
+            "n_ports": self.n_ports,
+            "n_cells": self.n_cells,
+            "network_state": {
+                k: v.detach().cpu()
+                for k, v in self.network.state_dict().items()
+            },
+            "dtype": str(parameter.dtype).replace("torch.", ""),
+        }
+
+    @classmethod
+    def from_checkpoint(cls, payload, device="cpu"):
+        import torch
+
+        if (
+            int(payload.get("schema_version", -1))
+            != _SPATIAL_SCHEMA_VERSION
+            or payload.get("representation")
+            != "cellwise_joule_tensor_v1"
+        ):
+            raise ValueError(
+                "unsupported spatial tensor-surrogate artifact version"
+            )
+        config = ResidualMLPConfig(
+            **dict(payload["network_config"])
+        )
+        normalizer = FeatureNormalizer(
+            np.asarray(payload["input_mean"], float),
+            np.asarray(payload["input_scale"], float),
+        )
+        network = build_residual_mlp(config, normalizer)
+        dtype = (
+            torch.float32
+            if payload.get("dtype") == "float32"
+            else torch.float64
+        )
+        network = network.to(device=device, dtype=dtype)
+        network.load_state_dict(payload["network_state"])
+        network.eval()
+        return cls(
+            network,
+            payload["output_mean"],
+            payload["output_scale"],
+            payload["pod_basis"],
+            int(payload["n_ports"]),
+            int(payload["n_cells"]),
+        )
+
+
 __all__ = [
     "DecodedTensors",
+    "SpatialDecodedTensors",
+    "SpatialTensorDataset",
+    "UnifiedSpatialTensorSurrogate",
     "TensorDataset",
     "UnifiedTensorSurrogate",
     "decode_physical_tensors",
+    "decode_spatial_tensors",
     "encode_geometry",
     "generate_tensor_dataset",
     "pack_complex_symmetric",
     "pack_hermitian",
     "pack_tensors",
+    "pack_spatial_tensors",
     "solve_port_truth_tensors",
     "solve_truth_tensors",
     "tensor_block_sizes",
     "tensor_output_dimension",
+    "spatial_tensor_output_dimension",
+    "normalize_cell_joule_tensors",
+    "cell_joule_tensors_from_port_fields",
     "unpack_complex_symmetric",
     "unpack_hermitian",
     "unpack_tensors",
+    "unpack_spatial_tensors",
 ]
