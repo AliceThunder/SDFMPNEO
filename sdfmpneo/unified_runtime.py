@@ -60,7 +60,12 @@ def _background_signature_view(settings):
     with caches created before those knobs existed while keeping all physical
     geometry/material/self-correction settings in the signature.
     """
-    background=_background_signature_view(settings)
+    background=jsonable(settings["BACKGROUND"])
+    self_correction=dict(background.get("self_correction",{}) or {})
+    self_correction.pop("linear_transverse_direct_max_dofs",None)
+    self_correction.pop("linear_transverse_direct_fallback_max_dofs",None)
+    if "self_correction" in background:
+        background["self_correction"]=self_correction
     return background
 
 
