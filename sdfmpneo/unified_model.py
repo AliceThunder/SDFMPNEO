@@ -921,9 +921,6 @@ class UnifiedNeuralElectroThermalModel:
             "field_chunk_size": int(
                 checkpoint.get("field_chunk_size", 65536)
             ),
-            "field_output_scale": float(
-                checkpoint.get("field_output_scale", 1.0)
-            ),
             "metadata": _plain(dict(metadata or {})),
         }
         arrays = {
@@ -950,6 +947,18 @@ class UnifiedNeuralElectroThermalModel:
             ],
             "field_input_scale": checkpoint[
                 "field_input_scale"
+            ],
+            "global_output_mean": checkpoint[
+                "global_output_mean"
+            ],
+            "global_output_scale": checkpoint[
+                "global_output_scale"
+            ],
+            "field_output_mean": checkpoint[
+                "field_output_mean"
+            ],
+            "field_output_scale": checkpoint[
+                "field_output_scale"
             ],
         }
         for key, value in checkpoint[
@@ -1003,7 +1012,7 @@ class UnifiedNeuralElectroThermalModel:
                 or int(
                     meta.get("surrogate_schema_version", -1)
                 )
-                != 2
+                != 3
             ):
                 raise ValueError(
                     "model tensor/thermal/surrogate "
@@ -1093,11 +1102,21 @@ class UnifiedNeuralElectroThermalModel:
                             65536,
                         )
                     ),
-                    "field_output_scale": float(
-                        meta.get(
-                            "field_output_scale",
-                            1.0,
-                        )
+                    "global_output_mean": np.asarray(
+                        data["global_output_mean"],
+                        float,
+                    ),
+                    "global_output_scale": np.asarray(
+                        data["global_output_scale"],
+                        float,
+                    ),
+                    "field_output_mean": np.asarray(
+                        data["field_output_mean"],
+                        float,
+                    ),
+                    "field_output_scale": np.asarray(
+                        data["field_output_scale"],
+                        float,
                     ),
                     "global_network_state": global_state,
                     "field_network_state": field_state,
