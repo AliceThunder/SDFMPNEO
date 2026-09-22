@@ -1150,6 +1150,7 @@ def train_spatial_tensor_surrogate(
         field_network,
         n,
         m,
+        field_output_scale=1.0 / float(m),
     )
 
     full_weights = np.concatenate(
