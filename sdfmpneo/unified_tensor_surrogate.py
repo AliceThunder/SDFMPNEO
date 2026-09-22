@@ -1854,7 +1854,7 @@ def project_spatial_dataset_to_production_cone(dataset):
 class UnifiedSpatialTensorSurrogate:
     """Two-head surrogate: global Z/D MLP + coordinate-conditioned Joule field."""
 
-    representation = "cellwise_joule_neural_field_v3"
+    representation = "cellwise_joule_neural_field_v4"
 
     def __init__(
         self,
@@ -2073,7 +2073,7 @@ class UnifiedSpatialTensorSurrogate:
             self.field_network.input_scale.detach().cpu().numpy(),
         )
         return {
-            "schema_version": 4,
+            "schema_version": 5,
             "representation": self.representation,
             "global_network_config": self.global_network.config.to_dict(),
             "field_network_config": self.field_network.config.to_dict(),
@@ -2108,9 +2108,9 @@ class UnifiedSpatialTensorSurrogate:
         import torch
 
         if (
-            int(payload.get("schema_version", -1)) != 4
+            int(payload.get("schema_version", -1)) != 5
             or payload.get("representation")
-            != "cellwise_joule_neural_field_v3"
+            != "cellwise_joule_neural_field_v4"
         ):
             raise ValueError(
                 "unsupported spatial neural-field artifact version"
