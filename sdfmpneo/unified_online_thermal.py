@@ -51,8 +51,11 @@ def merge_thermal_time_scales(*groups):
             value = float(value)
             if not np.isfinite(value):
                 continue
-            if value <= 0.0:
-                raise ValueError("thermal time scales must be positive")
+            if value == 0.0:
+                # t=0 is an initial-condition query, not a resolvent horizon.
+                continue
+            if value < 0.0:
+                raise ValueError("thermal time scales must be nonnegative")
             values.append(value)
     if not values:
         raise ValueError("at least one finite positive thermal time scale is required")
