@@ -845,6 +845,9 @@ def train_spatial_tensor_surrogate(
     )
 
     resolved = _resolve_device(torch, device)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     dtype = (
         torch.float32
         if str(cfg["dtype"]) == "float32"
@@ -858,6 +861,12 @@ def train_spatial_tensor_surrogate(
         field_cfg,
         field_norm,
     ).to(device=resolved, dtype=dtype)
+    initial_global_state = copy.deepcopy(
+        global_network.state_dict()
+    )
+    initial_field_state = copy.deepcopy(
+        field_network.state_dict()
+    )
 
     global_optimizer = torch.optim.AdamW(
         global_network.parameters(),
@@ -1024,9 +1033,6 @@ def train_spatial_tensor_surrogate(
         )
 
     rng = np.random.default_rng(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
 
     signature_hasher = hashlib.sha256()
     signature_hasher.update(
