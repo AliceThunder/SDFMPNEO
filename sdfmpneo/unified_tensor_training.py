@@ -1123,6 +1123,8 @@ def train_spatial_tensor_surrogate(
                         epoch=epochs_completed,
                         train_loss=last_train,
                         validation_loss=last_val,
+                        global_validation_loss=val_global,
+                        field_validation_loss=val_field,
                         tensor_pod_rank=0,
                         tensor_representation=(
                             "cellwise_joule_neural_field_v2"
