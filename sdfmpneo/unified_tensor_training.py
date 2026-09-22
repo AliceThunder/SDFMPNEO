@@ -366,7 +366,7 @@ def train_matrix_tensor_surrogate(
             network.eval()
             with torch.no_grad():
                 last_val = float(batch_loss(val_ids).detach().cpu())
-            if last_val < best_val - 1e-10 * max(1.0, abs(best_val)):
+            if (not np.isfinite(best_val)) or last_val < best_val - 1e-10 * max(1.0, abs(best_val)):
                 best_val = last_val
                 best_epoch = epochs_completed
                 best_state = copy.deepcopy(network.state_dict())
