@@ -181,7 +181,7 @@ def _save_truth_cache(
                         _jsonable(bundle[1]),
                         sort_keys=True,
                         separators=(",", ":"),
-                        allow_nan=False,
+                        allow_nan=True,
                     )
                     for bundle in bundles
                 ]
