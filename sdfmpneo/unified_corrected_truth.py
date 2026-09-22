@@ -19,6 +19,7 @@ from .unified_tensor_surrogate import (
     encode_geometry,
     pack_tensors,
     pack_spatial_tensors,
+    decode_spatial_tensors,
 )
 
 
@@ -38,9 +39,17 @@ def _refresh_audit(z, d, d_out, audit, correction, *, modal=None, phi_min=None, 
     implied = herm_z - d
     scale = max(float(np.linalg.norm(herm_z)), float(np.linalg.norm(d + d_out)), np.finfo(float).tiny)
     out["minimum_d_vol_eigenvalue"] = float(np.min(np.linalg.eigvalsh(_hermitian(d))).real)
-    out["minimum_physical_outward_eigenvalue"] = float(np.min(np.linalg.eigvalsh(_hermitian(d_out))).real)
+    # Keep the independent Maxwell boundary-form audit supplied by
+    # _port_truth_from_context.  The local fine-minus-coarse correction is not
+    # itself an independent global boundary measurement, so overwriting the
+    # physical value here mislabeled a corrected partition as raw physics.
+    out["minimum_corrected_outward_eigenvalue"] = float(
+        np.min(np.linalg.eigvalsh(_hermitian(d_out))).real
+    )
     out["minimum_implied_outward_eigenvalue"] = float(np.min(np.linalg.eigvalsh(_hermitian(implied))).real)
-    out["open_boundary_power_balance_relative_error"] = float(np.linalg.norm(herm_z - d - d_out) / scale)
+    out["corrected_power_balance_relative_error"] = float(
+        np.linalg.norm(herm_z - d - d_out) / scale
+    )
     out["local_self_correction_enabled"] = 1.0 if correction.audit.get("enabled", False) else 0.0
     out["local_self_correction_power_balance_relative_error"] = float(
         correction.audit.get("corrected_power_balance_relative_error", 0.0)
@@ -223,10 +232,23 @@ def solve_spatial_truth_tensors(
             np.finfo(float).tiny,
         )
     )
+    # Apply exactly the same reciprocal/passive port projection used by
+    # production inference.  This keeps held-out truth and learned outputs on one
+    # physical cone while retaining the independent raw boundary-form audit above.
+    production_decoded = decode_spatial_tensors(
+        pack_spatial_tensors(z, d, cells),
+        X.shape[1],
+        background.n_cells,
+    )
+    z = production_decoded.z_field
+    d = production_decoded.d_vol
+    cells = production_decoded.cell_h
+    d_out = production_decoded.implied_d_out
     truth_projection_correction = float(
         max(
             d_projection_correction,
             spatial_projection_correction,
+            production_decoded.projection_correction,
         )
     )
 
