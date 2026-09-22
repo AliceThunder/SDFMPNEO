@@ -535,6 +535,11 @@ def train(settings, model_path, settings_dir, monitor=None):
             model,
             final_geometries,
             monitor=monitor,
+            truth_cache_path=(
+                settings_dir
+                / "final_audit.spatial_truth.npz"
+            ),
+            truth_cache_key=_signature(settings),
         )
         if not final_audit["certified"]:
             raise RuntimeError(
