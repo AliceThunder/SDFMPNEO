@@ -10,12 +10,15 @@ from sdfmpneo.unified_online_thermal import (
 )
 from sdfmpneo.unified_tensor_surrogate import (
     decode_spatial_tensors,
+    encode_geometry,
     normalize_cell_joule_tensors,
     pack_spatial_tensors,
     project_spatial_dataset_to_production_cone,
     SpatialTensorDataset,
+    UnifiedSpatialTensorSurrogate,
     spatial_tensor_output_dimension,
 )
+from sdfmpneo.unified_tensor_training import train_spatial_tensor_surrogate
 
 
 MATERIALS = {
@@ -298,3 +301,151 @@ def test_corrected_audit_preserves_independent_physical_outward_measurement():
     assert refreshed["minimum_physical_outward_eigenvalue"] == 0.75
     assert refreshed["open_boundary_power_balance_relative_error"] == 2.5e-12
     assert refreshed["minimum_implied_outward_eigenvalue"] >= 0.0
+
+
+
+def test_two_head_spatial_training_builds_current_surrogate_interface():
+    bg = make_background()
+    base = make_geometry()
+    inputs = []
+    outputs = []
+    splits = np.asarray(
+        [
+            "train",
+            "train",
+            "train",
+            "train",
+            "validation",
+            "validation",
+            "test",
+            "audit",
+        ]
+    )
+    n = bg.n_cells
+    profile = np.linspace(1.0, 2.0, n)
+    profile /= np.sum(profile)
+
+    geometries = []
+    for index in range(len(splits)):
+        g = {
+            key: (
+                dict(value)
+                if isinstance(value, dict)
+                else list(value)
+            )
+            for key, value in base.items()
+        }
+        g["transmitter"] = dict(base["transmitter"])
+        g["receiver"] = dict(base["receiver"])
+        g["transmitter"]["translation"] = list(
+            base["transmitter"]["translation"]
+        )
+        g["receiver"]["translation"] = list(
+            base["receiver"]["translation"]
+        )
+        g["receiver"]["translation"][0] += (
+            index - 3.5
+        ) * 2.0e-4
+        geometries.append(g)
+
+        d = np.array(
+            [
+                [2.0 + 0.05 * index, 0.15 + 0.04j],
+                [0.15 - 0.04j, 1.5 + 0.03 * index],
+            ],
+            complex,
+        )
+        cells = profile[:, None, None] * d[None, :, :]
+        z = (
+            d
+            + np.eye(2) * (0.7 + 0.01 * index)
+            + 1j
+            * np.array(
+                [[0.2, -0.05], [-0.05, 0.3]],
+                float,
+            )
+        )
+        inputs.append(encode_geometry(g))
+        outputs.append(pack_spatial_tensors(z, d, cells))
+
+    dataset = SpatialTensorDataset(
+        np.asarray(inputs, float),
+        np.asarray(outputs, float),
+        splits,
+        {
+            "minimum_d_vol_eigenvalue": 0.0,
+            "minimum_implied_outward_eigenvalue": 0.0,
+            "minimum_cell_joule_tensor_eigenvalue": 0.0,
+            "maximum_spatial_joule_total_mismatch": 0.0,
+            "maximum_spatial_truth_projection_correction": 0.0,
+        },
+        2,
+        n,
+    )
+
+    surrogate, report = train_spatial_tensor_surrogate(
+        dataset,
+        background=bg,
+        network_settings={
+            "width": 16,
+            "blocks": 1,
+            "activation": "tanh",
+        },
+        training_settings={
+            "epochs": 2,
+            "batch_size": 2,
+            "field_batch_size": 16,
+            "field_cells_per_geometry": 12,
+            "learning_rate": 2e-3,
+            "weight_decay": 0.0,
+            "patience": 4,
+            "validation_interval": 1,
+            "gradient_clip_norm": 10.0,
+            "physics_penalty_weight": 0.0,
+            "z_weight": 1.0,
+            "d_weight": 1.0,
+            "spatial_weight": 1.0,
+            "seed": 7,
+            "dtype": "float64",
+        },
+        device="cpu",
+    )
+
+    assert isinstance(surrogate, UnifiedSpatialTensorSurrogate)
+    assert surrogate.pod_rank == 0
+    assert report.pod_rank == 0
+    predicted = surrogate.predict(
+        geometries[-1],
+        background=bg,
+    )
+    assert predicted.cell_h.shape == (n, 2, 2)
+    assert np.min(
+        np.linalg.eigvalsh(predicted.cell_h).real
+    ) >= -1e-10
+    assert np.allclose(
+        np.sum(predicted.cell_h, axis=0),
+        predicted.d_vol,
+        rtol=1e-10,
+        atol=1e-10,
+    )
+
+    restored = UnifiedSpatialTensorSurrogate.from_checkpoint(
+        surrogate.checkpoint(),
+        device="cpu",
+    )
+    restored_prediction = restored.predict(
+        geometries[-1],
+        background=bg,
+    )
+    assert np.allclose(
+        restored_prediction.z_field,
+        predicted.z_field,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert np.allclose(
+        restored_prediction.d_vol,
+        predicted.d_vol,
+        rtol=1e-12,
+        atol=1e-12,
+    )
