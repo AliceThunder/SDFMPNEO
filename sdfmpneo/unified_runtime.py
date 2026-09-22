@@ -599,13 +599,30 @@ def train(settings, model_path, settings_dir, monitor=None):
                     if cached_tensor_count > 0
                     else None
                 )
+                legacy_cached_signature = (
+                    _signature(
+                        settings,
+                        n_tensor_samples=cached_tensor_count,
+                        include_certification_policy=True,
+                    )
+                    if cached_tensor_count > 0
+                    else None
+                )
+                # Accept and migrate the historical v56 signature once; it
+                # included certification-only policy that never changed truth.
+                cache_signature_matches = (
+                    cache_meta.get("signature")
+                    in {
+                        cached_signature,
+                        legacy_cached_signature,
+                    }
+                )
                 # Truth labels and preflight certification are separate
                 # expensive artifacts. A preflight schema/tolerance change must
                 # never invalidate an otherwise identical Maxwell truth dataset.
                 valid_cache = (
                     cached_dataset is not None
-                    and cache_meta.get("signature")
-                    == cached_signature
+                    and cache_signature_matches
                     and int(
                         cache_meta.get("cache_format", -1)
                     )
@@ -677,6 +694,22 @@ def train(settings, model_path, settings_dir, monitor=None):
                 "self_correction_model": _SELF_CORRECTION_MODEL,
             }
             write_json(meta_path, cache_meta)
+
+        if (
+            valid_cache
+            and cache_meta.get("signature")
+            != cached_signature
+        ):
+            cache_meta["signature"] = cached_signature
+            cache_meta["truth_signature_semantics"] = (
+                "physical_truth_only_v57"
+            )
+            write_json(meta_path, cache_meta)
+            print(
+                "已原地迁移旧 spatial truth cache signature；"
+                "Maxwell truth 未重算。",
+                flush=True,
+            )
 
         if valid_cache:
             _progress(
