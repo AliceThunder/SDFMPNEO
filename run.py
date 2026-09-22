@@ -217,7 +217,16 @@ TRAINING = {
     "online_thermal_conditioning_limit": 1e10,
     "thermal_time_scales": [0.1, 1.0, 10.0],
     "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
+    # Start from the existing expensive truth budget, then add only
+    # high-coverage geometries if decoded physical validation still misses the
+    # release margin.  Existing cached truth is always reused.
     "n_tensor_samples": 96,
+    "tensor_enrichment": {
+        "enabled": True,
+        "max_samples": 256,
+        "batch_size": 32,
+        "candidate_pool": 2048,
+    },
     "final_audit": {
         "samples": 2,
         "times": [0.1, 1.0, 10.0, 100.0],
