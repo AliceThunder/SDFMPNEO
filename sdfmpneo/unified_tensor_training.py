@@ -21,8 +21,10 @@ from .unified_tensor_surrogate import (
     pack_spatial_tensors,
     pack_spatial_global_tensors,
     pack_whitened_field_factors,
+    normalize_cell_joule_tensors,
     tensor_block_sizes,
     unpack_spatial_tensors,
+    unpack_whitened_field_factors,
     spatial_cell_features,
     spatial_joule_density_prior,
     whiten_cell_joule_tensors,
@@ -564,6 +566,7 @@ def train_spatial_tensor_surrogate(
         "field_shape_weight": 1.0,
         "field_density_prior_strength": 0.9,
         "field_log_density_margin": 0.5,
+        "field_full_validation_interval": 10,
         "refit_all_truth": True,
         "refit_global_head": False,
         "refit_field_head": True,
@@ -1032,6 +1035,124 @@ def train_spatial_tensor_surrogate(
             * weighted_shape
         )
 
+
+    def full_field_validation(ids):
+        field_network.eval()
+        identity = np.eye(n, dtype=complex)
+        errors = []
+        projections = []
+        parameter = next(field_network.parameters())
+        chunk = max(
+            1,
+            int(cfg.get("field_batch_size", 4096)),
+        )
+        with torch.no_grad():
+            for sample_id in np.asarray(ids, int):
+                geometry = geometries[int(sample_id)]
+                spatial_context = background._spatial_context(
+                    geometry
+                )
+                raw_rows = []
+                for start_cell in range(0, m, chunk):
+                    stop_cell = min(
+                        m,
+                        start_cell + chunk,
+                    )
+                    cell_ids = np.arange(
+                        start_cell,
+                        stop_cell,
+                        dtype=int,
+                    )
+                    features = spatial_cell_features(
+                        background,
+                        geometry,
+                        cell_ids,
+                        spatial_context=spatial_context,
+                    )
+                    xb = torch.as_tensor(
+                        features,
+                        dtype=parameter.dtype,
+                        device=parameter.device,
+                    )
+                    normalized = (
+                        field_network(xb)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .astype(float)
+                    )
+                    raw_rows.append(
+                        field_output_mean[None, :]
+                        + field_output_scale[None, :]
+                        * normalized
+                    )
+                raw_packed = np.vstack(raw_rows)
+                density_prior = spatial_joule_density_prior(
+                    background,
+                    spatial_context,
+                    strength=float(
+                        cfg[
+                            "field_density_prior_strength"
+                        ]
+                    ),
+                )
+                raw_shape = unpack_whitened_field_factors(
+                    raw_packed,
+                    n_ports=n,
+                    total_cells=m,
+                    density_prior=density_prior,
+                    log_density_bounds=(
+                        field_log_density_bounds
+                    ),
+                )
+                _, normalized_shape = (
+                    normalize_cell_joule_tensors(
+                        raw_shape,
+                        identity,
+                    )
+                )
+                _z, d_truth, cells_truth = (
+                    unpack_spatial_tensors(
+                        dataset.outputs[int(sample_id)],
+                        n,
+                        m,
+                    )
+                )
+                truth_shape = whiten_cell_joule_tensors(
+                    cells_truth,
+                    d_truth,
+                )
+                errors.append(
+                    float(
+                        np.linalg.norm(
+                            normalized_shape - truth_shape
+                        )
+                        / max(
+                            float(
+                                np.linalg.norm(
+                                    truth_shape
+                                )
+                            ),
+                            np.finfo(float).tiny,
+                        )
+                    )
+                )
+                projections.append(
+                    float(
+                        np.linalg.norm(
+                            normalized_shape - raw_shape
+                        )
+                        / max(
+                            float(np.linalg.norm(raw_shape)),
+                            np.finfo(float).tiny,
+                        )
+                    )
+                )
+        return (
+            max(errors or [float("inf")]),
+            max(projections or [float("inf")]),
+        )
+
     rng = np.random.default_rng(seed)
 
     signature_hasher = hashlib.sha256()
@@ -1094,6 +1215,7 @@ def train_spatial_tensor_surrogate(
                         "field_shape_weight",
                         "field_density_prior_strength",
                         "field_log_density_margin",
+                        "field_full_validation_interval",
                         "refit_all_truth",
                         "refit_global_head",
                         "refit_field_head",
@@ -1123,6 +1245,10 @@ def train_spatial_tensor_surrogate(
     )
     best_global_val = float("inf")
     best_field_val = float("inf")
+    best_field_sampled_val = float("inf")
+    best_field_projection = float("inf")
+    last_field_full_val = float("inf")
+    last_field_projection = float("inf")
     best_global_epoch = 0
     best_field_epoch = 0
     stale_global = 0
@@ -1137,7 +1263,7 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 9
+                int(saved.get("schema_version", -1)) == 10
                 and saved.get("representation")
                 == "cellwise_joule_neural_field_v4"
                 and saved.get("training_signature")
@@ -1163,6 +1289,30 @@ def train_spatial_tensor_surrogate(
                 )
                 best_field_val = float(
                     saved["best_field_validation_loss"]
+                )
+                best_field_sampled_val = float(
+                    saved.get(
+                        "best_field_sampled_validation_loss",
+                        best_field_val,
+                    )
+                )
+                best_field_projection = float(
+                    saved.get(
+                        "best_field_projection_correction",
+                        np.inf,
+                    )
+                )
+                last_field_full_val = float(
+                    saved.get(
+                        "last_field_full_validation_error",
+                        best_field_val,
+                    )
+                )
+                last_field_projection = float(
+                    saved.get(
+                        "last_field_projection_correction",
+                        best_field_projection,
+                    )
                 )
                 best_global_epoch = int(
                     saved["best_global_epoch"]
@@ -1212,6 +1362,15 @@ def train_spatial_tensor_surrogate(
     interval = max(
         1,
         int(cfg["validation_interval"]),
+    )
+    full_field_interval = max(
+        1,
+        int(
+            cfg.get(
+                "field_full_validation_interval",
+                10,
+            )
+        ),
     )
     geometry_batch = max(
         1,
@@ -1385,21 +1544,35 @@ def train_spatial_tensor_surrogate(
             else:
                 stale_global += interval
 
-            if (
-                not np.isfinite(best_field_val)
-                or val_field
-                < best_field_val
-                - 1e-10
-                * max(1.0, abs(best_field_val))
-            ):
-                best_field_val = val_field
-                best_field_epoch = epochs_completed
-                best_field = copy.deepcopy(
-                    field_network.state_dict()
-                )
-                stale_field = 0
-            else:
-                stale_field += interval
+            evaluate_full_field = (
+                epochs_completed == 1
+                or epochs_completed % full_field_interval == 0
+                or epochs_completed == int(cfg["epochs"])
+            )
+            if evaluate_full_field:
+                (
+                    last_field_full_val,
+                    last_field_projection,
+                ) = full_field_validation(val_ids)
+                if (
+                    not np.isfinite(best_field_val)
+                    or last_field_full_val
+                    < best_field_val
+                    - 1e-10
+                    * max(1.0, abs(best_field_val))
+                ):
+                    best_field_val = last_field_full_val
+                    best_field_sampled_val = val_field
+                    best_field_projection = (
+                        last_field_projection
+                    )
+                    best_field_epoch = epochs_completed
+                    best_field = copy.deepcopy(
+                        field_network.state_dict()
+                    )
+                    stale_field = 0
+                else:
+                    stale_field += full_field_interval
 
             best_val = (
                 best_global_val
@@ -1418,7 +1591,7 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 9,
+                        "schema_version": 10,
                         "representation":
                             "cellwise_joule_neural_field_v4",
                         "training_signature":
@@ -1435,6 +1608,14 @@ def train_spatial_tensor_surrogate(
                             best_global_val,
                         "best_field_validation_loss":
                             best_field_val,
+                        "best_field_sampled_validation_loss":
+                            best_field_sampled_val,
+                        "best_field_projection_correction":
+                            best_field_projection,
+                        "last_field_full_validation_error":
+                            last_field_full_val,
+                        "last_field_projection_correction":
+                            last_field_projection,
                         "global_network":
                             global_network.state_dict(),
                         "field_network":
@@ -1468,6 +1649,10 @@ def train_spatial_tensor_surrogate(
                         best_field_epoch=best_field_epoch,
                         best_global_validation_loss=best_global_val,
                         best_field_validation_loss=best_field_val,
+                        field_full_validation_error=last_field_full_val,
+                        field_full_projection_correction=last_field_projection,
+                        best_field_sampled_validation_loss=best_field_sampled_val,
+                        best_field_projection_correction=best_field_projection,
                         tensor_pod_rank=0,
                         tensor_representation=(
                             "cellwise_joule_neural_field_v4"
@@ -1480,6 +1665,8 @@ def train_spatial_tensor_surrogate(
                 f"val={last_val:.5g} "
                 f"global={val_global:.5g} "
                 f"field={val_field:.5g} "
+                f"full_field={last_field_full_val:.5g} "
+                f"full_proj={last_field_projection:.5g} "
                 f"best_g@{best_global_epoch} "
                 f"best_f@{best_field_epoch}",
                 flush=True,
@@ -1841,6 +2028,12 @@ def train_spatial_tensor_surrogate(
     )
     report_cfg["best_field_validation_loss"] = float(
         best_field_val
+    )
+    report_cfg["best_field_sampled_validation_loss"] = float(
+        best_field_sampled_val
+    )
+    report_cfg["best_field_projection_correction"] = float(
+        best_field_projection
     )
 
     return surrogate, TensorTrainingReport(
