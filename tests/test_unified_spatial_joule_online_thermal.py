@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
 from sdfmpneo.unified_corrected_truth import _refresh_audit
+from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
 from sdfmpneo.unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
@@ -304,7 +305,7 @@ def test_corrected_audit_preserves_independent_physical_outward_measurement():
 
 
 
-def test_two_head_spatial_training_builds_current_surrogate_interface():
+def test_two_head_spatial_training_builds_current_surrogate_interface(tmp_path):
     bg = make_background()
     base = make_geometry()
     inputs = []
@@ -448,4 +449,33 @@ def test_two_head_spatial_training_builds_current_surrogate_interface():
         predicted.d_vol,
         rtol=1e-12,
         atol=1e-12,
+    )
+
+    model = UnifiedNeuralElectroThermalModel(
+        bg,
+        surrogate,
+        default_geometry=geometries[-1],
+        thermal_time_scales=(0.1, 1.0),
+        thermal_conditioning_limit=1e10,
+        thermal_target_relative_error=0.99,
+    )
+    artifact = tmp_path / "spatial_model.npz"
+    model.save(artifact)
+    loaded = UnifiedNeuralElectroThermalModel.load(
+        artifact,
+        device="cpu",
+    )
+    loaded_prediction = loaded.tensors(geometries[-1])
+    assert loaded_prediction.cell_h.shape == (n, 2, 2)
+    assert np.allclose(
+        loaded_prediction.z_field,
+        predicted.z_field,
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    assert np.allclose(
+        loaded_prediction.d_vol,
+        predicted.d_vol,
+        rtol=1e-10,
+        atol=1e-10,
     )
