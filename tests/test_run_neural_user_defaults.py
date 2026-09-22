@@ -23,6 +23,11 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
     final_audit = run.TRAINING["final_audit"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
+    enrichment = run.TRAINING["tensor_enrichment"]
+    assert enrichment["enabled"] is True
+    assert enrichment["max_samples"] > run.TRAINING["n_tensor_samples"]
+    assert enrichment["batch_size"] > 0
+    assert enrichment["candidate_pool"] >= enrichment["batch_size"]
     assert run.TRAINING["spatial_tensor_schema"] == "cellwise_joule_tensor_v1"
     assert run.TRAINING["online_thermal_relative_tolerance"] > 0
     assert run.TRAINING["online_thermal_conditioning_limit"] > 1
@@ -140,6 +145,12 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     solver_policy["BACKGROUND"]["self_correction"]["linear_transverse_direct_fallback_max_dofs"] = 95000
     assert _signature(baseline) == _signature(solver_policy)
 
+    certification_only = copy.deepcopy(baseline)
+    certification_only["BACKGROUND"]["open_boundary_check"]["samples"] += 1
+    certification_only["BACKGROUND"]["mesh_check"]["relative_tolerance"] *= 0.9
+    certification_only["BACKGROUND"]["geometry_continuity_check"]["angle_step"] *= 0.5
+    assert _signature(baseline) == _signature(certification_only)
+
     correction_change = copy.deepcopy(baseline)
     correction_change["BACKGROUND"]["self_correction"]["fine_step"] *= 0.9
     assert _signature(baseline) != _signature(correction_change)
@@ -220,3 +231,45 @@ def test_online_thermal_policy_does_not_invalidate_em_preflight_signature():
     em_physics = copy.deepcopy(baseline)
     em_physics["PHYSICS"]["frequency_hz"] *= 1.01
     assert _preflight_signature(baseline) != _preflight_signature(em_physics)
+
+
+
+def test_surrogate_internal_validation_uses_dynamic_release_margin():
+    from types import SimpleNamespace
+    from sdfmpneo.unified_runtime import _surrogate_internal_validation
+
+    run = _load_run()
+    report = SimpleNamespace(
+        training_config={
+            "best_global_validation_loss": 0.09,
+            "best_field_validation_loss": 0.08,
+            "best_field_projection_correction": 0.19,
+        }
+    )
+    result = _surrogate_internal_validation(
+        run.SETTINGS,
+        report,
+    )
+    assert result["global_limit"] == min(
+        run.TRAINING["final_audit"]["tensor_relative_tolerance"],
+        run.TRAINING["final_audit"]["outward_relative_tolerance"],
+        run.TRAINING["final_audit"]["reduced_dynamic_relative_tolerance"],
+    )
+    assert result["field_limit"] == min(
+        run.TRAINING["final_audit"]["tensor_relative_tolerance"],
+        run.TRAINING["final_audit"]["current_space_relative_tolerance"],
+        run.TRAINING["final_audit"]["reduced_dynamic_relative_tolerance"],
+    )
+    assert result["certified"] is True
+
+    failed = SimpleNamespace(
+        training_config={
+            "best_global_validation_loss": 0.11,
+            "best_field_validation_loss": 0.08,
+            "best_field_projection_correction": 0.19,
+        }
+    )
+    assert _surrogate_internal_validation(
+        run.SETTINGS,
+        failed,
+    )["certified"] is False
