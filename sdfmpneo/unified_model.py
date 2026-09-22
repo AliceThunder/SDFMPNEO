@@ -1008,11 +1008,11 @@ class UnifiedNeuralElectroThermalModel:
                 or meta.get("thermal_representation")
                 != "geometry_local_rational_krylov_v1"
                 or meta.get("surrogate_representation")
-                != "cellwise_joule_neural_field_v2"
+                != "cellwise_joule_neural_field_v3"
                 or int(
                     meta.get("surrogate_schema_version", -1)
                 )
-                != 3
+                != 4
             ):
                 raise ValueError(
                     "model tensor/thermal/surrogate "
