@@ -757,6 +757,54 @@ def train(settings, model_path, settings_dir, monitor=None):
                     flush=True,
                 )
         else:
+            cache_reasons = []
+            if cached_dataset is None:
+                cache_reasons.append(
+                    "dataset file missing/unreadable"
+                )
+            else:
+                expected_cached_signature = _signature(
+                    settings,
+                    n_tensor_samples=len(
+                        cached_dataset.inputs
+                    ),
+                )
+                if (
+                    cache_meta.get("signature")
+                    != expected_cached_signature
+                ):
+                    cache_reasons.append(
+                        "physical truth signature changed"
+                    )
+            if (
+                int(cache_meta.get("cache_format", -1))
+                != _CACHE_FORMAT
+            ):
+                cache_reasons.append(
+                    "truth cache format changed"
+                )
+            if (
+                cache_meta.get("tensor_representation")
+                != "cellwise_joule_tensor_v1"
+            ):
+                cache_reasons.append(
+                    "tensor representation changed"
+                )
+            if (
+                cache_meta.get("self_correction_model")
+                != _SELF_CORRECTION_MODEL
+            ):
+                cache_reasons.append(
+                    "self-correction truth model changed"
+                )
+            print(
+                "spatial truth cache miss："
+                + ", ".join(
+                    cache_reasons
+                    or ["unknown cache metadata mismatch"]
+                ),
+                flush=True,
+            )
             checkpoint.unlink(missing_ok=True)
             tensor_rng = np.random.default_rng(seed + 131071)
             n_tensor = int(
