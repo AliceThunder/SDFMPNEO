@@ -40,6 +40,51 @@ def _etd_coefficients(lambdas: np.ndarray, step: float):
     return E, b1, b2
 
 
+
+def _mass_norm(value: np.ndarray, mass: np.ndarray) -> float:
+    x = np.asarray(value, dtype=float).reshape(-1)
+    m = np.asarray(mass, dtype=float)
+    quadratic = float(x @ (m @ x))
+    return float(np.sqrt(max(quadratic, 0.0)))
+
+
+def _adaptive_mass_error_ratio(
+    error: np.ndarray,
+    current: np.ndarray,
+    trial: np.ndarray,
+    mass: np.ndarray,
+    *,
+    rtol: float,
+    atol: float,
+) -> float:
+    """Coordinate-robust adaptive error ratio in the thermal mass norm.
+
+    Reduced thermal coordinates are not Euclidean physical coordinates.  A
+    componentwise controller changes meaning when the reduced basis is rescaled.
+    The M-norm is the same norm used by release validation for temperature
+    fields, so controlling it aligns the online integrator with its certificate.
+    """
+    m = np.asarray(mass, dtype=float)
+    error_norm = _mass_norm(error, m)
+    reference = max(
+        _mass_norm(current, m),
+        _mass_norm(trial, m),
+    )
+    # Interpret atol as an RMS coordinate floor under the reduced thermal
+    # metric.  The relative term dominates once a nonzero thermal state exists.
+    absolute_floor = float(atol) * np.sqrt(
+        max(float(np.trace(m)), np.finfo(float).tiny)
+    )
+    denominator = (
+        absolute_floor
+        + float(rtol) * reference
+    )
+    return float(
+        error_norm
+        / max(denominator, np.finfo(float).tiny)
+    )
+
+
 def _validate_state(validator, state: np.ndarray) -> None:
     if validator is not None:
         validator(np.asarray(state, dtype=float))
@@ -294,8 +339,14 @@ def integrate_etd2_adaptive(
             raise FloatingPointError("adaptive ETD2 produced a non-finite thermal state")
 
         error = trial - stage
-        scale = atol + rtol * np.maximum(np.abs(a), np.abs(trial))
-        error_ratio = float(np.sqrt(np.mean((error / scale) ** 2)))
+        error_ratio = _adaptive_mass_error_ratio(
+            error,
+            a,
+            trial,
+            operator.mass,
+            rtol=rtol,
+            atol=atol,
+        )
         if not np.isfinite(error_ratio):
             raise FloatingPointError("adaptive ETD2 error indicator became non-finite")
 
