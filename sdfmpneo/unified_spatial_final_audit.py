@@ -49,7 +49,10 @@ def _tensor_case(model, geometry, *, truth_projection_limit=2e-1):
         model.background,
         geometry,
     )
-    predicted = model.surrogate.predict(geometry)
+    predicted = model.surrogate.predict(
+        geometry,
+        background=model.background,
+    )
     z_scale = max(
         float(np.linalg.norm(truth.z_field)),
         np.finfo(float).tiny,
