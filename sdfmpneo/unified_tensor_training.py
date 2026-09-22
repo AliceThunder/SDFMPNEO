@@ -533,10 +533,10 @@ def train_spatial_tensor_surrogate(
 ):
     """Fit the production two-head spatial surrogate.
 
-    The global MLP predicts reciprocal/passive Z/D.  A second coordinate-
-    conditioned field MLP predicts the whitened local Joule shape.  The
-    production decoder projects that field to PSD and enforces exact
-    sum(H_cell)=D, so no world-grid spatial POD is used.
+    The global MLP predicts the stable passive decomposition
+    D/Re(D_out)/Im(Z).  A second rigid-motion-equivariant field MLP predicts
+    log Joule density plus a PSD square-root shape.  The production decoder
+    enforces exact sum(H_cell)=D, so no world-grid spatial POD is used.
     """
     import torch
 
@@ -1110,7 +1110,7 @@ def train_spatial_tensor_surrogate(
                 )
             else:
                 print(
-                    "spatial-Joule 旧 POD 检查点与 v2 neural-field "
+                    "spatial-Joule 旧检查点与 v3 passive neural-field "
                     "架构不兼容，重新训练网络（truth cache 保留）。",
                     flush=True,
                 )
@@ -1347,7 +1347,7 @@ def train_spatial_tensor_surrogate(
                         field_validation_loss=val_field,
                         tensor_pod_rank=0,
                         tensor_representation=(
-                            "cellwise_joule_neural_field_v2"
+                            "cellwise_joule_neural_field_v3"
                         ),
                     )
             print(
