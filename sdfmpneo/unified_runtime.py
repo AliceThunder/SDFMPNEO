@@ -841,27 +841,236 @@ def train(settings, model_path, settings_dir, monitor=None):
             flush=True,
         )
 
-        _progress(
-            "训练 geometry→spatial-Joule neural field",
-            62,
-            monitor,
+        enrichment_cfg = dict(
+            settings["TRAINING"].get(
+                "tensor_enrichment",
+                {},
+            )
+            or {}
         )
-        surrogate, report = train_spatial_tensor_surrogate(
-            dataset,
-            background=bg,
-            network_settings=settings["TRAINING"].get(
-                "network"
-            ),
-            training_settings=settings["TRAINING"].get(
-                "optimizer"
-            ),
-            device=settings["TRAINING"].get(
-                "device",
-                "cuda",
-            ),
-            monitor=monitor,
-            checkpoint_path=checkpoint,
+        enrichment_enabled = bool(
+            enrichment_cfg.get("enabled", True)
         )
+        enrichment_max_samples = max(
+            len(dataset.inputs),
+            int(
+                enrichment_cfg.get(
+                    "max_samples",
+                    256,
+                )
+            ),
+        )
+        enrichment_batch = max(
+            1,
+            int(
+                enrichment_cfg.get(
+                    "batch_size",
+                    32,
+                )
+            ),
+        )
+        enrichment_candidate_pool = max(
+            enrichment_batch,
+            int(
+                enrichment_cfg.get(
+                    "candidate_pool",
+                    2048,
+                )
+            ),
+        )
+        enrichment_round = 0
+
+        while True:
+            training_progress = min(
+                62 + 6 * enrichment_round,
+                86,
+            )
+            _progress(
+                "训练 geometry→spatial-Joule neural field",
+                training_progress,
+                monitor,
+            )
+            surrogate, report = train_spatial_tensor_surrogate(
+                dataset,
+                background=bg,
+                network_settings=settings["TRAINING"].get(
+                    "network"
+                ),
+                training_settings=settings["TRAINING"].get(
+                    "optimizer"
+                ),
+                device=settings["TRAINING"].get(
+                    "device",
+                    "cuda",
+                ),
+                monitor=monitor,
+                checkpoint_path=checkpoint,
+            )
+
+            internal_validation = (
+                _surrogate_internal_validation(
+                    settings,
+                    report,
+                )
+            )
+            print(
+                "surrogate internal physical validation："
+                f"global={internal_validation['global_physical_validation_error']:.3e}"
+                f"/{internal_validation['global_limit']:.3e}，"
+                f"field={internal_validation['field_full_validation_error']:.3e}"
+                f"/{internal_validation['field_limit']:.3e}，"
+                f"projection={internal_validation['field_projection_correction']:.3e}"
+                f"/{internal_validation['projection_limit']:.3e}，"
+                f"truth samples={len(dataset.inputs)}。",
+                flush=True,
+            )
+            if monitor is not None:
+                with monitor._lock:
+                    monitor.data.update(
+                        surrogate_internal_validation=(
+                            internal_validation
+                        ),
+                        tensor_truth_samples=int(
+                            len(dataset.inputs)
+                        ),
+                        tensor_enrichment_round=int(
+                            enrichment_round
+                        ),
+                    )
+
+            if internal_validation["certified"]:
+                break
+
+            remaining = (
+                enrichment_max_samples
+                - len(dataset.inputs)
+            )
+            if (
+                not enrichment_enabled
+                or remaining <= 0
+            ):
+                raise RuntimeError(
+                    "Surrogate internal physical validation failed; "
+                    "skipping final held-out audit: "
+                    + json.dumps(
+                        jsonable(
+                            {
+                                **internal_validation,
+                                "truth_samples": int(
+                                    len(dataset.inputs)
+                                ),
+                                "enrichment_enabled":
+                                    enrichment_enabled,
+                                "enrichment_max_samples":
+                                    enrichment_max_samples,
+                            }
+                        ),
+                        sort_keys=True,
+                    )
+                )
+
+            add_count = min(
+                enrichment_batch,
+                remaining,
+            )
+            selected, selection_audit = (
+                _maximin_enrichment_geometries(
+                    settings,
+                    bg,
+                    dataset,
+                    count=add_count,
+                    seed=(
+                        seed
+                        + 900001
+                        + 8191 * enrichment_round
+                        + len(dataset.inputs)
+                    ),
+                    candidate_pool=(
+                        enrichment_candidate_pool
+                    ),
+                )
+            )
+            if len(selected) < add_count:
+                raise RuntimeError(
+                    "maximin geometry enrichment could not produce "
+                    f"{add_count} distinct legal candidates; "
+                    + json.dumps(
+                        jsonable(selection_audit),
+                        sort_keys=True,
+                    )
+                )
+
+            checkpoint.unlink(missing_ok=True)
+            _progress(
+                "增量补充 maximin spatial truth",
+                min(training_progress + 3, 89),
+                monitor,
+            )
+            print(
+                "surrogate validation 未达 release margin；"
+                f"追加 {len(selected)} 个 maximin geometry truth，"
+                f"candidate pool={selection_audit['candidate_pool']}，"
+                f"minimum selected distance="
+                f"{selection_audit['minimum_selected_distance']:.3e}。",
+                flush=True,
+            )
+            appended = generate_spatial_tensor_dataset(
+                bg,
+                selected,
+                seed=seed + len(dataset.inputs),
+                monitor=monitor,
+            )
+            dataset = merge_spatial_tensor_datasets(
+                dataset,
+                appended,
+                seed=seed,
+            )
+            cache_projection = (
+                project_spatial_dataset_to_production_cone(
+                    dataset
+                )
+            )
+            dataset.save(data_path)
+            cache_meta["signature"] = _signature(
+                settings,
+                n_tensor_samples=len(dataset.inputs),
+            )
+            cache_meta["tensor_sample_count"] = int(
+                len(dataset.inputs)
+            )
+            cache_meta["last_enrichment_selection"] = (
+                selection_audit
+            )
+            write_json(meta_path, cache_meta)
+
+            # The appended rows each carry a local physical audit, but rerun the
+            # global Gate so the release metadata certifies the actual enriched
+            # dataset rather than only its original prefix.
+            gate = run_spatial_physics_gate(
+                settings,
+                bg,
+                dataset,
+                gate_geometries,
+                preflight=preflight,
+                monitor=monitor,
+            )
+            if not gate["certified"]:
+                raise RuntimeError(
+                    "Spatial Physics Gate failed after tensor enrichment: "
+                    + json.dumps(
+                        jsonable(gate),
+                        sort_keys=True,
+                    )
+                )
+
+            print(
+                "spatial truth enrichment 完成："
+                f"samples={len(dataset.inputs)}，"
+                f"production-cone maximum correction="
+                f"{cache_projection:.3e}。",
+                flush=True,
+            )
+            enrichment_round += 1
 
         model = UnifiedNeuralElectroThermalModel(
             bg,
