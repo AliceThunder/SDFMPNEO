@@ -406,6 +406,7 @@ def test_two_head_spatial_training_builds_current_surrogate_interface(tmp_path):
             "z_weight": 1.0,
             "d_weight": 1.0,
             "spatial_weight": 1.0,
+            "refit_all_truth": False,
             "seed": 7,
             "dtype": "float64",
         },
