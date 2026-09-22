@@ -1371,12 +1371,39 @@ def train_spatial_tensor_surrogate(
             raise ValueError(
                 "refit_learning_rate_factor must lie in (0,1]"
             )
-        for optimizer in (
-            global_optimizer,
-            field_optimizer,
-        ):
-            for group in optimizer.param_groups:
-                group["lr"] *= factor
+        # Best weights may come from an earlier epoch than the optimizer's
+        # current moment state.  Rebuild AdamW so the refit starts from a
+        # coherent (weights, optimizer-state) pair.
+        global_optimizer = torch.optim.AdamW(
+            global_network.parameters(),
+            lr=float(
+                cfg.get(
+                    "global_learning_rate",
+                    cfg["learning_rate"],
+                )
+            ) * factor,
+            weight_decay=float(
+                cfg.get(
+                    "global_weight_decay",
+                    cfg["weight_decay"],
+                )
+            ),
+        )
+        field_optimizer = torch.optim.AdamW(
+            field_network.parameters(),
+            lr=float(
+                cfg.get(
+                    "field_learning_rate",
+                    cfg["learning_rate"],
+                )
+            ) * factor,
+            weight_decay=float(
+                cfg.get(
+                    "field_weight_decay",
+                    cfg["weight_decay"],
+                )
+            ),
+        )
 
         requested_refit = max(
             1,
