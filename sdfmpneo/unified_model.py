@@ -903,12 +903,24 @@ class UnifiedNeuralElectroThermalModel:
                 "geometry_local_rational_krylov_v1"
             ),
             "tensor_representation": "cellwise_joule_tensor_v1",
+            "surrogate_representation": checkpoint["representation"],
+            "surrogate_schema_version": int(
+                checkpoint["schema_version"]
+            ),
             "default_geometry": _plain(self.default_geometry),
             "production_domain": _plain(self.production_domain),
-            "network_config": checkpoint["network_config"],
+            "global_network_config": checkpoint[
+                "global_network_config"
+            ],
+            "field_network_config": checkpoint[
+                "field_network_config"
+            ],
             "network_dtype": checkpoint["dtype"],
             "n_ports": checkpoint["n_ports"],
             "n_cells": checkpoint["n_cells"],
+            "field_chunk_size": int(
+                checkpoint.get("field_chunk_size", 65536)
+            ),
             "metadata": _plain(dict(metadata or {})),
         }
         arrays = {
@@ -924,19 +936,42 @@ class UnifiedNeuralElectroThermalModel:
             "background_z": self.background.z,
             "current_offset": self.current_offset,
             "current_matrix": self.current_matrix,
-            "input_mean": checkpoint["input_mean"],
-            "input_scale": checkpoint["input_scale"],
-            "output_mean": checkpoint["output_mean"],
-            "output_scale": checkpoint["output_scale"],
-            "pod_basis": checkpoint["pod_basis"],
+            "global_input_mean": checkpoint[
+                "global_input_mean"
+            ],
+            "global_input_scale": checkpoint[
+                "global_input_scale"
+            ],
+            "field_input_mean": checkpoint[
+                "field_input_mean"
+            ],
+            "field_input_scale": checkpoint[
+                "field_input_scale"
+            ],
         }
-        for key, value in checkpoint["network_state"].items():
+        for key, value in checkpoint[
+            "global_network_state"
+        ].items():
             arrays[
-                "network__" + key.replace(".", "__DOT__")
+                "global_network__"
+                + key.replace(".", "__DOT__")
             ] = value.detach().cpu().numpy()
-        temporary = path.with_suffix(path.suffix + ".tmp")
+        for key, value in checkpoint[
+            "field_network_state"
+        ].items():
+            arrays[
+                "field_network__"
+                + key.replace(".", "__DOT__")
+            ] = value.detach().cpu().numpy()
+
+        temporary = path.with_suffix(
+            path.suffix + ".tmp"
+        )
         with temporary.open("wb") as handle:
-            np.savez_compressed(handle, **arrays)
+            np.savez_compressed(
+                handle,
+                **arrays,
+            )
         temporary.replace(path)
         return path
 
@@ -952,16 +987,24 @@ class UnifiedNeuralElectroThermalModel:
                 != FORMAT_VERSION
             ):
                 raise ValueError(
-                    "model is not the current spatial-Joule online-thermal architecture"
+                    "model is not the current spatial-Joule "
+                    "online-thermal architecture"
                 )
             if (
                 meta.get("tensor_representation")
                 != "cellwise_joule_tensor_v1"
                 or meta.get("thermal_representation")
                 != "geometry_local_rational_krylov_v1"
+                or meta.get("surrogate_representation")
+                != "cellwise_joule_neural_field_v2"
+                or int(
+                    meta.get("surrogate_schema_version", -1)
+                )
+                != 2
             ):
                 raise ValueError(
-                    "model tensor/thermal representation is incompatible"
+                    "model tensor/thermal/surrogate "
+                    "representation is incompatible"
                 )
 
             background = OpenBoundaryBackground(
@@ -977,25 +1020,18 @@ class UnifiedNeuralElectroThermalModel:
                     "ambient_temperature"
                 ],
             )
-            config = ResidualMLPConfig(
-                **dict(meta["network_config"])
-            )
-            normalizer = FeatureNormalizer(
-                np.asarray(data["input_mean"], float),
-                np.asarray(data["input_scale"], float),
-            )
-            network = build_residual_mlp(config, normalizer)
+
             dtype = (
                 torch.float32
                 if meta.get("network_dtype") == "float32"
                 else torch.float64
             )
-            network = network.to(device=device, dtype=dtype)
-            state = {}
+            global_state = {}
+            field_state = {}
             for name in data.files:
-                if name.startswith("network__"):
-                    state[
-                        name[len("network__"):].replace(
+                if name.startswith("global_network__"):
+                    global_state[
+                        name[len("global_network__"):].replace(
                             "__DOT__",
                             ".",
                         )
@@ -1004,15 +1040,61 @@ class UnifiedNeuralElectroThermalModel:
                         dtype=dtype,
                         device=device,
                     )
-            network.load_state_dict(state)
-            network.eval()
-            surrogate = UnifiedSpatialTensorSurrogate(
-                network,
-                np.asarray(data["output_mean"], float),
-                np.asarray(data["output_scale"], float),
-                np.asarray(data["pod_basis"], float),
-                int(meta["n_ports"]),
-                int(meta["n_cells"]),
+                elif name.startswith("field_network__"):
+                    field_state[
+                        name[len("field_network__"):].replace(
+                            "__DOT__",
+                            ".",
+                        )
+                    ] = torch.as_tensor(
+                        data[name],
+                        dtype=dtype,
+                        device=device,
+                    )
+
+            surrogate = UnifiedSpatialTensorSurrogate.from_checkpoint(
+                {
+                    "schema_version": int(
+                        meta["surrogate_schema_version"]
+                    ),
+                    "representation": meta[
+                        "surrogate_representation"
+                    ],
+                    "global_network_config": meta[
+                        "global_network_config"
+                    ],
+                    "field_network_config": meta[
+                        "field_network_config"
+                    ],
+                    "global_input_mean": np.asarray(
+                        data["global_input_mean"],
+                        float,
+                    ),
+                    "global_input_scale": np.asarray(
+                        data["global_input_scale"],
+                        float,
+                    ),
+                    "field_input_mean": np.asarray(
+                        data["field_input_mean"],
+                        float,
+                    ),
+                    "field_input_scale": np.asarray(
+                        data["field_input_scale"],
+                        float,
+                    ),
+                    "n_ports": int(meta["n_ports"]),
+                    "n_cells": int(meta["n_cells"]),
+                    "field_chunk_size": int(
+                        meta.get(
+                            "field_chunk_size",
+                            65536,
+                        )
+                    ),
+                    "global_network_state": global_state,
+                    "field_network_state": field_state,
+                    "dtype": meta["network_dtype"],
+                },
+                device=device,
             )
             return cls(
                 background,
@@ -1026,7 +1108,9 @@ class UnifiedNeuralElectroThermalModel:
                     data["current_matrix"],
                     complex,
                 ),
-                production_domain=meta.get("production_domain"),
+                production_domain=meta.get(
+                    "production_domain"
+                ),
                 thermal_time_scales=meta[
                     "thermal_time_scales"
                 ],
@@ -1034,7 +1118,9 @@ class UnifiedNeuralElectroThermalModel:
                     meta["thermal_conditioning_limit"]
                 ),
                 thermal_target_relative_error=float(
-                    meta["thermal_target_relative_error"]
+                    meta[
+                        "thermal_target_relative_error"
+                    ]
                 ),
             )
 
