@@ -2,9 +2,15 @@ import numpy as np
 
 from sdfmpneo.unified_tensor_surrogate import (
     decode_physical_tensors,
+    decode_spatial_global_tensors,
     encode_geometry,
+    encode_geometry_invariant,
+    normalize_cell_joule_tensors,
+    pack_spatial_global_tensors,
     pack_tensors,
+    pack_whitened_field_factors,
     unpack_tensors,
+    unpack_whitened_field_factors,
 )
 
 
@@ -104,3 +110,86 @@ def test_zero_rank_global_tensor_roundtrip_is_well_shaped():
     assert np.min(
         np.linalg.eigvalsh(decoded.implied_d_out).real
     ) >= -1e-12
+
+
+def test_spatial_global_representation_preserves_small_outward_matrix():
+    d = np.array(
+        [[5.0, 0.4 + 0.12j], [0.4 - 0.12j, 4.0]],
+        complex,
+    )
+    d_out = np.array(
+        [[2.0e-3, 3.0e-4 - 0.12j], [3.0e-4 + 0.12j, 1.5e-3]],
+        complex,
+    )
+    # Make the example exactly passive while preserving the required
+    # Im(D_out)=-Im(D) reciprocity identity.
+    minimum = np.min(np.linalg.eigvalsh(d_out).real)
+    if minimum < 0.0:
+        d_out = d_out + (-minimum + 1e-3) * np.eye(2)
+    z = (d + d_out).real + 1j * np.array(
+        [[0.3, -0.07], [-0.07, 0.45]],
+        float,
+    )
+    packed = pack_spatial_global_tensors(z, d)
+    decoded = decode_spatial_global_tensors(packed, 2)
+    assert np.allclose(decoded.d_vol, d, rtol=1e-12, atol=1e-12)
+    assert np.allclose(decoded.z_field, z, rtol=1e-12, atol=1e-12)
+    assert np.allclose(
+        decoded.implied_d_out,
+        d_out,
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    assert decoded.zd_projection_correction <= 1e-10
+
+
+def test_whitened_field_factor_roundtrip_is_psd_and_density_exact():
+    rng = np.random.default_rng(91)
+    count = 23
+    n = 2
+    factor = (
+        rng.normal(size=(count, n, n))
+        + 1j * rng.normal(size=(count, n, n))
+    )
+    cells = np.einsum(
+        "kab,kcb->kac",
+        factor,
+        factor.conj(),
+        optimize=True,
+    )
+    _, cells = normalize_cell_joule_tensors(
+        cells,
+        np.eye(n, dtype=complex),
+    )
+    packed = pack_whitened_field_factors(
+        cells,
+        total_cells=count,
+    )
+    restored = unpack_whitened_field_factors(
+        packed,
+        n_ports=n,
+        total_cells=count,
+    )
+    assert np.min(np.linalg.eigvalsh(restored).real) >= -1e-12
+    assert np.allclose(
+        restored,
+        cells,
+        rtol=2e-10,
+        atol=2e-12,
+    )
+
+
+def test_invariant_geometry_encoding_ignores_common_rigid_translation():
+    first = geometry("circle")
+    shifted = geometry("circle")
+    shift = np.array([0.013, -0.021, 0.007])
+    for side in ("transmitter", "receiver"):
+        shifted[side]["translation"] = (
+            np.asarray(shifted[side]["translation"], float) + shift
+        ).tolist()
+    assert np.allclose(
+        encode_geometry_invariant(first),
+        encode_geometry_invariant(shifted),
+        rtol=0.0,
+        atol=1e-12,
+    )
