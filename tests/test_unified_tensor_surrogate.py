@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import numpy as np
 
 from sdfmpneo.unified_tensor_surrogate import (
@@ -9,6 +10,7 @@ from sdfmpneo.unified_tensor_surrogate import (
     pack_spatial_global_tensors,
     pack_tensors,
     pack_whitened_field_factors,
+    spatial_joule_density_prior,
     unpack_tensors,
     unpack_whitened_field_factors,
 )
@@ -192,4 +194,62 @@ def test_invariant_geometry_encoding_ignores_common_rigid_translation():
         encode_geometry_invariant(shifted),
         rtol=0.0,
         atol=1e-12,
+    )
+
+
+
+def test_density_prior_is_positive_and_mean_one_on_full_grid():
+    weights_a = np.array([0.6, 0.3, 0.1, 0.0])
+    weights_b = np.array([0.0, 0.2, 0.3, 0.5])
+    context = SimpleNamespace(
+        line_heat_weights=(weights_a, weights_b),
+    )
+    background = SimpleNamespace(n_cells=4)
+    prior = spatial_joule_density_prior(
+        background,
+        context,
+        strength=0.9,
+    )
+    assert np.all(prior > 0.0)
+    assert np.isclose(np.mean(prior), 1.0)
+
+
+def test_whitened_field_factor_roundtrip_with_density_prior():
+    rng = np.random.default_rng(123)
+    count = 17
+    n = 2
+    factor = (
+        rng.normal(size=(count, n, n))
+        + 1j * rng.normal(size=(count, n, n))
+    )
+    cells = np.einsum(
+        "kab,kcb->kac",
+        factor,
+        factor.conj(),
+        optimize=True,
+    )
+    _, cells = normalize_cell_joule_tensors(
+        cells,
+        np.eye(n, dtype=complex),
+    )
+    prior = np.linspace(0.15, 1.85, count)
+    prior /= np.mean(prior)
+    packed = pack_whitened_field_factors(
+        cells,
+        total_cells=count,
+        density_prior=prior,
+    )
+    restored = unpack_whitened_field_factors(
+        packed,
+        n_ports=n,
+        total_cells=count,
+        density_prior=prior,
+        log_density_bounds=(-35.0, 35.0),
+    )
+    assert np.min(np.linalg.eigvalsh(restored).real) >= -1e-12
+    assert np.allclose(
+        restored,
+        cells,
+        rtol=2e-10,
+        atol=2e-12,
     )
