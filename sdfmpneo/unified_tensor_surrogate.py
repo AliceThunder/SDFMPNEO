@@ -1393,10 +1393,12 @@ class UnifiedSpatialTensorSurrogate:
             self.global_network,
             encoded,
         )[0]
+        empty = np.empty(0, float)
         return decode_physical_tensors(
             packed,
             self.n_ports,
-            0,
+            empty,
+            empty,
         )
 
     def predict(self, geometry, *, background):
