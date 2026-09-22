@@ -2329,7 +2329,7 @@ def train_spatial_tensor_surrogate(
         cfg.get("refit_all_truth", True)
     )
     report_cfg["final_refit_global_head"] = bool(
-        cfg.get("refit_global_head", False)
+        cfg.get("refit_global_head", True)
     )
     report_cfg["final_refit_field_head"] = bool(
         cfg.get("refit_field_head", True)
