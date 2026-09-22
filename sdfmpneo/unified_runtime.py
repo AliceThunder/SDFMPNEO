@@ -62,13 +62,16 @@ def _progress(message,percent,monitor=None):
         with monitor._lock: monitor.data.update(progress_percent=float(percent),progress_message=str(message))
 
 
-def _background_signature_view(settings):
-    """Physical BACKGROUND payload with solver-only v53 knobs removed.
+def _background_signature_view(
+    settings,
+    *,
+    include_certification_policy=False,
+):
+    """Physical BACKGROUND payload for expensive Maxwell truth identity.
 
-    The two localized-transverse direct thresholds change only how the same
-    certified linear system is solved.  Omitting them preserves compatibility
-    with caches created before those knobs existed while keeping all physical
-    geometry/material/self-correction settings in the signature.
+    Certification-only reference meshes, tolerances and continuity probes do
+    not change the production truth labels.  Keep a legacy mode so existing
+    v56 caches can be migrated in-place instead of recomputed.
     """
     background=jsonable(settings["BACKGROUND"])
     self_correction=dict(background.get("self_correction",{}) or {})
@@ -76,6 +79,14 @@ def _background_signature_view(settings):
     self_correction.pop("linear_transverse_direct_fallback_max_dofs",None)
     if "self_correction" in background:
         background["self_correction"]=self_correction
+    if not bool(include_certification_policy):
+        for name in (
+            "open_boundary_check",
+            "formulation_check",
+            "mesh_check",
+            "geometry_continuity_check",
+        ):
+            background.pop(name, None)
     return background
 
 
@@ -84,6 +95,7 @@ def _signature(
     *,
     cache_format=None,
     n_tensor_samples=None,
+    include_certification_policy=False,
 ):
     # Spatial-Joule truth is thermal-rank free.  Dataset cache identity depends
     # only on physical geometry/material settings plus the frozen truth sample
@@ -97,7 +109,12 @@ def _signature(
         "REGIONS",
     )
     payload = {k: settings[k] for k in keys}
-    payload["BACKGROUND"] = _background_signature_view(settings)
+    payload["BACKGROUND"] = _background_signature_view(
+        settings,
+        include_certification_policy=(
+            include_certification_policy
+        ),
+    )
     training = settings["TRAINING"]
     payload["TRAINING"] = {
         "seed": int(training.get("seed", 17)),
