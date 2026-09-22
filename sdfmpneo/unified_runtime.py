@@ -174,6 +174,37 @@ def build_background(settings,*,bounds=None):
     return bg
 
 
+
+def _geometry_sampling_complexity(sampling):
+    """Count scalar continuous bounds and categorical choices in sampling config."""
+    continuous = 0
+    categorical = 0
+
+    def visit(value):
+        nonlocal continuous, categorical
+        if not isinstance(value, dict):
+            return
+        if "choices" in value:
+            categorical += 1
+            return
+        if "bounds" in value:
+            bounds = np.asarray(value["bounds"], float)
+            if bounds.shape == (2,):
+                continuous += 1
+            elif bounds.shape == (3, 2):
+                continuous += 3
+            else:
+                raise ValueError(
+                    "geometry sampling bounds must be (2,) or (3,2)"
+                )
+            return
+        for item in value.values():
+            visit(item)
+
+    visit(dict(sampling or {}))
+    return int(continuous), int(categorical)
+
+
 def _sample_geometries(settings,n,rng,background):
     out=[]; attempts=0
     while len(out)<int(n):
@@ -255,6 +286,36 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
 
         seed = int(settings["TRAINING"].get("seed", 17))
+        (
+            geometry_continuous_dimension,
+            geometry_categorical_fields,
+        ) = _geometry_sampling_complexity(
+            settings.get("GEOMETRY_SAMPLING")
+        )
+        tensor_sample_budget = int(
+            settings["TRAINING"].get(
+                "n_tensor_samples",
+                96,
+            )
+        )
+        print(
+            "geometry surrogate sampling domain："
+            f"{geometry_continuous_dimension} continuous scalar dimensions，"
+            f"{geometry_categorical_fields} categorical fields；"
+            f"cached/training truth target={tensor_sample_budget}。",
+            flush=True,
+        )
+        if monitor is not None:
+            with monitor._lock:
+                monitor.data.update(
+                    geometry_continuous_dimension=(
+                        geometry_continuous_dimension
+                    ),
+                    geometry_categorical_fields=(
+                        geometry_categorical_fields
+                    ),
+                    tensor_sample_budget=tensor_sample_budget,
+                )
         preflight_cache_valid = False
         valid_cache = False
         cached_dataset = None
