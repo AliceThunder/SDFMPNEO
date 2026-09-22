@@ -2,7 +2,10 @@ import numpy as np
 from types import SimpleNamespace
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
-from sdfmpneo.unified_corrected_truth import _refresh_audit
+from sdfmpneo.unified_corrected_truth import (
+    _refresh_audit,
+    merge_spatial_tensor_datasets,
+)
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
 from sdfmpneo.unified_online_thermal import (
     audit_online_thermal_trajectories,
@@ -480,3 +483,67 @@ def test_two_head_spatial_training_builds_current_surrogate_interface(tmp_path):
         rtol=1e-10,
         atol=1e-10,
     )
+
+
+
+def test_spatial_truth_dataset_append_preserves_rows_and_conservative_audit():
+    n_ports = 2
+    n_cells = 3
+    width = spatial_tensor_output_dimension(
+        n_ports,
+        n_cells,
+    )
+    left = SpatialTensorDataset(
+        np.arange(2 * 5, dtype=float).reshape(2, 5),
+        np.arange(2 * width, dtype=float).reshape(2, width),
+        np.asarray(["train", "validation"]),
+        {
+            "minimum_d_vol_eigenvalue": 0.3,
+            "maximum_linear_relative_residual": 2e-10,
+            "source_regularization_available": 1.0,
+        },
+        n_ports,
+        n_cells,
+    )
+    right = SpatialTensorDataset(
+        100.0 + np.arange(4 * 5, dtype=float).reshape(4, 5),
+        1000.0 + np.arange(4 * width, dtype=float).reshape(4, width),
+        np.asarray(["train", "train", "test", "audit"]),
+        {
+            "minimum_d_vol_eigenvalue": 0.2,
+            "maximum_linear_relative_residual": 5e-10,
+            "source_regularization_available": 1.0,
+        },
+        n_ports,
+        n_cells,
+    )
+    merged = merge_spatial_tensor_datasets(
+        left,
+        right,
+        seed=17,
+    )
+    assert merged.inputs.shape == (6, 5)
+    assert merged.outputs.shape == (6, width)
+    assert np.array_equal(
+        merged.inputs[:2],
+        left.inputs,
+    )
+    assert np.array_equal(
+        merged.outputs[:2],
+        left.outputs,
+    )
+    assert merged.audit[
+        "minimum_d_vol_eigenvalue"
+    ] == 0.2
+    assert merged.audit[
+        "maximum_linear_relative_residual"
+    ] == 5e-10
+    assert merged.audit[
+        "source_regularization_available"
+    ] == 1.0
+    assert set(merged.split) == {
+        "train",
+        "validation",
+        "test",
+        "audit",
+    }
