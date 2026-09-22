@@ -406,6 +406,57 @@ def generate_spatial_tensor_dataset(
     )
 
 
+
+def merge_spatial_tensor_datasets(left, right, *, seed=0):
+    """Append independently generated spatial truth without weakening audits."""
+    if (
+        int(left.n_ports) != int(right.n_ports)
+        or int(left.n_cells) != int(right.n_cells)
+        or left.representation != right.representation
+    ):
+        raise ValueError(
+            "spatial tensor datasets are incompatible for append"
+        )
+    inputs = np.vstack(
+        (
+            np.asarray(left.inputs, float),
+            np.asarray(right.inputs, float),
+        )
+    )
+    outputs = np.vstack(
+        (
+            np.asarray(left.outputs, float),
+            np.asarray(right.outputs, float),
+        )
+    )
+    audit = {}
+    keys = set(left.audit) | set(right.audit)
+    for key in keys:
+        if key not in left.audit:
+            audit[key] = float(right.audit[key])
+            continue
+        if key not in right.audit:
+            audit[key] = float(left.audit[key])
+            continue
+        a = float(left.audit[key])
+        b = float(right.audit[key])
+        if (
+            str(key).startswith("minimum_")
+            or str(key).endswith("_available")
+        ):
+            audit[key] = min(a, b)
+        else:
+            audit[key] = max(a, b)
+    return SpatialTensorDataset(
+        inputs,
+        outputs,
+        _split_labels(len(inputs), seed),
+        audit,
+        int(left.n_ports),
+        int(left.n_cells),
+    )
+
+
 def generate_tensor_dataset(background, geometries, *, seed=0, monitor=None):
     geometries = list(geometries)
     if getattr(background, "thermal_library", None) is None:
