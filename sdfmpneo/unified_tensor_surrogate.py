@@ -331,6 +331,47 @@ def encode_geometry_invariant(geometry):
             ).reshape(-1).tolist()
         )
 
+        # Derived self-geometry scales dramatically reduce the burden on a
+        # 96-sample global regressor: resistance/inductive trends are much
+        # smoother in length, conductor area and normalized spiral dimensions
+        # than in the raw independent parameters alone.
+        length = float(coil.length(1.0e-3))
+        conductor_area = float(
+            coil.conductor_width
+            * coil.conductor_thickness
+        )
+        inner_half = float(
+            coil.outer_half_size
+            - coil.pitch * coil.turns
+        )
+        features.extend(
+            [
+                length,
+                conductor_area,
+                length
+                / max(
+                    conductor_area,
+                    np.finfo(float).tiny,
+                ),
+                inner_half,
+                float(coil.conductor_width)
+                / max(
+                    float(coil.pitch),
+                    np.finfo(float).tiny,
+                ),
+                float(coil.conductor_thickness)
+                / max(
+                    float(coil.conductor_width),
+                    np.finfo(float).tiny,
+                ),
+                float(coil.pitch)
+                / max(
+                    float(coil.outer_half_size),
+                    np.finfo(float).tiny,
+                ),
+            ]
+        )
+
     for i in range(len(g.coils)):
         for j in range(i + 1, len(g.coils)):
             left = g.coils[i]
@@ -349,6 +390,52 @@ def encode_geometry_invariant(geometry):
                     relative_rotation,
                     float,
                 ).reshape(-1).tolist()
+            )
+            delta = np.asarray(
+                left.pose.inverse(
+                    right.pose.translation
+                ),
+                float,
+            )
+            distance = float(np.linalg.norm(delta))
+            size = np.sqrt(
+                max(
+                    float(left.outer_half_size)
+                    * float(right.outer_half_size),
+                    np.finfo(float).tiny,
+                )
+            )
+            lateral = float(
+                np.linalg.norm(delta[:2])
+            )
+            left_normal = np.asarray(
+                left.pose.rotation[:, 2],
+                float,
+            )
+            right_normal = np.asarray(
+                right.pose.rotation[:, 2],
+                float,
+            )
+            normal_alignment = float(
+                np.dot(left_normal, right_normal)
+            )
+            features.extend(
+                [
+                    distance,
+                    distance / size,
+                    lateral / size,
+                    float(delta[2]) / size,
+                    normal_alignment,
+                    abs(normal_alignment),
+                    (
+                        float(left.outer_half_size)
+                        * float(right.outer_half_size)
+                    )
+                    / max(
+                        distance * distance,
+                        1e-12,
+                    ),
+                ]
             )
 
     out = np.asarray(features, float)
