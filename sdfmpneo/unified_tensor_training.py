@@ -1022,6 +1022,10 @@ def train_spatial_tensor_surrogate(
                 "optimizer": {
                     key: cfg.get(key)
                     for key in (
+                        "epochs",
+                        "patience",
+                        "validation_interval",
+                        "gradient_clip_norm",
                         "batch_size",
                         "field_batch_size",
                         "field_cells_per_geometry",
