@@ -283,10 +283,9 @@ TRAINING = {
         # make the production fit use every expensive cached truth geometry.
         # Release certification remains the independent final held-out audit.
         "refit_all_truth": True,
-        "refit_global_head": False,
+        "refit_global_head": True,
         "refit_field_head": True,
-        "refit_epochs": 24,
-        "refit_learning_rate_factor": 0.25,
+        "refit_learning_rate_factor": 1.0,
         "seed": 17,
         "dtype": "float32",
     },
