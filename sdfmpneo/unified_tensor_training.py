@@ -562,6 +562,8 @@ def train_spatial_tensor_surrogate(
         "field_density_weight": 1.0,
         "field_shape_weight": 1.0,
         "refit_all_truth": True,
+        "refit_global_head": False,
+        "refit_field_head": True,
         "refit_epochs": 24,
         "refit_learning_rate_factor": 0.25,
         "seed": 17,
@@ -1043,6 +1045,8 @@ def train_spatial_tensor_surrogate(
                         "field_density_weight",
                         "field_shape_weight",
                         "refit_all_truth",
+                        "refit_global_head",
+                        "refit_field_head",
                         "refit_epochs",
                         "refit_learning_rate_factor",
                         "seed",
@@ -1526,81 +1530,83 @@ def train_spatial_tensor_surrogate(
             global_network.train()
             field_network.train()
 
-            order = rng.permutation(refit_ids)
-            for start_batch in range(
-                0,
-                len(order),
-                geometry_batch,
-            ):
-                ids = order[
-                    start_batch:
-                    start_batch + geometry_batch
-                ]
-                loss = global_loss(ids)
-                global_optimizer.zero_grad(
-                    set_to_none=True
-                )
-                loss.backward()
-                if cfg.get(
-                    "gradient_clip_norm"
-                ) is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        global_network.parameters(),
-                        float(
-                            cfg[
-                                "gradient_clip_norm"
-                            ]
-                        ),
+            if bool(cfg.get("refit_global_head", False)):
+                order = rng.permutation(refit_ids)
+                for start_batch in range(
+                    0,
+                    len(order),
+                    geometry_batch,
+                ):
+                    ids = order[
+                        start_batch:
+                        start_batch + geometry_batch
+                    ]
+                    loss = global_loss(ids)
+                    global_optimizer.zero_grad(
+                        set_to_none=True
                     )
-                global_optimizer.step()
+                    loss.backward()
+                    if cfg.get(
+                        "gradient_clip_norm"
+                    ) is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            global_network.parameters(),
+                            float(
+                                cfg[
+                                    "gradient_clip_norm"
+                                ]
+                            ),
+                        )
+                    global_optimizer.step()
 
-            field_order = rng.permutation(
-                field_refit_x.shape[0]
-            )
-            for start_batch in range(
-                0,
-                len(field_order),
-                field_batch,
-            ):
-                ids_np = field_order[
-                    start_batch:
-                    start_batch + field_batch
-                ]
-                ids_t = torch.as_tensor(
-                    ids_np,
-                    dtype=torch.long,
-                    device=resolved,
+            if bool(cfg.get("refit_field_head", True)):
+                field_order = rng.permutation(
+                    field_refit_x.shape[0]
                 )
-                loss = field_loss(
-                    field_refit_x.index_select(
-                        0,
-                        ids_t,
-                    ),
-                    field_refit_y.index_select(
-                        0,
-                        ids_t,
-                    ),
-                    field_refit_shape_weight.index_select(
-                        0,
-                        ids_t,
-                    ),
-                )
-                field_optimizer.zero_grad(
-                    set_to_none=True
-                )
-                loss.backward()
-                if cfg.get(
-                    "gradient_clip_norm"
-                ) is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        field_network.parameters(),
-                        float(
-                            cfg[
-                                "gradient_clip_norm"
-                            ]
+                for start_batch in range(
+                    0,
+                    len(field_order),
+                    field_batch,
+                ):
+                    ids_np = field_order[
+                        start_batch:
+                        start_batch + field_batch
+                    ]
+                    ids_t = torch.as_tensor(
+                        ids_np,
+                        dtype=torch.long,
+                        device=resolved,
+                    )
+                    loss = field_loss(
+                        field_refit_x.index_select(
+                            0,
+                            ids_t,
+                        ),
+                        field_refit_y.index_select(
+                            0,
+                            ids_t,
+                        ),
+                        field_refit_shape_weight.index_select(
+                            0,
+                            ids_t,
                         ),
                     )
-                field_optimizer.step()
+                    field_optimizer.zero_grad(
+                        set_to_none=True
+                    )
+                    loss.backward()
+                    if cfg.get(
+                        "gradient_clip_norm"
+                    ) is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            field_network.parameters(),
+                            float(
+                                cfg[
+                                    "gradient_clip_norm"
+                                ]
+                            ),
+                        )
+                    field_optimizer.step()
 
             refit_epochs_completed = refit_epoch + 1
             if (
@@ -1754,6 +1760,12 @@ def train_spatial_tensor_surrogate(
     )
     report_cfg["final_refit_all_truth"] = bool(
         cfg.get("refit_all_truth", True)
+    )
+    report_cfg["final_refit_global_head"] = bool(
+        cfg.get("refit_global_head", False)
+    )
+    report_cfg["final_refit_field_head"] = bool(
+        cfg.get("refit_field_head", True)
     )
     report_cfg["final_refit_epochs_completed"] = int(
         refit_epochs_completed
