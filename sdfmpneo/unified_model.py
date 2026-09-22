@@ -314,7 +314,10 @@ class UnifiedNeuralElectroThermalModel:
         if key in self._tensor_cache:
             self._tensor_cache.move_to_end(key)
             return self._tensor_cache[key]
-        value = self.surrogate.predict(g)
+        value = self.surrogate.predict(
+            g,
+            background=self.background,
+        )
         self._tensor_cache[key] = value
         if len(self._tensor_cache) > self.context_cache_size:
             self._tensor_cache.popitem(last=False)
