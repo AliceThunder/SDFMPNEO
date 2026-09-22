@@ -37,6 +37,28 @@ class OnlineThermalReport:
     representation: str = "geometry_local_rational_krylov_v1"
 
 
+def merge_thermal_time_scales(*groups):
+    """Return the sorted positive union of declared thermal time horizons."""
+    values = []
+    for group in groups:
+        if group is None:
+            continue
+        for value in group:
+            if isinstance(value, str):
+                if value.lower() == "inf":
+                    continue
+                value = float(value)
+            value = float(value)
+            if not np.isfinite(value):
+                continue
+            if value <= 0.0:
+                raise ValueError("thermal time scales must be positive")
+            values.append(value)
+    if not values:
+        raise ValueError("at least one finite positive thermal time scale is required")
+    return tuple(sorted(set(values)))
+
+
 def _basis_condition(phi, weights):
     value = np.asarray(phi, float)
     if value.ndim != 2 or value.shape[1] < 1:
@@ -227,11 +249,15 @@ def audit_online_thermal_trajectories(
         raise ValueError("online thermal audit times must be positive")
     audit_times = np.unique(np.sort(audit_times))
 
+    basis_time_scales = merge_thermal_time_scales(
+        time_scales,
+        audit_times,
+    )
     context = build_online_thermal_context(
         background,
         geometry,
         cell_h,
-        time_scales=time_scales,
+        time_scales=basis_time_scales,
         conditioning_limit=conditioning_limit,
         target_relative_error=target_relative_error,
     )
@@ -336,12 +362,14 @@ def audit_online_thermal_trajectories(
             context.online_thermal_report.source_count
         ),
         "times": audit_times.tolist(),
+        "basis_time_scales": list(basis_time_scales),
         "converged": bool(worst <= float(target_relative_error)),
     }
 
 
 __all__ = [
     "OnlineThermalReport",
+    "merge_thermal_time_scales",
     "build_online_thermal_context",
     "audit_online_thermal_trajectories",
 ]
