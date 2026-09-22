@@ -819,9 +819,19 @@ def train(settings, model_path, settings_dir, monitor=None):
                         cached_dataset.inputs
                     ),
                 )
+                legacy_expected_signature = _signature(
+                    settings,
+                    n_tensor_samples=len(
+                        cached_dataset.inputs
+                    ),
+                    include_certification_policy=True,
+                )
                 if (
                     cache_meta.get("signature")
-                    != expected_cached_signature
+                    not in {
+                        expected_cached_signature,
+                        legacy_expected_signature,
+                    }
                 ):
                     cache_reasons.append(
                         "physical truth signature changed"
@@ -1244,7 +1254,10 @@ def train(settings, model_path, settings_dir, monitor=None):
             # Adaptive enrichment changes the cached dataset size but
             # leaves TRAINING.n_tensor_samples unchanged, so this legacy key
             # keeps the already-computed held-out Maxwell truth reusable.
-            truth_cache_key=_signature(settings),
+            truth_cache_key=_signature(
+                settings,
+                include_certification_policy=True,
+            ),
         )
         if not final_audit["certified"]:
             raise RuntimeError(
