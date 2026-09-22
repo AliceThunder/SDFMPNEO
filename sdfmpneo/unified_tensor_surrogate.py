@@ -1268,8 +1268,48 @@ def _unpack_hermitian_batch(packed, n):
 
 
 
-def pack_whitened_field_factors(whitened, *, total_cells):
-    """Encode PSD whitened cells as log-density + Hermitian square-root shape."""
+
+def spatial_joule_density_prior(
+    background,
+    spatial_context,
+    cell_indices=None,
+    *,
+    strength=0.9,
+):
+    """Mean-one Maxwell-free prior centered on the deposited conductor paths."""
+    s = float(strength)
+    if not 0.0 <= s < 1.0:
+        raise ValueError(
+            "field density prior strength must lie in [0,1)"
+        )
+    if cell_indices is None:
+        ids = np.arange(background.n_cells, dtype=int)
+    else:
+        ids = np.asarray(cell_indices, int).reshape(-1)
+    n_ports = len(spatial_context.line_heat_weights)
+    if n_ports < 1:
+        raise ValueError("spatial context has no source heat weights")
+    source_density = np.zeros(ids.size, float)
+    for weights in spatial_context.line_heat_weights:
+        source_density += np.asarray(weights, float)[ids]
+    source_density *= (
+        float(background.n_cells) / float(n_ports)
+    )
+    prior = (1.0 - s) + s * source_density
+    if np.any(~np.isfinite(prior)) or np.any(prior <= 0.0):
+        raise FloatingPointError(
+            "spatial Joule density prior is not finite/positive"
+        )
+    return np.asarray(prior, float)
+
+
+def pack_whitened_field_factors(
+    whitened,
+    *,
+    total_cells,
+    density_prior=None,
+):
+    """Encode PSD whitened cells as residual log-density + PSD square-root shape."""
     cells = _batch_psd_clip(np.asarray(whitened, complex))
     count, n, _ = cells.shape
     traces = np.maximum(
@@ -1279,8 +1319,23 @@ def pack_whitened_field_factors(whitened, *, total_cells):
     density = (
         traces * float(total_cells) / float(n)
     )
+    if density_prior is None:
+        prior = np.ones(count, float)
+    else:
+        prior = np.asarray(
+            density_prior,
+            float,
+        ).reshape(-1)
+        if (
+            prior.shape != (count,)
+            or np.any(~np.isfinite(prior))
+            or np.any(prior <= 0.0)
+        ):
+            raise ValueError(
+                "density_prior must be positive with one value per cell"
+            )
     log_density = np.log(
-        np.maximum(density, 1e-12)
+        np.maximum(density, 1e-12) / prior
     )
 
     floor = max(
@@ -1316,8 +1371,15 @@ def pack_whitened_field_factors(whitened, *, total_cells):
     )
 
 
-def unpack_whitened_field_factors(packed, *, n_ports, total_cells):
-    """Decode log-density + Hermitian factor into an intrinsically PSD field."""
+def unpack_whitened_field_factors(
+    packed,
+    *,
+    n_ports,
+    total_cells,
+    density_prior=None,
+    log_density_bounds=None,
+):
+    """Decode residual log-density + Hermitian factor into an intrinsically PSD field."""
     values = np.asarray(packed, float)
     n = int(n_ports)
     if (
@@ -1325,7 +1387,23 @@ def unpack_whitened_field_factors(packed, *, n_ports, total_cells):
         or values.shape[1] != 1 + n * n
     ):
         raise ValueError("whitened field factor width mismatch")
-    log_density = np.clip(values[:, 0], -35.0, 35.0)
+    if log_density_bounds is None:
+        lower, upper = -35.0, 35.0
+    else:
+        bounds = np.asarray(
+            log_density_bounds,
+            float,
+        ).reshape(-1)
+        if (
+            bounds.shape != (2,)
+            or not np.all(np.isfinite(bounds))
+            or bounds[0] >= bounds[1]
+        ):
+            raise ValueError(
+                "log_density_bounds must be finite increasing pair"
+            )
+        lower, upper = float(bounds[0]), float(bounds[1])
+    log_density = np.clip(values[:, 0], lower, upper)
     roots = _unpack_hermitian_batch(values[:, 1:], n)
     shapes = np.einsum(
         "kab,kcb->kac",
@@ -1349,8 +1427,24 @@ def unpack_whitened_field_factors(packed, *, n_ports, total_cells):
         )
         traces[bad] = 1.0
     shapes = shapes / traces[:, None, None]
+    if density_prior is None:
+        prior = np.ones(values.shape[0], float)
+    else:
+        prior = np.asarray(
+            density_prior,
+            float,
+        ).reshape(-1)
+        if (
+            prior.shape != (values.shape[0],)
+            or np.any(~np.isfinite(prior))
+            or np.any(prior <= 0.0)
+        ):
+            raise ValueError(
+                "density_prior must be positive with one value per cell"
+            )
     density = (
-        np.exp(log_density)
+        prior
+        * np.exp(log_density)
         * float(n)
         / float(total_cells)
     )
@@ -1774,6 +1868,8 @@ class UnifiedSpatialTensorSurrogate:
         global_output_scale=None,
         field_output_mean=None,
         field_output_scale=None,
+        field_density_prior_strength=0.9,
+        field_log_density_bounds=(-35.0, 35.0),
     ):
         self.global_network = global_network
         self.field_network = field_network
@@ -1786,6 +1882,23 @@ class UnifiedSpatialTensorSurrogate:
         self.global_output_scale = np.ones(global_dim, float) if global_output_scale is None else np.asarray(global_output_scale, float).reshape(-1)
         self.field_output_mean = np.zeros(field_dim, float) if field_output_mean is None else np.asarray(field_output_mean, float).reshape(-1)
         self.field_output_scale = np.ones(field_dim, float) if field_output_scale is None else np.asarray(field_output_scale, float).reshape(-1)
+        self.field_density_prior_strength = float(
+            field_density_prior_strength
+        )
+        self.field_log_density_bounds = np.asarray(
+            field_log_density_bounds,
+            float,
+        ).reshape(-1)
+        if (
+            not 0.0 <= self.field_density_prior_strength < 1.0
+            or self.field_log_density_bounds.shape != (2,)
+            or np.any(~np.isfinite(self.field_log_density_bounds))
+            or self.field_log_density_bounds[0]
+            >= self.field_log_density_bounds[1]
+        ):
+            raise ValueError(
+                "spatial field density prior/bounds are invalid"
+            )
         if (
             self.global_output_mean.shape != (global_dim,)
             or self.global_output_scale.shape != (global_dim,)
@@ -1884,10 +1997,17 @@ class UnifiedSpatialTensorSurrogate:
                 + self.field_output_scale[None, :] * normalized
             )
         raw_packed = np.vstack(raw_rows)
+        density_prior = spatial_joule_density_prior(
+            background,
+            spatial_context,
+            strength=self.field_density_prior_strength,
+        )
         raw_shape = unpack_whitened_field_factors(
             raw_packed,
             n_ports=self.n_ports,
             total_cells=self.n_cells,
+            density_prior=density_prior,
+            log_density_bounds=self.field_log_density_bounds,
         )
 
         identity = np.eye(self.n_ports, dtype=complex)
@@ -1968,6 +2088,10 @@ class UnifiedSpatialTensorSurrogate:
             "global_output_scale": self.global_output_scale,
             "field_output_mean": self.field_output_mean,
             "field_output_scale": self.field_output_scale,
+            "field_density_prior_strength":
+                self.field_density_prior_strength,
+            "field_log_density_bounds":
+                self.field_log_density_bounds,
             "global_network_state": {
                 k: v.detach().cpu()
                 for k, v in self.global_network.state_dict().items()
@@ -2053,6 +2177,19 @@ class UnifiedSpatialTensorSurrogate:
                 payload["field_output_scale"],
                 float,
             ),
+            field_density_prior_strength=float(
+                payload.get(
+                    "field_density_prior_strength",
+                    0.9,
+                )
+            ),
+            field_log_density_bounds=np.asarray(
+                payload.get(
+                    "field_log_density_bounds",
+                    [-35.0, 35.0],
+                ),
+                float,
+            ),
         )
 
 
@@ -2071,6 +2208,7 @@ __all__ = [
     "encode_geometry_invariant",
     "pack_spatial_global_tensors",
     "pack_whitened_field_factors",
+    "spatial_joule_density_prior",
     "unpack_whitened_field_factors",
     "generate_tensor_dataset",
     "pack_complex_symmetric",
