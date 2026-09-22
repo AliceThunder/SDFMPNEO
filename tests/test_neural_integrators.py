@@ -142,3 +142,90 @@ def test_imex_converges_when_step_is_refined():
         field, t, initial_state=a0, geometry=np.empty(0), operating=u, max_step=0.125
     ).state
     assert np.linalg.norm(fine - reference) < np.linalg.norm(coarse - reference)
+
+
+
+class _TwoStateNonlinearSurrogate:
+    state_dimension = 2
+    geometry_dimension = 0
+    pod = SimpleNamespace(current_dimension=1)
+
+    def heat_source_numpy(self, state, geometry, operating):
+        del geometry, operating
+        a = np.asarray(state, float)
+        return np.array(
+            [
+                0.20 + 0.03 * np.tanh(a[0] - 0.2 * a[1]),
+                0.12 + 0.04 * np.tanh(0.3 * a[0] + a[1]),
+            ]
+        )
+
+
+class _ScaledTwoStateSurrogate:
+    state_dimension = 2
+    geometry_dimension = 0
+    pod = SimpleNamespace(current_dimension=1)
+
+    def __init__(self, scale):
+        self.scale = np.asarray(scale, float)
+        self.base = _TwoStateNonlinearSurrogate()
+
+    def heat_source_numpy(self, state, geometry, operating):
+        b = np.asarray(state, float)
+        a = self.scale @ b
+        q = self.base.heat_source_numpy(
+            a,
+            geometry,
+            operating,
+        )
+        return self.scale.T @ q
+
+
+def test_adaptive_etd2_is_invariant_to_reduced_coordinate_rescaling():
+    mass = np.array([[2.0, 0.3], [0.3, 1.2]])
+    stiffness = np.array([[1.5, 0.1], [0.1, 0.9]])
+    scale = np.diag([100.0, 0.01])
+    transformed_mass = scale.T @ mass @ scale
+    transformed_stiffness = scale.T @ stiffness @ scale
+
+    base = NeuralElectroThermalVectorField(
+        _TwoStateNonlinearSurrogate(),
+        FixedThermalOperatorFamily(
+            mass,
+            stiffness,
+        ),
+    )
+    transformed = NeuralElectroThermalVectorField(
+        _ScaledTwoStateSurrogate(scale),
+        FixedThermalOperatorFamily(
+            transformed_mass,
+            transformed_stiffness,
+        ),
+    )
+
+    a0 = np.array([0.8, -0.25])
+    b0 = np.linalg.solve(scale, a0)
+    kwargs = dict(
+        time=20.0,
+        geometry=np.empty(0),
+        operating=np.array([0.0]),
+        max_step=5.0,
+        rtol=1e-7,
+        atol=1e-12,
+    )
+    result_a = integrate_etd2_adaptive(
+        base,
+        initial_state=a0,
+        **kwargs,
+    )
+    result_b = integrate_etd2_adaptive(
+        transformed,
+        initial_state=b0,
+        **kwargs,
+    )
+    np.testing.assert_allclose(
+        result_a.state,
+        scale @ result_b.state,
+        rtol=3e-6,
+        atol=3e-8,
+    )
