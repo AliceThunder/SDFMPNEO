@@ -1110,6 +1110,11 @@ def run_spatial_final_held_out_audit(
         rows.append(
             {
                 "index": int(index),
+                "geometry": (
+                    geometry.to_mapping()
+                    if hasattr(geometry, "to_mapping")
+                    else geometry
+                ),
                 "tensor": tensor,
                 "online_thermal": thermal,
                 "operating_cases": trajectories,
