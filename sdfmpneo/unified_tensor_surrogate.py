@@ -162,6 +162,79 @@ def encode_geometry(geometry):
     return out
 
 
+
+def decode_geometry_encoding(encoded, n_ports):
+    """Invert encode_geometry for cached training geometries.
+
+    The encoding stores translations directly and rotations as sin/cos pairs,
+    so this inversion is exact up to floating-point roundoff for the supported
+    circle/rounded-square production family. It lets the v2 spatial neural
+    field train from existing v56 truth caches without regenerating Maxwell truth.
+    """
+    values = np.asarray(encoded, float).reshape(-1)
+    n_ports = int(n_ports)
+    per_coil = len(_SUPPORTED_SHAPES) + 6 + 9
+    per_package = 3 + 9
+    expected = n_ports * (per_coil + per_package)
+    if values.size != expected or np.any(~np.isfinite(values)):
+        raise ValueError(
+            f"geometry encoding width mismatch: expected {expected}, got {values.size}"
+        )
+
+    cursor = 0
+    coils = []
+    for port in range(n_ports):
+        one_hot = values[cursor:cursor + len(_SUPPORTED_SHAPES)]
+        cursor += len(_SUPPORTED_SHAPES)
+        shape_index = int(np.argmax(one_hot))
+        if one_hot[shape_index] < 0.5:
+            raise ValueError("geometry encoding has no supported coil shape")
+        shape = _SUPPORTED_SHAPES[shape_index]
+        turns, outer, pitch, width, thickness, corner = values[cursor:cursor + 6]
+        cursor += 6
+        translation = values[cursor:cursor + 3]
+        cursor += 3
+        sine = values[cursor:cursor + 3]
+        cursor += 3
+        cosine = values[cursor:cursor + 3]
+        cursor += 3
+        angles = np.arctan2(sine, cosine)
+        coils.append({
+            "name": f"port_{port}",
+            "shape": shape,
+            "turns": float(turns),
+            "outer_half_size": float(outer),
+            "pitch": float(pitch),
+            "conductor_width": float(width),
+            "conductor_thickness": float(thickness),
+            "corner_radius": float(corner),
+            "translation": translation.tolist(),
+            "angles": angles.tolist(),
+        })
+
+    packages = []
+    for _port in range(n_ports):
+        half_extent = values[cursor:cursor + 3]
+        cursor += 3
+        translation = values[cursor:cursor + 3]
+        cursor += 3
+        sine = values[cursor:cursor + 3]
+        cursor += 3
+        cosine = values[cursor:cursor + 3]
+        cursor += 3
+        angles = np.arctan2(sine, cosine)
+        packages.append({
+            "half_extent": half_extent.tolist(),
+            "translation": translation.tolist(),
+            "angles": angles.tolist(),
+        })
+
+    return UnifiedUWPTGeometry.from_mapping({
+        "coils": coils,
+        "packages": packages,
+    })
+
+
 def _modal_project_to_bounds(h, d, lower, upper):
     d = _psd_clip(d)
     wd, ud = np.linalg.eigh(d)
@@ -1517,6 +1590,7 @@ __all__ = [
     "UnifiedTensorSurrogate",
     "decode_physical_tensors",
     "decode_spatial_tensors",
+    "decode_geometry_encoding",
     "encode_geometry",
     "generate_tensor_dataset",
     "pack_complex_symmetric",
