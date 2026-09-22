@@ -37,8 +37,10 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
     assert run.TRAINING["thermal_trajectory_times"] == [0.1, 1.0, 10.0, 100.0]
     assert max(run.TRAINING["thermal_trajectory_times"]) > max(run.TRAINING["thermal_time_scales"])
     assert "geometry_thermal" in run.FILES["model"]
-    assert network["width"] >= 16
-    assert network["blocks"] >= 1
+    assert network["global"]["width"] >= 8
+    assert network["global"]["blocks"] >= 1
+    assert network["field"]["width"] >= network["global"]["width"]
+    assert network["field"]["blocks"] >= 1
     assert boundary["samples"] >= 1
     assert boundary["padding"] > 0
     assert 0 < boundary["relative_tolerance"] < 1
@@ -120,7 +122,7 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     release_only = copy.deepcopy(baseline)
     release_only["TRAINING"]["final_audit"]["tensor_relative_tolerance"] *= 0.5
     release_only["TRAINING"]["optimizer"]["epochs"] += 1
-    release_only["TRAINING"]["network"]["width"] += 8
+    release_only["TRAINING"]["network"]["global"]["width"] += 8
     release_only["TRAINING"]["device"] = "cpu"
     assert _signature(baseline) == _signature(release_only)
 
@@ -152,7 +154,11 @@ def test_training_defaults_use_two_head_spatial_neural_field():
     assert "pod_relative_tail_tolerance" not in optimizer
     assert optimizer["z_weight"] > 0
     assert optimizer["d_weight"] > 0
+    assert optimizer["outward_weight"] > 0
     assert optimizer["spatial_weight"] > 0
+    assert optimizer["field_density_weight"] > 0
+    assert optimizer["field_shape_weight"] > 0
+    assert optimizer["global_weight_decay"] > optimizer["field_weight_decay"]
     assert "h_weight" not in optimizer
     assert optimizer["physics_penalty_weight"] >= 0
     assert "krylov_vectors_per_port" not in optimizer
