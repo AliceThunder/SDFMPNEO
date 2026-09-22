@@ -560,6 +560,9 @@ def train_spatial_tensor_surrogate(
         "spatial_weight": 1.0,
         "field_density_weight": 1.0,
         "field_shape_weight": 1.0,
+        "refit_all_truth": True,
+        "refit_epochs": 24,
+        "refit_learning_rate_factor": 0.25,
         "seed": 17,
         "dtype": "float32",
     }
@@ -1324,6 +1327,196 @@ def train_spatial_tensor_surrogate(
 
     global_network.load_state_dict(best_global)
     field_network.load_state_dict(best_field)
+
+    refit_epochs_completed = 0
+    if bool(cfg.get("refit_all_truth", True)):
+        refit_ids = np.arange(
+            len(dataset.inputs),
+            dtype=int,
+        )
+        (
+            field_refit_x_np,
+            field_refit_y_np,
+            field_refit_shape_weight_np,
+        ) = sampled_field_rows(
+            refit_ids,
+            161803,
+        )
+        field_refit_y_normalized_np = (
+            field_refit_y_np - field_output_mean
+        ) / field_output_scale
+        field_refit_x = torch.as_tensor(
+            field_refit_x_np,
+            dtype=dtype,
+            device=resolved,
+        )
+        field_refit_y = torch.as_tensor(
+            field_refit_y_normalized_np,
+            dtype=dtype,
+            device=resolved,
+        )
+        field_refit_shape_weight = torch.as_tensor(
+            field_refit_shape_weight_np,
+            dtype=dtype,
+            device=resolved,
+        )
+
+        factor = float(
+            cfg.get(
+                "refit_learning_rate_factor",
+                0.25,
+            )
+        )
+        if not 0.0 < factor <= 1.0:
+            raise ValueError(
+                "refit_learning_rate_factor must lie in (0,1]"
+            )
+        for optimizer in (
+            global_optimizer,
+            field_optimizer,
+        ):
+            for group in optimizer.param_groups:
+                group["lr"] *= factor
+
+        requested_refit = max(
+            1,
+            int(cfg.get("refit_epochs", 24)),
+        )
+        for refit_epoch in range(requested_refit):
+            if monitor is not None:
+                monitor.checkpoint()
+            global_network.train()
+            field_network.train()
+
+            order = rng.permutation(refit_ids)
+            for start_batch in range(
+                0,
+                len(order),
+                geometry_batch,
+            ):
+                ids = order[
+                    start_batch:
+                    start_batch + geometry_batch
+                ]
+                loss = global_loss(ids)
+                global_optimizer.zero_grad(
+                    set_to_none=True
+                )
+                loss.backward()
+                if cfg.get(
+                    "gradient_clip_norm"
+                ) is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        global_network.parameters(),
+                        float(
+                            cfg[
+                                "gradient_clip_norm"
+                            ]
+                        ),
+                    )
+                global_optimizer.step()
+
+            field_order = rng.permutation(
+                field_refit_x.shape[0]
+            )
+            for start_batch in range(
+                0,
+                len(field_order),
+                field_batch,
+            ):
+                ids_np = field_order[
+                    start_batch:
+                    start_batch + field_batch
+                ]
+                ids_t = torch.as_tensor(
+                    ids_np,
+                    dtype=torch.long,
+                    device=resolved,
+                )
+                loss = field_loss(
+                    field_refit_x.index_select(
+                        0,
+                        ids_t,
+                    ),
+                    field_refit_y.index_select(
+                        0,
+                        ids_t,
+                    ),
+                    field_refit_shape_weight.index_select(
+                        0,
+                        ids_t,
+                    ),
+                )
+                field_optimizer.zero_grad(
+                    set_to_none=True
+                )
+                loss.backward()
+                if cfg.get(
+                    "gradient_clip_norm"
+                ) is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        field_network.parameters(),
+                        float(
+                            cfg[
+                                "gradient_clip_norm"
+                            ]
+                        ),
+                    )
+                field_optimizer.step()
+
+            refit_epochs_completed = refit_epoch + 1
+            if (
+                monitor is not None
+                and (
+                    refit_epochs_completed == 1
+                    or refit_epochs_completed % 4 == 0
+                    or refit_epochs_completed
+                    == requested_refit
+                )
+            ):
+                global_network.eval()
+                field_network.eval()
+                with torch.no_grad():
+                    refit_global_loss = float(
+                        global_loss(refit_ids)
+                        .detach()
+                        .cpu()
+                    )
+                    # Deterministic diagnostic subset; training still uses
+                    # every sampled refit field row above.
+                    diagnostic_count = min(
+                        field_batch,
+                        field_refit_x.shape[0],
+                    )
+                    refit_field_loss = float(
+                        field_loss(
+                            field_refit_x[
+                                :diagnostic_count
+                            ],
+                            field_refit_y[
+                                :diagnostic_count
+                            ],
+                            field_refit_shape_weight[
+                                :diagnostic_count
+                            ],
+                        )
+                        .detach()
+                        .cpu()
+                    )
+                with monitor._lock:
+                    monitor.data.update(
+                        phase="spatial_tensor_refit",
+                        refit_epoch=(
+                            refit_epochs_completed
+                        ),
+                        refit_global_loss=(
+                            refit_global_loss
+                        ),
+                        refit_field_loss=(
+                            refit_field_loss
+                        ),
+                    )
+
     global_network.eval()
     field_network.eval()
 
@@ -1420,6 +1613,12 @@ def train_spatial_tensor_surrogate(
     )
     report_cfg["field_validation_points"] = int(
         field_val_x_np.shape[0]
+    )
+    report_cfg["final_refit_all_truth"] = bool(
+        cfg.get("refit_all_truth", True)
+    )
+    report_cfg["final_refit_epochs_completed"] = int(
+        refit_epochs_completed
     )
 
     return surrogate, TensorTrainingReport(
