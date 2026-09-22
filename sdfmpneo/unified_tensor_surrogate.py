@@ -1343,12 +1343,19 @@ class UnifiedSpatialTensorSurrogate:
         n_cells,
         *,
         field_chunk_size=65536,
+        field_output_scale=1.0,
     ):
         self.global_network = global_network
         self.field_network = field_network
         self.n_ports = int(n_ports)
         self.n_cells = int(n_cells)
         self.field_chunk_size = max(1, int(field_chunk_size))
+        self.field_output_scale = float(field_output_scale)
+        if (
+            not np.isfinite(self.field_output_scale)
+            or self.field_output_scale <= 0.0
+        ):
+            raise ValueError("field_output_scale must be finite and positive")
         global_dim = tensor_output_dimension(self.n_ports, 0)
         field_dim = self.n_ports * self.n_ports
         if self.global_network.config.output_dimension != global_dim:
@@ -1428,7 +1435,10 @@ class UnifiedSpatialTensorSurrogate:
                     features,
                 )
             )
-        raw_packed = np.vstack(raw_rows)
+        raw_packed = (
+            np.vstack(raw_rows)
+            * self.field_output_scale
+        )
         raw_shape = _unpack_hermitian_batch(
             raw_packed,
             self.n_ports,
@@ -1511,6 +1521,7 @@ class UnifiedSpatialTensorSurrogate:
             "n_ports": self.n_ports,
             "n_cells": self.n_cells,
             "field_chunk_size": self.field_chunk_size,
+            "field_output_scale": self.field_output_scale,
             "global_network_state": {
                 k: v.detach().cpu()
                 for k, v in self.global_network.state_dict().items()
@@ -1579,6 +1590,9 @@ class UnifiedSpatialTensorSurrogate:
             int(payload["n_cells"]),
             field_chunk_size=int(
                 payload.get("field_chunk_size", 65536)
+            ),
+            field_output_scale=float(
+                payload.get("field_output_scale", 1.0)
             ),
         )
 
