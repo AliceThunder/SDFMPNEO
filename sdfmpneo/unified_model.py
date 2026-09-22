@@ -921,6 +921,9 @@ class UnifiedNeuralElectroThermalModel:
             "field_chunk_size": int(
                 checkpoint.get("field_chunk_size", 65536)
             ),
+            "field_output_scale": float(
+                checkpoint.get("field_output_scale", 1.0)
+            ),
             "metadata": _plain(dict(metadata or {})),
         }
         arrays = {
@@ -1088,6 +1091,12 @@ class UnifiedNeuralElectroThermalModel:
                         meta.get(
                             "field_chunk_size",
                             65536,
+                        )
+                    ),
+                    "field_output_scale": float(
+                        meta.get(
+                            "field_output_scale",
+                            1.0,
                         )
                     ),
                     "global_network_state": global_state,
