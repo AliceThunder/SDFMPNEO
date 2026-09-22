@@ -462,6 +462,7 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
         surrogate, report = train_spatial_tensor_surrogate(
             dataset,
+            background=bg,
             network_settings=settings["TRAINING"].get(
                 "network"
             ),
