@@ -16,7 +16,10 @@ from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_spatial_physics_gate import run_spatial_physics_gate
-from .unified_corrected_truth import generate_spatial_tensor_dataset
+from .unified_corrected_truth import (
+    generate_spatial_tensor_dataset,
+    merge_spatial_tensor_datasets,
+)
 from .unified_tensor_surrogate import (
     SpatialTensorDataset,
     encode_geometry,
@@ -74,7 +77,12 @@ def _background_signature_view(settings):
     return background
 
 
-def _signature(settings, *, cache_format=None):
+def _signature(
+    settings,
+    *,
+    cache_format=None,
+    n_tensor_samples=None,
+):
     # Spatial-Joule truth is thermal-rank free.  Dataset cache identity depends
     # only on physical geometry/material settings plus the frozen truth sample
     # policy, not on neural optimizer choices or online thermal ROM tolerances.
@@ -91,7 +99,11 @@ def _signature(settings, *, cache_format=None):
     training = settings["TRAINING"]
     payload["TRAINING"] = {
         "seed": int(training.get("seed", 17)),
-        "n_tensor_samples": int(training.get("n_tensor_samples", 96)),
+        "n_tensor_samples": int(
+            training.get("n_tensor_samples", 96)
+            if n_tensor_samples is None
+            else n_tensor_samples
+        ),
         "spatial_tensor_schema": str(
             training.get(
                 "spatial_tensor_schema",
@@ -245,6 +257,8 @@ def train(settings, model_path, settings_dir, monitor=None):
         seed = int(settings["TRAINING"].get("seed", 17))
         preflight_cache_valid = False
         valid_cache = False
+        cached_dataset = None
+        cached_tensor_count = 0
         cache_meta = {}
         preflight_sig = _preflight_signature(settings)
 
@@ -279,14 +293,34 @@ def train(settings, model_path, settings_dir, monitor=None):
                     and cache_meta.get("self_correction_model")
                     == _SELF_CORRECTION_MODEL
                 )
+                if data_path.is_file():
+                    try:
+                        cached_dataset = SpatialTensorDataset.load(
+                            data_path
+                        )
+                        cached_tensor_count = int(
+                            len(cached_dataset.inputs)
+                        )
+                    except (OSError, ValueError, KeyError):
+                        cached_dataset = None
+                        cached_tensor_count = 0
+                cached_signature = (
+                    _signature(
+                        settings,
+                        n_tensor_samples=cached_tensor_count,
+                    )
+                    if cached_tensor_count > 0
+                    else None
+                )
                 valid_cache = (
-                    cache_meta.get("signature") == sig
+                    cached_dataset is not None
+                    and cache_meta.get("signature")
+                    == cached_signature
                     and int(
                         cache_meta.get("cache_format", -1)
                     )
                     == _CACHE_FORMAT
                     and preflight_cache_valid
-                    and data_path.is_file()
                     and cache_meta.get("tensor_representation")
                     == "cellwise_joule_tensor_v1"
                 )
@@ -354,13 +388,94 @@ def train(settings, model_path, settings_dir, monitor=None):
                 35,
                 monitor,
             )
-            dataset = SpatialTensorDataset.load(data_path)
+            dataset = cached_dataset
             if (
                 dataset.n_ports != len(bg.coil_materials)
                 or dataset.n_cells != bg.n_cells
             ):
                 raise RuntimeError(
                     "cached spatial tensor dataset dimensions differ from background"
+                )
+
+            desired_tensor_count = int(
+                settings["TRAINING"].get(
+                    "n_tensor_samples",
+                    96,
+                )
+            )
+            if desired_tensor_count > len(dataset.inputs):
+                # Recreate the deterministic accepted geometry stream, verify
+                # that its prefix is exactly the already cached dataset, then
+                # solve only the missing suffix.  This preserves every hour of
+                # prior Maxwell truth when increasing sample coverage.
+                tensor_rng = np.random.default_rng(
+                    seed + 131071
+                )
+                all_geometries = _sample_geometries(
+                    settings,
+                    desired_tensor_count,
+                    tensor_rng,
+                    bg,
+                )
+                existing_inputs = np.asarray(
+                    dataset.inputs,
+                    float,
+                )
+                expected_prefix = np.asarray(
+                    [
+                        encode_geometry(g)
+                        for g in all_geometries[
+                            : len(existing_inputs)
+                        ]
+                    ],
+                    float,
+                )
+                if (
+                    expected_prefix.shape
+                    != existing_inputs.shape
+                    or not np.array_equal(
+                        expected_prefix,
+                        existing_inputs,
+                    )
+                ):
+                    raise RuntimeError(
+                        "cached spatial truth geometry prefix does not match "
+                        "the deterministic sampling stream; refusing unsafe append"
+                    )
+                missing = all_geometries[
+                    len(existing_inputs):
+                ]
+                checkpoint.unlink(missing_ok=True)
+                _progress(
+                    "追加 geometry→Z/D/cell-Joule truth 数据",
+                    40,
+                    monitor,
+                )
+                appended = generate_spatial_tensor_dataset(
+                    bg,
+                    missing,
+                    seed=seed + len(existing_inputs),
+                    monitor=monitor,
+                )
+                dataset = merge_spatial_tensor_datasets(
+                    dataset,
+                    appended,
+                    seed=seed,
+                )
+                dataset.save(data_path)
+                cache_meta["signature"] = _signature(
+                    settings,
+                    n_tensor_samples=len(dataset.inputs),
+                )
+                cache_meta["tensor_sample_count"] = int(
+                    len(dataset.inputs)
+                )
+                write_json(meta_path, cache_meta)
+                print(
+                    "spatial truth cache 增量扩充完成："
+                    f"{len(existing_inputs)} -> {len(dataset.inputs)}；"
+                    "旧 truth 未重算。",
+                    flush=True,
                 )
         else:
             checkpoint.unlink(missing_ok=True)
@@ -395,6 +510,7 @@ def train(settings, model_path, settings_dir, monitor=None):
                 "preflight_signature": preflight_sig,
                 "truth_preflight": preflight,
                 "tensor_representation": "cellwise_joule_tensor_v1",
+                "tensor_sample_count": int(len(dataset.inputs)),
                 "thermal_representation": (
                     "geometry_local_rational_krylov_v1"
                 ),
