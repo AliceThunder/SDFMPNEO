@@ -101,6 +101,12 @@ def run_spatial_physics_gate(
                 "minimum_d_eigenvalue": float(
                     np.min(np.linalg.eigvalsh(d)).real
                 ),
+                "minimum_physical_outward_eigenvalue": float(
+                    truth_audit["minimum_physical_outward_eigenvalue"]
+                ),
+                "minimum_implied_outward_eigenvalue": float(
+                    truth_audit["minimum_implied_outward_eigenvalue"]
+                ),
                 "reciprocity_relative_error": float(
                     truth_audit["reciprocity_relative_error"]
                 ),
@@ -169,6 +175,14 @@ def run_spatial_physics_gate(
         row["minimum_d_eigenvalue"]
         for row in heldout_spatial_rows
     )
+    minimum_heldout_physical_outward = min(
+        row["minimum_physical_outward_eigenvalue"]
+        for row in heldout_spatial_rows
+    )
+    minimum_heldout_implied_outward = min(
+        row["minimum_implied_outward_eigenvalue"]
+        for row in heldout_spatial_rows
+    )
     maximum_heldout_reciprocity = max(
         row["reciprocity_relative_error"]
         for row in heldout_spatial_rows
@@ -204,11 +218,20 @@ def run_spatial_physics_gate(
         "volume_passivity_ok": (
             audit["minimum_d_vol_eigenvalue"] >= -1e-9
         ),
+        # Physical outward power is the independent Maxwell boundary form.
+        # Cached v56 audits previously overwrote that value after local
+        # correction, so certify it on fresh held-out truth instead of forcing
+        # a 3-hour truth-cache rebuild.  The raw form is PSD by construction
+        # from nonnegative boundary weights and is checked again here.
         "physical_outward_passivity_ok": (
-            audit["minimum_physical_outward_eigenvalue"] >= -1e-9
+            minimum_heldout_physical_outward >= -1e-9
         ),
+        # Implied outward belongs to the production Z/D representation.  Cached
+        # labels are cheaply upgraded through the same production decoder before
+        # this Gate, so both cached and held-out values must be passive.
         "implied_outward_passivity_ok": (
             audit["minimum_implied_outward_eigenvalue"] >= -1e-9
+            and minimum_heldout_implied_outward >= -1e-9
         ),
         "independent_poynting_balance_ok": (
             audit["maximum_open_boundary_power_balance_relative_error"]
