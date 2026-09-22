@@ -1674,7 +1674,7 @@ def train_spatial_tensor_surrogate(
     audit = evaluate(audit_ids)
     report_cfg = dict(cfg)
     report_cfg["representation"] = (
-        "cellwise_joule_neural_field_v2"
+        "cellwise_joule_neural_field_v3"
     )
     report_cfg["field_training_points"] = int(
         field_train_x_np.shape[0]
