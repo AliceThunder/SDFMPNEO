@@ -568,10 +568,9 @@ def train_spatial_tensor_surrogate(
         "field_log_density_margin": 0.5,
         "field_full_validation_interval": 10,
         "refit_all_truth": True,
-        "refit_global_head": False,
+        "refit_global_head": True,
         "refit_field_head": True,
-        "refit_epochs": 24,
-        "refit_learning_rate_factor": 0.25,
+        "refit_learning_rate_factor": 1.0,
         "seed": 17,
         "dtype": "float32",
     }
@@ -1219,7 +1218,6 @@ def train_spatial_tensor_surrogate(
                         "refit_all_truth",
                         "refit_global_head",
                         "refit_field_head",
-                        "refit_epochs",
                         "refit_learning_rate_factor",
                         "seed",
                         "dtype",
@@ -1263,7 +1261,7 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 10
+                int(saved.get("schema_version", -1)) == 11
                 and saved.get("representation")
                 == "cellwise_joule_neural_field_v4"
                 and saved.get("training_signature")
@@ -1591,7 +1589,7 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 10,
+                        "schema_version": 11,
                         "representation":
                             "cellwise_joule_neural_field_v4",
                         "training_signature":
