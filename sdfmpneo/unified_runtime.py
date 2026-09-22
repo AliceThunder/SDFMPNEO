@@ -22,7 +22,9 @@ from .unified_corrected_truth import (
 )
 from .unified_tensor_surrogate import (
     SpatialTensorDataset,
+    decode_geometry_encoding,
     encode_geometry,
+    encode_geometry_invariant,
     project_spatial_dataset_to_production_cone,
 )
 from .unified_tensor_training import train_spatial_tensor_surrogate
@@ -217,6 +219,213 @@ def _sample_geometries(settings,n,rng,background):
         except ValueError: continue
         out.append(candidate)
     return out
+
+
+
+def _maximin_enrichment_geometries(
+    settings,
+    background,
+    dataset,
+    *,
+    count,
+    seed,
+    candidate_pool,
+):
+    """Select legal geometries farthest from cached truth in invariant feature space."""
+    count = int(count)
+    pool = max(int(candidate_pool), count)
+    if count < 1:
+        return [], {
+            "candidate_pool": 0,
+            "minimum_selected_distance": 0.0,
+            "maximum_initial_distance": 0.0,
+        }
+
+    existing_geometries = [
+        decode_geometry_encoding(
+            row,
+            int(dataset.n_ports),
+        )
+        for row in np.asarray(dataset.inputs, float)
+    ]
+    existing_features = np.asarray(
+        [
+            encode_geometry_invariant(g)
+            for g in existing_geometries
+        ],
+        float,
+    )
+
+    rng = np.random.default_rng(int(seed))
+    candidates = _sample_geometries(
+        settings,
+        pool,
+        rng,
+        background,
+    )
+    candidate_features = np.asarray(
+        [
+            encode_geometry_invariant(g)
+            for g in candidates
+        ],
+        float,
+    )
+    if (
+        existing_features.ndim != 2
+        or candidate_features.ndim != 2
+        or existing_features.shape[1]
+        != candidate_features.shape[1]
+    ):
+        raise RuntimeError(
+            "geometry invariant feature width changed during enrichment"
+        )
+
+    combined = np.vstack(
+        (existing_features, candidate_features)
+    )
+    center = np.mean(combined, axis=0)
+    scale = np.std(combined, axis=0)
+    magnitude = np.max(np.abs(combined), axis=0)
+    scale = np.maximum(
+        scale,
+        np.maximum(1e-8 * magnitude, 1e-12),
+    )
+    existing_scaled = (
+        existing_features - center
+    ) / scale
+    candidate_scaled = (
+        candidate_features - center
+    ) / scale
+
+    nearest = np.full(
+        candidate_scaled.shape[0],
+        np.inf,
+        float,
+    )
+    for row in existing_scaled:
+        nearest = np.minimum(
+            nearest,
+            np.sum(
+                (candidate_scaled - row[None, :]) ** 2,
+                axis=1,
+            ),
+        )
+    initial_max = float(
+        np.sqrt(max(float(np.max(nearest)), 0.0))
+    )
+
+    selected_indices = []
+    selected_distances = []
+    for _ in range(min(count, len(candidates))):
+        index = int(np.argmax(nearest))
+        distance = float(
+            np.sqrt(max(float(nearest[index]), 0.0))
+        )
+        if (
+            not np.isfinite(distance)
+            or distance <= 1e-12
+        ):
+            break
+        selected_indices.append(index)
+        selected_distances.append(distance)
+        row = candidate_scaled[index]
+        nearest = np.minimum(
+            nearest,
+            np.sum(
+                (candidate_scaled - row[None, :]) ** 2,
+                axis=1,
+            ),
+        )
+        nearest[index] = -np.inf
+
+    selected = [
+        candidates[index]
+        for index in selected_indices
+    ]
+    return selected, {
+        "candidate_pool": int(len(candidates)),
+        "minimum_selected_distance": float(
+            min(selected_distances or [0.0])
+        ),
+        "maximum_initial_distance": initial_max,
+    }
+
+
+def _surrogate_internal_validation(settings, report):
+    final = dict(
+        settings["TRAINING"].get(
+            "final_audit",
+            {},
+        )
+        or {}
+    )
+    training = dict(
+        getattr(report, "training_config", {})
+        or {}
+    )
+    dynamic_limit = float(
+        final.get(
+            "reduced_dynamic_relative_tolerance",
+            1e-1,
+        )
+    )
+    global_limit = min(
+        float(final.get("tensor_relative_tolerance", 2e-1)),
+        float(final.get("outward_relative_tolerance", 2e-1)),
+        dynamic_limit,
+    )
+    field_limit = min(
+        float(final.get("tensor_relative_tolerance", 2e-1)),
+        float(
+            final.get(
+                "current_space_relative_tolerance",
+                2e-1,
+            )
+        ),
+        dynamic_limit,
+    )
+    projection_limit = float(
+        final.get(
+            "projection_correction_limit",
+            2e-1,
+        )
+    )
+
+    global_error = float(
+        training.get(
+            "best_global_validation_loss",
+            np.inf,
+        )
+    )
+    field_error = float(
+        training.get(
+            "best_field_validation_loss",
+            np.inf,
+        )
+    )
+    field_projection = float(
+        training.get(
+            "best_field_projection_correction",
+            np.inf,
+        )
+    )
+    certified = bool(
+        np.isfinite(global_error)
+        and np.isfinite(field_error)
+        and np.isfinite(field_projection)
+        and global_error <= global_limit
+        and field_error <= field_limit
+        and field_projection <= projection_limit
+    )
+    return {
+        "certified": certified,
+        "global_physical_validation_error": global_error,
+        "global_limit": global_limit,
+        "field_full_validation_error": field_error,
+        "field_limit": field_limit,
+        "field_projection_correction": field_projection,
+        "projection_limit": projection_limit,
+    }
 
 
 def _cache_paths(directory):
