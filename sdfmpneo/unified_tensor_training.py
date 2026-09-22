@@ -1716,16 +1716,43 @@ def train_spatial_tensor_surrogate(
         factor = float(
             cfg.get(
                 "refit_learning_rate_factor",
-                0.25,
+                1.0,
             )
         )
         if not 0.0 < factor <= 1.0:
             raise ValueError(
                 "refit_learning_rate_factor must lie in (0,1]"
             )
-        # Best weights may come from an earlier epoch than the optimizer's
-        # current moment state.  Rebuild AdamW so the refit starts from a
-        # coherent (weights, optimizer-state) pair.
+
+        replay_global_epochs = (
+            int(best_global_epoch)
+            if bool(cfg.get("refit_global_head", True))
+            else 0
+        )
+        replay_field_epochs = (
+            int(best_field_epoch)
+            if bool(cfg.get("refit_field_head", True))
+            else 0
+        )
+        replay_epochs = max(
+            replay_global_epochs,
+            replay_field_epochs,
+        )
+
+        # Standard train-all replay: restore the deterministic initialization
+        # and train every expensive truth geometry for exactly the epoch count
+        # selected on the held-out validation split.  This uses all 96 cached
+        # truths without the overfitting caused by continuing beyond the
+        # validation-selected stopping point.
+        if replay_global_epochs > 0:
+            global_network.load_state_dict(
+                initial_global_state
+            )
+        if replay_field_epochs > 0:
+            field_network.load_state_dict(
+                initial_field_state
+            )
+
         global_optimizer = torch.optim.AdamW(
             global_network.parameters(),
             lr=float(
@@ -1757,18 +1784,18 @@ def train_spatial_tensor_surrogate(
             ),
         )
 
-        requested_refit = max(
-            1,
-            int(cfg.get("refit_epochs", 24)),
+        # Replay uses a separate deterministic RNG stream, so checkpoint
+        # resume timing cannot change the final production weights.
+        refit_rng = np.random.default_rng(
+            seed + 271828
         )
-        for refit_epoch in range(requested_refit):
+        for refit_epoch in range(replay_epochs):
             if monitor is not None:
                 monitor.checkpoint()
-            global_network.train()
-            field_network.train()
 
-            if bool(cfg.get("refit_global_head", False)):
-                order = rng.permutation(refit_ids)
+            if refit_epoch < replay_global_epochs:
+                global_network.train()
+                order = refit_rng.permutation(refit_ids)
                 for start_batch in range(
                     0,
                     len(order),
@@ -1796,8 +1823,9 @@ def train_spatial_tensor_surrogate(
                         )
                     global_optimizer.step()
 
-            if bool(cfg.get("refit_field_head", True)):
-                field_order = rng.permutation(
+            if refit_epoch < replay_field_epochs:
+                field_network.train()
+                field_order = refit_rng.permutation(
                     field_refit_x.shape[0]
                 )
                 for start_batch in range(
@@ -1852,7 +1880,7 @@ def train_spatial_tensor_surrogate(
                     refit_epochs_completed == 1
                     or refit_epochs_completed % 4 == 0
                     or refit_epochs_completed
-                    == requested_refit
+                    == replay_epochs
                 )
             ):
                 global_network.eval()
@@ -1863,8 +1891,6 @@ def train_spatial_tensor_surrogate(
                         .detach()
                         .cpu()
                     )
-                    # Deterministic diagnostic subset; training still uses
-                    # every sampled refit field row above.
                     diagnostic_count = min(
                         field_batch,
                         field_refit_x.shape[0],
@@ -1890,6 +1916,12 @@ def train_spatial_tensor_surrogate(
                         refit_epoch=(
                             refit_epochs_completed
                         ),
+                        refit_global_target_epochs=(
+                            replay_global_epochs
+                        ),
+                        refit_field_target_epochs=(
+                            replay_field_epochs
+                        ),
                         refit_global_loss=(
                             refit_global_loss
                         ),
@@ -1897,6 +1929,7 @@ def train_spatial_tensor_surrogate(
                             refit_field_loss
                         ),
                     )
+
 
     global_network.eval()
     field_network.eval()
