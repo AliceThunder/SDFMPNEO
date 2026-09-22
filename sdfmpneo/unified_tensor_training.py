@@ -1145,6 +1145,16 @@ def train_spatial_tensor_surrogate(
                 flush=True,
             )
 
+    best_val = (
+        best_global_val
+        + float(cfg["spatial_weight"])
+        * best_field_val
+    )
+    best_epoch = max(
+        best_global_epoch,
+        best_field_epoch,
+    )
+
     interval = max(
         1,
         int(cfg["validation_interval"]),
