@@ -70,3 +70,37 @@ def test_geometry_encoding_is_fixed_width_across_supported_shapes():
     assert np.all(np.isfinite(circle))
     assert np.all(np.isfinite(square))
     assert not np.allclose(circle, square)
+
+
+def test_zero_rank_global_tensor_roundtrip_is_well_shaped():
+    z = np.array(
+        [[2.0 + 0.2j, 0.1 - 0.05j], [0.1 - 0.05j, 1.6 + 0.3j]],
+        complex,
+    )
+    d = np.array(
+        [[1.2, 0.08 + 0.02j], [0.08 - 0.02j, 0.9]],
+        complex,
+    )
+    packed = pack_tensors(
+        z,
+        d,
+        np.empty((0, 2, 2), complex),
+    )
+    z2, d2, modal = unpack_tensors(packed, 2, 0)
+    assert modal.shape == (0, 2, 2)
+    assert np.allclose(z2, z)
+    assert np.allclose(d2, d)
+
+    decoded = decode_physical_tensors(
+        packed,
+        2,
+        np.empty(0),
+        np.empty(0),
+    )
+    assert decoded.modal_h.shape == (0, 2, 2)
+    assert np.min(
+        np.linalg.eigvalsh(decoded.d_vol).real
+    ) >= -1e-12
+    assert np.min(
+        np.linalg.eigvalsh(decoded.implied_d_out).real
+    ) >= -1e-12
