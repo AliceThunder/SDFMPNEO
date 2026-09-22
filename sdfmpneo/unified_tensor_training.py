@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import copy
 import hashlib
+import json
 
 import numpy as np
 
@@ -1012,6 +1013,42 @@ def train_spatial_tensor_surrogate(
     )
     signature_hasher.update(
         np.ascontiguousarray(field_output_scale).tobytes()
+    )
+    signature_hasher.update(
+        json.dumps(
+            {
+                "global_network": global_cfg.to_dict(),
+                "field_network": field_cfg.to_dict(),
+                "optimizer": {
+                    key: cfg.get(key)
+                    for key in (
+                        "batch_size",
+                        "field_batch_size",
+                        "field_cells_per_geometry",
+                        "learning_rate",
+                        "global_learning_rate",
+                        "field_learning_rate",
+                        "weight_decay",
+                        "global_weight_decay",
+                        "field_weight_decay",
+                        "physics_penalty_weight",
+                        "z_weight",
+                        "d_weight",
+                        "outward_weight",
+                        "spatial_weight",
+                        "field_density_weight",
+                        "field_shape_weight",
+                        "refit_all_truth",
+                        "refit_epochs",
+                        "refit_learning_rate_factor",
+                        "seed",
+                        "dtype",
+                    )
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
     )
     training_signature = signature_hasher.hexdigest()
 
