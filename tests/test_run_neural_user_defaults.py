@@ -143,11 +143,13 @@ def test_final_release_settings_do_not_invalidate_physical_truth_cache():
     assert _signature(baseline) != _signature(correction_change)
 
 
-def test_training_defaults_are_matrix_aware_pod_not_krylov_residual_training():
+def test_training_defaults_use_two_head_spatial_neural_field():
     run = _load_run()
     optimizer = run.TRAINING["optimizer"]
     assert optimizer["batch_size"] > 1
-    assert 0 < optimizer["pod_relative_tail_tolerance"] < 1
+    assert optimizer["field_batch_size"] > optimizer["batch_size"]
+    assert optimizer["field_cells_per_geometry"] > 0
+    assert "pod_relative_tail_tolerance" not in optimizer
     assert optimizer["z_weight"] > 0
     assert optimizer["d_weight"] > 0
     assert optimizer["spatial_weight"] > 0
