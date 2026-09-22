@@ -1189,6 +1189,74 @@ class SpatialTensorDataset:
             )
 
 
+def project_spatial_dataset_to_production_cone(dataset):
+    """Upgrade cached spatial labels to the exact production decoder cone.
+
+    This is intentionally Maxwell-free: old truth caches already contain Z, D
+    and cellwise Joule tensors.  Re-decoding and re-packing makes those labels
+    obey the same D/cell PSD, exact sum-to-D and implied-outward passivity
+    constraints used at inference, without regenerating expensive EM truth.
+    """
+    if dataset.representation != "cellwise_joule_tensor_v1":
+        raise ValueError("unsupported spatial tensor dataset representation")
+    projected = []
+    maximum_correction = 0.0
+    minimum_d = float("inf")
+    minimum_outward = float("inf")
+    minimum_cell = float("inf")
+    maximum_sum_mismatch = 0.0
+    for packed in np.asarray(dataset.outputs, float):
+        decoded = decode_spatial_tensors(
+            packed,
+            int(dataset.n_ports),
+            int(dataset.n_cells),
+        )
+        projected.append(
+            pack_spatial_tensors(
+                decoded.z_field,
+                decoded.d_vol,
+                decoded.cell_h,
+            )
+        )
+        maximum_correction = max(
+            maximum_correction,
+            float(decoded.projection_correction),
+        )
+        minimum_d = min(
+            minimum_d,
+            float(np.min(np.linalg.eigvalsh(decoded.d_vol).real)),
+        )
+        minimum_outward = min(
+            minimum_outward,
+            float(np.min(np.linalg.eigvalsh(decoded.implied_d_out).real)),
+        )
+        minimum_cell = min(
+            minimum_cell,
+            float(np.min(np.linalg.eigvalsh(decoded.cell_h).real)),
+        )
+        maximum_sum_mismatch = max(
+            maximum_sum_mismatch,
+            float(
+                np.linalg.norm(np.sum(decoded.cell_h, axis=0) - decoded.d_vol)
+                / max(float(np.linalg.norm(decoded.d_vol)), np.finfo(float).tiny)
+            ),
+        )
+    dataset.outputs = np.asarray(projected, float)
+    audit = dict(dataset.audit)
+    audit["minimum_d_vol_eigenvalue"] = float(minimum_d)
+    audit["minimum_implied_outward_eigenvalue"] = float(minimum_outward)
+    audit["minimum_cell_joule_tensor_eigenvalue"] = float(minimum_cell)
+    audit["maximum_spatial_joule_total_mismatch"] = float(maximum_sum_mismatch)
+    audit["maximum_spatial_truth_projection_correction"] = float(
+        max(
+            float(audit.get("maximum_spatial_truth_projection_correction", 0.0)),
+            maximum_correction,
+        )
+    )
+    dataset.audit = audit
+    return float(maximum_correction)
+
+
 class UnifiedSpatialTensorSurrogate:
     """Two-head surrogate: global Z/D MLP + coordinate-conditioned Joule field."""
 
