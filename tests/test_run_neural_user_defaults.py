@@ -158,9 +158,13 @@ def test_training_defaults_use_two_head_spatial_neural_field():
     assert optimizer["spatial_weight"] > 0
     assert optimizer["field_density_weight"] > 0
     assert optimizer["field_shape_weight"] > 0
+    assert optimizer["field_physical_weight"] > 0
+    assert 0 <= optimizer["field_density_prior_strength"] < 1
+    assert optimizer["field_full_validation_interval"] > 0
     assert optimizer["global_weight_decay"] > optimizer["field_weight_decay"]
     assert optimizer["refit_all_truth"] is True
-    assert optimizer["refit_epochs"] > 0
+    assert optimizer["refit_global_head"] is True
+    assert optimizer["refit_field_head"] is True
     assert 0 < optimizer["refit_learning_rate_factor"] <= 1
     assert "h_weight" not in optimizer
     assert optimizer["physics_penalty_weight"] >= 0
