@@ -1,6 +1,8 @@
 import numpy as np
+from types import SimpleNamespace
 
 from sdfmpneo.unified_background import FixedMultiscaleBackground
+from sdfmpneo.unified_corrected_truth import _refresh_audit
 from sdfmpneo.unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
@@ -275,3 +277,24 @@ def test_cached_spatial_dataset_is_upgraded_to_production_passive_cone():
     )
     second = project_spatial_dataset_to_production_cone(dataset)
     assert second <= 1e-10
+
+
+def test_corrected_audit_preserves_independent_physical_outward_measurement():
+    z = np.array([[3.0 + 0.2j]], complex)
+    d = np.array([[2.0]], complex)
+    d_out = np.array([[1.0]], complex)
+    raw_audit = {
+        "minimum_physical_outward_eigenvalue": 0.75,
+        "open_boundary_power_balance_relative_error": 2.5e-12,
+    }
+    correction = SimpleNamespace(
+        audit={
+            "enabled": True,
+            "corrected_power_balance_relative_error": 1e-13,
+            "maximum_joule_total_power_relative_error": 1e-14,
+        }
+    )
+    refreshed = _refresh_audit(z, d, d_out, raw_audit, correction)
+    assert refreshed["minimum_physical_outward_eigenvalue"] == 0.75
+    assert refreshed["open_boundary_power_balance_relative_error"] == 2.5e-12
+    assert refreshed["minimum_implied_outward_eigenvalue"] >= 0.0
