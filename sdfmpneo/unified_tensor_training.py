@@ -24,6 +24,7 @@ from .unified_tensor_surrogate import (
     tensor_block_sizes,
     unpack_spatial_tensors,
     spatial_cell_features,
+    spatial_joule_density_prior,
     whiten_cell_joule_tensors,
 )
 
@@ -561,6 +562,8 @@ def train_spatial_tensor_surrogate(
         "spatial_weight": 1.0,
         "field_density_weight": 1.0,
         "field_shape_weight": 1.0,
+        "field_density_prior_strength": 0.9,
+        "field_log_density_margin": 0.5,
         "refit_all_truth": True,
         "refit_global_head": False,
         "refit_field_head": True,
@@ -631,6 +634,10 @@ def train_spatial_tensor_surrogate(
         feature_rows = []
         target_rows = []
         for sample_id in np.asarray(geometry_ids, int):
+            geometry = geometries[int(sample_id)]
+            spatial_context = background._spatial_context(
+                geometry
+            )
             _z, d, cells = unpack_spatial_tensors(
                 dataset.outputs[int(sample_id)],
                 n,
@@ -691,13 +698,23 @@ def train_spatial_tensor_surrogate(
             feature_rows.append(
                 spatial_cell_features(
                     background,
-                    geometries[int(sample_id)],
+                    geometry,
                     cell_ids,
+                    spatial_context=spatial_context,
                 )
+            )
+            density_prior = spatial_joule_density_prior(
+                background,
+                spatial_context,
+                cell_ids,
+                strength=float(
+                    cfg["field_density_prior_strength"]
+                ),
             )
             target = pack_whitened_field_factors(
                 whitened[cell_ids],
                 total_cells=m,
+                density_prior=density_prior,
             )
             target_rows.append(target)
         features = np.vstack(feature_rows).astype(
@@ -737,6 +754,26 @@ def train_spatial_tensor_surrogate(
     ) = sampled_field_rows(
         val_ids,
         130363,
+    )
+
+    density_margin = float(
+        cfg.get("field_log_density_margin", 0.5)
+    )
+    if (
+        not np.isfinite(density_margin)
+        or density_margin < 0.0
+    ):
+        raise ValueError(
+            "field_log_density_margin must be finite and nonnegative"
+        )
+    field_log_density_bounds = np.asarray(
+        [
+            float(np.min(field_train_y_np[:, 0]))
+            - density_margin,
+            float(np.max(field_train_y_np[:, 0]))
+            + density_margin,
+        ],
+        float,
     )
 
     def output_normalizer(values):
@@ -1017,6 +1054,11 @@ def train_spatial_tensor_surrogate(
         np.ascontiguousarray(field_output_scale).tobytes()
     )
     signature_hasher.update(
+        np.ascontiguousarray(
+            field_log_density_bounds
+        ).tobytes()
+    )
+    signature_hasher.update(
         json.dumps(
             {
                 "global_network": global_cfg.to_dict(),
@@ -1044,6 +1086,8 @@ def train_spatial_tensor_surrogate(
                         "spatial_weight",
                         "field_density_weight",
                         "field_shape_weight",
+                        "field_density_prior_strength",
+                        "field_log_density_margin",
                         "refit_all_truth",
                         "refit_global_head",
                         "refit_field_head",
@@ -1673,6 +1717,10 @@ def train_spatial_tensor_surrogate(
         global_output_scale=global_output_scale,
         field_output_mean=field_output_mean,
         field_output_scale=field_output_scale,
+        field_density_prior_strength=float(
+            cfg["field_density_prior_strength"]
+        ),
+        field_log_density_bounds=field_log_density_bounds,
     )
 
     full_weights = np.concatenate(
@@ -1757,6 +1805,12 @@ def train_spatial_tensor_surrogate(
     )
     report_cfg["field_validation_points"] = int(
         field_val_x_np.shape[0]
+    )
+    report_cfg["field_density_prior_strength"] = float(
+        cfg["field_density_prior_strength"]
+    )
+    report_cfg["field_log_density_bounds"] = (
+        field_log_density_bounds.tolist()
     )
     report_cfg["final_refit_all_truth"] = bool(
         cfg.get("refit_all_truth", True)
