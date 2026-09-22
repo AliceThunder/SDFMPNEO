@@ -564,6 +564,7 @@ def train_spatial_tensor_surrogate(
         "spatial_weight": 1.0,
         "field_density_weight": 1.0,
         "field_shape_weight": 1.0,
+        "field_physical_weight": 1.0,
         "field_density_prior_strength": 0.9,
         "field_log_density_margin": 0.5,
         "field_full_validation_interval": 10,
@@ -635,6 +636,7 @@ def train_spatial_tensor_surrogate(
         local_rng = np.random.default_rng(seed + int(seed_offset))
         feature_rows = []
         target_rows = []
+        prior_rows = []
         for sample_id in np.asarray(geometry_ids, int):
             geometry = geometries[int(sample_id)]
             spatial_context = background._spatial_context(
@@ -719,6 +721,7 @@ def train_spatial_tensor_surrogate(
                 density_prior=density_prior,
             )
             target_rows.append(target)
+            prior_rows.append(density_prior)
         features = np.vstack(feature_rows).astype(
             float,
             copy=False,
@@ -727,11 +730,25 @@ def train_spatial_tensor_surrogate(
             float,
             copy=False,
         )
+        prior = np.concatenate(prior_rows).astype(
+            float,
+            copy=False,
+        )
         # Shape/orientation is irrelevant where local power density is tiny.
-        # Weight its loss by the dimensionless density while always learning
-        # log-density itself across the whole domain.
+        # The first target channel is residual log-density, so recover the
+        # actual dimensionless density by multiplying the analytic prior.
+        actual_density = (
+            prior
+            * np.exp(
+                np.clip(
+                    targets[:, 0],
+                    -30.0,
+                    30.0,
+                )
+            )
+        )
         shape_weight = np.minimum(
-            np.exp(np.clip(targets[:, 0], -30.0, 30.0)),
+            actual_density,
             10.0,
         )
         shape_weight = np.maximum(shape_weight, 1e-3)
@@ -739,12 +756,13 @@ def train_spatial_tensor_surrogate(
             float(np.mean(shape_weight)),
             np.finfo(float).tiny,
         )
-        return features, targets, shape_weight
+        return features, targets, shape_weight, prior
 
     (
         field_train_x_np,
         field_train_y_np,
         field_train_shape_weight_np,
+        field_train_prior_np,
     ) = sampled_field_rows(
         train_ids,
         104729,
@@ -753,6 +771,7 @@ def train_spatial_tensor_surrogate(
         field_val_x_np,
         field_val_y_np,
         field_val_shape_weight_np,
+        field_val_prior_np,
     ) = sampled_field_rows(
         val_ids,
         130363,
@@ -956,6 +975,32 @@ def train_spatial_tensor_surrogate(
         dtype=dtype,
         device=resolved,
     )
+    field_train_prior = torch.as_tensor(
+        field_train_prior_np,
+        dtype=dtype,
+        device=resolved,
+    )
+    field_val_prior = torch.as_tensor(
+        field_val_prior_np,
+        dtype=dtype,
+        device=resolved,
+    )
+    field_output_mean_t = torch.as_tensor(
+        field_output_mean,
+        dtype=dtype,
+        device=resolved,
+    )
+    field_output_scale_t = torch.as_tensor(
+        field_output_scale,
+        dtype=dtype,
+        device=resolved,
+    )
+    field_log_density_lower = float(
+        field_log_density_bounds[0]
+    )
+    field_log_density_upper = float(
+        field_log_density_bounds[1]
+    )
 
     z_w_np, h_w_np = _matrix_weights(n)
 
@@ -1012,7 +1057,42 @@ def train_spatial_tensor_surrogate(
             )
         return loss
 
-    def field_loss(xb, yb, shape_weight):
+    def decoded_field_cells(normalized, prior):
+        physical = (
+            field_output_mean_t
+            + field_output_scale_t * normalized
+        )
+        log_density = torch.clamp(
+            physical[..., 0],
+            min=field_log_density_lower,
+            max=field_log_density_upper,
+        )
+        roots = _unpack_h_torch(
+            torch,
+            physical[..., 1:],
+            n,
+        )
+        shapes = roots @ roots.conj().transpose(-1, -2)
+        traces = torch.diagonal(
+            shapes.real,
+            dim1=-2,
+            dim2=-1,
+        ).sum(dim=-1).clamp_min(
+            torch.finfo(dtype).eps
+        )
+        shapes = (
+            shapes
+            / traces[..., None, None]
+        )
+        density = (
+            prior
+            * torch.exp(log_density)
+            * float(n)
+            / float(m)
+        )
+        return density[..., None, None] * shapes
+
+    def field_loss(xb, yb, shape_weight, prior):
         pred = field_network(xb)
         diff = pred - yb
         density_loss = torch.mean(
@@ -1027,11 +1107,32 @@ def train_spatial_tensor_surrogate(
         ) / torch.sum(shape_weight).clamp_min(
             torch.finfo(dtype).eps
         )
+        pred_cells = decoded_field_cells(
+            pred,
+            prior,
+        )
+        truth_cells = decoded_field_cells(
+            yb,
+            prior,
+        )
+        physical_error = torch.sum(
+            torch.abs(
+                pred_cells - truth_cells
+            ) ** 2
+        )
+        physical_reference = torch.sum(
+            torch.abs(truth_cells) ** 2
+        ).clamp_min(torch.finfo(dtype).eps)
+        physical_loss = (
+            physical_error / physical_reference
+        )
         return (
             float(cfg["field_density_weight"])
             * density_loss
             + float(cfg["field_shape_weight"])
             * weighted_shape
+            + float(cfg["field_physical_weight"])
+            * physical_loss
         )
 
 
@@ -1212,6 +1313,7 @@ def train_spatial_tensor_surrogate(
                         "spatial_weight",
                         "field_density_weight",
                         "field_shape_weight",
+                        "field_physical_weight",
                         "field_density_prior_strength",
                         "field_log_density_margin",
                         "field_full_validation_interval",
@@ -1261,7 +1363,7 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 11
+                int(saved.get("schema_version", -1)) == 12
                 and saved.get("representation")
                 == "cellwise_joule_neural_field_v4"
                 and saved.get("training_signature")
@@ -1447,6 +1549,10 @@ def train_spatial_tensor_surrogate(
                     0,
                     ids_t,
                 ),
+                field_train_prior.index_select(
+                    0,
+                    ids_t,
+                ),
             )
             field_optimizer.zero_grad(
                 set_to_none=True
@@ -1507,8 +1613,11 @@ def train_spatial_tensor_surrogate(
                     wb = field_val_shape_weight[
                         start_batch:start_batch + field_batch
                     ]
+                    pb = field_val_prior[
+                        start_batch:start_batch + field_batch
+                    ]
                     value = float(
-                        field_loss(xb, yb, wb)
+                        field_loss(xb, yb, wb, pb)
                         .detach()
                         .cpu()
                     )
@@ -1589,7 +1698,7 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 11,
+                        "schema_version": 12,
                         "representation":
                             "cellwise_joule_neural_field_v4",
                         "training_signature":
@@ -1688,6 +1797,7 @@ def train_spatial_tensor_surrogate(
             field_refit_x_np,
             field_refit_y_np,
             field_refit_shape_weight_np,
+            field_refit_prior_np,
         ) = sampled_field_rows(
             refit_ids,
             161803,
@@ -1707,6 +1817,11 @@ def train_spatial_tensor_surrogate(
         )
         field_refit_shape_weight = torch.as_tensor(
             field_refit_shape_weight_np,
+            dtype=dtype,
+            device=resolved,
+        )
+        field_refit_prior = torch.as_tensor(
+            field_refit_prior_np,
             dtype=dtype,
             device=resolved,
         )
@@ -1853,6 +1968,10 @@ def train_spatial_tensor_surrogate(
                             0,
                             ids_t,
                         ),
+                        field_refit_prior.index_select(
+                            0,
+                            ids_t,
+                        ),
                     )
                     field_optimizer.zero_grad(
                         set_to_none=True
@@ -1902,6 +2021,9 @@ def train_spatial_tensor_surrogate(
                                 :diagnostic_count
                             ],
                             field_refit_shape_weight[
+                                :diagnostic_count
+                            ],
+                            field_refit_prior[
                                 :diagnostic_count
                             ],
                         )
