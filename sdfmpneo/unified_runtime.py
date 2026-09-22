@@ -456,7 +456,7 @@ def train(settings, model_path, settings_dir, monitor=None):
         )
 
         _progress(
-            "训练 geometry→spatial-Joule POD-MLP",
+            "训练 geometry→spatial-Joule neural field",
             62,
             monitor,
         )
@@ -597,7 +597,7 @@ def train(settings, model_path, settings_dir, monitor=None):
         print(
             "训练完成："
             f"default geometry online thermal rank={default_rank}，"
-            f"tensor POD rank={report.pod_rank}，在线 Maxwell solve=0，"
+            f"spatial neural-field rank-free={report.pod_rank == 0}，在线 Maxwell solve=0，"
             f"best epoch={report.best_epoch}，"
             f"validation matrix loss={report.best_validation_loss:.6g}，"
             f"test relative tensor error={report.test_relative_tensor_error:.6g}。",
