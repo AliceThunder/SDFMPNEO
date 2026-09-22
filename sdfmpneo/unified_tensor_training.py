@@ -15,13 +15,15 @@ from .unified_tensor_surrogate import (
     decode_physical_tensors,
     decode_spatial_tensors,
     decode_geometry_encoding,
+    encode_geometry_invariant,
     pack_tensors,
     pack_spatial_tensors,
+    pack_spatial_global_tensors,
+    pack_whitened_field_factors,
     tensor_block_sizes,
     unpack_spatial_tensors,
     spatial_cell_features,
     whiten_cell_joule_tensors,
-    _pack_hermitian_batch,
 )
 
 
@@ -159,6 +161,55 @@ def _unpack_h_torch(torch, packed, n):
         h[..., i, j] = value
         h[..., j, i] = value.conj()
     return h
+
+
+
+def _unpack_real_symmetric_torch(torch, packed, n):
+    pairs = [(i, j) for i in range(n) for j in range(i, n)]
+    if packed.shape[-1] != len(pairs):
+        raise ValueError("real symmetric torch packed size mismatch")
+    out = torch.zeros(
+        (*packed.shape[:-1], n, n),
+        dtype=packed.dtype,
+        device=packed.device,
+    )
+    for k, (i, j) in enumerate(pairs):
+        out[..., i, j] = packed[..., k]
+        out[..., j, i] = packed[..., k]
+    return out
+
+
+def _spatial_global_physics_penalty(torch, physical, n_ports):
+    n = int(n_ports)
+    h_size = n * n
+    s_size = n * (n + 1) // 2
+    if physical.shape[-1] != h_size + 2 * s_size:
+        raise ValueError("spatial global physical width mismatch")
+    d = _unpack_h_torch(
+        torch,
+        physical[..., :h_size],
+        n,
+    )
+    outward_real = _unpack_real_symmetric_torch(
+        torch,
+        physical[..., h_size:h_size + s_size],
+        n,
+    )
+    outward = torch.complex(
+        outward_real,
+        -d.imag,
+    )
+    d_penalty = torch.mean(
+        torch.relu(
+            -torch.linalg.eigvalsh(d).real
+        ) ** 2
+    )
+    outward_penalty = torch.mean(
+        torch.relu(
+            -torch.linalg.eigvalsh(outward).real
+        ) ** 2
+    )
+    return 0.5 * (d_penalty + outward_penalty)
 
 
 def _physics_penalty(torch, physical, n_ports, thermal_rank, phi_min, phi_max):
@@ -492,16 +543,23 @@ def train_spatial_tensor_surrogate(
         "epochs": 240,
         "batch_size": 16,
         "field_batch_size": 4096,
-        "field_cells_per_geometry": 1024,
+        "field_cells_per_geometry": 2048,
         "learning_rate": 1e-3,
+        "global_learning_rate": 5e-4,
+        "field_learning_rate": 1e-3,
         "weight_decay": 1e-6,
+        "global_weight_decay": 1e-3,
+        "field_weight_decay": 1e-6,
         "patience": 40,
         "validation_interval": 2,
         "gradient_clip_norm": 10.0,
         "physics_penalty_weight": 0.05,
         "z_weight": 1.0,
         "d_weight": 1.0,
+        "outward_weight": 1.0,
         "spatial_weight": 1.0,
+        "field_density_weight": 1.0,
+        "field_shape_weight": 1.0,
         "seed": 17,
         "dtype": "float32",
     }
@@ -526,15 +584,36 @@ def train_spatial_tensor_surrogate(
             "spatial tensor dataset cell count differs from training background"
         )
     z_size, h_size, _ = tensor_block_sizes(n, 0)
-    global_dim = z_size + h_size
-    field_dim = n * n
+    symmetric_size = n * (n + 1) // 2
+    global_dim = h_size + 2 * symmetric_size
+    field_dim = 1 + n * n
 
     geometries = [
         decode_geometry_encoding(row, n)
         for row in np.asarray(dataset.inputs, float)
     ]
+    global_inputs_np = np.asarray(
+        [
+            encode_geometry_invariant(g)
+            for g in geometries
+        ],
+        float,
+    )
+    global_targets_np = []
+    for packed in np.asarray(dataset.outputs, float):
+        z_truth, d_truth, _cells_truth = unpack_spatial_tensors(
+            packed,
+            n,
+            m,
+        )
+        global_targets_np.append(
+            pack_spatial_global_tensors(
+                z_truth,
+                d_truth,
+            )
+        )
     global_targets_np = np.asarray(
-        dataset.outputs[:, :global_dim],
+        global_targets_np,
         float,
     )
 
@@ -610,21 +689,46 @@ def train_spatial_tensor_surrogate(
                     cell_ids,
                 )
             )
-            target_rows.append(
-                _pack_hermitian_batch(
-                    whitened[cell_ids]
-                )
+            target = pack_whitened_field_factors(
+                whitened[cell_ids],
+                total_cells=m,
             )
-        return (
-            np.vstack(feature_rows).astype(float, copy=False),
-            np.vstack(target_rows).astype(float, copy=False),
+            target_rows.append(target)
+        features = np.vstack(feature_rows).astype(
+            float,
+            copy=False,
         )
+        targets = np.vstack(target_rows).astype(
+            float,
+            copy=False,
+        )
+        # Shape/orientation is irrelevant where local power density is tiny.
+        # Weight its loss by the dimensionless density while always learning
+        # log-density itself across the whole domain.
+        shape_weight = np.minimum(
+            np.exp(np.clip(targets[:, 0], -30.0, 30.0)),
+            10.0,
+        )
+        shape_weight = np.maximum(shape_weight, 1e-3)
+        shape_weight /= max(
+            float(np.mean(shape_weight)),
+            np.finfo(float).tiny,
+        )
+        return features, targets, shape_weight
 
-    field_train_x_np, field_train_y_np = sampled_field_rows(
+    (
+        field_train_x_np,
+        field_train_y_np,
+        field_train_shape_weight_np,
+    ) = sampled_field_rows(
         train_ids,
         104729,
     )
-    field_val_x_np, field_val_y_np = sampled_field_rows(
+    (
+        field_val_x_np,
+        field_val_y_np,
+        field_val_shape_weight_np,
+    ) = sampled_field_rows(
         val_ids,
         130363,
     )
@@ -658,22 +762,43 @@ def train_spatial_tensor_surrogate(
     ) / field_output_scale
 
     global_norm = FeatureNormalizer.fit(
-        np.asarray(dataset.inputs[train_ids], float)
+        global_inputs_np[train_ids]
     )
     field_norm = FeatureNormalizer.fit(field_train_x_np)
 
     net_settings = dict(network_settings or {})
-    net_settings.pop("input_dimension", None)
-    net_settings.pop("output_dimension", None)
+    if (
+        isinstance(net_settings.get("global"), dict)
+        or isinstance(net_settings.get("field"), dict)
+    ):
+        shared = {
+            k: v
+            for k, v in net_settings.items()
+            if k not in {"global", "field"}
+        }
+        global_settings = {
+            **shared,
+            **dict(net_settings.get("global", {})),
+        }
+        field_settings = {
+            **shared,
+            **dict(net_settings.get("field", {})),
+        }
+    else:
+        global_settings = dict(net_settings)
+        field_settings = dict(net_settings)
+    for settings_part in (global_settings, field_settings):
+        settings_part.pop("input_dimension", None)
+        settings_part.pop("output_dimension", None)
     global_cfg = ResidualMLPConfig(
-        input_dimension=dataset.inputs.shape[1],
+        input_dimension=global_inputs_np.shape[1],
         output_dimension=global_dim,
-        **net_settings,
+        **global_settings,
     )
     field_cfg = ResidualMLPConfig(
         input_dimension=field_train_x_np.shape[1],
         output_dimension=field_dim,
-        **net_settings,
+        **field_settings,
     )
 
     resolved = _resolve_device(torch, device)
@@ -693,17 +818,37 @@ def train_spatial_tensor_surrogate(
 
     global_optimizer = torch.optim.AdamW(
         global_network.parameters(),
-        lr=float(cfg["learning_rate"]),
-        weight_decay=float(cfg["weight_decay"]),
+        lr=float(
+            cfg.get(
+                "global_learning_rate",
+                cfg["learning_rate"],
+            )
+        ),
+        weight_decay=float(
+            cfg.get(
+                "global_weight_decay",
+                cfg["weight_decay"],
+            )
+        ),
     )
     field_optimizer = torch.optim.AdamW(
         field_network.parameters(),
-        lr=float(cfg["learning_rate"]),
-        weight_decay=float(cfg["weight_decay"]),
+        lr=float(
+            cfg.get(
+                "field_learning_rate",
+                cfg["learning_rate"],
+            )
+        ),
+        weight_decay=float(
+            cfg.get(
+                "field_weight_decay",
+                cfg["weight_decay"],
+            )
+        ),
     )
 
     geometry_x = torch.as_tensor(
-        dataset.inputs,
+        global_inputs_np,
         dtype=dtype,
         device=resolved,
     )
@@ -747,6 +892,16 @@ def train_spatial_tensor_surrogate(
         dtype=dtype,
         device=resolved,
     )
+    field_train_shape_weight = torch.as_tensor(
+        field_train_shape_weight_np,
+        dtype=dtype,
+        device=resolved,
+    )
+    field_val_shape_weight = torch.as_tensor(
+        field_val_shape_weight_np,
+        dtype=dtype,
+        device=resolved,
+    )
 
     z_w_np, h_w_np = _matrix_weights(n)
 
@@ -765,22 +920,27 @@ def train_spatial_tensor_surrogate(
             geometry_x.index_select(0, ids_t)
         )
         diff = pred_normalized - truth_normalized
-        z_loss = torch.mean(
-            diff[..., :z_size] ** 2
-        )
         d_loss = torch.mean(
-            diff[..., z_size:] ** 2
+            diff[..., :h_size] ** 2
+        )
+        outward_loss = torch.mean(
+            diff[
+                ...,
+                h_size:h_size + symmetric_size,
+            ] ** 2
+        )
+        reactance_loss = torch.mean(
+            diff[
+                ...,
+                h_size + symmetric_size:,
+            ] ** 2
         )
         loss = (
-            float(cfg["z_weight"]) * z_loss
-            + float(cfg["d_weight"]) * d_loss
+            float(cfg["d_weight"]) * d_loss
+            + float(cfg["outward_weight"]) * outward_loss
+            + float(cfg["z_weight"]) * reactance_loss
         )
         if float(cfg["physics_penalty_weight"]) > 0.0:
-            empty = torch.empty(
-                (0, 0),
-                dtype=dtype,
-                device=resolved,
-            )
             physical_pred = (
                 global_output_mean_t
                 + global_output_scale_t * pred_normalized
@@ -789,21 +949,36 @@ def train_spatial_tensor_surrogate(
                 truth * truth
             ).clamp_min(torch.finfo(dtype).eps)
             loss = loss + float(cfg["physics_penalty_weight"]) * (
-                _physics_penalty(
+                _spatial_global_physics_penalty(
                     torch,
                     physical_pred,
                     n,
-                    0,
-                    empty,
-                    empty,
                 )
                 / physical_scale
             )
         return loss
 
-    def field_loss(xb, yb):
+    def field_loss(xb, yb, shape_weight):
         pred = field_network(xb)
-        return torch.mean((pred - yb) ** 2)
+        diff = pred - yb
+        density_loss = torch.mean(
+            diff[..., 0] ** 2
+        )
+        shape_error = torch.mean(
+            diff[..., 1:] ** 2,
+            dim=-1,
+        )
+        weighted_shape = torch.sum(
+            shape_weight * shape_error
+        ) / torch.sum(shape_weight).clamp_min(
+            torch.finfo(dtype).eps
+        )
+        return (
+            float(cfg["field_density_weight"])
+            * density_loss
+            + float(cfg["field_shape_weight"])
+            * weighted_shape
+        )
 
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
@@ -812,7 +987,7 @@ def train_spatial_tensor_surrogate(
 
     signature_hasher = hashlib.sha256()
     signature_hasher.update(
-        np.ascontiguousarray(dataset.inputs).tobytes()
+        np.ascontiguousarray(global_inputs_np).tobytes()
     )
     signature_hasher.update(
         np.ascontiguousarray(global_targets_np).tobytes()
@@ -861,9 +1036,9 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 6
+                int(saved.get("schema_version", -1)) == 7
                 and saved.get("representation")
-                == "cellwise_joule_neural_field_v2"
+                == "cellwise_joule_neural_field_v3"
                 and saved.get("training_signature")
                 == training_signature
             )
@@ -987,6 +1162,10 @@ def train_spatial_tensor_surrogate(
             loss = field_loss(
                 field_train_x.index_select(0, ids_t),
                 field_train_y.index_select(0, ids_t),
+                field_train_shape_weight.index_select(
+                    0,
+                    ids_t,
+                ),
             )
             field_optimizer.zero_grad(
                 set_to_none=True
@@ -1044,8 +1223,11 @@ def train_spatial_tensor_surrogate(
                     yb = field_val_y[
                         start_batch:start_batch + field_batch
                     ]
+                    wb = field_val_shape_weight[
+                        start_batch:start_batch + field_batch
+                    ]
                     value = float(
-                        field_loss(xb, yb)
+                        field_loss(xb, yb, wb)
                         .detach()
                         .cpu()
                     )
@@ -1088,9 +1270,9 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 6,
+                        "schema_version": 7,
                         "representation":
-                            "cellwise_joule_neural_field_v2",
+                            "cellwise_joule_neural_field_v3",
                         "training_signature":
                             training_signature,
                         "epoch": epochs_completed,
