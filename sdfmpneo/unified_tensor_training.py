@@ -1066,7 +1066,8 @@ def train_spatial_tensor_surrogate(
                 )
 
             if (
-                last_val
+                not np.isfinite(best_val)
+                or last_val
                 < best_val
                 - 1e-10 * max(1.0, abs(best_val))
             ):
