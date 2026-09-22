@@ -1368,21 +1368,35 @@ class UnifiedSpatialTensorSurrogate:
         n_cells,
         *,
         field_chunk_size=65536,
-        field_output_scale=1.0,
+        global_output_mean=None,
+        global_output_scale=None,
+        field_output_mean=None,
+        field_output_scale=None,
     ):
         self.global_network = global_network
         self.field_network = field_network
         self.n_ports = int(n_ports)
         self.n_cells = int(n_cells)
         self.field_chunk_size = max(1, int(field_chunk_size))
-        self.field_output_scale = float(field_output_scale)
-        if (
-            not np.isfinite(self.field_output_scale)
-            or self.field_output_scale <= 0.0
-        ):
-            raise ValueError("field_output_scale must be finite and positive")
         global_dim = tensor_output_dimension(self.n_ports, 0)
         field_dim = self.n_ports * self.n_ports
+        self.global_output_mean = np.zeros(global_dim, float) if global_output_mean is None else np.asarray(global_output_mean, float).reshape(-1)
+        self.global_output_scale = np.ones(global_dim, float) if global_output_scale is None else np.asarray(global_output_scale, float).reshape(-1)
+        self.field_output_mean = np.zeros(field_dim, float) if field_output_mean is None else np.asarray(field_output_mean, float).reshape(-1)
+        self.field_output_scale = np.ones(field_dim, float) if field_output_scale is None else np.asarray(field_output_scale, float).reshape(-1)
+        if (
+            self.global_output_mean.shape != (global_dim,)
+            or self.global_output_scale.shape != (global_dim,)
+            or self.field_output_mean.shape != (field_dim,)
+            or self.field_output_scale.shape != (field_dim,)
+            or np.any(~np.isfinite(self.global_output_mean))
+            or np.any(~np.isfinite(self.global_output_scale))
+            or np.any(~np.isfinite(self.field_output_mean))
+            or np.any(~np.isfinite(self.field_output_scale))
+            or np.any(self.global_output_scale <= 0.0)
+            or np.any(self.field_output_scale <= 0.0)
+        ):
+            raise ValueError("spatial surrogate output normalization is invalid")
         if self.global_network.config.output_dimension != global_dim:
             raise ValueError(
                 "global spatial surrogate output dimension differs from Z/D schema"
@@ -1421,10 +1435,14 @@ class UnifiedSpatialTensorSurrogate:
 
     def _global_tensors(self, geometry):
         encoded = encode_geometry(geometry)[None, :]
-        packed = self._network_numpy(
+        normalized = self._network_numpy(
             self.global_network,
             encoded,
         )[0]
+        packed = (
+            self.global_output_mean
+            + self.global_output_scale * normalized
+        )
         empty = np.empty(0, float)
         return decode_physical_tensors(
             packed,
@@ -1454,16 +1472,15 @@ class UnifiedSpatialTensorSurrogate:
                 g,
                 ids,
             )
-            raw_rows.append(
-                self._network_numpy(
-                    self.field_network,
-                    features,
-                )
+            normalized = self._network_numpy(
+                self.field_network,
+                features,
             )
-        raw_packed = (
-            np.vstack(raw_rows)
-            * self.field_output_scale
-        )
+            raw_rows.append(
+                self.field_output_mean[None, :]
+                + self.field_output_scale[None, :] * normalized
+            )
+        raw_packed = np.vstack(raw_rows)
         raw_shape = _unpack_hermitian_batch(
             raw_packed,
             self.n_ports,
@@ -1535,7 +1552,7 @@ class UnifiedSpatialTensorSurrogate:
             self.field_network.input_scale.detach().cpu().numpy(),
         )
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "representation": self.representation,
             "global_network_config": self.global_network.config.to_dict(),
             "field_network_config": self.field_network.config.to_dict(),
@@ -1546,6 +1563,9 @@ class UnifiedSpatialTensorSurrogate:
             "n_ports": self.n_ports,
             "n_cells": self.n_cells,
             "field_chunk_size": self.field_chunk_size,
+            "global_output_mean": self.global_output_mean,
+            "global_output_scale": self.global_output_scale,
+            "field_output_mean": self.field_output_mean,
             "field_output_scale": self.field_output_scale,
             "global_network_state": {
                 k: v.detach().cpu()
@@ -1563,7 +1583,7 @@ class UnifiedSpatialTensorSurrogate:
         import torch
 
         if (
-            int(payload.get("schema_version", -1)) != 2
+            int(payload.get("schema_version", -1)) != 3
             or payload.get("representation")
             != "cellwise_joule_neural_field_v2"
         ):
@@ -1616,8 +1636,21 @@ class UnifiedSpatialTensorSurrogate:
             field_chunk_size=int(
                 payload.get("field_chunk_size", 65536)
             ),
-            field_output_scale=float(
-                payload.get("field_output_scale", 1.0)
+            global_output_mean=np.asarray(
+                payload["global_output_mean"],
+                float,
+            ),
+            global_output_scale=np.asarray(
+                payload["global_output_scale"],
+                float,
+            ),
+            field_output_mean=np.asarray(
+                payload["field_output_mean"],
+                float,
+            ),
+            field_output_scale=np.asarray(
+                payload["field_output_scale"],
+                float,
             ),
         )
 
