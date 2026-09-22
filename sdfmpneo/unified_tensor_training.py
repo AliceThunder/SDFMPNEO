@@ -1067,9 +1067,12 @@ def train_spatial_tensor_surrogate(
     best_field = copy.deepcopy(
         field_network.state_dict()
     )
-    best_val = float("inf")
-    best_epoch = 0
-    stale = 0
+    best_global_val = float("inf")
+    best_field_val = float("inf")
+    best_global_epoch = 0
+    best_field_epoch = 0
+    stale_global = 0
+    stale_field = 0
     start_epoch = 0
 
     if checkpoint is not None and checkpoint.is_file():
@@ -1080,7 +1083,7 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 7
+                int(saved.get("schema_version", -1)) == 8
                 and saved.get("representation")
                 == "cellwise_joule_neural_field_v3"
                 and saved.get("training_signature")
@@ -1101,11 +1104,24 @@ def train_spatial_tensor_surrogate(
                 )
                 best_global = saved["best_global_network"]
                 best_field = saved["best_field_network"]
-                best_val = float(
-                    saved["best_validation_loss"]
+                best_global_val = float(
+                    saved["best_global_validation_loss"]
                 )
-                best_epoch = int(saved["best_epoch"])
-                stale = int(saved.get("stale", 0))
+                best_field_val = float(
+                    saved["best_field_validation_loss"]
+                )
+                best_global_epoch = int(
+                    saved["best_global_epoch"]
+                )
+                best_field_epoch = int(
+                    saved["best_field_epoch"]
+                )
+                stale_global = int(
+                    saved.get("stale_global", 0)
+                )
+                stale_field = int(
+                    saved.get("stale_field", 0)
+                )
                 start_epoch = int(saved["epoch"])
                 print(
                     "恢复 geometry→spatial-Joule neural-field "
@@ -1290,22 +1306,46 @@ def train_spatial_tensor_surrogate(
                 )
 
             if (
-                not np.isfinite(best_val)
-                or last_val
-                < best_val
-                - 1e-10 * max(1.0, abs(best_val))
+                not np.isfinite(best_global_val)
+                or val_global
+                < best_global_val
+                - 1e-10
+                * max(1.0, abs(best_global_val))
             ):
-                best_val = last_val
-                best_epoch = epochs_completed
+                best_global_val = val_global
+                best_global_epoch = epochs_completed
                 best_global = copy.deepcopy(
                     global_network.state_dict()
                 )
+                stale_global = 0
+            else:
+                stale_global += interval
+
+            if (
+                not np.isfinite(best_field_val)
+                or val_field
+                < best_field_val
+                - 1e-10
+                * max(1.0, abs(best_field_val))
+            ):
+                best_field_val = val_field
+                best_field_epoch = epochs_completed
                 best_field = copy.deepcopy(
                     field_network.state_dict()
                 )
-                stale = 0
+                stale_field = 0
             else:
-                stale += interval
+                stale_field += interval
+
+            best_val = (
+                best_global_val
+                + float(cfg["spatial_weight"])
+                * best_field_val
+            )
+            best_epoch = max(
+                best_global_epoch,
+                best_field_epoch,
+            )
 
             if checkpoint is not None:
                 checkpoint.parent.mkdir(
@@ -1314,7 +1354,7 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 7,
+                        "schema_version": 8,
                         "representation":
                             "cellwise_joule_neural_field_v3",
                         "training_signature":
@@ -1323,6 +1363,14 @@ def train_spatial_tensor_surrogate(
                         "best_epoch": best_epoch,
                         "best_validation_loss":
                             best_val,
+                        "best_global_epoch":
+                            best_global_epoch,
+                        "best_field_epoch":
+                            best_field_epoch,
+                        "best_global_validation_loss":
+                            best_global_val,
+                        "best_field_validation_loss":
+                            best_field_val,
                         "global_network":
                             global_network.state_dict(),
                         "field_network":
@@ -1335,7 +1383,10 @@ def train_spatial_tensor_surrogate(
                             global_optimizer.state_dict(),
                         "field_optimizer":
                             field_optimizer.state_dict(),
-                        "stale": stale,
+                        "stale_global":
+                            stale_global,
+                        "stale_field":
+                            stale_field,
                     },
                     checkpoint,
                 )
@@ -1349,6 +1400,10 @@ def train_spatial_tensor_surrogate(
                         validation_loss=last_val,
                         global_validation_loss=val_global,
                         field_validation_loss=val_field,
+                        best_global_epoch=best_global_epoch,
+                        best_field_epoch=best_field_epoch,
+                        best_global_validation_loss=best_global_val,
+                        best_field_validation_loss=best_field_val,
                         tensor_pod_rank=0,
                         tensor_representation=(
                             "cellwise_joule_neural_field_v3"
@@ -1360,10 +1415,15 @@ def train_spatial_tensor_surrogate(
                 f"train={last_train:.5g} "
                 f"val={last_val:.5g} "
                 f"global={val_global:.5g} "
-                f"field={val_field:.5g}",
+                f"field={val_field:.5g} "
+                f"best_g@{best_global_epoch} "
+                f"best_f@{best_field_epoch}",
                 flush=True,
             )
-            if stale >= int(cfg["patience"]):
+            if (
+                stale_global >= int(cfg["patience"])
+                and stale_field >= int(cfg["patience"])
+            ):
                 break
 
     global_network.load_state_dict(best_global)
@@ -1687,6 +1747,18 @@ def train_spatial_tensor_surrogate(
     )
     report_cfg["final_refit_epochs_completed"] = int(
         refit_epochs_completed
+    )
+    report_cfg["best_global_epoch"] = int(
+        best_global_epoch
+    )
+    report_cfg["best_field_epoch"] = int(
+        best_field_epoch
+    )
+    report_cfg["best_global_validation_loss"] = float(
+        best_global_val
+    )
+    report_cfg["best_field_validation_loss"] = float(
+        best_field_val
     )
 
     return surrogate, TensorTrainingReport(
