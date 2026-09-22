@@ -277,6 +277,12 @@ TRAINING = {
         "spatial_weight": 1.0,
         "field_density_weight": 1.0,
         "field_shape_weight": 1.0,
+        # Select the stopping point on the historical validation split, then
+        # make the production fit use every expensive cached truth geometry.
+        # Release certification remains the independent final held-out audit.
+        "refit_all_truth": True,
+        "refit_epochs": 24,
+        "refit_learning_rate_factor": 0.25,
         "seed": 17,
         "dtype": "float32",
     },
