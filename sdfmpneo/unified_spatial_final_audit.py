@@ -40,7 +40,7 @@ def _jsonable(value):
     if isinstance(value, np.ndarray):
         return _jsonable(value.tolist())
     if isinstance(value, np.generic):
-        return value.item()
+        return _jsonable(value.item())
     if isinstance(value, complex):
         return {
             "real": float(value.real),
@@ -1025,7 +1025,7 @@ def run_spatial_final_held_out_audit(
         truth_cache_path,
         cache_key=truth_cache_key,
         geometries=geometries,
-        n_ports=len(model.background.coil_materials),
+        n_ports=model.surrogate.n_ports,
         n_cells=model.background.n_cells,
     )
     if truth_bundles is None:
