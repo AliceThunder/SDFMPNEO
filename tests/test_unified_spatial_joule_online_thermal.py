@@ -4,11 +4,14 @@ from sdfmpneo.unified_background import FixedMultiscaleBackground
 from sdfmpneo.unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
+    merge_thermal_time_scales,
 )
 from sdfmpneo.unified_tensor_surrogate import (
     decode_spatial_tensors,
     normalize_cell_joule_tensors,
     pack_spatial_tensors,
+    project_spatial_dataset_to_production_cone,
+    SpatialTensorDataset,
     spatial_tensor_output_dimension,
 )
 
@@ -207,7 +210,7 @@ def test_online_thermal_rom_is_geometry_local_and_preserves_uniform_initial():
         bg,
         geometry,
         cell_h,
-        times=(0.1, 1.0),
+        times=(0.1, 1.0, 10.0),
         time_scales=(0.1, 1.0),
         conditioning_limit=1e10,
         target_relative_error=0.99,
@@ -215,3 +218,60 @@ def test_online_thermal_rom_is_geometry_local_and_preserves_uniform_initial():
     assert audit["converged"]
     assert audit["rank"] < bg.n_cells
     assert audit["maximum_mass_relative_error"] <= 0.99
+    assert audit["basis_time_scales"] == [0.1, 1.0, 10.0]
+
+
+def test_merge_thermal_time_scales_skips_initial_and_infinite_queries():
+    merged = merge_thermal_time_scales(
+        (0.1, 1.0, 10.0),
+        (0.0, 100.0, 1000.0, "inf"),
+    )
+    assert merged == (0.1, 1.0, 10.0, 100.0, 1000.0)
+
+
+def test_cached_spatial_dataset_is_upgraded_to_production_passive_cone():
+    d = np.array(
+        [[4.0, 0.5 + 0.2j], [0.5 - 0.2j, 3.0]],
+        complex,
+    )
+    cells = np.zeros((3, 2, 2), complex)
+    cells[0] = 0.4 * d
+    cells[1] = 0.35 * d
+    cells[2] = 0.25 * d
+    # Deliberately make Herm(Z)-D indefinite.  The production decoder must add
+    # the minimum passive correction, and cached labels must be rewritten onto
+    # that exact same cone before training.
+    z = np.array(
+        [[3.5 + 0.2j, 0.2 - 0.1j], [0.2 - 0.1j, 2.5 + 0.4j]],
+        complex,
+    )
+    packed = pack_spatial_tensors(z, d, cells)
+    dataset = SpatialTensorDataset(
+        inputs=np.zeros((1, 1), float),
+        outputs=np.asarray([packed], float),
+        split=np.asarray(["train"]),
+        audit={
+            "minimum_d_vol_eigenvalue": -1.0,
+            "minimum_implied_outward_eigenvalue": -1.0,
+            "minimum_cell_joule_tensor_eigenvalue": -1.0,
+            "maximum_spatial_joule_total_mismatch": 1.0,
+            "maximum_spatial_truth_projection_correction": 0.0,
+        },
+        n_ports=2,
+        n_cells=3,
+    )
+
+    correction = project_spatial_dataset_to_production_cone(dataset)
+    decoded = decode_spatial_tensors(dataset.outputs[0], 2, 3)
+    assert correction > 0.0
+    assert np.min(np.linalg.eigvalsh(decoded.d_vol).real) >= -1e-12
+    assert np.min(np.linalg.eigvalsh(decoded.implied_d_out).real) >= -1e-12
+    assert np.min(np.linalg.eigvalsh(decoded.cell_h).real) >= -1e-12
+    assert np.allclose(
+        np.sum(decoded.cell_h, axis=0),
+        decoded.d_vol,
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    second = project_spatial_dataset_to_production_cone(dataset)
+    assert second <= 1e-10
