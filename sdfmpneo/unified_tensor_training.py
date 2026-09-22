@@ -1131,9 +1131,9 @@ def train_spatial_tensor_surrogate(
                 weights_only=False,
             )
             compatible = (
-                int(saved.get("schema_version", -1)) == 8
+                int(saved.get("schema_version", -1)) == 9
                 and saved.get("representation")
-                == "cellwise_joule_neural_field_v3"
+                == "cellwise_joule_neural_field_v4"
                 and saved.get("training_signature")
                 == training_signature
             )
@@ -1178,7 +1178,7 @@ def train_spatial_tensor_surrogate(
                 )
             else:
                 print(
-                    "spatial-Joule 旧检查点与 v3 passive neural-field "
+                    "spatial-Joule 旧检查点与 v4 residual-density neural-field "
                     "架构不兼容，重新训练网络（truth cache 保留）。",
                     flush=True,
                 )
@@ -1412,9 +1412,9 @@ def train_spatial_tensor_surrogate(
                 )
                 torch.save(
                     {
-                        "schema_version": 8,
+                        "schema_version": 9,
                         "representation":
-                            "cellwise_joule_neural_field_v3",
+                            "cellwise_joule_neural_field_v4",
                         "training_signature":
                             training_signature,
                         "epoch": epochs_completed,
@@ -1464,7 +1464,7 @@ def train_spatial_tensor_surrogate(
                         best_field_validation_loss=best_field_val,
                         tensor_pod_rank=0,
                         tensor_representation=(
-                            "cellwise_joule_neural_field_v3"
+                            "cellwise_joule_neural_field_v4"
                         ),
                     )
             print(
@@ -1798,7 +1798,7 @@ def train_spatial_tensor_surrogate(
     audit = evaluate(audit_ids)
     report_cfg = dict(cfg)
     report_cfg["representation"] = (
-        "cellwise_joule_neural_field_v3"
+        "cellwise_joule_neural_field_v4"
     )
     report_cfg["field_training_points"] = int(
         field_train_x_np.shape[0]
