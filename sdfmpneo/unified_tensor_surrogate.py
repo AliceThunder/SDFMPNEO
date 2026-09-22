@@ -83,6 +83,109 @@ def unpack_hermitian(packed, n):
     return h
 
 
+
+def _pack_real_symmetric(matrix):
+    a = np.asarray(matrix, float)
+    if a.ndim != 2 or a.shape[0] != a.shape[1]:
+        raise ValueError("real symmetric matrix must be square")
+    a = 0.5 * (a + a.T)
+    return np.asarray(
+        [a[i, j] for i, j in _upper_pairs(a.shape[0])],
+        float,
+    )
+
+
+def _unpack_real_symmetric(packed, n):
+    n = int(n)
+    values = np.asarray(packed, float).reshape(-1)
+    pairs = _upper_pairs(n)
+    if values.size != len(pairs):
+        raise ValueError("real symmetric packed size mismatch")
+    out = np.zeros((n, n), float)
+    for value, (i, j) in zip(values, pairs):
+        out[i, j] = value
+        out[j, i] = value
+    return out
+
+
+def pack_spatial_global_tensors(z_field, d_vol):
+    """Pack the stable passive global representation.
+
+    Instead of regressing Re(Z) and D independently and recovering the tiny
+    outward matrix by catastrophic subtraction, regress D, Re(D_out) and Im(Z).
+    Reciprocity fixes Im(Z) to a real-symmetric matrix, while
+    Im(D_out)=-Im(D).  The packed width is exactly the legacy Z/D width.
+    """
+    z = 0.5 * (
+        np.asarray(z_field, complex)
+        + np.asarray(z_field, complex).T
+    )
+    d = _hermitian(d_vol)
+    outward = _hermitian(z) - d
+    return np.concatenate(
+        [
+            pack_hermitian(d),
+            _pack_real_symmetric(outward.real),
+            _pack_real_symmetric(z.imag),
+        ]
+    )
+
+
+def decode_spatial_global_tensors(packed, n_ports):
+    raw = np.asarray(packed, float).reshape(-1)
+    n = int(n_ports)
+    h_size = n * n
+    s_size = n * (n + 1) // 2
+    if raw.size != h_size + 2 * s_size:
+        raise ValueError("spatial global packed size mismatch")
+
+    d_raw = unpack_hermitian(raw[:h_size], n)
+    outward_real_raw = _unpack_real_symmetric(
+        raw[h_size:h_size + s_size],
+        n,
+    )
+    reactance = _unpack_real_symmetric(
+        raw[h_size + s_size:],
+        n,
+    )
+
+    d = _psd_clip(d_raw)
+    # Reciprocity requires Herm(Z) to be real symmetric.  Therefore the
+    # imaginary part of physical D_out is exactly -Im(D).
+    outward_candidate = _hermitian(
+        outward_real_raw.astype(complex)
+        - 1j * np.asarray(d.imag, float)
+    )
+    minimum = float(
+        np.min(np.linalg.eigvalsh(outward_candidate)).real
+    )
+    shift = max(0.0, -minimum)
+    outward = _hermitian(
+        outward_candidate
+        + shift * np.eye(n, dtype=complex)
+    )
+    resistance = np.asarray((d + outward).real, float)
+    z = resistance + 1j * reactance
+    implied = _hermitian(z) - d
+
+    corrected = pack_spatial_global_tensors(z, d)
+    correction = float(
+        np.linalg.norm(corrected - raw)
+        / max(
+            float(np.linalg.norm(raw)),
+            np.finfo(float).tiny,
+        )
+    )
+    return DecodedTensors(
+        np.asarray(z, complex),
+        np.asarray(d, complex),
+        np.empty((0, n, n), complex),
+        np.asarray(implied, complex),
+        correction,
+        0.0,
+    )
+
+
 def tensor_output_dimension(n_ports, thermal_rank):
     n = int(n_ports)
     return n * (n + 1) + n * n * (1 + int(thermal_rank))
@@ -175,6 +278,85 @@ def encode_geometry(geometry):
         raise ValueError("geometry encoding contains non-finite values")
     return out
 
+
+
+
+def encode_geometry_invariant(geometry):
+    """Rigid-motion-invariant geometry descriptor for surrogate regression."""
+    g = (
+        geometry
+        if isinstance(geometry, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(geometry)
+    )
+    features = []
+    for coil, package in zip(g.coils, g.packages):
+        if coil.shape not in _SUPPORTED_SHAPES:
+            raise ValueError(
+                f"unsupported production coil shape {coil.shape!r}"
+            )
+        features.extend(
+            1.0 if coil.shape == name else 0.0
+            for name in _SUPPORTED_SHAPES
+        )
+        features.extend(
+            [
+                float(coil.turns),
+                float(coil.outer_half_size),
+                float(coil.pitch),
+                float(coil.conductor_width),
+                float(coil.conductor_thickness),
+                0.0
+                if coil.corner_radius is None
+                else float(coil.corner_radius),
+            ]
+        )
+        features.extend(
+            np.asarray(package.half_extent, float).tolist()
+        )
+        # Package pose relative to its associated coil is physically relevant,
+        # while their common absolute rigid motion is not.
+        features.extend(
+            np.asarray(
+                coil.pose.inverse(package.pose.translation),
+                float,
+            ).tolist()
+        )
+        relative_package_rotation = (
+            coil.pose.rotation.T @ package.pose.rotation
+        )
+        features.extend(
+            np.asarray(
+                relative_package_rotation,
+                float,
+            ).reshape(-1).tolist()
+        )
+
+    for i in range(len(g.coils)):
+        for j in range(i + 1, len(g.coils)):
+            left = g.coils[i]
+            right = g.coils[j]
+            features.extend(
+                np.asarray(
+                    left.pose.inverse(right.pose.translation),
+                    float,
+                ).tolist()
+            )
+            relative_rotation = (
+                left.pose.rotation.T @ right.pose.rotation
+            )
+            features.extend(
+                np.asarray(
+                    relative_rotation,
+                    float,
+                ).reshape(-1).tolist()
+            )
+
+    out = np.asarray(features, float)
+    if np.any(~np.isfinite(out)):
+        raise ValueError(
+            "invariant geometry encoding contains non-finite values"
+        )
+    return out
 
 
 def decode_geometry_encoding(encoded, n_ports):
@@ -998,6 +1180,96 @@ def _unpack_hermitian_batch(packed, n):
     return h
 
 
+
+def pack_whitened_field_factors(whitened, *, total_cells):
+    """Encode PSD whitened cells as log-density + Hermitian square-root shape."""
+    cells = _batch_psd_clip(np.asarray(whitened, complex))
+    count, n, _ = cells.shape
+    traces = np.maximum(
+        np.trace(cells, axis1=1, axis2=2).real,
+        0.0,
+    )
+    density = (
+        traces * float(total_cells) / float(n)
+    )
+    log_density = np.log(
+        np.maximum(density, 1e-12)
+    )
+
+    floor = max(
+        float(np.max(traces)) * 1e-14,
+        np.finfo(float).tiny,
+    )
+    shape = np.empty_like(cells)
+    identity = np.eye(n, dtype=complex) / float(n)
+    positive = traces > floor
+    shape[~positive] = identity
+    if np.any(positive):
+        shape[positive] = (
+            cells[positive]
+            / traces[positive, None, None]
+        )
+
+    eigenvalues, eigenvectors = np.linalg.eigh(shape)
+    roots = np.einsum(
+        "kij,kj,klj->kil",
+        eigenvectors,
+        np.sqrt(np.maximum(eigenvalues.real, 0.0)),
+        eigenvectors.conj(),
+        optimize=True,
+    )
+    roots = 0.5 * (
+        roots + np.swapaxes(roots.conj(), 1, 2)
+    )
+    return np.column_stack(
+        (
+            log_density,
+            _pack_hermitian_batch(roots),
+        )
+    )
+
+
+def unpack_whitened_field_factors(packed, *, n_ports, total_cells):
+    """Decode log-density + Hermitian factor into an intrinsically PSD field."""
+    values = np.asarray(packed, float)
+    n = int(n_ports)
+    if (
+        values.ndim != 2
+        or values.shape[1] != 1 + n * n
+    ):
+        raise ValueError("whitened field factor width mismatch")
+    log_density = np.clip(values[:, 0], -35.0, 35.0)
+    roots = _unpack_hermitian_batch(values[:, 1:], n)
+    shapes = np.einsum(
+        "kab,kcb->kac",
+        roots,
+        roots.conj(),
+        optimize=True,
+    )
+    shapes = 0.5 * (
+        shapes + np.swapaxes(shapes.conj(), 1, 2)
+    )
+    traces = np.trace(
+        shapes,
+        axis1=1,
+        axis2=2,
+    ).real
+    bad = traces <= np.finfo(float).tiny
+    if np.any(bad):
+        shapes[bad] = (
+            np.eye(n, dtype=complex)[None, :, :]
+            / float(n)
+        )
+        traces[bad] = 1.0
+    shapes = shapes / traces[:, None, None]
+    density = (
+        np.exp(log_density)
+        * float(n)
+        / float(total_cells)
+    )
+    return density[:, None, None] * shapes
+
+
 def whiten_cell_joule_tensors(cell_h, d_vol):
     """Return dimensionless PSD cell tensors whose sum is identity."""
     d = _psd_clip(d_vol)
@@ -1035,24 +1307,12 @@ def spatial_cell_features(background, geometry, cell_indices=None):
         ids = np.asarray(cell_indices, int).reshape(-1)
         centers = np.asarray(background.cell_centers, float)[ids]
 
-    geom = encode_geometry(g)
+    geom = encode_geometry_invariant(g)
     repeated = np.broadcast_to(
         geom[None, :],
         (centers.shape[0], geom.size),
     )
     pieces = [np.asarray(repeated, float)]
-
-    lo = np.array(
-        [background.x[0], background.y[0], background.z[0]],
-        float,
-    )
-    hi = np.array(
-        [background.x[-1], background.y[-1], background.z[-1]],
-        float,
-    )
-    mid = 0.5 * (lo + hi)
-    half = np.maximum(0.5 * (hi - lo), np.finfo(float).tiny)
-    pieces.append((centers - mid[None, :]) / half[None, :])
 
     def signed_log(value):
         a = np.asarray(value, float)
@@ -1358,7 +1618,7 @@ def project_spatial_dataset_to_production_cone(dataset):
 class UnifiedSpatialTensorSurrogate:
     """Two-head surrogate: global Z/D MLP + coordinate-conditioned Joule field."""
 
-    representation = "cellwise_joule_neural_field_v2"
+    representation = "cellwise_joule_neural_field_v3"
 
     def __init__(
         self,
@@ -1379,7 +1639,7 @@ class UnifiedSpatialTensorSurrogate:
         self.n_cells = int(n_cells)
         self.field_chunk_size = max(1, int(field_chunk_size))
         global_dim = tensor_output_dimension(self.n_ports, 0)
-        field_dim = self.n_ports * self.n_ports
+        field_dim = 1 + self.n_ports * self.n_ports
         self.global_output_mean = np.zeros(global_dim, float) if global_output_mean is None else np.asarray(global_output_mean, float).reshape(-1)
         self.global_output_scale = np.ones(global_dim, float) if global_output_scale is None else np.asarray(global_output_scale, float).reshape(-1)
         self.field_output_mean = np.zeros(field_dim, float) if field_output_mean is None else np.asarray(field_output_mean, float).reshape(-1)
@@ -1434,7 +1694,9 @@ class UnifiedSpatialTensorSurrogate:
             )
 
     def _global_tensors(self, geometry):
-        encoded = encode_geometry(geometry)[None, :]
+        encoded = encode_geometry_invariant(
+            geometry
+        )[None, :]
         normalized = self._network_numpy(
             self.global_network,
             encoded,
@@ -1443,12 +1705,9 @@ class UnifiedSpatialTensorSurrogate:
             self.global_output_mean
             + self.global_output_scale * normalized
         )
-        empty = np.empty(0, float)
-        return decode_physical_tensors(
+        return decode_spatial_global_tensors(
             packed,
             self.n_ports,
-            empty,
-            empty,
         )
 
     def predict(self, geometry, *, background):
@@ -1481,9 +1740,10 @@ class UnifiedSpatialTensorSurrogate:
                 + self.field_output_scale[None, :] * normalized
             )
         raw_packed = np.vstack(raw_rows)
-        raw_shape = _unpack_hermitian_batch(
+        raw_shape = unpack_whitened_field_factors(
             raw_packed,
-            self.n_ports,
+            n_ports=self.n_ports,
+            total_cells=self.n_cells,
         )
 
         identity = np.eye(self.n_ports, dtype=complex)
@@ -1506,13 +1766,10 @@ class UnifiedSpatialTensorSurrogate:
             cells + np.swapaxes(cells.conj(), 1, 2)
         )
 
-        corrected_packed = _pack_hermitian_batch(
-            normalized_shape
-        )
         spatial_correction = float(
-            np.linalg.norm(corrected_packed - raw_packed)
+            np.linalg.norm(normalized_shape - raw_shape)
             / max(
-                float(np.linalg.norm(raw_packed)),
+                float(np.linalg.norm(raw_shape)),
                 np.finfo(float).tiny,
             )
         )
@@ -1552,7 +1809,7 @@ class UnifiedSpatialTensorSurrogate:
             self.field_network.input_scale.detach().cpu().numpy(),
         )
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "representation": self.representation,
             "global_network_config": self.global_network.config.to_dict(),
             "field_network_config": self.field_network.config.to_dict(),
@@ -1583,9 +1840,9 @@ class UnifiedSpatialTensorSurrogate:
         import torch
 
         if (
-            int(payload.get("schema_version", -1)) != 3
+            int(payload.get("schema_version", -1)) != 4
             or payload.get("representation")
-            != "cellwise_joule_neural_field_v2"
+            != "cellwise_joule_neural_field_v3"
         ):
             raise ValueError(
                 "unsupported spatial neural-field artifact version"
@@ -1664,8 +1921,13 @@ __all__ = [
     "UnifiedTensorSurrogate",
     "decode_physical_tensors",
     "decode_spatial_tensors",
+    "decode_spatial_global_tensors",
     "decode_geometry_encoding",
     "encode_geometry",
+    "encode_geometry_invariant",
+    "pack_spatial_global_tensors",
+    "pack_whitened_field_factors",
+    "unpack_whitened_field_factors",
     "generate_tensor_dataset",
     "pack_complex_symmetric",
     "pack_hermitian",
