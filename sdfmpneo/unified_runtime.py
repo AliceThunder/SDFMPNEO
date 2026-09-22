@@ -17,9 +17,14 @@ from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_spatial_physics_gate import run_spatial_physics_gate
 from .unified_corrected_truth import generate_spatial_tensor_dataset
-from .unified_tensor_surrogate import SpatialTensorDataset, encode_geometry
+from .unified_tensor_surrogate import (
+    SpatialTensorDataset,
+    encode_geometry,
+    project_spatial_dataset_to_production_cone,
+)
 from .unified_tensor_training import train_spatial_tensor_surrogate
 from .unified_thermal import configure_maxwell_field_cache
+from .unified_online_thermal import merge_thermal_time_scales
 from .unified_corrected_truth_preflight import run_truth_preflight
 
 _CACHE_FORMAT = 56
@@ -104,6 +109,20 @@ def _signature(settings, *, cache_format=None):
         allow_nan=False,
     )
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _production_thermal_time_scales(settings, extra_times=()):
+    """Thermal resolvent horizon declared by Gate, final audit and prediction."""
+    training = settings["TRAINING"]
+    final = dict(training.get("final_audit", {}) or {})
+    prediction = dict(settings.get("PREDICTION", {}) or {})
+    return merge_thermal_time_scales(
+        training.get("thermal_time_scales", [0.1, 1.0, 10.0]),
+        training.get("thermal_trajectory_times", ()),
+        final.get("times", ()),
+        prediction.get("times", ()),
+        extra_times,
+    )
 
 
 def _preflight_signature(settings):
@@ -393,6 +412,18 @@ def train(settings, model_path, settings_dir, monitor=None):
                 monitor,
             )
 
+        # v56 truth caches are expensive Maxwell products.  Upgrade their packed
+        # Z/D/cell labels through the exact production decoder instead of
+        # invalidating and recomputing the physical truth.  The operation is
+        # deterministic, idempotent and Maxwell-free.
+        cache_projection = project_spatial_dataset_to_production_cone(dataset)
+        dataset.save(data_path)
+        print(
+            "spatial truth production-cone projection: "
+            f"maximum relative correction={cache_projection:.3e}",
+            flush=True,
+        )
+
         gate_rng = np.random.default_rng(seed + 104729)
         gate_geometries = _sample_geometries(
             settings,
@@ -458,10 +489,7 @@ def train(settings, model_path, settings_dir, monitor=None):
             production_domain=settings.get(
                 "GEOMETRY_SAMPLING"
             ),
-            thermal_time_scales=settings["TRAINING"].get(
-                "thermal_time_scales",
-                [0.1, 1.0, 10.0],
-            ),
+            thermal_time_scales=_production_thermal_time_scales(settings),
             thermal_conditioning_limit=float(
                 settings["TRAINING"].get(
                     "online_thermal_conditioning_limit",
@@ -625,7 +653,12 @@ def _initial_state(model,prediction,geometry):
 def predict(settings,model_path,output_path,settings_dir):
     if not model_path.is_file(): raise FileNotFoundError(f"模型不存在：{model_path}")
     _require_release_artifact(model_path); device=_device(settings["TRAINING"].get("device","cuda")); model=UnifiedNeuralElectroThermalModel.load(model_path,device=device)
-    p=settings["PREDICTION"]; geometry=p.get("geometry") or settings["DEFAULT_GEOMETRY"]; initial=_initial_state(model,p,geometry)
+    p=settings["PREDICTION"]; geometry=p.get("geometry") or settings["DEFAULT_GEOMETRY"]
+    requested_scales = merge_thermal_time_scales(model.thermal_time_scales, p.get("times", ()))
+    if tuple(requested_scales) != tuple(model.thermal_time_scales):
+        model.thermal_time_scales = tuple(requested_scales)
+        model._contexts.clear()
+    initial=_initial_state(model,p,geometry)
     operating=p.get("drive",p.get("operating",[1.0]+[0.0]*(model.current_dimension-1))); results=[]; tensors=model.tensors(geometry)
     print(f"加载 spatial-Joule online-thermal ROM：{model_path}  device={device}  thermal rank={model.thermal_rank_for(geometry)}  POD={model.surrogate.pod_rank}  tensor projection correction={tensors.projection_correction:.3e}",flush=True)
     for requested in p["times"]:
