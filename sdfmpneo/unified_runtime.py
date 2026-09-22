@@ -582,6 +582,9 @@ def train(settings, model_path, settings_dir, monitor=None):
                     if cached_tensor_count > 0
                     else None
                 )
+                # Truth labels and preflight certification are separate
+                # expensive artifacts. A preflight schema/tolerance change must
+                # never invalidate an otherwise identical Maxwell truth dataset.
                 valid_cache = (
                     cached_dataset is not None
                     and cache_meta.get("signature")
@@ -590,9 +593,10 @@ def train(settings, model_path, settings_dir, monitor=None):
                         cache_meta.get("cache_format", -1)
                     )
                     == _CACHE_FORMAT
-                    and preflight_cache_valid
                     and cache_meta.get("tensor_representation")
                     == "cellwise_joule_tensor_v1"
+                    and cache_meta.get("self_correction_model")
+                    == _SELF_CORRECTION_MODEL
                 )
             except (OSError, ValueError, TypeError):
                 preflight_cache_valid = False
@@ -644,8 +648,13 @@ def train(settings, model_path, settings_dir, monitor=None):
                 flush=True,
             )
             cache_meta = {
-                "cache_format": _CACHE_FORMAT,
-                "signature": sig,
+                **dict(cache_meta),
+                "cache_format": int(
+                    cache_meta.get(
+                        "cache_format",
+                        _CACHE_FORMAT,
+                    )
+                ),
                 "preflight_signature": preflight_sig,
                 "truth_preflight": preflight,
                 "self_correction_model": _SELF_CORRECTION_MODEL,
