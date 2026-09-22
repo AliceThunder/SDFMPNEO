@@ -921,6 +921,12 @@ class UnifiedNeuralElectroThermalModel:
             "field_chunk_size": int(
                 checkpoint.get("field_chunk_size", 65536)
             ),
+            "field_density_prior_strength": float(
+                checkpoint.get(
+                    "field_density_prior_strength",
+                    0.9,
+                )
+            ),
             "metadata": _plain(dict(metadata or {})),
         }
         arrays = {
@@ -959,6 +965,9 @@ class UnifiedNeuralElectroThermalModel:
             ],
             "field_output_scale": checkpoint[
                 "field_output_scale"
+            ],
+            "field_log_density_bounds": checkpoint[
+                "field_log_density_bounds"
             ],
         }
         for key, value in checkpoint[
@@ -1008,11 +1017,11 @@ class UnifiedNeuralElectroThermalModel:
                 or meta.get("thermal_representation")
                 != "geometry_local_rational_krylov_v1"
                 or meta.get("surrogate_representation")
-                != "cellwise_joule_neural_field_v3"
+                != "cellwise_joule_neural_field_v4"
                 or int(
                     meta.get("surrogate_schema_version", -1)
                 )
-                != 4
+                != 5
             ):
                 raise ValueError(
                     "model tensor/thermal/surrogate "
@@ -1116,6 +1125,16 @@ class UnifiedNeuralElectroThermalModel:
                     ),
                     "field_output_scale": np.asarray(
                         data["field_output_scale"],
+                        float,
+                    ),
+                    "field_density_prior_strength": float(
+                        meta.get(
+                            "field_density_prior_strength",
+                            0.9,
+                        )
+                    ),
+                    "field_log_density_bounds": np.asarray(
+                        data["field_log_density_bounds"],
                         float,
                     ),
                     "global_network_state": global_state,
