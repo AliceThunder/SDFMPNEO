@@ -251,9 +251,10 @@ TRAINING = {
     },
     "device": "cuda",
     "network": {
-        # Global Z/D/outward head has only 96 expensive geometry samples:
-        # keep it deliberately small and regularized.  The coordinate field
-        # head sees many cell samples per geometry and can use more capacity.
+        # Global Z/D/outward head starts from a small expensive truth set
+        # and is enlarged only by adaptive maximin enrichment; keep it compact
+        # and regularized. The coordinate field head sees many cells per
+        # geometry and can use more capacity.
         "global": {
             "width": 32,
             "blocks": 1,
