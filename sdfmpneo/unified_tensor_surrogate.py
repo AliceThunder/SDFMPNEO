@@ -94,9 +94,14 @@ def tensor_block_sizes(n_ports, thermal_rank):
 
 
 def pack_tensors(z_field, d_vol, modal_h):
+    n = int(np.asarray(d_vol).shape[0])
     modal = np.asarray(modal_h, complex)
-    if modal.ndim != 3:
-        raise ValueError("modal Joule tensors must have shape (rank, ports, ports)")
+    if modal.size == 0:
+        modal = np.empty((0, n, n), complex)
+    if modal.ndim != 3 or modal.shape[1:] != (n, n):
+        raise ValueError(
+            "modal Joule tensors must have shape (rank, ports, ports)"
+        )
     return np.concatenate(
         [pack_complex_symmetric(z_field), pack_hermitian(d_vol)]
         + [pack_hermitian(h) for h in modal]
@@ -114,13 +119,22 @@ def unpack_tensors(packed, n_ports, thermal_rank):
     z = unpack_complex_symmetric(p[:z_size], n)
     d = unpack_hermitian(p[z_size:z_size + h_size], n)
     start = z_size + h_size
-    modal = np.asarray(
-        [
-            unpack_hermitian(p[start + j * h_size:start + (j + 1) * h_size], n)
-            for j in range(r)
-        ],
-        complex,
-    )
+    if r:
+        modal = np.asarray(
+            [
+                unpack_hermitian(
+                    p[
+                        start + j * h_size:
+                        start + (j + 1) * h_size
+                    ],
+                    n,
+                )
+                for j in range(r)
+            ],
+            complex,
+        )
+    else:
+        modal = np.empty((0, n, n), complex)
     return z, d, modal
 
 
@@ -306,13 +320,24 @@ def decode_physical_tensors(packed, n_ports, phi_min, phi_max):
     z = r + 1j * x
     implied = _hermitian(z) - d
 
-    modal = np.asarray(
-        [
-            _modal_project_to_bounds(h_raw[j], d, phi_min[j], phi_max[j])
-            for j in range(len(phi_min))
-        ],
-        complex,
-    )
+    if len(phi_min):
+        modal = np.asarray(
+            [
+                _modal_project_to_bounds(
+                    h_raw[j],
+                    d,
+                    phi_min[j],
+                    phi_max[j],
+                )
+                for j in range(len(phi_min))
+            ],
+            complex,
+        )
+    else:
+        modal = np.empty(
+            (0, int(n_ports), int(n_ports)),
+            complex,
+        )
     n = int(n_ports)
     z_size, h_size, r_count = tensor_block_sizes(n, len(phi_min))
     corrected = pack_tensors(z, d, modal)
