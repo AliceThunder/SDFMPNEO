@@ -1134,7 +1134,10 @@ def train(settings, model_path, settings_dir, monitor=None):
                 settings_dir
                 / "final_audit.spatial_truth.npz"
             ),
-            truth_cache_key=_signature(settings),
+            # Final Maxwell truth depends on the physical geometry
+            # domain, not on how many surrogate-training samples were used.
+            # Keep it reusable across adaptive enrichment rounds/count changes.
+            truth_cache_key=_preflight_signature(settings),
         )
         if not final_audit["certified"]:
             raise RuntimeError(
