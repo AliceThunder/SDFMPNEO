@@ -1,6 +1,9 @@
 """Completely-held-out audit for spatial-Joule + online thermal ROM."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 from scipy.integrate import solve_ivp
 
@@ -9,7 +12,7 @@ from .unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
 )
-from .unified_tensor_surrogate import SpatialDecodedTensors
+from .unified_tensor_surrogate import SpatialDecodedTensors, encode_geometry
 from .unified_thermal import _port_current_vectors
 
 
@@ -23,6 +26,168 @@ def _relative(value, reference, natural_scale=None):
         np.linalg.norm(a - b)
         / max(float(np.linalg.norm(b)), floor)
     )
+
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {
+            str(key): _jsonable(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _jsonable(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, complex):
+        return {
+            "real": float(value.real),
+            "imag": float(value.imag),
+        }
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _load_truth_cache(
+    path,
+    *,
+    cache_key,
+    geometries,
+    n_ports,
+    n_cells,
+):
+    if path is None:
+        return None
+    path = Path(path)
+    if not path.is_file():
+        return None
+    expected_geometry = np.asarray(
+        [encode_geometry(g) for g in geometries],
+        float,
+    )
+    try:
+        with np.load(path, allow_pickle=False) as data:
+            if int(data["format_version"]) != 1:
+                return None
+            if str(data["cache_key"]) != str(cache_key):
+                return None
+            cached_geometry = np.asarray(
+                data["geometry_encoding"],
+                float,
+            )
+            if (
+                cached_geometry.shape
+                != expected_geometry.shape
+                or not np.array_equal(
+                    cached_geometry,
+                    expected_geometry,
+                )
+            ):
+                return None
+            z = np.asarray(data["z_field"], complex)
+            d = np.asarray(data["d_vol"], complex)
+            cells = np.asarray(data["cell_h"], complex)
+            d_out = np.asarray(data["d_out"], complex)
+            audits_json = data["audit_json"].astype(str)
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):
+        return None
+
+    count = len(geometries)
+    n = int(n_ports)
+    m = int(n_cells)
+    if (
+        z.shape != (count, n, n)
+        or d.shape != (count, n, n)
+        or d_out.shape != (count, n, n)
+        or cells.shape != (count, m, n, n)
+        or audits_json.shape != (count,)
+    ):
+        return None
+
+    bundles = []
+    try:
+        for index in range(count):
+            audit = json.loads(str(audits_json[index]))
+            bundles.append(
+                (
+                    SpatialDecodedTensors(
+                        z[index],
+                        d[index],
+                        cells[index],
+                        d_out[index],
+                        0.0,
+                        0.0,
+                    ),
+                    audit,
+                )
+            )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return bundles
+
+
+def _save_truth_cache(
+    path,
+    *,
+    cache_key,
+    geometries,
+    bundles,
+):
+    if path is None:
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    geometry_encoding = np.asarray(
+        [encode_geometry(g) for g in geometries],
+        float,
+    )
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("wb") as handle:
+        np.savez_compressed(
+            handle,
+            format_version=np.asarray(1),
+            cache_key=np.asarray(str(cache_key)),
+            geometry_encoding=geometry_encoding,
+            z_field=np.asarray(
+                [bundle[0].z_field for bundle in bundles],
+                complex,
+            ),
+            d_vol=np.asarray(
+                [bundle[0].d_vol for bundle in bundles],
+                complex,
+            ),
+            cell_h=np.asarray(
+                [bundle[0].cell_h for bundle in bundles],
+                complex,
+            ),
+            d_out=np.asarray(
+                [
+                    bundle[0].implied_d_out
+                    for bundle in bundles
+                ],
+                complex,
+            ),
+            audit_json=np.asarray(
+                [
+                    json.dumps(
+                        _jsonable(bundle[1]),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                    for bundle in bundles
+                ]
+            ),
+        )
+    temporary.replace(path)
 
 
 def _truth_tensors(background, geometry):
@@ -44,11 +209,20 @@ def _truth_tensors(background, geometry):
     )
 
 
-def _tensor_case(model, geometry, *, truth_projection_limit=2e-1):
-    truth, truth_audit = _truth_tensors(
-        model.background,
-        geometry,
-    )
+def _tensor_case(
+    model,
+    geometry,
+    *,
+    truth_projection_limit=2e-1,
+    truth_bundle=None,
+):
+    if truth_bundle is None:
+        truth, truth_audit = _truth_tensors(
+            model.background,
+            geometry,
+        )
+    else:
+        truth, truth_audit = truth_bundle
     predicted = model.surrogate.predict(
         geometry,
         background=model.background,
@@ -772,6 +946,9 @@ def run_spatial_final_held_out_audit(
     model,
     geometries,
     monitor=None,
+    *,
+    truth_cache_path=None,
+    truth_cache_key=None,
 ):
     geometries = list(geometries)
     if not geometries:
@@ -844,15 +1021,53 @@ def run_spatial_final_held_out_audit(
         cfg,
     )
 
+    truth_bundles = _load_truth_cache(
+        truth_cache_path,
+        cache_key=truth_cache_key,
+        geometries=geometries,
+        n_ports=len(model.background.coil_materials),
+        n_cells=model.background.n_cells,
+    )
+    if truth_bundles is None:
+        truth_bundles = []
+        for index, geometry in enumerate(geometries):
+            if monitor is not None:
+                monitor.checkpoint()
+            print(
+                "生成 completely-held-out spatial truth……"
+                f"{index + 1}/{len(geometries)}",
+                flush=True,
+            )
+            truth_bundles.append(
+                _truth_tensors(
+                    model.background,
+                    geometry,
+                )
+            )
+        _save_truth_cache(
+            truth_cache_path,
+            cache_key=truth_cache_key,
+            geometries=geometries,
+            bundles=truth_bundles,
+        )
+    elif truth_cache_path is not None:
+        print(
+            "复用 completely-held-out spatial truth cache。",
+            flush=True,
+        )
+
     rows = []
     thermal_rows = []
-    for index, geometry in enumerate(geometries):
+    for index, (geometry, truth_bundle) in enumerate(
+        zip(geometries, truth_bundles)
+    ):
         if monitor is not None:
             monitor.checkpoint()
         truth, predicted, tensor = _tensor_case(
             model,
             geometry,
             truth_projection_limit=projection_limit,
+            truth_bundle=truth_bundle,
         )
         thermal = audit_online_thermal_trajectories(
             model.background,
