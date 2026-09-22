@@ -340,6 +340,15 @@ def run_spatial_physics_gate(
         "maximum_online_thermal_condition": float(
             maximum_online_condition
         ),
+        "minimum_heldout_physical_outward_eigenvalue": float(
+            minimum_heldout_physical_outward
+        ),
+        "minimum_implied_outward_eigenvalue": float(
+            min(
+                audit["minimum_implied_outward_eigenvalue"],
+                minimum_heldout_implied_outward,
+            )
+        ),
         "maximum_spatial_truth_projection_correction": float(
             max(
                 audit["maximum_spatial_truth_projection_correction"],
