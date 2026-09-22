@@ -1292,8 +1292,21 @@ def whiten_cell_joule_tensors(cell_h, d_vol):
     return whitened
 
 
-def spatial_cell_features(background, geometry, cell_indices=None):
-    """Coordinate features adapted to moving coils/packages, not world-grid POD."""
+def spatial_cell_features(
+    background,
+    geometry,
+    cell_indices=None,
+    *,
+    spatial_context=None,
+):
+    """Geometry/material/source features for the local Joule neural field.
+
+    The context terms are Maxwell-free analytic geometry data: deposited copper
+    fractions, package/seawater fractions, and the normalized stranded-source
+    line heat weights.  They explicitly expose the actual moving conductor
+    support instead of forcing an MLP to reconstruct a thin spiral from raw
+    center coordinates alone.
+    """
     g = (
         geometry
         if isinstance(geometry, UnifiedUWPTGeometry)
@@ -1313,6 +1326,48 @@ def spatial_cell_features(background, geometry, cell_indices=None):
         (centers.shape[0], geom.size),
     )
     pieces = [np.asarray(repeated, float)]
+
+    context = (
+        spatial_context
+        if spatial_context is not None
+        else background._spatial_context(g)
+    )
+    ids = (
+        np.arange(background.n_cells, dtype=int)
+        if cell_indices is None
+        else np.asarray(cell_indices, int).reshape(-1)
+    )
+    if context.geometry.n_ports != g.n_ports:
+        raise ValueError("spatial context port count differs from geometry")
+
+    # Exact analytic material occupancy.  The first channels locate each moving
+    # copper path and package; seawater closes the partition.
+    for material in background.coil_materials:
+        fraction = np.asarray(
+            context.fractions[material],
+            float,
+        )[ids]
+        pieces.append(fraction[:, None])
+    for material in background.package_materials:
+        fraction = np.asarray(
+            context.fractions[material],
+            float,
+        )[ids]
+        pieces.append(fraction[:, None])
+    seawater = np.asarray(
+        context.fractions[background.seawater_material],
+        float,
+    )[ids]
+    pieces.append(seawater[:, None])
+
+    # Port source-support indicator.  Multiplying by n_cells makes the feature
+    # O(1) on occupied cells while preserving exact zero/near-zero support.
+    for weights in context.line_heat_weights:
+        values = np.asarray(weights, float)[ids]
+        scaled = values * float(background.n_cells)
+        pieces.append(
+            np.log1p(np.maximum(scaled, 0.0))[:, None]
+        )
 
     def signed_log(value):
         a = np.asarray(value, float)
@@ -1722,6 +1777,7 @@ class UnifiedSpatialTensorSurrogate:
             )
 
         global_tensors = self._global_tensors(g)
+        spatial_context = background._spatial_context(g)
         raw_rows = []
         for start in range(0, self.n_cells, self.field_chunk_size):
             stop = min(self.n_cells, start + self.field_chunk_size)
@@ -1730,6 +1786,7 @@ class UnifiedSpatialTensorSurrogate:
                 background,
                 g,
                 ids,
+                spatial_context=spatial_context,
             )
             normalized = self._network_numpy(
                 self.field_network,
