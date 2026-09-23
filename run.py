@@ -303,6 +303,9 @@ PREDICTION = {
     "operating": [5.0, 0.0],
     # Voltage-driven example:
     # "drive": {"voltage": [10.0, 0.0], "series_impedance": [0.1, 0.1]},
+    # None 使用 family 中心（DEFAULT_GEOMETRY）。也可直接填写 9 个
+    # GEOMETRY_FAMILY 参数，或填写完整 geometry；完整 geometry 必须严格位于
+    # 同一个 scaled_uwpt_family_v1 流形内。
     "geometry": None,
     "times": [0.0, 0.1, 1.0, 1000.0, "inf"],
     "method": "etd2_adaptive",
