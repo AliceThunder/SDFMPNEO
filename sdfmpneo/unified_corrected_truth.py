@@ -407,8 +407,20 @@ def generate_spatial_tensor_dataset(
 
 
 
-def merge_spatial_tensor_datasets(left, right, *, seed=0):
-    """Append independently generated spatial truth without weakening audits."""
+def merge_spatial_tensor_datasets(
+    left,
+    right,
+    *,
+    seed=0,
+    preserve_existing_splits=True,
+):
+    """Append spatial truth while keeping validation/test/audit stationary.
+
+    Adaptive enrichment is chosen after seeing model validation diagnostics, so
+    reshuffling the historical holdout rows on every append destroys the
+    meaning of the learning curve.  By default all appended coverage points are
+    training rows while the original held-out split remains frozen.
+    """
     if (
         int(left.n_ports) != int(right.n_ports)
         or int(left.n_cells) != int(right.n_cells)
@@ -447,10 +459,23 @@ def merge_spatial_tensor_datasets(left, right, *, seed=0):
             audit[key] = min(a, b)
         else:
             audit[key] = max(a, b)
+    if bool(preserve_existing_splits):
+        split = np.concatenate(
+            (
+                np.asarray(left.split).astype(str),
+                np.full(
+                    len(right.inputs),
+                    "train",
+                    dtype="<U10",
+                ),
+            )
+        )
+    else:
+        split = _split_labels(len(inputs), seed)
     return SpatialTensorDataset(
         inputs,
         outputs,
-        _split_labels(len(inputs), seed),
+        split,
         audit,
         int(left.n_ports),
         int(left.n_cells),
