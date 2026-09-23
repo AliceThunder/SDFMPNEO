@@ -897,6 +897,52 @@ def train(settings, model_path, settings_dir, monitor=None):
                 ),
                 flush=True,
             )
+            if (
+                cached_dataset is not None
+                and data_path.is_file()
+                and "physical truth signature changed"
+                in cache_reasons
+            ):
+                old_signature = str(
+                    cache_meta.get(
+                        "signature",
+                        "unknown",
+                    )
+                )
+                archive_tag = (
+                    f"{len(cached_dataset.inputs)}-"
+                    f"{old_signature[:12]}"
+                )
+                archive_path = data_path.with_name(
+                    "unified.tensor_dataset.archive-"
+                    + archive_tag
+                    + ".npz"
+                )
+                archive_meta_path = meta_path.with_name(
+                    "unified.cache.archive-"
+                    + archive_tag
+                    + ".json"
+                )
+                if not archive_path.exists():
+                    data_path.replace(archive_path)
+                    write_json(
+                        archive_meta_path,
+                        {
+                            **dict(cache_meta),
+                            "archived_tensor_dataset": str(
+                                archive_path.name
+                            ),
+                            "archive_reason": (
+                                "production geometry/physics signature changed"
+                            ),
+                        },
+                    )
+                    print(
+                        "已归档旧 spatial truth dataset："
+                        f"{archive_path.name}；"
+                        "不会用于新 production domain，也未删除。",
+                        flush=True,
+                    )
             checkpoint.unlink(missing_ok=True)
             tensor_rng = np.random.default_rng(seed + 131071)
             n_tensor = int(
