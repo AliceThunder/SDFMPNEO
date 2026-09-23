@@ -294,8 +294,6 @@ class UnifiedNeuralElectroThermalModel:
             and isinstance(value, dict)
             and "transmitter" not in value
             and "coils" not in value
-            and set(value)
-            == set(self.production_domain.get("parameters", {}))
         ):
             value = apply_geometry_family(
                 self.default_geometry,
