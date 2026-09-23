@@ -287,3 +287,53 @@ def test_surrogate_internal_validation_uses_dynamic_release_margin():
         run.SETTINGS,
         failed,
     )["certified"] is False
+
+
+
+def test_persistent_maxwell_field_cache_tracks_only_global_ab_physics():
+    from sdfmpneo.unified_runtime import _maxwell_field_signature
+
+    run = _load_run()
+    baseline = copy.deepcopy(run.SETTINGS)
+
+    domain_only = copy.deepcopy(baseline)
+    domain_only["GEOMETRY_FAMILY"]["parameters"][
+        "rx_offset_x"
+    ]["bounds"][1] *= 0.9
+    domain_only["TRAINING"]["seed"] += 100
+    domain_only["TRAINING"]["final_audit"][
+        "tensor_relative_tolerance"
+    ] *= 0.5
+    domain_only["BACKGROUND"]["open_boundary_check"][
+        "relative_tolerance"
+    ] *= 0.5
+    domain_only["BACKGROUND"]["self_correction"][
+        "fine_step"
+    ] *= 0.8
+    assert (
+        _maxwell_field_signature(baseline)
+        == _maxwell_field_signature(domain_only)
+    )
+
+    frequency = copy.deepcopy(baseline)
+    frequency["PHYSICS"]["frequency_hz"] *= 1.01
+    assert (
+        _maxwell_field_signature(baseline)
+        != _maxwell_field_signature(frequency)
+    )
+
+    grid = copy.deepcopy(baseline)
+    grid["BACKGROUND"]["fine_step"] *= 0.9
+    assert (
+        _maxwell_field_signature(baseline)
+        != _maxwell_field_signature(grid)
+    )
+
+    material = copy.deepcopy(baseline)
+    material["MATERIALS"]["seawater"][
+        "electrical_conductivity"
+    ] *= 1.01
+    assert (
+        _maxwell_field_signature(baseline)
+        != _maxwell_field_signature(material)
+    )
