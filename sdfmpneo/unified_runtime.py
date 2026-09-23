@@ -12,7 +12,12 @@ import uuid
 import numpy as np
 
 from .unified_spatial_final_audit import run_spatial_final_held_out_audit
-from .unified_geometry import UnifiedUWPTGeometry, sample_geometry
+from .unified_geometry import (
+    UnifiedUWPTGeometry,
+    geometry_family_dimension,
+    sample_geometry,
+    sample_geometry_family,
+)
 from .unified_model import UnifiedNeuralElectroThermalModel
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_spatial_physics_gate import run_spatial_physics_gate
@@ -103,12 +108,15 @@ def _signature(
     keys = (
         "BACKGROUND",
         "DEFAULT_GEOMETRY",
-        "GEOMETRY_SAMPLING",
         "PHYSICS",
         "MATERIALS",
         "REGIONS",
     )
     payload = {k: settings[k] for k in keys}
+    if settings.get("GEOMETRY_FAMILY") is not None:
+        payload["GEOMETRY_FAMILY"] = settings["GEOMETRY_FAMILY"]
+    elif settings.get("GEOMETRY_SAMPLING") is not None:
+        payload["GEOMETRY_SAMPLING"] = settings["GEOMETRY_SAMPLING"]
     payload["BACKGROUND"] = _background_signature_view(
         settings,
         include_certification_policy=(
@@ -195,7 +203,10 @@ def build_background(settings,*,bounds=None):
 
 
 def _geometry_sampling_complexity(sampling):
-    """Count scalar continuous bounds and categorical choices in sampling config."""
+    """Count effective surrogate-domain dimensions."""
+    cfg = dict(sampling or {})
+    if "parameters" in cfg and cfg.get("schema") == "scaled_uwpt_family_v1":
+        return int(geometry_family_dimension(cfg)), 0
     continuous = 0
     categorical = 0
 
@@ -220,20 +231,39 @@ def _geometry_sampling_complexity(sampling):
         for item in value.values():
             visit(item)
 
-    visit(dict(sampling or {}))
+    visit(cfg)
     return int(continuous), int(categorical)
 
 
 def _sample_geometries(settings,n,rng,background):
     out=[]; attempts=0
+    family = settings.get("GEOMETRY_FAMILY")
     while len(out)<int(n):
         attempts+=1
         if attempts>100*max(1,int(n)):
-            raise ValueError("geometry sampling produced too many invalid physical geometries; adjust sampling ranges or BACKGROUND bounds")
-        candidate=sample_geometry(settings["DEFAULT_GEOMETRY"],settings.get("GEOMETRY_SAMPLING"),rng)
+            raise ValueError(
+                "geometry sampling produced too many invalid physical geometries; "
+                "adjust GEOMETRY_FAMILY/GEOMETRY_SAMPLING or BACKGROUND bounds"
+            )
+        if family is not None:
+            candidate = sample_geometry_family(
+                settings["DEFAULT_GEOMETRY"],
+                family,
+                rng,
+            )
+        else:
+            candidate=sample_geometry(
+                settings["DEFAULT_GEOMETRY"],
+                settings.get("GEOMETRY_SAMPLING"),
+                rng,
+            )
         try:
-            background.validate_geometry(UnifiedUWPTGeometry.from_mapping(candidate)); encode_geometry(candidate)
-        except ValueError: continue
+            background.validate_geometry(
+                UnifiedUWPTGeometry.from_mapping(candidate)
+            )
+            encode_geometry(candidate)
+        except ValueError:
+            continue
         out.append(candidate)
     return out
 
@@ -516,7 +546,9 @@ def train(settings, model_path, settings_dir, monitor=None):
             geometry_continuous_dimension,
             geometry_categorical_fields,
         ) = _geometry_sampling_complexity(
-            settings.get("GEOMETRY_SAMPLING")
+            settings.get("GEOMETRY_FAMILY")
+            if settings.get("GEOMETRY_FAMILY") is not None
+            else settings.get("GEOMETRY_SAMPLING")
         )
         tensor_sample_budget = int(
             settings["TRAINING"].get(
@@ -1199,8 +1231,10 @@ def train(settings, model_path, settings_dir, monitor=None):
             current_matrix=settings["PORTS"].get(
                 "current_matrix"
             ),
-            production_domain=settings.get(
-                "GEOMETRY_SAMPLING"
+            production_domain=(
+                settings.get("GEOMETRY_FAMILY")
+                if settings.get("GEOMETRY_FAMILY") is not None
+                else settings.get("GEOMETRY_SAMPLING")
             ),
             thermal_time_scales=_production_thermal_time_scales(settings),
             thermal_conditioning_limit=float(
