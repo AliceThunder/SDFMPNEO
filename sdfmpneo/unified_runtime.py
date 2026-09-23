@@ -164,6 +164,40 @@ def _production_thermal_time_scales(settings, extra_times=()):
     )
 
 
+
+def _maxwell_field_signature(settings):
+    """Identity of cached full global Maxwell port fields X(g).
+
+    Geometry itself is already part of each entry key and every hit is
+    re-certified against the current A/B.  The file-level signature therefore
+    contains only physics that can change the global Maxwell operator/source,
+    not the sampled geometry domain, certification policy, local-self model or
+    neural/training settings.
+    """
+    background = jsonable(settings["BACKGROUND"])
+    for name in (
+        "open_boundary_check",
+        "formulation_check",
+        "mesh_check",
+        "geometry_continuity_check",
+        "self_correction",
+    ):
+        background.pop(name, None)
+    payload = {
+        "BACKGROUND": background,
+        "PHYSICS": settings["PHYSICS"],
+        "MATERIALS": settings["MATERIALS"],
+        "REGIONS": settings["REGIONS"],
+    }
+    text = json.dumps(
+        jsonable(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 def _preflight_signature(settings):
     # Numerical solver-policy knobs must not invalidate already certified
     # physical truth/preflight data.  Keep the historical signature stable when
@@ -591,7 +625,7 @@ def train(settings, model_path, settings_dir, monitor=None):
         configure_maxwell_field_cache(
             bg,
             settings_dir / "unified.thermal_maxwell_fields.npz",
-            preflight_sig,
+            _maxwell_field_signature(settings),
         )
 
         if meta_path.is_file():
