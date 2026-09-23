@@ -151,30 +151,25 @@ DEFAULT_GEOMETRY = {
     "package_half_extent": [0.035, 0.035, 0.005],
 }
 
-GEOMETRY_SAMPLING = {
-    "transmitter": {
-        "shape": {"choices": ["circle", "rounded_square"]},
-        "turns": {"bounds": [0.5, 3.0]},
-        "outer_half_size": {"bounds": [0.012, 0.045]},
-        "pitch": {"bounds": [0.001, 0.004]},
-        "conductor_width": {"bounds": [0.0006, 0.003]},
-        "conductor_thickness": {"bounds": [0.0004, 0.0025]},
-        "corner_radius": {"bounds": [0.006, 0.035]},
-        "translation": {"bounds": [[-0.025, 0.025], [-0.025, 0.025], [-0.02, 0.02]]},
-        "angles": {"bounds": [[-0.5, 0.5], [-0.5, 0.5], [-np.pi, np.pi]]},
+# Production geometry is a constrained family, not the old 27D solver-
+# perturbation box. Shape, turns, orientation and topology stay fixed.
+# planar_scale jointly scales outer size, pitch, conductor width and corner
+# radius. The historical 10th parameter was seawater_radius; in the current
+# fixed open-boundary formulation that quantity is no longer an online geometry
+# variable and is certified separately by BACKGROUND.open_boundary_check.
+GEOMETRY_FAMILY = {
+    "schema": "scaled_uwpt_family_v1",
+    "parameters": {
+        "tx_planar_scale": {"bounds": [0.97, 1.03]},
+        "rx_planar_scale": {"bounds": [0.97, 1.03]},
+        "tx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_thickness_scale": {"bounds": [0.95, 1.05]},
+        "rx_offset_x": {"bounds": [-0.0002, 0.0002]},
+        "rx_offset_y": {"bounds": [-0.0002, 0.0002]},
+        "rx_gap": {"bounds": [0.0348, 0.0352]},
+        "tx_package_scale": {"bounds": [0.98, 1.02]},
+        "rx_package_scale": {"bounds": [0.98, 1.02]},
     },
-    "receiver": {
-        "shape": {"choices": ["circle", "rounded_square"]},
-        "turns": {"bounds": [0.5, 3.0]},
-        "outer_half_size": {"bounds": [0.012, 0.045]},
-        "pitch": {"bounds": [0.001, 0.004]},
-        "conductor_width": {"bounds": [0.0006, 0.003]},
-        "conductor_thickness": {"bounds": [0.0004, 0.0025]},
-        "corner_radius": {"bounds": [0.006, 0.035]},
-        "translation": {"bounds": [[-0.06, 0.06], [-0.06, 0.06], [0.005, 0.09]]},
-        "angles": {"bounds": [[-1.0, 1.0], [-1.0, 1.0], [-np.pi, np.pi]]},
-    },
-    "package_half_extent": {"bounds": [[0.02, 0.06], [0.02, 0.06], [0.003, 0.012]]},
 }
 
 PHYSICS = {
@@ -326,7 +321,7 @@ MONITOR = {
 
 SETTINGS = {
     "ROOT": str(ROOT), "MODE": MODE, "FILES": FILES, "BACKGROUND": BACKGROUND,
-    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY, "GEOMETRY_SAMPLING": GEOMETRY_SAMPLING,
+    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY, "GEOMETRY_FAMILY": GEOMETRY_FAMILY,
     "PHYSICS": PHYSICS, "MATERIALS": MATERIALS, "REGIONS": REGIONS, "PORTS": PORTS,
     "TRAINING": TRAINING, "PREDICTION": PREDICTION, "MONITOR": MONITOR,
 }
