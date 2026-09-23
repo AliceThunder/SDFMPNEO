@@ -75,6 +75,24 @@ BACKGROUND = {
     # Only the unresolved diagonal self response receives a small canonical local
     # fine-minus-coarse defect. Translation/rotation are removed in that local
     # solve, while global mutual/far-field coupling remains from the full domain.
+    # Boundary-conditioned longitudinal terminal near-field reference.
+    # The terminal charge support is a finite-width/thickness physical source;
+    # use >=4 cells across that support so the 3mm -> 2.25mm independent
+    # validation compares two resolved scalar patches rather than a 1.6-cell
+    # under-resolved contact.  The hard 575k cell budget remains fail-closed.
+    "global_longitudinal_correction": {
+        "enabled": True,
+        "fine_step": 0.003,
+        "validation_fine_step": 0.00225,
+        "relative_tolerance": 1e-1,
+        "core_padding": 0.006,
+        "boundary_padding": 0.04,
+        "growth": 1.5,
+        "max_step": 0.02,
+        "terminal_cells_per_support": 4.0,
+        "terminal_core_padding_factor": 1.5,
+        "terminal_patch_max_cells": 575000,
+    },
     "self_correction": {
         "enabled": True,
         "samples": 1,
