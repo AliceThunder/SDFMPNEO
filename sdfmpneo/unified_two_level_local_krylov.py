@@ -41,6 +41,43 @@ def _two_level_minimum_dofs(cfg):
     return minimum
 
 
+def _should_galerkin_recover(best_residual, consistency_error, cfg):
+    """Enter the true Galerkin coarse equation before rediscretized stagnation.
+
+    A large rediscretization-vs-Galerkin mismatch means the auxiliary coarse
+    operator is useful as a preconditioner but should not be expected to reduce
+    the fine residual by itself to the old 1e-4 polish threshold.
+    """
+    residual = float(best_residual)
+    consistency = float(consistency_error)
+    start = float(
+        cfg.get(
+            "linear_two_level_galerkin_recovery_start_residual",
+            8e-1,
+        )
+    )
+    mismatch = float(
+        cfg.get(
+            "linear_two_level_galerkin_recovery_consistency",
+            5e-2,
+        )
+    )
+    if not (0.0 < start < 1.0):
+        raise ValueError(
+            "linear_two_level_galerkin_recovery_start_residual must lie in (0,1)"
+        )
+    if mismatch < 0.0:
+        raise ValueError(
+            "linear_two_level_galerkin_recovery_consistency must be nonnegative"
+        )
+    return bool(
+        np.isfinite(residual)
+        and np.isfinite(consistency)
+        and residual < start
+        and consistency >= mismatch
+    )
+
+
 def _relative_pilot(A, rhs, x0, M, solve, residual_fn, *, maxiter, inner_m, accept_ratio):
     """Run a cheap pilot whose target is relative to the *current* residual."""
     start = np.asarray(x0, complex).reshape(-1)
@@ -421,6 +458,51 @@ def install(local_solver_module):
 
         if (
             not galerkin_polished
+            and _should_galerkin_recover(
+                best_residual,
+                two_level.consistency_error,
+                cfg,
+            )
+        ):
+            recovery_M = (
+                best_M
+                if best_M is not None
+                else two_level.operator(
+                    coarse_corrections=2,
+                    smoother_sweeps=2,
+                )
+            )
+            print(
+                "local Maxwell early Galerkin recovery: "
+                f"residual={best_residual:.3e}, "
+                f"coarse_consistency={two_level.consistency_error:.3e}",
+                flush=True,
+            )
+            recovered, recovered_residual, extra = _galerkin_defect_polish(
+                local_solver_module,
+                two_level,
+                A,
+                rhs,
+                best,
+                best_residual,
+                recovery_M,
+                residual_tolerance,
+                cfg,
+            )
+            history.extend(extra)
+            galerkin_polished = True
+            if (
+                np.isfinite(recovered_residual)
+                and recovered_residual < best_residual
+            ):
+                best = recovered
+                best_residual = recovered_residual
+                best_M = recovery_M
+            if best_residual <= residual_tolerance:
+                return best, best_residual, history
+
+        if (
+            not galerkin_polished
             and best_M is not None
             and np.isfinite(best_residual)
             and best_residual <= galerkin_start
@@ -477,4 +559,10 @@ def install(local_solver_module):
     return local_solver_module
 
 
-__all__ = ["_galerkin_defect_polish", "_relative_pilot", "_two_level_minimum_dofs", "install"]
+__all__ = [
+    "_galerkin_defect_polish",
+    "_relative_pilot",
+    "_should_galerkin_recover",
+    "_two_level_minimum_dofs",
+    "install",
+]
