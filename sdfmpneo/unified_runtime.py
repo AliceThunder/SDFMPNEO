@@ -181,6 +181,7 @@ def _maxwell_field_signature(settings):
         "mesh_check",
         "geometry_continuity_check",
         "self_correction",
+        "global_longitudinal_correction",
     ):
         background.pop(name, None)
     payload = {
