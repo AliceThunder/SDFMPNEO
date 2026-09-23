@@ -46,3 +46,18 @@ def test_signature_is_stable_across_solver_only_threshold_changes():
     second["BACKGROUND"]["self_correction"]["linear_transverse_direct_fallback_max_dofs"] = 64000
 
     assert _signature(first) == _signature(second)
+
+
+
+def test_signature_tracks_geometry_family_bounds():
+    first = _settings()
+    first.pop("GEOMETRY_SAMPLING", None)
+    first["GEOMETRY_FAMILY"] = {
+        "schema": "scaled_uwpt_family_v1",
+        "parameters": {
+            "tx_planar_scale": {"bounds": [0.97, 1.03]},
+        },
+    }
+    second = deepcopy(first)
+    second["GEOMETRY_FAMILY"]["parameters"]["tx_planar_scale"]["bounds"][1] = 1.04
+    assert _signature(first) != _signature(second)
