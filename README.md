@@ -35,6 +35,26 @@
 
 用户配置集中在 run.py 顶部。preflight、Physics Gate 和 completely-held-out final Go/No-Go 都在同一个训练入口中；任一硬 Gate 失败都会 fail closed，不保存 production artifact。
 
+### 1.1 Production geometry family
+
+当前 fixed-open-boundary 主链使用一个 **9 维受约束几何族**，而不是早期 unified-runtime 中误继承的 27 维 solver-perturbation 随机盒：
+
+    tx_planar_scale
+    rx_planar_scale
+    tx_thickness_scale
+    rx_thickness_scale
+    rx_offset_x
+    rx_offset_y
+    rx_gap
+    tx_package_scale
+    rx_package_scale
+
+`planar_scale` 联动缩放同一线圈的 outer size、pitch、conductor width 和 corner radius；shape、turns、angles、材料拓扑固定。package 只做相对自身 coil 的等比例尺寸缩放，pose 始终跟随对应 coil。
+
+历史 10D family 的第十维 `seawater_radius` 属于旧变形网格外球半径。当前 fixed-background + Silver–Müller 架构不把人工外边界作为在线 geometry；它由 `BACKGROUND.open_boundary_check` 独立认证，因此当前有效 surrogate domain 是 9D。
+
+训练、Physics Gate、maximin enrichment、final held-out audit 和推理全部使用同一 family。推理既可以给完整 geometry，也可以直接给上述 9 个 family 参数；完整 geometry 必须能反解到合法 family 坐标，否则拒绝外推。
+
 ## 2. 为什么取消跨 geometry thermal atlas
 
 此前 v14 要求一套经过 rigid transport 的共享 thermal state space 覆盖完整 geometry 域。实际运行已经出现明确反证：thermal rank 扩到约 2100 后，training error 可以压到 5% 内，但未见 geometry 仍保持约三成量级误差，而且 residual enrichment 本身需要数小时。
@@ -116,20 +136,24 @@ coarse global cell tensors加上 spatial self defect 后，decoder 执行：
 
 ## 5. Neural surrogate
 
-网络学习：
+当前 production surrogate 是 two-head neural field，不再使用 spatial POD：
 
-    geometry -> Z_field, D_vol, H_cell[0 ... N_cell-1]
+    geometry family coordinates
+      -> global head
+      -> D_vol / Re(D_out) / Im(Z)
+      -> hard passive reconstruction of Z
 
-MLP 不直接输出完整超宽 spatial vector。training split 先对 packed output 做 training-only POD；对宽输出使用 sample-Gram / dual POD，即先构造 sample-space Gram matrix Y Y^T，而不是直接对 N_sample × N_output 做 full SVD。
+    geometry + local cell/material/source features
+      -> field head
+      -> residual log Joule density + PSD square-root shape
+      -> exact cellwise PSD field
+      -> exact sum(H_cell) = D_vol
 
-因此网络实际输出维数受 training sample rank 控制，不随 thermal rank 增长。
+global head 直接学习 `D_out`，避免用两个大量 `Herm(Z)-D` 相减恢复很小的 outward loss。field head 输入除局部坐标外，还包含 analytic material fractions 和 finite-cross-section line-heat support。
 
-decoder 分两层：
+field density 使用 Maxwell-free analytic conductor-support prior，网络只学习 residual log-density；最终解码后仍执行 exact PSD / sum-to-D 约束。
 
-- Z/D 保持 reciprocal / passive algebraic structure；
-- spatial block执行 cellwise PSD + exact sum-to-D congruence。
-
-projection_correction 会进入 held-out diagnostics，不能靠巨大 projection 掩盖网络误差。
+model selection 直接使用 production 物理量：global head 用 validation geometry 上 decoded Z / D / D_out relative error；field head 用完整 validation 网格上的 whitened-Joule field error；projection correction 单独作为 hard diagnostic。随机 cell sampled loss 只用于优化，不再决定最终 best epoch。
 
 ## 6. Geometry-local online thermal ROM
 
@@ -177,53 +201,50 @@ projection_correction 会进入 held-out diagnostics，不能靠巨大 projectio
 python run.py --mode train 当前执行：
 
 1. 构建固定 open-boundary background。
-2. 执行 spatial EM truth preflight。
-3. 生成 geometry → corrected Z / D / cell-Joule truth dataset。
+2. 在同一 9D production family 上执行 spatial EM truth preflight。
+3. 复用或生成 geometry → corrected Z / D / cell-Joule truth dataset。
 4. 在独立 geometry 上执行 spatial-Joule / online-thermal Physics Gate。
-5. 只用 neural training split 拟合 dual POD + residual MLP。
-6. 在 completely-held-out geometry 上重新求 corrected Maxwell truth。
-7. 比较 surrogate 的 Z、D、cell-Joule field、完整 current-space heat contractions和独立 physical outward loss。
-8. 分别用 truth cell-Joule 与 predicted cell-Joule 构造 geometry-local thermal ROM，比较 current-controlled / circuit-controlled transient 与 steady state。
-9. 检查 production ETD2 adaptive integrator。
+5. 训练 two-head passive neural field。
+6. 直接检查 internal physical validation：global Z/D/D_out、完整 field error 和 projection correction。
+7. 若 internal validation 未达到 release margin，从大量合法 family 候选中做 maximin/farthest-point 选择，只追加覆盖最稀疏区域的 Maxwell truth，然后重新训练；默认每轮 32 个、上限 256。
+8. internal validation 达标后才进入 completely-held-out final Go/No-Go audit。
+9. final audit 比较 Z、D、cell-Joule、完整 current-space heat、outward loss、truth-vs-predicted online thermal、current/circuit dynamics、mass-norm adaptive ETD2 和 steady state。
 10. 全部通过后才保存 model artifact。
 
-production path 已没有跨 geometry thermal basis build / transport / residual-enrichment 阶段。
+因此不会在内部 surrogate 明显不合格时继续浪费 completely-held-out Maxwell audit。production path 也没有跨 geometry thermal atlas。
 
 ## 9. 推理
 
 python run.py --mode predict 对一个新 geometry：
 
-1. 校验 geometry 是否在 production domain；
-2. MLP 一次 forward 得到 packed spatial tensor POD coefficients；
-3. hard decode 得到 Z、D、H_cell；
+1. 将 9 个 family 参数映射为完整 geometry，或反验证用户提供的完整 geometry 确实位于 family 流形；
+2. global head 一次 forward 得到 passive Z / D / D_out 表示；
+3. field head 分块查询所有 background cells，解码得到 PSD H_cell，并严格执行 sum(H_cell)=D；
 4. 第一次访问该 geometry 时组装真实 M, K，构造并缓存小型 online thermal ROM；
 5. current-controlled 直接使用 prescribed complex current，或显式求解 voltage/circuit system；
 6. 更新 R_wire(T) 与 wire heat；
-7. 推进 reduced thermal ODE 或求 stable steady state。
+7. 用 mass-norm-certified adaptive ETD2 推进 reduced thermal ODE，或求 stable steady state。
 
 在线没有 Maxwell solve。第一次查询一个新 geometry 只有少量 sparse thermal factorizations；同一 geometry 后续查询直接复用缓存。
 
 ## 10. 核心配置
 
-run.py 当前 production TRAINING 关键字段：
+run.py 当前 production 关键字段：
 
+    GEOMETRY_FAMILY.schema = scaled_uwpt_family_v1
     spatial_tensor_schema = cellwise_joule_tensor_v1
     online_thermal_relative_tolerance = 5e-2
     online_thermal_conditioning_limit = 1e10
     thermal_time_scales = [0.1, 1.0, 10.0]
     thermal_trajectory_times = [0.1, 1.0, 10.0, 100.0]
     n_tensor_samples = 96
+    tensor_enrichment.max_samples = 256
+    tensor_enrichment.batch_size = 32
+    tensor_enrichment.candidate_pool = 2048
 
-以下旧 atlas 配置已经退出 production path：
+修改 neural optimizer、online thermal tolerance、final audit policy 或 certification-only sampling 不会使 spatial Maxwell truth dataset cache 失效。只有 production geometry/material/source/self-correction 等真正改变 truth 的设置才会使其失效。
 
-    thermal_basis_schema
-    thermal_basis_design
-    basis_samples
-    basis_validation_samples
-    thermal_basis_max_rank
-    thermal_component_target_multiplier
-
-修改 online thermal tolerance / time scales 不会使 spatial Maxwell truth dataset cache 失效；修改 geometry/material/source/self-correction 或 truth sample policy 会失效。
+当 production domain/physics 确实改变时，已有昂贵 `unified.tensor_dataset.npz` 会先自动归档为带旧 signature 的 `unified.tensor_dataset.archive-*.npz`，再生成新域 truth，不直接覆盖丢失。
 
 ## 11. Artifact 与 cache
 
@@ -239,7 +260,8 @@ run.py 当前 production TRAINING 关键字段：
 
     MODEL FORMAT_VERSION = 53
     RUNTIME CACHE_FORMAT = 56
-    spatial tensor = cellwise_joule_tensor_v1
+    spatial tensor truth = cellwise_joule_tensor_v1
+    spatial surrogate = cellwise_joule_neural_field_v4
     online thermal = geometry_local_rational_krylov_v1
 
 旧 geometry-aware thermal atlas artifact/cache 不再是 production dependency。
