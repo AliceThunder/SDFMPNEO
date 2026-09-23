@@ -23,6 +23,20 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
     final_audit = run.TRAINING["final_audit"]
     assert run.TRAINING["device"] == "cuda"
     assert run.TRAINING["n_tensor_samples"] >= 6
+    family = run.GEOMETRY_FAMILY
+    assert family["schema"] == "scaled_uwpt_family_v1"
+    assert set(family["parameters"]) == {
+        "tx_planar_scale",
+        "rx_planar_scale",
+        "tx_thickness_scale",
+        "rx_thickness_scale",
+        "rx_offset_x",
+        "rx_offset_y",
+        "rx_gap",
+        "tx_package_scale",
+        "rx_package_scale",
+    }
+    assert not hasattr(run, "GEOMETRY_SAMPLING")
     enrichment = run.TRAINING["tensor_enrichment"]
     assert enrichment["enabled"] is True
     assert enrichment["max_samples"] > run.TRAINING["n_tensor_samples"]
