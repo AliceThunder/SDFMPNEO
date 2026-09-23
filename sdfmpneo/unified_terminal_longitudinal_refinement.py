@@ -86,7 +86,7 @@ def _contact_boxes(module, background, geometry, port):
 def _terminal_options(background):
     root = dict(getattr(background, "background_config", {}) or {})
     own = dict(root.get("global_longitudinal_correction", {}) or {})
-    cells = float(own.get("terminal_cells_per_support", 1.6))
+    cells = float(own.get("terminal_cells_per_support", 4.0))
     padding_factor = float(own.get("terminal_core_padding_factor", 1.5))
     max_cells = int(own.get("terminal_patch_max_cells", 575000))
     if not np.isfinite(cells) or cells < 1.25:
@@ -375,7 +375,7 @@ def install(module):
     def resolve_settings(settings, background):
         original_resolve(settings, background)
         own = settings["BACKGROUND"].setdefault("global_longitudinal_correction", {})
-        own.setdefault("terminal_cells_per_support", 1.6)
+        own.setdefault("terminal_cells_per_support", 4.0)
         own.setdefault("terminal_core_padding_factor", 1.5)
         own.setdefault("terminal_patch_max_cells", 575000)
         if isinstance(getattr(background, "background_config", None), dict):
