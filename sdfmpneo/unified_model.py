@@ -21,7 +21,11 @@ from .electrothermal_tensor.network import (
     build_residual_mlp,
 )
 from .electrothermal_tensor.vector_field import ReducedThermalOperator
-from .unified_geometry import UnifiedUWPTGeometry
+from .unified_geometry import (
+    UnifiedUWPTGeometry,
+    apply_geometry_family,
+    geometry_family_coordinates,
+)
 from .unified_online_thermal import build_online_thermal_context
 from .unified_open_boundary import OpenBoundaryBackground
 from .unified_tensor_surrogate import UnifiedSpatialTensorSurrogate
@@ -243,6 +247,17 @@ class UnifiedNeuralElectroThermalModel:
     def _validate_production_geometry(self, mapping):
         if not self.production_domain:
             return
+        if (
+            isinstance(self.production_domain, dict)
+            and self.production_domain.get("schema")
+            == "scaled_uwpt_family_v1"
+        ):
+            geometry_family_coordinates(
+                self.default_geometry,
+                self.production_domain,
+                mapping,
+            )
+            return
         candidate = dict(mapping)
         for section, rules in self.production_domain.items():
             if section not in candidate:
@@ -269,8 +284,33 @@ class UnifiedNeuralElectroThermalModel:
 
     def _geometry(self, geometry=None):
         value = self.default_geometry if geometry is None else geometry
+        family = (
+            isinstance(self.production_domain, dict)
+            and self.production_domain.get("schema")
+            == "scaled_uwpt_family_v1"
+        )
+        if (
+            family
+            and isinstance(value, dict)
+            and "transmitter" not in value
+            and "coils" not in value
+            and set(value)
+            == set(self.production_domain.get("parameters", {}))
+        ):
+            value = apply_geometry_family(
+                self.default_geometry,
+                self.production_domain,
+                value,
+            )
         if isinstance(value, UnifiedUWPTGeometry):
             g = self.background.validate_geometry(value)
+            if family:
+                geometry_family_coordinates(
+                    self.default_geometry,
+                    self.production_domain,
+                    g,
+                )
+                return g
             if self.production_domain:
                 if len(g.coils) != 2 or len(g.packages) != 2:
                     raise ValueError(
