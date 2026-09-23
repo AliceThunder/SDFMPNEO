@@ -1336,13 +1336,10 @@ def train(settings, model_path, settings_dir, monitor=None):
                 settings_dir
                 / "final_audit.spatial_truth.npz"
             ),
-            # Adaptive enrichment changes the cached dataset size but
-            # leaves TRAINING.n_tensor_samples unchanged, so this legacy key
-            # keeps the already-computed held-out Maxwell truth reusable.
-            truth_cache_key=_signature(
-                settings,
-                include_certification_policy=True,
-            ),
+            # Held-out Maxwell truth follows the same physical-only
+            # identity as the training truth dataset.  Certification-only
+            # tolerances/sampling must not force another Maxwell solve.
+            truth_cache_key=_signature(settings),
         )
         if not final_audit["certified"]:
             raise RuntimeError(
