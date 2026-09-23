@@ -92,7 +92,7 @@ production truth 继续使用以下物理语义，不因 thermal 架构切换而
 
 缓存只保存完整 port fields X(g)。每次命中都会重新组装当前物理 A(g), B(g) 并重新计算 true residual，继续满足当前 residual Gate 才能复用。
 
-该 cache 使用独立 physical preflight signature，因此改变 neural optimizer、final audit 或 online thermal ROM 参数不会让已经认证的 Maxwell fields 无谓失效。
+该 cache 使用独立的 global-Maxwell A/B physical signature。geometry 本身已经是每条 cache entry 的键，而且命中后还会重新组装当前 A/B 并检查 true residual；因此改变 neural optimizer、geometry-family 采样范围、final audit、local-self fine mesh 或其他 certification-only policy 都不会无谓清空已有 port fields。只有主背景网格、频率、材料/region/source 等真正改变 global Maxwell 方程的设置才会失效。
 
 ## 4. Cellwise Joule tensor truth
 
