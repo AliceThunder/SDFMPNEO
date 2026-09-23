@@ -541,9 +541,10 @@ def test_spatial_truth_dataset_append_preserves_rows_and_conservative_audit():
     assert merged.audit[
         "source_regularization_available"
     ] == 1.0
-    assert set(merged.split) == {
-        "train",
-        "validation",
-        "test",
-        "audit",
-    }
+    assert np.array_equal(
+        merged.split[:2],
+        left.split,
+    )
+    assert np.all(
+        merged.split[2:] == "train"
+    )
