@@ -55,6 +55,11 @@
 
 训练、Physics Gate、maximin enrichment、final held-out audit 和推理全部使用同一 family。推理既可以给完整 geometry，也可以直接给上述 9 个 family 参数；完整 geometry 必须能反解到合法 family 坐标，否则拒绝外推。
 
+### 1.2 Terminal longitudinal scalar reference
+
+在进入昂贵 full-Maxwell truth 前，preflight 会先认证 boundary-conditioned terminal longitudinal scalar defect。当前 production 使用有限宽度/厚度 terminal charge support，并要求至少 4 个 scalar cells 解析该 support；3 mm / 2.25 mm 仍是两级独立参考的名义上限，实际每轴步长会由 contact tangent、导体宽度和厚度进一步收紧。
+
+如果该 Gate 失败，只允许调整 terminal-local scalar resolution/source model；不得用全局 Maxwell refinement 或放宽 10% relative tolerance 掩盖问题。`terminal_patch_max_cells` 仍是硬上限，超过预算直接 fail closed。
 ## 2. 为什么取消跨 geometry thermal atlas
 
 此前 v14 要求一套经过 rigid transport 的共享 thermal state space 覆盖完整 geometry 域。实际运行已经出现明确反证：thermal rank 扩到约 2100 后，training error 可以压到 5% 内，但未见 geometry 仍保持约三成量级误差，而且 residual enrichment 本身需要数小时。
