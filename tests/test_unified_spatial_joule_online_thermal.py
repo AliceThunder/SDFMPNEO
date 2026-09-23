@@ -7,6 +7,7 @@ from sdfmpneo.unified_corrected_truth import (
     merge_spatial_tensor_datasets,
 )
 from sdfmpneo.unified_model import UnifiedNeuralElectroThermalModel
+from sdfmpneo.unified_geometry import geometry_family_coordinates
 from sdfmpneo.unified_online_thermal import (
     audit_online_thermal_trajectories,
     build_online_thermal_context,
@@ -455,10 +456,25 @@ def test_two_head_spatial_training_builds_current_surrogate_interface(tmp_path):
         atol=1e-12,
     )
 
+    family = {
+        "schema": "scaled_uwpt_family_v1",
+        "parameters": {
+            "tx_planar_scale": {"bounds": [0.97, 1.03]},
+            "rx_planar_scale": {"bounds": [0.97, 1.03]},
+            "tx_thickness_scale": {"bounds": [0.95, 1.05]},
+            "rx_thickness_scale": {"bounds": [0.95, 1.05]},
+            "rx_offset_x": {"bounds": [-0.001, 0.001]},
+            "rx_offset_y": {"bounds": [-0.001, 0.001]},
+            "rx_gap": {"bounds": [0.029, 0.031]},
+            "tx_package_scale": {"bounds": [0.98, 1.02]},
+            "rx_package_scale": {"bounds": [0.98, 1.02]},
+        },
+    }
     model = UnifiedNeuralElectroThermalModel(
         bg,
         surrogate,
-        default_geometry=geometries[-1],
+        default_geometry=base,
+        production_domain=family,
         thermal_time_scales=(0.1, 1.0),
         thermal_conditioning_limit=1e10,
         thermal_target_relative_error=0.99,
@@ -470,7 +486,34 @@ def test_two_head_spatial_training_builds_current_surrogate_interface(tmp_path):
         device="cpu",
     )
     loaded_prediction = loaded.tensors(geometries[-1])
+    family_coordinates = geometry_family_coordinates(
+        base,
+        family,
+        geometries[-1],
+    )
+    loaded_from_coordinates = loaded.tensors(
+        family_coordinates
+    )
+    assert loaded.production_domain == family
     assert loaded_prediction.cell_h.shape == (n, 2, 2)
+    assert np.allclose(
+        loaded_from_coordinates.z_field,
+        loaded_prediction.z_field,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert np.allclose(
+        loaded_from_coordinates.d_vol,
+        loaded_prediction.d_vol,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert np.allclose(
+        loaded_from_coordinates.cell_h,
+        loaded_prediction.cell_h,
+        rtol=1e-12,
+        atol=1e-12,
+    )
     assert np.allclose(
         loaded_prediction.z_field,
         predicted.z_field,
