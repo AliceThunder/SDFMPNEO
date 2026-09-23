@@ -1,0 +1,82 @@
+\section{System requirements and non-negotiable invariants}
+
+Let a scene be denoted by
+\[
+  \mathcal S=(\mathcal G,\mathcal M,\mathcal B),
+\]
+where $\mathcal G$ is the set of geometric objects and their poses,
+$\mathcal M$ their constitutive laws, and $\mathcal B$ the electrical and
+thermal environment specification. The online model accepts
+\[
+  (\mathcal S,\,u(t),\,T_0)
+\]
+and returns electrical port quantities, continuous loss queries, and
+temperature evolution.
+
+\subsection{Required geometric scope}
+
+The theory shall support:
+\begin{enumerate}[label=(G\arabic*)]
+\item a variable number of conducting coils and passive bodies;
+\item independent arbitrary poses in $\SE(3)$;
+\item superelliptic spiral centerlines and superelliptic conductor cross-sections;
+\item independently variable conductor width, thickness, pitch, turn count,
+      superellipse exponent, and planar aspect ratio;
+\item arbitrary package dimensions and poses, including superquadrics and
+      constructive combinations of primitives;
+\item piecewise homogeneous, layered, continuously inhomogeneous, and
+      anisotropic material regions.
+\end{enumerate}
+
+\subsection{Required electromagnetic invariants}
+
+For a reciprocal $P$-port model with phasor current $i\in\C^P$,
+\[
+  v=Z(\omega;\mathcal S)i .
+\]
+The decoded impedance must satisfy reciprocity
+\[
+  Z^\T=Z
+\]
+when the constitutive scene is reciprocal. The dissipative Hermitian part
+must satisfy
+\[
+  R(\omega;\mathcal S)
+  :=\Herm Z
+  =\frac{Z+Z\adj}{2}\PSD .
+\]
+If $D_{\mathrm{vol}}$ denotes internally absorbed electromagnetic power and
+$D_{\mathrm{out}}$ an outward/radiative channel, then
+\[
+  R=D_{\mathrm{vol}}+D_{\mathrm{out}},\qquad
+  D_{\mathrm{vol}}\PSD,\quad D_{\mathrm{out}}\PSD .
+\]
+
+\subsection{Required thermal invariants}
+
+The reduced thermal dynamics must be representable as
+\[
+  C_T(z,\mathcal S)\dot z
+  =-G_T(z,\mathcal S)z+B_T(z,\mathcal S)p(t)+f_{\mathrm{env}},
+\]
+with
+\[
+  C_T=C_T^\T\SPD,\qquad G_T=G_T^\T\PSD
+\]
+for passive conduction and convection. The temperature decoder must reproduce a
+uniform reference state exactly and must not produce unbounded temperature
+growth under zero input in a passive environment.
+
+\subsection{Accuracy modes}
+
+The public model exposes three conceptual accuracy levels:
+\begin{description}
+\item[FAST] no full electromagnetic solve; analytic baseline plus neural
+  operators only;
+\item[CERTIFIED] FAST prediction followed by physical residual evaluation and a
+  bounded number of matrix-free corrections;
+\item[REFERENCE] high-accuracy teacher solution used offline for dataset
+  generation, release validation, and scientific benchmarking.
+\end{description}
+
+The same continuous scene semantics are used in all three modes.

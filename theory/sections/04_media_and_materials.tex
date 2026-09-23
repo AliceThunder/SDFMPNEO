@@ -1,0 +1,59 @@
+\section{Material and environment model}
+
+\subsection{Constitutive interface}
+
+Every material exposes frequency- and temperature-dependent constitutive maps
+\[
+  \epsilon(\omega,T,\mathbf r),\quad
+  \mu(\omega,T,\mathbf r),\quad
+  \sigma(\omega,T,\mathbf r),
+\]
+and thermal maps
+\[
+  k(T,\mathbf r),\quad
+  c_v(T,\mathbf r),\quad
+  \rho_m(T,\mathbf r).
+\]
+Tensor-valued anisotropic laws are allowed. Passive materials must satisfy the
+appropriate positivity and dissipation conditions over the declared frequency
+and temperature domain.
+
+\subsection{Environment classes}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Environment & Primary representation & Global volume mesh?\\
+\midrule
+homogeneous unbounded & analytic Green kernel & no\\
+layered background & layered Green kernel & no\\
+piecewise homogeneous bodies & surface integral equations & no\\
+localized continuous contrast & local VIE / adaptive nodes & local only\\
+strongly nonlinear material & iterative local constitutive update & local only\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The thermal backend follows the same principle: analytic/Green transfer in
+homogeneous regions, boundary operators on interfaces, and localized volumetric
+correction only where coefficients vary continuously.
+
+\subsection{Temperature feedback}
+
+Electromagnetic constitutive quantities may depend on the reduced thermal state.
+For slowly varying thermal evolution relative to the carrier period,
+\[
+  Z(t)\approx Z(\omega;\mathcal S,T(t)).
+\]
+For stronger frequency-domain memory or wideband electrical drive, the
+electromagnetic subsystem is replaced by the passive rational state-space model
+defined in Section~\ref{sec:port-macro}.
+
+\subsection{Material embeddings for learning}
+
+A neural model must not identify a material solely by a categorical ID.
+Material tokens are functions or sampled constitutive descriptors over the
+declared operating range. A compact embedding may contain coefficients of a
+causal rational fit, selected log-frequency samples, temperature derivatives,
+and thermophysical scalars. Two materials with identical constitutive laws must
+be indistinguishable to the learned operator.

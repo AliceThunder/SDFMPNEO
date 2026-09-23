@@ -1,0 +1,119 @@
+\section{Research program, milestones, and falsification criteria}
+
+The theory is implemented in stages. Each stage has a success criterion and a
+falsification criterion so that numerical difficulty cannot be hidden by adding
+more corrective layers.
+
+\subsection{Stage A: continuous geometry kernel}
+
+Deliver arbitrary-pose superelliptic spiral coils with finite superelliptic
+cross-sections, superquadric/CSG packages, relative-pose scene graphs, robust
+Bishop frames, collision/clearance tests, and high-order geometry quadrature.
+
+\textbf{Success:} rigid-transform invariance and geometry derivatives agree with
+independent finite-difference/analytic checks over broad poses and aspect
+ratios.
+
+\textbf{Falsification:} the representation develops discontinuities at shape
+exponent changes, near-zero curvature, or large rotations.
+
+\subsection{Stage B: homogeneous-medium conductor integral teacher}
+
+Implement finite-cross-section current--charge/PEEC physics for one and multiple
+coils in an unbounded homogeneous medium.
+
+\textbf{Success:} impedance, current distribution, skin/proximity loss, and
+mutual coupling converge under modal/quadrature enrichment and agree with an
+independent converged reference on a locked benchmark set.
+
+\textbf{Falsification:} accuracy requires degrees of freedom scaling like a full
+three-dimensional background volume, or self terms require ad hoc
+fine-minus-coarse corrections.
+
+\subsection{Stage C: packages and general media}
+
+Add SIE for piecewise homogeneous passive bodies, layered Green functions where
+appropriate, and localized VIE/adaptive-node corrections for continuous
+material contrast.
+
+\textbf{Success:} homogeneous regions add interface rather than volume
+complexity; local contrast complexity scales with contrast support.
+
+\textbf{Falsification:} a remote homogeneous background change forces a global
+volume remesh or world-grid state.
+
+\subsection{Stage D: passive electrical macromodel}
+
+Build narrowband and broadband structured port models and couple external
+circuits.
+
+\textbf{Success:} reciprocity/passivity are exact to numerical roundoff after
+decoding and broadband time simulations remain stable without post-hoc pole
+repair.
+
+\textbf{Falsification:} small frequency-domain errors routinely create unstable
+or active time-domain models.
+
+\subsection{Stage E: continuous loss operator}
+
+Construct continuous PSD conductor/dielectric loss factors and low-rank source
+channels.
+
+\textbf{Success:} non-negative local heat and integrated power closure hold for
+arbitrary complex port currents; thermal observables converge with modest loss
+rank.
+
+\textbf{Falsification:} accuracy depends on a fixed world-cell ordering or
+requires large projection corrections to restore positivity/power.
+
+\subsection{Stage F: thermal transfer model}
+
+Implement Green/BIE thermal teachers, stable reduced realizations, continuous
+temperature decoders, and localized inhomogeneous corrections.
+
+\textbf{Success:} transient and steady temperatures meet the declared error
+budget across moving packages/media without global thermal remeshing.
+
+\textbf{Falsification:} every new pose requires a large global matrix
+factorization comparable to a full PDE solve.
+
+\subsection{Stage G: neural correction and certified inference}
+
+Train the scene operator, structured EM/thermal corrections, uncertainty
+calibration, and predict-then-correct residual path.
+
+\textbf{Success:} FAST inference is suitable for repeated optimization/control,
+while CERTIFIED mode reaches reference accuracy with a small bounded correction
+budget on most in-domain scenes.
+
+\textbf{Falsification:} certification usually converges no faster than solving
+the integral teacher from an uninformed initial guess.
+
+\subsection{Stage H: full electrothermal deployment}
+
+Couple temperature-dependent materials, electrical circuits, broadband or
+carrier-envelope dynamics, and active learning.
+
+\textbf{Success:} locked release suites cover pose, shape, package, material,
+frequency, excitation, and time-evolution regimes with traceable error budgets.
+
+\subsection{Primary research questions}
+
+The following questions must be answered experimentally rather than assumed:
+\begin{enumerate}
+\item What cross-section modal family reaches skin/proximity accuracy with the
+      smallest stable rank over the target frequency range?
+\item Which hybrid conductor/SIE formulation gives the best conditioning for
+      high conductivity contrast and closely spaced package interfaces?
+\item How many continuous loss channels are required for thermal observables,
+      and should they be optimized jointly with the thermal realization?
+\item Which $\SE(3)$ scene architecture provides the best accuracy/latency trade
+      for variable object count and strongly separated length scales?
+\item Can a learned preconditioner reduce CERTIFIED corrections without
+      weakening residual-based acceptance?
+\item Which thermal Green/BIE reduction remains most robust under
+      temperature-dependent material properties?
+\end{enumerate}
+
+The project should prefer falsifying a weak formulation early over preserving
+compatibility with an expensive legacy implementation.

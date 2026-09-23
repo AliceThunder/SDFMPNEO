@@ -1,0 +1,82 @@
+\section{Online inference and residual certification}
+
+\subsection{FAST path}
+
+FAST inference performs:
+\[
+ \mathcal S
+ \longrightarrow
+ h_{\mathcal S}
+ \longrightarrow
+ \{\widehat{\mathcal R}_e,
+   \widehat{\mathcal Q},
+   \widehat{\mathcal R}_T\}.
+\]
+For narrowband operation the electrical port solve is a small dense circuit
+solve. Thermal time evolution is an ODE in a small state $z$. Continuous loss
+or temperature fields are evaluated only at requested query points.
+
+No global Maxwell or thermal volume solve is executed in FAST mode.
+
+\subsection{CERTIFIED electromagnetic path}
+
+Let the learned/analytic field coefficients be $x_0$. Evaluate
+\[
+ r_0=b-\mathcal A_{\mathrm{EM}}x_0,\qquad
+ \eta_0=\frac{\norm{r_0}}{\norm b}.
+\]
+If $\eta_0\le\epsilon_{\mathrm{accept}}$, accept the result. Otherwise perform a
+bounded Krylov/recycling correction
+\[
+ \delta x_m\in
+ \mathcal K_m(\mathcal A_{\mathrm{EM}}P^{-1},r_0),
+ \qquad x_m=x_0+\delta x_m.
+\]
+The preconditioner may itself be learned, analytic, block-diagonal PEEC, or
+hierarchical, but acceptance always uses the residual of the original physical
+operator.
+
+A certified prediction records
+\[
+ \{\eta_{\mathrm{EM}},
+   \eta_{\mathrm{power}},
+   m_{\mathrm{corr}},
+   \text{quadrature policy}\}.
+\]
+If the correction budget is exhausted, the system either escalates to REFERENCE
+mode or returns a non-certified status. It never silently downgrades accuracy.
+
+\subsection{CERTIFIED thermal path}
+
+For thermal evolution, certification combines:
+\begin{enumerate}
+\item positivity of $C_T$ and non-negative dissipation of $G_T$;
+\item transfer-function residuals or selected REFERENCE impulse-response probes;
+\item energy-balance residual over each accepted time step;
+\item adaptive local truncation error in the $C_T$ energy norm.
+\end{enumerate}
+A scene that falls outside the trained thermal regime may construct an
+on-demand compact thermal correction without changing public geometry
+semantics.
+
+\subsection{Latency targets}
+
+The intended hierarchy is qualitative rather than hardware specific:
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Mode & Expensive operator solve & Intended use\\
+\midrule
+FAST & none & optimization, control, Monte Carlo, UI\\
+CERTIFIED & few matrix-free corrections & high-accuracy engineering query\\
+REFERENCE & converged teacher & offline truth and audit\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{OOD behavior}
+
+Out-of-distribution detection is based on both learned uncertainty and physical
+residuals. A large latent distance alone cannot invalidate a physically small
+residual, and a familiar latent vector cannot override a large physical
+residual. CERTIFIED mode therefore supplies the final authority.

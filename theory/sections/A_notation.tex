@@ -1,0 +1,36 @@
+\section{Notation and conventions}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Symbol & Meaning\\
+\midrule
+$\mathcal S$ & complete continuous physical scene\\
+$\mathcal G$ & geometry and object poses\\
+$\mathcal M$ & material constitutive laws\\
+$P$ & number of electrical ports\\
+$i,v$ & port current and voltage phasors/vectors\\
+$Z$ & impedance or transfer matrix\\
+$x_{\mathrm{EM}}$ & integral-equation electromagnetic coefficients\\
+$\mathcal A_{\mathrm{EM}}$ & physical electromagnetic integral operator\\
+$D_{\mathrm{abs}}$ & integrated absorbed-power operator\\
+$H_q(\xi)$ & continuous local Hermitian loss operator\\
+$L_q(\xi)$ & PSD factor such that $H_q=L_q\adj L_q$\\
+$p(t)$ & low-dimensional thermal source-channel amplitudes\\
+$z(t)$ & reduced thermal state\\
+$C_T,G_T$ & reduced heat-capacity and dissipation matrices\\
+$\Phi_T(\mathbf r)$ & continuous temperature decoder\\
+$\eta_{\mathrm{EM}}$ & true normalized electromagnetic residual\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The document uses the engineering phasor convention consistently within each
+derived formulation; an implementation must declare whether time dependence is
+$e^{+j\omega t}$ or $e^{-j\omega t}$ and adjust the signs of imaginary
+constitutive losses accordingly. The theory relies on physical passivity, not
+on one particular sign convention.
+
+A superscript $\adj$ denotes conjugate transpose, while $\T$ denotes ordinary
+transpose. $\Herm A=(A+A\adj)/2$. Positive-semidefinite and
+positive-definite matrices are denoted by $\PSD$ and $\SPD$, respectively.

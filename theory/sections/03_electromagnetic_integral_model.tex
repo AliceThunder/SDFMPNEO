@@ -1,0 +1,117 @@
+\section{Electromagnetic teacher as a hybrid integral operator}
+
+\subsection{Motivation}
+
+The reference electromagnetic formulation should avoid discretizing large
+volumes of homogeneous background material. Infinite-space or layered-medium
+Green functions satisfy radiation conditions analytically; only conductors,
+material interfaces, and truly inhomogeneous contrast regions require numerical
+degrees of freedom.
+
+\subsection{Current--charge conductor representation}
+
+For conductor currents,
+\[
+ \mathbf E(\mathbf r)
+ =-j\omega\mathbf A(\mathbf r)-\nabla\phi(\mathbf r),
+\]
+with
+\[
+ \mathbf A(\mathbf r)
+ =\mu\int_{\Omega_c}
+   G_k(\mathbf r,\mathbf r')\mathbf J(\mathbf r')\dd V',
+\]
+\[
+ \phi(\mathbf r)
+ =\frac{1}{\epsilon}
+  \int_{\Omega_c}
+  G_k(\mathbf r,\mathbf r')\rho(\mathbf r')\dd V',
+\]
+and charge continuity
+\[
+  \nabla\cdot\mathbf J=-j\omega\rho.
+\]
+In a homogeneous background,
+\[
+ G_k(\mathbf r,\mathbf r')
+ =\frac{\exp(-jk\norm{\mathbf r-\mathbf r'})}
+        {4\pi\norm{\mathbf r-\mathbf r'}}.
+\]
+
+The conductor current is expanded in a tensor-product modal basis:
+\[
+ \mathbf J(s,\xi_1,\xi_2)
+ =
+ \sum_{\ell=1}^{N_s}\sum_{m=1}^{N_\perp}
+ a_{\ell m}\,\chi_\ell(s)\bm\psi_m(\xi_1,\xi_2).
+\]
+The cross-section basis explicitly represents uniform, skin, edge, and
+proximity modes. Increasing $N_\perp$ refines conductor physics without
+refining the surrounding world.
+
+\subsection{Dielectric and magnetic interfaces}
+
+For piecewise homogeneous passive bodies, surface-equivalence formulations
+introduce electric and magnetic surface currents $(\mathbf J_s,\mathbf M_s)$.
+The theoretical contract is that the chosen stable boundary integral
+formulation enforces transmission conditions and radiation without an
+artificial outer boundary.
+
+\subsection{Localized contrast-volume formulation}
+
+A continuously varying constitutive region can be expressed through a
+polarization/contrast current
+\[
+  \mathbf J_\Delta(\mathbf r)
+  =
+  j\omega[\epsilon(\mathbf r)-\epsilon_b]\mathbf E(\mathbf r)
+  +[\sigma(\mathbf r)-\sigma_b]\mathbf E(\mathbf r).
+\]
+Only the support of the material contrast is discretized. The contrast basis
+may be an adaptive point cloud, high-order local basis, or local volume
+integral basis.
+
+\begin{principle}[No false claim of zero discretization]
+An arbitrary continuously varying three-dimensional constitutive law cannot in
+general be solved exactly with a finite number of unknowns. Mesh-free in vNext
+means that there is no global conforming volume mesh tied to public geometry;
+localized quadrature points or compact basis expansions are permitted where the
+material itself carries volume complexity.
+\end{principle}
+
+\subsection{Unified block operator}
+
+All unknown coefficients are collected in
+\[
+  x_{\mathrm{EM}}
+ =
+ \begin{bmatrix}
+  a_c & q_c & j_s & m_s & j_\Delta
+ \end{bmatrix}^{\T}.
+\]
+For port excitation $i\in\C^P$,
+\[
+ \mathcal A_{\mathrm{EM}}(\mathcal S,\omega)
+ x_{\mathrm{EM}}
+ =
+ \mathcal B_{\mathrm{EM}}(\mathcal S,\omega)i.
+\]
+The operator is evaluated matrix-free. Dense far interactions are accelerated
+with a fast multipole or hierarchical kernel-compression backend
+\cite{greengard1987fmm,hackbusch2015hierarchical}.
+
+\subsection{Port extraction}
+
+Let $\mathcal C_{\mathrm{EM}}$ extract electromotive response. Then
+\[
+  Z(\omega;\mathcal S)
+ =
+  Z_{\mathrm{local}}
+  -\mathcal C_{\mathrm{EM}}\adj
+   \mathcal A_{\mathrm{EM}}^{-1}
+   \mathcal B_{\mathrm{EM}}.
+\]
+The local term contains analytically represented conductor/contact components
+that should not be recovered by cancellation of two large numerical fields.
+This Schur-complement view is the primary object learned by the neural
+macromodel.

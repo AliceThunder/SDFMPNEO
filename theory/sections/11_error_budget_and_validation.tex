@@ -1,0 +1,74 @@
+\section{Error budget, validation, and release criteria}
+
+\subsection{Error decomposition}
+
+The total observable error is decomposed as
+\[
+ \epsilon_{\mathrm{tot}}
+ \lesssim
+ \epsilon_{\mathrm{geom}}
+ +\epsilon_{\mathrm{basis}}
+ +\epsilon_{\mathrm{quad}}
+ +\epsilon_{\mathrm{solve}}
+ +\epsilon_{\mathrm{macro}}
+ +\epsilon_{\mathrm{NN}}
+ +\epsilon_{\mathrm{time}}.
+\]
+The terms denote continuous-geometry approximation, modal truncation,
+quadrature, integral solve, rational reduction, neural approximation, and time
+integration errors. A release report must not hide one term inside a generic
+training loss.
+
+\subsection{Electromagnetic validation}
+
+For held-out scenes and frequency points, report:
+\begin{enumerate}
+\item port impedance error in physically scaled Frobenius and current-space
+      norms;
+\item passivity/reciprocity violations before and after the structural decoder;
+\item absorbed and outward power closure;
+\item true integral-equation residual for CERTIFIED predictions;
+\item conductor current and selected near-field probe errors against REFERENCE;
+\item loss-channel and continuous spatial-loss errors.
+\end{enumerate}
+
+\subsection{Thermal validation}
+
+Report:
+\begin{enumerate}
+\item source-to-temperature transfer error over the declared Laplace/frequency
+      window;
+\item full trajectory error at fixed hidden scenes and inputs;
+\item peak component and pointwise temperature errors;
+\item steady-state residual;
+\item energy-balance residual;
+\item stability margin of the reduced thermal dynamics.
+\end{enumerate}
+
+\subsection{Cross-method validation}
+
+A mesh-free-first teacher must be checked against at least one independent
+method on a small benchmark suite. The legacy H(curl) volume solver may serve as
+one such oracle after its own convergence is demonstrated; external commercial
+or independent open-source solvers are also admissible. Agreement between two
+discretizations is evidence, not a proof, and must be accompanied by internal
+residual/convergence studies.
+
+\subsection{Release partitions}
+
+The data lifecycle has four disjoint roles:
+\begin{description}
+\item[training] optimized by gradient descent and active learning;
+\item[validation] fixed model-selection scenes;
+\item[test] fixed development-wide regression suite;
+\item[release] locked scenes, material regimes, poses, frequencies, and
+  trajectories not used in architecture or hyperparameter decisions.
+\end{description}
+
+\subsection{Fail-closed semantics}
+
+An artifact is production certified only if every required invariant and error
+budget passes. Otherwise the artifact may be saved as an experimental model,
+but the API must expose its non-certified status. Projection or clipping
+corrections are reported explicitly and cannot be used to conceal a poor raw
+approximation.

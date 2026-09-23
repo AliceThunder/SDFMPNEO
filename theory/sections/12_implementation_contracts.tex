@@ -1,0 +1,136 @@
+\section{Implementation contracts and software boundaries}
+
+This section translates the theory into stable software contracts. The exact
+numerical libraries may change; these public mathematical interfaces should
+not.
+
+\subsection{Core scene schema}
+
+The root object is
+\[
+  \texttt{Scene}
+  =
+  (\texttt{objects},\texttt{ports},\texttt{environment},
+   \texttt{frequency\_domain},\texttt{thermal\_domain}).
+\]
+Each geometric object contains:
+\begin{enumerate}
+\item a continuous geometry primitive or constructive expression;
+\item a pose in $\SE(3)$;
+\item a material-law reference;
+\item optional electrical/thermal boundary metadata;
+\item a stable object identifier used only for graph connectivity and result
+      attribution, never as a learned material feature.
+\end{enumerate}
+
+A coil object contains a superelliptic spiral centerline, a transported
+superelliptic cross-section, conductor material, terminal definitions, and port
+orientation. A package object contains a superquadric/CSG geometry and one or
+more material regions.
+
+\subsection{Teacher contracts}
+
+The electromagnetic teacher implements conceptually
+\[
+ \texttt{assemble\_operator(scene,frequency,temperature)}
+ \longrightarrow
+ (\mathcal A,\mathcal B,\mathcal C),
+\]
+\[
+ \texttt{solve\_ports}
+ \longrightarrow
+ \{\texttt{port\_model},\texttt{loss\_operator},
+   \texttt{residual\_certificate}\}.
+\]
+The returned operator may be matrix-free. The contract never requires callers
+to know panel, quadrature, multipole, or local-VIE indices.
+
+The thermal teacher implements
+\[
+ \texttt{build\_thermal\_transfer(scene,loss\_basis)}
+ \longrightarrow
+ \{\texttt{thermal\_realization},\texttt{decoder},
+   \texttt{certificate}\}.
+\]
+
+\subsection{Learned artifact contract}
+
+A production artifact contains:
+\begin{enumerate}
+\item scene/material encoder weights and normalization metadata;
+\item analytic baseline version;
+\item structured electromagnetic decoder;
+\item continuous loss decoder;
+\item structured thermal decoder;
+\item declared training/release domain;
+\item calibration statistics;
+\item immutable theory/schema version;
+\item release certificate with test-suite hashes.
+\end{enumerate}
+
+It does \emph{not} contain a mandatory background volume mesh or world-cell
+ordering.
+
+\subsection{Prediction contract}
+
+A prediction request specifies:
+\[
+  (\texttt{scene},\texttt{excitation},\texttt{times},
+   \texttt{spatial\_queries},\texttt{mode}).
+\]
+The result includes:
+\begin{enumerate}
+\item impedance/transfer information and port currents/voltages;
+\item loss-channel amplitudes and requested continuous loss values;
+\item requested temperatures and reduced thermal state;
+\item energy/power accounting;
+\item uncertainty estimates;
+\item certification residuals and correction counts when applicable;
+\item explicit status: \texttt{FAST}, \texttt{CERTIFIED}, or
+      \texttt{UNCERTIFIED}.
+\end{enumerate}
+
+\subsection{Backend separation}
+
+The implementation is divided into:
+\begin{description}
+\item[geometry-kernel] continuous superellipse/superquadric/CSG operations,
+  frames, intersections, relative poses, and quadrature geometry;
+\item[em-kernel] Green functions, conductor current--charge operators, SIE/VIE,
+  FMM/hierarchical acceleration, and residual evaluation;
+\item[macro] passive rational reduction and circuit coupling;
+\item[loss] continuous PSD loss factors and low-rank thermal source channels;
+\item[thermal-kernel] Green/boundary transfer, localized correction, and
+  structure-preserving reduction;
+\item[neural] scene encoder and structured corrections;
+\item[certification] residuals, energy identities, held-out release gates;
+\item[orchestration] datasets, active learning, caching, artifacts, CLI/API.
+\end{description}
+
+No backend is allowed to mutate the semantics of \texttt{Scene}.
+
+\subsection{Cache identity}
+
+Caches are content-addressed by the smallest physical identity that can change
+the cached quantity. Examples:
+\begin{itemize}
+\item Green-kernel tables depend on constitutive/background kernel parameters,
+      not neural hyperparameters;
+\item conductor self blocks depend on intrinsic conductor geometry, material,
+      frequency, and basis policy, not absolute pose in a homogeneous medium;
+\item pair-interaction blocks depend on both intrinsic objects and relative
+      pose;
+\item teacher solutions depend on scene physics and teacher tolerance;
+\item neural checkpoints depend on dataset snapshot, architecture, and training
+      policy;
+\item release certificates depend on artifact hash and locked release suite.
+\end{itemize}
+This rule prevents certification or optimizer changes from invalidating
+expensive physical data.
+
+\subsection{Legacy boundary}
+
+The legacy fixed-grid H(curl), cellwise-Joule, and grid-thermal modules are
+permitted only behind an independent validation adapter. New production modules
+must not import their mesh-index data structures. This prevents accidental
+reintroduction of the old representation through convenience dependencies.

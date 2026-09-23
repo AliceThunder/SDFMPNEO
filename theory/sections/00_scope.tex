@@ -1,0 +1,43 @@
+\section{Scope and architectural reset}
+
+SDF-MPNEO vNext is a new mathematical architecture rather than an incremental
+extension of the legacy fixed-grid Maxwell--thermal pipeline. The legacy
+implementation remains useful as a numerical oracle for regression studies, but
+its discretization choices are not part of the vNext definition.
+
+The target problem is a coupled electromagnetic--thermal multi-port system with
+continuously varying geometry, arbitrary rigid poses, finite conductor
+cross-sections, packages and nearby material bodies, and time-dependent
+electrical excitation. The model must support rapid repeated inference over a
+large geometric/material design space while retaining an independently
+checkable path to high accuracy.
+
+\begin{principle}[Continuous scene first]
+The primary object is a continuous physical scene. A mesh, point cloud,
+quadrature rule, panelization, or basis truncation is an implementation detail
+of a teacher or correction backend; it is never part of the public geometry
+semantics.
+\end{principle}
+
+\begin{principle}[Learn operators, not discretized fields]
+Neural networks approximate low-dimensional maps between physical operators,
+latent modal coefficients, and continuous query functions. They do not learn a
+vector whose coordinates are tied to cells of one background grid.
+\end{principle}
+
+\begin{principle}[Hard structure before soft loss]
+Passivity, reciprocity, positive dissipation, non-negative heat generation, and
+stable thermal dynamics are imposed by parameterization whenever possible.
+Penalty terms are reserved for properties that cannot be enforced exactly.
+\end{principle}
+
+\begin{principle}[Fast prediction and certified correction are separate modes]
+A purely learned/analytic prediction path is optimized for latency. A second
+path evaluates physical integral-operator residuals and performs a bounded
+number of corrections. High accuracy therefore does not require the neural
+model to be uniformly exact everywhere.
+\end{principle}
+
+The intended online complexity is controlled by the number of ports, compact
+electromagnetic modes, material objects, thermal states, and requested spatial
+query points. It must not scale with the volume of an artificial far-field box.

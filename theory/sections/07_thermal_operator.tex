@@ -1,0 +1,103 @@
+\section{Thermal transfer operator and time evolution}
+
+\subsection{Governing model}
+
+The physical temperature field obeys
+\[
+ \rho_m c_p(T,\mathbf r)\frac{\pd T}{\pd t}
+ -\nabla\cdot\big(k(T,\mathbf r)\nabla T\big)
+ =q(\mathbf r,t)+q_{\mathrm{ext}}(\mathbf r,t),
+\]
+with interface continuity and the declared convection, radiation, or fixed
+temperature boundaries.
+
+The public thermal model is continuous in space and reduced in state. It must
+not require construction of a fixed global thermal volume mesh for every query
+geometry.
+
+\subsection{Green and boundary-operator teacher}
+
+For piecewise homogeneous linearized regions, Laplace transformation gives
+\[
+  \rho c\,s\,\widehat T-\nabla\cdot(k\nabla\widehat T)=\widehat q.
+\]
+In a homogeneous infinite region the transfer kernel has the characteristic
+form
+\[
+  G_T(r,s)
+  \propto
+  \frac{\exp[-r\sqrt{s/\alpha}]}{4\pi k r},
+  \qquad \alpha=\frac{k}{\rho c}.
+\]
+Interfaces are handled with thermal boundary integral operators. Time-domain
+REFERENCE solutions may use convolution quadrature
+\cite{lubich1988cq}. Localized continuously varying media may use adaptive
+meshless/local volume corrections.
+
+\subsection{Reduced stable state-space}
+
+The thermal transfer from electromagnetic loss channels $p(t)\in\R^{R_q}$ to
+temperature observations is reduced to
+\[
+ C_T(\mathcal S,\vartheta)\dot z
+ =
+ -G_T(\mathcal S,\vartheta)z
+ +B_T(\mathcal S,\vartheta)p
+ +b_{\mathrm{env}},
+\]
+\[
+ T(\mathbf r,t)
+ =
+ T_{\mathrm{ref}}(\mathbf r)
+ +\Phi_T(\mathbf r;\mathcal S)\,z(t),
+\]
+where $\vartheta$ denotes slowly varying nonlinear material coordinates.
+
+We parameterize
+\[
+  C_T=L_C L_C^\T+\epsilon_C I,\qquad
+  G_T=L_G L_G^\T+G_{\mathrm{bc}},
+\]
+with $\epsilon_C>0$ and $G_{\mathrm{bc}}\PSD$. This guarantees positive heat
+capacity and passive diffusion.
+
+\subsection{Continuous thermal decoder}
+
+The decoder $\Phi_T(\mathbf r;\mathcal S)$ is expressed in object-local
+coordinates plus background coordinates. A constant-temperature basis function
+is included exactly, so a uniform initial temperature is representable without
+projection error. The decoder may be evaluated only at requested observation
+points, avoiding reconstruction of a global field when the user needs only
+component maxima or selected probes.
+
+\subsection{Nonlinear electrothermal coupling}
+
+Temperature feeds back into
+\[
+ \sigma(T),\quad \epsilon(T),\quad \mu(T),\quad
+ k(T),\quad c_p(T),
+\]
+and therefore into both the electromagnetic macromodel and thermal matrices.
+The coupled reduced system is
+\[
+ \begin{aligned}
+  \dot x_e &= f_e(x_e,i,z;\mathcal S),\\
+  C_T(z)\dot z
+    &=-G_T(z)z+B_T(z)p(x_e,i,z)+b_{\mathrm{env}},\\
+  0&=F_{\mathrm{circ}}(v,i,x_c,u,t).
+ \end{aligned}
+\]
+For narrowband WPT the carrier is eliminated algebraically and only the thermal
+envelope is integrated. For broadband switching, $x_e$ remains a dynamic state.
+
+\subsection{Time integration}
+
+The reduced thermal system supports implicit, exponential, or IMEX methods.
+Adaptive error control is performed in a physical energy norm induced by
+$C_T$, not in arbitrary reduced coordinates:
+\[
+ \norm{\delta z}_{C_T}
+ =\sqrt{\delta z^\T C_T\delta z}.
+\]
+Steady state is obtained from the same reduced operator and is accepted only if
+the residual and local stability checks pass.

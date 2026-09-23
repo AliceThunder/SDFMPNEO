@@ -1,0 +1,93 @@
+\section{Passive multi-port electromagnetic macromodel}
+\label{sec:port-macro}
+
+\subsection{Narrowband port operator}
+
+For a fixed carrier frequency, the electromagnetic subsystem is summarized by
+the reciprocal impedance matrix
+\[
+  v=Z(\mathcal S,\omega,T)i,\qquad Z^\T=Z .
+\]
+The real Hermitian part is decomposed into physically named channels:
+\[
+  \Herm Z
+  =D_{\mathrm{cond}}
+   +D_{\mathrm{diel}}
+   +D_{\mathrm{rad}}
+   +D_{\mathrm{other}},
+\]
+with each $D_\alpha\PSD$ for a passive scene. This decomposition is preferable
+to obtaining a small outward or dielectric term as the subtraction of two large
+independently approximated matrices.
+
+\subsection{Broadband positive-real realization}
+
+For broadband drive, modulation, or electrical transients, the port response is
+represented by a rational passive state-space model
+\[
+ \dot x_e=A_e x_e+B_e i,\qquad
+ v=C_e x_e+D_e i.
+\]
+A preferred realization is port-Hamiltonian:
+\[
+ \dot x_e=(J_e-R_e)Q_e x_e+B_e i,
+\]
+\[
+ v=B_e^\T Q_e x_e+(S_e+N_e)i,
+\]
+where
+\[
+ J_e=-J_e^\T,\quad N_e=-N_e^\T,\quad
+ Q_e\SPD,\quad R_e\PSD,\quad S_e\PSD.
+\]
+This parameterization makes stability and passivity structural rather than
+training objectives. Reciprocity imposes additional symmetry constraints on the
+transfer function.
+
+The transfer matrix is
+\[
+ Z(s)
+ =
+ B_e^\T Q_e
+ \big(sI-(J_e-R_e)Q_e\big)^{-1}B_e
+ +S_e+N_e.
+\]
+For a reciprocal impedance model, the antisymmetric feedthrough is omitted or
+constrained consistently with the chosen port convention.
+
+\subsection{Structure-preserving frequency fitting}
+
+REFERENCE samples over frequency are compressed into a rational model using a
+stable fitting method such as vector fitting followed by passivity-preserving
+realization or direct structure-preserving interpolation
+\cite{gustavsen1999vector,benner2015mor}. Neural networks do not predict
+unconstrained pole/residue tables. They predict Cholesky/factor coordinates of
+the structured realization or a correction to an analytic baseline.
+
+\subsection{Circuit coupling}
+
+External circuits are first-class components. Let the network equations be
+\[
+  F_{\mathrm{circ}}(v,i,x_c,u,t)=0.
+\]
+The electromagnetic port model is coupled to these equations without
+reconstructing spatial electromagnetic unknowns. At narrowband, one solves
+\[
+  v=Z(\mathcal S,\omega,T)i
+\]
+with the circuit algebraic constraints. In broadband mode, the electrical
+macromodel state $x_e$ is integrated jointly with circuit states $x_c$ and
+thermal states.
+
+\subsection{Temperature dependence}
+
+The model may use a separated representation
+\[
+ Z(s;\mathcal S,T)
+ =
+ Z_{\mathrm{base}}(s;\mathcal S)
+ +\sum_{r=1}^{R_T}\gamma_r(T)\Delta Z_r(s;\mathcal S),
+\]
+or may parameterize the passive realization matrices as smooth functions of a
+small thermal state. Any interpolation in temperature must preserve the
+positive-real constraints.
