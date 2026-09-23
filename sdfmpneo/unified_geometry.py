@@ -468,6 +468,23 @@ def geometry_family_coordinates(
         rx_pkg,
         rx_pkg0,
     )
+    for label, package, coil in (
+        ("transmitter", tx_pkg, tx),
+        ("receiver", rx_pkg, rx),
+    ):
+        if (
+            not close(
+                package.pose.translation,
+                coil.pose.translation,
+            )
+            or not close(
+                package.pose.angles,
+                coil.pose.angles,
+            )
+        ):
+            raise ValueError(
+                f"{label} package pose must follow its coil in the production family"
+            )
 
     for name, value in values.items():
         lo, hi = bounds[name]
