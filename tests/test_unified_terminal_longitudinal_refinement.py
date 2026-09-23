@@ -6,6 +6,7 @@ from sdfmpneo.unified_terminal_longitudinal_refinement import (
     _base_axis_steps,
     _refined_axes_for_request,
     _subdivide_axis,
+    _terminal_options,
 )
 
 
@@ -147,3 +148,14 @@ def test_installed_model_uses_reactive_longitudinal_v4():
     assert longitudinal._MODEL == "global_boundary_conditioned_longitudinal_reactive_defect_v4"
     assert bool(getattr(longitudinal, "_terminal_longitudinal_refinement_installed", False))
     assert bool(getattr(longitudinal, "_reactive_longitudinal_reference_installed", False))
+
+
+
+def test_terminal_refinement_default_resolves_physical_support():
+    bg = _background()
+    bg.background_config["global_longitudinal_correction"].pop(
+        "terminal_cells_per_support"
+    )
+    cells, _padding, budget = _terminal_options(bg)
+    assert cells >= 4.0
+    assert budget >= 100000
