@@ -37,6 +37,11 @@ def test_run_defaults_use_spatial_joule_and_geometry_local_thermal_rom():
         "rx_package_scale",
     }
     assert not hasattr(run, "GEOMETRY_SAMPLING")
+    longitudinal = run.BACKGROUND["global_longitudinal_correction"]
+    assert longitudinal["terminal_cells_per_support"] >= 4.0
+    assert longitudinal["terminal_patch_max_cells"] >= 100000
+    assert longitudinal["validation_fine_step"] < longitudinal["fine_step"]
+
     enrichment = run.TRAINING["tensor_enrichment"]
     assert enrichment["enabled"] is True
     assert enrichment["max_samples"] > run.TRAINING["n_tensor_samples"]
@@ -310,10 +315,14 @@ def test_persistent_maxwell_field_cache_tracks_only_global_ab_physics():
     domain_only["BACKGROUND"]["self_correction"][
         "fine_step"
     ] *= 0.8
+    domain_only["BACKGROUND"]["global_longitudinal_correction"][
+        "terminal_cells_per_support"
+    ] *= 1.25
     assert (
         _maxwell_field_signature(baseline)
         == _maxwell_field_signature(domain_only)
     )
+    assert _signature(baseline) != _signature(domain_only)
 
     frequency = copy.deepcopy(baseline)
     frequency["PHYSICS"]["frequency_hz"] *= 1.01
