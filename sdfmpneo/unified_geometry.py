@@ -167,6 +167,351 @@ class UnifiedUWPTGeometry:
     def canonical_json(self): return json.dumps(self.to_mapping(),sort_keys=True,separators=(",",":"),allow_nan=False)
 
 
+
+_FAMILY_SCHEMA = "scaled_uwpt_family_v1"
+_FAMILY_PARAMETER_ORDER = (
+    "tx_planar_scale",
+    "rx_planar_scale",
+    "tx_thickness_scale",
+    "rx_thickness_scale",
+    "rx_offset_x",
+    "rx_offset_y",
+    "rx_gap",
+    "tx_package_scale",
+    "rx_package_scale",
+)
+
+
+def _family_parameters(family):
+    cfg = dict(family or {})
+    schema = str(cfg.get("schema", _FAMILY_SCHEMA))
+    if schema != _FAMILY_SCHEMA:
+        raise ValueError(
+            f"unsupported geometry family schema {schema!r}"
+        )
+    params = dict(cfg.get("parameters", {}))
+    missing = [
+        name for name in _FAMILY_PARAMETER_ORDER
+        if name not in params
+    ]
+    extra = sorted(set(params) - set(_FAMILY_PARAMETER_ORDER))
+    if missing or extra:
+        raise ValueError(
+            "geometry family parameters must be exactly "
+            f"{list(_FAMILY_PARAMETER_ORDER)}; "
+            f"missing={missing}, extra={extra}"
+        )
+    out = {}
+    for name in _FAMILY_PARAMETER_ORDER:
+        spec = dict(params[name])
+        bounds = np.asarray(spec.get("bounds"), float)
+        if (
+            bounds.shape != (2,)
+            or np.any(~np.isfinite(bounds))
+            or bounds[0] >= bounds[1]
+        ):
+            raise ValueError(
+                f"geometry family {name} bounds must be finite increasing pair"
+            )
+        out[name] = (float(bounds[0]), float(bounds[1]))
+    return out
+
+
+def geometry_family_dimension(family):
+    _family_parameters(family)
+    return len(_FAMILY_PARAMETER_ORDER)
+
+
+def _base_two_port_geometry(base):
+    g = (
+        base
+        if isinstance(base, UnifiedUWPTGeometry)
+        else UnifiedUWPTGeometry.from_mapping(base)
+    )
+    if g.n_ports != 2:
+        raise ValueError(
+            "scaled UWPT geometry family requires exactly two ports"
+        )
+    return g
+
+
+def apply_geometry_family(base, family, parameters):
+    """Map 9 physical family coordinates to one full fixed-background geometry."""
+    bounds = _family_parameters(family)
+    p = dict(parameters)
+    missing = [name for name in _FAMILY_PARAMETER_ORDER if name not in p]
+    extra = sorted(set(p) - set(_FAMILY_PARAMETER_ORDER))
+    if missing or extra:
+        raise ValueError(
+            f"geometry family coordinate mismatch; missing={missing}, extra={extra}"
+        )
+    values = {}
+    for name in _FAMILY_PARAMETER_ORDER:
+        value = float(p[name])
+        lo, hi = bounds[name]
+        if not np.isfinite(value) or value < lo or value > hi:
+            raise ValueError(
+                f"geometry family {name}={value} lies outside [{lo}, {hi}]"
+            )
+        values[name] = value
+
+    base_g = _base_two_port_geometry(base)
+    tx0, rx0 = base_g.coils
+    tx_pkg0, rx_pkg0 = base_g.packages
+
+    def scaled_coil(coil, planar, thickness, translation):
+        mapping = coil.to_mapping()
+        mapping["outer_half_size"] = (
+            float(coil.outer_half_size) * planar
+        )
+        mapping["pitch"] = float(coil.pitch) * planar
+        mapping["conductor_width"] = (
+            float(coil.conductor_width) * planar
+        )
+        mapping["conductor_thickness"] = (
+            float(coil.conductor_thickness) * thickness
+        )
+        if coil.corner_radius is not None:
+            mapping["corner_radius"] = (
+                float(coil.corner_radius) * planar
+            )
+        mapping["translation"] = np.asarray(
+            translation, float
+        ).tolist()
+        # Shape, turns and orientation are topology/family invariants.
+        mapping["shape"] = coil.shape
+        mapping["turns"] = float(coil.turns)
+        mapping["angles"] = coil.pose.angles.tolist()
+        return mapping
+
+    tx_translation = np.asarray(
+        tx0.pose.translation,
+        float,
+    )
+    rx_translation = np.array(
+        [
+            tx_translation[0] + values["rx_offset_x"],
+            tx_translation[1] + values["rx_offset_y"],
+            tx_translation[2] + values["rx_gap"],
+        ],
+        float,
+    )
+    tx = scaled_coil(
+        tx0,
+        values["tx_planar_scale"],
+        values["tx_thickness_scale"],
+        tx_translation,
+    )
+    rx = scaled_coil(
+        rx0,
+        values["rx_planar_scale"],
+        values["rx_thickness_scale"],
+        rx_translation,
+    )
+    return {
+        "transmitter": tx,
+        "receiver": rx,
+        "tx_package_half_extent": (
+            np.asarray(tx_pkg0.half_extent, float)
+            * values["tx_package_scale"]
+        ).tolist(),
+        "rx_package_half_extent": (
+            np.asarray(rx_pkg0.half_extent, float)
+            * values["rx_package_scale"]
+        ).tolist(),
+    }
+
+
+def sample_geometry_family(base, family, rng):
+    bounds = _family_parameters(family)
+    parameters = {
+        name: float(rng.uniform(lo, hi))
+        for name, (lo, hi) in bounds.items()
+    }
+    return apply_geometry_family(
+        base,
+        family,
+        parameters,
+    )
+
+
+def geometry_family_coordinates(
+    base,
+    family,
+    geometry,
+    *,
+    rtol=2e-8,
+    atol=2e-11,
+):
+    """Invert/validate a full geometry against the production family manifold."""
+    bounds = _family_parameters(family)
+    base_g = _base_two_port_geometry(base)
+    g = _base_two_port_geometry(geometry)
+    tx0, rx0 = base_g.coils
+    tx, rx = g.coils
+    tx_pkg0, rx_pkg0 = base_g.packages
+    tx_pkg, rx_pkg = g.packages
+
+    def close(a, b):
+        return bool(
+            np.allclose(
+                np.asarray(a, float),
+                np.asarray(b, float),
+                rtol=float(rtol),
+                atol=float(atol),
+            )
+        )
+
+    for label, coil, reference in (
+        ("transmitter", tx, tx0),
+        ("receiver", rx, rx0),
+    ):
+        if coil.shape != reference.shape:
+            raise ValueError(
+                f"{label}.shape is outside the fixed production family"
+            )
+        if not np.isclose(
+            float(coil.turns),
+            float(reference.turns),
+            rtol=rtol,
+            atol=atol,
+        ):
+            raise ValueError(
+                f"{label}.turns is outside the fixed production family"
+            )
+        if not close(coil.pose.angles, reference.pose.angles):
+            raise ValueError(
+                f"{label}.angles is outside the fixed production family"
+            )
+
+    if not close(tx.pose.translation, tx0.pose.translation):
+        raise ValueError(
+            "transmitter.translation is fixed in the production family"
+        )
+
+    tx_planar = float(tx.outer_half_size / tx0.outer_half_size)
+    rx_planar = float(rx.outer_half_size / rx0.outer_half_size)
+    tx_thickness = float(
+        tx.conductor_thickness / tx0.conductor_thickness
+    )
+    rx_thickness = float(
+        rx.conductor_thickness / rx0.conductor_thickness
+    )
+
+    def check_planar(label, coil, reference, scale):
+        checks = (
+            (coil.pitch, reference.pitch * scale, "pitch"),
+            (
+                coil.conductor_width,
+                reference.conductor_width * scale,
+                "conductor_width",
+            ),
+        )
+        if reference.corner_radius is not None:
+            checks = checks + (
+                (
+                    coil.corner_radius,
+                    reference.corner_radius * scale,
+                    "corner_radius",
+                ),
+            )
+        for actual, expected, name in checks:
+            if actual is None or not np.isclose(
+                float(actual),
+                float(expected),
+                rtol=rtol,
+                atol=atol,
+            ):
+                raise ValueError(
+                    f"{label}.{name} does not follow planar_scale"
+                )
+
+    check_planar("transmitter", tx, tx0, tx_planar)
+    check_planar("receiver", rx, rx0, rx_planar)
+
+    delta = np.asarray(
+        rx.pose.translation - tx.pose.translation,
+        float,
+    )
+    values = {
+        "tx_planar_scale": tx_planar,
+        "rx_planar_scale": rx_planar,
+        "tx_thickness_scale": tx_thickness,
+        "rx_thickness_scale": rx_thickness,
+        "rx_offset_x": float(delta[0]),
+        "rx_offset_y": float(delta[1]),
+        "rx_gap": float(delta[2]),
+    }
+
+    def package_scale(label, package, reference):
+        ratios = (
+            np.asarray(package.half_extent, float)
+            / np.asarray(reference.half_extent, float)
+        )
+        scale = float(np.mean(ratios))
+        if not close(
+            package.half_extent,
+            np.asarray(reference.half_extent, float) * scale,
+        ):
+            raise ValueError(
+                f"{label} package does not follow isotropic package_scale"
+            )
+        return scale
+
+    values["tx_package_scale"] = package_scale(
+        "transmitter",
+        tx_pkg,
+        tx_pkg0,
+    )
+    values["rx_package_scale"] = package_scale(
+        "receiver",
+        rx_pkg,
+        rx_pkg0,
+    )
+
+    for name, value in values.items():
+        lo, hi = bounds[name]
+        tolerance = max(
+            float(atol),
+            float(rtol) * max(abs(lo), abs(hi), 1.0),
+        )
+        if value < lo - tolerance or value > hi + tolerance:
+            raise ValueError(
+                f"geometry family {name}={value} lies outside [{lo}, {hi}]"
+            )
+
+    # Reconstruct and compare complete geometry to catch any hidden drift.
+    reconstructed = _base_two_port_geometry(
+        apply_geometry_family(base_g, family, values)
+    )
+    for actual, expected, label in (
+        (g.coils[0].to_mapping(), reconstructed.coils[0].to_mapping(), "transmitter"),
+        (g.coils[1].to_mapping(), reconstructed.coils[1].to_mapping(), "receiver"),
+    ):
+        for key in (
+            "outer_half_size",
+            "pitch",
+            "conductor_width",
+            "conductor_thickness",
+            "corner_radius",
+        ):
+            av = actual[key]
+            ev = expected[key]
+            if av is None or ev is None:
+                if av is not ev:
+                    raise ValueError(
+                        f"{label}.{key} is outside production family"
+                    )
+            elif not np.isclose(float(av), float(ev), rtol=rtol, atol=atol):
+                raise ValueError(
+                    f"{label}.{key} is outside production family"
+                )
+    return {
+        name: float(values[name])
+        for name in _FAMILY_PARAMETER_ORDER
+    }
+
+
 def _sample(value,rule,rng):
     if not isinstance(rule,dict): return copy.deepcopy(value)
     if "choices" in rule:
@@ -191,4 +536,14 @@ def sample_geometry(base,sampling,rng):
     return out
 
 
-__all__=["Pose","CoilGeometry","PackageGeometry","UnifiedUWPTGeometry","sample_geometry"]
+__all__=[
+    "Pose",
+    "CoilGeometry",
+    "PackageGeometry",
+    "UnifiedUWPTGeometry",
+    "apply_geometry_family",
+    "geometry_family_coordinates",
+    "geometry_family_dimension",
+    "sample_geometry",
+    "sample_geometry_family",
+]
