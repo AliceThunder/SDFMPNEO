@@ -3,7 +3,11 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 import sdfmpneo.unified_certified_local_solve as local_solver
-from sdfmpneo.unified_two_level_local_krylov import _relative_pilot, _two_level_minimum_dofs
+from sdfmpneo.unified_two_level_local_krylov import (
+    _relative_pilot,
+    _should_galerkin_recover,
+    _two_level_minimum_dofs,
+)
 
 
 def test_two_level_pilot_target_is_relative_to_warm_start_residual():
@@ -59,3 +63,40 @@ def test_two_level_default_respects_transverse_direct_fallback_band():
         "linear_transverse_direct_fallback_max_dofs": 110000,
     }
     assert _two_level_minimum_dofs(cfg) == 110001
+
+
+
+def test_large_coarse_consistency_mismatch_triggers_early_galerkin_recovery():
+    cfg = {}
+    assert _should_galerkin_recover(
+        3.146e-1,
+        2.317e-1,
+        cfg,
+    )
+    assert not _should_galerkin_recover(
+        9.5e-1,
+        2.317e-1,
+        cfg,
+    )
+    assert not _should_galerkin_recover(
+        3.146e-1,
+        1e-3,
+        cfg,
+    )
+
+
+def test_galerkin_recovery_thresholds_are_configurable():
+    cfg = {
+        "linear_two_level_galerkin_recovery_start_residual": 0.4,
+        "linear_two_level_galerkin_recovery_consistency": 0.2,
+    }
+    assert _should_galerkin_recover(
+        0.31,
+        0.23,
+        cfg,
+    )
+    assert not _should_galerkin_recover(
+        0.41,
+        0.23,
+        cfg,
+    )
