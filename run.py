@@ -119,6 +119,12 @@ BACKGROUND = {
         "linear_iterative_defect_maxiter": 16,
         "linear_iterative_defect_inner_m": 20,
         "linear_iterative_defect_start_residual": 5e-6,
+        # If the rediscretized coarse operator disagrees materially with the
+        # true Galerkin coarse equation, enter exact coarse-defect recovery
+        # while the transferred warm state is still useful instead of waiting
+        # for an unreachable 1e-4 residual plateau.
+        "linear_two_level_galerkin_recovery_start_residual": 8e-1,
+        "linear_two_level_galerkin_recovery_consistency": 5e-2,
         "linear_ilu_drop_tolerance": 5e-3,
         "linear_ilu_fill_factor": 4.0,
         "linear_ilu_strong_drop_tolerance": 1e-3,
