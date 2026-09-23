@@ -177,7 +177,12 @@ def _preflight_signature(settings):
     payload={
         "BACKGROUND":background,
         "DEFAULT_GEOMETRY":settings["DEFAULT_GEOMETRY"],
-        "GEOMETRY_SAMPLING":settings.get("GEOMETRY_SAMPLING"),
+        "GEOMETRY_FAMILY":settings.get("GEOMETRY_FAMILY"),
+        "GEOMETRY_SAMPLING":(
+            None
+            if settings.get("GEOMETRY_FAMILY") is not None
+            else settings.get("GEOMETRY_SAMPLING")
+        ),
         "PHYSICS":settings["PHYSICS"],
         "MATERIALS":settings["MATERIALS"],
         "REGIONS":settings["REGIONS"],
