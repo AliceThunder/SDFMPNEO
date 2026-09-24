@@ -127,6 +127,32 @@ def command_self_check(_args) -> int:
         algebraic_tolerance=1e-8,
         correction_rtol=1e-9,
         allow_reference_fallback=False,
+        operator_backend="dense",
+    )
+    matrix_free = certify_mixed_ports(
+        scene,
+        20_000.0,
+        artifact,
+        config=config,
+        algebraic_tolerance=1e-7,
+        correction_rtol=1e-9,
+        correction_restart=30,
+        correction_maxiter=160,
+        allow_reference_fallback=False,
+        operator_backend="matrix_free",
+        matrix_free_chunk_size=64,
+    )
+    backend_relative_difference = float(
+        np.linalg.norm(
+            matrix_free.impedance
+            - discrete.impedance
+        )
+        / max(
+            np.linalg.norm(
+                discrete.impedance
+            ),
+            1e-30,
+        )
     )
 
     thermal = (
@@ -191,6 +217,15 @@ def command_self_check(_args) -> int:
         "certified_final_residual": (
             discrete.final_residual
         ),
+        "matrix_free_status": (
+            matrix_free.status
+        ),
+        "matrix_free_final_residual": (
+            matrix_free.final_residual
+        ),
+        "matrix_free_dense_relative_difference": (
+            backend_relative_difference
+        ),
         "thermal_converged": (
             thermal_step.converged
         ),
@@ -211,6 +246,9 @@ def command_self_check(_args) -> int:
         and reference.power_closure_error()
         < 1e-7
         and discrete.algebraic_certified
+        and matrix_free.algebraic_certified
+        and backend_relative_difference
+        < 1e-5
         and thermal_step.converged
     )
     return (
