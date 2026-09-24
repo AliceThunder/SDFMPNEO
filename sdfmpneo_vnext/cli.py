@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
 import numpy as np
@@ -723,6 +724,137 @@ def command_bundle_publish(
     return 0
 
 
+def command_release(
+    args,
+) -> int:
+    from .spatial_neural import (
+        NeuralSpatialLossArtifact,
+    )
+
+    dataset = ImmutableTeacherDataset(
+        args.dataset
+    )
+    release_samples = tuple(
+        dataset.iter_samples(
+            "release"
+        )
+    )
+    if not release_samples:
+        raise SystemExit(
+            "release requires a non-empty locked release split"
+        )
+
+    port = _load_neural_artifact(
+        args.port_artifact,
+        args.device,
+    )
+    spatial = (
+        NeuralSpatialLossArtifact.load(
+            args.spatial_artifact,
+            port,
+            device=args.device,
+        )
+    )
+
+    port_report = audit_surrogate(
+        port,
+        release_samples,
+        mean_relative_error_limit=(
+            args.port_mean_limit
+        ),
+        maximum_relative_error_limit=(
+            args.port_max_limit
+        ),
+    )
+    spatial_report = (
+        audit_spatial_surrogate(
+            spatial,
+            release_samples,
+            mean_relative_error_limit=(
+                args.spatial_mean_limit
+            ),
+            maximum_relative_error_limit=(
+                args.spatial_max_limit
+            ),
+            maximum_probe_joule_error_limit=(
+                args.joule_limit
+            ),
+        )
+    )
+
+    gate = {
+        "port": (
+            port_report.to_dict()
+        ),
+        "spatial": (
+            spatial_report.to_dict()
+        ),
+    }
+    if (
+        not port_report.passed
+        or not spatial_report.passed
+    ):
+        print(
+            json.dumps(
+                {
+                    "released": False,
+                    "gate": gate,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2
+
+    calibrator = None
+    if (
+        args.calibrator
+        is not None
+    ):
+        calibrator = (
+            FastErrorCalibrator.load(
+                args.calibrator
+            )
+        )
+
+    manifest_bytes = (
+        dataset.manifest_path.read_bytes()
+    )
+    dataset_manifest_sha256 = (
+        sha256(
+            manifest_bytes
+        ).hexdigest()
+    )
+    manifest = publish_bundle(
+        args.output,
+        port,
+        spatial_artifact=spatial,
+        calibrator=calibrator,
+        metadata={
+            "release_gate": gate,
+            "release_split": "release",
+            "release_samples": len(
+                release_samples
+            ),
+            "dataset_manifest_sha256": (
+                dataset_manifest_sha256
+            ),
+        },
+        overwrite=args.overwrite,
+    )
+    print(
+        json.dumps(
+            {
+                "released": True,
+                "bundle": manifest,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="sdfmpneo-vnext",
@@ -1041,6 +1173,66 @@ def build_parser():
     )
     publish.set_defaults(
         handler=command_bundle_publish
+    )
+
+    release = sub.add_parser(
+        "release"
+    )
+    release.add_argument(
+        "dataset",
+        type=Path,
+    )
+    release.add_argument(
+        "port_artifact",
+        type=Path,
+    )
+    release.add_argument(
+        "spatial_artifact",
+        type=Path,
+    )
+    release.add_argument(
+        "output",
+        type=Path,
+    )
+    release.add_argument(
+        "--calibrator",
+        type=Path,
+    )
+    release.add_argument(
+        "--port-mean-limit",
+        type=float,
+        default=0.02,
+    )
+    release.add_argument(
+        "--port-max-limit",
+        type=float,
+        default=0.05,
+    )
+    release.add_argument(
+        "--spatial-mean-limit",
+        type=float,
+        default=0.05,
+    )
+    release.add_argument(
+        "--spatial-max-limit",
+        type=float,
+        default=0.10,
+    )
+    release.add_argument(
+        "--joule-limit",
+        type=float,
+        default=0.10,
+    )
+    release.add_argument(
+        "--device",
+        default="cpu",
+    )
+    release.add_argument(
+        "--overwrite",
+        action="store_true",
+    )
+    release.set_defaults(
+        handler=command_release
     )
     return parser
 

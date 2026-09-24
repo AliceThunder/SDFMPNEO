@@ -26,6 +26,7 @@ def test_vnext_cli_registers_complete_workflow():
         "active-learn",
         "calibrate",
         "bundle-publish",
+        "release",
     }.issubset(
         subcommands
     )
