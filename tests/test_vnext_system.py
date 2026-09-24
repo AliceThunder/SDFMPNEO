@@ -96,6 +96,7 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     assert system.capabilities.arbitrary_se3_pose
     assert system.capabilities.superelliptic_conductors
     assert system.capabilities.package_geometry
+    assert system.capabilities.package_dielectric_sie
     assert not system.capabilities.package_em_coupling
     assert system.capabilities.continuous_spatial_loss
 

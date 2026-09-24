@@ -29,6 +29,7 @@ class SystemCapabilities:
     arbitrary_se3_pose: bool
     superelliptic_conductors: bool
     package_geometry: bool
+    package_dielectric_sie: bool
     package_em_coupling: bool
     continuous_spatial_loss: bool
 
@@ -53,6 +54,7 @@ def mvp_system_capabilities(
         arbitrary_se3_pose=True,
         superelliptic_conductors=True,
         package_geometry=True,
+        package_dielectric_sie=True,
         package_em_coupling=False,
         continuous_spatial_loss=True,
     )

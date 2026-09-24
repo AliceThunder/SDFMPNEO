@@ -98,6 +98,10 @@ from .electrothermal import (
     build_lumped_coil_thermal_model,
 )
 from .prediction import StructuredPortPrediction
+from .dielectric_surface import (
+    DielectricSurfaceResult,
+    DielectricSurfaceSolver,
+)
 from .fast import (
     FastCurrentControlledEnvelope,
     FastVoltageControlledEnvelope,
@@ -237,6 +241,8 @@ __all__ = [
     "VoltageControlledEnvelope",
     "build_lumped_coil_thermal_model",
     "StructuredPortPrediction",
+    "DielectricSurfaceResult",
+    "DielectricSurfaceSolver",
     "FastCurrentControlledEnvelope",
     "FastVoltageControlledEnvelope",
     "AnalyticBaselineArtifact",
