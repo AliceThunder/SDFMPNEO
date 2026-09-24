@@ -98,6 +98,13 @@ from .electrothermal import (
     VoltageControlledEnvelope,
     build_lumped_coil_thermal_model,
 )
+from .channel_thermal import (
+    ThermalNodeProperties,
+    ChannelElectroThermalStep,
+    ChannelResolvedCurrentEnvelope,
+    ChannelResolvedVoltageEnvelope,
+    build_lumped_channel_thermal_model,
+)
 from .prediction import StructuredPortPrediction
 from .dielectric_surface import (
     DielectricSurfaceResult,
@@ -247,6 +254,11 @@ __all__ = [
     "CurrentControlledEnvelope",
     "VoltageControlledEnvelope",
     "build_lumped_coil_thermal_model",
+    "ThermalNodeProperties",
+    "ChannelElectroThermalStep",
+    "ChannelResolvedCurrentEnvelope",
+    "ChannelResolvedVoltageEnvelope",
+    "build_lumped_channel_thermal_model",
     "StructuredPortPrediction",
     "DielectricSurfaceResult",
     "DielectricSurfaceSolver",

@@ -8,8 +8,13 @@ from .fast import (
     FastCurrentControlledEnvelope,
     FastVoltageControlledEnvelope,
 )
+from .channel_thermal import (
+    ChannelResolvedCurrentEnvelope,
+    ChannelResolvedVoltageEnvelope,
+)
 from .field import UniformLossFieldDecoder
 from .reference import MixedReferenceArtifact
+from .hybrid_dielectric import DielectricCoupledReferenceArtifact
 from .scene import Scene
 from .thermal_field import ContinuousThermalGreenArtifact
 
@@ -69,6 +74,8 @@ class MeshfreeVNextSystem:
         *,
         spatial_artifact=None,
         reference_config: MQSConfig | None = None,
+        dielectric_surface_vertical_order: int = 16,
+        dielectric_surface_azimuthal_order: int = 32,
     ):
         if not hasattr(
             port_artifact,
@@ -92,6 +99,19 @@ class MeshfreeVNextSystem:
                 config=(
                     self.reference_config
                 )
+            )
+        )
+        self._dielectric_reference = (
+            DielectricCoupledReferenceArtifact(
+                config=(
+                    self.reference_config
+                ),
+                surface_vertical_order=(
+                    dielectric_surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    dielectric_surface_azimuthal_order
+                ),
             )
         )
 
@@ -118,8 +138,13 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
+        artifact = (
+            self._dielectric_reference
+            if scene.packages
+            else self._reference
+        )
         return (
-            self._reference.predict_structured(
+            artifact.predict_structured(
                 scene,
                 frequency_hz,
             )
@@ -130,6 +155,13 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
+        if scene.packages:
+            return (
+                self._dielectric_reference.solve(
+                    scene,
+                    frequency_hz,
+                )
+            )
         return self._reference.solve(
             scene,
             frequency_hz,
@@ -146,6 +178,11 @@ class MeshfreeVNextSystem:
         config: MQSConfig | None = None,
         **certification_options,
     ):
+        if scene.packages:
+            raise NotImplementedError(
+                "dielectric package scenes have a REFERENCE coupled SIE backend, "
+                "but package-aware CERTIFIED correction is not implemented yet"
+            )
         return certify_mixed_ports(
             scene,
             frequency_hz,
@@ -189,11 +226,56 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
+        if scene.packages:
+            raise NotImplementedError(
+                "continuous package dielectric heat queries are not yet "
+                "implemented; port-level dielectric loss channels are available"
+            )
         return (
             self._reference.prepare_spatial(
                 scene,
                 frequency_hz,
             )
+        )
+
+    def reference_channel_current_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        artifact = (
+            self._dielectric_reference
+            if scene.packages
+            else self._reference
+        )
+        return ChannelResolvedCurrentEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            artifact,
+            **options,
+        )
+
+    def reference_channel_voltage_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        artifact = (
+            self._dielectric_reference
+            if scene.packages
+            else self._reference
+        )
+        return ChannelResolvedVoltageEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            artifact,
+            **options,
         )
 
     def fast_current_envelope(
