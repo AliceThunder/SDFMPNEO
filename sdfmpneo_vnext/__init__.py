@@ -68,6 +68,7 @@ from .dataset import (
 )
 from .serialization import scene_from_dict, scene_to_dict
 from .evaluation import SurrogateAudit, audit_surrogate
+from .spatial_evaluation import SpatialSurrogateAudit, audit_spatial_surrogate
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -136,6 +137,8 @@ __all__ = [
     "scene_to_dict",
     "SurrogateAudit",
     "audit_surrogate",
+    "SpatialSurrogateAudit",
+    "audit_spatial_surrogate",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",
