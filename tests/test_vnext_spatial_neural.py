@@ -4,6 +4,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from sdfmpneo_vnext import (
+    AnalyticBaselineArtifact,
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
@@ -13,14 +14,11 @@ from sdfmpneo_vnext import (
     TeacherSample,
     analytic_port_baseline,
     encode_scene_invariant,
-)
-from sdfmpneo_vnext.neural import (
-    NeuralResidualArtifact,
-    PhysicsFactoredResidualNet,
-    ResidualNormalizer,
+    haar_rotation,
 )
 from sdfmpneo_vnext.spatial_neural import (
     NeuralSpatialLossArtifact,
+    SpatialFeatureNormalizer,
     SpatialLossShapeNet,
 )
 
@@ -29,12 +27,12 @@ def _scene():
     copper = ConductorMaterial(5.8e7)
     first = CoilObject(
         SuperellipseSpiral(
-            0.028,
-            0.024,
-            0.8,
-            0.0012,
-            0.0012,
-            exponent=3.0,
+            0.030,
+            0.026,
+            0.9,
+            0.0015,
+            0.0015,
+            exponent=3.5,
             conductor_width=1.0e-3,
             conductor_thickness=0.8e-3,
         ),
@@ -43,17 +41,18 @@ def _scene():
     )
     second = CoilObject(
         SuperellipseSpiral(
-            0.022,
-            0.019,
-            0.7,
-            0.0010,
-            0.0010,
+            0.024,
+            0.020,
+            0.75,
+            0.0012,
+            0.0012,
             exponent=4.0,
             conductor_width=0.9e-3,
             conductor_thickness=0.7e-3,
-            pose=RigidPose(
-                np.eye(3),
-                np.array([0.004, 0.0, 0.018]),
+            pose=RigidPose.from_axis_angle(
+                (0.0, 1.0, 0.0),
+                0.35,
+                translation=(0.006, 0.0, 0.020),
             ),
         ),
         copper,
@@ -65,9 +64,11 @@ def _scene():
     )
 
 
-def _port_artifact():
-    scene = _scene()
-    frequency = 60_000.0
+def _normalizer(scene, frequency):
+    encoded = encode_scene_invariant(
+        scene,
+        frequency,
+    )
     baseline = analytic_port_baseline(
         scene,
         frequency,
@@ -84,87 +85,166 @@ def _port_artifact():
     sample = TeacherSample(
         scene,
         frequency,
-        encode_scene_invariant(
-            scene,
-            frequency,
-        ),
+        encoded,
         baseline.resistance,
         target.imag,
         target,
         32,
+        None,
+        None,
+        "mqs",
     )
-    normalizer = ResidualNormalizer.fit(
+    return SpatialFeatureNormalizer.fit(
         (sample,)
     )
-    model = PhysicsFactoredResidualNet(
-        hidden_dim=16,
+
+
+def _artifact(scene, frequency):
+    torch.manual_seed(13)
+    model = SpatialLossShapeNet(
+        hidden_dim=20,
         factor_rank=2,
         depth=1,
-    )
-    with torch.no_grad():
-        for parameter in model.parameters():
-            parameter.zero_()
-    return NeuralResidualArtifact(
+    ).double()
+    return NeuralSpatialLossArtifact(
+        AnalyticBaselineArtifact(
+            segments_per_coil=32,
+        ),
         model,
-        normalizer,
-        baseline_segments=32,
+        _normalizer(
+            scene,
+            frequency,
+        ),
+        integration_segments_per_turn=6,
+        integration_min_segments=8,
+        integration_radial_order=2,
+        integration_angular_order=8,
     )
 
 
-def test_spatial_decoder_is_locally_psd_and_closes_port_channels():
-    torch.manual_seed(3)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
+def test_random_spatial_network_is_psd_and_closes_each_coil_channel():
+    scene = _scene()
+    frequency = 70_000.0
+    artifact = _artifact(
+        scene,
+        frequency,
     )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
+    prediction = artifact.predict_structured(
+        scene,
+        frequency,
     )
-    prepared = artifact.prepare(
-        _scene(),
-        60_000.0,
-    )
-    assert (
-        prepared.normalization_closure_error
-        < 5e-5
-    )
-    for coil in (0, 1):
-        matrix = (
-            prepared.local_dissipation_matrix(
-                coil,
-                0.45,
-                (0.0, 0.0),
-            )
+
+    for coil in range(2):
+        integrated = artifact.integrated_matrix(
+            scene,
+            frequency,
+            coil,
         )
         assert np.allclose(
-            matrix,
-            matrix.conj().T,
-            atol=2e-6,
+            integrated,
+            prediction.dissipation_channels[
+                coil
+            ],
+            rtol=3e-8,
+            atol=3e-10,
         )
-        assert (
-            np.min(
-                np.linalg.eigvalsh(
-                    matrix
+        for arc, xy in (
+            (0.1, (0.0, 0.0)),
+            (0.5, (2e-4, -1e-4)),
+            (0.9, (-2e-4, 1e-4)),
+        ):
+            matrix = (
+                artifact.local_dissipation_matrix(
+                    scene,
+                    frequency,
+                    coil,
+                    arc,
+                    xy,
                 )
             )
-            >= -2e-6
-        )
-    outside = (
-        prepared.local_dissipation_matrix(
-            0,
-            0.5,
-            (1.0, 1.0),
+            assert np.allclose(
+                matrix,
+                matrix.conj().T,
+                atol=1e-10,
+            )
+            assert (
+                np.min(
+                    np.linalg.eigvalsh(
+                        matrix
+                    )
+                )
+                >= -1e-10
+            )
+
+
+def test_spatial_field_is_common_se3_invariant():
+    scene = _scene()
+    frequency = 70_000.0
+    artifact = _artifact(
+        scene,
+        frequency,
+    )
+    original = artifact.local_dissipation_matrix(
+        scene,
+        frequency,
+        1,
+        0.43,
+        (1.5e-4, -1.0e-4),
+    )
+
+    rng = np.random.default_rng(7)
+    common = RigidPose(
+        haar_rotation(rng),
+        np.array(
+            [0.2, -0.4, 0.3]
+        ),
+    )
+    moved = Scene(
+        tuple(
+            CoilObject(
+                coil.geometry.transformed(
+                    common
+                ),
+                coil.material,
+                coil.name,
+            )
+            for coil in scene.coils
+        ),
+        scene.medium,
+    )
+    moved_value = (
+        artifact.local_dissipation_matrix(
+            moved,
+            frequency,
+            1,
+            0.43,
+            (1.5e-4, -1.0e-4),
         )
     )
     assert np.allclose(
-        outside,
+        original,
+        moved_value,
+        rtol=5e-10,
+        atol=5e-11,
+    )
+
+
+def test_spatial_field_is_zero_outside_conductor_section():
+    scene = _scene()
+    frequency = 70_000.0
+    artifact = _artifact(
+        scene,
+        frequency,
+    )
+    matrix = artifact.local_dissipation_matrix(
+        scene,
+        frequency,
+        0,
+        0.5,
+        (1.0, 1.0),
+    )
+    assert np.allclose(
+        matrix,
         0.0,
+        atol=0.0,
     )

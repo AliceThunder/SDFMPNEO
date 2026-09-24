@@ -2,24 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import numpy as np
 
 try:
     import torch
     from torch import nn
-except ImportError as exc:  # pragma: no cover
+except ImportError as exc:  # pragma: no cover - optional dependency
     raise ImportError(
         "sdfmpneo_vnext.spatial_neural requires the 'neural' extra: "
         "pip install 'sdfmpneo[neural]'"
     ) from exc
 
 from .basis import superellipse_section_quadrature
-from .features import encode_scene_invariant
+from .features import EncodedScene, encode_scene_invariant
 from .scene import Scene
 from .training_data import TeacherSample
 
 
 SPATIAL_ARTIFACT_SCHEMA = 1
+LOCAL_FEATURE_DIM = 7
 
 
 def _mlp(
@@ -29,10 +31,8 @@ def _mlp(
     depth: int,
 ):
     layers = []
-    width = input_dim
-    for _ in range(
-        depth
-    ):
+    width = int(input_dim)
+    for _ in range(int(depth)):
         layers.extend(
             [
                 nn.Linear(
@@ -42,22 +42,238 @@ def _mlp(
                 nn.SiLU(),
             ]
         )
-        width = hidden_dim
+        width = int(hidden_dim)
     layers.append(
         nn.Linear(
             width,
             output_dim,
         )
     )
-    return nn.Sequential(
-        *layers
+    return nn.Sequential(*layers)
+
+
+@dataclass(frozen=True)
+class SpatialFeatureNormalizer:
+    node_mean: np.ndarray
+    node_scale: np.ndarray
+    pair_mean: np.ndarray
+    pair_scale: np.ndarray
+
+    @staticmethod
+    def fit(
+        samples,
+        *,
+        floor: float = 1e-8,
+    ) -> "SpatialFeatureNormalizer":
+        samples = tuple(samples)
+        if not samples:
+            raise ValueError(
+                "at least one teacher sample is required"
+            )
+        node = np.concatenate(
+            [
+                sample.encoded.node_features
+                for sample in samples
+            ],
+            axis=0,
+        )
+        pair = np.concatenate(
+            [
+                sample.encoded.pair_features.reshape(
+                    -1,
+                    sample.encoded.pair_features.shape[-1],
+                )
+                for sample in samples
+            ],
+            axis=0,
+        )
+        return SpatialFeatureNormalizer(
+            node.mean(axis=0),
+            np.maximum(
+                node.std(axis=0),
+                floor,
+            ),
+            pair.mean(axis=0),
+            np.maximum(
+                pair.std(axis=0),
+                floor,
+            ),
+        )
+
+    def normalize(
+        self,
+        encoded: EncodedScene,
+    ):
+        return (
+            (
+                encoded.node_features
+                - self.node_mean
+            )
+            / self.node_scale,
+            (
+                encoded.pair_features
+                - self.pair_mean
+            )
+            / self.pair_scale,
+        )
+
+    def to_dict(self):
+        return {
+            "node_mean": self.node_mean,
+            "node_scale": self.node_scale,
+            "pair_mean": self.pair_mean,
+            "pair_scale": self.pair_scale,
+        }
+
+    @staticmethod
+    def from_dict(data):
+        def _array(value):
+            if hasattr(
+                value,
+                "detach",
+            ):
+                value = (
+                    value.detach()
+                    .cpu()
+                    .numpy()
+                )
+            return np.asarray(
+                value,
+                dtype=float,
+            )
+
+        return SpatialFeatureNormalizer(
+            _array(
+                data["node_mean"]
+            ),
+            _array(
+                data["node_scale"]
+            ),
+            _array(
+                data["pair_mean"]
+            ),
+            _array(
+                data["pair_scale"]
+            ),
+        )
+
+
+def _local_features_numpy(
+    scene: Scene,
+    coil_index: int,
+    arc_fraction,
+    xy,
+):
+    arc = np.asarray(
+        arc_fraction,
+        dtype=float,
+    )
+    xy = np.asarray(
+        xy,
+        dtype=float,
+    )
+    scalar = (
+        arc.ndim == 0
+        and xy.ndim == 1
+    )
+    arc = np.atleast_1d(
+        arc
+    )
+    xy = np.atleast_2d(
+        xy
+    )
+    if xy.shape != (
+        len(arc),
+        2,
+    ):
+        raise ValueError(
+            "arc_fraction and xy must describe the same number of points"
+        )
+    if np.any(
+        (arc < 0.0)
+        | (arc > 1.0)
+    ):
+        raise ValueError(
+            "arc_fraction must lie in [0,1]"
+        )
+    if not (
+        0
+        <= coil_index
+        < len(scene.coils)
+    ):
+        raise IndexError(
+            "coil_index out of range"
+        )
+
+    geometry = (
+        scene.coils[
+            coil_index
+        ].geometry
+    )
+    a = (
+        0.5
+        * geometry.conductor_width
+    )
+    b = (
+        0.5
+        * geometry.conductor_thickness
+    )
+    xhat = (
+        xy[:, 0]
+        / a
+    )
+    yhat = (
+        xy[:, 1]
+        / b
+    )
+    exponent = (
+        geometry.cross_section_exponent
+    )
+    rho = (
+        np.abs(xhat) ** exponent
+        + np.abs(yhat) ** exponent
+    ) ** (
+        1.0 / exponent
+    )
+    inside = (
+        rho
+        <= 1.0 + 1e-12
+    )
+    features = np.stack(
+        (
+            2.0 * arc - 1.0,
+            np.sin(
+                2.0
+                * np.pi
+                * arc
+            ),
+            np.cos(
+                2.0
+                * np.pi
+                * arc
+            ),
+            xhat,
+            yhat,
+            rho,
+            1.0 - rho,
+        ),
+        axis=1,
+    )
+    if scalar:
+        return (
+            features[0],
+            bool(
+                inside[0]
+            ),
+        )
+    return (
+        features,
+        inside,
     )
 
 
 def _psd_sqrt(
     matrix,
-    *,
-    inverse: bool,
 ):
     matrix = 0.5 * (
         matrix
@@ -66,188 +282,150 @@ def _psd_sqrt(
             -2,
         )
     )
-    eigenvalues, eigenvectors = (
+    values, vectors = (
         torch.linalg.eigh(
             matrix
         )
     )
-    scale = torch.clamp(
-        torch.max(
-            torch.abs(
-                eigenvalues
-            )
-        ),
-        min=1e-20,
+    values = torch.clamp(
+        values.real,
+        min=0.0,
     )
-    if inverse:
-        floor = (
-            1e-10
-            * scale
-            + 1e-16
-        )
-        values = torch.rsqrt(
-            torch.clamp(
-                eigenvalues.real,
-                min=floor,
-            )
-        )
-    else:
-        values = torch.sqrt(
-            torch.clamp(
-                eigenvalues.real,
-                min=0.0,
-            )
-        )
     return (
-        eigenvectors
-        @ torch.diag(
-            values.to(
-                eigenvectors.dtype
+        vectors
+        @ torch.diag_embed(
+            torch.sqrt(
+                values
+            ).to(
+                vectors.dtype
             )
         )
-        @ eigenvectors.conj().transpose(
+        @ vectors.conj().transpose(
             -1,
             -2,
         )
     )
 
 
-def _coordinate_features(
-    scene: Scene,
-    coil_index,
-    arc_fraction,
-    xy,
+def _normalize_raw_shapes(
+    raw,
+    weights,
 ):
-    coil_index = np.asarray(
-        coil_index,
-        dtype=int,
-    )
-    arc_fraction = np.asarray(
-        arc_fraction,
-        dtype=float,
-    )
-    xy = np.asarray(
-        xy,
-        dtype=float,
-    )
-    n = len(
-        coil_index
-    )
-    if (
-        arc_fraction.shape
-        != (n,)
-        or xy.shape
-        != (
-            n,
-            2,
+    if raw.ndim != 3:
+        raise ValueError(
+            "raw field must have shape (n_points,n_ports,n_ports)"
         )
+    weights = weights.to(
+        dtype=raw.real.dtype,
+        device=raw.device,
+    )
+    if weights.shape != (
+        raw.shape[0],
     ):
         raise ValueError(
-            "spatial coordinates have incompatible shapes"
+            "weights have wrong shape"
         )
-    out = np.empty(
-        (
-            n,
-            5,
-        ),
-        dtype=float,
+
+    n_ports = raw.shape[1]
+    eye = torch.eye(
+        n_ports,
+        dtype=raw.dtype,
+        device=raw.device,
     )
-    for index in range(
-        n
-    ):
-        coil = int(
-            coil_index[
-                index
-            ]
-        )
-        geometry = (
-            scene.coils[
-                coil
-            ].geometry
-        )
-        xn = (
-            xy[
-                index,
-                0,
-            ]
-            / (
-                0.5
-                * geometry.conductor_width
+    trace_scale = torch.mean(
+        torch.real(
+            torch.diagonal(
+                raw,
+                dim1=-2,
+                dim2=-1,
+            ).sum(
+                dim=-1
             )
         )
-        yn = (
-            xy[
-                index,
+    )
+    jitter = (
+        1e-8
+        * torch.clamp(
+            trace_scale
+            / max(
+                n_ports,
                 1,
-            ]
-            / (
-                0.5
-                * geometry.conductor_thickness
-            )
+            ),
+            min=0.0,
         )
-        m = (
-            geometry.cross_section_exponent
+        + 1e-12
+    )
+    raw = (
+        raw
+        + jitter
+        * eye.unsqueeze(0)
+    )
+
+    integrated = torch.einsum(
+        "q,qij->ij",
+        weights,
+        raw,
+    )
+    integrated = 0.5 * (
+        integrated
+        + integrated.conj().T
+    )
+    chol = torch.linalg.cholesky(
+        integrated
+    )
+    inverse_chol = (
+        torch.linalg.solve_triangular(
+            chol,
+            eye,
+            upper=False,
         )
-        rho = (
-            abs(
-                xn
-            ) ** m
-            + abs(
-                yn
-            ) ** m
-        ) ** (
-            1.0
-            / m
+    )
+    normalized = torch.einsum(
+        "ab,qbc,dc->qad",
+        inverse_chol,
+        raw,
+        inverse_chol.conj(),
+    )
+    normalized = 0.5 * (
+        normalized
+        + normalized.conj().transpose(
+            -1,
+            -2,
         )
-        out[
-            index
-        ] = (
-            2.0
-            * arc_fraction[
-                index
-            ]
-            - 1.0,
-            xn,
-            yn,
-            rho,
-            rho**2,
-        )
-    return out
+    )
+    return normalized
 
 
-class SpatialLossShapeNet(
-    nn.Module
-):
-    """Continuous intrinsic PSD field-shape network."""
+class SpatialLossShapeNet(nn.Module):
+    """Scene-graph-conditioned continuous PSD loss-shape operator."""
 
     def __init__(
         self,
-        hidden_dim: int,
-        pair_dim: int,
-        *,
-        field_hidden_dim: int = 64,
-        factor_rank: int = 4,
+        node_dim: int = 17,
+        pair_dim: int = 15,
+        hidden_dim: int = 64,
+        factor_rank: int = 2,
         depth: int = 2,
+        local_dim: int = LOCAL_FEATURE_DIM,
     ):
         super().__init__()
         if (
-            hidden_dim < 1
-            or pair_dim < 1
-            or field_hidden_dim < 4
+            hidden_dim < 4
             or factor_rank < 1
             or depth < 1
+            or local_dim < 1
         ):
             raise ValueError(
                 "invalid spatial network dimensions"
             )
-        self.hidden_dim = int(
-            hidden_dim
+        self.node_dim = int(
+            node_dim
         )
         self.pair_dim = int(
             pair_dim
         )
-        self.field_hidden_dim = int(
-            field_hidden_dim
+        self.hidden_dim = int(
+            hidden_dim
         )
         self.factor_rank = int(
             factor_rank
@@ -255,145 +433,183 @@ class SpatialLossShapeNet(
         self.depth = int(
             depth
         )
-        self.head = _mlp(
-            2
-            * self.hidden_dim
+        self.local_dim = int(
+            local_dim
+        )
+
+        self.node_encoder = _mlp(
+            self.node_dim,
+            self.hidden_dim,
+            self.hidden_dim,
+            self.depth,
+        )
+        self.edge_encoder = _mlp(
+            2 * self.hidden_dim
+            + self.pair_dim,
+            self.hidden_dim,
+            self.hidden_dim,
+            self.depth,
+        )
+        self.node_update = _mlp(
+            2 * self.hidden_dim,
+            self.hidden_dim,
+            self.hidden_dim,
+            self.depth,
+        )
+        self.local_factor_head = _mlp(
+            2 * self.hidden_dim
             + self.pair_dim
-            + 5,
-            self.field_hidden_dim,
-            2
-            * self.factor_rank,
+            + self.local_dim,
+            self.hidden_dim,
+            2 * self.factor_rank,
             self.depth,
         )
 
-    def raw_matrices(
+    def encode_scene(
         self,
-        latent,
+        node_features,
         pair_features,
-        coil_index,
-        coordinate_features,
     ):
-        coil_index = torch.as_tensor(
-            coil_index,
-            dtype=torch.long,
-            device=latent.device,
+        h = self.node_encoder(
+            node_features
         )
-        coordinates = torch.as_tensor(
-            coordinate_features,
-            dtype=latent.dtype,
-            device=latent.device,
-        )
-        n_points = int(
-            coil_index.numel()
-        )
-        n_ports = int(
-            latent.shape[0]
-        )
-        complex_dtype = (
-            torch.complex64
-            if latent.dtype
-            == torch.float32
-            else torch.complex128
-        )
-        factors = []
-        for point in range(
-            n_points
-        ):
-            coil = int(
-                coil_index[
-                    point
-                ].item()
-            )
-            rows = []
-            for port in range(
-                n_ports
-            ):
-                features = torch.cat(
+        n = h.shape[0]
+        messages = []
+        for i in range(n):
+            incoming = []
+            for j in range(n):
+                if i == j:
+                    continue
+                edge = torch.cat(
                     (
-                        latent[
-                            coil
-                        ],
-                        latent[
-                            port
-                        ],
+                        h[i],
+                        h[j],
                         pair_features[
-                            coil,
-                            port,
-                        ],
-                        coordinates[
-                            point
+                            i,
+                            j,
                         ],
                     ),
                     dim=-1,
                 )
-                raw = self.head(
-                    features
-                )
-                rows.append(
-                    raw[
-                        : self.factor_rank
-                    ].to(
-                        complex_dtype
-                    )
-                    + 1j
-                    * raw[
-                        self.factor_rank :
-                    ].to(
-                        complex_dtype
+                incoming.append(
+                    self.edge_encoder(
+                        edge
                     )
                 )
-            factors.append(
-                torch.stack(
-                    rows,
+            if incoming:
+                aggregate = torch.stack(
+                    incoming,
                     dim=0,
+                ).sum(
+                    dim=0
+                ) / math.sqrt(
+                    len(
+                        incoming
+                    )
+                )
+            else:
+                aggregate = (
+                    torch.zeros_like(
+                        h[i]
+                    )
+                )
+            messages.append(
+                aggregate
+            )
+        return self.node_update(
+            torch.cat(
+                (
+                    h,
+                    torch.stack(
+                        messages,
+                        dim=0,
+                    ),
+                ),
+                dim=-1,
+            )
+        )
+
+    def raw_matrices(
+        self,
+        updated,
+        pair_features,
+        coil_index: int,
+        local_features,
+    ):
+        local_features = torch.atleast_2d(
+            local_features
+        )
+        n_points = (
+            local_features.shape[0]
+        )
+        n_ports = (
+            updated.shape[0]
+        )
+        rows = []
+        for port in range(
+            n_ports
+        ):
+            parts = (
+                updated[
+                    coil_index
+                ].expand(
+                    n_points,
+                    -1,
+                ),
+                updated[
+                    port
+                ].expand(
+                    n_points,
+                    -1,
+                ),
+                pair_features[
+                    coil_index,
+                    port,
+                ].expand(
+                    n_points,
+                    -1,
+                ),
+                local_features,
+            )
+            raw = (
+                self.local_factor_head(
+                    torch.cat(
+                        parts,
+                        dim=-1,
+                    )
                 )
             )
-        factors = torch.stack(
-            factors,
-            dim=0,
+            real = raw[
+                :,
+                : self.factor_rank,
+            ]
+            imag = raw[
+                :,
+                self.factor_rank :,
+            ]
+            complex_dtype = (
+                torch.complex64
+                if real.dtype
+                == torch.float32
+                else torch.complex128
+            )
+            rows.append(
+                real.to(
+                    complex_dtype
+                )
+                + 1j
+                * imag.to(
+                    complex_dtype
+                )
+            )
+        factor = torch.stack(
+            rows,
+            dim=1,
         )
         matrices = torch.einsum(
-            "qpr,qsr->qps",
-            factors.conj(),
-            factors,
-        )
-        n = matrices.shape[-1]
-        trace_scale = torch.clamp(
-            torch.real(
-                torch.diagonal(
-                    matrices,
-                    dim1=-2,
-                    dim2=-1,
-                ).sum(
-                    dim=-1
-                )
-            ),
-            min=1e-12,
-        )
-        eye = torch.eye(
-            n,
-            dtype=complex_dtype,
-            device=latent.device,
-        )
-        matrices = (
-            matrices
-            + (
-                1e-9
-                * trace_scale[
-                    :,
-                    None,
-                    None,
-                ]
-                / max(
-                    n,
-                    1,
-                )
-            )
-            * eye[
-                None,
-                :,
-                :,
-            ]
+            "qir,qjr->qij",
+            factor,
+            factor.conj(),
         )
         return 0.5 * (
             matrices
@@ -404,165 +620,196 @@ class SpatialLossShapeNet(
         )
 
 
-def _normalize_by_coil(
-    raw_matrices,
-    coil_index,
-    weights,
-    target_channels,
-):
-    coil_index = torch.as_tensor(
-        coil_index,
-        dtype=torch.long,
-        device=raw_matrices.device,
-    )
-    weights = torch.as_tensor(
-        weights,
-        dtype=raw_matrices.real.dtype,
-        device=raw_matrices.device,
-    )
-    target_channels = torch.as_tensor(
-        target_channels,
-        dtype=raw_matrices.dtype,
-        device=raw_matrices.device,
-    )
-    normalized = (
-        torch.empty_like(
-            raw_matrices
-        )
-    )
-    n_coils = int(
-        target_channels.shape[0]
-    )
-    for coil in range(
-        n_coils
+@dataclass(frozen=True)
+class SpatialTrainingReport:
+    final_loss: float
+    epochs: int
+    samples: int
+    best_epoch: int
+    best_validation_error: float | None
+    stopped_early: bool
+
+
+class NeuralSpatialLossArtifact:
+    """Continuous learned Joule field normalized to port dissipation channels."""
+
+    def __init__(
+        self,
+        port_artifact,
+        model: SpatialLossShapeNet,
+        normalizer: SpatialFeatureNormalizer,
+        *,
+        integration_segments_per_turn: int = 12,
+        integration_min_segments: int = 16,
+        integration_radial_order: int = 4,
+        integration_angular_order: int = 24,
+        device: str = "cpu",
     ):
-        mask = (
-            coil_index
-            == coil
-        )
-        if not bool(
-            torch.any(
-                mask
+        if not hasattr(
+            port_artifact,
+            "predict_structured",
+        ):
+            raise TypeError(
+                "port_artifact must expose predict_structured"
             )
+        if (
+            integration_segments_per_turn
+            < 4
+            or integration_min_segments
+            < 4
+            or integration_radial_order
+            < 2
+            or integration_angular_order
+            < 8
         ):
             raise ValueError(
-                "normalization quadrature has no samples for a coil"
+                "invalid spatial integration configuration"
             )
-        raw_integral = torch.sum(
-            weights[
-                mask,
-                None,
-                None,
-            ]
-            * raw_matrices[
-                mask
-            ],
-            dim=0,
+        self.port_artifact = (
+            port_artifact
         )
-        transform = (
-            _psd_sqrt(
-                target_channels[
-                    coil
-                ],
-                inverse=False,
-            )
-            @ _psd_sqrt(
-                raw_integral,
-                inverse=True,
-            )
+        self.model = model
+        self.normalizer = (
+            normalizer
         )
-        values = (
-            transform[
-                None,
-                :,
-                :
-            ]
-            @ raw_matrices[
-                mask
-            ]
-            @ transform.conj().transpose(
-                -1,
-                -2,
-            )[
-                None,
-                :,
-                :
-            ]
+        self.integration_segments_per_turn = int(
+            integration_segments_per_turn
         )
-        normalized[
-            mask
-        ] = 0.5 * (
-            values
-            + values.conj().transpose(
-                -1,
-                -2,
-            )
+        self.integration_min_segments = int(
+            integration_min_segments
         )
-    return normalized
+        self.integration_radial_order = int(
+            integration_radial_order
+        )
+        self.integration_angular_order = int(
+            integration_angular_order
+        )
+        self.device = str(
+            device
+        )
+        self.model.to(
+            self.device
+        )
+        self.model.eval()
 
-
-def _normalization_rule(
-    scene: Scene,
-    *,
-    longitudinal_points: int,
-    radial_order: int,
-    angular_order: int,
-):
-    if (
-        longitudinal_points < 2
-        or radial_order < 2
-        or angular_order < 8
+    def predict_structured(
+        self,
+        scene: Scene,
+        frequency_hz: float,
     ):
-        raise ValueError(
-            "invalid spatial normalization quadrature"
+        return (
+            self.port_artifact.predict_structured(
+                scene,
+                frequency_hz,
+            )
         )
-    coils = []
-    arc = []
-    xy = []
-    weights = []
-    for coil_index, coil in enumerate(
-        scene.coils
+
+    def predict(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        return (
+            self.predict_structured(
+                scene,
+                frequency_hz,
+            ).impedance
+        )
+
+    def _scene_tensors(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        encoded = (
+            encode_scene_invariant(
+                scene,
+                frequency_hz,
+            )
+        )
+        node, pair = (
+            self.normalizer.normalize(
+                encoded
+            )
+        )
+        dtype = next(
+            self.model.parameters()
+        ).dtype
+        device = next(
+            self.model.parameters()
+        ).device
+        node_tensor = torch.as_tensor(
+            node,
+            dtype=dtype,
+            device=device,
+        )
+        pair_tensor = torch.as_tensor(
+            pair,
+            dtype=dtype,
+            device=device,
+        )
+        with torch.no_grad():
+            updated = (
+                self.model.encode_scene(
+                    node_tensor,
+                    pair_tensor,
+                )
+            )
+        return (
+            updated,
+            pair_tensor,
+            dtype,
+            device,
+        )
+
+    def _integration_rule(
+        self,
+        scene: Scene,
+        coil_index: int,
     ):
         geometry = (
-            coil.geometry
+            scene.coils[
+                coil_index
+            ].geometry
+        )
+        n_segments = max(
+            self.integration_min_segments,
+            int(
+                np.ceil(
+                    self.integration_segments_per_turn
+                    * geometry.turns
+                )
+            ),
+        )
+        polyline = geometry.polyline(
+            n_segments
         )
         section = (
             superellipse_section_quadrature(
                 geometry.conductor_width,
                 geometry.conductor_thickness,
                 geometry.cross_section_exponent,
-                radial_order=(
-                    radial_order
-                ),
-                angular_order=(
-                    angular_order
-                ),
+                self.integration_radial_order,
+                self.integration_angular_order,
             )
         )
-        poly = geometry.polyline(
-            longitudinal_points
-        )
-        for longitudinal in range(
-            longitudinal_points
+        arc = []
+        xy = []
+        weights = []
+        for segment_index, length in enumerate(
+            polyline.lengths
         ):
             count = len(
                 section.weights
-            )
-            coils.append(
-                np.full(
-                    count,
-                    coil_index,
-                    dtype=int,
-                )
             )
             arc.append(
                 np.full(
                     count,
                     (
-                        longitudinal
+                        segment_index
                         + 0.5
                     )
-                    / longitudinal_points,
+                    / n_segments,
                     dtype=float,
                 )
             )
@@ -571,175 +818,317 @@ def _normalization_rule(
             )
             weights.append(
                 section.weights
-                * (
-                    poly.total_length
-                    / longitudinal_points
+                * float(
+                    length
                 )
             )
-    return (
-        np.concatenate(
-            coils
-        ),
-        np.concatenate(
-            arc
-        ),
-        np.concatenate(
+        return (
+            np.concatenate(
+                arc
+            ),
+            np.concatenate(
+                xy,
+                axis=0,
+            ),
+            np.concatenate(
+                weights
+            ),
+        )
+
+    def _shape_normalizer(
+        self,
+        scene: Scene,
+        coil_index: int,
+        updated,
+        pair_tensor,
+        dtype,
+        device,
+    ):
+        arc, xy, weights = (
+            self._integration_rule(
+                scene,
+                coil_index,
+            )
+        )
+        local, _ = (
+            _local_features_numpy(
+                scene,
+                coil_index,
+                arc,
+                xy,
+            )
+        )
+        local_tensor = torch.as_tensor(
+            local,
+            dtype=dtype,
+            device=device,
+        )
+        weight_tensor = torch.as_tensor(
+            weights,
+            dtype=dtype,
+            device=device,
+        )
+        with torch.no_grad():
+            raw = (
+                self.model.raw_matrices(
+                    updated,
+                    pair_tensor,
+                    coil_index,
+                    local_tensor,
+                )
+            )
+            normalized = (
+                _normalize_raw_shapes(
+                    raw,
+                    weight_tensor,
+                )
+            )
+        return (
+            arc,
             xy,
-            axis=0,
-        ),
-        np.concatenate(
-            weights
-        ),
-    )
+            weights,
+            normalized,
+        )
 
+    def local_dissipation_matrices(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        coil_index: int,
+        arc_fraction,
+        xy,
+    ) -> np.ndarray:
+        local, inside = (
+            _local_features_numpy(
+                scene,
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+        local = np.atleast_2d(
+            local
+        )
+        inside = np.atleast_1d(
+            inside
+        )
+        updated, pair, dtype, device = (
+            self._scene_tensors(
+                scene,
+                frequency_hz,
+            )
+        )
+        (
+            _,
+            _,
+            weights,
+            normalized_grid,
+        ) = self._shape_normalizer(
+            scene,
+            coil_index,
+            updated,
+            pair,
+            dtype,
+            device,
+        )
 
-@dataclass(frozen=True)
-class PreparedSpatialLossField:
-    scene: Scene
-    frequency_hz: float
-    port_prediction: object
-    model: SpatialLossShapeNet
-    latent: object
-    pair_features: object
-    transforms: tuple
-    normalization_closure_error: float
-    device: str
+        # Recover the common normalization congruence from the integration
+        # rule by applying the same raw normalization map to the query points.
+        arc_grid, xy_grid, weights_grid = (
+            self._integration_rule(
+                scene,
+                coil_index,
+            )
+        )
+        local_grid, _ = (
+            _local_features_numpy(
+                scene,
+                coil_index,
+                arc_grid,
+                xy_grid,
+            )
+        )
+        with torch.no_grad():
+            raw_grid = (
+                self.model.raw_matrices(
+                    updated,
+                    pair,
+                    coil_index,
+                    torch.as_tensor(
+                        local_grid,
+                        dtype=dtype,
+                        device=device,
+                    ),
+                )
+            )
+            # Build the same Cholesky congruence explicitly.
+            n_ports = raw_grid.shape[1]
+            eye = torch.eye(
+                n_ports,
+                dtype=raw_grid.dtype,
+                device=device,
+            )
+            trace_scale = torch.mean(
+                torch.real(
+                    torch.diagonal(
+                        raw_grid,
+                        dim1=-2,
+                        dim2=-1,
+                    ).sum(
+                        dim=-1
+                    )
+                )
+            )
+            jitter = (
+                1e-8
+                * torch.clamp(
+                    trace_scale
+                    / max(
+                        n_ports,
+                        1,
+                    ),
+                    min=0.0,
+                )
+                + 1e-12
+            )
+            raw_grid = (
+                raw_grid
+                + jitter
+                * eye.unsqueeze(0)
+            )
+            weight_tensor = (
+                torch.as_tensor(
+                    weights_grid,
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            integrated = (
+                torch.einsum(
+                    "q,qij->ij",
+                    weight_tensor,
+                    raw_grid,
+                )
+            )
+            integrated = 0.5 * (
+                integrated
+                + integrated.conj().T
+            )
+            chol = (
+                torch.linalg.cholesky(
+                    integrated
+                )
+            )
+            inverse_chol = (
+                torch.linalg.solve_triangular(
+                    chol,
+                    eye,
+                    upper=False,
+                )
+            )
+
+            raw_query = (
+                self.model.raw_matrices(
+                    updated,
+                    pair,
+                    coil_index,
+                    torch.as_tensor(
+                        local,
+                        dtype=dtype,
+                        device=device,
+                    ),
+                )
+            )
+            raw_query = (
+                raw_query
+                + jitter
+                * eye.unsqueeze(0)
+            )
+            shape = torch.einsum(
+                "ab,qbc,dc->qad",
+                inverse_chol,
+                raw_query,
+                inverse_chol.conj(),
+            )
+            shape = 0.5 * (
+                shape
+                + shape.conj().transpose(
+                    -1,
+                    -2,
+                )
+            )
+
+        prediction = (
+            self.port_artifact.predict_structured(
+                scene,
+                frequency_hz,
+            )
+        )
+        channel = torch.as_tensor(
+            prediction.dissipation_channels[
+                coil_index
+            ],
+            dtype=(
+                torch.complex64
+                if dtype
+                == torch.float32
+                else torch.complex128
+            ),
+            device=device,
+        )
+        with torch.no_grad():
+            root = _psd_sqrt(
+                channel
+            )
+            field = torch.einsum(
+                "ab,qbc,dc->qad",
+                root,
+                shape,
+                root.conj(),
+            )
+            field = 0.5 * (
+                field
+                + field.conj().transpose(
+                    -1,
+                    -2,
+                )
+            )
+        out = (
+            field.detach()
+            .cpu()
+            .numpy()
+        )
+        out[
+            ~inside
+        ] = 0.0
+        return out
 
     def local_dissipation_matrix(
         self,
+        scene: Scene,
+        frequency_hz: float,
         coil_index: int,
         arc_fraction: float,
         xy=(0.0, 0.0),
     ) -> np.ndarray:
-        if not (
-            0.0
-            <= arc_fraction
-            <= 1.0
-        ):
-            raise ValueError(
-                "arc_fraction must lie in [0,1]"
-            )
-        xy = np.asarray(
-            xy,
-            dtype=float,
-        )
-        if xy.shape != (
-            2,
-        ):
-            raise ValueError(
-                "xy must have shape (2,)"
-            )
-        if not (
-            0
-            <= coil_index
-            < len(
-                self.scene.coils
-            )
-        ):
-            raise IndexError(
-                "coil_index out of range"
-            )
-        geometry = (
-            self.scene.coils[
-                coil_index
-            ].geometry
-        )
-        xn = (
-            abs(
-                float(
-                    xy[
-                        0
-                    ]
-                )
-            )
-            / (
-                0.5
-                * geometry.conductor_width
-            )
-        )
-        yn = (
-            abs(
-                float(
-                    xy[
-                        1
-                    ]
-                )
-            )
-            / (
-                0.5
-                * geometry.conductor_thickness
-            )
-        )
-        if (
-            xn
-            ** geometry.cross_section_exponent
-            + yn
-            ** geometry.cross_section_exponent
-            > 1.0 + 1e-12
-        ):
-            n = len(
-                self.scene.coils
-            )
-            return np.zeros(
-                (
-                    n,
-                    n,
-                ),
-                dtype=complex,
-            )
-        coordinates = (
-            _coordinate_features(
-                self.scene,
-                np.asarray(
-                    [
-                        coil_index
-                    ],
-                    dtype=int,
-                ),
-                np.asarray(
-                    [
-                        arc_fraction
-                    ],
-                    dtype=float,
-                ),
-                np.asarray(
-                    [
-                        xy
-                    ],
-                    dtype=float,
-                ),
-            )
-        )
-        with torch.no_grad():
-            raw = self.model.raw_matrices(
-                self.latent,
-                self.pair_features,
-                np.asarray(
-                    [
-                        coil_index
-                    ],
-                    dtype=int,
-                ),
-                coordinates,
-            )[
-                0
-            ]
-            transform = self.transforms[
-                coil_index
-            ]
-            matrix = (
-                transform
-                @ raw
-                @ transform.conj().T
-            )
-            matrix = 0.5 * (
-                matrix
-                + matrix.conj().T
-            )
-        return matrix.detach().cpu().numpy()
+        return self.local_dissipation_matrices(
+            scene,
+            frequency_hz,
+            coil_index,
+            np.asarray(
+                [arc_fraction],
+                dtype=float,
+            ),
+            np.asarray(
+                [xy],
+                dtype=float,
+            ),
+        )[0]
 
     def local_joule_density(
         self,
+        scene: Scene,
+        frequency_hz: float,
         coil_index: int,
         arc_fraction: float,
         xy,
@@ -747,6 +1136,8 @@ class PreparedSpatialLossField:
     ) -> float:
         matrix = (
             self.local_dissipation_matrix(
+                scene,
+                frequency_hz,
                 coil_index,
                 arc_fraction,
                 xy,
@@ -767,303 +1158,31 @@ class PreparedSpatialLossField:
             )
         )
 
-
-class NeuralSpatialLossArtifact:
-    def __init__(
-        self,
-        port_artifact,
-        model: SpatialLossShapeNet,
-        *,
-        longitudinal_points: int = 12,
-        radial_order: int = 3,
-        angular_order: int = 16,
-        device: str = "cpu",
-    ):
-        if not hasattr(
-            port_artifact,
-            "predict_structured",
-        ):
-            raise TypeError(
-                "port_artifact must expose predict_structured"
-            )
-        if not hasattr(
-            port_artifact,
-            "model",
-        ):
-            raise TypeError(
-                "spatial neural artifact requires a neural port artifact"
-            )
-        self.port_artifact = (
-            port_artifact
-        )
-        self.port_artifact.model.to(
-            device
-        )
-        self.port_artifact.device = str(
-            device
-        )
-        port_dtype = next(
-            self.port_artifact.model.parameters()
-        ).dtype
-        self.model = model.to(
-            device=device,
-            dtype=port_dtype,
-        )
-        self.longitudinal_points = int(
-            longitudinal_points
-        )
-        self.radial_order = int(
-            radial_order
-        )
-        self.angular_order = int(
-            angular_order
-        )
-        self.device = str(
-            device
-        )
-
-    def _latent(
-        self,
-        scene,
-        frequency_hz,
-    ):
-        encoded = (
-            encode_scene_invariant(
-                scene,
-                frequency_hz,
-            )
-        )
-        node, pair = (
-            self.port_artifact.normalizer.normalize(
-                encoded
-            )
-        )
-        port_model = (
-            self.port_artifact.model
-        )
-        dtype = next(
-            port_model.parameters()
-        ).dtype
-        device = next(
-            port_model.parameters()
-        ).device
-        port_model.eval()
-        with torch.no_grad():
-            node_tensor = torch.as_tensor(
-                node,
-                dtype=dtype,
-                device=device,
-            )
-            pair_tensor = torch.as_tensor(
-                pair,
-                dtype=dtype,
-                device=device,
-            )
-            latent = (
-                port_model._updated_features(
-                    node_tensor,
-                    pair_tensor,
-                )
-            )
-        return (
-            latent,
-            pair_tensor,
-        )
-
-    def prepare(
+    def integrated_matrix(
         self,
         scene: Scene,
         frequency_hz: float,
-    ) -> PreparedSpatialLossField:
-        port_prediction = (
-            self.port_artifact.predict_structured(
+        coil_index: int,
+    ) -> np.ndarray:
+        arc, xy, weights = (
+            self._integration_rule(
                 scene,
-                frequency_hz,
+                coil_index,
             )
         )
-        latent, pair = self._latent(
-            scene,
-            frequency_hz,
-        )
-        (
-            coil_index,
-            arc,
-            xy,
-            weights,
-        ) = _normalization_rule(
-            scene,
-            longitudinal_points=(
-                self.longitudinal_points
-            ),
-            radial_order=(
-                self.radial_order
-            ),
-            angular_order=(
-                self.angular_order
-            ),
-        )
-        coordinate_features = (
-            _coordinate_features(
+        matrices = (
+            self.local_dissipation_matrices(
                 scene,
+                frequency_hz,
                 coil_index,
                 arc,
                 xy,
             )
         )
-        dtype = latent.dtype
-        device = latent.device
-        self.model.eval()
-        with torch.no_grad():
-            raw = (
-                self.model.raw_matrices(
-                    latent,
-                    pair,
-                    coil_index,
-                    coordinate_features,
-                )
-            )
-            target_channels = torch.as_tensor(
-                port_prediction.dissipation_channels,
-                dtype=raw.dtype,
-                device=device,
-            )
-            weight_tensor = torch.as_tensor(
-                weights,
-                dtype=dtype,
-                device=device,
-            )
-            transforms = []
-            coil_tensor = torch.as_tensor(
-                coil_index,
-                dtype=torch.long,
-                device=device,
-            )
-            for coil in range(
-                len(
-                    scene.coils
-                )
-            ):
-                mask = (
-                    coil_tensor
-                    == coil
-                )
-                raw_integral = torch.sum(
-                    weight_tensor[
-                        mask,
-                        None,
-                        None,
-                    ]
-                    * raw[
-                        mask
-                    ],
-                    dim=0,
-                )
-                transforms.append(
-                    _psd_sqrt(
-                        target_channels[
-                            coil
-                        ],
-                        inverse=False,
-                    )
-                    @ _psd_sqrt(
-                        raw_integral,
-                        inverse=True,
-                    )
-                )
-        normalized_integral = np.zeros_like(
-            port_prediction.dissipation_channels,
-            dtype=complex,
-        )
-        with torch.no_grad():
-            for coil in range(
-                len(
-                    scene.coils
-                )
-            ):
-                mask = (
-                    coil_tensor
-                    == coil
-                )
-                transform = transforms[
-                    coil
-                ]
-                values = (
-                    transform[
-                        None,
-                        :,
-                        :
-                    ]
-                    @ raw[
-                        mask
-                    ]
-                    @ transform.conj().T[
-                        None,
-                        :,
-                        :
-                    ]
-                )
-                integrated = torch.sum(
-                    weight_tensor[
-                        mask,
-                        None,
-                        None,
-                    ]
-                    * values,
-                    dim=0,
-                )
-                normalized_integral[
-                    coil
-                ] = (
-                    integrated
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
-        closure_error = float(
-            np.linalg.norm(
-                normalized_integral
-                - port_prediction.dissipation_channels
-            )
-            / max(
-                np.linalg.norm(
-                    port_prediction.dissipation_channels
-                ),
-                1e-30,
-            )
-        )
-        return PreparedSpatialLossField(
-            scene,
-            float(
-                frequency_hz
-            ),
-            port_prediction,
-            self.model,
-            latent,
-            pair,
-            tuple(
-                transforms
-            ),
-            closure_error,
-            self.device,
-        )
-
-    def local_dissipation_matrix(
-        self,
-        scene: Scene,
-        frequency_hz: float,
-        coil_index: int,
-        arc_fraction: float,
-        xy=(0.0, 0.0),
-    ):
-        return (
-            self.prepare(
-                scene,
-                frequency_hz,
-            ).local_dissipation_matrix(
-                coil_index,
-                arc_fraction,
-                xy,
-            )
+        return np.einsum(
+            "q,qij->ij",
+            weights,
+            matrices,
         )
 
     def save(
@@ -1075,14 +1194,14 @@ class NeuralSpatialLossArtifact:
                 SPATIAL_ARTIFACT_SCHEMA
             ),
             "model_config": {
-                "hidden_dim": (
-                    self.model.hidden_dim
+                "node_dim": (
+                    self.model.node_dim
                 ),
                 "pair_dim": (
                     self.model.pair_dim
                 ),
-                "field_hidden_dim": (
-                    self.model.field_hidden_dim
+                "hidden_dim": (
+                    self.model.hidden_dim
                 ),
                 "factor_rank": (
                     self.model.factor_rank
@@ -1090,19 +1209,30 @@ class NeuralSpatialLossArtifact:
                 "depth": (
                     self.model.depth
                 ),
+                "local_dim": (
+                    self.model.local_dim
+                ),
             },
             "model_state": (
                 self.model.state_dict()
             ),
-            "longitudinal_points": (
-                self.longitudinal_points
+            "normalizer": (
+                self.normalizer.to_dict()
             ),
-            "radial_order": (
-                self.radial_order
-            ),
-            "angular_order": (
-                self.angular_order
-            ),
+            "integration": {
+                "segments_per_turn": (
+                    self.integration_segments_per_turn
+                ),
+                "min_segments": (
+                    self.integration_min_segments
+                ),
+                "radial_order": (
+                    self.integration_radial_order
+                ),
+                "angular_order": (
+                    self.integration_angular_order
+                ),
+            },
         }
         torch.save(
             payload,
@@ -1114,10 +1244,10 @@ class NeuralSpatialLossArtifact:
     @staticmethod
     def load(
         path,
-        port_artifact,
         *,
+        port_artifact,
         device: str = "cpu",
-    ):
+    ) -> "NeuralSpatialLossArtifact":
         try:
             payload = torch.load(
                 Path(
@@ -1152,22 +1282,34 @@ class NeuralSpatialLossArtifact:
                 "model_state"
             ]
         )
-        model.eval()
+        integration = payload[
+            "integration"
+        ]
         return NeuralSpatialLossArtifact(
             port_artifact,
             model,
-            longitudinal_points=int(
+            SpatialFeatureNormalizer.from_dict(
                 payload[
-                    "longitudinal_points"
+                    "normalizer"
                 ]
             ),
-            radial_order=int(
-                payload[
+            integration_segments_per_turn=int(
+                integration[
+                    "segments_per_turn"
+                ]
+            ),
+            integration_min_segments=int(
+                integration[
+                    "min_segments"
+                ]
+            ),
+            integration_radial_order=int(
+                integration[
                     "radial_order"
                 ]
             ),
-            angular_order=int(
-                payload[
+            integration_angular_order=int(
+                integration[
                     "angular_order"
                 ]
             ),
@@ -1175,145 +1317,262 @@ class NeuralSpatialLossArtifact:
         )
 
 
-@dataclass(frozen=True)
-class SpatialTrainingReport:
-    final_loss: float
-    epochs: int
-    best_epoch: int
-    best_validation_error: float | None
-    stopped_early: bool
+def _training_scene_tensors(
+    model,
+    normalizer,
+    sample,
+    device,
+):
+    node, pair = (
+        normalizer.normalize(
+            sample.encoded
+        )
+    )
+    dtype = next(
+        model.parameters()
+    ).dtype
+    node_tensor = torch.as_tensor(
+        node,
+        dtype=dtype,
+        device=device,
+    )
+    pair_tensor = torch.as_tensor(
+        pair,
+        dtype=dtype,
+        device=device,
+    )
+    return (
+        model.encode_scene(
+            node_tensor,
+            pair_tensor,
+        ),
+        pair_tensor,
+        dtype,
+    )
 
 
 def _sample_spatial_loss(
     model,
-    port_artifact,
-    sample: TeacherSample,
+    normalizer,
+    sample,
     *,
     device: str,
 ):
+    spatial = sample.spatial_loss
     if (
-        sample.spatial_loss
-        is None
+        spatial is None
         or sample.target_dissipation_channels
         is None
     ):
         raise ValueError(
-            "spatial training requires spatial truth and dissipation channels"
-        )
-    encoded = sample.encoded
-    node, pair = (
-        port_artifact.normalizer.normalize(
-            encoded
-        )
-    )
-    port_model = (
-        port_artifact.model
-    )
-    port_dtype = next(
-        port_model.parameters()
-    ).dtype
-    port_model.eval()
-    with torch.no_grad():
-        node_tensor = torch.as_tensor(
-            node,
-            dtype=port_dtype,
-            device=device,
-        )
-        pair_tensor = torch.as_tensor(
-            pair,
-            dtype=port_dtype,
-            device=device,
-        )
-        latent = (
-            port_model._updated_features(
-                node_tensor,
-                pair_tensor,
-            )
+            "spatial training requires continuous loss truth and channel truth"
         )
 
-    spatial = (
-        sample.spatial_loss
-    )
-    coordinate_features = (
-        _coordinate_features(
-            sample.scene,
-            spatial.coil_index,
-            spatial.arc_fraction,
-            spatial.xy,
+    updated, pair, dtype = (
+        _training_scene_tensors(
+            model,
+            normalizer,
+            sample,
+            device,
         )
     )
-    raw = model.raw_matrices(
-        latent,
-        pair_tensor,
-        spatial.coil_index,
-        coordinate_features,
+    complex_dtype = (
+        torch.complex64
+        if dtype
+        == torch.float32
+        else torch.complex128
     )
-    target_channels = torch.as_tensor(
-        sample.target_dissipation_channels,
-        dtype=raw.dtype,
+    total = torch.zeros(
+        (),
+        dtype=dtype,
         device=device,
     )
-    normalized = _normalize_by_coil(
-        raw,
-        spatial.coil_index,
-        spatial.weights,
-        target_channels,
-    )
-    target = torch.as_tensor(
-        spatial.dissipation_matrix,
-        dtype=raw.dtype,
-        device=device,
-    )
-    weights = torch.as_tensor(
-        spatial.weights,
-        dtype=raw.real.dtype,
-        device=device,
-    )
-    numerator = torch.sum(
-        weights[
-            :,
-            None,
-            None,
-        ]
-        * torch.abs(
-            normalized
+    used = 0
+
+    for coil in range(
+        len(
+            sample.scene.coils
+        )
+    ):
+        mask = (
+            spatial.coil_index
+            == coil
+        )
+        if not np.any(
+            mask
+        ):
+            continue
+        local, inside = (
+            _local_features_numpy(
+                sample.scene,
+                coil,
+                spatial.arc_fraction[
+                    mask
+                ],
+                spatial.xy[
+                    mask
+                ],
+            )
+        )
+        if not np.all(
+            inside
+        ):
+            raise ValueError(
+                "teacher spatial points must lie inside the conductor section"
+            )
+        weights = torch.as_tensor(
+            spatial.weights[
+                mask
+            ],
+            dtype=dtype,
+            device=device,
+        )
+        raw = model.raw_matrices(
+            updated,
+            pair,
+            coil,
+            torch.as_tensor(
+                local,
+                dtype=dtype,
+                device=device,
+            ),
+        )
+        shape = (
+            _normalize_raw_shapes(
+                raw,
+                weights,
+            )
+        )
+        channel = torch.as_tensor(
+            sample.target_dissipation_channels[
+                coil
+            ],
+            dtype=complex_dtype,
+            device=device,
+        )
+        root = _psd_sqrt(
+            channel
+        )
+        predicted = torch.einsum(
+            "ab,qbc,dc->qad",
+            root,
+            shape,
+            root.conj(),
+        )
+        predicted = 0.5 * (
+            predicted
+            + predicted.conj().transpose(
+                -1,
+                -2,
+            )
+        )
+        target = torch.as_tensor(
+            spatial.dissipation_matrix[
+                mask
+            ],
+            dtype=complex_dtype,
+            device=device,
+        )
+        difference = torch.abs(
+            predicted
             - target
         ) ** 2
-    )
-    denominator = torch.sum(
-        weights[
-            :,
-            None,
-            None,
-        ]
-        * torch.abs(
+        target_energy = torch.abs(
             target
         ) ** 2
-    ) + 1e-18
+        numerator = torch.sum(
+            weights[
+                :,
+                None,
+                None,
+            ]
+            * difference.real
+        )
+        denominator = torch.sum(
+            weights[
+                :,
+                None,
+                None,
+            ]
+            * target_energy.real
+        )
+        total = (
+            total
+            + numerator
+            / torch.clamp(
+                denominator,
+                min=1e-20,
+            )
+        )
+        used += 1
+
+    if used == 0:
+        raise ValueError(
+            "spatial truth contains no coil samples"
+        )
     return (
-        numerator
-        / denominator
+        total
+        / used
+    )
+
+
+def _spatial_validation_error(
+    model,
+    normalizer,
+    samples,
+    *,
+    device: str,
+) -> float:
+    samples = tuple(
+        samples
+    )
+    if not samples:
+        raise ValueError(
+            "validation samples are empty"
+        )
+    model.eval()
+    values = []
+    with torch.no_grad():
+        for sample in samples:
+            value = (
+                _sample_spatial_loss(
+                    model,
+                    normalizer,
+                    sample,
+                    device=device,
+                )
+            )
+            values.append(
+                float(
+                    torch.sqrt(
+                        torch.clamp(
+                            value,
+                            min=0.0,
+                        )
+                    ).cpu()
+                )
+            )
+    return float(
+        np.mean(
+            values
+        )
     )
 
 
 def train_spatial_loss_surrogate(
-    port_artifact,
     samples,
     *,
     validation_samples=(),
-    field_hidden_dim: int = 64,
-    factor_rank: int = 4,
+    hidden_dim: int = 64,
+    factor_rank: int = 2,
     depth: int = 2,
     epochs: int = 120,
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-6,
     patience: int = 20,
     validation_interval: int = 1,
-    min_improvement: float = 1e-5,
-    seed: int = 23,
-    longitudinal_points: int = 12,
-    radial_order: int = 3,
-    angular_order: int = 16,
+    min_improvement: float = 1e-4,
+    seed: int = 29,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -1324,11 +1583,12 @@ def train_spatial_loss_surrogate(
     )
     if not samples:
         raise ValueError(
-            "at least one spatial training sample is required"
+            "at least one spatial teacher sample is required"
         )
     if (
         epochs < 1
         or learning_rate <= 0.0
+        or weight_decay < 0.0
         or patience < 1
         or validation_interval < 1
         or min_improvement < 0.0
@@ -1336,14 +1596,19 @@ def train_spatial_loss_surrogate(
         raise ValueError(
             "invalid spatial training configuration"
         )
-    if any(
-        sample.spatial_loss is None
-        or sample.target_dissipation_channels is None
-        for sample in samples
+    for sample in (
+        samples
+        + validation_samples
     ):
-        raise ValueError(
-            "all spatial training samples require spatial truth"
-        )
+        if (
+            sample.spatial_loss
+            is None
+            or sample.target_dissipation_channels
+            is None
+        ):
+            raise ValueError(
+                "all spatial train/validation samples require continuous loss truth"
+            )
 
     torch.manual_seed(
         seed
@@ -1352,27 +1617,28 @@ def train_spatial_loss_surrogate(
         seed
     )
 
-    port_model = (
-        port_artifact.model
-    )
-    for parameter in (
-        port_model.parameters()
-    ):
-        parameter.requires_grad_(
-            False
+    normalizer = (
+        SpatialFeatureNormalizer.fit(
+            samples
         )
-    hidden_dim = int(
-        port_model.hidden_dim
     )
-    pair_dim = int(
-        port_model.pair_dim
-    )
-
     model = SpatialLossShapeNet(
-        hidden_dim,
-        pair_dim,
-        field_hidden_dim=(
-            field_hidden_dim
+        node_dim=(
+            samples[
+                0
+            ].encoded.node_features.shape[
+                -1
+            ]
+        ),
+        pair_dim=(
+            samples[
+                0
+            ].encoded.pair_features.shape[
+                -1
+            ]
+        ),
+        hidden_dim=(
+            hidden_dim
         ),
         factor_rank=(
             factor_rank
@@ -1407,7 +1673,7 @@ def train_spatial_loss_surrogate(
                 samples
             )
         )
-        epoch_loss = 0.0
+        accumulated = 0.0
         for index in order:
             optimizer.zero_grad(
                 set_to_none=True
@@ -1415,7 +1681,7 @@ def train_spatial_loss_surrogate(
             loss = (
                 _sample_spatial_loss(
                     model,
-                    port_artifact,
+                    normalizer,
                     samples[
                         int(
                             index
@@ -1430,12 +1696,12 @@ def train_spatial_loss_surrogate(
                 10.0,
             )
             optimizer.step()
-            epoch_loss += float(
+            accumulated += float(
                 loss.detach().cpu()
             )
 
         final_loss = (
-            epoch_loss
+            accumulated
             / len(
                 samples
             )
@@ -1451,23 +1717,12 @@ def train_spatial_loss_surrogate(
                 != epochs
             ):
                 continue
-            model.eval()
-            with torch.no_grad():
-                values = [
-                    float(
-                        _sample_spatial_loss(
-                            model,
-                            port_artifact,
-                            sample,
-                            device=device,
-                        ).detach().cpu()
-                    )
-                    for sample
-                    in validation_samples
-                ]
-            score = float(
-                np.mean(
-                    values
+            score = (
+                _spatial_validation_error(
+                    model,
+                    normalizer,
+                    validation_samples,
+                    device=device,
                 )
             )
             if (
@@ -1502,33 +1757,25 @@ def train_spatial_loss_surrogate(
 
     if best_state is None:
         raise RuntimeError(
-            "spatial training completed without a selectable state"
+            "spatial training completed without a selectable model state"
         )
     model.load_state_dict(
         best_state
     )
     model.eval()
+
     return (
-        NeuralSpatialLossArtifact(
-            port_artifact,
-            model,
-            longitudinal_points=(
-                longitudinal_points
-            ),
-            radial_order=(
-                radial_order
-            ),
-            angular_order=(
-                angular_order
-            ),
-            device=device,
-        ),
+        model,
+        normalizer,
         SpatialTrainingReport(
             final_loss=float(
                 final_loss
             ),
             epochs=int(
                 epochs_run
+            ),
+            samples=len(
+                samples
             ),
             best_epoch=int(
                 best_epoch

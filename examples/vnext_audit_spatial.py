@@ -6,31 +6,54 @@ from pathlib import Path
 
 from sdfmpneo_vnext import ImmutableTeacherDataset
 from sdfmpneo_vnext.neural import NeuralResidualArtifact
-from sdfmpneo_vnext.spatial_neural import NeuralSpatialLossArtifact
-from sdfmpneo_vnext.spatial_evaluation import audit_spatial_surrogate
+from sdfmpneo_vnext.spatial_evaluation import (
+    audit_spatial_loss,
+)
+from sdfmpneo_vnext.spatial_neural import (
+    NeuralSpatialLossArtifact,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Audit a frozen vNext spatial Joule artifact."
+        description=(
+            "Audit a frozen vNext continuous spatial Joule artifact."
+        )
     )
-    parser.add_argument("dataset", type=Path)
-    parser.add_argument("port_artifact", type=Path)
-    parser.add_argument("spatial_artifact", type=Path)
+    parser.add_argument(
+        "dataset",
+        type=Path,
+    )
+    parser.add_argument(
+        "port_artifact",
+        type=Path,
+    )
+    parser.add_argument(
+        "spatial_artifact",
+        type=Path,
+    )
     parser.add_argument(
         "--split",
-        choices=("test", "release"),
+        choices=(
+            "test",
+            "release",
+        ),
         default="release",
     )
     parser.add_argument(
         "--mean-limit",
         type=float,
-        default=0.10,
+        default=0.05,
     )
     parser.add_argument(
         "--max-limit",
         type=float,
-        default=0.20,
+        default=0.10,
+    )
+    parser.add_argument(
+        "--joule-limit",
+        type=float,
+        default=0.10,
     )
     parser.add_argument(
         "--device",
@@ -57,24 +80,33 @@ def main():
     )
     spatial = NeuralSpatialLossArtifact.load(
         args.spatial_artifact,
-        port,
+        port_artifact=port,
         device=args.device,
     )
-    report = audit_spatial_surrogate(
+    audit = audit_spatial_loss(
         spatial,
         samples,
-        mean_relative_error_limit=args.mean_limit,
-        maximum_relative_error_limit=args.max_limit,
+        mean_relative_error_limit=(
+            args.mean_limit
+        ),
+        maximum_relative_error_limit=(
+            args.max_limit
+        ),
+        maximum_probe_joule_error_limit=(
+            args.joule_limit
+        ),
     )
     print(
         json.dumps(
-            report.to_dict(),
+            audit.to_dict(),
             indent=2,
             sort_keys=True,
         )
     )
     raise SystemExit(
-        0 if report.passed else 2
+        0
+        if audit.passed
+        else 2
     )
 
 
