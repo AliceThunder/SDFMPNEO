@@ -42,7 +42,13 @@ from .electrothermal import (
     VoltageControlledEnvelope,
     build_lumped_coil_thermal_model,
 )
+from .prediction import StructuredPortPrediction
+from .fast import (
+    FastCurrentControlledEnvelope,
+    FastVoltageControlledEnvelope,
+)
 from .analytic_baseline import (
+    AnalyticBaselineArtifact,
     AnalyticBaselineResult,
     analytic_port_baseline,
     pair_mutual_inductance,
@@ -102,6 +108,10 @@ __all__ = [
     "CurrentControlledEnvelope",
     "VoltageControlledEnvelope",
     "build_lumped_coil_thermal_model",
+    "StructuredPortPrediction",
+    "FastCurrentControlledEnvelope",
+    "FastVoltageControlledEnvelope",
+    "AnalyticBaselineArtifact",
     "AnalyticBaselineResult",
     "analytic_port_baseline",
     "pair_mutual_inductance",

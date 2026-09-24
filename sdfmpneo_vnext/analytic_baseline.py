@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .scene import Scene
+from .prediction import StructuredPortPrediction
 
 
 @dataclass(frozen=True)
@@ -165,3 +166,74 @@ def analytic_port_baseline(
         R,
         L,
     )
+
+
+
+class AnalyticBaselineArtifact:
+    """Pure-physics FAST fallback with exact structural power closure."""
+
+    def __init__(
+        self,
+        *,
+        segments_per_coil: int = 96,
+    ):
+        if segments_per_coil < 8:
+            raise ValueError(
+                "segments_per_coil must be >= 8"
+            )
+        self.segments_per_coil = int(
+            segments_per_coil
+        )
+
+    def predict_structured(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> StructuredPortPrediction:
+        baseline = analytic_port_baseline(
+            scene,
+            frequency_hz,
+            segments_per_coil=(
+                self.segments_per_coil
+            ),
+        )
+        n = len(
+            scene.coils
+        )
+        channels = np.zeros(
+            (
+                n,
+                n,
+                n,
+            ),
+            dtype=complex,
+        )
+        for coil in range(
+            n
+        ):
+            channels[
+                coil,
+                coil,
+                coil,
+            ] = (
+                baseline.resistance[
+                    coil,
+                    coil,
+                ]
+            )
+        return StructuredPortPrediction(
+            baseline.impedance,
+            channels,
+        )
+
+    def predict(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> np.ndarray:
+        return (
+            self.predict_structured(
+                scene,
+                frequency_hz,
+            ).impedance
+        )
