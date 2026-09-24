@@ -200,6 +200,7 @@ __all__ = [
     "ImmutableTeacherDataset",
     "deterministic_split",
     "migrate_dataset_v3_to_v4",
+    "migrate_dataset_v3_to_v4",
     "scene_from_dict",
     "scene_to_dict",
     "SurrogateAudit",

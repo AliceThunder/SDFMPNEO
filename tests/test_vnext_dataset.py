@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo_vnext import (
     ConductorMaterial,
     CoilObject,
+    DenseMixedConductorTeacher,
     HomogeneousMedium,
     ImmutableTeacherDataset,
     MQSConfig,
@@ -326,4 +327,51 @@ def test_minimal_scene_json_uses_physical_defaults_and_pitch_shorthand():
     assert np.isclose(
         scene.medium.conductivity,
         0.0,
+    )
+
+
+
+def test_mixed_reference_backend_generates_mixed_truth_and_records_backend(tmp_path):
+    scene = _scene()
+    frequency = 12_000.0
+    config = MQSConfig(
+        segments_per_turn=6,
+        min_segments=6,
+        section_degree=0,
+        radial_order=2,
+        angular_order=8,
+        line_order=2,
+    )
+    dataset = ImmutableTeacherDataset.create(
+        tmp_path / "dataset"
+    )
+    record = dataset.generate_and_add(
+        scene,
+        frequency,
+        teacher_config=config,
+        baseline_segments=24,
+        reference_backend="mixed",
+        split="train",
+    )
+    assert record.reference_backend == "mixed"
+    loaded = dataset.load_sample(
+        record.sample_id
+    )
+    expected = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        config,
+    ).solve()
+    assert np.allclose(
+        loaded.target_impedance,
+        expected.impedance,
+        rtol=2e-11,
+        atol=2e-12,
+    )
+    assert loaded.target_dissipation_channels is not None
+    assert np.allclose(
+        loaded.target_dissipation_channels,
+        expected.coil_dissipation_matrices(),
+        rtol=2e-11,
+        atol=2e-12,
     )

@@ -127,7 +127,6 @@ class TeacherSample:
     baseline_segments: int
     target_dissipation_channels: np.ndarray | None = None
     spatial_loss: SpatialLossSamples | None = None
-    reference_backend: str = "mixed"
 
     @staticmethod
     def generate(
@@ -136,7 +135,7 @@ class TeacherSample:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
-        reference_backend: str = "mixed",
+        reference_backend: str = "mqs",
     ) -> "TeacherSample":
         encoded = encode_scene_invariant(
             scene,
@@ -147,33 +146,31 @@ class TeacherSample:
             frequency_hz,
             segments_per_coil=baseline_segments,
         )
-        config = (
+        resolved_config = (
             teacher_config
             or MQSConfig()
         )
-        if reference_backend == "mixed":
-            teacher = DenseMixedConductorTeacher(
-                scene,
-                frequency_hz,
-                config,
-            )
-            segments = (
-                teacher._mqs._segments
-            )
-        elif reference_backend == "mqs":
+        reference_backend = str(
+            reference_backend
+        ).lower()
+        if reference_backend == "mqs":
             teacher = DenseMQSTeacher(
                 scene,
                 frequency_hz,
-                config,
+                resolved_config,
             )
-            segments = (
-                teacher._segments
+            segments = teacher._segments
+        elif reference_backend == "mixed":
+            teacher = DenseMixedConductorTeacher(
+                scene,
+                frequency_hz,
+                resolved_config,
             )
+            segments = teacher._mqs._segments
         else:
             raise ValueError(
-                "reference_backend must be 'mixed' or 'mqs'"
+                "reference_backend must be 'mqs' or 'mixed'"
             )
-
         truth_result = teacher.solve()
         truth = truth_result.impedance
         channels = (
@@ -317,5 +314,4 @@ class TeacherSample:
             int(baseline_segments),
             channels,
             spatial,
-            reference_backend,
         )

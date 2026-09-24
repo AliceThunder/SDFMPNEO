@@ -14,228 +14,22 @@ from .serialization import (
     scene_from_dict,
     scene_to_dict,
 )
-from .training_data import SpatialLossSamples, TeacherSample
+from .training_data import (
+    SpatialLossSamples,
+    TeacherSample,
+)
 
 
 DATASET_SCHEMA = 4
-LEGACY_DATASET_SCHEMA = 3
-
-
-def migrate_dataset_v3_to_v4(
-    root,
-):
-    """Upgrade persisted MQS truth metadata without recomputing any sample."""
-    root = Path(
-        root
-    )
-    manifest_path = (
-        root
-        / "manifest.json"
-    )
-    if not manifest_path.exists():
-        raise FileNotFoundError(
-            f"dataset manifest does not exist: {manifest_path}"
-        )
-    manifest = json.loads(
-        manifest_path.read_text(
-            encoding="utf-8"
-        )
-    )
-    schema = int(
-        manifest.get(
-            "schema",
-            -1,
-        )
-    )
-    if schema == DATASET_SCHEMA:
-        return {
-            "migrated": False,
-            "records": len(
-                manifest.get(
-                    "records",
-                    []
-                )
-            ),
-        }
-    if schema != LEGACY_DATASET_SCHEMA:
-        raise ValueError(
-            f"only dataset schema {LEGACY_DATASET_SCHEMA} can be migrated to {DATASET_SCHEMA}"
-        )
-
-    migrated_records = []
-    moves = []
-    seen = set()
-    for record in manifest.get(
-        "records",
-        []
-    ):
-        identity = {
-            "schema": DATASET_SCHEMA,
-            "scene": record[
-                "scene"
-            ],
-            "frequency_hz": float(
-                record[
-                    "frequency_hz"
-                ]
-            ),
-            "baseline_segments": int(
-                record[
-                    "baseline_segments"
-                ]
-            ),
-            "reference_backend": "mqs",
-            "teacher_config": record[
-                "teacher_config"
-            ],
-            "output_schema": (
-                "mvp_mixed_reference_impedance_loss_channels_and_spatial_v4"
-            ),
-        }
-        new_id = content_hash(
-            identity
-        )
-        if new_id in seen:
-            raise RuntimeError(
-                "legacy migration produced a duplicate content identity"
-            )
-        seen.add(
-            new_id
-        )
-        old_file = Path(
-            record[
-                "file"
-            ]
-        )
-        new_file = (
-            Path(
-                "samples"
-            )
-            / f"{new_id}.npz"
-        )
-        migrated = dict(
-            record
-        )
-        migrated[
-            "sample_id"
-        ] = new_id
-        migrated[
-            "reference_backend"
-        ] = "mqs"
-        migrated[
-            "file"
-        ] = str(
-            new_file
-        )
-        migrated_records.append(
-            migrated
-        )
-        if old_file != new_file:
-            moves.append(
-                (
-                    root
-                    / old_file,
-                    root
-                    / new_file,
-                )
-            )
-
-    for source, destination in moves:
-        if not source.exists():
-            raise FileNotFoundError(
-                f"legacy sample file is missing: {source}"
-            )
-        if destination.exists():
-            raise FileExistsError(
-                f"migration destination already exists: {destination}"
-            )
-
-    backup = (
-        root
-        / "manifest.schema3.json"
-    )
-    if not backup.exists():
-        backup.write_text(
-            canonical_json(
-                manifest
-            ),
-            encoding="utf-8",
-        )
-
-    completed = []
-    try:
-        for source, destination in moves:
-            destination.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-            source.replace(
-                destination
-            )
-            completed.append(
-                (
-                    destination,
-                    source,
-                )
-            )
-
-        upgraded = dict(
-            manifest
-        )
-        upgraded[
-            "schema"
-        ] = DATASET_SCHEMA
-        upgraded[
-            "records"
-        ] = sorted(
-            migrated_records,
-            key=lambda item: item[
-                "sample_id"
-            ],
-        )
-        temporary = (
-            manifest_path.with_suffix(
-                ".json.tmp"
-            )
-        )
-        temporary.write_text(
-            canonical_json(
-                upgraded
-            ),
-            encoding="utf-8",
-        )
-        temporary.replace(
-            manifest_path
-        )
-    except Exception:
-        for destination, source in reversed(
-            completed
-        ):
-            if (
-                destination.exists()
-                and not source.exists()
-            ):
-                destination.replace(
-                    source
-                )
-        raise
-
-    return {
-        "migrated": True,
-        "records": len(
-            migrated_records
-        ),
-        "backup": str(
-            backup
-        ),
-    }
-
-
 SPLITS = (
     "train",
     "validation",
     "test",
     "release",
+)
+REFERENCE_BACKENDS = (
+    "mqs",
+    "mixed",
 )
 
 
@@ -243,7 +37,12 @@ def deterministic_split(
     sample_id: str,
     *,
     seed: int,
-    fractions=(0.70, 0.15, 0.10, 0.05),
+    fractions=(
+        0.70,
+        0.15,
+        0.10,
+        0.05,
+    ),
 ) -> str:
     fractions = np.asarray(
         fractions,
@@ -251,9 +50,13 @@ def deterministic_split(
     )
     if (
         fractions.shape != (4,)
-        or np.any(fractions < 0.0)
+        or np.any(
+            fractions < 0.0
+        )
         or not np.isclose(
-            np.sum(fractions),
+            np.sum(
+                fractions
+            ),
             1.0,
             atol=1e-12,
         )
@@ -262,16 +65,22 @@ def deterministic_split(
             "fractions must be four nonnegative values summing to one"
         )
     digest = sha256(
-        f"{int(seed)}:{sample_id}".encode("utf-8")
+        f"{int(seed)}:{sample_id}".encode(
+            "utf-8"
+        )
     ).digest()
     value = (
         int.from_bytes(
             digest[:8],
             "big",
         )
-        / float(2**64)
+        / float(
+            2**64
+        )
     )
-    edge = np.cumsum(fractions)
+    edge = np.cumsum(
+        fractions
+    )
     index = int(
         np.searchsorted(
             edge,
@@ -279,8 +88,59 @@ def deterministic_split(
             side="right",
         )
     )
-    index = min(index, 3)
-    return SPLITS[index]
+    index = min(
+        index,
+        3,
+    )
+    return SPLITS[
+        index
+    ]
+
+
+def _normalize_reference_backend(
+    value,
+) -> str:
+    backend = str(
+        value
+    ).lower()
+    if backend not in (
+        REFERENCE_BACKENDS
+    ):
+        raise ValueError(
+            "reference_backend must be 'mqs' or 'mixed'"
+        )
+    return backend
+
+
+def _identity_payload(
+    *,
+    scene,
+    frequency_hz: float,
+    baseline_segments: int,
+    teacher_config,
+    reference_backend: str,
+):
+    return {
+        "schema": DATASET_SCHEMA,
+        "scene": scene,
+        "frequency_hz": float(
+            frequency_hz
+        ),
+        "baseline_segments": int(
+            baseline_segments
+        ),
+        "teacher_config": dict(
+            teacher_config
+        ),
+        "reference_backend": (
+            _normalize_reference_backend(
+                reference_backend
+            )
+        ),
+        "output_schema": (
+            "mvp_port_impedance_loss_channels_and_spatial_v4"
+        ),
+    }
 
 
 @dataclass(frozen=True)
@@ -290,10 +150,10 @@ class DatasetRecord:
     source: str
     frequency_hz: float
     baseline_segments: int
-    reference_backend: str
     file: str
     scene: dict
     teacher_config: dict
+    reference_backend: str
 
 
 class ImmutableTeacherDataset:
@@ -303,9 +163,12 @@ class ImmutableTeacherDataset:
         self,
         root,
     ):
-        self.root = Path(root)
+        self.root = Path(
+            root
+        )
         self.manifest_path = (
-            self.root / "manifest.json"
+            self.root
+            / "manifest.json"
         )
         if not self.manifest_path.exists():
             raise FileNotFoundError(
@@ -316,18 +179,18 @@ class ImmutableTeacherDataset:
                 encoding="utf-8"
             )
         )
-        schema = int(
-            self._manifest.get(
-                "schema",
-                -1,
-            )
+        schema = self._manifest.get(
+            "schema"
         )
-        if schema == LEGACY_DATASET_SCHEMA:
+        if schema == 3:
             raise ValueError(
-                "legacy vNext dataset schema 3 detected; call "
-                "migrate_dataset_v3_to_v4(root) to preserve existing truth without recomputation"
+                "vNext dataset schema 3 requires explicit "
+                "migrate_dataset_v3_to_v4(...) before loading"
             )
-        if schema != DATASET_SCHEMA:
+        if (
+            schema
+            != DATASET_SCHEMA
+        ):
             raise ValueError(
                 "unsupported vNext dataset schema"
             )
@@ -345,21 +208,27 @@ class ImmutableTeacherDataset:
             0.05,
         ),
     ):
-        root = Path(root)
+        root = Path(
+            root
+        )
         root.mkdir(
             parents=True,
             exist_ok=True,
         )
-        manifest = root / "manifest.json"
+        manifest = (
+            root
+            / "manifest.json"
+        )
         if manifest.exists():
             raise FileExistsError(
                 f"dataset already exists: {manifest}"
             )
         fractions = [
-            float(x)
+            float(
+                x
+            )
             for x in split_fractions
         ]
-        # Reuse the split validator before writing persistent metadata.
         deterministic_split(
             "0" * 64,
             seed=split_seed,
@@ -367,50 +236,81 @@ class ImmutableTeacherDataset:
         )
         payload = {
             "schema": DATASET_SCHEMA,
-            "split_seed": int(split_seed),
-            "split_fractions": fractions,
+            "split_seed": int(
+                split_seed
+            ),
+            "split_fractions": (
+                fractions
+            ),
             "records": [],
         }
         manifest.write_text(
-            canonical_json(payload),
+            canonical_json(
+                payload
+            ),
             encoding="utf-8",
         )
-        return cls(root)
-
-    @property
-    def split_seed(self) -> int:
-        return int(
-            self._manifest["split_seed"]
+        return cls(
+            root
         )
 
     @property
-    def split_fractions(self):
+    def split_seed(
+        self,
+    ) -> int:
+        return int(
+            self._manifest[
+                "split_seed"
+            ]
+        )
+
+    @property
+    def split_fractions(
+        self,
+    ):
         return tuple(
-            float(x)
-            for x in self._manifest[
+            float(
+                value
+            )
+            for value
+            in self._manifest[
                 "split_fractions"
             ]
         )
 
     @property
-    def records(self):
+    def records(
+        self,
+    ):
         return tuple(
-            DatasetRecord(**record)
-            for record in self._manifest[
+            DatasetRecord(
+                **record
+            )
+            for record
+            in self._manifest[
                 "records"
             ]
         )
 
-    def counts(self):
+    def counts(
+        self,
+    ):
         out = {
             split: 0
-            for split in SPLITS
+            for split
+            in SPLITS
         }
-        for record in self.records:
-            out[record.split] += 1
+        for record in (
+            self.records
+        ):
+            out[
+                record.split
+            ] += 1
         return out
 
-    def _write_manifest(self):
+    def _write_manifest(
+        self,
+    ):
         temporary = (
             self.manifest_path.with_suffix(
                 ".json.tmp"
@@ -431,7 +331,9 @@ class ImmutableTeacherDataset:
         teacher_config,
     ):
         if teacher_config is None:
-            teacher_config = MQSConfig()
+            teacher_config = (
+                MQSConfig()
+            )
         if not isinstance(
             teacher_config,
             MQSConfig,
@@ -447,33 +349,36 @@ class ImmutableTeacherDataset:
         self,
         sample: TeacherSample,
         teacher_config,
+        reference_backend: str,
     ):
         teacher_dict = (
             self._teacher_dict(
                 teacher_config
             )
         )
-        identity = {
-            "schema": DATASET_SCHEMA,
-            "scene": scene_to_dict(
-                sample.scene
-            ),
-            "frequency_hz": float(
-                sample.frequency_hz
-            ),
-            "baseline_segments": int(
-                sample.baseline_segments
-            ),
-            "reference_backend": str(
-                sample.reference_backend
-            ),
-            "teacher_config": teacher_dict,
-            "output_schema": (
-                "mvp_mixed_reference_impedance_loss_channels_and_spatial_v4"
-            ),
-        }
+        identity = (
+            _identity_payload(
+                scene=scene_to_dict(
+                    sample.scene
+                ),
+                frequency_hz=(
+                    sample.frequency_hz
+                ),
+                baseline_segments=(
+                    sample.baseline_segments
+                ),
+                teacher_config=(
+                    teacher_dict
+                ),
+                reference_backend=(
+                    reference_backend
+                ),
+            )
+        )
         return (
-            content_hash(identity),
+            content_hash(
+                identity
+            ),
             identity,
             teacher_dict,
         )
@@ -483,36 +388,60 @@ class ImmutableTeacherDataset:
         sample: TeacherSample,
         *,
         teacher_config: MQSConfig | None = None,
+        reference_backend: str = "mqs",
         source: str = "initial",
         split: str | None = None,
     ) -> DatasetRecord:
-        sample_id, identity, teacher_dict = (
-            self._identity(
-                sample,
-                teacher_config,
+        reference_backend = (
+            _normalize_reference_backend(
+                reference_backend
             )
         )
+        (
+            sample_id,
+            identity,
+            teacher_dict,
+        ) = self._identity(
+            sample,
+            teacher_config,
+            reference_backend,
+        )
         existing = {
-            record.sample_id: record
-            for record in self.records
+            record.sample_id: (
+                record
+            )
+            for record
+            in self.records
         }
-        if sample_id in existing:
-            return existing[sample_id]
+        if (
+            sample_id
+            in existing
+        ):
+            return existing[
+                sample_id
+            ]
 
         if source == "active":
             if (
                 split is not None
-                and split != "train"
+                and split
+                != "train"
             ):
                 raise ValueError(
                     "active-learning samples may only enter the train split"
                 )
             split = "train"
         elif split is None:
-            split = deterministic_split(
-                sample_id,
-                seed=self.split_seed,
-                fractions=self.split_fractions,
+            split = (
+                deterministic_split(
+                    sample_id,
+                    seed=(
+                        self.split_seed
+                    ),
+                    fractions=(
+                        self.split_fractions
+                    ),
+                )
             )
         if split not in SPLITS:
             raise ValueError(
@@ -520,10 +449,15 @@ class ImmutableTeacherDataset:
             )
 
         relative = (
-            Path("samples")
+            Path(
+                "samples"
+            )
             / f"{sample_id}.npz"
         )
-        path = self.root / relative
+        path = (
+            self.root
+            / relative
+        )
         path.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -532,6 +466,60 @@ class ImmutableTeacherDataset:
             raise FileExistsError(
                 f"orphan sample file already exists: {path}"
             )
+
+        n_ports = int(
+            sample.target_impedance.shape[
+                0
+            ]
+        )
+        spatial = (
+            sample.spatial_loss
+        )
+        if spatial is None:
+            spatial_coil = np.empty(
+                0,
+                dtype=int,
+            )
+            spatial_arc = np.empty(
+                0,
+                dtype=float,
+            )
+            spatial_xy = np.empty(
+                (
+                    0,
+                    2,
+                ),
+                dtype=float,
+            )
+            spatial_weights = np.empty(
+                0,
+                dtype=float,
+            )
+            spatial_matrix = np.empty(
+                (
+                    0,
+                    n_ports,
+                    n_ports,
+                ),
+                dtype=complex,
+            )
+        else:
+            spatial_coil = (
+                spatial.coil_index
+            )
+            spatial_arc = (
+                spatial.arc_fraction
+            )
+            spatial_xy = (
+                spatial.xy
+            )
+            spatial_weights = (
+                spatial.weights
+            )
+            spatial_matrix = (
+                spatial.dissipation_matrix
+            )
+
         np.savez_compressed(
             path,
             node_features=(
@@ -558,79 +546,73 @@ class ImmutableTeacherDataset:
                     [],
                     dtype=complex,
                 )
-                if sample.target_dissipation_channels is None
-                else sample.target_dissipation_channels
+                if (
+                    sample.target_dissipation_channels
+                    is None
+                )
+                else (
+                    sample.target_dissipation_channels
+                )
             ),
             spatial_coil_index=(
-                np.asarray(
-                    [],
-                    dtype=int,
-                )
-                if sample.spatial_loss is None
-                else sample.spatial_loss.coil_index
+                spatial_coil
             ),
             spatial_arc_fraction=(
-                np.asarray(
-                    [],
-                    dtype=float,
-                )
-                if sample.spatial_loss is None
-                else sample.spatial_loss.arc_fraction
+                spatial_arc
             ),
             spatial_xy=(
-                np.zeros(
-                    (0, 2),
-                    dtype=float,
-                )
-                if sample.spatial_loss is None
-                else sample.spatial_loss.xy
+                spatial_xy
             ),
             spatial_weights=(
-                np.asarray(
-                    [],
-                    dtype=float,
-                )
-                if sample.spatial_loss is None
-                else sample.spatial_loss.weights
+                spatial_weights
             ),
             spatial_dissipation_matrix=(
-                np.zeros(
-                    (
-                        0,
-                        sample.target_impedance.shape[0],
-                        sample.target_impedance.shape[1],
-                    ),
-                    dtype=complex,
-                )
-                if sample.spatial_loss is None
-                else sample.spatial_loss.dissipation_matrix
+                spatial_matrix
             ),
         )
 
         record = DatasetRecord(
-            sample_id=sample_id,
+            sample_id=(
+                sample_id
+            ),
             split=split,
-            source=str(source),
+            source=str(
+                source
+            ),
             frequency_hz=float(
                 sample.frequency_hz
             ),
             baseline_segments=int(
                 sample.baseline_segments
             ),
-            reference_backend=str(
-                sample.reference_backend
+            file=str(
+                relative
             ),
-            file=str(relative),
-            scene=identity["scene"],
-            teacher_config=teacher_dict,
+            scene=identity[
+                "scene"
+            ],
+            teacher_config=(
+                teacher_dict
+            ),
+            reference_backend=(
+                reference_backend
+            ),
         )
-        self._manifest["records"].append(
-            asdict(record)
+        self._manifest[
+            "records"
+        ].append(
+            asdict(
+                record
+            )
         )
-        self._manifest["records"].sort(
-            key=lambda item: item[
-                "sample_id"
-            ]
+        self._manifest[
+            "records"
+        ].sort(
+            key=lambda item: (
+                item[
+                    "sample_id"
+                ]
+            )
         )
         self._write_manifest()
         return record
@@ -642,20 +624,38 @@ class ImmutableTeacherDataset:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
-        reference_backend: str = "mixed",
+        reference_backend: str = "mqs",
         source: str = "initial",
         split: str | None = None,
     ) -> DatasetRecord:
-        sample = TeacherSample.generate(
-            scene,
-            frequency_hz,
-            teacher_config=teacher_config,
-            baseline_segments=baseline_segments,
-            reference_backend=reference_backend,
+        reference_backend = (
+            _normalize_reference_backend(
+                reference_backend
+            )
+        )
+        sample = (
+            TeacherSample.generate(
+                scene,
+                frequency_hz,
+                teacher_config=(
+                    teacher_config
+                ),
+                baseline_segments=(
+                    baseline_segments
+                ),
+                reference_backend=(
+                    reference_backend
+                ),
+            )
         )
         return self.add_sample(
             sample,
-            teacher_config=teacher_config,
+            teacher_config=(
+                teacher_config
+            ),
+            reference_backend=(
+                reference_backend
+            ),
             source=source,
             split=split,
         )
@@ -664,7 +664,9 @@ class ImmutableTeacherDataset:
         self,
         sample_id: str,
     ) -> DatasetRecord:
-        for record in self.records:
+        for record in (
+            self.records
+        ):
             if (
                 record.sample_id
                 == sample_id
@@ -689,65 +691,109 @@ class ImmutableTeacherDataset:
             path,
             allow_pickle=False,
         ) as data:
-            encoded = EncodedScene(
-                np.asarray(
-                    data["node_features"],
-                    dtype=float,
-                ),
-                np.asarray(
-                    data["pair_features"],
-                    dtype=float,
-                ),
-                float(
-                    data["length_scale"]
-                ),
+            encoded = (
+                EncodedScene(
+                    np.asarray(
+                        data[
+                            "node_features"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "pair_features"
+                        ],
+                        dtype=float,
+                    ),
+                    float(
+                        data[
+                            "length_scale"
+                        ]
+                    ),
+                )
             )
-            baseline_r = np.asarray(
-                data["baseline_resistance"],
-                dtype=float,
+            baseline_r = (
+                np.asarray(
+                    data[
+                        "baseline_resistance"
+                    ],
+                    dtype=float,
+                )
             )
-            baseline_x = np.asarray(
-                data["baseline_reactance"],
-                dtype=float,
+            baseline_x = (
+                np.asarray(
+                    data[
+                        "baseline_reactance"
+                    ],
+                    dtype=float,
+                )
             )
             target = np.asarray(
-                data["target_impedance"],
+                data[
+                    "target_impedance"
+                ],
                 dtype=complex,
             )
-            stored_channels = np.asarray(
-                data["target_dissipation_channels"],
-                dtype=complex,
+            stored_channels = (
+                np.asarray(
+                    data[
+                        "target_dissipation_channels"
+                    ],
+                    dtype=complex,
+                )
             )
             channels = (
                 None
-                if stored_channels.size == 0
-                else stored_channels
+                if (
+                    stored_channels.size
+                    == 0
+                )
+                else (
+                    stored_channels
+                )
             )
-            spatial_coil = np.asarray(
-                data["spatial_coil_index"],
-                dtype=int,
+            spatial_coil = (
+                np.asarray(
+                    data[
+                        "spatial_coil_index"
+                    ],
+                    dtype=int,
+                )
             )
-            if spatial_coil.size == 0:
+            if (
+                spatial_coil.size
+                == 0
+            ):
                 spatial = None
             else:
-                spatial = SpatialLossSamples(
-                    spatial_coil,
-                    np.asarray(
-                        data["spatial_arc_fraction"],
-                        dtype=float,
-                    ),
-                    np.asarray(
-                        data["spatial_xy"],
-                        dtype=float,
-                    ),
-                    np.asarray(
-                        data["spatial_weights"],
-                        dtype=float,
-                    ),
-                    np.asarray(
-                        data["spatial_dissipation_matrix"],
-                        dtype=complex,
-                    ),
+                spatial = (
+                    SpatialLossSamples(
+                        spatial_coil,
+                        np.asarray(
+                            data[
+                                "spatial_arc_fraction"
+                            ],
+                            dtype=float,
+                        ),
+                        np.asarray(
+                            data[
+                                "spatial_xy"
+                            ],
+                            dtype=float,
+                        ),
+                        np.asarray(
+                            data[
+                                "spatial_weights"
+                            ],
+                            dtype=float,
+                        ),
+                        np.asarray(
+                            data[
+                                "spatial_dissipation_matrix"
+                            ],
+                            dtype=complex,
+                        ),
+                    )
                 )
         return TeacherSample(
             scene_from_dict(
@@ -761,7 +807,6 @@ class ImmutableTeacherDataset:
             record.baseline_segments,
             channels,
             spatial,
-            record.reference_backend,
         )
 
     def iter_samples(
@@ -770,16 +815,222 @@ class ImmutableTeacherDataset:
     ):
         if (
             split is not None
-            and split not in SPLITS
+            and split
+            not in SPLITS
         ):
             raise ValueError(
                 f"unknown split: {split}"
             )
-        for record in self.records:
+        for record in (
+            self.records
+        ):
             if (
                 split is None
-                or record.split == split
+                or record.split
+                == split
             ):
                 yield self.load_sample(
                     record.sample_id
                 )
+
+
+def migrate_dataset_v3_to_v4(
+    root,
+):
+    """Migrate metadata only; expensive truth NPZ bytes are preserved."""
+    root = Path(
+        root
+    )
+    manifest_path = (
+        root
+        / "manifest.json"
+    )
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"dataset manifest does not exist: {manifest_path}"
+        )
+    original_bytes = (
+        manifest_path.read_bytes()
+    )
+    manifest = json.loads(
+        original_bytes.decode(
+            "utf-8"
+        )
+    )
+    schema = manifest.get(
+        "schema"
+    )
+    if (
+        schema
+        == DATASET_SCHEMA
+    ):
+        return {
+            "migrated": False,
+            "from_schema": (
+                DATASET_SCHEMA
+            ),
+            "to_schema": (
+                DATASET_SCHEMA
+            ),
+            "records": len(
+                manifest.get(
+                    "records",
+                    ()
+                )
+            ),
+        }
+    if schema != 3:
+        raise ValueError(
+            "only vNext dataset schema 3 can be migrated to schema 4"
+        )
+
+    backup = (
+        root
+        / "manifest.schema3.json"
+    )
+    if not backup.exists():
+        backup.write_bytes(
+            original_bytes
+        )
+
+    migrated_records = []
+    for record in manifest.get(
+        "records",
+        ()
+    ):
+        identity = (
+            _identity_payload(
+                scene=record[
+                    "scene"
+                ],
+                frequency_hz=record[
+                    "frequency_hz"
+                ],
+                baseline_segments=record[
+                    "baseline_segments"
+                ],
+                teacher_config=record[
+                    "teacher_config"
+                ],
+                reference_backend="mqs",
+            )
+        )
+        new_id = content_hash(
+            identity
+        )
+        old_path = (
+            root
+            / record[
+                "file"
+            ]
+        )
+        if not old_path.is_file():
+            raise FileNotFoundError(
+                f"dataset sample is missing: {old_path}"
+            )
+        new_relative = (
+            Path(
+                "samples"
+            )
+            / f"{new_id}.npz"
+        )
+        new_path = (
+            root
+            / new_relative
+        )
+        new_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        if (
+            old_path.resolve()
+            != new_path.resolve()
+        ):
+            if new_path.exists():
+                if (
+                    new_path.read_bytes()
+                    != old_path.read_bytes()
+                ):
+                    raise FileExistsError(
+                        f"migration target already exists with different bytes: {new_path}"
+                    )
+                old_path.unlink()
+            else:
+                old_path.replace(
+                    new_path
+                )
+
+        migrated = dict(
+            record
+        )
+        migrated[
+            "sample_id"
+        ] = new_id
+        migrated[
+            "file"
+        ] = str(
+            new_relative
+        )
+        migrated[
+            "reference_backend"
+        ] = "mqs"
+        migrated_records.append(
+            migrated
+        )
+
+    migrated_records.sort(
+        key=lambda item: (
+            item[
+                "sample_id"
+            ]
+        )
+    )
+    new_manifest = {
+        "schema": (
+            DATASET_SCHEMA
+        ),
+        "split_seed": int(
+            manifest[
+                "split_seed"
+            ]
+        ),
+        "split_fractions": [
+            float(
+                value
+            )
+            for value
+            in manifest[
+                "split_fractions"
+            ]
+        ],
+        "records": (
+            migrated_records
+        ),
+    }
+    temporary = (
+        manifest_path.with_suffix(
+            ".json.tmp"
+        )
+    )
+    temporary.write_text(
+        canonical_json(
+            new_manifest
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(
+        manifest_path
+    )
+    return {
+        "migrated": True,
+        "from_schema": 3,
+        "to_schema": (
+            DATASET_SCHEMA
+        ),
+        "records": len(
+            migrated_records
+        ),
+        "backup": str(
+            backup
+        ),
+    }
