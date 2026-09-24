@@ -28,32 +28,76 @@ represented by a rational passive state-space model
  \dot x_e=A_e x_e+B_e i,\qquad
  v=C_e x_e+D_e i.
 \]
-A preferred realization is port-Hamiltonian:
+A general linear port-Hamiltonian descriptor realization may be written
+\cite{cherifi2024phpassive}
+\[
+ E_e\dot x_e
+ =
+ (J_e-R_e)Q_e x_e+(G_e-P_e)i,
+\]
+\[
+ v
+ =
+ (G_e+P_e)\adj Q_e x_e+(S_e+N_e)i,
+\]
+with
+\[
+ Q_e\adj E_e=E_e\adj Q_e\PSD,
+\]
+a skew-adjoint interconnection block and a positive-semidefinite dissipation
+block. In particular,
+\[
+ \begin{bmatrix}
+ J_e&G_e\\
+ -G_e\adj&N_e
+ \end{bmatrix}
+ =
+ -
+ \begin{bmatrix}
+ J_e&G_e\\
+ -G_e\adj&N_e
+ \end{bmatrix}\adj,
+\]
+and
+\[
+ \begin{bmatrix}
+ Q_e\adj R_eQ_e&Q_e\adj P_e\\
+ P_e\adj Q_e&S_e
+ \end{bmatrix}
+ \PSD.
+\]
+This structure implies passivity. Positive-real transfer behavior and
+port-Hamiltonian realizability are closely related but are not treated as
+unconditionally identical for arbitrary descriptor systems
+\cite{cherifi2024phpassive}.
+
+For the first broadband implementation, vNext deliberately uses the simpler
+collocated standard-state subclass
+\[
+ E_e=I,\qquad P_e=0,
+\]
 \[
  \dot x_e=(J_e-R_e)Q_e x_e+B_e i,
 \]
 \[
- v=B_e^\T Q_e x_e+(S_e+N_e)i,
+ v=B_e\adj Q_e x_e+(S_e+N_e)i,
 \]
-where
+with
 \[
- J_e=-J_e^\T,\quad N_e=-N_e^\T,\quad
+ J_e=-J_e\adj,\quad N_e=-N_e\adj,\quad
  Q_e\SPD,\quad R_e\PSD,\quad S_e\PSD.
 \]
-This parameterization makes stability and passivity structural rather than
-training objectives. Reciprocity imposes additional symmetry constraints on the
-transfer function.
-
-The transfer matrix is
+The corresponding transfer matrix is
 \[
  Z(s)
  =
- B_e^\T Q_e
+ B_e\adj Q_e
  \big(sI-(J_e-R_e)Q_e\big)^{-1}B_e
  +S_e+N_e.
 \]
-For a reciprocal impedance model, the antisymmetric feedthrough is omitted or
-constrained consistently with the chosen port convention.
+Reciprocity imposes additional realization constraints so that
+$Z(s)^\T=Z(s)$; the exact reciprocal subclass is fixed together with the
+broadband backend rather than assumed from passivity alone.
 
 \subsection{Structure-preserving frequency fitting}
 
