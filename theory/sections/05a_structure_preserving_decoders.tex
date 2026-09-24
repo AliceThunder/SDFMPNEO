@@ -1,0 +1,209 @@
+\section{Exact structure-preserving decoders}
+\label{sec:structured-decoders}
+
+This section specifies how learned latent variables are mapped to physical
+electromagnetic and thermal operators. These maps are part of the model
+definition, not post-processing repairs.
+
+\subsection{Reciprocal narrowband impedance}
+
+For a reciprocal $P$-port scene at a real frequency,
+\[
+  Z^\T=Z.
+\]
+Write
+\[
+  Z=R+jX,
+\]
+where reciprocity implies
+\[
+  R=R^\T\in\R^{P\times P},\qquad
+  X=X^\T\in\R^{P\times P}.
+\]
+Passivity requires
+\[
+  R\PSD.
+\]
+The simplest exact decoder is therefore
+\[
+  R=L_RL_R^\T+\epsilon_R I,
+  \qquad
+  X=\operatorname{sym}(X_{\rm raw}),
+\]
+with $L_R$ real lower triangular and $\epsilon_R\ge0$ chosen according to
+whether strict or semidefinite passivity is desired.
+
+The model should normally predict a correction to a physical baseline rather
+than the entire $R,X$. If the correction itself is not positive, the decoder
+acts on the total structured quantity rather than projecting an arbitrary
+predicted matrix afterward.
+
+\subsection{Physical dissipative channels}
+
+Individual channel operators
+\[
+ D_\alpha
+\]
+satisfy
+\[
+ D_\alpha=D_\alpha\adj\PSD
+\]
+because
+\[
+ \frac12 i\adj D_\alpha i
+\]
+is physical power in channel $\alpha$. A complex Hermitian channel matrix may
+have imaginary off-diagonal entries even though the total reciprocal
+dissipative matrix $R$ is real symmetric.
+
+Therefore the decoder imposes
+\[
+  \sum_\alpha D_\alpha=R
+  \label{eq:channel-closure}
+\]
+exactly.
+
+One construction is:
+\begin{enumerate}
+\item predict raw PSD factors
+  \[
+    \widetilde D_\alpha=L_\alpha L_\alpha\adj;
+  \]
+\item form
+  \[
+    \widetilde D=\sum_\alpha\widetilde D_\alpha;
+  \]
+\item decode the total reciprocal dissipation $R$ independently as a real PSD
+      matrix;
+\item find a common congruence
+  \[
+    C=R^{1/2}\widetilde D^{\dagger/2};
+  \]
+\item set
+  \[
+    D_\alpha=C\widetilde D_\alpha C\adj.
+  \]
+\end{enumerate}
+On the supported range this gives
+\[
+ \sum_\alpha D_\alpha=R
+\]
+while preserving channel PSD. Rank-deficient cases use a support-restricted
+pseudoinverse plus a declared null-space allocation policy.
+
+This is a low-dimensional port-space operation. Its correction magnitude is
+reported during validation.
+
+\subsection{Alternative simplex-of-PSD decomposition}
+
+When the number of channels is fixed and small, learn contractive channel
+factors $Q_\alpha$ satisfying
+\[
+ \sum_\alpha Q_\alpha Q_\alpha\adj=I
+\]
+on the support of $R$, then define
+\[
+ D_\alpha
+ =
+ R^{1/2}Q_\alpha Q_\alpha\adj R^{1/2}.
+\]
+The normalization can be constructed from unconstrained factors
+$\widetilde Q_\alpha$ by the common inverse square root of
+\[
+ S=\sum_\alpha\widetilde Q_\alpha\widetilde Q_\alpha\adj.
+\]
+This parameterizes a matrix-valued partition of dissipative power.
+
+\subsection{Continuous spatial loss closure}
+
+Let raw continuous channel factors produce
+\[
+ \widetilde H_q(\xi)\PSD,
+\]
+with
+\[
+ \widetilde D_q
+ =
+ \int\widetilde H_q(\xi)\dd\mu(\xi).
+\]
+For the target absorbed operator $D_{\rm abs}$ define
+\[
+ C_q
+ =
+ D_{\rm abs}^{1/2}
+ \widetilde D_q^{\dagger/2}.
+\]
+Then
+\[
+ H_q(\xi)
+ =
+ C_q\widetilde H_q(\xi)C_q\adj
+\]
+remains PSD and satisfies
+\[
+ \int H_q(\xi)\dd\mu(\xi)
+ =
+ D_{\rm abs}
+\]
+on the supported port subspace. Thus local positivity and integrated power
+closure are exact simultaneously.
+
+If the raw field has deficient support relative to $D_{\rm abs}$, decoding
+fails closed; the model is not allowed to invent the missing port-power
+direction through an arbitrarily large correction.
+
+\subsection{Broadband electrical decoder}
+
+For a passive state realization,
+\[
+ \dot x_e=(J_e-R_e)Q_e x_e+B_ei,
+\]
+decode
+\[
+ J_e=A_J-A_J^\T,
+\]
+\[
+ R_e=L_RL_R^\T,
+ \qquad
+ Q_e=L_QL_Q^\T+\epsilon_QI,
+\]
+and a passive feedthrough
+\[
+ S_e=L_SL_S^\T.
+\]
+Reciprocity is imposed by a realization class whose transfer matrix is
+symmetric. The exact realization constraints depend on the selected
+port-Hamiltonian/circuit representation; arbitrary independent $B_e,C_e$ are
+not used.
+
+\subsection{Thermal decoder}
+
+Decode
+\[
+ C_T=L_CL_C^\T+\epsilon_CI,
+\]
+\[
+ G_T=L_GL_G^\T+G_{\rm env},
+ \qquad G_{\rm env}\PSD.
+\]
+This guarantees Lyapunov stability of the zero-input thermal state under the
+declared reference boundary conditions.
+
+When the application requires a discrete maximum-principle-like guarantee
+(non-negative temperature rise under non-negative heat), energy stability alone
+is insufficient. The selected thermal realization must additionally be tested
+for non-negative impulse responses at required observations, or use a positive
+system realization where practical.
+
+\subsection{No hidden projection}
+
+Every normalization/congruence in this section is part of the declared decoder
+and appears in training. Validation reports:
+\[
+ \eta_{\rm decode}
+ =
+ \frac{\norm{\text{raw physical quantity}-\text{decoded quantity}}}
+      {\text{physical scale}}
+\]
+where meaningful. Large systematic decoder corrections indicate a failed neural
+representation even if the final structured output is formally physical.
