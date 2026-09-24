@@ -77,3 +77,21 @@ def test_release_parser_exposes_certified_gate_controls():
     assert args.certified_convergence_limit == 0.02
     assert args.certified_fast_correction_limit == 0.20
     assert args.certified_truth_limit == 0.02
+
+
+
+def test_predict_parser_accepts_bundle_request_and_output():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "predict",
+            "bundle",
+            "request.json",
+            "--output",
+            "result.json",
+        ]
+    )
+    assert str(args.bundle).endswith("bundle")
+    assert str(args.request).endswith("request.json")
+    assert str(args.output).endswith("result.json")
+    assert args.device == "cpu"

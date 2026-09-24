@@ -93,6 +93,7 @@ from .dataset import (
 )
 from .serialization import scene_from_dict, scene_to_dict
 from .evaluation import SurrogateAudit, audit_surrogate
+from .inference import run_system_inference
 from .spatial_evaluation import SpatialSurrogateAudit, audit_spatial_surrogate
 from .active_learning import (
     ActiveLearningCandidate,
@@ -203,6 +204,7 @@ __all__ = [
     "scene_to_dict",
     "SurrogateAudit",
     "audit_surrogate",
+    "run_system_inference",
     "SpatialSurrogateAudit",
     "audit_spatial_surrogate",
     "ActiveLearningCandidate",

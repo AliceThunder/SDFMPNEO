@@ -8,7 +8,7 @@ import numpy as np
 
 from .active_learning import run_active_learning_round
 from .analytic_baseline import AnalyticBaselineArtifact
-from .bundle import publish_bundle
+from .bundle import load_bundle, publish_bundle
 from .certified import certify_mixed_ports
 from .certified_evaluation import audit_certified_release
 from .dataset import (
@@ -22,6 +22,7 @@ from .electrothermal import (
 from .em import MQSConfig
 from .evaluation import audit_surrogate
 from .geometry import RigidPose, SuperellipseSpiral
+from .inference import run_system_inference
 from .sampling import sample_two_coil_mvp_scene
 from .scene import (
     CoilObject,
@@ -763,6 +764,40 @@ def command_bundle_publish(
     return 0
 
 
+def command_predict(
+    args,
+) -> int:
+    bundle = load_bundle(
+        args.bundle,
+        device=args.device,
+    )
+    request = json.loads(
+        args.request.read_text(
+            encoding="utf-8"
+        )
+    )
+    output = run_system_inference(
+        bundle.system,
+        request,
+    )
+    rendered = json.dumps(
+        output,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    )
+    if args.output is None:
+        print(
+            rendered
+        )
+    else:
+        args.output.write_text(
+            rendered + "\n",
+            encoding="utf-8",
+        )
+    return 0
+
+
 def command_release(
     args,
 ) -> int:
@@ -1271,6 +1306,29 @@ def build_parser():
     )
     publish.set_defaults(
         handler=command_bundle_publish
+    )
+
+    predict = sub.add_parser(
+        "predict"
+    )
+    predict.add_argument(
+        "bundle",
+        type=Path,
+    )
+    predict.add_argument(
+        "request",
+        type=Path,
+    )
+    predict.add_argument(
+        "--output",
+        type=Path,
+    )
+    predict.add_argument(
+        "--device",
+        default="cpu",
+    )
+    predict.set_defaults(
+        handler=command_predict
     )
 
     release = sub.add_parser(
