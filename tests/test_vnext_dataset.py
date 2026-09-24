@@ -9,6 +9,7 @@ from sdfmpneo_vnext import (
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    SpatialLossSamples,
     TeacherSample,
     analytic_port_baseline,
     deterministic_split,
@@ -185,3 +186,69 @@ def test_deterministic_split_and_sampler_are_reproducible():
     )
     assert np.isclose(f_a, f_b)
     assert scene_to_dict(scene_a) == scene_to_dict(scene_b)
+
+
+
+def test_dataset_round_trips_spatial_loss_samples(tmp_path):
+    sample = _sample()
+    n_ports = sample.target_impedance.shape[0]
+    spatial = SpatialLossSamples(
+        np.array([0, 1], dtype=int),
+        np.array([0.25, 0.75], dtype=float),
+        np.array(
+            [
+                [0.0, 0.0],
+                [1e-4, -2e-4],
+            ],
+            dtype=float,
+        ),
+        np.array([1e-9, 2e-9], dtype=float),
+        np.stack(
+            [
+                np.eye(n_ports) * 2.0,
+                np.eye(n_ports) * 3.0,
+            ]
+        ).astype(complex),
+    )
+    sample = TeacherSample(
+        sample.scene,
+        sample.frequency_hz,
+        sample.encoded,
+        sample.baseline_resistance,
+        sample.baseline_reactance,
+        sample.target_impedance,
+        sample.baseline_segments,
+        sample.target_dissipation_channels,
+        spatial,
+    )
+    dataset = ImmutableTeacherDataset.create(
+        tmp_path / "dataset"
+    )
+    record = dataset.add_sample(
+        sample,
+        split="train",
+    )
+    loaded = dataset.load_sample(
+        record.sample_id
+    )
+    assert loaded.spatial_loss is not None
+    assert np.array_equal(
+        loaded.spatial_loss.coil_index,
+        spatial.coil_index,
+    )
+    assert np.allclose(
+        loaded.spatial_loss.arc_fraction,
+        spatial.arc_fraction,
+    )
+    assert np.allclose(
+        loaded.spatial_loss.xy,
+        spatial.xy,
+    )
+    assert np.allclose(
+        loaded.spatial_loss.weights,
+        spatial.weights,
+    )
+    assert np.allclose(
+        loaded.spatial_loss.dissipation_matrix,
+        spatial.dissipation_matrix,
+    )

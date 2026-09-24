@@ -14,10 +14,10 @@ from .serialization import (
     scene_from_dict,
     scene_to_dict,
 )
-from .training_data import TeacherSample
+from .training_data import SpatialLossSamples, TeacherSample
 
 
-DATASET_SCHEMA = 2
+DATASET_SCHEMA = 3
 SPLITS = (
     "train",
     "validation",
@@ -244,7 +244,7 @@ class ImmutableTeacherDataset:
             ),
             "teacher_config": teacher_dict,
             "output_schema": (
-                "mvp_port_impedance_and_loss_channels_v2"
+                "mvp_port_impedance_loss_channels_and_spatial_v3"
             ),
         }
         return (
@@ -335,6 +335,50 @@ class ImmutableTeacherDataset:
                 )
                 if sample.target_dissipation_channels is None
                 else sample.target_dissipation_channels
+            ),
+            spatial_coil_index=(
+                np.asarray(
+                    [],
+                    dtype=int,
+                )
+                if sample.spatial_loss is None
+                else sample.spatial_loss.coil_index
+            ),
+            spatial_arc_fraction=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.spatial_loss is None
+                else sample.spatial_loss.arc_fraction
+            ),
+            spatial_xy=(
+                np.zeros(
+                    (0, 2),
+                    dtype=float,
+                )
+                if sample.spatial_loss is None
+                else sample.spatial_loss.xy
+            ),
+            spatial_weights=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.spatial_loss is None
+                else sample.spatial_loss.weights
+            ),
+            spatial_dissipation_matrix=(
+                np.zeros(
+                    (
+                        0,
+                        sample.target_impedance.shape[0],
+                        sample.target_impedance.shape[1],
+                    ),
+                    dtype=complex,
+                )
+                if sample.spatial_loss is None
+                else sample.spatial_loss.dissipation_matrix
             ),
         )
 
@@ -449,6 +493,32 @@ class ImmutableTeacherDataset:
                 if stored_channels.size == 0
                 else stored_channels
             )
+            spatial_coil = np.asarray(
+                data["spatial_coil_index"],
+                dtype=int,
+            )
+            if spatial_coil.size == 0:
+                spatial = None
+            else:
+                spatial = SpatialLossSamples(
+                    spatial_coil,
+                    np.asarray(
+                        data["spatial_arc_fraction"],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data["spatial_xy"],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data["spatial_weights"],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data["spatial_dissipation_matrix"],
+                        dtype=complex,
+                    ),
+                )
         return TeacherSample(
             scene_from_dict(
                 record.scene
@@ -460,6 +530,7 @@ class ImmutableTeacherDataset:
             target,
             record.baseline_segments,
             channels,
+            spatial,
         )
 
     def iter_samples(

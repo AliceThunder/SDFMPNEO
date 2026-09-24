@@ -57,7 +57,7 @@ from .analytic_baseline import (
     regularized_self_inductance,
 )
 from .features import EncodedScene, encode_scene_invariant
-from .training_data import TeacherSample
+from .training_data import SpatialLossSamples, TeacherSample
 from .sampling import MVPSceneSamplerConfig, sample_two_coil_mvp_scene
 from .dataset import (
     DATASET_SCHEMA,
@@ -123,6 +123,7 @@ __all__ = [
     "regularized_self_inductance",
     "EncodedScene",
     "encode_scene_invariant",
+    "SpatialLossSamples",
     "TeacherSample",
     "MVPSceneSamplerConfig",
     "sample_two_coil_mvp_scene",

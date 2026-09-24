@@ -211,3 +211,26 @@ def test_uniform_fast_field_is_psd_zero_outside_and_power_closed():
             0.0,
             atol=0.0,
         )
+
+
+
+def test_generated_teacher_spatial_samples_integrate_to_target_channels():
+    from sdfmpneo_vnext import TeacherSample
+
+    scene = _scene()
+    sample = TeacherSample.generate(
+        scene,
+        30_000.0,
+        teacher_config=_config(),
+        baseline_segments=32,
+    )
+    assert sample.spatial_loss is not None
+    integrated = sample.spatial_loss.integrated_channels(
+        len(scene.coils)
+    )
+    assert np.allclose(
+        integrated,
+        sample.target_dissipation_channels,
+        rtol=2e-10,
+        atol=2e-12,
+    )
