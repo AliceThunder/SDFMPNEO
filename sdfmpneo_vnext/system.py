@@ -11,6 +11,7 @@ from .fast import (
 from .field import UniformLossFieldDecoder
 from .reference import MixedReferenceArtifact
 from .scene import Scene
+from .thermal_field import ContinuousThermalGreenArtifact
 
 
 @dataclass(frozen=True)
@@ -230,4 +231,44 @@ class MeshfreeVNextSystem:
                 self._reference,
                 **options,
             )
+        )
+
+
+    def fast_continuous_thermal_field(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        medium,
+        **options,
+    ):
+        spatial = (
+            self.spatial_artifact
+            if self.spatial_artifact is not None
+            else UniformLossFieldDecoder(
+                self.port_artifact
+            )
+        )
+        return ContinuousThermalGreenArtifact(
+            spatial,
+            medium,
+            **options,
+        ).prepare(
+            scene,
+            frequency_hz,
+        )
+
+    def reference_continuous_thermal_field(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        medium,
+        **options,
+    ):
+        return ContinuousThermalGreenArtifact(
+            self._reference,
+            medium,
+            **options,
+        ).prepare(
+            scene,
+            frequency_hz,
         )

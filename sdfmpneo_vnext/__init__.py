@@ -38,6 +38,13 @@ from .matrix_free import (
     MatrixFreeMixedOperator,
 )
 from .thermal import StableThermalModel
+from .thermal_field import (
+    HomogeneousThermalMedium,
+    ThermalSourceQuadrature,
+    PreparedThermalGreenField,
+    ContinuousThermalGreenArtifact,
+    build_thermal_source_quadrature,
+)
 from .loss import ConductorLossField
 from .field import PreparedUniformLossField, UniformLossFieldDecoder
 from .reference import MixedReferenceArtifact, PreparedReferenceLossField
@@ -143,6 +150,11 @@ __all__ = [
     "MatrixFreeMixedMetadata",
     "MatrixFreeMixedOperator",
     "StableThermalModel",
+    "HomogeneousThermalMedium",
+    "ThermalSourceQuadrature",
+    "PreparedThermalGreenField",
+    "ContinuousThermalGreenArtifact",
+    "build_thermal_source_quadrature",
     "ConductorLossField",
     "PreparedUniformLossField",
     "UniformLossFieldDecoder",

@@ -621,138 +621,188 @@ class PreparedSpatialLossField:
     normalization_closure_error: float
     device: str
 
+    def local_dissipation_matrices(
+        self,
+        coil_index,
+        arc_fraction,
+        xy,
+    ) -> np.ndarray:
+        coil_index = np.asarray(
+            coil_index,
+            dtype=int,
+        )
+        arc_fraction = np.asarray(
+            arc_fraction,
+            dtype=float,
+        )
+        xy = np.asarray(
+            xy,
+            dtype=float,
+        )
+        if coil_index.ndim != 1:
+            raise ValueError(
+                "coil_index must be one-dimensional"
+            )
+        n_query = len(
+            coil_index
+        )
+        if (
+            arc_fraction.shape != (n_query,)
+            or xy.shape != (n_query, 2)
+        ):
+            raise ValueError(
+                "spatial query arrays have incompatible shapes"
+            )
+        if np.any(
+            (arc_fraction < 0.0)
+            | (arc_fraction > 1.0)
+        ):
+            raise ValueError(
+                "arc_fraction must lie in [0,1]"
+            )
+        if np.any(
+            (coil_index < 0)
+            | (
+                coil_index
+                >= len(
+                    self.scene.coils
+                )
+            )
+        ):
+            raise IndexError(
+                "coil_index out of range"
+            )
+
+        inside = np.ones(
+            n_query,
+            dtype=bool,
+        )
+        for index in range(
+            n_query
+        ):
+            coil = int(
+                coil_index[index]
+            )
+            geometry = (
+                self.scene.coils[
+                    coil
+                ].geometry
+            )
+            xn = (
+                abs(
+                    float(
+                        xy[index, 0]
+                    )
+                )
+                / (
+                    0.5
+                    * geometry.conductor_width
+                )
+            )
+            yn = (
+                abs(
+                    float(
+                        xy[index, 1]
+                    )
+                )
+                / (
+                    0.5
+                    * geometry.conductor_thickness
+                )
+            )
+            inside[index] = bool(
+                xn
+                ** geometry.cross_section_exponent
+                + yn
+                ** geometry.cross_section_exponent
+                <= 1.0 + 1e-12
+            )
+
+        coordinates = _coordinate_features(
+            self.scene,
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+        with torch.no_grad():
+            raw = self.model.raw_matrices(
+                self.latent,
+                self.pair_features,
+                coil_index,
+                coordinates,
+            )
+            out = torch.zeros_like(
+                raw
+            )
+            for coil in range(
+                len(
+                    self.scene.coils
+                )
+            ):
+                mask_np = (
+                    (coil_index == coil)
+                    & inside
+                )
+                if not np.any(
+                    mask_np
+                ):
+                    continue
+                mask = torch.as_tensor(
+                    mask_np,
+                    dtype=torch.bool,
+                    device=raw.device,
+                )
+                transform = self.transforms[
+                    coil
+                ]
+                values = (
+                    transform[
+                        None,
+                        :,
+                        :,
+                    ]
+                    @ raw[
+                        mask
+                    ]
+                    @ transform.conj().T[
+                        None,
+                        :,
+                        :,
+                    ]
+                )
+                out[
+                    mask
+                ] = 0.5 * (
+                    values
+                    + values.conj().transpose(
+                        -1,
+                        -2,
+                    )
+                )
+        return (
+            out.detach().cpu().numpy()
+        )
+
     def local_dissipation_matrix(
         self,
         coil_index: int,
         arc_fraction: float,
         xy=(0.0, 0.0),
     ) -> np.ndarray:
-        if not (
-            0.0
-            <= arc_fraction
-            <= 1.0
-        ):
-            raise ValueError(
-                "arc_fraction must lie in [0,1]"
-            )
-        xy = np.asarray(
-            xy,
-            dtype=float,
-        )
-        if xy.shape != (
-            2,
-        ):
-            raise ValueError(
-                "xy must have shape (2,)"
-            )
-        if not (
-            0
-            <= coil_index
-            < len(
-                self.scene.coils
-            )
-        ):
-            raise IndexError(
-                "coil_index out of range"
-            )
-        geometry = (
-            self.scene.coils[
-                coil_index
-            ].geometry
-        )
-        xn = (
-            abs(
-                float(
-                    xy[
-                        0
-                    ]
-                )
-            )
-            / (
-                0.5
-                * geometry.conductor_width
-            )
-        )
-        yn = (
-            abs(
-                float(
-                    xy[
-                        1
-                    ]
-                )
-            )
-            / (
-                0.5
-                * geometry.conductor_thickness
-            )
-        )
-        if (
-            xn
-            ** geometry.cross_section_exponent
-            + yn
-            ** geometry.cross_section_exponent
-            > 1.0 + 1e-12
-        ):
-            n = len(
-                self.scene.coils
-            )
-            return np.zeros(
-                (
-                    n,
-                    n,
-                ),
-                dtype=complex,
-            )
-        coordinates = (
-            _coordinate_features(
-                self.scene,
-                np.asarray(
-                    [
-                        coil_index
-                    ],
-                    dtype=int,
-                ),
-                np.asarray(
-                    [
-                        arc_fraction
-                    ],
-                    dtype=float,
-                ),
-                np.asarray(
-                    [
-                        xy
-                    ],
-                    dtype=float,
-                ),
-            )
-        )
-        with torch.no_grad():
-            raw = self.model.raw_matrices(
-                self.latent,
-                self.pair_features,
-                np.asarray(
-                    [
-                        coil_index
-                    ],
-                    dtype=int,
-                ),
-                coordinates,
-            )[
-                0
-            ]
-            transform = self.transforms[
-                coil_index
-            ]
-            matrix = (
-                transform
-                @ raw
-                @ transform.conj().T
-            )
-            matrix = 0.5 * (
-                matrix
-                + matrix.conj().T
-            )
-        return matrix.detach().cpu().numpy()
+        return self.local_dissipation_matrices(
+            np.asarray(
+                [coil_index],
+                dtype=int,
+            ),
+            np.asarray(
+                [arc_fraction],
+                dtype=float,
+            ),
+            np.asarray(
+                [xy],
+                dtype=float,
+            ),
+        )[0]
 
     def local_joule_density(
         self,

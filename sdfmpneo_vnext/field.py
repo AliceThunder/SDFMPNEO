@@ -50,60 +50,116 @@ class PreparedUniformLossField:
             )
         return 0.0
 
+    def local_dissipation_matrices(
+        self,
+        coil_index,
+        arc_fraction,
+        xy,
+    ) -> np.ndarray:
+        coil_index = np.asarray(
+            coil_index,
+            dtype=int,
+        )
+        arc_fraction = np.asarray(
+            arc_fraction,
+            dtype=float,
+        )
+        xy = np.asarray(
+            xy,
+            dtype=float,
+        )
+        if coil_index.ndim != 1:
+            raise ValueError(
+                "coil_index must be one-dimensional"
+            )
+        n_query = len(
+            coil_index
+        )
+        if (
+            arc_fraction.shape != (n_query,)
+            or xy.shape != (n_query, 2)
+        ):
+            raise ValueError(
+                "spatial query arrays have incompatible shapes"
+            )
+        if np.any(
+            (arc_fraction < 0.0)
+            | (arc_fraction > 1.0)
+        ):
+            raise ValueError(
+                "arc_fraction must lie in [0,1]"
+            )
+        if np.any(
+            (coil_index < 0)
+            | (
+                coil_index
+                >= len(
+                    self.scene.coils
+                )
+            )
+        ):
+            raise IndexError(
+                "coil_index out of range"
+            )
+        n_ports = len(
+            self.scene.coils
+        )
+        out = np.zeros(
+            (
+                n_query,
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        )
+        for index in range(
+            n_query
+        ):
+            coil = int(
+                coil_index[index]
+            )
+            geometry = (
+                self.scene.coils[
+                    coil
+                ].geometry
+            )
+            if _inside_superellipse(
+                geometry,
+                xy[index],
+            ):
+                out[index] = (
+                    np.asarray(
+                        self.prediction.dissipation_channels[
+                            coil
+                        ],
+                        dtype=complex,
+                    )
+                    / self.volumes[
+                        coil
+                    ]
+                )
+        return out
+
     def local_dissipation_matrix(
         self,
         coil_index: int,
         arc_fraction: float,
         xy=(0.0, 0.0),
     ) -> np.ndarray:
-        if not (
-            0
-            <= coil_index
-            < len(
-                self.scene.coils
-            )
-        ):
-            raise IndexError(
-                "coil_index out of range"
-            )
-        if not (
-            0.0
-            <= arc_fraction
-            <= 1.0
-        ):
-            raise ValueError(
-                "arc_fraction must lie in [0,1]"
-            )
-        geometry = (
-            self.scene.coils[
-                coil_index
-            ].geometry
-        )
-        if not _inside_superellipse(
-            geometry,
-            xy,
-        ):
-            n = len(
-                self.scene.coils
-            )
-            return np.zeros(
-                (
-                    n,
-                    n,
-                ),
-                dtype=complex,
-            )
-        return (
+        return self.local_dissipation_matrices(
             np.asarray(
-                self.prediction.dissipation_channels[
-                    coil_index
-                ],
-                dtype=complex,
-            )
-            / self.volumes[
-                coil_index
-            ]
-        )
+                [coil_index],
+                dtype=int,
+            ),
+            np.asarray(
+                [arc_fraction],
+                dtype=float,
+            ),
+            np.asarray(
+                [xy],
+                dtype=float,
+            ),
+        )[0]
 
     def local_joule_density(
         self,
