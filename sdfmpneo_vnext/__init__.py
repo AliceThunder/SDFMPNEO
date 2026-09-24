@@ -35,6 +35,12 @@ from .thermal import StableThermalModel
 from .loss import ConductorLossField
 from .certification import PortCertificate, certify_port_result
 from .convergence import ConvergenceStep, ConvergenceReport, impedance_convergence
+from .electrothermal import (
+    CoilThermalProperties,
+    ElectroThermalStep,
+    CurrentControlledEnvelope,
+    build_lumped_coil_thermal_model,
+)
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -72,6 +78,10 @@ __all__ = [
     "ConvergenceStep",
     "ConvergenceReport",
     "impedance_convergence",
+    "CoilThermalProperties",
+    "ElectroThermalStep",
+    "CurrentControlledEnvelope",
+    "build_lumped_coil_thermal_model",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",

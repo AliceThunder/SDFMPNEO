@@ -13,12 +13,41 @@ EPS0 = 8.8541878128e-12
 class ConductorMaterial:
     conductivity: float
     relative_permeability: float = 1.0
+    resistance_temperature_coefficient: float = 0.0
+    reference_temperature: float = 293.15
 
     def __post_init__(self):
         if self.conductivity <= 0 or not np.isfinite(self.conductivity):
             raise ValueError("conductivity must be positive")
         if self.relative_permeability <= 0 or not np.isfinite(self.relative_permeability):
             raise ValueError("relative_permeability must be positive")
+        if (
+            not np.isfinite(self.resistance_temperature_coefficient)
+            or self.resistance_temperature_coefficient < 0
+        ):
+            raise ValueError(
+                "resistance_temperature_coefficient must be finite and nonnegative"
+            )
+        if not np.isfinite(self.reference_temperature):
+            raise ValueError("reference_temperature must be finite")
+
+    def conductivity_at(self, temperature: float) -> float:
+        factor = 1.0 + self.resistance_temperature_coefficient * (
+            float(temperature) - self.reference_temperature
+        )
+        if factor <= 0 or not np.isfinite(factor):
+            raise ValueError(
+                "temperature is outside the linear-resistivity material domain"
+            )
+        return float(self.conductivity / factor)
+
+    def at_temperature(self, temperature: float) -> "ConductorMaterial":
+        return ConductorMaterial(
+            self.conductivity_at(temperature),
+            self.relative_permeability,
+            0.0,
+            float(temperature),
+        )
 
 
 @dataclass(frozen=True)
