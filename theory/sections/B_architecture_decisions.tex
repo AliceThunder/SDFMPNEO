@@ -1,0 +1,109 @@
+\section{Frozen architecture decisions and open research choices}
+
+This appendix separates architectural invariants from implementation choices that
+must still be decided experimentally.
+
+\subsection{Frozen decisions}
+
+The following choices define vNext and should not be changed by implementation
+convenience without revising the theory/schema version.
+
+\begin{enumerate}
+\item \textbf{Continuous public scene.}
+  Geometry, material, pose, ports, and environment are continuous physical
+  objects. No public API exposes a mandatory world-grid cell ordering.
+
+\item \textbf{Superelliptic finite-cross-section coils.}
+  Coil centerlines and conductor cross-sections are continuous superelliptic
+  families transported through arbitrary $\SE(3)$ poses.
+
+\item \textbf{Mesh-free-first electromagnetic teacher.}
+  Homogeneous space is represented through Green kernels; piecewise homogeneous
+  bodies through surface operators; continuous material contrast through
+  localized volume/point bases only where physically necessary.
+
+\item \textbf{Current--charge compatible conductor physics.}
+  Finite-cross-section current modes and charge degrees of freedom obey exact
+  discrete continuity and work-conjugate port constraints.
+
+\item \textbf{No production fine-minus-coarse self correction.}
+  Conductor self physics is part of the same converged integral operator and is
+  refined through intrinsic basis/quadrature enrichment.
+
+\item \textbf{No artificial global radiation boundary.}
+  Open-domain radiation is carried by the electromagnetic kernel or an
+  analytically equivalent environment representation.
+
+\item \textbf{Structured passive port model.}
+  Reciprocity, positive dissipation, stability, and broadband passivity are
+  enforced in the decoded realization rather than repaired after arbitrary
+  neural matrix prediction.
+
+\item \textbf{Continuous PSD loss operator.}
+  Physical Joule/dielectric heat is queried continuously and is non-negative by
+  factorization. Fixed world-cell heat tensors are not a model primitive.
+
+\item \textbf{Low-rank EM-to-thermal interface.}
+  Thermal dynamics are driven by physically meaningful loss channels selected
+  with thermal observability in mind.
+
+\item \textbf{Stable reduced thermal dynamics.}
+  Heat capacity is positive definite and passive thermal dissipation is
+  positive semidefinite by construction.
+
+\item \textbf{Physics-factored learning.}
+  Self and pair physics form the baseline; graph/operator learning focuses on
+  many-body and model-form residuals.
+
+\item \textbf{FAST/CERTIFIED/REFERENCE separation.}
+  Fast inference never pretends to be certified. Certification uses a true
+  physical residual and, where needed, observable error estimation.
+
+\item \textbf{Frozen validation/release sets.}
+  Active learning may add training scenes but cannot reshuffle model-selection
+  or release scenes.
+
+\item \textbf{Legacy solvers are external oracles only.}
+  New production modules do not depend on legacy H(curl) mesh indices,
+  cellwise-Joule grids, or grid-thermal state definitions.
+\end{enumerate}
+
+\subsection{Open research choices}
+
+The following are deliberately not frozen:
+\begin{enumerate}
+\item exact longitudinal/cross-section basis family and enrichment estimator for
+      conductors;
+\item precise mixed current--charge stabilization and low-frequency
+      preconditioner;
+\item SIE formulation for each dielectric/magnetic contrast regime;
+\item FMM versus $\mathcal H^2$ versus other fast-kernel backend;
+\item adaptive local representation for continuously inhomogeneous media;
+\item exact passive rational-fitting/reduction algorithm;
+\item loss-channel discovery algorithm and joint thermal reduction;
+\item scene-graph/equivariant neural architecture;
+\item learned low-rank operator/preconditioner correction design;
+\item practical stability constants and dual estimators for CERTIFIED mode;
+\item uncertainty-calibration method and escalation thresholds;
+\item implementation language/library choices and hardware-specific kernels.
+\end{enumerate}
+
+These choices are evaluated against the falsification criteria in the research
+program rather than protected for compatibility.
+
+\subsection{Explicit non-goals}
+
+vNext does not claim:
+\begin{itemize}
+\item an exact finite-dimensional solution for every arbitrary continuously
+      varying three-dimensional material without any local discretization;
+\item zero computational cost for high-accuracy certification;
+\item that a neural network alone supplies a proof of Maxwell/thermal accuracy;
+\item that one fixed reduced rank is optimal for every frequency, geometry, and
+      material regime;
+\item that a single numerical backend must handle every admissible scene.
+\end{itemize}
+
+The objective is a unified \emph{physical interface and certification logic}
+over multiple specialized numerical kernels, with fast learned prediction and
+controlled escalation.
