@@ -33,6 +33,7 @@ from .mixed import (
 )
 from .thermal import StableThermalModel
 from .loss import ConductorLossField
+from .field import UniformLossFieldDecoder
 from .certification import PortCertificate, certify_port_result
 from .certified import CertifiedPortResult, certify_mqs_ports
 from .convergence import ConvergenceStep, ConvergenceReport, impedance_convergence
@@ -99,6 +100,7 @@ __all__ = [
     "MixedResult",
     "StableThermalModel",
     "ConductorLossField",
+    "UniformLossFieldDecoder",
     "PortCertificate",
     "certify_port_result",
     "CertifiedPortResult",

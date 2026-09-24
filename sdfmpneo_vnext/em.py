@@ -240,6 +240,147 @@ class DenseMQSTeacher:
             np.concatenate(values, axis=0),
         )
 
+
+    def _local_segment(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+    ) -> _SegmentBlock:
+        if not (
+            0
+            <= coil_index
+            < len(self.scene.coils)
+        ):
+            raise IndexError(
+                "coil_index out of range"
+            )
+        if not (
+            0.0
+            <= arc_fraction
+            <= 1.0
+        ):
+            raise ValueError(
+                "arc_fraction must lie in [0,1]"
+            )
+        segments = [
+            segment
+            for segment in self._segments
+            if segment.coil
+            == coil_index
+        ]
+        index = min(
+            int(
+                np.floor(
+                    arc_fraction
+                    * len(segments)
+                )
+            ),
+            len(segments) - 1,
+        )
+        return segments[index]
+
+    def _inside_section(
+        self,
+        coil_index: int,
+        xy,
+    ) -> bool:
+        local = np.asarray(
+            xy,
+            dtype=float,
+        )
+        if local.shape != (2,):
+            raise ValueError(
+                "xy must have shape (2,)"
+            )
+        geometry = (
+            self.scene.coils[
+                coil_index
+            ].geometry
+        )
+        a = (
+            0.5
+            * geometry.conductor_width
+        )
+        b = (
+            0.5
+            * geometry.conductor_thickness
+        )
+        m = (
+            geometry.cross_section_exponent
+        )
+        return bool(
+            (abs(local[0]) / a) ** m
+            + (abs(local[1]) / b) ** m
+            <= 1.0 + 1e-12
+        )
+
+    def local_current_transfer(
+        self,
+        result: MQSResult,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        if not self._inside_section(
+            coil_index,
+            xy,
+        ):
+            return np.zeros(
+                result.n_ports,
+                dtype=complex,
+            )
+        segment = self._local_segment(
+            coil_index,
+            arc_fraction,
+        )
+        values = (
+            segment.basis.evaluate_xy(
+                np.asarray(
+                    xy,
+                    dtype=float,
+                )
+            )
+        )
+        return np.asarray(
+            values
+            @ result.mode_coefficients[
+                segment.mode_slice
+            ],
+            dtype=complex,
+        )
+
+    def local_dissipation_matrix(
+        self,
+        result: MQSResult,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        transfer = (
+            self.local_current_transfer(
+                result,
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+        sigma = (
+            self.scene.coils[
+                coil_index
+            ].material.conductivity
+        )
+        matrix = (
+            np.outer(
+                transfer.conj(),
+                transfer,
+            )
+            / sigma
+        )
+        return 0.5 * (
+            matrix
+            + matrix.conj().T
+        )
+
     def assemble(self):
         m = self._n_modes
         ns = len(self._segments)
