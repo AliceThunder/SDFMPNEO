@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument("--factor-rank", type=int, default=4)
+    parser.add_argument("--patience", type=int, default=30)
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
 
@@ -45,12 +46,18 @@ def main():
         raise SystemExit(
             "dataset contains no training samples"
         )
+    if not validation_samples:
+        raise SystemExit(
+            "dataset contains no validation samples; generate a larger frozen dataset"
+        )
 
     artifact, report = train_residual_surrogate(
         train_samples,
         hidden_dim=args.hidden,
         factor_rank=args.factor_rank,
         epochs=args.epochs,
+        validation_samples=validation_samples,
+        patience=args.patience,
         device=args.device,
     )
     artifact.save(args.artifact)
@@ -78,9 +85,12 @@ def main():
     print(
         "training:",
         {
-            "epochs": report.epochs,
+            "epochs_run": report.epochs,
             "samples": report.samples,
             "final_loss": report.final_loss,
+            "best_epoch": report.best_epoch,
+            "best_validation_error": report.best_validation_error,
+            "stopped_early": report.stopped_early,
             "mean_relative_error": float(
                 np.mean(train_error)
             ),

@@ -382,6 +382,113 @@ class NeuralTrainingReport:
     final_loss: float
     epochs: int
     samples: int
+    best_epoch: int
+    best_validation_error: float | None
+    stopped_early: bool
+
+
+def _relative_z_error(
+    predicted,
+    target,
+) -> float:
+    predicted = np.asarray(
+        predicted,
+        dtype=complex,
+    )
+    target = np.asarray(
+        target,
+        dtype=complex,
+    )
+    return float(
+        np.linalg.norm(
+            predicted - target
+        )
+        / max(
+            np.linalg.norm(target),
+            1e-30,
+        )
+    )
+
+
+def _predict_sample_numpy(
+    model,
+    normalizer: ResidualNormalizer,
+    sample: TeacherSample,
+    *,
+    device: str,
+):
+    node, pair = normalizer.normalize(
+        sample.encoded
+    )
+    dtype = next(
+        model.parameters()
+    ).dtype
+    with torch.no_grad():
+        resistance, reactance = model(
+            torch.as_tensor(
+                node,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                pair,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                sample.baseline_resistance,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                sample.baseline_reactance,
+                dtype=dtype,
+                device=device,
+            ),
+            resistance_scale=(
+                normalizer.resistance_scale
+            ),
+            reactance_scale=(
+                normalizer.reactance_scale
+            ),
+        )
+    return (
+        resistance.detach().cpu().numpy()
+        + 1j
+        * reactance.detach().cpu().numpy()
+    )
+
+
+def _validation_error(
+    model,
+    normalizer: ResidualNormalizer,
+    samples,
+    *,
+    device: str,
+) -> float:
+    samples = tuple(samples)
+    validation_samples = tuple(
+        validation_samples
+    )
+    if not samples:
+        raise ValueError(
+            "validation samples are empty"
+        )
+    errors = [
+        _relative_z_error(
+            _predict_sample_numpy(
+                model,
+                normalizer,
+                sample,
+                device=device,
+            ),
+            sample.target_impedance,
+        )
+        for sample in samples
+    ]
+    return float(
+        np.mean(errors)
+    )
 
 
 class NeuralResidualArtifact:
@@ -524,12 +631,16 @@ class NeuralResidualArtifact:
 def train_residual_surrogate(
     samples,
     *,
+    validation_samples=(),
     hidden_dim: int = 64,
     factor_rank: int = 4,
     depth: int = 2,
     epochs: int = 200,
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-6,
+    patience: int = 30,
+    validation_interval: int = 1,
+    min_improvement: float = 1e-5,
     seed: int = 17,
     baseline_segments: int | None = None,
     device: str = "cpu",
@@ -539,7 +650,13 @@ def train_residual_surrogate(
         raise ValueError(
             "at least one teacher sample is required"
         )
-    if epochs < 1 or learning_rate <= 0.0:
+    if (
+        epochs < 1
+        or learning_rate <= 0.0
+        or patience < 1
+        or validation_interval < 1
+        or min_improvement < 0.0
+    ):
         raise ValueError(
             "invalid training configuration"
         )
@@ -582,11 +699,19 @@ def train_residual_surrogate(
     ).dtype
 
     final_loss = np.inf
-    for _ in range(epochs):
+    best_epoch = 0
+    best_validation_error = None
+    best_state = None
+    stale = 0
+    stopped_early = False
+    epochs_run = 0
+
+    for epoch in range(1, epochs + 1):
         order = np.random.permutation(
             len(samples)
         )
         epoch_loss = 0.0
+        model.train()
         for index in order:
             sample = samples[int(index)]
             node, pair = (
@@ -673,10 +798,62 @@ def train_residual_surrogate(
             epoch_loss += float(
                 loss.detach().cpu()
             )
+
         final_loss = (
             epoch_loss
             / len(samples)
         )
+        epochs_run = epoch
+
+        if validation_samples:
+            if (
+                epoch % validation_interval
+                != 0
+                and epoch != epochs
+            ):
+                continue
+            model.eval()
+            score = _validation_error(
+                model,
+                normalizer,
+                validation_samples,
+                device=device,
+            )
+            if (
+                best_validation_error is None
+                or score
+                < best_validation_error
+                - min_improvement
+            ):
+                best_validation_error = score
+                best_epoch = epoch
+                best_state = {
+                    key: value.detach().cpu().clone()
+                    for key, value
+                    in model.state_dict().items()
+                }
+                stale = 0
+            else:
+                stale += 1
+                if stale >= patience:
+                    stopped_early = True
+                    break
+        else:
+            best_epoch = epoch
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value
+                in model.state_dict().items()
+            }
+
+    if best_state is None:
+        raise RuntimeError(
+            "training completed without a selectable model state"
+        )
+    model.load_state_dict(
+        best_state
+    )
+    model.eval()
 
     artifact = NeuralResidualArtifact(
         model,
@@ -688,7 +865,14 @@ def train_residual_surrogate(
         artifact,
         NeuralTrainingReport(
             float(final_loss),
-            int(epochs),
+            int(epochs_run),
             len(samples),
+            int(best_epoch),
+            (
+                None
+                if best_validation_error is None
+                else float(best_validation_error)
+            ),
+            bool(stopped_early),
         ),
     )

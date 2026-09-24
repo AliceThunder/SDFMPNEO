@@ -59,6 +59,7 @@ from .dataset import (
     deterministic_split,
 )
 from .serialization import scene_from_dict, scene_to_dict
+from .evaluation import SurrogateAudit, audit_surrogate
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -117,6 +118,8 @@ __all__ = [
     "deterministic_split",
     "scene_from_dict",
     "scene_to_dict",
+    "SurrogateAudit",
+    "audit_surrogate",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",
