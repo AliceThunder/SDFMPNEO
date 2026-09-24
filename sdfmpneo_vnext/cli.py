@@ -865,6 +865,9 @@ def command_release(
         fast_domain_correction_limit=(
             args.certified_fast_correction_limit
         ),
+        truth_consistency_tolerance=(
+            args.certified_truth_limit
+        ),
         operator_backend=(
             args.certified_backend
         ),
@@ -1352,6 +1355,11 @@ def build_parser():
         "--certified-fast-correction-limit",
         type=float,
         default=0.20,
+    )
+    release.add_argument(
+        "--certified-truth-limit",
+        type=float,
+        default=0.02,
     )
     release.add_argument(
         "--certified-backend",

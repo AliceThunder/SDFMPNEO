@@ -75,6 +75,7 @@ def audit_certified_release(
     correction_restart: int = 40,
     correction_maxiter: int = 160,
     fast_domain_correction_limit: float = 0.20,
+    truth_consistency_tolerance: float = 0.02,
     operator_backend: str = "matrix_free",
     matrix_free_chunk_size: int = 256,
 ) -> CertifiedReleaseAudit:
@@ -90,6 +91,7 @@ def audit_certified_release(
         or correction_restart < 1
         or correction_maxiter < 1
         or fast_domain_correction_limit < 0.0
+        or truth_consistency_tolerance < 0.0
         or matrix_free_chunk_size < 1
     ):
         raise ValueError(
@@ -173,6 +175,7 @@ def audit_certified_release(
         and fast_domain_count == len(samples)
         and max_residual <= algebraic_tolerance
         and max_discretization <= convergence_tolerance
+        and max_truth_error <= truth_consistency_tolerance
     )
     return CertifiedReleaseAudit(
         samples=len(samples),

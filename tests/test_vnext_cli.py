@@ -76,3 +76,4 @@ def test_release_parser_exposes_certified_gate_controls():
     assert args.certified_fine_segments == 12
     assert args.certified_convergence_limit == 0.02
     assert args.certified_fast_correction_limit == 0.20
+    assert args.certified_truth_limit == 0.02

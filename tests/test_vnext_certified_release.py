@@ -81,6 +81,7 @@ def test_certified_release_audit_requires_physical_and_fast_domain_pass():
         correction_rtol=1e-9,
         correction_maxiter=120,
         fast_domain_correction_limit=10.0,
+        truth_consistency_tolerance=10.0,
         operator_backend="dense",
     )
     assert report.samples == 1

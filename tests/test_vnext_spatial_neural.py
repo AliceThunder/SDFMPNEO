@@ -231,3 +231,72 @@ def test_spatial_decoder_is_common_se3_invariant():
         rtol=2e-5,
         atol=2e-7,
     )
+
+
+
+def test_spatial_batch_query_matches_scalar_query():
+    torch.manual_seed(11)
+    port = _port_artifact()
+    field_model = SpatialLossShapeNet(
+        hidden_dim=16,
+        pair_dim=15,
+        field_hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    artifact = NeuralSpatialLossArtifact(
+        port,
+        field_model,
+        longitudinal_points=6,
+        radial_order=2,
+        angular_order=8,
+    )
+    prepared = artifact.prepare(
+        _scene(),
+        60_000.0,
+    )
+    coil_index = np.asarray(
+        [0, 1, 0, 1],
+        dtype=int,
+    )
+    arc_fraction = np.asarray(
+        [0.2, 0.4, 0.7, 0.9],
+        dtype=float,
+    )
+    xy = np.asarray(
+        [
+            [0.0, 0.0],
+            [1.0e-4, -1.0e-4],
+            [2.0e-4, 1.0e-4],
+            [0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    batch = (
+        prepared.local_dissipation_matrices(
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+    )
+    scalar = np.asarray(
+        [
+            prepared.local_dissipation_matrix(
+                int(coil),
+                float(arc),
+                point,
+            )
+            for coil, arc, point
+            in zip(
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        ]
+    )
+    assert np.allclose(
+        batch,
+        scalar,
+        rtol=2e-6,
+        atol=2e-8,
+    )
