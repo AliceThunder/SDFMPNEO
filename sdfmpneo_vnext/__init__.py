@@ -10,14 +10,27 @@ from .geometry import (
     bishop_segment_frames,
     haar_rotation,
 )
-from .scene import ConductorMaterial, HomogeneousMedium, CoilObject, Scene
+from .scene import (
+    ConductorMaterial,
+    HomogeneousMedium,
+    CoilObject,
+    Scene,
+)
 from .basis import (
     SectionBasis,
     SectionQuadrature,
     polynomial_section_basis,
     superellipse_section_quadrature,
 )
-from .em import DenseMQSTeacher, MQSConfig, MQSResult
+from .em import (
+    DenseMQSTeacher,
+    MQSConfig,
+    MQSResult,
+)
+from .mixed import (
+    DenseMixedConductorTeacher,
+    MixedResult,
+)
 from .thermal import StableThermalModel
 from .benchmarks import (
     MU0,
@@ -47,6 +60,8 @@ __all__ = [
     "DenseMQSTeacher",
     "MQSConfig",
     "MQSResult",
+    "DenseMixedConductorTeacher",
+    "MixedResult",
     "StableThermalModel",
     "MU0",
     "coaxial_circular_mutual_inductance",
