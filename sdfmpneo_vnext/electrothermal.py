@@ -36,6 +36,7 @@ class ElectroThermalStep:
     state: np.ndarray
     temperatures: np.ndarray
     impedance: np.ndarray
+    currents: np.ndarray
     coil_power: np.ndarray
     iterations: int
     coupling_residual: float
@@ -284,6 +285,7 @@ class CurrentControlledEnvelope:
             guess,
             final_temperatures,
             result.impedance,
+            currents.copy(),
             power,
             iteration,
             residual,
@@ -329,3 +331,206 @@ class CurrentControlledEnvelope:
             state = step.state
             previous = float(time)
         return tuple(out)
+
+
+
+class VoltageControlledEnvelope(CurrentControlledEnvelope):
+    """Narrowband voltage/circuit-controlled electrothermal envelope.
+
+    The source supplies a complex peak-voltage vector through an optional
+    passive external impedance matrix. Coil currents are solved from the warm
+    multi-port impedance at every slow coupling iteration.
+    """
+
+    def __init__(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model: StableThermalModel,
+        *,
+        external_impedance=None,
+        em_config: MQSConfig | None = None,
+        coupling_tolerance: float = 1e-7,
+        max_coupling_iterations: int = 12,
+    ):
+        super().__init__(
+            scene,
+            frequency_hz,
+            thermal_model,
+            em_config=em_config,
+            coupling_tolerance=coupling_tolerance,
+            max_coupling_iterations=max_coupling_iterations,
+        )
+        n = len(scene.coils)
+        if external_impedance is None:
+            external = np.zeros(
+                (n, n),
+                dtype=complex,
+            )
+        else:
+            external = np.asarray(
+                external_impedance,
+                dtype=complex,
+            )
+        if external.shape != (n, n):
+            raise ValueError(
+                "external_impedance must have shape (n_ports,n_ports)"
+            )
+        if not np.all(np.isfinite(external)):
+            raise ValueError(
+                "external_impedance must be finite"
+            )
+        dissipative = 0.5 * (
+            external + external.conj().T
+        )
+        if (
+            np.min(
+                np.linalg.eigvalsh(dissipative)
+            )
+            < -1e-12
+        ):
+            raise ValueError(
+                "external_impedance must be passive"
+            )
+        self.external_impedance = external
+
+    def _electromagnetic_from_voltage(
+        self,
+        temperatures,
+        source_voltage,
+    ):
+        voltage = np.asarray(
+            source_voltage,
+            dtype=complex,
+        )
+        if voltage.shape != (
+            len(self.scene.coils),
+        ):
+            raise ValueError(
+                "source_voltage has wrong shape"
+            )
+        warm_scene = self._scene_at_temperatures(
+            temperatures
+        )
+        teacher = DenseMQSTeacher(
+            warm_scene,
+            self.frequency_hz,
+            self.em_config,
+        )
+        result = teacher.solve()
+        total_impedance = (
+            result.impedance
+            + self.external_impedance
+        )
+        currents = np.linalg.solve(
+            total_impedance,
+            voltage,
+        )
+        loss = ConductorLossField(
+            teacher,
+            result,
+            currents,
+        )
+        return (
+            result,
+            currents,
+            loss.coil_power(),
+        )
+
+    def step(
+        self,
+        state,
+        source_voltage,
+        dt: float,
+    ) -> ElectroThermalStep:
+        z0 = np.asarray(
+            state,
+            dtype=float,
+        )
+        voltage = np.asarray(
+            source_voltage,
+            dtype=complex,
+        )
+        if z0.shape != (
+            self.thermal_model.n_states,
+        ):
+            raise ValueError(
+                "state has wrong shape"
+            )
+        if voltage.shape != (
+            len(self.scene.coils),
+        ):
+            raise ValueError(
+                "source_voltage has wrong shape"
+            )
+        if dt < 0.0:
+            raise ValueError(
+                "dt must be nonnegative"
+            )
+
+        guess = z0.copy()
+        residual = np.inf
+        result = None
+        currents = None
+        power = None
+        converged = False
+        for iteration in range(
+            1,
+            self.max_coupling_iterations + 1,
+        ):
+            temperatures = (
+                self.thermal_model.temperature(
+                    guess
+                )
+            )
+            result, currents, power = (
+                self._electromagnetic_from_voltage(
+                    temperatures,
+                    voltage,
+                )
+            )
+            candidate = (
+                self.thermal_model.advance_constant_power(
+                    z0,
+                    power,
+                    dt,
+                )
+            )
+            scale = max(
+                float(
+                    np.linalg.norm(candidate)
+                ),
+                1.0,
+            )
+            residual = float(
+                np.linalg.norm(
+                    candidate - guess
+                )
+                / scale
+            )
+            guess = candidate
+            if residual <= self.coupling_tolerance:
+                converged = True
+                break
+
+        final_temperatures = (
+            self.thermal_model.temperature(
+                guess
+            )
+        )
+        result, currents, power = (
+            self._electromagnetic_from_voltage(
+                final_temperatures,
+                voltage,
+            )
+        )
+        return ElectroThermalStep(
+            guess,
+            final_temperatures,
+            result.impedance,
+            currents,
+            power,
+            iteration,
+            residual,
+            converged,
+        )

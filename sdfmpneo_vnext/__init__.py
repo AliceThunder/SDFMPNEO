@@ -39,6 +39,7 @@ from .electrothermal import (
     CoilThermalProperties,
     ElectroThermalStep,
     CurrentControlledEnvelope,
+    VoltageControlledEnvelope,
     build_lumped_coil_thermal_model,
 )
 from .benchmarks import (
@@ -81,6 +82,7 @@ __all__ = [
     "CoilThermalProperties",
     "ElectroThermalStep",
     "CurrentControlledEnvelope",
+    "VoltageControlledEnvelope",
     "build_lumped_coil_thermal_model",
     "MU0",
     "coaxial_circular_mutual_inductance",
