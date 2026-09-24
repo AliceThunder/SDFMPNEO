@@ -209,3 +209,97 @@ def test_empty_packages_do_not_change_legacy_scene_serialization_shape():
         scene
     )
     assert "packages" not in payload
+
+
+
+def test_superquadric_surface_quadrature_recovers_sphere_area_and_normals():
+    radius = 0.03
+    geometry = SuperquadricPackageGeometry(
+        np.array(
+            [radius, radius, radius]
+        ),
+        exponent_xy=2.0,
+        exponent_z=2.0,
+    )
+    quadrature = geometry.surface_quadrature(
+        vertical_order=32,
+        azimuthal_order=64,
+    )
+    exact_area = (
+        4.0
+        * np.pi
+        * radius**2
+    )
+    assert np.isclose(
+        quadrature.area,
+        exact_area,
+        rtol=6e-4,
+    )
+    radial = (
+        quadrature.positions
+        / np.linalg.norm(
+            quadrature.positions,
+            axis=1,
+        )[
+            :,
+            None,
+        ]
+    )
+    alignment = np.sum(
+        radial
+        * quadrature.normals,
+        axis=1,
+    )
+    assert np.min(
+        alignment
+    ) > 1.0 - 2e-12
+
+
+def test_superquadric_surface_quadrature_is_rigid_motion_equivariant():
+    geometry = SuperquadricPackageGeometry(
+        np.array(
+            [0.04, 0.03, 0.02]
+        ),
+        exponent_xy=4.0,
+        exponent_z=3.0,
+    )
+    reference = geometry.surface_quadrature(
+        vertical_order=20,
+        azimuthal_order=40,
+    )
+    rng = np.random.default_rng(
+        91
+    )
+    pose = RigidPose(
+        haar_rotation(rng),
+        np.array(
+            [0.3, -0.2, 0.1]
+        ),
+    )
+    moved = geometry.transformed(
+        pose
+    ).surface_quadrature(
+        vertical_order=20,
+        azimuthal_order=40,
+    )
+    assert np.allclose(
+        moved.positions,
+        pose.apply(
+            reference.positions
+        ),
+        rtol=0,
+        atol=3e-13,
+    )
+    assert np.allclose(
+        moved.normals,
+        reference.normals
+        @ pose.rotation.T,
+        rtol=0,
+        atol=3e-13,
+    )
+    assert np.allclose(
+        moved.weights,
+        reference.weights,
+        rtol=2e-13,
+        atol=2e-15,
+    )

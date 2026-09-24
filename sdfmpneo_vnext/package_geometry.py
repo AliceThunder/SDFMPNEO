@@ -42,6 +42,120 @@ def _signed_power(
 
 
 @dataclass(frozen=True)
+class SuperquadricSurfaceQuadrature:
+    positions: np.ndarray
+    normals: np.ndarray
+    weights: np.ndarray
+    eta: np.ndarray
+    azimuth: np.ndarray
+
+    def __post_init__(self):
+        positions = np.asarray(
+            self.positions,
+            dtype=float,
+        )
+        normals = np.asarray(
+            self.normals,
+            dtype=float,
+        )
+        weights = np.asarray(
+            self.weights,
+            dtype=float,
+        )
+        eta = np.asarray(
+            self.eta,
+            dtype=float,
+        )
+        azimuth = np.asarray(
+            self.azimuth,
+            dtype=float,
+        )
+        n = len(
+            weights
+        )
+        if (
+            positions.shape != (n, 3)
+            or normals.shape != (n, 3)
+            or eta.shape != (n,)
+            or azimuth.shape != (n,)
+        ):
+            raise ValueError(
+                "surface quadrature arrays have incompatible shapes"
+            )
+        if (
+            np.any(
+                ~np.isfinite(
+                    positions
+                )
+            )
+            or np.any(
+                ~np.isfinite(
+                    normals
+                )
+            )
+            or np.any(
+                ~np.isfinite(
+                    weights
+                )
+            )
+            or np.any(
+                weights <= 0.0
+            )
+        ):
+            raise ValueError(
+                "surface quadrature must be finite with positive weights"
+            )
+        norm = np.linalg.norm(
+            normals,
+            axis=1,
+        )
+        if not np.allclose(
+            norm,
+            1.0,
+            rtol=0.0,
+            atol=2e-12,
+        ):
+            raise ValueError(
+                "surface quadrature normals must be unit length"
+            )
+        object.__setattr__(
+            self,
+            "positions",
+            positions,
+        )
+        object.__setattr__(
+            self,
+            "normals",
+            normals,
+        )
+        object.__setattr__(
+            self,
+            "weights",
+            weights,
+        )
+        object.__setattr__(
+            self,
+            "eta",
+            eta,
+        )
+        object.__setattr__(
+            self,
+            "azimuth",
+            azimuth,
+        )
+
+    @property
+    def area(
+        self,
+    ) -> float:
+        return float(
+            np.sum(
+                self.weights
+            )
+        )
+
+
+@dataclass(frozen=True)
 class SuperquadricPackageGeometry:
     """Continuous superellipsoid package primitive.
 
@@ -331,6 +445,253 @@ class SuperquadricPackageGeometry:
                 -1,
                 3,
             )
+        )
+
+    def surface_quadrature(
+        self,
+        vertical_order: int = 24,
+        azimuthal_order: int = 48,
+    ) -> SuperquadricSurfaceQuadrature:
+        if (
+            vertical_order < 4
+            or vertical_order % 2 != 0
+            or azimuthal_order < 8
+        ):
+            raise ValueError(
+                "surface quadrature requires an even vertical_order >= 4 "
+                "and azimuthal_order >= 8"
+            )
+
+        eta = (
+            -0.5
+            * np.pi
+            + (
+                np.arange(
+                    vertical_order
+                )
+                + 0.5
+            )
+            * np.pi
+            / vertical_order
+        )
+        azimuth = (
+            -np.pi
+            + (
+                np.arange(
+                    azimuthal_order
+                )
+                + 0.5
+            )
+            * 2.0
+            * np.pi
+            / azimuthal_order
+        )
+        ee, ww = np.meshgrid(
+            eta,
+            azimuth,
+            indexing="ij",
+        )
+
+        a, b, c = (
+            self.half_extents
+        )
+        ev = (
+            2.0
+            / float(
+                self.exponent_z
+            )
+        )
+        eh = (
+            2.0
+            / float(
+                self.exponent_xy
+            )
+        )
+
+        cos_eta = np.cos(
+            ee
+        )
+        sin_eta = np.sin(
+            ee
+        )
+        cos_az = np.cos(
+            ww
+        )
+        sin_az = np.sin(
+            ww
+        )
+
+        cv = _signed_power(
+            cos_eta,
+            ev,
+        )
+        sv = _signed_power(
+            sin_eta,
+            ev,
+        )
+        cp = _signed_power(
+            cos_az,
+            eh,
+        )
+        sp = _signed_power(
+            sin_az,
+            eh,
+        )
+
+        dcv = (
+            -ev
+            * np.abs(
+                cos_eta
+            ) ** (
+                ev - 1.0
+            )
+            * sin_eta
+        )
+        dsv = (
+            ev
+            * np.abs(
+                sin_eta
+            ) ** (
+                ev - 1.0
+            )
+            * cos_eta
+        )
+        dcp = (
+            -eh
+            * np.abs(
+                cos_az
+            ) ** (
+                eh - 1.0
+            )
+            * sin_az
+        )
+        dsp = (
+            eh
+            * np.abs(
+                sin_az
+            ) ** (
+                eh - 1.0
+            )
+            * cos_az
+        )
+
+        local = np.stack(
+            (
+                a
+                * cv
+                * cp,
+                b
+                * cv
+                * sp,
+                c
+                * sv,
+            ),
+            axis=-1,
+        )
+        derivative_eta = (
+            np.stack(
+                (
+                    a
+                    * dcv
+                    * cp,
+                    b
+                    * dcv
+                    * sp,
+                    c
+                    * dsv,
+                ),
+                axis=-1,
+            )
+        )
+        derivative_azimuth = (
+            np.stack(
+                (
+                    a
+                    * cv
+                    * dcp,
+                    b
+                    * cv
+                    * dsp,
+                    np.zeros_like(
+                        cv
+                    ),
+                ),
+                axis=-1,
+            )
+        )
+
+        outward = np.cross(
+            derivative_azimuth,
+            derivative_eta,
+        )
+        jacobian = np.linalg.norm(
+            outward,
+            axis=-1,
+        )
+        if np.any(
+            ~np.isfinite(
+                jacobian
+            )
+        ) or np.any(
+            jacobian <= 0.0
+        ):
+            raise RuntimeError(
+                "superquadric parameterization produced a singular "
+                "surface quadrature point"
+            )
+
+        local_normals = (
+            outward
+            / jacobian[
+                ...,
+                None,
+            ]
+        )
+        world_positions = (
+            self.local_to_world(
+                local.reshape(
+                    -1,
+                    3,
+                )
+            )
+        )
+        world_normals = (
+            local_normals.reshape(
+                -1,
+                3,
+            )
+            @ self.pose.rotation.T
+        )
+        world_normals /= np.linalg.norm(
+            world_normals,
+            axis=1,
+        )[
+            :,
+            None,
+        ]
+        parameter_weight = (
+            np.pi
+            / vertical_order
+            * 2.0
+            * np.pi
+            / azimuthal_order
+        )
+        weights = (
+            jacobian.reshape(
+                -1
+            )
+            * parameter_weight
+        )
+        return SuperquadricSurfaceQuadrature(
+            world_positions,
+            world_normals,
+            weights,
+            ee.reshape(
+                -1
+            ),
+            ww.reshape(
+                -1
+            ),
         )
 
     def transformed(
