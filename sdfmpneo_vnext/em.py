@@ -4,8 +4,12 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.linalg import solve
 
-from .basis import SectionBasis, polynomial_section_basis
-from .scene import Scene
+from .basis import (
+    SectionBasis,
+    adaptive_section_basis,
+    polynomial_section_basis,
+)
+from .scene import MU0, Scene
 
 
 @dataclass(frozen=True)
@@ -17,6 +21,11 @@ class MQSConfig:
     angular_order: int = 24
     line_order: int = 2
     self_softening_factor: float = 0.45
+    section_basis_family: str = "adaptive"
+    skin_enrichment_threshold: float = 2.0
+    skin_boundary_layers: int = 2
+    skin_angular_order: int = 1
+    skin_lambda_cap: float = 24.0
 
     def __post_init__(self):
         if self.segments_per_turn < 4 or self.min_segments < 4:
@@ -25,6 +34,22 @@ class MQSConfig:
             raise ValueError("invalid basis/quadrature order")
         if self.self_softening_factor <= 0:
             raise ValueError("self_softening_factor must be positive")
+        if self.section_basis_family not in (
+            "polynomial",
+            "adaptive",
+        ):
+            raise ValueError(
+                "section_basis_family must be 'polynomial' or 'adaptive'"
+            )
+        if (
+            self.skin_enrichment_threshold < 0.0
+            or self.skin_boundary_layers < 0
+            or self.skin_angular_order < 0
+            or self.skin_lambda_cap <= 0.0
+        ):
+            raise ValueError(
+                "invalid skin-enrichment configuration"
+            )
 
 
 @dataclass
@@ -179,6 +204,90 @@ class DenseMQSTeacher:
         self.config = config or MQSConfig()
         self._segments, self._n_modes = self._build_segments()
 
+    def _skin_parameter(
+        self,
+        coil,
+    ) -> float:
+        if self.omega <= 0.0:
+            return 0.0
+        material = coil.material
+        permeability = (
+            MU0
+            * material.relative_permeability
+        )
+        delta = np.sqrt(
+            2.0
+            / (
+                self.omega
+                * permeability
+                * material.conductivity
+            )
+        )
+        return float(
+            min(
+                coil.geometry.conductor_width,
+                coil.geometry.conductor_thickness,
+            )
+            / delta
+        )
+
+    def _section_basis(
+        self,
+        coil,
+    ) -> SectionBasis:
+        geometry = (
+            coil.geometry
+        )
+        common = dict(
+            width=(
+                geometry.conductor_width
+            ),
+            thickness=(
+                geometry.conductor_thickness
+            ),
+            exponent=(
+                geometry.cross_section_exponent
+            ),
+            degree=(
+                self.config.section_degree
+            ),
+            radial_order=(
+                self.config.radial_order
+            ),
+            angular_order=(
+                self.config.angular_order
+            ),
+        )
+        if (
+            self.config.section_basis_family
+            == "polynomial"
+        ):
+            return (
+                polynomial_section_basis(
+                    **common
+                )
+            )
+        return adaptive_section_basis(
+            **common,
+            skin_parameter=(
+                self._skin_parameter(
+                    coil
+                )
+            ),
+            skin_threshold=(
+                self.config.skin_enrichment_threshold
+            ),
+            boundary_layers=(
+                self.config.skin_boundary_layers
+            ),
+            boundary_angular_order=(
+                self.config.skin_angular_order
+            ),
+            lambda_cap=(
+                self.config.skin_lambda_cap
+            ),
+        )
+
     def _build_segments(self):
         segments = []
         cursor = 0
@@ -188,13 +297,10 @@ class DenseMQSTeacher:
                 int(np.ceil(self.config.segments_per_turn * coil.geometry.turns)),
             )
             poly = coil.geometry.polyline(nseg)
-            basis = polynomial_section_basis(
-                coil.geometry.conductor_width,
-                coil.geometry.conductor_thickness,
-                coil.geometry.cross_section_exponent,
-                self.config.section_degree,
-                self.config.radial_order,
-                self.config.angular_order,
+            basis = (
+                self._section_basis(
+                    coil
+                )
             )
             for s in range(nseg):
                 sl = slice(cursor, cursor + basis.n_modes)

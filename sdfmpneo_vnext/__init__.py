@@ -19,6 +19,7 @@ from .scene import (
 from .basis import (
     SectionBasis,
     SectionQuadrature,
+    adaptive_section_basis,
     polynomial_section_basis,
     superellipse_section_quadrature,
 )
@@ -139,6 +140,7 @@ __all__ = [
     "Scene",
     "SectionBasis",
     "SectionQuadrature",
+    "adaptive_section_basis",
     "polynomial_section_basis",
     "superellipse_section_quadrature",
     "DenseMQSTeacher",
