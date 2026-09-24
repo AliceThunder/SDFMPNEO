@@ -4,11 +4,13 @@ import argparse
 import numpy as np
 
 from .certification import certify_port_result
+from .certified import certify_mqs_ports
 from .electrothermal import (
     CoilThermalProperties,
-    CurrentControlledEnvelope,
     build_lumped_coil_thermal_model,
 )
+from .fast import FastCurrentControlledEnvelope
+from .analytic_baseline import AnalyticBaselineArtifact
 from .em import DenseMQSTeacher, MQSConfig
 from .geometry import RigidPose, SuperellipseSpiral
 from .scene import (
@@ -97,16 +99,33 @@ def self_check() -> int:
             ]
         ),
     )
-    envelope = CurrentControlledEnvelope(
+    fast_artifact = AnalyticBaselineArtifact(
+        segments_per_coil=12,
+    )
+    fast_prediction = fast_artifact.predict_structured(
+        scene,
+        85_000.0,
+    )
+    envelope = FastCurrentControlledEnvelope(
         scene,
         85_000.0,
         thermal,
-        em_config=cfg,
+        fast_artifact,
     )
     step = envelope.step(
         np.zeros(2),
         np.array([3.0 + 0j, -1.0 + 0.2j]),
         10.0,
+    )
+    discrete = certify_mqs_ports(
+        scene,
+        0.0,
+        AnalyticBaselineArtifact(
+            segments_per_coil=12,
+        ),
+        config=cfg,
+        algebraic_tolerance=1e-10,
+        allow_reference_fallback=False,
     )
 
     np.set_printoptions(precision=6, suppress=False)
@@ -122,6 +141,22 @@ def self_check() -> int:
             "min_dissipation_eigenvalue": cert.minimum_dissipation_eigenvalue,
         },
     )
+    print(
+        "FAST structure:",
+        {
+            "power_closure_error": fast_prediction.power_closure_error(),
+            "reciprocity_defect": fast_prediction.reciprocity_defect(),
+        },
+    )
+    print(
+        "CERTIFIED discrete:",
+        {
+            "status": discrete.status,
+            "initial_residual": discrete.initial_residual,
+            "final_residual": discrete.final_residual,
+            "correction_iterations": discrete.correction_iterations,
+        },
+    )
     print("T(10 s) [K]:", step.temperatures)
     print("coil power [W]:", step.coil_power)
     print(
@@ -132,7 +167,13 @@ def self_check() -> int:
             "residual": step.coupling_residual,
         },
     )
-    return 0 if cert.certified and step.converged else 2
+    ok = bool(
+        cert.certified
+        and fast_prediction.power_closure_error() < 1e-10
+        and discrete.algebraic_certified
+        and step.converged
+    )
+    return 0 if ok else 2
 
 
 def main(argv=None) -> int:
