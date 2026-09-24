@@ -612,6 +612,24 @@ class PreparedSpatialLossField:
         xy=(0.0, 0.0),
     ) -> np.ndarray:
         if not (
+            0.0
+            <= arc_fraction
+            <= 1.0
+        ):
+            raise ValueError(
+                "arc_fraction must lie in [0,1]"
+            )
+        xy = np.asarray(
+            xy,
+            dtype=float,
+        )
+        if xy.shape != (
+            2,
+        ):
+            raise ValueError(
+                "xy must have shape (2,)"
+            )
+        if not (
             0
             <= coil_index
             < len(
@@ -778,8 +796,18 @@ class NeuralSpatialLossArtifact:
         self.port_artifact = (
             port_artifact
         )
-        self.model = model.to(
+        self.port_artifact.model.to(
             device
+        )
+        self.port_artifact.device = str(
+            device
+        )
+        port_dtype = next(
+            self.port_artifact.model.parameters()
+        ).dtype
+        self.model = model.to(
+            device=device,
+            dtype=port_dtype,
         )
         self.longitudinal_points = int(
             longitudinal_points

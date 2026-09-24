@@ -33,7 +33,9 @@ from .mixed import (
 )
 from .thermal import StableThermalModel
 from .loss import ConductorLossField
-from .field import UniformLossFieldDecoder
+from .field import PreparedUniformLossField, UniformLossFieldDecoder
+from .reference import MixedReferenceArtifact, PreparedReferenceLossField
+from .system import MeshfreeVNextSystem, SystemCapabilities
 from .certification import PortCertificate, certify_port_result
 from .certified import (
     CertifiedPortResult,
@@ -110,7 +112,12 @@ __all__ = [
     "MixedResult",
     "StableThermalModel",
     "ConductorLossField",
+    "PreparedUniformLossField",
     "UniformLossFieldDecoder",
+    "MixedReferenceArtifact",
+    "PreparedReferenceLossField",
+    "MeshfreeVNextSystem",
+    "SystemCapabilities",
     "PortCertificate",
     "certify_port_result",
     "CertifiedPortResult",

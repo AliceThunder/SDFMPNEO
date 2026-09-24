@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import numpy as np
 
 from .scene import Scene
@@ -25,6 +26,113 @@ def _inside_superellipse(
         + (abs(xy[1]) / b) ** m
         <= 1.0 + 1e-12
     )
+
+
+@dataclass(frozen=True)
+class PreparedUniformLossField:
+    scene: Scene
+    frequency_hz: float
+    prediction: object
+    volumes: np.ndarray
+
+    @property
+    def port_prediction(self):
+        return self.prediction
+
+    @property
+    def normalization_closure_error(self) -> float:
+        if hasattr(
+            self.prediction,
+            "power_closure_error",
+        ):
+            return float(
+                self.prediction.power_closure_error()
+            )
+        return 0.0
+
+    def local_dissipation_matrix(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        if not (
+            0
+            <= coil_index
+            < len(
+                self.scene.coils
+            )
+        ):
+            raise IndexError(
+                "coil_index out of range"
+            )
+        if not (
+            0.0
+            <= arc_fraction
+            <= 1.0
+        ):
+            raise ValueError(
+                "arc_fraction must lie in [0,1]"
+            )
+        geometry = (
+            self.scene.coils[
+                coil_index
+            ].geometry
+        )
+        if not _inside_superellipse(
+            geometry,
+            xy,
+        ):
+            n = len(
+                self.scene.coils
+            )
+            return np.zeros(
+                (
+                    n,
+                    n,
+                ),
+                dtype=complex,
+            )
+        return (
+            np.asarray(
+                self.prediction.dissipation_channels[
+                    coil_index
+                ],
+                dtype=complex,
+            )
+            / self.volumes[
+                coil_index
+            ]
+        )
+
+    def local_joule_density(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy,
+        currents,
+    ) -> float:
+        matrix = (
+            self.local_dissipation_matrix(
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        return float(
+            0.5
+            * np.real(
+                np.vdot(
+                    currents,
+                    matrix
+                    @ currents,
+                )
+            )
+        )
 
 
 class UniformLossFieldDecoder:
@@ -80,6 +188,40 @@ class UniformLossFieldDecoder:
             * geometry.cross_section_area
         )
 
+    def prepare(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> PreparedUniformLossField:
+        prediction = (
+            self.port_artifact.predict_structured(
+                scene,
+                frequency_hz,
+            )
+        )
+        volumes = np.asarray(
+            [
+                self._coil_volume(
+                    scene,
+                    coil
+                )
+                for coil in range(
+                    len(
+                        scene.coils
+                    )
+                )
+            ],
+            dtype=float,
+        )
+        return PreparedUniformLossField(
+            scene,
+            float(
+                frequency_hz
+            ),
+            prediction,
+            volumes,
+        )
+
     def local_dissipation_matrix(
         self,
         scene: Scene,
@@ -88,53 +230,13 @@ class UniformLossFieldDecoder:
         arc_fraction: float,
         xy=(0.0, 0.0),
     ) -> np.ndarray:
-        if not (
-            0
-            <= coil_index
-            < len(scene.coils)
-        ):
-            raise IndexError(
-                "coil_index out of range"
-            )
-        if not (
-            0.0
-            <= arc_fraction
-            <= 1.0
-        ):
-            raise ValueError(
-                "arc_fraction must lie in [0,1]"
-            )
-        geometry = (
-            scene.coils[
-                coil_index
-            ].geometry
-        )
-        if not _inside_superellipse(
-            geometry,
-            xy,
-        ):
-            n = len(
-                scene.coils
-            )
-            return np.zeros(
-                (n, n),
-                dtype=complex,
-            )
-        prediction = (
-            self.port_artifact.predict_structured(
-                scene,
-                frequency_hz,
-            )
-        )
-        volume = self._coil_volume(
+        return self.prepare(
             scene,
+            frequency_hz,
+        ).local_dissipation_matrix(
             coil_index,
-        )
-        return (
-            prediction.dissipation_channels[
-                coil_index
-            ]
-            / volume
+            arc_fraction,
+            xy,
         )
 
     def local_joule_density(
@@ -146,28 +248,14 @@ class UniformLossFieldDecoder:
         xy,
         currents,
     ) -> float:
-        matrix = (
-            self.local_dissipation_matrix(
-                scene,
-                frequency_hz,
-                coil_index,
-                arc_fraction,
-                xy,
-            )
-        )
-        currents = np.asarray(
+        return self.prepare(
+            scene,
+            frequency_hz,
+        ).local_joule_density(
+            coil_index,
+            arc_fraction,
+            xy,
             currents,
-            dtype=complex,
-        )
-        return float(
-            0.5
-            * np.real(
-                np.vdot(
-                    currents,
-                    matrix
-                    @ currents,
-                )
-            )
         )
 
     def coil_integrated_matrix(
