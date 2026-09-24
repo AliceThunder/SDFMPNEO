@@ -27,13 +27,18 @@ class StructuredPortPrediction:
                 "impedance must be square"
             )
         n = impedance.shape[0]
-        if channels.shape != (
-            n,
-            n,
-            n,
+        if (
+            channels.ndim != 3
+            or channels.shape[1:]
+            != (
+                n,
+                n,
+            )
+            or channels.shape[0] < 1
         ):
             raise ValueError(
-                "dissipation_channels must have shape (n_ports,n_ports,n_ports)"
+                "dissipation_channels must have shape "
+                "(n_channels,n_ports,n_ports)"
             )
         object.__setattr__(
             self,
@@ -46,7 +51,15 @@ class StructuredPortPrediction:
             channels,
         )
 
-    def coil_power(
+    @property
+    def n_channels(
+        self,
+    ) -> int:
+        return int(
+            self.dissipation_channels.shape[0]
+        )
+
+    def channel_power(
         self,
         currents,
     ) -> np.ndarray:
@@ -73,6 +86,23 @@ class StructuredPortPrediction:
                 in self.dissipation_channels
             ],
             dtype=float,
+        )
+
+    def coil_power(
+        self,
+        currents,
+    ) -> np.ndarray:
+        if (
+            self.n_channels
+            != self.impedance.shape[0]
+        ):
+            raise ValueError(
+                "coil_power is defined only when there is exactly one "
+                "dissipation channel per port/coil; use channel_power for "
+                "general structured predictions"
+            )
+        return self.channel_power(
+            currents
         )
 
     def power_closure_error(

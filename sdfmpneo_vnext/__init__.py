@@ -15,10 +15,6 @@ from .geometry import (
 from .package_geometry import (
     SuperquadricPackageGeometry,
     SuperquadricSurfaceQuadrature,
-)
-from .package_geometry import (
-    SuperquadricPackageGeometry,
-    SuperquadricSurfaceQuadrature,
     SuperquadricVolumeQuadrature,
 )
 from .scene import (
@@ -106,6 +102,11 @@ from .prediction import StructuredPortPrediction
 from .dielectric_surface import (
     DielectricSurfaceResult,
     DielectricSurfaceSolver,
+)
+from .hybrid_dielectric import (
+    DielectricCoupledMixedTeacher,
+    DielectricCoupledResult,
+    DielectricCoupledReferenceArtifact,
 )
 from .fast import (
     FastCurrentControlledEnvelope,
@@ -197,8 +198,6 @@ __all__ = [
     "HomogeneousMedium",
     "IsotropicMaterial",
     "PackageObject",
-    "SuperquadricPackageGeometry",
-    "SuperquadricSurfaceQuadrature",
     "CoilObject",
     "Scene",
     "SectionBasis",
@@ -251,6 +250,9 @@ __all__ = [
     "StructuredPortPrediction",
     "DielectricSurfaceResult",
     "DielectricSurfaceSolver",
+    "DielectricCoupledMixedTeacher",
+    "DielectricCoupledResult",
+    "DielectricCoupledReferenceArtifact",
     "FastCurrentControlledEnvelope",
     "FastVoltageControlledEnvelope",
     "AnalyticBaselineArtifact",

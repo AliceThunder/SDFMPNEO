@@ -207,3 +207,63 @@ def test_dielectric_surface_response_is_common_se3_equivariant():
         rtol=3e-10,
         atol=3e-12,
     )
+
+
+
+def test_dielectric_surface_multi_rhs_matches_independent_solves():
+    solver = DielectricSurfaceSolver(
+        (_sphere(0.018, 3.5),),
+        HomogeneousMedium(),
+        90_000.0,
+        vertical_order=10,
+        azimuthal_order=20,
+    )
+    field_a = np.array(
+        [0.6, -0.2, 0.1],
+        dtype=complex,
+    )
+    field_b = np.array(
+        [-0.1, 0.4, 0.5],
+        dtype=complex,
+    )
+    rhs = np.stack(
+        (
+            -solver.normals @ field_a,
+            -solver.normals @ field_b,
+        ),
+        axis=1,
+    )
+    density, residual = (
+        solver.solve_density_matrix(
+            rhs
+        )
+    )
+    reference_a = (
+        solver.solve_uniform_field(
+            field_a
+        )
+    )
+    reference_b = (
+        solver.solve_uniform_field(
+            field_b
+        )
+    )
+    assert density.shape == (
+        len(solver.weights),
+        2,
+    )
+    assert np.all(
+        residual < 1e-11
+    )
+    assert np.allclose(
+        density[:, 0],
+        reference_a.equivalent_density,
+        rtol=2e-12,
+        atol=2e-13,
+    )
+    assert np.allclose(
+        density[:, 1],
+        reference_b.equivalent_density,
+        rtol=2e-12,
+        atol=2e-13,
+    )

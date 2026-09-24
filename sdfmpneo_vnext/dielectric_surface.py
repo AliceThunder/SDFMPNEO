@@ -485,21 +485,32 @@ class DielectricSurfaceSolver:
             ] += coefficient
         return matrix
 
-    def solve_normal_potential_derivative(
+    def solve_density_matrix(
         self,
         normal_derivative,
-    ) -> DielectricSurfaceResult:
+    ):
         rhs = np.asarray(
             normal_derivative,
             dtype=complex,
         )
-        if rhs.shape != (
-            len(
+        vector = (
+            rhs.ndim == 1
+        )
+        if vector:
+            rhs = rhs[
+                :,
+                None,
+            ]
+        if (
+            rhs.ndim != 2
+            or rhs.shape[0]
+            != len(
                 self.weights
-            ),
+            )
         ):
             raise ValueError(
-                "normal_derivative has wrong shape"
+                "normal_derivative must have shape (n_surface,) or "
+                "(n_surface,n_rhs)"
             )
         matrix = (
             self.operator_matrix()
@@ -536,7 +547,8 @@ class DielectricSurfaceSolver:
                 )
             ):
                 effective_rhs[
-                    package_slice
+                    package_slice,
+                    :,
                 ] = 0.0
 
         density = solve(
@@ -550,15 +562,44 @@ class DielectricSurfaceSolver:
             @ density
             - effective_rhs
         )
-        eta = float(
+        denominator = np.maximum(
             np.linalg.norm(
-                residual
+                effective_rhs,
+                axis=0,
+            ),
+            1.0,
+        )
+        normalized = (
+            np.linalg.norm(
+                residual,
+                axis=0,
             )
-            / max(
-                np.linalg.norm(
-                    effective_rhs
+            / denominator
+        )
+        if vector:
+            return (
+                density[
+                    :,
+                    0,
+                ],
+                float(
+                    normalized[
+                        0
+                    ]
                 ),
-                1.0,
+            )
+        return (
+            density,
+            normalized,
+        )
+
+    def solve_normal_potential_derivative(
+        self,
+        normal_derivative,
+    ) -> DielectricSurfaceResult:
+        density, eta = (
+            self.solve_density_matrix(
+                normal_derivative
             )
         )
         return DielectricSurfaceResult(
@@ -568,7 +609,9 @@ class DielectricSurfaceSolver:
             self.package_index,
             density,
             self.background_permittivity,
-            eta,
+            float(
+                eta
+            ),
         )
 
     def solve_uniform_field(
