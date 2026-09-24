@@ -76,6 +76,7 @@ from .dataset import (
     DatasetRecord,
     ImmutableTeacherDataset,
     deterministic_split,
+    migrate_dataset_v3_to_v4,
 )
 from .serialization import scene_from_dict, scene_to_dict
 from .evaluation import SurrogateAudit, audit_surrogate
@@ -151,6 +152,7 @@ __all__ = [
     "DatasetRecord",
     "ImmutableTeacherDataset",
     "deterministic_split",
+    "migrate_dataset_v3_to_v4",
     "scene_from_dict",
     "scene_to_dict",
     "SurrogateAudit",

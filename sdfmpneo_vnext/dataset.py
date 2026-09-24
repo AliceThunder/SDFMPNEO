@@ -18,6 +18,219 @@ from .training_data import SpatialLossSamples, TeacherSample
 
 
 DATASET_SCHEMA = 4
+LEGACY_DATASET_SCHEMA = 3
+
+
+def migrate_dataset_v3_to_v4(
+    root,
+):
+    """Upgrade persisted MQS truth metadata without recomputing any sample."""
+    root = Path(
+        root
+    )
+    manifest_path = (
+        root
+        / "manifest.json"
+    )
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"dataset manifest does not exist: {manifest_path}"
+        )
+    manifest = json.loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    schema = int(
+        manifest.get(
+            "schema",
+            -1,
+        )
+    )
+    if schema == DATASET_SCHEMA:
+        return {
+            "migrated": False,
+            "records": len(
+                manifest.get(
+                    "records",
+                    []
+                )
+            ),
+        }
+    if schema != LEGACY_DATASET_SCHEMA:
+        raise ValueError(
+            f"only dataset schema {LEGACY_DATASET_SCHEMA} can be migrated to {DATASET_SCHEMA}"
+        )
+
+    migrated_records = []
+    moves = []
+    seen = set()
+    for record in manifest.get(
+        "records",
+        []
+    ):
+        identity = {
+            "schema": DATASET_SCHEMA,
+            "scene": record[
+                "scene"
+            ],
+            "frequency_hz": float(
+                record[
+                    "frequency_hz"
+                ]
+            ),
+            "baseline_segments": int(
+                record[
+                    "baseline_segments"
+                ]
+            ),
+            "reference_backend": "mqs",
+            "teacher_config": record[
+                "teacher_config"
+            ],
+            "output_schema": (
+                "mvp_mixed_reference_impedance_loss_channels_and_spatial_v4"
+            ),
+        }
+        new_id = content_hash(
+            identity
+        )
+        if new_id in seen:
+            raise RuntimeError(
+                "legacy migration produced a duplicate content identity"
+            )
+        seen.add(
+            new_id
+        )
+        old_file = Path(
+            record[
+                "file"
+            ]
+        )
+        new_file = (
+            Path(
+                "samples"
+            )
+            / f"{new_id}.npz"
+        )
+        migrated = dict(
+            record
+        )
+        migrated[
+            "sample_id"
+        ] = new_id
+        migrated[
+            "reference_backend"
+        ] = "mqs"
+        migrated[
+            "file"
+        ] = str(
+            new_file
+        )
+        migrated_records.append(
+            migrated
+        )
+        if old_file != new_file:
+            moves.append(
+                (
+                    root
+                    / old_file,
+                    root
+                    / new_file,
+                )
+            )
+
+    for source, destination in moves:
+        if not source.exists():
+            raise FileNotFoundError(
+                f"legacy sample file is missing: {source}"
+            )
+        if destination.exists():
+            raise FileExistsError(
+                f"migration destination already exists: {destination}"
+            )
+
+    backup = (
+        root
+        / "manifest.schema3.json"
+    )
+    if not backup.exists():
+        backup.write_text(
+            canonical_json(
+                manifest
+            ),
+            encoding="utf-8",
+        )
+
+    completed = []
+    try:
+        for source, destination in moves:
+            destination.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            source.replace(
+                destination
+            )
+            completed.append(
+                (
+                    destination,
+                    source,
+                )
+            )
+
+        upgraded = dict(
+            manifest
+        )
+        upgraded[
+            "schema"
+        ] = DATASET_SCHEMA
+        upgraded[
+            "records"
+        ] = sorted(
+            migrated_records,
+            key=lambda item: item[
+                "sample_id"
+            ],
+        )
+        temporary = (
+            manifest_path.with_suffix(
+                ".json.tmp"
+            )
+        )
+        temporary.write_text(
+            canonical_json(
+                upgraded
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(
+            manifest_path
+        )
+    except Exception:
+        for destination, source in reversed(
+            completed
+        ):
+            if (
+                destination.exists()
+                and not source.exists()
+            ):
+                destination.replace(
+                    source
+                )
+        raise
+
+    return {
+        "migrated": True,
+        "records": len(
+            migrated_records
+        ),
+        "backup": str(
+            backup
+        ),
+    }
+
+
 SPLITS = (
     "train",
     "validation",
@@ -103,10 +316,18 @@ class ImmutableTeacherDataset:
                 encoding="utf-8"
             )
         )
-        if (
-            self._manifest.get("schema")
-            != DATASET_SCHEMA
-        ):
+        schema = int(
+            self._manifest.get(
+                "schema",
+                -1,
+            )
+        )
+        if schema == LEGACY_DATASET_SCHEMA:
+            raise ValueError(
+                "legacy vNext dataset schema 3 detected; call "
+                "migrate_dataset_v3_to_v4(root) to preserve existing truth without recomputation"
+            )
+        if schema != DATASET_SCHEMA:
             raise ValueError(
                 "unsupported vNext dataset schema"
             )
