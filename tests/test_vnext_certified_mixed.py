@@ -120,3 +120,53 @@ def test_mixed_convergence_report_controls_full_certification_status():
     )
     assert result.status == "CERTIFIED"
     assert result.certified
+
+
+
+def test_matrix_free_mixed_certification_matches_dense_corrected_ports():
+    scene = _scene()
+    config = _cfg(7)
+    frequency = 8_000.0
+    artifact = AnalyticBaselineArtifact(
+        segments_per_coil=20,
+    )
+
+    dense = certify_mixed_ports(
+        scene,
+        frequency,
+        artifact,
+        config=config,
+        algebraic_tolerance=1e-6,
+        correction_rtol=1e-9,
+        correction_restart=30,
+        correction_maxiter=160,
+        allow_reference_fallback=False,
+        operator_backend="dense",
+    )
+    matrix_free = certify_mixed_ports(
+        scene,
+        frequency,
+        artifact,
+        config=config,
+        algebraic_tolerance=1e-6,
+        correction_rtol=1e-9,
+        correction_restart=30,
+        correction_maxiter=160,
+        allow_reference_fallback=False,
+        operator_backend="matrix_free",
+        matrix_free_chunk_size=37,
+    )
+
+    assert dense.algebraic_certified
+    assert matrix_free.algebraic_certified
+    assert dense.operator_backend == "dense"
+    assert matrix_free.operator_backend == "matrix_free"
+    assert matrix_free.result.inductance_matrix is None
+    assert matrix_free.port_certificate.certified
+    assert matrix_free.final_residual <= 1e-6
+    assert np.allclose(
+        matrix_free.impedance,
+        dense.impedance,
+        rtol=5e-6,
+        atol=5e-8,
+    )

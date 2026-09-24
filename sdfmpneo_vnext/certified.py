@@ -14,6 +14,7 @@ from .em import (
     MQSResult,
 )
 from .mixed import DenseMixedConductorTeacher, MixedResult
+from .matrix_free import MatrixFreeMixedOperator
 from .scene import Scene
 
 
@@ -29,6 +30,7 @@ class CertifiedPortResult:
     algebraic_certified: bool
     discretization_certified: bool
     used_reference_fallback: bool
+    operator_backend: str = "dense"
 
     @property
     def certified(self) -> bool:
@@ -507,6 +509,48 @@ def certify_mqs_ports(
 
 
 
+def _current_constraint_port_map(
+    teacher: DenseMQSTeacher,
+):
+    n_segments = len(
+        teacher._segments
+    )
+    n_ports = len(
+        teacher.scene.coils
+    )
+    constraint = np.zeros(
+        (
+            n_segments,
+            teacher._n_modes,
+        ),
+        dtype=float,
+    )
+    port_map = np.zeros(
+        (
+            n_segments,
+            n_ports,
+        ),
+        dtype=float,
+    )
+    for segment_index, segment in enumerate(
+        teacher._segments
+    ):
+        constraint[
+            segment_index,
+            segment.mode_slice,
+        ] = (
+            segment.basis.moments
+        )
+        port_map[
+            segment_index,
+            segment.coil,
+        ] = 1.0
+    return (
+        constraint,
+        port_map,
+    )
+
+
 def _mixed_fast_lift(
     teacher: DenseMixedConductorTeacher,
     R,
@@ -515,11 +559,21 @@ def _mixed_fast_lift(
     B,
     Q,
     fast_impedance,
+    *,
+    current_constraint=None,
+    current_port_map=None,
 ):
     """Build a compatible current/potential/charge initial state."""
-    _, _, current_constraint, current_port_map = (
-        teacher._mqs.assemble()
-    )
+    if (
+        current_constraint is None
+        or current_port_map is None
+    ):
+        (
+            current_constraint,
+            current_port_map,
+        ) = _current_constraint_port_map(
+            teacher._mqs
+        )
     current, _ = _uniform_fast_lift(
         teacher._mqs,
         current_constraint,
@@ -582,7 +636,6 @@ def _mixed_fast_lift(
         potential_r,
         charge_r,
     )
-
 
 def _make_mixed_result(
     teacher: DenseMixedConductorTeacher,
@@ -666,16 +719,31 @@ def certify_mixed_ports(
     correction_restart: int = 40,
     correction_maxiter: int = 100,
     allow_reference_fallback: bool = True,
+    operator_backend: str = "dense",
+    matrix_free_chunk_size: int = 512,
 ) -> CertifiedPortResult:
-    """CERTIFIED correction in the canonical current-potential-charge KKT."""
+    """CERTIFIED correction in the canonical current-potential-charge KKT.
+
+    The dense and matrix-free backends represent the same mixed discretization.
+    Matrix-free mode avoids formation of the global magnetic inductance matrix;
+    the electrostatic potential block remains dense in this MVP.
+    """
     if (
         algebraic_tolerance <= 0.0
         or correction_rtol <= 0.0
         or correction_restart < 1
         or correction_maxiter < 1
+        or matrix_free_chunk_size < 1
     ):
         raise ValueError(
             "invalid certification tolerances"
+        )
+    if operator_backend not in (
+        "dense",
+        "matrix_free",
+    ):
+        raise ValueError(
+            "operator_backend must be 'dense' or 'matrix_free'"
         )
     if not hasattr(
         artifact,
@@ -685,108 +753,224 @@ def certify_mixed_ports(
             "artifact must expose predict_structured"
         )
 
+    resolved_config = (
+        config
+        or MQSConfig()
+    )
     teacher = DenseMixedConductorTeacher(
         scene,
         frequency_hz,
-        config or MQSConfig(),
+        resolved_config,
     )
-    (
-        R,
-        L,
-        D,
-        Phi,
-        B,
-        Q,
-    ) = teacher.assemble()
-    A = (
-        R.astype(
-            complex
-        )
-        + 1j
-        * teacher.omega
-        * L
-    )
-    Dr = Q.T @ D
-    Br = Q.T @ B
-    Phir = (
-        Q.T
-        @ Phi
-        @ Q
-    )
-    m = A.shape[0]
-    nr = Dr.shape[0]
-    K = np.block(
-        [
-            [
-                A,
-                -Dr.T.astype(
-                    complex
-                ),
-                np.zeros(
-                    (
-                        m,
-                        nr,
-                    ),
-                    dtype=complex,
-                ),
-            ],
-            [
-                Dr.astype(
-                    complex
-                ),
-                np.zeros(
-                    (
-                        nr,
-                        nr,
-                    ),
-                    dtype=complex,
-                ),
-                1j
-                * teacher.omega
-                * np.eye(
-                    nr,
-                    dtype=complex,
-                ),
-            ],
-            [
-                np.zeros(
-                    (
-                        nr,
-                        m,
-                    ),
-                    dtype=complex,
-                ),
-                np.eye(
-                    nr,
-                    dtype=complex,
-                ),
-                -Phir.astype(
-                    complex
-                ),
-            ],
-        ]
-    )
-    rhs_matrix = np.vstack(
+
+    matrix_free = None
+    if operator_backend == "dense":
         (
-            np.zeros(
-                (
-                    m,
-                    B.shape[1],
-                ),
-                dtype=complex,
-            ),
-            Br.astype(
+            R,
+            L,
+            D,
+            Phi,
+            B,
+            Q,
+        ) = teacher.assemble()
+        A = (
+            R.astype(
                 complex
-            ),
-            np.zeros(
-                (
-                    nr,
-                    B.shape[1],
-                ),
-                dtype=complex,
-            ),
+            )
+            + 1j
+            * teacher.omega
+            * L
         )
-    )
+        Dr = Q.T @ D
+        Br = Q.T @ B
+        Phir = (
+            Q.T
+            @ Phi
+            @ Q
+        )
+        m = A.shape[0]
+        nr = Dr.shape[0]
+        K = np.block(
+            [
+                [
+                    A,
+                    -Dr.T.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            m,
+                            nr,
+                        ),
+                        dtype=complex,
+                    ),
+                ],
+                [
+                    Dr.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            nr,
+                            nr,
+                        ),
+                        dtype=complex,
+                    ),
+                    1j
+                    * teacher.omega
+                    * np.eye(
+                        nr,
+                        dtype=complex,
+                    ),
+                ],
+                [
+                    np.zeros(
+                        (
+                            nr,
+                            m,
+                        ),
+                        dtype=complex,
+                    ),
+                    np.eye(
+                        nr,
+                        dtype=complex,
+                    ),
+                    -Phir.astype(
+                        complex
+                    ),
+                ],
+            ]
+        )
+        rhs_matrix = np.vstack(
+            (
+                np.zeros(
+                    (
+                        m,
+                        B.shape[1],
+                    ),
+                    dtype=complex,
+                ),
+                Br.astype(
+                    complex
+                ),
+                np.zeros(
+                    (
+                        nr,
+                        B.shape[1],
+                    ),
+                    dtype=complex,
+                ),
+            )
+        )
+        row_weights = (
+            _scaled_row_weights(
+                K
+            )
+        )
+        preconditioner = None
+
+        def residual_measure(
+            rhs,
+            solution,
+        ):
+            return _scaled_residual(
+                K,
+                rhs,
+                solution,
+                row_weights,
+            )
+
+        (
+            current_constraint,
+            current_port_map,
+        ) = _current_constraint_port_map(
+            teacher._mqs
+        )
+    else:
+        matrix_free = (
+            MatrixFreeMixedOperator(
+                scene,
+                frequency_hz,
+                resolved_config,
+                chunk_size=(
+                    matrix_free_chunk_size
+                ),
+            )
+        )
+        K = (
+            matrix_free.linear_operator()
+        )
+        R = (
+            matrix_free.resistance_diagonal
+        )
+        L = None
+        D = (
+            matrix_free.divergence_matrix
+        )
+        Phi = (
+            matrix_free.potential_matrix
+        )
+        B = (
+            matrix_free.port_injection
+        )
+        Q = (
+            matrix_free.gauge_basis
+        )
+        Dr = (
+            matrix_free.reduced_divergence
+        )
+        Br = (
+            matrix_free.reduced_port_injection
+        )
+        Phir = (
+            matrix_free.reduced_potential
+        )
+        m = (
+            matrix_free.metadata.n_current_modes
+        )
+        nr = (
+            matrix_free.metadata.n_reduced_potential
+        )
+        rhs_matrix = np.column_stack(
+            [
+                matrix_free.port_rhs(
+                    port
+                )
+                for port in range(
+                    matrix_free.metadata.n_ports
+                )
+            ]
+        )
+
+        def residual_measure(
+            rhs,
+            solution,
+        ):
+            residual = (
+                rhs
+                - K @ solution
+            )
+            return float(
+                np.linalg.norm(
+                    residual
+                )
+                / max(
+                    np.linalg.norm(
+                        rhs
+                    ),
+                    1.0,
+                )
+            )
+
+        current_constraint = (
+            matrix_free.mqs.constraint_matrix
+        )
+        current_port_map = (
+            matrix_free.mqs.port_map
+        )
+        preconditioner = (
+            matrix_free.resistive_preconditioner()
+        )
 
     fast_prediction = (
         artifact.predict_structured(
@@ -818,6 +1002,12 @@ def certify_mixed_ports(
         B,
         Q,
         fast_impedance,
+        current_constraint=(
+            current_constraint
+        ),
+        current_port_map=(
+            current_port_map
+        ),
     )
     lift = np.vstack(
         (
@@ -826,15 +1016,9 @@ def certify_mixed_ports(
             charge_r,
         )
     )
-    row_weights = (
-        _scaled_row_weights(
-            K
-        )
-    )
     initial_residual = float(
         max(
-            _scaled_residual(
-                K,
+            residual_measure(
                 rhs_matrix[
                     :,
                     port,
@@ -843,7 +1027,6 @@ def certify_mixed_ports(
                     :,
                     port,
                 ],
-                row_weights,
             )
             for port in range(
                 B.shape[1]
@@ -882,6 +1065,7 @@ def certify_mixed_ports(
                     :,
                     port,
                 ],
+                M=preconditioner,
                 rtol=(
                     correction_rtol
                 ),
@@ -919,8 +1103,7 @@ def certify_mixed_ports(
 
     final_residual = float(
         max(
-            _scaled_residual(
-                K,
+            residual_measure(
                 rhs_matrix[
                     :,
                     port,
@@ -929,7 +1112,6 @@ def certify_mixed_ports(
                     :,
                     port,
                 ],
-                row_weights,
             )
             for port in range(
                 B.shape[1]
@@ -1021,4 +1203,6 @@ def certify_mixed_ports(
         algebraic_certified,
         discretization_certified,
         used_reference_fallback,
+        operator_backend,
     )
+

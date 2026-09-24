@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import numpy as np
+from scipy.linalg import lu_factor, lu_solve
 from scipy.sparse.linalg import LinearOperator
 
 from .em import DenseMQSTeacher, MQSConfig
@@ -564,6 +565,94 @@ class MatrixFreeMQSOperator:
             matvec=(
                 self.apply_kkt
             ),
+            dtype=complex,
+        )
+
+    def resistive_preconditioner(
+        self,
+    ) -> LinearOperator:
+        """Factor the mixed KKT with the magnetic block omitted."""
+        metadata = self.metadata
+        m = metadata.n_current_modes
+        nr = metadata.n_reduced_potential
+        approximate = np.block(
+            [
+                [
+                    np.diag(
+                        self.resistance_diagonal.astype(
+                            complex
+                        )
+                    ),
+                    -self.reduced_divergence.T.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            m,
+                            nr,
+                        ),
+                        dtype=complex,
+                    ),
+                ],
+                [
+                    self.reduced_divergence.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            nr,
+                            nr,
+                        ),
+                        dtype=complex,
+                    ),
+                    1j
+                    * self.mqs.omega
+                    * np.eye(
+                        nr,
+                        dtype=complex,
+                    ),
+                ],
+                [
+                    np.zeros(
+                        (
+                            nr,
+                            m,
+                        ),
+                        dtype=complex,
+                    ),
+                    np.eye(
+                        nr,
+                        dtype=complex,
+                    ),
+                    -self.reduced_potential.astype(
+                        complex
+                    ),
+                ],
+            ]
+        )
+        factor = lu_factor(
+            approximate,
+            check_finite=True,
+        )
+
+        def apply(
+            vector,
+        ):
+            return lu_solve(
+                factor,
+                np.asarray(
+                    vector,
+                    dtype=complex,
+                ),
+                check_finite=True,
+            )
+
+        return LinearOperator(
+            (
+                metadata.system_size,
+                metadata.system_size,
+            ),
+            matvec=apply,
             dtype=complex,
         )
 

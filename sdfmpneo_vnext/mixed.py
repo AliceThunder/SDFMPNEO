@@ -39,7 +39,7 @@ class MixedResult:
     node_potential: np.ndarray
     node_charge: np.ndarray
     resistance_matrix: np.ndarray
-    inductance_matrix: np.ndarray
+    inductance_matrix: np.ndarray | None
     divergence_matrix: np.ndarray
     potential_matrix: np.ndarray
     port_injection: np.ndarray
@@ -68,12 +68,27 @@ class MixedResult:
     def conductor_power(self, currents) -> float:
         i = np.asarray(currents, dtype=complex)
         c = self.current_coefficients @ i
+        resistance = np.asarray(
+            self.resistance_matrix
+        )
+        if resistance.ndim == 1:
+            dissipative_current = (
+                resistance * c
+            )
+        elif resistance.ndim == 2:
+            dissipative_current = (
+                resistance @ c
+            )
+        else:
+            raise ValueError(
+                "resistance_matrix must be a diagonal vector or square matrix"
+            )
         return float(
             0.5
             * np.real(
                 np.vdot(
                     c,
-                    self.resistance_matrix @ c,
+                    dissipative_current,
                 )
             )
         )
@@ -103,16 +118,38 @@ class MixedResult:
             local_transfer = transfer[
                 mask
             ]
-            local_resistance = (
-                self.resistance_matrix[
-                    np.ix_(mask, mask)
+            resistance = np.asarray(
+                self.resistance_matrix
+            )
+            if resistance.ndim == 1:
+                local_resistance = resistance[
+                    mask
                 ]
-            )
-            matrix = (
-                local_transfer.conj().T
-                @ local_resistance
-                @ local_transfer
-            )
+                matrix = (
+                    local_transfer.conj().T
+                    @ (
+                        local_resistance[
+                            :,
+                            None,
+                        ]
+                        * local_transfer
+                    )
+                )
+            elif resistance.ndim == 2:
+                local_resistance = (
+                    resistance[
+                        np.ix_(mask, mask)
+                    ]
+                )
+                matrix = (
+                    local_transfer.conj().T
+                    @ local_resistance
+                    @ local_transfer
+                )
+            else:
+                raise ValueError(
+                    "resistance_matrix must be a diagonal vector or square matrix"
+                )
             out[coil] = 0.5 * (
                 matrix
                 + matrix.conj().T
