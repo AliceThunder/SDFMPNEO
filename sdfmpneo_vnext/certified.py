@@ -757,6 +757,160 @@ def _make_mixed_result(
     )
 
 
+def _mixed_physical_residual(
+    solution,
+    rhs,
+    *,
+    n_current_modes: int,
+    n_reduced_potential: int,
+    current_operator,
+    reduced_divergence,
+    reduced_potential,
+    omega: float,
+) -> float:
+    """Dimensionless residual in the three physical mixed equations.
+
+    Each equation block is normalized by the magnitudes of the physical terms
+    that appear in that same equation. This keeps the tolerance invariant to
+    the wildly different current, potential and charge units and gives dense
+    and matrix-free backends identical certification semantics.
+    """
+    solution = np.asarray(
+        solution,
+        dtype=complex,
+    )
+    rhs = np.asarray(
+        rhs,
+        dtype=complex,
+    )
+    m = int(
+        n_current_modes
+    )
+    nr = int(
+        n_reduced_potential
+    )
+    current = solution[
+        :m
+    ]
+    potential_r = solution[
+        m : m + nr
+    ]
+    charge_r = solution[
+        m + nr :
+    ]
+
+    current_term = np.asarray(
+        current_operator(
+            current
+        ),
+        dtype=complex,
+    )
+    potential_force = (
+        reduced_divergence.T
+        @ potential_r
+    )
+    current_rhs = rhs[
+        :m
+    ]
+    residual_current = (
+        current_term
+        - potential_force
+        - current_rhs
+    )
+    scale_current = max(
+        float(
+            np.linalg.norm(
+                current_term
+            )
+            + np.linalg.norm(
+                potential_force
+            )
+            + np.linalg.norm(
+                current_rhs
+            )
+        ),
+        1e-30,
+    )
+
+    continuity_current = (
+        reduced_divergence
+        @ current
+    )
+    continuity_charge = (
+        1j
+        * float(
+            omega
+        )
+        * charge_r
+    )
+    continuity_rhs = rhs[
+        m : m + nr
+    ]
+    residual_continuity = (
+        continuity_current
+        + continuity_charge
+        - continuity_rhs
+    )
+    scale_continuity = max(
+        float(
+            np.linalg.norm(
+                continuity_current
+            )
+            + np.linalg.norm(
+                continuity_charge
+            )
+            + np.linalg.norm(
+                continuity_rhs
+            )
+        ),
+        1e-30,
+    )
+
+    electrostatic_charge = (
+        reduced_potential
+        @ charge_r
+    )
+    potential_rhs = rhs[
+        m + nr :
+    ]
+    residual_potential = (
+        potential_r
+        - electrostatic_charge
+        - potential_rhs
+    )
+    scale_potential = max(
+        float(
+            np.linalg.norm(
+                potential_r
+            )
+            + np.linalg.norm(
+                electrostatic_charge
+            )
+            + np.linalg.norm(
+                potential_rhs
+            )
+        ),
+        1e-30,
+    )
+
+    return float(
+        max(
+            np.linalg.norm(
+                residual_current
+            )
+            / scale_current,
+            np.linalg.norm(
+                residual_continuity
+            )
+            / scale_continuity,
+            np.linalg.norm(
+                residual_potential
+            )
+            / scale_potential,
+        )
+    )
+
+
 def certify_mixed_ports(
     scene: Scene,
     frequency_hz: float,
@@ -914,22 +1068,33 @@ def certify_mixed_ports(
                 ),
             )
         )
-        row_weights = (
-            _scaled_row_weights(
-                K
-            )
-        )
         preconditioner = None
+
+        def current_operator(
+            current,
+        ):
+            return (
+                A
+                @ current
+            )
 
         def residual_measure(
             rhs,
             solution,
         ):
-            return _scaled_residual(
-                K,
-                rhs,
+            return _mixed_physical_residual(
                 solution,
-                row_weights,
+                rhs,
+                n_current_modes=m,
+                n_reduced_potential=nr,
+                current_operator=(
+                    current_operator
+                ),
+                reduced_divergence=Dr,
+                reduced_potential=Phir,
+                omega=(
+                    teacher.omega
+                ),
             )
 
         (
@@ -994,24 +1159,32 @@ def certify_mixed_ports(
             ]
         )
 
+        def current_operator(
+            current,
+        ):
+            return (
+                matrix_free.mqs.apply_current_operator(
+                    current
+                )
+            )
+
         def residual_measure(
             rhs,
             solution,
         ):
-            residual = (
-                rhs
-                - K @ solution
-            )
-            return float(
-                np.linalg.norm(
-                    residual
-                )
-                / max(
-                    np.linalg.norm(
-                        rhs
-                    ),
-                    1.0,
-                )
+            return _mixed_physical_residual(
+                solution,
+                rhs,
+                n_current_modes=m,
+                n_reduced_potential=nr,
+                current_operator=(
+                    current_operator
+                ),
+                reduced_divergence=Dr,
+                reduced_potential=Phir,
+                omega=(
+                    teacher.omega
+                ),
             )
 
         current_constraint = (

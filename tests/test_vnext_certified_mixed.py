@@ -1,10 +1,13 @@
 import numpy as np
 
+from sdfmpneo_vnext.certified import _mixed_physical_residual
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
     CoilObject,
     ConductorMaterial,
+    DenseMixedConductorTeacher,
     HomogeneousMedium,
+    MatrixFreeMixedOperator,
     MQSConfig,
     RigidPose,
     Scene,
@@ -171,4 +174,127 @@ def test_matrix_free_mixed_certification_matches_dense_corrected_ports():
         dense.impedance,
         rtol=5e-6,
         atol=5e-8,
+    )
+
+
+
+def test_mixed_physical_residual_has_identical_dense_and_matrix_free_semantics():
+    scene = _scene()
+    config = _cfg(7)
+    frequency = 11_000.0
+
+    dense = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        config,
+    )
+    (
+        resistance,
+        inductance,
+        divergence,
+        potential,
+        port_injection,
+        gauge_basis,
+    ) = dense.assemble()
+    current_matrix = (
+        resistance.astype(complex)
+        + 1j
+        * 2.0
+        * np.pi
+        * frequency
+        * inductance
+    )
+    reduced_divergence = (
+        gauge_basis.T
+        @ divergence
+    )
+    reduced_potential = (
+        gauge_basis.T
+        @ potential
+        @ gauge_basis
+    )
+    reduced_ports = (
+        gauge_basis.T
+        @ port_injection
+    )
+    m = current_matrix.shape[0]
+    nr = reduced_divergence.shape[0]
+
+    matrix_free = MatrixFreeMixedOperator(
+        scene,
+        frequency,
+        config,
+        chunk_size=29,
+    )
+    rng = np.random.default_rng(83)
+    solution = (
+        rng.normal(
+            size=m + 2 * nr
+        )
+        + 1j
+        * rng.normal(
+            size=m + 2 * nr
+        )
+    )
+    rhs = np.concatenate(
+        (
+            np.zeros(
+                m,
+                dtype=complex,
+            ),
+            reduced_ports[
+                :,
+                0,
+            ].astype(complex),
+            np.zeros(
+                nr,
+                dtype=complex,
+            ),
+        )
+    )
+
+    dense_eta = _mixed_physical_residual(
+        solution,
+        rhs,
+        n_current_modes=m,
+        n_reduced_potential=nr,
+        current_operator=(
+            lambda current:
+            current_matrix @ current
+        ),
+        reduced_divergence=(
+            reduced_divergence
+        ),
+        reduced_potential=(
+            reduced_potential
+        ),
+        omega=(
+            2.0
+            * np.pi
+            * frequency
+        ),
+    )
+    matrix_free_eta = _mixed_physical_residual(
+        solution,
+        rhs,
+        n_current_modes=m,
+        n_reduced_potential=nr,
+        current_operator=(
+            matrix_free.mqs.apply_current_operator
+        ),
+        reduced_divergence=(
+            matrix_free.reduced_divergence
+        ),
+        reduced_potential=(
+            matrix_free.reduced_potential
+        ),
+        omega=(
+            matrix_free.mqs.omega
+        ),
+    )
+    assert np.isclose(
+        matrix_free_eta,
+        dense_eta,
+        rtol=2e-11,
+        atol=2e-13,
     )
