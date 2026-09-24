@@ -34,6 +34,8 @@ from .mixed import (
 from .matrix_free import (
     MatrixFreeMetadata,
     MatrixFreeMQSOperator,
+    MatrixFreeMixedMetadata,
+    MatrixFreeMixedOperator,
 )
 from .thermal import StableThermalModel
 from .loss import ConductorLossField
@@ -138,6 +140,8 @@ __all__ = [
     "MixedResult",
     "MatrixFreeMetadata",
     "MatrixFreeMQSOperator",
+    "MatrixFreeMixedMetadata",
+    "MatrixFreeMixedOperator",
     "StableThermalModel",
     "ConductorLossField",
     "PreparedUniformLossField",

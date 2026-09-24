@@ -5,6 +5,7 @@ import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
 from .em import DenseMQSTeacher, MQSConfig
+from .mixed import DenseMixedConductorTeacher
 from .scene import Scene
 
 
@@ -591,6 +592,230 @@ class MatrixFreeMQSOperator:
                     port_index,
                 ].astype(
                     complex
+                ),
+            )
+        )
+
+
+
+@dataclass(frozen=True)
+class MatrixFreeMixedMetadata:
+    n_current_modes: int
+    n_reduced_potential: int
+    n_ports: int
+    n_support_points: int
+
+    @property
+    def system_size(self) -> int:
+        return (
+            self.n_current_modes
+            + 2
+            * self.n_reduced_potential
+        )
+
+
+class MatrixFreeMixedOperator:
+    """Current-potential-charge KKT with a matrix-free magnetic block."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        config: MQSConfig | None = None,
+        *,
+        chunk_size: int = 512,
+        charge_self_radius_factor: float = 0.75,
+    ):
+        self.scene = scene
+        self.frequency_hz = float(
+            frequency_hz
+        )
+        self.config = (
+            config
+            or MQSConfig()
+        )
+        self.mqs = MatrixFreeMQSOperator(
+            scene,
+            frequency_hz,
+            self.config,
+            chunk_size=chunk_size,
+        )
+        self.teacher = (
+            DenseMixedConductorTeacher(
+                scene,
+                frequency_hz,
+                self.config,
+                charge_self_radius_factor=(
+                    charge_self_radius_factor
+                ),
+            )
+        )
+
+        (
+            divergence,
+            port_injection,
+            gauge_basis,
+            positions,
+            radii,
+        ) = self.teacher._topology(
+            self.mqs.constraint_matrix
+        )
+        potential = (
+            self.teacher._potential_matrix(
+                positions,
+                radii,
+            )
+        )
+        self.divergence_matrix = (
+            divergence
+        )
+        self.port_injection = (
+            port_injection
+        )
+        self.gauge_basis = (
+            gauge_basis
+        )
+        self.potential_matrix = (
+            potential
+        )
+        self.reduced_divergence = (
+            gauge_basis.T
+            @ divergence
+        )
+        self.reduced_port_injection = (
+            gauge_basis.T
+            @ port_injection
+        )
+        self.reduced_potential = (
+            gauge_basis.T
+            @ potential
+            @ gauge_basis
+        )
+
+    @property
+    def metadata(
+        self,
+    ) -> MatrixFreeMixedMetadata:
+        return MatrixFreeMixedMetadata(
+            n_current_modes=(
+                self.mqs.metadata.n_modes
+            ),
+            n_reduced_potential=(
+                self.reduced_divergence.shape[
+                    0
+                ]
+            ),
+            n_ports=(
+                self.port_injection.shape[
+                    1
+                ]
+            ),
+            n_support_points=(
+                self.mqs.metadata.n_support_points
+            ),
+        )
+
+    @property
+    def resistance_diagonal(
+        self,
+    ):
+        return (
+            self.mqs.resistance_diagonal
+        )
+
+    def apply_kkt(
+        self,
+        vector,
+    ):
+        vector = np.asarray(
+            vector,
+            dtype=complex,
+        )
+        metadata = self.metadata
+        if vector.shape != (
+            metadata.system_size,
+        ):
+            raise ValueError(
+                "mixed KKT vector has wrong shape"
+            )
+        m = (
+            metadata.n_current_modes
+        )
+        nr = (
+            metadata.n_reduced_potential
+        )
+        current = vector[
+            :m
+        ]
+        potential_r = vector[
+            m : m + nr
+        ]
+        charge_r = vector[
+            m + nr :
+        ]
+
+        return np.concatenate(
+            (
+                self.mqs.apply_current_operator(
+                    current
+                )
+                - self.reduced_divergence.T
+                @ potential_r,
+                self.reduced_divergence
+                @ current
+                + 1j
+                * self.mqs.omega
+                * charge_r,
+                potential_r
+                - self.reduced_potential
+                @ charge_r,
+            )
+        )
+
+    def linear_operator(
+        self,
+    ) -> LinearOperator:
+        size = (
+            self.metadata.system_size
+        )
+        return LinearOperator(
+            (
+                size,
+                size,
+            ),
+            matvec=(
+                self.apply_kkt
+            ),
+            dtype=complex,
+        )
+
+    def port_rhs(
+        self,
+        port_index: int,
+    ):
+        if not (
+            0
+            <= port_index
+            < self.metadata.n_ports
+        ):
+            raise IndexError(
+                "port_index out of range"
+            )
+        return np.concatenate(
+            (
+                np.zeros(
+                    self.metadata.n_current_modes,
+                    dtype=complex,
+                ),
+                self.reduced_port_injection[
+                    :,
+                    port_index,
+                ].astype(
+                    complex
+                ),
+                np.zeros(
+                    self.metadata.n_reduced_potential,
+                    dtype=complex,
                 ),
             )
         )
