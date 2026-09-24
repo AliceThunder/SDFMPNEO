@@ -10,6 +10,9 @@ from .features import EncodedScene, encode_scene_invariant
 from .scene import Scene
 
 
+CANONICAL_REFERENCE_BACKEND = "mixed"
+
+
 @dataclass(frozen=True)
 class SpatialLossSamples:
     coil_index: np.ndarray
@@ -127,6 +130,7 @@ class TeacherSample:
     baseline_segments: int
     target_dissipation_channels: np.ndarray | None = None
     spatial_loss: SpatialLossSamples | None = None
+    reference_backend: str | None = None
 
     @staticmethod
     def generate(
@@ -135,7 +139,7 @@ class TeacherSample:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
-        reference_backend: str = "mqs",
+        reference_backend: str = CANONICAL_REFERENCE_BACKEND,
     ) -> "TeacherSample":
         encoded = encode_scene_invariant(
             scene,
@@ -314,4 +318,5 @@ class TeacherSample:
             int(baseline_segments),
             channels,
             spatial,
+            reference_backend,
         )

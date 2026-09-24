@@ -83,6 +83,7 @@ def _sample():
         target.imag,
         target,
         32,
+        reference_backend="mqs",
     )
 
 
@@ -402,6 +403,7 @@ def test_dataset_reports_reference_backends_per_split(tmp_path):
             sample.baseline_segments,
             sample.target_dissipation_channels,
             sample.spatial_loss,
+            "mixed",
         ),
         reference_backend="mixed",
         split="train",
@@ -416,3 +418,68 @@ def test_dataset_reports_reference_backends_per_split(tmp_path):
         "mixed",
         "mqs",
     )
+
+
+
+def test_default_generated_dataset_truth_is_canonical_mixed(tmp_path):
+    scene = _scene()
+    frequency = 11_000.0
+    config = MQSConfig(
+        segments_per_turn=6,
+        min_segments=6,
+        section_degree=0,
+        radial_order=2,
+        angular_order=8,
+        line_order=2,
+    )
+    dataset = ImmutableTeacherDataset.create(
+        tmp_path / "dataset_default_mixed"
+    )
+    record = dataset.generate_and_add(
+        scene,
+        frequency,
+        teacher_config=config,
+        baseline_segments=20,
+        split="train",
+    )
+    assert record.reference_backend == "mixed"
+    loaded = dataset.load_sample(
+        record.sample_id
+    )
+    assert loaded.reference_backend == "mixed"
+    expected = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        config,
+    ).solve()
+    assert np.allclose(
+        loaded.target_impedance,
+        expected.impedance,
+        rtol=2e-12,
+        atol=2e-13,
+    )
+    assert np.allclose(
+        loaded.target_dissipation_channels,
+        expected.coil_dissipation_matrices(),
+        rtol=2e-11,
+        atol=2e-13,
+    )
+
+
+def test_dataset_rejects_reference_backend_provenance_mismatch(tmp_path):
+    sample = _sample()
+    dataset = ImmutableTeacherDataset.create(
+        tmp_path / "dataset_provenance"
+    )
+    try:
+        dataset.add_sample(
+            sample,
+            reference_backend="mixed",
+            split="train",
+        )
+    except ValueError as exc:
+        assert "provenance" in str(exc)
+    else:
+        raise AssertionError(
+            "dataset must reject a backend label that disagrees with sample provenance"
+        )

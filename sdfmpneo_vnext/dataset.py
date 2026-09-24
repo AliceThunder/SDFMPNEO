@@ -15,6 +15,7 @@ from .serialization import (
     scene_to_dict,
 )
 from .training_data import (
+    CANONICAL_REFERENCE_BACKEND,
     SpatialLossSamples,
     TeacherSample,
 )
@@ -415,15 +416,36 @@ class ImmutableTeacherDataset:
         sample: TeacherSample,
         *,
         teacher_config: MQSConfig | None = None,
-        reference_backend: str = "mqs",
+        reference_backend: str | None = None,
         source: str = "initial",
         split: str | None = None,
     ) -> DatasetRecord:
+        sample_backend = getattr(
+            sample,
+            "reference_backend",
+            None,
+        )
+        if reference_backend is None:
+            if sample_backend is None:
+                raise ValueError(
+                    "reference_backend is required for a TeacherSample without provenance"
+                )
+            reference_backend = sample_backend
         reference_backend = (
             _normalize_reference_backend(
                 reference_backend
             )
         )
+        if (
+            sample_backend is not None
+            and _normalize_reference_backend(
+                sample_backend
+            )
+            != reference_backend
+        ):
+            raise ValueError(
+                "reference_backend disagrees with TeacherSample provenance"
+            )
         (
             sample_id,
             identity,
@@ -651,7 +673,7 @@ class ImmutableTeacherDataset:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
-        reference_backend: str = "mqs",
+        reference_backend: str = CANONICAL_REFERENCE_BACKEND,
         source: str = "initial",
         split: str | None = None,
     ) -> DatasetRecord:
@@ -834,6 +856,7 @@ class ImmutableTeacherDataset:
             record.baseline_segments,
             channels,
             spatial,
+            record.reference_backend,
         )
 
     def iter_samples(

@@ -52,6 +52,7 @@ def main():
             frequency,
             teacher_config=teacher,
             baseline_segments=args.baseline_segments,
+            reference_backend="mixed",
             source="initial",
         )
         print(
