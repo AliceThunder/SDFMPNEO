@@ -88,8 +88,9 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     )
     assert (
         system.capabilities.background_medium
-        == "homogeneous_isotropic_unbounded"
+        == "homogeneous_isotropic_unbounded_lossless"
     )
+    assert not system.capabilities.lossy_background_media
     assert not system.capabilities.heterogeneous_media
     assert not system.capabilities.retardation
     assert system.capabilities.arbitrary_se3_pose

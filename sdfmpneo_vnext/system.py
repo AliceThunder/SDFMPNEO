@@ -23,6 +23,7 @@ class SystemCapabilities:
     electrothermal: bool
     electromagnetic_formulation: str
     background_medium: str
+    lossy_background_media: bool
     heterogeneous_media: bool
     retardation: bool
     arbitrary_se3_pose: bool
@@ -42,8 +43,9 @@ def mvp_system_capabilities(
             "magnetoquasistatic_current_potential_charge"
         ),
         background_medium=(
-            "homogeneous_isotropic_unbounded"
+            "homogeneous_isotropic_unbounded_lossless"
         ),
+        lossy_background_media=False,
         heterogeneous_media=False,
         retardation=False,
         arbitrary_se3_pose=True,

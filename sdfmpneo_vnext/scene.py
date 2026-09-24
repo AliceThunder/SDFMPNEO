@@ -100,3 +100,15 @@ class Scene:
                 "heterogeneous electromagnetic media require the post-MVP "
                 "SIE/VIE extension"
             )
+        if not np.isclose(
+            self.medium.conductivity,
+            0.0,
+            rtol=0.0,
+            atol=0.0,
+        ):
+            raise ValueError(
+                "vNext MVP electromagnetic solvers currently require a "
+                "lossless homogeneous background (medium.conductivity == 0); "
+                "lossy media require an explicit dielectric/environment "
+                "dissipation channel and are not silently approximated"
+            )

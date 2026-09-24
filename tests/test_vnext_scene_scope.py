@@ -3,6 +3,7 @@ import pytest
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    HomogeneousMedium,
     Scene,
     SuperellipseSpiral,
 )
@@ -33,3 +34,56 @@ def test_scene_rejects_unsupported_electromagnetic_medium_kind():
             (coil,),
             _UnsupportedMedium(),
         )
+
+
+
+def test_scene_rejects_lossy_background_until_environment_loss_channel_exists():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.02,
+            0.018,
+            0.6,
+            0.001,
+            0.001,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="lossless homogeneous background",
+    ):
+        Scene(
+            (coil,),
+            HomogeneousMedium(
+                relative_permittivity=2.5,
+                relative_permeability=1.0,
+                conductivity=0.01,
+            ),
+        )
+
+
+def test_scene_accepts_lossless_nonvacuum_homogeneous_background():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.02,
+            0.018,
+            0.6,
+            0.001,
+            0.001,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+    )
+    scene = Scene(
+        (coil,),
+        HomogeneousMedium(
+            relative_permittivity=3.2,
+            relative_permeability=1.4,
+            conductivity=0.0,
+        ),
+    )
+    assert scene.medium.relative_permittivity == 3.2
+    assert scene.medium.relative_permeability == 1.4
