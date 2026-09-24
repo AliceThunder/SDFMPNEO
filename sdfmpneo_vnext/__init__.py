@@ -42,6 +42,13 @@ from .electrothermal import (
     VoltageControlledEnvelope,
     build_lumped_coil_thermal_model,
 )
+from .analytic_baseline import (
+    AnalyticBaselineResult,
+    analytic_port_baseline,
+    pair_mutual_inductance,
+    regularized_self_inductance,
+)
+from .features import EncodedScene, encode_scene_invariant
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -84,6 +91,12 @@ __all__ = [
     "CurrentControlledEnvelope",
     "VoltageControlledEnvelope",
     "build_lumped_coil_thermal_model",
+    "AnalyticBaselineResult",
+    "analytic_port_baseline",
+    "pair_mutual_inductance",
+    "regularized_self_inductance",
+    "EncodedScene",
+    "encode_scene_invariant",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",
