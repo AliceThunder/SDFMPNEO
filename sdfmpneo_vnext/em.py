@@ -196,6 +196,7 @@ class DenseMQSTeacher:
         frequency_hz: float,
         config: MQSConfig | None = None,
     ):
+        scene.require_mvp_electromagnetic_scope()
         if frequency_hz < 0 or not np.isfinite(frequency_hz):
             raise ValueError("frequency_hz must be finite and nonnegative")
         self.scene = scene

@@ -5,16 +5,19 @@ import json
 import numpy as np
 
 from .geometry import RigidPose, SuperellipseSpiral
+from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
+    IsotropicMaterial,
+    PackageObject,
     Scene,
 )
 
 
 def scene_to_dict(scene: Scene):
-    return {
+    payload = {
         "coils": [
             {
                 "name": coil.name,
@@ -48,6 +51,35 @@ def scene_to_dict(scene: Scene):
             "conductivity": scene.medium.conductivity,
         },
     }
+    if scene.packages:
+        payload["packages"] = [
+            {
+                "name": package.name,
+                "geometry": {
+                    "half_extents": package.geometry.half_extents.tolist(),
+                    "exponent_xy": package.geometry.exponent_xy,
+                    "exponent_z": package.geometry.exponent_z,
+                    "rotation": package.geometry.pose.rotation.tolist(),
+                    "translation": package.geometry.pose.translation.tolist(),
+                },
+                "material": {
+                    "relative_permittivity": (
+                        package.material.relative_permittivity
+                    ),
+                    "relative_permeability": (
+                        package.material.relative_permeability
+                    ),
+                    "conductivity": package.material.conductivity,
+                    "thermal_conductivity": (
+                        package.material.thermal_conductivity
+                    ),
+                    "density": package.material.density,
+                    "heat_capacity": package.material.heat_capacity,
+                },
+            }
+            for package in scene.packages
+        ]
+    return payload
 
 
 def scene_from_dict(data) -> Scene:
@@ -253,6 +285,148 @@ def scene_from_dict(data) -> Scene:
             )
         )
 
+    raw_packages = data.get(
+        "packages",
+        ()
+    )
+    if not isinstance(
+        raw_packages,
+        (list, tuple),
+    ):
+        raise TypeError(
+            "scene.packages must be a list"
+        )
+    packages = []
+    for index, item in enumerate(
+        raw_packages
+    ):
+        if not isinstance(
+            item,
+            dict,
+        ):
+            raise TypeError(
+                f"scene.packages[{index}] must be a dictionary"
+            )
+        g = item.get(
+            "geometry",
+            {}
+        )
+        m = item.get(
+            "material",
+            {}
+        )
+        if not isinstance(
+            g,
+            dict,
+        ) or not isinstance(
+            m,
+            dict,
+        ):
+            raise TypeError(
+                "package geometry and material must be dictionaries"
+            )
+        if "half_extents" not in g:
+            raise ValueError(
+                f"scene.packages[{index}].geometry requires half_extents"
+            )
+        pose = RigidPose(
+            np.asarray(
+                g.get(
+                    "rotation",
+                    np.eye(3),
+                ),
+                dtype=float,
+            ),
+            np.asarray(
+                g.get(
+                    "translation",
+                    np.zeros(3),
+                ),
+                dtype=float,
+            ),
+        )
+        geometry = SuperquadricPackageGeometry(
+            np.asarray(
+                g["half_extents"],
+                dtype=float,
+            ),
+            float(
+                g.get(
+                    "exponent_xy",
+                    4.0,
+                )
+            ),
+            float(
+                g.get(
+                    "exponent_z",
+                    4.0,
+                )
+            ),
+            pose,
+        )
+        thermal_conductivity = m.get(
+            "thermal_conductivity"
+        )
+        density = m.get(
+            "density"
+        )
+        heat_capacity = m.get(
+            "heat_capacity"
+        )
+        material = IsotropicMaterial(
+            float(
+                m.get(
+                    "relative_permittivity",
+                    1.0,
+                )
+            ),
+            float(
+                m.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                m.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            (
+                None
+                if thermal_conductivity is None
+                else float(
+                    thermal_conductivity
+                )
+            ),
+            (
+                None
+                if density is None
+                else float(
+                    density
+                )
+            ),
+            (
+                None
+                if heat_capacity is None
+                else float(
+                    heat_capacity
+                )
+            ),
+        )
+        packages.append(
+            PackageObject(
+                geometry,
+                material,
+                str(
+                    item.get(
+                        "name",
+                        f"package_{index}",
+                    )
+                ),
+            )
+        )
+
     md = data.get(
         "medium",
         {}
@@ -287,6 +461,9 @@ def scene_from_dict(data) -> Scene:
                     0.0,
                 )
             ),
+        ),
+        tuple(
+            packages
         ),
     )
 

@@ -37,6 +37,7 @@ def encode_scene_invariant(
     scene: Scene,
     frequency_hz: float,
 ) -> EncodedScene:
+    scene.require_mvp_electromagnetic_scope()
     if (
         not np.isfinite(frequency_hz)
         or frequency_hz < 0.0

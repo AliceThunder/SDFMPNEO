@@ -12,9 +12,12 @@ from .geometry import (
     bishop_segment_frames,
     haar_rotation,
 )
+from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     ConductorMaterial,
     HomogeneousMedium,
+    IsotropicMaterial,
+    PackageObject,
     CoilObject,
     Scene,
 )
@@ -177,6 +180,9 @@ __all__ = [
     "haar_rotation",
     "ConductorMaterial",
     "HomogeneousMedium",
+    "IsotropicMaterial",
+    "PackageObject",
+    "SuperquadricPackageGeometry",
     "CoilObject",
     "Scene",
     "SectionBasis",
