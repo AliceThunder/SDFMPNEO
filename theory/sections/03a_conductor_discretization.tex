@@ -61,18 +61,32 @@ $c=[a^\T,b^\T]^\T$ to charge-test coefficients:
   \int_{\Omega_c}
   \nu_r^\ast\nabla\cdot\mathbf J(c)\,\dd V .
 \]
-Let $M_\rho$ be the charge mass matrix. Harmonic charge continuity is imposed
+Let $M_\rho$ be the charge mass matrix. For the \emph{total} conductor
+current, including its terminal flux, harmonic charge continuity is imposed
 algebraically,
 \[
-  Dc+j\omega M_\rho q=S_\rho i,
+  Dc+j\omega M_\rho q=0.
   \label{eq:discrete-continuity}
 \]
-where $S_\rho$ represents physical terminal injection. Continuity is therefore
-not a penalty term and cannot drift during iterative solves.
+The terminal current is imposed independently by the exact port constraint
+$\mathcal I c=i$ in Section~\ref{sec:port-schur}. Continuity is therefore not
+a penalty term and cannot drift during iterative solves.
 
-For internal conductor basis functions away from terminals,
-$S_\rho=0$. Summing Equation~\eqref{eq:discrete-continuity} over a closed
-conductor gives exact net-charge compatibility with the port currents.
+If an implementation introduces a compatible current lifting
+\[
+  c=c_0+B_I i,\qquad \mathcal I B_I=I,
+\]
+then the zero-port-current correction satisfies
+\[
+  Dc_0+j\omega M_\rho q
+  =S_\rho i,
+  \qquad
+  S_\rho=-DB_I.
+\]
+Thus a nonzero $S_\rho i$ is a derived lifting source, not an additional
+physical injection to be combined with the total-current port constraint.
+Summing Equation~\eqref{eq:discrete-continuity} over a conductor gives exact
+net-charge compatibility with its terminal fluxes.
 
 \subsection{Port definition}
 
@@ -114,21 +128,38 @@ Testing Ohm's law
  =\mathbf E_{\rm impressed}
 \]
 with the current basis and coupling it to
-Equation~\eqref{eq:discrete-continuity} gives the saddle/block system
+Equation~\eqref{eq:discrete-continuity} defines the internal mixed operator
 \[
+ A_{cq}
+ =
  \begin{bmatrix}
    R_c+j\omega L_A & -D^\ast \Phi_\rho\\
    D                & j\omega M_\rho
- \end{bmatrix}
- \begin{bmatrix}
-   c\\ q
- \end{bmatrix}
- =
- \begin{bmatrix}
-   B_J\\ S_\rho
- \end{bmatrix}i .
+ \end{bmatrix}.
  \label{eq:conductor-block}
 \]
+For a port-driven problem with no independent impressed field,
+\[
+  A_{cq}
+  \begin{bmatrix}
+    c\\q
+  \end{bmatrix}
+  -
+  \mathcal I_{cq}\adj v
+  =0,
+\]
+together with
+\[
+  \mathcal I_{cq}
+  \begin{bmatrix}
+    c\\q
+  \end{bmatrix}
+  =i,
+\]
+which is the canonical constrained system of
+Section~\ref{sec:port-schur}. A lifting implementation may transform this into
+a nonzero compatible right-hand side, but must not add that source on top of
+the total-current constraint.
 With the definition of $D$ above, integration by parts gives the minus
 sign in the current--potential coupling. A different signed-divergence
 convention may move that sign into $D$, but continuity and the work identity
@@ -152,8 +183,9 @@ Here
 \]
 and $\Phi_\rho$ is the scalar-potential interaction operator.
 
-Equation~\eqref{eq:conductor-block} is a schematic compatible-source form,
-not the canonical port-extraction definition. Stable implementations may
+Equation~\eqref{eq:conductor-block} is the internal current--charge operator;
+Section~\ref{sec:port-schur} supplies its canonical work-conjugate port
+constraint. Stable implementations may
 eliminate charge, use loop/tree or divergence-conforming bases, or use a
 regularized mixed formulation. What is invariant is the exact discrete
 continuity relation, finite-cross-section current space, and work-conjugate port
