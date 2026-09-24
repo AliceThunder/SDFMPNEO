@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .convergence import mixed_impedance_convergence
+from .convergence import mixed_reference_convergence
 from .em import MQSConfig
 from .mixed import DenseMixedConductorTeacher
 from .prediction import StructuredPortPrediction
@@ -148,16 +148,18 @@ def _certified_prediction(
     fine = _mqs_config(
         fine_segments
     )
+    if (
+        fine_segments
+        < coarse_segments
+    ):
+        raise ValueError(
+            "fine_segments must be >= coarse_segments"
+        )
     convergence = (
-        mixed_impedance_convergence(
+        mixed_reference_convergence(
             scene,
             frequency_hz,
-            (
-                _mqs_config(
-                    coarse_segments
-                ),
-                fine,
-            ),
+            fine,
             tolerance=(
                 convergence_tolerance
             ),
@@ -589,9 +591,25 @@ def run_system_inference(
                 certified.correction_iterations
             ),
             "discretization_change": float(
-                convergence.steps[
-                    -1
-                ].relative_change
+                convergence.maximum_relative_change
             ),
+            "discretization_directions": {
+                direction.name: {
+                    "maximum_relative_change": float(
+                        direction.maximum_relative_change
+                    ),
+                    "impedance_relative_change": float(
+                        direction.impedance_relative_change
+                    ),
+                    "channel_relative_change": float(
+                        direction.channel_relative_change
+                    ),
+                    "local_loss_relative_change": float(
+                        direction.local_loss_relative_change
+                    ),
+                }
+                for direction
+                in convergence.directions
+            },
         }
     return output

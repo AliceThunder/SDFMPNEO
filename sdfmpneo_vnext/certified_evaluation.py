@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .certified import certify_mixed_ports
-from .convergence import mixed_impedance_convergence
+from .convergence import mixed_reference_convergence
 from .em import MQSConfig
 
 
@@ -16,6 +16,9 @@ class CertifiedReleaseAudit:
     maximum_final_residual: float
     maximum_relative_observable_correction: float
     maximum_discretization_change: float
+    maximum_longitudinal_change: float
+    maximum_cross_section_change: float
+    maximum_quadrature_change: float
     maximum_certified_truth_relative_error: float
     operator_backend: str
     passed: bool
@@ -31,6 +34,15 @@ class CertifiedReleaseAudit:
             ),
             "maximum_discretization_change": (
                 self.maximum_discretization_change
+            ),
+            "maximum_longitudinal_change": (
+                self.maximum_longitudinal_change
+            ),
+            "maximum_cross_section_change": (
+                self.maximum_cross_section_change
+            ),
+            "maximum_quadrature_change": (
+                self.maximum_quadrature_change
             ),
             "maximum_certified_truth_relative_error": (
                 self.maximum_certified_truth_relative_error
@@ -110,24 +122,66 @@ def audit_certified_release(
     max_residual = 0.0
     max_correction = 0.0
     max_discretization = 0.0
+    max_longitudinal = 0.0
+    max_cross_section = 0.0
+    max_quadrature = 0.0
     max_truth_error = 0.0
 
     for sample in samples:
-        convergence = mixed_impedance_convergence(
+        if (
+            fine_config.segments_per_turn
+            < coarse_config.segments_per_turn
+            or fine_config.min_segments
+            < coarse_config.min_segments
+        ):
+            raise ValueError(
+                "fine_config must not be longitudinally coarser than coarse_config"
+            )
+        convergence = mixed_reference_convergence(
             sample.scene,
             sample.frequency_hz,
-            (
-                coarse_config,
-                fine_config,
+            fine_config,
+            tolerance=(
+                convergence_tolerance
             ),
-            tolerance=convergence_tolerance,
         )
         discretization_change = float(
-            convergence.steps[-1].relative_change
+            convergence.maximum_relative_change
         )
         max_discretization = max(
             max_discretization,
             discretization_change,
+        )
+        directional = {
+            direction.name: (
+                direction.maximum_relative_change
+            )
+            for direction
+            in convergence.directions
+        }
+        max_longitudinal = max(
+            max_longitudinal,
+            float(
+                directional[
+                    "longitudinal"
+                ]
+            ),
+        )
+        max_cross_section = max(
+            max_cross_section,
+            float(
+                directional[
+                    "cross_section"
+                ]
+            ),
+        )
+        max_quadrature = max(
+            max_quadrature,
+            float(
+                directional[
+                    "quadrature"
+                ]
+            ),
         )
 
         certified = certify_mixed_ports(
@@ -184,6 +238,15 @@ def audit_certified_release(
         maximum_final_residual=max_residual,
         maximum_relative_observable_correction=max_correction,
         maximum_discretization_change=max_discretization,
+        maximum_longitudinal_change=(
+            max_longitudinal
+        ),
+        maximum_cross_section_change=(
+            max_cross_section
+        ),
+        maximum_quadrature_change=(
+            max_quadrature
+        ),
         maximum_certified_truth_relative_error=(
             max_truth_error
         ),

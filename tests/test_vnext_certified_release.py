@@ -89,4 +89,7 @@ def test_certified_release_audit_requires_physical_and_fast_domain_pass():
     assert report.fast_domain_valid_samples == 1
     assert report.maximum_final_residual <= 1e-6
     assert report.maximum_discretization_change <= 1.0
+    assert report.maximum_longitudinal_change <= 1.0
+    assert report.maximum_cross_section_change <= 1.0
+    assert report.maximum_quadrature_change <= 1.0
     assert report.passed
