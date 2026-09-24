@@ -17,7 +17,7 @@ from .serialization import (
 from .training_data import SpatialLossSamples, TeacherSample
 
 
-DATASET_SCHEMA = 3
+DATASET_SCHEMA = 4
 SPLITS = (
     "train",
     "validation",
@@ -77,6 +77,7 @@ class DatasetRecord:
     source: str
     frequency_hz: float
     baseline_segments: int
+    reference_backend: str
     file: str
     scene: dict
     teacher_config: dict
@@ -242,9 +243,12 @@ class ImmutableTeacherDataset:
             "baseline_segments": int(
                 sample.baseline_segments
             ),
+            "reference_backend": str(
+                sample.reference_backend
+            ),
             "teacher_config": teacher_dict,
             "output_schema": (
-                "mvp_port_impedance_loss_channels_and_spatial_v3"
+                "mvp_mixed_reference_impedance_loss_channels_and_spatial_v4"
             ),
         }
         return (
@@ -392,6 +396,9 @@ class ImmutableTeacherDataset:
             baseline_segments=int(
                 sample.baseline_segments
             ),
+            reference_backend=str(
+                sample.reference_backend
+            ),
             file=str(relative),
             scene=identity["scene"],
             teacher_config=teacher_dict,
@@ -414,6 +421,7 @@ class ImmutableTeacherDataset:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
+        reference_backend: str = "mixed",
         source: str = "initial",
         split: str | None = None,
     ) -> DatasetRecord:
@@ -422,6 +430,7 @@ class ImmutableTeacherDataset:
             frequency_hz,
             teacher_config=teacher_config,
             baseline_segments=baseline_segments,
+            reference_backend=reference_backend,
         )
         return self.add_sample(
             sample,
@@ -531,6 +540,7 @@ class ImmutableTeacherDataset:
             record.baseline_segments,
             channels,
             spatial,
+            record.reference_backend,
         )
 
     def iter_samples(

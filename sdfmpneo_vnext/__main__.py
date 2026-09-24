@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 
 from .certification import certify_port_result
-from .certified import certify_mqs_ports
+from .certified import certify_mixed_ports
 from .electrothermal import (
     CoilThermalProperties,
     build_lumped_coil_thermal_model,
@@ -117,7 +117,7 @@ def self_check() -> int:
         np.array([3.0 + 0j, -1.0 + 0.2j]),
         10.0,
     )
-    discrete = certify_mqs_ports(
+    discrete = certify_mixed_ports(
         scene,
         0.0,
         AnalyticBaselineArtifact(
@@ -149,7 +149,7 @@ def self_check() -> int:
         },
     )
     print(
-        "CERTIFIED discrete:",
+        "CERTIFIED mixed discrete:",
         {
             "status": discrete.status,
             "initial_residual": discrete.initial_residual,

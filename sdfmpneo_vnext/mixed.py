@@ -44,10 +44,17 @@ class MixedResult:
     potential_matrix: np.ndarray
     port_injection: np.ndarray
     normalized_residual: float
+    segment_coils: np.ndarray
+    mode_segments: np.ndarray
 
     @property
     def n_ports(self) -> int:
         return self.impedance.shape[0]
+
+    @property
+    def mode_coefficients(self) -> np.ndarray:
+        """Compatibility alias used by shared continuous-loss decoders."""
+        return self.current_coefficients
 
     def port_power(self, currents) -> float:
         i = np.asarray(currents, dtype=complex)
@@ -69,6 +76,75 @@ class MixedResult:
                     self.resistance_matrix @ c,
                 )
             )
+        )
+
+    def coil_dissipation_matrices(self) -> np.ndarray:
+        mode_coils = self.segment_coils[
+            self.mode_segments
+        ]
+        n_coils = int(
+            np.max(self.segment_coils)
+        ) + 1
+        out = np.zeros(
+            (
+                n_coils,
+                self.n_ports,
+                self.n_ports,
+            ),
+            dtype=complex,
+        )
+        transfer = self.current_coefficients
+        for coil in range(n_coils):
+            mask = (
+                mode_coils == coil
+            )
+            if not np.any(mask):
+                continue
+            local_transfer = transfer[
+                mask
+            ]
+            local_resistance = (
+                self.resistance_matrix[
+                    np.ix_(mask, mask)
+                ]
+            )
+            matrix = (
+                local_transfer.conj().T
+                @ local_resistance
+                @ local_transfer
+            )
+            out[coil] = 0.5 * (
+                matrix
+                + matrix.conj().T
+            )
+        return out
+
+    def coil_power(self, currents) -> np.ndarray:
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        if currents.shape != (
+            self.n_ports,
+        ):
+            raise ValueError(
+                "currents has wrong shape"
+            )
+        channels = (
+            self.coil_dissipation_matrices()
+        )
+        return np.asarray(
+            [
+                0.5
+                * np.real(
+                    np.vdot(
+                        currents,
+                        channel @ currents,
+                    )
+                )
+                for channel in channels
+            ],
+            dtype=float,
         )
 
     def continuity_residual(
@@ -320,6 +396,34 @@ class DenseMixedConductorTeacher:
             + Phi.T
         )
 
+    def local_current_transfer(
+        self,
+        result: MixedResult,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        return self._mqs.local_current_transfer(
+            result,
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+
+    def local_dissipation_matrix(
+        self,
+        result: MixedResult,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        return self._mqs.local_dissipation_matrix(
+            result,
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+
     def assemble(self):
         R, L, C, _ = self._mqs.assemble()
         D, Bp, Q, pos, radii = (
@@ -437,6 +541,24 @@ class DenseMixedConductorTeacher:
             np.linalg.norm(residual)
             / scale
         )
+        segment_coils = np.asarray(
+            [
+                segment.coil
+                for segment
+                in self._mqs._segments
+            ],
+            dtype=int,
+        )
+        mode_segments = np.empty(
+            self._mqs._n_modes,
+            dtype=int,
+        )
+        for segment_index, segment in enumerate(
+            self._mqs._segments
+        ):
+            mode_segments[
+                segment.mode_slice
+            ] = segment_index
         return MixedResult(
             Z,
             c,
@@ -448,4 +570,6 @@ class DenseMixedConductorTeacher:
             Phi,
             B,
             eta,
+            segment_coils,
+            mode_segments,
         )

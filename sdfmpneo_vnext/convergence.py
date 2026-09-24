@@ -7,6 +7,7 @@ from .em import (
     DenseMQSTeacher,
     MQSConfig,
 )
+from .mixed import DenseMixedConductorTeacher
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,72 @@ def impedance_convergence(
         tuple(steps),
         bool(
             steps[-1].relative_change
+            <= tolerance
+        ),
+        tolerance,
+    )
+
+
+
+def mixed_impedance_convergence(
+    scene,
+    frequency_hz: float,
+    configs,
+    tolerance: float = 1e-3,
+) -> ConvergenceReport:
+    """Convergence report for the canonical current-potential-charge teacher."""
+    configs = tuple(
+        configs
+    )
+    if len(configs) < 2:
+        raise ValueError(
+            "at least two configurations are required"
+        )
+    if tolerance <= 0:
+        raise ValueError(
+            "tolerance must be positive"
+        )
+    steps = []
+    previous = None
+    for config in configs:
+        impedance = (
+            DenseMixedConductorTeacher(
+                scene,
+                frequency_hz,
+                config,
+            ).solve().impedance
+        )
+        if previous is None:
+            change = None
+        else:
+            change = float(
+                np.linalg.norm(
+                    impedance
+                    - previous
+                )
+                / max(
+                    np.linalg.norm(
+                        impedance
+                    ),
+                    1e-30,
+                )
+            )
+        steps.append(
+            ConvergenceStep(
+                config,
+                impedance,
+                change,
+            )
+        )
+        previous = impedance
+    return ConvergenceReport(
+        tuple(
+            steps
+        ),
+        bool(
+            steps[
+                -1
+            ].relative_change
             <= tolerance
         ),
         tolerance,

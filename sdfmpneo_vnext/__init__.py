@@ -35,8 +35,17 @@ from .thermal import StableThermalModel
 from .loss import ConductorLossField
 from .field import UniformLossFieldDecoder
 from .certification import PortCertificate, certify_port_result
-from .certified import CertifiedPortResult, certify_mqs_ports
-from .convergence import ConvergenceStep, ConvergenceReport, impedance_convergence
+from .certified import (
+    CertifiedPortResult,
+    certify_mqs_ports,
+    certify_mixed_ports,
+)
+from .convergence import (
+    ConvergenceStep,
+    ConvergenceReport,
+    impedance_convergence,
+    mixed_impedance_convergence,
+)
 from .electrothermal import (
     CoilThermalProperties,
     ElectroThermalStep,
@@ -106,9 +115,11 @@ __all__ = [
     "certify_port_result",
     "CertifiedPortResult",
     "certify_mqs_ports",
+    "certify_mixed_ports",
     "ConvergenceStep",
     "ConvergenceReport",
     "impedance_convergence",
+    "mixed_impedance_convergence",
     "CoilThermalProperties",
     "ElectroThermalStep",
     "CurrentControlledEnvelope",

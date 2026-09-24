@@ -171,3 +171,95 @@ def test_mixed_rejects_closed_coincident_terminals():
         raise AssertionError(
             "closed coincident terminals must be rejected"
         )
+
+
+
+def test_mixed_loss_channels_are_psd_and_close_port_dissipation():
+    scene = Scene(
+        (
+            coil(0.025),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        HomogeneousMedium(),
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        20_000.0,
+        CFG,
+    ).solve()
+    channels = result.coil_dissipation_matrices()
+    assert channels.shape == (
+        2,
+        2,
+        2,
+    )
+    for channel in channels:
+        assert np.allclose(
+            channel,
+            channel.conj().T,
+            atol=2e-9,
+        )
+        assert (
+            np.min(
+                np.linalg.eigvalsh(channel)
+            )
+            >= -2e-9
+        )
+    total = np.sum(
+        channels,
+        axis=0,
+    )
+    physical = 0.5 * (
+        result.impedance
+        + result.impedance.conj().T
+    )
+    assert np.allclose(
+        total,
+        physical,
+        rtol=2e-6,
+        atol=2e-8,
+    )
+    currents = np.array(
+        [1.0 + 0.2j, -0.4 + 0.3j]
+    )
+    assert np.isclose(
+        np.sum(
+            result.coil_power(currents)
+        ),
+        result.conductor_power(currents),
+        rtol=2e-7,
+        atol=1e-10,
+    )
+
+
+def test_mixed_local_dissipation_matrix_is_psd():
+    scene = Scene(
+        (coil(0.025),),
+        HomogeneousMedium(),
+    )
+    teacher = DenseMixedConductorTeacher(
+        scene,
+        10_000.0,
+        CFG,
+    )
+    result = teacher.solve()
+    matrix = teacher.local_dissipation_matrix(
+        result,
+        0,
+        0.5,
+        (0.0, 0.0),
+    )
+    assert np.allclose(
+        matrix,
+        matrix.conj().T,
+        atol=1e-10,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(matrix)
+        )
+        >= -1e-10
+    )

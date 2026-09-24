@@ -5,6 +5,7 @@ import numpy as np
 
 from .analytic_baseline import analytic_port_baseline
 from .em import DenseMQSTeacher, MQSConfig
+from .mixed import DenseMixedConductorTeacher
 from .features import EncodedScene, encode_scene_invariant
 from .scene import Scene
 
@@ -126,6 +127,7 @@ class TeacherSample:
     baseline_segments: int
     target_dissipation_channels: np.ndarray | None = None
     spatial_loss: SpatialLossSamples | None = None
+    reference_backend: str = "mixed"
 
     @staticmethod
     def generate(
@@ -134,6 +136,7 @@ class TeacherSample:
         *,
         teacher_config: MQSConfig | None = None,
         baseline_segments: int = 96,
+        reference_backend: str = "mixed",
     ) -> "TeacherSample":
         encoded = encode_scene_invariant(
             scene,
@@ -144,11 +147,33 @@ class TeacherSample:
             frequency_hz,
             segments_per_coil=baseline_segments,
         )
-        teacher = DenseMQSTeacher(
-            scene,
-            frequency_hz,
-            teacher_config or MQSConfig(),
+        config = (
+            teacher_config
+            or MQSConfig()
         )
+        if reference_backend == "mixed":
+            teacher = DenseMixedConductorTeacher(
+                scene,
+                frequency_hz,
+                config,
+            )
+            segments = (
+                teacher._mqs._segments
+            )
+        elif reference_backend == "mqs":
+            teacher = DenseMQSTeacher(
+                scene,
+                frequency_hz,
+                config,
+            )
+            segments = (
+                teacher._segments
+            )
+        else:
+            raise ValueError(
+                "reference_backend must be 'mixed' or 'mqs'"
+            )
+
         truth_result = teacher.solve()
         truth = truth_result.impedance
         channels = (
@@ -157,7 +182,7 @@ class TeacherSample:
 
         coil_segments = {}
         for index, segment in enumerate(
-            teacher._segments
+            segments
         ):
             coil_segments.setdefault(
                 int(segment.coil),
@@ -181,7 +206,7 @@ class TeacherSample:
         }
 
         for segment_index, segment in enumerate(
-            teacher._segments
+            segments
         ):
             coil = int(
                 segment.coil
@@ -292,4 +317,5 @@ class TeacherSample:
             int(baseline_segments),
             channels,
             spatial,
+            reference_backend,
         )
