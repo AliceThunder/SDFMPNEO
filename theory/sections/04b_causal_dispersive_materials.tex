@@ -1,0 +1,89 @@
+\section{Causal dispersive material representation}
+\label{sec:dispersive-materials}
+
+Arbitrary media are useful only if their constitutive representation remains
+causal, passive, and differentiable. A table of unrelated complex values at
+each frequency is not an acceptable production material model.
+
+\subsection{Frequency-domain constitutive law}
+
+For an isotropic electric response,
+\[
+  D(\omega)=\epsilon_0\epsilon_r(\omega)E(\omega),
+\]
+and similarly for magnetic response. A causal rational representation is
+written as
+\[
+ \epsilon_r(s)
+ =
+ \epsilon_\infty
+ +\sum_{k=1}^{N_\epsilon}
+   \frac{a_k}{s-p_k}
+ +\sum_{k=1}^{N_\epsilon}
+   \frac{\overline{a_k}}{s-\overline{p_k}},
+ \qquad \Rea p_k<0 .
+\]
+Equivalent real Debye, Lorentz, or Drude parameterizations are allowed when they
+match the material class. Conductivity may be represented separately or
+absorbed into complex permittivity under a declared convention.
+
+\subsection{Passivity}
+
+A fitted material law is accepted only if the associated constitutive transfer
+is passive over the declared band. Stable poles alone are insufficient.
+Passivity is imposed either by a known passive pole/residue parameterization or
+by a state-space realization whose storage function is positive.
+
+For anisotropic material, the tensor transfer
+\[
+  \epsilon(s)=\epsilon(s)^\T
+\]
+for reciprocal media is parameterized through structured matrix residues or a
+passive state realization; independently fitting each tensor entry is
+forbidden if it can violate reciprocity or positivity.
+
+\subsection{Auxiliary material states}
+
+Dispersive media can be represented in time domain by local auxiliary states
+$x_m$:
+\[
+ \dot x_m=A_m x_m+B_m E,\qquad
+ P=C_m x_m+D_m E.
+\]
+This form couples naturally to broadband electromagnetic macromodels and avoids
+reconstructing a frequency table at every time step.
+
+\subsection{Temperature dependence}
+
+Let $\vartheta$ denote temperature or a small vector of thermodynamic state
+variables. Material parameters are smooth structured functions:
+\[
+  p_k=p_k(\vartheta),\qquad
+  a_k=a_k(\vartheta),\qquad
+  \epsilon_\infty=\epsilon_\infty(\vartheta).
+\]
+The interpolation is performed in stable/passive coordinates. Interpolating
+complex permittivity entrywise between two temperatures is not sufficient if it
+leaves the passive material manifold.
+
+\subsection{Material API}
+
+Every material definition declares:
+\begin{enumerate}
+\item the valid frequency and temperature domain;
+\item scalar/tensor isotropy class and reciprocity;
+\item causal/passive constitutive realization;
+\item derivatives or differentiable evaluation with respect to frequency,
+      temperature, and trainable material parameters;
+\item uncertainty or data provenance when fitted from measurement.
+\end{enumerate}
+
+Material data outside the declared domain trigger extrapolation status and may
+force CERTIFIED/REFERENCE evaluation.
+
+\subsection{Background Green kernels}
+
+A homogeneous or layered Green kernel uses the same causal constitutive law.
+Kernel caching therefore depends on the material realization and frequency, not
+on a material name. Two differently named materials with identical
+constitutive realizations generate the same physics cache identity.

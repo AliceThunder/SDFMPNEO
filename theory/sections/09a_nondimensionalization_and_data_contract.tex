@@ -1,0 +1,95 @@
+\section{Nondimensionalization, normalization, and immutable data contracts}
+\label{sec:nondimensionalization}
+
+Large scale disparities were a major source of conditioning and learning
+difficulty in earlier architectures. vNext distinguishes physical units from
+dimensionless numerical coordinates.
+
+\subsection{Reference scales}
+
+For each declared operating family choose positive reference scales
+\[
+ L_0,\quad \omega_0,\quad \sigma_0,\quad \epsilon_0^{\rm ref},
+ \quad Z_0,\quad P_0,\quad T_0^{\Delta},\quad t_0 .
+\]
+Geometry is expressed as
+\[
+  \widetilde r=r/L_0,\qquad
+  \widetilde\omega=\omega/\omega_0.
+\]
+One useful electromagnetic scale in inductive systems is selected from the
+analytic baseline rather than hard-coded universally. Thermal time may use
+\[
+  t_0=L_0^2/\alpha_0
+\]
+for a representative diffusivity $\alpha_0$ when appropriate.
+
+\subsection{Dimensionless operator equations}
+
+The current--charge and thermal equations are scaled so all blocks have
+comparable natural magnitude. If
+\[
+ x=S_x\widetilde x,\qquad
+ b=S_b\widetilde b,
+\]
+then
+\[
+ \widetilde A
+ =
+ S_b^{-1}AS_x,\qquad
+ \widetilde A\widetilde x=\widetilde b.
+\]
+The scaling matrices are deterministic functions of physical reference scales
+and basis norms, not statistics fitted on train and validation together.
+
+\subsection{Neural feature normalization}
+
+Continuous shape parameters use dimensionless physical transforms:
+length ratios, log-positive scales, bounded angle representations, and
+constitutive ratios. Learned normalization statistics are computed only from
+training data and stored in the artifact.
+
+Rotations are never encoded as three raw Euler angles without periodicity
+handling. Relative rotation matrices, quaternions with sign convention, or
+equivariant tensors are preferred.
+
+\subsection{Target normalization}
+
+Structured matrix factors may vary over orders of magnitude. The model predicts
+dimensionless factors relative to analytic baselines or training-only physical
+scales. A normalized MSE is never interpreted as the final engineering error;
+model selection uses decoded physical observables and residuals.
+
+\subsection{Immutable scene sample}
+
+Every training/reference sample has a content hash over:
+\[
+ \{\text{scene physics},
+   \text{frequency/temperature domain},
+   \text{teacher schema},
+   \text{teacher tolerance},
+   \text{output schema}\}.
+\]
+Training labels are immutable. Reprocessing a label with a new decoder or
+normalization creates a derived dataset version rather than silently mutating
+the physical truth.
+
+\subsection{Dataset provenance}
+
+A dataset manifest records:
+\begin{enumerate}
+\item theory/schema version;
+\item generator commit and numerical backend versions;
+\item deterministic scene seed or explicit scene description;
+\item teacher tolerances and residual certificates;
+\item split assignment fixed before training;
+\item parent dataset and transformation history;
+\item units and reference scales.
+\end{enumerate}
+
+\subsection{Training determinism}
+
+Network initialization, scene batching, active-learning candidate generation,
+and refit/replay seeds are explicit artifact metadata. Determinism is not a
+substitute for statistical validation, but it is required to distinguish
+algorithmic changes from random optimization variation.
