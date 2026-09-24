@@ -89,7 +89,9 @@ def main():
             "samples": report.samples,
             "final_loss": report.final_loss,
             "best_epoch": report.best_epoch,
-            "best_validation_error": report.best_validation_error,
+            "best_validation_score": report.best_validation_score,
+            "best_validation_z_error": report.best_validation_z_error,
+            "best_validation_channel_error": report.best_validation_channel_error,
             "stopped_early": report.stopped_early,
             "mean_relative_error": float(
                 np.mean(train_error)

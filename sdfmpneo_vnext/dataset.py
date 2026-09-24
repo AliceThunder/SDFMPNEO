@@ -17,7 +17,7 @@ from .serialization import (
 from .training_data import TeacherSample
 
 
-DATASET_SCHEMA = 1
+DATASET_SCHEMA = 2
 SPLITS = (
     "train",
     "validation",
@@ -244,7 +244,7 @@ class ImmutableTeacherDataset:
             ),
             "teacher_config": teacher_dict,
             "output_schema": (
-                "mvp_port_impedance_v1"
+                "mvp_port_impedance_and_loss_channels_v2"
             ),
         }
         return (
@@ -327,6 +327,14 @@ class ImmutableTeacherDataset:
             ),
             target_impedance=(
                 sample.target_impedance
+            ),
+            target_dissipation_channels=(
+                np.asarray(
+                    [],
+                    dtype=complex,
+                )
+                if sample.target_dissipation_channels is None
+                else sample.target_dissipation_channels
             ),
         )
 
@@ -432,6 +440,15 @@ class ImmutableTeacherDataset:
                 data["target_impedance"],
                 dtype=complex,
             )
+            stored_channels = np.asarray(
+                data["target_dissipation_channels"],
+                dtype=complex,
+            )
+            channels = (
+                None
+                if stored_channels.size == 0
+                else stored_channels
+            )
         return TeacherSample(
             scene_from_dict(
                 record.scene
@@ -442,6 +459,7 @@ class ImmutableTeacherDataset:
             baseline_x,
             target,
             record.baseline_segments,
+            channels,
         )
 
     def iter_samples(

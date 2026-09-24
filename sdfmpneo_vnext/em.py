@@ -84,6 +84,76 @@ class MQSResult:
         np.add.at(out, self.mode_segments, modal)
         return out
 
+    def coil_dissipation_matrices(self) -> np.ndarray:
+        """Return one Hermitian PSD port-loss matrix per conductor object."""
+        mode_coils = self.segment_coils[
+            self.mode_segments
+        ]
+        n_coils = int(
+            np.max(self.segment_coils)
+        ) + 1
+        out = np.zeros(
+            (
+                n_coils,
+                self.n_ports,
+                self.n_ports,
+            ),
+            dtype=complex,
+        )
+        transfer = self.mode_coefficients
+        for coil in range(n_coils):
+            mask = (
+                mode_coils == coil
+            )
+            if not np.any(mask):
+                continue
+            local_transfer = transfer[
+                mask
+            ]
+            local_resistance = (
+                self.resistance_matrix[
+                    np.ix_(mask, mask)
+                ]
+            )
+            matrix = (
+                local_transfer.conj().T
+                @ local_resistance
+                @ local_transfer
+            )
+            out[coil] = 0.5 * (
+                matrix
+                + matrix.conj().T
+            )
+        return out
+
+    def coil_power(self, currents) -> np.ndarray:
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        if currents.shape != (
+            self.n_ports,
+        ):
+            raise ValueError(
+                "currents has wrong shape"
+            )
+        channels = (
+            self.coil_dissipation_matrices()
+        )
+        return np.asarray(
+            [
+                0.5
+                * np.real(
+                    np.vdot(
+                        currents,
+                        channel @ currents,
+                    )
+                )
+                for channel in channels
+            ],
+            dtype=float,
+        )
+
 
 
 class DenseMQSTeacher:

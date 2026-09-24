@@ -13,6 +13,9 @@ class SurrogateAudit:
     baseline_mean_relative_error: float
     baseline_maximum_relative_error: float
     baseline_improvement_ratio: float
+    mean_channel_relative_error: float | None
+    maximum_channel_relative_error: float | None
+    maximum_power_closure_error: float | None
     maximum_reciprocity_defect: float
     minimum_dissipation_eigenvalue: float
     passed: bool
@@ -26,6 +29,9 @@ class SurrogateAudit:
             "baseline_mean_relative_error": self.baseline_mean_relative_error,
             "baseline_maximum_relative_error": self.baseline_maximum_relative_error,
             "baseline_improvement_ratio": self.baseline_improvement_ratio,
+            "mean_channel_relative_error": self.mean_channel_relative_error,
+            "maximum_channel_relative_error": self.maximum_channel_relative_error,
+            "maximum_power_closure_error": self.maximum_power_closure_error,
             "maximum_reciprocity_defect": self.maximum_reciprocity_defect,
             "minimum_dissipation_eigenvalue": self.minimum_dissipation_eigenvalue,
             "passed": self.passed,
@@ -46,10 +52,13 @@ def _relative_error(
     )
     return float(
         np.linalg.norm(
-            predicted - target
+            predicted
+            - target
         )
         / max(
-            np.linalg.norm(target),
+            np.linalg.norm(
+                target
+            ),
             1e-30,
         )
     )
@@ -61,19 +70,34 @@ def audit_surrogate(
     *,
     mean_relative_error_limit: float = 0.02,
     maximum_relative_error_limit: float = 0.05,
+    mean_channel_relative_error_limit: float = 0.05,
+    maximum_channel_relative_error_limit: float = 0.10,
+    power_closure_tolerance: float = 1e-6,
     reciprocity_tolerance: float = 1e-8,
     passivity_tolerance: float = 1e-10,
 ) -> SurrogateAudit:
-    samples = tuple(samples)
+    samples = tuple(
+        samples
+    )
     if not samples:
         raise ValueError(
             "audit requires at least one sample"
         )
     if (
-        mean_relative_error_limit <= 0.0
-        or maximum_relative_error_limit <= 0.0
-        or reciprocity_tolerance < 0.0
-        or passivity_tolerance < 0.0
+        mean_relative_error_limit
+        <= 0.0
+        or maximum_relative_error_limit
+        <= 0.0
+        or mean_channel_relative_error_limit
+        <= 0.0
+        or maximum_channel_relative_error_limit
+        <= 0.0
+        or power_closure_tolerance
+        < 0.0
+        or reciprocity_tolerance
+        < 0.0
+        or passivity_tolerance
+        < 0.0
     ):
         raise ValueError(
             "audit tolerances are invalid"
@@ -81,6 +105,8 @@ def audit_surrogate(
 
     errors = []
     baseline_errors = []
+    channel_errors = []
+    closure_errors = []
     reciprocity = []
     minimum_eigenvalue = np.inf
 
@@ -89,19 +115,42 @@ def audit_surrogate(
             sample.target_impedance,
             dtype=complex,
         )
-        predicted = np.asarray(
-            artifact.predict(
-                sample.scene,
-                sample.frequency_hz,
-            ),
-            dtype=complex,
-        )
-        if predicted.shape != target.shape:
+
+        structured = None
+        if hasattr(
+            artifact,
+            "predict_structured",
+        ):
+            structured = (
+                artifact.predict_structured(
+                    sample.scene,
+                    sample.frequency_hz,
+                )
+            )
+            predicted = np.asarray(
+                structured.impedance,
+                dtype=complex,
+            )
+        else:
+            predicted = np.asarray(
+                artifact.predict(
+                    sample.scene,
+                    sample.frequency_hz,
+                ),
+                dtype=complex,
+            )
+
+        if (
+            predicted.shape
+            != target.shape
+        ):
             raise ValueError(
                 "artifact returned the wrong port-matrix shape"
             )
         if not np.all(
-            np.isfinite(predicted)
+            np.isfinite(
+                predicted
+            )
         ):
             raise ValueError(
                 "artifact returned non-finite impedance"
@@ -124,6 +173,7 @@ def audit_surrogate(
                 target,
             )
         )
+
         scale = max(
             float(
                 np.linalg.norm(
@@ -156,19 +206,65 @@ def audit_surrogate(
             ),
         )
 
+        if (
+            sample.target_dissipation_channels
+            is not None
+        ):
+            if structured is None:
+                raise ValueError(
+                    "artifact lacks structured dissipation-channel prediction"
+                )
+            predicted_channels = np.asarray(
+                structured.dissipation_channels,
+                dtype=complex,
+            )
+            target_channels = np.asarray(
+                sample.target_dissipation_channels,
+                dtype=complex,
+            )
+            if (
+                predicted_channels.shape
+                != target_channels.shape
+            ):
+                raise ValueError(
+                    "artifact returned the wrong dissipation-channel shape"
+                )
+            channel_errors.append(
+                _relative_error(
+                    predicted_channels,
+                    target_channels,
+                )
+            )
+            summed = np.sum(
+                predicted_channels,
+                axis=0,
+            )
+            closure_errors.append(
+                _relative_error(
+                    summed,
+                    dissipation,
+                )
+            )
+
     errors = np.asarray(
         errors,
         dtype=float,
     )
-    baseline_errors = np.asarray(
-        baseline_errors,
-        dtype=float,
+    baseline_errors = (
+        np.asarray(
+            baseline_errors,
+            dtype=float,
+        )
     )
     mean_error = float(
-        np.mean(errors)
+        np.mean(
+            errors
+        )
     )
     max_error = float(
-        np.max(errors)
+        np.max(
+            errors
+        )
     )
     baseline_mean = float(
         np.mean(
@@ -187,6 +283,43 @@ def audit_surrogate(
             reciprocity
         )
     )
+
+    if channel_errors:
+        channel_errors_array = (
+            np.asarray(
+                channel_errors,
+                dtype=float,
+            )
+        )
+        mean_channel_error = float(
+            np.mean(
+                channel_errors_array
+            )
+        )
+        max_channel_error = float(
+            np.max(
+                channel_errors_array
+            )
+        )
+        max_closure_error = float(
+            np.max(
+                closure_errors
+            )
+        )
+        channels_pass = bool(
+            mean_channel_error
+            <= mean_channel_relative_error_limit
+            and max_channel_error
+            <= maximum_channel_relative_error_limit
+            and max_closure_error
+            <= power_closure_tolerance
+        )
+    else:
+        mean_channel_error = None
+        max_channel_error = None
+        max_closure_error = None
+        channels_pass = True
+
     passed = bool(
         mean_error
         <= mean_relative_error_limit
@@ -196,26 +329,48 @@ def audit_surrogate(
         <= reciprocity_tolerance
         and minimum_eigenvalue
         >= -passivity_tolerance
+        and channels_pass
     )
 
     return SurrogateAudit(
-        samples=len(samples),
-        mean_relative_error=mean_error,
+        samples=len(
+            samples
+        ),
+        mean_relative_error=(
+            mean_error
+        ),
         p95_relative_error=float(
             np.quantile(
                 errors,
                 0.95,
             )
         ),
-        maximum_relative_error=max_error,
-        baseline_mean_relative_error=baseline_mean,
+        maximum_relative_error=(
+            max_error
+        ),
+        baseline_mean_relative_error=(
+            baseline_mean
+        ),
         baseline_maximum_relative_error=float(
             np.max(
                 baseline_errors
             )
         ),
-        baseline_improvement_ratio=improvement,
-        maximum_reciprocity_defect=max_reciprocity,
+        baseline_improvement_ratio=(
+            improvement
+        ),
+        mean_channel_relative_error=(
+            mean_channel_error
+        ),
+        maximum_channel_relative_error=(
+            max_channel_error
+        ),
+        maximum_power_closure_error=(
+            max_closure_error
+        ),
+        maximum_reciprocity_defect=(
+            max_reciprocity
+        ),
         minimum_dissipation_eigenvalue=float(
             minimum_eigenvalue
         ),

@@ -18,6 +18,7 @@ class TeacherSample:
     baseline_reactance: np.ndarray
     target_impedance: np.ndarray
     baseline_segments: int
+    target_dissipation_channels: np.ndarray | None = None
 
     @staticmethod
     def generate(
@@ -36,11 +37,15 @@ class TeacherSample:
             frequency_hz,
             segments_per_coil=baseline_segments,
         )
-        truth = DenseMQSTeacher(
+        truth_result = DenseMQSTeacher(
             scene,
             frequency_hz,
             teacher_config or MQSConfig(),
-        ).solve().impedance
+        ).solve()
+        truth = truth_result.impedance
+        channels = (
+            truth_result.coil_dissipation_matrices()
+        )
         return TeacherSample(
             scene,
             float(frequency_hz),
@@ -54,4 +59,5 @@ class TeacherSample:
             ),
             truth,
             int(baseline_segments),
+            channels,
         )

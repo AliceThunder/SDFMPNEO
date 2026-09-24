@@ -167,3 +167,63 @@ def test_convergence_report_is_deterministic():
         report.steps[1].relative_change
     )
     assert report.converged
+
+
+
+def test_teacher_coil_dissipation_channels_are_psd_and_close_total_power():
+    cfg = MQSConfig(
+        segments_per_turn=10,
+        min_segments=12,
+        section_degree=1,
+        radial_order=3,
+        angular_order=12,
+        line_order=2,
+    )
+    result = DenseMQSTeacher(
+        _scene(),
+        25_000.0,
+        cfg,
+    ).solve()
+    channels = result.coil_dissipation_matrices()
+    assert channels.shape == (
+        2,
+        2,
+        2,
+    )
+    for channel in channels:
+        assert np.allclose(
+            channel,
+            channel.conj().T,
+            atol=1e-11,
+        )
+        assert (
+            np.min(
+                np.linalg.eigvalsh(channel)
+            )
+            >= -1e-11
+        )
+    total = np.sum(
+        channels,
+        axis=0,
+    )
+    physical = 0.5 * (
+        result.impedance
+        + result.impedance.conj().T
+    )
+    assert np.allclose(
+        total,
+        physical,
+        rtol=2e-9,
+        atol=2e-11,
+    )
+    currents = np.array(
+        [1.2 - 0.2j, -0.5 + 0.4j]
+    )
+    assert np.isclose(
+        np.sum(
+            result.coil_power(currents)
+        ),
+        result.conductor_power(currents),
+        rtol=2e-10,
+        atol=1e-12,
+    )

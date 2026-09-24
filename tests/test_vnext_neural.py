@@ -225,3 +225,107 @@ def test_zero_residual_artifact_round_trip_matches_physics_baseline(tmp_path):
         rtol=0,
         atol=1e-12,
     )
+
+
+
+def _forward_structured(model, scene):
+    encoded = encode_scene_invariant(
+        scene,
+        70_000.0,
+    )
+    baseline = analytic_port_baseline(
+        scene,
+        70_000.0,
+        segments_per_coil=48,
+    )
+    node = torch.as_tensor(
+        encoded.node_features,
+        dtype=torch.float32,
+    )
+    pair = torch.as_tensor(
+        encoded.pair_features,
+        dtype=torch.float32,
+    )
+    R, X, channels = model.forward_structured(
+        node,
+        pair,
+        torch.as_tensor(
+            baseline.resistance,
+            dtype=torch.float32,
+        ),
+        torch.as_tensor(
+            2.0
+            * np.pi
+            * 70_000.0
+            * baseline.inductance,
+            dtype=torch.float32,
+        ),
+        resistance_scale=0.01,
+        reactance_scale=0.1,
+    )
+    return (
+        R.detach().cpu().numpy(),
+        X.detach().cpu().numpy(),
+        channels.detach().cpu().numpy(),
+    )
+
+
+def test_random_network_loss_channels_are_psd_close_and_permutation_equivariant():
+    torch.manual_seed(7)
+    model = PhysicsFactoredResidualNet(
+        hidden_dim=24,
+        factor_rank=3,
+        depth=1,
+    )
+    R, _, channels = _forward_structured(
+        model,
+        _scene(False),
+    )
+    assert np.allclose(
+        np.sum(channels, axis=0),
+        R,
+        rtol=2e-5,
+        atol=2e-6,
+    )
+    for channel in channels:
+        assert np.allclose(
+            channel,
+            channel.conj().T,
+            atol=2e-6,
+        )
+        assert (
+            np.min(
+                np.linalg.eigvalsh(channel)
+            )
+            >= -2e-6
+        )
+
+    Rs, _, channels_s = _forward_structured(
+        model,
+        _scene(True),
+    )
+    P = np.array(
+        [
+            [0.0, 1.0],
+            [1.0, 0.0],
+        ]
+    )
+    expected_channels = np.stack(
+        [
+            P @ channels[1] @ P.T,
+            P @ channels[0] @ P.T,
+        ],
+        axis=0,
+    )
+    assert np.allclose(
+        Rs,
+        P @ R @ P.T,
+        rtol=3e-5,
+        atol=3e-6,
+    )
+    assert np.allclose(
+        channels_s,
+        expected_channels,
+        rtol=5e-5,
+        atol=5e-6,
+    )
