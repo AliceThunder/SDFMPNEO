@@ -25,11 +25,17 @@ $\eta_{\mathrm{EM}}$ & true normalized electromagnetic residual\\
 \end{tabular}
 \end{center}
 
-The document uses the engineering phasor convention consistently within each
-derived formulation; an implementation must declare whether time dependence is
-$e^{+j\omega t}$ or $e^{-j\omega t}$ and adjust the signs of imaginary
-constitutive losses accordingly. The theory relies on physical passivity, not
-on one particular sign convention.
+The vNext convention is
+\[
+  f_{\rm phys}(t)=\Rea\{\widetilde f e^{+j\omega t}\},
+\]
+with peak rather than RMS phasors. Therefore average port power is
+\[
+  P=\frac12\Rea\{v\adj i\}.
+\]
+Constitutive signs, Green kernels, Maxwell operators, and loss formulas must be
+implemented consistently with this convention. Physical passivity is verified
+through non-negative time-averaged power and structured passive realizations.
 
 A superscript $\adj$ denotes conjugate transpose, while $\T$ denotes ordinary
 transpose. $\Herm A=(A+A\adj)/2$. Positive-semidefinite and

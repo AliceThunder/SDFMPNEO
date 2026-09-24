@@ -92,10 +92,11 @@ unit terminal current:
 \]
 where $\mathcal I$ is the matrix of terminal current functionals.
 
-Port voltage is defined by the work-conjugate functional. In a current--charge
-formulation this may be written as a terminal electrochemical/electric
-potential difference plus any explicitly separated local contact term. The
-discrete port pair must satisfy the power identity
+Port voltage is defined by the work-conjugate functional. The canonical
+definition and the exact current-constrained KKT/Schur formulation are given in
+Section~\ref{sec:port-schur}. Impressed-current right-hand sides used by an
+implementation are admissible only if regression tests show equivalence to that
+canonical port definition. The discrete port pair must satisfy the power identity
 \[
   \frac12\Rea\{i\adj v\}
   =
@@ -151,7 +152,8 @@ Here
 \]
 and $\Phi_\rho$ is the scalar-potential interaction operator.
 
-Equation~\eqref{eq:conductor-block} is schematic: stable implementations may
+Equation~\eqref{eq:conductor-block} is a schematic compatible-source form,
+not the canonical port-extraction definition. Stable implementations may
 eliminate charge, use loop/tree or divergence-conforming bases, or use a
 regularized mixed formulation. What is invariant is the exact discrete
 continuity relation, finite-cross-section current space, and work-conjugate port
