@@ -344,3 +344,66 @@ def test_matrix_free_mixed_kkt_matches_dense_three_field_action():
         rtol=3e-11,
         atol=3e-11,
     )
+
+
+
+def test_matrix_free_mqs_resistive_preconditioner_is_callable_and_finite():
+    operator = MatrixFreeMQSOperator(
+        _scene(),
+        25_000.0,
+        _config(),
+        chunk_size=23,
+    )
+    preconditioner = (
+        operator.resistive_preconditioner()
+    )
+    rng = np.random.default_rng(
+        53
+    )
+    vector = (
+        rng.normal(
+            size=preconditioner.shape[0]
+        )
+        + 1j
+        * rng.normal(
+            size=preconditioner.shape[0]
+        )
+    )
+    applied = preconditioner @ vector
+    assert applied.shape == vector.shape
+    assert np.all(
+        np.isfinite(
+            applied
+        )
+    )
+
+
+def test_matrix_free_mixed_resistive_preconditioner_is_callable_and_finite():
+    operator = MatrixFreeMixedOperator(
+        _scene(),
+        15_000.0,
+        _config(),
+        chunk_size=23,
+    )
+    preconditioner = (
+        operator.resistive_preconditioner()
+    )
+    rng = np.random.default_rng(
+        59
+    )
+    vector = (
+        rng.normal(
+            size=preconditioner.shape[0]
+        )
+        + 1j
+        * rng.normal(
+            size=preconditioner.shape[0]
+        )
+    )
+    applied = preconditioner @ vector
+    assert applied.shape == vector.shape
+    assert np.all(
+        np.isfinite(
+            applied
+        )
+    )
