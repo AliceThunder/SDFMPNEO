@@ -308,6 +308,33 @@ class ImmutableTeacherDataset:
             ] += 1
         return out
 
+    def reference_backends(
+        self,
+        split: str | None = None,
+    ) -> tuple[str, ...]:
+        if (
+            split is not None
+            and split not in SPLITS
+        ):
+            raise ValueError(
+                f"unknown split: {split}"
+            )
+        return tuple(
+            sorted(
+                {
+                    record.reference_backend
+                    for record
+                    in self.records
+                    if (
+                        split is None
+                        or record.split
+                        == split
+                    )
+                }
+            )
+        )
+
+
     def _write_manifest(
         self,
     ):

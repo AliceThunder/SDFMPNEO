@@ -529,6 +529,25 @@ def run_active_learning_round(
         raise ValueError(
             "candidate_count and select_count must be >= 1"
         )
+    if hasattr(
+        dataset,
+        "reference_backends",
+    ):
+        existing_backends = (
+            dataset.reference_backends(
+                "train"
+            )
+        )
+        if (
+            existing_backends
+            and existing_backends
+            != (
+                "mixed",
+            )
+        ):
+            raise ValueError(
+                "active learning requires a pure mixed-reference training split"
+            )
     rng = np.random.default_rng(
         seed
     )

@@ -375,3 +375,44 @@ def test_mixed_reference_backend_generates_mixed_truth_and_records_backend(tmp_p
         rtol=2e-11,
         atol=2e-12,
     )
+
+
+
+def test_dataset_reports_reference_backends_per_split(tmp_path):
+    sample = _sample()
+    dataset = ImmutableTeacherDataset.create(
+        tmp_path / "dataset"
+    )
+    dataset.add_sample(
+        sample,
+        reference_backend="mqs",
+        split="validation",
+    )
+    dataset.add_sample(
+        TeacherSample(
+            sample.scene,
+            sample.frequency_hz + 1.0,
+            encode_scene_invariant(
+                sample.scene,
+                sample.frequency_hz + 1.0,
+            ),
+            sample.baseline_resistance,
+            sample.baseline_reactance,
+            sample.target_impedance,
+            sample.baseline_segments,
+            sample.target_dissipation_channels,
+            sample.spatial_loss,
+        ),
+        reference_backend="mixed",
+        split="train",
+    )
+    assert dataset.reference_backends(
+        "train"
+    ) == ("mixed",)
+    assert dataset.reference_backends(
+        "validation"
+    ) == ("mqs",)
+    assert dataset.reference_backends() == (
+        "mixed",
+        "mqs",
+    )

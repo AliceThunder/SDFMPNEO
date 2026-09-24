@@ -1,4 +1,9 @@
-from sdfmpneo_vnext.cli import build_parser
+import pytest
+
+from sdfmpneo_vnext.cli import (
+    _require_mixed_reference,
+    build_parser,
+)
 from sdfmpneo_vnext.__main__ import main
 
 
@@ -96,3 +101,47 @@ def test_predict_parser_accepts_bundle_request_and_output():
     assert str(args.output).endswith("result.json")
     assert args.device == "cpu"
     assert not args.allow_development_bundle
+
+
+
+class _BackendDataset:
+    def __init__(self, mapping):
+        self.mapping = dict(mapping)
+
+    def reference_backends(self, split):
+        return tuple(
+            self.mapping.get(
+                split,
+                (),
+            )
+        )
+
+
+def test_production_workflows_require_pure_mixed_reference_splits():
+    good = _BackendDataset(
+        {
+            "train": ("mixed",),
+            "validation": ("mixed",),
+            "release": ("mixed",),
+        }
+    )
+    _require_mixed_reference(
+        good,
+        ("train", "validation", "release"),
+        context="test",
+    )
+
+    mixed = _BackendDataset(
+        {
+            "train": ("mixed", "mqs"),
+        }
+    )
+    with pytest.raises(
+        SystemExit,
+        match="pure mixed-reference train split",
+    ):
+        _require_mixed_reference(
+            mixed,
+            ("train",),
+            context="test",
+        )

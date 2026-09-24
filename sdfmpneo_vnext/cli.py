@@ -89,6 +89,31 @@ def _demo_scene() -> Scene:
     )
 
 
+def _require_mixed_reference(
+    dataset,
+    splits,
+    *,
+    context: str,
+):
+    for split in tuple(
+        splits
+    ):
+        backends = (
+            dataset.reference_backends(
+                split
+            )
+        )
+        if not backends:
+            continue
+        if backends != (
+            "mixed",
+        ):
+            raise SystemExit(
+                f"{context} requires a pure mixed-reference {split} split; "
+                f"found {', '.join(backends)}"
+            )
+
+
 def _reference_config() -> MQSConfig:
     return MQSConfig(
         segments_per_turn=10,
@@ -360,6 +385,11 @@ def command_train_port(
     dataset = ImmutableTeacherDataset(
         args.dataset
     )
+    _require_mixed_reference(
+        dataset,
+        ("train", "validation"),
+        context="train-port",
+    )
     train = tuple(
         dataset.iter_samples(
             "train"
@@ -431,6 +461,11 @@ def command_train_spatial(
 
     dataset = ImmutableTeacherDataset(
         args.dataset
+    )
+    _require_mixed_reference(
+        dataset,
+        ("train", "validation"),
+        context="train-spatial",
     )
     train = tuple(
         dataset.iter_samples(
@@ -653,6 +688,11 @@ def command_calibrate(
     dataset = ImmutableTeacherDataset(
         args.dataset
     )
+    _require_mixed_reference(
+        dataset,
+        ("validation",),
+        context="calibrate",
+    )
     validation = tuple(
         dataset.iter_samples(
             "validation"
@@ -810,6 +850,11 @@ def command_release(
 
     dataset = ImmutableTeacherDataset(
         args.dataset
+    )
+    _require_mixed_reference(
+        dataset,
+        ("release",),
+        context="release",
     )
     release_samples = tuple(
         dataset.iter_samples(
