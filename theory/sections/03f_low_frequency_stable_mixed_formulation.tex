@@ -1,0 +1,212 @@
+\section{Low-frequency-stable mixed formulation and first solver policy}
+\label{sec:stable-mixed}
+
+The first implementation freezes a mixed current--potential--charge formulation
+that remains finite as $\omega\to0$. It does not eliminate charge by dividing
+the continuity equation by $j\omega$.
+
+\subsection{Three-field formulation}
+
+Let $c$ be conductor-current coefficients, $\phi$ scalar-potential
+coefficients, and $q$ charge coefficients. Define
+\[
+  A_c(\omega)=R_c+j\omega L_A(\omega),
+\]
+where retardation may make $L_A$ frequency dependent. The mixed equations are
+\[
+  A_c c-D^\ast\phi-\mathcal I^\ast v=0,
+  \label{eq:mixed-current}
+\]
+\[
+  Dc+j\omega M_\rho q=0,
+  \label{eq:mixed-continuity}
+\]
+\[
+  \phi-\Phi_\rho(\omega)q=0,
+  \label{eq:mixed-potential}
+\]
+\[
+  \mathcal I c=i.
+  \label{eq:mixed-port}
+\]
+Together,
+\[
+ \begin{bmatrix}
+  A_c & -D^\ast & 0 & -\mathcal I^\ast\\
+  D   & 0        & j\omega M_\rho & 0\\
+  0   & I        & -\Phi_\rho & 0\\
+  \mathcal I & 0 & 0 & 0
+ \end{bmatrix}
+ \begin{bmatrix}
+  c\\\phi\\q\\v
+ \end{bmatrix}
+ =
+ \begin{bmatrix}
+  0\\0\\0\\i
+ \end{bmatrix}.
+ \label{eq:stable-kkt}
+\]
+
+Equation~\eqref{eq:stable-kkt} is the canonical first-implementation
+REFERENCE system for a homogeneous conductor scene.
+
+\subsection{DC limit}
+
+At $\omega=0$,
+\[
+  Dc=0,
+\]
+while
+\[
+  A_c(0)c-D^\ast\phi-\mathcal I^\ast v=0.
+\]
+Thus $\phi$ acts as the finite Lagrange/electric-potential variable enforcing
+current continuity. No coefficient proportional to $1/\omega$ is introduced.
+
+The charge variable remains related by
+\[
+  \phi=\Phi_\rho(0)q
+\]
+after the gauge is fixed. DC resistance is therefore obtained from the same
+mixed system, not from a separate incompatible code path.
+
+\subsection{Why charge elimination is not the primary formulation}
+
+For nonzero frequency, eliminating $q$ gives schematically
+\[
+  q=-\frac{1}{j\omega}M_\rho^{-1}Dc.
+\]
+Substitution into the current equation introduces explicit $1/\omega$ scaling.
+Although the exact solution may remain finite because $Dc=O(\omega)$, the
+algebraic system becomes vulnerable to low-frequency cancellation and poor
+conditioning. Such elimination may be used only inside a carefully scaled
+preconditioner, not as the canonical physical system.
+
+\subsection{Compatible spaces and discrete inf--sup diagnostic}
+
+Let $M_c$ and $M_\phi$ be positive current and potential/charge norm matrices
+after gauge removal. Define the scaled divergence
+\[
+  \widehat D
+  =
+  M_\phi^{-1/2}DM_c^{-1/2}.
+\]
+After excluding the physical solenoidal null space, define
+\[
+  \beta_h
+  =
+  \sigma_{\min}^{+}(\widehat D).
+\]
+A vanishing or rapidly deteriorating $\beta_h$ under basis refinement indicates
+an incompatible current/potential pair. The implementation must change or
+enrich the basis; it must not hide the defect with an arbitrary diagonal
+regularizer.
+
+The charge/potential space is constructed to contain the numerical range of the
+current divergence plus required terminal/gauge modes. Range-revealing QR or
+SVD may be used during basis construction, with tolerances tied to the
+REFERENCE basis error budget.
+
+\subsection{Gauge constraints}
+
+For each electrically isolated component, remove one constant scalar-potential
+mode or impose
+\[
+  g^\ast M_\phi\phi=0
+\]
+for a chosen constant-mode vector $g$. The corresponding charge neutrality
+constraint is imposed consistently. Gauge constraints are assembled separately
+from physical terminal-current constraints.
+
+\subsection{Nondimensional block scaling}
+
+Choose diagonal/block scalings
+\[
+  c=S_c\widetilde c,\quad
+  \phi=S_\phi\widetilde\phi,\quad
+  q=S_q\widetilde q,\quad
+  v=S_v\widetilde v.
+\]
+$S_c$ is based on conductive-energy/current norms; $S_\phi,S_q$ on electrostatic
+energy/capacitance scales; $S_v$ on the port impedance baseline. The scaled KKT
+matrix is used for numerical linear algebra, while residual certification is
+mapped back to the declared physical Riesz norm.
+
+\subsection{Correctness solver for the first implementation}
+
+The first teacher backend intentionally prioritizes correctness over asymptotic
+speed:
+\begin{enumerate}
+\item assemble dense/high-accuracy interaction blocks for small benchmark
+      scenes;
+\item apply the gauge projection exactly;
+\item solve the scaled KKT system with a pivoted dense factorization;
+\item recompute the residual from independently applied physical blocks;
+\item perform basis and quadrature enrichment.
+\end{enumerate}
+This backend establishes trusted truth for small and medium systems and is the
+oracle used to validate the iterative backend.
+
+\subsection{Scalable iterative solver}
+
+The scalable REFERENCE backend uses FGMRES or an equivalent robust nonsymmetric
+Krylov method on the scaled KKT system. A physics block preconditioner uses
+\[
+  \widetilde A_c^{-1}
+  \approx
+  (R_{\rm self}+j\omega L_{\rm self})^{-1}
+\]
+for conductor blocks and a potential Schur approximation.
+
+If $q$ is formally eliminated only for preconditioning, the potential Schur
+operator is
+\[
+ S_\phi
+ \approx
+ D A_c^{-1}D^\ast
+ +j\omega M_\rho\Phi_\rho^{-1}.
+ \label{eq:potential-schur}
+\]
+The action of $\Phi_\rho^{-1}$ is approximated by intrinsic electrostatic
+self-block solves/hierarchical methods; it need not be formed densely.
+
+As $\omega\to0$,
+\[
+ S_\phi
+ \to
+ D R_c^{-1}D^\ast,
+\]
+which supplies the required DC constraint scaling rather than degenerating as
+$1/\omega$.
+
+\subsection{Solver acceptance}
+
+An iterative solve is accepted only if:
+\begin{enumerate}
+\item original mixed-equation Riesz residual passes;
+\item port-current constraints pass independently;
+\item charge continuity passes independently;
+\item gauge residual passes;
+\item power closure passes;
+\item the result agrees with the dense correctness backend on overlapping
+      benchmark sizes.
+\end{enumerate}
+
+\subsection{Frequency sweep recycling}
+
+For nearby frequencies or temperatures, previous modal solutions and Krylov
+subspaces may be recycled. Recycling changes only the initial subspace; all
+acceptance residuals use the current physical operator.
+
+\subsection{Frozen first choice and allowed future alternatives}
+
+Equation~\eqref{eq:stable-kkt} is frozen for the first implementation. Future
+loop--tree, quasi-Helmholtz, charge-current, or other stabilized formulations
+may replace it only after demonstrating:
+\begin{enumerate}
+\item the same continuous Scene/port semantics;
+\item equal or better low-frequency conditioning;
+\item equivalent converged $Z$ and loss observables;
+\item no weaker passivity/power certificates.
+\end{enumerate}
+Thus solver research remains possible without blocking initial code.

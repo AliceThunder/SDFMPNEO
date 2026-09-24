@@ -1,0 +1,233 @@
+\section{Analytic and independent reference benchmarks}
+\label{sec:analytic-benchmarks}
+
+This section freezes the minimum benchmark equations required before neural
+training. Exact formulas are used only within their known asymptotic/domain
+assumptions.
+
+\subsection{Uniform DC conductor}
+
+For a straight homogeneous conductor of length $L$, conductivity $\sigma$, and
+cross-sectional area $A$,
+\[
+  R_{\rm dc}
+  =
+  \frac{L}{\sigma A}.
+  \label{eq:dc-resistance}
+\]
+For a superelliptic cross-section
+\[
+ \left|\frac{x}{a}\right|^m+
+ \left|\frac{y}{b}\right|^m\le1,
+\]
+the area is
+\[
+ A
+ =
+ 4ab\,
+ \frac{\Gamma(1+1/m)^2}
+      {\Gamma(1+2/m)}.
+ \label{eq:superellipse-area}
+\]
+The low-frequency conductor solver must converge to
+Equation~\eqref{eq:dc-resistance} using the same geometry and port convention.
+
+\subsection{Circular-loop mutual inductance}
+
+For two coaxial filamentary circular loops with radii $a,b$ and axial
+separation $z$, define
+\[
+  k^2
+  =
+  \frac{4ab}{(a+b)^2+z^2}.
+\]
+The magnetoquasistatic mutual inductance is
+\[
+  M
+  =
+  \mu\sqrt{ab}\,
+  \frac{(2-k^2)K(k)-2E(k)}{k},
+  \label{eq:coaxial-mutual}
+\]
+where $K,E$ are complete elliptic integrals. In the thin-conductor,
+electrically-small limit, the off-diagonal reactance must satisfy
+\[
+  \Ima Z_{12}
+  \approx
+  \omega M
+\]
+under the fixed $e^{+j\omega t}$ convention.
+
+This benchmark is evaluated away from coincident-loop singular limits.
+
+\subsection{General filament Neumann integral}
+
+For two disjoint thin closed curves $C_1,C_2$ in the MQS limit,
+\[
+  M_{12}
+  =
+  \frac{\mu}{4\pi}
+  \oint_{C_1}\oint_{C_2}
+  \frac{\dd\mathbf l_1\cdot\dd\mathbf l_2}
+       {\norm{\mathbf r_1-\mathbf r_2}}.
+  \label{eq:neumann-mutual}
+\]
+High-order independent curve quadrature of
+Equation~\eqref{eq:neumann-mutual} provides a pose-general benchmark for the
+leading mutual coupling of sufficiently thin conductors. It is independent of
+the finite-cross-section IE implementation.
+
+\subsection{High-frequency round-wire resistance asymptote}
+
+For a long circular conductor of radius $a$ with
+\[
+  a/\delta\gg1,
+\]
+current is concentrated in a surface layer. The leading AC resistance per unit
+length is
+\[
+  R'_{\rm ac}
+  \sim
+  \frac{1}{2\pi a\sigma\delta}.
+  \label{eq:skin-asymptote}
+\]
+The finite-cross-section modal solver must approach this trend as conductor
+curvature/proximity effects are removed and $a/\delta$ increases.
+
+This is an asymptotic benchmark, not an exact finite-frequency formula.
+
+\subsection{Rigid-motion invariance}
+
+For any common $(R_0,t_0)\in\SE(3)$ in an isotropic homogeneous background,
+\[
+  Z(g_0\cdot\mathcal S)
+  =
+  Z(\mathcal S).
+  \label{eq:rigid-benchmark}
+\]
+The test suite applies deterministic random rotations and translations over
+many orders of orientation representation, comparing both port observables and
+equivariantly transformed continuous field/loss queries.
+
+\subsection{Reciprocity benchmark}
+
+For reciprocal materials and consistently oriented ports,
+\[
+  Z-Z^\T=0.
+\]
+Report
+\[
+  \eta_{\rm rec}
+  =
+  \frac{\norm{Z-Z^\T}_F}
+       {\max(\norm Z_F,Z_0)}.
+\]
+
+\subsection{Power benchmark}
+
+For each deterministic complex current vector $i$,
+\[
+ P_{\rm port}
+ =
+ \frac12 i\adj\Herm(Z)i.
+\]
+The independently integrated conductor loss is
+\[
+ P_c
+ =
+ \frac12
+ \int_{\Omega_c}
+ \mathbf J\adj\rho_e\mathbf J\,\dd V.
+\]
+For an electrically-small non-radiating benchmark,
+\[
+  P_{\rm port}\approx P_c.
+\]
+For a retarded/radiating benchmark,
+\[
+  P_{\rm port}=P_c+P_{\rm out}
+\]
+with $P_{\rm out}$ computed from the independent radiation channel.
+
+\subsection{Infinite-medium thermal impulse}
+
+For homogeneous infinite material with diffusivity
+\[
+  \alpha=\frac{k}{\rho c},
+\]
+an instantaneous point heat input of energy $Q$ at the origin gives, for $t>0$,
+\[
+ \Delta T(r,t)
+ =
+ \frac{Q}
+      {\rho c(4\pi\alpha t)^{3/2}}
+ \exp\left(
+  -\frac{r^2}{4\alpha t}
+ \right).
+ \label{eq:thermal-impulse}
+\]
+This tests transient Green-kernel normalization and time scaling.
+
+\subsection{Infinite-medium thermal step source}
+
+For a point source of constant power $P$ switched on at $t=0$,
+\[
+  \Delta T(r,t)
+  =
+  \frac{P}{4\pi kr}
+  \operatorname{erfc}
+  \left(
+    \frac{r}{2\sqrt{\alpha t}}
+  \right),
+  \qquad r>0.
+  \label{eq:thermal-step}
+\]
+As $t\to\infty$,
+\[
+  \Delta T(r,\infty)=\frac{P}{4\pi kr}.
+\]
+This benchmark covers short-time, transition, and steady limits of the thermal
+transfer.
+
+\subsection{Lumped thermal mode}
+
+For a single thermal capacity $C$ connected to ambient by conductance $G$,
+\[
+  C\dot\theta+G\theta=P,
+\]
+with $\theta(0)=0$ and constant $P$,
+\[
+ \theta(t)
+ =
+ \frac{P}{G}
+ \left(
+  1-e^{-Gt/C}
+ \right).
+ \label{eq:lumped-thermal}
+\]
+The reduced integrator and steady solver must reproduce this exactly to their
+declared time-integration tolerance.
+
+\subsection{Independent numerical oracle}
+
+Analytic formulas do not cover finite-cross-section arbitrary superellipse
+coils in generic poses. A locked subset is therefore compared with an
+independent converged numerical method. The legacy volume H(curl) solver may be
+used only after its own mesh/domain/self-physics convergence is demonstrated for
+that benchmark. It is not considered independent evidence when configured from
+the same integral basis or quadrature code.
+
+\subsection{Benchmark tiers}
+
+Each benchmark is labeled:
+\begin{description}
+\item[A] analytic/exact under explicitly stated assumptions;
+\item[B] asymptotic with a declared small parameter;
+\item[C] independent numerical cross-method;
+\item[D] structural identity such as reciprocity, rigid invariance, or energy
+  closure.
+\end{description}
+
+REFERENCE acceptance requires all applicable Tier A/D tests, selected Tier B
+regime tests, and at least one Tier C cross-method family before neural labels
+are trusted.
