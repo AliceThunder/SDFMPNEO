@@ -130,6 +130,10 @@ from .features import (
     EncodedScene,
     encode_scene_invariant,
 )
+from .hybrid_features import (
+    EncodedHybridScene,
+    encode_hybrid_scene_invariant,
+)
 from .training_data import (
     SpatialLossSamples,
     TeacherSample,
@@ -274,6 +278,8 @@ __all__ = [
     "regularized_self_inductance",
     "EncodedScene",
     "encode_scene_invariant",
+    "EncodedHybridScene",
+    "encode_hybrid_scene_invariant",
     "SpatialLossSamples",
     "TeacherSample",
     "MVPSceneSamplerConfig",
