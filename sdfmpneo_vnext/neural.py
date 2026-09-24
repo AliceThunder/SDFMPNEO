@@ -146,22 +146,26 @@ class ResidualNormalizer:
 
     @staticmethod
     def from_dict(data):
+        def _array(value):
+            if hasattr(value, "detach"):
+                value = value.detach().cpu().numpy()
+            return np.asarray(
+                value,
+                dtype=float,
+            )
+
         return ResidualNormalizer(
-            np.asarray(
-                data["node_mean"],
-                dtype=float,
+            _array(
+                data["node_mean"]
             ),
-            np.asarray(
-                data["node_scale"],
-                dtype=float,
+            _array(
+                data["node_scale"]
             ),
-            np.asarray(
-                data["pair_mean"],
-                dtype=float,
+            _array(
+                data["pair_mean"]
             ),
-            np.asarray(
-                data["pair_scale"],
-                dtype=float,
+            _array(
+                data["pair_scale"]
             ),
             float(
                 data["resistance_scale"]
@@ -1110,9 +1114,15 @@ class NeuralResidualArtifact:
             "model_state": (
                 self.model.state_dict()
             ),
-            "normalizer": (
-                self.normalizer.to_dict()
-            ),
+            "normalizer": {
+                key: (
+                    torch.as_tensor(value)
+                    if isinstance(value, np.ndarray)
+                    else value
+                )
+                for key, value
+                in self.normalizer.to_dict().items()
+            },
             "baseline_segments": (
                 self.baseline_segments
             ),
@@ -1128,10 +1138,19 @@ class NeuralResidualArtifact:
         *,
         device: str = "cpu",
     ) -> "NeuralResidualArtifact":
-        payload = torch.load(
-            Path(path),
-            map_location=device,
-        )
+        try:
+            payload = torch.load(
+                Path(path),
+                map_location=device,
+                weights_only=True,
+            )
+        except TypeError:
+            # torch 2.2 compatibility: weights_only existed in later minor
+            # releases. The artifact contains only tensors and primitives.
+            payload = torch.load(
+                Path(path),
+                map_location=device,
+            )
         if (
             payload.get(
                 "schema"
