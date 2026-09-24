@@ -1,0 +1,90 @@
+\section{Admissible scenes and well-posedness assumptions}
+\label{sec:admissible-scenes}
+
+The phrases arbitrary pose, arbitrary package size, and arbitrary medium mean
+that these quantities are not restricted to one fixed parameter chart or world
+grid. They do not mean that physically singular or mathematically ill-posed
+scenes must produce a finite prediction.
+
+\subsection{Geometric admissibility}
+
+A scene is admissible when:
+\begin{enumerate}
+\item every object map is at least piecewise $C^1$ with finite measure and a
+      well-defined outward normal almost everywhere where a surface formulation
+      is used;
+\item conductor cross-section remains positive and the sweep Jacobian does not
+      vanish;
+\item distinct perfectly conducting volumes do not overlap unless an explicit
+      electrical contact/junction is declared;
+\item material interfaces have a declared ownership rule and do not create
+      ambiguous multiply occupied volumes;
+\item terminal regions have nonzero measure and define a valid oriented
+      work-conjugate port pair.
+\end{enumerate}
+
+Near-touching objects are allowed, but the numerical backend must refine
+near-singular quadrature accordingly. Exact topological contact is a different
+scene and requires an explicit contact model.
+
+\subsection{Material admissibility}
+
+Over the declared frequency/temperature domain, constitutive laws are bounded,
+causal, and passive. For a simple isotropic conductive dielectric under a fixed
+phasor convention this implies non-negative dissipative response. For tensor
+media, the Hermitian dissipative part is positive semidefinite.
+
+Thermal density and heat capacity remain positive:
+\[
+ \rho_m(\mathbf r,T)>0,\qquad c_p(\mathbf r,T)>0,
+\]
+and the symmetric part of thermal conductivity is uniformly positive on each
+conducting thermal region:
+\[
+ \xi^\T k(\mathbf r,T)\xi
+ \ge k_{\min}\norm{\xi}^2,\qquad k_{\min}>0.
+\]
+Degenerate phase change, hysteresis, superconductivity, plasma breakdown, and
+other constitutive phenomena require an explicit material extension rather than
+being hidden inside extrapolation.
+
+\subsection{Frequency domain}
+
+Every artifact declares a finite operating band
+\[
+ \omega\in[\omega_{\min},\omega_{\max}].
+\]
+The REFERENCE formulation may cover DC/quasi-static, induction-dominated, and
+full-wave regimes, but the basis and preconditioner policy may change between
+regimes. Numerical formulations that suffer interior resonances must use a
+combined/stabilized integral formulation so a physical scattering solution is
+not confused with a discretization null space.
+
+\subsection{Thermal boundary well-posedness}
+
+A pure Neumann insulated thermal problem has an undetermined absolute
+temperature under zero net heat removal and no finite steady state under
+positive continuous heating. Such a scene may still have a transient solution,
+but a steady-state query must return \texttt{NO\_FINITE\_STEADY\_STATE} rather
+than inventing a stabilized answer.
+
+\subsection{Nonlinear operating domain}
+
+For temperature-dependent coupled simulation, the trajectory must remain within
+the declared constitutive temperature range. Crossing the range triggers
+extrapolation status, model escalation, or simulation termination according to
+policy.
+
+\subsection{Existence of certificates}
+
+CERTIFIED mode assumes that the chosen physical operator admits a computable
+residual and a usable stability/goal estimator in the requested regime. If the
+operator is too ill-conditioned for a meaningful bound, the system may still
+return a REFERENCE numerical result but must not label it certified.
+
+\begin{principle}[Explicit invalidity beats hidden regularization]
+Geometry repair, artificial conductivity floors, thermal leakage, or numerical
+damping may be used only when they are declared physical/numerical model
+choices. They are never silently introduced to force an invalid scene to
+converge.
+\end{principle}

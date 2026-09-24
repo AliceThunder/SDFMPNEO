@@ -1,0 +1,105 @@
+\section{Frequency regimes, skin depth, and conductor-mode adaptivity}
+\label{sec:frequency-regimes}
+
+Wireless-power systems often operate in a regime where the device is
+electrically small while conductor skin/proximity effects are not negligible.
+The vNext formulation separates these two notions.
+
+\subsection{Electromagnetic size}
+
+Define a scene electrical-size indicator
+\[
+ \kappa_{\rm scene}
+ =
+ \max_{\mathbf r,\mathbf r'\in\mathcal S}
+ |k_b|\,\norm{\mathbf r-\mathbf r'} ,
+\]
+where $k_b$ is the relevant background wavenumber. When
+$\kappa_{\rm scene}\ll1$, a magnetoquasistatic or electroquasistatic expansion
+may provide an efficient analytic baseline. Correctness of the REFERENCE model,
+however, does not rely on dropping retardation unless the artifact explicitly
+declares an MQS-only domain.
+
+\subsection{Skin depth}
+
+For a good isotropic conductor, the characteristic skin depth is
+\[
+ \delta
+ \approx
+ \sqrt{\frac{2}{\omega\mu\sigma}}.
+\]
+Define dimensionless cross-section indicators
+\[
+ \chi_w=\frac{w}{\delta},\qquad
+ \chi_h=\frac{h}{\delta}.
+\]
+These, together with separation-to-size ratios, drive the required
+cross-section modal rank.
+
+\subsection{Adaptive modal family}
+
+The conductor basis contains nested mode sets
+\[
+ V_\perp^{(0)}
+ \subset V_\perp^{(1)}
+ \subset\cdots .
+\]
+A teacher solve begins with a rank predicted from
+$(\chi_w,\chi_h)$ and geometric proximity, then enriches until
+\[
+ \eta_{\rm mode}
+ =
+ \frac{\norm{Z^{(r+\Delta r)}-Z^{(r)}}_{W_Z}}
+      {\max(\norm{Z^{(r+\Delta r)}}_{W_Z},\epsilon_Z)}
+ \le\tau_{\rm mode}
+\]
+and selected local current/loss observables also converge.
+
+High-conductivity accuracy is therefore purchased by additional intrinsic
+cross-section modes, not by shrinking cells throughout surrounding space.
+
+\subsection{DC and low-frequency limit}
+
+As $\omega\to0$,
+\[
+ \delta\to\infty,
+\]
+and the current basis naturally collapses toward the uniform conduction mode.
+Charge/current scaling and the mixed formulation must remain well conditioned
+in this limit. A DC resistance benchmark is part of the mandatory teacher test
+suite.
+
+\subsection{Full-wave transition}
+
+As $\kappa_{\rm scene}$ approaches unity, retardation and radiation are retained
+by the full Green kernel. The same continuous scene and port definitions are
+used; only kernel evaluation, basis requirements, and acceleration strategy
+change.
+
+\subsection{Analytic baseline selection}
+
+The physics baseline used by the neural model is selected by dimensionless
+regime indicators:
+\[
+ \eta_{\rm regime}
+ =
+ (\kappa_{\rm scene},\chi_w,\chi_h,
+  d_{\min}/L_0,\text{material contrast}).
+\]
+Examples:
+\begin{itemize}
+\item filament/mutual-inductance baseline for very thin, weakly coupled
+      conductors;
+\item finite-cross-section MQS/PEEC baseline for electrically small WPT;
+\item retarded integral baseline for larger electrical size;
+\item layered Green baseline near planar stratified media.
+\end{itemize}
+The neural correction always receives the baseline identity/quality features so
+it does not have to infer which asymptotic model was used.
+
+\subsection{No regime discontinuity}
+
+When multiple baselines are blended, the blend uses smooth regime weights and
+the final structured decoder. Switching a backend must not introduce a
+discontinuity in $Z$, loss, or design gradients as geometry/frequency crosses a
+threshold.
