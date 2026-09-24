@@ -82,6 +82,7 @@ def test_convergence_evidence_is_required_for_full_certified_status():
         convergence_report=_Converged(),
         algebraic_tolerance=1e-10,
         allow_reference_fallback=False,
+        fast_domain_correction_limit=1.0,
     )
     assert result.status == "CERTIFIED"
     assert result.certified
@@ -121,3 +122,49 @@ def test_ac_correction_returns_the_discrete_teacher_solution():
         certified.initial_residual
         >= certified.final_residual
     )
+
+
+
+def test_large_physical_correction_is_reported_outside_fast_domain():
+    from sdfmpneo_vnext import StructuredPortPrediction
+
+    class _BadFastArtifact:
+        def __init__(self):
+            self.base = AnalyticBaselineArtifact(
+                segments_per_coil=10,
+            )
+
+        def predict_structured(self, scene, frequency_hz):
+            prediction = self.base.predict_structured(
+                scene,
+                frequency_hz,
+            )
+            return StructuredPortPrediction(
+                5.0 * prediction.impedance,
+                5.0 * prediction.dissipation_channels,
+            )
+
+    class _Converged:
+        converged = True
+
+    result = certify_mqs_ports(
+        _scene(),
+        0.0,
+        _BadFastArtifact(),
+        config=_config(),
+        convergence_report=_Converged(),
+        algebraic_tolerance=1e-10,
+        correction_rtol=1e-12,
+        correction_maxiter=120,
+        allow_reference_fallback=False,
+        fast_domain_correction_limit=0.05,
+    )
+    assert result.algebraic_certified
+    assert result.discretization_certified
+    assert result.certified
+    assert not result.fast_domain_valid
+    assert (
+        result.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+    assert result.relative_observable_correction > 0.05

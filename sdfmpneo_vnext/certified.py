@@ -31,10 +31,15 @@ class CertifiedPortResult:
     discretization_certified: bool
     used_reference_fallback: bool
     operator_backend: str = "dense"
+    relative_observable_correction: float = float("inf")
+    fast_domain_valid: bool = False
 
     @property
     def certified(self) -> bool:
-        return self.status == "CERTIFIED"
+        return self.status in (
+            "CERTIFIED",
+            "CORRECTED_OUT_OF_FAST_DOMAIN",
+        )
 
 
 def _mode_metadata(
@@ -227,6 +232,7 @@ def certify_mqs_ports(
     correction_restart: int = 40,
     correction_maxiter: int = 80,
     allow_reference_fallback: bool = True,
+    fast_domain_correction_limit: float = 0.20,
 ) -> CertifiedPortResult:
     """Lift a FAST model into the physical MQS KKT space and certify it.
 
@@ -239,6 +245,7 @@ def certify_mqs_ports(
         or correction_rtol <= 0.0
         or correction_restart < 1
         or correction_maxiter < 1
+        or fast_domain_correction_limit < 0.0
     ):
         raise ValueError(
             "invalid certification tolerances"
@@ -449,6 +456,23 @@ def certify_mqs_ports(
         )
     )
 
+    relative_observable_correction = float(
+        np.linalg.norm(
+            result.impedance
+            - fast_impedance
+        )
+        / max(
+            np.linalg.norm(
+                result.impedance
+            ),
+            1e-30,
+        )
+    )
+    fast_domain_valid = bool(
+        relative_observable_correction
+        <= fast_domain_correction_limit
+    )
+
     used_reference_fallback = False
     if not algebraic_certified:
         if not allow_reference_fallback:
@@ -465,6 +489,9 @@ def certify_mqs_ports(
                 False,
                 discretization_certified,
                 False,
+                "dense",
+                relative_observable_correction,
+                fast_domain_valid,
             )
 
         result = teacher.solve()
@@ -482,11 +509,31 @@ def certify_mqs_ports(
         )
         final_residual = 0.0
         used_reference_fallback = True
+        relative_observable_correction = float(
+            np.linalg.norm(
+                result.impedance
+                - fast_impedance
+            )
+            / max(
+                np.linalg.norm(
+                    result.impedance
+                ),
+                1e-30,
+            )
+        )
+        fast_domain_valid = bool(
+            relative_observable_correction
+            <= fast_domain_correction_limit
+        )
         status = (
             "REFERENCE_FALLBACK"
         )
     elif discretization_certified:
-        status = "CERTIFIED"
+        status = (
+            "CERTIFIED"
+            if fast_domain_valid
+            else "CORRECTED_OUT_OF_FAST_DOMAIN"
+        )
     else:
         status = (
             "DISCRETE_CERTIFIED"
@@ -505,6 +552,9 @@ def certify_mqs_ports(
         algebraic_certified,
         discretization_certified,
         used_reference_fallback,
+        "dense",
+        relative_observable_correction,
+        fast_domain_valid,
     )
 
 
@@ -721,6 +771,7 @@ def certify_mixed_ports(
     allow_reference_fallback: bool = True,
     operator_backend: str = "dense",
     matrix_free_chunk_size: int = 512,
+    fast_domain_correction_limit: float = 0.20,
 ) -> CertifiedPortResult:
     """CERTIFIED correction in the canonical current-potential-charge KKT.
 
@@ -734,6 +785,7 @@ def certify_mixed_ports(
         or correction_restart < 1
         or correction_maxiter < 1
         or matrix_free_chunk_size < 1
+        or fast_domain_correction_limit < 0.0
     ):
         raise ValueError(
             "invalid certification tolerances"
@@ -1156,6 +1208,23 @@ def certify_mixed_ports(
         )
     )
 
+    relative_observable_correction = float(
+        np.linalg.norm(
+            result.impedance
+            - fast_impedance
+        )
+        / max(
+            np.linalg.norm(
+                result.impedance
+            ),
+            1e-30,
+        )
+    )
+    fast_domain_valid = bool(
+        relative_observable_correction
+        <= fast_domain_correction_limit
+    )
+
     used_reference_fallback = False
     if not algebraic_certified:
         if not allow_reference_fallback:
@@ -1180,11 +1249,31 @@ def certify_mixed_ports(
                 result.normalized_residual
             )
             used_reference_fallback = True
+            relative_observable_correction = float(
+                np.linalg.norm(
+                    result.impedance
+                    - fast_impedance
+                )
+                / max(
+                    np.linalg.norm(
+                        result.impedance
+                    ),
+                    1e-30,
+                )
+            )
+            fast_domain_valid = bool(
+                relative_observable_correction
+                <= fast_domain_correction_limit
+            )
             status = (
                 "REFERENCE_FALLBACK"
             )
     elif discretization_certified:
-        status = "CERTIFIED"
+        status = (
+            "CERTIFIED"
+            if fast_domain_valid
+            else "CORRECTED_OUT_OF_FAST_DOMAIN"
+        )
     else:
         status = (
             "DISCRETE_CERTIFIED"
@@ -1204,5 +1293,7 @@ def certify_mixed_ports(
         discretization_certified,
         used_reference_fallback,
         operator_backend,
+        relative_observable_correction,
+        fast_domain_valid,
     )
 

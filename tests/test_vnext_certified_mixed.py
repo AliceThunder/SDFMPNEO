@@ -89,6 +89,7 @@ def test_mixed_certification_reduces_physical_residual_without_fallback():
     assert result.status in (
         "DISCRETE_CERTIFIED",
         "CERTIFIED",
+        "CORRECTED_OUT_OF_FAST_DOMAIN",
     )
 
 
@@ -117,6 +118,7 @@ def test_mixed_convergence_report_controls_full_certification_status():
         correction_restart=30,
         correction_maxiter=120,
         allow_reference_fallback=False,
+        fast_domain_correction_limit=1.0,
     )
     assert result.status == "CERTIFIED"
     assert result.certified
