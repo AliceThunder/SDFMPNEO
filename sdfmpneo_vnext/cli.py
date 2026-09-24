@@ -10,6 +10,7 @@ from .active_learning import run_active_learning_round
 from .analytic_baseline import AnalyticBaselineArtifact
 from .bundle import publish_bundle
 from .certified import certify_mixed_ports
+from .certified_evaluation import audit_certified_release
 from .dataset import (
     ImmutableTeacherDataset,
     migrate_dataset_v3_to_v4,
@@ -820,6 +821,58 @@ def command_release(
         )
     )
 
+    coarse_config = MQSConfig(
+        segments_per_turn=(
+            args.certified_coarse_segments
+        ),
+        min_segments=(
+            args.certified_coarse_segments
+        ),
+        section_degree=1,
+        radial_order=3,
+        angular_order=16,
+        line_order=2,
+    )
+    fine_config = MQSConfig(
+        segments_per_turn=(
+            args.certified_fine_segments
+        ),
+        min_segments=(
+            args.certified_fine_segments
+        ),
+        section_degree=1,
+        radial_order=3,
+        angular_order=16,
+        line_order=2,
+    )
+    certified_report = audit_certified_release(
+        port,
+        release_samples,
+        coarse_config=coarse_config,
+        fine_config=fine_config,
+        convergence_tolerance=(
+            args.certified_convergence_limit
+        ),
+        algebraic_tolerance=(
+            args.certified_algebraic_limit
+        ),
+        correction_rtol=(
+            args.certified_correction_rtol
+        ),
+        correction_maxiter=(
+            args.certified_correction_maxiter
+        ),
+        fast_domain_correction_limit=(
+            args.certified_fast_correction_limit
+        ),
+        operator_backend=(
+            args.certified_backend
+        ),
+        matrix_free_chunk_size=(
+            args.certified_chunk_size
+        ),
+    )
+
     gate = {
         "port": (
             port_report.to_dict()
@@ -827,10 +880,14 @@ def command_release(
         "spatial": (
             spatial_report.to_dict()
         ),
+        "certified": (
+            certified_report.to_dict()
+        ),
     }
     if (
         not port_report.passed
         or not spatial_report.passed
+        or not certified_report.passed
     ):
         print(
             json.dumps(
@@ -1260,6 +1317,51 @@ def build_parser():
         "--joule-limit",
         type=float,
         default=0.10,
+    )
+    release.add_argument(
+        "--certified-coarse-segments",
+        type=int,
+        default=8,
+    )
+    release.add_argument(
+        "--certified-fine-segments",
+        type=int,
+        default=12,
+    )
+    release.add_argument(
+        "--certified-convergence-limit",
+        type=float,
+        default=0.02,
+    )
+    release.add_argument(
+        "--certified-algebraic-limit",
+        type=float,
+        default=1e-7,
+    )
+    release.add_argument(
+        "--certified-correction-rtol",
+        type=float,
+        default=1e-9,
+    )
+    release.add_argument(
+        "--certified-correction-maxiter",
+        type=int,
+        default=160,
+    )
+    release.add_argument(
+        "--certified-fast-correction-limit",
+        type=float,
+        default=0.20,
+    )
+    release.add_argument(
+        "--certified-backend",
+        choices=("dense", "matrix_free"),
+        default="matrix_free",
+    )
+    release.add_argument(
+        "--certified-chunk-size",
+        type=int,
+        default=256,
     )
     release.add_argument(
         "--device",

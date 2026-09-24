@@ -57,3 +57,22 @@ def test_legacy_self_check_flag_is_translated(monkeypatch):
     ] == [
         "self-check"
     ]
+
+
+
+def test_release_parser_exposes_certified_gate_controls():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "release",
+            "dataset",
+            "port.pt",
+            "spatial.pt",
+            "bundle",
+        ]
+    )
+    assert args.certified_backend == "matrix_free"
+    assert args.certified_coarse_segments == 8
+    assert args.certified_fine_segments == 12
+    assert args.certified_convergence_limit == 0.02
+    assert args.certified_fast_correction_limit == 0.20
