@@ -7,28 +7,17 @@
           "outer_a": 0.035,
           "outer_b": 0.030,
           "turns": 0.9,
-          "pitch_a": 0.002,
-          "pitch_b": 0.002,
+          "pitch": 0.002,
           "exponent": 4.0,
           "conductor_width": 0.0015,
-          "conductor_thickness": 0.0009,
-          "cross_section_exponent": 4.0,
-          "rotation": [[1,0,0],[0,1,0],[0,0,1]],
-          "translation": [0,0,0]
+          "conductor_thickness": 0.0009
         },
         "material": {
           "conductivity": 58000000.0,
-          "relative_permeability": 1.0,
-          "resistance_temperature_coefficient": 0.00393,
-          "reference_temperature": 293.15
+          "resistance_temperature_coefficient": 0.00393
         }
       }
-    ],
-    "medium": {
-      "relative_permittivity": 1.0,
-      "relative_permeability": 1.0,
-      "conductivity": 0.0
-    }
+    ]
   },
   "frequency_hz": 85000.0,
   "mode": "fast",

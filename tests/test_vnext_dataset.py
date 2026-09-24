@@ -252,3 +252,78 @@ def test_dataset_round_trips_spatial_loss_samples(tmp_path):
         loaded.spatial_loss.dissipation_matrix,
         spatial.dissipation_matrix,
     )
+
+
+
+def test_minimal_scene_json_uses_physical_defaults_and_pitch_shorthand():
+    compact = {
+        "coils": [
+            {
+                "geometry": {
+                    "outer_a": 0.03,
+                    "outer_b": 0.025,
+                    "turns": 0.8,
+                    "pitch": 0.0012,
+                    "conductor_width": 0.001,
+                    "conductor_thickness": 0.0008,
+                },
+                "material": {
+                    "conductivity": 5.8e7,
+                },
+            }
+        ]
+    }
+    scene = scene_from_dict(
+        compact
+    )
+    assert len(scene.coils) == 1
+    coil = scene.coils[0]
+    assert coil.name == "coil_0"
+    assert np.isclose(
+        coil.geometry.pitch_a,
+        0.0012,
+    )
+    assert np.isclose(
+        coil.geometry.pitch_b,
+        0.0012,
+    )
+    assert np.isclose(
+        coil.geometry.exponent,
+        2.0,
+    )
+    assert np.isclose(
+        coil.geometry.cross_section_exponent,
+        2.0,
+    )
+    assert np.allclose(
+        coil.geometry.pose.rotation,
+        np.eye(3),
+    )
+    assert np.allclose(
+        coil.geometry.pose.translation,
+        np.zeros(3),
+    )
+    assert np.isclose(
+        coil.material.relative_permeability,
+        1.0,
+    )
+    assert np.isclose(
+        coil.material.resistance_temperature_coefficient,
+        0.0,
+    )
+    assert np.isclose(
+        coil.material.reference_temperature,
+        293.15,
+    )
+    assert np.isclose(
+        scene.medium.relative_permittivity,
+        1.0,
+    )
+    assert np.isclose(
+        scene.medium.relative_permeability,
+        1.0,
+    )
+    assert np.isclose(
+        scene.medium.conductivity,
+        0.0,
+    )

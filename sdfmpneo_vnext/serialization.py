@@ -51,46 +51,242 @@ def scene_to_dict(scene: Scene):
 
 
 def scene_from_dict(data) -> Scene:
-    coils = []
-    for item in data["coils"]:
-        g = item["geometry"]
-        m = item["material"]
-        pose = RigidPose(
-            np.asarray(g["rotation"], dtype=float),
-            np.asarray(g["translation"], dtype=float),
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise TypeError(
+            "scene must be a dictionary"
         )
+    raw_coils = data.get(
+        "coils"
+    )
+    if not isinstance(
+        raw_coils,
+        (list, tuple),
+    ) or not raw_coils:
+        raise ValueError(
+            "scene.coils must be a non-empty list"
+        )
+
+    coils = []
+    for index, item in enumerate(
+        raw_coils
+    ):
+        if not isinstance(
+            item,
+            dict,
+        ):
+            raise TypeError(
+                f"scene.coils[{index}] must be a dictionary"
+            )
+        g = item.get(
+            "geometry",
+            {}
+        )
+        m = item.get(
+            "material",
+            {}
+        )
+        if not isinstance(
+            g,
+            dict,
+        ) or not isinstance(
+            m,
+            dict,
+        ):
+            raise TypeError(
+                "geometry and material must be dictionaries"
+            )
+
+        rotation = np.asarray(
+            g.get(
+                "rotation",
+                np.eye(3),
+            ),
+            dtype=float,
+        )
+        translation = np.asarray(
+            g.get(
+                "translation",
+                np.zeros(3),
+            ),
+            dtype=float,
+        )
+        pose = RigidPose(
+            rotation,
+            translation,
+        )
+
+        if "pitch" in g:
+            pitch_default = float(
+                g["pitch"]
+            )
+        else:
+            pitch_default = None
+        if (
+            "pitch_a" not in g
+            and pitch_default is None
+        ):
+            raise ValueError(
+                f"scene.coils[{index}].geometry requires pitch or pitch_a"
+            )
+        if (
+            "pitch_b" not in g
+            and pitch_default is None
+        ):
+            raise ValueError(
+                f"scene.coils[{index}].geometry requires pitch or pitch_b"
+            )
+        pitch_a = float(
+            g.get(
+                "pitch_a",
+                pitch_default,
+            )
+        )
+        pitch_b = float(
+            g.get(
+                "pitch_b",
+                pitch_default,
+            )
+        )
+        exponent = float(
+            g.get(
+                "exponent",
+                2.0,
+            )
+        )
+        cross_section_exponent = float(
+            g.get(
+                "cross_section_exponent",
+                exponent,
+            )
+        )
+
+        required_geometry = (
+            "outer_a",
+            "outer_b",
+            "turns",
+            "conductor_width",
+            "conductor_thickness",
+        )
+        missing_geometry = [
+            key
+            for key in required_geometry
+            if key not in g
+        ]
+        if missing_geometry:
+            raise ValueError(
+                "scene.coils["
+                + str(index)
+                + "].geometry is missing: "
+                + ", ".join(
+                    missing_geometry
+                )
+            )
+        if "conductivity" not in m:
+            raise ValueError(
+                f"scene.coils[{index}].material requires conductivity"
+            )
+
         geometry = SuperellipseSpiral(
-            g["outer_a"],
-            g["outer_b"],
-            g["turns"],
-            g["pitch_a"],
-            g["pitch_b"],
-            exponent=g["exponent"],
-            conductor_width=g["conductor_width"],
-            conductor_thickness=g["conductor_thickness"],
-            cross_section_exponent=g["cross_section_exponent"],
+            float(
+                g["outer_a"]
+            ),
+            float(
+                g["outer_b"]
+            ),
+            float(
+                g["turns"]
+            ),
+            pitch_a,
+            pitch_b,
+            exponent=exponent,
+            conductor_width=float(
+                g[
+                    "conductor_width"
+                ]
+            ),
+            conductor_thickness=float(
+                g[
+                    "conductor_thickness"
+                ]
+            ),
+            cross_section_exponent=(
+                cross_section_exponent
+            ),
             pose=pose,
         )
         material = ConductorMaterial(
-            m["conductivity"],
-            m["relative_permeability"],
-            m["resistance_temperature_coefficient"],
-            m["reference_temperature"],
+            float(
+                m["conductivity"]
+            ),
+            float(
+                m.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                m.get(
+                    "resistance_temperature_coefficient",
+                    0.0,
+                )
+            ),
+            float(
+                m.get(
+                    "reference_temperature",
+                    293.15,
+                )
+            ),
         )
         coils.append(
             CoilObject(
                 geometry,
                 material,
-                item.get("name", "coil"),
+                str(
+                    item.get(
+                        "name",
+                        f"coil_{index}",
+                    )
+                ),
             )
         )
-    md = data["medium"]
+
+    md = data.get(
+        "medium",
+        {}
+    )
+    if not isinstance(
+        md,
+        dict,
+    ):
+        raise TypeError(
+            "scene.medium must be a dictionary"
+        )
     return Scene(
-        tuple(coils),
+        tuple(
+            coils
+        ),
         HomogeneousMedium(
-            md["relative_permittivity"],
-            md["relative_permeability"],
-            md["conductivity"],
+            float(
+                md.get(
+                    "relative_permittivity",
+                    1.0,
+                )
+            ),
+            float(
+                md.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                md.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
         ),
     )
 
