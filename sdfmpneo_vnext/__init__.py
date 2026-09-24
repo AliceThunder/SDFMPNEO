@@ -81,6 +81,21 @@ from .dataset import (
 from .serialization import scene_from_dict, scene_to_dict
 from .evaluation import SurrogateAudit, audit_surrogate
 from .spatial_evaluation import SpatialSurrogateAudit, audit_spatial_surrogate
+from .active_learning import (
+    ActiveLearningCandidate,
+    ActiveLearningRound,
+    run_active_learning_round,
+    scene_regime_vector,
+    score_active_learning_candidates,
+    select_diverse_candidates,
+)
+from .uncertainty import (
+    FastErrorCalibrator,
+    CalibratedFastPrediction,
+    calibrated_fast_predict,
+    fast_error_indicator,
+    fit_fast_error_calibrator,
+)
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -159,6 +174,17 @@ __all__ = [
     "audit_surrogate",
     "SpatialSurrogateAudit",
     "audit_spatial_surrogate",
+    "ActiveLearningCandidate",
+    "ActiveLearningRound",
+    "run_active_learning_round",
+    "scene_regime_vector",
+    "score_active_learning_candidates",
+    "select_diverse_candidates",
+    "FastErrorCalibrator",
+    "CalibratedFastPrediction",
+    "calibrated_fast_predict",
+    "fast_error_indicator",
+    "fit_fast_error_calibrator",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",
