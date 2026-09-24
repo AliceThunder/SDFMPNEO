@@ -32,6 +32,9 @@ from .mixed import (
     MixedResult,
 )
 from .thermal import StableThermalModel
+from .loss import ConductorLossField
+from .certification import PortCertificate, certify_port_result
+from .convergence import ConvergenceStep, ConvergenceReport, impedance_convergence
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -63,6 +66,12 @@ __all__ = [
     "DenseMixedConductorTeacher",
     "MixedResult",
     "StableThermalModel",
+    "ConductorLossField",
+    "PortCertificate",
+    "certify_port_result",
+    "ConvergenceStep",
+    "ConvergenceReport",
+    "impedance_convergence",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",

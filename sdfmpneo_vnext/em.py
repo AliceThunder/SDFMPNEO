@@ -49,6 +49,7 @@ class MQSResult:
     constraint_matrix: np.ndarray
     port_map: np.ndarray
     segment_coils: np.ndarray
+    mode_segments: np.ndarray
 
     @property
     def n_ports(self) -> int:
@@ -76,22 +77,13 @@ class MQSResult:
 
     def segment_power(self, currents) -> np.ndarray:
         c = self.mode_current(currents)
+        modal = 0.5 * np.real(
+            np.conj(c) * (self.resistance_matrix @ c)
+        )
         out = np.zeros(len(self.segment_coils), dtype=float)
-        for s in range(len(self.segment_coils)):
-            row = self.constraint_matrix[s]
-            active = np.flatnonzero(np.abs(row) > 0)
-            if not len(active):
-                continue
-            first = active[0]
-            block = np.flatnonzero(np.abs(self.resistance_matrix[first]) > 0)
-            if not len(block):
-                continue
-            lo, hi = block.min(), block.max() + 1
-            cs = c[lo:hi]
-            out[s] = 0.5 * np.real(
-                np.vdot(cs, self.resistance_matrix[lo:hi, lo:hi] @ cs)
-            )
+        np.add.at(out, self.mode_segments, modal)
         return out
+
 
 
 class DenseMQSTeacher:
