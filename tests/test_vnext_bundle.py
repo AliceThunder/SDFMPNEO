@@ -110,6 +110,12 @@ def test_bundle_round_trip_and_calibrated_fast(tmp_path):
         "port",
         "calibrator",
     }
+    assert (
+        manifest["capabilities"]["background_medium"]
+        == "homogeneous_isotropic_unbounded"
+    )
+    assert not manifest["capabilities"]["heterogeneous_media"]
+    assert not manifest["capabilities"]["retardation"]
 
     loaded = load_bundle(
         root
@@ -302,4 +308,42 @@ def test_released_bundle_rejects_unbound_calibrator(tmp_path):
             _artifact(),
             calibrator=calibrator,
             release_gate=gate,
+        )
+
+
+
+def test_bundle_rejects_tampered_capability_domain(tmp_path):
+    root = tmp_path / "bundle-capabilities"
+    publish_bundle(
+        root,
+        _artifact(),
+    )
+    manifest_path = (
+        root
+        / "manifest.json"
+    )
+    payload = __import__("json").loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    payload[
+        "capabilities"
+    ][
+        "heterogeneous_media"
+    ] = True
+    manifest_path.write_text(
+        __import__("json").dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="capability domain",
+    ):
+        load_bundle(
+            root
         )

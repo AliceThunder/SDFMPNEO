@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -8,14 +8,17 @@ import shutil
 import tempfile
 
 from .dataset import DATASET_SCHEMA
-from .system import MeshfreeVNextSystem
+from .system import (
+    MeshfreeVNextSystem,
+    mvp_system_capabilities,
+)
 from .uncertainty import (
     FastErrorCalibrator,
     calibrated_fast_predict,
 )
 
 
-BUNDLE_SCHEMA = 2
+BUNDLE_SCHEMA = 3
 
 
 def _file_sha256(
@@ -300,6 +303,9 @@ def publish_bundle(
             "model_family": (
                 "sdfmpneo_vnext_meshfree_mvp"
             ),
+            "capabilities": asdict(
+                mvp_system_capabilities()
+            ),
             "reference_backend": "mixed",
             "dataset_schema": (
                 DATASET_SCHEMA
@@ -464,6 +470,19 @@ def load_bundle(
     elif require_release:
         raise ValueError(
             "bundle is development-only and has not passed the locked release gate"
+        )
+
+    expected_capabilities = asdict(
+        mvp_system_capabilities()
+    )
+    if (
+        manifest.get(
+            "capabilities"
+        )
+        != expected_capabilities
+    ):
+        raise ValueError(
+            "bundle capability domain is incompatible with this runtime"
         )
 
     if (

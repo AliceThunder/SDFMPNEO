@@ -82,6 +82,19 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     assert system.capabilities.reference
     assert system.capabilities.certified
     assert system.capabilities.electrothermal
+    assert (
+        system.capabilities.electromagnetic_formulation
+        == "magnetoquasistatic_current_potential_charge"
+    )
+    assert (
+        system.capabilities.background_medium
+        == "homogeneous_isotropic_unbounded"
+    )
+    assert not system.capabilities.heterogeneous_media
+    assert not system.capabilities.retardation
+    assert system.capabilities.arbitrary_se3_pose
+    assert system.capabilities.superelliptic_conductors
+    assert system.capabilities.continuous_spatial_loss
 
     fast = system.fast_ports(
         scene,

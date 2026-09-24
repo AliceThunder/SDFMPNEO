@@ -81,3 +81,22 @@ class Scene:
         object.__setattr__(self, "coils", tuple(self.coils))
         if not self.coils:
             raise ValueError("scene must contain at least one coil")
+        if not all(
+            isinstance(
+                coil,
+                CoilObject,
+            )
+            for coil in self.coils
+        ):
+            raise TypeError(
+                "scene coils must be CoilObject instances"
+            )
+        if not isinstance(
+            self.medium,
+            HomogeneousMedium,
+        ):
+            raise TypeError(
+                "vNext MVP currently supports only HomogeneousMedium; "
+                "heterogeneous electromagnetic media require the post-MVP "
+                "SIE/VIE extension"
+            )

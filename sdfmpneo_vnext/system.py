@@ -21,6 +21,35 @@ class SystemCapabilities:
     reference: bool
     certified: bool
     electrothermal: bool
+    electromagnetic_formulation: str
+    background_medium: str
+    heterogeneous_media: bool
+    retardation: bool
+    arbitrary_se3_pose: bool
+    superelliptic_conductors: bool
+    continuous_spatial_loss: bool
+
+
+def mvp_system_capabilities(
+) -> SystemCapabilities:
+    return SystemCapabilities(
+        fast_ports=True,
+        fast_spatial=True,
+        reference=True,
+        certified=True,
+        electrothermal=True,
+        electromagnetic_formulation=(
+            "magnetoquasistatic_current_potential_charge"
+        ),
+        background_medium=(
+            "homogeneous_isotropic_unbounded"
+        ),
+        heterogeneous_media=False,
+        retardation=False,
+        arbitrary_se3_pose=True,
+        superelliptic_conductors=True,
+        continuous_spatial_loss=True,
+    )
 
 
 class MeshfreeVNextSystem:
@@ -62,13 +91,7 @@ class MeshfreeVNextSystem:
     def capabilities(
         self,
     ) -> SystemCapabilities:
-        return SystemCapabilities(
-            fast_ports=True,
-            fast_spatial=True,
-            reference=True,
-            certified=True,
-            electrothermal=True,
-        )
+        return mvp_system_capabilities()
 
     def fast_ports(
         self,

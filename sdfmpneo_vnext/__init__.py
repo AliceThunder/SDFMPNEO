@@ -1,6 +1,8 @@
-"""SDF-MPNEO vNext mesh-free-first MVP.
+"""SDF-MPNEO vNext mesh-free-first electrothermal runtime.
 
-This package is intentionally independent from the legacy fixed-grid runtime.
+The vNext package is intentionally independent from the legacy fixed-grid
+runtime. Optional PyTorch-backed neural artifacts are imported lazily by their
+own modules so the physical REFERENCE/CERTIFIED stack remains NumPy/SciPy only.
 """
 
 from .geometry import (
@@ -47,20 +49,40 @@ from .thermal_field import (
     build_thermal_source_quadrature,
 )
 from .loss import ConductorLossField
-from .field import PreparedUniformLossField, UniformLossFieldDecoder
-from .reference import MixedReferenceArtifact, PreparedReferenceLossField
-from .system import MeshfreeVNextSystem, SystemCapabilities
-from .certification import PortCertificate, certify_port_result
+from .field import (
+    PreparedUniformLossField,
+    UniformLossFieldDecoder,
+)
+from .reference import (
+    MixedReferenceArtifact,
+    PreparedReferenceLossField,
+)
+from .system import (
+    MeshfreeVNextSystem,
+    SystemCapabilities,
+    mvp_system_capabilities,
+)
+from .certification import (
+    PortCertificate,
+    certify_port_result,
+)
 from .certified import (
     CertifiedPortResult,
     certify_mqs_ports,
     certify_mixed_ports,
 )
+from .certified_evaluation import (
+    CertifiedReleaseAudit,
+    audit_certified_release,
+)
 from .convergence import (
     ConvergenceStep,
     ConvergenceReport,
+    ReferenceConvergenceDirection,
+    ReferenceConvergenceReport,
     impedance_convergence,
     mixed_impedance_convergence,
+    mixed_reference_convergence,
 )
 from .electrothermal import (
     CoilThermalProperties,
@@ -81,9 +103,18 @@ from .analytic_baseline import (
     pair_mutual_inductance,
     regularized_self_inductance,
 )
-from .features import EncodedScene, encode_scene_invariant
-from .training_data import SpatialLossSamples, TeacherSample
-from .sampling import MVPSceneSamplerConfig, sample_two_coil_mvp_scene
+from .features import (
+    EncodedScene,
+    encode_scene_invariant,
+)
+from .training_data import (
+    SpatialLossSamples,
+    TeacherSample,
+)
+from .sampling import (
+    MVPSceneSamplerConfig,
+    sample_two_coil_mvp_scene,
+)
 from .dataset import (
     DATASET_SCHEMA,
     SPLITS,
@@ -92,10 +123,19 @@ from .dataset import (
     deterministic_split,
     migrate_dataset_v3_to_v4,
 )
-from .serialization import scene_from_dict, scene_to_dict
-from .evaluation import SurrogateAudit, audit_surrogate
+from .serialization import (
+    scene_from_dict,
+    scene_to_dict,
+)
+from .evaluation import (
+    SurrogateAudit,
+    audit_surrogate,
+)
 from .inference import run_system_inference
-from .spatial_evaluation import SpatialSurrogateAudit, audit_spatial_surrogate
+from .spatial_evaluation import (
+    SpatialSurrogateAudit,
+    audit_spatial_surrogate,
+)
 from .active_learning import (
     ActiveLearningCandidate,
     ActiveLearningRound,
@@ -127,6 +167,7 @@ from .benchmarks import (
     thermal_impulse_temperature,
     thermal_step_temperature,
 )
+
 
 __all__ = [
     "RigidPose",
@@ -165,6 +206,7 @@ __all__ = [
     "PreparedReferenceLossField",
     "MeshfreeVNextSystem",
     "SystemCapabilities",
+    "mvp_system_capabilities",
     "PortCertificate",
     "certify_port_result",
     "CertifiedPortResult",
@@ -172,7 +214,6 @@ __all__ = [
     "certify_mixed_ports",
     "CertifiedReleaseAudit",
     "audit_certified_release",
-    "certify_mixed_ports",
     "ConvergenceStep",
     "ConvergenceReport",
     "ReferenceConvergenceDirection",
@@ -180,7 +221,6 @@ __all__ = [
     "impedance_convergence",
     "mixed_impedance_convergence",
     "mixed_reference_convergence",
-    "mixed_impedance_convergence",
     "CoilThermalProperties",
     "ElectroThermalStep",
     "CurrentControlledEnvelope",
@@ -205,7 +245,6 @@ __all__ = [
     "DatasetRecord",
     "ImmutableTeacherDataset",
     "deterministic_split",
-    "migrate_dataset_v3_to_v4",
     "migrate_dataset_v3_to_v4",
     "scene_from_dict",
     "scene_to_dict",
