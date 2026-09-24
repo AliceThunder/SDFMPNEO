@@ -770,6 +770,9 @@ def command_predict(
     bundle = load_bundle(
         args.bundle,
         device=args.device,
+        require_release=(
+            not args.allow_development_bundle
+        ),
     )
     request = json.loads(
         args.request.read_text(
@@ -963,8 +966,8 @@ def command_release(
         port,
         spatial_artifact=spatial,
         calibrator=calibrator,
+        release_gate=gate,
         metadata={
-            "release_gate": gate,
             "release_split": "release",
             "release_samples": len(
                 release_samples
@@ -1326,6 +1329,13 @@ def build_parser():
     predict.add_argument(
         "--device",
         default="cpu",
+    )
+    predict.add_argument(
+        "--allow-development-bundle",
+        action="store_true",
+        help=(
+            "allow inference from a bundle that has not passed the locked release gate"
+        ),
     )
     predict.set_defaults(
         handler=command_predict

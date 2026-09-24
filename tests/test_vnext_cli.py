@@ -95,3 +95,4 @@ def test_predict_parser_accepts_bundle_request_and_output():
     assert str(args.request).endswith("request.json")
     assert str(args.output).endswith("result.json")
     assert args.device == "cpu"
+    assert not args.allow_development_bundle

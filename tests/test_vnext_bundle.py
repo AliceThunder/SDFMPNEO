@@ -202,3 +202,76 @@ def test_bundle_manifest_port_fingerprint_is_verified(tmp_path):
         load_bundle(
             root
         )
+
+
+
+def test_development_bundle_is_rejected_when_release_is_required(tmp_path):
+    root = tmp_path / "development"
+    manifest = publish_bundle(
+        root,
+        _artifact(),
+    )
+    assert (
+        manifest["release_status"]
+        == "development"
+    )
+    load_bundle(
+        root,
+        require_release=False,
+    )
+    with pytest.raises(
+        ValueError,
+        match="development-only",
+    ):
+        load_bundle(
+            root,
+            require_release=True,
+        )
+
+
+def test_release_bundle_requires_all_locked_audits_to_pass(tmp_path):
+    good_gate = {
+        "port": {
+            "passed": True,
+        },
+        "spatial": {
+            "passed": True,
+        },
+        "certified": {
+            "passed": True,
+        },
+    }
+    root = tmp_path / "released"
+    manifest = publish_bundle(
+        root,
+        _artifact(),
+        release_gate=good_gate,
+    )
+    assert (
+        manifest["release_status"]
+        == "released"
+    )
+    loaded = load_bundle(
+        root,
+        require_release=True,
+    )
+    assert (
+        loaded.manifest["release_gate"]
+        == good_gate
+    )
+
+    bad_gate = {
+        **good_gate,
+        "certified": {
+            "passed": False,
+        },
+    }
+    with pytest.raises(
+        ValueError,
+        match="failed audits",
+    ):
+        publish_bundle(
+            tmp_path / "bad",
+            _artifact(),
+            release_gate=bad_gate,
+        )

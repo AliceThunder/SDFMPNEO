@@ -38,6 +38,62 @@ def _file_sha256(
     return digest.hexdigest()
 
 
+def _validate_release_gate(
+    release_gate,
+):
+    if release_gate is None:
+        return None
+    if not isinstance(
+        release_gate,
+        dict,
+    ):
+        raise TypeError(
+            "release_gate must be a dictionary"
+        )
+    normalized = dict(
+        release_gate
+    )
+    required = (
+        "port",
+        "spatial",
+        "certified",
+    )
+    missing = [
+        name
+        for name
+        in required
+        if name not in normalized
+    ]
+    if missing:
+        raise ValueError(
+            "release_gate is missing required audits: "
+            + ", ".join(
+                missing
+            )
+        )
+    failed = [
+        name
+        for name
+        in required
+        if not bool(
+            normalized[
+                name
+            ].get(
+                "passed",
+                False,
+            )
+        )
+    ]
+    if failed:
+        raise ValueError(
+            "release_gate contains failed audits: "
+            + ", ".join(
+                failed
+            )
+        )
+    return normalized
+
+
 def _write_manifest(
     path: Path,
     payload,
@@ -108,8 +164,14 @@ def publish_bundle(
     spatial_artifact=None,
     calibrator: FastErrorCalibrator | None = None,
     metadata=None,
+    release_gate=None,
     overwrite: bool = False,
 ):
+    release_gate = (
+        _validate_release_gate(
+            release_gate
+        )
+    )
     output = Path(
         output
     )
@@ -241,6 +303,14 @@ def publish_bundle(
                 calibrator is not None
                 and calibrator.artifact_fingerprints
             ),
+            "release_status": (
+                "released"
+                if release_gate is not None
+                else "development"
+            ),
+            "release_gate": (
+                release_gate
+            ),
             "files": files,
             "metadata": (
                 {}
@@ -334,6 +404,7 @@ def load_bundle(
     root,
     *,
     device: str = "cpu",
+    require_release: bool = False,
 ) -> LoadedVNextBundle:
     root = Path(
         root
@@ -360,6 +431,33 @@ def load_bundle(
         raise ValueError(
             "unsupported vNext bundle schema"
         )
+    release_status = str(
+        manifest.get(
+            "release_status",
+            "development",
+        )
+    )
+    if release_status not in (
+        "development",
+        "released",
+    ):
+        raise ValueError(
+            "bundle release_status is invalid"
+        )
+    if (
+        release_status
+        == "released"
+    ):
+        _validate_release_gate(
+            manifest.get(
+                "release_gate"
+            )
+        )
+    elif require_release:
+        raise ValueError(
+            "bundle is development-only and has not passed the locked release gate"
+        )
+
     if (
         manifest.get(
             "reference_backend"
