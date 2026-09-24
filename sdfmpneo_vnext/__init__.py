@@ -138,6 +138,15 @@ from .training_data import (
     SpatialLossSamples,
     TeacherSample,
 )
+from .hybrid_training_data import (
+    HYBRID_REFERENCE_BACKEND,
+    HybridTeacherSample,
+)
+from .hybrid_dataset import (
+    HYBRID_DATASET_SCHEMA,
+    HybridDatasetRecord,
+    ImmutableHybridTeacherDataset,
+)
 from .sampling import (
     MVPSceneSamplerConfig,
     sample_two_coil_mvp_scene,
@@ -282,6 +291,11 @@ __all__ = [
     "encode_hybrid_scene_invariant",
     "SpatialLossSamples",
     "TeacherSample",
+    "HYBRID_REFERENCE_BACKEND",
+    "HybridTeacherSample",
+    "HYBRID_DATASET_SCHEMA",
+    "HybridDatasetRecord",
+    "ImmutableHybridTeacherDataset",
     "MVPSceneSamplerConfig",
     "sample_two_coil_mvp_scene",
     "DATASET_SCHEMA",
