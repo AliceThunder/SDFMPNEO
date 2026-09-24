@@ -89,6 +89,12 @@ from .active_learning import (
     score_active_learning_candidates,
     select_diverse_candidates,
 )
+from .bundle import (
+    BUNDLE_SCHEMA,
+    LoadedVNextBundle,
+    load_bundle,
+    publish_bundle,
+)
 from .uncertainty import (
     FastErrorCalibrator,
     CalibratedFastPrediction,
@@ -180,6 +186,10 @@ __all__ = [
     "scene_regime_vector",
     "score_active_learning_candidates",
     "select_diverse_candidates",
+    "BUNDLE_SCHEMA",
+    "LoadedVNextBundle",
+    "load_bundle",
+    "publish_bundle",
     "FastErrorCalibrator",
     "CalibratedFastPrediction",
     "calibrated_fast_predict",

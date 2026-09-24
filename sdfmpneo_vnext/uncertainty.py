@@ -14,6 +14,7 @@ class FastErrorCalibrator:
     scale: float
     indicator_floor: float
     validation_samples: int
+    ensemble_size: int
     baseline_weight: float
     ensemble_weight: float
 
@@ -31,6 +32,8 @@ class FastErrorCalibrator:
             or self.indicator_floor
             <= 0.0
             or self.validation_samples
+            < 1
+            or self.ensemble_size
             < 1
         ):
             raise ValueError(
@@ -232,6 +235,13 @@ def fit_fast_error_calibrator(
     baseline_weight: float = 0.5,
     ensemble_weight: float = 1.0,
 ) -> FastErrorCalibrator:
+    artifacts = tuple(
+        artifacts
+    )
+    if not artifacts:
+        raise ValueError(
+            "at least one FAST artifact is required"
+        )
     validation_samples = tuple(
         validation_samples
     )
@@ -338,6 +348,11 @@ def fit_fast_error_calibrator(
         validation_samples=len(
             validation_samples
         ),
+        ensemble_size=len(
+            tuple(
+                artifacts
+            )
+        ),
         baseline_weight=float(
             baseline_weight
         ),
@@ -355,6 +370,15 @@ def calibrated_fast_predict(
     *,
     baseline_segments: int = 64,
 ) -> CalibratedFastPrediction:
+    artifacts = tuple(
+        artifacts
+    )
+    if len(
+        artifacts
+    ) != calibrator.ensemble_size:
+        raise ValueError(
+            "artifact ensemble size does not match the fitted calibrator"
+        )
     (
         impedance,
         indicator,
