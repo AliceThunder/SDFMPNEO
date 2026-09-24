@@ -116,8 +116,8 @@ with the current basis and coupling it to
 Equation~\eqref{eq:discrete-continuity} gives the saddle/block system
 \[
  \begin{bmatrix}
-   R_c+j\omega L_A & D^\ast \Phi_\rho\\
-   D               & j\omega M_\rho
+   R_c+j\omega L_A & -D^\ast \Phi_\rho\\
+   D                & j\omega M_\rho
  \end{bmatrix}
  \begin{bmatrix}
    c\\ q
@@ -128,6 +128,11 @@ Equation~\eqref{eq:discrete-continuity} gives the saddle/block system
  \end{bmatrix}i .
  \label{eq:conductor-block}
 \]
+With the definition of $D$ above, integration by parts gives the minus
+sign in the current--potential coupling. A different signed-divergence
+convention may move that sign into $D$, but continuity and the work identity
+must be changed consistently.
+
 Here
 \[
  (R_c)_{\alpha\beta}
