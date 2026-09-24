@@ -17,6 +17,7 @@ class FastErrorCalibrator:
     ensemble_size: int
     baseline_weight: float
     ensemble_weight: float
+    artifact_fingerprints: tuple[str, ...] = ()
 
     def __post_init__(self):
         if not (
@@ -39,6 +40,36 @@ class FastErrorCalibrator:
             raise ValueError(
                 "invalid calibrator parameters"
             )
+        fingerprints = tuple(
+            str(
+                value
+            )
+            for value
+            in self.artifact_fingerprints
+        )
+        if (
+            fingerprints
+            and len(
+                fingerprints
+            )
+            != self.ensemble_size
+        ):
+            raise ValueError(
+                "artifact fingerprint count must match ensemble_size"
+            )
+        if any(
+            not value
+            for value
+            in fingerprints
+        ):
+            raise ValueError(
+                "artifact fingerprints must be non-empty"
+            )
+        object.__setattr__(
+            self,
+            "artifact_fingerprints",
+            fingerprints,
+        )
 
     def error_bound(
         self,
@@ -78,14 +109,23 @@ class FastErrorCalibrator:
     def load(
         path,
     ) -> "FastErrorCalibrator":
-        return FastErrorCalibrator(
-            **json.loads(
-                Path(
-                    path
-                ).read_text(
-                    encoding="utf-8"
-                )
+        payload = json.loads(
+            Path(
+                path
+            ).read_text(
+                encoding="utf-8"
             )
+        )
+        payload[
+            "artifact_fingerprints"
+        ] = tuple(
+            payload.get(
+                "artifact_fingerprints",
+                (),
+            )
+        )
+        return FastErrorCalibrator(
+            **payload
         )
 
 
@@ -334,6 +374,34 @@ def fit_fast_error_calibrator(
                 interpolation="higher",
             )
         )
+    fingerprint_support = [
+        hasattr(
+            artifact,
+            "fingerprint",
+        )
+        for artifact
+        in artifacts
+    ]
+    if any(
+        fingerprint_support
+    ) and not all(
+        fingerprint_support
+    ):
+        raise ValueError(
+            "calibration ensemble must be either fully fingerprinted or fully unbound"
+        )
+    artifact_fingerprints = (
+        tuple(
+            artifact.fingerprint()
+            for artifact
+            in artifacts
+        )
+        if all(
+            fingerprint_support
+        )
+        else ()
+    )
+
     return FastErrorCalibrator(
         quantile=float(
             quantile
@@ -359,6 +427,9 @@ def fit_fast_error_calibrator(
         ensemble_weight=float(
             ensemble_weight
         ),
+        artifact_fingerprints=(
+            artifact_fingerprints
+        ),
     )
 
 
@@ -379,6 +450,30 @@ def calibrated_fast_predict(
         raise ValueError(
             "artifact ensemble size does not match the fitted calibrator"
         )
+    if calibrator.artifact_fingerprints:
+        if any(
+            not hasattr(
+                artifact,
+                "fingerprint",
+            )
+            for artifact
+            in artifacts
+        ):
+            raise ValueError(
+                "calibrator requires fingerprinted artifacts"
+            )
+        actual_fingerprints = tuple(
+            artifact.fingerprint()
+            for artifact
+            in artifacts
+        )
+        if (
+            actual_fingerprints
+            != calibrator.artifact_fingerprints
+        ):
+            raise ValueError(
+                "artifact fingerprints do not match the fitted calibrator"
+            )
     (
         impedance,
         indicator,

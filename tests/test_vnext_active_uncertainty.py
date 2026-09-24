@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
@@ -210,3 +211,60 @@ def test_validation_only_error_calibrator_round_trip(tmp_path):
         2,
         2,
     )
+
+
+
+class _FingerprintArtifact(_ScaledArtifact):
+    def __init__(self, scale, fingerprint):
+        super().__init__(scale)
+        self._fingerprint = str(fingerprint)
+
+    def fingerprint(self):
+        return self._fingerprint
+
+
+def test_calibrator_binds_to_exact_artifact_fingerprints():
+    validation = (
+        _sample(
+            _scene(0.02),
+            60_000.0,
+        ),
+    )
+    artifacts = (
+        _FingerprintArtifact(
+            1.03,
+            "artifact-a",
+        ),
+    )
+    calibrator = fit_fast_error_calibrator(
+        artifacts,
+        validation,
+        quantile=0.75,
+        baseline_segments=32,
+    )
+    assert calibrator.artifact_fingerprints == (
+        "artifact-a",
+    )
+    calibrated_fast_predict(
+        artifacts,
+        calibrator,
+        _scene(0.022),
+        70_000.0,
+        baseline_segments=32,
+    )
+    with pytest.raises(
+        ValueError,
+        match="fingerprints",
+    ):
+        calibrated_fast_predict(
+            (
+                _FingerprintArtifact(
+                    1.03,
+                    "artifact-b",
+                ),
+            ),
+            calibrator,
+            _scene(0.022),
+            70_000.0,
+            baseline_segments=32,
+        )

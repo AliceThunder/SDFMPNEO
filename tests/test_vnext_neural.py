@@ -216,6 +216,10 @@ def test_zero_residual_artifact_round_trip_matches_physics_baseline(tmp_path):
     loaded = NeuralResidualArtifact.load(
         path
     )
+    assert (
+        loaded.fingerprint()
+        == artifact.fingerprint()
+    )
     assert np.allclose(
         loaded.predict(
             scene,

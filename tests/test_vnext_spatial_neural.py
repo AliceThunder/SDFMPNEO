@@ -300,3 +300,53 @@ def test_spatial_batch_query_matches_scalar_query():
         rtol=2e-6,
         atol=2e-8,
     )
+
+
+
+def test_spatial_artifact_rejects_mismatched_port_weights(tmp_path):
+    torch.manual_seed(13)
+    port = _port_artifact()
+    field_model = SpatialLossShapeNet(
+        hidden_dim=16,
+        pair_dim=15,
+        field_hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    artifact = NeuralSpatialLossArtifact(
+        port,
+        field_model,
+        longitudinal_points=6,
+        radial_order=2,
+        angular_order=8,
+    )
+    path = tmp_path / "spatial.pt"
+    artifact.save(path)
+
+    compatible = NeuralSpatialLossArtifact.load(
+        path,
+        port,
+    )
+    assert (
+        compatible.port_fingerprint
+        == port.fingerprint()
+    )
+
+    wrong_port = _port_artifact()
+    with torch.no_grad():
+        parameter = next(
+            wrong_port.model.parameters()
+        )
+        parameter.view(-1)[0] += 0.01
+    assert (
+        wrong_port.fingerprint()
+        != port.fingerprint()
+    )
+    with pytest.raises(
+        ValueError,
+        match="port fingerprint mismatch",
+    ):
+        NeuralSpatialLossArtifact.load(
+            path,
+            wrong_port,
+        )

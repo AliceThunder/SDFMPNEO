@@ -165,3 +165,40 @@ def test_bundle_detects_artifact_tampering(tmp_path):
         load_bundle(
             root
         )
+
+
+
+def test_bundle_manifest_port_fingerprint_is_verified(tmp_path):
+    root = tmp_path / "bundle"
+    port = _artifact()
+    manifest = publish_bundle(
+        root,
+        port,
+    )
+    assert (
+        manifest["port_fingerprint"]
+        == port.fingerprint()
+    )
+
+    manifest_path = root / "manifest.json"
+    payload = __import__("json").loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    payload["port_fingerprint"] = "0" * 64
+    manifest_path.write_text(
+        __import__("json").dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="port fingerprint mismatch",
+    ):
+        load_bundle(
+            root
+        )

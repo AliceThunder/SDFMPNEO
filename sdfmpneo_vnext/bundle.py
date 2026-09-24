@@ -15,7 +15,7 @@ from .uncertainty import (
 )
 
 
-BUNDLE_SCHEMA = 1
+BUNDLE_SCHEMA = 2
 
 
 def _file_sha256(
@@ -120,13 +120,46 @@ def publish_bundle(
         raise FileExistsError(
             f"bundle already exists: {output}"
         )
+    if not hasattr(
+        port_artifact,
+        "fingerprint",
+    ):
+        raise TypeError(
+            "bundle requires a fingerprinted neural port artifact"
+        )
+    port_fingerprint = (
+        port_artifact.fingerprint()
+    )
     if (
         calibrator is not None
         and calibrator.ensemble_size
         != 1
     ):
         raise ValueError(
-            "bundle v1 supports only calibrators fitted to one port artifact"
+            "bundle v2 supports only calibrators fitted to one port artifact"
+        )
+    if (
+        spatial_artifact is not None
+        and getattr(
+            spatial_artifact,
+            "port_fingerprint",
+            None,
+        )
+        != port_fingerprint
+    ):
+        raise ValueError(
+            "spatial artifact is bound to a different port artifact"
+        )
+    if (
+        calibrator is not None
+        and calibrator.artifact_fingerprints
+        and calibrator.artifact_fingerprints
+        != (
+            port_fingerprint,
+        )
+    ):
+        raise ValueError(
+            "calibrator is bound to a different port artifact"
         )
     output.parent.mkdir(
         parents=True,
@@ -200,6 +233,13 @@ def publish_bundle(
             "reference_backend": "mixed",
             "dataset_schema": (
                 DATASET_SCHEMA
+            ),
+            "port_fingerprint": (
+                port_fingerprint
+            ),
+            "calibrator_bound": bool(
+                calibrator is not None
+                and calibrator.artifact_fingerprints
             ),
             "files": files,
             "metadata": (
@@ -358,6 +398,23 @@ def load_bundle(
             device=device,
         )
     )
+    actual_port_fingerprint = (
+        port.fingerprint()
+    )
+    expected_port_fingerprint = str(
+        manifest.get(
+            "port_fingerprint",
+            "",
+        )
+    )
+    if (
+        not expected_port_fingerprint
+        or expected_port_fingerprint
+        != actual_port_fingerprint
+    ):
+        raise ValueError(
+            "bundle port fingerprint mismatch"
+        )
 
     spatial = None
     if "spatial" in files:
@@ -390,6 +447,16 @@ def load_bundle(
         ):
             raise ValueError(
                 "bundle contains a calibrator fitted to a different ensemble size"
+            )
+        if (
+            calibrator.artifact_fingerprints
+            and calibrator.artifact_fingerprints
+            != (
+                actual_port_fingerprint,
+            )
+        ):
+            raise ValueError(
+                "bundle calibrator fingerprint does not match the port artifact"
             )
 
     system = MeshfreeVNextSystem(

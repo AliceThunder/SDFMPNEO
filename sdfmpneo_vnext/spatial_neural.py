@@ -19,7 +19,7 @@ from .scene import Scene
 from .training_data import TeacherSample
 
 
-SPATIAL_ARTIFACT_SCHEMA = 1
+SPATIAL_ARTIFACT_SCHEMA = 2
 
 
 def _mlp(
@@ -859,8 +859,18 @@ class NeuralSpatialLossArtifact:
             raise TypeError(
                 "spatial neural artifact requires a neural port artifact"
             )
+        if not hasattr(
+            port_artifact,
+            "fingerprint",
+        ):
+            raise TypeError(
+                "spatial neural artifact requires a fingerprinted port artifact"
+            )
         self.port_artifact = (
             port_artifact
+        )
+        self.port_fingerprint = (
+            port_artifact.fingerprint()
         )
         self.port_artifact.model.to(
             device
@@ -1185,6 +1195,9 @@ class NeuralSpatialLossArtifact:
             "angular_order": (
                 self.angular_order
             ),
+            "port_fingerprint": (
+                self.port_fingerprint
+            ),
         }
         torch.save(
             payload,
@@ -1223,6 +1236,28 @@ class NeuralSpatialLossArtifact:
         ):
             raise ValueError(
                 "unsupported vNext spatial artifact schema"
+            )
+        expected_port_fingerprint = str(
+            payload.get(
+                "port_fingerprint",
+                "",
+            )
+        )
+        actual_port_fingerprint = (
+            port_artifact.fingerprint()
+            if hasattr(
+                port_artifact,
+                "fingerprint",
+            )
+            else ""
+        )
+        if (
+            not expected_port_fingerprint
+            or expected_port_fingerprint
+            != actual_port_fingerprint
+        ):
+            raise ValueError(
+                "spatial artifact port fingerprint mismatch"
             )
         model = SpatialLossShapeNet(
             **payload[
