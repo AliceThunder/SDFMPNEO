@@ -1,0 +1,95 @@
+\section{Complexity model and reusable physical caches}
+
+\subsection{Complexity variables}
+
+The relevant problem sizes are:
+\[
+ N_c=\text{conductor modal unknowns},\quad
+ N_s=\text{surface unknowns},\quad
+ N_v=\text{local contrast unknowns},
+\]
+\[
+ P=\text{port count},\quad
+ R_q=\text{loss-channel rank},\quad
+ R_T=\text{thermal-state rank}.
+\]
+The background volume is deliberately absent from this list.
+
+\subsection{REFERENCE electromagnetic cost}
+
+With fast kernel application,
+\[
+ N=N_c+N_s+N_v,
+\]
+and one operator application should scale approximately as
+\[
+ O(N\log N)
+\]
+or better in favorable geometries. The total solve cost is this application
+cost times the preconditioned iteration count. The research objective is to
+keep that iteration count weakly dependent on geometric scale and material
+contrast through physics-based block preconditioning.
+
+\subsection{FAST cost}
+
+The scene encoder cost scales with object/interaction graph size, while the
+structured port decode is approximately
+\[
+ O(P^3)
+\]
+for dense circuit solution and much less for small fixed $P$. Loss and
+temperature fields cost
+\[
+ O(R_q N_{\rm query})
+ \quad\text{and}\quad
+ O(R_T N_{\rm query})
+\]
+respectively, so spatial resolution is paid only when queried.
+
+\subsection{CERTIFIED cost}
+
+CERTIFIED mode reuses FAST predictions and cached physical blocks. If $m$ is
+the correction Krylov count, incremental electromagnetic cost is roughly
+\[
+ m\,C_{\rm op}(N)
+\]
+plus residual and dual evaluations. The central performance metric is therefore
+the empirical distribution of $m$, not only raw neural latency.
+
+\subsection{Intrinsic self-block cache}
+
+For a rigid conductor in a homogeneous isotropic medium, its self operator
+depends on intrinsic geometry, material, frequency, temperature, and basis
+policy but not absolute pose. Cache key:
+\[
+ K_{\rm self}
+ =
+ H(\text{intrinsic geometry},\text{material},\omega,T,\text{basis policy}).
+\]
+
+\subsection{Pair-interaction cache}
+
+Pair blocks depend on intrinsic object identities and relative pose:
+\[
+ K_{ij}
+ =
+ H(K_i,K_j,R_i^\T R_j,R_i^\T(t_j-t_i),
+   \text{environment kernel}).
+\]
+For optimization trajectories, nearby relative poses may reuse hierarchical
+interpolation or low-rank updates.
+
+\subsection{Thermal cache}
+
+Thermal intrinsic blocks and Green responses are cached by material law,
+intrinsic geometry, and thermal boundary class. Pair/interface transfer blocks
+use relative pose. Neural checkpoints and release certificates are separate
+cache layers and cannot invalidate these physical caches.
+
+\subsection{Cache correctness}
+
+Every cache hit must be verifiable by reconstructing the minimal physical
+identity. Tolerance changes may invalidate a numerical approximation level
+without invalidating a more accurate stored primitive. Caches are monotone in
+accuracy when possible: a stricter query can refine an existing entry rather
+than discard it.

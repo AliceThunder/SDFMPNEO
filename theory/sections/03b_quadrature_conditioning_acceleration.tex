@@ -1,0 +1,125 @@
+\section{Singular quadrature, conditioning, and fast application}
+\label{sec:em-numerics}
+
+A mesh-free-first integral formulation replaces global volume meshing with
+careful treatment of singular kernels, compact local bases, and fast
+long-range interactions. These numerical rules are part of the REFERENCE
+teacher definition.
+
+\subsection{Interaction classes}
+
+Every pair of source/test supports is classified as:
+\begin{enumerate}
+\item identical/self;
+\item topologically adjacent or overlapping;
+\item geometrically near but disjoint;
+\item far.
+\end{enumerate}
+Each class has a separate quadrature policy. One generic Gaussian rule is not
+permitted for all four regimes.
+
+\subsection{Self and near-singular terms}
+
+For kernels with $1/R$ or differentiated-$1/R$ singularity, the self block is
+split into
+\[
+  K=K_{\rm sing}+K_{\rm smooth}.
+\]
+$K_{\rm sing}$ is integrated analytically when possible, or by a
+singularity-removing coordinate transformation on the reference
+superellipse/surface patch. The smooth remainder is integrated with adaptive
+high-order quadrature.
+
+Near interactions use distance-aware refinement or specialized nearly singular
+quadrature. A required local estimator is
+\[
+ \eta_{\rm quad}
+ =
+ \frac{\norm{K^{(p+1)}-K^{(p)}}}
+      {\max(\norm{K^{(p+1)}},\epsilon_{\rm scale})}.
+\]
+The teacher increases quadrature order or local subdivision until the declared
+quadrature budget is met.
+
+\subsection{No fine-minus-coarse self correction}
+
+A conductor self block belongs to the same continuous operator as every other
+interaction. It is converged by basis/quadrature enrichment of that block. The
+production theory does not define a coarse global self term plus an empirical
+fine-minus-coarse correction.
+
+\subsection{Far-field acceleration}
+
+Far interactions are evaluated using one of:
+\[
+  \text{FMM},\qquad
+  \mathcal H/\mathcal H^2\text{-matrices},\qquad
+  \text{kernel interpolation / butterfly methods}.
+\]
+The acceleration tolerance $\epsilon_{\rm far}$ is separate from quadrature and
+linear-solve tolerances. The REFERENCE residual uses the same physical operator
+with a stricter or independently checked acceleration policy.
+
+\subsection{Block preconditioning}
+
+The preferred preconditioner reflects physics:
+\[
+ P^{-1}
+ \approx
+ \operatorname{blockdiag}
+ \left(
+  A_{\rm cond,self}^{-1},
+  A_{\rm surf,self}^{-1},
+  A_{\rm contrast,local}^{-1}
+ \right)
+\]
+plus optional coarse/global low-rank coupling. Conductor self inverses may be
+cached in intrinsic coordinates and reused under rigid motion in homogeneous
+backgrounds.
+
+For current--charge saddle systems, scaling is chosen so current and charge
+blocks have comparable nondimensional magnitude. Schur-complement or
+constraint preconditioners may be used, but the final residual is always
+measured in the original physical block system.
+
+\subsection{Residual norm}
+
+The algebraic residual
+\[
+ r=b-Ax
+\]
+is scaled by a block Riesz map $W$:
+\[
+ \eta_{\rm alg}
+ =
+ \frac{\sqrt{r\adj W^{-1}r}}
+      {\sqrt{b\adj W^{-1}b}}.
+\]
+$W$ is constructed from physically meaningful current, charge, surface-current,
+and contrast-current energy scales. This avoids declaring convergence merely
+because one block has numerically small units.
+
+\subsection{Convergence hierarchy}
+
+A REFERENCE electromagnetic sample is accepted only after independently
+checking:
+\[
+ \epsilon_{\rm basis},\quad
+ \epsilon_{\rm quad},\quad
+ \epsilon_{\rm far},\quad
+ \epsilon_{\rm solve}.
+\]
+Refining one knob cannot compensate for failure of another. In particular, a
+small Krylov residual does not certify an under-resolved conductor
+cross-section basis.
+
+\subsection{Complexity target}
+
+Let $N$ denote total integral unknowns. Direct dense storage and
+$O(N^2)$ application are not production targets. For geometrically regular
+scenes the intended REFERENCE operator application is approximately
+\[
+  O(N\log N)\quad\text{or}\quad O(N)
+\]
+up to accuracy-dependent constants, with memory of comparable order. The FAST
+neural path is independent of $N$.

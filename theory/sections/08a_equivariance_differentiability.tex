@@ -1,0 +1,92 @@
+\section{Equivariance, differentiability, and design gradients}
+\label{sec:differentiability}
+
+A useful surrogate should support gradient-based geometry and circuit design.
+Differentiability must therefore be considered at the level of the continuous
+scene, not added after discretization.
+
+\subsection{Rigid-motion symmetry}
+
+For a common rigid transform $g\in\SE(3)$ in an isotropic environment,
+\[
+ Z(g\cdot\mathcal S)=Z(\mathcal S).
+\]
+For a continuous vector field,
+\[
+ E_{g\cdot\mathcal S}(g\mathbf r)
+ =
+ R_gE_{\mathcal S}(\mathbf r).
+\]
+The neural architecture enforces these transformations by relative poses,
+local frames, and equivariant feature types rather than data augmentation
+alone.
+
+\subsection{Permutation symmetry}
+
+Objects of the same semantic class have no arbitrary ordering. Scene encoders
+must be permutation equivariant before global pooling. Port ordering is
+physical, however, and transforms the port matrices by the corresponding
+permutation:
+\[
+ Z'\!=P ZP^\T.
+\]
+
+\subsection{Geometry derivatives}
+
+Let $\theta$ denote continuous shape/pose/material parameters. For a linear
+integral equation
+\[
+ A(\theta)x(\theta)=b(\theta),
+\]
+the state derivative satisfies
+\[
+ A\frac{\pd x}{\pd\theta}
+ =
+ \frac{\pd b}{\pd\theta}
+ -\frac{\pd A}{\pd\theta}x.
+\]
+For a scalar objective $J(x,\theta)$, an adjoint $\lambda$ solving
+\[
+ A\adj\lambda
+ =
+ \left(\frac{\pd J}{\pd x}\right)\adj
+\]
+gives
+\[
+ \frac{\dd J}{\dd\theta}
+ =
+ \frac{\pd J}{\pd\theta}
+ +\lambda\adj
+ \left(
+  \frac{\pd b}{\pd\theta}
+  -\frac{\pd A}{\pd\theta}x
+ \right).
+\]
+Thus optimization gradients need not differentiate through every Krylov
+iteration.
+
+\subsection{Shape differentiability}
+
+Superellipse and superquadric parameters are differentiable away from
+degenerate limits. The geometry kernel exposes derivatives of coordinates,
+normals, Jacobians, and pair distances. Collision/contact topology changes are
+piecewise smooth events; optimization either enforces clearance constraints or
+uses a smooth barrier before topology changes occur.
+
+\subsection{Neural correction gradients}
+
+FAST-mode gradients are obtained directly by automatic differentiation through
+the scene encoder and structured decoders. CERTIFIED-mode gradients may combine
+the neural derivative with an adjoint correction of the physical residual.
+The correction is essential when optimization approaches the edge of the
+training distribution.
+
+\subsection{Gradient certification}
+
+A design gradient is optionally checked by:
+\begin{enumerate}
+\item adjoint residual;
+\item one or more random directional finite-difference probes;
+\item symmetry identities under rigid scene perturbations.
+\end{enumerate}
+A low prediction residual does not automatically certify a derivative.

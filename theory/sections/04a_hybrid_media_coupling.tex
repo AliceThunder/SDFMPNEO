@@ -1,0 +1,111 @@
+\section{Hybrid conductor--surface--contrast coupling}
+\label{sec:hybrid-media}
+
+\subsection{Block decomposition}
+
+Partition electromagnetic unknowns into conductor, interface, and volumetric
+contrast variables:
+\[
+ x=
+ \begin{bmatrix}
+  x_c\\x_s\\x_v
+ \end{bmatrix}.
+\]
+The coupled operator is
+\[
+ \begin{bmatrix}
+  A_{cc} & A_{cs} & A_{cv}\\
+  A_{sc} & A_{ss} & A_{sv}\\
+  A_{vc} & A_{vs} & A_{vv}
+ \end{bmatrix}
+ \begin{bmatrix}
+  x_c\\x_s\\x_v
+ \end{bmatrix}
+ =
+ \begin{bmatrix}
+  B_c\\B_s\\B_v
+ \end{bmatrix}i .
+ \label{eq:hybrid-block}
+\]
+Every off-diagonal block is a Green-operator interaction between continuous
+supports; no interpolation through a common world grid is required.
+
+\subsection{Surface-equivalence block}
+
+For piecewise homogeneous object interfaces, $x_s$ contains equivalent
+tangential electric and magnetic surface currents. A stable transmission
+formulation is selected according to constitutive contrast and frequency. The
+surface unknown count scales with interface complexity, not object volume.
+
+The implementation must check:
+\begin{enumerate}
+\item tangential-field transmission residual;
+\item jump-condition sign/orientation consistency;
+\item reciprocity under reciprocal materials;
+\item independence from the arbitrary choice of interface normal convention
+      after the corresponding unknown orientation is transformed.
+\end{enumerate}
+
+\subsection{Contrast-volume block}
+
+For an inhomogeneous region $\Omega_\Delta$, define a background constitutive
+law and contrast operator $\chi$. Schematically,
+\[
+  E=E_{\rm inc}+\mathcal G_\Delta J_\Delta,\qquad
+  J_\Delta=\chi E .
+\]
+Hence
+\[
+  (I-\chi\mathcal G_\Delta)J_\Delta
+  =
+  \chi E_{\rm inc}.
+\]
+The support of $J_\Delta$ is exactly $\Omega_\Delta$. Adaptive nodes or local
+high-order basis functions are refined according to constitutive variation and
+field residual, not according to a global Cartesian resolution.
+
+\subsection{Schur elimination}
+
+When interface or contrast unknowns are expensive but port count is small,
+Equation~\eqref{eq:hybrid-block} may be reduced by a Schur complement. For
+example, eliminating $x_s,x_v$ gives an effective conductor operator
+\[
+ A_{\rm eff}
+ =
+ A_{cc}
+ -A_{c\eta}A_{\eta\eta}^{-1}A_{\eta c},
+ \qquad
+ \eta=(s,v).
+\]
+This is useful for repeated port solves and for defining neural corrections:
+the learned model may approximate the low-rank action of the environmental
+Schur complement rather than the entire field solution.
+
+\subsection{Material passivity}
+
+For passive constitutive laws, the time-averaged dissipated power computed from
+conductor, dielectric, magnetic, and radiation channels must be non-negative.
+Each channel is evaluated independently and assembled as
+\[
+ \Herm Z
+ =
+ D_c+D_d+D_m+D_{\rm out}.
+\]
+This channel decomposition is retained in truth data and in the learned
+structured decoder. A small channel is never inferred solely by subtracting two
+large independently fitted terms.
+
+\subsection{Layered environments}
+
+For planar or otherwise analytically separable backgrounds, layered Green
+functions may replace explicit interfaces. The scene semantics remain
+unchanged: this is a backend acceleration selected by the environment kernel,
+not a different public geometry representation.
+
+\subsection{Moving objects}
+
+Rigid motion changes only geometry-dependent interaction blocks. Intrinsic self
+blocks of a rigid object in a homogeneous isotropic medium are invariant under
+common rigid motion and are cacheable. Pair blocks depend on relative pose.
+This separation is a primary mechanism for fast REFERENCE data generation over
+arbitrary poses.
