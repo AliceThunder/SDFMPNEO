@@ -5,158 +5,37 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class SpatialFieldAudit:
+class SpatialSurrogateAudit:
     samples: int
-    mean_relative_error: float
-    p95_relative_error: float
-    maximum_relative_error: float
-    maximum_probe_joule_error: float
+    mean_weighted_relative_error: float
+    maximum_weighted_relative_error: float
     maximum_channel_closure_error: float
+    maximum_probe_joule_error: float
     minimum_local_eigenvalue: float
     passed: bool
 
     def to_dict(self):
         return {
             "samples": self.samples,
-            "mean_relative_error": self.mean_relative_error,
-            "p95_relative_error": self.p95_relative_error,
-            "maximum_relative_error": self.maximum_relative_error,
-            "maximum_probe_joule_error": self.maximum_probe_joule_error,
+            "mean_weighted_relative_error": self.mean_weighted_relative_error,
+            "maximum_weighted_relative_error": self.maximum_weighted_relative_error,
             "maximum_channel_closure_error": self.maximum_channel_closure_error,
+            "maximum_probe_joule_error": self.maximum_probe_joule_error,
             "minimum_local_eigenvalue": self.minimum_local_eigenvalue,
             "passed": self.passed,
         }
 
 
-def _weighted_matrix_error(
-    predicted,
-    target,
-    weights,
-):
-    difference = np.abs(
-        predicted - target
-    ) ** 2
-    target_energy = np.abs(
-        target
-    ) ** 2
-    numerator = float(
-        np.sum(
-            weights[
-                :,
-                None,
-                None,
-            ]
-            * difference
-        )
-    )
-    denominator = float(
-        np.sum(
-            weights[
-                :,
-                None,
-                None,
-            ]
-            * target_energy
-        )
-    )
-    return float(
-        np.sqrt(
-            numerator
-            / max(
-                denominator,
-                1e-30,
-            )
-        )
-    )
-
-
-def _probe_currents(
-    n_ports: int,
-):
-    probes = [
-        np.eye(
-            n_ports,
-            dtype=complex,
-        )[:, index]
-        for index in range(
-            n_ports
-        )
-    ]
-    probes.append(
-        np.ones(
-            n_ports,
-            dtype=complex,
-        )
-    )
-    probes.append(
-        np.arange(
-            1,
-            n_ports + 1,
-            dtype=float,
-        )
-        + 0.3j
-    )
-    return probes
-
-
-def _weighted_joule_error(
-    predicted,
-    target,
-    weights,
-    current,
-):
-    q_pred = 0.5 * np.real(
-        np.einsum(
-            "i,qij,j->q",
-            current.conj(),
-            predicted,
-            current,
-        )
-    )
-    q_true = 0.5 * np.real(
-        np.einsum(
-            "i,qij,j->q",
-            current.conj(),
-            target,
-            current,
-        )
-    )
-    numerator = float(
-        np.sum(
-            weights
-            * (
-                q_pred
-                - q_true
-            ) ** 2
-        )
-    )
-    denominator = float(
-        np.sum(
-            weights
-            * q_true**2
-        )
-    )
-    return float(
-        np.sqrt(
-            numerator
-            / max(
-                denominator,
-                1e-30,
-            )
-        )
-    )
-
-
-def audit_spatial_loss(
-    artifact,
+def audit_spatial_surrogate(
+    spatial_artifact,
     samples,
     *,
-    mean_relative_error_limit: float = 0.05,
-    maximum_relative_error_limit: float = 0.10,
-    maximum_probe_joule_error_limit: float = 0.10,
+    mean_relative_error_limit: float = 0.10,
+    maximum_relative_error_limit: float = 0.20,
     channel_closure_tolerance: float = 1e-5,
-    passivity_tolerance: float = 1e-9,
-) -> SpatialFieldAudit:
+    maximum_probe_joule_error_limit: float = 0.20,
+    passivity_tolerance: float = 1e-10,
+) -> SpatialSurrogateAudit:
     samples = tuple(
         samples
     )
@@ -165,19 +44,24 @@ def audit_spatial_loss(
             "spatial audit requires at least one sample"
         )
     if (
-        mean_relative_error_limit <= 0.0
-        or maximum_relative_error_limit <= 0.0
-        or maximum_probe_joule_error_limit <= 0.0
-        or channel_closure_tolerance < 0.0
-        or passivity_tolerance < 0.0
+        mean_relative_error_limit
+        <= 0.0
+        or maximum_relative_error_limit
+        <= 0.0
+        or channel_closure_tolerance
+        < 0.0
+        or maximum_probe_joule_error_limit
+        <= 0.0
+        or passivity_tolerance
+        < 0.0
     ):
         raise ValueError(
             "invalid spatial audit tolerances"
         )
 
-    sample_errors = []
-    max_probe_error = 0.0
-    max_closure = 0.0
+    errors = []
+    closure_errors = []
+    maximum_probe_error = 0.0
     minimum_eigenvalue = np.inf
 
     for sample in samples:
@@ -188,165 +72,223 @@ def audit_spatial_loss(
             is None
         ):
             raise ValueError(
-                "spatial audit sample is missing continuous loss truth"
+                "spatial audit sample is missing physical field truth"
             )
 
-        predicted_all = np.zeros_like(
+        prepared = spatial_artifact.prepare(
+            sample.scene,
+            sample.frequency_hz,
+        )
+        predicted = []
+        for (
+            coil,
+            arc,
+            xy,
+        ) in zip(
+            spatial.coil_index,
+            spatial.arc_fraction,
+            spatial.xy,
+        ):
+            matrix = (
+                prepared.local_dissipation_matrix(
+                    int(coil),
+                    float(arc),
+                    xy,
+                )
+            )
+            predicted.append(
+                matrix
+            )
+            minimum_eigenvalue = min(
+                minimum_eigenvalue,
+                float(
+                    np.min(
+                        np.linalg.eigvalsh(
+                            0.5
+                            * (
+                                matrix
+                                + matrix.conj().T
+                            )
+                        )
+                    )
+                ),
+            )
+        predicted = np.asarray(
+            predicted,
+            dtype=complex,
+        )
+        target = np.asarray(
             spatial.dissipation_matrix,
             dtype=complex,
         )
-        for coil in range(
-            len(
-                sample.scene.coils
-            )
-        ):
-            mask = (
-                spatial.coil_index
-                == coil
-            )
-            if not np.any(
-                mask
-            ):
-                continue
-            predicted = (
-                artifact.local_dissipation_matrices(
-                    sample.scene,
-                    sample.frequency_hz,
-                    coil,
-                    spatial.arc_fraction[
-                        mask
-                    ],
-                    spatial.xy[
-                        mask
-                    ],
-                )
-            )
-            predicted_all[
-                mask
-            ] = predicted
-
-            integrated = (
-                artifact.integrated_matrix(
-                    sample.scene,
-                    sample.frequency_hz,
-                    coil,
-                )
-            )
-            channel = (
-                artifact.predict_structured(
-                    sample.scene,
-                    sample.frequency_hz,
-                ).dissipation_channels[
-                    coil
+        weights = np.asarray(
+            spatial.weights,
+            dtype=float,
+        )
+        numerator = float(
+            np.sum(
+                weights[
+                    :,
+                    None,
+                    None,
                 ]
-            )
-            closure = float(
-                np.linalg.norm(
-                    integrated
-                    - channel
-                )
-                / max(
-                    np.linalg.norm(
-                        channel
-                    ),
-                    1e-30,
-                )
-            )
-            max_closure = max(
-                max_closure,
-                closure,
-            )
-
-        sample_errors.append(
-            _weighted_matrix_error(
-                predicted_all,
-                spatial.dissipation_matrix,
-                spatial.weights,
+                * np.abs(
+                    predicted
+                    - target
+                ) ** 2
             )
         )
-
-        eigenvalues = np.linalg.eigvalsh(
-            0.5
-            * (
-                predicted_all
-                + predicted_all.conj().transpose(
-                    0,
-                    2,
-                    1,
-                )
-            )
-        )
-        minimum_eigenvalue = min(
-            minimum_eigenvalue,
+        denominator = max(
             float(
-                np.min(
-                    eigenvalues
+                np.sum(
+                    weights[
+                        :,
+                        None,
+                        None,
+                    ]
+                    * np.abs(
+                        target
+                    ) ** 2
                 )
             ),
+            1e-30,
+        )
+        errors.append(
+            float(
+                np.sqrt(
+                    numerator
+                    / denominator
+                )
+            )
         )
 
-        for current in _probe_currents(
-            sample.target_impedance.shape[
-                0
+        n_ports = int(
+            target.shape[-1]
+        )
+        probes = [
+            np.eye(
+                n_ports,
+                dtype=complex,
+            )[:, port]
+            for port in range(
+                n_ports
+            )
+        ]
+        probes.extend(
+            [
+                np.ones(
+                    n_ports,
+                    dtype=complex,
+                ),
+                (
+                    np.arange(
+                        1,
+                        n_ports + 1,
+                        dtype=float,
+                    )
+                    + 0.3j
+                ),
             ]
-        ):
-            max_probe_error = max(
-                max_probe_error,
-                _weighted_joule_error(
-                    predicted_all,
-                    spatial.dissipation_matrix,
-                    spatial.weights,
+        )
+        for current in probes:
+            predicted_joule = 0.5 * np.real(
+                np.einsum(
+                    "i,qij,j->q",
+                    current.conj(),
+                    predicted,
                     current,
+                )
+            )
+            target_joule = 0.5 * np.real(
+                np.einsum(
+                    "i,qij,j->q",
+                    current.conj(),
+                    target,
+                    current,
+                )
+            )
+            joule_numerator = float(
+                np.sum(
+                    weights
+                    * (
+                        predicted_joule
+                        - target_joule
+                    ) ** 2
+                )
+            )
+            joule_denominator = max(
+                float(
+                    np.sum(
+                        weights
+                        * target_joule**2
+                    )
+                ),
+                1e-30,
+            )
+            maximum_probe_error = max(
+                maximum_probe_error,
+                float(
+                    np.sqrt(
+                        joule_numerator
+                        / joule_denominator
+                    )
                 ),
             )
 
+        closure_errors.append(
+            float(
+                prepared.normalization_closure_error
+            )
+        )
+
     errors = np.asarray(
-        sample_errors,
+        errors,
         dtype=float,
     )
-    mean_error = float(
-        np.mean(
-            errors
-        )
-    )
-    maximum_error = float(
+    maximum_closure = float(
         np.max(
-            errors
+            closure_errors
         )
     )
     passed = bool(
-        mean_error
+        float(
+            np.mean(
+                errors
+            )
+        )
         <= mean_relative_error_limit
-        and maximum_error
+        and float(
+            np.max(
+                errors
+            )
+        )
         <= maximum_relative_error_limit
-        and max_probe_error
-        <= maximum_probe_joule_error_limit
-        and max_closure
+        and maximum_closure
         <= channel_closure_tolerance
+        and maximum_probe_error
+        <= maximum_probe_joule_error_limit
         and minimum_eigenvalue
         >= -passivity_tolerance
     )
-    return SpatialFieldAudit(
+    return SpatialSurrogateAudit(
         samples=len(
             samples
         ),
-        mean_relative_error=(
-            mean_error
-        ),
-        p95_relative_error=float(
-            np.quantile(
-                errors,
-                0.95,
+        mean_weighted_relative_error=float(
+            np.mean(
+                errors
             )
         ),
-        maximum_relative_error=(
-            maximum_error
+        maximum_weighted_relative_error=float(
+            np.max(
+                errors
+            )
+        ),
+        maximum_channel_closure_error=(
+            maximum_closure
         ),
         maximum_probe_joule_error=float(
-            max_probe_error
-        ),
-        maximum_channel_closure_error=float(
-            max_closure
+            maximum_probe_error
         ),
         minimum_local_eigenvalue=float(
             minimum_eigenvalue

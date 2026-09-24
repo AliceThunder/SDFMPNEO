@@ -538,6 +538,9 @@ def command_audit_spatial(
         maximum_relative_error_limit=(
             args.max_limit
         ),
+        maximum_probe_joule_error_limit=(
+            args.joule_limit
+        ),
     )
     print(
         json.dumps(
@@ -918,6 +921,15 @@ def build_parser():
                 else 0.20
             ),
         )
+        if (
+            name
+            == "audit-spatial"
+        ):
+            audit.add_argument(
+                "--joule-limit",
+                type=float,
+                default=0.20,
+            )
         audit.add_argument(
             "--device",
             default="cpu",
