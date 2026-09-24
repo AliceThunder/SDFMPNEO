@@ -467,9 +467,6 @@ def _validation_error(
     device: str,
 ) -> float:
     samples = tuple(samples)
-    validation_samples = tuple(
-        validation_samples
-    )
     if not samples:
         raise ValueError(
             "validation samples are empty"
@@ -646,6 +643,9 @@ def train_residual_surrogate(
     device: str = "cpu",
 ):
     samples = tuple(samples)
+    validation_samples = tuple(
+        validation_samples
+    )
     if not samples:
         raise ValueError(
             "at least one teacher sample is required"

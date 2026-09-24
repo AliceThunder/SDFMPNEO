@@ -238,7 +238,20 @@ class DenseMQSTeacher:
         coeff = sol[:m]
         lam = sol[m:]
         Z = B.T @ lam
-        segment_coils = np.array([s.coil for s in self._segments], dtype=int)
+        segment_coils = np.array(
+            [s.coil for s in self._segments],
+            dtype=int,
+        )
+        mode_segments = np.empty(
+            self._n_modes,
+            dtype=int,
+        )
+        for segment_index, segment in enumerate(
+            self._segments
+        ):
+            mode_segments[
+                segment.mode_slice
+            ] = segment_index
         return MQSResult(
             Z,
             coeff,
@@ -248,4 +261,5 @@ class DenseMQSTeacher:
             C,
             B,
             segment_coils,
+            mode_segments,
         )
