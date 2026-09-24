@@ -49,6 +49,16 @@ from .analytic_baseline import (
     regularized_self_inductance,
 )
 from .features import EncodedScene, encode_scene_invariant
+from .training_data import TeacherSample
+from .sampling import MVPSceneSamplerConfig, sample_two_coil_mvp_scene
+from .dataset import (
+    DATASET_SCHEMA,
+    SPLITS,
+    DatasetRecord,
+    ImmutableTeacherDataset,
+    deterministic_split,
+)
+from .serialization import scene_from_dict, scene_to_dict
 from .benchmarks import (
     MU0,
     coaxial_circular_mutual_inductance,
@@ -97,6 +107,16 @@ __all__ = [
     "regularized_self_inductance",
     "EncodedScene",
     "encode_scene_invariant",
+    "TeacherSample",
+    "MVPSceneSamplerConfig",
+    "sample_two_coil_mvp_scene",
+    "DATASET_SCHEMA",
+    "SPLITS",
+    "DatasetRecord",
+    "ImmutableTeacherDataset",
+    "deterministic_split",
+    "scene_from_dict",
+    "scene_to_dict",
     "MU0",
     "coaxial_circular_mutual_inductance",
     "dc_resistance",
