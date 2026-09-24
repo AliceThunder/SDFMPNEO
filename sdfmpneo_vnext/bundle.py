@@ -223,6 +223,14 @@ def publish_bundle(
         raise ValueError(
             "calibrator is bound to a different port artifact"
         )
+    if (
+        release_gate is not None
+        and calibrator is not None
+        and not calibrator.artifact_fingerprints
+    ):
+        raise ValueError(
+            "released bundle requires a calibrator bound to the exact port artifact"
+        )
     output.parent.mkdir(
         parents=True,
         exist_ok=True,

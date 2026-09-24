@@ -275,3 +275,31 @@ def test_release_bundle_requires_all_locked_audits_to_pass(tmp_path):
             _artifact(),
             release_gate=bad_gate,
         )
+
+
+
+def test_released_bundle_rejects_unbound_calibrator(tmp_path):
+    gate = {
+        "port": {"passed": True},
+        "spatial": {"passed": True},
+        "certified": {"passed": True},
+    }
+    calibrator = FastErrorCalibrator(
+        quantile=0.95,
+        scale=1.0,
+        indicator_floor=1e-3,
+        validation_samples=4,
+        ensemble_size=1,
+        baseline_weight=0.5,
+        ensemble_weight=0.0,
+    )
+    with pytest.raises(
+        ValueError,
+        match="requires a calibrator bound",
+    ):
+        publish_bundle(
+            tmp_path / "released",
+            _artifact(),
+            calibrator=calibrator,
+            release_gate=gate,
+        )
