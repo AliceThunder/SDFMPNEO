@@ -303,3 +303,75 @@ def test_superquadric_surface_quadrature_is_rigid_motion_equivariant():
         rtol=2e-13,
         atol=2e-15,
     )
+
+
+
+def test_superquadric_volume_quadrature_recovers_exact_volume():
+    geometry = SuperquadricPackageGeometry(
+        np.array(
+            [0.04, 0.03, 0.02]
+        ),
+        exponent_xy=4.0,
+        exponent_z=3.0,
+    )
+    quadrature = geometry.volume_quadrature(
+        axial_order=18,
+        radial_order=8,
+        azimuthal_order=96,
+    )
+    assert np.isclose(
+        quadrature.volume,
+        geometry.volume,
+        rtol=2e-4,
+    )
+    assert np.all(
+        geometry.contains(
+            quadrature.positions,
+            tolerance=3e-12,
+        )
+    )
+
+
+def test_superquadric_volume_quadrature_is_rigid_motion_equivariant():
+    geometry = SuperquadricPackageGeometry(
+        np.array(
+            [0.035, 0.027, 0.018]
+        ),
+        exponent_xy=3.0,
+        exponent_z=4.0,
+    )
+    reference = geometry.volume_quadrature(
+        axial_order=8,
+        radial_order=5,
+        azimuthal_order=24,
+    )
+    rng = np.random.default_rng(
+        207
+    )
+    pose = RigidPose(
+        haar_rotation(rng),
+        np.array(
+            [0.12, -0.08, 0.19]
+        ),
+    )
+    moved = geometry.transformed(
+        pose
+    ).volume_quadrature(
+        axial_order=8,
+        radial_order=5,
+        azimuthal_order=24,
+    )
+    assert np.allclose(
+        moved.positions,
+        pose.apply(
+            reference.positions
+        ),
+        rtol=0,
+        atol=4e-13,
+    )
+    assert np.allclose(
+        moved.weights,
+        reference.weights,
+        rtol=2e-13,
+        atol=2e-15,
+    )

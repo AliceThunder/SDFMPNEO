@@ -16,6 +16,11 @@ from .package_geometry import (
     SuperquadricPackageGeometry,
     SuperquadricSurfaceQuadrature,
 )
+from .package_geometry import (
+    SuperquadricPackageGeometry,
+    SuperquadricSurfaceQuadrature,
+    SuperquadricVolumeQuadrature,
+)
 from .scene import (
     ConductorMaterial,
     HomogeneousMedium,
@@ -181,6 +186,9 @@ from .benchmarks import (
 
 __all__ = [
     "RigidPose",
+    "SuperquadricPackageGeometry",
+    "SuperquadricSurfaceQuadrature",
+    "SuperquadricVolumeQuadrature",
     "SuperellipseSpiral",
     "PolylineConductor",
     "bishop_segment_frames",

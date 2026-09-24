@@ -42,6 +42,52 @@ def _signed_power(
 
 
 @dataclass(frozen=True)
+class SuperquadricVolumeQuadrature:
+    positions: np.ndarray
+    weights: np.ndarray
+    local_positions: np.ndarray
+
+    def __post_init__(self):
+        positions = np.asarray(
+            self.positions,
+            dtype=float,
+        )
+        weights = np.asarray(
+            self.weights,
+            dtype=float,
+        )
+        local_positions = np.asarray(
+            self.local_positions,
+            dtype=float,
+        )
+        n = len(weights)
+        if (
+            positions.shape != (n, 3)
+            or local_positions.shape != (n, 3)
+            or np.any(~np.isfinite(positions))
+            or np.any(~np.isfinite(local_positions))
+            or np.any(~np.isfinite(weights))
+            or np.any(weights <= 0.0)
+        ):
+            raise ValueError(
+                "volume quadrature arrays must be finite and shape-compatible"
+            )
+        object.__setattr__(self, "positions", positions)
+        object.__setattr__(self, "weights", weights)
+        object.__setattr__(
+            self,
+            "local_positions",
+            local_positions,
+        )
+
+    @property
+    def volume(self) -> float:
+        return float(
+            np.sum(self.weights)
+        )
+
+
+@dataclass(frozen=True)
 class SuperquadricSurfaceQuadrature:
     positions: np.ndarray
     normals: np.ndarray
@@ -692,6 +738,152 @@ class SuperquadricPackageGeometry:
             ww.reshape(
                 -1
             ),
+        )
+
+    def volume_quadrature(
+        self,
+        axial_order: int = 12,
+        radial_order: int = 8,
+        azimuthal_order: int = 32,
+    ) -> SuperquadricVolumeQuadrature:
+        if (
+            axial_order < 2
+            or radial_order < 2
+            or azimuthal_order < 8
+        ):
+            raise ValueError(
+                "volume quadrature orders are too small"
+            )
+
+        uz, wz = np.polynomial.legendre.leggauss(
+            axial_order
+        )
+        rr_raw, wr_raw = np.polynomial.legendre.leggauss(
+            radial_order
+        )
+        rr = 0.5 * (
+            rr_raw + 1.0
+        )
+        wr = 0.5 * wr_raw
+        theta = (
+            np.arange(
+                azimuthal_order
+            )
+            + 0.5
+        ) * (
+            2.0
+            * np.pi
+            / azimuthal_order
+        )
+        wt = (
+            2.0
+            * np.pi
+            / azimuthal_order
+        )
+
+        a, b, c_axis = self.half_extents
+        p = float(
+            self.exponent_xy
+        )
+        q = float(
+            self.exponent_z
+        )
+
+        ct = np.cos(theta)
+        st = np.sin(theta)
+        radial_boundary = (
+            (
+                np.abs(ct) / a
+            ) ** p
+            + (
+                np.abs(st) / b
+            ) ** p
+        ) ** (
+            -1.0 / p
+        )
+
+        local = []
+        weights = []
+        for u, wu in zip(
+            uz,
+            wz,
+        ):
+            scale_xy = (
+                max(
+                    1.0
+                    - abs(float(u)) ** q,
+                    0.0,
+                )
+                ** (
+                    1.0 / q
+                )
+            )
+            if scale_xy <= 0.0:
+                continue
+            rho, angle = np.meshgrid(
+                rr,
+                theta,
+                indexing="ij",
+            )
+            wr_grid, rb_grid = np.meshgrid(
+                wr,
+                radial_boundary,
+                indexing="ij",
+            )
+            x = (
+                scale_xy
+                * rho
+                * rb_grid
+                * np.cos(angle)
+            )
+            y = (
+                scale_xy
+                * rho
+                * rb_grid
+                * np.sin(angle)
+            )
+            z = np.full_like(
+                x,
+                c_axis * u,
+            )
+            local.append(
+                np.stack(
+                    (
+                        x.ravel(),
+                        y.ravel(),
+                        z.ravel(),
+                    ),
+                    axis=1,
+                )
+            )
+            jacobian_xy = (
+                scale_xy**2
+                * rho
+                * rb_grid**2
+            )
+            weights.append(
+                (
+                    c_axis
+                    * wu
+                    * wt
+                    * wr_grid
+                    * jacobian_xy
+                ).ravel()
+            )
+
+        local_positions = np.concatenate(
+            local,
+            axis=0,
+        )
+        volume_weights = np.concatenate(
+            weights
+        )
+        return SuperquadricVolumeQuadrature(
+            self.local_to_world(
+                local_positions
+            ),
+            volume_weights,
+            local_positions,
         )
 
     def transformed(
