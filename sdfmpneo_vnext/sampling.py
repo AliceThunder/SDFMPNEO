@@ -4,10 +4,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from .geometry import RigidPose, SuperellipseSpiral, haar_rotation
+from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
+    IsotropicMaterial,
+    PackageObject,
     Scene,
 )
 
@@ -178,3 +181,169 @@ def sample_two_coil_mvp_scene(
         config.frequency_range,
     )
     return scene, frequency
+
+
+
+@dataclass(frozen=True)
+class HybridSceneSamplerConfig:
+    conductor: MVPSceneSamplerConfig = MVPSceneSamplerConfig()
+    package_margin_range: tuple[float, float] = (1.35, 2.0)
+    package_half_z_range: tuple[float, float] = (0.004, 0.012)
+    package_exponent_xy_range: tuple[float, float] = (2.0, 5.0)
+    package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
+    relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
+    dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
+    lossless_probability: float = 0.20
+
+    def __post_init__(self):
+        for name in (
+            "package_margin_range",
+            "package_half_z_range",
+            "package_exponent_xy_range",
+            "package_exponent_z_range",
+            "relative_permittivity_range",
+            "dielectric_conductivity_range",
+        ):
+            lo, hi = getattr(
+                self,
+                name,
+            )
+            if not (
+                np.isfinite(
+                    lo
+                )
+                and np.isfinite(
+                    hi
+                )
+                and 0.0
+                < lo
+                < hi
+            ):
+                raise ValueError(
+                    f"{name} must be a positive finite increasing pair"
+                )
+        if not (
+            0.0
+            <= self.lossless_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "lossless_probability must lie in [0,1]"
+            )
+
+
+def sample_hybrid_package_scene(
+    rng: np.random.Generator,
+    config: HybridSceneSamplerConfig | None = None,
+):
+    """Sample the first supported dielectric-package training domain.
+
+    The package is centered on the primary coil and may rotate freely about the
+    primary coil normal. This preserves guaranteed enclosure while exercising
+    nontrivial relative superquadric orientation. Common global SE(3) motion is
+    an exact symmetry and is tested separately rather than wasting teacher
+    solves on duplicate scenes.
+    """
+    config = (
+        config
+        or HybridSceneSamplerConfig()
+    )
+    base_scene, frequency = (
+        sample_two_coil_mvp_scene(
+            rng,
+            config.conductor,
+        )
+    )
+    root = base_scene.coils[
+        0
+    ].geometry
+    margin = _uniform(
+        rng,
+        config.package_margin_range,
+    )
+    half_extents = np.asarray(
+        [
+            margin
+            * (
+                root.outer_a
+                + 0.5
+                * root.conductor_width
+            ),
+            margin
+            * (
+                root.outer_b
+                + 0.5
+                * root.conductor_width
+            ),
+            _uniform(
+                rng,
+                config.package_half_z_range,
+            ),
+        ],
+        dtype=float,
+    )
+    twist = float(
+        rng.uniform(
+            -np.pi,
+            np.pi,
+        )
+    )
+    package_pose = RigidPose.from_axis_angle(
+        (
+            0.0,
+            0.0,
+            1.0,
+        ),
+        twist,
+    )
+    package_geometry = (
+        SuperquadricPackageGeometry(
+            half_extents,
+            exponent_xy=_uniform(
+                rng,
+                config.package_exponent_xy_range,
+            ),
+            exponent_z=_uniform(
+                rng,
+                config.package_exponent_z_range,
+            ),
+            pose=package_pose,
+        )
+    )
+    epsilon_r = _uniform(
+        rng,
+        config.relative_permittivity_range,
+    )
+    if (
+        rng.random()
+        < config.lossless_probability
+    ):
+        conductivity = 0.0
+    else:
+        conductivity = _log_uniform(
+            rng,
+            config.dielectric_conductivity_range,
+        )
+    package = PackageObject(
+        package_geometry,
+        IsotropicMaterial(
+            relative_permittivity=(
+                epsilon_r
+            ),
+            conductivity=(
+                conductivity
+            ),
+        ),
+        "package",
+    )
+    scene = Scene(
+        base_scene.coils,
+        base_scene.medium,
+        (
+            package,
+        ),
+    )
+    return (
+        scene,
+        frequency,
+    )

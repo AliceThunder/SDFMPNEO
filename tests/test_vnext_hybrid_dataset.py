@@ -7,6 +7,8 @@ from sdfmpneo_vnext import (
     HomogeneousMedium,
     HybridTeacherSample,
     ImmutableHybridTeacherDataset,
+    PackageSpatialLossSamples,
+    SpatialLossSamples,
     IsotropicMaterial,
     MQSConfig,
     PackageObject,
@@ -108,6 +110,46 @@ def _manual_sample():
         ],
         dtype=complex,
     )
+    conductor_spatial = SpatialLossSamples(
+        np.asarray(
+            [0],
+            dtype=int,
+        ),
+        np.asarray(
+            [0.5],
+            dtype=float,
+        ),
+        np.asarray(
+            [[0.0, 0.0]],
+            dtype=float,
+        ),
+        np.asarray(
+            [1.0],
+            dtype=float,
+        ),
+        np.asarray(
+            [channels[0]],
+            dtype=complex,
+        ),
+    )
+    package_spatial = PackageSpatialLossSamples(
+        np.asarray(
+            [0],
+            dtype=int,
+        ),
+        np.asarray(
+            [[0.0, 0.0, 0.0]],
+            dtype=float,
+        ),
+        np.asarray(
+            [1.0],
+            dtype=float,
+        ),
+        np.asarray(
+            [channels[1]],
+            dtype=complex,
+        ),
+    )
     return HybridTeacherSample(
         scene=scene,
         frequency_hz=frequency,
@@ -130,6 +172,15 @@ def _manual_sample():
         surface_residual=0.0,
         raw_potential_reciprocity_defect=0.0,
         power_closure_error=0.0,
+        conductor_spatial_loss=(
+            conductor_spatial
+        ),
+        package_spatial_loss=(
+            package_spatial
+        ),
+        package_volume_axial_order=2,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
     )
 
 
@@ -189,6 +240,19 @@ def test_hybrid_dataset_round_trip_is_content_addressed(tmp_path):
         loaded.target_dissipation_channels,
         sample.target_dissipation_channels,
     )
+    assert loaded.has_spatial_truth
+    assert np.allclose(
+        loaded.conductor_spatial_loss.dissipation_matrix,
+        sample.conductor_spatial_loss.dissipation_matrix,
+    )
+    assert np.allclose(
+        loaded.package_spatial_loss.local_position,
+        sample.package_spatial_loss.local_position,
+    )
+    assert np.allclose(
+        loaded.package_spatial_loss.dissipation_matrix,
+        sample.package_spatial_loss.dissipation_matrix,
+    )
 
 
 def test_hybrid_active_learning_can_only_append_to_train(tmp_path):
@@ -220,6 +284,11 @@ def test_hybrid_teacher_generation_uses_coupled_reference_and_extra_loss_channel
         baseline_segments=24,
         surface_vertical_order=6,
         surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        maximum_raw_spatial_closure_error=5.0,
     )
     assert sample.target_impedance.shape == (
         1,
@@ -240,4 +309,42 @@ def test_hybrid_teacher_generation_uses_coupled_reference_and_extra_loss_channel
     assert (
         sample.surface_residual
         < 1e-10
+    )
+    assert sample.has_spatial_truth
+    conductor_integrated = (
+        sample.conductor_spatial_loss.integrated_channels(
+            len(
+                sample.scene.coils
+            )
+        )
+    )
+    package_integrated = (
+        sample.package_spatial_loss.integrated_packages(
+            len(
+                sample.scene.packages
+            )
+        )
+    )
+    assert np.allclose(
+        conductor_integrated,
+        sample.target_dissipation_channels[
+            : len(
+                sample.scene.coils
+            )
+        ],
+        rtol=2e-6,
+        atol=2e-10,
+    )
+    assert np.allclose(
+        np.sum(
+            package_integrated,
+            axis=0,
+        ),
+        sample.target_dissipation_channels[
+            len(
+                sample.scene.coils
+            )
+        ],
+        rtol=2e-6,
+        atol=2e-10,
     )

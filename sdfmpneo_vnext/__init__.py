@@ -115,6 +115,16 @@ from .hybrid_dielectric import (
     DielectricCoupledResult,
     DielectricCoupledReferenceArtifact,
 )
+from .hybrid_field import (
+    PreparedHybridReferenceLossField,
+    prepare_hybrid_reference_loss_field,
+)
+from .hybrid_certified import certify_dielectric_ports
+from .hybrid_convergence import (
+    HybridReferenceConvergenceDirection,
+    HybridReferenceConvergenceReport,
+    hybrid_reference_convergence,
+)
 from .fast import (
     FastCurrentControlledEnvelope,
     FastVoltageControlledEnvelope,
@@ -141,6 +151,7 @@ from .training_data import (
 from .hybrid_training_data import (
     HYBRID_REFERENCE_BACKEND,
     HybridTeacherSample,
+    PackageSpatialLossSamples,
 )
 from .hybrid_dataset import (
     HYBRID_DATASET_SCHEMA,
@@ -149,7 +160,9 @@ from .hybrid_dataset import (
 )
 from .sampling import (
     MVPSceneSamplerConfig,
+    HybridSceneSamplerConfig,
     sample_two_coil_mvp_scene,
+    sample_hybrid_package_scene,
 )
 from .dataset import (
     DATASET_SCHEMA,
@@ -299,11 +312,14 @@ __all__ = [
     "TeacherSample",
     "HYBRID_REFERENCE_BACKEND",
     "HybridTeacherSample",
+    "PackageSpatialLossSamples",
     "HYBRID_DATASET_SCHEMA",
     "HybridDatasetRecord",
     "ImmutableHybridTeacherDataset",
     "MVPSceneSamplerConfig",
+    "HybridSceneSamplerConfig",
     "sample_two_coil_mvp_scene",
+    "sample_hybrid_package_scene",
     "DATASET_SCHEMA",
     "SPLITS",
     "DatasetRecord",

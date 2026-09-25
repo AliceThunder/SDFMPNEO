@@ -15,7 +15,9 @@ from .hybrid_features import EncodedHybridScene
 from .hybrid_training_data import (
     HYBRID_REFERENCE_BACKEND,
     HybridTeacherSample,
+    PackageSpatialLossSamples,
 )
+from .training_data import SpatialLossSamples
 from .serialization import (
     canonical_json,
     content_hash,
@@ -24,7 +26,11 @@ from .serialization import (
 )
 
 
-HYBRID_DATASET_SCHEMA = 1
+HYBRID_DATASET_SCHEMA = 2
+_HYBRID_DATASET_READ_SCHEMAS = (
+    1,
+    HYBRID_DATASET_SCHEMA,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,9 @@ class HybridDatasetRecord:
     scene: dict
     teacher_config: dict
     reference_backend: str
+    package_volume_axial_order: int = 0
+    package_volume_radial_order: int = 0
+    package_volume_azimuthal_order: int = 0
 
 
 class ImmutableHybridTeacherDataset:
@@ -69,11 +78,15 @@ class ImmutableHybridTeacherDataset:
                 encoding="utf-8"
             )
         )
-        if (
+        self.schema = int(
             self._manifest.get(
-                "schema"
+                "schema",
+                -1,
             )
-            != HYBRID_DATASET_SCHEMA
+        )
+        if (
+            self.schema
+            not in _HYBRID_DATASET_READ_SCHEMAS
         ):
             raise ValueError(
                 "unsupported hybrid dataset schema"
@@ -267,6 +280,15 @@ class ImmutableHybridTeacherDataset:
             "surface_azimuthal_order": int(
                 sample.surface_azimuthal_order
             ),
+            "package_volume_axial_order": int(
+                sample.package_volume_axial_order
+            ),
+            "package_volume_radial_order": int(
+                sample.package_volume_radial_order
+            ),
+            "package_volume_azimuthal_order": int(
+                sample.package_volume_azimuthal_order
+            ),
             "teacher_config": (
                 teacher_dict
             ),
@@ -274,7 +296,7 @@ class ImmutableHybridTeacherDataset:
                 HYBRID_REFERENCE_BACKEND
             ),
             "output_schema": (
-                "hybrid_port_impedance_and_loss_channels_v1"
+                "hybrid_port_channels_and_spatial_v2"
             ),
         }
         return (
@@ -293,6 +315,11 @@ class ImmutableHybridTeacherDataset:
         source: str = "initial",
         split: str | None = None,
     ) -> HybridDatasetRecord:
+        if self.schema != HYBRID_DATASET_SCHEMA:
+            raise RuntimeError(
+                "legacy hybrid datasets are read-only; create a schema-v2 "
+                "dataset before appending spatial truth"
+            )
         if (
             sample.reference_backend
             != HYBRID_REFERENCE_BACKEND
@@ -414,6 +441,109 @@ class ImmutableHybridTeacherDataset:
                 sample.power_closure_error,
                 dtype=float,
             ),
+            conductor_spatial_coil_index=(
+                np.asarray(
+                    [],
+                    dtype=int,
+                )
+                if sample.conductor_spatial_loss
+                is None
+                else sample.conductor_spatial_loss.coil_index
+            ),
+            conductor_spatial_arc_fraction=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.conductor_spatial_loss
+                is None
+                else sample.conductor_spatial_loss.arc_fraction
+            ),
+            conductor_spatial_xy=(
+                np.empty(
+                    (
+                        0,
+                        2,
+                    ),
+                    dtype=float,
+                )
+                if sample.conductor_spatial_loss
+                is None
+                else sample.conductor_spatial_loss.xy
+            ),
+            conductor_spatial_weights=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.conductor_spatial_loss
+                is None
+                else sample.conductor_spatial_loss.weights
+            ),
+            conductor_spatial_matrix=(
+                np.empty(
+                    (
+                        0,
+                        sample.target_impedance.shape[
+                            0
+                        ],
+                        sample.target_impedance.shape[
+                            1
+                        ],
+                    ),
+                    dtype=complex,
+                )
+                if sample.conductor_spatial_loss
+                is None
+                else sample.conductor_spatial_loss.dissipation_matrix
+            ),
+            package_spatial_package_index=(
+                np.asarray(
+                    [],
+                    dtype=int,
+                )
+                if sample.package_spatial_loss
+                is None
+                else sample.package_spatial_loss.package_index
+            ),
+            package_spatial_local_position=(
+                np.empty(
+                    (
+                        0,
+                        3,
+                    ),
+                    dtype=float,
+                )
+                if sample.package_spatial_loss
+                is None
+                else sample.package_spatial_loss.local_position
+            ),
+            package_spatial_weights=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.package_spatial_loss
+                is None
+                else sample.package_spatial_loss.weights
+            ),
+            package_spatial_matrix=(
+                np.empty(
+                    (
+                        0,
+                        sample.target_impedance.shape[
+                            0
+                        ],
+                        sample.target_impedance.shape[
+                            1
+                        ],
+                    ),
+                    dtype=complex,
+                )
+                if sample.package_spatial_loss
+                is None
+                else sample.package_spatial_loss.dissipation_matrix
+            ),
         )
 
         record = HybridDatasetRecord(
@@ -446,6 +576,15 @@ class ImmutableHybridTeacherDataset:
             reference_backend=(
                 HYBRID_REFERENCE_BACKEND
             ),
+            package_volume_axial_order=int(
+                sample.package_volume_axial_order
+            ),
+            package_volume_radial_order=int(
+                sample.package_volume_radial_order
+            ),
+            package_volume_azimuthal_order=int(
+                sample.package_volume_azimuthal_order
+            ),
         )
         self._manifest[
             "records"
@@ -473,6 +612,10 @@ class ImmutableHybridTeacherDataset:
         baseline_segments: int = 96,
         surface_vertical_order: int = 16,
         surface_azimuthal_order: int = 32,
+        include_spatial_truth: bool = True,
+        package_volume_axial_order: int = 8,
+        package_volume_radial_order: int = 6,
+        package_volume_azimuthal_order: int = 24,
         source: str = "initial",
         split: str | None = None,
     ):
@@ -491,6 +634,18 @@ class ImmutableHybridTeacherDataset:
                 ),
                 surface_azimuthal_order=(
                     surface_azimuthal_order
+                ),
+                include_spatial_truth=(
+                    include_spatial_truth
+                ),
+                package_volume_axial_order=(
+                    package_volume_axial_order
+                ),
+                package_volume_radial_order=(
+                    package_volume_radial_order
+                ),
+                package_volume_azimuthal_order=(
+                    package_volume_azimuthal_order
                 ),
             )
         )
@@ -613,6 +768,85 @@ class ImmutableHybridTeacherDataset:
                     "power_closure_error"
                 ]
             )
+            if (
+                "conductor_spatial_coil_index"
+                in data.files
+                and data[
+                    "conductor_spatial_coil_index"
+                ].size
+                > 0
+            ):
+                conductor_spatial = SpatialLossSamples(
+                    np.asarray(
+                        data[
+                            "conductor_spatial_coil_index"
+                        ],
+                        dtype=int,
+                    ),
+                    np.asarray(
+                        data[
+                            "conductor_spatial_arc_fraction"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "conductor_spatial_xy"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "conductor_spatial_weights"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "conductor_spatial_matrix"
+                        ],
+                        dtype=complex,
+                    ),
+                )
+            else:
+                conductor_spatial = None
+
+            if (
+                "package_spatial_package_index"
+                in data.files
+                and data[
+                    "package_spatial_package_index"
+                ].size
+                > 0
+            ):
+                package_spatial = PackageSpatialLossSamples(
+                    np.asarray(
+                        data[
+                            "package_spatial_package_index"
+                        ],
+                        dtype=int,
+                    ),
+                    np.asarray(
+                        data[
+                            "package_spatial_local_position"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "package_spatial_weights"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "package_spatial_matrix"
+                        ],
+                        dtype=complex,
+                    ),
+                )
+            else:
+                package_spatial = None
 
         return HybridTeacherSample(
             scene=scene_from_dict(
@@ -651,6 +885,33 @@ class ImmutableHybridTeacherDataset:
             ),
             power_closure_error=(
                 closure
+            ),
+            conductor_spatial_loss=(
+                conductor_spatial
+            ),
+            package_spatial_loss=(
+                package_spatial
+            ),
+            package_volume_axial_order=int(
+                getattr(
+                    record,
+                    "package_volume_axial_order",
+                    0,
+                )
+            ),
+            package_volume_radial_order=int(
+                getattr(
+                    record,
+                    "package_volume_radial_order",
+                    0,
+                )
+            ),
+            package_volume_azimuthal_order=int(
+                getattr(
+                    record,
+                    "package_volume_azimuthal_order",
+                    0,
+                )
             ),
         )
 
