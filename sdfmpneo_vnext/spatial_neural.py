@@ -112,6 +112,75 @@ def _psd_sqrt(
     )
 
 
+def _stable_cholesky(
+    matrix,
+):
+    """Differentiable Cholesky with adaptive roundoff-only stabilization."""
+    matrix = 0.5 * (
+        matrix
+        + matrix.conj().T
+    )
+    chol, info = (
+        torch.linalg.cholesky_ex(
+            matrix,
+            check_errors=False,
+        )
+    )
+    if int(
+        info.max().detach().cpu()
+    ) == 0:
+        return chol
+
+    n = matrix.shape[-1]
+    identity = torch.eye(
+        n,
+        dtype=matrix.dtype,
+        device=matrix.device,
+    )
+    scale = torch.clamp(
+        torch.real(
+            torch.trace(
+                matrix
+            )
+        )
+        / max(
+            n,
+            1,
+        ),
+        min=1e-30,
+    )
+    dtype_eps = torch.finfo(
+        matrix.real.dtype
+    ).eps
+    for multiplier in (
+        8.0,
+        64.0,
+        512.0,
+        4096.0,
+    ):
+        jitter = (
+            multiplier
+            * dtype_eps
+            * scale
+        )
+        chol, info = (
+            torch.linalg.cholesky_ex(
+                matrix
+                + jitter
+                * identity,
+                check_errors=False,
+            )
+        )
+        if int(
+            info.max().detach().cpu()
+        ) == 0:
+            return chol
+    raise RuntimeError(
+        "spatial PSD normalization remained numerically singular "
+        "after roundoff-scale stabilization"
+    )
+
+
 def _coordinate_features(
     scene: Scene,
     coil_index,
@@ -468,7 +537,7 @@ def _normalize_by_coil(
             dtype=raw_integral.dtype,
             device=raw_integral.device,
         )
-        chol = torch.linalg.cholesky(
+        chol = _stable_cholesky(
             raw_integral
         )
         inverse_chol = (
@@ -1043,9 +1112,9 @@ class NeuralSpatialLossArtifact:
                     dtype=raw_integral.dtype,
                     device=raw_integral.device,
                 )
-                chol = torch.linalg.cholesky(
-                    raw_integral
-                )
+                chol = _stable_cholesky(
+            raw_integral
+        )
                 inverse_chol = (
                     torch.linalg.solve_triangular(
                         chol,

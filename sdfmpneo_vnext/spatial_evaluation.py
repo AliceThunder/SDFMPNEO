@@ -79,43 +79,31 @@ def audit_spatial_surrogate(
             sample.scene,
             sample.frequency_hz,
         )
-        predicted = []
-        for (
-            coil,
-            arc,
-            xy,
-        ) in zip(
-            spatial.coil_index,
-            spatial.arc_fraction,
-            spatial.xy,
-        ):
-            matrix = (
-                prepared.local_dissipation_matrix(
-                    int(coil),
-                    float(arc),
-                    xy,
-                )
-            )
-            predicted.append(
-                matrix
-            )
-            minimum_eigenvalue = min(
-                minimum_eigenvalue,
-                float(
-                    np.min(
-                        np.linalg.eigvalsh(
-                            0.5
-                            * (
-                                matrix
-                                + matrix.conj().T
-                            )
-                        )
-                    )
-                ),
-            )
         predicted = np.asarray(
-            predicted,
+            prepared.local_dissipation_matrices(
+                spatial.coil_index,
+                spatial.arc_fraction,
+                spatial.xy,
+            ),
             dtype=complex,
+        )
+        hermitian = 0.5 * (
+            predicted
+            + predicted.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        minimum_eigenvalue = min(
+            minimum_eigenvalue,
+            float(
+                np.min(
+                    np.linalg.eigvalsh(
+                        hermitian
+                    )
+                )
+            ),
         )
         target = np.asarray(
             spatial.dissipation_matrix,

@@ -350,3 +350,92 @@ def test_spatial_artifact_rejects_mismatched_port_weights(tmp_path):
             path,
             wrong_port,
         )
+
+
+
+def test_spatial_decoder_is_object_and_port_permutation_equivariant():
+    torch.manual_seed(19)
+    port = _port_artifact()
+    field_model = SpatialLossShapeNet(
+        hidden_dim=16,
+        pair_dim=15,
+        field_hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    artifact = NeuralSpatialLossArtifact(
+        port,
+        field_model,
+        longitudinal_points=6,
+        radial_order=2,
+        angular_order=8,
+    )
+
+    scene = _scene()
+    prepared = artifact.prepare(
+        scene,
+        60_000.0,
+    )
+    original_a = (
+        prepared.local_dissipation_matrix(
+            0,
+            0.37,
+            (1.0e-4, -0.5e-4),
+        )
+    )
+    original_b = (
+        prepared.local_dissipation_matrix(
+            1,
+            0.61,
+            (-0.8e-4, 0.7e-4),
+        )
+    )
+
+    swapped = Scene(
+        (
+            scene.coils[1],
+            scene.coils[0],
+        ),
+        scene.medium,
+    )
+    prepared_swapped = artifact.prepare(
+        swapped,
+        60_000.0,
+    )
+    swapped_a = (
+        prepared_swapped.local_dissipation_matrix(
+            1,
+            0.37,
+            (1.0e-4, -0.5e-4),
+        )
+    )
+    swapped_b = (
+        prepared_swapped.local_dissipation_matrix(
+            0,
+            0.61,
+            (-0.8e-4, 0.7e-4),
+        )
+    )
+
+    permutation = np.asarray(
+        [
+            [0.0, 1.0],
+            [1.0, 0.0],
+        ]
+    )
+    assert np.allclose(
+        swapped_a,
+        permutation
+        @ original_a
+        @ permutation.T,
+        rtol=5e-5,
+        atol=5e-7,
+    )
+    assert np.allclose(
+        swapped_b,
+        permutation
+        @ original_b
+        @ permutation.T,
+        rtol=5e-5,
+        atol=5e-7,
+    )
