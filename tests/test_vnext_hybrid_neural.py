@@ -9,6 +9,7 @@ from sdfmpneo_vnext import (
     HomogeneousMedium,
     HybridTeacherSample,
     IsotropicMaterial,
+    MeshfreeVNextSystem,
     PackageObject,
     RigidPose,
     Scene,
@@ -471,6 +472,38 @@ def test_hybrid_artifact_save_load_round_trip(tmp_path):
     assert np.allclose(
         actual.dissipation_channels,
         expected.dissipation_channels,
+        rtol=0,
+        atol=0,
+    )
+
+
+
+def test_hybrid_artifact_is_accepted_by_unified_fast_port_runtime():
+    scene = _scene()
+    artifact = _artifact(
+        scene
+    )
+    assert artifact.supports_packages
+    system = MeshfreeVNextSystem(
+        artifact
+    )
+    direct = artifact.predict_structured(
+        scene,
+        85_000.0,
+    )
+    through_system = system.fast_ports(
+        scene,
+        85_000.0,
+    )
+    assert np.allclose(
+        through_system.impedance,
+        direct.impedance,
+        rtol=0,
+        atol=0,
+    )
+    assert np.allclose(
+        through_system.dissipation_channels,
+        direct.dissipation_channels,
         rtol=0,
         atol=0,
     )

@@ -190,3 +190,16 @@ def test_package_fast_spatial_does_not_fall_back_to_conductor_only_decoder():
             _scene(),
             80_000.0,
         )
+
+
+
+def test_package_fast_ports_reject_conductor_only_artifact():
+    system = _system()
+    with pytest.raises(
+        NotImplementedError,
+        match="package-aware FAST port artifact",
+    ):
+        system.fast_ports(
+            _scene(),
+            80_000.0,
+        )

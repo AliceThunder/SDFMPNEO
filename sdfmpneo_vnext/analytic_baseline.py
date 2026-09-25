@@ -171,6 +171,7 @@ def analytic_port_baseline(
 
 
 class AnalyticBaselineArtifact:
+    supports_packages = False
     """Pure-physics FAST fallback with exact structural power closure."""
 
     def __init__(

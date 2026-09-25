@@ -973,6 +973,7 @@ def _validation_metrics(
 
 
 class NeuralResidualArtifact:
+    supports_packages = False
     def __init__(
         self,
         model: PhysicsFactoredResidualNet,

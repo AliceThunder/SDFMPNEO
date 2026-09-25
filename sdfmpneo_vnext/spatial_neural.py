@@ -904,6 +904,7 @@ class PreparedSpatialLossField:
 
 
 class NeuralSpatialLossArtifact:
+    supports_packages = False
     def __init__(
         self,
         port_artifact,

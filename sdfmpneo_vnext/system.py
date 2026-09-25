@@ -55,13 +55,13 @@ def mvp_system_capabilities(
             "homogeneous_isotropic_unbounded_lossless"
         ),
         lossy_background_media=False,
-        heterogeneous_media=True,
+        heterogeneous_media=False,
         retardation=False,
         arbitrary_se3_pose=True,
         superelliptic_conductors=True,
         package_geometry=True,
         package_dielectric_sie=True,
-        package_em_coupling=True,
+        package_em_coupling=False,
         continuous_spatial_loss=True,
     )
 
@@ -128,11 +128,54 @@ class MeshfreeVNextSystem:
     ) -> SystemCapabilities:
         return mvp_system_capabilities()
 
+    def _require_package_fast_port_artifact(
+        self,
+        scene: Scene,
+    ):
+        if (
+            scene.packages
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_packages",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST port artifact; "
+                "conductor-only FAST predictions are not used for dielectric scenes"
+            )
+
+    def _require_package_fast_spatial_artifact(
+        self,
+        scene: Scene,
+    ):
+        if not scene.packages:
+            return
+        if (
+            self.spatial_artifact is None
+            or not bool(
+                getattr(
+                    self.spatial_artifact,
+                    "supports_packages",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST spatial artifact; "
+                "the conductor-only spatial decoder is not used as a dielectric field"
+            )
+
     def fast_ports(
         self,
         scene: Scene,
         frequency_hz: float,
     ):
+        self._require_package_fast_port_artifact(
+            scene
+        )
         return (
             self.port_artifact.predict_structured(
                 scene,
@@ -224,15 +267,12 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
-        if (
-            scene.packages
-            and self.spatial_artifact
-            is None
-        ):
-            raise NotImplementedError(
-                "package scenes require a package-aware FAST spatial artifact; "
-                "the conductor-only uniform decoder is not used as a dielectric field"
-            )
+        self._require_package_fast_port_artifact(
+            scene
+        )
+        self._require_package_fast_spatial_artifact(
+            scene
+        )
         if (
             self.spatial_artifact
             is not None
@@ -318,6 +358,9 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        self._require_package_fast_port_artifact(
+            scene
+        )
         if scene.packages:
             return ChannelResolvedCurrentEnvelope(
                 scene,
@@ -343,6 +386,9 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        self._require_package_fast_port_artifact(
+            scene
+        )
         if scene.packages:
             return ChannelResolvedVoltageEnvelope(
                 scene,
@@ -419,15 +465,12 @@ class MeshfreeVNextSystem:
         medium,
         **options,
     ):
-        if (
-            scene.packages
-            and self.spatial_artifact
-            is None
-        ):
-            raise NotImplementedError(
-                "package scenes require a package-aware FAST spatial artifact "
-                "before continuous FAST thermal fields are available"
-            )
+        self._require_package_fast_port_artifact(
+            scene
+        )
+        self._require_package_fast_spatial_artifact(
+            scene
+        )
         spatial = (
             self.spatial_artifact
             if self.spatial_artifact is not None
