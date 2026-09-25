@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .certified import certify_mixed_ports
+from .hybrid_certified import certify_dielectric_ports
 from .em import MQSConfig
 from .fast import (
     FastCurrentControlledEnvelope,
@@ -54,13 +55,13 @@ def mvp_system_capabilities(
             "homogeneous_isotropic_unbounded_lossless"
         ),
         lossy_background_media=False,
-        heterogeneous_media=False,
+        heterogeneous_media=True,
         retardation=False,
         arbitrary_se3_pose=True,
         superelliptic_conductors=True,
         package_geometry=True,
         package_dielectric_sie=True,
-        package_em_coupling=False,
+        package_em_coupling=True,
         continuous_spatial_loss=True,
     )
 
@@ -101,16 +102,22 @@ class MeshfreeVNextSystem:
                 )
             )
         )
+        self.dielectric_surface_vertical_order = int(
+            dielectric_surface_vertical_order
+        )
+        self.dielectric_surface_azimuthal_order = int(
+            dielectric_surface_azimuthal_order
+        )
         self._dielectric_reference = (
             DielectricCoupledReferenceArtifact(
                 config=(
                     self.reference_config
                 ),
                 surface_vertical_order=(
-                    dielectric_surface_vertical_order
+                    self.dielectric_surface_vertical_order
                 ),
                 surface_azimuthal_order=(
-                    dielectric_surface_azimuthal_order
+                    self.dielectric_surface_azimuthal_order
                 ),
             )
         )
@@ -179,9 +186,24 @@ class MeshfreeVNextSystem:
         **certification_options,
     ):
         if scene.packages:
-            raise NotImplementedError(
-                "dielectric package scenes have a REFERENCE coupled SIE backend, "
-                "but package-aware CERTIFIED correction is not implemented yet"
+            return certify_dielectric_ports(
+                scene,
+                frequency_hz,
+                self.port_artifact,
+                config=(
+                    config
+                    or self.reference_config
+                ),
+                convergence_report=(
+                    convergence_report
+                ),
+                surface_vertical_order=(
+                    self.dielectric_surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    self.dielectric_surface_azimuthal_order
+                ),
+                **certification_options,
             )
         return certify_mixed_ports(
             scene,
@@ -202,6 +224,15 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
+        if (
+            scene.packages
+            and self.spatial_artifact
+            is None
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST spatial artifact; "
+                "the conductor-only uniform decoder is not used as a dielectric field"
+            )
         if (
             self.spatial_artifact
             is not None
@@ -227,9 +258,11 @@ class MeshfreeVNextSystem:
         frequency_hz: float,
     ):
         if scene.packages:
-            raise NotImplementedError(
-                "continuous package dielectric heat queries are not yet "
-                "implemented; port-level dielectric loss channels are available"
+            return (
+                self._dielectric_reference.prepare_spatial(
+                    scene,
+                    frequency_hz,
+                )
             )
         return (
             self._reference.prepare_spatial(
@@ -285,6 +318,14 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        if scene.packages:
+            return ChannelResolvedCurrentEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self.port_artifact,
+                **options,
+            )
         return (
             FastCurrentControlledEnvelope(
                 scene,
@@ -302,6 +343,14 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        if scene.packages:
+            return ChannelResolvedVoltageEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self.port_artifact,
+                **options,
+            )
         return (
             FastVoltageControlledEnvelope(
                 scene,
@@ -319,6 +368,14 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        if scene.packages:
+            return ChannelResolvedCurrentEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self._dielectric_reference,
+                **options,
+            )
         return (
             FastCurrentControlledEnvelope(
                 scene,
@@ -336,6 +393,14 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
+        if scene.packages:
+            return ChannelResolvedVoltageEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self._dielectric_reference,
+                **options,
+            )
         return (
             FastVoltageControlledEnvelope(
                 scene,
@@ -354,6 +419,15 @@ class MeshfreeVNextSystem:
         medium,
         **options,
     ):
+        if (
+            scene.packages
+            and self.spatial_artifact
+            is None
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST spatial artifact "
+                "before continuous FAST thermal fields are available"
+            )
         spatial = (
             self.spatial_artifact
             if self.spatial_artifact is not None
@@ -377,8 +451,13 @@ class MeshfreeVNextSystem:
         medium,
         **options,
     ):
+        artifact = (
+            self._dielectric_reference
+            if scene.packages
+            else self._reference
+        )
         return ContinuousThermalGreenArtifact(
-            self._reference,
+            artifact,
             medium,
             **options,
         ).prepare(

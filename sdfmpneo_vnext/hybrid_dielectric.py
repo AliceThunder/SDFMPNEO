@@ -841,6 +841,57 @@ class DielectricCoupledReferenceArtifact:
             ).prediction
         )
 
+    def prepare_spatial(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        *,
+        volume_axial_order: int = 8,
+        volume_radial_order: int = 6,
+        volume_azimuthal_order: int = 24,
+        maximum_raw_closure_error: float = 0.25,
+        normalized_closure_tolerance: float = 1e-6,
+    ):
+        from .hybrid_field import (
+            prepare_hybrid_reference_loss_field,
+        )
+
+        teacher = (
+            DielectricCoupledMixedTeacher(
+                scene,
+                frequency_hz,
+                self.config,
+                surface_vertical_order=(
+                    self.surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    self.surface_azimuthal_order
+                ),
+            )
+        )
+        result = teacher.solve()
+        return (
+            prepare_hybrid_reference_loss_field(
+                teacher,
+                result,
+                volume_axial_order=(
+                    volume_axial_order
+                ),
+                volume_radial_order=(
+                    volume_radial_order
+                ),
+                volume_azimuthal_order=(
+                    volume_azimuthal_order
+                ),
+                maximum_raw_closure_error=(
+                    maximum_raw_closure_error
+                ),
+                normalized_closure_tolerance=(
+                    normalized_closure_tolerance
+                ),
+            )
+        )
+
     def predict(
         self,
         scene: Scene,

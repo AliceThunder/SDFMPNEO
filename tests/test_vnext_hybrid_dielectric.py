@@ -295,3 +295,74 @@ def test_structured_prediction_allows_more_loss_channels_than_ports():
                 [1.0 + 0j]
             )
         )
+
+
+
+def test_lossy_dielectric_reference_spatial_field_is_psd_and_energy_closed():
+    material = IsotropicMaterial(
+        relative_permittivity=3.0,
+        conductivity=0.005,
+    )
+    scene = Scene(
+        (_coil(),),
+        HomogeneousMedium(),
+        (_package(material),),
+    )
+    artifact = (
+        DielectricCoupledReferenceArtifact(
+            config=CFG,
+            surface_vertical_order=8,
+            surface_azimuthal_order=16,
+        )
+    )
+    spatial = artifact.prepare_spatial(
+        scene,
+        80_000.0,
+        volume_axial_order=4,
+        volume_radial_order=3,
+        volume_azimuthal_order=12,
+        maximum_raw_closure_error=5.0,
+        normalized_closure_tolerance=1e-6,
+    )
+    matrix = (
+        spatial.package_local_dissipation_matrix(
+            0,
+            np.zeros(3),
+        )
+    )
+    assert np.allclose(
+        matrix,
+        matrix.conj().T,
+        atol=1e-10,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                matrix
+            )
+        )
+        >= -1e-10
+    )
+    assert (
+        spatial.package_local_joule_density(
+            0,
+            np.zeros(3),
+            np.array(
+                [1.0 + 0.2j]
+            ),
+        )
+        > 0.0
+    )
+    assert (
+        spatial.normalized_dielectric_closure_error
+        < 1e-6
+    )
+    assert np.allclose(
+        np.sum(
+            spatial.package_integrated_channels,
+            axis=0,
+        ),
+        spatial.result.dielectric_dissipation_matrix,
+        rtol=1e-5,
+        atol=1e-10,
+    )

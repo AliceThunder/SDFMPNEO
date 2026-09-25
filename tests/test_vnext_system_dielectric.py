@@ -7,6 +7,7 @@ from sdfmpneo_vnext import (
     ConductorMaterial,
     DielectricCoupledResult,
     HomogeneousMedium,
+    HomogeneousThermalMedium,
     IsotropicMaterial,
     MeshfreeVNextSystem,
     MQSConfig,
@@ -64,8 +65,8 @@ def _config():
     )
 
 
-def test_system_reference_dispatches_package_scene_to_coupled_sie():
-    system = MeshfreeVNextSystem(
+def _system():
+    return MeshfreeVNextSystem(
         AnalyticBaselineArtifact(
             segments_per_coil=24,
         ),
@@ -73,6 +74,10 @@ def test_system_reference_dispatches_package_scene_to_coupled_sie():
         dielectric_surface_vertical_order=8,
         dielectric_surface_azimuthal_order=16,
     )
+
+
+def test_system_reference_dispatches_package_scene_to_coupled_sie():
+    system = _system()
     scene = _scene()
     prediction = system.reference_ports(
         scene,
@@ -98,29 +103,90 @@ def test_system_reference_dispatches_package_scene_to_coupled_sie():
     )
 
 
-def test_system_refuses_to_mislabel_package_scene_as_certified_or_spatial():
-    system = MeshfreeVNextSystem(
-        AnalyticBaselineArtifact(
-            segments_per_coil=24,
-        ),
-        reference_config=_config(),
-        dielectric_surface_vertical_order=8,
-        dielectric_surface_azimuthal_order=16,
-    )
+def test_system_package_scene_has_discrete_certificate_and_reference_spatial_field():
+    system = _system()
     scene = _scene()
-    with pytest.raises(
-        NotImplementedError,
-        match="CERTIFIED",
-    ):
-        system.certified_ports(
+
+    certified = system.certified_ports(
+        scene,
+        80_000.0,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-8,
+        fast_domain_correction_limit=1.0,
+    )
+    assert (
+        certified.status
+        == "DISCRETE_CERTIFIED"
+    )
+    assert certified.algebraic_certified
+    assert not certified.discretization_certified
+    assert certified.used_reference_fallback
+    assert (
+        certified.operator_backend
+        == "dense_dielectric_reference"
+    )
+
+    spatial = system.reference_spatial(
+        scene,
+        80_000.0,
+    )
+    assert (
+        spatial.normalization_closure_error
+        < 1e-6
+    )
+    assert np.allclose(
+        spatial.package_local_dissipation_matrix(
+            0,
+            np.zeros(3),
+        ),
+        0.0,
+        atol=1e-14,
+    )
+
+
+def test_package_reference_continuous_thermal_field_keeps_dielectric_channel():
+    system = _system()
+    scene = _scene()
+    prepared = (
+        system.reference_continuous_thermal_field(
             scene,
             80_000.0,
+            HomogeneousThermalMedium(
+                conductivity=0.4,
+                density=1200.0,
+                heat_capacity=1000.0,
+            ),
+            longitudinal_segments=8,
+            radial_order=3,
+            angular_order=12,
         )
+    )
+    channels = (
+        prepared.source.integrated_channels()
+    )
+    assert channels.shape == (
+        2,
+        1,
+        1,
+    )
+    assert (
+        prepared.source.normalization_closure_error
+        < 1e-6
+    )
+    assert np.allclose(
+        channels[1],
+        0.0,
+        atol=1e-14,
+    )
+
+
+def test_package_fast_spatial_does_not_fall_back_to_conductor_only_decoder():
+    system = _system()
     with pytest.raises(
         NotImplementedError,
-        match="dielectric heat",
+        match="package-aware FAST spatial",
     ):
-        system.reference_spatial(
-            scene,
+        system.fast_spatial(
+            _scene(),
             80_000.0,
         )

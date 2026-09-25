@@ -158,7 +158,13 @@ class ThermalSourceQuadrature:
         )
 
     @property
-    def n_coils(
+    def channel_index(
+        self,
+    ) -> np.ndarray:
+        return self.coil_index
+
+    @property
+    def n_channels(
         self,
     ) -> int:
         return int(
@@ -167,6 +173,13 @@ class ThermalSourceQuadrature:
             )
             + 1
         )
+
+    @property
+    def n_coils(
+        self,
+    ) -> int:
+        # Backward-compatible alias; source ids are generic loss-channel ids.
+        return self.n_channels
 
     def integrated_channels(
         self,
@@ -224,7 +237,7 @@ class ThermalSourceQuadrature:
             )
         )
 
-    def coil_power(
+    def channel_power(
         self,
         currents,
     ) -> np.ndarray:
@@ -232,7 +245,7 @@ class ThermalSourceQuadrature:
             currents
         )
         out = np.zeros(
-            self.n_coils,
+            self.n_channels,
             dtype=float,
         )
         np.add.at(
@@ -242,6 +255,16 @@ class ThermalSourceQuadrature:
             * density,
         )
         return out
+
+    def coil_power(
+        self,
+        currents,
+    ) -> np.ndarray:
+        # Backward-compatible alias for conductor-only callers.
+        return self.channel_power(
+            currents
+        )
+
 
 
 def _hermitian_psd_sqrt(
@@ -342,6 +365,16 @@ def _normalize_source_matrices(
                 coil
             ].conj().T
         )
+        if (
+            np.linalg.norm(
+                target
+            )
+            <= 1e-18
+        ):
+            matrices[
+                mask
+            ] = 0.0
+            continue
         volume = float(
             np.sum(
                 weights[
@@ -500,6 +533,9 @@ def build_thermal_source_quadrature(
     longitudinal_segments: int = 24,
     radial_order: int = 4,
     angular_order: int = 24,
+    package_axial_order: int | None = None,
+    package_radial_order: int | None = None,
+    package_azimuthal_order: int | None = None,
 ) -> ThermalSourceQuadrature:
     if (
         longitudinal_segments < 2
@@ -524,11 +560,11 @@ def build_thermal_source_quadrature(
             "prepared_spatial must expose port_prediction"
         )
 
-    positions = []
-    weights = []
-    coil_ids = []
-    arcs = []
-    section_xy = []
+    conductor_positions = []
+    conductor_weights = []
+    conductor_ids = []
+    conductor_arcs = []
+    conductor_xy = []
 
     for coil_index, coil in enumerate(
         scene.coils
@@ -585,23 +621,23 @@ def build_thermal_source_quadrature(
                     :
                 ]
             )
-            positions.append(
+            conductor_positions.append(
                 points
             )
-            weights.append(
+            conductor_weights.append(
                 section.weights
                 * poly.lengths[
                     segment
                 ]
             )
-            coil_ids.append(
+            conductor_ids.append(
                 np.full(
                     n_section,
                     coil_index,
                     dtype=int,
                 )
             )
-            arcs.append(
+            conductor_arcs.append(
                 np.full(
                     n_section,
                     (
@@ -612,25 +648,25 @@ def build_thermal_source_quadrature(
                     dtype=float,
                 )
             )
-            section_xy.append(
+            conductor_xy.append(
                 section.xy
             )
 
     positions = np.concatenate(
-        positions,
+        conductor_positions,
         axis=0,
     )
     weights = np.concatenate(
-        weights
+        conductor_weights
     )
-    coil_ids = np.concatenate(
-        coil_ids
+    channel_ids = np.concatenate(
+        conductor_ids
     )
     arcs = np.concatenate(
-        arcs
+        conductor_arcs
     )
     section_xy = np.concatenate(
-        section_xy,
+        conductor_xy,
         axis=0,
     )
 
@@ -640,7 +676,7 @@ def build_thermal_source_quadrature(
     ):
         matrices = (
             prepared_spatial.local_dissipation_matrices(
-                coil_ids,
+                channel_ids,
                 arcs,
                 section_xy,
             )
@@ -655,7 +691,7 @@ def build_thermal_source_quadrature(
                 )
                 for coil, arc, xy
                 in zip(
-                    coil_ids,
+                    channel_ids,
                     arcs,
                     section_xy,
                 )
@@ -663,10 +699,204 @@ def build_thermal_source_quadrature(
             dtype=complex,
         )
 
+    # Package-aware REFERENCE fields append dielectric volume sources to the
+    # aggregate dielectric loss channel. Their actual world positions are
+    # retained, so subsequent thermal Green evaluation resolves package heat
+    # spatially even though the port model exposes one aggregate dielectric
+    # channel.
+    if scene.packages:
+        if not hasattr(
+            prepared_spatial,
+            "package_dissipation_matrices",
+        ):
+            raise TypeError(
+                "package scenes require prepared_spatial package dissipation queries"
+            )
+        dielectric_channel = int(
+            getattr(
+                prepared_spatial,
+                "dielectric_channel_index",
+                len(
+                    scene.coils
+                ),
+            )
+        )
+        package_axial = (
+            max(
+                4,
+                longitudinal_segments
+                // 2,
+            )
+            if package_axial_order
+            is None
+            else int(
+                package_axial_order
+            )
+        )
+        package_radial = (
+            radial_order
+            if package_radial_order
+            is None
+            else int(
+                package_radial_order
+            )
+        )
+        package_azimuthal = (
+            angular_order
+            if package_azimuthal_order
+            is None
+            else int(
+                package_azimuthal_order
+            )
+        )
+        if (
+            package_axial < 2
+            or package_radial < 2
+            or package_azimuthal < 8
+        ):
+            raise ValueError(
+                "invalid package thermal source quadrature order"
+            )
+
+        extra_positions = []
+        extra_weights = []
+        extra_ids = []
+        extra_arcs = []
+        extra_xy = []
+        extra_matrices = []
+        for package_index, package in enumerate(
+            scene.packages
+        ):
+            quadrature = (
+                package.geometry.volume_quadrature(
+                    axial_order=(
+                        package_axial
+                    ),
+                    radial_order=(
+                        package_radial
+                    ),
+                    azimuthal_order=(
+                        package_azimuthal
+                    ),
+                )
+            )
+            count = len(
+                quadrature.weights
+            )
+            extra_positions.append(
+                quadrature.positions
+            )
+            extra_weights.append(
+                quadrature.weights
+            )
+            extra_ids.append(
+                np.full(
+                    count,
+                    dielectric_channel,
+                    dtype=int,
+                )
+            )
+            # These fields are retained only for backward-compatible source
+            # metadata; package heat queries use world positions directly.
+            extra_arcs.append(
+                np.zeros(
+                    count,
+                    dtype=float,
+                )
+            )
+            extra_xy.append(
+                np.zeros(
+                    (
+                        count,
+                        2,
+                    ),
+                    dtype=float,
+                )
+            )
+            extra_matrices.append(
+                prepared_spatial.package_dissipation_matrices(
+                    package_index,
+                    quadrature.positions,
+                )
+            )
+
+        positions = np.concatenate(
+            (
+                positions,
+                np.concatenate(
+                    extra_positions,
+                    axis=0,
+                ),
+            ),
+            axis=0,
+        )
+        weights = np.concatenate(
+            (
+                weights,
+                np.concatenate(
+                    extra_weights
+                ),
+            )
+        )
+        channel_ids = np.concatenate(
+            (
+                channel_ids,
+                np.concatenate(
+                    extra_ids
+                ),
+            )
+        )
+        arcs = np.concatenate(
+            (
+                arcs,
+                np.concatenate(
+                    extra_arcs
+                ),
+            )
+        )
+        section_xy = np.concatenate(
+            (
+                section_xy,
+                np.concatenate(
+                    extra_xy,
+                    axis=0,
+                ),
+            ),
+            axis=0,
+        )
+        matrices = np.concatenate(
+            (
+                np.asarray(
+                    matrices,
+                    dtype=complex,
+                ),
+                np.concatenate(
+                    extra_matrices,
+                    axis=0,
+                ),
+            ),
+            axis=0,
+        )
+
     target_channels = np.asarray(
         prepared_spatial.port_prediction.dissipation_channels,
         dtype=complex,
     )
+    expected_channels = int(
+        np.max(
+            channel_ids
+        )
+        + 1
+    )
+    if (
+        target_channels.shape[
+            0
+        ]
+        != expected_channels
+    ):
+        raise ValueError(
+            "thermal source channel ids do not match structured port channels"
+        )
     (
         matrices,
         closure,
@@ -674,7 +904,7 @@ def build_thermal_source_quadrature(
     ) = _normalize_source_matrices(
         matrices,
         weights,
-        coil_ids,
+        channel_ids,
         target_channels,
     )
     effective_radius = (
@@ -691,7 +921,7 @@ def build_thermal_source_quadrature(
     return ThermalSourceQuadrature(
         positions,
         weights,
-        coil_ids,
+        channel_ids,
         arcs,
         section_xy,
         matrices,

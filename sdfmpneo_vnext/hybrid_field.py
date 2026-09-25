@@ -1,0 +1,791 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import numpy as np
+
+from .prediction import StructuredPortPrediction
+from .scene import Scene
+
+
+def _hermitian_psd_sqrt(
+    matrix,
+    *,
+    inverse: bool,
+):
+    matrix = np.asarray(
+        matrix,
+        dtype=complex,
+    )
+    matrix = 0.5 * (
+        matrix
+        + matrix.conj().T
+    )
+    values, vectors = np.linalg.eigh(
+        matrix
+    )
+    scale = max(
+        float(
+            np.max(
+                np.abs(
+                    values
+                )
+            )
+        ),
+        1e-30,
+    )
+    floor = (
+        1e-12
+        * scale
+    )
+    clipped = np.clip(
+        values.real,
+        floor,
+        None,
+    )
+    diagonal = (
+        1.0
+        / np.sqrt(
+            clipped
+        )
+        if inverse
+        else np.sqrt(
+            clipped
+        )
+    )
+    return (
+        vectors
+        @ np.diag(
+            diagonal
+        )
+        @ vectors.conj().T
+    )
+
+
+@dataclass(frozen=True)
+class PreparedHybridReferenceLossField:
+    scene: Scene
+    frequency_hz: float
+    teacher: object
+    result: object
+    port_prediction: StructuredPortPrediction
+    package_transform: np.ndarray
+    raw_dielectric_closure_error: float
+    normalized_dielectric_closure_error: float
+    package_integrated_channels: np.ndarray
+
+    @property
+    def normalization_closure_error(
+        self,
+    ) -> float:
+        return float(
+            max(
+                self.port_prediction.power_closure_error(),
+                self.normalized_dielectric_closure_error,
+            )
+        )
+
+    @property
+    def n_conductor_channels(
+        self,
+    ) -> int:
+        return len(
+            self.scene.coils
+        )
+
+    @property
+    def dielectric_channel_index(
+        self,
+    ) -> int:
+        return self.n_conductor_channels
+
+    def conductor_local_dissipation_matrix(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        return (
+            self.teacher.conductor_teacher.local_dissipation_matrix(
+                self.result.mixed_result,
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+
+    def local_dissipation_matrix(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        """Compatibility conductor query used by existing spatial consumers."""
+        return (
+            self.conductor_local_dissipation_matrix(
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+
+    def conductor_local_joule_density(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy,
+        currents,
+    ) -> float:
+        matrix = (
+            self.conductor_local_dissipation_matrix(
+                coil_index,
+                arc_fraction,
+                xy,
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        return float(
+            0.5
+            * np.real(
+                np.vdot(
+                    currents,
+                    matrix
+                    @ currents,
+                )
+            )
+        )
+
+    def _charge_geometry(
+        self,
+    ):
+        (
+            _,
+            _,
+            current_constraint,
+            _,
+        ) = (
+            self.teacher.conductor_teacher._mqs.assemble()
+        )
+        (
+            _,
+            _,
+            _,
+            node_positions,
+            node_radii,
+        ) = (
+            self.teacher.conductor_teacher._topology(
+                current_constraint
+            )
+        )
+        (
+            _,
+            source_permittivity,
+        ) = self.teacher._source_regions(
+            node_positions
+        )
+        return (
+            node_positions,
+            node_radii,
+            source_permittivity,
+        )
+
+    def electric_field_transfer(
+        self,
+        points,
+    ) -> np.ndarray:
+        """Return E(points)=transfer @ port-current as (n,3,n_ports)."""
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim != 2
+            or points.shape[1] != 3
+        ):
+            raise ValueError(
+                "points must have shape (3,) or (n,3)"
+            )
+
+        (
+            node_positions,
+            node_radii,
+            source_permittivity,
+        ) = self._charge_geometry()
+
+        diff = (
+            points[
+                :,
+                None,
+                :,
+            ]
+            - node_positions[
+                None,
+                :,
+                :,
+            ]
+        )
+        soft = (
+            self.teacher.charge_self_radius_factor
+            * node_radii[
+                None,
+                :,
+            ]
+        )
+        distance2 = (
+            np.sum(
+                diff
+                * diff,
+                axis=2,
+            )
+            + soft**2
+        )
+        direct_kernel = (
+            diff
+            / (
+                4.0
+                * np.pi
+                * distance2[
+                    :,
+                    :,
+                    None,
+                ] ** 1.5
+                * source_permittivity[
+                    None,
+                    :,
+                    None,
+                ]
+            )
+        )
+        direct = np.einsum(
+            "qjd,jp->qdp",
+            direct_kernel,
+            self.result.mixed_result.node_charge,
+        )
+
+        surface_positions = (
+            self.teacher.surface_solver.positions
+        )
+        surface_weights = (
+            self.teacher.surface_solver.weights
+        )
+        surface_diff = (
+            points[
+                :,
+                None,
+                :,
+            ]
+            - surface_positions[
+                None,
+                :,
+                :,
+            ]
+        )
+        surface_distance = np.linalg.norm(
+            surface_diff,
+            axis=2,
+        )
+        geometry_scale = max(
+            float(
+                np.max(
+                    np.linalg.norm(
+                        surface_positions,
+                        axis=1,
+                    )
+                )
+            ),
+            1.0,
+        )
+        if np.any(
+            surface_distance
+            <= 1e-13
+            * geometry_scale
+        ):
+            raise ValueError(
+                "dielectric electric-field query lies on a surface quadrature node"
+            )
+        induced_kernel = (
+            surface_weights[
+                None,
+                :,
+                None,
+            ]
+            * surface_diff
+            / (
+                4.0
+                * np.pi
+                * surface_distance[
+                    :,
+                    :,
+                    None,
+                ] ** 3
+            )
+        )
+        induced = np.einsum(
+            "qsd,sp->qdp",
+            induced_kernel,
+            self.result.surface_density_transfer,
+        )
+        transfer = (
+            direct
+            + induced
+        )
+        return (
+            transfer[0]
+            if scalar
+            else transfer
+        )
+
+    def raw_package_dissipation_matrices(
+        self,
+        package_index: int,
+        points,
+    ) -> np.ndarray:
+        if not (
+            0
+            <= package_index
+            < len(
+                self.scene.packages
+            )
+        ):
+            raise IndexError(
+                "package_index out of range"
+            )
+        package = (
+            self.scene.packages[
+                package_index
+            ]
+        )
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        inside = np.asarray(
+            package.geometry.contains(
+                points,
+                tolerance=2e-12,
+            ),
+            dtype=bool,
+        )
+        n_ports = (
+            self.port_prediction.impedance.shape[
+                0
+            ]
+        )
+        out = np.zeros(
+            (
+                len(points),
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        )
+        if (
+            package.material.conductivity
+            > 0.0
+            and np.any(
+                inside
+            )
+        ):
+            transfer = (
+                self.electric_field_transfer(
+                    points[
+                        inside
+                    ]
+                )
+            )
+            matrices = (
+                package.material.conductivity
+                * np.einsum(
+                    "qdi,qdj->qij",
+                    transfer.conj(),
+                    transfer,
+                )
+            )
+            out[
+                inside
+            ] = 0.5 * (
+                matrices
+                + matrices.conj().transpose(
+                    0,
+                    2,
+                    1,
+                )
+            )
+        return (
+            out[0]
+            if scalar
+            else out
+        )
+
+    def package_dissipation_matrices(
+        self,
+        package_index: int,
+        points,
+    ) -> np.ndarray:
+        raw = (
+            self.raw_package_dissipation_matrices(
+                package_index,
+                points,
+            )
+        )
+        scalar = (
+            raw.ndim == 2
+        )
+        if scalar:
+            raw = raw[
+                None,
+                :,
+                :,
+            ]
+        transform = (
+            self.package_transform
+        )
+        corrected = (
+            transform[
+                None,
+                :,
+                :,
+            ]
+            @ raw
+            @ transform.conj().T[
+                None,
+                :,
+                :,
+            ]
+        )
+        corrected = 0.5 * (
+            corrected
+            + corrected.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        return (
+            corrected[0]
+            if scalar
+            else corrected
+        )
+
+    def package_local_dissipation_matrix(
+        self,
+        package_index: int,
+        local_position,
+    ) -> np.ndarray:
+        package = (
+            self.scene.packages[
+                package_index
+            ]
+        )
+        local = np.asarray(
+            local_position,
+            dtype=float,
+        )
+        if local.shape != (3,):
+            raise ValueError(
+                "local_position must have shape (3,)"
+            )
+        world = (
+            package.geometry.local_to_world(
+                local
+            )
+        )
+        return (
+            self.package_dissipation_matrices(
+                package_index,
+                world,
+            )
+        )
+
+    def package_local_joule_density(
+        self,
+        package_index: int,
+        local_position,
+        currents,
+    ) -> float:
+        matrix = (
+            self.package_local_dissipation_matrix(
+                package_index,
+                local_position,
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        return float(
+            0.5
+            * np.real(
+                np.vdot(
+                    currents,
+                    matrix
+                    @ currents,
+                )
+            )
+        )
+
+
+def prepare_hybrid_reference_loss_field(
+    teacher,
+    result,
+    *,
+    volume_axial_order: int = 8,
+    volume_radial_order: int = 6,
+    volume_azimuthal_order: int = 24,
+    maximum_raw_closure_error: float = 0.25,
+    normalized_closure_tolerance: float = 1e-6,
+) -> PreparedHybridReferenceLossField:
+    if maximum_raw_closure_error <= 0.0:
+        raise ValueError(
+            "maximum_raw_closure_error must be positive"
+        )
+    if normalized_closure_tolerance <= 0.0:
+        raise ValueError(
+            "normalized_closure_tolerance must be positive"
+        )
+
+    scene = teacher.scene
+    n_ports = (
+        result.impedance.shape[
+            0
+        ]
+    )
+    identity = np.eye(
+        n_ports,
+        dtype=complex,
+    )
+
+    temporary = PreparedHybridReferenceLossField(
+        scene=scene,
+        frequency_hz=float(
+            teacher.frequency_hz
+        ),
+        teacher=teacher,
+        result=result,
+        port_prediction=result.prediction,
+        package_transform=identity,
+        raw_dielectric_closure_error=0.0,
+        normalized_dielectric_closure_error=0.0,
+        package_integrated_channels=np.zeros(
+            (
+                len(
+                    scene.packages
+                ),
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        ),
+    )
+
+    raw_package_channels = []
+    package_quadratures = []
+    for package_index, package in enumerate(
+        scene.packages
+    ):
+        quadrature = (
+            package.geometry.volume_quadrature(
+                axial_order=(
+                    volume_axial_order
+                ),
+                radial_order=(
+                    volume_radial_order
+                ),
+                azimuthal_order=(
+                    volume_azimuthal_order
+                ),
+            )
+        )
+        raw = (
+            temporary.raw_package_dissipation_matrices(
+                package_index,
+                quadrature.positions,
+            )
+        )
+        integrated = np.sum(
+            quadrature.weights[
+                :,
+                None,
+                None,
+            ]
+            * raw,
+            axis=0,
+        )
+        raw_package_channels.append(
+            0.5
+            * (
+                integrated
+                + integrated.conj().T
+            )
+        )
+        package_quadratures.append(
+            quadrature
+        )
+
+    raw_package_channels = np.asarray(
+        raw_package_channels,
+        dtype=complex,
+    )
+    raw_total = np.sum(
+        raw_package_channels,
+        axis=0,
+    )
+    target = 0.5 * (
+        result.dielectric_dissipation_matrix
+        + result.dielectric_dissipation_matrix.conj().T
+    )
+    target_norm = max(
+        float(
+            np.linalg.norm(
+                target
+            )
+        ),
+        1e-30,
+    )
+    raw_error = float(
+        np.linalg.norm(
+            raw_total
+            - target
+        )
+        / target_norm
+    )
+
+    if (
+        np.linalg.norm(
+            target
+        )
+        <= 1e-18
+    ):
+        if (
+            np.linalg.norm(
+                raw_total
+            )
+            > 1e-12
+        ):
+            raise RuntimeError(
+                "package field reconstruction predicts dielectric loss "
+                "for a lossless port-level dielectric channel"
+            )
+        transform = identity
+        corrected_package_channels = np.zeros_like(
+            raw_package_channels
+        )
+        normalized_error = 0.0
+    else:
+        if raw_error > maximum_raw_closure_error:
+            raise RuntimeError(
+                "raw dielectric field integration does not close the port-level "
+                f"dielectric loss channel: relative error={raw_error:.3e}"
+            )
+        scale = max(
+            float(
+                np.trace(
+                    target
+                ).real
+                / max(
+                    n_ports,
+                    1,
+                )
+            ),
+            target_norm
+            / max(
+                n_ports,
+                1,
+            ),
+            1e-30,
+        )
+        regularization = (
+            1e-12
+            * scale
+        )
+        raw_regularized = (
+            raw_total
+            + regularization
+            * identity
+        )
+        target_regularized = (
+            target
+            + regularization
+            * identity
+        )
+        transform = (
+            _hermitian_psd_sqrt(
+                target_regularized,
+                inverse=False,
+            )
+            @ _hermitian_psd_sqrt(
+                raw_regularized,
+                inverse=True,
+            )
+        )
+        corrected_package_channels = np.asarray(
+            [
+                0.5
+                * (
+                    transform
+                    @ channel
+                    @ transform.conj().T
+                    + (
+                        transform
+                        @ channel
+                        @ transform.conj().T
+                    ).conj().T
+                )
+                for channel
+                in raw_package_channels
+            ],
+            dtype=complex,
+        )
+        corrected_total = np.sum(
+            corrected_package_channels,
+            axis=0,
+        )
+        normalized_error = float(
+            np.linalg.norm(
+                corrected_total
+                - target
+            )
+            / target_norm
+        )
+        if (
+            normalized_error
+            > normalized_closure_tolerance
+        ):
+            raise RuntimeError(
+                "normalized dielectric spatial field failed power closure: "
+                f"relative error={normalized_error:.3e}"
+            )
+
+    return PreparedHybridReferenceLossField(
+        scene=scene,
+        frequency_hz=float(
+            teacher.frequency_hz
+        ),
+        teacher=teacher,
+        result=result,
+        port_prediction=result.prediction,
+        package_transform=transform,
+        raw_dielectric_closure_error=(
+            raw_error
+        ),
+        normalized_dielectric_closure_error=(
+            normalized_error
+        ),
+        package_integrated_channels=(
+            corrected_package_channels
+        ),
+    )
