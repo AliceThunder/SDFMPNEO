@@ -1369,6 +1369,7 @@ class SpatialTrainingReport:
     best_epoch: int
     best_validation_error: float | None
     stopped_early: bool
+    best_validation_shape_error: float | None = None
 
 
 def _sample_spatial_loss(
@@ -1483,6 +1484,100 @@ def _sample_spatial_loss(
     )
 
 
+def _weighted_relative_error_numpy(
+    predicted,
+    target,
+    weights,
+) -> float:
+    predicted = np.asarray(
+        predicted,
+        dtype=complex,
+    )
+    target = np.asarray(
+        target,
+        dtype=complex,
+    )
+    weights = np.asarray(
+        weights,
+        dtype=float,
+    )
+    numerator = np.sum(
+        weights[
+            :,
+            None,
+            None,
+        ]
+        * np.abs(
+            predicted
+            - target
+        ) ** 2
+    )
+    denominator = (
+        np.sum(
+            weights[
+                :,
+                None,
+                None,
+            ]
+            * np.abs(
+                target
+            ) ** 2
+        )
+        + 1e-18
+    )
+    return float(
+        numerator
+        / denominator
+    )
+
+
+def _sample_spatial_end_to_end_error(
+    model,
+    port_artifact,
+    sample: TeacherSample,
+    *,
+    longitudinal_points: int,
+    radial_order: int,
+    angular_order: int,
+    device: str,
+) -> float:
+    if sample.spatial_loss is None:
+        raise ValueError(
+            "end-to-end spatial validation requires spatial truth"
+        )
+    artifact = NeuralSpatialLossArtifact(
+        port_artifact,
+        model,
+        longitudinal_points=(
+            longitudinal_points
+        ),
+        radial_order=(
+            radial_order
+        ),
+        angular_order=(
+            angular_order
+        ),
+        device=device,
+    )
+    prepared = artifact.prepare(
+        sample.scene,
+        sample.frequency_hz,
+    )
+    spatial = sample.spatial_loss
+    predicted = (
+        prepared.local_dissipation_matrices(
+            spatial.coil_index,
+            spatial.arc_fraction,
+            spatial.xy,
+        )
+    )
+    return _weighted_relative_error_numpy(
+        predicted,
+        spatial.dissipation_matrix,
+        spatial.weights,
+    )
+
+
 def train_spatial_loss_surrogate(
     port_artifact,
     samples,
@@ -1579,6 +1674,7 @@ def train_spatial_loss_surrogate(
     final_loss = np.inf
     best_epoch = 0
     best_validation_error = None
+    best_validation_shape_error = None
     best_state = None
     stale = 0
     stopped_early = False
@@ -1640,7 +1736,7 @@ def train_spatial_loss_surrogate(
                 continue
             model.eval()
             with torch.no_grad():
-                values = [
+                shape_values = [
                     float(
                         _sample_spatial_loss(
                             model,
@@ -1652,9 +1748,33 @@ def train_spatial_loss_surrogate(
                     for sample
                     in validation_samples
                 ]
+            end_to_end_values = [
+                _sample_spatial_end_to_end_error(
+                    model,
+                    port_artifact,
+                    sample,
+                    longitudinal_points=(
+                        longitudinal_points
+                    ),
+                    radial_order=(
+                        radial_order
+                    ),
+                    angular_order=(
+                        angular_order
+                    ),
+                    device=device,
+                )
+                for sample
+                in validation_samples
+            ]
+            shape_score = float(
+                np.mean(
+                    shape_values
+                )
+            )
             score = float(
                 np.mean(
-                    values
+                    end_to_end_values
                 )
             )
             if (
@@ -1666,6 +1786,9 @@ def train_spatial_loss_surrogate(
             ):
                 best_validation_error = (
                     score
+                )
+                best_validation_shape_error = (
+                    shape_score
                 )
                 best_epoch = epoch
                 best_state = {
@@ -1730,6 +1853,14 @@ def train_spatial_loss_surrogate(
             ),
             stopped_early=bool(
                 stopped_early
+            ),
+            best_validation_shape_error=(
+                None
+                if best_validation_shape_error
+                is None
+                else float(
+                    best_validation_shape_error
+                )
             ),
         ),
     )

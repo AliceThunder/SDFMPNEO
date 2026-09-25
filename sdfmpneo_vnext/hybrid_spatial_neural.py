@@ -1572,6 +1572,7 @@ class HybridSpatialTrainingReport:
     best_epoch: int
     best_validation_error: float | None
     stopped_early: bool
+    best_validation_shape_error: float | None = None
 
 
 def _weighted_relative_loss(
@@ -1761,6 +1762,134 @@ def _sample_loss(
     )
 
 
+def _weighted_relative_error_numpy(
+    predicted,
+    target,
+    weights,
+) -> float:
+    predicted = np.asarray(
+        predicted,
+        dtype=complex,
+    )
+    target = np.asarray(
+        target,
+        dtype=complex,
+    )
+    weights = np.asarray(
+        weights,
+        dtype=float,
+    )
+    numerator = np.sum(
+        weights[
+            :,
+            None,
+            None,
+        ]
+        * np.abs(
+            predicted
+            - target
+        ) ** 2
+    )
+    denominator = (
+        np.sum(
+            weights[
+                :,
+                None,
+                None,
+            ]
+            * np.abs(
+                target
+            ) ** 2
+        )
+        + 1e-18
+    )
+    return float(
+        numerator
+        / denominator
+    )
+
+
+def _sample_end_to_end_error(
+    model,
+    port_artifact,
+    sample: HybridTeacherSample,
+    *,
+    conductor_longitudinal_points: int,
+    conductor_radial_order: int,
+    conductor_angular_order: int,
+    package_axial_order: int,
+    package_radial_order: int,
+    package_azimuthal_order: int,
+    device: str,
+) -> float:
+    if not sample.has_spatial_truth:
+        raise ValueError(
+            "end-to-end hybrid spatial validation requires spatial truth"
+        )
+    artifact = HybridSpatialLossArtifact(
+        port_artifact,
+        model,
+        conductor_longitudinal_points=(
+            conductor_longitudinal_points
+        ),
+        conductor_radial_order=(
+            conductor_radial_order
+        ),
+        conductor_angular_order=(
+            conductor_angular_order
+        ),
+        package_axial_order=(
+            package_axial_order
+        ),
+        package_radial_order=(
+            package_radial_order
+        ),
+        package_azimuthal_order=(
+            package_azimuthal_order
+        ),
+        device=device,
+    )
+    prepared = artifact.prepare(
+        sample.scene,
+        sample.frequency_hz,
+    )
+
+    conductor = sample.conductor_spatial_loss
+    conductor_predicted = (
+        prepared.local_dissipation_matrices(
+            conductor.coil_index,
+            conductor.arc_fraction,
+            conductor.xy,
+        )
+    )
+    conductor_error = (
+        _weighted_relative_error_numpy(
+            conductor_predicted,
+            conductor.dissipation_matrix,
+            conductor.weights,
+        )
+    )
+
+    package = sample.package_spatial_loss
+    package_predicted = (
+        prepared.package_local_dissipation_matrices(
+            package.package_index,
+            package.local_position,
+        )
+    )
+    package_error = (
+        _weighted_relative_error_numpy(
+            package_predicted,
+            package.dissipation_matrix,
+            package.weights,
+        )
+    )
+    return float(
+        conductor_error
+        + package_error
+    )
+
+
 def train_hybrid_spatial_loss_surrogate(
     port_artifact,
     samples,
@@ -1874,6 +2003,7 @@ def train_hybrid_spatial_loss_surrogate(
     final_loss = np.inf
     best_epoch = 0
     best_validation_error = None
+    best_validation_shape_error = None
     best_state = None
     stale = 0
     stopped_early = False
@@ -1926,7 +2056,7 @@ def train_hybrid_spatial_loss_surrogate(
                 continue
             model.eval()
             with torch.no_grad():
-                values = [
+                shape_values = [
                     float(
                         _sample_loss(
                             model,
@@ -1938,8 +2068,43 @@ def train_hybrid_spatial_loss_surrogate(
                     for sample
                     in validation_samples
                 ]
+            end_to_end_values = [
+                _sample_end_to_end_error(
+                    model,
+                    port_artifact,
+                    sample,
+                    conductor_longitudinal_points=(
+                        conductor_longitudinal_points
+                    ),
+                    conductor_radial_order=(
+                        conductor_radial_order
+                    ),
+                    conductor_angular_order=(
+                        conductor_angular_order
+                    ),
+                    package_axial_order=(
+                        package_axial_order
+                    ),
+                    package_radial_order=(
+                        package_radial_order
+                    ),
+                    package_azimuthal_order=(
+                        package_azimuthal_order
+                    ),
+                    device=device,
+                )
+                for sample
+                in validation_samples
+            ]
+            shape_score = float(
+                np.mean(
+                    shape_values
+                )
+            )
             score = float(
-                np.mean(values)
+                np.mean(
+                    end_to_end_values
+                )
             )
             if (
                 best_validation_error
@@ -1950,6 +2115,9 @@ def train_hybrid_spatial_loss_surrogate(
             ):
                 best_validation_error = (
                     score
+                )
+                best_validation_shape_error = (
+                    shape_score
                 )
                 best_epoch = epoch
                 best_state = {
@@ -2030,6 +2198,14 @@ def train_hybrid_spatial_loss_surrogate(
             ),
             bool(
                 stopped_early
+            ),
+            (
+                None
+                if best_validation_shape_error
+                is None
+                else float(
+                    best_validation_shape_error
+                )
             ),
         ),
     )

@@ -10,6 +10,7 @@ from sdfmpneo_vnext import (
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    StructuredPortPrediction,
     TeacherSample,
     analytic_port_baseline,
     encode_scene_invariant,
@@ -23,7 +24,11 @@ from sdfmpneo_vnext.neural import (
 from sdfmpneo_vnext.spatial_neural import (
     NeuralSpatialLossArtifact,
     SpatialLossShapeNet,
+    _normalization_rule,
+    _sample_spatial_end_to_end_error,
+    _sample_spatial_loss,
 )
+from sdfmpneo_vnext.training_data import SpatialLossSamples
 
 
 def _scene():
@@ -439,3 +444,184 @@ def test_spatial_decoder_is_object_and_port_permutation_equivariant():
         rtol=5e-5,
         atol=5e-7,
     )
+
+
+
+class _ScaledChannelPortArtifact:
+    def __init__(
+        self,
+        base,
+        scale: float,
+    ):
+        self.base = base
+        self.scale = float(
+            scale
+        )
+        self.model = base.model
+        self.normalizer = (
+            base.normalizer
+        )
+        self.baseline_segments = (
+            base.baseline_segments
+        )
+        self.device = (
+            base.device
+        )
+
+    def fingerprint(
+        self,
+    ):
+        return (
+            self.base.fingerprint()
+        )
+
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        prediction = (
+            self.base.predict_structured(
+                scene,
+                frequency_hz,
+            )
+        )
+        return StructuredPortPrediction(
+            prediction.impedance,
+            self.scale
+            * prediction.dissipation_channels,
+        )
+
+
+def test_spatial_validation_uses_predicted_channels_not_truth_channels():
+    torch.manual_seed(
+        29
+    )
+    scene = _scene()
+    frequency = 60_000.0
+    port = _port_artifact()
+    model = SpatialLossShapeNet(
+        hidden_dim=16,
+        pair_dim=15,
+        field_hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    longitudinal_points = 6
+    radial_order = 2
+    angular_order = 8
+    truth_artifact = (
+        NeuralSpatialLossArtifact(
+            port,
+            model,
+            longitudinal_points=(
+                longitudinal_points
+            ),
+            radial_order=(
+                radial_order
+            ),
+            angular_order=(
+                angular_order
+            ),
+        )
+    )
+    prepared = (
+        truth_artifact.prepare(
+            scene,
+            frequency,
+        )
+    )
+    (
+        coil_index,
+        arc_fraction,
+        xy,
+        weights,
+    ) = _normalization_rule(
+        scene,
+        longitudinal_points=(
+            longitudinal_points
+        ),
+        radial_order=(
+            radial_order
+        ),
+        angular_order=(
+            angular_order
+        ),
+    )
+    spatial_truth = (
+        prepared.local_dissipation_matrices(
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+    )
+    baseline = (
+        analytic_port_baseline(
+            scene,
+            frequency,
+            segments_per_coil=32,
+        )
+    )
+    port_prediction = (
+        port.predict_structured(
+            scene,
+            frequency,
+        )
+    )
+    sample = TeacherSample(
+        scene,
+        frequency,
+        encode_scene_invariant(
+            scene,
+            frequency,
+        ),
+        baseline.resistance,
+        2.0
+        * np.pi
+        * frequency
+        * baseline.inductance,
+        port_prediction.impedance,
+        32,
+        port_prediction.dissipation_channels,
+        SpatialLossSamples(
+            coil_index,
+            arc_fraction,
+            xy,
+            weights,
+            spatial_truth,
+        ),
+    )
+
+    wrong_port = (
+        _ScaledChannelPortArtifact(
+            port,
+            1.5,
+        )
+    )
+    shape_only = float(
+        _sample_spatial_loss(
+            model,
+            wrong_port,
+            sample,
+            device="cpu",
+        ).detach().cpu()
+    )
+    end_to_end = (
+        _sample_spatial_end_to_end_error(
+            model,
+            wrong_port,
+            sample,
+            longitudinal_points=(
+                longitudinal_points
+            ),
+            radial_order=(
+                radial_order
+            ),
+            angular_order=(
+                angular_order
+            ),
+            device="cpu",
+        )
+    )
+    assert shape_only < 1e-8
+    assert end_to_end > 0.10

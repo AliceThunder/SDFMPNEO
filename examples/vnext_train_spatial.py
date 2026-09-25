@@ -64,6 +64,7 @@ def main():
             "epochs_run": report.epochs,
             "best_epoch": report.best_epoch,
             "best_validation_error": report.best_validation_error,
+            "best_validation_shape_error": report.best_validation_shape_error,
             "stopped_early": report.stopped_early,
             "artifact": str(
                 args.spatial_artifact
