@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+import json
 import math
 import numpy as np
 
@@ -1286,6 +1288,72 @@ class HybridNeuralResidualArtifact:
             self.device
         )
         self.model.eval()
+
+    def fingerprint(
+        self,
+    ) -> str:
+        """Stable semantic fingerprint for hybrid weights and preprocessing."""
+        digest = sha256()
+        config = {
+            "schema": HYBRID_ARTIFACT_SCHEMA,
+            "model_config": {
+                "coil_dim": self.model.coil_dim,
+                "coil_pair_dim": self.model.coil_pair_dim,
+                "package_dim": self.model.package_dim,
+                "cross_dim": self.model.cross_dim,
+                "package_pair_dim": self.model.package_pair_dim,
+                "hidden_dim": self.model.hidden_dim,
+                "factor_rank": self.model.factor_rank,
+                "depth": self.model.depth,
+            },
+            "baseline_segments": self.baseline_segments,
+        }
+        digest.update(
+            json.dumps(
+                config,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+        def update_array(name, value):
+            array = np.asarray(value)
+            digest.update(
+                str(name).encode("utf-8")
+            )
+            digest.update(
+                str(array.dtype).encode("ascii")
+            )
+            digest.update(
+                np.asarray(
+                    array.shape,
+                    dtype=np.int64,
+                ).tobytes()
+            )
+            digest.update(
+                np.ascontiguousarray(
+                    array
+                ).tobytes()
+            )
+
+        for name, tensor in sorted(
+            self.model.state_dict().items()
+        ):
+            update_array(
+                "state:" + name,
+                tensor.detach()
+                .cpu()
+                .contiguous()
+                .numpy(),
+            )
+        for name, value in sorted(
+            self.normalizer.to_dict().items()
+        ):
+            update_array(
+                "normalizer:" + name,
+                value,
+            )
+        return digest.hexdigest()
 
     def predict_structured(
         self,
