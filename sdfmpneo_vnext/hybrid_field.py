@@ -393,8 +393,13 @@ class PreparedHybridReferenceLossField:
             ),
             dtype=complex,
         )
+        loss_conductivity = (
+            package.material.loss_conductivity(
+                self.frequency_hz
+            )
+        )
         if (
-            package.material.conductivity
+            loss_conductivity
             > 0.0
             and np.any(
                 inside
@@ -408,7 +413,7 @@ class PreparedHybridReferenceLossField:
                 )
             )
             matrices = (
-                package.material.conductivity
+                loss_conductivity
                 * np.einsum(
                     "qdi,qdj->qij",
                     transfer.conj(),

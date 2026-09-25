@@ -213,31 +213,45 @@ def _package_features(
         material = (
             package.material
         )
+        relative_epsilon = (
+            material.relative_permittivity_at(
+                frequency_hz
+            )
+        )
+        epsilon_real = max(
+            float(
+                np.real(
+                    relative_epsilon
+                )
+            ),
+            1e-12,
+        )
+        loss_conductivity = (
+            material.loss_conductivity(
+                frequency_hz
+            )
+        )
         epsilon_ratio = (
-            material.relative_permittivity
+            epsilon_real
             / scene.medium.relative_permittivity
         )
         permeability_ratio = (
             material.relative_permeability
             / scene.medium.relative_permeability
         )
-        if frequency_hz > 0.0:
-            loss_tangent_like = (
-                material.conductivity
-                / max(
-                    omega
-                    * EPS0
-                    * material.relative_permittivity,
-                    1e-30,
-                )
+        loss_tangent_like = (
+            0.0
+            if frequency_hz == 0.0
+            else max(
+                float(
+                    -np.imag(
+                        relative_epsilon
+                    )
+                    / epsilon_real
+                ),
+                0.0,
             )
-        else:
-            loss_tangent_like = (
-                0.0
-                if material.conductivity
-                == 0.0
-                else 1e30
-            )
+        )
         rows.append(
             [
                 geometry.half_extents[
@@ -255,11 +269,11 @@ def _package_features(
                 geometry.exponent_xy,
                 geometry.exponent_z,
                 np.log(
-                    material.relative_permittivity
+                    epsilon_real
                 ),
                 material.relative_permeability,
                 np.log1p(
-                    material.conductivity
+                    loss_conductivity
                     / 1e-6
                 ),
                 np.log(

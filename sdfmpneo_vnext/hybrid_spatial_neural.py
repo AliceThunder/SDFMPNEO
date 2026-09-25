@@ -31,6 +31,7 @@ HYBRID_SPATIAL_ARTIFACT_SCHEMA = 1
 
 def _package_loss_gate(
     scene: Scene,
+    frequency_hz: float,
     package_index,
 ):
     package_index = np.asarray(
@@ -42,7 +43,9 @@ def _package_loss_gate(
             1.0
             if scene.packages[
                 int(index)
-            ].material.conductivity
+            ].material.loss_conductivity(
+                frequency_hz
+            )
             > 0.0
             else 0.0
             for index in package_index
@@ -953,6 +956,7 @@ class PreparedHybridSpatialLossField:
             package_gate = torch.as_tensor(
                 _package_loss_gate(
                     self.scene,
+                    self.frequency_hz,
                     package_index,
                 ),
                 dtype=raw.real.dtype,
@@ -1309,6 +1313,7 @@ class HybridSpatialLossArtifact:
             package_gate = torch.as_tensor(
                 _package_loss_gate(
                     scene,
+                    frequency_hz,
                     package_ids,
                 ),
                 dtype=raw_package.real.dtype,
@@ -1719,6 +1724,7 @@ def _sample_loss(
     package_gate = torch.as_tensor(
         _package_loss_gate(
             sample.scene,
+            sample.frequency_hz,
             package.package_index,
         ),
         dtype=raw_package.real.dtype,

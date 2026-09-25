@@ -11,9 +11,197 @@ from .scene import (
     ConductorMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
+    DebyeMaterial,
     PackageObject,
     Scene,
 )
+
+
+def _package_material_to_dict(
+    material,
+):
+    if isinstance(
+        material,
+        DebyeMaterial,
+    ):
+        return {
+            "model": "debye",
+            "relative_permittivity_static": (
+                material.relative_permittivity_static
+            ),
+            "relative_permittivity_infinite": (
+                material.relative_permittivity_infinite
+            ),
+            "relaxation_time": (
+                material.relaxation_time
+            ),
+            "relative_permeability": (
+                material.relative_permeability
+            ),
+            "conductivity": (
+                material.conductivity
+            ),
+            "thermal_conductivity": (
+                material.thermal_conductivity
+            ),
+            "density": material.density,
+            "heat_capacity": (
+                material.heat_capacity
+            ),
+        }
+    if isinstance(
+        material,
+        IsotropicMaterial,
+    ):
+        return {
+            "relative_permittivity": (
+                material.relative_permittivity
+            ),
+            "relative_permeability": (
+                material.relative_permeability
+            ),
+            "conductivity": (
+                material.conductivity
+            ),
+            "thermal_conductivity": (
+                material.thermal_conductivity
+            ),
+            "density": material.density,
+            "heat_capacity": (
+                material.heat_capacity
+            ),
+        }
+    raise TypeError(
+        "unsupported package material type"
+    )
+
+
+def _package_material_from_dict(
+    data,
+):
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise TypeError(
+            "package material must be a dictionary"
+        )
+    thermal_conductivity = (
+        data.get(
+            "thermal_conductivity"
+        )
+    )
+    density = data.get(
+        "density"
+    )
+    heat_capacity = data.get(
+        "heat_capacity"
+    )
+    thermal = (
+        None
+        if thermal_conductivity
+        is None
+        else float(
+            thermal_conductivity
+        )
+    )
+    rho = (
+        None
+        if density is None
+        else float(
+            density
+        )
+    )
+    capacity = (
+        None
+        if heat_capacity is None
+        else float(
+            heat_capacity
+        )
+    )
+    model = str(
+        data.get(
+            "model",
+            "constant",
+        )
+    ).lower()
+    if model == "constant":
+        return IsotropicMaterial(
+            float(
+                data.get(
+                    "relative_permittivity",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            thermal,
+            rho,
+            capacity,
+        )
+    if model == "debye":
+        required = (
+            "relative_permittivity_static",
+            "relative_permittivity_infinite",
+            "relaxation_time",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "Debye package material is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return DebyeMaterial(
+            float(
+                data[
+                    "relative_permittivity_static"
+                ]
+            ),
+            float(
+                data[
+                    "relative_permittivity_infinite"
+                ]
+            ),
+            float(
+                data[
+                    "relaxation_time"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            thermal,
+            rho,
+            capacity,
+        )
+    raise ValueError(
+        f"unsupported package material model: {model}"
+    )
 
 
 def scene_to_dict(scene: Scene):
@@ -62,20 +250,9 @@ def scene_to_dict(scene: Scene):
                     "rotation": package.geometry.pose.rotation.tolist(),
                     "translation": package.geometry.pose.translation.tolist(),
                 },
-                "material": {
-                    "relative_permittivity": (
-                        package.material.relative_permittivity
-                    ),
-                    "relative_permeability": (
-                        package.material.relative_permeability
-                    ),
-                    "conductivity": package.material.conductivity,
-                    "thermal_conductivity": (
-                        package.material.thermal_conductivity
-                    ),
-                    "density": package.material.density,
-                    "heat_capacity": package.material.heat_capacity,
-                },
+                "material": _package_material_to_dict(
+                    package.material
+                ),
             }
             for package in scene.packages
         ]
@@ -364,55 +541,10 @@ def scene_from_dict(data) -> Scene:
             ),
             pose,
         )
-        thermal_conductivity = m.get(
-            "thermal_conductivity"
-        )
-        density = m.get(
-            "density"
-        )
-        heat_capacity = m.get(
-            "heat_capacity"
-        )
-        material = IsotropicMaterial(
-            float(
-                m.get(
-                    "relative_permittivity",
-                    1.0,
-                )
-            ),
-            float(
-                m.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                m.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            (
-                None
-                if thermal_conductivity is None
-                else float(
-                    thermal_conductivity
-                )
-            ),
-            (
-                None
-                if density is None
-                else float(
-                    density
-                )
-            ),
-            (
-                None
-                if heat_capacity is None
-                else float(
-                    heat_capacity
-                )
-            ),
+        material = (
+            _package_material_from_dict(
+                m
+            )
         )
         packages.append(
             PackageObject(

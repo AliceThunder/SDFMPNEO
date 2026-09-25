@@ -61,7 +61,7 @@ def mvp_system_capabilities(
         superelliptic_conductors=True,
         package_geometry=True,
         package_dielectric_sie=True,
-        package_em_coupling=False,
+        package_em_coupling=True,
         continuous_spatial_loss=True,
     )
 

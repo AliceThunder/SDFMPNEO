@@ -107,6 +107,34 @@ class IsotropicMaterial:
                     "must be supplied together as positive finite values"
                 )
 
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        return (
+            self.complex_permittivity(
+                frequency_hz
+            )
+            / EPS0
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        if (
+            not np.isfinite(
+                frequency_hz
+            )
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        return float(
+            self.conductivity
+        )
+
     def complex_permittivity(
         self,
         frequency_hz: float,
@@ -145,9 +173,191 @@ class IsotropicMaterial:
 
 
 @dataclass(frozen=True)
+class DebyeMaterial:
+    relative_permittivity_static: float
+    relative_permittivity_infinite: float
+    relaxation_time: float
+    relative_permeability: float = 1.0
+    conductivity: float = 0.0
+    thermal_conductivity: float | None = None
+    density: float | None = None
+    heat_capacity: float | None = None
+
+    def __post_init__(
+        self,
+    ):
+        if (
+            not np.isfinite(
+                self.relative_permittivity_static
+            )
+            or not np.isfinite(
+                self.relative_permittivity_infinite
+            )
+            or self.relative_permittivity_infinite
+            <= 0.0
+            or self.relative_permittivity_static
+            < self.relative_permittivity_infinite
+            or not np.isfinite(
+                self.relaxation_time
+            )
+            or self.relaxation_time
+            <= 0.0
+            or not np.isfinite(
+                self.relative_permeability
+            )
+            or self.relative_permeability
+            <= 0.0
+            or not np.isfinite(
+                self.conductivity
+            )
+            or self.conductivity
+            < 0.0
+        ):
+            raise ValueError(
+                "invalid passive Debye material parameters"
+            )
+        thermal = (
+            self.thermal_conductivity,
+            self.density,
+            self.heat_capacity,
+        )
+        if any(
+            value is not None
+            for value in thermal
+        ):
+            if not all(
+                value is not None
+                and np.isfinite(
+                    value
+                )
+                and value > 0.0
+                for value in thermal
+            ):
+                raise ValueError(
+                    "thermal_conductivity, density, and heat_capacity "
+                    "must be supplied together as positive finite values"
+                )
+
+    @property
+    def relative_permittivity(
+        self,
+    ) -> float:
+        """Static relative permittivity for backward-compatible metadata."""
+        return float(
+            self.relative_permittivity_static
+        )
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        return (
+            self.complex_permittivity(
+                frequency_hz
+            )
+            / EPS0
+        )
+
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        if (
+            not np.isfinite(
+                frequency_hz
+            )
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if frequency_hz == 0.0:
+            if self.conductivity > 0.0:
+                raise ValueError(
+                    "conductive Debye material has no finite "
+                    "complex-permittivity representation at DC"
+                )
+            return complex(
+                EPS0
+                * self.relative_permittivity_static
+            )
+        omega = (
+            2.0
+            * np.pi
+            * float(
+                frequency_hz
+            )
+        )
+        susceptibility = (
+            self.relative_permittivity_static
+            - self.relative_permittivity_infinite
+        ) / (
+            1.0
+            + 1j
+            * omega
+            * self.relaxation_time
+        )
+        relative = (
+            self.relative_permittivity_infinite
+            + susceptibility
+        )
+        return complex(
+            EPS0
+            * relative
+            - 1j
+            * self.conductivity
+            / omega
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        if (
+            not np.isfinite(
+                frequency_hz
+            )
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if frequency_hz == 0.0:
+            return float(
+                self.conductivity
+            )
+        omega = (
+            2.0
+            * np.pi
+            * float(
+                frequency_hz
+            )
+        )
+        epsilon = (
+            self.complex_permittivity(
+                frequency_hz
+            )
+        )
+        effective = (
+            -omega
+            * float(
+                np.imag(
+                    epsilon
+                )
+            )
+        )
+        return float(
+            max(
+                effective,
+                0.0,
+            )
+        )
+
+
+@dataclass(frozen=True)
 class PackageObject:
     geometry: SuperquadricPackageGeometry
-    material: IsotropicMaterial
+    material: IsotropicMaterial | DebyeMaterial
     name: str = "package"
 
     def __post_init__(self):
@@ -160,10 +370,13 @@ class PackageObject:
             )
         if not isinstance(
             self.material,
-            IsotropicMaterial,
+            (
+                IsotropicMaterial,
+                DebyeMaterial,
+            ),
         ):
             raise TypeError(
-                "package material must be IsotropicMaterial"
+                "package material must be a supported passive isotropic material"
             )
 
 

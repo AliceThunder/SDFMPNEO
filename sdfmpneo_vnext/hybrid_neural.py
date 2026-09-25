@@ -1241,10 +1241,13 @@ class HybridPhysicsFactoredResidualNet(
 
 def _dielectric_loss_gate(
     scene: Scene,
+    frequency_hz: float,
 ) -> float:
     return float(
         any(
-            package.material.conductivity
+            package.material.loss_conductivity(
+                frequency_hz
+            )
             > 0.0
             for package
             in scene.packages
@@ -1453,7 +1456,8 @@ class HybridNeuralResidualArtifact:
                 ),
                 dielectric_loss_gate=(
                     _dielectric_loss_gate(
-                        scene
+                        scene,
+                        frequency_hz,
                     )
                 ),
             )
@@ -1678,7 +1682,8 @@ def _predict_sample(
             ),
             dielectric_loss_gate=(
                 _dielectric_loss_gate(
-                    sample.scene
+                    sample.scene,
+                    sample.frequency_hz,
                 )
             ),
         )
@@ -1945,7 +1950,8 @@ def train_hybrid_residual_surrogate(
                 ),
                 dielectric_loss_gate=(
                     _dielectric_loss_gate(
-                        sample.scene
+                        sample.scene,
+                        sample.frequency_hz,
                     )
                 ),
             )
