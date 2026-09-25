@@ -6,6 +6,8 @@ import numpy as np
 from .certified import certify_mixed_ports
 from .convergence import mixed_reference_convergence
 from .em import MQSConfig
+from .hybrid_certified import certify_dielectric_ports
+from .hybrid_convergence import hybrid_reference_convergence
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,7 @@ class CertifiedReleaseAudit:
     maximum_longitudinal_change: float
     maximum_cross_section_change: float
     maximum_quadrature_change: float
+    maximum_dielectric_surface_change: float
     maximum_certified_truth_relative_error: float
     operator_backend: str
     passed: bool
@@ -43,6 +46,9 @@ class CertifiedReleaseAudit:
             ),
             "maximum_quadrature_change": (
                 self.maximum_quadrature_change
+            ),
+            "maximum_dielectric_surface_change": (
+                self.maximum_dielectric_surface_change
             ),
             "maximum_certified_truth_relative_error": (
                 self.maximum_certified_truth_relative_error
@@ -125,7 +131,9 @@ def audit_certified_release(
     max_longitudinal = 0.0
     max_cross_section = 0.0
     max_quadrature = 0.0
+    max_dielectric_surface = 0.0
     max_truth_error = 0.0
+    observed_backends = set()
 
     for sample in samples:
         if (
@@ -137,14 +145,50 @@ def audit_certified_release(
             raise ValueError(
                 "fine_config must not be longitudinally coarser than coarse_config"
             )
-        convergence = mixed_reference_convergence(
-            sample.scene,
-            sample.frequency_hz,
-            fine_config,
-            tolerance=(
-                convergence_tolerance
-            ),
-        )
+        if sample.scene.packages:
+            surface_vertical_order = int(
+                getattr(
+                    sample,
+                    "surface_vertical_order",
+                    16,
+                )
+            )
+            surface_azimuthal_order = int(
+                getattr(
+                    sample,
+                    "surface_azimuthal_order",
+                    32,
+                )
+            )
+            convergence = (
+                hybrid_reference_convergence(
+                    sample.scene,
+                    sample.frequency_hz,
+                    fine_config,
+                    surface_vertical_order=(
+                        surface_vertical_order
+                    ),
+                    surface_azimuthal_order=(
+                        surface_azimuthal_order
+                    ),
+                    tolerance=(
+                        convergence_tolerance
+                    ),
+                    surface_residual_tolerance=(
+                        algebraic_tolerance
+                    ),
+                )
+            )
+        else:
+            convergence = mixed_reference_convergence(
+                sample.scene,
+                sample.frequency_hz,
+                fine_config,
+                tolerance=(
+                    convergence_tolerance
+                ),
+            )
+
         discretization_change = float(
             convergence.maximum_relative_change
         )
@@ -183,23 +227,59 @@ def audit_certified_release(
                 ]
             ),
         )
-
-        certified = certify_mixed_ports(
-            sample.scene,
-            sample.frequency_hz,
-            artifact,
-            config=fine_config,
-            convergence_report=convergence,
-            algebraic_tolerance=algebraic_tolerance,
-            correction_rtol=correction_rtol,
-            correction_restart=correction_restart,
-            correction_maxiter=correction_maxiter,
-            allow_reference_fallback=False,
-            operator_backend=operator_backend,
-            matrix_free_chunk_size=matrix_free_chunk_size,
-            fast_domain_correction_limit=(
-                fast_domain_correction_limit
+        max_dielectric_surface = max(
+            max_dielectric_surface,
+            float(
+                directional.get(
+                    "dielectric_surface",
+                    0.0,
+                )
             ),
+        )
+
+        if sample.scene.packages:
+            certified = certify_dielectric_ports(
+                sample.scene,
+                sample.frequency_hz,
+                artifact,
+                config=fine_config,
+                convergence_report=convergence,
+                surface_vertical_order=(
+                    surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    surface_azimuthal_order
+                ),
+                algebraic_tolerance=(
+                    algebraic_tolerance
+                ),
+                surface_tolerance=(
+                    algebraic_tolerance
+                ),
+                fast_domain_correction_limit=(
+                    fast_domain_correction_limit
+                ),
+            )
+        else:
+            certified = certify_mixed_ports(
+                sample.scene,
+                sample.frequency_hz,
+                artifact,
+                config=fine_config,
+                convergence_report=convergence,
+                algebraic_tolerance=algebraic_tolerance,
+                correction_rtol=correction_rtol,
+                correction_restart=correction_restart,
+                correction_maxiter=correction_maxiter,
+                allow_reference_fallback=False,
+                operator_backend=operator_backend,
+                matrix_free_chunk_size=matrix_free_chunk_size,
+                fast_domain_correction_limit=(
+                    fast_domain_correction_limit
+                ),
+            )
+        observed_backends.add(
+            certified.operator_backend
         )
         if certified.certified:
             certified_count += 1
@@ -229,6 +309,7 @@ def audit_certified_release(
         and fast_domain_count == len(samples)
         and max_residual <= algebraic_tolerance
         and max_discretization <= convergence_tolerance
+        and max_dielectric_surface <= convergence_tolerance
         and max_truth_error <= truth_consistency_tolerance
     )
     return CertifiedReleaseAudit(
@@ -247,9 +328,23 @@ def audit_certified_release(
         maximum_quadrature_change=(
             max_quadrature
         ),
+        maximum_dielectric_surface_change=(
+            max_dielectric_surface
+        ),
         maximum_certified_truth_relative_error=(
             max_truth_error
         ),
-        operator_backend=operator_backend,
+        operator_backend=(
+            next(
+                iter(
+                    observed_backends
+                )
+            )
+            if len(
+                observed_backends
+            )
+            == 1
+            else "mixed"
+        ),
         passed=passed,
     )
