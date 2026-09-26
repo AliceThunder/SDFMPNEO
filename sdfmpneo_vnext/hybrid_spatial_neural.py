@@ -2489,6 +2489,10 @@ def _sample_end_to_end_error(
     package_axial_order: int,
     package_radial_order: int,
     package_azimuthal_order: int,
+    background_segments_per_turn: int,
+    background_radial_order: int,
+    background_angular_order: int,
+    background_conductivity_range,
     device: str,
 ) -> float:
     if not sample.has_spatial_truth:
@@ -2515,6 +2519,18 @@ def _sample_end_to_end_error(
         ),
         package_azimuthal_order=(
             package_azimuthal_order
+        ),
+        background_segments_per_turn=(
+            background_segments_per_turn
+        ),
+        background_radial_order=(
+            background_radial_order
+        ),
+        background_angular_order=(
+            background_angular_order
+        ),
+        background_conductivity_range=(
+            background_conductivity_range
         ),
         device=device,
     )
@@ -2553,9 +2569,36 @@ def _sample_end_to_end_error(
             package.weights,
         )
     )
+
+    background_error = 0.0
+    background = (
+        sample.background_spatial_loss
+    )
+    if background is not None:
+        root_pose = (
+            sample.scene.coils[
+                0
+            ].geometry.pose
+        )
+        background_world = root_pose.apply(
+            background.root_local_position
+        )
+        background_predicted = (
+            prepared.background_dissipation_matrices(
+                background_world
+            )
+        )
+        background_error = (
+            _weighted_relative_error_numpy(
+                background_predicted,
+                background.dissipation_matrix,
+                background.weights,
+            )
+        )
     return float(
         conductor_error
         + package_error
+        + background_error
     )
 
 
@@ -2580,6 +2623,9 @@ def train_hybrid_spatial_loss_surrogate(
     package_axial_order: int = 6,
     package_radial_order: int = 4,
     package_azimuthal_order: int = 16,
+    background_segments_per_turn: int = 16,
+    background_radial_order: int = 12,
+    background_angular_order: int = 48,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2622,10 +2668,74 @@ def train_hybrid_spatial_loss_surrogate(
         or patience < 1
         or validation_interval < 1
         or min_improvement < 0.0
+        or background_segments_per_turn < 4
+        or background_radial_order < 3
+        or background_angular_order < 8
     ):
         raise ValueError(
             "invalid hybrid spatial training configuration"
         )
+
+    training_background_conductivity = np.asarray(
+        [
+            sample.scene.medium.conductivity
+            for sample
+            in samples
+        ],
+        dtype=float,
+    )
+    if np.any(
+        training_background_conductivity
+        > 0.0
+    ):
+        if not bool(
+            getattr(
+                port_artifact,
+                "supports_lossy_background",
+                False,
+            )
+        ):
+            raise ValueError(
+                "lossy-background spatial training requires a port artifact "
+                "trained for lossy homogeneous backgrounds"
+            )
+        background_conductivity_range = (
+            float(
+                np.min(
+                    training_background_conductivity
+                )
+            ),
+            float(
+                np.max(
+                    training_background_conductivity
+                )
+            ),
+        )
+    else:
+        background_conductivity_range = None
+
+    if (
+        validation_samples
+        and background_conductivity_range
+        is not None
+    ):
+        lower, upper = (
+            background_conductivity_range
+        )
+        for sample in validation_samples:
+            conductivity = float(
+                sample.scene.medium.conductivity
+            )
+            if (
+                conductivity
+                < lower
+                or conductivity
+                > upper
+            ):
+                raise ValueError(
+                    "validation background conductivity lies outside the "
+                    "hybrid spatial training domain"
+                )
 
     torch.manual_seed(
         seed
@@ -2760,6 +2870,18 @@ def train_hybrid_spatial_loss_surrogate(
                     package_azimuthal_order=(
                         package_azimuthal_order
                     ),
+                    background_segments_per_turn=(
+                        background_segments_per_turn
+                    ),
+                    background_radial_order=(
+                        background_radial_order
+                    ),
+                    background_angular_order=(
+                        background_angular_order
+                    ),
+                    background_conductivity_range=(
+                        background_conductivity_range
+                    ),
                     device=device,
                 )
                 for sample
@@ -2841,6 +2963,18 @@ def train_hybrid_spatial_loss_surrogate(
             ),
             package_azimuthal_order=(
                 package_azimuthal_order
+            ),
+            background_segments_per_turn=(
+                background_segments_per_turn
+            ),
+            background_radial_order=(
+                background_radial_order
+            ),
+            background_angular_order=(
+                background_angular_order
+            ),
+            background_conductivity_range=(
+                background_conductivity_range
             ),
             device=device,
         )
