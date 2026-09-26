@@ -23,6 +23,7 @@ from sdfmpneo_vnext.hybrid_neural import (
     HybridNeuralResidualArtifact,
     HybridNormalizer,
     HybridPhysicsFactoredResidualNet,
+    train_hybrid_residual_surrogate,
 )
 
 
@@ -731,4 +732,93 @@ def test_schema1_hybrid_artifact_loads_as_lossless_background_only(tmp_path):
                 conductivity=1.0e-4,
             ),
             85_000.0,
+        )
+
+
+def test_hybrid_training_uses_declared_background_conductivity_domain():
+    base = _scene(
+        loss=0.0
+    )
+    train_scene = _with_background(
+        base,
+        conductivity=5.0e-4,
+    )
+    validation_scene = _with_background(
+        base,
+        conductivity=1.5e-3,
+    )
+    artifact, report = (
+        train_hybrid_residual_surrogate(
+            (
+                _manual_sample(
+                    train_scene
+                ),
+            ),
+            validation_samples=(
+                _manual_sample(
+                    validation_scene
+                ),
+            ),
+            hidden_dim=8,
+            factor_rank=1,
+            depth=1,
+            epochs=1,
+            patience=1,
+            background_conductivity_range=(
+                0.0,
+                2.0e-3,
+            ),
+        )
+    )
+    assert report.epochs == 1
+    assert artifact.supports_lossy_background
+    assert (
+        artifact.background_conductivity_range
+        == (
+            0.0,
+            2.0e-3,
+        )
+    )
+    artifact.predict_structured(
+        validation_scene,
+        85_000.0,
+    )
+
+
+def test_hybrid_training_rejects_validation_outside_declared_background_domain():
+    base = _scene(
+        loss=0.0
+    )
+    train_scene = _with_background(
+        base,
+        conductivity=5.0e-4,
+    )
+    validation_scene = _with_background(
+        base,
+        conductivity=3.0e-3,
+    )
+    with pytest.raises(
+        ValueError,
+        match="outside the declared hybrid port training domain",
+    ):
+        train_hybrid_residual_surrogate(
+            (
+                _manual_sample(
+                    train_scene
+                ),
+            ),
+            validation_samples=(
+                _manual_sample(
+                    validation_scene
+                ),
+            ),
+            hidden_dim=8,
+            factor_rank=1,
+            depth=1,
+            epochs=1,
+            patience=1,
+            background_conductivity_range=(
+                0.0,
+                2.0e-3,
+            ),
         )
