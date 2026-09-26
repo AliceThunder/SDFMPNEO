@@ -1203,6 +1203,15 @@ class HybridSpatialLossArtifact:
             raise ValueError(
                 "hybrid spatial artifact requires at least one package"
             )
+        if (
+            scene.medium.conductivity
+            > 0.0
+            and not self.supports_lossy_background
+        ):
+            raise NotImplementedError(
+                "this hybrid spatial artifact has no continuous "
+                "background-loss decoder for lossy homogeneous media"
+            )
         prediction = (
             self.port_artifact.predict_structured(
                 scene,
