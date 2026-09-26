@@ -231,9 +231,22 @@ def _package_features(
                 frequency_hz
             )
         )
+        background_relative_epsilon = (
+            scene.medium.relative_permittivity_at(
+                frequency_hz
+            )
+        )
+        background_epsilon_real = max(
+            float(
+                np.real(
+                    background_relative_epsilon
+                )
+            ),
+            1e-12,
+        )
         epsilon_ratio = (
             epsilon_real
-            / scene.medium.relative_permittivity
+            / background_epsilon_real
         )
         permeability_ratio = (
             material.relative_permeability
