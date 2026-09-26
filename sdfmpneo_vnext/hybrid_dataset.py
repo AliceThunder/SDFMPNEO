@@ -14,6 +14,7 @@ from .features import EncodedScene
 from .hybrid_features import EncodedHybridScene
 from .hybrid_training_data import (
     HYBRID_REFERENCE_BACKEND,
+    BackgroundSpatialLossSamples,
     HybridTeacherSample,
     PackageSpatialLossSamples,
 )
@@ -26,9 +27,10 @@ from .serialization import (
 )
 
 
-HYBRID_DATASET_SCHEMA = 2
+HYBRID_DATASET_SCHEMA = 3
 _HYBRID_DATASET_READ_SCHEMAS = (
     1,
+    2,
     HYBRID_DATASET_SCHEMA,
 )
 
@@ -49,6 +51,8 @@ class HybridDatasetRecord:
     package_volume_axial_order: int = 0
     package_volume_radial_order: int = 0
     package_volume_azimuthal_order: int = 0
+    background_radial_order: int = 0
+    background_angular_order: int = 0
 
 
 class ImmutableHybridTeacherDataset:
@@ -289,6 +293,12 @@ class ImmutableHybridTeacherDataset:
             "package_volume_azimuthal_order": int(
                 sample.package_volume_azimuthal_order
             ),
+            "background_radial_order": int(
+                sample.background_radial_order
+            ),
+            "background_angular_order": int(
+                sample.background_angular_order
+            ),
             "teacher_config": (
                 teacher_dict
             ),
@@ -296,7 +306,7 @@ class ImmutableHybridTeacherDataset:
                 HYBRID_REFERENCE_BACKEND
             ),
             "output_schema": (
-                "hybrid_port_channels_and_spatial_v2"
+                "hybrid_port_channels_and_spatial_v3"
             ),
         }
         return (
@@ -317,7 +327,7 @@ class ImmutableHybridTeacherDataset:
     ) -> HybridDatasetRecord:
         if self.schema != HYBRID_DATASET_SCHEMA:
             raise RuntimeError(
-                "legacy hybrid datasets are read-only; create a schema-v2 "
+                "legacy hybrid datasets are read-only; create a schema-v3 "
                 "dataset before appending spatial truth"
             )
         if (
@@ -544,6 +554,44 @@ class ImmutableHybridTeacherDataset:
                 is None
                 else sample.package_spatial_loss.dissipation_matrix
             ),
+            background_spatial_root_local_position=(
+                np.empty(
+                    (
+                        0,
+                        3,
+                    ),
+                    dtype=float,
+                )
+                if sample.background_spatial_loss
+                is None
+                else sample.background_spatial_loss.root_local_position
+            ),
+            background_spatial_weights=(
+                np.asarray(
+                    [],
+                    dtype=float,
+                )
+                if sample.background_spatial_loss
+                is None
+                else sample.background_spatial_loss.weights
+            ),
+            background_spatial_matrix=(
+                np.empty(
+                    (
+                        0,
+                        sample.target_impedance.shape[
+                            0
+                        ],
+                        sample.target_impedance.shape[
+                            1
+                        ],
+                    ),
+                    dtype=complex,
+                )
+                if sample.background_spatial_loss
+                is None
+                else sample.background_spatial_loss.dissipation_matrix
+            ),
         )
 
         record = HybridDatasetRecord(
@@ -585,6 +633,12 @@ class ImmutableHybridTeacherDataset:
             package_volume_azimuthal_order=int(
                 sample.package_volume_azimuthal_order
             ),
+            background_radial_order=int(
+                sample.background_radial_order
+            ),
+            background_angular_order=int(
+                sample.background_angular_order
+            ),
         )
         self._manifest[
             "records"
@@ -616,6 +670,8 @@ class ImmutableHybridTeacherDataset:
         package_volume_axial_order: int = 8,
         package_volume_radial_order: int = 6,
         package_volume_azimuthal_order: int = 24,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
         source: str = "initial",
         split: str | None = None,
     ):
@@ -646,6 +702,12 @@ class ImmutableHybridTeacherDataset:
                 ),
                 package_volume_azimuthal_order=(
                     package_volume_azimuthal_order
+                ),
+                background_radial_order=(
+                    background_radial_order
+                ),
+                background_angular_order=(
+                    background_angular_order
                 ),
             )
         )
@@ -848,6 +910,37 @@ class ImmutableHybridTeacherDataset:
             else:
                 package_spatial = None
 
+            if (
+                "background_spatial_root_local_position"
+                in data.files
+                and data[
+                    "background_spatial_root_local_position"
+                ].size
+                > 0
+            ):
+                background_spatial = BackgroundSpatialLossSamples(
+                    np.asarray(
+                        data[
+                            "background_spatial_root_local_position"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "background_spatial_weights"
+                        ],
+                        dtype=float,
+                    ),
+                    np.asarray(
+                        data[
+                            "background_spatial_matrix"
+                        ],
+                        dtype=complex,
+                    ),
+                )
+            else:
+                background_spatial = None
+
         return HybridTeacherSample(
             scene=scene_from_dict(
                 record.scene
@@ -892,6 +985,9 @@ class ImmutableHybridTeacherDataset:
             package_spatial_loss=(
                 package_spatial
             ),
+            background_spatial_loss=(
+                background_spatial
+            ),
             package_volume_axial_order=int(
                 getattr(
                     record,
@@ -910,6 +1006,20 @@ class ImmutableHybridTeacherDataset:
                 getattr(
                     record,
                     "package_volume_azimuthal_order",
+                    0,
+                )
+            ),
+            background_radial_order=int(
+                getattr(
+                    record,
+                    "background_radial_order",
+                    0,
+                )
+            ),
+            background_angular_order=int(
+                getattr(
+                    record,
+                    "background_angular_order",
                     0,
                 )
             ),
