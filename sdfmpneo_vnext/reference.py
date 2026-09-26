@@ -260,6 +260,126 @@ class PreparedReferenceLossField:
             ),
         )
 
+    def _background_domain_mask(
+        self,
+        points,
+    ) -> np.ndarray:
+        """Return points that belong to the homogeneous exterior medium.
+
+        The exterior loss integral must exclude conductor volume.  We use the
+        same longitudinal segment/Bishop-frame representation as the mixed
+        teacher, so the exclusion follows arbitrary pose and finite
+        superelliptic conductor cross-sections without introducing a world
+        voxel grid.
+        """
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        if (
+            points.ndim != 2
+            or points.shape[1] != 3
+        ):
+            raise ValueError(
+                "points must have shape (n,3)"
+            )
+        exterior = np.ones(
+            len(
+                points
+            ),
+            dtype=bool,
+        )
+        for segment in self.teacher._mqs._segments:
+            active = np.flatnonzero(
+                exterior
+            )
+            if active.size == 0:
+                break
+            delta = (
+                points[
+                    active
+                ]
+                - segment.midpoint[
+                    None,
+                    :
+                ]
+            )
+            longitudinal = (
+                delta
+                @ segment.tangent
+            )
+            near = (
+                np.abs(
+                    longitudinal
+                )
+                <= (
+                    0.5
+                    * segment.length
+                    + 1e-12
+                )
+            )
+            if not np.any(
+                near
+            ):
+                continue
+            candidate = active[
+                near
+            ]
+            transverse = (
+                delta[
+                    near
+                ]
+                - longitudinal[
+                    near,
+                    None,
+                ]
+                * segment.tangent[
+                    None,
+                    :
+                ]
+            )
+            coil = self.scene.coils[
+                segment.coil
+            ]
+            geometry = coil.geometry
+            half_width = (
+                0.5
+                * geometry.conductor_width
+            )
+            half_thickness = (
+                0.5
+                * geometry.conductor_thickness
+            )
+            exponent = float(
+                geometry.cross_section_exponent
+            )
+            u = (
+                transverse
+                @ segment.n1
+            ) / half_width
+            v = (
+                transverse
+                @ segment.n2
+            ) / half_thickness
+            inside = (
+                np.abs(
+                    u
+                ) ** exponent
+                + np.abs(
+                    v
+                ) ** exponent
+                <= (
+                    1.0
+                    + 1e-10
+                )
+            )
+            exterior[
+                candidate[
+                    inside
+                ]
+            ] = False
+        return exterior
+
     def background_quadrature(
         self,
         *,
@@ -296,17 +416,12 @@ class PreparedReferenceLossField:
         positions, radii = (
             self._charge_geometry()
         )
-        lower = np.min(
+        # The integration origin must itself be SE(3)-equivariant. An
+        # axis-aligned bounding-box centre is not rotation equivariant; the
+        # charge-node centroid is.
+        center = np.mean(
             positions,
             axis=0,
-        )
-        upper = np.max(
-            positions,
-            axis=0,
-        )
-        center = 0.5 * (
-            lower
-            + upper
         )
         scale = max(
             float(
@@ -408,14 +523,27 @@ class PreparedReferenceLossField:
                 dtype=float,
             )
         )
-        return (
-            points.reshape(
-                -1,
-                3,
-            ),
+        points = points.reshape(
+            -1,
+            3,
+        )
+        volume_weights = (
             volume_weights.reshape(
                 -1
-            ),
+            )
+        )
+        exterior = (
+            self._background_domain_mask(
+                points
+            )
+        )
+        return (
+            points[
+                exterior
+            ],
+            volume_weights[
+                exterior
+            ],
         )
 
     def electric_field_transfer(
