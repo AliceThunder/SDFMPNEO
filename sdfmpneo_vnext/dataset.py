@@ -857,6 +857,9 @@ class ImmutableTeacherDataset:
             channels,
             spatial,
             record.reference_backend,
+            MQSConfig(
+                **record.teacher_config
+            ),
         )
 
     def iter_samples(

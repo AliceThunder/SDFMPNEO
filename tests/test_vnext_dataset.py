@@ -146,6 +146,7 @@ def test_dataset_is_content_addressed_and_idempotent(tmp_path):
         sample.target_impedance,
     )
     assert loaded.baseline_segments == 32
+    assert loaded.teacher_config == cfg
 
 
 def test_active_learning_cannot_enter_release_split(tmp_path):

@@ -131,6 +131,7 @@ class TeacherSample:
     target_dissipation_channels: np.ndarray | None = None
     spatial_loss: SpatialLossSamples | None = None
     reference_backend: str | None = None
+    teacher_config: MQSConfig | None = None
 
     @staticmethod
     def generate(
@@ -337,4 +338,5 @@ class TeacherSample:
             channels,
             spatial,
             reference_backend,
+            resolved_config,
         )

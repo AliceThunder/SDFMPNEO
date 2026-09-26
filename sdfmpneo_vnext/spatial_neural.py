@@ -621,6 +621,60 @@ def _sample_loss(artifact: SpatialLossArtifact, sample):
     return error / denom
 
 
+def _inference_sample_error(
+    artifact: SpatialLossArtifact,
+    sample,
+) -> float:
+    """Validation error under the exact online normalization semantics."""
+    spatial = sample.spatial_loss
+    if spatial is None:
+        raise ValueError(
+            "spatial validation requires spatial_loss truth"
+        )
+    prepared = artifact.prepare(
+        sample.scene,
+        sample.frequency_hz,
+    )
+    predicted = np.asarray(
+        prepared.local_dissipation_matrices(
+            spatial.coil_index,
+            spatial.arc_fraction,
+            spatial.xy,
+        ),
+        dtype=complex,
+    )
+    target = np.asarray(
+        spatial.dissipation_matrix,
+        dtype=complex,
+    )
+    weights = np.asarray(
+        spatial.weights,
+        dtype=float,
+    )
+    numerator = float(
+        np.sum(
+            weights[:, None, None]
+            * np.abs(
+                predicted - target
+            ) ** 2
+        )
+    )
+    denominator = max(
+        float(
+            np.sum(
+                weights[:, None, None]
+                * np.abs(target) ** 2
+            )
+        ),
+        1e-30,
+    )
+    return float(
+        np.sqrt(
+            numerator / denominator
+        )
+    )
+
+
 def train_spatial_loss_surrogate(
     port_artifact,
     samples,
@@ -678,15 +732,18 @@ def train_spatial_loss_surrogate(
 
         if validation_samples:
             model.eval()
-            with torch.no_grad():
-                score = float(
-                    np.mean(
-                        [
-                            float(_sample_loss(artifact, sample).detach().cpu())
-                            for sample in validation_samples
-                        ]
-                    )
+            score = float(
+                np.mean(
+                    [
+                        _inference_sample_error(
+                            artifact,
+                            sample,
+                        )
+                        for sample
+                        in validation_samples
+                    ]
                 )
+            )
             if best_validation is None or score < best_validation - 1e-6:
                 best_validation = score
                 best_epoch = epoch

@@ -41,6 +41,26 @@ def main():
         type=float,
         default=0.20,
     )
+    parser.add_argument(
+        "--offgrid-mean-limit",
+        type=float,
+        default=0.12,
+    )
+    parser.add_argument(
+        "--offgrid-max-limit",
+        type=float,
+        default=0.25,
+    )
+    parser.add_argument(
+        "--offgrid-joule-limit",
+        type=float,
+        default=0.25,
+    )
+    parser.add_argument(
+        "--cross-grid-closure-limit",
+        type=float,
+        default=0.02,
+    )
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
 
@@ -71,6 +91,10 @@ def main():
         mean_relative_error_limit=args.mean_limit,
         maximum_relative_error_limit=args.max_limit,
         maximum_probe_joule_error_limit=args.joule_limit,
+        mean_offgrid_relative_error_limit=args.offgrid_mean_limit,
+        maximum_offgrid_relative_error_limit=args.offgrid_max_limit,
+        maximum_offgrid_probe_joule_error_limit=args.offgrid_joule_limit,
+        cross_grid_closure_tolerance=args.cross_grid_closure_limit,
     )
     print(
         json.dumps(
