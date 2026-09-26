@@ -898,7 +898,17 @@ def build_thermal_source_quadrature(
             axis=0,
         )
 
-    if scene.medium.conductivity > 0.0:
+    if (
+        scene.medium.loss_conductivity(
+            prepared_spatial.frequency_hz
+            if hasattr(
+                prepared_spatial,
+                "frequency_hz",
+            )
+            else 0.0
+        )
+        > 0.0
+    ):
         required = (
             "background_quadrature",
             "background_dissipation_matrices",
