@@ -133,6 +133,11 @@ def _query_row_features(
 
 
 def _normalize_fields(raw, weights, coil_index, channels):
+    # The neural field may train in float32, but passivity/closure normalization
+    # is physical linear algebra and is deliberately evaluated in complex128.
+    raw = raw.to(torch.complex128)
+    weights = weights.to(torch.float64)
+    channels = channels.to(torch.complex128)
     out = torch.empty_like(raw)
     n_coils = channels.shape[0]
     for coil in range(n_coils):
@@ -246,7 +251,7 @@ class PreparedNeuralLossField:
                     dtype=dtype,
                     device=device,
                 )
-            )
+            ).to(torch.complex128)
             corrected = []
             for local_index, query_index in enumerate(feature_indices):
                 transform = self.transforms[int(coil_index[query_index])]
@@ -369,14 +374,14 @@ class SpatialLossArtifact:
         with torch.no_grad():
             raw = self.model(
                 torch.as_tensor(features, dtype=dtype, device=device)
-            )
+            ).to(torch.complex128)
         prediction = self.port_artifact.predict_structured(scene, frequency_hz)
         channels = torch.as_tensor(
             prediction.dissipation_channels,
-            dtype=raw.dtype,
+            dtype=torch.complex128,
             device=device,
         )
-        weight_t = torch.as_tensor(weights, dtype=dtype, device=device)
+        weight_t = torch.as_tensor(weights, dtype=torch.float64, device=device)
         coil_t = torch.as_tensor(coils, dtype=torch.long, device=device)
         transforms = []
         for coil in range(len(scene.coils)):
@@ -426,7 +431,7 @@ class SpatialLossArtifact:
             )
             w = torch.as_tensor(
                 weights[mask_np],
-                dtype=dtype,
+                dtype=torch.float64,
                 device=device,
             )
             integrated.append(
@@ -592,17 +597,21 @@ def _sample_loss(artifact: SpatialLossArtifact, sample):
     )
     channels = torch.as_tensor(
         sample.target_dissipation_channels,
-        dtype=raw.dtype,
+        dtype=torch.complex128,
         device=device,
     )
-    weights = torch.as_tensor(spatial.weights, dtype=dtype, device=device)
+    weights = torch.as_tensor(
+        spatial.weights,
+        dtype=torch.float64,
+        device=device,
+    )
     coil_index = torch.as_tensor(
         spatial.coil_index, dtype=torch.long, device=device
     )
     predicted = _normalize_fields(raw, weights, coil_index, channels)
     target = torch.as_tensor(
         spatial.dissipation_matrix,
-        dtype=raw.dtype,
+        dtype=torch.complex128,
         device=device,
     )
     error = torch.sum(weights[:, None, None] * torch.abs(predicted - target) ** 2)
