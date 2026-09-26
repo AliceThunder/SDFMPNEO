@@ -43,6 +43,22 @@ class DielectricCoupledResult:
         )
 
     @property
+    def environment_dissipation_matrix(
+        self,
+    ) -> np.ndarray:
+        """Aggregate non-conductor electric loss.
+
+        For a lossless background this is the historical package dielectric
+        channel.  When the homogeneous background is lossy it contains the
+        package plus background electric-environment dissipation until the
+        spatial decomposition is requested explicitly.
+        """
+        return np.asarray(
+            self.dielectric_dissipation_matrix,
+            dtype=complex,
+        )
+
+    @property
     def power_closure_error(
         self,
     ) -> float:
@@ -86,19 +102,6 @@ class DielectricCoupledMixedTeacher:
             raise ValueError(
                 "dielectric-coupled teacher requires at least one package"
             )
-        if (
-            not np.isclose(
-                scene.medium.conductivity,
-                0.0,
-                rtol=0.0,
-                atol=0.0,
-            )
-        ):
-            raise NotImplementedError(
-                "the first dielectric-coupled backend requires a lossless "
-                "homogeneous background; background-loss channels are not "
-                "implemented yet"
-            )
         if maximum_raw_reciprocity_defect <= 0.0:
             raise ValueError(
                 "maximum_raw_reciprocity_defect must be positive"
@@ -130,15 +133,19 @@ class DielectricCoupledMixedTeacher:
             )
         if (
             self.frequency_hz == 0.0
-            and any(
-                package.material.conductivity
+            and (
+                scene.medium.conductivity
                 > 0.0
-                for package
-                in scene.packages
+                or any(
+                    package.material.conductivity
+                    > 0.0
+                    for package
+                    in scene.packages
+                )
             )
         ):
             raise NotImplementedError(
-                "conductive dielectric packages at DC require the static "
+                "conductive background/package media at DC require the static "
                 "conduction interface formulation"
             )
         self.config = (
@@ -768,11 +775,17 @@ class DielectricCoupledMixedTeacher:
             density_from_node_charge
             @ node_charge
         )
+        environment_label = (
+            "electric_environment:aggregate"
+            if self.scene.medium.conductivity
+            > 0.0
+            else "dielectric:aggregate"
+        )
         labels = tuple(
             f"conductor:{coil.name}"
             for coil in self.scene.coils
         ) + (
-            "dielectric:aggregate",
+            environment_label,
         )
 
         return DielectricCoupledResult(
@@ -855,6 +868,14 @@ class DielectricCoupledReferenceArtifact:
         from .hybrid_field import (
             prepare_hybrid_reference_loss_field,
         )
+
+        if scene.medium.conductivity > 0.0:
+            raise NotImplementedError(
+                "hybrid port physics supports a lossy homogeneous background, "
+                "but spatial package/background loss decomposition is not yet "
+                "certified; refusing to map aggregate environment loss into "
+                "package volume"
+            )
 
         teacher = (
             DielectricCoupledMixedTeacher(
