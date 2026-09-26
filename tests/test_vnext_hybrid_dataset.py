@@ -414,7 +414,7 @@ def test_hybrid_sampler_can_opt_in_lossy_background_domain():
         )
 
 
-def test_hybrid_lossy_background_generates_port_truth_but_rejects_incomplete_spatial_schema():
+def test_hybrid_lossy_background_spatial_truth_closes_and_round_trips(tmp_path):
     base = _scene(
         epsilon_r=3.0
     )
@@ -434,7 +434,13 @@ def test_hybrid_lossy_background_generates_port_truth_but_rejects_incomplete_spa
         baseline_segments=24,
         surface_vertical_order=6,
         surface_azimuthal_order=12,
-        include_spatial_truth=False,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=8,
+        background_angular_order=24,
+        maximum_raw_spatial_closure_error=5.0,
     )
     assert (
         sample.target_dissipation_channels.shape
@@ -444,33 +450,74 @@ def test_hybrid_lossy_background_generates_port_truth_but_rejects_incomplete_spa
             1,
         )
     )
+    assert sample.has_spatial_truth
     assert (
-        sample.target_dissipation_channels[
-            -1,
+        sample.background_spatial_loss
+        is not None
+    )
+    assert (
+        sample.background_spatial_loss.integrated()[
             0,
             0,
         ].real
         > 0.0
     )
-    assert (
-        sample.power_closure_error
-        < 1e-5
-    )
-    assert not sample.has_spatial_truth
 
-    with pytest.raises(
-        NotImplementedError,
-        match="no background spatial labels",
-    ):
-        HybridTeacherSample.generate(
-            scene,
-            80_000.0,
-            teacher_config=_config(),
-            baseline_segments=24,
-            surface_vertical_order=6,
-            surface_azimuthal_order=12,
-            include_spatial_truth=True,
-            package_volume_axial_order=3,
-            package_volume_radial_order=2,
-            package_volume_azimuthal_order=8,
+    package = (
+        sample.package_spatial_loss.integrated_packages(
+            len(
+                sample.scene.packages
+            )
         )
+    )
+    environment = (
+        np.sum(
+            package,
+            axis=0,
+        )
+        + sample.background_spatial_loss.integrated()
+    )
+    assert np.allclose(
+        environment,
+        sample.target_dissipation_channels[
+            len(
+                sample.scene.coils
+            )
+        ],
+        rtol=2e-5,
+        atol=2e-10,
+    )
+
+    dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "hybrid-lossy"
+    )
+    record = dataset.add_sample(
+        sample,
+        teacher_config=_config(),
+        split="validation",
+    )
+    loaded = dataset.load_sample(
+        record.sample_id
+    )
+    assert loaded.has_spatial_truth
+    assert (
+        loaded.background_radial_order
+        == 8
+    )
+    assert (
+        loaded.background_angular_order
+        == 24
+    )
+    assert np.allclose(
+        loaded.background_spatial_loss.root_local_position,
+        sample.background_spatial_loss.root_local_position,
+    )
+    assert np.allclose(
+        loaded.background_spatial_loss.weights,
+        sample.background_spatial_loss.weights,
+    )
+    assert np.allclose(
+        loaded.background_spatial_loss.dissipation_matrix,
+        sample.background_spatial_loss.dissipation_matrix,
+    )
