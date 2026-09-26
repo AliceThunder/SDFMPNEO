@@ -61,6 +61,15 @@ from .field import (
     PreparedUniformLossField,
     UniformLossFieldDecoder,
 )
+from .spatial_neural import (
+    PreparedNeuralLossField,
+    PreparedNeuralSpatialLossField,
+    SpatialLossShapeNet,
+    SpatialLossArtifact,
+    NeuralSpatialLossArtifact,
+    SpatialTrainingReport,
+    train_spatial_loss_surrogate,
+)
 from .reference import (
     MixedReferenceArtifact,
     PreparedReferenceLossField,
@@ -258,8 +267,11 @@ __all__ = [
     "ConductorLossField",
     "PreparedUniformLossField",
     "UniformLossFieldDecoder",
+    "PreparedNeuralLossField",
+    "PreparedNeuralSpatialLossField",
     "SpatialLossShapeNet",
     "SpatialLossArtifact",
+    "NeuralSpatialLossArtifact",
     "SpatialTrainingReport",
     "train_spatial_loss_surrogate",
     "PreparedHybridReferenceLossField",
