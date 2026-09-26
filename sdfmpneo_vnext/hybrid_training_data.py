@@ -170,6 +170,101 @@ class PackageSpatialLossSamples:
 
 
 @dataclass(frozen=True)
+class BackgroundSpatialLossSamples:
+    root_local_position: np.ndarray
+    weights: np.ndarray
+    dissipation_matrix: np.ndarray
+
+    def __post_init__(
+        self,
+    ):
+        position = np.asarray(
+            self.root_local_position,
+            dtype=float,
+        )
+        weights = np.asarray(
+            self.weights,
+            dtype=float,
+        )
+        matrix = np.asarray(
+            self.dissipation_matrix,
+            dtype=complex,
+        )
+        n = len(
+            weights
+        )
+        if (
+            position.shape
+            != (
+                n,
+                3,
+            )
+            or matrix.ndim
+            != 3
+            or matrix.shape[
+                0
+            ]
+            != n
+            or matrix.shape[
+                1
+            ]
+            != matrix.shape[
+                2
+            ]
+        ):
+            raise ValueError(
+                "background spatial loss arrays have incompatible shapes"
+            )
+        if (
+            np.any(
+                ~np.isfinite(
+                    position
+                )
+            )
+            or np.any(
+                ~np.isfinite(
+                    weights
+                )
+            )
+            or np.any(
+                weights
+                <= 0.0
+            )
+        ):
+            raise ValueError(
+                "background spatial loss coordinates/weights are invalid"
+            )
+        object.__setattr__(
+            self,
+            "root_local_position",
+            position,
+        )
+        object.__setattr__(
+            self,
+            "weights",
+            weights,
+        )
+        object.__setattr__(
+            self,
+            "dissipation_matrix",
+            matrix,
+        )
+
+    def integrated(
+        self,
+    ) -> np.ndarray:
+        return np.sum(
+            self.weights[
+                :,
+                None,
+                None,
+            ]
+            * self.dissipation_matrix,
+            axis=0,
+        )
+
+
+@dataclass(frozen=True)
 class HybridTeacherSample:
     scene: Scene
     frequency_hz: float
@@ -186,9 +281,12 @@ class HybridTeacherSample:
     power_closure_error: float
     conductor_spatial_loss: SpatialLossSamples | None = None
     package_spatial_loss: PackageSpatialLossSamples | None = None
+    background_spatial_loss: BackgroundSpatialLossSamples | None = None
     package_volume_axial_order: int = 0
     package_volume_radial_order: int = 0
     package_volume_azimuthal_order: int = 0
+    background_radial_order: int = 0
+    background_angular_order: int = 0
     reference_backend: str = (
         HYBRID_REFERENCE_BACKEND
     )
@@ -202,6 +300,12 @@ class HybridTeacherSample:
             is not None
             and self.package_spatial_loss
             is not None
+            and (
+                self.scene.medium.conductivity
+                <= 0.0
+                or self.background_spatial_loss
+                is not None
+            )
         )
 
     @staticmethod
@@ -217,21 +321,13 @@ class HybridTeacherSample:
         package_volume_axial_order: int = 8,
         package_volume_radial_order: int = 6,
         package_volume_azimuthal_order: int = 24,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
         maximum_raw_spatial_closure_error: float = 0.25,
     ) -> "HybridTeacherSample":
         if not scene.packages:
             raise ValueError(
                 "hybrid teacher samples require at least one package"
-            )
-        if (
-            include_spatial_truth
-            and scene.medium.conductivity
-            > 0.0
-        ):
-            raise NotImplementedError(
-                "hybrid port truth supports lossy homogeneous backgrounds, "
-                "but the current hybrid spatial-training schema stores only "
-                "conductor/package fields and has no background spatial labels"
             )
         if include_spatial_truth and (
             package_volume_axial_order
@@ -243,6 +339,20 @@ class HybridTeacherSample:
         ):
             raise ValueError(
                 "invalid package spatial truth quadrature order"
+            )
+        if (
+            include_spatial_truth
+            and scene.medium.conductivity
+            > 0.0
+            and (
+                background_radial_order
+                < 3
+                or background_angular_order
+                < 8
+            )
+        ):
+            raise ValueError(
+                "invalid background spatial truth quadrature order"
             )
 
         encoded = (
@@ -283,6 +393,7 @@ class HybridTeacherSample:
 
         conductor_spatial = None
         package_spatial = None
+        background_spatial = None
         if include_spatial_truth:
             coil_segments = {}
             for index, segment in enumerate(
@@ -431,6 +542,12 @@ class HybridTeacherSample:
                     volume_azimuthal_order=(
                         package_volume_azimuthal_order
                     ),
+                    background_radial_order=(
+                        background_radial_order
+                    ),
+                    background_angular_order=(
+                        background_angular_order
+                    ),
                     maximum_raw_closure_error=(
                         maximum_raw_spatial_closure_error
                     ),
@@ -497,6 +614,46 @@ class HybridTeacherSample:
                 )
             )
 
+            if (
+                scene.medium.conductivity
+                > 0.0
+            ):
+                (
+                    background_points,
+                    background_weights,
+                ) = prepared.background_quadrature(
+                    radial_order=(
+                        background_radial_order
+                    ),
+                    angular_order=(
+                        background_angular_order
+                    ),
+                )
+                root_pose = (
+                    scene.coils[
+                        0
+                    ].geometry.pose
+                )
+                root_local = (
+                    (
+                        background_points
+                        - root_pose.translation[
+                            None,
+                            :
+                        ]
+                    )
+                    @ root_pose.rotation
+                )
+                background_spatial = (
+                    BackgroundSpatialLossSamples(
+                        root_local,
+                        background_weights,
+                        prepared.background_dissipation_matrices(
+                            background_points
+                        ),
+                    )
+                )
+
         return HybridTeacherSample(
             scene=scene,
             frequency_hz=float(
@@ -544,6 +701,9 @@ class HybridTeacherSample:
             package_spatial_loss=(
                 package_spatial
             ),
+            background_spatial_loss=(
+                background_spatial
+            ),
             package_volume_axial_order=(
                 int(
                     package_volume_axial_order
@@ -563,6 +723,28 @@ class HybridTeacherSample:
                     package_volume_azimuthal_order
                 )
                 if include_spatial_truth
+                else 0
+            ),
+            background_radial_order=(
+                int(
+                    background_radial_order
+                )
+                if (
+                    include_spatial_truth
+                    and scene.medium.conductivity
+                    > 0.0
+                )
+                else 0
+            ),
+            background_angular_order=(
+                int(
+                    background_angular_order
+                )
+                if (
+                    include_spatial_truth
+                    and scene.medium.conductivity
+                    > 0.0
+                )
                 else 0
             ),
         )
