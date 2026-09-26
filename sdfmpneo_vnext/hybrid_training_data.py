@@ -223,6 +223,16 @@ class HybridTeacherSample:
             raise ValueError(
                 "hybrid teacher samples require at least one package"
             )
+        if (
+            include_spatial_truth
+            and scene.medium.conductivity
+            > 0.0
+        ):
+            raise NotImplementedError(
+                "hybrid port truth supports lossy homogeneous backgrounds, "
+                "but the current hybrid spatial-training schema stores only "
+                "conductor/package fields and has no background spatial labels"
+            )
         if include_spatial_truth and (
             package_volume_axial_order
             < 2
