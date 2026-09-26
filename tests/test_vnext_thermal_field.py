@@ -322,3 +322,163 @@ def test_lossy_background_has_continuous_psd_heat_channel_and_thermal_coupling()
         temperature
         > thermal.medium.ambient_temperature
     )
+
+
+def test_lossy_background_reference_spatial_closes_continuous_environment_channel():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=3.0,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    artifact = MixedReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=8,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        background_radial_order=10,
+        background_angular_order=32,
+    )
+    spatial = artifact.prepare_spatial(
+        scene,
+        40_000.0,
+    )
+    assert spatial.background_channel_index == 1
+    assert (
+        spatial.normalized_background_closure_error
+        < 1e-8
+    )
+
+    points, weights = spatial.background_quadrature(
+        radial_order=10,
+        angular_order=32,
+    )
+    matrices = spatial.background_dissipation_matrices(
+        points
+    )
+    assert np.all(
+        np.isfinite(
+            points
+        )
+    )
+    assert np.all(
+        weights > 0.0
+    )
+    for matrix in matrices[:: max(1, len(matrices) // 17)]:
+        assert np.allclose(
+            matrix,
+            matrix.conj().T,
+            atol=1e-10,
+        )
+        assert (
+            np.min(
+                np.linalg.eigvalsh(
+                    matrix
+                )
+            )
+            >= -1e-10
+        )
+
+    integrated = np.sum(
+        weights[
+            :,
+            None,
+            None,
+        ]
+        * matrices,
+        axis=0,
+    )
+    target = spatial.port_prediction.dissipation_channels[
+        spatial.background_channel_index
+    ]
+    assert np.allclose(
+        integrated,
+        target,
+        rtol=2e-7,
+        atol=2e-10,
+    )
+
+
+def test_lossy_background_reference_thermal_field_includes_environment_heat_channel():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.5,
+            relative_permeability=1.0,
+            conductivity=8e-5,
+        ),
+    )
+    artifact = MixedReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=8,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        background_radial_order=10,
+        background_angular_order=32,
+    )
+    prepared = ContinuousThermalGreenArtifact(
+        artifact,
+        _medium(),
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+    ).prepare(
+        scene,
+        40_000.0,
+    )
+    channels = prepared.source.integrated_channels()
+    assert channels.shape == (
+        2,
+        1,
+        1,
+    )
+    assert (
+        prepared.source.normalization_closure_error
+        < 1e-8
+    )
+    target = artifact.predict_structured(
+        scene,
+        40_000.0,
+    ).dissipation_channels
+    assert np.allclose(
+        channels,
+        target,
+        rtol=2e-7,
+        atol=2e-10,
+    )
+    assert (
+        channels[
+            1,
+            0,
+            0,
+        ].real
+        > 0.0
+    )
+    temperature = prepared.temperature_step(
+        np.array(
+            [0.0, 0.0, 0.03]
+        ),
+        5.0,
+        np.array(
+            [1.5 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > prepared.medium.ambient_temperature
+    )
