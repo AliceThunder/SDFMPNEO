@@ -205,7 +205,9 @@ class MeshfreeVNextSystem:
             scene
         )
         if (
-            scene.medium.conductivity
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
             > 0.0
             and (
                 self.spatial_artifact
@@ -325,7 +327,8 @@ class MeshfreeVNextSystem:
         frequency_hz: float,
     ):
         self._require_fast_port_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         self._require_fast_spatial_artifact(
             scene,
@@ -417,7 +420,8 @@ class MeshfreeVNextSystem:
         **options,
     ):
         self._require_fast_port_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         if (
             scene.packages
@@ -450,11 +454,14 @@ class MeshfreeVNextSystem:
         **options,
     ):
         self._require_fast_port_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         if (
             scene.packages
-            or scene.medium.conductivity > 0.0
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
         ):
             return ChannelResolvedVoltageEnvelope(
                 scene,
@@ -482,7 +489,9 @@ class MeshfreeVNextSystem:
     ):
         if (
             scene.packages
-            or scene.medium.conductivity > 0.0
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
         ):
             artifact = (
                 self._dielectric_reference
@@ -515,7 +524,9 @@ class MeshfreeVNextSystem:
     ):
         if (
             scene.packages
-            or scene.medium.conductivity > 0.0
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
         ):
             artifact = (
                 self._dielectric_reference
@@ -548,10 +559,12 @@ class MeshfreeVNextSystem:
         **options,
     ):
         self._require_fast_port_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         self._require_fast_spatial_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         spatial = (
             self.spatial_artifact
