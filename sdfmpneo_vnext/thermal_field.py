@@ -719,6 +719,126 @@ def build_thermal_source_quadrature(
             dtype=complex,
         )
 
+    # A conductive homogeneous background is represented without a world
+    # volume mesh. The prepared REFERENCE field supplies a positive quadrature
+    # on [0, infinity) and a PSD local loss matrix normalized to the explicit
+    # background dissipation channel. This keeps environmental Joule heating
+    # continuous and power-closed while preserving the mesh-free public
+    # interface.
+    background_channel = getattr(
+        prepared_spatial,
+        "background_channel_index",
+        None,
+    )
+    if background_channel is not None:
+        if (
+            not hasattr(
+                prepared_spatial,
+                "background_quadrature",
+            )
+            or not hasattr(
+                prepared_spatial,
+                "background_dissipation_matrices",
+            )
+        ):
+            raise TypeError(
+                "lossy-background spatial fields must expose background "
+                "quadrature and dissipation queries"
+            )
+        background_positions, background_weights = (
+            prepared_spatial.background_quadrature()
+        )
+        background_positions = np.asarray(
+            background_positions,
+            dtype=float,
+        )
+        background_weights = np.asarray(
+            background_weights,
+            dtype=float,
+        )
+        if (
+            background_positions.ndim != 2
+            or background_positions.shape[1] != 3
+            or background_weights.shape
+            != (
+                len(
+                    background_positions
+                ),
+            )
+            or np.any(
+                background_weights <= 0.0
+            )
+        ):
+            raise ValueError(
+                "invalid lossy-background thermal quadrature"
+            )
+        background_matrices = np.asarray(
+            prepared_spatial.background_dissipation_matrices(
+                background_positions
+            ),
+            dtype=complex,
+        )
+        count = len(
+            background_weights
+        )
+        positions = np.concatenate(
+            (
+                positions,
+                background_positions,
+            ),
+            axis=0,
+        )
+        weights = np.concatenate(
+            (
+                weights,
+                background_weights,
+            )
+        )
+        channel_ids = np.concatenate(
+            (
+                channel_ids,
+                np.full(
+                    count,
+                    int(
+                        background_channel
+                    ),
+                    dtype=int,
+                ),
+            )
+        )
+        arcs = np.concatenate(
+            (
+                arcs,
+                np.zeros(
+                    count,
+                    dtype=float,
+                ),
+            )
+        )
+        section_xy = np.concatenate(
+            (
+                section_xy,
+                np.zeros(
+                    (
+                        count,
+                        2,
+                    ),
+                    dtype=float,
+                ),
+            ),
+            axis=0,
+        )
+        matrices = np.concatenate(
+            (
+                np.asarray(
+                    matrices,
+                    dtype=complex,
+                ),
+                background_matrices,
+            ),
+            axis=0,
+        )
+
     # Package-aware REFERENCE fields append dielectric volume sources to the
     # aggregate dielectric loss channel. Their actual world positions are
     # retained, so subsequent thermal Green evaluation resolves package heat
