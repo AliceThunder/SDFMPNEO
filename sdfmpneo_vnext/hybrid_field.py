@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
+from .exterior_quadrature import (
+    homogeneous_background_domain_mask,
+    unbounded_background_quadrature,
+)
 from .prediction import StructuredPortPrediction
 from .scene import Scene
 
@@ -58,61 +62,6 @@ def _hermitian_psd_sqrt(
             diagonal
         )
         @ vectors.conj().T
-    )
-
-
-def _fibonacci_directions(
-    count: int,
-) -> np.ndarray:
-    if count < 8:
-        raise ValueError(
-            "background angular order must be >= 8"
-        )
-    index = np.arange(
-        count,
-        dtype=float,
-    )
-    z = (
-        1.0
-        - 2.0
-        * (
-            index
-            + 0.5
-        )
-        / count
-    )
-    radius = np.sqrt(
-        np.maximum(
-            1.0
-            - z * z,
-            0.0,
-        )
-    )
-    golden = (
-        np.pi
-        * (
-            3.0
-            - np.sqrt(
-                5.0
-            )
-        )
-    )
-    angle = (
-        golden
-        * index
-    )
-    return np.column_stack(
-        (
-            radius
-            * np.cos(
-                angle
-            ),
-            radius
-            * np.sin(
-                angle
-            ),
-            z,
-        )
     )
 
 
@@ -433,151 +382,15 @@ class PreparedHybridReferenceLossField:
             else transfer
         )
 
-    def _conductor_exterior_mask(
-        self,
-        points,
-    ) -> np.ndarray:
-        points = np.asarray(
-            points,
-            dtype=float,
-        )
-        if (
-            points.ndim != 2
-            or points.shape[1] != 3
-        ):
-            raise ValueError(
-                "points must have shape (n,3)"
-            )
-        exterior = np.ones(
-            len(
-                points
-            ),
-            dtype=bool,
-        )
-        for segment in self.teacher.conductor_teacher._mqs._segments:
-            active = np.flatnonzero(
-                exterior
-            )
-            if active.size == 0:
-                break
-            delta = (
-                points[
-                    active
-                ]
-                - segment.midpoint[
-                    None,
-                    :
-                ]
-            )
-            longitudinal = (
-                delta
-                @ segment.tangent
-            )
-            near = (
-                np.abs(
-                    longitudinal
-                )
-                <= (
-                    0.5
-                    * segment.length
-                    + 1e-12
-                )
-            )
-            if not np.any(
-                near
-            ):
-                continue
-            candidate = active[
-                near
-            ]
-            transverse = (
-                delta[
-                    near
-                ]
-                - longitudinal[
-                    near,
-                    None,
-                ]
-                * segment.tangent[
-                    None,
-                    :
-                ]
-            )
-            geometry = self.scene.coils[
-                segment.coil
-            ].geometry
-            u = (
-                transverse
-                @ segment.n1
-            ) / (
-                0.5
-                * geometry.conductor_width
-            )
-            v = (
-                transverse
-                @ segment.n2
-            ) / (
-                0.5
-                * geometry.conductor_thickness
-            )
-            exponent = float(
-                geometry.cross_section_exponent
-            )
-            inside = (
-                np.abs(
-                    u
-                ) ** exponent
-                + np.abs(
-                    v
-                ) ** exponent
-                <= (
-                    1.0
-                    + 1e-10
-                )
-            )
-            exterior[
-                candidate[
-                    inside
-                ]
-            ] = False
-        return exterior
-
     def _background_domain_mask(
         self,
         points,
     ) -> np.ndarray:
-        points = np.asarray(
+        return homogeneous_background_domain_mask(
+            self.scene,
+            self.teacher.conductor_teacher._mqs._segments,
             points,
-            dtype=float,
         )
-        exterior = (
-            self._conductor_exterior_mask(
-                points
-            )
-        )
-        for package in self.scene.packages:
-            if not np.any(
-                exterior
-            ):
-                break
-            active = np.flatnonzero(
-                exterior
-            )
-            inside = np.asarray(
-                package.geometry.contains(
-                    points[
-                        active
-                    ],
-                    tolerance=2e-12,
-                ),
-                dtype=bool,
-            )
-            exterior[
-                active[
-                    inside
-                ]
-            ] = False
-        return exterior
 
     def background_quadrature(
         self,
@@ -585,168 +398,18 @@ class PreparedHybridReferenceLossField:
         radial_order: int = 12,
         angular_order: int = 48,
     ):
-        """Positive quadrature on the unbounded background excluding objects."""
-        if radial_order < 3:
-            raise ValueError(
-                "background radial order must be >= 3"
-            )
-        directions = _fibonacci_directions(
-            int(
-                angular_order
-            )
-        )
-        rotation = np.asarray(
-            self.scene.coils[
-                0
-            ].geometry.pose.rotation,
-            dtype=float,
-        )
-        directions = (
-            directions
-            @ rotation.T
-        )
-
         (
             node_positions,
             node_radii,
             _,
         ) = self._charge_geometry()
-        surface_positions = np.asarray(
-            self.teacher.surface_solver.positions,
-            dtype=float,
-        )
-        geometry_points = np.concatenate(
-            (
-                np.asarray(
-                    node_positions,
-                    dtype=float,
-                ),
-                surface_positions,
-            ),
-            axis=0,
-        )
-        center = np.mean(
-            geometry_points,
-            axis=0,
-        )
-        scale = max(
-            float(
-                np.max(
-                    np.linalg.norm(
-                        geometry_points
-                        - center[
-                            None,
-                            :
-                        ],
-                        axis=1,
-                    )
-                )
-            ),
-            float(
-                np.max(
-                    np.asarray(
-                        node_radii,
-                        dtype=float,
-                    )
-                )
-            ),
-            1e-6,
-        )
-
-        nodes, weights = (
-            np.polynomial.legendre.leggauss(
-                int(
-                    radial_order
-                )
-            )
-        )
-        unit = 0.5 * (
-            nodes
-            + 1.0
-        )
-        unit_weights = (
-            0.5
-            * weights
-        )
-        radius = (
-            scale
-            * unit
-            / (
-                1.0
-                - unit
-            )
-        )
-        derivative = (
-            scale
-            / (
-                1.0
-                - unit
-            ) ** 2
-        )
-        points = (
-            center[
-                None,
-                None,
-                :
-            ]
-            + radius[
-                :,
-                None,
-                None,
-            ]
-            * directions[
-                None,
-                :,
-                :
-            ]
-        ).reshape(
-            -1,
-            3,
-        )
-        volume_weights = (
-            unit_weights[
-                :,
-                None
-            ]
-            * radius[
-                :,
-                None
-            ] ** 2
-            * derivative[
-                :,
-                None
-            ]
-            * (
-                4.0
-                * np.pi
-                / int(
-                    angular_order
-                )
-            )
-            * np.ones(
-                (
-                    1,
-                    int(
-                        angular_order
-                    ),
-                ),
-                dtype=float,
-            )
-        ).reshape(
-            -1
-        )
-        exterior = (
-            self._background_domain_mask(
-                points
-            )
-        )
-        return (
-            points[
-                exterior
-            ],
-            volume_weights[
-                exterior
-            ],
+        return unbounded_background_quadrature(
+            self.scene,
+            self.teacher.conductor_teacher._mqs._segments,
+            node_positions,
+            node_radii,
+            radial_order=radial_order,
+            angular_order=angular_order,
         )
 
     def raw_background_dissipation_matrices(
