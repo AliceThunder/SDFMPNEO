@@ -194,6 +194,9 @@ class HybridSceneSamplerConfig:
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossless_probability: float = 0.20
+    background_relative_permittivity_range: tuple[float, float] = (1.0, 1.0)
+    background_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
+    lossy_background_probability: float = 0.0
 
     def __post_init__(self):
         for name in (
@@ -203,6 +206,7 @@ class HybridSceneSamplerConfig:
             "package_exponent_z_range",
             "relative_permittivity_range",
             "dielectric_conductivity_range",
+            "background_conductivity_range",
         ):
             lo, hi = getattr(
                 self,
@@ -222,6 +226,24 @@ class HybridSceneSamplerConfig:
                 raise ValueError(
                     f"{name} must be a positive finite increasing pair"
                 )
+        bg_eps_lo, bg_eps_hi = (
+            self.background_relative_permittivity_range
+        )
+        if not (
+            np.isfinite(
+                bg_eps_lo
+            )
+            and np.isfinite(
+                bg_eps_hi
+            )
+            and 0.0
+            < bg_eps_lo
+            <= bg_eps_hi
+        ):
+            raise ValueError(
+                "background_relative_permittivity_range must be a positive "
+                "finite nondecreasing pair"
+            )
         if not (
             0.0
             <= self.lossless_probability
@@ -229,6 +251,14 @@ class HybridSceneSamplerConfig:
         ):
             raise ValueError(
                 "lossless_probability must lie in [0,1]"
+            )
+        if not (
+            0.0
+            <= self.lossy_background_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "lossy_background_probability must lie in [0,1]"
             )
 
 
@@ -254,6 +284,32 @@ def sample_hybrid_package_scene(
             config.conductor,
         )
     )
+    background_relative_permittivity = _uniform(
+        rng,
+        config.background_relative_permittivity_range,
+    )
+    if (
+        rng.random()
+        < config.lossy_background_probability
+    ):
+        background_conductivity = _log_uniform(
+            rng,
+            config.background_conductivity_range,
+        )
+    else:
+        background_conductivity = 0.0
+    background = HomogeneousMedium(
+        relative_permittivity=(
+            background_relative_permittivity
+        ),
+        relative_permeability=(
+            base_scene.medium.relative_permeability
+        ),
+        conductivity=(
+            background_conductivity
+        ),
+    )
+
     root = base_scene.coils[
         0
     ].geometry
@@ -338,7 +394,7 @@ def sample_hybrid_package_scene(
     )
     scene = Scene(
         base_scene.coils,
-        base_scene.medium,
+        background,
         (
             package,
         ),
