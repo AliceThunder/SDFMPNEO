@@ -449,11 +449,16 @@ class MeshfreeVNextSystem:
             scene.packages
             or scene.medium.conductivity > 0.0
         ):
+            artifact = (
+                self._dielectric_reference
+                if scene.packages
+                else self._reference
+            )
             return ChannelResolvedCurrentEnvelope(
                 scene,
                 frequency_hz,
                 thermal_model,
-                self._dielectric_reference,
+                artifact,
                 **options,
             )
         return (
@@ -477,11 +482,16 @@ class MeshfreeVNextSystem:
             scene.packages
             or scene.medium.conductivity > 0.0
         ):
+            artifact = (
+                self._dielectric_reference
+                if scene.packages
+                else self._reference
+            )
             return ChannelResolvedVoltageEnvelope(
                 scene,
                 frequency_hz,
                 thermal_model,
-                self._dielectric_reference,
+                artifact,
                 **options,
             )
         return (
