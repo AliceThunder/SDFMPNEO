@@ -151,12 +151,15 @@ class MeshfreeVNextSystem:
     def _require_fast_port_artifact(
         self,
         scene: Scene,
+        frequency_hz: float,
     ):
         self._require_package_fast_port_artifact(
             scene
         )
         if (
-            scene.medium.conductivity
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
             > 0.0
             and not bool(
                 getattr(
@@ -196,6 +199,7 @@ class MeshfreeVNextSystem:
     def _require_fast_spatial_artifact(
         self,
         scene: Scene,
+        frequency_hz: float,
     ):
         self._require_package_fast_spatial_artifact(
             scene
@@ -226,7 +230,8 @@ class MeshfreeVNextSystem:
         frequency_hz: float,
     ):
         self._require_fast_port_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         return (
             self.port_artifact.predict_structured(
@@ -323,7 +328,8 @@ class MeshfreeVNextSystem:
             scene
         )
         self._require_fast_spatial_artifact(
-            scene
+            scene,
+            frequency_hz,
         )
         if (
             self.spatial_artifact
@@ -415,7 +421,9 @@ class MeshfreeVNextSystem:
         )
         if (
             scene.packages
-            or scene.medium.conductivity > 0.0
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
         ):
             return ChannelResolvedCurrentEnvelope(
                 scene,
