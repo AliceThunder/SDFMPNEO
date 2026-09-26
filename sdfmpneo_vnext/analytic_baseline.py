@@ -112,7 +112,10 @@ def analytic_port_baseline(
     *,
     segments_per_coil: int = 96,
 ) -> AnalyticBaselineResult:
-    scene.require_mvp_electromagnetic_scope()
+    if scene.packages:
+        raise ValueError(
+            "analytic conductor baseline does not include package coupling"
+        )
     if (
         not np.isfinite(frequency_hz)
         or frequency_hz < 0.0
