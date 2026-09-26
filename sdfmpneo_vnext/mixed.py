@@ -326,7 +326,9 @@ class DenseMixedConductorTeacher:
             )
         if (
             self.frequency_hz == 0.0
-            and self.scene.medium.conductivity > 0.0
+            and self.scene.medium.loss_conductivity(
+                0.0
+            ) > 0.0
         ):
             raise NotImplementedError(
                 "conductive homogeneous background at DC requires the static "
@@ -338,9 +340,7 @@ class DenseMixedConductorTeacher:
         # Green operator through complex permittivity.  Do not let the MQS
         # magnetic subsolver silently reject that otherwise valid EQS loss.
         magnetic_medium = HomogeneousMedium(
-            relative_permittivity=(
-                scene.medium.relative_permittivity
-            ),
+            relative_permittivity=1.0,
             relative_permeability=(
                 scene.medium.relative_permeability
             ),
@@ -589,7 +589,12 @@ class DenseMixedConductorTeacher:
         self,
         result: MixedResult,
     ) -> np.ndarray | None:
-        if self.scene.medium.conductivity <= 0.0:
+        if (
+            self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
+            <= 0.0
+        ):
             return None
         total = 0.5 * (
             result.impedance
