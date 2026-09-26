@@ -1388,6 +1388,10 @@ class HybridSpatialLossArtifact:
         package_axial_order: int = 6,
         package_radial_order: int = 4,
         package_azimuthal_order: int = 16,
+        background_segments_per_turn: int = 16,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
+        background_conductivity_range=None,
         device: str = "cpu",
     ):
         if not bool(
@@ -1444,6 +1448,101 @@ class HybridSpatialLossArtifact:
         self.package_azimuthal_order = int(
             package_azimuthal_order
         )
+        self.background_segments_per_turn = int(
+            background_segments_per_turn
+        )
+        self.background_radial_order = int(
+            background_radial_order
+        )
+        self.background_angular_order = int(
+            background_angular_order
+        )
+        if (
+            self.background_segments_per_turn
+            < 4
+            or self.background_radial_order
+            < 3
+            or self.background_angular_order
+            < 8
+        ):
+            raise ValueError(
+                "invalid background spatial normalization resolution"
+            )
+        if background_conductivity_range is None:
+            self.background_conductivity_range = None
+        else:
+            values = np.asarray(
+                background_conductivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_conductivity_range must be a finite "
+                    "nonnegative increasing pair"
+                )
+            self.background_conductivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+        self.supports_lossy_background = bool(
+            self.background_conductivity_range
+            is not None
+            and self.background_conductivity_range[
+                1
+            ]
+            > 0.0
+            and bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_lossy_background",
+                    False,
+                )
+            )
+        )
+        if (
+            self.background_conductivity_range
+            is not None
+            and self.background_conductivity_range[
+                1
+            ]
+            > 0.0
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_lossy_background",
+                    False,
+                )
+            )
+        ):
+            raise ValueError(
+                "lossy-background spatial artifacts require a port artifact "
+                "trained for lossy homogeneous backgrounds"
+            )
         self.device = str(
             device
         )
@@ -1457,15 +1556,37 @@ class HybridSpatialLossArtifact:
             raise ValueError(
                 "hybrid spatial artifact requires at least one package"
             )
-        if (
+        conductivity = float(
             scene.medium.conductivity
-            > 0.0
-            and not self.supports_lossy_background
-        ):
-            raise NotImplementedError(
-                "this hybrid spatial artifact has no continuous "
-                "background-loss decoder for lossy homogeneous media"
+        )
+        if conductivity > 0.0:
+            if not self.supports_lossy_background:
+                raise NotImplementedError(
+                    "this hybrid spatial artifact has no trained continuous "
+                    "background-loss decoder for lossy homogeneous media"
+                )
+            lower, upper = (
+                self.background_conductivity_range
             )
+            tolerance = (
+                1e-12
+                * max(
+                    upper,
+                    1.0,
+                )
+            )
+            if (
+                conductivity
+                < lower
+                - tolerance
+                or conductivity
+                > upper
+                + tolerance
+            ):
+                raise ValueError(
+                    "background conductivity is outside the hybrid spatial "
+                    f"training domain [{lower:.6g}, {upper:.6g}] S/m"
+                )
         prediction = (
             self.port_artifact.predict_structured(
                 scene,
@@ -1490,6 +1611,7 @@ class HybridSpatialLossArtifact:
             package_latent,
             coil_pair,
             coil_package,
+            length_scale,
         ) = _latent(
             self.port_artifact,
             scene,
@@ -1544,6 +1666,72 @@ class HybridSpatialLossArtifact:
                 package_local,
             )
         )
+        (
+            background_segments,
+            background_anchor_positions,
+            background_anchor_radii,
+        ) = scene_conductor_geometry(
+            scene,
+            segments_per_turn=(
+                self.background_segments_per_turn
+            ),
+        )
+        if conductivity > 0.0:
+            (
+                background_points,
+                background_weights,
+            ) = unbounded_background_quadrature(
+                scene,
+                background_segments,
+                background_anchor_positions,
+                background_anchor_radii,
+                radial_order=(
+                    self.background_radial_order
+                ),
+                angular_order=(
+                    self.background_angular_order
+                ),
+            )
+            (
+                background_coil_coordinates,
+                background_package_coordinates,
+            ) = background_coordinate_features(
+                scene,
+                background_points,
+                length_scale=(
+                    length_scale
+                ),
+            )
+        else:
+            background_points = np.empty(
+                (
+                    0,
+                    3,
+                ),
+                dtype=float,
+            )
+            background_weights = np.empty(
+                0,
+                dtype=float,
+            )
+            background_coil_coordinates = np.empty(
+                (
+                    0,
+                    n_coils,
+                    5,
+                ),
+                dtype=float,
+            )
+            background_package_coordinates = np.empty(
+                (
+                    0,
+                    len(
+                        scene.packages
+                    ),
+                    5,
+                ),
+                dtype=float,
+            )
 
         self.model.eval()
         with torch.no_grad():
@@ -1591,10 +1779,42 @@ class HybridSpatialLossArtifact:
                     None,
                 ]
             )
+            if len(
+                background_points
+            ):
+                raw_background = (
+                    self.model.background.raw_matrices(
+                        coil_latent,
+                        package_latent,
+                        background_coil_coordinates,
+                        background_package_coordinates,
+                    )
+                )
+                raw_background = (
+                    raw_background
+                    * float(
+                        background_loss_gate(
+                            scene,
+                            frequency_hz,
+                        )
+                    )
+                )
+            else:
+                raw_background = torch.empty(
+                    (
+                        0,
+                        n_coils,
+                        n_coils,
+                    ),
+                    dtype=raw_package.dtype,
+                    device=raw_package.device,
+                )
             package_transform = (
-                _package_transform(
+                _environment_transform(
                     raw_package,
                     package_weights,
+                    raw_background,
+                    background_weights,
                     prediction.dissipation_channels[
                         n_coils
                     ],
@@ -1614,6 +1834,19 @@ class HybridSpatialLossArtifact:
                     package_transform,
                 )
             )
+            if int(
+                raw_background.shape[
+                    0
+                ]
+            ):
+                background_values = (
+                    _apply_transform(
+                        raw_background,
+                        package_transform,
+                    )
+                )
+            else:
+                background_values = raw_background
 
         integrated = np.zeros_like(
             prediction.dissipation_channels,
@@ -1656,6 +1889,22 @@ class HybridSpatialLossArtifact:
             .numpy(),
             axis=0,
         )
+        if len(
+            background_weights
+        ):
+            integrated[
+                n_coils
+            ] += np.sum(
+                background_weights[
+                    :,
+                    None,
+                    None,
+                ]
+                * background_values.detach()
+                .cpu()
+                .numpy(),
+                axis=0,
+            )
         closure = float(
             np.linalg.norm(
                 integrated
@@ -1681,6 +1930,12 @@ class HybridSpatialLossArtifact:
             coil_package,
             conductor_transforms,
             package_transform,
+            background_segments,
+            background_anchor_positions,
+            background_anchor_radii,
+            float(
+                length_scale
+            ),
             closure,
             self.device,
         )
