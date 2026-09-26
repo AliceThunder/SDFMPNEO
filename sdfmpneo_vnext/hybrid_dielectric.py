@@ -134,10 +134,14 @@ class DielectricCoupledMixedTeacher:
         if (
             self.frequency_hz == 0.0
             and (
-                scene.medium.conductivity
+                scene.medium.loss_conductivity(
+                    0.0
+                )
                 > 0.0
                 or any(
-                    package.material.conductivity
+                    package.material.loss_conductivity(
+                        0.0
+                    )
                     > 0.0
                     for package
                     in scene.packages
@@ -790,7 +794,9 @@ class DielectricCoupledMixedTeacher:
         )
         environment_label = (
             "electric_environment:aggregate"
-            if self.scene.medium.conductivity
+            if self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
             > 0.0
             else "dielectric:aggregate"
         )
