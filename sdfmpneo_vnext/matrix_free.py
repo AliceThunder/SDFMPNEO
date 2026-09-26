@@ -571,51 +571,91 @@ class MatrixFreeMQSOperator:
     def resistive_preconditioner(
         self,
     ) -> LinearOperator:
-        """Factor the MQS KKT with the magnetic block omitted."""
+        """Exact inverse of the resistive KKT approximation via a small Schur solve.
+
+        This is algebraically identical to factoring
+        [[R, -C^T], [C, 0]] but never forms that full matrix.  Only the
+        constraint Schur complement C R^{-1} C^T is factorized.
+        """
         metadata = self.metadata
         m = metadata.n_modes
         ns = metadata.n_constraints
-        approximate = np.block(
-            [
-                [
-                    np.diag(
-                        self.resistance_diagonal.astype(
-                            complex
-                        )
-                    ),
-                    -self.constraint_matrix.T.astype(
-                        complex
-                    ),
-                ],
-                [
-                    self.constraint_matrix.astype(
-                        complex
-                    ),
-                    np.zeros(
-                        (
-                            ns,
-                            ns,
-                        ),
-                        dtype=complex,
-                    ),
-                ],
-            ]
+        resistance = self.resistance_diagonal.astype(
+            complex
+        )
+        if np.any(
+            np.abs(resistance)
+            <= 0.0
+        ):
+            raise RuntimeError(
+                "resistive preconditioner requires strictly positive modal resistance"
+            )
+        inverse_resistance = (
+            1.0 / resistance
+        )
+        constraint = self.constraint_matrix.astype(
+            complex
+        )
+        schur = (
+            (
+                constraint
+                * inverse_resistance[
+                    None,
+                    :,
+                ]
+            )
+            @ constraint.T
         )
         factor = lu_factor(
-            approximate,
+            schur,
             check_finite=True,
         )
 
         def apply(
             vector,
         ):
-            return lu_solve(
+            vector = np.asarray(
+                vector,
+                dtype=complex,
+            )
+            if vector.shape != (
+                m + ns,
+            ):
+                raise ValueError(
+                    "MQS preconditioner vector has wrong shape"
+                )
+            current_rhs = vector[
+                :m
+            ]
+            constraint_rhs = vector[
+                m:
+            ]
+            reduced_rhs = (
+                constraint_rhs
+                - constraint
+                @ (
+                    inverse_resistance
+                    * current_rhs
+                )
+            )
+            multiplier = lu_solve(
                 factor,
-                np.asarray(
-                    vector,
-                    dtype=complex,
-                ),
+                reduced_rhs,
                 check_finite=True,
+            )
+            current = (
+                inverse_resistance
+                * (
+                    current_rhs
+                    + constraint.T
+                    @ multiplier
+                )
+            )
+            return np.concatenate(
+                (
+                    current,
+                    multiplier,
+                )
             )
 
         return LinearOperator(
@@ -879,80 +919,122 @@ class MatrixFreeMixedOperator:
     def resistive_preconditioner(
         self,
     ) -> LinearOperator:
-        """Factor the mixed KKT with the magnetic block omitted."""
+        """Invert the resistive mixed approximation through a reduced Schur block.
+
+        For
+            R c - D^T phi = b_c,
+            D c + j*omega q = b_d,
+            phi - Phi q = b_phi,
+        eliminate c and phi analytically.  Only
+            (D R^{-1} D^T Phi + j*omega I)
+        in the gauge-reduced potential space is factorized.  This is exactly
+        the same approximation as the former full dense KKT LU while avoiding
+        a dense matrix of dimension m + 2*n_r.
+        """
         metadata = self.metadata
         m = metadata.n_current_modes
         nr = metadata.n_reduced_potential
-        approximate = np.block(
-            [
-                [
-                    np.diag(
-                        self.resistance_diagonal.astype(
-                            complex
-                        )
-                    ),
-                    -self.reduced_divergence.T.astype(
-                        complex
-                    ),
-                    np.zeros(
-                        (
-                            m,
-                            nr,
-                        ),
-                        dtype=complex,
-                    ),
-                ],
-                [
-                    self.reduced_divergence.astype(
-                        complex
-                    ),
-                    np.zeros(
-                        (
-                            nr,
-                            nr,
-                        ),
-                        dtype=complex,
-                    ),
-                    1j
-                    * self.mqs.omega
-                    * np.eye(
-                        nr,
-                        dtype=complex,
-                    ),
-                ],
-                [
-                    np.zeros(
-                        (
-                            nr,
-                            m,
-                        ),
-                        dtype=complex,
-                    ),
-                    np.eye(
-                        nr,
-                        dtype=complex,
-                    ),
-                    -self.reduced_potential.astype(
-                        complex
-                    ),
-                ],
-            ]
+        resistance = self.resistance_diagonal.astype(
+            complex
+        )
+        if np.any(
+            np.abs(resistance)
+            <= 0.0
+        ):
+            raise RuntimeError(
+                "resistive preconditioner requires strictly positive modal resistance"
+            )
+        inverse_resistance = (
+            1.0 / resistance
+        )
+        divergence = self.reduced_divergence.astype(
+            complex
+        )
+        potential = self.reduced_potential.astype(
+            complex
+        )
+        current_schur = (
+            (
+                divergence
+                * inverse_resistance[
+                    None,
+                    :,
+                ]
+            )
+            @ divergence.T
+        )
+        charge_schur = (
+            current_schur
+            @ potential
+            + 1j
+            * self.mqs.omega
+            * np.eye(
+                nr,
+                dtype=complex,
+            )
         )
         factor = lu_factor(
-            approximate,
+            charge_schur,
             check_finite=True,
         )
 
         def apply(
             vector,
         ):
-            return lu_solve(
+            vector = np.asarray(
+                vector,
+                dtype=complex,
+            )
+            if vector.shape != (
+                metadata.system_size,
+            ):
+                raise ValueError(
+                    "mixed preconditioner vector has wrong shape"
+                )
+            current_rhs = vector[
+                :m
+            ]
+            continuity_rhs = vector[
+                m : m + nr
+            ]
+            potential_rhs = vector[
+                m + nr :
+            ]
+            inverse_r_current = (
+                inverse_resistance
+                * current_rhs
+            )
+            charge_rhs = (
+                continuity_rhs
+                - divergence
+                @ inverse_r_current
+                - current_schur
+                @ potential_rhs
+            )
+            charge = lu_solve(
                 factor,
-                np.asarray(
-                    vector,
-                    dtype=complex,
-                ),
+                charge_rhs,
                 check_finite=True,
+            )
+            scalar_potential = (
+                potential_rhs
+                + potential
+                @ charge
+            )
+            current = (
+                inverse_resistance
+                * (
+                    current_rhs
+                    + divergence.T
+                    @ scalar_potential
+                )
+            )
+            return np.concatenate(
+                (
+                    current,
+                    scalar_potential,
+                    charge,
+                )
             )
 
         return LinearOperator(

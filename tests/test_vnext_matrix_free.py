@@ -347,7 +347,7 @@ def test_matrix_free_mixed_kkt_matches_dense_three_field_action():
 
 
 
-def test_matrix_free_mqs_resistive_preconditioner_is_callable_and_finite():
+def test_matrix_free_mqs_resistive_preconditioner_exactly_inverts_resistive_kkt():
     operator = MatrixFreeMQSOperator(
         _scene(),
         25_000.0,
@@ -357,10 +357,38 @@ def test_matrix_free_mqs_resistive_preconditioner_is_callable_and_finite():
     preconditioner = (
         operator.resistive_preconditioner()
     )
+    resistance = np.diag(
+        operator.resistance_diagonal.astype(
+            complex
+        )
+    )
+    constraint = (
+        operator.constraint_matrix.astype(
+            complex
+        )
+    )
+    approximate = np.block(
+        [
+            [
+                resistance,
+                -constraint.T,
+            ],
+            [
+                constraint,
+                np.zeros(
+                    (
+                        constraint.shape[0],
+                        constraint.shape[0],
+                    ),
+                    dtype=complex,
+                ),
+            ],
+        ]
+    )
     rng = np.random.default_rng(
         53
     )
-    vector = (
+    rhs = (
         rng.normal(
             size=preconditioner.shape[0]
         )
@@ -369,16 +397,21 @@ def test_matrix_free_mqs_resistive_preconditioner_is_callable_and_finite():
             size=preconditioner.shape[0]
         )
     )
-    applied = preconditioner @ vector
-    assert applied.shape == vector.shape
+    applied = preconditioner @ rhs
     assert np.all(
         np.isfinite(
             applied
         )
     )
+    assert np.allclose(
+        approximate @ applied,
+        rhs,
+        rtol=2e-11,
+        atol=2e-12,
+    )
 
 
-def test_matrix_free_mixed_resistive_preconditioner_is_callable_and_finite():
+def test_matrix_free_mixed_resistive_preconditioner_exactly_inverts_reduced_kkt():
     operator = MatrixFreeMixedOperator(
         _scene(),
         15_000.0,
@@ -388,10 +421,67 @@ def test_matrix_free_mixed_resistive_preconditioner_is_callable_and_finite():
     preconditioner = (
         operator.resistive_preconditioner()
     )
+    m = (
+        operator.metadata.n_current_modes
+    )
+    nr = (
+        operator.metadata.n_reduced_potential
+    )
+    resistance = np.diag(
+        operator.resistance_diagonal.astype(
+            complex
+        )
+    )
+    divergence = (
+        operator.reduced_divergence.astype(
+            complex
+        )
+    )
+    potential = (
+        operator.reduced_potential.astype(
+            complex
+        )
+    )
+    approximate = np.block(
+        [
+            [
+                resistance,
+                -divergence.T,
+                np.zeros(
+                    (m, nr),
+                    dtype=complex,
+                ),
+            ],
+            [
+                divergence,
+                np.zeros(
+                    (nr, nr),
+                    dtype=complex,
+                ),
+                1j
+                * operator.mqs.omega
+                * np.eye(
+                    nr,
+                    dtype=complex,
+                ),
+            ],
+            [
+                np.zeros(
+                    (nr, m),
+                    dtype=complex,
+                ),
+                np.eye(
+                    nr,
+                    dtype=complex,
+                ),
+                -potential,
+            ],
+        ]
+    )
     rng = np.random.default_rng(
         59
     )
-    vector = (
+    rhs = (
         rng.normal(
             size=preconditioner.shape[0]
         )
@@ -400,10 +490,15 @@ def test_matrix_free_mixed_resistive_preconditioner_is_callable_and_finite():
             size=preconditioner.shape[0]
         )
     )
-    applied = preconditioner @ vector
-    assert applied.shape == vector.shape
+    applied = preconditioner @ rhs
     assert np.all(
         np.isfinite(
             applied
         )
+    )
+    assert np.allclose(
+        approximate @ applied,
+        rhs,
+        rtol=3e-11,
+        atol=3e-11,
     )
