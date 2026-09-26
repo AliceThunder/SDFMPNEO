@@ -839,6 +839,131 @@ def build_thermal_source_quadrature(
             axis=0,
         )
 
+    # A lossy homogeneous background is represented by a positive quadrature
+    # over the unbounded exterior, not by a finite world box. The prepared
+    # REFERENCE field supplies both the mapped [0, infinity) quadrature and a
+    # PSD local dissipation matrix whose integral is congruence-normalized to
+    # the exact background port-loss channel.
+    background_channel = getattr(
+        prepared_spatial,
+        "background_channel_index",
+        None,
+    )
+    if background_channel is not None:
+        if (
+            not hasattr(
+                prepared_spatial,
+                "background_quadrature",
+            )
+            or not hasattr(
+                prepared_spatial,
+                "background_dissipation_matrices",
+            )
+        ):
+            raise TypeError(
+                "lossy-background spatial fields must expose background "
+                "quadrature and dissipation queries"
+            )
+        background_positions, background_weights = (
+            prepared_spatial.background_quadrature()
+        )
+        background_positions = np.asarray(
+            background_positions,
+            dtype=float,
+        )
+        background_weights = np.asarray(
+            background_weights,
+            dtype=float,
+        )
+        if (
+            background_positions.ndim != 2
+            or background_positions.shape[1] != 3
+            or background_weights.shape
+            != (
+                len(background_positions),
+            )
+            or np.any(
+                background_weights <= 0.0
+            )
+        ):
+            raise ValueError(
+                "invalid lossy-background thermal quadrature"
+            )
+        background_matrices = np.asarray(
+            prepared_spatial.background_dissipation_matrices(
+                background_positions
+            ),
+            dtype=complex,
+        )
+        if background_matrices.shape != (
+            len(background_positions),
+            matrices.shape[1],
+            matrices.shape[2],
+        ):
+            raise ValueError(
+                "lossy-background dissipation matrices have wrong shape"
+            )
+        count = len(
+            background_positions
+        )
+        positions = np.concatenate(
+            (
+                positions,
+                background_positions,
+            ),
+            axis=0,
+        )
+        weights = np.concatenate(
+            (
+                weights,
+                background_weights,
+            )
+        )
+        channel_ids = np.concatenate(
+            (
+                channel_ids,
+                np.full(
+                    count,
+                    int(
+                        background_channel
+                    ),
+                    dtype=int,
+                ),
+            )
+        )
+        arcs = np.concatenate(
+            (
+                arcs,
+                np.zeros(
+                    count,
+                    dtype=float,
+                ),
+            )
+        )
+        section_xy = np.concatenate(
+            (
+                section_xy,
+                np.zeros(
+                    (
+                        count,
+                        2,
+                    ),
+                    dtype=float,
+                ),
+            ),
+            axis=0,
+        )
+        matrices = np.concatenate(
+            (
+                np.asarray(
+                    matrices,
+                    dtype=complex,
+                ),
+                background_matrices,
+            ),
+            axis=0,
+        )
+
     # Package-aware REFERENCE fields append dielectric volume sources to the
     # aggregate dielectric loss channel. Their actual world positions are
     # retained, so subsequent thermal Green evaluation resolves package heat
