@@ -13,6 +13,16 @@ except ImportError as exc:  # pragma: no cover
         "pip install 'sdfmpneo[neural]'"
     ) from exc
 
+from .exterior_quadrature import (
+    homogeneous_background_domain_mask,
+    scene_conductor_geometry,
+    unbounded_background_quadrature,
+)
+from .hybrid_background_spatial import (
+    BackgroundLossShapeNet,
+    background_coordinate_features,
+    background_loss_gate,
+)
 from .hybrid_features import encode_hybrid_scene_invariant
 from .hybrid_training_data import HybridTeacherSample
 from .scene import Scene
@@ -26,7 +36,11 @@ from .spatial_neural import (
 )
 
 
-HYBRID_SPATIAL_ARTIFACT_SCHEMA = 1
+HYBRID_SPATIAL_ARTIFACT_SCHEMA = 2
+SUPPORTED_HYBRID_SPATIAL_ARTIFACT_SCHEMAS = (
+    1,
+    HYBRID_SPATIAL_ARTIFACT_SCHEMA,
+)
 
 
 def _package_loss_gate(
@@ -351,6 +365,18 @@ class HybridSpatialLossShapeNet(
                 depth=self.depth,
             )
         )
+        self.background = (
+            BackgroundLossShapeNet(
+                self.hidden_dim,
+                field_hidden_dim=(
+                    self.field_hidden_dim
+                ),
+                factor_rank=(
+                    self.factor_rank
+                ),
+                depth=self.depth,
+            )
+        )
 
 
 def _conductor_transforms(
@@ -492,6 +518,55 @@ def _package_transform(
         )
         @ inverse_chol
     )
+
+
+def _environment_transform(
+    raw_package,
+    package_weights,
+    raw_background,
+    background_weights,
+    target_channel,
+):
+    parts = [
+        raw_package
+    ]
+    weight_parts = [
+        np.asarray(
+            package_weights,
+            dtype=float,
+        )
+    ]
+    if (
+        raw_background is not None
+        and int(
+            raw_background.shape[
+                0
+            ]
+        )
+        > 0
+    ):
+        parts.append(
+            raw_background
+        )
+        weight_parts.append(
+            np.asarray(
+                background_weights,
+                dtype=float,
+            )
+        )
+    raw = torch.cat(
+        parts,
+        dim=0,
+    )
+    weights = np.concatenate(
+        weight_parts
+    )
+    return _package_transform(
+        raw,
+        weights,
+        target_channel,
+    )
+
 
 
 def _apply_by_coil(
@@ -691,6 +766,9 @@ def _latent(
         package_latent,
         tensors[1],
         tensors[3],
+        float(
+            encoded.length_scale
+        ),
     )
 
 
