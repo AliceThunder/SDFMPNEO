@@ -160,6 +160,7 @@ from .training_data import (
 )
 from .hybrid_training_data import (
     HYBRID_REFERENCE_BACKEND,
+    BackgroundSpatialLossSamples,
     HybridTeacherSample,
     PackageSpatialLossSamples,
 )
@@ -329,6 +330,7 @@ __all__ = [
     "SpatialLossSamples",
     "TeacherSample",
     "HYBRID_REFERENCE_BACKEND",
+    "BackgroundSpatialLossSamples",
     "HybridTeacherSample",
     "PackageSpatialLossSamples",
     "HYBRID_DATASET_SCHEMA",
