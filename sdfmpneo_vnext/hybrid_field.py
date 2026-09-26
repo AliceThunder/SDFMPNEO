@@ -61,6 +61,61 @@ def _hermitian_psd_sqrt(
     )
 
 
+def _fibonacci_directions(
+    count: int,
+) -> np.ndarray:
+    if count < 8:
+        raise ValueError(
+            "background angular order must be >= 8"
+        )
+    index = np.arange(
+        count,
+        dtype=float,
+    )
+    z = (
+        1.0
+        - 2.0
+        * (
+            index
+            + 0.5
+        )
+        / count
+    )
+    radius = np.sqrt(
+        np.maximum(
+            1.0
+            - z * z,
+            0.0,
+        )
+    )
+    golden = (
+        np.pi
+        * (
+            3.0
+            - np.sqrt(
+                5.0
+            )
+        )
+    )
+    angle = (
+        golden
+        * index
+    )
+    return np.column_stack(
+        (
+            radius
+            * np.cos(
+                angle
+            ),
+            radius
+            * np.sin(
+                angle
+            ),
+            z,
+        )
+    )
+
+
 @dataclass(frozen=True)
 class PreparedHybridReferenceLossField:
     scene: Scene
@@ -72,6 +127,7 @@ class PreparedHybridReferenceLossField:
     raw_dielectric_closure_error: float
     normalized_dielectric_closure_error: float
     package_integrated_channels: np.ndarray
+    background_integrated_channel: np.ndarray | None = None
 
     @property
     def normalization_closure_error(
@@ -96,7 +152,33 @@ class PreparedHybridReferenceLossField:
     def dielectric_channel_index(
         self,
     ) -> int:
+        # Backward-compatible name for the aggregate electric-environment
+        # channel. With a lossy background this channel contains both package
+        # and exterior-medium electric loss.
         return self.n_conductor_channels
+
+    @property
+    def environment_channel_index(
+        self,
+    ) -> int:
+        return self.n_conductor_channels
+
+    @property
+    def background_channel_index(
+        self,
+    ) -> int | None:
+        if self.scene.medium.conductivity <= 0.0:
+            return None
+        return self.environment_channel_index
+
+    @property
+    def environment_transform(
+        self,
+    ) -> np.ndarray:
+        return np.asarray(
+            self.package_transform,
+            dtype=complex,
+        )
 
     def conductor_local_dissipation_matrix(
         self,
@@ -343,6 +425,492 @@ class PreparedHybridReferenceLossField:
             else transfer
         )
 
+    def _conductor_exterior_mask(
+        self,
+        points,
+    ) -> np.ndarray:
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        if (
+            points.ndim != 2
+            or points.shape[1] != 3
+        ):
+            raise ValueError(
+                "points must have shape (n,3)"
+            )
+        exterior = np.ones(
+            len(
+                points
+            ),
+            dtype=bool,
+        )
+        for segment in self.teacher.conductor_teacher._mqs._segments:
+            active = np.flatnonzero(
+                exterior
+            )
+            if active.size == 0:
+                break
+            delta = (
+                points[
+                    active
+                ]
+                - segment.midpoint[
+                    None,
+                    :
+                ]
+            )
+            longitudinal = (
+                delta
+                @ segment.tangent
+            )
+            near = (
+                np.abs(
+                    longitudinal
+                )
+                <= (
+                    0.5
+                    * segment.length
+                    + 1e-12
+                )
+            )
+            if not np.any(
+                near
+            ):
+                continue
+            candidate = active[
+                near
+            ]
+            transverse = (
+                delta[
+                    near
+                ]
+                - longitudinal[
+                    near,
+                    None,
+                ]
+                * segment.tangent[
+                    None,
+                    :
+                ]
+            )
+            geometry = self.scene.coils[
+                segment.coil
+            ].geometry
+            u = (
+                transverse
+                @ segment.n1
+            ) / (
+                0.5
+                * geometry.conductor_width
+            )
+            v = (
+                transverse
+                @ segment.n2
+            ) / (
+                0.5
+                * geometry.conductor_thickness
+            )
+            exponent = float(
+                geometry.cross_section_exponent
+            )
+            inside = (
+                np.abs(
+                    u
+                ) ** exponent
+                + np.abs(
+                    v
+                ) ** exponent
+                <= (
+                    1.0
+                    + 1e-10
+                )
+            )
+            exterior[
+                candidate[
+                    inside
+                ]
+            ] = False
+        return exterior
+
+    def _background_domain_mask(
+        self,
+        points,
+    ) -> np.ndarray:
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        exterior = (
+            self._conductor_exterior_mask(
+                points
+            )
+        )
+        for package in self.scene.packages:
+            if not np.any(
+                exterior
+            ):
+                break
+            active = np.flatnonzero(
+                exterior
+            )
+            inside = np.asarray(
+                package.geometry.contains(
+                    points[
+                        active
+                    ],
+                    tolerance=2e-12,
+                ),
+                dtype=bool,
+            )
+            exterior[
+                active[
+                    inside
+                ]
+            ] = False
+        return exterior
+
+    def background_quadrature(
+        self,
+        *,
+        radial_order: int = 12,
+        angular_order: int = 48,
+    ):
+        """Positive quadrature on the unbounded background excluding objects."""
+        if radial_order < 3:
+            raise ValueError(
+                "background radial order must be >= 3"
+            )
+        directions = _fibonacci_directions(
+            int(
+                angular_order
+            )
+        )
+        rotation = np.asarray(
+            self.scene.coils[
+                0
+            ].geometry.pose.rotation,
+            dtype=float,
+        )
+        directions = (
+            directions
+            @ rotation.T
+        )
+
+        (
+            node_positions,
+            node_radii,
+            _,
+        ) = self._charge_geometry()
+        surface_positions = np.asarray(
+            self.teacher.surface_solver.positions,
+            dtype=float,
+        )
+        geometry_points = np.concatenate(
+            (
+                np.asarray(
+                    node_positions,
+                    dtype=float,
+                ),
+                surface_positions,
+            ),
+            axis=0,
+        )
+        center = np.mean(
+            geometry_points,
+            axis=0,
+        )
+        scale = max(
+            float(
+                np.max(
+                    np.linalg.norm(
+                        geometry_points
+                        - center[
+                            None,
+                            :
+                        ],
+                        axis=1,
+                    )
+                )
+            ),
+            float(
+                np.max(
+                    np.asarray(
+                        node_radii,
+                        dtype=float,
+                    )
+                )
+            ),
+            1e-6,
+        )
+
+        nodes, weights = (
+            np.polynomial.legendre.leggauss(
+                int(
+                    radial_order
+                )
+            )
+        )
+        unit = 0.5 * (
+            nodes
+            + 1.0
+        )
+        unit_weights = (
+            0.5
+            * weights
+        )
+        radius = (
+            scale
+            * unit
+            / (
+                1.0
+                - unit
+            )
+        )
+        derivative = (
+            scale
+            / (
+                1.0
+                - unit
+            ) ** 2
+        )
+        points = (
+            center[
+                None,
+                None,
+                :
+            ]
+            + radius[
+                :,
+                None,
+                None,
+            ]
+            * directions[
+                None,
+                :,
+                :
+            ]
+        ).reshape(
+            -1,
+            3,
+        )
+        volume_weights = (
+            unit_weights[
+                :,
+                None
+            ]
+            * radius[
+                :,
+                None
+            ] ** 2
+            * derivative[
+                :,
+                None
+            ]
+            * (
+                4.0
+                * np.pi
+                / int(
+                    angular_order
+                )
+            )
+            * np.ones(
+                (
+                    1,
+                    int(
+                        angular_order
+                    ),
+                ),
+                dtype=float,
+            )
+        ).reshape(
+            -1
+        )
+        exterior = (
+            self._background_domain_mask(
+                points
+            )
+        )
+        return (
+            points[
+                exterior
+            ],
+            volume_weights[
+                exterior
+            ],
+        )
+
+    def raw_background_dissipation_matrices(
+        self,
+        points,
+    ) -> np.ndarray:
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        n_ports = int(
+            self.port_prediction.impedance.shape[
+                0
+            ]
+        )
+        out = np.zeros(
+            (
+                len(
+                    points
+                ),
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        )
+        conductivity = (
+            self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
+        )
+        if conductivity <= 0.0:
+            return (
+                out[
+                    0
+                ]
+                if scalar
+                else out
+            )
+        exterior = (
+            self._background_domain_mask(
+                points
+            )
+        )
+        if np.any(
+            exterior
+        ):
+            transfer = (
+                self.electric_field_transfer(
+                    points[
+                        exterior
+                    ]
+                )
+            )
+            if transfer.ndim == 2:
+                transfer = transfer[
+                    None,
+                    :,
+                    :
+                ]
+            matrices = (
+                conductivity
+                * np.einsum(
+                    "qdi,qdj->qij",
+                    transfer.conj(),
+                    transfer,
+                )
+            )
+            out[
+                exterior
+            ] = 0.5 * (
+                matrices
+                + matrices.conj().transpose(
+                    0,
+                    2,
+                    1,
+                )
+            )
+        return (
+            out[
+                0
+            ]
+            if scalar
+            else out
+        )
+
+    def background_dissipation_matrices(
+        self,
+        points,
+    ) -> np.ndarray:
+        raw = (
+            self.raw_background_dissipation_matrices(
+                points
+            )
+        )
+        scalar = (
+            raw.ndim == 2
+        )
+        if scalar:
+            raw = raw[
+                None,
+                :,
+                :
+            ]
+        transform = (
+            self.environment_transform
+        )
+        corrected = (
+            transform[
+                None,
+                :,
+                :
+            ]
+            @ raw
+            @ transform.conj().T[
+                None,
+                :,
+                :
+            ]
+        )
+        corrected = 0.5 * (
+            corrected
+            + corrected.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        return (
+            corrected[
+                0
+            ]
+            if scalar
+            else corrected
+        )
+
+    def background_joule_density(
+        self,
+        points,
+        currents,
+    ):
+        matrices = (
+            self.background_dissipation_matrices(
+                points
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        if currents.shape != (
+            self.port_prediction.impedance.shape[
+                0
+            ],
+        ):
+            raise ValueError(
+                "currents have wrong shape"
+            )
+        return 0.5 * np.real(
+            np.einsum(
+                "i,...ij,j->...",
+                currents.conj(),
+                matrices,
+                currents,
+            )
+        )
+
     def raw_package_dissipation_matrices(
         self,
         package_index: int,
@@ -551,6 +1119,8 @@ def prepare_hybrid_reference_loss_field(
     volume_axial_order: int = 8,
     volume_radial_order: int = 6,
     volume_azimuthal_order: int = 24,
+    background_radial_order: int = 12,
+    background_angular_order: int = 48,
     maximum_raw_closure_error: float = 0.25,
     normalized_closure_tolerance: float = 1e-6,
 ) -> PreparedHybridReferenceLossField:
@@ -561,6 +1131,13 @@ def prepare_hybrid_reference_loss_field(
     if normalized_closure_tolerance <= 0.0:
         raise ValueError(
             "normalized_closure_tolerance must be positive"
+        )
+    if (
+        background_radial_order < 3
+        or background_angular_order < 8
+    ):
+        raise ValueError(
+            "invalid background spatial quadrature order"
         )
 
     scene = teacher.scene
@@ -590,6 +1167,13 @@ def prepare_hybrid_reference_loss_field(
                 len(
                     scene.packages
                 ),
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        ),
+        background_integrated_channel=np.zeros(
+            (
                 n_ports,
                 n_ports,
             ),
@@ -645,9 +1229,49 @@ def prepare_hybrid_reference_loss_field(
         raw_package_channels,
         dtype=complex,
     )
-    raw_total = np.sum(
-        raw_package_channels,
-        axis=0,
+    raw_background_channel = np.zeros(
+        (
+            n_ports,
+            n_ports,
+        ),
+        dtype=complex,
+    )
+    if scene.medium.conductivity > 0.0:
+        (
+            background_points,
+            background_weights,
+        ) = temporary.background_quadrature(
+            radial_order=(
+                background_radial_order
+            ),
+            angular_order=(
+                background_angular_order
+            ),
+        )
+        raw_background = (
+            temporary.raw_background_dissipation_matrices(
+                background_points
+            )
+        )
+        raw_background_channel = np.sum(
+            background_weights[
+                :,
+                None,
+                None,
+            ]
+            * raw_background,
+            axis=0,
+        )
+        raw_background_channel = 0.5 * (
+            raw_background_channel
+            + raw_background_channel.conj().T
+        )
+    raw_total = (
+        np.sum(
+            raw_package_channels,
+            axis=0,
+        )
+        + raw_background_channel
     )
     target = 0.5 * (
         result.dielectric_dissipation_matrix
@@ -682,18 +1306,21 @@ def prepare_hybrid_reference_loss_field(
             > 1e-12
         ):
             raise RuntimeError(
-                "package field reconstruction predicts dielectric loss "
+                "spatial field reconstruction predicts electric-environment loss "
                 "for a lossless port-level dielectric channel"
             )
         transform = identity
         corrected_package_channels = np.zeros_like(
             raw_package_channels
         )
+        corrected_background_channel = np.zeros_like(
+            raw_background_channel
+        )
         normalized_error = 0.0
     else:
         if raw_error > maximum_raw_closure_error:
             raise RuntimeError(
-                "raw dielectric field integration does not close the port-level "
+                "raw electric-environment field integration does not close the port-level "
                 f"dielectric loss channel: relative error={raw_error:.3e}"
             )
         scale = max(
@@ -755,9 +1382,22 @@ def prepare_hybrid_reference_loss_field(
             ],
             dtype=complex,
         )
-        corrected_total = np.sum(
-            corrected_package_channels,
-            axis=0,
+        corrected_background_channel = 0.5 * (
+            transform
+            @ raw_background_channel
+            @ transform.conj().T
+            + (
+                transform
+                @ raw_background_channel
+                @ transform.conj().T
+            ).conj().T
+        )
+        corrected_total = (
+            np.sum(
+                corrected_package_channels,
+                axis=0,
+            )
+            + corrected_background_channel
         )
         normalized_error = float(
             np.linalg.norm(
@@ -771,7 +1411,7 @@ def prepare_hybrid_reference_loss_field(
             > normalized_closure_tolerance
         ):
             raise RuntimeError(
-                "normalized dielectric spatial field failed power closure: "
+                "normalized electric-environment spatial field failed power closure: "
                 f"relative error={normalized_error:.3e}"
             )
 
@@ -792,5 +1432,8 @@ def prepare_hybrid_reference_loss_field(
         ),
         package_integrated_channels=(
             corrected_package_channels
+        ),
+        background_integrated_channel=(
+            corrected_background_channel
         ),
     )
