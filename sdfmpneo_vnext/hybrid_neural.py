@@ -26,7 +26,11 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
-HYBRID_ARTIFACT_SCHEMA = 1
+HYBRID_ARTIFACT_SCHEMA = 2
+SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
+    1,
+    HYBRID_ARTIFACT_SCHEMA,
+)
 
 
 def _mlp(
@@ -1243,8 +1247,15 @@ def _dielectric_loss_gate(
     scene: Scene,
     frequency_hz: float,
 ) -> float:
+    # Historical name retained for artifact compatibility. The final channel
+    # is the aggregate electric-environment loss, so either package loss or a
+    # conductive homogeneous background must open the PSD loss head.
     return float(
-        any(
+        scene.medium.loss_conductivity(
+            frequency_hz
+        )
+        > 0.0
+        or any(
             package.material.loss_conductivity(
                 frequency_hz
             )
@@ -1269,12 +1280,15 @@ class HybridTrainingReport:
 
 class HybridNeuralResidualArtifact:
     supports_packages = True
+    supports_lossy_background = False
+
     def __init__(
         self,
         model: HybridPhysicsFactoredResidualNet,
         normalizer: HybridNormalizer,
         *,
         baseline_segments: int,
+        background_conductivity_range=None,
         device: str = "cpu",
     ):
         self.model = model
@@ -1283,6 +1297,55 @@ class HybridNeuralResidualArtifact:
         )
         self.baseline_segments = int(
             baseline_segments
+        )
+        if background_conductivity_range is None:
+            self.background_conductivity_range = None
+        else:
+            values = np.asarray(
+                background_conductivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_conductivity_range must be a finite "
+                    "nonnegative increasing pair"
+                )
+            self.background_conductivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+        self.supports_lossy_background = bool(
+            self.background_conductivity_range
+            is not None
+            and self.background_conductivity_range[
+                1
+            ]
+            > 0.0
         )
         self.device = str(
             device
@@ -1310,6 +1373,9 @@ class HybridNeuralResidualArtifact:
                 "depth": self.model.depth,
             },
             "baseline_segments": self.baseline_segments,
+            "background_conductivity_range": (
+                self.background_conductivity_range
+            ),
         }
         digest.update(
             json.dumps(
@@ -1367,6 +1433,38 @@ class HybridNeuralResidualArtifact:
             raise ValueError(
                 "hybrid neural artifact requires at least one package"
             )
+        conductivity = float(
+            scene.medium.conductivity
+        )
+        if self.background_conductivity_range is None:
+            if conductivity > 0.0:
+                raise ValueError(
+                    "this hybrid artifact was not trained/certified for a "
+                    "lossy homogeneous background"
+                )
+        else:
+            lower, upper = (
+                self.background_conductivity_range
+            )
+            tolerance = (
+                1e-12
+                * max(
+                    upper,
+                    1.0,
+                )
+            )
+            if (
+                conductivity
+                < lower
+                - tolerance
+                or conductivity
+                > upper
+                + tolerance
+            ):
+                raise ValueError(
+                    "background conductivity is outside the hybrid artifact "
+                    f"training domain [{lower:.6g}, {upper:.6g}] S/m"
+                )
         encoded = (
             encode_hybrid_scene_invariant(
                 scene,
@@ -1526,6 +1624,9 @@ class HybridNeuralResidualArtifact:
                 "baseline_segments": (
                     self.baseline_segments
                 ),
+                "background_conductivity_range": (
+                    self.background_conductivity_range
+                ),
             },
             Path(
                 path
@@ -1557,7 +1658,7 @@ class HybridNeuralResidualArtifact:
             payload.get(
                 "schema"
             )
-            != HYBRID_ARTIFACT_SCHEMA
+            not in SUPPORTED_HYBRID_ARTIFACT_SCHEMAS
         ):
             raise ValueError(
                 "unsupported hybrid neural artifact schema"
@@ -1585,6 +1686,11 @@ class HybridNeuralResidualArtifact:
                 payload[
                     "baseline_segments"
                 ]
+            ),
+            background_conductivity_range=(
+                payload.get(
+                    "background_conductivity_range"
+                )
             ),
             device=device,
         )
@@ -1753,6 +1859,25 @@ def train_hybrid_residual_surrogate(
         )
     baseline_segments = (
         baseline_segments.pop()
+    )
+    training_background_conductivity = np.asarray(
+        [
+            sample.scene.medium.conductivity
+            for sample in samples
+        ],
+        dtype=float,
+    )
+    background_conductivity_range = (
+        float(
+            np.min(
+                training_background_conductivity
+            )
+        ),
+        float(
+            np.max(
+                training_background_conductivity
+            )
+        ),
     )
 
     torch.manual_seed(
@@ -2114,6 +2239,9 @@ def train_hybrid_residual_surrogate(
             normalizer,
             baseline_segments=(
                 baseline_segments
+            ),
+            background_conductivity_range=(
+                background_conductivity_range
             ),
             device=device,
         )
