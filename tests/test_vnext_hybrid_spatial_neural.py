@@ -195,6 +195,7 @@ def _spatial_artifact(
     scene,
     *,
     background_conductivity_range=None,
+    enable_background_decoder=False,
 ):
     port = _port_artifact(
         scene,
@@ -222,6 +223,14 @@ def _spatial_artifact(
         package_axial_order=3,
         package_radial_order=2,
         package_azimuthal_order=8,
+        background_segments_per_turn=8,
+        background_radial_order=8,
+        background_angular_order=24,
+        background_conductivity_range=(
+            background_conductivity_range
+            if enable_background_decoder
+            else None
+        ),
     )
 
 
@@ -496,3 +505,200 @@ def test_hybrid_spatial_artifact_fails_closed_for_lossy_background_without_backg
             lossy,
             75_000.0,
         )
+
+
+def test_hybrid_spatial_artifact_supports_lossy_background_when_domain_is_declared():
+    base = _scene()
+    domain = (
+        0.0,
+        2.0e-3,
+    )
+    spatial = _spatial_artifact(
+        base,
+        background_conductivity_range=domain,
+        enable_background_decoder=True,
+    )
+    assert spatial.supports_lossy_background
+
+    lossy = _lossy_background_scene(
+        base,
+        conductivity=1.0e-3,
+    )
+    prepared = spatial.prepare(
+        lossy,
+        75_000.0,
+    )
+    assert (
+        prepared.background_channel_index
+        == len(
+            lossy.coils
+        )
+    )
+    assert (
+        prepared.normalization_closure_error
+        < 2e-5
+    )
+
+    query = np.asarray(
+        [0.0, 0.0, 0.06]
+    )
+    assert bool(
+        prepared._background_domain_mask(
+            query[
+                None,
+                :
+            ]
+        )[
+            0
+        ]
+    )
+    background = (
+        prepared.background_dissipation_matrices(
+            query
+        )
+    )
+    _assert_psd(
+        background
+    )
+    assert (
+        background[
+            0,
+            0,
+        ].real
+        > 0.0
+    )
+
+
+def test_hybrid_lossy_background_fast_spatial_is_common_se3_invariant():
+    base = _scene()
+    domain = (
+        0.0,
+        2.0e-3,
+    )
+    spatial = _spatial_artifact(
+        base,
+        background_conductivity_range=domain,
+        enable_background_decoder=True,
+    )
+    scene = _lossy_background_scene(
+        base,
+        conductivity=8.0e-4,
+    )
+    prepared = spatial.prepare(
+        scene,
+        75_000.0,
+    )
+    query = np.asarray(
+        [0.0, 0.0, 0.06]
+    )
+    currents = np.asarray(
+        [1.2 - 0.3j]
+    )
+    reference = (
+        prepared.background_joule_density(
+            query,
+            currents,
+        )
+    )
+
+    rng = np.random.default_rng(
+        211
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.asarray(
+            [0.19, -0.14, 0.27]
+        ),
+    )
+    moved = Scene(
+        tuple(
+            CoilObject(
+                coil.geometry.transformed(
+                    common
+                ),
+                coil.material,
+                coil.name,
+            )
+            for coil in scene.coils
+        ),
+        scene.medium,
+        tuple(
+            PackageObject(
+                package.geometry.transformed(
+                    common
+                ),
+                package.material,
+                package.name,
+            )
+            for package in scene.packages
+        ),
+    )
+    moved_prepared = spatial.prepare(
+        moved,
+        75_000.0,
+    )
+    actual = (
+        moved_prepared.background_joule_density(
+            common.apply(
+                query
+            ),
+            currents,
+        )
+    )
+    assert np.isclose(
+        actual,
+        reference,
+        rtol=5e-5,
+        atol=1e-9,
+    )
+
+
+def test_hybrid_spatial_lossy_background_artifact_save_load_preserves_domain(tmp_path):
+    base = _scene()
+    domain = (
+        0.0,
+        2.0e-3,
+    )
+    spatial = _spatial_artifact(
+        base,
+        background_conductivity_range=domain,
+        enable_background_decoder=True,
+    )
+    path = (
+        tmp_path
+        / "hybrid-spatial.pt"
+    )
+    spatial.save(
+        path
+    )
+    loaded = HybridSpatialLossArtifact.load(
+        path,
+        spatial.port_artifact,
+    )
+    assert loaded.supports_lossy_background
+    assert (
+        loaded.background_conductivity_range
+        == domain
+    )
+    assert (
+        loaded.background_radial_order
+        == 8
+    )
+    assert (
+        loaded.background_angular_order
+        == 24
+    )
+    scene = _lossy_background_scene(
+        base,
+        conductivity=1.0e-3,
+    )
+    prepared = loaded.prepare(
+        scene,
+        75_000.0,
+    )
+    assert (
+        prepared.normalization_closure_error
+        < 2e-5
+    )
