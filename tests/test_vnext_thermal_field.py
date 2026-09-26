@@ -7,6 +7,8 @@ from sdfmpneo_vnext import (
     ContinuousThermalGreenArtifact,
     HomogeneousMedium,
     HomogeneousThermalMedium,
+    MixedReferenceArtifact,
+    MQSConfig,
     RigidPose,
     Scene,
     SuperellipseSpiral,
@@ -209,3 +211,114 @@ def test_continuous_green_time_history_matches_step_and_steady_limit():
         currents,
     )
     assert steady > step[-1]
+
+
+def test_lossy_background_has_continuous_psd_heat_channel_and_thermal_coupling():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=3.0,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    reference = MixedReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=8,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        )
+    )
+    spatial = reference.prepare_spatial(
+        scene,
+        40_000.0,
+    )
+    assert spatial.background_channel_index == 1
+    assert (
+        spatial.normalized_background_closure_error
+        < 1e-7
+    )
+    query = np.array(
+        [0.0, 0.0, 0.035]
+    )
+    matrix = spatial.background_dissipation_matrices(
+        query
+    )
+    assert np.allclose(
+        matrix,
+        matrix.conj().T,
+        atol=1e-10,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                matrix
+            )
+        )
+        >= -1e-10
+    )
+    currents = np.array(
+        [1.8 + 0.2j]
+    )
+    assert (
+        spatial.background_joule_density(
+            query,
+            currents,
+        )
+        >= -1e-12
+    )
+
+    source = build_thermal_source_quadrature(
+        scene,
+        spatial,
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+    )
+    assert source.n_channels == 2
+    assert (
+        source.normalization_closure_error
+        < 1e-8
+    )
+    assert np.allclose(
+        source.integrated_channels(),
+        spatial.port_prediction.dissipation_channels,
+        rtol=2e-7,
+        atol=2e-10,
+    )
+    channel_power = source.channel_power(
+        currents
+    )
+    assert channel_power.shape == (2,)
+    assert np.all(
+        channel_power
+        >= -1e-12
+    )
+
+    thermal = ContinuousThermalGreenArtifact(
+        reference,
+        _medium(),
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+    ).prepare(
+        scene,
+        40_000.0,
+    )
+    assert thermal.source.n_channels == 2
+    temperature = thermal.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > thermal.medium.ambient_temperature
+    )
