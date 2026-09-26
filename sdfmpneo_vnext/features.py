@@ -70,6 +70,25 @@ def encode_scene_invariant(
         length_scale,
         1e-12,
     )
+    medium_relative_epsilon = (
+        scene.medium.relative_permittivity_at(
+            frequency_hz
+        )
+    )
+    medium_epsilon_real = max(
+        float(
+            np.real(
+                medium_relative_epsilon
+            )
+        ),
+        1e-12,
+    )
+    medium_loss_conductivity = (
+        scene.medium.loss_conductivity(
+            frequency_hz
+        )
+    )
+
     node = []
     for coil in scene.coils:
         g = coil.geometry
@@ -107,10 +126,10 @@ def encode_scene_invariant(
                 mat.relative_permeability,
                 skin_w,
                 skin_h,
-                scene.medium.relative_permittivity,
+                medium_epsilon_real,
                 scene.medium.relative_permeability,
                 np.log1p(
-                    scene.medium.conductivity
+                    medium_loss_conductivity
                     / 1e-6
                 ),
                 np.log1p(
