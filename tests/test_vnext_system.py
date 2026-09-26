@@ -242,3 +242,81 @@ def test_fast_rejects_lossy_background_without_explicit_artifact_support():
         20_000.0,
     )
     assert reference.impedance.shape == (2, 2)
+
+
+def test_reference_spatial_and_continuous_thermal_support_lossy_background():
+    scene = _scene()
+    lossy = Scene(
+        scene.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.5,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        ),
+        reference_config=_reference_config(),
+    )
+    spatial = system.reference_spatial(
+        lossy,
+        20_000.0,
+    )
+    assert spatial.background_channel_index == 2
+    assert (
+        spatial.normalization_closure_error
+        < 1e-6
+    )
+    currents = np.array(
+        [1.0 + 0.1j, -0.3 + 0.2j]
+    )
+    density = spatial.background_joule_density(
+        np.array(
+            [0.0, 0.0, 0.03]
+        ),
+        currents,
+    )
+    assert np.isfinite(
+        density
+    )
+    assert density >= -1e-12
+
+    from sdfmpneo_vnext import (
+        HomogeneousThermalMedium,
+    )
+
+    thermal = (
+        system.reference_continuous_thermal_field(
+            lossy,
+            20_000.0,
+            HomogeneousThermalMedium(
+                conductivity=0.6,
+                density=1000.0,
+                heat_capacity=4200.0,
+            ),
+            longitudinal_segments=8,
+            radial_order=3,
+            angular_order=12,
+        )
+    )
+    assert thermal.source.n_channels == 3
+    assert (
+        thermal.source.normalization_closure_error
+        < 1e-6
+    )
+    temperature = thermal.temperature_step(
+        np.array(
+            [0.0, 0.0, 0.03]
+        ),
+        1.0,
+        currents,
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        >= thermal.medium.ambient_temperature
+    )
