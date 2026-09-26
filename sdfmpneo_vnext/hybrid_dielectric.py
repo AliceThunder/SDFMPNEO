@@ -862,20 +862,14 @@ class DielectricCoupledReferenceArtifact:
         volume_axial_order: int = 8,
         volume_radial_order: int = 6,
         volume_azimuthal_order: int = 24,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
         maximum_raw_closure_error: float = 0.25,
         normalized_closure_tolerance: float = 1e-6,
     ):
         from .hybrid_field import (
             prepare_hybrid_reference_loss_field,
         )
-
-        if scene.medium.conductivity > 0.0:
-            raise NotImplementedError(
-                "hybrid port physics supports a lossy homogeneous background, "
-                "but spatial package/background loss decomposition is not yet "
-                "certified; refusing to map aggregate environment loss into "
-                "package volume"
-            )
 
         teacher = (
             DielectricCoupledMixedTeacher(
@@ -903,6 +897,12 @@ class DielectricCoupledReferenceArtifact:
                 ),
                 volume_azimuthal_order=(
                     volume_azimuthal_order
+                ),
+                background_radial_order=(
+                    background_radial_order
+                ),
+                background_angular_order=(
+                    background_angular_order
                 ),
                 maximum_raw_closure_error=(
                     maximum_raw_closure_error
