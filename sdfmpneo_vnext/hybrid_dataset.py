@@ -108,6 +108,7 @@ class ImmutableHybridTeacherDataset:
             0.10,
             0.05,
         ),
+        domain_metadata=None,
     ):
         root = Path(
             root
@@ -149,6 +150,16 @@ class ImmutableHybridTeacherDataset:
             "split_fractions": (
                 fractions
             ),
+            "domain_metadata": (
+                {}
+                if domain_metadata
+                is None
+                else json.loads(
+                    canonical_json(
+                        domain_metadata
+                    )
+                )
+            ),
             "records": [],
         }
         manifest.write_text(
@@ -159,6 +170,20 @@ class ImmutableHybridTeacherDataset:
         )
         return cls(
             root
+        )
+
+    @property
+    def domain_metadata(
+        self,
+    ):
+        value = self._manifest.get(
+            "domain_metadata",
+            {},
+        )
+        return json.loads(
+            canonical_json(
+                value
+            )
         )
 
     @property
