@@ -17,6 +17,144 @@ from .scene import (
 )
 
 
+def _medium_to_dict(
+    medium,
+):
+    if isinstance(
+        medium,
+        DebyeMaterial,
+    ):
+        return {
+            "model": "debye",
+            "relative_permittivity_static": (
+                medium.relative_permittivity_static
+            ),
+            "relative_permittivity_infinite": (
+                medium.relative_permittivity_infinite
+            ),
+            "relaxation_time": (
+                medium.relaxation_time
+            ),
+            "relative_permeability": (
+                medium.relative_permeability
+            ),
+            "conductivity": (
+                medium.conductivity
+            ),
+        }
+    if isinstance(
+        medium,
+        (
+            HomogeneousMedium,
+            IsotropicMaterial,
+        ),
+    ):
+        return {
+            "model": "constant",
+            "relative_permittivity": (
+                medium.relative_permittivity
+            ),
+            "relative_permeability": (
+                medium.relative_permeability
+            ),
+            "conductivity": (
+                medium.conductivity
+            ),
+        }
+    raise TypeError(
+        "unsupported scene background medium type"
+    )
+
+
+def _medium_from_dict(
+    data,
+):
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise TypeError(
+            "scene.medium must be a dictionary"
+        )
+    model = str(
+        data.get(
+            "model",
+            "constant",
+        )
+    ).lower()
+    if model == "constant":
+        return HomogeneousMedium(
+            float(
+                data.get(
+                    "relative_permittivity",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+        )
+    if model == "debye":
+        required = (
+            "relative_permittivity_static",
+            "relative_permittivity_infinite",
+            "relaxation_time",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "Debye scene background medium is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return DebyeMaterial(
+            float(
+                data[
+                    "relative_permittivity_static"
+                ]
+            ),
+            float(
+                data[
+                    "relative_permittivity_infinite"
+                ]
+            ),
+            float(
+                data[
+                    "relaxation_time"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+        )
+    raise ValueError(
+        f"unsupported scene background medium model: {model}"
+    )
+
+
 def _package_material_to_dict(
     material,
 ):
@@ -233,11 +371,9 @@ def scene_to_dict(scene: Scene):
             }
             for coil in scene.coils
         ],
-        "medium": {
-            "relative_permittivity": scene.medium.relative_permittivity,
-            "relative_permeability": scene.medium.relative_permeability,
-            "conductivity": scene.medium.conductivity,
-        },
+        "medium": _medium_to_dict(
+            scene.medium
+        ),
     }
     if scene.packages:
         payload["packages"] = [
@@ -563,37 +699,14 @@ def scene_from_dict(data) -> Scene:
         "medium",
         {}
     )
-    if not isinstance(
-        md,
-        dict,
-    ):
-        raise TypeError(
-            "scene.medium must be a dictionary"
-        )
+    medium = _medium_from_dict(
+        md
+    )
     return Scene(
         tuple(
             coils
         ),
-        HomogeneousMedium(
-            float(
-                md.get(
-                    "relative_permittivity",
-                    1.0,
-                )
-            ),
-            float(
-                md.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                md.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-        ),
+        medium,
         tuple(
             packages
         ),
