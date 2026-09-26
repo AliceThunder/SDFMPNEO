@@ -5,12 +5,14 @@ from sdfmpneo_vnext import (
     CoilObject,
     CoilThermalProperties,
     ConductorMaterial,
+    ThermalNodeProperties,
     HomogeneousMedium,
     MeshfreeVNextSystem,
     MQSConfig,
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    build_lumped_channel_thermal_model,
     build_lumped_coil_thermal_model,
 )
 
@@ -319,4 +321,73 @@ def test_reference_spatial_and_continuous_thermal_support_lossy_background():
     assert (
         temperature
         >= thermal.medium.ambient_temperature
+    )
+
+
+def test_lossy_background_reference_envelope_uses_explicit_environment_channel():
+    scene = _scene()
+    lossy = Scene(
+        scene.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.5,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        ),
+        reference_config=_reference_config(),
+    )
+    thermal = build_lumped_channel_thermal_model(
+        (
+            ThermalNodeProperties(
+                8.0,
+                0.10,
+            ),
+            ThermalNodeProperties(
+                7.0,
+                0.12,
+            ),
+        ),
+        source_map=np.asarray(
+            [
+                [1.0, 0.0, 0.5],
+                [0.0, 1.0, 0.5],
+            ],
+            dtype=float,
+        ),
+    )
+    envelope = system.reference_current_envelope(
+        lossy,
+        20_000.0,
+        thermal,
+        coupling_tolerance=1e-8,
+        max_coupling_iterations=20,
+    )
+    step = envelope.step(
+        np.zeros(
+            2,
+            dtype=float,
+        ),
+        np.array(
+            [
+                1.0 + 0.1j,
+                -0.3 + 0.2j,
+            ]
+        ),
+        1.0,
+    )
+    assert step.converged
+    assert step.channel_power.shape == (3,)
+    assert np.all(
+        step.channel_power
+        >= -1e-12
+    )
+    assert step.total_power >= 0.0
+    assert np.all(
+        np.isfinite(
+            step.temperatures
+        )
     )
