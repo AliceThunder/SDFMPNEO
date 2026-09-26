@@ -12,9 +12,11 @@ from sdfmpneo_vnext import (
     MeshfreeVNextSystem,
     MQSConfig,
     PackageObject,
+    RigidPose,
     Scene,
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
+    haar_rotation,
 )
 
 
@@ -304,4 +306,160 @@ def test_package_and_lossy_background_reference_continuous_thermal_field_closes_
     assert (
         temperature
         > prepared.medium.ambient_temperature
+    )
+
+
+def test_lossy_package_background_quadrature_excludes_objects_and_is_se3_invariant():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+            conductivity=0.002,
+        ),
+        "lossy-package",
+    )
+    medium = HomogeneousMedium(
+        relative_permittivity=2.2,
+        relative_permeability=1.0,
+        conductivity=1e-4,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+        (
+            package,
+        ),
+    )
+    system = _system()
+    spatial = system.reference_spatial(
+        scene,
+        80_000.0,
+    )
+    package_center = (
+        package.geometry.pose.translation
+    )
+    phi = (
+        0.35
+        * 2.0
+        * np.pi
+        * scene.coils[
+            0
+        ].geometry.turns
+    )
+    conductor_center = (
+        scene.coils[
+            0
+        ].geometry.centerline(
+            np.asarray(
+                [phi]
+            )
+        )[
+            0
+        ]
+    )
+    mask = spatial._background_domain_mask(
+        np.vstack(
+            (
+                package_center,
+                conductor_center,
+            )
+        )
+    )
+    assert np.array_equal(
+        mask,
+        np.array(
+            [False, False]
+        ),
+    )
+
+    points, weights = spatial.background_quadrature(
+        radial_order=8,
+        angular_order=24,
+    )
+    assert len(points) == len(weights)
+    assert np.all(
+        weights > 0.0
+    )
+    assert np.all(
+        spatial._background_domain_mask(
+            points
+        )
+    )
+
+    currents = np.array(
+        [1.1 - 0.2j]
+    )
+    query = np.array(
+        [0.0, 0.0, 0.035]
+    )
+    density = spatial.background_joule_density(
+        query,
+        currents,
+    )
+
+    rng = np.random.default_rng(
+        719
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.array(
+            [0.17, -0.11, 0.29]
+        ),
+    )
+    moved_coils = tuple(
+        type(coil)(
+            coil.geometry.transformed(
+                common
+            ),
+            coil.material,
+            coil.name,
+        )
+        for coil in scene.coils
+    )
+    old_geometry = package.geometry
+    moved_package = PackageObject(
+        SuperquadricPackageGeometry(
+            old_geometry.half_extents,
+            exponent_xy=(
+                old_geometry.exponent_xy
+            ),
+            exponent_z=(
+                old_geometry.exponent_z
+            ),
+            pose=common.compose(
+                old_geometry.pose
+            ),
+        ),
+        package.material,
+        package.name,
+    )
+    moved_scene = Scene(
+        moved_coils,
+        medium,
+        (
+            moved_package,
+        ),
+    )
+    moved_spatial = system.reference_spatial(
+        moved_scene,
+        80_000.0,
+    )
+    moved_density = (
+        moved_spatial.background_joule_density(
+            common.apply(
+                query
+            ),
+            currents,
+        )
+    )
+    assert np.isclose(
+        density,
+        moved_density,
+        rtol=5e-6,
+        atol=1e-12,
     )
