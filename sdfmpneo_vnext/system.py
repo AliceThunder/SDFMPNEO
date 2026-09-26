@@ -386,7 +386,10 @@ class MeshfreeVNextSystem:
         self._require_fast_port_artifact(
             scene
         )
-        if scene.packages:
+        if (
+            scene.packages
+            or scene.medium.conductivity > 0.0
+        ):
             return ChannelResolvedCurrentEnvelope(
                 scene,
                 frequency_hz,
@@ -414,7 +417,10 @@ class MeshfreeVNextSystem:
         self._require_fast_port_artifact(
             scene
         )
-        if scene.packages:
+        if (
+            scene.packages
+            or scene.medium.conductivity > 0.0
+        ):
             return ChannelResolvedVoltageEnvelope(
                 scene,
                 frequency_hz,
@@ -439,7 +445,10 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        if scene.packages:
+        if (
+            scene.packages
+            or scene.medium.conductivity > 0.0
+        ):
             return ChannelResolvedCurrentEnvelope(
                 scene,
                 frequency_hz,
@@ -464,7 +473,10 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        if scene.packages:
+        if (
+            scene.packages
+            or scene.medium.conductivity > 0.0
+        ):
             return ChannelResolvedVoltageEnvelope(
                 scene,
                 frequency_hz,
