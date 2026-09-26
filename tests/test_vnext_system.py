@@ -206,3 +206,39 @@ def test_unified_system_fast_and_reference_thermal_use_same_drive_contract():
     assert reference_step.currents.shape == (
         2,
     )
+
+
+
+def test_fast_rejects_lossy_background_without_explicit_artifact_support():
+    scene = _scene()
+    lossy = Scene(
+        scene.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.0,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        ),
+        reference_config=_reference_config(),
+    )
+    import pytest
+
+    with pytest.raises(
+        NotImplementedError,
+        match="background-dissipation",
+    ):
+        system.fast_ports(
+            lossy,
+            20_000.0,
+        )
+
+    # The physical REFERENCE path remains valid at nonzero frequency.
+    reference = system.reference_ports(
+        lossy,
+        20_000.0,
+    )
+    assert reference.impedance.shape == (2, 2)

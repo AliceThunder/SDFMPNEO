@@ -147,6 +147,31 @@ class MeshfreeVNextSystem:
                 "conductor-only FAST predictions are not used for dielectric scenes"
             )
 
+
+    def _require_fast_port_artifact(
+        self,
+        scene: Scene,
+    ):
+        self._require_package_fast_port_artifact(
+            scene
+        )
+        if (
+            scene.medium.conductivity
+            > 0.0
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_lossy_background",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "lossy homogeneous backgrounds require a FAST artifact with "
+                "an explicit background-dissipation channel; conductor-only "
+                "FAST predictions must not silently ignore medium loss"
+            )
+
     def _require_package_fast_spatial_artifact(
         self,
         scene: Scene,
@@ -173,7 +198,7 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
-        self._require_package_fast_port_artifact(
+        self._require_fast_port_artifact(
             scene
         )
         return (
@@ -267,7 +292,7 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
-        self._require_package_fast_port_artifact(
+        self._require_fast_port_artifact(
             scene
         )
         self._require_package_fast_spatial_artifact(
@@ -358,7 +383,7 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        self._require_package_fast_port_artifact(
+        self._require_fast_port_artifact(
             scene
         )
         if scene.packages:
@@ -386,7 +411,7 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        self._require_package_fast_port_artifact(
+        self._require_fast_port_artifact(
             scene
         )
         if scene.packages:
@@ -465,7 +490,7 @@ class MeshfreeVNextSystem:
         medium,
         **options,
     ):
-        self._require_package_fast_port_artifact(
+        self._require_fast_port_artifact(
             scene
         )
         self._require_package_fast_spatial_artifact(
