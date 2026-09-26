@@ -1700,6 +1700,7 @@ class ContinuousThermalGreenArtifact:
         angular_order: int = 24,
         background_radial_order: int | None = None,
         background_angular_order: int | None = None,
+        spatial_prepare_options=None,
     ):
         if not (
             hasattr(
@@ -1743,6 +1744,13 @@ class ContinuousThermalGreenArtifact:
                 background_angular_order
             )
         )
+        self.spatial_prepare_options = (
+            {}
+            if spatial_prepare_options is None
+            else dict(
+                spatial_prepare_options
+            )
+        )
 
     def prepare(
         self,
@@ -1757,6 +1765,7 @@ class ContinuousThermalGreenArtifact:
                 self.spatial_artifact.prepare(
                     scene,
                     frequency_hz,
+                    **self.spatial_prepare_options,
                 )
             )
         else:
@@ -1764,6 +1773,7 @@ class ContinuousThermalGreenArtifact:
                 self.spatial_artifact.prepare_spatial(
                     scene,
                     frequency_hz,
+                    **self.spatial_prepare_options,
                 )
             )
         source = (
