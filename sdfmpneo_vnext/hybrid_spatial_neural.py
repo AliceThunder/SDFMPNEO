@@ -2229,6 +2229,7 @@ def _sample_loss(
         package_latent,
         coil_pair,
         coil_package,
+        length_scale,
     ) = _latent(
         port_artifact,
         sample.scene,
@@ -2317,10 +2318,73 @@ def _sample_loss(
             None,
         ]
     )
+    background = (
+        sample.background_spatial_loss
+    )
+    if background is not None:
+        root_pose = (
+            sample.scene.coils[
+                0
+            ].geometry.pose
+        )
+        background_world = root_pose.apply(
+            background.root_local_position
+        )
+        (
+            background_coil_coordinates,
+            background_package_coordinates,
+        ) = background_coordinate_features(
+            sample.scene,
+            background_world,
+            length_scale=(
+                length_scale
+            ),
+        )
+        raw_background = (
+            model.background.raw_matrices(
+                coil_latent,
+                package_latent,
+                background_coil_coordinates,
+                background_package_coordinates,
+            )
+        )
+        raw_background = (
+            raw_background
+            * float(
+                background_loss_gate(
+                    sample.scene,
+                    sample.frequency_hz,
+                )
+            )
+        )
+        background_weights = (
+            background.weights
+        )
+    else:
+        raw_background = torch.empty(
+            (
+                0,
+                len(
+                    sample.scene.coils
+                ),
+                len(
+                    sample.scene.coils
+                ),
+            ),
+            dtype=raw_package.dtype,
+            device=raw_package.device,
+        )
+        background_weights = np.empty(
+            0,
+            dtype=float,
+        )
+
     transform = (
-        _package_transform(
+        _environment_transform(
             raw_package,
             package.weights,
+            raw_background,
+            background_weights,
             sample.target_dissipation_channels[
                 len(
                     sample.scene.coils
@@ -2341,9 +2405,29 @@ def _sample_loss(
             package.weights,
         )
     )
+    background_loss = torch.zeros(
+        (),
+        dtype=package_loss.dtype,
+        device=package_loss.device,
+    )
+    if background is not None:
+        predicted_background = (
+            _apply_transform(
+                raw_background,
+                transform,
+            )
+        )
+        background_loss = (
+            _weighted_relative_loss(
+                predicted_background,
+                background.dissipation_matrix,
+                background.weights,
+            )
+        )
     return (
         conductor_loss
         + package_loss
+        + background_loss
     )
 
 
