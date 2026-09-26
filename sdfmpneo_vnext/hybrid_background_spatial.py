@@ -104,23 +104,33 @@ def background_coordinate_features(
             local,
             axis=1,
         )
+        inverse_distance = 1.0 / (
+            1.0
+            + radius
+        )
         coil_features[
             :,
             coil_index,
             :3,
-        ] = local
+        ] = (
+            local
+            * inverse_distance[
+                :,
+                None,
+            ]
+        )
         coil_features[
             :,
             coil_index,
             3,
-        ] = radius
+        ] = inverse_distance
         coil_features[
             :,
             coil_index,
             4,
-        ] = 1.0 / (
-            1.0
-            + radius
+        ] = (
+            radius
+            * inverse_distance
         )
 
     package_features = np.empty(
@@ -178,16 +188,29 @@ def background_coordinate_features(
         ) ** (
             1.0 / q
         )
+        inverse_radius = 1.0 / (
+            1.0
+            + rho
+        )
         package_features[
             :,
             package_index,
             :3,
-        ] = local
+        ] = (
+            local
+            * inverse_radius[
+                :,
+                None,
+            ]
+        )
         package_features[
             :,
             package_index,
             3,
-        ] = rho
+        ] = (
+            rho
+            * inverse_radius
+        )
         package_features[
             :,
             package_index,
@@ -407,6 +430,27 @@ class BackgroundLossShapeNet(nn.Module):
             factors,
             dim=0,
         )
+        # Hard far-field envelope. Feature index 3 is 1/(1+r/L) for
+        # each coil, so the closest-coil value behaves as O(r^-1).
+        # Multiplying the factor by its square enforces O(r^-2) on the
+        # field factor and therefore O(r^-4) on the PSD loss matrix.
+        inverse_distance = torch.max(
+            coil_coordinates[
+                :,
+                :,
+                3,
+            ],
+            dim=1,
+        ).values
+        envelope = inverse_distance**2
+        factors = (
+            factors
+            * envelope[
+                :,
+                None,
+                None,
+            ]
+        )
         matrices = torch.einsum(
             "qpr,qsr->qps",
             factors.conj(),
@@ -425,7 +469,12 @@ class BackgroundLossShapeNet(nn.Module):
                     dim=-1
                 )
             ),
-            min=1e-12,
+            min=0.0,
+        )
+        trace_scale = (
+            trace_scale
+            + 1e-12
+            * envelope**2
         )
         eye = torch.eye(
             n,
