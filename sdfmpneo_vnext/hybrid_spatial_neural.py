@@ -1121,6 +1121,7 @@ class PreparedHybridSpatialLossField:
 
 class HybridSpatialLossArtifact:
     supports_packages = True
+    supports_lossy_background = False
 
     def __init__(
         self,
