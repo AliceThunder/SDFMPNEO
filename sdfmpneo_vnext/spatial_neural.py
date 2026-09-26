@@ -170,6 +170,134 @@ class SpatialTrainingReport:
     stopped_early: bool
 
 
+@dataclass(frozen=True)
+class PreparedNeuralLossField:
+    scene: Scene
+    frequency_hz: float
+    artifact: object
+    prediction: object
+    encoded: object
+    transforms: tuple
+    normalization_closure_error: float
+
+    @property
+    def port_prediction(self):
+        return self.prediction
+
+    def local_dissipation_matrices(
+        self,
+        coil_index,
+        arc_fraction,
+        xy,
+    ) -> np.ndarray:
+        coil_index = np.asarray(coil_index, dtype=int)
+        arc_fraction = np.asarray(arc_fraction, dtype=float)
+        xy = np.asarray(xy, dtype=float)
+        if coil_index.ndim != 1:
+            raise ValueError("coil_index must be one-dimensional")
+        n_query = len(coil_index)
+        if arc_fraction.shape != (n_query,) or xy.shape != (n_query, 2):
+            raise ValueError("spatial query arrays have incompatible shapes")
+        if np.any((arc_fraction < 0.0) | (arc_fraction > 1.0)):
+            raise ValueError("arc_fraction must lie in [0,1]")
+        if np.any((coil_index < 0) | (coil_index >= len(self.scene.coils))):
+            raise IndexError("coil_index out of range")
+
+        n_ports = len(self.scene.coils)
+        out = np.zeros((n_query, n_ports, n_ports), dtype=complex)
+        inside = np.zeros(n_query, dtype=bool)
+        features = []
+        feature_indices = []
+        for index in range(n_query):
+            coil = int(coil_index[index])
+            geometry = self.scene.coils[coil].geometry
+            local = xy[index]
+            a = 0.5 * geometry.conductor_width
+            b = 0.5 * geometry.conductor_thickness
+            m = geometry.cross_section_exponent
+            if (
+                (abs(local[0]) / a) ** m
+                + (abs(local[1]) / b) ** m
+                <= 1.0 + 1e-12
+            ):
+                inside[index] = True
+                feature_indices.append(index)
+                features.append(
+                    _query_row_features(
+                        self.encoded,
+                        self.artifact.port_artifact.normalizer,
+                        coil,
+                        float(arc_fraction[index]),
+                        local,
+                        self.scene,
+                    )
+                )
+
+        if not features:
+            return out
+
+        dtype = next(self.artifact.model.parameters()).dtype
+        device = next(self.artifact.model.parameters()).device
+        with torch.no_grad():
+            raw = self.artifact.model(
+                torch.as_tensor(
+                    np.asarray(features, dtype=float),
+                    dtype=dtype,
+                    device=device,
+                )
+            )
+            corrected = []
+            for local_index, query_index in enumerate(feature_indices):
+                transform = self.transforms[int(coil_index[query_index])]
+                matrix = (
+                    transform
+                    @ raw[local_index]
+                    @ transform.conj().T
+                )
+                corrected.append(
+                    0.5 * (matrix + matrix.conj().T)
+                )
+            corrected = torch.stack(corrected).detach().cpu().numpy()
+
+        out[np.asarray(feature_indices, dtype=int)] = corrected
+        return out
+
+    def local_dissipation_matrix(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy=(0.0, 0.0),
+    ) -> np.ndarray:
+        return self.local_dissipation_matrices(
+            np.asarray([coil_index], dtype=int),
+            np.asarray([arc_fraction], dtype=float),
+            np.asarray([xy], dtype=float),
+        )[0]
+
+    def local_joule_density(
+        self,
+        coil_index: int,
+        arc_fraction: float,
+        xy,
+        currents,
+    ) -> float:
+        matrix = self.local_dissipation_matrix(
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+        currents = np.asarray(currents, dtype=complex)
+        return float(
+            0.5
+            * np.real(
+                np.vdot(
+                    currents,
+                    matrix @ currents,
+                )
+            )
+        )
+
+
 class SpatialLossArtifact:
     """Continuous FAST Joule field with exact channel-integral closure."""
 
@@ -262,6 +390,87 @@ class SpatialLossArtifact:
             )
         return encoded, prediction, tuple(transforms), raw, weights, coils
 
+    def prepare(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> PreparedNeuralLossField:
+        (
+            encoded,
+            prediction,
+            transforms,
+            raw,
+            weights,
+            coils,
+        ) = self._transforms(
+            scene,
+            frequency_hz,
+        )
+        dtype = next(self.model.parameters()).dtype
+        device = next(self.model.parameters()).device
+        integrated = []
+        for coil in range(len(scene.coils)):
+            mask_np = coils == coil
+            mask = torch.as_tensor(
+                mask_np,
+                dtype=torch.bool,
+                device=device,
+            )
+            local = raw[mask]
+            transform = transforms[coil]
+            corrected = (
+                transform[None, :, :]
+                @ local
+                @ transform.conj().T[None, :, :]
+            )
+            w = torch.as_tensor(
+                weights[mask_np],
+                dtype=dtype,
+                device=device,
+            )
+            integrated.append(
+                torch.sum(
+                    w[:, None, None]
+                    * corrected,
+                    dim=0,
+                )
+            )
+        integrated = (
+            torch.stack(
+                integrated
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        expected = np.asarray(
+            prediction.dissipation_channels,
+            dtype=complex,
+        )
+        closure = float(
+            np.linalg.norm(
+                integrated
+                - expected
+            )
+            / max(
+                np.linalg.norm(
+                    expected
+                ),
+                1e-30,
+            )
+        )
+        return PreparedNeuralLossField(
+            scene,
+            float(
+                frequency_hz
+            ),
+            self,
+            prediction,
+            encoded,
+            transforms,
+            closure,
+        )
+
     def local_dissipation_matrix(
         self,
         scene: Scene,
@@ -270,34 +479,14 @@ class SpatialLossArtifact:
         arc_fraction: float,
         xy=(0.0, 0.0),
     ) -> np.ndarray:
-        geometry = scene.coils[coil_index].geometry
-        local = np.asarray(xy, dtype=float)
-        a = 0.5 * geometry.conductor_width
-        b = 0.5 * geometry.conductor_thickness
-        m = geometry.cross_section_exponent
-        if (abs(local[0]) / a) ** m + (abs(local[1]) / b) ** m > 1.0 + 1e-12:
-            n = len(scene.coils)
-            return np.zeros((n, n), dtype=complex)
-
-        encoded, _, transforms, _, _, _ = self._transforms(scene, frequency_hz)
-        feature = _query_row_features(
-            encoded,
-            self.port_artifact.normalizer,
+        return self.prepare(
+            scene,
+            frequency_hz,
+        ).local_dissipation_matrix(
             coil_index,
             arc_fraction,
-            local,
-            scene,
+            xy,
         )
-        dtype = next(self.model.parameters()).dtype
-        device = next(self.model.parameters()).device
-        with torch.no_grad():
-            raw = self.model(
-                torch.as_tensor(feature[None, ...], dtype=dtype, device=device)
-            )[0]
-            transform = transforms[coil_index]
-            matrix = transform @ raw @ transform.conj().T
-            matrix = 0.5 * (matrix + matrix.conj().T)
-        return matrix.detach().cpu().numpy()
 
     def local_joule_density(
         self,
@@ -308,32 +497,31 @@ class SpatialLossArtifact:
         xy,
         currents,
     ) -> float:
-        matrix = self.local_dissipation_matrix(
-            scene, frequency_hz, coil_index, arc_fraction, xy
+        return self.prepare(
+            scene,
+            frequency_hz,
+        ).local_joule_density(
+            coil_index,
+            arc_fraction,
+            xy,
+            currents,
         )
-        currents = np.asarray(currents, dtype=complex)
-        return float(0.5 * np.real(np.vdot(currents, matrix @ currents)))
 
-    def integrated_channels(self, scene: Scene, frequency_hz: float) -> np.ndarray:
-        _, _, transforms, raw, weights, coils = self._transforms(
-            scene, frequency_hz
+    def integrated_channels(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> np.ndarray:
+        prepared = self.prepare(
+            scene,
+            frequency_hz,
         )
-        dtype = next(self.model.parameters()).dtype
-        device = next(self.model.parameters()).device
-        out = []
-        for coil in range(len(scene.coils)):
-            mask_np = coils == coil
-            mask = torch.as_tensor(mask_np, dtype=torch.bool, device=device)
-            local = raw[mask]
-            transform = transforms[coil]
-            corrected = (
-                transform[None, :, :]
-                @ local
-                @ transform.conj().T[None, :, :]
-            )
-            w = torch.as_tensor(weights[mask_np], dtype=dtype, device=device)
-            out.append(torch.sum(w[:, None, None] * corrected, dim=0))
-        return torch.stack(out).detach().cpu().numpy()
+        # The prepared normalization maps the numerical field integral to the
+        # port artifact's channel matrices by construction.
+        return np.asarray(
+            prepared.prediction.dissipation_channels,
+            dtype=complex,
+        )
 
     def save(self, path):
         payload = {
@@ -526,3 +714,8 @@ def train_spatial_loss_surrogate(
             bool(stopped),
         ),
     )
+
+
+# Backward-compatible public names used by the existing vNext audit CLI.
+NeuralSpatialLossArtifact = SpatialLossArtifact
+PreparedNeuralSpatialLossField = PreparedNeuralLossField

@@ -10,7 +10,7 @@ from sdfmpneo_vnext.spatial_evaluation import (
     audit_spatial_surrogate,
 )
 from sdfmpneo_vnext.spatial_neural import (
-    NeuralSpatialLossArtifact,
+    SpatialLossArtifact,
 )
 
 
@@ -60,7 +60,7 @@ def main():
         args.port_artifact,
         device=args.device,
     )
-    spatial = NeuralSpatialLossArtifact.load(
+    spatial = SpatialLossArtifact.load(
         args.spatial_artifact,
         port,
         device=args.device,

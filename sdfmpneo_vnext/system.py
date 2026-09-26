@@ -52,9 +52,9 @@ def mvp_system_capabilities(
             "magnetoquasistatic_current_potential_charge"
         ),
         background_medium=(
-            "homogeneous_isotropic_unbounded_lossless"
+            "homogeneous_isotropic_unbounded_lossless_or_lossy_ac"
         ),
-        lossy_background_media=False,
+        lossy_background_media=True,
         heterogeneous_media=False,
         retardation=False,
         arbitrary_se3_pose=True,

@@ -155,3 +155,38 @@ def test_spatial_field_respects_port_and_object_permutation():
     Hs = b.local_dissipation_matrix(swapped, 60_000.0, 1, 0.35, (0.0, 0.0))
     P = np.array([[0.0, 1.0], [1.0, 0.0]])
     assert np.allclose(Hs, P @ H @ P.T, rtol=5e-5, atol=5e-6)
+
+
+
+def test_spatial_neural_prepared_field_matches_unified_runtime_contract():
+    scene = _scene()
+    port = _PortArtifact(scene, 60_000.0)
+    torch.manual_seed(17)
+    artifact = SpatialLossArtifact(
+        SpatialLossShapeNet(
+            hidden_dim=20,
+            factor_rank=2,
+            depth=1,
+        ),
+        port,
+        normalization_segments=6,
+        radial_order=3,
+        angular_order=10,
+    )
+    prepared = artifact.prepare(
+        scene,
+        60_000.0,
+    )
+    assert prepared.port_prediction.impedance.shape == (2, 2)
+    assert prepared.normalization_closure_error < 5e-5
+    matrices = prepared.local_dissipation_matrices(
+        np.array([0, 1]),
+        np.array([0.25, 0.75]),
+        np.array([[0.0, 0.0], [0.0, 0.0]]),
+    )
+    assert matrices.shape == (2, 2, 2)
+    assert np.allclose(
+        matrices,
+        matrices.conj().transpose(0, 2, 1),
+        atol=3e-6,
+    )

@@ -88,16 +88,16 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     )
     assert (
         system.capabilities.background_medium
-        == "homogeneous_isotropic_unbounded_lossless"
+        == "homogeneous_isotropic_unbounded_lossless_or_lossy_ac"
     )
-    assert not system.capabilities.lossy_background_media
+    assert system.capabilities.lossy_background_media
     assert not system.capabilities.heterogeneous_media
     assert not system.capabilities.retardation
     assert system.capabilities.arbitrary_se3_pose
     assert system.capabilities.superelliptic_conductors
     assert system.capabilities.package_geometry
     assert system.capabilities.package_dielectric_sie
-    assert not system.capabilities.package_em_coupling
+    assert system.capabilities.package_em_coupling
     assert system.capabilities.continuous_spatial_loss
 
     fast = system.fast_ports(
