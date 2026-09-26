@@ -4,6 +4,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from .em import MQSConfig
+from .exterior_quadrature import (
+    homogeneous_background_domain_mask,
+    unbounded_background_quadrature,
+)
 from .mixed import DenseMixedConductorTeacher
 from .prediction import StructuredPortPrediction
 from .scene import Scene
@@ -132,61 +136,6 @@ def _channel_congruence_transform(
     )
 
 
-def _fibonacci_directions(
-    count: int,
-) -> np.ndarray:
-    if count < 8:
-        raise ValueError(
-            "background angular order must be >= 8"
-        )
-    index = np.arange(
-        count,
-        dtype=float,
-    )
-    z = (
-        1.0
-        - 2.0
-        * (
-            index
-            + 0.5
-        )
-        / count
-    )
-    radius = np.sqrt(
-        np.maximum(
-            1.0
-            - z * z,
-            0.0,
-        )
-    )
-    golden = (
-        np.pi
-        * (
-            3.0
-            - np.sqrt(
-                5.0
-            )
-        )
-    )
-    angle = (
-        golden
-        * index
-    )
-    return np.column_stack(
-        (
-            radius
-            * np.cos(
-                angle
-            ),
-            radius
-            * np.sin(
-                angle
-            ),
-            z,
-        )
-    )
-
-
 @dataclass(frozen=True)
 class PreparedReferenceLossField:
     scene: Scene
@@ -299,121 +248,11 @@ class PreparedReferenceLossField:
         self,
         points,
     ) -> np.ndarray:
-        """Return points that belong to the homogeneous exterior medium.
-
-        The exterior loss integral must exclude conductor volume.  We use the
-        same longitudinal segment/Bishop-frame representation as the mixed
-        teacher, so the exclusion follows arbitrary pose and finite
-        superelliptic conductor cross-sections without introducing a world
-        voxel grid.
-        """
-        points = np.asarray(
+        return homogeneous_background_domain_mask(
+            self.scene,
+            self.teacher._mqs._segments,
             points,
-            dtype=float,
         )
-        if (
-            points.ndim != 2
-            or points.shape[1] != 3
-        ):
-            raise ValueError(
-                "points must have shape (n,3)"
-            )
-        exterior = np.ones(
-            len(
-                points
-            ),
-            dtype=bool,
-        )
-        for segment in self.teacher._mqs._segments:
-            active = np.flatnonzero(
-                exterior
-            )
-            if active.size == 0:
-                break
-            delta = (
-                points[
-                    active
-                ]
-                - segment.midpoint[
-                    None,
-                    :
-                ]
-            )
-            longitudinal = (
-                delta
-                @ segment.tangent
-            )
-            near = (
-                np.abs(
-                    longitudinal
-                )
-                <= (
-                    0.5
-                    * segment.length
-                    + 1e-12
-                )
-            )
-            if not np.any(
-                near
-            ):
-                continue
-            candidate = active[
-                near
-            ]
-            transverse = (
-                delta[
-                    near
-                ]
-                - longitudinal[
-                    near,
-                    None,
-                ]
-                * segment.tangent[
-                    None,
-                    :
-                ]
-            )
-            coil = self.scene.coils[
-                segment.coil
-            ]
-            geometry = coil.geometry
-            half_width = (
-                0.5
-                * geometry.conductor_width
-            )
-            half_thickness = (
-                0.5
-                * geometry.conductor_thickness
-            )
-            exponent = float(
-                geometry.cross_section_exponent
-            )
-            u = (
-                transverse
-                @ segment.n1
-            ) / half_width
-            v = (
-                transverse
-                @ segment.n2
-            ) / half_thickness
-            inside = (
-                np.abs(
-                    u
-                ) ** exponent
-                + np.abs(
-                    v
-                ) ** exponent
-                <= (
-                    1.0
-                    + 1e-10
-                )
-            )
-            exterior[
-                candidate[
-                    inside
-                ]
-            ] = False
-        return exterior
 
     def background_quadrature(
         self,
@@ -421,164 +260,16 @@ class PreparedReferenceLossField:
         radial_order: int = 12,
         angular_order: int = 48,
     ):
-        """Positive quadrature over the unbounded homogeneous background.
-
-        The radial map r=s*x/(1-x) integrates [0,infinity) without a world
-        truncation box. Angular directions are transported by the first coil
-        pose so a common rigid transform rotates/translates the quadrature
-        instead of changing an arbitrary world-grid orientation.
-        """
-        if radial_order < 3:
-            raise ValueError(
-                "background radial order must be >= 3"
-            )
-        directions = _fibonacci_directions(
-            int(
-                angular_order
-            )
-        )
-        rotation = np.asarray(
-            self.scene.coils[
-                0
-            ].geometry.pose.rotation,
-            dtype=float,
-        )
-        directions = (
-            directions
-            @ rotation.T
-        )
-
         positions, radii = (
             self._charge_geometry()
         )
-        # The integration origin must itself be SE(3)-equivariant. An
-        # axis-aligned bounding-box centre is not rotation equivariant; the
-        # charge-node centroid is.
-        center = np.mean(
+        return unbounded_background_quadrature(
+            self.scene,
+            self.teacher._mqs._segments,
             positions,
-            axis=0,
-        )
-        scale = max(
-            float(
-                np.max(
-                    np.linalg.norm(
-                        positions
-                        - center[
-                            None,
-                            :
-                        ],
-                        axis=1,
-                    )
-                    + radii
-                )
-            ),
-            4.0
-            * float(
-                np.max(
-                    radii
-                )
-            ),
-            1e-6,
-        )
-
-        nodes, weights = (
-            np.polynomial.legendre.leggauss(
-                int(
-                    radial_order
-                )
-            )
-        )
-        unit = 0.5 * (
-            nodes
-            + 1.0
-        )
-        unit_weights = (
-            0.5
-            * weights
-        )
-        radius = (
-            scale
-            * unit
-            / (
-                1.0
-                - unit
-            )
-        )
-        derivative = (
-            scale
-            / (
-                1.0
-                - unit
-            ) ** 2
-        )
-        points = (
-            center[
-                None,
-                None,
-                :
-            ]
-            + radius[
-                :,
-                None,
-                None,
-            ]
-            * directions[
-                None,
-                :,
-                :
-            ]
-        )
-        volume_weights = (
-            unit_weights[
-                :,
-                None
-            ]
-            * radius[
-                :,
-                None
-            ] ** 2
-            * derivative[
-                :,
-                None
-            ]
-            * (
-                4.0
-                * np.pi
-                / int(
-                    angular_order
-                )
-            )
-            * np.ones(
-                (
-                    1,
-                    int(
-                        angular_order
-                    ),
-                ),
-                dtype=float,
-            )
-        )
-        points = points.reshape(
-            -1,
-            3,
-        )
-        volume_weights = (
-            volume_weights.reshape(
-                -1
-            )
-        )
-        exterior = (
-            self._background_domain_mask(
-                points
-            )
-        )
-        return (
-            points[
-                exterior
-            ],
-            volume_weights[
-                exterior
-            ],
+            radii,
+            radial_order=radial_order,
+            angular_order=angular_order,
         )
 
     def electric_field_transfer(
