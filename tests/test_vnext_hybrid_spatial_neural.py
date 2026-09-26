@@ -4,6 +4,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from sdfmpneo_vnext import (
+    BackgroundSpatialLossSamples,
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
@@ -11,8 +12,10 @@ from sdfmpneo_vnext import (
     IsotropicMaterial,
     MeshfreeVNextSystem,
     PackageObject,
+    PackageSpatialLossSamples,
     RigidPose,
     Scene,
+    SpatialLossSamples,
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
     analytic_port_baseline,
@@ -31,6 +34,7 @@ from sdfmpneo_vnext.hybrid_neural import (
 from sdfmpneo_vnext.hybrid_spatial_neural import (
     HybridSpatialLossArtifact,
     HybridSpatialLossShapeNet,
+    train_hybrid_spatial_loss_surrogate,
 )
 
 
@@ -822,4 +826,195 @@ def test_background_spatial_features_are_bounded_and_far_field_is_integrable():
         far_trace
         < 2e-3
         * near_trace
+    )
+
+
+def _manual_spatial_training_sample(
+    scene,
+    frequency=75_000.0,
+):
+    encoded = encode_hybrid_scene_invariant(
+        scene,
+        frequency,
+    )
+    baseline = analytic_port_baseline(
+        Scene(
+            scene.coils,
+            scene.medium,
+            (),
+        ),
+        frequency,
+        segments_per_coil=24,
+    )
+    target = (
+        baseline.resistance
+        + 1j
+        * 2.0
+        * np.pi
+        * frequency
+        * baseline.inductance
+    )
+    resistance = float(
+        target[
+            0,
+            0,
+        ].real
+    )
+    channels = np.asarray(
+        [
+            [[0.8 * resistance]],
+            [[0.2 * resistance]],
+        ],
+        dtype=complex,
+    )
+    conductor = SpatialLossSamples(
+        np.asarray(
+            [0],
+            dtype=int,
+        ),
+        np.asarray(
+            [0.5],
+            dtype=float,
+        ),
+        np.asarray(
+            [[0.0, 0.0]],
+            dtype=float,
+        ),
+        np.asarray(
+            [1.0],
+            dtype=float,
+        ),
+        np.asarray(
+            [
+                [[0.8 * resistance]]
+            ],
+            dtype=complex,
+        ),
+    )
+    package = PackageSpatialLossSamples(
+        np.asarray(
+            [0, 1],
+            dtype=int,
+        ),
+        np.zeros(
+            (
+                2,
+                3,
+            ),
+            dtype=float,
+        ),
+        np.ones(
+            2,
+            dtype=float,
+        ),
+        np.asarray(
+            [
+                [[0.1 * resistance]],
+                [[0.0]],
+            ],
+            dtype=complex,
+        ),
+    )
+    background = BackgroundSpatialLossSamples(
+        np.asarray(
+            [[0.0, 0.0, 0.06]],
+            dtype=float,
+        ),
+        np.asarray(
+            [1.0],
+            dtype=float,
+        ),
+        np.asarray(
+            [
+                [[0.1 * resistance]]
+            ],
+            dtype=complex,
+        ),
+    )
+    return HybridTeacherSample(
+        scene=scene,
+        frequency_hz=frequency,
+        encoded=encoded,
+        baseline_resistance=(
+            baseline.resistance
+        ),
+        baseline_reactance=(
+            target.imag
+        ),
+        target_impedance=target,
+        target_dissipation_channels=(
+            channels
+        ),
+        baseline_segments=24,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+        surface_residual=0.0,
+        raw_potential_reciprocity_defect=0.0,
+        power_closure_error=0.0,
+        conductor_spatial_loss=(
+            conductor
+        ),
+        package_spatial_loss=(
+            package
+        ),
+        background_spatial_loss=(
+            background
+        ),
+        package_volume_axial_order=2,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=3,
+        background_angular_order=8,
+    )
+
+
+def test_hybrid_spatial_training_inherits_port_background_domain():
+    base = _scene()
+    scene = _lossy_background_scene(
+        base,
+        conductivity=1.0e-3,
+    )
+    domain = (
+        0.0,
+        2.0e-3,
+    )
+    port = _port_artifact(
+        scene,
+        background_conductivity_range=(
+            domain
+        ),
+    )
+    sample = _manual_spatial_training_sample(
+        scene
+    )
+    artifact, report = (
+        train_hybrid_spatial_loss_surrogate(
+            port,
+            (
+                sample,
+            ),
+            validation_samples=(
+                sample,
+            ),
+            field_hidden_dim=8,
+            factor_rank=1,
+            depth=1,
+            epochs=1,
+            patience=1,
+            conductor_longitudinal_points=4,
+            conductor_radial_order=2,
+            conductor_angular_order=8,
+            package_axial_order=2,
+            package_radial_order=2,
+            package_azimuthal_order=8,
+            background_segments_per_turn=4,
+            background_radial_order=3,
+            background_angular_order=8,
+        )
+    )
+    assert report.epochs == 1
+    assert artifact.supports_lossy_background
+    assert (
+        artifact.background_conductivity_range
+        == domain
     )
