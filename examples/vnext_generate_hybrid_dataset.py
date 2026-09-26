@@ -106,26 +106,6 @@ def main():
             "--count must be >= 1"
         )
 
-    if (
-        args.output
-        / "manifest.json"
-    ).exists():
-        dataset = (
-            ImmutableHybridTeacherDataset(
-                args.output
-            )
-        )
-    else:
-        dataset = (
-            ImmutableHybridTeacherDataset.create(
-                args.output,
-                split_seed=args.seed,
-            )
-        )
-
-    rng = np.random.default_rng(
-        args.seed
-    )
     sampler = HybridSceneSamplerConfig(
         background_relative_permittivity_range=(
             args.background_epsilon_min,
@@ -138,6 +118,61 @@ def main():
         lossy_background_probability=(
             args.lossy_background_probability
         ),
+    )
+    domain_metadata = {
+        "background": {
+            "relative_permittivity_range": [
+                float(
+                    args.background_epsilon_min
+                ),
+                float(
+                    args.background_epsilon_max
+                ),
+            ],
+            "conductivity_range": [
+                float(
+                    args.background_conductivity_min
+                ),
+                float(
+                    args.background_conductivity_max
+                ),
+            ],
+            "lossy_probability": float(
+                args.lossy_background_probability
+            ),
+        }
+    }
+
+    if (
+        args.output
+        / "manifest.json"
+    ).exists():
+        dataset = (
+            ImmutableHybridTeacherDataset(
+                args.output
+            )
+        )
+        if (
+            dataset.domain_metadata
+            != domain_metadata
+        ):
+            raise SystemExit(
+                "existing dataset background design domain does not match "
+                "the requested generator arguments"
+            )
+    else:
+        dataset = (
+            ImmutableHybridTeacherDataset.create(
+                args.output,
+                split_seed=args.seed,
+                domain_metadata=(
+                    domain_metadata
+                ),
+            )
+        )
+
+    rng = np.random.default_rng(
+        args.seed
     )
     teacher = MQSConfig(
         segments_per_turn=12,
