@@ -423,7 +423,7 @@ def test_lossy_background_invisible_package_reduces_to_bare_lossy_mixed_referenc
     )
 
 
-def test_lossy_background_with_dielectric_package_has_passive_environment_channel_and_fails_closed_spatially():
+def test_lossy_background_with_dielectric_package_has_joint_spatial_environment_loss():
     background = HomogeneousMedium(
         relative_permittivity=2.2,
         relative_permeability=1.0,
@@ -475,14 +475,89 @@ def test_lossy_background_with_dielectric_package_has_passive_environment_channe
         result.normalized_residual
         < 1e-9
     )
-    with pytest.raises(
-        NotImplementedError,
-        match="spatial package/background loss decomposition",
-    ):
-        artifact.prepare_spatial(
-            scene,
-            80_000.0,
-            volume_axial_order=4,
-            volume_radial_order=3,
-            volume_azimuthal_order=12,
+
+    spatial = artifact.prepare_spatial(
+        scene,
+        80_000.0,
+        volume_axial_order=4,
+        volume_radial_order=3,
+        volume_azimuthal_order=12,
+        background_radial_order=10,
+        background_angular_order=32,
+        maximum_raw_closure_error=5.0,
+        normalized_closure_tolerance=1e-6,
+    )
+    assert (
+        spatial.background_channel_index
+        == spatial.environment_channel_index
+        == spatial.dielectric_channel_index
+        == 1
+    )
+    assert (
+        spatial.normalized_dielectric_closure_error
+        < 1e-6
+    )
+    combined = (
+        np.sum(
+            spatial.package_integrated_channels,
+            axis=0,
         )
+        + spatial.background_integrated_channel
+    )
+    assert np.allclose(
+        combined,
+        environment,
+        rtol=2e-5,
+        atol=2e-10,
+    )
+
+    package_matrix = (
+        spatial.package_local_dissipation_matrix(
+            0,
+            np.zeros(3),
+        )
+    )
+    background_matrix = (
+        spatial.background_dissipation_matrices(
+            np.array(
+                [0.0, 0.0, 0.03]
+            )
+        )
+    )
+    for matrix in (
+        package_matrix,
+        background_matrix,
+    ):
+        assert np.allclose(
+            matrix,
+            matrix.conj().T,
+            atol=2e-10,
+        )
+        assert (
+            np.min(
+                np.linalg.eigvalsh(
+                    matrix
+                )
+            )
+            >= -2e-9
+        )
+    currents = np.array(
+        [1.0 + 0.2j]
+    )
+    assert (
+        spatial.package_local_joule_density(
+            0,
+            np.zeros(3),
+            currents,
+        )
+        > 0.0
+    )
+    assert (
+        spatial.background_joule_density(
+            np.array(
+                [0.0, 0.0, 0.03]
+            ),
+            currents,
+        )
+        > 0.0
+    )
