@@ -193,6 +193,33 @@ class MeshfreeVNextSystem:
                 "the conductor-only spatial decoder is not used as a dielectric field"
             )
 
+    def _require_fast_spatial_artifact(
+        self,
+        scene: Scene,
+    ):
+        self._require_package_fast_spatial_artifact(
+            scene
+        )
+        if (
+            scene.medium.conductivity
+            > 0.0
+            and (
+                self.spatial_artifact
+                is None
+                or not bool(
+                    getattr(
+                        self.spatial_artifact,
+                        "supports_lossy_background",
+                        False,
+                    )
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "lossy homogeneous backgrounds require a FAST spatial artifact "
+                "with an explicit continuous background-loss decoder"
+            )
+
     def fast_ports(
         self,
         scene: Scene,
@@ -295,7 +322,7 @@ class MeshfreeVNextSystem:
         self._require_fast_port_artifact(
             scene
         )
-        self._require_package_fast_spatial_artifact(
+        self._require_fast_spatial_artifact(
             scene
         )
         if (
@@ -515,7 +542,7 @@ class MeshfreeVNextSystem:
         self._require_fast_port_artifact(
             scene
         )
-        self._require_package_fast_spatial_artifact(
+        self._require_fast_spatial_artifact(
             scene
         )
         spatial = (
