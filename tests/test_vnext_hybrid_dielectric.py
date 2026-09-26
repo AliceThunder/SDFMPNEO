@@ -366,3 +366,123 @@ def test_lossy_dielectric_reference_spatial_field_is_psd_and_energy_closed():
         rtol=1e-5,
         atol=1e-10,
     )
+
+
+def test_lossy_background_invisible_package_reduces_to_bare_lossy_mixed_reference():
+    background = HomogeneousMedium(
+        relative_permittivity=3.0,
+        relative_permeability=1.0,
+        conductivity=1e-4,
+    )
+    material = IsotropicMaterial(
+        relative_permittivity=3.0,
+        relative_permeability=1.0,
+        conductivity=1e-4,
+    )
+    scene = Scene(
+        (_coil(),),
+        background,
+        (_package(material),),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    coupled = artifact.solve(
+        scene,
+        80_000.0,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            scene.coils,
+            background,
+        ),
+        80_000.0,
+        CFG,
+    ).solve()
+    assert np.allclose(
+        coupled.impedance,
+        bare.impedance,
+        rtol=3e-9,
+        atol=3e-10,
+    )
+    assert np.allclose(
+        coupled.surface_density_transfer,
+        0.0,
+        rtol=0.0,
+        atol=1e-13,
+    )
+    assert (
+        coupled.channel_labels[-1]
+        == "electric_environment:aggregate"
+    )
+    assert (
+        coupled.power_closure_error
+        < 3e-6
+    )
+
+
+def test_lossy_background_with_dielectric_package_has_passive_environment_channel_and_fails_closed_spatially():
+    background = HomogeneousMedium(
+        relative_permittivity=2.2,
+        relative_permeability=1.0,
+        conductivity=1e-4,
+    )
+    material = IsotropicMaterial(
+        relative_permittivity=4.0,
+        conductivity=0.003,
+    )
+    scene = Scene(
+        (_coil(),),
+        background,
+        (_package(material),),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    result = artifact.solve(
+        scene,
+        80_000.0,
+    )
+    environment = (
+        result.environment_dissipation_matrix
+    )
+    assert np.allclose(
+        environment,
+        environment.conj().T,
+        atol=2e-10,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                environment
+            )
+        )
+        >= -2e-9
+    )
+    assert (
+        result.channel_labels[-1]
+        == "electric_environment:aggregate"
+    )
+    assert (
+        result.power_closure_error
+        < 5e-6
+    )
+    assert (
+        result.normalized_residual
+        < 1e-9
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="spatial package/background loss decomposition",
+    ):
+        artifact.prepare_spatial(
+            scene,
+            80_000.0,
+            volume_axial_order=4,
+            volume_radial_order=3,
+            volume_azimuthal_order=12,
+        )
