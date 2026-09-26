@@ -19,6 +19,10 @@ from sdfmpneo_vnext import (
     encode_hybrid_scene_invariant,
     haar_rotation,
 )
+from sdfmpneo_vnext.hybrid_background_spatial import (
+    BackgroundLossShapeNet,
+    background_coordinate_features,
+)
 from sdfmpneo_vnext.hybrid_neural import (
     HybridNeuralResidualArtifact,
     HybridNormalizer,
@@ -701,4 +705,121 @@ def test_hybrid_spatial_lossy_background_artifact_save_load_preserves_domain(tmp
     assert (
         prepared.normalization_closure_error
         < 2e-5
+    )
+
+
+def test_background_spatial_features_are_bounded_and_far_field_is_integrable():
+    scene = _scene()
+    encoded = encode_hybrid_scene_invariant(
+        scene,
+        75_000.0,
+    )
+    points = np.asarray(
+        [
+            [0.0, 0.0, 0.05],
+            [0.0, 0.0, 1.0],
+            [25.0, -40.0, 60.0],
+        ],
+        dtype=float,
+    )
+    (
+        coil_features,
+        package_features,
+    ) = background_coordinate_features(
+        scene,
+        points,
+        length_scale=(
+            encoded.length_scale
+        ),
+    )
+    assert np.max(
+        np.abs(
+            coil_features
+        )
+    ) <= 1.0 + 1e-12
+    assert np.max(
+        np.abs(
+            package_features
+        )
+    ) <= 1.0 + 1e-12
+
+    model = BackgroundLossShapeNet(
+        hidden_dim=4,
+        field_hidden_dim=8,
+        factor_rank=1,
+        depth=1,
+    )
+    for parameter in model.parameters():
+        parameter.data.zero_()
+
+    near = np.asarray(
+        [[0.0, 0.0, 1.0]]
+    )
+    far = np.asarray(
+        [[0.0, 0.0, 10.0]]
+    )
+    near_features = background_coordinate_features(
+        scene,
+        near,
+        length_scale=(
+            encoded.length_scale
+        ),
+    )
+    far_features = background_coordinate_features(
+        scene,
+        far,
+        length_scale=(
+            encoded.length_scale
+        ),
+    )
+    coil_latent = torch.zeros(
+        (
+            len(
+                scene.coils
+            ),
+            4,
+        )
+    )
+    package_latent = torch.zeros(
+        (
+            len(
+                scene.packages
+            ),
+            4,
+        )
+    )
+    near_matrix = (
+        model.raw_matrices(
+            coil_latent,
+            package_latent,
+            *near_features,
+        )[
+            0
+        ].detach().cpu().numpy()
+    )
+    far_matrix = (
+        model.raw_matrices(
+            coil_latent,
+            package_latent,
+            *far_features,
+        )[
+            0
+        ].detach().cpu().numpy()
+    )
+    near_trace = float(
+        np.trace(
+            near_matrix
+        ).real
+    )
+    far_trace = float(
+        np.trace(
+            far_matrix
+        ).real
+    )
+    assert near_trace > 0.0
+    assert far_trace > 0.0
+    assert (
+        far_trace
+        < 2e-3
+        * near_trace
     )
