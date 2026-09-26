@@ -199,11 +199,19 @@ class DielectricSurfaceResult:
             diff,
             axis=2,
         )
+        surface_center = np.mean(
+            self.positions,
+            axis=0,
+        )
         scale = max(
             float(
                 np.max(
                     np.linalg.norm(
-                        self.positions,
+                        self.positions
+                        - surface_center[
+                            None,
+                            :
+                        ],
                         axis=1,
                     )
                 )
