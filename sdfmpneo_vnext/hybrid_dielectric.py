@@ -384,19 +384,32 @@ class DielectricCoupledMixedTeacher:
             diff,
             axis=2,
         )
+        geometry_points = np.concatenate(
+            (
+                np.asarray(
+                    node_positions,
+                    dtype=float,
+                ),
+                np.asarray(
+                    self.surface_solver.positions,
+                    dtype=float,
+                ),
+            ),
+            axis=0,
+        )
+        geometry_center = np.mean(
+            geometry_points,
+            axis=0,
+        )
         scale = max(
             float(
                 np.max(
                     np.linalg.norm(
-                        node_positions,
-                        axis=1,
-                    )
-                )
-            ),
-            float(
-                np.max(
-                    np.linalg.norm(
-                        self.surface_solver.positions,
+                        geometry_points
+                        - geometry_center[
+                            None,
+                            :
+                        ],
                         axis=1,
                     )
                 )
