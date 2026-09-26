@@ -8,6 +8,7 @@ from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
+    HomogeneousThermalMedium,
     HybridTeacherSample,
     IsotropicMaterial,
     MeshfreeVNextSystem,
@@ -1017,4 +1018,71 @@ def test_hybrid_spatial_training_inherits_port_background_domain():
     assert (
         artifact.background_conductivity_range
         == domain
+    )
+
+
+def test_hybrid_lossy_background_fast_spatial_drives_continuous_thermal_history():
+    base = _scene()
+    domain = (
+        0.0,
+        2.0e-3,
+    )
+    spatial = _spatial_artifact(
+        base,
+        background_conductivity_range=domain,
+        enable_background_decoder=True,
+    )
+    scene = _lossy_background_scene(
+        base,
+        conductivity=1.0e-3,
+    )
+    system = MeshfreeVNextSystem(
+        spatial.port_artifact,
+        spatial_artifact=(
+            spatial
+        ),
+    )
+    thermal = (
+        system.fast_continuous_thermal_field(
+            scene,
+            75_000.0,
+            HomogeneousThermalMedium(
+                conductivity=0.45,
+                density=1100.0,
+                heat_capacity=1300.0,
+            ),
+            longitudinal_segments=4,
+            radial_order=2,
+            angular_order=8,
+            background_radial_order=3,
+            background_angular_order=8,
+        )
+    )
+    channels = (
+        thermal.source.integrated_channels()
+    )
+    assert channels.shape == (
+        2,
+        1,
+        1,
+    )
+    assert (
+        thermal.source.normalization_closure_error
+        < 1e-6
+    )
+    temperature = thermal.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.04]
+        ),
+        3.0,
+        np.asarray(
+            [1.1 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > thermal.medium.ambient_temperature
     )
