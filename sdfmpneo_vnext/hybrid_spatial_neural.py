@@ -2714,17 +2714,20 @@ def train_hybrid_spatial_loss_surrogate(
     else:
         background_conductivity_range = None
 
-    if (
-        validation_samples
-        and background_conductivity_range
-        is not None
-    ):
-        lower, upper = (
-            background_conductivity_range
-        )
+    if validation_samples:
         for sample in validation_samples:
             conductivity = float(
                 sample.scene.medium.conductivity
+            )
+            if background_conductivity_range is None:
+                if conductivity > 0.0:
+                    raise ValueError(
+                        "validation background conductivity lies outside the "
+                        "hybrid spatial training domain"
+                    )
+                continue
+            lower, upper = (
+                background_conductivity_range
             )
             if (
                 conductivity
