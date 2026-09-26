@@ -521,3 +521,37 @@ def test_hybrid_lossy_background_spatial_truth_closes_and_round_trips(tmp_path):
         loaded.background_spatial_loss.dissipation_matrix,
         sample.background_spatial_loss.dissipation_matrix,
     )
+
+
+def test_hybrid_dataset_background_domain_metadata_includes_lossless_branch(tmp_path):
+    metadata = {
+        "background": {
+            "relative_permittivity_range": [
+                2.0,
+                3.0,
+            ],
+            "conductivity_range": [
+                1.0e-4,
+                2.0e-3,
+            ],
+            "lossy_probability": 0.6,
+        }
+    }
+    dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "hybrid-domain",
+        domain_metadata=(
+            metadata
+        ),
+    )
+    assert (
+        dataset.domain_metadata
+        == metadata
+    )
+    assert (
+        dataset.background_conductivity_domain
+        == (
+            0.0,
+            2.0e-3,
+        )
+    )
