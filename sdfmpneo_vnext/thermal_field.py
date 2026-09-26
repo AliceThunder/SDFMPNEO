@@ -536,6 +536,8 @@ def build_thermal_source_quadrature(
     package_axial_order: int | None = None,
     package_radial_order: int | None = None,
     package_azimuthal_order: int | None = None,
+    background_radial_order: int | None = None,
+    background_angular_order: int | None = None,
 ) -> ThermalSourceQuadrature:
     if (
         longitudinal_segments < 2
@@ -544,6 +546,24 @@ def build_thermal_source_quadrature(
     ):
         raise ValueError(
             "invalid thermal source quadrature order"
+        )
+    if (
+        background_radial_order is not None
+        and int(
+            background_radial_order
+        ) < 3
+    ):
+        raise ValueError(
+            "background radial order must be >= 3"
+        )
+    if (
+        background_angular_order is not None
+        and int(
+            background_angular_order
+        ) < 8
+    ):
+        raise ValueError(
+            "background angular order must be >= 8"
         )
     if not hasattr(
         prepared_spatial,
@@ -873,6 +893,140 @@ def build_thermal_source_quadrature(
                 np.concatenate(
                     extra_matrices,
                     axis=0,
+                ),
+            ),
+            axis=0,
+        )
+
+    if scene.medium.conductivity > 0.0:
+        required = (
+            "background_quadrature",
+            "background_dissipation_matrices",
+            "background_channel_index",
+        )
+        missing = tuple(
+            name
+            for name in required
+            if not hasattr(
+                prepared_spatial,
+                name,
+            )
+        )
+        if missing:
+            raise NotImplementedError(
+                "lossy homogeneous-background thermal coupling requires "
+                "a spatial artifact with an explicit continuous background "
+                "loss field; missing "
+                + ", ".join(
+                    missing
+                )
+            )
+        background_channel = (
+            prepared_spatial.background_channel_index
+        )
+        if background_channel is None:
+            raise RuntimeError(
+                "lossy background did not expose its dissipation channel"
+            )
+        background_radial = (
+            12
+            if background_radial_order
+            is None
+            else int(
+                background_radial_order
+            )
+        )
+        background_angular = (
+            48
+            if background_angular_order
+            is None
+            else int(
+                background_angular_order
+            )
+        )
+        (
+            background_positions,
+            background_weights,
+        ) = (
+            prepared_spatial.background_quadrature(
+                radial_order=(
+                    background_radial
+                ),
+                angular_order=(
+                    background_angular
+                ),
+            )
+        )
+        background_matrices = (
+            prepared_spatial.background_dissipation_matrices(
+                background_positions
+            )
+        )
+        background_count = len(
+            background_weights
+        )
+        positions = np.concatenate(
+            (
+                positions,
+                np.asarray(
+                    background_positions,
+                    dtype=float,
+                ),
+            ),
+            axis=0,
+        )
+        weights = np.concatenate(
+            (
+                weights,
+                np.asarray(
+                    background_weights,
+                    dtype=float,
+                ),
+            )
+        )
+        channel_ids = np.concatenate(
+            (
+                channel_ids,
+                np.full(
+                    background_count,
+                    int(
+                        background_channel
+                    ),
+                    dtype=int,
+                ),
+            )
+        )
+        arcs = np.concatenate(
+            (
+                arcs,
+                np.zeros(
+                    background_count,
+                    dtype=float,
+                ),
+            )
+        )
+        section_xy = np.concatenate(
+            (
+                section_xy,
+                np.zeros(
+                    (
+                        background_count,
+                        2,
+                    ),
+                    dtype=float,
+                ),
+            ),
+            axis=0,
+        )
+        matrices = np.concatenate(
+            (
+                np.asarray(
+                    matrices,
+                    dtype=complex,
+                ),
+                np.asarray(
+                    background_matrices,
+                    dtype=complex,
                 ),
             ),
             axis=0,
@@ -1299,6 +1453,8 @@ class ContinuousThermalGreenArtifact:
         longitudinal_segments: int = 24,
         radial_order: int = 4,
         angular_order: int = 24,
+        background_radial_order: int | None = None,
+        background_angular_order: int | None = None,
     ):
         if not (
             hasattr(
@@ -1325,6 +1481,22 @@ class ContinuousThermalGreenArtifact:
         )
         self.angular_order = int(
             angular_order
+        )
+        self.background_radial_order = (
+            None
+            if background_radial_order
+            is None
+            else int(
+                background_radial_order
+            )
+        )
+        self.background_angular_order = (
+            None
+            if background_angular_order
+            is None
+            else int(
+                background_angular_order
+            )
         )
 
     def prepare(
@@ -1361,6 +1533,12 @@ class ContinuousThermalGreenArtifact:
                 ),
                 angular_order=(
                     self.angular_order
+                ),
+                background_radial_order=(
+                    self.background_radial_order
+                ),
+                background_angular_order=(
+                    self.background_angular_order
                 ),
             )
         )
