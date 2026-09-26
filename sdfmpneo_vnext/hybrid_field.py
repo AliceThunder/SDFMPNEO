@@ -374,11 +374,19 @@ class PreparedHybridReferenceLossField:
             surface_diff,
             axis=2,
         )
+        surface_center = np.mean(
+            surface_positions,
+            axis=0,
+        )
         geometry_scale = max(
             float(
                 np.max(
                     np.linalg.norm(
-                        surface_positions,
+                        surface_positions
+                        - surface_center[
+                            None,
+                            :
+                        ],
                         axis=1,
                     )
                 )
