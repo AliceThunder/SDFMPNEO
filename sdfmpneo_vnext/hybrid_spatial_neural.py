@@ -1992,6 +1992,18 @@ class HybridSpatialLossArtifact:
             "package_azimuthal_order": (
                 self.package_azimuthal_order
             ),
+            "background_segments_per_turn": (
+                self.background_segments_per_turn
+            ),
+            "background_radial_order": (
+                self.background_radial_order
+            ),
+            "background_angular_order": (
+                self.background_angular_order
+            ),
+            "background_conductivity_range": (
+                self.background_conductivity_range
+            ),
         }
         torch.save(
             payload,
@@ -2018,7 +2030,7 @@ class HybridSpatialLossArtifact:
             )
         if (
             payload.get("schema")
-            != HYBRID_SPATIAL_ARTIFACT_SCHEMA
+            not in SUPPORTED_HYBRID_SPATIAL_ARTIFACT_SCHEMAS
         ):
             raise ValueError(
                 "unsupported hybrid spatial artifact schema"
@@ -2046,11 +2058,36 @@ class HybridSpatialLossArtifact:
                 ]
             )
         )
-        model.load_state_dict(
-            payload[
-                "model_state"
-            ]
-        )
+        if int(
+            payload.get(
+                "schema",
+                -1,
+            )
+        ) == 1:
+            incompatible = model.load_state_dict(
+                payload[
+                    "model_state"
+                ],
+                strict=False,
+            )
+            if (
+                incompatible.unexpected_keys
+                or any(
+                    not key.startswith(
+                        "background."
+                    )
+                    for key in incompatible.missing_keys
+                )
+            ):
+                raise ValueError(
+                    "legacy hybrid spatial artifact has incompatible model state"
+                )
+        else:
+            model.load_state_dict(
+                payload[
+                    "model_state"
+                ]
+            )
         model.eval()
         return HybridSpatialLossArtifact(
             port_artifact,
@@ -2084,6 +2121,29 @@ class HybridSpatialLossArtifact:
                 payload[
                     "package_azimuthal_order"
                 ]
+            ),
+            background_segments_per_turn=int(
+                payload.get(
+                    "background_segments_per_turn",
+                    16,
+                )
+            ),
+            background_radial_order=int(
+                payload.get(
+                    "background_radial_order",
+                    12,
+                )
+            ),
+            background_angular_order=int(
+                payload.get(
+                    "background_angular_order",
+                    48,
+                )
+            ),
+            background_conductivity_range=(
+                payload.get(
+                    "background_conductivity_range"
+                )
             ),
             device=device,
         )
