@@ -100,7 +100,11 @@ def _scene():
     )
 
 
-def _port_artifact(scene):
+def _port_artifact(
+    scene,
+    *,
+    background_conductivity_range=None,
+):
     frequency = 75_000.0
     encoded = (
         encode_hybrid_scene_invariant(
@@ -181,14 +185,22 @@ def _port_artifact(scene):
         model,
         normalizer,
         baseline_segments=32,
+        background_conductivity_range=(
+            background_conductivity_range
+        ),
     )
 
 
 def _spatial_artifact(
     scene,
+    *,
+    background_conductivity_range=None,
 ):
     port = _port_artifact(
-        scene
+        scene,
+        background_conductivity_range=(
+            background_conductivity_range
+        ),
     )
     torch.manual_seed(
         103
@@ -425,3 +437,62 @@ def test_unified_runtime_accepts_package_aware_fast_spatial_artifact():
             scene.coils
         )
     )
+
+
+def _lossy_background_scene(
+    scene,
+    conductivity=1.0e-3,
+):
+    return Scene(
+        scene.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.5,
+            relative_permeability=(
+                scene.medium.relative_permeability
+            ),
+            conductivity=(
+                conductivity
+            ),
+        ),
+        scene.packages,
+    )
+
+
+def test_hybrid_spatial_artifact_fails_closed_for_lossy_background_without_background_decoder():
+    base = _scene()
+    spatial = _spatial_artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            2.0e-3,
+        ),
+    )
+    assert (
+        spatial.port_artifact.supports_lossy_background
+    )
+    assert not spatial.supports_lossy_background
+    lossy = _lossy_background_scene(
+        base
+    )
+
+    with pytest.raises(
+        NotImplementedError,
+        match="no continuous background-loss decoder",
+    ):
+        spatial.prepare(
+            lossy,
+            75_000.0,
+        )
+
+    system = MeshfreeVNextSystem(
+        spatial.port_artifact,
+        spatial_artifact=spatial,
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="continuous background-loss decoder",
+    ):
+        system.fast_spatial(
+            lossy,
+            75_000.0,
+        )
