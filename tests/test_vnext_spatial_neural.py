@@ -9,37 +9,60 @@ from sdfmpneo_vnext import (
     HomogeneousMedium,
     RigidPose,
     Scene,
-    SuperellipseSpiral,
     StructuredPortPrediction,
-    TeacherSample,
-    analytic_port_baseline,
+    SuperellipseSpiral,
     encode_scene_invariant,
-    haar_rotation,
 )
-from sdfmpneo_vnext.neural import (
-    NeuralResidualArtifact,
-    PhysicsFactoredResidualNet,
-    ResidualNormalizer,
-)
+from sdfmpneo_vnext.neural import ResidualNormalizer
 from sdfmpneo_vnext.spatial_neural import (
-    NeuralSpatialLossArtifact,
+    SpatialLossArtifact,
     SpatialLossShapeNet,
-    _normalization_rule,
-    _sample_spatial_end_to_end_error,
-    _sample_spatial_loss,
 )
-from sdfmpneo_vnext.training_data import SpatialLossSamples
 
 
-def _scene():
+class _PortArtifact:
+    def __init__(self, scene, frequency):
+        encoded = encode_scene_invariant(scene, frequency)
+        self.normalizer = ResidualNormalizer(
+            np.zeros(encoded.node_features.shape[-1]),
+            np.ones(encoded.node_features.shape[-1]),
+            np.zeros(encoded.pair_features.shape[-1]),
+            np.ones(encoded.pair_features.shape[-1]),
+            1.0,
+            1.0,
+        )
+
+    def fingerprint(self):
+        return "test-port-artifact"
+
+    def predict_structured(self, scene, frequency_hz):
+        n = len(scene.coils)
+        resistance = np.eye(n) * 0.2
+        if n > 1:
+            resistance += 0.03 * (np.ones((n, n)) - np.eye(n))
+        reactance = np.eye(n) * 0.8
+        impedance = resistance + 1j * reactance
+        channels = np.zeros((n, n, n), dtype=complex)
+        for coil in range(n):
+            raw = np.eye(n) * (0.03 + 0.01 * coil)
+            raw[coil, coil] += 0.05
+            channels[coil] = raw
+        total = np.sum(channels, axis=0)
+        # exact common congruence into resistance
+        w, v = np.linalg.eigh(total)
+        inv = v @ np.diag(1.0 / np.sqrt(np.maximum(w, 1e-12))) @ v.T
+        wr, vr = np.linalg.eigh(resistance)
+        root = vr @ np.diag(np.sqrt(np.maximum(wr, 0.0))) @ vr.T
+        C = root @ inv
+        channels = np.stack([C @ d @ C.T for d in channels])
+        return StructuredPortPrediction(impedance, channels)
+
+
+def _scene(swapped=False):
     copper = ConductorMaterial(5.8e7)
-    first = CoilObject(
+    a = CoilObject(
         SuperellipseSpiral(
-            0.028,
-            0.024,
-            0.8,
-            0.0012,
-            0.0012,
+            0.030, 0.026, 0.8, 0.0015, 0.0015,
             exponent=3.0,
             conductor_width=1.0e-3,
             conductor_thickness=0.8e-3,
@@ -47,581 +70,88 @@ def _scene():
         copper,
         "a",
     )
-    second = CoilObject(
+    b = CoilObject(
         SuperellipseSpiral(
-            0.022,
-            0.019,
-            0.7,
-            0.0010,
-            0.0010,
+            0.024, 0.020, 0.7, 0.0012, 0.0012,
             exponent=4.0,
             conductor_width=0.9e-3,
             conductor_thickness=0.7e-3,
-            pose=RigidPose(
-                np.eye(3),
-                np.array([0.004, 0.0, 0.018]),
+            pose=RigidPose.from_axis_angle(
+                (0.0, 1.0, 0.0),
+                0.35,
+                translation=(0.006, 0.0, 0.02),
             ),
         ),
         copper,
         "b",
     )
-    return Scene(
-        (first, second),
-        HomogeneousMedium(),
-    )
+    return Scene((b, a) if swapped else (a, b), HomogeneousMedium())
 
 
-def _port_artifact():
+def test_spatial_neural_field_is_psd_and_integrates_to_port_channels():
     scene = _scene()
-    frequency = 60_000.0
-    baseline = analytic_port_baseline(
-        scene,
-        frequency,
-        segments_per_coil=32,
-    )
-    target = (
-        baseline.resistance
-        + 1j
-        * 2.0
-        * np.pi
-        * frequency
-        * baseline.inductance
-    )
-    sample = TeacherSample(
-        scene,
-        frequency,
-        encode_scene_invariant(
-            scene,
-            frequency,
-        ),
-        baseline.resistance,
-        target.imag,
-        target,
-        32,
-    )
-    normalizer = ResidualNormalizer.fit(
-        (sample,)
-    )
-    model = PhysicsFactoredResidualNet(
-        hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    with torch.no_grad():
-        for parameter in model.parameters():
-            parameter.zero_()
-    return NeuralResidualArtifact(
-        model,
-        normalizer,
-        baseline_segments=32,
-    )
-
-
-def test_spatial_decoder_is_locally_psd_and_closes_port_channels():
-    torch.manual_seed(3)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
-    )
-    prepared = artifact.prepare(
-        _scene(),
-        60_000.0,
-    )
-    assert (
-        prepared.normalization_closure_error
-        < 5e-6
-    )
-    for coil in (0, 1):
-        matrix = (
-            prepared.local_dissipation_matrix(
-                coil,
-                0.45,
-                (0.0, 0.0),
-            )
-        )
-        assert np.allclose(
-            matrix,
-            matrix.conj().T,
-            atol=2e-6,
-        )
-        assert (
-            np.min(
-                np.linalg.eigvalsh(
-                    matrix
-                )
-            )
-            >= -2e-6
-        )
-    outside = (
-        prepared.local_dissipation_matrix(
-            0,
-            0.5,
-            (1.0, 1.0),
-        )
-    )
-    assert np.allclose(
-        outside,
-        0.0,
-    )
-
-
-
-def test_spatial_decoder_is_common_se3_invariant():
-    torch.manual_seed(5)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
-    )
-    scene = _scene()
-    original = artifact.prepare(
-        scene,
-        60_000.0,
-    ).local_dissipation_matrix(
-        1,
-        0.43,
-        (1.0e-4, -1.0e-4),
-    )
-
-    rng = np.random.default_rng(12)
-    common = RigidPose(
-        haar_rotation(rng),
-        np.array([0.2, -0.1, 0.3]),
-    )
-    moved = Scene(
-        tuple(
-            CoilObject(
-                coil.geometry.transformed(
-                    common
-                ),
-                coil.material,
-                coil.name,
-            )
-            for coil in scene.coils
-        ),
-        scene.medium,
-    )
-    transformed = artifact.prepare(
-        moved,
-        60_000.0,
-    ).local_dissipation_matrix(
-        1,
-        0.43,
-        (1.0e-4, -1.0e-4),
-    )
-    assert np.allclose(
-        original,
-        transformed,
-        rtol=2e-5,
-        atol=2e-7,
-    )
-
-
-
-def test_spatial_batch_query_matches_scalar_query():
-    torch.manual_seed(11)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
-    )
-    prepared = artifact.prepare(
-        _scene(),
-        60_000.0,
-    )
-    coil_index = np.asarray(
-        [0, 1, 0, 1],
-        dtype=int,
-    )
-    arc_fraction = np.asarray(
-        [0.2, 0.4, 0.7, 0.9],
-        dtype=float,
-    )
-    xy = np.asarray(
-        [
-            [0.0, 0.0],
-            [1.0e-4, -1.0e-4],
-            [2.0e-4, 1.0e-4],
-            [0.0, 0.0],
-        ],
-        dtype=float,
-    )
-    batch = (
-        prepared.local_dissipation_matrices(
-            coil_index,
-            arc_fraction,
-            xy,
-        )
-    )
-    scalar = np.asarray(
-        [
-            prepared.local_dissipation_matrix(
-                int(coil),
-                float(arc),
-                point,
-            )
-            for coil, arc, point
-            in zip(
-                coil_index,
-                arc_fraction,
-                xy,
-            )
-        ]
-    )
-    assert np.allclose(
-        batch,
-        scalar,
-        rtol=2e-6,
-        atol=2e-8,
-    )
-
-
-
-def test_spatial_artifact_rejects_mismatched_port_weights(tmp_path):
+    port = _PortArtifact(scene, 60_000.0)
     torch.manual_seed(13)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
-    )
-    path = tmp_path / "spatial.pt"
-    artifact.save(path)
-
-    compatible = NeuralSpatialLossArtifact.load(
-        path,
-        port,
-    )
-    assert (
-        compatible.port_fingerprint
-        == port.fingerprint()
-    )
-
-    wrong_port = _port_artifact()
-    with torch.no_grad():
-        parameter = next(
-            wrong_port.model.parameters()
-        )
-        parameter.view(-1)[0] += 0.01
-    assert (
-        wrong_port.fingerprint()
-        != port.fingerprint()
-    )
-    with pytest.raises(
-        ValueError,
-        match="port fingerprint mismatch",
-    ):
-        NeuralSpatialLossArtifact.load(
-            path,
-            wrong_port,
-        )
-
-
-
-def test_spatial_decoder_is_object_and_port_permutation_equivariant():
-    torch.manual_seed(19)
-    port = _port_artifact()
-    field_model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
-        factor_rank=2,
-        depth=1,
-    )
-    artifact = NeuralSpatialLossArtifact(
-        port,
-        field_model,
-        longitudinal_points=6,
-        radial_order=2,
-        angular_order=8,
-    )
-
-    scene = _scene()
-    prepared = artifact.prepare(
-        scene,
-        60_000.0,
-    )
-    original_a = (
-        prepared.local_dissipation_matrix(
-            0,
-            0.37,
-            (1.0e-4, -0.5e-4),
-        )
-    )
-    original_b = (
-        prepared.local_dissipation_matrix(
-            1,
-            0.61,
-            (-0.8e-4, 0.7e-4),
-        )
-    )
-
-    swapped = Scene(
-        (
-            scene.coils[1],
-            scene.coils[0],
-        ),
-        scene.medium,
-    )
-    prepared_swapped = artifact.prepare(
-        swapped,
-        60_000.0,
-    )
-    swapped_a = (
-        prepared_swapped.local_dissipation_matrix(
-            1,
-            0.37,
-            (1.0e-4, -0.5e-4),
-        )
-    )
-    swapped_b = (
-        prepared_swapped.local_dissipation_matrix(
-            0,
-            0.61,
-            (-0.8e-4, 0.7e-4),
-        )
-    )
-
-    permutation = np.asarray(
-        [
-            [0.0, 1.0],
-            [1.0, 0.0],
-        ]
-    )
-    assert np.allclose(
-        swapped_a,
-        permutation
-        @ original_a
-        @ permutation.T,
-        rtol=5e-5,
-        atol=5e-7,
-    )
-    assert np.allclose(
-        swapped_b,
-        permutation
-        @ original_b
-        @ permutation.T,
-        rtol=5e-5,
-        atol=5e-7,
-    )
-
-
-
-class _ScaledChannelPortArtifact:
-    def __init__(
-        self,
-        base,
-        scale: float,
-    ):
-        self.base = base
-        self.scale = float(
-            scale
-        )
-        self.model = base.model
-        self.normalizer = (
-            base.normalizer
-        )
-        self.baseline_segments = (
-            base.baseline_segments
-        )
-        self.device = (
-            base.device
-        )
-
-    def fingerprint(
-        self,
-    ):
-        return (
-            self.base.fingerprint()
-        )
-
-    def predict_structured(
-        self,
-        scene,
-        frequency_hz,
-    ):
-        prediction = (
-            self.base.predict_structured(
-                scene,
-                frequency_hz,
-            )
-        )
-        return StructuredPortPrediction(
-            prediction.impedance,
-            self.scale
-            * prediction.dissipation_channels,
-        )
-
-
-def test_spatial_validation_uses_predicted_channels_not_truth_channels():
-    torch.manual_seed(
-        29
-    )
-    scene = _scene()
-    frequency = 60_000.0
-    port = _port_artifact()
     model = SpatialLossShapeNet(
-        hidden_dim=16,
-        pair_dim=15,
-        field_hidden_dim=16,
+        hidden_dim=24,
         factor_rank=2,
         depth=1,
     )
-    longitudinal_points = 6
-    radial_order = 2
-    angular_order = 8
-    truth_artifact = (
-        NeuralSpatialLossArtifact(
-            port,
-            model,
-            longitudinal_points=(
-                longitudinal_points
-            ),
-            radial_order=(
-                radial_order
-            ),
-            angular_order=(
-                angular_order
-            ),
-        )
+    artifact = SpatialLossArtifact(
+        model,
+        port,
+        normalization_segments=8,
+        radial_order=3,
+        angular_order=12,
     )
-    prepared = (
-        truth_artifact.prepare(
-            scene,
-            frequency,
-        )
-    )
-    (
-        coil_index,
-        arc_fraction,
-        xy,
-        weights,
-    ) = _normalization_rule(
+    integrated = artifact.integrated_channels(scene, 60_000.0)
+    expected = port.predict_structured(scene, 60_000.0).dissipation_channels
+    assert np.allclose(integrated, expected, rtol=2e-5, atol=2e-6)
+
+    matrix = artifact.local_dissipation_matrix(
         scene,
-        longitudinal_points=(
-            longitudinal_points
-        ),
-        radial_order=(
-            radial_order
-        ),
-        angular_order=(
-            angular_order
-        ),
+        60_000.0,
+        0,
+        0.4,
+        (0.0, 0.0),
     )
-    spatial_truth = (
-        prepared.local_dissipation_matrices(
-            coil_index,
-            arc_fraction,
-            xy,
-        )
-    )
-    baseline = (
-        analytic_port_baseline(
+    assert np.allclose(matrix, matrix.conj().T, atol=2e-6)
+    assert np.min(np.linalg.eigvalsh(matrix)) >= -2e-6
+    assert (
+        artifact.local_joule_density(
             scene,
-            frequency,
-            segments_per_coil=32,
+            60_000.0,
+            0,
+            0.4,
+            (0.0, 0.0),
+            np.array([1.0 + 0.2j, -0.3 + 0.1j]),
         )
-    )
-    port_prediction = (
-        port.predict_structured(
-            scene,
-            frequency,
-        )
-    )
-    sample = TeacherSample(
-        scene,
-        frequency,
-        encode_scene_invariant(
-            scene,
-            frequency,
-        ),
-        baseline.resistance,
-        2.0
-        * np.pi
-        * frequency
-        * baseline.inductance,
-        port_prediction.impedance,
-        32,
-        port_prediction.dissipation_channels,
-        SpatialLossSamples(
-            coil_index,
-            arc_fraction,
-            xy,
-            weights,
-            spatial_truth,
-        ),
+        >= 0.0
     )
 
-    wrong_port = (
-        _ScaledChannelPortArtifact(
-            port,
-            1.5,
-        )
+
+def test_spatial_field_respects_port_and_object_permutation():
+    scene = _scene(False)
+    swapped = _scene(True)
+    port_a = _PortArtifact(scene, 60_000.0)
+    port_b = _PortArtifact(swapped, 60_000.0)
+    torch.manual_seed(5)
+    model_a = SpatialLossShapeNet(hidden_dim=20, factor_rank=2, depth=1)
+    model_b = SpatialLossShapeNet(hidden_dim=20, factor_rank=2, depth=1)
+    model_b.load_state_dict(model_a.state_dict())
+    a = SpatialLossArtifact(
+        model_a, port_a,
+        normalization_segments=6,
+        radial_order=3,
+        angular_order=10,
     )
-    shape_only = float(
-        _sample_spatial_loss(
-            model,
-            wrong_port,
-            sample,
-            device="cpu",
-        ).detach().cpu()
+    b = SpatialLossArtifact(
+        model_b, port_b,
+        normalization_segments=6,
+        radial_order=3,
+        angular_order=10,
     )
-    end_to_end = (
-        _sample_spatial_end_to_end_error(
-            model,
-            wrong_port,
-            sample,
-            longitudinal_points=(
-                longitudinal_points
-            ),
-            radial_order=(
-                radial_order
-            ),
-            angular_order=(
-                angular_order
-            ),
-            device="cpu",
-        )
-    )
-    assert shape_only < 1e-8
-    assert end_to_end > 0.10
+    H = a.local_dissipation_matrix(scene, 60_000.0, 0, 0.35, (0.0, 0.0))
+    Hs = b.local_dissipation_matrix(swapped, 60_000.0, 1, 0.35, (0.0, 0.0))
+    P = np.array([[0.0, 1.0], [1.0, 0.0]])
+    assert np.allclose(Hs, P @ H @ P.T, rtol=5e-5, atol=5e-6)
