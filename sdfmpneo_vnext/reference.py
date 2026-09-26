@@ -78,20 +78,55 @@ def _channel_congruence_transform(
         target
         + target.conj().T
     )
-    if np.linalg.norm(
-        target
-    ) <= 1e-18:
+    target_norm = float(
+        np.linalg.norm(
+            target
+        )
+    )
+    if target_norm <= 1e-18:
         return np.zeros_like(
             target,
             dtype=complex,
         )
+    n = target.shape[
+        0
+    ]
+    scale = max(
+        float(
+            np.trace(
+                target
+            ).real
+            / max(
+                n,
+                1,
+            )
+        ),
+        target_norm
+        / max(
+            n,
+            1,
+        ),
+        1e-30,
+    )
+    regularization = (
+        1e-12
+        * scale
+    )
+    identity = np.eye(
+        n,
+        dtype=complex,
+    )
     return (
         _hermitian_psd_sqrt(
-            target,
+            target
+            + regularization
+            * identity,
             inverse=False,
         )
         @ _hermitian_psd_sqrt(
-            raw_integral,
+            raw_integral
+            + regularization
+            * identity,
             inverse=True,
         )
     )
