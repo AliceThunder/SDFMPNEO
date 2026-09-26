@@ -178,6 +178,7 @@ class PreparedNeuralLossField:
     prediction: object
     encoded: object
     transforms: tuple
+    integrated_channels: np.ndarray
     normalization_closure_error: float
 
     @property
@@ -468,6 +469,7 @@ class SpatialLossArtifact:
             prediction,
             encoded,
             transforms,
+            integrated,
             closure,
         )
 
@@ -512,14 +514,11 @@ class SpatialLossArtifact:
         scene: Scene,
         frequency_hz: float,
     ) -> np.ndarray:
-        prepared = self.prepare(
-            scene,
-            frequency_hz,
-        )
-        # The prepared normalization maps the numerical field integral to the
-        # port artifact's channel matrices by construction.
         return np.asarray(
-            prepared.prediction.dissipation_channels,
+            self.prepare(
+                scene,
+                frequency_hz,
+            ).integrated_channels,
             dtype=complex,
         )
 
