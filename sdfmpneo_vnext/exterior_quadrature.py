@@ -1,8 +1,103 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import numpy as np
 
 from .scene import Scene
+
+
+@dataclass(frozen=True)
+class SceneConductorSegment:
+    coil: int
+    midpoint: np.ndarray
+    tangent: np.ndarray
+    length: float
+    n1: np.ndarray
+    n2: np.ndarray
+
+
+def scene_conductor_geometry(
+    scene: Scene,
+    *,
+    segments_per_turn: int = 16,
+):
+    """Build mesh-free conductor sweep segments plus extent anchors.
+
+    This helper is intentionally geometric only: it does not build any Maxwell
+    basis or world-volume mesh. It is used by FAST spatial decoders that need
+    the same exterior-domain semantics as the REFERENCE teacher.
+    """
+    if segments_per_turn < 4:
+        raise ValueError(
+            "segments_per_turn must be >= 4"
+        )
+    segments = []
+    anchors = []
+    radii = []
+    for coil_index, coil in enumerate(
+        scene.coils
+    ):
+        n_segments = max(
+            4,
+            int(
+                np.ceil(
+                    segments_per_turn
+                    * coil.geometry.turns
+                )
+            ),
+        )
+        poly = coil.geometry.polyline(
+            n_segments
+        )
+        anchors.append(
+            poly.points
+        )
+        radii.append(
+            np.full(
+                len(
+                    poly.points
+                ),
+                coil.geometry.equivalent_radius,
+                dtype=float,
+            )
+        )
+        for index in range(
+            n_segments
+        ):
+            segments.append(
+                SceneConductorSegment(
+                    coil=coil_index,
+                    midpoint=poly.midpoints[
+                        index
+                    ],
+                    tangent=poly.tangents[
+                        index
+                    ],
+                    length=float(
+                        poly.lengths[
+                            index
+                        ]
+                    ),
+                    n1=poly.normal1[
+                        index
+                    ],
+                    n2=poly.normal2[
+                        index
+                    ],
+                )
+            )
+    return (
+        tuple(
+            segments
+        ),
+        np.concatenate(
+            anchors,
+            axis=0,
+        ),
+        np.concatenate(
+            radii
+        ),
+    )
 
 
 def fibonacci_directions(
