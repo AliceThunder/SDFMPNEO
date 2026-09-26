@@ -5,6 +5,7 @@ from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
+    HybridSceneSamplerConfig,
     HybridTeacherSample,
     ImmutableHybridTeacherDataset,
     PackageSpatialLossSamples,
@@ -17,6 +18,7 @@ from sdfmpneo_vnext import (
     SuperquadricPackageGeometry,
     analytic_port_baseline,
     encode_hybrid_scene_invariant,
+    sample_hybrid_package_scene,
 )
 
 
@@ -348,3 +350,127 @@ def test_hybrid_teacher_generation_uses_coupled_reference_and_extra_loss_channel
         rtol=2e-6,
         atol=2e-10,
     )
+
+
+def test_hybrid_sampler_default_background_domain_remains_lossless():
+    rng = np.random.default_rng(
+        701
+    )
+    for _ in range(
+        4
+    ):
+        scene, frequency = (
+            sample_hybrid_package_scene(
+                rng
+            )
+        )
+        assert (
+            scene.medium.conductivity
+            == 0.0
+        )
+        assert (
+            scene.medium.relative_permittivity
+            == 1.0
+        )
+        assert (
+            frequency
+            > 0.0
+        )
+
+
+def test_hybrid_sampler_can_opt_in_lossy_background_domain():
+    rng = np.random.default_rng(
+        703
+    )
+    config = HybridSceneSamplerConfig(
+        background_relative_permittivity_range=(
+            2.0,
+            3.0,
+        ),
+        background_conductivity_range=(
+            1.0e-4,
+            2.0e-4,
+        ),
+        lossy_background_probability=1.0,
+    )
+    for _ in range(
+        4
+    ):
+        scene, _ = (
+            sample_hybrid_package_scene(
+                rng,
+                config,
+            )
+        )
+        assert (
+            2.0
+            <= scene.medium.relative_permittivity
+            <= 3.0
+        )
+        assert (
+            1.0e-4
+            <= scene.medium.conductivity
+            <= 2.0e-4
+        )
+
+
+def test_hybrid_lossy_background_generates_port_truth_but_rejects_incomplete_spatial_schema():
+    base = _scene(
+        epsilon_r=3.0
+    )
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.2,
+            relative_permeability=1.0,
+            conductivity=1.0e-4,
+        ),
+        base.packages,
+    )
+    sample = HybridTeacherSample.generate(
+        scene,
+        80_000.0,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=False,
+    )
+    assert (
+        sample.target_dissipation_channels.shape
+        == (
+            2,
+            1,
+            1,
+        )
+    )
+    assert (
+        sample.target_dissipation_channels[
+            -1,
+            0,
+            0,
+        ].real
+        > 0.0
+    )
+    assert (
+        sample.power_closure_error
+        < 1e-5
+    )
+    assert not sample.has_spatial_truth
+
+    with pytest.raises(
+        NotImplementedError,
+        match="no background spatial labels",
+    ):
+        HybridTeacherSample.generate(
+            scene,
+            80_000.0,
+            teacher_config=_config(),
+            baseline_segments=24,
+            surface_vertical_order=6,
+            surface_azimuthal_order=12,
+            include_spatial_truth=True,
+            package_volume_axial_order=3,
+            package_volume_radial_order=2,
+            package_volume_azimuthal_order=8,
+        )
