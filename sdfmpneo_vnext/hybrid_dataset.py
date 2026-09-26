@@ -187,6 +187,69 @@ class ImmutableHybridTeacherDataset:
         )
 
     @property
+    def background_conductivity_domain(
+        self,
+    ):
+        background = self.domain_metadata.get(
+            "background"
+        )
+        if not background:
+            return None
+        probability = float(
+            background.get(
+                "lossy_probability",
+                0.0,
+            )
+        )
+        if probability <= 0.0:
+            return None
+        values = np.asarray(
+            background.get(
+                "conductivity_range"
+            ),
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+            or probability > 1.0
+        ):
+            raise ValueError(
+                "invalid background design-domain metadata"
+            )
+        lower = (
+            0.0
+            if probability < 1.0
+            else float(
+                values[
+                    0
+                ]
+            )
+        )
+        return (
+            lower,
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    @property
     def split_seed(
         self,
     ) -> int:
