@@ -203,3 +203,105 @@ def test_package_fast_ports_reject_conductor_only_artifact():
             _scene(),
             80_000.0,
         )
+
+
+def test_package_and_lossy_background_reference_continuous_thermal_field_closes_environment_channel():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=4.0,
+            conductivity=0.003,
+        ),
+        "lossy-package",
+    )
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.2,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+        (
+            package,
+        ),
+    )
+    system = _system()
+    prepared = (
+        system.reference_continuous_thermal_field(
+            scene,
+            80_000.0,
+            HomogeneousThermalMedium(
+                conductivity=0.4,
+                density=1200.0,
+                heat_capacity=1000.0,
+            ),
+            longitudinal_segments=8,
+            radial_order=3,
+            angular_order=12,
+            background_radial_order=10,
+            background_angular_order=32,
+            spatial_prepare_options={
+                "volume_axial_order": 4,
+                "volume_radial_order": 3,
+                "volume_azimuthal_order": 12,
+                "background_radial_order": 10,
+                "background_angular_order": 32,
+                "maximum_raw_closure_error": 5.0,
+                "normalized_closure_tolerance": 1e-6,
+            },
+        )
+    )
+    channels = (
+        prepared.source.integrated_channels()
+    )
+    target = system.reference_ports(
+        scene,
+        80_000.0,
+    ).dissipation_channels
+    assert channels.shape == (
+        2,
+        1,
+        1,
+    )
+    assert target.shape == (
+        2,
+        1,
+        1,
+    )
+    assert (
+        prepared.source.normalization_closure_error
+        < 1e-6
+    )
+    assert np.allclose(
+        channels,
+        target,
+        rtol=2e-5,
+        atol=2e-10,
+    )
+    assert (
+        channels[
+            1,
+            0,
+            0,
+        ].real
+        > 0.0
+    )
+    temperature = prepared.temperature_step(
+        np.array(
+            [0.0, 0.0, 0.03]
+        ),
+        3.0,
+        np.array(
+            [1.2 + 0.1j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > prepared.medium.ambient_temperature
+    )
