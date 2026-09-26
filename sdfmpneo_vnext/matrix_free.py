@@ -7,7 +7,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from .em import DenseMQSTeacher, MQSConfig
 from .mixed import DenseMixedConductorTeacher
-from .scene import Scene
+from .scene import Scene, HomogeneousMedium
 
 
 @dataclass(frozen=True)
@@ -695,8 +695,34 @@ class MatrixFreeMixedOperator:
             config
             or MQSConfig()
         )
+        if scene.packages:
+            raise NotImplementedError(
+                "MatrixFreeMixedOperator is the conductor/background backend; "
+                "package dielectric coupling uses the hybrid SIE backend"
+            )
+        if (
+            self.frequency_hz == 0.0
+            and scene.medium.conductivity > 0.0
+        ):
+            raise NotImplementedError(
+                "conductive homogeneous background at DC requires the static "
+                "conduction exterior problem"
+            )
+        magnetic_scene = Scene(
+            scene.coils,
+            HomogeneousMedium(
+                relative_permittivity=(
+                    scene.medium.relative_permittivity
+                ),
+                relative_permeability=(
+                    scene.medium.relative_permeability
+                ),
+                conductivity=0.0,
+            ),
+            (),
+        )
         self.mqs = MatrixFreeMQSOperator(
-            scene,
+            magnetic_scene,
             frequency_hz,
             self.config,
             chunk_size=chunk_size,

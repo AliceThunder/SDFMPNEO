@@ -177,131 +177,149 @@ class TeacherSample:
             )
         truth_result = teacher.solve()
         truth = truth_result.impedance
-        channels = (
-            truth_result.coil_dissipation_matrices()
-        )
-
-        coil_segments = {}
-        for index, segment in enumerate(
-            segments
+        if hasattr(
+            truth_result,
+            "dissipation_channels",
         ):
-            coil_segments.setdefault(
-                int(segment.coil),
-                [],
-            ).append(index)
+            channels = (
+                truth_result.dissipation_channels()
+            )
+        else:
+            channels = (
+                truth_result.coil_dissipation_matrices()
+            )
 
-        spatial_coil = []
-        spatial_arc = []
-        spatial_xy = []
-        spatial_weights = []
-        spatial_matrix = []
+        if (
+            reference_backend == "mixed"
+            and scene.medium.conductivity > 0.0
+        ):
+            # Port/background dissipation is valid, but the current spatial
+            # teacher describes conductor volume only.  Do not label it as a
+            # complete environmental heat-source field.
+            spatial = None
+        else:
+            coil_segments = {}
+            for index, segment in enumerate(
+                segments
+            ):
+                coil_segments.setdefault(
+                    int(segment.coil),
+                    [],
+                ).append(index)
 
-        local_position = {
-            coil: {
-                segment_index: position
-                for position, segment_index
-                in enumerate(indices)
+            spatial_coil = []
+            spatial_arc = []
+            spatial_xy = []
+            spatial_weights = []
+            spatial_matrix = []
+
+            local_position = {
+                coil: {
+                    segment_index: position
+                    for position, segment_index
+                    in enumerate(indices)
+                }
+                for coil, indices
+                in coil_segments.items()
             }
-            for coil, indices
-            in coil_segments.items()
-        }
 
-        for segment_index, segment in enumerate(
-            segments
-        ):
-            coil = int(
-                segment.coil
-            )
-            local_index = (
-                local_position[
-                    coil
-                ][segment_index]
-            )
-            n_segments = len(
-                coil_segments[
-                    coil
-                ]
-            )
-            arc = (
-                local_index + 0.5
-            ) / n_segments
-            quadrature = (
-                segment.basis.quadrature
-            )
-            transfer = (
-                segment.basis.values
-                @ truth_result.mode_coefficients[
-                    segment.mode_slice
-                ]
-            )
-            sigma = (
-                scene.coils[
-                    coil
-                ].material.conductivity
-            )
-            matrices = (
-                np.einsum(
-                    "qi,qj->qij",
-                    transfer.conj(),
-                    transfer,
+            for segment_index, segment in enumerate(
+                segments
+            ):
+                coil = int(
+                    segment.coil
                 )
-                / sigma
-            )
-            matrices = 0.5 * (
-                matrices
-                + matrices.conj().transpose(
-                    0,
-                    2,
-                    1,
+                local_index = (
+                    local_position[
+                        coil
+                    ][segment_index]
                 )
-            )
-            count = len(
-                quadrature.weights
-            )
-            spatial_coil.append(
-                np.full(
-                    count,
-                    coil,
-                    dtype=int,
+                n_segments = len(
+                    coil_segments[
+                        coil
+                    ]
                 )
-            )
-            spatial_arc.append(
-                np.full(
-                    count,
-                    arc,
-                    dtype=float,
+                arc = (
+                    local_index + 0.5
+                ) / n_segments
+                quadrature = (
+                    segment.basis.quadrature
                 )
-            )
-            spatial_xy.append(
-                quadrature.xy
-            )
-            spatial_weights.append(
-                quadrature.weights
-                * segment.length
-            )
-            spatial_matrix.append(
-                matrices
+                transfer = (
+                    segment.basis.values
+                    @ truth_result.mode_coefficients[
+                        segment.mode_slice
+                    ]
+                )
+                sigma = (
+                    scene.coils[
+                        coil
+                    ].material.conductivity
+                )
+                matrices = (
+                    np.einsum(
+                        "qi,qj->qij",
+                        transfer.conj(),
+                        transfer,
+                    )
+                    / sigma
+                )
+                matrices = 0.5 * (
+                    matrices
+                    + matrices.conj().transpose(
+                        0,
+                        2,
+                        1,
+                    )
+                )
+                count = len(
+                    quadrature.weights
+                )
+                spatial_coil.append(
+                    np.full(
+                        count,
+                        coil,
+                        dtype=int,
+                    )
+                )
+                spatial_arc.append(
+                    np.full(
+                        count,
+                        arc,
+                        dtype=float,
+                    )
+                )
+                spatial_xy.append(
+                    quadrature.xy
+                )
+                spatial_weights.append(
+                    quadrature.weights
+                    * segment.length
+                )
+                spatial_matrix.append(
+                    matrices
+                )
+
+            spatial = SpatialLossSamples(
+                np.concatenate(
+                    spatial_coil
+                ),
+                np.concatenate(
+                    spatial_arc
+                ),
+                np.concatenate(
+                    spatial_xy,
+                    axis=0,
+                ),
+                np.concatenate(
+                    spatial_weights
+                ),
+                np.concatenate(
+                    spatial_matrix,
+                    axis=0,
+                ),
             )
 
-        spatial = SpatialLossSamples(
-            np.concatenate(
-                spatial_coil
-            ),
-            np.concatenate(
-                spatial_arc
-            ),
-            np.concatenate(
-                spatial_xy,
-                axis=0,
-            ),
-            np.concatenate(
-                spatial_weights
-            ),
-            np.concatenate(
-                spatial_matrix,
-                axis=0,
-            ),
-        )
 
         return TeacherSample(
             scene,

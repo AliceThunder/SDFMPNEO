@@ -70,9 +70,17 @@ def certify_port_result(
         pp = float(
             result.port_power(i)
         )
-        cp = float(
-            result.conductor_power(i)
-        )
+        if hasattr(
+            result,
+            "dissipated_power",
+        ):
+            cp = float(
+                result.dissipated_power(i)
+            )
+        else:
+            cp = float(
+                result.conductor_power(i)
+            )
         denom = max(
             abs(pp),
             abs(cp),

@@ -111,7 +111,7 @@ class MixedReferenceArtifact:
         )
         return StructuredPortPrediction(
             result.impedance,
-            result.coil_dissipation_matrices(),
+            result.dissipation_channels(),
         )
 
     def predict(
@@ -131,6 +131,13 @@ class MixedReferenceArtifact:
         scene: Scene,
         frequency_hz: float,
     ) -> PreparedReferenceLossField:
+        if scene.medium.conductivity > 0.0:
+            raise NotImplementedError(
+                "continuous spatial loss for a lossy homogeneous background "
+                "is not implemented yet; port/background dissipation truth is "
+                "available, but conductor-only spatial loss is not presented "
+                "as a complete environmental heat source"
+            )
         teacher, result = self.solve(
             scene,
             frequency_hz,

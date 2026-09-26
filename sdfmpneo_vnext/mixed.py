@@ -5,7 +5,7 @@ import numpy as np
 from scipy.linalg import solve
 
 from .em import DenseMQSTeacher, MQSConfig
-from .scene import Scene, EPS0
+from .scene import Scene, HomogeneousMedium, EPS0
 
 
 def _equilibrated_dense_solve(matrix: np.ndarray, rhs: np.ndarray, iterations: int = 6):
@@ -46,6 +46,7 @@ class MixedResult:
     normalized_residual: float
     segment_coils: np.ndarray
     mode_segments: np.ndarray
+    background_dissipation_matrix: np.ndarray | None = None
 
     @property
     def n_ports(self) -> int:
@@ -184,6 +185,78 @@ class MixedResult:
             dtype=float,
         )
 
+    def dissipation_channels(self) -> np.ndarray:
+        coils = (
+            self.coil_dissipation_matrices()
+        )
+        if (
+            self.background_dissipation_matrix
+            is None
+        ):
+            return coils
+        return np.concatenate(
+            (
+                coils,
+                np.asarray(
+                    self.background_dissipation_matrix,
+                    dtype=complex,
+                )[None, :, :],
+            ),
+            axis=0,
+        )
+
+    def background_power(
+        self,
+        currents,
+    ) -> float:
+        if (
+            self.background_dissipation_matrix
+            is None
+        ):
+            return 0.0
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        return float(
+            0.5
+            * np.real(
+                np.vdot(
+                    currents,
+                    self.background_dissipation_matrix
+                    @ currents,
+                )
+            )
+        )
+
+    def dissipated_power(
+        self,
+        currents,
+    ) -> float:
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        channels = (
+            self.dissipation_channels()
+        )
+        return float(
+            np.sum(
+                [
+                    0.5
+                    * np.real(
+                        np.vdot(
+                            currents,
+                            channel
+                            @ currents,
+                        )
+                    )
+                    for channel
+                    in channels
+                ]
+            )
+        )
+
     def continuity_residual(
         self,
         currents,
@@ -246,8 +319,40 @@ class DenseMixedConductorTeacher:
         self.charge_self_radius_factor = float(
             charge_self_radius_factor
         )
+        if self.scene.packages:
+            raise NotImplementedError(
+                "DenseMixedConductorTeacher is the conductor/background "
+                "backend; package dielectric coupling uses the hybrid SIE backend"
+            )
+        if (
+            self.frequency_hz == 0.0
+            and self.scene.medium.conductivity > 0.0
+        ):
+            raise NotImplementedError(
+                "conductive homogeneous background at DC requires the static "
+                "conduction exterior problem"
+            )
+
+        # The current/vector-potential block remains magnetoquasistatic.  For
+        # a conductive dielectric background, loss enters the scalar-potential
+        # Green operator through complex permittivity.  Do not let the MQS
+        # magnetic subsolver silently reject that otherwise valid EQS loss.
+        magnetic_medium = HomogeneousMedium(
+            relative_permittivity=(
+                scene.medium.relative_permittivity
+            ),
+            relative_permeability=(
+                scene.medium.relative_permeability
+            ),
+            conductivity=0.0,
+        )
+        magnetic_scene = Scene(
+            scene.coils,
+            magnetic_medium,
+            (),
+        )
         self._mqs = DenseMQSTeacher(
-            scene,
+            magnetic_scene,
             frequency_hz,
             self.config,
         )
@@ -387,8 +492,9 @@ class DenseMixedConductorTeacher:
         radii: np.ndarray,
     ):
         eps = (
-            EPS0
-            * self.scene.medium.relative_permittivity
+            self.scene.medium.complex_permittivity(
+                self.frequency_hz
+            )
         )
         pref = 1.0 / (
             4.0
@@ -478,6 +584,53 @@ class DenseMixedConductorTeacher:
             Bp,
             Q,
         )
+
+    def _background_dissipation_channel(
+        self,
+        result: MixedResult,
+    ) -> np.ndarray | None:
+        if self.scene.medium.conductivity <= 0.0:
+            return None
+        total = 0.5 * (
+            result.impedance
+            + result.impedance.conj().T
+        )
+        conductor = np.sum(
+            result.coil_dissipation_matrices(),
+            axis=0,
+        )
+        background = 0.5 * (
+            total
+            - conductor
+            + (
+                total
+                - conductor
+            ).conj().T
+        )
+        scale = max(
+            float(
+                np.linalg.norm(
+                    total
+                )
+            ),
+            1e-30,
+        )
+        minimum = float(
+            np.min(
+                np.linalg.eigvalsh(
+                    background
+                )
+            )
+        )
+        if minimum < (
+            -1e-8 * scale
+            - 1e-12
+        ):
+            raise RuntimeError(
+                "homogeneous-background loss channel is non-passive; "
+                "the quasistatic medium model is outside its valid regime"
+            )
+        return background
 
     def solve(self) -> MixedResult:
         R, L, D, Phi, B, Q = self.assemble()
@@ -596,6 +749,28 @@ class DenseMixedConductorTeacher:
             mode_segments[
                 segment.mode_slice
             ] = segment_index
+        provisional = MixedResult(
+            Z,
+            c,
+            phi,
+            q,
+            R,
+            L,
+            D,
+            Phi,
+            B,
+            eta,
+            segment_coils,
+            mode_segments,
+            None,
+        )
+
+        background = (
+            self._background_dissipation_channel(
+                provisional
+            )
+        )
+
         return MixedResult(
             Z,
             c,
@@ -609,4 +784,5 @@ class DenseMixedConductorTeacher:
             eta,
             segment_coils,
             mode_segments,
+            background,
         )

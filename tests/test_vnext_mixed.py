@@ -263,3 +263,87 @@ def test_mixed_local_dissipation_matrix_is_psd():
         )
         >= -1e-10
     )
+
+
+
+def test_mixed_lossy_background_adds_passive_environment_channel_and_closes_power():
+    scene = Scene(
+        (
+            coil(0.025),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        HomogeneousMedium(
+            relative_permittivity=3.0,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        40_000.0,
+        CFG,
+    ).solve()
+    channels = result.dissipation_channels()
+    assert channels.shape == (
+        3,
+        2,
+        2,
+    )
+    background = channels[-1]
+    assert np.allclose(
+        background,
+        background.conj().T,
+        atol=2e-9,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                background
+            )
+        )
+        >= -2e-9
+    )
+    assert np.allclose(
+        np.sum(
+            channels,
+            axis=0,
+        ),
+        0.5
+        * (
+            result.impedance
+            + result.impedance.conj().T
+        ),
+        rtol=3e-6,
+        atol=3e-8,
+    )
+    currents = np.array(
+        [
+            1.0 + 0.2j,
+            -0.4 + 0.3j,
+        ]
+    )
+    assert result.background_power(
+        currents
+    ) >= -1e-10
+    assert np.isclose(
+        result.port_power(
+            currents
+        ),
+        result.dissipated_power(
+            currents
+        ),
+        rtol=3e-6,
+        atol=3e-9,
+    )
+    assert (
+        result.port_power(
+            currents
+        )
+        >= result.conductor_power(
+            currents
+        )
+        - 1e-10
+    )

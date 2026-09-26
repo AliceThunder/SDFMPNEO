@@ -65,6 +65,66 @@ class HomogeneousMedium:
     def permeability(self) -> float:
         return MU0 * self.relative_permeability
 
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        """Passive e^{+j omega t} complex permittivity.
+
+        The conductivity term is represented as -j*sigma/omega. A conductive
+        homogeneous background therefore has no finite complex-permittivity
+        representation at exactly DC; the static conduction problem is a
+        separate physical limit.
+        """
+        if (
+            not np.isfinite(frequency_hz)
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        epsilon = (
+            EPS0
+            * self.relative_permittivity
+        )
+        if self.conductivity == 0.0:
+            return complex(
+                epsilon
+            )
+        if frequency_hz == 0.0:
+            raise ValueError(
+                "conductive homogeneous background has no finite "
+                "complex-permittivity representation at DC"
+            )
+        omega = (
+            2.0
+            * np.pi
+            * float(
+                frequency_hz
+            )
+        )
+        return complex(
+            epsilon
+            - 1j
+            * self.conductivity
+            / omega
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        if (
+            not np.isfinite(frequency_hz)
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        return float(
+            self.conductivity
+        )
+
 
 @dataclass(frozen=True)
 class IsotropicMaterial:

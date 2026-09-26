@@ -298,3 +298,71 @@ def test_mixed_physical_residual_has_identical_dense_and_matrix_free_semantics()
         rtol=2e-11,
         atol=2e-13,
     )
+
+
+
+def test_lossy_background_certification_matches_dense_and_matrix_free():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.7,
+            relative_permeability=1.0,
+            conductivity=1e-4,
+        ),
+    )
+    config = _cfg(7)
+    frequency = 25_000.0
+    artifact = AnalyticBaselineArtifact(
+        segments_per_coil=20,
+    )
+    dense = certify_mixed_ports(
+        scene,
+        frequency,
+        artifact,
+        config=config,
+        algebraic_tolerance=2e-6,
+        correction_rtol=1e-9,
+        correction_restart=30,
+        correction_maxiter=180,
+        allow_reference_fallback=False,
+        operator_backend="dense",
+    )
+    matrix_free = certify_mixed_ports(
+        scene,
+        frequency,
+        artifact,
+        config=config,
+        algebraic_tolerance=2e-6,
+        correction_rtol=1e-9,
+        correction_restart=30,
+        correction_maxiter=180,
+        allow_reference_fallback=False,
+        operator_backend="matrix_free",
+        matrix_free_chunk_size=31,
+    )
+    assert dense.algebraic_certified
+    assert matrix_free.algebraic_certified
+    assert dense.result.background_dissipation_matrix is not None
+    assert matrix_free.result.background_dissipation_matrix is not None
+    assert dense.port_certificate.certified
+    assert matrix_free.port_certificate.certified
+    assert np.allclose(
+        matrix_free.impedance,
+        dense.impedance,
+        rtol=8e-6,
+        atol=8e-8,
+    )
+    assert np.allclose(
+        np.sum(
+            dense.result.dissipation_channels(),
+            axis=0,
+        ),
+        0.5
+        * (
+            dense.impedance
+            + dense.impedance.conj().T
+        ),
+        rtol=5e-6,
+        atol=5e-8,
+    )
