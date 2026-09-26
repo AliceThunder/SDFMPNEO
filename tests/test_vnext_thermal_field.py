@@ -482,3 +482,146 @@ def test_lossy_background_reference_thermal_field_includes_environment_heat_chan
         temperature
         > prepared.medium.ambient_temperature
     )
+
+
+def test_lossy_background_domain_excludes_finite_cross_section_conductor():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=3.0,
+            conductivity=1e-4,
+        ),
+    )
+    artifact = MixedReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=8,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        )
+    )
+    spatial = artifact.prepare_spatial(
+        scene,
+        40_000.0,
+    )
+    phi = (
+        0.45
+        * 2.0
+        * np.pi
+        * scene.coils[
+            0
+        ].geometry.turns
+    )
+    centerline = scene.coils[
+        0
+    ].geometry.centerline(
+        np.asarray(
+            [phi]
+        )
+    )
+    exterior = spatial._background_domain_mask(
+        centerline
+    )
+    assert exterior.shape == (1,)
+    assert not bool(
+        exterior[
+            0
+        ]
+    )
+
+
+def test_lossy_background_spatial_heat_is_common_se3_invariant():
+    base = _scene()
+    lossy = HomogeneousMedium(
+        relative_permittivity=3.0,
+        relative_permeability=1.0,
+        conductivity=1e-4,
+    )
+    scene = Scene(
+        base.coils,
+        lossy,
+    )
+    config = MQSConfig(
+        segments_per_turn=8,
+        min_segments=8,
+        section_degree=0,
+        radial_order=3,
+        angular_order=12,
+        line_order=2,
+    )
+    reference = MixedReferenceArtifact(
+        config=config,
+        background_radial_order=10,
+        background_angular_order=32,
+    )
+    spatial = reference.prepare_spatial(
+        scene,
+        40_000.0,
+    )
+    query = np.array(
+        [0.006, -0.004, 0.030]
+    )
+    currents = np.array(
+        [1.7 - 0.2j]
+    )
+    density = spatial.background_joule_density(
+        query,
+        currents,
+    )
+
+    rng = np.random.default_rng(
+        918
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.array(
+            [0.21, -0.13, 0.37]
+        ),
+    )
+    moved_coils = tuple(
+        type(coil)(
+            coil.geometry.transformed(
+                common
+            ),
+            coil.material,
+            coil.name,
+        )
+        for coil in scene.coils
+    )
+    moved_scene = Scene(
+        moved_coils,
+        lossy,
+    )
+    moved_spatial = MixedReferenceArtifact(
+        config=config,
+        background_radial_order=10,
+        background_angular_order=32,
+    ).prepare_spatial(
+        moved_scene,
+        40_000.0,
+    )
+    moved_density = (
+        moved_spatial.background_joule_density(
+            common.apply(
+                query
+            ),
+            currents,
+        )
+    )
+    assert np.isclose(
+        density,
+        moved_density,
+        rtol=3e-7,
+        atol=1e-12,
+    )
+    assert np.isclose(
+        spatial.raw_background_closure_error,
+        moved_spatial.raw_background_closure_error,
+        rtol=3e-7,
+        atol=1e-12,
+    )
