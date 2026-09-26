@@ -211,6 +211,8 @@ def _manual_sample(
 
 def _artifact(
     scene,
+    *,
+    background_conductivity_range=None,
 ):
     sample = _manual_sample(
         scene
@@ -234,6 +236,9 @@ def _artifact(
         model,
         normalizer,
         baseline_segments=32,
+        background_conductivity_range=(
+            background_conductivity_range
+        ),
     )
 
 
@@ -507,3 +512,223 @@ def test_hybrid_artifact_is_accepted_by_unified_fast_port_runtime():
         rtol=0,
         atol=0,
     )
+
+
+def _with_background(
+    scene,
+    *,
+    conductivity,
+    relative_permittivity=2.5,
+):
+    return Scene(
+        scene.coils,
+        HomogeneousMedium(
+            relative_permittivity=(
+                relative_permittivity
+            ),
+            relative_permeability=(
+                scene.medium.relative_permeability
+            ),
+            conductivity=(
+                conductivity
+            ),
+        ),
+        scene.packages,
+    )
+
+
+def test_hybrid_fast_port_artifact_accepts_certified_lossy_background_domain():
+    base = _scene(
+        loss=0.0
+    )
+    scene = _with_background(
+        base,
+        conductivity=1.0e-3,
+    )
+    artifact = _artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            2.0e-3,
+        ),
+    )
+    assert artifact.supports_lossy_background
+    prediction = artifact.predict_structured(
+        scene,
+        85_000.0,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+    assert (
+        prediction.dissipation_channels[
+            -1
+        ].real.max()
+        > 0.0
+    )
+
+    system = MeshfreeVNextSystem(
+        artifact
+    )
+    through_system = system.fast_ports(
+        scene,
+        85_000.0,
+    )
+    assert np.allclose(
+        through_system.impedance,
+        prediction.impedance,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert np.allclose(
+        through_system.dissipation_channels,
+        prediction.dissipation_channels,
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def test_hybrid_fast_port_artifact_rejects_background_conductivity_outside_training_domain():
+    base = _scene()
+    artifact = _artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            1.0e-3,
+        ),
+    )
+    outside = _with_background(
+        base,
+        conductivity=2.0e-3,
+    )
+    with pytest.raises(
+        ValueError,
+        match="outside the hybrid artifact training domain",
+    ):
+        artifact.predict_structured(
+            outside,
+            85_000.0,
+        )
+
+
+def test_legacy_hybrid_artifact_remains_lossless_background_only():
+    base = _scene()
+    artifact = _artifact(
+        base
+    )
+    assert not artifact.supports_lossy_background
+    lossy = _with_background(
+        base,
+        conductivity=1.0e-4,
+    )
+    with pytest.raises(
+        ValueError,
+        match="not trained/certified for a lossy",
+    ):
+        artifact.predict_structured(
+            lossy,
+            85_000.0,
+        )
+
+
+def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
+    base = _scene()
+    artifact = _artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            3.0e-3,
+        ),
+    )
+    path = (
+        tmp_path
+        / "hybrid-lossy-domain.pt"
+    )
+    artifact.save(
+        path
+    )
+    loaded = HybridNeuralResidualArtifact.load(
+        path
+    )
+    assert loaded.supports_lossy_background
+    assert loaded.background_conductivity_range == (
+        0.0,
+        3.0e-3,
+    )
+    lossy = _with_background(
+        base,
+        conductivity=1.0e-3,
+    )
+    expected = artifact.predict_structured(
+        lossy,
+        85_000.0,
+    )
+    actual = loaded.predict_structured(
+        lossy,
+        85_000.0,
+    )
+    assert np.allclose(
+        actual.impedance,
+        expected.impedance,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert np.allclose(
+        actual.dissipation_channels,
+        expected.dissipation_channels,
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def test_schema1_hybrid_artifact_loads_as_lossless_background_only(tmp_path):
+    base = _scene()
+    artifact = _artifact(
+        base
+    )
+    path = (
+        tmp_path
+        / "hybrid-schema2.pt"
+    )
+    artifact.save(
+        path
+    )
+    try:
+        payload = torch.load(
+            path,
+            weights_only=False,
+        )
+    except TypeError:
+        payload = torch.load(
+            path
+        )
+    payload[
+        "schema"
+    ] = 1
+    payload.pop(
+        "background_conductivity_range",
+        None,
+    )
+    legacy_path = (
+        tmp_path
+        / "hybrid-schema1.pt"
+    )
+    torch.save(
+        payload,
+        legacy_path,
+    )
+    loaded = HybridNeuralResidualArtifact.load(
+        legacy_path
+    )
+    assert not loaded.supports_lossy_background
+    with pytest.raises(
+        ValueError,
+        match="not trained/certified for a lossy",
+    ):
+        loaded.predict_structured(
+            _with_background(
+                base,
+                conductivity=1.0e-4,
+            ),
+            85_000.0,
+        )
