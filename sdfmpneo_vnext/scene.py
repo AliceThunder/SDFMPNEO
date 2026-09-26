@@ -167,6 +167,15 @@ class IsotropicMaterial:
                     "must be supplied together as positive finite values"
                 )
 
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        return (
+            MU0
+            * self.relative_permeability
+        )
+
     def relative_permittivity_at(
         self,
         frequency_hz: float,
@@ -297,6 +306,15 @@ class DebyeMaterial:
                     "thermal_conductivity, density, and heat_capacity "
                     "must be supplied together as positive finite values"
                 )
+
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        return (
+            MU0
+            * self.relative_permeability
+        )
 
     @property
     def relative_permittivity(
@@ -450,7 +468,7 @@ class CoilObject:
 @dataclass(frozen=True)
 class Scene:
     coils: Tuple[CoilObject, ...]
-    medium: HomogeneousMedium = HomogeneousMedium()
+    medium: HomogeneousMedium | IsotropicMaterial | DebyeMaterial = HomogeneousMedium()
     packages: Tuple[PackageObject, ...] = ()
 
     def __post_init__(self):
@@ -470,12 +488,15 @@ class Scene:
             )
         if not isinstance(
             self.medium,
-            HomogeneousMedium,
+            (
+                HomogeneousMedium,
+                IsotropicMaterial,
+                DebyeMaterial,
+            ),
         ):
             raise TypeError(
-                "vNext MVP currently supports only HomogeneousMedium; "
-                "heterogeneous electromagnetic media require the post-MVP "
-                "SIE/VIE extension"
+                "scene medium must be a supported homogeneous passive "
+                "electromagnetic material"
             )
         if not all(
             isinstance(
@@ -492,7 +513,9 @@ class Scene:
         self,
     ) -> None:
         if not np.isclose(
-            self.medium.conductivity,
+            self.medium.loss_conductivity(
+                0.0
+            ),
             0.0,
             rtol=0.0,
             atol=0.0,
