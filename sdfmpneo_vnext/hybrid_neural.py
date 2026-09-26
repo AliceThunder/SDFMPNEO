@@ -1819,6 +1819,7 @@ def train_hybrid_residual_surrogate(
     validation_interval: int = 1,
     min_improvement: float = 1e-5,
     seed: int = 17,
+    background_conductivity_range=None,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -1867,18 +1868,99 @@ def train_hybrid_residual_surrogate(
         ],
         dtype=float,
     )
-    background_conductivity_range = (
-        float(
-            np.min(
-                training_background_conductivity
-            )
-        ),
-        float(
-            np.max(
-                training_background_conductivity
-            )
-        ),
+    has_lossy_background_training = bool(
+        np.any(
+            training_background_conductivity
+            > 0.0
+        )
     )
+    if has_lossy_background_training:
+        if background_conductivity_range is None:
+            resolved_background_conductivity_range = (
+                float(
+                    np.min(
+                        training_background_conductivity
+                    )
+                ),
+                float(
+                    np.max(
+                        training_background_conductivity
+                    )
+                ),
+            )
+        else:
+            values = np.asarray(
+                background_conductivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_conductivity_range must be a finite "
+                    "nonnegative increasing pair"
+                )
+            resolved_background_conductivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+    else:
+        resolved_background_conductivity_range = None
+
+    if resolved_background_conductivity_range is None:
+        if any(
+            sample.scene.medium.conductivity
+            > 0.0
+            for sample
+            in validation_samples
+        ):
+            raise ValueError(
+                "validation contains lossy backgrounds but training does not"
+            )
+    else:
+        lower, upper = (
+            resolved_background_conductivity_range
+        )
+        for sample in (
+            samples
+            + validation_samples
+        ):
+            conductivity = float(
+                sample.scene.medium.conductivity
+            )
+            if (
+                conductivity
+                < lower
+                or conductivity
+                > upper
+            ):
+                raise ValueError(
+                    "sample background conductivity lies outside the declared "
+                    "hybrid port training domain"
+                )
 
     torch.manual_seed(
         seed
@@ -2241,7 +2323,7 @@ def train_hybrid_residual_surrogate(
                 baseline_segments
             ),
             background_conductivity_range=(
-                background_conductivity_range
+                resolved_background_conductivity_range
             ),
             device=device,
         )
