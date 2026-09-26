@@ -784,6 +784,10 @@ class PreparedHybridSpatialLossField:
     coil_package_features: object
     conductor_transforms: tuple
     package_transform: object
+    background_segments: tuple
+    background_anchor_positions: np.ndarray
+    background_anchor_radii: np.ndarray
+    length_scale: float
     normalization_closure_error: float
     device: str
 
@@ -793,6 +797,178 @@ class PreparedHybridSpatialLossField:
     ) -> int:
         return len(
             self.scene.coils
+        )
+
+    @property
+    def background_channel_index(
+        self,
+    ) -> int | None:
+        if (
+            self.scene.medium.conductivity
+            <= 0.0
+        ):
+            return None
+        return self.dielectric_channel_index
+
+    @property
+    def environment_transform(
+        self,
+    ):
+        return self.package_transform
+
+    def _background_domain_mask(
+        self,
+        points,
+    ) -> np.ndarray:
+        return homogeneous_background_domain_mask(
+            self.scene,
+            self.background_segments,
+            points,
+        )
+
+    def background_quadrature(
+        self,
+        *,
+        radial_order: int = 12,
+        angular_order: int = 48,
+    ):
+        return unbounded_background_quadrature(
+            self.scene,
+            self.background_segments,
+            self.background_anchor_positions,
+            self.background_anchor_radii,
+            radial_order=radial_order,
+            angular_order=angular_order,
+        )
+
+    def background_dissipation_matrices(
+        self,
+        points,
+    ) -> np.ndarray:
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim != 2
+            or points.shape[1] != 3
+        ):
+            raise ValueError(
+                "points must have shape (3,) or (n,3)"
+            )
+        n_ports = int(
+            self.port_prediction.impedance.shape[
+                0
+            ]
+        )
+        out = np.zeros(
+            (
+                len(
+                    points
+                ),
+                n_ports,
+                n_ports,
+            ),
+            dtype=complex,
+        )
+        if (
+            background_loss_gate(
+                self.scene,
+                self.frequency_hz,
+            )
+            <= 0.0
+        ):
+            return (
+                out[
+                    0
+                ]
+                if scalar
+                else out
+            )
+        exterior = (
+            self._background_domain_mask(
+                points
+            )
+        )
+        if np.any(
+            exterior
+        ):
+            (
+                coil_coordinates,
+                package_coordinates,
+            ) = background_coordinate_features(
+                self.scene,
+                points[
+                    exterior
+                ],
+                length_scale=(
+                    self.length_scale
+                ),
+            )
+            self.model.eval()
+            with torch.no_grad():
+                raw = (
+                    self.model.background.raw_matrices(
+                        self.coil_latent,
+                        self.package_latent,
+                        coil_coordinates,
+                        package_coordinates,
+                    )
+                )
+                values = _apply_transform(
+                    raw,
+                    self.environment_transform,
+                )
+            out[
+                exterior
+            ] = (
+                values.detach()
+                .cpu()
+                .numpy()
+            )
+        return (
+            out[
+                0
+            ]
+            if scalar
+            else out
+        )
+
+    def background_joule_density(
+        self,
+        points,
+        currents,
+    ):
+        matrices = (
+            self.background_dissipation_matrices(
+                points
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        if currents.shape != (
+            self.port_prediction.impedance.shape[
+                0
+            ],
+        ):
+            raise ValueError(
+                "currents have wrong shape"
+            )
+        return 0.5 * np.real(
+            np.einsum(
+                "i,...ij,j->...",
+                currents.conj(),
+                matrices,
+                currents,
+            )
         )
 
     def local_dissipation_matrices(
