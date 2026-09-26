@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from sdfmpneo_vnext import (
+    HybridSceneSamplerConfig,
     ImmutableHybridTeacherDataset,
     MQSConfig,
     sample_hybrid_package_scene,
@@ -15,7 +16,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Generate immutable vNext hybrid dielectric teacher data, "
-            "including conductor and package spatial loss truth."
+            "including conductor, package, and optional unbounded-background "
+            "spatial loss truth."
         )
     )
     parser.add_argument(
@@ -62,6 +64,41 @@ def main():
         type=int,
         default=16,
     )
+    parser.add_argument(
+        "--lossy-background-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--background-epsilon-min",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--background-epsilon-max",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--background-conductivity-min",
+        type=float,
+        default=1e-7,
+    )
+    parser.add_argument(
+        "--background-conductivity-max",
+        type=float,
+        default=5e-3,
+    )
+    parser.add_argument(
+        "--background-radial-order",
+        type=int,
+        default=12,
+    )
+    parser.add_argument(
+        "--background-angular-order",
+        type=int,
+        default=48,
+    )
     args = parser.parse_args()
 
     if args.count < 1:
@@ -89,6 +126,19 @@ def main():
     rng = np.random.default_rng(
         args.seed
     )
+    sampler = HybridSceneSamplerConfig(
+        background_relative_permittivity_range=(
+            args.background_epsilon_min,
+            args.background_epsilon_max,
+        ),
+        background_conductivity_range=(
+            args.background_conductivity_min,
+            args.background_conductivity_max,
+        ),
+        lossy_background_probability=(
+            args.lossy_background_probability
+        ),
+    )
     teacher = MQSConfig(
         segments_per_turn=12,
         min_segments=16,
@@ -102,7 +152,8 @@ def main():
     ):
         scene, frequency = (
             sample_hybrid_package_scene(
-                rng
+                rng,
+                sampler,
             )
         )
         record = (
@@ -131,6 +182,12 @@ def main():
                 package_volume_azimuthal_order=(
                     args.package_volume_azimuthal_order
                 ),
+                background_radial_order=(
+                    args.background_radial_order
+                ),
+                background_angular_order=(
+                    args.background_angular_order
+                ),
                 source="initial",
             )
         )
@@ -138,7 +195,8 @@ def main():
             f"[{index + 1:04d}/{args.count:04d}] "
             f"{record.sample_id[:12]} "
             f"{record.split} "
-            f"{frequency / 1e3:.2f} kHz"
+            f"{frequency / 1e3:.2f} kHz "
+            f"sigma_bg={scene.medium.conductivity:.3e} S/m"
         )
     print(
         "counts:",
