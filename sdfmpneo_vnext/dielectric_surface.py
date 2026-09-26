@@ -4,48 +4,24 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.linalg import solve
 
-from .scene import EPS0, HomogeneousMedium, PackageObject
+from .scene import PackageObject
 
 
 def _complex_permittivity(
     medium,
     frequency_hz: float,
 ) -> complex:
-    if (
-        not np.isfinite(frequency_hz)
-        or frequency_hz < 0.0
+    if not hasattr(
+        medium,
+        "complex_permittivity",
     ):
-        raise ValueError(
-            "frequency_hz must be finite and nonnegative"
+        raise TypeError(
+            "background medium must expose complex_permittivity(frequency_hz)"
         )
-    epsilon = (
-        EPS0
-        * float(
-            medium.relative_permittivity
-        )
-    )
-    conductivity = float(
-        medium.conductivity
-    )
-    if conductivity == 0.0:
-        return complex(
-            epsilon
-        )
-    if frequency_hz == 0.0:
-        raise ValueError(
-            "conductive media require nonzero frequency in the "
-            "complex-permittivity dielectric SIE"
-        )
-    omega = (
-        2.0
-        * np.pi
-        * frequency_hz
-    )
     return complex(
-        epsilon
-        - 1j
-        * conductivity
-        / omega
+        medium.complex_permittivity(
+            frequency_hz
+        )
     )
 
 
