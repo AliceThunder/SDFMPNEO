@@ -110,6 +110,17 @@ class HomogeneousMedium:
             / omega
         )
 
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        return (
+            self.complex_permittivity(
+                frequency_hz
+            )
+            / EPS0
+        )
+
     def loss_conductivity(
         self,
         frequency_hz: float,
