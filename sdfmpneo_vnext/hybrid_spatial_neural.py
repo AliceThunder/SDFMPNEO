@@ -2626,6 +2626,7 @@ def train_hybrid_spatial_loss_surrogate(
     background_segments_per_turn: int = 16,
     background_radial_order: int = 12,
     background_angular_order: int = 48,
+    background_conductivity_range=None,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2684,10 +2685,13 @@ def train_hybrid_spatial_loss_surrogate(
         ],
         dtype=float,
     )
-    if np.any(
-        training_background_conductivity
-        > 0.0
-    ):
+    has_lossy_background_training = bool(
+        np.any(
+            training_background_conductivity
+            > 0.0
+        )
+    )
+    if has_lossy_background_training:
         if not bool(
             getattr(
                 port_artifact,
@@ -2699,46 +2703,111 @@ def train_hybrid_spatial_loss_surrogate(
                 "lossy-background spatial training requires a port artifact "
                 "trained for lossy homogeneous backgrounds"
             )
-        background_conductivity_range = (
-            float(
-                np.min(
-                    training_background_conductivity
+        candidate = (
+            getattr(
+                port_artifact,
+                "background_conductivity_range",
+                None,
+            )
+            if background_conductivity_range
+            is None
+            else background_conductivity_range
+        )
+        if candidate is None:
+            raise ValueError(
+                "lossy-background spatial training requires a declared "
+                "background conductivity domain"
+            )
+        values = np.asarray(
+            candidate,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
                 )
+            )
+            or values[
+                0
+            ] < 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "background_conductivity_range must be a finite "
+                "nonnegative increasing pair"
+            )
+        resolved_background_conductivity_range = (
+            float(
+                values[
+                    0
+                ]
             ),
             float(
-                np.max(
-                    training_background_conductivity
-                )
+                values[
+                    1
+                ]
             ),
         )
-    else:
-        background_conductivity_range = None
-
-    if validation_samples:
-        for sample in validation_samples:
-            conductivity = float(
-                sample.scene.medium.conductivity
+        port_range = getattr(
+            port_artifact,
+            "background_conductivity_range",
+            None,
+        )
+        if port_range is not None:
+            port_lower, port_upper = (
+                port_range
             )
-            if background_conductivity_range is None:
-                if conductivity > 0.0:
-                    raise ValueError(
-                        "validation background conductivity lies outside the "
-                        "hybrid spatial training domain"
-                    )
-                continue
             lower, upper = (
-                background_conductivity_range
+                resolved_background_conductivity_range
             )
             if (
-                conductivity
-                < lower
-                or conductivity
-                > upper
+                lower
+                < port_lower
+                or upper
+                > port_upper
             ):
                 raise ValueError(
-                    "validation background conductivity lies outside the "
+                    "spatial background conductivity domain cannot exceed "
+                    "the port artifact domain"
+                )
+    else:
+        resolved_background_conductivity_range = None
+
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        conductivity = float(
+            sample.scene.medium.conductivity
+        )
+        if resolved_background_conductivity_range is None:
+            if conductivity > 0.0:
+                raise ValueError(
+                    "sample background conductivity lies outside the "
                     "hybrid spatial training domain"
                 )
+            continue
+        lower, upper = (
+            resolved_background_conductivity_range
+        )
+        if (
+            conductivity
+            < lower
+            or conductivity
+            > upper
+        ):
+            raise ValueError(
+                "sample background conductivity lies outside the "
+                "hybrid spatial training domain"
+            )
 
     torch.manual_seed(
         seed
@@ -2883,7 +2952,7 @@ def train_hybrid_spatial_loss_surrogate(
                         background_angular_order
                     ),
                     background_conductivity_range=(
-                        background_conductivity_range
+                        resolved_background_conductivity_range
                     ),
                     device=device,
                 )
@@ -2977,7 +3046,7 @@ def train_hybrid_spatial_loss_surrogate(
                 background_angular_order
             ),
             background_conductivity_range=(
-                background_conductivity_range
+                resolved_background_conductivity_range
             ),
             device=device,
         )
