@@ -9,6 +9,149 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
+def _hermitian_psd_sqrt(
+    matrix,
+    *,
+    inverse: bool,
+):
+    matrix = np.asarray(
+        matrix,
+        dtype=complex,
+    )
+    matrix = 0.5 * (
+        matrix
+        + matrix.conj().T
+    )
+    values, vectors = np.linalg.eigh(
+        matrix
+    )
+    scale = max(
+        float(
+            np.max(
+                np.abs(
+                    values
+                )
+            )
+        ),
+        1e-30,
+    )
+    if inverse:
+        diagonal = 1.0 / np.sqrt(
+            np.maximum(
+                values.real,
+                1e-14 * scale,
+            )
+        )
+    else:
+        diagonal = np.sqrt(
+            np.maximum(
+                values.real,
+                0.0,
+            )
+        )
+    return (
+        vectors
+        @ np.diag(
+            diagonal
+        )
+        @ vectors.conj().T
+    )
+
+
+def _channel_congruence_transform(
+    raw_integral,
+    target,
+):
+    raw_integral = np.asarray(
+        raw_integral,
+        dtype=complex,
+    )
+    raw_integral = 0.5 * (
+        raw_integral
+        + raw_integral.conj().T
+    )
+    target = np.asarray(
+        target,
+        dtype=complex,
+    )
+    target = 0.5 * (
+        target
+        + target.conj().T
+    )
+    if np.linalg.norm(
+        target
+    ) <= 1e-18:
+        return np.zeros_like(
+            target,
+            dtype=complex,
+        )
+    return (
+        _hermitian_psd_sqrt(
+            target,
+            inverse=False,
+        )
+        @ _hermitian_psd_sqrt(
+            raw_integral,
+            inverse=True,
+        )
+    )
+
+
+def _fibonacci_directions(
+    count: int,
+) -> np.ndarray:
+    if count < 8:
+        raise ValueError(
+            "background angular order must be >= 8"
+        )
+    index = np.arange(
+        count,
+        dtype=float,
+    )
+    z = (
+        1.0
+        - 2.0
+        * (
+            index
+            + 0.5
+        )
+        / count
+    )
+    radius = np.sqrt(
+        np.maximum(
+            1.0
+            - z * z,
+            0.0,
+        )
+    )
+    golden = (
+        np.pi
+        * (
+            3.0
+            - np.sqrt(
+                5.0
+            )
+        )
+    )
+    angle = (
+        golden
+        * index
+    )
+    return np.column_stack(
+        (
+            radius
+            * np.cos(
+                angle
+            ),
+            radius
+            * np.sin(
+                angle
+            ),
+            z,
+        )
+    )
+
+
 @dataclass(frozen=True)
 class PreparedReferenceLossField:
     scene: Scene
@@ -16,13 +159,32 @@ class PreparedReferenceLossField:
     teacher: DenseMixedConductorTeacher
     result: object
     port_prediction: StructuredPortPrediction
+    background_transform: np.ndarray | None = None
+    raw_background_closure_error: float = 0.0
+    normalized_background_closure_error: float = 0.0
 
     @property
     def normalization_closure_error(
         self,
     ) -> float:
         return float(
-            self.port_prediction.power_closure_error()
+            max(
+                self.port_prediction.power_closure_error(),
+                self.normalized_background_closure_error,
+            )
+        )
+
+    @property
+    def background_channel_index(
+        self,
+    ) -> int | None:
+        if (
+            self.result.background_dissipation_matrix
+            is None
+        ):
+            return None
+        return len(
+            self.scene.coils
         )
 
     def local_dissipation_matrix(
@@ -69,6 +231,453 @@ class PreparedReferenceLossField:
             )
         )
 
+    def _charge_geometry(
+        self,
+    ):
+        (
+            _,
+            _,
+            current_constraint,
+            _,
+        ) = self.teacher._mqs.assemble()
+        (
+            _,
+            _,
+            _,
+            positions,
+            radii,
+        ) = self.teacher._topology(
+            current_constraint
+        )
+        return (
+            np.asarray(
+                positions,
+                dtype=float,
+            ),
+            np.asarray(
+                radii,
+                dtype=float,
+            ),
+        )
+
+    def background_quadrature(
+        self,
+        *,
+        radial_order: int = 12,
+        angular_order: int = 48,
+    ):
+        """Positive quadrature over the unbounded homogeneous background.
+
+        The radial map r=s*x/(1-x) integrates [0,infinity) without a world
+        truncation box. Angular directions are transported by the first coil
+        pose so a common rigid transform rotates/translates the quadrature
+        instead of changing an arbitrary world-grid orientation.
+        """
+        if radial_order < 3:
+            raise ValueError(
+                "background radial order must be >= 3"
+            )
+        directions = _fibonacci_directions(
+            int(
+                angular_order
+            )
+        )
+        rotation = np.asarray(
+            self.scene.coils[
+                0
+            ].geometry.pose.rotation,
+            dtype=float,
+        )
+        directions = (
+            directions
+            @ rotation.T
+        )
+
+        positions, radii = (
+            self._charge_geometry()
+        )
+        lower = np.min(
+            positions,
+            axis=0,
+        )
+        upper = np.max(
+            positions,
+            axis=0,
+        )
+        center = 0.5 * (
+            lower
+            + upper
+        )
+        scale = max(
+            float(
+                np.max(
+                    np.linalg.norm(
+                        positions
+                        - center[
+                            None,
+                            :
+                        ],
+                        axis=1,
+                    )
+                    + radii
+                )
+            ),
+            4.0
+            * float(
+                np.max(
+                    radii
+                )
+            ),
+            1e-6,
+        )
+
+        nodes, weights = (
+            np.polynomial.legendre.leggauss(
+                int(
+                    radial_order
+                )
+            )
+        )
+        unit = 0.5 * (
+            nodes
+            + 1.0
+        )
+        unit_weights = (
+            0.5
+            * weights
+        )
+        radius = (
+            scale
+            * unit
+            / (
+                1.0
+                - unit
+            )
+        )
+        derivative = (
+            scale
+            / (
+                1.0
+                - unit
+            ) ** 2
+        )
+        points = (
+            center[
+                None,
+                None,
+                :
+            ]
+            + radius[
+                :,
+                None,
+                None,
+            ]
+            * directions[
+                None,
+                :,
+                :
+            ]
+        )
+        volume_weights = (
+            unit_weights[
+                :,
+                None
+            ]
+            * radius[
+                :,
+                None
+            ] ** 2
+            * derivative[
+                :,
+                None
+            ]
+            * (
+                4.0
+                * np.pi
+                / int(
+                    angular_order
+                )
+            )
+            * np.ones(
+                (
+                    1,
+                    int(
+                        angular_order
+                    ),
+                ),
+                dtype=float,
+            )
+        )
+        return (
+            points.reshape(
+                -1,
+                3,
+            ),
+            volume_weights.reshape(
+                -1
+            ),
+        )
+
+    def electric_field_transfer(
+        self,
+        points,
+    ) -> np.ndarray:
+        """Return scalar-potential background E transfer as (n,3,n_ports)."""
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim != 2
+            or points.shape[
+                1
+            ] != 3
+        ):
+            raise ValueError(
+                "points must have shape (3,) or (n,3)"
+            )
+        positions, radii = (
+            self._charge_geometry()
+        )
+        epsilon = (
+            self.scene.medium.complex_permittivity(
+                self.frequency_hz
+            )
+        )
+        difference = (
+            points[
+                :,
+                None,
+                :
+            ]
+            - positions[
+                None,
+                :,
+                :
+            ]
+        )
+        soft = (
+            self.teacher.charge_self_radius_factor
+            * radii[
+                None,
+                :
+            ]
+        )
+        distance2 = (
+            np.sum(
+                difference
+                * difference,
+                axis=2,
+            )
+            + soft**2
+        )
+        kernel = (
+            difference
+            / (
+                4.0
+                * np.pi
+                * epsilon
+                * distance2[
+                    :,
+                    :,
+                    None,
+                ] ** 1.5
+            )
+        )
+        transfer = np.einsum(
+            "qjd,jp->qdp",
+            kernel,
+            self.result.node_charge,
+        )
+        return (
+            transfer[
+                0
+            ]
+            if scalar
+            else transfer
+        )
+
+    def raw_background_dissipation_matrices(
+        self,
+        points,
+    ) -> np.ndarray:
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        n_ports = int(
+            self.port_prediction.impedance.shape[
+                0
+            ]
+        )
+        if (
+            self.result.background_dissipation_matrix
+            is None
+        ):
+            out = np.zeros(
+                (
+                    len(
+                        points
+                    ),
+                    n_ports,
+                    n_ports,
+                ),
+                dtype=complex,
+            )
+            return (
+                out[
+                    0
+                ]
+                if scalar
+                else out
+            )
+        transfer = (
+            self.electric_field_transfer(
+                points
+            )
+        )
+        if transfer.ndim == 2:
+            transfer = (
+                transfer[
+                    None,
+                    :,
+                    :
+                ]
+            )
+        conductivity = (
+            self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
+        )
+        matrices = (
+            conductivity
+            * np.einsum(
+                "qdi,qdj->qij",
+                transfer.conj(),
+                transfer,
+            )
+        )
+        matrices = 0.5 * (
+            matrices
+            + matrices.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        return (
+            matrices[
+                0
+            ]
+            if scalar
+            else matrices
+        )
+
+    def background_dissipation_matrices(
+        self,
+        points,
+    ) -> np.ndarray:
+        raw = (
+            self.raw_background_dissipation_matrices(
+                points
+            )
+        )
+        scalar = (
+            raw.ndim == 2
+        )
+        if scalar:
+            raw = raw[
+                None,
+                :,
+                :
+            ]
+        if (
+            self.result.background_dissipation_matrix
+            is None
+        ):
+            corrected = raw
+        else:
+            if self.background_transform is None:
+                raise RuntimeError(
+                    "lossy-background spatial field is missing its "
+                    "power-normalization transform"
+                )
+            transform = np.asarray(
+                self.background_transform,
+                dtype=complex,
+            )
+            corrected = (
+                transform[
+                    None,
+                    :,
+                    :
+                ]
+                @ raw
+                @ transform.conj().T[
+                    None,
+                    :,
+                    :
+                ]
+            )
+            corrected = 0.5 * (
+                corrected
+                + corrected.conj().transpose(
+                    0,
+                    2,
+                    1,
+                )
+            )
+        return (
+            corrected[
+                0
+            ]
+            if scalar
+            else corrected
+        )
+
+    def background_joule_density(
+        self,
+        points,
+        currents,
+    ):
+        matrices = (
+            self.background_dissipation_matrices(
+                points
+            )
+        )
+        currents = np.asarray(
+            currents,
+            dtype=complex,
+        )
+        if currents.shape != (
+            self.port_prediction.impedance.shape[
+                0
+            ],
+        ):
+            raise ValueError(
+                "currents have wrong shape"
+            )
+        return 0.5 * np.real(
+            np.einsum(
+                "i,...ij,j->...",
+                currents.conj(),
+                matrices,
+                currents,
+            )
+        )
+
 
 class MixedReferenceArtifact:
     """Canonical mesh-free current-potential-charge REFERENCE artifact."""
@@ -77,10 +686,25 @@ class MixedReferenceArtifact:
         self,
         *,
         config: MQSConfig | None = None,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
     ):
+        if (
+            background_radial_order < 3
+            or background_angular_order < 8
+        ):
+            raise ValueError(
+                "invalid lossy-background spatial quadrature order"
+            )
         self.config = (
             config
             or MQSConfig()
+        )
+        self.background_radial_order = int(
+            background_radial_order
+        )
+        self.background_angular_order = int(
+            background_angular_order
         )
 
     def solve(
@@ -131,13 +755,6 @@ class MixedReferenceArtifact:
         scene: Scene,
         frequency_hz: float,
     ) -> PreparedReferenceLossField:
-        if scene.medium.conductivity > 0.0:
-            raise NotImplementedError(
-                "continuous spatial loss for a lossy homogeneous background "
-                "is not implemented yet; port/background dissipation truth is "
-                "available, but conductor-only spatial loss is not presented "
-                "as a complete environmental heat source"
-            )
         teacher, result = self.solve(
             scene,
             frequency_hz,
@@ -145,7 +762,91 @@ class MixedReferenceArtifact:
         prediction = (
             StructuredPortPrediction(
                 result.impedance,
-                result.coil_dissipation_matrices(),
+                result.dissipation_channels(),
+            )
+        )
+        provisional = (
+            PreparedReferenceLossField(
+                scene,
+                float(
+                    frequency_hz
+                ),
+                teacher,
+                result,
+                prediction,
+            )
+        )
+        target = (
+            result.background_dissipation_matrix
+        )
+        if target is None:
+            return provisional
+
+        points, weights = (
+            provisional.background_quadrature(
+                radial_order=(
+                    self.background_radial_order
+                ),
+                angular_order=(
+                    self.background_angular_order
+                ),
+            )
+        )
+        raw = (
+            provisional.raw_background_dissipation_matrices(
+                points
+            )
+        )
+        raw_integral = np.sum(
+            weights[
+                :,
+                None,
+                None,
+            ]
+            * raw,
+            axis=0,
+        )
+        target = np.asarray(
+            target,
+            dtype=complex,
+        )
+        raw_error = float(
+            np.linalg.norm(
+                raw_integral
+                - target
+            )
+            / max(
+                np.linalg.norm(
+                    target
+                ),
+                1e-30,
+            )
+        )
+        transform = (
+            _channel_congruence_transform(
+                raw_integral,
+                target,
+            )
+        )
+        normalized = (
+            transform
+            @ raw_integral
+            @ transform.conj().T
+        )
+        normalized = 0.5 * (
+            normalized
+            + normalized.conj().T
+        )
+        normalized_error = float(
+            np.linalg.norm(
+                normalized
+                - target
+            )
+            / max(
+                np.linalg.norm(
+                    target
+                ),
+                1e-30,
             )
         )
         return PreparedReferenceLossField(
@@ -156,4 +857,7 @@ class MixedReferenceArtifact:
             teacher,
             result,
             prediction,
+            transform,
+            raw_error,
+            normalized_error,
         )
