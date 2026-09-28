@@ -1543,3 +1543,87 @@ def test_hybrid_fast_exact_dc_hard_gates_reactance_and_keeps_conduction_loss_cha
         )
         >= -1e-10
     )
+
+
+def test_hybrid_fast_geometry_domain_accepts_declared_free_inclusion_and_legacy_domain_rejects_it():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            1,
+            1,
+        ),
+        free_inclusion_probability=1.0,
+        free_inclusion_center_radius_fraction_range=(
+            0.75,
+            1.25,
+        ),
+        free_inclusion_half_extent_fraction_range=(
+            0.12,
+            0.25,
+        ),
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            3529
+        ),
+        config,
+    )
+    assert all(
+        scene.packages[
+            0
+        ].geometry.classify_conductor(
+            coil.geometry,
+            longitudinal_segments=64,
+            section_points=16,
+            tolerance=1e-10,
+        )
+        == "outside"
+        for coil in scene.coils
+    )
+
+    package_domain = (
+        config.package_domain_metadata()
+    )
+    artifact = _artifact(
+        scene,
+        geometry_domain=(
+            config.geometry_domain_metadata()
+        ),
+        package_permittivity_range=tuple(
+            package_domain[
+                "effective_relative_permittivity_range"
+            ]
+        ),
+        package_loss_conductivity_range=tuple(
+            package_domain[
+                "effective_loss_conductivity_range"
+            ]
+        ),
+        package_permeability_range=tuple(
+            package_domain[
+                "relative_permeability_range"
+            ]
+        ),
+    )
+    prediction = artifact.predict_structured(
+        scene,
+        frequency,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+
+    legacy_domain = (
+        HybridSceneSamplerConfig().geometry_domain_metadata()
+    )
+    legacy = _artifact(
+        scene,
+        geometry_domain=legacy_domain,
+    )
+    with pytest.raises(
+        ValueError,
+        match="free material inclusions",
+    ):
+        legacy.predict_structured(
+            scene,
+            frequency,
+        )
