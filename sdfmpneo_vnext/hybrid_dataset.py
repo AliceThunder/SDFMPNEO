@@ -195,6 +195,55 @@ class ImmutableHybridTeacherDataset:
         )
         if not background:
             return None
+
+        effective = background.get(
+            "effective_loss_conductivity_range"
+        )
+        if effective is not None:
+            values = np.asarray(
+                effective,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "invalid effective background loss domain metadata"
+                )
+            if values[
+                1
+            ] <= 0.0:
+                return None
+            return (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+
+        # Backward-compatible schema-v3 metadata from the constant-medium
+        # generator before dispersive backgrounds were added.
         probability = float(
             background.get(
                 "lossy_probability",
@@ -242,6 +291,61 @@ class ImmutableHybridTeacherDataset:
         )
         return (
             lower,
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    @property
+    def background_permittivity_domain(
+        self,
+    ):
+        background = self.domain_metadata.get(
+            "background"
+        )
+        if not background:
+            return None
+        raw = background.get(
+            "effective_relative_permittivity_range",
+            background.get(
+                "relative_permittivity_range"
+            ),
+        )
+        if raw is None:
+            return None
+        values = np.asarray(
+            raw,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "invalid effective background permittivity domain metadata"
+            )
+        return (
+            float(
+                values[
+                    0
+                ]
+            ),
             float(
                 values[
                     1
