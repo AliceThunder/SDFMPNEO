@@ -810,6 +810,14 @@ class ImmutableHybridTeacherDataset:
                 sample.power_closure_error,
                 dtype=float,
             ),
+            magnetic_surface_residual=np.asarray(
+                sample.magnetic_surface_residual,
+                dtype=float,
+            ),
+            raw_magnetic_reciprocity_defect=np.asarray(
+                sample.raw_magnetic_reciprocity_defect,
+                dtype=float,
+            ),
             conductor_spatial_coil_index=(
                 np.asarray(
                     [],
@@ -1189,6 +1197,22 @@ class ImmutableHybridTeacherDataset:
                     "power_closure_error"
                 ]
             )
+            magnetic_surface_residual = float(
+                data[
+                    "magnetic_surface_residual"
+                ]
+            ) if (
+                "magnetic_surface_residual"
+                in data.files
+            ) else 0.0
+            raw_magnetic_reciprocity = float(
+                data[
+                    "raw_magnetic_reciprocity_defect"
+                ]
+            ) if (
+                "raw_magnetic_reciprocity_defect"
+                in data.files
+            ) else 0.0
             if (
                 "conductor_spatial_coil_index"
                 in data.files
@@ -1337,6 +1361,12 @@ class ImmutableHybridTeacherDataset:
             ),
             power_closure_error=(
                 closure
+            ),
+            magnetic_surface_residual=(
+                magnetic_surface_residual
+            ),
+            raw_magnetic_reciprocity_defect=(
+                raw_magnetic_reciprocity
             ),
             conductor_spatial_loss=(
                 conductor_spatial
