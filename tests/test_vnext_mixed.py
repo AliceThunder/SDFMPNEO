@@ -678,3 +678,94 @@ def test_tabulated_background_runs_mixed_reference_inside_declared_frequency_tab
         raise AssertionError(
             "tabulated material must not extrapolate outside its frequency domain"
         )
+
+
+def test_conductive_homogeneous_background_runs_true_dc_environment_current_formulation():
+    scene = Scene(
+        (
+            coil(
+                0.025
+            ),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        HomogeneousMedium(
+            relative_permittivity=3.0,
+            relative_permeability=1.0,
+            conductivity=2.0e-3,
+        ),
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        0.0,
+        CFG,
+    ).solve()
+
+    assert (
+        result.node_environment_current
+        is not None
+    )
+    assert (
+        np.linalg.norm(
+            result.node_environment_current
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        result.node_charge,
+        0.0,
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert (
+        result.background_dissipation_matrix
+        is not None
+    )
+    currents = np.asarray(
+        [
+            1.0 + 0.0j,
+            -0.35 + 0.0j,
+        ]
+    )
+    assert (
+        result.continuity_residual(
+            currents,
+            0.0,
+        )
+        < 1e-9
+    )
+    channels = result.dissipation_channels()
+    total = 0.5 * (
+        result.impedance
+        + result.impedance.conj().T
+    )
+    assert np.allclose(
+        np.sum(
+            channels,
+            axis=0,
+        ),
+        total,
+        rtol=8e-6,
+        atol=8e-8,
+    )
+    for channel in channels:
+        assert (
+            np.min(
+                np.linalg.eigvalsh(
+                    0.5
+                    * (
+                        channel
+                        + channel.conj().T
+                    )
+                )
+            )
+            >= -2e-8
+        )
+    assert (
+        np.linalg.norm(
+            result.impedance.imag
+        )
+        < 1e-10
+    )
