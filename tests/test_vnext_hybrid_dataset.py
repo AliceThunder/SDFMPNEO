@@ -727,7 +727,7 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
 
 def test_hybrid_sampler_generates_passive_multi_debye_media(tmp_path):
     config = HybridSceneSamplerConfig(
-        lossless_probability=1.0,
+        lossless_probability=0.0,
         lossy_background_probability=0.0,
         debye_package_probability=0.0,
         multi_debye_package_probability=1.0,
@@ -1348,4 +1348,76 @@ def test_hybrid_sampler_teacher_and_dataset_support_true_conductive_dc(tmp_path)
     assert np.allclose(
         loaded.target_impedance,
         sample.target_impedance,
+    )
+
+
+def test_hybrid_sampler_teacher_supports_insulating_packages_in_conductive_dc():
+    sampler = HybridSceneSamplerConfig(
+        dc_probability=1.0,
+        dc_conductive_probability=1.0,
+        package_count_range=(
+            1,
+            1,
+        ),
+        background_conductivity_range=(
+            1.0e-3,
+            2.0e-3,
+        ),
+        lossless_probability=1.0,
+        lossy_background_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            4811
+        ),
+        sampler,
+    )
+    assert frequency == 0.0
+    assert (
+        scene.medium.loss_conductivity(
+            0.0
+        )
+        > 0.0
+    )
+    assert all(
+        package.material.loss_conductivity(
+            0.0
+        )
+        == 0.0
+        for package in scene.packages
+    )
+
+    sample = HybridTeacherSample.generate(
+        scene,
+        frequency,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=8,
+        background_angular_order=24,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+    assert (
+        sample.frequency_hz
+        == 0.0
+    )
+    assert (
+        sample.power_closure_error
+        < 1e-5
+    )
+    assert np.all(
+        np.isfinite(
+            sample.target_impedance
+        )
+    )
+    assert (
+        np.linalg.norm(
+            sample.target_impedance.imag
+        )
+        < 1e-9
     )
