@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo_vnext import (
     ConductorMaterial,
     CoilObject,
+    DebyeMaterial,
     DenseMixedConductorTeacher,
     HomogeneousMedium,
     ImmutableTeacherDataset,
@@ -483,4 +484,53 @@ def test_dataset_rejects_reference_backend_provenance_mismatch(tmp_path):
     else:
         raise AssertionError(
             "dataset must reject a backend label that disagrees with sample provenance"
+        )
+
+
+def test_scene_serialization_round_trips_debye_background():
+    base = _scene()
+    medium = DebyeMaterial(
+        relative_permittivity_static=18.0,
+        relative_permittivity_infinite=4.0,
+        relaxation_time=2.5e-6,
+        relative_permeability=1.0,
+        conductivity=0.0,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+    )
+    restored = scene_from_dict(
+        scene_to_dict(
+            scene
+        )
+    )
+    assert isinstance(
+        restored.medium,
+        DebyeMaterial,
+    )
+    assert np.isclose(
+        restored.medium.relative_permittivity_static,
+        medium.relative_permittivity_static,
+    )
+    assert np.isclose(
+        restored.medium.relative_permittivity_infinite,
+        medium.relative_permittivity_infinite,
+    )
+    assert np.isclose(
+        restored.medium.relaxation_time,
+        medium.relaxation_time,
+    )
+    for frequency in (
+        10_000.0,
+        100_000.0,
+        1_000_000.0,
+    ):
+        assert np.isclose(
+            restored.medium.complex_permittivity(
+                frequency
+            ),
+            medium.complex_permittivity(
+                frequency
+            ),
         )
