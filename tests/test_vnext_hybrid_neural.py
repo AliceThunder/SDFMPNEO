@@ -1142,6 +1142,39 @@ def test_hybrid_fast_geometry_domain_is_se3_invariant_and_fails_closed_outside_p
             frequency,
         )
 
+    oversized_geometry = SuperquadricPackageGeometry(
+        package.geometry.half_extents
+        * 4.0,
+        exponent_xy=(
+            package.geometry.exponent_xy
+        ),
+        exponent_z=(
+            package.geometry.exponent_z
+        ),
+        pose=(
+            package.geometry.pose
+        ),
+    )
+    oversized = Scene(
+        scene.coils,
+        scene.medium,
+        (
+            PackageObject(
+                oversized_geometry,
+                package.material,
+                package.name,
+            ),
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="package enclosure scale",
+    ):
+        artifact.predict_structured(
+            oversized,
+            frequency,
+        )
+
 
 def test_legacy_hybrid_port_fingerprint_ignores_newer_geometry_domain_and_resaves_stably(tmp_path):
     scene = _scene()
