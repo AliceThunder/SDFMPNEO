@@ -1099,3 +1099,94 @@ def test_hybrid_sampler_generates_three_strictly_nested_packages():
         ]
         == "strict_chain_or_disjoint_roots"
     )
+
+
+def test_nested_package_teacher_spatial_truth_uses_unique_material_regions():
+    sampler = HybridSceneSamplerConfig(
+        package_count_range=(
+            2,
+            2,
+        ),
+        nested_package_probability=1.0,
+        nested_package_scale_range=(
+            1.18,
+            1.22,
+        ),
+        lossless_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            2417
+        ),
+        sampler,
+    )
+    sample = HybridTeacherSample.generate(
+        scene,
+        frequency,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+    assert sample.target_dissipation_channels.shape == (
+        len(
+            scene.coils
+        )
+        + 1,
+        len(
+            scene.coils
+        ),
+        len(
+            scene.coils
+        ),
+    )
+    package_integrated = (
+        sample.package_spatial_loss.integrated_packages(
+            len(
+                scene.packages
+            )
+        )
+    )
+    assert np.allclose(
+        np.sum(
+            package_integrated,
+            axis=0,
+        ),
+        sample.target_dissipation_channels[
+            len(
+                scene.coils
+            )
+        ],
+        rtol=3e-5,
+        atol=3e-9,
+    )
+
+    outer_mask = (
+        sample.package_spatial_loss.package_index
+        == 1
+    )
+    outer_local = (
+        sample.package_spatial_loss.local_position[
+            outer_mask
+        ]
+    )
+    outer_world = (
+        scene.packages[
+            1
+        ].geometry.local_to_world(
+            outer_local
+        )
+    )
+    assert not np.any(
+        scene.packages[
+            0
+        ].geometry.contains(
+            outer_world,
+            tolerance=2e-12,
+        )
+    )
