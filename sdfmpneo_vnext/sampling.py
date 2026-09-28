@@ -1642,8 +1642,11 @@ def _sample_disjoint_package_geometries(
                 accepted = candidate
                 break
         if accepted is None:
-            # Falling back to a free inclusion preserves the declared
-            # disjoint-root topology without silently switching to nesting.
+            if config.free_inclusion_probability <= 0.0:
+                raise RuntimeError(
+                    "failed to sample disjoint enclosing package roots "
+                    "without leaving the declared geometry domain"
+                )
             accepted = _sample_free_inclusion_geometry(
                 rng,
                 base_scene,
@@ -1979,11 +1982,22 @@ def sample_hybrid_package_scene(
             + 1,
         )
     )
+    force_nested = (
+        package_count
+        > len(
+            base_scene.coils
+        )
+        and config.free_inclusion_probability
+        <= 0.0
+    )
     nested = (
         package_count
         > 1
-        and rng.random()
-        < config.nested_package_probability
+        and (
+            force_nested
+            or rng.random()
+            < config.nested_package_probability
+        )
     )
     if nested:
         geometries = _nested_package_geometries(
