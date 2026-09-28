@@ -354,6 +354,113 @@ class ImmutableHybridTeacherDataset:
         )
 
     @property
+    def package_permittivity_domain(
+        self,
+    ):
+        package = self.domain_metadata.get(
+            "package"
+        )
+        if not package:
+            return None
+        raw = package.get(
+            "effective_relative_permittivity_range",
+            package.get(
+                "relative_permittivity_range"
+            ),
+        )
+        if raw is None:
+            return None
+        values = np.asarray(
+            raw,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "invalid effective package permittivity domain metadata"
+            )
+        return (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    @property
+    def package_loss_conductivity_domain(
+        self,
+    ):
+        package = self.domain_metadata.get(
+            "package"
+        )
+        if not package:
+            return None
+        raw = package.get(
+            "effective_loss_conductivity_range"
+        )
+        if raw is None:
+            return None
+        values = np.asarray(
+            raw,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] < 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "invalid effective package loss domain metadata"
+            )
+        return (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    @property
     def split_seed(
         self,
     ) -> int:
