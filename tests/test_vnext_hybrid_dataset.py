@@ -1421,3 +1421,94 @@ def test_hybrid_sampler_teacher_supports_insulating_packages_in_conductive_dc():
         )
         < 1e-9
     )
+
+
+def test_hybrid_sampler_and_teacher_support_free_material_inclusion():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            1,
+            1,
+        ),
+        nested_package_probability=0.0,
+        free_inclusion_probability=1.0,
+        free_inclusion_center_radius_fraction_range=(
+            0.75,
+            1.25,
+        ),
+        free_inclusion_half_extent_fraction_range=(
+            0.12,
+            0.25,
+        ),
+        relative_permittivity_range=(
+            4.0,
+            5.0,
+        ),
+        dielectric_conductivity_range=(
+            8.0e-4,
+            2.0e-3,
+        ),
+        lossless_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            2719
+        ),
+        config,
+    )
+    assert len(
+        scene.packages
+    ) == 1
+    package = scene.packages[
+        0
+    ]
+    assert all(
+        package.geometry.classify_conductor(
+            coil.geometry,
+            longitudinal_segments=64,
+            section_points=16,
+            tolerance=1e-10,
+        )
+        == "outside"
+        for coil in scene.coils
+    )
+
+    metadata = config.geometry_domain_metadata()
+    assert (
+        metadata[
+            "package"
+        ][
+            "free_inclusion_probability"
+        ]
+        == 1.0
+    )
+
+    sample = HybridTeacherSample.generate(
+        scene,
+        frequency,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+    package_integrated = (
+        sample.package_spatial_loss.integrated_packages(
+            1
+        )[
+            0
+        ]
+    )
+    assert (
+        np.linalg.norm(
+            package_integrated
+        )
+        > 0.0
+    )
+    assert (
+        sample.power_closure_error
+        < 1e-5
+    )
