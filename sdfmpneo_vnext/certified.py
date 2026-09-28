@@ -301,10 +301,87 @@ def certify_mqs_ports(
         )
     )
 
-    fast_prediction = artifact.predict_structured(
-        scene,
-        frequency_hz,
-    )
+    try:
+        fast_prediction = artifact.predict_structured(
+            scene,
+            frequency_hz,
+        )
+    except (
+        ValueError,
+        NotImplementedError,
+    ) as exc:
+        if not allow_reference_fallback:
+            raise
+        result = teacher.solve()
+        port_certificate = certify_port_result(
+            result,
+            residual_tolerance=(
+                algebraic_tolerance
+            ),
+            reciprocity_tolerance=1e-8,
+            power_tolerance=1e-7,
+            passivity_tolerance=1e-10,
+        )
+        algebraic_certified = bool(
+            port_certificate.certified
+        )
+        discretization_certified = bool(
+            convergence_report
+            is not None
+            and getattr(
+                convergence_report,
+                "converged",
+                False,
+            )
+        )
+        if not algebraic_certified:
+            status = "UNCERTIFIED"
+        elif discretization_certified:
+            status = (
+                "CORRECTED_OUT_OF_FAST_DOMAIN"
+            )
+        else:
+            status = (
+                "DISCRETE_CERTIFIED"
+            )
+        return CertifiedPortResult(
+            status=status,
+            impedance=result.impedance,
+            result=result,
+            port_certificate=(
+                port_certificate
+            ),
+            initial_residual=float(
+                "inf"
+            ),
+            final_residual=0.0,
+            correction_iterations=tuple(
+                0
+                for _ in range(
+                    B.shape[
+                        1
+                    ]
+                )
+            ),
+            algebraic_certified=(
+                algebraic_certified
+            ),
+            discretization_certified=(
+                discretization_certified
+            ),
+            used_reference_fallback=True,
+            operator_backend=(
+                "dense_reference_fallback"
+            ),
+            relative_observable_correction=float(
+                "inf"
+            ),
+            fast_domain_valid=False,
+            fast_domain_reason=str(
+                exc
+            ),
+        )
+
     fast_impedance = np.asarray(
         fast_prediction.impedance,
         dtype=complex,
@@ -1198,12 +1275,93 @@ def certify_mixed_ports(
             matrix_free.resistive_preconditioner()
         )
 
-    fast_prediction = (
-        artifact.predict_structured(
-            scene,
-            frequency_hz,
+    try:
+        fast_prediction = (
+            artifact.predict_structured(
+                scene,
+                frequency_hz,
+            )
         )
-    )
+    except (
+        ValueError,
+        NotImplementedError,
+    ) as exc:
+        if not allow_reference_fallback:
+            raise
+        result = teacher.solve()
+        port_certificate = (
+            certify_port_result(
+                result,
+                residual_tolerance=(
+                    algebraic_tolerance
+                ),
+                reciprocity_tolerance=1e-8,
+                power_tolerance=1e-7,
+                passivity_tolerance=1e-10,
+            )
+        )
+        algebraic_certified = bool(
+            port_certificate.certified
+        )
+        discretization_certified = bool(
+            convergence_report
+            is not None
+            and getattr(
+                convergence_report,
+                "converged",
+                False,
+            )
+        )
+        if not algebraic_certified:
+            status = "UNCERTIFIED"
+        elif discretization_certified:
+            status = (
+                "CORRECTED_OUT_OF_FAST_DOMAIN"
+            )
+        else:
+            status = (
+                "DISCRETE_CERTIFIED"
+            )
+        return CertifiedPortResult(
+            status=status,
+            impedance=result.impedance,
+            result=result,
+            port_certificate=(
+                port_certificate
+            ),
+            initial_residual=float(
+                "inf"
+            ),
+            final_residual=float(
+                result.normalized_residual
+            ),
+            correction_iterations=tuple(
+                0
+                for _ in range(
+                    B.shape[
+                        1
+                    ]
+                )
+            ),
+            algebraic_certified=(
+                algebraic_certified
+            ),
+            discretization_certified=(
+                discretization_certified
+            ),
+            used_reference_fallback=True,
+            operator_backend=(
+                "dense_reference_fallback"
+            ),
+            relative_observable_correction=float(
+                "inf"
+            ),
+            fast_domain_valid=False,
+            fast_domain_reason=str(
+                exc
+            ),
+        )
+
     fast_impedance = np.asarray(
         fast_prediction.impedance,
         dtype=complex,
