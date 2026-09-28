@@ -255,6 +255,47 @@ class PreparedHybridReferenceLossField:
             node_radii,
             source_permittivity,
         ) = self._charge_geometry()
+        source_state = (
+            self.result.mixed_result.node_environment_current
+            if self.result.mixed_result.node_environment_current
+            is not None
+            else self.result.mixed_result.node_charge
+        )
+        if (
+            self.result.mixed_result.node_environment_current
+            is not None
+        ):
+            coefficient_scale = max(
+                float(
+                    np.max(
+                        np.abs(
+                            source_permittivity
+                        )
+                    )
+                ),
+                1e-30,
+            )
+            active = (
+                np.abs(
+                    source_permittivity
+                )
+                > 1e-13
+                * coefficient_scale
+            )
+            node_positions = node_positions[
+                active
+            ]
+            node_radii = node_radii[
+                active
+            ]
+            source_permittivity = (
+                source_permittivity[
+                    active
+                ]
+            )
+            source_state = source_state[
+                active
+            ]
 
         diff = (
             points[
@@ -299,12 +340,6 @@ class PreparedHybridReferenceLossField:
                     None,
                 ]
             )
-        )
-        source_state = (
-            self.result.mixed_result.node_environment_current
-            if self.result.mixed_result.node_environment_current
-            is not None
-            else self.result.mixed_result.node_charge
         )
         direct = np.einsum(
             "qjd,jp->qdp",
