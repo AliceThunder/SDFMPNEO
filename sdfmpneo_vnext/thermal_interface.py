@@ -2424,7 +2424,7 @@ class PreparedMultiThermalInterfaceField:
 
 
 class PiecewiseThermalInterfaceArtifact:
-    """REFERENCE thermal transfer for one superquadric material interface."""
+    """REFERENCE thermal transfer for one or more disjoint package interfaces."""
 
     def __init__(
         self,
@@ -2541,21 +2541,8 @@ class PiecewiseThermalInterfaceArtifact:
                 scene,
                 frequency_hz,
             )
-        if len(
-            thermal_packages
-        ) != 1:
-            raise NotImplementedError(
-                "piecewise thermal REFERENCE currently supports exactly one "
-                "thermally distinct superquadric package"
-            )
-
         validate_package_conductor_topology(
             scene
-        )
-        package_index, package_medium = (
-            thermal_packages[
-                0
-            ]
         )
         if hasattr(
             self.spatial_artifact,
@@ -2610,13 +2597,59 @@ class PiecewiseThermalInterfaceArtifact:
                 self.background_angular_order
             ),
         )
-        return PreparedThermalInterfaceField(
+        if len(
+            thermal_packages
+        ) == 1:
+            package_index, package_medium = (
+                thermal_packages[
+                    0
+                ]
+            )
+            return PreparedThermalInterfaceField(
+                source,
+                self.background_medium,
+                scene.packages[
+                    package_index
+                ].geometry,
+                package_medium,
+                surface_vertical_order=(
+                    self.interface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    self.interface_azimuthal_order
+                ),
+                mfs_offset_fraction=(
+                    self.mfs_offset_fraction
+                ),
+                stehfest_order=(
+                    self.stehfest_order
+                ),
+                interface_residual_tolerance=(
+                    self.interface_residual_tolerance
+                ),
+                svd_rcond=(
+                    self.svd_rcond
+                ),
+            )
+
+        package_regions = tuple(
+            (
+                package_index,
+                scene.packages[
+                    package_index
+                ].geometry,
+                package_medium,
+            )
+            for (
+                package_index,
+                package_medium,
+            )
+            in thermal_packages
+        )
+        return PreparedMultiThermalInterfaceField(
             source,
             self.background_medium,
-            scene.packages[
-                package_index
-            ].geometry,
-            package_medium,
+            package_regions,
             surface_vertical_order=(
                 self.interface_vertical_order
             ),
