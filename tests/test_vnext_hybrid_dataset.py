@@ -949,12 +949,13 @@ def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose():
         * offset_scale
     )
 
-    centerline = root.sample_centerline(
-        257
+    conductor_surface = root.surface_samples(
+        longitudinal_segments=96,
+        section_points=20,
     )
     assert np.all(
         package.contains(
-            centerline
+            conductor_surface
         )
     )
 
