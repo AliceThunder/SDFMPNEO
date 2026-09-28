@@ -25,6 +25,10 @@ class HybridReferenceConvergenceDirection:
     channel_relative_change: float
     surface_residual: float
     maximum_relative_change: float
+    magnetic_surface_residual: float = 0.0
+    magnetic_volume_axial_order: int | None = None
+    magnetic_volume_radial_order: int | None = None
+    magnetic_volume_azimuthal_order: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,11 @@ class HybridReferenceConvergenceReport:
     maximum_relative_change: float
     maximum_surface_residual: float
     converged: bool
+    magnetic_surface_residual_tolerance: float = 1e-9
+    maximum_magnetic_surface_residual: float = 0.0
+    magnetic_volume_axial_order: int | None = None
+    magnetic_volume_radial_order: int | None = None
+    magnetic_volume_azimuthal_order: int | None = None
 
 
 def _surface_refinement(
@@ -73,12 +82,54 @@ def _surface_refinement(
     )
 
 
+def _magnetic_volume_refinement(
+    axial_order: int,
+    radial_order: int,
+    azimuthal_order: int,
+):
+    axial = max(
+        axial_order + 2,
+        int(
+            np.ceil(
+                1.5
+                * axial_order
+            )
+        ),
+    )
+    radial = max(
+        radial_order + 2,
+        int(
+            np.ceil(
+                1.5
+                * radial_order
+            )
+        ),
+    )
+    azimuthal = max(
+        azimuthal_order + 8,
+        int(
+            np.ceil(
+                1.5
+                * azimuthal_order
+            )
+        ),
+    )
+    return (
+        axial,
+        radial,
+        azimuthal,
+    )
+
+
 def _hybrid_observables(
     scene,
     frequency_hz: float,
     config: MQSConfig,
     surface_vertical_order: int,
     surface_azimuthal_order: int,
+    magnetic_volume_axial_order: int,
+    magnetic_volume_radial_order: int,
+    magnetic_volume_azimuthal_order: int,
 ):
     result = (
         DielectricCoupledMixedTeacher(
@@ -91,6 +142,15 @@ def _hybrid_observables(
             surface_azimuthal_order=(
                 surface_azimuthal_order
             ),
+            magnetic_volume_axial_order=(
+                magnetic_volume_axial_order
+            ),
+            magnetic_volume_radial_order=(
+                magnetic_volume_radial_order
+            ),
+            magnetic_volume_azimuthal_order=(
+                magnetic_volume_azimuthal_order
+            ),
         ).solve()
     )
     return (
@@ -98,6 +158,9 @@ def _hybrid_observables(
         result.prediction.dissipation_channels,
         float(
             result.surface_residual
+        ),
+        float(
+            result.magnetic_surface_residual
         ),
     )
 
@@ -109,10 +172,14 @@ def hybrid_reference_convergence(
     *,
     surface_vertical_order: int = 16,
     surface_azimuthal_order: int = 32,
+    magnetic_volume_axial_order: int = 8,
+    magnetic_volume_radial_order: int = 6,
+    magnetic_volume_azimuthal_order: int = 24,
     tolerance: float = 2e-3,
     surface_residual_tolerance: float = 1e-9,
+    magnetic_surface_residual_tolerance: float = 1e-9,
 ) -> HybridReferenceConvergenceReport:
-    """Independent conductor and dielectric-SIE refinement for package scenes."""
+    """Independent conductor, interface-surface, and magnetic-volume refinement."""
     if not scene.packages:
         raise ValueError(
             "hybrid reference convergence requires at least one package"
@@ -124,6 +191,18 @@ def hybrid_reference_convergence(
     if surface_residual_tolerance <= 0.0:
         raise ValueError(
             "surface_residual_tolerance must be positive"
+        )
+    if magnetic_surface_residual_tolerance <= 0.0:
+        raise ValueError(
+            "magnetic_surface_residual_tolerance must be positive"
+        )
+    if (
+        magnetic_volume_axial_order < 2
+        or magnetic_volume_radial_order < 2
+        or magnetic_volume_azimuthal_order < 8
+    ):
+        raise ValueError(
+            "invalid base magnetic volume quadrature order"
         )
     if (
         surface_vertical_order < 4
@@ -138,18 +217,29 @@ def hybrid_reference_convergence(
         base_impedance,
         base_channels,
         base_surface_residual,
+        base_magnetic_surface_residual,
     ) = _hybrid_observables(
         scene,
         frequency_hz,
         base_config,
         surface_vertical_order,
         surface_azimuthal_order,
+        magnetic_volume_axial_order,
+        magnetic_volume_radial_order,
+        magnetic_volume_azimuthal_order,
     )
 
     surface_refined = (
         _surface_refinement(
             surface_vertical_order,
             surface_azimuthal_order,
+        )
+    )
+    magnetic_volume_refined = (
+        _magnetic_volume_refinement(
+            magnetic_volume_axial_order,
+            magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order,
         )
     )
     refinements = (
@@ -160,6 +250,9 @@ def hybrid_reference_convergence(
             ),
             surface_vertical_order,
             surface_azimuthal_order,
+            magnetic_volume_axial_order,
+            magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order,
         ),
         (
             "cross_section",
@@ -168,6 +261,9 @@ def hybrid_reference_convergence(
             ),
             surface_vertical_order,
             surface_azimuthal_order,
+            magnetic_volume_axial_order,
+            magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order,
         ),
         (
             "quadrature",
@@ -176,6 +272,9 @@ def hybrid_reference_convergence(
             ),
             surface_vertical_order,
             surface_azimuthal_order,
+            magnetic_volume_axial_order,
+            magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order,
         ),
         (
             "dielectric_surface",
@@ -186,6 +285,24 @@ def hybrid_reference_convergence(
             surface_refined[
                 1
             ],
+            magnetic_volume_axial_order,
+            magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order,
+        ),
+        (
+            "magnetic_volume",
+            base_config,
+            surface_vertical_order,
+            surface_azimuthal_order,
+            magnetic_volume_refined[
+                0
+            ],
+            magnetic_volume_refined[
+                1
+            ],
+            magnetic_volume_refined[
+                2
+            ],
         ),
     )
 
@@ -195,17 +312,24 @@ def hybrid_reference_convergence(
         config,
         vertical,
         azimuthal,
+        magnetic_axial,
+        magnetic_radial,
+        magnetic_azimuthal,
     ) in refinements:
         (
             impedance,
             channels,
             surface_residual,
+            magnetic_surface_residual,
         ) = _hybrid_observables(
             scene,
             frequency_hz,
             config,
             vertical,
             azimuthal,
+            magnetic_axial,
+            magnetic_radial,
+            magnetic_azimuthal,
         )
         impedance_error = (
             _relative_observable_change(
@@ -247,6 +371,18 @@ def hybrid_reference_convergence(
                 maximum_relative_change=(
                     maximum
                 ),
+                magnetic_surface_residual=float(
+                    magnetic_surface_residual
+                ),
+                magnetic_volume_axial_order=int(
+                    magnetic_axial
+                ),
+                magnetic_volume_radial_order=int(
+                    magnetic_radial
+                ),
+                magnetic_volume_azimuthal_order=int(
+                    magnetic_azimuthal
+                ),
             )
         )
 
@@ -267,6 +403,18 @@ def hybrid_reference_convergence(
             ]
             + [
                 direction.surface_residual
+                for direction
+                in directions
+            ]
+        )
+    )
+    maximum_magnetic_surface_residual = float(
+        max(
+            [
+                base_magnetic_surface_residual
+            ]
+            + [
+                direction.magnetic_surface_residual
                 for direction
                 in directions
             ]
@@ -298,5 +446,22 @@ def hybrid_reference_convergence(
             <= tolerance
             and maximum_surface_residual
             <= surface_residual_tolerance
+            and maximum_magnetic_surface_residual
+            <= magnetic_surface_residual_tolerance
+        ),
+        magnetic_surface_residual_tolerance=float(
+            magnetic_surface_residual_tolerance
+        ),
+        maximum_magnetic_surface_residual=(
+            maximum_magnetic_surface_residual
+        ),
+        magnetic_volume_axial_order=int(
+            magnetic_volume_axial_order
+        ),
+        magnetic_volume_radial_order=int(
+            magnetic_volume_radial_order
+        ),
+        magnetic_volume_azimuthal_order=int(
+            magnetic_volume_azimuthal_order
         ),
     )
