@@ -151,6 +151,37 @@ def _enclosure_key(
     )
 
 
+def validate_package_conductor_topology(
+    scene: Scene,
+    *,
+    validated_pairs=None,
+) -> None:
+    """Reject package surfaces that cut through finite conductor volumes."""
+    for package in scene.packages:
+        for coil in scene.coils:
+            key = _enclosure_key(
+                coil.geometry,
+                package.geometry,
+            )
+            if (
+                validated_pairs
+                is not None
+                and key
+                in validated_pairs
+            ):
+                continue
+            package.geometry.classify_conductor(
+                coil.geometry,
+                longitudinal_segments=64,
+                section_points=16,
+                tolerance=1e-10,
+            )
+            if validated_pairs is not None:
+                validated_pairs.add(
+                    key
+                )
+
+
 def validate_hybrid_geometry_domain(
     scene: Scene,
     frequency_hz: float,
