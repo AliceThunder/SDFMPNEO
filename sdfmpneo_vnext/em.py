@@ -488,6 +488,265 @@ class DenseMQSTeacher:
             + matrix.conj().T
         )
 
+    def magnetic_field_mode_transfer(
+        self,
+        points,
+    ) -> np.ndarray:
+        """Return H-field transfer from every current mode at world points."""
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim != 2
+            or points.shape[
+                1
+            ] != 3
+            or np.any(
+                ~np.isfinite(
+                    points
+                )
+            )
+        ):
+            raise ValueError(
+                "points must have shape (3,) or (n,3)"
+            )
+        out = np.zeros(
+            (
+                len(
+                    points
+                ),
+                3,
+                self._n_modes,
+            ),
+            dtype=float,
+        )
+        prefactor = (
+            1.0
+            / (
+                4.0
+                * np.pi
+            )
+        )
+        for segment in self._segments:
+            support, weights, values = (
+                self._support_quadrature(
+                    segment
+                )
+            )
+            difference = (
+                points[
+                    :,
+                    None,
+                    :
+                ]
+                - support[
+                    None,
+                    :,
+                    :
+                ]
+            )
+            distance_squared = np.sum(
+                difference
+                * difference,
+                axis=2,
+            )
+            scale = max(
+                float(
+                    segment.length
+                ),
+                1e-12,
+            )
+            if np.any(
+                distance_squared
+                <= (
+                    1e-14
+                    * scale
+                ) ** 2
+            ):
+                raise ValueError(
+                    "magnetic-field query lies on a conductor support node"
+                )
+            inverse_distance_cubed = (
+                distance_squared
+                ** (
+                    -1.5
+                )
+            )
+            cross = np.cross(
+                segment.tangent[
+                    None,
+                    None,
+                    :
+                ],
+                difference,
+            )
+            kernel = (
+                prefactor
+                * cross
+                * inverse_distance_cubed[
+                    :,
+                    :,
+                    None,
+                ]
+            )
+            weighted_basis = (
+                weights[
+                    :,
+                    None,
+                ]
+                * values
+            )
+            out[
+                :,
+                :,
+                segment.mode_slice,
+            ] += np.einsum(
+                "qsd,sm->qdm",
+                kernel,
+                weighted_basis,
+            )
+        return (
+            out[
+                0
+            ]
+            if scalar
+            else out
+        )
+
+    def points_in_conductors(
+        self,
+        points,
+        *,
+        tolerance: float = 1e-10,
+    ) -> np.ndarray:
+        """Classify points against the finite segmented conductor volumes."""
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim != 2
+            or points.shape[
+                1
+            ] != 3
+            or tolerance < 0.0
+        ):
+            raise ValueError(
+                "points must have shape (3,) or (n,3) and nonnegative tolerance"
+            )
+        inside = np.zeros(
+            len(
+                points
+            ),
+            dtype=bool,
+        )
+        for segment in self._segments:
+            geometry = (
+                self.scene.coils[
+                    segment.coil
+                ].geometry
+            )
+            relative = (
+                points
+                - segment.midpoint[
+                    None,
+                    :
+                ]
+            )
+            longitudinal = (
+                relative
+                @ segment.tangent
+            )
+            candidate = (
+                np.abs(
+                    longitudinal
+                )
+                <= (
+                    0.5
+                    * segment.length
+                    + tolerance
+                )
+            )
+            if not np.any(
+                candidate
+            ):
+                continue
+            local = relative[
+                candidate
+            ]
+            x = (
+                local
+                @ segment.n1
+            )
+            y = (
+                local
+                @ segment.n2
+            )
+            a = (
+                0.5
+                * geometry.conductor_width
+            )
+            b = (
+                0.5
+                * geometry.conductor_thickness
+            )
+            exponent = (
+                geometry.cross_section_exponent
+            )
+            section_inside = (
+                (
+                    np.abs(
+                        x
+                    )
+                    / a
+                ) ** exponent
+                + (
+                    np.abs(
+                        y
+                    )
+                    / b
+                ) ** exponent
+                <= (
+                    1.0
+                    + tolerance
+                    / max(
+                        min(
+                            a,
+                            b,
+                        ),
+                        1e-30,
+                    )
+                )
+            )
+            indices = np.flatnonzero(
+                candidate
+            )
+            inside[
+                indices[
+                    section_inside
+                ]
+            ] = True
+        return (
+            inside[
+                0
+            ]
+            if scalar
+            else inside
+        )
+
     def assemble(self):
         m = self._n_modes
         ns = len(self._segments)
