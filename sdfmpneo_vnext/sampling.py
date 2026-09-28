@@ -294,6 +294,78 @@ class HybridSceneSamplerConfig:
             )
 
 
+    def package_domain_metadata(
+        self,
+    ):
+        return {
+            "relative_permittivity_range": [
+                float(
+                    self.relative_permittivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.relative_permittivity_range[
+                        1
+                    ]
+                ),
+            ],
+            "conductivity_range": [
+                float(
+                    self.dielectric_conductivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.dielectric_conductivity_range[
+                        1
+                    ]
+                ),
+            ],
+            "ohmic_lossless_probability": float(
+                self.lossless_probability
+            ),
+            "debye_probability": float(
+                self.debye_package_probability
+            ),
+            "debye_epsilon_infinite_range": [
+                float(
+                    self.package_debye_epsilon_infinite_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.package_debye_epsilon_infinite_range[
+                        1
+                    ]
+                ),
+            ],
+            "debye_delta_epsilon_range": [
+                float(
+                    self.package_debye_delta_epsilon_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.package_debye_delta_epsilon_range[
+                        1
+                    ]
+                ),
+            ],
+            "debye_relaxation_time_range": [
+                float(
+                    self.package_debye_relaxation_time_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.package_debye_relaxation_time_range[
+                        1
+                    ]
+                ),
+            ],
+        }
+
     def background_domain_metadata(
         self,
     ):
