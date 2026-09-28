@@ -26,10 +26,11 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
-HYBRID_ARTIFACT_SCHEMA = 3
+HYBRID_ARTIFACT_SCHEMA = 4
 SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
     1,
     2,
+    3,
     HYBRID_ARTIFACT_SCHEMA,
 )
 
@@ -1291,6 +1292,8 @@ class HybridNeuralResidualArtifact:
         baseline_segments: int,
         background_conductivity_range=None,
         background_permittivity_range=None,
+        package_permittivity_range=None,
+        package_loss_conductivity_range=None,
         device: str = "cpu",
     ):
         self.model = model
@@ -1382,6 +1385,71 @@ class HybridNeuralResidualArtifact:
                     ]
                 ),
             )
+        def _positive_range(
+            value,
+            *,
+            name,
+            allow_zero_lower,
+        ):
+            if value is None:
+                return None
+            values = np.asarray(
+                value,
+                dtype=float,
+            )
+            lower_ok = (
+                values[
+                    0
+                ] >= 0.0
+                if allow_zero_lower
+                else values[
+                    0
+                ] > 0.0
+            ) if values.shape == (
+                2,
+            ) else False
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or not lower_ok
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    f"{name} must be a finite increasing pair"
+                )
+            return (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+
+        self.package_permittivity_range = _positive_range(
+            package_permittivity_range,
+            name="package_permittivity_range",
+            allow_zero_lower=False,
+        )
+        self.package_loss_conductivity_range = _positive_range(
+            package_loss_conductivity_range,
+            name="package_loss_conductivity_range",
+            allow_zero_lower=True,
+        )
         self.supports_lossy_background = bool(
             self.background_conductivity_range
             is not None
@@ -1421,6 +1489,12 @@ class HybridNeuralResidualArtifact:
             ),
             "background_permittivity_range": (
                 self.background_permittivity_range
+            ),
+            "package_permittivity_range": (
+                self.package_permittivity_range
+            ),
+            "package_loss_conductivity_range": (
+                self.package_loss_conductivity_range
             ),
         }
         digest.update(
@@ -1479,6 +1553,75 @@ class HybridNeuralResidualArtifact:
             raise ValueError(
                 "hybrid neural artifact requires at least one package"
             )
+        for package in scene.packages:
+            if not np.isclose(
+                package.material.relative_permeability,
+                scene.medium.relative_permeability,
+                rtol=1e-12,
+                atol=1e-12,
+            ):
+                raise NotImplementedError(
+                    "magnetic package contrast is outside the current "
+                    "dielectric SIE/FAST physics domain"
+                )
+            epsilon_real = float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        frequency_hz
+                    )
+                )
+            )
+            loss_conductivity = float(
+                package.material.loss_conductivity(
+                    frequency_hz
+                )
+            )
+            if self.package_permittivity_range is not None:
+                lower, upper = (
+                    self.package_permittivity_range
+                )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    epsilon_real
+                    < lower
+                    - tolerance
+                    or epsilon_real
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package effective relative permittivity is outside "
+                        "the hybrid artifact training domain"
+                    )
+            if self.package_loss_conductivity_range is not None:
+                lower, upper = (
+                    self.package_loss_conductivity_range
+                )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    loss_conductivity
+                    < lower
+                    - tolerance
+                    or loss_conductivity
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package effective loss conductivity is outside the "
+                        "hybrid artifact training domain"
+                    )
         conductivity = float(
             scene.medium.loss_conductivity(
                 frequency_hz
@@ -1710,6 +1853,12 @@ class HybridNeuralResidualArtifact:
                 "background_permittivity_range": (
                     self.background_permittivity_range
                 ),
+                "package_permittivity_range": (
+                    self.package_permittivity_range
+                ),
+                "package_loss_conductivity_range": (
+                    self.package_loss_conductivity_range
+                ),
             },
             Path(
                 path
@@ -1778,6 +1927,16 @@ class HybridNeuralResidualArtifact:
             background_permittivity_range=(
                 payload.get(
                     "background_permittivity_range"
+                )
+            ),
+            package_permittivity_range=(
+                payload.get(
+                    "package_permittivity_range"
+                )
+            ),
+            package_loss_conductivity_range=(
+                payload.get(
+                    "package_loss_conductivity_range"
                 )
             ),
             device=device,
@@ -1909,6 +2068,8 @@ def train_hybrid_residual_surrogate(
     seed: int = 17,
     background_conductivity_range=None,
     background_permittivity_range=None,
+    package_permittivity_range=None,
+    package_loss_conductivity_range=None,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2147,6 +2308,193 @@ def train_hybrid_residual_surrogate(
                 "sample background effective relative permittivity lies "
                 "outside the declared hybrid port training domain"
             )
+
+    training_package_permittivity = np.asarray(
+        [
+            float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
+    training_package_loss = np.asarray(
+        [
+            float(
+                package.material.loss_conductivity(
+                    sample.frequency_hz
+                )
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
+    if package_permittivity_range is None:
+        resolved_package_permittivity_range = (
+            float(
+                np.min(
+                    training_package_permittivity
+                )
+            ),
+            float(
+                np.max(
+                    training_package_permittivity
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_permittivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_permittivity_range must be a finite positive "
+                "increasing pair"
+            )
+        resolved_package_permittivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    if package_loss_conductivity_range is None:
+        resolved_package_loss_conductivity_range = (
+            float(
+                np.min(
+                    training_package_loss
+                )
+            ),
+            float(
+                np.max(
+                    training_package_loss
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_loss_conductivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] < 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_loss_conductivity_range must be a finite "
+                "nonnegative increasing pair"
+            )
+        resolved_package_loss_conductivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    package_epsilon_lower, package_epsilon_upper = (
+        resolved_package_permittivity_range
+    )
+    package_loss_lower, package_loss_upper = (
+        resolved_package_loss_conductivity_range
+    )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        for package in sample.scene.packages:
+            if not np.isclose(
+                package.material.relative_permeability,
+                sample.scene.medium.relative_permeability,
+                rtol=1e-12,
+                atol=1e-12,
+            ):
+                raise ValueError(
+                    "magnetic package contrast is outside the hybrid training "
+                    "physics domain"
+                )
+            epsilon_real = float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
+            loss = float(
+                package.material.loss_conductivity(
+                    sample.frequency_hz
+                )
+            )
+            if (
+                epsilon_real
+                < package_epsilon_lower
+                or epsilon_real
+                > package_epsilon_upper
+            ):
+                raise ValueError(
+                    "sample package effective relative permittivity lies "
+                    "outside the declared hybrid port training domain"
+                )
+            if (
+                loss
+                < package_loss_lower
+                or loss
+                > package_loss_upper
+            ):
+                raise ValueError(
+                    "sample package effective loss conductivity lies outside "
+                    "the declared hybrid port training domain"
+                )
+
 
     torch.manual_seed(
         seed
@@ -2513,6 +2861,12 @@ def train_hybrid_residual_surrogate(
             ),
             background_permittivity_range=(
                 resolved_background_permittivity_range
+            ),
+            package_permittivity_range=(
+                resolved_package_permittivity_range
+            ),
+            package_loss_conductivity_range=(
+                resolved_package_loss_conductivity_range
             ),
             device=device,
         )
