@@ -463,3 +463,133 @@ def test_lossy_package_background_quadrature_excludes_objects_and_is_se3_invaria
         rtol=5e-6,
         atol=1e-12,
     )
+
+
+def test_package_and_background_exact_dc_conduction_closes_spatial_and_thermal_fields():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=9.0,
+            relative_permeability=1.0,
+            conductivity=5.0e-3,
+        ),
+        "dc-conductive-package",
+    )
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.0,
+            relative_permeability=1.0,
+            conductivity=1.5e-3,
+        ),
+        (
+            package,
+        ),
+    )
+    system = _system()
+    spatial = system.reference_spatial(
+        scene,
+        0.0,
+        volume_axial_order=4,
+        volume_radial_order=3,
+        volume_azimuthal_order=12,
+        background_radial_order=10,
+        background_angular_order=32,
+        maximum_raw_closure_error=5.0,
+        normalized_closure_tolerance=2e-6,
+    )
+    assert (
+        spatial.result.mixed_result.node_environment_current
+        is not None
+    )
+    target = spatial.port_prediction.dissipation_channels[
+        spatial.environment_channel_index
+    ]
+    resolved = (
+        np.sum(
+            spatial.package_integrated_channels,
+            axis=0,
+        )
+        + spatial.background_integrated_channel
+    )
+    assert np.allclose(
+        resolved,
+        target,
+        rtol=3e-6,
+        atol=3e-9,
+    )
+    assert (
+        spatial.normalization_closure_error
+        < 3e-6
+    )
+    assert (
+        np.linalg.norm(
+            spatial.package_integrated_channels[
+                0
+            ]
+        )
+        > 0.0
+    )
+    assert (
+        np.linalg.norm(
+            spatial.background_integrated_channel
+        )
+        > 0.0
+    )
+
+    prepared = system.reference_continuous_thermal_field(
+        scene,
+        0.0,
+        HomogeneousThermalMedium(
+            conductivity=0.45,
+            density=1150.0,
+            heat_capacity=1300.0,
+        ),
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+        package_axial_order=4,
+        package_radial_order=3,
+        package_azimuthal_order=12,
+        background_radial_order=10,
+        background_angular_order=32,
+        spatial_prepare_options={
+            "volume_axial_order": 4,
+            "volume_radial_order": 3,
+            "volume_azimuthal_order": 12,
+            "background_radial_order": 10,
+            "background_angular_order": 32,
+            "maximum_raw_closure_error": 5.0,
+            "normalized_closure_tolerance": 2e-6,
+        },
+    )
+    channels = prepared.source.integrated_channels()
+    port_channels = system.reference_ports(
+        scene,
+        0.0,
+    ).dissipation_channels
+    assert np.allclose(
+        channels,
+        port_channels,
+        rtol=3e-6,
+        atol=3e-9,
+    )
+    temperature = prepared.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.03]
+        ),
+        2.5,
+        np.asarray(
+            [1.1 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > prepared.medium.ambient_temperature
+    )
