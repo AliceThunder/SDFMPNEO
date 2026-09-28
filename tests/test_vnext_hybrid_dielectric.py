@@ -1424,9 +1424,10 @@ def test_dc_conductive_package_contrast_changes_resistive_response_and_closes_po
     )
 
 
-def test_dc_conductor_fully_inside_insulating_package_fails_closed():
+def test_dc_conductor_inside_insulating_package_has_no_environment_leakage():
+    coil = _coil()
     scene = Scene(
-        (_coil(),),
+        (coil,),
         HomogeneousMedium(
             conductivity=2.0e-3,
         ),
@@ -1444,11 +1445,151 @@ def test_dc_conductor_fully_inside_insulating_package_fails_closed():
         surface_vertical_order=6,
         surface_azimuthal_order=12,
     )
-    with pytest.raises(
-        NotImplementedError,
-        match="positive conductivity",
-    ):
-        artifact.solve(
-            scene,
-            0.0,
+    result = artifact.solve(
+        scene,
+        0.0,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            (coil,),
+            HomogeneousMedium(),
+        ),
+        0.0,
+        CFG,
+    ).solve()
+
+    assert (
+        result.mixed_result.node_environment_current
+        is not None
+    )
+    assert np.allclose(
+        result.mixed_result.node_environment_current,
+        0.0,
+        atol=2e-12,
+        rtol=0.0,
+    )
+    assert np.allclose(
+        result.surface_density_transfer,
+        0.0,
+        atol=2e-12,
+        rtol=0.0,
+    )
+    assert np.allclose(
+        result.impedance,
+        bare.impedance,
+        rtol=3e-7,
+        atol=3e-9,
+    )
+    assert np.allclose(
+        result.dielectric_dissipation_matrix,
+        0.0,
+        atol=3e-10,
+        rtol=0.0,
+    )
+    assert (
+        result.power_closure_error
+        < 3e-7
+    )
+
+
+def test_dc_mixed_insulated_and_exposed_coils_use_partial_environment_current_state():
+    insulated = _coil()
+    exposed = CoilObject(
+        insulated.geometry.transformed(
+            RigidPose(
+                np.eye(
+                    3
+                ),
+                np.asarray(
+                    [0.060, 0.0, 0.0]
+                ),
+            )
+        ),
+        insulated.material,
+        "exposed",
+    )
+    scene = Scene(
+        (
+            insulated,
+            exposed,
+        ),
+        HomogeneousMedium(
+            conductivity=2.0e-3,
+        ),
+        (
+            _package(
+                IsotropicMaterial(
+                    relative_permittivity=4.0,
+                    conductivity=0.0,
+                )
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+    )
+    result = artifact.solve(
+        scene,
+        0.0,
+    )
+    environment = (
+        result.mixed_result.node_environment_current
+    )
+    assert environment is not None
+
+    first_port_rows = np.flatnonzero(
+        np.abs(
+            result.mixed_result.port_injection[
+                :,
+                0,
+            ]
         )
+        > 0.0
+    )
+    first_slice = slice(
+        int(
+            first_port_rows[
+                0
+            ]
+        ),
+        int(
+            first_port_rows[
+                -1
+            ]
+        )
+        + 1,
+    )
+    assert np.allclose(
+        environment[
+            first_slice
+        ],
+        0.0,
+        atol=3e-12,
+        rtol=0.0,
+    )
+    assert (
+        np.linalg.norm(
+            environment[
+                first_slice.stop:
+            ]
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        result.impedance.imag,
+        0.0,
+        atol=1e-10,
+        rtol=0.0,
+    )
+    assert (
+        np.linalg.norm(
+            result.dielectric_dissipation_matrix
+        )
+        > 0.0
+    )
+    assert (
+        result.power_closure_error
+        < 8e-6
+    )
