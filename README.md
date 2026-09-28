@@ -259,15 +259,18 @@ The current vNext code intentionally fails closed outside implemented physics:
   region and isotropic; spatially heterogeneous/anisotropic VIE media are not
   yet implemented;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
-  frequency responses share the same solver interface, but magnetic package contrast is
-  not yet approximated by the dielectric SIE;
+  frequency responses share the same solver interface; electric and magnetic
+  package contrast are both handled by local surface-integral transmission
+  corrections without a global world mesh;
 - conductive media at exactly DC require a separate static-conduction
   interface formulation;
 - FAST port/spatial inference requires artifacts trained for the corresponding
   declared geometry and material domains; package/conductor surface
   intersections are rejected;
-- thermally distinct package interfaces must currently be disjoint and
-  non-nested; overlapping/nested thermal inclusions are rejected;
+- strictly nested or disjoint package material interfaces are supported for
+  electromagnetic and thermal transmission; partially intersecting package
+  volumes are still rejected because they require explicit Boolean material
+  partitioning;
 - object-local quadrature and conductor/surface discretization remain numerical
   approximations even though there is no fixed global world mesh.
 
