@@ -1042,3 +1042,60 @@ def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose(tmp_path):
             0.26,
         ]
     )
+
+
+def test_hybrid_sampler_generates_three_strictly_nested_packages():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            3,
+            3,
+        ),
+        nested_package_probability=1.0,
+        nested_package_scale_range=(
+            1.15,
+            1.25,
+        ),
+    )
+    scene, _ = sample_hybrid_package_scene(
+        np.random.default_rng(
+            2401
+        ),
+        config,
+    )
+    assert len(
+        scene.packages
+    ) == 3
+    for inner_index in range(
+        2
+    ):
+        inner = scene.packages[
+            inner_index
+        ].geometry
+        outer = scene.packages[
+            inner_index
+            + 1
+        ].geometry
+        assert np.all(
+            outer.contains(
+                inner.surface_points(
+                    vertical_order=9,
+                    azimuthal_order=24,
+                ),
+                tolerance=1e-10,
+            )
+        )
+    metadata = config.geometry_domain_metadata()
+    assert metadata[
+        "n_packages_range"
+    ] == [
+        3,
+        3,
+    ]
+    assert (
+        metadata[
+            "package"
+        ][
+            "nested_topology"
+        ]
+        == "strict_chain_or_disjoint_roots"
+    )
