@@ -1480,6 +1480,7 @@ class HybridNeuralResidualArtifact:
                 )
             )
         )
+        self._validated_geometry_enclosures = set()
         self.supports_lossy_background = bool(
             self.background_conductivity_range
             is not None
@@ -1604,6 +1605,9 @@ class HybridNeuralResidualArtifact:
             scene,
             frequency_hz,
             self.geometry_domain,
+            validated_enclosures=(
+                self._validated_geometry_enclosures
+            ),
         )
         for package in scene.packages:
             if not np.isclose(
