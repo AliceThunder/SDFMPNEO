@@ -8,6 +8,7 @@ from sdfmpneo_vnext import (
     ConductorMaterial,
     DebyeMaterial,
     HomogeneousMedium,
+    HybridSceneSamplerConfig,
     HybridTeacherSample,
     IsotropicMaterial,
     MeshfreeVNextSystem,
@@ -19,6 +20,7 @@ from sdfmpneo_vnext import (
     analytic_port_baseline,
     encode_hybrid_scene_invariant,
     haar_rotation,
+    sample_hybrid_package_scene,
 )
 from sdfmpneo_vnext.hybrid_neural import (
     HybridNeuralResidualArtifact,
@@ -218,6 +220,7 @@ def _artifact(
     background_permittivity_range=None,
     package_permittivity_range=None,
     package_loss_conductivity_range=None,
+    geometry_domain=None,
 ):
     sample = _manual_sample(
         scene
@@ -252,6 +255,9 @@ def _artifact(
         ),
         package_loss_conductivity_range=(
             package_loss_conductivity_range
+        ),
+        geometry_domain=(
+            geometry_domain
         ),
     )
 
@@ -1023,4 +1029,111 @@ def test_hybrid_fast_port_rejects_magnetic_package_contrast():
         artifact.predict_structured(
             magnetic,
             85_000.0,
+        )
+
+
+def test_hybrid_fast_geometry_domain_is_se3_invariant_and_fails_closed_outside_package_pose():
+    config = HybridSceneSamplerConfig(
+        package_center_offset_fraction_range=(
+            0.05,
+            0.30,
+        ),
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            1009
+        ),
+        config,
+    )
+    artifact = _artifact(
+        scene,
+        geometry_domain=(
+            config.geometry_domain_metadata()
+        ),
+    )
+    reference = artifact.predict_structured(
+        scene,
+        frequency,
+    )
+    _assert_structured_physics(
+        reference
+    )
+
+    common = RigidPose(
+        haar_rotation(
+            np.random.default_rng(
+                1013
+            )
+        ),
+        np.asarray(
+            [0.17, -0.09, 0.23]
+        ),
+    )
+    moved = Scene(
+        tuple(
+            CoilObject(
+                coil.geometry.transformed(
+                    common
+                ),
+                coil.material,
+                coil.name,
+            )
+            for coil in scene.coils
+        ),
+        scene.medium,
+        tuple(
+            PackageObject(
+                package.geometry.transformed(
+                    common
+                ),
+                package.material,
+                package.name,
+            )
+            for package in scene.packages
+        ),
+    )
+    moved_prediction = (
+        artifact.predict_structured(
+            moved,
+            frequency,
+        )
+    )
+    assert np.allclose(
+        moved_prediction.impedance,
+        reference.impedance,
+        rtol=4e-5,
+        atol=4e-7,
+    )
+
+    package = scene.packages[
+        0
+    ]
+    displaced = PackageObject(
+        package.geometry.transformed(
+            RigidPose(
+                np.eye(
+                    3
+                ),
+                np.asarray(
+                    [0.20, 0.0, 0.0]
+                ),
+            )
+        ),
+        package.material,
+        package.name,
+    )
+    outside = Scene(
+        scene.coils,
+        scene.medium,
+        (
+            displaced,
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="package center offset",
+    ):
+        artifact.predict_structured(
+            outside,
+            frequency,
         )
