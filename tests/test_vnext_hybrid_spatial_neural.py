@@ -1184,3 +1184,65 @@ def test_fast_continuous_thermal_field_supports_package_thermal_interface():
         temperature
         > field.medium.ambient_temperature
     )
+
+
+def test_fast_nested_package_spatial_loss_masks_parent_material_region():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            2,
+            2,
+        ),
+        nested_package_probability=1.0,
+        nested_package_scale_range=(
+            1.18,
+            1.22,
+        ),
+        lossless_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            3307
+        ),
+        config,
+    )
+    spatial = _spatial_artifact(
+        scene
+    )
+    prepared = spatial.prepare(
+        scene,
+        frequency,
+    )
+    inner = scene.packages[
+        0
+    ].geometry
+    outer = scene.packages[
+        1
+    ].geometry
+    point = inner.pose.translation
+    assert bool(
+        inner.contains(
+            point
+        )
+    )
+    assert bool(
+        outer.contains(
+            point
+        )
+    )
+    outer_matrix = (
+        prepared.package_dissipation_matrix(
+            1,
+            point[
+                None,
+                :
+            ],
+        )[
+            0
+        ]
+    )
+    assert np.allclose(
+        outer_matrix,
+        0.0,
+        atol=1e-14,
+        rtol=0.0,
+    )
