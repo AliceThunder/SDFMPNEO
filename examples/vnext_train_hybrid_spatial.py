@@ -113,6 +113,9 @@ def main():
         in train
         + validation
     )
+    geometry_domain = (
+        dataset.geometry_domain
+    )
     background_domain = (
         dataset.background_conductivity_domain
     )
@@ -138,6 +141,13 @@ def main():
         args.port_artifact,
         device=args.device,
     )
+    if (
+        port.geometry_domain
+        != geometry_domain
+    ):
+        raise SystemExit(
+            "port artifact geometry domain does not match the dataset"
+        )
     if lossy_present:
         if not port.supports_lossy_background:
             raise SystemExit(
@@ -214,6 +224,10 @@ def main():
             ),
             "stopped_early": (
                 report.stopped_early
+            ),
+            "geometry_domain_declared": (
+                geometry_domain
+                is not None
             ),
             "background_conductivity_domain": (
                 background_domain
