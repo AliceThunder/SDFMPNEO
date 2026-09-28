@@ -2186,39 +2186,25 @@ class PreparedMultiThermalInterfaceField:
                 laplace_s
             )
         )
-        membership = np.full(
-            len(
-                points
+        membership = np.asarray(
+            self.topology.deepest_containing(
+                tuple(
+                    region[
+                        "geometry"
+                    ]
+                    for region in self.regions
+                ),
+                points,
+                tolerance=1e-12,
             ),
-            -1,
             dtype=int,
         )
-        for region_index, region in enumerate(
-            self.regions
-        ):
-            inside = np.asarray(
-                region[
-                    "geometry"
-                ].contains(
-                    points,
-                    tolerance=1e-12,
-                ),
-                dtype=bool,
+        coefficients = np.vstack(
+            (
+                exterior_coefficients,
+                interior_coefficients,
             )
-            if np.any(
-                inside
-                & (
-                    membership
-                    >= 0
-                )
-            ):
-                raise ValueError(
-                    "thermal query belongs to overlapping package regions"
-                )
-            membership[
-                inside
-            ] = region_index
-
+        )
         flat = np.zeros(
             (
                 len(
@@ -2229,51 +2215,24 @@ class PreparedMultiThermalInterfaceField:
             ),
             dtype=complex,
         )
-        outside = (
-            membership
-            < 0
-        )
-        if np.any(
-            outside
+        for region_index in (
+            -1,
+            *range(
+                len(
+                    self.regions
+                )
+            ),
         ):
-            query = points[
-                outside
-            ]
-            direct = self._particular(
-                query,
-                laplace_s,
-                region_index=-1,
-            )[
-                0
-            ]
-            flat[
-                outside
-            ] = (
-                direct
-                + _yukawa_kernel(
-                    query,
-                    self.exterior_mfs_sources,
-                    self.background_medium,
-                    laplace_s,
-                )[
-                    0
-                ]
-                @ exterior_coefficients
-            )
-
-        for region_index, region in enumerate(
-            self.regions
-        ):
-            inside = (
+            select = (
                 membership
                 == region_index
             )
             if not np.any(
-                inside
+                select
             ):
                 continue
             query = points[
-                inside
+                select
             ]
             direct = self._particular(
                 query,
@@ -2284,28 +2243,21 @@ class PreparedMultiThermalInterfaceField:
             )[
                 0
             ]
-            sl = region[
-                "slice"
+            basis = self._region_basis(
+                query,
+                laplace_s,
+                region_index=(
+                    region_index
+                ),
+            )[
+                0
             ]
             flat[
-                inside
+                select
             ] = (
                 direct
-                + _yukawa_kernel(
-                    query,
-                    region[
-                        "interior_mfs"
-                    ],
-                    region[
-                        "medium"
-                    ],
-                    laplace_s,
-                )[
-                    0
-                ]
-                @ interior_coefficients[
-                    sl
-                ]
+                + basis
+                @ coefficients
             )
 
         matrix = flat.reshape(
