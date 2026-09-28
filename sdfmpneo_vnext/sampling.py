@@ -1762,8 +1762,11 @@ def sample_hybrid_package_scene(
                 rng,
                 config,
                 force_conductive=(
-                    dc_conductive
-                    if is_dc
+                    False
+                    if (
+                        is_dc
+                        and not dc_conductive
+                    )
                     else None
                 ),
             ),
