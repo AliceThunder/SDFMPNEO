@@ -17,7 +17,21 @@ from .field import UniformLossFieldDecoder
 from .reference import MixedReferenceArtifact
 from .hybrid_dielectric import DielectricCoupledReferenceArtifact
 from .scene import Scene
-from .thermal_field import ContinuousThermalGreenArtifact
+from .thermal_field import (
+    ContinuousThermalGreenArtifact,
+    HomogeneousThermalMedium,
+)
+
+
+def _resolve_thermal_medium(
+    scene: Scene,
+    medium,
+):
+    if medium is not None:
+        return medium
+    return HomogeneousThermalMedium.from_material(
+        scene.medium
+    )
 
 
 @dataclass(frozen=True)
@@ -555,9 +569,13 @@ class MeshfreeVNextSystem:
         self,
         scene: Scene,
         frequency_hz: float,
-        medium,
+        medium=None,
         **options,
     ):
+        medium = _resolve_thermal_medium(
+            scene,
+            medium,
+        )
         self._require_fast_port_artifact(
             scene,
             frequency_hz,
@@ -586,9 +604,13 @@ class MeshfreeVNextSystem:
         self,
         scene: Scene,
         frequency_hz: float,
-        medium,
+        medium=None,
         **options,
     ):
+        medium = _resolve_thermal_medium(
+            scene,
+            medium,
+        )
         artifact = (
             self._dielectric_reference
             if scene.packages
