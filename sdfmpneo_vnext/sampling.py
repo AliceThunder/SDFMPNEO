@@ -408,6 +408,15 @@ class HybridSceneSamplerConfig:
                 "enclosure_target_radius": (
                     0.90
                 ),
+                "enclosure_radius_range": [
+                    float(
+                        1.0
+                        / self.package_margin_range[
+                            1
+                        ]
+                    ),
+                    0.90,
+                ],
             },
         }
 
