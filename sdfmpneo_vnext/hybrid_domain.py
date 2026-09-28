@@ -24,8 +24,13 @@ class PackageDomainTopology:
         region = np.full(len(points), -1, dtype=int)
         best_depth = np.full(len(points), -1, dtype=int)
         for index, package in enumerate(packages):
+            geometry = getattr(
+                package,
+                "geometry",
+                package,
+            )
             inside = np.asarray(
-                package.geometry.contains(points, tolerance=tolerance),
+                geometry.contains(points, tolerance=tolerance),
                 dtype=bool,
             )
             select = inside & (self.depth[index] > best_depth)
@@ -48,12 +53,20 @@ def package_domain_topology(
     if tolerance <= 0.0:
         raise ValueError("tolerance must be positive")
 
+    geometries = tuple(
+        getattr(
+            package,
+            "geometry",
+            package,
+        )
+        for package in packages
+    )
     surfaces = tuple(
-        package.geometry.surface_points(
+        geometry.surface_points(
             vertical_order=surface_vertical_order,
             azimuthal_order=surface_azimuthal_order,
         )
-        for package in packages
+        for geometry in geometries
     )
     contains = np.zeros((n, n), dtype=bool)
     for outer in range(n):
@@ -61,7 +74,7 @@ def package_domain_topology(
             if outer == inner:
                 continue
             level = np.asarray(
-                packages[outer].geometry.implicit(surfaces[inner]),
+                geometries[outer].implicit(surfaces[inner]),
                 dtype=float,
             )
             if np.all(level <= -tolerance):
@@ -77,12 +90,12 @@ def package_domain_topology(
             if contains[left, right] or contains[right, left]:
                 continue
             left_in_right = np.any(
-                packages[right].geometry.contains(
+                geometries[right].contains(
                     surfaces[left], tolerance=tolerance
                 )
             )
             right_in_left = np.any(
-                packages[left].geometry.contains(
+                geometries[left].contains(
                     surfaces[right], tolerance=tolerance
                 )
             )
