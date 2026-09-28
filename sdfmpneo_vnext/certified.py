@@ -33,6 +33,7 @@ class CertifiedPortResult:
     operator_backend: str = "dense"
     relative_observable_correction: float = float("inf")
     fast_domain_valid: bool = False
+    fast_domain_reason: str | None = None
 
     @property
     def certified(self) -> bool:
