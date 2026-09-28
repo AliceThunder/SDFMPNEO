@@ -13,6 +13,7 @@ from .scene import (
     IsotropicMaterial,
     DebyeMaterial,
     MultiDebyeMaterial,
+    TabulatedMaterial,
     PackageObject,
     Scene,
 )
@@ -21,6 +22,33 @@ from .scene import (
 def _medium_to_dict(
     medium,
 ):
+    if isinstance(
+        medium,
+        TabulatedMaterial,
+    ):
+        return {
+            "model": "tabulated",
+            "frequencies_hz": list(
+                medium.frequencies_hz
+            ),
+            "relative_permittivity_real": list(
+                medium.relative_permittivity_real
+            ),
+            "loss_conductivity_values": list(
+                medium.loss_conductivity_values
+            ),
+            "relative_permeability": (
+                medium.relative_permeability
+            ),
+            "conductivity": (
+                medium.conductivity
+            ),
+            "thermal_conductivity": (
+                medium.thermal_conductivity
+            ),
+            "density": medium.density,
+            "heat_capacity": medium.heat_capacity,
+        }
     if isinstance(
         medium,
         MultiDebyeMaterial,
@@ -322,6 +350,65 @@ def _medium_from_dict(
             rho,
             capacity,
         )
+    if model == "tabulated":
+        required = (
+            "frequencies_hz",
+            "relative_permittivity_real",
+            "loss_conductivity_values",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "tabulated scene background medium is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return TabulatedMaterial(
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "frequencies_hz"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relative_permittivity_real"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "loss_conductivity_values"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            thermal,
+            rho,
+            capacity,
+        )
     raise ValueError(
         f"unsupported scene background medium model: {model}"
     )
@@ -330,6 +417,33 @@ def _medium_from_dict(
 def _package_material_to_dict(
     material,
 ):
+    if isinstance(
+        material,
+        TabulatedMaterial,
+    ):
+        return {
+            "model": "tabulated",
+            "frequencies_hz": list(
+                material.frequencies_hz
+            ),
+            "relative_permittivity_real": list(
+                material.relative_permittivity_real
+            ),
+            "loss_conductivity_values": list(
+                material.loss_conductivity_values
+            ),
+            "relative_permeability": (
+                material.relative_permeability
+            ),
+            "conductivity": (
+                material.conductivity
+            ),
+            "thermal_conductivity": (
+                material.thermal_conductivity
+            ),
+            "density": material.density,
+            "heat_capacity": material.heat_capacity,
+        }
     if isinstance(
         material,
         MultiDebyeMaterial,
@@ -576,6 +690,65 @@ def _package_material_from_dict(
                 )
                 for value in data[
                     "relaxation_times"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            thermal,
+            rho,
+            capacity,
+        )
+    if model == "tabulated":
+        required = (
+            "frequencies_hz",
+            "relative_permittivity_real",
+            "loss_conductivity_values",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "tabulated package material is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return TabulatedMaterial(
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "frequencies_hz"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relative_permittivity_real"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "loss_conductivity_values"
                 ]
             ),
             float(
