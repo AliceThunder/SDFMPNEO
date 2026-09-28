@@ -38,6 +38,7 @@ class DielectricSurfaceResult:
     equivalent_density: np.ndarray
     background_permittivity: complex
     normalized_residual: float
+    exterior_permittivity: np.ndarray | None = None
 
     def __post_init__(self):
         positions = np.asarray(
@@ -97,13 +98,38 @@ class DielectricSurfaceResult:
             "equivalent_density",
             density,
         )
+        exterior = (
+            np.full(
+                n,
+                complex(
+                    self.background_permittivity
+                ),
+                dtype=complex,
+            )
+            if self.exterior_permittivity is None
+            else np.asarray(
+                self.exterior_permittivity,
+                dtype=complex,
+            )
+        )
+        if exterior.shape != (
+            n,
+        ):
+            raise ValueError(
+                "exterior_permittivity must have one value per surface node"
+            )
+        object.__setattr__(
+            self,
+            "exterior_permittivity",
+            exterior,
+        )
 
     @property
     def physical_surface_charge_density(
         self,
     ) -> np.ndarray:
         return (
-            self.background_permittivity
+            self.exterior_permittivity
             * self.equivalent_density
         )
 
@@ -636,6 +662,12 @@ class DielectricSurfaceSolver:
             float(
                 eta
             ),
+            np.asarray(
+                self.exterior_permittivity,
+                dtype=complex,
+            )[
+                self.package_index
+            ],
         )
 
     def solve_uniform_field(
