@@ -8,6 +8,9 @@ from .em import MQSConfig
 from .hybrid_dielectric import (
     DielectricCoupledMixedTeacher,
 )
+from .hybrid_convergence import (
+    hybrid_reference_convergence,
+)
 from .scene import Scene
 
 
@@ -18,6 +21,10 @@ def certify_dielectric_ports(
     *,
     config: MQSConfig | None = None,
     convergence_report=None,
+    auto_convergence: bool = False,
+    convergence_tolerance: float = 2e-3,
+    convergence_surface_residual_tolerance: float | None = None,
+    convergence_magnetic_surface_residual_tolerance: float | None = None,
     surface_vertical_order: int = 16,
     surface_azimuthal_order: int = 32,
     magnetic_volume_axial_order: int = 8,
@@ -49,6 +56,24 @@ def certify_dielectric_ports(
         raise TypeError(
             "artifact must expose predict_structured"
         )
+    if convergence_tolerance <= 0.0:
+        raise ValueError(
+            "convergence_tolerance must be positive"
+        )
+    if (
+        convergence_surface_residual_tolerance is not None
+        and convergence_surface_residual_tolerance <= 0.0
+    ):
+        raise ValueError(
+            "convergence_surface_residual_tolerance must be positive"
+        )
+    if (
+        convergence_magnetic_surface_residual_tolerance is not None
+        and convergence_magnetic_surface_residual_tolerance <= 0.0
+    ):
+        raise ValueError(
+            "convergence_magnetic_surface_residual_tolerance must be positive"
+        )
     if (
         algebraic_tolerance <= 0.0
         or surface_tolerance <= 0.0
@@ -60,6 +85,52 @@ def certify_dielectric_ports(
     ):
         raise ValueError(
             "invalid dielectric certification tolerances"
+        )
+
+    resolved_config = (
+        config
+        or MQSConfig()
+    )
+    if (
+        convergence_report is None
+        and auto_convergence
+    ):
+        convergence_report = (
+            hybrid_reference_convergence(
+                scene,
+                frequency_hz,
+                resolved_config,
+                surface_vertical_order=(
+                    surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    surface_azimuthal_order
+                ),
+                magnetic_volume_axial_order=(
+                    magnetic_volume_axial_order
+                ),
+                magnetic_volume_radial_order=(
+                    magnetic_volume_radial_order
+                ),
+                magnetic_volume_azimuthal_order=(
+                    magnetic_volume_azimuthal_order
+                ),
+                tolerance=(
+                    convergence_tolerance
+                ),
+                surface_residual_tolerance=(
+                    surface_tolerance
+                    if convergence_surface_residual_tolerance
+                    is None
+                    else convergence_surface_residual_tolerance
+                ),
+                magnetic_surface_residual_tolerance=(
+                    surface_tolerance
+                    if convergence_magnetic_surface_residual_tolerance
+                    is None
+                    else convergence_magnetic_surface_residual_tolerance
+                ),
+            )
         )
 
     fast_prediction = None
@@ -88,8 +159,7 @@ def certify_dielectric_ports(
         DielectricCoupledMixedTeacher(
             scene,
             frequency_hz,
-            config
-            or MQSConfig(),
+            resolved_config,
             surface_vertical_order=(
                 surface_vertical_order
             ),
