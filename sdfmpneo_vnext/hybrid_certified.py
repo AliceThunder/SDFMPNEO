@@ -57,16 +57,27 @@ def certify_dielectric_ports(
             "invalid dielectric certification tolerances"
         )
 
-    fast_prediction = (
-        artifact.predict_structured(
-            scene,
-            frequency_hz,
+    fast_prediction = None
+    fast_impedance = None
+    fast_domain_reason = None
+    try:
+        fast_prediction = (
+            artifact.predict_structured(
+                scene,
+                frequency_hz,
+            )
         )
-    )
-    fast_impedance = np.asarray(
-        fast_prediction.impedance,
-        dtype=complex,
-    )
+        fast_impedance = np.asarray(
+            fast_prediction.impedance,
+            dtype=complex,
+        )
+    except (
+        ValueError,
+        NotImplementedError,
+    ) as exc:
+        fast_domain_reason = str(
+            exc
+        )
 
     teacher = (
         DielectricCoupledMixedTeacher(
@@ -88,7 +99,8 @@ def certify_dielectric_ports(
         dtype=complex,
     )
     if (
-        fast_impedance.shape
+        fast_impedance is not None
+        and fast_impedance.shape
         != impedance.shape
     ):
         raise ValueError(
@@ -160,17 +172,23 @@ def certify_dielectric_ports(
         ),
     )
 
-    correction = float(
-        np.linalg.norm(
-            impedance
-            - fast_impedance
+    if fast_impedance is None:
+        correction = float(
+            "inf"
         )
-        / scale
-    )
-    fast_domain_valid = bool(
-        correction
-        <= fast_domain_correction_limit
-    )
+        fast_domain_valid = False
+    else:
+        correction = float(
+            np.linalg.norm(
+                impedance
+                - fast_impedance
+            )
+            / scale
+        )
+        fast_domain_valid = bool(
+            correction
+            <= fast_domain_correction_limit
+        )
     discretization_certified = bool(
         convergence_report
         is not None
@@ -230,5 +248,8 @@ def certify_dielectric_ports(
         ),
         fast_domain_valid=(
             fast_domain_valid
+        ),
+        fast_domain_reason=(
+            fast_domain_reason
         ),
     )
