@@ -4,7 +4,10 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.linalg import solve
 
-from .scene import PackageObject
+from .scene import (
+    PackageObject,
+    PassiveIsotropicMaterial,
+)
 
 
 def _complex_permittivity(
@@ -237,7 +240,7 @@ class DielectricSurfaceSolver:
     def __init__(
         self,
         packages,
-        background: HomogeneousMedium,
+        background: PassiveIsotropicMaterial,
         frequency_hz: float,
         *,
         vertical_order: int = 16,
@@ -262,10 +265,11 @@ class DielectricSurfaceSolver:
             )
         if not isinstance(
             background,
-            HomogeneousMedium,
+            PassiveIsotropicMaterial,
         ):
             raise TypeError(
-                "background must be HomogeneousMedium"
+                "background must implement the passive isotropic "
+                "frequency-response interface"
             )
         self.background = (
             background
