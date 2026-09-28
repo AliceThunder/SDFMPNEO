@@ -17,6 +17,7 @@ from sdfmpneo_vnext import (
     StructuredPortPrediction,
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
+    TabulatedMaterial,
     haar_rotation,
     sample_hybrid_package_scene,
 )
@@ -738,3 +739,68 @@ def test_reference_supports_arbitrary_relative_3d_package_pose_from_training_sam
             )
             >= -2e-8
         )
+
+
+def test_tabulated_background_with_identical_tabulated_package_is_invisible():
+    frequency = 80_000.0
+    material = TabulatedMaterial(
+        frequencies_hz=(
+            20_000.0,
+            80_000.0,
+            300_000.0,
+        ),
+        relative_permittivity_real=(
+            11.0,
+            7.0,
+            4.5,
+        ),
+        loss_conductivity_values=(
+            2.0e-5,
+            2.0e-4,
+            1.2e-4,
+        ),
+    )
+    scene = Scene(
+        (
+            _coil(),
+        ),
+        material,
+        (
+            _package(
+                material
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    coupled = artifact.solve(
+        scene,
+        frequency,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            scene.coils,
+            material,
+        ),
+        frequency,
+        CFG,
+    ).solve()
+    assert np.allclose(
+        coupled.impedance,
+        bare.impedance,
+        rtol=5e-9,
+        atol=5e-10,
+    )
+    assert np.allclose(
+        coupled.surface_density_transfer,
+        0.0,
+        rtol=0.0,
+        atol=2e-13,
+    )
+    assert (
+        coupled.power_closure_error
+        < 5e-6
+    )
