@@ -1299,6 +1299,7 @@ class HybridNeuralResidualArtifact:
         package_permittivity_range=None,
         package_loss_conductivity_range=None,
         geometry_domain=None,
+        artifact_schema: int | None = None,
         device: str = "cpu",
     ):
         self.model = model
@@ -1308,6 +1309,19 @@ class HybridNeuralResidualArtifact:
         self.baseline_segments = int(
             baseline_segments
         )
+        self.artifact_schema = int(
+            HYBRID_ARTIFACT_SCHEMA
+            if artifact_schema
+            is None
+            else artifact_schema
+        )
+        if (
+            self.artifact_schema
+            not in SUPPORTED_HYBRID_ARTIFACT_SCHEMAS
+        ):
+            raise ValueError(
+                "unsupported hybrid neural artifact schema"
+            )
         if background_conductivity_range is None:
             self.background_conductivity_range = None
         else:
@@ -1488,7 +1502,7 @@ class HybridNeuralResidualArtifact:
         """Stable semantic fingerprint for hybrid weights and preprocessing."""
         digest = sha256()
         config = {
-            "schema": HYBRID_ARTIFACT_SCHEMA,
+            "schema": self.artifact_schema,
             "model_config": {
                 "coil_dim": self.model.coil_dim,
                 "coil_pair_dim": self.model.coil_pair_dim,
@@ -1500,22 +1514,36 @@ class HybridNeuralResidualArtifact:
                 "depth": self.model.depth,
             },
             "baseline_segments": self.baseline_segments,
-            "background_conductivity_range": (
-                self.background_conductivity_range
-            ),
-            "background_permittivity_range": (
-                self.background_permittivity_range
-            ),
-            "package_permittivity_range": (
-                self.package_permittivity_range
-            ),
-            "package_loss_conductivity_range": (
-                self.package_loss_conductivity_range
-            ),
-            "geometry_domain": (
-                self.geometry_domain
-            ),
         }
+        if self.artifact_schema >= 2:
+            config[
+                "background_conductivity_range"
+            ] = (
+                self.background_conductivity_range
+            )
+        if self.artifact_schema >= 3:
+            config[
+                "background_permittivity_range"
+            ] = (
+                self.background_permittivity_range
+            )
+        if self.artifact_schema >= 4:
+            config[
+                "package_permittivity_range"
+            ] = (
+                self.package_permittivity_range
+            )
+            config[
+                "package_loss_conductivity_range"
+            ] = (
+                self.package_loss_conductivity_range
+            )
+        if self.artifact_schema >= 5:
+            config[
+                "geometry_domain"
+            ] = (
+                self.geometry_domain
+            )
         digest.update(
             json.dumps(
                 config,
@@ -1970,6 +1998,11 @@ class HybridNeuralResidualArtifact:
                 payload.get(
                     "geometry_domain"
                 )
+            ),
+            artifact_schema=int(
+                payload[
+                    "schema"
+                ]
             ),
             device=device,
         )
