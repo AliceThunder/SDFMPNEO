@@ -133,7 +133,7 @@ class DielectricCoupledMixedTeacher:
             raise ValueError(
                 "frequency_hz must be finite and nonnegative"
             )
-        if (
+        self.conductive_dc = bool(
             self.frequency_hz == 0.0
             and (
                 scene.medium.loss_conductivity(
@@ -149,11 +149,7 @@ class DielectricCoupledMixedTeacher:
                     in scene.packages
                 )
             )
-        ):
-            raise NotImplementedError(
-                "conductive background/package media at DC require the static "
-                "conduction interface formulation"
-            )
+        )
         self.config = (
             config
             or MQSConfig()
@@ -210,6 +206,11 @@ class DielectricCoupledMixedTeacher:
                 scene.packages,
                 scene.medium,
                 self.frequency_hz,
+                coefficient_mode=(
+                    "conductivity"
+                    if self.conductive_dc
+                    else "permittivity"
+                ),
                 vertical_order=(
                     surface_vertical_order
                 ),
@@ -248,7 +249,7 @@ class DielectricCoupledMixedTeacher:
             ),
             dtype=int,
         )
-        permittivity = np.full(
+        coefficient = np.full(
             n,
             self.surface_solver.background_permittivity,
             dtype=complex,
@@ -263,16 +264,16 @@ class DielectricCoupledMixedTeacher:
             if np.any(
                 mask
             ):
-                permittivity[
+                coefficient[
                     mask
                 ] = (
-                    package.material.complex_permittivity(
-                        self.frequency_hz
+                    self.surface_solver._material_coefficient(
+                        package.material
                     )
                 )
         return (
             region,
-            permittivity,
+            coefficient,
         )
 
     def _direct_node_potential(
@@ -479,6 +480,31 @@ class DielectricCoupledMixedTeacher:
         ) = self._source_regions(
             node_positions
         )
+        if self.conductive_dc:
+            scale = max(
+                float(
+                    np.max(
+                        np.abs(
+                            source_permittivity
+                        )
+                    )
+                ),
+                1.0,
+            )
+            if np.any(
+                np.abs(
+                    source_permittivity
+                )
+                <= 1e-14
+                * scale
+            ):
+                raise NotImplementedError(
+                    "exact DC conduction currently requires every conductor "
+                    "to lie in a material region with positive conductivity; "
+                    "a conductor fully enclosed by an insulating region needs "
+                    "the coupled electrostatic-charge/conduction-current DC "
+                    "formulation"
+                )
         direct = (
             self._direct_node_potential(
                 node_positions,
@@ -637,6 +663,12 @@ class DielectricCoupledMixedTeacher:
         nr = reduced_divergence.shape[
             0
         ]
+        environment_factor = (
+            1.0 + 0.0j
+            if self.conductive_dc
+            else 1j
+            * self.conductor_teacher.omega
+        )
         kkt = np.block(
             [
                 [
@@ -663,8 +695,7 @@ class DielectricCoupledMixedTeacher:
                         ),
                         dtype=complex,
                     ),
-                    1j
-                    * self.conductor_teacher.omega
+                    environment_factor
                     * np.eye(
                         nr,
                         dtype=complex,
@@ -729,7 +760,7 @@ class DielectricCoupledMixedTeacher:
                 m : m + nr
             ]
         )
-        charge_reduced = (
+        state_reduced = (
             solution[
                 m + nr :
             ]
@@ -738,10 +769,34 @@ class DielectricCoupledMixedTeacher:
             gauge
             @ potential_reduced
         )
-        node_charge = (
-            gauge
-            @ charge_reduced
-        )
+        if self.conductive_dc:
+            node_charge = np.zeros(
+                (
+                    gauge.shape[
+                        0
+                    ],
+                    state_reduced.shape[
+                        1
+                    ],
+                ),
+                dtype=complex,
+            )
+            node_environment_current = (
+                gauge
+                @ state_reduced
+            )
+            node_surface_state = (
+                node_environment_current
+            )
+        else:
+            node_charge = (
+                gauge
+                @ state_reduced
+            )
+            node_environment_current = None
+            node_surface_state = (
+                node_charge
+            )
         impedance = (
             port_injection.T
             @ node_potential
@@ -796,23 +851,36 @@ class DielectricCoupledMixedTeacher:
             normalized_residual,
             segment_coils,
             mode_segments,
+            None,
+            node_environment_current,
         )
 
         conductor_channels = (
             mixed_result.coil_dissipation_matrices()
         )
-        imaginary_potential = (
-            effective_potential
-            - effective_potential.conj().T
-        ) / (
-            2j
-        )
-        dielectric_channel = (
-            self.conductor_teacher.omega
-            * node_charge.conj().T
-            @ imaginary_potential
-            @ node_charge
-        )
+        if self.conductive_dc:
+            dissipative_potential = 0.5 * (
+                effective_potential
+                + effective_potential.conj().T
+            )
+            dielectric_channel = (
+                node_environment_current.conj().T
+                @ dissipative_potential
+                @ node_environment_current
+            )
+        else:
+            imaginary_potential = (
+                effective_potential
+                - effective_potential.conj().T
+            ) / (
+                2j
+            )
+            dielectric_channel = (
+                self.conductor_teacher.omega
+                * node_charge.conj().T
+                @ imaginary_potential
+                @ node_charge
+            )
         dielectric_channel = 0.5 * (
             dielectric_channel
             + dielectric_channel.conj().T
@@ -838,7 +906,7 @@ class DielectricCoupledMixedTeacher:
 
         surface_density_transfer = (
             density_from_node_charge
-            @ node_charge
+            @ node_surface_state
         )
         environment_label = (
             "electric_environment:aggregate"
