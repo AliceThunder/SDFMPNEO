@@ -279,6 +279,8 @@ class HybridTeacherSample:
     surface_residual: float
     raw_potential_reciprocity_defect: float
     power_closure_error: float
+    magnetic_surface_residual: float = 0.0
+    raw_magnetic_reciprocity_defect: float = 0.0
     conductor_spatial_loss: SpatialLossSamples | None = None
     package_spatial_loss: PackageSpatialLossSamples | None = None
     background_spatial_loss: BackgroundSpatialLossSamples | None = None
@@ -710,6 +712,12 @@ class HybridTeacherSample:
             power_closure_error=float(
                 result.power_closure_error
             ),
+            magnetic_surface_residual=float(
+                result.magnetic_surface_residual
+            ),
+            raw_magnetic_reciprocity_defect=float(
+                result.raw_magnetic_reciprocity_defect
+            ),
             conductor_spatial_loss=(
                 conductor_spatial
             ),
@@ -719,26 +727,14 @@ class HybridTeacherSample:
             background_spatial_loss=(
                 background_spatial
             ),
-            package_volume_axial_order=(
-                int(
-                    package_volume_axial_order
-                )
-                if include_spatial_truth
-                else 0
+            package_volume_axial_order=int(
+                package_volume_axial_order
             ),
-            package_volume_radial_order=(
-                int(
-                    package_volume_radial_order
-                )
-                if include_spatial_truth
-                else 0
+            package_volume_radial_order=int(
+                package_volume_radial_order
             ),
-            package_volume_azimuthal_order=(
-                int(
-                    package_volume_azimuthal_order
-                )
-                if include_spatial_truth
-                else 0
+            package_volume_azimuthal_order=int(
+                package_volume_azimuthal_order
             ),
             background_radial_order=(
                 int(
