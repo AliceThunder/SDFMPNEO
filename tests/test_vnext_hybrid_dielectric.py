@@ -1255,3 +1255,200 @@ def test_partially_overlapping_packages_are_rejected():
             scene,
             80_000.0,
         )
+
+
+def test_dc_package_with_background_matched_conductivity_is_conduction_invisible():
+    frequency = 0.0
+    conductivity = 2.0e-3
+    medium = HomogeneousMedium(
+        relative_permittivity=5.0,
+        relative_permeability=1.0,
+        conductivity=conductivity,
+    )
+    package = _package(
+        IsotropicMaterial(
+            relative_permittivity=18.0,
+            relative_permeability=1.0,
+            conductivity=conductivity,
+        )
+    )
+    scene = Scene(
+        (_coil(),),
+        medium,
+        (package,),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    coupled = artifact.solve(
+        scene,
+        frequency,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            scene.coils,
+            medium,
+        ),
+        frequency,
+        CFG,
+    ).solve()
+
+    assert (
+        coupled.mixed_result.node_environment_current
+        is not None
+    )
+    assert np.allclose(
+        coupled.mixed_result.node_charge,
+        0.0,
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert np.allclose(
+        coupled.surface_density_transfer,
+        0.0,
+        atol=2e-12,
+        rtol=0.0,
+    )
+    assert np.allclose(
+        coupled.impedance,
+        bare.impedance,
+        rtol=2e-7,
+        atol=2e-9,
+    )
+    assert (
+        coupled.power_closure_error
+        < 2e-7
+    )
+    assert (
+        coupled.channel_labels[
+            -1
+        ]
+        == "electric_environment:aggregate"
+    )
+
+
+def test_dc_conductive_package_contrast_changes_resistive_response_and_closes_power():
+    frequency = 0.0
+    background = HomogeneousMedium(
+        relative_permittivity=2.0,
+        relative_permeability=1.0,
+        conductivity=1.5e-3,
+    )
+    matched_scene = Scene(
+        (_coil(),),
+        background,
+        (
+            _package(
+                IsotropicMaterial(
+                    relative_permittivity=3.0,
+                    conductivity=1.5e-3,
+                )
+            ),
+        ),
+    )
+    contrast_scene = Scene(
+        (_coil(),),
+        background,
+        (
+            _package(
+                IsotropicMaterial(
+                    relative_permittivity=3.0,
+                    conductivity=6.0e-3,
+                )
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    matched = artifact.solve(
+        matched_scene,
+        frequency,
+    )
+    contrast = artifact.solve(
+        contrast_scene,
+        frequency,
+    )
+
+    assert (
+        abs(
+            contrast.impedance[
+                0,
+                0,
+            ].real
+            - matched.impedance[
+                0,
+                0,
+            ].real
+        )
+        > 1e-9
+    )
+    assert (
+        abs(
+            contrast.impedance[
+                0,
+                0,
+            ].imag
+        )
+        < 1e-10
+    )
+    environment = (
+        contrast.dielectric_dissipation_matrix
+    )
+    assert np.allclose(
+        environment,
+        environment.conj().T,
+        atol=1e-10,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                environment
+            )
+        )
+        >= -2e-8
+    )
+    assert (
+        np.linalg.norm(
+            environment
+        )
+        > 0.0
+    )
+    assert (
+        contrast.power_closure_error
+        < 5e-6
+    )
+
+
+def test_dc_conductor_fully_inside_insulating_package_fails_closed():
+    scene = Scene(
+        (_coil(),),
+        HomogeneousMedium(
+            conductivity=2.0e-3,
+        ),
+        (
+            _package(
+                IsotropicMaterial(
+                    relative_permittivity=4.0,
+                    conductivity=0.0,
+                )
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="positive conductivity",
+    ):
+        artifact.solve(
+            scene,
+            0.0,
+        )
