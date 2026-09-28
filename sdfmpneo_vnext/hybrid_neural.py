@@ -19,6 +19,7 @@ except ImportError as exc:  # pragma: no cover
 from .analytic_baseline import analytic_port_baseline
 from .hybrid_domain import (
     validate_hybrid_geometry_domain,
+    validate_package_conductor_topology,
 )
 from .hybrid_features import (
     EncodedHybridScene,
@@ -1481,6 +1482,7 @@ class HybridNeuralResidualArtifact:
             )
         )
         self._validated_geometry_enclosures = set()
+        self._validated_topology_pairs = set()
         self.supports_lossy_background = bool(
             self.background_conductivity_range
             is not None
@@ -1601,6 +1603,12 @@ class HybridNeuralResidualArtifact:
             raise ValueError(
                 "hybrid neural artifact requires at least one package"
             )
+        validate_package_conductor_topology(
+            scene,
+            validated_pairs=(
+                self._validated_topology_pairs
+            ),
+        )
         validate_hybrid_geometry_domain(
             scene,
             frequency_hz,
