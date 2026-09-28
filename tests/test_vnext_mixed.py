@@ -496,3 +496,89 @@ def test_multi_debye_background_is_passive_and_closes_mixed_power():
         rtol=6e-6,
         atol=6e-8,
     )
+
+
+class _CustomBackgroundMaterial:
+    def __init__(
+        self,
+    ):
+        self._delegate = MultiDebyeMaterial(
+            relative_permittivity_infinite=2.5,
+            relaxation_strengths=(
+                3.0,
+                7.0,
+            ),
+            relaxation_times=(
+                3.0e-7,
+                4.0e-6,
+            ),
+            conductivity=0.0,
+        )
+        self.relative_permeability = (
+            self._delegate.relative_permeability
+        )
+        self.conductivity = (
+            self._delegate.conductivity
+        )
+
+    @property
+    def permeability(
+        self,
+    ):
+        return self._delegate.permeability
+
+    def complex_permittivity(
+        self,
+        frequency_hz,
+    ):
+        return self._delegate.complex_permittivity(
+            frequency_hz
+        )
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz,
+    ):
+        return self._delegate.relative_permittivity_at(
+            frequency_hz
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz,
+    ):
+        return self._delegate.loss_conductivity(
+            frequency_hz
+        )
+
+
+def test_custom_material_response_protocol_runs_mixed_reference():
+    frequency = 90_000.0
+    medium = _CustomBackgroundMaterial()
+    scene = Scene(
+        (
+            coil(
+                0.025
+            ),
+        ),
+        medium,
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        CFG,
+    ).solve()
+    assert (
+        result.background_dissipation_matrix
+        is not None
+    )
+    assert (
+        np.linalg.norm(
+            result.background_dissipation_matrix
+        )
+        > 0.0
+    )
+    assert (
+        result.power_closure_error()
+        < 1e-5
+    )
