@@ -1378,3 +1378,66 @@ def test_hybrid_fast_rejects_package_surface_intersecting_finite_conductor():
             scene,
             85_000.0,
         )
+
+
+def test_hybrid_fast_geometry_domain_accepts_declared_nested_package_count():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            3,
+            3,
+        ),
+        nested_package_probability=1.0,
+        nested_package_scale_range=(
+            1.15,
+            1.25,
+        ),
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            3301
+        ),
+        config,
+    )
+    artifact = _artifact(
+        scene,
+        geometry_domain=(
+            config.geometry_domain_metadata()
+        ),
+        package_permittivity_range=(
+            1.0,
+            8.0,
+        ),
+        package_loss_conductivity_range=(
+            0.0,
+            1.0e-2,
+        ),
+        package_permeability_range=(
+            1.0,
+            1.0,
+        ),
+    )
+    prediction = artifact.predict_structured(
+        scene,
+        frequency,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+
+    outside = Scene(
+        scene.coils,
+        scene.medium,
+        (
+            scene.packages[
+                0
+            ],
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="package count",
+    ):
+        artifact.predict_structured(
+            outside,
+            frequency,
+        )
