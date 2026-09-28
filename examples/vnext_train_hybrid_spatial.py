@@ -128,6 +128,9 @@ def main():
     package_loss_domain = (
         dataset.package_loss_conductivity_domain
     )
+    package_permeability_domain = (
+        dataset.package_permeability_domain
+    )
     if (
         lossy_present
         and background_domain
@@ -173,6 +176,8 @@ def main():
         != package_permittivity_domain
         or port.package_loss_conductivity_range
         != package_loss_domain
+        or port.package_permeability_range
+        != package_permeability_domain
     ):
         raise SystemExit(
             "port artifact package material domain does not match the dataset"
@@ -240,6 +245,9 @@ def main():
             ),
             "package_loss_conductivity_domain": (
                 package_loss_domain
+            ),
+            "package_permeability_domain": (
+                package_permeability_domain
             ),
             "artifact": str(
                 args.spatial_artifact
