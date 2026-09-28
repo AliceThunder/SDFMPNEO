@@ -576,6 +576,19 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
             2.0e-4,
         ),
         lossy_background_probability=0.0,
+        debye_package_probability=1.0,
+        package_debye_epsilon_infinite_range=(
+            2.0,
+            3.0,
+        ),
+        package_debye_delta_epsilon_range=(
+            4.0,
+            5.0,
+        ),
+        package_debye_relaxation_time_range=(
+            1.0e-6,
+            2.0e-6,
+        ),
         debye_background_probability=1.0,
         background_debye_epsilon_infinite_range=(
             2.0,
@@ -601,6 +614,12 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
         scene.medium,
         DebyeMaterial,
     )
+    assert isinstance(
+        scene.packages[
+            0
+        ].material,
+        DebyeMaterial,
+    )
     assert (
         scene.medium.conductivity
         == 0.0
@@ -612,6 +631,15 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
         > 0.0
     )
 
+    package_domain = (
+        config.package_domain_metadata()
+    )
+    assert (
+        package_domain[
+            "debye_probability"
+        ]
+        == 1.0
+    )
     domain = config.background_domain_metadata()
     assert domain[
         "debye_probability"
