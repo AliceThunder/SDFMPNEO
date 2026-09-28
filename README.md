@@ -261,8 +261,8 @@ time window.
 For package thermal contrast, REFERENCE uses the same interface solver with
 REFERENCE electromagnetic loss fields. FAST uses the trained port/spatial loss
 artifacts and solves only the local package thermal-interface system online.
-Multiple disjoint thermally distinct packages are solved in one coupled
-interface system; no finite world box is introduced.
+Multiple strictly nested or disjoint thermally distinct material regions are
+solved in one coupled interface system; no finite world box is introduced.
 
 ## Important current scope limits
 
