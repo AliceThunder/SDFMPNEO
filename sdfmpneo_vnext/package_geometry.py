@@ -408,6 +408,57 @@ class SuperquadricPackageGeometry:
             <= tolerance
         )
 
+    def classify_conductor(
+        self,
+        conductor_geometry,
+        *,
+        longitudinal_segments: int = 64,
+        section_points: int = 16,
+        tolerance: float = 1e-10,
+    ) -> str:
+        """Classify a finite conductor as wholly inside or outside this package."""
+        points = conductor_geometry.surface_samples(
+            longitudinal_segments=(
+                longitudinal_segments
+            ),
+            section_points=(
+                section_points
+            ),
+        )
+        implicit = np.asarray(
+            self.implicit(
+                points
+            ),
+            dtype=float,
+        )
+        inside = (
+            implicit
+            <= -abs(
+                float(
+                    tolerance
+                )
+            )
+        )
+        outside = (
+            implicit
+            >= abs(
+                float(
+                    tolerance
+                )
+            )
+        )
+        if np.all(
+            inside
+        ):
+            return "inside"
+        if np.all(
+            outside
+        ):
+            return "outside"
+        raise ValueError(
+            "package surface intersects a finite conductor"
+        )
+
     def surface_points(
         self,
         vertical_order: int = 17,
