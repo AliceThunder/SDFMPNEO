@@ -322,26 +322,69 @@ def validate_hybrid_geometry_domain(
             ),
         )
     )
-    expected_packages = int(
-        domain.get(
-            "n_packages",
-            len(
-                scene.packages
-            ),
-        )
-    )
     if len(
         scene.coils
     ) != expected_coils:
         raise ValueError(
             "coil count is outside the hybrid artifact geometry domain"
         )
-    if len(
-        scene.packages
-    ) != expected_packages:
-        raise ValueError(
-            "package count is outside the hybrid artifact geometry domain"
+    if "n_packages_range" in domain:
+        package_count = np.asarray(
+            domain[
+                "n_packages_range"
+            ],
+            dtype=int,
         )
+        if (
+            package_count.shape
+            != (
+                2,
+            )
+            or package_count[
+                0
+            ] < 1
+            or package_count[
+                1
+            ] < package_count[
+                0
+            ]
+        ):
+            raise ValueError(
+                "invalid package-count geometry domain"
+            )
+        if not (
+            int(
+                package_count[
+                    0
+                ]
+            )
+            <= len(
+                scene.packages
+            )
+            <= int(
+                package_count[
+                    1
+                ]
+            )
+        ):
+            raise ValueError(
+                "package count is outside the hybrid artifact geometry domain"
+            )
+    else:
+        expected_packages = int(
+            domain.get(
+                "n_packages",
+                len(
+                    scene.packages
+                ),
+            )
+        )
+        if len(
+            scene.packages
+        ) != expected_packages:
+            raise ValueError(
+                "package count is outside the hybrid artifact geometry domain"
+            )
 
     conductor = domain.get(
         "conductor"
@@ -478,18 +521,25 @@ def validate_hybrid_geometry_domain(
         raise ValueError(
             "geometry domain is missing package metadata"
         )
-    if (
-        len(
-            scene.packages
-        )
-        == 1
-    ):
-        package = scene.packages[
-            0
-        ].geometry
-        root = scene.coils[
-            0
-        ].geometry
+    package_domain_topology(
+        scene.packages
+    )
+    minimum_half_z = _declared_range(
+        package_domain,
+        "minimum_half_z_range",
+    )[
+        0
+    ]
+    enclosure_bounds = _declared_range(
+        package_domain,
+        "enclosure_radius_range",
+    )
+    offset_bounds = _declared_range(
+        package_domain,
+        "center_offset_fraction_range",
+    )
+    for package_object in scene.packages:
+        package = package_object.geometry
         if not _within(
             float(
                 package.exponent_xy
@@ -514,32 +564,6 @@ def validate_hybrid_geometry_domain(
             raise ValueError(
                 "package exponent_z is outside the hybrid artifact geometry domain"
             )
-        offset_fraction = float(
-            np.linalg.norm(
-                package.pose.translation
-                - root.pose.translation
-            )
-            / max(
-                root.outer_a,
-                root.outer_b,
-            )
-        )
-        if not _within(
-            offset_fraction,
-            _declared_range(
-                package_domain,
-                "center_offset_fraction_range",
-            ),
-        ):
-            raise ValueError(
-                "package center offset is outside the hybrid artifact geometry domain"
-            )
-        minimum_half_z = _declared_range(
-            package_domain,
-            "minimum_half_z_range",
-        )[
-            0
-        ]
         if (
             float(
                 package.half_extents[
@@ -553,60 +577,108 @@ def validate_hybrid_geometry_domain(
                 "package thickness is outside the hybrid artifact geometry domain"
             )
 
+        enclosed = []
+        for coil in scene.coils:
+            classification = package.classify_conductor(
+                coil.geometry,
+                longitudinal_segments=64,
+                section_points=16,
+                tolerance=1e-10,
+            )
+            if classification == "inside":
+                enclosed.append(
+                    coil.geometry
+                )
+        if not enclosed:
+            raise ValueError(
+                "each package must enclose at least one finite conductor in "
+                "the declared hybrid geometry domain"
+            )
+
+        root = min(
+            enclosed,
+            key=lambda geometry: (
+                np.linalg.norm(
+                    package.pose.translation
+                    - geometry.pose.translation
+                )
+                / max(
+                    geometry.outer_a,
+                    geometry.outer_b,
+                )
+            ),
+        )
+        offset_fraction = float(
+            np.linalg.norm(
+                package.pose.translation
+                - root.pose.translation
+            )
+            / max(
+                root.outer_a,
+                root.outer_b,
+            )
+        )
+        if not _within(
+            offset_fraction,
+            offset_bounds,
+        ):
+            raise ValueError(
+                "package center offset is outside the hybrid artifact geometry domain"
+            )
+
         enclosure_key = _enclosure_key(
             root,
             package,
         )
         if (
             validated_enclosures
-            is None
-            or enclosure_key
-            not in validated_enclosures
+            is not None
+            and enclosure_key
+            in validated_enclosures
         ):
-            conductor_surface = root.surface_samples(
-                longitudinal_segments=96,
-                section_points=20,
+            continue
+        conductor_surface = root.surface_samples(
+            longitudinal_segments=96,
+            section_points=20,
+        )
+        implicit = np.asarray(
+            package.implicit(
+                conductor_surface
+            ),
+            dtype=float,
+        )
+        if np.any(
+            implicit
+            > 1e-10
+        ):
+            raise ValueError(
+                "package does not enclose its finite conductor as required "
+                "by the hybrid artifact geometry domain"
             )
-            implicit = np.asarray(
-                package.implicit(
-                    conductor_surface
-                ),
-                dtype=float,
-            )
-            if np.any(
-                implicit
-                > 1e-10
-            ):
-                raise ValueError(
-                    "package does not enclose the finite primary conductor as "
-                    "required by the hybrid artifact geometry domain"
-                )
-            enclosure_radius = float(
-                np.max(
-                    np.maximum(
-                        implicit
-                        + 1.0,
-                        0.0,
-                    ) ** (
-                        1.0
-                        / float(
-                            package.exponent_z
-                        )
+        enclosure_radius = float(
+            np.max(
+                np.maximum(
+                    implicit
+                    + 1.0,
+                    0.0,
+                ) ** (
+                    1.0
+                    / float(
+                        package.exponent_z
                     )
                 )
             )
-            if not _within(
-                enclosure_radius,
-                _declared_range(
-                    package_domain,
-                    "enclosure_radius_range",
-                ),
-            ):
-                raise ValueError(
-                    "package enclosure scale is outside the hybrid artifact "
-                    "geometry domain"
-                )
-            if validated_enclosures is not None:
-                validated_enclosures.add(
-                    enclosure_key
-                )
+        )
+        if not _within(
+            enclosure_radius,
+            enclosure_bounds,
+        ):
+            raise ValueError(
+                "package enclosure scale is outside the hybrid artifact "
+                "geometry domain"
+            )
+        if validated_enclosures is not None:
+            validated_enclosures.add(
+                enclosure_key
+            )
+
