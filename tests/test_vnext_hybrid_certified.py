@@ -144,7 +144,7 @@ def test_hybrid_full_certificate_requires_independent_convergence_evidence():
     )
     assert (
         certified.operator_backend
-        == "dense_dielectric_reference"
+        == "dense_electric_magnetic_interface_reference"
     )
 
 
@@ -201,4 +201,67 @@ def test_hybrid_certificate_falls_back_to_reference_when_fast_is_outside_domain(
     assert (
         "outside the declared FAST geometry domain"
         in certified.fast_domain_reason
+    )
+
+
+def test_hybrid_certificate_supports_exact_dc_with_insulating_package_in_conductive_background():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            conductivity=2.0e-3,
+        ),
+        (
+            PackageObject(
+                base.packages[
+                    0
+                ].geometry,
+                IsotropicMaterial(
+                    relative_permittivity=4.0,
+                    conductivity=0.0,
+                ),
+                "insulating-package",
+            ),
+        ),
+    )
+    report = hybrid_reference_convergence(
+        scene,
+        0.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+        magnetic_surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    certified = certify_dielectric_ports(
+        scene,
+        0.0,
+        _OutOfFastDomainArtifact(),
+        config=_config(),
+        convergence_report=report,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        magnetic_reciprocity_tolerance=0.2,
+        fast_domain_correction_limit=0.2,
+    )
+    assert certified.certified
+    assert certified.discretization_certified
+    assert np.allclose(
+        certified.impedance.imag,
+        0.0,
+        atol=1e-10,
+        rtol=0.0,
+    )
+    assert (
+        certified.port_certificate.power_closure_error
+        < 1e-6
+    )
+    assert (
+        certified.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
     )
