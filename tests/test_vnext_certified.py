@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
@@ -168,3 +169,62 @@ def test_large_physical_correction_is_reported_outside_fast_domain():
         == "CORRECTED_OUT_OF_FAST_DOMAIN"
     )
     assert result.relative_observable_correction > 0.05
+
+
+class _OutOfFastDomainArtifact:
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        raise ValueError(
+            "outside declared FAST domain"
+        )
+
+
+def test_mqs_certification_falls_back_to_reference_when_fast_is_unavailable():
+    class _Converged:
+        converged = True
+
+    result = certify_mqs_ports(
+        _scene(),
+        0.0,
+        _OutOfFastDomainArtifact(),
+        config=_config(),
+        convergence_report=_Converged(),
+        algebraic_tolerance=1e-10,
+        allow_reference_fallback=True,
+    )
+    assert result.certified
+    assert (
+        result.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+    assert result.used_reference_fallback
+    assert not result.fast_domain_valid
+    assert np.isinf(
+        result.relative_observable_correction
+    )
+    assert (
+        result.operator_backend
+        == "dense_reference_fallback"
+    )
+    assert (
+        result.fast_domain_reason
+        == "outside declared FAST domain"
+    )
+
+
+def test_mqs_certification_preserves_fast_domain_error_when_fallback_is_disabled():
+    with pytest.raises(
+        ValueError,
+        match="outside declared FAST domain",
+    ):
+        certify_mqs_ports(
+            _scene(),
+            0.0,
+            _OutOfFastDomainArtifact(),
+            config=_config(),
+            algebraic_tolerance=1e-10,
+            allow_reference_fallback=False,
+        )
