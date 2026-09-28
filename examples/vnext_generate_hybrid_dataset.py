@@ -65,6 +65,16 @@ def main():
         default=16,
     )
     parser.add_argument(
+        "--package-offset-fraction-min",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--package-offset-fraction-max",
+        type=float,
+        default=0.35,
+    )
+    parser.add_argument(
         "--debye-package-probability",
         type=float,
         default=0.0,
@@ -197,6 +207,10 @@ def main():
         )
 
     sampler = HybridSceneSamplerConfig(
+        package_center_offset_fraction_range=(
+            args.package_offset_fraction_min,
+            args.package_offset_fraction_max,
+        ),
         debye_package_probability=(
             args.debye_package_probability
         ),
@@ -250,6 +264,9 @@ def main():
         ),
     )
     domain_metadata = {
+        "geometry": (
+            sampler.geometry_domain_metadata()
+        ),
         "background": (
             sampler.background_domain_metadata()
         ),
