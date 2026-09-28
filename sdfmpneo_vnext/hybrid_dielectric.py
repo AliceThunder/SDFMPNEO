@@ -910,10 +910,13 @@ class DielectricCoupledMixedTeacher:
         )
         environment_label = (
             "electric_environment:aggregate"
-            if self.scene.medium.loss_conductivity(
-                self.frequency_hz
+            if (
+                self.conductive_dc
+                or self.scene.medium.loss_conductivity(
+                    self.frequency_hz
+                )
+                > 0.0
             )
-            > 0.0
             else "dielectric:aggregate"
         )
         labels = tuple(
