@@ -1821,6 +1821,131 @@ class PreparedMultiThermalInterfaceField:
             derivative,
         )
 
+    def _region_basis(
+        self,
+        points,
+        laplace_s: float,
+        *,
+        region_index: int,
+        normals=None,
+    ):
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        n = len(
+            self.surface_positions
+        )
+        value = np.zeros(
+            (
+                len(
+                    points
+                ),
+                2
+                * n,
+            ),
+            dtype=float,
+        )
+        derivative = (
+            None
+            if normals is None
+            else np.zeros_like(
+                value
+            )
+        )
+        medium = (
+            self.background_medium
+            if region_index < 0
+            else self.regions[
+                region_index
+            ][
+                "medium"
+            ]
+        )
+        blocks = []
+        if region_index < 0:
+            for index, region in enumerate(
+                self.regions
+            ):
+                if region[
+                    "parent"
+                ] is None:
+                    blocks.append(
+                        (
+                            region[
+                                "slice"
+                            ],
+                            region[
+                                "exterior_mfs"
+                            ],
+                        )
+                    )
+        else:
+            region = self.regions[
+                region_index
+            ]
+            sl = region[
+                "slice"
+            ]
+            blocks.append(
+                (
+                    slice(
+                        n
+                        + sl.start,
+                        n
+                        + sl.stop,
+                    ),
+                    region[
+                        "interior_mfs"
+                    ],
+                )
+            )
+            for child_index in region[
+                "children"
+            ]:
+                child = self.regions[
+                    child_index
+                ]
+                blocks.append(
+                    (
+                        child[
+                            "slice"
+                        ],
+                        child[
+                            "exterior_mfs"
+                        ],
+                    )
+                )
+
+        for columns, sources in blocks:
+            value[
+                :,
+                columns,
+            ] = _yukawa_kernel(
+                points,
+                sources,
+                medium,
+                laplace_s,
+            )[
+                0
+            ]
+            if normals is not None:
+                derivative[
+                    :,
+                    columns,
+                ] = _normal_derivative_kernel(
+                    points,
+                    normals,
+                    sources,
+                    medium,
+                    laplace_s,
+                )
+        return (
+            value,
+            derivative,
+            medium,
+        )
+
     def _interface_solution(
         self,
         laplace_s: float,
@@ -1837,22 +1962,9 @@ class PreparedMultiThermalInterfaceField:
         n = len(
             self.surface_positions
         )
-        exterior_value = _yukawa_kernel(
-            self.surface_positions,
-            self.exterior_mfs_sources,
-            self.background_medium,
-            laplace_s,
-        )[
-            0
-        ]
-        exterior_derivative = (
-            _normal_derivative_kernel(
-                self.surface_positions,
-                self.surface_normals,
-                self.exterior_mfs_sources,
-                self.background_medium,
-                laplace_s,
-            )
+        width = (
+            self.source.n_ports
+            * self.source.n_ports
         )
         matrix = np.zeros(
             (
@@ -1863,34 +1975,15 @@ class PreparedMultiThermalInterfaceField:
             ),
             dtype=float,
         )
-        matrix[
-            :n,
-            :n,
-        ] = exterior_value
-        matrix[
-            n:,
-            :n,
-        ] = (
-            self.background_medium.conductivity
-            * exterior_derivative
-        )
-
-        (
-            background_particular,
-            background_derivative,
-        ) = self._particular(
-            self.surface_positions,
-            laplace_s,
-            region_index=-1,
-            normals=(
-                self.surface_normals
+        rhs_value = np.zeros(
+            (
+                n,
+                width,
             ),
+            dtype=complex,
         )
-        rhs_value = np.empty_like(
-            background_particular
-        )
-        rhs_flux = np.empty_like(
-            background_particular
+        rhs_flux = np.zeros_like(
+            rhs_value
         )
 
         for region_index, region in enumerate(
@@ -1899,93 +1992,99 @@ class PreparedMultiThermalInterfaceField:
             sl = region[
                 "slice"
             ]
-            medium = region[
-                "medium"
+            points = region[
+                "positions"
             ]
-            interior_value = _yukawa_kernel(
-                region[
-                    "positions"
-                ],
-                region[
-                    "interior_mfs"
-                ],
-                medium,
-                laplace_s,
-            )[
-                0
+            normals = region[
+                "normals"
             ]
-            interior_derivative = (
-                _normal_derivative_kernel(
-                    region[
-                        "positions"
-                    ],
-                    region[
-                        "normals"
-                    ],
-                    region[
-                        "interior_mfs"
-                    ],
-                    medium,
-                    laplace_s,
-                )
+            parent = region[
+                "parent"
+            ]
+            outside_index = (
+                -1
+                if parent is None
+                else parent
             )
-            matrix[
-                sl,
-                n
-                + sl.start:
-                n
-                + sl.stop,
-            ] = (
-                -interior_value
-            )
-            matrix[
-                n
-                + sl.start:
-                n
-                + sl.stop,
-                n
-                + sl.start:
-                n
-                + sl.stop,
-            ] = (
-                -medium.conductivity
-                * interior_derivative
-            )
-
             (
-                package_particular,
-                package_derivative,
-            ) = self._particular(
-                region[
-                    "positions"
-                ],
+                outside_value,
+                outside_derivative,
+                outside_medium,
+            ) = self._region_basis(
+                points,
+                laplace_s,
+                region_index=(
+                    outside_index
+                ),
+                normals=normals,
+            )
+            (
+                inside_value,
+                inside_derivative,
+                inside_medium,
+            ) = self._region_basis(
+                points,
                 laplace_s,
                 region_index=(
                     region_index
                 ),
-                normals=(
-                    region[
-                        "normals"
-                    ]
+                normals=normals,
+            )
+            matrix[
+                sl,
+                :,
+            ] = (
+                outside_value
+                - inside_value
+            )
+            matrix[
+                n
+                + sl.start:
+                n
+                + sl.stop,
+                :,
+            ] = (
+                outside_medium.conductivity
+                * outside_derivative
+                - inside_medium.conductivity
+                * inside_derivative
+            )
+
+            (
+                outside_particular,
+                outside_particular_derivative,
+            ) = self._particular(
+                points,
+                laplace_s,
+                region_index=(
+                    outside_index
                 ),
+                normals=normals,
+            )
+            (
+                inside_particular,
+                inside_particular_derivative,
+            ) = self._particular(
+                points,
+                laplace_s,
+                region_index=(
+                    region_index
+                ),
+                normals=normals,
             )
             rhs_value[
                 sl
             ] = (
-                package_particular
-                - background_particular[
-                    sl
-                ]
+                inside_particular
+                - outside_particular
             )
             rhs_flux[
                 sl
             ] = (
-                medium.conductivity
-                * package_derivative
-                - self.background_medium.conductivity
-                * background_derivative[
-                    sl
-                ]
+                inside_medium.conductivity
+                * inside_particular_derivative
+                - outside_medium.conductivity
+                * outside_particular_derivative
             )
 
         rhs = np.vstack(
