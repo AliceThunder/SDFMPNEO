@@ -1232,13 +1232,8 @@ def test_fast_nested_package_spatial_loss_masks_parent_material_region():
     outer_matrix = (
         prepared.package_dissipation_matrix(
             1,
-            point[
-                None,
-                :
-            ],
-        )[
-            0
-        ]
+            point,
+        )
     )
     assert np.allclose(
         outer_matrix,
