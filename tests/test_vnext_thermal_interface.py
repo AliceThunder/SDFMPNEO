@@ -1,9 +1,19 @@
 import numpy as np
 
 from sdfmpneo_vnext import (
+    AnalyticBaselineArtifact,
+    CoilObject,
+    ConductorMaterial,
+    HomogeneousMedium,
     HomogeneousThermalMedium,
+    IsotropicMaterial,
+    MeshfreeVNextSystem,
+    MQSConfig,
+    PackageObject,
     PreparedMultiThermalInterfaceField,
     RigidPose,
+    Scene,
+    SuperellipseSpiral,
     SuperquadricPackageGeometry,
     ThermalSourceQuadrature,
     haar_rotation,
@@ -373,4 +383,134 @@ def test_multi_package_thermal_interface_is_common_se3_invariant():
         reference_step,
         rtol=2e-5,
         atol=2e-6,
+    )
+
+
+def test_system_reference_continuous_thermal_field_dispatches_multiple_package_interfaces():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.020,
+            0.018,
+            0.65,
+            0.001,
+            0.001,
+            conductor_width=8.0e-4,
+            conductor_thickness=6.0e-4,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+        "coil",
+    )
+    first_geometry = _geometry(
+        (
+            -0.045,
+            0.0,
+            0.0,
+        )
+    )
+    second_geometry = _geometry(
+        (
+            0.045,
+            0.0,
+            0.0,
+        )
+    )
+    first_package = PackageObject(
+        first_geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity=0.24,
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "first",
+    )
+    second_package = PackageObject(
+        second_geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity=1.25,
+            density=920.0,
+            heat_capacity=2300.0,
+        ),
+        "second",
+    )
+    scene = Scene(
+        (
+            coil,
+        ),
+        HomogeneousMedium(),
+        (
+            first_package,
+            second_package,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=20,
+        ),
+        reference_config=MQSConfig(
+            segments_per_turn=6,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        dielectric_surface_vertical_order=6,
+        dielectric_surface_azimuthal_order=12,
+    )
+    field = (
+        system.reference_continuous_thermal_field(
+            scene,
+            40_000.0,
+            _background(),
+            longitudinal_segments=6,
+            radial_order=3,
+            angular_order=8,
+            package_axial_order=2,
+            package_radial_order=2,
+            package_azimuthal_order=8,
+            interface_vertical_order=4,
+            interface_azimuthal_order=8,
+            mfs_offset_fraction=0.12,
+            stehfest_order=6,
+            interface_residual_tolerance=5e-3,
+            svd_rcond=1e-13,
+        )
+    )
+    assert isinstance(
+        field,
+        PreparedMultiThermalInterfaceField,
+    )
+    currents = np.asarray(
+        [
+            1.0
+            + 0.0j
+        ]
+    )
+    temperature = field.temperature_step(
+        np.asarray(
+            [
+                0.0,
+                0.0,
+                0.025,
+            ]
+        ),
+        2.0,
+        currents,
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > field.medium.ambient_temperature
+    )
+    assert (
+        field.maximum_interface_residual
+        <= field.interface_residual_tolerance
     )
