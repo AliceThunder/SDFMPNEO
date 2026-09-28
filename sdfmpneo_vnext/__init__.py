@@ -19,6 +19,7 @@ from .package_geometry import (
 )
 from .scene import (
     ConductorMaterial,
+    PassiveIsotropicMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
     DebyeMaterial,
@@ -240,6 +241,7 @@ __all__ = [
     "bishop_segment_frames",
     "haar_rotation",
     "ConductorMaterial",
+    "PassiveIsotropicMaterial",
     "HomogeneousMedium",
     "IsotropicMaterial",
     "DebyeMaterial",
