@@ -30,12 +30,13 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
-HYBRID_ARTIFACT_SCHEMA = 5
+HYBRID_ARTIFACT_SCHEMA = 6
 SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
     1,
     2,
     3,
     4,
+    5,
     HYBRID_ARTIFACT_SCHEMA,
 )
 
@@ -1299,6 +1300,7 @@ class HybridNeuralResidualArtifact:
         background_permittivity_range=None,
         package_permittivity_range=None,
         package_loss_conductivity_range=None,
+        package_permeability_range=None,
         geometry_domain=None,
         artifact_schema: int | None = None,
         device: str = "cpu",
@@ -1470,6 +1472,11 @@ class HybridNeuralResidualArtifact:
             name="package_loss_conductivity_range",
             allow_zero_lower=True,
         )
+        self.package_permeability_range = _positive_range(
+            package_permeability_range,
+            name="package_permeability_range",
+            allow_zero_lower=False,
+        )
         self.geometry_domain = (
             None
             if geometry_domain
@@ -1547,6 +1554,12 @@ class HybridNeuralResidualArtifact:
             ] = (
                 self.geometry_domain
             )
+        if self.artifact_schema >= 6:
+            config[
+                "package_permeability_range"
+            ] = (
+                self.package_permeability_range
+            )
         digest.update(
             json.dumps(
                 config,
@@ -1618,16 +1631,43 @@ class HybridNeuralResidualArtifact:
             ),
         )
         for package in scene.packages:
-            if not np.isclose(
-                package.material.relative_permeability,
-                scene.medium.relative_permeability,
-                rtol=1e-12,
-                atol=1e-12,
-            ):
-                raise NotImplementedError(
-                    "magnetic package contrast is outside the current "
-                    "dielectric SIE/FAST physics domain"
+            permeability = float(
+                package.material.relative_permeability
+            )
+            if self.package_permeability_range is None:
+                if not np.isclose(
+                    permeability,
+                    scene.medium.relative_permeability,
+                    rtol=1e-12,
+                    atol=1e-12,
+                ):
+                    raise ValueError(
+                        "this hybrid artifact was not trained/certified for "
+                        "magnetic package contrast"
+                    )
+            else:
+                lower, upper = (
+                    self.package_permeability_range
                 )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    permeability
+                    < lower
+                    - tolerance
+                    or permeability
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package relative permeability is outside the hybrid "
+                        "artifact training domain"
+                    )
             epsilon_real = float(
                 np.real(
                     package.material.relative_permittivity_at(
@@ -1923,6 +1963,9 @@ class HybridNeuralResidualArtifact:
                 "package_loss_conductivity_range": (
                     self.package_loss_conductivity_range
                 ),
+                "package_permeability_range": (
+                    self.package_permeability_range
+                ),
                 "geometry_domain": (
                     self.geometry_domain
                 ),
@@ -2004,6 +2047,11 @@ class HybridNeuralResidualArtifact:
             package_loss_conductivity_range=(
                 payload.get(
                     "package_loss_conductivity_range"
+                )
+            ),
+            package_permeability_range=(
+                payload.get(
+                    "package_permeability_range"
                 )
             ),
             geometry_domain=(
