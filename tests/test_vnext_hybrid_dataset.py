@@ -725,12 +725,16 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
     )
 
 
-def test_hybrid_sampler_generates_passive_multi_debye_media():
+def test_hybrid_sampler_generates_passive_multi_debye_media(tmp_path):
     config = HybridSceneSamplerConfig(
         lossless_probability=1.0,
         lossy_background_probability=0.0,
         debye_package_probability=0.0,
         multi_debye_package_probability=1.0,
+        package_relative_permeability_range=(
+            1.7,
+            2.3,
+        ),
         package_debye_epsilon_infinite_range=(
             2.0,
             3.0,
@@ -777,6 +781,13 @@ def test_hybrid_sampler_generates_passive_multi_debye_media():
             0
         ].material,
         MultiDebyeMaterial,
+    )
+    assert (
+        1.7
+        <= scene.packages[
+            0
+        ].material.relative_permeability
+        <= 2.3
     )
     for material, delta_range in (
         (
@@ -844,6 +855,15 @@ def test_hybrid_sampler_generates_passive_multi_debye_media():
         == 1.0
     )
     assert (
+        package_domain[
+            "relative_permeability_range"
+        ]
+        == [
+            1.7,
+            2.3,
+        ]
+    )
+    assert (
         background_domain[
             "multi_debye_poles_range"
         ]
@@ -893,6 +913,26 @@ def test_hybrid_sampler_generates_passive_multi_debye_media():
         ][
             1
         ]
+    )
+
+    dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "hybrid-magnetic-domain",
+        domain_metadata={
+            "background": (
+                background_domain
+            ),
+            "package": (
+                package_domain
+            ),
+        },
+    )
+    assert (
+        dataset.package_permeability_domain
+        == (
+            1.7,
+            2.3,
+        )
     )
 
 
