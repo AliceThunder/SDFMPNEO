@@ -2195,6 +2195,7 @@ def train_hybrid_residual_surrogate(
     background_permittivity_range=None,
     package_permittivity_range=None,
     package_loss_conductivity_range=None,
+    package_permeability_range=None,
     geometry_domain=None,
     device: str = "cpu",
 ):
@@ -2474,6 +2475,16 @@ def train_hybrid_residual_surrogate(
         ],
         dtype=float,
     )
+    training_package_permeability = np.asarray(
+        [
+            float(
+                package.material.relative_permeability
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
     if package_permittivity_range is None:
         resolved_package_permittivity_range = (
             float(
@@ -2580,26 +2591,85 @@ def train_hybrid_residual_surrogate(
             ),
         )
 
+    if package_permeability_range is None:
+        resolved_package_permeability_range = (
+            float(
+                np.min(
+                    training_package_permeability
+                )
+            ),
+            float(
+                np.max(
+                    training_package_permeability
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_permeability_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_permeability_range must be a finite positive "
+                "increasing pair"
+            )
+        resolved_package_permeability_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
     package_epsilon_lower, package_epsilon_upper = (
         resolved_package_permittivity_range
     )
     package_loss_lower, package_loss_upper = (
         resolved_package_loss_conductivity_range
     )
+    package_mu_lower, package_mu_upper = (
+        resolved_package_permeability_range
+    )
     for sample in (
         samples
         + validation_samples
     ):
         for package in sample.scene.packages:
-            if not np.isclose(
-                package.material.relative_permeability,
-                sample.scene.medium.relative_permeability,
-                rtol=1e-12,
-                atol=1e-12,
+            permeability = float(
+                package.material.relative_permeability
+            )
+            if (
+                permeability
+                < package_mu_lower
+                or permeability
+                > package_mu_upper
             ):
                 raise ValueError(
-                    "magnetic package contrast is outside the hybrid training "
-                    "physics domain"
+                    "sample package relative permeability lies outside the "
+                    "declared hybrid port training domain"
                 )
             epsilon_real = float(
                 np.real(
@@ -3006,6 +3076,9 @@ def train_hybrid_residual_surrogate(
             ),
             package_loss_conductivity_range=(
                 resolved_package_loss_conductivity_range
+            ),
+            package_permeability_range=(
+                resolved_package_permeability_range
             ),
             geometry_domain=(
                 geometry_domain
