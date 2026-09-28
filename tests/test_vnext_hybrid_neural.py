@@ -679,6 +679,10 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
             0.0,
             1.0e-2,
         ),
+        package_permeability_range=(
+            1.0,
+            4.0,
+        ),
     )
     path = (
         tmp_path
@@ -706,6 +710,10 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
     assert loaded.package_loss_conductivity_range == (
         0.0,
         1.0e-2,
+    )
+    assert loaded.package_permeability_range == (
+        1.0,
+        4.0,
     )
     lossy = _with_background(
         base,
@@ -1265,6 +1273,48 @@ def test_legacy_hybrid_port_fingerprint_ignores_newer_geometry_domain_and_resave
     assert (
         current_a.fingerprint()
         != current_b.fingerprint()
+    )
+
+    schema5_mu_a = _artifact(
+        scene,
+        package_permeability_range=(
+            1.0,
+            1.0,
+        ),
+        artifact_schema=5,
+    )
+    schema5_mu_b = _artifact(
+        scene,
+        package_permeability_range=(
+            1.0,
+            4.0,
+        ),
+        artifact_schema=5,
+    )
+    assert (
+        schema5_mu_a.fingerprint()
+        == schema5_mu_b.fingerprint()
+    )
+
+    schema6_mu_a = _artifact(
+        scene,
+        package_permeability_range=(
+            1.0,
+            1.0,
+        ),
+        artifact_schema=6,
+    )
+    schema6_mu_b = _artifact(
+        scene,
+        package_permeability_range=(
+            1.0,
+            4.0,
+        ),
+        artifact_schema=6,
+    )
+    assert (
+        schema6_mu_a.fingerprint()
+        != schema6_mu_b.fingerprint()
     )
 
     path = (
