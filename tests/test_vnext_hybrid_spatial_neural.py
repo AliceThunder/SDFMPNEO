@@ -9,6 +9,7 @@ from sdfmpneo_vnext import (
     ConductorMaterial,
     HomogeneousMedium,
     HomogeneousThermalMedium,
+    HybridSceneSamplerConfig,
     HybridTeacherSample,
     IsotropicMaterial,
     MeshfreeVNextSystem,
@@ -23,6 +24,7 @@ from sdfmpneo_vnext import (
     analytic_port_baseline,
     encode_hybrid_scene_invariant,
     haar_rotation,
+    sample_hybrid_package_scene,
 )
 from sdfmpneo_vnext.hybrid_background_spatial import (
     BackgroundLossShapeNet,
