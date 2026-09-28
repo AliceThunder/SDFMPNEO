@@ -12,6 +12,7 @@ from .scene import (
     EPS0,
     HomogeneousMedium,
     IsotropicMaterial,
+    MultiDebyeMaterial,
     PackageObject,
     Scene,
 )
@@ -197,6 +198,7 @@ class HybridSceneSamplerConfig:
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossless_probability: float = 0.20
     debye_package_probability: float = 0.0
+    multi_debye_package_probability: float = 0.0
     package_debye_epsilon_infinite_range: tuple[float, float] = (1.5, 6.0)
     package_debye_delta_epsilon_range: tuple[float, float] = (0.5, 20.0)
     package_debye_relaxation_time_range: tuple[float, float] = (1e-8, 1e-4)
@@ -204,6 +206,8 @@ class HybridSceneSamplerConfig:
     background_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossy_background_probability: float = 0.0
     debye_background_probability: float = 0.0
+    multi_debye_background_probability: float = 0.0
+    multi_debye_poles_range: tuple[int, int] = (2, 4)
     background_debye_epsilon_infinite_range: tuple[float, float] = (1.0, 6.0)
     background_debye_delta_epsilon_range: tuple[float, float] = (0.5, 30.0)
     background_debye_relaxation_time_range: tuple[float, float] = (1e-8, 1e-4)
@@ -292,6 +296,58 @@ class HybridSceneSamplerConfig:
             raise ValueError(
                 "debye_background_probability must lie in [0,1]"
             )
+        for name in (
+            "multi_debye_package_probability",
+            "multi_debye_background_probability",
+        ):
+            value = float(
+                getattr(
+                    self,
+                    name,
+                )
+            )
+            if not (
+                0.0
+                <= value
+                <= 1.0
+            ):
+                raise ValueError(
+                    f"{name} must lie in [0,1]"
+                )
+        if (
+            self.debye_package_probability
+            + self.multi_debye_package_probability
+            > 1.0
+        ):
+            raise ValueError(
+                "package Debye probabilities must sum to <= 1"
+            )
+        if (
+            self.debye_background_probability
+            + self.multi_debye_background_probability
+            > 1.0
+        ):
+            raise ValueError(
+                "background Debye probabilities must sum to <= 1"
+            )
+        pole_lo, pole_hi = (
+            self.multi_debye_poles_range
+        )
+        if (
+            not isinstance(
+                pole_lo,
+                (int, np.integer),
+            )
+            or not isinstance(
+                pole_hi,
+                (int, np.integer),
+            )
+            or pole_lo < 2
+            or pole_hi < pole_lo
+        ):
+            raise ValueError(
+                "multi_debye_poles_range must be an integer range >= 2"
+            )
 
 
     def package_domain_metadata(
@@ -300,11 +356,18 @@ class HybridSceneSamplerConfig:
         debye_probability = float(
             self.debye_package_probability
         )
+        multi_debye_probability = float(
+            self.multi_debye_package_probability
+        )
+        dispersive_probability = (
+            debye_probability
+            + multi_debye_probability
+        )
         constant_probability = (
             1.0
-            - debye_probability
+            - dispersive_probability
         )
-        if debye_probability <= 0.0:
+        if dispersive_probability <= 0.0:
             epsilon_lower, epsilon_upper = (
                 self.relative_permittivity_range
             )
@@ -361,7 +424,7 @@ class HybridSceneSamplerConfig:
             < 1.0
             else 0.0
         )
-        if debye_probability > 0.0:
+        if dispersive_probability > 0.0:
             omega_max = (
                 2.0
                 * np.pi
@@ -415,6 +478,21 @@ class HybridSceneSamplerConfig:
             "debye_probability": (
                 debye_probability
             ),
+            "multi_debye_probability": (
+                multi_debye_probability
+            ),
+            "multi_debye_poles_range": [
+                int(
+                    self.multi_debye_poles_range[
+                        0
+                    ]
+                ),
+                int(
+                    self.multi_debye_poles_range[
+                        1
+                    ]
+                ),
+            ],
             "debye_epsilon_infinite_range": [
                 float(
                     self.package_debye_epsilon_infinite_range[
@@ -475,12 +553,19 @@ class HybridSceneSamplerConfig:
         debye_probability = float(
             self.debye_background_probability
         )
+        multi_debye_probability = float(
+            self.multi_debye_background_probability
+        )
+        dispersive_probability = (
+            debye_probability
+            + multi_debye_probability
+        )
         constant_probability = (
             1.0
-            - debye_probability
+            - dispersive_probability
         )
 
-        if debye_probability <= 0.0:
+        if dispersive_probability <= 0.0:
             epsilon_lower, epsilon_upper = (
                 self.background_relative_permittivity_range
             )
@@ -537,7 +622,7 @@ class HybridSceneSamplerConfig:
             > 0.0
             else 0.0
         )
-        if debye_probability > 0.0:
+        if dispersive_probability > 0.0:
             omega_max = (
                 2.0
                 * np.pi
@@ -596,6 +681,21 @@ class HybridSceneSamplerConfig:
             "debye_probability": (
                 debye_probability
             ),
+            "multi_debye_probability": (
+                multi_debye_probability
+            ),
+            "multi_debye_poles_range": [
+                int(
+                    self.multi_debye_poles_range[
+                        0
+                    ]
+                ),
+                int(
+                    self.multi_debye_poles_range[
+                        1
+                    ]
+                ),
+            ],
             "debye_epsilon_infinite_range": [
                 float(
                     self.background_debye_epsilon_infinite_range[
@@ -649,6 +749,92 @@ class HybridSceneSamplerConfig:
         }
 
 
+def _sample_multi_debye_material(
+    rng: np.random.Generator,
+    *,
+    epsilon_infinite_range,
+    delta_epsilon_range,
+    relaxation_time_range,
+    pole_count_range,
+    conductivity: float,
+    relative_permeability: float = 1.0,
+):
+    pole_lo, pole_hi = (
+        pole_count_range
+    )
+    n_poles = int(
+        rng.integers(
+            int(
+                pole_lo
+            ),
+            int(
+                pole_hi
+            )
+            + 1,
+        )
+    )
+    epsilon_infinite = _uniform(
+        rng,
+        epsilon_infinite_range,
+    )
+    total_delta = _uniform(
+        rng,
+        delta_epsilon_range,
+    )
+    fractions = rng.dirichlet(
+        np.ones(
+            n_poles,
+            dtype=float,
+        )
+    )
+    strengths = (
+        total_delta
+        * fractions
+    )
+    times = np.asarray(
+        [
+            _log_uniform(
+                rng,
+                relaxation_time_range,
+            )
+            for _ in range(
+                n_poles
+            )
+        ],
+        dtype=float,
+    )
+    order = np.argsort(
+        times
+    )
+    return MultiDebyeMaterial(
+        relative_permittivity_infinite=(
+            epsilon_infinite
+        ),
+        relaxation_strengths=tuple(
+            float(
+                strengths[
+                    index
+                ]
+            )
+            for index in order
+        ),
+        relaxation_times=tuple(
+            float(
+                times[
+                    index
+                ]
+            )
+            for index in order
+        ),
+        relative_permeability=float(
+            relative_permeability
+        ),
+        conductivity=float(
+            conductivity
+        ),
+    )
+
+
 def sample_hybrid_package_scene(
     rng: np.random.Generator,
     config: HybridSceneSamplerConfig | None = None,
@@ -682,9 +868,40 @@ def sample_hybrid_package_scene(
     else:
         background_conductivity = 0.0
 
-    if (
+    background_model_draw = float(
         rng.random()
-        < config.debye_background_probability
+    )
+    if (
+        background_model_draw
+        < config.multi_debye_background_probability
+    ):
+        background = _sample_multi_debye_material(
+            rng,
+            epsilon_infinite_range=(
+                config.background_debye_epsilon_infinite_range
+            ),
+            delta_epsilon_range=(
+                config.background_debye_delta_epsilon_range
+            ),
+            relaxation_time_range=(
+                config.background_debye_relaxation_time_range
+            ),
+            pole_count_range=(
+                config.multi_debye_poles_range
+            ),
+            conductivity=(
+                background_conductivity
+            ),
+            relative_permeability=(
+                base_scene.medium.relative_permeability
+            ),
+        )
+    elif (
+        background_model_draw
+        < (
+            config.multi_debye_background_probability
+            + config.debye_background_probability
+        )
     ):
         epsilon_infinite = _uniform(
             rng,
@@ -800,9 +1017,37 @@ def sample_hybrid_package_scene(
             rng,
             config.dielectric_conductivity_range,
         )
-    if (
+    package_model_draw = float(
         rng.random()
-        < config.debye_package_probability
+    )
+    if (
+        package_model_draw
+        < config.multi_debye_package_probability
+    ):
+        package_material = _sample_multi_debye_material(
+            rng,
+            epsilon_infinite_range=(
+                config.package_debye_epsilon_infinite_range
+            ),
+            delta_epsilon_range=(
+                config.package_debye_delta_epsilon_range
+            ),
+            relaxation_time_range=(
+                config.package_debye_relaxation_time_range
+            ),
+            pole_count_range=(
+                config.multi_debye_poles_range
+            ),
+            conductivity=(
+                conductivity
+            ),
+        )
+    elif (
+        package_model_draw
+        < (
+            config.multi_debye_package_probability
+            + config.debye_package_probability
+        )
     ):
         epsilon_infinite = _uniform(
             rng,
