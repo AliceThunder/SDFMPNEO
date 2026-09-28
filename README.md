@@ -9,8 +9,9 @@ box.
 
 The current implementation supports arbitrarily posed finite-cross-section
 superelliptic spiral coils, superquadric dielectric packages, homogeneous
-background media, continuous conductor/package/background loss fields, and
-time-dependent temperature queries.  REFERENCE, FAST, and CERTIFIED paths are
+passive isotropic background media with constant, Debye, multi-Debye, or
+custom frequency-response models, continuous conductor/package/background
+loss fields, and time-dependent temperature queries.  REFERENCE, FAST, and CERTIFIED paths are
 kept separate so a neural artifact never silently replaces the correctness
 backend.
 
@@ -36,7 +37,9 @@ A scene is assembled from:
 
 - `SuperellipseSpiral` + `ConductorMaterial` + `CoilObject`
 - optional `SuperquadricPackageGeometry` + material + `PackageObject`
-- a `HomogeneousMedium`
+- a passive isotropic homogeneous background material: `HomogeneousMedium`,
+  `DebyeMaterial`, `MultiDebyeMaterial`, or a custom
+  `PassiveIsotropicMaterial` implementation
 - arbitrary `RigidPose` values for coils and packages
 
 The conductor representation has a finite superelliptic cross-section and uses
@@ -92,16 +95,24 @@ Opt into a lossy homogeneous background domain:
 ```bash
 python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --count 256 \
-  --lossy-background-probability 0.6 \
+  --lossy-background-probability 0.4 \
+  --debye-background-probability 0.5 \
   --background-epsilon-min 1.0 \
   --background-epsilon-max 6.0 \
   --background-conductivity-min 1e-5 \
   --background-conductivity-max 5e-3 \
+  --background-debye-epsilon-infinite-min 1.0 \
+  --background-debye-epsilon-infinite-max 6.0 \
+  --background-debye-delta-epsilon-min 0.5 \
+  --background-debye-delta-epsilon-max 30.0 \
+  --debye-package-probability 0.4 \
   --background-radial-order 12 \
   --background-angular-order 48
 ```
 
-The generator records the declared background domain in `manifest.json`.
+The generator records the declared package/background material domains in
+`manifest.json`, including conservative frequency-effective
+`Re(epsilon_r)` and loss-conductivity bounds for dispersive backgrounds.
 Appending with incompatible domain arguments is rejected instead of mixing
 different design domains in one frozen dataset.
 
@@ -115,9 +126,11 @@ python examples/vnext_train_hybrid_residual.py \
   --device cpu
 ```
 
-The training script reads the background conductivity support from the dataset
-manifest.  It does not infer the intended design domain from finite-sample
-minimum/maximum values.
+The training script reads the frequency-effective background permittivity and
+loss-conductivity support from the dataset manifest. It does not infer the
+intended design domain from finite-sample minimum/maximum values. FAST inputs
+therefore depend on the material response at the query frequency rather than
+on the name of the material model.
 
 The port decoder is structurally reciprocal/passive and produces PSD
 dissipation channels whose sum closes to the dissipative part of the predicted
@@ -198,11 +211,12 @@ time window.
 
 The current vNext code intentionally fails closed outside implemented physics:
 
-- the background medium is currently homogeneous and nondispersive
-  (`epsilon_r`, `mu_r`, constant `sigma`);
-- dielectric package materials may use the implemented isotropic/Debye
-  material path, but magnetic package contrast is not yet approximated by the
-  dielectric SIE;
+- electromagnetic media are currently homogeneous within each represented
+  region and isotropic; spatially heterogeneous/anisotropic VIE media are not
+  yet implemented;
+- constant, Debye, multi-Debye, and custom passive isotropic frequency
+  responses share the same solver interface, but magnetic package contrast is
+  not yet approximated by the dielectric SIE;
 - conductive media at exactly DC require a separate static-conduction
   interface formulation;
 - FAST package/background spatial inference requires artifacts trained for the
