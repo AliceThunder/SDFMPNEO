@@ -59,6 +59,11 @@ from .thermal_field import (
     ContinuousThermalGreenArtifact,
     build_thermal_source_quadrature,
 )
+from .thermal_interface import (
+    PreparedThermalInterfaceField,
+    PiecewiseThermalInterfaceArtifact,
+    scene_thermal_package_media,
+)
 from .loss import ConductorLossField
 from .field import (
     PreparedUniformLossField,
@@ -271,6 +276,9 @@ __all__ = [
     "PreparedThermalGreenField",
     "ContinuousThermalGreenArtifact",
     "build_thermal_source_quadrature",
+    "PreparedThermalInterfaceField",
+    "PiecewiseThermalInterfaceArtifact",
+    "scene_thermal_package_media",
     "ConductorLossField",
     "PreparedUniformLossField",
     "UniformLossFieldDecoder",
