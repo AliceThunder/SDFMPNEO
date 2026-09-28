@@ -106,6 +106,9 @@ def main():
         in train
         + validation
     )
+    geometry_domain = (
+        dataset.geometry_domain
+    )
     background_domain = (
         dataset.background_conductivity_domain
     )
@@ -151,6 +154,9 @@ def main():
             ),
             package_loss_conductivity_range=(
                 package_loss_domain
+            ),
+            geometry_domain=(
+                geometry_domain
             ),
             device=args.device,
         )
@@ -208,6 +214,10 @@ def main():
                 np.mean(
                     validation_channels
                 )
+            ),
+            "geometry_domain_declared": (
+                geometry_domain
+                is not None
             ),
             "background_conductivity_domain": (
                 background_domain
