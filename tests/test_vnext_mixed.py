@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     DenseMixedConductorTeacher,
     HomogeneousMedium,
     MQSConfig,
@@ -346,4 +347,85 @@ def test_mixed_lossy_background_adds_passive_environment_channel_and_closes_powe
             currents
         )
         - 1e-10
+    )
+
+
+def test_mixed_debye_background_adds_frequency_loss_channel_without_dc_conductivity():
+    frequency = 80_000.0
+    medium = DebyeMaterial(
+        relative_permittivity_static=30.0,
+        relative_permittivity_infinite=5.0,
+        relaxation_time=2.0e-6,
+        relative_permeability=1.0,
+        conductivity=0.0,
+    )
+    assert (
+        medium.conductivity
+        == 0.0
+    )
+    assert (
+        medium.loss_conductivity(
+            frequency
+        )
+        > 0.0
+    )
+    scene = Scene(
+        (
+            coil(
+                0.025
+            ),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        medium,
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        CFG,
+    ).solve()
+    channels = (
+        result.dissipation_channels()
+    )
+    assert channels.shape == (
+        3,
+        2,
+        2,
+    )
+    background = channels[
+        -1
+    ]
+    assert np.allclose(
+        background,
+        background.conj().T,
+        atol=3e-9,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                background
+            )
+        )
+        >= -3e-9
+    )
+    assert (
+        np.linalg.norm(
+            background
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        np.sum(
+            channels,
+            axis=0,
+        ),
+        0.5
+        * (
+            result.impedance
+            + result.impedance.conj().T
+        ),
+        rtol=5e-6,
+        atol=5e-8,
     )
