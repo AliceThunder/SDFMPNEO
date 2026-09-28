@@ -297,6 +297,93 @@ class HybridSceneSamplerConfig:
     def package_domain_metadata(
         self,
     ):
+        debye_probability = float(
+            self.debye_package_probability
+        )
+        constant_probability = (
+            1.0
+            - debye_probability
+        )
+        if debye_probability <= 0.0:
+            epsilon_lower, epsilon_upper = (
+                self.relative_permittivity_range
+            )
+        elif constant_probability <= 0.0:
+            epsilon_lower = float(
+                self.package_debye_epsilon_infinite_range[
+                    0
+                ]
+            )
+            epsilon_upper = float(
+                self.package_debye_epsilon_infinite_range[
+                    1
+                ]
+                + self.package_debye_delta_epsilon_range[
+                    1
+                ]
+            )
+        else:
+            epsilon_lower = min(
+                float(
+                    self.relative_permittivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.package_debye_epsilon_infinite_range[
+                        0
+                    ]
+                ),
+            )
+            epsilon_upper = max(
+                float(
+                    self.relative_permittivity_range[
+                        1
+                    ]
+                ),
+                float(
+                    self.package_debye_epsilon_infinite_range[
+                        1
+                    ]
+                    + self.package_debye_delta_epsilon_range[
+                        1
+                    ]
+                ),
+            )
+
+        ohmic_upper = (
+            float(
+                self.dielectric_conductivity_range[
+                    1
+                ]
+            )
+            if self.lossless_probability
+            < 1.0
+            else 0.0
+        )
+        if debye_probability > 0.0:
+            omega_max = (
+                2.0
+                * np.pi
+                * float(
+                    self.conductor.frequency_range[
+                        1
+                    ]
+                )
+            )
+            debye_upper = (
+                0.5
+                * omega_max
+                * EPS0
+                * float(
+                    self.package_debye_delta_epsilon_range[
+                        1
+                    ]
+                )
+            )
+        else:
+            debye_upper = 0.0
+
         return {
             "relative_permittivity_range": [
                 float(
@@ -325,8 +412,8 @@ class HybridSceneSamplerConfig:
             "ohmic_lossless_probability": float(
                 self.lossless_probability
             ),
-            "debye_probability": float(
-                self.debye_package_probability
+            "debye_probability": (
+                debye_probability
             ),
             "debye_epsilon_infinite_range": [
                 float(
@@ -362,6 +449,21 @@ class HybridSceneSamplerConfig:
                     self.package_debye_relaxation_time_range[
                         1
                     ]
+                ),
+            ],
+            "effective_relative_permittivity_range": [
+                float(
+                    epsilon_lower
+                ),
+                float(
+                    epsilon_upper
+                ),
+            ],
+            "effective_loss_conductivity_range": [
+                0.0,
+                float(
+                    ohmic_upper
+                    + debye_upper
                 ),
             ],
         }
