@@ -11,6 +11,7 @@ from sdfmpneo_vnext import (
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    TabulatedMaterial,
 )
 
 COPPER = ConductorMaterial(5.8e7)
@@ -591,3 +592,83 @@ def test_custom_material_response_protocol_runs_mixed_reference():
         rtol=6e-6,
         atol=6e-8,
     )
+
+
+def test_tabulated_background_runs_mixed_reference_inside_declared_frequency_table():
+    frequency = 100_000.0
+    medium = TabulatedMaterial(
+        frequencies_hz=(
+            20_000.0,
+            100_000.0,
+            500_000.0,
+        ),
+        relative_permittivity_real=(
+            10.0,
+            7.0,
+            4.0,
+        ),
+        loss_conductivity_values=(
+            1.0e-5,
+            2.5e-4,
+            1.0e-4,
+        ),
+    )
+    scene = Scene(
+        (
+            coil(
+                0.025
+            ),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        medium,
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        CFG,
+    ).solve()
+    channels = result.dissipation_channels()
+    assert channels.shape == (
+        3,
+        2,
+        2,
+    )
+    assert (
+        np.linalg.norm(
+            channels[
+                -1
+            ]
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        np.sum(
+            channels,
+            axis=0,
+        ),
+        0.5
+        * (
+            result.impedance
+            + result.impedance.conj().T
+        ),
+        rtol=6e-6,
+        atol=6e-8,
+    )
+    try:
+        medium.relative_permittivity_at(
+            1_000_000.0
+        )
+    except ValueError as exc:
+        assert (
+            "outside the tabulated material domain"
+            in str(
+                exc
+            )
+        )
+    else:
+        raise AssertionError(
+            "tabulated material must not extrapolate outside its frequency domain"
+        )
