@@ -8,10 +8,12 @@ introduce a fixed world voxel/FEM mesh or a finite thermal/world truncation
 box.
 
 The current implementation supports arbitrarily posed finite-cross-section
-superelliptic spiral coils, superquadric dielectric packages, homogeneous
-passive isotropic background media with constant, Debye, multi-Debye, or
-custom frequency-response models, continuous conductor/package/background
-loss fields, and time-dependent temperature queries.  REFERENCE, FAST, and CERTIFIED paths are
+superelliptic spiral coils; arbitrary strictly nested or mutually disjoint
+superquadric material regions, including both conductor-enclosing packages and
+free inclusions; homogeneous passive isotropic background media with constant,
+Debye, multi-Debye, tabulated, or custom frequency-response models; continuous
+conductor/material/background loss fields; and time-dependent temperature
+queries.  REFERENCE, FAST, and CERTIFIED paths are
 kept separate so a neural artifact never silently replaces the correctness
 backend.
 
@@ -131,16 +133,25 @@ python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --multi-debye-package-probability 0.15 \
   --package-offset-fraction-min 0.0 \
   --package-offset-fraction-max 0.35 \
+  --package-count-min 1 \
+  --package-count-max 4 \
+  --nested-package-probability 0.25 \
+  --free-inclusion-probability 0.35 \
+  --free-inclusion-center-radius-min 0.65 \
+  --free-inclusion-center-radius-max 1.8 \
+  --free-inclusion-half-extent-min 0.12 \
+  --free-inclusion-half-extent-max 0.45 \
   --background-radial-order 12 \
   --background-angular-order 48
 ```
 
-The generator records the declared coil/package geometry domain and the
-package/background material domains in `manifest.json`. Package orientation
-is sampled from Haar SO(3), its center may be offset in 3-D, and its
-superquadric extents are enlarged until the finite primary conductor is safely
-enclosed; poses that make a package surface cut another finite conductor are
-resampled. Material metadata includes conservative frequency-effective
+The generator records the declared coil/material-region geometry domain and
+the package/background material domains in `manifest.json`. Package
+orientation is sampled from Haar SO(3). A region may enclose a finite
+conductor, form a strict nested material shell, or be sampled as a free
+inclusion at a declared scene-relative distance and size. Surfaces that cut a
+finite conductor or partially intersect another material region are rejected
+and resampled. Material metadata includes conservative frequency-effective
 `Re(epsilon_r)` and loss-conductivity bounds for Debye and multi-Debye
 responses. Appending with incompatible domain arguments is rejected instead of
 mixing different design domains in one frozen dataset.
@@ -257,9 +268,10 @@ interface system; no finite world box is introduced.
 
 The current vNext code intentionally fails closed outside implemented physics:
 
-- electromagnetic media are currently homogeneous within each represented
-  region and isotropic; spatially heterogeneous/anisotropic VIE media are not
-  yet implemented;
+- arbitrary piecewise-homogeneous isotropic media can be represented by
+  strictly nested or disjoint superquadric material regions, including free
+  inclusions; continuously graded media and true tensor-anisotropic VIE media
+  are not yet implemented;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
