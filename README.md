@@ -90,6 +90,27 @@ Package-aware REFERENCE queries dispatch to the mixed conductor + dielectric
 surface-integral backend.  Homogeneous lossy-background power is represented
 as an unbounded exterior-domain integral rather than a finite world box.
 
+Radially graded isotropic package media can be compiled into a convergent
+strictly nested shell hierarchy. The profile may be the built-in
+`RadialIsotropicMaterialProfile` or a callable that returns any
+`PassiveIsotropicMaterial` response (including Debye, multi-Debye, tabulated,
+or custom models). Supplying `enclosed_coils` automatically keeps every
+internal material interface clear of the finite conductor volume:
+
+```python
+layers = compile_graded_superquadric_regions(
+    outer_package_geometry,
+    lambda rho: DebyeMaterial(
+        relative_permittivity_static=4.0 + 8.0 * rho,
+        relative_permittivity_infinite=2.0 + rho,
+        relaxation_time=1e-6 * (1.0 + rho),
+    ),
+    shell_count=8,
+    enclosed_coils=scene.coils,
+)
+graded_scene = Scene(scene.coils, scene.medium, layers)
+```
+
 ## Hybrid dataset: packages + optional lossy background
 
 The hybrid dataset stores:
@@ -270,8 +291,10 @@ The current vNext code intentionally fails closed outside implemented physics:
 
 - arbitrary piecewise-homogeneous isotropic media can be represented by
   strictly nested or disjoint superquadric material regions, including free
-  inclusions; continuously graded media and true tensor-anisotropic VIE media
-  are not yet implemented;
+  inclusions; continuously graded radial isotropic profiles are supported by
+  convergent conductor-safe nested-shell compilation, while general
+  non-radial 3D heterogeneity and true tensor-anisotropic VIE media are not yet
+  implemented;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
