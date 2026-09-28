@@ -65,6 +65,16 @@ def main():
         default=16,
     )
     parser.add_argument(
+        "--dc-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--dc-conductive-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
         "--package-count-min",
         type=int,
         default=1,
@@ -242,6 +252,12 @@ def main():
         )
 
     sampler = HybridSceneSamplerConfig(
+        dc_probability=(
+            args.dc_probability
+        ),
+        dc_conductive_probability=(
+            args.dc_conductive_probability
+        ),
         package_count_range=(
             args.package_count_min,
             args.package_count_max,
@@ -408,10 +424,26 @@ def main():
                 source="initial",
             )
         )
+        mode = (
+            "DC-conductive"
+            if (
+                frequency == 0.0
+                and scene.medium.loss_conductivity(
+                    0.0
+                )
+                > 0.0
+            )
+            else (
+                "DC-electrostatic"
+                if frequency == 0.0
+                else "AC"
+            )
+        )
         print(
             f"[{index + 1:04d}/{args.count:04d}] "
             f"{record.sample_id[:12]} "
             f"{record.split} "
+            f"{mode} "
             f"{frequency / 1e3:.2f} kHz "
             f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
             f"medium={type(scene.medium).__name__} "
