@@ -26,9 +26,10 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
-HYBRID_ARTIFACT_SCHEMA = 2
+HYBRID_ARTIFACT_SCHEMA = 3
 SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
     1,
+    2,
     HYBRID_ARTIFACT_SCHEMA,
 )
 
@@ -1289,6 +1290,7 @@ class HybridNeuralResidualArtifact:
         *,
         baseline_segments: int,
         background_conductivity_range=None,
+        background_permittivity_range=None,
         device: str = "cpu",
     ):
         self.model = model
@@ -1339,6 +1341,47 @@ class HybridNeuralResidualArtifact:
                     ]
                 ),
             )
+        if background_permittivity_range is None:
+            self.background_permittivity_range = None
+        else:
+            values = np.asarray(
+                background_permittivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] <= 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_permittivity_range must be a finite positive "
+                    "increasing pair"
+                )
+            self.background_permittivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
         self.supports_lossy_background = bool(
             self.background_conductivity_range
             is not None
@@ -1375,6 +1418,9 @@ class HybridNeuralResidualArtifact:
             "baseline_segments": self.baseline_segments,
             "background_conductivity_range": (
                 self.background_conductivity_range
+            ),
+            "background_permittivity_range": (
+                self.background_permittivity_range
             ),
         }
         digest.update(
@@ -1434,7 +1480,9 @@ class HybridNeuralResidualArtifact:
                 "hybrid neural artifact requires at least one package"
             )
         conductivity = float(
-            scene.medium.conductivity
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
         )
         if self.background_conductivity_range is None:
             if conductivity > 0.0:
@@ -1462,8 +1510,40 @@ class HybridNeuralResidualArtifact:
                 + tolerance
             ):
                 raise ValueError(
-                    "background conductivity is outside the hybrid artifact "
-                    f"training domain [{lower:.6g}, {upper:.6g}] S/m"
+                    "background effective loss conductivity is outside the "
+                    "hybrid artifact training domain "
+                    f"[{lower:.6g}, {upper:.6g}] S/m"
+                )
+        if self.background_permittivity_range is not None:
+            epsilon_real = float(
+                np.real(
+                    scene.medium.relative_permittivity_at(
+                        frequency_hz
+                    )
+                )
+            )
+            lower, upper = (
+                self.background_permittivity_range
+            )
+            tolerance = (
+                1e-12
+                * max(
+                    upper,
+                    1.0,
+                )
+            )
+            if (
+                epsilon_real
+                < lower
+                - tolerance
+                or epsilon_real
+                > upper
+                + tolerance
+            ):
+                raise ValueError(
+                    "background effective relative permittivity is outside "
+                    "the hybrid artifact training domain "
+                    f"[{lower:.6g}, {upper:.6g}]"
                 )
         encoded = (
             encode_hybrid_scene_invariant(
@@ -1627,6 +1707,9 @@ class HybridNeuralResidualArtifact:
                 "background_conductivity_range": (
                     self.background_conductivity_range
                 ),
+                "background_permittivity_range": (
+                    self.background_permittivity_range
+                ),
             },
             Path(
                 path
@@ -1690,6 +1773,11 @@ class HybridNeuralResidualArtifact:
             background_conductivity_range=(
                 payload.get(
                     "background_conductivity_range"
+                )
+            ),
+            background_permittivity_range=(
+                payload.get(
+                    "background_permittivity_range"
                 )
             ),
             device=device,
@@ -1820,6 +1908,7 @@ def train_hybrid_residual_surrogate(
     min_improvement: float = 1e-5,
     seed: int = 17,
     background_conductivity_range=None,
+    background_permittivity_range=None,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -1863,7 +1952,22 @@ def train_hybrid_residual_surrogate(
     )
     training_background_conductivity = np.asarray(
         [
-            sample.scene.medium.conductivity
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
+            )
+            for sample in samples
+        ],
+        dtype=float,
+    )
+    training_background_permittivity = np.asarray(
+        [
+            float(
+                np.real(
+                    sample.scene.medium.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
             for sample in samples
         ],
         dtype=float,
@@ -1930,37 +2034,119 @@ def train_hybrid_residual_surrogate(
     else:
         resolved_background_conductivity_range = None
 
-    if resolved_background_conductivity_range is None:
-        if any(
-            sample.scene.medium.conductivity
-            > 0.0
-            for sample
-            in validation_samples
+    if background_permittivity_range is None:
+        resolved_background_permittivity_range = (
+            float(
+                np.min(
+                    training_background_permittivity
+                )
+            ),
+            float(
+                np.max(
+                    training_background_permittivity
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            background_permittivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
         ):
             raise ValueError(
-                "validation contains lossy backgrounds but training does not"
+                "background_permittivity_range must be a finite positive "
+                "increasing pair"
             )
-    else:
-        lower, upper = (
-            resolved_background_conductivity_range
+        resolved_background_permittivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
         )
-        for sample in (
-            samples
-            + validation_samples
-        ):
-            conductivity = float(
-                sample.scene.medium.conductivity
+
+    conductivity_lower = (
+        None
+        if resolved_background_conductivity_range
+        is None
+        else resolved_background_conductivity_range[
+            0
+        ]
+    )
+    conductivity_upper = (
+        None
+        if resolved_background_conductivity_range
+        is None
+        else resolved_background_conductivity_range[
+            1
+        ]
+    )
+    epsilon_lower, epsilon_upper = (
+        resolved_background_permittivity_range
+    )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        conductivity = float(
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
             )
-            if (
-                conductivity
-                < lower
-                or conductivity
-                > upper
-            ):
+        )
+        if resolved_background_conductivity_range is None:
+            if conductivity > 0.0:
                 raise ValueError(
-                    "sample background conductivity lies outside the declared "
-                    "hybrid port training domain"
+                    "validation contains lossy backgrounds but training does not"
                 )
+        elif (
+            conductivity
+            < conductivity_lower
+            or conductivity
+            > conductivity_upper
+        ):
+            raise ValueError(
+                "sample background effective loss conductivity lies outside "
+                "the declared hybrid port training domain"
+            )
+        epsilon_real = float(
+            np.real(
+                sample.scene.medium.relative_permittivity_at(
+                    sample.frequency_hz
+                )
+            )
+        )
+        if (
+            epsilon_real
+            < epsilon_lower
+            or epsilon_real
+            > epsilon_upper
+        ):
+            raise ValueError(
+                "sample background effective relative permittivity lies "
+                "outside the declared hybrid port training domain"
+            )
 
     torch.manual_seed(
         seed
@@ -2324,6 +2510,9 @@ def train_hybrid_residual_surrogate(
             ),
             background_conductivity_range=(
                 resolved_background_conductivity_range
+            ),
+            background_permittivity_range=(
+                resolved_background_permittivity_range
             ),
             device=device,
         )
