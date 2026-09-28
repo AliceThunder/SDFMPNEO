@@ -804,7 +804,9 @@ class PreparedHybridSpatialLossField:
         self,
     ) -> int | None:
         if (
-            self.scene.medium.conductivity
+            self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
             <= 0.0
         ):
             return None
@@ -1557,7 +1559,9 @@ class HybridSpatialLossArtifact:
                 "hybrid spatial artifact requires at least one package"
             )
         conductivity = float(
-            scene.medium.conductivity
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
         )
         if conductivity > 0.0:
             if not self.supports_lossy_background:
@@ -1584,8 +1588,8 @@ class HybridSpatialLossArtifact:
                 + tolerance
             ):
                 raise ValueError(
-                    "background conductivity is outside the hybrid spatial "
-                    f"training domain [{lower:.6g}, {upper:.6g}] S/m"
+                    "background effective loss conductivity is outside the "
+                    f"hybrid spatial training domain [{lower:.6g}, {upper:.6g}] S/m"
                 )
         prediction = (
             self.port_artifact.predict_structured(
@@ -2679,7 +2683,9 @@ def train_hybrid_spatial_loss_surrogate(
 
     training_background_conductivity = np.asarray(
         [
-            sample.scene.medium.conductivity
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
+            )
             for sample
             in samples
         ],
@@ -2786,12 +2792,14 @@ def train_hybrid_spatial_loss_surrogate(
         + validation_samples
     ):
         conductivity = float(
-            sample.scene.medium.conductivity
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
+            )
         )
         if resolved_background_conductivity_range is None:
             if conductivity > 0.0:
                 raise ValueError(
-                    "sample background conductivity lies outside the "
+                    "sample background effective loss conductivity lies outside the "
                     "hybrid spatial training domain"
                 )
             continue
@@ -2805,7 +2813,7 @@ def train_hybrid_spatial_loss_surrogate(
             > upper
         ):
             raise ValueError(
-                "sample background conductivity lies outside the "
+                "sample background effective loss conductivity lies outside the "
                 "hybrid spatial training domain"
             )
 
