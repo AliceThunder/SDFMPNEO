@@ -640,6 +640,62 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
         ]
         == 1.0
     )
+    assert (
+        package_domain[
+            "effective_relative_permittivity_range"
+        ]
+        == [
+            2.0,
+            8.0,
+        ]
+    )
+    assert (
+        package_domain[
+            "effective_loss_conductivity_range"
+        ][
+            0
+        ]
+        == 0.0
+    )
+    assert (
+        package_domain[
+            "effective_loss_conductivity_range"
+        ][
+            1
+        ]
+        > 0.0
+    )
+
+    dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "hybrid-effective-domain",
+        domain_metadata={
+            "background": (
+                config.background_domain_metadata()
+            ),
+            "package": package_domain,
+        },
+    )
+    assert (
+        dataset.package_permittivity_domain
+        == (
+            2.0,
+            8.0,
+        )
+    )
+    assert (
+        dataset.package_loss_conductivity_domain[
+            0
+        ]
+        == 0.0
+    )
+    assert (
+        dataset.package_loss_conductivity_domain[
+            1
+        ]
+        > 0.0
+    )
+
     domain = config.background_domain_metadata()
     assert domain[
         "debye_probability"
