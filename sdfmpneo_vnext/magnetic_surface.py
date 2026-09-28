@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.linalg import solve
 
+from .hybrid_domain import package_domain_topology
 from .scene import (
     PackageObject,
     PassiveIsotropicMaterial,
@@ -60,6 +61,9 @@ class MagneticSurfaceSolver:
         self.background = background
         self.background_permeability = float(
             background.permeability
+        )
+        self.topology = package_domain_topology(
+            self.packages
         )
         self.vertical_order = int(
             vertical_order
@@ -149,8 +153,20 @@ class MagneticSurfaceSolver:
                     package.material.permeability
                 )
             )
-            interface_outside_permeability.append(
+            parent = self.topology.parent[
+                index
+            ]
+            outside_permeability = (
                 self.background_permeability
+                if parent is None
+                else float(
+                    self.packages[
+                        parent
+                    ].material.permeability
+                )
+            )
+            interface_outside_permeability.append(
+                outside_permeability
             )
             interface_kind.append(
                 (
@@ -183,19 +199,15 @@ class MagneticSurfaceSolver:
                     containing.append(
                         package_index_value
                     )
-            if len(
-                containing
-            ) > 1:
-                raise NotImplementedError(
-                    "a conductor enclosed by multiple package material regions "
-                    "requires nested magnetic-domain topology"
-                )
             if not containing:
                 continue
-            package_index_value = (
-                containing[
-                    0
-                ]
+            package_index_value = max(
+                containing,
+                key=lambda index: (
+                    self.topology.depth[
+                        index
+                    ]
+                ),
             )
             package = self.packages[
                 package_index_value
@@ -734,9 +746,21 @@ class MagneticSurfaceSolver:
         for package_index, package in enumerate(
             self.packages
         ):
+            parent = self.topology.parent[
+                package_index
+            ]
+            outside_mu = (
+                self.background_permeability
+                if parent is None
+                else float(
+                    self.packages[
+                        parent
+                    ].material.permeability
+                )
+            )
             delta_mu = float(
                 package.material.permeability
-                - self.background_permeability
+                - outside_mu
             )
             if np.isclose(
                 delta_mu,
@@ -788,22 +812,6 @@ class MagneticSurfaceSolver:
                     "magnetic package volume quadrature is fully occupied by "
                     "conductor volume"
                 )
-
-            for other_index, other in enumerate(
-                self.packages
-            ):
-                if other_index == package_index:
-                    continue
-                if np.any(
-                    other.geometry.contains(
-                        positions,
-                        tolerance=1e-12,
-                    )
-                ):
-                    raise NotImplementedError(
-                        "overlapping/nested magnetic package volumes require "
-                        "a hierarchical material-domain formulation"
-                    )
 
             incident = (
                 mqs_teacher.magnetic_field_mode_transfer(
