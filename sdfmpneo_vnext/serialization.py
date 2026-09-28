@@ -42,6 +42,11 @@ def _medium_to_dict(
             "conductivity": (
                 medium.conductivity
             ),
+            "thermal_conductivity": (
+                medium.thermal_conductivity
+            ),
+            "density": medium.density,
+            "heat_capacity": medium.heat_capacity,
         }
     if isinstance(
         medium,
@@ -64,13 +69,36 @@ def _medium_to_dict(
             "conductivity": (
                 medium.conductivity
             ),
+            "thermal_conductivity": (
+                medium.thermal_conductivity
+            ),
+            "density": medium.density,
+            "heat_capacity": medium.heat_capacity,
         }
     if isinstance(
         medium,
-        (
-            HomogeneousMedium,
-            IsotropicMaterial,
-        ),
+        IsotropicMaterial,
+    ):
+        return {
+            "model": "constant",
+            "relative_permittivity": (
+                medium.relative_permittivity
+            ),
+            "relative_permeability": (
+                medium.relative_permeability
+            ),
+            "conductivity": (
+                medium.conductivity
+            ),
+            "thermal_conductivity": (
+                medium.thermal_conductivity
+            ),
+            "density": medium.density,
+            "heat_capacity": medium.heat_capacity,
+        }
+    if isinstance(
+        medium,
+        HomogeneousMedium,
     ):
         return {
             "model": "constant",
@@ -105,26 +133,88 @@ def _medium_from_dict(
             "constant",
         )
     ).lower()
+    thermal_conductivity = data.get(
+        "thermal_conductivity"
+    )
+    density = data.get(
+        "density"
+    )
+    heat_capacity = data.get(
+        "heat_capacity"
+    )
+    has_thermal = any(
+        value is not None
+        for value in (
+            thermal_conductivity,
+            density,
+            heat_capacity,
+        )
+    )
+    if has_thermal and not all(
+        value is not None
+        for value in (
+            thermal_conductivity,
+            density,
+            heat_capacity,
+        )
+    ):
+        raise ValueError(
+            "background thermal_conductivity, density, and heat_capacity "
+            "must be supplied together"
+        )
+    thermal = (
+        None
+        if not has_thermal
+        else float(
+            thermal_conductivity
+        )
+    )
+    rho = (
+        None
+        if not has_thermal
+        else float(
+            density
+        )
+    )
+    capacity = (
+        None
+        if not has_thermal
+        else float(
+            heat_capacity
+        )
+    )
     if model == "constant":
+        epsilon_r = float(
+            data.get(
+                "relative_permittivity",
+                1.0,
+            )
+        )
+        mu_r = float(
+            data.get(
+                "relative_permeability",
+                1.0,
+            )
+        )
+        conductivity = float(
+            data.get(
+                "conductivity",
+                0.0,
+            )
+        )
+        if has_thermal:
+            return IsotropicMaterial(
+                epsilon_r,
+                mu_r,
+                conductivity,
+                thermal,
+                rho,
+                capacity,
+            )
         return HomogeneousMedium(
-            float(
-                data.get(
-                    "relative_permittivity",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
+            epsilon_r,
+            mu_r,
+            conductivity,
         )
     if model == "debye":
         required = (
@@ -172,6 +262,9 @@ def _medium_from_dict(
                     0.0,
                 )
             ),
+            thermal,
+            rho,
+            capacity,
         )
     if model == "multi_debye":
         required = (
@@ -225,6 +318,9 @@ def _medium_from_dict(
                     0.0,
                 )
             ),
+            thermal,
+            rho,
+            capacity,
         )
     raise ValueError(
         f"unsupported scene background medium model: {model}"
