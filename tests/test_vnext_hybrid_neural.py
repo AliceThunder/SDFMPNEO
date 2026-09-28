@@ -220,6 +220,7 @@ def _artifact(
     background_permittivity_range=None,
     package_permittivity_range=None,
     package_loss_conductivity_range=None,
+    package_permeability_range=None,
     geometry_domain=None,
     artifact_schema=None,
 ):
@@ -256,6 +257,9 @@ def _artifact(
         ),
         package_loss_conductivity_range=(
             package_loss_conductivity_range
+        ),
+        package_permeability_range=(
+            package_permeability_range
         ),
         geometry_domain=(
             geometry_domain
@@ -1000,15 +1004,14 @@ def test_hybrid_fast_port_rejects_package_effective_permittivity_outside_domain(
         )
 
 
-def test_hybrid_fast_port_rejects_magnetic_package_contrast():
-    base = _scene()
-    artifact = _artifact(
-        base
-    )
+def _magnetic_package_scene(
+    base,
+    relative_permeability,
+):
     first = base.packages[
         0
     ]
-    magnetic = Scene(
+    return Scene(
         base.coils,
         base.medium,
         (
@@ -1016,7 +1019,9 @@ def test_hybrid_fast_port_rejects_magnetic_package_contrast():
                 first.geometry,
                 IsotropicMaterial(
                     relative_permittivity=3.2,
-                    relative_permeability=1.2,
+                    relative_permeability=(
+                        relative_permeability
+                    ),
                     conductivity=0.003,
                 ),
                 first.name,
@@ -1026,12 +1031,58 @@ def test_hybrid_fast_port_rejects_magnetic_package_contrast():
             ],
         ),
     )
+
+
+def test_hybrid_fast_port_fails_closed_without_declared_magnetic_package_domain():
+    base = _scene()
+    artifact = _artifact(
+        base
+    )
+    magnetic = _magnetic_package_scene(
+        base,
+        1.2,
+    )
     with pytest.raises(
-        NotImplementedError,
-        match="magnetic package contrast",
+        ValueError,
+        match="not trained/certified for magnetic package contrast",
     ):
         artifact.predict_structured(
             magnetic,
+            85_000.0,
+        )
+
+
+def test_hybrid_fast_port_accepts_magnetic_package_inside_declared_domain():
+    base = _scene()
+    artifact = _artifact(
+        base,
+        package_permeability_range=(
+            1.0,
+            1.5,
+        ),
+    )
+    magnetic = _magnetic_package_scene(
+        base,
+        1.2,
+    )
+    prediction = artifact.predict_structured(
+        magnetic,
+        85_000.0,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+
+    outside = _magnetic_package_scene(
+        base,
+        1.8,
+    )
+    with pytest.raises(
+        ValueError,
+        match="relative permeability",
+    ):
+        artifact.predict_structured(
+            outside,
             85_000.0,
         )
 
