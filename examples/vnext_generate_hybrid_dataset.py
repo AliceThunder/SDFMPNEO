@@ -90,6 +90,41 @@ def main():
         default=5e-3,
     )
     parser.add_argument(
+        "--debye-background-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--background-debye-epsilon-infinite-min",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--background-debye-epsilon-infinite-max",
+        type=float,
+        default=6.0,
+    )
+    parser.add_argument(
+        "--background-debye-delta-epsilon-min",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument(
+        "--background-debye-delta-epsilon-max",
+        type=float,
+        default=30.0,
+    )
+    parser.add_argument(
+        "--background-debye-relaxation-time-min",
+        type=float,
+        default=1e-8,
+    )
+    parser.add_argument(
+        "--background-debye-relaxation-time-max",
+        type=float,
+        default=1e-4,
+    )
+    parser.add_argument(
         "--background-radial-order",
         type=int,
         default=12,
@@ -118,29 +153,26 @@ def main():
         lossy_background_probability=(
             args.lossy_background_probability
         ),
+        debye_background_probability=(
+            args.debye_background_probability
+        ),
+        background_debye_epsilon_infinite_range=(
+            args.background_debye_epsilon_infinite_min,
+            args.background_debye_epsilon_infinite_max,
+        ),
+        background_debye_delta_epsilon_range=(
+            args.background_debye_delta_epsilon_min,
+            args.background_debye_delta_epsilon_max,
+        ),
+        background_debye_relaxation_time_range=(
+            args.background_debye_relaxation_time_min,
+            args.background_debye_relaxation_time_max,
+        ),
     )
     domain_metadata = {
-        "background": {
-            "relative_permittivity_range": [
-                float(
-                    args.background_epsilon_min
-                ),
-                float(
-                    args.background_epsilon_max
-                ),
-            ],
-            "conductivity_range": [
-                float(
-                    args.background_conductivity_min
-                ),
-                float(
-                    args.background_conductivity_max
-                ),
-            ],
-            "lossy_probability": float(
-                args.lossy_background_probability
-            ),
-        }
+        "background": (
+            sampler.background_domain_metadata()
+        )
     }
 
     if (
@@ -231,7 +263,8 @@ def main():
             f"{record.sample_id[:12]} "
             f"{record.split} "
             f"{frequency / 1e3:.2f} kHz "
-            f"sigma_bg={scene.medium.conductivity:.3e} S/m"
+            f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
+            f"medium={type(scene.medium).__name__}"
         )
     print(
         "counts:",
