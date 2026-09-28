@@ -116,7 +116,12 @@ class PreparedHybridReferenceLossField:
     def background_channel_index(
         self,
     ) -> int | None:
-        if self.scene.medium.conductivity <= 0.0:
+        if (
+            self.scene.medium.loss_conductivity(
+                self.frequency_hz
+            )
+            <= 0.0
+        ):
             return None
         return self.environment_channel_index
 
@@ -907,7 +912,12 @@ def prepare_hybrid_reference_loss_field(
         ),
         dtype=complex,
     )
-    if scene.medium.conductivity > 0.0:
+    if (
+        scene.medium.loss_conductivity(
+            frequency_hz
+        )
+        > 0.0
+    ):
         (
             background_points,
             background_weights,
