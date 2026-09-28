@@ -196,6 +196,7 @@ class HybridSceneSamplerConfig:
     package_exponent_xy_range: tuple[float, float] = (2.0, 5.0)
     package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
+    package_relative_permeability_range: tuple[float, float] = (1.0, 1.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossless_probability: float = 0.20
     debye_package_probability: float = 0.0
@@ -247,6 +248,24 @@ class HybridSceneSamplerConfig:
                 raise ValueError(
                     f"{name} must be a positive finite increasing pair"
                 )
+        mu_lo, mu_hi = (
+            self.package_relative_permeability_range
+        )
+        if not (
+            np.isfinite(
+                mu_lo
+            )
+            and np.isfinite(
+                mu_hi
+            )
+            and 0.0
+            < mu_lo
+            <= mu_hi
+        ):
+            raise ValueError(
+                "package_relative_permeability_range must be a positive "
+                "finite nondecreasing pair"
+            )
         offset_lo, offset_hi = (
             self.package_center_offset_fraction_range
         )
@@ -541,6 +560,18 @@ class HybridSceneSamplerConfig:
                 ),
                 float(
                     self.relative_permittivity_range[
+                        1
+                    ]
+                ),
+            ],
+            "relative_permeability_range": [
+                float(
+                    self.package_relative_permeability_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.package_relative_permeability_range[
                         1
                     ]
                 ),
@@ -1280,6 +1311,10 @@ def sample_hybrid_package_scene(
             rng,
             config.dielectric_conductivity_range,
         )
+    package_relative_permeability = _uniform(
+        rng,
+        config.package_relative_permeability_range,
+    )
     package_model_draw = float(
         rng.random()
     )
@@ -1303,6 +1338,9 @@ def sample_hybrid_package_scene(
             ),
             conductivity=(
                 conductivity
+            ),
+            relative_permeability=(
+                package_relative_permeability
             ),
         )
     elif (
@@ -1332,6 +1370,9 @@ def sample_hybrid_package_scene(
                 rng,
                 config.package_debye_relaxation_time_range,
             ),
+            relative_permeability=(
+                package_relative_permeability
+            ),
             conductivity=(
                 conductivity
             ),
@@ -1340,6 +1381,9 @@ def sample_hybrid_package_scene(
         package_material = IsotropicMaterial(
             relative_permittivity=(
                 epsilon_r
+            ),
+            relative_permeability=(
+                package_relative_permeability
             ),
             conductivity=(
                 conductivity
