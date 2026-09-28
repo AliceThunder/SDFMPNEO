@@ -1093,6 +1093,13 @@ class Scene:
     def require_mvp_electromagnetic_scope(
         self,
     ) -> None:
+        """Validate only the historical conductor-only MVP subset.
+
+        This legacy guard is intentionally narrower than the current vNext
+        system. Package-aware SIE, lossy/dispersive media, magnetic contrast,
+        exact-DC conduction, and nested material regions are available through
+        the package-aware reference/FAST APIs.
+        """
         if not np.isclose(
             self.medium.loss_conductivity(
                 0.0
@@ -1102,14 +1109,12 @@ class Scene:
             atol=0.0,
         ):
             raise ValueError(
-                "vNext MVP electromagnetic solvers currently require a "
-                "lossless homogeneous background at DC; "
-                "lossy media require an explicit dielectric/environment "
-                "dissipation channel and are not silently approximated"
+                "the legacy conductor-only MVP subset requires a lossless "
+                "background; use the package-aware vNext system for lossy or "
+                "conductive media"
             )
         if self.packages:
-            raise NotImplementedError(
-                "package geometry is represented by Scene, but electromagnetic "
-                "package coupling requires the post-MVP SIE/VIE backend and "
-                "must not be silently ignored"
+            raise ValueError(
+                "the legacy conductor-only MVP subset excludes packages; "
+                "use the package-aware vNext system for package coupling"
             )
