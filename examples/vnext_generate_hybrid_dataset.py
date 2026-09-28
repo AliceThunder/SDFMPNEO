@@ -65,6 +65,31 @@ def main():
         default=16,
     )
     parser.add_argument(
+        "--package-count-min",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--package-count-max",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--nested-package-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--nested-package-scale-min",
+        type=float,
+        default=1.15,
+    )
+    parser.add_argument(
+        "--nested-package-scale-max",
+        type=float,
+        default=1.45,
+    )
+    parser.add_argument(
         "--package-offset-fraction-min",
         type=float,
         default=0.0,
@@ -217,6 +242,17 @@ def main():
         )
 
     sampler = HybridSceneSamplerConfig(
+        package_count_range=(
+            args.package_count_min,
+            args.package_count_max,
+        ),
+        nested_package_probability=(
+            args.nested_package_probability
+        ),
+        nested_package_scale_range=(
+            args.nested_package_scale_min,
+            args.nested_package_scale_max,
+        ),
         package_center_offset_fraction_range=(
             args.package_offset_fraction_min,
             args.package_offset_fraction_max,
@@ -379,7 +415,8 @@ def main():
             f"{frequency / 1e3:.2f} kHz "
             f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
             f"medium={type(scene.medium).__name__} "
-            f"package={type(scene.packages[0].material).__name__}"
+            f"n_packages={len(scene.packages)} "
+            f"packages={[type(package.material).__name__ for package in scene.packages]}"
         )
     print(
         "counts:",
