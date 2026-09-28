@@ -1348,6 +1348,1081 @@ class PreparedThermalInterfaceField:
         return result
 
 
+class PreparedMultiThermalInterfaceField:
+    """Mesh-free transient transmission through disjoint package interfaces."""
+
+    def __init__(
+        self,
+        source,
+        background_medium: HomogeneousThermalMedium,
+        package_regions,
+        *,
+        surface_vertical_order: int,
+        surface_azimuthal_order: int,
+        mfs_offset_fraction: float,
+        stehfest_order: int,
+        interface_residual_tolerance: float,
+        svd_rcond: float,
+    ):
+        self.source = source
+        self.medium = background_medium
+        self.background_medium = background_medium
+        self.stehfest_order = int(
+            stehfest_order
+        )
+        self.stehfest_weights = (
+            _stehfest_weights(
+                self.stehfest_order
+            )
+        )
+        self.interface_residual_tolerance = float(
+            interface_residual_tolerance
+        )
+        self.svd_rcond = float(
+            svd_rcond
+        )
+        if (
+            self.interface_residual_tolerance
+            <= 0.0
+            or self.svd_rcond
+            <= 0.0
+            or not (
+                0.0
+                < mfs_offset_fraction
+                < 0.5
+            )
+        ):
+            raise ValueError(
+                "invalid multi-interface thermal solver configuration"
+            )
+
+        regions = []
+        start = 0
+        for (
+            package_index,
+            geometry,
+            package_medium,
+        ) in package_regions:
+            surface = geometry.surface_quadrature(
+                vertical_order=(
+                    surface_vertical_order
+                ),
+                azimuthal_order=(
+                    surface_azimuthal_order
+                ),
+            )
+            offset = (
+                float(
+                    mfs_offset_fraction
+                )
+                * float(
+                    np.min(
+                        geometry.half_extents
+                    )
+                )
+            )
+            for _ in range(
+                12
+            ):
+                exterior_mfs = (
+                    surface.positions
+                    - offset
+                    * surface.normals
+                )
+                interior_mfs = (
+                    surface.positions
+                    + offset
+                    * surface.normals
+                )
+                if (
+                    np.all(
+                        geometry.contains(
+                            exterior_mfs,
+                            tolerance=1e-12,
+                        )
+                    )
+                    and not np.any(
+                        geometry.contains(
+                            interior_mfs,
+                            tolerance=1e-12,
+                        )
+                    )
+                ):
+                    break
+                offset *= 0.5
+            else:
+                raise RuntimeError(
+                    "failed to place multi-package thermal MFS sources"
+                )
+            count = len(
+                surface.positions
+            )
+            regions.append(
+                {
+                    "package_index": int(
+                        package_index
+                    ),
+                    "geometry": geometry,
+                    "medium": package_medium,
+                    "positions": surface.positions,
+                    "normals": surface.normals,
+                    "exterior_mfs": exterior_mfs,
+                    "interior_mfs": interior_mfs,
+                    "slice": slice(
+                        start,
+                        start
+                        + count,
+                    ),
+                    "offset": float(
+                        offset
+                    ),
+                }
+            )
+            start += count
+
+        for left in range(
+            len(
+                regions
+            )
+        ):
+            for right in range(
+                left
+                + 1,
+                len(
+                    regions
+                ),
+            ):
+                a = regions[
+                    left
+                ]
+                b = regions[
+                    right
+                ]
+                if (
+                    np.any(
+                        a[
+                            "geometry"
+                        ].contains(
+                            b[
+                                "positions"
+                            ],
+                            tolerance=1e-12,
+                        )
+                    )
+                    or np.any(
+                        b[
+                            "geometry"
+                        ].contains(
+                            a[
+                                "positions"
+                            ],
+                            tolerance=1e-12,
+                        )
+                    )
+                ):
+                    raise NotImplementedError(
+                        "overlapping or nested thermal package interfaces "
+                        "are not supported"
+                    )
+
+        self.regions = tuple(
+            regions
+        )
+        self.surface_positions = np.concatenate(
+            [
+                region[
+                    "positions"
+                ]
+                for region in self.regions
+            ],
+            axis=0,
+        )
+        self.surface_normals = np.concatenate(
+            [
+                region[
+                    "normals"
+                ]
+                for region in self.regions
+            ],
+            axis=0,
+        )
+        self.exterior_mfs_sources = np.concatenate(
+            [
+                region[
+                    "exterior_mfs"
+                ]
+                for region in self.regions
+            ],
+            axis=0,
+        )
+        self.source_region = np.full(
+            len(
+                source.positions
+            ),
+            -1,
+            dtype=int,
+        )
+        for region_index, region in enumerate(
+            self.regions
+        ):
+            inside = np.asarray(
+                region[
+                    "geometry"
+                ].contains(
+                    source.positions,
+                    tolerance=1e-12,
+                ),
+                dtype=bool,
+            )
+            if np.any(
+                inside
+                & (
+                    self.source_region
+                    >= 0
+                )
+            ):
+                raise ValueError(
+                    "thermal source belongs to overlapping package regions"
+                )
+            self.source_region[
+                inside
+            ] = region_index
+
+        self.source_strength = (
+            source.volume_weights[
+                :,
+                None,
+                None,
+            ]
+            * source.dissipation_matrices
+        )
+        self.source_strength_flat = (
+            self.source_strength.reshape(
+                len(
+                    source.volume_weights
+                ),
+                -1,
+            )
+        )
+        self._solve_cache = {}
+        self._residual_cache = {}
+        self._condition_cache = {}
+
+    @property
+    def maximum_interface_residual(
+        self,
+    ) -> float:
+        if not self._residual_cache:
+            return 0.0
+        return float(
+            max(
+                self._residual_cache.values()
+            )
+        )
+
+    @property
+    def maximum_interface_condition(
+        self,
+    ) -> float:
+        if not self._condition_cache:
+            return 0.0
+        return float(
+            max(
+                self._condition_cache.values()
+            )
+        )
+
+    def _particular(
+        self,
+        points,
+        laplace_s: float,
+        *,
+        region_index: int,
+        normals=None,
+    ):
+        mask = (
+            self.source_region
+            == region_index
+        )
+        medium = (
+            self.background_medium
+            if region_index
+            < 0
+            else self.regions[
+                region_index
+            ][
+                "medium"
+            ]
+        )
+        width = (
+            self.source.n_ports
+            * self.source.n_ports
+        )
+        if not np.any(
+            mask
+        ):
+            zeros = np.zeros(
+                (
+                    len(
+                        points
+                    ),
+                    width,
+                ),
+                dtype=complex,
+            )
+            return (
+                zeros,
+                zeros
+                if normals is not None
+                else None,
+            )
+        kernel = _yukawa_kernel(
+            points,
+            self.source.positions[
+                mask
+            ],
+            medium,
+            laplace_s,
+            source_radius=(
+                self.source.effective_radius[
+                    mask
+                ]
+            ),
+        )[
+            0
+        ]
+        values = (
+            kernel
+            @ self.source_strength_flat[
+                mask
+            ]
+        )
+        if normals is None:
+            return (
+                values,
+                None,
+            )
+        derivative = (
+            _normal_derivative_kernel(
+                points,
+                normals,
+                self.source.positions[
+                    mask
+                ],
+                medium,
+                laplace_s,
+                source_radius=(
+                    self.source.effective_radius[
+                        mask
+                    ]
+                ),
+            )
+            @ self.source_strength_flat[
+                mask
+            ]
+        )
+        return (
+            values,
+            derivative,
+        )
+
+    def _interface_solution(
+        self,
+        laplace_s: float,
+    ):
+        key = float(
+            laplace_s
+        )
+        cached = self._solve_cache.get(
+            key
+        )
+        if cached is not None:
+            return cached
+
+        n = len(
+            self.surface_positions
+        )
+        exterior_value = _yukawa_kernel(
+            self.surface_positions,
+            self.exterior_mfs_sources,
+            self.background_medium,
+            laplace_s,
+        )[
+            0
+        ]
+        exterior_derivative = (
+            _normal_derivative_kernel(
+                self.surface_positions,
+                self.surface_normals,
+                self.exterior_mfs_sources,
+                self.background_medium,
+                laplace_s,
+            )
+        )
+        matrix = np.zeros(
+            (
+                2
+                * n,
+                2
+                * n,
+            ),
+            dtype=float,
+        )
+        matrix[
+            :n,
+            :n,
+        ] = exterior_value
+        matrix[
+            n:,
+            :n,
+        ] = (
+            self.background_medium.conductivity
+            * exterior_derivative
+        )
+
+        (
+            background_particular,
+            background_derivative,
+        ) = self._particular(
+            self.surface_positions,
+            laplace_s,
+            region_index=-1,
+            normals=(
+                self.surface_normals
+            ),
+        )
+        rhs_value = np.empty_like(
+            background_particular
+        )
+        rhs_flux = np.empty_like(
+            background_particular
+        )
+
+        for region_index, region in enumerate(
+            self.regions
+        ):
+            sl = region[
+                "slice"
+            ]
+            medium = region[
+                "medium"
+            ]
+            interior_value = _yukawa_kernel(
+                region[
+                    "positions"
+                ],
+                region[
+                    "interior_mfs"
+                ],
+                medium,
+                laplace_s,
+            )[
+                0
+            ]
+            interior_derivative = (
+                _normal_derivative_kernel(
+                    region[
+                        "positions"
+                    ],
+                    region[
+                        "normals"
+                    ],
+                    region[
+                        "interior_mfs"
+                    ],
+                    medium,
+                    laplace_s,
+                )
+            )
+            matrix[
+                sl,
+                n
+                + sl.start:
+                n
+                + sl.stop,
+            ] = (
+                -interior_value
+            )
+            matrix[
+                n
+                + sl.start:
+                n
+                + sl.stop,
+                n
+                + sl.start:
+                n
+                + sl.stop,
+            ] = (
+                -medium.conductivity
+                * interior_derivative
+            )
+
+            (
+                package_particular,
+                package_derivative,
+            ) = self._particular(
+                region[
+                    "positions"
+                ],
+                laplace_s,
+                region_index=(
+                    region_index
+                ),
+                normals=(
+                    region[
+                        "normals"
+                    ]
+                ),
+            )
+            rhs_value[
+                sl
+            ] = (
+                package_particular
+                - background_particular[
+                    sl
+                ]
+            )
+            rhs_flux[
+                sl
+            ] = (
+                medium.conductivity
+                * package_derivative
+                - self.background_medium.conductivity
+                * background_derivative[
+                    sl
+                ]
+            )
+
+        rhs = np.vstack(
+            (
+                rhs_value,
+                rhs_flux,
+            )
+        )
+        (
+            solution,
+            residual,
+            rank,
+            condition,
+        ) = _equilibrated_lstsq(
+            matrix,
+            rhs,
+            rcond=(
+                self.svd_rcond
+            ),
+        )
+        if (
+            residual
+            > self.interface_residual_tolerance
+        ):
+            raise RuntimeError(
+                "multi-package thermal interface solve did not meet the "
+                "declared residual tolerance: "
+                f"{residual:.3e} > "
+                f"{self.interface_residual_tolerance:.3e}"
+            )
+        if rank < min(
+            matrix.shape
+        ):
+            raise RuntimeError(
+                "multi-package thermal interface MFS system is rank deficient"
+            )
+
+        coefficients = (
+            solution[
+                :n
+            ],
+            solution[
+                n:
+            ],
+        )
+        self._solve_cache[
+            key
+        ] = coefficients
+        self._residual_cache[
+            key
+        ] = residual
+        self._condition_cache[
+            key
+        ] = condition
+        return coefficients
+
+    def laplace_response_matrix(
+        self,
+        points,
+        laplace_s: float,
+    ):
+        points = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            points.ndim
+            == 1
+        )
+        points = np.atleast_2d(
+            points
+        )
+        if (
+            points.ndim
+            != 2
+            or points.shape[
+                1
+            ]
+            != 3
+        ):
+            raise ValueError(
+                "query points must have shape (3,) or (n,3)"
+            )
+        if (
+            not np.isfinite(
+                laplace_s
+            )
+            or laplace_s < 0.0
+        ):
+            raise ValueError(
+                "laplace_s must be finite and nonnegative"
+            )
+
+        (
+            exterior_coefficients,
+            interior_coefficients,
+        ) = self._interface_solution(
+            float(
+                laplace_s
+            )
+        )
+        membership = np.full(
+            len(
+                points
+            ),
+            -1,
+            dtype=int,
+        )
+        for region_index, region in enumerate(
+            self.regions
+        ):
+            inside = np.asarray(
+                region[
+                    "geometry"
+                ].contains(
+                    points,
+                    tolerance=1e-12,
+                ),
+                dtype=bool,
+            )
+            if np.any(
+                inside
+                & (
+                    membership
+                    >= 0
+                )
+            ):
+                raise ValueError(
+                    "thermal query belongs to overlapping package regions"
+                )
+            membership[
+                inside
+            ] = region_index
+
+        flat = np.zeros(
+            (
+                len(
+                    points
+                ),
+                self.source.n_ports
+                * self.source.n_ports,
+            ),
+            dtype=complex,
+        )
+        outside = (
+            membership
+            < 0
+        )
+        if np.any(
+            outside
+        ):
+            query = points[
+                outside
+            ]
+            direct = self._particular(
+                query,
+                laplace_s,
+                region_index=-1,
+            )[
+                0
+            ]
+            flat[
+                outside
+            ] = (
+                direct
+                + _yukawa_kernel(
+                    query,
+                    self.exterior_mfs_sources,
+                    self.background_medium,
+                    laplace_s,
+                )[
+                    0
+                ]
+                @ exterior_coefficients
+            )
+
+        for region_index, region in enumerate(
+            self.regions
+        ):
+            inside = (
+                membership
+                == region_index
+            )
+            if not np.any(
+                inside
+            ):
+                continue
+            query = points[
+                inside
+            ]
+            direct = self._particular(
+                query,
+                laplace_s,
+                region_index=(
+                    region_index
+                ),
+            )[
+                0
+            ]
+            sl = region[
+                "slice"
+            ]
+            flat[
+                inside
+            ] = (
+                direct
+                + _yukawa_kernel(
+                    query,
+                    region[
+                        "interior_mfs"
+                    ],
+                    region[
+                        "medium"
+                    ],
+                    laplace_s,
+                )[
+                    0
+                ]
+                @ interior_coefficients[
+                    sl
+                ]
+            )
+
+        matrix = flat.reshape(
+            len(
+                points
+            ),
+            self.source.n_ports,
+            self.source.n_ports,
+        )
+        matrix = 0.5 * (
+            matrix
+            + matrix.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        return (
+            matrix[
+                0
+            ]
+            if scalar
+            else matrix
+        )
+
+    def steady_response_matrix(
+        self,
+        points,
+    ):
+        return self.laplace_response_matrix(
+            points,
+            0.0,
+        )
+
+    def step_response_matrix(
+        self,
+        points,
+        time: float,
+    ):
+        if (
+            not np.isfinite(
+                time
+            )
+            or time < 0.0
+        ):
+            raise ValueError(
+                "time must be finite and nonnegative"
+            )
+        query = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            query.ndim
+            == 1
+        )
+        query = np.atleast_2d(
+            query
+        )
+        if time == 0.0:
+            zeros = np.zeros(
+                (
+                    len(
+                        query
+                    ),
+                    self.source.n_ports,
+                    self.source.n_ports,
+                ),
+                dtype=complex,
+            )
+            return (
+                zeros[
+                    0
+                ]
+                if scalar
+                else zeros
+            )
+
+        logarithm = np.log(
+            2.0
+        )
+        result = np.zeros(
+            (
+                len(
+                    query
+                ),
+                self.source.n_ports,
+                self.source.n_ports,
+            ),
+            dtype=complex,
+        )
+        for k, weight in enumerate(
+            self.stehfest_weights,
+            start=1,
+        ):
+            laplace_s = (
+                k
+                * logarithm
+                / float(
+                    time
+                )
+            )
+            result += (
+                weight
+                / k
+                * np.asarray(
+                    self.laplace_response_matrix(
+                        query,
+                        laplace_s,
+                    ),
+                    dtype=complex,
+                )
+            )
+        result = 0.5 * (
+            result
+            + result.conj().transpose(
+                0,
+                2,
+                1,
+            )
+        )
+        return (
+            result[
+                0
+            ]
+            if scalar
+            else result
+        )
+
+    @staticmethod
+    def _contract(
+        matrices,
+        currents,
+    ):
+        return PreparedThermalGreenField._contract(
+            matrices,
+            currents,
+        )
+
+    def temperature_step(
+        self,
+        points,
+        time: float,
+        currents,
+    ):
+        rise = self._contract(
+            self.step_response_matrix(
+                points,
+                time,
+            ),
+            currents,
+        )
+        return (
+            self.medium.ambient_temperature
+            + rise
+        )
+
+    def steady_temperature(
+        self,
+        points,
+        currents,
+    ):
+        rise = self._contract(
+            self.steady_response_matrix(
+                points
+            ),
+            currents,
+        )
+        return (
+            self.medium.ambient_temperature
+            + rise
+        )
+
+    def temperature_history(
+        self,
+        points,
+        interval_edges,
+        interval_currents,
+        observation_times,
+    ):
+        edges = np.asarray(
+            interval_edges,
+            dtype=float,
+        )
+        currents = np.asarray(
+            interval_currents,
+            dtype=complex,
+        )
+        times = np.asarray(
+            observation_times,
+            dtype=float,
+        )
+        if (
+            edges.ndim
+            != 1
+            or len(
+                edges
+            )
+            < 2
+            or np.any(
+                np.diff(
+                    edges
+                )
+                <= 0.0
+            )
+        ):
+            raise ValueError(
+                "interval_edges must be strictly increasing"
+            )
+        if currents.shape != (
+            len(
+                edges
+            )
+            - 1,
+            self.source.n_ports,
+        ):
+            raise ValueError(
+                "interval_currents have wrong shape"
+            )
+        if (
+            times.ndim
+            != 1
+            or np.any(
+                ~np.isfinite(
+                    times
+                )
+            )
+        ):
+            raise ValueError(
+                "observation_times must be finite"
+            )
+        query = np.asarray(
+            points,
+            dtype=float,
+        )
+        scalar = (
+            query.ndim
+            == 1
+        )
+        query = np.atleast_2d(
+            query
+        )
+        result = np.full(
+            (
+                len(
+                    times
+                ),
+                len(
+                    query
+                ),
+            ),
+            self.medium.ambient_temperature,
+            dtype=float,
+        )
+        for time_index, time in enumerate(
+            times
+        ):
+            for interval in range(
+                len(
+                    edges
+                )
+                - 1
+            ):
+                start = edges[
+                    interval
+                ]
+                end = edges[
+                    interval
+                    + 1
+                ]
+                if time <= start:
+                    continue
+                age_start = (
+                    time
+                    - start
+                )
+                age_end = max(
+                    time
+                    - end,
+                    0.0,
+                )
+                response = self.step_response_matrix(
+                    query,
+                    age_start,
+                )
+                if age_end > 0.0:
+                    response = (
+                        response
+                        - self.step_response_matrix(
+                            query,
+                            age_end,
+                        )
+                    )
+                result[
+                    time_index
+                ] += self._contract(
+                    response,
+                    currents[
+                        interval
+                    ],
+                )
+        return (
+            result[
+                :,
+                0
+            ]
+            if scalar
+            else result
+        )
+
+
 class PiecewiseThermalInterfaceArtifact:
     """REFERENCE thermal transfer for one superquadric material interface."""
 
