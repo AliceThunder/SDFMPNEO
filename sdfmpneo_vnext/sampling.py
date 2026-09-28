@@ -197,6 +197,7 @@ class HybridSceneSamplerConfig:
     package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
     package_count_range: tuple[int, int] = (1, 1)
     nested_package_probability: float = 0.0
+    nested_package_scale_range: tuple[float, float] = (1.15, 1.45)
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
     package_relative_permeability_range: tuple[float, float] = (1.0, 1.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
@@ -222,6 +223,7 @@ class HybridSceneSamplerConfig:
             "package_half_z_range",
             "package_exponent_xy_range",
             "package_exponent_z_range",
+            "nested_package_scale_range",
             "relative_permittivity_range",
             "dielectric_conductivity_range",
             "package_debye_epsilon_infinite_range",
@@ -490,6 +492,9 @@ class HybridSceneSamplerConfig:
                 "nested_package_probability": float(
                     self.nested_package_probability
                 ),
+                "nested_package_scale_range": list(
+                    self.nested_package_scale_range
+                ),
                 "nested_topology": (
                     "strict_chain_or_disjoint_roots"
                 ),
@@ -498,10 +503,26 @@ class HybridSceneSamplerConfig:
                 ),
                 "enclosure_radius_range": [
                     float(
-                        1.0
-                        / self.package_margin_range[
-                            1
-                        ]
+                        (
+                            1.0
+                            / self.package_margin_range[
+                                1
+                            ]
+                        )
+                        / (
+                            self.nested_package_scale_range[
+                                1
+                            ]
+                            ** max(
+                                int(
+                                    self.package_count_range[
+                                        1
+                                    ]
+                                )
+                                - 1,
+                                0,
+                            )
+                        )
                     ),
                     0.90,
                 ],
