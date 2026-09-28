@@ -391,6 +391,15 @@ class HybridTeacherSample:
                 surface_azimuthal_order=(
                     surface_azimuthal_order
                 ),
+                magnetic_volume_axial_order=(
+                    package_volume_axial_order
+                ),
+                magnetic_volume_radial_order=(
+                    package_volume_radial_order
+                ),
+                magnetic_volume_azimuthal_order=(
+                    package_volume_azimuthal_order
+                ),
             )
         )
         result = teacher.solve()
