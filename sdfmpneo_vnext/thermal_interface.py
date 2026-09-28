@@ -4,7 +4,10 @@ from math import factorial
 import numpy as np
 from scipy.linalg import lstsq
 
-from .hybrid_domain import validate_package_conductor_topology
+from .hybrid_domain import (
+    package_domain_topology,
+    validate_package_conductor_topology,
+)
 from .scene import Scene
 from .thermal_field import (
     ContinuousThermalGreenArtifact,
@@ -85,31 +88,65 @@ def scene_thermal_package_media(
     scene: Scene,
     background: HomogeneousThermalMedium,
 ):
-    """Return declared package thermal contrasts as (index, medium)."""
-    out = []
-    for index, package in enumerate(
+    """Return thermal interfaces whose material differs from the parent region."""
+    topology = package_domain_topology(
         scene.packages
-    ):
+    )
+    resolved = [
+        None
+        for _ in scene.packages
+    ]
+    out = []
+    order = sorted(
+        range(
+            len(
+                scene.packages
+            )
+        ),
+        key=lambda index: (
+            topology.depth[
+                index
+            ]
+        ),
+    )
+    for index in order:
+        package = scene.packages[
+            index
+        ]
+        parent = topology.parent[
+            index
+        ]
+        parent_medium = (
+            background
+            if parent is None
+            else resolved[
+                parent
+            ]
+        )
         values = _thermal_properties(
             package.material
         )
         if values is None:
-            continue
-        medium = HomogeneousThermalMedium(
-            values[
-                0
-            ],
-            values[
-                1
-            ],
-            values[
-                2
-            ],
-            background.ambient_temperature,
-        )
+            medium = parent_medium
+        else:
+            medium = HomogeneousThermalMedium(
+                values[
+                    0
+                ],
+                values[
+                    1
+                ],
+                values[
+                    2
+                ],
+                background.ambient_temperature,
+            )
+        resolved[
+            index
+        ] = medium
         if not _same_thermal_medium(
             medium,
-            background,
+            parent_medium,
         ):
             out.append(
                 (
