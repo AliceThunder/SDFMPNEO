@@ -112,6 +112,8 @@ Opt into a lossy homogeneous background domain:
 ```bash
 python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --count 256 \
+  --dc-probability 0.10 \
+  --dc-conductive-probability 0.50 \
   --lossy-background-probability 0.4 \
   --debye-background-probability 0.35 \
   --multi-debye-background-probability 0.15 \
@@ -262,8 +264,11 @@ The current vNext code intentionally fails closed outside implemented physics:
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
   corrections without a global world mesh;
-- conductive media at exactly DC require a separate static-conduction
-  interface formulation;
+- exact DC is supported for electrostatic scenes and for conductive
+  background/package regions through the static-conduction transmission
+  formulation; a conductor fully enclosed by a zero-conductivity region while
+  other DC conduction paths are active still requires the coupled
+  electrostatic-charge/conduction-current formulation and fails closed;
 - FAST port/spatial inference requires artifacts trained for the corresponding
   declared geometry and material domains; package/conductor surface
   intersections are rejected;
