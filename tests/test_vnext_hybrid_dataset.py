@@ -4,6 +4,7 @@ import pytest
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     HomogeneousMedium,
     HybridSceneSamplerConfig,
     HybridTeacherSample,
@@ -554,4 +555,86 @@ def test_hybrid_dataset_background_domain_metadata_includes_lossless_branch(tmp_
             0.0,
             2.0e-3,
         )
+    )
+    assert (
+        dataset.background_permittivity_domain
+        == (
+            2.0,
+            3.0,
+        )
+    )
+
+
+def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain():
+    config = HybridSceneSamplerConfig(
+        background_relative_permittivity_range=(
+            1.0,
+            2.0,
+        ),
+        background_conductivity_range=(
+            1.0e-6,
+            2.0e-4,
+        ),
+        lossy_background_probability=0.0,
+        debye_background_probability=1.0,
+        background_debye_epsilon_infinite_range=(
+            2.0,
+            3.0,
+        ),
+        background_debye_delta_epsilon_range=(
+            5.0,
+            6.0,
+        ),
+        background_debye_relaxation_time_range=(
+            1.0e-6,
+            2.0e-6,
+        ),
+    )
+    rng = np.random.default_rng(
+        931
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        rng,
+        config,
+    )
+    assert isinstance(
+        scene.medium,
+        DebyeMaterial,
+    )
+    assert (
+        scene.medium.conductivity
+        == 0.0
+    )
+    assert (
+        scene.medium.loss_conductivity(
+            frequency
+        )
+        > 0.0
+    )
+
+    domain = config.background_domain_metadata()
+    assert domain[
+        "debye_probability"
+    ] == 1.0
+    assert domain[
+        "effective_relative_permittivity_range"
+    ] == [
+        2.0,
+        9.0,
+    ]
+    assert (
+        domain[
+            "effective_loss_conductivity_range"
+        ][
+            0
+        ]
+        == 0.0
+    )
+    assert (
+        domain[
+            "effective_loss_conductivity_range"
+        ][
+            1
+        ]
+        > 0.0
     )
