@@ -81,7 +81,8 @@ The hybrid dataset stores:
 - continuous package spatial loss;
 - when the homogeneous background is lossy, continuous unbounded-background
   spatial loss;
-- the declared background design domain in the immutable manifest.
+- the declared geometry and package/background material design domains in the
+  immutable manifest.
 
 Generate a dataset with the historical lossless-background behavior:
 
@@ -96,7 +97,10 @@ Opt into a lossy homogeneous background domain:
 python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --count 256 \
   --lossy-background-probability 0.4 \
-  --debye-background-probability 0.5 \
+  --debye-background-probability 0.35 \
+  --multi-debye-background-probability 0.15 \
+  --multi-debye-min-poles 2 \
+  --multi-debye-max-poles 4 \
   --background-epsilon-min 1.0 \
   --background-epsilon-max 6.0 \
   --background-conductivity-min 1e-5 \
@@ -105,16 +109,23 @@ python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --background-debye-epsilon-infinite-max 6.0 \
   --background-debye-delta-epsilon-min 0.5 \
   --background-debye-delta-epsilon-max 30.0 \
-  --debye-package-probability 0.4 \
+  --debye-package-probability 0.25 \
+  --multi-debye-package-probability 0.15 \
+  --package-offset-fraction-min 0.0 \
+  --package-offset-fraction-max 0.35 \
   --background-radial-order 12 \
   --background-angular-order 48
 ```
 
-The generator records the declared package/background material domains in
-`manifest.json`, including conservative frequency-effective
-`Re(epsilon_r)` and loss-conductivity bounds for dispersive backgrounds.
-Appending with incompatible domain arguments is rejected instead of mixing
-different design domains in one frozen dataset.
+The generator records the declared coil/package geometry domain and the
+package/background material domains in `manifest.json`. Package orientation
+is sampled from Haar SO(3), its center may be offset in 3-D, and its
+superquadric extents are enlarged until the finite primary conductor is safely
+enclosed; poses that make a package surface cut another finite conductor are
+resampled. Material metadata includes conservative frequency-effective
+`Re(epsilon_r)` and loss-conductivity bounds for Debye and multi-Debye
+responses. Appending with incompatible domain arguments is rejected instead of
+mixing different design domains in one frozen dataset.
 
 ## Train the hybrid FAST port surrogate
 
@@ -126,11 +137,13 @@ python examples/vnext_train_hybrid_residual.py \
   --device cpu
 ```
 
-The training script reads the frequency-effective background permittivity and
-loss-conductivity support from the dataset manifest. It does not infer the
-intended design domain from finite-sample minimum/maximum values. FAST inputs
-therefore depend on the material response at the query frequency rather than
-on the name of the material model.
+The training script reads the declared geometry domain together with
+frequency-effective package/background permittivity and loss-conductivity
+support from the dataset manifest. It does not infer the intended design domain
+from finite-sample minimum/maximum values. FAST therefore fails closed on
+out-of-domain coil sizes, spacing, frequency, package pose/size, material
+response, or unsupported magnetic package contrast instead of silently
+extrapolating. Common global SE(3) motion remains an exact invariant.
 
 The port decoder is structurally reciprocal/passive and produces PSD
 dissipation channels whose sum closes to the dissipative part of the predicted
@@ -196,6 +209,10 @@ thermal = system.fast_continuous_thermal_field(
     ),
 )
 
+# If scene.medium is an Isotropic/Debye/MultiDebye material carrying
+# thermal_conductivity, density, and heat_capacity, the third argument can be
+# omitted and the homogeneous thermal background is built from the scene.
+
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
     5.0,
@@ -219,8 +236,9 @@ The current vNext code intentionally fails closed outside implemented physics:
   not yet approximated by the dielectric SIE;
 - conductive media at exactly DC require a separate static-conduction
   interface formulation;
-- FAST package/background spatial inference requires artifacts trained for the
-  corresponding declared media domain;
+- FAST port/spatial inference requires artifacts trained for the corresponding
+  declared geometry and material domains; package/conductor surface
+  intersections are rejected;
 - object-local quadrature and conductor/surface discretization remain numerical
   approximations even though there is no fixed global world mesh.
 
