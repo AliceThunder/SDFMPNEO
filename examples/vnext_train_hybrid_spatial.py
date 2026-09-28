@@ -114,6 +114,9 @@ def main():
     background_domain = (
         dataset.background_conductivity_domain
     )
+    background_permittivity_domain = (
+        dataset.background_permittivity_domain
+    )
     if (
         lossy_present
         and background_domain
@@ -139,6 +142,14 @@ def main():
             raise SystemExit(
                 "port artifact background domain does not match the dataset"
             )
+    if (
+        port.background_permittivity_range
+        != background_permittivity_domain
+    ):
+        raise SystemExit(
+            "port artifact background permittivity domain does not match "
+            "the dataset"
+        )
 
     artifact, report = (
         train_hybrid_spatial_loss_surrogate(
@@ -189,6 +200,9 @@ def main():
             ),
             "background_conductivity_domain": (
                 background_domain
+            ),
+            "background_permittivity_domain": (
+                background_permittivity_domain
             ),
             "artifact": str(
                 args.spatial_artifact
