@@ -119,6 +119,12 @@ def main():
     background_permittivity_domain = (
         dataset.background_permittivity_domain
     )
+    package_permittivity_domain = (
+        dataset.package_permittivity_domain
+    )
+    package_loss_domain = (
+        dataset.package_loss_conductivity_domain
+    )
     if (
         lossy_present
         and background_domain
@@ -151,6 +157,15 @@ def main():
         raise SystemExit(
             "port artifact background permittivity domain does not match "
             "the dataset"
+        )
+    if (
+        port.package_permittivity_range
+        != package_permittivity_domain
+        or port.package_loss_conductivity_range
+        != package_loss_domain
+    ):
+        raise SystemExit(
+            "port artifact package material domain does not match the dataset"
         )
 
     artifact, report = (
@@ -205,6 +220,12 @@ def main():
             ),
             "background_permittivity_domain": (
                 background_permittivity_domain
+            ),
+            "package_permittivity_domain": (
+                package_permittivity_domain
+            ),
+            "package_loss_conductivity_domain": (
+                package_loss_domain
             ),
             "artifact": str(
                 args.spatial_artifact
