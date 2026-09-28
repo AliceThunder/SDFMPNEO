@@ -480,31 +480,6 @@ class DielectricCoupledMixedTeacher:
         ) = self._source_regions(
             node_positions
         )
-        if self.conductive_dc:
-            scale = max(
-                float(
-                    np.max(
-                        np.abs(
-                            source_permittivity
-                        )
-                    )
-                ),
-                1.0,
-            )
-            if np.any(
-                np.abs(
-                    source_permittivity
-                )
-                <= 1e-14
-                * scale
-            ):
-                raise NotImplementedError(
-                    "exact DC conduction currently requires every conductor "
-                    "to lie in a material region with positive conductivity; "
-                    "a conductor fully enclosed by an insulating region needs "
-                    "the coupled electrostatic-charge/conduction-current DC "
-                    "formulation"
-                )
         direct = (
             self._direct_node_potential(
                 node_positions,
@@ -577,6 +552,165 @@ class DielectricCoupledMixedTeacher:
             source_region,
         )
 
+    def _effective_conduction_potential(
+        self,
+        node_positions,
+        node_radii,
+    ):
+        (
+            source_region,
+            source_conductivity,
+        ) = self._source_regions(
+            node_positions
+        )
+        source_conductivity = np.asarray(
+            np.real(
+                source_conductivity
+            ),
+            dtype=float,
+        )
+        scale = max(
+            float(
+                np.max(
+                    source_conductivity
+                )
+            ),
+            1e-30,
+        )
+        conductive = (
+            source_conductivity
+            > 1e-13
+            * scale
+        )
+        n_node = len(
+            node_positions
+        )
+        n_surface = len(
+            self.surface_solver.weights
+        )
+        full_potential = np.zeros(
+            (
+                n_node,
+                n_node,
+            ),
+            dtype=complex,
+        )
+        full_density = np.zeros(
+            (
+                n_surface,
+                n_node,
+            ),
+            dtype=complex,
+        )
+        if not np.any(
+            conductive
+        ):
+            return (
+                full_potential,
+                full_density,
+                0.0,
+                0.0,
+                source_region,
+                conductive,
+            )
+
+        positions = np.asarray(
+            node_positions,
+            dtype=float,
+        )[
+            conductive
+        ]
+        radii = np.asarray(
+            node_radii,
+            dtype=float,
+        )[
+            conductive
+        ]
+        coefficient = (
+            source_conductivity[
+                conductive
+            ].astype(
+                complex
+            )
+        )
+        direct = self._direct_node_potential(
+            positions,
+            radii,
+            coefficient,
+        )
+        incident_derivative = (
+            self._surface_incident_derivative(
+                positions,
+                radii,
+                coefficient,
+            )
+        )
+        (
+            density,
+            surface_residuals,
+        ) = self.surface_solver.solve_density_matrix(
+            incident_derivative
+        )
+        induced = (
+            self._induced_node_potential_matrix(
+                positions,
+                density,
+            )
+        )
+        raw = (
+            direct
+            + induced
+        )
+        reciprocity_defect = float(
+            np.linalg.norm(
+                raw
+                - raw.T
+            )
+            / max(
+                np.linalg.norm(
+                    raw
+                ),
+                1e-30,
+            )
+        )
+        if (
+            reciprocity_defect
+            > self.maximum_raw_reciprocity_defect
+        ):
+            raise RuntimeError(
+                "DC conduction Schur potential failed the raw reciprocity "
+                f"diagnostic: {reciprocity_defect:.3e}"
+            )
+        effective = 0.5 * (
+            raw
+            + raw.T
+        )
+        indices = np.flatnonzero(
+            conductive
+        )
+        full_potential[
+            np.ix_(
+                indices,
+                indices,
+            )
+        ] = effective
+        full_density[
+            :,
+            indices,
+        ] = density
+        return (
+            full_potential,
+            full_density,
+            float(
+                np.max(
+                    surface_residuals
+                )
+            ),
+            reciprocity_defect,
+            source_region,
+            conductive,
+        )
+
     def solve(
         self,
     ) -> DielectricCoupledResult:
@@ -624,16 +758,30 @@ class DielectricCoupledMixedTeacher:
                 current_constraint
             )
         )
-        (
-            effective_potential,
-            density_from_node_charge,
-            surface_residual,
-            reciprocity_defect,
-            source_region,
-        ) = self._effective_potential(
-            node_positions,
-            node_radii,
-        )
+        if self.conductive_dc:
+            (
+                effective_potential,
+                density_from_node_charge,
+                surface_residual,
+                reciprocity_defect,
+                source_region,
+                conductive_node_mask,
+            ) = self._effective_conduction_potential(
+                node_positions,
+                node_radii,
+            )
+        else:
+            (
+                effective_potential,
+                density_from_node_charge,
+                surface_residual,
+                reciprocity_defect,
+                source_region,
+            ) = self._effective_potential(
+                node_positions,
+                node_radii,
+            )
+            conductive_node_mask = None
 
         current_operator = (
             resistance.astype(
@@ -651,99 +799,224 @@ class DielectricCoupledMixedTeacher:
             gauge.T
             @ port_injection
         )
-        reduced_potential = (
-            gauge.T
-            @ effective_potential
-            @ gauge
-        )
-
         m = current_operator.shape[
             0
         ]
         nr = reduced_divergence.shape[
             0
         ]
-        environment_factor = (
-            1.0 + 0.0j
-            if self.conductive_dc
-            else 1j
-            * self.conductor_teacher.omega
-        )
-        kkt = np.block(
-            [
-                [
-                    current_operator,
-                    -reduced_divergence.T.astype(
-                        complex
-                    ),
-                    np.zeros(
-                        (
-                            m,
-                            nr,
-                        ),
-                        dtype=complex,
-                    ),
-                ],
-                [
-                    reduced_divergence.astype(
-                        complex
-                    ),
-                    np.zeros(
-                        (
-                            nr,
-                            nr,
-                        ),
-                        dtype=complex,
-                    ),
-                    environment_factor
-                    * np.eye(
-                        nr,
-                        dtype=complex,
-                    ),
-                ],
-                [
-                    np.zeros(
-                        (
-                            nr,
-                            m,
-                        ),
-                        dtype=complex,
-                    ),
-                    np.eye(
-                        nr,
-                        dtype=complex,
-                    ),
-                    -reduced_potential.astype(
-                        complex
-                    ),
-                ],
-            ]
-        )
-        rhs = np.vstack(
-            (
-                np.zeros(
-                    (
-                        m,
-                        port_injection.shape[
-                            1
-                        ],
-                    ),
-                    dtype=complex,
-                ),
-                reduced_port.astype(
-                    complex
-                ),
-                np.zeros(
-                    (
-                        nr,
-                        port_injection.shape[
-                            1
-                        ],
-                    ),
-                    dtype=complex,
-                ),
+        if self.conductive_dc:
+            reduced_weight = np.sum(
+                gauge[
+                    conductive_node_mask,
+                    :
+                ] ** 2,
+                axis=0,
             )
-        )
+            mixed_columns = (
+                (
+                    reduced_weight
+                    > 1e-10
+                )
+                & (
+                    reduced_weight
+                    < 1.0
+                    - 1e-10
+                )
+            )
+            if np.any(
+                mixed_columns
+            ):
+                raise ValueError(
+                    "a conductor reduced node subspace crosses a DC "
+                    "conductive/insulating material boundary"
+                )
+            conductive_reduced_mask = (
+                reduced_weight
+                > 0.5
+            )
+            conductive_columns = np.flatnonzero(
+                conductive_reduced_mask
+            )
+            nc = len(
+                conductive_columns
+            )
+            selector = np.eye(
+                nr,
+                dtype=complex,
+            )[
+                :,
+                conductive_columns
+            ]
+            if nc:
+                conductive_gauge = gauge[
+                    :,
+                    conductive_columns
+                ]
+                reduced_potential = (
+                    conductive_gauge.T
+                    @ effective_potential
+                    @ conductive_gauge
+                )
+            else:
+                reduced_potential = np.zeros(
+                    (
+                        0,
+                        0,
+                    ),
+                    dtype=complex,
+                )
+            kkt = np.block(
+                [
+                    [
+                        current_operator,
+                        -reduced_divergence.T.astype(
+                            complex
+                        ),
+                        np.zeros(
+                            (
+                                m,
+                                nc,
+                            ),
+                            dtype=complex,
+                        ),
+                    ],
+                    [
+                        reduced_divergence.astype(
+                            complex
+                        ),
+                        np.zeros(
+                            (
+                                nr,
+                                nr,
+                            ),
+                            dtype=complex,
+                        ),
+                        selector,
+                    ],
+                    [
+                        np.zeros(
+                            (
+                                nc,
+                                m,
+                            ),
+                            dtype=complex,
+                        ),
+                        selector.T,
+                        -reduced_potential.astype(
+                            complex
+                        ),
+                    ],
+                ]
+            )
+            rhs = np.vstack(
+                (
+                    np.zeros(
+                        (
+                            m,
+                            port_injection.shape[
+                                1
+                            ],
+                        ),
+                        dtype=complex,
+                    ),
+                    reduced_port.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            nc,
+                            port_injection.shape[
+                                1
+                            ],
+                        ),
+                        dtype=complex,
+                    ),
+                )
+            )
+        else:
+            conductive_columns = None
+            reduced_potential = (
+                gauge.T
+                @ effective_potential
+                @ gauge
+            )
+            kkt = np.block(
+                [
+                    [
+                        current_operator,
+                        -reduced_divergence.T.astype(
+                            complex
+                        ),
+                        np.zeros(
+                            (
+                                m,
+                                nr,
+                            ),
+                            dtype=complex,
+                        ),
+                    ],
+                    [
+                        reduced_divergence.astype(
+                            complex
+                        ),
+                        np.zeros(
+                            (
+                                nr,
+                                nr,
+                            ),
+                            dtype=complex,
+                        ),
+                        1j
+                        * self.conductor_teacher.omega
+                        * np.eye(
+                            nr,
+                            dtype=complex,
+                        ),
+                    ],
+                    [
+                        np.zeros(
+                            (
+                                nr,
+                                m,
+                            ),
+                            dtype=complex,
+                        ),
+                        np.eye(
+                            nr,
+                            dtype=complex,
+                        ),
+                        -reduced_potential.astype(
+                            complex
+                        ),
+                    ],
+                ]
+            )
+            rhs = np.vstack(
+                (
+                    np.zeros(
+                        (
+                            m,
+                            port_injection.shape[
+                                1
+                            ],
+                        ),
+                        dtype=complex,
+                    ),
+                    reduced_port.astype(
+                        complex
+                    ),
+                    np.zeros(
+                        (
+                            nr,
+                            port_injection.shape[
+                                1
+                            ],
+                        ),
+                        dtype=complex,
+                    ),
+                )
+            )
         solution = (
             _equilibrated_dense_solve(
                 kkt,
@@ -781,10 +1054,28 @@ class DielectricCoupledMixedTeacher:
                 ),
                 dtype=complex,
             )
-            node_environment_current = (
-                gauge
-                @ state_reduced
-            )
+            if len(
+                conductive_columns
+            ):
+                node_environment_current = (
+                    gauge[
+                        :,
+                        conductive_columns
+                    ]
+                    @ state_reduced
+                )
+            else:
+                node_environment_current = np.zeros(
+                    (
+                        gauge.shape[
+                            0
+                        ],
+                        state_reduced.shape[
+                            1
+                        ],
+                    ),
+                    dtype=complex,
+                )
             node_surface_state = (
                 node_environment_current
             )
