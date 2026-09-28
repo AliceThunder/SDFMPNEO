@@ -580,14 +580,12 @@ class MeshfreeVNextSystem:
             scene,
             medium,
         )
-        if scene_thermal_package_media(
-            scene,
-            medium,
-        ):
-            raise NotImplementedError(
-                "FAST continuous thermal inference has no trained package "
-                "thermal-interface ROM; use reference_continuous_thermal_field"
+        thermal_packages = (
+            scene_thermal_package_media(
+                scene,
+                medium,
             )
+        )
         self._require_fast_port_artifact(
             scene,
             frequency_hz,
@@ -603,11 +601,20 @@ class MeshfreeVNextSystem:
                 self.port_artifact
             )
         )
-        return ContinuousThermalGreenArtifact(
-            spatial,
-            medium,
-            **options,
-        ).prepare(
+        thermal_artifact = (
+            PiecewiseThermalInterfaceArtifact(
+                spatial,
+                medium,
+                **options,
+            )
+            if thermal_packages
+            else ContinuousThermalGreenArtifact(
+                spatial,
+                medium,
+                **options,
+            )
+        )
+        return thermal_artifact.prepare(
             scene,
             frequency_hz,
         )
