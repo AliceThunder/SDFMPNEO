@@ -331,16 +331,17 @@ def validate_hybrid_geometry_domain(
                 "package thickness is outside the hybrid artifact geometry domain"
             )
 
-        centerline = root.sample_centerline(
-            129
+        conductor_surface = root.surface_samples(
+            longitudinal_segments=96,
+            section_points=20,
         )
         if not np.all(
             package.contains(
-                centerline,
+                conductor_surface,
                 tolerance=1e-10,
             )
         ):
             raise ValueError(
-                "package does not enclose the primary coil as required by "
-                "the hybrid artifact geometry domain"
+                "package does not enclose the finite primary conductor as "
+                "required by the hybrid artifact geometry domain"
             )
