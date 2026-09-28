@@ -270,6 +270,7 @@ class DielectricSurfaceSolver:
         background: PassiveIsotropicMaterial,
         frequency_hz: float,
         *,
+        coefficient_mode: str = "permittivity",
         vertical_order: int = 16,
         azimuthal_order: int = 32,
     ):
@@ -304,6 +305,23 @@ class DielectricSurfaceSolver:
         self.frequency_hz = float(
             frequency_hz
         )
+        self.coefficient_mode = str(
+            coefficient_mode
+        ).lower()
+        if self.coefficient_mode not in (
+            "permittivity",
+            "conductivity",
+        ):
+            raise ValueError(
+                "coefficient_mode must be 'permittivity' or 'conductivity'"
+            )
+        if (
+            self.coefficient_mode == "conductivity"
+            and self.frequency_hz != 0.0
+        ):
+            raise ValueError(
+                "conductivity transmission mode is reserved for exact DC"
+            )
         self.vertical_order = int(
             vertical_order
         )
@@ -311,9 +329,8 @@ class DielectricSurfaceSolver:
             azimuthal_order
         )
         self.background_permittivity = (
-            _complex_permittivity(
-                background,
-                self.frequency_hz,
+            self._material_coefficient(
+                background
             )
         )
         self.topology = package_domain_topology(
@@ -331,10 +348,10 @@ class DielectricSurfaceSolver:
             if parent is None:
                 value = self.background_permittivity
             else:
-                value = self.packages[
-                    parent
-                ].material.complex_permittivity(
-                    self.frequency_hz
+                value = self._material_coefficient(
+                    self.packages[
+                        parent
+                    ].material
                 )
             exterior.append(
                 complex(
@@ -345,6 +362,24 @@ class DielectricSurfaceSolver:
             exterior
         )
         self._build_geometry()
+
+    def _material_coefficient(
+        self,
+        material,
+    ) -> complex:
+        if self.coefficient_mode == "conductivity":
+            return complex(
+                float(
+                    material.loss_conductivity(
+                        0.0
+                    )
+                )
+            )
+        return complex(
+            material.complex_permittivity(
+                self.frequency_hz
+            )
+        )
 
     def _build_geometry(
         self,
@@ -471,8 +506,8 @@ class DielectricSurfaceSolver:
             self.package_slices
         ):
             epsilon_inside = (
-                package.material.complex_permittivity(
-                    self.frequency_hz
+                self._material_coefficient(
+                    package.material
                 )
             )
             epsilon_outside = (
@@ -567,10 +602,10 @@ class DielectricSurfaceSolver:
             self.package_slices
         ):
             epsilon_inside = (
-                self.packages[
-                    package_index
-                ].material.complex_permittivity(
-                    self.frequency_hz
+                self._material_coefficient(
+                    self.packages[
+                        package_index
+                    ].material
                 )
             )
             epsilon_outside = (
