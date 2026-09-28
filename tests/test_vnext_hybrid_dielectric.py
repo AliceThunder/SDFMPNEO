@@ -8,6 +8,7 @@ from sdfmpneo_vnext import (
     DenseMixedConductorTeacher,
     DielectricCoupledReferenceArtifact,
     HomogeneousMedium,
+    HybridSceneSamplerConfig,
     IsotropicMaterial,
     MQSConfig,
     PackageObject,
@@ -17,6 +18,7 @@ from sdfmpneo_vnext import (
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
     haar_rotation,
+    sample_hybrid_package_scene,
 )
 
 
@@ -671,4 +673,68 @@ def test_reference_rejects_package_surface_intersecting_finite_conductor():
         ).solve(
             scene,
             80_000.0,
+        )
+
+
+def test_reference_supports_arbitrary_relative_3d_package_pose_from_training_sampler():
+    config = HybridSceneSamplerConfig(
+        package_center_offset_fraction_range=(
+            0.12,
+            0.24,
+        ),
+        lossless_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            1061
+        ),
+        config,
+    )
+    root = scene.coils[
+        0
+    ].geometry
+    package = scene.packages[
+        0
+    ].geometry
+    relative_rotation = (
+        root.pose.rotation.T
+        @ package.pose.rotation
+    )
+    assert (
+        np.linalg.norm(
+            relative_rotation[
+                2,
+                :2
+            ]
+        )
+        > 1e-2
+    )
+    result = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    ).solve(
+        scene,
+        frequency,
+    )
+    assert (
+        result.prediction.reciprocity_defect()
+        < 2e-10
+    )
+    assert (
+        result.power_closure_error
+        < 1e-5
+    )
+    assert (
+        result.normalized_residual
+        < 1e-8
+    )
+    for channel in result.prediction.dissipation_channels:
+        assert (
+            np.min(
+                np.linalg.eigvalsh(
+                    channel
+                )
+            )
+            >= -2e-8
         )
