@@ -12,6 +12,7 @@ from .scene import (
     HomogeneousMedium,
     IsotropicMaterial,
     DebyeMaterial,
+    MultiDebyeMaterial,
     PackageObject,
     Scene,
 )
@@ -20,6 +21,28 @@ from .scene import (
 def _medium_to_dict(
     medium,
 ):
+    if isinstance(
+        medium,
+        MultiDebyeMaterial,
+    ):
+        return {
+            "model": "multi_debye",
+            "relative_permittivity_infinite": (
+                medium.relative_permittivity_infinite
+            ),
+            "relaxation_strengths": list(
+                medium.relaxation_strengths
+            ),
+            "relaxation_times": list(
+                medium.relaxation_times
+            ),
+            "relative_permeability": (
+                medium.relative_permeability
+            ),
+            "conductivity": (
+                medium.conductivity
+            ),
+        }
     if isinstance(
         medium,
         DebyeMaterial,
@@ -150,6 +173,59 @@ def _medium_from_dict(
                 )
             ),
         )
+    if model == "multi_debye":
+        required = (
+            "relative_permittivity_infinite",
+            "relaxation_strengths",
+            "relaxation_times",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "multi-Debye scene background medium is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return MultiDebyeMaterial(
+            float(
+                data[
+                    "relative_permittivity_infinite"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relaxation_strengths"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relaxation_times"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+        )
     raise ValueError(
         f"unsupported scene background medium model: {model}"
     )
@@ -158,6 +234,35 @@ def _medium_from_dict(
 def _package_material_to_dict(
     material,
 ):
+    if isinstance(
+        material,
+        MultiDebyeMaterial,
+    ):
+        return {
+            "model": "multi_debye",
+            "relative_permittivity_infinite": (
+                material.relative_permittivity_infinite
+            ),
+            "relaxation_strengths": list(
+                material.relaxation_strengths
+            ),
+            "relaxation_times": list(
+                material.relaxation_times
+            ),
+            "relative_permeability": (
+                material.relative_permeability
+            ),
+            "conductivity": (
+                material.conductivity
+            ),
+            "thermal_conductivity": (
+                material.thermal_conductivity
+            ),
+            "density": material.density,
+            "heat_capacity": (
+                material.heat_capacity
+            ),
+        }
     if isinstance(
         material,
         DebyeMaterial,
@@ -319,6 +424,62 @@ def _package_material_from_dict(
             float(
                 data[
                     "relaxation_time"
+                ]
+            ),
+            float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            float(
+                data.get(
+                    "conductivity",
+                    0.0,
+                )
+            ),
+            thermal,
+            rho,
+            capacity,
+        )
+    if model == "multi_debye":
+        required = (
+            "relative_permittivity_infinite",
+            "relaxation_strengths",
+            "relaxation_times",
+        )
+        missing = [
+            key
+            for key in required
+            if key not in data
+        ]
+        if missing:
+            raise ValueError(
+                "multi-Debye package material is missing: "
+                + ", ".join(
+                    missing
+                )
+            )
+        return MultiDebyeMaterial(
+            float(
+                data[
+                    "relative_permittivity_infinite"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relaxation_strengths"
+                ]
+            ),
+            tuple(
+                float(
+                    value
+                )
+                for value in data[
+                    "relaxation_times"
                 ]
             ),
             float(
