@@ -228,6 +228,11 @@ thermal = system.fast_continuous_thermal_field(
 # If scene.medium is an Isotropic/Debye/MultiDebye material carrying
 # thermal_conductivity, density, and heat_capacity, the third argument can be
 # omitted and the homogeneous thermal background is built from the scene.
+#
+# Package materials may also carry thermal_conductivity, density, and
+# heat_capacity. Thermally distinct, disjoint superquadric packages are then
+# coupled through a local mesh-free modified-Helmholtz/MFS transmission solve;
+# the unbounded exterior remains an analytic thermal Green field.
 
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
@@ -239,6 +244,12 @@ temperature = thermal.temperature_step(
 `temperature_history(...)` supports piecewise-constant current histories and
 arbitrary observation times without truncating queries to a neural training
 time window.
+
+For package thermal contrast, REFERENCE uses the same interface solver with
+REFERENCE electromagnetic loss fields. FAST uses the trained port/spatial loss
+artifacts and solves only the local package thermal-interface system online.
+Multiple disjoint thermally distinct packages are solved in one coupled
+interface system; no finite world box is introduced.
 
 ## Important current scope limits
 
@@ -255,6 +266,8 @@ The current vNext code intentionally fails closed outside implemented physics:
 - FAST port/spatial inference requires artifacts trained for the corresponding
   declared geometry and material domains; package/conductor surface
   intersections are rejected;
+- thermally distinct package interfaces must currently be disjoint and
+  non-nested; overlapping/nested thermal inclusions are rejected;
 - object-local quadrature and conductor/surface discretization remain numerical
   approximations even though there is no fixed global world mesh.
 
