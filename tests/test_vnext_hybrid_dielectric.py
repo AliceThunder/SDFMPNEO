@@ -629,3 +629,46 @@ def test_debye_background_with_identical_debye_package_is_electromagnetically_in
         coupled.power_closure_error
         < 5e-6
     )
+
+
+def test_reference_rejects_package_surface_intersecting_finite_conductor():
+    coil = _coil()
+    crossing = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [
+                    coil.geometry.outer_a,
+                    coil.geometry.outer_b,
+                    0.5
+                    * coil.geometry.conductor_thickness,
+                ]
+            ),
+            exponent_xy=2.0,
+            exponent_z=2.0,
+        ),
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        ),
+        "crossing",
+    )
+    scene = Scene(
+        (
+            coil,
+        ),
+        HomogeneousMedium(),
+        (
+            crossing,
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="package surface intersects",
+    ):
+        DielectricCoupledReferenceArtifact(
+            config=CFG,
+            surface_vertical_order=8,
+            surface_azimuthal_order=16,
+        ).solve(
+            scene,
+            80_000.0,
+        )
