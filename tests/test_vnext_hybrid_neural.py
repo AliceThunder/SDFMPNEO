@@ -1231,3 +1231,49 @@ def test_legacy_hybrid_port_fingerprint_ignores_newer_geometry_domain_and_resave
         loaded.fingerprint()
         == legacy_a.fingerprint()
     )
+
+
+def test_hybrid_fast_rejects_package_surface_intersecting_finite_conductor():
+    base = _scene()
+    first_coil = base.coils[
+        0
+    ]
+    crossing = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [
+                    first_coil.geometry.outer_a,
+                    first_coil.geometry.outer_b,
+                    0.5
+                    * first_coil.geometry.conductor_thickness,
+                ]
+            ),
+            exponent_xy=2.0,
+            exponent_z=2.0,
+        ),
+        base.packages[
+            0
+        ].material,
+        "crossing",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            crossing,
+            base.packages[
+                1
+            ],
+        ),
+    )
+    artifact = _artifact(
+        base
+    )
+    with pytest.raises(
+        ValueError,
+        match="package surface intersects",
+    ):
+        artifact.predict_structured(
+            scene,
+            85_000.0,
+        )
