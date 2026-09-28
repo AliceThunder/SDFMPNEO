@@ -4,6 +4,7 @@ import pytest
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     DenseMixedConductorTeacher,
     DielectricCoupledReferenceArtifact,
     HomogeneousMedium,
@@ -560,4 +561,71 @@ def test_lossy_background_with_dielectric_package_has_joint_spatial_environment_
             currents,
         )
         > 0.0
+    )
+
+
+def test_debye_background_with_identical_debye_package_is_electromagnetically_invisible():
+    frequency = 80_000.0
+    medium = DebyeMaterial(
+        relative_permittivity_static=18.0,
+        relative_permittivity_infinite=4.0,
+        relaxation_time=2.0e-6,
+        relative_permeability=1.0,
+        conductivity=0.0,
+    )
+    assert (
+        medium.loss_conductivity(
+            frequency
+        )
+        > 0.0
+    )
+    scene = Scene(
+        (
+            _coil(),
+        ),
+        medium,
+        (
+            _package(
+                medium
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+    )
+    coupled = artifact.solve(
+        scene,
+        frequency,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            scene.coils,
+            medium,
+        ),
+        frequency,
+        CFG,
+    ).solve()
+    assert np.allclose(
+        coupled.impedance,
+        bare.impedance,
+        rtol=5e-9,
+        atol=5e-10,
+    )
+    assert np.allclose(
+        coupled.surface_density_transfer,
+        0.0,
+        rtol=0.0,
+        atol=2e-13,
+    )
+    assert (
+        coupled.channel_labels[
+            -1
+        ]
+        == "electric_environment:aggregate"
+    )
+    assert (
+        coupled.power_closure_error
+        < 5e-6
     )
