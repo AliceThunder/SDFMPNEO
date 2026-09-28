@@ -7,6 +7,7 @@ from sdfmpneo_vnext import (
     DenseMixedConductorTeacher,
     HomogeneousMedium,
     MQSConfig,
+    MultiDebyeMaterial,
     RigidPose,
     Scene,
     SuperellipseSpiral,
@@ -428,4 +429,70 @@ def test_mixed_debye_background_adds_frequency_loss_channel_without_dc_conductiv
         ),
         rtol=5e-6,
         atol=5e-8,
+    )
+
+
+def test_multi_debye_background_is_passive_and_closes_mixed_power():
+    frequency = 120_000.0
+    medium = MultiDebyeMaterial(
+        relative_permittivity_infinite=3.0,
+        relaxation_strengths=(
+            4.0,
+            10.0,
+        ),
+        relaxation_times=(
+            2.0e-7,
+            5.0e-6,
+        ),
+        conductivity=0.0,
+    )
+    assert (
+        medium.loss_conductivity(
+            frequency
+        )
+        > 0.0
+    )
+    scene = Scene(
+        (
+            coil(
+                0.025
+            ),
+            coil(
+                0.020,
+                z=0.018,
+            ),
+        ),
+        medium,
+    )
+    result = DenseMixedConductorTeacher(
+        scene,
+        frequency,
+        CFG,
+    ).solve()
+    channels = result.dissipation_channels()
+    assert channels.shape == (
+        3,
+        2,
+        2,
+    )
+    assert (
+        np.linalg.norm(
+            channels[
+                -1
+            ]
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        np.sum(
+            channels,
+            axis=0,
+        ),
+        0.5
+        * (
+            result.impedance
+            + result.impedance.conj().T
+        ),
+        rtol=6e-6,
+        atol=6e-8,
     )
