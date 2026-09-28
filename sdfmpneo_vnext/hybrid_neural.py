@@ -2177,6 +2177,9 @@ def train_hybrid_residual_surrogate(
         samples
         + validation_samples
     ):
+        validate_package_conductor_topology(
+            sample.scene
+        )
         validate_hybrid_geometry_domain(
             sample.scene,
             sample.frequency_hz,
