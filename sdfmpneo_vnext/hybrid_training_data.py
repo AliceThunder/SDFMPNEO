@@ -8,6 +8,7 @@ from .em import MQSConfig
 from .hybrid_dielectric import (
     DielectricCoupledMixedTeacher,
 )
+from .hybrid_domain import package_domain_topology
 from .hybrid_field import (
     prepare_hybrid_reference_loss_field,
 )
@@ -588,8 +589,24 @@ class HybridTeacherSample:
                         ),
                     )
                 )
-                count = len(
-                    quadrature.weights
+                region = np.asarray(
+                    package_domain_topology(
+                        scene.packages
+                    ).deepest_containing(
+                        scene.packages,
+                        quadrature.positions,
+                        tolerance=2e-12,
+                    ),
+                    dtype=int,
+                )
+                keep = (
+                    region
+                    == index
+                )
+                count = int(
+                    np.count_nonzero(
+                        keep
+                    )
                 )
                 package_index.append(
                     np.full(
@@ -599,15 +616,21 @@ class HybridTeacherSample:
                     )
                 )
                 package_local.append(
-                    quadrature.local_positions
+                    quadrature.local_positions[
+                        keep
+                    ]
                 )
                 package_weights.append(
-                    quadrature.weights
+                    quadrature.weights[
+                        keep
+                    ]
                 )
                 package_matrices.append(
                     prepared.package_dissipation_matrices(
                         index,
-                        quadrature.positions,
+                        quadrature.positions[
+                            keep
+                        ],
                     )
                 )
             package_spatial = (
