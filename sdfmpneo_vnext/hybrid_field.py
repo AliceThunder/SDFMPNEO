@@ -300,10 +300,16 @@ class PreparedHybridReferenceLossField:
                 ]
             )
         )
+        source_state = (
+            self.result.mixed_result.node_environment_current
+            if self.result.mixed_result.node_environment_current
+            is not None
+            else self.result.mixed_result.node_charge
+        )
         direct = np.einsum(
             "qjd,jp->qdp",
             direct_kernel,
-            self.result.mixed_result.node_charge,
+            source_state,
         )
 
         surface_positions = (
