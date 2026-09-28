@@ -9,10 +9,13 @@ from sdfmpneo_vnext import (
     ImmutableTeacherDataset,
     MultiDebyeMaterial,
     MQSConfig,
+    PackageObject,
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    SuperquadricPackageGeometry,
     SpatialLossSamples,
+    TabulatedMaterial,
     TeacherSample,
     analytic_port_baseline,
     deterministic_split,
@@ -597,6 +600,88 @@ def test_scene_serialization_round_trips_multi_debye_background():
                 frequency
             ),
             medium.complex_permittivity(
+                frequency
+            ),
+        )
+
+
+def test_scene_serialization_round_trips_tabulated_background_and_package():
+    base = _scene()
+    material = TabulatedMaterial(
+        frequencies_hz=(
+            20_000.0,
+            100_000.0,
+            500_000.0,
+        ),
+        relative_permittivity_real=(
+            12.0,
+            7.0,
+            4.5,
+        ),
+        loss_conductivity_values=(
+            2.0e-5,
+            3.0e-4,
+            1.5e-4,
+        ),
+        thermal_conductivity=0.48,
+        density=1120.0,
+        heat_capacity=1350.0,
+    )
+    package = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [0.055, 0.050, 0.015]
+            ),
+            exponent_xy=3.0,
+            exponent_z=3.0,
+        ),
+        material,
+        "tabulated-package",
+    )
+    scene = Scene(
+        base.coils,
+        material,
+        (
+            package,
+        ),
+    )
+    restored = scene_from_dict(
+        scene_to_dict(
+            scene
+        )
+    )
+    assert isinstance(
+        restored.medium,
+        TabulatedMaterial,
+    )
+    assert isinstance(
+        restored.packages[
+            0
+        ].material,
+        TabulatedMaterial,
+    )
+    assert (
+        restored.medium.frequencies_hz
+        == material.frequencies_hz
+    )
+    assert (
+        restored.medium.relative_permittivity_real
+        == material.relative_permittivity_real
+    )
+    assert (
+        restored.medium.loss_conductivity_values
+        == material.loss_conductivity_values
+    )
+    for frequency in (
+        20_000.0,
+        70_000.0,
+        500_000.0,
+    ):
+        assert np.isclose(
+            restored.medium.complex_permittivity(
+                frequency
+            ),
+            material.complex_permittivity(
                 frequency
             ),
         )
