@@ -5,6 +5,7 @@ import numpy as np
 
 from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
+    CoilObject,
     IsotropicMaterial,
     PackageObject,
 )
@@ -310,18 +311,136 @@ class RadialIsotropicMaterialProfile:
         )
 
 
+def _minimum_enclosing_scale(
+    geometry: SuperquadricPackageGeometry,
+    coils,
+    *,
+    clearance_fraction: float,
+    longitudinal_segments: int,
+    section_points: int,
+) -> float:
+    coils = tuple(
+        coils
+    )
+    if not coils:
+        return 0.0
+    if (
+        not np.isfinite(
+            clearance_fraction
+        )
+        or clearance_fraction < 0.0
+    ):
+        raise ValueError(
+            "clearance_fraction must be finite and nonnegative"
+        )
+    if (
+        longitudinal_segments < 8
+        or section_points < 8
+    ):
+        raise ValueError(
+            "conductor enclosure sampling orders are too small"
+        )
+    if not all(
+        isinstance(
+            coil,
+            CoilObject,
+        )
+        for coil in coils
+    ):
+        raise TypeError(
+            "enclosed_coils must contain CoilObject instances"
+        )
+
+    points = np.concatenate(
+        [
+            coil.geometry.surface_samples(
+                longitudinal_segments=(
+                    longitudinal_segments
+                ),
+                section_points=(
+                    section_points
+                ),
+            )
+            for coil in coils
+        ],
+        axis=0,
+    )
+    if not np.all(
+        geometry.contains(
+            points,
+            tolerance=1e-11,
+        )
+    ):
+        raise ValueError(
+            "outer graded package does not fully enclose enclosed_coils"
+        )
+
+    lower = 1e-4
+    upper = 1.0
+    for _ in range(
+        56
+    ):
+        midpoint = 0.5 * (
+            lower
+            + upper
+        )
+        candidate = SuperquadricPackageGeometry(
+            np.asarray(
+                geometry.half_extents,
+                dtype=float,
+            )
+            * midpoint,
+            exponent_xy=(
+                geometry.exponent_xy
+            ),
+            exponent_z=(
+                geometry.exponent_z
+            ),
+            pose=geometry.pose,
+        )
+        if np.all(
+            candidate.contains(
+                points,
+                tolerance=1e-11,
+            )
+        ):
+            upper = midpoint
+        else:
+            lower = midpoint
+    return float(
+        min(
+            upper
+            * (
+                1.0
+                + clearance_fraction
+            ),
+            1.0,
+        )
+    )
+
+
 def compile_graded_superquadric_regions(
     geometry: SuperquadricPackageGeometry,
     profile: RadialIsotropicMaterialProfile,
     *,
     shell_count: int = 8,
     name_prefix: str = "graded",
+    enclosed_coils=(),
+    minimum_inner_scale: float | None = None,
+    clearance_fraction: float = 0.03,
+    longitudinal_segments: int = 96,
+    section_points: int = 24,
 ):
     """Compile a continuous radial profile into nested homogeneous regions.
 
     Each shell uses the material value at its normalized radial midpoint.
     Increasing shell_count refines the graded-medium approximation while
     preserving the same local surface-integral solver and unbounded world.
+
+    If enclosed_coils are supplied, the innermost material interface is moved
+    outward as needed so no shell boundary cuts a finite-section conductor.
+    This keeps the compiled profile inside the strict nested/disjoint material
+    topology required by the electromagnetic and thermal interface solvers.
     """
     if not isinstance(
         geometry,
@@ -355,28 +474,99 @@ def compile_graded_superquadric_regions(
             "name_prefix must be nonempty"
         )
 
-    boundaries = (
-        np.arange(
-            1,
-            shell_count
-            + 1,
-            dtype=float,
+    required_inner_scale = _minimum_enclosing_scale(
+        geometry,
+        enclosed_coils,
+        clearance_fraction=(
+            clearance_fraction
+        ),
+        longitudinal_segments=(
+            longitudinal_segments
+        ),
+        section_points=(
+            section_points
+        ),
+    )
+    if minimum_inner_scale is not None:
+        minimum_inner_scale = float(
+            minimum_inner_scale
         )
-        / float(
-            shell_count
+        if (
+            not np.isfinite(
+                minimum_inner_scale
+            )
+            or minimum_inner_scale <= 0.0
+            or minimum_inner_scale > 1.0
+        ):
+            raise ValueError(
+                "minimum_inner_scale must lie in (0,1]"
+            )
+        required_inner_scale = max(
+            required_inner_scale,
+            minimum_inner_scale,
+        )
+
+    if required_inner_scale <= 0.0:
+        boundaries = (
+            np.arange(
+                1,
+                shell_count
+                + 1,
+                dtype=float,
+            )
+            / float(
+                shell_count
+            )
+        )
+    else:
+        if (
+            shell_count > 1
+            and required_inner_scale
+            >= 1.0
+            - 1e-8
+        ):
+            raise ValueError(
+                "there is no room for a strict graded shell outside the "
+                "enclosed conductor; enlarge the outer package"
+            )
+        inner_volume = (
+            required_inner_scale
+            ** 3
+        )
+        volume_boundaries = np.linspace(
+            inner_volume,
+            1.0,
+            shell_count,
+        )
+        boundaries = (
+            volume_boundaries
+            ** (
+                1.0
+                / 3.0
+            )
+        )
+
+    inner_boundaries = np.concatenate(
+        (
+            np.asarray(
+                [
+                    0.0
+                ]
+            ),
+            boundaries[
+                :-1
+            ],
         )
     )
     midpoints = (
-        (
-            np.arange(
-                shell_count,
-                dtype=float,
-            )
-            + 0.5
+        0.5
+        * (
+            boundaries**3
+            + inner_boundaries**3
         )
-        / float(
-            shell_count
-        )
+    ) ** (
+        1.0
+        / 3.0
     )
     packages = []
     for index, (
