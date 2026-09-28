@@ -565,7 +565,7 @@ def test_hybrid_dataset_background_domain_metadata_includes_lossless_branch(tmp_
     )
 
 
-def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain():
+def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain(tmp_path):
     config = HybridSceneSamplerConfig(
         background_relative_permittivity_range=(
             1.0,
