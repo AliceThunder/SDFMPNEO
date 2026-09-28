@@ -958,6 +958,16 @@ def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose():
             conductor_surface
         )
     )
+    for coil in scene.coils:
+        assert (
+            package.classify_conductor(
+                coil.geometry
+            )
+            in (
+                "inside",
+                "outside",
+            )
+        )
 
     geometry_domain = (
         config.geometry_domain_metadata()
