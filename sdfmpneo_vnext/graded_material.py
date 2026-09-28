@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import numpy as np
 
@@ -8,6 +9,7 @@ from .scene import (
     CoilObject,
     IsotropicMaterial,
     PackageObject,
+    PassiveIsotropicMaterial,
 )
 
 
@@ -421,7 +423,13 @@ def _minimum_enclosing_scale(
 
 def compile_graded_superquadric_regions(
     geometry: SuperquadricPackageGeometry,
-    profile: RadialIsotropicMaterialProfile,
+    profile: (
+        RadialIsotropicMaterialProfile
+        | Callable[
+            [float],
+            PassiveIsotropicMaterial,
+        ]
+    ),
     *,
     shell_count: int = 8,
     name_prefix: str = "graded",
@@ -434,6 +442,9 @@ def compile_graded_superquadric_regions(
     """Compile a continuous radial profile into nested homogeneous regions.
 
     Each shell uses the material value at its normalized radial midpoint.
+    The profile may be the built-in piecewise-linear radial profile or any
+    callable returning a PassiveIsotropicMaterial, including dispersive or
+    tabulated responses.
     Increasing shell_count refines the graded-medium approximation while
     preserving the same local surface-integral solver and unbounded world.
 
@@ -449,12 +460,18 @@ def compile_graded_superquadric_regions(
         raise TypeError(
             "geometry must be SuperquadricPackageGeometry"
         )
-    if not isinstance(
-        profile,
-        RadialIsotropicMaterialProfile,
+    if not (
+        isinstance(
+            profile,
+            RadialIsotropicMaterialProfile,
+        )
+        or callable(
+            profile
+        )
     ):
         raise TypeError(
-            "profile must be RadialIsotropicMaterialProfile"
+            "profile must be RadialIsotropicMaterialProfile or a callable "
+            "returning passive isotropic materials"
         )
     if (
         not isinstance(
@@ -596,14 +613,34 @@ def compile_graded_superquadric_regions(
                 pose=geometry.pose,
             )
         )
+        material = (
+            profile.material_at(
+                float(
+                    midpoint
+                )
+            )
+            if isinstance(
+                profile,
+                RadialIsotropicMaterialProfile,
+            )
+            else profile(
+                float(
+                    midpoint
+                )
+            )
+        )
+        if not isinstance(
+            material,
+            PassiveIsotropicMaterial,
+        ):
+            raise TypeError(
+                "graded material callable must return a passive isotropic "
+                "material response"
+            )
         packages.append(
             PackageObject(
                 shell_geometry,
-                profile.material_at(
-                    float(
-                        midpoint
-                    )
-                ),
+                material,
                 f"{prefix}:{index:03d}",
             )
         )
