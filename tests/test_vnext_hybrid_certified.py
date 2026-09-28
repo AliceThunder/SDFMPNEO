@@ -146,3 +146,59 @@ def test_hybrid_full_certificate_requires_independent_convergence_evidence():
         certified.operator_backend
         == "dense_dielectric_reference"
     )
+
+
+class _OutOfFastDomainArtifact:
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        raise ValueError(
+            "scene is outside the declared FAST geometry domain"
+        )
+
+
+def test_hybrid_certificate_falls_back_to_reference_when_fast_is_outside_domain():
+    scene = _scene()
+    report = hybrid_reference_convergence(
+        scene,
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    certified = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        _OutOfFastDomainArtifact(),
+        config=_config(),
+        convergence_report=report,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=0.2,
+    )
+    assert certified.certified
+    assert (
+        certified.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+    assert certified.used_reference_fallback
+    assert not certified.fast_domain_valid
+    assert np.isinf(
+        certified.relative_observable_correction
+    )
+    assert (
+        certified.fast_domain_reason
+        is not None
+    )
+    assert (
+        "outside the declared FAST geometry domain"
+        in certified.fast_domain_reason
+    )
