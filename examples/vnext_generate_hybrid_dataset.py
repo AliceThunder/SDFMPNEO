@@ -70,6 +70,11 @@ def main():
         default=0.0,
     )
     parser.add_argument(
+        "--multi-debye-package-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
         "--package-debye-epsilon-infinite-min",
         type=float,
         default=1.5,
@@ -130,6 +135,21 @@ def main():
         default=0.0,
     )
     parser.add_argument(
+        "--multi-debye-background-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--multi-debye-min-poles",
+        type=int,
+        default=2,
+    )
+    parser.add_argument(
+        "--multi-debye-max-poles",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
         "--background-debye-epsilon-infinite-min",
         type=float,
         default=1.0,
@@ -180,6 +200,9 @@ def main():
         debye_package_probability=(
             args.debye_package_probability
         ),
+        multi_debye_package_probability=(
+            args.multi_debye_package_probability
+        ),
         package_debye_epsilon_infinite_range=(
             args.package_debye_epsilon_infinite_min,
             args.package_debye_epsilon_infinite_max,
@@ -205,6 +228,13 @@ def main():
         ),
         debye_background_probability=(
             args.debye_background_probability
+        ),
+        multi_debye_background_probability=(
+            args.multi_debye_background_probability
+        ),
+        multi_debye_poles_range=(
+            args.multi_debye_min_poles,
+            args.multi_debye_max_poles,
         ),
         background_debye_epsilon_infinite_range=(
             args.background_debye_epsilon_infinite_min,
@@ -242,7 +272,7 @@ def main():
             != domain_metadata
         ):
             raise SystemExit(
-                "existing dataset background design domain does not match "
+                "existing dataset material design domain does not match "
                 "the requested generator arguments"
             )
     else:
