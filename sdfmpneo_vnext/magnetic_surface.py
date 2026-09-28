@@ -22,11 +22,18 @@ class MagneticSurfaceSolver:
         packages,
         background: PassiveIsotropicMaterial,
         *,
+        conductors=(),
         vertical_order: int = 16,
         azimuthal_order: int = 32,
+        conductor_longitudinal_segments: int = 64,
+        conductor_section_points: int = 16,
+        conductor_end_radial_order: int = 3,
     ):
         self.packages = tuple(
             packages
+        )
+        self.conductors = tuple(
+            conductors
         )
         if not self.packages:
             raise ValueError(
@@ -60,9 +67,21 @@ class MagneticSurfaceSolver:
         self.azimuthal_order = int(
             azimuthal_order
         )
+        self.conductor_longitudinal_segments = int(
+            conductor_longitudinal_segments
+        )
+        self.conductor_section_points = int(
+            conductor_section_points
+        )
+        self.conductor_end_radial_order = int(
+            conductor_end_radial_order
+        )
         if (
             self.vertical_order < 4
             or self.azimuthal_order < 8
+            or self.conductor_longitudinal_segments < 2
+            or self.conductor_section_points < 8
+            or self.conductor_end_radial_order < 2
         ):
             raise ValueError(
                 "magnetic surface quadrature orders are too small"
@@ -76,8 +95,15 @@ class MagneticSurfaceSolver:
         normals = []
         weights = []
         package_index = []
+        interface_slices = []
+        interface_inside_permeability = []
+        interface_outside_permeability = []
+        interface_kind = []
         package_slices = []
         cursor = 0
+
+        # Package exterior interfaces. Normals point from package material to
+        # the unbounded background.
         for index, package in enumerate(
             self.packages
         ):
@@ -90,6 +116,12 @@ class MagneticSurfaceSolver:
             count = len(
                 quadrature.weights
             )
+            sl = slice(
+                cursor,
+                cursor
+                + count,
+            )
+            cursor += count
             positions.append(
                 quadrature.positions
             )
@@ -107,13 +139,137 @@ class MagneticSurfaceSolver:
                 )
             )
             package_slices.append(
-                slice(
-                    cursor,
-                    cursor
-                    + count,
+                sl
+            )
+            interface_slices.append(
+                sl
+            )
+            interface_inside_permeability.append(
+                float(
+                    package.material.permeability
                 )
             )
+            interface_outside_permeability.append(
+                self.background_permeability
+            )
+            interface_kind.append(
+                (
+                    "package",
+                    index,
+                )
+            )
+
+        # A conductor enclosed by a magnetic package is a nonmagnetic cavity
+        # in the package material under the current conductor model. Its
+        # closed boundary is therefore another permeability interface. The
+        # conductor-surface normal points from the cavity into the package.
+        conductor_cavity_slices = []
+        for conductor_index, conductor in enumerate(
+            self.conductors
+        ):
+            containing = []
+            for package_index_value, package in enumerate(
+                self.packages
+            ):
+                classification = (
+                    package.geometry.classify_conductor(
+                        conductor.geometry,
+                        longitudinal_segments=64,
+                        section_points=16,
+                        tolerance=1e-10,
+                    )
+                )
+                if classification == "inside":
+                    containing.append(
+                        package_index_value
+                    )
+            if len(
+                containing
+            ) > 1:
+                raise NotImplementedError(
+                    "a conductor enclosed by multiple package material regions "
+                    "requires nested magnetic-domain topology"
+                )
+            if not containing:
+                continue
+            package_index_value = (
+                containing[
+                    0
+                ]
+            )
+            package = self.packages[
+                package_index_value
+            ]
+            package_mu = float(
+                package.material.permeability
+            )
+            if np.isclose(
+                package_mu,
+                self.background_permeability,
+                rtol=1e-12,
+                atol=0.0,
+            ):
+                continue
+            quadrature = (
+                conductor.geometry.surface_quadrature(
+                    longitudinal_segments=(
+                        self.conductor_longitudinal_segments
+                    ),
+                    section_points=(
+                        self.conductor_section_points
+                    ),
+                    end_radial_order=(
+                        self.conductor_end_radial_order
+                    ),
+                )
+            )
+            count = len(
+                quadrature.weights
+            )
+            sl = slice(
+                cursor,
+                cursor
+                + count,
+            )
             cursor += count
+            positions.append(
+                quadrature.positions
+            )
+            normals.append(
+                quadrature.normals
+            )
+            weights.append(
+                quadrature.weights
+            )
+            package_index.append(
+                np.full(
+                    count,
+                    package_index_value,
+                    dtype=int,
+                )
+            )
+            conductor_cavity_slices.append(
+                (
+                    conductor_index,
+                    sl,
+                )
+            )
+            interface_slices.append(
+                sl
+            )
+            interface_inside_permeability.append(
+                self.background_permeability
+            )
+            interface_outside_permeability.append(
+                package_mu
+            )
+            interface_kind.append(
+                (
+                    "conductor_cavity",
+                    conductor_index,
+                )
+            )
+
         self.positions = np.concatenate(
             positions,
             axis=0,
@@ -133,6 +289,21 @@ class MagneticSurfaceSolver:
         self.package_slices = tuple(
             package_slices
         )
+        self.conductor_cavity_slices = tuple(
+            conductor_cavity_slices
+        )
+        self.interface_slices = tuple(
+            interface_slices
+        )
+        self.interface_inside_permeability = tuple(
+            interface_inside_permeability
+        )
+        self.interface_outside_permeability = tuple(
+            interface_outside_permeability
+        )
+        self.interface_kind = tuple(
+            interface_kind
+        )
 
     @property
     def has_contrast(
@@ -140,12 +311,19 @@ class MagneticSurfaceSolver:
     ) -> bool:
         return any(
             not np.isclose(
-                package.material.permeability,
-                self.background_permeability,
+                permeability_inside,
+                permeability_outside,
                 rtol=1e-12,
                 atol=0.0,
             )
-            for package in self.packages
+            for (
+                permeability_inside,
+                permeability_outside,
+            )
+            in zip(
+                self.interface_inside_permeability,
+                self.interface_outside_permeability,
+            )
         )
 
     def _adjoint_double_layer(
@@ -201,23 +379,22 @@ class MagneticSurfaceSolver:
         matrix = (
             -kstar
         )
-        for package, package_slice in zip(
-            self.packages,
-            self.package_slices,
+        for (
+            interface_slice,
+            permeability_inside,
+            permeability_outside,
+        ) in zip(
+            self.interface_slices,
+            self.interface_inside_permeability,
+            self.interface_outside_permeability,
         ):
-            permeability_inside = float(
-                package.material.permeability
-            )
-            permeability_outside = (
-                self.background_permeability
-            )
             contrast = (
                 permeability_inside
                 - permeability_outside
             )
             indices = np.arange(
-                package_slice.start,
-                package_slice.stop,
+                interface_slice.start,
+                interface_slice.stop,
             )
             if abs(
                 contrast
@@ -289,18 +466,23 @@ class MagneticSurfaceSolver:
                 "incident normal derivative has incompatible shape"
             )
         effective_rhs = rhs.copy()
-        for package, package_slice in zip(
-            self.packages,
-            self.package_slices,
+        for (
+            interface_slice,
+            permeability_inside,
+            permeability_outside,
+        ) in zip(
+            self.interface_slices,
+            self.interface_inside_permeability,
+            self.interface_outside_permeability,
         ):
             if np.isclose(
-                package.material.permeability,
-                self.background_permeability,
+                permeability_inside,
+                permeability_outside,
                 rtol=1e-12,
                 atol=0.0,
             ):
                 effective_rhs[
-                    package_slice,
+                    interface_slice,
                     :
                 ] = 0.0
         matrix = self.operator_matrix()
