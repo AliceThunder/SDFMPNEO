@@ -192,6 +192,7 @@ class HybridSceneSamplerConfig:
     conductor: MVPSceneSamplerConfig = MVPSceneSamplerConfig()
     package_margin_range: tuple[float, float] = (1.35, 2.0)
     package_half_z_range: tuple[float, float] = (0.004, 0.012)
+    package_center_offset_fraction_range: tuple[float, float] = (0.0, 0.35)
     package_exponent_xy_range: tuple[float, float] = (2.0, 5.0)
     package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
@@ -246,6 +247,24 @@ class HybridSceneSamplerConfig:
                 raise ValueError(
                     f"{name} must be a positive finite increasing pair"
                 )
+        offset_lo, offset_hi = (
+            self.package_center_offset_fraction_range
+        )
+        if not (
+            np.isfinite(
+                offset_lo
+            )
+            and np.isfinite(
+                offset_hi
+            )
+            and 0.0
+            <= offset_lo
+            < offset_hi
+        ):
+            raise ValueError(
+                "package_center_offset_fraction_range must be a finite "
+                "nonnegative increasing pair"
+            )
         bg_eps_lo, bg_eps_hi = (
             self.background_relative_permittivity_range
         )
@@ -749,6 +768,317 @@ class HybridSceneSamplerConfig:
         }
 
 
+def _conductor_surface_samples(
+    geometry,
+    *,
+    longitudinal_segments: int = 96,
+    section_points: int = 20,
+):
+    segments = max(
+        int(
+            longitudinal_segments
+        ),
+        int(
+            np.ceil(
+                48.0
+                * geometry.turns
+            )
+        ),
+        24,
+    )
+    polyline = geometry.polyline(
+        segments
+    )
+    theta = np.linspace(
+        0.0,
+        2.0 * np.pi,
+        int(
+            section_points
+        ),
+        endpoint=False,
+    )
+    exponent = float(
+        geometry.cross_section_exponent
+    )
+    power = 2.0 / exponent
+    cosine = np.cos(
+        theta
+    )
+    sine = np.sin(
+        theta
+    )
+    section_x = (
+        0.5
+        * geometry.conductor_width
+        * np.sign(
+            cosine
+        )
+        * np.abs(
+            cosine
+        ) ** power
+    )
+    section_y = (
+        0.5
+        * geometry.conductor_thickness
+        * np.sign(
+            sine
+        )
+        * np.abs(
+            sine
+        ) ** power
+    )
+    offsets = (
+        section_x[
+            None,
+            :,
+            None,
+        ]
+        * polyline.normal1[
+            :,
+            None,
+            :,
+        ]
+        + section_y[
+            None,
+            :,
+            None,
+        ]
+        * polyline.normal2[
+            :,
+            None,
+            :,
+        ]
+    )
+    middle = (
+        polyline.midpoints[
+            :,
+            None,
+            :,
+        ]
+        + offsets
+    ).reshape(
+        -1,
+        3,
+    )
+
+    endpoint_points = []
+    for point, n1, n2 in (
+        (
+            polyline.points[
+                0
+            ],
+            polyline.normal1[
+                0
+            ],
+            polyline.normal2[
+                0
+            ],
+        ),
+        (
+            polyline.points[
+                -1
+            ],
+            polyline.normal1[
+                -1
+            ],
+            polyline.normal2[
+                -1
+            ],
+        ),
+    ):
+        endpoint_points.append(
+            point[
+                None,
+                :
+            ]
+            + section_x[
+                :,
+                None,
+            ]
+            * n1[
+                None,
+                :
+            ]
+            + section_y[
+                :,
+                None,
+            ]
+            * n2[
+                None,
+                :
+            ]
+        )
+    return np.concatenate(
+        (
+            middle,
+            *endpoint_points,
+        ),
+        axis=0,
+    )
+
+
+def _sample_enclosing_package_geometry(
+    rng: np.random.Generator,
+    root,
+    config,
+):
+    exponent_xy = _uniform(
+        rng,
+        config.package_exponent_xy_range,
+    )
+    exponent_z = _uniform(
+        rng,
+        config.package_exponent_z_range,
+    )
+    relative_rotation = haar_rotation(
+        rng
+    )
+    direction = np.asarray(
+        rng.normal(
+            size=3
+        ),
+        dtype=float,
+    )
+    direction /= max(
+        float(
+            np.linalg.norm(
+                direction
+            )
+        ),
+        1e-30,
+    )
+    offset_fraction = _uniform(
+        rng,
+        config.package_center_offset_fraction_range,
+    )
+    offset_scale = max(
+        float(
+            root.outer_a
+        ),
+        float(
+            root.outer_b
+        ),
+    )
+    relative_pose = RigidPose(
+        relative_rotation,
+        direction
+        * offset_fraction
+        * offset_scale,
+    )
+    package_pose = root.pose.compose(
+        relative_pose
+    )
+
+    conductor_points = _conductor_surface_samples(
+        root
+    )
+    local = (
+        (
+            conductor_points
+            - package_pose.translation[
+                None,
+                :
+            ]
+        )
+        @ package_pose.rotation
+    )
+    bounds = np.max(
+        np.abs(
+            local
+        ),
+        axis=0,
+    )
+    margin = _uniform(
+        rng,
+        config.package_margin_range,
+    )
+    half_extents = (
+        margin
+        * np.maximum(
+            bounds,
+            1e-6,
+        )
+    )
+    half_extents[
+        2
+    ] = max(
+        float(
+            half_extents[
+                2
+            ]
+        ),
+        _uniform(
+            rng,
+            config.package_half_z_range,
+        ),
+    )
+
+    scaled = (
+        np.abs(
+            local
+        )
+        / half_extents[
+            None,
+            :
+        ]
+    )
+    radial = (
+        (
+            scaled[
+                :,
+                0
+            ] ** exponent_xy
+            + scaled[
+                :,
+                1
+            ] ** exponent_xy
+        ) ** (
+            exponent_z
+            / exponent_xy
+        )
+        + scaled[
+            :,
+            2
+        ] ** exponent_z
+    ) ** (
+        1.0
+        / exponent_z
+    )
+    maximum_radius = float(
+        np.max(
+            radial
+        )
+    )
+    target_radius = 0.90
+    if maximum_radius > target_radius:
+        half_extents = (
+            half_extents
+            * maximum_radius
+            / target_radius
+        )
+
+    geometry = SuperquadricPackageGeometry(
+        half_extents,
+        exponent_xy=(
+            exponent_xy
+        ),
+        exponent_z=(
+            exponent_z
+        ),
+        pose=package_pose,
+    )
+    if not np.all(
+        geometry.contains(
+            conductor_points,
+            tolerance=1e-10,
+        )
+    ):
+        raise RuntimeError(
+            "failed to construct an enclosing arbitrary-pose package"
+        )
+    return geometry
+
+
 def _sample_multi_debye_material(
     rng: np.random.Generator,
     *,
@@ -950,57 +1280,11 @@ def sample_hybrid_package_scene(
     root = base_scene.coils[
         0
     ].geometry
-    margin = _uniform(
-        rng,
-        config.package_margin_range,
-    )
-    half_extents = np.asarray(
-        [
-            margin
-            * (
-                root.outer_a
-                + 0.5
-                * root.conductor_width
-            ),
-            margin
-            * (
-                root.outer_b
-                + 0.5
-                * root.conductor_width
-            ),
-            _uniform(
-                rng,
-                config.package_half_z_range,
-            ),
-        ],
-        dtype=float,
-    )
-    twist = float(
-        rng.uniform(
-            -np.pi,
-            np.pi,
-        )
-    )
-    package_pose = RigidPose.from_axis_angle(
-        (
-            0.0,
-            0.0,
-            1.0,
-        ),
-        twist,
-    )
     package_geometry = (
-        SuperquadricPackageGeometry(
-            half_extents,
-            exponent_xy=_uniform(
-                rng,
-                config.package_exponent_xy_range,
-            ),
-            exponent_z=_uniform(
-                rng,
-                config.package_exponent_z_range,
-            ),
-            pose=package_pose,
+        _sample_enclosing_package_geometry(
+            rng,
+            root,
+            config,
         )
     )
     epsilon_r = _uniform(
