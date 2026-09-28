@@ -17,6 +17,10 @@ from .package_geometry import (
     SuperquadricSurfaceQuadrature,
     SuperquadricVolumeQuadrature,
 )
+from .graded_material import (
+    RadialIsotropicMaterialProfile,
+    compile_graded_superquadric_regions,
+)
 from .scene import (
     ConductorMaterial,
     PassiveIsotropicMaterial,
@@ -243,6 +247,8 @@ __all__ = [
     "SuperquadricPackageGeometry",
     "SuperquadricSurfaceQuadrature",
     "SuperquadricVolumeQuadrature",
+    "RadialIsotropicMaterialProfile",
+    "compile_graded_superquadric_regions",
     "SuperellipseSpiral",
     "PolylineConductor",
     "bishop_segment_frames",
