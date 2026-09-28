@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from sdfmpneo_vnext.certified import _mixed_physical_residual
 from sdfmpneo_vnext import (
@@ -366,3 +367,66 @@ def test_lossy_background_certification_matches_dense_and_matrix_free():
         rtol=5e-6,
         atol=5e-8,
     )
+
+
+class _MixedOutOfFastDomainArtifact:
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        raise ValueError(
+            "outside mixed FAST geometry domain"
+        )
+
+
+def test_mixed_certification_falls_back_to_dense_reference_when_fast_is_unavailable():
+    class _Converged:
+        converged = True
+
+    result = certify_mixed_ports(
+        _scene(),
+        12_000.0,
+        _MixedOutOfFastDomainArtifact(),
+        config=_cfg(
+            8
+        ),
+        convergence_report=_Converged(),
+        algebraic_tolerance=1e-7,
+        allow_reference_fallback=True,
+    )
+    assert result.certified
+    assert (
+        result.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+    assert result.used_reference_fallback
+    assert not result.fast_domain_valid
+    assert np.isinf(
+        result.relative_observable_correction
+    )
+    assert (
+        result.operator_backend
+        == "dense_reference_fallback"
+    )
+    assert (
+        result.fast_domain_reason
+        == "outside mixed FAST geometry domain"
+    )
+
+
+def test_mixed_certification_does_not_hide_fast_domain_error_without_fallback():
+    with pytest.raises(
+        ValueError,
+        match="outside mixed FAST geometry domain",
+    ):
+        certify_mixed_ports(
+            _scene(),
+            12_000.0,
+            _MixedOutOfFastDomainArtifact(),
+            config=_cfg(
+                8
+            ),
+            algebraic_tolerance=1e-7,
+            allow_reference_fallback=False,
+        )
