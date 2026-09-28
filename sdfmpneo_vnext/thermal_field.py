@@ -5,6 +5,7 @@ import numpy as np
 from scipy.special import erfc
 
 from .basis import superellipse_section_quadrature
+from .hybrid_domain import package_domain_topology
 from .scene import Scene
 
 
@@ -837,6 +838,9 @@ def build_thermal_source_quadrature(
         extra_arcs = []
         extra_xy = []
         extra_matrices = []
+        package_topology = package_domain_topology(
+            scene.packages
+        )
         for package_index, package in enumerate(
             scene.packages
         ):
@@ -853,14 +857,36 @@ def build_thermal_source_quadrature(
                     ),
                 )
             )
-            count = len(
-                quadrature.weights
+            region = np.asarray(
+                package_topology.deepest_containing(
+                    scene.packages,
+                    quadrature.positions,
+                    tolerance=2e-12,
+                ),
+                dtype=int,
             )
+            keep = (
+                region
+                == package_index
+            )
+            count = int(
+                np.count_nonzero(
+                    keep
+                )
+            )
+            if count == 0:
+                continue
+            kept_positions = quadrature.positions[
+                keep
+            ]
+            kept_weights = quadrature.weights[
+                keep
+            ]
             extra_positions.append(
-                quadrature.positions
+                kept_positions
             )
             extra_weights.append(
-                quadrature.weights
+                kept_weights
             )
             extra_ids.append(
                 np.full(
@@ -889,7 +915,7 @@ def build_thermal_source_quadrature(
             extra_matrices.append(
                 prepared_spatial.package_dissipation_matrices(
                     package_index,
-                    quadrature.positions,
+                    kept_positions,
                 )
             )
 
