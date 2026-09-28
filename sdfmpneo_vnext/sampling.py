@@ -1633,6 +1633,7 @@ def _sample_disjoint_package_geometries(
             != target_index
         )
         accepted = None
+        accepted_enclosure = True
         for _ in range(
             64
         ):
@@ -1670,12 +1671,14 @@ def _sample_disjoint_package_geometries(
                     geometries
                 ),
             )
+            accepted_enclosure = False
         geometries.append(
             accepted
         )
-        used_enclosures.add(
-            target_index
-        )
+        if accepted_enclosure:
+            used_enclosures.add(
+                target_index
+            )
     return tuple(
         geometries
     )
