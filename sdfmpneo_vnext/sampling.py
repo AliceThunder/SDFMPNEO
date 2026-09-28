@@ -196,6 +196,10 @@ class HybridSceneSamplerConfig:
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossless_probability: float = 0.20
+    debye_package_probability: float = 0.0
+    package_debye_epsilon_infinite_range: tuple[float, float] = (1.5, 6.0)
+    package_debye_delta_epsilon_range: tuple[float, float] = (0.5, 20.0)
+    package_debye_relaxation_time_range: tuple[float, float] = (1e-8, 1e-4)
     background_relative_permittivity_range: tuple[float, float] = (1.0, 1.0)
     background_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossy_background_probability: float = 0.0
@@ -212,6 +216,9 @@ class HybridSceneSamplerConfig:
             "package_exponent_z_range",
             "relative_permittivity_range",
             "dielectric_conductivity_range",
+            "package_debye_epsilon_infinite_range",
+            "package_debye_delta_epsilon_range",
+            "package_debye_relaxation_time_range",
             "background_conductivity_range",
             "background_debye_epsilon_infinite_range",
             "background_debye_delta_epsilon_range",
@@ -260,6 +267,14 @@ class HybridSceneSamplerConfig:
         ):
             raise ValueError(
                 "lossless_probability must lie in [0,1]"
+            )
+        if not (
+            0.0
+            <= self.debye_package_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "debye_package_probability must lie in [0,1]"
             )
         if not (
             0.0
@@ -611,16 +626,46 @@ def sample_hybrid_package_scene(
             rng,
             config.dielectric_conductivity_range,
         )
-    package = PackageObject(
-        package_geometry,
-        IsotropicMaterial(
+    if (
+        rng.random()
+        < config.debye_package_probability
+    ):
+        epsilon_infinite = _uniform(
+            rng,
+            config.package_debye_epsilon_infinite_range,
+        )
+        delta_epsilon = _uniform(
+            rng,
+            config.package_debye_delta_epsilon_range,
+        )
+        package_material = DebyeMaterial(
+            relative_permittivity_static=(
+                epsilon_infinite
+                + delta_epsilon
+            ),
+            relative_permittivity_infinite=(
+                epsilon_infinite
+            ),
+            relaxation_time=_log_uniform(
+                rng,
+                config.package_debye_relaxation_time_range,
+            ),
+            conductivity=(
+                conductivity
+            ),
+        )
+    else:
+        package_material = IsotropicMaterial(
             relative_permittivity=(
                 epsilon_r
             ),
             conductivity=(
                 conductivity
             ),
-        ),
+        )
+    package = PackageObject(
+        package_geometry,
+        package_material,
         "package",
     )
     scene = Scene(
