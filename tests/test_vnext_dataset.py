@@ -7,6 +7,7 @@ from sdfmpneo_vnext import (
     DenseMixedConductorTeacher,
     HomogeneousMedium,
     ImmutableTeacherDataset,
+    MultiDebyeMaterial,
     MQSConfig,
     RigidPose,
     Scene,
@@ -525,6 +526,56 @@ def test_scene_serialization_round_trips_debye_background():
         10_000.0,
         100_000.0,
         1_000_000.0,
+    ):
+        assert np.isclose(
+            restored.medium.complex_permittivity(
+                frequency
+            ),
+            medium.complex_permittivity(
+                frequency
+            ),
+        )
+
+
+def test_scene_serialization_round_trips_multi_debye_background():
+    base = _scene()
+    medium = MultiDebyeMaterial(
+        relative_permittivity_infinite=3.0,
+        relaxation_strengths=(
+            5.0,
+            12.0,
+        ),
+        relaxation_times=(
+            2.0e-7,
+            7.0e-6,
+        ),
+        conductivity=2.0e-5,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+    )
+    restored = scene_from_dict(
+        scene_to_dict(
+            scene
+        )
+    )
+    assert isinstance(
+        restored.medium,
+        MultiDebyeMaterial,
+    )
+    assert (
+        restored.medium.relaxation_strengths
+        == medium.relaxation_strengths
+    )
+    assert (
+        restored.medium.relaxation_times
+        == medium.relaxation_times
+    )
+    for frequency in (
+        20_000.0,
+        100_000.0,
+        500_000.0,
     ):
         assert np.isclose(
             restored.medium.complex_permittivity(
