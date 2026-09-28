@@ -100,6 +100,31 @@ def main():
         default=1.45,
     )
     parser.add_argument(
+        "--free-inclusion-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--free-inclusion-center-radius-min",
+        type=float,
+        default=0.65,
+    )
+    parser.add_argument(
+        "--free-inclusion-center-radius-max",
+        type=float,
+        default=1.8,
+    )
+    parser.add_argument(
+        "--free-inclusion-half-extent-min",
+        type=float,
+        default=0.12,
+    )
+    parser.add_argument(
+        "--free-inclusion-half-extent-max",
+        type=float,
+        default=0.45,
+    )
+    parser.add_argument(
         "--package-offset-fraction-min",
         type=float,
         default=0.0,
@@ -268,6 +293,17 @@ def main():
         nested_package_scale_range=(
             args.nested_package_scale_min,
             args.nested_package_scale_max,
+        ),
+        free_inclusion_probability=(
+            args.free_inclusion_probability
+        ),
+        free_inclusion_center_radius_fraction_range=(
+            args.free_inclusion_center_radius_min,
+            args.free_inclusion_center_radius_max,
+        ),
+        free_inclusion_half_extent_fraction_range=(
+            args.free_inclusion_half_extent_min,
+            args.free_inclusion_half_extent_max,
         ),
         package_center_offset_fraction_range=(
             args.package_offset_fraction_min,
