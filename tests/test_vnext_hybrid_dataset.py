@@ -13,6 +13,7 @@ from sdfmpneo_vnext import (
     SpatialLossSamples,
     IsotropicMaterial,
     MQSConfig,
+    MultiDebyeMaterial,
     PackageObject,
     Scene,
     SuperellipseSpiral,
@@ -721,4 +722,175 @@ def test_hybrid_sampler_generates_debye_background_and_declares_effective_domain
             1
         ]
         > 0.0
+    )
+
+
+def test_hybrid_sampler_generates_passive_multi_debye_media():
+    config = HybridSceneSamplerConfig(
+        lossless_probability=1.0,
+        lossy_background_probability=0.0,
+        debye_package_probability=0.0,
+        multi_debye_package_probability=1.0,
+        package_debye_epsilon_infinite_range=(
+            2.0,
+            3.0,
+        ),
+        package_debye_delta_epsilon_range=(
+            4.0,
+            5.0,
+        ),
+        package_debye_relaxation_time_range=(
+            1.0e-7,
+            1.0e-5,
+        ),
+        debye_background_probability=0.0,
+        multi_debye_background_probability=1.0,
+        multi_debye_poles_range=(
+            3,
+            3,
+        ),
+        background_debye_epsilon_infinite_range=(
+            1.5,
+            2.5,
+        ),
+        background_debye_delta_epsilon_range=(
+            5.0,
+            6.0,
+        ),
+        background_debye_relaxation_time_range=(
+            1.0e-7,
+            1.0e-5,
+        ),
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            947
+        ),
+        config,
+    )
+    assert isinstance(
+        scene.medium,
+        MultiDebyeMaterial,
+    )
+    assert isinstance(
+        scene.packages[
+            0
+        ].material,
+        MultiDebyeMaterial,
+    )
+    for material, delta_range in (
+        (
+            scene.medium,
+            config.background_debye_delta_epsilon_range,
+        ),
+        (
+            scene.packages[
+                0
+            ].material,
+            config.package_debye_delta_epsilon_range,
+        ),
+    ):
+        assert len(
+            material.relaxation_strengths
+        ) == 3
+        assert len(
+            material.relaxation_times
+        ) == 3
+        assert all(
+            value > 0.0
+            for value
+            in material.relaxation_strengths
+        )
+        assert all(
+            value > 0.0
+            for value
+            in material.relaxation_times
+        )
+        total_delta = sum(
+            material.relaxation_strengths
+        )
+        assert (
+            delta_range[
+                0
+            ]
+            <= total_delta
+            <= delta_range[
+                1
+            ]
+        )
+        assert (
+            material.loss_conductivity(
+                frequency
+            )
+            > 0.0
+        )
+
+    background_domain = (
+        config.background_domain_metadata()
+    )
+    package_domain = (
+        config.package_domain_metadata()
+    )
+    assert (
+        background_domain[
+            "multi_debye_probability"
+        ]
+        == 1.0
+    )
+    assert (
+        package_domain[
+            "multi_debye_probability"
+        ]
+        == 1.0
+    )
+    assert (
+        background_domain[
+            "multi_debye_poles_range"
+        ]
+        == [
+            3,
+            3,
+        ]
+    )
+    background_epsilon = float(
+        np.real(
+            scene.medium.relative_permittivity_at(
+                frequency
+            )
+        )
+    )
+    package_epsilon = float(
+        np.real(
+            scene.packages[
+                0
+            ].material.relative_permittivity_at(
+                frequency
+            )
+        )
+    )
+    assert (
+        background_domain[
+            "effective_relative_permittivity_range"
+        ][
+            0
+        ]
+        <= background_epsilon
+        <= background_domain[
+            "effective_relative_permittivity_range"
+        ][
+            1
+        ]
+    )
+    assert (
+        package_domain[
+            "effective_relative_permittivity_range"
+        ][
+            0
+        ]
+        <= package_epsilon
+        <= package_domain[
+            "effective_relative_permittivity_range"
+        ][
+            1
+        ]
     )
