@@ -372,12 +372,27 @@ class HybridSceneSamplerConfig:
     def geometry_domain_metadata(
         self,
     ):
+        conductor = asdict(
+            self.conductor
+        )
+        conductor = {
+            key: (
+                list(
+                    value
+                )
+                if isinstance(
+                    value,
+                    tuple,
+                )
+                else value
+            )
+            for key, value
+            in conductor.items()
+        }
         return {
             "n_coils": 2,
             "n_packages": 1,
-            "conductor": asdict(
-                self.conductor
-            ),
+            "conductor": conductor,
             "coil_relative_pose": {
                 "translation_direction": (
                     "isotropic_s2"
