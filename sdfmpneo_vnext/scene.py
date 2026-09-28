@@ -993,6 +993,22 @@ class TabulatedMaterial:
         frequency = float(
             frequency_hz
         )
+        if (
+            not np.isfinite(
+                frequency
+            )
+            or frequency < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if frequency == 0.0:
+            # The tabulated AC loss is intentionally not extrapolated to DC.
+            # Only an explicitly supplied static conductivity has a defined
+            # zero-frequency limit here.
+            return float(
+                self.conductivity
+            )
         dispersive = self._interpolate(
             self.loss_conductivity_values,
             frequency,
@@ -1087,7 +1103,7 @@ class Scene:
         ):
             raise ValueError(
                 "vNext MVP electromagnetic solvers currently require a "
-                "lossless homogeneous background (medium.conductivity == 0); "
+                "lossless homogeneous background at DC; "
                 "lossy media require an explicit dielectric/environment "
                 "dissipation channel and are not silently approximated"
             )
