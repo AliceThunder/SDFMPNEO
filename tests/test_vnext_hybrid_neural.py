@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     HomogeneousMedium,
     HybridTeacherSample,
     IsotropicMaterial,
@@ -214,6 +215,7 @@ def _artifact(
     scene,
     *,
     background_conductivity_range=None,
+    background_permittivity_range=None,
 ):
     sample = _manual_sample(
         scene
@@ -239,6 +241,9 @@ def _artifact(
         baseline_segments=32,
         background_conductivity_range=(
             background_conductivity_range
+        ),
+        background_permittivity_range=(
+            background_permittivity_range
         ),
     )
 
@@ -640,6 +645,10 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
             0.0,
             3.0e-3,
         ),
+        background_permittivity_range=(
+            1.0,
+            6.0,
+        ),
     )
     path = (
         tmp_path
@@ -655,6 +664,10 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
     assert loaded.background_conductivity_range == (
         0.0,
         3.0e-3,
+    )
+    assert loaded.background_permittivity_range == (
+        1.0,
+        6.0,
     )
     lossy = _with_background(
         base,
@@ -821,4 +834,90 @@ def test_hybrid_training_rejects_validation_outside_declared_background_domain()
                 0.0,
                 2.0e-3,
             ),
+        )
+
+
+def test_hybrid_fast_port_artifact_accepts_debye_background_in_effective_domain():
+    base = _scene(
+        loss=0.0
+    )
+    medium = DebyeMaterial(
+        relative_permittivity_static=20.0,
+        relative_permittivity_infinite=4.0,
+        relaxation_time=2.0e-6,
+        conductivity=0.0,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+        base.packages,
+    )
+    frequency = 85_000.0
+    effective_loss = medium.loss_conductivity(
+        frequency
+    )
+    effective_epsilon = float(
+        np.real(
+            medium.relative_permittivity_at(
+                frequency
+            )
+        )
+    )
+    assert effective_loss > 0.0
+    artifact = _artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            2.0e-4,
+        ),
+        background_permittivity_range=(
+            3.0,
+            21.0,
+        ),
+    )
+    prediction = artifact.predict_structured(
+        scene,
+        frequency,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+    assert (
+        3.0
+        <= effective_epsilon
+        <= 21.0
+    )
+    assert (
+        prediction.dissipation_channels[
+            -1
+        ].real.max()
+        > 0.0
+    )
+
+
+def test_hybrid_fast_port_artifact_rejects_effective_background_permittivity_outside_domain():
+    base = _scene()
+    artifact = _artifact(
+        base,
+        background_conductivity_range=(
+            0.0,
+            1.0e-3,
+        ),
+        background_permittivity_range=(
+            1.0,
+            6.0,
+        ),
+    )
+    outside = _with_background(
+        base,
+        conductivity=0.0,
+        relative_permittivity=12.0,
+    )
+    with pytest.raises(
+        ValueError,
+        match="effective relative permittivity",
+    ):
+        artifact.predict_structured(
+            outside,
+            85_000.0,
         )
