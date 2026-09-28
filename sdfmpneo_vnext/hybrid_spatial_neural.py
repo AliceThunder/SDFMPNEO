@@ -673,21 +673,40 @@ def _package_normalization_rule(
                 azimuthal_order=azimuthal_order,
             )
         )
-        count = len(
-            quadrature.weights
+        region = np.asarray(
+            package_domain_topology(
+                scene.packages
+            ).deepest_containing(
+                scene.packages,
+                quadrature.positions,
+                tolerance=2e-12,
+            ),
+            dtype=int,
+        )
+        keep = (
+            region
+            == index
         )
         ids.append(
             np.full(
-                count,
+                int(
+                    np.count_nonzero(
+                        keep
+                    )
+                ),
                 index,
                 dtype=int,
             )
         )
         local.append(
-            quadrature.local_positions
+            quadrature.local_positions[
+                keep
+            ]
         )
         weights.append(
-            quadrature.weights
+            quadrature.weights[
+                keep
+            ]
         )
     return (
         np.concatenate(ids),
@@ -1169,28 +1188,46 @@ class PreparedHybridSpatialLossField:
             raise IndexError(
                 "package_index out of range"
             )
-        inside = np.ones(
-            n,
-            dtype=bool,
+        world_position = np.empty(
+            (
+                n,
+                3,
+            ),
+            dtype=float,
         )
-        for point in range(n):
+        for point in range(
+            n
+        ):
             package = int(
                 package_index[
                     point
                 ]
             )
-            inside[
+            world_position[
                 point
-            ] = bool(
+            ] = (
                 self.scene.packages[
                     package
-                ].geometry.implicit_local(
+                ].geometry.local_to_world(
                     local_position[
                         point
                     ]
                 )
-                <= 1e-12
             )
+        region = np.asarray(
+            package_domain_topology(
+                self.scene.packages
+            ).deepest_containing(
+                self.scene.packages,
+                world_position,
+                tolerance=2e-12,
+            ),
+            dtype=int,
+        )
+        inside = (
+            region
+            == package_index
+        )
         coordinates = (
             _package_coordinate_features(
                 self.scene,
