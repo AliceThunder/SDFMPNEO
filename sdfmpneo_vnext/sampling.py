@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import numpy as np
 
 from .geometry import RigidPose, SuperellipseSpiral, haar_rotation
@@ -368,6 +368,38 @@ class HybridSceneSamplerConfig:
                 "multi_debye_poles_range must be an integer range >= 2"
             )
 
+
+    def geometry_domain_metadata(
+        self,
+    ):
+        return {
+            "conductor": asdict(
+                self.conductor
+            ),
+            "package": {
+                "margin_range": list(
+                    self.package_margin_range
+                ),
+                "minimum_half_z_range": list(
+                    self.package_half_z_range
+                ),
+                "center_offset_fraction_range": list(
+                    self.package_center_offset_fraction_range
+                ),
+                "exponent_xy_range": list(
+                    self.package_exponent_xy_range
+                ),
+                "exponent_z_range": list(
+                    self.package_exponent_z_range
+                ),
+                "relative_rotation": (
+                    "haar_so3"
+                ),
+                "enclosure_target_radius": (
+                    0.90
+                ),
+            },
+        }
 
     def package_domain_metadata(
         self,
@@ -1171,11 +1203,12 @@ def sample_hybrid_package_scene(
 ):
     """Sample the first supported dielectric-package training domain.
 
-    The package is centered on the primary coil and may rotate freely about the
-    primary coil normal. This preserves guaranteed enclosure while exercising
-    nontrivial relative superquadric orientation. Common global SE(3) motion is
-    an exact symmetry and is tested separately rather than wasting teacher
-    solves on duplicate scenes.
+    The package receives a Haar-distributed 3-D rotation and a random center
+    offset relative to the primary coil. Its half extents are then enlarged
+    from finite-conductor surface samples until the superquadric encloses the
+    full primary conductor with margin. Common global SE(3) motion remains an
+    exact symmetry and is tested separately rather than wasting teacher solves
+    on duplicate scenes.
     """
     config = (
         config
