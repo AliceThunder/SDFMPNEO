@@ -278,6 +278,60 @@ def _enclosure_key(
     )
 
 
+def scene_characteristic_center_scale(
+    scene: Scene,
+):
+    """SE(3)-invariant center and length scale for hybrid geometry domains."""
+    centers = np.asarray(
+        [
+            coil.geometry.pose.translation
+            for coil in scene.coils
+        ],
+        dtype=float,
+    )
+    radii = np.asarray(
+        [
+            max(
+                float(
+                    coil.geometry.outer_a
+                ),
+                float(
+                    coil.geometry.outer_b
+                ),
+            )
+            for coil in scene.coils
+        ],
+        dtype=float,
+    )
+    center = np.mean(
+        centers,
+        axis=0,
+    )
+    scale = float(
+        max(
+            np.max(
+                np.linalg.norm(
+                    centers
+                    - center[
+                        None,
+                        :
+                    ],
+                    axis=1,
+                )
+                + radii
+            ),
+            np.max(
+                radii
+            ),
+            1e-12,
+        )
+    )
+    return (
+        center,
+        scale,
+    )
+
+
 def validate_package_conductor_topology(
     scene: Scene,
     *,
