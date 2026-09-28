@@ -301,7 +301,9 @@ class HybridTeacherSample:
             and self.package_spatial_loss
             is not None
             and (
-                self.scene.medium.conductivity
+                self.scene.medium.loss_conductivity(
+                    self.frequency_hz
+                )
                 <= 0.0
                 or self.background_spatial_loss
                 is not None
@@ -342,7 +344,9 @@ class HybridTeacherSample:
             )
         if (
             include_spatial_truth
-            and scene.medium.conductivity
+            and scene.medium.loss_conductivity(
+                frequency_hz
+            )
             > 0.0
             and (
                 background_radial_order
@@ -615,7 +619,9 @@ class HybridTeacherSample:
             )
 
             if (
-                scene.medium.conductivity
+                scene.medium.loss_conductivity(
+                    frequency_hz
+                )
                 > 0.0
             ):
                 (
@@ -731,7 +737,9 @@ class HybridTeacherSample:
                 )
                 if (
                     include_spatial_truth
-                    and scene.medium.conductivity
+                    and scene.medium.loss_conductivity(
+                        frequency_hz
+                    )
                     > 0.0
                 )
                 else 0
@@ -742,7 +750,9 @@ class HybridTeacherSample:
                 )
                 if (
                     include_spatial_truth
-                    and scene.medium.conductivity
+                    and scene.medium.loss_conductivity(
+                        frequency_hz
+                    )
                     > 0.0
                 )
                 else 0
