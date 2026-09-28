@@ -143,6 +143,163 @@ class SuperellipseSpiral:
         points = self.sample_centerline(n_segments + 1, equal_arclength=True)
         return PolylineConductor.from_points(points, self)
 
+    def surface_samples(
+        self,
+        longitudinal_segments: int = 96,
+        section_points: int = 20,
+    ) -> np.ndarray:
+        """Sample the finite conductor boundary without a global volume mesh."""
+        if longitudinal_segments < 2:
+            raise ValueError(
+                "longitudinal_segments must be >= 2"
+            )
+        if section_points < 4:
+            raise ValueError(
+                "section_points must be >= 4"
+            )
+        segments = max(
+            int(
+                longitudinal_segments
+            ),
+            int(
+                np.ceil(
+                    48.0
+                    * self.turns
+                )
+            ),
+            24,
+        )
+        polyline = self.polyline(
+            segments
+        )
+        theta = np.linspace(
+            0.0,
+            2.0 * np.pi,
+            int(
+                section_points
+            ),
+            endpoint=False,
+        )
+        power = (
+            2.0
+            / float(
+                self.cross_section_exponent
+            )
+        )
+        cosine = np.cos(
+            theta
+        )
+        sine = np.sin(
+            theta
+        )
+        section_x = (
+            0.5
+            * self.conductor_width
+            * np.sign(
+                cosine
+            )
+            * np.abs(
+                cosine
+            ) ** power
+        )
+        section_y = (
+            0.5
+            * self.conductor_thickness
+            * np.sign(
+                sine
+            )
+            * np.abs(
+                sine
+            ) ** power
+        )
+        offsets = (
+            section_x[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal1[
+                :,
+                None,
+                :,
+            ]
+            + section_y[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal2[
+                :,
+                None,
+                :,
+            ]
+        )
+        middle = (
+            polyline.midpoints[
+                :,
+                None,
+                :,
+            ]
+            + offsets
+        ).reshape(
+            -1,
+            3,
+        )
+        ends = []
+        for point, n1, n2 in (
+            (
+                polyline.points[
+                    0
+                ],
+                polyline.normal1[
+                    0
+                ],
+                polyline.normal2[
+                    0
+                ],
+            ),
+            (
+                polyline.points[
+                    -1
+                ],
+                polyline.normal1[
+                    -1
+                ],
+                polyline.normal2[
+                    -1
+                ],
+            ),
+        ):
+            ends.append(
+                point[
+                    None,
+                    :
+                ]
+                + section_x[
+                    :,
+                    None,
+                ]
+                * n1[
+                    None,
+                    :
+                ]
+                + section_y[
+                    :,
+                    None,
+                ]
+                * n2[
+                    None,
+                    :
+                ]
+            )
+        return np.concatenate(
+            (
+                middle,
+                *ends,
+            ),
+            axis=0,
+        )
+
     def transformed(self, pose: RigidPose) -> "SuperellipseSpiral":
         return SuperellipseSpiral(
             self.outer_a, self.outer_b, self.turns, self.pitch_a, self.pitch_b,
