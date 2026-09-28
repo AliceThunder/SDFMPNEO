@@ -38,7 +38,7 @@ A scene is assembled from:
 - `SuperellipseSpiral` + `ConductorMaterial` + `CoilObject`
 - optional `SuperquadricPackageGeometry` + material + `PackageObject`
 - a passive isotropic homogeneous background material: `HomogeneousMedium`,
-  `DebyeMaterial`, `MultiDebyeMaterial`, or a custom
+  `DebyeMaterial`, `MultiDebyeMaterial`, `TabulatedMaterial`, or a custom
   `PassiveIsotropicMaterial` implementation
 - arbitrary `RigidPose` values for coils and packages
 
@@ -46,6 +46,22 @@ The conductor representation has a finite superelliptic cross-section and uses
 geometry-local longitudinal/section quadrature.  Dielectric packages use
 surface/volume quadrature.  These are local numerical discretizations of the
 objects, not a fixed global volume grid.
+
+Measured passive material data can be used without fitting a Debye model:
+
+```python
+from sdfmpneo_vnext import TabulatedMaterial
+
+medium = TabulatedMaterial(
+    frequencies_hz=(20e3, 100e3, 500e3),
+    relative_permittivity_real=(12.0, 7.0, 4.5),
+    loss_conductivity_values=(2e-5, 3e-4, 1.5e-4),
+)
+```
+
+Tabulated response is interpolated in log-frequency inside the supplied
+frequency interval. Queries outside that interval are rejected rather than
+extrapolated.
 
 ## REFERENCE / FAST / CERTIFIED
 
@@ -231,8 +247,8 @@ The current vNext code intentionally fails closed outside implemented physics:
 - electromagnetic media are currently homogeneous within each represented
   region and isotropic; spatially heterogeneous/anisotropic VIE media are not
   yet implemented;
-- constant, Debye, multi-Debye, and custom passive isotropic frequency
-  responses share the same solver interface, but magnetic package contrast is
+- constant, Debye, multi-Debye, tabulated, and custom passive isotropic
+  frequency responses share the same solver interface, but magnetic package contrast is
   not yet approximated by the dielectric SIE;
 - conductive media at exactly DC require a separate static-conduction
   interface formulation;
