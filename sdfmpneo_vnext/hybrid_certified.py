@@ -20,9 +20,13 @@ def certify_dielectric_ports(
     convergence_report=None,
     surface_vertical_order: int = 16,
     surface_azimuthal_order: int = 32,
+    magnetic_volume_axial_order: int = 8,
+    magnetic_volume_radial_order: int = 6,
+    magnetic_volume_azimuthal_order: int = 24,
     algebraic_tolerance: float = 1e-9,
     surface_tolerance: float = 1e-9,
     reciprocity_tolerance: float = 1e-8,
+    magnetic_reciprocity_tolerance: float = 0.08,
     power_tolerance: float = 1e-6,
     passivity_tolerance: float = 1e-10,
     fast_domain_correction_limit: float = 0.20,
@@ -49,6 +53,7 @@ def certify_dielectric_ports(
         algebraic_tolerance <= 0.0
         or surface_tolerance <= 0.0
         or reciprocity_tolerance < 0.0
+        or magnetic_reciprocity_tolerance < 0.0
         or power_tolerance < 0.0
         or passivity_tolerance < 0.0
         or fast_domain_correction_limit < 0.0
@@ -90,6 +95,18 @@ def certify_dielectric_ports(
             ),
             surface_azimuthal_order=(
                 surface_azimuthal_order
+            ),
+            magnetic_volume_axial_order=(
+                magnetic_volume_axial_order
+            ),
+            magnetic_volume_radial_order=(
+                magnetic_volume_radial_order
+            ),
+            magnetic_volume_azimuthal_order=(
+                magnetic_volume_azimuthal_order
+            ),
+            maximum_raw_magnetic_reciprocity_defect=(
+                magnetic_reciprocity_tolerance
             ),
         )
     )
@@ -140,6 +157,7 @@ def certify_dielectric_ports(
         max(
             result.mixed_result.normalized_residual,
             result.surface_residual,
+            result.magnetic_surface_residual,
         )
     )
     algebraic_certified = bool(
@@ -147,6 +165,10 @@ def certify_dielectric_ports(
         <= algebraic_tolerance
         and result.surface_residual
         <= surface_tolerance
+        and result.magnetic_surface_residual
+        <= surface_tolerance
+        and result.raw_magnetic_reciprocity_defect
+        <= magnetic_reciprocity_tolerance
         and reciprocity
         <= reciprocity_tolerance
         and minimum_dissipation
@@ -241,7 +263,7 @@ def certify_dielectric_ports(
         ),
         used_reference_fallback=True,
         operator_backend=(
-            "dense_dielectric_reference"
+            "dense_electric_magnetic_interface_reference"
         ),
         relative_observable_correction=(
             correction
