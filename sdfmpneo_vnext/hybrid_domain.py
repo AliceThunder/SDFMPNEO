@@ -1,8 +1,122 @@
 from __future__ import annotations
 
 import numpy as np
+from dataclasses import dataclass
 
 from .scene import Scene
+
+
+@dataclass(frozen=True)
+class PackageDomainTopology:
+    parent: tuple[int | None, ...]
+    depth: tuple[int, ...]
+
+    def deepest_containing(
+        self,
+        packages,
+        points,
+        *,
+        tolerance: float = 1e-10,
+    ) -> np.ndarray:
+        points = np.asarray(points, dtype=float)
+        scalar = points.ndim == 1
+        points = np.atleast_2d(points)
+        region = np.full(len(points), -1, dtype=int)
+        best_depth = np.full(len(points), -1, dtype=int)
+        for index, package in enumerate(packages):
+            inside = np.asarray(
+                package.geometry.contains(points, tolerance=tolerance),
+                dtype=bool,
+            )
+            select = inside & (self.depth[index] > best_depth)
+            region[select] = index
+            best_depth[select] = self.depth[index]
+        return region[0] if scalar else region
+
+
+def package_domain_topology(
+    packages,
+    *,
+    surface_vertical_order: int = 17,
+    surface_azimuthal_order: int = 48,
+    tolerance: float = 1e-9,
+) -> PackageDomainTopology:
+    packages = tuple(packages)
+    n = len(packages)
+    if n == 0:
+        return PackageDomainTopology((), ())
+    if tolerance <= 0.0:
+        raise ValueError("tolerance must be positive")
+
+    surfaces = tuple(
+        package.geometry.surface_points(
+            vertical_order=surface_vertical_order,
+            azimuthal_order=surface_azimuthal_order,
+        )
+        for package in packages
+    )
+    contains = np.zeros((n, n), dtype=bool)
+    for outer in range(n):
+        for inner in range(n):
+            if outer == inner:
+                continue
+            level = np.asarray(
+                packages[outer].geometry.implicit(surfaces[inner]),
+                dtype=float,
+            )
+            if np.all(level <= -tolerance):
+                contains[outer, inner] = True
+            elif np.any(np.abs(level) < tolerance):
+                raise ValueError(
+                    "package surfaces touch/intersect; material regions must "
+                    "be strictly nested or disjoint"
+                )
+
+    for left in range(n):
+        for right in range(left + 1, n):
+            if contains[left, right] or contains[right, left]:
+                continue
+            left_in_right = np.any(
+                packages[right].geometry.contains(
+                    surfaces[left], tolerance=tolerance
+                )
+            )
+            right_in_left = np.any(
+                packages[left].geometry.contains(
+                    surfaces[right], tolerance=tolerance
+                )
+            )
+            if left_in_right or right_in_left:
+                raise ValueError(
+                    "package volumes partially overlap; only strict nesting "
+                    "or disjoint material regions are supported"
+                )
+
+    parent = []
+    for inner in range(n):
+        candidates = [outer for outer in range(n) if contains[outer, inner]]
+        if not candidates:
+            parent.append(None)
+            continue
+        direct = candidates[0]
+        for candidate in candidates[1:]:
+            if contains[direct, candidate]:
+                direct = candidate
+        parent.append(direct)
+
+    depth = []
+    for index in range(n):
+        value = 0
+        cursor = parent[index]
+        seen = set()
+        while cursor is not None:
+            if cursor in seen:
+                raise RuntimeError("cyclic package containment topology")
+            seen.add(cursor)
+            value += 1
+            cursor = parent[cursor]
+        depth.append(value)
+    return PackageDomainTopology(tuple(parent), tuple(depth))
 
 
 def _declared_range(
