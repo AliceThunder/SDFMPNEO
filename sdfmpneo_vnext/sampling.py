@@ -1405,6 +1405,264 @@ def _sample_package_material(
     )
 
 
+def _package_probe_objects(
+    geometries,
+):
+    probe_material = IsotropicMaterial(
+        relative_permittivity=1.0,
+    )
+    return tuple(
+        PackageObject(
+            geometry,
+            probe_material,
+            f"probe{index}",
+        )
+        for index, geometry in enumerate(
+            geometries
+        )
+    )
+
+
+def _are_disjoint_package_roots(
+    geometries,
+) -> bool:
+    if len(
+        geometries
+    ) <= 1:
+        return True
+    try:
+        topology = package_domain_topology(
+            _package_probe_objects(
+                geometries
+            )
+        )
+    except ValueError:
+        return False
+    return all(
+        parent is None
+        for parent in topology.parent
+    )
+
+
+def _sample_free_inclusion_geometry(
+    rng: np.random.Generator,
+    base_scene: Scene,
+    config: HybridSceneSamplerConfig,
+    existing_geometries=(),
+):
+    center, scale = (
+        scene_characteristic_center_scale(
+            base_scene
+        )
+    )
+    for _ in range(
+        96
+    ):
+        direction = np.asarray(
+            rng.normal(
+                size=3
+            ),
+            dtype=float,
+        )
+        direction /= max(
+            float(
+                np.linalg.norm(
+                    direction
+                )
+            ),
+            1e-30,
+        )
+        center_fraction = _uniform(
+            rng,
+            config.free_inclusion_center_radius_fraction_range,
+        )
+        half_extent_fraction = np.asarray(
+            [
+                _uniform(
+                    rng,
+                    config.free_inclusion_half_extent_fraction_range,
+                )
+                for _axis in range(
+                    3
+                )
+            ],
+            dtype=float,
+        )
+        geometry = SuperquadricPackageGeometry(
+            scale
+            * half_extent_fraction,
+            exponent_xy=_uniform(
+                rng,
+                config.package_exponent_xy_range,
+            ),
+            exponent_z=_uniform(
+                rng,
+                config.package_exponent_z_range,
+            ),
+            pose=RigidPose(
+                haar_rotation(
+                    rng
+                ),
+                center
+                + scale
+                * center_fraction
+                * direction,
+            ),
+        )
+        valid = True
+        for coil in base_scene.coils:
+            try:
+                classification = (
+                    geometry.classify_conductor(
+                        coil.geometry,
+                        longitudinal_segments=64,
+                        section_points=16,
+                        tolerance=1e-10,
+                    )
+                )
+            except ValueError:
+                valid = False
+                break
+            if classification != "outside":
+                valid = False
+                break
+        if not valid:
+            continue
+        candidates = tuple(
+            existing_geometries
+        ) + (
+            geometry,
+        )
+        if _are_disjoint_package_roots(
+            candidates
+        ):
+            return geometry
+    raise RuntimeError(
+        "failed to sample a free material inclusion disjoint from conductors "
+        "and existing package roots"
+    )
+
+
+def _sample_disjoint_package_geometries(
+    rng: np.random.Generator,
+    base_scene: Scene,
+    config: HybridSceneSamplerConfig,
+    count: int,
+):
+    geometries = []
+    used_enclosures = set()
+    for index in range(
+        count
+    ):
+        force_free = (
+            len(
+                used_enclosures
+            )
+            >= len(
+                base_scene.coils
+            )
+        )
+        sample_free = (
+            force_free
+            or (
+                rng.random()
+                < config.free_inclusion_probability
+            )
+        )
+        if sample_free:
+            geometries.append(
+                _sample_free_inclusion_geometry(
+                    rng,
+                    base_scene,
+                    config,
+                    existing_geometries=(
+                        geometries
+                    ),
+                )
+            )
+            continue
+
+        available = [
+            coil_index
+            for coil_index in range(
+                len(
+                    base_scene.coils
+                )
+            )
+            if coil_index
+            not in used_enclosures
+        ]
+        target_index = (
+            available[
+                0
+            ]
+            if len(
+                available
+            )
+            == 1
+            else int(
+                rng.choice(
+                    available
+                )
+            )
+        )
+        target = base_scene.coils[
+            target_index
+        ].geometry
+        other_conductors = tuple(
+            coil.geometry
+            for coil_index, coil in enumerate(
+                base_scene.coils
+            )
+            if coil_index
+            != target_index
+        )
+        accepted = None
+        for _ in range(
+            64
+        ):
+            candidate = (
+                _sample_enclosing_package_geometry(
+                    rng,
+                    target,
+                    config,
+                    other_geometries=(
+                        other_conductors
+                    ),
+                )
+            )
+            if _are_disjoint_package_roots(
+                tuple(
+                    geometries
+                )
+                + (
+                    candidate,
+                )
+            ):
+                accepted = candidate
+                break
+        if accepted is None:
+            # Falling back to a free inclusion preserves the declared
+            # disjoint-root topology without silently switching to nesting.
+            accepted = _sample_free_inclusion_geometry(
+                rng,
+                base_scene,
+                config,
+                existing_geometries=(
+                    geometries
+                ),
+            )
+        geometries.append(
+            accepted
+        )
+        used_enclosures.add(
+            target_index
+        )
+    return tuple(
+        geometries
+    )
+
+
 def _nested_package_geometries(
     rng: np.random.Generator,
     base_scene: Scene,
@@ -1724,31 +1982,10 @@ def sample_hybrid_package_scene(
     nested = (
         package_count
         > 1
-        and (
-            package_count
-            > 2
-            or rng.random()
-            < config.nested_package_probability
-        )
+        and rng.random()
+        < config.nested_package_probability
     )
-    if package_count == 1:
-        geometries = (
-            _sample_enclosing_package_geometry(
-                rng,
-                base_scene.coils[
-                    0
-                ].geometry,
-                config,
-                other_geometries=tuple(
-                    coil.geometry
-                    for coil
-                    in base_scene.coils[
-                        1:
-                    ]
-                ),
-            ),
-        )
-    elif nested:
+    if nested:
         geometries = _nested_package_geometries(
             rng,
             base_scene,
@@ -1756,21 +1993,14 @@ def sample_hybrid_package_scene(
             package_count,
         )
     else:
-        try:
-            geometries = (
-                _disjoint_two_package_geometries(
-                    rng,
-                    base_scene,
-                    config,
-                )
-            )
-        except RuntimeError:
-            geometries = _nested_package_geometries(
+        geometries = (
+            _sample_disjoint_package_geometries(
                 rng,
                 base_scene,
                 config,
                 package_count,
             )
+        )
 
     packages = tuple(
         PackageObject(
