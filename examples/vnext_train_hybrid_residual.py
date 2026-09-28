@@ -107,6 +107,9 @@ def main():
     background_domain = (
         dataset.background_conductivity_domain
     )
+    background_permittivity_domain = (
+        dataset.background_permittivity_domain
+    )
     if (
         lossy_present
         and background_domain
@@ -131,6 +134,9 @@ def main():
             patience=args.patience,
             background_conductivity_range=(
                 background_domain
+            ),
+            background_permittivity_range=(
+                background_permittivity_domain
             ),
             device=args.device,
         )
@@ -191,6 +197,9 @@ def main():
             ),
             "background_conductivity_domain": (
                 background_domain
+            ),
+            "background_permittivity_domain": (
+                background_permittivity_domain
             ),
             "artifact": str(
                 args.artifact
