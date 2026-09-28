@@ -9,6 +9,7 @@ from .scene import (
     CoilObject,
     ConductorMaterial,
     DebyeMaterial,
+    EPS0,
     HomogeneousMedium,
     IsotropicMaterial,
     PackageObject,
@@ -276,6 +277,187 @@ class HybridSceneSamplerConfig:
             raise ValueError(
                 "debye_background_probability must lie in [0,1]"
             )
+
+
+    def background_domain_metadata(
+        self,
+    ):
+        """Declared raw and frequency-effective homogeneous background domain."""
+        debye_probability = float(
+            self.debye_background_probability
+        )
+        constant_probability = (
+            1.0
+            - debye_probability
+        )
+
+        if debye_probability <= 0.0:
+            epsilon_lower, epsilon_upper = (
+                self.background_relative_permittivity_range
+            )
+        elif constant_probability <= 0.0:
+            epsilon_lower = float(
+                self.background_debye_epsilon_infinite_range[
+                    0
+                ]
+            )
+            epsilon_upper = float(
+                self.background_debye_epsilon_infinite_range[
+                    1
+                ]
+                + self.background_debye_delta_epsilon_range[
+                    1
+                ]
+            )
+        else:
+            epsilon_lower = min(
+                float(
+                    self.background_relative_permittivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_debye_epsilon_infinite_range[
+                        0
+                    ]
+                ),
+            )
+            epsilon_upper = max(
+                float(
+                    self.background_relative_permittivity_range[
+                        1
+                    ]
+                ),
+                float(
+                    self.background_debye_epsilon_infinite_range[
+                        1
+                    ]
+                    + self.background_debye_delta_epsilon_range[
+                        1
+                    ]
+                ),
+            )
+
+        ohmic_upper = (
+            float(
+                self.background_conductivity_range[
+                    1
+                ]
+            )
+            if self.lossy_background_probability
+            > 0.0
+            else 0.0
+        )
+        if debye_probability > 0.0:
+            omega_max = (
+                2.0
+                * np.pi
+                * float(
+                    self.conductor.frequency_range[
+                        1
+                    ]
+                )
+            )
+            # For x = omega*tau, x/(1+x^2) <= 1/2.
+            debye_upper = (
+                0.5
+                * omega_max
+                * EPS0
+                * float(
+                    self.background_debye_delta_epsilon_range[
+                        1
+                    ]
+                )
+            )
+        else:
+            debye_upper = 0.0
+
+        effective_loss_upper = (
+            ohmic_upper
+            + debye_upper
+        )
+        return {
+            "relative_permittivity_range": [
+                float(
+                    self.background_relative_permittivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_relative_permittivity_range[
+                        1
+                    ]
+                ),
+            ],
+            "conductivity_range": [
+                float(
+                    self.background_conductivity_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_conductivity_range[
+                        1
+                    ]
+                ),
+            ],
+            "lossy_probability": float(
+                self.lossy_background_probability
+            ),
+            "debye_probability": (
+                debye_probability
+            ),
+            "debye_epsilon_infinite_range": [
+                float(
+                    self.background_debye_epsilon_infinite_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_debye_epsilon_infinite_range[
+                        1
+                    ]
+                ),
+            ],
+            "debye_delta_epsilon_range": [
+                float(
+                    self.background_debye_delta_epsilon_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_debye_delta_epsilon_range[
+                        1
+                    ]
+                ),
+            ],
+            "debye_relaxation_time_range": [
+                float(
+                    self.background_debye_relaxation_time_range[
+                        0
+                    ]
+                ),
+                float(
+                    self.background_debye_relaxation_time_range[
+                        1
+                    ]
+                ),
+            ],
+            "effective_relative_permittivity_range": [
+                float(
+                    epsilon_lower
+                ),
+                float(
+                    epsilon_upper
+                ),
+            ],
+            "effective_loss_conductivity_range": [
+                0.0,
+                float(
+                    effective_loss_upper
+                ),
+            ],
+        }
 
 
 def sample_hybrid_package_scene(
