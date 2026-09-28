@@ -657,6 +657,12 @@ def test_tabulated_background_runs_mixed_reference_inside_declared_frequency_tab
         rtol=6e-6,
         atol=6e-8,
     )
+    assert (
+        medium.loss_conductivity(
+            0.0
+        )
+        == 0.0
+    )
     try:
         medium.relative_permittivity_at(
             1_000_000.0
