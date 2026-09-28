@@ -550,6 +550,9 @@ def test_scene_serialization_round_trips_multi_debye_background():
             7.0e-6,
         ),
         conductivity=2.0e-5,
+        thermal_conductivity=0.42,
+        density=1080.0,
+        heat_capacity=1450.0,
     )
     scene = Scene(
         base.coils,
@@ -571,6 +574,18 @@ def test_scene_serialization_round_trips_multi_debye_background():
     assert (
         restored.medium.relaxation_times
         == medium.relaxation_times
+    )
+    assert np.isclose(
+        restored.medium.thermal_conductivity,
+        medium.thermal_conductivity,
+    )
+    assert np.isclose(
+        restored.medium.density,
+        medium.density,
+    )
+    assert np.isclose(
+        restored.medium.heat_capacity,
+        medium.heat_capacity,
     )
     for frequency in (
         20_000.0,
