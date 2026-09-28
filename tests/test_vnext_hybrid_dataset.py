@@ -1190,3 +1190,162 @@ def test_nested_package_teacher_spatial_truth_uses_unique_material_regions():
             tolerance=2e-12,
         )
     )
+
+
+def test_hybrid_sampler_teacher_and_dataset_support_true_conductive_dc(tmp_path):
+    sampler = HybridSceneSamplerConfig(
+        dc_probability=1.0,
+        dc_conductive_probability=1.0,
+        package_count_range=(
+            1,
+            1,
+        ),
+        background_conductivity_range=(
+            8.0e-4,
+            2.0e-3,
+        ),
+        dielectric_conductivity_range=(
+            1.0e-3,
+            4.0e-3,
+        ),
+        lossless_probability=1.0,
+        lossy_background_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            3209
+        ),
+        sampler,
+    )
+    assert (
+        frequency
+        == 0.0
+    )
+    assert (
+        scene.medium.loss_conductivity(
+            0.0
+        )
+        > 0.0
+    )
+    assert all(
+        package.material.loss_conductivity(
+            0.0
+        )
+        > 0.0
+        for package in scene.packages
+    )
+
+    geometry_domain = (
+        sampler.geometry_domain_metadata()
+    )
+    assert (
+        geometry_domain[
+            "conductor"
+        ][
+            "frequency_range"
+        ][
+            0
+        ]
+        == 0.0
+    )
+    assert (
+        geometry_domain[
+            "frequency_sampling"
+        ][
+            "dc_probability"
+        ]
+        == 1.0
+    )
+    assert (
+        sampler.background_domain_metadata()[
+            "effective_loss_conductivity_range"
+        ][
+            1
+        ]
+        > 0.0
+    )
+    assert (
+        sampler.package_domain_metadata()[
+            "effective_loss_conductivity_range"
+        ][
+            1
+        ]
+        > 0.0
+    )
+
+    sample = HybridTeacherSample.generate(
+        scene,
+        frequency,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=3,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=8,
+        background_angular_order=24,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+    assert (
+        sample.frequency_hz
+        == 0.0
+    )
+    assert (
+        sample.background_spatial_loss
+        is not None
+    )
+    assert (
+        sample.package_spatial_loss
+        is not None
+    )
+    assert np.all(
+        np.isfinite(
+            sample.target_impedance
+        )
+    )
+    assert (
+        np.linalg.norm(
+            sample.target_impedance.imag
+        )
+        < 1e-9
+    )
+    assert (
+        sample.power_closure_error
+        < 1e-5
+    )
+
+    domain_metadata = {
+        "geometry": (
+            geometry_domain
+        ),
+        "background": (
+            sampler.background_domain_metadata()
+        ),
+        "package": (
+            sampler.package_domain_metadata()
+        ),
+    }
+    dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "hybrid-dc",
+        split_seed=37,
+        domain_metadata=domain_metadata,
+    )
+    record = dataset.add_sample(
+        sample,
+        teacher_config=_config(),
+        split="train",
+    )
+    loaded = dataset.load_sample(
+        record.sample_id
+    )
+    assert (
+        loaded.frequency_hz
+        == 0.0
+    )
+    assert np.allclose(
+        loaded.target_impedance,
+        sample.target_impedance,
+    )
