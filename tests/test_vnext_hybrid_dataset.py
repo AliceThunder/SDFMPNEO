@@ -894,3 +894,89 @@ def test_hybrid_sampler_generates_passive_multi_debye_media():
             1
         ]
     )
+
+
+def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose():
+    config = HybridSceneSamplerConfig(
+        package_center_offset_fraction_range=(
+            0.24,
+            0.26,
+        ),
+    )
+    scene, _ = sample_hybrid_package_scene(
+        np.random.default_rng(
+            977
+        ),
+        config,
+    )
+    root = scene.coils[
+        0
+    ].geometry
+    package = scene.packages[
+        0
+    ].geometry
+
+    relative_rotation = (
+        root.pose.rotation.T
+        @ package.pose.rotation
+    )
+    tilt = float(
+        np.linalg.norm(
+            relative_rotation[
+                2,
+                :2
+            ]
+        )
+    )
+    assert tilt > 1e-2
+
+    offset_root = (
+        (
+            package.pose.translation
+            - root.pose.translation
+        )
+        @ root.pose.rotation
+    )
+    offset_scale = max(
+        root.outer_a,
+        root.outer_b,
+    )
+    assert (
+        np.linalg.norm(
+            offset_root
+        )
+        > 0.20
+        * offset_scale
+    )
+
+    centerline = root.sample_centerline(
+        257
+    )
+    assert np.all(
+        package.contains(
+            centerline
+        )
+    )
+
+    geometry_domain = (
+        config.geometry_domain_metadata()
+    )
+    assert (
+        geometry_domain[
+            "package"
+        ][
+            "relative_rotation"
+        ]
+        == "haar_so3"
+    )
+    assert (
+        geometry_domain[
+            "package"
+        ][
+            "center_offset_fraction_range"
+        ]
+        == [
+            0.24,
+            0.26,
+        ]
+    )
