@@ -14,6 +14,7 @@ from sdfmpneo_vnext import (
     MeshfreeVNextSystem,
     PackageObject,
     PackageSpatialLossSamples,
+    PreparedThermalInterfaceField,
     RigidPose,
     Scene,
     SpatialLossSamples,
@@ -1085,4 +1086,101 @@ def test_hybrid_lossy_background_fast_spatial_drives_continuous_thermal_history(
     assert (
         temperature
         > thermal.medium.ambient_temperature
+    )
+
+
+def test_fast_continuous_thermal_field_supports_package_thermal_interface():
+    base = _scene()
+    first = base.packages[
+        0
+    ]
+    first_material = (
+        first.material
+    )
+    thermal_first = PackageObject(
+        first.geometry,
+        IsotropicMaterial(
+            relative_permittivity=(
+                first_material.relative_permittivity
+            ),
+            relative_permeability=(
+                first_material.relative_permeability
+            ),
+            conductivity=(
+                first_material.conductivity
+            ),
+            thermal_conductivity=0.28,
+            density=1180.0,
+            heat_capacity=1750.0,
+        ),
+        first.name,
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            thermal_first,
+            base.packages[
+                1
+            ],
+        ),
+    )
+    spatial = _spatial_artifact(
+        base
+    )
+    system = MeshfreeVNextSystem(
+        spatial.port_artifact,
+        spatial_artifact=(
+            spatial
+        ),
+    )
+    field = (
+        system.fast_continuous_thermal_field(
+            scene,
+            75_000.0,
+            HomogeneousThermalMedium(
+                conductivity=0.6,
+                density=1000.0,
+                heat_capacity=4000.0,
+            ),
+            longitudinal_segments=4,
+            radial_order=2,
+            angular_order=8,
+            package_axial_order=2,
+            package_radial_order=2,
+            package_azimuthal_order=8,
+            interface_vertical_order=4,
+            interface_azimuthal_order=8,
+            mfs_offset_fraction=0.12,
+            stehfest_order=6,
+            interface_residual_tolerance=5e-3,
+            svd_rcond=1e-13,
+        )
+    )
+    assert isinstance(
+        field,
+        PreparedThermalInterfaceField,
+    )
+    temperature = field.temperature_step(
+        np.asarray(
+            [
+                0.0,
+                0.0,
+                0.025,
+            ]
+        ),
+        2.0,
+        np.asarray(
+            [
+                1.0
+                + 0.0j
+            ]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > field.medium.ambient_temperature
     )
