@@ -17,6 +17,7 @@ from sdfmpneo_vnext import (
     SuperquadricPackageGeometry,
     ThermalSourceQuadrature,
     haar_rotation,
+    scene_thermal_package_media,
 )
 
 
@@ -513,4 +514,222 @@ def test_system_reference_continuous_thermal_field_dispatches_multiple_package_i
     assert (
         field.maximum_interface_residual
         <= field.interface_residual_tolerance
+    )
+
+
+def _nested_thermal_geometries():
+    outer = SuperquadricPackageGeometry(
+        np.asarray(
+            [0.032, 0.028, 0.014]
+        ),
+        exponent_xy=2.2,
+        exponent_z=2.0,
+    )
+    inner = SuperquadricPackageGeometry(
+        np.asarray(
+            [0.016, 0.014, 0.006]
+        ),
+        exponent_xy=2.2,
+        exponent_z=2.0,
+    )
+    return (
+        outer,
+        inner,
+    )
+
+
+def test_nested_thermal_media_are_compared_against_parent_region():
+    background = _background()
+    outer_geometry, inner_geometry = (
+        _nested_thermal_geometries()
+    )
+    outer_material = IsotropicMaterial(
+        relative_permittivity=1.0,
+        thermal_conductivity=0.22,
+        density=1200.0,
+        heat_capacity=1800.0,
+    )
+    inner_material = IsotropicMaterial(
+        relative_permittivity=1.0,
+        thermal_conductivity=(
+            background.conductivity
+        ),
+        density=background.density,
+        heat_capacity=(
+            background.heat_capacity
+        ),
+    )
+    scene = Scene(
+        (),
+        HomogeneousMedium(),
+        (
+            PackageObject(
+                outer_geometry,
+                outer_material,
+                "outer",
+            ),
+            PackageObject(
+                inner_geometry,
+                inner_material,
+                "inner",
+            ),
+        ),
+    )
+    media = scene_thermal_package_media(
+        scene,
+        background,
+    )
+    assert tuple(
+        index
+        for index, _ in media
+    ) == (
+        0,
+        1,
+    )
+
+
+def test_nested_package_thermal_interface_has_finite_se3_invariant_response():
+    background = _background()
+    outer_geometry, inner_geometry = (
+        _nested_thermal_geometries()
+    )
+    outer_medium = HomogeneousThermalMedium(
+        conductivity=0.24,
+        density=1180.0,
+        heat_capacity=1750.0,
+        ambient_temperature=293.15,
+    )
+    inner_medium = HomogeneousThermalMedium(
+        conductivity=1.15,
+        density=930.0,
+        heat_capacity=2350.0,
+        ambient_temperature=293.15,
+    )
+    source_positions = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.023, 0.0, 0.0],
+        ]
+    )
+    field = PreparedMultiThermalInterfaceField(
+        _source(
+            source_positions
+        ),
+        background,
+        (
+            (
+                0,
+                outer_geometry,
+                outer_medium,
+            ),
+            (
+                1,
+                inner_geometry,
+                inner_medium,
+            ),
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        mfs_offset_fraction=0.10,
+        stehfest_order=6,
+        interface_residual_tolerance=5e-3,
+        svd_rcond=1e-10,
+    )
+    query = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.023, 0.0, 0.0],
+            [0.0, 0.0, 0.030],
+        ]
+    )
+    currents = np.asarray(
+        [1.0 + 0.0j]
+    )
+    steady = field.steady_temperature(
+        query,
+        currents,
+    )
+    transient = field.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    assert np.all(
+        np.isfinite(
+            steady
+        )
+    )
+    assert np.all(
+        np.isfinite(
+            transient
+        )
+    )
+    assert np.all(
+        steady
+        >= background.ambient_temperature
+        - 1e-7
+    )
+    assert np.all(
+        transient
+        >= background.ambient_temperature
+        - 1e-7
+    )
+    assert (
+        field.maximum_interface_residual
+        <= field.interface_residual_tolerance
+    )
+
+    rng = np.random.default_rng(
+        1907
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.asarray(
+            [0.13, -0.09, 0.21]
+        ),
+    )
+    moved_field = PreparedMultiThermalInterfaceField(
+        _source(
+            common.apply(
+                source_positions
+            )
+        ),
+        background,
+        (
+            (
+                0,
+                outer_geometry.transformed(
+                    common
+                ),
+                outer_medium,
+            ),
+            (
+                1,
+                inner_geometry.transformed(
+                    common
+                ),
+                inner_medium,
+            ),
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        mfs_offset_fraction=0.10,
+        stehfest_order=6,
+        interface_residual_tolerance=5e-3,
+        svd_rcond=1e-10,
+    )
+    moved = moved_field.temperature_step(
+        common.apply(
+            query
+        ),
+        2.0,
+        currents,
+    )
+    assert np.allclose(
+        moved,
+        transient,
+        rtol=5e-5,
+        atol=5e-6,
     )
