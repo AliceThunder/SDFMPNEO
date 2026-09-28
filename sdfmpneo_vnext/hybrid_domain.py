@@ -588,8 +588,13 @@ def validate_hybrid_geometry_domain(
         raise ValueError(
             "geometry domain is missing package metadata"
         )
-    package_domain_topology(
+    topology = package_domain_topology(
         scene.packages
+    )
+    scene_center, scene_scale = (
+        scene_characteristic_center_scale(
+            scene
+        )
     )
     minimum_half_z = _declared_range(
         package_domain,
@@ -605,7 +610,9 @@ def validate_hybrid_geometry_domain(
         package_domain,
         "center_offset_fraction_range",
     )
-    for package_object in scene.packages:
+    for package_index, package_object in enumerate(
+        scene.packages
+    ):
         package = package_object.geometry
         if not _within(
             float(
@@ -631,19 +638,6 @@ def validate_hybrid_geometry_domain(
             raise ValueError(
                 "package exponent_z is outside the hybrid artifact geometry domain"
             )
-        if (
-            float(
-                package.half_extents[
-                    2
-                ]
-            )
-            < minimum_half_z
-            - 1e-12
-        ):
-            raise ValueError(
-                "package thickness is outside the hybrid artifact geometry domain"
-            )
-
         enclosed = []
         for coil in scene.coils:
             classification = package.classify_conductor(
@@ -657,9 +651,87 @@ def validate_hybrid_geometry_domain(
                     coil.geometry
                 )
         if not enclosed:
+            free_probability = float(
+                package_domain.get(
+                    "free_inclusion_probability",
+                    0.0,
+                )
+            )
+            if free_probability <= 0.0:
+                raise ValueError(
+                    "free material inclusions are outside the hybrid artifact "
+                    "geometry domain"
+                )
+            if (
+                package_domain.get(
+                    "free_inclusion_topology",
+                    "disjoint_root",
+                )
+                == "disjoint_root"
+                and topology.parent[
+                    package_index
+                ]
+                is not None
+            ):
+                raise ValueError(
+                    "free material inclusions must be disjoint package roots "
+                    "in this hybrid artifact geometry domain"
+                )
+            center_fraction = float(
+                np.linalg.norm(
+                    package.pose.translation
+                    - scene_center
+                )
+                / scene_scale
+            )
+            if not _within(
+                center_fraction,
+                _declared_range(
+                    package_domain,
+                    "free_inclusion_center_radius_fraction_range",
+                ),
+            ):
+                raise ValueError(
+                    "free material inclusion center is outside the hybrid "
+                    "artifact geometry domain"
+                )
+            half_extent_fraction = (
+                np.asarray(
+                    package.half_extents,
+                    dtype=float,
+                )
+                / scene_scale
+            )
+            half_extent_bounds = _declared_range(
+                package_domain,
+                "free_inclusion_half_extent_fraction_range",
+            )
+            if not all(
+                _within(
+                    float(
+                        value
+                    ),
+                    half_extent_bounds,
+                )
+                for value in half_extent_fraction
+            ):
+                raise ValueError(
+                    "free material inclusion size is outside the hybrid "
+                    "artifact geometry domain"
+                )
+            continue
+
+        if (
+            float(
+                package.half_extents[
+                    2
+                ]
+            )
+            < minimum_half_z
+            - 1e-12
+        ):
             raise ValueError(
-                "each package must enclose at least one finite conductor in "
-                "the declared hybrid geometry domain"
+                "package thickness is outside the hybrid artifact geometry domain"
             )
 
         root = min(
