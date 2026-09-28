@@ -29,6 +29,59 @@ class HomogeneousThermalMedium:
                 "thermal-medium properties must be finite and positive"
             )
 
+    @classmethod
+    def from_material(
+        cls,
+        material,
+        *,
+        ambient_temperature: float = 293.15,
+    ):
+        values = (
+            getattr(
+                material,
+                "thermal_conductivity",
+                None,
+            ),
+            getattr(
+                material,
+                "density",
+                None,
+            ),
+            getattr(
+                material,
+                "heat_capacity",
+                None,
+            ),
+        )
+        if any(
+            value is None
+            for value in values
+        ):
+            raise ValueError(
+                "material must provide thermal_conductivity, density, and "
+                "heat_capacity to define a homogeneous thermal medium"
+            )
+        return cls(
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+            float(
+                values[
+                    2
+                ]
+            ),
+            float(
+                ambient_temperature
+            ),
+        )
+
     @property
     def volumetric_heat_capacity(
         self,
