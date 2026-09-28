@@ -1441,3 +1441,105 @@ def test_hybrid_fast_geometry_domain_accepts_declared_nested_package_count():
             outside,
             frequency,
         )
+
+
+def test_hybrid_fast_exact_dc_hard_gates_reactance_and_keeps_conduction_loss_channel():
+    config = HybridSceneSamplerConfig(
+        dc_probability=1.0,
+        dc_conductive_probability=1.0,
+        package_count_range=(
+            1,
+            1,
+        ),
+        background_conductivity_range=(
+            8.0e-4,
+            2.0e-3,
+        ),
+        dielectric_conductivity_range=(
+            1.0e-3,
+            4.0e-3,
+        ),
+        lossless_probability=1.0,
+        lossy_background_probability=0.0,
+    )
+    scene, frequency = sample_hybrid_package_scene(
+        np.random.default_rng(
+            4217
+        ),
+        config,
+    )
+    assert (
+        frequency
+        == 0.0
+    )
+    background_domain = (
+        config.background_domain_metadata()
+    )
+    package_domain = (
+        config.package_domain_metadata()
+    )
+    artifact = _artifact(
+        scene,
+        background_conductivity_range=tuple(
+            background_domain[
+                "effective_loss_conductivity_range"
+            ]
+        ),
+        background_permittivity_range=tuple(
+            background_domain[
+                "effective_relative_permittivity_range"
+            ]
+        ),
+        package_permittivity_range=tuple(
+            package_domain[
+                "effective_relative_permittivity_range"
+            ]
+        ),
+        package_loss_conductivity_range=tuple(
+            package_domain[
+                "effective_loss_conductivity_range"
+            ]
+        ),
+        package_permeability_range=tuple(
+            package_domain[
+                "relative_permeability_range"
+            ]
+        ),
+        geometry_domain=(
+            config.geometry_domain_metadata()
+        ),
+    )
+    prediction = artifact.predict_structured(
+        scene,
+        frequency,
+    )
+    _assert_structured_physics(
+        prediction
+    )
+    assert np.allclose(
+        prediction.impedance.imag,
+        0.0,
+        atol=0.0,
+        rtol=0.0,
+    )
+    environment = prediction.dissipation_channels[
+        -1
+    ]
+    assert (
+        np.linalg.norm(
+            environment
+        )
+        > 0.0
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                0.5
+                * (
+                    environment
+                    + environment.conj().T
+                )
+            )
+        )
+        >= -1e-10
+    )
