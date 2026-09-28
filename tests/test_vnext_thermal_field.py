@@ -625,3 +625,109 @@ def test_lossy_background_spatial_heat_is_common_se3_invariant():
         rtol=3e-7,
         atol=1e-12,
     )
+
+
+def test_conductive_background_dc_spatial_loss_and_thermal_source_close():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            relative_permittivity=2.5,
+            relative_permeability=1.0,
+            conductivity=1.5e-3,
+        ),
+    )
+    artifact = MixedReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=8,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        background_radial_order=10,
+        background_angular_order=32,
+    )
+    spatial = artifact.prepare_spatial(
+        scene,
+        0.0,
+    )
+    assert (
+        spatial.result.node_environment_current
+        is not None
+    )
+    assert (
+        spatial.background_channel_index
+        == 1
+    )
+    points, weights = spatial.background_quadrature(
+        radial_order=10,
+        angular_order=32,
+    )
+    matrices = spatial.background_dissipation_matrices(
+        points
+    )
+    assert np.all(
+        np.isfinite(
+            matrices
+        )
+    )
+    integrated = np.sum(
+        weights[
+            :,
+            None,
+            None,
+        ]
+        * matrices,
+        axis=0,
+    )
+    target = spatial.port_prediction.dissipation_channels[
+        spatial.background_channel_index
+    ]
+    assert np.allclose(
+        integrated,
+        target,
+        rtol=3e-7,
+        atol=3e-10,
+    )
+
+    prepared = ContinuousThermalGreenArtifact(
+        artifact,
+        _medium(),
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+        background_radial_order=10,
+        background_angular_order=32,
+    ).prepare(
+        scene,
+        0.0,
+    )
+    assert (
+        prepared.source.normalization_closure_error
+        < 1e-8
+    )
+    channels = prepared.source.integrated_channels()
+    assert np.allclose(
+        channels,
+        spatial.port_prediction.dissipation_channels,
+        rtol=3e-7,
+        atol=3e-10,
+    )
+    temperature = prepared.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.03]
+        ),
+        4.0,
+        np.asarray(
+            [1.25 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > prepared.medium.ambient_temperature
+    )
