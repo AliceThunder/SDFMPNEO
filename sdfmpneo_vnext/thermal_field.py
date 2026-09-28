@@ -1513,6 +1513,10 @@ class ContinuousThermalGreenArtifact:
         angular_order: int = 24,
         background_radial_order: int | None = None,
         background_angular_order: int | None = None,
+        thermal_contrast_surface_vertical_order: int = 6,
+        thermal_contrast_surface_azimuthal_order: int = 12,
+        thermal_contrast_fictitious_scale: float = 0.18,
+        thermal_contrast_stehfest_order: int = 10,
         spatial_prepare_options=None,
     ):
         if not (
@@ -1557,6 +1561,18 @@ class ContinuousThermalGreenArtifact:
                 background_angular_order
             )
         )
+        self.thermal_contrast_surface_vertical_order = int(
+            thermal_contrast_surface_vertical_order
+        )
+        self.thermal_contrast_surface_azimuthal_order = int(
+            thermal_contrast_surface_azimuthal_order
+        )
+        self.thermal_contrast_fictitious_scale = float(
+            thermal_contrast_fictitious_scale
+        )
+        self.thermal_contrast_stehfest_order = int(
+            thermal_contrast_stehfest_order
+        )
         self.spatial_prepare_options = (
             {}
             if spatial_prepare_options is None
@@ -1569,7 +1585,7 @@ class ContinuousThermalGreenArtifact:
         self,
         scene: Scene,
         frequency_hz: float,
-    ) -> PreparedThermalGreenField:
+    ):
         if hasattr(
             self.spatial_artifact,
             "prepare",
@@ -1610,6 +1626,32 @@ class ContinuousThermalGreenArtifact:
                 ),
             )
         )
+        if scene.packages:
+            from .thermal_contrast import (
+                prepare_package_thermal_contrast_field,
+            )
+
+            contrast = (
+                prepare_package_thermal_contrast_field(
+                    scene,
+                    source,
+                    self.medium,
+                    surface_vertical_order=(
+                        self.thermal_contrast_surface_vertical_order
+                    ),
+                    surface_azimuthal_order=(
+                        self.thermal_contrast_surface_azimuthal_order
+                    ),
+                    fictitious_scale=(
+                        self.thermal_contrast_fictitious_scale
+                    ),
+                    stehfest_order=(
+                        self.thermal_contrast_stehfest_order
+                    ),
+                )
+            )
+            if contrast is not None:
+                return contrast
         return PreparedThermalGreenField(
             source,
             self.medium,
