@@ -617,12 +617,17 @@ class PreparedHybridReferenceLossField:
         points = np.atleast_2d(
             points
         )
-        inside = np.asarray(
-            package.geometry.contains(
+        region = np.asarray(
+            self.teacher.surface_solver.topology.deepest_containing(
+                self.scene.packages,
                 points,
                 tolerance=2e-12,
             ),
-            dtype=bool,
+            dtype=int,
+        )
+        inside = (
+            region
+            == package_index
         )
         n_ports = (
             self.port_prediction.impedance.shape[
