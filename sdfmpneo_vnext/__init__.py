@@ -61,6 +61,7 @@ from .thermal_field import (
 )
 from .thermal_interface import (
     PreparedThermalInterfaceField,
+    PreparedMultiThermalInterfaceField,
     PiecewiseThermalInterfaceArtifact,
     scene_thermal_package_media,
 )
@@ -277,6 +278,7 @@ __all__ = [
     "ContinuousThermalGreenArtifact",
     "build_thermal_source_quadrature",
     "PreparedThermalInterfaceField",
+    "PreparedMultiThermalInterfaceField",
     "PiecewiseThermalInterfaceArtifact",
     "scene_thermal_package_media",
     "ConductorLossField",
