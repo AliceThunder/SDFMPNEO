@@ -1395,7 +1395,7 @@ def prepare_package_thermal_contrast_field(
         if np.any(
             package.geometry.contains(
                 exterior,
-                tolerance=-1e-10,
+                tolerance=1e-12,
             )
         ):
             raise RuntimeError(
