@@ -733,3 +733,115 @@ def test_nested_package_thermal_interface_has_finite_se3_invariant_response():
         rtol=5e-5,
         atol=5e-6,
     )
+
+
+def test_system_reference_continuous_thermal_field_supports_nested_package_interfaces():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.012,
+            0.010,
+            0.60,
+            8.0e-4,
+            8.0e-4,
+            conductor_width=7.0e-4,
+            conductor_thickness=5.0e-4,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+        "coil",
+    )
+    outer_geometry, inner_geometry = (
+        _nested_thermal_geometries()
+    )
+    outer = PackageObject(
+        outer_geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+            conductivity=0.0,
+            thermal_conductivity=0.25,
+            density=1180.0,
+            heat_capacity=1750.0,
+        ),
+        "outer",
+    )
+    inner = PackageObject(
+        inner_geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+            conductivity=0.0,
+            thermal_conductivity=1.05,
+            density=940.0,
+            heat_capacity=2300.0,
+        ),
+        "inner",
+    )
+    scene = Scene(
+        (
+            coil,
+        ),
+        HomogeneousMedium(),
+        (
+            outer,
+            inner,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=18,
+        ),
+        reference_config=MQSConfig(
+            segments_per_turn=6,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        dielectric_surface_vertical_order=4,
+        dielectric_surface_azimuthal_order=8,
+    )
+    field = system.reference_continuous_thermal_field(
+        scene,
+        35_000.0,
+        _background(),
+        longitudinal_segments=5,
+        radial_order=2,
+        angular_order=8,
+        package_axial_order=2,
+        package_radial_order=2,
+        package_azimuthal_order=8,
+        interface_vertical_order=4,
+        interface_azimuthal_order=8,
+        mfs_offset_fraction=0.10,
+        stehfest_order=6,
+        interface_residual_tolerance=8e-3,
+        svd_rcond=1e-10,
+    )
+    assert isinstance(
+        field,
+        PreparedMultiThermalInterfaceField,
+    )
+    temperature = field.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.022]
+        ),
+        1.5,
+        np.asarray(
+            [1.0 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        >= field.medium.ambient_temperature
+        - 1e-7
+    )
+    assert (
+        field.maximum_interface_residual
+        <= field.interface_residual_tolerance
+    )
