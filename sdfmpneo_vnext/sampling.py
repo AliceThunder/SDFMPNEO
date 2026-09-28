@@ -8,6 +8,7 @@ from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
     PackageObject,
@@ -197,6 +198,10 @@ class HybridSceneSamplerConfig:
     background_relative_permittivity_range: tuple[float, float] = (1.0, 1.0)
     background_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
     lossy_background_probability: float = 0.0
+    debye_background_probability: float = 0.0
+    background_debye_epsilon_infinite_range: tuple[float, float] = (1.0, 6.0)
+    background_debye_delta_epsilon_range: tuple[float, float] = (0.5, 30.0)
+    background_debye_relaxation_time_range: tuple[float, float] = (1e-8, 1e-4)
 
     def __post_init__(self):
         for name in (
@@ -207,6 +212,9 @@ class HybridSceneSamplerConfig:
             "relative_permittivity_range",
             "dielectric_conductivity_range",
             "background_conductivity_range",
+            "background_debye_epsilon_infinite_range",
+            "background_debye_delta_epsilon_range",
+            "background_debye_relaxation_time_range",
         ):
             lo, hi = getattr(
                 self,
@@ -260,6 +268,14 @@ class HybridSceneSamplerConfig:
             raise ValueError(
                 "lossy_background_probability must lie in [0,1]"
             )
+        if not (
+            0.0
+            <= self.debye_background_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "debye_background_probability must lie in [0,1]"
+            )
 
 
 def sample_hybrid_package_scene(
@@ -284,10 +300,6 @@ def sample_hybrid_package_scene(
             config.conductor,
         )
     )
-    background_relative_permittivity = _uniform(
-        rng,
-        config.background_relative_permittivity_range,
-    )
     if (
         rng.random()
         < config.lossy_background_probability
@@ -298,17 +310,54 @@ def sample_hybrid_package_scene(
         )
     else:
         background_conductivity = 0.0
-    background = HomogeneousMedium(
-        relative_permittivity=(
-            background_relative_permittivity
-        ),
-        relative_permeability=(
-            base_scene.medium.relative_permeability
-        ),
-        conductivity=(
-            background_conductivity
-        ),
-    )
+
+    if (
+        rng.random()
+        < config.debye_background_probability
+    ):
+        epsilon_infinite = _uniform(
+            rng,
+            config.background_debye_epsilon_infinite_range,
+        )
+        delta_epsilon = _uniform(
+            rng,
+            config.background_debye_delta_epsilon_range,
+        )
+        background = DebyeMaterial(
+            relative_permittivity_static=(
+                epsilon_infinite
+                + delta_epsilon
+            ),
+            relative_permittivity_infinite=(
+                epsilon_infinite
+            ),
+            relaxation_time=_log_uniform(
+                rng,
+                config.background_debye_relaxation_time_range,
+            ),
+            relative_permeability=(
+                base_scene.medium.relative_permeability
+            ),
+            conductivity=(
+                background_conductivity
+            ),
+        )
+    else:
+        background_relative_permittivity = _uniform(
+            rng,
+            config.background_relative_permittivity_range,
+        )
+        background = HomogeneousMedium(
+            relative_permittivity=(
+                background_relative_permittivity
+            ),
+            relative_permeability=(
+                base_scene.medium.relative_permeability
+            ),
+            conductivity=(
+                background_conductivity
+            ),
+        )
 
     root = base_scene.coils[
         0
