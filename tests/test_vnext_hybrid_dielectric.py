@@ -962,3 +962,296 @@ def test_magnetic_package_reference_is_common_se3_invariant():
         rtol=3e-6,
         atol=3e-10,
     )
+
+
+def _nested_packages(
+    outer_material,
+    inner_material,
+    *,
+    pose=None,
+):
+    outer_geometry = SuperquadricPackageGeometry(
+        np.asarray(
+            [0.030, 0.027, 0.008]
+        ),
+        exponent_xy=2.4,
+        exponent_z=2.2,
+    )
+    inner_geometry = SuperquadricPackageGeometry(
+        np.asarray(
+            [0.021, 0.019, 0.0045]
+        ),
+        exponent_xy=2.2,
+        exponent_z=2.0,
+    )
+    if pose is not None:
+        outer_geometry = outer_geometry.transformed(
+            pose
+        )
+        inner_geometry = inner_geometry.transformed(
+            pose
+        )
+    return (
+        PackageObject(
+            outer_geometry,
+            outer_material,
+            "outer",
+        ),
+        PackageObject(
+            inner_geometry,
+            inner_material,
+            "inner",
+        ),
+    )
+
+
+def _nested_artifact():
+    return DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        magnetic_volume_axial_order=3,
+        magnetic_volume_radial_order=2,
+        magnetic_volume_azimuthal_order=8,
+        maximum_raw_magnetic_reciprocity_defect=0.20,
+    )
+
+
+def test_nested_invisible_packages_reduce_to_bare_reference():
+    packages = _nested_packages(
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+        ),
+    )
+    scene = Scene(
+        (_coil(),),
+        HomogeneousMedium(),
+        packages,
+    )
+    coupled = _nested_artifact().solve(
+        scene,
+        80_000.0,
+    )
+    bare = DenseMixedConductorTeacher(
+        Scene(
+            scene.coils,
+            scene.medium,
+        ),
+        80_000.0,
+        CFG,
+    ).solve()
+    assert np.allclose(
+        coupled.impedance,
+        bare.impedance,
+        rtol=5e-9,
+        atol=5e-10,
+    )
+    assert np.allclose(
+        coupled.surface_density_transfer,
+        0.0,
+        atol=5e-13,
+        rtol=0.0,
+    )
+    assert np.allclose(
+        coupled.magnetic_inductance_correction,
+        0.0,
+        atol=5e-13,
+        rtol=0.0,
+    )
+
+
+def test_nested_dielectric_inner_layer_changes_reactive_response_and_closes_power():
+    outer = IsotropicMaterial(
+        relative_permittivity=2.0,
+    )
+    packages_base = _nested_packages(
+        outer,
+        IsotropicMaterial(
+            relative_permittivity=2.0,
+        ),
+    )
+    packages_inner = _nested_packages(
+        outer,
+        IsotropicMaterial(
+            relative_permittivity=5.0,
+        ),
+    )
+    artifact = _nested_artifact()
+    base = artifact.solve(
+        Scene(
+            (_coil(),),
+            HomogeneousMedium(),
+            packages_base,
+        ),
+        80_000.0,
+    )
+    nested = artifact.solve(
+        Scene(
+            (_coil(),),
+            HomogeneousMedium(),
+            packages_inner,
+        ),
+        80_000.0,
+    )
+    assert (
+        abs(
+            nested.impedance[
+                0,
+                0,
+            ].imag
+            - base.impedance[
+                0,
+                0,
+            ].imag
+        )
+        > 1e-11
+    )
+    assert (
+        nested.power_closure_error
+        < 5e-7
+    )
+    assert (
+        nested.raw_potential_reciprocity_defect
+        < 0.15
+    )
+
+
+def test_nested_magnetic_layers_change_inductive_response_and_are_se3_invariant():
+    outer_material = IsotropicMaterial(
+        relative_permittivity=1.0,
+        relative_permeability=2.0,
+    )
+    inner_material = IsotropicMaterial(
+        relative_permittivity=1.0,
+        relative_permeability=4.0,
+    )
+    packages = _nested_packages(
+        outer_material,
+        inner_material,
+    )
+    scene = Scene(
+        (_coil(),),
+        HomogeneousMedium(),
+        packages,
+    )
+    artifact = _nested_artifact()
+    reference = artifact.solve(
+        scene,
+        70_000.0,
+    )
+    assert (
+        np.linalg.norm(
+            reference.magnetic_inductance_correction
+        )
+        > 0.0
+    )
+    assert (
+        reference.magnetic_surface_residual
+        < 1e-7
+    )
+    assert (
+        reference.raw_magnetic_reciprocity_defect
+        < 0.20
+    )
+
+    rng = np.random.default_rng(
+        1703
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.asarray(
+            [0.16, -0.12, 0.23]
+        ),
+    )
+    moved_coil = CoilObject(
+        scene.coils[
+            0
+        ].geometry.transformed(
+            common
+        ),
+        scene.coils[
+            0
+        ].material,
+        "coil",
+    )
+    moved = Scene(
+        (
+            moved_coil,
+        ),
+        scene.medium,
+        _nested_packages(
+            outer_material,
+            inner_material,
+            pose=common,
+        ),
+    )
+    actual = artifact.solve(
+        moved,
+        70_000.0,
+    )
+    assert np.allclose(
+        actual.impedance,
+        reference.impedance,
+        rtol=2e-5,
+        atol=2e-7,
+    )
+    assert np.allclose(
+        actual.magnetic_inductance_correction,
+        reference.magnetic_inductance_correction,
+        rtol=2e-5,
+        atol=2e-9,
+    )
+
+
+def test_partially_overlapping_packages_are_rejected():
+    first = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [0.024, 0.022, 0.007]
+            ),
+        ),
+        IsotropicMaterial(
+            relative_permittivity=2.0,
+        ),
+        "first",
+    )
+    second = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [0.024, 0.022, 0.007]
+            ),
+            pose=RigidPose(
+                np.eye(
+                    3
+                ),
+                np.asarray(
+                    [0.025, 0.0, 0.0]
+                ),
+            ),
+        ),
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        ),
+        "second",
+    )
+    scene = Scene(
+        (_coil(),),
+        HomogeneousMedium(),
+        (
+            first,
+            second,
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="partially overlap|touch/intersect",
+    ):
+        _nested_artifact().solve(
+            scene,
+            80_000.0,
+        )
