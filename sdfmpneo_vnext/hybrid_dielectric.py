@@ -223,6 +223,7 @@ class DielectricCoupledMixedTeacher:
             MagneticSurfaceSolver(
                 scene.packages,
                 scene.medium,
+                conductors=scene.coils,
                 vertical_order=(
                     surface_vertical_order
                 ),
