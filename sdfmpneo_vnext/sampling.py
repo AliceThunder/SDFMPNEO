@@ -4,7 +4,10 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from .geometry import RigidPose, SuperellipseSpiral, haar_rotation
-from .hybrid_domain import package_domain_topology
+from .hybrid_domain import (
+    package_domain_topology,
+    scene_characteristic_center_scale,
+)
 from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     CoilObject,
@@ -199,6 +202,9 @@ class HybridSceneSamplerConfig:
     package_count_range: tuple[int, int] = (1, 1)
     nested_package_probability: float = 0.0
     nested_package_scale_range: tuple[float, float] = (1.15, 1.45)
+    free_inclusion_probability: float = 0.0
+    free_inclusion_center_radius_fraction_range: tuple[float, float] = (0.65, 1.8)
+    free_inclusion_half_extent_fraction_range: tuple[float, float] = (0.12, 0.45)
     dc_probability: float = 0.0
     dc_conductive_probability: float = 0.0
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
@@ -227,6 +233,8 @@ class HybridSceneSamplerConfig:
             "package_exponent_xy_range",
             "package_exponent_z_range",
             "nested_package_scale_range",
+            "free_inclusion_center_radius_fraction_range",
+            "free_inclusion_half_extent_fraction_range",
             "relative_permittivity_range",
             "dielectric_conductivity_range",
             "package_debye_epsilon_infinite_range",
@@ -345,6 +353,14 @@ class HybridSceneSamplerConfig:
             )
         if not (
             0.0
+            <= self.free_inclusion_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "free_inclusion_probability must lie in [0,1]"
+            )
+        if not (
+            0.0
             <= self.dc_probability
             <= 1.0
         ):
@@ -358,15 +374,6 @@ class HybridSceneSamplerConfig:
         ):
             raise ValueError(
                 "dc_conductive_probability must lie in [0,1]"
-            )
-        if (
-            package_hi > 2
-            and self.nested_package_probability
-            < 1.0
-        ):
-            raise ValueError(
-                "package_count_range above two currently requires "
-                "nested_package_probability=1"
             )
         if not (
             0.0
@@ -531,6 +538,16 @@ class HybridSceneSamplerConfig:
                 "nested_topology": (
                     "strict_chain_or_disjoint_roots"
                 ),
+                "free_inclusion_probability": float(
+                    self.free_inclusion_probability
+                ),
+                "free_inclusion_center_radius_fraction_range": list(
+                    self.free_inclusion_center_radius_fraction_range
+                ),
+                "free_inclusion_half_extent_fraction_range": list(
+                    self.free_inclusion_half_extent_fraction_range
+                ),
+                "free_inclusion_topology": "disjoint_root",
                 "enclosure_target_radius": (
                     0.90
                 ),
