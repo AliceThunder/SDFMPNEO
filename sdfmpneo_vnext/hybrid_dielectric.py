@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
+from .hybrid_domain import validate_package_conductor_topology
 from .dielectric_surface import DielectricSurfaceSolver
 from .em import MQSConfig
 from .mixed import (
@@ -106,6 +107,9 @@ class DielectricCoupledMixedTeacher:
             raise ValueError(
                 "maximum_raw_reciprocity_defect must be positive"
             )
+        validate_package_conductor_topology(
+            scene
+        )
         for package in scene.packages:
             if not np.isclose(
                 package.material.relative_permeability,
