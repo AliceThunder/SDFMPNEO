@@ -75,6 +75,16 @@ def main():
         default=0.35,
     )
     parser.add_argument(
+        "--package-mu-min",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--package-mu-max",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
         "--debye-package-probability",
         type=float,
         default=0.0,
@@ -210,6 +220,10 @@ def main():
         package_center_offset_fraction_range=(
             args.package_offset_fraction_min,
             args.package_offset_fraction_max,
+        ),
+        package_relative_permeability_range=(
+            args.package_mu_min,
+            args.package_mu_max,
         ),
         debye_package_probability=(
             args.debye_package_probability
