@@ -12,12 +12,14 @@ from sdfmpneo_vnext import (
     IsotropicMaterial,
     MQSConfig,
     PackageObject,
+    RadialIsotropicMaterialProfile,
     RigidPose,
     Scene,
     StructuredPortPrediction,
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
     TabulatedMaterial,
+    compile_graded_superquadric_regions,
     haar_rotation,
     sample_hybrid_package_scene,
 )
@@ -1591,5 +1593,172 @@ def test_dc_mixed_insulated_and_exposed_coils_use_partial_environment_current_st
     )
     assert (
         result.power_closure_error
+        < 8e-6
+    )
+
+
+def test_graded_package_compiler_keeps_all_internal_interfaces_off_conductor():
+    coil = _coil()
+    outer = _package(
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        )
+    ).geometry
+    profile = RadialIsotropicMaterialProfile(
+        normalized_radius=(
+            0.0,
+            1.0,
+        ),
+        relative_permittivity=(
+            2.0,
+            5.0,
+        ),
+        relative_permeability=(
+            1.0,
+            1.0,
+        ),
+        conductivity=(
+            0.0,
+            0.0,
+        ),
+    )
+    layers = compile_graded_superquadric_regions(
+        outer,
+        profile,
+        shell_count=5,
+        enclosed_coils=(
+            coil,
+        ),
+        clearance_fraction=0.04,
+    )
+
+    assert len(
+        layers
+    ) == 5
+    assert np.allclose(
+        layers[
+            -1
+        ].geometry.half_extents,
+        outer.half_extents,
+        rtol=0.0,
+        atol=1e-14,
+    )
+    scales = np.asarray(
+        [
+            layer.geometry.half_extents[
+                0
+            ]
+            / outer.half_extents[
+                0
+            ]
+            for layer in layers
+        ],
+        dtype=float,
+    )
+    assert np.all(
+        np.diff(
+            scales
+        )
+        > 0.0
+    )
+    for layer in layers:
+        assert (
+            layer.geometry.classify_conductor(
+                coil.geometry,
+                longitudinal_segments=72,
+                section_points=20,
+                tolerance=1e-10,
+            )
+            == "inside"
+        )
+
+
+def test_constant_graded_profile_reduces_to_single_uniform_package():
+    coil = _coil()
+    material = IsotropicMaterial(
+        relative_permittivity=3.5,
+        relative_permeability=1.8,
+        conductivity=1.0e-4,
+    )
+    outer = _package(
+        material
+    ).geometry
+    profile = RadialIsotropicMaterialProfile(
+        normalized_radius=(
+            0.0,
+            1.0,
+        ),
+        relative_permittivity=(
+            material.relative_permittivity,
+            material.relative_permittivity,
+        ),
+        relative_permeability=(
+            material.relative_permeability,
+            material.relative_permeability,
+        ),
+        conductivity=(
+            material.conductivity,
+            material.conductivity,
+        ),
+    )
+    layered = compile_graded_superquadric_regions(
+        outer,
+        profile,
+        shell_count=4,
+        enclosed_coils=(
+            coil,
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        magnetic_volume_axial_order=3,
+        magnetic_volume_radial_order=2,
+        magnetic_volume_azimuthal_order=8,
+        maximum_raw_magnetic_reciprocity_defect=0.20,
+    )
+    frequency = 75_000.0
+    layered_result = artifact.solve(
+        Scene(
+            (
+                coil,
+            ),
+            HomogeneousMedium(),
+            layered,
+        ),
+        frequency,
+    )
+    uniform_result = artifact.solve(
+        Scene(
+            (
+                coil,
+            ),
+            HomogeneousMedium(),
+            (
+                PackageObject(
+                    outer,
+                    material,
+                    "uniform",
+                ),
+            ),
+        ),
+        frequency,
+    )
+
+    assert np.allclose(
+        layered_result.impedance,
+        uniform_result.impedance,
+        rtol=3e-5,
+        atol=3e-7,
+    )
+    assert np.allclose(
+        layered_result.dissipation_channels,
+        uniform_result.dissipation_channels,
+        rtol=4e-5,
+        atol=4e-8,
+    )
+    assert (
+        layered_result.power_closure_error
         < 8e-6
     )
