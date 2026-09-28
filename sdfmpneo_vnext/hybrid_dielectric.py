@@ -5,6 +5,7 @@ import numpy as np
 
 from .hybrid_domain import validate_package_conductor_topology
 from .dielectric_surface import DielectricSurfaceSolver
+from .magnetic_surface import MagneticSurfaceSolver
 from .em import MQSConfig
 from .mixed import (
     DenseMixedConductorTeacher,
@@ -26,6 +27,9 @@ class DielectricCoupledResult:
     surface_residual: float
     source_region_index: np.ndarray
     channel_labels: tuple[str, ...]
+    magnetic_inductance_correction: np.ndarray | None = None
+    magnetic_surface_residual: float = 0.0
+    raw_magnetic_reciprocity_defect: float = 0.0
 
     @property
     def impedance(
@@ -84,8 +88,9 @@ class DielectricCoupledMixedTeacher:
     Conductors use the canonical current--potential--charge mixed formulation.
     Piecewise homogeneous isotropic packages are eliminated through a
     dielectric single-layer Schur response, producing an effective nodal
-    potential operator. The magnetic current block remains the homogeneous
-    MQS conductor block; magnetic material contrast is intentionally rejected.
+    potential operator. Magnetic permeability contrast is eliminated through
+    a magnetic-scalar single-layer response and a local package energy
+    correction to the current-mode partial-inductance operator.
     """
 
     def __init__(
@@ -97,7 +102,11 @@ class DielectricCoupledMixedTeacher:
         charge_self_radius_factor: float = 0.75,
         surface_vertical_order: int = 16,
         surface_azimuthal_order: int = 32,
+        magnetic_volume_axial_order: int = 8,
+        magnetic_volume_radial_order: int = 6,
+        magnetic_volume_azimuthal_order: int = 24,
         maximum_raw_reciprocity_defect: float = 0.15,
+        maximum_raw_magnetic_reciprocity_defect: float = 0.08,
     ):
         if not scene.packages:
             raise ValueError(
@@ -110,17 +119,6 @@ class DielectricCoupledMixedTeacher:
         validate_package_conductor_topology(
             scene
         )
-        for package in scene.packages:
-            if not np.isclose(
-                package.material.relative_permeability,
-                scene.medium.relative_permeability,
-                rtol=1e-12,
-                atol=1e-12,
-            ):
-                raise NotImplementedError(
-                    "magnetic package contrast requires the magnetic SIE/VIE "
-                    "extension and is not approximated by the dielectric solver"
-                )
 
         self.scene = scene
         self.frequency_hz = float(
@@ -167,6 +165,31 @@ class DielectricCoupledMixedTeacher:
             maximum_raw_reciprocity_defect
         )
 
+        self.maximum_raw_magnetic_reciprocity_defect = float(
+            maximum_raw_magnetic_reciprocity_defect
+        )
+        if self.maximum_raw_magnetic_reciprocity_defect <= 0.0:
+            raise ValueError(
+                "maximum_raw_magnetic_reciprocity_defect must be positive"
+            )
+        self.magnetic_volume_axial_order = int(
+            magnetic_volume_axial_order
+        )
+        self.magnetic_volume_radial_order = int(
+            magnetic_volume_radial_order
+        )
+        self.magnetic_volume_azimuthal_order = int(
+            magnetic_volume_azimuthal_order
+        )
+        if (
+            self.magnetic_volume_axial_order < 2
+            or self.magnetic_volume_radial_order < 2
+            or self.magnetic_volume_azimuthal_order < 8
+        ):
+            raise ValueError(
+                "magnetic package volume quadrature orders are too small"
+            )
+
         conductor_scene = Scene(
             scene.coils,
             scene.medium,
@@ -187,6 +210,19 @@ class DielectricCoupledMixedTeacher:
                 scene.packages,
                 scene.medium,
                 self.frequency_hz,
+                vertical_order=(
+                    surface_vertical_order
+                ),
+                azimuthal_order=(
+                    surface_azimuthal_order
+                ),
+            )
+        )
+
+        self.magnetic_surface_solver = (
+            MagneticSurfaceSolver(
+                scene.packages,
+                scene.medium,
                 vertical_order=(
                     surface_vertical_order
                 ),
@@ -544,6 +580,31 @@ class DielectricCoupledMixedTeacher:
             self.conductor_teacher._mqs.assemble()
         )
         (
+            magnetic_inductance_correction,
+            magnetic_surface_residual,
+            magnetic_reciprocity_defect,
+        ) = (
+            self.magnetic_surface_solver.inductance_correction(
+                self.conductor_teacher._mqs,
+                volume_axial_order=(
+                    self.magnetic_volume_axial_order
+                ),
+                volume_radial_order=(
+                    self.magnetic_volume_radial_order
+                ),
+                volume_azimuthal_order=(
+                    self.magnetic_volume_azimuthal_order
+                ),
+                maximum_raw_reciprocity_defect=(
+                    self.maximum_raw_magnetic_reciprocity_defect
+                ),
+            )
+        )
+        inductance = (
+            inductance
+            + magnetic_inductance_correction
+        )
+        (
             divergence,
             port_injection,
             gauge,
@@ -821,6 +882,9 @@ class DielectricCoupledMixedTeacher:
             surface_residual,
             source_region,
             labels,
+            magnetic_inductance_correction,
+            magnetic_surface_residual,
+            magnetic_reciprocity_defect,
         )
 
 
