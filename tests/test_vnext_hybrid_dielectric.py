@@ -117,6 +117,16 @@ def test_invisible_package_reduces_to_conductor_only_mixed_reference():
         coupled.power_closure_error
         < 1e-10
     )
+    assert np.allclose(
+        coupled.magnetic_inductance_correction,
+        0.0,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert (
+        coupled.magnetic_surface_residual
+        == 0.0
+    )
 
 
 def test_lossless_dielectric_changes_reactive_response_without_dielectric_loss():
@@ -803,4 +813,152 @@ def test_tabulated_background_with_identical_tabulated_package_is_invisible():
     assert (
         coupled.power_closure_error
         < 5e-6
+    )
+
+
+def test_magnetic_package_increases_inductive_response_and_preserves_power_structure():
+    frequency = 80_000.0
+    base_scene, base = _coupled(
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+        )
+    )
+    magnetic_scene = Scene(
+        base_scene.coils,
+        base_scene.medium,
+        (
+            _package(
+                IsotropicMaterial(
+                    relative_permittivity=1.0,
+                    relative_permeability=4.0,
+                )
+            ),
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+        magnetic_volume_axial_order=4,
+        magnetic_volume_radial_order=3,
+        magnetic_volume_azimuthal_order=12,
+    )
+    magnetic = artifact.solve(
+        magnetic_scene,
+        frequency,
+    )
+    assert (
+        np.linalg.norm(
+            magnetic.magnetic_inductance_correction
+        )
+        > 0.0
+    )
+    assert (
+        magnetic.impedance[
+            0,
+            0,
+        ].imag
+        > base.impedance[
+            0,
+            0,
+        ].imag
+    )
+    assert (
+        magnetic.magnetic_surface_residual
+        < 1e-9
+    )
+    assert (
+        magnetic.raw_magnetic_reciprocity_defect
+        < 0.08
+    )
+    assert (
+        magnetic.power_closure_error
+        < 1e-6
+    )
+
+
+def test_magnetic_package_reference_is_common_se3_invariant():
+    frequency = 65_000.0
+    material = IsotropicMaterial(
+        relative_permittivity=1.0,
+        relative_permeability=3.0,
+    )
+    coil = _coil()
+    package = _package(
+        material
+    )
+    scene = Scene(
+        (
+            coil,
+        ),
+        HomogeneousMedium(),
+        (
+            package,
+        ),
+    )
+    artifact = DielectricCoupledReferenceArtifact(
+        config=CFG,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        magnetic_volume_axial_order=3,
+        magnetic_volume_radial_order=3,
+        magnetic_volume_azimuthal_order=12,
+    )
+    reference = artifact.solve(
+        scene,
+        frequency,
+    )
+
+    rng = np.random.default_rng(
+        1701
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.asarray(
+            [
+                0.17,
+                -0.08,
+                0.23,
+            ]
+        ),
+    )
+    moved_scene = Scene(
+        (
+            CoilObject(
+                coil.geometry.transformed(
+                    common
+                ),
+                coil.material,
+                coil.name,
+            ),
+        ),
+        scene.medium,
+        (
+            PackageObject(
+                package.geometry.transformed(
+                    common
+                ),
+                package.material,
+                package.name,
+            ),
+        ),
+    )
+    actual = artifact.solve(
+        moved_scene,
+        frequency,
+    )
+    assert np.allclose(
+        actual.impedance,
+        reference.impedance,
+        rtol=3e-6,
+        atol=3e-8,
+    )
+    assert np.allclose(
+        actual.magnetic_inductance_correction,
+        reference.magnetic_inductance_correction,
+        rtol=3e-6,
+        atol=3e-10,
     )
