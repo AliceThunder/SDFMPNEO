@@ -563,14 +563,29 @@ class HybridSceneSamplerConfig:
                             self.nested_package_scale_range[
                                 1
                             ]
-                            ** max(
-                                int(
-                                    self.package_count_range[
-                                        1
-                                    ]
+                            ** (
+                                max(
+                                    int(
+                                        self.package_count_range[
+                                            1
+                                        ]
+                                    )
+                                    - 1,
+                                    0,
                                 )
-                                - 1,
-                                0,
+                                if (
+                                    self.nested_package_probability
+                                    > 0.0
+                                    or (
+                                        self.package_count_range[
+                                            1
+                                        ]
+                                        > 2
+                                        and self.free_inclusion_probability
+                                        <= 0.0
+                                    )
+                                )
+                                else 0
                             )
                         )
                     ),
