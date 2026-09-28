@@ -221,6 +221,7 @@ def _artifact(
     package_permittivity_range=None,
     package_loss_conductivity_range=None,
     geometry_domain=None,
+    artifact_schema=None,
 ):
     sample = _manual_sample(
         scene
@@ -258,6 +259,9 @@ def _artifact(
         ),
         geometry_domain=(
             geometry_domain
+        ),
+        artifact_schema=(
+            artifact_schema
         ),
     )
 
@@ -1137,3 +1141,60 @@ def test_hybrid_fast_geometry_domain_is_se3_invariant_and_fails_closed_outside_p
             outside,
             frequency,
         )
+
+
+def test_legacy_hybrid_port_fingerprint_ignores_newer_geometry_domain_and_resaves_stably(tmp_path):
+    scene = _scene()
+    legacy_a = _artifact(
+        scene,
+        geometry_domain={
+            "tag": "first",
+        },
+        artifact_schema=4,
+    )
+    legacy_b = _artifact(
+        scene,
+        geometry_domain={
+            "tag": "second",
+        },
+        artifact_schema=4,
+    )
+    assert (
+        legacy_a.fingerprint()
+        == legacy_b.fingerprint()
+    )
+
+    current_a = _artifact(
+        scene,
+        geometry_domain={
+            "tag": "first",
+        },
+        artifact_schema=5,
+    )
+    current_b = _artifact(
+        scene,
+        geometry_domain={
+            "tag": "second",
+        },
+        artifact_schema=5,
+    )
+    assert (
+        current_a.fingerprint()
+        != current_b.fingerprint()
+    )
+
+    path = (
+        tmp_path
+        / "legacy-hybrid-port.pt"
+    )
+    legacy_a.save(
+        path
+    )
+    loaded = HybridNeuralResidualArtifact.load(
+        path
+    )
+    assert loaded.artifact_schema == 4
+    assert (
+        loaded.fingerprint()
+        == legacy_a.fingerprint()
+    )
