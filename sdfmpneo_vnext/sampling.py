@@ -199,6 +199,8 @@ class HybridSceneSamplerConfig:
     package_count_range: tuple[int, int] = (1, 1)
     nested_package_probability: float = 0.0
     nested_package_scale_range: tuple[float, float] = (1.15, 1.45)
+    dc_probability: float = 0.0
+    dc_conductive_probability: float = 0.0
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
     package_relative_permeability_range: tuple[float, float] = (1.0, 1.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
@@ -341,6 +343,22 @@ class HybridSceneSamplerConfig:
             raise ValueError(
                 "nested_package_probability must lie in [0,1]"
             )
+        if not (
+            0.0
+            <= self.dc_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "dc_probability must lie in [0,1]"
+            )
+        if not (
+            0.0
+            <= self.dc_conductive_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "dc_conductive_probability must lie in [0,1]"
+            )
         if (
             package_hi > 2
             and self.nested_package_probability
@@ -448,6 +466,12 @@ class HybridSceneSamplerConfig:
             for key, value
             in conductor.items()
         }
+        if self.dc_probability > 0.0:
+            conductor[
+                "frequency_range"
+            ][
+                0
+            ] = 0.0
         return {
             "n_coils": 2,
             "n_packages_range": [
@@ -463,6 +487,14 @@ class HybridSceneSamplerConfig:
                 ),
             ],
             "conductor": conductor,
+            "frequency_sampling": {
+                "dc_probability": float(
+                    self.dc_probability
+                ),
+                "dc_conductive_probability": float(
+                    self.dc_conductive_probability
+                ),
+            },
             "coil_relative_pose": {
                 "translation_direction": (
                     "isotropic_s2"
@@ -600,8 +632,16 @@ class HybridSceneSamplerConfig:
                     1
                 ]
             )
-            if self.lossless_probability
-            < 1.0
+            if (
+                self.lossless_probability
+                < 1.0
+                or (
+                    self.dc_probability
+                    > 0.0
+                    and self.dc_conductive_probability
+                    > 0.0
+                )
+            )
             else 0.0
         )
         if dispersive_probability > 0.0:
@@ -810,8 +850,16 @@ class HybridSceneSamplerConfig:
                     1
                 ]
             )
-            if self.lossy_background_probability
-            > 0.0
+            if (
+                self.lossy_background_probability
+                > 0.0
+                or (
+                    self.dc_probability
+                    > 0.0
+                    and self.dc_conductive_probability
+                    > 0.0
+                )
+            )
             else 0.0
         )
         if dispersive_probability > 0.0:
@@ -1246,8 +1294,17 @@ def _sample_multi_debye_material(
 def _sample_package_material(
     rng: np.random.Generator,
     config: HybridSceneSamplerConfig,
+    *,
+    force_conductive: bool | None = None,
 ):
-    if (
+    if force_conductive is True:
+        conductivity = _log_uniform(
+            rng,
+            config.dielectric_conductivity_range,
+        )
+    elif force_conductive is False:
+        conductivity = 0.0
+    elif (
         rng.random()
         < config.lossless_probability
     ):
@@ -1521,7 +1578,29 @@ def sample_hybrid_package_scene(
             config.conductor,
         )
     )
-    if (
+    is_dc = bool(
+        rng.random()
+        < config.dc_probability
+    )
+    if is_dc:
+        frequency = 0.0
+    dc_conductive = bool(
+        is_dc
+        and (
+            rng.random()
+            < config.dc_conductive_probability
+        )
+    )
+    if is_dc:
+        background_conductivity = (
+            _log_uniform(
+                rng,
+                config.background_conductivity_range,
+            )
+            if dc_conductive
+            else 0.0
+        )
+    elif (
         rng.random()
         < config.lossy_background_probability
     ):
@@ -1682,6 +1761,11 @@ def sample_hybrid_package_scene(
             _sample_package_material(
                 rng,
                 config,
+                force_conductive=(
+                    dc_conductive
+                    if is_dc
+                    else None
+                ),
             ),
             f"package{index}",
         )
