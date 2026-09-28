@@ -187,6 +187,14 @@ class ImmutableHybridTeacherDataset:
         )
 
     @property
+    def geometry_domain(
+        self,
+    ):
+        return self.domain_metadata.get(
+            "geometry"
+        )
+
+    @property
     def background_conductivity_domain(
         self,
     ):
