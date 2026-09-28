@@ -417,6 +417,58 @@ class ImmutableHybridTeacherDataset:
         )
 
     @property
+    def package_permeability_domain(
+        self,
+    ):
+        package = self.domain_metadata.get(
+            "package"
+        )
+        if not package:
+            return None
+        raw = package.get(
+            "relative_permeability_range"
+        )
+        if raw is None:
+            return None
+        values = np.asarray(
+            raw,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "invalid package permeability domain metadata"
+            )
+        return (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    @property
     def package_loss_conductivity_domain(
         self,
     ):
