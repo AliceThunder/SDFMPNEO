@@ -835,7 +835,7 @@ def _conductor_surface_samples(
     )
 
 
-def _sample_enclosing_package_geometry(
+def _build_enclosing_package_geometry_candidate(
     rng: np.random.Generator,
     root,
     config,
@@ -995,6 +995,44 @@ def _sample_enclosing_package_geometry(
             "failed to construct an enclosing arbitrary-pose package"
         )
     return geometry
+
+
+def _sample_enclosing_package_geometry(
+    rng: np.random.Generator,
+    root,
+    config,
+    *,
+    other_geometries=(),
+):
+    other_geometries = tuple(
+        other_geometries
+    )
+    for _ in range(
+        32
+    ):
+        geometry = (
+            _build_enclosing_package_geometry_candidate(
+                rng,
+                root,
+                config,
+            )
+        )
+        valid = True
+        for other in other_geometries:
+            try:
+                geometry.classify_conductor(
+                    other,
+                    longitudinal_segments=64,
+                    section_points=16,
+                )
+            except ValueError:
+                valid = False
+                break
+        if valid:
+            return geometry
+    raise RuntimeError(
+        "failed to sample a package pose without conductor-surface intersection"
+    )
 
 
 def _sample_multi_debye_material(
@@ -1204,6 +1242,13 @@ def sample_hybrid_package_scene(
             rng,
             root,
             config,
+            other_geometries=tuple(
+                coil.geometry
+                for coil
+                in base_scene.coils[
+                    1:
+                ]
+            ),
         )
     )
     epsilon_r = _uniform(
