@@ -3,6 +3,7 @@ import numpy as np
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
+    DebyeMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
     PackageObject,
@@ -247,4 +248,75 @@ def test_hybrid_encoding_without_packages_preserves_conductor_encoding():
         0,
         0,
         15,
+    )
+
+
+def test_hybrid_encoding_tracks_frequency_effective_debye_background():
+    base = _scene()
+    medium = DebyeMaterial(
+        relative_permittivity_static=24.0,
+        relative_permittivity_infinite=4.0,
+        relaxation_time=3.0e-6,
+        conductivity=0.0,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+        base.packages,
+    )
+    low = encode_hybrid_scene_invariant(
+        scene,
+        10_000.0,
+    )
+    high = encode_hybrid_scene_invariant(
+        scene,
+        500_000.0,
+    )
+
+    # Background features keep the historical dimensionality but now carry
+    # effective Re(epsilon_r) and effective loss conductivity at frequency.
+    low_node = low.coil.node_features[
+        0
+    ]
+    high_node = high.coil.node_features[
+        0
+    ]
+    assert np.all(
+        np.isfinite(
+            low_node
+        )
+    )
+    assert np.all(
+        np.isfinite(
+            high_node
+        )
+    )
+    assert not np.isclose(
+        low_node[
+            13
+        ],
+        high_node[
+            13
+        ],
+    )
+    assert not np.isclose(
+        low_node[
+            15
+        ],
+        high_node[
+            15
+        ],
+    )
+
+    # Package/background electric contrast must use the same frequency-aware
+    # background epsilon rather than the Debye static metadata value.
+    assert not np.allclose(
+        low.package_features[
+            :,
+            8
+        ],
+        high.package_features[
+            :,
+            8
+        ],
     )
