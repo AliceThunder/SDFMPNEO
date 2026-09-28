@@ -65,6 +65,41 @@ def main():
         default=16,
     )
     parser.add_argument(
+        "--debye-package-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--package-debye-epsilon-infinite-min",
+        type=float,
+        default=1.5,
+    )
+    parser.add_argument(
+        "--package-debye-epsilon-infinite-max",
+        type=float,
+        default=6.0,
+    )
+    parser.add_argument(
+        "--package-debye-delta-epsilon-min",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument(
+        "--package-debye-delta-epsilon-max",
+        type=float,
+        default=20.0,
+    )
+    parser.add_argument(
+        "--package-debye-relaxation-time-min",
+        type=float,
+        default=1e-8,
+    )
+    parser.add_argument(
+        "--package-debye-relaxation-time-max",
+        type=float,
+        default=1e-4,
+    )
+    parser.add_argument(
         "--lossy-background-probability",
         type=float,
         default=0.0,
@@ -142,6 +177,21 @@ def main():
         )
 
     sampler = HybridSceneSamplerConfig(
+        debye_package_probability=(
+            args.debye_package_probability
+        ),
+        package_debye_epsilon_infinite_range=(
+            args.package_debye_epsilon_infinite_min,
+            args.package_debye_epsilon_infinite_max,
+        ),
+        package_debye_delta_epsilon_range=(
+            args.package_debye_delta_epsilon_min,
+            args.package_debye_delta_epsilon_max,
+        ),
+        package_debye_relaxation_time_range=(
+            args.package_debye_relaxation_time_min,
+            args.package_debye_relaxation_time_max,
+        ),
         background_relative_permittivity_range=(
             args.background_epsilon_min,
             args.background_epsilon_max,
@@ -172,7 +222,10 @@ def main():
     domain_metadata = {
         "background": (
             sampler.background_domain_metadata()
-        )
+        ),
+        "package": (
+            sampler.package_domain_metadata()
+        ),
     }
 
     if (
@@ -264,7 +317,8 @@ def main():
             f"{record.split} "
             f"{frequency / 1e3:.2f} kHz "
             f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
-            f"medium={type(scene.medium).__name__}"
+            f"medium={type(scene.medium).__name__} "
+            f"package={type(scene.packages[0].material).__name__}"
         )
     print(
         "counts:",
