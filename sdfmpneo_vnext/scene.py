@@ -708,6 +708,302 @@ class MultiDebyeMaterial:
 
 
 @dataclass(frozen=True)
+class TabulatedMaterial:
+    """Passive isotropic material interpolated on a positive frequency table.
+
+    The table stores Re(epsilon_r) and additional effective AC loss
+    conductivity. Interpolation is linear in log-frequency and extrapolation is
+    intentionally rejected.
+    """
+
+    frequencies_hz: tuple[float, ...]
+    relative_permittivity_real: tuple[float, ...]
+    loss_conductivity_values: tuple[float, ...]
+    relative_permeability: float = 1.0
+    conductivity: float = 0.0
+    thermal_conductivity: float | None = None
+    density: float | None = None
+    heat_capacity: float | None = None
+
+    def __post_init__(
+        self,
+    ):
+        frequency = np.asarray(
+            self.frequencies_hz,
+            dtype=float,
+        )
+        epsilon = np.asarray(
+            self.relative_permittivity_real,
+            dtype=float,
+        )
+        loss = np.asarray(
+            self.loss_conductivity_values,
+            dtype=float,
+        )
+        if (
+            frequency.ndim
+            != 1
+            or len(
+                frequency
+            )
+            < 2
+            or epsilon.shape
+            != frequency.shape
+            or loss.shape
+            != frequency.shape
+            or np.any(
+                ~np.isfinite(
+                    frequency
+                )
+            )
+            or np.any(
+                frequency
+                <= 0.0
+            )
+            or np.any(
+                np.diff(
+                    frequency
+                )
+                <= 0.0
+            )
+            or np.any(
+                ~np.isfinite(
+                    epsilon
+                )
+            )
+            or np.any(
+                epsilon
+                <= 0.0
+            )
+            or np.any(
+                ~np.isfinite(
+                    loss
+                )
+            )
+            or np.any(
+                loss
+                < 0.0
+            )
+            or not np.isfinite(
+                self.relative_permeability
+            )
+            or self.relative_permeability
+            <= 0.0
+            or not np.isfinite(
+                self.conductivity
+            )
+            or self.conductivity
+            < 0.0
+        ):
+            raise ValueError(
+                "invalid passive tabulated material"
+            )
+        thermal = (
+            self.thermal_conductivity,
+            self.density,
+            self.heat_capacity,
+        )
+        if any(
+            value is not None
+            for value in thermal
+        ):
+            if not all(
+                value is not None
+                and np.isfinite(
+                    value
+                )
+                and value > 0.0
+                for value in thermal
+            ):
+                raise ValueError(
+                    "thermal_conductivity, density, and heat_capacity "
+                    "must be supplied together as positive finite values"
+                )
+        object.__setattr__(
+            self,
+            "frequencies_hz",
+            tuple(
+                float(
+                    value
+                )
+                for value in frequency
+            ),
+        )
+        object.__setattr__(
+            self,
+            "relative_permittivity_real",
+            tuple(
+                float(
+                    value
+                )
+                for value in epsilon
+            ),
+        )
+        object.__setattr__(
+            self,
+            "loss_conductivity_values",
+            tuple(
+                float(
+                    value
+                )
+                for value in loss
+            ),
+        )
+
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        return (
+            MU0
+            * self.relative_permeability
+        )
+
+    @property
+    def relative_permittivity(
+        self,
+    ) -> float:
+        return float(
+            self.relative_permittivity_real[
+                0
+            ]
+        )
+
+    def _interpolate(
+        self,
+        values,
+        frequency_hz: float,
+    ) -> float:
+        frequency = float(
+            frequency_hz
+        )
+        if (
+            not np.isfinite(
+                frequency
+            )
+            or frequency <= 0.0
+        ):
+            raise ValueError(
+                "tabulated material requires a positive finite frequency"
+            )
+        table = np.asarray(
+            self.frequencies_hz,
+            dtype=float,
+        )
+        tolerance = (
+            1e-12
+            * max(
+                float(
+                    table[
+                        -1
+                    ]
+                ),
+                1.0,
+            )
+        )
+        if (
+            frequency
+            < table[
+                0
+            ]
+            - tolerance
+            or frequency
+            > table[
+                -1
+            ]
+            + tolerance
+        ):
+            raise ValueError(
+                "frequency is outside the tabulated material domain"
+            )
+        frequency = min(
+            max(
+                frequency,
+                float(
+                    table[
+                        0
+                    ]
+                ),
+            ),
+            float(
+                table[
+                    -1
+                ]
+            ),
+        )
+        return float(
+            np.interp(
+                np.log(
+                    frequency
+                ),
+                np.log(
+                    table
+                ),
+                np.asarray(
+                    values,
+                    dtype=float,
+                ),
+            )
+        )
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        frequency = float(
+            frequency_hz
+        )
+        epsilon_real = self._interpolate(
+            self.relative_permittivity_real,
+            frequency,
+        )
+        loss = self.loss_conductivity(
+            frequency
+        )
+        omega = (
+            2.0
+            * np.pi
+            * frequency
+        )
+        return complex(
+            epsilon_real
+            - 1j
+            * loss
+            / (
+                omega
+                * EPS0
+            )
+        )
+
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        return (
+            EPS0
+            * self.relative_permittivity_at(
+                frequency_hz
+            )
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        frequency = float(
+            frequency_hz
+        )
+        dispersive = self._interpolate(
+            self.loss_conductivity_values,
+            frequency,
+        )
+        return float(
+            self.conductivity
+            + dispersive
+        )
+
+
+@dataclass(frozen=True)
 class PackageObject:
     geometry: SuperquadricPackageGeometry
     material: PassiveIsotropicMaterial
