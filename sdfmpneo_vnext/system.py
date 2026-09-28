@@ -375,18 +375,21 @@ class MeshfreeVNextSystem:
         self,
         scene: Scene,
         frequency_hz: float,
+        **options,
     ):
         if scene.packages:
             return (
                 self._dielectric_reference.prepare_spatial(
                     scene,
                     frequency_hz,
+                    **options,
                 )
             )
         return (
             self._reference.prepare_spatial(
                 scene,
                 frequency_hz,
+                **options,
             )
         )
 
