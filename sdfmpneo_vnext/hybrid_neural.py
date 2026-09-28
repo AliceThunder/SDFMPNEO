@@ -841,6 +841,7 @@ class HybridPhysicsFactoredResidualNet(
         *,
         resistance_scale: float,
         reactance_scale: float,
+        reactance_gate: float = 1.0,
     ):
         n = coil.shape[
             0
@@ -952,6 +953,12 @@ class HybridPhysicsFactoredResidualNet(
                     j,
                     i,
                 ] = value
+        residual = (
+            float(
+                reactance_gate
+            )
+            * residual
+        )
         reactance = (
             baseline_reactance
             + residual
@@ -1209,6 +1216,7 @@ class HybridPhysicsFactoredResidualNet(
         resistance_scale: float,
         reactance_scale: float,
         dielectric_loss_gate: float,
+        reactance_gate: float = 1.0,
     ):
         coil, package = (
             self._latent(
@@ -1233,6 +1241,9 @@ class HybridPhysicsFactoredResidualNet(
             reactance_scale=(
                 reactance_scale
             ),
+            reactance_gate=(
+                reactance_gate
+            ),
         )
         channels = self._decode_channels(
             coil,
@@ -1249,6 +1260,17 @@ class HybridPhysicsFactoredResidualNet(
             reactance,
             channels,
         )
+
+
+def _reactance_gate(
+    frequency_hz: float,
+) -> float:
+    return float(
+        float(
+            frequency_hz
+        )
+        > 0.0
+    )
 
 
 def _dielectric_loss_gate(
@@ -1885,6 +1907,11 @@ class HybridNeuralResidualArtifact:
                         frequency_hz,
                     )
                 ),
+                reactance_gate=(
+                    _reactance_gate(
+                        frequency_hz
+                    )
+                ),
             )
         return StructuredPortPrediction(
             (
@@ -2162,6 +2189,11 @@ def _predict_sample(
                 _dielectric_loss_gate(
                     sample.scene,
                     sample.frequency_hz,
+                )
+            ),
+            reactance_gate=(
+                _reactance_gate(
+                    sample.frequency_hz
                 )
             ),
         )
@@ -2902,6 +2934,11 @@ def train_hybrid_residual_surrogate(
                     _dielectric_loss_gate(
                         sample.scene,
                         sample.frequency_hz,
+                    )
+                ),
+                reactance_gate=(
+                    _reactance_gate(
+                        sample.frequency_hz
                     )
                 ),
             )
