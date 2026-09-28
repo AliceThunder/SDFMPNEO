@@ -373,9 +373,19 @@ class HybridSceneSamplerConfig:
         self,
     ):
         return {
+            "n_coils": 2,
+            "n_packages": 1,
             "conductor": asdict(
                 self.conductor
             ),
+            "coil_relative_pose": {
+                "translation_direction": (
+                    "isotropic_s2"
+                ),
+                "rotation": (
+                    "haar_so3"
+                ),
+            },
             "package": {
                 "margin_range": list(
                     self.package_margin_range
