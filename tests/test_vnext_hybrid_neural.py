@@ -216,6 +216,8 @@ def _artifact(
     *,
     background_conductivity_range=None,
     background_permittivity_range=None,
+    package_permittivity_range=None,
+    package_loss_conductivity_range=None,
 ):
     sample = _manual_sample(
         scene
@@ -244,6 +246,12 @@ def _artifact(
         ),
         background_permittivity_range=(
             background_permittivity_range
+        ),
+        package_permittivity_range=(
+            package_permittivity_range
+        ),
+        package_loss_conductivity_range=(
+            package_loss_conductivity_range
         ),
     )
 
@@ -649,6 +657,14 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
             1.0,
             6.0,
         ),
+        package_permittivity_range=(
+            1.5,
+            6.0,
+        ),
+        package_loss_conductivity_range=(
+            0.0,
+            1.0e-2,
+        ),
     )
     path = (
         tmp_path
@@ -668,6 +684,14 @@ def test_hybrid_artifact_round_trip_preserves_lossy_background_domain(tmp_path):
     assert loaded.background_permittivity_range == (
         1.0,
         6.0,
+    )
+    assert loaded.package_permittivity_range == (
+        1.5,
+        6.0,
+    )
+    assert loaded.package_loss_conductivity_range == (
+        0.0,
+        1.0e-2,
     )
     lossy = _with_background(
         base,
@@ -919,5 +943,84 @@ def test_hybrid_fast_port_artifact_rejects_effective_background_permittivity_out
     ):
         artifact.predict_structured(
             outside,
+            85_000.0,
+        )
+
+
+def test_hybrid_fast_port_rejects_package_effective_permittivity_outside_domain():
+    base = _scene()
+    artifact = _artifact(
+        base,
+        package_permittivity_range=(
+            1.5,
+            6.0,
+        ),
+        package_loss_conductivity_range=(
+            0.0,
+            1.0e-2,
+        ),
+    )
+    first = base.packages[
+        0
+    ]
+    outside = Scene(
+        base.coils,
+        base.medium,
+        (
+            PackageObject(
+                first.geometry,
+                IsotropicMaterial(
+                    relative_permittivity=15.0,
+                    conductivity=first.material.conductivity,
+                ),
+                first.name,
+            ),
+            base.packages[
+                1
+            ],
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match="package effective relative permittivity",
+    ):
+        artifact.predict_structured(
+            outside,
+            85_000.0,
+        )
+
+
+def test_hybrid_fast_port_rejects_magnetic_package_contrast():
+    base = _scene()
+    artifact = _artifact(
+        base
+    )
+    first = base.packages[
+        0
+    ]
+    magnetic = Scene(
+        base.coils,
+        base.medium,
+        (
+            PackageObject(
+                first.geometry,
+                IsotropicMaterial(
+                    relative_permittivity=3.2,
+                    relative_permeability=1.2,
+                    conductivity=0.003,
+                ),
+                first.name,
+            ),
+            base.packages[
+                1
+            ],
+        ),
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="magnetic package contrast",
+    ):
+        artifact.predict_structured(
+            magnetic,
             85_000.0,
         )
