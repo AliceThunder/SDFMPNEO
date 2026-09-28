@@ -1,13 +1,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Protocol, Tuple, runtime_checkable
 import numpy as np
 from .geometry import SuperellipseSpiral
 from .package_geometry import SuperquadricPackageGeometry
 
 MU0 = 4e-7 * np.pi
 EPS0 = 8.8541878128e-12
+
+
+@runtime_checkable
+class PassiveIsotropicMaterial(Protocol):
+    relative_permeability: float
+    conductivity: float
+
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        ...
+
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        ...
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        ...
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        ...
 
 
 @dataclass(frozen=True)
@@ -680,7 +710,7 @@ class MultiDebyeMaterial:
 @dataclass(frozen=True)
 class PackageObject:
     geometry: SuperquadricPackageGeometry
-    material: IsotropicMaterial | DebyeMaterial | MultiDebyeMaterial
+    material: PassiveIsotropicMaterial
     name: str = "package"
 
     def __post_init__(self):
@@ -693,14 +723,11 @@ class PackageObject:
             )
         if not isinstance(
             self.material,
-            (
-                IsotropicMaterial,
-                DebyeMaterial,
-                MultiDebyeMaterial,
-            ),
+            PassiveIsotropicMaterial,
         ):
             raise TypeError(
-                "package material must be a supported passive isotropic material"
+                "package material must implement the passive isotropic "
+                "frequency-response interface"
             )
 
 
@@ -714,7 +741,7 @@ class CoilObject:
 @dataclass(frozen=True)
 class Scene:
     coils: Tuple[CoilObject, ...]
-    medium: HomogeneousMedium | IsotropicMaterial | DebyeMaterial | MultiDebyeMaterial = HomogeneousMedium()
+    medium: PassiveIsotropicMaterial = HomogeneousMedium()
     packages: Tuple[PackageObject, ...] = ()
 
     def __post_init__(self):
@@ -734,16 +761,11 @@ class Scene:
             )
         if not isinstance(
             self.medium,
-            (
-                HomogeneousMedium,
-                IsotropicMaterial,
-                DebyeMaterial,
-                MultiDebyeMaterial,
-            ),
+            PassiveIsotropicMaterial,
         ):
             raise TypeError(
-                "scene medium must be a supported homogeneous passive "
-                "electromagnetic material"
+                "scene medium must implement the passive isotropic "
+                "frequency-response interface"
             )
         if not all(
             isinstance(
