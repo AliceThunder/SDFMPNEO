@@ -17,6 +17,9 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from .analytic_baseline import analytic_port_baseline
+from .hybrid_domain import (
+    validate_hybrid_geometry_domain,
+)
 from .hybrid_features import (
     EncodedHybridScene,
     encode_hybrid_scene_invariant,
@@ -26,11 +29,12 @@ from .prediction import StructuredPortPrediction
 from .scene import Scene
 
 
-HYBRID_ARTIFACT_SCHEMA = 4
+HYBRID_ARTIFACT_SCHEMA = 5
 SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
     1,
     2,
     3,
+    4,
     HYBRID_ARTIFACT_SCHEMA,
 )
 
@@ -1294,6 +1298,7 @@ class HybridNeuralResidualArtifact:
         background_permittivity_range=None,
         package_permittivity_range=None,
         package_loss_conductivity_range=None,
+        geometry_domain=None,
         device: str = "cpu",
     ):
         self.model = model
@@ -1450,6 +1455,17 @@ class HybridNeuralResidualArtifact:
             name="package_loss_conductivity_range",
             allow_zero_lower=True,
         )
+        self.geometry_domain = (
+            None
+            if geometry_domain
+            is None
+            else json.loads(
+                json.dumps(
+                    geometry_domain,
+                    sort_keys=True,
+                )
+            )
+        )
         self.supports_lossy_background = bool(
             self.background_conductivity_range
             is not None
@@ -1495,6 +1511,9 @@ class HybridNeuralResidualArtifact:
             ),
             "package_loss_conductivity_range": (
                 self.package_loss_conductivity_range
+            ),
+            "geometry_domain": (
+                self.geometry_domain
             ),
         }
         digest.update(
@@ -1553,6 +1572,11 @@ class HybridNeuralResidualArtifact:
             raise ValueError(
                 "hybrid neural artifact requires at least one package"
             )
+        validate_hybrid_geometry_domain(
+            scene,
+            frequency_hz,
+            self.geometry_domain,
+        )
         for package in scene.packages:
             if not np.isclose(
                 package.material.relative_permeability,
@@ -1859,6 +1883,9 @@ class HybridNeuralResidualArtifact:
                 "package_loss_conductivity_range": (
                     self.package_loss_conductivity_range
                 ),
+                "geometry_domain": (
+                    self.geometry_domain
+                ),
             },
             Path(
                 path
@@ -1937,6 +1964,11 @@ class HybridNeuralResidualArtifact:
             package_loss_conductivity_range=(
                 payload.get(
                     "package_loss_conductivity_range"
+                )
+            ),
+            geometry_domain=(
+                payload.get(
+                    "geometry_domain"
                 )
             ),
             device=device,
@@ -2070,6 +2102,7 @@ def train_hybrid_residual_surrogate(
     background_permittivity_range=None,
     package_permittivity_range=None,
     package_loss_conductivity_range=None,
+    geometry_domain=None,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2095,6 +2128,16 @@ def train_hybrid_residual_surrogate(
         raise ValueError(
             "invalid hybrid training configuration"
         )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        validate_hybrid_geometry_domain(
+            sample.scene,
+            sample.frequency_hz,
+            geometry_domain,
+        )
+
     baseline_segments = {
         int(
             sample.baseline_segments
@@ -2867,6 +2910,9 @@ def train_hybrid_residual_surrogate(
             ),
             package_loss_conductivity_range=(
                 resolved_package_loss_conductivity_range
+            ),
+            geometry_domain=(
+                geometry_domain
             ),
             device=device,
         )
