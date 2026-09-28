@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from .geometry import RigidPose, SuperellipseSpiral, haar_rotation
+from .hybrid_domain import package_domain_topology
 from .package_geometry import SuperquadricPackageGeometry
 from .scene import (
     CoilObject,
@@ -1242,6 +1243,261 @@ def _sample_multi_debye_material(
     )
 
 
+def _sample_package_material(
+    rng: np.random.Generator,
+    config: HybridSceneSamplerConfig,
+):
+    if (
+        rng.random()
+        < config.lossless_probability
+    ):
+        conductivity = 0.0
+    else:
+        conductivity = _log_uniform(
+            rng,
+            config.dielectric_conductivity_range,
+        )
+    relative_permeability = _uniform(
+        rng,
+        config.package_relative_permeability_range,
+    )
+    draw = float(
+        rng.random()
+    )
+    if (
+        draw
+        < config.multi_debye_package_probability
+    ):
+        return _sample_multi_debye_material(
+            rng,
+            epsilon_infinite_range=(
+                config.package_debye_epsilon_infinite_range
+            ),
+            delta_epsilon_range=(
+                config.package_debye_delta_epsilon_range
+            ),
+            relaxation_time_range=(
+                config.package_debye_relaxation_time_range
+            ),
+            pole_count_range=(
+                config.multi_debye_poles_range
+            ),
+            conductivity=conductivity,
+            relative_permeability=(
+                relative_permeability
+            ),
+        )
+    if (
+        draw
+        < (
+            config.multi_debye_package_probability
+            + config.debye_package_probability
+        )
+    ):
+        epsilon_infinite = _uniform(
+            rng,
+            config.package_debye_epsilon_infinite_range,
+        )
+        delta_epsilon = _uniform(
+            rng,
+            config.package_debye_delta_epsilon_range,
+        )
+        return DebyeMaterial(
+            relative_permittivity_static=(
+                epsilon_infinite
+                + delta_epsilon
+            ),
+            relative_permittivity_infinite=(
+                epsilon_infinite
+            ),
+            relaxation_time=_log_uniform(
+                rng,
+                config.package_debye_relaxation_time_range,
+            ),
+            relative_permeability=(
+                relative_permeability
+            ),
+            conductivity=conductivity,
+        )
+    return IsotropicMaterial(
+        relative_permittivity=_uniform(
+            rng,
+            config.relative_permittivity_range,
+        ),
+        relative_permeability=(
+            relative_permeability
+        ),
+        conductivity=conductivity,
+    )
+
+
+def _nested_package_geometries(
+    rng: np.random.Generator,
+    base_scene: Scene,
+    config: HybridSceneSamplerConfig,
+    count: int,
+):
+    root = base_scene.coils[
+        0
+    ].geometry
+    for _ in range(
+        32
+    ):
+        inner = _sample_enclosing_package_geometry(
+            rng,
+            root,
+            config,
+            other_geometries=tuple(
+                coil.geometry
+                for coil in base_scene.coils[
+                    1:
+                ]
+            ),
+        )
+        geometries = [
+            inner
+        ]
+        valid = True
+        for _layer in range(
+            1,
+            count,
+        ):
+            previous = geometries[
+                -1
+            ]
+            scale = _uniform(
+                rng,
+                config.nested_package_scale_range,
+            )
+            outer = SuperquadricPackageGeometry(
+                previous.half_extents
+                * scale,
+                exponent_xy=(
+                    previous.exponent_xy
+                ),
+                exponent_z=(
+                    previous.exponent_z
+                ),
+                pose=previous.pose,
+            )
+            for coil in base_scene.coils:
+                try:
+                    outer.classify_conductor(
+                        coil.geometry,
+                        longitudinal_segments=64,
+                        section_points=16,
+                        tolerance=1e-10,
+                    )
+                except ValueError:
+                    valid = False
+                    break
+            if not valid:
+                break
+            geometries.append(
+                outer
+            )
+        if valid:
+            return tuple(
+                geometries
+            )
+    raise RuntimeError(
+        "failed to sample a valid nested package chain"
+    )
+
+
+def _disjoint_two_package_geometries(
+    rng: np.random.Generator,
+    base_scene: Scene,
+    config: HybridSceneSamplerConfig,
+):
+    if len(
+        base_scene.coils
+    ) < 2:
+        raise RuntimeError(
+            "disjoint two-package sampling requires two conductors"
+        )
+    for _ in range(
+        48
+    ):
+        first = _sample_enclosing_package_geometry(
+            rng,
+            base_scene.coils[
+                0
+            ].geometry,
+            config,
+            other_geometries=(
+                base_scene.coils[
+                    1
+                ].geometry,
+            ),
+        )
+        second = _sample_enclosing_package_geometry(
+            rng,
+            base_scene.coils[
+                1
+            ].geometry,
+            config,
+            other_geometries=(
+                base_scene.coils[
+                    0
+                ].geometry,
+            ),
+        )
+        if (
+            first.classify_conductor(
+                base_scene.coils[
+                    1
+                ].geometry,
+                longitudinal_segments=64,
+                section_points=16,
+                tolerance=1e-10,
+            )
+            != "outside"
+            or second.classify_conductor(
+                base_scene.coils[
+                    0
+                ].geometry,
+                longitudinal_segments=64,
+                section_points=16,
+                tolerance=1e-10,
+            )
+            != "outside"
+        ):
+            continue
+        probe_material = IsotropicMaterial(
+            relative_permittivity=1.0,
+        )
+        probes = (
+            PackageObject(
+                first,
+                probe_material,
+                "first",
+            ),
+            PackageObject(
+                second,
+                probe_material,
+                "second",
+            ),
+        )
+        try:
+            topology = package_domain_topology(
+                probes
+            )
+        except ValueError:
+            continue
+        if all(
+            parent is None
+            for parent in topology.parent
+        ):
+            return (
+                first,
+                second,
+            )
+    raise RuntimeError(
+        "failed to sample two disjoint package regions"
+    )
+
+
 def sample_hybrid_package_scene(
     rng: np.random.Generator,
     config: HybridSceneSamplerConfig | None = None,
@@ -1355,126 +1611,91 @@ def sample_hybrid_package_scene(
             ),
         )
 
-    root = base_scene.coils[
-        0
-    ].geometry
-    package_geometry = (
-        _sample_enclosing_package_geometry(
-            rng,
-            root,
-            config,
-            other_geometries=tuple(
-                coil.geometry
-                for coil
-                in base_scene.coils[
-                    1:
-                ]
+    package_lo, package_hi = (
+        config.package_count_range
+    )
+    package_count = int(
+        rng.integers(
+            int(
+                package_lo
             ),
+            int(
+                package_hi
+            )
+            + 1,
         )
     )
-    epsilon_r = _uniform(
-        rng,
-        config.relative_permittivity_range,
+    nested = (
+        package_count
+        > 1
+        and (
+            package_count
+            > 2
+            or rng.random()
+            < config.nested_package_probability
+        )
     )
-    if (
-        rng.random()
-        < config.lossless_probability
-    ):
-        conductivity = 0.0
-    else:
-        conductivity = _log_uniform(
-            rng,
-            config.dielectric_conductivity_range,
-        )
-    package_relative_permeability = _uniform(
-        rng,
-        config.package_relative_permeability_range,
-    )
-    package_model_draw = float(
-        rng.random()
-    )
-    if (
-        package_model_draw
-        < config.multi_debye_package_probability
-    ):
-        package_material = _sample_multi_debye_material(
-            rng,
-            epsilon_infinite_range=(
-                config.package_debye_epsilon_infinite_range
-            ),
-            delta_epsilon_range=(
-                config.package_debye_delta_epsilon_range
-            ),
-            relaxation_time_range=(
-                config.package_debye_relaxation_time_range
-            ),
-            pole_count_range=(
-                config.multi_debye_poles_range
-            ),
-            conductivity=(
-                conductivity
-            ),
-            relative_permeability=(
-                package_relative_permeability
-            ),
-        )
-    elif (
-        package_model_draw
-        < (
-            config.multi_debye_package_probability
-            + config.debye_package_probability
-        )
-    ):
-        epsilon_infinite = _uniform(
-            rng,
-            config.package_debye_epsilon_infinite_range,
-        )
-        delta_epsilon = _uniform(
-            rng,
-            config.package_debye_delta_epsilon_range,
-        )
-        package_material = DebyeMaterial(
-            relative_permittivity_static=(
-                epsilon_infinite
-                + delta_epsilon
-            ),
-            relative_permittivity_infinite=(
-                epsilon_infinite
-            ),
-            relaxation_time=_log_uniform(
+    if package_count == 1:
+        geometries = (
+            _sample_enclosing_package_geometry(
                 rng,
-                config.package_debye_relaxation_time_range,
+                base_scene.coils[
+                    0
+                ].geometry,
+                config,
+                other_geometries=tuple(
+                    coil.geometry
+                    for coil
+                    in base_scene.coils[
+                        1:
+                    ]
+                ),
             ),
-            relative_permeability=(
-                package_relative_permeability
-            ),
-            conductivity=(
-                conductivity
-            ),
+        )
+    elif nested:
+        geometries = _nested_package_geometries(
+            rng,
+            base_scene,
+            config,
+            package_count,
         )
     else:
-        package_material = IsotropicMaterial(
-            relative_permittivity=(
-                epsilon_r
+        try:
+            geometries = (
+                _disjoint_two_package_geometries(
+                    rng,
+                    base_scene,
+                    config,
+                )
+            )
+        except RuntimeError:
+            geometries = _nested_package_geometries(
+                rng,
+                base_scene,
+                config,
+                package_count,
+            )
+
+    packages = tuple(
+        PackageObject(
+            geometry,
+            _sample_package_material(
+                rng,
+                config,
             ),
-            relative_permeability=(
-                package_relative_permeability
-            ),
-            conductivity=(
-                conductivity
-            ),
+            f"package{index}",
         )
-    package = PackageObject(
-        package_geometry,
-        package_material,
-        "package",
+        for index, geometry in enumerate(
+            geometries
+        )
+    )
+    package_domain_topology(
+        packages
     )
     scene = Scene(
         base_scene.coils,
         background,
-        (
-            package,
-        ),
+        packages,
     )
     return (
         scene,
