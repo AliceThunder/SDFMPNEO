@@ -898,6 +898,10 @@ class DielectricCoupledReferenceArtifact:
         config: MQSConfig | None = None,
         surface_vertical_order: int = 16,
         surface_azimuthal_order: int = 32,
+        magnetic_volume_axial_order: int = 8,
+        magnetic_volume_radial_order: int = 6,
+        magnetic_volume_azimuthal_order: int = 24,
+        maximum_raw_magnetic_reciprocity_defect: float = 0.08,
     ):
         self.config = (
             config
@@ -908,6 +912,18 @@ class DielectricCoupledReferenceArtifact:
         )
         self.surface_azimuthal_order = int(
             surface_azimuthal_order
+        )
+        self.magnetic_volume_axial_order = int(
+            magnetic_volume_axial_order
+        )
+        self.magnetic_volume_radial_order = int(
+            magnetic_volume_radial_order
+        )
+        self.magnetic_volume_azimuthal_order = int(
+            magnetic_volume_azimuthal_order
+        )
+        self.maximum_raw_magnetic_reciprocity_defect = float(
+            maximum_raw_magnetic_reciprocity_defect
         )
 
     def solve(
@@ -925,6 +941,18 @@ class DielectricCoupledReferenceArtifact:
                 ),
                 surface_azimuthal_order=(
                     self.surface_azimuthal_order
+                ),
+                magnetic_volume_axial_order=(
+                    self.magnetic_volume_axial_order
+                ),
+                magnetic_volume_radial_order=(
+                    self.magnetic_volume_radial_order
+                ),
+                magnetic_volume_azimuthal_order=(
+                    self.magnetic_volume_azimuthal_order
+                ),
+                maximum_raw_magnetic_reciprocity_defect=(
+                    self.maximum_raw_magnetic_reciprocity_defect
                 ),
             ).solve()
         )
@@ -968,6 +996,18 @@ class DielectricCoupledReferenceArtifact:
                 ),
                 surface_azimuthal_order=(
                     self.surface_azimuthal_order
+                ),
+                magnetic_volume_axial_order=(
+                    volume_axial_order
+                ),
+                magnetic_volume_radial_order=(
+                    volume_radial_order
+                ),
+                magnetic_volume_azimuthal_order=(
+                    volume_azimuthal_order
+                ),
+                maximum_raw_magnetic_reciprocity_defect=(
+                    self.maximum_raw_magnetic_reciprocity_defect
                 ),
             )
         )
