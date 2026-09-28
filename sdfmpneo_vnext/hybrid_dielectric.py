@@ -239,9 +239,12 @@ class DielectricCoupledMixedTeacher:
         n = len(
             positions
         )
-        region = np.full(
-            n,
-            -1,
+        region = np.asarray(
+            self.surface_solver.topology.deepest_containing(
+                self.scene.packages,
+                positions,
+                tolerance=2e-12,
+            ),
             dtype=int,
         )
         permittivity = np.full(
@@ -252,36 +255,15 @@ class DielectricCoupledMixedTeacher:
         for package_index, package in enumerate(
             self.scene.packages
         ):
-            inside = np.asarray(
-                package.geometry.contains(
-                    positions,
-                    tolerance=2e-12,
-                ),
-                dtype=bool,
-            )
-            overlap = (
-                inside
-                & (
-                    region
-                    >= 0
-                )
+            mask = (
+                region
+                == package_index
             )
             if np.any(
-                overlap
+                mask
             ):
-                raise NotImplementedError(
-                    "nested/overlapping dielectric packages containing the "
-                    "same conductor charge node are not supported by the first "
-                    "multi-domain SIE backend"
-                )
-            if np.any(
-                inside
-            ):
-                region[
-                    inside
-                ] = package_index
                 permittivity[
-                    inside
+                    mask
                 ] = (
                     package.material.complex_permittivity(
                         self.frequency_hz
