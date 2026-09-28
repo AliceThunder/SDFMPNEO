@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.linalg import solve
 
+from .hybrid_domain import package_domain_topology
 from .scene import (
     PackageObject,
     PassiveIsotropicMaterial,
@@ -289,6 +290,34 @@ class DielectricSurfaceSolver:
                 self.frequency_hz,
             )
         )
+        self.topology = package_domain_topology(
+            self.packages
+        )
+        exterior = []
+        for package_index in range(
+            len(
+                self.packages
+            )
+        ):
+            parent = self.topology.parent[
+                package_index
+            ]
+            if parent is None:
+                value = self.background_permittivity
+            else:
+                value = self.packages[
+                    parent
+                ].material.complex_permittivity(
+                    self.frequency_hz
+                )
+            exterior.append(
+                complex(
+                    value
+                )
+            )
+        self.exterior_permittivity = tuple(
+            exterior
+        )
         self._build_geometry()
 
     def _build_geometry(
@@ -421,7 +450,9 @@ class DielectricSurfaceSolver:
                 )
             )
             epsilon_outside = (
-                self.background_permittivity
+                self.exterior_permittivity[
+                    package_index
+                ]
             )
             contrast = (
                 epsilon_inside
@@ -516,9 +547,14 @@ class DielectricSurfaceSolver:
                     self.frequency_hz
                 )
             )
+            epsilon_outside = (
+                self.exterior_permittivity[
+                    package_index
+                ]
+            )
             contrast = (
                 epsilon_inside
-                - self.background_permittivity
+                - epsilon_outside
             )
             if abs(
                 contrast
@@ -529,7 +565,7 @@ class DielectricSurfaceSolver:
                         epsilon_inside
                     ),
                     abs(
-                        self.background_permittivity
+                        epsilon_outside
                     ),
                     1e-30,
                 )
