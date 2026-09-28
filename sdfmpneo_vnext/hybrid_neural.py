@@ -1862,7 +1862,7 @@ class HybridNeuralResidualArtifact:
         torch.save(
             {
                 "schema": (
-                    HYBRID_ARTIFACT_SCHEMA
+                    self.artifact_schema
                 ),
                 "model_config": {
                     "coil_dim": (
