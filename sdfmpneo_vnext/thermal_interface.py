@@ -1386,7 +1386,7 @@ class PreparedThermalInterfaceField:
 
 
 class PreparedMultiThermalInterfaceField:
-    """Mesh-free transient transmission through disjoint package interfaces."""
+    """Mesh-free transient transmission through disjoint or nested interfaces."""
 
     def __init__(
         self,
@@ -1517,49 +1517,126 @@ class PreparedMultiThermalInterfaceField:
             )
             start += count
 
-        for left in range(
-            len(
-                regions
-            )
+        geometries = tuple(
+            region[
+                "geometry"
+            ]
+            for region in regions
+        )
+        self.topology = package_domain_topology(
+            geometries
+        )
+        children = [
+            []
+            for _ in regions
+        ]
+        for index, parent in enumerate(
+            self.topology.parent
         ):
-            for right in range(
-                left
-                + 1,
-                len(
-                    regions
-                ),
-            ):
-                a = regions[
-                    left
+            if parent is not None:
+                children[
+                    parent
+                ].append(
+                    index
+                )
+        for index, region in enumerate(
+            regions
+        ):
+            parent = self.topology.parent[
+                index
+            ]
+            region[
+                "parent"
+            ] = parent
+            region[
+                "children"
+            ] = tuple(
+                children[
+                    index
                 ]
-                b = regions[
-                    right
+            )
+            region[
+                "outside_medium"
+            ] = (
+                self.background_medium
+                if parent is None
+                else regions[
+                    parent
+                ][
+                    "medium"
                 ]
-                if (
-                    np.any(
-                        a[
-                            "geometry"
-                        ].contains(
-                            b[
-                                "positions"
-                            ],
-                            tolerance=1e-12,
-                        )
-                    )
-                    or np.any(
-                        b[
-                            "geometry"
-                        ].contains(
-                            a[
-                                "positions"
-                            ],
-                            tolerance=1e-12,
-                        )
-                    )
+            )
+            if parent is not None:
+                parent_geometry = regions[
+                    parent
+                ][
+                    "geometry"
+                ]
+                offset = float(
+                    region[
+                        "offset"
+                    ]
+                )
+                for _ in range(
+                    12
                 ):
-                    raise NotImplementedError(
-                        "overlapping or nested thermal package interfaces "
-                        "are not supported"
+                    exterior_mfs = (
+                        region[
+                            "positions"
+                        ]
+                        - offset
+                        * region[
+                            "normals"
+                        ]
+                    )
+                    interior_mfs = (
+                        region[
+                            "positions"
+                        ]
+                        + offset
+                        * region[
+                            "normals"
+                        ]
+                    )
+                    if (
+                        np.all(
+                            region[
+                                "geometry"
+                            ].contains(
+                                exterior_mfs,
+                                tolerance=1e-12,
+                            )
+                        )
+                        and not np.any(
+                            region[
+                                "geometry"
+                            ].contains(
+                                interior_mfs,
+                                tolerance=1e-12,
+                            )
+                        )
+                        and np.all(
+                            parent_geometry.contains(
+                                interior_mfs,
+                                tolerance=1e-12,
+                            )
+                        )
+                    ):
+                        region[
+                            "exterior_mfs"
+                        ] = exterior_mfs
+                        region[
+                            "interior_mfs"
+                        ] = interior_mfs
+                        region[
+                            "offset"
+                        ] = offset
+                        break
+                    offset *= 0.5
+                else:
+                    raise RuntimeError(
+                        "failed to place nested thermal MFS sources inside "
+                        "the parent material shell"
                     )
 
         self.regions = tuple(
@@ -1592,38 +1669,19 @@ class PreparedMultiThermalInterfaceField:
             ],
             axis=0,
         )
-        self.source_region = np.full(
-            len(
-                source.positions
+        self.source_region = np.asarray(
+            self.topology.deepest_containing(
+                tuple(
+                    region[
+                        "geometry"
+                    ]
+                    for region in self.regions
+                ),
+                source.positions,
+                tolerance=1e-12,
             ),
-            -1,
             dtype=int,
         )
-        for region_index, region in enumerate(
-            self.regions
-        ):
-            inside = np.asarray(
-                region[
-                    "geometry"
-                ].contains(
-                    source.positions,
-                    tolerance=1e-12,
-                ),
-                dtype=bool,
-            )
-            if np.any(
-                inside
-                & (
-                    self.source_region
-                    >= 0
-                )
-            ):
-                raise ValueError(
-                    "thermal source belongs to overlapping package regions"
-                )
-            self.source_region[
-                inside
-            ] = region_index
 
         self.source_strength = (
             source.volume_weights[
