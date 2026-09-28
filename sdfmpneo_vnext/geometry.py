@@ -61,6 +61,104 @@ class RigidPose:
 
 
 @dataclass(frozen=True)
+class ConductorSurfaceQuadrature:
+    positions: np.ndarray
+    normals: np.ndarray
+    weights: np.ndarray
+
+    def __post_init__(
+        self,
+    ):
+        positions = np.asarray(
+            self.positions,
+            dtype=float,
+        )
+        normals = np.asarray(
+            self.normals,
+            dtype=float,
+        )
+        weights = np.asarray(
+            self.weights,
+            dtype=float,
+        )
+        n = len(
+            weights
+        )
+        if (
+            positions.shape != (
+                n,
+                3,
+            )
+            or normals.shape != (
+                n,
+                3,
+            )
+            or np.any(
+                ~np.isfinite(
+                    positions
+                )
+            )
+            or np.any(
+                ~np.isfinite(
+                    normals
+                )
+            )
+            or np.any(
+                ~np.isfinite(
+                    weights
+                )
+            )
+            or np.any(
+                weights
+                <= 0.0
+            )
+        ):
+            raise ValueError(
+                "conductor surface quadrature arrays are invalid"
+            )
+        norm = np.linalg.norm(
+            normals,
+            axis=1,
+        )
+        if np.any(
+            norm
+            <= 1e-14
+        ):
+            raise ValueError(
+                "conductor surface normals must be nonzero"
+            )
+        object.__setattr__(
+            self,
+            "positions",
+            positions,
+        )
+        object.__setattr__(
+            self,
+            "normals",
+            normals
+            / norm[
+                :,
+                None,
+            ],
+        )
+        object.__setattr__(
+            self,
+            "weights",
+            weights,
+        )
+
+    @property
+    def area(
+        self,
+    ) -> float:
+        return float(
+            np.sum(
+                self.weights
+            )
+        )
+
+
+@dataclass(frozen=True)
 class SuperellipseSpiral:
     outer_a: float
     outer_b: float
@@ -298,6 +396,395 @@ class SuperellipseSpiral:
                 *ends,
             ),
             axis=0,
+        )
+
+    def surface_quadrature(
+        self,
+        longitudinal_segments: int = 96,
+        section_points: int = 24,
+        end_radial_order: int = 4,
+    ) -> ConductorSurfaceQuadrature:
+        """Closed object-local quadrature for the finite conductor boundary."""
+        if longitudinal_segments < 2:
+            raise ValueError(
+                "longitudinal_segments must be >= 2"
+            )
+        if section_points < 8:
+            raise ValueError(
+                "section_points must be >= 8"
+            )
+        if end_radial_order < 2:
+            raise ValueError(
+                "end_radial_order must be >= 2"
+            )
+
+        segments = max(
+            int(
+                longitudinal_segments
+            ),
+            int(
+                np.ceil(
+                    48.0
+                    * self.turns
+                )
+            ),
+            24,
+        )
+        polyline = self.polyline(
+            segments
+        )
+        theta = (
+            np.arange(
+                int(
+                    section_points
+                ),
+                dtype=float,
+            )
+            + 0.5
+        ) * (
+            2.0
+            * np.pi
+            / int(
+                section_points
+            )
+        )
+        dtheta = (
+            2.0
+            * np.pi
+            / int(
+                section_points
+            )
+        )
+        exponent = (
+            2.0
+            / float(
+                self.cross_section_exponent
+            )
+        )
+        cosine = np.cos(
+            theta
+        )
+        sine = np.sin(
+            theta
+        )
+        a = (
+            0.5
+            * self.conductor_width
+        )
+        b = (
+            0.5
+            * self.conductor_thickness
+        )
+        section_x = (
+            a
+            * np.sign(
+                cosine
+            )
+            * np.abs(
+                cosine
+            ) ** exponent
+        )
+        section_y = (
+            b
+            * np.sign(
+                sine
+            )
+            * np.abs(
+                sine
+            ) ** exponent
+        )
+        derivative_x = (
+            -a
+            * exponent
+            * np.abs(
+                cosine
+            ) ** (
+                exponent
+                - 1.0
+            )
+            * sine
+        )
+        derivative_y = (
+            b
+            * exponent
+            * np.abs(
+                sine
+            ) ** (
+                exponent
+                - 1.0
+            )
+            * cosine
+        )
+        boundary_speed = np.sqrt(
+            derivative_x**2
+            + derivative_y**2
+        )
+        if np.any(
+            ~np.isfinite(
+                boundary_speed
+            )
+        ) or np.any(
+            boundary_speed
+            <= 0.0
+        ):
+            raise RuntimeError(
+                "failed to construct finite superellipse boundary Jacobian"
+            )
+
+        side_positions = (
+            polyline.midpoints[
+                :,
+                None,
+                :
+            ]
+            + section_x[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal1[
+                :,
+                None,
+                :
+            ]
+            + section_y[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal2[
+                :,
+                None,
+                :
+            ]
+        )
+        side_normal_raw = (
+            derivative_y[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal1[
+                :,
+                None,
+                :
+            ]
+            - derivative_x[
+                None,
+                :,
+                None,
+            ]
+            * polyline.normal2[
+                :,
+                None,
+                :
+            ]
+        )
+        side_normals = (
+            side_normal_raw
+            / boundary_speed[
+                None,
+                :,
+                None,
+            ]
+        )
+        side_weights = (
+            polyline.lengths[
+                :,
+                None,
+            ]
+            * boundary_speed[
+                None,
+                :
+            ]
+            * dtheta
+        )
+
+        radial_raw, radial_weight_raw = (
+            np.polynomial.legendre.leggauss(
+                int(
+                    end_radial_order
+                )
+            )
+        )
+        radial = (
+            0.5
+            * (
+                radial_raw
+                + 1.0
+            )
+        )
+        radial_weights = (
+            0.5
+            * radial_weight_raw
+        )
+        boundary_jacobian = np.abs(
+            section_x
+            * derivative_y
+            - section_y
+            * derivative_x
+        )
+
+        cap_positions = []
+        cap_normals = []
+        cap_weights = []
+        for (
+            endpoint,
+            n1,
+            n2,
+            tangent,
+            sign,
+        ) in (
+            (
+                polyline.points[
+                    0
+                ],
+                polyline.normal1[
+                    0
+                ],
+                polyline.normal2[
+                    0
+                ],
+                polyline.tangents[
+                    0
+                ],
+                -1.0,
+            ),
+            (
+                polyline.points[
+                    -1
+                ],
+                polyline.normal1[
+                    -1
+                ],
+                polyline.normal2[
+                    -1
+                ],
+                polyline.tangents[
+                    -1
+                ],
+                1.0,
+            ),
+        ):
+            rr, tt = np.meshgrid(
+                radial,
+                np.arange(
+                    int(
+                        section_points
+                    )
+                ),
+                indexing="ij",
+            )
+            x = (
+                rr
+                * section_x[
+                    tt
+                ]
+            )
+            y = (
+                rr
+                * section_y[
+                    tt
+                ]
+            )
+            position = (
+                endpoint[
+                    None,
+                    None,
+                    :
+                ]
+                + x[
+                    :,
+                    :,
+                    None,
+                ]
+                * n1[
+                    None,
+                    None,
+                    :
+                ]
+                + y[
+                    :,
+                    :,
+                    None,
+                ]
+                * n2[
+                    None,
+                    None,
+                    :
+                ]
+            )
+            weight = (
+                radial_weights[
+                    :,
+                    None,
+                ]
+                * rr
+                * boundary_jacobian[
+                    None,
+                    :
+                ]
+                * dtheta
+            )
+            cap_positions.append(
+                position.reshape(
+                    -1,
+                    3,
+                )
+            )
+            cap_normals.append(
+                np.repeat(
+                    (
+                        sign
+                        * tangent
+                    )[
+                        None,
+                        :
+                    ],
+                    position.shape[
+                        0
+                    ]
+                    * position.shape[
+                        1
+                    ],
+                    axis=0,
+                )
+            )
+            cap_weights.append(
+                weight.reshape(
+                    -1
+                )
+            )
+
+        return ConductorSurfaceQuadrature(
+            np.concatenate(
+                (
+                    side_positions.reshape(
+                        -1,
+                        3,
+                    ),
+                    *cap_positions,
+                ),
+                axis=0,
+            ),
+            np.concatenate(
+                (
+                    side_normals.reshape(
+                        -1,
+                        3,
+                    ),
+                    *cap_normals,
+                ),
+                axis=0,
+            ),
+            np.concatenate(
+                (
+                    side_weights.reshape(
+                        -1
+                    ),
+                    *cap_weights,
+                )
+            ),
         )
 
     def transformed(self, pose: RigidPose) -> "SuperellipseSpiral":
