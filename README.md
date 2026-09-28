@@ -264,11 +264,11 @@ The current vNext code intentionally fails closed outside implemented physics:
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
   corrections without a global world mesh;
-- exact DC is supported for electrostatic scenes and for conductive
-  background/package regions through the static-conduction transmission
-  formulation; a conductor fully enclosed by a zero-conductivity region while
-  other DC conduction paths are active still requires the coupled
-  electrostatic-charge/conduction-current formulation and fails closed;
+- exact DC is supported for electrostatic scenes and for mixed conductive /
+  insulating material regions through a partial environment-current
+  formulation: exposed conductors participate in the static-conduction
+  transmission problem while conductors fully enclosed by insulating package
+  regions remain galvanically isolated;
 - FAST port/spatial inference requires artifacts trained for the corresponding
   declared geometry and material domains; package/conductor surface
   intersections are rejected;
