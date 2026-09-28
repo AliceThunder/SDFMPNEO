@@ -444,9 +444,243 @@ class DebyeMaterial:
 
 
 @dataclass(frozen=True)
+class MultiDebyeMaterial:
+    """Passive isotropic multi-pole Debye dielectric.
+
+    Positive relaxation strengths approximate a broad causal dielectric
+    spectrum while preserving passivity under the e^{+j omega t} convention.
+    """
+
+    relative_permittivity_infinite: float
+    relaxation_strengths: tuple[float, ...]
+    relaxation_times: tuple[float, ...]
+    relative_permeability: float = 1.0
+    conductivity: float = 0.0
+    thermal_conductivity: float | None = None
+    density: float | None = None
+    heat_capacity: float | None = None
+
+    def __post_init__(
+        self,
+    ):
+        strengths = tuple(
+            float(
+                value
+            )
+            for value
+            in self.relaxation_strengths
+        )
+        times = tuple(
+            float(
+                value
+            )
+            for value
+            in self.relaxation_times
+        )
+        if (
+            not np.isfinite(
+                self.relative_permittivity_infinite
+            )
+            or self.relative_permittivity_infinite
+            <= 0.0
+            or not strengths
+            or len(
+                strengths
+            )
+            != len(
+                times
+            )
+            or any(
+                not np.isfinite(
+                    value
+                )
+                or value < 0.0
+                for value
+                in strengths
+            )
+            or any(
+                not np.isfinite(
+                    value
+                )
+                or value <= 0.0
+                for value
+                in times
+            )
+            or not np.isfinite(
+                self.relative_permeability
+            )
+            or self.relative_permeability
+            <= 0.0
+            or not np.isfinite(
+                self.conductivity
+            )
+            or self.conductivity
+            < 0.0
+        ):
+            raise ValueError(
+                "invalid passive multi-Debye material parameters"
+            )
+        thermal = (
+            self.thermal_conductivity,
+            self.density,
+            self.heat_capacity,
+        )
+        if any(
+            value is not None
+            for value in thermal
+        ):
+            if not all(
+                value is not None
+                and np.isfinite(
+                    value
+                )
+                and value > 0.0
+                for value in thermal
+            ):
+                raise ValueError(
+                    "thermal_conductivity, density, and heat_capacity "
+                    "must be supplied together as positive finite values"
+                )
+        object.__setattr__(
+            self,
+            "relaxation_strengths",
+            strengths,
+        )
+        object.__setattr__(
+            self,
+            "relaxation_times",
+            times,
+        )
+
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        return (
+            MU0
+            * self.relative_permeability
+        )
+
+    @property
+    def relative_permittivity(
+        self,
+    ) -> float:
+        return float(
+            self.relative_permittivity_infinite
+            + sum(
+                self.relaxation_strengths
+            )
+        )
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        return (
+            self.complex_permittivity(
+                frequency_hz
+            )
+            / EPS0
+        )
+
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        if (
+            not np.isfinite(
+                frequency_hz
+            )
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if frequency_hz == 0.0:
+            if self.conductivity > 0.0:
+                raise ValueError(
+                    "conductive multi-Debye material has no finite "
+                    "complex-permittivity representation at DC"
+                )
+            return complex(
+                EPS0
+                * self.relative_permittivity
+            )
+        omega = (
+            2.0
+            * np.pi
+            * float(
+                frequency_hz
+            )
+        )
+        relative = complex(
+            self.relative_permittivity_infinite
+        )
+        for strength, tau in zip(
+            self.relaxation_strengths,
+            self.relaxation_times,
+        ):
+            relative += (
+                strength
+                / (
+                    1.0
+                    + 1j
+                    * omega
+                    * tau
+                )
+            )
+        return complex(
+            EPS0
+            * relative
+            - 1j
+            * self.conductivity
+            / omega
+        )
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        if (
+            not np.isfinite(
+                frequency_hz
+            )
+            or frequency_hz < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if frequency_hz == 0.0:
+            return float(
+                self.conductivity
+            )
+        omega = (
+            2.0
+            * np.pi
+            * float(
+                frequency_hz
+            )
+        )
+        epsilon = self.complex_permittivity(
+            frequency_hz
+        )
+        return float(
+            max(
+                -omega
+                * float(
+                    np.imag(
+                        epsilon
+                    )
+                ),
+                0.0,
+            )
+        )
+
+
+@dataclass(frozen=True)
 class PackageObject:
     geometry: SuperquadricPackageGeometry
-    material: IsotropicMaterial | DebyeMaterial
+    material: IsotropicMaterial | DebyeMaterial | MultiDebyeMaterial
     name: str = "package"
 
     def __post_init__(self):
@@ -462,6 +696,7 @@ class PackageObject:
             (
                 IsotropicMaterial,
                 DebyeMaterial,
+                MultiDebyeMaterial,
             ),
         ):
             raise TypeError(
@@ -479,7 +714,7 @@ class CoilObject:
 @dataclass(frozen=True)
 class Scene:
     coils: Tuple[CoilObject, ...]
-    medium: HomogeneousMedium | IsotropicMaterial | DebyeMaterial = HomogeneousMedium()
+    medium: HomogeneousMedium | IsotropicMaterial | DebyeMaterial | MultiDebyeMaterial = HomogeneousMedium()
     packages: Tuple[PackageObject, ...] = ()
 
     def __post_init__(self):
@@ -503,6 +738,7 @@ class Scene:
                 HomogeneousMedium,
                 IsotropicMaterial,
                 DebyeMaterial,
+                MultiDebyeMaterial,
             ),
         ):
             raise TypeError(
