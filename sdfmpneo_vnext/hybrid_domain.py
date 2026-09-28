@@ -335,13 +335,42 @@ def validate_hybrid_geometry_domain(
             longitudinal_segments=96,
             section_points=20,
         )
-        if not np.all(
-            package.contains(
-                conductor_surface,
-                tolerance=1e-10,
-            )
+        implicit = np.asarray(
+            package.implicit(
+                conductor_surface
+            ),
+            dtype=float,
+        )
+        if np.any(
+            implicit
+            > 1e-10
         ):
             raise ValueError(
                 "package does not enclose the finite primary conductor as "
                 "required by the hybrid artifact geometry domain"
+            )
+        enclosure_radius = float(
+            np.max(
+                np.maximum(
+                    implicit
+                    + 1.0,
+                    0.0,
+                ) ** (
+                    1.0
+                    / float(
+                        package.exponent_z
+                    )
+                )
+            )
+        )
+        if not _within(
+            enclosure_radius,
+            _declared_range(
+                package_domain,
+                "enclosure_radius_range",
+            ),
+        ):
+            raise ValueError(
+                "package enclosure scale is outside the hybrid artifact "
+                "geometry domain"
             )
