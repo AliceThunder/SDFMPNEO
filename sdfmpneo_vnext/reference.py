@@ -299,11 +299,35 @@ class PreparedReferenceLossField:
         positions, radii = (
             self._charge_geometry()
         )
-        epsilon = (
-            self.scene.medium.complex_permittivity(
-                self.frequency_hz
-            )
+        environment_current = (
+            self.result.node_environment_current
         )
+        if environment_current is None:
+            kernel_material = (
+                self.scene.medium.complex_permittivity(
+                    self.frequency_hz
+                )
+            )
+            source_state = (
+                self.result.node_charge
+            )
+        else:
+            conductivity = float(
+                self.scene.medium.loss_conductivity(
+                    0.0
+                )
+            )
+            if conductivity <= 0.0:
+                raise RuntimeError(
+                    "DC environment-current state requires positive "
+                    "background conductivity"
+                )
+            kernel_material = complex(
+                conductivity
+            )
+            source_state = (
+                environment_current
+            )
         difference = (
             points[
                 :,
@@ -336,7 +360,7 @@ class PreparedReferenceLossField:
             / (
                 4.0
                 * np.pi
-                * epsilon
+                * kernel_material
                 * distance2[
                     :,
                     :,
@@ -347,7 +371,7 @@ class PreparedReferenceLossField:
         transfer = np.einsum(
             "qjd,jp->qdp",
             kernel,
-            self.result.node_charge,
+            source_state,
         )
         return (
             transfer[
