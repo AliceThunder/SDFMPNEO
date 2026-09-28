@@ -1762,3 +1762,88 @@ def test_constant_graded_profile_reduces_to_single_uniform_package():
         layered_result.power_closure_error
         < 8e-6
     )
+
+
+def test_graded_package_callable_accepts_dispersive_material_responses():
+    coil = _coil()
+    outer = _package(
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        )
+    ).geometry
+
+    def profile(radius):
+        return DebyeMaterial(
+            relative_permittivity_static=(
+                4.0
+                + 8.0
+                * radius
+            ),
+            relative_permittivity_infinite=(
+                2.0
+                + radius
+            ),
+            relaxation_time=(
+                1.0e-6
+                * (
+                    1.0
+                    + radius
+                )
+            ),
+            conductivity=(
+                2.0e-4
+                * radius
+            ),
+        )
+
+    layers = compile_graded_superquadric_regions(
+        outer,
+        profile,
+        shell_count=4,
+        enclosed_coils=(
+            coil,
+        ),
+    )
+    assert all(
+        isinstance(
+            layer.material,
+            DebyeMaterial,
+        )
+        for layer in layers
+    )
+    frequency = 120_000.0
+    epsilon = np.asarray(
+        [
+            np.real(
+                layer.material.relative_permittivity_at(
+                    frequency
+                )
+            )
+            for layer in layers
+        ],
+        dtype=float,
+    )
+    loss = np.asarray(
+        [
+            layer.material.loss_conductivity(
+                frequency
+            )
+            for layer in layers
+        ],
+        dtype=float,
+    )
+    assert np.all(
+        np.isfinite(
+            epsilon
+        )
+    )
+    assert np.all(
+        loss
+        >= 0.0
+    )
+    assert (
+        np.ptp(
+            epsilon
+        )
+        > 0.0
+    )
