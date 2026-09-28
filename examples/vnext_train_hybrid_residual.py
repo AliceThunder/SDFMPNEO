@@ -112,6 +112,12 @@ def main():
     background_permittivity_domain = (
         dataset.background_permittivity_domain
     )
+    package_permittivity_domain = (
+        dataset.package_permittivity_domain
+    )
+    package_loss_domain = (
+        dataset.package_loss_conductivity_domain
+    )
     if (
         lossy_present
         and background_domain
@@ -139,6 +145,12 @@ def main():
             ),
             background_permittivity_range=(
                 background_permittivity_domain
+            ),
+            package_permittivity_range=(
+                package_permittivity_domain
+            ),
+            package_loss_conductivity_range=(
+                package_loss_domain
             ),
             device=args.device,
         )
@@ -202,6 +214,12 @@ def main():
             ),
             "background_permittivity_domain": (
                 background_permittivity_domain
+            ),
+            "package_permittivity_domain": (
+                package_permittivity_domain
+            ),
+            "package_loss_conductivity_domain": (
+                package_loss_domain
             ),
             "artifact": str(
                 args.artifact
