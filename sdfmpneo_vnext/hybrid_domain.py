@@ -76,10 +76,87 @@ def _within(
     )
 
 
+def _enclosure_key(
+    root,
+    package,
+):
+    return (
+        float(
+            root.outer_a
+        ),
+        float(
+            root.outer_b
+        ),
+        float(
+            root.turns
+        ),
+        float(
+            root.pitch_a
+        ),
+        float(
+            root.pitch_b
+        ),
+        float(
+            root.exponent
+        ),
+        float(
+            root.conductor_width
+        ),
+        float(
+            root.conductor_thickness
+        ),
+        float(
+            root.cross_section_exponent
+        ),
+        tuple(
+            np.asarray(
+                root.pose.rotation,
+                dtype=float,
+            ).reshape(
+                -1
+            )
+        ),
+        tuple(
+            np.asarray(
+                root.pose.translation,
+                dtype=float,
+            )
+        ),
+        tuple(
+            np.asarray(
+                package.half_extents,
+                dtype=float,
+            )
+        ),
+        float(
+            package.exponent_xy
+        ),
+        float(
+            package.exponent_z
+        ),
+        tuple(
+            np.asarray(
+                package.pose.rotation,
+                dtype=float,
+            ).reshape(
+                -1
+            )
+        ),
+        tuple(
+            np.asarray(
+                package.pose.translation,
+                dtype=float,
+            )
+        ),
+    )
+
+
 def validate_hybrid_geometry_domain(
     scene: Scene,
     frequency_hz: float,
     domain,
+    *,
+    validated_enclosures=None,
 ) -> None:
     """Fail closed when a scene leaves the declared hybrid design domain."""
     if domain is None:
@@ -331,46 +408,60 @@ def validate_hybrid_geometry_domain(
                 "package thickness is outside the hybrid artifact geometry domain"
             )
 
-        conductor_surface = root.surface_samples(
-            longitudinal_segments=96,
-            section_points=20,
+        enclosure_key = _enclosure_key(
+            root,
+            package,
         )
-        implicit = np.asarray(
-            package.implicit(
-                conductor_surface
-            ),
-            dtype=float,
-        )
-        if np.any(
-            implicit
-            > 1e-10
+        if (
+            validated_enclosures
+            is None
+            or enclosure_key
+            not in validated_enclosures
         ):
-            raise ValueError(
-                "package does not enclose the finite primary conductor as "
-                "required by the hybrid artifact geometry domain"
+            conductor_surface = root.surface_samples(
+                longitudinal_segments=96,
+                section_points=20,
             )
-        enclosure_radius = float(
-            np.max(
-                np.maximum(
-                    implicit
-                    + 1.0,
-                    0.0,
-                ) ** (
-                    1.0
-                    / float(
-                        package.exponent_z
+            implicit = np.asarray(
+                package.implicit(
+                    conductor_surface
+                ),
+                dtype=float,
+            )
+            if np.any(
+                implicit
+                > 1e-10
+            ):
+                raise ValueError(
+                    "package does not enclose the finite primary conductor as "
+                    "required by the hybrid artifact geometry domain"
+                )
+            enclosure_radius = float(
+                np.max(
+                    np.maximum(
+                        implicit
+                        + 1.0,
+                        0.0,
+                    ) ** (
+                        1.0
+                        / float(
+                            package.exponent_z
+                        )
                     )
                 )
             )
-        )
-        if not _within(
-            enclosure_radius,
-            _declared_range(
-                package_domain,
-                "enclosure_radius_range",
-            ),
-        ):
-            raise ValueError(
-                "package enclosure scale is outside the hybrid artifact "
-                "geometry domain"
-            )
+            if not _within(
+                enclosure_radius,
+                _declared_range(
+                    package_domain,
+                    "enclosure_radius_range",
+                ),
+            ):
+                raise ValueError(
+                    "package enclosure scale is outside the hybrid artifact "
+                    "geometry domain"
+                )
+            if validated_enclosures is not None:
+                validated_enclosures.add(
+                    enclosure_key
+                )
