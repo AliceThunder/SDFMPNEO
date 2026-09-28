@@ -98,7 +98,9 @@ def main():
         )
 
     lossy_present = any(
-        sample.scene.medium.conductivity
+        sample.scene.medium.loss_conductivity(
+            sample.frequency_hz
+        )
         > 0.0
         for sample
         in train
