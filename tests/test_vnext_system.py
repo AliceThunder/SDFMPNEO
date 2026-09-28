@@ -7,6 +7,7 @@ from sdfmpneo_vnext import (
     ConductorMaterial,
     ThermalNodeProperties,
     HomogeneousMedium,
+    IsotropicMaterial,
     MeshfreeVNextSystem,
     MQSConfig,
     RigidPose,
@@ -90,7 +91,7 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     )
     assert (
         system.capabilities.background_medium
-        == "homogeneous_isotropic_unbounded_lossless_or_lossy_ac"
+        == "homogeneous_isotropic_unbounded_frequency_response"
     )
     assert system.capabilities.lossy_background_media
     assert not system.capabilities.heterogeneous_media
@@ -390,4 +391,64 @@ def test_lossy_background_reference_envelope_uses_explicit_environment_channel()
         np.isfinite(
             step.temperatures
         )
+    )
+
+
+def test_reference_continuous_thermal_field_uses_scene_background_thermal_properties():
+    base = _scene()
+    medium = IsotropicMaterial(
+        relative_permittivity=2.5,
+        relative_permeability=1.0,
+        conductivity=1.0e-4,
+        thermal_conductivity=0.55,
+        density=1030.0,
+        heat_capacity=3900.0,
+    )
+    scene = Scene(
+        base.coils,
+        medium,
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        ),
+        reference_config=_reference_config(),
+    )
+    thermal = system.reference_continuous_thermal_field(
+        scene,
+        20_000.0,
+        longitudinal_segments=6,
+        radial_order=3,
+        angular_order=12,
+        background_radial_order=6,
+        background_angular_order=16,
+    )
+    assert np.isclose(
+        thermal.medium.conductivity,
+        medium.thermal_conductivity,
+    )
+    assert np.isclose(
+        thermal.medium.density,
+        medium.density,
+    )
+    assert np.isclose(
+        thermal.medium.heat_capacity,
+        medium.heat_capacity,
+    )
+    currents = np.asarray(
+        [1.0 + 0.0j, -0.2 + 0.1j]
+    )
+    temperature = thermal.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.03]
+        ),
+        2.0,
+        currents,
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        >= thermal.medium.ambient_temperature
     )
