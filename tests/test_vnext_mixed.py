@@ -578,7 +578,16 @@ def test_custom_material_response_protocol_runs_mixed_reference():
         )
         > 0.0
     )
-    assert (
-        result.power_closure_error()
-        < 1e-5
+    assert np.allclose(
+        np.sum(
+            result.dissipation_channels(),
+            axis=0,
+        ),
+        0.5
+        * (
+            result.impedance
+            + result.impedance.conj().T
+        ),
+        rtol=6e-6,
+        atol=6e-8,
     )
