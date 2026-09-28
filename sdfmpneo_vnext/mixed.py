@@ -47,6 +47,7 @@ class MixedResult:
     segment_coils: np.ndarray
     mode_segments: np.ndarray
     background_dissipation_matrix: np.ndarray | None = None
+    node_environment_current: np.ndarray | None = None
 
     @property
     def n_ports(self) -> int:
@@ -264,13 +265,24 @@ class MixedResult:
     ) -> float:
         i = np.asarray(currents, dtype=complex)
         c = self.current_coefficients @ i
-        q = self.node_charge @ i
         rhs = self.port_injection @ i
-        r = (
-            self.divergence_matrix @ c
-            + 1j * omega * q
-            - rhs
-        )
+        if self.node_environment_current is None:
+            q = self.node_charge @ i
+            r = (
+                self.divergence_matrix @ c
+                + 1j * omega * q
+                - rhs
+            )
+        else:
+            environment_current = (
+                self.node_environment_current
+                @ i
+            )
+            r = (
+                self.divergence_matrix @ c
+                + environment_current
+                - rhs
+            )
         scale = max(
             float(np.linalg.norm(rhs)),
             1.0,
@@ -324,17 +336,6 @@ class DenseMixedConductorTeacher:
                 "DenseMixedConductorTeacher is the conductor/background "
                 "backend; package dielectric coupling uses the hybrid SIE backend"
             )
-        if (
-            self.frequency_hz == 0.0
-            and self.scene.medium.loss_conductivity(
-                0.0
-            ) > 0.0
-        ):
-            raise NotImplementedError(
-                "conductive homogeneous background at DC requires the static "
-                "conduction exterior problem"
-            )
-
         # The current/vector-potential block remains magnetoquasistatic.  For
         # a conductive dielectric background, loss enters the scalar-potential
         # Green operator through complex permittivity.  Do not let the MQS
@@ -539,6 +540,69 @@ class DenseMixedConductorTeacher:
             + Phi.T
         )
 
+    def _environment_current_potential_matrix(
+        self,
+        positions: np.ndarray,
+        radii: np.ndarray,
+    ):
+        conductivity = float(
+            self.scene.medium.loss_conductivity(
+                0.0
+            )
+        )
+        if conductivity <= 0.0:
+            raise ValueError(
+                "DC environment-current potential requires positive "
+                "background conductivity"
+            )
+        pref = 1.0 / (
+            4.0
+            * np.pi
+            * conductivity
+        )
+        diff = (
+            positions[:, None, :]
+            - positions[None, :, :]
+        )
+        dist = np.linalg.norm(
+            diff,
+            axis=2,
+        )
+        soft = (
+            self.charge_self_radius_factor
+            * np.sqrt(
+                radii[:, None]
+                * radii[None, :]
+            )
+        )
+        offdiag = ~np.eye(
+            len(dist),
+            dtype=bool,
+        )
+        if np.any(
+            dist[offdiag]
+            < 0.1 * soft[offdiag]
+        ):
+            raise ValueError(
+                "coincident/overlapping terminal or conduction nodes "
+                "require an explicit junction/contact model"
+            )
+        dist = dist.copy()
+        np.fill_diagonal(
+            dist,
+            np.diag(
+                soft
+            ),
+        )
+        potential = (
+            pref
+            / dist
+        )
+        return 0.5 * (
+            potential
+            + potential.T
+        )
+
     def local_current_transfer(
         self,
         result: MixedResult,
@@ -572,9 +636,22 @@ class DenseMixedConductorTeacher:
         D, Bp, Q, pos, radii = (
             self._topology(C)
         )
-        Phi = self._potential_matrix(
-            pos,
-            radii,
+        conductive_dc = (
+            self.frequency_hz == 0.0
+            and self.scene.medium.loss_conductivity(
+                0.0
+            ) > 0.0
+        )
+        Phi = (
+            self._environment_current_potential_matrix(
+                pos,
+                radii,
+            )
+            if conductive_dc
+            else self._potential_matrix(
+                pos,
+                radii,
+            )
         )
         return (
             R,
@@ -655,9 +732,21 @@ class DenseMixedConductorTeacher:
         m = A.shape[0]
         nr = Dr.shape[0]
 
+        conductive_dc = (
+            self.frequency_hz == 0.0
+            and self.scene.medium.loss_conductivity(
+                0.0
+            ) > 0.0
+        )
+        environment_factor = (
+            1.0 + 0.0j
+            if conductive_dc
+            else 1j * self.omega
+        )
+
         # Gauge-free mixed unknowns: modal current c, zero-mean scalar
-        # potential phi_r, and zero-net-charge q_r. Charge is never
-        # eliminated by dividing through j*omega.
+        # potential phi_r, and either zero-net-charge q_r (ordinary EQS)
+        # or zero-net environment-current source s_r (conductive DC).
         K = np.block(
             [
                 [
@@ -674,8 +763,7 @@ class DenseMixedConductorTeacher:
                         (nr, nr),
                         dtype=complex,
                     ),
-                    1j
-                    * self.omega
+                    environment_factor
                     * np.eye(
                         nr,
                         dtype=complex,
@@ -719,9 +807,30 @@ class DenseMixedConductorTeacher:
         )
         c = sol[:m]
         phi_r = sol[m : m + nr]
-        q_r = sol[m + nr :]
+        state_r = sol[m + nr :]
         phi = Q @ phi_r
-        q = Q @ q_r
+        if conductive_dc:
+            q = np.zeros(
+                (
+                    Q.shape[
+                        0
+                    ],
+                    state_r.shape[
+                        1
+                    ],
+                ),
+                dtype=complex,
+            )
+            environment_current = (
+                Q
+                @ state_r
+            )
+        else:
+            q = (
+                Q
+                @ state_r
+            )
+            environment_current = None
         Z = B.T @ phi
 
         residual = (
@@ -768,6 +877,7 @@ class DenseMixedConductorTeacher:
             segment_coils,
             mode_segments,
             None,
+            environment_current,
         )
 
         background = (
@@ -790,4 +900,5 @@ class DenseMixedConductorTeacher:
             segment_coils,
             mode_segments,
             background,
+            environment_current,
         )
