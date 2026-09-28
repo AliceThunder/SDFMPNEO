@@ -896,7 +896,7 @@ def test_hybrid_sampler_generates_passive_multi_debye_media():
     )
 
 
-def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose():
+def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose(tmp_path):
     config = HybridSceneSamplerConfig(
         package_center_offset_fraction_range=(
             0.24,
@@ -971,6 +971,17 @@ def test_hybrid_sampler_uses_arbitrary_3d_enclosing_package_pose():
 
     geometry_domain = (
         config.geometry_domain_metadata()
+    )
+    domain_dataset = ImmutableHybridTeacherDataset.create(
+        tmp_path
+        / "geometry-domain-round-trip",
+        domain_metadata={
+            "geometry": geometry_domain,
+        },
+    )
+    assert (
+        domain_dataset.geometry_domain
+        == geometry_domain
     )
     assert (
         geometry_domain[
