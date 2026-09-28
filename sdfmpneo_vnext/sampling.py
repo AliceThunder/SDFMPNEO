@@ -195,6 +195,8 @@ class HybridSceneSamplerConfig:
     package_center_offset_fraction_range: tuple[float, float] = (0.0, 0.35)
     package_exponent_xy_range: tuple[float, float] = (2.0, 5.0)
     package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
+    package_count_range: tuple[int, int] = (1, 1)
+    nested_package_probability: float = 0.0
     relative_permittivity_range: tuple[float, float] = (1.5, 6.0)
     package_relative_permeability_range: tuple[float, float] = (1.0, 1.0)
     dielectric_conductivity_range: tuple[float, float] = (1e-7, 5e-3)
@@ -310,6 +312,41 @@ class HybridSceneSamplerConfig:
             raise ValueError(
                 "lossless_probability must lie in [0,1]"
             )
+        package_lo, package_hi = (
+            self.package_count_range
+        )
+        if (
+            not isinstance(
+                package_lo,
+                (int, np.integer),
+            )
+            or not isinstance(
+                package_hi,
+                (int, np.integer),
+            )
+            or package_lo < 1
+            or package_hi < package_lo
+        ):
+            raise ValueError(
+                "package_count_range must be an integer range >= 1"
+            )
+        if not (
+            0.0
+            <= self.nested_package_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "nested_package_probability must lie in [0,1]"
+            )
+        if (
+            package_hi > 2
+            and self.nested_package_probability
+            < 1.0
+        ):
+            raise ValueError(
+                "package_count_range above two currently requires "
+                "nested_package_probability=1"
+            )
         if not (
             0.0
             <= self.debye_package_probability
@@ -410,7 +447,18 @@ class HybridSceneSamplerConfig:
         }
         return {
             "n_coils": 2,
-            "n_packages": 1,
+            "n_packages_range": [
+                int(
+                    self.package_count_range[
+                        0
+                    ]
+                ),
+                int(
+                    self.package_count_range[
+                        1
+                    ]
+                ),
+            ],
             "conductor": conductor,
             "coil_relative_pose": {
                 "translation_direction": (
@@ -438,6 +486,12 @@ class HybridSceneSamplerConfig:
                 ),
                 "relative_rotation": (
                     "haar_so3"
+                ),
+                "nested_package_probability": float(
+                    self.nested_package_probability
+                ),
+                "nested_topology": (
+                    "strict_chain_or_disjoint_roots"
                 ),
                 "enclosure_target_radius": (
                     0.90
