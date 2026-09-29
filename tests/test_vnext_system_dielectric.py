@@ -704,12 +704,29 @@ class _PublicSpatialProxy:
 
     def local_dissipation_matrices(
         self,
-        *args,
-        **kwargs,
+        coil_indices,
+        arc_fractions,
+        xy_points,
     ):
-        return self._base.local_dissipation_matrices(
-            *args,
-            **kwargs,
+        return np.asarray(
+            [
+                self._base.local_dissipation_matrix(
+                    int(
+                        coil
+                    ),
+                    float(
+                        arc
+                    ),
+                    xy,
+                )
+                for coil, arc, xy
+                in zip(
+                    coil_indices,
+                    arc_fractions,
+                    xy_points,
+                )
+            ],
+            dtype=complex,
         )
 
     def package_dissipation_matrices(
