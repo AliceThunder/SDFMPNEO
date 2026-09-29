@@ -937,63 +937,64 @@ def build_thermal_source_quadrature(
                 )
             )
 
-        positions = np.concatenate(
-            (
-                positions,
-                np.concatenate(
-                    extra_positions,
-                    axis=0,
+        if extra_positions:
+            positions = np.concatenate(
+                (
+                    positions,
+                    np.concatenate(
+                        extra_positions,
+                        axis=0,
+                    ),
                 ),
-            ),
-            axis=0,
-        )
-        weights = np.concatenate(
-            (
-                weights,
-                np.concatenate(
-                    extra_weights
-                ),
+                axis=0,
             )
-        )
-        channel_ids = np.concatenate(
-            (
-                channel_ids,
-                np.concatenate(
-                    extra_ids
-                ),
+            weights = np.concatenate(
+                (
+                    weights,
+                    np.concatenate(
+                        extra_weights
+                    ),
+                )
             )
-        )
-        arcs = np.concatenate(
-            (
-                arcs,
-                np.concatenate(
-                    extra_arcs
-                ),
+            channel_ids = np.concatenate(
+                (
+                    channel_ids,
+                    np.concatenate(
+                        extra_ids
+                    ),
+                )
             )
-        )
-        section_xy = np.concatenate(
-            (
-                section_xy,
-                np.concatenate(
-                    extra_xy,
-                    axis=0,
+            arcs = np.concatenate(
+                (
+                    arcs,
+                    np.concatenate(
+                        extra_arcs
+                    ),
+                )
+            )
+            section_xy = np.concatenate(
+                (
+                    section_xy,
+                    np.concatenate(
+                        extra_xy,
+                        axis=0,
+                    ),
                 ),
-            ),
-            axis=0,
-        )
-        matrices = np.concatenate(
-            (
-                np.asarray(
-                    matrices,
-                    dtype=complex,
+                axis=0,
+            )
+            matrices = np.concatenate(
+                (
+                    np.asarray(
+                        matrices,
+                        dtype=complex,
+                    ),
+                    np.concatenate(
+                        extra_matrices,
+                        axis=0,
+                    ),
                 ),
-                np.concatenate(
-                    extra_matrices,
-                    axis=0,
-                ),
-            ),
-            axis=0,
-        )
+                axis=0,
+            )
 
     if (
         scene.medium.loss_conductivity(
