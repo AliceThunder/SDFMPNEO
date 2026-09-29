@@ -20,6 +20,7 @@ from sdfmpneo_vnext import (
     SuperquadricPackageGeometry,
     TabulatedMaterial,
     compile_graded_superquadric_regions,
+    graded_material_convergence,
     haar_rotation,
     sample_hybrid_package_scene,
 )
@@ -1846,4 +1847,86 @@ def test_graded_package_callable_accepts_dispersive_material_responses():
             epsilon
         )
         > 0.0
+    )
+
+
+def test_constant_graded_profile_convergence_report_converges_under_shell_refinement():
+    coil = _coil()
+    material = IsotropicMaterial(
+        relative_permittivity=3.2,
+        relative_permeability=1.4,
+        conductivity=7.0e-5,
+    )
+    outer = _package(
+        material
+    ).geometry
+    profile = RadialIsotropicMaterialProfile(
+        normalized_radius=(
+            0.0,
+            1.0,
+        ),
+        relative_permittivity=(
+            material.relative_permittivity,
+            material.relative_permittivity,
+        ),
+        relative_permeability=(
+            material.relative_permeability,
+            material.relative_permeability,
+        ),
+        conductivity=(
+            material.conductivity,
+            material.conductivity,
+        ),
+    )
+    report = graded_material_convergence(
+        Scene(
+            (
+                coil,
+            ),
+            HomogeneousMedium(),
+        ),
+        70_000.0,
+        outer,
+        profile,
+        shell_counts=(
+            2,
+            4,
+        ),
+        config=CFG,
+        tolerance=2e-4,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        magnetic_volume_axial_order=3,
+        magnetic_volume_radial_order=2,
+        magnetic_volume_azimuthal_order=8,
+        maximum_raw_magnetic_reciprocity_defect=0.20,
+    )
+    assert report.converged
+    assert len(
+        report.steps
+    ) == 2
+    assert (
+        report.steps[
+            0
+        ].maximum_relative_change
+        is None
+    )
+    assert (
+        report.steps[
+            1
+        ].maximum_relative_change
+        is not None
+    )
+    assert (
+        report.maximum_relative_change
+        <= report.tolerance
+    )
+    assert len(
+        report.final_packages
+    ) == 4
+    assert np.allclose(
+        report.final_result.impedance,
+        report.steps[
+            -1
+        ].impedance,
     )
