@@ -593,3 +593,93 @@ def test_package_and_background_exact_dc_conduction_closes_spatial_and_thermal_f
         temperature
         > prepared.medium.ambient_temperature
     )
+
+
+def test_package_spatial_loss_excludes_finite_conductor_volume():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=4.0,
+            conductivity=2.0e-3,
+        ),
+        "lossy-package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    spatial = _system().reference_spatial(
+        scene,
+        90_000.0,
+        volume_axial_order=4,
+        volume_radial_order=3,
+        volume_azimuthal_order=12,
+        maximum_raw_closure_error=5.0,
+    )
+    centerline = scene.coils[
+        0
+    ].geometry.sample_centerline(
+        9
+    )[
+        4
+    ]
+    assert bool(
+        spatial.teacher.conductor_teacher._mqs.points_in_conductors(
+            centerline
+        )
+    )
+    conductor_loss = spatial.raw_package_dissipation_matrices(
+        0,
+        centerline,
+    )
+    assert np.allclose(
+        conductor_loss,
+        0.0,
+        atol=0.0,
+        rtol=0.0,
+    )
+
+    material_point = np.asarray(
+        [
+            0.0,
+            0.0,
+            0.004,
+        ]
+    )
+    assert not bool(
+        spatial.teacher.conductor_teacher._mqs.points_in_conductors(
+            material_point
+        )
+    )
+    assert bool(
+        package.geometry.contains(
+            material_point
+        )
+    )
+    material_loss = spatial.raw_package_dissipation_matrices(
+        0,
+        material_point,
+    )
+    assert np.all(
+        np.isfinite(
+            material_loss
+        )
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                0.5
+                * (
+                    material_loss
+                    + material_loss.conj().T
+                )
+            )
+        )
+        >= -1e-12
+    )
