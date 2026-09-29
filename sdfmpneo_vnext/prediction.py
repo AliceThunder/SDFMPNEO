@@ -208,18 +208,52 @@ class StructuredPortPrediction:
         self,
         currents,
     ) -> np.ndarray:
-        if (
-            self.n_channels
-            != self.impedance.shape[0]
-        ):
-            raise ValueError(
-                "coil_power is defined only when there is exactly one "
-                "dissipation channel per port/coil; use channel_power for "
-                "general structured predictions"
-            )
-        return self.channel_power(
+        powers = self.channel_power(
             currents
         )
+        n_coils = int(
+            self.impedance.shape[
+                0
+            ]
+        )
+        if self.channel_labels is not None:
+            indices = self.coil_channel_indices(
+                n_coils
+            )
+            return powers[
+                np.asarray(
+                    indices,
+                    dtype=int,
+                )
+            ]
+        if self.n_channels != n_coils:
+            raise ValueError(
+                "coil_power cannot identify coil channels in an unlabeled "
+                "prediction with extra dissipation channels; use "
+                "channel_power or provide channel_labels"
+            )
+        return powers
+
+    def channel_power_by_label(
+        self,
+        currents,
+    ) -> dict[str, float]:
+        if self.channel_labels is None:
+            raise ValueError(
+                "prediction does not provide channel labels"
+            )
+        powers = self.channel_power(
+            currents
+        )
+        return {
+            label: float(
+                power
+            )
+            for label, power in zip(
+                self.channel_labels,
+                powers,
+            )
+        }
 
     def power_closure_error(
         self,
