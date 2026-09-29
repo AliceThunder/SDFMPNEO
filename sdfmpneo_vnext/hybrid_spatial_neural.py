@@ -197,73 +197,128 @@ class PackageLossShapeNet(nn.Module):
             package_index.numel()
         )
         n_ports = int(
-            coil_latent.shape[0]
+            coil_latent.shape[
+                0
+            ]
         )
+        if (
+            coordinates.shape
+            != (
+                n_points,
+                5,
+            )
+        ):
+            raise ValueError(
+                "package coordinate features have incompatible shape"
+            )
+        if (
+            package_index.ndim
+            != 1
+            or (
+                n_points
+                and (
+                    torch.any(
+                        package_index
+                        < 0
+                    )
+                    or torch.any(
+                        package_index
+                        >= package_latent.shape[
+                            0
+                        ]
+                    )
+                )
+            )
+        ):
+            raise ValueError(
+                "package indices are outside the latent package set"
+            )
+
+        selected_package = package_latent[
+            package_index
+        ]
+        selected_cross = (
+            coil_package_features[
+                :,
+                package_index,
+                :
+            ]
+            .permute(
+                1,
+                0,
+                2,
+            )
+        )
+        package_rows = selected_package[
+            :,
+            None,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        coil_rows = coil_latent[
+            None,
+            :,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        coordinate_rows = coordinates[
+            :,
+            None,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        features = torch.cat(
+            (
+                package_rows,
+                coil_rows,
+                selected_cross,
+                coordinate_rows,
+            ),
+            dim=-1,
+        )
+        raw = self.head(
+            features
+        )
+        real = raw[
+            ...,
+            : self.factor_rank
+        ]
+        imag = raw[
+            ...,
+            self.factor_rank :
+        ]
         complex_dtype = (
             torch.complex64
             if coil_latent.dtype
             == torch.float32
             else torch.complex128
         )
-        factors = []
-        for point in range(n_points):
-            package = int(
-                package_index[
-                    point
-                ].item()
+        factors = (
+            real.to(
+                complex_dtype
             )
-            rows = []
-            for port in range(n_ports):
-                features = torch.cat(
-                    (
-                        package_latent[
-                            package
-                        ],
-                        coil_latent[
-                            port
-                        ],
-                        coil_package_features[
-                            port,
-                            package,
-                        ],
-                        coordinates[
-                            point
-                        ],
-                    ),
-                    dim=-1,
-                )
-                raw = self.head(
-                    features
-                )
-                rows.append(
-                    raw[
-                        : self.factor_rank
-                    ].to(
-                        complex_dtype
-                    )
-                    + 1j
-                    * raw[
-                        self.factor_rank :
-                    ].to(
-                        complex_dtype
-                    )
-                )
-            factors.append(
-                torch.stack(
-                    rows,
-                    dim=0,
-                )
+            + 1j
+            * imag.to(
+                complex_dtype
             )
-        factors = torch.stack(
-            factors,
-            dim=0,
         )
         matrices = torch.einsum(
             "qpr,qsr->qps",
             factors.conj(),
             factors,
         )
-        n = matrices.shape[-1]
+        n = matrices.shape[
+            -1
+        ]
         trace_scale = torch.clamp(
             torch.real(
                 torch.diagonal(
@@ -290,7 +345,10 @@ class PackageLossShapeNet(nn.Module):
                     None,
                     None,
                 ]
-                / max(n, 1)
+                / max(
+                    n,
+                    1,
+                )
             )
             * eye[
                 None,
