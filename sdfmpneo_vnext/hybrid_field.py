@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .exterior_quadrature import (
+    conductor_volume_mask,
     homogeneous_background_domain_mask,
     unbounded_background_quadrature,
 )
@@ -674,8 +675,12 @@ class PreparedHybridReferenceLossField:
             inside
         ):
             conductor = np.asarray(
-                self.teacher.conductor_teacher._mqs.points_in_conductors(
-                    points
+                conductor_volume_mask(
+                    self.scene,
+                    points,
+                    segments=(
+                        self.teacher.conductor_teacher._mqs._segments
+                    ),
                 ),
                 dtype=bool,
             )
