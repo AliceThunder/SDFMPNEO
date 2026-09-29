@@ -21,6 +21,7 @@ def certify_dielectric_ports(
     *,
     config: MQSConfig | None = None,
     convergence_report=None,
+    graded_convergence_report=None,
     auto_convergence: bool = False,
     convergence_tolerance: float = 2e-3,
     convergence_surface_residual_tolerance: float | None = None,
@@ -281,7 +282,7 @@ def certify_dielectric_ports(
             correction
             <= fast_domain_correction_limit
         )
-    discretization_certified = bool(
+    reference_discretization_certified = bool(
         convergence_report
         is not None
         and getattr(
@@ -289,6 +290,19 @@ def certify_dielectric_ports(
             "converged",
             False,
         )
+    )
+    graded_discretization_certified = bool(
+        graded_convergence_report
+        is None
+        or getattr(
+            graded_convergence_report,
+            "converged",
+            False,
+        )
+    )
+    discretization_certified = bool(
+        reference_discretization_certified
+        and graded_discretization_certified
     )
 
     if not algebraic_certified:
