@@ -1243,3 +1243,52 @@ def test_fast_nested_package_spatial_loss_masks_parent_material_region():
         atol=1e-14,
         rtol=0.0,
     )
+
+
+def test_hybrid_spatial_minibatch_training_uses_cached_port_latents():
+    scene = _scene()
+    port = _port_artifact(
+        scene
+    )
+    first = _manual_spatial_training_sample(
+        scene
+    )
+    second = _manual_spatial_training_sample(
+        scene
+    )
+    artifact, report = train_hybrid_spatial_loss_surrogate(
+        port,
+        (
+            first,
+            second,
+        ),
+        field_hidden_dim=8,
+        factor_rank=1,
+        depth=1,
+        epochs=1,
+        batch_size=2,
+        patience=1,
+        conductor_longitudinal_points=4,
+        conductor_radial_order=2,
+        conductor_angular_order=8,
+        package_axial_order=2,
+        package_radial_order=2,
+        package_azimuthal_order=8,
+        background_segments_per_turn=4,
+        background_radial_order=3,
+        background_angular_order=8,
+    )
+    assert (
+        report.epochs
+        == 1
+    )
+    assert artifact.port_artifact is port
+    prepared = artifact.prepare(
+        scene,
+        first.frequency_hz,
+    )
+    assert np.all(
+        np.isfinite(
+            prepared.port_prediction.impedance
+        )
+    )
