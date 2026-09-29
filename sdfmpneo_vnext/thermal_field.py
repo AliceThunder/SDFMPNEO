@@ -1720,12 +1720,12 @@ class PreparedThermalGreenField:
 
 
 class ContinuousThermalGreenArtifact:
-    """Mesh-free continuous thermal transfer for a homogeneous infinite medium."""
+    """Mesh-free thermal transfer for a homogeneous isotropic/tensor medium."""
 
     def __init__(
         self,
         spatial_artifact,
-        medium: HomogeneousThermalMedium,
+        medium: HomogeneousThermalMedium | AnisotropicThermalMedium,
         *,
         longitudinal_segments: int = 24,
         radial_order: int = 4,
