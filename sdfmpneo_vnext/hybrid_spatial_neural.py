@@ -27,8 +27,6 @@ from .hybrid_features import encode_hybrid_scene_invariant
 from .hybrid_training_data import HybridTeacherSample
 from .scene import Scene
 from .spatial_neural import (
-    SpatialLossShapeNet,
-    _coordinate_features,
     _mlp,
     _normalization_rule,
     _psd_sqrt,
@@ -66,6 +64,351 @@ def _package_loss_gate(
         ],
         dtype=float,
     )
+
+
+def _coordinate_features(
+    scene: Scene,
+    coil_index,
+    arc_fraction,
+    xy,
+):
+    coil_index = np.asarray(
+        coil_index,
+        dtype=int,
+    )
+    arc_fraction = np.asarray(
+        arc_fraction,
+        dtype=float,
+    )
+    xy = np.asarray(
+        xy,
+        dtype=float,
+    )
+    if coil_index.ndim != 1:
+        raise ValueError(
+            "coil_index must be one-dimensional"
+        )
+    n = len(
+        coil_index
+    )
+    if (
+        arc_fraction.shape
+        != (
+            n,
+        )
+        or xy.shape
+        != (
+            n,
+            2,
+        )
+    ):
+        raise ValueError(
+            "conductor spatial coordinates have incompatible shapes"
+        )
+    if np.any(
+        (
+            coil_index
+            < 0
+        )
+        | (
+            coil_index
+            >= len(
+                scene.coils
+            )
+        )
+    ):
+        raise IndexError(
+            "coil_index out of range"
+        )
+    if np.any(
+        (
+            arc_fraction
+            < 0.0
+        )
+        | (
+            arc_fraction
+            > 1.0
+        )
+    ):
+        raise ValueError(
+            "arc_fraction must lie in [0,1]"
+        )
+
+    half_width = np.asarray(
+        [
+            0.5
+            * scene.coils[
+                int(
+                    index
+                )
+            ].geometry.conductor_width
+            for index in coil_index
+        ],
+        dtype=float,
+    )
+    half_thickness = np.asarray(
+        [
+            0.5
+            * scene.coils[
+                int(
+                    index
+                )
+            ].geometry.conductor_thickness
+            for index in coil_index
+        ],
+        dtype=float,
+    )
+    theta = (
+        2.0
+        * np.pi
+        * arc_fraction
+    )
+    return np.column_stack(
+        (
+            xy[
+                :,
+                0
+            ]
+            / half_width,
+            xy[
+                :,
+                1
+            ]
+            / half_thickness,
+            np.sin(
+                theta
+            ),
+            np.cos(
+                theta
+            ),
+        )
+    )
+
+
+class ConductorLossShapeNet(nn.Module):
+    """Hybrid conductor-local continuous PSD loss decoder."""
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        coil_pair_dim: int,
+        *,
+        field_hidden_dim: int = 64,
+        factor_rank: int = 4,
+        depth: int = 2,
+    ):
+        super().__init__()
+        if (
+            hidden_dim < 1
+            or coil_pair_dim < 1
+            or field_hidden_dim < 4
+            or factor_rank < 1
+            or depth < 1
+        ):
+            raise ValueError(
+                "invalid conductor spatial network dimensions"
+            )
+        self.hidden_dim = int(
+            hidden_dim
+        )
+        self.coil_pair_dim = int(
+            coil_pair_dim
+        )
+        self.field_hidden_dim = int(
+            field_hidden_dim
+        )
+        self.factor_rank = int(
+            factor_rank
+        )
+        self.depth = int(
+            depth
+        )
+        self.head = _mlp(
+            2
+            * self.hidden_dim
+            + self.coil_pair_dim
+            + 4,
+            self.field_hidden_dim,
+            2
+            * self.factor_rank,
+            self.depth,
+        )
+
+    def raw_matrices(
+        self,
+        coil_latent,
+        coil_pair_features,
+        coil_index,
+        coordinate_features,
+    ):
+        coil_index = torch.as_tensor(
+            coil_index,
+            dtype=torch.long,
+            device=coil_latent.device,
+        )
+        coordinates = torch.as_tensor(
+            coordinate_features,
+            dtype=coil_latent.dtype,
+            device=coil_latent.device,
+        )
+        n_points = int(
+            coil_index.numel()
+        )
+        n_ports = int(
+            coil_latent.shape[
+                0
+            ]
+        )
+        if (
+            coil_index.ndim != 1
+            or coordinates.shape
+            != (
+                n_points,
+                4,
+            )
+        ):
+            raise ValueError(
+                "conductor spatial query arrays have incompatible shapes"
+            )
+        if (
+            n_points
+            and (
+                torch.any(
+                    coil_index
+                    < 0
+                )
+                or torch.any(
+                    coil_index
+                    >= n_ports
+                )
+            )
+        ):
+            raise IndexError(
+                "coil_index out of range"
+            )
+
+        source_latent = coil_latent[
+            coil_index
+        ]
+        pair_rows = coil_pair_features[
+            coil_index,
+            :,
+            :
+        ]
+        source_rows = source_latent[
+            :,
+            None,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        port_rows = coil_latent[
+            None,
+            :,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        coordinate_rows = coordinates[
+            :,
+            None,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        features = torch.cat(
+            (
+                source_rows,
+                port_rows,
+                pair_rows,
+                coordinate_rows,
+            ),
+            dim=-1,
+        )
+        raw = self.head(
+            features
+        )
+        real = raw[
+            ...,
+            : self.factor_rank
+        ]
+        imag = raw[
+            ...,
+            self.factor_rank :
+        ]
+        complex_dtype = (
+            torch.complex64
+            if coil_latent.dtype
+            == torch.float32
+            else torch.complex128
+        )
+        factors = (
+            real.to(
+                complex_dtype
+            )
+            + 1j
+            * imag.to(
+                complex_dtype
+            )
+        )
+        matrices = torch.einsum(
+            "qpr,qsr->qps",
+            factors.conj(),
+            factors,
+        )
+        n = matrices.shape[
+            -1
+        ]
+        trace_scale = torch.clamp(
+            torch.real(
+                torch.diagonal(
+                    matrices,
+                    dim1=-2,
+                    dim2=-1,
+                ).sum(
+                    dim=-1
+                )
+            ),
+            min=1e-12,
+        )
+        eye = torch.eye(
+            n,
+            dtype=complex_dtype,
+            device=coil_latent.device,
+        )
+        matrices = (
+            matrices
+            + (
+                1e-9
+                * trace_scale[
+                    :,
+                    None,
+                    None,
+                ]
+                / max(
+                    n,
+                    1,
+                )
+            )
+            * eye[
+                None,
+                :,
+                :,
+            ]
+        )
+        return 0.5 * (
+            matrices
+            + matrices.conj().transpose(
+                -1,
+                -2,
+            )
+        )
 
 
 def _package_coordinate_features(
@@ -398,7 +741,7 @@ class HybridSpatialLossShapeNet(
             depth
         )
         self.conductor = (
-            SpatialLossShapeNet(
+            ConductorLossShapeNet(
                 self.hidden_dim,
                 self.coil_pair_dim,
                 field_hidden_dim=(
