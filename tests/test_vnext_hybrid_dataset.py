@@ -1208,7 +1208,7 @@ def test_hybrid_sampler_teacher_and_dataset_support_true_conductive_dc(tmp_path)
             1.0e-3,
             4.0e-3,
         ),
-        lossless_probability=1.0,
+        lossless_probability=0.0,
         lossy_background_probability=0.0,
     )
     scene, frequency = sample_hybrid_package_scene(
