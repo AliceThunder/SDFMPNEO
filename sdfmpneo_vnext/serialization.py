@@ -46,6 +46,15 @@ def _medium_to_dict(
             "thermal_conductivity": (
                 medium.thermal_conductivity
             ),
+            "thermal_conductivity_tensor": (
+                None
+                if medium.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    medium.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
         }
@@ -164,37 +173,54 @@ def _medium_from_dict(
     thermal_conductivity = data.get(
         "thermal_conductivity"
     )
+    thermal_conductivity_tensor = data.get(
+        "thermal_conductivity_tensor"
+    )
     density = data.get(
         "density"
     )
     heat_capacity = data.get(
         "heat_capacity"
     )
-    has_thermal = any(
-        value is not None
-        for value in (
-            thermal_conductivity,
-            density,
-            heat_capacity,
-        )
-    )
-    if has_thermal and not all(
-        value is not None
-        for value in (
-            thermal_conductivity,
-            density,
-            heat_capacity,
-        )
+    if (
+        thermal_conductivity is not None
+        and thermal_conductivity_tensor is not None
     ):
         raise ValueError(
-            "background thermal_conductivity, density, and heat_capacity "
-            "must be supplied together"
+            "thermal_conductivity and thermal_conductivity_tensor are "
+            "mutually exclusive"
+        )
+    has_conductivity = bool(
+        thermal_conductivity is not None
+        or thermal_conductivity_tensor is not None
+    )
+    has_thermal = bool(
+        has_conductivity
+        or density is not None
+        or heat_capacity is not None
+    )
+    if has_thermal and (
+        not has_conductivity
+        or density is None
+        or heat_capacity is None
+    ):
+        raise ValueError(
+            "thermal conductivity, density, and heat_capacity must be "
+            "supplied together"
         )
     thermal = (
         None
-        if not has_thermal
+        if thermal_conductivity is None
         else float(
             thermal_conductivity
+        )
+    )
+    thermal_tensor = (
+        None
+        if thermal_conductivity_tensor is None
+        else np.asarray(
+            thermal_conductivity_tensor,
+            dtype=float,
         )
     )
     rho = (
@@ -232,12 +258,27 @@ def _medium_from_dict(
         )
         if has_thermal:
             return IsotropicMaterial(
-                epsilon_r,
-                mu_r,
-                conductivity,
-                thermal,
-                rho,
-                capacity,
+                relative_permittivity=(
+                    epsilon_r
+                ),
+                relative_permeability=(
+                    mu_r
+                ),
+                conductivity=(
+                    conductivity
+                ),
+                thermal_conductivity=(
+                    thermal
+                ),
+                density=(
+                    rho
+                ),
+                heat_capacity=(
+                    capacity
+                ),
+                thermal_conductivity_tensor=(
+                    thermal_tensor
+                ),
             )
         return HomogeneousMedium(
             epsilon_r,
