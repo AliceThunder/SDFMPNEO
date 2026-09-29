@@ -90,6 +90,11 @@ def main():
         default=0.0,
     )
     parser.add_argument(
+        "--graded-package-probability",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
         "--nested-package-scale-min",
         type=float,
         default=1.15,
@@ -289,6 +294,9 @@ def main():
         ),
         nested_package_probability=(
             args.nested_package_probability
+        ),
+        graded_package_probability=(
+            args.graded_package_probability
         ),
         nested_package_scale_range=(
             args.nested_package_scale_min,
