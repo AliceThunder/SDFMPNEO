@@ -285,9 +285,15 @@ thermal = system.fast_continuous_thermal_field(
 # omitted and the homogeneous thermal background is built from the scene.
 #
 # Package materials may also carry thermal_conductivity, density, and
-# heat_capacity. Thermally distinct, disjoint superquadric packages are then
-# coupled through a local mesh-free modified-Helmholtz/MFS transmission solve;
-# the unbounded exterior remains an analytic thermal Green field.
+# heat_capacity. Thermally distinct, strictly nested or disjoint superquadric
+# packages are coupled through a local mesh-free modified-Helmholtz/MFS
+# transmission solve; the unbounded exterior remains an analytic thermal Green
+# field.
+#
+# A homogeneous anisotropic thermal background is also supported with
+# AnisotropicThermalMedium(K, density, heat_capacity). Its infinite-domain
+# steady/transient Green function is analytic. Tensor-anisotropic package
+# thermal interfaces are still fail-closed.
 
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
@@ -314,8 +320,10 @@ The current vNext code intentionally fails closed outside implemented physics:
   strictly nested or disjoint superquadric material regions, including free
   inclusions; continuously graded radial isotropic profiles are supported by
   convergent conductor-safe nested-shell compilation, while general
-  non-radial 3D heterogeneity and true tensor-anisotropic VIE media are not yet
-  implemented;
+  non-radial 3D electromagnetic heterogeneity and true tensor-anisotropic EM
+  VIE media are not yet implemented; homogeneous tensor-anisotropic thermal
+  backgrounds are supported analytically, while tensor-anisotropic package
+  thermal interfaces are still not implemented;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
