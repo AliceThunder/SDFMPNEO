@@ -102,6 +102,14 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     assert system.capabilities.package_dielectric_sie
     assert system.capabilities.package_em_coupling
     assert system.capabilities.continuous_spatial_loss
+    assert system.capabilities.exact_dc
+    assert system.capabilities.magnetic_package_contrast
+    assert system.capabilities.nested_material_regions
+    assert system.capabilities.graded_radial_media
+    assert system.capabilities.anisotropic_thermal_background
+    assert not (
+        system.capabilities.anisotropic_package_thermal_interfaces
+    )
 
     fast = system.fast_ports(
         scene,
