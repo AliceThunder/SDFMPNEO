@@ -10,6 +10,7 @@ from .hybrid_domain import (
 )
 from .scene import Scene
 from .thermal_field import (
+    AnisotropicThermalMedium,
     ContinuousThermalGreenArtifact,
     HomogeneousThermalMedium,
     PreparedThermalGreenField,
@@ -176,10 +177,60 @@ def scene_thermal_package_media(
     )
 
 
+def _medium_metric_data(
+    medium,
+):
+    if isinstance(
+        medium,
+        AnisotropicThermalMedium,
+    ):
+        inverse = (
+            medium.inverse_conductivity_tensor
+        )
+        determinant = (
+            medium.conductivity_determinant
+        )
+        geometric_mean = (
+            medium.geometric_mean_conductivity
+        )
+    elif isinstance(
+        medium,
+        HomogeneousThermalMedium,
+    ):
+        conductivity = float(
+            medium.conductivity
+        )
+        inverse = (
+            np.eye(
+                3,
+                dtype=float,
+            )
+            / conductivity
+        )
+        determinant = (
+            conductivity**3
+        )
+        geometric_mean = conductivity
+    else:
+        raise TypeError(
+            "thermal interface medium must be homogeneous isotropic or "
+            "homogeneous anisotropic"
+        )
+    return (
+        inverse,
+        float(
+            determinant
+        ),
+        float(
+            geometric_mean
+        ),
+    )
+
+
 def _yukawa_kernel(
     targets,
     sources,
-    medium: HomogeneousThermalMedium,
+    medium,
     laplace_s: float,
     *,
     source_radius=None,
@@ -204,10 +255,18 @@ def _yukawa_kernel(
             :
         ]
     )
-    radius_squared = np.sum(
-        difference
-        * difference,
-        axis=2,
+    (
+        inverse_conductivity,
+        conductivity_determinant,
+        geometric_mean_conductivity,
+    ) = _medium_metric_data(
+        medium
+    )
+    metric_squared = np.einsum(
+        "qsi,ij,qsj->qs",
+        difference,
+        inverse_conductivity,
+        difference,
     )
     if source_radius is not None:
         radius = np.asarray(
@@ -222,16 +281,17 @@ def _yukawa_kernel(
             raise ValueError(
                 "source_radius has incompatible shape"
             )
-        radius_squared = (
-            radius_squared
+        metric_squared = (
+            metric_squared
             + radius[
                 None,
                 :
             ] ** 2
+            / geometric_mean_conductivity
         )
     distance = np.sqrt(
         np.maximum(
-            radius_squared,
+            metric_squared,
             1e-30,
         )
     )
@@ -243,8 +303,10 @@ def _yukawa_kernel(
         0.0
         if laplace_s == 0.0
         else np.sqrt(
-            laplace_s
-            / medium.diffusivity
+            float(
+                laplace_s
+            )
+            * medium.volumetric_heat_capacity
         )
     )
     exponential = np.exp(
@@ -256,7 +318,9 @@ def _yukawa_kernel(
         / (
             4.0
             * np.pi
-            * medium.conductivity
+            * np.sqrt(
+                conductivity_determinant
+            )
             * distance
         )
     )
@@ -269,20 +333,20 @@ def _yukawa_kernel(
     )
 
 
-def _normal_derivative_kernel(
+def _normal_flux_kernel(
     targets,
     normals,
     sources,
-    medium: HomogeneousThermalMedium,
+    medium,
     laplace_s: float,
     *,
     source_radius=None,
 ):
     (
-        _,
+        value,
         difference,
         distance,
-        exponential,
+        _,
         decay,
     ) = _yukawa_kernel(
         targets,
@@ -307,26 +371,20 @@ def _normal_derivative_kernel(
             "normals have incompatible shape"
         )
     projection = np.einsum(
-        "pqd,pd->pq",
+        "qsd,qd->qs",
         difference,
         normals,
     )
     return (
-        -exponential
+        -value
         * (
             decay
-            * distance
             + 1.0
+            / distance
         )
         * projection
-        / (
-            4.0
-            * np.pi
-            * medium.conductivity
-            * distance**3
-        )
+        / distance
     )
-
 
 def _equilibrated_lstsq(
     matrix,
@@ -788,8 +846,8 @@ class PreparedThermalInterfaceField:
         )[
             0
         ]
-        derivative = (
-            _normal_derivative_kernel(
+        flux = (
+            _normal_flux_kernel(
                 self.surface_positions,
                 self.surface_normals,
                 source_positions,
@@ -803,7 +861,7 @@ class PreparedThermalInterfaceField:
         return (
             values
             @ strength,
-            derivative
+            flux
             @ strength,
         )
 
@@ -836,8 +894,8 @@ class PreparedThermalInterfaceField:
         )[
             0
         ]
-        exterior_derivative = (
-            _normal_derivative_kernel(
+        exterior_flux = (
+            _normal_flux_kernel(
                 self.surface_positions,
                 self.surface_normals,
                 self.exterior_mfs_sources,
@@ -845,8 +903,8 @@ class PreparedThermalInterfaceField:
                 laplace_s,
             )
         )
-        interior_derivative = (
-            _normal_derivative_kernel(
+        interior_flux = (
+            _normal_flux_kernel(
                 self.surface_positions,
                 self.surface_normals,
                 self.interior_mfs_sources,
@@ -861,24 +919,22 @@ class PreparedThermalInterfaceField:
                     -interior_value,
                 ],
                 [
-                    self.background_medium.conductivity
-                    * exterior_derivative,
-                    -self.package_medium.conductivity
-                    * interior_derivative,
+                    exterior_flux,
+                    -interior_flux,
                 ],
             ]
         )
 
         (
             background_particular,
-            background_derivative,
+            background_flux,
         ) = self._particular_boundary(
             laplace_s,
             inside=False,
         )
         (
             package_particular,
-            package_derivative,
+            package_flux,
         ) = self._particular_boundary(
             laplace_s,
             inside=True,
@@ -887,10 +943,8 @@ class PreparedThermalInterfaceField:
             (
                 package_particular
                 - background_particular,
-                self.package_medium.conductivity
-                * package_derivative
-                - self.background_medium.conductivity
-                * background_derivative,
+                package_flux
+                - background_flux,
             )
         )
         (
@@ -1814,8 +1868,8 @@ class PreparedMultiThermalInterfaceField:
                 values,
                 None,
             )
-        derivative = (
-            _normal_derivative_kernel(
+        flux = (
+            _normal_flux_kernel(
                 points,
                 normals,
                 self.source.positions[
@@ -1835,7 +1889,7 @@ class PreparedMultiThermalInterfaceField:
         )
         return (
             values,
-            derivative,
+            flux,
         )
 
     def _region_basis(
@@ -1863,7 +1917,7 @@ class PreparedMultiThermalInterfaceField:
             ),
             dtype=float,
         )
-        derivative = (
+        flux = (
             None
             if normals is None
             else np.zeros_like(
@@ -1947,10 +2001,10 @@ class PreparedMultiThermalInterfaceField:
                 0
             ]
             if normals is not None:
-                derivative[
+                flux[
                     :,
                     columns,
-                ] = _normal_derivative_kernel(
+                ] = _normal_flux_kernel(
                     points,
                     normals,
                     sources,
@@ -1959,7 +2013,7 @@ class PreparedMultiThermalInterfaceField:
                 )
         return (
             value,
-            derivative,
+            flux,
             medium,
         )
 
@@ -2025,7 +2079,7 @@ class PreparedMultiThermalInterfaceField:
             )
             (
                 outside_value,
-                outside_derivative,
+                outside_flux,
                 outside_medium,
             ) = self._region_basis(
                 points,
@@ -2037,7 +2091,7 @@ class PreparedMultiThermalInterfaceField:
             )
             (
                 inside_value,
-                inside_derivative,
+                inside_flux,
                 inside_medium,
             ) = self._region_basis(
                 points,
@@ -2061,15 +2115,13 @@ class PreparedMultiThermalInterfaceField:
                 + sl.stop,
                 :,
             ] = (
-                outside_medium.conductivity
-                * outside_derivative
-                - inside_medium.conductivity
-                * inside_derivative
+                outside_flux
+                - inside_flux
             )
 
             (
                 outside_particular,
-                outside_particular_derivative,
+                outside_particular_flux,
             ) = self._particular(
                 points,
                 laplace_s,
@@ -2080,7 +2132,7 @@ class PreparedMultiThermalInterfaceField:
             )
             (
                 inside_particular,
-                inside_particular_derivative,
+                inside_particular_flux,
             ) = self._particular(
                 points,
                 laplace_s,
@@ -2098,10 +2150,8 @@ class PreparedMultiThermalInterfaceField:
             rhs_flux[
                 sl
             ] = (
-                inside_medium.conductivity
-                * inside_particular_derivative
-                - outside_medium.conductivity
-                * outside_particular_derivative
+                inside_particular_flux
+                - outside_particular_flux
             )
 
         rhs = np.vstack(
