@@ -2259,6 +2259,7 @@ def train_hybrid_residual_surrogate(
     package_loss_conductivity_range=None,
     package_permeability_range=None,
     geometry_domain=None,
+    batch_size: int = 1,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2280,6 +2281,11 @@ def train_hybrid_residual_surrogate(
         or patience < 1
         or validation_interval < 1
         or min_improvement < 0.0
+        or not isinstance(
+            batch_size,
+            (int, np.integer),
+        )
+        or batch_size < 1
     ):
         raise ValueError(
             "invalid hybrid training configuration"
@@ -2829,6 +2835,121 @@ def train_hybrid_residual_surrogate(
     dtype = next(
         model.parameters()
     ).dtype
+    complex_dtype = (
+        torch.complex64
+        if dtype == torch.float32
+        else torch.complex128
+    )
+
+    def prepare_training_record(
+        sample,
+    ):
+        (
+            coil_node,
+            coil_pair,
+            package,
+            coil_package,
+            package_pair,
+        ) = normalizer.normalize(
+            sample.encoded
+        )
+        target_z = np.asarray(
+            sample.target_impedance,
+            dtype=complex,
+        )
+        target_r = torch.as_tensor(
+            target_z.real,
+            dtype=dtype,
+            device=device,
+        )
+        target_x = torch.as_tensor(
+            target_z.imag,
+            dtype=dtype,
+            device=device,
+        )
+        target_channels = torch.as_tensor(
+            sample.target_dissipation_channels,
+            dtype=complex_dtype,
+            device=device,
+        )
+        return {
+            "coil_node": torch.as_tensor(
+                coil_node,
+                dtype=dtype,
+                device=device,
+            ),
+            "coil_pair": torch.as_tensor(
+                coil_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            "package": torch.as_tensor(
+                package,
+                dtype=dtype,
+                device=device,
+            ),
+            "coil_package": torch.as_tensor(
+                coil_package,
+                dtype=dtype,
+                device=device,
+            ),
+            "package_pair": torch.as_tensor(
+                package_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            "baseline_resistance": torch.as_tensor(
+                sample.baseline_resistance,
+                dtype=dtype,
+                device=device,
+            ),
+            "baseline_reactance": torch.as_tensor(
+                sample.baseline_reactance,
+                dtype=dtype,
+                device=device,
+            ),
+            "target_r": target_r,
+            "target_x": target_x,
+            "target_channels": target_channels,
+            "r_denom": (
+                torch.mean(
+                    target_r**2
+                )
+                + 1e-18
+            ),
+            "x_denom": (
+                torch.mean(
+                    target_x**2
+                )
+                + 1e-18
+            ),
+            "channel_denom": (
+                torch.mean(
+                    torch.abs(
+                        target_channels
+                    ) ** 2
+                )
+                + 1e-18
+            ),
+            "dielectric_loss_gate": float(
+                _dielectric_loss_gate(
+                    sample.scene,
+                    sample.frequency_hz,
+                )
+            ),
+            "reactance_gate": float(
+                _reactance_gate(
+                    sample.frequency_hz
+                )
+            ),
+        }
+
+    training_records = tuple(
+        prepare_training_record(
+            sample
+        )
+        for sample in samples
+    )
 
     best_state = None
     best_score = None
@@ -2896,168 +3017,142 @@ def train_hybrid_residual_surrogate(
         )
         epoch_loss = 0.0
 
-        for sample_index in order:
-            sample = samples[
-                int(
-                    sample_index
+        for batch_start in range(
+            0,
+            len(
+                order
+            ),
+            int(
+                batch_size
+            ),
+        ):
+            batch_indices = order[
+                batch_start:
+                batch_start
+                + int(
+                    batch_size
                 )
             ]
-            (
-                coil_node,
-                coil_pair,
-                package,
-                coil_package,
-                package_pair,
-            ) = normalizer.normalize(
-                sample.encoded
-            )
             optimizer.zero_grad(
                 set_to_none=True
             )
-            (
-                resistance,
-                reactance,
-                channels,
-            ) = model.forward_structured(
-                torch.as_tensor(
-                    coil_node,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    coil_pair,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    package,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    coil_package,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    package_pair,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    sample.baseline_resistance,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    sample.baseline_reactance,
-                    dtype=dtype,
-                    device=device,
-                ),
-                resistance_scale=(
-                    normalizer.resistance_scale
-                ),
-                reactance_scale=(
-                    normalizer.reactance_scale
-                ),
-                dielectric_loss_gate=(
-                    _dielectric_loss_gate(
-                        sample.scene,
-                        sample.frequency_hz,
-                    )
-                ),
-                reactance_gate=(
-                    _reactance_gate(
-                        sample.frequency_hz
-                    )
-                ),
-            )
-            target_z = np.asarray(
-                sample.target_impedance,
-                dtype=complex,
-            )
-            target_r = torch.as_tensor(
-                target_z.real,
-                dtype=dtype,
-                device=device,
-            )
-            target_x = torch.as_tensor(
-                target_z.imag,
-                dtype=dtype,
-                device=device,
-            )
-            r_denom = (
-                torch.mean(
-                    target_r**2
-                )
-                + 1e-18
-            )
-            x_denom = (
-                torch.mean(
-                    target_x**2
-                )
-                + 1e-18
-            )
-            loss = (
-                torch.mean(
-                    (
-                        resistance
-                        - target_r
-                    ) ** 2
-                )
-                / r_denom
-                + torch.mean(
-                    (
-                        reactance
-                        - target_x
-                    ) ** 2
-                )
-                / x_denom
-            )
+            batch_loss = None
 
-            target_channels = (
-                torch.as_tensor(
-                    sample.target_dissipation_channels,
-                    dtype=(
-                        torch.complex64
-                        if dtype
-                        == torch.float32
-                        else torch.complex128
+            for sample_index in batch_indices:
+                record = training_records[
+                    int(
+                        sample_index
+                    )
+                ]
+                (
+                    resistance,
+                    reactance,
+                    channels,
+                ) = model.forward_structured(
+                    record[
+                        "coil_node"
+                    ],
+                    record[
+                        "coil_pair"
+                    ],
+                    record[
+                        "package"
+                    ],
+                    record[
+                        "coil_package"
+                    ],
+                    record[
+                        "package_pair"
+                    ],
+                    record[
+                        "baseline_resistance"
+                    ],
+                    record[
+                        "baseline_reactance"
+                    ],
+                    resistance_scale=(
+                        normalizer.resistance_scale
                     ),
-                    device=device,
+                    reactance_scale=(
+                        normalizer.reactance_scale
+                    ),
+                    dielectric_loss_gate=(
+                        record[
+                            "dielectric_loss_gate"
+                        ]
+                    ),
+                    reactance_gate=(
+                        record[
+                            "reactance_gate"
+                        ]
+                    ),
+                )
+                loss = (
+                    torch.mean(
+                        (
+                            resistance
+                            - record[
+                                "target_r"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "r_denom"
+                    ]
+                    + torch.mean(
+                        (
+                            reactance
+                            - record[
+                                "target_x"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "x_denom"
+                    ]
+                )
+                channel_loss = (
+                    torch.mean(
+                        torch.abs(
+                            channels
+                            - record[
+                                "target_channels"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "channel_denom"
+                    ]
+                )
+                loss = (
+                    loss
+                    + channel_loss_weight
+                    * channel_loss
+                )
+                epoch_loss += float(
+                    loss.detach().cpu()
+                )
+                batch_loss = (
+                    loss
+                    if batch_loss is None
+                    else batch_loss
+                    + loss
+                )
+
+            if batch_loss is None:
+                continue
+            batch_loss = (
+                batch_loss
+                / len(
+                    batch_indices
                 )
             )
-            channel_denom = (
-                torch.mean(
-                    torch.abs(
-                        target_channels
-                    ) ** 2
-                )
-                + 1e-18
-            )
-            channel_loss = (
-                torch.mean(
-                    torch.abs(
-                        channels
-                        - target_channels
-                    ) ** 2
-                )
-                / channel_denom
-            )
-            loss = (
-                loss
-                + channel_loss_weight
-                * channel_loss
-            )
-            loss.backward()
+            batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(),
                 10.0,
             )
             optimizer.step()
-            epoch_loss += float(
-                loss.detach().cpu()
-            )
 
         final_loss = (
             epoch_loss
