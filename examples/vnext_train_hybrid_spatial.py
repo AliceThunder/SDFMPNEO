@@ -53,6 +53,11 @@ def main():
         default=20,
     )
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
         "--background-segments-per-turn",
         type=int,
         default=16,
@@ -198,6 +203,9 @@ def main():
             ),
             epochs=args.epochs,
             patience=args.patience,
+            batch_size=(
+                args.batch_size
+            ),
             background_segments_per_turn=(
                 args.background_segments_per_turn
             ),
@@ -219,6 +227,7 @@ def main():
     print(
         {
             "epochs_run": report.epochs,
+            "batch_size": args.batch_size,
             "best_epoch": report.best_epoch,
             "final_loss": report.final_loss,
             "best_validation_error": (
