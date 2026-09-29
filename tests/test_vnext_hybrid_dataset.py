@@ -1637,5 +1637,5 @@ def test_hybrid_sampler_generates_correlated_graded_nested_materials():
         ][
             "graded_material_parameterization"
         ]
-        == "correlated_isotropic_endpoint_interpolation"
+        == "correlated_passive_isotropic_endpoint_interpolation"
     )
