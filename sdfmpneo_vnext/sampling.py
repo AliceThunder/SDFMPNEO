@@ -1447,22 +1447,69 @@ def _sample_graded_package_materials(
             "graded package material sampling requires at least two layers"
         )
 
-    epsilon_inner = _uniform(
-        rng,
-        config.relative_permittivity_range,
-    )
-    epsilon_outer = _uniform(
-        rng,
-        config.relative_permittivity_range,
-    )
-    mu_inner = _uniform(
-        rng,
-        config.package_relative_permeability_range,
-    )
-    mu_outer = _uniform(
-        rng,
-        config.package_relative_permeability_range,
-    )
+    def linear_pair(
+        bounds,
+    ):
+        return (
+            _uniform(
+                rng,
+                bounds,
+            ),
+            _uniform(
+                rng,
+                bounds,
+            ),
+        )
+
+    def log_pair(
+        bounds,
+    ):
+        return (
+            _log_uniform(
+                rng,
+                bounds,
+            ),
+            _log_uniform(
+                rng,
+                bounds,
+            ),
+        )
+
+    def interpolate_linear(
+        inner,
+        outer,
+        t,
+    ):
+        return (
+            (
+                1.0
+                - t
+            )
+            * inner
+            + t
+            * outer
+        )
+
+    def interpolate_log(
+        inner,
+        outer,
+        t,
+    ):
+        return float(
+            np.exp(
+                (
+                    1.0
+                    - t
+                )
+                * np.log(
+                    inner
+                )
+                + t
+                * np.log(
+                    outer
+                )
+            )
+        )
 
     if force_conductive is True:
         lossless = False
@@ -1477,69 +1524,330 @@ def _sample_graded_package_materials(
         sigma_inner = 0.0
         sigma_outer = 0.0
     else:
-        sigma_inner = _log_uniform(
-            rng,
-            config.dielectric_conductivity_range,
-        )
-        sigma_outer = _log_uniform(
-            rng,
-            config.dielectric_conductivity_range,
+        (
+            sigma_inner,
+            sigma_outer,
+        ) = log_pair(
+            config.dielectric_conductivity_range
         )
 
+    (
+        mu_inner,
+        mu_outer,
+    ) = linear_pair(
+        config.package_relative_permeability_range
+    )
+    model_draw = float(
+        rng.random()
+    )
+    multi_debye = bool(
+        model_draw
+        < config.multi_debye_package_probability
+    )
+    debye = bool(
+        not multi_debye
+        and model_draw
+        < (
+            config.multi_debye_package_probability
+            + config.debye_package_probability
+        )
+    )
+
     materials = []
-    for t in np.linspace(
+    t_values = np.linspace(
         0.0,
         1.0,
         int(
             count
         ),
-    ):
-        epsilon = (
-            (
-                1.0
-                - t
-            )
-            * epsilon_inner
-            + t
-            * epsilon_outer
+    )
+
+    if multi_debye:
+        pole_lo, pole_hi = (
+            config.multi_debye_poles_range
         )
-        mu = (
-            (
-                1.0
-                - t
+        pole_count = int(
+            rng.integers(
+                int(
+                    pole_lo
+                ),
+                int(
+                    pole_hi
+                )
+                + 1,
             )
-            * mu_inner
-            + t
-            * mu_outer
         )
-        if (
-            sigma_inner > 0.0
-            and sigma_outer > 0.0
-        ):
-            sigma = float(
-                np.exp(
-                    (
-                        1.0
-                        - t
+        (
+            epsilon_infinite_inner,
+            epsilon_infinite_outer,
+        ) = linear_pair(
+            config.package_debye_epsilon_infinite_range
+        )
+        strength_inner = np.asarray(
+            [
+                _uniform(
+                    rng,
+                    config.package_debye_delta_epsilon_range,
+                )
+                for _ in range(
+                    pole_count
+                )
+            ],
+            dtype=float,
+        )
+        strength_outer = np.asarray(
+            [
+                _uniform(
+                    rng,
+                    config.package_debye_delta_epsilon_range,
+                )
+                for _ in range(
+                    pole_count
+                )
+            ],
+            dtype=float,
+        )
+        time_inner = np.asarray(
+            [
+                _log_uniform(
+                    rng,
+                    config.package_debye_relaxation_time_range,
+                )
+                for _ in range(
+                    pole_count
+                )
+            ],
+            dtype=float,
+        )
+        time_outer = np.asarray(
+            [
+                _log_uniform(
+                    rng,
+                    config.package_debye_relaxation_time_range,
+                )
+                for _ in range(
+                    pole_count
+                )
+            ],
+            dtype=float,
+        )
+        inner_order = np.argsort(
+            time_inner
+        )
+        outer_order = np.argsort(
+            time_outer
+        )
+        strength_inner = strength_inner[
+            inner_order
+        ]
+        strength_outer = strength_outer[
+            outer_order
+        ]
+        time_inner = time_inner[
+            inner_order
+        ]
+        time_outer = time_outer[
+            outer_order
+        ]
+
+        for t in t_values:
+            strengths = (
+                (
+                    1.0
+                    - t
+                )
+                * strength_inner
+                + t
+                * strength_outer
+            )
+            times = np.asarray(
+                [
+                    interpolate_log(
+                        float(
+                            left
+                        ),
+                        float(
+                            right
+                        ),
+                        float(
+                            t
+                        ),
                     )
-                    * np.log(
-                        sigma_inner
+                    for left, right in zip(
+                        time_inner,
+                        time_outer,
                     )
-                    + t
-                    * np.log(
-                        sigma_outer
-                    )
+                ],
+                dtype=float,
+            )
+            sigma = (
+                0.0
+                if lossless
+                else interpolate_log(
+                    sigma_inner,
+                    sigma_outer,
+                    float(
+                        t
+                    ),
                 )
             )
-        else:
-            sigma = 0.0
+            materials.append(
+                MultiDebyeMaterial(
+                    relative_permittivity_infinite=float(
+                        interpolate_linear(
+                            epsilon_infinite_inner,
+                            epsilon_infinite_outer,
+                            float(
+                                t
+                            ),
+                        )
+                    ),
+                    relaxation_strengths=tuple(
+                        float(
+                            value
+                        )
+                        for value in strengths
+                    ),
+                    relaxation_times=tuple(
+                        float(
+                            value
+                        )
+                        for value in times
+                    ),
+                    relative_permeability=float(
+                        interpolate_linear(
+                            mu_inner,
+                            mu_outer,
+                            float(
+                                t
+                            ),
+                        )
+                    ),
+                    conductivity=float(
+                        sigma
+                    ),
+                )
+            )
+        return tuple(
+            materials
+        )
+
+    if debye:
+        (
+            epsilon_infinite_inner,
+            epsilon_infinite_outer,
+        ) = linear_pair(
+            config.package_debye_epsilon_infinite_range
+        )
+        (
+            delta_epsilon_inner,
+            delta_epsilon_outer,
+        ) = linear_pair(
+            config.package_debye_delta_epsilon_range
+        )
+        (
+            relaxation_time_inner,
+            relaxation_time_outer,
+        ) = log_pair(
+            config.package_debye_relaxation_time_range
+        )
+        for t in t_values:
+            epsilon_infinite = interpolate_linear(
+                epsilon_infinite_inner,
+                epsilon_infinite_outer,
+                float(
+                    t
+                ),
+            )
+            delta_epsilon = interpolate_linear(
+                delta_epsilon_inner,
+                delta_epsilon_outer,
+                float(
+                    t
+                ),
+            )
+            sigma = (
+                0.0
+                if lossless
+                else interpolate_log(
+                    sigma_inner,
+                    sigma_outer,
+                    float(
+                        t
+                    ),
+                )
+            )
+            materials.append(
+                DebyeMaterial(
+                    relative_permittivity_static=float(
+                        epsilon_infinite
+                        + delta_epsilon
+                    ),
+                    relative_permittivity_infinite=float(
+                        epsilon_infinite
+                    ),
+                    relaxation_time=interpolate_log(
+                        relaxation_time_inner,
+                        relaxation_time_outer,
+                        float(
+                            t
+                        ),
+                    ),
+                    relative_permeability=float(
+                        interpolate_linear(
+                            mu_inner,
+                            mu_outer,
+                            float(
+                                t
+                            ),
+                        )
+                    ),
+                    conductivity=float(
+                        sigma
+                    ),
+                )
+            )
+        return tuple(
+            materials
+        )
+
+    (
+        epsilon_inner,
+        epsilon_outer,
+    ) = linear_pair(
+        config.relative_permittivity_range
+    )
+    for t in t_values:
+        sigma = (
+            0.0
+            if lossless
+            else interpolate_log(
+                sigma_inner,
+                sigma_outer,
+                float(
+                    t
+                ),
+            )
+        )
         materials.append(
             IsotropicMaterial(
                 relative_permittivity=float(
-                    epsilon
+                    interpolate_linear(
+                        epsilon_inner,
+                        epsilon_outer,
+                        float(
+                            t
+                        ),
+                    )
                 ),
                 relative_permeability=float(
-                    mu
+                    interpolate_linear(
+                        mu_inner,
+                        mu_outer,
+                        float(
+                            t
+                        ),
+                    )
                 ),
                 conductivity=float(
                     sigma
