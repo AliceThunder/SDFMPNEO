@@ -869,6 +869,19 @@ def build_thermal_source_quadrature(
                 region
                 == package_index
             )
+            if np.any(
+                keep
+            ):
+                conductor = np.asarray(
+                    prepared_spatial.teacher.conductor_teacher._mqs.points_in_conductors(
+                        quadrature.positions
+                    ),
+                    dtype=bool,
+                )
+                keep = (
+                    keep
+                    & ~conductor
+                )
             count = int(
                 np.count_nonzero(
                     keep
