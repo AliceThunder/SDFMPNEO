@@ -125,6 +125,13 @@ class CurrentControlledEnvelope:
             raise ValueError(
                 "max_coupling_iterations must be >= 1"
             )
+        if scene.packages:
+            raise ValueError(
+                "coil-only REFERENCE electrothermal envelope does not resolve "
+                "package/background dissipation channels; use the structured "
+                "channel-resolved electrothermal envelope with a package-aware "
+                "port artifact"
+            )
         self.scene = scene
         self.frequency_hz = float(frequency_hz)
         self.thermal_model = thermal_model
