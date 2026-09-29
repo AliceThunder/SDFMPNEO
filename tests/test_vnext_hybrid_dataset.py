@@ -1512,3 +1512,130 @@ def test_hybrid_sampler_and_teacher_support_free_material_inclusion():
         sample.power_closure_error
         < 1e-5
     )
+
+
+def test_hybrid_sampler_generates_correlated_graded_nested_materials():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            3,
+            3,
+        ),
+        nested_package_probability=1.0,
+        graded_package_probability=1.0,
+        nested_package_scale_range=(
+            1.15,
+            1.25,
+        ),
+        relative_permittivity_range=(
+            2.0,
+            8.0,
+        ),
+        package_relative_permeability_range=(
+            1.0,
+            3.0,
+        ),
+        dielectric_conductivity_range=(
+            1.0e-5,
+            1.0e-2,
+        ),
+        lossless_probability=0.0,
+        debye_package_probability=0.0,
+        multi_debye_package_probability=0.0,
+    )
+    scene, _ = sample_hybrid_package_scene(
+        np.random.default_rng(
+            2417
+        ),
+        config,
+    )
+    materials = tuple(
+        package.material
+        for package in scene.packages
+    )
+    assert all(
+        isinstance(
+            material,
+            IsotropicMaterial,
+        )
+        for material in materials
+    )
+
+    epsilon = np.asarray(
+        [
+            material.relative_permittivity
+            for material in materials
+        ],
+        dtype=float,
+    )
+    permeability = np.asarray(
+        [
+            material.relative_permeability
+            for material in materials
+        ],
+        dtype=float,
+    )
+    conductivity = np.asarray(
+        [
+            material.conductivity
+            for material in materials
+        ],
+        dtype=float,
+    )
+    assert np.isclose(
+        epsilon[
+            1
+        ],
+        0.5
+        * (
+            epsilon[
+                0
+            ]
+            + epsilon[
+                2
+            ]
+        ),
+    )
+    assert np.isclose(
+        permeability[
+            1
+        ],
+        0.5
+        * (
+            permeability[
+                0
+            ]
+            + permeability[
+                2
+            ]
+        ),
+    )
+    assert np.isclose(
+        conductivity[
+            1
+        ] ** 2,
+        conductivity[
+            0
+        ]
+        * conductivity[
+            2
+        ],
+        rtol=1e-12,
+        atol=0.0,
+    )
+    metadata = config.geometry_domain_metadata()
+    assert (
+        metadata[
+            "package"
+        ][
+            "graded_package_probability"
+        ]
+        == 1.0
+    )
+    assert (
+        metadata[
+            "package"
+        ][
+            "graded_material_parameterization"
+        ]
+        == "correlated_isotropic_endpoint_interpolation"
+    )
