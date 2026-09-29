@@ -2166,11 +2166,12 @@ def sample_hybrid_package_scene(
         )
 
     force_package_conductivity = (
-        False
-        if (
-            is_dc
-            and not dc_conductive
+        (
+            True
+            if dc_conductive
+            else False
         )
+        if is_dc
         else None
     )
     graded = bool(
