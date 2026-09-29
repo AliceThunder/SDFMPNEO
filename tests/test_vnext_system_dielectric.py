@@ -3,6 +3,7 @@ import pytest
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
+    AnisotropicThermalMedium,
     CoilObject,
     ConductorMaterial,
     DielectricCoupledResult,
@@ -799,3 +800,85 @@ def test_package_thermal_source_uses_public_spatial_api_without_reference_teache
         rtol=2e-6,
         atol=2e-9,
     )
+
+
+def test_system_uses_anisotropic_thermal_green_with_em_packages_without_thermal_contrast():
+    scene = _scene()
+    medium = AnisotropicThermalMedium(
+        conductivity_tensor=np.asarray(
+            [
+                [1.2, 0.15, 0.0],
+                [0.15, 0.7, 0.05],
+                [0.0, 0.05, 0.45],
+            ]
+        ),
+        density=1050.0,
+        heat_capacity=1800.0,
+    )
+    field = _system().reference_continuous_thermal_field(
+        scene,
+        80_000.0,
+        medium,
+        longitudinal_segments=6,
+        radial_order=3,
+        angular_order=12,
+    )
+    temperature = field.temperature_step(
+        np.asarray(
+            [0.0, 0.0, 0.03]
+        ),
+        2.0,
+        np.asarray(
+            [1.0 + 0.0j]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        >= medium.ambient_temperature
+    )
+
+
+def test_system_fails_closed_for_anisotropic_background_with_package_thermal_contrast():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=2.0,
+            thermal_conductivity=0.25,
+            density=1200.0,
+            heat_capacity=1500.0,
+        ),
+        "thermal-package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    medium = AnisotropicThermalMedium(
+        conductivity_tensor=np.diag(
+            [
+                1.2,
+                0.7,
+                0.45,
+            ]
+        ),
+        density=1050.0,
+        heat_capacity=1800.0,
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="anisotropic.*tensor thermal-interface",
+    ):
+        _system().reference_continuous_thermal_field(
+            scene,
+            80_000.0,
+            medium,
+        )
