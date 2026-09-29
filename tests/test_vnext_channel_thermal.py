@@ -6,8 +6,10 @@ from sdfmpneo_vnext import (
     ChannelResolvedVoltageEnvelope,
     CoilObject,
     ConductorMaterial,
+    DielectricCoupledReferenceArtifact,
     HomogeneousMedium,
     IsotropicMaterial,
+    MQSConfig,
     PackageObject,
     Scene,
     StructuredPortPrediction,
@@ -259,3 +261,60 @@ def test_channel_resolved_envelope_rejects_thermal_source_channel_mismatch():
             ),
             1.0,
         )
+
+
+def test_channel_resolved_envelope_accepts_real_package_reference_artifact():
+    artifact = DielectricCoupledReferenceArtifact(
+        config=MQSConfig(
+            segments_per_turn=6,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        magnetic_volume_axial_order=2,
+        magnetic_volume_radial_order=2,
+        magnetic_volume_azimuthal_order=8,
+        maximum_raw_magnetic_reciprocity_defect=0.25,
+    )
+    envelope = ChannelResolvedCurrentEnvelope(
+        _scene(),
+        40_000.0,
+        _thermal(),
+        artifact,
+        coil_temperature_indices=np.asarray(
+            [
+                0
+            ]
+        ),
+        coupling_tolerance=1e-8,
+        max_coupling_iterations=3,
+    )
+    step = envelope.step(
+        np.zeros(
+            2
+        ),
+        np.asarray(
+            [
+                1.0 + 0.0j
+            ]
+        ),
+        0.0,
+    )
+    assert step.converged
+    assert step.channel_power.shape == (
+        2,
+    )
+    assert np.all(
+        step.channel_power
+        >= -1e-12
+    )
+    assert np.isfinite(
+        step.impedance[
+            0,
+            0
+        ]
+    )
