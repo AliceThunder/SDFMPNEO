@@ -63,6 +63,7 @@ from .matrix_free import (
 from .thermal import StableThermalModel
 from .thermal_field import (
     HomogeneousThermalMedium,
+    AnisotropicThermalMedium,
     ThermalSourceQuadrature,
     PreparedThermalGreenField,
     ContinuousThermalGreenArtifact,
@@ -287,6 +288,7 @@ __all__ = [
     "MatrixFreeMixedOperator",
     "StableThermalModel",
     "HomogeneousThermalMedium",
+    "AnisotropicThermalMedium",
     "ThermalSourceQuadrature",
     "PreparedThermalGreenField",
     "ContinuousThermalGreenArtifact",
