@@ -109,7 +109,27 @@ layers = compile_graded_superquadric_regions(
     enclosed_coils=scene.coils,
 )
 graded_scene = Scene(scene.coils, scene.medium, layers)
+
+graded_report = graded_material_convergence(
+    Scene(scene.coils, scene.medium),
+    frequency_hz,
+    outer_package_geometry,
+    profile,
+    shell_counts=(4, 8, 16),
+)
+
+certified = certify_dielectric_ports(
+    graded_scene,
+    frequency_hz,
+    fast_artifact,
+    convergence_report=hybrid_report,
+    graded_convergence_report=graded_report,
+)
 ```
+
+The graded report isolates material-profile shell error from conductor/SIE
+quadrature error. Full discretization certification can therefore require both
+the ordinary hybrid refinement report and the graded-shell report to converge.
 
 ## Hybrid dataset: packages + optional lossy background
 
