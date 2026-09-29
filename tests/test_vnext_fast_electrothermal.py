@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
@@ -8,8 +9,12 @@ from sdfmpneo_vnext import (
     FastCurrentControlledEnvelope,
     FastVoltageControlledEnvelope,
     HomogeneousMedium,
+    IsotropicMaterial,
+    PackageObject,
     Scene,
+    StructuredPortPrediction,
     SuperellipseSpiral,
+    SuperquadricPackageGeometry,
     build_lumped_coil_thermal_model,
 )
 
@@ -130,3 +135,90 @@ def test_fast_voltage_control_reduces_current_as_resistance_rises():
     assert hot.converged
     assert hot.temperatures[0] > cold.temperatures[0]
     assert abs(hot.currents[0]) < abs(cold.currents[0])
+
+
+class _PackageTwoChannelArtifact:
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        assert len(
+            scene.packages
+        ) == 1
+        resistance = 0.2
+        return StructuredPortPrediction(
+            np.asarray(
+                [
+                    [
+                        resistance
+                        + 0.1j
+                    ]
+                ],
+                dtype=complex,
+            ),
+            np.asarray(
+                [
+                    [
+                        [
+                            0.75
+                            * resistance
+                        ]
+                    ],
+                    [
+                        [
+                            0.25
+                            * resistance
+                        ]
+                    ],
+                ],
+                dtype=complex,
+            ),
+        )
+
+
+def test_fast_coil_only_envelope_preserves_packages_and_directs_extra_channels_to_channel_resolved_api():
+    base = _scene()
+    package = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [
+                    0.035,
+                    0.030,
+                    0.010,
+                ]
+            )
+        ),
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        ),
+        "package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    envelope = FastCurrentControlledEnvelope(
+        scene,
+        40_000.0,
+        _thermal(),
+        _PackageTwoChannelArtifact(),
+    )
+    with pytest.raises(
+        ValueError,
+        match="ChannelResolvedCurrentEnvelope",
+    ):
+        envelope.step(
+            np.zeros(
+                1
+            ),
+            np.asarray(
+                [
+                    1.0 + 0.0j
+                ]
+            ),
+            1.0,
+        )
