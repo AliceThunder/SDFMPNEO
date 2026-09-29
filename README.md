@@ -312,6 +312,14 @@ artifacts and solves only the local package thermal-interface system online.
 Multiple strictly nested or disjoint thermally distinct material regions are
 solved in one coupled interface system; no finite world box is introduced.
 
+For closed-loop lumped electrothermal evolution, the legacy
+`FastCurrentControlledEnvelope` / `FastVoltageControlledEnvelope` APIs are
+intentionally one thermal source per coil. Scenes with package/background
+environment-loss channels should use `ChannelResolvedCurrentEnvelope` or
+`ChannelResolvedVoltageEnvelope` with `build_lumped_channel_thermal_model`.
+Those envelopes preserve package geometry during temperature feedback and map
+every electromagnetic dissipation channel into the declared thermal network.
+
 ## Important current scope limits
 
 The current vNext code intentionally fails closed outside implemented physics:
