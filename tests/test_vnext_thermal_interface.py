@@ -2,6 +2,7 @@ import numpy as np
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
+    AnisotropicThermalMedium,
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
@@ -844,4 +845,281 @@ def test_system_reference_continuous_thermal_field_supports_nested_package_inter
     assert (
         field.maximum_interface_residual
         <= field.interface_residual_tolerance
+    )
+
+
+def _anisotropic_package_scene():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.020,
+            0.018,
+            0.65,
+            0.001,
+            0.001,
+            conductor_width=8.0e-4,
+            conductor_thickness=6.0e-4,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+        "coil",
+    )
+    package = PackageObject(
+        _geometry(
+            (
+                0.040,
+                0.0,
+                0.0,
+            )
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity=0.24,
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "thermal-inclusion",
+    )
+    scene = Scene(
+        (
+            coil,
+        ),
+        HomogeneousMedium(),
+        (
+            package,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=20,
+        ),
+        reference_config=MQSConfig(
+            segments_per_turn=6,
+            min_segments=8,
+            section_degree=0,
+            radial_order=3,
+            angular_order=12,
+            line_order=2,
+        ),
+        dielectric_surface_vertical_order=6,
+        dielectric_surface_azimuthal_order=12,
+    )
+    return (
+        scene,
+        system,
+    )
+
+
+def _prepare_anisotropic_package_field(
+    scene,
+    system,
+    thermal_medium,
+):
+    return system.reference_continuous_thermal_field(
+        scene,
+        40_000.0,
+        thermal_medium,
+        longitudinal_segments=6,
+        radial_order=3,
+        angular_order=8,
+        package_axial_order=2,
+        package_radial_order=2,
+        package_azimuthal_order=8,
+        interface_vertical_order=4,
+        interface_azimuthal_order=8,
+        mfs_offset_fraction=0.12,
+        stehfest_order=6,
+        interface_residual_tolerance=5e-3,
+        svd_rcond=1e-13,
+    )
+
+
+def test_package_thermal_interface_anisotropic_isotropic_limit_matches_scalar_background():
+    scene, system = _anisotropic_package_scene()
+    scalar = HomogeneousThermalMedium(
+        conductivity=0.6,
+        density=1000.0,
+        heat_capacity=4000.0,
+        ambient_temperature=293.15,
+    )
+    tensor = AnisotropicThermalMedium(
+        conductivity_tensor=(
+            0.6
+            * np.eye(
+                3
+            )
+        ),
+        density=1000.0,
+        heat_capacity=4000.0,
+        ambient_temperature=293.15,
+    )
+    scalar_field = _prepare_anisotropic_package_field(
+        scene,
+        system,
+        scalar,
+    )
+    tensor_field = _prepare_anisotropic_package_field(
+        scene,
+        system,
+        tensor,
+    )
+    query = np.asarray(
+        [
+            [
+                0.040,
+                0.0,
+                0.014,
+            ],
+            [
+                0.0,
+                0.0,
+                0.030,
+            ],
+        ]
+    )
+    currents = np.asarray(
+        [
+            1.0 + 0.0j
+        ]
+    )
+    scalar_temperature = scalar_field.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    tensor_temperature = tensor_field.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    assert np.allclose(
+        tensor_temperature,
+        scalar_temperature,
+        rtol=3e-5,
+        atol=3e-6,
+    )
+
+
+def test_anisotropic_background_package_interface_is_common_rotation_invariant():
+    scene, system = _anisotropic_package_scene()
+    conductivity = np.diag(
+        [
+            0.35,
+            0.75,
+            1.15,
+        ]
+    )
+    medium = AnisotropicThermalMedium(
+        conductivity_tensor=conductivity,
+        density=1050.0,
+        heat_capacity=3600.0,
+        ambient_temperature=293.15,
+    )
+    field = _prepare_anisotropic_package_field(
+        scene,
+        system,
+        medium,
+    )
+    query = np.asarray(
+        [
+            0.040,
+            0.002,
+            0.014,
+        ]
+    )
+    currents = np.asarray(
+        [
+            1.0 + 0.0j
+        ]
+    )
+    reference = field.temperature_step(
+        query,
+        2.5,
+        currents,
+    )
+
+    rng = np.random.default_rng(
+        17031
+    )
+    rotation = haar_rotation(
+        rng
+    )
+    common = RigidPose(
+        rotation,
+        np.asarray(
+            [
+                0.11,
+                -0.08,
+                0.19,
+            ]
+        ),
+    )
+    moved_coil = CoilObject(
+        scene.coils[
+            0
+        ].geometry.transformed(
+            common
+        ),
+        scene.coils[
+            0
+        ].material,
+        "coil",
+    )
+    moved_package = PackageObject(
+        scene.packages[
+            0
+        ].geometry.transformed(
+            common
+        ),
+        scene.packages[
+            0
+        ].material,
+        "thermal-inclusion",
+    )
+    moved_scene = Scene(
+        (
+            moved_coil,
+        ),
+        scene.medium,
+        (
+            moved_package,
+        ),
+    )
+    moved_medium = AnisotropicThermalMedium(
+        conductivity_tensor=(
+            rotation
+            @ conductivity
+            @ rotation.T
+        ),
+        density=medium.density,
+        heat_capacity=medium.heat_capacity,
+        ambient_temperature=(
+            medium.ambient_temperature
+        ),
+    )
+    moved_field = _prepare_anisotropic_package_field(
+        moved_scene,
+        system,
+        moved_medium,
+    )
+    actual = moved_field.temperature_step(
+        common.apply(
+            query
+        ),
+        2.5,
+        currents,
+    )
+    assert np.isclose(
+        actual,
+        reference,
+        rtol=5e-5,
+        atol=5e-6,
+    )
+    assert np.isfinite(
+        actual
+    )
+    assert (
+        actual
+        > moved_medium.ambient_temperature
     )
