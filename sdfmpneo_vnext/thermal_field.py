@@ -104,6 +104,127 @@ class HomogeneousThermalMedium:
 
 
 @dataclass(frozen=True)
+class AnisotropicThermalMedium:
+    """Homogeneous infinite medium with an SPD thermal-conductivity tensor."""
+
+    conductivity_tensor: np.ndarray
+    density: float
+    heat_capacity: float
+    ambient_temperature: float = 293.15
+
+    def __post_init__(
+        self,
+    ):
+        tensor = np.asarray(
+            self.conductivity_tensor,
+            dtype=float,
+        )
+        if (
+            tensor.shape
+            != (
+                3,
+                3,
+            )
+            or np.any(
+                ~np.isfinite(
+                    tensor
+                )
+            )
+            or not np.allclose(
+                tensor,
+                tensor.T,
+                rtol=1e-12,
+                atol=1e-14,
+            )
+            or not np.isfinite(
+                self.density
+            )
+            or self.density <= 0.0
+            or not np.isfinite(
+                self.heat_capacity
+            )
+            or self.heat_capacity <= 0.0
+            or not np.isfinite(
+                self.ambient_temperature
+            )
+        ):
+            raise ValueError(
+                "anisotropic thermal medium requires a finite symmetric "
+                "3x3 conductivity tensor and positive thermal properties"
+            )
+        eigenvalues = np.linalg.eigvalsh(
+            tensor
+        )
+        if np.min(
+            eigenvalues
+        ) <= 0.0:
+            raise ValueError(
+                "thermal conductivity tensor must be positive definite"
+            )
+        inverse = np.linalg.inv(
+            tensor
+        )
+        determinant = float(
+            np.linalg.det(
+                tensor
+            )
+        )
+        object.__setattr__(
+            self,
+            "conductivity_tensor",
+            tensor,
+        )
+        object.__setattr__(
+            self,
+            "_inverse_conductivity_tensor",
+            inverse,
+        )
+        object.__setattr__(
+            self,
+            "_conductivity_determinant",
+            determinant,
+        )
+
+    @property
+    def volumetric_heat_capacity(
+        self,
+    ) -> float:
+        return float(
+            self.density
+            * self.heat_capacity
+        )
+
+    @property
+    def inverse_conductivity_tensor(
+        self,
+    ) -> np.ndarray:
+        return np.asarray(
+            self._inverse_conductivity_tensor,
+            dtype=float,
+        )
+
+    @property
+    def conductivity_determinant(
+        self,
+    ) -> float:
+        return float(
+            self._conductivity_determinant
+        )
+
+    @property
+    def geometric_mean_conductivity(
+        self,
+    ) -> float:
+        return float(
+            self.conductivity_determinant
+            ** (
+                1.0
+                / 3.0
+            )
+        )
+
+
+@dataclass(frozen=True)
 class ThermalSourceQuadrature:
     positions: np.ndarray
     volume_weights: np.ndarray
@@ -1191,7 +1312,7 @@ def build_thermal_source_quadrature(
 @dataclass(frozen=True)
 class PreparedThermalGreenField:
     source: ThermalSourceQuadrature
-    medium: HomogeneousThermalMedium
+    medium: HomogeneousThermalMedium | AnisotropicThermalMedium
 
     def _query_points(
         self,
@@ -1216,7 +1337,7 @@ class PreparedThermalGreenField:
             scalar,
         )
 
-    def _distance(
+    def _green_geometry(
         self,
         points,
     ):
@@ -1232,17 +1353,82 @@ class PreparedThermalGreenField:
                 :
             ]
         )
+        radius_squared = (
+            self.source.effective_radius[
+                None,
+                :
+            ] ** 2
+        )
+        if isinstance(
+            self.medium,
+            AnisotropicThermalMedium,
+        ):
+            metric_squared = np.einsum(
+                "qsi,ij,qsj->qs",
+                difference,
+                self.medium.inverse_conductivity_tensor,
+                difference,
+            )
+            metric_squared = (
+                metric_squared
+                + radius_squared
+                / self.medium.geometric_mean_conductivity
+            )
+            metric_distance = np.sqrt(
+                np.maximum(
+                    metric_squared,
+                    1e-30,
+                )
+            )
+            steady = (
+                1.0
+                / (
+                    4.0
+                    * np.pi
+                    * np.sqrt(
+                        self.medium.conductivity_determinant
+                    )
+                    * metric_distance
+                )
+            )
+            transient_length = (
+                np.sqrt(
+                    self.medium.volumetric_heat_capacity
+                )
+                * metric_distance
+            )
+            return (
+                steady,
+                transient_length,
+            )
+
         distance_squared = np.sum(
             difference
             * difference,
             axis=2,
         )
-        return np.sqrt(
+        distance = np.sqrt(
             distance_squared
-            + self.source.effective_radius[
-                None,
-                :
-            ] ** 2
+            + radius_squared
+        )
+        steady = (
+            1.0
+            / (
+                4.0
+                * np.pi
+                * self.medium.conductivity
+                * distance
+            )
+        )
+        transient_length = (
+            distance
+            / np.sqrt(
+                self.medium.diffusivity
+            )
+        )
+        return (
+            steady,
+            transient_length,
         )
 
     def step_response_matrix(
@@ -1277,29 +1463,23 @@ class PreparedThermalGreenField:
                 else out
             )
 
-        distance = self._distance(
+        (
+            steady_coefficient,
+            transient_length,
+        ) = self._green_geometry(
             points
-        )
-        alpha = (
-            self.medium.diffusivity
         )
         coefficient = (
             erfc(
-                distance
+                transient_length
                 / (
                     2.0
                     * np.sqrt(
-                        alpha
-                        * time
+                        time
                     )
                 )
             )
-            / (
-                4.0
-                * np.pi
-                * self.medium.conductivity
-                * distance
-            )
+            * steady_coefficient
         )
         weighted = (
             coefficient
@@ -1336,17 +1516,11 @@ class PreparedThermalGreenField:
                 points
             )
         )
-        distance = self._distance(
+        (
+            coefficient,
+            _,
+        ) = self._green_geometry(
             points
-        )
-        coefficient = (
-            1.0
-            / (
-                4.0
-                * np.pi
-                * self.medium.conductivity
-                * distance
-            )
         )
         weighted = (
             coefficient
