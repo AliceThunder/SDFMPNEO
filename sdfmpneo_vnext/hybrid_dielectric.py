@@ -1192,6 +1192,27 @@ class DielectricCoupledMixedTeacher:
             StructuredPortPrediction(
                 impedance,
                 all_channels,
+                tuple(
+                    f"coil:{index}"
+                    for index in range(
+                        len(
+                            self.scene.coils
+                        )
+                    )
+                )
+                + (
+                    (
+                        "electric_environment:aggregate"
+                        if (
+                            self.conductive_dc
+                            or self.scene.medium.loss_conductivity(
+                                self.frequency_hz
+                            )
+                            > 0.0
+                        )
+                        else "dielectric:aggregate"
+                    ),
+                ),
             )
         )
 
