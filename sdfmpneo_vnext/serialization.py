@@ -46,15 +46,6 @@ def _medium_to_dict(
             "thermal_conductivity": (
                 medium.thermal_conductivity
             ),
-            "thermal_conductivity_tensor": (
-                None
-                if medium.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    medium.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
         }
@@ -129,6 +120,15 @@ def _medium_to_dict(
             ),
             "thermal_conductivity": (
                 medium.thermal_conductivity
+            ),
+            "thermal_conductivity_tensor": (
+                None
+                if medium.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    medium.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
             ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
@@ -237,6 +237,14 @@ def _medium_from_dict(
             heat_capacity
         )
     )
+    if (
+        thermal_tensor is not None
+        and model != "constant"
+    ):
+        raise ValueError(
+            "thermal_conductivity_tensor is currently supported only for "
+            "constant passive isotropic electromagnetic materials"
+        )
     if model == "constant":
         epsilon_r = float(
             data.get(
@@ -560,6 +568,15 @@ def _package_material_to_dict(
             "thermal_conductivity": (
                 material.thermal_conductivity
             ),
+            "thermal_conductivity_tensor": (
+                None
+                if material.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    material.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
             "density": material.density,
             "heat_capacity": (
                 material.heat_capacity
@@ -585,6 +602,17 @@ def _package_material_from_dict(
             "thermal_conductivity"
         )
     )
+    thermal_conductivity_tensor = data.get(
+        "thermal_conductivity_tensor"
+    )
+    if (
+        thermal_conductivity is not None
+        and thermal_conductivity_tensor is not None
+    ):
+        raise ValueError(
+            "package thermal_conductivity and "
+            "thermal_conductivity_tensor are mutually exclusive"
+        )
     density = data.get(
         "density"
     )
@@ -597,6 +625,15 @@ def _package_material_from_dict(
         is None
         else float(
             thermal_conductivity
+        )
+    )
+    thermal_tensor = (
+        None
+        if thermal_conductivity_tensor
+        is None
+        else np.asarray(
+            thermal_conductivity_tensor,
+            dtype=float,
         )
     )
     rho = (
@@ -619,29 +656,40 @@ def _package_material_from_dict(
             "constant",
         )
     ).lower()
+    if (
+        thermal_tensor is not None
+        and model != "constant"
+    ):
+        raise ValueError(
+            "package thermal_conductivity_tensor is currently supported only "
+            "for constant passive isotropic electromagnetic materials"
+        )
     if model == "constant":
         return IsotropicMaterial(
-            float(
+            relative_permittivity=float(
                 data.get(
                     "relative_permittivity",
                     1.0,
                 )
             ),
-            float(
+            relative_permeability=float(
                 data.get(
                     "relative_permeability",
                     1.0,
                 )
             ),
-            float(
+            conductivity=float(
                 data.get(
                     "conductivity",
                     0.0,
                 )
             ),
-            thermal,
-            rho,
-            capacity,
+            thermal_conductivity=thermal,
+            density=rho,
+            heat_capacity=capacity,
+            thermal_conductivity_tensor=(
+                thermal_tensor
+            ),
         )
     if model == "debye":
         required = (
