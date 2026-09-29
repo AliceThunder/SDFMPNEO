@@ -201,6 +201,7 @@ class HybridSceneSamplerConfig:
     package_exponent_z_range: tuple[float, float] = (2.0, 5.0)
     package_count_range: tuple[int, int] = (1, 1)
     nested_package_probability: float = 0.0
+    graded_package_probability: float = 0.0
     nested_package_scale_range: tuple[float, float] = (1.15, 1.45)
     free_inclusion_probability: float = 0.0
     free_inclusion_center_radius_fraction_range: tuple[float, float] = (0.65, 1.8)
@@ -350,6 +351,14 @@ class HybridSceneSamplerConfig:
         ):
             raise ValueError(
                 "nested_package_probability must lie in [0,1]"
+            )
+        if not (
+            0.0
+            <= self.graded_package_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "graded_package_probability must lie in [0,1]"
             )
         if not (
             0.0
@@ -531,6 +540,12 @@ class HybridSceneSamplerConfig:
                 ),
                 "nested_package_probability": float(
                     self.nested_package_probability
+                ),
+                "graded_package_probability": float(
+                    self.graded_package_probability
+                ),
+                "graded_material_parameterization": (
+                    "correlated_isotropic_endpoint_interpolation"
                 ),
                 "nested_package_scale_range": list(
                     self.nested_package_scale_range
