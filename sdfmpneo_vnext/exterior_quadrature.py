@@ -155,30 +155,81 @@ def fibonacci_directions(
     )
 
 
-def homogeneous_background_domain_mask(
+def conductor_volume_mask(
     scene: Scene,
-    segments,
     points,
+    *,
+    segments=None,
+    segments_per_coil: int = 64,
 ) -> np.ndarray:
-    """Return the points that belong to the homogeneous background medium.
-
-    Conductor finite cross-sections and package interiors are excluded.  The
-    test is object-local and transported by the same segment frames / package
-    poses as the physical model, so no world-volume grid is introduced.
-    """
+    """Return points lying inside any finite-section conductor volume."""
     points = np.asarray(
         points,
         dtype=float,
     )
+    scalar = (
+        points.ndim
+        == 1
+    )
+    points = np.atleast_2d(
+        points
+    )
     if (
         points.ndim != 2
-        or points.shape[1] != 3
+        or points.shape[
+            1
+        ] != 3
     ):
         raise ValueError(
-            "points must have shape (n,3)"
+            "points must have shape (3,) or (n,3)"
         )
 
-    exterior = np.ones(
+    if segments is None:
+        if segments_per_coil < 4:
+            raise ValueError(
+                "segments_per_coil must be >= 4"
+            )
+        built = []
+        for coil_index, coil in enumerate(
+            scene.coils
+        ):
+            poly = coil.geometry.polyline(
+                int(
+                    segments_per_coil
+                )
+            )
+            for index in range(
+                len(
+                    poly.lengths
+                )
+            ):
+                built.append(
+                    SceneConductorSegment(
+                        coil=coil_index,
+                        midpoint=poly.midpoints[
+                            index
+                        ],
+                        tangent=poly.tangents[
+                            index
+                        ],
+                        length=float(
+                            poly.lengths[
+                                index
+                            ]
+                        ),
+                        n1=poly.normal1[
+                            index
+                        ],
+                        n2=poly.normal2[
+                            index
+                        ],
+                    )
+                )
+        segments = tuple(
+            built
+        )
+
+    inside_any = np.zeros(
         len(
             points
         ),
@@ -186,7 +237,7 @@ def homogeneous_background_domain_mask(
     )
     for segment in segments:
         active = np.flatnonzero(
-            exterior
+            ~inside_any
         )
         if active.size == 0:
             break
@@ -268,11 +319,52 @@ def homogeneous_background_domain_mask(
                 + 1e-10
             )
         )
-        exterior[
+        inside_any[
             candidate[
                 inside
             ]
-        ] = False
+        ] = True
+
+    return (
+        inside_any[
+            0
+        ]
+        if scalar
+        else inside_any
+    )
+
+
+def homogeneous_background_domain_mask(
+    scene: Scene,
+    segments,
+    points,
+) -> np.ndarray:
+    """Return the points that belong to the homogeneous background medium.
+
+    Conductor finite cross-sections and package interiors are excluded.  The
+    test is object-local and transported by the same segment frames / package
+    poses as the physical model, so no world-volume grid is introduced.
+    """
+    points = np.asarray(
+        points,
+        dtype=float,
+    )
+    if (
+        points.ndim != 2
+        or points.shape[1] != 3
+    ):
+        raise ValueError(
+            "points must have shape (n,3)"
+        )
+
+    exterior = ~np.asarray(
+        conductor_volume_mask(
+            scene,
+            points,
+            segments=segments,
+        ),
+        dtype=bool,
+    )
 
     for package in scene.packages:
         active = np.flatnonzero(
