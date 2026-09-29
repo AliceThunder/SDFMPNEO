@@ -1435,6 +1435,122 @@ def _sample_package_material(
     )
 
 
+def _sample_graded_package_materials(
+    rng: np.random.Generator,
+    config: HybridSceneSamplerConfig,
+    count: int,
+    *,
+    force_conductive: bool | None = None,
+):
+    if count < 2:
+        raise ValueError(
+            "graded package material sampling requires at least two layers"
+        )
+
+    epsilon_inner = _uniform(
+        rng,
+        config.relative_permittivity_range,
+    )
+    epsilon_outer = _uniform(
+        rng,
+        config.relative_permittivity_range,
+    )
+    mu_inner = _uniform(
+        rng,
+        config.package_relative_permeability_range,
+    )
+    mu_outer = _uniform(
+        rng,
+        config.package_relative_permeability_range,
+    )
+
+    if force_conductive is True:
+        lossless = False
+    elif force_conductive is False:
+        lossless = True
+    else:
+        lossless = bool(
+            rng.random()
+            < config.lossless_probability
+        )
+    if lossless:
+        sigma_inner = 0.0
+        sigma_outer = 0.0
+    else:
+        sigma_inner = _log_uniform(
+            rng,
+            config.dielectric_conductivity_range,
+        )
+        sigma_outer = _log_uniform(
+            rng,
+            config.dielectric_conductivity_range,
+        )
+
+    materials = []
+    for t in np.linspace(
+        0.0,
+        1.0,
+        int(
+            count
+        ),
+    ):
+        epsilon = (
+            (
+                1.0
+                - t
+            )
+            * epsilon_inner
+            + t
+            * epsilon_outer
+        )
+        mu = (
+            (
+                1.0
+                - t
+            )
+            * mu_inner
+            + t
+            * mu_outer
+        )
+        if (
+            sigma_inner > 0.0
+            and sigma_outer > 0.0
+        ):
+            sigma = float(
+                np.exp(
+                    (
+                        1.0
+                        - t
+                    )
+                    * np.log(
+                        sigma_inner
+                    )
+                    + t
+                    * np.log(
+                        sigma_outer
+                    )
+                )
+            )
+        else:
+            sigma = 0.0
+        materials.append(
+            IsotropicMaterial(
+                relative_permittivity=float(
+                    epsilon
+                ),
+                relative_permeability=float(
+                    mu
+                ),
+                conductivity=float(
+                    sigma
+                ),
+            )
+        )
+    return tuple(
+        materials
+    )
+
+
 def _package_probe_objects(
     geometries,
 ):
@@ -2049,25 +2165,57 @@ def sample_hybrid_package_scene(
             )
         )
 
-    packages = tuple(
-        PackageObject(
-            geometry,
+    force_package_conductivity = (
+        False
+        if (
+            is_dc
+            and not dc_conductive
+        )
+        else None
+    )
+    graded = bool(
+        nested
+        and package_count
+        > 1
+        and rng.random()
+        < config.graded_package_probability
+    )
+    if graded:
+        package_materials = (
+            _sample_graded_package_materials(
+                rng,
+                config,
+                package_count,
+                force_conductive=(
+                    force_package_conductivity
+                ),
+            )
+        )
+    else:
+        package_materials = tuple(
             _sample_package_material(
                 rng,
                 config,
                 force_conductive=(
-                    False
-                    if (
-                        is_dc
-                        and not dc_conductive
-                    )
-                    else None
+                    force_package_conductivity
                 ),
-            ),
+            )
+            for _ in geometries
+        )
+    packages = tuple(
+        PackageObject(
+            geometry,
+            material,
             f"package{index}",
         )
-        for index, geometry in enumerate(
-            geometries
+        for index, (
+            geometry,
+            material,
+        ) in enumerate(
+            zip(
+                geometries,
+                package_materials,
+            )
         )
     )
     package_domain_topology(
