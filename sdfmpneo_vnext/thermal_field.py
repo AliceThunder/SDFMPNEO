@@ -1730,6 +1730,9 @@ class ContinuousThermalGreenArtifact:
         longitudinal_segments: int = 24,
         radial_order: int = 4,
         angular_order: int = 24,
+        package_axial_order: int | None = None,
+        package_radial_order: int | None = None,
+        package_azimuthal_order: int | None = None,
         background_radial_order: int | None = None,
         background_angular_order: int | None = None,
         spatial_prepare_options=None,
@@ -1759,6 +1762,30 @@ class ContinuousThermalGreenArtifact:
         )
         self.angular_order = int(
             angular_order
+        )
+        self.package_axial_order = (
+            None
+            if package_axial_order
+            is None
+            else int(
+                package_axial_order
+            )
+        )
+        self.package_radial_order = (
+            None
+            if package_radial_order
+            is None
+            else int(
+                package_radial_order
+            )
+        )
+        self.package_azimuthal_order = (
+            None
+            if package_azimuthal_order
+            is None
+            else int(
+                package_azimuthal_order
+            )
         )
         self.background_radial_order = (
             None
@@ -1820,6 +1847,15 @@ class ContinuousThermalGreenArtifact:
                 ),
                 angular_order=(
                     self.angular_order
+                ),
+                package_axial_order=(
+                    self.package_axial_order
+                ),
+                package_radial_order=(
+                    self.package_radial_order
+                ),
+                package_azimuthal_order=(
+                    self.package_azimuthal_order
                 ),
                 background_radial_order=(
                     self.background_radial_order
