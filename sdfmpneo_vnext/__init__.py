@@ -21,6 +21,11 @@ from .graded_material import (
     RadialIsotropicMaterialProfile,
     compile_graded_superquadric_regions,
 )
+from .graded_convergence import (
+    GradedMaterialConvergenceStep,
+    GradedMaterialConvergenceReport,
+    graded_material_convergence,
+)
 from .scene import (
     ConductorMaterial,
     PassiveIsotropicMaterial,
@@ -249,6 +254,9 @@ __all__ = [
     "SuperquadricVolumeQuadrature",
     "RadialIsotropicMaterialProfile",
     "compile_graded_superquadric_regions",
+    "GradedMaterialConvergenceStep",
+    "GradedMaterialConvergenceReport",
+    "graded_material_convergence",
     "SuperellipseSpiral",
     "PolylineConductor",
     "bishop_segment_frames",
