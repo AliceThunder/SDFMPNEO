@@ -86,9 +86,26 @@ def _same_thermal_medium(
 
 def scene_thermal_package_media(
     scene: Scene,
-    background: HomogeneousThermalMedium,
+    background,
 ):
     """Return thermal interfaces whose material differs from the parent region."""
+    if not isinstance(
+        background,
+        HomogeneousThermalMedium,
+    ):
+        has_package_thermal_contrast = any(
+            _thermal_properties(
+                package.material
+            )
+            is not None
+            for package in scene.packages
+        )
+        if has_package_thermal_contrast:
+            raise NotImplementedError(
+                "thermally distinct package interfaces with an anisotropic "
+                "background require the tensor thermal-interface solver"
+            )
+        return ()
     topology = package_domain_topology(
         scene.packages
     )
@@ -2593,6 +2610,14 @@ class PiecewiseThermalInterfaceArtifact:
         svd_rcond: float = 1e-11,
         spatial_prepare_options=None,
     ):
+        if not isinstance(
+            background_medium,
+            HomogeneousThermalMedium,
+        ):
+            raise NotImplementedError(
+                "piecewise package thermal interfaces currently require an "
+                "isotropic homogeneous thermal background"
+            )
         self.spatial_artifact = (
             spatial_artifact
         )
