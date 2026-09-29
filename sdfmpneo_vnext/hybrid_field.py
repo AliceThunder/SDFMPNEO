@@ -670,6 +670,19 @@ class PreparedHybridReferenceLossField:
             region
             == package_index
         )
+        if np.any(
+            inside
+        ):
+            conductor = np.asarray(
+                self.teacher.conductor_teacher._mqs.points_in_conductors(
+                    points
+                ),
+                dtype=bool,
+            )
+            inside = (
+                inside
+                & ~conductor
+            )
         n_ports = (
             self.port_prediction.impedance.shape[
                 0
