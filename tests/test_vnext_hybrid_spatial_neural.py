@@ -38,6 +38,7 @@ from sdfmpneo_vnext.hybrid_neural import (
 from sdfmpneo_vnext.hybrid_spatial_neural import (
     HybridSpatialLossArtifact,
     HybridSpatialLossShapeNet,
+    PackageLossShapeNet,
     train_hybrid_spatial_loss_surrogate,
 )
 
@@ -1291,4 +1292,150 @@ def test_hybrid_spatial_minibatch_training_uses_cached_port_latents():
         np.isfinite(
             prepared.port_prediction.impedance
         )
+    )
+
+
+def test_vectorized_package_decoder_matches_independent_point_queries():
+    torch.manual_seed(
+        701
+    )
+    model = PackageLossShapeNet(
+        hidden_dim=5,
+        cross_dim=3,
+        field_hidden_dim=8,
+        factor_rank=2,
+        depth=1,
+    )
+    coil_latent = torch.randn(
+        2,
+        5,
+    )
+    package_latent = torch.randn(
+        3,
+        5,
+    )
+    coil_package = torch.randn(
+        2,
+        3,
+        3,
+    )
+    package_index = np.asarray(
+        [
+            0,
+            2,
+            1,
+        ],
+        dtype=int,
+    )
+    coordinates = np.asarray(
+        [
+            [0.1, -0.2, 0.3, 0.4, 0.5],
+            [-0.3, 0.2, -0.1, 0.6, 0.2],
+            [0.4, 0.1, -0.2, 0.3, 0.7],
+        ],
+        dtype=float,
+    )
+    batched = model.raw_matrices(
+        coil_latent,
+        package_latent,
+        coil_package,
+        package_index,
+        coordinates,
+    )
+    independent = torch.cat(
+        [
+            model.raw_matrices(
+                coil_latent,
+                package_latent,
+                coil_package,
+                package_index[
+                    index:
+                    index
+                    + 1
+                ],
+                coordinates[
+                    index:
+                    index
+                    + 1
+                ],
+            )
+            for index in range(
+                len(
+                    package_index
+                )
+            )
+        ],
+        dim=0,
+    )
+    assert torch.allclose(
+        batched,
+        independent,
+        rtol=2e-6,
+        atol=2e-7,
+    )
+
+
+def test_vectorized_background_decoder_matches_independent_point_queries():
+    torch.manual_seed(
+        709
+    )
+    model = BackgroundLossShapeNet(
+        hidden_dim=5,
+        field_hidden_dim=8,
+        factor_rank=2,
+        depth=1,
+    )
+    coil_latent = torch.randn(
+        2,
+        5,
+    )
+    package_latent = torch.randn(
+        3,
+        5,
+    )
+    coil_coordinates = torch.rand(
+        4,
+        2,
+        5,
+    )
+    package_coordinates = torch.rand(
+        4,
+        3,
+        5,
+    )
+    batched = model.raw_matrices(
+        coil_latent,
+        package_latent,
+        coil_coordinates,
+        package_coordinates,
+    )
+    independent = torch.cat(
+        [
+            model.raw_matrices(
+                coil_latent,
+                package_latent,
+                coil_coordinates[
+                    index:
+                    index
+                    + 1
+                ],
+                package_coordinates[
+                    index:
+                    index
+                    + 1
+                ],
+            )
+            for index in range(
+                coil_coordinates.shape[
+                    0
+                ]
+            )
+        ],
+        dim=0,
+    )
+    assert torch.allclose(
+        batched,
+        independent,
+        rtol=2e-6,
+        atol=2e-7,
     )
