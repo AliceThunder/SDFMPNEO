@@ -5,6 +5,7 @@ import numpy as np
 from scipy.special import erfc
 
 from .basis import superellipse_section_quadrature
+from .exterior_quadrature import conductor_volume_mask
 from .hybrid_domain import package_domain_topology
 from .scene import Scene
 
@@ -873,8 +874,12 @@ def build_thermal_source_quadrature(
                 keep
             ):
                 conductor = np.asarray(
-                    prepared_spatial.teacher.conductor_teacher._mqs.points_in_conductors(
-                        quadrature.positions
+                    conductor_volume_mask(
+                        scene,
+                        quadrature.positions,
+                        segments_per_coil=(
+                            longitudinal_segments
+                        ),
                     ),
                     dtype=bool,
                 )
