@@ -10,6 +10,91 @@ MU0 = 4e-7 * np.pi
 EPS0 = 8.8541878128e-12
 
 
+def _validated_optional_thermal_tensor(
+    scalar,
+    tensor,
+    density,
+    heat_capacity,
+):
+    if (
+        scalar is None
+        and tensor is None
+        and density is None
+        and heat_capacity is None
+    ):
+        return None
+    if (
+        scalar is not None
+        and tensor is not None
+    ):
+        raise ValueError(
+            "thermal_conductivity and thermal_conductivity_tensor are "
+            "mutually exclusive"
+        )
+    if (
+        density is None
+        or heat_capacity is None
+        or (
+            scalar is None
+            and tensor is None
+        )
+        or not np.isfinite(
+            density
+        )
+        or density <= 0.0
+        or not np.isfinite(
+            heat_capacity
+        )
+        or heat_capacity <= 0.0
+    ):
+        raise ValueError(
+            "thermal conductivity, density, and heat_capacity must be "
+            "supplied together as positive finite properties"
+        )
+    if scalar is not None:
+        if (
+            not np.isfinite(
+                scalar
+            )
+            or scalar <= 0.0
+        ):
+            raise ValueError(
+                "thermal_conductivity must be positive and finite"
+            )
+        return None
+    value = np.asarray(
+        tensor,
+        dtype=float,
+    )
+    if (
+        value.shape != (
+            3,
+            3,
+        )
+        or np.any(
+            ~np.isfinite(
+                value
+            )
+        )
+        or not np.allclose(
+            value,
+            value.T,
+            rtol=1e-12,
+            atol=1e-14,
+        )
+        or np.min(
+            np.linalg.eigvalsh(
+                value
+            )
+        ) <= 0.0
+    ):
+        raise ValueError(
+            "thermal_conductivity_tensor must be a finite symmetric "
+            "positive-definite 3x3 matrix"
+        )
+    return value.copy()
+
+
 @runtime_checkable
 class PassiveIsotropicMaterial(Protocol):
     relative_permeability: float
@@ -361,6 +446,7 @@ class DebyeMaterial:
     thermal_conductivity: float | None = None
     density: float | None = None
     heat_capacity: float | None = None
+    thermal_conductivity_tensor: np.ndarray | None = None
 
     def __post_init__(
         self,
@@ -395,27 +481,18 @@ class DebyeMaterial:
             raise ValueError(
                 "invalid passive Debye material parameters"
             )
-        thermal = (
+        tensor = _validated_optional_thermal_tensor(
             self.thermal_conductivity,
+            self.thermal_conductivity_tensor,
             self.density,
             self.heat_capacity,
         )
-        if any(
-            value is not None
-            for value in thermal
-        ):
-            if not all(
-                value is not None
-                and np.isfinite(
-                    value
-                )
-                and value > 0.0
-                for value in thermal
-            ):
-                raise ValueError(
-                    "thermal_conductivity, density, and heat_capacity "
-                    "must be supplied together as positive finite values"
-                )
+        if tensor is not None:
+            object.__setattr__(
+                self,
+                "thermal_conductivity_tensor",
+                tensor,
+            )
 
     @property
     def permeability(
@@ -558,6 +635,7 @@ class MultiDebyeMaterial:
     thermal_conductivity: float | None = None
     density: float | None = None
     heat_capacity: float | None = None
+    thermal_conductivity_tensor: np.ndarray | None = None
 
     def __post_init__(
         self,
@@ -619,27 +697,18 @@ class MultiDebyeMaterial:
             raise ValueError(
                 "invalid passive multi-Debye material parameters"
             )
-        thermal = (
+        tensor = _validated_optional_thermal_tensor(
             self.thermal_conductivity,
+            self.thermal_conductivity_tensor,
             self.density,
             self.heat_capacity,
         )
-        if any(
-            value is not None
-            for value in thermal
-        ):
-            if not all(
-                value is not None
-                and np.isfinite(
-                    value
-                )
-                and value > 0.0
-                for value in thermal
-            ):
-                raise ValueError(
-                    "thermal_conductivity, density, and heat_capacity "
-                    "must be supplied together as positive finite values"
-                )
+        if tensor is not None:
+            object.__setattr__(
+                self,
+                "thermal_conductivity_tensor",
+                tensor,
+            )
         object.__setattr__(
             self,
             "relaxation_strengths",
@@ -793,6 +862,7 @@ class TabulatedMaterial:
     thermal_conductivity: float | None = None
     density: float | None = None
     heat_capacity: float | None = None
+    thermal_conductivity_tensor: np.ndarray | None = None
 
     def __post_init__(
         self,
@@ -867,27 +937,18 @@ class TabulatedMaterial:
             raise ValueError(
                 "invalid passive tabulated material"
             )
-        thermal = (
+        tensor = _validated_optional_thermal_tensor(
             self.thermal_conductivity,
+            self.thermal_conductivity_tensor,
             self.density,
             self.heat_capacity,
         )
-        if any(
-            value is not None
-            for value in thermal
-        ):
-            if not all(
-                value is not None
-                and np.isfinite(
-                    value
-                )
-                and value > 0.0
-                for value in thermal
-            ):
-                raise ValueError(
-                    "thermal_conductivity, density, and heat_capacity "
-                    "must be supplied together as positive finite values"
-                )
+        if tensor is not None:
+            object.__setattr__(
+                self,
+                "thermal_conductivity_tensor",
+                tensor,
+            )
         object.__setattr__(
             self,
             "frequencies_hz",
