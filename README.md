@@ -292,8 +292,9 @@ thermal = system.fast_continuous_thermal_field(
 #
 # A homogeneous anisotropic thermal background is also supported with
 # AnisotropicThermalMedium(K, density, heat_capacity). Its infinite-domain
-# steady/transient Green function is analytic. Tensor-anisotropic package
-# thermal interfaces are still fail-closed.
+# steady/transient Green function is analytic and the same tensor-aware
+# modified-Helmholtz interface solver couples it to isotropic package thermal
+# contrast. Tensor-anisotropic package materials themselves remain fail-closed.
 
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
@@ -330,8 +331,9 @@ The current vNext code intentionally fails closed outside implemented physics:
   convergent conductor-safe nested-shell compilation, while general
   non-radial 3D electromagnetic heterogeneity and true tensor-anisotropic EM
   VIE media are not yet implemented; homogeneous tensor-anisotropic thermal
-  backgrounds are supported analytically, while tensor-anisotropic package
-  thermal interfaces are still not implemented;
+  backgrounds are supported analytically and through isotropic package
+  interfaces, while tensor-anisotropic package materials are not yet
+  implemented;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
