@@ -21,41 +21,122 @@ from .thermal_field import (
 def _thermal_properties(
     material,
 ):
-    values = (
-        getattr(
-            material,
-            "thermal_conductivity",
-            None,
-        ),
-        getattr(
-            material,
-            "density",
-            None,
-        ),
-        getattr(
-            material,
-            "heat_capacity",
-            None,
-        ),
+    scalar = getattr(
+        material,
+        "thermal_conductivity",
+        None,
     )
-    if all(
-        value is None
-        for value in values
+    tensor = getattr(
+        material,
+        "thermal_conductivity_tensor",
+        None,
+    )
+    density = getattr(
+        material,
+        "density",
+        None,
+    )
+    heat_capacity = getattr(
+        material,
+        "heat_capacity",
+        None,
+    )
+    if (
+        scalar is None
+        and tensor is None
+        and density is None
+        and heat_capacity is None
     ):
         return None
-    if any(
-        value is None
-        for value in values
+    if (
+        density is None
+        or heat_capacity is None
+        or (
+            scalar is None
+            and tensor is None
+        )
+        or (
+            scalar is not None
+            and tensor is not None
+        )
     ):
         raise ValueError(
-            "thermal_conductivity, density, and heat_capacity must be "
-            "declared together"
+            "exactly one of thermal_conductivity or "
+            "thermal_conductivity_tensor must be declared together with "
+            "density and heat_capacity"
         )
-    return tuple(
-        float(
-            value
+    rho = float(
+        density
+    )
+    capacity = float(
+        heat_capacity
+    )
+    if (
+        not np.isfinite(
+            rho
         )
-        for value in values
+        or rho <= 0.0
+        or not np.isfinite(
+            capacity
+        )
+        or capacity <= 0.0
+    ):
+        raise ValueError(
+            "density and heat_capacity must be positive and finite"
+        )
+    if tensor is not None:
+        conductivity = np.asarray(
+            tensor,
+            dtype=float,
+        )
+        if (
+            conductivity.shape
+            != (
+                3,
+                3,
+            )
+            or np.any(
+                ~np.isfinite(
+                    conductivity
+                )
+            )
+            or not np.allclose(
+                conductivity,
+                conductivity.T,
+                rtol=1e-12,
+                atol=1e-14,
+            )
+            or np.min(
+                np.linalg.eigvalsh(
+                    conductivity
+                )
+            ) <= 0.0
+        ):
+            raise ValueError(
+                "thermal_conductivity_tensor must be a finite symmetric "
+                "positive-definite 3x3 matrix"
+            )
+        return (
+            conductivity,
+            rho,
+            capacity,
+        )
+    conductivity = float(
+        scalar
+    )
+    if (
+        not np.isfinite(
+            conductivity
+        )
+        or conductivity <= 0.0
+    ):
+        raise ValueError(
+            "thermal_conductivity must be positive and finite"
+        )
+    return (
+        conductivity,
+        rho,
+        capacity,
     )
 
 
@@ -175,18 +256,43 @@ def scene_thermal_package_media(
         if values is None:
             medium = parent_medium
         else:
-            medium = HomogeneousThermalMedium(
-                values[
-                    0
-                ],
-                values[
-                    1
-                ],
-                values[
-                    2
-                ],
-                background.ambient_temperature,
-            )
+            conductivity = values[
+                0
+            ]
+            if np.asarray(
+                conductivity
+            ).ndim == 2:
+                medium = AnisotropicThermalMedium(
+                    conductivity_tensor=(
+                        conductivity
+                    ),
+                    density=(
+                        values[
+                            1
+                        ]
+                    ),
+                    heat_capacity=(
+                        values[
+                            2
+                        ]
+                    ),
+                    ambient_temperature=(
+                        background.ambient_temperature
+                    ),
+                )
+            else:
+                medium = HomogeneousThermalMedium(
+                    values[
+                        0
+                    ],
+                    values[
+                        1
+                    ],
+                    values[
+                        2
+                    ],
+                    background.ambient_temperature,
+                )
         resolved[
             index
         ] = medium
