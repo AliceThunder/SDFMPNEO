@@ -265,3 +265,76 @@ def test_hybrid_certificate_supports_exact_dc_with_insulating_package_in_conduct
         certified.status
         == "CORRECTED_OUT_OF_FAST_DOMAIN"
     )
+
+
+class _GradedConvergenceEvidence:
+    def __init__(
+        self,
+        converged,
+    ):
+        self.converged = bool(
+            converged
+        )
+
+
+def test_hybrid_certificate_requires_graded_refinement_when_evidence_is_supplied():
+    scene = _scene()
+    artifact = AnalyticBaselineArtifact(
+        segments_per_coil=24,
+    )
+    report = hybrid_reference_convergence(
+        scene,
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    unresolved = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        convergence_report=report,
+        graded_convergence_report=(
+            _GradedConvergenceEvidence(
+                False
+            )
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert (
+        unresolved.status
+        == "DISCRETE_CERTIFIED"
+    )
+    assert not unresolved.discretization_certified
+
+    resolved = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        convergence_report=report,
+        graded_convergence_report=(
+            _GradedConvergenceEvidence(
+                True
+            )
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert resolved.discretization_certified
+    assert (
+        resolved.status
+        == "CERTIFIED"
+    )
