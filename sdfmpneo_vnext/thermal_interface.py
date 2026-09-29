@@ -2699,6 +2699,15 @@ class PiecewiseThermalInterfaceArtifact:
                 angular_order=(
                     self.angular_order
                 ),
+                package_axial_order=(
+                    self.package_axial_order
+                ),
+                package_radial_order=(
+                    self.package_radial_order
+                ),
+                package_azimuthal_order=(
+                    self.package_azimuthal_order
+                ),
                 background_radial_order=(
                     self.background_radial_order
                 ),
