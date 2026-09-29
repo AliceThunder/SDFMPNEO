@@ -2279,6 +2279,21 @@ def _sample_loss(
         coil_package,
         length_scale,
     ) = latent
+    spatial_device = next(
+        model.parameters()
+    ).device
+    coil_latent = coil_latent.detach().to(
+        spatial_device
+    )
+    package_latent = package_latent.detach().to(
+        spatial_device
+    )
+    coil_pair = coil_pair.detach().to(
+        spatial_device
+    )
+    coil_package = coil_package.detach().to(
+        spatial_device
+    )
 
     conductor = (
         sample.conductor_spatial_loss
@@ -2871,8 +2886,6 @@ def train_hybrid_spatial_loss_surrogate(
     )
     port_model = (
         port_artifact.model
-    ).to(
-        device
     )
     port_model.eval()
     for parameter in (
