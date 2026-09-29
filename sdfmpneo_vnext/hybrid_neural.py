@@ -1913,13 +1913,43 @@ class HybridNeuralResidualArtifact:
                     )
                 ),
             )
+        channel_array = (
+            channels.detach().cpu().numpy()
+        )
+        n_coils = len(
+            scene.coils
+        )
+        labels = tuple(
+            f"coil:{index}"
+            for index in range(
+                n_coils
+            )
+        )
+        extra = (
+            channel_array.shape[
+                0
+            ]
+            - n_coils
+        )
+        if extra == 1:
+            labels = labels + (
+                "electric_environment:aggregate",
+            )
+        elif extra != 0:
+            labels = labels + tuple(
+                f"environment:{index}"
+                for index in range(
+                    extra
+                )
+            )
         return StructuredPortPrediction(
             (
                 resistance.detach().cpu().numpy()
                 + 1j
                 * reactance.detach().cpu().numpy()
             ),
-            channels.detach().cpu().numpy(),
+            channel_array,
+            labels,
         )
 
     def predict(
