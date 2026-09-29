@@ -70,6 +70,11 @@ def main():
         default=30,
     )
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
         "--device",
         default="cpu",
     )
@@ -146,6 +151,9 @@ def main():
             ),
             epochs=args.epochs,
             patience=args.patience,
+            batch_size=(
+                args.batch_size
+            ),
             background_conductivity_range=(
                 background_domain
             ),
@@ -196,6 +204,7 @@ def main():
     print(
         {
             "epochs_run": report.epochs,
+            "batch_size": args.batch_size,
             "samples": report.samples,
             "best_epoch": report.best_epoch,
             "final_loss": report.final_loss,
