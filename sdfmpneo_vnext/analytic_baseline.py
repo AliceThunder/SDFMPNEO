@@ -229,6 +229,12 @@ class AnalyticBaselineArtifact:
         return StructuredPortPrediction(
             baseline.impedance,
             channels,
+            tuple(
+                f"coil:{index}"
+                for index in range(
+                    n
+                )
+            ),
         )
 
     def predict(
