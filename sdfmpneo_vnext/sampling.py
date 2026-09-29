@@ -545,7 +545,7 @@ class HybridSceneSamplerConfig:
                     self.graded_package_probability
                 ),
                 "graded_material_parameterization": (
-                    "correlated_isotropic_endpoint_interpolation"
+                    "correlated_passive_isotropic_endpoint_interpolation"
                 ),
                 "nested_package_scale_range": list(
                     self.nested_package_scale_range
