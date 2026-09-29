@@ -703,6 +703,16 @@ class _PublicSpatialProxy:
             ),
         )
 
+    def local_dissipation_matrix(
+        self,
+        *args,
+        **kwargs,
+    ):
+        return self._base.local_dissipation_matrix(
+            *args,
+            **kwargs,
+        )
+
     def local_dissipation_matrices(
         self,
         coil_indices,
