@@ -1627,3 +1627,61 @@ def test_hybrid_fast_geometry_domain_accepts_declared_free_inclusion_and_legacy_
             scene,
             frequency,
         )
+
+
+def test_hybrid_minibatch_training_accepts_mixed_package_counts():
+    two_package_scene = _scene(
+        loss=0.0
+    )
+    one_package_scene = Scene(
+        two_package_scene.coils,
+        two_package_scene.medium,
+        (
+            two_package_scene.packages[
+                0
+            ],
+        ),
+    )
+    samples = (
+        _manual_sample(
+            one_package_scene,
+            frequency=70_000.0,
+        ),
+        _manual_sample(
+            two_package_scene,
+            frequency=90_000.0,
+        ),
+    )
+    artifact, report = train_hybrid_residual_surrogate(
+        samples,
+        hidden_dim=8,
+        factor_rank=2,
+        depth=1,
+        epochs=2,
+        batch_size=2,
+        learning_rate=5e-4,
+        patience=2,
+        seed=91,
+    )
+    assert (
+        report.samples
+        == 2
+    )
+    assert (
+        report.epochs
+        == 2
+    )
+    for sample in samples:
+        predicted = artifact.predict_structured(
+            sample.scene,
+            sample.frequency_hz,
+        )
+        assert predicted.impedance.shape == (
+            2,
+            2,
+        )
+        assert np.all(
+            np.isfinite(
+                predicted.impedance
+            )
+        )
