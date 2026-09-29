@@ -2950,6 +2950,68 @@ def train_hybrid_residual_surrogate(
         )
         for sample in samples
     )
+    validation_records = tuple(
+        prepare_training_record(
+            sample
+        )
+        for sample in validation_samples
+    )
+
+    def predict_record(
+        record,
+    ):
+        with torch.no_grad():
+            (
+                resistance,
+                reactance,
+                channels,
+            ) = model.forward_structured(
+                record[
+                    "coil_node"
+                ],
+                record[
+                    "coil_pair"
+                ],
+                record[
+                    "package"
+                ],
+                record[
+                    "coil_package"
+                ],
+                record[
+                    "package_pair"
+                ],
+                record[
+                    "baseline_resistance"
+                ],
+                record[
+                    "baseline_reactance"
+                ],
+                resistance_scale=(
+                    normalizer.resistance_scale
+                ),
+                reactance_scale=(
+                    normalizer.reactance_scale
+                ),
+                dielectric_loss_gate=(
+                    record[
+                        "dielectric_loss_gate"
+                    ]
+                ),
+                reactance_gate=(
+                    record[
+                        "reactance_gate"
+                    ]
+                ),
+            )
+        return (
+            (
+                resistance.detach().cpu().numpy()
+                + 1j
+                * reactance.detach().cpu().numpy()
+            ),
+            channels.detach().cpu().numpy(),
+        )
 
     best_state = None
     best_score = None
@@ -2964,15 +3026,13 @@ def train_hybrid_residual_surrogate(
     def validation_metrics():
         z_errors = []
         channel_errors = []
-        for sample in (
-            validation_samples
+        for sample, record in zip(
+            validation_samples,
+            validation_records,
         ):
             predicted_z, predicted_channels = (
-                _predict_sample(
-                    model,
-                    normalizer,
-                    sample,
-                    device=device,
+                predict_record(
+                    record
                 )
             )
             z_errors.append(
