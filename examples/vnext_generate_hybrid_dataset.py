@@ -1,15 +1,57 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import numpy as np
 
 from sdfmpneo_vnext import (
     HybridSceneSamplerConfig,
+    HybridTeacherSample,
     ImmutableHybridTeacherDataset,
     MQSConfig,
     sample_hybrid_package_scene,
 )
+
+
+def _generate_teacher_job(
+    job,
+):
+    (
+        index,
+        seed,
+        sampler,
+        teacher,
+        options,
+    ) = job
+    rng = np.random.default_rng(
+        [
+            int(
+                seed
+            ),
+            int(
+                index
+            ),
+        ]
+    )
+    scene, frequency = (
+        sample_hybrid_package_scene(
+            rng,
+            sampler,
+        )
+    )
+    sample = HybridTeacherSample.generate(
+        scene,
+        frequency,
+        teacher_config=teacher,
+        **options,
+    )
+    return (
+        index,
+        scene,
+        frequency,
+        sample,
+    )
 
 
 def main():
@@ -28,6 +70,15 @@ def main():
         "--count",
         type=int,
         default=32,
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Local teacher-generation worker processes. Dataset writes remain "
+            "serialized in the main process."
+        ),
     )
     parser.add_argument(
         "--seed",
@@ -280,6 +331,10 @@ def main():
         raise SystemExit(
             "--count must be >= 1"
         )
+    if args.workers < 1:
+        raise SystemExit(
+            "--workers must be >= 1"
+        )
 
     sampler = HybridSceneSamplerConfig(
         dc_probability=(
@@ -413,9 +468,6 @@ def main():
             )
         )
 
-    rng = np.random.default_rng(
-        args.seed
-    )
     teacher = MQSConfig(
         segments_per_turn=12,
         min_segments=16,
@@ -424,76 +476,103 @@ def main():
         angular_order=24,
         line_order=2,
     )
-    for index in range(
-        args.count
-    ):
-        scene, frequency = (
-            sample_hybrid_package_scene(
-                rng,
-                sampler,
+    teacher_options = {
+        "baseline_segments": (
+            args.baseline_segments
+        ),
+        "surface_vertical_order": (
+            args.surface_vertical_order
+        ),
+        "surface_azimuthal_order": (
+            args.surface_azimuthal_order
+        ),
+        "include_spatial_truth": True,
+        "package_volume_axial_order": (
+            args.package_volume_axial_order
+        ),
+        "package_volume_radial_order": (
+            args.package_volume_radial_order
+        ),
+        "package_volume_azimuthal_order": (
+            args.package_volume_azimuthal_order
+        ),
+        "background_radial_order": (
+            args.background_radial_order
+        ),
+        "background_angular_order": (
+            args.background_angular_order
+        ),
+    }
+    jobs = (
+        (
+            index,
+            args.seed,
+            sampler,
+            teacher,
+            teacher_options,
+        )
+        for index in range(
+            args.count
+        )
+    )
+
+    if args.workers == 1:
+        generated = map(
+            _generate_teacher_job,
+            jobs,
+        )
+        executor = None
+    else:
+        executor = ProcessPoolExecutor(
+            max_workers=(
+                args.workers
             )
         )
-        record = (
-            dataset.generate_and_add(
-                scene,
-                frequency,
-                teacher_config=(
-                    teacher
-                ),
-                baseline_segments=(
-                    args.baseline_segments
-                ),
-                surface_vertical_order=(
-                    args.surface_vertical_order
-                ),
-                surface_azimuthal_order=(
-                    args.surface_azimuthal_order
-                ),
-                include_spatial_truth=True,
-                package_volume_axial_order=(
-                    args.package_volume_axial_order
-                ),
-                package_volume_radial_order=(
-                    args.package_volume_radial_order
-                ),
-                package_volume_azimuthal_order=(
-                    args.package_volume_azimuthal_order
-                ),
-                background_radial_order=(
-                    args.background_radial_order
-                ),
-                background_angular_order=(
-                    args.background_angular_order
-                ),
+        generated = executor.map(
+            _generate_teacher_job,
+            jobs,
+            chunksize=1,
+        )
+
+    try:
+        for index, scene, frequency, sample in generated:
+            record = dataset.add_sample(
+                sample,
+                teacher_config=teacher,
                 source="initial",
             )
-        )
-        mode = (
-            "DC-conductive"
-            if (
-                frequency == 0.0
-                and scene.medium.loss_conductivity(
-                    0.0
+            mode = (
+                "DC-conductive"
+                if (
+                    frequency == 0.0
+                    and scene.medium.loss_conductivity(
+                        0.0
+                    )
+                    > 0.0
                 )
-                > 0.0
+                else (
+                    "DC-electrostatic"
+                    if frequency == 0.0
+                    else "AC"
+                )
             )
-            else (
-                "DC-electrostatic"
-                if frequency == 0.0
-                else "AC"
+            print(
+                f"[{index + 1:04d}/{args.count:04d}] "
+                f"{record.sample_id[:12]} "
+                f"{record.split} "
+                f"{mode} "
+                f"{frequency / 1e3:.2f} kHz "
+                f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
+                f"medium={type(scene.medium).__name__} "
+                f"n_packages={len(scene.packages)} "
+                f"packages={[type(package.material).__name__ for package in scene.packages]}"
             )
-        )
-        print(
-            f"[{index + 1:04d}/{args.count:04d}] "
-            f"{record.sample_id[:12]} "
-            f"{record.split} "
-            f"{mode} "
-            f"{frequency / 1e3:.2f} kHz "
-            f"sigma_eff_bg={scene.medium.loss_conductivity(frequency):.3e} S/m "
-            f"medium={type(scene.medium).__name__} "
-            f"n_packages={len(scene.packages)} "
-            f"packages={[type(package.material).__name__ for package in scene.packages]}"
-        )
+    finally:
+        if executor is not None:
+            executor.shutdown(
+                wait=True,
+                cancel_futures=True,
+            )
     print(
         "counts:",
         dataset.counts(),
