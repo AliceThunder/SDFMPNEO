@@ -1123,3 +1123,221 @@ def test_anisotropic_background_package_interface_is_common_rotation_invariant()
         actual
         > moved_medium.ambient_temperature
     )
+
+
+def test_tensor_package_thermal_conductivity_isotropic_limit_matches_scalar_package():
+    base_scene, system = _anisotropic_package_scene()
+    geometry = base_scene.packages[
+        0
+    ].geometry
+    scalar_package = PackageObject(
+        geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity=0.24,
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "scalar-package",
+    )
+    tensor_package = PackageObject(
+        geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity_tensor=(
+                0.24
+                * np.eye(
+                    3
+                )
+            ),
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "tensor-package",
+    )
+    scalar_scene = Scene(
+        base_scene.coils,
+        base_scene.medium,
+        (
+            scalar_package,
+        ),
+    )
+    tensor_scene = Scene(
+        base_scene.coils,
+        base_scene.medium,
+        (
+            tensor_package,
+        ),
+    )
+    background = _background()
+    scalar_field = _prepare_anisotropic_package_field(
+        scalar_scene,
+        system,
+        background,
+    )
+    tensor_field = _prepare_anisotropic_package_field(
+        tensor_scene,
+        system,
+        background,
+    )
+    query = np.asarray(
+        [
+            0.040,
+            0.001,
+            0.014,
+        ]
+    )
+    currents = np.asarray(
+        [
+            1.0 + 0.0j
+        ]
+    )
+    scalar_temperature = scalar_field.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    tensor_temperature = tensor_field.temperature_step(
+        query,
+        2.0,
+        currents,
+    )
+    assert np.isclose(
+        tensor_temperature,
+        scalar_temperature,
+        rtol=3e-5,
+        atol=3e-6,
+    )
+
+
+def test_tensor_package_thermal_conductivity_is_common_rotation_invariant():
+    base_scene, system = _anisotropic_package_scene()
+    package_tensor = np.asarray(
+        [
+            [0.21, 0.06, 0.01],
+            [0.06, 0.47, 0.04],
+            [0.01, 0.04, 0.82],
+        ],
+        dtype=float,
+    )
+    package = PackageObject(
+        base_scene.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity_tensor=(
+                package_tensor
+            ),
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "tensor-package",
+    )
+    scene = Scene(
+        base_scene.coils,
+        base_scene.medium,
+        (
+            package,
+        ),
+    )
+    field = _prepare_anisotropic_package_field(
+        scene,
+        system,
+        _background(),
+    )
+    query = np.asarray(
+        [
+            0.040,
+            0.002,
+            0.013,
+        ]
+    )
+    currents = np.asarray(
+        [
+            1.0 + 0.0j
+        ]
+    )
+    reference = field.temperature_step(
+        query,
+        2.5,
+        currents,
+    )
+
+    rng = np.random.default_rng(
+        91231
+    )
+    rotation = haar_rotation(
+        rng
+    )
+    common = RigidPose(
+        rotation,
+        np.asarray(
+            [
+                -0.09,
+                0.14,
+                0.21,
+            ]
+        ),
+    )
+    moved_coil = CoilObject(
+        scene.coils[
+            0
+        ].geometry.transformed(
+            common
+        ),
+        scene.coils[
+            0
+        ].material,
+        "coil",
+    )
+    moved_package = PackageObject(
+        package.geometry.transformed(
+            common
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            conductivity=0.0,
+            thermal_conductivity_tensor=(
+                rotation
+                @ package_tensor
+                @ rotation.T
+            ),
+            density=1180.0,
+            heat_capacity=1700.0,
+        ),
+        "tensor-package",
+    )
+    moved_scene = Scene(
+        (
+            moved_coil,
+        ),
+        scene.medium,
+        (
+            moved_package,
+        ),
+    )
+    moved_field = _prepare_anisotropic_package_field(
+        moved_scene,
+        system,
+        _background(),
+    )
+    actual = moved_field.temperature_step(
+        common.apply(
+            query
+        ),
+        2.5,
+        currents,
+    )
+    assert np.isclose(
+        actual,
+        reference,
+        rtol=6e-5,
+        atol=6e-6,
+    )
+    assert np.isfinite(
+        actual
+    )
