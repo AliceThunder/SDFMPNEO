@@ -2920,19 +2920,45 @@ def train_hybrid_spatial_loss_surrogate(
             weight_decay
         ),
     )
-    training_latents = tuple(
-        _latent(
+    def cache_latent(
+        sample,
+    ):
+        (
+            coil_latent,
+            package_latent,
+            coil_pair,
+            coil_package,
+            length_scale,
+        ) = _latent(
             port_artifact,
             sample.scene,
             sample.frequency_hz,
         )
+        return (
+            coil_latent.detach().to(
+                device
+            ),
+            package_latent.detach().to(
+                device
+            ),
+            coil_pair.detach().to(
+                device
+            ),
+            coil_package.detach().to(
+                device
+            ),
+            length_scale,
+        )
+
+    training_latents = tuple(
+        cache_latent(
+            sample
+        )
         for sample in samples
     )
     validation_latents = tuple(
-        _latent(
-            port_artifact,
-            sample.scene,
-            sample.frequency_hz,
+        cache_latent(
+            sample
         )
         for sample in validation_samples
     )
