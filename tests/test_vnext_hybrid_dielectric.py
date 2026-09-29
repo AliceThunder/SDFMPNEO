@@ -8,6 +8,7 @@ from sdfmpneo_vnext import (
     DenseMixedConductorTeacher,
     DielectricCoupledReferenceArtifact,
     HomogeneousMedium,
+    HomogeneousThermalMedium,
     HybridSceneSamplerConfig,
     IsotropicMaterial,
     MQSConfig,
@@ -21,6 +22,7 @@ from sdfmpneo_vnext import (
     TabulatedMaterial,
     compile_graded_superquadric_regions,
     graded_material_convergence,
+    graded_electrothermal_convergence,
     haar_rotation,
     sample_hybrid_package_scene,
 )
@@ -1930,3 +1932,129 @@ def test_constant_graded_profile_convergence_report_converges_under_shell_refine
             -1
         ].impedance,
     )
+
+
+def test_constant_graded_electrothermal_profile_converges_in_temperature_and_ports():
+    coil = _coil()
+    material = IsotropicMaterial(
+        relative_permittivity=3.4,
+        relative_permeability=1.0,
+        conductivity=2.0e-4,
+        thermal_conductivity=0.24,
+        density=1180.0,
+        heat_capacity=1350.0,
+    )
+    outer = _package(
+        material
+    ).geometry
+    profile = RadialIsotropicMaterialProfile(
+        normalized_radius=(
+            0.0,
+            1.0,
+        ),
+        relative_permittivity=(
+            material.relative_permittivity,
+            material.relative_permittivity,
+        ),
+        relative_permeability=(
+            material.relative_permeability,
+            material.relative_permeability,
+        ),
+        conductivity=(
+            material.conductivity,
+            material.conductivity,
+        ),
+        thermal_conductivity=(
+            material.thermal_conductivity,
+            material.thermal_conductivity,
+        ),
+        density=(
+            material.density,
+            material.density,
+        ),
+        heat_capacity=(
+            material.heat_capacity,
+            material.heat_capacity,
+        ),
+    )
+    report = graded_electrothermal_convergence(
+        Scene(
+            (
+                coil,
+            ),
+            HomogeneousMedium(),
+        ),
+        75_000.0,
+        outer,
+        profile,
+        HomogeneousThermalMedium(
+            conductivity=0.55,
+            density=1000.0,
+            heat_capacity=4200.0,
+            ambient_temperature=293.15,
+        ),
+        np.asarray(
+            [
+                0.0,
+                0.0,
+                0.020,
+            ]
+        ),
+        np.asarray(
+            [
+                0.5,
+                2.0,
+            ]
+        ),
+        np.asarray(
+            [
+                1.0 + 0.0j,
+            ]
+        ),
+        shell_counts=(
+            2,
+            4,
+        ),
+        config=CFG,
+        tolerance=8e-4,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        magnetic_volume_axial_order=3,
+        magnetic_volume_radial_order=2,
+        magnetic_volume_azimuthal_order=8,
+        thermal_longitudinal_segments=8,
+        thermal_radial_order=3,
+        thermal_angular_order=8,
+        thermal_package_axial_order=3,
+        thermal_package_radial_order=2,
+        thermal_package_azimuthal_order=8,
+        thermal_interface_vertical_order=4,
+        thermal_interface_azimuthal_order=8,
+        thermal_stehfest_order=6,
+        thermal_interface_residual_tolerance=2e-3,
+    )
+    assert report.converged
+    assert len(
+        report.steps
+    ) == 2
+    assert (
+        report.maximum_relative_change
+        <= report.tolerance
+    )
+    assert np.all(
+        report.steps[
+            -1
+        ].temperature_rise
+        >= -1e-9
+    )
+    assert (
+        np.max(
+            report.steps[
+                -1
+            ].temperature_rise
+        )
+        > 0.0
+    )
+    assert len(
+        report.final_packages
+    ) == 4
