@@ -92,6 +92,31 @@ def test_system_reference_dispatches_package_scene_to_coupled_sie():
         1,
     )
     assert prediction.n_channels == 2
+    assert prediction.channel_labels == (
+        "coil:0",
+        "dielectric:aggregate",
+    )
+    currents = np.asarray(
+        [
+            1.2 - 0.1j
+        ]
+    )
+    assert prediction.coil_power(
+        currents
+    ).shape == (
+        1,
+    )
+    named_power = (
+        prediction.channel_power_by_label(
+            currents
+        )
+    )
+    assert set(
+        named_power
+    ) == {
+        "coil:0",
+        "dielectric:aggregate",
+    }
     assert (
         prediction.power_closure_error()
         < 1e-8
