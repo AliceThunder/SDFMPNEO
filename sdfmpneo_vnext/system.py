@@ -56,6 +56,12 @@ class SystemCapabilities:
     package_dielectric_sie: bool
     package_em_coupling: bool
     continuous_spatial_loss: bool
+    exact_dc: bool = False
+    magnetic_package_contrast: bool = False
+    nested_material_regions: bool = False
+    graded_radial_media: bool = False
+    anisotropic_thermal_background: bool = False
+    anisotropic_package_thermal_interfaces: bool = False
 
 
 def mvp_system_capabilities(
@@ -81,6 +87,12 @@ def mvp_system_capabilities(
         package_dielectric_sie=True,
         package_em_coupling=True,
         continuous_spatial_loss=True,
+        exact_dc=True,
+        magnetic_package_contrast=True,
+        nested_material_regions=True,
+        graded_radial_media=True,
+        anisotropic_thermal_background=True,
+        anisotropic_package_thermal_interfaces=False,
     )
 
 
