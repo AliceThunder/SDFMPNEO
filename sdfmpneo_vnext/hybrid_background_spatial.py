@@ -306,6 +306,11 @@ class BackgroundLossShapeNet(nn.Module):
                 0
             ]
         )
+        n_packages = int(
+            package_latent.shape[
+                0
+            ]
+        )
         if (
             coil_coordinates.shape
             != (
@@ -313,123 +318,108 @@ class BackgroundLossShapeNet(nn.Module):
                 n_ports,
                 5,
             )
-            or package_coordinates.shape[
-                0
-            ]
-            != n_points
-            or package_coordinates.shape[
-                1
-            ]
-            != package_latent.shape[
-                0
-            ]
-            or package_coordinates.shape[
-                2
-            ]
-            != 5
+            or package_coordinates.shape
+            != (
+                n_points,
+                n_packages,
+                5,
+            )
         ):
             raise ValueError(
                 "background coordinate features have incompatible shapes"
             )
 
+        if n_packages:
+            package_rows = package_latent[
+                None,
+                :,
+                :
+            ].expand(
+                n_points,
+                n_packages,
+                -1,
+            )
+            package_inputs = torch.cat(
+                (
+                    package_rows,
+                    package_coordinates,
+                ),
+                dim=-1,
+            )
+            package_messages = self.package_message(
+                package_inputs
+            )
+            package_context = (
+                package_messages.sum(
+                    dim=1
+                )
+                / math.sqrt(
+                    n_packages
+                )
+            )
+        else:
+            package_context = torch.zeros(
+                (
+                    n_points,
+                    self.hidden_dim,
+                ),
+                dtype=coil_latent.dtype,
+                device=coil_latent.device,
+            )
+
+        coil_rows = coil_latent[
+            None,
+            :,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        context_rows = package_context[
+            :,
+            None,
+            :
+        ].expand(
+            n_points,
+            n_ports,
+            -1,
+        )
+        head_input = torch.cat(
+            (
+                coil_rows,
+                context_rows,
+                coil_coordinates,
+            ),
+            dim=-1,
+        )
+        raw = self.head(
+            head_input
+        )
+        real = raw[
+            ...,
+            : self.factor_rank
+        ]
+        imag = raw[
+            ...,
+            self.factor_rank :
+        ]
         complex_dtype = (
             torch.complex64
             if coil_latent.dtype
             == torch.float32
             else torch.complex128
         )
-        factors = []
-        for point in range(
-            n_points
-        ):
-            package_messages = []
-            for package in range(
-                int(
-                    package_latent.shape[
-                        0
-                    ]
-                )
-            ):
-                package_messages.append(
-                    self.package_message(
-                        torch.cat(
-                            (
-                                package_latent[
-                                    package
-                                ],
-                                package_coordinates[
-                                    point,
-                                    package,
-                                ],
-                            ),
-                            dim=-1,
-                        )
-                    )
-                )
-            if package_messages:
-                package_context = (
-                    torch.stack(
-                        package_messages,
-                        dim=0,
-                    ).sum(
-                        dim=0
-                    )
-                    / math.sqrt(
-                        len(
-                            package_messages
-                        )
-                    )
-                )
-            else:
-                package_context = torch.zeros(
-                    self.hidden_dim,
-                    dtype=coil_latent.dtype,
-                    device=coil_latent.device,
-                )
-
-            rows = []
-            for port in range(
-                n_ports
-            ):
-                raw = self.head(
-                    torch.cat(
-                        (
-                            coil_latent[
-                                port
-                            ],
-                            package_context,
-                            coil_coordinates[
-                                point,
-                                port,
-                            ],
-                        ),
-                        dim=-1,
-                    )
-                )
-                rows.append(
-                    raw[
-                        : self.factor_rank
-                    ].to(
-                        complex_dtype
-                    )
-                    + 1j
-                    * raw[
-                        self.factor_rank :
-                    ].to(
-                        complex_dtype
-                    )
-                )
-            factors.append(
-                torch.stack(
-                    rows,
-                    dim=0,
-                )
+        factors = (
+            real.to(
+                complex_dtype
             )
-
-        factors = torch.stack(
-            factors,
-            dim=0,
+            + 1j
+            * imag.to(
+                complex_dtype
+            )
         )
+
         # Hard far-field envelope. Feature index 3 is 1/(1+r/L) for
         # each coil, so the closest-coil value behaves as O(r^-1).
         # Multiplying the factor by its square enforces O(r^-2) on the
