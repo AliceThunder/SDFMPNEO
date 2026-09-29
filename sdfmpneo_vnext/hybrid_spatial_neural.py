@@ -2248,6 +2248,7 @@ def _sample_loss(
     sample: HybridTeacherSample,
     *,
     device: str,
+    latent=None,
 ):
     if not sample.has_spatial_truth:
         raise ValueError(
@@ -2265,17 +2266,19 @@ def _sample_loss(
         raise ValueError(
             "hybrid spatial training requires one aggregate dielectric channel"
         )
+    if latent is None:
+        latent = _latent(
+            port_artifact,
+            sample.scene,
+            sample.frequency_hz,
+        )
     (
         coil_latent,
         package_latent,
         coil_pair,
         coil_package,
         length_scale,
-    ) = _latent(
-        port_artifact,
-        sample.scene,
-        sample.frequency_hz,
-    )
+    ) = latent
 
     conductor = (
         sample.conductor_spatial_loss
@@ -2668,6 +2671,7 @@ def train_hybrid_spatial_loss_surrogate(
     background_radial_order: int = 12,
     background_angular_order: int = 48,
     background_conductivity_range=None,
+    batch_size: int = 1,
     device: str = "cpu",
 ):
     samples = tuple(
@@ -2713,6 +2717,11 @@ def train_hybrid_spatial_loss_surrogate(
         or background_segments_per_turn < 4
         or background_radial_order < 3
         or background_angular_order < 8
+        or not isinstance(
+            batch_size,
+            (int, np.integer),
+        )
+        or batch_size < 1
     ):
         raise ValueError(
             "invalid hybrid spatial training configuration"
@@ -2862,7 +2871,10 @@ def train_hybrid_spatial_loss_surrogate(
     )
     port_model = (
         port_artifact.model
+    ).to(
+        device
     )
+    port_model.eval()
     for parameter in (
         port_model.parameters()
     ):
@@ -2895,6 +2907,22 @@ def train_hybrid_spatial_loss_surrogate(
             weight_decay
         ),
     )
+    training_latents = tuple(
+        _latent(
+            port_artifact,
+            sample.scene,
+            sample.frequency_hz,
+        )
+        for sample in samples
+    )
+    validation_latents = tuple(
+        _latent(
+            port_artifact,
+            sample.scene,
+            sample.frequency_hz,
+        )
+        for sample in validation_samples
+    )
 
     final_loss = np.inf
     best_epoch = 0
@@ -2914,27 +2942,66 @@ def train_hybrid_spatial_loss_surrogate(
             len(samples)
         )
         epoch_loss = 0.0
-        for index in order:
+        for batch_start in range(
+            0,
+            len(
+                order
+            ),
+            int(
+                batch_size
+            ),
+        ):
+            batch_indices = order[
+                batch_start:
+                batch_start
+                + int(
+                    batch_size
+                )
+            ]
             optimizer.zero_grad(
                 set_to_none=True
             )
-            loss = _sample_loss(
-                model,
-                port_artifact,
-                samples[
-                    int(index)
-                ],
-                device=device,
+            batch_loss = None
+            for index in batch_indices:
+                sample_index = int(
+                    index
+                )
+                loss = _sample_loss(
+                    model,
+                    port_artifact,
+                    samples[
+                        sample_index
+                    ],
+                    device=device,
+                    latent=(
+                        training_latents[
+                            sample_index
+                        ]
+                    ),
+                )
+                epoch_loss += float(
+                    loss.detach().cpu()
+                )
+                batch_loss = (
+                    loss
+                    if batch_loss is None
+                    else batch_loss
+                    + loss
+                )
+            if batch_loss is None:
+                continue
+            batch_loss = (
+                batch_loss
+                / len(
+                    batch_indices
+                )
             )
-            loss.backward()
+            batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(),
                 10.0,
             )
             optimizer.step()
-            epoch_loss += float(
-                loss.detach().cpu()
-            )
         final_loss = (
             epoch_loss
             / len(samples)
@@ -2959,10 +3026,17 @@ def train_hybrid_spatial_loss_surrogate(
                             port_artifact,
                             sample,
                             device=device,
+                            latent=(
+                                validation_latents[
+                                    index
+                                ]
+                            ),
                         ).detach().cpu()
                     )
-                    for sample
-                    in validation_samples
+                    for index, sample
+                    in enumerate(
+                        validation_samples
+                    )
                 ]
             end_to_end_values = [
                 _sample_end_to_end_error(
