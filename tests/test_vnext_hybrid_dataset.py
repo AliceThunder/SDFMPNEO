@@ -1,6 +1,10 @@
 import numpy as np
 import pytest
 
+from sdfmpneo_vnext.exterior_quadrature import (
+    conductor_volume_mask,
+)
+
 from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
@@ -1807,3 +1811,73 @@ def test_hybrid_sampler_generates_correlated_graded_multi_debye_materials():
             )
             >= 0.0
         )
+
+
+def test_package_spatial_training_truth_excludes_finite_conductor_volume():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=4.0,
+            conductivity=2.0e-3,
+        ),
+        "lossy-package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    sample = HybridTeacherSample.generate(
+        scene,
+        90_000.0,
+        teacher_config=_config(),
+        baseline_segments=24,
+        surface_vertical_order=6,
+        surface_azimuthal_order=12,
+        include_spatial_truth=True,
+        package_volume_axial_order=4,
+        package_volume_radial_order=3,
+        package_volume_azimuthal_order=12,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+    package_spatial = sample.package_spatial_loss
+    assert package_spatial is not None
+    assert len(
+        package_spatial.package_index
+    ) > 0
+
+    world = np.zeros_like(
+        package_spatial.local_position
+    )
+    for package_index in np.unique(
+        package_spatial.package_index
+    ):
+        mask = (
+            package_spatial.package_index
+            == package_index
+        )
+        world[
+            mask
+        ] = scene.packages[
+            int(
+                package_index
+            )
+        ].geometry.pose.apply(
+            package_spatial.local_position[
+                mask
+            ]
+        )
+
+    inside_conductor = conductor_volume_mask(
+        scene,
+        world,
+        segments_per_coil=64,
+    )
+    assert not np.any(
+        inside_conductor
+    )
