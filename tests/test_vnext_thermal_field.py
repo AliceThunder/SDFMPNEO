@@ -2,6 +2,7 @@ import numpy as np
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
+    AnisotropicThermalMedium,
     CoilObject,
     ConductorMaterial,
     ContinuousThermalGreenArtifact,
@@ -9,9 +10,11 @@ from sdfmpneo_vnext import (
     HomogeneousThermalMedium,
     MixedReferenceArtifact,
     MQSConfig,
+    PreparedThermalGreenField,
     RigidPose,
     Scene,
     SuperellipseSpiral,
+    ThermalSourceQuadrature,
     UniformLossFieldDecoder,
     build_thermal_source_quadrature,
     haar_rotation,
@@ -730,4 +733,260 @@ def test_conductive_background_dc_spatial_loss_and_thermal_source_close():
     assert (
         temperature
         > prepared.medium.ambient_temperature
+    )
+
+
+def _single_thermal_source(
+    position=(0.0, 0.0, 0.0),
+):
+    return ThermalSourceQuadrature(
+        positions=np.asarray(
+            [
+                position
+            ],
+            dtype=float,
+        ),
+        volume_weights=np.asarray(
+            [
+                1.0
+            ],
+            dtype=float,
+        ),
+        coil_index=np.asarray(
+            [
+                0
+            ],
+            dtype=int,
+        ),
+        arc_fraction=np.asarray(
+            [
+                0.0
+            ],
+            dtype=float,
+        ),
+        xy=np.zeros(
+            (
+                1,
+                2,
+            ),
+            dtype=float,
+        ),
+        dissipation_matrices=np.asarray(
+            [
+                [
+                    [
+                        1.0
+                    ]
+                ]
+            ],
+            dtype=complex,
+        ),
+        effective_radius=np.asarray(
+            [
+                2.0e-4
+            ],
+            dtype=float,
+        ),
+        normalization_closure_error=0.0,
+        normalization_correction=0.0,
+    )
+
+
+def test_anisotropic_thermal_green_reduces_to_isotropic_limit():
+    source = _single_thermal_source()
+    isotropic = PreparedThermalGreenField(
+        source,
+        HomogeneousThermalMedium(
+            conductivity=0.6,
+            density=1000.0,
+            heat_capacity=4200.0,
+        ),
+    )
+    anisotropic = PreparedThermalGreenField(
+        source,
+        AnisotropicThermalMedium(
+            conductivity_tensor=(
+                0.6
+                * np.eye(
+                    3
+                )
+            ),
+            density=1000.0,
+            heat_capacity=4200.0,
+        ),
+    )
+    points = np.asarray(
+        [
+            [0.020, 0.0, 0.0],
+            [0.0, -0.015, 0.010],
+        ]
+    )
+    assert np.allclose(
+        anisotropic.steady_response_matrix(
+            points
+        ),
+        isotropic.steady_response_matrix(
+            points
+        ),
+        rtol=2e-12,
+        atol=2e-14,
+    )
+    assert np.allclose(
+        anisotropic.step_response_matrix(
+            points,
+            3.0,
+        ),
+        isotropic.step_response_matrix(
+            points,
+            3.0,
+        ),
+        rtol=2e-12,
+        atol=2e-14,
+    )
+
+
+def test_anisotropic_thermal_green_resolves_directional_conductivity():
+    field = PreparedThermalGreenField(
+        _single_thermal_source(),
+        AnisotropicThermalMedium(
+            conductivity_tensor=np.diag(
+                [
+                    2.4,
+                    0.6,
+                    0.6,
+                ]
+            ),
+            density=1000.0,
+            heat_capacity=4200.0,
+        ),
+    )
+    response = field.steady_response_matrix(
+        np.asarray(
+            [
+                [0.030, 0.0, 0.0],
+                [0.0, 0.030, 0.0],
+            ]
+        )
+    )
+    assert (
+        response[
+            0,
+            0,
+            0
+        ].real
+        > response[
+            1,
+            0,
+            0
+        ].real
+    )
+
+
+def test_anisotropic_thermal_green_is_common_rotation_covariant():
+    source = _single_thermal_source(
+        (
+            0.004,
+            -0.003,
+            0.002,
+        )
+    )
+    tensor = np.asarray(
+        [
+            [1.4, 0.18, 0.0],
+            [0.18, 0.8, 0.07],
+            [0.0, 0.07, 0.5],
+        ],
+        dtype=float,
+    )
+    field = PreparedThermalGreenField(
+        source,
+        AnisotropicThermalMedium(
+            conductivity_tensor=tensor,
+            density=980.0,
+            heat_capacity=3600.0,
+        ),
+    )
+    query = np.asarray(
+        [
+            0.026,
+            -0.011,
+            0.019,
+        ]
+    )
+    steady = field.steady_response_matrix(
+        query
+    )
+    transient = field.step_response_matrix(
+        query,
+        2.5,
+    )
+
+    rng = np.random.default_rng(
+        741
+    )
+    common = RigidPose(
+        haar_rotation(
+            rng
+        ),
+        np.asarray(
+            [
+                0.11,
+                -0.07,
+                0.16,
+            ]
+        ),
+    )
+    moved_source = ThermalSourceQuadrature(
+        positions=common.apply(
+            source.positions
+        ),
+        volume_weights=source.volume_weights,
+        coil_index=source.coil_index,
+        arc_fraction=source.arc_fraction,
+        xy=source.xy,
+        dissipation_matrices=(
+            source.dissipation_matrices
+        ),
+        effective_radius=(
+            source.effective_radius
+        ),
+        normalization_closure_error=(
+            source.normalization_closure_error
+        ),
+        normalization_correction=(
+            source.normalization_correction
+        ),
+    )
+    rotation = common.rotation
+    moved_field = PreparedThermalGreenField(
+        moved_source,
+        AnisotropicThermalMedium(
+            conductivity_tensor=(
+                rotation
+                @ tensor
+                @ rotation.T
+            ),
+            density=980.0,
+            heat_capacity=3600.0,
+        ),
+    )
+    moved_query = common.apply(
+        query
+    )
+    assert np.allclose(
+        moved_field.steady_response_matrix(
+            moved_query
+        ),
+        steady,
+        rtol=2e-11,
+        atol=2e-13,
+    )
+    assert np.allclose(
+        moved_field.step_response_matrix(
+            moved_query,
+            2.5,
+        ),
+        transient,
+        rtol=2e-11,
+        atol=2e-13,
     )
