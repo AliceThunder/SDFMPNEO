@@ -8,6 +8,7 @@ import numpy as np
 class StructuredPortPrediction:
     impedance: np.ndarray
     dissipation_channels: np.ndarray
+    channel_labels: tuple[str, ...] | None = None
 
     def __post_init__(self):
         impedance = np.asarray(
@@ -49,6 +50,121 @@ class StructuredPortPrediction:
             self,
             "dissipation_channels",
             channels,
+        )
+        labels = self.channel_labels
+        if labels is not None:
+            labels = tuple(
+                str(
+                    label
+                )
+                for label in labels
+            )
+            if (
+                len(
+                    labels
+                )
+                != channels.shape[
+                    0
+                ]
+                or any(
+                    not label
+                    for label in labels
+                )
+                or len(
+                    set(
+                        labels
+                    )
+                )
+                != len(
+                    labels
+                )
+            ):
+                raise ValueError(
+                    "channel_labels must be unique nonempty labels with one "
+                    "entry per dissipation channel"
+                )
+            object.__setattr__(
+                self,
+                "channel_labels",
+                labels,
+            )
+
+    def channel_index(
+        self,
+        label: str,
+    ) -> int:
+        if self.channel_labels is None:
+            raise ValueError(
+                "prediction does not provide channel labels"
+            )
+        try:
+            return int(
+                self.channel_labels.index(
+                    str(
+                        label
+                    )
+                )
+            )
+        except ValueError as exc:
+            raise KeyError(
+                f"unknown dissipation channel label: {label}"
+            ) from exc
+
+    def coil_channel_indices(
+        self,
+        n_coils: int,
+    ) -> tuple[int, ...]:
+        if (
+            not isinstance(
+                n_coils,
+                (int, np.integer),
+            )
+            or n_coils < 1
+        ):
+            raise ValueError(
+                "n_coils must be a positive integer"
+            )
+        if self.channel_labels is None:
+            if self.n_channels != n_coils:
+                raise ValueError(
+                    "unlabeled prediction cannot identify coil channels when "
+                    "extra dissipation channels are present"
+                )
+            return tuple(
+                range(
+                    n_coils
+                )
+            )
+        indices = []
+        for coil in range(
+            n_coils
+        ):
+            candidates = (
+                f"coil:{coil}",
+                f"conductor:{coil}",
+            )
+            found = [
+                self.channel_labels.index(
+                    label
+                )
+                for label in candidates
+                if label in self.channel_labels
+            ]
+            if len(
+                found
+            ) != 1:
+                raise ValueError(
+                    f"prediction does not uniquely identify coil channel {coil}"
+                )
+            indices.append(
+                int(
+                    found[
+                        0
+                    ]
+                )
+            )
+        return tuple(
+            indices
         )
 
     @property
