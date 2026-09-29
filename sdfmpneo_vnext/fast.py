@@ -141,6 +141,7 @@ class _FastEnvelopeBase:
         return Scene(
             tuple(coils),
             self.scene.medium,
+            self.scene.packages,
         )
 
     def _predict(
@@ -182,7 +183,10 @@ class _FastEnvelopeBase:
             n,
         ):
             raise ValueError(
-                "FAST artifact returned wrong loss-channel shape"
+                "coil-only FAST electrothermal envelopes require exactly one "
+                "dissipation channel per coil; use ChannelResolvedCurrentEnvelope "
+                "or ChannelResolvedVoltageEnvelope for package/background "
+                "environment channels"
             )
         dissipation = 0.5 * (
             impedance
