@@ -16,6 +16,7 @@ from sdfmpneo_vnext import (
     Scene,
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
+    build_thermal_source_quadrature,
     haar_rotation,
 )
 
@@ -682,4 +683,102 @@ def test_package_spatial_loss_excludes_finite_conductor_volume():
             )
         )
         >= -1e-12
+    )
+
+
+class _PublicSpatialProxy:
+    def __init__(
+        self,
+        base,
+    ):
+        self._base = base
+        self.frequency_hz = base.frequency_hz
+        self.port_prediction = base.port_prediction
+        self.dielectric_channel_index = getattr(
+            base,
+            "dielectric_channel_index",
+            len(
+                base.scene.coils
+            ),
+        )
+
+    def local_dissipation_matrices(
+        self,
+        *args,
+        **kwargs,
+    ):
+        return self._base.local_dissipation_matrices(
+            *args,
+            **kwargs,
+        )
+
+    def package_dissipation_matrices(
+        self,
+        *args,
+        **kwargs,
+    ):
+        return self._base.package_dissipation_matrices(
+            *args,
+            **kwargs,
+        )
+
+
+def test_package_thermal_source_uses_public_spatial_api_without_reference_teacher():
+    base = _scene()
+    package = PackageObject(
+        base.packages[
+            0
+        ].geometry,
+        IsotropicMaterial(
+            relative_permittivity=4.0,
+            conductivity=2.0e-3,
+        ),
+        "lossy-package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    spatial = _system().reference_spatial(
+        scene,
+        90_000.0,
+        volume_axial_order=4,
+        volume_radial_order=3,
+        volume_azimuthal_order=12,
+        maximum_raw_closure_error=5.0,
+    )
+    proxy = _PublicSpatialProxy(
+        spatial
+    )
+    assert not hasattr(
+        proxy,
+        "teacher",
+    )
+    source = build_thermal_source_quadrature(
+        scene,
+        proxy,
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=12,
+        package_axial_order=4,
+        package_radial_order=3,
+        package_azimuthal_order=12,
+    )
+    assert np.all(
+        np.isfinite(
+            source.dissipation_matrices
+        )
+    )
+    assert (
+        source.normalization_closure_error
+        < 1e-7
+    )
+    assert np.allclose(
+        source.integrated_channels(),
+        spatial.port_prediction.dissipation_channels,
+        rtol=2e-6,
+        atol=2e-9,
     )
