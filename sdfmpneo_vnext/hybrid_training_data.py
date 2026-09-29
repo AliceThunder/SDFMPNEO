@@ -5,6 +5,7 @@ import numpy as np
 
 from .analytic_baseline import analytic_port_baseline
 from .em import MQSConfig
+from .exterior_quadrature import conductor_volume_mask
 from .hybrid_dielectric import (
     DielectricCoupledMixedTeacher,
 )
@@ -603,11 +604,30 @@ class HybridTeacherSample:
                     region
                     == index
                 )
+                if np.any(
+                    keep
+                ):
+                    conductor = np.asarray(
+                        conductor_volume_mask(
+                            scene,
+                            quadrature.positions,
+                            segments=(
+                                teacher.conductor_teacher._mqs._segments
+                            ),
+                        ),
+                        dtype=bool,
+                    )
+                    keep = (
+                        keep
+                        & ~conductor
+                    )
                 count = int(
                     np.count_nonzero(
                         keep
                     )
                 )
+                if count == 0:
+                    continue
                 package_index.append(
                     np.full(
                         count,
@@ -633,24 +653,60 @@ class HybridTeacherSample:
                         ],
                     )
                 )
-            package_spatial = (
-                PackageSpatialLossSamples(
-                    np.concatenate(
-                        package_index
-                    ),
-                    np.concatenate(
-                        package_local,
-                        axis=0,
-                    ),
-                    np.concatenate(
-                        package_weights
-                    ),
-                    np.concatenate(
-                        package_matrices,
-                        axis=0,
-                    ),
+            if package_index:
+                package_spatial = (
+                    PackageSpatialLossSamples(
+                        np.concatenate(
+                            package_index
+                        ),
+                        np.concatenate(
+                            package_local,
+                            axis=0,
+                        ),
+                        np.concatenate(
+                            package_weights
+                        ),
+                        np.concatenate(
+                            package_matrices,
+                            axis=0,
+                        ),
+                    )
                 )
-            )
+            else:
+                n_ports = len(
+                    scene.coils
+                )
+                package_spatial = (
+                    PackageSpatialLossSamples(
+                        np.zeros(
+                            (
+                                0,
+                            ),
+                            dtype=int,
+                        ),
+                        np.zeros(
+                            (
+                                0,
+                                3,
+                            ),
+                            dtype=float,
+                        ),
+                        np.zeros(
+                            (
+                                0,
+                            ),
+                            dtype=float,
+                        ),
+                        np.zeros(
+                            (
+                                0,
+                                n_ports,
+                                n_ports,
+                            ),
+                            dtype=complex,
+                        ),
+                    )
+                )
 
             if (
                 scene.medium.loss_conductivity(
