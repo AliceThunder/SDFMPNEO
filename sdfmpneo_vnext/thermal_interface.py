@@ -59,16 +59,50 @@ def _thermal_properties(
     )
 
 
+def _thermal_conductivity_tensor(
+    medium,
+) -> np.ndarray:
+    if isinstance(
+        medium,
+        AnisotropicThermalMedium,
+    ):
+        return np.asarray(
+            medium.conductivity_tensor,
+            dtype=float,
+        )
+    if isinstance(
+        medium,
+        HomogeneousThermalMedium,
+    ):
+        return (
+            np.eye(
+                3,
+                dtype=float,
+            )
+            * float(
+                medium.conductivity
+            )
+        )
+    raise TypeError(
+        "thermal medium must be homogeneous isotropic or homogeneous "
+        "anisotropic"
+    )
+
+
 def _same_thermal_medium(
-    first: HomogeneousThermalMedium,
-    second: HomogeneousThermalMedium,
+    first,
+    second,
 ) -> bool:
     return bool(
-        np.isclose(
-            first.conductivity,
-            second.conductivity,
+        np.allclose(
+            _thermal_conductivity_tensor(
+                first
+            ),
+            _thermal_conductivity_tensor(
+                second
+            ),
             rtol=1e-12,
-            atol=0.0,
+            atol=1e-14,
         )
         and np.isclose(
             first.density,
@@ -92,21 +126,15 @@ def scene_thermal_package_media(
     """Return thermal interfaces whose material differs from the parent region."""
     if not isinstance(
         background,
-        HomogeneousThermalMedium,
+        (
+            HomogeneousThermalMedium,
+            AnisotropicThermalMedium,
+        ),
     ):
-        has_package_thermal_contrast = any(
-            _thermal_properties(
-                package.material
-            )
-            is not None
-            for package in scene.packages
+        raise TypeError(
+            "background thermal medium must be homogeneous isotropic or "
+            "homogeneous anisotropic"
         )
-        if has_package_thermal_contrast:
-            raise NotImplementedError(
-                "thermally distinct package interfaces with an anisotropic "
-                "background require the tensor thermal-interface solver"
-            )
-        return ()
     topology = package_domain_topology(
         scene.packages
     )
@@ -607,9 +635,9 @@ class PreparedThermalInterfaceField:
     def __init__(
         self,
         source,
-        background_medium: HomogeneousThermalMedium,
+        background_medium,
         package_geometry,
-        package_medium: HomogeneousThermalMedium,
+        package_medium,
         *,
         surface_vertical_order: int,
         surface_azimuthal_order: int,
@@ -2662,11 +2690,14 @@ class PiecewiseThermalInterfaceArtifact:
     ):
         if not isinstance(
             background_medium,
-            HomogeneousThermalMedium,
+            (
+                HomogeneousThermalMedium,
+                AnisotropicThermalMedium,
+            ),
         ):
-            raise NotImplementedError(
-                "piecewise package thermal interfaces currently require an "
-                "isotropic homogeneous thermal background"
+            raise TypeError(
+                "piecewise thermal interfaces require a homogeneous isotropic "
+                "or homogeneous anisotropic thermal background"
             )
         self.spatial_artifact = (
             spatial_artifact
