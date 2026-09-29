@@ -24,7 +24,10 @@ from .graded_material import (
 from .graded_convergence import (
     GradedMaterialConvergenceStep,
     GradedMaterialConvergenceReport,
+    GradedElectrothermalConvergenceStep,
+    GradedElectrothermalConvergenceReport,
     graded_material_convergence,
+    graded_electrothermal_convergence,
 )
 from .scene import (
     ConductorMaterial,
@@ -257,7 +260,10 @@ __all__ = [
     "compile_graded_superquadric_regions",
     "GradedMaterialConvergenceStep",
     "GradedMaterialConvergenceReport",
+    "GradedElectrothermalConvergenceStep",
+    "GradedElectrothermalConvergenceReport",
     "graded_material_convergence",
+    "graded_electrothermal_convergence",
     "SuperellipseSpiral",
     "PolylineConductor",
     "bishop_segment_frames",
