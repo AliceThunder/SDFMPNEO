@@ -175,6 +175,7 @@ class IsotropicMaterial:
     thermal_conductivity: float | None = None
     density: float | None = None
     heat_capacity: float | None = None
+    thermal_conductivity_tensor: np.ndarray | None = None
 
     def __post_init__(self):
         if (
@@ -188,24 +189,92 @@ class IsotropicMaterial:
             raise ValueError(
                 "invalid passive isotropic electromagnetic material"
             )
-        thermal = (
-            self.thermal_conductivity,
-            self.density,
-            self.heat_capacity,
+        scalar_thermal = (
+            self.thermal_conductivity
         )
-        if any(
-            value is not None
-            for value in thermal
+        tensor_thermal = (
+            self.thermal_conductivity_tensor
+        )
+        if (
+            scalar_thermal is not None
+            and tensor_thermal is not None
         ):
-            if not all(
-                value is not None
-                and np.isfinite(value)
-                and value > 0.0
-                for value in thermal
+            raise ValueError(
+                "thermal_conductivity and thermal_conductivity_tensor are "
+                "mutually exclusive"
+            )
+        has_thermal = bool(
+            scalar_thermal is not None
+            or tensor_thermal is not None
+            or self.density is not None
+            or self.heat_capacity is not None
+        )
+        if has_thermal:
+            if (
+                self.density is None
+                or self.heat_capacity is None
+                or not np.isfinite(
+                    self.density
+                )
+                or self.density <= 0.0
+                or not np.isfinite(
+                    self.heat_capacity
+                )
+                or self.heat_capacity <= 0.0
+                or (
+                    scalar_thermal is None
+                    and tensor_thermal is None
+                )
             ):
                 raise ValueError(
-                    "thermal_conductivity, density, and heat_capacity "
-                    "must be supplied together as positive finite values"
+                    "thermal conductivity, density, and heat_capacity must be "
+                    "supplied together as positive finite properties"
+                )
+            if scalar_thermal is not None:
+                if (
+                    not np.isfinite(
+                        scalar_thermal
+                    )
+                    or scalar_thermal <= 0.0
+                ):
+                    raise ValueError(
+                        "thermal_conductivity must be positive and finite"
+                    )
+            else:
+                tensor = np.asarray(
+                    tensor_thermal,
+                    dtype=float,
+                )
+                if (
+                    tensor.shape != (
+                        3,
+                        3,
+                    )
+                    or np.any(
+                        ~np.isfinite(
+                            tensor
+                        )
+                    )
+                    or not np.allclose(
+                        tensor,
+                        tensor.T,
+                        rtol=1e-12,
+                        atol=1e-14,
+                    )
+                    or np.min(
+                        np.linalg.eigvalsh(
+                            tensor
+                        )
+                    ) <= 0.0
+                ):
+                    raise ValueError(
+                        "thermal_conductivity_tensor must be a finite "
+                        "symmetric positive-definite 3x3 matrix"
+                    )
+                object.__setattr__(
+                    self,
+                    "thermal_conductivity_tensor",
+                    tensor.copy(),
                 )
 
     @property
