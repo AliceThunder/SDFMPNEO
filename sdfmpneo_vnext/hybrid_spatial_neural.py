@@ -13,6 +13,7 @@ except ImportError as exc:  # pragma: no cover
         "pip install 'sdfmpneo[neural]'"
     ) from exc
 
+from .basis import superellipse_section_quadrature
 from .exterior_quadrature import (
     homogeneous_background_domain_mask,
     scene_conductor_geometry,
@@ -28,9 +29,7 @@ from .hybrid_training_data import HybridTeacherSample
 from .scene import Scene
 from .spatial_neural import (
     _mlp,
-    _normalization_rule,
     _psd_sqrt,
-    _stable_cholesky,
 )
 
 
@@ -39,6 +38,196 @@ SUPPORTED_HYBRID_SPATIAL_ARTIFACT_SCHEMAS = (
     1,
     HYBRID_SPATIAL_ARTIFACT_SCHEMA,
 )
+
+
+def _stable_cholesky(
+    matrix,
+):
+    matrix = 0.5 * (
+        matrix
+        + matrix.conj().transpose(
+            -1,
+            -2,
+        )
+    )
+    n = int(
+        matrix.shape[
+            -1
+        ]
+    )
+    if n < 1:
+        raise ValueError(
+            "cholesky matrix must be nonempty"
+        )
+    diagonal_scale = torch.max(
+        torch.abs(
+            torch.real(
+                torch.diagonal(
+                    matrix,
+                    dim1=-2,
+                    dim2=-1,
+                )
+            )
+        )
+    )
+    scale = torch.clamp(
+        diagonal_scale,
+        min=1.0,
+    )
+    eye = torch.eye(
+        n,
+        dtype=matrix.dtype,
+        device=matrix.device,
+    )
+    for relative in (
+        1e-12,
+        1e-10,
+        1e-8,
+        1e-6,
+    ):
+        candidate = (
+            matrix
+            + (
+                relative
+                * scale
+            )
+            * eye
+        )
+        factor, info = torch.linalg.cholesky_ex(
+            candidate
+        )
+        if int(
+            torch.max(
+                info
+            ).detach().cpu()
+        ) == 0:
+            return factor
+
+    values, vectors = torch.linalg.eigh(
+        matrix
+    )
+    floor = (
+        1e-6
+        * scale
+        + 1e-20
+    )
+    repaired = (
+        vectors
+        @ torch.diag(
+            torch.clamp(
+                values.real,
+                min=floor,
+            ).to(
+                vectors.dtype
+            )
+        )
+        @ vectors.conj().transpose(
+            -1,
+            -2,
+        )
+    )
+    return torch.linalg.cholesky(
+        0.5
+        * (
+            repaired
+            + repaired.conj().transpose(
+                -1,
+                -2,
+            )
+        )
+    )
+
+
+def _normalization_rule(
+    scene: Scene,
+    *,
+    longitudinal_points: int,
+    radial_order: int,
+    angular_order: int,
+):
+    if (
+        longitudinal_points < 4
+        or radial_order < 2
+        or angular_order < 8
+    ):
+        raise ValueError(
+            "invalid conductor normalization quadrature orders"
+        )
+    coil_ids = []
+    arc_fraction = []
+    xy = []
+    weights = []
+    for coil_index, coil in enumerate(
+        scene.coils
+    ):
+        geometry = coil.geometry
+        poly = geometry.polyline(
+            int(
+                longitudinal_points
+            )
+        )
+        section = superellipse_section_quadrature(
+            geometry.conductor_width,
+            geometry.conductor_thickness,
+            geometry.cross_section_exponent,
+            int(
+                radial_order
+            ),
+            int(
+                angular_order
+            ),
+        )
+        n_segment = len(
+            poly.lengths
+        )
+        for segment_index, length in enumerate(
+            poly.lengths
+        ):
+            count = len(
+                section.weights
+            )
+            coil_ids.append(
+                np.full(
+                    count,
+                    coil_index,
+                    dtype=int,
+                )
+            )
+            arc_fraction.append(
+                np.full(
+                    count,
+                    (
+                        segment_index
+                        + 0.5
+                    )
+                    / n_segment,
+                    dtype=float,
+                )
+            )
+            xy.append(
+                section.xy
+            )
+            weights.append(
+                float(
+                    length
+                )
+                * section.weights
+            )
+    return (
+        np.concatenate(
+            coil_ids
+        ),
+        np.concatenate(
+            arc_fraction
+        ),
+        np.concatenate(
+            xy,
+            axis=0,
+        ),
+        np.concatenate(
+            weights
+        ),
+    )
 
 
 def _package_loss_gate(
