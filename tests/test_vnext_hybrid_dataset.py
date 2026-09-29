@@ -1639,3 +1639,171 @@ def test_hybrid_sampler_generates_correlated_graded_nested_materials():
         ]
         == "correlated_passive_isotropic_endpoint_interpolation"
     )
+
+
+def test_hybrid_sampler_generates_correlated_graded_debye_materials():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            3,
+            3,
+        ),
+        nested_package_probability=1.0,
+        graded_package_probability=1.0,
+        debye_package_probability=1.0,
+        multi_debye_package_probability=0.0,
+        lossless_probability=0.0,
+        dielectric_conductivity_range=(
+            1.0e-5,
+            1.0e-3,
+        ),
+    )
+    scene, _ = sample_hybrid_package_scene(
+        np.random.default_rng(
+            7431
+        ),
+        config,
+    )
+    materials = tuple(
+        package.material
+        for package in scene.packages
+    )
+    assert all(
+        isinstance(
+            material,
+            DebyeMaterial,
+        )
+        for material in materials
+    )
+    middle = materials[
+        1
+    ]
+    inner = materials[
+        0
+    ]
+    outer = materials[
+        2
+    ]
+    assert np.isclose(
+        middle.relative_permittivity_infinite,
+        0.5
+        * (
+            inner.relative_permittivity_infinite
+            + outer.relative_permittivity_infinite
+        ),
+    )
+    middle_delta = (
+        middle.relative_permittivity_static
+        - middle.relative_permittivity_infinite
+    )
+    inner_delta = (
+        inner.relative_permittivity_static
+        - inner.relative_permittivity_infinite
+    )
+    outer_delta = (
+        outer.relative_permittivity_static
+        - outer.relative_permittivity_infinite
+    )
+    assert np.isclose(
+        middle_delta,
+        0.5
+        * (
+            inner_delta
+            + outer_delta
+        ),
+    )
+    assert np.isclose(
+        middle.relaxation_time**2,
+        inner.relaxation_time
+        * outer.relaxation_time,
+        rtol=1e-12,
+        atol=0.0,
+    )
+    assert np.isclose(
+        middle.conductivity**2,
+        inner.conductivity
+        * outer.conductivity,
+        rtol=1e-12,
+        atol=0.0,
+    )
+    assert (
+        middle.loss_conductivity(
+            100_000.0
+        )
+        >= 0.0
+    )
+
+
+def test_hybrid_sampler_generates_correlated_graded_multi_debye_materials():
+    config = HybridSceneSamplerConfig(
+        package_count_range=(
+            3,
+            3,
+        ),
+        nested_package_probability=1.0,
+        graded_package_probability=1.0,
+        debye_package_probability=0.0,
+        multi_debye_package_probability=1.0,
+        multi_debye_poles_range=(
+            3,
+            3,
+        ),
+        lossless_probability=0.0,
+        dielectric_conductivity_range=(
+            1.0e-5,
+            1.0e-3,
+        ),
+    )
+    scene, _ = sample_hybrid_package_scene(
+        np.random.default_rng(
+            9137
+        ),
+        config,
+    )
+    materials = tuple(
+        package.material
+        for package in scene.packages
+    )
+    assert all(
+        isinstance(
+            material,
+            MultiDebyeMaterial,
+        )
+        for material in materials
+    )
+    assert {
+        len(
+            material.relaxation_times
+        )
+        for material in materials
+    } == {
+        3
+    }
+    for material in materials:
+        times = np.asarray(
+            material.relaxation_times,
+            dtype=float,
+        )
+        strengths = np.asarray(
+            material.relaxation_strengths,
+            dtype=float,
+        )
+        assert np.all(
+            times
+            > 0.0
+        )
+        assert np.all(
+            np.diff(
+                times
+            )
+            > 0.0
+        )
+        assert np.all(
+            strengths
+            >= 0.0
+        )
+        assert (
+            material.loss_conductivity(
+                100_000.0
+            )
+            >= 0.0
+        )
