@@ -177,6 +177,7 @@ python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
   --package-count-min 1 \
   --package-count-max 4 \
   --nested-package-probability 0.25 \
+  --graded-package-probability 0.50 \
   --free-inclusion-probability 0.35 \
   --free-inclusion-center-radius-min 0.65 \
   --free-inclusion-center-radius-max 1.8 \
