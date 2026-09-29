@@ -167,6 +167,7 @@ class CurrentControlledEnvelope:
         return Scene(
             tuple(coils),
             self.scene.medium,
+            self.scene.packages,
         )
 
     def _electromagnetic_power(
