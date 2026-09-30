@@ -786,7 +786,10 @@ class DielectricCoupledMixedTeacher:
                 self.scene,
                 self.frequency_hz,
                 node_positions,
-                node_radii,
+                (
+                    self.charge_self_radius_factor
+                    * node_radii
+                ),
                 conduction_dc=(
                     self.conductive_dc
                 ),
