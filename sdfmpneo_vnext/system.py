@@ -18,6 +18,7 @@ from .reference import MixedReferenceArtifact
 from .hybrid_dielectric import DielectricCoupledReferenceArtifact
 from .scene import Scene
 from .thermal_field import (
+    AnisotropicThermalMedium,
     ContinuousThermalGreenArtifact,
     HomogeneousThermalMedium,
 )
@@ -33,6 +34,40 @@ def _resolve_thermal_medium(
 ):
     if medium is not None:
         return medium
+    tensor = getattr(
+        scene.medium,
+        "thermal_conductivity_tensor",
+        None,
+    )
+    if tensor is not None:
+        density = getattr(
+            scene.medium,
+            "density",
+            None,
+        )
+        heat_capacity = getattr(
+            scene.medium,
+            "heat_capacity",
+            None,
+        )
+        if (
+            density is None
+            or heat_capacity is None
+        ):
+            raise ValueError(
+                "tensor thermal background requires density and heat_capacity"
+            )
+        return AnisotropicThermalMedium(
+            conductivity_tensor=(
+                tensor
+            ),
+            density=float(
+                density
+            ),
+            heat_capacity=float(
+                heat_capacity
+            ),
+        )
     return HomogeneousThermalMedium.from_material(
         scene.medium
     )
@@ -92,7 +127,7 @@ def mvp_system_capabilities(
         nested_material_regions=True,
         graded_radial_media=True,
         anisotropic_thermal_background=True,
-        anisotropic_package_thermal_interfaces=False,
+        anisotropic_package_thermal_interfaces=True,
     )
 
 
