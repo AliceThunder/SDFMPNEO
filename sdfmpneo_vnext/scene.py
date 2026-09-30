@@ -1246,6 +1246,31 @@ class TensorElectricMaterial:
                 "conductivity_tensor must be finite symmetric positive "
                 "semidefinite and relative_permeability must be positive"
             )
+        commutator = (
+            epsilon
+            @ sigma
+            - sigma
+            @ epsilon
+        )
+        if (
+            np.linalg.norm(
+                commutator
+            )
+            > 1e-10
+            * max(
+                np.linalg.norm(
+                    epsilon
+                )
+                * np.linalg.norm(
+                    sigma
+                ),
+                1.0,
+            )
+        ):
+            raise ValueError(
+                "relative_permittivity_tensor and conductivity_tensor must "
+                "share principal axes in the current tensor-electric backend"
+            )
         tensor_thermal = _validated_optional_thermal_tensor(
             self.thermal_conductivity,
             self.thermal_conductivity_tensor,
