@@ -187,6 +187,59 @@ def _coefficient_metric(
     eigenvalues_real, rotation = np.linalg.eigh(
         real
     )
+    scale = max(
+        float(
+            np.max(
+                np.abs(
+                    eigenvalues_real
+                )
+            )
+        ),
+        1e-30,
+    )
+    start = 0
+    while start < 3:
+        stop = start + 1
+        while (
+            stop < 3
+            and abs(
+                eigenvalues_real[
+                    stop
+                ]
+                - eigenvalues_real[
+                    start
+                ]
+            )
+            <= 1e-10
+            * scale
+        ):
+            stop += 1
+        if stop - start > 1:
+            block = rotation[
+                :,
+                start:stop
+            ]
+            imaginary_block = (
+                block.T
+                @ imaginary
+                @ block
+            )
+            _, local_rotation = np.linalg.eigh(
+                imaginary_block
+            )
+            rotation[
+                :,
+                start:stop
+            ] = (
+                block
+                @ local_rotation
+            )
+        start = stop
+    real_local = (
+        rotation.T
+        @ real
+        @ rotation
+    )
     imaginary_local = (
         rotation.T
         @ imaginary
@@ -217,7 +270,9 @@ def _coefficient_metric(
             "imaginary tensor parts"
         )
     eigenvalues = (
-        eigenvalues_real.astype(
+        np.diag(
+            real_local
+        ).astype(
             complex
         )
         + 1j
