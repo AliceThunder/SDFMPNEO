@@ -24,6 +24,14 @@ class SpatialSurrogateAudit:
     maximum_offgrid_probe_joule_error: float
     maximum_cross_grid_closure_error: float
     passed: bool
+    package_samples: int = 0
+    mean_package_weighted_relative_error: float = 0.0
+    maximum_package_weighted_relative_error: float = 0.0
+    maximum_package_probe_joule_error: float = 0.0
+    background_samples: int = 0
+    mean_background_weighted_relative_error: float = 0.0
+    maximum_background_weighted_relative_error: float = 0.0
+    maximum_background_probe_joule_error: float = 0.0
 
     def to_dict(self):
         return {
@@ -37,6 +45,26 @@ class SpatialSurrogateAudit:
             "maximum_offgrid_relative_error": self.maximum_offgrid_relative_error,
             "maximum_offgrid_probe_joule_error": self.maximum_offgrid_probe_joule_error,
             "maximum_cross_grid_closure_error": self.maximum_cross_grid_closure_error,
+            "package_samples": self.package_samples,
+            "mean_package_weighted_relative_error": (
+                self.mean_package_weighted_relative_error
+            ),
+            "maximum_package_weighted_relative_error": (
+                self.maximum_package_weighted_relative_error
+            ),
+            "maximum_package_probe_joule_error": (
+                self.maximum_package_probe_joule_error
+            ),
+            "background_samples": self.background_samples,
+            "mean_background_weighted_relative_error": (
+                self.mean_background_weighted_relative_error
+            ),
+            "maximum_background_weighted_relative_error": (
+                self.maximum_background_weighted_relative_error
+            ),
+            "maximum_background_probe_joule_error": (
+                self.maximum_background_probe_joule_error
+            ),
             "passed": self.passed,
         }
 
@@ -505,8 +533,17 @@ def _cross_grid_closure(
         prepared.port_prediction.dissipation_channels,
         dtype=complex,
     )
+    n_conductor_channels = int(
+        np.max(
+            coil_index
+        )
+        + 1
+    )
+    target = channels[
+        :n_conductor_channels
+    ]
     integrated = np.zeros_like(
-        channels
+        target
     )
     for index, coil in enumerate(
         coil_index
@@ -520,11 +557,11 @@ def _cross_grid_closure(
     return float(
         np.linalg.norm(
             integrated
-            - channels
+            - target
         )
         / max(
             np.linalg.norm(
-                channels
+                target
             ),
             1e-30,
         )
@@ -584,6 +621,10 @@ def audit_spatial_surrogate(
     maximum_probe_error = 0.0
     maximum_offgrid_probe_error = 0.0
     minimum_eigenvalue = np.inf
+    package_errors = []
+    background_errors = []
+    maximum_package_probe_error = 0.0
+    maximum_background_probe_error = 0.0
 
     for sample in samples:
         spatial = (
@@ -646,6 +687,130 @@ def audit_spatial_surrogate(
                 prepared.normalization_closure_error
             )
         )
+
+        package_truth = getattr(
+            sample,
+            "package_spatial_loss",
+            None,
+        )
+        if package_truth is not None:
+            if not hasattr(
+                prepared,
+                "package_local_dissipation_matrices",
+            ):
+                raise ValueError(
+                    "hybrid package spatial truth requires a package-aware "
+                    "spatial artifact"
+                )
+            package_weights = np.asarray(
+                package_truth.weights,
+                dtype=float,
+            )
+            if len(
+                package_weights
+            ):
+                package_predicted = np.asarray(
+                    prepared.package_local_dissipation_matrices(
+                        package_truth.package_index,
+                        package_truth.local_position,
+                    ),
+                    dtype=complex,
+                )
+                package_target = np.asarray(
+                    package_truth.dissipation_matrix,
+                    dtype=complex,
+                )
+                package_errors.append(
+                    _weighted_relative_error(
+                        package_predicted,
+                        package_target,
+                        package_weights,
+                    )
+                )
+                maximum_package_probe_error = max(
+                    maximum_package_probe_error,
+                    _probe_joule_error(
+                        package_predicted,
+                        package_target,
+                        package_weights,
+                    ),
+                )
+                minimum_eigenvalue = min(
+                    minimum_eigenvalue,
+                    _minimum_eigenvalue(
+                        package_predicted
+                    ),
+                )
+
+        background_truth = getattr(
+            sample,
+            "background_spatial_loss",
+            None,
+        )
+        if background_truth is not None:
+            if not hasattr(
+                prepared,
+                "background_dissipation_matrices",
+            ):
+                raise ValueError(
+                    "hybrid background spatial truth requires a background-aware "
+                    "spatial artifact"
+                )
+            root_pose = (
+                sample.scene.coils[
+                    0
+                ].geometry.pose
+            )
+            root_local = np.asarray(
+                background_truth.root_local_position,
+                dtype=float,
+            )
+            world_position = (
+                root_local
+                @ root_pose.rotation.T
+                + root_pose.translation[
+                    None,
+                    :
+                ]
+            )
+            background_predicted = np.asarray(
+                prepared.background_dissipation_matrices(
+                    world_position
+                ),
+                dtype=complex,
+            )
+            background_target = np.asarray(
+                background_truth.dissipation_matrix,
+                dtype=complex,
+            )
+            background_weights = np.asarray(
+                background_truth.weights,
+                dtype=float,
+            )
+            background_errors.append(
+                _weighted_relative_error(
+                    background_predicted,
+                    background_target,
+                    background_weights,
+                )
+            )
+            maximum_background_probe_error = max(
+                maximum_background_probe_error,
+                _probe_joule_error(
+                    background_predicted,
+                    background_target,
+                    background_weights,
+                ),
+            )
+            if len(
+                background_weights
+            ):
+                minimum_eigenvalue = min(
+                    minimum_eigenvalue,
+                    _minimum_eigenvalue(
+                        background_predicted
+                    ),
+                )
 
         (
             offgrid_coil,
@@ -713,6 +878,42 @@ def audit_spatial_surrogate(
             cross_grid_errors
         )
     )
+    package_mean = (
+        float(
+            np.mean(
+                package_errors
+            )
+        )
+        if package_errors
+        else 0.0
+    )
+    package_maximum = (
+        float(
+            np.max(
+                package_errors
+            )
+        )
+        if package_errors
+        else 0.0
+    )
+    background_mean = (
+        float(
+            np.mean(
+                background_errors
+            )
+        )
+        if background_errors
+        else 0.0
+    )
+    background_maximum = (
+        float(
+            np.max(
+                background_errors
+            )
+        )
+        if background_errors
+        else 0.0
+    )
 
     passed = bool(
         float(
@@ -747,6 +948,18 @@ def audit_spatial_surrogate(
         <= maximum_offgrid_probe_joule_error_limit
         and maximum_cross_grid
         <= cross_grid_closure_tolerance
+        and package_mean
+        <= mean_relative_error_limit
+        and package_maximum
+        <= maximum_relative_error_limit
+        and maximum_package_probe_error
+        <= maximum_probe_joule_error_limit
+        and background_mean
+        <= mean_relative_error_limit
+        and background_maximum
+        <= maximum_relative_error_limit
+        and maximum_background_probe_error
+        <= maximum_probe_joule_error_limit
         and minimum_eigenvalue
         >= -passivity_tolerance
     )
@@ -791,4 +1004,28 @@ def audit_spatial_surrogate(
             maximum_cross_grid
         ),
         passed=passed,
+        package_samples=len(
+            package_errors
+        ),
+        mean_package_weighted_relative_error=(
+            package_mean
+        ),
+        maximum_package_weighted_relative_error=(
+            package_maximum
+        ),
+        maximum_package_probe_joule_error=float(
+            maximum_package_probe_error
+        ),
+        background_samples=len(
+            background_errors
+        ),
+        mean_background_weighted_relative_error=(
+            background_mean
+        ),
+        maximum_background_weighted_relative_error=(
+            background_maximum
+        ),
+        maximum_background_probe_joule_error=float(
+            maximum_background_probe_error
+        ),
     )
