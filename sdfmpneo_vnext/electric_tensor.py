@@ -177,47 +177,99 @@ def _coefficient_metric(
         raise ValueError(
             "electric coefficient tensor must be finite symmetric 3x3"
         )
-    determinant = complex(
-        np.linalg.det(
-            coefficient
+
+    real = np.real(
+        coefficient
+    )
+    imaginary = np.imag(
+        coefficient
+    )
+    eigenvalues_real, rotation = np.linalg.eigh(
+        real
+    )
+    imaginary_local = (
+        rotation.T
+        @ imaginary
+        @ rotation
+    )
+    off_diagonal = (
+        imaginary_local
+        - np.diag(
+            np.diag(
+                imaginary_local
+            )
         )
     )
     if (
-        not np.isfinite(
-            determinant.real
+        np.linalg.norm(
+            off_diagonal
         )
-        or not np.isfinite(
-            determinant.imag
+        > 1e-10
+        * max(
+            np.linalg.norm(
+                imaginary_local
+            ),
+            1.0,
         )
-        or abs(
-            determinant
+    ):
+        raise ValueError(
+            "complex electric coefficient must have coaxial real and "
+            "imaginary tensor parts"
         )
-        <= 1e-40
+    eigenvalues = (
+        eigenvalues_real.astype(
+            complex
+        )
+        + 1j
+        * np.diag(
+            imaginary_local
+        )
+    )
+    if np.any(
+        np.abs(
+            eigenvalues
+        )
+        <= 1e-30
     ):
         raise ValueError(
             "electric coefficient tensor must be nonsingular"
         )
-    inverse = np.linalg.inv(
-        coefficient
+    roots = np.sqrt(
+        eigenvalues
     )
-    square_root_determinant = np.sqrt(
-        determinant
-    )
-    if np.real(
-        square_root_determinant
-    ) < 0.0:
-        square_root_determinant = (
-            -square_root_determinant
+    roots = np.where(
+        np.real(
+            roots
         )
+        < 0.0,
+        -roots,
+        roots,
+    )
+    sqrt_det = np.prod(
+        roots
+    )
+    inverse = (
+        rotation
+        @ np.diag(
+            1.0
+            / eigenvalues
+        )
+        @ rotation.T
+    )
     geometric_mean = np.exp(
-        np.log(
-            determinant
+        (
+            2.0
+            / 3.0
         )
-        / 3.0
+        * np.sum(
+            np.log(
+                roots
+            )
+        )
     )
     return (
         inverse,
-        square_root_determinant,
+        sqrt_det,
         geometric_mean,
     )
 
