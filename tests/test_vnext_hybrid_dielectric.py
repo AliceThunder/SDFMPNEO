@@ -2058,3 +2058,105 @@ def test_constant_graded_electrothermal_profile_converges_in_temperature_and_por
     assert len(
         report.final_packages
     ) == 4
+
+
+def test_radial_profile_interpolates_spd_tensor_thermal_conductivity():
+    coil = _coil()
+    outer = _package(
+        IsotropicMaterial(
+            relative_permittivity=3.0,
+        )
+    ).geometry
+    inner_tensor = np.asarray(
+        [
+            [0.20, 0.03, 0.00],
+            [0.03, 0.42, 0.02],
+            [0.00, 0.02, 0.70],
+        ],
+        dtype=float,
+    )
+    outer_tensor = np.asarray(
+        [
+            [0.55, 0.07, 0.01],
+            [0.07, 0.88, 0.04],
+            [0.01, 0.04, 1.20],
+        ],
+        dtype=float,
+    )
+    profile = RadialIsotropicMaterialProfile(
+        normalized_radius=(
+            0.0,
+            1.0,
+        ),
+        relative_permittivity=(
+            2.5,
+            4.0,
+        ),
+        relative_permeability=(
+            1.0,
+            1.0,
+        ),
+        conductivity=(
+            1.0e-5,
+            2.0e-4,
+        ),
+        density=(
+            1100.0,
+            1250.0,
+        ),
+        heat_capacity=(
+            1300.0,
+            1500.0,
+        ),
+        thermal_conductivity_tensor=(
+            inner_tensor,
+            outer_tensor,
+        ),
+    )
+    midpoint = profile.material_at(
+        0.5
+    )
+    assert midpoint.thermal_conductivity is None
+    assert np.allclose(
+        midpoint.thermal_conductivity_tensor,
+        0.5
+        * (
+            inner_tensor
+            + outer_tensor
+        ),
+        rtol=0.0,
+        atol=1e-14,
+    )
+    assert (
+        np.min(
+            np.linalg.eigvalsh(
+                midpoint.thermal_conductivity_tensor
+            )
+        )
+        > 0.0
+    )
+
+    layers = compile_graded_superquadric_regions(
+        outer,
+        profile,
+        shell_count=5,
+        enclosed_coils=(
+            coil,
+        ),
+    )
+    assert len(
+        layers
+    ) == 5
+    for layer in layers:
+        tensor = (
+            layer.material.thermal_conductivity_tensor
+        )
+        assert tensor is not None
+        assert (
+            np.min(
+                np.linalg.eigvalsh(
+                    tensor
+                )
+            )
+            > 0.0
+        )
