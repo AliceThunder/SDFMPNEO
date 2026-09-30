@@ -1333,10 +1333,10 @@ def command_bundle_publish(
             )
         ):
             from .hybrid_spatial_neural import (
-                HybridNeuralSpatialLossArtifact,
+                HybridSpatialLossArtifact,
             )
             spatial = (
-                HybridNeuralSpatialLossArtifact.load(
+                HybridSpatialLossArtifact.load(
                     args.spatial_artifact,
                     port,
                     device=args.device,
