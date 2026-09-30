@@ -9,9 +9,8 @@ from .prediction import StructuredPortPrediction
 from .reference import PreparedReferenceLossField
 from .serialization import scene_from_dict
 from .thermal_field import (
+    AnisotropicThermalMedium,
     HomogeneousThermalMedium,
-    PreparedThermalGreenField,
-    build_thermal_source_quadrature,
 )
 
 
@@ -41,6 +40,51 @@ def _complex_vector(
         array[:, 0]
         + 1j
         * array[:, 1]
+    )
+
+
+def _complex_matrix(
+    value,
+    *,
+    columns: int,
+):
+    array = np.asarray(
+        value,
+        dtype=float,
+    )
+    if (
+        array.ndim == 2
+        and array.shape[
+            1
+        ] == columns
+    ):
+        return array.astype(
+            complex
+        )
+    if (
+        array.ndim != 3
+        or array.shape[
+            1:
+        ] != (
+            columns,
+            2,
+        )
+    ):
+        raise ValueError(
+            "complex matrix must be rows of real values or [real,imag] pairs"
+        )
+    return (
+        array[
+            :,
+            :,
+            0
+        ]
+        + 1j
+        * array[
+            :,
+            :,
+            1
+        ]
     )
 
 
@@ -86,8 +130,61 @@ def _thermal_medium(
     data,
 ):
     if data is None:
+        return None
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise TypeError(
+            "thermal medium must be a dictionary"
+        )
+    density = float(
+        data[
+            "density"
+        ]
+    )
+    heat_capacity = float(
+        data[
+            "heat_capacity"
+        ]
+    )
+    ambient = float(
+        data.get(
+            "ambient_temperature",
+            293.15,
+        )
+    )
+    has_scalar = (
+        "conductivity"
+        in data
+    )
+    has_tensor = (
+        "conductivity_tensor"
+        in data
+    )
+    if (
+        has_scalar
+        == has_tensor
+    ):
         raise ValueError(
-            "thermal query requires a medium"
+            "thermal medium requires exactly one of conductivity or "
+            "conductivity_tensor"
+        )
+    if has_tensor:
+        return AnisotropicThermalMedium(
+            conductivity_tensor=np.asarray(
+                data[
+                    "conductivity_tensor"
+                ],
+                dtype=float,
+            ),
+            density=density,
+            heat_capacity=(
+                heat_capacity
+            ),
+            ambient_temperature=(
+                ambient
+            ),
         )
     return HomogeneousThermalMedium(
         conductivity=float(
@@ -95,21 +192,12 @@ def _thermal_medium(
                 "conductivity"
             ]
         ),
-        density=float(
-            data[
-                "density"
-            ]
+        density=density,
+        heat_capacity=(
+            heat_capacity
         ),
-        heat_capacity=float(
-            data[
-                "heat_capacity"
-            ]
-        ),
-        ambient_temperature=float(
-            data.get(
-                "ambient_temperature",
-                293.15,
-            )
+        ambient_temperature=(
+            ambient
         ),
     )
 
@@ -472,9 +560,17 @@ def run_system_inference(
         ] = spatial_output
 
     if thermal_request is not None:
-        if currents is None:
+        history_request = (
+            thermal_request.get(
+                "history"
+            )
+        )
+        if (
+            history_request is None
+            and currents is None
+        ):
             raise ValueError(
-                "thermal query requires currents"
+                "thermal step query requires top-level currents"
             )
         medium = _thermal_medium(
             thermal_request.get(
@@ -496,7 +592,10 @@ def run_system_inference(
                     **thermal_options,
                 )
             )
-        elif mode == "reference":
+        else:
+            # REFERENCE and CERTIFIED thermal queries use the same continuous
+            # REFERENCE loss field and package-interface truth.  The certified
+            # port correction must never bypass package thermal transmission.
             thermal = (
                 system.reference_continuous_thermal_field(
                     scene,
@@ -505,56 +604,112 @@ def run_system_inference(
                     **thermal_options,
                 )
             )
-        else:
-            source = (
-                build_thermal_source_quadrature(
-                    scene,
-                    spatial,
-                    **thermal_options,
-                )
-            )
-            thermal = (
-                PreparedThermalGreenField(
-                    source,
-                    medium,
-                )
-            )
+
         points = np.asarray(
             thermal_request[
                 "points"
             ],
             dtype=float,
         )
-        time = float(
-            thermal_request[
-                "time"
-            ]
-        )
-        temperature = (
-            thermal.temperature_step(
-                points,
-                time,
-                currents,
-            )
-        )
-        output[
-            "thermal"
-        ] = {
-            "time": time,
+        thermal_output = {
             "points": points.tolist(),
-            "temperature": (
-                np.asarray(
-                    temperature,
-                    dtype=float,
-                ).tolist()
-            ),
-            "ambient_temperature": (
-                medium.ambient_temperature
+            "ambient_temperature": float(
+                thermal.medium.ambient_temperature
             ),
             "source_normalization_closure_error": float(
                 thermal.source.normalization_closure_error
             ),
         }
+
+        if history_request is None:
+            if "time" not in thermal_request:
+                raise ValueError(
+                    "thermal query requires time or history"
+                )
+            time = float(
+                thermal_request[
+                    "time"
+                ]
+            )
+            temperature = (
+                thermal.temperature_step(
+                    points,
+                    time,
+                    currents,
+                )
+            )
+            thermal_output[
+                "time"
+            ] = time
+            thermal_output[
+                "temperature"
+            ] = (
+                np.asarray(
+                    temperature,
+                    dtype=float,
+                ).tolist()
+            )
+        else:
+            if not isinstance(
+                history_request,
+                dict,
+            ):
+                raise TypeError(
+                    "thermal history must be a dictionary"
+                )
+            interval_edges = np.asarray(
+                history_request[
+                    "interval_edges"
+                ],
+                dtype=float,
+            )
+            interval_currents = _complex_matrix(
+                history_request[
+                    "interval_currents"
+                ],
+                columns=len(
+                    scene.coils
+                ),
+            )
+            observation_times = np.asarray(
+                history_request[
+                    "observation_times"
+                ],
+                dtype=float,
+            )
+            temperature = (
+                thermal.temperature_history(
+                    points,
+                    interval_edges,
+                    interval_currents,
+                    observation_times,
+                )
+            )
+            thermal_output[
+                "history"
+            ] = {
+                "interval_edges": (
+                    interval_edges.tolist()
+                ),
+                "interval_currents": (
+                    _complex_json(
+                        interval_currents
+                    )
+                ),
+                "observation_times": (
+                    observation_times.tolist()
+                ),
+                "temperature": (
+                    np.asarray(
+                        temperature,
+                        dtype=float,
+                    ).tolist()
+                ),
+            }
+
+        output[
+            "thermal"
+        ] = thermal_output
 
     if certified is not None:
         output[
