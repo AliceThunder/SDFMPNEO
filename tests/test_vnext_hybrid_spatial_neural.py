@@ -11,6 +11,7 @@ from sdfmpneo_vnext import (
     HomogeneousThermalMedium,
     HybridSceneSamplerConfig,
     HybridTeacherSample,
+    MQSConfig,
     IsotropicMaterial,
     MeshfreeVNextSystem,
     PackageObject,
@@ -25,11 +26,19 @@ from sdfmpneo_vnext import (
     encode_hybrid_scene_invariant,
     haar_rotation,
     sample_hybrid_package_scene,
+    audit_spatial_surrogate,
 )
 from sdfmpneo_vnext.hybrid_background_spatial import (
     BackgroundLossShapeNet,
     background_coordinate_features,
 )
+from sdfmpneo_vnext.hybrid_dielectric import (
+    DielectricCoupledMixedTeacher,
+)
+from sdfmpneo_vnext.hybrid_field import (
+    prepare_hybrid_reference_loss_field,
+)
+
 from sdfmpneo_vnext.hybrid_neural import (
     HybridNeuralResidualArtifact,
     HybridNormalizer,
@@ -1438,4 +1447,184 @@ def test_vectorized_background_decoder_matches_independent_point_queries():
         independent,
         rtol=2e-6,
         atol=2e-7,
+    )
+
+
+class _ReferenceHybridSpatialAuditArtifact:
+    def __init__(
+        self,
+        sample,
+        *,
+        environment_scale=1.0,
+    ):
+        self.sample = sample
+        self.environment_scale = float(
+            environment_scale
+        )
+
+    def prepare(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        teacher = DielectricCoupledMixedTeacher(
+            scene,
+            frequency_hz,
+            MQSConfig(),
+            surface_vertical_order=(
+                self.sample.surface_vertical_order
+            ),
+            surface_azimuthal_order=(
+                self.sample.surface_azimuthal_order
+            ),
+        )
+        result = teacher.solve()
+        base = prepare_hybrid_reference_loss_field(
+            teacher,
+            result,
+            volume_axial_order=(
+                self.sample.package_volume_axial_order
+            ),
+            volume_radial_order=(
+                self.sample.package_volume_radial_order
+            ),
+            volume_azimuthal_order=(
+                self.sample.package_volume_azimuthal_order
+            ),
+            background_radial_order=(
+                self.sample.background_radial_order
+            ),
+            background_angular_order=(
+                self.sample.background_angular_order
+            ),
+            maximum_raw_closure_error=5.0,
+        )
+        if np.isclose(
+            self.environment_scale,
+            1.0,
+        ):
+            return base
+        return _ScaledHybridEnvironmentField(
+            base,
+            self.environment_scale,
+        )
+
+
+class _ScaledHybridEnvironmentField:
+    def __init__(
+        self,
+        base,
+        scale,
+    ):
+        self._base = base
+        self._scale = float(
+            scale
+        )
+
+    def __getattr__(
+        self,
+        name,
+    ):
+        return getattr(
+            self._base,
+            name,
+        )
+
+    def package_local_dissipation_matrices(
+        self,
+        package_index,
+        local_position,
+    ):
+        return (
+            self._scale
+            * self._base.package_local_dissipation_matrices(
+                package_index,
+                local_position,
+            )
+        )
+
+    def background_dissipation_matrices(
+        self,
+        points,
+    ):
+        return (
+            self._scale
+            * self._base.background_dissipation_matrices(
+                points
+            )
+        )
+
+
+def test_hybrid_spatial_release_audit_checks_package_and_background_truth():
+    scene = _lossy_background_scene(
+        _scene(),
+        conductivity=1.0e-3,
+    )
+    sample = HybridTeacherSample.generate(
+        scene,
+        75_000.0,
+        teacher_config=MQSConfig(),
+        baseline_segments=24,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        include_spatial_truth=True,
+        package_volume_axial_order=2,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=3,
+        background_angular_order=8,
+        maximum_raw_spatial_closure_error=5.0,
+    )
+
+    report = audit_spatial_surrogate(
+        _ReferenceHybridSpatialAuditArtifact(
+            sample
+        ),
+        (
+            sample,
+        ),
+        mean_relative_error_limit=0.25,
+        maximum_relative_error_limit=0.50,
+        channel_closure_tolerance=1e-4,
+        maximum_probe_joule_error_limit=0.50,
+        mean_offgrid_relative_error_limit=0.25,
+        maximum_offgrid_relative_error_limit=0.50,
+        maximum_offgrid_probe_joule_error_limit=0.50,
+        cross_grid_closure_tolerance=1.0,
+    )
+    assert report.passed
+    assert report.package_samples == 1
+    assert report.background_samples == 1
+    assert (
+        report.maximum_package_weighted_relative_error
+        < 1e-8
+    )
+    assert (
+        report.maximum_background_weighted_relative_error
+        < 1e-8
+    )
+
+    corrupted = audit_spatial_surrogate(
+        _ReferenceHybridSpatialAuditArtifact(
+            sample,
+            environment_scale=4.0,
+        ),
+        (
+            sample,
+        ),
+        mean_relative_error_limit=0.25,
+        maximum_relative_error_limit=0.50,
+        channel_closure_tolerance=1e-4,
+        maximum_probe_joule_error_limit=0.50,
+        mean_offgrid_relative_error_limit=0.25,
+        maximum_offgrid_relative_error_limit=0.50,
+        maximum_offgrid_probe_joule_error_limit=0.50,
+        cross_grid_closure_tolerance=1.0,
+    )
+    assert not corrupted.passed
+    assert (
+        corrupted.maximum_package_weighted_relative_error
+        > 1.0
+        or corrupted.maximum_background_weighted_relative_error
+        > 1.0
     )
