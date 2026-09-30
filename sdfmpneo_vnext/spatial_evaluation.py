@@ -6,6 +6,8 @@ import numpy as np
 from .basis import superellipse_section_quadrature
 from .em import DenseMQSTeacher, MQSConfig
 from .mixed import DenseMixedConductorTeacher
+from .hybrid_dielectric import DielectricCoupledMixedTeacher
+from .hybrid_training_data import HYBRID_REFERENCE_BACKEND
 from .training_data import CANONICAL_REFERENCE_BACKEND
 
 
@@ -273,6 +275,28 @@ def _reference_teacher(
                 config,
             )
         )
+    elif backend == HYBRID_REFERENCE_BACKEND:
+        teacher = (
+            DielectricCoupledMixedTeacher(
+                sample.scene,
+                sample.frequency_hz,
+                config,
+                surface_vertical_order=int(
+                    getattr(
+                        sample,
+                        "surface_vertical_order",
+                        16,
+                    )
+                ),
+                surface_azimuthal_order=int(
+                    getattr(
+                        sample,
+                        "surface_azimuthal_order",
+                        32,
+                    )
+                ),
+            )
+        )
     else:
         raise ValueError(
             "unsupported spatial reference backend"
@@ -293,11 +317,46 @@ def _offgrid_truth(
             sample
         )
     )
-    base_teacher = getattr(
+    if isinstance(
         teacher,
-        "_mqs",
-        teacher,
-    )
+        DielectricCoupledMixedTeacher,
+    ):
+        base_teacher = (
+            teacher.conductor_teacher._mqs
+        )
+
+        def local_truth(
+            coil,
+            arc,
+            local_xy,
+        ):
+            return (
+                teacher.conductor_teacher.local_dissipation_matrix(
+                    result.mixed_result,
+                    coil,
+                    arc,
+                    local_xy,
+                )
+            )
+    else:
+        base_teacher = getattr(
+            teacher,
+            "_mqs",
+            teacher,
+        )
+
+        def local_truth(
+            coil,
+            arc,
+            local_xy,
+        ):
+            return teacher.local_dissipation_matrix(
+                result,
+                coil,
+                arc,
+                local_xy,
+            )
+
     segments = (
         base_teacher._segments
     )
@@ -396,8 +455,7 @@ def _offgrid_truth(
                     )
                 )
                 truth.append(
-                    teacher.local_dissipation_matrix(
-                        result,
+                    local_truth(
                         coil,
                         arc,
                         local_xy,
