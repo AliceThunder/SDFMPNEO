@@ -293,8 +293,10 @@ thermal = system.fast_continuous_thermal_field(
 # A homogeneous anisotropic thermal background is also supported with
 # AnisotropicThermalMedium(K, density, heat_capacity). Its infinite-domain
 # steady/transient Green function is analytic and the same tensor-aware
-# modified-Helmholtz interface solver couples it to isotropic package thermal
-# contrast. Tensor-anisotropic package materials themselves remain fail-closed.
+# modified-Helmholtz interface solver couples it to isotropic or
+# tensor-anisotropic package thermal contrast. Package conductivity tensors are
+# declared in package-local coordinates and rotate automatically with the
+# package pose.
 
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
@@ -331,9 +333,9 @@ The current vNext code intentionally fails closed outside implemented physics:
   convergent conductor-safe nested-shell compilation, while general
   non-radial 3D electromagnetic heterogeneity and true tensor-anisotropic EM
   VIE media are not yet implemented; homogeneous tensor-anisotropic thermal
-  backgrounds are supported analytically and through isotropic package
-  interfaces, while tensor-anisotropic package materials are not yet
-  implemented;
+  backgrounds and tensor-anisotropic package thermal materials are supported
+  by the analytic/tensor-aware thermal interface solver; package thermal
+  tensors are local to each package pose;
 - constant, Debye, multi-Debye, tabulated, and custom passive isotropic
   frequency responses share the same solver interface; electric and magnetic
   package contrast are both handled by local surface-integral transmission
