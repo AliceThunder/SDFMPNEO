@@ -1298,17 +1298,7 @@ def test_tensor_package_thermal_conductivity_is_common_rotation_invariant():
         package.geometry.transformed(
             common
         ),
-        IsotropicMaterial(
-            relative_permittivity=1.0,
-            conductivity=0.0,
-            thermal_conductivity_tensor=(
-                rotation
-                @ package_tensor
-                @ rotation.T
-            ),
-            density=1180.0,
-            heat_capacity=1700.0,
-        ),
+        package.material,
         "tensor-package",
     )
     moved_scene = Scene(
