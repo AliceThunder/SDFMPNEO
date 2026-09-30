@@ -7,10 +7,15 @@ from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
     HomogeneousMedium,
+    HybridTeacherSample,
+    IsotropicMaterial,
+    PackageObject,
     Scene,
     SuperellipseSpiral,
+    SuperquadricPackageGeometry,
     TeacherSample,
     analytic_port_baseline,
+    encode_hybrid_scene_invariant,
     encode_scene_invariant,
 )
 from sdfmpneo_vnext.bundle import (
@@ -21,6 +26,11 @@ from sdfmpneo_vnext.neural import (
     NeuralResidualArtifact,
     PhysicsFactoredResidualNet,
     ResidualNormalizer,
+)
+from sdfmpneo_vnext.hybrid_neural import (
+    HybridNeuralResidualArtifact,
+    HybridNormalizer,
+    HybridPhysicsFactoredResidualNet,
 )
 from sdfmpneo_vnext.uncertainty import FastErrorCalibrator
 
@@ -112,7 +122,7 @@ def test_bundle_round_trip_and_calibrated_fast(tmp_path):
     }
     assert (
         manifest["capabilities"]["background_medium"]
-        == "homogeneous_isotropic_unbounded"
+        == "homogeneous_isotropic_unbounded_frequency_response"
     )
     assert not manifest["capabilities"]["heterogeneous_media"]
     assert not manifest["capabilities"]["retardation"]
@@ -347,3 +357,163 @@ def test_bundle_rejects_tampered_capability_domain(tmp_path):
         load_bundle(
             root
         )
+
+
+def _hybrid_artifact():
+    base = _scene()
+    package = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [
+                    0.034,
+                    0.030,
+                    0.007,
+                ],
+                dtype=float,
+            )
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+            conductivity=0.0,
+        ),
+        "package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    frequency = 50_000.0
+    encoded = encode_hybrid_scene_invariant(
+        scene,
+        frequency,
+    )
+    baseline = analytic_port_baseline(
+        Scene(
+            scene.coils,
+            scene.medium,
+        ),
+        frequency,
+        segments_per_coil=32,
+    )
+    target = (
+        baseline.resistance
+        + 1j
+        * (
+            2.0
+            * np.pi
+            * frequency
+            * baseline.inductance
+        )
+    )
+    channels = np.zeros(
+        (
+            2,
+            1,
+            1,
+        ),
+        dtype=complex,
+    )
+    channels[
+        0,
+        0,
+        0,
+    ] = target.real[
+        0,
+        0,
+    ]
+    sample = HybridTeacherSample(
+        scene=scene,
+        frequency_hz=frequency,
+        encoded=encoded,
+        baseline_resistance=(
+            baseline.resistance
+        ),
+        baseline_reactance=(
+            target.imag
+        ),
+        target_impedance=target,
+        target_dissipation_channels=(
+            channels
+        ),
+        baseline_segments=32,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+        surface_residual=0.0,
+        raw_potential_reciprocity_defect=0.0,
+        power_closure_error=0.0,
+    )
+    normalizer = HybridNormalizer.fit(
+        (
+            sample,
+        )
+    )
+    model = HybridPhysicsFactoredResidualNet(
+        hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+    return (
+        scene,
+        HybridNeuralResidualArtifact(
+            model,
+            normalizer,
+            baseline_segments=32,
+        ),
+    )
+
+
+def test_hybrid_bundle_round_trip_selects_hybrid_artifact_family(tmp_path):
+    scene, port = _hybrid_artifact()
+    root = tmp_path / "hybrid-bundle"
+    manifest = publish_bundle(
+        root,
+        port,
+    )
+    assert (
+        manifest[
+            "artifact_family"
+        ]
+        == "hybrid"
+    )
+    assert (
+        manifest[
+            "dataset_schema"
+        ]
+        == 3
+    )
+    assert (
+        manifest[
+            "reference_backend"
+        ]
+        == "dielectric_mixed_sie"
+    )
+
+    loaded = load_bundle(
+        root
+    )
+    assert isinstance(
+        loaded.port_artifact,
+        HybridNeuralResidualArtifact,
+    )
+    assert (
+        loaded.port_artifact.supports_packages
+    )
+    prediction = loaded.system.fast_ports(
+        scene,
+        50_000.0,
+    )
+    assert prediction.impedance.shape == (
+        1,
+        1,
+    )
+    assert (
+        prediction.power_closure_error()
+        < 1e-10
+    )
