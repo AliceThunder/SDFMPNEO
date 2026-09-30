@@ -5,6 +5,7 @@ import numpy as np
 
 from .hybrid_domain import validate_package_conductor_topology
 from .dielectric_surface import DielectricSurfaceSolver
+from .electric_tensor import PreparedTensorElectricTransmission
 from .magnetic_surface import MagneticSurfaceSolver
 from .em import MQSConfig
 from .mixed import (
@@ -13,7 +14,10 @@ from .mixed import (
     _equilibrated_dense_solve,
 )
 from .prediction import StructuredPortPrediction
-from .scene import Scene
+from .scene import (
+    Scene,
+    TensorElectricMaterial,
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,7 @@ class DielectricCoupledResult:
     magnetic_inductance_correction: np.ndarray | None = None
     magnetic_surface_residual: float = 0.0
     raw_magnetic_reciprocity_defect: float = 0.0
+    tensor_electric_transmission: object | None = None
 
     @property
     def impedance(
@@ -86,9 +91,11 @@ class DielectricCoupledMixedTeacher:
     """Dense quasi-static conductor--dielectric correctness backend.
 
     Conductors use the canonical current--potential--charge mixed formulation.
-    Piecewise homogeneous isotropic packages are eliminated through a
-    dielectric single-layer Schur response, producing an effective nodal
-    potential operator. Magnetic permeability contrast is eliminated through
+    Piecewise homogeneous scalar packages are eliminated through a dielectric
+    single-layer Schur response. Package-local tensor electric materials use a
+    mesh-free tensor Laplace MFS transmission response, producing the same
+    effective nodal-potential operator. Magnetic permeability contrast is
+    eliminated through
     a magnetic-scalar single-layer response and a local package energy
     correction to the current-mode partial-inductance operator.
     """
@@ -160,6 +167,19 @@ class DielectricCoupledMixedTeacher:
         self.maximum_raw_reciprocity_defect = float(
             maximum_raw_reciprocity_defect
         )
+        self.tensor_electric = any(
+            isinstance(
+                package.material,
+                TensorElectricMaterial,
+            )
+            for package in scene.packages
+        )
+        self.surface_vertical_order = int(
+            surface_vertical_order
+        )
+        self.surface_azimuthal_order = int(
+            surface_azimuthal_order
+        )
 
         self.maximum_raw_magnetic_reciprocity_defect = float(
             maximum_raw_magnetic_reciprocity_defect
@@ -202,7 +222,9 @@ class DielectricCoupledMixedTeacher:
             )
         )
         self.surface_solver = (
-            DielectricSurfaceSolver(
+            None
+            if self.tensor_electric
+            else DielectricSurfaceSolver(
                 scene.packages,
                 scene.medium,
                 self.frequency_hz,
@@ -758,7 +780,59 @@ class DielectricCoupledMixedTeacher:
                 current_constraint
             )
         )
-        if self.conductive_dc:
+        tensor_transmission = None
+        if self.tensor_electric:
+            tensor_transmission = PreparedTensorElectricTransmission(
+                self.scene,
+                self.frequency_hz,
+                node_positions,
+                node_radii,
+                conduction_dc=(
+                    self.conductive_dc
+                ),
+                surface_vertical_order=(
+                    self.surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    self.surface_azimuthal_order
+                ),
+                maximum_raw_reciprocity_defect=(
+                    self.maximum_raw_reciprocity_defect
+                ),
+            )
+            effective_potential = (
+                tensor_transmission.potential_matrix()
+            )
+            density_from_node_charge = np.zeros(
+                (
+                    0,
+                    len(
+                        node_positions
+                    ),
+                ),
+                dtype=complex,
+            )
+            surface_residual = float(
+                tensor_transmission.interface_residual
+            )
+            reciprocity_defect = float(
+                tensor_transmission.raw_reciprocity_defect
+            )
+            source_region = np.asarray(
+                tensor_transmission.source_region,
+                dtype=int,
+            )
+            conductive_node_mask = (
+                np.ones(
+                    len(
+                        node_positions
+                    ),
+                    dtype=bool,
+                )
+                if self.conductive_dc
+                else None
+            )
+        elif self.conductive_dc:
             (
                 effective_potential,
                 density_from_node_charge,
@@ -1251,6 +1325,7 @@ class DielectricCoupledMixedTeacher:
             magnetic_inductance_correction,
             magnetic_surface_residual,
             magnetic_reciprocity_defect,
+            tensor_transmission,
         )
 
 
