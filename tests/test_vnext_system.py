@@ -2,6 +2,7 @@ import numpy as np
 
 from sdfmpneo_vnext import (
     AnalyticBaselineArtifact,
+    AnisotropicThermalMedium,
     CoilObject,
     CoilThermalProperties,
     ConductorMaterial,
@@ -107,7 +108,7 @@ def test_unified_system_fast_reference_and_spatial_share_contract():
     assert system.capabilities.nested_material_regions
     assert system.capabilities.graded_radial_media
     assert system.capabilities.anisotropic_thermal_background
-    assert not (
+    assert (
         system.capabilities.anisotropic_package_thermal_interfaces
     )
 
@@ -459,4 +460,71 @@ def test_reference_continuous_thermal_field_uses_scene_background_thermal_proper
     assert (
         temperature
         >= thermal.medium.ambient_temperature
+    )
+
+
+def test_reference_thermal_auto_resolves_tensor_background_from_scene_material():
+    base = _scene()
+    tensor = np.asarray(
+        [
+            [0.42, 0.07, 0.0],
+            [0.07, 0.68, 0.03],
+            [0.0, 0.03, 0.95],
+        ],
+        dtype=float,
+    )
+    scene = Scene(
+        base.coils,
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+            conductivity=0.0,
+            thermal_conductivity_tensor=tensor,
+            density=1040.0,
+            heat_capacity=3650.0,
+        ),
+    )
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        ),
+        reference_config=_reference_config(),
+    )
+    field = system.reference_continuous_thermal_field(
+        scene,
+        20_000.0,
+        longitudinal_segments=8,
+        radial_order=3,
+        angular_order=8,
+    )
+    assert isinstance(
+        field.medium,
+        AnisotropicThermalMedium,
+    )
+    assert np.allclose(
+        field.medium.conductivity_tensor,
+        tensor,
+    )
+    temperature = field.temperature_step(
+        np.asarray(
+            [
+                0.0,
+                0.0,
+                0.040,
+            ]
+        ),
+        1.5,
+        np.asarray(
+            [
+                1.0 + 0.0j,
+                0.4 + 0.1j,
+            ]
+        ),
+    )
+    assert np.isfinite(
+        temperature
+    )
+    assert (
+        temperature
+        > field.medium.ambient_temperature
     )
