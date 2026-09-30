@@ -8,6 +8,7 @@ from .exterior_quadrature import (
     homogeneous_background_domain_mask,
     unbounded_background_quadrature,
 )
+from .hybrid_domain import package_domain_topology
 from .prediction import StructuredPortPrediction
 from .scene import Scene
 
@@ -216,12 +217,15 @@ class PreparedHybridReferenceLossField:
                 current_constraint
             )
         )
-        (
-            _,
-            source_permittivity,
-        ) = self.teacher._source_regions(
-            node_positions
-        )
+        if self.result.tensor_electric_transmission is not None:
+            source_permittivity = None
+        else:
+            (
+                _,
+                source_permittivity,
+            ) = self.teacher._source_regions(
+                node_positions
+            )
         return (
             node_positions,
             node_radii,
@@ -256,6 +260,33 @@ class PreparedHybridReferenceLossField:
             node_radii,
             source_permittivity,
         ) = self._charge_geometry()
+        source_state = (
+            self.result.mixed_result.node_environment_current
+            if self.result.mixed_result.node_environment_current
+            is not None
+            else self.result.mixed_result.node_charge
+        )
+        tensor_transmission = (
+            self.result.tensor_electric_transmission
+        )
+        if tensor_transmission is not None:
+            node_transfer = (
+                tensor_transmission.electric_field_transfer(
+                    points
+                )
+            )
+            transfer = np.einsum(
+                "qdn,np->qdp",
+                node_transfer,
+                source_state,
+            )
+            return (
+                transfer[
+                    0
+                ]
+                if scalar
+                else transfer
+            )
         source_state = (
             self.result.mixed_result.node_environment_current
             if self.result.mixed_result.node_environment_current
@@ -660,7 +691,9 @@ class PreparedHybridReferenceLossField:
             points
         )
         region = np.asarray(
-            self.teacher.surface_solver.topology.deepest_containing(
+            package_domain_topology(
+                self.scene.packages
+            ).deepest_containing(
                 self.scene.packages,
                 points,
                 tolerance=2e-12,
@@ -701,32 +734,32 @@ class PreparedHybridReferenceLossField:
             ),
             dtype=complex,
         )
-        loss_conductivity = (
-            package.material.loss_conductivity(
-                self.frequency_hz
-            )
+        tensor_transmission = (
+            self.result.tensor_electric_transmission
         )
         if (
-            loss_conductivity
-            > 0.0
+            tensor_transmission is not None
             and np.any(
                 inside
             )
         ):
-            transfer = (
-                self.electric_field_transfer(
+            transfer = self.electric_field_transfer(
+                points[
+                    inside
+                ]
+            )
+            conductivity = (
+                tensor_transmission.conductivity_tensor_at(
                     points[
                         inside
                     ]
                 )
             )
-            matrices = (
-                loss_conductivity
-                * np.einsum(
-                    "qdi,qdj->qij",
-                    transfer.conj(),
-                    transfer,
-                )
+            matrices = np.einsum(
+                "qdi,qde,qej->qij",
+                transfer.conj(),
+                conductivity,
+                transfer,
             )
             out[
                 inside
@@ -738,6 +771,44 @@ class PreparedHybridReferenceLossField:
                     1,
                 )
             )
+        else:
+            loss_conductivity = (
+                package.material.loss_conductivity(
+                    self.frequency_hz
+                )
+            )
+            if (
+                loss_conductivity
+                > 0.0
+                and np.any(
+                    inside
+                )
+            ):
+                transfer = (
+                    self.electric_field_transfer(
+                        points[
+                            inside
+                        ]
+                    )
+                )
+                matrices = (
+                    loss_conductivity
+                    * np.einsum(
+                        "qdi,qdj->qij",
+                        transfer.conj(),
+                        transfer,
+                    )
+                )
+                out[
+                    inside
+                ] = 0.5 * (
+                    matrices
+                    + matrices.conj().transpose(
+                        0,
+                        2,
+                        1,
+                    )
+                )
         return (
             out[0]
             if scalar
