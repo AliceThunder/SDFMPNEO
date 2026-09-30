@@ -11,6 +11,7 @@ from .scene import (
     ConductorMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
+    TensorElectricMaterial,
     DebyeMaterial,
     MultiDebyeMaterial,
     TabulatedMaterial,
@@ -490,6 +491,38 @@ def _package_material_to_dict(
 ):
     if isinstance(
         material,
+        TensorElectricMaterial,
+    ):
+        return {
+            "model": "tensor_electric",
+            "relative_permittivity_tensor": np.asarray(
+                material.relative_permittivity_tensor,
+                dtype=float,
+            ).tolist(),
+            "conductivity_tensor": np.asarray(
+                material.conductivity_tensor,
+                dtype=float,
+            ).tolist(),
+            "relative_permeability": float(
+                material.relative_permeability
+            ),
+            "thermal_conductivity": (
+                material.thermal_conductivity
+            ),
+            "thermal_conductivity_tensor": (
+                None
+                if material.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    material.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
+            "density": material.density,
+            "heat_capacity": material.heat_capacity,
+        }
+    if isinstance(
+        material,
         TabulatedMaterial,
     ):
         return {
@@ -705,6 +738,45 @@ def _package_material_from_dict(
             "constant",
         )
     ).lower()
+    if model == "tensor_electric":
+        if "relative_permittivity_tensor" not in data:
+            raise ValueError(
+                "tensor-electric package material is missing "
+                "relative_permittivity_tensor"
+            )
+        conductivity_tensor = np.asarray(
+            data.get(
+                "conductivity_tensor",
+                np.zeros(
+                    (
+                        3,
+                        3,
+                    )
+                ),
+            ),
+            dtype=float,
+        )
+        return TensorElectricMaterial(
+            relative_permittivity_tensor=np.asarray(
+                data[
+                    "relative_permittivity_tensor"
+                ],
+                dtype=float,
+            ),
+            conductivity_tensor=conductivity_tensor,
+            relative_permeability=float(
+                data.get(
+                    "relative_permeability",
+                    1.0,
+                )
+            ),
+            thermal_conductivity=thermal,
+            density=rho,
+            heat_capacity=capacity,
+            thermal_conductivity_tensor=(
+                thermal_tensor
+            ),
+        )
     if model == "constant":
         return IsotropicMaterial(
             relative_permittivity=float(
