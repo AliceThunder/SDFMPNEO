@@ -8,6 +8,8 @@ import shutil
 import tempfile
 
 from .dataset import DATASET_SCHEMA
+from .hybrid_dataset import HYBRID_DATASET_SCHEMA
+from .hybrid_training_data import HYBRID_REFERENCE_BACKEND
 from .system import (
     MeshfreeVNextSystem,
     mvp_system_capabilities,
@@ -195,6 +197,21 @@ def publish_bundle(
     port_fingerprint = (
         port_artifact.fingerprint()
     )
+    artifact_family = (
+        "hybrid"
+        if bool(
+            getattr(
+                port_artifact,
+                "supports_packages",
+                False,
+            )
+        )
+        else "conductor"
+    )
+    expected_spatial_packages = (
+        artifact_family
+        == "hybrid"
+    )
     if (
         calibrator is not None
         and calibrator.ensemble_size
@@ -202,6 +219,20 @@ def publish_bundle(
     ):
         raise ValueError(
             "bundle v2 supports only calibrators fitted to one port artifact"
+        )
+    if (
+        spatial_artifact is not None
+        and bool(
+            getattr(
+                spatial_artifact,
+                "supports_packages",
+                False,
+            )
+        )
+        != expected_spatial_packages
+    ):
+        raise ValueError(
+            "port and spatial artifacts belong to different model families"
         )
     if (
         spatial_artifact is not None
@@ -306,9 +337,20 @@ def publish_bundle(
             "capabilities": asdict(
                 mvp_system_capabilities()
             ),
-            "reference_backend": "mixed",
+            "artifact_family": (
+                artifact_family
+            ),
+            "reference_backend": (
+                HYBRID_REFERENCE_BACKEND
+                if artifact_family
+                == "hybrid"
+                else "mixed"
+            ),
             "dataset_schema": (
-                DATASET_SCHEMA
+                HYBRID_DATASET_SCHEMA
+                if artifact_family
+                == "hybrid"
+                else DATASET_SCHEMA
             ),
             "port_fingerprint": (
                 port_fingerprint
@@ -485,23 +527,48 @@ def load_bundle(
             "bundle capability domain is incompatible with this runtime"
         )
 
+    artifact_family = str(
+        manifest.get(
+            "artifact_family",
+            "conductor",
+        )
+    )
+    if artifact_family not in (
+        "conductor",
+        "hybrid",
+    ):
+        raise ValueError(
+            "bundle artifact_family is invalid"
+        )
+    expected_reference_backend = (
+        HYBRID_REFERENCE_BACKEND
+        if artifact_family
+        == "hybrid"
+        else "mixed"
+    )
+    expected_dataset_schema = (
+        HYBRID_DATASET_SCHEMA
+        if artifact_family
+        == "hybrid"
+        else DATASET_SCHEMA
+    )
     if (
         manifest.get(
             "reference_backend"
         )
-        != "mixed"
+        != expected_reference_backend
     ):
         raise ValueError(
-            "bundle reference backend is incompatible with this runtime"
+            "bundle reference backend is incompatible with artifact family"
         )
     if int(
         manifest.get(
             "dataset_schema",
             -1,
         )
-    ) != DATASET_SCHEMA:
+    ) != expected_dataset_schema:
         raise ValueError(
-            "bundle dataset schema is incompatible with this runtime"
+            "bundle dataset schema is incompatible with artifact family"
         )
 
     files = (
@@ -511,18 +578,30 @@ def load_bundle(
         )
     )
 
-    from .neural import (
-        NeuralResidualArtifact,
-    )
-
-    port = (
-        NeuralResidualArtifact.load(
-            files[
-                "port"
-            ],
-            device=device,
+    if artifact_family == "hybrid":
+        from .hybrid_neural import (
+            HybridNeuralResidualArtifact,
         )
-    )
+        port = (
+            HybridNeuralResidualArtifact.load(
+                files[
+                    "port"
+                ],
+                device=device,
+            )
+        )
+    else:
+        from .neural import (
+            NeuralResidualArtifact,
+        )
+        port = (
+            NeuralResidualArtifact.load(
+                files[
+                    "port"
+                ],
+                device=device,
+            )
+        )
     actual_port_fingerprint = (
         port.fingerprint()
     )
@@ -543,19 +622,32 @@ def load_bundle(
 
     spatial = None
     if "spatial" in files:
-        from .spatial_neural import (
-            NeuralSpatialLossArtifact,
-        )
-
-        spatial = (
-            NeuralSpatialLossArtifact.load(
-                files[
-                    "spatial"
-                ],
-                port,
-                device=device,
+        if artifact_family == "hybrid":
+            from .hybrid_spatial_neural import (
+                HybridNeuralSpatialLossArtifact,
             )
-        )
+            spatial = (
+                HybridNeuralSpatialLossArtifact.load(
+                    files[
+                        "spatial"
+                    ],
+                    port,
+                    device=device,
+                )
+            )
+        else:
+            from .spatial_neural import (
+                NeuralSpatialLossArtifact,
+            )
+            spatial = (
+                NeuralSpatialLossArtifact.load(
+                    files[
+                        "spatial"
+                    ],
+                    port,
+                    device=device,
+                )
+            )
 
     calibrator = None
     if "calibrator" in files:
