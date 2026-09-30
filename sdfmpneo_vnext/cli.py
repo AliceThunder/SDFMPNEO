@@ -346,6 +346,519 @@ def command_dataset_generate(
     return 0
 
 
+def _hybrid_reference_config(
+) -> MQSConfig:
+    return MQSConfig(
+        segments_per_turn=12,
+        min_segments=16,
+        section_degree=1,
+        radial_order=4,
+        angular_order=24,
+        line_order=2,
+    )
+
+
+def command_hybrid_generate(
+    args,
+) -> int:
+    from .hybrid_dataset import (
+        ImmutableHybridTeacherDataset,
+    )
+    from .sampling import (
+        HybridSceneSamplerConfig,
+        sample_hybrid_package_scene,
+    )
+
+    sampler = HybridSceneSamplerConfig(
+        dc_probability=(
+            args.dc_probability
+        ),
+        dc_conductive_probability=(
+            args.dc_conductive_probability
+        ),
+        package_count_range=(
+            args.package_count_min,
+            args.package_count_max,
+        ),
+        nested_package_probability=(
+            args.nested_package_probability
+        ),
+        graded_package_probability=(
+            args.graded_package_probability
+        ),
+        free_inclusion_probability=(
+            args.free_inclusion_probability
+        ),
+        lossy_background_probability=(
+            args.lossy_background_probability
+        ),
+        debye_package_probability=(
+            args.debye_package_probability
+        ),
+        multi_debye_package_probability=(
+            args.multi_debye_package_probability
+        ),
+        debye_background_probability=(
+            args.debye_background_probability
+        ),
+        multi_debye_background_probability=(
+            args.multi_debye_background_probability
+        ),
+        package_relative_permeability_range=(
+            args.package_mu_min,
+            args.package_mu_max,
+        ),
+    )
+    domain_metadata = {
+        "geometry": (
+            sampler.geometry_domain_metadata()
+        ),
+        "background": (
+            sampler.background_domain_metadata()
+        ),
+        "package": (
+            sampler.package_domain_metadata()
+        ),
+    }
+
+    output = Path(
+        args.output
+    )
+    if (
+        output
+        / "manifest.json"
+    ).exists():
+        dataset = ImmutableHybridTeacherDataset(
+            output
+        )
+        if (
+            dataset.domain_metadata
+            != domain_metadata
+        ):
+            raise SystemExit(
+                "existing hybrid dataset domain does not match the requested "
+                "sampler configuration"
+            )
+    else:
+        dataset = (
+            ImmutableHybridTeacherDataset.create(
+                output,
+                split_seed=(
+                    args.seed
+                ),
+                domain_metadata=(
+                    domain_metadata
+                ),
+            )
+        )
+
+    teacher = _hybrid_reference_config()
+    start_index = len(
+        dataset.records
+    )
+    for offset in range(
+        args.count
+    ):
+        sample_index = (
+            start_index
+            + offset
+        )
+        rng = np.random.default_rng(
+            [
+                int(
+                    args.seed
+                ),
+                int(
+                    sample_index
+                ),
+            ]
+        )
+        scene, frequency = (
+            sample_hybrid_package_scene(
+                rng,
+                sampler,
+            )
+        )
+        record = dataset.generate_and_add(
+            scene,
+            frequency,
+            teacher_config=(
+                teacher
+            ),
+            baseline_segments=(
+                args.baseline_segments
+            ),
+            surface_vertical_order=(
+                args.surface_vertical_order
+            ),
+            surface_azimuthal_order=(
+                args.surface_azimuthal_order
+            ),
+            include_spatial_truth=True,
+            package_volume_axial_order=(
+                args.package_volume_axial_order
+            ),
+            package_volume_radial_order=(
+                args.package_volume_radial_order
+            ),
+            package_volume_azimuthal_order=(
+                args.package_volume_azimuthal_order
+            ),
+            background_radial_order=(
+                args.background_radial_order
+            ),
+            background_angular_order=(
+                args.background_angular_order
+            ),
+            source="initial",
+        )
+        mode = (
+            "DC-conductive"
+            if (
+                frequency == 0.0
+                and scene.medium.loss_conductivity(
+                    0.0
+                )
+                > 0.0
+            )
+            else (
+                "DC-electrostatic"
+                if frequency == 0.0
+                else "AC"
+            )
+        )
+        print(
+            f"[{offset + 1}/{args.count}] "
+            f"{record.sample_id[:12]} "
+            f"{record.split} "
+            f"{mode} "
+            f"{frequency / 1e3:.2f} kHz "
+            f"packages={len(scene.packages)}"
+        )
+
+    print(
+        json.dumps(
+            dataset.counts(),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _hybrid_training_splits(
+    dataset,
+    *,
+    context: str,
+):
+    train = tuple(
+        dataset.iter_samples(
+            "train"
+        )
+    )
+    validation = tuple(
+        dataset.iter_samples(
+            "validation"
+        )
+    )
+    if (
+        not train
+        or not validation
+    ):
+        raise SystemExit(
+            f"{context} requires non-empty train and validation splits"
+        )
+    return (
+        train,
+        validation,
+    )
+
+
+def command_hybrid_train_port(
+    args,
+) -> int:
+    from .hybrid_dataset import (
+        ImmutableHybridTeacherDataset,
+    )
+    from .hybrid_neural import (
+        train_hybrid_residual_surrogate,
+    )
+
+    dataset = ImmutableHybridTeacherDataset(
+        args.dataset
+    )
+    (
+        train,
+        validation,
+    ) = _hybrid_training_splits(
+        dataset,
+        context="hybrid-train-port",
+    )
+    lossy_present = any(
+        sample.scene.medium.loss_conductivity(
+            sample.frequency_hz
+        )
+        > 0.0
+        for sample in (
+            train
+            + validation
+        )
+    )
+    background_domain = (
+        dataset.background_conductivity_domain
+    )
+    if (
+        lossy_present
+        and background_domain is None
+    ):
+        raise SystemExit(
+            "lossy-background hybrid samples require declared background "
+            "conductivity domain metadata"
+        )
+
+    artifact, report = (
+        train_hybrid_residual_surrogate(
+            train,
+            validation_samples=(
+                validation
+            ),
+            hidden_dim=(
+                args.hidden
+            ),
+            factor_rank=(
+                args.factor_rank
+            ),
+            epochs=(
+                args.epochs
+            ),
+            patience=(
+                args.patience
+            ),
+            batch_size=(
+                args.batch_size
+            ),
+            background_conductivity_range=(
+                background_domain
+            ),
+            background_permittivity_range=(
+                dataset.background_permittivity_domain
+            ),
+            package_permittivity_range=(
+                dataset.package_permittivity_domain
+            ),
+            package_loss_conductivity_range=(
+                dataset.package_loss_conductivity_domain
+            ),
+            package_permeability_range=(
+                dataset.package_permeability_domain
+            ),
+            geometry_domain=(
+                dataset.geometry_domain
+            ),
+            device=(
+                args.device
+            ),
+        )
+    )
+    artifact.save(
+        args.output
+    )
+    print(
+        json.dumps(
+            {
+                "epochs_run": (
+                    report.epochs
+                ),
+                "best_epoch": (
+                    report.best_epoch
+                ),
+                "best_validation_score": (
+                    report.best_validation_score
+                ),
+                "best_validation_z_error": (
+                    report.best_validation_z_error
+                ),
+                "best_validation_channel_error": (
+                    report.best_validation_channel_error
+                ),
+                "stopped_early": (
+                    report.stopped_early
+                ),
+                "artifact": str(
+                    args.output
+                ),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def command_hybrid_train_spatial(
+    args,
+) -> int:
+    from .hybrid_dataset import (
+        ImmutableHybridTeacherDataset,
+    )
+    from .hybrid_neural import (
+        HybridNeuralResidualArtifact,
+    )
+    from .hybrid_spatial_neural import (
+        train_hybrid_spatial_loss_surrogate,
+    )
+
+    dataset = ImmutableHybridTeacherDataset(
+        args.dataset
+    )
+    (
+        train,
+        validation,
+    ) = _hybrid_training_splits(
+        dataset,
+        context="hybrid-train-spatial",
+    )
+    if any(
+        not sample.has_spatial_truth
+        for sample in (
+            train
+            + validation
+        )
+    ):
+        raise SystemExit(
+            "hybrid spatial training requires spatial truth on every train "
+            "and validation sample"
+        )
+
+    background_domain = (
+        dataset.background_conductivity_domain
+    )
+    lossy_present = any(
+        sample.scene.medium.loss_conductivity(
+            sample.frequency_hz
+        )
+        > 0.0
+        for sample in (
+            train
+            + validation
+        )
+    )
+    if (
+        lossy_present
+        and background_domain is None
+    ):
+        raise SystemExit(
+            "lossy-background hybrid samples require declared background "
+            "conductivity domain metadata"
+        )
+
+    port = HybridNeuralResidualArtifact.load(
+        args.port_artifact,
+        device=(
+            args.device
+        ),
+    )
+    if (
+        port.geometry_domain
+        != dataset.geometry_domain
+    ):
+        raise SystemExit(
+            "hybrid port artifact geometry domain does not match dataset"
+        )
+    if (
+        port.background_permittivity_range
+        != dataset.background_permittivity_domain
+        or port.package_permittivity_range
+        != dataset.package_permittivity_domain
+        or port.package_loss_conductivity_range
+        != dataset.package_loss_conductivity_domain
+        or port.package_permeability_range
+        != dataset.package_permeability_domain
+    ):
+        raise SystemExit(
+            "hybrid port artifact material domain does not match dataset"
+        )
+    if lossy_present and (
+        not port.supports_lossy_background
+        or port.background_conductivity_range
+        != background_domain
+    ):
+        raise SystemExit(
+            "hybrid port artifact lossy-background domain does not match "
+            "dataset"
+        )
+
+    artifact, report = (
+        train_hybrid_spatial_loss_surrogate(
+            port,
+            train,
+            validation_samples=(
+                validation
+            ),
+            field_hidden_dim=(
+                args.hidden
+            ),
+            factor_rank=(
+                args.factor_rank
+            ),
+            epochs=(
+                args.epochs
+            ),
+            patience=(
+                args.patience
+            ),
+            batch_size=(
+                args.batch_size
+            ),
+            background_segments_per_turn=(
+                args.background_segments_per_turn
+            ),
+            background_radial_order=(
+                args.background_radial_order
+            ),
+            background_angular_order=(
+                args.background_angular_order
+            ),
+            background_conductivity_range=(
+                background_domain
+            ),
+            device=(
+                args.device
+            ),
+        )
+    )
+    artifact.save(
+        args.output
+    )
+    print(
+        json.dumps(
+            {
+                "epochs_run": (
+                    report.epochs
+                ),
+                "best_epoch": (
+                    report.best_epoch
+                ),
+                "best_validation_error": (
+                    report.best_validation_error
+                ),
+                "best_validation_shape_error": (
+                    report.best_validation_shape_error
+                ),
+                "stopped_early": (
+                    report.stopped_early
+                ),
+                "artifact": str(
+                    args.output
+                ),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def command_dataset_migrate(
     args,
 ) -> int:
