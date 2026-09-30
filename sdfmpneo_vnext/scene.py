@@ -1150,6 +1150,267 @@ class TabulatedMaterial:
 
 
 @dataclass(frozen=True)
+class TensorElectricMaterial:
+    """Package-local passive tensor electric material.
+
+    Electromagnetic anisotropy is represented by a symmetric positive-definite
+    relative-permittivity tensor and a symmetric positive-semidefinite static
+    conductivity tensor. The tensor axes are local to the package pose.
+    Magnetic permeability remains isotropic in this stage.
+    """
+
+    relative_permittivity_tensor: np.ndarray
+    conductivity_tensor: np.ndarray | None = None
+    relative_permeability: float = 1.0
+    thermal_conductivity: float | None = None
+    density: float | None = None
+    heat_capacity: float | None = None
+    thermal_conductivity_tensor: np.ndarray | None = None
+
+    def __post_init__(
+        self,
+    ):
+        epsilon = np.asarray(
+            self.relative_permittivity_tensor,
+            dtype=float,
+        )
+        if (
+            epsilon.shape
+            != (
+                3,
+                3,
+            )
+            or np.any(
+                ~np.isfinite(
+                    epsilon
+                )
+            )
+            or not np.allclose(
+                epsilon,
+                epsilon.T,
+                rtol=1e-12,
+                atol=1e-14,
+            )
+            or np.min(
+                np.linalg.eigvalsh(
+                    epsilon
+                )
+            ) <= 0.0
+        ):
+            raise ValueError(
+                "relative_permittivity_tensor must be a finite symmetric "
+                "positive-definite 3x3 matrix"
+            )
+        sigma = (
+            np.zeros(
+                (
+                    3,
+                    3,
+                ),
+                dtype=float,
+            )
+            if self.conductivity_tensor is None
+            else np.asarray(
+                self.conductivity_tensor,
+                dtype=float,
+            )
+        )
+        if (
+            sigma.shape
+            != (
+                3,
+                3,
+            )
+            or np.any(
+                ~np.isfinite(
+                    sigma
+                )
+            )
+            or not np.allclose(
+                sigma,
+                sigma.T,
+                rtol=1e-12,
+                atol=1e-14,
+            )
+            or np.min(
+                np.linalg.eigvalsh(
+                    sigma
+                )
+            ) < -1e-14
+            or not np.isfinite(
+                self.relative_permeability
+            )
+            or self.relative_permeability <= 0.0
+        ):
+            raise ValueError(
+                "conductivity_tensor must be finite symmetric positive "
+                "semidefinite and relative_permeability must be positive"
+            )
+        tensor_thermal = _validated_optional_thermal_tensor(
+            self.thermal_conductivity,
+            self.thermal_conductivity_tensor,
+            self.density,
+            self.heat_capacity,
+        )
+        object.__setattr__(
+            self,
+            "relative_permittivity_tensor",
+            epsilon.copy(),
+        )
+        object.__setattr__(
+            self,
+            "conductivity_tensor",
+            sigma.copy(),
+        )
+        if tensor_thermal is not None:
+            object.__setattr__(
+                self,
+                "thermal_conductivity_tensor",
+                tensor_thermal,
+            )
+
+    @property
+    def permeability(
+        self,
+    ) -> float:
+        return (
+            MU0
+            * float(
+                self.relative_permeability
+            )
+        )
+
+    @property
+    def conductivity(
+        self,
+    ) -> float:
+        return float(
+            np.max(
+                np.linalg.eigvalsh(
+                    self.conductivity_tensor
+                )
+            )
+        )
+
+    @property
+    def relative_permittivity(
+        self,
+    ) -> float:
+        # A diagnostic scalar only. Tensor-aware physics must use the full
+        # coefficient tensor through electric_coefficient_tensor().
+        return float(
+            np.trace(
+                self.relative_permittivity_tensor
+            )
+            / 3.0
+        )
+
+    def electric_coefficient_tensor(
+        self,
+        frequency_hz: float,
+        *,
+        conduction_dc: bool = False,
+    ) -> np.ndarray:
+        frequency = float(
+            frequency_hz
+        )
+        if (
+            not np.isfinite(
+                frequency
+            )
+            or frequency < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        if conduction_dc:
+            if frequency != 0.0:
+                raise ValueError(
+                    "conduction_dc coefficient is defined only at exact DC"
+                )
+            return np.asarray(
+                self.conductivity_tensor,
+                dtype=complex,
+            )
+        if frequency == 0.0:
+            if self.conductivity > 0.0:
+                raise ValueError(
+                    "conductive tensor electric material requires the exact "
+                    "DC conduction formulation"
+                )
+            return (
+                EPS0
+                * np.asarray(
+                    self.relative_permittivity_tensor,
+                    dtype=complex,
+                )
+            )
+        omega = (
+            2.0
+            * np.pi
+            * frequency
+        )
+        return (
+            EPS0
+            * np.asarray(
+                self.relative_permittivity_tensor,
+                dtype=complex,
+            )
+            - 1j
+            * np.asarray(
+                self.conductivity_tensor,
+                dtype=complex,
+            )
+            / omega
+        )
+
+    def loss_conductivity_tensor(
+        self,
+        frequency_hz: float,
+    ) -> np.ndarray:
+        frequency = float(
+            frequency_hz
+        )
+        if (
+            not np.isfinite(
+                frequency
+            )
+            or frequency < 0.0
+        ):
+            raise ValueError(
+                "frequency_hz must be finite and nonnegative"
+            )
+        return self.conductivity_tensor.copy()
+
+    def loss_conductivity(
+        self,
+        frequency_hz: float,
+    ) -> float:
+        self.loss_conductivity_tensor(
+            frequency_hz
+        )
+        return self.conductivity
+
+    def relative_permittivity_at(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        raise NotImplementedError(
+            "TensorElectricMaterial has no scalar relative permittivity; "
+            "use the tensor-aware REFERENCE electric transmission backend"
+        )
+
+    def complex_permittivity(
+        self,
+        frequency_hz: float,
+    ) -> complex:
+        raise NotImplementedError(
+            "TensorElectricMaterial has no scalar complex permittivity; "
+            "use the tensor-aware REFERENCE electric transmission backend"
+        )
+
+
+@dataclass(frozen=True)
 class PackageObject:
     geometry: SuperquadricPackageGeometry
     material: PassiveIsotropicMaterial
@@ -1208,6 +1469,15 @@ class Scene:
             raise TypeError(
                 "scene medium must implement the passive isotropic "
                 "frequency-response interface"
+            )
+        if isinstance(
+            self.medium,
+            TensorElectricMaterial,
+        ):
+            raise NotImplementedError(
+                "TensorElectricMaterial is currently supported for package "
+                "regions only; tensor-electric infinite backgrounds are the "
+                "next REFERENCE extension"
             )
         if not all(
             isinstance(
