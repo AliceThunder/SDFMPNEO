@@ -822,7 +822,7 @@ class DielectricCoupledMixedTeacher:
                 tensor_transmission.raw_reciprocity_defect
             )
             source_region = np.asarray(
-                tensor_transmission.source_region,
+                tensor_transmission.source_package_region,
                 dtype=int,
             )
             conductive_node_mask = (
