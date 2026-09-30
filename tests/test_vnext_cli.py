@@ -85,6 +85,7 @@ def test_release_parser_exposes_certified_gate_controls():
     assert args.certified_convergence_limit == 0.02
     assert args.certified_fast_correction_limit == 0.20
     assert args.certified_truth_limit == 0.02
+    assert args.artifact_family == "auto"
 
 
 
@@ -246,4 +247,35 @@ def test_hybrid_training_parsers_bind_artifacts_and_batch_controls():
     assert (
         spatial.handler.__name__
         == "command_hybrid_train_spatial"
+    )
+
+
+def test_bundle_publish_and_release_accept_explicit_hybrid_family():
+    parser = build_parser()
+    publish = parser.parse_args(
+        [
+            "bundle-publish",
+            "port.pt",
+            "bundle",
+            "--artifact-family",
+            "hybrid",
+        ]
+    )
+    assert publish.artifact_family == "hybrid"
+
+    release = parser.parse_args(
+        [
+            "release",
+            "dataset",
+            "port.pt",
+            "spatial.pt",
+            "bundle",
+            "--artifact-family",
+            "hybrid",
+        ]
+    )
+    assert release.artifact_family == "hybrid"
+    assert (
+        release.handler.__name__
+        == "command_release"
     )
