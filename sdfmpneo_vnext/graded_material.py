@@ -29,6 +29,7 @@ class RadialIsotropicMaterialProfile:
     thermal_conductivity: tuple[float, ...] | None = None
     density: tuple[float, ...] | None = None
     heat_capacity: tuple[float, ...] | None = None
+    thermal_conductivity_tensor: tuple | np.ndarray | None = None
 
     def __post_init__(
         self,
@@ -116,28 +117,40 @@ class RadialIsotropicMaterialProfile:
                 "invalid passive radial isotropic material profile"
             )
 
-        thermal_fields = (
-            self.thermal_conductivity,
-            self.density,
-            self.heat_capacity,
+        scalar_thermal = (
+            self.thermal_conductivity
         )
-        if any(
-            value is not None
-            for value in thermal_fields
+        tensor_thermal = (
+            self.thermal_conductivity_tensor
+        )
+        if (
+            scalar_thermal is not None
+            and tensor_thermal is not None
         ):
-            if not all(
-                value is not None
-                for value in thermal_fields
+            raise ValueError(
+                "thermal_conductivity and thermal_conductivity_tensor "
+                "profiles are mutually exclusive"
+            )
+        has_thermal = bool(
+            scalar_thermal is not None
+            or tensor_thermal is not None
+            or self.density is not None
+            or self.heat_capacity is not None
+        )
+        if has_thermal:
+            if (
+                self.density is None
+                or self.heat_capacity is None
+                or (
+                    scalar_thermal is None
+                    and tensor_thermal is None
+                )
             ):
                 raise ValueError(
-                    "thermal_conductivity, density, and heat_capacity "
+                    "thermal conductivity, density, and heat_capacity "
                     "profiles must be supplied together"
                 )
             for name, values in (
-                (
-                    "thermal_conductivity",
-                    self.thermal_conductivity,
-                ),
                 (
                     "density",
                     self.density,
@@ -166,6 +179,67 @@ class RadialIsotropicMaterialProfile:
                     raise ValueError(
                         f"invalid {name} radial profile"
                     )
+
+            if scalar_thermal is not None:
+                array = np.asarray(
+                    scalar_thermal,
+                    dtype=float,
+                )
+                if (
+                    array.shape != radius.shape
+                    or np.any(
+                        ~np.isfinite(
+                            array
+                        )
+                    )
+                    or np.any(
+                        array
+                        <= 0.0
+                    )
+                ):
+                    raise ValueError(
+                        "invalid thermal_conductivity radial profile"
+                    )
+            else:
+                tensor = np.asarray(
+                    tensor_thermal,
+                    dtype=float,
+                )
+                if tensor.shape != (
+                    len(
+                        radius
+                    ),
+                    3,
+                    3,
+                ):
+                    raise ValueError(
+                        "thermal_conductivity_tensor radial profile must "
+                        "have shape (n_radius,3,3)"
+                    )
+                for matrix in tensor:
+                    if (
+                        np.any(
+                            ~np.isfinite(
+                                matrix
+                            )
+                        )
+                        or not np.allclose(
+                            matrix,
+                            matrix.T,
+                            rtol=1e-12,
+                            atol=1e-14,
+                        )
+                        or np.min(
+                            np.linalg.eigvalsh(
+                                matrix
+                            )
+                        ) <= 0.0
+                    ):
+                        raise ValueError(
+                            "thermal_conductivity_tensor radial profile "
+                            "must contain finite symmetric positive-definite "
+                            "matrices"
+                        )
 
         object.__setattr__(
             self,
@@ -227,6 +301,27 @@ class RadialIsotropicMaterialProfile:
                         for value in values
                     ),
                 )
+        if self.thermal_conductivity_tensor is not None:
+            tensor = np.asarray(
+                self.thermal_conductivity_tensor,
+                dtype=float,
+            )
+            object.__setattr__(
+                self,
+                "thermal_conductivity_tensor",
+                tuple(
+                    tuple(
+                        tuple(
+                            float(
+                                value
+                            )
+                            for value in row
+                        )
+                        for row in matrix
+                    )
+                    for matrix in tensor
+                ),
+            )
 
     def _interpolate(
         self,
@@ -260,6 +355,65 @@ class RadialIsotropicMaterialProfile:
             )
         )
 
+    def _interpolate_tensor(
+        self,
+        normalized_radius: float,
+    ) -> np.ndarray:
+        if self.thermal_conductivity_tensor is None:
+            raise ValueError(
+                "thermal_conductivity_tensor profile is not defined"
+            )
+        radius = float(
+            normalized_radius
+        )
+        if (
+            not np.isfinite(
+                radius
+            )
+            or radius < 0.0
+            or radius > 1.0
+        ):
+            raise ValueError(
+                "normalized_radius must lie in [0,1]"
+            )
+        nodes = np.asarray(
+            self.normalized_radius,
+            dtype=float,
+        )
+        values = np.asarray(
+            self.thermal_conductivity_tensor,
+            dtype=float,
+        )
+        result = np.empty(
+            (
+                3,
+                3,
+            ),
+            dtype=float,
+        )
+        for row in range(
+            3
+        ):
+            for column in range(
+                3
+            ):
+                result[
+                    row,
+                    column,
+                ] = np.interp(
+                    radius,
+                    nodes,
+                    values[
+                        :,
+                        row,
+                        column,
+                    ],
+                )
+        return 0.5 * (
+            result
+            + result.T
+        )
+
     def material_at(
         self,
         normalized_radius: float,
@@ -270,6 +424,14 @@ class RadialIsotropicMaterialProfile:
             else self._interpolate(
                 self.thermal_conductivity,
                 normalized_radius,
+            )
+        )
+        thermal_tensor = (
+            None
+            if self.thermal_conductivity_tensor
+            is None
+            else self._interpolate_tensor(
+                normalized_radius
             )
         )
         density = (
@@ -310,6 +472,9 @@ class RadialIsotropicMaterialProfile:
             thermal_conductivity=thermal,
             density=density,
             heat_capacity=capacity,
+            thermal_conductivity_tensor=(
+                thermal_tensor
+            ),
         )
 
 
