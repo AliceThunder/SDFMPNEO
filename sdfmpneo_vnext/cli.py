@@ -369,6 +369,11 @@ def command_hybrid_generate(
         sample_hybrid_package_scene,
     )
 
+    if args.count < 1:
+        raise SystemExit(
+            "hybrid-generate --count must be >= 1"
+        )
+
     sampler = HybridSceneSamplerConfig(
         dc_probability=(
             args.dc_probability
