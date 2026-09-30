@@ -1592,6 +1592,137 @@ def build_parser():
         handler=command_dataset_generate
     )
 
+    hybrid_generate = sub.add_parser(
+        "hybrid-generate"
+    )
+    hybrid_generate.add_argument(
+        "output",
+        type=Path,
+    )
+    hybrid_generate.add_argument(
+        "--count",
+        type=int,
+        default=32,
+    )
+    hybrid_generate.add_argument(
+        "--seed",
+        type=int,
+        default=37,
+    )
+    hybrid_generate.add_argument(
+        "--baseline-segments",
+        type=int,
+        default=64,
+    )
+    hybrid_generate.add_argument(
+        "--surface-vertical-order",
+        type=int,
+        default=12,
+    )
+    hybrid_generate.add_argument(
+        "--surface-azimuthal-order",
+        type=int,
+        default=24,
+    )
+    hybrid_generate.add_argument(
+        "--package-volume-axial-order",
+        type=int,
+        default=6,
+    )
+    hybrid_generate.add_argument(
+        "--package-volume-radial-order",
+        type=int,
+        default=4,
+    )
+    hybrid_generate.add_argument(
+        "--package-volume-azimuthal-order",
+        type=int,
+        default=16,
+    )
+    hybrid_generate.add_argument(
+        "--background-radial-order",
+        type=int,
+        default=12,
+    )
+    hybrid_generate.add_argument(
+        "--background-angular-order",
+        type=int,
+        default=48,
+    )
+    hybrid_generate.add_argument(
+        "--dc-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--dc-conductive-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--package-count-min",
+        type=int,
+        default=1,
+    )
+    hybrid_generate.add_argument(
+        "--package-count-max",
+        type=int,
+        default=1,
+    )
+    hybrid_generate.add_argument(
+        "--nested-package-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--graded-package-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--free-inclusion-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--lossy-background-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--debye-package-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--multi-debye-package-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--debye-background-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--multi-debye-background-probability",
+        type=float,
+        default=0.0,
+    )
+    hybrid_generate.add_argument(
+        "--package-mu-min",
+        type=float,
+        default=1.0,
+    )
+    hybrid_generate.add_argument(
+        "--package-mu-max",
+        type=float,
+        default=1.0,
+    )
+    hybrid_generate.set_defaults(
+        handler=command_hybrid_generate
+    )
+
     migrate = sub.add_parser(
         "dataset-migrate"
     )
@@ -1642,6 +1773,50 @@ def build_parser():
         handler=command_train_port
     )
 
+    hybrid_train_port = sub.add_parser(
+        "hybrid-train-port"
+    )
+    hybrid_train_port.add_argument(
+        "dataset",
+        type=Path,
+    )
+    hybrid_train_port.add_argument(
+        "output",
+        type=Path,
+    )
+    hybrid_train_port.add_argument(
+        "--epochs",
+        type=int,
+        default=200,
+    )
+    hybrid_train_port.add_argument(
+        "--hidden",
+        type=int,
+        default=64,
+    )
+    hybrid_train_port.add_argument(
+        "--factor-rank",
+        type=int,
+        default=4,
+    )
+    hybrid_train_port.add_argument(
+        "--patience",
+        type=int,
+        default=30,
+    )
+    hybrid_train_port.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+    )
+    hybrid_train_port.add_argument(
+        "--device",
+        default="cpu",
+    )
+    hybrid_train_port.set_defaults(
+        handler=command_hybrid_train_port
+    )
+
     train_spatial = sub.add_parser(
         "train-spatial"
     )
@@ -1683,6 +1858,69 @@ def build_parser():
     )
     train_spatial.set_defaults(
         handler=command_train_spatial
+    )
+
+    hybrid_train_spatial = sub.add_parser(
+        "hybrid-train-spatial"
+    )
+    hybrid_train_spatial.add_argument(
+        "dataset",
+        type=Path,
+    )
+    hybrid_train_spatial.add_argument(
+        "port_artifact",
+        type=Path,
+    )
+    hybrid_train_spatial.add_argument(
+        "output",
+        type=Path,
+    )
+    hybrid_train_spatial.add_argument(
+        "--epochs",
+        type=int,
+        default=120,
+    )
+    hybrid_train_spatial.add_argument(
+        "--hidden",
+        type=int,
+        default=64,
+    )
+    hybrid_train_spatial.add_argument(
+        "--factor-rank",
+        type=int,
+        default=4,
+    )
+    hybrid_train_spatial.add_argument(
+        "--patience",
+        type=int,
+        default=20,
+    )
+    hybrid_train_spatial.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+    )
+    hybrid_train_spatial.add_argument(
+        "--background-segments-per-turn",
+        type=int,
+        default=16,
+    )
+    hybrid_train_spatial.add_argument(
+        "--background-radial-order",
+        type=int,
+        default=12,
+    )
+    hybrid_train_spatial.add_argument(
+        "--background-angular-order",
+        type=int,
+        default=48,
+    )
+    hybrid_train_spatial.add_argument(
+        "--device",
+        default="cpu",
+    )
+    hybrid_train_spatial.set_defaults(
+        handler=command_hybrid_train_spatial
     )
 
     for name, handler in (
