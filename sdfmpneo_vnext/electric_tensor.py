@@ -892,6 +892,24 @@ class PreparedTensorElectricTransmission:
         self.source_region = self._active_region(
             self.source_positions
         )
+        self.source_package_region = np.full(
+            len(
+                self.source_positions
+            ),
+            -1,
+            dtype=int,
+        )
+        for active_index, region in enumerate(
+            self.regions
+        ):
+            self.source_package_region[
+                self.source_region
+                == active_index
+            ] = int(
+                region[
+                    "package_index"
+                ]
+            )
         self._coefficients = None
         self.interface_residual = 0.0
         self.interface_condition = 1.0
