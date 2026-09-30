@@ -262,9 +262,21 @@ def scene_thermal_package_media(
             if np.asarray(
                 conductivity
             ).ndim == 2:
+                rotation = np.asarray(
+                    package.geometry.pose.rotation,
+                    dtype=float,
+                )
+                world_conductivity = (
+                    rotation
+                    @ np.asarray(
+                        conductivity,
+                        dtype=float,
+                    )
+                    @ rotation.T
+                )
                 medium = AnisotropicThermalMedium(
                     conductivity_tensor=(
-                        conductivity
+                        world_conductivity
                     ),
                     density=(
                         values[
