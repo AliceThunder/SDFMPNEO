@@ -1266,29 +1266,93 @@ def command_calibrate(
     return 0
 
 
+def _load_bundle_port_artifact(
+    path,
+    device,
+    family: str,
+):
+    family = str(
+        family
+    )
+    if family == "hybrid":
+        from .hybrid_neural import (
+            HybridNeuralResidualArtifact,
+        )
+        return HybridNeuralResidualArtifact.load(
+            path,
+            device=device,
+        )
+    if family == "conductor":
+        return _load_neural_artifact(
+            path,
+            device,
+        )
+    if family != "auto":
+        raise ValueError(
+            "artifact family must be auto, conductor, or hybrid"
+        )
+    try:
+        return _load_neural_artifact(
+            path,
+            device,
+        )
+    except ValueError as conductor_error:
+        from .hybrid_neural import (
+            HybridNeuralResidualArtifact,
+        )
+        try:
+            return HybridNeuralResidualArtifact.load(
+                path,
+                device=device,
+            )
+        except ValueError as hybrid_error:
+            raise ValueError(
+                "port artifact is neither a supported conductor nor hybrid "
+                "artifact"
+            ) from hybrid_error
+
+
 def command_bundle_publish(
     args,
 ) -> int:
-    from .spatial_neural import (
-        NeuralSpatialLossArtifact,
-    )
-
-    port = _load_neural_artifact(
+    port = _load_bundle_port_artifact(
         args.port_artifact,
         args.device,
+        args.artifact_family,
     )
     spatial = None
     if (
         args.spatial_artifact
         is not None
     ):
-        spatial = (
-            NeuralSpatialLossArtifact.load(
-                args.spatial_artifact,
+        if bool(
+            getattr(
                 port,
-                device=args.device,
+                "supports_packages",
+                False,
             )
-        )
+        ):
+            from .hybrid_spatial_neural import (
+                HybridNeuralSpatialLossArtifact,
+            )
+            spatial = (
+                HybridNeuralSpatialLossArtifact.load(
+                    args.spatial_artifact,
+                    port,
+                    device=args.device,
+                )
+            )
+        else:
+            from .spatial_neural import (
+                NeuralSpatialLossArtifact,
+            )
+            spatial = (
+                NeuralSpatialLossArtifact.load(
+                    args.spatial_artifact,
+                    port,
+                    device=args.device,
+                )
+            )
     calibrator = None
     if (
         args.calibrator
@@ -2103,6 +2167,15 @@ def build_parser():
     publish.add_argument(
         "--device",
         default="cpu",
+    )
+    publish.add_argument(
+        "--artifact-family",
+        choices=(
+            "auto",
+            "conductor",
+            "hybrid",
+        ),
+        default="auto",
     )
     publish.add_argument(
         "--overwrite",
