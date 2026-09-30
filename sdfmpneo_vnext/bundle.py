@@ -624,10 +624,10 @@ def load_bundle(
     if "spatial" in files:
         if artifact_family == "hybrid":
             from .hybrid_spatial_neural import (
-                HybridNeuralSpatialLossArtifact,
+                HybridSpatialLossArtifact,
             )
             spatial = (
-                HybridNeuralSpatialLossArtifact.load(
+                HybridSpatialLossArtifact.load(
                     files[
                         "spatial"
                     ],
