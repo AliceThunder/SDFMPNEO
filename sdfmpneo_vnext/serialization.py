@@ -46,6 +46,15 @@ def _medium_to_dict(
             "thermal_conductivity": (
                 medium.thermal_conductivity
             ),
+            "thermal_conductivity_tensor": (
+                None
+                if medium.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    medium.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
         }
@@ -73,6 +82,15 @@ def _medium_to_dict(
             "thermal_conductivity": (
                 medium.thermal_conductivity
             ),
+            "thermal_conductivity_tensor": (
+                None
+                if medium.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    medium.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
         }
@@ -99,6 +117,15 @@ def _medium_to_dict(
             ),
             "thermal_conductivity": (
                 medium.thermal_conductivity
+            ),
+            "thermal_conductivity_tensor": (
+                None
+                if medium.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    medium.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
             ),
             "density": medium.density,
             "heat_capacity": medium.heat_capacity,
@@ -237,14 +264,6 @@ def _medium_from_dict(
             heat_capacity
         )
     )
-    if (
-        thermal_tensor is not None
-        and model != "constant"
-    ):
-        raise ValueError(
-            "thermal_conductivity_tensor is currently supported only for "
-            "constant passive isotropic electromagnetic materials"
-        )
     if model == "constant":
         epsilon_r = float(
             data.get(
@@ -342,6 +361,7 @@ def _medium_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     if model == "multi_debye":
         required = (
@@ -398,6 +418,7 @@ def _medium_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     if model == "tabulated":
         required = (
@@ -457,6 +478,7 @@ def _medium_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     raise ValueError(
         f"unsupported scene background medium model: {model}"
@@ -490,6 +512,15 @@ def _package_material_to_dict(
             "thermal_conductivity": (
                 material.thermal_conductivity
             ),
+            "thermal_conductivity_tensor": (
+                None
+                if material.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    material.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
+            ),
             "density": material.density,
             "heat_capacity": material.heat_capacity,
         }
@@ -516,6 +547,15 @@ def _package_material_to_dict(
             ),
             "thermal_conductivity": (
                 material.thermal_conductivity
+            ),
+            "thermal_conductivity_tensor": (
+                None
+                if material.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    material.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
             ),
             "density": material.density,
             "heat_capacity": (
@@ -545,6 +585,15 @@ def _package_material_to_dict(
             ),
             "thermal_conductivity": (
                 material.thermal_conductivity
+            ),
+            "thermal_conductivity_tensor": (
+                None
+                if material.thermal_conductivity_tensor
+                is None
+                else np.asarray(
+                    material.thermal_conductivity_tensor,
+                    dtype=float,
+                ).tolist()
             ),
             "density": material.density,
             "heat_capacity": (
@@ -656,14 +705,6 @@ def _package_material_from_dict(
             "constant",
         )
     ).lower()
-    if (
-        thermal_tensor is not None
-        and model != "constant"
-    ):
-        raise ValueError(
-            "package thermal_conductivity_tensor is currently supported only "
-            "for constant passive isotropic electromagnetic materials"
-        )
     if model == "constant":
         return IsotropicMaterial(
             relative_permittivity=float(
@@ -740,6 +781,7 @@ def _package_material_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     if model == "multi_debye":
         required = (
@@ -796,6 +838,7 @@ def _package_material_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     if model == "tabulated":
         required = (
@@ -855,6 +898,7 @@ def _package_material_from_dict(
             thermal,
             rho,
             capacity,
+            thermal_tensor,
         )
     raise ValueError(
         f"unsupported package material model: {model}"
