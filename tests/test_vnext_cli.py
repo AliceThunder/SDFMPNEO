@@ -23,9 +23,12 @@ def test_vnext_cli_registers_complete_workflow():
     assert {
         "self-check",
         "dataset-generate",
+        "hybrid-generate",
         "dataset-migrate",
         "train-port",
+        "hybrid-train-port",
         "train-spatial",
+        "hybrid-train-spatial",
         "audit-port",
         "audit-spatial",
         "active-learn",
@@ -145,3 +148,102 @@ def test_production_workflows_require_pure_mixed_reference_splits():
             ("train",),
             context="test",
         )
+
+
+def test_hybrid_generate_parser_exposes_core_design_domain_controls():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "hybrid-generate",
+            "dataset",
+            "--count",
+            "9",
+            "--dc-probability",
+            "0.2",
+            "--dc-conductive-probability",
+            "0.6",
+            "--package-count-min",
+            "2",
+            "--package-count-max",
+            "4",
+            "--nested-package-probability",
+            "1.0",
+            "--graded-package-probability",
+            "0.75",
+            "--lossy-background-probability",
+            "0.4",
+            "--package-mu-max",
+            "2.5",
+        ]
+    )
+    assert args.count == 9
+    assert args.dc_probability == 0.2
+    assert args.dc_conductive_probability == 0.6
+    assert args.package_count_min == 2
+    assert args.package_count_max == 4
+    assert args.nested_package_probability == 1.0
+    assert args.graded_package_probability == 0.75
+    assert args.lossy_background_probability == 0.4
+    assert args.package_mu_min == 1.0
+    assert args.package_mu_max == 2.5
+    assert args.handler.__name__ == "command_hybrid_generate"
+
+
+def test_hybrid_training_parsers_bind_artifacts_and_batch_controls():
+    parser = build_parser()
+    port = parser.parse_args(
+        [
+            "hybrid-train-port",
+            "dataset",
+            "port.pt",
+            "--batch-size",
+            "6",
+            "--device",
+            "cuda",
+        ]
+    )
+    assert str(
+        port.dataset
+    ).endswith(
+        "dataset"
+    )
+    assert str(
+        port.output
+    ).endswith(
+        "port.pt"
+    )
+    assert port.batch_size == 6
+    assert port.device == "cuda"
+    assert (
+        port.handler.__name__
+        == "command_hybrid_train_port"
+    )
+
+    spatial = parser.parse_args(
+        [
+            "hybrid-train-spatial",
+            "dataset",
+            "port.pt",
+            "spatial.pt",
+            "--batch-size",
+            "5",
+            "--background-radial-order",
+            "14",
+        ]
+    )
+    assert str(
+        spatial.port_artifact
+    ).endswith(
+        "port.pt"
+    )
+    assert str(
+        spatial.output
+    ).endswith(
+        "spatial.pt"
+    )
+    assert spatial.batch_size == 5
+    assert spatial.background_radial_order == 14
+    assert (
+        spatial.handler.__name__
+        == "command_hybrid_train_spatial"
+    )
