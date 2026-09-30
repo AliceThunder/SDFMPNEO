@@ -1426,18 +1426,69 @@ def command_predict(
 def command_release(
     args,
 ) -> int:
-    from .spatial_neural import (
-        NeuralSpatialLossArtifact,
+    from .dataset import DATASET_SCHEMA
+    from .hybrid_dataset import (
+        HYBRID_DATASET_SCHEMA,
+        ImmutableHybridTeacherDataset,
+    )
+    from .hybrid_training_data import (
+        HYBRID_REFERENCE_BACKEND,
     )
 
-    dataset = ImmutableTeacherDataset(
-        args.dataset
+    manifest_path = (
+        Path(
+            args.dataset
+        )
+        / "manifest.json"
     )
-    _require_mixed_reference(
-        dataset,
-        ("release",),
-        context="release",
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"release dataset manifest does not exist: {manifest_path}"
+        )
+    manifest = json.loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
     )
+    schema = int(
+        manifest.get(
+            "schema",
+            -1,
+        )
+    )
+    if schema == HYBRID_DATASET_SCHEMA:
+        dataset_family = "hybrid"
+    elif schema == DATASET_SCHEMA:
+        dataset_family = "conductor"
+    else:
+        raise SystemExit(
+            f"unsupported release dataset schema: {schema}"
+        )
+
+    requested_family = str(
+        args.artifact_family
+    )
+    family = (
+        dataset_family
+        if requested_family == "auto"
+        else requested_family
+    )
+    if family != dataset_family:
+        raise SystemExit(
+            "release artifact family does not match dataset schema"
+        )
+
+    if family == "hybrid":
+        dataset = (
+            ImmutableHybridTeacherDataset(
+                args.dataset
+            )
+        )
+    else:
+        dataset = ImmutableTeacherDataset(
+            args.dataset
+        )
+
     release_samples = tuple(
         dataset.iter_samples(
             "release"
@@ -1447,18 +1498,52 @@ def command_release(
         raise SystemExit(
             "release requires a non-empty locked release split"
         )
+    if family == "hybrid":
+        invalid = tuple(
+            sample.reference_backend
+            for sample in release_samples
+            if sample.reference_backend
+            != HYBRID_REFERENCE_BACKEND
+        )
+        if invalid:
+            raise SystemExit(
+                "hybrid release split must contain only canonical "
+                "dielectric_mixed_sie reference truth"
+            )
+    else:
+        _require_mixed_reference(
+            dataset,
+            ("release",),
+            context="release",
+        )
 
-    port = _load_neural_artifact(
+    port = _load_bundle_port_artifact(
         args.port_artifact,
         args.device,
+        family,
     )
-    spatial = (
-        NeuralSpatialLossArtifact.load(
-            args.spatial_artifact,
-            port,
-            device=args.device,
+    if family == "hybrid":
+        from .hybrid_spatial_neural import (
+            HybridSpatialLossArtifact,
         )
-    )
+        spatial = (
+            HybridSpatialLossArtifact.load(
+                args.spatial_artifact,
+                port,
+                device=args.device,
+            )
+        )
+    else:
+        from .spatial_neural import (
+            NeuralSpatialLossArtifact,
+        )
+        spatial = (
+            NeuralSpatialLossArtifact.load(
+                args.spatial_artifact,
+                port,
+                device=args.device,
+            )
+        )
 
     port_report = audit_surrogate(
         port,
@@ -2237,6 +2322,15 @@ def build_parser():
     release.add_argument(
         "--calibrator",
         type=Path,
+    )
+    release.add_argument(
+        "--artifact-family",
+        choices=(
+            "auto",
+            "conductor",
+            "hybrid",
+        ),
+        default="auto",
     )
     release.add_argument(
         "--port-mean-limit",
