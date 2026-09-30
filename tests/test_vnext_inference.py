@@ -125,3 +125,112 @@ def test_inference_rejects_unknown_mode():
         raise AssertionError(
             "unknown inference mode must be rejected"
         )
+
+
+def test_fast_json_inference_supports_tensor_thermal_history_without_top_level_currents():
+    system = MeshfreeVNextSystem(
+        AnalyticBaselineArtifact(
+            segments_per_coil=24,
+        )
+    )
+    request = {
+        "scene": scene_to_dict(
+            _scene()
+        ),
+        "frequency_hz": 40_000.0,
+        "mode": "fast",
+        "thermal": {
+            "medium": {
+                "conductivity_tensor": [
+                    [0.35, 0.04, 0.0],
+                    [0.04, 0.65, 0.02],
+                    [0.0, 0.02, 0.95],
+                ],
+                "density": 1000.0,
+                "heat_capacity": 4200.0,
+                "ambient_temperature": 293.15,
+            },
+            "points": [
+                [0.0, 0.0, 0.03]
+            ],
+            "history": {
+                "interval_edges": [
+                    0.0,
+                    1.0,
+                    3.0,
+                ],
+                "interval_currents": [
+                    [
+                        [1.0, 0.0]
+                    ],
+                    [
+                        [0.5, 0.2]
+                    ],
+                ],
+                "observation_times": [
+                    0.5,
+                    1.5,
+                    4.0,
+                ],
+            },
+            "quadrature": {
+                "longitudinal_segments": 6,
+                "radial_order": 2,
+                "angular_order": 8,
+            },
+        },
+    }
+    output = run_system_inference(
+        system,
+        request,
+    )
+    thermal = output[
+        "thermal"
+    ]
+    history = thermal[
+        "history"
+    ]
+    temperature = np.asarray(
+        history[
+            "temperature"
+        ],
+        dtype=float,
+    )
+    assert temperature.shape == (
+        3,
+        1,
+    )
+    assert np.all(
+        np.isfinite(
+            temperature
+        )
+    )
+    assert (
+        temperature[
+            0,
+            0,
+        ]
+        > thermal[
+            "ambient_temperature"
+        ]
+    )
+    assert (
+        temperature[
+            -1,
+            0,
+        ]
+        > thermal[
+            "ambient_temperature"
+        ]
+    )
+    encoded_currents = np.asarray(
+        history[
+            "interval_currents"
+        ],
+        dtype=float,
+    )
+    assert encoded_currents.shape == (
+        2,
+        1,
+        2,
+    )
