@@ -120,16 +120,7 @@ def test_tensor_background_reference_is_common_rotation_invariant():
         ],
         dtype=float,
     )
-    conductivity = np.asarray(
-        [
-            [8.0e-4, 0.0, 0.0],
-            [0.0, 1.5e-3, 0.0],
-            [0.0, 0.0, 2.4e-3],
-        ],
-        dtype=float,
-    )
-    # The tensor backend currently requires coaxial real/loss tensors.
-    values, axes = np.linalg.eigh(
+    _, axes = np.linalg.eigh(
         epsilon
     )
     conductivity = (
@@ -286,6 +277,80 @@ def test_tensor_background_spatial_loss_uses_tensor_conductivity_and_closes():
             matrices
         )
         >= -1e-11
+    )
+
+
+def test_tensor_background_exact_dc_uses_environment_current_and_closes_loss():
+    scene = Scene(
+        (
+            _coil(),
+        ),
+        TensorElectricMaterial(
+            relative_permittivity_tensor=np.diag(
+                [
+                    2.0,
+                    3.0,
+                    4.0,
+                ]
+            ),
+            conductivity_tensor=np.diag(
+                [
+                    8.0e-4,
+                    1.6e-3,
+                    2.7e-3,
+                ]
+            ),
+        ),
+    )
+    system = _system()
+    result = system.reference_result(
+        scene,
+        0.0,
+    )
+
+    assert result.mixed_result.node_environment_current is not None
+    assert np.allclose(
+        result.mixed_result.node_charge,
+        0.0,
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert (
+        np.linalg.norm(
+            result.mixed_result.node_environment_current
+        )
+        > 0.0
+    )
+    assert np.allclose(
+        result.impedance.imag,
+        0.0,
+        atol=1e-10,
+        rtol=0.0,
+    )
+    assert (
+        np.linalg.norm(
+            result.dielectric_dissipation_matrix
+        )
+        > 0.0
+    )
+    assert result.power_closure_error < 5e-6
+
+    spatial = system.reference_spatial(
+        scene,
+        0.0,
+        background_radial_order=10,
+        background_angular_order=32,
+        maximum_raw_closure_error=0.75,
+        normalized_closure_tolerance=3e-6,
+    )
+    target = spatial.port_prediction.dissipation_channels[
+        spatial.environment_channel_index
+    ]
+    assert np.allclose(
+        spatial.background_integrated_channel,
+        target,
+        rtol=4e-6,
+        atol=4e-9,
     )
 
 
