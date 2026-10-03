@@ -691,8 +691,7 @@ class MultiDebyeMaterial:
             or not np.isfinite(
                 self.conductivity
             )
-            or self.conductivity
-            < 0.0
+            or self.conductivity < 0.0
         ):
             raise ValueError(
                 "invalid passive multi-Debye material parameters"
@@ -884,8 +883,7 @@ class TabulatedMaterial:
             != 1
             or len(
                 frequency
-            )
-            < 2
+            ) < 2
             or epsilon.shape
             != frequency.shape
             or loss.shape
@@ -896,14 +894,12 @@ class TabulatedMaterial:
                 )
             )
             or np.any(
-                frequency
-                <= 0.0
+                frequency <= 0.0
             )
             or np.any(
                 np.diff(
                     frequency
-                )
-                <= 0.0
+                ) <= 0.0
             )
             or np.any(
                 ~np.isfinite(
@@ -911,8 +907,7 @@ class TabulatedMaterial:
                 )
             )
             or np.any(
-                epsilon
-                <= 0.0
+                epsilon <= 0.0
             )
             or np.any(
                 ~np.isfinite(
@@ -920,19 +915,16 @@ class TabulatedMaterial:
                 )
             )
             or np.any(
-                loss
-                < 0.0
+                loss < 0.0
             )
             or not np.isfinite(
                 self.relative_permeability
             )
-            or self.relative_permeability
-            <= 0.0
+            or self.relative_permeability <= 0.0
             or not np.isfinite(
                 self.conductivity
             )
-            or self.conductivity
-            < 0.0
+            or self.conductivity < 0.0
         ):
             raise ValueError(
                 "invalid passive tabulated material"
@@ -1035,13 +1027,11 @@ class TabulatedMaterial:
             frequency
             < table[
                 0
-            ]
-            - tolerance
+            ] - tolerance
             or frequency
             > table[
                 -1
-            ]
-            + tolerance
+            ] + tolerance
         ):
             raise ValueError(
                 "frequency is outside the tabulated material domain"
@@ -1133,9 +1123,6 @@ class TabulatedMaterial:
                 "frequency_hz must be finite and nonnegative"
             )
         if frequency == 0.0:
-            # The tabulated AC loss is intentionally not extrapolated to DC.
-            # Only an explicitly supplied static conductivity has a defined
-            # zero-frequency limit here.
             return float(
                 self.conductivity
             )
@@ -1144,18 +1131,18 @@ class TabulatedMaterial:
             frequency,
         )
         return float(
-            self.conductivity
-            + dispersive
+            self.conductivity + dispersive
         )
 
 
 @dataclass(frozen=True)
 class TensorElectricMaterial:
-    """Package-local passive tensor electric material.
+    """Passive tensor electric material for package or homogeneous regions.
 
     Electromagnetic anisotropy is represented by a symmetric positive-definite
     relative-permittivity tensor and a symmetric positive-semidefinite static
-    conductivity tensor. The tensor axes are local to the package pose.
+    conductivity tensor. Tensor axes follow the containing region frame: a
+    package uses its local pose while a Scene background uses world axes.
     Magnetic permeability remains isotropic in this stage.
     """
 
@@ -1175,8 +1162,7 @@ class TensorElectricMaterial:
             dtype=float,
         )
         if (
-            epsilon.shape
-            != (
+            epsilon.shape != (
                 3,
                 3,
             )
@@ -1216,8 +1202,7 @@ class TensorElectricMaterial:
             )
         )
         if (
-            sigma.shape
-            != (
+            sigma.shape != (
                 3,
                 3,
             )
@@ -1246,12 +1231,7 @@ class TensorElectricMaterial:
                 "conductivity_tensor must be finite symmetric positive "
                 "semidefinite and relative_permeability must be positive"
             )
-        commutator = (
-            epsilon
-            @ sigma
-            - sigma
-            @ epsilon
-        )
+        commutator = epsilon @ sigma - sigma @ epsilon
         if (
             np.linalg.norm(
                 commutator
@@ -1298,11 +1278,8 @@ class TensorElectricMaterial:
     def permeability(
         self,
     ) -> float:
-        return (
-            MU0
-            * float(
-                self.relative_permeability
-            )
+        return MU0 * float(
+            self.relative_permeability
         )
 
     @property
@@ -1321,13 +1298,10 @@ class TensorElectricMaterial:
     def relative_permittivity(
         self,
     ) -> float:
-        # A diagnostic scalar only. Tensor-aware physics must use the full
-        # coefficient tensor through electric_coefficient_tensor().
         return float(
             np.trace(
                 self.relative_permittivity_tensor
-            )
-            / 3.0
+            ) / 3.0
         )
 
     def electric_coefficient_tensor(
@@ -1370,11 +1344,7 @@ class TensorElectricMaterial:
                     dtype=complex,
                 )
             )
-        omega = (
-            2.0
-            * np.pi
-            * frequency
-        )
+        omega = 2.0 * np.pi * frequency
         return (
             EPS0
             * np.asarray(
@@ -1385,8 +1355,7 @@ class TensorElectricMaterial:
             * np.asarray(
                 self.conductivity_tensor,
                 dtype=complex,
-            )
-            / omega
+            ) / omega
         )
 
     def loss_conductivity_tensor(
@@ -1454,7 +1423,7 @@ class PackageObject:
             PassiveIsotropicMaterial,
         ):
             raise TypeError(
-                "package material must implement the passive isotropic "
+                "package material must implement the passive electric "
                 "frequency-response interface"
             )
 
@@ -1492,17 +1461,8 @@ class Scene:
             PassiveIsotropicMaterial,
         ):
             raise TypeError(
-                "scene medium must implement the passive isotropic "
+                "scene medium must implement the passive electric "
                 "frequency-response interface"
-            )
-        if isinstance(
-            self.medium,
-            TensorElectricMaterial,
-        ):
-            raise NotImplementedError(
-                "TensorElectricMaterial is currently supported for package "
-                "regions only; tensor-electric infinite backgrounds are the "
-                "next REFERENCE extension"
             )
         if not all(
             isinstance(
