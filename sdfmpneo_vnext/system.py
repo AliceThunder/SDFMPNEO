@@ -15,8 +15,11 @@ from .channel_thermal import (
 )
 from .field import UniformLossFieldDecoder
 from .reference import MixedReferenceArtifact
-from .hybrid_dielectric import DielectricCoupledReferenceArtifact
-from .scene import Scene
+from .tensor_reference import TensorElectricReferenceArtifact
+from .scene import (
+    Scene,
+    TensorElectricMaterial,
+)
 from .thermal_field import (
     AnisotropicThermalMedium,
     ContinuousThermalGreenArtifact,
@@ -26,6 +29,35 @@ from .thermal_interface import (
     PiecewiseThermalInterfaceArtifact,
     scene_thermal_package_media,
 )
+
+
+def _uses_tensor_electric(
+    scene: Scene,
+) -> bool:
+    return bool(
+        isinstance(
+            scene.medium,
+            TensorElectricMaterial,
+        )
+        or any(
+            isinstance(
+                package.material,
+                TensorElectricMaterial,
+            )
+            for package in scene.packages
+        )
+    )
+
+
+def _uses_heterogeneous_reference(
+    scene: Scene,
+) -> bool:
+    return bool(
+        scene.packages
+        or _uses_tensor_electric(
+            scene
+        )
+    )
 
 
 def _resolve_thermal_medium(
@@ -58,9 +90,7 @@ def _resolve_thermal_medium(
                 "tensor thermal background requires density and heat_capacity"
             )
         return AnisotropicThermalMedium(
-            conductivity_tensor=(
-                tensor
-            ),
+            conductivity_tensor=tensor,
             density=float(
                 density
             ),
@@ -97,6 +127,8 @@ class SystemCapabilities:
     graded_radial_media: bool = False
     anisotropic_thermal_background: bool = False
     anisotropic_package_thermal_interfaces: bool = False
+    anisotropic_electric_background: bool = False
+    anisotropic_electric_packages: bool = False
 
 
 def mvp_system_capabilities(
@@ -111,7 +143,7 @@ def mvp_system_capabilities(
             "magnetoquasistatic_current_potential_charge"
         ),
         background_medium=(
-            "homogeneous_isotropic_unbounded_frequency_response"
+            "homogeneous_isotropic_or_tensor_unbounded_frequency_response"
         ),
         lossy_background_media=True,
         heterogeneous_media=False,
@@ -128,6 +160,8 @@ def mvp_system_capabilities(
         graded_radial_media=True,
         anisotropic_thermal_background=True,
         anisotropic_package_thermal_interfaces=True,
+        anisotropic_electric_background=True,
+        anisotropic_electric_packages=True,
     )
 
 
@@ -150,22 +184,14 @@ class MeshfreeVNextSystem:
             raise TypeError(
                 "port_artifact must expose predict_structured"
             )
-        self.port_artifact = (
-            port_artifact
-        )
-        self.spatial_artifact = (
-            spatial_artifact
-        )
+        self.port_artifact = port_artifact
+        self.spatial_artifact = spatial_artifact
         self.reference_config = (
             reference_config
             or MQSConfig()
         )
-        self._reference = (
-            MixedReferenceArtifact(
-                config=(
-                    self.reference_config
-                )
-            )
+        self._reference = MixedReferenceArtifact(
+            config=self.reference_config
         )
         self.dielectric_surface_vertical_order = int(
             dielectric_surface_vertical_order
@@ -173,18 +199,14 @@ class MeshfreeVNextSystem:
         self.dielectric_surface_azimuthal_order = int(
             dielectric_surface_azimuthal_order
         )
-        self._dielectric_reference = (
-            DielectricCoupledReferenceArtifact(
-                config=(
-                    self.reference_config
-                ),
-                surface_vertical_order=(
-                    self.dielectric_surface_vertical_order
-                ),
-                surface_azimuthal_order=(
-                    self.dielectric_surface_azimuthal_order
-                ),
-            )
+        self._dielectric_reference = TensorElectricReferenceArtifact(
+            config=self.reference_config,
+            surface_vertical_order=(
+                self.dielectric_surface_vertical_order
+            ),
+            surface_azimuthal_order=(
+                self.dielectric_surface_azimuthal_order
+            ),
         )
 
     @property
@@ -192,6 +214,18 @@ class MeshfreeVNextSystem:
         self,
     ) -> SystemCapabilities:
         return mvp_system_capabilities()
+
+    def _reference_artifact_for_scene(
+        self,
+        scene: Scene,
+    ):
+        return (
+            self._dielectric_reference
+            if _uses_heterogeneous_reference(
+                scene
+            )
+            else self._reference
+        )
 
     def _require_package_fast_port_artifact(
         self,
@@ -212,7 +246,6 @@ class MeshfreeVNextSystem:
                 "conductor-only FAST predictions are not used for dielectric scenes"
             )
 
-
     def _require_fast_port_artifact(
         self,
         scene: Scene,
@@ -221,6 +254,22 @@ class MeshfreeVNextSystem:
         self._require_package_fast_port_artifact(
             scene
         )
+        if (
+            _uses_tensor_electric(
+                scene
+            )
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_tensor_electric",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "tensor-electric scenes require a tensor-aware FAST port "
+                "artifact; scalar material features are not used as a proxy"
+            )
         if (
             scene.medium.loss_conductivity(
                 frequency_hz
@@ -270,13 +319,31 @@ class MeshfreeVNextSystem:
             scene
         )
         if (
+            _uses_tensor_electric(
+                scene
+            )
+            and (
+                self.spatial_artifact is None
+                or not bool(
+                    getattr(
+                        self.spatial_artifact,
+                        "supports_tensor_electric",
+                        False,
+                    )
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "tensor-electric scenes require a tensor-aware FAST spatial "
+                "artifact; scalar spatial decoders are not used as a proxy"
+            )
+        if (
             scene.medium.loss_conductivity(
                 frequency_hz
             )
             > 0.0
             and (
-                self.spatial_artifact
-                is None
+                self.spatial_artifact is None
                 or not bool(
                     getattr(
                         self.spatial_artifact,
@@ -300,11 +367,9 @@ class MeshfreeVNextSystem:
             scene,
             frequency_hz,
         )
-        return (
-            self.port_artifact.predict_structured(
-                scene,
-                frequency_hz,
-            )
+        return self.port_artifact.predict_structured(
+            scene,
+            frequency_hz,
         )
 
     def reference_ports(
@@ -312,16 +377,11 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
-        artifact = (
-            self._dielectric_reference
-            if scene.packages
-            else self._reference
-        )
-        return (
-            artifact.predict_structured(
-                scene,
-                frequency_hz,
-            )
+        return self._reference_artifact_for_scene(
+            scene
+        ).predict_structured(
+            scene,
+            frequency_hz,
         )
 
     def reference_result(
@@ -329,19 +389,17 @@ class MeshfreeVNextSystem:
         scene: Scene,
         frequency_hz: float,
     ):
-        if scene.packages:
-            return (
-                self._dielectric_reference.solve(
-                    scene,
-                    frequency_hz,
-                )
+        if _uses_heterogeneous_reference(
+            scene
+        ):
+            return self._dielectric_reference.solve(
+                scene,
+                frequency_hz,
             )
         return self._reference.solve(
             scene,
             frequency_hz,
-        )[
-            1
-        ]
+        )[1]
 
     def certified_ports(
         self,
@@ -352,7 +410,9 @@ class MeshfreeVNextSystem:
         config: MQSConfig | None = None,
         **certification_options,
     ):
-        if scene.packages:
+        if _uses_heterogeneous_reference(
+            scene
+        ):
             return certify_dielectric_ports(
                 scene,
                 frequency_hz,
@@ -380,9 +440,7 @@ class MeshfreeVNextSystem:
                 config
                 or self.reference_config
             ),
-            convergence_report=(
-                convergence_report
-            ),
+            convergence_report=convergence_report,
             **certification_options,
         )
 
@@ -399,23 +457,16 @@ class MeshfreeVNextSystem:
             scene,
             frequency_hz,
         )
-        if (
-            self.spatial_artifact
-            is not None
-        ):
-            return (
-                self.spatial_artifact.prepare(
-                    scene,
-                    frequency_hz,
-                )
-            )
-        return (
-            UniformLossFieldDecoder(
-                self.port_artifact
-            ).prepare(
+        if self.spatial_artifact is not None:
+            return self.spatial_artifact.prepare(
                 scene,
                 frequency_hz,
             )
+        return UniformLossFieldDecoder(
+            self.port_artifact
+        ).prepare(
+            scene,
+            frequency_hz,
         )
 
     def reference_spatial(
@@ -424,20 +475,12 @@ class MeshfreeVNextSystem:
         frequency_hz: float,
         **options,
     ):
-        if scene.packages:
-            return (
-                self._dielectric_reference.prepare_spatial(
-                    scene,
-                    frequency_hz,
-                    **options,
-                )
-            )
-        return (
-            self._reference.prepare_spatial(
-                scene,
-                frequency_hz,
-                **options,
-            )
+        return self._reference_artifact_for_scene(
+            scene
+        ).prepare_spatial(
+            scene,
+            frequency_hz,
+            **options,
         )
 
     def reference_channel_current_envelope(
@@ -447,16 +490,13 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        artifact = (
-            self._dielectric_reference
-            if scene.packages
-            else self._reference
-        )
         return ChannelResolvedCurrentEnvelope(
             scene,
             frequency_hz,
             thermal_model,
-            artifact,
+            self._reference_artifact_for_scene(
+                scene
+            ),
             **options,
         )
 
@@ -467,16 +507,13 @@ class MeshfreeVNextSystem:
         thermal_model,
         **options,
     ):
-        artifact = (
-            self._dielectric_reference
-            if scene.packages
-            else self._reference
-        )
         return ChannelResolvedVoltageEnvelope(
             scene,
             frequency_hz,
             thermal_model,
-            artifact,
+            self._reference_artifact_for_scene(
+                scene
+            ),
             **options,
         )
 
@@ -493,6 +530,9 @@ class MeshfreeVNextSystem:
         )
         if (
             scene.packages
+            or _uses_tensor_electric(
+                scene
+            )
             or scene.medium.loss_conductivity(
                 frequency_hz
             ) > 0.0
@@ -504,14 +544,12 @@ class MeshfreeVNextSystem:
                 self.port_artifact,
                 **options,
             )
-        return (
-            FastCurrentControlledEnvelope(
-                scene,
-                frequency_hz,
-                thermal_model,
-                self.port_artifact,
-                **options,
-            )
+        return FastCurrentControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self.port_artifact,
+            **options,
         )
 
     def fast_voltage_envelope(
@@ -527,6 +565,9 @@ class MeshfreeVNextSystem:
         )
         if (
             scene.packages
+            or _uses_tensor_electric(
+                scene
+            )
             or scene.medium.loss_conductivity(
                 frequency_hz
             ) > 0.0
@@ -538,14 +579,12 @@ class MeshfreeVNextSystem:
                 self.port_artifact,
                 **options,
             )
-        return (
-            FastVoltageControlledEnvelope(
-                scene,
-                frequency_hz,
-                thermal_model,
-                self.port_artifact,
-                **options,
-            )
+        return FastVoltageControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self.port_artifact,
+            **options,
         )
 
     def reference_current_envelope(
@@ -556,31 +595,28 @@ class MeshfreeVNextSystem:
         **options,
     ):
         if (
-            scene.packages
+            _uses_heterogeneous_reference(
+                scene
+            )
             or scene.medium.loss_conductivity(
                 frequency_hz
             ) > 0.0
         ):
-            artifact = (
-                self._dielectric_reference
-                if scene.packages
-                else self._reference
-            )
             return ChannelResolvedCurrentEnvelope(
                 scene,
                 frequency_hz,
                 thermal_model,
-                artifact,
+                self._reference_artifact_for_scene(
+                    scene
+                ),
                 **options,
             )
-        return (
-            FastCurrentControlledEnvelope(
-                scene,
-                frequency_hz,
-                thermal_model,
-                self._reference,
-                **options,
-            )
+        return FastCurrentControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference,
+            **options,
         )
 
     def reference_voltage_envelope(
@@ -591,33 +627,29 @@ class MeshfreeVNextSystem:
         **options,
     ):
         if (
-            scene.packages
+            _uses_heterogeneous_reference(
+                scene
+            )
             or scene.medium.loss_conductivity(
                 frequency_hz
             ) > 0.0
         ):
-            artifact = (
-                self._dielectric_reference
-                if scene.packages
-                else self._reference
-            )
             return ChannelResolvedVoltageEnvelope(
                 scene,
                 frequency_hz,
                 thermal_model,
-                artifact,
+                self._reference_artifact_for_scene(
+                    scene
+                ),
                 **options,
             )
-        return (
-            FastVoltageControlledEnvelope(
-                scene,
-                frequency_hz,
-                thermal_model,
-                self._reference,
-                **options,
-            )
+        return FastVoltageControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference,
+            **options,
         )
-
 
     def fast_continuous_thermal_field(
         self,
@@ -630,11 +662,9 @@ class MeshfreeVNextSystem:
             scene,
             medium,
         )
-        thermal_packages = (
-            scene_thermal_package_media(
-                scene,
-                medium,
-            )
+        thermal_packages = scene_thermal_package_media(
+            scene,
+            medium,
         )
         self._require_fast_port_artifact(
             scene,
@@ -680,33 +710,26 @@ class MeshfreeVNextSystem:
             scene,
             medium,
         )
-        artifact = (
-            self._dielectric_reference
-            if scene.packages
-            else self._reference
+        artifact = self._reference_artifact_for_scene(
+            scene
         )
-        thermal_packages = (
-            scene_thermal_package_media(
-                scene,
+        thermal_packages = scene_thermal_package_media(
+            scene,
+            medium,
+        )
+        thermal_artifact = (
+            PiecewiseThermalInterfaceArtifact(
+                artifact,
                 medium,
+                **options,
+            )
+            if thermal_packages
+            else ContinuousThermalGreenArtifact(
+                artifact,
+                medium,
+                **options,
             )
         )
-        if thermal_packages:
-            thermal_artifact = (
-                PiecewiseThermalInterfaceArtifact(
-                    artifact,
-                    medium,
-                    **options,
-                )
-            )
-        else:
-            thermal_artifact = (
-                ContinuousThermalGreenArtifact(
-                    artifact,
-                    medium,
-                    **options,
-                )
-            )
         return thermal_artifact.prepare(
             scene,
             frequency_hz,
