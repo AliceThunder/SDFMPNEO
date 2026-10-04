@@ -21,6 +21,9 @@ from .graded_material import (
     RadialIsotropicMaterialProfile,
     compile_graded_superquadric_regions,
 )
+from .graded_tensor_thermal import (
+    RadialTensorThermalMaterialProfile,
+)
 from .graded_convergence import (
     GradedMaterialConvergenceStep,
     GradedMaterialConvergenceReport,
@@ -258,6 +261,7 @@ __all__ = [
     "SuperquadricSurfaceQuadrature",
     "SuperquadricVolumeQuadrature",
     "RadialIsotropicMaterialProfile",
+    "RadialTensorThermalMaterialProfile",
     "compile_graded_superquadric_regions",
     "GradedMaterialConvergenceStep",
     "GradedMaterialConvergenceReport",
