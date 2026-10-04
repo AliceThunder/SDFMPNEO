@@ -180,6 +180,14 @@ from .hybrid_features import (
     EncodedHybridScene,
     encode_hybrid_scene_invariant,
 )
+from .tensor_features import (
+    TENSOR_COIL_FEATURE_DIM,
+    TENSOR_PACKAGE_FEATURE_DIM,
+    TENSOR_PAIR_FEATURE_DIM,
+    TENSOR_CROSS_FEATURE_DIM,
+    EncodedTensorHybridScene,
+    encode_tensor_hybrid_scene_invariant,
+)
 from .training_data import (
     SpatialLossSamples,
     TeacherSample,
@@ -371,6 +379,12 @@ __all__ = [
     "encode_scene_invariant",
     "EncodedHybridScene",
     "encode_hybrid_scene_invariant",
+    "TENSOR_COIL_FEATURE_DIM",
+    "TENSOR_PACKAGE_FEATURE_DIM",
+    "TENSOR_PAIR_FEATURE_DIM",
+    "TENSOR_CROSS_FEATURE_DIM",
+    "EncodedTensorHybridScene",
+    "encode_tensor_hybrid_scene_invariant",
     "SpatialLossSamples",
     "TeacherSample",
     "HYBRID_REFERENCE_BACKEND",
