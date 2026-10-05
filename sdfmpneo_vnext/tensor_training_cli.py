@@ -8,7 +8,6 @@ import numpy as np
 
 from .em import MQSConfig
 from .performance import (
-    iter_tensor_teacher_samples_parallel,
     resolve_torch_device,
     train_tensor_hybrid_residual_surrogate_accelerated,
 )
@@ -18,6 +17,7 @@ from .spatial_performance import (
 )
 from .tensor_bundle import publish_tensor_bundle
 from .tensor_sampling import TensorHybridSceneSamplerConfig
+from .tensor_teacher_pipeline import iter_tensor_teacher_samples_parallel_once
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -30,6 +30,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("output", type=Path)
     parser.add_argument("--count", type=int, default=64)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--native-threads-per-worker",
+        type=int,
+        default=1,
+        help=(
+            "BLAS/OpenMP threads per teacher worker. Use 1 with several worker "
+            "processes to avoid CPU oversubscription; 0 leaves native pools unmanaged."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=37)
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--batch-size", type=int, default=16)
@@ -69,11 +78,13 @@ def _split(samples, fraction: float, seed: int):
     order = np.random.default_rng(int(seed) + 991).permutation(len(samples))
     validation_indices = set(int(index) for index in order[:count])
     train = tuple(
-        sample for index, sample in enumerate(samples)
+        sample
+        for index, sample in enumerate(samples)
         if index not in validation_indices
     )
     validation = tuple(
-        sample for index, sample in enumerate(samples)
+        sample
+        for index, sample in enumerate(samples)
         if index in validation_indices
     )
     return train, validation
@@ -83,6 +94,8 @@ def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     if args.count < 1 or args.workers < 1 or args.batch_size < 1:
         raise SystemExit("count, workers, and batch-size must be positive")
+    if args.native_threads_per_worker < 0:
+        raise SystemExit("native-threads-per-worker must be nonnegative")
 
     resolved_device = resolve_torch_device(args.device)
     sampler = TensorHybridSceneSamplerConfig(
@@ -95,8 +108,7 @@ def main(argv=None) -> int:
         "baseline_segments": int(args.baseline_segments),
         "surface_vertical_order": int(args.surface_vertical_order),
         "surface_azimuthal_order": int(args.surface_azimuthal_order),
-    }
-    spatial_options = {
+        "include_spatial": bool(args.with_spatial),
         "package_volume_axial_order": int(args.package_volume_axial_order),
         "package_volume_radial_order": int(args.package_volume_radial_order),
         "package_volume_azimuthal_order": int(args.package_volume_azimuthal_order),
@@ -105,15 +117,14 @@ def main(argv=None) -> int:
     }
 
     generated = tuple(
-        iter_tensor_teacher_samples_parallel(
+        iter_tensor_teacher_samples_parallel_once(
             args.count,
             sampler_config=sampler,
             teacher_config=teacher,
             workers=args.workers,
+            native_threads_per_worker=args.native_threads_per_worker,
             seed=args.seed,
-            include_spatial=bool(args.with_spatial),
-            teacher_options=teacher_options,
-            spatial_options=spatial_options,
+            **teacher_options,
         )
     )
     if args.with_spatial:
@@ -143,11 +154,13 @@ def main(argv=None) -> int:
     if args.with_spatial:
         validation_ids = {id(sample) for sample in validation_port}
         train_spatial = tuple(
-            sample for sample in spatial_samples
+            sample
+            for sample in spatial_samples
             if id(sample.port) not in validation_ids
         )
         validation_spatial = tuple(
-            sample for sample in spatial_samples
+            sample
+            for sample in spatial_samples
             if id(sample.port) in validation_ids
         )
         spatial, spatial_report = train_tensor_hybrid_spatial_loss_surrogate_accelerated(
@@ -168,8 +181,10 @@ def main(argv=None) -> int:
             "training_device": resolved_device,
             "training_precision": args.precision,
             "teacher_workers": int(args.workers),
+            "native_threads_per_worker": int(args.native_threads_per_worker),
             "teacher_samples": int(args.count),
             "batch_size": int(args.batch_size),
+            "single_solve_spatial_truth": bool(args.with_spatial),
         },
         overwrite=bool(args.overwrite),
     )
@@ -183,7 +198,9 @@ def main(argv=None) -> int:
             "best_validation_score": port_report.best_validation_score,
             "stopped_early": port_report.stopped_early,
         },
-        "spatial": None if spatial_report is None else {
+        "spatial": None
+        if spatial_report is None
+        else {
             "epochs": spatial_report.epochs,
             "best_epoch": spatial_report.best_epoch,
             "final_loss": spatial_report.final_loss,
