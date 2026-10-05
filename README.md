@@ -209,6 +209,69 @@ The manifest contains checksums, runtime capability metadata, and a semantic
 fingerprint binding the spatial artifact to the exact tensor port weights and
 normalization state.
 
+### Tensor bundle JSON inference
+
+After installing the package, a published tensor bundle can be queried without
+writing a Python driver:
+
+```bash
+sdfmpneo-vnext-tensor \
+  artifacts/tensor-fast \
+  request.json \
+  --output result.json
+```
+
+The request uses the same serialized scene contract as `scene_to_dict(...)` and
+accepts `"mode": "fast"`, `"reference"`, or `"certified"`. Tensor-electric
+package and homogeneous-background materials are represented with
+`"model": "tensor_electric"`, for example:
+
+```json
+{
+  "scene": {
+    "coils": [
+      {
+        "name": "tx",
+        "geometry": {
+          "outer_a": 0.02,
+          "outer_b": 0.018,
+          "turns": 1.0,
+          "pitch_a": 0.001,
+          "pitch_b": 0.001,
+          "conductor_width": 0.001,
+          "conductor_thickness": 0.0008
+        },
+        "material": {
+          "conductivity": 58000000.0
+        }
+      }
+    ],
+    "medium": {
+      "model": "tensor_electric",
+      "relative_permittivity_tensor": [
+        [2.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0],
+        [0.0, 0.0, 4.0]
+      ],
+      "conductivity_tensor": [
+        [0.00005, 0.0, 0.0],
+        [0.0, 0.0001, 0.0],
+        [0.0, 0.0, 0.0002]
+      ]
+    }
+  },
+  "frequency_hz": 100000.0,
+  "mode": "fast",
+  "currents": [[1.0, 0.0]]
+}
+```
+
+Spatial and continuous-thermal requests use the same `spatial_queries` and
+`thermal` fields accepted by `run_system_inference(...)`. `certified` mode is
+scene-aware: heterogeneous and tensor-electric scenes are routed to the
+coupled electric/magnetic correctness backend rather than the conductor-only
+certifier.
+
 ## Continuous electrothermal evolution
 
 FAST and REFERENCE spatial fields feed the same continuous thermal interfaces:
@@ -292,6 +355,8 @@ pytest -q \
   tests/test_vnext_tensor_electric.py \
   tests/test_vnext_tensor_fast.py \
   tests/test_vnext_tensor_spatial_fast.py \
+  tests/test_vnext_serialization.py \
+  tests/test_vnext_inference.py \
   tests/test_vnext_system_dielectric.py
 ```
 
