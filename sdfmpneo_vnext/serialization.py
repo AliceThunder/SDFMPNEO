@@ -20,209 +20,34 @@ from .scene import (
 )
 
 
-def _medium_to_dict(
-    medium,
-):
-    if isinstance(
-        medium,
-        TabulatedMaterial,
-    ):
-        return {
-            "model": "tabulated",
-            "frequencies_hz": list(
-                medium.frequencies_hz
-            ),
-            "relative_permittivity_real": list(
-                medium.relative_permittivity_real
-            ),
-            "loss_conductivity_values": list(
-                medium.loss_conductivity_values
-            ),
-            "relative_permeability": (
-                medium.relative_permeability
-            ),
-            "conductivity": (
-                medium.conductivity
-            ),
-            "thermal_conductivity": (
-                medium.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if medium.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    medium.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": medium.density,
-            "heat_capacity": medium.heat_capacity,
-        }
-    if isinstance(
-        medium,
-        MultiDebyeMaterial,
-    ):
-        return {
-            "model": "multi_debye",
-            "relative_permittivity_infinite": (
-                medium.relative_permittivity_infinite
-            ),
-            "relaxation_strengths": list(
-                medium.relaxation_strengths
-            ),
-            "relaxation_times": list(
-                medium.relaxation_times
-            ),
-            "relative_permeability": (
-                medium.relative_permeability
-            ),
-            "conductivity": (
-                medium.conductivity
-            ),
-            "thermal_conductivity": (
-                medium.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if medium.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    medium.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": medium.density,
-            "heat_capacity": medium.heat_capacity,
-        }
-    if isinstance(
-        medium,
-        DebyeMaterial,
-    ):
-        return {
-            "model": "debye",
-            "relative_permittivity_static": (
-                medium.relative_permittivity_static
-            ),
-            "relative_permittivity_infinite": (
-                medium.relative_permittivity_infinite
-            ),
-            "relaxation_time": (
-                medium.relaxation_time
-            ),
-            "relative_permeability": (
-                medium.relative_permeability
-            ),
-            "conductivity": (
-                medium.conductivity
-            ),
-            "thermal_conductivity": (
-                medium.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if medium.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    medium.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": medium.density,
-            "heat_capacity": medium.heat_capacity,
-        }
-    if isinstance(
-        medium,
-        IsotropicMaterial,
-    ):
-        return {
-            "model": "constant",
-            "relative_permittivity": (
-                medium.relative_permittivity
-            ),
-            "relative_permeability": (
-                medium.relative_permeability
-            ),
-            "conductivity": (
-                medium.conductivity
-            ),
-            "thermal_conductivity": (
-                medium.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if medium.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    medium.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": medium.density,
-            "heat_capacity": medium.heat_capacity,
-        }
-    if isinstance(
-        medium,
-        HomogeneousMedium,
-    ):
-        return {
-            "model": "constant",
-            "relative_permittivity": (
-                medium.relative_permittivity
-            ),
-            "relative_permeability": (
-                medium.relative_permeability
-            ),
-            "conductivity": (
-                medium.conductivity
-            ),
-        }
-    raise TypeError(
-        "unsupported scene background medium type"
-    )
+def _thermal_payload(material):
+    return {
+        "thermal_conductivity": getattr(material, "thermal_conductivity", None),
+        "thermal_conductivity_tensor": (
+            None
+            if getattr(material, "thermal_conductivity_tensor", None) is None
+            else np.asarray(
+                material.thermal_conductivity_tensor,
+                dtype=float,
+            ).tolist()
+        ),
+        "density": getattr(material, "density", None),
+        "heat_capacity": getattr(material, "heat_capacity", None),
+    }
 
 
-def _medium_from_dict(
-    data,
-):
-    if not isinstance(
-        data,
-        dict,
-    ):
-        raise TypeError(
-            "scene.medium must be a dictionary"
-        )
-    model = str(
-        data.get(
-            "model",
-            "constant",
-        )
-    ).lower()
-    thermal_conductivity = data.get(
-        "thermal_conductivity"
-    )
-    thermal_conductivity_tensor = data.get(
-        "thermal_conductivity_tensor"
-    )
-    density = data.get(
-        "density"
-    )
-    heat_capacity = data.get(
-        "heat_capacity"
-    )
-    if (
-        thermal_conductivity is not None
-        and thermal_conductivity_tensor is not None
-    ):
+def _thermal_from_dict(data, *, prefix: str):
+    scalar = data.get("thermal_conductivity")
+    tensor = data.get("thermal_conductivity_tensor")
+    density = data.get("density")
+    heat_capacity = data.get("heat_capacity")
+    if scalar is not None and tensor is not None:
         raise ValueError(
-            "thermal_conductivity and thermal_conductivity_tensor are "
-            "mutually exclusive"
+            f"{prefix} thermal_conductivity and thermal_conductivity_tensor "
+            "are mutually exclusive"
         )
-    has_conductivity = bool(
-        thermal_conductivity is not None
-        or thermal_conductivity_tensor is not None
-    )
-    has_thermal = bool(
+    has_conductivity = scalar is not None or tensor is not None
+    has_thermal = (
         has_conductivity
         or density is not None
         or heat_capacity is not None
@@ -233,372 +58,69 @@ def _medium_from_dict(
         or heat_capacity is None
     ):
         raise ValueError(
-            "thermal conductivity, density, and heat_capacity must be "
-            "supplied together"
+            f"{prefix} thermal conductivity, density, and heat_capacity must "
+            "be supplied together"
         )
-    thermal = (
-        None
-        if thermal_conductivity is None
-        else float(
-            thermal_conductivity
-        )
-    )
-    thermal_tensor = (
-        None
-        if thermal_conductivity_tensor is None
-        else np.asarray(
-            thermal_conductivity_tensor,
+    return {
+        "thermal_conductivity": (
+            None if scalar is None else float(scalar)
+        ),
+        "thermal_conductivity_tensor": (
+            None
+            if tensor is None
+            else np.asarray(tensor, dtype=float)
+        ),
+        "density": None if density is None else float(density),
+        "heat_capacity": (
+            None if heat_capacity is None else float(heat_capacity)
+        ),
+    }
+
+
+def _tensor_electric_to_dict(material):
+    return {
+        "model": "tensor_electric",
+        "relative_permittivity_tensor": np.asarray(
+            material.relative_permittivity_tensor,
             dtype=float,
-        )
-    )
-    rho = (
-        None
-        if not has_thermal
-        else float(
-            density
-        )
-    )
-    capacity = (
-        None
-        if not has_thermal
-        else float(
-            heat_capacity
-        )
-    )
-    if model == "constant":
-        epsilon_r = float(
-            data.get(
-                "relative_permittivity",
-                1.0,
-            )
-        )
-        mu_r = float(
-            data.get(
-                "relative_permeability",
-                1.0,
-            )
-        )
-        conductivity = float(
-            data.get(
-                "conductivity",
-                0.0,
-            )
-        )
-        if has_thermal:
-            return IsotropicMaterial(
-                relative_permittivity=(
-                    epsilon_r
-                ),
-                relative_permeability=(
-                    mu_r
-                ),
-                conductivity=(
-                    conductivity
-                ),
-                thermal_conductivity=(
-                    thermal
-                ),
-                density=(
-                    rho
-                ),
-                heat_capacity=(
-                    capacity
-                ),
-                thermal_conductivity_tensor=(
-                    thermal_tensor
-                ),
-            )
-        return HomogeneousMedium(
-            epsilon_r,
-            mu_r,
-            conductivity,
-        )
-    if model == "debye":
-        required = (
-            "relative_permittivity_static",
-            "relative_permittivity_infinite",
-            "relaxation_time",
-        )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
-        if missing:
-            raise ValueError(
-                "Debye scene background medium is missing: "
-                + ", ".join(
-                    missing
-                )
-            )
-        return DebyeMaterial(
-            float(
-                data[
-                    "relative_permittivity_static"
-                ]
-            ),
-            float(
-                data[
-                    "relative_permittivity_infinite"
-                ]
-            ),
-            float(
-                data[
-                    "relaxation_time"
-                ]
-            ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
-        )
-    if model == "multi_debye":
-        required = (
-            "relative_permittivity_infinite",
-            "relaxation_strengths",
-            "relaxation_times",
-        )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
-        if missing:
-            raise ValueError(
-                "multi-Debye scene background medium is missing: "
-                + ", ".join(
-                    missing
-                )
-            )
-        return MultiDebyeMaterial(
-            float(
-                data[
-                    "relative_permittivity_infinite"
-                ]
-            ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relaxation_strengths"
-                ]
-            ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relaxation_times"
-                ]
-            ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
-        )
-    if model == "tabulated":
-        required = (
-            "frequencies_hz",
-            "relative_permittivity_real",
-            "loss_conductivity_values",
-        )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
-        if missing:
-            raise ValueError(
-                "tabulated scene background medium is missing: "
-                + ", ".join(
-                    missing
-                )
-            )
-        return TabulatedMaterial(
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "frequencies_hz"
-                ]
-            ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relative_permittivity_real"
-                ]
-            ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "loss_conductivity_values"
-                ]
-            ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
-        )
-    raise ValueError(
-        f"unsupported scene background medium model: {model}"
-    )
+        ).tolist(),
+        "conductivity_tensor": np.asarray(
+            material.conductivity_tensor,
+            dtype=float,
+        ).tolist(),
+        "relative_permeability": float(material.relative_permeability),
+        **_thermal_payload(material),
+    }
 
 
-def _package_material_to_dict(
-    material,
-):
-    if isinstance(
-        material,
-        TensorElectricMaterial,
-    ):
-        return {
-            "model": "tensor_electric",
-            "relative_permittivity_tensor": np.asarray(
-                material.relative_permittivity_tensor,
-                dtype=float,
-            ).tolist(),
-            "conductivity_tensor": np.asarray(
-                material.conductivity_tensor,
-                dtype=float,
-            ).tolist(),
-            "relative_permeability": float(
-                material.relative_permeability
-            ),
-            "thermal_conductivity": (
-                material.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if material.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    material.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": material.density,
-            "heat_capacity": material.heat_capacity,
-        }
-    if isinstance(
-        material,
-        TabulatedMaterial,
-    ):
+def _frequency_material_to_dict(material):
+    if isinstance(material, TabulatedMaterial):
         return {
             "model": "tabulated",
-            "frequencies_hz": list(
-                material.frequencies_hz
-            ),
+            "frequencies_hz": list(material.frequencies_hz),
             "relative_permittivity_real": list(
                 material.relative_permittivity_real
             ),
             "loss_conductivity_values": list(
                 material.loss_conductivity_values
             ),
-            "relative_permeability": (
-                material.relative_permeability
-            ),
-            "conductivity": (
-                material.conductivity
-            ),
-            "thermal_conductivity": (
-                material.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if material.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    material.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": material.density,
-            "heat_capacity": material.heat_capacity,
+            "relative_permeability": material.relative_permeability,
+            "conductivity": material.conductivity,
+            **_thermal_payload(material),
         }
-    if isinstance(
-        material,
-        MultiDebyeMaterial,
-    ):
+    if isinstance(material, MultiDebyeMaterial):
         return {
             "model": "multi_debye",
             "relative_permittivity_infinite": (
                 material.relative_permittivity_infinite
             ),
-            "relaxation_strengths": list(
-                material.relaxation_strengths
-            ),
-            "relaxation_times": list(
-                material.relaxation_times
-            ),
-            "relative_permeability": (
-                material.relative_permeability
-            ),
-            "conductivity": (
-                material.conductivity
-            ),
-            "thermal_conductivity": (
-                material.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if material.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    material.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": material.density,
-            "heat_capacity": (
-                material.heat_capacity
-            ),
+            "relaxation_strengths": list(material.relaxation_strengths),
+            "relaxation_times": list(material.relaxation_times),
+            "relative_permeability": material.relative_permeability,
+            "conductivity": material.conductivity,
+            **_thermal_payload(material),
         }
-    if isinstance(
-        material,
-        DebyeMaterial,
-    ):
+    if isinstance(material, DebyeMaterial):
         return {
             "model": "debye",
             "relative_permittivity_static": (
@@ -607,374 +129,199 @@ def _package_material_to_dict(
             "relative_permittivity_infinite": (
                 material.relative_permittivity_infinite
             ),
-            "relaxation_time": (
-                material.relaxation_time
-            ),
-            "relative_permeability": (
-                material.relative_permeability
-            ),
-            "conductivity": (
-                material.conductivity
-            ),
-            "thermal_conductivity": (
-                material.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if material.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    material.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": material.density,
-            "heat_capacity": (
-                material.heat_capacity
-            ),
+            "relaxation_time": material.relaxation_time,
+            "relative_permeability": material.relative_permeability,
+            "conductivity": material.conductivity,
+            **_thermal_payload(material),
         }
+    raise TypeError("unsupported frequency-response material type")
+
+
+def _medium_to_dict(medium):
+    if isinstance(medium, TensorElectricMaterial):
+        return _tensor_electric_to_dict(medium)
     if isinstance(
-        material,
-        IsotropicMaterial,
+        medium,
+        (TabulatedMaterial, MultiDebyeMaterial, DebyeMaterial),
     ):
+        return _frequency_material_to_dict(medium)
+    if isinstance(medium, IsotropicMaterial):
         return {
-            "relative_permittivity": (
-                material.relative_permittivity
-            ),
-            "relative_permeability": (
-                material.relative_permeability
-            ),
-            "conductivity": (
-                material.conductivity
-            ),
-            "thermal_conductivity": (
-                material.thermal_conductivity
-            ),
-            "thermal_conductivity_tensor": (
-                None
-                if material.thermal_conductivity_tensor
-                is None
-                else np.asarray(
-                    material.thermal_conductivity_tensor,
-                    dtype=float,
-                ).tolist()
-            ),
-            "density": material.density,
-            "heat_capacity": (
-                material.heat_capacity
-            ),
+            "model": "constant",
+            "relative_permittivity": medium.relative_permittivity,
+            "relative_permeability": medium.relative_permeability,
+            "conductivity": medium.conductivity,
+            **_thermal_payload(medium),
         }
-    raise TypeError(
-        "unsupported package material type"
-    )
+    if isinstance(medium, HomogeneousMedium):
+        return {
+            "model": "constant",
+            "relative_permittivity": medium.relative_permittivity,
+            "relative_permeability": medium.relative_permeability,
+            "conductivity": medium.conductivity,
+        }
+    raise TypeError("unsupported scene background medium type")
 
 
-def _package_material_from_dict(
-    data,
-):
-    if not isinstance(
-        data,
-        dict,
-    ):
+def _material_from_dict(data, *, package: bool):
+    if not isinstance(data, dict):
         raise TypeError(
             "package material must be a dictionary"
+            if package
+            else "scene.medium must be a dictionary"
         )
-    thermal_conductivity = (
-        data.get(
-            "thermal_conductivity"
-        )
-    )
-    thermal_conductivity_tensor = data.get(
-        "thermal_conductivity_tensor"
-    )
-    if (
-        thermal_conductivity is not None
-        and thermal_conductivity_tensor is not None
-    ):
-        raise ValueError(
-            "package thermal_conductivity and "
-            "thermal_conductivity_tensor are mutually exclusive"
-        )
-    density = data.get(
-        "density"
-    )
-    heat_capacity = data.get(
-        "heat_capacity"
-    )
-    thermal = (
-        None
-        if thermal_conductivity
-        is None
-        else float(
-            thermal_conductivity
-        )
-    )
-    thermal_tensor = (
-        None
-        if thermal_conductivity_tensor
-        is None
-        else np.asarray(
-            thermal_conductivity_tensor,
-            dtype=float,
-        )
-    )
-    rho = (
-        None
-        if density is None
-        else float(
-            density
-        )
-    )
-    capacity = (
-        None
-        if heat_capacity is None
-        else float(
-            heat_capacity
-        )
-    )
-    model = str(
-        data.get(
-            "model",
-            "constant",
-        )
-    ).lower()
+    prefix = "package" if package else "scene medium"
+    thermal = _thermal_from_dict(data, prefix=prefix)
+    model = str(data.get("model", "constant")).lower()
+
     if model == "tensor_electric":
         if "relative_permittivity_tensor" not in data:
             raise ValueError(
-                "tensor-electric package material is missing "
+                f"tensor-electric {prefix} is missing "
                 "relative_permittivity_tensor"
             )
-        conductivity_tensor = np.asarray(
-            data.get(
-                "conductivity_tensor",
-                np.zeros(
-                    (
-                        3,
-                        3,
-                    )
-                ),
-            ),
-            dtype=float,
-        )
         return TensorElectricMaterial(
             relative_permittivity_tensor=np.asarray(
-                data[
-                    "relative_permittivity_tensor"
-                ],
+                data["relative_permittivity_tensor"],
                 dtype=float,
             ),
-            conductivity_tensor=conductivity_tensor,
+            conductivity_tensor=np.asarray(
+                data.get("conductivity_tensor", np.zeros((3, 3))),
+                dtype=float,
+            ),
             relative_permeability=float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
+                data.get("relative_permeability", 1.0)
             ),
-            thermal_conductivity=thermal,
-            density=rho,
-            heat_capacity=capacity,
-            thermal_conductivity_tensor=(
-                thermal_tensor
-            ),
+            **thermal,
         )
+
     if model == "constant":
-        return IsotropicMaterial(
-            relative_permittivity=float(
-                data.get(
-                    "relative_permittivity",
-                    1.0,
-                )
-            ),
-            relative_permeability=float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            conductivity=float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal_conductivity=thermal,
-            density=rho,
-            heat_capacity=capacity,
-            thermal_conductivity_tensor=(
-                thermal_tensor
-            ),
+        epsilon = float(data.get("relative_permittivity", 1.0))
+        permeability = float(data.get("relative_permeability", 1.0))
+        conductivity = float(data.get("conductivity", 0.0))
+        has_thermal = any(value is not None for value in thermal.values())
+        if package or has_thermal:
+            return IsotropicMaterial(
+                relative_permittivity=epsilon,
+                relative_permeability=permeability,
+                conductivity=conductivity,
+                **thermal,
+            )
+        return HomogeneousMedium(
+            epsilon,
+            permeability,
+            conductivity,
         )
+
     if model == "debye":
         required = (
             "relative_permittivity_static",
             "relative_permittivity_infinite",
             "relaxation_time",
         )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
+        missing = [key for key in required if key not in data]
         if missing:
             raise ValueError(
-                "Debye package material is missing: "
-                + ", ".join(
-                    missing
-                )
+                f"Debye {prefix} is missing: " + ", ".join(missing)
             )
         return DebyeMaterial(
-            float(
-                data[
-                    "relative_permittivity_static"
-                ]
+            relative_permittivity_static=float(
+                data["relative_permittivity_static"]
             ),
-            float(
-                data[
-                    "relative_permittivity_infinite"
-                ]
+            relative_permittivity_infinite=float(
+                data["relative_permittivity_infinite"]
             ),
-            float(
-                data[
-                    "relaxation_time"
-                ]
+            relaxation_time=float(data["relaxation_time"]),
+            relative_permeability=float(
+                data.get("relative_permeability", 1.0)
             ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
-            ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
+            conductivity=float(data.get("conductivity", 0.0)),
+            **thermal,
         )
+
     if model == "multi_debye":
         required = (
             "relative_permittivity_infinite",
             "relaxation_strengths",
             "relaxation_times",
         )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
+        missing = [key for key in required if key not in data]
         if missing:
             raise ValueError(
-                "multi-Debye package material is missing: "
-                + ", ".join(
-                    missing
-                )
+                f"multi-Debye {prefix} is missing: " + ", ".join(missing)
             )
         return MultiDebyeMaterial(
-            float(
-                data[
-                    "relative_permittivity_infinite"
-                ]
+            relative_permittivity_infinite=float(
+                data["relative_permittivity_infinite"]
             ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relaxation_strengths"
-                ]
+            relaxation_strengths=tuple(
+                float(value) for value in data["relaxation_strengths"]
             ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relaxation_times"
-                ]
+            relaxation_times=tuple(
+                float(value) for value in data["relaxation_times"]
             ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
+            relative_permeability=float(
+                data.get("relative_permeability", 1.0)
             ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
+            conductivity=float(data.get("conductivity", 0.0)),
+            **thermal,
         )
+
     if model == "tabulated":
         required = (
             "frequencies_hz",
             "relative_permittivity_real",
             "loss_conductivity_values",
         )
-        missing = [
-            key
-            for key in required
-            if key not in data
-        ]
+        missing = [key for key in required if key not in data]
         if missing:
             raise ValueError(
-                "tabulated package material is missing: "
-                + ", ".join(
-                    missing
-                )
+                f"tabulated {prefix} is missing: " + ", ".join(missing)
             )
         return TabulatedMaterial(
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "frequencies_hz"
-                ]
+            frequencies_hz=tuple(
+                float(value) for value in data["frequencies_hz"]
             ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "relative_permittivity_real"
-                ]
+            relative_permittivity_real=tuple(
+                float(value) for value in data["relative_permittivity_real"]
             ),
-            tuple(
-                float(
-                    value
-                )
-                for value in data[
-                    "loss_conductivity_values"
-                ]
+            loss_conductivity_values=tuple(
+                float(value) for value in data["loss_conductivity_values"]
             ),
-            float(
-                data.get(
-                    "relative_permeability",
-                    1.0,
-                )
+            relative_permeability=float(
+                data.get("relative_permeability", 1.0)
             ),
-            float(
-                data.get(
-                    "conductivity",
-                    0.0,
-                )
-            ),
-            thermal,
-            rho,
-            capacity,
-            thermal_tensor,
+            conductivity=float(data.get("conductivity", 0.0)),
+            **thermal,
         )
-    raise ValueError(
-        f"unsupported package material model: {model}"
-    )
+    raise ValueError(f"unsupported {prefix} material model: {model}")
+
+
+def _medium_from_dict(data):
+    return _material_from_dict(data, package=False)
+
+
+def _package_material_to_dict(material):
+    if isinstance(material, TensorElectricMaterial):
+        return _tensor_electric_to_dict(material)
+    if isinstance(
+        material,
+        (TabulatedMaterial, MultiDebyeMaterial, DebyeMaterial),
+    ):
+        return _frequency_material_to_dict(material)
+    if isinstance(material, IsotropicMaterial):
+        # Preserve the historical package payload: omitted model means constant.
+        return {
+            "relative_permittivity": material.relative_permittivity,
+            "relative_permeability": material.relative_permeability,
+            "conductivity": material.conductivity,
+            **_thermal_payload(material),
+        }
+    raise TypeError("unsupported package material type")
+
+
+def _package_material_from_dict(data):
+    return _material_from_dict(data, package=True)
 
 
 def scene_to_dict(scene: Scene):
@@ -991,24 +338,28 @@ def scene_to_dict(scene: Scene):
                     "exponent": coil.geometry.exponent,
                     "conductor_width": coil.geometry.conductor_width,
                     "conductor_thickness": coil.geometry.conductor_thickness,
-                    "cross_section_exponent": coil.geometry.cross_section_exponent,
+                    "cross_section_exponent": (
+                        coil.geometry.cross_section_exponent
+                    ),
                     "rotation": coil.geometry.pose.rotation.tolist(),
                     "translation": coil.geometry.pose.translation.tolist(),
                 },
                 "material": {
                     "conductivity": coil.material.conductivity,
-                    "relative_permeability": coil.material.relative_permeability,
+                    "relative_permeability": (
+                        coil.material.relative_permeability
+                    ),
                     "resistance_temperature_coefficient": (
                         coil.material.resistance_temperature_coefficient
                     ),
-                    "reference_temperature": coil.material.reference_temperature,
+                    "reference_temperature": (
+                        coil.material.reference_temperature
+                    ),
                 },
             }
             for coil in scene.coils
         ],
-        "medium": _medium_to_dict(
-            scene.medium
-        ),
+        "medium": _medium_to_dict(scene.medium),
     }
     if scene.packages:
         payload["packages"] = [
@@ -1021,9 +372,7 @@ def scene_to_dict(scene: Scene):
                     "rotation": package.geometry.pose.rotation.tolist(),
                     "translation": package.geometry.pose.translation.tolist(),
                 },
-                "material": _package_material_to_dict(
-                    package.material
-                ),
+                "material": _package_material_to_dict(package.material),
             }
             for package in scene.packages
         ]
@@ -1031,118 +380,33 @@ def scene_to_dict(scene: Scene):
 
 
 def scene_from_dict(data) -> Scene:
-    if not isinstance(
-        data,
-        dict,
-    ):
-        raise TypeError(
-            "scene must be a dictionary"
-        )
-    raw_coils = data.get(
-        "coils"
-    )
-    if not isinstance(
-        raw_coils,
-        (list, tuple),
-    ) or not raw_coils:
-        raise ValueError(
-            "scene.coils must be a non-empty list"
-        )
+    if not isinstance(data, dict):
+        raise TypeError("scene must be a dictionary")
+    raw_coils = data.get("coils")
+    if not isinstance(raw_coils, (list, tuple)) or not raw_coils:
+        raise ValueError("scene.coils must be a non-empty list")
 
     coils = []
-    for index, item in enumerate(
-        raw_coils
-    ):
-        if not isinstance(
-            item,
-            dict,
-        ):
-            raise TypeError(
-                f"scene.coils[{index}] must be a dictionary"
-            )
-        g = item.get(
-            "geometry",
-            {}
-        )
-        m = item.get(
-            "material",
-            {}
-        )
-        if not isinstance(
-            g,
-            dict,
-        ) or not isinstance(
-            m,
-            dict,
-        ):
-            raise TypeError(
-                "geometry and material must be dictionaries"
-            )
-
-        rotation = np.asarray(
-            g.get(
-                "rotation",
-                np.eye(3),
-            ),
-            dtype=float,
-        )
-        translation = np.asarray(
-            g.get(
-                "translation",
-                np.zeros(3),
-            ),
-            dtype=float,
-        )
+    for index, item in enumerate(raw_coils):
+        if not isinstance(item, dict):
+            raise TypeError(f"scene.coils[{index}] must be a dictionary")
+        g = item.get("geometry", {})
+        m = item.get("material", {})
+        if not isinstance(g, dict) or not isinstance(m, dict):
+            raise TypeError("geometry and material must be dictionaries")
         pose = RigidPose(
-            rotation,
-            translation,
+            np.asarray(g.get("rotation", np.eye(3)), dtype=float),
+            np.asarray(g.get("translation", np.zeros(3)), dtype=float),
         )
-
-        if "pitch" in g:
-            pitch_default = float(
-                g["pitch"]
-            )
-        else:
-            pitch_default = None
-        if (
-            "pitch_a" not in g
-            and pitch_default is None
-        ):
+        pitch_default = float(g["pitch"]) if "pitch" in g else None
+        if "pitch_a" not in g and pitch_default is None:
             raise ValueError(
                 f"scene.coils[{index}].geometry requires pitch or pitch_a"
             )
-        if (
-            "pitch_b" not in g
-            and pitch_default is None
-        ):
+        if "pitch_b" not in g and pitch_default is None:
             raise ValueError(
                 f"scene.coils[{index}].geometry requires pitch or pitch_b"
             )
-        pitch_a = float(
-            g.get(
-                "pitch_a",
-                pitch_default,
-            )
-        )
-        pitch_b = float(
-            g.get(
-                "pitch_b",
-                pitch_default,
-            )
-        )
-        exponent = float(
-            g.get(
-                "exponent",
-                2.0,
-            )
-        )
-        cross_section_exponent = float(
-            g.get(
-                "cross_section_exponent",
-                exponent,
-            )
-        )
-
         required_geometry = (
             "outer_a",
             "outer_b",
@@ -1151,201 +415,87 @@ def scene_from_dict(data) -> Scene:
             "conductor_thickness",
         )
         missing_geometry = [
-            key
-            for key in required_geometry
-            if key not in g
+            key for key in required_geometry if key not in g
         ]
         if missing_geometry:
             raise ValueError(
-                "scene.coils["
-                + str(index)
-                + "].geometry is missing: "
-                + ", ".join(
-                    missing_geometry
-                )
+                f"scene.coils[{index}].geometry is missing: "
+                + ", ".join(missing_geometry)
             )
         if "conductivity" not in m:
             raise ValueError(
                 f"scene.coils[{index}].material requires conductivity"
             )
-
+        exponent = float(g.get("exponent", 2.0))
         geometry = SuperellipseSpiral(
-            float(
-                g["outer_a"]
-            ),
-            float(
-                g["outer_b"]
-            ),
-            float(
-                g["turns"]
-            ),
-            pitch_a,
-            pitch_b,
+            float(g["outer_a"]),
+            float(g["outer_b"]),
+            float(g["turns"]),
+            float(g.get("pitch_a", pitch_default)),
+            float(g.get("pitch_b", pitch_default)),
             exponent=exponent,
-            conductor_width=float(
-                g[
-                    "conductor_width"
-                ]
-            ),
-            conductor_thickness=float(
-                g[
-                    "conductor_thickness"
-                ]
-            ),
-            cross_section_exponent=(
-                cross_section_exponent
+            conductor_width=float(g["conductor_width"]),
+            conductor_thickness=float(g["conductor_thickness"]),
+            cross_section_exponent=float(
+                g.get("cross_section_exponent", exponent)
             ),
             pose=pose,
         )
         material = ConductorMaterial(
-            float(
-                m["conductivity"]
+            conductivity=float(m["conductivity"]),
+            relative_permeability=float(
+                m.get("relative_permeability", 1.0)
             ),
-            float(
-                m.get(
-                    "relative_permeability",
-                    1.0,
-                )
+            resistance_temperature_coefficient=float(
+                m.get("resistance_temperature_coefficient", 0.0)
             ),
-            float(
-                m.get(
-                    "resistance_temperature_coefficient",
-                    0.0,
-                )
-            ),
-            float(
-                m.get(
-                    "reference_temperature",
-                    293.15,
-                )
+            reference_temperature=float(
+                m.get("reference_temperature", 293.15)
             ),
         )
         coils.append(
             CoilObject(
                 geometry,
                 material,
-                str(
-                    item.get(
-                        "name",
-                        f"coil_{index}",
-                    )
-                ),
+                str(item.get("name", f"coil_{index}")),
             )
         )
 
-    raw_packages = data.get(
-        "packages",
-        ()
-    )
-    if not isinstance(
-        raw_packages,
-        (list, tuple),
-    ):
-        raise TypeError(
-            "scene.packages must be a list"
-        )
+    raw_packages = data.get("packages", ())
+    if not isinstance(raw_packages, (list, tuple)):
+        raise TypeError("scene.packages must be a list")
     packages = []
-    for index, item in enumerate(
-        raw_packages
-    ):
-        if not isinstance(
-            item,
-            dict,
-        ):
-            raise TypeError(
-                f"scene.packages[{index}] must be a dictionary"
-            )
-        g = item.get(
-            "geometry",
-            {}
-        )
-        m = item.get(
-            "material",
-            {}
-        )
-        if not isinstance(
-            g,
-            dict,
-        ) or not isinstance(
-            m,
-            dict,
-        ):
-            raise TypeError(
-                "package geometry and material must be dictionaries"
-            )
+    for index, item in enumerate(raw_packages):
+        if not isinstance(item, dict):
+            raise TypeError(f"scene.packages[{index}] must be a dictionary")
+        g = item.get("geometry", {})
+        m = item.get("material", {})
+        if not isinstance(g, dict) or not isinstance(m, dict):
+            raise TypeError("package geometry and material must be dictionaries")
         if "half_extents" not in g:
             raise ValueError(
                 f"scene.packages[{index}].geometry requires half_extents"
             )
         pose = RigidPose(
-            np.asarray(
-                g.get(
-                    "rotation",
-                    np.eye(3),
-                ),
-                dtype=float,
-            ),
-            np.asarray(
-                g.get(
-                    "translation",
-                    np.zeros(3),
-                ),
-                dtype=float,
-            ),
+            np.asarray(g.get("rotation", np.eye(3)), dtype=float),
+            np.asarray(g.get("translation", np.zeros(3)), dtype=float),
         )
         geometry = SuperquadricPackageGeometry(
-            np.asarray(
-                g["half_extents"],
-                dtype=float,
-            ),
-            float(
-                g.get(
-                    "exponent_xy",
-                    4.0,
-                )
-            ),
-            float(
-                g.get(
-                    "exponent_z",
-                    4.0,
-                )
-            ),
+            np.asarray(g["half_extents"], dtype=float),
+            float(g.get("exponent_xy", 4.0)),
+            float(g.get("exponent_z", 4.0)),
             pose,
-        )
-        material = (
-            _package_material_from_dict(
-                m
-            )
         )
         packages.append(
             PackageObject(
                 geometry,
-                material,
-                str(
-                    item.get(
-                        "name",
-                        f"package_{index}",
-                    )
-                ),
+                _package_material_from_dict(m),
+                str(item.get("name", f"package_{index}")),
             )
         )
 
-    md = data.get(
-        "medium",
-        {}
-    )
-    medium = _medium_from_dict(
-        md
-    )
-    return Scene(
-        tuple(
-            coils
-        ),
-        medium,
-        tuple(
-            packages
-        ),
-    )
+    medium = _medium_from_dict(data.get("medium", {}))
+    return Scene(tuple(coils), medium, tuple(packages))
 
 
 def canonical_json(data) -> str:
@@ -1358,6 +508,4 @@ def canonical_json(data) -> str:
 
 
 def content_hash(data) -> str:
-    return sha256(
-        canonical_json(data).encode("utf-8")
-    ).hexdigest()
+    return sha256(canonical_json(data).encode("utf-8")).hexdigest()
