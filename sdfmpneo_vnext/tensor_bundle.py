@@ -10,6 +10,10 @@ import tempfile
 from .bundle import LoadedVNextBundle
 from .device import resolve_torch_device
 from .system import MeshfreeVNextSystem, mvp_system_capabilities
+from .tensor_artifact_io import (
+    load_tensor_port_artifact,
+    load_tensor_spatial_artifact,
+)
 from .tensor_neural import TensorHybridNeuralResidualArtifact
 from .tensor_spatial_neural import (
     TensorHybridSpatialLossArtifact,
@@ -150,7 +154,7 @@ def load_tensor_bundle(
         raise ValueError("tensor bundle capability domain is incompatible")
 
     files = _validated_files(root, manifest)
-    port = TensorHybridNeuralResidualArtifact.load(
+    port = load_tensor_port_artifact(
         files["port"],
         device=resolved_device,
     )
@@ -159,7 +163,7 @@ def load_tensor_bundle(
         raise ValueError("tensor bundle port fingerprint mismatch")
     spatial = None
     if "spatial" in files:
-        spatial = TensorHybridSpatialLossArtifact.load(
+        spatial = load_tensor_spatial_artifact(
             files["spatial"],
             port,
             device=resolved_device,
