@@ -9,6 +9,10 @@ from sdfmpneo_vnext import (
     MQSConfig,
     MeshfreeVNextSystem,
 )
+from sdfmpneo_vnext.tensor_bundle import (
+    load_tensor_bundle,
+    publish_tensor_bundle,
+)
 from sdfmpneo_vnext.tensor_neural import train_tensor_hybrid_residual_surrogate
 from sdfmpneo_vnext.tensor_sampling import (
     TensorHybridSceneSamplerConfig,
@@ -117,7 +121,7 @@ def _train(sample):
     return port, spatial
 
 
-def test_tensor_spatial_fast_trains_prepares_and_round_trips(tmp_path):
+def test_tensor_spatial_fast_trains_prepares_round_trips_and_bundles(tmp_path):
     sample = _sample(1201)
     port, spatial = _train(sample)
     prepared = spatial.prepare(sample.scene, sample.frequency_hz)
@@ -172,6 +176,25 @@ def test_tensor_spatial_fast_trains_prepares_and_round_trips(tmp_path):
         np.ones(len(sample.scene.coils), dtype=complex),
     )
     assert np.isfinite(value)
+
+    bundle_path = tmp_path / "tensor-bundle"
+    manifest = publish_tensor_bundle(
+        bundle_path,
+        port,
+        spatial_artifact=restored,
+    )
+    assert manifest["artifact_family"] == "tensor_hybrid"
+    loaded = load_tensor_bundle(bundle_path)
+    loaded_ports = loaded.system.fast_ports(sample.scene, sample.frequency_hz)
+    expected_ports = port.predict_structured(sample.scene, sample.frequency_hz)
+    assert np.allclose(
+        loaded_ports.impedance,
+        expected_ports.impedance,
+        rtol=0.0,
+        atol=1e-12,
+    )
+    loaded_field = loaded.system.fast_spatial(sample.scene, sample.frequency_hz)
+    assert loaded_field.normalization_closure_error < 1e-6
 
 
 def test_tensor_spatial_fast_supports_lossy_tensor_background():
