@@ -12,6 +12,7 @@ from sdfmpneo_vnext import (
     SuperellipseSpiral,
     SuperquadricPackageGeometry,
     TabulatedMaterial,
+    TensorElectricMaterial,
     scene_from_dict,
     scene_to_dict,
 )
@@ -266,3 +267,57 @@ def test_tensor_thermal_dispersive_package_materials_round_trip():
                 probe
             ),
         )
+
+
+def test_tensor_electric_background_and_package_round_trip():
+    epsilon_background = np.diag([2.0, 3.0, 4.0])
+    sigma_background = np.diag([1.0e-5, 2.0e-5, 3.0e-5])
+    epsilon_package = np.diag([4.0, 5.0, 6.0])
+    sigma_package = np.diag([2.0e-5, 3.0e-5, 4.0e-5])
+    base = _serialization_base_scene(
+        TensorElectricMaterial(
+            relative_permittivity_tensor=epsilon_package,
+            conductivity_tensor=sigma_package,
+            relative_permeability=1.15,
+        )
+    )
+    scene = Scene(
+        base.coils,
+        TensorElectricMaterial(
+            relative_permittivity_tensor=epsilon_background,
+            conductivity_tensor=sigma_background,
+            relative_permeability=1.05,
+            thermal_conductivity_tensor=np.diag([0.3, 0.5, 0.8]),
+            density=1020.0,
+            heat_capacity=1250.0,
+        ),
+        base.packages,
+    )
+
+    payload = scene_to_dict(scene)
+    assert payload["medium"]["model"] == "tensor_electric"
+    assert payload["packages"][0]["material"]["model"] == "tensor_electric"
+    restored = scene_from_dict(payload)
+
+    assert isinstance(restored.medium, TensorElectricMaterial)
+    assert isinstance(restored.packages[0].material, TensorElectricMaterial)
+    assert np.allclose(
+        restored.medium.relative_permittivity_tensor,
+        epsilon_background,
+    )
+    assert np.allclose(
+        restored.medium.conductivity_tensor,
+        sigma_background,
+    )
+    assert np.allclose(
+        restored.medium.thermal_conductivity_tensor,
+        np.diag([0.3, 0.5, 0.8]),
+    )
+    assert np.allclose(
+        restored.packages[0].material.relative_permittivity_tensor,
+        epsilon_package,
+    )
+    assert np.allclose(
+        restored.packages[0].material.conductivity_tensor,
+        sigma_package,
+    )
