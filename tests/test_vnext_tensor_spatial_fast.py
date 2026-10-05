@@ -157,9 +157,14 @@ def test_tensor_spatial_fast_trains_prepares_and_round_trips(tmp_path):
             density=1100.0,
             heat_capacity=1300.0,
         ),
-        source_longitudinal_points=4,
-        source_radial_order=2,
-        source_angular_order=8,
+        longitudinal_segments=4,
+        radial_order=2,
+        angular_order=8,
+        package_axial_order=2,
+        package_radial_order=2,
+        package_azimuthal_order=8,
+        background_radial_order=3,
+        background_angular_order=8,
     )
     value = thermal.temperature_step(
         np.array([0.0, 0.0, 0.05]),
