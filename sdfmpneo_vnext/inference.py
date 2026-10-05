@@ -98,14 +98,7 @@ def _certified_prediction(
     frequency_hz: float,
     options,
 ):
-    """Certify through the same scene-aware backend used by the system.
-
-    Conductor-only scenes retain matrix-free correction options. Package and
-    tensor-electric scenes use the dense electric/magnetic interface truth and
-    hybrid discretization refinement. Tensor-background-only scenes can still
-    receive an algebraic/physical certificate; until a background-only tensor
-    refinement report exists they are explicitly marked discrete-uncertified.
-    """
+    """Certify through the same scene-aware backend used by the system."""
     options = {} if options is None else dict(options)
     coarse_segments = int(options.get("coarse_segments", 8))
     fine_segments = int(options.get("fine_segments", 12))
@@ -118,6 +111,15 @@ def _certified_prediction(
 
     heterogeneous = _uses_heterogeneous_reference(scene)
     convergence = None
+    magnetic_volume_axial_order = int(
+        options.get("magnetic_volume_axial_order", 8)
+    )
+    magnetic_volume_radial_order = int(
+        options.get("magnetic_volume_radial_order", 6)
+    )
+    magnetic_volume_azimuthal_order = int(
+        options.get("magnetic_volume_azimuthal_order", 24)
+    )
     if heterogeneous and scene.packages:
         convergence = hybrid_reference_convergence(
             scene,
@@ -129,15 +131,9 @@ def _certified_prediction(
             surface_azimuthal_order=int(
                 getattr(system, "dielectric_surface_azimuthal_order", 32)
             ),
-            magnetic_volume_axial_order=int(
-                options.get("magnetic_volume_axial_order", 8)
-            ),
-            magnetic_volume_radial_order=int(
-                options.get("magnetic_volume_radial_order", 6)
-            ),
-            magnetic_volume_azimuthal_order=int(
-                options.get("magnetic_volume_azimuthal_order", 24)
-            ),
+            magnetic_volume_axial_order=magnetic_volume_axial_order,
+            magnetic_volume_radial_order=magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
             tolerance=convergence_tolerance,
             surface_residual_tolerance=float(
                 options.get("surface_tolerance", 1e-9)
@@ -160,6 +156,9 @@ def _certified_prediction(
             frequency_hz,
             convergence_report=convergence,
             config=fine,
+            magnetic_volume_axial_order=magnetic_volume_axial_order,
+            magnetic_volume_radial_order=magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
             algebraic_tolerance=float(
                 options.get("algebraic_tolerance", 1e-7)
             ),
@@ -180,7 +179,7 @@ def _certified_prediction(
         prediction = StructuredPortPrediction(
             certified.impedance,
             reference_prediction.dissipation_channels,
-            reference_prediction.channel_names,
+            reference_prediction.channel_labels,
         )
     else:
         certified = system.certified_ports(
@@ -234,10 +233,7 @@ def _spatial_query(spatial, query, currents):
     }
     if currents is not None:
         item["joule_density"] = float(
-            0.5
-            * np.real(
-                np.vdot(currents, matrix @ currents)
-            )
+            0.5 * np.real(np.vdot(currents, matrix @ currents))
         )
     return item
 
@@ -344,10 +340,7 @@ def run_system_inference(system, request):
         output["currents"] = _complex_json(currents)
         output["coil_power"] = prediction.coil_power(currents).tolist()
         output["port_power"] = float(
-            0.5
-            * np.real(
-                np.vdot(currents, prediction.impedance @ currents)
-            )
+            0.5 * np.real(np.vdot(currents, prediction.impedance @ currents))
         )
 
     queries = request.get("spatial_queries", ())
