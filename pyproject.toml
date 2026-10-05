@@ -4,18 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sdfmpneo"
-version = "0.10.0"
-description = "Solution-data-free electromagnetic-thermal surrogate training and arbitrary-time inference for research"
+version = "0.17.0"
+description = "Structure-preserving geometry-to-spatial-Joule electrothermal surrogate with geometry-local thermal ROM"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10", "threadpoolctl>=3.1"]
 
 [project.scripts]
 sdfmpneo = "sdfmpneo.__main__:main"
+sdfmpneo-vnext = "sdfmpneo_vnext.__main__:main"
+sdfmpneo-vnext-tensor = "sdfmpneo_vnext.tensor_cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
-cad = ["gmsh>=4.11"]
 gui = ["PyQt6>=6.5", "pyqtgraph>=0.13.3"]
+neural = ["torch>=2.2"]
 
 [tool.setuptools.packages.find]
 include = ["sdfmpneo*"]

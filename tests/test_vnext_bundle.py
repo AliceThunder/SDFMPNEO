@@ -1,0 +1,519 @@
+import numpy as np
+import pytest
+
+torch = pytest.importorskip("torch")
+
+from sdfmpneo_vnext import (
+    CoilObject,
+    ConductorMaterial,
+    HomogeneousMedium,
+    HybridTeacherSample,
+    IsotropicMaterial,
+    PackageObject,
+    Scene,
+    SuperellipseSpiral,
+    SuperquadricPackageGeometry,
+    TeacherSample,
+    analytic_port_baseline,
+    encode_hybrid_scene_invariant,
+    encode_scene_invariant,
+)
+from sdfmpneo_vnext.bundle import (
+    load_bundle,
+    publish_bundle,
+)
+from sdfmpneo_vnext.neural import (
+    NeuralResidualArtifact,
+    PhysicsFactoredResidualNet,
+    ResidualNormalizer,
+)
+from sdfmpneo_vnext.hybrid_neural import (
+    HybridNeuralResidualArtifact,
+    HybridNormalizer,
+    HybridPhysicsFactoredResidualNet,
+)
+from sdfmpneo_vnext.uncertainty import FastErrorCalibrator
+
+
+def _scene():
+    copper = ConductorMaterial(5.8e7)
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.025,
+            0.022,
+            0.8,
+            0.001,
+            0.001,
+            conductor_width=1e-3,
+            conductor_thickness=8e-4,
+        ),
+        copper,
+    )
+    return Scene(
+        (coil,),
+        HomogeneousMedium(),
+    )
+
+
+def _artifact():
+    scene = _scene()
+    frequency = 50_000.0
+    baseline = analytic_port_baseline(
+        scene,
+        frequency,
+        segments_per_coil=32,
+    )
+    target = baseline.impedance
+    sample = TeacherSample(
+        scene,
+        frequency,
+        encode_scene_invariant(
+            scene,
+            frequency,
+        ),
+        baseline.resistance,
+        target.imag,
+        target,
+        32,
+    )
+    normalizer = ResidualNormalizer.fit(
+        (sample,)
+    )
+    model = PhysicsFactoredResidualNet(
+        hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+    return NeuralResidualArtifact(
+        model,
+        normalizer,
+        baseline_segments=32,
+    )
+
+
+def test_bundle_round_trip_and_calibrated_fast(tmp_path):
+    port = _artifact()
+    calibrator = FastErrorCalibrator(
+        quantile=0.95,
+        scale=1.5,
+        indicator_floor=1e-3,
+        validation_samples=10,
+        ensemble_size=1,
+        baseline_weight=0.5,
+        ensemble_weight=0.0,
+    )
+    root = tmp_path / "bundle"
+    manifest = publish_bundle(
+        root,
+        port,
+        calibrator=calibrator,
+        metadata={
+            "test": True
+        },
+    )
+    assert set(
+        manifest["files"]
+    ) == {
+        "port",
+        "calibrator",
+    }
+    assert (
+        manifest["capabilities"]["background_medium"]
+        == "homogeneous_isotropic_unbounded_frequency_response"
+    )
+    assert not manifest["capabilities"]["heterogeneous_media"]
+    assert not manifest["capabilities"]["retardation"]
+
+    loaded = load_bundle(
+        root
+    )
+    scene = _scene()
+    direct = port.predict(
+        scene,
+        50_000.0,
+    )
+    restored = (
+        loaded.system.fast_ports(
+            scene,
+            50_000.0,
+        ).impedance
+    )
+    assert np.allclose(
+        direct,
+        restored,
+        rtol=0,
+        atol=1e-12,
+    )
+    calibrated = loaded.calibrated_fast(
+        scene,
+        50_000.0,
+        baseline_segments=32,
+    )
+    assert (
+        calibrated.relative_error_bound
+        >= 0.0
+    )
+
+
+def test_bundle_detects_artifact_tampering(tmp_path):
+    root = tmp_path / "bundle"
+    publish_bundle(
+        root,
+        _artifact(),
+    )
+    port_path = (
+        root
+        / "port.pt"
+    )
+    with port_path.open(
+        "ab"
+    ) as handle:
+        handle.write(
+            b"tamper"
+        )
+    with pytest.raises(
+        ValueError,
+        match="checksum mismatch",
+    ):
+        load_bundle(
+            root
+        )
+
+
+
+def test_bundle_manifest_port_fingerprint_is_verified(tmp_path):
+    root = tmp_path / "bundle"
+    port = _artifact()
+    manifest = publish_bundle(
+        root,
+        port,
+    )
+    assert (
+        manifest["port_fingerprint"]
+        == port.fingerprint()
+    )
+
+    manifest_path = root / "manifest.json"
+    payload = __import__("json").loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    payload["port_fingerprint"] = "0" * 64
+    manifest_path.write_text(
+        __import__("json").dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="port fingerprint mismatch",
+    ):
+        load_bundle(
+            root
+        )
+
+
+
+def test_development_bundle_is_rejected_when_release_is_required(tmp_path):
+    root = tmp_path / "development"
+    manifest = publish_bundle(
+        root,
+        _artifact(),
+    )
+    assert (
+        manifest["release_status"]
+        == "development"
+    )
+    load_bundle(
+        root,
+        require_release=False,
+    )
+    with pytest.raises(
+        ValueError,
+        match="development-only",
+    ):
+        load_bundle(
+            root,
+            require_release=True,
+        )
+
+
+def test_release_bundle_requires_all_locked_audits_to_pass(tmp_path):
+    good_gate = {
+        "port": {
+            "passed": True,
+        },
+        "spatial": {
+            "passed": True,
+        },
+        "certified": {
+            "passed": True,
+        },
+    }
+    root = tmp_path / "released"
+    manifest = publish_bundle(
+        root,
+        _artifact(),
+        release_gate=good_gate,
+    )
+    assert (
+        manifest["release_status"]
+        == "released"
+    )
+    loaded = load_bundle(
+        root,
+        require_release=True,
+    )
+    assert (
+        loaded.manifest["release_gate"]
+        == good_gate
+    )
+
+    bad_gate = {
+        **good_gate,
+        "certified": {
+            "passed": False,
+        },
+    }
+    with pytest.raises(
+        ValueError,
+        match="failed audits",
+    ):
+        publish_bundle(
+            tmp_path / "bad",
+            _artifact(),
+            release_gate=bad_gate,
+        )
+
+
+
+def test_released_bundle_rejects_unbound_calibrator(tmp_path):
+    gate = {
+        "port": {"passed": True},
+        "spatial": {"passed": True},
+        "certified": {"passed": True},
+    }
+    calibrator = FastErrorCalibrator(
+        quantile=0.95,
+        scale=1.0,
+        indicator_floor=1e-3,
+        validation_samples=4,
+        ensemble_size=1,
+        baseline_weight=0.5,
+        ensemble_weight=0.0,
+    )
+    with pytest.raises(
+        ValueError,
+        match="requires a calibrator bound",
+    ):
+        publish_bundle(
+            tmp_path / "released",
+            _artifact(),
+            calibrator=calibrator,
+            release_gate=gate,
+        )
+
+
+
+def test_bundle_rejects_tampered_capability_domain(tmp_path):
+    root = tmp_path / "bundle-capabilities"
+    publish_bundle(
+        root,
+        _artifact(),
+    )
+    manifest_path = (
+        root
+        / "manifest.json"
+    )
+    payload = __import__("json").loads(
+        manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    payload[
+        "capabilities"
+    ][
+        "heterogeneous_media"
+    ] = True
+    manifest_path.write_text(
+        __import__("json").dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="capability domain",
+    ):
+        load_bundle(
+            root
+        )
+
+
+def _hybrid_artifact():
+    base = _scene()
+    package = PackageObject(
+        SuperquadricPackageGeometry(
+            np.asarray(
+                [
+                    0.034,
+                    0.030,
+                    0.007,
+                ],
+                dtype=float,
+            )
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+            relative_permeability=1.0,
+            conductivity=0.0,
+        ),
+        "package",
+    )
+    scene = Scene(
+        base.coils,
+        base.medium,
+        (
+            package,
+        ),
+    )
+    frequency = 50_000.0
+    encoded = encode_hybrid_scene_invariant(
+        scene,
+        frequency,
+    )
+    baseline = analytic_port_baseline(
+        Scene(
+            scene.coils,
+            scene.medium,
+        ),
+        frequency,
+        segments_per_coil=32,
+    )
+    target = (
+        baseline.resistance
+        + 1j
+        * (
+            2.0
+            * np.pi
+            * frequency
+            * baseline.inductance
+        )
+    )
+    channels = np.zeros(
+        (
+            2,
+            1,
+            1,
+        ),
+        dtype=complex,
+    )
+    channels[
+        0,
+        0,
+        0,
+    ] = target.real[
+        0,
+        0,
+    ]
+    sample = HybridTeacherSample(
+        scene=scene,
+        frequency_hz=frequency,
+        encoded=encoded,
+        baseline_resistance=(
+            baseline.resistance
+        ),
+        baseline_reactance=(
+            target.imag
+        ),
+        target_impedance=target,
+        target_dissipation_channels=(
+            channels
+        ),
+        baseline_segments=32,
+        surface_vertical_order=8,
+        surface_azimuthal_order=16,
+        surface_residual=0.0,
+        raw_potential_reciprocity_defect=0.0,
+        power_closure_error=0.0,
+    )
+    normalizer = HybridNormalizer.fit(
+        (
+            sample,
+        )
+    )
+    model = HybridPhysicsFactoredResidualNet(
+        hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+    return (
+        scene,
+        HybridNeuralResidualArtifact(
+            model,
+            normalizer,
+            baseline_segments=32,
+        ),
+    )
+
+
+def test_hybrid_bundle_round_trip_selects_hybrid_artifact_family(tmp_path):
+    scene, port = _hybrid_artifact()
+    root = tmp_path / "hybrid-bundle"
+    manifest = publish_bundle(
+        root,
+        port,
+    )
+    assert (
+        manifest[
+            "artifact_family"
+        ]
+        == "hybrid"
+    )
+    assert (
+        manifest[
+            "dataset_schema"
+        ]
+        == 3
+    )
+    assert (
+        manifest[
+            "reference_backend"
+        ]
+        == "dielectric_mixed_sie"
+    )
+
+    loaded = load_bundle(
+        root
+    )
+    assert isinstance(
+        loaded.port_artifact,
+        HybridNeuralResidualArtifact,
+    )
+    assert (
+        loaded.port_artifact.supports_packages
+    )
+    prediction = loaded.system.fast_ports(
+        scene,
+        50_000.0,
+    )
+    assert prediction.impedance.shape == (
+        1,
+        1,
+    )
+    assert (
+        prediction.power_closure_error()
+        < 1e-10
+    )

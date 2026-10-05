@@ -1,0 +1,229 @@
+\section{First implementation MVP: frozen mathematical scope}
+\label{sec:mvp}
+
+The first vNext implementation deliberately solves a smaller problem completely
+before enabling every general feature in the architecture.
+
+\subsection{MVP scene class}
+
+The MVP supports:
+\begin{enumerate}
+\item $N_c\ge1$ independent superelliptic spiral coils;
+\item arbitrary independent rigid poses in $\SE(3)$;
+\item continuous superellipse exponent, aspect ratio, pitch, turns, conductor
+      width/thickness, and superelliptic cross-section exponent;
+\item finite-conductivity isotropic conductors;
+\item one homogeneous, isotropic, unbounded passive electromagnetic background;
+\item narrowband sinusoidal excitation at arbitrary frequency within a declared
+      artifact band;
+\item arbitrary complex multi-port current or voltage/circuit excitation;
+\item conductor Joule loss;
+\item homogeneous or piecewise-simple thermal environment sufficient for a
+      Green/compact thermal transfer model;
+\item linear temperature evolution first, followed by temperature-dependent
+      conductor resistance as the first nonlinear extension.
+\end{enumerate}
+
+There is no restriction to coplanar coils, small rotations, matched coil shape,
+or a fixed number of turns.
+
+\subsection{Explicitly excluded from MVP}
+
+The first implementation does not yet include:
+\begin{enumerate}
+\item dielectric/magnetic package scattering in the electromagnetic solve;
+\item localized electromagnetic VIE for continuously varying media;
+\item broadband electromagnetic internal states;
+\item nonlinear magnetic materials;
+\item internal conductor branching/junction networks;
+\item phase change or radiative thermal nonlinearity;
+\item learned operator-level preconditioner correction.
+\end{enumerate}
+The public Scene schema already has extension points for these features; they
+are absent from the first backend, not removed from the theory.
+
+\subsection{MVP physics pipeline}
+
+The complete MVP path is
+\[
+ \text{continuous coils}
+ \rightarrow
+ \text{finite-cross-section current--charge IE}
+ \rightarrow
+ \{Z,H_q\}
+ \rightarrow
+ \text{loss channels}
+ \rightarrow
+ \text{stable thermal ROM}
+ \rightarrow
+ T(\mathbf r,t).
+\]
+The neural path is added only after the REFERENCE path is independently
+converged.
+
+\subsection{MVP reference benchmarks}
+
+At minimum the teacher must pass the following locked tests.
+
+\paragraph{DC resistance.}
+For straight/sufficiently simple conductors in the low-frequency limit, compare
+against
+\[
+ R_{\rm dc}=\rho_e L/A
+\]
+including convergence as modal rank is reduced toward the uniform mode.
+
+\paragraph{Self inductance trend.}
+For circular/superelliptic loops, compare against trusted analytic/asymptotic
+limits where valid and an independent converged numerical oracle elsewhere.
+
+\paragraph{Mutual inductance.}
+For coaxial circular loops, compare against the classical elliptic-integral
+reference. Then rotate/translate both loops together and require invariant port
+results to numerical tolerance.
+
+\paragraph{Reciprocity.}
+For every reciprocal two/multi-coil scene,
+\[
+ Z-Z^\T
+\]
+must converge to zero under teacher refinement.
+
+\paragraph{Passivity.}
+For random complex currents,
+\[
+ \Rea(i^\ast Zi)\ge0
+\]
+up to declared numerical tolerance.
+
+\paragraph{Skin/proximity convergence.}
+Sweep frequency so
+\[
+ \min(w,h)/\delta
+\]
+crosses from $\ll1$ to $O(1)$ and larger. Conductor modal enrichment must
+converge without changing any background discretization.
+
+\paragraph{Near-separation stress.}
+Bring two conductors close without contact. Near-singular quadrature must
+converge and the result must remain independent of arbitrary quadrature
+partition orientation.
+
+\paragraph{Pose invariance.}
+Apply random common rigid transforms to an entire scene. Global port matrices
+must remain invariant; spatial current/loss queries must transform
+equivariantly.
+
+\paragraph{Power closure.}
+For every port-current test,
+\[
+ \frac12 i^\ast\Herm(Z)i
+\]
+must agree with integrated conductor heat plus any declared outward channel.
+
+\paragraph{Thermal impulse/step response.}
+Compare Green/reduced thermal response against an independent high-accuracy
+thermal reference for selected geometries and source channels.
+
+\paragraph{Thermal energy balance.}
+Over every accepted trajectory,
+input heat minus environmental loss equals stored thermal-energy change to the
+declared integration tolerance.
+
+\subsection{MVP numerical acceptance targets}
+
+Exact numerical values are configuration parameters, but the first development
+target is:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Quantity & Initial target\\
+\midrule
+teacher algebraic residual & $\le10^{-10}$\\
+reciprocity defect & $\le10^{-10}$ relative\\
+power closure & $\le10^{-6}$ relative\\
+basis/quadrature convergence & $\le10^{-4}$ relative\\
+independent port-$Z$ benchmark & $\le5\times10^{-3}$ relative\\
+thermal transfer benchmark & $\le10^{-2}$ relative\\
+FAST port-$Z$ validation & $\le10^{-2}$ median, $\le5\times10^{-2}$ max\\
+FAST thermal observable validation & $\le5\times10^{-2}$ max\\
+CERTIFIED requested observables & user tolerance or explicit uncertified status\\
+\bottomrule
+\end{tabular}
+\end{center}
+These are engineering development targets, not claims of guaranteed universal
+accuracy. Release values may be tightened after the teacher is characterized.
+
+\subsection{MVP neural model}
+
+Only after the REFERENCE dataset passes the benchmarks above:
+\begin{enumerate}
+\item train isolated-object self models;
+\item train pair interaction kernels over relative pose and intrinsic geometry;
+\item form the analytic/self/pair baseline;
+\item train a small many-body residual graph network;
+\item train the continuous conductor-loss factor decoder;
+\item train structured thermal coefficient corrections;
+\item calibrate uncertainty against fixed validation and CERTIFIED residuals.
+\end{enumerate}
+
+For two-coil homogeneous scenes, the many-body residual may be nearly zero. In
+that case the correct result is a small/simple neural model, not artificially
+increasing network capacity.
+
+\subsection{MVP FAST interface}
+
+A minimal query is
+\[
+ \texttt{predict(scene, excitation, times, points, mode=FAST)}.
+\]
+It returns:
+\begin{enumerate}
+\item reciprocal/passive $Z(\omega)$;
+\item currents/voltages after optional circuit solve;
+\item total conductor loss and optional continuous $q(\mathbf r)$ queries;
+\item temperatures at requested times/points;
+\item uncertainty/calibration metadata.
+\end{enumerate}
+
+\subsection{MVP CERTIFIED interface}
+
+CERTIFIED mode additionally returns:
+\begin{enumerate}
+\item electromagnetic residual and correction count;
+\item port observable error estimate;
+\item power-closure residual;
+\item thermal state/integration residual;
+\item final certification status.
+\end{enumerate}
+
+\subsection{MVP stop conditions}
+
+Implementation stops and the theory is revisited if any of the following occur:
+\begin{enumerate}
+\item conductor self accuracy requires a world-volume mesh;
+\item cross-section rank grows comparably to a full 3D conductor volume
+      discretization over the target regime;
+\item common rigid motion changes port results materially;
+\item the teacher needs empirical fine-minus-coarse correction to pass basic
+      conductor benchmarks;
+\item FAST accuracy improves only by predicting world-coordinate fields;
+\item CERTIFIED correction routinely costs as much as a cold REFERENCE solve.
+\end{enumerate}
+
+These are architecture falsification conditions, not bugs to patch around.
+
+\subsection{MVP completion criterion}
+
+The first implementation is complete only when the same artifact can:
+\begin{enumerate}
+\item evaluate previously unseen arbitrary-pose superelliptic coils;
+\item produce passive reciprocal port response;
+\item provide continuous conductor heat queries;
+\item evolve temperature in time;
+\item run FAST without a Maxwell solve;
+\item escalate the same query to CERTIFIED mode;
+\item reproduce locked REFERENCE benchmarks without geometry-specific hacks.
+\end{enumerate}
+Only then should package SIE/VIE and broadband physics become implementation
+priorities.

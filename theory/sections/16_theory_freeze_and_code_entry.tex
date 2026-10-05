@@ -1,0 +1,116 @@
+\section{Theory freeze and entry criteria for code implementation}
+\label{sec:theory-freeze}
+
+This section marks the end of architecture design required before the first
+implementation branch.
+
+\subsection{Status}
+
+The vNext theory is considered \textbf{implementation-ready} for the MVP in
+Section~\ref{sec:mvp} when the following are defined:
+\begin{enumerate}
+\item continuous Scene and superelliptic conductor geometry;
+\item admissibility and material-domain assumptions;
+\item homogeneous current--potential--charge integral teacher;
+\item canonical work-conjugate port definition;
+\item singular/near/far quadrature policy;
+\item low-frequency-stable mixed system and correctness solver;
+\item finite-cross-section nested modal enrichment;
+\item physical loss operator and exact power closure;
+\item stable thermal transfer/reduced realization;
+\item carrier-envelope electrothermal coupling;
+\item physics-factored neural architecture;
+\item FAST/CERTIFIED/REFERENCE semantics;
+\item immutable data/split/active-learning policy;
+\item analytic and independent benchmark suite;
+\item explicit architecture falsification criteria.
+\end{enumerate}
+All of these are now specified by this document.
+
+\subsection{Open questions that do not block coding}
+
+The following remain research choices and are expected to be resolved by
+prototype measurements:
+\begin{enumerate}
+\item optimal Jacobi/boundary-layer conductor mode ordering;
+\item exact knot-refinement heuristic along the spiral;
+\item FMM versus hierarchical-matrix acceleration;
+\item best scalable Schur/preconditioner approximation;
+\item graph architecture and latent widths;
+\item best loss-channel joint-reduction algorithm;
+\item uncertainty-calibration method;
+\item broadband reciprocal port-Hamiltonian realization;
+\item SIE/VIE formulations beyond the MVP.
+\end{enumerate}
+None changes the MVP public Scene, port, power, loss, thermal, or certification
+semantics. Therefore they are not reasons to delay implementation.
+
+\subsection{Implementation phases}
+
+The first implementation branch proceeds in five phases.
+
+\paragraph{I0: geometry and analytic benchmarks.}
+Implement continuous superellipse/sweep geometry, Bishop frame, quadrature
+patches, terminals, rigid-transform tests, and benchmark formulas. No neural
+network.
+
+\paragraph{I1: dense homogeneous conductor teacher.}
+Implement the mixed KKT operator of Section~\ref{sec:stable-mixed}, dense
+singular/near interaction blocks, port extraction, loss integration, and nested
+basis/quadrature convergence. This phase is the first hard go/no-go point.
+
+\paragraph{I2: thermal transfer and electrothermal loop.}
+Implement loss channels, analytic/compact thermal transfer, stable reduced
+thermal dynamics, carrier-envelope coupling, and time/steady benchmarks.
+
+\paragraph{I3: physics-factored FAST surrogate.}
+Generate immutable REFERENCE data, train self/pair/many-body structured models,
+continuous loss decoder, and thermal correction. FAST must pass fixed validation.
+
+\paragraph{I4: CERTIFIED correction and scale-up.}
+Add matrix-free/hierarchical/FMM application, block FGMRES, FAST-to-physical
+lifting, goal-oriented certification, active learning, and performance caches.
+
+Package SIE/VIE and broadband EM begin only after I0--I4 demonstrate the MVP
+architecture.
+
+\subsection{Go/no-go after I1}
+
+Continue to neural implementation only if the dense homogeneous conductor
+teacher simultaneously demonstrates:
+\begin{enumerate}
+\item DC limit;
+\item coaxial mutual inductance;
+\item generic-pose Neumann thin-wire limit;
+\item finite-cross-section skin/proximity convergence;
+\item reciprocity;
+\item rigid-motion invariance;
+\item power closure;
+\item basis and quadrature convergence without world-volume refinement.
+\end{enumerate}
+
+If these fail because of the chosen mixed formulation or modal space, revise
+that isolated numerical choice before writing neural code. Do not change the
+public architecture to rescue the teacher.
+
+\subsection{Theory change control after code begins}
+
+After the implementation branch starts:
+\begin{enumerate}
+\item corrections to algebra/signs/definitions are allowed with a theory
+      version increment;
+\item numerical basis/preconditioner choices may change without changing public
+      schema if invariants are preserved;
+\item changing Scene semantics, port work convention, continuous loss
+      definition, FAST/CERTIFIED meaning, or removing hard physical invariants
+      requires an explicit architecture revision;
+\item implementation difficulties alone are not sufficient justification for
+      restoring a global world-volume mesh.
+\end{enumerate}
+
+\subsection{Conclusion}
+
+There are no remaining theoretical blockers to starting I0 and I1. Further
+theoretical work should now be driven by concrete failures of the new
+implementation or by post-MVP extensions, not by speculative expansion of the
+architecture.

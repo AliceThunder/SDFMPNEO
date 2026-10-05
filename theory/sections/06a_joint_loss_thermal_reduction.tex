@@ -1,0 +1,108 @@
+\section{Joint reduction of electromagnetic loss and thermal response}
+\label{sec:joint-loss-thermal}
+
+Reducing the electromagnetic loss field and the thermal dynamics independently
+can waste rank on heat patterns that are electromagnetically distinct but
+thermally indistinguishable. vNext therefore permits a joint,
+observable-aware reduction.
+
+\subsection{Fine loss dictionary}
+
+Let a high-fidelity electromagnetic teacher produce a dictionary of PSD loss
+patterns
+\[
+  q(\mathbf r;u)
+  \approx
+  \sum_{k=1}^{K_q}\alpha_k(u)\Psi_k^{\rm fine}(\mathbf r),
+\]
+where $u$ spans port currents, frequencies, temperatures, and representative
+scenes.
+
+The dictionary is not exposed online. It is an offline object used to discover
+thermal source channels.
+
+\subsection{Thermal transfer metric}
+
+Let $\mathcal H_T$ map a heat source to the set of thermal observables over the
+declared time window. Define the source-response inner product
+\[
+ \inner{q_1}{q_2}_{\mathcal H}
+ =
+ \int_{\Gamma_s}
+ w(s)
+ \inner{\mathcal H_T(s)q_1}
+        {\mathcal H_T(s)q_2}\,\dd\mu(s),
+\]
+where $\Gamma_s$ is a set/contour of Laplace samples and $w$ selects relevant
+time scales and observations.
+
+Two heat patterns that differ strongly in $L^2(\Omega)$ but have nearly the same
+thermal response are close in this metric.
+
+\subsection{Thermally observable source basis}
+
+The reduced heat basis
+\[
+ \{\Psi_\ell\}_{\ell=1}^{R_q}
+\]
+is obtained by a POD/SVD/eigendecomposition in the transfer metric above, or by
+an equivalent source-side controllability/observability construction. The rank
+is selected so
+\[
+ \epsilon_{\rm source\to T}
+ =
+ \sup_{q\in\mathcal Q_{\rm val}}
+ \frac{
+  \norm{\mathcal H_T(q-\Pi_q q)}_{\mathcal Y}
+ }{
+  \max(\norm{\mathcal H_Tq}_{\mathcal Y},\epsilon_T)
+ }
+ \le \tau_q .
+\]
+Thus source rank is tied directly to temperature accuracy.
+
+\subsection{Preserving local positivity}
+
+An observable-optimal linear basis may contain signed fields. The online loss
+decoder therefore retains a PSD/non-negative fine factorization and maps it to
+source amplitudes through an energy-preserving aggregation:
+\[
+  p_\ell
+  =
+  \int w_\ell(\mathbf r)q(\mathbf r)\dd V,
+  \qquad
+  w_\ell(\mathbf r)\ge0
+\]
+when strict channel positivity is required. More general signed latent channels
+are allowed internally only if the continuous reconstructed physical heat field
+remains non-negative and integrated power closes exactly.
+
+\subsection{Joint source/state realization}
+
+A stronger reduction forms one coupled realization
+\[
+  C_T\dot z=-G_Tz+\widetilde B_T a_q,
+\]
+where $a_q$ are coefficients of a compact PSD loss factor. Source basis and
+thermal state basis are optimized together to minimize held-out temperature
+observable error.
+
+\subsection{Geometry dependence}
+
+Source modes are object-local and transported with geometry. A conductor
+surface/volume heat pattern follows its conductor pose automatically; only its
+intrinsic profile and modal amplitude change. This avoids relearning a moving
+heat source in world coordinates.
+
+\subsection{Certification}
+
+The release suite reports both
+\[
+  \epsilon_q
+  \quad\text{and}\quad
+  \epsilon_{q\to T}.
+\]
+A relatively large pointwise loss-field error may be acceptable only if the
+declared product does not require that field and the thermally observable error
+is below budget. If the API exposes spatial Joule density as an engineering
+output, its separate spatial error budget remains mandatory.

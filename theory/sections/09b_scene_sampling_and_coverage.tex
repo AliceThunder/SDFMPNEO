@@ -1,0 +1,188 @@
+\section{Scene sampling, symmetry quotient, and coverage}
+\label{sec:scene-sampling}
+
+Arbitrary-pose support requires a training and validation measure defined on the
+physical scene space rather than on an arbitrary ordered parameter vector.
+
+\subsection{Quotient by global rigid motion}
+
+In an isotropic homogeneous electromagnetic background, a common scene transform
+\[
+  g_0\cdot\mathcal S
+\]
+does not change port observables. Therefore training samples are generated on
+the quotient space
+\[
+  \mathfrak S/\SE(3)
+\]
+whenever the environment shares that symmetry.
+
+For a two-object scene, one object may be fixed as a gauge frame:
+\[
+  g_1=I,\qquad g_{12}=g_1^{-1}g_2.
+\]
+For a general scene, a canonical root object or center-of-mass/inertia frame may
+be used only for sampling convenience; the neural model itself remains
+permutation-aware and relative-pose based.
+
+When the environment breaks global rigid symmetry, for example a layered medium
+or fixed wall, the environment frame becomes physical and is retained.
+
+\subsection{Uniform rotation sampling}
+
+Euler-angle components are not sampled independently and uniformly because this
+does not produce a uniform distribution on $\SO(3)$ and overweights some
+orientations.
+
+For isotropic pose coverage, draw
+\[
+  q=\frac{g}{\norm g_2},\qquad
+  g_k\sim\mathcal N(0,1),
+\]
+where $q$ is a unit quaternion, identifying $q$ and $-q$. This induces the Haar
+measure on $\SO(3)$.
+
+Restricted-orientation domains are specified geometrically, for example by a
+cone around a nominal normal plus free twist, and sampled with the correct
+surface/solid-angle measure.
+
+\subsection{Relative translation variables}
+
+Raw Cartesian translation is replaced by dimensionless interaction variables:
+\[
+  \widetilde d_{ij}=\frac{t_j-t_i}{L_{ij}},
+\]
+where $L_{ij}$ is an intrinsic pair scale such as the geometric mean of coil
+diameters.
+
+Sampling is stratified by
+\[
+  \frac{d_{\rm gap}}{L_{ij}},
+  \qquad
+  \frac{d_{\rm gap}}{\min(w_i,h_i,w_j,h_j)},
+\]
+because electromagnetic difficulty changes rapidly near contact. Near-field
+regimes receive explicit probability mass instead of relying on uniform volume
+sampling, which overwhelmingly produces weakly coupled far configurations.
+
+\subsection{Intrinsic geometry sampling}
+
+Strictly positive size variables are sampled in dimensionless or logarithmic
+coordinates when the declared range spans large ratios:
+\[
+  \ell=\log(L/L_0).
+\]
+Superellipse exponent, aspect ratio, pitch-to-width ratio,
+thickness-to-width ratio, and turn count are sampled directly in physically
+valid transformed coordinates. Geometry constraints are enforced before a
+candidate reaches the teacher.
+
+A continuous turn count means that terminal endpoints may stop after a
+fractional turn; it does not imply a fractional topological conductor.
+
+\subsection{Material and frequency sampling}
+
+Material samples are drawn from constitutive parameter spaces, not only from
+named material IDs. Frequency is sampled in
+\[
+  \log\omega
+\]
+when several decades are covered, with additional strata near regime
+transitions such as
+\[
+  \min(w,h)/\delta\approx1
+\]
+or electrical size
+\[
+  |k|L\approx1.
+\]
+
+\subsection{Variable object count}
+
+The training measure is a mixture
+\[
+  \pi(\mathcal S)
+  =
+  \sum_{n=1}^{N_{\max}}
+  \pi_n\,\pi(\mathcal S\mid N_{\rm obj}=n).
+\]
+Low-order self/pair data are deliberately overrepresented early because they
+are reusable across many larger scenes. Multi-object scenes then train the
+many-body residual.
+
+Object count beyond the trained range is marked extrapolative unless the
+selected graph architecture and release suite explicitly certify such
+generalization.
+
+\subsection{Physics-regime stratification}
+
+Every scene is tagged by dimensionless regime descriptors such as
+\[
+ \chi_{\rm skin},\quad
+ \kappa_{\rm scene},\quad
+ d_{\rm gap}/L,\quad
+ \text{material contrast},\quad
+ N_{\rm obj},\quad
+ \text{thermal Biot-like groups}.
+\]
+Validation and release sets are stratified over these descriptors. A low global
+mean error cannot hide a failed near-contact, high-skin, large-rotation, or
+strong-contrast regime.
+
+\subsection{Fixed validation cells in regime space}
+
+Before training begins, define immutable validation cells
+\[
+  \mathcal V_1,\ldots,\mathcal V_K
+\]
+covering combinations of important regimes. Model selection reports
+\[
+  \epsilon_k
+  =
+  \max_{\mathcal S\in\mathcal V_k}
+  \epsilon(\mathcal S)
+\]
+and a declared aggregate. Active learning cannot move scenes between these
+cells or replace a difficult cell with easier new samples.
+
+\subsection{Active-learning candidate pool}
+
+Candidate generation uses a broad physical proposal distribution. Acquisition
+score combines
+\[
+ a(\mathcal S)
+ =
+ w_r\eta_{\rm residual}
+ +w_o\eta_{\rm observable}
+ +w_u\eta_{\rm uncertainty}
+ +w_c\eta_{\rm coverage}.
+\]
+The coverage term is computed in a dimensionless physics feature space or
+learned invariant latent, but it is secondary to actual residual/observable
+error. Diversity constraints prevent selecting many nearly identical high-score
+candidates.
+
+\subsection{Symmetry tests as zero-cost data}
+
+Common rigid transforms and object relabelings produce exact transformed
+answers and are used as invariance/equivariance tests. They need not become
+independent expensive truth solves.
+
+For reciprocal identical-object pairs, swapping object/port labels gives exact
+matrix permutation relations. These identities are mandatory unit tests for
+the data pipeline and network decoder.
+
+\subsection{Extrapolation declaration}
+
+Every artifact stores the support/coverage summary of:
+\[
+  \{\text{intrinsic geometry},
+    \text{relative pose},
+    \text{materials},
+    \omega,
+    T,
+    N_{\rm obj}\}.
+\]
+FAST mode may return an extrapolation warning outside this support.
+CERTIFIED mode remains authoritative if the physical correction and observable
+certificate succeed.

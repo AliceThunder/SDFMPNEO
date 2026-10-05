@@ -1,0 +1,3339 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path
+import json
+import math
+import numpy as np
+
+try:
+    import torch
+    from torch import nn
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(
+        "sdfmpneo_vnext.hybrid_neural requires the 'neural' extra: "
+        "pip install 'sdfmpneo[neural]'"
+    ) from exc
+
+from .analytic_baseline import analytic_port_baseline
+from .hybrid_domain import (
+    validate_hybrid_geometry_domain,
+    validate_package_conductor_topology,
+)
+from .hybrid_features import (
+    EncodedHybridScene,
+    encode_hybrid_scene_invariant,
+)
+from .hybrid_training_data import HybridTeacherSample
+from .prediction import StructuredPortPrediction
+from .scene import Scene
+
+
+HYBRID_ARTIFACT_SCHEMA = 6
+SUPPORTED_HYBRID_ARTIFACT_SCHEMAS = (
+    1,
+    2,
+    3,
+    4,
+    5,
+    HYBRID_ARTIFACT_SCHEMA,
+)
+
+
+def _mlp(
+    input_dim: int,
+    hidden_dim: int,
+    output_dim: int,
+    depth: int,
+):
+    layers = []
+    width = int(
+        input_dim
+    )
+    for _ in range(
+        depth
+    ):
+        layers.extend(
+            [
+                nn.Linear(
+                    width,
+                    hidden_dim,
+                ),
+                nn.SiLU(),
+            ]
+        )
+        width = (
+            hidden_dim
+        )
+    layers.append(
+        nn.Linear(
+            width,
+            output_dim,
+        )
+    )
+    return nn.Sequential(
+        *layers
+    )
+
+
+def _matrix_sqrt(
+    matrix,
+    *,
+    inverse: bool,
+):
+    matrix = 0.5 * (
+        matrix
+        + matrix.conj().transpose(
+            -1,
+            -2,
+        )
+    )
+    eigenvalues, eigenvectors = (
+        torch.linalg.eigh(
+            matrix
+        )
+    )
+    scale = torch.clamp(
+        torch.max(
+            torch.abs(
+                eigenvalues
+            )
+        ),
+        min=1e-12,
+    )
+    floor = (
+        1e-10
+        * scale
+        + 1e-14
+    )
+    clipped = torch.clamp(
+        eigenvalues.real,
+        min=floor,
+    )
+    diagonal = (
+        torch.rsqrt(
+            clipped
+        )
+        if inverse
+        else torch.sqrt(
+            clipped
+        )
+    )
+    return (
+        eigenvectors
+        @ torch.diag(
+            diagonal.to(
+                eigenvectors.dtype
+            )
+        )
+        @ eigenvectors.conj().transpose(
+            -1,
+            -2,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class HybridNormalizer:
+    coil_node_mean: np.ndarray
+    coil_node_scale: np.ndarray
+    coil_pair_mean: np.ndarray
+    coil_pair_scale: np.ndarray
+    package_mean: np.ndarray
+    package_scale: np.ndarray
+    coil_package_mean: np.ndarray
+    coil_package_scale: np.ndarray
+    package_pair_mean: np.ndarray
+    package_pair_scale: np.ndarray
+    resistance_scale: float
+    reactance_scale: float
+
+    @staticmethod
+    def fit(
+        samples,
+        *,
+        floor: float = 1e-8,
+    ) -> "HybridNormalizer":
+        samples = tuple(
+            samples
+        )
+        if not samples:
+            raise ValueError(
+                "at least one hybrid sample is required"
+            )
+
+        def stack(
+            getter,
+        ):
+            arrays = [
+                np.asarray(
+                    getter(
+                        sample
+                    ),
+                    dtype=float,
+                ).reshape(
+                    -1,
+                    np.asarray(
+                        getter(
+                            sample
+                        )
+                    ).shape[
+                        -1
+                    ],
+                )
+                for sample
+                in samples
+            ]
+            return np.concatenate(
+                arrays,
+                axis=0,
+            )
+
+        coil_node = stack(
+            lambda sample: (
+                sample.encoded.coil.node_features
+            )
+        )
+        coil_pair = stack(
+            lambda sample: (
+                sample.encoded.coil.pair_features
+            )
+        )
+        package = stack(
+            lambda sample: (
+                sample.encoded.package_features
+            )
+        )
+        coil_package = stack(
+            lambda sample: (
+                sample.encoded.coil_package_features
+            )
+        )
+        package_pair = stack(
+            lambda sample: (
+                sample.encoded.package_pair_features
+            )
+        )
+
+        def stats(
+            values,
+        ):
+            return (
+                values.mean(
+                    axis=0
+                ),
+                np.maximum(
+                    values.std(
+                        axis=0
+                    ),
+                    floor,
+                ),
+            )
+
+        (
+            coil_node_mean,
+            coil_node_scale,
+        ) = stats(
+            coil_node
+        )
+        (
+            coil_pair_mean,
+            coil_pair_scale,
+        ) = stats(
+            coil_pair
+        )
+        (
+            package_mean,
+            package_scale,
+        ) = stats(
+            package
+        )
+        (
+            coil_package_mean,
+            coil_package_scale,
+        ) = stats(
+            coil_package
+        )
+        (
+            package_pair_mean,
+            package_pair_scale,
+        ) = stats(
+            package_pair
+        )
+
+        r_values = []
+        x_values = []
+        for sample in samples:
+            target = np.asarray(
+                sample.target_impedance,
+                dtype=complex,
+            )
+            r_values.append(
+                (
+                    target.real
+                    - sample.baseline_resistance
+                ).ravel()
+            )
+            x_values.append(
+                (
+                    target.imag
+                    - sample.baseline_reactance
+                ).ravel()
+            )
+        resistance_values = np.concatenate(
+            r_values
+        )
+        reactance_values = np.concatenate(
+            x_values
+        )
+
+        return HybridNormalizer(
+            coil_node_mean,
+            coil_node_scale,
+            coil_pair_mean,
+            coil_pair_scale,
+            package_mean,
+            package_scale,
+            coil_package_mean,
+            coil_package_scale,
+            package_pair_mean,
+            package_pair_scale,
+            max(
+                float(
+                    np.sqrt(
+                        np.mean(
+                            resistance_values**2
+                        )
+                    )
+                ),
+                floor,
+            ),
+            max(
+                float(
+                    np.sqrt(
+                        np.mean(
+                            reactance_values**2
+                        )
+                    )
+                ),
+                floor,
+            ),
+        )
+
+    def normalize(
+        self,
+        encoded: EncodedHybridScene,
+    ):
+        return (
+            (
+                encoded.coil.node_features
+                - self.coil_node_mean
+            )
+            / self.coil_node_scale,
+            (
+                encoded.coil.pair_features
+                - self.coil_pair_mean
+            )
+            / self.coil_pair_scale,
+            (
+                encoded.package_features
+                - self.package_mean
+            )
+            / self.package_scale,
+            (
+                encoded.coil_package_features
+                - self.coil_package_mean
+            )
+            / self.coil_package_scale,
+            (
+                encoded.package_pair_features
+                - self.package_pair_mean
+            )
+            / self.package_pair_scale,
+        )
+
+    def to_dict(
+        self,
+    ):
+        return {
+            "coil_node_mean": self.coil_node_mean,
+            "coil_node_scale": self.coil_node_scale,
+            "coil_pair_mean": self.coil_pair_mean,
+            "coil_pair_scale": self.coil_pair_scale,
+            "package_mean": self.package_mean,
+            "package_scale": self.package_scale,
+            "coil_package_mean": self.coil_package_mean,
+            "coil_package_scale": self.coil_package_scale,
+            "package_pair_mean": self.package_pair_mean,
+            "package_pair_scale": self.package_pair_scale,
+            "resistance_scale": self.resistance_scale,
+            "reactance_scale": self.reactance_scale,
+        }
+
+    @staticmethod
+    def from_dict(
+        data,
+    ):
+        return HybridNormalizer(
+            np.asarray(
+                data[
+                    "coil_node_mean"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "coil_node_scale"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "coil_pair_mean"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "coil_pair_scale"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "package_mean"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "package_scale"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "coil_package_mean"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "coil_package_scale"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "package_pair_mean"
+                ],
+                dtype=float,
+            ),
+            np.asarray(
+                data[
+                    "package_pair_scale"
+                ],
+                dtype=float,
+            ),
+            float(
+                data[
+                    "resistance_scale"
+                ]
+            ),
+            float(
+                data[
+                    "reactance_scale"
+                ]
+            ),
+        )
+
+
+class HybridPhysicsFactoredResidualNet(
+    nn.Module
+):
+    """Heterogeneous coil/package graph with hard passive port decoding."""
+
+    def __init__(
+        self,
+        coil_dim: int = 17,
+        coil_pair_dim: int = 15,
+        package_dim: int = 13,
+        cross_dim: int = 15,
+        package_pair_dim: int = 15,
+        hidden_dim: int = 64,
+        factor_rank: int = 4,
+        depth: int = 2,
+    ):
+        super().__init__()
+        if (
+            hidden_dim < 4
+            or factor_rank < 1
+            or depth < 1
+        ):
+            raise ValueError(
+                "invalid hybrid neural dimensions"
+            )
+        self.coil_dim = int(
+            coil_dim
+        )
+        self.coil_pair_dim = int(
+            coil_pair_dim
+        )
+        self.package_dim = int(
+            package_dim
+        )
+        self.cross_dim = int(
+            cross_dim
+        )
+        self.package_pair_dim = int(
+            package_pair_dim
+        )
+        self.hidden_dim = int(
+            hidden_dim
+        )
+        self.factor_rank = int(
+            factor_rank
+        )
+        self.depth = int(
+            depth
+        )
+
+        h = self.hidden_dim
+        self.coil_encoder = _mlp(
+            self.coil_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.package_encoder = _mlp(
+            self.package_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.coil_pair_encoder = _mlp(
+            2 * h
+            + self.coil_pair_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.package_pair_encoder = _mlp(
+            2 * h
+            + self.package_pair_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.coil_to_package_encoder = _mlp(
+            2 * h
+            + self.cross_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.package_to_coil_encoder = _mlp(
+            2 * h
+            + self.cross_dim,
+            h,
+            h,
+            self.depth,
+        )
+        self.package_update = _mlp(
+            3 * h,
+            h,
+            h,
+            self.depth,
+        )
+        self.coil_update = _mlp(
+            3 * h,
+            h,
+            h,
+            self.depth,
+        )
+
+        self.loss_factor_head = (
+            nn.Linear(
+                h,
+                self.factor_rank,
+            )
+        )
+        self.reactance_diag_head = (
+            nn.Linear(
+                h,
+                1,
+            )
+        )
+        self.reactance_pair_head = _mlp(
+            2 * h
+            + self.coil_pair_dim,
+            h,
+            1,
+            self.depth,
+        )
+        self.conductor_channel_head = _mlp(
+            2 * h
+            + self.coil_pair_dim,
+            h,
+            2 * self.factor_rank,
+            self.depth,
+        )
+        self.dielectric_channel_head = _mlp(
+            2 * h
+            + self.cross_dim,
+            h,
+            2 * self.factor_rank,
+            self.depth,
+        )
+
+    @staticmethod
+    def _aggregate(
+        messages,
+        reference,
+    ):
+        if not messages:
+            return torch.zeros_like(
+                reference
+            )
+        return torch.stack(
+            messages,
+            dim=0,
+        ).sum(
+            dim=0
+        ) / math.sqrt(
+            len(
+                messages
+            )
+        )
+
+    def _latent(
+        self,
+        coil_features,
+        coil_pair_features,
+        package_features,
+        coil_package_features,
+        package_pair_features,
+    ):
+        coil0 = self.coil_encoder(
+            coil_features
+        )
+        package0 = (
+            self.package_encoder(
+                package_features
+            )
+        )
+        n_coils = coil0.shape[
+            0
+        ]
+        n_packages = package0.shape[
+            0
+        ]
+
+        coil_pair_messages = []
+        for i in range(
+            n_coils
+        ):
+            messages = []
+            for j in range(
+                n_coils
+            ):
+                if i == j:
+                    continue
+                messages.append(
+                    self.coil_pair_encoder(
+                        torch.cat(
+                            (
+                                coil0[
+                                    i
+                                ],
+                                coil0[
+                                    j
+                                ],
+                                coil_pair_features[
+                                    i,
+                                    j,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    )
+                )
+            coil_pair_messages.append(
+                self._aggregate(
+                    messages,
+                    coil0[
+                        i
+                    ],
+                )
+            )
+
+        package_pair_messages = []
+        coil_to_package_messages = []
+        for package_index in range(
+            n_packages
+        ):
+            pair_messages = []
+            for other in range(
+                n_packages
+            ):
+                if (
+                    package_index
+                    == other
+                ):
+                    continue
+                pair_messages.append(
+                    self.package_pair_encoder(
+                        torch.cat(
+                            (
+                                package0[
+                                    package_index
+                                ],
+                                package0[
+                                    other
+                                ],
+                                package_pair_features[
+                                    package_index,
+                                    other,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    )
+                )
+            package_pair_messages.append(
+                self._aggregate(
+                    pair_messages,
+                    package0[
+                        package_index
+                    ],
+                )
+            )
+
+            coil_messages = []
+            for coil_index in range(
+                n_coils
+            ):
+                coil_messages.append(
+                    self.coil_to_package_encoder(
+                        torch.cat(
+                            (
+                                package0[
+                                    package_index
+                                ],
+                                coil0[
+                                    coil_index
+                                ],
+                                coil_package_features[
+                                    coil_index,
+                                    package_index,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    )
+                )
+            coil_to_package_messages.append(
+                self._aggregate(
+                    coil_messages,
+                    package0[
+                        package_index
+                    ],
+                )
+            )
+
+        package = torch.stack(
+            [
+                self.package_update(
+                    torch.cat(
+                        (
+                            package0[
+                                index
+                            ],
+                            package_pair_messages[
+                                index
+                            ],
+                            coil_to_package_messages[
+                                index
+                            ],
+                        ),
+                        dim=-1,
+                    )
+                )
+                for index in range(
+                    n_packages
+                )
+            ],
+            dim=0,
+        )
+
+        package_to_coil_messages = []
+        for coil_index in range(
+            n_coils
+        ):
+            messages = []
+            for package_index in range(
+                n_packages
+            ):
+                messages.append(
+                    self.package_to_coil_encoder(
+                        torch.cat(
+                            (
+                                coil0[
+                                    coil_index
+                                ],
+                                package[
+                                    package_index
+                                ],
+                                coil_package_features[
+                                    coil_index,
+                                    package_index,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    )
+                )
+            package_to_coil_messages.append(
+                self._aggregate(
+                    messages,
+                    coil0[
+                        coil_index
+                    ],
+                )
+            )
+
+        coil = torch.stack(
+            [
+                self.coil_update(
+                    torch.cat(
+                        (
+                            coil0[
+                                index
+                            ],
+                            coil_pair_messages[
+                                index
+                            ],
+                            package_to_coil_messages[
+                                index
+                            ],
+                        ),
+                        dim=-1,
+                    )
+                )
+                for index in range(
+                    n_coils
+                )
+            ],
+            dim=0,
+        )
+        return (
+            coil,
+            package,
+        )
+
+    def _decode_impedance(
+        self,
+        coil,
+        coil_pair_features,
+        baseline_resistance,
+        baseline_reactance,
+        *,
+        resistance_scale: float,
+        reactance_scale: float,
+        reactance_gate: float = 1.0,
+    ):
+        n = coil.shape[
+            0
+        ]
+        factors = (
+            self.loss_factor_head(
+                coil
+            )
+        )
+        resistance = (
+            baseline_resistance
+            + float(
+                resistance_scale
+            )
+            * (
+                factors
+                @ factors.transpose(
+                    0,
+                    1,
+                )
+            )
+        )
+        resistance = 0.5 * (
+            resistance
+            + resistance.transpose(
+                0,
+                1,
+            )
+        )
+
+        residual = torch.zeros_like(
+            baseline_reactance
+        )
+        diagonal = (
+            float(
+                reactance_scale
+            )
+            * self.reactance_diag_head(
+                coil
+            ).squeeze(
+                -1
+            )
+        )
+        residual = (
+            residual
+            + torch.diag(
+                diagonal
+            )
+        )
+        for i in range(
+            n
+        ):
+            for j in range(
+                i
+            ):
+                forward = (
+                    self.reactance_pair_head(
+                        torch.cat(
+                            (
+                                coil[
+                                    i
+                                ],
+                                coil[
+                                    j
+                                ],
+                                coil_pair_features[
+                                    i,
+                                    j,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    ).squeeze()
+                )
+                reverse = (
+                    self.reactance_pair_head(
+                        torch.cat(
+                            (
+                                coil[
+                                    j
+                                ],
+                                coil[
+                                    i
+                                ],
+                                coil_pair_features[
+                                    j,
+                                    i,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    ).squeeze()
+                )
+                value = (
+                    0.5
+                    * float(
+                        reactance_scale
+                    )
+                    * (
+                        forward
+                        + reverse
+                    )
+                )
+                residual[
+                    i,
+                    j,
+                ] = value
+                residual[
+                    j,
+                    i,
+                ] = value
+        residual = (
+            float(
+                reactance_gate
+            )
+            * residual
+        )
+        reactance = (
+            baseline_reactance
+            + residual
+        )
+        reactance = 0.5 * (
+            reactance
+            + reactance.transpose(
+                0,
+                1,
+            )
+        )
+        return (
+            resistance,
+            reactance,
+        )
+
+    def _complex_factor(
+        self,
+        raw,
+        dtype,
+    ):
+        real = raw[
+            : self.factor_rank
+        ]
+        imag = raw[
+            self.factor_rank :
+        ]
+        return (
+            real.to(
+                dtype
+            )
+            + 1j
+            * imag.to(
+                dtype
+            )
+        )
+
+    def _decode_channels(
+        self,
+        coil,
+        package,
+        coil_pair_features,
+        coil_package_features,
+        resistance,
+        *,
+        dielectric_loss_gate: float,
+    ):
+        n_ports = coil.shape[
+            0
+        ]
+        complex_dtype = (
+            torch.complex64
+            if resistance.dtype
+            == torch.float32
+            else torch.complex128
+        )
+
+        raw_channels = []
+        for channel_index in range(
+            n_ports
+        ):
+            rows = []
+            for port_index in range(
+                n_ports
+            ):
+                raw = (
+                    self.conductor_channel_head(
+                        torch.cat(
+                            (
+                                coil[
+                                    channel_index
+                                ],
+                                coil[
+                                    port_index
+                                ],
+                                coil_pair_features[
+                                    channel_index,
+                                    port_index,
+                                ],
+                            ),
+                            dim=-1,
+                        )
+                    )
+                )
+                rows.append(
+                    self._complex_factor(
+                        raw,
+                        complex_dtype,
+                    )
+                )
+            factor = torch.stack(
+                rows,
+                dim=0,
+            )
+            raw_channels.append(
+                factor
+                @ factor.conj().transpose(
+                    0,
+                    1,
+                )
+            )
+
+        package_pool = torch.mean(
+            package,
+            dim=0,
+        )
+        rows = []
+        for port_index in range(
+            n_ports
+        ):
+            cross_summary = torch.mean(
+                coil_package_features[
+                    port_index
+                ],
+                dim=0,
+            )
+            raw = (
+                self.dielectric_channel_head(
+                    torch.cat(
+                        (
+                            package_pool,
+                            coil[
+                                port_index
+                            ],
+                            cross_summary,
+                        ),
+                        dim=-1,
+                    )
+                )
+            )
+            rows.append(
+                self._complex_factor(
+                    raw,
+                    complex_dtype,
+                )
+            )
+        dielectric_factor = (
+            torch.stack(
+                rows,
+                dim=0,
+            )
+        )
+        dielectric_raw = (
+            float(
+                dielectric_loss_gate
+            )
+            * (
+                dielectric_factor
+                @ dielectric_factor.conj().transpose(
+                    0,
+                    1,
+                )
+            )
+        )
+        raw_channels.append(
+            dielectric_raw
+        )
+
+        raw_channels = torch.stack(
+            raw_channels,
+            dim=0,
+        )
+        resistance_complex = resistance.to(
+            complex_dtype
+        )
+        scale = torch.clamp(
+            torch.trace(
+                resistance_complex
+            ).real
+            / max(
+                n_ports,
+                1,
+            ),
+            min=1e-12,
+        )
+        eye = torch.eye(
+            n_ports,
+            dtype=complex_dtype,
+            device=(
+                resistance.device
+            ),
+        )
+        jitter = (
+            1e-8
+            * scale
+            / max(
+                n_ports,
+                1,
+            )
+        )
+        conductor_raw = (
+            raw_channels[
+                :n_ports
+            ]
+            + jitter
+            * eye.unsqueeze(
+                0
+            )
+        )
+        raw_channels = torch.cat(
+            (
+                conductor_raw,
+                raw_channels[
+                    n_ports:
+                ],
+            ),
+            dim=0,
+        )
+
+        raw_sum = torch.sum(
+            raw_channels,
+            dim=0,
+        )
+        congruence = (
+            _matrix_sqrt(
+                resistance_complex,
+                inverse=False,
+            )
+            @ _matrix_sqrt(
+                raw_sum,
+                inverse=True,
+            )
+        )
+        channels = torch.stack(
+            [
+                congruence
+                @ channel
+                @ congruence.conj().transpose(
+                    0,
+                    1,
+                )
+                for channel
+                in raw_channels
+            ],
+            dim=0,
+        )
+        return 0.5 * (
+            channels
+            + channels.conj().transpose(
+                -1,
+                -2,
+            )
+        )
+
+    def forward_structured(
+        self,
+        coil_features,
+        coil_pair_features,
+        package_features,
+        coil_package_features,
+        package_pair_features,
+        baseline_resistance,
+        baseline_reactance,
+        *,
+        resistance_scale: float,
+        reactance_scale: float,
+        dielectric_loss_gate: float,
+        reactance_gate: float = 1.0,
+    ):
+        coil, package = (
+            self._latent(
+                coil_features,
+                coil_pair_features,
+                package_features,
+                coil_package_features,
+                package_pair_features,
+            )
+        )
+        (
+            resistance,
+            reactance,
+        ) = self._decode_impedance(
+            coil,
+            coil_pair_features,
+            baseline_resistance,
+            baseline_reactance,
+            resistance_scale=(
+                resistance_scale
+            ),
+            reactance_scale=(
+                reactance_scale
+            ),
+            reactance_gate=(
+                reactance_gate
+            ),
+        )
+        channels = self._decode_channels(
+            coil,
+            package,
+            coil_pair_features,
+            coil_package_features,
+            resistance,
+            dielectric_loss_gate=(
+                dielectric_loss_gate
+            ),
+        )
+        return (
+            resistance,
+            reactance,
+            channels,
+        )
+
+
+def _reactance_gate(
+    frequency_hz: float,
+) -> float:
+    return float(
+        float(
+            frequency_hz
+        )
+        > 0.0
+    )
+
+
+def _dielectric_loss_gate(
+    scene: Scene,
+    frequency_hz: float,
+) -> float:
+    # Historical name retained for artifact compatibility. The final channel
+    # is the aggregate electric-environment loss, so either package loss or a
+    # conductive homogeneous background must open the PSD loss head.
+    return float(
+        scene.medium.loss_conductivity(
+            frequency_hz
+        )
+        > 0.0
+        or any(
+            package.material.loss_conductivity(
+                frequency_hz
+            )
+            > 0.0
+            for package
+            in scene.packages
+        )
+    )
+
+
+@dataclass(frozen=True)
+class HybridTrainingReport:
+    final_loss: float
+    epochs: int
+    samples: int
+    best_epoch: int
+    best_validation_score: float | None
+    best_validation_z_error: float | None
+    best_validation_channel_error: float | None
+    stopped_early: bool
+
+
+class HybridNeuralResidualArtifact:
+    supports_packages = True
+    supports_lossy_background = False
+
+    def __init__(
+        self,
+        model: HybridPhysicsFactoredResidualNet,
+        normalizer: HybridNormalizer,
+        *,
+        baseline_segments: int,
+        background_conductivity_range=None,
+        background_permittivity_range=None,
+        package_permittivity_range=None,
+        package_loss_conductivity_range=None,
+        package_permeability_range=None,
+        geometry_domain=None,
+        artifact_schema: int | None = None,
+        device: str = "cpu",
+    ):
+        self.model = model
+        self.normalizer = (
+            normalizer
+        )
+        self.baseline_segments = int(
+            baseline_segments
+        )
+        self.artifact_schema = int(
+            HYBRID_ARTIFACT_SCHEMA
+            if artifact_schema
+            is None
+            else artifact_schema
+        )
+        if (
+            self.artifact_schema
+            not in SUPPORTED_HYBRID_ARTIFACT_SCHEMAS
+        ):
+            raise ValueError(
+                "unsupported hybrid neural artifact schema"
+            )
+        if background_conductivity_range is None:
+            self.background_conductivity_range = None
+        else:
+            values = np.asarray(
+                background_conductivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_conductivity_range must be a finite "
+                    "nonnegative increasing pair"
+                )
+            self.background_conductivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+        if background_permittivity_range is None:
+            self.background_permittivity_range = None
+        else:
+            values = np.asarray(
+                background_permittivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] <= 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_permittivity_range must be a finite positive "
+                    "increasing pair"
+                )
+            self.background_permittivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+        def _positive_range(
+            value,
+            *,
+            name,
+            allow_zero_lower,
+        ):
+            if value is None:
+                return None
+            values = np.asarray(
+                value,
+                dtype=float,
+            )
+            lower_ok = (
+                values[
+                    0
+                ] >= 0.0
+                if allow_zero_lower
+                else values[
+                    0
+                ] > 0.0
+            ) if values.shape == (
+                2,
+            ) else False
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or not lower_ok
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    f"{name} must be a finite increasing pair"
+                )
+            return (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+
+        self.package_permittivity_range = _positive_range(
+            package_permittivity_range,
+            name="package_permittivity_range",
+            allow_zero_lower=False,
+        )
+        self.package_loss_conductivity_range = _positive_range(
+            package_loss_conductivity_range,
+            name="package_loss_conductivity_range",
+            allow_zero_lower=True,
+        )
+        self.package_permeability_range = _positive_range(
+            package_permeability_range,
+            name="package_permeability_range",
+            allow_zero_lower=False,
+        )
+        self.geometry_domain = (
+            None
+            if geometry_domain
+            is None
+            else json.loads(
+                json.dumps(
+                    geometry_domain,
+                    sort_keys=True,
+                )
+            )
+        )
+        self._validated_geometry_enclosures = set()
+        self._validated_topology_pairs = set()
+        self.supports_lossy_background = bool(
+            self.background_conductivity_range
+            is not None
+            and self.background_conductivity_range[
+                1
+            ]
+            > 0.0
+        )
+        self.device = str(
+            device
+        )
+        self.model.to(
+            self.device
+        )
+        self.model.eval()
+
+    def fingerprint(
+        self,
+    ) -> str:
+        """Stable semantic fingerprint for hybrid weights and preprocessing."""
+        digest = sha256()
+        config = {
+            "schema": self.artifact_schema,
+            "model_config": {
+                "coil_dim": self.model.coil_dim,
+                "coil_pair_dim": self.model.coil_pair_dim,
+                "package_dim": self.model.package_dim,
+                "cross_dim": self.model.cross_dim,
+                "package_pair_dim": self.model.package_pair_dim,
+                "hidden_dim": self.model.hidden_dim,
+                "factor_rank": self.model.factor_rank,
+                "depth": self.model.depth,
+            },
+            "baseline_segments": self.baseline_segments,
+        }
+        if self.artifact_schema >= 2:
+            config[
+                "background_conductivity_range"
+            ] = (
+                self.background_conductivity_range
+            )
+        if self.artifact_schema >= 3:
+            config[
+                "background_permittivity_range"
+            ] = (
+                self.background_permittivity_range
+            )
+        if self.artifact_schema >= 4:
+            config[
+                "package_permittivity_range"
+            ] = (
+                self.package_permittivity_range
+            )
+            config[
+                "package_loss_conductivity_range"
+            ] = (
+                self.package_loss_conductivity_range
+            )
+        if self.artifact_schema >= 5:
+            config[
+                "geometry_domain"
+            ] = (
+                self.geometry_domain
+            )
+        if self.artifact_schema >= 6:
+            config[
+                "package_permeability_range"
+            ] = (
+                self.package_permeability_range
+            )
+        digest.update(
+            json.dumps(
+                config,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+        def update_array(name, value):
+            array = np.asarray(value)
+            digest.update(
+                str(name).encode("utf-8")
+            )
+            digest.update(
+                str(array.dtype).encode("ascii")
+            )
+            digest.update(
+                np.asarray(
+                    array.shape,
+                    dtype=np.int64,
+                ).tobytes()
+            )
+            digest.update(
+                np.ascontiguousarray(
+                    array
+                ).tobytes()
+            )
+
+        for name, tensor in sorted(
+            self.model.state_dict().items()
+        ):
+            update_array(
+                "state:" + name,
+                tensor.detach()
+                .cpu()
+                .contiguous()
+                .numpy(),
+            )
+        for name, value in sorted(
+            self.normalizer.to_dict().items()
+        ):
+            update_array(
+                "normalizer:" + name,
+                value,
+            )
+        return digest.hexdigest()
+
+    def predict_structured(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> StructuredPortPrediction:
+        if not scene.packages:
+            raise ValueError(
+                "hybrid neural artifact requires at least one package"
+            )
+        validate_package_conductor_topology(
+            scene,
+            validated_pairs=(
+                self._validated_topology_pairs
+            ),
+        )
+        validate_hybrid_geometry_domain(
+            scene,
+            frequency_hz,
+            self.geometry_domain,
+            validated_enclosures=(
+                self._validated_geometry_enclosures
+            ),
+        )
+        for package in scene.packages:
+            permeability = float(
+                package.material.relative_permeability
+            )
+            if self.package_permeability_range is None:
+                if not np.isclose(
+                    permeability,
+                    scene.medium.relative_permeability,
+                    rtol=1e-12,
+                    atol=1e-12,
+                ):
+                    raise ValueError(
+                        "this hybrid artifact was not trained/certified for "
+                        "magnetic package contrast"
+                    )
+            else:
+                lower, upper = (
+                    self.package_permeability_range
+                )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    permeability
+                    < lower
+                    - tolerance
+                    or permeability
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package relative permeability is outside the hybrid "
+                        "artifact training domain"
+                    )
+            epsilon_real = float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        frequency_hz
+                    )
+                )
+            )
+            loss_conductivity = float(
+                package.material.loss_conductivity(
+                    frequency_hz
+                )
+            )
+            if self.package_permittivity_range is not None:
+                lower, upper = (
+                    self.package_permittivity_range
+                )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    epsilon_real
+                    < lower
+                    - tolerance
+                    or epsilon_real
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package effective relative permittivity is outside "
+                        "the hybrid artifact training domain"
+                    )
+            if self.package_loss_conductivity_range is not None:
+                lower, upper = (
+                    self.package_loss_conductivity_range
+                )
+                tolerance = (
+                    1e-12
+                    * max(
+                        upper,
+                        1.0,
+                    )
+                )
+                if (
+                    loss_conductivity
+                    < lower
+                    - tolerance
+                    or loss_conductivity
+                    > upper
+                    + tolerance
+                ):
+                    raise ValueError(
+                        "package effective loss conductivity is outside the "
+                        "hybrid artifact training domain"
+                    )
+        conductivity = float(
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
+        )
+        if self.background_conductivity_range is None:
+            if conductivity > 0.0:
+                raise ValueError(
+                    "this hybrid artifact was not trained/certified for a "
+                    "lossy homogeneous background"
+                )
+        else:
+            lower, upper = (
+                self.background_conductivity_range
+            )
+            tolerance = (
+                1e-12
+                * max(
+                    upper,
+                    1.0,
+                )
+            )
+            if (
+                conductivity
+                < lower
+                - tolerance
+                or conductivity
+                > upper
+                + tolerance
+            ):
+                raise ValueError(
+                    "background effective loss conductivity is outside the "
+                    "hybrid artifact training domain "
+                    f"[{lower:.6g}, {upper:.6g}] S/m"
+                )
+        if self.background_permittivity_range is not None:
+            epsilon_real = float(
+                np.real(
+                    scene.medium.relative_permittivity_at(
+                        frequency_hz
+                    )
+                )
+            )
+            lower, upper = (
+                self.background_permittivity_range
+            )
+            tolerance = (
+                1e-12
+                * max(
+                    upper,
+                    1.0,
+                )
+            )
+            if (
+                epsilon_real
+                < lower
+                - tolerance
+                or epsilon_real
+                > upper
+                + tolerance
+            ):
+                raise ValueError(
+                    "background effective relative permittivity is outside "
+                    "the hybrid artifact training domain "
+                    f"[{lower:.6g}, {upper:.6g}]"
+                )
+        encoded = (
+            encode_hybrid_scene_invariant(
+                scene,
+                frequency_hz,
+            )
+        )
+        (
+            coil_node,
+            coil_pair,
+            package,
+            coil_package,
+            package_pair,
+        ) = self.normalizer.normalize(
+            encoded
+        )
+        conductor_scene = Scene(
+            scene.coils,
+            scene.medium,
+            (),
+        )
+        baseline = (
+            analytic_port_baseline(
+                conductor_scene,
+                frequency_hz,
+                segments_per_coil=(
+                    self.baseline_segments
+                ),
+            )
+        )
+        dtype = next(
+            self.model.parameters()
+        ).dtype
+        device = next(
+            self.model.parameters()
+        ).device
+        with torch.no_grad():
+            (
+                resistance,
+                reactance,
+                channels,
+            ) = self.model.forward_structured(
+                torch.as_tensor(
+                    coil_node,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    coil_pair,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    package,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    coil_package,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    package_pair,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    baseline.resistance,
+                    dtype=dtype,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    2.0
+                    * np.pi
+                    * float(
+                        frequency_hz
+                    )
+                    * baseline.inductance,
+                    dtype=dtype,
+                    device=device,
+                ),
+                resistance_scale=(
+                    self.normalizer.resistance_scale
+                ),
+                reactance_scale=(
+                    self.normalizer.reactance_scale
+                ),
+                dielectric_loss_gate=(
+                    _dielectric_loss_gate(
+                        scene,
+                        frequency_hz,
+                    )
+                ),
+                reactance_gate=(
+                    _reactance_gate(
+                        frequency_hz
+                    )
+                ),
+            )
+        channel_array = (
+            channels.detach().cpu().numpy()
+        )
+        n_coils = len(
+            scene.coils
+        )
+        labels = tuple(
+            f"coil:{index}"
+            for index in range(
+                n_coils
+            )
+        )
+        extra = (
+            channel_array.shape[
+                0
+            ]
+            - n_coils
+        )
+        if extra == 1:
+            labels = labels + (
+                "electric_environment:aggregate",
+            )
+        elif extra != 0:
+            labels = labels + tuple(
+                f"environment:{index}"
+                for index in range(
+                    extra
+                )
+            )
+        return StructuredPortPrediction(
+            (
+                resistance.detach().cpu().numpy()
+                + 1j
+                * reactance.detach().cpu().numpy()
+            ),
+            channel_array,
+            labels,
+        )
+
+    def predict(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ) -> np.ndarray:
+        return (
+            self.predict_structured(
+                scene,
+                frequency_hz,
+            ).impedance
+        )
+
+    def save(
+        self,
+        path,
+    ):
+        torch.save(
+            {
+                "schema": (
+                    self.artifact_schema
+                ),
+                "model_config": {
+                    "coil_dim": (
+                        self.model.coil_dim
+                    ),
+                    "coil_pair_dim": (
+                        self.model.coil_pair_dim
+                    ),
+                    "package_dim": (
+                        self.model.package_dim
+                    ),
+                    "cross_dim": (
+                        self.model.cross_dim
+                    ),
+                    "package_pair_dim": (
+                        self.model.package_pair_dim
+                    ),
+                    "hidden_dim": (
+                        self.model.hidden_dim
+                    ),
+                    "factor_rank": (
+                        self.model.factor_rank
+                    ),
+                    "depth": (
+                        self.model.depth
+                    ),
+                },
+                "model_state": (
+                    self.model.state_dict()
+                ),
+                "normalizer": (
+                    self.normalizer.to_dict()
+                ),
+                "baseline_segments": (
+                    self.baseline_segments
+                ),
+                "background_conductivity_range": (
+                    self.background_conductivity_range
+                ),
+                "background_permittivity_range": (
+                    self.background_permittivity_range
+                ),
+                "package_permittivity_range": (
+                    self.package_permittivity_range
+                ),
+                "package_loss_conductivity_range": (
+                    self.package_loss_conductivity_range
+                ),
+                "package_permeability_range": (
+                    self.package_permeability_range
+                ),
+                "geometry_domain": (
+                    self.geometry_domain
+                ),
+            },
+            Path(
+                path
+            ),
+        )
+
+    @staticmethod
+    def load(
+        path,
+        *,
+        device: str = "cpu",
+    ):
+        try:
+            payload = torch.load(
+                Path(
+                    path
+                ),
+                map_location=device,
+                weights_only=False,
+            )
+        except TypeError:
+            payload = torch.load(
+                Path(
+                    path
+                ),
+                map_location=device,
+            )
+        if (
+            payload.get(
+                "schema"
+            )
+            not in SUPPORTED_HYBRID_ARTIFACT_SCHEMAS
+        ):
+            raise ValueError(
+                "unsupported hybrid neural artifact schema"
+            )
+        model = (
+            HybridPhysicsFactoredResidualNet(
+                **payload[
+                    "model_config"
+                ]
+            )
+        )
+        model.load_state_dict(
+            payload[
+                "model_state"
+            ]
+        )
+        return HybridNeuralResidualArtifact(
+            model,
+            HybridNormalizer.from_dict(
+                payload[
+                    "normalizer"
+                ]
+            ),
+            baseline_segments=int(
+                payload[
+                    "baseline_segments"
+                ]
+            ),
+            background_conductivity_range=(
+                payload.get(
+                    "background_conductivity_range"
+                )
+            ),
+            background_permittivity_range=(
+                payload.get(
+                    "background_permittivity_range"
+                )
+            ),
+            package_permittivity_range=(
+                payload.get(
+                    "package_permittivity_range"
+                )
+            ),
+            package_loss_conductivity_range=(
+                payload.get(
+                    "package_loss_conductivity_range"
+                )
+            ),
+            package_permeability_range=(
+                payload.get(
+                    "package_permeability_range"
+                )
+            ),
+            geometry_domain=(
+                payload.get(
+                    "geometry_domain"
+                )
+            ),
+            artifact_schema=int(
+                payload[
+                    "schema"
+                ]
+            ),
+            device=device,
+        )
+
+
+def _relative_error(
+    predicted,
+    target,
+) -> float:
+    return float(
+        np.linalg.norm(
+            np.asarray(
+                predicted
+            )
+            - np.asarray(
+                target
+            )
+        )
+        / max(
+            np.linalg.norm(
+                np.asarray(
+                    target
+                )
+            ),
+            1e-30,
+        )
+    )
+
+
+def _predict_sample(
+    model,
+    normalizer,
+    sample,
+    *,
+    device,
+):
+    (
+        coil_node,
+        coil_pair,
+        package,
+        coil_package,
+        package_pair,
+    ) = normalizer.normalize(
+        sample.encoded
+    )
+    dtype = next(
+        model.parameters()
+    ).dtype
+    with torch.no_grad():
+        (
+            resistance,
+            reactance,
+            channels,
+        ) = model.forward_structured(
+            torch.as_tensor(
+                coil_node,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                coil_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                package,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                coil_package,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                package_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                sample.baseline_resistance,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.as_tensor(
+                sample.baseline_reactance,
+                dtype=dtype,
+                device=device,
+            ),
+            resistance_scale=(
+                normalizer.resistance_scale
+            ),
+            reactance_scale=(
+                normalizer.reactance_scale
+            ),
+            dielectric_loss_gate=(
+                _dielectric_loss_gate(
+                    sample.scene,
+                    sample.frequency_hz,
+                )
+            ),
+            reactance_gate=(
+                _reactance_gate(
+                    sample.frequency_hz
+                )
+            ),
+        )
+    return (
+        (
+            resistance.detach().cpu().numpy()
+            + 1j
+            * reactance.detach().cpu().numpy()
+        ),
+        channels.detach().cpu().numpy(),
+    )
+
+
+def train_hybrid_residual_surrogate(
+    samples,
+    *,
+    validation_samples=(),
+    hidden_dim: int = 64,
+    factor_rank: int = 4,
+    depth: int = 2,
+    epochs: int = 200,
+    learning_rate: float = 1e-3,
+    weight_decay: float = 1e-6,
+    channel_loss_weight: float = 1.0,
+    validation_channel_weight: float = 0.5,
+    patience: int = 30,
+    validation_interval: int = 1,
+    min_improvement: float = 1e-5,
+    seed: int = 17,
+    background_conductivity_range=None,
+    background_permittivity_range=None,
+    package_permittivity_range=None,
+    package_loss_conductivity_range=None,
+    package_permeability_range=None,
+    geometry_domain=None,
+    batch_size: int = 1,
+    device: str = "cpu",
+):
+    samples = tuple(
+        samples
+    )
+    validation_samples = tuple(
+        validation_samples
+    )
+    if not samples:
+        raise ValueError(
+            "at least one hybrid training sample is required"
+        )
+    if (
+        epochs < 1
+        or learning_rate <= 0.0
+        or weight_decay < 0.0
+        or channel_loss_weight < 0.0
+        or validation_channel_weight < 0.0
+        or patience < 1
+        or validation_interval < 1
+        or min_improvement < 0.0
+        or not isinstance(
+            batch_size,
+            (int, np.integer),
+        )
+        or batch_size < 1
+    ):
+        raise ValueError(
+            "invalid hybrid training configuration"
+        )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        validate_package_conductor_topology(
+            sample.scene
+        )
+        validate_hybrid_geometry_domain(
+            sample.scene,
+            sample.frequency_hz,
+            geometry_domain,
+        )
+
+    baseline_segments = {
+        int(
+            sample.baseline_segments
+        )
+        for sample
+        in samples
+    }
+    if len(
+        baseline_segments
+    ) != 1:
+        raise ValueError(
+            "all hybrid samples must use the same analytic baseline resolution"
+        )
+    baseline_segments = (
+        baseline_segments.pop()
+    )
+    training_background_conductivity = np.asarray(
+        [
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
+            )
+            for sample in samples
+        ],
+        dtype=float,
+    )
+    training_background_permittivity = np.asarray(
+        [
+            float(
+                np.real(
+                    sample.scene.medium.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
+            for sample in samples
+        ],
+        dtype=float,
+    )
+    has_lossy_background_training = bool(
+        np.any(
+            training_background_conductivity
+            > 0.0
+        )
+    )
+    if has_lossy_background_training:
+        if background_conductivity_range is None:
+            resolved_background_conductivity_range = (
+                float(
+                    np.min(
+                        training_background_conductivity
+                    )
+                ),
+                float(
+                    np.max(
+                        training_background_conductivity
+                    )
+                ),
+            )
+        else:
+            values = np.asarray(
+                background_conductivity_range,
+                dtype=float,
+            )
+            if (
+                values.shape != (
+                    2,
+                )
+                or np.any(
+                    ~np.isfinite(
+                        values
+                    )
+                )
+                or values[
+                    0
+                ] < 0.0
+                or values[
+                    1
+                ] < values[
+                    0
+                ]
+            ):
+                raise ValueError(
+                    "background_conductivity_range must be a finite "
+                    "nonnegative increasing pair"
+                )
+            resolved_background_conductivity_range = (
+                float(
+                    values[
+                        0
+                    ]
+                ),
+                float(
+                    values[
+                        1
+                    ]
+                ),
+            )
+    else:
+        resolved_background_conductivity_range = None
+
+    if background_permittivity_range is None:
+        resolved_background_permittivity_range = (
+            float(
+                np.min(
+                    training_background_permittivity
+                )
+            ),
+            float(
+                np.max(
+                    training_background_permittivity
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            background_permittivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "background_permittivity_range must be a finite positive "
+                "increasing pair"
+            )
+        resolved_background_permittivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    conductivity_lower = (
+        None
+        if resolved_background_conductivity_range
+        is None
+        else resolved_background_conductivity_range[
+            0
+        ]
+    )
+    conductivity_upper = (
+        None
+        if resolved_background_conductivity_range
+        is None
+        else resolved_background_conductivity_range[
+            1
+        ]
+    )
+    epsilon_lower, epsilon_upper = (
+        resolved_background_permittivity_range
+    )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        conductivity = float(
+            sample.scene.medium.loss_conductivity(
+                sample.frequency_hz
+            )
+        )
+        if resolved_background_conductivity_range is None:
+            if conductivity > 0.0:
+                raise ValueError(
+                    "validation contains lossy backgrounds but training does not"
+                )
+        elif (
+            conductivity
+            < conductivity_lower
+            or conductivity
+            > conductivity_upper
+        ):
+            raise ValueError(
+                "sample background effective loss conductivity lies outside "
+                "the declared hybrid port training domain"
+            )
+        epsilon_real = float(
+            np.real(
+                sample.scene.medium.relative_permittivity_at(
+                    sample.frequency_hz
+                )
+            )
+        )
+        if (
+            epsilon_real
+            < epsilon_lower
+            or epsilon_real
+            > epsilon_upper
+        ):
+            raise ValueError(
+                "sample background effective relative permittivity lies "
+                "outside the declared hybrid port training domain"
+            )
+
+    training_package_permittivity = np.asarray(
+        [
+            float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
+    training_package_loss = np.asarray(
+        [
+            float(
+                package.material.loss_conductivity(
+                    sample.frequency_hz
+                )
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
+    training_package_permeability = np.asarray(
+        [
+            float(
+                package.material.relative_permeability
+            )
+            for sample in samples
+            for package in sample.scene.packages
+        ],
+        dtype=float,
+    )
+    if package_permittivity_range is None:
+        resolved_package_permittivity_range = (
+            float(
+                np.min(
+                    training_package_permittivity
+                )
+            ),
+            float(
+                np.max(
+                    training_package_permittivity
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_permittivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_permittivity_range must be a finite positive "
+                "increasing pair"
+            )
+        resolved_package_permittivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    if package_loss_conductivity_range is None:
+        resolved_package_loss_conductivity_range = (
+            float(
+                np.min(
+                    training_package_loss
+                )
+            ),
+            float(
+                np.max(
+                    training_package_loss
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_loss_conductivity_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] < 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_loss_conductivity_range must be a finite "
+                "nonnegative increasing pair"
+            )
+        resolved_package_loss_conductivity_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    if package_permeability_range is None:
+        resolved_package_permeability_range = (
+            float(
+                np.min(
+                    training_package_permeability
+                )
+            ),
+            float(
+                np.max(
+                    training_package_permeability
+                )
+            ),
+        )
+    else:
+        values = np.asarray(
+            package_permeability_range,
+            dtype=float,
+        )
+        if (
+            values.shape != (
+                2,
+            )
+            or np.any(
+                ~np.isfinite(
+                    values
+                )
+            )
+            or values[
+                0
+            ] <= 0.0
+            or values[
+                1
+            ] < values[
+                0
+            ]
+        ):
+            raise ValueError(
+                "package_permeability_range must be a finite positive "
+                "increasing pair"
+            )
+        resolved_package_permeability_range = (
+            float(
+                values[
+                    0
+                ]
+            ),
+            float(
+                values[
+                    1
+                ]
+            ),
+        )
+
+    package_epsilon_lower, package_epsilon_upper = (
+        resolved_package_permittivity_range
+    )
+    package_loss_lower, package_loss_upper = (
+        resolved_package_loss_conductivity_range
+    )
+    package_mu_lower, package_mu_upper = (
+        resolved_package_permeability_range
+    )
+    for sample in (
+        samples
+        + validation_samples
+    ):
+        for package in sample.scene.packages:
+            permeability = float(
+                package.material.relative_permeability
+            )
+            if (
+                permeability
+                < package_mu_lower
+                or permeability
+                > package_mu_upper
+            ):
+                raise ValueError(
+                    "sample package relative permeability lies outside the "
+                    "declared hybrid port training domain"
+                )
+            epsilon_real = float(
+                np.real(
+                    package.material.relative_permittivity_at(
+                        sample.frequency_hz
+                    )
+                )
+            )
+            loss = float(
+                package.material.loss_conductivity(
+                    sample.frequency_hz
+                )
+            )
+            if (
+                epsilon_real
+                < package_epsilon_lower
+                or epsilon_real
+                > package_epsilon_upper
+            ):
+                raise ValueError(
+                    "sample package effective relative permittivity lies "
+                    "outside the declared hybrid port training domain"
+                )
+            if (
+                loss
+                < package_loss_lower
+                or loss
+                > package_loss_upper
+            ):
+                raise ValueError(
+                    "sample package effective loss conductivity lies outside "
+                    "the declared hybrid port training domain"
+                )
+
+
+    torch.manual_seed(
+        seed
+    )
+    np.random.seed(
+        seed
+    )
+    normalizer = (
+        HybridNormalizer.fit(
+            samples
+        )
+    )
+    first = samples[
+        0
+    ].encoded
+    model = (
+        HybridPhysicsFactoredResidualNet(
+            coil_dim=(
+                first.coil.node_features.shape[
+                    -1
+                ]
+            ),
+            coil_pair_dim=(
+                first.coil.pair_features.shape[
+                    -1
+                ]
+            ),
+            package_dim=(
+                first.package_features.shape[
+                    -1
+                ]
+            ),
+            cross_dim=(
+                first.coil_package_features.shape[
+                    -1
+                ]
+            ),
+            package_pair_dim=(
+                first.package_pair_features.shape[
+                    -1
+                ]
+            ),
+            hidden_dim=(
+                hidden_dim
+            ),
+            factor_rank=(
+                factor_rank
+            ),
+            depth=depth,
+        ).to(
+            device
+        )
+    )
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=(
+            weight_decay
+        ),
+    )
+    dtype = next(
+        model.parameters()
+    ).dtype
+    complex_dtype = (
+        torch.complex64
+        if dtype == torch.float32
+        else torch.complex128
+    )
+
+    def prepare_training_record(
+        sample,
+    ):
+        (
+            coil_node,
+            coil_pair,
+            package,
+            coil_package,
+            package_pair,
+        ) = normalizer.normalize(
+            sample.encoded
+        )
+        target_z = np.asarray(
+            sample.target_impedance,
+            dtype=complex,
+        )
+        target_r = torch.as_tensor(
+            target_z.real,
+            dtype=dtype,
+            device=device,
+        )
+        target_x = torch.as_tensor(
+            target_z.imag,
+            dtype=dtype,
+            device=device,
+        )
+        target_channels = torch.as_tensor(
+            sample.target_dissipation_channels,
+            dtype=complex_dtype,
+            device=device,
+        )
+        return {
+            "coil_node": torch.as_tensor(
+                coil_node,
+                dtype=dtype,
+                device=device,
+            ),
+            "coil_pair": torch.as_tensor(
+                coil_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            "package": torch.as_tensor(
+                package,
+                dtype=dtype,
+                device=device,
+            ),
+            "coil_package": torch.as_tensor(
+                coil_package,
+                dtype=dtype,
+                device=device,
+            ),
+            "package_pair": torch.as_tensor(
+                package_pair,
+                dtype=dtype,
+                device=device,
+            ),
+            "baseline_resistance": torch.as_tensor(
+                sample.baseline_resistance,
+                dtype=dtype,
+                device=device,
+            ),
+            "baseline_reactance": torch.as_tensor(
+                sample.baseline_reactance,
+                dtype=dtype,
+                device=device,
+            ),
+            "target_r": target_r,
+            "target_x": target_x,
+            "target_channels": target_channels,
+            "r_denom": (
+                torch.mean(
+                    target_r**2
+                )
+                + 1e-18
+            ),
+            "x_denom": (
+                torch.mean(
+                    target_x**2
+                )
+                + 1e-18
+            ),
+            "channel_denom": (
+                torch.mean(
+                    torch.abs(
+                        target_channels
+                    ) ** 2
+                )
+                + 1e-18
+            ),
+            "dielectric_loss_gate": float(
+                _dielectric_loss_gate(
+                    sample.scene,
+                    sample.frequency_hz,
+                )
+            ),
+            "reactance_gate": float(
+                _reactance_gate(
+                    sample.frequency_hz
+                )
+            ),
+        }
+
+    training_records = tuple(
+        prepare_training_record(
+            sample
+        )
+        for sample in samples
+    )
+    validation_records = tuple(
+        prepare_training_record(
+            sample
+        )
+        for sample in validation_samples
+    )
+
+    def predict_record(
+        record,
+    ):
+        with torch.no_grad():
+            (
+                resistance,
+                reactance,
+                channels,
+            ) = model.forward_structured(
+                record[
+                    "coil_node"
+                ],
+                record[
+                    "coil_pair"
+                ],
+                record[
+                    "package"
+                ],
+                record[
+                    "coil_package"
+                ],
+                record[
+                    "package_pair"
+                ],
+                record[
+                    "baseline_resistance"
+                ],
+                record[
+                    "baseline_reactance"
+                ],
+                resistance_scale=(
+                    normalizer.resistance_scale
+                ),
+                reactance_scale=(
+                    normalizer.reactance_scale
+                ),
+                dielectric_loss_gate=(
+                    record[
+                        "dielectric_loss_gate"
+                    ]
+                ),
+                reactance_gate=(
+                    record[
+                        "reactance_gate"
+                    ]
+                ),
+            )
+        return (
+            (
+                resistance.detach().cpu().numpy()
+                + 1j
+                * reactance.detach().cpu().numpy()
+            ),
+            channels.detach().cpu().numpy(),
+        )
+
+    best_state = None
+    best_score = None
+    best_z = None
+    best_channel = None
+    best_epoch = 0
+    stale = 0
+    stopped_early = False
+    final_loss = np.inf
+    epochs_run = 0
+
+    def validation_metrics():
+        z_errors = []
+        channel_errors = []
+        for sample, record in zip(
+            validation_samples,
+            validation_records,
+        ):
+            predicted_z, predicted_channels = (
+                predict_record(
+                    record
+                )
+            )
+            z_errors.append(
+                _relative_error(
+                    predicted_z,
+                    sample.target_impedance,
+                )
+            )
+            channel_errors.append(
+                _relative_error(
+                    predicted_channels,
+                    sample.target_dissipation_channels,
+                )
+            )
+        z_error = float(
+            np.mean(
+                z_errors
+            )
+        )
+        channel_error = float(
+            np.mean(
+                channel_errors
+            )
+        )
+        return (
+            z_error
+            + validation_channel_weight
+            * channel_error,
+            z_error,
+            channel_error,
+        )
+
+    for epoch in range(
+        1,
+        epochs + 1,
+    ):
+        model.train()
+        order = np.random.permutation(
+            len(
+                samples
+            )
+        )
+        epoch_loss = 0.0
+
+        for batch_start in range(
+            0,
+            len(
+                order
+            ),
+            int(
+                batch_size
+            ),
+        ):
+            batch_indices = order[
+                batch_start:
+                batch_start
+                + int(
+                    batch_size
+                )
+            ]
+            optimizer.zero_grad(
+                set_to_none=True
+            )
+            batch_loss = None
+
+            for sample_index in batch_indices:
+                record = training_records[
+                    int(
+                        sample_index
+                    )
+                ]
+                (
+                    resistance,
+                    reactance,
+                    channels,
+                ) = model.forward_structured(
+                    record[
+                        "coil_node"
+                    ],
+                    record[
+                        "coil_pair"
+                    ],
+                    record[
+                        "package"
+                    ],
+                    record[
+                        "coil_package"
+                    ],
+                    record[
+                        "package_pair"
+                    ],
+                    record[
+                        "baseline_resistance"
+                    ],
+                    record[
+                        "baseline_reactance"
+                    ],
+                    resistance_scale=(
+                        normalizer.resistance_scale
+                    ),
+                    reactance_scale=(
+                        normalizer.reactance_scale
+                    ),
+                    dielectric_loss_gate=(
+                        record[
+                            "dielectric_loss_gate"
+                        ]
+                    ),
+                    reactance_gate=(
+                        record[
+                            "reactance_gate"
+                        ]
+                    ),
+                )
+                loss = (
+                    torch.mean(
+                        (
+                            resistance
+                            - record[
+                                "target_r"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "r_denom"
+                    ]
+                    + torch.mean(
+                        (
+                            reactance
+                            - record[
+                                "target_x"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "x_denom"
+                    ]
+                )
+                channel_loss = (
+                    torch.mean(
+                        torch.abs(
+                            channels
+                            - record[
+                                "target_channels"
+                            ]
+                        ) ** 2
+                    )
+                    / record[
+                        "channel_denom"
+                    ]
+                )
+                loss = (
+                    loss
+                    + channel_loss_weight
+                    * channel_loss
+                )
+                epoch_loss += float(
+                    loss.detach().cpu()
+                )
+                batch_loss = (
+                    loss
+                    if batch_loss is None
+                    else batch_loss
+                    + loss
+                )
+
+            if batch_loss is None:
+                continue
+            batch_loss = (
+                batch_loss
+                / len(
+                    batch_indices
+                )
+            )
+            batch_loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(),
+                10.0,
+            )
+            optimizer.step()
+
+        final_loss = (
+            epoch_loss
+            / len(
+                samples
+            )
+        )
+        epochs_run = epoch
+
+        if validation_samples:
+            if (
+                epoch
+                % validation_interval
+                != 0
+                and epoch
+                != epochs
+            ):
+                continue
+            model.eval()
+            (
+                score,
+                z_error,
+                channel_error,
+            ) = validation_metrics()
+            if (
+                best_score is None
+                or score
+                < best_score
+                - min_improvement
+            ):
+                best_score = float(
+                    score
+                )
+                best_z = float(
+                    z_error
+                )
+                best_channel = float(
+                    channel_error
+                )
+                best_epoch = epoch
+                best_state = {
+                    key: value.detach().cpu().clone()
+                    for key, value
+                    in model.state_dict().items()
+                }
+                stale = 0
+            else:
+                stale += 1
+                if stale >= patience:
+                    stopped_early = True
+                    break
+        else:
+            best_epoch = epoch
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value
+                in model.state_dict().items()
+            }
+
+    if best_state is None:
+        raise RuntimeError(
+            "hybrid training completed without a selectable model state"
+        )
+    model.load_state_dict(
+        best_state
+    )
+    model.eval()
+    artifact = (
+        HybridNeuralResidualArtifact(
+            model,
+            normalizer,
+            baseline_segments=(
+                baseline_segments
+            ),
+            background_conductivity_range=(
+                resolved_background_conductivity_range
+            ),
+            background_permittivity_range=(
+                resolved_background_permittivity_range
+            ),
+            package_permittivity_range=(
+                resolved_package_permittivity_range
+            ),
+            package_loss_conductivity_range=(
+                resolved_package_loss_conductivity_range
+            ),
+            package_permeability_range=(
+                resolved_package_permeability_range
+            ),
+            geometry_domain=(
+                geometry_domain
+            ),
+            device=device,
+        )
+    )
+    return (
+        artifact,
+        HybridTrainingReport(
+            final_loss=float(
+                final_loss
+            ),
+            epochs=int(
+                epochs_run
+            ),
+            samples=len(
+                samples
+            ),
+            best_epoch=int(
+                best_epoch
+            ),
+            best_validation_score=(
+                best_score
+            ),
+            best_validation_z_error=(
+                best_z
+            ),
+            best_validation_channel_error=(
+                best_channel
+            ),
+            stopped_early=bool(
+                stopped_early
+            ),
+        ),
+    )

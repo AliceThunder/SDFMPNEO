@@ -1,0 +1,97 @@
+\section{Continuous electromagnetic loss operator}
+
+\subsection{From cell tensors to a continuous operator}
+
+The vNext thermal interface is not a vector of fixed-grid cell powers. For
+every spatial point or material-local coordinate $\xi$, define a matrix factor
+\[
+  L_q(\xi;\mathcal S,\omega,T)\in\C^{r_q\times P}
+\]
+and the local Hermitian loss operator
+\[
+  H_q(\xi)=L_q(\xi)\adj L_q(\xi)\PSD.
+\]
+For port current $i$,
+\[
+  q(\xi;i)
+  =\frac{1}{2}i\adj H_q(\xi)i
+  =\frac{1}{2}\norm{L_q(\xi)i}_2^2
+  \ge 0.
+\]
+Thus local non-negativity is exact by construction.
+
+Different material objects use their natural measure: conductor volume,
+dielectric volume, surface loss measure, or a reduced modal coordinate.
+The global absorbed-power operator is
+\[
+  D_{\mathrm{abs}}
+  =\int_{\Omega_{\mathrm{loss}}}
+    H_q(\xi)\dd\mu(\xi).
+\]
+
+\begin{invariant}[Power closure]
+For every port current,
+\[
+  \int q(\xi;i)\dd\mu(\xi)
+  =\frac{1}{2}i\adj D_{\mathrm{abs}}i .
+\]
+The decoder enforces this identity structurally or by one final low-dimensional
+congruence, never by redistributing heat on a world-grid stencil.
+\end{invariant}
+
+\subsection{Low-rank loss channels}
+
+For thermal coupling, the continuous field is factorized as
+\[
+  H_q(\xi;\mathcal S)
+  \approx
+  \sum_{\ell=1}^{R_q}
+  W_\ell(\mathcal S)\,
+  \psi_\ell(\xi;\mathcal S),
+\]
+where $\psi_\ell$ are non-negative or PSD object-local basis fields transported
+with geometry. Equivalently, instantaneous heat is represented by a small set
+of source amplitudes
+\[
+  p_\ell(t)=p_\ell(i(t),x_e(t),T(t))
+\]
+and continuous source profiles
+\[
+  q(\mathbf r,t)
+  =\sum_{\ell=1}^{R_q}p_\ell(t)\Psi_\ell(\mathbf r;\mathcal S,T).
+\]
+The rank $R_q$ is chosen by energy and downstream thermal observability, not by
+the number of electromagnetic quadrature points.
+
+\subsection{Conductor loss}
+
+Conductor loss is computed directly from finite-cross-section modal currents:
+\[
+  q_c(\mathbf r)
+  =\frac12 \Rea\{\mathbf J\adj\rho_e\mathbf J\},
+\]
+where $\rho_e=\sigma^{-1}$ may be tensor-valued and temperature dependent.
+Because the conductor basis resolves skin and proximity modes, no separate
+fine-minus-coarse self correction is part of the vNext theory.
+
+\subsection{Dielectric and magnetic loss}
+
+In a harmonic passive dielectric,
+\[
+  q_d
+  =
+  \frac{\omega}{2}
+  \mathbf E\adj \Ima\{\epsilon\}\mathbf E
+  +\frac{\omega}{2}
+  \mathbf H\adj \Ima\{\mu\}\mathbf H ,
+\]
+with sign convention chosen consistently with the phasor convention. Equivalent
+surface or contrast-volume unknowns are mapped to continuous loss factors
+through the same integral representation used by the teacher.
+
+\subsection{Spatial queries}
+
+A user may request $q(\mathbf r)$ at arbitrary coordinates without retraining.
+The query is transformed to relevant object-local coordinates and evaluated by
+analytic basis functions plus a continuous neural residual. Spatial resolution
+is therefore chosen at query time.

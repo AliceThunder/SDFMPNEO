@@ -1,0 +1,138 @@
+\section{Residual-based observable error bounds}
+\label{sec:residual-bounds}
+
+CERTIFIED mode must turn a small physical residual into a meaningful statement
+about port or thermal observables.
+
+\subsection{State error from residual}
+
+Let
+\[
+ Ax=b,\qquad r=b-A\widehat x.
+\]
+Then
+\[
+ e=x-\widehat x=A^{-1}r.
+\]
+If a computable stability lower bound $\beta$ satisfies
+\[
+ \norm{Ay}_{Y^\ast}\ge\beta\norm{y}_X
+\]
+for all admissible $y$, then
+\[
+ \norm e_X
+ \le
+ \frac{\norm r_{Y^\ast}}{\beta}.
+\]
+The raw residual is therefore sufficient only when paired with an estimate or
+bound for operator stability.
+
+\subsection{Preconditioned practical estimator}
+
+Let $M^{-1}$ approximate $A^{-1}$. Define
+\[
+ \eta_M=\norm{M^{-1}r}_X.
+\]
+A calibration factor derived from REFERENCE scenes bounds the defect of the
+preconditioner:
+\[
+ \norm{(I-M^{-1}A)y}_X\le\gamma\norm y_X,\qquad \gamma<1.
+\]
+Then
+\[
+ \norm e_X
+ \le
+ \frac{\eta_M}{1-\gamma}.
+\]
+The calibration domain and observed maximum $\gamma$ are part of the
+certificate.
+
+\subsection{Goal-oriented port error}
+
+For a scalar observable
+\[
+ J(x)=\ell\adj x,
+\]
+let the dual state satisfy
+\[
+ A\adj z=\ell.
+\]
+Then
+\[
+ J(x)-J(\widehat x)=z\adj r.
+\]
+An approximate dual $\widehat z$ gives the computable estimator
+\[
+ \eta_J=\widehat z\adj r
+\]
+plus a dual-residual remainder. Port impedance entries, power channels, and
+selected field probes can therefore be certified more tightly than the entire
+state norm.
+
+\subsection{Matrix-valued port certificate}
+
+For all port basis excitations collected as $B$, let
+\[
+ AX=B,\qquad \widehat R=B-A\widehat X.
+\]
+The impedance error is
+\[
+ \Delta Z
+ =
+ C\adj A^{-1}\widehat R.
+\]
+A dual matrix $Y$ satisfying
+\[
+ A\adj Y=C
+\]
+gives
+\[
+ \Delta Z=Y\adj\widehat R.
+\]
+CERTIFIED mode may solve or recycle a small number of dual systems and report a
+direct bound/estimate on $\norm{\Delta Z}$.
+
+\subsection{Energy and power residuals}
+
+Independent algebraic identities provide inexpensive secondary certificates:
+\[
+ \eta_{\rm power}
+ =
+ \frac{
+  \left|
+    \frac12 i\adj\Herm(Z)i
+    -P_{\rm cond}-P_{\rm diel}-P_{\rm out}
+  \right|
+ }{
+  \max\left(
+   \left|\frac12 i\adj\Herm(Z)i\right|,
+   P_{\rm scale}
+  \right)
+ }.
+\]
+A model is not certified solely because the operator residual is small if power
+closure or passivity fails.
+
+\subsection{Thermal observable bounds}
+
+For the reduced thermal model, the step residual is
+\[
+ r_T
+ =
+ C_T\dot z+G_Tz-B_Tp-b_{\rm env}.
+\]
+In a coercive passive system, energy estimates bound state error using the
+smallest generalized dissipation/capacity scales. Goal-oriented adjoints are
+used for peak-temperature or probe-temperature certification.
+
+\subsection{Certificate levels}
+
+The API distinguishes:
+\begin{description}
+\item[residual-certified] physical residual and structural identities pass;
+\item[observable-certified] residual plus goal-oriented estimator for requested
+  observables passes;
+\item[reference-certified] a converged teacher solve has been performed.
+\end{description}
+This prevents one scalar residual tolerance from being interpreted as a
+universal error guarantee.

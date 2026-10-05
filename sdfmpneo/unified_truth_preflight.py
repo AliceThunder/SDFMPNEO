@@ -1,0 +1,378 @@
+"""Pre-basis spatial truth checks required before canonical thermal construction."""
+from __future__ import annotations
+
+import numpy as np
+
+from .unified_physics_gate import (
+    _background_from_settings,
+    _off_diagonal,
+    _power_contraction_relative_error,
+    _relative,
+    _solve_fields,
+    audit_low_frequency_formulation,
+)
+
+
+def _hermitian(matrix):
+    value = np.asarray(matrix, complex)
+    return 0.5 * (value + value.conj().T)
+
+
+def _diagonal(matrix):
+    value = np.asarray(matrix)
+    return np.diag(np.diag(value))
+
+
+def _diag_vector(matrix):
+    return np.diag(np.asarray(matrix))
+
+
+def _source_path_lengths(context):
+    return np.asarray(
+        [float(row.get("path_length", np.nan)) for row in getattr(context, "source_regularization", ())],
+        float,
+    )
+
+
+def audit_open_boundary_domain(settings, background, geometries, monitor=None):
+    """Check domain convergence without requiring boundary flux itself to be invariant.
+
+    In conductive seawater, moving the artificial boundary outward changes the
+    physical loss partition: more power is dissipated in the newly included
+    seawater volume and less power reaches the artificial boundary. Therefore
+    ``D_out`` is not a domain-invariant observable. The hard Gate checks port
+    response / volume loss convergence and measures the change in ``D_out`` only
+    relative to the total terminal-dissipation scale. The raw relative D_out
+    change is still reported as a diagnostic.
+    """
+    cfg = dict(settings["BACKGROUND"].get("open_boundary_check", {}))
+    tolerance = float(cfg.get("relative_tolerance", 5e-2))
+    padding = np.asarray(cfg.get("padding", 0.12), float)
+    if padding.ndim == 0:
+        padding = np.full(3, float(padding))
+    if padding.shape != (3,) or np.any(padding <= 0.0):
+        raise ValueError("open_boundary_check.padding must be positive scalar/length-3")
+
+    bounds = np.asarray(settings["BACKGROUND"]["bounds"], float)
+    expanded = bounds.copy()
+    expanded[:, 0] -= padding
+    expanded[:, 1] += padding
+    reference = _background_from_settings(settings, bounds=expanded)
+
+    rows = []
+    for index, geometry in enumerate(geometries):
+        if monitor is not None:
+            monitor.checkpoint()
+        _, _, _, z0, d0, o0 = _solve_fields(background, geometry)
+        _, _, _, z1, d1, o1 = _solve_fields(reference, geometry)
+
+        herm0 = _hermitian(z0)
+        herm1 = _hermitian(z1)
+        terminal_scale = max(
+            float(np.linalg.norm(herm1)),
+            float(np.linalg.norm(d1 + o1)),
+            np.finfo(float).tiny,
+        )
+        outward_partition_change = float(np.linalg.norm(o0 - o1) / terminal_scale)
+        outward_fraction_base = float(np.linalg.norm(o0) / terminal_scale)
+        outward_fraction_expanded = float(np.linalg.norm(o1) / terminal_scale)
+
+        row = {
+            "index": int(index),
+            "geometry": geometry,
+            "relative_z_error": _relative(z0, z1),
+            "relative_d_vol_error": _relative(d0, d1),
+            "relative_p_vol_error": _power_contraction_relative_error(d0, d1),
+            "relative_terminal_dissipation_error": _power_contraction_relative_error(herm0, herm1),
+            "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
+            "relative_outward_partition_significance": outward_partition_change,
+            "raw_relative_d_out_error": _relative(o0, o1),
+            "outward_fraction_base": outward_fraction_base,
+            "outward_fraction_expanded": outward_fraction_expanded,
+        }
+        gated = (
+            "relative_z_error",
+            "relative_d_vol_error",
+            "relative_p_vol_error",
+            "relative_terminal_dissipation_error",
+            "relative_mutual_impedance_error",
+            "relative_outward_partition_significance",
+        )
+        row["maximum_relative_error"] = max(float(row[key]) for key in gated)
+        rows.append(row)
+        print(
+            f"开放边界域扩展 Gate……{index+1}/{len(geometries)}  "
+            f"max={row['maximum_relative_error']:.3e}  "
+            f"raw ΔDout/Dout={row['raw_relative_d_out_error']:.3e}",
+            flush=True,
+        )
+
+    worst = max((row["maximum_relative_error"] for row in rows), default=0.0)
+    return {
+        "sample_count": len(rows),
+        "padding": padding.tolist(),
+        "relative_tolerance": tolerance,
+        "maximum_relative_error": float(worst),
+        "converged": bool(worst <= tolerance),
+        "loss_partition_semantics": "D_out_changes_with_artificial_boundary_in_lossy_medium",
+        "samples": rows,
+    }
+
+
+def audit_em_mesh_preflight(settings, background, geometries, monitor=None):
+    cfg = dict(settings["BACKGROUND"].get("mesh_check", {}))
+    tolerance = float(cfg.get("relative_tolerance", 1e-1))
+    path_tolerance = 1e-10
+    factor = float(cfg.get("refinement_factor", 0.75))
+    if not 0.0 < factor < 1.0:
+        raise ValueError("mesh_check.refinement_factor must lie in (0, 1)")
+    base_fine = float(settings["BACKGROUND"]["fine_step"])
+    base_max = float(settings["BACKGROUND"].get("max_step", 4.0 * base_fine))
+    refined_fine = factor * base_fine
+    refined = _background_from_settings(
+        settings,
+        fine_step=refined_fine,
+        max_step=max(refined_fine, factor * base_max),
+    )
+    rows = []
+    for index, geometry in enumerate(geometries):
+        if monitor is not None:
+            monitor.checkpoint()
+        context0, _, _, z0, d0, o0 = _solve_fields(background, geometry)
+        context1, _, _, z1, d1, o1 = _solve_fields(refined, geometry)
+        path0 = _source_path_lengths(context0)
+        path1 = _source_path_lengths(context1)
+        path_error = (
+            _relative(path0, path1)
+            if path0.shape == path1.shape and path0.size and np.all(np.isfinite(path0)) and np.all(np.isfinite(path1))
+            else float("inf")
+        )
+        zdiag0 = _diag_vector(z0)
+        zdiag1 = _diag_vector(z1)
+        ddiag0 = np.real(_diag_vector(d0))
+        ddiag1 = np.real(_diag_vector(d1))
+        row = {
+            "index": int(index),
+            "geometry": geometry,
+            "relative_z_error": _relative(z0, z1),
+            "relative_d_vol_error": _relative(d0, d1),
+            "relative_p_vol_error": _power_contraction_relative_error(d0, d1),
+            "relative_d_out_error": _relative(o0, o1),
+            "relative_mutual_impedance_error": _relative(_off_diagonal(z0), _off_diagonal(z1)),
+            "relative_source_path_length_error": path_error,
+            # Diagnostics only: expose whether a failed full-matrix Gate is
+            # dominated by local self terms or by coupling terms.
+            "diagnostic_z_self_relative_error": _relative(_diagonal(z0), _diagonal(z1)),
+            "diagnostic_z_self_resistive_relative_error": _relative(np.real(zdiag0), np.real(zdiag1)),
+            "diagnostic_z_self_reactive_relative_error": _relative(np.imag(zdiag0), np.imag(zdiag1)),
+            "diagnostic_d_vol_self_relative_error": _relative(_diagonal(d0), _diagonal(d1)),
+            "diagnostic_d_vol_mutual_relative_error": _relative(_off_diagonal(d0), _off_diagonal(d1)),
+            "base_z_self_real": np.real(zdiag0).tolist(),
+            "base_z_self_imag": np.imag(zdiag0).tolist(),
+            "refined_z_self_real": np.real(zdiag1).tolist(),
+            "refined_z_self_imag": np.imag(zdiag1).tolist(),
+            "base_d_vol_self": ddiag0.tolist(),
+            "refined_d_vol_self": ddiag1.tolist(),
+            "base_source_path_lengths": path0.tolist(),
+            "refined_source_path_lengths": path1.tolist(),
+        }
+        mesh_keys = (
+            "relative_z_error",
+            "relative_d_vol_error",
+            "relative_p_vol_error",
+            "relative_d_out_error",
+            "relative_mutual_impedance_error",
+        )
+        row["maximum_relative_error"] = max(float(row[key]) for key in mesh_keys)
+        rows.append(row)
+        print(
+            "pre-basis EM mesh Gate……"
+            f"{index + 1}/{len(geometries)}  max={row['maximum_relative_error']:.3e}  "
+            f"self-Z={row['diagnostic_z_self_relative_error']:.3e}  "
+            f"Rself={row['diagnostic_z_self_resistive_relative_error']:.3e}  "
+            f"Xself={row['diagnostic_z_self_reactive_relative_error']:.3e}  "
+            f"mutual-Z={row['relative_mutual_impedance_error']:.3e}  "
+            f"path={row['relative_source_path_length_error']:.3e}",
+            flush=True,
+        )
+    worst = max((row["maximum_relative_error"] for row in rows), default=0.0)
+    worst_path = max((row["relative_source_path_length_error"] for row in rows), default=float("inf"))
+    return {
+        "sample_count": len(rows),
+        "refinement_factor": factor,
+        "base_fine_step": base_fine,
+        "refined_fine_step": refined_fine,
+        "relative_tolerance": tolerance,
+        "source_path_relative_tolerance": path_tolerance,
+        "maximum_relative_error": float(worst),
+        "maximum_source_path_length_relative_error": float(worst_path),
+        "source_geometry_invariant": bool(worst_path <= path_tolerance),
+        "converged": bool(worst <= tolerance and worst_path <= path_tolerance),
+        "samples": rows,
+    }
+
+
+def _mesh_failure_diagnosis(mesh):
+    if bool(mesh.get("converged", False)) or not mesh.get("samples"):
+        return None
+    row = max(
+        mesh["samples"],
+        key=lambda item: max(
+            float(item.get("maximum_relative_error", 0.0)),
+            float(item.get("relative_source_path_length_error", 0.0)),
+        ),
+    )
+    tolerance = float(mesh.get("relative_tolerance", 0.0))
+    path_tolerance = float(mesh.get("source_path_relative_tolerance", 1e-10))
+    path_error = float(row.get("relative_source_path_length_error", np.inf))
+    if path_error > path_tolerance:
+        return {
+            "code": "mesh_refinement_changed_physical_source_geometry",
+            "geometry": row.get("geometry"),
+            "relative_source_path_length_error": path_error,
+            "source_path_relative_tolerance": path_tolerance,
+            "recommendation": (
+                "Mesh refinement must compare the same physical source geometry. "
+                "Fix centerline/source sampling before interpreting Maxwell convergence."
+            ),
+        }
+    self_z = float(row.get("diagnostic_z_self_relative_error", 0.0))
+    mutual_z = float(row.get("relative_mutual_impedance_error", 0.0))
+    self_d = float(row.get("diagnostic_d_vol_self_relative_error", 0.0))
+    mutual_d = float(row.get("diagnostic_d_vol_mutual_relative_error", 0.0))
+    self_dominated = (
+        self_z > max(tolerance, 3.0 * mutual_z)
+        and self_d > max(tolerance, 3.0 * mutual_d)
+    )
+    if self_dominated:
+        return {
+            "code": "unresolved_source_self_response",
+            "geometry": row.get("geometry"),
+            "self_z_relative_error": self_z,
+            "self_resistive_relative_error": float(row.get("diagnostic_z_self_resistive_relative_error", np.inf)),
+            "self_reactive_relative_error": float(row.get("diagnostic_z_self_reactive_relative_error", np.inf)),
+            "mutual_z_relative_error": mutual_z,
+            "self_d_vol_relative_error": self_d,
+            "mutual_d_vol_relative_error": mutual_d,
+            "base_z_self_real": row.get("base_z_self_real"),
+            "base_z_self_imag": row.get("base_z_self_imag"),
+            "refined_z_self_real": row.get("refined_z_self_real"),
+            "refined_z_self_imag": row.get("refined_z_self_imag"),
+            "base_d_vol_self": row.get("base_d_vol_self"),
+            "refined_d_vol_self": row.get("refined_d_vol_self"),
+            "recommendation": (
+                "The EM grid resolves mutual/far-field coupling much better than the local source "
+                "self response. The physical source polyline is already mesh-invariant; do not "
+                "relax the Gate. If the self error remains large, use a separately validated local "
+                "self-field/self-loss correction or a locally refined EM truth discretization."
+            ),
+        }
+    return {
+        "code": "general_em_mesh_nonconvergence",
+        "geometry": row.get("geometry"),
+        "maximum_relative_error": float(row.get("maximum_relative_error", np.inf)),
+        "recommendation": "Refine the EM truth discretization and rerun the convergence Gate; do not relax the tolerance.",
+    }
+
+
+def _source_and_loss_partition(background, geometry):
+    context = background.geometry_context(geometry, assemble_thermal=False)
+    rows = tuple(getattr(context, "source_regularization", ()))
+    matching = len(rows) == context.source_shape.shape[1]
+    expected_step = float(getattr(background, "source_centerline_step", np.nan))
+    source_ok = bool(
+        matching
+        and np.isfinite(expected_step)
+        and expected_step > 0.0
+        and all(
+            row.get("model") == getattr(background, "source_model", None)
+            and abs(float(row.get("centerline_step", np.nan)) - expected_step) <= 1e-15
+            and float(row.get("conductor_width", 0.0)) > 0.0
+            and float(row.get("conductor_thickness", 0.0)) > 0.0
+            and abs(float(row.get("heat_weight_sum", 0.0)) - 1.0) <= 1e-12
+            and float(row.get("source_norm", 0.0)) > 0.0
+            for row in rows
+        )
+    )
+    terminal_ok = bool(
+        matching
+        and all(
+            row.get("terminal_model") == getattr(background, "terminal_model", None)
+            and float(row.get("terminal_separation", 0.0)) > np.finfo(float).tiny
+            and float(row.get("terminal_path_integral_relative_error", np.inf)) <= 1e-12
+            for row in rows
+        )
+    )
+    sigma = np.asarray(background.cell_properties(context, None, em=True)[0], float)
+    expected = np.zeros(background.n_cells, float)
+    for name, fraction in context.fractions.items():
+        if name in background.coil_materials:
+            continue
+        local = float(
+            background._temperature_material(name, np.asarray(background.ambient_temperature))
+        )
+        expected += np.asarray(fraction, float) * local
+    partition_error = float(
+        np.linalg.norm(sigma - expected)
+        / max(float(np.linalg.norm(expected)), np.finfo(float).tiny)
+    )
+    return {
+        "finite_support_source": source_ok,
+        "source_centerline_step": expected_step,
+        "terminal_path_conservation": terminal_ok,
+        "maximum_terminal_path_integral_relative_error": max(
+            (float(row.get("terminal_path_integral_relative_error", np.inf)) for row in rows),
+            default=float("inf"),
+        ),
+        "material_fraction_closure_error": float(
+            getattr(context, "material_fraction_closure_error", np.inf)
+        ),
+        "wire_loss_partition_relative_error": partition_error,
+    }
+
+
+def run_truth_preflight(settings, background, geometries, monitor=None):
+    geometries = list(geometries)
+    if not geometries:
+        raise ValueError("truth preflight needs at least one held-out geometry")
+    cfg = settings["BACKGROUND"]
+    domain_n = min(len(geometries), max(1, int(cfg.get("open_boundary_check", {}).get("samples", 1))))
+    formulation_n = min(len(geometries), max(1, int(cfg.get("formulation_check", {}).get("samples", 1))))
+    mesh_n = min(len(geometries), max(1, int(cfg.get("mesh_check", {}).get("samples", 1))))
+    domain = audit_open_boundary_domain(settings, background, geometries[:domain_n], monitor)
+    formulation = audit_low_frequency_formulation(settings, background, geometries[:formulation_n], monitor)
+    mesh = audit_em_mesh_preflight(settings, background, geometries[:mesh_n], monitor)
+    source_rows = [_source_and_loss_partition(background, g) for g in geometries]
+    max_fraction = max(row["material_fraction_closure_error"] for row in source_rows)
+    max_partition = max(row["wire_loss_partition_relative_error"] for row in source_rows)
+    max_terminal = max(row["maximum_terminal_path_integral_relative_error"] for row in source_rows)
+    checks = {
+        "finite_support_source_ok": all(row["finite_support_source"] for row in source_rows),
+        "terminal_source_continuity_ok": all(row["terminal_path_conservation"] for row in source_rows),
+        "material_fraction_closure_ok": max_fraction <= 1e-10,
+        "wire_loss_not_double_counted": max_partition <= 1e-12,
+        "open_boundary_domain_converged": bool(domain["converged"]),
+        "low_frequency_formulation_converged": bool(formulation["converged"]),
+        "em_mesh_converged": bool(mesh["converged"]),
+    }
+    certified = all(bool(value) for value in checks.values())
+    diagnosis = _mesh_failure_diagnosis(mesh)
+    return {
+        **{key: bool(value) for key, value in checks.items()},
+        "source_model": getattr(background, "source_model", "unknown"),
+        "source_centerline_step": float(getattr(background, "source_centerline_step", np.nan)),
+        "terminal_model": getattr(background, "terminal_model", "unknown"),
+        "maximum_terminal_path_integral_relative_error": float(max_terminal),
+        "maximum_material_fraction_closure_error": float(max_fraction),
+        "maximum_wire_loss_partition_relative_error": float(max_partition),
+        "open_boundary_convergence": domain,
+        "formulation_convergence": formulation,
+        "em_mesh_convergence": mesh,
+        "failure_diagnosis": diagnosis,
+        "source_samples": source_rows,
+        "certified": bool(certified),
+        "status": "certified" if certified else "truth_preflight_failed",
+    }
+
+
+__all__ = ["audit_open_boundary_domain", "audit_em_mesh_preflight", "run_truth_preflight"]

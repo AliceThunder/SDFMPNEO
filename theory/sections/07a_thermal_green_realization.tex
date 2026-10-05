@@ -1,0 +1,120 @@
+\section{Thermal transfer construction and stable realization}
+\label{sec:thermal-realization}
+
+\subsection{Source and observation operators}
+
+Let the electromagnetic loss model provide $R_q$ source profiles
+$\Psi_\ell(\mathbf r)$ with amplitudes $p_\ell(t)$. Define
+\[
+ q(\mathbf r,t)
+ =
+ \sum_{\ell=1}^{R_q}\Psi_\ell(\mathbf r)p_\ell(t).
+\]
+Let $\mathcal O_T$ be a set of thermal observations: component-average
+temperature, point probes, surface temperatures, or coefficients of a
+continuous decoder basis.
+
+After Laplace transformation, the thermal teacher defines
+\[
+ y_T(s)=H_T(s;\mathcal S)p(s)+h_{\rm env}(s),
+\]
+where
+\[
+ H_T(s)
+ =
+ C_{\rm obs}
+ \mathcal L_T(s)^{-1}
+ B_{\rm src}.
+\]
+$\mathcal L_T(s)$ is the continuous conduction/interface operator.
+
+\subsection{Sampling in the Laplace domain}
+
+The transfer is sampled at shifts
+\[
+ s_k=\sigma_k+j\omega_k,\qquad \sigma_k>0
+\]
+covering the time scales of interest. Sampling points are selected
+logarithmically and adaptively according to transfer interpolation error. Very
+long-time behavior is constrained by a separate near-zero/steady solve rather
+than extrapolated from only short-time samples.
+
+\subsection{Structure-preserving reduction}
+
+A linear passive thermal transfer is a positive-real/Stieltjes-type diffusive
+system under appropriate source/observation pairing. The reduced realization
+is sought directly in the form
+\[
+ C_T\dot z=-G_Tz+B_Tp,\qquad
+ y=C_T^{\rm obs}z+D_Tp,
+\]
+with
+\[
+ C_T\SPD,\qquad G_T\PSD.
+\]
+Projection bases obtained from rational Krylov or moment matching may be used,
+but the final realization is symmetrized/parameterized so the energy
+\[
+ \mathcal E_T(z)=\frac12 z^\T C_Tz
+\]
+satisfies
+\[
+ \frac{\dd\mathcal E_T}{\dd t}
+ =
+ -z^\T G_Tz+z^\T B_Tp
+\]
+up to environmental exchange terms.
+
+\subsection{Geometry-parametric thermal model}
+
+The thermal state dimension is fixed only within one artifact schema, not by a
+world mesh. Geometry dependence enters through structured factors:
+\[
+ C_T(\mathcal S)=L_C(\mathcal S)L_C(\mathcal S)^\T+\epsilon I,
+\]
+\[
+ G_T(\mathcal S)=L_G(\mathcal S)L_G(\mathcal S)^\T+G_{\rm env}(\mathcal S).
+\]
+A neural model may predict these factors around an analytic/low-order baseline.
+
+\subsection{Decoder construction}
+
+The continuous temperature decoder is represented as
+\[
+ T(\mathbf r,t)-T_{\rm ref}
+ =
+ \sum_{m=1}^{R_T}z_m(t)\Phi_m(\mathbf r;\mathcal S).
+\]
+The basis functions combine:
+\begin{enumerate}
+\item object-local analytic Green responses of loss channels;
+\item low-order interface response modes;
+\item a learned continuous residual constrained to reproduce the reduced
+      observation operator.
+\end{enumerate}
+
+\subsection{Nonlinear update}
+
+For temperature-dependent material laws, a time step uses a small number of
+Picard/Newton updates in reduced coordinates:
+\[
+ C_T(z^{(k)})\dot z^{(k+1)}
+ =
+ -G_T(z^{(k)})z^{(k+1)}
+ +B_T(z^{(k)})p^{(k)}.
+\]
+The update is accepted only if the electrothermal energy residual and state
+increment meet tolerances. If reduced nonlinearity cannot represent the local
+constitutive change, CERTIFIED mode escalates to a local teacher correction.
+
+\subsection{Steady-state consistency}
+
+The steady state satisfies
+\[
+ G_T(z_\ast)z_\ast
+ =
+ B_T(z_\ast)p_\ast+b_{\rm env}.
+\]
+A transient integrator and steady solver use the same reduced operators. A model
+that matches trajectories but fails this equation is not considered thermally
+certified.

@@ -1,0 +1,176 @@
+\section{Physics-factored scene operator and many-body neural residual}
+\label{sec:physics-factored}
+
+A trainable scene model should not ask one neural network to rediscover
+self-impedance, free-space pair coupling, rigid-motion invariance, and
+many-body scattering simultaneously. vNext therefore uses a cluster/factor
+decomposition whose low-order terms are physical operators.
+
+\subsection{Object and port embeddings}
+
+Let object $i$ carry intrinsic descriptor $\gamma_i$ and pose $g_i\in\SE(3)$.
+Let $E_i$ embed the local ports of object $i$ into the global port vector.
+The isolated-object contribution is
+\[
+  Z_i^{(1)}
+  =
+  Z_{\rm self}(\gamma_i,\mathcal M_{\rm bg},\omega,T).
+\]
+In a homogeneous isotropic background it is independent of absolute pose.
+
+\subsection{Pair interaction}
+
+For a pair $(i,j)$ define relative pose
+\[
+  g_{ij}=g_i^{-1}g_j.
+\]
+The two-body port interaction is
+\[
+  Z_{ij}^{(2)}
+  =
+  \mathcal K_2(
+    \gamma_i,\gamma_j,g_{ij},
+    \mathcal M_{\rm env},\omega,T
+  ).
+\]
+For reciprocal media, exchanging source and receiver gives the transpose
+relation required by reciprocity. The pair kernel may be analytic,
+tabulated/interpolated from an integral teacher, or represented by a small
+equivariant neural operator.
+
+A first scene approximation is
+\[
+ Z^{[2]}
+ =
+ \sum_i E_i^\T Z_i^{(1)}E_i
+ +\sum_{i<j}
+ \left(
+   E_i^\T Z_{ij}^{(2)}E_j
+  +E_j^\T Z_{ij}^{(2)\T}E_i
+ \right).
+ \label{eq:pair-expansion}
+\]
+
+\subsection{Many-body residual}
+
+Packages, dielectric scattering, shielding, and repeated interactions create a
+non-additive remainder:
+\[
+  \Delta Z_{\ge3}
+  =
+  Z_{\rm true}-Z^{[2]}.
+\]
+A graph neural operator predicts this residual from physics-initialized
+messages. The initial edge message is not an arbitrary learned embedding; it
+contains pair features such as
+\[
+  Z_{ij}^{(2)},\quad
+  d_{ij}/L_0,\quad
+  \widehat d_{ij},\quad
+  \text{electrical size},\quad
+  \text{material contrast}.
+\]
+Message passing therefore learns repeated/many-body interaction corrections
+rather than first-order coupling from scratch.
+
+\subsection{Channel-structured residual}
+
+The residual is decomposed into reactive and dissipative parts:
+\[
+ \Delta Z_{\ge3}
+ =
+ \Delta D_{\rm abs}
+ +\Delta D_{\rm out}
+ +j\Delta X.
+\]
+The network does not output unconstrained matrices. A structure-preserving
+decoder predicts factors
+\[
+ D_{\rm abs}
+ =
+ L_{\rm abs}L_{\rm abs}\adj,\qquad
+ D_{\rm out}
+ =
+ L_{\rm out}L_{\rm out}\adj,
+\]
+and a reciprocal reactance $X=X^\T$. The factors may represent the total
+quantity or a positive correction to a baseline, depending on whether the
+chosen residual decomposition preserves positivity termwise.
+
+If a signed correction is necessary, the network predicts a structured latent
+whose \emph{final} decoded total remains PSD; it never projects an arbitrary
+matrix after the fact without reporting the correction magnitude.
+
+\subsection{Operator-level low-rank correction}
+
+For CERTIFIED acceleration it is useful to learn a low-rank correction to the
+physical integral operator or preconditioner:
+\[
+  A
+  \approx
+  A_0+U_\theta K_\theta V_\theta\adj ,
+  \qquad
+  r_\theta\ll N.
+\]
+When appropriate symmetry permits $V_\theta=U_\theta$, structured $K_\theta$
+can preserve reciprocity or energy properties. If $A_0^{-1}$ is cheap, the
+Woodbury identity gives
+\[
+ (A_0+UKV\adj)^{-1}
+ =
+ A_0^{-1}
+ -A_0^{-1}U
+ \left(K^{-1}+V\adj A_0^{-1}U\right)^{-1}
+ V\adj A_0^{-1}.
+\]
+This creates a bridge between the FAST neural macromodel and the physical
+operator used by CERTIFIED mode.
+
+The learned operator correction is optional; a port-only residual model may be
+used first. In all cases the true physical residual remains the acceptance
+criterion.
+
+\subsection{Loss-field factorization}
+
+The same hierarchy applies to loss:
+\[
+  H_q(\xi)
+  =
+  H_q^{\rm self}(\xi)
+  +H_q^{\rm pair}(\xi)
+  +\Delta H_q^{\rm many}(\xi).
+\]
+Self loss modes are intrinsic to each conductor/material body and move with its
+pose. Pair modes account for leading proximity/coupling. The learned residual
+contains higher-order redistribution. The final factorized decoder enforces
+local non-negativity and global power closure.
+
+\subsection{Thermal interaction factorization}
+
+For homogeneous or weakly structured thermal backgrounds, the transfer between
+source object $i$ and observation object $j$ has a Green-kernel pair baseline.
+Interface/package effects are then learned or reduced as a many-body correction.
+This mirrors the electromagnetic scene decomposition and improves transfer
+across variable object counts.
+
+\subsection{Training hierarchy}
+
+Training follows the factorization:
+\begin{enumerate}
+\item learn/validate isolated-object self libraries;
+\item learn/validate two-object pair kernels over relative pose;
+\item freeze or slowly fine-tune low-order physics and train many-body residuals;
+\item jointly fine-tune decoded observables with fixed release sets;
+\item calibrate residual/uncertainty heads against CERTIFIED solves.
+\end{enumerate}
+
+This hierarchy allows pair data to be reused combinatorially across many
+multi-object scenes and reduces the number of expensive full-scene REFERENCE
+samples.
+
+\subsection{Failure criterion}
+
+If the many-body residual is routinely of the same scale as the full operator
+for the target scene class, the pair baseline is considered inadequate. The
+response is to improve the physical cluster expansion or environment kernel,
+not merely to enlarge the neural network.

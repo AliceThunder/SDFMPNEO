@@ -1,88 +1,188 @@
-"""一键训练/推理：修改下方配置后直接运行 python run.py。
+"""统一 geometry→spatial Joule tensor + geometry-local thermal ROM 生产入口。
 
-也可临时覆盖模式：
+只修改本文件顶部配置：
+
     python run.py --mode train
     python run.py --mode predict
 
-首次使用安装依赖：python -m pip install -e '.[cad,gui]'
-训练默认打开 PyQt 窗口；无界面运行使用 --headless。
-所有相对路径均相对于本文件，支持从 IDE 或其他工作目录启动。
+理论主链：
+
+    geometry
+      -> MLP: Z_field(g), D_vol(g), H_cell(g)
+      -> cellwise PSD + exact sum(H_cell)=D_vol
+      -> query geometry 的真实 M(g), K(g)
+      -> 小型 geometry-local rational-Krylov thermal ROM
+      -> explicit current/circuit + wire resistance
+      -> temperature
+
+Maxwell 只在离线 truth 生成时求解；在线推理没有 Maxwell/FGMRES/full-field
+electromagnetic correction。离线 truth 使用 finite-cross-section stranded source、
+Silver--Mueller 开放边界和 canonical local fine-minus-coarse self correction。
+训练前只做 EM truth preflight，不再构造跨 geometry 的全局 thermal state basis。
+训练/发布前的独立 Gate 会直接比较 full-cell thermal transient 与在线小 ROM，
+并在 completely-held-out geometry 上检查 spatial Joule、current/circuit dynamics、
+production integrator 和 steady state。
 """
 from __future__ import annotations
 
-import argparse
-from contextlib import contextmanager
-import json
 from pathlib import Path
-import threading
-import time
 
+import numpy as np
 
-# ==================== 1. 运行模式（直接使用 UWPT 算例） ====================
-MODE = "train"                  # "train" 训练；"predict" 推理
+MODE = "train"
+ROOT = Path(__file__).resolve().parent
 
-
-# ==================== 2. 输入输出路径 ====================
-# 可填写相对于 run.py 的路径，也可直接写绝对路径。
 FILES = {
-    "model": "results/uwpt/model.npz",          # 训练保存 / 推理加载
+    "model": "results/uwpt/model.geometry_thermal.npz",
     "predictions": "results/uwpt/predictions.json",
-    "settings_dir": "results/uwpt",           # 实际配置和训练报告所在目录
-    "resume_model": "results/uwpt/model.stopped.npz",                       # 可选：已有 .npz，继续训练
-}
-# 继续训练使用文件内保存的物理模型/空间基/网络，以及下方当前 TRAINING；
-# 此时不会重新生成网格，几何/材料等构建参数不参与本次继续训练。
-
-
-# ==================== 3. UWPT 几何与网格（长度单位 m） ====================
-MESH = {
-    "generate": True,                   # True：每次新训练按配置生成；False：导入已有网格
-    "path": "results/uwpt/uwpt.msh",     # Gmsh 2.2 ASCII 四面体网格
-    "geometry_tolerance": 0.0005,        # 中心线折线弦误差
-    "mesh_size": 0.01,
-}
-# 发射/接收线圈可独立配置。角度为弧度，依次绕 x/y/z 旋转。
-TRANSMITTER = {
-    "shape": "circle",                  # "circle" / "rounded_square"
-    "turns": 0.5,
-    "outer_half_size": 0.015,
-    "pitch": 0.002,
-    "conductor_width": 0.001,
-    "conductor_thickness": 0.001,
-    "corner_radius": 0.006,             # 仅 rounded_square 使用
-    "translation": [0.0, 0.0, 0.0],
-    "angles": [0.0, 0.0, 0.0],
-}
-RECEIVER = {
-    "shape": "circle",
-    "turns": 0.5,
-    "outer_half_size": 0.015,
-    "pitch": 0.002,
-    "conductor_width": 0.001,
-    "conductor_thickness": 0.001,
-    "corner_radius": 0.006,
-    "translation": [0.0, 0.0, 0.01],
-    "angles": [0.0, 0.0, 0.0],
-}
-ENVIRONMENT = {
-    "package_half_extent": [0.019, 0.019, 0.003],
-    "seawater_padding": 0.006,
-}
-PHYSICAL_TAGS = {
-    "tx_copper": 101, "rx_copper": 102,
-    "tx_package": 201, "rx_package": 202, "seawater": 301,
-    "tx_terminal_start": 1001, "tx_terminal_end": 1002,
-    "rx_terminal_start": 1003, "rx_terminal_end": 1004,
-    "outer_boundary": 2001,
+    "settings_dir": "results/uwpt",
+    "training_checkpoint": "results/uwpt/model.tensor_training.pt",
 }
 
+BACKGROUND = {
+    # Open-domain convergence at ±0.27 m was not sufficient for the production
+    # geometry box: the independent ±0.39 m reference changed D_vol by ~11%
+    # and mutual Z by ~22%. Keep the same 12-mm resolved core, but move the
+    # artificial boundary to ±0.51 m. Far seawater may stretch to 80 mm; the
+    # independent mesh Gate still checks this coarsening.
+    "bounds": [[-0.51, 0.51], [-0.51, 0.51], [-0.51, 0.51]],
+    "core_center": [0.0, 0.0, 0.02],
+    "core_half_extent": [0.09, 0.09, 0.09],
+    "fine_step": 0.012,
+    "growth": 1.5,
+    "max_step": 0.08,
+    # Large open-domain matrices use Maxwell-aware shifted-ILU + LGMRES.
+    # The shift belongs only to the preconditioner. If the main Krylov solve
+    # stalls around 1e-6--1e-7, true-residual defect correction reuses the same
+    # ILU until the original physical matrix reaches the 1e-9 certificate.
+    "linear_solver": {
+        "relative_residual_tolerance": 1e-9,
+        "direct_max_dofs": 60000,
+        "iterative_maxiter": 40,
+        "iterative_inner_m": 30,
+        "iterative_defect_steps": 3,
+        "iterative_defect_maxiter": 16,
+        "iterative_defect_inner_m": 20,
+        "iterative_defect_start_residual": 5e-6,
+        "ilu_drop_tolerance": 5e-3,
+        "ilu_fill_factor": 4.0,
+        "ilu_strong_drop_tolerance": 1e-3,
+        "ilu_strong_fill_factor": 8.0,
+        "ilu_shift_factor": 3e-2,
+        "ilu_strong_shift_factor": 1e-1,
+    },
+    # The global grid is intentionally kept coarse enough for many-geometry truth.
+    # Only the unresolved diagonal self response receives a small canonical local
+    # fine-minus-coarse defect. Translation/rotation are removed in that local
+    # solve, while global mutual/far-field coupling remains from the full domain.
+    # Boundary-conditioned longitudinal terminal near-field reference.
+    # The terminal charge support is a finite-width/thickness physical source;
+    # use >=4 cells across that support so the 3mm -> 2.25mm independent
+    # validation compares two resolved scalar patches rather than a 1.6-cell
+    # under-resolved contact.  The hard 575k cell budget remains fail-closed.
+    "global_longitudinal_correction": {
+        "enabled": True,
+        "fine_step": 0.003,
+        "validation_fine_step": 0.00225,
+        "relative_tolerance": 1e-1,
+        "core_padding": 0.006,
+        "boundary_padding": 0.04,
+        "growth": 1.5,
+        "max_step": 0.02,
+        "terminal_cells_per_support": 4.0,
+        "terminal_core_padding_factor": 1.5,
+        "terminal_patch_max_cells": 575000,
+    },
+    "self_correction": {
+        "enabled": True,
+        "samples": 1,
+        "fine_step": 0.003,
+        "validation_fine_step": 0.00225,
+        "core_padding": 0.006,
+        "boundary_padding": 0.04,
+        "growth": 1.5,
+        "max_step": 0.02,
+        "relative_tolerance": 1e-1,
+        "joule_identity_tolerance": 1e-10,
+        "linear_relative_residual_tolerance": 1e-9,
+        "linear_direct_max_dofs": 60000,
+        "linear_direct_fallback_max_dofs": 60000,
+        # The compatible transverse solve can use a bounded direct factorization
+        # for medium local systems.  The 64k-edge case observed in production
+        # stalls completely under ILU/LGMRES, while this 100k cap still excludes
+        # the 118k/254k refined validation systems that must stay iterative.
+        "linear_transverse_direct_max_dofs": 100000,
+        "linear_transverse_direct_fallback_max_dofs": 100000,
+        "linear_iterative_maxiter": 40,
+        "linear_iterative_inner_m": 30,
+        "linear_iterative_defect_steps": 3,
+        "linear_iterative_defect_maxiter": 16,
+        "linear_iterative_defect_inner_m": 20,
+        "linear_iterative_defect_start_residual": 5e-6,
+        # If the rediscretized coarse operator disagrees materially with the
+        # true Galerkin coarse equation, enter exact coarse-defect recovery
+        # while the transferred warm state is still useful instead of waiting
+        # for an unreachable 1e-4 residual plateau.
+        "linear_two_level_galerkin_recovery_start_residual": 8e-1,
+        "linear_two_level_galerkin_recovery_consistency": 5e-2,
+        "linear_ilu_drop_tolerance": 5e-3,
+        "linear_ilu_fill_factor": 4.0,
+        "linear_ilu_strong_drop_tolerance": 1e-3,
+        "linear_ilu_strong_fill_factor": 8.0,
+        "linear_ilu_shift_factor": 3e-2,
+        "linear_ilu_strong_shift_factor": 1e-1,
+        "parallel_ports": 2,
+        "linear_result_cache_size": 64,
+    },
+    # Production is ±0.51 m; the independent reference is ±0.63 m. The 5%
+    # convergence requirement is unchanged. D_out itself is diagnostic in
+    # conductive seawater; its change is normalized by the terminal-dissipation
+    # scale, while Z/D_vol/current-space power remain hard Gate quantities.
+    "open_boundary_check": {
+        "samples": 1,
+        "padding": 0.12,
+        "relative_tolerance": 5e-2,
+    },
+    "formulation_check": {
+        "samples": 1,
+        "relative_tolerance": 2e-2,
+    },
+    "mesh_check": {
+        "samples": 1,
+        "refinement_factor": 0.75,
+        "relative_tolerance": 1e-1,
+        "source_path_relative_tolerance": 1e-10,
+    },
+    "geometry_continuity_check": {
+        "samples": 1,
+        "translation_step": 1e-4,
+        "angle_step": 1e-3,
+        "relative_change_limit": 2e-1,
+    },
+}
 
-# 几何参数族：一次训练覆盖整个连续参数盒；推理输入保存模型内的这些参数。
-# 形状、匝数、材料拓扑固定。planar_scale 同比例改变外径、匝距和导体宽度；
-# thickness_scale 独立改变厚度；package_scale 仅改变封装外表面尺寸。
-# 位移/间距单位 m，seawater_radius 是实际网格外球半径（包含几何容差）。
+DEFAULT_GEOMETRY = {
+    "transmitter": {
+        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
+        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
+        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.0], "angles": [0.0, 0.0, 0.0],
+    },
+    "receiver": {
+        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
+        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
+        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.035], "angles": [0.0, 0.0, 0.0],
+    },
+    "package_half_extent": [0.035, 0.035, 0.005],
+}
+
+# Production geometry is a constrained family, not the old 27D solver-
+# perturbation box. Shape, turns, orientation and topology stay fixed.
+# planar_scale jointly scales outer size, pitch, conductor width and corner
+# radius. The historical 10th parameter was seawater_radius; in the current
+# fixed open-boundary formulation that quantity is no longer an online geometry
+# variable and is certified separately by BACKGROUND.open_boundary_check.
 GEOMETRY_FAMILY = {
-    "enabled": True,
+    "schema": "scaled_uwpt_family_v1",
     "parameters": {
         "tx_planar_scale": {"bounds": [0.97, 1.03]},
         "rx_planar_scale": {"bounds": [0.97, 1.03]},
@@ -90,454 +190,173 @@ GEOMETRY_FAMILY = {
         "rx_thickness_scale": {"bounds": [0.95, 1.05]},
         "rx_offset_x": {"bounds": [-0.0002, 0.0002]},
         "rx_offset_y": {"bounds": [-0.0002, 0.0002]},
-        "rx_gap": {"bounds": [0.0098, 0.0102]},
+        "rx_gap": {"bounds": [0.0348, 0.0352]},
         "tx_package_scale": {"bounds": [0.98, 1.02]},
         "rx_package_scale": {"bounds": [0.98, 1.02]},
-        "seawater_radius": {"relative": [0.98, 1.02]},
     },
-    "em_anchor_count": 4,       # 额外 Halton 几何锚点；另含中心、上下角点及各轴端点
-    "cache_size": 128,          # 缓存几何物理算子，减少残差训练中的重复组装
 }
 
-
-# ==================== 4. UWPT 材料与电磁参数（SI 单位） ====================
 PHYSICS = {
     "frequency_hz": 100000.0,
-    "ambient_temperature": 293.15,      # K，固定环境/边界参考温度
-    "constitutive_relative_error": 1e-8,
-    "em_energy_error": 1e-6,            # 单位端口源的 EM 降阶误差目标
+    "ambient_temperature": 293.15,
 }
-# 键是网格的体物理标签；修改 PHYSICAL_TAGS 后也应对应修改这里及 PORTS。
-# 电导率 S/m；电阻率温度系数 1/K；热导率 W/(m K)；体积热容量 J/(m³ K)。
+
 MATERIALS = {
-    "101": {
-        "name": "tx_copper", "electrical_conductivity": 5.8e7,
-        "resistivity_temperature_coefficient": 0.00393,
-        "reference_temperature": 293.15, "relative_permeability": 1.0,
-        "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6,
-    },
-    "102": {
-        "name": "rx_copper", "electrical_conductivity": 5.8e7,
-        "resistivity_temperature_coefficient": 0.00393,
-        "reference_temperature": 293.15, "relative_permeability": 1.0,
-        "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6,
-    },
-    "201": {
-        "name": "tx_package", "electrical_conductivity": 0.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15, "relative_permeability": 1.0,
-        "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6,
-    },
-    "202": {
-        "name": "rx_package", "electrical_conductivity": 0.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15, "relative_permeability": 1.0,
-        "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6,
-    },
-    "301": {
-        "name": "seawater", "electrical_conductivity": 5.0,
-        "resistivity_temperature_coefficient": 0.0,
-        "reference_temperature": 293.15, "relative_permeability": 1.0,
-        "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6,
-    },
+    "tx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
+                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "rx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
+                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
+    "tx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
+                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "rx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
+                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
+                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
+    "seawater": {"electrical_conductivity": 5.0, "resistivity_temperature_coefficient": 0.0,
+                 "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 80.0,
+                 "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6},
 }
-PORTS = {
-    "terminal_pairs": [[1001, 1002], [1003, 1004]],
-    "port_names": ["tx", "rx"],
-    "current_offset": None,             # I = I0 + C U；None 表示零偏置
-    "current_matrix": None,             # None 表示单位阵，即 I=U
+
+REGIONS = {
+    "coil_materials": ["tx_copper", "rx_copper"],
+    "package_materials": ["tx_package", "rx_package"],
+    "seawater_material": "seawater",
 }
-# 电流采用峰值相量 A；复系数写为字符串，例如 [["1", "0"], ["0", "1j"]]。
-EM_CANDIDATE_STATES = [
-    [-0.1, -0.1], [-0.1, 0.1], [0.1, -0.1], [0.1, 0.1], [0.0, 0.0],
-]  # 热坐标维数须等于保留热秩；None 表示由训练域上下界及中点生成
 
+PORTS = {"current_offset": None, "current_matrix": None}
 
-# ==================== 5. UWPT 热空间截断 ====================
-THERMAL_RANK = 2                     # 数值截断阶数；None 表示全空间或下方证书选秩
-THERMAL_TRUNCATION = {
-    "initial_temperature_deviation_free": None,
-    "source_dual_bound": None,
-    "requested_state_tolerance": None,
-    "prefer_partial_thermal_spectrum": True,
-}
-# 常规运行仅修改 THERMAL_RANK。若使用原有证书选秩，将其设为 None，
-# 同时填入以上前三项：自由节点初温偏差数组、热源对偶范数界和状态误差目标。
-
-
-# ==================== 6. 训练配置 ====================
-# initial_* 是质量正交热模态坐标，不是摄氏温度；长度等于热秩。
-# operating_* 对应实工况 U；time_horizon 单位 s。
-# residual_tolerance 是模态方程残差目标，不是温度误差目标。
 TRAINING = {
-    "initial_lower": [-0.1, -0.1], "initial_upper": [0.1, 0.1],
-    "operating_lower": [0.0, 0.0], "operating_upper": [10.0, 10.0],
-    "time_horizon": 100000.0, "residual_tolerance": 1e-5,
-    "time_sampling": "mixed_log", "time_min": 1e-6, "include_steady_state": True,
-    "sample_count": 64, "validation_count": 64,
-    "max_nodes": 256, "max_degree": 3,
-    "max_parent_responses": 1, "max_realization_dimension": 64,
+    "seed": 17,
+    "spatial_tensor_schema": "cellwise_joule_tensor_v1",
+    # Online thermal ROM is built independently for each query geometry from
+    # true M(g), K(g) and the predicted complete Hermitian current-source span.
+    "online_thermal_relative_tolerance": 5e-2,
+    "online_thermal_conditioning_limit": 1e10,
+    "thermal_time_scales": [0.1, 1.0, 10.0],
+    "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
+    # Start from the existing expensive truth budget, then add only
+    # high-coverage geometries if decoded physical validation still misses the
+    # release margin.  Existing cached truth is always reused.
+    "n_tensor_samples": 96,
+    "tensor_enrichment": {
+        "enabled": True,
+        "max_samples": 256,
+        "batch_size": 32,
+        "candidate_pool": 2048,
+    },
+    "final_audit": {
+        "samples": 2,
+        "times": [0.1, 1.0, 10.0, 100.0],
+        "full_vs_rom_thermal_tolerance": 5e-2,
+        "tensor_relative_tolerance": 2e-1,
+        "current_space_relative_tolerance": 2e-1,
+        "outward_relative_tolerance": 2e-1,
+        "projection_correction_limit": 2e-1,
+        "reduced_dynamic_relative_tolerance": 1e-1,
+        "integrator_relative_tolerance": 1e-4,
+        "integrator_rtol": 1e-7,
+        "integrator_atol": 1e-9,
+        "integrator_max_step": 10.0,
+        "circuit_condition_limit": 1e8,
+        "operating_cases": [
+            {"name": "current-controlled", "operating": [5.0, 0.0]},
+            {"name": "circuit-controlled", "drive": {
+                "voltage": [10.0, 0.0],
+                "series_impedance": [0.1, 0.1],
+            }},
+        ],
+    },
+    "device": "cuda",
+    "network": {
+        # Global Z/D/outward head starts from a small expensive truth set
+        # and is enlarged only by adaptive maximin enrichment; keep it compact
+        # and regularized. The coordinate field head sees many cells per
+        # geometry and can use more capacity.
+        "global": {
+            "width": 32,
+            "blocks": 1,
+            "activation": "silu",
+        },
+        "field": {
+            "width": 128,
+            "blocks": 3,
+            "activation": "silu",
+        },
+    },
+    "optimizer": {
+        "epochs": 240,
+        "batch_size": 16,
+        "field_batch_size": 4096,
+        "field_cells_per_geometry": 2048,
+        "learning_rate": 1e-3,
+        "global_learning_rate": 5e-4,
+        "field_learning_rate": 1e-3,
+        "weight_decay": 1e-6,
+        "global_weight_decay": 1e-3,
+        "field_weight_decay": 1e-6,
+        "patience": 40,
+        "validation_interval": 2,
+        "gradient_clip_norm": 10.0,
+        "physics_penalty_weight": 0.05,
+        "z_weight": 1.0,
+        "d_weight": 1.0,
+        "outward_weight": 1.0,
+        "spatial_weight": 1.0,
+        "field_density_weight": 1.0,
+        "field_shape_weight": 1.0,
+        "field_physical_weight": 1.0,
+        "field_density_prior_strength": 0.9,
+        "field_log_density_margin": 0.5,
+        "field_full_validation_interval": 10,
+        # Select the stopping point on the historical validation split, then
+        # make the production fit use every expensive cached truth geometry.
+        # Release certification remains the independent final held-out audit.
+        "refit_all_truth": True,
+        "refit_global_head": True,
+        "refit_field_head": True,
+        "refit_learning_rate_factor": 1.0,
+        "seed": 17,
+        "dtype": "float32",
+    },
 }
-# 几何物理初始种子最多使用约 75% 的节点预算，其余容量留给残差驱动修正。
-# validation_count 仅为无标签物理残差的独立输入检查点数量，不做瞬态参考积分。
 
-
-# ==================== 7. 推理配置 ====================
 PREDICTION = {
-    "a0": [0.0, 0.0], "operating": [5.0, 0.0],
-    "times": [0.0, 0.001, 1.0, 1000.0, 100000.0, 1000000.0, "inf"],
-    "geometry": None,                   # None：保存几何域的中心；或填写完整参数字典
-    "allow_time_extrapolation": True,   # 时间可超出训练窗；"inf" 查询解析稳态极限
-    "initial_temperature_file": None,
-    "state_only": False, "allow_extrapolation": False,
+    "initial_temperature_rise": 0.0,
+    "operating": [5.0, 0.0],
+    # Voltage-driven example:
+    # "drive": {"voltage": [10.0, 0.0], "series_impedance": [0.1, 0.1]},
+    # None 使用 family 中心（DEFAULT_GEOMETRY）。也可直接填写 9 个
+    # GEOMETRY_FAMILY 参数，或填写完整 geometry；完整 geometry 必须严格位于
+    # 同一个 scaled_uwpt_family_v1 流形内。
+    "geometry": None,
+    "times": [0.0, 0.1, 1.0, 1000.0, "inf"],
+    "method": "etd2_adaptive",
+    "max_step": 100.0,
+    "initial_step": 0.01,
+    "rtol": 1e-5,
+    "atol": 1e-8,
+    "steady_tolerance": 1e-10,
+    "steady_max_iterations": 40,
 }
-# initial_temperature_file：可选的一维 .npy 全节点开尔文温度；设置后投影得到 a0。
-# state_only=True：仅解析网络与温度重构；False：另输出阻抗、电感和材料损耗。
-# allow_extrapolation 仅放开初态/电流域；几何必须处于保存的有效网格参数域。
-# 任意非负有限时间及 "inf" 均可查询；域外时间精度不由有限残差检查保证。
-# 推理始终使用 .npz 内保存的物理参数，不使用本文件的几何/材料构建配置。
 
-
-# ==================== 8. PyQt 实时训练窗口与日志 ====================
 MONITOR = {
-    "enabled": True,                    # 训练打开窗口；推理不受影响
-    "auto_start": False,                # False：窗口打开后点击“启动”
-    "log_dir": "results/uwpt/logs",      # 每次任务独立子目录，保留全部 JSONL/文本日志
-    "log_interval_s": 1.0,              # 训练侧周期写日志，接受更新时也立即记录
-    "refresh_ms": 300,                  # 日志读取线程轮询周期
-    "max_plot_points": 4000,            # 窗口最多保留的曲线点数，日志不截断
-    "compute_threads": 1,               # 后台进程 BLAS/OpenMP 线程数
-    "assembly_progress_interval_s": 5.0, # 物理组装/EM 降阶期间控制台心跳周期
+    "enabled": True, "auto_start": False, "log_dir": "results/uwpt/logs",
+    "log_interval_s": 1.0, "refresh_ms": 300, "max_plot_points": 4000, "compute_threads": 1,
 }
-# 窗口主线程只绘图；QThread 读日志；独立进程训练，其日志线程周期写盘。
-# 暂停/停止在当前不可拆分运算结束后的检查点生效。暂停不退出进程，恢复继续原任务。
-# 停止后保存 model.stopped.npz（若已有有效网络），不会覆盖上次正常完成的模型。
 
-
-# ==================== 运行实现（通常无需修改） ====================
-ROOT = Path(__file__).resolve().parent
-
-
-def resolve_path(value):
-    path = Path(value).expanduser()
-    return path if path.is_absolute() else ROOT / path
-
-
-def write_json(path, value):
-    from sdfmpneo.__main__ import jsonable
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(jsonable(value), ensure_ascii=False, indent=2,
-                               allow_nan=False) + "\n", encoding="utf-8")
-
-
-@contextmanager
-def assembly_progress(monitor=None):
-    """Keep long physical assembly visibly alive in GUI/headless console output."""
-    interval = float(MONITOR.get("assembly_progress_interval_s", 5.0))
-    if not 0 < interval < float("inf"):
-        raise ValueError("MONITOR['assembly_progress_interval_s'] 必须为有限正数")
-    stop = threading.Event()
-    started = time.monotonic()
-    labels = {
-        "assembly": "组装物理模型与参考电磁空间",
-        "geometry_em_basis": "构建跨几何共享电磁空间",
-        "geometry_seed": "构造跨几何物理初始网络",
-    }
-
-    def current_label():
-        if monitor is None:
-            return labels["assembly"]
-        try:
-            phase = monitor.data.get("phase", "assembly")
-        except Exception:
-            phase = "assembly"
-        return labels.get(phase, phase or labels["assembly"])
-
-    def reporter():
-        previous = None
-        next_heartbeat = started
-        while not stop.wait(0.2):
-            now = time.monotonic()
-            label = current_label()
-            if label != previous:
-                print(f"[组装进度] {label}", flush=True)
-                previous = label
-            if now >= next_heartbeat:
-                print(f"[组装进度] {label} · 已耗时 {now-started:.1f} s", flush=True)
-                next_heartbeat = now + interval
-
-    thread = threading.Thread(target=reporter, name="assembly-progress", daemon=True)
-    thread.start()
-    succeeded = False
-    try:
-        yield
-        succeeded = True
-    finally:
-        stop.set()
-        thread.join(timeout=max(1.0, interval))
-        elapsed = time.monotonic() - started
-        status = "完成" if succeeded else "中断"
-        print(f"[组装进度] {status} · 总耗时 {elapsed:.1f} s", flush=True)
-
-
-def print_training_sample_ranges(model, config):
-    """Print the actual parameter box used to generate training/validation samples."""
-    print("\n训练样本参数范围：", flush=True)
-    if hasattr(model, "geometry_names"):
-        print("  几何参数 G（物理值；网络内部归一化到 [-1, 1]）：", flush=True)
-        for name, lower, upper, reference in zip(
-                model.geometry_names, model.lower, model.upper, model.geometry_reference):
-            print(f"    {name}: [{float(lower):.8g}, {float(upper):.8g}]"
-                  f"  参考值={float(reference):.8g}", flush=True)
-    else:
-        print("  几何参数 G：固定几何", flush=True)
-    print("  初始热坐标 a0：", flush=True)
-    for index, (lower, upper) in enumerate(zip(config.initial_lower, config.initial_upper)):
-        print(f"    a0[{index}]: [{float(lower):.8g}, {float(upper):.8g}]", flush=True)
-    print("  工况参数 U：", flush=True)
-    for index, (lower, upper) in enumerate(zip(config.operating_lower, config.operating_upper)):
-        print(f"    U[{index}]: [{float(lower):.8g}, {float(upper):.8g}]", flush=True)
-    sampling = getattr(config, "time_sampling", "linear")
-    time_min = getattr(config, "time_min", None)
-    time_detail = f"采样={sampling}"
-    if time_min is not None:
-        time_detail += f"，time_min={float(time_min):.8g} s"
-    print(f"  有限时间 t: [0, {float(config.time_horizon):.8g}] s；{time_detail}", flush=True)
-    print(f"  稳态残差点: {'包含' if getattr(config, 'include_steady_state', False) else '不包含'}",
-          flush=True)
-    print(f"  配点数量: 训练={int(config.sample_count)}，独立检查={int(config.validation_count)}",
-          flush=True)
-    print(f"  残差目标: {float(config.residual_tolerance):.8g}\n", flush=True)
-
-
-def generate_mesh(path):
-    import numpy as np
-    from sdfmpneo.spatial import RigidPose, SpiralCoilGeometry, UnderwaterWPTGeometry
-    from sdfmpneo.spatial.gmsh_pipeline import UWPTPhysicalTags, mesh_underwater_wpt_geometry
-
-    def coil(settings):
-        parameters = dict(settings)
-        pose = RigidPose(np.asarray(parameters.pop("translation")), *parameters.pop("angles"))
-        if parameters["shape"] == "circle":
-            parameters.pop("corner_radius")
-        return SpiralCoilGeometry(**parameters, pose=pose)
-
-    geometry = UnderwaterWPTGeometry(
-        coil(TRANSMITTER), coil(RECEIVER),
-        np.asarray(ENVIRONMENT["package_half_extent"]), ENVIRONMENT["seawater_padding"],
-    )
-    result = mesh_underwater_wpt_geometry(
-        geometry, path, geometry_tolerance=MESH["geometry_tolerance"],
-        mesh_size=MESH["mesh_size"], physical_tags=UWPTPhysicalTags(**PHYSICAL_TAGS),
-    )
-    mesh = result.tagged_mesh
-    if not np.array_equal(mesh.mesh.boundary_nodes(), mesh.boundary_nodes(PHYSICAL_TAGS["outer_boundary"])):
-        raise RuntimeError("材料界面网格不共形")
-    print(f"网格已生成：{mesh.mesh.n_nodes} 节点，{mesh.mesh.n_tetrahedra} 四面体", flush=True)
-
-
-def train(model_path, settings_dir, monitor=None):
-    from sdfmpneo import ResearchElectroThermalModel, ResearchTrainingConfig
-    from sdfmpneo.research import model_from_config
-
-    config = ResearchTrainingConfig(**TRAINING)
-    resume = FILES["resume_model"]
-    settings = {"case": "uwpt", "mode": "train", "model": str(model_path),
-                "training": TRAINING, "resume_model": None}
-    if resume is not None:
-        if monitor is not None:
-            monitor.phase("loading")
-        resume_path = resolve_path(resume)
-        settings["resume_model"] = str(resume_path)
-        print(f"加载模型继续训练：{resume_path}", flush=True)
-        model = ResearchElectroThermalModel.load(resume_path)
-    else:
-        mesh_path = resolve_path(MESH["path"])
-        physical = {
-            **PHYSICS, **PORTS, "mesh": str(mesh_path), "materials": MATERIALS,
-            "thermal_rank": THERMAL_RANK, "thermal_truncation": THERMAL_TRUNCATION,
-            "training": TRAINING,
-        }
-        if GEOMETRY_FAMILY["enabled"]:
-            physical["geometry_family"] = {**GEOMETRY_FAMILY, "transmitter": TRANSMITTER,
-                "receiver": RECEIVER, "physical_tags": PHYSICAL_TAGS}
-        if EM_CANDIDATE_STATES is not None:
-            physical["em_candidate_states"] = EM_CANDIDATE_STATES
-        settings.update(physics=physical, mesh=MESH, transmitter=TRANSMITTER,
-                        receiver=RECEIVER, environment=ENVIRONMENT, physical_tags=PHYSICAL_TAGS)
-        if MESH["generate"]:
-            if monitor is not None:
-                monitor.phase("mesh")
-            print("生成线圈、封装和海水网格……", flush=True)
-            generate_mesh(mesh_path)
-        elif not mesh_path.is_file():
-            raise FileNotFoundError(f"网格不存在：{mesh_path}；可设置 MESH['generate']=True")
-        # 由本文件自动生成底层入口所需配置，无需另行维护 JSON。
-        config_path = settings_dir / "model.config.json"
-        write_json(config_path, physical)
-        print("组装物理模型并构建电磁降阶空间……", flush=True)
-        if monitor is not None:
-            monitor.phase("assembly")
-        with assembly_progress(monitor):
-            if GEOMETRY_FAMILY["enabled"]:
-                from sdfmpneo.geometry_research import geometry_model_from_config
-                model, config = geometry_model_from_config(config_path, monitor=monitor)
-            else:
-                model, config = model_from_config(config_path)
-        if GEOMETRY_FAMILY["enabled"]:
-            write_json(settings_dir / "geometry.domain.json", {
-                "names": model.geometry_names, "reference": model.geometry_reference,
-                "lower": model.lower, "upper": model.upper,
-                "mesh_certificate": model.certificate, "em_basis": model.em_basis_report,
-            })
-            print(f"共享几何代理：{len(model.geometry_names)} 个几何输入，EM 基维数={model.reference.em.n_reduced}", flush=True)
-    write_json(settings_dir / "train.settings.json", settings)
-    print_training_sample_ranges(model, config)
-    print("开始无解标签残差训练……", flush=True)
-    from sdfmpneo.training.monitor import TrainingStopped
-    try:
-        report = model.train(config, monitor=monitor, progress=lambda n, r, m: print(
-            f"响应节点={n}  RMS残差={r:.6g}  最大残差={m:.6g}", flush=True))
-    except TrainingStopped:
-        checkpoint = model_path.with_name(model_path.stem+".stopped"+model_path.suffix)
-        if model.graph is not None:
-            model.save(checkpoint)
-            print(f"训练已停止，有效模型已保存：{checkpoint}", flush=True)
-        else:
-            checkpoint = None
-        stopped = {"status": "stopped", "checkpoint": None if checkpoint is None else str(checkpoint),
-                   "numerical_tolerance_met": False}
-        write_json(settings_dir / "training.stopped.json", stopped)
-        if monitor is not None:
-            monitor.finish("stopped", **stopped)
-        return 130
-    # Saving is allowed to finish even if stop arrives after training completed.
-    if monitor is not None:
-        monitor.phase("saving", check=False)
-    model.save(model_path)
-    write_json(settings_dir / "training.report.json", report)
-    print(f"训练状态：{report.status}；独立检查最大残差={report.maximum_validation_residual:.6g}")
-    print(f"模型已保存：{model_path}")
-    if not report.numerical_tolerance_met:
-        print("本次尚未达到残差目标；已保存当前模型和报告，退出码为 2。")
-    if monitor is not None:
-        monitor.finish("completed" if report.numerical_tolerance_met else report.status,
-                       model=str(model_path), numerical_tolerance_met=report.numerical_tolerance_met)
-    return 0 if report.numerical_tolerance_met else 2
-
-
-def predict(model_path, output_path, settings_dir):
-    import numpy as np
-    from sdfmpneo import ResearchElectroThermalModel
-
-    if not model_path.is_file():
-        raise FileNotFoundError(f"模型不存在：{model_path}；请先运行 python run.py --mode train")
-    model = ResearchElectroThermalModel.load(model_path)
-    parameters = dict(PREDICTION)
-    initial = parameters["a0"]
-    geometry_args = {}
-    if hasattr(model, "geometry_names"):
-        g = parameters.get("geometry")
-        if g is None:
-            g = dict(zip(model.geometry_names, (model.lower+model.upper)/2))
-        parameters["geometry"] = g
-        geometry_args = {"geometry": g}
-    temperature_file = parameters["initial_temperature_file"]
-    if temperature_file is not None:
-        temperature_path = resolve_path(temperature_file)
-        initial = model.project_initial_temperature(np.load(temperature_path, allow_pickle=False), **geometry_args)
-        parameters["initial_temperature_file"] = str(temperature_path)
-    if not parameters["times"]:
-        raise ValueError("推理 times 至少需要一个时间点")
-    print(f"加载模型推理：{model_path}", flush=True)
-    results = [model.predict(
-        t, a0=initial, operating=parameters["operating"],
-        diagnostics=not parameters["state_only"], allow_extrapolation=parameters["allow_extrapolation"],
-        allow_time_extrapolation=parameters.get("allow_time_extrapolation", True), **geometry_args,
-    ) for t in parameters["times"]]
-    write_json(output_path, results)
-    write_json(settings_dir / "predict.settings.json", {
-        "case": "uwpt", "mode": "predict", "model": str(model_path),
-        "predictions": str(output_path), "prediction": parameters, "effective_a0": initial,
-    })
-    for result in results:
-        if isinstance(result, dict):
-            time, maximum = result["time"], result["maximum_temperature"]
-        else:
-            time, maximum = result.time, result.maximum_temperature
-        print(f"t={float(time):g} s，最高温度={maximum:.8g} K")
-    print(f"推理结果已保存：{output_path}")
-    return 0
-
-
-CONFIG_NAMES = ("FILES", "MESH", "TRANSMITTER", "RECEIVER", "ENVIRONMENT", "PHYSICAL_TAGS",
-                "PHYSICS", "MATERIALS", "PORTS", "EM_CANDIDATE_STATES", "THERMAL_RANK",
-                "THERMAL_TRUNCATION", "TRAINING", "PREDICTION", "MONITOR", "GEOMETRY_FAMILY")
-
-
-def configuration_snapshot(model_path):
-    return {"root": str(ROOT), "model_path": str(model_path),
-            "parameters": {name: globals()[name] for name in CONFIG_NAMES}}
-
-
-def execute_training(model_path, settings_dir, session_dir=None):
-    from datetime import datetime
-    import uuid
-    from sdfmpneo.training.monitor import TrainingMonitor, TrainingStopped
-    if session_dir is None:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:8]
-        session_dir = resolve_path(MONITOR["log_dir"])/stamp
-    session_dir = Path(session_dir)
-    write_json(session_dir/"settings.json", configuration_snapshot(model_path))
-    print(f"训练日志：{session_dir}", flush=True)
-    with TrainingMonitor(session_dir/"metrics.jsonl", session_dir/"control.json",
-                         interval=MONITOR["log_interval_s"]) as monitor:
-        try:
-            return train(model_path, settings_dir, monitor)
-        except TrainingStopped:
-            print("已停止：物理模型构建尚未完成，暂无可保存的训练网络。", flush=True)
-            monitor.finish("stopped", checkpoint=None, message="模型构建阶段停止，暂无网络检查点")
-            return 130
-
-
-def training_worker(snapshot_path):
-    global ROOT
-    payload = json.loads(Path(snapshot_path).read_text(encoding="utf-8"))
-    settings = payload["settings"]
-    ROOT = Path(settings["root"])
-    for name in CONFIG_NAMES:
-        globals()[name] = settings["parameters"][name]
-    return execute_training(Path(settings["model_path"]), resolve_path(FILES["settings_dir"]),
-                            payload["session_dir"])
+SETTINGS = {
+    "ROOT": str(ROOT), "MODE": MODE, "FILES": FILES, "BACKGROUND": BACKGROUND,
+    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY, "GEOMETRY_FAMILY": GEOMETRY_FAMILY,
+    "PHYSICS": PHYSICS, "MATERIALS": MATERIALS, "REGIONS": REGIONS, "PORTS": PORTS,
+    "TRAINING": TRAINING, "PREDICTION": PREDICTION, "MONITOR": MONITOR,
+}
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="一键运行电磁–热代理；参数集中在 run.py 顶部。")
-    parser.add_argument("--mode", choices=("train", "predict"), default=MODE,
-                        help="train=训练，predict=推理；覆盖顶部 MODE")
-    parser.add_argument("--model", help="覆盖 FILES['model']，指定保存/加载的模型路径")
-    display = parser.add_mutually_exclusive_group()
-    display.add_argument("--gui", action="store_true", help="打开 PyQt 训练窗口")
-    display.add_argument("--headless", action="store_true", help="仅后台训练及日志，不打开窗口")
-    parser.add_argument("--worker-config", help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
-    if args.worker_config:
-        return training_worker(args.worker_config)
-    if args.mode not in ("train", "predict"):
-        parser.error("MODE 应为 train/predict")
-    model_path = resolve_path(args.model or FILES["model"])
-    settings_dir = resolve_path(FILES["settings_dir"])
-    if args.mode == "train":
-        if not args.headless and (args.gui or MONITOR["enabled"]):
-            try:
-                from sdfmpneo.training.qt_monitor import launch_window
-            except ImportError as exc:
-                raise SystemExit('请安装图形依赖：python -m pip install -e ".[cad,gui]"；'
-                                 '或使用 --headless 仅训练并记录日志。') from exc
-            return launch_window(__file__, configuration_snapshot(model_path),
-                                 resolve_path(MONITOR["log_dir"]), MONITOR)
-        return execute_training(model_path, settings_dir)
-    return predict(model_path, resolve_path(FILES["predictions"]), settings_dir)
+    from sdfmpneo.unified_runtime import launch
+    return launch(SETTINGS, argv)
 
 
 if __name__ == "__main__":

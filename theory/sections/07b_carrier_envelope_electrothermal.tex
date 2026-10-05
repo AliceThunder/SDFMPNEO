@@ -1,0 +1,178 @@
+\section{Carrier-envelope electrothermal coupling}
+\label{sec:carrier-envelope}
+
+For inductive power-transfer applications, electromagnetic carrier periods are
+typically much shorter than thermal time scales. vNext exploits this separation
+without assuming that electrical operating conditions are constant in time.
+
+\subsection{Two-time-scale model}
+
+Let
+\[
+  \tau=\omega_c t
+\]
+be the fast carrier phase and $t$ the slow envelope/thermal time. Port signals
+are represented as
+\[
+  i_{\rm phys}(t)
+  =
+  \Rea\{i(t)e^{+j\omega_c t}\},
+\]
+where the complex envelope $i(t)$ varies slowly relative to the carrier:
+\[
+  \frac{\norm{\dot i}}{\omega_c\norm i}
+  \ll1
+\]
+for the narrowband envelope approximation.
+
+At each slow time, the electromagnetic port relation is
+\[
+  v(t)
+  =
+  Z(\omega_c;\mathcal S,T(t))\,i(t).
+\]
+
+\subsection{Cycle-averaged heat}
+
+With peak phasors, the cycle-averaged local heat is
+\[
+ q(\mathbf r,t)
+ =
+ \frac12
+ i(t)\adj H_q(\mathbf r;\mathcal S,T(t))i(t).
+ \label{eq:cycle-heat}
+\]
+The integrated absorbed power is
+\[
+ P_{\rm abs}(t)
+ =
+ \frac12
+ i(t)\adj D_{\rm abs}(\mathcal S,T(t))i(t).
+\]
+These are the sources supplied to the slow thermal model. No factor of two is
+introduced elsewhere.
+
+\subsection{Circuit-controlled envelope}
+
+For a narrowband external circuit,
+\[
+  F_{\rm circ}
+  \big(
+    v(t),i(t),u(t),T(t)
+  \big)=0
+\]
+is solved together with
+\[
+  v=Zi.
+\]
+Thus current changes caused by coil resistance, detuning, load variation, or
+temperature automatically alter the thermal source.
+
+\subsection{Temperature feedback}
+
+At slow time $t_n$, use the reduced temperature state $z_n$ to evaluate
+temperature-sensitive constitutive coordinates
+\[
+  \vartheta_n=\Theta(z_n,\mathcal S).
+\]
+Update only the electromagnetic quantities that depend materially on
+$\vartheta_n$:
+\[
+ Z_n=Z(\omega_c;\mathcal S,\vartheta_n),
+\]
+\[
+ H_{q,n}
+ =
+ H_q(\cdot;\mathcal S,\vartheta_n).
+\]
+Self/pair caches may use interpolation in passive temperature coordinates.
+
+\subsection{Partitioned time step}
+
+A first implementation uses the following predictor--corrector:
+\begin{enumerate}
+\item predict $z_{n+1}^{(0)}$ from the previous thermal derivative;
+\item evaluate temperature-dependent electromagnetic macromodel at the
+      predicted thermal coordinates;
+\item solve the small circuit/port problem for $i_{n+1}^{(k)}$;
+\item compute loss-channel amplitudes from
+      Equation~\eqref{eq:cycle-heat};
+\item advance the thermal reduced state implicitly/exponentially;
+\item iterate steps 2--5 until the electrothermal state increment and energy
+      residual pass tolerances.
+\end{enumerate}
+
+The carrier Maxwell field is not time-stepped.
+
+\subsection{When the envelope approximation fails}
+
+If excitation contains switching harmonics, modulation comparable to electrical
+memory, or a frequency sweep over which $Z$ varies materially, use the
+broadband passive electrical state $x_e$:
+\[
+ \dot x_e=(J_e-R_e)Q_e x_e+B_e u_e.
+\]
+Instantaneous/cycle-resolved dissipation is obtained from the passive electrical
+storage/dissipation structure and mapped to thermal source channels. The
+narrowband envelope model is therefore an efficient specialization of the
+broader architecture, not a separate code path with different scene semantics.
+
+\subsection{Electrothermal energy audit}
+
+Over one slow time interval $[t_n,t_{n+1}]$, define
+\[
+ E_{\rm in}
+ =
+ \int_{t_n}^{t_{n+1}}
+ \frac12\Rea\{v\adj i\}\dd t,
+\]
+\[
+ E_{\rm heat}
+ =
+ \int_{t_n}^{t_{n+1}}
+ P_{\rm abs}(t)\dd t.
+\]
+The electromagnetic channel decomposition checks
+\[
+ E_{\rm in}
+ =
+ E_{\rm heat}
+ +E_{\rm out}
+ +\Delta E_{\rm em}
+\]
+with $\Delta E_{\rm em}\approx0$ in a quasi-steady narrowband solve.
+The thermal step separately checks
+\[
+ E_{\rm heat}
+ =
+ \Delta E_T+E_{\rm env}.
+\]
+These two identities form an end-to-end energy audit from circuit input to
+stored/environmental thermal energy.
+
+\subsection{Thermal time-scale adaptivity}
+
+The time integrator adapts according to the physical thermal energy norm and
+changes in electrical envelope/constitutive coordinates. A sharp load change
+may force a small thermal step even if the thermal state itself is initially
+smooth, because $P_{\rm abs}$ changes discontinuously.
+
+\subsection{Steady operation}
+
+At thermal steady state,
+\[
+  0=-G_T(z_\ast)z_\ast+B_T(z_\ast)p_\ast+b_{\rm env},
+\]
+while
+\[
+  p_\ast
+  =
+  p\big(
+    Z(\omega_c,T_\ast),
+    i_\ast,
+    T_\ast
+  \big)
+\]
+and the circuit equations hold simultaneously. The steady solver is therefore
+a coupled reduced nonlinear problem, not a post-processing solve with frozen
+room-temperature impedance.

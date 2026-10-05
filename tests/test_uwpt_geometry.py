@@ -1,4 +1,7 @@
 import numpy as np
+import pytest
+
+from sdfmpneo.unified_geometry import CoilGeometry as UnifiedCoilGeometry, Pose
 
 from sdfmpneo.spatial import (
     RigidPose,
@@ -56,3 +59,51 @@ $EndElements
     assert tagged.tetra_mask(21).tolist() == [True]
     assert set(tagged.boundary_nodes(11).tolist()) == {0, 1, 2}
     assert tagged.boundary_mask(14).sum() == 1
+
+
+def test_spiral_geometry_rejects_adjacent_turn_overlap():
+    with pytest.raises(ValueError, match="pitch.*conductor_width"):
+        SpiralCoilGeometry(
+            "circle",
+            turns=1.5,
+            outer_half_size=0.03,
+            pitch=0.0012,
+            conductor_width=0.0020,
+            conductor_thickness=0.0010,
+        )
+
+    with pytest.raises(ValueError, match="pitch.*conductor_width"):
+        UnifiedCoilGeometry(
+            name="tx",
+            shape="circle",
+            turns=1.5,
+            outer_half_size=0.03,
+            pitch=0.0012,
+            conductor_width=0.0020,
+            conductor_thickness=0.0010,
+            corner_radius=0.012,
+            pose=Pose(np.zeros(3), np.zeros(3)),
+        )
+
+
+def test_subturn_spiral_does_not_require_interturn_clearance():
+    spatial = SpiralCoilGeometry(
+        "circle",
+        turns=0.5,
+        outer_half_size=0.03,
+        pitch=0.0012,
+        conductor_width=0.0020,
+        conductor_thickness=0.0010,
+    )
+    unified = UnifiedCoilGeometry(
+        name="tx",
+        shape="circle",
+        turns=0.5,
+        outer_half_size=0.03,
+        pitch=0.0012,
+        conductor_width=0.0020,
+        conductor_thickness=0.0010,
+        corner_radius=0.012,
+        pose=Pose(np.zeros(3), np.zeros(3)),
+    )
+    assert spatial.turns == unified.turns == 0.5

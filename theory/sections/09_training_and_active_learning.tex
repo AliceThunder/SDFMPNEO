@@ -1,0 +1,100 @@
+\section{Training, reference generation, and active learning}
+
+\subsection{Hierarchical teacher stack}
+
+Training uses a hierarchy rather than one monolithic truth solver:
+\begin{description}
+\item[Level 0:] analytic filament, mutual-inductance, homogeneous-medium, and
+  simple thermal Green estimates;
+\item[Level 1:] low-order integral-equation/PEEC solve;
+\item[Level 2:] converged hybrid conductor/SIE/VIE electromagnetic teacher and
+  thermal boundary/Green teacher;
+\item[Level 3:] independent external or legacy high-fidelity solver used on a
+  small audit subset for cross-method validation.
+\end{description}
+
+A datum records the continuous scene and teacher policy, not a mesh-dependent
+feature vector.
+
+\subsection{Dataset unit}
+
+One immutable scene sample contains
+\[
+ \mathcal D_j=
+ \{\mathcal S_j,\Omega_{\omega,j},\Omega_{T,j},
+ Z_j,\mathcal R_{e,j},\mathcal Q_j,\mathcal R_{T,j},
+ \text{certificates}\}.
+\]
+Here $\mathcal R_e$ is a structured electrical realization, $\mathcal Q$ the
+continuous/low-rank loss representation, and $\mathcal R_T$ the thermal reduced
+realization. Quadrature data may be cached internally but is not part of the
+model schema.
+
+\subsection{Split policy}
+
+Validation and test scenes are frozen before active learning. Splits are grouped
+by geometric/material regimes, not by random neighboring samples. Additional
+active-learning scenes enter the training pool only. A completely independent
+release suite remains untouched by model selection.
+
+\subsection{Losses}
+
+Because major physical properties are hard-parameterized, the trainable loss
+focuses on observable accuracy:
+\[
+ \mathcal L
+ =
+ \lambda_Z\mathcal L_Z
+ +\lambda_{\mathrm{dyn}}\mathcal L_{\mathrm{dyn}}
+ +\lambda_q\mathcal L_q
+ +\lambda_T\mathcal L_T
+ +\lambda_r\mathcal L_{\mathrm{res}}
+ +\lambda_u\mathcal L_{\mathrm{uncert}}.
+\]
+Matrix errors use physically scaled norms and current-space probes. Spatial loss
+errors are measured after decoding and power normalization. Dynamic losses
+compare transfer functions, impulse responses, and selected time trajectories.
+
+\subsection{Physics-residual active learning}
+
+Candidate scenes are not selected primarily by Euclidean parameter distance.
+For a candidate $\mathcal S$, FAST mode provides a prediction and cheap
+estimators:
+\[
+ \eta(\mathcal S)
+ =
+ w_e\eta_{\mathrm{EM}}
+ +w_p\eta_{\mathrm{power}}
+ +w_t\eta_{\mathrm{thermal}}
+ +w_u\eta_{\mathrm{uncertainty}}.
+\]
+High-score scenes are promoted to higher teacher levels. In CERTIFIED mode the
+actual integral residual
+\[
+ \eta_{\mathrm{EM}}
+ =
+ \frac{\norm{\mathcal B i-\mathcal A x_\theta}}
+      {\norm{\mathcal B i}}
+\]
+is directly available for representative port excitations.
+
+\subsection{Curriculum}
+
+A recommended curriculum is:
+\begin{enumerate}
+\item one and two coils in homogeneous background;
+\item arbitrary relative pose and continuous superellipse geometry;
+\item finite-cross-section skin/proximity effects;
+\item passive packages and piecewise homogeneous media;
+\item localized inhomogeneous/anisotropic media;
+\item frequency and temperature dependence;
+\item full electrothermal trajectories and external circuits.
+\end{enumerate}
+Each stage retains previous-stage release tests to prevent catastrophic
+regression.
+
+\subsection{No fixed truth count}
+
+Numbers such as 96, 256, or 1024 are not theoretical requirements. Training
+terminates when fixed validation regimes and independent residual certificates
+meet the declared error budget or when a declared resource ceiling is reached.

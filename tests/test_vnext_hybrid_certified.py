@@ -1,0 +1,340 @@
+import numpy as np
+
+from sdfmpneo_vnext import (
+    AnalyticBaselineArtifact,
+    CoilObject,
+    ConductorMaterial,
+    HomogeneousMedium,
+    IsotropicMaterial,
+    MQSConfig,
+    PackageObject,
+    Scene,
+    SuperellipseSpiral,
+    SuperquadricPackageGeometry,
+    certify_dielectric_ports,
+    hybrid_reference_convergence,
+)
+
+
+def _scene():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.014,
+            0.012,
+            0.6,
+            0.001,
+            0.001,
+            conductor_width=7e-4,
+            conductor_thickness=5e-4,
+        ),
+        ConductorMaterial(
+            5.8e7
+        ),
+        "coil",
+    )
+    package = PackageObject(
+        SuperquadricPackageGeometry(
+            np.array(
+                [0.022, 0.019, 0.005]
+            ),
+            exponent_xy=2.0,
+            exponent_z=2.0,
+        ),
+        IsotropicMaterial(
+            relative_permittivity=1.0,
+        ),
+        "invisible",
+    )
+    return Scene(
+        (coil,),
+        HomogeneousMedium(),
+        (package,),
+    )
+
+
+def _config():
+    return MQSConfig(
+        segments_per_turn=6,
+        min_segments=8,
+        section_degree=0,
+        radial_order=3,
+        angular_order=12,
+        line_order=2,
+    )
+
+
+def test_hybrid_reference_convergence_refines_conductor_and_surface_axes():
+    report = hybrid_reference_convergence(
+        _scene(),
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    assert {
+        direction.name
+        for direction in report.directions
+    } == {
+        "longitudinal",
+        "cross_section",
+        "quadrature",
+        "dielectric_surface",
+    }
+    assert np.isfinite(
+        report.maximum_relative_change
+    )
+    assert np.isfinite(
+        report.maximum_surface_residual
+    )
+    assert report.converged
+
+
+def test_hybrid_full_certificate_requires_independent_convergence_evidence():
+    scene = _scene()
+    artifact = AnalyticBaselineArtifact(
+        segments_per_coil=24,
+    )
+    discrete = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert (
+        discrete.status
+        == "DISCRETE_CERTIFIED"
+    )
+    assert discrete.algebraic_certified
+    assert not discrete.certified
+    assert discrete.used_reference_fallback
+
+    report = hybrid_reference_convergence(
+        scene,
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    certified = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        convergence_report=report,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert certified.certified
+    assert certified.discretization_certified
+    assert (
+        certified.status
+        == "CERTIFIED"
+    )
+    assert (
+        certified.operator_backend
+        == "dense_electric_magnetic_interface_reference"
+    )
+
+
+class _OutOfFastDomainArtifact:
+    def predict_structured(
+        self,
+        scene,
+        frequency_hz,
+    ):
+        raise ValueError(
+            "scene is outside the declared FAST geometry domain"
+        )
+
+
+def test_hybrid_certificate_falls_back_to_reference_when_fast_is_outside_domain():
+    scene = _scene()
+    report = hybrid_reference_convergence(
+        scene,
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    certified = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        _OutOfFastDomainArtifact(),
+        config=_config(),
+        convergence_report=report,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=0.2,
+    )
+    assert certified.certified
+    assert (
+        certified.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+    assert certified.used_reference_fallback
+    assert not certified.fast_domain_valid
+    assert np.isinf(
+        certified.relative_observable_correction
+    )
+    assert (
+        certified.fast_domain_reason
+        is not None
+    )
+    assert (
+        "outside the declared FAST geometry domain"
+        in certified.fast_domain_reason
+    )
+
+
+def test_hybrid_certificate_supports_exact_dc_with_insulating_package_in_conductive_background():
+    base = _scene()
+    scene = Scene(
+        base.coils,
+        HomogeneousMedium(
+            conductivity=2.0e-3,
+        ),
+        (
+            PackageObject(
+                base.packages[
+                    0
+                ].geometry,
+                IsotropicMaterial(
+                    relative_permittivity=4.0,
+                    conductivity=0.0,
+                ),
+                "insulating-package",
+            ),
+        ),
+    )
+    report = hybrid_reference_convergence(
+        scene,
+        0.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+        magnetic_surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    certified = certify_dielectric_ports(
+        scene,
+        0.0,
+        _OutOfFastDomainArtifact(),
+        config=_config(),
+        convergence_report=report,
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        magnetic_reciprocity_tolerance=0.2,
+        fast_domain_correction_limit=0.2,
+    )
+    assert certified.certified
+    assert certified.discretization_certified
+    assert np.allclose(
+        certified.impedance.imag,
+        0.0,
+        atol=1e-10,
+        rtol=0.0,
+    )
+    assert (
+        certified.port_certificate.power_closure_error
+        < 1e-6
+    )
+    assert (
+        certified.status
+        == "CORRECTED_OUT_OF_FAST_DOMAIN"
+    )
+
+
+class _GradedConvergenceEvidence:
+    def __init__(
+        self,
+        converged,
+    ):
+        self.converged = bool(
+            converged
+        )
+
+
+def test_hybrid_certificate_requires_graded_refinement_when_evidence_is_supplied():
+    scene = _scene()
+    artifact = AnalyticBaselineArtifact(
+        segments_per_coil=24,
+    )
+    report = hybrid_reference_convergence(
+        scene,
+        60_000.0,
+        _config(),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        tolerance=0.5,
+        surface_residual_tolerance=1e-7,
+    )
+    assert report.converged
+
+    unresolved = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        convergence_report=report,
+        graded_convergence_report=(
+            _GradedConvergenceEvidence(
+                False
+            )
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert (
+        unresolved.status
+        == "DISCRETE_CERTIFIED"
+    )
+    assert not unresolved.discretization_certified
+
+    resolved = certify_dielectric_ports(
+        scene,
+        60_000.0,
+        artifact,
+        config=_config(),
+        convergence_report=report,
+        graded_convergence_report=(
+            _GradedConvergenceEvidence(
+                True
+            )
+        ),
+        surface_vertical_order=4,
+        surface_azimuthal_order=8,
+        algebraic_tolerance=1e-8,
+        surface_tolerance=1e-7,
+        fast_domain_correction_limit=1.0,
+    )
+    assert resolved.discretization_certified
+    assert (
+        resolved.status
+        == "CERTIFIED"
+    )

@@ -1,0 +1,76 @@
+\section{Structure-preserving neural operator}
+
+\subsection{Role of learning}
+
+The neural system is a correction and compression layer around explicit
+physics. It is not a replacement for Maxwell's equations or heat diffusion.
+The generic form is
+\[
+  \mathcal O(\mathcal S)
+  =
+  \mathcal O_{\mathrm{phys}}(\mathcal S)
+  +\Delta\mathcal O_\theta(\mathcal S),
+\]
+followed by a structure-preserving decoder.
+
+Analytic/current-filament/low-order PEEC models provide
+$\mathcal O_{\mathrm{phys}}$. Learning focuses on finite-cross-section
+corrections, many-body dielectric interactions, higher-order proximity effects,
+and compact thermal transfer corrections.
+
+\subsection{SE(3)-aware scene encoder}
+
+Each object is encoded from intrinsic geometry and constitutive features.
+Message passing uses relative poses $(R_{ij},d_{ij})$. The global latent must be
+invariant to a common rigid transformation of the entire scene; local vector or
+tensor features may transform equivariantly. A practical implementation may use
+an $\SE(3)$-equivariant graph network or an invariant graph network with
+explicit local frames.
+
+The encoder must support a variable number of objects and materials. Padding a
+scene to a fixed ordered parameter vector is not part of the theory.
+
+\subsection{Global electromagnetic decoder}
+
+The global head predicts factors of structured quantities rather than raw
+matrix entries. Examples include
+\[
+ D_{\mathrm{abs}}=L_D L_D\adj,\qquad
+ D_{\mathrm{out}}=L_O L_O\adj,
+\]
+and a reciprocal reactance parameterization
+\[
+ X=X^\T.
+\]
+At one frequency,
+\[
+ Z=D_{\mathrm{abs}}+D_{\mathrm{out}}+jX
+\]
+under the corresponding phasor/sign convention. For broadband models the head
+predicts factors of the port-Hamiltonian realization in
+Section~\ref{sec:port-macro}.
+
+\subsection{Continuous field decoder}
+
+Spatial loss and temperature decoders use a branch/trunk operator structure:
+the scene encoder produces a global/object latent, while a query point is
+expressed in object-local coordinates. The network returns coefficients or
+factors of a continuous basis rather than a cell index. This is conceptually
+related to operator-learning architectures such as DeepONet
+\cite{lu2021deeponet}, but the vNext decoder is constrained by passivity,
+positive loss, energy closure, and rigid-motion symmetry.
+
+\subsection{Uncertainty and residual prediction}
+
+A separate calibration head predicts expected physical residuals and epistemic
+uncertainty from latent distance, ensemble disagreement, and cheap physics
+features. This quantity never replaces a real residual in CERTIFIED mode; it
+only decides whether FAST mode is appropriate and prioritizes active-learning
+queries.
+
+\subsection{Neural thermal model}
+
+The thermal head predicts only structured reduced coefficients or corrections:
+Cholesky factors of $C_T$, dissipative factors of $G_T$, source coupling
+$B_T$, and continuous decoder coefficients. Stability is therefore independent
+of the neural training loss.

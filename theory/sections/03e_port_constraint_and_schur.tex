@@ -1,0 +1,176 @@
+\section{Work-conjugate port constraints and Schur extraction}
+\label{sec:port-schur}
+
+The electrical port definition must be independent of how an implementation
+chooses impressed-current right-hand sides. vNext therefore defines ports
+variationally through exact current constraints and their work-conjugate
+Lagrange multipliers.
+
+\subsection{Peak-phasor convention}
+
+The theory fixes
+\[
+  f_{\rm phys}(t)
+  =
+  \Rea\{\widetilde f\,e^{+j\omega t}\},
+\]
+where $\widetilde f$ is a peak phasor. For port peak phasors,
+time-averaged electrical power entering the electromagnetic subsystem is
+\[
+  P_{\rm in}
+  =
+  \frac12\Rea\{v\adj i\}.
+  \label{eq:peak-power}
+\]
+All loss and heat formulas in the theory use this convention unless explicitly
+stated otherwise. Under $e^{+j\omega t}$, passive dielectric loss corresponds
+to the sign convention used consistently by the constitutive implementation;
+material passivity is checked from power, not inferred from an isolated sign of
+an imaginary coefficient.
+
+\subsection{Constrained field solve}
+
+Let $x$ contain all electromagnetic internal unknowns after gauge constraints,
+and let
+\[
+  \mathcal I x=i
+\]
+be the exact vector of oriented terminal-current constraints. For zero external
+field, define the constrained system
+\[
+ \begin{bmatrix}
+   A & -\mathcal I\adj\\
+   \mathcal I & 0
+ \end{bmatrix}
+ \begin{bmatrix}
+   x\\v
+ \end{bmatrix}
+ =
+ \begin{bmatrix}
+   0\\i
+ \end{bmatrix}.
+ \label{eq:port-kkt}
+\]
+The multiplier $v$ is, by definition, the work-conjugate port-voltage vector.
+The minus sign in Equation~\eqref{eq:port-kkt} fixes the orientation convention.
+If an implementation uses the opposite terminal-current orientation, both
+$\mathcal I$ and the corresponding voltage orientation transform together.
+
+Eliminating $x$ gives
+\[
+  x=A^{-1}\mathcal I\adj v,
+\]
+\[
+  i
+  =
+  \mathcal I A^{-1}\mathcal I\adj v.
+\]
+Hence the port admittance and impedance are
+\[
+  Y
+  =
+  \mathcal I A^{-1}\mathcal I\adj,
+  \qquad
+  Z=Y^{-1},
+  \label{eq:port-schur}
+\]
+on the independent port subspace.
+
+\subsection{Current-driven implementation}
+
+For a prescribed current vector, an implementation may solve the KKT system
+directly. It may alternatively construct a compatible lifting $x_i$ satisfying
+\[
+  \mathcal I x_i=i
+\]
+and solve only for a zero-port-current correction. These formulations are
+equivalent only if the lifting preserves the same charge-continuity and gauge
+constraints.
+
+\subsection{Voltage-driven implementation}
+
+For prescribed $v$, solve
+\[
+  Ax=\mathcal I\adj v
+\]
+and recover
+\[
+  i=\mathcal I x.
+\]
+This form is especially convenient for extracting $Y$. Conversion to $Z$
+requires a nonsingular independent-port admittance. Floating/common-mode
+electrical degrees of freedom are removed according to the circuit/port
+topology rather than by arbitrary matrix regularization.
+
+\subsection{Power identity}
+
+Multiplying the field equation by $x\adj$ gives
+\[
+  x\adj A x
+  =
+  x\adj\mathcal I\adj v
+  =
+  i\adj v.
+\]
+Therefore
+\[
+  P_{\rm in}
+  =
+  \frac12\Rea\{x\adj A x\}
+  =
+  \frac12\Rea\{v\adj i\}.
+\]
+The real part of the physical operator decomposes into conductor, dielectric,
+magnetic, and outward channels. This is the primary port-to-field power closure
+identity used by REFERENCE and CERTIFIED modes.
+
+\subsection{Reciprocity}
+
+If the reciprocal physical operator and port functionals satisfy the
+corresponding complex-symmetric reciprocity relation, then
+\[
+  Y^\T=Y,\qquad Z^\T=Z.
+\]
+Reciprocity is therefore a property of the operator and work-conjugate port
+definition, not a matrix symmetrization step applied after solving.
+
+\subsection{Multi-terminal networks}
+
+For $N_t$ physical terminals, let $C_p$ map terminal currents to $P$ independent
+port currents while enforcing Kirchhoff conservation:
+\[
+  i_t=C_p i,\qquad \mathbf 1^\T i_t=0
+\]
+within each isolated electrical network. The port current functional is
+\[
+  \mathcal I=C_p^\T\mathcal I_t
+\]
+under the chosen orientation. Port voltages use the dual terminal-potential
+combination. This permits differential, multi-winding, and future branched
+conductor networks without changing the field operator.
+
+\subsection{Contact impedance}
+
+A physical terminal/contact impedance is represented explicitly by
+\[
+  Z_{\rm port}
+  =
+  Z_{\rm field}+Z_{\rm contact},
+\]
+where
+\[
+ \Herm Z_{\rm contact}\PSD
+\]
+for a passive contact. Contact terms are never used as numerical regularizers
+for an ill-conditioned field solve.
+
+\subsection{Teacher outputs}
+
+For each scene/frequency the conductor teacher stores:
+\[
+  \{Y,Z,X_{\rm port},D_{\rm channels},
+    \eta_{\rm solve},\eta_{\rm power}\},
+\]
+plus modal field coefficients needed for continuous loss queries. The KKT
+multiplier or equivalent Schur extraction is the canonical definition against
+which alternative source formulations are regression-tested.

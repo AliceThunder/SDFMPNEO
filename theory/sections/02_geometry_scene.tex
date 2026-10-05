@@ -1,0 +1,87 @@
+\section{Continuous geometry and scene representation}
+
+\subsection{Superelliptic spiral centerline}
+
+A planar superellipse with semi-axes $a,b>0$ and exponent $n\ge 2$ is
+parameterized by
+\[
+ x(\phi)=a\,\operatorname{sgn}(\cos\phi)|\cos\phi|^{2/n},\qquad
+ y(\phi)=b\,\operatorname{sgn}(\sin\phi)|\sin\phi|^{2/n}.
+\]
+A spiral is obtained by allowing the semi-axes to vary monotonically:
+\[
+ a(\phi)=a_0-\frac{p_x}{2\pi}\phi,\qquad
+ b(\phi)=b_0-\frac{p_y}{2\pi}\phi,\qquad
+ 0\le\phi\le 2\pi N .
+\]
+The local centerline is
+\[
+  c_0(\phi)=\begin{bmatrix}x(\phi)&y(\phi)&0\end{bmatrix}^{\T}.
+\]
+An arbitrary pose $(R,t)\in\SE(3)$ gives
+\[
+  c(\phi)=Rc_0(\phi)+t.
+\]
+The continuous exponent $n$ includes ellipse-like coils near $n=2$ and
+rounded-rectangle-like coils for larger $n$ without a categorical shape
+discontinuity.
+
+\subsection{Finite conductor cross-section}
+
+At each centerline parameter we define a transport frame
+\[
+  \{e_t(\phi),e_1(\phi),e_2(\phi)\}.
+\]
+A Bishop/parallel-transport frame is preferred to a Frenet frame because it
+remains well behaved at small curvature. A superelliptic cross-section is
+\[
+ \left|\frac{\xi_1}{w/2}\right|^{m}
+ +\left|\frac{\xi_2}{h/2}\right|^{m}\le 1.
+\]
+The conductor volume is the swept image
+\[
+  r(\phi,\xi_1,\xi_2)
+  =c(\phi)+\xi_1 e_1(\phi)+\xi_2 e_2(\phi).
+\]
+
+\subsection{Packages and passive bodies}
+
+Packages are represented by superquadrics, swept profiles, analytic primitives,
+or constructive solid geometry. A superellipsoid is defined by
+\[
+ \left(
+   \left|\frac{x}{a}\right|^{2/\epsilon_2}
+  +\left|\frac{y}{b}\right|^{2/\epsilon_2}
+ \right)^{\epsilon_2/\epsilon_1}
+ +\left|\frac{z}{c}\right|^{2/\epsilon_1}=1.
+\]
+Each object carries its own pose in $\SE(3)$ and one or more material regions.
+
+\subsection{Scene graph}
+
+The scene is a variable-size graph. Node $j$ contains intrinsic features
+\[
+  h_j^{\mathrm{int}}
+  =
+  (\text{type},\text{shape parameters},\text{material law},\text{local ports}),
+\]
+while geometric relations are encoded by relative poses
+\[
+  R_{ij}=R_i^\T R_j,\qquad
+  d_{ij}=R_i^\T(t_j-t_i).
+\]
+No global Cartesian origin is needed by the learned global operator.
+
+\begin{invariant}[Rigid-scene invariance]
+If all objects are transformed by the same $(R_0,t_0)\in\SE(3)$ in an isotropic
+unbounded background, port quantities are unchanged. Spatial fields transform
+equivariantly through the query coordinates.
+\end{invariant}
+
+\subsection{Geometry validity}
+
+A scene validator enforces non-self-intersection, positive cross-section,
+clearance rules, package containment rules when requested, and material-region
+consistency. These constraints act on continuous geometry, not on mesh quality.
+Teacher-specific quadrature or panelization validity is a separate numerical
+concern.

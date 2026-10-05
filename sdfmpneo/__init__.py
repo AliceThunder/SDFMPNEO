@@ -1,159 +1,258 @@
-"""SDF-MPNEO executable core."""
+"""SDF-MPNEO geometry-to-spatial-Joule electrothermal ROM.
 
-from .analytic import (
-    AnalyticEvolutionGraph,
-    AnalyticSeries,
-    CertifiedAnalyticEvolutionOperator,
-    GeometryConditionedAnalyticEvolutionOperator,
-    MultiChartGeometryAnalyticEvolutionOperator,
-    MultiChartGeometryAnalyticPrediction,
-    ParametricAnalyticEvolutionGraph,
-    ParametricAnalyticSeries,
-)
-from .electrothermal import CertifiedElectroThermalVectorField
-from .em import (
-    ParametricEMProblem,
-    ReducedEMModel,
-    ResidualGreedyEMReducer,
-    SolidTerminalPortSet,
-    SparseEnergyReducedEMModel,
-    SparseEnergyResidualGreedyEMReducer,
-)
-from .geometry_family import CertifiedGeometryElectroThermalFamily
-from .geometry_multichart import (
-    CertifiedMultiChartGeometryFamily,
-    MultiChartGeometrySelection,
-)
-from .model import (
-    ExecutableSDFMPNEOModel,
-    OnlinePrediction,
-    ParametricExecutableSDFMPNEOModel,
-    ParametricOnlinePrediction,
-)
-from .tetra_core import TetrahedralElectroThermalCore
-from .thermal import ThermalSpectralModel
-from .training import GeometryElectroThermalResidual, SolutionDataFreeClosedLoopTrainer
+Production API:
+``geometry -> neural Z/D/cellwise Joule tensors -> geometry-local thermal ROM
+from true M(g),K(g) -> explicit current/circuit physics -> temperature``.
+"""
 
-__version__ = "0.9.0"
+from .unified_background import BackgroundContext, FixedMultiscaleBackground, stretched_axis
+from .unified_geometry import CoilGeometry, PackageGeometry, Pose, UnifiedUWPTGeometry, sample_geometry
+from . import unified_model as _unified_model
+
+# Physics truth version 53 keeps the certified v34 EM/source semantics and
+# replaces the failed cross-geometry thermal state atlas with a thermal-rank-free
+# spatial Joule surrogate.  v53 additionally carries the spatially resolved
+# canonical local self defect into parent-grid truth and hard-gates the physical
+# PSD/sum-to-D projection.  The network predicts corrected Z_field, D_vol and one
+# Hermitian Joule tensor per background cell.  Decoder projection enforces cell
+# PSD and exact sum-to-D; each query geometry then assembles its true M(g), K(g)
+# and builds a small local rational-Krylov thermal ROM.  No Maxwell solve is used
+# during prediction.
+#
+# EM/source semantics remain unchanged: spiral geometry rejects adjacent-turn
+# overlap; the corrected global truth uses the same finite-support terminal source,
+# open-boundary power form, canonical local fine-minus-coarse self defect and
+# unchanged true-residual certificates.
+_unified_model.FORMAT_VERSION = 53
+_SELF_CORRECTION_MODEL = "canonical_local_transverse_fine_minus_coarse_self_defect_v2"
+
+from .unified_model import ARCHITECTURE, UnifiedNeuralElectroThermalModel, UnifiedPrediction, UnifiedSteadyState
+from .unified_open_boundary import OpenBoundaryBackground
+from .unified_resolved_package_fraction import install as _install_resolved_package_fraction
+from . import unified_terminal_contact_source as _terminal_contact_source
+from .unified_terminal_contact_source import install as _install_terminal_contact_source
+from . import unified_charge_regularized_source as _charge_regularized_source
+from .unified_charge_regularized_source import install as _install_charge_regularized_source
+from .unified_maxwell_operator_metadata import install as _install_maxwell_operator_metadata
+
+_install_resolved_package_fraction(OpenBoundaryBackground)
+_install_terminal_contact_source(OpenBoundaryBackground)
+_install_charge_regularized_source(OpenBoundaryBackground)
+_install_maxwell_operator_metadata(OpenBoundaryBackground)
+
+from . import unified_self_correction as _self_correction
+from . import unified_certified_local_solve as _certified_local_solve
+from . import unified_two_level_local_krylov as _two_level_local_krylov
+from .unified_fast_local_krylov import install as _install_fast_local_krylov
+from .unified_hcurl_warm_start import install as _install_hcurl_warm_start
+from .unified_two_level_local_krylov import install as _install_two_level_local_krylov
+from .unified_two_level_residual_replacement import install as _install_two_level_residual_replacement
+from .unified_localized_self_solve import install as _install_localized_self_solve
+from .unified_stable_localized_self import install as _install_stable_localized_self
+from .unified_local_solve_cache import install as _install_local_solve_cache
+
+_install_fast_local_krylov(_certified_local_solve)
+_install_hcurl_warm_start(_certified_local_solve)
+_install_two_level_local_krylov(_certified_local_solve)
+_install_two_level_residual_replacement(_two_level_local_krylov, _certified_local_solve)
+_certified_local_solve.install(_self_correction)
+_install_localized_self_solve(_self_correction, _certified_local_solve)
+_install_stable_localized_self(_self_correction)
+_install_local_solve_cache(_self_correction)
+
+from . import unified_tensor_surrogate as _tensor_surrogate
+from . import unified_physics_gate as _physics_gate
+from .unified_fast_global_maxwell import install as _install_fast_global_maxwell
+
+_install_fast_global_maxwell(_physics_gate, _tensor_surrogate, _certified_local_solve)
+
+from . import unified_truth_preflight as _truth_preflight
+from .unified_source_preflight_patch import install as _install_source_preflight
+
+_install_source_preflight(_truth_preflight)
+
+from . import unified_corrected_truth_preflight as _corrected_preflight
+from .unified_preflight_diagnosis_patch import install as _install_preflight_diagnosis
+
+_corrected_preflight._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
+_install_preflight_diagnosis(_corrected_preflight)
+
+from . import unified_corrected_truth as _corrected_truth
+from . import unified_global_longitudinal_reference as _global_longitudinal_reference
+from .unified_longitudinal_patch_consistency import install as _install_longitudinal_patch_consistency
+from .unified_terminal_longitudinal_refinement import install as _install_terminal_longitudinal_refinement
+from .unified_scalar_charge_patch import install as _install_scalar_charge_patch
+from .unified_reactive_longitudinal_reference import install as _install_reactive_longitudinal_reference
+from . import unified_global_dissipative_reference as _global_dissipative_reference_impl
+from .unified_global_dissipative_reference import install as _install_global_dissipative_reference
+from .unified_resolved_dissipative_reference import install as _install_resolved_dissipative_reference
+from . import unified_terminal_dissipative_defect as _terminal_dissipative_defect
+from .unified_terminal_dissipative_defect import install as _install_terminal_dissipative_defect
+from .unified_fast_terminal_dissipative_scalar import install as _install_fast_terminal_dissipative_scalar
+from .unified_terminal_dissipative_quadrature_fix import install as _install_terminal_dissipative_quadrature_fix
+from .unified_fast_reactive_scalar import install as _install_fast_reactive_scalar
+from .unified_longitudinal_state_cache import install as _install_longitudinal_state_cache
+from .unified_longitudinal_preflight_schedule import install as _install_longitudinal_preflight_schedule
+from .unified_global_longitudinal_reference import install as _install_global_longitudinal_reference
+
+_global_longitudinal_reference._MODEL = "global_boundary_conditioned_longitudinal_nearfield_defect_v2"
+_install_longitudinal_patch_consistency(_global_longitudinal_reference)
+_install_terminal_longitudinal_refinement(_global_longitudinal_reference)
+_install_scalar_charge_patch(_global_longitudinal_reference)
+# Full-port terminal patches independently certify only the reactive longitudinal
+# defect. Their absolute local Dvol remains diagnostic-only.
+_install_reactive_longitudinal_reference(_global_longitudinal_reference)
+# Keep the historical whole-domain dissipative implementation available for
+# diagnostics/regression. The balanced terminal-local installer disables that
+# uniform production reference and installs the source-scale dissipative truth.
+_install_global_dissipative_reference(_global_longitudinal_reference)
+_install_resolved_dissipative_reference(
+    _global_longitudinal_reference,
+    _global_dissipative_reference_impl,
+)
+_install_terminal_dissipative_defect(
+    _global_longitudinal_reference,
+    _global_dissipative_reference_impl,
+)
+# Refined dissipative patches use production-parent material coefficients rather
+# than the experimentally falsified geometry-resolved sigma/epsilon reassembly.
+# Large scalar systems still use true-residual-certified iterative solvers. The
+# material suffix is physics semantics and therefore remains in the model name;
+# the solver implementation itself does not alter the truth label.
+_material_suffix = "production_parent_piecewise_constant_complex_mass_v1"
+_longitudinal_physics_model = f"{_global_longitudinal_reference._MODEL}+{_material_suffix}"
+_terminal_dissipative_physics_model = f"{_terminal_dissipative_defect._MODEL}+{_material_suffix}"
+_install_fast_terminal_dissipative_scalar(_global_longitudinal_reference)
+_global_longitudinal_reference._MODEL = _longitudinal_physics_model
+_terminal_dissipative_defect._MODEL = _terminal_dissipative_physics_model
+# Lock reference/validation to the same physical source quadrature. This installer
+# also applies the v33 single-terminal component lock as its outer source adapter.
+_install_terminal_dissipative_quadrature_fix(
+    _terminal_contact_source,
+    _charge_regularized_source,
+    _terminal_dissipative_defect,
+    _global_longitudinal_reference,
+)
+# Reactive terminal refinement keeps its existing discretization but uses the
+# same certified fast scalar linear algebra for large systems.
+_install_fast_reactive_scalar(_global_longitudinal_reference)
+# Reuse compact phi=None reference states already computed by the early audit
+# when later preflight correction asks for the identical reference.
+_install_longitudinal_state_cache(
+    _global_longitudinal_reference,
+    _terminal_dissipative_defect,
+)
+_install_global_longitudinal_reference(_corrected_preflight, _corrected_truth)
+_install_longitudinal_preflight_schedule(
+    _corrected_preflight, _global_longitudinal_reference
+)
+
+from .unified_tensor_surrogate import (
+    DecodedTensors,
+    SpatialDecodedTensors,
+    SpatialTensorDataset,
+    TensorDataset,
+    UnifiedSpatialTensorSurrogate,
+    UnifiedTensorSurrogate,
+    decode_physical_tensors,
+    decode_spatial_tensors,
+    encode_geometry,
+    pack_spatial_tensors,
+    pack_tensors,
+    solve_port_truth_tensors,
+    solve_truth_tensors,
+)
+from .unified_tensor_training import (
+    TensorTrainingReport,
+    train_matrix_tensor_surrogate,
+    train_spatial_tensor_surrogate,
+)
+from .unified_online_thermal import (
+    OnlineThermalReport,
+    audit_online_thermal_trajectories,
+    build_online_thermal_context,
+)
+from .unified_thermal import (
+    GeometryAwareThermalLibrary,
+    ThermalBasisReport,
+    audit_geometry_aware_thermal_trajectories,
+    build_geometry_aware_thermal_library,
+)
+
+__version__ = "0.17.0"
 
 __all__ = [
-    "AnalyticEvolutionGraph",
-    "AnalyticSeries",
-    "ParametricAnalyticEvolutionGraph",
-    "ParametricAnalyticSeries",
-    "CertifiedAnalyticEvolutionOperator",
-    "GeometryConditionedAnalyticEvolutionOperator",
-    "MultiChartGeometryAnalyticPrediction",
-    "MultiChartGeometryAnalyticEvolutionOperator",
-    "CertifiedElectroThermalVectorField",
-    "CertifiedGeometryElectroThermalFamily",
-    "CertifiedMultiChartGeometryFamily",
-    "MultiChartGeometrySelection",
-    "GeometryElectroThermalResidual",
-    "SolutionDataFreeClosedLoopTrainer",
-    "ThermalSpectralModel",
-    "ParametricEMProblem",
-    "ReducedEMModel",
-    "ResidualGreedyEMReducer",
-    "SparseEnergyReducedEMModel",
-    "SparseEnergyResidualGreedyEMReducer",
-    "SolidTerminalPortSet",
-    "ExecutableSDFMPNEOModel",
-    "OnlinePrediction",
-    "ParametricExecutableSDFMPNEOModel",
-    "ParametricOnlinePrediction",
-    "TetrahedralElectroThermalCore",
+    "ARCHITECTURE",
+    "BackgroundContext",
+    "CoilGeometry",
+    "DecodedTensors",
+    "SpatialDecodedTensors",
+    "SpatialTensorDataset",
+    "FixedMultiscaleBackground",
+    "GeometryAwareThermalLibrary",
+    "OpenBoundaryBackground",
+    "PackageGeometry",
+    "Pose",
+    "TensorDataset",
+    "TensorTrainingReport",
+    "OnlineThermalReport",
+    "ThermalBasisReport",
+    "UnifiedNeuralElectroThermalModel",
+    "UnifiedPrediction",
+    "UnifiedSteadyState",
+    "UnifiedTensorSurrogate",
+    "UnifiedSpatialTensorSurrogate",
+    "UnifiedUWPTGeometry",
+    "audit_geometry_aware_thermal_trajectories",
+    "build_geometry_aware_thermal_library",
+    "decode_physical_tensors",
+    "decode_spatial_tensors",
+    "encode_geometry",
+    "pack_tensors",
+    "pack_spatial_tensors",
+    "sample_geometry",
+    "solve_port_truth_tensors",
+    "solve_truth_tensors",
+    "stretched_axis",
+    "train_matrix_tensor_surrogate",
+    "train_spatial_tensor_surrogate",
+    "build_online_thermal_context",
+    "audit_online_thermal_trajectories",
 ]
 
-from .research import ResearchElectroThermalModel, demo_research_model, model_from_config
-from .training.research import ResearchTrainingConfig, ResearchTrainingReport, train_research_graph
-from .training.cpp_guard import install_cpp_auto_build_guard
-from .training.cpp_runtime import install_cpp_training_backend
-from .training.parallel_runtime import install_training_acceleration
-from .training.adaptive_runtime import (
-    ResearchTrainingContinuation,
-    install_adaptive_training,
-    install_geometry_continuation_persistence,
+# v53 production removes the falsified cross-geometry thermal state atlas.  The
+# surrogate predicts corrected Z/D plus a PSD cellwise Joule tensor field; each
+# query geometry constructs a small thermal ROM directly from its true M(g),K(g).
+# The certified EM preflight/port-field cache keeps its physical signature and
+# remains reusable across this thermal architecture change.
+from . import unified_runtime as _unified_runtime
+_unified_runtime._CACHE_FORMAT = 56
+_unified_runtime._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
+
+_original_runtime_build_background = _unified_runtime.build_background
+
+def _build_background_with_longitudinal_reference(settings, *args, **kwargs):
+    background = _original_runtime_build_background(settings, *args, **kwargs)
+    _global_longitudinal_reference._resolve_settings(settings, background)
+    return background
+
+_unified_runtime.build_background = _build_background_with_longitudinal_reference
+
+from . import unified_corrected_physics_gate as _corrected_physics_gate
+from .unified_global_longitudinal_physics_gate import install as _install_global_longitudinal_physics_gate
+
+_corrected_physics_gate._SELF_CORRECTION_MODEL = _SELF_CORRECTION_MODEL
+_install_global_longitudinal_physics_gate(
+    _corrected_physics_gate, _global_longitudinal_reference
 )
-from .training.late_stage_runtime import install_late_stage_training
-from .training.late_stage_batch import install_late_stage_batching
-from .training.cpp_visibility import install_cpp_training_visibility
-from .training.node_compile_runtime import install_node_only_training_compile
-from .training.observation_runtime import install_observation_training_acceleration
-from .training.cpp_dag_runtime import install_native_dag_training
-from .training.coverage_runtime import install_high_dimensional_collocation
-from .training.max_residual_runtime import install_max_residual_training
-from .analytic.state_runtime import install_analytic_state_graph
-from .training.residual_state_runtime import install_residual_driven_state_training
-from .training.state_search_runtime import (
-    install_geometry_seed_coalescing,
-    install_state_search_policy,
+
+# Mesh refinement must compare the same production subgrid truth.  Freeze the
+# certified terminal dissipative correction from the production background while
+# the 12->9 mm pre/post-basis mesh Gates run; reactive/transverse corrections are
+# still recomputed on each Maxwell grid.
+from .unified_mesh_gate_terminal_dissipation import install as _install_mesh_gate_terminal_dissipation
+_install_mesh_gate_terminal_dissipation(
+    _corrected_preflight,
+    _corrected_physics_gate,
+    _global_longitudinal_reference,
 )
-from .training.state_split_runtime import install_screened_split_policy
-from .training.block_sparse_search_runtime import install_block_sparse_state_search
-from .training.convergence_rescue_runtime import install_convergence_rescue
-from .training.state_linearization_runtime import install_independent_state_native_linearization
-from .training.geometry_context_runtime import install_concurrent_geometry_context_cache
-
-# Install the one-shot auto-build guard before any runtime can invoke a compiled
-# kernel. The C++ layer stays lazy: importing sdfmpneo never launches a compiler.
-install_cpp_auto_build_guard()
-install_cpp_training_backend()
-# Upgrade the public parametric graph before training wrappers capture evaluator
-# bindings. Old add_product_response() remains a single-source special case.
-install_analytic_state_graph()
-install_training_acceleration()
-install_adaptive_training()
-install_late_stage_training()
-install_late_stage_batching()
-install_node_only_training_compile()
-install_observation_training_acceleration()
-# Native DAG/GN remains the fast path while every state is single-source.
-install_native_dag_training()
-# Install final residual-search semantics before structural state construction.
-install_high_dimensional_collocation()
-install_max_residual_training()
-# Final policy: residual-driven Enrich/Grow/Split with no fixed source count K.
-install_residual_driven_state_training()
-# Align structural ranking with the actual L-infinity stopping metric and bound
-# expensive nonlinear candidate trials. This patches only runtime search policy;
-# physical equations, tolerance and public configuration stay unchanged.
-install_state_search_policy()
-# Aggregate states can expose many source-specific split choices. Screen those
-# exact tangents first and materialize only the best few function-preserving DAG
-# splits instead of duplicating every branch for every weak candidate.
-install_screened_split_policy()
-# Replace per-candidate greedy ranking with one matrix-free sparse-group solve.
-# The shared physical Jacobian scores a whole admissible source dictionary at
-# once; only the resulting sparse block receives full nonlinear EM-thermal
-# validation. Exact scalar/Split search remains a fail-closed compatibility path.
-install_block_sparse_state_search()
-# A normal dictionary stall is not treated as a finished training result. First
-# try a small sparse block of two-response thermal interactions, then continue
-# with two progressively richer static polynomial dictionaries. Only a genuine
-# exhausted rescue path is allowed to return stalled above the residual target.
-install_convergence_rescue()
-# A coalesced equation seed is multi-source but has no dynamic descendants. For
-# its weight Jacobian, expand the sources transiently into an exactly equivalent
-# scalar graph so the existing native C++ GN kernel remains usable.
-install_independent_state_native_linearization()
-# Timing wrappers are last so they observe the actual final training path.
-install_cpp_training_visibility()
-
-# Export the trainer after runtime installation so callers receive the final
-# residual-driven state-construction implementation.
-from .training.research import train_research_graph as train_research_graph
-
-__all__ += ["ResearchElectroThermalModel", "ResearchTrainingConfig", "ResearchTrainingReport",
-            "ResearchTrainingContinuation", "demo_research_model", "model_from_config",
-            "train_research_graph"]
-
-from .geometry_research import GeometryResearchModel, geometry_model_from_config
-# Geometry seeding predates analytic multi-source states. Coalesce the pure seed
-# after its unchanged equation-based selection so equivalent same-mode source
-# columns start in one state and are split only when residual evidence requires
-# independent downstream addressability.
-install_geometry_seed_coalescing(GeometryResearchModel)
-install_geometry_continuation_persistence(GeometryResearchModel)
-install_concurrent_geometry_context_cache(GeometryResearchModel)
-__all__ += ["GeometryResearchModel", "geometry_model_from_config"]

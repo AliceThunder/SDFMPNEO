@@ -1,0 +1,142 @@
+\section{Reference, training, FAST, and CERTIFIED algorithms}
+\label{sec:algorithms}
+
+This section summarizes the first implementation as four deterministic
+algorithms. It is intentionally written at pseudocode level.
+
+\subsection{Algorithm R: REFERENCE electromagnetic--thermal sample}
+
+Given a continuous scene $\mathcal S$ and frequency $\omega$:
+
+\begin{enumerate}
+\item Validate scene admissibility and material domains.
+\item Construct intrinsic conductor geometry, Bishop frames, terminal
+      functionals, and initial nested current/charge bases.
+\item Select the homogeneous Green kernel and dimensionless scaling.
+\item Assemble/cache conductor self blocks with singular quadrature.
+\item Assemble near pair blocks with adaptive near-singular quadrature.
+\item Assemble far interactions through the selected fast kernel backend.
+\item Build exact current/charge compatibility and port constraints.
+\item Solve the canonical constrained port systems for all independent ports.
+\item Compute $Y$, $Z$, modal currents/charges, channel powers, and continuous
+      loss factors.
+\item Evaluate algebraic residual, reciprocity, passivity, and power closure.
+\item Enrich longitudinal basis, cross-section basis, quadrature, and far-field
+      tolerance independently.
+\item Repeat until each error component satisfies its REFERENCE budget.
+\item Discover/project thermally observable loss channels.
+\item Build the thermal Green/boundary transfer at adaptive Laplace samples.
+\item Construct a stable reduced thermal realization and continuous decoder.
+\item Verify thermal transfer, steady state, and energy residuals.
+\item Save the immutable scene truth record and all certificates.
+\end{enumerate}
+
+Any failed certificate aborts the truth record; a partially converged solve is
+diagnostic data, not a training label.
+
+\subsection{Algorithm T: surrogate training}
+
+Given immutable training, validation, test, and locked release manifests:
+
+\begin{enumerate}
+\item Fit training-only nondimensional/normalization metadata.
+\item Train and validate isolated-object intrinsic self models/libraries.
+\item Train and validate pair kernels in relative-pose coordinates.
+\item Construct the fixed physics baseline for every training scene.
+\item Train the many-body global residual with structured impedance/channel
+      decoder.
+\item Train the continuous PSD loss-factor residual with exact power closure.
+\item Train thermal structured factors and continuous temperature decoder.
+\item Select checkpoints using decoded physical validation errors, not latent
+      MSE alone.
+\item Calibrate uncertainty/residual-prediction heads on fixed validation data.
+\item Run test suite exactly once per candidate artifact.
+\item Perform physics-residual active learning by adding new REFERENCE scenes to
+      training only; never reshuffle validation/test/release.
+\item Freeze the candidate and run the locked release suite.
+\item Emit a production artifact only if all required release gates pass.
+\end{enumerate}
+
+\subsection{Algorithm F: FAST online prediction}
+
+Input:
+\[
+  (\mathcal S,u,\omega,t_{\rm query},r_{\rm query}).
+\]
+
+\begin{enumerate}
+\item Validate public scene semantics and artifact domain.
+\item Build intrinsic object descriptors and relative-pose graph.
+\item Evaluate analytic/self/pair physical baseline.
+\item Evaluate many-body neural residual.
+\item Decode reciprocal/passive port model and dissipative channels.
+\item Solve the small external circuit/port problem.
+\item Decode loss-channel amplitudes; evaluate continuous Joule density only at
+      requested points if requested.
+\item Decode structured thermal matrices and initial reduced state.
+\item Integrate carrier-envelope electrothermal dynamics over requested times.
+\item Evaluate continuous temperature decoder only at requested points.
+\item Return observables, energy accounting, uncertainty, and status
+      \texttt{FAST}.
+\end{enumerate}
+
+No REFERENCE integral solve is executed.
+
+\subsection{Algorithm C: CERTIFIED online prediction}
+
+Start from Algorithm F and retain its physical latent/modal prediction as an
+initial guess.
+
+\begin{enumerate}
+\item Build the physical integral operator at the requested scene/frequency,
+      reusing intrinsic/pair caches.
+\item Lift the FAST prediction to compatible current/charge/operator
+      coefficients.
+\item Evaluate the true Riesz-scaled physical residual for all requested port
+      excitations.
+\item If residual and requested observable estimators pass, accept without
+      correction.
+\item Otherwise perform a bounded number of preconditioned/recycled Krylov
+      corrections.
+\item After every correction batch, recompute the residual in the original
+      physical operator.
+\item Evaluate dual/goal-oriented estimator for requested $Z$, power, or field
+      observables.
+\item Recompute exact channel power closure and continuous loss normalization.
+\item If the corrected loss changes materially, update the thermal reduced
+      source amplitudes/model correction.
+\item Integrate thermal dynamics with energy-norm adaptive control and thermal
+      residual checks.
+\item Return \texttt{CERTIFIED} only if all requested observable budgets pass.
+\item If correction budget is exhausted, return \texttt{UNCERTIFIED} or
+      explicitly escalate to Algorithm R according to policy.
+\end{enumerate}
+
+\subsection{Algorithm E: electrothermal slow-time step}
+
+Given reduced thermal state $z_n$:
+
+\begin{enumerate}
+\item Predict $z_{n+1}^{(0)}$.
+\item Evaluate temperature-dependent material coordinates.
+\item Update structured narrowband $Z$ and loss operator.
+\item Solve external circuit for complex envelope current.
+\item Compute cycle-averaged loss-channel amplitudes.
+\item Advance thermal state using implicit/exponential reduced integration.
+\item Re-evaluate material/electrical state and iterate if coupling is strong.
+\item Check circuit-to-EM and EM-to-thermal energy identities.
+\item Estimate local thermal integration error in the $C_T$ energy norm.
+\item Accept/reject the step and adapt $\Delta t$.
+\end{enumerate}
+
+\subsection{Algorithmic invariants}
+
+All implementations of these algorithms must preserve:
+\begin{enumerate}
+\item identical Scene semantics across FAST/CERTIFIED/REFERENCE;
+\item exact port orientation/work convention;
+\item exact structural passivity/PSD constraints of decoders;
+\item frozen validation/release sets;
+\item no dependency of online public outputs on legacy world-grid indices;
+\item fail-closed certification.
+\end{enumerate}

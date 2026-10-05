@@ -1,0 +1,42 @@
+\section{Notation and conventions}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Symbol & Meaning\\
+\midrule
+$\mathcal S$ & complete continuous physical scene\\
+$\mathcal G$ & geometry and object poses\\
+$\mathcal M$ & material constitutive laws\\
+$P$ & number of electrical ports\\
+$i,v$ & port current and voltage phasors/vectors\\
+$Z$ & impedance or transfer matrix\\
+$x_{\mathrm{EM}}$ & integral-equation electromagnetic coefficients\\
+$\mathcal A_{\mathrm{EM}}$ & physical electromagnetic integral operator\\
+$D_{\mathrm{abs}}$ & integrated absorbed-power operator\\
+$H_q(\xi)$ & continuous local Hermitian loss operator\\
+$L_q(\xi)$ & PSD factor such that $H_q=L_q\adj L_q$\\
+$p(t)$ & low-dimensional thermal source-channel amplitudes\\
+$z(t)$ & reduced thermal state\\
+$C_T,G_T$ & reduced heat-capacity and dissipation matrices\\
+$\Phi_T(\mathbf r)$ & continuous temperature decoder\\
+$\eta_{\mathrm{EM}}$ & true normalized electromagnetic residual\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The vNext convention is
+\[
+  f_{\rm phys}(t)=\Rea\{\widetilde f e^{+j\omega t}\},
+\]
+with peak rather than RMS phasors. Therefore average port power is
+\[
+  P=\frac12\Rea\{v\adj i\}.
+\]
+Constitutive signs, Green kernels, Maxwell operators, and loss formulas must be
+implemented consistently with this convention. Physical passivity is verified
+through non-negative time-averaged power and structured passive realizations.
+
+A superscript $\adj$ denotes conjugate transpose, while $\T$ denotes ordinary
+transpose. $\Herm A=(A+A\adj)/2$. Positive-semidefinite and
+positive-definite matrices are denoted by $\PSD$ and $\SPD$, respectively.

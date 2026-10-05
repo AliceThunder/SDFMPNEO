@@ -1,0 +1,312 @@
+\section{Superelliptic conductor basis and reference assembly algorithm}
+\label{sec:superellipse-basis}
+
+This section specifies a first implementable basis family for the homogeneous-
+background conductor teacher. It is not the only admissible basis, but it is
+the reference construction for the first implementation.
+
+\subsection{Reference superellipse}
+
+Let the conductor cross-section be
+\[
+ \Sigma
+ =
+ \left\{
+  (\xi_1,\xi_2):
+  \left|\frac{\xi_1}{a_c}\right|^m
+  +
+  \left|\frac{\xi_2}{b_c}\right|^m
+  \le 1
+ \right\},
+ \qquad
+ a_c=w/2,\quad b_c=h/2 .
+\]
+Use generalized polar coordinates
+\[
+ \xi_1
+ =
+ a_c\,\rho\,
+ \operatorname{sgn}(\cos\theta)
+ |\cos\theta|^{2/m},
+\]
+\[
+ \xi_2
+ =
+ b_c\,\rho\,
+ \operatorname{sgn}(\sin\theta)
+ |\sin\theta|^{2/m},
+\]
+with
+\[
+ 0\le\rho\le1,\qquad 0\le\theta<2\pi.
+\]
+The Jacobian is evaluated analytically or by automatic differentiation and is
+included in all cross-section inner products. Since this coordinate chart has
+integrable axis singularities for some exponents, production quadrature may
+instead split the superellipse into four smooth quadrant patches. The
+mathematical basis is independent of that quadrature choice.
+
+\subsection{Scalar cross-section modes}
+
+Define weighted radial functions
+\[
+ R_n^{(\beta)}(\rho)
+ =
+ (1-\rho)^{\beta/2}
+ P_n^{(\alpha,\beta)}(2\rho-1),
+\]
+where $P_n^{(\alpha,\beta)}$ is a Jacobi polynomial. The boundary exponent
+$\beta$ may be chosen to concentrate resolution near the conductor boundary
+when skin depth is small.
+
+Angular functions are
+\[
+ A_0(\theta)=1,
+\]
+\[
+ A_{k,c}(\theta)=\cos(k\theta),\qquad
+ A_{k,s}(\theta)=\sin(k\theta).
+\]
+A raw scalar family is
+\[
+ \varphi_{n,k,\tau}(\rho,\theta)
+ =
+ R_n^{(\beta_k)}(\rho)A_{k,\tau}(\theta).
+\]
+These functions are Gram--Schmidt or Cholesky orthonormalized under the
+conductive cross-section metric
+\[
+ M_\Sigma(u,v)
+ =
+ \int_{\Sigma}u^\ast \sigma^{-1}v\,\dd A .
+\]
+The constant mode is retained exactly.
+
+\subsection{Boundary-layer enrichment}
+
+When
+\[
+ \chi_{\min}
+ =
+ \min(w,h)/\delta
+\]
+is large, a polynomial radial family may converge slowly. Add boundary-layer
+modes
+\[
+ B_{r,k,\tau}
+ =
+ \exp[-\lambda_r(1-\rho)]
+ A_{k,\tau}(\theta),
+\]
+with
+\[
+ \lambda_r
+ \sim
+ c_r\,\frac{\min(w,h)}{\delta}.
+\]
+The coefficients $c_r$ are chosen from a small geometric sequence. These
+functions represent skin concentration without shrinking a surrounding volume
+mesh.
+
+\subsection{Longitudinal basis}
+
+Parameterize the centerline by normalized arc coordinate
+\[
+ \zeta=s/L\in[0,1].
+\]
+The first implementation uses compact B-spline functions
+\[
+ \chi_\ell(\zeta)
+\]
+of degree $p_s\ge2$ with open knots. Knot spacing is refined according to:
+\begin{enumerate}
+\item centerline curvature;
+\item terminal neighborhoods;
+\item rapid variation of cross-section;
+\item close electromagnetic proximity to another object.
+\end{enumerate}
+
+The longitudinal current basis is
+\[
+ \mathbf w_{\ell a}^{(t)}
+ =
+ e_t(s)\chi_\ell(s)\varphi_a(\xi;s).
+\]
+
+\subsection{Transverse compatible modes}
+
+To allow finite-cross-section charge redistribution and transverse proximity
+currents, define cross-section scalar potentials $\eta_a$ and stream functions
+$\psi_a$. The transverse family is
+\[
+ \mathbf v_a^{(g)}
+ =
+ \nabla_\perp \eta_a,
+\qquad
+ \mathbf v_a^{(c)}
+ =
+ e_t\times\nabla_\perp\psi_a.
+\]
+The gradient family contributes cross-section divergence; the rotated-gradient
+family is divergence-free in the local plane. Mapped to the swept conductor,
+metric/curvature corrections are included through the exact geometry
+Jacobian. The discrete divergence matrix $D$ is assembled from the mapped
+basis, rather than assuming the straight-conductor formula.
+
+\subsection{Charge basis}
+
+Use longitudinal B-splines times scalar cross-section modes:
+\[
+ \nu_{\ell a}(s,\xi)
+ =
+ \widehat\chi_\ell(s)\widehat\varphi_a(\xi;s).
+\]
+The charge space is selected so the image of the discrete current divergence is
+represented to machine precision or to a declared commuting-projection
+tolerance. In the first implementation the safest policy is to build $D$ first,
+compute its numerical range, and retain a charge basis spanning that range plus
+terminal charge modes.
+
+\subsection{Port terminal basis}
+
+For each terminal cross-section, define a normalized flux mode
+\[
+ \tau_p(\xi)
+\]
+such that
+\[
+ \int_{\Gamma_p}\tau_p(\xi)\dd A=1.
+\]
+The terminal current constraint is imposed exactly:
+\[
+ \int_{\Gamma_p}\mathbf J\cdot n\,\dd A=I_p.
+\]
+Additional zero-net-flux terminal shape modes may be included to represent
+nonuniform terminal current without changing the prescribed port current.
+
+\subsection{Matrix elements}
+
+For current basis functions $\mathbf w_\alpha,\mathbf w_\beta$,
+\[
+ R_{\alpha\beta}
+ =
+ \int_{\Omega_c}
+ \mathbf w_\alpha^\ast
+ \rho_e
+ \mathbf w_\beta
+ \dd V.
+\]
+The vector-potential block is
+\[
+ L_{\alpha\beta}
+ =
+ \mu
+ \iint
+ \mathbf w_\alpha(\mathbf r)^\ast
+ G_k(\mathbf r,\mathbf r')
+ \mathbf w_\beta(\mathbf r')
+ \dd V'\dd V.
+\]
+For charge basis functions $\nu_r,\nu_s$,
+\[
+ \Phi_{rs}
+ =
+ \frac{1}{\epsilon}
+ \iint
+ \nu_r^\ast(\mathbf r)
+ G_k(\mathbf r,\mathbf r')
+ \nu_s(\mathbf r')
+ \dd V'\dd V.
+\]
+The divergence block is
+\[
+ D_{r\alpha}
+ =
+ \int_{\Omega_c}
+ \nu_r^\ast
+ \nabla\cdot\mathbf w_\alpha
+ \dd V.
+\]
+These four objects, together with terminal injection/extraction matrices, are
+the minimal homogeneous-medium conductor teacher.
+
+\subsection{Dimensionless assembly}
+
+Before solving, scale
+\[
+ c=S_c\widetilde c,\qquad
+ q=S_q\widetilde q
+\]
+using conductive-energy and charge-energy norms. The scaled block system is
+assembled so resistance, inductive, and potential blocks have comparable
+natural magnitude over the operating band. All Krylov residuals are evaluated
+in a physical Riesz norm and then reported in dimensionless form.
+
+\subsection{Nested enrichment policy}
+
+The REFERENCE solver uses a deterministic nested sequence:
+\[
+ (p_s,r_\perp,q_{\rm quad})
+ \rightarrow
+ (p_s+\Delta p_s,r_\perp,q_{\rm quad})
+ \rightarrow
+ (p_s,r_\perp+\Delta r,q_{\rm quad})
+ \rightarrow
+ (p_s,r_\perp,q_{\rm quad}+\Delta q).
+\]
+Each direction is refined independently at least once so basis and quadrature
+errors are identifiable.
+
+For a port observable $Y$, define
+\[
+ \eta_s
+ =
+ \frac{\norm{Y_{s+}-Y}_{W_Y}}
+      {\max(\norm{Y_{s+}}_{W_Y},Y_0)},
+\]
+and analogously $\eta_\perp,\eta_q$. A truth sample is accepted only if
+\[
+ \max(\eta_s,\eta_\perp,\eta_q,\eta_{\rm solve})
+ \le\tau_{\rm ref}.
+\]
+
+\subsection{Reference assembly algorithm}
+
+The first implementation follows this deterministic procedure:
+
+\begin{enumerate}
+\item Validate continuous conductor geometry and terminal topology.
+\item Build Bishop frames and longitudinal quadrature partitions.
+\item Build nested cross-section scalar, gradient, and curl-like modes.
+\item Assemble the discrete divergence and exact terminal-current maps.
+\item Remove charge gauge null spaces.
+\item Assemble/cache intrinsic resistance and singular self-interaction blocks.
+\item Assemble pair interactions using near/far classification.
+\item Scale the mixed system and build a block preconditioner.
+\item Solve all independent port excitations.
+\item Evaluate true physical residual, reciprocity, passivity, and power closure.
+\item Independently enrich longitudinal basis, cross-section basis, and
+      quadrature.
+\item Accept only when all declared convergence estimators pass.
+\item Store the continuous/modal solution and certificate, never a world-grid
+      field vector.
+\end{enumerate}
+
+\subsection{Junctions and branched conductors}
+
+A junction joins multiple swept conductor branches at one electrical node.
+Terminal-flux constraints are replaced by Kirchhoff compatibility:
+\[
+ \sum_{b\in\mathcal J}\mathcal I_b c_b=0
+\]
+for an internal junction. Potential/charge compatibility is imposed through a
+shared junction charge/potential space or Lagrange multiplier. The first MVP
+may exclude internal branched conductors, but the scene/port theory is designed
+so adding them does not require a new global representation.
+
+\subsection{Implementation checkpoint}
+
+Before any neural network is trained, the homogeneous conductor teacher must
+pass isolated-wire, single-loop, two-coil, rigid-motion, low-frequency, and
+skin-depth convergence tests. A neural surrogate is not allowed to compensate
+for a teacher that fails these tests.

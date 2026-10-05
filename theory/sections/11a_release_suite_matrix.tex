@@ -1,0 +1,92 @@
+\section{Release-suite matrix}
+\label{sec:release-matrix}
+
+A release suite is not a random holdout. It is a locked matrix of physical
+regimes designed to falsify the architecture.
+
+\subsection{Electromagnetic release axes}
+
+At minimum, scenes span:
+\begin{enumerate}
+\item superellipse exponent from ellipse-like to strongly rounded-rectangular;
+\item thin to thick conductor cross-sections;
+\item low to high skin-depth ratio;
+\item weak, moderate, and near-field coupling;
+\item coaxial, lateral-offset, orthogonal, and generic random relative poses;
+\item unequal coil sizes, pitches, turns, and aspect ratios;
+\item low and high end of the declared frequency domain;
+\item one, two, and multi-object scenes when supported;
+\item weak and strong passive material contrast after media extensions are
+      enabled.
+\end{enumerate}
+
+\subsection{Thermal release axes}
+
+The thermal suite spans:
+\begin{enumerate}
+\item short, intermediate, and asymptotic time scales;
+\item localized and distributed loss-channel combinations;
+\item different relative positions between heat sources and observation points;
+\item weak and strong environmental cooling;
+\item temperature-independent and temperature-dependent conductor resistance
+      once nonlinear coupling is enabled;
+\item current-controlled and circuit/voltage-controlled operation.
+\end{enumerate}
+
+\subsection{Cross-product policy}
+
+A full Cartesian product is often prohibitively large. The locked suite uses:
+\begin{enumerate}
+\item pairwise covering arrays across discrete regime bins;
+\item explicit worst-case combinations known to be difficult;
+\item deterministic random scenes from a fixed hidden seed;
+\item hand-constructed analytic benchmark scenes.
+\end{enumerate}
+No architecture decision may inspect or replace individual hidden release
+scenes.
+
+\subsection{Required reports}
+
+For every release cell report at least:
+\[
+ \epsilon_Z,\quad
+ \epsilon_{\rm power},\quad
+ \epsilon_q,\quad
+ \epsilon_T,\quad
+ \eta_{\rm EM},\quad
+ m_{\rm correction},
+\]
+plus passivity, reciprocity, and stability status.
+
+Aggregate metrics include median, 95th percentile, and maximum. Production
+gates use per-regime maxima or explicitly declared robust quantiles; a global
+average alone is never sufficient.
+
+\subsection{FAST and CERTIFIED gates}
+
+FAST and CERTIFIED are evaluated separately.
+
+FAST gates measure pure surrogate usefulness:
+\[
+  \text{latency},\quad
+  \epsilon_Z,\quad
+  \epsilon_T,\quad
+  \text{calibrated uncertainty}.
+\]
+
+CERTIFIED gates additionally require:
+\[
+  \eta_{\rm physical},\quad
+  \epsilon_{\rm observable}^{\rm bound},\quad
+  m_{\rm correction}\le m_{\max}.
+\]
+A scene may fail FAST accuracy yet pass CERTIFIED after a small correction. A
+scene that routinely requires a cold-solve-sized correction fails the
+CERTIFIED performance goal even if the final answer is accurate.
+
+\subsection{Teacher release}
+
+The REFERENCE teacher has its own locked convergence suite independent of the
+neural model. It must pass before its labels are admitted into training. This
+prevents a neural release test from validating against a common biased teacher
+without independent evidence.
