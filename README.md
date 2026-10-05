@@ -1,21 +1,18 @@
 # SDF-MPNEO vNext
 
-SDF-MPNEO vNext is the mesh-free-first electrothermal surrogate branch.  The
-runtime is built around geometry-local conductor/surface/volume quadrature,
-matrix-free or dense correctness backends, structure-preserving neural
-surrogates, and continuous thermal Green-function evolution.  It does **not**
-introduce a fixed world voxel/FEM mesh or a finite thermal/world truncation
-box.
+SDF-MPNEO vNext is the mesh-free-first electrothermal surrogate runtime. The
+core model uses geometry-local conductor/surface/volume quadrature, dense or
+matrix-free correctness backends, structure-preserving neural FAST artifacts,
+and continuous thermal Green/interface evolution. It does **not** require a
+fixed world voxel/FEM mesh or a finite thermal/world truncation box.
 
-The current implementation supports arbitrarily posed finite-cross-section
-superelliptic spiral coils; arbitrary strictly nested or mutually disjoint
-superquadric material regions, including both conductor-enclosing packages and
-free inclusions; homogeneous passive isotropic background media with constant,
-Debye, multi-Debye, tabulated, or custom frequency-response models; continuous
-conductor/material/background loss fields; and time-dependent temperature
-queries.  REFERENCE, FAST, and CERTIFIED paths are
-kept separate so a neural artifact never silently replaces the correctness
-backend.
+The current vNext branch supports arbitrary-pose finite-cross-section
+superelliptic spiral coils, strictly nested or mutually disjoint superquadric
+material regions, homogeneous isotropic or tensor-electric backgrounds,
+piecewise-homogeneous isotropic or tensor-electric package materials,
+continuous conductor/package/background loss fields, and time-dependent
+thermal queries. REFERENCE, FAST, and CERTIFIED remain separate execution
+paths so neural inference never silently replaces the correctness backend.
 
 ## Install
 
@@ -31,43 +28,32 @@ For neural FAST artifacts:
 pip install -e ".[dev,neural]"
 ```
 
-The NumPy/SciPy REFERENCE and CERTIFIED stack does not require PyTorch.
+The NumPy/SciPy REFERENCE and CERTIFIED paths do not require PyTorch.
 
-## Main physical objects
+## Scene model
 
-A scene is assembled from:
+The main objects are:
 
-- `SuperellipseSpiral` + `ConductorMaterial` + `CoilObject`
-- optional `SuperquadricPackageGeometry` + material + `PackageObject`
-- a passive isotropic homogeneous background material: `HomogeneousMedium`,
-  `DebyeMaterial`, `MultiDebyeMaterial`, `TabulatedMaterial`, or a custom
-  `PassiveIsotropicMaterial` implementation
-- arbitrary `RigidPose` values for coils and packages
+- `SuperellipseSpiral` + `ConductorMaterial` + `CoilObject`;
+- optional `SuperquadricPackageGeometry` + material + `PackageObject`;
+- arbitrary independent `RigidPose` values for coils and packages;
+- a homogeneous background material;
+- optional strictly nested or mutually disjoint material regions.
 
-The conductor representation has a finite superelliptic cross-section and uses
-geometry-local longitudinal/section quadrature.  Dielectric packages use
-surface/volume quadrature.  These are local numerical discretizations of the
-objects, not a fixed global volume grid.
+Isotropic electric materials may use `HomogeneousMedium`, `IsotropicMaterial`,
+`DebyeMaterial`, `MultiDebyeMaterial`, `TabulatedMaterial`, or another passive
+frequency-response implementation. Tensor-electric regions use
+`TensorElectricMaterial`, with an SPD relative-permittivity tensor and a PSD
+conductivity tensor whose principal axes are expressed in the containing
+region frame. Package tensors therefore rotate with package pose, while a
+background tensor is expressed in world axes.
 
-Measured passive material data can be used without fitting a Debye model:
-
-```python
-from sdfmpneo_vnext import TabulatedMaterial
-
-medium = TabulatedMaterial(
-    frequencies_hz=(20e3, 100e3, 500e3),
-    relative_permittivity_real=(12.0, 7.0, 4.5),
-    loss_conductivity_values=(2e-5, 3e-4, 1.5e-4),
-)
-```
-
-Tabulated response is interpolated in log-frequency inside the supplied
-frequency interval. Queries outside that interval are rejected rather than
-extrapolated.
+The tensor-electric backend is a piecewise-homogeneous electric transmission
+model. It is not a general continuously varying tensor VIE solver.
 
 ## REFERENCE / FAST / CERTIFIED
 
-`MeshfreeVNextSystem` exposes the common runtime:
+`MeshfreeVNextSystem` is the common runtime:
 
 ```python
 from sdfmpneo_vnext import MeshfreeVNextSystem
@@ -77,198 +63,159 @@ system = MeshfreeVNextSystem(
     spatial_artifact=spatial_artifact,
 )
 
-z_fast = system.fast_ports(scene, frequency_hz)
+ports_fast = system.fast_ports(scene, frequency_hz)
 loss_fast = system.fast_spatial(scene, frequency_hz)
 
-z_ref = system.reference_ports(scene, frequency_hz)
+ports_ref = system.reference_ports(scene, frequency_hz)
 loss_ref = system.reference_spatial(scene, frequency_hz)
 
 certified = system.certified_ports(scene, frequency_hz)
 ```
 
-Package-aware REFERENCE queries dispatch to the mixed conductor + dielectric
-surface-integral backend.  Homogeneous lossy-background power is represented
-as an unbounded exterior-domain integral rather than a finite world box.
+REFERENCE dispatches conductor-only scenes to the mixed finite-cross-section
+backend and heterogeneous/tensor-electric scenes to the coupled electric /
+magnetic interface backend. Homogeneous lossy-background power is represented
+by an unbounded exterior-domain integral rather than a finite world box.
 
-Radially graded isotropic package media can be compiled into a convergent
-strictly nested shell hierarchy. The profile may be the built-in
-`RadialIsotropicMaterialProfile` or a callable that returns any
-`PassiveIsotropicMaterial` response (including Debye, multi-Debye, tabulated,
-or custom models). Supplying `enclosed_coils` automatically keeps every
-internal material interface clear of the finite conductor volume:
+FAST artifacts fail closed when geometry or material values fall outside the
+training domain. Tensor-electric scenes additionally require artifacts marked
+`supports_tensor_electric`; scalar material features are never used as an
+anisotropy proxy.
 
-```python
-layers = compile_graded_superquadric_regions(
-    outer_package_geometry,
-    lambda rho: DebyeMaterial(
-        relative_permittivity_static=4.0 + 8.0 * rho,
-        relative_permittivity_infinite=2.0 + rho,
-        relaxation_time=1e-6 * (1.0 + rho),
-    ),
-    shell_count=8,
-    enclosed_coils=scene.coils,
-)
-graded_scene = Scene(scene.coils, scene.medium, layers)
+## Isotropic hybrid FAST training
 
-graded_report = graded_material_convergence(
-    Scene(scene.coils, scene.medium),
-    frequency_hz,
-    outer_package_geometry,
-    profile,
-    shell_counts=(4, 8, 16),
-)
-
-certified = certify_dielectric_ports(
-    graded_scene,
-    frequency_hz,
-    fast_artifact,
-    convergence_report=hybrid_report,
-    graded_convergence_report=graded_report,
-)
-```
-
-The graded report isolates material-profile shell error from conductor/SIE
-quadrature error. Full discretization certification can therefore require both
-the ordinary hybrid refinement report and the graded-shell report to converge.
-
-## Hybrid dataset: packages + optional lossy background
-
-The hybrid dataset stores:
-
-- port impedance and PSD dissipation channels;
-- continuous conductor spatial loss;
-- continuous package spatial loss;
-- when the homogeneous background is lossy, continuous unbounded-background
-  spatial loss;
-- the declared geometry and package/background material design domains in the
-  immutable manifest.
-
-Generate a dataset with the historical lossless-background behavior:
+The existing hybrid dataset/training path remains available for isotropic
+package/background material domains:
 
 ```bash
-python examples/vnext_generate_hybrid_dataset.py data/hybrid \
-  --count 128
-```
+python examples/vnext_generate_hybrid_dataset.py data/hybrid --count 128
 
-Opt into a lossy homogeneous background domain:
-
-```bash
-python examples/vnext_generate_hybrid_dataset.py data/hybrid-lossy \
-  --count 256 \
-  --dc-probability 0.10 \
-  --dc-conductive-probability 0.50 \
-  --lossy-background-probability 0.4 \
-  --debye-background-probability 0.35 \
-  --multi-debye-background-probability 0.15 \
-  --multi-debye-min-poles 2 \
-  --multi-debye-max-poles 4 \
-  --background-epsilon-min 1.0 \
-  --background-epsilon-max 6.0 \
-  --background-conductivity-min 1e-5 \
-  --background-conductivity-max 5e-3 \
-  --background-debye-epsilon-infinite-min 1.0 \
-  --background-debye-epsilon-infinite-max 6.0 \
-  --background-debye-delta-epsilon-min 0.5 \
-  --background-debye-delta-epsilon-max 30.0 \
-  --debye-package-probability 0.25 \
-  --multi-debye-package-probability 0.15 \
-  --package-offset-fraction-min 0.0 \
-  --package-offset-fraction-max 0.35 \
-  --package-count-min 1 \
-  --package-count-max 4 \
-  --nested-package-probability 0.25 \
-  --graded-package-probability 0.50 \
-  --free-inclusion-probability 0.35 \
-  --free-inclusion-center-radius-min 0.65 \
-  --free-inclusion-center-radius-max 1.8 \
-  --free-inclusion-half-extent-min 0.12 \
-  --free-inclusion-half-extent-max 0.45 \
-  --background-radial-order 12 \
-  --background-angular-order 48
-```
-
-The generator records the declared coil/material-region geometry domain and
-the package/background material domains in `manifest.json`. Package
-orientation is sampled from Haar SO(3). A region may enclose a finite
-conductor, form a strict nested material shell, or be sampled as a free
-inclusion at a declared scene-relative distance and size. Surfaces that cut a
-finite conductor or partially intersect another material region are rejected
-and resampled. Material metadata includes conservative frequency-effective
-`Re(epsilon_r)` and loss-conductivity bounds for Debye and multi-Debye
-responses. Appending with incompatible domain arguments is rejected instead of
-mixing different design domains in one frozen dataset.
-
-## Train the hybrid FAST port surrogate
-
-```bash
 python examples/vnext_train_hybrid_residual.py \
-  data/hybrid-lossy \
+  data/hybrid \
   artifacts/hybrid-port.pt \
-  --epochs 200 \
-  --device cpu
-```
+  --epochs 200
 
-The training script reads the declared geometry domain together with
-frequency-effective package/background permittivity and loss-conductivity
-support from the dataset manifest. It does not infer the intended design domain
-from finite-sample minimum/maximum values. FAST therefore fails closed on
-out-of-domain coil sizes, spacing, frequency, package pose/size, material
-response, or unsupported magnetic package contrast instead of silently
-extrapolating. Common global SE(3) motion remains an exact invariant.
-
-The port decoder is structurally reciprocal/passive and produces PSD
-dissipation channels whose sum closes to the dissipative part of the predicted
-impedance.
-
-## Train the hybrid continuous spatial-loss surrogate
-
-```bash
 python examples/vnext_train_hybrid_spatial.py \
-  data/hybrid-lossy \
+  data/hybrid \
   artifacts/hybrid-port.pt \
   artifacts/hybrid-spatial.pt \
-  --epochs 120 \
-  --background-segments-per-turn 16 \
-  --background-radial-order 12 \
-  --background-angular-order 48
+  --epochs 120
 ```
 
-The spatial model predicts continuous PSD loss shapes for conductors, packages,
-and the unbounded homogeneous background.  Package and background losses share
-one electric-environment port channel and are normalized jointly, so they do
-not double-count dissipation.
+The port decoder is reciprocal/passive by construction and returns PSD
+conductor plus aggregate electric-environment dissipation channels whose sum
+closes to the dissipative part of the predicted impedance. The spatial model
+then resolves those channels into continuous conductor, package, and optional
+unbounded-background loss fields.
 
-The background neural decoder uses bounded SE(3)-invariant coordinates and a
-hard far-field envelope.  Its PSD loss matrix decays at least as
-`O(r^-4)`, making the 3-D exterior loss integral structurally integrable.
+## Tensor-electric FAST port and spatial training
 
-## Load FAST artifacts and query electrothermal evolution
+Tensor-electric training uses tensor-invariant material features for both the
+port model and the spatial latent state. The spatial decoder reuses the mature
+PSD conductor/package/background shape networks but is normalized against the
+tensor-aware port channels; it therefore does not collapse anisotropic
+permittivity/conductivity to scalar surrogates.
+
+A minimal in-memory research workflow is:
 
 ```python
 import numpy as np
 
-from sdfmpneo_vnext import (
-    HomogeneousThermalMedium,
-    MeshfreeVNextSystem,
+from sdfmpneo_vnext import HybridSceneSamplerConfig, MQSConfig
+from sdfmpneo_vnext.tensor_sampling import (
+    TensorHybridSceneSamplerConfig,
+    sample_tensor_hybrid_scene,
 )
-from sdfmpneo_vnext.hybrid_neural import HybridNeuralResidualArtifact
-from sdfmpneo_vnext.hybrid_spatial_neural import HybridSpatialLossArtifact
+from sdfmpneo_vnext.tensor_training_data import TensorHybridTeacherSample
+from sdfmpneo_vnext.tensor_spatial_training_data import (
+    TensorHybridSpatialTeacherSample,
+)
+from sdfmpneo_vnext.tensor_neural import (
+    train_tensor_hybrid_residual_surrogate,
+)
+from sdfmpneo_vnext.tensor_spatial_neural import (
+    train_tensor_hybrid_spatial_loss_surrogate,
+)
 
-port = HybridNeuralResidualArtifact.load(
-    "artifacts/hybrid-port.pt"
+sampler = TensorHybridSceneSamplerConfig(
+    base=HybridSceneSamplerConfig(),
+    tensor_package_probability=1.0,
+    tensor_background_probability=0.5,
 )
-spatial = HybridSpatialLossArtifact.load(
-    "artifacts/hybrid-spatial.pt",
+
+teacher_config = MQSConfig()
+rng = np.random.default_rng(7)
+spatial_samples = []
+for _ in range(16):
+    scene, frequency_hz = sample_tensor_hybrid_scene(rng, sampler)
+    port_truth = TensorHybridTeacherSample.generate(
+        scene,
+        frequency_hz,
+        teacher_config=teacher_config,
+    )
+    spatial_samples.append(
+        TensorHybridSpatialTeacherSample.generate(
+            port_truth,
+            teacher_config=teacher_config,
+        )
+    )
+
+port, port_report = train_tensor_hybrid_residual_surrogate(
+    tuple(sample.port for sample in spatial_samples),
+    epochs=200,
+)
+spatial, spatial_report = train_tensor_hybrid_spatial_loss_surrogate(
     port,
+    spatial_samples,
+    epochs=120,
+)
+```
+
+`TensorHybridSpatialLossArtifact.prepare(...)` produces the same prepared
+continuous-field interface used by the isotropic hybrid path, including:
+
+- conductor-local `local_dissipation_matrix/matrices` queries;
+- package-local/world `package_*dissipation*` queries;
+- unbounded-background dissipation queries when the background is lossy;
+- exact normalization to the tensor FAST port dissipation channels;
+- compatibility with `MeshfreeVNextSystem.fast_spatial` and continuous thermal
+  evolution.
+
+## Tensor artifact persistence
+
+Tensor port and spatial artifacts can be published as one self-contained
+bundle:
+
+```python
+from sdfmpneo_vnext.tensor_bundle import (
+    publish_tensor_bundle,
+    load_tensor_bundle,
 )
 
-system = MeshfreeVNextSystem(
+publish_tensor_bundle(
+    "artifacts/tensor-fast",
     port,
     spatial_artifact=spatial,
+    overwrite=True,
 )
 
+loaded = load_tensor_bundle("artifacts/tensor-fast")
+system = loaded.system
 ports = system.fast_ports(scene, frequency_hz)
 field = system.fast_spatial(scene, frequency_hz)
+```
+
+The manifest contains checksums, runtime capability metadata, and a semantic
+fingerprint binding the spatial artifact to the exact tensor port weights and
+normalization state.
+
+## Continuous electrothermal evolution
+
+FAST and REFERENCE spatial fields feed the same continuous thermal interfaces:
+
+```python
+import numpy as np
+from sdfmpneo_vnext import HomogeneousThermalMedium
 
 thermal = system.fast_continuous_thermal_field(
     scene,
@@ -280,100 +227,72 @@ thermal = system.fast_continuous_thermal_field(
     ),
 )
 
-# If scene.medium is an Isotropic/Debye/MultiDebye material carrying
-# thermal_conductivity, density, and heat_capacity, the third argument can be
-# omitted and the homogeneous thermal background is built from the scene.
-#
-# Package materials may also carry thermal_conductivity, density, and
-# heat_capacity. Thermally distinct, strictly nested or disjoint superquadric
-# packages are coupled through a local mesh-free modified-Helmholtz/MFS
-# transmission solve; the unbounded exterior remains an analytic thermal Green
-# field.
-#
-# A homogeneous anisotropic thermal background is also supported with
-# AnisotropicThermalMedium(K, density, heat_capacity). Its infinite-domain
-# steady/transient Green function is analytic and the same tensor-aware
-# modified-Helmholtz interface solver couples it to isotropic or
-# tensor-anisotropic package thermal contrast. Package conductivity tensors are
-# declared in package-local coordinates and rotate automatically with the
-# package pose.
-
 temperature = thermal.temperature_step(
     np.array([0.0, 0.0, 0.04]),
     5.0,
-    np.array([1.0 + 0.0j] * len(scene.coils)),
+    np.ones(len(scene.coils), dtype=complex),
 )
 ```
 
-`temperature_history(...)` supports piecewise-constant current histories and
-arbitrary observation times without truncating queries to a neural training
-time window.
+If the scene background material carries thermal conductivity, density, and
+heat capacity, the explicit thermal medium may be omitted. Homogeneous
+anisotropic thermal backgrounds are supported through
+`AnisotropicThermalMedium`. Thermally distinct package regions are coupled by
+a local mesh-free modified-Helmholtz/interface solve; the unbounded exterior
+remains analytic. `temperature_history(...)` accepts piecewise-constant current
+histories and arbitrary observation times, so long-time inference is not
+truncated to a neural training-time window.
 
-For package thermal contrast, REFERENCE uses the same interface solver with
-REFERENCE electromagnetic loss fields. FAST uses the trained port/spatial loss
-artifacts and solves only the local package thermal-interface system online.
-Multiple strictly nested or disjoint thermally distinct material regions are
-solved in one coupled interface system; no finite world box is introduced.
+For lumped closed-loop electrothermal evolution, heterogeneous scenes should
+use `ChannelResolvedCurrentEnvelope` or `ChannelResolvedVoltageEnvelope` with
+`build_lumped_channel_thermal_model`, preserving every electromagnetic loss
+channel explicitly.
 
-For closed-loop lumped electrothermal evolution, the legacy
-`FastCurrentControlledEnvelope` / `FastVoltageControlledEnvelope` APIs are
-intentionally one thermal source per coil. Scenes with package/background
-environment-loss channels should use `ChannelResolvedCurrentEnvelope` or
-`ChannelResolvedVoltageEnvelope` with `build_lumped_channel_thermal_model`.
-Those envelopes preserve package geometry during temperature feedback and map
-every electromagnetic dissipation channel into the declared thermal network.
+## Graded and nested media
 
-## Important current scope limits
+Radially graded isotropic package media can be compiled to a convergent nested
+shell hierarchy with `compile_graded_superquadric_regions`. Convergence of the
+material-profile shell approximation is tracked separately from conductor and
+surface quadrature convergence. Strictly nested or mutually disjoint package
+regions are supported in electromagnetic and thermal transmission.
 
-The current vNext code intentionally fails closed outside implemented physics:
+## Current scope limits
 
-- arbitrary piecewise-homogeneous isotropic media can be represented by
-  strictly nested or disjoint superquadric material regions, including free
-  inclusions; continuously graded radial isotropic profiles are supported by
-  convergent conductor-safe nested-shell compilation, while general
-  non-radial 3D electromagnetic heterogeneity and true tensor-anisotropic EM
-  VIE media are not yet implemented; homogeneous tensor-anisotropic thermal
-  backgrounds and tensor-anisotropic package thermal materials are supported
-  by the analytic/tensor-aware thermal interface solver; package thermal
-  tensors are local to each package pose;
-- constant, Debye, multi-Debye, tabulated, and custom passive isotropic
-  frequency responses share the same solver interface; electric and magnetic
-  package contrast are both handled by local surface-integral transmission
-  corrections without a global world mesh;
-- exact DC is supported for electrostatic scenes and for mixed conductive /
-  insulating material regions through a partial environment-current
-  formulation: exposed conductors participate in the static-conduction
-  transmission problem while conductors fully enclosed by insulating package
-  regions remain galvanically isolated;
-- FAST port/spatial inference requires artifacts trained for the corresponding
-  declared geometry and material domains; package/conductor surface
-  intersections are rejected;
-- strictly nested or disjoint package material interfaces are supported for
-  electromagnetic and thermal transmission; partially intersecting package
-  volumes are still rejected because they require explicit Boolean material
-  partitioning;
-- object-local quadrature and conductor/surface discretization remain numerical
-  approximations even though there is no fixed global world mesh.
+The runtime intentionally fails closed outside implemented physics:
+
+- tensor-electric support is piecewise homogeneous; a general continuously
+  varying/non-radial 3-D tensor electromagnetic VIE is not implemented;
+- magnetic permeability is isotropic in the tensor-electric material stage;
+- partially intersecting package volumes are rejected because they require an
+  explicit Boolean material partition;
+- internal conductor branching/junction networks and phase-change/radiative
+  thermal nonlinearities remain outside the current MVP;
+- object-local quadrature and interface discretization are numerical
+  approximations even though no fixed global world mesh is introduced;
+- FAST inference requires artifacts whose declared geometry/material domains
+  include the query scene.
 
 These restrictions are explicit so unsupported physics cannot silently fall
 back to a simpler model.
 
 ## Tests
 
-When the repository is available locally:
+Run the repository locally with:
 
 ```bash
 pytest -q
 ```
 
-Useful focused suites for the current hybrid path are:
+Focused vNext suites include:
 
 ```bash
 pytest -q \
-  tests/test_vnext_hybrid_dataset.py \
   tests/test_vnext_hybrid_neural.py \
   tests/test_vnext_hybrid_spatial_neural.py \
+  tests/test_vnext_tensor_electric.py \
+  tests/test_vnext_tensor_fast.py \
+  tests/test_vnext_tensor_spatial_fast.py \
   tests/test_vnext_system_dielectric.py
 ```
 
-No GitHub Actions workflow is required for the vNext development flow.
+The vNext development flow does not require a GitHub Actions workflow.
