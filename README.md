@@ -116,6 +116,13 @@ PSD conductor/package/background shape networks but is normalized against the
 tensor-aware port channels; it therefore does not collapse anisotropic
 permittivity/conductivity to scalar surrogates.
 
+The current tensor FAST family is deliberately the **hybrid package-aware**
+family: its teacher/trainer requires at least one package region. A tensor
+homogeneous background may be sampled and learned together with those package
+regions. Background-only tensor scenes are supported by REFERENCE/CERTIFIED,
+but are not silently accepted by a tensor hybrid FAST artifact trained on a
+package domain.
+
 A minimal in-memory research workflow is:
 
 ```python
@@ -224,7 +231,8 @@ sdfmpneo-vnext-tensor \
 The request uses the same serialized scene contract as `scene_to_dict(...)` and
 accepts `"mode": "fast"`, `"reference"`, or `"certified"`. Tensor-electric
 package and homogeneous-background materials are represented with
-`"model": "tensor_electric"`, for example:
+`"model": "tensor_electric"`. The following FAST example contains the package
+region required by the current tensor hybrid artifact family:
 
 ```json
 {
@@ -247,18 +255,34 @@ package and homogeneous-background materials are represented with
       }
     ],
     "medium": {
-      "model": "tensor_electric",
-      "relative_permittivity_tensor": [
-        [2.0, 0.0, 0.0],
-        [0.0, 3.0, 0.0],
-        [0.0, 0.0, 4.0]
-      ],
-      "conductivity_tensor": [
-        [0.00005, 0.0, 0.0],
-        [0.0, 0.0001, 0.0],
-        [0.0, 0.0, 0.0002]
-      ]
-    }
+      "model": "constant",
+      "relative_permittivity": 1.0,
+      "relative_permeability": 1.0,
+      "conductivity": 0.0
+    },
+    "packages": [
+      {
+        "name": "tensor-package",
+        "geometry": {
+          "half_extents": [0.03, 0.028, 0.006],
+          "exponent_xy": 3.0,
+          "exponent_z": 3.0
+        },
+        "material": {
+          "model": "tensor_electric",
+          "relative_permittivity_tensor": [
+            [2.0, 0.0, 0.0],
+            [0.0, 3.0, 0.0],
+            [0.0, 0.0, 4.0]
+          ],
+          "conductivity_tensor": [
+            [0.00005, 0.0, 0.0],
+            [0.0, 0.0001, 0.0],
+            [0.0, 0.0, 0.0002]
+          ]
+        }
+      }
+    ]
   },
   "frequency_hz": 100000.0,
   "mode": "fast",
@@ -325,6 +349,8 @@ The runtime intentionally fails closed outside implemented physics:
 
 - tensor-electric support is piecewise homogeneous; a general continuously
   varying/non-radial 3-D tensor electromagnetic VIE is not implemented;
+- tensor FAST sampling/training is currently AC-only (`dc_probability=0`);
+  tensor exact-DC questions remain on the REFERENCE/CERTIFIED path;
 - magnetic permeability is isotropic in the tensor-electric material stage;
 - partially intersecting package volumes are rejected because they require an
   explicit Boolean material partition;
