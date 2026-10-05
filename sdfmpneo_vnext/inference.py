@@ -219,22 +219,96 @@ def _certified_prediction(
     return prediction, None, certified, convergence
 
 
-def _spatial_query(spatial, query, currents):
-    matrix = spatial.local_dissipation_matrix(
-        int(query["coil_index"]),
-        float(query["arc_fraction"]),
-        np.asarray(query.get("xy", (0.0, 0.0)), dtype=float),
+def _joule_density(matrix, currents):
+    if currents is None:
+        return None
+    return float(
+        0.5 * np.real(np.vdot(currents, matrix @ currents))
     )
-    item = {
-        "coil_index": int(query["coil_index"]),
-        "arc_fraction": float(query["arc_fraction"]),
-        "xy": list(query.get("xy", (0.0, 0.0))),
-        "dissipation_matrix": _complex_json(matrix),
-    }
-    if currents is not None:
-        item["joule_density"] = float(
-            0.5 * np.real(np.vdot(currents, matrix @ currents))
+
+
+def _spatial_query(spatial, query, currents):
+    if not isinstance(query, dict):
+        raise TypeError("spatial query must be a dictionary")
+    kind = query.get("kind")
+    if kind is None:
+        if "coil_index" in query:
+            kind = "conductor"
+        elif "package_index" in query and "local_position" in query:
+            kind = "package_local"
+        elif "package_index" in query and "world_position" in query:
+            kind = "package_world"
+        elif "world_position" in query:
+            kind = "background"
+        else:
+            raise ValueError(
+                "spatial query must specify kind or a supported coordinate set"
+            )
+    kind = str(kind).lower()
+
+    if kind == "conductor":
+        matrix = spatial.local_dissipation_matrix(
+            int(query["coil_index"]),
+            float(query["arc_fraction"]),
+            np.asarray(query.get("xy", (0.0, 0.0)), dtype=float),
         )
+        item = {
+            "kind": "conductor",
+            "coil_index": int(query["coil_index"]),
+            "arc_fraction": float(query["arc_fraction"]),
+            "xy": list(query.get("xy", (0.0, 0.0))),
+        }
+    elif kind == "package_local":
+        if not hasattr(spatial, "package_local_dissipation_matrix"):
+            raise NotImplementedError(
+                "spatial artifact does not expose package-local loss queries"
+            )
+        local_position = np.asarray(query["local_position"], dtype=float)
+        matrix = spatial.package_local_dissipation_matrix(
+            int(query["package_index"]),
+            local_position,
+        )
+        item = {
+            "kind": "package_local",
+            "package_index": int(query["package_index"]),
+            "local_position": local_position.tolist(),
+        }
+    elif kind == "package_world":
+        if not hasattr(spatial, "package_dissipation_matrix"):
+            raise NotImplementedError(
+                "spatial artifact does not expose package-world loss queries"
+            )
+        world_position = np.asarray(query["world_position"], dtype=float)
+        matrix = spatial.package_dissipation_matrix(
+            int(query["package_index"]),
+            world_position,
+        )
+        item = {
+            "kind": "package_world",
+            "package_index": int(query["package_index"]),
+            "world_position": world_position.tolist(),
+        }
+    elif kind == "background":
+        if not hasattr(spatial, "background_dissipation_matrices"):
+            raise NotImplementedError(
+                "spatial artifact does not expose background loss queries"
+            )
+        world_position = np.asarray(query["world_position"], dtype=float)
+        matrix = spatial.background_dissipation_matrices(world_position)
+        item = {
+            "kind": "background",
+            "world_position": world_position.tolist(),
+        }
+    else:
+        raise ValueError(
+            "spatial query kind must be conductor, package_local, "
+            "package_world, or background"
+        )
+
+    item["dissipation_matrix"] = _complex_json(matrix)
+    joule = _joule_density(matrix, currents)
+    if joule is not None:
+        item["joule_density"] = joule
     return item
 
 
