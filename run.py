@@ -60,13 +60,16 @@ CONFIG = {
     # ------------------------------------------------------------------
     # 数据生成调度
     # count 不属于缓存身份：从 64 改到 128 时只补 64 个样本。
-    # workers/native_threads_per_worker 也不属于缓存身份。
+    # workers/native_threads_per_worker/maximum_teacher_attempts 也不属于缓存身份。
     # ------------------------------------------------------------------
     "DATA": {
         "count": 256,
         "seed": 37,
         "workers": 8,
         "native_threads_per_worker": 1,
+        # 单个 cache index 若遇到明确的 REFERENCE 数值诊断拒绝，则沿同一
+        # deterministic RNG 流重采样完整场景；未知异常仍立即抛出。
+        "maximum_teacher_attempts": 8,
         # 每完成一小批 teacher 后检查暂停/停止命令。
         "generation_chunk_size": 8,
     },
