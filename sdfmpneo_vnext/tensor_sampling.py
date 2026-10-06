@@ -196,6 +196,7 @@ class TensorHybridSceneSamplerConfig:
         5e-3,
     )
     tensor_lossless_probability: float = 0.20
+    maximum_scene_attempts: int = 64
 
     def __post_init__(
         self,
@@ -242,6 +243,18 @@ class TensorHybridSceneSamplerConfig:
                     f"{name} must be a positive finite increasing pair"
                 )
         if (
+            not isinstance(
+                self.maximum_scene_attempts,
+                (int, np.integer),
+            )
+            or int(
+                self.maximum_scene_attempts
+            ) < 1
+        ):
+            raise ValueError(
+                "maximum_scene_attempts must be a positive integer"
+            )
+        if (
             self.base.dc_probability
             > 0.0
             and (
@@ -258,14 +271,44 @@ class TensorHybridSceneSamplerConfig:
             )
 
 
+def _sample_base_scene(
+    rng: np.random.Generator,
+    config: TensorHybridSceneSamplerConfig,
+):
+    last_error = None
+    for _ in range(
+        int(
+            config.maximum_scene_attempts
+        )
+    ):
+        try:
+            return sample_hybrid_package_scene(
+                rng,
+                config.base,
+            )
+        except RuntimeError as exc:
+            # Package/root generation is rejection sampling. A failed finite
+            # draw budget is not a malformed tensor scene; continue from the
+            # deterministic RNG stream. Preserve unrelated numerical failures.
+            if not str(exc).startswith(
+                "failed to sample"
+            ):
+                raise
+            last_error = exc
+    raise RuntimeError(
+        "failed to sample a valid tensor hybrid scene after "
+        f"{int(config.maximum_scene_attempts)} independent scene attempts"
+    ) from last_error
+
+
 def sample_tensor_hybrid_scene(
     rng: np.random.Generator,
     config: TensorHybridSceneSamplerConfig | None = None,
 ):
     config = config or TensorHybridSceneSamplerConfig()
-    scene, frequency_hz = sample_hybrid_package_scene(
+    scene, frequency_hz = _sample_base_scene(
         rng,
-        config.base,
+        config,
     )
 
     packages = []
