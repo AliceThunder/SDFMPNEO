@@ -17,7 +17,20 @@ from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybri
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
 
 
-CACHE_SCHEMA = 1
+CACHE_SCHEMA = 2
+
+
+_RETRYABLE_TEACHER_FAILURE_PREFIXES = (
+    "tensor-electric effective potential failed the raw reciprocity diagnostic:",
+    "tensor-electric MFS solve did not meet the declared residual tolerance:",
+    "tensor-electric MFS system is rank deficient",
+    "failed to place tensor-electric MFS sources",
+    "failed to place nested tensor-electric MFS sources inside ",
+    "magnetic permeability correction failed the raw reciprocity diagnostic:",
+    "dielectric Schur potential failed the raw reciprocity diagnostic:",
+    "DC conduction Schur potential failed the raw reciprocity diagnostic:",
+    "tensor spatial REFERENCE closure remained outside tolerance after ",
+)
 
 
 def _jsonable(value):
@@ -60,10 +73,10 @@ def build_teacher_config(mapping) -> MQSConfig:
 def teacher_cache_payload(config) -> dict:
     data = dict(config["DATA"])
     sampler = _jsonable(config["SAMPLER"])
-    # Retry budget controls how long rejection sampling is allowed to search;
-    # it does not change the accepted scene distribution or teacher labels.
-    # Keeping it out of the identity lets users raise the robustness budget
-    # without discarding already valid expensive truth shards.
+    # Retry budgets control how long deterministic rejection sampling is allowed
+    # to search; they do not change already accepted teacher labels.  Keeping
+    # them out of the cache identity lets users increase robustness without
+    # discarding expensive valid shards.
     if isinstance(sampler, dict):
         sampler.pop("maximum_scene_attempts", None)
     return {
@@ -97,24 +110,50 @@ def _worker_init(native_threads: int):
     _THREADPOOL_LIMITER = threadpool_limits(limits=int(native_threads))
 
 
-def _generate_job(payload):
-    index, seed, sampler, teacher, truth = payload
-    rng = np.random.default_rng([int(seed), int(index)])
-    scene, frequency_hz = sample_tensor_hybrid_scene(rng, sampler)
-    sample = generate_tensor_teacher_once(
-        scene,
-        frequency_hz,
-        teacher_config=teacher,
-        **truth,
+def _retryable_teacher_failure(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return any(
+        message.startswith(prefix)
+        for prefix in _RETRYABLE_TEACHER_FAILURE_PREFIXES
     )
-    return int(index), sample
+
+
+def _generate_job(payload):
+    index, seed, sampler, teacher, truth, maximum_teacher_attempts = payload
+    maximum_teacher_attempts = int(maximum_teacher_attempts)
+    if maximum_teacher_attempts < 1:
+        raise ValueError("maximum_teacher_attempts must be positive")
+
+    rng = np.random.default_rng([int(seed), int(index)])
+    last_error = None
+    for _ in range(maximum_teacher_attempts):
+        scene, frequency_hz = sample_tensor_hybrid_scene(rng, sampler)
+        try:
+            sample = generate_tensor_teacher_once(
+                scene,
+                frequency_hz,
+                teacher_config=teacher,
+                **truth,
+            )
+        except RuntimeError as exc:
+            if not _retryable_teacher_failure(exc):
+                raise
+            last_error = exc
+            continue
+        return int(index), sample
+
+    raise RuntimeError(
+        f"teacher cache sample {int(index)} exhausted "
+        f"{maximum_teacher_attempts} deterministic scene attempts after "
+        f"REFERENCE numerical rejections; last error: {last_error}"
+    ) from last_error
 
 
 class TensorTeacherCache:
     """Content-addressed, append-only cache of deterministic teacher samples.
 
     The cache directory identity intentionally excludes requested sample count,
-    worker count, rejection retry budget, accelerator selection and optimizer
+    worker count, rejection retry budgets, accelerator selection and optimizer
     settings. Increasing the sample budget therefore only generates missing
     deterministic index shards.
     """
@@ -255,6 +294,9 @@ class TensorTeacherCache:
         workers = max(1, int(data["workers"]))
         native_threads = max(0, int(data["native_threads_per_worker"]))
         chunk_size = max(1, int(data.get("generation_chunk_size", workers)))
+        maximum_teacher_attempts = int(data.get("maximum_teacher_attempts", 8))
+        if maximum_teacher_attempts < 1:
+            raise ValueError("DATA.maximum_teacher_attempts must be positive")
 
         completed = int(count) - len(missing)
         for start in range(0, len(missing), chunk_size):
@@ -262,7 +304,14 @@ class TensorTeacherCache:
                 checkpoint()
             indices = missing[start : start + chunk_size]
             jobs = [
-                (index, seed, sampler, teacher, truth)
+                (
+                    index,
+                    seed,
+                    sampler,
+                    teacher,
+                    truth,
+                    maximum_teacher_attempts,
+                )
                 for index in indices
             ]
             if workers == 1:

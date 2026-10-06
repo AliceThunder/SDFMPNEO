@@ -145,6 +145,63 @@ def _laplace_kernel(
     return value, difference, distance, inverse
 
 
+def _node_potential_kernel(
+    targets,
+    target_radii,
+    sources,
+    source_radii,
+    coefficient,
+):
+    """Galerkin-style node potential with symmetric self regularization.
+
+    Conductor charge nodes are both source and testing functions.  Their finite
+    radius therefore belongs only to coincident/self interactions in the nodal
+    potential matrix.  Applying a source-only Plummer radius to every off-
+    diagonal interaction makes ``G_ij`` depend on radius ``j`` while ``G_ji``
+    depends on radius ``i`` and destroys reciprocity whenever node radii differ.
+    Interface incident fields still use ``_laplace_kernel(..., source_radius=)``
+    because those targets are physical interface points rather than charge-node
+    testing functions.
+    """
+    targets = np.asarray(targets, dtype=float)
+    sources = np.asarray(sources, dtype=float)
+    target_radii = np.asarray(target_radii, dtype=float)
+    source_radii = np.asarray(source_radii, dtype=float)
+    if target_radii.shape != (len(targets),):
+        raise ValueError("target_radii has incompatible shape")
+    if source_radii.shape != (len(sources),):
+        raise ValueError("source_radii has incompatible shape")
+    if np.any(target_radii <= 0.0) or np.any(source_radii <= 0.0):
+        raise ValueError("node radii must be positive")
+
+    difference = targets[:, None, :] - sources[None, :, :]
+    inverse, sqrt_det, geometric_mean = _coefficient_metric(coefficient)
+    metric_squared = np.einsum(
+        "qsi,ij,qsj->qs",
+        difference,
+        inverse,
+        difference,
+    )
+    coincident = np.all(difference == 0.0, axis=2)
+    if np.any(coincident):
+        pair_radius = np.sqrt(
+            target_radii[:, None] * source_radii[None, :]
+        )
+        metric_squared = np.where(
+            coincident,
+            pair_radius**2 / geometric_mean,
+            metric_squared,
+        )
+
+    distance = np.sqrt(metric_squared)
+    distance = np.where(np.real(distance) < 0.0, -distance, distance)
+    if np.any(np.abs(distance) <= 1e-20):
+        raise ValueError(
+            "electric Green kernel encountered a coincident unregularized source/target pair"
+        )
+    return 1.0 / (4.0 * np.pi * sqrt_det * distance)
+
+
 def _normal_flux_kernel(
     targets,
     normals,
@@ -629,11 +686,17 @@ class PreparedTensorElectricTransmission:
         query_region = self._active_region(self.source_positions)
         for region_index in np.unique(query_region):
             mask = query_region == region_index
+            source_mask = self.source_region == region_index
             points = self.source_positions[mask]
-            particular, _ = self._particular(
-                points,
-                region_index=int(region_index),
-            )
+            particular = np.zeros((len(points), count), dtype=complex)
+            if np.any(source_mask):
+                particular[:, source_mask] = _node_potential_kernel(
+                    points,
+                    self.source_radii[mask],
+                    self.source_positions[source_mask],
+                    self.source_radii[source_mask],
+                    self._coefficient(int(region_index)),
+                )
             if self.regions:
                 basis, _ = self._region_basis(
                     points,
