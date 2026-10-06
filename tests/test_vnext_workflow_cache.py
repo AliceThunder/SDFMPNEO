@@ -43,6 +43,7 @@ def test_cache_identity_ignores_count_workers_and_training_runtime(tmp_path):
     changed["DATA"]["workers"] = 16
     changed["DATA"]["native_threads_per_worker"] = 4
     changed["DATA"]["generation_chunk_size"] = 64
+    changed["SAMPLER"]["maximum_scene_attempts"] = 256
     changed["RUNTIME"] = {"device": "cuda"}
     changed["PORT_TRAINING"] = {"epochs": 999, "batch_size": 64}
     assert teacher_cache_key(changed) == original
