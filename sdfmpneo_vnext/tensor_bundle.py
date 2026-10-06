@@ -8,7 +8,12 @@ import shutil
 import tempfile
 
 from .bundle import LoadedVNextBundle
+from .device import resolve_torch_device
 from .system import MeshfreeVNextSystem, mvp_system_capabilities
+from .tensor_artifact_io import (
+    load_tensor_port_artifact,
+    load_tensor_spatial_artifact,
+)
 from .tensor_neural import TensorHybridNeuralResidualArtifact
 from .tensor_spatial_neural import (
     TensorHybridSpatialLossArtifact,
@@ -130,9 +135,10 @@ def _validated_files(root: Path, manifest):
 def load_tensor_bundle(
     root,
     *,
-    device: str = "cpu",
+    device: str = "auto",
 ) -> LoadedVNextBundle:
-    """Load a tensor-electric FAST bundle and return a ready vNext system."""
+    """Load a tensor-electric FAST bundle on the requested/available device."""
+    resolved_device = resolve_torch_device(device)
     root = Path(root)
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
@@ -148,19 +154,19 @@ def load_tensor_bundle(
         raise ValueError("tensor bundle capability domain is incompatible")
 
     files = _validated_files(root, manifest)
-    port = TensorHybridNeuralResidualArtifact.load(
+    port = load_tensor_port_artifact(
         files["port"],
-        device=device,
+        device=resolved_device,
     )
     fingerprint = tensor_port_fingerprint(port)
     if fingerprint != str(manifest.get("port_fingerprint", "")):
         raise ValueError("tensor bundle port fingerprint mismatch")
     spatial = None
     if "spatial" in files:
-        spatial = TensorHybridSpatialLossArtifact.load(
+        spatial = load_tensor_spatial_artifact(
             files["spatial"],
             port,
-            device=device,
+            device=resolved_device,
         )
     system = MeshfreeVNextSystem(
         port,

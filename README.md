@@ -28,7 +28,44 @@ For neural FAST artifacts:
 pip install -e ".[dev,neural]"
 ```
 
+For the one-click PyQt training console:
+
+```bash
+pip install -e ".[dev,neural,gui]"
+```
+
 The NumPy/SciPy REFERENCE and CERTIFIED paths do not require PyTorch.
+
+## One-click cached / resumable training
+
+The root `run.py` is the main vNext training configuration and launch entry.
+Edit `CONFIG` in that file, then run:
+
+```bash
+python run.py
+```
+
+The default mode opens a nonblocking PyQt6/pyqtgraph console. Training runs in
+an independent `QProcess` and metrics are tailed by a `QThread`, so correctness
+teacher solves and CUDA training do not block the UI. The window provides
+start/resume, pause, resume and safe stop controls together with port/spatial
+loss curves and teacher-cache progress.
+
+Headless training uses the same configuration:
+
+```bash
+python run.py --mode train
+```
+
+Teacher truth is stored in a content-addressed cache. Keeping the sampler,
+teacher and truth parameter space unchanged reuses existing deterministic
+sample shards; changing sample count only generates missing shards. Network,
+optimizer, device and GUI changes do not invalidate teacher data. Port and
+spatial model checkpoints store optimizer/model/RNG/batch position state for
+safe continuation after a stop.
+
+See `docs/VNEXT_TRAINING_GUI.md` for the full configuration, cache identity and
+resume semantics.
 
 ## Scene model
 
@@ -218,172 +255,44 @@ normalization state.
 
 ### Tensor bundle JSON inference
 
-After installing the package, a published tensor bundle can be queried without
-writing a Python driver:
-
 ```bash
-sdfmpneo-vnext-tensor \
-  artifacts/tensor-fast \
-  request.json \
-  --output result.json
+sdfmpneo-vnext-tensor artifacts/tensor-fast request.json --device auto
 ```
 
-The request uses the same serialized scene contract as `scene_to_dict(...)` and
-accepts `"mode": "fast"`, `"reference"`, or `"certified"`. Tensor-electric
-package and homogeneous-background materials are represented with
-`"model": "tensor_electric"`. The following FAST example contains the package
-region required by the current tensor hybrid artifact family:
+`--device auto` prefers CUDA, then MPS, then CPU. Tensor bundle loading preserves
+the dtype stored in the port/spatial artifacts.
 
-```json
-{
-  "scene": {
-    "coils": [
-      {
-        "name": "tx",
-        "geometry": {
-          "outer_a": 0.02,
-          "outer_b": 0.018,
-          "turns": 1.0,
-          "pitch_a": 0.001,
-          "pitch_b": 0.001,
-          "conductor_width": 0.001,
-          "conductor_thickness": 0.0008
-        },
-        "material": {
-          "conductivity": 58000000.0
-        }
-      }
-    ],
-    "medium": {
-      "model": "constant",
-      "relative_permittivity": 1.0,
-      "relative_permeability": 1.0,
-      "conductivity": 0.0
-    },
-    "packages": [
-      {
-        "name": "tensor-package",
-        "geometry": {
-          "half_extents": [0.03, 0.028, 0.006],
-          "exponent_xy": 3.0,
-          "exponent_z": 3.0
-        },
-        "material": {
-          "model": "tensor_electric",
-          "relative_permittivity_tensor": [
-            [2.0, 0.0, 0.0],
-            [0.0, 3.0, 0.0],
-            [0.0, 0.0, 4.0]
-          ],
-          "conductivity_tensor": [
-            [0.00005, 0.0, 0.0],
-            [0.0, 0.0001, 0.0],
-            [0.0, 0.0, 0.0002]
-          ]
-        }
-      }
-    ]
-  },
-  "frequency_hz": 100000.0,
-  "mode": "fast",
-  "currents": [[1.0, 0.0]]
-}
-```
+## Continuous thermal fields
 
-Spatial and continuous-thermal requests use the same `spatial_queries` and
-`thermal` fields accepted by `run_system_inference(...)`. `certified` mode is
-scene-aware: heterogeneous and tensor-electric scenes are routed to the
-coupled electric/magnetic correctness backend rather than the conductor-only
-certifier.
-
-## Continuous electrothermal evolution
-
-FAST and REFERENCE spatial fields feed the same continuous thermal interfaces:
+A FAST spatial field can be coupled directly to continuous thermal evolution:
 
 ```python
-import numpy as np
-from sdfmpneo_vnext import HomogeneousThermalMedium
-
 thermal = system.fast_continuous_thermal_field(
     scene,
     frequency_hz,
-    HomogeneousThermalMedium(
-        conductivity=0.45,
-        density=1100.0,
-        heat_capacity=1300.0,
-    ),
+    HomogeneousThermalMedium(...),
 )
-
-temperature = thermal.temperature_step(
-    np.array([0.0, 0.0, 0.04]),
-    5.0,
-    np.ones(len(scene.coils), dtype=complex),
-)
+temperature = thermal.temperature_step(position, time_s, currents)
 ```
 
-If the scene background material carries thermal conductivity, density, and
-heat capacity, the explicit thermal medium may be omitted. Homogeneous
-anisotropic thermal backgrounds are supported through
-`AnisotropicThermalMedium`. Thermally distinct package regions are coupled by
-a local mesh-free modified-Helmholtz/interface solve; the unbounded exterior
-remains analytic. `temperature_history(...)` accepts piecewise-constant current
-histories and arbitrary observation times, so long-time inference is not
-truncated to a neural training-time window.
+The thermal field remains continuous in space and time. Package thermal
+interfaces and anisotropic background/package thermal tensors remain distinct
+from the electromagnetic tensor-electric model.
 
-For lumped closed-loop electrothermal evolution, heterogeneous scenes should
-use `ChannelResolvedCurrentEnvelope` or `ChannelResolvedVoltageEnvelope` with
-`build_lumped_channel_thermal_model`, preserving every electromagnetic loss
-channel explicitly.
+## Scope boundaries
 
-## Graded and nested media
+The vNext MVP intentionally fails closed outside its declared physics domain.
+In particular:
 
-Radially graded isotropic package media can be compiled to a convergent nested
-shell hierarchy with `compile_graded_superquadric_regions`. Convergence of the
-material-profile shell approximation is tracked separately from conductor and
-surface quadrature convergence. Strictly nested or mutually disjoint package
-regions are supported in electromagnetic and thermal transmission.
+- tensor electric support is piecewise homogeneous, not a continuously varying tensor VIE;
+- magnetic permeability is isotropic in the tensor-electric stage;
+- partially intersecting packages are rejected; packages must be nested or disjoint;
+- conductor branching/junction networks are not part of the spiral-coil MVP;
+- tensor FAST training is AC-only; exact tensor DC uses REFERENCE/CERTIFIED;
+- object-local quadrature/interface discretization is still a numerical approximation even though no global world mesh is required;
+- phase change and nonlinear radiation are not part of the current thermal MVP.
 
-## Current scope limits
+## Performance notes
 
-The runtime intentionally fails closed outside implemented physics:
-
-- tensor-electric support is piecewise homogeneous; a general continuously
-  varying/non-radial 3-D tensor electromagnetic VIE is not implemented;
-- tensor FAST sampling/training is currently AC-only (`dc_probability=0`);
-  tensor exact-DC questions remain on the REFERENCE/CERTIFIED path;
-- magnetic permeability is isotropic in the tensor-electric material stage;
-- partially intersecting package volumes are rejected because they require an
-  explicit Boolean material partition;
-- internal conductor branching/junction networks and phase-change/radiative
-  thermal nonlinearities remain outside the current MVP;
-- object-local quadrature and interface discretization are numerical
-  approximations even though no fixed global world mesh is introduced;
-- FAST inference requires artifacts whose declared geometry/material domains
-  include the query scene.
-
-These restrictions are explicit so unsupported physics cannot silently fall
-back to a simpler model.
-
-## Tests
-
-Run the repository locally with:
-
-```bash
-pytest -q
-```
-
-Focused vNext suites include:
-
-```bash
-pytest -q \
-  tests/test_vnext_hybrid_neural.py \
-  tests/test_vnext_hybrid_spatial_neural.py \
-  tests/test_vnext_tensor_electric.py \
-  tests/test_vnext_tensor_fast.py \
-  tests/test_vnext_tensor_spatial_fast.py \
-  tests/test_vnext_serialization.py \
-  tests/test_vnext_inference.py \
-  tests/test_vnext_system_dielectric.py
-```
-
-The vNext development flow does not require a GitHub Actions workflow.
+See `docs/VNEXT_PERFORMANCE.md` for CUDA batching, CPU multiprocessing,
+precision policy and cached batch inference details.

@@ -24,6 +24,7 @@ from .hybrid_background_spatial import (
     background_coordinate_features,
     background_loss_gate,
 )
+from .hybrid_domain import package_domain_topology
 from .hybrid_features import encode_hybrid_scene_invariant
 from .hybrid_training_data import HybridTeacherSample
 from .scene import Scene
@@ -59,6 +60,21 @@ def _stable_cholesky(
         raise ValueError(
             "cholesky matrix must be nonempty"
         )
+
+    # The spatial normalization is a physical power identity.  Do not perturb
+    # a positive-definite matrix merely because its physical units make every
+    # entry much smaller than one.  Try the exact matrix first, then use only
+    # scale-relative regularization if roundoff makes Cholesky fail.
+    factor, info = torch.linalg.cholesky_ex(
+        matrix
+    )
+    if int(
+        torch.max(
+            info
+        ).detach().cpu()
+    ) == 0:
+        return factor
+
     diagonal_scale = torch.max(
         torch.abs(
             torch.real(
@@ -72,7 +88,7 @@ def _stable_cholesky(
     )
     scale = torch.clamp(
         diagonal_scale,
-        min=1.0,
+        min=torch.finfo(matrix.real.dtype).tiny,
     )
     eye = torch.eye(
         n,
@@ -106,11 +122,7 @@ def _stable_cholesky(
     values, vectors = torch.linalg.eigh(
         matrix
     )
-    floor = (
-        1e-6
-        * scale
-        + 1e-20
-    )
+    floor = 1e-6 * scale
     repaired = (
         vectors
         @ torch.diag(

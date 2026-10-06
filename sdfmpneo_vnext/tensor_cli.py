@@ -26,8 +26,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--device",
-        default="cpu",
-        help="PyTorch device used to load FAST artifacts (default: cpu)",
+        default="auto",
+        help="PyTorch device for FAST artifacts: auto, cpu, cuda[:index], or mps",
     )
     return parser
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
+
 import numpy as np
 
 try:
@@ -13,6 +13,7 @@ except ImportError as exc:  # pragma: no cover
         "sdfmpneo_vnext.tensor_spatial_neural requires the 'neural' extra"
     ) from exc
 
+from .device import resolve_torch_device
 from .exterior_quadrature import (
     scene_conductor_geometry,
     unbounded_background_quadrature,
@@ -66,11 +67,7 @@ def tensor_port_fingerprint(port_artifact) -> str:
         "geometry_domain": getattr(port_artifact, "geometry_domain", None),
     }
     digest.update(
-        json.dumps(
-            config,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        json.dumps(config, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
 
     def update_array(name, value):
@@ -86,32 +83,18 @@ def tensor_port_fingerprint(port_artifact) -> str:
             tensor.detach().cpu().contiguous().numpy(),
         )
     for name, value in sorted(port_artifact.normalizer.to_dict().items()):
-        update_array(
-            "normalizer:" + name,
-            value,
-        )
+        update_array("normalizer:" + name, value)
     return digest.hexdigest()
 
 
-def _tensor_latent(
-    port_artifact,
-    scene: Scene,
-    frequency_hz: float,
-):
-    encoded = encode_tensor_hybrid_scene_invariant(
-        scene,
-        frequency_hz,
-    )
+def _tensor_latent(port_artifact, scene: Scene, frequency_hz: float):
+    encoded = encode_tensor_hybrid_scene_invariant(scene, frequency_hz)
     normalized = port_artifact.normalizer.normalize(encoded)
     model = port_artifact.model
     dtype = next(model.parameters()).dtype
     device = next(model.parameters()).device
     tensors = tuple(
-        torch.as_tensor(
-            value,
-            dtype=dtype,
-            device=device,
-        )
+        torch.as_tensor(value, dtype=dtype, device=device)
         for value in normalized
     )
     model.eval()
@@ -128,19 +111,11 @@ def _tensor_latent(
 
 def _background_sigma_upper(port_artifact) -> float:
     bounds = port_artifact.material_domain.get("background_sigma")
-    if bounds is None:
-        return 0.0
-    return float(bounds[1])
+    return 0.0 if bounds is None else float(bounds[1])
 
 
 class TensorHybridSpatialLossArtifact:
-    """Tensor-aware continuous FAST loss artifact.
-
-    The spatial heads are shared with the scalar hybrid path, while their
-    latent state is produced from tensor-invariant electric material features.
-    The final conductor and electric-environment channels are normalized by
-    exact PSD congruence transforms to the tensor-aware FAST port prediction.
-    """
+    """Tensor-aware continuous FAST loss artifact."""
 
     supports_packages = True
     supports_tensor_electric = True
@@ -169,12 +144,17 @@ class TensorHybridSpatialLossArtifact:
             raise TypeError(
                 "tensor spatial artifact requires a package-aware FAST port artifact"
             )
+        resolved_device = resolve_torch_device(device)
         self.port_artifact = port_artifact
         self.port_fingerprint = tensor_port_fingerprint(port_artifact)
-        self.port_artifact.model.to(device)
-        self.port_artifact.device = str(device)
+        self.port_artifact.model.to(resolved_device)
+        self.port_artifact.device = resolved_device
         port_dtype = next(self.port_artifact.model.parameters()).dtype
-        self.model = model.to(device=device, dtype=port_dtype)
+        if resolved_device == "mps" and port_dtype == torch.float64:
+            raise ValueError(
+                "float64 tensor spatial artifacts cannot run on MPS"
+            )
+        self.model = model.to(device=resolved_device, dtype=port_dtype)
         self.model.eval()
         self.conductor_longitudinal_points = int(conductor_longitudinal_points)
         self.conductor_radial_order = int(conductor_radial_order)
@@ -201,17 +181,14 @@ class TensorHybridSpatialLossArtifact:
             getattr(port_artifact, "supports_lossy_background", False)
             and _background_sigma_upper(port_artifact) > 0.0
         )
-        self.device = str(device)
+        self.device = resolved_device
 
     def prepare(
         self,
         scene: Scene,
         frequency_hz: float,
     ) -> PreparedHybridSpatialLossField:
-        prediction = self.port_artifact.predict_structured(
-            scene,
-            frequency_hz,
-        )
+        prediction = self.port_artifact.predict_structured(scene, frequency_hz)
         n_coils = len(scene.coils)
         if prediction.dissipation_channels.shape[0] != n_coils + 1:
             raise ValueError(
@@ -230,11 +207,7 @@ class TensorHybridSpatialLossArtifact:
             coil_pair,
             coil_package,
             length_scale,
-        ) = _tensor_latent(
-            self.port_artifact,
-            scene,
-            frequency_hz,
-        )
+        ) = _tensor_latent(self.port_artifact, scene, frequency_hz)
         (
             conductor_ids,
             conductor_arc,
@@ -254,11 +227,7 @@ class TensorHybridSpatialLossArtifact:
         )
 
         if scene.packages:
-            (
-                package_ids,
-                package_local,
-                package_weights,
-            ) = _package_normalization_rule(
+            package_ids, package_local, package_weights = _package_normalization_rule(
                 scene,
                 axial_order=self.package_axial_order,
                 radial_order=self.package_radial_order,
@@ -302,11 +271,10 @@ class TensorHybridSpatialLossArtifact:
         else:
             background_points = np.empty((0, 3), dtype=float)
             background_weights = np.empty(0, dtype=float)
-            background_coil_coordinates = np.empty(
-                (0, n_coils, 5), dtype=float
-            )
+            background_coil_coordinates = np.empty((0, n_coils, 5), dtype=float)
             background_package_coordinates = np.empty(
-                (0, len(scene.packages), 5), dtype=float
+                (0, len(scene.packages), 5),
+                dtype=float,
             )
 
         self.model.eval()
@@ -323,7 +291,6 @@ class TensorHybridSpatialLossArtifact:
                 conductor_weights,
                 prediction.dissipation_channels[:n_coils],
             )
-
             raw_package = self.model.package.raw_matrices(
                 coil_latent,
                 package_latent,
@@ -368,10 +335,7 @@ class TensorHybridSpatialLossArtifact:
                 conductor_ids,
                 conductor_transforms,
             )
-            package_values = _apply_transform(
-                raw_package,
-                environment_transform,
-            )
+            package_values = _apply_transform(raw_package, environment_transform)
             background_values = (
                 _apply_transform(raw_background, environment_transform)
                 if int(raw_background.shape[0])
@@ -386,8 +350,7 @@ class TensorHybridSpatialLossArtifact:
         for coil in range(n_coils):
             mask = conductor_ids == coil
             integrated[coil] = np.sum(
-                conductor_weights[mask, None, None]
-                * conductor_values_np[mask],
+                conductor_weights[mask, None, None] * conductor_values_np[mask],
                 axis=0,
             )
         if len(package_weights):
@@ -426,42 +389,50 @@ class TensorHybridSpatialLossArtifact:
         )
 
     def save(self, path):
-        payload = {
-            "schema": TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA,
-            "port_fingerprint": self.port_fingerprint,
-            "model_config": {
-                "hidden_dim": self.model.hidden_dim,
-                "coil_pair_dim": self.model.coil_pair_dim,
-                "cross_dim": self.model.cross_dim,
-                "field_hidden_dim": self.model.field_hidden_dim,
-                "factor_rank": self.model.factor_rank,
-                "depth": self.model.depth,
+        torch.save(
+            {
+                "schema": TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA,
+                "port_fingerprint": self.port_fingerprint,
+                "model_config": {
+                    "hidden_dim": self.model.hidden_dim,
+                    "coil_pair_dim": self.model.coil_pair_dim,
+                    "cross_dim": self.model.cross_dim,
+                    "field_hidden_dim": self.model.field_hidden_dim,
+                    "factor_rank": self.model.factor_rank,
+                    "depth": self.model.depth,
+                },
+                "model_state": self.model.state_dict(),
+                "conductor_longitudinal_points": self.conductor_longitudinal_points,
+                "conductor_radial_order": self.conductor_radial_order,
+                "conductor_angular_order": self.conductor_angular_order,
+                "package_axial_order": self.package_axial_order,
+                "package_radial_order": self.package_radial_order,
+                "package_azimuthal_order": self.package_azimuthal_order,
+                "background_segments_per_turn": self.background_segments_per_turn,
+                "background_radial_order": self.background_radial_order,
+                "background_angular_order": self.background_angular_order,
             },
-            "model_state": self.model.state_dict(),
-            "conductor_longitudinal_points": self.conductor_longitudinal_points,
-            "conductor_radial_order": self.conductor_radial_order,
-            "conductor_angular_order": self.conductor_angular_order,
-            "package_axial_order": self.package_axial_order,
-            "package_radial_order": self.package_radial_order,
-            "package_azimuthal_order": self.package_azimuthal_order,
-            "background_segments_per_turn": self.background_segments_per_turn,
-            "background_radial_order": self.background_radial_order,
-            "background_angular_order": self.background_angular_order,
-        }
-        torch.save(payload, Path(path))
+            Path(path),
+        )
 
     @staticmethod
     def load(path, port_artifact, *, device: str = "cpu"):
+        resolved_device = resolve_torch_device(device)
         payload = torch.load(
             Path(path),
-            map_location=device,
+            map_location="cpu",
             weights_only=False,
         )
         if int(payload.get("schema", -1)) != TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA:
             raise ValueError("unsupported tensor hybrid spatial artifact schema")
         if payload.get("port_fingerprint") != tensor_port_fingerprint(port_artifact):
             raise ValueError("tensor spatial port fingerprint mismatch")
-        model = HybridSpatialLossShapeNet(**payload["model_config"])
+        dtype = next(port_artifact.model.parameters()).dtype
+        if resolved_device == "mps" and dtype == torch.float64:
+            raise ValueError(
+                "this tensor spatial artifact uses float64 and cannot be loaded on MPS"
+            )
+        model = HybridSpatialLossShapeNet(**payload["model_config"]).to(dtype=dtype)
         model.load_state_dict(payload["model_state"])
         model.eval()
         return TensorHybridSpatialLossArtifact(
@@ -479,10 +450,8 @@ class TensorHybridSpatialLossArtifact:
                 payload.get("background_segments_per_turn", 16)
             ),
             background_radial_order=int(payload.get("background_radial_order", 12)),
-            background_angular_order=int(
-                payload.get("background_angular_order", 48)
-            ),
-            device=device,
+            background_angular_order=int(payload.get("background_angular_order", 48)),
+            device=resolved_device,
         )
 
 
@@ -606,19 +575,19 @@ def _sample_loss(
         background_weights,
         sample.target_dissipation_channels[len(sample.scene.coils)],
     )
-    predicted_package = _apply_transform(raw_package, transform)
     package_loss = _weighted_relative_loss(
-        predicted_package,
+        _apply_transform(raw_package, transform),
         package.dissipation_matrix,
         package.weights,
     )
     background_loss = torch.zeros(
-        (), dtype=package_loss.dtype, device=package_loss.device
+        (),
+        dtype=package_loss.dtype,
+        device=package_loss.device,
     )
     if background is not None:
-        predicted_background = _apply_transform(raw_background, transform)
         background_loss = _weighted_relative_loss(
-            predicted_background,
+            _apply_transform(raw_background, transform),
             background.dissipation_matrix,
             background.weights,
         )
@@ -662,7 +631,7 @@ def _sample_end_to_end_error(
     return float(conductor_error + package_error + background_error)
 
 
-def train_tensor_hybrid_spatial_loss_surrogate(
+def _legacy_train_tensor_hybrid_spatial_loss_surrogate(
     port_artifact,
     samples,
     *,
@@ -713,12 +682,14 @@ def train_tensor_hybrid_spatial_loss_surrogate(
     ):
         raise ValueError("invalid tensor spatial training configuration")
 
+    resolved_device = resolve_torch_device(device)
     for sample in samples + validation_samples:
         port_artifact.predict_structured(sample.scene, sample.frequency_hz)
 
     torch.manual_seed(int(seed))
     rng = np.random.default_rng(int(seed))
-    port_model = port_artifact.model
+    port_model = port_artifact.model.to(resolved_device)
+    port_artifact.device = resolved_device
     port_model.eval()
     for parameter in port_model.parameters():
         parameter.requires_grad_(False)
@@ -730,7 +701,7 @@ def train_tensor_hybrid_spatial_loss_surrogate(
         factor_rank=factor_rank,
         depth=depth,
     ).to(
-        device=device,
+        device=resolved_device,
         dtype=next(port_model.parameters()).dtype,
     )
     optimizer = torch.optim.AdamW(
@@ -746,18 +717,15 @@ def train_tensor_hybrid_spatial_loss_surrogate(
             sample.frequency_hz,
         )
         return (
-            latent[0].detach().to(device),
-            latent[1].detach().to(device),
-            latent[2].detach().to(device),
-            latent[3].detach().to(device),
+            latent[0].detach().to(resolved_device),
+            latent[1].detach().to(resolved_device),
+            latent[2].detach().to(resolved_device),
+            latent[3].detach().to(resolved_device),
             latent[4],
         )
 
     training_latents = tuple(cache_latent(sample) for sample in samples)
-    validation_latents = tuple(
-        cache_latent(sample) for sample in validation_samples
-    )
-
+    validation_latents = tuple(cache_latent(sample) for sample in validation_samples)
     best_state = None
     best_epoch = 0
     best_validation_error = None
@@ -781,7 +749,7 @@ def train_tensor_hybrid_spatial_loss_surrogate(
                     model,
                     port_artifact,
                     samples[index],
-                    device=device,
+                    device=resolved_device,
                     latent=training_latents[index],
                 )
                 losses.append(loss)
@@ -806,7 +774,7 @@ def train_tensor_hybrid_spatial_loss_surrogate(
                                     model,
                                     port_artifact,
                                     sample,
-                                    device=device,
+                                    device=resolved_device,
                                     latent=validation_latents[index],
                                 ).detach().cpu()
                             )
@@ -826,7 +794,7 @@ def train_tensor_hybrid_spatial_loss_surrogate(
                 background_segments_per_turn=background_segments_per_turn,
                 background_radial_order=background_radial_order,
                 background_angular_order=background_angular_order,
-                device=device,
+                device=resolved_device,
             )
             score = float(
                 np.mean(
@@ -876,20 +844,102 @@ def train_tensor_hybrid_spatial_loss_surrogate(
         background_segments_per_turn=background_segments_per_turn,
         background_radial_order=background_radial_order,
         background_angular_order=background_angular_order,
-        device=device,
+        device=resolved_device,
     )
-    return (
-        artifact,
-        HybridSpatialTrainingReport(
-            float(final_loss),
-            int(epochs_run),
-            int(best_epoch),
-            None
-            if best_validation_error is None
-            else float(best_validation_error),
-            bool(stopped_early),
-            None
-            if best_validation_shape_error is None
-            else float(best_validation_shape_error),
-        ),
+    return artifact, HybridSpatialTrainingReport(
+        float(final_loss),
+        int(epochs_run),
+        int(best_epoch),
+        None if best_validation_error is None else float(best_validation_error),
+        bool(stopped_early),
+        None
+        if best_validation_shape_error is None
+        else float(best_validation_shape_error),
+    )
+
+
+def train_tensor_hybrid_spatial_loss_surrogate(
+    port_artifact,
+    samples,
+    *,
+    validation_samples=(),
+    field_hidden_dim: int = 64,
+    factor_rank: int = 4,
+    depth: int = 2,
+    epochs: int = 120,
+    learning_rate: float = 1e-3,
+    weight_decay: float = 1e-6,
+    patience: int = 20,
+    validation_interval: int = 1,
+    min_improvement: float = 1e-5,
+    seed: int = 47,
+    conductor_longitudinal_points: int = 12,
+    conductor_radial_order: int = 3,
+    conductor_angular_order: int = 16,
+    package_axial_order: int = 6,
+    package_radial_order: int = 4,
+    package_azimuthal_order: int = 16,
+    background_segments_per_turn: int = 16,
+    background_radial_order: int = 12,
+    background_angular_order: int = 48,
+    batch_size: int = 1,
+    device: str = "cpu",
+):
+    """Train tensor spatial FAST loss fields with optional true scene batching."""
+    if int(batch_size) > 1 or str(device).strip().lower() == "auto":
+        from .spatial_performance import (
+            train_tensor_hybrid_spatial_loss_surrogate_accelerated,
+        )
+
+        return train_tensor_hybrid_spatial_loss_surrogate_accelerated(
+            port_artifact,
+            samples,
+            validation_samples=validation_samples,
+            field_hidden_dim=field_hidden_dim,
+            factor_rank=factor_rank,
+            depth=depth,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            patience=patience,
+            validation_interval=validation_interval,
+            min_improvement=min_improvement,
+            seed=seed,
+            conductor_longitudinal_points=conductor_longitudinal_points,
+            conductor_radial_order=conductor_radial_order,
+            conductor_angular_order=conductor_angular_order,
+            package_axial_order=package_axial_order,
+            package_radial_order=package_radial_order,
+            package_azimuthal_order=package_azimuthal_order,
+            background_segments_per_turn=background_segments_per_turn,
+            background_radial_order=background_radial_order,
+            background_angular_order=background_angular_order,
+            batch_size=batch_size,
+            device=device,
+        )
+    return _legacy_train_tensor_hybrid_spatial_loss_surrogate(
+        port_artifact,
+        samples,
+        validation_samples=validation_samples,
+        field_hidden_dim=field_hidden_dim,
+        factor_rank=factor_rank,
+        depth=depth,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        patience=patience,
+        validation_interval=validation_interval,
+        min_improvement=min_improvement,
+        seed=seed,
+        conductor_longitudinal_points=conductor_longitudinal_points,
+        conductor_radial_order=conductor_radial_order,
+        conductor_angular_order=conductor_angular_order,
+        package_axial_order=package_axial_order,
+        package_radial_order=package_radial_order,
+        package_azimuthal_order=package_azimuthal_order,
+        background_segments_per_turn=background_segments_per_turn,
+        background_radial_order=background_radial_order,
+        background_angular_order=background_angular_order,
+        batch_size=batch_size,
+        device=device,
     )
