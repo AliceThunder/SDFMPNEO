@@ -1,362 +1,294 @@
-"""统一 geometry→spatial Joule tensor + geometry-local thermal ROM 生产入口。
+"""SDF-MPNEO vNext 一键入口。
 
-只修改本文件顶部配置：
+正常使用只需要修改本文件的 CONFIG，然后运行：
 
-    python run.py --mode train
-    python run.py --mode predict
+    python run.py
 
-理论主链：
+默认打开非阻塞 PyQt 训练界面。也可以：
 
-    geometry
-      -> MLP: Z_field(g), D_vol(g), H_cell(g)
-      -> cellwise PSD + exact sum(H_cell)=D_vol
-      -> query geometry 的真实 M(g), K(g)
-      -> 小型 geometry-local rational-Krylov thermal ROM
-      -> explicit current/circuit + wire resistance
-      -> temperature
+    python run.py --mode train     # 无界面训练
+    python run.py --fresh          # 忽略模型 checkpoint，但继续复用 teacher 缓存
 
-Maxwell 只在离线 truth 生成时求解；在线推理没有 Maxwell/FGMRES/full-field
-electromagnetic correction。离线 truth 使用 finite-cross-section stranded source、
-Silver--Mueller 开放边界和 canonical local fine-minus-coarse self correction。
-训练前只做 EM truth preflight，不再构造跨 geometry 的全局 thermal state basis。
-训练/发布前的独立 Gate 会直接比较 full-cell thermal transient 与在线小 ROM，
-并在 completely-held-out geometry 上检查 spatial Joule、current/circuit dynamics、
-production integrator 和 steady state。
+所有面向用户的训练、缓存、采样、teacher、CUDA/CPU、GUI、checkpoint
+和输出路径配置均集中在本文件；数值实现模块不固化具体实验参数。
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 
-MODE = "train"
 ROOT = Path(__file__).resolve().parent
 
-FILES = {
-    "model": "results/uwpt/model.geometry_thermal.npz",
-    "predictions": "results/uwpt/predictions.json",
-    "settings_dir": "results/uwpt",
-    "training_checkpoint": "results/uwpt/model.tensor_training.pt",
-}
 
-BACKGROUND = {
-    # Open-domain convergence at ±0.27 m was not sufficient for the production
-    # geometry box: the independent ±0.39 m reference changed D_vol by ~11%
-    # and mutual Z by ~22%. Keep the same 12-mm resolved core, but move the
-    # artificial boundary to ±0.51 m. Far seawater may stretch to 80 mm; the
-    # independent mesh Gate still checks this coarsening.
-    "bounds": [[-0.51, 0.51], [-0.51, 0.51], [-0.51, 0.51]],
-    "core_center": [0.0, 0.0, 0.02],
-    "core_half_extent": [0.09, 0.09, 0.09],
-    "fine_step": 0.012,
-    "growth": 1.5,
-    "max_step": 0.08,
-    # Large open-domain matrices use Maxwell-aware shifted-ILU + LGMRES.
-    # The shift belongs only to the preconditioner. If the main Krylov solve
-    # stalls around 1e-6--1e-7, true-residual defect correction reuses the same
-    # ILU until the original physical matrix reaches the 1e-9 certificate.
-    "linear_solver": {
-        "relative_residual_tolerance": 1e-9,
-        "direct_max_dofs": 60000,
-        "iterative_maxiter": 40,
-        "iterative_inner_m": 30,
-        "iterative_defect_steps": 3,
-        "iterative_defect_maxiter": 16,
-        "iterative_defect_inner_m": 20,
-        "iterative_defect_start_residual": 5e-6,
-        "ilu_drop_tolerance": 5e-3,
-        "ilu_fill_factor": 4.0,
-        "ilu_strong_drop_tolerance": 1e-3,
-        "ilu_strong_fill_factor": 8.0,
-        "ilu_shift_factor": 3e-2,
-        "ilu_strong_shift_factor": 1e-1,
+CONFIG = {
+    # ------------------------------------------------------------------
+    # 总运行模式
+    # ------------------------------------------------------------------
+    "ROOT": str(ROOT),
+    "RUN": {
+        # gui: PyQt 控制台；train: 当前终端直接训练。
+        "mode": "gui",
     },
-    # The global grid is intentionally kept coarse enough for many-geometry truth.
-    # Only the unresolved diagonal self response receives a small canonical local
-    # fine-minus-coarse defect. Translation/rotation are removed in that local
-    # solve, while global mutual/far-field coupling remains from the full domain.
-    # Boundary-conditioned longitudinal terminal near-field reference.
-    # The terminal charge support is a finite-width/thickness physical source;
-    # use >=4 cells across that support so the 3mm -> 2.25mm independent
-    # validation compares two resolved scalar patches rather than a 1.6-cell
-    # under-resolved contact.  The hard 575k cell budget remains fail-closed.
-    "global_longitudinal_correction": {
-        "enabled": True,
-        "fine_step": 0.003,
-        "validation_fine_step": 0.00225,
-        "relative_tolerance": 1e-1,
-        "core_padding": 0.006,
-        "boundary_padding": 0.04,
-        "growth": 1.5,
-        "max_step": 0.02,
-        "terminal_cells_per_support": 4.0,
-        "terminal_core_padding_factor": 1.5,
-        "terminal_patch_max_cells": 575000,
-    },
-    "self_correction": {
-        "enabled": True,
-        "samples": 1,
-        "fine_step": 0.003,
-        "validation_fine_step": 0.00225,
-        "core_padding": 0.006,
-        "boundary_padding": 0.04,
-        "growth": 1.5,
-        "max_step": 0.02,
-        "relative_tolerance": 1e-1,
-        "joule_identity_tolerance": 1e-10,
-        "linear_relative_residual_tolerance": 1e-9,
-        "linear_direct_max_dofs": 60000,
-        "linear_direct_fallback_max_dofs": 60000,
-        # The compatible transverse solve can use a bounded direct factorization
-        # for medium local systems.  The 64k-edge case observed in production
-        # stalls completely under ILU/LGMRES, while this 100k cap still excludes
-        # the 118k/254k refined validation systems that must stay iterative.
-        "linear_transverse_direct_max_dofs": 100000,
-        "linear_transverse_direct_fallback_max_dofs": 100000,
-        "linear_iterative_maxiter": 40,
-        "linear_iterative_inner_m": 30,
-        "linear_iterative_defect_steps": 3,
-        "linear_iterative_defect_maxiter": 16,
-        "linear_iterative_defect_inner_m": 20,
-        "linear_iterative_defect_start_residual": 5e-6,
-        # If the rediscretized coarse operator disagrees materially with the
-        # true Galerkin coarse equation, enter exact coarse-defect recovery
-        # while the transferred warm state is still useful instead of waiting
-        # for an unreachable 1e-4 residual plateau.
-        "linear_two_level_galerkin_recovery_start_residual": 8e-1,
-        "linear_two_level_galerkin_recovery_consistency": 5e-2,
-        "linear_ilu_drop_tolerance": 5e-3,
-        "linear_ilu_fill_factor": 4.0,
-        "linear_ilu_strong_drop_tolerance": 1e-3,
-        "linear_ilu_strong_fill_factor": 8.0,
-        "linear_ilu_shift_factor": 3e-2,
-        "linear_ilu_strong_shift_factor": 1e-1,
-        "parallel_ports": 2,
-        "linear_result_cache_size": 64,
-    },
-    # Production is ±0.51 m; the independent reference is ±0.63 m. The 5%
-    # convergence requirement is unchanged. D_out itself is diagnostic in
-    # conductive seawater; its change is normalized by the terminal-dissipation
-    # scale, while Z/D_vol/current-space power remain hard Gate quantities.
-    "open_boundary_check": {
-        "samples": 1,
-        "padding": 0.12,
-        "relative_tolerance": 5e-2,
-    },
-    "formulation_check": {
-        "samples": 1,
-        "relative_tolerance": 2e-2,
-    },
-    "mesh_check": {
-        "samples": 1,
-        "refinement_factor": 0.75,
-        "relative_tolerance": 1e-1,
-        "source_path_relative_tolerance": 1e-10,
-    },
-    "geometry_continuity_check": {
-        "samples": 1,
-        "translation_step": 1e-4,
-        "angle_step": 1e-3,
-        "relative_change_limit": 2e-1,
-    },
-}
 
-DEFAULT_GEOMETRY = {
-    "transmitter": {
-        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
-        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
-        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.0], "angles": [0.0, 0.0, 0.0],
+    # ------------------------------------------------------------------
+    # 文件与目录
+    # ------------------------------------------------------------------
+    "FILES": {
+        "log_dir": "results/vnext/logs",
+        "checkpoint_dir": "results/vnext/checkpoints",
+        "port_checkpoint": "tensor_port.training.pt",
+        "spatial_checkpoint": "tensor_spatial.training.pt",
+        "port_artifact": "results/vnext/tensor_port.pt",
+        "spatial_artifact": "results/vnext/tensor_spatial.pt",
+        "bundle": "results/vnext/tensor_bundle",
+        "summary": "results/vnext/training_summary.json",
+        "overwrite_bundle": True,
     },
-    "receiver": {
-        "shape": "circle", "turns": 1.5, "outer_half_size": 0.025,
-        "pitch": 0.002, "conductor_width": 0.0015, "conductor_thickness": 0.001,
-        "corner_radius": 0.012, "translation": [0.0, 0.0, 0.035], "angles": [0.0, 0.0, 0.0],
+
+    # ------------------------------------------------------------------
+    # Teacher 数据缓存
+    # ------------------------------------------------------------------
+    "CACHE": {
+        "root": "results/vnext/teacher_cache",
+        # reuse: 命中即复用，只补缺失样本；
+        # refresh: 删除当前参数空间对应缓存并重新生成；
+        # readonly: 只允许读取，缺样本直接报错。
+        "policy": "reuse",
+        "verify_checksums": True,
     },
-    "package_half_extent": [0.035, 0.035, 0.005],
-}
 
-# Production geometry is a constrained family, not the old 27D solver-
-# perturbation box. Shape, turns, orientation and topology stay fixed.
-# planar_scale jointly scales outer size, pitch, conductor width and corner
-# radius. The historical 10th parameter was seawater_radius; in the current
-# fixed open-boundary formulation that quantity is no longer an online geometry
-# variable and is certified separately by BACKGROUND.open_boundary_check.
-GEOMETRY_FAMILY = {
-    "schema": "scaled_uwpt_family_v1",
-    "parameters": {
-        "tx_planar_scale": {"bounds": [0.97, 1.03]},
-        "rx_planar_scale": {"bounds": [0.97, 1.03]},
-        "tx_thickness_scale": {"bounds": [0.95, 1.05]},
-        "rx_thickness_scale": {"bounds": [0.95, 1.05]},
-        "rx_offset_x": {"bounds": [-0.0002, 0.0002]},
-        "rx_offset_y": {"bounds": [-0.0002, 0.0002]},
-        "rx_gap": {"bounds": [0.0348, 0.0352]},
-        "tx_package_scale": {"bounds": [0.98, 1.02]},
-        "rx_package_scale": {"bounds": [0.98, 1.02]},
+    # ------------------------------------------------------------------
+    # 数据生成调度
+    # count 不属于缓存身份：从 64 改到 128 时只补 64 个样本。
+    # workers/native_threads_per_worker 也不属于缓存身份。
+    # ------------------------------------------------------------------
+    "DATA": {
+        "count": 256,
+        "seed": 37,
+        "workers": 8,
+        "native_threads_per_worker": 1,
+        # 每完成一小批 teacher 后检查暂停/停止命令。
+        "generation_chunk_size": 8,
     },
-}
 
-PHYSICS = {
-    "frequency_hz": 100000.0,
-    "ambient_temperature": 293.15,
-}
-
-MATERIALS = {
-    "tx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
-                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
-    "rx_copper": {"electrical_conductivity": 5.8e7, "resistivity_temperature_coefficient": 0.00393,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 1.0,
-                   "thermal_conductivity": 400.0, "volumetric_heat_capacity": 3.45e6},
-    "tx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
-                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
-    "rx_package": {"electrical_conductivity": 0.0, "resistivity_temperature_coefficient": 0.0,
-                   "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 3.0,
-                   "thermal_conductivity": 0.2, "volumetric_heat_capacity": 1.5e6},
-    "seawater": {"electrical_conductivity": 5.0, "resistivity_temperature_coefficient": 0.0,
-                 "reference_temperature": 293.15, "relative_permeability": 1.0, "relative_permittivity": 80.0,
-                 "thermal_conductivity": 0.6, "volumetric_heat_capacity": 4.1e6},
-}
-
-REGIONS = {
-    "coil_materials": ["tx_copper", "rx_copper"],
-    "package_materials": ["tx_package", "rx_package"],
-    "seawater_material": "seawater",
-}
-
-PORTS = {"current_offset": None, "current_matrix": None}
-
-TRAINING = {
-    "seed": 17,
-    "spatial_tensor_schema": "cellwise_joule_tensor_v1",
-    # Online thermal ROM is built independently for each query geometry from
-    # true M(g), K(g) and the predicted complete Hermitian current-source span.
-    "online_thermal_relative_tolerance": 5e-2,
-    "online_thermal_conditioning_limit": 1e10,
-    "thermal_time_scales": [0.1, 1.0, 10.0],
-    "thermal_trajectory_times": [0.1, 1.0, 10.0, 100.0],
-    # Start from the existing expensive truth budget, then add only
-    # high-coverage geometries if decoded physical validation still misses the
-    # release margin.  Existing cached truth is always reused.
-    "n_tensor_samples": 96,
-    "tensor_enrichment": {
-        "enabled": True,
-        "max_samples": 256,
-        "batch_size": 32,
-        "candidate_pool": 2048,
-    },
-    "final_audit": {
-        "samples": 2,
-        "times": [0.1, 1.0, 10.0, 100.0],
-        "full_vs_rom_thermal_tolerance": 5e-2,
-        "tensor_relative_tolerance": 2e-1,
-        "current_space_relative_tolerance": 2e-1,
-        "outward_relative_tolerance": 2e-1,
-        "projection_correction_limit": 2e-1,
-        "reduced_dynamic_relative_tolerance": 1e-1,
-        "integrator_relative_tolerance": 1e-4,
-        "integrator_rtol": 1e-7,
-        "integrator_atol": 1e-9,
-        "integrator_max_step": 10.0,
-        "circuit_condition_limit": 1e8,
-        "operating_cases": [
-            {"name": "current-controlled", "operating": [5.0, 0.0]},
-            {"name": "circuit-controlled", "drive": {
-                "voltage": [10.0, 0.0],
-                "series_impedance": [0.1, 0.1],
-            }},
-        ],
-    },
-    "device": "cuda",
-    "network": {
-        # Global Z/D/outward head starts from a small expensive truth set
-        # and is enlarged only by adaptive maximin enrichment; keep it compact
-        # and regularized. The coordinate field head sees many cells per
-        # geometry and can use more capacity.
-        "global": {
-            "width": 32,
-            "blocks": 1,
-            "activation": "silu",
+    # ------------------------------------------------------------------
+    # 参数空间：MVP conductor + package + tensor-electric 扩展。
+    # 这些参数属于 teacher cache 身份，修改后自动进入新的缓存目录。
+    # ------------------------------------------------------------------
+    "SAMPLER": {
+        "base": {
+            "conductor": {
+                "outer_radius_range": [0.02, 0.05],
+                "aspect_ratio_range": [0.7, 1.3],
+                "turns_range": [0.6, 1.6],
+                "pitch_range": [8.0e-4, 3.0e-3],
+                "exponent_range": [2.0, 5.0],
+                "width_range": [5.0e-4, 2.5e-3],
+                "thickness_range": [3.0e-4, 1.5e-3],
+                "separation_range": [0.012, 0.06],
+                "conductivity_range": [3.0e7, 6.0e7],
+                "frequency_range": [2.0e4, 2.0e5],
+            },
+            "package_margin_range": [1.35, 2.0],
+            "package_half_z_range": [0.004, 0.012],
+            "package_center_offset_fraction_range": [0.0, 0.35],
+            "package_exponent_xy_range": [2.0, 5.0],
+            "package_exponent_z_range": [2.0, 5.0],
+            "package_count_range": [1, 1],
+            "nested_package_probability": 0.0,
+            "graded_package_probability": 0.0,
+            "nested_package_scale_range": [1.15, 1.45],
+            "free_inclusion_probability": 0.0,
+            "free_inclusion_center_radius_fraction_range": [0.65, 1.8],
+            "free_inclusion_half_extent_fraction_range": [0.12, 0.45],
+            # Tensor FAST 当前训练域使用 AC；精确 DC 留给 REFERENCE/CERTIFIED。
+            "dc_probability": 0.0,
+            "dc_conductive_probability": 0.0,
+            "relative_permittivity_range": [1.5, 6.0],
+            "package_relative_permeability_range": [1.0, 1.0],
+            "dielectric_conductivity_range": [1.0e-7, 5.0e-3],
+            "lossless_probability": 0.20,
+            "debye_package_probability": 0.0,
+            "multi_debye_package_probability": 0.0,
+            "package_debye_epsilon_infinite_range": [1.5, 6.0],
+            "package_debye_delta_epsilon_range": [0.5, 20.0],
+            "package_debye_relaxation_time_range": [1.0e-8, 1.0e-4],
+            "background_relative_permittivity_range": [1.0, 1.000001],
+            "background_conductivity_range": [1.0e-7, 5.0e-3],
+            "lossy_background_probability": 0.25,
+            "debye_background_probability": 0.0,
+            "multi_debye_background_probability": 0.0,
+            "multi_debye_poles_range": [2, 4],
+            "background_debye_epsilon_infinite_range": [1.0, 6.0],
+            "background_debye_delta_epsilon_range": [0.5, 30.0],
+            "background_debye_relaxation_time_range": [1.0e-8, 1.0e-4],
         },
-        "field": {
-            "width": 128,
-            "blocks": 3,
-            "activation": "silu",
+        "tensor_package_probability": 1.0,
+        "tensor_background_probability": 0.25,
+        "tensor_relative_permittivity_range": [1.5, 10.0],
+        "tensor_conductivity_range": [1.0e-7, 5.0e-3],
+        "tensor_lossless_probability": 0.20,
+    },
+
+    # ------------------------------------------------------------------
+    # MQS correctness teacher。修改这些参数会生成新的数据缓存。
+    # ------------------------------------------------------------------
+    "TEACHER": {
+        "segments_per_turn": 20,
+        "min_segments": 16,
+        "section_degree": 1,
+        "radial_order": 4,
+        "angular_order": 24,
+        "line_order": 2,
+        "self_softening_factor": 0.45,
+        "section_basis_family": "adaptive",
+        "skin_enrichment_threshold": 2.0,
+        "skin_boundary_layers": 2,
+        "skin_angular_order": 1,
+        "skin_lambda_cap": 24.0,
+    },
+
+    # ------------------------------------------------------------------
+    # Teacher truth 输出和积分阶数。修改会生成新的缓存。
+    # port + spatial 共用一次 coupled EM solve。
+    # ------------------------------------------------------------------
+    "TRUTH": {
+        "baseline_segments": 96,
+        "surface_vertical_order": 16,
+        "surface_azimuthal_order": 32,
+        "magnetic_volume_axial_order": 8,
+        "magnetic_volume_radial_order": 6,
+        "magnetic_volume_azimuthal_order": 24,
+        "maximum_raw_magnetic_reciprocity_defect": 0.08,
+        "include_spatial": True,
+        "package_volume_axial_order": 6,
+        "package_volume_radial_order": 4,
+        "package_volume_azimuthal_order": 16,
+        "background_radial_order": 10,
+        "background_angular_order": 32,
+        "maximum_raw_spatial_closure_error": 0.35,
+    },
+
+    # ------------------------------------------------------------------
+    # 通用运行设备。训练项 device="inherit" 时继承这里。
+    # auto: CUDA -> MPS -> CPU。
+    # ------------------------------------------------------------------
+    "RUNTIME": {
+        "device": "auto",
+        # 传给 GUI 启动的 worker 进程；按机器需要增删。
+        "environment": {
+            "PYTHONUNBUFFERED": "1",
         },
     },
-    "optimizer": {
-        "epochs": 240,
-        "batch_size": 16,
-        "field_batch_size": 4096,
-        "field_cells_per_geometry": 2048,
-        "learning_rate": 1e-3,
-        "global_learning_rate": 5e-4,
-        "field_learning_rate": 1e-3,
-        "weight_decay": 1e-6,
-        "global_weight_decay": 1e-3,
-        "field_weight_decay": 1e-6,
-        "patience": 40,
-        "validation_interval": 2,
-        "gradient_clip_norm": 10.0,
-        "physics_penalty_weight": 0.05,
-        "z_weight": 1.0,
-        "d_weight": 1.0,
-        "outward_weight": 1.0,
-        "spatial_weight": 1.0,
-        "field_density_weight": 1.0,
-        "field_shape_weight": 1.0,
-        "field_physical_weight": 1.0,
-        "field_density_prior_strength": 0.9,
-        "field_log_density_margin": 0.5,
-        "field_full_validation_interval": 10,
-        # Select the stopping point on the historical validation split, then
-        # make the production fit use every expensive cached truth geometry.
-        # Release certification remains the independent final held-out audit.
-        "refit_all_truth": True,
-        "refit_global_head": True,
-        "refit_field_head": True,
-        "refit_learning_rate_factor": 1.0,
+
+    # ------------------------------------------------------------------
+    # 模型 checkpoint 总策略。
+    # resume=True 会自动识别兼容 checkpoint；参数空间、样本数或关键训练
+    # 配置改变时不会错误续接旧 checkpoint。
+    # ------------------------------------------------------------------
+    "TRAINING": {
+        "resume": True,
+    },
+
+    # ------------------------------------------------------------------
+    # Tensor FAST port 网络
+    # ------------------------------------------------------------------
+    "PORT_TRAINING": {
+        "device": "inherit",
+        # auto: CUDA/MPS=float32，CPU=float64；也可显式 float32/float64。
+        "precision": "auto",
         "seed": 17,
-        "dtype": "float32",
+        "epochs": 200,
+        "batch_size": 32,
+        "validation_fraction": 0.15,
+        "patience": 30,
+        "min_improvement": 1.0e-5,
+        "channel_loss_weight": 1.0,
+        # 1 最安全，写盘更多；可调大以减少 checkpoint I/O。
+        "checkpoint_every_batches": 1,
+        "geometry_domain": None,
+        "model": {
+            "hidden_dim": 64,
+            "factor_rank": 4,
+            "depth": 2,
+            # 以下维度由当前 tensor feature schema 决定，通常不要覆盖；
+            # 如未来 schema 扩展，可在实现支持后从此处显式配置。
+        },
+        "optimizer": {
+            "learning_rate": 1.0e-3,
+            "weight_decay": 1.0e-6,
+            "gradient_clip_norm": 10.0,
+        },
     },
-}
 
-PREDICTION = {
-    "initial_temperature_rise": 0.0,
-    "operating": [5.0, 0.0],
-    # Voltage-driven example:
-    # "drive": {"voltage": [10.0, 0.0], "series_impedance": [0.1, 0.1]},
-    # None 使用 family 中心（DEFAULT_GEOMETRY）。也可直接填写 9 个
-    # GEOMETRY_FAMILY 参数，或填写完整 geometry；完整 geometry 必须严格位于
-    # 同一个 scaled_uwpt_family_v1 流形内。
-    "geometry": None,
-    "times": [0.0, 0.1, 1.0, 1000.0, "inf"],
-    "method": "etd2_adaptive",
-    "max_step": 100.0,
-    "initial_step": 0.01,
-    "rtol": 1e-5,
-    "atol": 1e-8,
-    "steady_tolerance": 1e-10,
-    "steady_max_iterations": 40,
-}
+    # ------------------------------------------------------------------
+    # Tensor continuous spatial loss 网络
+    # ------------------------------------------------------------------
+    "SPATIAL_TRAINING": {
+        "enabled": True,
+        "device": "inherit",
+        "seed": 47,
+        "epochs": 120,
+        "batch_size": 8,
+        "validation_fraction": 0.15,
+        "patience": 20,
+        "validation_interval": 1,
+        "min_improvement": 1.0e-5,
+        "end_to_end_validation": True,
+        "checkpoint_every_batches": 1,
+        "model": {
+            "field_hidden_dim": 64,
+            "factor_rank": 4,
+            "depth": 2,
+        },
+        "optimizer": {
+            "learning_rate": 1.0e-3,
+            "weight_decay": 1.0e-6,
+            "gradient_clip_norm": 10.0,
+        },
+        # FAST spatial 归一化/背景积分配置，也随 artifact 保存。
+        "normalization": {
+            "conductor_longitudinal_points": 12,
+            "conductor_radial_order": 3,
+            "conductor_angular_order": 16,
+            "package_axial_order": 6,
+            "package_radial_order": 4,
+            "package_azimuthal_order": 16,
+            "background_segments_per_turn": 16,
+            "background_radial_order": 12,
+            "background_angular_order": 48,
+        },
+    },
 
-MONITOR = {
-    "enabled": True, "auto_start": False, "log_dir": "results/uwpt/logs",
-    "log_interval_s": 1.0, "refresh_ms": 300, "max_plot_points": 4000, "compute_threads": 1,
-}
+    # ------------------------------------------------------------------
+    # 训练控制协议。暂停/停止仅在安全数值边界生效。
+    # ------------------------------------------------------------------
+    "CONTROL": {
+        "heartbeat_interval_s": 0.5,
+        "fsync_metrics": False,
+    },
 
-SETTINGS = {
-    "ROOT": str(ROOT), "MODE": MODE, "FILES": FILES, "BACKGROUND": BACKGROUND,
-    "DEFAULT_GEOMETRY": DEFAULT_GEOMETRY, "GEOMETRY_FAMILY": GEOMETRY_FAMILY,
-    "PHYSICS": PHYSICS, "MATERIALS": MATERIALS, "REGIONS": REGIONS, "PORTS": PORTS,
-    "TRAINING": TRAINING, "PREDICTION": PREDICTION, "MONITOR": MONITOR,
+    # ------------------------------------------------------------------
+    # PyQt + pyqtgraph 训练界面
+    # GUI 不执行数值训练；训练运行在独立 QProcess，metrics 由 QThread 读取。
+    # ------------------------------------------------------------------
+    "GUI": {
+        "title": "SDF-MPNEO vNext 训练控制台",
+        "auto_start": False,
+        "refresh_ms": 250,
+        "max_plot_points": 4000,
+        "console_blocks": 1000,
+        "console_height": 190,
+        "width": 1240,
+        "height": 860,
+    },
 }
 
 
 def main(argv=None):
-    from sdfmpneo.unified_runtime import launch
-    return launch(SETTINGS, argv)
+    from sdfmpneo_vnext.workflow import launch
+
+    return launch(CONFIG, argv, runner_path=__file__)
 
 
 if __name__ == "__main__":
