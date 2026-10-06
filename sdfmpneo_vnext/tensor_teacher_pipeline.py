@@ -10,7 +10,6 @@ from .em import MQSConfig
 from .exterior_quadrature import conductor_volume_mask
 from .hybrid_dielectric import DielectricCoupledMixedTeacher
 from .hybrid_domain import package_domain_topology
-from .hybrid_field import prepare_hybrid_reference_loss_field
 from .hybrid_training_data import (
     BackgroundSpatialLossSamples,
     PackageSpatialLossSamples,
@@ -21,6 +20,7 @@ from .tensor_sampling import (
     TensorHybridSceneSamplerConfig,
     sample_tensor_hybrid_scene,
 )
+from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 from .tensor_spatial_training_data import TensorHybridSpatialTeacherSample
 from .tensor_training_data import TensorHybridTeacherSample
 from .training_data import SpatialLossSamples
@@ -56,6 +56,7 @@ def generate_tensor_teacher_once(
     background_radial_order: int = 10,
     background_angular_order: int = 32,
     maximum_raw_spatial_closure_error: float = 0.35,
+    maximum_spatial_quadrature_refinements: int = 4,
 ):
     """Produce tensor port truth and optional spatial truth from one teacher solve."""
     if not scene.packages:
@@ -68,6 +69,10 @@ def generate_tensor_teacher_once(
         or background_angular_order < 8
     ):
         raise ValueError("invalid tensor spatial truth quadrature resolution")
+    if int(maximum_spatial_quadrature_refinements) < 0:
+        raise ValueError(
+            "maximum_spatial_quadrature_refinements must be nonnegative"
+        )
 
     frequency_hz = float(frequency_hz)
     encoded = encode_tensor_hybrid_scene_invariant(scene, frequency_hz)
@@ -117,7 +122,7 @@ def generate_tensor_teacher_once(
     if not include_spatial:
         return port
 
-    prepared = prepare_hybrid_reference_loss_field(
+    calibration = prepare_tensor_spatial_reference_adaptive(
         teacher,
         result,
         volume_axial_order=int(package_volume_axial_order),
@@ -126,7 +131,11 @@ def generate_tensor_teacher_once(
         background_radial_order=int(background_radial_order),
         background_angular_order=int(background_angular_order),
         maximum_raw_closure_error=float(maximum_raw_spatial_closure_error),
+        maximum_quadrature_refinements=int(
+            maximum_spatial_quadrature_refinements
+        ),
     )
+    prepared = calibration.prepared
 
     coil_segments = {}
     segments = teacher.conductor_teacher._mqs._segments
@@ -180,6 +189,8 @@ def generate_tensor_teacher_once(
     package_weights = []
     package_matrices = []
     for index, package in enumerate(scene.packages):
+        # Calibration may refine internally, but the actual training sample
+        # count remains governed by the requested truth sampling resolution.
         quadrature = package.geometry.volume_quadrature(
             axial_order=int(package_volume_axial_order),
             radial_order=int(package_volume_radial_order),
