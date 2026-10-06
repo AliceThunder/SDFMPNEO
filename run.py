@@ -128,6 +128,9 @@ CONFIG = {
         "tensor_relative_permittivity_range": [1.5, 10.0],
         "tensor_conductivity_range": [1.0e-7, 5.0e-3],
         "tensor_lossless_probability": 0.20,
+        # 单次 hybrid package rejection budget 用尽后，从同一 RNG 流继续
+        # 采样完整场景；这是合法参数空间中的 rejection，不是训练错误。
+        "maximum_scene_attempts": 64,
     },
 
     # ------------------------------------------------------------------
