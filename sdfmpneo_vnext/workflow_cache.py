@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import pickle
-from typing import Callable, Iterable
+from typing import Callable
 
 import numpy as np
 
@@ -59,10 +59,17 @@ def build_teacher_config(mapping) -> MQSConfig:
 
 def teacher_cache_payload(config) -> dict:
     data = dict(config["DATA"])
+    sampler = _jsonable(config["SAMPLER"])
+    # Retry budget controls how long rejection sampling is allowed to search;
+    # it does not change the accepted scene distribution or teacher labels.
+    # Keeping it out of the identity lets users raise the robustness budget
+    # without discarding already valid expensive truth shards.
+    if isinstance(sampler, dict):
+        sampler.pop("maximum_scene_attempts", None)
     return {
         "schema": CACHE_SCHEMA,
         "seed": int(data["seed"]),
-        "sampler": _jsonable(config["SAMPLER"]),
+        "sampler": sampler,
         "teacher": _jsonable(config["TEACHER"]),
         "truth": _jsonable(config["TRUTH"]),
     }
@@ -107,8 +114,9 @@ class TensorTeacherCache:
     """Content-addressed, append-only cache of deterministic teacher samples.
 
     The cache directory identity intentionally excludes requested sample count,
-    worker count, accelerator selection and optimizer settings. Increasing the
-    sample budget therefore only generates missing deterministic index shards.
+    worker count, rejection retry budget, accelerator selection and optimizer
+    settings. Increasing the sample budget therefore only generates missing
+    deterministic index shards.
     """
 
     def __init__(self, root, config, *, verify_checksums: bool = True):
