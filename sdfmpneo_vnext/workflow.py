@@ -40,8 +40,32 @@ def _runtime_config(config):
     return cfg
 
 
-def _training_dataset_key(cache_key: str, count: int) -> str:
-    return sha256(f"{cache_key}:{int(count)}".encode("utf-8")).hexdigest()
+def _training_dataset_key(cache_key: str, count: int, config) -> str:
+    """Identity of the ordered samples and deterministic train/validation policy.
+
+    Optimizer/model changes are handled by trainer checkpoint signatures. This
+    key only adds partition/objective semantics that must not silently inherit
+    an old optimizer trajectory. Epoch limits and accelerator choice are
+    intentionally absent so a run can be extended or moved between CPU/GPU.
+    """
+    port = dict(config.get("PORT_TRAINING", {}) or {})
+    spatial = dict(config.get("SPATIAL_TRAINING", {}) or {})
+    payload = {
+        "teacher_cache_key": cache_key,
+        "count": int(count),
+        "port": {
+            "seed": int(port.get("seed", 17)),
+            "validation_fraction": float(port.get("validation_fraction", 0.15)),
+            "channel_loss_weight": float(port.get("channel_loss_weight", 1.0)),
+        },
+        "spatial": {
+            "seed": int(spatial.get("seed", 47)),
+            "validation_fraction": float(spatial.get("validation_fraction", 0.15)),
+            "end_to_end_validation": bool(spatial.get("end_to_end_validation", True)),
+            "validation_interval": int(spatial.get("validation_interval", 1)),
+        },
+    }
+    return sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def _prepare_cache(config, control):
@@ -100,7 +124,7 @@ def run_training_worker(config, session_dir) -> int:
         try:
             cache, generated = _prepare_cache(config, control)
             count = int(config["DATA"]["count"])
-            dataset_key = _training_dataset_key(cache.key, count)
+            dataset_key = _training_dataset_key(cache.key, count, config)
             include_spatial = bool(config["TRUTH"].get("include_spatial", False))
             if include_spatial:
                 port_samples = tuple(sample.port for sample in generated)
