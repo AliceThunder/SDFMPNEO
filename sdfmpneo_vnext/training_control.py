@@ -10,6 +10,7 @@ import time
 
 TERMINAL_STATES = {"completed", "stopped", "failed"}
 COMMANDS = {"run", "pause", "stop"}
+_CONTEXT_KEYS = {"phase", "message"}
 
 
 class TrainingStopRequested(Exception):
@@ -51,7 +52,12 @@ class SessionPaths:
 
 
 class TrainingControl:
-    """Cooperative file control plus append-only JSONL telemetry."""
+    """Cooperative file control plus append-only JSONL telemetry.
+
+    Only stable UI context (phase/message/state) survives across rows. Epoch
+    losses and cache counters are event payloads, so heartbeat rows cannot
+    duplicate the previous training metric on plots.
+    """
 
     def __init__(
         self,
@@ -73,8 +79,7 @@ class TrainingControl:
         self._sequence = 0
         self._start = time.monotonic()
         self._state = "running"
-        self._latest = {
-            "state": "running",
+        self._context = {
             "phase": "starting",
             "message": "",
         }
@@ -83,7 +88,7 @@ class TrainingControl:
         if not self.paths.control.exists():
             write_control_command(self.paths.control, "run")
         self._file = self.paths.metrics.open("a", encoding="utf-8", buffering=1)
-        self.emit(phase="starting", state="running")
+        self.emit(phase="starting", state="running", event="state")
         self._thread = threading.Thread(
             target=self._heartbeat,
             name="vnext-training-heartbeat",
@@ -94,7 +99,7 @@ class TrainingControl:
 
     def __exit__(self, exc_type, exc, tb):
         if exc is not None and not isinstance(exc, TrainingStopRequested):
-            self.emit(state="failed", message=str(exc), force=True)
+            self.emit(state="failed", message=str(exc), event="state", force=True)
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=max(1.0, 2.0 * self.heartbeat_interval_s))
@@ -125,17 +130,21 @@ class TrainingControl:
                     state = self._state
                 self.emit(state=state, event="heartbeat")
             except Exception:
+                # Telemetry must never terminate the numerical worker.
                 pass
 
     def emit(self, force=False, **values):
         with self._lock:
             if values.get("state") is not None:
                 self._state = str(values["state"])
-            self._latest.update(values)
-            self._latest["state"] = self._state
+            for key in _CONTEXT_KEYS:
+                if key in values and values[key] is not None:
+                    self._context[key] = values[key]
             self._sequence += 1
             row = {
-                **self._latest,
+                **self._context,
+                **values,
+                "state": self._state,
                 "sequence": self._sequence,
                 "elapsed_s": time.monotonic() - self._start,
                 "timestamp": time.time(),
@@ -157,23 +166,23 @@ class TrainingControl:
         if message is not None:
             values["message"] = message
         if values:
-            self.emit(**values)
+            self.emit(event="progress", **values)
         while True:
             command = self._read_command()
             if command == "stop":
-                self.emit(state="stopping", force=True)
+                self.emit(state="stopping", event="state", force=True)
                 raise TrainingStopRequested("training stop requested")
             if command == "run":
                 if self._state in {"paused", "pausing", "resuming"}:
-                    self.emit(state="resuming", force=True)
+                    self.emit(state="resuming", event="state", force=True)
                 self._state = "running"
                 return
             if self._state != "paused":
-                self.emit(state="paused", force=True)
+                self.emit(state="paused", event="state", force=True)
             time.sleep(0.1)
 
     def finish(self, state="completed", **values):
         state = str(state)
         if state not in TERMINAL_STATES:
             raise ValueError(f"unsupported terminal state: {state}")
-        self.emit(state=state, force=True, **values)
+        self.emit(state=state, event="state", force=True, **values)
