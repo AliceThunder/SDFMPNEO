@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import deque
 from copy import deepcopy
 from datetime import datetime
-import codecs
 import json
 from pathlib import Path
 import sys
@@ -272,13 +271,17 @@ class TrainingWindow(QtWidgets.QMainWindow):
         self.paths = SessionPaths.from_root(self.session)
         write_control_command(self.paths.control, "run")
         worker_config = deepcopy(self.config)
-        if self.fresh_checkbox.isChecked():
+        fresh = self.fresh_checkbox.isChecked()
+        if fresh:
             worker_config.setdefault("TRAINING", {})["resume"] = False
         self._snapshot(worker_config)
         self.path_label.setText(f"本次会话：{self.session}")
         self.status.setText("正在启动训练 worker……")
         self.output.clear()
-        self._clear_plots()
+        # Preserve the currently displayed loss history for a stop -> resume
+        # cycle. A deliberate fresh training run starts a new curve.
+        if fresh:
+            self._clear_plots()
 
         self.reader = MetricsReader(
             self.paths.metrics,
@@ -350,21 +353,23 @@ class TrainingWindow(QtWidgets.QMainWindow):
             self.status.setText(detail)
 
             if phase == "port_training" and row.get("train_loss") is not None:
-                epoch = float(row["epoch"])
-                self._append("port_epoch", epoch)
-                self._append("port_train", float(row["train_loss"]))
-                if row.get("validation_loss") is not None:
-                    self._append("port_val", float(row["validation_loss"]))
-                else:
-                    self._append("port_val", float("nan"))
+                self._set_epoch_metric(
+                    "port",
+                    float(row["epoch"]),
+                    float(row["train_loss"]),
+                    None
+                    if row.get("validation_loss") is None
+                    else float(row["validation_loss"]),
+                )
             elif phase == "spatial_training" and row.get("train_loss") is not None:
-                epoch = float(row["epoch"])
-                self._append("spatial_epoch", epoch)
-                self._append("spatial_train", float(row["train_loss"]))
-                if row.get("validation_loss") is not None:
-                    self._append("spatial_val", float(row["validation_loss"]))
-                else:
-                    self._append("spatial_val", float("nan"))
+                self._set_epoch_metric(
+                    "spatial",
+                    float(row["epoch"]),
+                    float(row["train_loss"]),
+                    None
+                    if row.get("validation_loss") is None
+                    else float(row["validation_loss"]),
+                )
             elif phase == "teacher_cache" and row.get("cached") is not None:
                 self._append("cache_x", len(self.series["cache_x"]) + 1)
                 self._append("cache_y", float(row["cached"]))
@@ -372,6 +377,19 @@ class TrainingWindow(QtWidgets.QMainWindow):
 
     def _append(self, key, value):
         self.series[key].append(value)
+
+    def _set_epoch_metric(self, prefix, epoch, train, validation):
+        epoch_key = f"{prefix}_epoch"
+        train_key = f"{prefix}_train"
+        validation_key = f"{prefix}_val"
+        validation_value = float("nan") if validation is None else validation
+        if self.series[epoch_key] and self.series[epoch_key][-1] == epoch:
+            self.series[train_key][-1] = train
+            self.series[validation_key][-1] = validation_value
+            return
+        self.series[epoch_key].append(epoch)
+        self.series[train_key].append(train)
+        self.series[validation_key].append(validation_value)
 
     def _refresh_plots(self):
         self.curves["port_train"].setData(
