@@ -60,6 +60,21 @@ def _stable_cholesky(
         raise ValueError(
             "cholesky matrix must be nonempty"
         )
+
+    # The spatial normalization is a physical power identity.  Do not perturb
+    # a positive-definite matrix merely because its physical units make every
+    # entry much smaller than one.  Try the exact matrix first, then use only
+    # scale-relative regularization if roundoff makes Cholesky fail.
+    factor, info = torch.linalg.cholesky_ex(
+        matrix
+    )
+    if int(
+        torch.max(
+            info
+        ).detach().cpu()
+    ) == 0:
+        return factor
+
     diagonal_scale = torch.max(
         torch.abs(
             torch.real(
@@ -73,7 +88,7 @@ def _stable_cholesky(
     )
     scale = torch.clamp(
         diagonal_scale,
-        min=1.0,
+        min=torch.finfo(matrix.real.dtype).tiny,
     )
     eye = torch.eye(
         n,
@@ -107,11 +122,7 @@ def _stable_cholesky(
     values, vectors = torch.linalg.eigh(
         matrix
     )
-    floor = (
-        1e-6
-        * scale
-        + 1e-20
-    )
+    floor = 1e-6 * scale
     repaired = (
         vectors
         @ torch.diag(
@@ -1098,10 +1109,10 @@ def _package_transform(
             _stable_cholesky(
                 integral
             ),
-                identity,
-                upper=False,
-            )
+            identity,
+            upper=False,
         )
+    )
     return (
         _psd_sqrt(
             target,
@@ -3395,8 +3406,8 @@ def train_hybrid_spatial_loss_surrogate(
             or values[
                 1
             ] < values[
-                    0
-                ]
+                0
+            ]
         ):
             raise ValueError(
                 "background_conductivity_range must be a finite "
