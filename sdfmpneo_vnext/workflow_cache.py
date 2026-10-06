@@ -17,7 +17,7 @@ from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybri
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
 
 
-CACHE_SCHEMA = 1
+CACHE_SCHEMA = 2
 
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
