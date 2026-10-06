@@ -170,6 +170,9 @@ CONFIG = {
         "background_radial_order": 10,
         "background_angular_order": 32,
         "maximum_raw_spatial_closure_error": 0.35,
+        # 上述空间积分阶数是训练样本分辨率，同时也是 closure 校准起点；
+        # 若 raw closure 不达标，只加密校准积分，不扩大训练样本点数。
+        "maximum_spatial_quadrature_refinements": 4,
     },
 
     # ------------------------------------------------------------------
