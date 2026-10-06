@@ -24,6 +24,7 @@ from .hybrid_background_spatial import (
     background_coordinate_features,
     background_loss_gate,
 )
+from .hybrid_domain import package_domain_topology
 from .hybrid_features import encode_hybrid_scene_invariant
 from .hybrid_training_data import HybridTeacherSample
 from .scene import Scene
@@ -1097,10 +1098,10 @@ def _package_transform(
             _stable_cholesky(
                 integral
             ),
-            identity,
-            upper=False,
+                identity,
+                upper=False,
+            )
         )
-    )
     return (
         _psd_sqrt(
             target,
@@ -3394,8 +3395,8 @@ def train_hybrid_spatial_loss_surrogate(
             or values[
                 1
             ] < values[
-                0
-            ]
+                    0
+                ]
         ):
             raise ValueError(
                 "background_conductivity_range must be a finite "
