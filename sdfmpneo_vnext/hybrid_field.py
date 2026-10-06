@@ -952,6 +952,9 @@ def prepare_hybrid_reference_loss_field(
         )
 
     scene = teacher.scene
+    frequency_hz = float(
+        teacher.frequency_hz
+    )
     n_ports = (
         result.impedance.shape[
             0
@@ -964,9 +967,7 @@ def prepare_hybrid_reference_loss_field(
 
     temporary = PreparedHybridReferenceLossField(
         scene=scene,
-        frequency_hz=float(
-            teacher.frequency_hz
-        ),
+        frequency_hz=frequency_hz,
         teacher=teacher,
         result=result,
         port_prediction=result.prediction,
@@ -1233,9 +1234,7 @@ def prepare_hybrid_reference_loss_field(
 
     return PreparedHybridReferenceLossField(
         scene=scene,
-        frequency_hz=float(
-            teacher.frequency_hz
-        ),
+        frequency_hz=frequency_hz,
         teacher=teacher,
         result=result,
         port_prediction=result.prediction,
