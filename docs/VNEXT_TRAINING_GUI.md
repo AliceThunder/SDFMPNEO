@@ -40,7 +40,8 @@ GUI 提供：
 
 模型 checkpoint 保存了模型、optimizer、best model、early-stop 状态、当前 epoch、
 batch 调度、下一 batch 位置和 NumPy RNG 状态，因此停止后的恢复不是简单从上一
-完整 epoch 重新开始。
+完整 epoch 重新开始。同一 GUI 会话中停止后再次启动时，已有训练曲线也会保留并
+继续追加；选择“重新训练”时才清空当前曲线。
 
 ## Teacher 数据缓存
 
@@ -144,7 +145,10 @@ Teacher 参数空间不变但 `count` 增加时：
 - teacher cache 继续复用；
 - 不兼容的模型 checkpoint 不会被错误载入。
 
-只把 `epochs` 调大时可以继续已有 checkpoint，用于自然的续训/延长训练。
+训练处于 `running`/`stopped` 状态时可以从精确 batch 边界续训。如果一次训练已经
+正常 `completed` 并选出了 best model，则该完成 checkpoint 视为终态，不自动把
+best-state 与最后一个 optimizer-state 拼接起来继续训练。此时若要增加 epoch，使用
+“忽略模型 checkpoint 重新训练”即可；昂贵的 teacher 数据仍从原缓存直接复用。
 
 ## 主要可配置区域
 
