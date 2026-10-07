@@ -11,11 +11,10 @@ from .prediction import StructuredPortPrediction
 def reciprocalize_dissipation_matrices(matrices):
     """Project Hermitian loss matrices onto the reciprocal real-symmetric cone.
 
-    A reciprocal multiport has a real-symmetric dissipative operator.  Pointwise
-    Joule matrices obtained from a finite collocation field can carry small (or,
-    for difficult random scenes, large) imaginary antisymmetric cross terms.
-    Taking the real part of the Hermitian projection preserves positive
-    semidefiniteness while enforcing the reciprocal port convention.
+    A reciprocal multiport has a real-symmetric dissipative operator. Pointwise
+    Joule matrices obtained from a finite collocation field can carry imaginary
+    antisymmetric cross terms. Taking the real part of the Hermitian projection
+    preserves positive semidefiniteness while enforcing reciprocity.
     """
     value = np.asarray(matrices, dtype=complex)
     hermitian = 0.5 * (
@@ -99,9 +98,43 @@ class PreparedTensorEnergyReferenceLossField:
         )
 
     def raw_background_dissipation_matrices(self, points):
-        return reciprocalize_dissipation_matrices(
-            self.base.raw_background_dissipation_matrices(points)
+        points = np.asarray(points, dtype=float)
+        scalar = points.ndim == 1
+        points = np.atleast_2d(points)
+        transmission = self.result.tensor_electric_transmission
+        if transmission is None:
+            raw = self.base.raw_background_dissipation_matrices(points)
+            raw = raw[None, :, :] if raw.ndim == 2 else raw
+            projected = reciprocalize_dissipation_matrices(raw)
+            return projected[0] if scalar else projected
+
+        n_ports = self.port_prediction.impedance.shape[0]
+        out = np.zeros(
+            (len(points), n_ports, n_ports),
+            dtype=complex,
         )
+        if self.scene.medium.loss_conductivity(self.frequency_hz) <= 0.0:
+            return out[0] if scalar else out
+
+        exterior = np.asarray(
+            self.base._background_domain_mask(points),
+            dtype=bool,
+        )
+        if np.any(exterior):
+            transfer = self.electric_field_transfer(points[exterior])
+            if transfer.ndim == 2:
+                transfer = transfer[None, :, :]
+            conductivity = transmission.conductivity_tensor_at(
+                points[exterior]
+            )
+            matrices = np.einsum(
+                "qdi,qde,qej->qij",
+                transfer.conj(),
+                conductivity,
+                transfer,
+            )
+            out[exterior] = reciprocalize_dissipation_matrices(matrices)
+        return out[0] if scalar else out
 
     def background_dissipation_matrices(self, points):
         return self.raw_background_dissipation_matrices(points)
@@ -204,17 +237,17 @@ def prepare_tensor_spatial_reference_adaptive(
 ) -> TensorSpatialReferenceCalibration:
     """Build one reciprocal energy truth shared by tensor port and spatial data.
 
-    The tensor MFS potential is a point-collocation approximation.  Its
+    The tensor MFS potential is a point-collocation approximation. Its
     ``omega*Im(V_eff)`` loss can differ structurally from the actual Joule
     integral of the reconstructed field over the physical material domain,
-    especially because conductor volume is excluded from that domain.  Trying
+    especially because conductor volume is excluded from that domain. Trying
     to force the two operators together with a congruence transform fails when
     their dissipative subspaces have different rank.
 
     For tensor-electric truth, the continuous Joule integral is therefore the
-    canonical environment-loss operator.  The port impedance keeps the solved
+    canonical environment-loss operator. The port impedance keeps the solved
     reactive part, while its dissipative part is replaced by the sum of the
-    reciprocalized conductor and environment channels.  Port and pointwise
+    reciprocalized conductor and environment channels. Port and pointwise
     spatial labels then use exactly the same energy definition.
 
     ``maximum_raw_closure_error`` remains a diagnostic target and
