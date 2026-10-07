@@ -55,14 +55,49 @@ class TensorHybridSpatialTeacherSample:
         port_sample: TensorHybridTeacherSample,
         *,
         teacher_config: MQSConfig | None = None,
-        package_volume_axial_order: int = 6,
-        package_volume_radial_order: int = 4,
-        package_volume_azimuthal_order: int = 16,
-        background_radial_order: int = 10,
-        background_angular_order: int = 32,
-        maximum_raw_spatial_closure_error: float = 0.35,
+        package_volume_axial_order: int | None = None,
+        package_volume_radial_order: int | None = None,
+        package_volume_azimuthal_order: int | None = None,
+        background_radial_order: int | None = None,
+        background_angular_order: int | None = None,
+        maximum_raw_spatial_closure_error: float | None = None,
         maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridSpatialTeacherSample":
+        # When callers do not explicitly request a new spatial truth
+        # resolution, reproduce the exact energy quadrature used by the port
+        # sample.  This prevents a port sample from silently changing its
+        # physical label when spatial truth is attached later.
+        package_volume_axial_order = int(
+            port_sample.package_volume_axial_order
+            if package_volume_axial_order is None
+            else package_volume_axial_order
+        )
+        package_volume_radial_order = int(
+            port_sample.package_volume_radial_order
+            if package_volume_radial_order is None
+            else package_volume_radial_order
+        )
+        package_volume_azimuthal_order = int(
+            port_sample.package_volume_azimuthal_order
+            if package_volume_azimuthal_order is None
+            else package_volume_azimuthal_order
+        )
+        background_radial_order = int(
+            port_sample.background_radial_order
+            if background_radial_order is None
+            else background_radial_order
+        )
+        background_angular_order = int(
+            port_sample.background_angular_order
+            if background_angular_order is None
+            else background_angular_order
+        )
+        maximum_raw_spatial_closure_error = float(
+            port_sample.maximum_raw_spatial_closure_error
+            if maximum_raw_spatial_closure_error is None
+            else maximum_raw_spatial_closure_error
+        )
+
         if (
             package_volume_axial_order < 2
             or package_volume_radial_order < 2
@@ -74,6 +109,10 @@ class TensorHybridSpatialTeacherSample:
         if int(maximum_spatial_quadrature_refinements) < 0:
             raise ValueError(
                 "maximum_spatial_quadrature_refinements must be nonnegative"
+            )
+        if maximum_raw_spatial_closure_error <= 0.0:
+            raise ValueError(
+                "maximum_raw_spatial_closure_error must be positive"
             )
 
         scene = port_sample.scene
@@ -125,12 +164,12 @@ class TensorHybridSpatialTeacherSample:
             raw_magnetic_reciprocity_defect=float(
                 result.raw_magnetic_reciprocity_defect
             ),
-            package_volume_axial_order=int(package_volume_axial_order),
-            package_volume_radial_order=int(package_volume_radial_order),
-            package_volume_azimuthal_order=int(package_volume_azimuthal_order),
-            background_radial_order=int(background_radial_order),
-            background_angular_order=int(background_angular_order),
-            maximum_raw_spatial_closure_error=float(
+            package_volume_axial_order=package_volume_axial_order,
+            package_volume_radial_order=package_volume_radial_order,
+            package_volume_azimuthal_order=package_volume_azimuthal_order,
+            background_radial_order=background_radial_order,
+            background_angular_order=background_angular_order,
+            maximum_raw_spatial_closure_error=(
                 maximum_raw_spatial_closure_error
             ),
             reference_backend=TENSOR_HYBRID_REFERENCE_BACKEND,
@@ -263,9 +302,9 @@ class TensorHybridSpatialTeacherSample:
             conductor_spatial_loss=conductor_spatial,
             package_spatial_loss=package_spatial,
             background_spatial_loss=background_spatial,
-            package_volume_axial_order=int(package_volume_axial_order),
-            package_volume_radial_order=int(package_volume_radial_order),
-            package_volume_azimuthal_order=int(package_volume_azimuthal_order),
-            background_radial_order=int(background_radial_order),
-            background_angular_order=int(background_angular_order),
+            package_volume_axial_order=package_volume_axial_order,
+            package_volume_radial_order=package_volume_radial_order,
+            package_volume_azimuthal_order=package_volume_azimuthal_order,
+            background_radial_order=background_radial_order,
+            background_angular_order=background_angular_order,
         )
