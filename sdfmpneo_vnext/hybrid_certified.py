@@ -45,8 +45,8 @@ def certify_dielectric_ports(
     """REFERENCE-backed certification for heterogeneous/tensor electric scenes.
 
     Tensor-electric scenes use the same continuous E^H sigma E energy truth as
-    tensor FAST training and tensor REFERENCE queries.  Scalar heterogeneous
-    scenes retain the original dense interface reference definition.
+    tensor FAST training, tensor REFERENCE queries, and convergence checks.
+    Scalar heterogeneous scenes retain the original dense interface reference.
     """
     if not hasattr(artifact, "predict_structured"):
         raise TypeError("artifact must expose predict_structured")
@@ -97,6 +97,11 @@ def certify_dielectric_ports(
             magnetic_volume_axial_order=magnetic_volume_axial_order,
             magnetic_volume_radial_order=magnetic_volume_radial_order,
             magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
+            energy_volume_axial_order=energy_volume_axial_order,
+            energy_volume_radial_order=energy_volume_radial_order,
+            energy_volume_azimuthal_order=energy_volume_azimuthal_order,
+            energy_background_radial_order=energy_background_radial_order,
+            energy_background_angular_order=energy_background_angular_order,
             tolerance=convergence_tolerance,
             surface_residual_tolerance=(
                 surface_tolerance
@@ -154,13 +159,9 @@ def certify_dielectric_ports(
         raise ValueError("FAST artifact returned the wrong port-matrix shape")
 
     scale = max(float(np.linalg.norm(impedance)), 1e-30)
-    reciprocity = float(
-        np.linalg.norm(impedance - impedance.T) / scale
-    )
+    reciprocity = float(np.linalg.norm(impedance - impedance.T) / scale)
     dissipation = 0.5 * (impedance + impedance.conj().T)
-    minimum_dissipation = float(
-        np.min(np.linalg.eigvalsh(dissipation))
-    )
+    minimum_dissipation = float(np.min(np.linalg.eigvalsh(dissipation)))
     power_closure = float(result.prediction.power_closure_error())
     physical_residual = float(
         max(
@@ -191,12 +192,8 @@ def certify_dielectric_ports(
         correction = float("inf")
         fast_domain_valid = False
     else:
-        correction = float(
-            np.linalg.norm(impedance - fast_impedance) / scale
-        )
-        fast_domain_valid = bool(
-            correction <= fast_domain_correction_limit
-        )
+        correction = float(np.linalg.norm(impedance - fast_impedance) / scale)
+        fast_domain_valid = bool(correction <= fast_domain_correction_limit)
     reference_discretization_certified = bool(
         convergence_report is not None
         and getattr(convergence_report, "converged", False)
