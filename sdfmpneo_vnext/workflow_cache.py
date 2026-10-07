@@ -17,11 +17,10 @@ from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybri
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
 
 
-CACHE_SCHEMA = 2
+CACHE_SCHEMA = 3
 
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
-    "tensor-electric effective potential failed the raw reciprocity diagnostic:",
     "tensor-electric MFS solve did not meet the declared residual tolerance:",
     "tensor-electric MFS system is rank deficient",
     "failed to place tensor-electric MFS sources",
@@ -29,7 +28,6 @@ _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
     "magnetic permeability correction failed the raw reciprocity diagnostic:",
     "dielectric Schur potential failed the raw reciprocity diagnostic:",
     "DC conduction Schur potential failed the raw reciprocity diagnostic:",
-    "tensor spatial REFERENCE closure remained outside tolerance after ",
 )
 
 
