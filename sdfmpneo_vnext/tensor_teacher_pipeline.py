@@ -99,10 +99,6 @@ def generate_tensor_teacher_once(
         ),
     )
     result = teacher.solve()
-
-    # Tensor port loss and tensor spatial loss share this same continuous-field
-    # energy operator.  Do this even for port-only samples so a given scene has
-    # one canonical teacher label independent of which training consumer asks.
     calibration = prepare_tensor_spatial_reference_adaptive(
         teacher,
         result,
@@ -127,9 +123,7 @@ def generate_tensor_teacher_once(
             2.0 * np.pi * frequency_hz * baseline.inductance
         ),
         target_impedance=calibration.target_impedance,
-        target_dissipation_channels=(
-            calibration.target_dissipation_channels
-        ),
+        target_dissipation_channels=calibration.target_dissipation_channels,
         baseline_segments=int(baseline_segments),
         surface_vertical_order=int(surface_vertical_order),
         surface_azimuthal_order=int(surface_azimuthal_order),
@@ -142,6 +136,20 @@ def generate_tensor_teacher_once(
         raw_magnetic_reciprocity_defect=float(
             result.raw_magnetic_reciprocity_defect
         ),
+        magnetic_volume_axial_order=int(magnetic_volume_axial_order),
+        magnetic_volume_radial_order=int(magnetic_volume_radial_order),
+        magnetic_volume_azimuthal_order=int(magnetic_volume_azimuthal_order),
+        maximum_raw_magnetic_reciprocity_defect=float(
+            maximum_raw_magnetic_reciprocity_defect
+        ),
+        package_volume_axial_order=int(package_volume_axial_order),
+        package_volume_radial_order=int(package_volume_radial_order),
+        package_volume_azimuthal_order=int(package_volume_azimuthal_order),
+        background_radial_order=int(background_radial_order),
+        background_angular_order=int(background_angular_order),
+        maximum_raw_spatial_closure_error=float(
+            maximum_raw_spatial_closure_error
+        ),
     )
     if not include_spatial:
         return port
@@ -151,7 +159,10 @@ def generate_tensor_teacher_once(
     for index, segment in enumerate(segments):
         coil_segments.setdefault(int(segment.coil), []).append(index)
     local_position = {
-        coil: {segment_index: position for position, segment_index in enumerate(indices)}
+        coil: {
+            segment_index: position
+            for position, segment_index in enumerate(indices)
+        }
         for coil, indices in coil_segments.items()
     }
     conductor_coil = []
