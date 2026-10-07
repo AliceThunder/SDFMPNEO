@@ -4,8 +4,11 @@ from dataclasses import dataclass, is_dataclass, replace
 
 import numpy as np
 
+from .exterior_quadrature import conductor_volume_mask
+from .hybrid_domain import package_domain_topology
 from .hybrid_field import PreparedHybridReferenceLossField
 from .prediction import StructuredPortPrediction
+from .scene import TensorElectricMaterial
 
 
 def reciprocalize_dissipation_matrices(matrices):
@@ -24,6 +27,22 @@ def reciprocalize_dissipation_matrices(matrices):
     return np.asarray(
         np.real(hermitian),
         dtype=complex,
+    )
+
+
+def _material_loss_tensor(material, frequency_hz: float, *, rotation=None):
+    if isinstance(material, TensorElectricMaterial):
+        tensor = np.asarray(
+            material.loss_conductivity_tensor(frequency_hz),
+            dtype=float,
+        )
+        if rotation is not None:
+            rotation = np.asarray(rotation, dtype=float)
+            tensor = rotation @ tensor @ rotation.T
+        return tensor
+    return (
+        float(material.loss_conductivity(frequency_hz))
+        * np.eye(3, dtype=float)
     )
 
 
@@ -65,9 +84,55 @@ class PreparedTensorEnergyReferenceLossField:
         )
 
     def raw_package_dissipation_matrices(self, package_index: int, points):
-        return reciprocalize_dissipation_matrices(
-            self.base.raw_package_dissipation_matrices(package_index, points)
+        if not 0 <= package_index < len(self.scene.packages):
+            raise IndexError("package_index out of range")
+        points = np.asarray(points, dtype=float)
+        scalar = points.ndim == 1
+        points = np.atleast_2d(points)
+        package = self.scene.packages[package_index]
+        topology = package_domain_topology(self.scene.packages)
+        region = np.asarray(
+            topology.deepest_containing(
+                self.scene.packages,
+                points,
+                tolerance=2e-12,
+            ),
+            dtype=int,
         )
+        inside = region == package_index
+        if np.any(inside):
+            inside &= ~np.asarray(
+                conductor_volume_mask(
+                    self.scene,
+                    points,
+                    segments=self.teacher.conductor_teacher._mqs._segments,
+                ),
+                dtype=bool,
+            )
+
+        n_ports = self.port_prediction.impedance.shape[0]
+        out = np.zeros(
+            (len(points), n_ports, n_ports),
+            dtype=complex,
+        )
+        if np.any(inside):
+            conductivity = _material_loss_tensor(
+                package.material,
+                self.frequency_hz,
+                rotation=package.geometry.pose.rotation,
+            )
+            if np.linalg.norm(conductivity) > 0.0:
+                transfer = self.electric_field_transfer(points[inside])
+                if transfer.ndim == 2:
+                    transfer = transfer[None, :, :]
+                matrices = np.einsum(
+                    "qdi,de,qej->qij",
+                    transfer.conj(),
+                    conductivity,
+                    transfer,
+                )
+                out[inside] = reciprocalize_dissipation_matrices(matrices)
+        return out[0] if scalar else out
 
     def package_dissipation_matrices(self, package_index: int, points):
         return self.raw_package_dissipation_matrices(package_index, points)
@@ -101,19 +166,16 @@ class PreparedTensorEnergyReferenceLossField:
         points = np.asarray(points, dtype=float)
         scalar = points.ndim == 1
         points = np.atleast_2d(points)
-        transmission = self.result.tensor_electric_transmission
-        if transmission is None:
-            raw = self.base.raw_background_dissipation_matrices(points)
-            raw = raw[None, :, :] if raw.ndim == 2 else raw
-            projected = reciprocalize_dissipation_matrices(raw)
-            return projected[0] if scalar else projected
-
         n_ports = self.port_prediction.impedance.shape[0]
         out = np.zeros(
             (len(points), n_ports, n_ports),
             dtype=complex,
         )
-        if self.scene.medium.loss_conductivity(self.frequency_hz) <= 0.0:
+        conductivity = _material_loss_tensor(
+            self.scene.medium,
+            self.frequency_hz,
+        )
+        if np.linalg.norm(conductivity) <= 0.0:
             return out[0] if scalar else out
 
         exterior = np.asarray(
@@ -124,11 +186,8 @@ class PreparedTensorEnergyReferenceLossField:
             transfer = self.electric_field_transfer(points[exterior])
             if transfer.ndim == 2:
                 transfer = transfer[None, :, :]
-            conductivity = transmission.conductivity_tensor_at(
-                points[exterior]
-            )
             matrices = np.einsum(
-                "qdi,qde,qej->qij",
+                "qdi,de,qej->qij",
                 transfer.conj(),
                 conductivity,
                 transfer,
@@ -204,7 +263,11 @@ def _integrated_tensor_environment(
         (n_ports, n_ports),
         dtype=complex,
     )
-    if scene.medium.loss_conductivity(prepared.frequency_hz) > 0.0:
+    background_loss = _material_loss_tensor(
+        scene.medium,
+        prepared.frequency_hz,
+    )
+    if np.linalg.norm(background_loss) > 0.0:
         points, weights = prepared.background_quadrature(
             radial_order=background_radial_order,
             angular_order=background_angular_order,
