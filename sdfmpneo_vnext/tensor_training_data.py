@@ -12,6 +12,7 @@ from .tensor_features import (
     EncodedTensorHybridScene,
     encode_tensor_hybrid_scene_invariant,
 )
+from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 
 
 TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs"
@@ -177,6 +178,13 @@ class TensorHybridTeacherSample:
         magnetic_volume_radial_order: int = 6,
         magnetic_volume_azimuthal_order: int = 24,
         maximum_raw_magnetic_reciprocity_defect: float = 0.08,
+        package_volume_axial_order: int = 6,
+        package_volume_radial_order: int = 4,
+        package_volume_azimuthal_order: int = 16,
+        background_radial_order: int = 10,
+        background_angular_order: int = 32,
+        maximum_raw_spatial_closure_error: float = 0.35,
+        maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridTeacherSample":
         if not scene.packages:
             raise ValueError(
@@ -198,7 +206,7 @@ class TensorHybridTeacherSample:
                 baseline_segments
             ),
         )
-        result = DielectricCoupledMixedTeacher(
+        teacher = DielectricCoupledMixedTeacher(
             scene,
             frequency_hz,
             teacher_config
@@ -221,7 +229,23 @@ class TensorHybridTeacherSample:
             maximum_raw_magnetic_reciprocity_defect=(
                 maximum_raw_magnetic_reciprocity_defect
             ),
-        ).solve()
+        )
+        result = teacher.solve()
+        calibration = prepare_tensor_spatial_reference_adaptive(
+            teacher,
+            result,
+            volume_axial_order=int(package_volume_axial_order),
+            volume_radial_order=int(package_volume_radial_order),
+            volume_azimuthal_order=int(package_volume_azimuthal_order),
+            background_radial_order=int(background_radial_order),
+            background_angular_order=int(background_angular_order),
+            maximum_raw_closure_error=float(
+                maximum_raw_spatial_closure_error
+            ),
+            maximum_quadrature_refinements=int(
+                maximum_spatial_quadrature_refinements
+            ),
+        )
         return TensorHybridTeacherSample(
             scene=scene,
             frequency_hz=float(
@@ -240,10 +264,10 @@ class TensorHybridTeacherSample:
                 * baseline.inductance
             ),
             target_impedance=(
-                result.impedance
+                calibration.target_impedance
             ),
             target_dissipation_channels=(
-                result.prediction.dissipation_channels
+                calibration.target_dissipation_channels
             ),
             baseline_segments=int(
                 baseline_segments
@@ -261,7 +285,7 @@ class TensorHybridTeacherSample:
                 result.raw_potential_reciprocity_defect
             ),
             power_closure_error=float(
-                result.power_closure_error
+                calibration.power_closure_error
             ),
             magnetic_surface_residual=float(
                 result.magnetic_surface_residual
