@@ -133,6 +133,7 @@ def generate_tensor_teacher_once(
         raw_magnetic_reciprocity_defect=float(
             result.raw_magnetic_reciprocity_defect
         ),
+        teacher_config=config,
         magnetic_volume_axial_order=int(magnetic_volume_axial_order),
         magnetic_volume_radial_order=int(magnetic_volume_radial_order),
         magnetic_volume_azimuthal_order=int(magnetic_volume_azimuthal_order),
