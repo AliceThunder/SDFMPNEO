@@ -15,7 +15,7 @@ from .tensor_features import (
 from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 
 
-TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs_energy_v2"
+TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs_energy_v3"
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,10 @@ class TensorHybridTeacherSample:
             or np.any(~np.isfinite(reactance))
         ):
             raise ValueError("tensor hybrid teacher matrices must be finite")
+        if self.reference_backend != TENSOR_HYBRID_REFERENCE_BACKEND:
+            raise ValueError(
+                "tensor teacher sample uses an incompatible reference backend"
+            )
         if self.baseline_segments < 8:
             raise ValueError("baseline_segments must be >= 8")
         if self.surface_vertical_order < 2 or self.surface_azimuthal_order < 4:
