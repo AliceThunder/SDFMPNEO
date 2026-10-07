@@ -37,7 +37,10 @@ from .tensor_features import (
 from .tensor_training_data import TensorHybridTeacherSample
 
 
-TENSOR_HYBRID_ARTIFACT_SCHEMA = 1
+# Schema 2 is the first tensor FAST artifact trained against the canonical
+# continuous E^H sigma E energy truth.  Schema-1 weights used the historical
+# Im(V_eff) loss target and must not be loaded silently into this runtime.
+TENSOR_HYBRID_ARTIFACT_SCHEMA = 2
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,7 @@ def _state_dtype(state_dict):
 class TensorHybridNeuralResidualArtifact:
     """Tensor-aware FAST port artifact with hard passive channel decoding."""
 
+    artifact_schema = TENSOR_HYBRID_ARTIFACT_SCHEMA
     supports_packages = True
     supports_lossy_background = True
     supports_tensor_electric = True
