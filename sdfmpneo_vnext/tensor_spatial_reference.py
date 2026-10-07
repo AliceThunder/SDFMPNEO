@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, replace
 
 import numpy as np
 
@@ -357,11 +357,27 @@ def prepare_tensor_spatial_reference_adaptive(
             f"relative error={closure_error:.3e}"
         )
 
+    corrected_result = result
+    if is_dataclass(result) and is_dataclass(result.mixed_result):
+        corrected_mixed_result = replace(
+            result.mixed_result,
+            impedance=np.asarray(corrected_impedance, dtype=complex),
+        )
+        corrected_result = replace(
+            result,
+            mixed_result=corrected_mixed_result,
+            prediction=corrected_prediction,
+            dielectric_dissipation_matrix=np.asarray(
+                environment_channel,
+                dtype=complex,
+            ),
+        )
+
     final_base = PreparedHybridReferenceLossField(
         scene=teacher.scene,
         frequency_hz=float(teacher.frequency_hz),
         teacher=teacher,
-        result=result,
+        result=corrected_result,
         port_prediction=corrected_prediction,
         package_transform=identity,
         raw_dielectric_closure_error=raw_error,
