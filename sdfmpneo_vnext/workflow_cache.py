@@ -15,10 +15,10 @@ from .em import MQSConfig
 from .sampling import HybridSceneSamplerConfig, MVPSceneSamplerConfig
 from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybrid_scene
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
+from .tensor_training_data import TENSOR_HYBRID_REFERENCE_BACKEND
 
 
-CACHE_SCHEMA = 5
-
+CACHE_SCHEMA = 6
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
     "tensor-electric MFS solve did not meet the declared residual tolerance:",
@@ -74,9 +74,13 @@ def teacher_cache_payload(config) -> dict:
     if isinstance(sampler, dict):
         sampler.pop("maximum_scene_attempts", None)
     truth = dict(_jsonable(config["TRUTH"]))
+    # The v3 energy teacher no longer adaptively changes quadrature based on
+    # raw port/spatial mismatch, so this compatibility knob does not alter a
+    # successfully generated label.
     truth.pop("maximum_spatial_quadrature_refinements", None)
     return {
         "schema": CACHE_SCHEMA,
+        "reference_backend": TENSOR_HYBRID_REFERENCE_BACKEND,
         "seed": int(data["seed"]),
         "sampler": sampler,
         "teacher": _jsonable(config["TEACHER"]),
@@ -147,7 +151,7 @@ def _generate_job(payload):
 
 
 class TensorTeacherCache:
-    """Content-addressed, append-only cache of deterministic teacher samples."""
+    """Content-addressed append-only cache with per-sample durable commits."""
 
     def __init__(self, root, config, *, verify_checksums: bool = True):
         self.root = Path(root).expanduser().resolve(strict=False)
@@ -207,12 +211,10 @@ class TensorTeacherCache:
         path = self.path / entry["path"]
         if not path.is_file():
             return False
-        if (
-            self.verify_checksums
-            and _sha256_file(path) != str(entry.get("sha256", ""))
-        ):
-            return False
-        return True
+        return bool(
+            not self.verify_checksums
+            or _sha256_file(path) == str(entry.get("sha256", ""))
+        )
 
     def existing_indices(self) -> tuple[int, ...]:
         result = []
@@ -229,9 +231,7 @@ class TensorTeacherCache:
         if int(count) < 1:
             raise ValueError("teacher sample count must be positive")
         return tuple(
-            index
-            for index in range(int(count))
-            if not self._valid_entry(index)
+            index for index in range(int(count)) if not self._valid_entry(index)
         )
 
     def load(self, index: int):
@@ -255,10 +255,9 @@ class TensorTeacherCache:
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
-        digest = _sha256_file(path)
         self._manifest.setdefault("samples", {})[str(index)] = {
             "path": str(path.relative_to(self.path)),
-            "sha256": digest,
+            "sha256": _sha256_file(path),
             "size": int(path.stat().st_size),
         }
         self._write_manifest()
@@ -271,16 +270,17 @@ class TensorTeacherCache:
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[dict], None] | None = None,
     ):
-        """Generate missing shards and persist each success immediately."""
         data = dict(config["DATA"])
         missing = list(self.missing_indices(count))
+        completed = int(count) - len(missing)
+
         if progress is not None:
             progress(
                 {
                     "phase": "teacher_cache",
                     "cache_key": self.key,
                     "requested": int(count),
-                    "cached": int(count) - len(missing),
+                    "cached": completed,
                     "missing": len(missing),
                     "cache_path": str(self.path),
                 }
@@ -295,11 +295,9 @@ class TensorTeacherCache:
         workers = max(1, int(data["workers"]))
         native_threads = max(0, int(data["native_threads_per_worker"]))
         chunk_size = max(1, int(data.get("generation_chunk_size", workers)))
-        maximum_teacher_attempts = int(data.get("maximum_teacher_attempts", 8))
-        if maximum_teacher_attempts < 1:
+        maximum_attempts = int(data.get("maximum_teacher_attempts", 8))
+        if maximum_attempts < 1:
             raise ValueError("DATA.maximum_teacher_attempts must be positive")
-
-        completed = int(count) - len(missing)
 
         def persist(result):
             nonlocal completed
@@ -324,14 +322,7 @@ class TensorTeacherCache:
                 checkpoint()
             indices = missing[start : start + chunk_size]
             jobs = [
-                (
-                    index,
-                    seed,
-                    sampler,
-                    teacher,
-                    truth,
-                    maximum_teacher_attempts,
-                )
+                (index, seed, sampler, teacher, truth, maximum_attempts)
                 for index in indices
             ]
             if workers == 1:
@@ -351,10 +342,7 @@ class TensorTeacherCache:
                     initializer=_worker_init,
                     initargs=(native_threads,),
                 ) as executor:
-                    futures = [
-                        executor.submit(_generate_job, job)
-                        for job in jobs
-                    ]
+                    futures = [executor.submit(_generate_job, job) for job in jobs]
                     for future in as_completed(futures):
                         try:
                             persist(future.result())
@@ -365,4 +353,5 @@ class TensorTeacherCache:
                     raise first_error
             if checkpoint is not None:
                 checkpoint()
+
         return self.load_many(count)
