@@ -15,7 +15,7 @@ from .tensor_features import (
 from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 
 
-TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs"
+TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs_energy_v2"
 
 
 @dataclass(frozen=True)
