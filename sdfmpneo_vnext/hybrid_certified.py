@@ -5,13 +5,10 @@ import numpy as np
 from .certification import PortCertificate
 from .certified import CertifiedPortResult
 from .em import MQSConfig
-from .hybrid_dielectric import (
-    DielectricCoupledMixedTeacher,
-)
-from .hybrid_convergence import (
-    hybrid_reference_convergence,
-)
+from .hybrid_dielectric import DielectricCoupledMixedTeacher
+from .hybrid_convergence import hybrid_reference_convergence
 from .scene import Scene
+from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 
 
 def certify_dielectric_ports(
@@ -31,6 +28,12 @@ def certify_dielectric_ports(
     magnetic_volume_axial_order: int = 8,
     magnetic_volume_radial_order: int = 6,
     magnetic_volume_azimuthal_order: int = 24,
+    energy_volume_axial_order: int = 8,
+    energy_volume_radial_order: int = 6,
+    energy_volume_azimuthal_order: int = 24,
+    energy_background_radial_order: int = 12,
+    energy_background_angular_order: int = 48,
+    maximum_raw_energy_closure_error: float = 0.25,
     algebraic_tolerance: float = 1e-9,
     surface_tolerance: float = 1e-9,
     reciprocity_tolerance: float = 1e-8,
@@ -41,22 +44,14 @@ def certify_dielectric_ports(
 ) -> CertifiedPortResult:
     """REFERENCE-backed certification for heterogeneous/tensor electric scenes.
 
-    The full dense electric/magnetic interface system is the correctness
-    backend. Scenes may contain package material interfaces, a tensor-electric
-    homogeneous infinite background, or both. FAST predictions remain optional
-    evidence and may fail closed outside their trained domain.
+    Tensor-electric scenes use the same continuous E^H sigma E energy truth as
+    tensor FAST training and tensor REFERENCE queries.  Scalar heterogeneous
+    scenes retain the original dense interface reference definition.
     """
-    if not hasattr(
-        artifact,
-        "predict_structured",
-    ):
-        raise TypeError(
-            "artifact must expose predict_structured"
-        )
+    if not hasattr(artifact, "predict_structured"):
+        raise TypeError("artifact must expose predict_structured")
     if convergence_tolerance <= 0.0:
-        raise ValueError(
-            "convergence_tolerance must be positive"
-        )
+        raise ValueError("convergence_tolerance must be positive")
     if (
         convergence_surface_residual_tolerance is not None
         and convergence_surface_residual_tolerance <= 0.0
@@ -79,35 +74,29 @@ def certify_dielectric_ports(
         or power_tolerance < 0.0
         or passivity_tolerance < 0.0
         or fast_domain_correction_limit < 0.0
+        or maximum_raw_energy_closure_error <= 0.0
     ):
-        raise ValueError(
-            "invalid dielectric certification tolerances"
-        )
+        raise ValueError("invalid dielectric certification tolerances")
+    if (
+        energy_volume_axial_order < 2
+        or energy_volume_radial_order < 2
+        or energy_volume_azimuthal_order < 8
+        or energy_background_radial_order < 3
+        or energy_background_angular_order < 8
+    ):
+        raise ValueError("invalid tensor certification energy quadrature")
 
     resolved_config = config or MQSConfig()
-    if (
-        convergence_report is None
-        and auto_convergence
-    ):
+    if convergence_report is None and auto_convergence:
         convergence_report = hybrid_reference_convergence(
             scene,
             frequency_hz,
             resolved_config,
-            surface_vertical_order=(
-                surface_vertical_order
-            ),
-            surface_azimuthal_order=(
-                surface_azimuthal_order
-            ),
-            magnetic_volume_axial_order=(
-                magnetic_volume_axial_order
-            ),
-            magnetic_volume_radial_order=(
-                magnetic_volume_radial_order
-            ),
-            magnetic_volume_azimuthal_order=(
-                magnetic_volume_azimuthal_order
-            ),
+            surface_vertical_order=surface_vertical_order,
+            surface_azimuthal_order=surface_azimuthal_order,
+            magnetic_volume_axial_order=magnetic_volume_axial_order,
+            magnetic_volume_radial_order=magnetic_volume_radial_order,
+            magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
             tolerance=convergence_tolerance,
             surface_residual_tolerance=(
                 surface_tolerance
@@ -125,85 +114,54 @@ def certify_dielectric_ports(
     fast_impedance = None
     fast_domain_reason = None
     try:
-        fast_prediction = artifact.predict_structured(
-            scene,
-            frequency_hz,
-        )
-        fast_impedance = np.asarray(
-            fast_prediction.impedance,
-            dtype=complex,
-        )
-    except (
-        ValueError,
-        NotImplementedError,
-    ) as exc:
+        fast_prediction = artifact.predict_structured(scene, frequency_hz)
+        fast_impedance = np.asarray(fast_prediction.impedance, dtype=complex)
+    except (ValueError, NotImplementedError) as exc:
         fast_domain_reason = str(exc)
 
     teacher = DielectricCoupledMixedTeacher(
         scene,
         frequency_hz,
         resolved_config,
-        surface_vertical_order=(
-            surface_vertical_order
-        ),
-        surface_azimuthal_order=(
-            surface_azimuthal_order
-        ),
-        magnetic_volume_axial_order=(
-            magnetic_volume_axial_order
-        ),
-        magnetic_volume_radial_order=(
-            magnetic_volume_radial_order
-        ),
-        magnetic_volume_azimuthal_order=(
-            magnetic_volume_azimuthal_order
-        ),
+        surface_vertical_order=surface_vertical_order,
+        surface_azimuthal_order=surface_azimuthal_order,
+        magnetic_volume_axial_order=magnetic_volume_axial_order,
+        magnetic_volume_radial_order=magnetic_volume_radial_order,
+        magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
         maximum_raw_magnetic_reciprocity_defect=(
             magnetic_reciprocity_tolerance
         ),
     )
     result = teacher.solve()
-    impedance = np.asarray(
-        result.impedance,
-        dtype=complex,
-    )
-    if (
-        fast_impedance is not None
-        and fast_impedance.shape != impedance.shape
-    ):
-        raise ValueError(
-            "FAST artifact returned the wrong port-matrix shape"
+    if result.tensor_electric_transmission is not None:
+        calibration = prepare_tensor_spatial_reference_adaptive(
+            teacher,
+            result,
+            volume_axial_order=int(energy_volume_axial_order),
+            volume_radial_order=int(energy_volume_radial_order),
+            volume_azimuthal_order=int(energy_volume_azimuthal_order),
+            background_radial_order=int(energy_background_radial_order),
+            background_angular_order=int(energy_background_angular_order),
+            maximum_raw_closure_error=float(
+                maximum_raw_energy_closure_error
+            ),
+            maximum_quadrature_refinements=0,
         )
+        result = calibration.prepared.result
 
-    scale = max(
-        float(
-            np.linalg.norm(
-                impedance
-            )
-        ),
-        1e-30,
-    )
+    impedance = np.asarray(result.impedance, dtype=complex)
+    if fast_impedance is not None and fast_impedance.shape != impedance.shape:
+        raise ValueError("FAST artifact returned the wrong port-matrix shape")
+
+    scale = max(float(np.linalg.norm(impedance)), 1e-30)
     reciprocity = float(
-        np.linalg.norm(
-            impedance
-            - impedance.T
-        )
-        / scale
+        np.linalg.norm(impedance - impedance.T) / scale
     )
-    dissipation = 0.5 * (
-        impedance
-        + impedance.conj().T
-    )
+    dissipation = 0.5 * (impedance + impedance.conj().T)
     minimum_dissipation = float(
-        np.min(
-            np.linalg.eigvalsh(
-                dissipation
-            )
-        )
+        np.min(np.linalg.eigvalsh(dissipation))
     )
-    power_closure = float(
-        result.prediction.power_closure_error()
-    )
+    power_closure = float(result.prediction.power_closure_error())
     physical_residual = float(
         max(
             result.mixed_result.normalized_residual,
@@ -212,12 +170,9 @@ def certify_dielectric_ports(
         )
     )
     algebraic_certified = bool(
-        result.mixed_result.normalized_residual
-        <= algebraic_tolerance
-        and result.surface_residual
-        <= surface_tolerance
-        and result.magnetic_surface_residual
-        <= surface_tolerance
+        result.mixed_result.normalized_residual <= algebraic_tolerance
+        and result.surface_residual <= surface_tolerance
+        and result.magnetic_surface_residual <= surface_tolerance
         and result.raw_magnetic_reciprocity_defect
         <= magnetic_reciprocity_tolerance
         and reciprocity <= reciprocity_tolerance
@@ -226,9 +181,7 @@ def certify_dielectric_ports(
     )
     port_certificate = PortCertificate(
         reciprocity_defect=reciprocity,
-        minimum_dissipation_eigenvalue=(
-            minimum_dissipation
-        ),
+        minimum_dissipation_eigenvalue=minimum_dissipation,
         power_closure_error=power_closure,
         algebraic_residual=physical_residual,
         certified=algebraic_certified,
@@ -239,31 +192,18 @@ def certify_dielectric_ports(
         fast_domain_valid = False
     else:
         correction = float(
-            np.linalg.norm(
-                impedance
-                - fast_impedance
-            )
-            / scale
+            np.linalg.norm(impedance - fast_impedance) / scale
         )
         fast_domain_valid = bool(
-            correction
-            <= fast_domain_correction_limit
+            correction <= fast_domain_correction_limit
         )
     reference_discretization_certified = bool(
         convergence_report is not None
-        and getattr(
-            convergence_report,
-            "converged",
-            False,
-        )
+        and getattr(convergence_report, "converged", False)
     )
     graded_discretization_certified = bool(
         graded_convergence_report is None
-        or getattr(
-            graded_convergence_report,
-            "converged",
-            False,
-        )
+        or getattr(graded_convergence_report, "converged", False)
     )
     discretization_certified = bool(
         reference_discretization_certified
@@ -286,18 +226,11 @@ def certify_dielectric_ports(
         port_certificate=port_certificate,
         initial_residual=physical_residual,
         final_residual=physical_residual,
-        correction_iterations=tuple(
-            0
-            for _ in range(
-                impedance.shape[0]
-            )
-        ),
+        correction_iterations=tuple(0 for _ in range(impedance.shape[0])),
         algebraic_certified=algebraic_certified,
         discretization_certified=discretization_certified,
         used_reference_fallback=True,
-        operator_backend=(
-            "dense_electric_magnetic_interface_reference"
-        ),
+        operator_backend="dense_electric_magnetic_interface_reference",
         relative_observable_correction=correction,
         fast_domain_valid=fast_domain_valid,
         fast_domain_reason=fast_domain_reason,
