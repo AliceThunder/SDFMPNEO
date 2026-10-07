@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, is_dataclass
 from hashlib import sha256
 import json
@@ -17,7 +17,7 @@ from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybri
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
 
 
-CACHE_SCHEMA = 3
+CACHE_SCHEMA = 4
 
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
@@ -71,23 +71,26 @@ def build_teacher_config(mapping) -> MQSConfig:
 def teacher_cache_payload(config) -> dict:
     data = dict(config["DATA"])
     sampler = _jsonable(config["SAMPLER"])
-    # Retry budgets control how long deterministic rejection sampling is allowed
-    # to search; they do not change already accepted teacher labels.  Keeping
-    # them out of the cache identity lets users increase robustness without
-    # discarding expensive valid shards.
+    # Rejection budgets affect search effort, not the accepted teacher label.
     if isinstance(sampler, dict):
         sampler.pop("maximum_scene_attempts", None)
+    truth = dict(_jsonable(config["TRUTH"]))
+    # This knob is retained for API compatibility; energy truth no longer uses
+    # raw port/spatial mismatch as a quadrature-refinement trigger.
+    truth.pop("maximum_spatial_quadrature_refinements", None)
     return {
         "schema": CACHE_SCHEMA,
         "seed": int(data["seed"]),
         "sampler": sampler,
         "teacher": _jsonable(config["TEACHER"]),
-        "truth": _jsonable(config["TRUTH"]),
+        "truth": truth,
     }
 
 
 def teacher_cache_key(config) -> str:
-    return sha256(canonical_json(teacher_cache_payload(config)).encode("utf-8")).hexdigest()
+    return sha256(
+        canonical_json(teacher_cache_payload(config)).encode("utf-8")
+    ).hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -103,7 +106,6 @@ def _worker_init(native_threads: int):
         return
     from threadpoolctl import threadpool_limits
 
-    # Keep the limiter object alive for the lifetime of the worker process.
     global _THREADPOOL_LIMITER
     _THREADPOOL_LIMITER = threadpool_limits(limits=int(native_threads))
 
@@ -148,13 +150,7 @@ def _generate_job(payload):
 
 
 class TensorTeacherCache:
-    """Content-addressed, append-only cache of deterministic teacher samples.
-
-    The cache directory identity intentionally excludes requested sample count,
-    worker count, rejection retry budgets, accelerator selection and optimizer
-    settings. Increasing the sample budget therefore only generates missing
-    deterministic index shards.
-    """
+    """Content-addressed, append-only cache of deterministic teacher samples."""
 
     def __init__(self, root, config, *, verify_checksums: bool = True):
         self.root = Path(root).expanduser().resolve(strict=False)
@@ -198,7 +194,8 @@ class TensorTeacherCache:
                 sort_keys=True,
                 ensure_ascii=False,
                 allow_nan=False,
-            ) + "\n",
+            )
+            + "\n",
             encoding="utf-8",
         )
         temporary.replace(self.manifest_path)
@@ -213,7 +210,10 @@ class TensorTeacherCache:
         path = self.path / entry["path"]
         if not path.is_file():
             return False
-        if self.verify_checksums and _sha256_file(path) != str(entry.get("sha256", "")):
+        if (
+            self.verify_checksums
+            and _sha256_file(path) != str(entry.get("sha256", ""))
+        ):
             return False
         return True
 
@@ -231,11 +231,17 @@ class TensorTeacherCache:
     def missing_indices(self, count: int) -> tuple[int, ...]:
         if int(count) < 1:
             raise ValueError("teacher sample count must be positive")
-        return tuple(index for index in range(int(count)) if not self._valid_entry(index))
+        return tuple(
+            index
+            for index in range(int(count))
+            if not self._valid_entry(index)
+        )
 
     def load(self, index: int):
         if not self._valid_entry(index):
-            raise FileNotFoundError(f"teacher cache sample {index} is unavailable or corrupt")
+            raise FileNotFoundError(
+                f"teacher cache sample {index} is unavailable or corrupt"
+            )
         entry = self._manifest["samples"][str(int(index))]
         with (self.path / entry["path"]).open("rb") as handle:
             return pickle.load(handle)
@@ -268,7 +274,7 @@ class TensorTeacherCache:
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[dict], None] | None = None,
     ):
-        """Generate only missing shards, returning samples [0, count)."""
+        """Generate missing shards and persist each success immediately."""
         data = dict(config["DATA"])
         missing = list(self.missing_indices(count))
         if progress is not None:
@@ -297,6 +303,25 @@ class TensorTeacherCache:
             raise ValueError("DATA.maximum_teacher_attempts must be positive")
 
         completed = int(count) - len(missing)
+
+        def persist(result):
+            nonlocal completed
+            index, sample = result
+            self.store(index, sample)
+            completed += 1
+            if progress is not None:
+                progress(
+                    {
+                        "phase": "teacher_cache",
+                        "cache_key": self.key,
+                        "requested": int(count),
+                        "cached": completed,
+                        "missing": int(count) - completed,
+                        "sample_index": int(index),
+                        "cache_path": str(self.path),
+                    }
+                )
+
         for start in range(0, len(missing), chunk_size):
             if checkpoint is not None:
                 checkpoint()
@@ -317,31 +342,30 @@ class TensorTeacherCache:
                     from threadpoolctl import threadpool_limits
 
                     with threadpool_limits(limits=native_threads):
-                        results = list(map(_generate_job, jobs))
+                        for result in map(_generate_job, jobs):
+                            persist(result)
                 else:
-                    results = list(map(_generate_job, jobs))
+                    for result in map(_generate_job, jobs):
+                        persist(result)
             else:
+                first_error = None
                 with ProcessPoolExecutor(
                     max_workers=min(workers, len(jobs)),
                     initializer=_worker_init,
                     initargs=(native_threads,),
                 ) as executor:
-                    results = list(executor.map(_generate_job, jobs, chunksize=1))
-            for index, sample in results:
-                self.store(index, sample)
-                completed += 1
-                if progress is not None:
-                    progress(
-                        {
-                            "phase": "teacher_cache",
-                            "cache_key": self.key,
-                            "requested": int(count),
-                            "cached": completed,
-                            "missing": int(count) - completed,
-                            "sample_index": int(index),
-                            "cache_path": str(self.path),
-                        }
-                    )
+                    futures = [
+                        executor.submit(_generate_job, job)
+                        for job in jobs
+                    ]
+                    for future in as_completed(futures):
+                        try:
+                            persist(future.result())
+                        except Exception as exc:
+                            if first_error is None:
+                                first_error = exc
+                if first_error is not None:
+                    raise first_error
             if checkpoint is not None:
                 checkpoint()
         return self.load_many(count)
