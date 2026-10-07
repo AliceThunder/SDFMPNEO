@@ -257,7 +257,7 @@ def _integrated_tensor_environment(
     package_channels = np.asarray(
         package_channels,
         dtype=complex,
-    )
+    ).reshape((-1, n_ports, n_ports))
 
     background_channel = np.zeros(
         (n_ports, n_ports),
