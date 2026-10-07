@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 
 from .analytic_baseline import analytic_port_baseline
@@ -37,6 +37,7 @@ class TensorHybridTeacherSample:
     power_closure_error: float
     magnetic_surface_residual: float = 0.0
     raw_magnetic_reciprocity_defect: float = 0.0
+    teacher_config: MQSConfig = field(default_factory=MQSConfig)
     magnetic_volume_axial_order: int = 8
     magnetic_volume_radial_order: int = 6
     magnetic_volume_azimuthal_order: int = 24
@@ -53,6 +54,8 @@ class TensorHybridTeacherSample:
         frequency = float(self.frequency_hz)
         if not np.isfinite(frequency) or frequency < 0.0:
             raise ValueError("frequency_hz must be finite and nonnegative")
+        if not isinstance(self.teacher_config, MQSConfig):
+            raise TypeError("teacher_config must be MQSConfig")
 
         impedance = np.asarray(self.target_impedance, dtype=complex)
         channels = np.asarray(self.target_dissipation_channels, dtype=complex)
@@ -147,6 +150,7 @@ class TensorHybridTeacherSample:
             raise ValueError(
                 "tensor hybrid teacher samples require at least one package"
             )
+        resolved_config = teacher_config or MQSConfig()
         encoded = encode_tensor_hybrid_scene_invariant(scene, frequency_hz)
         conductor_scene = Scene(scene.coils, scene.medium, ())
         baseline = analytic_port_baseline(
@@ -157,7 +161,7 @@ class TensorHybridTeacherSample:
         teacher = DielectricCoupledMixedTeacher(
             scene,
             frequency_hz,
-            teacher_config or MQSConfig(),
+            resolved_config,
             surface_vertical_order=surface_vertical_order,
             surface_azimuthal_order=surface_azimuthal_order,
             magnetic_volume_axial_order=magnetic_volume_axial_order,
@@ -207,6 +211,7 @@ class TensorHybridTeacherSample:
             raw_magnetic_reciprocity_defect=float(
                 result.raw_magnetic_reciprocity_defect
             ),
+            teacher_config=resolved_config,
             magnetic_volume_axial_order=int(magnetic_volume_axial_order),
             magnetic_volume_radial_order=int(magnetic_volume_radial_order),
             magnetic_volume_azimuthal_order=int(
