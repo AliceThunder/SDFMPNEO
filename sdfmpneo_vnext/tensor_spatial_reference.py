@@ -11,23 +11,56 @@ from .prediction import StructuredPortPrediction
 from .scene import TensorElectricMaterial
 
 
-def reciprocalize_dissipation_matrices(matrices):
-    """Project Hermitian loss matrices onto the reciprocal real-symmetric cone.
-
-    A reciprocal multiport has a real-symmetric dissipative operator. Pointwise
-    Joule matrices obtained from a finite collocation field can carry imaginary
-    antisymmetric cross terms. Taking the real part of the Hermitian projection
-    preserves positive semidefiniteness while enforcing reciprocity.
-    """
+def _hermitian(matrices):
     value = np.asarray(matrices, dtype=complex)
-    hermitian = 0.5 * (
-        value
-        + value.conj().swapaxes(-1, -2)
+    return 0.5 * (value + value.conj().swapaxes(-1, -2))
+
+
+def reciprocalize_dissipation_matrices(matrices):
+    """Project an integrated Hermitian loss operator to reciprocal resistance."""
+    return np.asarray(np.real(_hermitian(matrices)), dtype=complex)
+
+
+def _stable_cholesky(matrix):
+    matrix = _hermitian(matrix)
+    try:
+        return np.linalg.cholesky(matrix)
+    except np.linalg.LinAlgError:
+        diagonal = np.real(np.diag(matrix))
+        scale = max(
+            float(np.max(np.abs(diagonal))) if diagonal.size else 0.0,
+            float(np.linalg.norm(matrix)) / max(matrix.shape[0], 1),
+            np.finfo(float).tiny,
+        )
+        eye = np.eye(matrix.shape[0], dtype=complex)
+        for relative in (1e-14, 1e-12, 1e-10, 1e-8):
+            try:
+                return np.linalg.cholesky(
+                    matrix + relative * scale * eye
+                )
+            except np.linalg.LinAlgError:
+                continue
+    raise RuntimeError(
+        "tensor energy loss operator is not positive semidefinite enough for "
+        "the reciprocal energy projection"
     )
-    return np.asarray(
-        np.real(hermitian),
-        dtype=complex,
+
+
+def _energy_congruence(raw_total, reciprocal_target):
+    """Map raw total Joule energy to reciprocal resistance with one transform."""
+    raw_factor = _stable_cholesky(raw_total)
+    target_factor = _stable_cholesky(reciprocal_target)
+    inverse_raw = np.linalg.solve(
+        raw_factor,
+        np.eye(raw_factor.shape[0], dtype=complex),
     )
+    return target_factor @ inverse_raw
+
+
+def _apply_energy_transform(matrices, transform):
+    value = np.asarray(matrices, dtype=complex)
+    corrected = transform @ value @ transform.conj().T
+    return _hermitian(corrected)
 
 
 def _material_loss_tensor(material, frequency_hz: float, *, rotation=None):
@@ -47,7 +80,14 @@ def _material_loss_tensor(material, frequency_hz: float, *, rotation=None):
 
 
 class PreparedTensorEnergyReferenceLossField:
-    """Energy-consistent reciprocal view of the tensor REFERENCE field."""
+    """Energy-consistent reciprocal view of the tensor REFERENCE field.
+
+    Raw pointwise Joule matrices remain Hermitian PSD, including their local
+    phase-sensitive cross-port terms.  A single global congruence is applied to
+    every conductor/package/background matrix so the integrated total equals a
+    reciprocal real-symmetric port resistance without independently distorting
+    each spatial point or loss mechanism.
+    """
 
     def __init__(self, base: PreparedHybridReferenceLossField):
         self.base = base
@@ -55,9 +95,21 @@ class PreparedTensorEnergyReferenceLossField:
     def __getattr__(self, name):
         return getattr(self.base, name)
 
-    def conductor_local_dissipation_matrix(self, *args, **kwargs):
-        return reciprocalize_dissipation_matrices(
+    @property
+    def energy_transform(self):
+        return np.asarray(self.base.package_transform, dtype=complex)
+
+    def transform_dissipation_matrices(self, matrices):
+        return _apply_energy_transform(matrices, self.energy_transform)
+
+    def raw_conductor_local_dissipation_matrix(self, *args, **kwargs):
+        return _hermitian(
             self.base.conductor_local_dissipation_matrix(*args, **kwargs)
+        )
+
+    def conductor_local_dissipation_matrix(self, *args, **kwargs):
+        return self.transform_dissipation_matrices(
+            self.raw_conductor_local_dissipation_matrix(*args, **kwargs)
         )
 
     def local_dissipation_matrix(self, *args, **kwargs):
@@ -76,12 +128,7 @@ class PreparedTensorEnergyReferenceLossField:
             xy,
         )
         currents = np.asarray(currents, dtype=complex)
-        return float(
-            0.5
-            * np.real(
-                np.vdot(currents, matrix @ currents)
-            )
-        )
+        return float(0.5 * np.real(np.vdot(currents, matrix @ currents)))
 
     def raw_package_dissipation_matrices(self, package_index: int, points):
         if not 0 <= package_index < len(self.scene.packages):
@@ -111,10 +158,7 @@ class PreparedTensorEnergyReferenceLossField:
             )
 
         n_ports = self.port_prediction.impedance.shape[0]
-        out = np.zeros(
-            (len(points), n_ports, n_ports),
-            dtype=complex,
-        )
+        out = np.zeros((len(points), n_ports, n_ports), dtype=complex)
         if np.any(inside):
             conductivity = _material_loss_tensor(
                 package.material,
@@ -131,11 +175,13 @@ class PreparedTensorEnergyReferenceLossField:
                     conductivity,
                     transfer,
                 )
-                out[inside] = reciprocalize_dissipation_matrices(matrices)
+                out[inside] = _hermitian(matrices)
         return out[0] if scalar else out
 
     def package_dissipation_matrices(self, package_index: int, points):
-        return self.raw_package_dissipation_matrices(package_index, points)
+        return self.transform_dissipation_matrices(
+            self.raw_package_dissipation_matrices(package_index, points)
+        )
 
     def package_local_dissipation_matrix(self, package_index: int, local_position):
         package = self.scene.packages[package_index]
@@ -155,22 +201,14 @@ class PreparedTensorEnergyReferenceLossField:
             local_position,
         )
         currents = np.asarray(currents, dtype=complex)
-        return float(
-            0.5
-            * np.real(
-                np.vdot(currents, matrix @ currents)
-            )
-        )
+        return float(0.5 * np.real(np.vdot(currents, matrix @ currents)))
 
     def raw_background_dissipation_matrices(self, points):
         points = np.asarray(points, dtype=float)
         scalar = points.ndim == 1
         points = np.atleast_2d(points)
         n_ports = self.port_prediction.impedance.shape[0]
-        out = np.zeros(
-            (len(points), n_ports, n_ports),
-            dtype=complex,
-        )
+        out = np.zeros((len(points), n_ports, n_ports), dtype=complex)
         conductivity = _material_loss_tensor(
             self.scene.medium,
             self.frequency_hz,
@@ -192,11 +230,13 @@ class PreparedTensorEnergyReferenceLossField:
                 conductivity,
                 transfer,
             )
-            out[exterior] = reciprocalize_dissipation_matrices(matrices)
+            out[exterior] = _hermitian(matrices)
         return out[0] if scalar else out
 
     def background_dissipation_matrices(self, points):
-        return self.raw_background_dissipation_matrices(points)
+        return self.transform_dissipation_matrices(
+            self.raw_background_dissipation_matrices(points)
+        )
 
     def background_joule_density(self, points, currents):
         matrices = self.background_dissipation_matrices(points)
@@ -259,10 +299,7 @@ def _integrated_tensor_environment(
         dtype=complex,
     ).reshape((-1, n_ports, n_ports))
 
-    background_channel = np.zeros(
-        (n_ports, n_ports),
-        dtype=complex,
-    )
+    background_channel = np.zeros((n_ports, n_ports), dtype=complex)
     background_loss = _material_loss_tensor(
         scene.medium,
         prepared.frequency_hz,
@@ -278,12 +315,10 @@ def _integrated_tensor_environment(
             axis=0,
         )
 
-    environment = (
-        np.sum(package_channels, axis=0)
-        + background_channel
+    environment = _hermitian(
+        np.sum(package_channels, axis=0) + background_channel
     )
-    environment = reciprocalize_dissipation_matrices(environment)
-    return package_channels, background_channel, environment
+    return package_channels, _hermitian(background_channel), environment
 
 
 def prepare_tensor_spatial_reference_adaptive(
@@ -300,18 +335,12 @@ def prepare_tensor_spatial_reference_adaptive(
 ) -> TensorSpatialReferenceCalibration:
     """Build one reciprocal energy truth shared by tensor port and spatial data.
 
-    The tensor MFS potential is a point-collocation approximation. Its
-    ``omega*Im(V_eff)`` loss can differ structurally from the actual Joule
-    integral of the reconstructed field over the physical material domain,
-    especially because conductor volume is excluded from that domain. Trying
-    to force the two operators together with a congruence transform fails when
-    their dissipative subspaces have different rank.
-
-    For tensor-electric truth, the continuous Joule integral is therefore the
-    canonical environment-loss operator. The port impedance keeps the solved
-    reactive part, while its dissipative part is replaced by the sum of the
-    reciprocalized conductor and environment channels. Port and pointwise
-    spatial labels then use exactly the same energy definition.
+    The raw pointwise loss matrices are integrated first without discarding
+    phase-sensitive cross-port terms.  One common congruence is then applied to
+    every loss mechanism and every spatial point so the total dissipative port
+    operator is reciprocal and power-closing.  This mirrors the hard passive
+    normalization used by the FAST port decoder while preserving much more of
+    the reconstructed local Joule field than pointwise real projection.
 
     ``maximum_raw_closure_error`` remains a diagnostic target and
     ``maximum_quadrature_refinements`` remains API-compatible; neither changes
@@ -333,7 +362,7 @@ def prepare_tensor_spatial_reference_adaptive(
         raise ValueError("invalid tensor spatial truth quadrature resolution")
     if maximum_quadrature_refinements < 0:
         raise ValueError(
-            "maximum_quadrature_refinements must be nonnegative"
+            "maximum_spatial_quadrature_refinements must be nonnegative"
         )
     if maximum_raw_closure_error <= 0.0:
         raise ValueError("maximum_raw_closure_error must be positive")
@@ -364,9 +393,9 @@ def prepare_tensor_spatial_reference_adaptive(
     )
     temporary = PreparedTensorEnergyReferenceLossField(temporary_base)
     (
-        package_channels,
-        background_channel,
-        environment_channel,
+        raw_package_channels,
+        raw_background_channel,
+        raw_environment_channel,
     ) = _integrated_tensor_environment(
         temporary,
         volume_axial_order=axial,
@@ -376,49 +405,65 @@ def prepare_tensor_spatial_reference_adaptive(
         background_angular_order=background_angular,
     )
 
-    original_environment = reciprocalize_dissipation_matrices(
-        result.dielectric_dissipation_matrix
-    )
-    original_norm = max(
-        float(np.linalg.norm(original_environment)),
-        1e-30,
-    )
+    original_environment = _hermitian(result.dielectric_dissipation_matrix)
+    original_norm = max(float(np.linalg.norm(original_environment)), 1e-30)
     raw_error = float(
-        np.linalg.norm(environment_channel - original_environment)
+        np.linalg.norm(raw_environment_channel - original_environment)
         / original_norm
     )
 
-    conductor_channels = reciprocalize_dissipation_matrices(
+    raw_conductor_channels = _hermitian(
         result.mixed_result.coil_dissipation_matrices()
     )
-    channels = np.concatenate(
+    raw_channels = np.concatenate(
         (
-            conductor_channels,
-            environment_channel[None, :, :],
+            raw_conductor_channels,
+            raw_environment_channel[None, :, :],
         ),
         axis=0,
     )
-    dissipative = np.sum(channels, axis=0)
+    raw_total = _hermitian(np.sum(raw_channels, axis=0))
+    target_resistance = reciprocalize_dissipation_matrices(raw_total)
+    transform = _energy_congruence(raw_total, target_resistance)
+    corrected_channels = _apply_energy_transform(raw_channels, transform)
+    corrected_total = _hermitian(np.sum(corrected_channels, axis=0))
+    energy_closure = float(
+        np.linalg.norm(corrected_total - target_resistance)
+        / max(float(np.linalg.norm(target_resistance)), 1e-30)
+    )
+    if not np.isfinite(energy_closure) or energy_closure > 1e-8:
+        raise RuntimeError(
+            "tensor reciprocal energy projection failed total power closure: "
+            f"relative error={energy_closure:.3e}"
+        )
 
     solved_impedance = np.asarray(result.impedance, dtype=complex)
-    reactive = (
-        solved_impedance
-        - solved_impedance.conj().T
-    ) / (2j)
-    reactive = reciprocalize_dissipation_matrices(reactive)
-    corrected_impedance = dissipative + 1j * reactive
+    reactive = reciprocalize_dissipation_matrices(
+        (solved_impedance - solved_impedance.conj().T) / (2j)
+    )
+    corrected_impedance = target_resistance + 1j * reactive
 
     corrected_prediction = StructuredPortPrediction(
         corrected_impedance,
-        channels,
+        corrected_channels,
         result.prediction.channel_labels,
     )
     closure_error = float(corrected_prediction.power_closure_error())
-    if not np.isfinite(closure_error) or closure_error > 1e-10:
+    if not np.isfinite(closure_error) or closure_error > 1e-8:
         raise RuntimeError(
             "energy-consistent tensor port truth failed power closure: "
             f"relative error={closure_error:.3e}"
         )
+
+    corrected_environment = corrected_channels[-1]
+    corrected_package_channels = _apply_energy_transform(
+        raw_package_channels,
+        transform,
+    )
+    corrected_background_channel = _apply_energy_transform(
+        raw_background_channel,
+        transform,
+    )
 
     corrected_result = result
     if is_dataclass(result) and is_dataclass(result.mixed_result):
@@ -431,7 +476,7 @@ def prepare_tensor_spatial_reference_adaptive(
             mixed_result=corrected_mixed_result,
             prediction=corrected_prediction,
             dielectric_dissipation_matrix=np.asarray(
-                environment_channel,
+                corrected_environment,
                 dtype=complex,
             ),
         )
@@ -442,11 +487,14 @@ def prepare_tensor_spatial_reference_adaptive(
         teacher=teacher,
         result=corrected_result,
         port_prediction=corrected_prediction,
-        package_transform=identity,
+        package_transform=transform,
         raw_dielectric_closure_error=raw_error,
-        normalized_dielectric_closure_error=closure_error,
-        package_integrated_channels=package_channels,
-        background_integrated_channel=background_channel,
+        normalized_dielectric_closure_error=max(
+            closure_error,
+            energy_closure,
+        ),
+        package_integrated_channels=corrected_package_channels,
+        background_integrated_channel=corrected_background_channel,
     )
     prepared = PreparedTensorEnergyReferenceLossField(final_base)
 
@@ -459,8 +507,8 @@ def prepare_tensor_spatial_reference_adaptive(
         background_angular_order=background_angular,
         refinements=0,
         target_impedance=np.asarray(corrected_impedance, dtype=complex),
-        target_dissipation_channels=np.asarray(channels, dtype=complex),
-        power_closure_error=closure_error,
+        target_dissipation_channels=np.asarray(corrected_channels, dtype=complex),
+        power_closure_error=max(closure_error, energy_closure),
         raw_closure_target_exceeded=bool(
             raw_error > float(maximum_raw_closure_error)
         ),
