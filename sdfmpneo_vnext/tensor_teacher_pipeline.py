@@ -20,10 +20,7 @@ from .tensor_sampling import (
     TensorHybridSceneSamplerConfig,
     sample_tensor_hybrid_scene,
 )
-from .tensor_spatial_reference import (
-    prepare_tensor_spatial_reference_adaptive,
-    reciprocalize_dissipation_matrices,
-)
+from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 from .tensor_spatial_training_data import TensorHybridSpatialTeacherSample
 from .tensor_training_data import TensorHybridTeacherSample
 from .training_data import SpatialLossSamples
@@ -186,7 +183,7 @@ def generate_tensor_teacher_once(
             transfer.conj(),
             transfer,
         ) / conductivity
-        matrices = reciprocalize_dissipation_matrices(matrices)
+        matrices = prepared.transform_dissipation_matrices(matrices)
         count = len(quadrature.weights)
         conductor_coil.append(np.full(count, coil, dtype=int))
         conductor_arc.append(np.full(count, arc, dtype=float))
