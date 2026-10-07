@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import numpy as np
 
 from .em import MQSConfig
@@ -11,7 +11,10 @@ from .hybrid_training_data import (
     BackgroundSpatialLossSamples,
     PackageSpatialLossSamples,
 )
-from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
+from .tensor_spatial_reference import (
+    prepare_tensor_spatial_reference_adaptive,
+    reciprocalize_dissipation_matrices,
+)
 from .tensor_training_data import TensorHybridTeacherSample
 from .training_data import SpatialLossSamples
 
@@ -97,6 +100,24 @@ class TensorHybridSpatialTeacherSample:
             ),
         )
         prepared = calibration.prepared
+        corrected_port = replace(
+            port_sample,
+            target_impedance=calibration.target_impedance,
+            target_dissipation_channels=(
+                calibration.target_dissipation_channels
+            ),
+            power_closure_error=calibration.power_closure_error,
+            surface_residual=float(result.surface_residual),
+            raw_potential_reciprocity_defect=float(
+                result.raw_potential_reciprocity_defect
+            ),
+            magnetic_surface_residual=float(
+                result.magnetic_surface_residual
+            ),
+            raw_magnetic_reciprocity_defect=float(
+                result.raw_magnetic_reciprocity_defect
+            ),
+        )
 
         coil_segments = {}
         segments = teacher.conductor_teacher._mqs._segments
@@ -131,9 +152,7 @@ class TensorHybridSpatialTeacherSample:
                 transfer.conj(),
                 transfer,
             ) / conductivity
-            matrices = 0.5 * (
-                matrices + matrices.conj().transpose(0, 2, 1)
-            )
+            matrices = reciprocalize_dissipation_matrices(matrices)
             count = len(quadrature.weights)
             conductor_coil.append(np.full(count, coil, dtype=int))
             conductor_arc.append(np.full(count, arc, dtype=float))
@@ -154,9 +173,6 @@ class TensorHybridSpatialTeacherSample:
         package_weights = []
         package_matrices = []
         for index, package in enumerate(scene.packages):
-            # The training sample density remains exactly what the caller
-            # requested.  Adaptive refinement above is used only to calibrate
-            # the REFERENCE power closure transform.
             quadrature = package.geometry.volume_quadrature(
                 axial_order=package_volume_axial_order,
                 radial_order=package_volume_radial_order,
@@ -226,7 +242,7 @@ class TensorHybridSpatialTeacherSample:
             )
 
         return TensorHybridSpatialTeacherSample(
-            port=port_sample,
+            port=corrected_port,
             conductor_spatial_loss=conductor_spatial,
             package_spatial_loss=package_spatial,
             background_spatial_loss=background_spatial,
