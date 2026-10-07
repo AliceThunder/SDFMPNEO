@@ -1,18 +1,94 @@
+from types import SimpleNamespace
+
 import numpy as np
-import pytest
 
 import sdfmpneo_vnext.tensor_spatial_reference as tensor_spatial_reference
+from sdfmpneo_vnext.prediction import StructuredPortPrediction
 
 
-class _Prepared:
-    raw_dielectric_closure_error = 0.6456
-    normalized_dielectric_closure_error = 2.0e-12
+def test_reciprocalized_joule_matrix_remains_psd():
+    transfer = np.asarray(
+        [
+            [1.0 + 0.4j, 0.2 - 0.7j],
+            [-0.3 + 0.8j, 0.9 + 0.1j],
+            [0.5 - 0.2j, -0.6 + 0.3j],
+        ],
+        dtype=complex,
+    )
+    raw = transfer.conj().T @ transfer
+
+    projected = tensor_spatial_reference.reciprocalize_dissipation_matrices(raw)
+
+    assert np.allclose(projected, projected.T, rtol=0.0, atol=0.0)
+    assert np.max(np.abs(projected.imag)) == 0.0
+    assert np.min(np.linalg.eigvalsh(projected.real)) >= -1e-12
 
 
-def _call():
-    return tensor_spatial_reference.prepare_tensor_spatial_reference_adaptive(
-        object(),
-        object(),
+def test_tensor_energy_truth_replaces_structurally_mismatched_port_loss(monkeypatch):
+    old_environment = np.asarray(
+        [[1.0e-12, 0.0], [0.0, 2.0e-12]],
+        dtype=complex,
+    )
+    conductor = np.asarray(
+        [[[2.0, 0.1 + 0.2j], [0.1 - 0.2j, 1.0]]],
+        dtype=complex,
+    )
+    old_channels = np.concatenate(
+        (conductor, old_environment[None, :, :]),
+        axis=0,
+    )
+    old_impedance = np.asarray(
+        [[2.1 + 4.0j, 0.2 + 0.5j], [0.2 + 0.5j, 1.2 + 3.0j]],
+        dtype=complex,
+    )
+    prediction = StructuredPortPrediction(
+        old_impedance,
+        old_channels,
+        ("coil:0", "electric_environment:aggregate"),
+    )
+
+    mixed_result = SimpleNamespace(
+        coil_dissipation_matrices=lambda: conductor,
+    )
+    result = SimpleNamespace(
+        impedance=old_impedance,
+        prediction=prediction,
+        dielectric_dissipation_matrix=old_environment,
+        tensor_electric_transmission=object(),
+        mixed_result=mixed_result,
+    )
+    scene = SimpleNamespace(
+        packages=(object(),),
+        coils=(object(), object()),
+    )
+    teacher = SimpleNamespace(
+        scene=scene,
+        frequency_hz=100_000.0,
+    )
+
+    package_channel = np.asarray(
+        [[[1.5e-3, 2.0e-4], [2.0e-4, 8.0e-4]]],
+        dtype=complex,
+    )
+    background_channel = np.asarray(
+        [[3.0e-4, 1.0e-4], [1.0e-4, 2.0e-4]],
+        dtype=complex,
+    )
+    environment = package_channel[0] + background_channel
+
+    monkeypatch.setattr(
+        tensor_spatial_reference,
+        "_integrated_tensor_environment",
+        lambda *args, **kwargs: (
+            package_channel,
+            background_channel,
+            environment,
+        ),
+    )
+
+    calibration = tensor_spatial_reference.prepare_tensor_spatial_reference_adaptive(
+        teacher,
+        result,
         volume_axial_order=6,
         volume_radial_order=4,
         volume_azimuthal_order=16,
@@ -22,49 +98,16 @@ def _call():
         maximum_quadrature_refinements=4,
     )
 
-
-def test_tensor_spatial_raw_closure_uses_same_resolution_calibration(monkeypatch):
-    calls = []
-
-    def fake_prepare(*args, maximum_raw_closure_error, **kwargs):
-        calls.append((float(maximum_raw_closure_error), dict(kwargs)))
-        if np.isfinite(maximum_raw_closure_error):
-            raise RuntimeError(
-                "raw electric-environment field integration does not close the "
-                "port-level dielectric loss channel: relative error=6.456e-01"
-            )
-        return _Prepared()
-
-    monkeypatch.setattr(
-        tensor_spatial_reference,
-        "prepare_hybrid_reference_loss_field",
-        fake_prepare,
+    prediction = StructuredPortPrediction(
+        calibration.target_impedance,
+        calibration.target_dissipation_channels,
+        ("coil:0", "electric_environment:aggregate"),
     )
-
-    calibration = _call()
-
-    assert len(calls) == 2
-    assert calls[0][0] == 0.35
-    assert np.isinf(calls[1][0])
-    for _, kwargs in calls:
-        assert kwargs["volume_axial_order"] == 6
-        assert kwargs["volume_radial_order"] == 4
-        assert kwargs["volume_azimuthal_order"] == 16
-        assert kwargs["background_radial_order"] == 10
-        assert kwargs["background_angular_order"] == 32
-    assert calibration.prepared.normalized_dielectric_closure_error < 1e-6
-    assert calibration.refinements == 0
-
-
-def test_tensor_spatial_calibration_does_not_mask_other_runtime_errors(monkeypatch):
-    def fake_prepare(*args, **kwargs):
-        raise RuntimeError("unexpected tensor field failure")
-
-    monkeypatch.setattr(
-        tensor_spatial_reference,
-        "prepare_hybrid_reference_loss_field",
-        fake_prepare,
+    assert calibration.raw_closure_target_exceeded
+    assert calibration.power_closure_error < 1e-12
+    assert prediction.power_closure_error() < 1e-12
+    assert prediction.reciprocity_defect() < 1e-12
+    assert np.allclose(
+        calibration.target_dissipation_channels[-1],
+        environment,
     )
-
-    with pytest.raises(RuntimeError, match="unexpected tensor field failure"):
-        _call()
