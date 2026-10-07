@@ -110,10 +110,15 @@ class TensorHybridSpatialTeacherSample:
 
         scene = port_sample.scene
         frequency_hz = port_sample.frequency_hz
+        resolved_config = (
+            port_sample.teacher_config
+            if teacher_config is None
+            else teacher_config
+        )
         teacher = DielectricCoupledMixedTeacher(
             scene,
             frequency_hz,
-            teacher_config or MQSConfig(),
+            resolved_config,
             surface_vertical_order=port_sample.surface_vertical_order,
             surface_azimuthal_order=port_sample.surface_azimuthal_order,
             magnetic_volume_axial_order=(
@@ -157,6 +162,7 @@ class TensorHybridSpatialTeacherSample:
             raw_magnetic_reciprocity_defect=float(
                 result.raw_magnetic_reciprocity_defect
             ),
+            teacher_config=resolved_config,
             package_volume_axial_order=package_volume_axial_order,
             package_volume_radial_order=package_volume_radial_order,
             package_volume_azimuthal_order=package_volume_azimuthal_order,
