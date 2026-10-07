@@ -11,10 +11,7 @@ from .hybrid_training_data import (
     BackgroundSpatialLossSamples,
     PackageSpatialLossSamples,
 )
-from .tensor_spatial_reference import (
-    prepare_tensor_spatial_reference_adaptive,
-    reciprocalize_dissipation_matrices,
-)
+from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
 from .tensor_training_data import (
     TENSOR_HYBRID_REFERENCE_BACKEND,
     TensorHybridTeacherSample,
@@ -63,10 +60,6 @@ class TensorHybridSpatialTeacherSample:
         maximum_raw_spatial_closure_error: float | None = None,
         maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridSpatialTeacherSample":
-        # When callers do not explicitly request a new spatial truth
-        # resolution, reproduce the exact energy quadrature used by the port
-        # sample.  This prevents a port sample from silently changing its
-        # physical label when spatial truth is attached later.
         package_volume_axial_order = int(
             port_sample.package_volume_axial_order
             if package_volume_axial_order is None
@@ -208,7 +201,7 @@ class TensorHybridSpatialTeacherSample:
                 transfer.conj(),
                 transfer,
             ) / conductivity
-            matrices = reciprocalize_dissipation_matrices(matrices)
+            matrices = prepared.transform_dissipation_matrices(matrices)
             count = len(quadrature.weights)
             conductor_coil.append(np.full(count, coil, dtype=int))
             conductor_arc.append(np.full(count, arc, dtype=float))
