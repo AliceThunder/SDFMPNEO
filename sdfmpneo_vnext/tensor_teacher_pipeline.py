@@ -20,7 +20,10 @@ from .tensor_sampling import (
     TensorHybridSceneSamplerConfig,
     sample_tensor_hybrid_scene,
 )
-from .tensor_spatial_reference import prepare_tensor_spatial_reference_adaptive
+from .tensor_spatial_reference import (
+    prepare_tensor_spatial_reference_adaptive,
+    reciprocalize_dissipation_matrices,
+)
 from .tensor_spatial_training_data import TensorHybridSpatialTeacherSample
 from .tensor_training_data import TensorHybridTeacherSample
 from .training_data import SpatialLossSamples
@@ -58,10 +61,10 @@ def generate_tensor_teacher_once(
     maximum_raw_spatial_closure_error: float = 0.35,
     maximum_spatial_quadrature_refinements: int = 4,
 ):
-    """Produce tensor port truth and optional spatial truth from one teacher solve."""
+    """Produce one energy-consistent tensor port/spatial teacher sample."""
     if not scene.packages:
         raise ValueError("tensor hybrid teacher samples require at least one package")
-    if include_spatial and (
+    if (
         package_volume_axial_order < 2
         or package_volume_radial_order < 2
         or package_volume_azimuthal_order < 8
@@ -96,32 +99,10 @@ def generate_tensor_teacher_once(
         ),
     )
     result = teacher.solve()
-    port = TensorHybridTeacherSample(
-        scene=scene,
-        frequency_hz=frequency_hz,
-        encoded=encoded,
-        baseline_resistance=baseline.resistance,
-        baseline_reactance=(
-            2.0 * np.pi * frequency_hz * baseline.inductance
-        ),
-        target_impedance=result.impedance,
-        target_dissipation_channels=result.prediction.dissipation_channels,
-        baseline_segments=int(baseline_segments),
-        surface_vertical_order=int(surface_vertical_order),
-        surface_azimuthal_order=int(surface_azimuthal_order),
-        surface_residual=float(result.surface_residual),
-        raw_potential_reciprocity_defect=float(
-            result.raw_potential_reciprocity_defect
-        ),
-        power_closure_error=float(result.power_closure_error),
-        magnetic_surface_residual=float(result.magnetic_surface_residual),
-        raw_magnetic_reciprocity_defect=float(
-            result.raw_magnetic_reciprocity_defect
-        ),
-    )
-    if not include_spatial:
-        return port
 
+    # Tensor port loss and tensor spatial loss share this same continuous-field
+    # energy operator.  Do this even for port-only samples so a given scene has
+    # one canonical teacher label independent of which training consumer asks.
     calibration = prepare_tensor_spatial_reference_adaptive(
         teacher,
         result,
@@ -136,6 +117,34 @@ def generate_tensor_teacher_once(
         ),
     )
     prepared = calibration.prepared
+
+    port = TensorHybridTeacherSample(
+        scene=scene,
+        frequency_hz=frequency_hz,
+        encoded=encoded,
+        baseline_resistance=baseline.resistance,
+        baseline_reactance=(
+            2.0 * np.pi * frequency_hz * baseline.inductance
+        ),
+        target_impedance=calibration.target_impedance,
+        target_dissipation_channels=(
+            calibration.target_dissipation_channels
+        ),
+        baseline_segments=int(baseline_segments),
+        surface_vertical_order=int(surface_vertical_order),
+        surface_azimuthal_order=int(surface_azimuthal_order),
+        surface_residual=float(result.surface_residual),
+        raw_potential_reciprocity_defect=float(
+            result.raw_potential_reciprocity_defect
+        ),
+        power_closure_error=float(calibration.power_closure_error),
+        magnetic_surface_residual=float(result.magnetic_surface_residual),
+        raw_magnetic_reciprocity_defect=float(
+            result.raw_magnetic_reciprocity_defect
+        ),
+    )
+    if not include_spatial:
+        return port
 
     coil_segments = {}
     segments = teacher.conductor_teacher._mqs._segments
@@ -166,9 +175,7 @@ def generate_tensor_teacher_once(
             transfer.conj(),
             transfer,
         ) / conductivity
-        matrices = 0.5 * (
-            matrices + matrices.conj().transpose(0, 2, 1)
-        )
+        matrices = reciprocalize_dissipation_matrices(matrices)
         count = len(quadrature.weights)
         conductor_coil.append(np.full(count, coil, dtype=int))
         conductor_arc.append(np.full(count, arc, dtype=float))
@@ -189,8 +196,6 @@ def generate_tensor_teacher_once(
     package_weights = []
     package_matrices = []
     for index, package in enumerate(scene.packages):
-        # Calibration may refine internally, but the actual training sample
-        # count remains governed by the requested truth sampling resolution.
         quadrature = package.geometry.volume_quadrature(
             axial_order=int(package_volume_axial_order),
             radial_order=int(package_volume_radial_order),
