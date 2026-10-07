@@ -17,7 +17,7 @@ from .tensor_sampling import TensorHybridSceneSamplerConfig, sample_tensor_hybri
 from .tensor_teacher_pipeline import generate_tensor_teacher_once
 
 
-CACHE_SCHEMA = 4
+CACHE_SCHEMA = 5
 
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
@@ -71,12 +71,9 @@ def build_teacher_config(mapping) -> MQSConfig:
 def teacher_cache_payload(config) -> dict:
     data = dict(config["DATA"])
     sampler = _jsonable(config["SAMPLER"])
-    # Rejection budgets affect search effort, not the accepted teacher label.
     if isinstance(sampler, dict):
         sampler.pop("maximum_scene_attempts", None)
     truth = dict(_jsonable(config["TRUTH"]))
-    # This knob is retained for API compatibility; energy truth no longer uses
-    # raw port/spatial mismatch as a quadrature-refinement trigger.
     truth.pop("maximum_spatial_quadrature_refinements", None)
     return {
         "schema": CACHE_SCHEMA,
