@@ -15,7 +15,10 @@ from .tensor_spatial_reference import (
     prepare_tensor_spatial_reference_adaptive,
     reciprocalize_dissipation_matrices,
 )
-from .tensor_training_data import TensorHybridTeacherSample
+from .tensor_training_data import (
+    TENSOR_HYBRID_REFERENCE_BACKEND,
+    TensorHybridTeacherSample,
+)
 from .training_data import SpatialLossSamples
 
 
@@ -81,9 +84,18 @@ class TensorHybridSpatialTeacherSample:
             teacher_config or MQSConfig(),
             surface_vertical_order=port_sample.surface_vertical_order,
             surface_azimuthal_order=port_sample.surface_azimuthal_order,
-            magnetic_volume_axial_order=package_volume_axial_order,
-            magnetic_volume_radial_order=package_volume_radial_order,
-            magnetic_volume_azimuthal_order=package_volume_azimuthal_order,
+            magnetic_volume_axial_order=(
+                port_sample.magnetic_volume_axial_order
+            ),
+            magnetic_volume_radial_order=(
+                port_sample.magnetic_volume_radial_order
+            ),
+            magnetic_volume_azimuthal_order=(
+                port_sample.magnetic_volume_azimuthal_order
+            ),
+            maximum_raw_magnetic_reciprocity_defect=(
+                port_sample.maximum_raw_magnetic_reciprocity_defect
+            ),
         )
         result = teacher.solve()
         calibration = prepare_tensor_spatial_reference_adaptive(
@@ -103,20 +115,25 @@ class TensorHybridSpatialTeacherSample:
         corrected_port = replace(
             port_sample,
             target_impedance=calibration.target_impedance,
-            target_dissipation_channels=(
-                calibration.target_dissipation_channels
-            ),
+            target_dissipation_channels=calibration.target_dissipation_channels,
             power_closure_error=calibration.power_closure_error,
             surface_residual=float(result.surface_residual),
             raw_potential_reciprocity_defect=float(
                 result.raw_potential_reciprocity_defect
             ),
-            magnetic_surface_residual=float(
-                result.magnetic_surface_residual
-            ),
+            magnetic_surface_residual=float(result.magnetic_surface_residual),
             raw_magnetic_reciprocity_defect=float(
                 result.raw_magnetic_reciprocity_defect
             ),
+            package_volume_axial_order=int(package_volume_axial_order),
+            package_volume_radial_order=int(package_volume_radial_order),
+            package_volume_azimuthal_order=int(package_volume_azimuthal_order),
+            background_radial_order=int(background_radial_order),
+            background_angular_order=int(background_angular_order),
+            maximum_raw_spatial_closure_error=float(
+                maximum_raw_spatial_closure_error
+            ),
+            reference_backend=TENSOR_HYBRID_REFERENCE_BACKEND,
         )
 
         coil_segments = {}
