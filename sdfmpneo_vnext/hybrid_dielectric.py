@@ -40,8 +40,16 @@ class DielectricCoupledResult:
     def impedance(
         self,
     ) -> np.ndarray:
-        return (
-            self.mixed_result.impedance
+        """Canonical coupled port observable.
+
+        ``mixed_result`` is the raw dense solver state used for field
+        reconstruction.  Tensor energy calibration may replace the public port
+        observable without changing those raw coefficients, so the coupled
+        result must source its impedance from the structured prediction.
+        """
+        return np.asarray(
+            self.prediction.impedance,
+            dtype=complex,
         )
 
     @property
@@ -70,6 +78,28 @@ class DielectricCoupledResult:
             self.prediction.power_closure_error()
         )
 
+    def coil_dissipation_matrices(
+        self,
+    ) -> np.ndarray:
+        """Canonical conductor channels associated with ``prediction``."""
+        indices = self.prediction.coil_channel_indices(
+            self.impedance.shape[0]
+        )
+        return np.asarray(
+            self.prediction.dissipation_channels[
+                np.asarray(indices, dtype=int)
+            ],
+            dtype=complex,
+        )
+
+    def dissipation_channels(
+        self,
+    ) -> np.ndarray:
+        return np.asarray(
+            self.prediction.dissipation_channels,
+            dtype=complex,
+        )
+
     def channel_power(
         self,
         currents,
@@ -78,6 +108,14 @@ class DielectricCoupledResult:
             self.prediction.channel_power(
                 currents
             )
+        )
+
+    def coil_power(
+        self,
+        currents,
+    ) -> np.ndarray:
+        return self.prediction.coil_power(
+            currents
         )
 
 
