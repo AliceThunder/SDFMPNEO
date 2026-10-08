@@ -156,7 +156,8 @@ CONFIG = {
 
     # ------------------------------------------------------------------
     # Teacher truth 输出和积分阶数。修改会生成新的缓存。
-    # port + spatial 共用一次 coupled EM solve。
+    # port + spatial 共用一次 coupled EM solve，但端口能量积分与空间训练点
+    # 分辨率独立：提高 port truth 精度不会自动把 spatial 数据量放大数倍。
     # ------------------------------------------------------------------
     "TRUTH": {
         "baseline_segments": 96,
@@ -167,15 +168,25 @@ CONFIG = {
         "magnetic_volume_azimuthal_order": 24,
         "maximum_raw_magnetic_reciprocity_defect": 0.08,
         "include_spatial": True,
+
+        # Spatial 网络训练点分辨率：只决定保存多少局部 Joule-field 样本。
         "package_volume_axial_order": 6,
         "package_volume_radial_order": 4,
         "package_volume_azimuthal_order": 16,
         "background_radial_order": 10,
         "background_angular_order": 32,
+
+        # Canonical port energy truth：与 REFERENCE/CERTIFIED 默认积分阶数一致。
+        "energy_volume_axial_order": 8,
+        "energy_volume_radial_order": 6,
+        "energy_volume_azimuthal_order": 24,
+        "energy_background_radial_order": 12,
+        "energy_background_angular_order": 48,
+
+        # raw closure 仅保留作诊断；energy-v3 最终闭合由共享 congruence 保证。
         "maximum_raw_spatial_closure_error": 0.35,
-        # 上述空间积分阶数是训练样本分辨率，同时也是 closure 校准起点；
-        # 若 raw closure 不达标，只加密校准积分，不扩大训练样本点数。
-        "maximum_spatial_quadrature_refinements": 4,
+        # 兼容旧配置；energy-v3 不再依据 raw closure 自适应加密 truth。
+        "maximum_spatial_quadrature_refinements": 0,
     },
 
     # ------------------------------------------------------------------
