@@ -108,6 +108,17 @@ def _uses_magnetic_contrast(scene) -> bool:
     )
 
 
+def _uses_package_electric_loss(scene, frequency_hz: float) -> bool:
+    return any(
+        float(package.material.loss_conductivity(frequency_hz)) > 0.0
+        for package in scene.packages
+    )
+
+
+def _uses_background_electric_loss(scene, frequency_hz: float) -> bool:
+    return float(scene.medium.loss_conductivity(frequency_hz)) > 0.0
+
+
 def _hybrid_observables(
     scene,
     frequency_hz: float,
@@ -173,7 +184,7 @@ def hybrid_reference_convergence(
     surface_residual_tolerance: float = 1e-9,
     magnetic_surface_residual_tolerance: float = 1e-9,
 ) -> HybridReferenceConvergenceReport:
-    """Refine every numerical axis that affects the reported observables."""
+    """Refine every independent numerical axis affecting reported observables."""
     tensor_electric = _uses_tensor_electric(scene)
     if not scene.packages and not tensor_electric:
         raise ValueError(
@@ -287,17 +298,29 @@ def hybrid_reference_convergence(
             )
         )
 
-    if tensor_electric:
+    if tensor_electric and _uses_package_electric_loss(scene, frequency_hz):
         refined_volume = _volume_refinement(*base_energy[:3])
-        refined_background = _background_refinement(*base_energy[3:])
         refinements.append(
             (
-                "electric_energy",
+                "electric_package_energy",
                 base_config,
                 surface_vertical_order,
                 surface_azimuthal_order,
                 base_magnetic,
-                refined_volume + refined_background,
+                refined_volume + base_energy[3:],
+            )
+        )
+
+    if tensor_electric and _uses_background_electric_loss(scene, frequency_hz):
+        refined_background = _background_refinement(*base_energy[3:])
+        refinements.append(
+            (
+                "electric_background_energy",
+                base_config,
+                surface_vertical_order,
+                surface_azimuthal_order,
+                base_magnetic,
+                base_energy[:3] + refined_background,
             )
         )
 
