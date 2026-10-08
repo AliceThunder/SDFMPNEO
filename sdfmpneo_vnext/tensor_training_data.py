@@ -20,7 +20,12 @@ TENSOR_HYBRID_REFERENCE_BACKEND = "tensor_electric_mixed_mfs_energy_v3"
 
 @dataclass(frozen=True)
 class TensorHybridTeacherSample:
-    """Port-level tensor-electric teacher sample for FAST residual training."""
+    """Port-level tensor-electric teacher sample for FAST residual training.
+
+    ``package_volume_*`` and ``background_*`` are the quadrature orders used
+    to define the canonical port energy truth. Spatial-training samples keep
+    their own, potentially lower, point-cloud quadrature metadata.
+    """
 
     scene: Scene
     frequency_hz: float
@@ -42,11 +47,11 @@ class TensorHybridTeacherSample:
     magnetic_volume_radial_order: int = 6
     magnetic_volume_azimuthal_order: int = 24
     maximum_raw_magnetic_reciprocity_defect: float = 0.08
-    package_volume_axial_order: int = 6
-    package_volume_radial_order: int = 4
-    package_volume_azimuthal_order: int = 16
-    background_radial_order: int = 10
-    background_angular_order: int = 32
+    package_volume_axial_order: int = 8
+    package_volume_radial_order: int = 6
+    package_volume_azimuthal_order: int = 24
+    background_radial_order: int = 12
+    background_angular_order: int = 48
     maximum_raw_spatial_closure_error: float = 0.35
     reference_backend: str = TENSOR_HYBRID_REFERENCE_BACKEND
 
@@ -138,11 +143,11 @@ class TensorHybridTeacherSample:
         magnetic_volume_radial_order: int = 6,
         magnetic_volume_azimuthal_order: int = 24,
         maximum_raw_magnetic_reciprocity_defect: float = 0.08,
-        package_volume_axial_order: int = 6,
-        package_volume_radial_order: int = 4,
-        package_volume_azimuthal_order: int = 16,
-        background_radial_order: int = 10,
-        background_angular_order: int = 32,
+        package_volume_axial_order: int = 8,
+        package_volume_radial_order: int = 6,
+        package_volume_azimuthal_order: int = 24,
+        background_radial_order: int = 12,
+        background_angular_order: int = 48,
         maximum_raw_spatial_closure_error: float = 0.35,
         maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridTeacherSample":
