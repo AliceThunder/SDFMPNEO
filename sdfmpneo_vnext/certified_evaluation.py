@@ -8,6 +8,7 @@ from .convergence import mixed_reference_convergence
 from .em import MQSConfig
 from .hybrid_certified import certify_dielectric_ports
 from .hybrid_convergence import hybrid_reference_convergence
+from .scene import TensorElectricMaterial
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,13 @@ def _relative_error(
     )
 
 
+def _uses_hybrid_reference(scene) -> bool:
+    return bool(
+        scene.packages
+        or isinstance(scene.medium, TensorElectricMaterial)
+    )
+
+
 def audit_certified_release(
     artifact,
     samples,
@@ -145,48 +153,63 @@ def audit_certified_release(
             raise ValueError(
                 "fine_config must not be longitudinally coarser than coarse_config"
             )
-        if sample.scene.packages:
+
+        hybrid = _uses_hybrid_reference(sample.scene)
+        if hybrid:
             surface_vertical_order = int(
-                getattr(
-                    sample,
-                    "surface_vertical_order",
-                    16,
-                )
+                getattr(sample, "surface_vertical_order", 16)
             )
             surface_azimuthal_order = int(
-                getattr(
-                    sample,
-                    "surface_azimuthal_order",
-                    32,
-                )
+                getattr(sample, "surface_azimuthal_order", 32)
             )
-            convergence = (
-                hybrid_reference_convergence(
-                    sample.scene,
-                    sample.frequency_hz,
-                    fine_config,
-                    surface_vertical_order=(
-                        surface_vertical_order
-                    ),
-                    surface_azimuthal_order=(
-                        surface_azimuthal_order
-                    ),
-                    tolerance=(
-                        convergence_tolerance
-                    ),
-                    surface_residual_tolerance=(
-                        algebraic_tolerance
-                    ),
-                )
+            magnetic_volume_axial_order = int(
+                getattr(sample, "magnetic_volume_axial_order", 8)
+            )
+            magnetic_volume_radial_order = int(
+                getattr(sample, "magnetic_volume_radial_order", 6)
+            )
+            magnetic_volume_azimuthal_order = int(
+                getattr(sample, "magnetic_volume_azimuthal_order", 24)
+            )
+            energy_volume_axial_order = int(
+                getattr(sample, "package_volume_axial_order", 8)
+            )
+            energy_volume_radial_order = int(
+                getattr(sample, "package_volume_radial_order", 6)
+            )
+            energy_volume_azimuthal_order = int(
+                getattr(sample, "package_volume_azimuthal_order", 24)
+            )
+            energy_background_radial_order = int(
+                getattr(sample, "background_radial_order", 12)
+            )
+            energy_background_angular_order = int(
+                getattr(sample, "background_angular_order", 48)
+            )
+            convergence = hybrid_reference_convergence(
+                sample.scene,
+                sample.frequency_hz,
+                fine_config,
+                surface_vertical_order=surface_vertical_order,
+                surface_azimuthal_order=surface_azimuthal_order,
+                magnetic_volume_axial_order=magnetic_volume_axial_order,
+                magnetic_volume_radial_order=magnetic_volume_radial_order,
+                magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
+                energy_volume_axial_order=energy_volume_axial_order,
+                energy_volume_radial_order=energy_volume_radial_order,
+                energy_volume_azimuthal_order=energy_volume_azimuthal_order,
+                energy_background_radial_order=energy_background_radial_order,
+                energy_background_angular_order=energy_background_angular_order,
+                tolerance=convergence_tolerance,
+                surface_residual_tolerance=algebraic_tolerance,
+                magnetic_surface_residual_tolerance=algebraic_tolerance,
             )
         else:
             convergence = mixed_reference_convergence(
                 sample.scene,
                 sample.frequency_hz,
                 fine_config,
-                tolerance=(
-                    convergence_tolerance
-                ),
+                tolerance=convergence_tolerance,
             )
 
         discretization_change = float(
@@ -197,68 +220,49 @@ def audit_certified_release(
             discretization_change,
         )
         directional = {
-            direction.name: (
-                direction.maximum_relative_change
-            )
-            for direction
-            in convergence.directions
+            direction.name: direction.maximum_relative_change
+            for direction in convergence.directions
         }
         max_longitudinal = max(
             max_longitudinal,
-            float(
-                directional[
-                    "longitudinal"
-                ]
-            ),
+            float(directional["longitudinal"]),
         )
         max_cross_section = max(
             max_cross_section,
-            float(
-                directional[
-                    "cross_section"
-                ]
-            ),
+            float(directional["cross_section"]),
         )
         max_quadrature = max(
             max_quadrature,
-            float(
-                directional[
-                    "quadrature"
-                ]
-            ),
+            float(directional["quadrature"]),
         )
         max_dielectric_surface = max(
             max_dielectric_surface,
-            float(
-                directional.get(
-                    "dielectric_surface",
-                    0.0,
-                )
-            ),
+            float(directional.get("dielectric_surface", 0.0)),
         )
 
-        if sample.scene.packages:
+        if hybrid:
             certified = certify_dielectric_ports(
                 sample.scene,
                 sample.frequency_hz,
                 artifact,
                 config=fine_config,
                 convergence_report=convergence,
-                surface_vertical_order=(
-                    surface_vertical_order
+                surface_vertical_order=surface_vertical_order,
+                surface_azimuthal_order=surface_azimuthal_order,
+                magnetic_volume_axial_order=magnetic_volume_axial_order,
+                magnetic_volume_radial_order=magnetic_volume_radial_order,
+                magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
+                energy_volume_axial_order=energy_volume_axial_order,
+                energy_volume_radial_order=energy_volume_radial_order,
+                energy_volume_azimuthal_order=energy_volume_azimuthal_order,
+                energy_background_radial_order=energy_background_radial_order,
+                energy_background_angular_order=energy_background_angular_order,
+                maximum_raw_energy_closure_error=float(
+                    getattr(sample, "maximum_raw_spatial_closure_error", 0.25)
                 ),
-                surface_azimuthal_order=(
-                    surface_azimuthal_order
-                ),
-                algebraic_tolerance=(
-                    algebraic_tolerance
-                ),
-                surface_tolerance=(
-                    algebraic_tolerance
-                ),
-                fast_domain_correction_limit=(
-                    fast_domain_correction_limit
-                ),
+                algebraic_tolerance=algebraic_tolerance,
+                surface_tolerance=algebraic_tolerance,
+                fast_domain_correction_limit=fast_domain_correction_limit,
             )
         else:
             certified = certify_mixed_ports(
@@ -274,9 +278,7 @@ def audit_certified_release(
                 allow_reference_fallback=False,
                 operator_backend=operator_backend,
                 matrix_free_chunk_size=matrix_free_chunk_size,
-                fast_domain_correction_limit=(
-                    fast_domain_correction_limit
-                ),
+                fast_domain_correction_limit=fast_domain_correction_limit,
             )
         observed_backends.add(
             certified.operator_backend
@@ -319,31 +321,14 @@ def audit_certified_release(
         maximum_final_residual=max_residual,
         maximum_relative_observable_correction=max_correction,
         maximum_discretization_change=max_discretization,
-        maximum_longitudinal_change=(
-            max_longitudinal
-        ),
-        maximum_cross_section_change=(
-            max_cross_section
-        ),
-        maximum_quadrature_change=(
-            max_quadrature
-        ),
-        maximum_dielectric_surface_change=(
-            max_dielectric_surface
-        ),
-        maximum_certified_truth_relative_error=(
-            max_truth_error
-        ),
+        maximum_longitudinal_change=max_longitudinal,
+        maximum_cross_section_change=max_cross_section,
+        maximum_quadrature_change=max_quadrature,
+        maximum_dielectric_surface_change=max_dielectric_surface,
+        maximum_certified_truth_relative_error=max_truth_error,
         operator_backend=(
-            next(
-                iter(
-                    observed_backends
-                )
-            )
-            if len(
-                observed_backends
-            )
-            == 1
+            next(iter(observed_backends))
+            if len(observed_backends) == 1
             else "mixed"
         ),
         passed=passed,
