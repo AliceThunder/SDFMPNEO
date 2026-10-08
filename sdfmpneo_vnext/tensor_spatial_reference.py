@@ -466,14 +466,9 @@ def prepare_tensor_spatial_reference_adaptive(
     )
 
     corrected_result = result
-    if is_dataclass(result) and is_dataclass(result.mixed_result):
-        corrected_mixed_result = replace(
-            result.mixed_result,
-            impedance=np.asarray(corrected_impedance, dtype=complex),
-        )
+    if is_dataclass(result):
         corrected_result = replace(
             result,
-            mixed_result=corrected_mixed_result,
             prediction=corrected_prediction,
             dielectric_dissipation_matrix=np.asarray(
                 corrected_environment,
