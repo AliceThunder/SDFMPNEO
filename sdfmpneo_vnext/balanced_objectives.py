@@ -7,7 +7,7 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("balanced vNext objectives require the 'neural' extra") from exc
 
-from .performance import forward_structured_batch
+from . import performance as _performance
 
 
 PORT_TRAINING_CONTRACT = 2
@@ -38,7 +38,7 @@ def balanced_port_batch_loss(model, normalizer, batch, *, channel_loss_weight: f
     predicted/teacher energy instead of one dataset-wide scalar.  Small values
     therefore cannot explode the loss, while large scenes no longer dominate it.
     """
-    resistance, reactance, channels = forward_structured_batch(
+    resistance, reactance, channels = _performance.forward_structured_batch(
         model,
         *batch["normalized"],
         batch["baseline_resistance"],
@@ -155,3 +155,9 @@ def balanced_spatial_end_to_end_error(artifact, sample) -> float:
         )
 
     return float(conductor_error + package_error + background_error)
+
+
+# The accelerated port trainer resolves this global at call time.  Installing
+# the balanced objective here keeps the public accelerated API consistent with
+# the controlled workflow without duplicating the training loop.
+_performance._batch_loss = balanced_port_batch_loss
