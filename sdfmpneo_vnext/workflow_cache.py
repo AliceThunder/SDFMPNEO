@@ -18,7 +18,7 @@ from .tensor_teacher_pipeline import generate_tensor_teacher_once
 from .tensor_training_data import TENSOR_HYBRID_REFERENCE_BACKEND
 
 
-CACHE_SCHEMA = 6
+CACHE_SCHEMA = 7
 
 _RETRYABLE_TEACHER_FAILURE_PREFIXES = (
     "tensor-electric MFS solve did not meet the declared residual tolerance:",
