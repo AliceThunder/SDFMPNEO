@@ -74,7 +74,9 @@ def _sample_tensor_ranges(samples):
     package_epsilon = []
     package_sigma = []
     permeability = []
+    package_counts = []
     for sample in samples:
+        package_counts.append(len(sample.scene.packages))
         epsilon, sigma = _material_tensors(
             sample.scene.medium,
             sample.frequency_hz,
@@ -89,8 +91,6 @@ def _sample_tensor_ranges(samples):
             package_epsilon.append(epsilon)
             package_sigma.append(sigma)
             permeability.append(float(package.material.relative_permeability))
-    if not permeability:
-        raise ValueError("tensor hybrid training requires at least one package")
     return {
         "background_epsilon": _eigenvalue_range(
             background_epsilon,
@@ -109,8 +109,16 @@ def _sample_tensor_ranges(samples):
             nonnegative=True,
         ),
         "package_mu": (
-            float(np.min(permeability)),
-            float(np.max(permeability)),
+            None
+            if not permeability
+            else (
+                float(np.min(permeability)),
+                float(np.max(permeability)),
+            )
+        ),
+        "package_count": (
+            int(np.min(package_counts)),
+            int(np.max(package_counts)),
         ),
     }
 
@@ -135,6 +143,56 @@ def _state_dtype(state_dict):
         if torch.is_floating_point(value):
             return value.dtype
     return torch.get_default_dtype()
+
+
+def _forward_structured_single(
+    model,
+    normalizer,
+    normalized,
+    baseline_resistance,
+    baseline_reactance,
+    *,
+    dielectric_loss_gate,
+    reactance_gate,
+    device,
+):
+    # Import lazily because performance imports this module to construct the
+    # artifact class. At runtime both modules are fully initialized, and this
+    # keeps tensor single-sample and batch inference on one decoder contract.
+    from .performance import forward_structured_batch
+
+    dtype = next(model.parameters()).dtype
+    tensors = [
+        torch.as_tensor(value, dtype=dtype, device=device).unsqueeze(0)
+        for value in normalized
+    ]
+    resistance, reactance, channels = forward_structured_batch(
+        model,
+        *tensors,
+        torch.as_tensor(
+            baseline_resistance,
+            dtype=dtype,
+            device=device,
+        ).unsqueeze(0),
+        torch.as_tensor(
+            baseline_reactance,
+            dtype=dtype,
+            device=device,
+        ).unsqueeze(0),
+        resistance_scale=normalizer.resistance_scale,
+        reactance_scale=normalizer.reactance_scale,
+        dielectric_loss_gate=torch.as_tensor(
+            [float(dielectric_loss_gate)],
+            dtype=dtype,
+            device=device,
+        ),
+        reactance_gate=torch.as_tensor(
+            [float(reactance_gate)],
+            dtype=dtype,
+            device=device,
+        ),
+    )
+    return resistance[0], reactance[0], channels[0]
 
 
 class TensorHybridNeuralResidualArtifact:
@@ -182,11 +240,25 @@ class TensorHybridNeuralResidualArtifact:
         self.model.eval()
 
     def _validate_material_domain(self, scene: Scene, frequency_hz: float):
-        if not scene.packages:
-            raise NotImplementedError(
-                "the current tensor FAST artifact requires at least one package; "
-                "background-only tensor-electric scenes use REFERENCE or CERTIFIED"
-            )
+        package_count_domain = self.material_domain.get("package_count")
+        if package_count_domain is None:
+            # Schema-3 artifacts produced before background-only training did
+            # not record topology support. Preserve their historical contract
+            # instead of silently extrapolating them to a new empty graph.
+            if not scene.packages:
+                raise NotImplementedError(
+                    "this tensor FAST artifact predates background-only topology "
+                    "training; use a newly trained artifact or REFERENCE/CERTIFIED"
+                )
+        else:
+            lower, upper = (int(value) for value in package_count_domain)
+            count = len(scene.packages)
+            if count < lower or count > upper:
+                raise ValueError(
+                    "package count is outside the tensor FAST training domain "
+                    f"[{lower}, {upper}]"
+                )
+
         epsilon, sigma = _material_tensors(scene.medium, frequency_hz)
         _range_contains(
             np.linalg.eigvalsh(epsilon),
@@ -199,6 +271,10 @@ class TensorHybridNeuralResidualArtifact:
             name="background conductivity principal values",
         )
         for package in scene.packages:
+            if self.material_domain.get("package_epsilon") is None:
+                raise ValueError(
+                    "package scene is outside this tensor FAST training domain"
+                )
             epsilon, sigma = _material_tensors(package.material, frequency_hz)
             _range_contains(
                 np.linalg.eigvalsh(epsilon),
@@ -235,31 +311,19 @@ class TensorHybridNeuralResidualArtifact:
             frequency_hz,
             segments_per_coil=self.baseline_segments,
         )
-        dtype = next(self.model.parameters()).dtype
-        device = self.device
         with torch.no_grad():
-            resistance, reactance, channels = self.model.forward_structured(
-                *[
-                    torch.as_tensor(value, dtype=dtype, device=device)
-                    for value in normalized
-                ],
-                torch.as_tensor(
-                    baseline.resistance,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.as_tensor(
-                    2.0
-                    * np.pi
-                    * float(frequency_hz)
-                    * baseline.inductance,
-                    dtype=dtype,
-                    device=device,
-                ),
-                resistance_scale=self.normalizer.resistance_scale,
-                reactance_scale=self.normalizer.reactance_scale,
+            resistance, reactance, channels = _forward_structured_single(
+                self.model,
+                self.normalizer,
+                normalized,
+                baseline.resistance,
+                2.0
+                * np.pi
+                * float(frequency_hz)
+                * baseline.inductance,
                 dielectric_loss_gate=_dielectric_loss_gate(scene, frequency_hz),
                 reactance_gate=_reactance_gate(frequency_hz),
+                device=self.device,
             )
         impedance = (
             resistance.detach().cpu().numpy()
@@ -352,30 +416,20 @@ def _tensor_sample_loss(
     device: str,
 ):
     normalized = normalizer.normalize(sample.encoded)
-    dtype = next(model.parameters()).dtype
-    resistance, reactance, channels = model.forward_structured(
-        *[
-            torch.as_tensor(value, dtype=dtype, device=device)
-            for value in normalized
-        ],
-        torch.as_tensor(
-            sample.baseline_resistance,
-            dtype=dtype,
-            device=device,
-        ),
-        torch.as_tensor(
-            sample.baseline_reactance,
-            dtype=dtype,
-            device=device,
-        ),
-        resistance_scale=normalizer.resistance_scale,
-        reactance_scale=normalizer.reactance_scale,
+    resistance, reactance, channels = _forward_structured_single(
+        model,
+        normalizer,
+        normalized,
+        sample.baseline_resistance,
+        sample.baseline_reactance,
         dielectric_loss_gate=_dielectric_loss_gate(
             sample.scene,
             sample.frequency_hz,
         ),
         reactance_gate=_reactance_gate(sample.frequency_hz),
+        device=device,
     )
+    dtype = next(model.parameters()).dtype
     complex_dtype = (
         torch.complex128 if dtype == torch.float64 else torch.complex64
     )
