@@ -4,16 +4,14 @@ from sdfmpneo_vnext import (
     CoilObject,
     ConductorMaterial,
     IsotropicMaterial,
+    LinearIsotropicTemperatureLaw,
     MeshfreeVNextSystem,
     Scene,
     SuperellipseSpiral,
+    TemperatureResolvedChannelCurrentEnvelope,
     ThermalNodeProperties,
     build_lumped_channel_thermal_model,
 )
-from sdfmpneo_vnext.temperature_coupled_channel import (
-    TemperatureResolvedChannelCurrentEnvelope,
-)
-from sdfmpneo_vnext.thermal_material_laws import LinearIsotropicTemperatureLaw
 
 
 class _PortArtifact:
