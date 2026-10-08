@@ -111,16 +111,67 @@ def _certified_prediction(
 
     heterogeneous = _uses_heterogeneous_reference(scene)
     convergence = None
+    dielectric_reference = getattr(system, "_dielectric_reference", None)
+
+    def reference_setting(name, default):
+        return getattr(dielectric_reference, name, default)
+
     magnetic_volume_axial_order = int(
-        options.get("magnetic_volume_axial_order", 8)
+        options.get(
+            "magnetic_volume_axial_order",
+            reference_setting("magnetic_volume_axial_order", 8),
+        )
     )
     magnetic_volume_radial_order = int(
-        options.get("magnetic_volume_radial_order", 6)
+        options.get(
+            "magnetic_volume_radial_order",
+            reference_setting("magnetic_volume_radial_order", 6),
+        )
     )
     magnetic_volume_azimuthal_order = int(
-        options.get("magnetic_volume_azimuthal_order", 24)
+        options.get(
+            "magnetic_volume_azimuthal_order",
+            reference_setting("magnetic_volume_azimuthal_order", 24),
+        )
     )
-    if heterogeneous and scene.packages:
+    energy_volume_axial_order = int(
+        options.get(
+            "energy_volume_axial_order",
+            reference_setting("energy_volume_axial_order", 8),
+        )
+    )
+    energy_volume_radial_order = int(
+        options.get(
+            "energy_volume_radial_order",
+            reference_setting("energy_volume_radial_order", 6),
+        )
+    )
+    energy_volume_azimuthal_order = int(
+        options.get(
+            "energy_volume_azimuthal_order",
+            reference_setting("energy_volume_azimuthal_order", 24),
+        )
+    )
+    energy_background_radial_order = int(
+        options.get(
+            "energy_background_radial_order",
+            reference_setting("energy_background_radial_order", 12),
+        )
+    )
+    energy_background_angular_order = int(
+        options.get(
+            "energy_background_angular_order",
+            reference_setting("energy_background_angular_order", 48),
+        )
+    )
+    maximum_raw_energy_closure_error = float(
+        options.get(
+            "maximum_raw_energy_closure_error",
+            reference_setting("maximum_raw_energy_closure_error", 0.25),
+        )
+    )
+
+    if heterogeneous:
         convergence = hybrid_reference_convergence(
             scene,
             frequency_hz,
@@ -134,6 +185,11 @@ def _certified_prediction(
             magnetic_volume_axial_order=magnetic_volume_axial_order,
             magnetic_volume_radial_order=magnetic_volume_radial_order,
             magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
+            energy_volume_axial_order=energy_volume_axial_order,
+            energy_volume_radial_order=energy_volume_radial_order,
+            energy_volume_azimuthal_order=energy_volume_azimuthal_order,
+            energy_background_radial_order=energy_background_radial_order,
+            energy_background_angular_order=energy_background_angular_order,
             tolerance=convergence_tolerance,
             surface_residual_tolerance=float(
                 options.get("surface_tolerance", 1e-9)
@@ -142,7 +198,7 @@ def _certified_prediction(
                 options.get("magnetic_surface_tolerance", 1e-9)
             ),
         )
-    elif not heterogeneous:
+    else:
         convergence = mixed_reference_convergence(
             scene,
             frequency_hz,
@@ -159,6 +215,12 @@ def _certified_prediction(
             magnetic_volume_axial_order=magnetic_volume_axial_order,
             magnetic_volume_radial_order=magnetic_volume_radial_order,
             magnetic_volume_azimuthal_order=magnetic_volume_azimuthal_order,
+            energy_volume_axial_order=energy_volume_axial_order,
+            energy_volume_radial_order=energy_volume_radial_order,
+            energy_volume_azimuthal_order=energy_volume_azimuthal_order,
+            energy_background_radial_order=energy_background_radial_order,
+            energy_background_angular_order=energy_background_angular_order,
+            maximum_raw_energy_closure_error=maximum_raw_energy_closure_error,
             algebraic_tolerance=float(
                 options.get("algebraic_tolerance", 1e-7)
             ),
