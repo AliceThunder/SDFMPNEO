@@ -83,6 +83,51 @@ class TensorHybridTeacherSample:
             or np.any(~np.isfinite(reactance))
         ):
             raise ValueError("tensor hybrid teacher matrices must be finite")
+
+        impedance_scale = max(float(np.linalg.norm(impedance)), np.finfo(float).tiny)
+        reciprocity = float(np.linalg.norm(impedance - impedance.T) / impedance_scale)
+        if reciprocity > 1e-8:
+            raise ValueError(
+                "tensor teacher target impedance is not reciprocal: "
+                f"relative defect={reciprocity:.3e}"
+            )
+
+        for index, channel in enumerate(channels):
+            channel_scale = max(
+                float(np.linalg.norm(channel)),
+                np.finfo(float).tiny,
+            )
+            hermitian_defect = float(
+                np.linalg.norm(channel - channel.conj().T) / channel_scale
+            )
+            if hermitian_defect > 1e-8:
+                raise ValueError(
+                    f"tensor teacher dissipation channel {index} is not Hermitian: "
+                    f"relative defect={hermitian_defect:.3e}"
+                )
+            eigenvalues = np.linalg.eigvalsh(
+                0.5 * (channel + channel.conj().T)
+            )
+            if float(np.min(eigenvalues)) < -1e-8 * channel_scale:
+                raise ValueError(
+                    f"tensor teacher dissipation channel {index} is not passive"
+                )
+
+        port_dissipation = 0.5 * (impedance + impedance.conj().T)
+        closure_scale = max(
+            float(np.linalg.norm(port_dissipation)),
+            np.finfo(float).tiny,
+        )
+        closure = float(
+            np.linalg.norm(np.sum(channels, axis=0) - port_dissipation)
+            / closure_scale
+        )
+        if closure > 1e-8:
+            raise ValueError(
+                "tensor teacher channels do not close the port dissipation: "
+                f"relative error={closure:.3e}"
+            )
+
         if self.reference_backend != TENSOR_HYBRID_REFERENCE_BACKEND:
             raise ValueError(
                 "tensor teacher sample uses an incompatible reference backend"
@@ -119,6 +164,7 @@ class TensorHybridTeacherSample:
         object.__setattr__(self, "target_dissipation_channels", channels)
         object.__setattr__(self, "baseline_resistance", resistance)
         object.__setattr__(self, "baseline_reactance", reactance)
+        object.__setattr__(self, "power_closure_error", closure)
 
     @property
     def target_prediction(self) -> StructuredPortPrediction:
