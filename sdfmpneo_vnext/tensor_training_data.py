@@ -7,7 +7,7 @@ from .analytic_baseline import analytic_port_baseline
 from .em import MQSConfig
 from .hybrid_dielectric import DielectricCoupledMixedTeacher
 from .prediction import StructuredPortPrediction
-from .scene import Scene
+from .scene import Scene, TensorElectricMaterial
 from .tensor_features import (
     EncodedTensorHybridScene,
     encode_tensor_hybrid_scene_invariant,
@@ -197,9 +197,13 @@ class TensorHybridTeacherSample:
         maximum_raw_spatial_closure_error: float = 0.35,
         maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridTeacherSample":
-        if not scene.packages:
+        if (
+            not scene.packages
+            and not isinstance(scene.medium, TensorElectricMaterial)
+        ):
             raise ValueError(
-                "tensor hybrid teacher samples require at least one package"
+                "tensor hybrid teacher samples require package regions or a "
+                "tensor-electric homogeneous background"
             )
         resolved_config = teacher_config or MQSConfig()
         encoded = encode_tensor_hybrid_scene_invariant(scene, frequency_hz)
