@@ -37,10 +37,11 @@ from .tensor_features import (
 from .tensor_training_data import TensorHybridTeacherSample
 
 
-# Schema 2 is the first tensor FAST artifact trained against the canonical
-# continuous E^H sigma E energy truth.  Schema-1 weights used the historical
-# Im(V_eff) loss target and must not be loaded silently into this runtime.
-TENSOR_HYBRID_ARTIFACT_SCHEMA = 2
+# Schema 3 is trained against the energy-v3 truth: raw local Hermitian Joule
+# operators are integrated first and one global congruence enforces reciprocal
+# port resistance. Schema-2 used the earlier pointwise reciprocalized energy
+# labels, while schema-1 used the historical Im(V_eff) loss target.
+TENSOR_HYBRID_ARTIFACT_SCHEMA = 3
 
 
 @dataclass(frozen=True)
