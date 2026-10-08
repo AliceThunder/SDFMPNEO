@@ -28,6 +28,16 @@ def test_run_config_constructs_current_sampler_and_teacher_contracts():
     assert config["TRUTH"]["include_spatial"]
 
 
+def test_run_config_uses_higher_order_port_energy_truth_than_spatial_sampling():
+    truth = _load_run_module().CONFIG["TRUTH"]
+
+    assert truth["energy_volume_axial_order"] >= truth["package_volume_axial_order"]
+    assert truth["energy_volume_radial_order"] >= truth["package_volume_radial_order"]
+    assert truth["energy_volume_azimuthal_order"] >= truth["package_volume_azimuthal_order"]
+    assert truth["energy_background_radial_order"] >= truth["background_radial_order"]
+    assert truth["energy_background_angular_order"] >= truth["background_angular_order"]
+
+
 def test_run_config_inherited_device_is_resolved_without_mutating_source():
     module = _load_run_module()
     source = module.CONFIG
