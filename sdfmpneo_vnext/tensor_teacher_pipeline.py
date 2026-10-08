@@ -14,7 +14,7 @@ from .hybrid_training_data import (
     BackgroundSpatialLossSamples,
     PackageSpatialLossSamples,
 )
-from .scene import Scene
+from .scene import Scene, TensorElectricMaterial
 from .tensor_features import encode_tensor_hybrid_scene_invariant
 from .tensor_sampling import (
     TensorHybridSceneSamplerConfig,
@@ -70,8 +70,14 @@ def generate_tensor_teacher_once(
     point cloud stored for spatial-network training, so improving port truth
     does not automatically multiply the spatial training-set size.
     """
-    if not scene.packages:
-        raise ValueError("tensor hybrid teacher samples require at least one package")
+    if (
+        not scene.packages
+        and not isinstance(scene.medium, TensorElectricMaterial)
+    ):
+        raise ValueError(
+            "tensor hybrid teacher samples require package regions or a "
+            "tensor-electric homogeneous background"
+        )
     if (
         package_volume_axial_order < 2
         or package_volume_radial_order < 2
