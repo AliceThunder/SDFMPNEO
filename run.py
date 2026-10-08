@@ -63,7 +63,7 @@ CONFIG = {
     # workers/native_threads_per_worker/maximum_teacher_attempts 也不属于缓存身份。
     # ------------------------------------------------------------------
     "DATA": {
-        "count": 256,
+        "count": 512,
         "seed": 37,
         "workers": 8,
         "native_threads_per_worker": 1,
@@ -239,7 +239,7 @@ CONFIG = {
         },
         "optimizer": {
             "learning_rate": 1.0e-3,
-            "weight_decay": 1.0e-6,
+            "weight_decay": 1.0e-5,
             "gradient_clip_norm": 10.0,
         },
     },
@@ -251,18 +251,18 @@ CONFIG = {
         "enabled": True,
         "device": "inherit",
         "seed": 47,
-        "epochs": 120,
+        "epochs": 140,
         "batch_size": 8,
         "validation_fraction": 0.15,
-        "patience": 20,
+        "patience": 30,
         "validation_interval": 1,
         "min_improvement": 1.0e-5,
         "end_to_end_validation": True,
         "checkpoint_every_batches": 1,
         "model": {
-            "field_hidden_dim": 64,
+            "field_hidden_dim": 128,
             "factor_rank": 4,
-            "depth": 2,
+            "depth": 3,
         },
         "optimizer": {
             "learning_rate": 1.0e-3,
