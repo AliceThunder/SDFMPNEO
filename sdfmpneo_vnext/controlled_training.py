@@ -9,15 +9,15 @@ from .balanced_objectives import (
     balanced_spatial_relative_loss,
 )
 from .spatial_boundary_features import (
+    BoundaryAwareHybridSpatialLossShapeNet,
     boundary_aware_conductor_coordinates,
-    install_boundary_aware_conductor_features,
 )
 from .tensor_neural import _sample_tensor_ranges
 
 
-# Install the vNext conductor representation before any spatial model is built.
-# Modules that imported the old coordinate helper by value are rebound below.
-install_boundary_aware_conductor_features()
+# Tensor spatial training uses the schema-2 conductor representation without
+# altering the legacy hybrid spatial classes used elsewhere in the package.
+_spatial_core.HybridSpatialLossShapeNet = BoundaryAwareHybridSpatialLossShapeNet
 _spatial_objective._coordinate_features = boundary_aware_conductor_coordinates
 
 
