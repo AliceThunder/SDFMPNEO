@@ -208,7 +208,11 @@ def train_tensor_hybrid_spatial_loss_surrogate_accelerated(
                     ]
                 )
             )
-            if best_shape_error is None or shape_score < best_shape_error - float(min_improvement):
+            if (
+                best_end_to_end_error is None
+                or end_to_end_score
+                < best_end_to_end_error - float(min_improvement)
+            ):
                 best_shape_error = shape_score
                 best_end_to_end_error = end_to_end_score
                 best_epoch = epoch
