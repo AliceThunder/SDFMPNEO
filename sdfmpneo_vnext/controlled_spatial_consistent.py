@@ -239,6 +239,7 @@ def train_spatial_controlled(
         train_loss = epoch_total / max(epoch_seen, 1)
         shape_score = None
         end_to_end_score = None
+        selection_score = None
         if validation_samples and (epoch % validation_interval == 0 or epoch == epochs):
             model.eval()
             total = 0.0
@@ -277,11 +278,15 @@ def train_spatial_controlled(
                     )
                 )
 
-            # Select the checkpoint using the quantity controlled by this
-            # network. End-to-end error also contains the frozen port model's
-            # error and is therefore diagnostic rather than an early-stop key.
-            if best_score is None or shape_score < float(best_score) - min_improvement:
-                best_score = shape_score
+            # When requested, select exactly the model that performs best on the
+            # inference path users will call. The port model is frozen for every
+            # spatial epoch, so its error is a constant component of this model
+            # comparison rather than validation-label leakage.
+            selection_score = (
+                end_to_end_score if end_to_end_validation else shape_score
+            )
+            if best_score is None or selection_score < float(best_score) - min_improvement:
+                best_score = selection_score
                 best_shape_score = shape_score
                 best_epoch = epoch
                 best_state = _cpu_state_dict(model.state_dict())
@@ -297,7 +302,9 @@ def train_spatial_controlled(
             "epoch": epoch,
             "epochs": epochs,
             "train_loss": float(train_loss),
-            "validation_loss": None if shape_score is None else float(shape_score),
+            "validation_loss": (
+                None if selection_score is None else float(selection_score)
+            ),
             "validation_shape_loss": None if shape_score is None else float(shape_score),
             "validation_end_to_end_loss": (
                 None if end_to_end_score is None else float(end_to_end_score)
