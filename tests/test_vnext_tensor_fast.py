@@ -90,6 +90,11 @@ def _teacher_sample(
         magnetic_volume_radial_order=2,
         magnetic_volume_azimuthal_order=8,
         maximum_raw_magnetic_reciprocity_defect=0.25,
+        package_volume_axial_order=2,
+        package_volume_radial_order=2,
+        package_volume_azimuthal_order=8,
+        background_radial_order=3,
+        background_angular_order=8,
     )
 
 
