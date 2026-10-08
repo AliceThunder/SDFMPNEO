@@ -1,7 +1,6 @@
 from . import _spatial_performance_core as _core
 
 resolve_torch_device = _core.resolve_torch_device
-resolve_training_dtype = _core.resolve_training_dtype
 _factor_psd = _core._factor_psd
 _conductor_raw_batched = _core._conductor_raw_batched
 _package_raw_batched = _core._package_raw_batched
