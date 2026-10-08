@@ -55,10 +55,21 @@ def generate_tensor_teacher_once(
     package_volume_azimuthal_order: int = 16,
     background_radial_order: int = 10,
     background_angular_order: int = 32,
+    energy_volume_axial_order: int = 8,
+    energy_volume_radial_order: int = 6,
+    energy_volume_azimuthal_order: int = 24,
+    energy_background_radial_order: int = 12,
+    energy_background_angular_order: int = 48,
     maximum_raw_spatial_closure_error: float = 0.35,
     maximum_spatial_quadrature_refinements: int = 4,
 ):
-    """Produce one energy-consistent tensor port/spatial teacher sample."""
+    """Produce one energy-consistent tensor port/spatial teacher sample.
+
+    Port resistance and loss-channel truth use the higher-accuracy ``energy_*``
+    quadrature.  ``package_volume_*`` and ``background_*`` control only the
+    point cloud stored for spatial-network training, so improving port truth
+    does not automatically multiply the spatial training-set size.
+    """
     if not scene.packages:
         raise ValueError("tensor hybrid teacher samples require at least one package")
     if (
@@ -68,7 +79,15 @@ def generate_tensor_teacher_once(
         or background_radial_order < 3
         or background_angular_order < 8
     ):
-        raise ValueError("invalid tensor spatial truth quadrature resolution")
+        raise ValueError("invalid tensor spatial sampling quadrature resolution")
+    if (
+        energy_volume_axial_order < 2
+        or energy_volume_radial_order < 2
+        or energy_volume_azimuthal_order < 8
+        or energy_background_radial_order < 3
+        or energy_background_angular_order < 8
+    ):
+        raise ValueError("invalid tensor energy truth quadrature resolution")
     if int(maximum_spatial_quadrature_refinements) < 0:
         raise ValueError(
             "maximum_spatial_quadrature_refinements must be nonnegative"
@@ -99,11 +118,11 @@ def generate_tensor_teacher_once(
     calibration = prepare_tensor_spatial_reference_adaptive(
         teacher,
         result,
-        volume_axial_order=int(package_volume_axial_order),
-        volume_radial_order=int(package_volume_radial_order),
-        volume_azimuthal_order=int(package_volume_azimuthal_order),
-        background_radial_order=int(background_radial_order),
-        background_angular_order=int(background_angular_order),
+        volume_axial_order=int(energy_volume_axial_order),
+        volume_radial_order=int(energy_volume_radial_order),
+        volume_azimuthal_order=int(energy_volume_azimuthal_order),
+        background_radial_order=int(energy_background_radial_order),
+        background_angular_order=int(energy_background_angular_order),
         maximum_raw_closure_error=float(maximum_raw_spatial_closure_error),
         maximum_quadrature_refinements=int(
             maximum_spatial_quadrature_refinements
@@ -140,11 +159,11 @@ def generate_tensor_teacher_once(
         maximum_raw_magnetic_reciprocity_defect=float(
             maximum_raw_magnetic_reciprocity_defect
         ),
-        package_volume_axial_order=int(package_volume_axial_order),
-        package_volume_radial_order=int(package_volume_radial_order),
-        package_volume_azimuthal_order=int(package_volume_azimuthal_order),
-        background_radial_order=int(background_radial_order),
-        background_angular_order=int(background_angular_order),
+        package_volume_axial_order=int(energy_volume_axial_order),
+        package_volume_radial_order=int(energy_volume_radial_order),
+        package_volume_azimuthal_order=int(energy_volume_azimuthal_order),
+        background_radial_order=int(energy_background_radial_order),
+        background_angular_order=int(energy_background_angular_order),
         maximum_raw_spatial_closure_error=float(
             maximum_raw_spatial_closure_error
         ),
