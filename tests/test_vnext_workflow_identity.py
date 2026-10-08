@@ -23,6 +23,12 @@ def _config():
             "surface_vertical_order": 4,
             "surface_azimuthal_order": 8,
             "include_spatial": False,
+            "energy_volume_axial_order": 8,
+            "energy_volume_radial_order": 6,
+            "energy_volume_azimuthal_order": 24,
+            "energy_background_radial_order": 12,
+            "energy_background_angular_order": 48,
+            "maximum_spatial_quadrature_refinements": 0,
         },
         "PORT_TRAINING": {
             "seed": 17,
@@ -81,3 +87,19 @@ def test_partition_change_keeps_teacher_cache_but_invalidates_model_dataset_key(
 
     assert changed_cache_key == cache_key
     assert changed_training_key != training_key
+
+
+def test_energy_truth_quadrature_changes_teacher_cache_identity():
+    config = _config()
+    changed = deepcopy(config)
+    changed["TRUTH"]["energy_volume_axial_order"] = 10
+
+    assert teacher_cache_key(changed) != teacher_cache_key(config)
+
+
+def test_ignored_legacy_refinement_budget_does_not_change_teacher_cache_identity():
+    config = _config()
+    changed = deepcopy(config)
+    changed["TRUTH"]["maximum_spatial_quadrature_refinements"] = 9
+
+    assert teacher_cache_key(changed) == teacher_cache_key(config)
