@@ -9,6 +9,9 @@ from sdfmpneo_vnext.balanced_objectives import (
     balanced_port_batch_loss,
     balanced_spatial_relative_loss,
 )
+from sdfmpneo_vnext.spatial_boundary_features import (
+    boundary_aware_conductor_coordinates,
+)
 
 
 def test_balanced_spatial_loss_is_scale_invariant_and_finite_near_zero_truth():
@@ -28,6 +31,26 @@ def test_balanced_spatial_loss_is_scale_invariant_and_finite_near_zero_truth():
     assert torch.allclose(value, scaled, rtol=2e-5, atol=1e-7)
 
 
+def test_boundary_aware_conductor_coordinates_expose_superellipse_radius():
+    geometry = SimpleNamespace(
+        conductor_width=2.0,
+        conductor_thickness=4.0,
+        cross_section_exponent=4.0,
+    )
+    scene = SimpleNamespace(coils=[SimpleNamespace(geometry=geometry)])
+    coordinates = boundary_aware_conductor_coordinates(
+        scene,
+        np.asarray([0, 0, 0]),
+        np.asarray([0.0, 0.25, 0.5]),
+        np.asarray([[1.0, 0.0], [0.0, 2.0], [0.5, 0.0]]),
+    )
+
+    assert coordinates.shape == (3, 6)
+    assert np.allclose(coordinates[:2, 2], 1.0)
+    assert np.isclose(coordinates[2, 2], 0.5)
+    assert np.allclose(coordinates[:, 3], coordinates[:, 2] ** 2)
+
+
 def test_controlled_training_installs_balanced_contracts():
     import sdfmpneo_vnext._controlled_training_core as port_core
     import sdfmpneo_vnext.controlled_spatial_consistent as spatial_core
@@ -35,9 +58,10 @@ def test_controlled_training_installs_balanced_contracts():
     import sdfmpneo_vnext.controlled_training as controlled
 
     assert PORT_TRAINING_CONTRACT == 2
-    assert SPATIAL_TRAINING_CONTRACT == 3
+    assert SPATIAL_TRAINING_CONTRACT == 4
     assert port_core._batch_loss is balanced_port_batch_loss
     assert spatial_objective._weighted_relative_loss is balanced_spatial_relative_loss
+    assert spatial_objective._coordinate_features is boundary_aware_conductor_coordinates
     assert spatial_core.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
 
     legacy = controlled._legacy_port_signature({}, "dataset")
