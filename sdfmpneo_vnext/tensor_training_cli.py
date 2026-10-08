@@ -56,13 +56,51 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-segments", type=int, default=64)
     parser.add_argument("--surface-vertical-order", type=int, default=12)
     parser.add_argument("--surface-azimuthal-order", type=int, default=24)
+
+    # Magnetic permeability correction quadrature. This is independent of the
+    # electric-energy truth and the point cloud used to train the spatial net.
+    parser.add_argument("--magnetic-volume-axial-order", type=int, default=8)
+    parser.add_argument("--magnetic-volume-radial-order", type=int, default=6)
+    parser.add_argument("--magnetic-volume-azimuthal-order", type=int, default=24)
+
+    # Spatial-network point-cloud resolution.
     parser.add_argument("--package-volume-axial-order", type=int, default=6)
     parser.add_argument("--package-volume-radial-order", type=int, default=4)
     parser.add_argument("--package-volume-azimuthal-order", type=int, default=16)
     parser.add_argument("--background-radial-order", type=int, default=10)
     parser.add_argument("--background-angular-order", type=int, default=32)
+
+    # Canonical port energy truth, aligned with tensor REFERENCE/CERTIFIED.
+    parser.add_argument("--energy-volume-axial-order", type=int, default=8)
+    parser.add_argument("--energy-volume-radial-order", type=int, default=6)
+    parser.add_argument("--energy-volume-azimuthal-order", type=int, default=24)
+    parser.add_argument("--energy-background-radial-order", type=int, default=12)
+    parser.add_argument("--energy-background-angular-order", type=int, default=48)
+
     parser.add_argument("--overwrite", action="store_true")
     return parser
+
+
+def _teacher_options(args) -> dict:
+    return {
+        "baseline_segments": int(args.baseline_segments),
+        "surface_vertical_order": int(args.surface_vertical_order),
+        "surface_azimuthal_order": int(args.surface_azimuthal_order),
+        "include_spatial": bool(args.with_spatial),
+        "magnetic_volume_axial_order": int(args.magnetic_volume_axial_order),
+        "magnetic_volume_radial_order": int(args.magnetic_volume_radial_order),
+        "magnetic_volume_azimuthal_order": int(args.magnetic_volume_azimuthal_order),
+        "package_volume_axial_order": int(args.package_volume_axial_order),
+        "package_volume_radial_order": int(args.package_volume_radial_order),
+        "package_volume_azimuthal_order": int(args.package_volume_azimuthal_order),
+        "background_radial_order": int(args.background_radial_order),
+        "background_angular_order": int(args.background_angular_order),
+        "energy_volume_axial_order": int(args.energy_volume_axial_order),
+        "energy_volume_radial_order": int(args.energy_volume_radial_order),
+        "energy_volume_azimuthal_order": int(args.energy_volume_azimuthal_order),
+        "energy_background_radial_order": int(args.energy_background_radial_order),
+        "energy_background_angular_order": int(args.energy_background_angular_order),
+    }
 
 
 def _split(samples, fraction: float, seed: int):
@@ -104,20 +142,7 @@ def main(argv=None) -> int:
         tensor_background_probability=float(args.tensor_background_probability),
     )
     teacher = MQSConfig()
-    teacher_options = {
-        "baseline_segments": int(args.baseline_segments),
-        "surface_vertical_order": int(args.surface_vertical_order),
-        "surface_azimuthal_order": int(args.surface_azimuthal_order),
-        "include_spatial": bool(args.with_spatial),
-        "magnetic_volume_axial_order": int(args.package_volume_axial_order),
-        "magnetic_volume_radial_order": int(args.package_volume_radial_order),
-        "magnetic_volume_azimuthal_order": int(args.package_volume_azimuthal_order),
-        "package_volume_axial_order": int(args.package_volume_axial_order),
-        "package_volume_radial_order": int(args.package_volume_radial_order),
-        "package_volume_azimuthal_order": int(args.package_volume_azimuthal_order),
-        "background_radial_order": int(args.background_radial_order),
-        "background_angular_order": int(args.background_angular_order),
-    }
+    teacher_options = _teacher_options(args)
 
     generated = tuple(
         iter_tensor_teacher_samples_parallel_once(
@@ -188,6 +213,7 @@ def main(argv=None) -> int:
             "teacher_samples": int(args.count),
             "batch_size": int(args.batch_size),
             "single_solve_spatial_truth": bool(args.with_spatial),
+            "teacher_truth": teacher_options,
         },
         overwrite=bool(args.overwrite),
     )
