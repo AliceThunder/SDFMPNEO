@@ -40,6 +40,7 @@ _port_core._batch_loss = balanced_port_batch_loss
 _port_core._port_signature = _balanced_port_signature
 
 _spatial_objective._weighted_relative_loss = balanced_spatial_relative_loss
+_spatial_objective.SPATIAL_TRAINING_CONTRACT = SPATIAL_TRAINING_CONTRACT
 _spatial_core.SPATIAL_TRAINING_CONTRACT = SPATIAL_TRAINING_CONTRACT
 _spatial_core._sample_end_to_end_error = balanced_spatial_end_to_end_error
 
