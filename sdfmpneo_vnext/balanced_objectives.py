@@ -11,7 +11,7 @@ from . import performance as _performance
 
 
 PORT_TRAINING_CONTRACT = 2
-SPATIAL_TRAINING_CONTRACT = 3
+SPATIAL_TRAINING_CONTRACT = 4
 
 
 def _real_dtype(value):
