@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from sdfmpneo_vnext.workflow import _training_dataset_key
+from sdfmpneo_vnext.workflow import _training_dataset_key, _training_history_summary
 from sdfmpneo_vnext.workflow_cache import teacher_cache_key
 
 
@@ -103,3 +103,47 @@ def test_ignored_legacy_refinement_budget_does_not_change_teacher_cache_identity
     changed["TRUTH"]["maximum_spatial_quadrature_refinements"] = 9
 
     assert teacher_cache_key(changed) == teacher_cache_key(config)
+
+
+def test_training_history_summary_reports_selected_and_final_quality():
+    history = [
+        {
+            "epoch": 1,
+            "train_loss": 0.8,
+            "validation_loss": 0.7,
+            "best_validation_loss": 0.7,
+            "best_epoch": 1,
+            "device": "cpu",
+            "dtype": "float64",
+        },
+        {
+            "epoch": 2,
+            "train_loss": 0.5,
+            "validation_loss": 0.6,
+            "best_validation_loss": 0.6,
+            "best_epoch": 2,
+            "device": "cpu",
+            "dtype": "float64",
+        },
+        {
+            "epoch": 3,
+            "train_loss": 0.4,
+            "validation_loss": 0.65,
+            "best_validation_loss": 0.6,
+            "best_epoch": 2,
+            "device": "cpu",
+            "dtype": "float64",
+        },
+    ]
+
+    summary = _training_history_summary(history, 10)
+
+    assert summary["epochs_completed"] == 3
+    assert summary["final_epoch"] == 3
+    assert summary["best_epoch"] == 2
+    assert summary["stopped_early"] is True
+    assert summary["best_validation_loss"] == 0.6
+    assert summary["best_epoch_train_loss"] == 0.5
+    assert summary["final_validation_loss"] == 0.65
+    assert summary["device"] == "cpu"
+    assert summary["dtype"] == "float64"
