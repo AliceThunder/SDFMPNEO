@@ -8,7 +8,17 @@ from .balanced_objectives import (
     balanced_spatial_end_to_end_error,
     balanced_spatial_relative_loss,
 )
+from .spatial_boundary_features import (
+    boundary_aware_conductor_coordinates,
+    install_boundary_aware_conductor_features,
+)
 from .tensor_neural import _sample_tensor_ranges
+
+
+# Install the vNext conductor representation before any spatial model is built.
+# Modules that imported the old coordinate helper by value are rebound below.
+install_boundary_aware_conductor_features()
+_spatial_objective._coordinate_features = boundary_aware_conductor_coordinates
 
 
 # The controlled trainers resolve these module globals at call time.  Rebinding
