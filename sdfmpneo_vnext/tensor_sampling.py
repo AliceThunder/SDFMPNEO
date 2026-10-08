@@ -187,6 +187,10 @@ class TensorHybridSceneSamplerConfig:
     base: HybridSceneSamplerConfig = HybridSceneSamplerConfig()
     tensor_package_probability: float = 1.0
     tensor_background_probability: float = 0.0
+    # Fraction of tensor scenes that contain no finite package at all. The
+    # background is forced tensor-electric for these draws so the sample stays
+    # inside the tensor-aware training family rather than collapsing to scalar.
+    background_only_probability: float = 0.0
     tensor_relative_permittivity_range: tuple[float, float] = (
         1.5,
         10.0,
@@ -204,6 +208,7 @@ class TensorHybridSceneSamplerConfig:
         for name in (
             "tensor_package_probability",
             "tensor_background_probability",
+            "background_only_probability",
             "tensor_lossless_probability",
         ):
             value = float(
@@ -262,6 +267,8 @@ class TensorHybridSceneSamplerConfig:
                 > 0.0
                 or self.tensor_package_probability
                 > 0.0
+                or self.background_only_probability
+                > 0.0
             )
         ):
             raise ValueError(
@@ -310,6 +317,34 @@ def sample_tensor_hybrid_scene(
         rng,
         config,
     )
+
+    if (
+        rng.random()
+        < config.background_only_probability
+    ):
+        medium = _tensor_material(
+            rng,
+            scene.medium,
+            relative_permittivity_range=(
+                config.tensor_relative_permittivity_range
+            ),
+            conductivity_range=(
+                config.tensor_conductivity_range
+            ),
+            lossless_probability=(
+                config.tensor_lossless_probability
+            ),
+        )
+        return (
+            Scene(
+                scene.coils,
+                medium,
+                (),
+            ),
+            float(
+                frequency_hz
+            ),
+        )
 
     packages = []
     tensor_package_count = 0
