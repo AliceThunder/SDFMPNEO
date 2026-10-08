@@ -18,14 +18,7 @@ CONDUCTOR_COORDINATE_FEATURE_DIM = 6
 
 
 def boundary_aware_conductor_coordinates(scene, coil_index, arc_fraction, xy):
-    """Conductor-local coordinates with explicit superellipse boundary radius.
-
-    The first two channels retain the signed normalized cross-section position.
-    rho is the exact superellipse radial coordinate, so rho=1 is the conductor
-    boundary for every cross-section exponent.  rho and rho**2 make skin-depth
-    localization directly representable without requiring the MLP to reconstruct
-    the variable-exponent superellipse norm from latent geometry features.
-    """
+    """Conductor-local coordinates with explicit superellipse boundary radius."""
     coil_index = np.asarray(coil_index, dtype=int)
     arc_fraction = np.asarray(arc_fraction, dtype=float)
     xy = np.asarray(xy, dtype=float)
@@ -156,7 +149,90 @@ class BoundaryAwareConductorLossShapeNet(nn.Module):
         return 0.5 * (matrices + matrices.conj().transpose(-1, -2))
 
 
+class BoundaryAwareHybridSpatialLossShapeNet(_hybrid.HybridSpatialLossShapeNet):
+    """Tensor FAST spatial model with a boundary-aware conductor decoder."""
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        coil_pair_dim: int,
+        cross_dim: int,
+        *,
+        field_hidden_dim: int = 64,
+        factor_rank: int = 4,
+        depth: int = 2,
+    ):
+        super().__init__(
+            hidden_dim,
+            coil_pair_dim,
+            cross_dim,
+            field_hidden_dim=field_hidden_dim,
+            factor_rank=factor_rank,
+            depth=depth,
+        )
+        self.conductor = BoundaryAwareConductorLossShapeNet(
+            self.hidden_dim,
+            self.coil_pair_dim,
+            field_hidden_dim=self.field_hidden_dim,
+            factor_rank=self.factor_rank,
+            depth=self.depth,
+        )
+
+
+class BoundaryAwarePreparedHybridSpatialLossField(
+    _hybrid.PreparedHybridSpatialLossField
+):
+    """Prepared tensor field whose conductor queries use schema-2 coordinates."""
+
+    def local_dissipation_matrices(self, coil_index, arc_fraction, xy) -> np.ndarray:
+        coil_index = np.asarray(coil_index, dtype=int)
+        arc_fraction = np.asarray(arc_fraction, dtype=float)
+        xy = np.asarray(xy, dtype=float)
+        n = len(coil_index)
+        if (
+            coil_index.ndim != 1
+            or arc_fraction.shape != (n,)
+            or xy.shape != (n, 2)
+        ):
+            raise ValueError("conductor spatial query arrays have incompatible shapes")
+        if np.any((coil_index < 0) | (coil_index >= len(self.scene.coils))):
+            raise IndexError("coil_index out of range")
+        if np.any((arc_fraction < 0.0) | (arc_fraction > 1.0)):
+            raise ValueError("arc_fraction must lie in [0,1]")
+
+        inside = np.ones(n, dtype=bool)
+        for point in range(n):
+            geometry = self.scene.coils[int(coil_index[point])].geometry
+            xn = abs(xy[point, 0]) / (0.5 * geometry.conductor_width)
+            yn = abs(xy[point, 1]) / (0.5 * geometry.conductor_thickness)
+            exponent = geometry.cross_section_exponent
+            inside[point] = xn**exponent + yn**exponent <= 1.0 + 1e-12
+
+        coordinates = boundary_aware_conductor_coordinates(
+            self.scene,
+            coil_index,
+            arc_fraction,
+            xy,
+        )
+        self.model.eval()
+        with torch.no_grad():
+            raw = self.model.conductor.raw_matrices(
+                self.coil_latent,
+                self.coil_pair_features,
+                coil_index,
+                coordinates,
+            )
+            values = _hybrid._apply_by_coil(
+                raw,
+                coil_index,
+                self.conductor_transforms,
+            )
+            if not np.all(inside):
+                mask = torch.as_tensor(~inside, dtype=torch.bool, device=raw.device)
+                values[mask] = 0.0
+        return values.detach().cpu().numpy()
+
+
 def install_boundary_aware_conductor_features() -> None:
-    """Install the vNext conductor representation into shared spatial classes."""
-    _hybrid._coordinate_features = boundary_aware_conductor_coordinates
-    _hybrid.ConductorLossShapeNet = BoundaryAwareConductorLossShapeNet
+    """Compatibility no-op; tensor facades install the scoped classes explicitly."""
+    return None
