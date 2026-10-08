@@ -122,20 +122,23 @@ class HybridNormalizer(_core.HybridNormalizer):
 
     @staticmethod
     def from_dict(data):
-        base = _core.HybridNormalizer.from_dict(data)
+        # Do not dispatch through ``_core.HybridNormalizer`` here.  The facade
+        # intentionally rebinds that core global below so core factory methods
+        # construct the empty-safe public class.  Calling it from this method
+        # would therefore resolve back to this same staticmethod and recurse.
         return HybridNormalizer(
-            base.coil_node_mean,
-            base.coil_node_scale,
-            base.coil_pair_mean,
-            base.coil_pair_scale,
-            base.package_mean,
-            base.package_scale,
-            base.coil_package_mean,
-            base.coil_package_scale,
-            base.package_pair_mean,
-            base.package_pair_scale,
-            base.resistance_scale,
-            base.reactance_scale,
+            np.asarray(data["coil_node_mean"], dtype=float),
+            np.asarray(data["coil_node_scale"], dtype=float),
+            np.asarray(data["coil_pair_mean"], dtype=float),
+            np.asarray(data["coil_pair_scale"], dtype=float),
+            np.asarray(data["package_mean"], dtype=float),
+            np.asarray(data["package_scale"], dtype=float),
+            np.asarray(data["coil_package_mean"], dtype=float),
+            np.asarray(data["coil_package_scale"], dtype=float),
+            np.asarray(data["package_pair_mean"], dtype=float),
+            np.asarray(data["package_pair_scale"], dtype=float),
+            float(data["resistance_scale"]),
+            float(data["reactance_scale"]),
         )
 
 
