@@ -182,6 +182,11 @@ class TensorHybridNeuralResidualArtifact:
         self.model.eval()
 
     def _validate_material_domain(self, scene: Scene, frequency_hz: float):
+        if not scene.packages:
+            raise NotImplementedError(
+                "the current tensor FAST artifact requires at least one package; "
+                "background-only tensor-electric scenes use REFERENCE or CERTIFIED"
+            )
         epsilon, sigma = _material_tensors(scene.medium, frequency_hz)
         _range_contains(
             np.linalg.eigvalsh(epsilon),
