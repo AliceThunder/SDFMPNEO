@@ -116,7 +116,7 @@ CONFIG = {
             "package_debye_epsilon_infinite_range": [1.5, 6.0],
             "package_debye_delta_epsilon_range": [0.5, 20.0],
             "package_debye_relaxation_time_range": [1.0e-8, 1.0e-4],
-            "background_relative_permittivity_range": [1.0, 1.000001],
+            "background_relative_permittivity_range": [1.0, 1.0],
             "background_conductivity_range": [1.0e-7, 5.0e-3],
             "lossy_background_probability": 0.25,
             "debye_background_probability": 0.0,
