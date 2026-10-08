@@ -11,7 +11,7 @@ except ImportError as exc:  # pragma: no cover
 
 from .device import resolve_torch_device
 from .hybrid_neural import HybridNormalizer, HybridPhysicsFactoredResidualNet
-from .hybrid_spatial_neural import HybridSpatialLossShapeNet
+from .spatial_boundary_features import BoundaryAwareHybridSpatialLossShapeNet
 from .tensor_neural import (
     TENSOR_HYBRID_ARTIFACT_SCHEMA,
     TensorHybridNeuralResidualArtifact,
@@ -91,7 +91,9 @@ def load_tensor_spatial_artifact(
         raise ValueError(
             "this tensor spatial artifact uses float64 and cannot be loaded on MPS"
         )
-    model = HybridSpatialLossShapeNet(**payload["model_config"]).to(dtype=dtype)
+    model = BoundaryAwareHybridSpatialLossShapeNet(**payload["model_config"]).to(
+        dtype=dtype
+    )
     model.load_state_dict(payload["model_state"])
     model.eval()
     return TensorHybridSpatialLossArtifact(
