@@ -97,18 +97,21 @@ CONFIG = {
             "package_center_offset_fraction_range": [0.0, 0.35],
             "package_exponent_xy_range": [2.0, 5.0],
             "package_exponent_z_range": [2.0, 5.0],
-            "package_count_range": [1, 1],
-            "nested_package_probability": 0.0,
+            # 默认覆盖单/双 material region；多 package 由同一图网络处理。
+            "package_count_range": [1, 2],
+            # 严格嵌套与自由 inclusion 都进入训练域；partial overlap 仍拒绝。
+            "nested_package_probability": 0.25,
             "graded_package_probability": 0.0,
             "nested_package_scale_range": [1.15, 1.45],
-            "free_inclusion_probability": 0.0,
+            "free_inclusion_probability": 0.20,
             "free_inclusion_center_radius_fraction_range": [0.65, 1.8],
             "free_inclusion_half_extent_fraction_range": [0.12, 0.45],
             # Tensor FAST 当前训练域使用 AC；精确 DC 留给 REFERENCE/CERTIFIED。
             "dc_probability": 0.0,
             "dc_conductive_probability": 0.0,
             "relative_permittivity_range": [1.5, 6.0],
-            "package_relative_permeability_range": [1.0, 1.0],
+            # 磁导率保持各向同性，但不再固定为真空值，让磁性修正进入训练。
+            "package_relative_permeability_range": [0.8, 1.5],
             "dielectric_conductivity_range": [1.0e-7, 5.0e-3],
             "lossless_probability": 0.20,
             "debye_package_probability": 0.0,
