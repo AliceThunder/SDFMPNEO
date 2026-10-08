@@ -1,9 +1,10 @@
 from . import _tensor_spatial_neural_core as _core
+from .balanced_objectives import balanced_spatial_end_to_end_error
 
 TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA = _core.TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA
 TensorHybridSpatialLossArtifact = _core.TensorHybridSpatialLossArtifact
 tensor_port_fingerprint = _core.tensor_port_fingerprint
-_sample_end_to_end_error = _core._sample_end_to_end_error
+_sample_end_to_end_error = balanced_spatial_end_to_end_error
 
 from ._tensor_spatial_neural_core import *
 
