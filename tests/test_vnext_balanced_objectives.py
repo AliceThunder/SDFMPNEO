@@ -80,6 +80,7 @@ def test_controlled_training_installs_balanced_contracts():
     assert port_core._batch_loss is balanced_port_batch_loss
     assert spatial_objective._weighted_relative_loss is balanced_spatial_relative_loss
     assert spatial_objective._coordinate_features is boundary_aware_conductor_coordinates
+    assert spatial_objective.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
     assert spatial_core.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
 
     legacy = controlled._legacy_port_signature({}, "dataset")
