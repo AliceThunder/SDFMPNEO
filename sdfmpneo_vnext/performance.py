@@ -118,8 +118,6 @@ def _batched_latent(
     package0 = model.package_encoder(package_features)
     _, n_coils, _ = coil0.shape
     _, n_packages, _ = package0.shape
-    if n_packages < 1:
-        raise ValueError("tensor hybrid batches require at least one package")
 
     coil_pair_messages = []
     for i in range(n_coils):
@@ -165,18 +163,21 @@ def _batched_latent(
             )
         coil_to_package_messages.append(_aggregate(coil_messages, package0[:, p]))
 
-    package = torch.stack(
-        [
-            model.package_update(
-                torch.cat(
-                    (package0[:, p], package_pair_messages[p], coil_to_package_messages[p]),
-                    dim=-1,
+    if n_packages:
+        package = torch.stack(
+            [
+                model.package_update(
+                    torch.cat(
+                        (package0[:, p], package_pair_messages[p], coil_to_package_messages[p]),
+                        dim=-1,
+                    )
                 )
-            )
-            for p in range(n_packages)
-        ],
-        dim=1,
-    )
+                for p in range(n_packages)
+            ],
+            dim=1,
+        )
+    else:
+        package = package0
 
     package_to_coil_messages = []
     for c in range(n_coils):
@@ -293,10 +294,28 @@ def forward_structured_batch(
         factor = torch.stack(rows, dim=1)
         raw_channels.append(factor @ factor.conj().transpose(-1, -2))
 
-    package_pool = torch.mean(package, dim=1)
+    n_packages = int(package.shape[1])
+    if n_packages:
+        package_pool = torch.mean(package, dim=1)
+    else:
+        package_pool = torch.zeros(
+            (batch, model.hidden_dim),
+            dtype=coil.dtype,
+            device=coil.device,
+        )
     rows = []
     for port_index in range(n_ports):
-        cross_summary = torch.mean(coil_package_features[:, port_index], dim=1)
+        if n_packages:
+            cross_summary = torch.mean(
+                coil_package_features[:, port_index],
+                dim=1,
+            )
+        else:
+            cross_summary = torch.zeros(
+                (batch, model.cross_dim),
+                dtype=coil.dtype,
+                device=coil.device,
+            )
         raw = model.dielectric_channel_head(
             torch.cat((package_pool, coil[:, port_index], cross_summary), dim=-1)
         )
