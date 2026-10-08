@@ -185,15 +185,67 @@ class TensorElectricReferenceArtifact(
         scene: Scene,
         frequency_hz: float,
         *,
-        volume_axial_order: int = 8,
-        volume_radial_order: int = 6,
-        volume_azimuthal_order: int = 24,
-        background_radial_order: int = 12,
-        background_angular_order: int = 48,
-        maximum_raw_closure_error: float = 0.25,
-        normalized_closure_tolerance: float = 1e-6,
+        volume_axial_order: int | None = None,
+        volume_radial_order: int | None = None,
+        volume_azimuthal_order: int | None = None,
+        background_radial_order: int | None = None,
+        background_angular_order: int | None = None,
+        maximum_raw_closure_error: float | None = None,
+        normalized_closure_tolerance: float | None = None,
     ):
-        if not self.supports_scene(scene):
+        tensor_scene = self.supports_scene(scene)
+        if tensor_scene:
+            volume_axial_order = (
+                self.energy_volume_axial_order
+                if volume_axial_order is None
+                else int(volume_axial_order)
+            )
+            volume_radial_order = (
+                self.energy_volume_radial_order
+                if volume_radial_order is None
+                else int(volume_radial_order)
+            )
+            volume_azimuthal_order = (
+                self.energy_volume_azimuthal_order
+                if volume_azimuthal_order is None
+                else int(volume_azimuthal_order)
+            )
+            background_radial_order = (
+                self.energy_background_radial_order
+                if background_radial_order is None
+                else int(background_radial_order)
+            )
+            background_angular_order = (
+                self.energy_background_angular_order
+                if background_angular_order is None
+                else int(background_angular_order)
+            )
+            maximum_raw_closure_error = (
+                self.maximum_raw_energy_closure_error
+                if maximum_raw_closure_error is None
+                else float(maximum_raw_closure_error)
+            )
+            normalized_closure_tolerance = (
+                self.normalized_energy_closure_tolerance
+                if normalized_closure_tolerance is None
+                else float(normalized_closure_tolerance)
+            )
+        else:
+            volume_axial_order = 8 if volume_axial_order is None else int(volume_axial_order)
+            volume_radial_order = 6 if volume_radial_order is None else int(volume_radial_order)
+            volume_azimuthal_order = 24 if volume_azimuthal_order is None else int(volume_azimuthal_order)
+            background_radial_order = 12 if background_radial_order is None else int(background_radial_order)
+            background_angular_order = 48 if background_angular_order is None else int(background_angular_order)
+            maximum_raw_closure_error = (
+                0.25
+                if maximum_raw_closure_error is None
+                else float(maximum_raw_closure_error)
+            )
+            normalized_closure_tolerance = (
+                1e-6
+                if normalized_closure_tolerance is None
+                else float(normalized_closure_tolerance)
+            )
             return super().prepare_spatial(
                 scene,
                 frequency_hz,
@@ -205,6 +257,7 @@ class TensorElectricReferenceArtifact(
                 maximum_raw_closure_error=maximum_raw_closure_error,
                 normalized_closure_tolerance=normalized_closure_tolerance,
             )
+
         teacher = self._raw_teacher(scene, frequency_hz)
         result = teacher.solve()
         return prepare_tensor_reference_loss_field(
