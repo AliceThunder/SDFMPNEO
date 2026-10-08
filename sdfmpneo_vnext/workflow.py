@@ -68,6 +68,55 @@ def _training_dataset_key(cache_key: str, count: int, config) -> str:
     return sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
+def _training_history_summary(history, configured_epochs: int):
+    """Compact, JSON-safe quality summary for fresh or resumed training history."""
+    rows = list(history)
+    result = {
+        "epochs_completed": len(rows),
+        "configured_epochs": int(configured_epochs),
+    }
+    if not rows:
+        return result
+
+    last = rows[-1]
+    best_epoch = int(last.get("best_epoch") or last.get("epoch") or len(rows))
+    best = next(
+        (
+            row
+            for row in rows
+            if int(row.get("epoch", -1)) == best_epoch
+        ),
+        last,
+    )
+
+    def metric(row, name):
+        value = row.get(name)
+        return None if value is None else float(value)
+
+    best_validation_loss = metric(last, "best_validation_loss")
+    if best_validation_loss is None:
+        best_validation_loss = metric(best, "validation_loss")
+
+    final_epoch = int(last.get("epoch") or len(rows))
+    result.update(
+        {
+            "final_epoch": final_epoch,
+            "best_epoch": best_epoch,
+            "stopped_early": final_epoch < int(configured_epochs),
+            "final_train_loss": metric(last, "train_loss"),
+            "final_validation_loss": metric(last, "validation_loss"),
+            "final_validation_shape_loss": metric(last, "validation_shape_loss"),
+            "best_validation_loss": best_validation_loss,
+            "best_epoch_train_loss": metric(best, "train_loss"),
+            "best_epoch_validation_loss": metric(best, "validation_loss"),
+            "best_epoch_validation_shape_loss": metric(best, "validation_shape_loss"),
+            "device": last.get("device"),
+            "dtype": last.get("dtype"),
+        }
+    )
+    return result
+
+
 def _prepare_cache(config, control):
     root = Path(config["ROOT"])
     cache_cfg = dict(config["CACHE"])
@@ -157,15 +206,25 @@ def run_training_worker(config, session_dir) -> int:
             port_artifact_path = _resolve(root, files["port_artifact"])
             port_artifact_path.parent.mkdir(parents=True, exist_ok=True)
             port.save(port_artifact_path)
+            port_summary = _training_history_summary(
+                port_history,
+                int(config["PORT_TRAINING"].get("epochs", 200)),
+            )
             control.emit(
                 phase="port_training",
+                event="summary",
                 port_artifact=str(port_artifact_path),
                 port_epochs_completed=len(port_history),
+                **port_summary,
             )
 
             spatial = None
             spatial_history = []
             spatial_cfg = dict(config.get("SPATIAL_TRAINING", {}) or {})
+            spatial_summary = _training_history_summary(
+                spatial_history,
+                int(spatial_cfg.get("epochs", 120)),
+            )
             if bool(spatial_cfg.get("enabled", include_spatial)):
                 if not include_spatial:
                     raise ValueError(
@@ -187,10 +246,16 @@ def run_training_worker(config, session_dir) -> int:
                 spatial_artifact_path = _resolve(root, files["spatial_artifact"])
                 spatial_artifact_path.parent.mkdir(parents=True, exist_ok=True)
                 spatial.save(spatial_artifact_path)
+                spatial_summary = _training_history_summary(
+                    spatial_history,
+                    int(spatial_cfg.get("epochs", 120)),
+                )
                 control.emit(
                     phase="spatial_training",
+                    event="summary",
                     spatial_artifact=str(spatial_artifact_path),
                     spatial_epochs_completed=len(spatial_history),
+                    **spatial_summary,
                 )
 
             control.checkpoint(phase="publishing", message="publishing tensor bundle")
@@ -219,6 +284,8 @@ def run_training_worker(config, session_dir) -> int:
                         "dataset_key": dataset_key,
                         "port_epochs": len(port_history),
                         "spatial_epochs": len(spatial_history),
+                        "port_training": port_summary,
+                        "spatial_training": spatial_summary,
                         "manifest": manifest,
                     },
                     indent=2,
