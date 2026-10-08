@@ -60,30 +60,23 @@ class TensorHybridSpatialTeacherSample:
         maximum_raw_spatial_closure_error: float | None = None,
         maximum_spatial_quadrature_refinements: int = 4,
     ) -> "TensorHybridSpatialTeacherSample":
+        # Spatial point-cloud density is intentionally independent of the
+        # higher-order quadrature stored on the port sample. Callers can still
+        # override these sampling resolutions explicitly.
         package_volume_axial_order = int(
-            port_sample.package_volume_axial_order
-            if package_volume_axial_order is None
-            else package_volume_axial_order
+            6 if package_volume_axial_order is None else package_volume_axial_order
         )
         package_volume_radial_order = int(
-            port_sample.package_volume_radial_order
-            if package_volume_radial_order is None
-            else package_volume_radial_order
+            4 if package_volume_radial_order is None else package_volume_radial_order
         )
         package_volume_azimuthal_order = int(
-            port_sample.package_volume_azimuthal_order
-            if package_volume_azimuthal_order is None
-            else package_volume_azimuthal_order
+            16 if package_volume_azimuthal_order is None else package_volume_azimuthal_order
         )
         background_radial_order = int(
-            port_sample.background_radial_order
-            if background_radial_order is None
-            else background_radial_order
+            10 if background_radial_order is None else background_radial_order
         )
         background_angular_order = int(
-            port_sample.background_angular_order
-            if background_angular_order is None
-            else background_angular_order
+            32 if background_angular_order is None else background_angular_order
         )
         maximum_raw_spatial_closure_error = float(
             port_sample.maximum_raw_spatial_closure_error
@@ -98,7 +91,7 @@ class TensorHybridSpatialTeacherSample:
             or background_radial_order < 3
             or background_angular_order < 8
         ):
-            raise ValueError("invalid tensor spatial truth quadrature resolution")
+            raise ValueError("invalid tensor spatial sampling quadrature resolution")
         if int(maximum_spatial_quadrature_refinements) < 0:
             raise ValueError(
                 "maximum_spatial_quadrature_refinements must be nonnegative"
@@ -138,11 +131,11 @@ class TensorHybridSpatialTeacherSample:
         calibration = prepare_tensor_spatial_reference_adaptive(
             teacher,
             result,
-            volume_axial_order=package_volume_axial_order,
-            volume_radial_order=package_volume_radial_order,
-            volume_azimuthal_order=package_volume_azimuthal_order,
-            background_radial_order=background_radial_order,
-            background_angular_order=background_angular_order,
+            volume_axial_order=port_sample.package_volume_axial_order,
+            volume_radial_order=port_sample.package_volume_radial_order,
+            volume_azimuthal_order=port_sample.package_volume_azimuthal_order,
+            background_radial_order=port_sample.background_radial_order,
+            background_angular_order=port_sample.background_angular_order,
             maximum_raw_closure_error=maximum_raw_spatial_closure_error,
             maximum_quadrature_refinements=(
                 maximum_spatial_quadrature_refinements
@@ -163,11 +156,6 @@ class TensorHybridSpatialTeacherSample:
                 result.raw_magnetic_reciprocity_defect
             ),
             teacher_config=resolved_config,
-            package_volume_axial_order=package_volume_axial_order,
-            package_volume_radial_order=package_volume_radial_order,
-            package_volume_azimuthal_order=package_volume_azimuthal_order,
-            background_radial_order=background_radial_order,
-            background_angular_order=background_angular_order,
             maximum_raw_spatial_closure_error=(
                 maximum_raw_spatial_closure_error
             ),
