@@ -17,7 +17,13 @@ def _install_balanced_spatial_objective():
     # the circular-import dependency while preserving one objective everywhere.
     from . import spatial_consistent_training as consistent_training
     from .balanced_objectives import balanced_spatial_relative_loss
+    from .spatial_boundary_features import (
+        boundary_aware_conductor_coordinates,
+        install_boundary_aware_conductor_features,
+    )
 
+    install_boundary_aware_conductor_features()
+    consistent_training._coordinate_features = boundary_aware_conductor_coordinates
     consistent_training._weighted_relative_loss = balanced_spatial_relative_loss
     return consistent_training
 
