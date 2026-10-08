@@ -1,0 +1,736 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .certified import certify_mixed_ports
+from .hybrid_certified import certify_dielectric_ports
+from .em import MQSConfig
+from .fast import (
+    FastCurrentControlledEnvelope,
+    FastVoltageControlledEnvelope,
+)
+from .channel_thermal import (
+    ChannelResolvedCurrentEnvelope,
+    ChannelResolvedVoltageEnvelope,
+)
+from .field import UniformLossFieldDecoder
+from .reference import MixedReferenceArtifact
+from .tensor_reference import TensorElectricReferenceArtifact
+from .scene import (
+    Scene,
+    TensorElectricMaterial,
+)
+from .thermal_field import (
+    AnisotropicThermalMedium,
+    ContinuousThermalGreenArtifact,
+    HomogeneousThermalMedium,
+)
+from .thermal_interface import (
+    PiecewiseThermalInterfaceArtifact,
+    scene_thermal_package_media,
+)
+
+
+def _uses_tensor_electric(
+    scene: Scene,
+) -> bool:
+    return bool(
+        isinstance(
+            scene.medium,
+            TensorElectricMaterial,
+        )
+        or any(
+            isinstance(
+                package.material,
+                TensorElectricMaterial,
+            )
+            for package in scene.packages
+        )
+    )
+
+
+def _uses_heterogeneous_reference(
+    scene: Scene,
+) -> bool:
+    return bool(
+        scene.packages
+        or _uses_tensor_electric(
+            scene
+        )
+    )
+
+
+def _resolve_thermal_medium(
+    scene: Scene,
+    medium,
+):
+    if medium is not None:
+        return medium
+    tensor = getattr(
+        scene.medium,
+        "thermal_conductivity_tensor",
+        None,
+    )
+    if tensor is not None:
+        density = getattr(
+            scene.medium,
+            "density",
+            None,
+        )
+        heat_capacity = getattr(
+            scene.medium,
+            "heat_capacity",
+            None,
+        )
+        if (
+            density is None
+            or heat_capacity is None
+        ):
+            raise ValueError(
+                "tensor thermal background requires density and heat_capacity"
+            )
+        return AnisotropicThermalMedium(
+            conductivity_tensor=tensor,
+            density=float(
+                density
+            ),
+            heat_capacity=float(
+                heat_capacity
+            ),
+        )
+    return HomogeneousThermalMedium.from_material(
+        scene.medium
+    )
+
+
+@dataclass(frozen=True)
+class SystemCapabilities:
+    fast_ports: bool
+    fast_spatial: bool
+    reference: bool
+    certified: bool
+    electrothermal: bool
+    electromagnetic_formulation: str
+    background_medium: str
+    lossy_background_media: bool
+    heterogeneous_media: bool
+    retardation: bool
+    arbitrary_se3_pose: bool
+    superelliptic_conductors: bool
+    package_geometry: bool
+    package_dielectric_sie: bool
+    package_em_coupling: bool
+    continuous_spatial_loss: bool
+    exact_dc: bool = False
+    magnetic_package_contrast: bool = False
+    nested_material_regions: bool = False
+    graded_radial_media: bool = False
+    anisotropic_thermal_background: bool = False
+    anisotropic_package_thermal_interfaces: bool = False
+    anisotropic_electric_background: bool = False
+    anisotropic_electric_packages: bool = False
+
+
+def mvp_system_capabilities(
+) -> SystemCapabilities:
+    return SystemCapabilities(
+        fast_ports=True,
+        fast_spatial=True,
+        reference=True,
+        certified=True,
+        electrothermal=True,
+        electromagnetic_formulation=(
+            "magnetoquasistatic_current_potential_charge"
+        ),
+        background_medium=(
+            "homogeneous_isotropic_or_tensor_unbounded_frequency_response"
+        ),
+        lossy_background_media=True,
+        heterogeneous_media=False,
+        retardation=False,
+        arbitrary_se3_pose=True,
+        superelliptic_conductors=True,
+        package_geometry=True,
+        package_dielectric_sie=True,
+        package_em_coupling=True,
+        continuous_spatial_loss=True,
+        exact_dc=True,
+        magnetic_package_contrast=True,
+        nested_material_regions=True,
+        graded_radial_media=True,
+        anisotropic_thermal_background=True,
+        anisotropic_package_thermal_interfaces=True,
+        anisotropic_electric_background=True,
+        anisotropic_electric_packages=True,
+    )
+
+
+class MeshfreeVNextSystem:
+    """Unified vNext runtime over one immutable Scene contract."""
+
+    def __init__(
+        self,
+        port_artifact,
+        *,
+        spatial_artifact=None,
+        reference_config: MQSConfig | None = None,
+        dielectric_surface_vertical_order: int = 16,
+        dielectric_surface_azimuthal_order: int = 32,
+    ):
+        if not hasattr(
+            port_artifact,
+            "predict_structured",
+        ):
+            raise TypeError(
+                "port_artifact must expose predict_structured"
+            )
+        self.port_artifact = port_artifact
+        self.spatial_artifact = spatial_artifact
+        self.reference_config = (
+            reference_config
+            or MQSConfig()
+        )
+        self._reference = MixedReferenceArtifact(
+            config=self.reference_config
+        )
+        self.dielectric_surface_vertical_order = int(
+            dielectric_surface_vertical_order
+        )
+        self.dielectric_surface_azimuthal_order = int(
+            dielectric_surface_azimuthal_order
+        )
+        self._dielectric_reference = TensorElectricReferenceArtifact(
+            config=self.reference_config,
+            surface_vertical_order=(
+                self.dielectric_surface_vertical_order
+            ),
+            surface_azimuthal_order=(
+                self.dielectric_surface_azimuthal_order
+            ),
+        )
+
+    @property
+    def capabilities(
+        self,
+    ) -> SystemCapabilities:
+        return mvp_system_capabilities()
+
+    def _reference_artifact_for_scene(
+        self,
+        scene: Scene,
+    ):
+        return (
+            self._dielectric_reference
+            if _uses_heterogeneous_reference(
+                scene
+            )
+            else self._reference
+        )
+
+    def _require_package_fast_port_artifact(
+        self,
+        scene: Scene,
+    ):
+        if (
+            scene.packages
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_packages",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST port artifact; "
+                "conductor-only FAST predictions are not used for dielectric scenes"
+            )
+
+    def _require_fast_port_artifact(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        self._require_package_fast_port_artifact(
+            scene
+        )
+        if (
+            _uses_tensor_electric(
+                scene
+            )
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_tensor_electric",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "tensor-electric scenes require a tensor-aware FAST port "
+                "artifact; scalar material features are not used as a proxy"
+            )
+        if (
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
+            > 0.0
+            and not bool(
+                getattr(
+                    self.port_artifact,
+                    "supports_lossy_background",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "lossy homogeneous backgrounds require a FAST artifact with "
+                "an explicit background-dissipation channel; conductor-only "
+                "FAST predictions must not silently ignore medium loss"
+            )
+
+    def _require_package_fast_spatial_artifact(
+        self,
+        scene: Scene,
+    ):
+        if not scene.packages:
+            return
+        if (
+            self.spatial_artifact is None
+            or not bool(
+                getattr(
+                    self.spatial_artifact,
+                    "supports_packages",
+                    False,
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "package scenes require a package-aware FAST spatial artifact; "
+                "the conductor-only spatial decoder is not used as a dielectric field"
+            )
+
+    def _require_fast_spatial_artifact(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        self._require_package_fast_spatial_artifact(
+            scene
+        )
+        if (
+            _uses_tensor_electric(
+                scene
+            )
+            and (
+                self.spatial_artifact is None
+                or not bool(
+                    getattr(
+                        self.spatial_artifact,
+                        "supports_tensor_electric",
+                        False,
+                    )
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "tensor-electric scenes require a tensor-aware FAST spatial "
+                "artifact; scalar spatial decoders are not used as a proxy"
+            )
+        if (
+            scene.medium.loss_conductivity(
+                frequency_hz
+            )
+            > 0.0
+            and (
+                self.spatial_artifact is None
+                or not bool(
+                    getattr(
+                        self.spatial_artifact,
+                        "supports_lossy_background",
+                        False,
+                    )
+                )
+            )
+        ):
+            raise NotImplementedError(
+                "lossy homogeneous backgrounds require a FAST spatial artifact "
+                "with an explicit continuous background-loss decoder"
+            )
+
+    def fast_ports(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        self._require_fast_port_artifact(
+            scene,
+            frequency_hz,
+        )
+        return self.port_artifact.predict_structured(
+            scene,
+            frequency_hz,
+        )
+
+    def reference_ports(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        return self._reference_artifact_for_scene(
+            scene
+        ).predict_structured(
+            scene,
+            frequency_hz,
+        )
+
+    def reference_result(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        if _uses_heterogeneous_reference(
+            scene
+        ):
+            return self._dielectric_reference.solve(
+                scene,
+                frequency_hz,
+            )
+        return self._reference.solve(
+            scene,
+            frequency_hz,
+        )[1]
+
+    def certified_ports(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        *,
+        convergence_report=None,
+        config: MQSConfig | None = None,
+        **certification_options,
+    ):
+        if _uses_heterogeneous_reference(
+            scene
+        ):
+            return certify_dielectric_ports(
+                scene,
+                frequency_hz,
+                self.port_artifact,
+                config=(
+                    config
+                    or self.reference_config
+                ),
+                convergence_report=(
+                    convergence_report
+                ),
+                surface_vertical_order=(
+                    self.dielectric_surface_vertical_order
+                ),
+                surface_azimuthal_order=(
+                    self.dielectric_surface_azimuthal_order
+                ),
+                **certification_options,
+            )
+        return certify_mixed_ports(
+            scene,
+            frequency_hz,
+            self.port_artifact,
+            config=(
+                config
+                or self.reference_config
+            ),
+            convergence_report=convergence_report,
+            **certification_options,
+        )
+
+    def fast_spatial(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+    ):
+        self._require_fast_port_artifact(
+            scene,
+            frequency_hz,
+        )
+        self._require_fast_spatial_artifact(
+            scene,
+            frequency_hz,
+        )
+        if self.spatial_artifact is not None:
+            return self.spatial_artifact.prepare(
+                scene,
+                frequency_hz,
+            )
+        return UniformLossFieldDecoder(
+            self.port_artifact
+        ).prepare(
+            scene,
+            frequency_hz,
+        )
+
+    def reference_spatial(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        **options,
+    ):
+        return self._reference_artifact_for_scene(
+            scene
+        ).prepare_spatial(
+            scene,
+            frequency_hz,
+            **options,
+        )
+
+    def reference_channel_current_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        return ChannelResolvedCurrentEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference_artifact_for_scene(
+                scene
+            ),
+            **options,
+        )
+
+    def reference_channel_voltage_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        return ChannelResolvedVoltageEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference_artifact_for_scene(
+                scene
+            ),
+            **options,
+        )
+
+    def fast_current_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        self._require_fast_port_artifact(
+            scene,
+            frequency_hz,
+        )
+        if (
+            scene.packages
+            or _uses_tensor_electric(
+                scene
+            )
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
+        ):
+            return ChannelResolvedCurrentEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self.port_artifact,
+                **options,
+            )
+        return FastCurrentControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self.port_artifact,
+            **options,
+        )
+
+    def fast_voltage_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        self._require_fast_port_artifact(
+            scene,
+            frequency_hz,
+        )
+        if (
+            scene.packages
+            or _uses_tensor_electric(
+                scene
+            )
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
+        ):
+            return ChannelResolvedVoltageEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self.port_artifact,
+                **options,
+            )
+        return FastVoltageControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self.port_artifact,
+            **options,
+        )
+
+    def reference_current_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        if (
+            _uses_heterogeneous_reference(
+                scene
+            )
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
+        ):
+            return ChannelResolvedCurrentEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self._reference_artifact_for_scene(
+                    scene
+                ),
+                **options,
+            )
+        return FastCurrentControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference,
+            **options,
+        )
+
+    def reference_voltage_envelope(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        thermal_model,
+        **options,
+    ):
+        if (
+            _uses_heterogeneous_reference(
+                scene
+            )
+            or scene.medium.loss_conductivity(
+                frequency_hz
+            ) > 0.0
+        ):
+            return ChannelResolvedVoltageEnvelope(
+                scene,
+                frequency_hz,
+                thermal_model,
+                self._reference_artifact_for_scene(
+                    scene
+                ),
+                **options,
+            )
+        return FastVoltageControlledEnvelope(
+            scene,
+            frequency_hz,
+            thermal_model,
+            self._reference,
+            **options,
+        )
+
+    def fast_continuous_thermal_field(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        medium=None,
+        **options,
+    ):
+        medium = _resolve_thermal_medium(
+            scene,
+            medium,
+        )
+        thermal_packages = scene_thermal_package_media(
+            scene,
+            medium,
+        )
+        self._require_fast_port_artifact(
+            scene,
+            frequency_hz,
+        )
+        self._require_fast_spatial_artifact(
+            scene,
+            frequency_hz,
+        )
+        spatial = (
+            self.spatial_artifact
+            if self.spatial_artifact is not None
+            else UniformLossFieldDecoder(
+                self.port_artifact
+            )
+        )
+        thermal_artifact = (
+            PiecewiseThermalInterfaceArtifact(
+                spatial,
+                medium,
+                **options,
+            )
+            if thermal_packages
+            else ContinuousThermalGreenArtifact(
+                spatial,
+                medium,
+                **options,
+            )
+        )
+        return thermal_artifact.prepare(
+            scene,
+            frequency_hz,
+        )
+
+    def reference_continuous_thermal_field(
+        self,
+        scene: Scene,
+        frequency_hz: float,
+        medium=None,
+        **options,
+    ):
+        medium = _resolve_thermal_medium(
+            scene,
+            medium,
+        )
+        artifact = self._reference_artifact_for_scene(
+            scene
+        )
+        thermal_packages = scene_thermal_package_media(
+            scene,
+            medium,
+        )
+        thermal_artifact = (
+            PiecewiseThermalInterfaceArtifact(
+                artifact,
+                medium,
+                **options,
+            )
+            if thermal_packages
+            else ContinuousThermalGreenArtifact(
+                artifact,
+                medium,
+                **options,
+            )
+        )
+        return thermal_artifact.prepare(
+            scene,
+            frequency_hz,
+        )
