@@ -1,15 +1,17 @@
 from . import _tensor_spatial_neural_core as _core
 from .balanced_objectives import balanced_spatial_end_to_end_error
 from .spatial_boundary_features import (
+    BoundaryAwareHybridSpatialLossShapeNet,
+    BoundaryAwarePreparedHybridSpatialLossField,
     boundary_aware_conductor_coordinates,
-    install_boundary_aware_conductor_features,
 )
 
 
 # Tensor spatial schema 2 adds explicit superellipse boundary coordinates to the
-# conductor decoder.  Old schema-1 weights have a different first-layer shape
-# and must never be loaded as if they were compatible.
-install_boundary_aware_conductor_features()
+# conductor decoder.  Keep this scoped to tensor artifacts so legacy hybrid
+# spatial artifacts retain their original four-coordinate representation.
+_core.HybridSpatialLossShapeNet = BoundaryAwareHybridSpatialLossShapeNet
+_core.PreparedHybridSpatialLossField = BoundaryAwarePreparedHybridSpatialLossField
 _core._coordinate_features = boundary_aware_conductor_coordinates
 _core.TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA = 2
 
