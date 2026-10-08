@@ -31,15 +31,18 @@ def test_balanced_spatial_loss_is_scale_invariant_and_finite_near_zero_truth():
     assert torch.allclose(value, scaled, rtol=2e-5, atol=1e-7)
 
 
-def test_boundary_aware_conductor_coordinates_expose_superellipse_radius():
+def _boundary_scene():
     geometry = SimpleNamespace(
         conductor_width=2.0,
         conductor_thickness=4.0,
         cross_section_exponent=4.0,
     )
-    scene = SimpleNamespace(coils=[SimpleNamespace(geometry=geometry)])
+    return SimpleNamespace(coils=[SimpleNamespace(geometry=geometry)])
+
+
+def test_boundary_aware_conductor_coordinates_expose_superellipse_radius():
     coordinates = boundary_aware_conductor_coordinates(
-        scene,
+        _boundary_scene(),
         np.asarray([0, 0, 0]),
         np.asarray([0.0, 0.25, 0.5]),
         np.asarray([[1.0, 0.0], [0.0, 2.0], [0.5, 0.0]]),
@@ -49,6 +52,21 @@ def test_boundary_aware_conductor_coordinates_expose_superellipse_radius():
     assert np.allclose(coordinates[:2, 2], 1.0)
     assert np.isclose(coordinates[2, 2], 0.5)
     assert np.allclose(coordinates[:, 3], coordinates[:, 2] ** 2)
+
+
+def test_tensor_boundary_schema_does_not_replace_legacy_coordinates():
+    import sdfmpneo_vnext.hybrid_spatial_neural as legacy
+    import sdfmpneo_vnext.tensor_spatial_neural as tensor_spatial
+
+    coordinates = legacy._coordinate_features(
+        _boundary_scene(),
+        np.asarray([0]),
+        np.asarray([0.25]),
+        np.asarray([[0.5, 0.0]]),
+    )
+
+    assert coordinates.shape == (1, 4)
+    assert tensor_spatial.TENSOR_HYBRID_SPATIAL_ARTIFACT_SCHEMA == 2
 
 
 def test_controlled_training_installs_balanced_contracts():
