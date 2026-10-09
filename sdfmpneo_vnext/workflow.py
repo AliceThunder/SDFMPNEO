@@ -97,6 +97,26 @@ def _training_history_summary(history, configured_epochs: int):
     if best_validation_loss is None:
         best_validation_loss = metric(best, "validation_loss")
 
+    end_to_end_rows = [
+        row
+        for row in rows
+        if row.get("validation_end_to_end_loss") is not None
+    ]
+    if end_to_end_rows:
+        best_end_to_end = min(
+            end_to_end_rows,
+            key=lambda row: float(row["validation_end_to_end_loss"]),
+        )
+        best_end_to_end_epoch = int(best_end_to_end.get("epoch") or 0)
+        best_validation_end_to_end_loss = metric(
+            best_end_to_end,
+            "validation_end_to_end_loss",
+        )
+    else:
+        best_end_to_end = None
+        best_end_to_end_epoch = None
+        best_validation_end_to_end_loss = None
+
     final_epoch = int(last.get("epoch") or len(rows))
     result.update(
         {
@@ -106,10 +126,20 @@ def _training_history_summary(history, configured_epochs: int):
             "final_train_loss": metric(last, "train_loss"),
             "final_validation_loss": metric(last, "validation_loss"),
             "final_validation_shape_loss": metric(last, "validation_shape_loss"),
+            "final_validation_end_to_end_loss": metric(
+                last,
+                "validation_end_to_end_loss",
+            ),
             "best_validation_loss": best_validation_loss,
             "best_epoch_train_loss": metric(best, "train_loss"),
             "best_epoch_validation_loss": metric(best, "validation_loss"),
             "best_epoch_validation_shape_loss": metric(best, "validation_shape_loss"),
+            "best_epoch_validation_end_to_end_loss": metric(
+                best,
+                "validation_end_to_end_loss",
+            ),
+            "best_end_to_end_epoch": best_end_to_end_epoch,
+            "best_validation_end_to_end_loss": best_validation_end_to_end_loss,
             "device": last.get("device"),
             "dtype": last.get("dtype"),
         }
