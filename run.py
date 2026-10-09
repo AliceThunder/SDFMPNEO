@@ -63,7 +63,7 @@ CONFIG = {
     # workers/native_threads_per_worker/maximum_teacher_attempts 也不属于缓存身份。
     # ------------------------------------------------------------------
     "DATA": {
-        "count": 1024,
+        "count": 4096,
         "seed": 37,
         "workers": 8,
         "native_threads_per_worker": 1,
