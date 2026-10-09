@@ -11,7 +11,7 @@ from . import performance as _performance
 
 
 PORT_TRAINING_CONTRACT = 2
-SPATIAL_TRAINING_CONTRACT = 4
+SPATIAL_TRAINING_CONTRACT = 5
 
 
 def _real_dtype(value):
@@ -31,13 +31,7 @@ def _symmetric_relative_mean(predicted, target, *, dims, floor=0.0):
 
 
 def balanced_port_batch_loss(model, normalizer, batch, *, channel_loss_weight: float):
-    """Per-scene relative port loss for broad geometry/material dynamic ranges.
-
-    The network still decodes the exact same passive structured quantities.  Only
-    the optimization metric changes: each scene is normalized by its own
-    predicted/teacher energy instead of one dataset-wide scalar.  Small values
-    therefore cannot explode the loss, while large scenes no longer dominate it.
-    """
+    """Per-scene relative port loss for broad geometry/material dynamic ranges."""
     resistance, reactance, channels = _performance.forward_structured_batch(
         model,
         *batch["normalized"],
@@ -77,13 +71,7 @@ def balanced_port_batch_loss(model, normalizer, batch, *, channel_loss_weight: f
 
 
 def balanced_spatial_relative_loss(predicted, target, weights):
-    """Symmetric weighted field error for one physical spatial region.
-
-    The historical target-only denominator can become arbitrarily small for a
-    weakly lossy package/background and make that negligible region dominate the
-    whole optimization.  The symmetric energy denominator remains scale
-    invariant but stays finite when either prediction or truth approaches zero.
-    """
+    """Symmetric weighted field error for one physical spatial region."""
     weights = torch.as_tensor(
         weights,
         dtype=_real_dtype(predicted),
@@ -100,7 +88,7 @@ def balanced_spatial_relative_loss(predicted, target, weights):
     return error / torch.clamp(energy, min=tiny)
 
 
-def _balanced_spatial_relative_error_numpy(predicted, target, weights) -> float:
+def _balanced_spatial_error_energy_numpy(predicted, target, weights):
     predicted = np.asarray(predicted, dtype=complex)
     target = np.asarray(target, dtype=complex)
     weights = np.asarray(weights, dtype=float)
@@ -113,17 +101,28 @@ def _balanced_spatial_relative_error_numpy(predicted, target, weights) -> float:
             * (np.abs(predicted) ** 2 + np.abs(target) ** 2)
         )
     )
+    return error, energy
+
+
+def _balanced_spatial_relative_error_numpy(predicted, target, weights) -> float:
+    error, energy = _balanced_spatial_error_energy_numpy(predicted, target, weights)
     if energy <= np.finfo(float).tiny:
         return 0.0 if error <= np.finfo(float).tiny else 1.0
     return error / energy
 
 
 def balanced_spatial_end_to_end_error(artifact, sample) -> float:
-    """Inference-path spatial error using the same robust regional metric."""
+    """Inference-path spatial error with one physical energy normalization.
+
+    Conductor, package and background all contribute to one numerator and one
+    symmetric-energy denominator.  This preserves supervision in weak regions
+    without assigning a tiny-loss region the same weight as the dominant power
+    region merely because each region was normalized independently.
+    """
     prepared = artifact.prepare(sample.scene, sample.frequency_hz)
 
     conductor = sample.conductor_spatial_loss
-    conductor_error = _balanced_spatial_relative_error_numpy(
+    total_error, total_energy = _balanced_spatial_error_energy_numpy(
         prepared.local_dissipation_matrices(
             conductor.coil_index,
             conductor.arc_fraction,
@@ -134,7 +133,7 @@ def balanced_spatial_end_to_end_error(artifact, sample) -> float:
     )
 
     package = sample.package_spatial_loss
-    package_error = _balanced_spatial_relative_error_numpy(
+    error, energy = _balanced_spatial_error_energy_numpy(
         prepared.package_local_dissipation_matrices(
             package.package_index,
             package.local_position,
@@ -142,19 +141,24 @@ def balanced_spatial_end_to_end_error(artifact, sample) -> float:
         package.dissipation_matrix,
         package.weights,
     )
+    total_error += error
+    total_energy += energy
 
-    background_error = 0.0
     if sample.background_spatial_loss is not None:
         background = sample.background_spatial_loss
         root_pose = sample.scene.coils[0].geometry.pose
         world = root_pose.apply(background.root_local_position)
-        background_error = _balanced_spatial_relative_error_numpy(
+        error, energy = _balanced_spatial_error_energy_numpy(
             prepared.background_dissipation_matrices(world),
             background.dissipation_matrix,
             background.weights,
         )
+        total_error += error
+        total_energy += energy
 
-    return float(conductor_error + package_error + background_error)
+    if total_energy <= np.finfo(float).tiny:
+        return 0.0 if total_error <= np.finfo(float).tiny else 1.0
+    return float(total_error / total_energy)
 
 
 # The accelerated port trainer resolves this global at call time.  Installing
