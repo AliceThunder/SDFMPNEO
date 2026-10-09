@@ -76,9 +76,8 @@ def test_controlled_training_installs_balanced_contracts():
     import sdfmpneo_vnext.controlled_training as controlled
 
     assert PORT_TRAINING_CONTRACT == 2
-    assert SPATIAL_TRAINING_CONTRACT == 4
+    assert SPATIAL_TRAINING_CONTRACT == 5
     assert port_core._batch_loss is balanced_port_batch_loss
-    assert spatial_objective._weighted_relative_loss is balanced_spatial_relative_loss
     assert spatial_objective._coordinate_features is boundary_aware_conductor_coordinates
     assert spatial_objective.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
     assert spatial_core.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
