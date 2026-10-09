@@ -29,7 +29,6 @@ from .hybrid_spatial_neural import (
     _package_coordinate_features,
     _package_loss_gate,
     _package_normalization_rule,
-    _weighted_relative_loss,
 )
 from .spatial_performance import (
     _background_raw_batched,
@@ -39,7 +38,7 @@ from .spatial_performance import (
 )
 
 
-SPATIAL_TRAINING_CONTRACT = 2
+SPATIAL_TRAINING_CONTRACT = 5
 
 _DEFAULT_NORMALIZATION = {
     "conductor_longitudinal_points": 12,
@@ -95,6 +94,21 @@ def resolve_spatial_normalization(config=None) -> dict[str, int]:
     ):
         raise ValueError("invalid tensor spatial normalization resolution")
     return values
+
+
+def _weighted_error_energy(predicted, target, weights):
+    """Return physical weighted error and symmetric field energy for one region."""
+    weights = torch.as_tensor(
+        weights,
+        dtype=predicted.real.dtype,
+        device=predicted.device,
+    )
+    weighted = weights[:, None, None]
+    error = torch.sum(weighted * torch.abs(predicted - target) ** 2)
+    energy = torch.sum(
+        weighted * (torch.abs(predicted) ** 2 + torch.abs(target) ** 2)
+    )
+    return error, energy
 
 
 def _normalization_geometry(sample, normalization) -> _NormalizationGeometry:
@@ -348,7 +362,7 @@ def consistent_batched_spatial_shape_loss(
     device,
     normalization=None,
 ):
-    """Spatial shape loss using the exact FAST inference normalization contract."""
+    """Spatial field loss using inference-identical normalization and global energy weighting."""
     samples = tuple(samples)
     if not samples:
         raise ValueError("spatial shape loss requires at least one sample")
@@ -529,26 +543,27 @@ def consistent_batched_spatial_shape_loss(
             dtype=predicted_conductor.dtype,
             device=predicted_conductor.device,
         )
-        conductor_loss = _weighted_relative_loss(
+
+        error, energy = _weighted_error_energy(
             predicted_conductor,
             target_conductor,
             conductor.weights,
         )
-        package_loss = _weighted_relative_loss(
+        region_error, region_energy = _weighted_error_energy(
             predicted_package,
             target_package,
             package.weights,
         )
-        background_loss = torch.zeros(
-            (),
-            dtype=package_loss.dtype,
-            device=package_loss.device,
-        )
+        error = error + region_error
+        energy = energy + region_energy
         if background is not None:
-            background_loss = _weighted_relative_loss(
+            region_error, region_energy = _weighted_error_energy(
                 predicted_background,
                 target_background,
                 background.weights,
             )
-        losses.append(conductor_loss + package_loss + background_loss)
+            error = error + region_error
+            energy = energy + region_energy
+        tiny = torch.finfo(error.dtype).tiny
+        losses.append(error / torch.clamp(energy, min=tiny))
     return torch.stack(losses).mean()
