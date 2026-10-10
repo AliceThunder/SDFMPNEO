@@ -10,8 +10,8 @@ except ImportError as exc:  # pragma: no cover
 from . import performance as _performance
 
 
-PORT_TRAINING_CONTRACT = 2
-SPATIAL_TRAINING_CONTRACT = 5
+PORT_TRAINING_CONTRACT = 3
+SPATIAL_TRAINING_CONTRACT = 6
 
 
 def _real_dtype(value):
