@@ -6,6 +6,7 @@ from .heterogeneous_medium import (
     SmoothHeterogeneousMedium,
     SmoothMaterialAnchor,
 )
+from .heterogeneous_compile import compile_smooth_heterogeneous_scene
 from .thermal_material_laws import (
     MaterialTemperatureLaw,
     TemperatureAdjustedIsotropicMaterial,
@@ -20,6 +21,7 @@ from .temperature_coupled_channel import (
 __all__ = list(_BASE_ALL) + [
     "SmoothHeterogeneousMedium",
     "SmoothMaterialAnchor",
+    "compile_smooth_heterogeneous_scene",
     "MaterialTemperatureLaw",
     "TemperatureAdjustedIsotropicMaterial",
     "LinearIsotropicTemperatureLaw",
