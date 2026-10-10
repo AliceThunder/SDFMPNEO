@@ -12,6 +12,7 @@ from sdfmpneo_vnext.balanced_objectives import (
 from sdfmpneo_vnext.spatial_boundary_features import (
     boundary_aware_conductor_coordinates,
 )
+from sdfmpneo_vnext.stable_validation import stable_deterministic_split
 
 
 def test_balanced_spatial_loss_is_scale_invariant_and_finite_near_zero_truth():
@@ -29,6 +30,18 @@ def test_balanced_spatial_loss_is_scale_invariant_and_finite_near_zero_truth():
     assert torch.isfinite(value)
     assert 0.0 <= float(value) <= 1.0001
     assert torch.allclose(value, scaled, rtol=2e-5, atol=1e-7)
+
+
+def test_stable_validation_membership_survives_dataset_growth():
+    prefix = tuple(range(128))
+    expanded = tuple(range(256))
+
+    _, validation_prefix = stable_deterministic_split(prefix, 0.15, 17)
+    _, validation_expanded = stable_deterministic_split(expanded, 0.15, 17)
+
+    assert set(validation_prefix) == {
+        value for value in validation_expanded if value < len(prefix)
+    }
 
 
 def _boundary_scene():
@@ -75,9 +88,11 @@ def test_controlled_training_installs_balanced_contracts():
     import sdfmpneo_vnext.spatial_consistent_training as spatial_objective
     import sdfmpneo_vnext.controlled_training as controlled
 
-    assert PORT_TRAINING_CONTRACT == 2
-    assert SPATIAL_TRAINING_CONTRACT == 5
+    assert PORT_TRAINING_CONTRACT == 3
+    assert SPATIAL_TRAINING_CONTRACT == 6
     assert port_core._batch_loss is balanced_port_batch_loss
+    assert port_core.deterministic_split is stable_deterministic_split
+    assert spatial_core.deterministic_split is stable_deterministic_split
     assert spatial_objective._coordinate_features is boundary_aware_conductor_coordinates
     assert spatial_objective.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
     assert spatial_core.SPATIAL_TRAINING_CONTRACT == SPATIAL_TRAINING_CONTRACT
