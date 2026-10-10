@@ -2,12 +2,18 @@ import numpy as np
 import pytest
 
 from sdfmpneo_vnext import (
+    CoilObject,
+    ConductorMaterial,
     HomogeneousMedium,
     IsotropicMaterial,
     RigidPose,
+    Scene,
     SmoothHeterogeneousMedium,
     SmoothMaterialAnchor,
+    SuperellipseSpiral,
     TensorElectricMaterial,
+    compile_smooth_heterogeneous_scene,
+    encode_tensor_hybrid_scene_invariant,
 )
 
 
@@ -136,3 +142,53 @@ def test_scalar_electric_interface_fails_closed():
         medium.relative_permittivity_at(100_000.0)
     with pytest.raises(NotImplementedError, match="no single loss conductivity"):
         medium.loss_conductivity(100_000.0)
+
+
+def test_smooth_heterogeneous_scene_compiles_into_tensor_graph_regions():
+    coil = CoilObject(
+        SuperellipseSpiral(
+            0.012,
+            0.010,
+            0.8,
+            8.0e-4,
+            8.0e-4,
+            conductor_width=8.0e-4,
+            conductor_thickness=5.0e-4,
+        ),
+        ConductorMaterial(5.8e7),
+    )
+    base = HomogeneousMedium(relative_permittivity=1.5, conductivity=1.0e-5)
+    anchor = SmoothMaterialAnchor(
+        TensorElectricMaterial(
+            relative_permittivity_tensor=np.diag([3.0, 5.0, 7.0]),
+            conductivity_tensor=np.diag([2.0e-4, 3.0e-4, 5.0e-4]),
+        ),
+        np.asarray([0.004, 0.006, 0.005]),
+        pose=RigidPose.from_axis_angle(
+            (0.0, 0.0, 1.0),
+            0.35,
+            translation=(0.06, 0.01, 0.015),
+        ),
+        strength=2.0,
+    )
+    heterogeneous = SmoothHeterogeneousMedium(base, (anchor,))
+    compiled = compile_smooth_heterogeneous_scene(
+        Scene((coil,), heterogeneous),
+        shell_count=4,
+        cutoff_sigma=3.0,
+    )
+
+    assert compiled.medium is base
+    assert len(compiled.packages) == 4
+    assert all(
+        isinstance(package.material, TensorElectricMaterial)
+        for package in compiled.packages
+    )
+    assert np.allclose(
+        compiled.packages[-1].geometry.half_extents,
+        3.0 * anchor.length_scales,
+    )
+
+    encoded = encode_tensor_hybrid_scene_invariant(compiled, 75_000.0)
+    assert encoded.physical_package_count == 4
+    assert encoded.package_features.shape[0] == 5
