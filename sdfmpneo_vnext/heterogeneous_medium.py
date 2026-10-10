@@ -54,7 +54,7 @@ def _material_representatives(material):
 
 @dataclass(frozen=True)
 class SmoothMaterialAnchor:
-    """Compact analytic material anchor used by ``SmoothHeterogeneousMedium``.
+    """Compact analytic material anchor for a smooth heterogeneous background.
 
     The influence is an anisotropic Gaussian in the anchor's local SE(3) frame.
     ``material`` supplies the local principal electric tensors; tensor materials
@@ -113,19 +113,20 @@ class SmoothMaterialAnchor:
 
 @dataclass(frozen=True)
 class SmoothHeterogeneousMedium:
-    """Mesh-free smooth heterogeneous electromagnetic background.
+    """Mesh-free smooth heterogeneous electric background.
 
-    At every point the material response is a convex mixture of one unbounded
+    At every point the electric response is a convex mixture of one unbounded
     base material and any number of SE(3)-posed Gaussian material anchors.  The
     mixture is evaluated analytically, so no voxel/grid representation is
     introduced.  Convex mixing preserves positive-definite permittivity and
     positive-semidefinite loss conductivity whenever the source materials are
     passive.
 
-    Existing homogeneous REFERENCE/FAST solvers intentionally cannot consume
-    the scalar material methods below: they fail closed instead of silently
-    replacing this field by one effective homogeneous medium.  Dedicated
-    heterogeneous solvers should use the vectorized point-query methods.
+    This first heterogeneous stage keeps magnetic permeability spatially
+    uniform.  That preserves the existing MQS magnetic Green kernel exactly
+    while the dedicated variable-epsilon/sigma REFERENCE backend is connected.
+    Existing scalar electric material methods fail closed instead of silently
+    replacing this field by one effective homogeneous medium.
     """
 
     base_material: PassiveIsotropicMaterial
@@ -133,6 +134,7 @@ class SmoothHeterogeneousMedium:
     relative_permittivity: float = field(init=False)
     relative_permeability: float = field(init=False)
     conductivity: float = field(init=False)
+    spatially_varying_electric: bool = field(default=True, init=False)
 
     def __post_init__(self):
         if not isinstance(self.base_material, PassiveIsotropicMaterial):
@@ -146,6 +148,17 @@ class SmoothHeterogeneousMedium:
         epsilon, permeability, conductivity = _material_representatives(
             self.base_material
         )
+        for anchor in anchors:
+            if not np.isclose(
+                float(anchor.material.relative_permeability),
+                permeability,
+                rtol=1e-12,
+                atol=1e-14,
+            ):
+                raise ValueError(
+                    "SmoothHeterogeneousMedium currently requires uniform "
+                    "relative_permeability across base material and anchors"
+                )
         object.__setattr__(self, "anchors", anchors)
         object.__setattr__(self, "relative_permittivity", epsilon)
         object.__setattr__(self, "relative_permeability", permeability)
@@ -176,11 +189,6 @@ class SmoothHeterogeneousMedium:
         )
         epsilon = np.broadcast_to(base_epsilon, (len(points), 3, 3)).copy()
         sigma = np.broadcast_to(base_sigma, (len(points), 3, 3)).copy()
-        mu = np.full(
-            len(points),
-            float(self.base_material.relative_permeability),
-            dtype=float,
-        )
 
         for index, anchor in enumerate(self.anchors):
             anchor_epsilon, anchor_sigma = _material_tensors(
@@ -191,11 +199,10 @@ class SmoothHeterogeneousMedium:
             weight = influence[:, index]
             epsilon += weight[:, None, None] * anchor_epsilon[None, :, :]
             sigma += weight[:, None, None] * anchor_sigma[None, :, :]
-            mu += weight * float(anchor.material.relative_permeability)
 
         epsilon /= denominator[:, None, None]
         sigma /= denominator[:, None, None]
-        mu /= denominator
+        mu = np.full(len(points), self.relative_permeability, dtype=float)
         if scalar:
             return epsilon[0], sigma[0], float(mu[0])
         return epsilon, sigma, mu
@@ -248,10 +255,7 @@ class SmoothHeterogeneousMedium:
 
     @property
     def permeability(self) -> float:
-        raise NotImplementedError(
-            "heterogeneous medium has no single permeability; use "
-            "relative_permeability_at_points"
-        )
+        return MU0 * self.relative_permeability
 
     def complex_permittivity(self, frequency_hz: float) -> complex:
         raise NotImplementedError(
