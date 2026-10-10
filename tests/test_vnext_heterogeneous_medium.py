@@ -190,5 +190,5 @@ def test_smooth_heterogeneous_scene_compiles_into_tensor_graph_regions():
     )
 
     encoded = encode_tensor_hybrid_scene_invariant(compiled, 75_000.0)
-    assert encoded.physical_package_count == 4
-    assert encoded.package_features.shape[0] == 5
+    assert encoded.n_packages == 4
+    assert encoded.package_features.shape[0] == 4
