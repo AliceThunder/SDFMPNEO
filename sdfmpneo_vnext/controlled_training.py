@@ -12,6 +12,7 @@ from .spatial_boundary_features import (
     BoundaryAwareHybridSpatialLossShapeNet,
     boundary_aware_conductor_coordinates,
 )
+from .stable_validation import stable_deterministic_split
 from .tensor_neural import _sample_tensor_ranges
 
 
@@ -19,6 +20,12 @@ from .tensor_neural import _sample_tensor_ranges
 # altering the legacy hybrid spatial classes used elsewhere in the package.
 _spatial_core.HybridSpatialLossShapeNet = BoundaryAwareHybridSpatialLossShapeNet
 _spatial_objective._coordinate_features = boundary_aware_conductor_coordinates
+
+
+# Controlled training uses a prefix-stable holdout: extending the deterministic
+# teacher cache never moves an existing sample between train and validation.
+_port_core.deterministic_split = stable_deterministic_split
+_spatial_core.deterministic_split = stable_deterministic_split
 
 
 # The controlled trainers resolve these module globals at call time.  Rebinding
