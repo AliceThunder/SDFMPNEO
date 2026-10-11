@@ -33,11 +33,7 @@ def _stable_spd_relative_logs(target, background) -> np.ndarray:
     values, vectors = np.linalg.eigh(0.5 * (background + background.T))
     if float(np.min(values)) <= 0.0:
         raise ValueError("background permittivity tensor must be positive definite")
-    inverse_sqrt = (
-        vectors
-        @ np.diag(1.0 / np.sqrt(values))
-        @ vectors.T
-    )
+    inverse_sqrt = vectors @ np.diag(1.0 / np.sqrt(values)) @ vectors.T
     relative = inverse_sqrt @ (0.5 * (target + target.T)) @ inverse_sqrt
     eigenvalues = np.linalg.eigvalsh(0.5 * (relative + relative.T))
     if float(np.min(eigenvalues)) <= 0.0:
@@ -51,31 +47,38 @@ def _signed_log1p(value: float) -> float:
 
 
 def _package_physics_features(scene: Scene, frequency_hz: float, length_scale: float):
-    background_epsilon, background_sigma = _material_tensors(
+    background_epsilon_world, background_sigma_world = _material_tensors(
         scene.medium,
         frequency_hz,
     )
     omega = 2.0 * np.pi * float(frequency_hz)
     rows = []
     for package in scene.packages:
-        package_epsilon, package_sigma = _material_tensors(
+        package_epsilon_local, package_sigma_local = _material_tensors(
             package.material,
             frequency_hz,
         )
+        rotation = np.asarray(package.geometry.pose.rotation, dtype=float)
+        background_epsilon_local = (
+            rotation.T @ background_epsilon_world @ rotation
+        )
+        background_sigma_local = (
+            rotation.T @ background_sigma_world @ rotation
+        )
         log_relative = _stable_spd_relative_logs(
-            package_epsilon,
-            background_epsilon,
+            package_epsilon_local,
+            background_epsilon_local,
         )
         electric_bias = float(np.mean(log_relative))
         electric_anisotropy = float(np.std(log_relative))
-
         electric_scale = max(
-            omega * EPS0 * float(np.linalg.norm(background_epsilon)),
-            float(np.linalg.norm(background_sigma)),
+            omega * EPS0 * float(np.linalg.norm(background_epsilon_local)),
+            float(np.linalg.norm(background_sigma_local)),
             1e-18,
         )
         loss_contrast = float(
-            np.linalg.norm(package_sigma - background_sigma) / electric_scale
+            np.linalg.norm(package_sigma_local - background_sigma_local)
+            / electric_scale
         )
         mu_ratio = float(
             package.material.relative_permeability
