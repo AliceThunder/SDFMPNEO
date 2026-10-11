@@ -445,13 +445,16 @@ def _batched_hermitian_sqrt(matrix, *, inverse: bool = False):
 
 def _symmetric_matrix_exp(matrix, limit: float):
     matrix = 0.5 * (matrix + matrix.transpose(-1, -2))
-    eigenvalues, eigenvectors = torch.linalg.eigh(matrix)
-    eigenvalues = torch.clamp(eigenvalues, min=-float(limit), max=float(limit))
-    return (
-        eigenvectors
-        @ torch.diag_embed(torch.exp(eigenvalues))
-        @ eigenvectors.transpose(-1, -2)
+    dtype = matrix.dtype
+    tiny = torch.finfo(dtype).tiny
+    norm = torch.sqrt(
+        torch.sum(matrix * matrix, dim=(-2, -1), keepdim=True)
     )
+    scale = torch.clamp(
+        float(limit) / torch.clamp(norm, min=tiny),
+        max=1.0,
+    )
+    return torch.matrix_exp(matrix * scale)
 
 
 def _complex_factor(model: Generation2PortNet, raw):
@@ -609,10 +612,12 @@ def forward_generation2_port_batch(
         * eye[None, None, :, :]
     )
     raw_sum = torch.sum(raw_channels, dim=1)
-    congruence = (
-        _batched_hermitian_sqrt(resistance_complex, inverse=False)
-        @ _batched_hermitian_sqrt(raw_sum, inverse=True)
-    )
+    resistance_cholesky = torch.linalg.cholesky(resistance_complex)
+    raw_cholesky = torch.linalg.cholesky(raw_sum)
+    congruence = torch.linalg.solve(
+        raw_cholesky.transpose(-1, -2),
+        resistance_cholesky.transpose(-1, -2),
+    ).transpose(-1, -2)
     channels = (
         congruence[:, None]
         @ raw_channels
@@ -889,7 +894,9 @@ def _fingerprint_value(digest, label: str, value) -> None:
         digest.update(b"\0scalar\0")
         digest.update(type(value).__name__.encode("ascii", "backslashreplace"))
         digest.update(b"\0")
-        digest.update(repr(value.item() if isinstance(value, np.generic) else value).encode("utf-8"))
+        digest.update(
+            repr(value.item() if isinstance(value, np.generic) else value).encode("utf-8")
+        )
     else:
         digest.update(b"\0repr\0")
         digest.update(repr(value).encode("utf-8"))
