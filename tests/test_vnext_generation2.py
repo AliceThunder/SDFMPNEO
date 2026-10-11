@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import torch
 
@@ -9,12 +11,19 @@ from sdfmpneo_vnext.generation2_features import (
     encode_generation2_scene,
 )
 from sdfmpneo_vnext.generation2_port import (
+    Generation2Normalizer,
+    Generation2PortArtifact,
     Generation2PortNet,
     forward_generation2_port_batch,
+)
+from sdfmpneo_vnext.generation2_spatial import (
+    Generation2SpatialNet,
+    generation2_batched_spatial_shape_loss,
 )
 from sdfmpneo_vnext.generation2_split import generation2_partition
 from sdfmpneo_vnext.generation2_training import _initialize_baseline_residual_heads
 from sdfmpneo_vnext.geometry import RigidPose, SuperellipseSpiral
+from sdfmpneo_vnext.hybrid_training_data import PackageSpatialLossSamples
 from sdfmpneo_vnext.package_geometry import SuperquadricPackageGeometry
 from sdfmpneo_vnext.scene import (
     CoilObject,
@@ -24,6 +33,7 @@ from sdfmpneo_vnext.scene import (
     Scene,
     TensorElectricMaterial,
 )
+from sdfmpneo_vnext.training_data import SpatialLossSamples
 
 
 def test_generation2_partition_is_prefix_stable_and_disjoint():
@@ -233,3 +243,99 @@ def test_generation2_total_psd_decoder_allows_signed_baseline_correction():
     )
     assert torch.allclose(upper, 2.0 * batch[5], rtol=1e-9, atol=1e-10)
     assert torch.all(torch.linalg.eigvalsh(upper) > 0.0)
+
+
+def _neutral_normalizer():
+    return Generation2Normalizer(
+        np.zeros(GENERATION2_COIL_FEATURE_DIM),
+        np.ones(GENERATION2_COIL_FEATURE_DIM),
+        np.zeros(GENERATION2_PAIR_FEATURE_DIM),
+        np.ones(GENERATION2_PAIR_FEATURE_DIM),
+        np.zeros(GENERATION2_PACKAGE_FEATURE_DIM),
+        np.ones(GENERATION2_PACKAGE_FEATURE_DIM),
+        np.zeros(GENERATION2_CROSS_FEATURE_DIM),
+        np.ones(GENERATION2_CROSS_FEATURE_DIM),
+        np.zeros(GENERATION2_PAIR_FEATURE_DIM),
+        np.ones(GENERATION2_PAIR_FEATURE_DIM),
+        1.0,
+    )
+
+
+def test_generation2_spatial_training_target_does_not_call_port_prediction(monkeypatch):
+    source = _scene()
+    scene = Scene(source.coils, HomogeneousMedium(), source.packages)
+    port_model = Generation2PortNet(
+        hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+        interaction_rounds=1,
+    ).to(dtype=torch.float64)
+    port = Generation2PortArtifact(
+        port_model,
+        _neutral_normalizer(),
+        baseline_segments=16,
+        material_domain={},
+        device="cpu",
+    )
+    spatial = Generation2SpatialNet(
+        16,
+        context_hidden_dim=16,
+        context_rounds=1,
+        context_depth=1,
+        field_hidden_dim=16,
+        factor_rank=2,
+        depth=1,
+    ).to(dtype=torch.float64)
+
+    channels = np.asarray(
+        [
+            [[1.0, 0.1], [0.1, 0.5]],
+            [[0.4, -0.05], [-0.05, 0.8]],
+            [[0.2, 0.03], [0.03, 0.3]],
+        ],
+        dtype=complex,
+    )
+    conductor = SpatialLossSamples(
+        np.asarray([0, 1], dtype=int),
+        np.asarray([0.25, 0.75], dtype=float),
+        np.zeros((2, 2), dtype=float),
+        np.ones(2, dtype=float),
+        np.asarray([channels[0], channels[1]], dtype=complex),
+    )
+    package = PackageSpatialLossSamples(
+        np.asarray([0], dtype=int),
+        np.zeros((1, 3), dtype=float),
+        np.ones(1, dtype=float),
+        channels[2:3],
+    )
+    sample = SimpleNamespace(
+        scene=scene,
+        frequency_hz=85_000.0,
+        target_dissipation_channels=channels,
+        conductor_spatial_loss=conductor,
+        package_spatial_loss=package,
+        background_spatial_loss=None,
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("canonical Spatial training must not call Port prediction")
+
+    monkeypatch.setattr(port, "predict_structured", forbidden)
+    value = generation2_batched_spatial_shape_loss(
+        spatial,
+        port,
+        (sample,),
+        device="cpu",
+        normalization={
+            "conductor_longitudinal_points": 4,
+            "conductor_radial_order": 2,
+            "conductor_angular_order": 8,
+            "package_axial_order": 2,
+            "package_radial_order": 2,
+            "package_azimuthal_order": 8,
+            "background_segments_per_turn": 4,
+            "background_radial_order": 3,
+            "background_angular_order": 8,
+        },
+    )
+    assert torch.isfinite(value)
