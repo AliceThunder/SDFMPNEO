@@ -1,0 +1,175 @@
+\section{Generation-2 FAST surrogate factorization}
+\label{sec:generation2-fast}
+
+The Generation-2 FAST surrogate is the concrete trainable realization of the
+physics-factored architecture in Section~\ref{sec:physics-factored}.  Its
+purpose is to preserve the physical invariants already enforced by the vNext
+REFERENCE stack while removing three avoidable sources of learned-model bias:
+a one-pass many-body graph, an unnecessarily positive residual resistance, and
+a spatial target that depends on upstream Port prediction error.
+
+\subsection{Shared immutable scene partition}
+
+Teacher scene index $j$ is mapped by a fixed hash $h(j,s)$, where $s$ is one
+split seed, into exactly one of
+\[
+  \mathcal D_{\rm train},\qquad
+  \mathcal D_{\rm val},\qquad
+  \mathcal D_{\rm test}.
+\]
+Membership is independent of the current dataset length.  Port and spatial
+training use the same partition.  Active-learning additions may enter only
+$\mathcal D_{\rm train}$; validation and test membership remain immutable.
+
+\subsection{Repeated physics-initialized scene interactions}
+
+Let $c_i^{(0)}$ and $p_a^{(0)}$ be normalized coil and package node embeddings.
+Relative-pose edges also contain cheap dimensionless physical descriptors such
+as inverse-distance factors, normalized package volume, electric/loss contrast,
+and magnetic contrast.  Generation-2 performs a fixed number $K$ of shared
+interaction rounds,
+\[
+ m_{cc,i}^{(r)}
+ =\mathop{\mathrm{Agg}}_{j\ne i}
+ M_{cc}(c_i^{(r)},c_j^{(r)},e_{ij}),
+\]
+\[
+ m_{pp,a}^{(r)}
+ =\mathop{\mathrm{Agg}}_{b\ne a}
+ M_{pp}(p_a^{(r)},p_b^{(r)},e_{ab}),
+\]
+\[
+ m_{cp,a}^{(r)}
+ =\mathop{\mathrm{Agg}}_i
+ M_{cp}(p_a^{(r)},c_i^{(r)},e_{ia}),
+\]
+\[
+ m_{pc,i}^{(r)}
+ =\mathop{\mathrm{Agg}}_a
+ M_{pc}(c_i^{(r)},p_a^{(r)},e_{ia}).
+\]
+Residual node updates are
+\[
+ c_i^{(r+1)}
+ =\operatorname{Norm}\!\left(
+ c_i^{(r)}+U_c(c_i^{(r)},m_{cc,i}^{(r)},m_{pc,i}^{(r)})
+ \right),
+\]
+\[
+ p_a^{(r+1)}
+ =\operatorname{Norm}\!\left(
+ p_a^{(r)}+U_p(p_a^{(r)},m_{pp,a}^{(r)},m_{cp,a}^{(r)})
+ \right).
+\]
+The first implementation uses $K=3$.  Increasing MLP depth inside a single edge
+map is not considered a substitute for increasing this interaction order.
+
+\subsection{Baseline-conditioned passive resistance}
+
+Let $R_0\PSD$ be the analytic conductor/background baseline resistance and let
+$B=R_0^{1/2}$ be a numerically stabilized PSD square root.  The neural decoder
+predicts a real symmetric dimensionless log-correction $S=S^\T$.  Define
+\[
+ M=\exp(S)\SPD,
+ \qquad
+ R=BMB^\T\PSD.
+\]
+This parameterization has three required properties:
+\begin{enumerate}
+\item $S=0$ reproduces the analytic baseline exactly;
+\item the final resistance is passive for every network output;
+\item $R-R_0$ is not constrained to be positive semidefinite.
+\end{enumerate}
+The third property is essential because passivity constrains the final total
+operator, not the sign of the package-induced correction to a package-free
+baseline.
+
+The reactive decoder remains signed and reciprocal,
+\[
+ X=X_0+\Delta X,
+ \qquad
+ \Delta X=\Delta X^\T.
+\]
+
+\subsection{Power-closing dissipative channels}
+
+Let $\widetilde D_k\PSD$ be raw learned channel operators.  Their raw sum is
+\[
+ \widetilde R=\sum_k\widetilde D_k.
+\]
+A low-dimensional congruence $T$ is computed such that
+\[
+ T\widetilde R T\adj=R.
+\]
+The returned channels are
+\[
+ D_k=T\widetilde D_kT\adj\PSD,
+ \qquad
+ \sum_kD_k=R.
+\]
+Thus passivity and exact Port power closure are independent of training error.
+The initial Generation-2 migration retains the existing teacher channel family
+(one conductor channel per coil plus one aggregate electric-environment
+channel) so the energy-v3 teacher cache remains reusable.
+
+\subsection{Teacher-channel canonical spatial shape}
+
+The spatial surrogate learns geometry-dependent loss shape rather than upstream
+Port amplitude error.  For teacher channel $D_k^\star$ and teacher local loss
+operator $H_k^\star(\xi)$, define a normalized shape representation by a
+congruence that enforces
+\[
+ \int H_{k,\theta}^{\rm canon}(\xi)\,\dd\mu
+ =D_k^\star.
+\]
+Spatial training compares this teacher-channel-normalized prediction directly
+with $H_k^\star(\xi)$.  The teacher target is therefore independent of the Port
+surrogate prediction.
+
+At inference the same raw spatial shape is normalized instead to the predicted
+Port channel $D_{k,\theta}$,
+\[
+ \int H_{k,\theta}^{\rm run}(\xi)\,\dd\mu
+ =D_{k,\theta}.
+\]
+This preserves deployed Port--Spatial power closure while separating Port
+channel error from spatial shape error during training and validation.
+
+\subsection{Spatial-specific scene refinement}
+
+The spatial network receives the frozen Port latent but does not treat it as a
+sufficient statistic.  It also receives normalized intrinsic and relative scene
+features and performs a small spatial-specific interaction refinement before
+query-point decoding.  This permits local interface, anisotropy, and boundary
+information to remain available even when it is not required by the Port head.
+
+\subsection{Loss decomposition and model selection}
+
+Port optimization reports separate symmetric relative losses
+\[
+ \mathcal L_R,\qquad
+ \mathcal L_X,\qquad
+ \mathcal L_D,
+\]
+and minimizes
+\[
+ \mathcal L_{\rm port}
+ =w_R\mathcal L_R+w_X\mathcal L_X+w_D\mathcal L_D.
+\]
+Because the spatial stage depends directly on dissipative channels, the initial
+Generation-2 configuration uses $w_D>w_R=w_X$ while still reporting every
+component independently.
+
+Spatial training and selection use the same canonical shape metric.  Full
+Port--Spatial end-to-end error is reported separately and cannot be mistaken
+for a same-objective train/validation pair.
+
+\subsection{Cache and artifact boundary}
+
+The physical energy-v3 teacher cache is representation-independent and remains
+valid.  Generation-2 re-encodes the stored scene at training time.  Neural
+checkpoints and artifacts are not representation-independent: they carry a new
+generation/schema identifier and cannot resume Generation-1 optimizer state.
+
+This separation allows a clean architecture experiment on the same physical
+teacher scenes before changing the sampling distribution.
