@@ -55,7 +55,12 @@ def publish_tensor_bundle(
     metadata=None,
     overwrite: bool = False,
 ):
-    """Publish a self-contained tensor-electric FAST artifact directory."""
+    """Publish a legacy Generation-1 tensor-electric FAST artifact directory."""
+    if int(getattr(port_artifact, "model_generation", 1)) != 1:
+        raise TypeError(
+            "publish_tensor_bundle is the Generation-1 publisher; use "
+            "publish_generation2_bundle for Generation-2 artifacts"
+        )
     if not bool(getattr(port_artifact, "supports_tensor_electric", False)):
         raise TypeError("tensor bundle requires a tensor-aware port artifact")
     fingerprint = tensor_port_fingerprint(port_artifact)
@@ -137,13 +142,19 @@ def load_tensor_bundle(
     *,
     device: str = "auto",
 ) -> LoadedVNextBundle:
-    """Load a tensor-electric FAST bundle on the requested/available device."""
-    resolved_device = resolve_torch_device(device)
+    """Load either Generation-1 or Generation-2 tensor FAST bundles."""
     root = Path(root)
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"tensor bundle manifest is missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    if int(manifest.get("model_generation", 1)) == 2:
+        from .generation2_bundle import load_generation2_bundle
+
+        return load_generation2_bundle(root, device=device)
+
+    resolved_device = resolve_torch_device(device)
     if int(manifest.get("schema", -1)) != TENSOR_BUNDLE_SCHEMA:
         raise ValueError("unsupported tensor bundle schema")
     if manifest.get("model_family") != "sdfmpneo_vnext_tensor_electric":
