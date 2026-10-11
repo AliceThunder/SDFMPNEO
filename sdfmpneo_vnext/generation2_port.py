@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-import io
 import math
 from pathlib import Path
 
@@ -591,7 +590,6 @@ def forward_generation2_port_batch(
 
     complex_dtype = torch.complex64 if resistance.dtype == torch.float32 else torch.complex128
     resistance_complex = resistance.to(complex_dtype)
-    raw_sum = torch.sum(raw_channels, dim=1)
     scale = torch.clamp(
         torch.diagonal(resistance, dim1=-2, dim2=-1).sum(dim=-1)
         / max(n_ports, 1),
@@ -599,8 +597,16 @@ def forward_generation2_port_batch(
     )
     eye = torch.eye(n_ports, dtype=complex_dtype, device=resistance.device)
     jitter = 1e-8 * scale / max(n_ports, 1)
-    raw_channels[:, :n_ports] = raw_channels[:, :n_ports] + (
-        jitter[:, None, None, None] * eye[None, None]
+    channel_mask = torch.cat(
+        (
+            torch.ones(n_ports, dtype=resistance.dtype, device=resistance.device),
+            torch.zeros(1, dtype=resistance.dtype, device=resistance.device),
+        )
+    )
+    raw_channels = raw_channels + (
+        jitter[:, None, None, None]
+        * channel_mask[None, :, None, None]
+        * eye[None, None, :, :]
     )
     raw_sum = torch.sum(raw_channels, dim=1)
     congruence = (
@@ -850,10 +856,72 @@ class Generation2PortArtifact:
         )
 
 
+def _fingerprint_array(digest, label: str, value) -> None:
+    array = np.ascontiguousarray(np.asarray(value))
+    digest.update(str(label).encode("utf-8"))
+    digest.update(b"\0array\0")
+    digest.update(str(array.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+    digest.update(array.tobytes(order="C"))
+
+
+def _fingerprint_value(digest, label: str, value) -> None:
+    if isinstance(value, torch.Tensor):
+        _fingerprint_array(digest, label, value.detach().cpu().numpy())
+        return
+    if isinstance(value, np.ndarray):
+        _fingerprint_array(digest, label, value)
+        return
+    digest.update(str(label).encode("utf-8"))
+    if value is None:
+        digest.update(b"\0none\0")
+    elif isinstance(value, dict):
+        digest.update(b"\0dict\0")
+        for key in sorted(value, key=lambda item: str(item)):
+            _fingerprint_value(digest, f"{label}.{key}", value[key])
+    elif isinstance(value, (tuple, list)):
+        digest.update(b"\0sequence\0")
+        digest.update(str(len(value)).encode("ascii"))
+        for index, item in enumerate(value):
+            _fingerprint_value(digest, f"{label}[{index}]", item)
+    elif isinstance(value, (bool, int, float, str, np.generic)):
+        digest.update(b"\0scalar\0")
+        digest.update(type(value).__name__.encode("ascii", "backslashreplace"))
+        digest.update(b"\0")
+        digest.update(repr(value.item() if isinstance(value, np.generic) else value).encode("utf-8"))
+    else:
+        digest.update(b"\0repr\0")
+        digest.update(repr(value).encode("utf-8"))
+
+
 def generation2_port_fingerprint(artifact: Generation2PortArtifact) -> str:
-    buffer = io.BytesIO()
-    torch.save(artifact._payload(), buffer)
-    return sha256(buffer.getvalue()).hexdigest()
+    """Device-independent semantic fingerprint of one Gen2 Port artifact."""
+    digest = sha256()
+    model_metadata = {
+        "schema": GENERATION2_PORT_ARTIFACT_SCHEMA,
+        "model_generation": GENERATION2_PORT_MODEL_GENERATION,
+        "feature_schema": GENERATION2_FEATURE_SCHEMA,
+        "coil_dim": artifact.model.coil_dim,
+        "coil_pair_dim": artifact.model.coil_pair_dim,
+        "package_dim": artifact.model.package_dim,
+        "cross_dim": artifact.model.cross_dim,
+        "package_pair_dim": artifact.model.package_pair_dim,
+        "hidden_dim": artifact.model.hidden_dim,
+        "factor_rank": artifact.model.factor_rank,
+        "depth": artifact.model.depth,
+        "interaction_rounds": artifact.model.interaction_rounds,
+        "resistance_log_limit": artifact.model.resistance_log_limit,
+        "baseline_segments": artifact.baseline_segments,
+        "material_domain": artifact.material_domain,
+        "geometry_domain": artifact.geometry_domain,
+        "partition_fingerprint": artifact.partition_fingerprint,
+        "normalizer": artifact.normalizer.to_dict(),
+    }
+    _fingerprint_value(digest, "metadata", model_metadata)
+    for name, tensor in sorted(artifact.model.state_dict().items()):
+        _fingerprint_value(digest, f"state.{name}", tensor)
+    return digest.hexdigest()
 
 
 def generation2_material_domain(samples):
