@@ -426,17 +426,22 @@ def generation2_batched_latent(
     return coil, package
 
 
-def _batched_psd_sqrt(matrix, *, inverse: bool = False):
-    matrix = 0.5 * (matrix + matrix.transpose(-1, -2))
+def _batched_hermitian_sqrt(matrix, *, inverse: bool = False):
+    matrix = 0.5 * (matrix + matrix.conj().transpose(-1, -2))
     eigenvalues, eigenvectors = torch.linalg.eigh(matrix)
+    real_dtype = matrix.real.dtype if torch.is_complex(matrix) else matrix.dtype
     scale = torch.clamp(
         torch.amax(torch.abs(eigenvalues), dim=-1, keepdim=True),
-        min=torch.finfo(matrix.dtype).tiny,
+        min=torch.finfo(real_dtype).tiny,
     )
-    floor = torch.finfo(matrix.dtype).eps * 32.0 * scale
-    clipped = torch.maximum(eigenvalues, floor)
+    floor = torch.finfo(real_dtype).eps * 32.0 * scale
+    clipped = torch.maximum(eigenvalues.real, floor)
     diagonal = torch.rsqrt(clipped) if inverse else torch.sqrt(clipped)
-    return eigenvectors @ torch.diag_embed(diagonal) @ eigenvectors.transpose(-1, -2)
+    return (
+        eigenvectors
+        @ torch.diag_embed(diagonal.to(eigenvectors.dtype))
+        @ eigenvectors.conj().transpose(-1, -2)
+    )
 
 
 def _symmetric_matrix_exp(matrix, limit: float):
@@ -502,7 +507,7 @@ def forward_generation2_port_batch(
         log_correction,
         model.resistance_log_limit,
     )
-    baseline_factor = _batched_psd_sqrt(baseline_resistance)
+    baseline_factor = _batched_hermitian_sqrt(baseline_resistance)
     resistance = baseline_factor @ multiplier @ baseline_factor.transpose(-1, -2)
     resistance = 0.5 * (resistance + resistance.transpose(-1, -2))
 
@@ -593,16 +598,14 @@ def forward_generation2_port_batch(
         min=torch.finfo(resistance.dtype).tiny,
     )
     eye = torch.eye(n_ports, dtype=complex_dtype, device=resistance.device)
-    raw_sum = raw_sum + (
-        (1e-8 * scale)[:, None, None] * eye[None]
-    )
+    jitter = 1e-8 * scale / max(n_ports, 1)
     raw_channels[:, :n_ports] = raw_channels[:, :n_ports] + (
-        (1e-8 * scale / max(n_ports, 1))[:, None, None, None]
-        * eye[None, None]
+        jitter[:, None, None, None] * eye[None, None]
     )
+    raw_sum = torch.sum(raw_channels, dim=1)
     congruence = (
-        _batched_psd_sqrt(resistance, inverse=False).to(complex_dtype)
-        @ _batched_psd_sqrt(raw_sum.real, inverse=True).to(complex_dtype)
+        _batched_hermitian_sqrt(resistance_complex, inverse=False)
+        @ _batched_hermitian_sqrt(raw_sum, inverse=True)
     )
     channels = (
         congruence[:, None]
