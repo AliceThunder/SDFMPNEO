@@ -446,7 +446,9 @@ def _batched_hermitian_sqrt(matrix, *, inverse: bool = False):
 def _symmetric_matrix_exp(matrix, limit: float):
     matrix = 0.5 * (matrix + matrix.transpose(-1, -2))
     norm_squared = torch.sum(matrix * matrix, dim=(-2, -1), keepdim=True)
-    scale = torch.rsqrt(1.0 + norm_squared / float(limit) ** 2)
+    scale = float(limit) / torch.sqrt(
+        torch.clamp(norm_squared, min=float(limit) ** 2)
+    )
     return torch.matrix_exp(matrix * scale)
 
 
