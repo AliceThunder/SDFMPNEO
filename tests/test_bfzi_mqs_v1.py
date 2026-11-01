@@ -124,3 +124,89 @@ def test_vnext_bishop_frame_bridge():
     assert polyline.points.shape == (81, 3)
     assert np.isfinite(polyline.normal1).all()
     assert polyline.total_length > 0
+
+
+def test_box_wall_radial_cubature_preserves_sea_volume():
+    scene = scene_pair()
+    points, weights = scene.quadrature(5, 7, 10)
+    box_volumes = [
+        8.0 * np.prod(assembly.enclosure.half_extents)
+        for assembly in scene.assemblies
+    ]
+    exact_volume = (
+        4.0 * np.pi * scene.outer_radius**3 / 3.0 - sum(box_volumes)
+    )
+    # Radial Gauss intervals terminate at actual OBB walls; the original
+    # node-rejection rule missed ~0.4% of this same sea volume.
+    assert abs(weights.sum() / exact_volume - 1.0) < 8e-4
+    assert np.all(weights > 0.0)
+    assert scene.in_seawater(points).all()
+
+
+def test_finite_wire_skin_loss_and_lumped_thermal_coupling():
+    from dataclasses import replace
+    from sdfmpneo_vnext.scene import ConductorMaterial
+    from sdfmpneo_vnext.electrothermal import (
+        CoilThermalProperties, build_lumped_coil_thermal_model,
+    )
+    from sdfmpneo_bfzi import BFZICurrentControlledEnvelope
+
+    original = scene_pair()
+    warm_material = ConductorMaterial(
+        5.8e7, resistance_temperature_coefficient=0.00393
+    )
+    tx = replace(original.transmitter, material=warm_material)
+    rx = replace(original.receiver, material=warm_material)
+    scene = replace(original, transmitter=tx, receiver=rx)
+    source = build_bfzi_source(scene, 200_000., order=3)
+    impedances = source.conductor_internal_impedance()
+    lengths = np.array([
+        np.linalg.norm(line.line_elements, axis=1).sum()
+        for line in source.lines
+    ])
+    dc_resistance = lengths / (
+        warm_material.conductivity * np.pi * tx.wire_radius**2
+    )
+    assert np.all(impedances.real > dc_resistance)
+    assert np.all(impedances.imag > 0)
+    np.testing.assert_allclose(
+        source.conductor_internal_impedance([333.15, 333.15]).real
+        > impedances.real, [True, True],
+    )
+
+    result = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=4, polar_order=6, azimuthal_order=8,
+            field_softening=0.025,
+        ),
+    )
+    currents = np.array([1.0 + 0.0j, 0.2 + 0.1j])
+    predicted = result.as_structured_prediction()
+    assert predicted.channel_labels == (
+        "conductor:0", "conductor:1", "seawater",
+    )
+    assert predicted.power_closure_error() < 1e-8
+    np.testing.assert_allclose(
+        predicted.coil_power(currents),
+        result.port_conductor_power(currents),
+        rtol=1e-9,
+    )
+    np.testing.assert_allclose(
+        predicted.channel_power(currents).sum(),
+        result.port_total_power(currents),
+        rtol=1e-8,
+    )
+
+    thermal = build_lumped_coil_thermal_model(
+        (CoilThermalProperties(20.0, 0.7),
+         CoilThermalProperties(20.0, 0.7)),
+    )
+    envelope = BFZICurrentControlledEnvelope(result, thermal)
+    initial = np.zeros(2)
+    step = envelope.step(initial, currents, 30.0)
+    assert step.converged
+    assert np.all(step.temperatures >= 293.15)
+    assert np.all(step.coil_power >= 0.0)
+    np.testing.assert_allclose(
+        step.impedance, result.port_impedance_at(step.temperatures),
+    )
