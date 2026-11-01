@@ -344,3 +344,23 @@ def test_round_wire_joule_profile_and_complete_path_heat_are_consistent():
             volume_weights.sum(), length * np.pi * assembly.wire_radius**2,
             rtol=1e-12,
         )
+
+
+def test_nested_face_basis_refinement_keeps_original_current_modes():
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    coarse = build_sea_basis(scene, face_refinement=1)
+    refined = build_sea_basis(scene, face_refinement=2)
+    assert refined.size > coarse.size
+    for original in coarse.modes:
+        assert any(
+            np.array_equal(original.center, candidate.center)
+            and np.array_equal(original.direction, candidate.direction)
+            and original.width == candidate.width
+            for candidate in refined.modes
+        )
+    points, _ = scene.quadrature(3, 4, 6, wall_layers=1)
+    fields = refined.evaluate(points[:5])
+    assert fields.shape == (5, refined.size, 3)
+    assert np.isfinite(fields).all()
