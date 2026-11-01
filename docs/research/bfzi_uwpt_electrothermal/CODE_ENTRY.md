@@ -77,3 +77,18 @@
 ## 本轮代码进展
 
 已开始新子包的 **geometry.py + __init__.py**：BFZI 八段解析中心线、有向线元、圆形退化、合法参数及刚体位姿、按原路径顺序的 Gauss 线元采样。另新增少量 pytest 几何测试。**这不是已完成电磁场或热代理**，端口馈回流、海水矩阵和求解仍属下一批主代码。
+
+## 实现更新：BFZI-MQS 原型已接通（2026-11-01）
+
+当前分支增加：
+- `scene.py`：可旋转的密封绝缘盒、显式端口回流路径、海水有限球域与正权积分节点；
+- `source.py`：BFZI 真实有向 Gauss 节点、返回路径、空气 Neumann 耦合与磁场查询；
+- `sea_basis.py`：随盒体位姿移动的 curl 电流模式，零散度与绝缘面零法向电流；
+- `sea_reference.py`：共享电阻/磁能/源耦合矩阵 R/L/K、双端口单位激励、空间电流与海水焦耳热；
+- `sea_rom.py`：从参考结果提取确定性低阶子空间，保持同一物理内积；
+- `vnext_bridge.py`：复用旧 vNext 的 PolylineConductor/Bishop 截面框架，不把历史 SuperellipseSpiral 错称 BFZI。
+
+可直接运行 `python examples/bfzi_mqs_demo.py` 并运行
+`python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q`。
+
+**准确性声明：** 目前是有限外域、有限字典、体积核软化的首个可运行物理原型，不是经过 FEM/实验和收敛验证的高精度参考；空气自感使用明确的平滑近似而非完整 GMD/铜损。下一阶段需要外域/积分/模态收敛以及有限铜损和热闭环。线上神经代理尚未训练。

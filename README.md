@@ -1,4 +1,4 @@
-> **BFZI research branch notice (2026-10-31).** The new BFZI-MQS-v1 theory is frozen for implementation: [Code entry plan](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md), [LaTeX theory](theory/main.tex). The new `sdfmpneo_bfzi` package starts with the correct continuous round-square/circular BFZI geometry, rather than historical `SuperellipseSpiral`. The vNext runtime documented below still describes the **legacy implementation**, and has **not** yet been migrated to BFZI electromagnetic/thermal inference. No new seawater/thermal accuracy or runtime performance is claimed.
+> **BFZI research branch (2026-11-01).** The active implementation is `sdfmpneo_bfzi/`: exact BFZI continuous-coil geometry, enclosed twin-port scenes, explicit return paths, direct air Neumann integrals, finite-domain seawater MQS Galerkin fields, shared Joule dissipation, and deterministic reduced subspaces. This is an **unconverged finite-domain prototype**, not yet a validated ocean/FEM surrogate. The vNext commands further below remain **legacy superellipse workflows**, not BFZI electrothermal training. See [new code instructions](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) and [theory](theory/main.tex).
 
 # SDF-MPNEO vNext
 
@@ -15,6 +15,31 @@ piecewise-homogeneous isotropic or tensor-electric package materials,
 continuous conductor/package/background loss fields, and time-dependent
 thermal queries. REFERENCE, FAST, and CERTIFIED remain separate execution
 paths so neural inference never silently replaces the correctness backend.
+
+## BFZI-MQS prototype (current research branch)
+
+Install with `pip install -e ".[dev]"`. Run the small example with:
+
+```bash
+python examples/bfzi_mqs_demo.py
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+```
+
+The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
+`BfziScene`, `build_bfzi_source`, `solve_seawater_reference`, and
+`compress_seawater_response` from `sdfmpneo_bfzi`. Both ports require explicit
+return conductor routes. No new GitHub Actions, no legacy superellipse renaming.
+
+Physical scope: two sealed nonconductive nonmagnetic boxes, static SE(3)
+poses, finite spherical conducting seawater domain, fixed frequency and
+a divergence-free Galerkin seawater current basis. `L_air` uses a softened
+finite-radius self approximation. The seawater heat source integrates to the
+resistive port channel **under the same cubature**. Outer-domain, basis,
+cubature and kernel-softening convergence and independent field validation
+are still required. Copper skin/proximity, conductive boxes, full thermal
+evolution and resonant feedback are **not yet implemented** here.
+
+---
 
 ## Install
 
@@ -66,7 +91,7 @@ optimizer, device and GUI changes do not invalidate teacher data. Port and
 spatial model checkpoints store optimizer/model/RNG/batch position state for
 safe continuation after a stop.
 
-See `docs/VNEXT_TRAINING_GUI.md` for the full configuration, cache identity and
+The legacy GUI path remains in the Git history; its configuration, cache identity and
 resume semantics.
 
 ## Scene model
@@ -296,5 +321,5 @@ In particular:
 
 ## Performance notes
 
-See `docs/VNEXT_PERFORMANCE.md` for CUDA batching, CPU multiprocessing,
+Historical vNext GPU batching, CPU multiprocessing,
 precision policy and cached batch inference details.
