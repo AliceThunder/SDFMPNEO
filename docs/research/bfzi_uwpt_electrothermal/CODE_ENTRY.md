@@ -126,3 +126,14 @@ python run.py --mode bfzi
 - `python run.py --mode bfzi-convergence` 与 `python -m examples.bfzi_convergence` 比较近壁层数、面模态、球域半径、角径向阶数以及磁核软化。每条路径都必须本地实际执行并观察收敛序列，不能把此诊断入口宣称为精度证明。
 
 **未验证项保持明确：** GitHub 内容接口允许修改/提交，但当前工作容器无法解析 GitHub 主机，不能下载完整仓库运行 pytest、示例或真实收敛序列。已用独立 NumPy/SciPy 数值计算核对圆导体集肤剖面的横截面能量积分以及盒壁径向分层后的体积积分守恒；未完成整个仓库集成运行。
+
+
+## 2026-11-01：第三轮核心数值和热源实现
+
+- 原 `air_inductance` 在低阶 Gauss 源节点上直接对相同节点使用软核自作用，正对角会造成约 `dl²/a` 的分辨率偏差。现按 BFZI 连续组/回流路线生成短直线段，自段采用解析的正则核双积分 `2[h asinh(h/a)-sqrt(h²+a²)+a]`，不同段仍使用带分块内存限制的 Gauss Neumann 积分；与单位端口海水场所用的粗 Gauss 源分辨率解耦。可通过 `air_panel_length_factor`、`air_panel_gauss_order` 独立细化；仍非精确外部场 GMD/复杂邻近解。
+- 海水软化 Green 磁耦合采用**对称分块**组装，非对角块及其转置只算一次，有限内存从 `chunk * Q` 改为 `chunk²`；电阻/磁能/耦合共享同一离散模式，端口耗散身份仍应保持。
+- `SeawaterResponse.seawater_heat_nodes` 从同一积分电流直接返回 `(xyz, dV, q)`，`thermal_channel_power` 返回 `(coil0, coil1, seawater)`；避免端口海水耗散与后续空间热源各算各的。
+- `BFZICurrentControlledEnvelope` 和 `BFZIVoltageControlledEnvelope` 支持 vNext 热 ROM 的二输入（仅两路铜热）或三输入（含海水热）源算子，允许额外热状态；前两路解码温度必须代表两路导体，保持电阻温度反馈与源通道一致。
+- 收敛脚本拆分为**默认轻量**和 `--full` 细化，并同时检查端口海水阻抗与固定湿区采样点焦耳热；完整模式还独立比较空气自段长度、Gauss 源阶数，避免将空气自感误差隐藏在海水收敛曲线下。
+
+**独立局部数值检查：** 解析直线段 Neumann 自积分与 1D 高精度积分吻合；对 0.1m 直线、0.8mm 软化半径，原 4 点 Gauss 离散自作用高估约 298%，改用长度约 4 倍线半径的解析面板及 3 点段间积分后误差约 0.05%。对称 Green 分块和原分块收缩的独立随机算例相对差约 1.4e-16。这些检查不等于在整个 BFZI 仓库跑过测试，也不代表已完成外域、几何及核软化收敛。
