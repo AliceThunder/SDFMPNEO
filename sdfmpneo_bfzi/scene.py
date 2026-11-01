@@ -10,6 +10,7 @@ import math
 import numpy as np
 
 from .geometry import BFZICoil, RigidPose
+from sdfmpneo_vnext.scene import ConductorMaterial
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,10 @@ class BFZIAssembly:
     enclosure: InsulatingBox
     return_waypoints: tuple[tuple[float, float, float], ...]
     wire_radius: float = 0.0008
+    # Round finite conductor cross-section; vNext material law is reused.
+    material: ConductorMaterial = field(
+        default_factory=lambda: ConductorMaterial(5.8e7)
+    )
 
     def __post_init__(self):
         radius = float(self.wire_radius)
@@ -58,6 +63,8 @@ class BFZIAssembly:
         outer = self.coil.outer_half_size + self.coil.beta + radius
         if min(h[:2]) <= outer or h[2] <= radius:
             raise ValueError("enclosure does not contain the BFZI spiral footprint")
+        if not isinstance(self.material, ConductorMaterial):
+            raise ValueError("material must be a vNext ConductorMaterial")
         object.__setattr__(self, "wire_radius", radius)
         object.__setattr__(
             self, "return_waypoints",
