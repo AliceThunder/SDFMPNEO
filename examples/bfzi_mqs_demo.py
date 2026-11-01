@@ -11,7 +11,7 @@ from sdfmpneo_vnext.scene import ConductorMaterial
 from sdfmpneo_bfzi import (
     BFZICoil, RigidPose, InsulatingBox, BFZIAssembly, BfziScene,
     Seawater, SeaMQSConfig, build_bfzi_source, solve_seawater_reference,
-    BFZICurrentControlledEnvelope,
+    BFZICurrentControlledEnvelope, BFZIVoltageControlledEnvelope,
 )
 
 
@@ -69,6 +69,14 @@ def main():
         np.zeros(2), current, 30.0,
     )
     print("Illustrative 30 s coil temperatures (K):", step.temperatures)
+    # Two-port voltage drive with a passive external series/tuning impedance.
+    external = np.diag([0.05 - 0.15j, 0.05 - 0.15j])
+    voltage_drive = (result.port_impedance + external) @ current
+    driven = BFZIVoltageControlledEnvelope(
+        result, thermal, external_impedance=external,
+    ).step(np.zeros(2), voltage_drive, 30.0)
+    print("Voltage-driven warm port currents (A):", driven.currents)
+    print("Voltage-driven 30 s coil temperatures (K):", driven.temperatures)
     print("Retained modes:", result.resistance.shape[0], "/", result.raw_basis_count)
     print("Note: finite-domain/basis/softening convergence not established")
 
