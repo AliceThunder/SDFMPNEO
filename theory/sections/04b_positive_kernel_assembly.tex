@@ -1,0 +1,202 @@
+\section{保半正定的核装配与 BFZI 在线计算}\label{sec:positive-assembly}
+\subsection{瓶颈和目标}
+第 \ref{sec:admissible-atlas} 节的局部图谱减少了
+跨几何重建 FEM 网格的需求，但 \(\bm R,\bm L,\bm K\) 的空间积分
+仍可能成为推理瓶颈。因此需要在\textbf{保持物理 Gram 结构}的前提下
+改造核装配。下面区分两种来源：
+\textbf{精确对称积分 / 一致离散}和
+\textbf{用正权核特征近似后仍具有半正定结构}。
+不能通过独立预测矩阵元素来保证整体功率守恒。
+
+\subsection{电阻 Gram：正权局部求积}
+对同一套几何条件化实电流基 \(\bm W_i\)，
+在实际导电域选取正权求积
+\((\bm x_\nu,w_\nu)\)，\(w_\nu>0\)，并定义
+\begin{equation}
+\widehat{\bm R}_{ij}
+=\sum_{\nu=1}^{Q_R}
+\frac{w_\nu}{\sigma_s(\bm x_\nu,T)}
+\bm W_i(\bm x_\nu)\cdot\bm W_j(\bm x_\nu).
+\label{eq:R-positive}
+\end{equation}
+若用 \(\bm D_R\) 表示把每个模式在所有求积点的三分量
+叠加后形成的加权采样矩阵，则
+\[
+\widehat{\bm R}=\bm D_R^{\mathsf T}\bm D_R\succeq0.
+\]
+若在采样点上字典列仍线性独立，则 \(\widehat{\bm R}\succ0\)；
+若不独立，应消除冗余模态、细化近界面求积或选择稳定秩，
+而不是在未解释空间损耗的情况下随意添加对角电阻。
+用\textbf{同一求积节点}的
+\(q_{s,\nu}=|\sum_i z_i\bm W_i(\bm x_\nu)|^2/(2\sigma_s)\)，
+可保证
+\[
+\tfrac12\bm z^{\mathrm H}\widehat{\bm R}\bm z
+=\sum_\nu w_\nu q_{s,\nu}.
+\]
+这只是\textbf{离散求积功率等式}。
+如果用其它积分规则或连续精确热积分，
+误差由 \(\widehat{\bm R}-\bm R\) 控制，
+不得把离散等式当成零误差的连续物理结果。
+
+\subsection{磁核 Gram：共同的非负 Fourier 特征}
+在均匀自由空间磁导率、场足够衰减且基函数可作 Fourier 变换时，
+记 \(\widehat{\bm W}_m(\bm k)=
+\int_{\mathbb R^3}\bm W_m(\bm x)e^{-\jj\bm k\cdot\bm x}\,\mathrm d\bm x\)。
+对 Coulomb Green 核
+\(G_0(\bm x)=1/(4\pi\|\bm x\|)\)
+有形式上
+\[
+\widehat{G_0}(\bm k)=\|\bm k\|^{-2}.
+\]
+在满足积分收敛的条件下，
+由 Parseval 恒等式
+\begin{equation}
+[\bm L]_{mn}
+=\frac{\mu_0}{(2\pi)^3}
+\int_{\mathbb R^3}
+\frac{\operatorname{Re}[
+\widehat{\bm W}_m(\bm k)^*\cdot
+\widehat{\bm W}_n(\bm k)]}
+{\|\bm k\|^2}\,\mathrm d\bm k.
+\label{eq:magnetic-fourier}
+\end{equation}
+该表达在 \(\bm k=0\) 附近的可积性、
+高频收敛和外海水模式必须由实际函数空间保证。
+用排除零波数奇点并匹配正权的 Fourier 节点
+\((\bm k_\nu,a_\nu)\)、\(a_\nu>0\)，定义
+\begin{equation}
+\boxed{
+\widehat{\bm L}_{mn}=
+\mu_0\sum_{\nu=1}^{Q_L}
+\frac{a_\nu}{\|\bm k_\nu\|^2}
+\operatorname{Re}\!\left[
+\widehat{\bm W}_m(\bm k_\nu)^*\cdot
+\widehat{\bm W}_n(\bm k_\nu)\right].
+}
+\label{eq:L-positive}
+\end{equation}
+对于所有实系数向量 \(\bm c\)，
+\[
+\bm c^{\mathsf T}\widehat{\bm L}\bm c
+=\mu_0\sum_\nu
+\frac{a_\nu}{\|\bm k_\nu\|^2}
+\left\|\sum_m c_m\widehat{\bm W}_m(\bm k_\nu)\right\|^2
+\ge0.
+\]
+因此只要所有模式使用\textbf{同一组正权谱特征}，
+即使求积尚有误差，所得实对称磁矩阵仍半正定。
+实际实现可用带 \(\pm\bm k_\nu\) 成对的实/虚特征
+保证矩阵实对称；\textbf{此构造是标准正定核性质的具体应用，
+不是首次发现 Fourier 保正性的数学定理。}
+
+对铜载流提升场、盒壁模式和海水模式，
+可把全部电流函数列组成 \(\bm V=[\bm U,\bm W]\)，
+用完全相同的 Fourier 特征生成完整
+\(\widehat{\bm L}_{ab}\) 块；
+这样\textbf{全部块联合半正定}，
+联合 Schur 补的被动性和离散功率证明继续适用。
+若海水 \(\bm K\) 使用精确 BFZI 线积分、
+\(\bm L_{00}\) 使用另一组独立近似，
+则不能自动断言合并后的完整磁 Gram 为半正定；
+必须核对共同能量内积或回到联合同源组装。
+
+\subsection{刚体变换可复用的谱特征}
+对随组件刚体移动的模式
+\(\bm W_p(\bm x)
+=R_p\widehat{\bm W}_p(R_p^{\mathsf T}(\bm x-\bm c_p))\)，
+其 Fourier 变换严格满足
+\begin{equation}
+\boxed{
+\widehat{\bm W}_p(\bm k)
+=e^{-\jj\bm k\cdot\bm c_p}\,
+R_p\widehat{\widehat{\bm W}}_p(R_p^{\mathsf T}\bm k).
+}
+\label{eq:rigid-fourier}
+\end{equation}
+这里 \(\widehat{\widehat{\bm W}}\) 表示\textbf{局部参考模式的 Fourier 变换}，
+不表示再对 Fourier 数据作一次变换。
+因此局部几何固定且其模式不侵犯另一实体时，
+只需改变相位、方向和频点采样，就能更新相对位姿的谱 Gram。
+在任意旋转下，参考谱需要在旋转后的
+\(R_p^{\mathsf T}\bm k_\nu\) 处评估；
+插值误差可改变数值精度，
+但若最终 \(\widehat{\bm L}\) 仍由同一组采样特征
+形成 Gram，半正定性仍得到保持。
+相对位姿变化不会使跨组件磁耦合不变；
+\(\bm c_2-\bm c_1\) 对应的相位仍需计算。
+
+\subsection{BFZI 快速构造端口耦合 \(\bm K\)}
+第 \ref{sec:galerkin} 节的
+\(\bm K_{mp}=\mu_0\int_{\Omega_s}\bm W_m\cdot\bm C_p\,dV\)
+由 Green 核互易性可改写为
+\begin{equation}
+\boxed{
+K_{mp}=\int_{\Gamma_p}\bm A_m^{\rm mode}(\bm r_p)
+\cdot \mathrm d\bm\ell_p,\quad
+\bm A_m^{\rm mode}(\bm r)
+=\mu_0\int_{\Omega_s}G_0(\bm r-\bm x)\bm W_m(\bm x)\,\mathrm dV.
+}
+\label{eq:K-reciprocal}
+\end{equation}
+这表明可以\textbf{预计算或快速查询电流模式的矢量势}，
+再沿 BFZI 连续线圈执行结构化线积分，
+不必在每次端口查询中完整求一个海水三重体积分。
+在固定线段组与 Gauss 节点，BFZI 仍满足
+\(\bm r_{b,k}=\bm r_{b,0}+k\Delta\bm r_b\) 和
+\(\bm h_{b,k}=\bm h_{b,0}+k\Delta\bm h_b\)。
+若 \(\bm A_m^{\rm mode}\) 在匝号块覆盖的路径邻域
+具有可控导数，可按 \(k\) 做 Taylor / Chebyshev 模式求和，
+用
+\(\sum_{k\in T}(k-k_c)^j\) 的显式矩求和加速；
+在近场陡变、靠近盒边和模式奇异位置回退直接求积。
+注意这与原 BFZI 论文对 \(1/\|\bm x-\bm r_k\|\) 核做二阶块求和
+是\textbf{扩展应用}，新的 \(\bm A_m^{\rm mode}\) 误差界需单独推导，
+不能沿用原文的余项常数。
+
+\subsection{正定性、连续损耗与加速之间的取舍}
+\textbf{路径 A（首选保结构）}：
+所有 \(\bm R\) 均来自实际分区上的正权积分，
+所有 \(\bm L\) 块来自同一正权谱/空间核 Gram；
+因此任意子空间选择与联合 Schur 补保持离散被动性，
+输出空间 \(q_i(\bm x)\) 由同一当前电流模式求得。
+\textbf{路径 B（严格源核）}：
+BFZI 互易线积分快速给出精确/有界的 \(\bm K\)。
+此时对只有海水的低维散射阻抗，独立
+\(\bm R_s\succ0,\bm L_s\succeq0\) 足以保证
+海水散射部分被动；但若要把铜/盒壁共同耦合进完整 Schur，
+则必须继续检查\textbf{完整磁 Gram 的一致性}。
+\textbf{禁用的捷径}：
+单独神经预测 PSD \(\bm R\) 和各点损耗却不给出相同的场内积，
+不能宣称端口积分功率严格相等。
+
+\subsection{在线复杂度的正确统计}
+若字典模式数 \(M\)、学习子空间维数 \(r\)、电阻求积点数
+\(Q_R\)、谱节点数 \(Q_L\)，且
+\(\bm D_R,\bm D_L\) 可在当前场景生成，
+则可先计算小型特征
+\[
+\bm F_{R,r}=\bm D_R\bm S_\theta,\qquad
+\bm F_{L,r}=\bm D_L\bm S_\theta,
+\quad
+\bm R_r=\bm F_{R,r}^{\mathsf T}\bm F_{R,r},\quad
+\bm L_r=\bm F_{L,r}^{\mathsf T}\bm F_{L,r},
+\]
+从而避免显式构造 \(M\times M\) 全矩阵。
+典型稠密运算的贡献为
+\(O((Q_R+Q_L)Mr+(Q_R+Q_L)r^2+r^3)\)，
+\textbf{不包含}字典建立、特征值评估、
+BFZI \(\bm K\) 核装配及最终场查询。
+若分区紧支撑，\(\bm D_R\) 实际稀疏，
+应利用局部结构减少常数和矩阵乘法代价。
+要获得真实在线加速，必须使
+\(Q_R,Q_L,M\) 与图谱计算在目标参数域内有可复用/分离结构；
+仅令 \(r\) 很小并不足够。
+
+\subsection{几何重组时的失败回退}
+相对位姿导致局部模式支撑侵犯另一盒体、
+间隙接近零、正权采样不足、低阶电流基不满秩或
+谱/局部核逼近无法达到容差时：
+增广间隙图谱、加密局部求积、缩小模型适用域
+或回退高精度场求解。
+不能为维持速度而输出不合规的电流或负功率损耗。

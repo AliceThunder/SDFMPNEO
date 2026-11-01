@@ -70,3 +70,11 @@ L09 说明 WPT 温升可改变线圈电阻与电路工作点。项目需要显�
 ## 核对状态
 
 已通过出版社摘要/页面在本轮交叉核实的主线包括 L01、L04、L05、L08、L09、L11、L12、L13。其他 DOI 属于先前文献查找整理，后续投稿前应逐一查全文确认具体页码、作者、方法及数据；**不应直接将本综述当正式论文参考文献列表**。
+
+## 补充：与本轮算法紧密相关的先行方法（2026-10-31）
+
+- **参数化 MQS/EQS 子空间插值：** Wei Chen, Thomas Henneron, Stéphane Clénet, [Comparison of parametric model order reduction methods to solve magneto-quasistatic and electro-quasistatic problems](https://doi.org/10.1016/j.finel.2025.104444), *Finite Elements in Analysis and Design* 252 (2025):104444。对比多矩匹配、子空间插值和混合参数 ROM，覆盖电磁与静电准静态问题中的几何/材料变化。**提醒：参数化子空间插值本身已有先例**。
+- **被动性保持的磁准静态降阶：** Johanna Kerler-Back, Timo Reis, Tatjana Stykel, [Regularization and passivity-preserving model reduction of quasilinear magneto-quasistatic coupled problems](https://arxiv.org/abs/2411.14226), arXiv:2411.14226 (2024)。讨论非线性 MQS 电路耦合的 DAE 正则化、降阶与被动性保持。**提醒：保被动 ROM 本身已有先例**。
+- **Piola 和 curl 构造：** 属于现有的 H(div) 有限元/函数空间结构工具。不能作为我们的独占创新；我们需要创新的是在 BFZI 双封装、任意合法位姿、正权物理矩阵和可学习子空间中的高效联合使用。
+
+更详细的技术推导与实用限制见 [BFZI 合规电流空间与快速装配](geometry_admissible_space_and_fast_assembly.md)。

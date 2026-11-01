@@ -1,0 +1,149 @@
+\section{几何变化下合规海水电流空间的具体构造}\label{sec:admissible-atlas}
+\subsection{研究任务和必要的限制}
+第 \ref{sec:galerkin} 节要求海水电流基
+\(\bm W_m\in H(\mathrm{div};\Omega_s)\) 且
+\(\nabla\cdot\bm W_m=0\)、
+\(\bm n\cdot\bm W_m=0\)（绝缘实体界面），
+第 \ref{sec:neural-rom} 节仅假设这类字典已存在。
+现在将其变为\textbf{可实施的构造路线}。
+限制在封闭、相互不交的非导电封装体，
+表面至少分片 \(C^1\)，最小间隙 \(h_{\min}>0\)，
+有限外域或能量收敛的无穷海水域。
+完整的任意拓扑、尖角、近接触极限和移动导电接触将在单独图谱中处理。
+\textbf{“任意静态六自由度位姿”仅指满足非碰撞、正间隙与局部形状图谱条件的工况。}
+
+\subsection{构造 I：边界消失矢量势的 curl 基}
+在海水中设 \(\mathcal U_\alpha\) 是局部求积/表示图谱，
+\(\chi_\alpha\in C^1_c(\mathcal U_\alpha)\) 是有限支撑窗函数；
+局部封装面由
+\(d_\alpha(\bm x)=0\) 定义，
+其中 \(d_\alpha>0\) 在海水侧，且
+\(\nabla d_\alpha\ne0\) 于光滑界面。
+用分片光滑向量函数 \(\bm a_{\alpha m}\) 构造
+\begin{equation}
+\boxed{
+\bm V_{\alpha m}(\bm x)
+=d_\alpha(\bm x)\chi_\alpha(\bm x)\bm a_{\alpha m}(\bm x),
+\qquad
+\bm W_{\alpha m}(\bm x)=\nabla\times\bm V_{\alpha m}(\bm x).
+}
+\label{eq:curl-atlas}
+\end{equation}
+将 \(\mathcal U_\alpha\) 的支撑限制在
+\(\Omega_s\) 内及其当前指定的绝缘界面附近，
+且不跨越其它固体。
+于是恒等式 \(\nabla\cdot\nabla\times\bm V=0\)
+在分布意义下保证连续性。
+由于 \(\bm V_{\alpha m}=0\) 于相关绝缘界面，
+其切向迹为零；由
+\(\bm n\cdot(\nabla\times\bm V)=
+\operatorname{div}_{\Gamma}(\bm V\times\bm n)\)
+可得
+\begin{equation}
+\boxed{\nabla\cdot\bm W_{\alpha m}=0,\qquad
+\bm n\cdot\bm W_{\alpha m}=0.}
+\label{eq:curl-constraints}
+\end{equation}
+更一般地只需 \(\bm n\times\bm V=0\)，
+不必强制矢量势的全部分量消失。
+在界面 \(d_\alpha=0\) 上，
+\(\nabla\times(d_\alpha\chi_\alpha\bm a)
+=\chi_\alpha\nabla d_\alpha\times\bm a\)，
+这是切向非零的涡流模式，\textbf{并不会把真实海水界面切向电流错误设为零}。
+若支撑完全位于海水内部，则无需上述边界消失因子，
+直接取 \(\bm W=\nabla\times(\chi\bm a)\)。
+
+对于有尖角的盒壁，距离函数可能只具 Lipschitz 正则性，
+需使用分片 \(H(\mathrm{curl})\) 势及合法迹，
+或将光滑面片分区并用相容拼接；不能在不可微的
+\(\min(d_1,d_2)\) 上盲目应用经典点态 curl 公式。
+可采用解析参数面、圆角矩形盒体图谱等，
+\textbf{不得将用于界面图谱的圆角盒体函数误替代 BFZI 线圈中心线定义}。
+
+\subsection{构造 II：局部 Piola 图谱和刚体复用}
+对于可用 \(C^1\) 微分同胚
+\(F_{\alpha,\bm g}:\widehat{\mathcal U}_\alpha
+\to\mathcal U_\alpha(\bm g)\) 描述的局部几何形变，
+令 \(\bm J_F=D_{\widehat{\bm x}}F_{\alpha,\bm g}\)，
+\(\det\bm J_F>0\)；定义\textbf{逆变} Piola 场
+\begin{equation}
+\boxed{
+\bm W_{\alpha m}(\bm x;\bm g)
+=\left.\frac{\bm J_F\,\widehat{\bm W}_{\alpha m}}
+{\det\bm J_F}\right|_{\widehat{\bm x}=F^{-1}_{\alpha,\bm g}(\bm x)}.
+}
+\label{eq:piola-atlas}
+\end{equation}
+它满足
+\[
+\nabla_{\bm x}\cdot\bm W_{\alpha m}
+=\frac{\widehat\nabla\cdot\widehat{\bm W}_{\alpha m}}
+{\det\bm J_F},
+\]
+并保持界面的法向通量；
+因此参考图谱中符合约束的电流模式可迁移到变化的封装几何。
+\textbf{Piola 映射是既有数学工具，非本研究原创}；
+其具体优势在于几何变化后不必重新学习散度约束。
+
+纯刚体运动下 \(F(\widehat{\bm x})=R\widehat{\bm x}+\bm c\)，
+\(\bm J_F=R\)、\(\det R=1\)，故
+\(\bm W(\bm x)=R\widehat{\bm W}(R^\top(\bm x-\bm c))\)。
+在均匀海水中，
+该\textbf{同一局部模式}的电阻内积、自磁能和自身几何核保持刚体不变；
+不同封装之间的\textbf{交叉磁能/间隙场}仍依赖相对位姿，
+必须更新，不得沿用每盒独立求和。
+
+\subsection{双封装图谱：近盒、间隙和远场}
+只对单一封装建立参考域 Piola 图谱不足以覆盖
+双封装六自由度互相错位后的海水区域，
+且一般不存在一个具有统一低形变界的
+\textbf{全参数域全局微分同胚}。
+建议将字典分为：
+\begin{equation}
+\boxed{
+\mathcal W(\mathcal G)
+=\mathcal W_{\mathrm{near},1}
++\mathcal W_{\mathrm{near},2}
++\mathcal W_{\mathrm{gap}}
++\mathcal W_{\mathrm{far}}
++\mathcal W_{\mathrm{top}} .
+}
+\label{eq:dictionary-decomp}
+\end{equation}
+近盒图谱随各自装配件刚体运动或局部尺寸伸缩；
+两盒靠近时增加随正间隙 \(h\) 缩放的间隙图谱；
+远场采用合适衰减的解析模式、非局部边界映射或自适应局部模式；
+多连通电流域需要相应的\textbf{全局拓扑谐和环流}，否则 curl 字典不完备。
+这里的加号表示有限基空间之和，\textbf{不是}将每个盒子
+\emph{独立求解的}阻抗相加。
+
+采用近盒局部基时，需保证其支撑不侵犯第二个盒体；
+相对姿态变化使其发生交叠时，动态裁剪或用新的
+\(\chi_\alpha\) 重新生成合规模式，并重新计算受影响的 Gram 项。
+间隙 \(h\to0^+\) 时，Piola Jacobian 条件数和局部场梯度可能恶化，
+应增广近场模式、缩小适用范围或回退参考求解；
+不宣称固定低阶数在所有近接触极限仍然准确。
+
+\subsection{几何网络应学习什么}
+网络仅学习以下\textbf{连续空间的选择/压缩}：
+\[
+\bm S_\theta:
+(A_0,\varrho_0,s,\alpha,N,\sigma_w,\bm g_{\rm box},
+q_{\rm rel},\omega,\sigma_s,\text{thermal summary})
+\mapsto\mathbb R^{M\times r}.
+\]
+约束模式字典的散度/法向条件与网络权重无关，
+低维子空间 \( \bm W_\theta=\bm W_0\bm S_\theta\)
+仍合规。用局部图谱、特征缩放、秩条件以及
+必要的局部正交化维持 \(\bm R\succ0\)；
+随几何改变导致参考字典基数量变化时，
+使用固定上界模式槽/掩码或可变大小集合编码器，
+并明确模型接口。若新场景的模式空间覆盖不足，
+应增加图谱或教师样本，而不是简单加大学习率。
+
+\subsection{推理阶段无需世界 FEM 网格，但不能免积分}
+几何通过解析图谱、局部积分节点和 BFZI 结构化线源处理，
+不必构造固定世界 FEM 网格。体积分和核积分仍然存在；
+每个图谱的积分和映射必须进入计算复杂度预算。
+本节证明的是\textbf{约束保持}，
+不是字典足够完备、跨几何高精度或在线快速的证明。

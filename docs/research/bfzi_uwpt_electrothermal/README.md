@@ -25,3 +25,12 @@
 - [铜、盒壁与海水联合 Schur 补](../../../theory/sections/05a_coupled_conductive_schur.tex)：避免独立阻抗补丁漏掉交叉耦合或重复计损。
 
 **特别注意：** 该推导并没有解决任意几何下连续散度自由电流基的高效构造、任意磁芯或高速运动；也没有获得实验精度与加速性能。最新理论仅属于数学条件明确的研究方案，现有运行代码未被修改。
+
+## 第三轮推进：合法电流基、保正定快速装配与误差界（2026-10-31）
+
+- [专题 Markdown：从数学到可实施算法](geometry_admissible_space_and_fast_assembly.md)：curl/Piola 物理电流图谱、BFZI 模式耦合、正权磁能 Gram、计算成本和回退。
+- [03b：六自由度双封装的合规电流图谱](../../../theory/sections/03b_geometry_admissible_basis.tex)：近盒、间隙、远场及拓扑模式，并给出保持散度和绝缘界面条件的构造。
+- [04b：正权核矩阵与 BFZI 在线装配](../../../theory/sections/04b_positive_kernel_assembly.tex)：R 和 L 的 PSD Gram、双盒相对姿态的谱特征、K 的互易积分以及成本。
+- [04c：能量范数残差界及在线流程](../../../theory/sections/04c_residual_online_algorithm.tex)：同一高精度有限字典中的电流误差证明及快速推理/参考回退分工。
+
+本轮补充了参数化 MQS ROM 与保被动降阶的先行文献，以明确已有数学工具与本研究创新之间的界限。**没有修改代码，也未进行实验或编译。**

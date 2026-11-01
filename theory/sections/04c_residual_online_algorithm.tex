@@ -1,0 +1,146 @@
+\section{电磁低阶误差界、几何回退与训练最小闭环}\label{sec:error-algorithm}
+\subsection{Galerkin 电流误差的能量范数}
+固定某个合法的 BFZI--封装--海水场景 \(\mathcal G\)，
+在一个有限维合规的高精度参考电流字典上，定义
+\(\bm A=\bm R+\jj\omega\bm L\)，
+\(\bm R\succ0\)、\(\bm L\succeq0\)，
+\(\bm A\bm z^\star=\bm f\)；
+设由神经选择空间投影得到的近似解为 \(\bm z_r\)
+（已提升到同一参考字典坐标），
+\(\bm r_{\rm full}=\bm f-\bm A\bm z_r\)，
+\(\bm e=\bm z^\star-\bm z_r\)。
+用 \(\|\bm u\|_{\bm R}
+=(\bm u^{\mathrm H}\bm R\bm u)^{1/2}\)
+和 \(\|\bm v\|_{\bm R^{-1}}\) 表示能量范数及其对偶范数。
+由于 \(\bm A\bm e=\bm r_{\rm full}\)，有
+\[
+\|\bm e\|_{\bm R}^2
+=\operatorname{Re}(\bm e^{\mathrm H}\bm A\bm e)
+=\operatorname{Re}(\bm e^{\mathrm H}\bm r_{\rm full})
+\le \|\bm e\|_{\bm R}\|\bm r_{\rm full}\|_{\bm R^{-1}},
+\]
+所以
+\begin{equation}
+\boxed{
+\|\bm z^\star-\bm z_r\|_{\bm R}
+\le \|\bm r_{\rm full}\|_{\bm R^{-1}}.
+}
+\label{eq:galerkin-residual-bound}
+\end{equation}
+这是一条\textbf{同一高精度有限维参考空间}下的
+标准残差能量误差界，适用于任何合规的近似电流状态，
+不要求神经网络满足特殊训练损失。
+其代价是完整残差和对偶范数可能在线昂贵；
+可在代表性教师场景/抽样几何中精确计算用于验收，
+在线使用参数化低维残差估计与阈值回退。
+若 \(\bm A,\bm f\) 自身是近似装配，
+必须将装配误差纳入 \(\bm r_{\rm full}\) 或另外增加误差项，
+不能把式 \eqref{eq:galerkin-residual-bound}
+直接应用于未测量的真实连续算子。
+
+\subsection{最优子空间近似与条件数}
+对于带 \(\bm R\) 内积的同一字典，
+定义 \(\bm B=\bm R^{-1/2}\bm L\bm R^{-1/2}\)，
+其为实对称半正定。
+\[
+\bm R^{-1/2}\bm A\bm R^{-1/2}
+=\mathsf I+\jj\omega\bm B.
+\]
+该变换算子在能量范数内的算子范数为
+\(\sqrt{1+\omega^2\|\bm B\|_2^2}\)，
+实部强制性常数为 \(1\)，
+因而标准复数 Galerkin 估计提供
+\begin{equation}
+\|\bm e\|_{\bm R}
+\le
+\sqrt{1+\omega^2\|\bm B\|_2^2}
+\inf_{\bm v\in\mathcal V_r}
+\|\bm z^\star-\bm v\|_{\bm R}.
+\label{eq:cea-complex}
+\end{equation}
+这是较保守的上界，
+仅用于分析\textbf{频率放大效应和子空间覆盖不足}，
+不能据此预测实际误差总能保持在某固定百分比内。
+在高频、海水电导率高或皮肤深度显著缩小时，
+\(\omega\|\bm B\|\) 可能增大，应相应增广涡流模式与训练频段。
+
+\subsection{端口/热源的误差与残差}
+对固定的同一高精度字典及精确耦合 \(\bm K\)，
+低阶海水阻抗误差来源于响应差
+\(\Delta\bm z\)：
+\(\Delta\bm v_s=\jj\omega\bm K^{\mathsf T}\Delta\bm z\)，
+故
+\[
+\|\Delta\bm v_s\|_2
+\le |\omega|\,\|\bm K^{\mathsf T}\bm R^{-1/2}\|_2
+\|\Delta\bm z\|_{\bm R}.
+\]
+这给出从同源电流的能量误差到端口电压误差的界。
+对于同一欧姆积分，海水功率误差满足
+\begin{equation}
+\left|
+\tfrac12\|\bm z^\star\|_{\bm R}^2
+-\tfrac12\|\bm z_r\|_{\bm R}^2
+\right|
+\le \tfrac12
+(\|\bm z^\star\|_{\bm R}+\|\bm z_r\|_{\bm R})
+\|\bm z^\star-\bm z_r\|_{\bm R}.
+\label{eq:loss-error}
+\end{equation}
+但\textbf{最大局部热源、盒壁热点和温度峰值}
+一般不能仅由一个全局 \(L^2\) 电流误差界控制；
+仍需局部增强采样、近界面场验证和热传播稳定性分析。
+不同几何下的高精度字典不一致时，
+需先指定稳定的场映射/投影，才能比较其范数。
+
+\subsection{一条可计算的最小运行流程}
+在物理参考求解器可用后，按下列算法推进；
+这里的 \texttt{REFERENCE} 与 \texttt{FAST}
+仍是严格分开的模型层级，不能互相偷偷代替。
+
+\paragraph{离线阶段}
+确定 BFZI 几何合法域和导体/馈回流约定；
+为典型封装和海水构造合规局部 curl/Piola 图谱及拓扑模式；
+生成参考场景、端口单位电流教师样本；
+计算自洽参考场、材料损耗和 \(\bm R,\bm L,\bm K\)；
+将几何--频率--位姿--材料条件映射到可表达该响应的低维子空间，
+训练 \(\bm S_\theta\) 选择器，并验证
+式 \eqref{eq:galerkin-residual-bound} 对应的电流误差与空间误差。
+对于几何改变后不能复用的矩阵核，记录在线必须重组的具体块。
+
+\paragraph{在线阶段}
+\begin{enumerate}
+\item 读取 BFZI 线圈和各组件的完整尺寸、材料、相对六自由度位姿；
+检查非法穿透、几何非退化、局部图谱的正间隙条件。
+\item 选择近盒、间隙、远场和必要拓扑电流模式；
+将每个模式映射至真实世界坐标并保留连续性/法向零通量。
+\item 用正权物理积分或共同的磁核谱特征
+组装所需的电阻、磁能和 BFZI 端口耦合矩阵；
+主螺旋源项执行有误差控制的匝号聚合。
+\item 用网络选择低阶子空间 \(\bm S_\theta\)，
+进行小矩阵收缩及 \(r\) 维复线性系统求解；
+若含有限铜导体/导电盒壁则使用联合 Schur 补，
+不可独立叠加修正。
+\item 由同一低维电流状态计算复阻抗、连续空间
+\(\bm J,\bm E,\bm B\) 和逐材料 \(q_i\)；
+向电路与守恒热 ODE 传入同一组损耗投影。
+\item 若场景超出图谱覆盖、矩阵失去秩、
+边界近接触或样本内残差/局部场误差失控，
+增广模式或切换参考求解。
+\end{enumerate}
+在线查询远离线圈与海水模式支持集的
+\(\bm E,\bm B\) 仍需要连续 Green 核/多极或谱快速场评价；
+\textbf{小维度求出涡流系数不等于所有三维场查询都已经快速。}
+
+\subsection{验证的优先级}
+首个可复现实例限定：两只 BFZI 合法线圈、
+非导电盒壁、均匀静止海水、一个频率、
+已知六自由度相对位姿；
+不先训练大网络。
+先证明/对照：散度与法向通量、
+互易、端口阻性功率与海水损耗的离散恒等式、
+参考场的空间误差和实际组装耗时。
+随后分别增加频率扫、间隙趋小、封装尺寸变化、
+有限铜截面、导电盒壁和热时间演化。
+研究记录优先关注\textbf{物理计算是否正确、线上矩阵组装是否有真实效率优势}，
+无需添加大量额外审计程序。
