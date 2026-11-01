@@ -143,26 +143,81 @@ class BfziScene:
         self, radial_order: int = 7, polar_order: int = 10,
         azimuthal_order: int = 16,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Positive spherical point cubature (not a world FEM mesh)."""
+        """Positive spherical cubature with exact radial cuts at both boxes.
+
+        Each angular ray is partitioned at its intersections with the
+        oriented insulation boxes before radial Gauss integration. Unlike
+        deleting nodes that happen to fall inside a box, this resolves the
+        radial jump in conductivity and the near-wall sea volume without a
+        world mesh. Angular and outer-domain convergence are still required.
+        """
         if min(radial_order, polar_order, azimuthal_order) < 2:
             raise ValueError("quadrature orders must be >= 2")
         rr, rw = np.polynomial.legendre.leggauss(radial_order)
         mu, mw = np.polynomial.legendre.leggauss(polar_order)
-        r = 0.5 * (rr + 1) * self.outer_radius
-        wr = 0.5 * rw * self.outer_radius * r**2
-        theta = (np.arange(azimuthal_order) + 0.5) * (2 * math.pi / azimuthal_order)
-        c, s = np.cos(theta), np.sin(theta)
-        uu = np.sqrt(np.maximum(1 - mu**2, 0))
-        directions = np.stack(
-            (uu[:, None] * c, uu[:, None] * s,
-             np.broadcast_to(mu[:, None], (polar_order, azimuthal_order))), axis=-1,
+        theta = (np.arange(azimuthal_order) + 0.5) * (
+            2 * math.pi / azimuthal_order
         )
-        points = (np.asarray(self.outer_center)
-                  + r[:, None, None, None] * directions[None, :, :, :])
-        weights = (wr[:, None, None] * mw[None, :, None]
-                   * (2 * math.pi / azimuthal_order)
-                   * np.ones((1, 1, azimuthal_order)))
-        flat = points.reshape(-1, 3)
-        weight = weights.reshape(-1)
-        mask = self.in_seawater(flat)
-        return flat[mask], weight[mask]
+        transverse = np.sqrt(np.maximum(1.0 - mu**2, 0.0))
+        directions = np.stack((
+            transverse[:, None] * np.cos(theta),
+            transverse[:, None] * np.sin(theta),
+            np.broadcast_to(mu[:, None], (polar_order, azimuthal_order)),
+        ), axis=-1).reshape(-1, 3)
+        angular_weights = np.broadcast_to(
+            mw[:, None] * (2 * math.pi / azimuthal_order),
+            (polar_order, azimuthal_order),
+        ).reshape(-1)
+        n_rays = len(directions)
+        outer_center = np.asarray(self.outer_center)
+        radius = self.outer_radius
+        cuts = [np.zeros(n_rays), np.full(n_rays, radius)]
+        for assembly in self.assemblies:
+            # Ray/slab intersections in the box's own orthonormal frame.
+            origin = (outer_center - assembly.pose.center) @ assembly.pose.rotation
+            rays = directions @ assembly.pose.rotation
+            half = np.asarray(assembly.enclosure.half_extents)
+            entering = np.full(n_rays, -np.inf)
+            exiting = np.full(n_rays, np.inf)
+            intersects = np.ones(n_rays, dtype=bool)
+            for axis in range(3):
+                direction = rays[:, axis]
+                parallel = np.abs(direction) <= 1e-14
+                intersects &= ~parallel | (abs(origin[axis]) <= half[axis])
+                near = np.divide(
+                    -half[axis] - origin[axis], direction,
+                    out=np.full(n_rays, -np.inf), where=~parallel,
+                )
+                far = np.divide(
+                    half[axis] - origin[axis], direction,
+                    out=np.full(n_rays, np.inf), where=~parallel,
+                )
+                entering = np.maximum(entering, np.minimum(near, far))
+                exiting = np.minimum(exiting, np.maximum(near, far))
+            start = np.clip(entering, 0.0, radius)
+            stop = np.clip(exiting, 0.0, radius)
+            hits = intersects & (start < stop)
+            # Non-intersecting rays receive degenerate cuts at the far end.
+            cuts.extend((np.where(hits, start, radius),
+                         np.where(hits, stop, radius)))
+        boundaries = np.sort(np.stack(cuts, axis=1), axis=1)
+        a, b = boundaries[:, :-1], boundaries[:, 1:]
+        midpoints = outer_center + (
+            (a + b)[:, :, None] * 0.5 * directions[:, None, :]
+        )
+        valid = (b > a) & self.in_seawater(midpoints)
+        if not np.any(valid):
+            return np.empty((0, 3)), np.empty(0)
+        # Apply the same Gauss rule on each *entirely wet* interval.
+        r = a[:, :, None] + 0.5 * (b - a)[:, :, None] * (
+            rr[None, None, :] + 1.0
+        )
+        weight = (
+            0.5 * (b - a)[:, :, None] * rw[None, None, :]
+            * r**2 * angular_weights[:, None, None]
+        )
+        points = (
+            outer_center
+            + r[..., None] * directions[:, None, None, :]
+        )
+        return points[valid].reshape(-1, 3), weight[valid].reshape(-1)
