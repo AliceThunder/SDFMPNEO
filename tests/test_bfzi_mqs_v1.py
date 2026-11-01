@@ -425,6 +425,11 @@ def test_seawater_heat_nodes_drive_separate_thermal_rom_channel():
     )
     three_channels = reference.thermal_channel_power(currents)
     np.testing.assert_allclose(
+        three_channels,
+        reference.as_structured_prediction().channel_power(currents),
+        rtol=3e-9, atol=1e-12,
+    )
+    np.testing.assert_allclose(
         three_channels[:2], reference.port_conductor_power(currents),
     )
     np.testing.assert_allclose(three_channels[2], weights @ heat, rtol=3e-9)
