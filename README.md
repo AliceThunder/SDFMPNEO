@@ -22,7 +22,8 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 
 ```bash
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
-python run.py --mode bfzi-convergence  # wall layers / basis / cubature / domain / kernel
+python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
+python run.py --mode bfzi-convergence --full  # additional high-cost refinements
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
 
@@ -61,6 +62,15 @@ using `BFZICurrentControlledEnvelope` or `BFZIVoltageControlledEnvelope`
 (with a passive external series/tuning impedance); conductivity, coil power
 and, for voltage control, port currents update at every fixed-point iterate.
 The seawater electromagnetic response stays at its reference conductivity.
+For a thermal ROM with a third input column, the envelopes also inject the
+seawater Joule power into a separate heat channel. A thermal model may then
+have more than two states, provided its first two *decoded temperatures*
+refer to the two copper conductors; additional states can represent a reduced
+seawater/insulation temperature. `seawater_heat_nodes()` gives positive
+spatial volume nodes whose total exactly matches the seawater port channel
+under the shared Galerkin cubature. The default two-channel coil thermal
+model is unchanged. A third **lumped** seawater node is illustrative, not
+a calibrated infinite-ocean thermal solver.
 
 Limitations: this is **not yet** a converged infinite-ocean reference.
 It does not resolve current redistribution from proximity, arbitrary
