@@ -1,13 +1,17 @@
-"""BFZI one-axis-at-a-time convergence probe (not a certification).
+"""Independent BFZI seawater convergence probes (not certification).
 
-Run from the repository root:
+Quick (default) uses a modest mode count; --full also tests more localized
+box-face modes and higher cubature resolution. Results compare both two-port
+reaction matrices and spatial seawater Joule density at fixed wet probes.
+Commands from repository root:
     python -m examples.bfzi_convergence
-
-Compares the same two-port seawater reaction impedance under basis, angular/
-radial quadrature, outer-radius and kernel-softening refinements. An individual
-small difference is NOT proof of infinite-domain or singular-kernel convergence.
+    python -m examples.bfzi_convergence --full
+    python run.py --mode bfzi-convergence [--full]
 """
+from __future__ import annotations
+
 from dataclasses import replace
+import sys
 import numpy as np
 
 from examples.bfzi_mqs_demo import build_demo_scene
@@ -17,71 +21,99 @@ from sdfmpneo_bfzi import (
 )
 
 
-def main():
+def main(full: bool = False):
     scene = build_demo_scene()
-    configurations = {
-        "ungraded_wall": (scene, 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.025, wall_layers=0,
-        )),
-        "one_wall_layer": (scene, 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.025, wall_layers=1,
-        )),
-        "baseline": (scene, 1, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
+    base = dict(radial_order=4, polar_order=6, azimuthal_order=8,
+                field_softening=0.025)
+    configs = [
+        ("ungraded", scene, 1, 1, SeaMQSConfig(**base, wall_layers=0)),
+        ("one_wall_layer", scene, 1, 1, SeaMQSConfig(**base, wall_layers=1)),
+        ("two_wall_layers", scene, 1, 1, SeaMQSConfig(**base, wall_layers=2)),
+        ("two_face_modes", scene, 2, 1, SeaMQSConfig(**base)),
+        ("refined_cubature", scene, 2, 1, SeaMQSConfig(
+            radial_order=5, polar_order=8, azimuthal_order=12,
             field_softening=0.025,
         )),
-        "enriched_modes": (scene, 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.025,
+        ("larger_domain", replace(scene, outer_radius=0.70), 2, 1,
+         SeaMQSConfig(**base)),
+        ("smaller_softening", scene, 2, 1, SeaMQSConfig(
+            **{**base, "field_softening": 0.018},
         )),
-        "refined_face_basis": (scene, 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.025,
-        )),
-        "refined_cubature": (scene, 2, SeaMQSConfig(
-            radial_order=6, polar_order=10, azimuthal_order=16,
-            field_softening=0.025,
-        )),
-        "larger_domain": (replace(scene, outer_radius=0.7), 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.025,
-        )),
-        "smaller_softening": (scene, 2, SeaMQSConfig(
-            radial_order=5, polar_order=7, azimuthal_order=10,
-            field_softening=0.018,
-        )),
-    }
-    impedances = {}
-    for label, (domain, n_face, config) in configurations.items():
-        sources = build_bfzi_source(domain, 200_000.0, order=4)
+    ]
+    if full:
+        configs.extend([
+            ("refined_face_basis", scene, 2, 2, SeaMQSConfig(**base)),
+            ("higher_cubature", scene, 2, 1, SeaMQSConfig(
+                radial_order=6, polar_order=10, azimuthal_order=16,
+                field_softening=0.025,
+            )),
+            ("smaller_softening_2", scene, 2, 1, SeaMQSConfig(
+                **{**base, "field_softening": 0.012},
+            )),
+            ("larger_domain_2", replace(scene, outer_radius=0.85), 2, 1,
+             SeaMQSConfig(**base)),
+        ])
+    # Probe locations are strictly outside both sealed boxes for every
+    # configuration and far from the artificial outer boundary.
+    probes = np.array([
+        [0.0, 0.0, 0.0],
+        [0.13, 0.0, 0.0],
+        [0.0, 0.13, 0.0],
+        [0.0, 0.0, 0.22],
+    ])
+    currents = np.array([1.0 + 0.2j, -0.4 + 0.5j])
+    assert all(domain.in_seawater(probes).all() for _, domain, *_ in configs)
+    results = {}
+    source_cache = {}
+    for name, domain, face_modes, face_refinement, config in configs:
+        # Air/port source quadrature does not change when refining the sea
+        # trial space or Green kernel, so do not recompute it unnecessarily.
+        key = (domain.outer_radius, domain.outer_center)
+        if key not in source_cache:
+            source_cache[key] = build_bfzi_source(
+                domain, 200_000., order=4,
+            )
         result = solve_seawater_reference(
-            sources, basis=build_sea_basis(
-                domain, modes_per_face=n_face,
-                face_refinement=2 if label == "refined_face_basis" else 1,
-            ), config=config,
+            source_cache[key],
+            basis=build_sea_basis(
+                domain, modes_per_face=face_modes,
+                face_refinement=face_refinement,
+            ),
+            config=config,
         )
-        impedances[label] = result.impedance_seawater
-        print(
-            f"{label:>19}: nodes={len(result.integration_points):5d},"
-            f" resolved_modes={result.resistance.shape[0]:2d},"
-            f" reaction={result.impedance_seawater.tolist()}"
+        results[name] = (
+            result.impedance_seawater, result.seawater_loss(probes, currents)
         )
-    for label, baseline in (
-        ("one_wall_layer", "ungraded_wall"),
-        ("enriched_modes", "one_wall_layer"),
-        ("enriched_modes", "baseline"),
-        ("refined_face_basis", "enriched_modes"),
-        ("refined_cubature", "enriched_modes"),
-        ("larger_domain", "enriched_modes"),
-        ("smaller_softening", "enriched_modes"),
-    ):
-        change = np.linalg.norm(impedances[label] - impedances[baseline])
-        scale = max(np.linalg.norm(impedances[baseline]), 1e-30)
-        print(f"{label:>19} relative reaction change: {change / scale:.6g}")
-    print("NOT CERTIFIED: continue independent refinements until changes stabilize.")
+        print(f"{name:>21}: Q={len(result.integration_points):6d}, "
+              f"modes={result.resistance.shape[0]:3d}, "
+              f"Zsw={result.impedance_seawater.tolist()}", flush=True)
+    pairs = [
+        ("one_wall_layer", "ungraded"),
+        ("two_wall_layers", "one_wall_layer"),
+        ("two_face_modes", "two_wall_layers"),
+        ("refined_cubature", "two_face_modes"),
+        ("larger_domain", "two_face_modes"),
+        ("smaller_softening", "two_face_modes"),
+    ]
+    if full:
+        pairs.extend([
+            ("refined_face_basis", "two_face_modes"),
+            ("higher_cubature", "refined_cubature"),
+            ("smaller_softening_2", "smaller_softening"),
+            ("larger_domain_2", "larger_domain"),
+        ])
+    print("\nOne-axis relative changes (Zsw / fixed-point seawater Joule):")
+    for refined, coarse in pairs:
+        z1, q1 = results[refined]
+        z0, q0 = results[coarse]
+        dz = np.linalg.norm(z1 - z0) / max(np.linalg.norm(z0), 1e-30)
+        dq = np.linalg.norm(q1 - q0) / max(np.linalg.norm(q0), 1e-30)
+        print(f"{refined:>21} vs {coarse:<20}: "
+              f"dZ={dz:.5g}, dq={dq:.5g}")
+    print("NOT CERTIFIED: confirm successive refinements and independent truth.")
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] != "--full"):
+        raise SystemExit("usage: python -m examples.bfzi_convergence [--full]")
+    main(full=len(sys.argv) == 2)
