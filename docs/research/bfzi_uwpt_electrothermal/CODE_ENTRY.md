@@ -115,3 +115,14 @@ python run.py --mode bfzi
 - 新增 `python -m examples.bfzi_convergence`：分别变更模态数量、空间求积、外域半径和软化长度，打印两端口响应相对差。单次差值不得作为收敛证明。
 
 **执行验证边界：** 此次通过 GitHub 内容接口修改并提交，当前执行容器访问 `github.com` 失败，尚未能够执行仓库内 pytest 与 `python run.py --mode bfzi`。在独立本地数值原型中测试了边界切分体积积分和圆导线集肤公式，结果仅证明这些局部算法的基本数值合理性，不能代替仓库集成测试或电磁参考场的收敛验证。
+
+
+## 第二轮实现增量：近壁分辨、嵌套模态、导体空间热源与电压反馈
+
+- 新 `BfziScene.quadrature(..., wall_layers=2, wall_scale=...)` 保持盒壁径向精确切分，并以随 `SeaCurrentBasis.wall_scale` 变化的几何级数分层加密海水近壁积分。 `wall_layers=0` 可恢复未加密的精确盒壁切分结果，便于直接比较近壁数值敏感性。
+- `build_sea_basis(..., face_refinement=2)` 增加盒壁切向偏移的局部 curl 模态，并严格保留 `face_refinement=1` 原中心模态作为嵌套子空间。新增模态仅为收敛候选，不能凭模态数量认定收敛。
+- `BFZISources.conductor_cross_section_loss` 输出圆导线 AC 集肤的径向体积焦耳热密度 `q(r)`；`conductor_heat_nodes` 输出完整导线的积分功率节点；`conductor_volume_heat` 沿连续 BFZI 和指定回流构建正权体积热源点，供未来空间热场复用。在相同径向/中心线求积下，该场积分应匹配端口铜损；尚未处理邻近效应与锐角回流截面交叠。
+- `BFZIVoltageControlledEnvelope` 引入被动外电路阻抗，温度迭代内动态求解两端口电流和铜损，独立于已有电流控制模式。外电路自身损耗不会错误计入线圈发热；海水温度仍冻结。
+- `python run.py --mode bfzi-convergence` 与 `python -m examples.bfzi_convergence` 比较近壁层数、面模态、球域半径、角径向阶数以及磁核软化。每条路径都必须本地实际执行并观察收敛序列，不能把此诊断入口宣称为精度证明。
+
+**未验证项保持明确：** GitHub 内容接口允许修改/提交，但当前工作容器无法解析 GitHub 主机，不能下载完整仓库运行 pytest、示例或真实收敛序列。已用独立 NumPy/SciPy 数值计算核对圆导体集肤剖面的横截面能量积分以及盒壁径向分层后的体积积分守恒；未完成整个仓库集成运行。
