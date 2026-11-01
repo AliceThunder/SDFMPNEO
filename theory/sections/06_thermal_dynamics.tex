@@ -1,0 +1,55 @@
+\section{海水耦合瞬态热场与守恒降阶演化}\label{sec:thermal}
+\subsection{固体与海水的热方程}
+对封装、导体、磁芯等固体，在自身材料坐标内
+\begin{equation}
+\rho_i c_i(T)\,\mathrm D_t T_i
+=\grad\cdot(k_i(T)\grad T_i)+q_i^{\rm EM}.
+\label{eq:heat-solid}
+\end{equation}
+对于海水
+\begin{equation}
+\rho_sc_s(T_s)[\partial_tT_s+\bm v_s\cdot\grad T_s]
+=\grad\cdot(k_s(T_s)\grad T_s)+q_s^{\rm EM}.
+\label{eq:heat-sea}
+\end{equation}
+界面给出接触温差/接触热阻及热通量平衡；
+海水远场具有背景温度/热输运条件。
+第一阶段可采用静止海水或指定流速场，
+但不能宣称不建流场就能正确预测任意湍流与自然对流。
+运动组件中的温度采用材料导数，避免将刚体运输重复计入热源。
+
+\subsection{几何条件化连续温度场}
+对第 \(i\) 个组件使用随体坐标
+\(\bm\xi_i=R_i^{\mathsf T}(\bm x-\bm c_i)\)，
+研究连续低维表达
+\begin{equation}
+T_i(\bm x,t)=T_{\rm ref}(\bm x,t)
++\sum_{\ell=1}^{r_i}
+a_{i,\ell}(t)\Phi_{i,\ell}(\bm\xi_i;\bm g_i).
+\label{eq:thermal-basis}
+\end{equation}
+\(\Phi\) 可来自解析 Green/传热本征基与有限维学习修正，
+需对边界接口和热容量保持物理一致。
+\textbf{不可默认固定 FEM 网格 POD 基支持全部 BFZI 形状与盒体尺寸}。
+海水的热尾迹应使用独立的连续核/低阶状态表达，
+否则可能错误丢失流向下游的热能。
+
+\subsection{守恒低阶热动力系统}
+对热量方程进行几何条件化投影，得到候选
+\begin{equation}
+\boxed{
+\bm M(\bm g,\bm a)\dot{\bm a}
++\bm K(\bm g,\bm a,\bm q,\bm v_s)\bm a
+=\bm B(\bm g)\bm p_{\rm EM}
++\bm f_\theta(\bm a,\bm g,\bm q,\bm v_s).
+}
+\label{eq:thermal-rom}
+\end{equation}
+这里 \(\bm M\succ0\)，
+\(\bm K\) 对应传导/换热耗散，
+学习闭合项 \(\bm f_\theta\) 只能表示未建模热通量
+或低阶截断，不得任意制造/消灭能量。
+在线时间通过对式 \eqref{eq:thermal-rom} 的积分推进，
+不是将时间作为单个黑箱网络输入后截断训练窗。
+这给出长时间求解的机制，\textbf{并不自动证明长时间精度}；
+仍需在未知功率历程、位姿和热稳态下独立测试。

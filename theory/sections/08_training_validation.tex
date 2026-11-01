@@ -1,0 +1,44 @@
+\section{训练任务、物理基准与逐阶段验证}\label{sec:training}
+\subsection{四阶段研发}
+\begin{enumerate}
+\item \textbf{BFZI 解析基线：}直接复核原几何、圆形极限、
+跨匝节点仿射性、完整馈回流、两线圈六自由度、
+空气电感及误差受控主螺旋源项积分。
+\item \textbf{海水复场与分布损耗：}先实现非导电封装、
+海水电流连续约束和自洽反作用；从同一单位端口状态
+得到 \(\bm Z,\bm E,\bm B,\bm J,q_s,q_{\rm Cu}\)，
+再训练海水场散射残差；明确不同材料分区的功率归属。
+\item \textbf{连续热场及演化：}构造随体几何条件化基、
+界面热通量/对流/海水尾迹和低阶 ODE，
+验证功率阶跃、稳态、关断、相对姿态及长时间演化。
+\item \textbf{谐振电路双向耦合：}接入确定的电源、
+补偿拓扑和负载，比较固定电流/固定电压、
+单向/双向热反馈、基波/多谐波模型。
+\end{enumerate}
+\subsection{学习目标与失效判据}
+候选损失
+\[
+\mathcal L=\lambda_F\mathcal L_F+\lambda_Z\mathcal L_Z+
+\lambda_Q\mathcal L_Q+\lambda_T\mathcal L_T+
+\lambda_c\mathcal L_{\rm continuity}+
+\lambda_e\mathcal L_{\rm energy}+
+\lambda_d\mathcal L_{\rm dynamics}.
+\]
+各项需归一化并报告物理单位误差；
+更应采用结构性的散度/耗散/互易约束，不通过堆积损失权重代替。
+训练/测试按完整几何、封装、姿态、海水电导率、
+频率、功率和时间历程分组；
+同一场景的空间点随机分配不是跨几何泛化验证。
+
+\subsection{初始验证工况和未知数据}
+可参考 0UnifiedModelingUWPT 的论文草稿：
+200/240 mm 线圈、204/244 mm 盒体、
+\(N=10,s=6\) mm、\(\alpha=0.5\)、200 kHz、
+海水电导率 5 S/m 等工况。
+\textbf{其 FEM/实验表格仍有待填内容，不得将其当成已证实性能。}
+至少报告端口复阻抗、空间场及热源、最高温度、
+长期稳态、能量收支和全场误差；零值附近采用有尺度的绝对误差。
+加速比需说明基准、硬件、预计算、加载和批量查询成本。
+建议消融：跨匝聚合/逐匝；同源场/端口黑箱；
+无海水反作用/有；固定热基/条件化热基；
+单向/双向；静止海水/给定海流。

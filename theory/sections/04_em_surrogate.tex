@@ -1,0 +1,44 @@
+\section{BFZI 结构化场源与受约束神经响应}\label{sec:surrogate}
+\subsection{从端口黑箱回归转为同源场代理}
+仅独立拟合 \(R,L,M\) 或损耗、温度容易破坏
+电流连续性、互易性、端口功率与空间热源的一致性。
+因此研究同一个复场响应（或其低维状态）的学习方案，
+再从同一响应读取端口和空间量。
+用 \(\bm f_{\rm BFZI}\) 表示跨匝仿射几何节点、
+聚合后的线源矩和已知空气积分先验；
+用 \(\mathcal G\) 表示封装几何、材料分区、海水边界与相对位姿。
+假设可建立低成本物理先验 \(\bm X_p^{(0)}\)，则定义候选
+\begin{equation}
+\boxed{
+\widehat{\bm X}_p(\bm x)
+=\bm X_p^{(0)}(\bm x)+
+\mathcal P_{\mathcal G}
+\mathcal N_\theta(\bm f_{{\rm BFZI},p},\mathcal G,\omega,\bm a;\bm x).
+}
+\end{equation}
+其中 \(\bm a\) 为慢时间热状态，\(\mathcal P_{\mathcal G}\)
+表示与材料、连续性和界面一致的投影/闭合结构。
+该算子尚未构成完整证明；需要比较散度自由基、
+低维势约束、边界积分和少量局部求积等具体实现，
+并将 \(\mathcal P_{\mathcal G}\) 的计算成本计入推理时间。
+
+\subsection{空间场、阻抗和损耗同源读取}
+相量场由相应 \(A,\phi\) 读出
+\[
+\widehat{\bm B}=\Curl\widehat{\bm A},\quad
+\widehat{\bm E}=-\jj\omega\widehat{\bm A}-\grad\widehat\phi,\quad
+\widehat{\bm J}_i=\sigma_i\widehat{\bm E}_i.
+\]
+实际使用的 \(\bm X\) 定义和规范必须与源物理算子一致；
+端口矩阵和局部热源均从相同的单位端口复场叠加获得，
+不另外训练不相关的独立模型。
+材料界面使用分域基和相应跳跃条件，
+不得以单个光滑神经输出跨越全部材料界面。
+
+\subsection{几何等变性与外场}
+当背景各向同性且没有固定世界方向输入，
+整体旋转和平移时矢量场应协同变换，
+端口标量响应保持不变；但固定海流、重力、
+各向异性电导率张量和世界外场需同步变换才能保留该对称性。
+局部装配件任意改变相对姿态不是整体不变变换：
+模型必须真实计算新的耦合关系。

@@ -1,0 +1,59 @@
+\section{BFZI 解析电磁参考与海水非局部反作用}\label{sec:em}
+\subsection{完整端口回路及空气电感}
+对单位端口电流 \(p\)，将主螺旋及明确的馈电/回流段统一记为
+\(\Gamma_p\)，定义
+\[
+\bm C_p(\bm x)=\frac1{4\pi}
+\int_{\Gamma_p}\frac{\mathrm d\bm\ell'}{\|\bm x-\bm r'\|}.
+\]
+对主螺旋在固定 Gauss 节点 \(b,\mu\) 的带权线元，
+\(\bm r_k=\bm r_0+k\Delta\bm r\)，
+\(\bm h_k=\bm h_0+k\Delta\bm h\)，
+可对 \(\sum_k\bm h_k/\|\bm x-\bm r_k\|\)
+按 BFZI 原稿采用特殊情形精确求和、
+一般情形误差受控二阶分块，近奇异时回退直接计算。
+非重复馈/回流段单独积分，不可遗漏。
+
+空气电感参考以 Neumann 积分为基础
+\[
+L^{\rm air}_{pq}=\frac{\mu_0}{4\pi}
+\int_{\Gamma_p}\int_{\Gamma_q}
+\frac{\mathrm d\bm\ell_p\cdot\mathrm d\bm\ell_q}
+{\|\bm r_p-\bm r_q\|}.
+\]
+同端口自项必须考虑有限导体截面/GMD 和近奇异局部积分，
+不能直接对零半径自重合线元求积。
+双匝号节点对令
+\(Q_{kl}=\|\bm d_0+k\Delta\bm x-l\Delta\bm y\|^2\) 和
+\(H_{kl}=(\bm h_0+k\Delta\bm h)\cdot(\bm z_0+l\Delta\bm z)\)；
+\(Q\) 为二次多项式，\(H\) 分别关于 \(k,l\) 至多一次。
+当两匝号增量相等或相反时可精确转为匝号差/和的单索引求和，
+否则以块矩和余项界做加速。
+该结构已经来自几何论文，不应说是新神经算子自己发明的。
+
+\subsection{海水导电反作用}
+在峰值相量 \(e^{\jj\omega t}\) 下使用磁准静态 \(A\)--\(\phi\)：
+\begin{equation}
+\bm E=-\jj\omega\bm A-\grad\phi,\quad
+\bm B=\Curl\bm A,\quad
+\bm J_s=\sigma_s\bm E,\quad \Div\bm J_s=0.
+\end{equation}
+海水与绝缘封装面满足 \(\bm n\cdot\bm J_s=0\)。
+在源仓库相应的分段材料与离散前提下，场的自洽反作用可写作
+\begin{equation}
+\boxed{(\mathsf I+\mathcal KP_\phi)\bm X_p=\bm C_p},
+\label{eq:sea-response}
+\end{equation}
+其中 \(P_\phi\) 实现电流连续约束，\(\mathcal K\) 描述涡流
+反过来对磁场的影响。统一得到端口海水反作用复阻抗
+\(\bm Z_{\rm sw}\)，并与 \(j\omega\bm L^{\rm air}\)
+组成源文献的复阻抗基底。这个基底的实部指海水导电反作用，
+\textbf{不含导体自身欧姆、趋肤、邻近损耗}。
+
+\subsection{扩展求解器和高精度参考}
+非导电封装基底之外，导电外壳、磁芯和复杂介质需要适用的
+材料边界/弱式、界面积分或体积分，不得假定式
+\eqref{eq:sea-response} 适用于任意非线性材料。
+为每个端口保存同源复电磁状态，允许同时读出
+\(\bm E,\bm J,\bm B\)、端口电压及空间材料损耗，
+作为后续神经学习的物理教师。

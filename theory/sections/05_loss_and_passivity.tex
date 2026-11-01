@@ -1,0 +1,43 @@
+\section{材料损耗、互易、被动性与功率一致}\label{sec:loss}
+\subsection{完整端口矩阵和材料损耗归属}
+设 \(\bm Z_{\rm EM}\) 是从完整电磁参考面看到的
+无源线性耦合器内部端口矩阵，\textbf{不含外部负载和补偿网络}。
+铜导体、导电海水、盒壁、屏蔽及磁芯耗散分别由不重叠材料域负责；
+相量峰值约定下
+\begin{equation}
+q_i(\bm x)=\frac12\operatorname{Re}
+[\bm J_i(\bm x)\cdot\bm E_i^*(\bm x)]
+\quad\text{(欧姆耗散区域)}.
+\end{equation}
+频散或磁滞材料须使用适当周期平均损耗模型，
+不可将同一损耗同时计入磁化功和电流欧姆项。
+电磁总耗散应满足
+\begin{equation}
+\boxed{
+P_{\rm EM,int}=\frac12\bm I^{\mathrm H}
+\Herm{\bm Z_{\rm EM}}\bm I
+=\sum_i\int_{\Omega_i}q_i(\bm x)\,\mathrm dV.
+}\label{eq:power-balance}
+\end{equation}
+该等式成立的条件是两侧采用相同电流/端口参考和
+完整且不重复的内部耗散分区。
+不能用原 BFZI 海水反作用阻抗实部代表包括铜损在内的总损耗。
+
+\subsection{结构约束}
+在线性互易材料条件下要求 \(\bm Z=\bm Z^{\mathsf T}\)；
+非互易介质下不强制对称。
+无源端口要求
+\[
+\Herm{\bm Z_{\rm EM}}\succeq0.
+\]
+注意互阻实部可能为负数，不能逐元素裁剪电阻。
+若以 \(\bm L\bm L^{\mathrm H}\) 参数化耗散矩阵，
+还应使其与实际空间材料损耗和端口电流相容。
+宽带应用必须进一步满足因果性和材料频散限制；
+单频正半定不足以证明完整频带的物理正确性。
+
+\subsection{监督与物理约束}
+训练损失可同时包含端口数据、场数据、空间损耗、
+电流连续/边界条件、\eqref{eq:power-balance} 的功率残差。
+优先通过解码结构保证强物理约束，
+而不是叠加大量数值惩罚掩盖物理不一致。

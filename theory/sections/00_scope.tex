@@ -1,43 +1,19 @@
-\section{Scope and architectural reset}
+\section{范围、来源与物理约定}
+\textbf{几何权威来源：}\href{https://github.com/AliceThunder/0UnifiedModelingUWPT}{0UnifiedModelingUWPT} 的
+\texttt{sections/02\_geometry\_model.tex}。
+海水源项与导电反作用参考 \texttt{03\_package\_seawater\_impedance.tex}，
+匝号结构化快速计算参考 \texttt{04\_geometry\_induced\_fast\_computation.tex}。
+本文不沿用旧的双阶数超椭圆模型；“统一建模”严格指圆形与圆角方形之间的
+\textbf{连续平面螺旋几何统一}，封装空腔只是海水导电域的结构修正。
 
-SDF-MPNEO vNext is a new mathematical architecture rather than an incremental
-extension of the legacy fixed-grid Maxwell--thermal pipeline. The legacy
-implementation remains useful as a numerical oracle for regression studies, but
-its discretization choices are not part of the vNext definition.
+研究目标是从同一场景及其运行历程在合法查询点生成
+\(\bm E,\bm B,\bm J,q_i,T_i\)，在端口生成复阻抗矩阵 \(\bm Z\)，
+在热时间上实现 \(T\to\mathrm{material}\to\bm Z\to\bm I\to q\to T\) 的双向反馈。
+仅预测测温点、仅预测 \(R,L,M\) 或仅单向将损耗传给热场均不足以达成完整目标。
 
-The target problem is a coupled electromagnetic--thermal multi-port system with
-continuously varying geometry, arbitrary rigid poses, finite conductor
-cross-sections, packages and nearby material bodies, and time-dependent
-electrical excitation. The model must support rapid repeated inference over a
-large geometric/material design space while retaining an independently
-checkable path to high accuracy.
-
-\begin{principle}[Continuous scene first]
-The primary object is a continuous physical scene. A mesh, point cloud,
-quadrature rule, panelization, or basis truncation is an implementation detail
-of a teacher or correction backend; it is never part of the public geometry
-semantics.
-\end{principle}
-
-\begin{principle}[Learn operators, not discretized fields]
-Neural networks approximate low-dimensional maps between physical operators,
-latent modal coefficients, and continuous query functions. They do not learn a
-vector whose coordinates are tied to cells of one background grid.
-\end{principle}
-
-\begin{principle}[Hard structure before soft loss]
-Passivity, reciprocity, positive dissipation, non-negative heat generation, and
-stable thermal dynamics are imposed by parameterization whenever possible.
-Penalty terms are reserved for properties that cannot be enforced exactly.
-\end{principle}
-
-\begin{principle}[Fast prediction and certified correction are separate modes]
-A purely learned/analytic prediction path is optimized for latency. A second
-path evaluates physical integral-operator residuals and performs a bounded
-number of corrections. High accuracy therefore does not require the neural
-model to be uniformly exact everywhere.
-\end{principle}
-
-The intended online complexity is controlled by the number of ports, compact
-electromagnetic modes, material objects, thermal states, and requested spatial
-query points. It must not scale with the volume of an artificial far-field box.
+使用峰值相量 \(e^{\jj\omega t}\)，时间平均功率前系数为 \(1/2\)；
+\(\Herm{\bm Z}=(\bm Z+\bm Z^{\mathrm H})/2\)。
+首版采用磁准静态、线性各向同性海水、非导电封装和明确补偿拓扑，
+非线性磁芯、各向异性介质、快速运动与全波问题须分阶段扩展验证。
+无固定世界网格推理不等于无需局部求积、数值参考或 FEM 教师数据。
+现有 SDFMPNEO 的 \texttt{SuperellipseSpiral} 也不等于 BFZI 最新几何类，不得直接重命名冒充迁移。

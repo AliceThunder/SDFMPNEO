@@ -1,0 +1,39 @@
+\section{谐振电路与电磁热双向闭环}\label{sec:circuit}
+\subsection{实际端口电流}
+给定电源/负载、补偿网络拓扑、工作频率和温度状态，
+由同一 \(\bm Z_{\rm EM}\) 组合电路阻抗，
+在基波线性稳态近似下解
+\[
+\bm{\mathcal Z}_{\rm circuit}(\bm Z_{\rm EM},\omega,\mathcal C,\bm u)
+\bm I=\bm V.
+\]
+补偿电容、电源和负载不应计入耦合器内部空间热源。
+LLC/CLLC 开关器件、整流器和谐波需要频域多谐波或时域模型；
+首版只能对明确指定的基波工作域作保证。
+
+\subsection{闭环热时间步}
+在热时间 \(t_n\)，以热状态 \(\bm a_n\) 计算材料
+\(\mathcal M(T_n)\)，求同源单位端口电磁状态
+\((\bm Z_n,\{\bm F_{p,n}\})=\mathcal E_\theta(\mathcal S_n,\mathcal M_n)\)，
+解电路电流 \(\bm I_n=\mathcal C(\bm Z_n,\bm u_n)\)，
+再由场叠加得到局部 \(q_{i,n}\) 和热动力变化：
+\begin{equation}
+\boxed{
+\bm a_n\longrightarrow \mathcal M(T_n)
+\longrightarrow(\bm Z_n,\bm F_n)
+\longrightarrow\bm I_n
+\longrightarrow q_{i,n}
+\longrightarrow\bm a_{n+1}.
+}\label{eq:feedback}
+\end{equation}
+导体电阻、海水电导率和磁性材料参数随温度变化，
+可导致阻抗和谐振工况改变。
+在温度强反馈情况下应在同一时间步内做隐式/固定点迭代，
+弱耦合可采用误差受控的半隐式积分。
+只有走通闭环才是双向电磁热代理。
+
+\subsection{慢热/快电分解}
+电磁载波周期通常远小于热常数，
+故可采用载波相量和慢热包络联立；
+启动、负载突变及高频谐波超出包络假设时要切换适当电路瞬态模型。
+海水流动和位姿历程也应由真实时间输入，不可在网络中仅附加静态位置标签。

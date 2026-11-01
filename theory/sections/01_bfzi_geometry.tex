@@ -1,0 +1,91 @@
+\section{最新版 BFZI 圆形--圆角方形连续螺旋}\label{sec:geometry}
+\subsection{统一绕行参数和尺度}
+依照 0UnifiedModelingUWPT 的原始公式，定义
+\begin{equation}
+\eta=k+\frac{\tau}{2\pi},\quad
+\beta=\frac{s}{2\pi},\quad
+\psi=\sigma_w\tau,\quad
+k=0,\ldots,N-1,\ \tau\in[0,2\pi].
+\end{equation}
+其中 \(\sigma_w=\pm1\) 指定绕制方向。
+直边外侧半尺寸、角部尺度及直边半长度为
+\begin{equation}
+\boxed{\begin{aligned}
+A(\eta)&=A_0-s\eta,\\
+\varrho(\eta)&=\varrho_0-\alpha s\eta,\\
+\chi(\eta)&=A_0-\varrho_0-(1-\alpha)s\eta,
+\end{aligned}}\qquad
+A=\chi+\varrho,\quad 0\le\alpha\le1.
+\label{eq:bfzi-scales}
+\end{equation}
+\(s\) 是直边处的标称匝距；仅当 \(\alpha=1\) 时，圆角部分也保持恒定法向匝距。
+合法参数要求 \(A>0,\varrho>0,\chi\ge0\)、线元不退化，
+且实际导体/绝缘截面满足净距、自交、封装约束。
+
+\subsection{四组直边和四组角部}
+定义 \(\bm n(\psi)=(\cos\psi,\sin\psi)^{\mathsf T}\) 和
+\(\bm t(\psi)=(-\sin\psi,\cos\psi)^{\mathsf T}\)。
+第 \(j=0,\dots,3\) 个直边在
+\(\eta_{j,k}=k+j/4,\psi_j=\sigma_wj\pi/2,\xi\in[-1,1]\) 上满足
+\begin{equation}
+\begin{aligned}
+\bm r_{j,k}(\xi)&=A(\eta_{j,k})\bm n(\psi_j)
+ +\sigma_w[\chi(\eta_{j,k})\xi-\beta]\bm t(\psi_j),\\
+\bm g_{j,k}(\xi)&=\sigma_w\chi(\eta_{j,k})\bm t(\psi_j).
+\end{aligned}
+\label{eq:bfzi-straight}
+\end{equation}
+第 \(m=0,\dots,3\) 个角部在
+\(\tau_m=m\pi/2+u,\eta_{m,k}=k+\tau_m/(2\pi)\)，
+\(\psi_m=\sigma_w\tau_m,\ u\in[0,\pi/2]\)，
+\(\bm e_m=\bm n(\sigma_wm\pi/2)+\sigma_w\bm t(\sigma_wm\pi/2)\) 下，
+通过支撑函数
+\[
+h_{m,k}(u)=\chi(\eta_{m,k})\bm e_m\cdot\bm n(\psi_m)
++\varrho(\eta_{m,k})
+\]
+产生实际中心线和有向线元
+\begin{equation}
+\begin{aligned}
+\bm r_{m,k}(u)&=h_{m,k}\bm n(\psi_m)
+ +\sigma_wh'_{m,k}(u)\bm t(\psi_m),\\
+\bm g_{m,k}(u)&=\sigma_w[
+ \varrho(\eta_{m,k})
+ -2\sigma_w(1-\alpha)\beta\,\bm e_m\cdot\bm t(\psi_m)]
+ \bm t(\psi_m).
+\end{aligned}
+\label{eq:bfzi-corner}
+\end{equation}
+两式的 \(\bm g=\partial_{\zeta}\bm r\) 都是有向线元向量；
+角部与前后直边、各匝之间连续连接成一根从外端到内端的导体。
+\textbf{不应将其替换为各匝互不连接的圆环}。
+
+\subsection{圆形退化及跨匝仿射关系}
+当 \(\varrho_0=A_0\) 且 \(\alpha=1\)，有 \(\chi=0\)；
+四个角部共同构成圆形连续平面螺旋
+\[
+\bm r_{\rm cir,k}(\tau)
+=A(\eta)\bm n(\sigma_w\tau)-\sigma_w\beta\bm t(\sigma_w\tau).
+\]
+切向偏移项不能删去。记直边/角部线段组 \(b=0,\dots,7\)，
+固定各组局部参数 \(\zeta_b\) 时，原模型严格满足
+\begin{equation}
+\boxed{
+\bm r_{b,k}=\bm r_{b,0}+k\Delta\bm r_b,\qquad
+\bm g_{b,k}=\bm g_{b,0}+k\Delta\bm g_b.
+}
+\label{eq:bfzi-affine}
+\end{equation}
+这是后续快速积分和代理场源编码的几何基础，并非神经网络训练得来的近似。
+
+\subsection{独立六自由度装配}
+令两侧组件 \(p\) 具有 \(R_p\in SO(3)\) 和
+\(\bm c_p\in\mathbb R^3\)，则
+\begin{equation}
+\bm r_{p,b,k}^{(3)}
+ =\bm c_p+R_p[\bm r_{b,k};0],\qquad
+\bm g_{p,b,k}^{(3)}=R_p[\bm g_{b,k};0].
+\end{equation}
+刚体变换保持跨匝仿射结构。
+相对姿态可表示为 \(R_1^{\mathsf T}R_2\)，相对位置为
+\(R_1^{\mathsf T}(\bm c_2-\bm c_1)\)。
