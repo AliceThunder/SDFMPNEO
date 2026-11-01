@@ -104,3 +104,14 @@ python run.py --mode bfzi
 ```
 
 **下个代码会话优先级：** 第一优先运行这些真实测试和 demo、逐项修正失败；第二优先提高**盒壁附近海水体积分求积**（当前球坐标正权点裁剪可能漏采薄界面邻域）、进行外域与核软化收敛；第三步才接有限截面导体/耦合电热时间演化。继续借鉴现有 vNext 的数值与场查询/缓存设计，不得重构成重复的大框架，也不使用 GitHub Actions。
+
+
+## 2026-11-01：盒壁求积、圆截面铜损与温度反馈增量
+
+- `scene.quadrature` 不再对球积分节点简单做盒内布尔删除。每条角向射线与两只任意位姿 OBB 通过 slab 求交，在绝缘壁处精确断开径向区间，再进行正权 Gauss 求积；仍需角向自适应与独立场收敛。
+- `source.BFZISources.conductor_internal_impedance(temperatures)` 使用现有 vNext `ConductorMaterial` 和圆形均匀导线的复 Bessel 集肤模型，螺旋段及显式回流全路径共同计入有限截面内部阻抗。该通道不是含邻近效应的联合铜-海水 Schur 模型，暂时不能取代正式的混合导电参考。
+- `SeawaterResponse` 的总端口矩阵增加导体内部阻抗，保留 `impedance_seawater` 专用于海水反作用，并提供 `conductor:0`、`conductor:1`、`seawater` 独立 PSD 功率通道；海水单项闭合和总功率闭合不可混淆。
+- `BFZICurrentControlledEnvelope` 接入 vNext `StableThermalModel` 与 `ElectroThermalStep`，实现两线圈集总温升对铜电阻/功率的准静态反馈。海水电磁场仍视为固定温度，海水体积热扩散尚未耦合。
+- 新增 `python -m examples.bfzi_convergence`：分别变更模态数量、空间求积、外域半径和软化长度，打印两端口响应相对差。单次差值不得作为收敛证明。
+
+**执行验证边界：** 此次通过 GitHub 内容接口修改并提交，当前执行容器访问 `github.com` 失败，尚未能够执行仓库内 pytest 与 `python run.py --mode bfzi`。在独立本地数值原型中测试了边界切分体积积分和圆导线集肤公式，结果仅证明这些局部算法的基本数值合理性，不能代替仓库集成测试或电磁参考场的收敛验证。
