@@ -1,0 +1,142 @@
+\section{新推导：导体、海水与导电盒壁的统一端口 Schur 补}\label{sec:multidomain-schur}
+\subsection{为何不能直接相加独立损耗修正}
+只对理想丝状线圈与线性均匀海水，上一节海水
+\(\bm Z_{\rm sw}\) 可作为空气基底上的附加散射项。
+若有限截面导体、金属屏蔽和海水同时存在，
+它们的感应电流会通过磁场相互作用；将各区域
+\emph{独立求解}的 \(\Delta\bm Z_{\rm Cu},\Delta\bm Z_{\rm box},
+\Delta\bm Z_{\rm sea}\) 逐项相加一般\textbf{不是}完整耦合解。
+应使用同一低阶块矩阵描述全部导电区域。
+
+\subsection{端口载流提升场与无端口环流场}
+令 \(\Omega_c=\bigcup_i\Omega_i^{\rm cond}\)
+为所有线性导电实体（包括铜线、海水和可选的导电盒壁）
+的互不重叠并集。导体端口参考面、端点与回路电流方向必须明确。
+构造单位端口载流提升场
+\(\bm U_p(\bm x)\)，具有正确的第 \(p\) 个端口通量和绝缘面
+法向零电流，满足实体内部电流连续性；
+同时构造零端口电流的散度自由纠正基
+\(\bm W_m(\bm x)\)。
+写作
+\begin{equation}
+\boxed{
+\bm J(\bm x)
+=\bm U(\bm x)\bm I+\bm W(\bm x)\bm z.
+}
+\label{eq:joint-current}
+\end{equation}
+这里 \(\bm U\) 的端口通量是一种约束仿射提升，
+而 \(\bm W\) 的端口净通量严格为零。
+对海水等无外接导电端口的区域，
+\(\bm U\) 在该材料域可以为零但 \(\bm W\) 可以非零。
+实际固体的接触导电性、连接关系、绝缘涂层和
+海水--金属界面需要按真实物理设置；不能假设全部材料都电绝缘。
+
+\subsection{统一阻性与磁性双线性型}
+设 \(\bm V_0(\bm x)=\bm U(\bm x)\)、
+\(\bm V_1(\bm x)=\bm W(\bm x)\)，
+对两组基函数 \(a,b\in\{0,1\}\) 定义
+\begin{align}
+[\bm R_{ab}]_{mn}
+&=\int_{\Omega_c}\sigma^{-1}
+\bm V_{a,m}\cdot\bm V_{b,n}\,\mathrm dV,
+\\
+[\bm L_{ab}]_{mn}
+&=\mu_0\int_{\Omega_c}
+\bm V_{a,m}\cdot\mathcal G_0\bm V_{b,n}\,\mathrm dV.
+\end{align}
+记 \(\bm A_{ab}=\bm R_{ab}+\jj\omega\bm L_{ab}\)。
+对合规的分段材料空间和无源实导电率，
+\(\bm R_{ab}=\bm R_{ba}^{\mathsf T}\),
+\(\bm L_{ab}=\bm L_{ba}^{\mathsf T}\)，
+\(\bm R_{11}\succ0\)（对线性独立纠正基）。
+由带端口约束的谐波弱式获得
+\begin{equation}
+\begin{bmatrix}
+\bm v\\ \bm 0
+\end{bmatrix}
+=
+\begin{bmatrix}
+\bm A_{00}&\bm A_{01}\\
+\bm A_{10}&\bm A_{11}
+\end{bmatrix}
+\begin{bmatrix}
+\bm I\\\bm z
+\end{bmatrix},\qquad
+\bm z=-\bm A_{11}^{-1}\bm A_{10}\bm I .
+\label{eq:joint-system}
+\end{equation}
+矩阵第二行表示对全部\emph{零端口电流测试场}的电磁方程残差为零。
+对端口载流提升 \(\bm U\) 则由第一行读出端口电压；
+严格性依赖完整端口边界及源项/电势约定。
+
+消去 \(\bm z\) 后得到
+\begin{equation}
+\boxed{
+\bm Z_{\rm cond,total}
+=\bm A_{00}-\bm A_{01}\bm A_{11}^{-1}\bm A_{10}.
+}
+\label{eq:joint-schur}
+\end{equation}
+这包含导体皮肤/邻近重分布、海水涡流和盒壁涡流
+在单一线性 MQS 模型中的\textbf{耦合}影响。
+不能再把它与已经由同一模型包含的海水/铜损阻抗重复叠加。
+当载流提升退化成理想无耗散丝状电流、
+\(\bm R_{00}=\bm R_{01}=0\)，
+\(\bm A_{00}=\jj\omega\bm L^{\rm air}\)，
+\(\bm A_{10}=\jj\omega\bm K\) 时，
+式 \eqref{eq:joint-schur} 恰退化为
+\(\jj\omega\bm L^{\rm air}+
+\omega^2\bm K^{\mathsf T}
+(\bm R_s+\jj\omega\bm L_s)^{-1}\bm K\)。
+
+\subsection{被动性、互易与任意导电材料的功率一致性}
+上述块矩阵复对称，且 Schur 补保持转置对称：
+\(\bm Z_{\rm cond,total}^{\mathsf T}=\bm Z_{\rm cond,total}\)。
+对实际解 \(\bm y=[\bm I;\bm z]\)，
+用式 \eqref{eq:joint-system} 得
+\[
+\bm I^{\mathrm H}\bm v
+=\bm y^{\mathrm H}
+(\bm R+\jj\omega\bm L)\bm y,
+\quad
+\bm R=
+\begin{bmatrix}\bm R_{00}&\bm R_{01}\\
+\bm R_{10}&\bm R_{11}\end{bmatrix}.
+\]
+取实部得到
+\begin{equation}
+\boxed{
+\frac12\bm I^{\mathrm H}
+\operatorname{Herm}(\bm Z_{\rm cond,total})\bm I
+=\frac12\bm y^{\mathrm H}\bm R\bm y
+=\sum_i\frac12\int_{\Omega_i^{\rm cond}}
+\frac{|\bm J_i(\bm x)|^2}{\sigma_i(\bm x)}\,\mathrm dV\ge0.
+}
+\label{eq:joint-power}
+\end{equation}
+因此完整端口矩阵被动、互易（在本节互易条件下），
+而且按真实实体域划分的焦耳热\textbf{不会相互重复计入}。
+此证明比人为调低多种独立损耗预测的误差更有结构保证。
+
+\subsection{磁性材料、频散及非导电介质的边界}
+本节的磁核使用均匀 \(\mu_0\)；
+磁芯非线性、磁滞、频散、磁化电流及位移电流
+\textbf{不由单纯的 \(\bm R,\bm L\) 块自动覆盖}。
+在磁性部件存在时，应扩展有限维状态到磁化/磁通变量，
+再推导相应被动储能--耗散形式与额外材料热源。
+只在该扩展模型验证后才可宣称适用任意磁芯。
+非导电灌封本身无欧姆体积损耗，但影响海水通道与热传导；
+其作用必须保留在几何/边界条件而非虚构电阻项中。
+
+\subsection{与 BFZI 几何和热演化的连接}
+\(\bm U_p\) 的主载流分量继承 BFZI 直边--角部
+连续路径及匝号仿射源项，并显式处理有限导体截面及馈/回流；
+用 BFZI 结构化核积分为块矩阵
+\(\bm A_{00},\bm A_{01}\) 的磁场项提供加速。
+\(\bm W\) 的低维空间可由第 \ref{sec:neural-rom} 节的
+几何条件化模型选择。
+同一 \(\bm y\) 计算各区
+\(q_i(\bm x)=|\bm J_i(\bm x)|^2/(2\sigma_i)\)，
+再将 \(q_i\) 投影到式 \eqref{eq:thermal-rom} 的热状态输入，
+从而明确组成电磁--电路--热的闭环动力系统。

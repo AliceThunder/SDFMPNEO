@@ -1,0 +1,172 @@
+\section{新推导：保结构海水涡流 Galerkin 与同源端口阻抗}\label{sec:galerkin}
+\subsection{问题范围及导电电流函数空间}
+本节\textbf{首次将已有 BFZI 解析场源与新的保结构海水电流低阶模型相结合}。
+限定如下：谐波峰值相量 \(e^{\jj\omega t}\)、磁准静态、线性互易介质、
+均匀 \(\mu=\mu_0\)、海水电导率 \(0<\sigma_{\min}\leq\sigma_s(\bm x)\leq\sigma_{\max}<\infty\)、
+绝缘封装及海水外部的正确衰减条件，端口回路与海水界面不相交。
+所有基函数和积分取实值几何/材料，复数仅由谐波场系数引入。
+静态位姿可任意合法改变，但暂不纳入运动感应电动势。
+对可计算有限域 \(\Omega_s\)（或合适的有限能量无限域空间），定义
+\begin{equation}
+\mathcal V(\Omega_s)
+=\{\bm v\in H(\mathrm{div};\Omega_s):
+\nabla\cdot\bm v=0,\ 
+\bm n\cdot\bm v|_{\partial\Omega_s^{\rm ins}}=0\}.
+\label{eq:sea-solenoidal-space}
+\end{equation}
+对无限海水，还需要无穷远处衰减、能量有限及适当的函数空间闭合；
+后文所有有限维证明先在边界良定、积分收敛的条件下成立。
+\textbf{多连通域中仅使用局部 curl 基可能遗漏拓扑环流自由度}；
+基空间必须含必要的全局回路模态或采用等价的连续性投影。
+这是一项待落实的具体离散构造，不可把其存在性等同于已完成快速实现。
+
+令 \(\bm W_m(\bm x;\mathcal G)\in\mathcal V\) 为 \(r\) 个线性独立的
+实向量基，封装与位姿以 \(\mathcal G\) 表示；对任意端口电流列
+\(\bm I\in\mathbb C^P\)，采用
+\begin{equation}
+\bm J_s(\bm x)=\sum_{m=1}^r z_m\bm W_m(\bm x)
+=:\bm W(\bm x)\bm z .
+\label{eq:sea-reduced-current}
+\end{equation}
+\(\bm W\) 的列代表电流密度模式，\(\bm z\) 为复数电流模式系数。
+允许 \(\bm W\) 随几何变化，但在每一次线性频域求解中应作为固定空间；
+随温度改变的 \(\sigma_s\) 进入下面的 \(\bm R_s\)。
+
+\subsection{从 \(A\)--\(\phi\) 方程得到约束弱式}
+定义自由空间积分核
+\begin{equation}
+(\mathcal G_0\bm f)(\bm x)
+=\int_{\Omega_s}\frac{\bm f(\bm y)}
+{4\pi\|\bm x-\bm y\|}\,\mathrm d\bm y,
+\label{eq:free-g}
+\end{equation}
+以及由 BFZI 完整端口路径（含明确馈/回流）形成的单位端口线源
+\(\bm C_p(\bm x)=\int_{\Gamma_p}(4\pi\|\bm x-\bm r'\|)^{-1}
+\,\mathrm d\bm\ell'\)。
+在 \(\mu=\mu_0\) 条件下，
+\[
+\bm A(\bm x)
+=\mu_0\sum_{p=1}^P \bm C_p(\bm x)I_p
++\mu_0\mathcal G_0\bm J_s(\bm x),\quad
+\sigma_s^{-1}\bm J_s=-\jj\omega\bm A-\nabla\phi .
+\]
+取任意 \(\bm v\in\mathcal V\) 测试，上式与 \(\bm v\) 做
+\(L^2\) 内积并对 \(\Omega_s\) 积分。
+由分部积分、\(\nabla\cdot\bm v=0\) 和边界零法向电流，
+\(\int_{\Omega_s}\bm v\cdot\nabla\phi\,\mathrm dV=0\)。
+故有
+\begin{equation}
+\int_{\Omega_s}\sigma_s^{-1}\bm v\cdot\bm J_s\,\mathrm dV
++\jj\omega\mu_0\int_{\Omega_s}\bm v\cdot\mathcal G_0\bm J_s\,\mathrm dV
+=-\jj\omega\mu_0\sum_p I_p\int_{\Omega_s}\bm v\cdot\bm C_p\,\mathrm dV .
+\label{eq:sea-weak}
+\end{equation}
+采用 \(\bm v=\bm W_m\) 形成有限维矩阵
+\begin{align}
+[\bm R_s]_{mn}
+&=\int_{\Omega_s}\sigma_s^{-1}\bm W_m\cdot\bm W_n\,\mathrm dV,
+\label{eq:Rs}\\
+[\bm L_s]_{mn}
+&=\mu_0\int_{\Omega_s}\bm W_m\cdot\mathcal G_0\bm W_n\,\mathrm dV,
+\label{eq:Ls}\\
+[\bm K]_{mp}
+&=\mu_0\int_{\Omega_s}\bm W_m\cdot\bm C_p\,\mathrm dV .
+\label{eq:Kbfzi}
+\end{align}
+其中 \(\bm K\) 并非数学刚度矩阵；此处专用作
+\textbf{海水电流模式--BFZI 端口互感耦合矩阵}。
+上述基于实值模式的 \(\bm R_s,\bm L_s,\bm K\) 均为实矩阵，
+其中 \(\bm R_s\) 对称正定，\(\bm L_s\) 在适用自由空间核和电流空间中对称半正定，
+其物理含义分别为电阻功率与磁场能量度量。
+令
+\(\bm A_r(\omega)=\bm R_s+\jj\omega\bm L_s\)，
+得到
+\begin{equation}
+\boxed{\bm A_r\bm z=-\jj\omega\bm K\bm I,\qquad
+\bm z=-\jj\omega\bm A_r^{-1}\bm K\bm I.}
+\label{eq:sea-current-state}
+\end{equation}
+因为任意非零 \(\bm v\in\mathbb C^r\) 有
+\(\operatorname{Re}(\bm v^{\mathrm H}\bm A_r\bm v)
+=\bm v^{\mathrm H}\bm R_s\bm v>0\)，
+\(\bm A_r\) 在实频率上非奇异。实际采用适当频率与材料归一化，
+避免 \(\bm R_s\) 和 \(\omega\bm L_s\) 尺度相差巨大造成数值条件恶化。
+
+\subsection{端口散射阻抗与同源功率定理}
+由自由空间 Green 核的交换对称性和相同端口/回路方向，
+涡流磁矢势对第 \(p\) 个端口产生的附加链磁通为
+\(\lambda_{s,p}=\sum_m[\bm K]_{mp} z_m\)。
+按 \(+\jj\omega\lambda\) 的端口感应电压约定，
+\(\bm v_s=\jj\omega\bm K^{\mathsf T}\bm z\)。
+代入式 \eqref{eq:sea-current-state} 得到
+\begin{equation}
+\boxed{
+\bm Z_{\rm sw}(\omega)
+=\omega^2\bm K^{\mathsf T}
+(\bm R_s+\jj\omega\bm L_s)^{-1}\bm K .}
+\label{eq:zsw-schur}
+\end{equation}
+\textbf{定理（有限维互易、被动与海水功率一致性）}：
+在本节所有假设成立、\(\bm R_s=\bm R_s^{\mathsf T}\succ0\)、
+\(\bm L_s=\bm L_s^{\mathsf T}\succeq0\)、\(\bm K\) 实值，
+且响应、端口和局部损耗均采用\textbf{同一} \(\bm W\)
+和矩阵 \eqref{eq:Rs}--\eqref{eq:Kbfzi} 的条件下，
+有
+\begin{equation}
+\bm Z_{\rm sw}=\bm Z_{\rm sw}^{\mathsf T},\quad
+\operatorname{Herm}(\bm Z_{\rm sw})\succeq0,
+\label{eq:sea-passivity-theorem}
+\end{equation}
+并对任意复端口电流 \(\bm I\) 满足
+\begin{equation}
+\boxed{
+\frac12\bm I^{\mathrm H}\operatorname{Herm}(\bm Z_{\rm sw})\bm I
+=\frac12\bm z^{\mathrm H}\bm R_s\bm z
+=\int_{\Omega_s}q_s(\bm x)\,\mathrm dV,
+\quad
+q_s=\frac{|\bm W(\bm x)\bm z|^2}{2\sigma_s(\bm x)}.
+}
+\label{eq:sea-power-proof}
+\end{equation}
+证明：\(\bm A_r^{\mathsf T}=\bm A_r\) 导致
+\((\bm A_r^{-1})^{\mathsf T}=\bm A_r^{-1}\)，故阻抗对称。
+由
+\[
+\operatorname{Herm}(\bm A_r^{-1})
+=\bm A_r^{-\mathrm H}\bm R_s\bm A_r^{-1}
+\]
+可得
+\[
+\operatorname{Herm}(\bm Z_{\rm sw})
+=\omega^2\bm K^{\mathsf T}
+\bm A_r^{-\mathrm H}\bm R_s\bm A_r^{-1}\bm K\succeq0.
+\]
+结合 \(\bm z=-\jj\omega\bm A_r^{-1}\bm K\bm I\)
+得到前两个功率表达相等；将 \eqref{eq:Rs}
+和 \eqref{eq:sea-reduced-current} 代入则得到体积分表达。
+证毕。
+
+该定理只证明\textbf{同一降阶模型内部}的物理一致性，
+不证明 \(\bm W\) 足以逼近真实海水涡流；
+积分数值误差若未一致处理也会破坏数值等式。
+在 \(\omega\to0\) 且矩阵适当有界时，
+\(\bm Z_{\rm sw}=\omega^2\bm K^{\mathsf T}\bm R_s^{-1}\bm K
++O(\omega^3)\)，提供低频渐近检验。
+
+\subsection{热投影可直接取自同一电流系数}
+对任意固体/海水热测试基 \(\varphi_a(\bm x)\)，
+海水损耗投影为
+\[
+b_a^{\rm sea}
+=\int_{\Omega_s}\varphi_a(\bm x)
+\frac{|\bm W(\bm x)\bm z|^2}{2\sigma_s(\bm x)}\,\mathrm dV
+=\frac12\bm z^{\mathrm H}\bm Q_a\bm z ,
+\quad
+[\bm Q_a]_{mn}=
+\int_{\Omega_s}\frac{\varphi_a\bm W_m\cdot\bm W_n}{\sigma_s}\,\mathrm dV.
+\]
+此式建立同一涡流状态到\textbf{热空间输入}的明确接口。
+若热测试基含常数分量 \(\varphi_0\equiv1\)，
+其对应 \(\bm Q_0=\bm R_s\)，可直接满足总能量约束。
+温度场和空间热源均可按合法场景在任意查询点继续解码，
+但复杂海水外部流动应另由热/流动算子处理。

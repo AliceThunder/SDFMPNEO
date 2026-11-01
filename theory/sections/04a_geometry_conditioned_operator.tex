@@ -1,0 +1,160 @@
+\section{新算法：BFZI 条件化保结构低阶响应算子}\label{sec:neural-rom}
+\subsection{目标：学习解空间，而不是学习互不相容的端口数值}
+第 \ref{sec:galerkin} 节构造了严格同源的海水电流系数、
+复阻抗和空间焦耳热。本节进一步定义一种\textbf{可训练但结构可证明}的求解路线。
+在给定合法场景 \(\mathcal G\) 中，先构造一个较丰富的
+几何适配、连续、散度自由和界面法向零通量的海水电流字典：
+\[
+\bm W_0(\bm x;\mathcal G)
+=[\bm w_1(\bm x;\mathcal G),\ldots,\bm w_M(\bm x;\mathcal G)],
+\qquad \bm w_m\in\mathcal V(\Omega_s).
+\]
+一个候选构造是局部矢量势 curl 模态、曲面切向边界适配模态、
+低阶全局环流模态的组合；\textbf{在任意六自由度非凸封装/多连通海水域下
+如何高效构造此字典，是尚未解决的算法问题，不得假称已通用实现}。
+只使用带环境方向信息的物理合法局部坐标映射，
+避免将固体与海水的边界条件用同一个不分区网络处理。
+
+计算字典级真实物理 Gram 矩阵
+\[
+\begin{aligned}
+[\bm R_0]_{mn}&=\int_{\Omega_s}\sigma_s^{-1}\bm w_m\cdot\bm w_n\,\mathrm dV,\\
+[\bm L_0]_{mn}&=\mu_0\int_{\Omega_s}\bm w_m\cdot\mathcal G_0\bm w_n\,\mathrm dV,\\
+[\bm K_0]_{mp}&=\mu_0\int_{\Omega_s}\bm w_m\cdot\bm C_p^{\rm BFZI}\,\mathrm dV.
+\end{aligned}
+\]
+其中 \(\bm R_0\succ0,\bm L_0\succeq0\) 的充分前提为
+实值线性独立字典、正电导率和适用的磁核。
+
+令一个轻量条件网络接收
+\(c=(\bm g_{\rm BFZI},\bm g_{\rm pack},q_{\rm rel},
+\sigma_s,\omega,\text{thermal descriptors})\)，输出
+\begin{equation}
+\boxed{\bm U_\theta(c)\in\mathbb R^{M\times r},\qquad r\ll M.}
+\label{eq:learned-subspace}
+\end{equation}
+为防止列空间退化，可将 \(\bm U_\theta\)
+在 \(\bm R_0\) 内积下正交化，令
+\[
+\bm S_\theta=
+\bm U_\theta
+\bigl(\bm U_\theta^{\mathsf T}\bm R_0\bm U_\theta\bigr)^{-1/2},
+\quad
+\bm S_\theta^{\mathsf T}\bm R_0\bm S_\theta=\mathsf I,
+\]
+必要时用正交 QR/SVD 及秩容差稳定实现。
+定义低维连续电流基
+\begin{equation}
+\boxed{\bm W_\theta(\bm x;\mathcal G,c)
+=\bm W_0(\bm x;\mathcal G)\bm S_\theta(c).}
+\label{eq:learned-current-basis}
+\end{equation}
+由于 \(\bm S_\theta\) 对空间 \(\bm x\) 是常数，
+\(\bm W_\theta\) 仍满足字典空间的散度和界面法向约束。
+\textbf{神经网络只选择/混合已满足物理约束的电流空间，
+不直接写出任意的 \(R,L,M\) 或电流。}
+
+\subsection{快速矩阵收缩与端口/场/热源同源解码}
+在字典级矩阵存在时，低维组装只需小矩阵收缩
+\begin{equation}
+\boxed{
+\begin{aligned}
+\bm R_\theta&=\bm S_\theta^{\mathsf T}\bm R_0\bm S_\theta,\\
+\bm L_\theta&=\bm S_\theta^{\mathsf T}\bm L_0\bm S_\theta,\\
+\bm K_\theta&=\bm S_\theta^{\mathsf T}\bm K_0.
+\end{aligned}}\label{eq:structured-contractions}
+\end{equation}
+因此
+\[
+\bm A_\theta=\bm R_\theta+\jj\omega\bm L_\theta,\qquad
+\bm z_\theta=-\jj\omega\bm A_\theta^{-1}\bm K_\theta\bm I,\qquad
+\widehat{\bm J}_s(\bm x)=\bm W_0(\bm x)\bm S_\theta\bm z_\theta,
+\]
+并通过式 \eqref{eq:zsw-schur} 得到
+\(\widehat{\bm Z}_{\rm sw}\)、通过式 \eqref{eq:sea-power-proof}
+得到 \(\widehat q_s(\bm x)\)。
+即使 \(\bm S_\theta\) 来自神经网络，
+只要所有矩阵和场读出用同一组字典及同一 \(\bm S_\theta\)，
+第 \ref{sec:galerkin} 节的互易、被动、功率等式\textbf{仍然成立}。
+这是比额外加入若干物理残差惩罚更强的结构性结果。
+
+\textbf{温度相关性}：若 \(\sigma_s=\sigma_s(T)\)，
+必须更新 \(\bm R_0(T)\) 及其正交归一，
+不能把参考温度的 \(\bm R_0\) 缓存跨所有温度直接使用。
+如果字典位置随装配件运动改变，
+\(\bm R_0,\bm L_0,\bm K_0\) 同样可能需要重组。
+可采用训练覆盖域内的参数化核插值、缩放律与自适应缓存，
+但插值/近似后的结构约束与真实空间积分是否一致需另行处理。
+
+\subsection{BFZI 结构如何加速 \(\bm K_0\)}
+用 BFZI 主螺旋匝号仿射关系，
+在固定节点组 \(b,\mu\) 记
+\(\bm r_{p,b,k}=\bm r_{p,b,0}+k\Delta\bm r_{p,b}\)，
+\(\bm h_{p,b,k}=\bm h_{p,b,0}+k\Delta\bm h_{p,b}\)，
+则
+\begin{equation}
+[\bm K_0]_{mp}
+=\frac{\mu_0}{4\pi}
+\int_{\Omega_s}\bm w_m(\bm x)\cdot
+\left[
+\sum_{b,\mu}\sum_{k=0}^{N_p-1}
+\frac{\bm h_{p,b,k}}{\|\bm x-\bm r_{p,b,k}\|}
++\bm C_p^{\rm dir}(\bm x)\,4\pi
+\right]\mathrm dV.
+\label{eq:bfzi-K-assembly}
+\end{equation}
+括号内第一项是主螺旋的\textbf{单匝号核聚合}；
+可复用 BFZI 论文的精确特殊情形与有余项界的分块法。
+\(\bm C_p^{\rm dir}\) 是非重复馈线/回流对原 \(\bm C_p\)
+的贡献，故第二项中的 \(4\pi\) 用于统一第一项记号。
+可以把字典模式与 BFZI 端口线源的积分矩预先分解/缓存，
+对空间点进行批量查询。
+
+\textbf{限制}：BFZI 匝号加速只减少\textbf{主螺旋源项/线元配对}计算，
+不自动消除 \(\bm R_0,\bm L_0\) 的体积/边界积分代价，
+也不能保证任意几何下总复杂度与匝数无关。
+真正的整体加速须单独测量字典构建、积分矩组装、
+神经子空间生成、\(r\times r\) 求解与任意空间点查询。
+
+\subsection{有约束训练和有限维扰动控制}
+可用高精度教师的单位端口涡流场 \(\bm J_p^\star\)
+训练 \(\bm S_\theta\)，令其直接最小化
+\[
+\mathcal L_{\rm state}
+=\sum_p\int_{\Omega_s}
+\frac{\|\widehat{\bm J}_{s,p}-\bm J_p^\star\|^2}
+{\sigma_s}\,\mathrm dV,
+\]
+并同时使用端口复阻抗和热点场数据监督；
+不需要额外训练一个互不一致的阻抗网络。
+若字典空间的矩阵组装存在可控近似
+\(\widehat{\bm A}=\bm A+\Delta\bm A\),
+\(\widehat{\bm K}=\bm K+\Delta\bm K\)
+且矩阵尺寸、基空间、基向量意义均一致，
+则由预解式恒等式
+\(\widehat{\bm A}^{-1}-\bm A^{-1}
+=-\bm A^{-1}\Delta\bm A\,\widehat{\bm A}^{-1}\)，
+有
+\begin{align}
+\|\widehat{\bm Z}_{\rm sw}-\bm Z_{\rm sw}\|
+\leq \omega^2\bigl(&
+\|\Delta\bm K\|\|\widehat{\bm A}^{-1}\|\|\widehat{\bm K}\|\nonumber\\
+&+\|\bm K\|\|\bm A^{-1}\|\|\Delta\bm A\|
+\|\widehat{\bm A}^{-1}\|\|\widehat{\bm K}\|\nonumber\\
+&+\|\bm K\|\|\bm A^{-1}\|\|\Delta\bm K\|
+\bigr).\label{eq:z-perturbation}
+\end{align}
+这是\textbf{同一有限维空间内的组装扰动界}，
+不是跨不同几何、不同基空间时的直接误差保证；
+投影截断误差仍须独立估计。
+
+\subsection{两种运行路径与物理一致性失效点}
+\textbf{REFERENCE}：原始 BFZI 几何、完整材料与边界模型、
+足够丰富的合规电流字典/高精度空间解；
+\textbf{FAST}：网络选择子空间并解低维被动系统，适当缓存积分核。
+在 FAST 中也可进一步让网络直接预测结构化低维
+\(\bm R,\bm L,\bm K\) 加速，但若 \(\bm R\) 不再等于所解码
+\(\bm J_s\) 的焦耳内积，式 \eqref{eq:sea-power-proof}
+就不再成立；仅约束正定\textbf{不等于空间热源一致}。
+因此这一捷径不能直接用于核心方法，除非额外设计
+有局部正半定损耗分解且与场解码一致的严格闭合机制。
