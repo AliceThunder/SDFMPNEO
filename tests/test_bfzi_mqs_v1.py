@@ -364,3 +364,14 @@ def test_nested_face_basis_refinement_keeps_original_current_modes():
     fields = refined.evaluate(points[:5])
     assert fields.shape == (5, refined.size, 3)
     assert np.isfinite(fields).all()
+
+
+def test_reference_refuses_basis_from_a_different_outer_domain():
+    from dataclasses import replace
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    sources = build_bfzi_source(scene, 200_000., order=3)
+    wrong_basis = build_sea_basis(replace(scene, outer_radius=0.65))
+    with pytest.raises(ValueError, match="source scene"):
+        solve_seawater_reference(sources, basis=wrong_basis)
