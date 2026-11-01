@@ -110,6 +110,27 @@ def main(full: bool = False):
         dq = np.linalg.norm(q1 - q0) / max(np.linalg.norm(q0), 1e-30)
         print(f"{refined:>21} vs {coarse:<20}: "
               f"dZ={dz:.5g}, dq={dq:.5g}")
+    if full:
+        # Air self-panels and mutual-source order are separate from seawater
+        # Green softening. Compare them rather than concealing their errors
+        # behind the seawater-only impedance difference.
+        air_coarse = source_cache[(scene.outer_radius, scene.outer_center)]
+        air_refined = build_bfzi_source(
+            scene, 200_000., order=4,
+            air_panel_length_factor=2.0, air_panel_gauss_order=4,
+        )
+        air_high_source = build_bfzi_source(
+            scene, 200_000., order=6,
+            air_panel_length_factor=4.0,
+        )
+        for name, new in (
+            ("air_self_panels", air_refined),
+            ("air_mutual_source", air_high_source),
+        ):
+            change = np.linalg.norm(
+                new.inductance_air - air_coarse.inductance_air
+            ) / max(np.linalg.norm(air_coarse.inductance_air), 1e-30)
+            print(f"{name:>21} relative air-L change: {change:.5g}")
     print("NOT CERTIFIED: confirm successive refinements and independent truth.")
 
 
