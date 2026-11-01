@@ -23,6 +23,7 @@ class SeaMQSConfig:
     polar_order: int = 10
     azimuthal_order: int = 16
     field_softening: float = 0.018
+    wall_layers: int = 2
     resistance_rank_tolerance: float = 1e-9
     kernel_chunk_size: int = 128
 
@@ -31,6 +32,8 @@ class SeaMQSConfig:
             raise ValueError("quadrature orders must be >= 2")
         if not math.isfinite(self.field_softening) or self.field_softening <= 0:
             raise ValueError("field_softening must be positive")
+        if not isinstance(self.wall_layers, int) or not 0 <= self.wall_layers <= 6:
+            raise ValueError("wall_layers must be an integer from 0 to 6")
         if not 0 < self.resistance_rank_tolerance < 1:
             raise ValueError("resistance_rank_tolerance must be in (0,1)")
         if not isinstance(self.kernel_chunk_size, int) or self.kernel_chunk_size < 1:
@@ -175,6 +178,7 @@ def solve_seawater_reference(
     basis = basis or build_sea_basis(scene)
     points, weights = scene.quadrature(
         cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+        wall_layers=cfg.wall_layers, wall_scale=basis.wall_scale,
     )
     if len(points) == 0:
         raise ValueError("no seawater integration nodes")
