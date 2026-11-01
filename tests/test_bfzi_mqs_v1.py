@@ -375,3 +375,77 @@ def test_reference_refuses_basis_from_a_different_outer_domain():
     wrong_basis = build_sea_basis(replace(scene, outer_radius=0.65))
     with pytest.raises(ValueError, match="source scene"):
         solve_seawater_reference(sources, basis=wrong_basis)
+
+
+def test_symmetric_green_tiles_are_independent_of_chunk_partition():
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    base = dict(
+        radial_order=4, polar_order=5, azimuthal_order=8,
+        wall_layers=1, field_softening=0.025,
+    )
+    first = solve_seawater_reference(
+        source, config=SeaMQSConfig(**base, kernel_chunk_size=17),
+    )
+    second = solve_seawater_reference(
+        source, config=SeaMQSConfig(**base, kernel_chunk_size=29),
+    )
+    np.testing.assert_allclose(
+        first.inductance, second.inductance, rtol=2e-12, atol=1e-14,
+    )
+    np.testing.assert_allclose(
+        first.impedance_seawater, second.impedance_seawater,
+        rtol=2e-12, atol=1e-14,
+    )
+    assert np.min(np.linalg.eigvalsh(first.inductance)) > -1e-12
+
+
+def test_seawater_heat_nodes_drive_separate_thermal_rom_channel():
+    from sdfmpneo_vnext.electrothermal import (
+        CoilThermalProperties, build_lumped_coil_thermal_model,
+    )
+
+    scene = scene_pair()
+    reference = solve_seawater_reference(
+        build_bfzi_source(scene, 200_000., order=3),
+        config=SeaMQSConfig(
+            radial_order=4, polar_order=5, azimuthal_order=8,
+            wall_layers=1, field_softening=0.025,
+        ),
+    )
+    currents = np.array([1.3 + 0.2j, -0.3 + 0.4j])
+    points, weights, heat = reference.seawater_heat_nodes(currents)
+    assert len(points) == len(weights) == len(heat)
+    assert scene.in_seawater(points).all()
+    assert np.all(weights > 0)
+    assert np.all(heat >= 0)
+    np.testing.assert_allclose(
+        weights @ heat, reference.port_seawater_power(currents),
+        rtol=3e-9, atol=1e-12,
+    )
+    three_channels = reference.thermal_channel_power(currents)
+    np.testing.assert_allclose(
+        three_channels[:2], reference.port_conductor_power(currents),
+    )
+    np.testing.assert_allclose(three_channels[2], weights @ heat, rtol=3e-9)
+
+    thermal = build_lumped_coil_thermal_model(
+        (CoilThermalProperties(20.0, 0.7),
+         CoilThermalProperties(20.0, 0.7),
+         CoilThermalProperties(100.0, 0.2)),
+        mutual_conductance=np.array([
+            [0.0, 0.0, 0.04],
+            [0.0, 0.0, 0.04],
+            [0.04, 0.04, 0.0],
+        ]),
+    )
+    envelope = BFZICurrentControlledEnvelope(reference, thermal)
+    step = envelope.step(np.zeros(3), currents, 30.0)
+    assert step.converged
+    assert step.state.shape == (3,)
+    assert step.temperatures.shape == (3,)
+    assert step.temperatures[2] >= thermal.reference_temperature
+    np.testing.assert_allclose(
+        step.coil_power,
+        reference.port_conductor_power(currents, step.temperatures[:2]),
+    )
