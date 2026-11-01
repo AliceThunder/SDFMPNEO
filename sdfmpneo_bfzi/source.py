@@ -252,6 +252,69 @@ class BFZISources:
             results.append((line.points.copy(), power))
         return tuple(results)
 
+    def conductor_volume_heat(
+        self, port_currents=(1.0, 0.0), temperatures=None, *,
+        radial_order: int = 12, angular_order: int = 8,
+    ) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]:
+        """Positive wire volume cubature (xyz, dV, q) for each port.
+
+        Cylindrical cross sections are swept along the complete BFZI+return
+        Gauss path using local tangent frames. The round-wire radial AC skin
+        profile gives the true isolated-straight-wire q(r) at those sections.
+        No FEM mesh or absolute frame orientation is needed; small-radius
+        curved-wire and no-proximity approximations remain in force.
+        """
+        if (not isinstance(radial_order, int) or radial_order < 2
+                or not isinstance(angular_order, int) or angular_order < 4):
+            raise ValueError("radial_order >= 2 and angular_order >= 4 required")
+        gauss_nodes, gauss_weights = np.polynomial.legendre.leggauss(radial_order)
+        fraction = 0.5 * (gauss_nodes + 1.0)
+        radial_weights = 0.5 * gauss_weights * fraction
+        angles = 2.0 * math.pi * (
+            np.arange(angular_order) + 0.5
+        ) / angular_order
+        radial_density = self.conductor_cross_section_loss(
+            fraction, port_currents, temperatures,
+        )
+        result = []
+        for port, (assembly, line) in enumerate(
+            zip(self.scene.assemblies, self.lines)
+        ):
+            lengths = np.linalg.norm(line.line_elements, axis=1)
+            tangents = line.line_elements / lengths[:, None]
+            seed = np.tile([0.0, 0.0, 1.0], (len(tangents), 1))
+            seed[np.abs(tangents[:, 2]) > 0.9] = [1.0, 0.0, 0.0]
+            normal1 = np.cross(tangents, seed)
+            normal1 /= np.linalg.norm(normal1, axis=1)[:, None]
+            normal2 = np.cross(tangents, normal1)
+            unit_offset = (
+                np.cos(angles)[None, None, :, None]
+                * normal1[:, None, None, :]
+                + np.sin(angles)[None, None, :, None]
+                * normal2[:, None, None, :]
+            )
+            radius = assembly.wire_radius
+            points = (
+                line.points[:, None, None, :]
+                + radius * fraction[None, :, None, None] * unit_offset
+            )
+            weights = (
+                lengths[:, None, None] * radius**2
+                * radial_weights[None, :, None]
+                * (2.0 * math.pi / angular_order)
+                * np.ones((1, 1, angular_order))
+            )
+            q = np.broadcast_to(
+                radial_density[None, :, port, None],
+                weights.shape,
+            )
+            result.append((
+                points.reshape(-1, 3),
+                weights.reshape(-1),
+                q.reshape(-1),
+            ))
+        return tuple(result)
+
     def potential_kernels(self, positions) -> np.ndarray:
         """Return (...,3,2) unit-port C source."""
         return np.stack(
