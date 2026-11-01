@@ -95,7 +95,10 @@ def build_sea_basis(
     if face_refinement not in (1, 2):
         raise ValueError("face_refinement must be 1 or 2")
     scale = (
-        0.075 * min(scene.transmitter.enclosure.half_extents)
+        0.075 * min(
+            min(assembly.enclosure.half_extents)
+            for assembly in scene.assemblies
+        )
         if wall_scale is None else float(wall_scale)
     )
     if not np.isfinite(scale) or scale <= 0:
