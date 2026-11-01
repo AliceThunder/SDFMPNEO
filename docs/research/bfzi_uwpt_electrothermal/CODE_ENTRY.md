@@ -73,3 +73,7 @@
 **现在就可以开始：** geometry → scene/source → sea REFERENCE → deterministic ROM → neural subspace → loss-to-thermal → resonant circuit feedback → materials/flow expansion。
 
 不再把“任意介质、所有位姿运动、全部温度历程都已经覆盖”作为进入代码的前置条件；这些在各自的代码里程碑逐步实现、验证并公开适用域。
+
+## 本轮代码进展
+
+已开始新子包的 **geometry.py + __init__.py**：BFZI 八段解析中心线、有向线元、圆形退化、合法参数及刚体位姿、按原路径顺序的 Gauss 线元采样。另新增少量 pytest 几何测试。**这不是已完成电磁场或热代理**，端口馈回流、海水矩阵和求解仍属下一批主代码。

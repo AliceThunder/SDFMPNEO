@@ -1,3 +1,5 @@
+> **BFZI research branch notice (2026-10-31).** The new BFZI-MQS-v1 theory is frozen for implementation: [Code entry plan](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md), [LaTeX theory](theory/main.tex). The new `sdfmpneo_bfzi` package starts with the correct continuous round-square/circular BFZI geometry, rather than historical `SuperellipseSpiral`. The vNext runtime documented below still describes the **legacy implementation**, and has **not** yet been migrated to BFZI electromagnetic/thermal inference. No new seawater/thermal accuracy or runtime performance is claimed.
+
 # SDF-MPNEO vNext
 
 SDF-MPNEO vNext is the mesh-free-first electrothermal surrogate runtime. The
