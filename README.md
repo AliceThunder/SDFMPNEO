@@ -43,7 +43,14 @@ are now cut **exactly at the oriented box surfaces** for each angular ray
 `SeaMQSConfig.wall_layers` adds graded subintervals near the physical walls,
 and each layer uses the active `SeaCurrentBasis.wall_scale`. The default is
 two graded layers. Angular, outer-domain and singular-kernel convergence
-still require independent refinement. `L_air` uses a softened finite-radius self approximation.
+still require independent refinement. `L_air` uses a softened finite-radius
+Neumann approximation. Its self entries now subdivide the *analytic*
+continuous BFZI-plus-return path into short panels and integrate each
+straight-panel diagonal analytically, avoiding the strong coincident-node
+bias of low-order line Gauss integration. The panel size can be refined via
+`build_bfzi_source(..., air_panel_length_factor=2.0)`; the default is 4.0
+wire radii per panel. This is still not a fully resolved GMD or
+cross-section magnetic solution.
 The seawater heat source integrates to the seawater port channel **under the
 same cubature**; Green-kernel assembly remains memory-bounded in blocks.
 
