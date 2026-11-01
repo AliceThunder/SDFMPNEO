@@ -6,6 +6,7 @@ The reported numbers are UNCONVERGED prototype results, not experimental
 predictions or certified infinite-ocean accuracy.
 """
 import numpy as np
+from sdfmpneo_vnext.scene import ConductorMaterial
 
 from sdfmpneo_bfzi import (
     BFZICoil, RigidPose, InsulatingBox, BFZIAssembly, BfziScene,
@@ -23,13 +24,16 @@ def build_demo_scene():
     # This example's external return routing is explicit and is not an
     # automatic assumption about real charging-pad terminal connections.
     return_route = ((0.0, 0.0, 0.008), (0.09, 0.0, 0.008))
+    copper = ConductorMaterial(
+        5.8e7, resistance_temperature_coefficient=0.00393,
+    )
     tx = BFZIAssembly(
         coil, RigidPose(np.eye(3), np.array([0.0, 0.0, -0.13])),
-        box, return_route,
+        box, return_route, material=copper,
     )
     rx = BFZIAssembly(
         coil, RigidPose(np.eye(3), np.array([0.0, 0.0, 0.13])),
-        box, return_route,
+        box, return_route, material=copper,
     )
     return BfziScene(tx, rx, Seawater(5.0), outer_radius=0.52)
 
