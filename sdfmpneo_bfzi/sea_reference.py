@@ -209,6 +209,9 @@ def solve_seawater_reference(
     # memory-bounded reference pattern without changing the energy kernel.
     weighted_modes = weights[:, None, None] * w
     n_modes = transform.shape[1]
+    # Pack the three Cartesian columns into a single BLAS multiplication
+    # per kernel block, avoiding three passes over the same large Green slab.
+    packed = weighted_modes.reshape(len(points), 3 * n_modes)
     inductance = np.zeros((n_modes, n_modes), dtype=float)
     for start in range(0, len(points), cfg.kernel_chunk_size):
         stop = min(start + cfg.kernel_chunk_size, len(points))
@@ -216,10 +219,10 @@ def solve_seawater_reference(
         kernel = MU0 / (4 * math.pi) / np.sqrt(
             distance2 + cfg.field_softening**2
         )
-        for axis in range(3):
-            left = weighted_modes[start:stop, :, axis]
-            right = weighted_modes[:, :, axis]
-            inductance += left.T @ (kernel @ right)
+        projected = (kernel @ packed).reshape(stop - start, n_modes, 3)
+        inductance += np.einsum(
+            "pic,pjc->ij", weighted_modes[start:stop], projected, optimize=True,
+        )
     inductance = 0.5 * (inductance + inductance.T)
 
     csource = sources.potential_kernels(points)
