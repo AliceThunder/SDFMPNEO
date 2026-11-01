@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import math
 import numpy as np
 from scipy.special import ive
+from scipy.spatial.distance import cdist
 
 from .scene import BFZIAssembly, BfziScene
 
@@ -108,31 +109,139 @@ def build_line_source(assembly: BFZIAssembly, order: int = 4) -> LineSource:
     return LineSource(points, dl)
 
 
+def _segmented_complete_wire(assembly: BFZIAssembly, max_length: float):
+    """Analytic BFZI groups and return subdivided into oriented line panels."""
+    starts, deltas = [], []
+
+    def add(polyline):
+        differences = np.diff(polyline, axis=0)
+        for point, delta in zip(polyline[:-1], differences):
+            if np.linalg.norm(delta) > 1e-15:
+                starts.append(point)
+                deltas.append(delta)
+
+    for turn in range(assembly.coil.turns):
+        for side in range(4):
+            for kind, left, right in (
+                ("side", -1.0, 1.0),
+                ("corner", 0.0, math.pi / 2),
+            ):
+                end_points, _ = assembly.coil.segment(
+                    turn, kind, side, np.array([left, right]), assembly.pose,
+                )
+                chord = np.linalg.norm(end_points[1] - end_points[0])
+                # The curved-corner arc can be longer than its chord.
+                factor = 1.2 if kind == "corner" else 1.0
+                count = max(1, int(math.ceil(factor * chord / max_length)))
+                parameters = np.linspace(left, right, count + 1)
+                positions, _ = assembly.coil.segment(
+                    turn, kind, side, parameters, assembly.pose,
+                )
+                add(positions)
+
+    outer, inner = assembly.coil.endpoints()
+    route = assembly.pose.position(np.vstack((
+        inner, np.asarray(assembly.return_waypoints), outer,
+    )))
+    for p, q in zip(route[:-1], route[1:]):
+        count = max(1, int(math.ceil(np.linalg.norm(q - p) / max_length)))
+        add(p + np.linspace(0.0, 1.0, count + 1)[:, None] * (q - p))
+    return np.asarray(starts), np.asarray(deltas)
+
+
+def _regularized_self_inductance(
+    assembly: BFZIAssembly, *, panel_length_factor: float,
+    panel_gauss_order: int, chunk_size: int,
+) -> float:
+    """Neumann self term: exact straight-panel diagonal, Gauss off diagonal.
+
+    Regularized Green kernel is 1/sqrt(r^2+a^2), a=wire radius. Treating a
+    curved BFZI segment as several short straight panels is an explicit
+    geometric approximation, and is refineable independently of the
+    external-port field quadrature. Correcting the diagonal avoids the
+    O(1/a) low-order Gauss self-node bias.
+    """
+    radius = assembly.wire_radius
+    origins, segments = _segmented_complete_wire(
+        assembly, radius * panel_length_factor,
+    )
+    length = np.linalg.norm(segments, axis=1)
+    if not len(length) or np.any(length <= 0):
+        raise ValueError("degenerate finite-wire self-inductance panels")
+    q, w = np.polynomial.legendre.leggauss(panel_gauss_order)
+    points = (
+        origins[:, None, :]
+        + 0.5 * (q[None, :, None] + 1.0) * segments[:, None, :]
+    ).reshape(-1, 3)
+    elements = np.broadcast_to(
+        0.5 * w[None, :, None] * segments[:, None, :],
+        (len(length), panel_gauss_order, 3),
+    ).reshape(-1, 3)
+    indices = np.repeat(np.arange(len(length)), panel_gauss_order)
+    off_diagonal = 0.0
+    for first in range(0, len(points), chunk_size):
+        stop = min(first + chunk_size, len(points))
+        distance2 = cdist(points[first:stop], points, "sqeuclidean")
+        kernel = np.reciprocal(np.sqrt(distance2 + radius**2))
+        kernel *= (indices[first:stop, None] != indices[None, :])
+        off_diagonal += float(np.sum(
+            (elements[first:stop] @ elements.T) * kernel,
+        ))
+    # Exact pair integral along a straight panel of length h:
+    # 2 [h asinh(h/a) - sqrt(h^2+a^2) + a].
+    diagonal = 2.0 * np.sum(
+        length * np.arcsinh(length / radius)
+        - np.hypot(length, radius) + radius
+    )
+    return float(MU0 / (4 * math.pi) * (off_diagonal + diagonal))
+
+
 def air_inductance(
     scene: BfziScene, sources: tuple[LineSource, LineSource],
-    chunk_size: int = 192,
+    chunk_size: int = 192, *,
+    panel_length_factor: float = 4.0,
+    panel_gauss_order: int = 3,
 ) -> np.ndarray:
-    """Real symmetric regularized Neumann matrix.
+    """Closed-path approximate external Neumann inductance in henries.
 
-    The self term uses sqrt(r^2 + a^2) smoothing with specified wire_radius;
-    this is a convergence baseline, NOT an exact finite-cross-section GMD
-    or a validated skin/proximity conductor model.
+    Mutual inductance uses the existing unit-port Gauss sources. Each self
+    inductance integrates the regularized finite-radius kernel on analytic
+    BFZI + return path panels; panel self-interactions are analytically
+    integrated rather than approximated by coincident Gauss source nodes.
+    It is still a prescribed-radius soft-kernel approximation, not a
+    surface-current/GMD truth solution or proximity-effect conductor solve.
     """
+    if (not math.isfinite(panel_length_factor)
+            or panel_length_factor <= 0):
+        raise ValueError("panel_length_factor must be finite and positive")
+    if (isinstance(panel_gauss_order, bool)
+            or not isinstance(panel_gauss_order, int)
+            or panel_gauss_order < 2):
+        raise ValueError("panel_gauss_order must be >= 2")
+    if not isinstance(chunk_size, int) or chunk_size < 1:
+        raise ValueError("chunk_size must be a positive integer")
+
     L = np.zeros((2, 2), dtype=float)
     for p in range(2):
-        for q in range(p, 2):
-            a, b = sources[p], sources[q]
-            smooth = scene.assemblies[p].wire_radius if p == q else 0.0
-            total = 0.0
-            for start in range(0, len(a.points), chunk_size):
-                offset = a.points[start:start + chunk_size, None, :] - b.points[None, :, :]
-                dist2 = np.einsum("ijk,ijk->ij", offset, offset) + smooth**2
-                if np.any(dist2 <= 1e-24):
-                    raise ValueError("distinct port paths intersect or are unresolved")
-                dot = a.line_elements[start:start + chunk_size] @ b.line_elements.T
-                total += float(np.sum(dot / np.sqrt(dist2)))
-            L[p, q] = MU0 / (4 * math.pi) * total
-            L[q, p] = L[p, q]
+        L[p, p] = _regularized_self_inductance(
+            scene.assemblies[p],
+            panel_length_factor=panel_length_factor,
+            panel_gauss_order=panel_gauss_order,
+            chunk_size=chunk_size,
+        )
+    a, b = sources
+    total = 0.0
+    for first in range(0, len(a.points), chunk_size):
+        offset = (
+            a.points[first:first + chunk_size, None, :]
+            - b.points[None, :, :]
+        )
+        distance2 = np.einsum("ijk,ijk->ij", offset, offset)
+        if np.any(distance2 <= 1e-24):
+            raise ValueError("distinct port paths intersect or are unresolved")
+        dot = a.line_elements[first:first + chunk_size] @ b.line_elements.T
+        total += float(np.sum(dot / np.sqrt(distance2)))
+    L[0, 1] = L[1, 0] = MU0 / (4 * math.pi) * total
     return L
 
 
@@ -336,7 +445,11 @@ class BFZISources:
         )
 
 
-def build_bfzi_source(scene: BfziScene, frequency_hz: float, order: int = 4):
+def build_bfzi_source(
+    scene: BfziScene, frequency_hz: float, order: int = 4, *,
+    air_panel_length_factor: float = 4.0,
+    air_panel_gauss_order: int = 3,
+):
     if not math.isfinite(float(frequency_hz)) or frequency_hz <= 0:
         raise ValueError("frequency must be positive and finite")
     lines = tuple(build_line_source(item, order) for item in scene.assemblies)
@@ -344,5 +457,9 @@ def build_bfzi_source(scene: BfziScene, frequency_hz: float, order: int = 4):
         scene=scene,
         frequency_hz=float(frequency_hz),
         lines=lines,
-        inductance_air=air_inductance(scene, lines),
+        inductance_air=air_inductance(
+            scene, lines,
+            panel_length_factor=air_panel_length_factor,
+            panel_gauss_order=air_panel_gauss_order,
+        ),
     )
