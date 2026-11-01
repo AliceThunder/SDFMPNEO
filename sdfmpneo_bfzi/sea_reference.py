@@ -209,20 +209,32 @@ def solve_seawater_reference(
     # memory-bounded reference pattern without changing the energy kernel.
     weighted_modes = weights[:, None, None] * w
     n_modes = transform.shape[1]
-    # Pack the three Cartesian columns into a single BLAS multiplication
-    # per kernel block, avoiding three passes over the same large Green slab.
+    # Symmetric two-block Green assembly. Compute each pair of cubature
+    # blocks once: the transposed off-diagonal contribution is its exact
+    # discrete reciprocal counterpart. Peak kernel memory is O(chunk**2)
+    # rather than O(chunk * total_nodes); no full QxQ kernel is formed.
     packed = weighted_modes.reshape(len(points), 3 * n_modes)
     inductance = np.zeros((n_modes, n_modes), dtype=float)
-    for start in range(0, len(points), cfg.kernel_chunk_size):
-        stop = min(start + cfg.kernel_chunk_size, len(points))
-        distance2 = cdist(points[start:stop], points, metric="sqeuclidean")
-        kernel = MU0 / (4 * math.pi) / np.sqrt(
-            distance2 + cfg.field_softening**2
-        )
-        projected = (kernel @ packed).reshape(stop - start, n_modes, 3)
-        inductance += np.einsum(
-            "pic,pjc->ij", weighted_modes[start:stop], projected, optimize=True,
-        )
+    chunk = cfg.kernel_chunk_size
+    for start in range(0, len(points), chunk):
+        stop = min(start + chunk, len(points))
+        left = weighted_modes[start:stop]
+        for other in range(start, len(points), chunk):
+            end = min(other + chunk, len(points))
+            distance2 = cdist(
+                points[start:stop], points[other:end], metric="sqeuclidean",
+            )
+            kernel = MU0 / (4 * math.pi) / np.sqrt(
+                distance2 + cfg.field_softening**2
+            )
+            projected = (kernel @ packed[other:end]).reshape(
+                stop - start, n_modes, 3,
+            )
+            block = np.einsum("pic,pjc->ij", left, projected, optimize=True)
+            if other == start:
+                inductance += block
+            else:
+                inductance += block + block.T
     inductance = 0.5 * (inductance + inductance.T)
 
     csource = sources.potential_kernels(points)
