@@ -55,7 +55,15 @@ class SeawaterResponse:
 
     @property
     def port_impedance(self) -> np.ndarray:
-        return 1j * self.sources.omega * self.sources.inductance_air + self.impedance_seawater
+        return self.port_impedance_at()
+
+    def port_impedance_at(self, temperatures=None) -> np.ndarray:
+        """Closed-loop port impedance including finite conductor internal Z."""
+        return (
+            1j * self.sources.omega * self.sources.inductance_air
+            + self.impedance_seawater
+            + np.diag(self.sources.conductor_internal_impedance(temperatures))
+        )
 
     def _currents(self, port_currents) -> np.ndarray:
         i = np.asarray(port_currents, dtype=complex)
@@ -96,17 +104,35 @@ class SeawaterResponse:
         return float(self.integration_weights @ q)
 
     def dissipation_channel(self) -> np.ndarray:
-        """Single vNext-compatible Hermitian PSD channel: seawater only."""
+        """Seawater Hermitian PSD channel only, excluding the conductors."""
         return self.unit_current_modes.conj().T @ self.resistance @ self.unit_current_modes
 
-    def as_structured_prediction(self):
-        # Reuses the existing vNext channel/port contract without passing
-        # BFZI geometry off as a historical SuperellipseSpiral.
+    def port_conductor_power(self, port_currents=(1.0, 0.0),
+                             temperatures=None) -> np.ndarray:
+        """Per-coil peak-phasor Joule power in each finite circular wire."""
+        i = self._currents(port_currents)
+        resistances = self.sources.conductor_internal_impedance(temperatures).real
+        return 0.5 * resistances * np.abs(i)**2
+
+    def port_total_power(self, port_currents=(1.0, 0.0),
+                         temperatures=None) -> float:
+        return float(
+            self.port_conductor_power(port_currents, temperatures).sum()
+            + self.port_seawater_power(port_currents)
+        )
+
+    def as_structured_prediction(self, temperatures=None):
+        # Keep distinct coil channels so the existing vNext channel-resolved
+        # thermal tools can identify the dissipative conductor ports.
         from sdfmpneo_vnext.prediction import StructuredPortPrediction
+        conductor = self.sources.conductor_internal_impedance(temperatures).real
+        coil_channels = np.zeros((2, 2, 2), dtype=complex)
+        coil_channels[0, 0, 0] = conductor[0]
+        coil_channels[1, 1, 1] = conductor[1]
         return StructuredPortPrediction(
-            self.port_impedance,
-            self.dissipation_channel()[None, :, :],
-            channel_labels=("seawater",),
+            self.port_impedance_at(temperatures),
+            np.concatenate((coil_channels, self.dissipation_channel()[None]), axis=0),
+            channel_labels=("conductor:0", "conductor:1", "seawater"),
         )
 
     def magnetic_field(self, xyz, port_currents=(1.0, 0.0), chunk_size: int = 96):
