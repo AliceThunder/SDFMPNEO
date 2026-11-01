@@ -21,6 +21,7 @@ paths so neural inference never silently replaces the correctness backend.
 Install with `pip install -e ".[dev]"`. Run the small example with:
 
 ```bash
+python run.py --mode bfzi             # same BFZI finite-domain demo
 python examples/bfzi_mqs_demo.py
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```

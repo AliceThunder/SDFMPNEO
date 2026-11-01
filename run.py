@@ -6,7 +6,8 @@
 
 默认打开非阻塞 PyQt 训练界面。也可以：
 
-    python run.py --mode train     # 无界面训练
+    python run.py --mode train     # 无界面训练（历史 vNext）
+    python run.py --mode bfzi      # BFZI-MQS 新物理原型
     python run.py --fresh          # 忽略模型 checkpoint，但继续复用 teacher 缓存
 
 所有面向用户的训练、缓存、采样、teacher、CUDA/CPU、GUI、checkpoint
@@ -309,9 +310,20 @@ CONFIG = {
 
 
 def main(argv=None):
+    # The BFZI research path shares the repository entry point but deliberately
+    # does not feed BFZI geometry into the legacy SuperellipseSpiral trainer.
+    import sys
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--mode" in args:
+        index = args.index("--mode")
+        if index + 1 < len(args) and args[index + 1] == "bfzi":
+            from examples.bfzi_mqs_demo import main as bfzi_main
+            bfzi_main()
+            return 0
+
     from sdfmpneo_vnext.workflow import launch
 
-    return launch(CONFIG, argv, runner_path=__file__)
+    return launch(CONFIG, args, runner_path=__file__)
 
 
 if __name__ == "__main__":
