@@ -63,6 +63,12 @@ class BFZIAssembly:
         outer = self.coil.outer_half_size + self.coil.beta + radius
         if min(h[:2]) <= outer or h[2] <= radius:
             raise ValueError("enclosure does not contain the BFZI spiral footprint")
+        # An exposed return would invalidate the assumption that seawater
+        # carries only induced currents outside the sealed insulating box.
+        if np.any(np.abs(waypoints) + radius >= h):
+            raise ValueError("return route must remain inside the insulating box")
+        if self.coil.turns > 1 and 2.0 * radius >= self.coil.pitch:
+            raise ValueError("wire diameter must be smaller than coil pitch")
         if not isinstance(self.material, ConductorMaterial):
             raise ValueError("material must be a vNext ConductorMaterial")
         object.__setattr__(self, "wire_radius", radius)
