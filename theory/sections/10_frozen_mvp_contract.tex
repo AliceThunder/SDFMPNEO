@@ -1,0 +1,158 @@
+\section{首版理论封版与进入代码阶段的强制实现契约}\label{sec:freeze}
+\subsection{封版决策：从无限可扩展目标收敛到可完成物理闭环}
+前面各节提供了可扩展研究框架；此处明确\textbf{第一代码里程碑}
+（以下简称 BFZI-MQS-v1）的\textbf{不可再扩大}的基本模型：
+\begin{enumerate}
+\item 两个电气端口、两根 BFZI 圆形--圆角方形\textbf{连续平面螺旋}，
+各自带完全定义的馈/回流路径，参数
+\((N,A_0,\varrho_0,s,\alpha,\sigma_w)\) 和真实单位采用 SI；
+\item 两侧封装互不穿透，盒体为绝缘、非磁性；海水为
+\(\mu=\mu_0\)、各向同性线性正电导率
+\(\sigma_s\) 的均匀静止介质；
+\item 两侧可取任意\textbf{合法静态}六自由度位姿；时间变化姿态的
+准静态逐帧计算可测试，但首版不包括运动电动势与流体运动；
+\item 电磁计算为单一实频率 \(\omega=2\pi f\) 的 MQS，
+峰值相量约定 \(e^{\jj\omega t}\)；
+\item 初始海水教师采用有限海水外域 \(\Omega_B\setminus\Omega_{\rm pack}\)
+和绝缘人工外边界 \(n\cdot J_s=0\)，通过增大外域做收敛检验；
+\textbf{不得}把此计算冒充严格无限海水解；
+\item 首版将 BFZI 线圈作为已给定\textbf{单位端口丝状源}；
+空气自项需由 GMD/有限截面规则处理，铜材内部分布损耗暂不预测。
+初版 \(Z_{\rm EM}=j\omega L_{\rm air}+Z_{\rm sw}\)
+只含线源磁响应和海水耗散，不能宣称总导体阻抗；
+\item 仅当电磁端口、空间海水电流和耗散均来自同一可重现
+REFERENCE 状态，才开始低阶神经子空间训练；
+热与电路模块用同一个场损耗投影作为后续里程碑，暂不阻挡
+BFZI-MQS-v1 开工。
+\end{enumerate}
+上述限制是\textbf{首版实现边界}而不是最终系统能力边界。
+本轮起理论范围冻结，今后只允许因实现发现的数学错误修正，
+不得为等待所有高级介质和热流细节而延迟主代码。
+
+\subsection{实际闭合的 REFERENCE 算法}
+对每个端口 \(p\) 用 BFZI 解析直边/圆角路径和
+馈/回流段建立 \(\bm C_p\)；对空气感应项用
+Neumann 分组求积、有限截面自项约定建立
+\(\bm L_{\rm air}\)。对有限海水域先使用具有
+\(H(\mathrm{div})\) 连续性、绝缘界面零法向通量的
+\textbf{确定性局部 curl/Piola 字典} \(\bm W_0(\bm x;\mathcal G)\)，
+明确包括远场及当前拓扑所需模式。
+\(\bm R,\bm L,\bm K\) 按
+\eqref{eq:Rs}--\eqref{eq:Kbfzi} 的原始体积分/Green 双体积分直接组装；
+先不强制 Fourier 特征加速和网络。
+\[
+\bm A_s=\bm R+\jj\omega\bm L,\qquad
+\bm X_p=-\jj\omega\bm A_s^{-1}\bm K\bm e_p.
+\]
+在 \(\bm R\succ0\) 时
+\[
+\bm Z_{\rm sw}=\omega^2\bm K^{\mathsf T}\bm A_s^{-1}\bm K,
+\quad
+q_s(\bm x;\bm I)
+=\frac{\|\bm W_0(\bm x)\bm X\bm I\|^2}{2\sigma_s},
+\quad
+\bm Z_{\rm EM}=\jj\omega\bm L_{\rm air}+\bm Z_{\rm sw}.
+\]
+输出单位端口基状态 \(\bm X\in\mathbb C^{M\times2}\)，
+此后可以对任何 \(\bm I\) 组合场/耗散而不重复建立基。
+\textbf{若局部字典在某几何下覆盖不足，应增广字典并对比参考教师；
+内部代数功率一致性不等于真实海水涡流场已收敛。}
+
+\subsection{首轮 FAST 算法及其严格解码}
+首版 FAST 不采用独立端口 NN。先运行\textbf{确定性}
+低秩基选择/投影，建立无网络的子空间闭环：
+\[
+\bm W_r=\bm W_0\bm S,\quad
+(\bm R_r,\bm L_r,\bm K_r)
+=(\bm S^{\mathsf T}\bm R\bm S,
+\bm S^{\mathsf T}\bm L\bm S,\bm S^{\mathsf T}\bm K).
+\]
+先由 SVD/贪心或能量加权正交方法从教师单位端口响应
+选择 \(\bm S\)；在线低阶矩阵必须仍按同一物理积分定义。
+通过验证后再用轻量条件网络替代 \(\bm S\) 的选择策略
+（而不是让 NN 自由生成任意 \(Z,q\)）。
+\textbf{可测加速的前提}：矩阵/核的参数化复用和 BFZI
+匝号聚合的总耗时少于参考组装；
+若每次仍建立全 \(M\times M\) 矩阵，不能称为高性能 FAST。
+此项性能工程在代码阶段对直接求积、特征预计算和
+BFZI 块积分逐项计时后选择，不再阻碍物理 REFERENCE 首版。
+
+\subsection{物理接口的数据和相量合同}
+场景参数不得把 BFZI 的 \(\varrho_0\) 误当成超椭圆形状阶数。
+端口用指定\textbf{峰值}电流方向，并定义完整馈线/回流路径，
+不允许仅依靠无限开口曲线声称完整实际端口自感。
+固定输出：
+\[
+\begin{aligned}
+\mathrm{EMPortResponse}&=\{f,\bm Z_{\rm EM},
+\bm Z_{\rm sw},\bm L_{\rm air},
+\mathrm{validity},\mathrm{reference\_metadata}\},\\
+\mathrm{EMFieldResponse}&=\{\bm x,\mathrm{region},
+\bm E(\bm x),\bm J_s(\bm x),\bm B(\bm x),q_s(\bm x)\},\\
+\mathrm{ROMState}&=\{\bm W_r,\bm R_r,\bm L_r,\bm K_r,
+\bm X_r,\mathrm{scene\_key}\}.
+\end{aligned}
+\]
+在静态线性条件下，\(\bm E,\bm J,\bm B\) 输出可表示为
+两个单位端口基场的线性组合；
+\(q_s\) 按 \(|\bm J_s|^2/(2\sigma_s)\) 非负二次计算，
+不能把单位端口热源简单线性相加
+（两个端口之间有交叉项）。
+端口实部损耗归属与 \(q_s\) 的积分采用\textbf{一致海水状态}；
+在有限积分误差下报告数值闭合残差。
+若同时请求不同几何、温度或频率，
+必须重建或更新相应物理矩阵，不可错用缓存。
+
+\subsection{实现顺序与代码包边界}
+考虑到原 \texttt{sdfmpneo\_vnext} 实现体量较大
+且已有 \texttt{SuperellipseSpiral} 代表另一种形状族，
+新实现应在\textbf{同一仓库的独立 Python 子包}
+\texttt{sdfmpneo\_bfzi/} 中起步，再经适配器接入
+\texttt{MeshfreeVNextSystem} 和训练入口。
+安装配置中 \texttt{include=["sdfmpneo*"]} 能发现该子包。
+第一批按依赖方向实现：
+\begin{enumerate}
+\item \texttt{geometry.py}：BFZI 参数验证、
+八线段组 \((\bm r,\bm g)\)、连续圆形退化、
+刚体位姿与 Gauss 节点、馈/回流几何接口；
+\item \texttt{scene.py}：两个不交绝缘封装、海水导电率、
+人工外域、区域分类和合规几何检查；
+\item \texttt{source.py}：BFZI 完整端口的
+\(\bm C_p\) 与空气电感积分，先逐匝参考再接
+有误差控制的匝号快速块；
+\item \texttt{sea\_basis.py}：确定性 curl 局部图谱、
+零法向模式、远场/间隙字典，按真实场景输出评估器；
+\item \texttt{sea\_reference.py}：正权 \(\bm R\)、
+一致 \(\bm L\) 和 \(\bm K\) 参考组装、
+两端口单位激励求解、场读出与逐材料海水热源；
+\item \texttt{sea\_rom.py}：确定性低阶投影，
+保结构 \(\bm Z_{\rm sw}\) 与非负空间热源；
+\item 后续 \texttt{thermal.py},\texttt{circuit.py},\texttt{neural.py}
+接入空间损耗、双向电热演化和 NN 子空间。
+\end{enumerate}
+第一阶段\textbf{不迁移历史训练脚本、不实现新 GUI、
+不改旧 \texttt{SuperellipseSpiral} 定义、不建立 GitHub Actions}。
+
+\subsection{完成 BFZI-MQS-v1 的唯一验收门槛}
+代码阶段针对少量自洽物理算例直接做以下必要检查：
+\begin{enumerate}
+\item BFZI 主曲线的直边--圆角段连接、
+有向线元、圆形极限、任意刚体位姿下的仿射匝号保持，
+以及有限截面自项约定；
+\item 对双盒合法姿态，海水模式在人工外边界与绝缘封装面
+满足零法向电流，且求积电阻矩阵满秩；
+\item 同一海水离散空间内
+\(\bm Z_{\rm sw}\) 数值对称、Hermitian 部分非负，
+\(\int q_s\,\mathrm dV\) 与
+\(\tfrac12\bm I^{\mathrm H}\operatorname{Herm}(\bm Z_{\rm sw})\bm I\)
+在相同积分规则下闭合；
+\item 随外域增大、求积与电流基增广，
+端口结果及局部场向稳定参考收敛；
+\textbf{只有离散功率恒等式而没有此收敛不能称作参考精度达标}；
+\item 空气/海水基准与原 BFZI 公式一致，
+且完整推理耗时记录包括节点生成、矩阵组装与求解。
+\end{enumerate}
+这些是主体功能的最小验收，不需要衍生大量审计/认证框架。
+\textbf{进入代码的决定：已满足。}
+后续复杂材料、全域神经模型、热动力及电路闭环作为代码迭代工作，
+不再提出额外的理论封版前置条件。
