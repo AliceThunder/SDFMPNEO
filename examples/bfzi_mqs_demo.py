@@ -53,6 +53,8 @@ def main():
     print("Baseline port Z (ohm):", result.port_impedance)
     print("Sea power from port (W):", result.port_seawater_power(current))
     print("Sea power from same cubature (W):", result.quadrature_power(current))
+    sea_points, sea_weights, sea_heat = result.seawater_heat_nodes(current)
+    print("Sea spatial heat integral (W):", np.dot(sea_weights, sea_heat))
     print("Finite conductor internal Z (ohm):", sources.conductor_internal_impedance())
     print("Conductor Joule power per coil (W):", result.port_conductor_power(current))
     conductor_volumes = sources.conductor_volume_heat(
@@ -83,6 +85,23 @@ def main():
     ).step(np.zeros(2), voltage_drive, 30.0)
     print("Voltage-driven warm port currents (A):", driven.currents)
     print("Voltage-driven 30 s coil temperatures (K):", driven.temperatures)
+    # Optional third reduced thermal state represents an *illustrative bulk*
+    # sea heat node. It receives the full seawater power, not a calibrated
+    # open-ocean thermal convolution.
+    three_channel_thermal = build_lumped_coil_thermal_model((
+        CoilThermalProperties(20.0, 0.7),
+        CoilThermalProperties(20.0, 0.7),
+        CoilThermalProperties(100.0, 0.2),
+    ), mutual_conductance=np.array([
+        [0.0, 0.0, 0.04],
+        [0.0, 0.0, 0.04],
+        [0.04, 0.04, 0.0],
+    ]))
+    sea_coupled = BFZICurrentControlledEnvelope(
+        result, three_channel_thermal,
+    ).step(np.zeros(3), current, 30.0)
+    print("Illustrative coil/sea-node temperatures (K):",
+          sea_coupled.temperatures)
     print("Retained modes:", result.resistance.shape[0], "/", result.raw_basis_count)
     print("Note: finite-domain/basis/softening convergence not established")
 
