@@ -294,3 +294,35 @@ def test_voltage_control_recomputes_current_at_warm_port_impedance():
         BFZIVoltageControlledEnvelope(
             reference, thermal, external_impedance=-np.eye(2),
         )
+
+
+def test_round_wire_joule_profile_and_complete_path_heat_are_consistent():
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    currents = np.array([1.1 + 0.2j, -0.4 + 0.5j])
+    radius_nodes, radial_weights = np.polynomial.legendre.leggauss(24)
+    fraction = 0.5 * (radius_nodes + 1)
+    density = source.conductor_cross_section_loss(fraction, currents)
+    assert density.shape == (24, 2)
+    assert np.all(density >= 0.0)
+    assert np.all(
+        source.conductor_cross_section_loss(1.0, currents)
+        > source.conductor_cross_section_loss(0.0, currents)
+    )
+    area_integral = np.array([
+        np.pi * assembly.wire_radius**2
+        * np.sum(radial_weights * fraction * density[:, port])
+        for port, assembly in enumerate(scene.assemblies)
+    ])
+    lengths = np.array([
+        np.linalg.norm(line.line_elements, axis=1).sum()
+        for line in source.lines
+    ])
+    expected = 0.5 * source.conductor_internal_impedance().real * np.abs(currents)**2
+    np.testing.assert_allclose(
+        area_integral * lengths, expected, rtol=1e-8,
+    )
+    nodes = source.conductor_heat_nodes(currents)
+    np.testing.assert_allclose(
+        [watts.sum() for _, watts in nodes], expected, rtol=1e-12,
+    )
