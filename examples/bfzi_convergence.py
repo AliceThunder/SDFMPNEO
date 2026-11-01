@@ -36,6 +36,10 @@ def main():
             radial_order=5, polar_order=7, azimuthal_order=10,
             field_softening=0.025,
         )),
+        "refined_face_basis": (scene, 2, SeaMQSConfig(
+            radial_order=5, polar_order=7, azimuthal_order=10,
+            field_softening=0.025,
+        )),
         "refined_cubature": (scene, 2, SeaMQSConfig(
             radial_order=6, polar_order=10, azimuthal_order=16,
             field_softening=0.025,
@@ -53,8 +57,10 @@ def main():
     for label, (domain, n_face, config) in configurations.items():
         sources = build_bfzi_source(domain, 200_000.0, order=4)
         result = solve_seawater_reference(
-            sources, basis=build_sea_basis(domain, modes_per_face=n_face),
-            config=config,
+            sources, basis=build_sea_basis(
+                domain, modes_per_face=n_face,
+                face_refinement=2 if label == "refined_face_basis" else 1,
+            ), config=config,
         )
         impedances[label] = result.impedance_seawater
         print(
@@ -66,6 +72,7 @@ def main():
         ("one_wall_layer", "ungraded_wall"),
         ("enriched_modes", "one_wall_layer"),
         ("enriched_modes", "baseline"),
+        ("refined_face_basis", "enriched_modes"),
         ("refined_cubature", "enriched_modes"),
         ("larger_domain", "enriched_modes"),
         ("smaller_softening", "enriched_modes"),
