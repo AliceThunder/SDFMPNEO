@@ -7,7 +7,8 @@
 默认打开非阻塞 PyQt 训练界面。也可以：
 
     python run.py --mode train     # 无界面训练（历史 vNext）
-    python run.py --mode bfzi      # BFZI-MQS 新物理原型
+    python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
+    python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --fresh          # 忽略模型 checkpoint，但继续复用 teacher 缓存
 
 所有面向用户的训练、缓存、采样、teacher、CUDA/CPU、GUI、checkpoint
@@ -316,10 +317,16 @@ def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     if "--mode" in args:
         index = args.index("--mode")
-        if index + 1 < len(args) and args[index + 1] == "bfzi":
-            from examples.bfzi_mqs_demo import main as bfzi_main
-            bfzi_main()
-            return 0
+        if index + 1 < len(args):
+            mode = args[index + 1]
+            if mode == "bfzi":
+                from examples.bfzi_mqs_demo import main as bfzi_main
+                bfzi_main()
+                return 0
+            if mode == "bfzi-convergence":
+                from examples.bfzi_convergence import main as bfzi_main
+                bfzi_main()
+                return 0
 
     from sdfmpneo_vnext.workflow import launch
 
