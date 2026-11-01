@@ -176,6 +176,8 @@ def solve_seawater_reference(
     cfg = config or SeaMQSConfig()
     scene = sources.scene
     basis = basis or build_sea_basis(scene)
+    if basis.scene is not scene:
+        raise ValueError("seawater current basis must belong to the source scene")
     points, weights = scene.quadrature(
         cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
         wall_layers=cfg.wall_layers, wall_scale=basis.wall_scale,
