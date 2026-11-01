@@ -129,6 +129,13 @@ def test_vnext_bishop_frame_bridge():
 def test_box_wall_radial_cubature_preserves_sea_volume():
     scene = scene_pair()
     points, weights = scene.quadrature(5, 7, 10)
+    plain_points, plain_weights = scene.quadrature(
+        5, 7, 10, wall_layers=0,
+    )
+    assert len(points) > len(plain_points)
+    np.testing.assert_allclose(
+        weights.sum(), plain_weights.sum(), rtol=1e-12,
+    )
     box_volumes = [
         8.0 * np.prod(assembly.enclosure.half_extents)
         for assembly in scene.assemblies
@@ -210,3 +217,80 @@ def test_finite_wire_skin_loss_and_lumped_thermal_coupling():
     np.testing.assert_allclose(
         step.impedance, result.port_impedance_at(step.temperatures),
     )
+
+
+def test_rotated_box_cubature_and_return_wire_clearance():
+    from dataclasses import replace
+    scene = scene_pair()
+    angle = 0.37
+    rotation = np.array([
+        [np.cos(angle), 0.0, np.sin(angle)],
+        [0.0, 1.0, 0.0],
+        [-np.sin(angle), 0.0, np.cos(angle)],
+    ])
+    rotated = replace(
+        scene, receiver=replace(
+            scene.receiver,
+            pose=RigidPose(rotation, scene.receiver.pose.center),
+        ),
+    )
+    points, weights = rotated.quadrature(4, 9, 14, wall_layers=2)
+    assert len(points) > 0
+    assert rotated.in_seawater(points).all()
+    assert np.all(weights > 0.0)
+    with pytest.raises(ValueError, match="return route"):
+        replace(
+            scene.transmitter,
+            return_waypoints=((0., 0., 0.008), (0.11, 0., 0.008)),
+        )
+    with pytest.raises(ValueError, match="pitch"):
+        replace(scene.transmitter, wire_radius=0.003)
+
+
+def test_voltage_control_recomputes_current_at_warm_port_impedance():
+    from dataclasses import replace
+    from sdfmpneo_bfzi import BFZIVoltageControlledEnvelope
+    from sdfmpneo_vnext.scene import ConductorMaterial
+    from sdfmpneo_vnext.electrothermal import (
+        CoilThermalProperties, build_lumped_coil_thermal_model,
+    )
+
+    initial_scene = scene_pair()
+    copper = ConductorMaterial(
+        5.8e7, resistance_temperature_coefficient=0.00393,
+    )
+    scene = replace(
+        initial_scene,
+        transmitter=replace(initial_scene.transmitter, material=copper),
+        receiver=replace(initial_scene.receiver, material=copper),
+    )
+    source = build_bfzi_source(scene, 200_000., order=3)
+    reference = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=4, polar_order=6, azimuthal_order=8,
+            field_softening=0.025,
+        ),
+    )
+    thermal = build_lumped_coil_thermal_model((
+        CoilThermalProperties(20.0, 0.7),
+        CoilThermalProperties(20.0, 0.7),
+    ))
+    external = np.diag([0.05 - 0.2j, 0.07 - 0.2j])
+    envelope = BFZIVoltageControlledEnvelope(
+        reference, thermal, external_impedance=external,
+    )
+    voltage = np.array([1.0 + 0.2j, 0.0j])
+    step = envelope.step(np.zeros(2), voltage, 30.0)
+    assert step.converged
+    np.testing.assert_allclose(
+        (step.impedance + external) @ step.currents, voltage,
+        rtol=1e-10, atol=1e-10,
+    )
+    np.testing.assert_allclose(
+        step.coil_power,
+        reference.port_conductor_power(step.currents, step.temperatures),
+    )
+    with pytest.raises(ValueError, match="passive"):
+        BFZIVoltageControlledEnvelope(
+            reference, thermal, external_impedance=-np.eye(2),
+        )
