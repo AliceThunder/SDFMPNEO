@@ -20,6 +20,14 @@ from sdfmpneo_bfzi import (
 def main():
     scene = build_demo_scene()
     configurations = {
+        "ungraded_wall": (scene, 2, SeaMQSConfig(
+            radial_order=5, polar_order=7, azimuthal_order=10,
+            field_softening=0.025, wall_layers=0,
+        )),
+        "one_wall_layer": (scene, 2, SeaMQSConfig(
+            radial_order=5, polar_order=7, azimuthal_order=10,
+            field_softening=0.025, wall_layers=1,
+        )),
         "baseline": (scene, 1, SeaMQSConfig(
             radial_order=5, polar_order=7, azimuthal_order=10,
             field_softening=0.025,
@@ -55,6 +63,8 @@ def main():
             f" reaction={result.impedance_seawater.tolist()}"
         )
     for label, baseline in (
+        ("one_wall_layer", "ungraded_wall"),
+        ("enriched_modes", "one_wall_layer"),
         ("enriched_modes", "baseline"),
         ("refined_cubature", "enriched_modes"),
         ("larger_domain", "enriched_modes"),
