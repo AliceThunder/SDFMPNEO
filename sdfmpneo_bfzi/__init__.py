@@ -10,7 +10,9 @@ from .source import BFZISources, LineSource, build_bfzi_source
 from .sea_basis import SeaCurrentBasis, build_sea_basis
 from .sea_reference import SeaMQSConfig, SeawaterResponse, solve_seawater_reference
 from .sea_rom import compress_seawater_response
-from .electrothermal import BFZICurrentControlledEnvelope
+from .electrothermal import (
+    BFZICurrentControlledEnvelope, BFZIVoltageControlledEnvelope,
+)
 
 __all__ = [
     "BFZICoil", "RigidPose", "BfziScene", "BFZIAssembly",
@@ -18,4 +20,5 @@ __all__ = [
     "build_bfzi_source", "SeaCurrentBasis", "build_sea_basis",
     "SeaMQSConfig", "SeawaterResponse", "solve_seawater_reference",
     "compress_seawater_response", "BFZICurrentControlledEnvelope",
+    "BFZIVoltageControlledEnvelope",
 ]
