@@ -55,6 +55,12 @@ def main():
     print("Sea power from same cubature (W):", result.quadrature_power(current))
     print("Finite conductor internal Z (ohm):", sources.conductor_internal_impedance())
     print("Conductor Joule power per coil (W):", result.port_conductor_power(current))
+    conductor_volumes = sources.conductor_volume_heat(
+        current, radial_order=12, angular_order=8,
+    )
+    print("Conductor spatial Joule power (W):", np.array([
+        np.dot(volume_weights, q) for _, volume_weights, q in conductor_volumes
+    ]))
     print("Structured channel closure:", result.as_structured_prediction().power_closure_error())
     # Illustrative coil-only heat capacities/conductances, not calibrated
     # packaging/seawater temperature predictions.
