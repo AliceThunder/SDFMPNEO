@@ -148,18 +148,28 @@ class BfziScene:
 
     def quadrature(
         self, radial_order: int = 7, polar_order: int = 10,
-        azimuthal_order: int = 16,
+        azimuthal_order: int = 16, *, wall_layers: int = 2,
+        wall_scale: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Positive spherical cubature with exact radial cuts at both boxes.
+        """Positive meshless cubature with exact box cuts and graded wall layers.
 
-        Each angular ray is partitioned at its intersections with the
-        oriented insulation boxes before radial Gauss integration. Unlike
-        deleting nodes that happen to fall inside a box, this resolves the
-        radial jump in conductivity and the near-wall sea volume without a
-        world mesh. Angular and outer-domain convergence are still required.
+        Each radial ray is clipped against the oriented insulation boxes.
+        The wet intervals are then locally subdivided near *actual* box
+        intersections, not near the artificial outer boundary. Subdivision
+        depths are multiples of the physical wall scale, resolving the
+        strongly localized curl-basis gradients without globally increasing
+        radial order. Angular convergence is independent and still required.
         """
         if min(radial_order, polar_order, azimuthal_order) < 2:
             raise ValueError("quadrature orders must be >= 2")
+        if not isinstance(wall_layers, int) or not 0 <= wall_layers <= 6:
+            raise ValueError("wall_layers must be an integer from 0 to 6")
+        scale = (
+            0.075 * min(min(a.enclosure.half_extents) for a in self.assemblies)
+            if wall_scale is None else float(wall_scale)
+        )
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("wall_scale must be positive and finite")
         rr, rw = np.polynomial.legendre.leggauss(radial_order)
         mu, mw = np.polynomial.legendre.leggauss(polar_order)
         theta = (np.arange(azimuthal_order) + 0.5) * (
@@ -179,8 +189,8 @@ class BfziScene:
         outer_center = np.asarray(self.outer_center)
         radius = self.outer_radius
         cuts = [np.zeros(n_rays), np.full(n_rays, radius)]
+        wall_cuts = [np.zeros(n_rays, dtype=bool) for _ in range(2)]
         for assembly in self.assemblies:
-            # Ray/slab intersections in the box's own orthonormal frame.
             origin = (outer_center - assembly.pose.center) @ assembly.pose.rotation
             rays = directions @ assembly.pose.rotation
             half = np.asarray(assembly.enclosure.half_extents)
@@ -188,15 +198,15 @@ class BfziScene:
             exiting = np.full(n_rays, np.inf)
             intersects = np.ones(n_rays, dtype=bool)
             for axis in range(3):
-                direction = rays[:, axis]
-                parallel = np.abs(direction) <= 1e-14
+                component = rays[:, axis]
+                parallel = np.abs(component) <= 1e-14
                 intersects &= ~parallel | (abs(origin[axis]) <= half[axis])
                 near = np.divide(
-                    -half[axis] - origin[axis], direction,
+                    -half[axis] - origin[axis], component,
                     out=np.full(n_rays, -np.inf), where=~parallel,
                 )
                 far = np.divide(
-                    half[axis] - origin[axis], direction,
+                    half[axis] - origin[axis], component,
                     out=np.full(n_rays, np.inf), where=~parallel,
                 )
                 entering = np.maximum(entering, np.minimum(near, far))
@@ -204,27 +214,45 @@ class BfziScene:
             start = np.clip(entering, 0.0, radius)
             stop = np.clip(exiting, 0.0, radius)
             hits = intersects & (start < stop)
-            # Non-intersecting rays receive degenerate cuts at the far end.
             cuts.extend((np.where(hits, start, radius),
                          np.where(hits, stop, radius)))
-        boundaries = np.sort(np.stack(cuts, axis=1), axis=1)
-        a, b = boundaries[:, :-1], boundaries[:, 1:]
-        midpoints = outer_center + (
-            (a + b)[:, :, None] * 0.5 * directions[:, None, :]
+            wall_cuts.extend((hits, hits))
+        values = np.stack(cuts, axis=1)
+        flags = np.stack(wall_cuts, axis=1)
+        order = np.argsort(values, axis=1, kind="stable")
+        boundaries = np.take_along_axis(values, order, axis=1)
+        boundary_is_wall = np.take_along_axis(flags, order, axis=1)
+        left, right = boundaries[:, :-1], boundaries[:, 1:]
+        mid = outer_center + (
+            (left + right)[:, :, None] * 0.5 * directions[:, None, :]
         )
-        valid = (b > a) & self.in_seawater(midpoints)
-        if not np.any(valid):
+        wet = (right > left) & self.in_seawater(mid)
+        if not np.any(wet):
             return np.empty((0, 3)), np.empty(0)
-        # Apply the same Gauss rule on each *entirely wet* interval.
-        r = a[:, :, None] + 0.5 * (b - a)[:, :, None] * (
-            rr[None, None, :] + 1.0
+
+        # Each wet interval stays wet after subdivision. The Gauss weights
+        # remain positive, and the sum of radial cubature weights integrates
+        # r^2 exactly on every subinterval for radial_order >= 2.
+        knots = [left, right]
+        for layer in range(wall_layers):
+            distance = scale * 4**layer
+            knots.append(np.where(
+                boundary_is_wall[:, :-1],
+                np.minimum(left + distance, right), left,
+            ))
+            knots.append(np.where(
+                boundary_is_wall[:, 1:],
+                np.maximum(right - distance, left), right,
+            ))
+        bounds = np.sort(np.stack(knots, axis=-1), axis=-1)
+        a, b = bounds[..., :-1], bounds[..., 1:]
+        valid = wet[..., None] & (b > a)
+        r = a[..., None] + 0.5 * (b - a)[..., None] * (
+            rr[None, None, None, :] + 1.0
         )
-        weight = (
-            0.5 * (b - a)[:, :, None] * rw[None, None, :]
-            * r**2 * angular_weights[:, None, None]
+        weights = (
+            0.5 * (b - a)[..., None] * rw[None, None, None, :]
+            * r**2 * angular_weights[:, None, None, None]
         )
-        points = (
-            outer_center
-            + r[..., None] * directions[:, None, None, :]
-        )
-        return points[valid].reshape(-1, 3), weight[valid].reshape(-1)
+        points = outer_center + r[..., None] * directions[:, None, None, None, :]
+        return points[valid].reshape(-1, 3), weights[valid].reshape(-1)
