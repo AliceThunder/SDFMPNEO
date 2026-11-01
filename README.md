@@ -22,14 +22,16 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 
 ```bash
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
-python -m examples.bfzi_convergence   # isolated basis/cubature/domain/softening changes
+python run.py --mode bfzi-convergence  # wall layers / basis / cubature / domain / kernel
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
-`compress_seawater_response`, and `BFZICurrentControlledEnvelope` from
-`sdfmpneo_bfzi`. Both ports require explicit return conductor routes.
+`compress_seawater_response`, `BFZICurrentControlledEnvelope`, and
+`BFZIVoltageControlledEnvelope` from `sdfmpneo_bfzi`.
+Both ports require explicit return conductor routes wholly inside the sealed
+boxes, and the finite wire diameter must be smaller than the nominal turn pitch.
 The BFZI branch does not rename or feed its path into the legacy superellipse.
 
 Physical scope: two sealed nonconductive nonmagnetic boxes, static SE(3)
@@ -37,8 +39,10 @@ poses, finite spherical conducting seawater domain, fixed frequency and
 a divergence-free Galerkin seawater current basis. Radial Gauss intervals
 are now cut **exactly at the oriented box surfaces** for each angular ray
 (positive, meshless cubature), rather than dropping samples in the boxes.
-Angular, outer-domain and singular-kernel convergence still require
-independent refinement. `L_air` uses a softened finite-radius self approximation.
+`SeaMQSConfig.wall_layers` adds graded subintervals near the physical walls,
+and each layer uses the active `SeaCurrentBasis.wall_scale`. The default is
+two graded layers. Angular, outer-domain and singular-kernel convergence
+still require independent refinement. `L_air` uses a softened finite-radius self approximation.
 The seawater heat source integrates to the seawater port channel **under the
 same cubature**; Green-kernel assembly remains memory-bounded in blocks.
 
@@ -47,11 +51,16 @@ The two complete paths use `BFZIAssembly.wire_radius` and the existing
 the **finite circular-wire internal impedance** (DC + cylindrical AC skin
 effect, Bessel-ratio solution); this includes the spiral and explicit return.
 The structured response has the mutually exclusive PSD channels
-`conductor:0`, `conductor:1` and `seawater`. The existing vNext lumped
-thermal `StableThermalModel` can be stepped using
-`BFZICurrentControlledEnvelope`; conductivity and conductor power update
-at each thermal fixed-point iterate, while the seawater electromagnetic
-response stays at its specified constant conductivity.
+`conductor:0`, `conductor:1` and `seawater`. The conductor helper methods
+`conductor_cross_section_loss`, `conductor_heat_nodes`, and
+`conductor_volume_heat` return the cylindrical skin-current radial loss,
+conservative line-source heat nodes, and positive meshless volumetric Joule
+nodes respectively, for **both the BFZI spiral and its return**.
+The existing vNext lumped thermal `StableThermalModel` can be stepped
+using `BFZICurrentControlledEnvelope` or `BFZIVoltageControlledEnvelope`
+(with a passive external series/tuning impedance); conductivity, coil power
+and, for voltage control, port currents update at every fixed-point iterate.
+The seawater electromagnetic response stays at its reference conductivity.
 
 Limitations: this is **not yet** a converged infinite-ocean reference.
 It does not resolve current redistribution from proximity, arbitrary
