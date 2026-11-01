@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import numpy as np
+from scipy.special import ive
 
 from .scene import BFZIAssembly, BfziScene
 
@@ -145,6 +146,44 @@ class BFZISources:
     @property
     def omega(self) -> float:
         return 2 * math.pi * self.frequency_hz
+
+    def conductor_internal_impedance(self, temperatures=None) -> np.ndarray:
+        """Complex two-port diagonal for finite circular conductor sections.
+
+        Uses the exact uniform cylindrical-wire skin-effect solution (modified
+        Bessel ratio) at each material conductivity and the quadrature length
+        of the *complete* spiral plus explicit return. Includes DC resistance
+        and internal magnetic reactance. Does not include proximity-effect
+        redistribution, lead contacts or rectangular cross sections.
+        """
+        if temperatures is None:
+            temperatures = [a.material.reference_temperature
+                            for a in self.scene.assemblies]
+        temp = np.asarray(temperatures, dtype=float)
+        if temp.shape != (2,) or not np.isfinite(temp).all():
+            raise ValueError("temperatures must be a finite 2-vector")
+        result = np.empty(2, dtype=complex)
+        for p, (assembly, line) in enumerate(zip(self.scene.assemblies, self.lines)):
+            sigma = assembly.material.conductivity_at(float(temp[p]))
+            mu = MU0 * assembly.material.relative_permeability
+            radius = assembly.wire_radius
+            k = np.sqrt(1j * self.omega * mu * sigma)
+            argument = k * radius
+            # ive scales away the common exp(Re(argument)) in the ratio.
+            # The small-argument expansion avoids cancellation at low omega.
+            if abs(argument) < 1e-3:
+                per_length = (
+                    1.0 / (math.pi * radius**2 * sigma)
+                    + 1j * self.omega * mu / (8 * math.pi)
+                )
+            else:
+                per_length = (
+                    k * ive(0, argument) /
+                    (2 * math.pi * radius * sigma * ive(1, argument))
+                )
+            length = float(np.linalg.norm(line.line_elements, axis=1).sum())
+            result[p] = per_length * length
+        return result
 
     def potential_kernels(self, positions) -> np.ndarray:
         """Return (...,3,2) unit-port C source."""
