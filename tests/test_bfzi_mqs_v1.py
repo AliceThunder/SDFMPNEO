@@ -454,3 +454,39 @@ def test_seawater_heat_nodes_drive_separate_thermal_rom_channel():
         step.coil_power,
         reference.port_conductor_power(currents, step.temperatures[:2]),
     )
+
+
+def test_air_self_neumann_does_not_depend_on_coarse_port_gauss_nodes():
+    scene = scene_pair()
+    low = build_bfzi_source(
+        scene, 200_000., order=3, air_panel_length_factor=4.0,
+    )
+    high = build_bfzi_source(
+        scene, 200_000., order=5, air_panel_length_factor=4.0,
+    )
+    np.testing.assert_allclose(
+        np.diag(low.inductance_air), np.diag(high.inductance_air),
+        rtol=1e-13, atol=1e-16,
+    )
+    assert np.all(np.diag(low.inductance_air) > 0.0)
+    # The mutual term may vary with source Gauss order, as intended.
+    np.testing.assert_allclose(
+        low.inductance_air, low.inductance_air.T, atol=1e-15,
+    )
+
+
+def test_analytical_straight_panel_self_integral_matches_high_order_quad():
+    from scipy.integrate import quad
+
+    length = 0.041
+    radius = 0.0008
+    analytic = 2 * (
+        length * np.arcsinh(length / radius)
+        - np.hypot(length, radius) + radius
+    )
+    # One-dimensional equivalent of the double Neumann panel integral.
+    numeric = 2 * quad(
+        lambda delta: (length - delta) / np.hypot(delta, radius),
+        0.0, length, epsabs=1e-11,
+    )[0]
+    np.testing.assert_allclose(analytic, numeric, rtol=1e-12)
