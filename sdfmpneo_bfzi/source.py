@@ -74,8 +74,13 @@ class LineSource:
 
 def build_line_source(assembly: BFZIAssembly, order: int = 4) -> LineSource:
     """Complete BFZI spiral followed by explicit return path in world frame."""
+    if not isinstance(order, int) or order < 2:
+        raise ValueError("complete port source requires Gauss order >= 2")
     spiral_points, spiral_dl = assembly.coil.gauss_nodes(order, assembly.pose)
-    inner, outer = assembly.coil.endpoints()
+    # endpoints() returns the outer winding START and the inner winding END.
+    # The explicit return must run from INNER end back to OUTER start, so
+    # spiral + return is a single closed physical current path.
+    outer, inner = assembly.coil.endpoints()
     route_local = np.vstack(
         (inner, np.asarray(assembly.return_waypoints, dtype=float), outer)
     )
@@ -92,6 +97,13 @@ def build_line_source(assembly: BFZIAssembly, order: int = 4) -> LineSource:
         source_dl.append(np.broadcast_to(0.5 * w[:, None] * delta, local.shape))
     points = np.vstack(source_points)
     dl = np.vstack([spiral_dl, *(assembly.pose.vector(v) for v in source_dl[1:])])
+    # Gauss quadrature approximates the curved spiral integral.  Failure
+    # to close at this scale indicates an incorrect endpoint/return order
+    # rather than a tolerable high-order integration error.
+    closure = np.linalg.norm(dl.sum(axis=0))
+    size = max(float(np.linalg.norm(dl, axis=1).sum()), 1e-30)
+    if closure > max(1e-8, size * 1e-4):
+        raise ValueError("BFZI port source did not close; check return direction and order")
     return LineSource(points, dl)
 
 

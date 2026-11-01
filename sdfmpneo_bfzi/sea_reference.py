@@ -24,6 +24,7 @@ class SeaMQSConfig:
     azimuthal_order: int = 16
     field_softening: float = 0.018
     resistance_rank_tolerance: float = 1e-9
+    kernel_chunk_size: int = 128
 
     def __post_init__(self):
         if min(self.radial_order, self.polar_order, self.azimuthal_order) < 2:
@@ -32,6 +33,8 @@ class SeaMQSConfig:
             raise ValueError("field_softening must be positive")
         if not 0 < self.resistance_rank_tolerance < 1:
             raise ValueError("resistance_rank_tolerance must be in (0,1)")
+        if not isinstance(self.kernel_chunk_size, int) or self.kernel_chunk_size < 1:
+            raise ValueError("kernel_chunk_size must be a positive integer")
 
 
 @dataclass(frozen=True)
@@ -169,14 +172,22 @@ def solve_seawater_reference(
 
     # Softened Coulomb kernel 1/sqrt(r^2+a^2) is positive definite. Using
     # a common kernel across all basis modes preserves L >= 0.
-    distances = cdist(points, points, metric="sqeuclidean")
-    kernel = MU0 / (4 * math.pi) / np.sqrt(distances + cfg.field_softening**2)
+    # Matrix-free-in-memory Green contraction: only a small block of the
+    # Q-by-Q volume kernel is materialized at once. This borrows the vNext
+    # memory-bounded reference pattern without changing the energy kernel.
     weighted_modes = weights[:, None, None] * w
     n_modes = transform.shape[1]
     inductance = np.zeros((n_modes, n_modes), dtype=float)
-    for axis in range(3):
-        block = weighted_modes[:, :, axis]
-        inductance += block.T @ (kernel @ block)
+    for start in range(0, len(points), cfg.kernel_chunk_size):
+        stop = min(start + cfg.kernel_chunk_size, len(points))
+        distance2 = cdist(points[start:stop], points, metric="sqeuclidean")
+        kernel = MU0 / (4 * math.pi) / np.sqrt(
+            distance2 + cfg.field_softening**2
+        )
+        for axis in range(3):
+            left = weighted_modes[start:stop, :, axis]
+            right = weighted_modes[:, :, axis]
+            inductance += left.T @ (kernel @ right)
     inductance = 0.5 * (inductance + inductance.T)
 
     csource = sources.potential_kernels(points)

@@ -5,6 +5,7 @@ import pytest
 from sdfmpneo_bfzi import (
     BFZICoil, RigidPose, InsulatingBox, BFZIAssembly, Seawater,
     BfziScene, SeaMQSConfig, build_bfzi_source, solve_seawater_reference,
+    compress_seawater_response,
 )
 from sdfmpneo_bfzi.vnext_bridge import BFZIVNextGeometry
 
@@ -27,9 +28,20 @@ def scene_pair():
 def test_port_source_closed_and_air_mutual():
     scene = scene_pair()
     source = build_bfzi_source(scene, 200_000., order=3)
-    for line in source.lines:
-        # Exact closed-return circulation, up to Gauss rule error.
-        np.testing.assert_allclose(line.line_elements.sum(axis=0), 0., atol=3e-5)
+    for assembly, line in zip(scene.assemblies, source.lines):
+        # The physical spiral is oriented from outer START to inner END.
+        # Its separate return starts at inner END and finishes at outer START.
+        outer, inner = assembly.coil.endpoints()
+        offset = 8 * assembly.coil.turns * 3
+        first_return_segment = line.line_elements[offset:offset + 3].sum(axis=0)
+        first_waypoint = np.asarray(assembly.return_waypoints[0])
+        np.testing.assert_allclose(
+            first_return_segment,
+            assembly.pose.vector(first_waypoint - inner),
+            atol=1e-12,
+        )
+        # A reversed return route would produce a nonzero total displacement.
+        np.testing.assert_allclose(line.line_elements.sum(axis=0), 0., atol=1e-6)
     np.testing.assert_allclose(
         source.inductance_air, source.inductance_air.T, atol=1e-14,
     )
@@ -59,7 +71,33 @@ def test_same_state_seawater_impedance_and_joule_heat():
     points = result.integration_points[:5]
     q = result.seawater_loss(points, i)
     assert q.shape == (5,) and np.all(q >= 0)
-    assert result.current_density(points, i).shape == (5, 3)
+    current_field = result.current_density(points, i)
+    assert current_field.shape == (5, 3)
+    # In a true two-port response the current fields superpose, while
+    # Joule heat is a quadratic field with cross terms.
+    i_a = np.array([i[0], 0j])
+    i_b = np.array([0j, i[1]])
+    np.testing.assert_allclose(
+        current_field,
+        result.current_density(points, i_a) + result.current_density(points, i_b),
+        rtol=1e-10, atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        q,
+        np.sum(np.abs(current_field)**2, axis=1) /
+        (2 * scene.seawater.conductivity),
+        rtol=1e-10, atol=1e-12,
+    )
+    # The deterministic projection preserves the same low-dimensional
+    # port/volume power identity; it is not yet a trained FAST artifact.
+    reduced = compress_seawater_response(
+        result, rank=min(2, result.resistance.shape[0]),
+    )
+    np.testing.assert_allclose(
+        reduced.port_seawater_power(i), reduced.quadrature_power(i),
+        rtol=1e-7, atol=1e-12,
+    )
+    assert reduced.seawater_power(i) >= 0
 
 
 def test_reject_overlapping_packages():

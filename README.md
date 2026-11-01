@@ -35,7 +35,9 @@ Physical scope: two sealed nonconductive nonmagnetic boxes, static SE(3)
 poses, finite spherical conducting seawater domain, fixed frequency and
 a divergence-free Galerkin seawater current basis. `L_air` uses a softened
 finite-radius self approximation. The seawater heat source integrates to the
-resistive port channel **under the same cubature**. Outer-domain, basis,
+resistive port channel **under the same cubature**. Port returns are explicitly
+oriented from the spiral inner end back to its outer start; Green-kernel
+assembly is memory-bounded in blocks. Outer-domain, basis,
 cubature and kernel-softening convergence and independent field validation
 are still required. Copper skin/proximity, conductive boxes, full thermal
 evolution and resonant feedback are **not yet implemented** here.
