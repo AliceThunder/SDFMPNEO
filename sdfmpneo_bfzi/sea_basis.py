@@ -80,6 +80,7 @@ def build_sea_basis(
     scene: BfziScene, *,
     wall_scale: float | None = None,
     modes_per_face: int = 2,
+    face_refinement: int = 1,
     include_global: bool = True,
 ) -> SeaCurrentBasis:
     """Generate box-following curl modes and optional long-range modes.
@@ -91,6 +92,8 @@ def build_sea_basis(
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
+    if face_refinement not in (1, 2):
+        raise ValueError("face_refinement must be 1 or 2")
     scale = (
         0.075 * min(scene.transmitter.enclosure.half_extents)
         if wall_scale is None else float(wall_scale)
@@ -103,13 +106,27 @@ def build_sea_basis(
         for axis in range(3):
             tangents = [j for j in range(3) if j != axis]
             for sign in (-1, 1):
-                local = np.zeros(3)
-                local[axis] = sign * (half[axis] + max(scale, 0.15 * half[axis]))
-                center = assembly.pose.position(local)
-                width = max(half.max() * 0.9, 3 * scale)
-                for tangent_axis in tangents[:modes_per_face]:
-                    direction = assembly.pose.rotation[:, tangent_axis]
-                    modes.append(CurrentMode(center, direction, width))
+                # Always retain the original face-center modes. The next
+                # level adds four tangentially shifted modes per face, giving
+                # a nested trial space rather than replacing the baseline.
+                patches = [(0.0, 0.0, 1.0)]
+                if face_refinement == 2:
+                    patches.extend(
+                        (u, v, 0.70)
+                        for u in (-0.45, 0.45)
+                        for v in (-0.45, 0.45)
+                    )
+                for u, v, width_factor in patches:
+                    local = np.zeros(3)
+                    local[axis] = sign * (
+                        half[axis] + max(scale, 0.15 * half[axis])
+                    )
+                    local[tangents] = np.array((u, v)) * half[tangents]
+                    center = assembly.pose.position(local)
+                    width = max(half.max() * 0.9 * width_factor, 3 * scale)
+                    for tangent_axis in tangents[:modes_per_face]:
+                        direction = assembly.pose.rotation[:, tangent_axis]
+                        modes.append(CurrentMode(center, direction, width))
     if include_global:
         r = scene.outer_radius
         center = np.asarray(scene.outer_center)
