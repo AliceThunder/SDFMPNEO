@@ -57,7 +57,7 @@ def compress_seawater_response(
         R, L, K, coefficients, z,
         reference.integration_points,
         reference.integration_weights,
-        reference.integration_modes @ reduction,
+        np.einsum("nmc,mr->nrc", reference.integration_modes, reduction),
         reference.field_softening,
         reference.raw_basis_count,
     )

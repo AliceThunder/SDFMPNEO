@@ -65,7 +65,7 @@ class SeawaterResponse:
         x = np.asarray(xyz, dtype=float)
         single = x.ndim == 1
         locations = x.reshape(-1, 3)
-        modes = self.basis.evaluate(locations) @ self.transform
+        modes = np.einsum("nmc,mr->nrc", self.basis.evaluate(locations), self.transform)
         z = self.unit_current_modes @ self._currents(port_currents)
         field = np.einsum("nmc,m->nc", modes, z)
         return field[0] if single else field.reshape(x.shape)
@@ -163,7 +163,7 @@ def solve_seawater_reference(
     if not np.any(keep):
         raise ValueError("seawater modes not resolved by the current cubature")
     transform = eigenvectors[:, keep] / np.sqrt(eigenvalues[keep])[None, :]
-    w = modes @ transform
+    w = np.einsum("nmc,mr->nrc", modes, transform)
     resistance = np.einsum("n,nic,njc->ij", wres, w, w, optimize=True)
     resistance = 0.5 * (resistance + resistance.T)
 
