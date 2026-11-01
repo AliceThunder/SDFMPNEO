@@ -326,3 +326,21 @@ def test_round_wire_joule_profile_and_complete_path_heat_are_consistent():
     np.testing.assert_allclose(
         [watts.sum() for _, watts in nodes], expected, rtol=1e-12,
     )
+    volumes = source.conductor_volume_heat(
+        currents, radial_order=12, angular_order=8,
+    )
+    np.testing.assert_allclose(
+        [np.dot(volume_weights, density)
+         for _, volume_weights, density in volumes],
+        expected, rtol=1e-8,
+    )
+    for (positions, volume_weights, density), assembly, length in zip(
+        volumes, scene.assemblies, lengths,
+    ):
+        assert positions.shape == (len(volume_weights), 3)
+        assert np.all(volume_weights > 0)
+        assert np.all(density >= 0)
+        np.testing.assert_allclose(
+            volume_weights.sum(), length * np.pi * assembly.wire_radius**2,
+            rtol=1e-12,
+        )
