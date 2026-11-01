@@ -106,6 +106,28 @@ class SeawaterResponse:
         q = np.sum(np.abs(j)**2, axis=-1) / (2 * self.sources.scene.seawater.conductivity)
         return float(self.integration_weights @ q)
 
+    def seawater_heat_nodes(self, port_currents=(1.0, 0.0)):
+        """Positive seawater heat cubature (xyz, dV, q in W/m^3).
+
+        Uses exactly the current-mode samples and positive volume weights
+        which define the port dissipative matrix. The integral of this field
+        therefore equals the seawater port power up to floating-point error.
+        """
+        z = self.unit_current_modes @ self._currents(port_currents)
+        field = np.einsum("nmc,m->nc", self.integration_modes, z)
+        q = np.sum(np.abs(field)**2, axis=1) / (
+            2.0 * self.sources.scene.seawater.conductivity
+        )
+        return self.integration_points.copy(), self.integration_weights.copy(), q
+
+    def thermal_channel_power(self, port_currents=(1.0, 0.0),
+                              temperatures=None) -> np.ndarray:
+        """Two conductor heat powers followed by total seawater Joule heat."""
+        return np.r_[
+            self.port_conductor_power(port_currents, temperatures),
+            self.port_seawater_power(port_currents),
+        ]
+
     def dissipation_channel(self) -> np.ndarray:
         """Seawater Hermitian PSD channel only, excluding the conductors."""
         return self.unit_current_modes.conj().T @ self.resistance @ self.unit_current_modes
