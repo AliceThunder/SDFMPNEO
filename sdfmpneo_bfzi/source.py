@@ -185,6 +185,73 @@ class BFZISources:
             result[p] = per_length * length
         return result
 
+    def conductor_cross_section_loss(
+        self, radius_fraction, port_currents=(1.0, 0.0), temperatures=None,
+    ) -> np.ndarray:
+        """Round-wire AC Joule density q(r) in W/m^3, shape (..., 2).
+
+        radius_fraction is r/a in [0,1]. The exact isolated cylindrical
+        conductor skin-current profile is used on each complete BFZI path.
+        This neglects proximity-induced angular redistribution; it is not a
+        world-coordinate point-in-wire query.
+        """
+        r = np.asarray(radius_fraction, dtype=float)
+        if not np.isfinite(r).all() or np.any((r < 0) | (r > 1)):
+            raise ValueError("radius_fraction must be finite and in [0,1]")
+        i = np.asarray(port_currents, dtype=complex)
+        if i.shape != (2,) or not np.isfinite(i).all():
+            raise ValueError("port_currents must be a finite complex two-vector")
+        if temperatures is None:
+            temperatures = [a.material.reference_temperature
+                            for a in self.scene.assemblies]
+        temp = np.asarray(temperatures, dtype=float)
+        if temp.shape != (2,) or not np.isfinite(temp).all():
+            raise ValueError("temperatures must be a finite two-vector")
+        result = np.empty(r.shape + (2,), dtype=float)
+        for port, assembly in enumerate(self.scene.assemblies):
+            sigma = assembly.material.conductivity_at(float(temp[port]))
+            mu = MU0 * assembly.material.relative_permeability
+            radius = assembly.wire_radius
+            k = np.sqrt(1j * self.omega * mu * sigma)
+            argument = k * radius
+            if abs(argument) < 1e-3:
+                unit_density = np.full(r.shape, 1.0 / (math.pi * radius**2),
+                                       dtype=complex)
+            else:
+                # ive(0,z) and ive(1,z) contain exp(-abs(Re z));
+                # restore only the nonpositive relative exponent.
+                ratio = (
+                    ive(0, argument * r) / ive(1, argument)
+                    * np.exp(argument.real * (r - 1.0))
+                )
+                unit_density = k / (2 * math.pi * radius) * ratio
+            result[..., port] = (
+                0.5 * abs(i[port])**2 * np.abs(unit_density)**2 / sigma
+            )
+        return result
+
+    def conductor_heat_nodes(
+        self, port_currents=(1.0, 0.0), temperatures=None,
+    ) -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+        """Positive centerline Joule-power nodes (positions, watts per node).
+
+        The line nodes span both the physical spiral and the return. Their
+        summed power is exactly the conductor port channel under the same
+        line quadrature. The radial cross-section distribution is available
+        separately through conductor_cross_section_loss.
+        """
+        i = np.asarray(port_currents, dtype=complex)
+        if i.shape != (2,) or not np.isfinite(i).all():
+            raise ValueError("port_currents must be a finite complex two-vector")
+        total_z = self.conductor_internal_impedance(temperatures).real
+        results = []
+        for port, line in enumerate(self.lines):
+            lengths = np.linalg.norm(line.line_elements, axis=1)
+            resistance_per_length = total_z[port] / lengths.sum()
+            power = 0.5 * resistance_per_length * abs(i[port])**2 * lengths
+            results.append((line.points.copy(), power))
+        return tuple(results)
+
     def potential_kernels(self, positions) -> np.ndarray:
         """Return (...,3,2) unit-port C source."""
         return np.stack(
