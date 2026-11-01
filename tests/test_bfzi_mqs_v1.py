@@ -169,9 +169,9 @@ def test_finite_wire_skin_loss_and_lumped_thermal_coupling():
     )
     assert np.all(impedances.real > dc_resistance)
     assert np.all(impedances.imag > 0)
-    np.testing.assert_allclose(
+    assert np.all(
         source.conductor_internal_impedance([333.15, 333.15]).real
-        > impedances.real, [True, True],
+        > impedances.real
     )
 
     result = solve_seawater_reference(
