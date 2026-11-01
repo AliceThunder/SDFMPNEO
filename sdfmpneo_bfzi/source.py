@@ -281,7 +281,11 @@ class BFZISources:
             zip(self.scene.assemblies, self.lines)
         ):
             lengths = np.linalg.norm(line.line_elements, axis=1)
-            tangents = line.line_elements / lengths[:, None]
+            active = lengths > 0.0
+            lengths = lengths[active]
+            elements = line.line_elements[active]
+            centers = line.points[active]
+            tangents = elements / lengths[:, None]
             seed = np.tile([0.0, 0.0, 1.0], (len(tangents), 1))
             seed[np.abs(tangents[:, 2]) > 0.9] = [1.0, 0.0, 0.0]
             normal1 = np.cross(tangents, seed)
@@ -295,7 +299,7 @@ class BFZISources:
             )
             radius = assembly.wire_radius
             points = (
-                line.points[:, None, None, :]
+                centers[:, None, None, :]
                 + radius * fraction[None, :, None, None] * unit_offset
             )
             weights = (
