@@ -74,10 +74,6 @@
 
 不再把“任意介质、所有位姿运动、全部温度历程都已经覆盖”作为进入代码的前置条件；这些在各自的代码里程碑逐步实现、验证并公开适用域。
 
-## 本轮代码进展
-
-已开始新子包的 **geometry.py + __init__.py**：BFZI 八段解析中心线、有向线元、圆形退化、合法参数及刚体位姿、按原路径顺序的 Gauss 线元采样。另新增少量 pytest 几何测试。**这不是已完成电磁场或热代理**，端口馈回流、海水矩阵和求解仍属下一批主代码。
-
 ## 实现更新：BFZI-MQS 原型已接通（2026-11-01）
 
 当前分支增加：
@@ -88,7 +84,9 @@
 - `sea_rom.py`：从参考结果提取确定性低阶子空间，保持同一物理内积；
 - `vnext_bridge.py`：复用旧 vNext 的 PolylineConductor/Bishop 截面框架，不把历史 SuperellipseSpiral 错称 BFZI。
 
-可直接运行 `python examples/bfzi_mqs_demo.py` 并运行
+运行入口：`python run.py --mode bfzi` 或 `python examples/bfzi_mqs_demo.py`；基本测试命令为
 `python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q`。
 
 **准确性声明：** 目前是有限外域、有限字典、体积核软化的首个可运行物理原型，不是经过 FEM/实验和收敛验证的高精度参考；空气自感使用明确的平滑近似而非完整 GMD/铜损。下一阶段需要外域/积分/模态收敛以及有限铜损和热闭环。线上神经代理尚未训练。
+
+**实施状态核对（2026-11-01）：** 已提交上述 Python 代码、示例及针对性 pytest，但当前 GitHub 工具连接不支持直接执行私有仓库的 Python 测试，所以**尚未实际运行**新示例/测试，不能据此宣称已通过。下一项是直接在可执行环境中运行并修正，再增加外域、积分与海水基数收敛。历史 vNext 性能、状态及 GUI 文档已从研究分支删除，旧代码仅用于可复用能力和未来迁移。
