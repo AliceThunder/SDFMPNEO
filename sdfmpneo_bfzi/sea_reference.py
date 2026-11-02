@@ -43,6 +43,9 @@ class SeaMQSConfig:
     # Optional five orders for the Green double integral only:
     # (radial, polar, azimuthal, shell_normal, shell_tangential).
     # R/K/Joule remain on the primary, potentially finer cubature.
+    # When specified, these L angles use their own global mu Gauss and
+    # midpoint azimuth, never the potentially far costlier R/K composite
+    # or geometry-projected angular settings. Green accuracy is separate.
     inductance_quadrature: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self):
