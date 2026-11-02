@@ -51,7 +51,15 @@ This avoids hard angular masking of the expanded boxes and resolves
 thin-package wall modes without depending on a coarse ray intersecting
 a particular face. `shell_normal_order`, `shell_tangential_order`, and
 `shell_width_factor` control near-wall refinement independently of
-`radial_order`, `polar_order`, `azimuthal_order` for the spherical part. This uses positive
+`radial_order`, `polar_order`, `azimuthal_order` for the spherical part.
+Tangential Gauss rules are now **composite**: the physical face center and
+both box edges are explicit interval boundaries; positive u²-mapped
+exterior nodes cluster towards each edge without introducing a world mesh.
+This addresses the earlier ~85% sensitivity to changing the tangential
+Gauss order from four to five, but must be checked numerically rather than
+assumed fixed. Global seawater mode widths also depend on physical package
+reach instead of the artificial sphere radius, making domain refinements
+less entangled with the basis shape. This uses positive
 geometry-local quadrature, not a world spatial solver mesh. The original
 run output showed 52% mode sensitivity and 71% cubature sensitivity, so
 angular, basis, outer-domain and singular-kernel convergence remain explicitly
