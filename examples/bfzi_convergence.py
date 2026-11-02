@@ -10,6 +10,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
     python run.py --mode bfzi-convergence --basis-green-refined # converged-wall R/K, independent L
     python run.py --mode bfzi-convergence --basis-green-cross # noncoincident magnetic cross-rule test
+    python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian volume Green test
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
@@ -55,7 +56,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       radial: bool = False, kparts: bool = False,
                       wallpanels: bool = False,
                       green_refined: bool = False,
-                      green_cross: bool = False):
+                      green_cross: bool = False,
+                      green_gaussian: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -198,7 +200,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
-    if green_refined or green_cross:
+    if green_refined or green_cross or green_gaussian:
         # This comparison changes ONLY Green L after a single high-quality
         # streamed R/K solve. It avoids the original teacher's inaccurate
         # global-angle/near-wall R/K while retaining that teacher's modes,
@@ -342,6 +344,81 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 "lack of diagonal does not prove accuracy. Compare "
                 "both quadrature rules jointly before changing the "
                 "production Green operator.",
+                flush=True,
+            )
+            return
+
+        if green_gaussian:
+            # Positive definite finite-volume cloud kernel replaces the
+            # artificially concentrated magnetic self points. Both rules
+            # retain the same 63-mode trial space and already fine R/K.
+            print("\nFinite-volume Gaussian Green L (PSD candidate):",
+                  flush=True)
+            rules = (
+                ("A", (5, 8, 12, 3, 4)),
+                ("B", (5, 9, 14, 4, 5)),
+            )
+            previous = {}
+            for label, orders in rules:
+                radial, polar, azimuthal, normal, tangent = orders
+                gx, gw = scene.box_shell_quadrature(
+                    radial, polar, azimuthal,
+                    wall_scale=enriched.wall_scale,
+                    shell_width_factor=config.shell_width_factor,
+                    shell_normal_order=normal,
+                    shell_tangential_order=tangent,
+                    outer_taper_width=enriched.outer_taper_width,
+                )
+                blurs = (0.0, 0.012) if label == "A" else (0.0,)
+                print(
+                    f"  assembling Gaussian rule {label}: {len(gx)} "
+                    f"nodes, additional Gaussian blur(s)={blurs} m",
+                    flush=True,
+                )
+                matrices, diagonals = (
+                    teacher.reintegrate_gaussian_green_matrices(
+                        gx, gw, extra_blurs=blurs,
+                        kernel_chunk_size=config.kernel_chunk_size,
+                    )
+                )
+                for blur, l, diag in zip(blurs, matrices, diagonals):
+                    curl = metrics(l, k_current)
+                    dual = metrics(l, k_dual)
+                    eig = np.linalg.eigvalsh(l)
+                    print(
+                        f"{'gaussian_L':>20}: rule={label}, a={blur:.4g} m, "
+                        f"trace={np.trace(l):.8g} H, "
+                        f"diag_share={diag/max(np.trace(l),1e-30):.6g}, "
+                        f"min_L_eig={eig[0]:.8g} H, "
+                        f"vs_old_dL={relative(l,base_l):.6g}, "
+                        f"vs_old_dZ={relative(curl[0],original_base[0][0]):.6g}, "
+                        f"vs_old_dq={relative(curl[1],original_base[0][1]):.6g}, "
+                        f"vs_old_dP={abs(curl[2]-original_base[0][2])/max(abs(original_base[0][2]),1e-30):.6g}",
+                        flush=True,
+                    )
+                    if blur == 0.0:
+                        previous[label] = (l, curl, dual)
+                del gx, gw
+
+            l_a, curl_a, dual_a = previous["A"]
+            l_b, curl_b, dual_b = previous["B"]
+            print(
+                f"{'gaussian_B_vs_A':>20}: "
+                f"dL={relative(l_b,l_a):.6g}, "
+                f"dZ={relative(curl_b[0],curl_a[0]):.6g}, "
+                f"dq={relative(curl_b[1],curl_a[1]):.6g}, "
+                f"dP={abs(curl_b[2]-curl_a[2])/max(abs(curl_a[2]),1e-30):.6g}, "
+                f"dual_dZ={relative(dual_b[0],dual_a[0]):.6g}, "
+                f"dual_dq={relative(dual_b[1],dual_a[1]):.6g}, "
+                f"dual_dP={abs(dual_b[2]-dual_a[2])/max(abs(dual_a[2]),1e-30):.6g}",
+                flush=True,
+            )
+            print(
+                "No extra blur means the analytic Coulomb interaction "
+                "of finite Gaussian volume clouds, NOT pointwise "
+                "a=0 Plummer. This candidate is PSD but needs "
+                "cross-rule and width-factor convergence before "
+                "promotion to the production reference.",
                 flush=True,
             )
             return
@@ -1262,11 +1339,13 @@ def main(
     basis_wallpanels: bool = False,
     basis_green_refined: bool = False,
     basis_green_cross: bool = False,
+    basis_green_gaussian: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
             or basis_radial or basis_kparts or basis_wallpanels
-            or basis_green_refined or basis_green_cross):
+            or basis_green_refined or basis_green_cross
+            or basis_green_gaussian):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
@@ -1274,6 +1353,7 @@ def main(
             kparts=basis_kparts, wallpanels=basis_wallpanels,
             green_refined=basis_green_refined,
             green_cross=basis_green_cross,
+            green_gaussian=basis_green_gaussian,
         )
     scene = build_demo_scene()
     base = dict(
@@ -1424,11 +1504,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -1444,4 +1524,5 @@ if __name__ == "__main__":
         basis_wallpanels="--basis-wallpanels" in sys.argv[1:],
         basis_green_refined="--basis-green-refined" in sys.argv[1:],
         basis_green_cross="--basis-green-cross" in sys.argv[1:],
+        basis_green_gaussian="--basis-green-gaussian" in sys.argv[1:],
     )
