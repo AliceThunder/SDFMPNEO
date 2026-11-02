@@ -27,7 +27,7 @@ class SeaMQSConfig:
     resistance_rank_tolerance: float = 1e-9
     kernel_chunk_size: int = 128
     quadrature_scheme: str = "box_shell"
-    shell_width_factor: float = 8.0
+    shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
 
