@@ -1441,3 +1441,54 @@ def test_gaussian_volume_green_is_finite_psd_and_chunk_independent():
         reference.reintegrate_gaussian_green_matrices(
             points, weights, width_factor=0.0,
         )
+
+
+def test_uniform_ball_coulomb_green_exact_pairs_and_psd():
+    """Physical finite ball self, containment and disjoint pair identities."""
+    from sdfmpneo_bfzi.sea_reference import (
+        _uniform_ball_coulomb_kernel, _assemble_ball_green_inductance,
+    )
+    radius = np.array([[0.1], [0.1], [0.2]])
+    other_radius = np.array([[0.1, 0.05, 0.1]])
+    distances = np.array([
+        [0.0, 0.0, 0.2],
+        [0.1, 0.5, 0.0],
+        [0.25, 0.1, 0.5],
+    ])
+    answer = _uniform_ball_coulomb_kernel(
+        distances, radius, other_radius,
+    )
+    np.testing.assert_allclose(answer[0, 0], 6.0/(5*0.1), rtol=1e-13)
+    np.testing.assert_allclose(
+        answer[0, 1], 3/(2*0.1) - 3*0.05**2/(10*0.1**3),
+        rtol=1e-13,
+    )
+    np.testing.assert_allclose(answer[0, 2], 1/0.2, rtol=1e-13)
+    np.testing.assert_allclose(answer[1, 0], 0.88125/0.1, rtol=1e-13)
+    np.testing.assert_allclose(answer[1, 1], 2.0, rtol=1e-13)
+    assert np.isfinite(answer).all() and np.all(answer > 0)
+
+    points = np.array([
+        [0.0, 0.0, 0.0],
+        [0.02, 0.0, 0.0],
+        [0.08, 0.1, 0.0],
+        [0.2, 0.02, 0.0],
+    ])
+    weights = np.array([0.001, 0.0003, 0.0008, 0.0005])
+    modes = np.array([
+        [[1., 0., 0.], [0., 1., 0.]],
+        [[0.2, 0.7, 0.], [1., 0.1, 0.]],
+        [[0., 1., 0.], [0., 0., 1.]],
+        [[0.2, 0., 1.], [0., 1., 0.2]],
+    ])
+    matrix, self_trace = _assemble_ball_green_inductance(
+        points, weights, modes, 2,
+    )
+    other, other_self = _assemble_ball_green_inductance(
+        points, weights, modes, 3,
+    )
+    np.testing.assert_allclose(matrix, other, rtol=1e-12, atol=1e-16)
+    np.testing.assert_allclose(self_trace, other_self, rtol=1e-14)
+    np.testing.assert_allclose(matrix, matrix.T, atol=1e-16)
+    assert np.linalg.eigvalsh(matrix)[0] >= -1e-14
+    assert 0 < self_trace < np.trace(matrix)
