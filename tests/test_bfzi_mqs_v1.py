@@ -726,3 +726,11 @@ def test_source_guided_curl_modes_match_complete_port_vector_potential():
         response.port_seawater_power(currents),
         response.quadrature_power(currents), rtol=2e-8, atol=1e-12,
     )
+    # Reintegrating R/K and the induced Joule density on the same nodes
+    # must recover the operators used by this actual 31-mode solve.
+    metrics = response.independent_cubature_metrics(
+        response.integration_points, response.integration_weights, currents,
+    )
+    assert metrics["relative_resistance_difference"] < 1e-8
+    assert metrics["relative_coupling_difference"] < 1e-8
+    assert metrics["relative_power_difference"] < 1e-8
