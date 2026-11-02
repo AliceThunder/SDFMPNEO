@@ -393,3 +393,22 @@ response = solve_seawater_reference(source, basis=basis)
 - 新增一项针对性测试：通过截取实际求积调用检验高精度几何 R/K 使用该参数，而独立 L 不意外继承高成本几何角度参数，并验证端口能量与海水 Joule 体积分离散闭合。
 
 执行建议：`git pull`，`python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q`，`python run.py --mode bfzi-convergence --basis-geometry`。后续若这些几何基准下的独立径向与盒壁比较均小，再利用该高精度 R/K 配置检查 Green 核正则化、模态完备性与更大外域。始终不使用 GitHub Actions。
+
+
+### 2026-11-02：39 passed；R/K 角向收敛后暴露径向与近壁误差，新增等价 K 弱式
+
+用户上一版 `4363d9a` 的本地 `pytest` 为 **39 passed in 14.08s**，`--basis-geometry` 中使用固定 `geometry_mu8`（相同 63 模态与 Green L）再对比：
+- 仅 `radial_order: 6→7`，`vs_geom8_dR=0.0112539,dK=0.0171725,dZ=0.0230224,dq=0.0519701`，最大探针相对差 `0.101934`，功率差 `0.0262679`。
+- 仅近壁阶数 `normal4→5,tangent5→6`，`dR=0.00651345,dK=0.0171025,dZ=0.0170344,dq=0.00246285,dP=0.0193525`。
+- 同时细化，`dZ=0.040216,dq=0.050943,dP=0.0458016`。原先高精度极角求积已改善该单轴，但真正参考求解仍未完成 R/K 径向和近壁误差收敛。
+
+**本轮针对 K 的物理积分进行实质性数学重构（暂未收到本地结果）**：
+- 原试探海水电流每列为 `J_m=curl(F_m)`，其中矢量势原函数 `F_m=g(x)*a_m` 或源引导模态 `F_m=g(x)*C_port`，且在全部绝缘盒壁及外球边界 `F_m=0`。对光滑真实闭合线圈源 `C_p=A_p/mu0`，有严格连续恒等式
+  `K_mp=mu0∫_sea J_m·C_p dV=∫_sea F_m·B_p dV`，其中 `B_p=mu0 curl(C_p)`。边界积分因为 `F_m=0` 严格消失。后者不再对 K 被积函数引入尖锐的盒壁基函数梯度，因此预计更容易处理精细的封装边缘和径向采样变化，**实际改善需要下一轮测量**。
+- 新增 `SeaCurrentBasis.potential_primitive(points)` 返回所有模态的原始势函数，包括闭合端口 `C_port` 引导模态。它不修改 `SeaCurrentBasis.evaluate` 的电流表示，也不改变 Galerkin 物理空间。
+- 新增 `SeaMQSConfig.coupling_form`，选择 `"current_potential"`（现有默认）或 `"curl_dual"`，对完整 `solve_seawater_reference` 的 K 积分直接切换公式，R/L/热源节点与原方案一致。
+- `SeawaterResponse.reintegrate_local_response(...,coupling_form=...)` 支持在独立 R/K 求积时指定公式；`reintegrate_source_coupling(points,weights,coupling_form="curl_dual")` 则可以只计算新 K，再复用 `resolve_with_coupling`，避免重复构建 R/L，保持电功率/海水体热源的离散闭合。
+- `--basis-geometry` 新增 `geometry_mu8_dual_K` 和 `curl_dual_K` 行：首先在完全同样的角度/节点/原始 R/L 下比较两种等价 K 算式，然后在径向、近壁、组合细化时，将各自的新双形式 K 与稳定几何基线双形式 K 比较，输出 `dZ/dq/max_probe_dq/dP`。此诊断能回答**径向 K 的不稳定是否根源于近壁基函数旋度参与耦合求积**。
+- 新增两项小型单测：双形式求解与能量闭合，及对全部普通/源引导模态的数值旋度与原始 `J` 一致性。未运行 GitHub Actions。
+
+下一步执行旧的三条命令 `git pull`、指定两文件 `pytest -q`、`--basis-geometry`。新构造要以实际输出判断，不提前将新 K 形式设为默认或宣称总体参考精度已收敛。
