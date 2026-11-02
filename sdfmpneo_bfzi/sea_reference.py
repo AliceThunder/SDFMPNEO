@@ -468,6 +468,93 @@ class SeawaterResponse:
         )
         return matrices, self_numerator
 
+    def reintegrate_cross_green_matrices(
+        self, left_points, left_weights, right_points, right_weights, *,
+        softenings=None, kernel_chunk_size: int = 128,
+    ) -> tuple[tuple[np.ndarray, ...], int]:
+        """Cross-cubature Green L on two independently sampled wet domains.
+
+        M_ab = mu0/(4*pi) sum_{i in left,j in right}
+                   w_i w_j J_i dot J_j / sqrt(|x_i-x_j|^2+a^2).
+        Return 0.5*(M_ab+M_ab.T), plus the count of exactly coincident
+        cross pairs. No same-node i=j diagonal is introduced when the
+        rules are disjoint. This is a *diagnostic*, not the default L:
+        unlike single-rule Gram assembly, a cross-rule discretization
+        is NOT guaranteed positive semidefinite before convergence.
+        """
+        arrays = []
+        for points, weights in (
+            (left_points, left_weights), (right_points, right_weights),
+        ):
+            x = np.asarray(points, dtype=float)
+            w = np.asarray(weights, dtype=float)
+            if (x.ndim != 2 or x.shape[1] != 3 or
+                    w.shape != (len(x),) or len(x) == 0 or
+                    not np.isfinite(x).all() or not np.isfinite(w).all() or
+                    np.any(w <= 0) or
+                    not self.sources.scene.in_seawater(x).all()):
+                raise ValueError(
+                    "cross Green cubature requires positive seawater nodes"
+                )
+            arrays.append((x, w))
+        if (not isinstance(kernel_chunk_size, int)
+                or isinstance(kernel_chunk_size, bool)
+                or kernel_chunk_size < 1):
+            raise ValueError("kernel_chunk_size must be a positive integer")
+        if softenings is None:
+            softenings = (self.field_softening,)
+        softenings = tuple(float(a) for a in softenings)
+        if not softenings or any(
+            not math.isfinite(a) or a <= 0 for a in softenings
+        ):
+            raise ValueError("softenings must be positive finite lengths")
+
+        left_x, left_w = arrays[0]
+        right_x, right_w = arrays[1]
+        left_modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(left_x), self.transform,
+            optimize=True,
+        )
+        right_modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(right_x), self.transform,
+            optimize=True,
+        )
+        left_weighted = left_w[:, None, None] * left_modes
+        right_packed = (
+            right_w[:, None, None] * right_modes
+        ).reshape(len(right_x), -1)
+        n_modes = left_modes.shape[1]
+        matrices = [
+            np.zeros((n_modes, n_modes), dtype=float)
+            for _ in softenings
+        ]
+        overlap_count = 0
+        for start in range(0, len(left_x), kernel_chunk_size):
+            stop = min(start + kernel_chunk_size, len(left_x))
+            left_block = left_weighted[start:stop]
+            for other in range(0, len(right_x), kernel_chunk_size):
+                end = min(other + kernel_chunk_size, len(right_x))
+                d2 = cdist(
+                    left_x[start:stop], right_x[other:end],
+                    metric="sqeuclidean",
+                )
+                overlap_count += int(np.count_nonzero(d2 <= 1e-24))
+                for a, result in zip(softenings, matrices):
+                    kernel = (
+                        MU0 / (4 * math.pi)
+                        / np.sqrt(d2 + a**2)
+                    )
+                    induced = (
+                        kernel @ right_packed[other:end]
+                    ).reshape(stop-start, n_modes, 3)
+                    result += np.einsum(
+                        "nic,njc->ij", left_block, induced,
+                        optimize=True,
+                    )
+        return tuple(
+            0.5 * (result + result.T) for result in matrices
+        ), overlap_count
+
     def reintegrate_green_responses(
         self, points, weights, *, softenings=None, kernel_chunk_size=128,
     ) -> tuple[SeawaterResponse, ...]:
