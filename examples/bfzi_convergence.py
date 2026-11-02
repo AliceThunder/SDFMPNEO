@@ -89,7 +89,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     )
     enriched = build_sea_basis(
         scene, modes_per_face=2,
-        face_refinement=3 if spatial_holdout else 2,
+        face_refinement=4 if spatial_holdout else 2,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
     )
@@ -253,7 +253,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         # independently refined near-wall R/K, NOT the preliminary coarse
         # teacher R/K. The uniform-ball L was assembled on magnetic A
         # by the teacher and is held fixed for every nested Galerkin solve.
-        print("\nRefined R/K + uniform-ball L: independent 63-to-95 modal holdout",
+        print("\nRefined R/K + uniform-ball L: independent 63-to-95-to-159 modal holdout",
               flush=True)
         r_cfg = replace(
             config, polar_geometry_order=8, azimuthal_panel_order=2,
@@ -331,6 +331,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             ("thin_face_patches", 2, 2, True, False),
             ("guided_port_curls", 2, 2, True, True),
             ("edge_face_patches", 2, 3, True, True),
+            ("corner_face_patches", 2, 4, True, True),
         ):
             subset = build_sea_basis(
                 scene, modes_per_face=modes_per_face,
@@ -371,6 +372,105 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
             previous = label, z, q, p
 
+        # Goal-oriented, residual-driven sparse trial selection from the
+        # strictly nested level-4 *physical* current family. This is an
+        # offline diagnostic, not an online approximation: the full parent
+        # R/L/K must first be assembled, so no continuum accuracy is claimed.
+        # Unlike fixed 159-mode promotion, it records how many additional
+        # modes are actually needed for Z, Joule probes and port power.
+        print("\nResidual-driven selective enrichment from 63 modes:",
+              flush=True)
+        raw_directions, _, _, _ = np.linalg.lstsq(
+            teacher.transform, np.eye(enriched.size), rcond=None,
+        )
+        if not np.allclose(
+            teacher.transform @ raw_directions, np.eye(enriched.size),
+            atol=1e-8, rtol=1e-8,
+        ):
+            raise RuntimeError(
+                "level-4 hierarchy contains discarded physical modes; "
+                "need better-resolved primary whitening before greedy selection"
+            )
+        raw_r = raw_directions.T @ r @ raw_directions
+        raw_l = raw_directions.T @ teacher.inductance @ raw_directions
+        raw_k = raw_directions.T @ k_curl
+        raw_a = raw_r + 1j*omega*raw_l
+        raw_f = 1j*omega*raw_k
+        raw_probes = np.einsum(
+            "nmc,mr->nrc", probe_modes, raw_directions, optimize=True,
+        )
+        full_amplitudes = np.linalg.solve(raw_a, -raw_f)
+        def report_sparse(selected):
+            chosen = np.asarray(selected, dtype=int)
+            rr = raw_r[np.ix_(chosen,chosen)]
+            kk = raw_k[chosen]
+            coeff = np.linalg.solve(raw_a[np.ix_(chosen,chosen)],
+                                    -raw_f[chosen])
+            impedance = 1j*omega*kk.T @ coeff
+            impedance = 0.5*(impedance + impedance.T)
+            driven = coeff @ currents
+            j = np.einsum(
+                "nmc,m->nc", raw_probes[:,chosen,:], driven, optimize=True,
+            )
+            heat = np.sum(np.abs(j)**2, axis=1) / (
+                2*scene.seawater.conductivity
+            )
+            power = 0.5*float(np.real(np.vdot(driven,rr @ driven)))
+            return impedance, heat, power, coeff
+        full_z, full_q, full_power, _ = report_sparse(
+            np.arange(enriched.size)
+        )
+        initial_basis = build_sea_basis(
+            scene, modes_per_face=2, face_refinement=2,
+            refine_thin_faces_only=True, sources=source,
+            include_source_guided=True,
+        )
+        selected = list(_indices_in_enriched_basis(enriched, initial_basis))
+        diag_r = np.maximum(np.diag(raw_r), 1e-30)
+        for iteration in range(0, 13):
+            z, q, power, coeff = report_sparse(selected)
+            sparse = np.zeros_like(raw_f)
+            sparse[selected] = coeff
+            residual = raw_a @ sparse + raw_f
+            score = np.sqrt(np.sum(np.abs(residual)**2, axis=1) / diag_r)
+            score[selected] = -np.inf
+            dz = relative(z, full_z)
+            dq = relative(q, full_q)
+            dp = abs(power-full_power)/max(abs(full_power),1e-30)
+            # Near-zero probe heat is not an informative relative metric;
+            # floor is for a comparison only, never a training loss.
+            max_dq = float(np.max(
+                np.abs(q-full_q)/np.maximum(full_q,1e-10)
+            ))
+            print(
+                f"  adaptive_{iteration:02d}: modes={len(selected)}, "
+                f"dZ={dz:.6g}, dq={dq:.6g}, "
+                f"max_probe_dq={max_dq:.6g}, "
+                f"dP={dp:.6g}, "
+                f"max_residual_score={np.max(score):.6g}",
+                flush=True,
+            )
+            if (dz <= 0.002 and dq <= 0.005 and dp <= 0.002):
+                print(
+                    "  adaptive_screen: matched 159-mode port/probe/power "
+                    "within fixed thresholds; NOT continuum-certified",
+                    flush=True,
+                )
+                break
+            if len(selected) == enriched.size:
+                print("  adaptive_screen: full candidate space reached "
+                      "without independent higher-order holdout", flush=True)
+                break
+            # Select the most violated missing *Galerkin equations*.
+            # The resistance diagonal removes arbitrary basis amplitude
+            # scaling from the ranking. Eight-at-a-time limits re-solves.
+            available = np.flatnonzero(np.isfinite(score))
+            ranked = available[np.argsort(-score[available],kind="stable")]
+            selected.extend(int(i) for i in ranked[:8])
+        else:
+            print("  adaptive_screen: iteration cap reached; "
+                  "not validated", flush=True)
+
         final = solve_nested(np.eye(m), k_curl)
         dual = solve_nested(np.eye(m), k_dual)
         print(
@@ -383,7 +483,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         print(
             "Modal screen uses refined streamed R/K and A uniform-ball L. "
-            "It measures missing trial directions within the 95-mode "
+            "It measures missing trial directions within the 159-mode "
             "parent, not a continuum accuracy certificate.",
             flush=True,
         )
