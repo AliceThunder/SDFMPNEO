@@ -1063,3 +1063,35 @@ def test_package_aligned_polar_panels_are_positive_and_refinable():
         SeaMQSConfig(polar_geometry_order=1)
     with pytest.raises(ValueError, match="polar_geometry_order"):
         SeaMQSConfig(polar_geometry_order=3, polar_panel_count=2)
+
+
+def test_geometry_rk_refinement_does_not_expand_independent_green_l(monkeypatch):
+    """A fine K angular rule must not make the separately coarse L quadratic."""
+    seen = []
+    original = BfziScene.box_shell_quadrature
+
+    def record_quadrature(scene, *args, **kwargs):
+        seen.append((args, kwargs))
+        return original(scene, *args, **kwargs)
+
+    monkeypatch.setattr(BfziScene, "box_shell_quadrature", record_quadrature)
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    config = SeaMQSConfig(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=3,
+        polar_geometry_order=2, azimuthal_panel_order=2,
+        inductance_quadrature=(3, 4, 6, 2, 3),
+    )
+    response = solve_seawater_reference(source, config=config)
+    assert len(seen) == 2
+    assert seen[0][1]["polar_geometry_order"] == 2
+    assert seen[0][1]["azimuthal_panel_order"] == 2
+    assert seen[1][1].get("polar_geometry_order") is None
+    assert seen[1][1].get("azimuthal_panel_order", 1) == 1
+    currents = (1.0, -0.3 + 0.4j)
+    np.testing.assert_allclose(
+        response.port_seawater_power(currents),
+        response.quadrature_power(currents),
+        rtol=1e-9, atol=1e-12,
+    )
