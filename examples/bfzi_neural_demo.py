@@ -52,10 +52,16 @@ def infer(argv=None):
     currents=np.array([1.0+0.2j,-0.4+0.5j])
     print("Predicted seawater port Z (ohms):",
           pred.impedance_seawater,flush=True)
+    print("Predicted complete port Z (ohms):",
+          pred.port_impedance,flush=True)
     print("Predicted sampled Joule heat (W/m^3):",
           pred.seawater_loss(points,currents),flush=True)
     print("Predicted seawater port power (W):",
           pred.port_seawater_power(currents),flush=True)
+    print("Finite conductor powers (W):",
+          pred.port_conductor_power(currents),flush=True)
+    print("Total port dissipated power (W):",
+          pred.port_total_power(currents),flush=True)
     print("Port loss minimum eigenvalue:",
           np.linalg.eigvalsh(pred.impedance_seawater.real)[0],flush=True)
     print("Outside observed varying-feature range:",
