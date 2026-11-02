@@ -24,7 +24,8 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
-python run.py --mode bfzi-convergence --basis  # one assembly: nested 15/27/59/63 modes
+python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/Joule cubature
+python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
 
@@ -91,8 +92,17 @@ the zero normal trace at insulating surfaces and global solenoidality.
 They are optional in `build_sea_basis(scene, sources=source,
 include_source_guided=True)` and do not silently change the standard
 27-mode demo. The full all-face 123-mode hierarchy remains optional.
-This is a trial-space diagnostic, not neural surrogate training;
-the 63-mode response must still be tested for independent convergence.
+The same `--basis` run also checks the 63-mode result on **two
+independent cubatures**: one refining the near-wall normal/tangential rules,
+another refining the outer-sphere radial/angular rules. It reports relative
+differences in the resistance matrix `R`, source coupling `K`, and held-out
+spatial Joule heat integral, without reassembling the expensive nonlocal Green
+kernel `L`. The optional `--basis-verify` repeats a full 63-mode
+reference solve on a jointly refined cubature and reports `dZ`, `dq`, and
+`dP`; this can be significantly slower. Small holdout discrepancies
+alone do **not** certify `L`, basis completeness, or outer-domain convergence.
+These are trial-space/reference diagnostics, not neural surrogate training;
+the 63-mode response is not yet certified.
 
 The two complete paths use `BFZIAssembly.wire_radius` and the existing
 `sdfmpneo_vnext.scene.ConductorMaterial` temperature law to compute
