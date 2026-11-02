@@ -131,8 +131,18 @@ def build_sea_basis(
                         direction = assembly.pose.rotation[:, tangent_axis]
                         modes.append(CurrentMode(center, direction, width))
     if include_global:
-        r = scene.outer_radius
         center = np.asarray(scene.outer_center)
+        # Keep the physical Gaussian part of the global trial functions
+        # unchanged when only the artificial outer radius is refined.
+        # Previously width=0.8*outer_radius changed the entire basis at
+        # the same time as the truncation boundary, confounding domain
+        # convergence by an unrelated approximation-space change.
+        package_reach = max(
+            np.linalg.norm(assembly.pose.center - center)
+            + np.linalg.norm(assembly.enclosure.half_extents)
+            for assembly in scene.assemblies
+        )
+        global_width = 1.5 * package_reach
         for axis in range(3):
-            modes.append(CurrentMode(center, np.eye(3)[axis], 0.8 * r))
+            modes.append(CurrentMode(center, np.eye(3)[axis], global_width))
     return SeaCurrentBasis(scene, tuple(modes), scale)
