@@ -325,7 +325,10 @@ def main(argv=None):
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
-                bfzi_main(full="--full" in args)
+                bfzi_main(
+                    full="--full" in args,
+                    basis_only="--basis" in args,
+                )
                 return 0
 
     from sdfmpneo_vnext.workflow import launch
