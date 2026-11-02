@@ -84,12 +84,16 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         max_radial_panel_width=0.18 if domain else None,
     )
     source = build_bfzi_source(scene, 200_000., order=4)
+    spatial_holdout = ball_reference and not domain and not (
+        radial or green_refined or green_cross or green_gaussian or green_ball
+    )
     enriched = build_sea_basis(
-        scene, modes_per_face=2, face_refinement=2,
+        scene, modes_per_face=2,
+        face_refinement=3 if spatial_holdout else 2,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
     )
-    print("Building enriched 63-mode Galerkin operator...",
+    print(f"Building enriched {enriched.size}-mode Galerkin operator...",
           f"raw modes={enriched.size}, "
           f"kernel={config.inductance_kernel}; "
           "fine R/K/Joule cubature; independently coarse L", flush=True)
@@ -225,15 +229,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
-    if ball_reference and not domain and not (
-        radial or green_refined or green_cross
-        or green_gaussian or green_ball
-    ):
+    if spatial_holdout:
         # Genuine nested-mode comparison with the already established
         # independently refined near-wall R/K, NOT the preliminary coarse
         # teacher R/K. The uniform-ball L was assembled on magnetic A
         # by the teacher and is held fixed for every nested Galerkin solve.
-        print("\nRefined R/K + uniform-ball L: nested modal study",
+        print("\nRefined R/K + uniform-ball L: independent 63-to-95 modal holdout",
               flush=True)
         r_cfg = replace(
             config, polar_geometry_order=8, azimuthal_panel_order=2,
@@ -305,32 +306,32 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             return z, q, p, relative_residual
 
         previous = None
-        for label, modes_per_face, face_refinement, thin in (
-            ("one_tangent", 1, 1, False),
-            ("two_tangents", 2, 1, False),
-            ("thin_face_patches", 2, 2, True),
-            ("guided_port_curls", 2, 2, True),
+        for label, modes_per_face, face_refinement, thin, guided in (
+            ("one_tangent", 1, 1, False, False),
+            ("two_tangents", 2, 1, False, False),
+            ("thin_face_patches", 2, 2, True, False),
+            ("guided_port_curls", 2, 2, True, True),
+            ("edge_face_patches", 2, 3, True, True),
         ):
-            if label == "guided_port_curls":
-                coords = np.eye(m)
-            else:
-                subset = build_sea_basis(
-                    scene, modes_per_face=modes_per_face,
-                    face_refinement=face_refinement,
-                    refine_thin_faces_only=thin,
+            subset = build_sea_basis(
+                scene, modes_per_face=modes_per_face,
+                face_refinement=face_refinement,
+                refine_thin_faces_only=thin,
+                sources=source if guided else None,
+                include_source_guided=guided,
+            )
+            indices = _indices_in_enriched_basis(enriched, subset)
+            selection = np.eye(enriched.size)[:, indices]
+            coords, _, _, _ = np.linalg.lstsq(
+                teacher.transform, selection, rcond=None,
+            )
+            if not np.allclose(
+                teacher.transform @ coords, selection,
+                rtol=1e-8, atol=1e-9,
+            ):
+                raise RuntimeError(
+                    "nested current modes were discarded by R whitening"
                 )
-                indices = _indices_in_enriched_basis(enriched, subset)
-                selection = np.eye(enriched.size)[:, indices]
-                coords, _, _, _ = np.linalg.lstsq(
-                    teacher.transform, selection, rcond=None,
-                )
-                if not np.allclose(
-                    teacher.transform @ coords, selection,
-                    rtol=1e-8, atol=1e-9,
-                ):
-                    raise RuntimeError(
-                        "nested current modes were discarded by R whitening"
-                    )
             z, q, p, residual = solve_nested(coords, k_curl)
             print(
                 f"  {label}: modes={coords.shape[1]}, "
@@ -362,7 +363,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         print(
             "Modal screen uses refined streamed R/K and A uniform-ball L. "
-            "It measures missing trial directions within the 63-mode "
+            "It measures missing trial directions within the 95-mode "
             "parent, not a continuum accuracy certificate.",
             flush=True,
         )
