@@ -38,9 +38,15 @@ def train(argv=None):
 def infer(argv=None):
     parser=argparse.ArgumentParser(description="Fast BFZI neural field query")
     parser.add_argument("--model",default="bfzi_neural.pt")
-    parser.add_argument(
+    choice=parser.add_mutually_exclusive_group()
+    choice.add_argument(
+        "--power-closure",action="store_true",
+        help="diagnostic only: reconstruct dissipative Z from predicted J; "
+             "held-out accuracy may worsen",
+    )
+    choice.add_argument(
         "--raw-port-loss",action="store_true",
-        help="skip positive local R closure for the fastest but inconsistent output",
+        help="deprecated alias for the default independent raw port Z",
     )
     args=parser.parse_args(argv)
     scene=build_demo_scene()
@@ -48,7 +54,7 @@ def infer(argv=None):
     basis=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
     model=BFZINeuralSurrogate.load(args.model)
     pred=model.predict(
-        sources,basis,power_consistent=not args.raw_port_loss,
+        sources,basis,power_consistent=args.power_closure,
     )
     points=np.array([
         [0.,0.,0.],
@@ -88,9 +94,10 @@ def infer(argv=None):
         print("Reciprocal energy Gram imaginary defect:",
               pred.reciprocal_gram_defect,flush=True)
     else:
-        print("Uncorrected fast path: learned field and port loss "
-              "are INDEPENDENT and need not close.",flush=True)
-    print("PROVISIONAL: power closure applies only to the selected "
+        print("Default raw path: learned field and port Z are "
+              "INDEPENDENT and need not close. Held-out data currently "
+              "favor raw port Z over field-derived Z.",flush=True)
+    print("PROVISIONAL: optional power closure applies only to the selected "
           "local-R cubature. It does not certify reference-field "
           "accuracy, local Joule resolution or learned MQS reactance.",
           flush=True)
