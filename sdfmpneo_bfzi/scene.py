@@ -287,6 +287,7 @@ class BfziScene:
         azimuthal_order: int = 16, *, wall_scale: float | None = None,
         shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
+        shell_tangential_max_panel_width: float | None = None,
         outer_taper_width: float | None = None,
         max_radial_panel_width: float | None = None,
         radial_geometry_cuts: bool = False,
@@ -340,6 +341,13 @@ class BfziScene:
             raise ValueError("shell Gauss orders must be integers >= 2")
         if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
             raise ValueError("shell_width_factor must be finite and positive")
+        if shell_tangential_max_panel_width is not None and (
+            not math.isfinite(shell_tangential_max_panel_width)
+            or shell_tangential_max_panel_width <= 0
+        ):
+            raise ValueError(
+                "shell_tangential_max_panel_width must be finite and positive"
+            )
         scale = (
             0.075 * min(min(a.enclosure.half_extents) for a in self.assemblies)
             if wall_scale is None else float(wall_scale)
@@ -594,13 +602,34 @@ class BfziScene:
         edge_w = 0.5 * edge_weights
 
         def tangent_rule(half_extent: float, extended: bool):
-            # Two interior patches resolve face-centered basis functions.
-            # Both positive and negative exterior strips are independent
-            # from the interior, including the nonsmooth physical edge.
-            interior_negative = -half_extent + half_extent * center_t
-            interior_positive = half_extent * center_t
-            nodes = [interior_negative, interior_positive]
-            weights = [half_extent * center_w] * 2
+            # The physical face center and two real edges remain panel
+            # boundaries. Fine Gaussian current patches can be much
+            # narrower than a half-face: split each half into fixed
+            # physical-length panels instead of escalating a global
+            # polynomial on a broad patch. Exact positive Gauss weights
+            # are retained, including arbitrary oriented boxes.
+            count = (
+                1 if shell_tangential_max_panel_width is None
+                else max(
+                    1, math.ceil(
+                        half_extent / shell_tangential_max_panel_width
+                    )
+                )
+            )
+            patches = []
+            patch_weights = []
+            for left, right in ((-half_extent, 0.0), (0.0, half_extent)):
+                boundaries = np.linspace(left, right, count + 1)
+                widths = np.diff(boundaries)
+                patches.append((
+                    boundaries[:-1, None]
+                    + widths[:, None] * center_t[None, :]
+                ).reshape(-1))
+                patch_weights.append((
+                    widths[:, None] * center_w[None, :]
+                ).reshape(-1))
+            nodes = patches
+            weights = patch_weights
             if extended:
                 stretch = shell_width * edge_t**2
                 stretch_w = 2.0 * shell_width * edge_t * edge_w
