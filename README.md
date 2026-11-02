@@ -32,6 +32,7 @@ python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite 
 python run.py --mode bfzi-convergence --basis-geometry # enclosure-projected polar Gauss refinement
 python run.py --mode bfzi-convergence --basis-radial   # physical radial panels, both K weak forms
 python run.py --mode bfzi-convergence --basis-kparts   # sphere vs box-wall partition of K weak-form error
+python run.py --mode bfzi-convergence --basis-wallpanels # physical face/edge Gauss panel refinement
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -437,6 +438,57 @@ weak form's successive response change. This identifies the
 it does not prejudge which method is correct. It is much more
 targeted than broad brute-force refinement, though the
 seawater point evaluations are still substantial.
+
+**Near-wall R/Joule convergence and composite face panels (2026-11-02).**
+The user-run `dd16b7c` experiment completed **43 tests** and
+localized the two K weak forms' discrepancy at the
+sphere/box-slab partition. The normalized weak-form differences
+in **each region** are around 0.82 of the total K norm but
+almost perfectly anti-aligned (`alignment≈-0.999995`).
+These are large complementary *subdomain integration-by-parts
+boundary terms*, **not** independent 82% physical errors.
+The total weak-form K discrepancy falls from 0.0456624 at
+wall 4/5 to 0.00367166 at wall 8/9, and the port discrepancy
+falls from 0.0377317 to 0.000971325. A separate mu8→mu10
+polar refinement at wall 8/9 changes port Z by only
+`1.73114e-05` (historical K).
+
+However the near-wall **R** operator changes by 0.205192
+between wall 5/6 and wall 6/7, and by 0.085981 between
+wall 6/7 and wall 8/9, with significant spatial heat
+changes. Thus a small K weak-form gap alone is NOT enough
+to certify electromagnetic Joule heating, and increasing
+global shell Gauss order is still an inefficient strategy.
+
+An optional **physical tangential half-face and edge-strip
+composite Gauss rule** is now implemented in
+`BfziScene.box_shell_quadrature(
+shell_tangential_max_panel_width=<meters>)` and
+`SeaMQSConfig.shell_tangential_max_panel_width`.
+The physical box face center and true edges remain
+integration boundaries. Each half-face is subdivided into
+intervals no longer than the given width; an independent
+positive Gauss rule is used on each. Exterior edge/corner
+strips retain their positive `u²` clustering near the
+insulating edge, now with optional smaller composite
+`u`-intervals controlled by the same physical width.
+All slab nodes follow each oriented box's local axes,
+support arbitrary box poses, and use no global world mesh.
+The sphere, primary R/K/Joule physics and independent
+Green L remain unchanged. The default `None` reproduces
+the previous near-wall rule.
+
+`python run.py --mode bfzi-convergence --basis-wallpanels`
+reuses the sphere/slab source K comparison while holding
+63 modes, Green L, geometry-mu8, physical radial cap 0.06m
+and shell normal order 5 fixed. It compares the old
+unsegmented tangential order 6, then 0.05m and 0.025m
+physical panel caps at the same order, and finally increases
+tangential order 6→7 on the same 0.025m panels. Each
+stage prints region-separated weak-form K discrepancies
+and step changes in R, K, port impedance, heat probes
+and power. At this revision, this improvement has **not
+yet** been validated by the user's next local experiment.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
