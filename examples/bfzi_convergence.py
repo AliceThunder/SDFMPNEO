@@ -7,6 +7,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence
     python run.py --mode bfzi-convergence --full
     python run.py --mode bfzi-convergence --basis
+    python run.py --mode bfzi-convergence --basis-verify  # expensive second R/L/K solve
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ def _indices_in_enriched_basis(enriched, subset):
     return np.asarray(indices, dtype=int)
 
 
-def basis_convergence():
+def basis_convergence(*, verify: bool = False):
     """Four nested Galerkin spaces with ONE shared cubature and Green solve.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -171,15 +172,52 @@ def basis_convergence():
             f"heldout_P={check['heldout_power']:.8g} W",
             flush=True,
         )
+    if verify:
+        # Optional expensive second REFERENCE solve. Unlike the cheap
+        # holdouts above, this changes the full nonlocal Green L operator
+        # and recomputes the coupled 63-mode current state.
+        fine_config = replace(
+            config,
+            radial_order=6, polar_order=10, azimuthal_order=16,
+            shell_normal_order=4, shell_tangential_order=5,
+        )
+        print(
+            "\nFull independent 63-mode R/L/K solve on refined cubature...",
+            flush=True,
+        )
+        fine = solve_seawater_reference(
+            source, basis=enriched, config=fine_config,
+        )
+        fine_z = fine.impedance_seawater
+        fine_q = fine.seawater_loss(probes, currents)
+        base_z, base_q, base_p = stages[-1][1:]
+        fine_p = fine.port_seawater_power(currents)
+        dz = np.linalg.norm(fine_z - base_z) / max(
+            np.linalg.norm(base_z), 1e-30,
+        )
+        dq = np.linalg.norm(fine_q - base_q) / max(
+            np.linalg.norm(base_q), 1e-30,
+        )
+        dp = abs(fine_p - base_p) / max(abs(base_p), 1e-30)
+        print(
+            f"refined_63: nodes={len(fine.integration_points):6d}, "
+            f"retained_modes={fine.resistance.shape[0]}, "
+            f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}, "
+            f"sea_power={fine_p:.8g} W",
+            flush=True,
+        )
     print(
-        "NOT CERTIFIED: R/K/Joule heldouts do not certify Green L, "
-        "outer-domain independence, or basis completeness."
+        "NOT CERTIFIED: separate outer-domain, basis-completeness, "
+        "and Green-regularization convergence are still required."
     )
 
 
-def main(full: bool = False, basis_only: bool = False):
-    if basis_only:
-        return basis_convergence()
+def main(
+    full: bool = False, basis_only: bool = False,
+    basis_verify: bool = False,
+):
+    if basis_only or basis_verify:
+        return basis_convergence(verify=basis_verify)
     scene = build_demo_scene()
     base = dict(
         radial_order=4, polar_order=6, azimuthal_order=8,
@@ -328,12 +366,15 @@ def main(full: bool = False, basis_only: bool = False):
 
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
-        len(sys.argv) == 2 and sys.argv[1] not in ("--full", "--basis")
+        len(sys.argv) == 2
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify")
     ):
         raise SystemExit(
-            "usage: python -m examples.bfzi_convergence [--full|--basis]"
+            "usage: python -m examples.bfzi_convergence "
+            "[--full|--basis|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
         basis_only="--basis" in sys.argv[1:],
+        basis_verify="--basis-verify" in sys.argv[1:],
     )
