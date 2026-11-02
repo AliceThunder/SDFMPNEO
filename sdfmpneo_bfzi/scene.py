@@ -631,8 +631,32 @@ class BfziScene:
             nodes = patches
             weights = patch_weights
             if extended:
-                stretch = shell_width * edge_t**2
-                stretch_w = 2.0 * shell_width * edge_t * edge_w
+                # Side and corner strips need the same control: the
+                # near-edge envelope changes on the tiny wall_scale,
+                # while the whole exterior strip spans shell_width.
+                # Composite u=sqrt(distance/shell_width) panels retain
+                # the existing positive edge clustering/Jacobian.
+                edge_count = (
+                    1 if shell_tangential_max_panel_width is None
+                    else max(
+                        1, math.ceil(
+                            shell_width / shell_tangential_max_panel_width
+                        ),
+                    )
+                )
+                edge_boundaries = np.linspace(0.0, 1.0, edge_count + 1)
+                edge_du = np.diff(edge_boundaries)
+                u = (
+                    edge_boundaries[:-1, None]
+                    + edge_du[:, None] * edge_t[None, :]
+                ).reshape(-1)
+                stretch = shell_width * u**2
+                stretch_w = (
+                    2.0 * shell_width * u
+                    * (
+                        edge_du[:, None] * edge_w[None, :]
+                    ).reshape(-1)
+                )
                 nodes = [
                     -half_extent - stretch, *nodes,
                     half_extent + stretch,
