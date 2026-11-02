@@ -230,6 +230,25 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         return
 
     if spatial_holdout:
+        # Extend the four established bulk probes with physical near-wall
+        # locations on both broad faces of each oriented enclosure. This
+        # catches sharp local Joule features masked by a small port dZ.
+        near_wall = []
+        for assembly in scene.assemblies:
+            half = np.asarray(assembly.enclosure.half_extents)
+            axis = int(np.argmin(half))
+            tangents = [direction for direction in range(3) if direction != axis]
+            for sign in (-1.0, 1.0):
+                for u, v in ((0.0, 0.0), (0.65, 0.0), (0.0, 0.65)):
+                    local = np.zeros(3)
+                    local[axis] = sign*(
+                        half[axis] + max(0.003, 3.0*enriched.wall_scale)
+                    )
+                    local[tangents] = (u, v)*half[tangents]
+                    near_wall.append(assembly.pose.position(local))
+        probes = np.concatenate((probes, np.asarray(near_wall)))
+        if not scene.in_seawater(probes).all():
+            raise RuntimeError("modal wall probes must lie in seawater")
         # Genuine nested-mode comparison with the already established
         # independently refined near-wall R/K, NOT the preliminary coarse
         # teacher R/K. The uniform-ball L was assembled on magnetic A
@@ -346,6 +365,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"  {old_label}_to_{label}: "
                     f"dZ={relative(z,old_z):.6g}, "
                     f"dq={relative(q,old_q):.6g}, "
+                    f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-10)):.6g}, "
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
                     flush=True,
                 )
