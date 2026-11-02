@@ -30,6 +30,9 @@ class SeaMQSConfig:
     shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
+    # Optional physical-length cap for spherical radial Gauss intervals.
+    # Especially useful when increasing the finite outer domain.
+    max_radial_panel_width: float | None = None
     # Optional five orders for the Green double integral only:
     # (radial, polar, azimuthal, shell_normal, shell_tangential).
     # R/K/Joule remain on the primary, potentially finer cubature.
@@ -52,6 +55,11 @@ class SeaMQSConfig:
                 or not isinstance(self.shell_tangential_order, int)
                 or self.shell_tangential_order < 2):
             raise ValueError("shell Gauss orders must be integers >= 2")
+        if self.max_radial_panel_width is not None and (
+            not math.isfinite(self.max_radial_panel_width)
+            or self.max_radial_panel_width <= 0
+        ):
+            raise ValueError("max_radial_panel_width must be positive and finite")
         if not 0 < self.resistance_rank_tolerance < 1:
             raise ValueError("resistance_rank_tolerance must be in (0,1)")
         if not isinstance(self.kernel_chunk_size, int) or self.kernel_chunk_size < 1:
@@ -532,6 +540,7 @@ def solve_seawater_reference(
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
             outer_taper_width=taper_width,
+            max_radial_panel_width=cfg.max_radial_panel_width,
         )
     else:
         points, weights = scene.quadrature(
@@ -576,6 +585,7 @@ def solve_seawater_reference(
             shell_normal_order=normal,
             shell_tangential_order=tangential,
             outer_taper_width=taper_width,
+            max_radial_panel_width=cfg.max_radial_panel_width,
         )
         magnetic_modes = np.einsum(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
