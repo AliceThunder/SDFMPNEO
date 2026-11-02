@@ -289,6 +289,7 @@ class BfziScene:
         shell_tangential_order: int = 4,
         outer_taper_width: float | None = None,
         max_radial_panel_width: float | None = None,
+        radial_geometry_cuts: bool = False,
         polar_panel_count: int = 1,
         azimuthal_panel_order: int = 1,
         polar_geometry_order: int | None = None,
@@ -351,6 +352,8 @@ class BfziScene:
             or max_radial_panel_width <= 0
         ):
             raise ValueError("max_radial_panel_width must be positive and finite")
+        if not isinstance(radial_geometry_cuts, bool):
+            raise ValueError("radial_geometry_cuts must be a boolean")
 
         shell_width = shell_width_factor * scale
         center = np.asarray(self.outer_center)
@@ -493,6 +496,26 @@ class BfziScene:
                 distance,
                 min(self.outer_radius, distance + reach + shell_width),
             ))
+        if radial_geometry_cuts:
+            # Physical radial breakpoints of the actual (possibly
+            # rotated) enclosures and expanded box-shell partitions.
+            # The closest point of an OBB to the sphere center is not
+            # generally a corner; use its exact exterior distance.
+            for inner, outer in zip(self.assemblies, expanded):
+                for assembly in (inner, outer):
+                    closest2, _ = assembly.enclosure.squared_exterior_distance(
+                        center[None, :], assembly.pose,
+                    )
+                    half = np.asarray(assembly.enclosure.half_extents)
+                    corners = np.array(np.meshgrid(
+                        (-half[0], half[0]),
+                        (-half[1], half[1]),
+                        (-half[2], half[2]), indexing="ij",
+                    )).reshape(3, -1).T
+                    farthest = max(np.linalg.norm(
+                        assembly.pose.position(corners) - center, axis=1,
+                    ))
+                    cuts.extend((float(np.sqrt(closest2[0])), float(farthest)))
         cuts = sorted(set(
             float(np.clip(v, 0.0, self.outer_radius)) for v in cuts
         ))
