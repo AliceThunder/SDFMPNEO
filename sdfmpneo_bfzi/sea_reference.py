@@ -30,6 +30,9 @@ class SeaMQSConfig:
     shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
+    # Physical half-face composite Gauss panel cap (meters).
+    # Optional R/K/Joule refinement, independent of Green L.
+    shell_tangential_max_panel_width: float | None = None
     # Stokes/integration-by-parts dual source-coupling form avoids
     # differentiating the sharp box-wall curl modes inside K integrals.
     # Historical current.potential form remains the default.
@@ -65,6 +68,13 @@ class SeaMQSConfig:
             raise ValueError("wall_layers must be an integer from 0 to 6")
         if self.quadrature_scheme not in ("ray", "box_shell"):
             raise ValueError("quadrature_scheme must be 'ray' or 'box_shell'")
+        if self.shell_tangential_max_panel_width is not None and (
+            not math.isfinite(self.shell_tangential_max_panel_width)
+            or self.shell_tangential_max_panel_width <= 0
+        ):
+            raise ValueError(
+                "shell_tangential_max_panel_width must be finite and positive"
+            )
         if self.coupling_form not in ("current_potential", "curl_dual"):
             raise ValueError(
                 "coupling_form must be 'current_potential' or 'curl_dual'"
@@ -664,6 +674,7 @@ def solve_seawater_reference(
             shell_width_factor=cfg.shell_width_factor,
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
+            shell_tangential_max_panel_width=cfg.shell_tangential_max_panel_width,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
             radial_geometry_cuts=cfg.radial_geometry_cuts,
