@@ -1651,3 +1651,80 @@ def test_ball_green_full_reference_modal_power_and_electrothermal_closure():
 
     with pytest.raises(ValueError, match="inductance_kernel"):
         SeaMQSConfig(inductance_kernel="unsupported")
+
+
+def test_rank_four_snapshot_rom_reconstructs_parent_and_saves(tmp_path):
+    """Two complex port solutions span <=4 real current directions.
+
+    Compression never asserts that the parent spatial Galerkin basis is
+    continuum-converged; it only checks exact-in-parent source responses.
+    """
+    from dataclasses import replace
+    from sdfmpneo_bfzi import BFZISnapshotROM, build_sea_basis
+
+    scene = scene_pair()
+    sources = build_bfzi_source(scene, 200_000.0, order=3)
+    basis = build_sea_basis(
+        scene, modes_per_face=2, face_refinement=2,
+        refine_thin_faces_only=True,
+        sources=sources, include_source_guided=True,
+    )
+    ref = solve_seawater_reference(
+        sources, basis=basis, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            inductance_kernel="uniform_ball",
+            inductance_quadrature=(3, 4, 6, 2, 3),
+        ),
+    )
+    snapshot = BFZISnapshotROM.from_operators(
+        sources, basis, ref.transform,
+        ref.resistance, ref.inductance, ref.coupling,
+    )
+    assert snapshot.rank == 4
+    assert snapshot.raw_projection.shape == (basis.size, 4)
+    np.testing.assert_allclose(
+        snapshot.impedance_seawater, ref.impedance_seawater,
+        rtol=1e-8, atol=1e-12,
+    )
+    current = np.array([1.0+0.2j,-0.3+0.4j])
+    xyz = ref.integration_points[::max(1,len(ref.integration_points)//9)][:9]
+    np.testing.assert_allclose(
+        snapshot.current_density(xyz,current),
+        ref.current_density(xyz,current), rtol=5e-8, atol=1e-10,
+    )
+    np.testing.assert_allclose(
+        snapshot.seawater_loss(xyz,current),
+        ref.seawater_loss(xyz,current), rtol=5e-8, atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        snapshot.port_seawater_power(current),
+        ref.port_seawater_power(current),
+        rtol=1e-8,atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        snapshot.modal_seawater_power(current),
+        snapshot.port_seawater_power(current),
+        rtol=1e-8,atol=1e-12,
+    )
+    file = tmp_path/"bfzi_snapshot.npz"
+    snapshot.save(file)
+    restored = BFZISnapshotROM.load(file,sources,basis)
+    np.testing.assert_allclose(
+        restored.current_density(xyz,current),
+        snapshot.current_density(xyz,current),
+        rtol=1e-12,atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        restored.impedance_seawater,snapshot.impedance_seawater,
+        rtol=1e-12,atol=1e-14,
+    )
+    wrong_scene = replace(scene,seawater=Seawater(6.0))
+    wrong_sources = build_bfzi_source(wrong_scene,200_000.0,order=3)
+    wrong_basis = build_sea_basis(
+        wrong_scene, modes_per_face=2, face_refinement=2,
+        refine_thin_faces_only=True,
+        sources=wrong_sources,include_source_guided=True,
+    )
+    with pytest.raises(ValueError,match="signature mismatch"):
+        BFZISnapshotROM.load(file,wrong_sources,wrong_basis)
