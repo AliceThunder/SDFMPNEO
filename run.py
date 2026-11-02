@@ -13,6 +13,7 @@
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
+    python run.py --mode bfzi-convergence --basis-radial   # 真实几何径向分片及两种 K 弱式对照
     python run.py --fresh          # 忽略模型 checkpoint，但继续复用 teacher 缓存
 
 所有面向用户的训练、缓存、采样、teacher、CUDA/CPU、GUI、checkpoint
