@@ -328,6 +328,7 @@ def main(argv=None):
                 bfzi_main(
                     full="--full" in args,
                     basis_only="--basis" in args,
+                    basis_verify="--basis-verify" in args,
                 )
                 return 0
 
