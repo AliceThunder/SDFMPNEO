@@ -233,7 +233,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         # domain changes the boundary-conditioned trial functions. These
         # are fresh complete R/K/L Galerkin solves at FIXED mode hierarchy,
         # softening, frequency and cubature orders, not a Green-only test.
-        print("\\nOuter-domain sequence (independent 63-mode solves):")
+        print("\nOuter-domain sequence (independent 63-mode solves):")
         baseline_z, baseline_q = stages[-1][1:3]
         baseline_power = stages[-1][3]
         previous_z, previous_q, previous_power = (
