@@ -7,7 +7,8 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence
     python run.py --mode bfzi-convergence --full
     python run.py --mode bfzi-convergence --basis
-    python run.py --mode bfzi-convergence --basis-verify  # expensive second R/L/K solve
+    python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
+    python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ def _indices_in_enriched_basis(enriched, subset):
     return np.asarray(indices, dtype=int)
 
 
-def basis_convergence(*, verify: bool = False):
+def basis_convergence(*, verify: bool = False, green: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -187,6 +188,44 @@ def basis_convergence(*, verify: bool = False):
             f"sea_power={check['resolved_power']:.8g} W",
             flush=True,
         )
+    if green:
+        # Keep the original 63-mode R/K, basis, whitening, power cubature,
+        # and port source fixed. Vary only the nonlocal L double integration.
+        # Comparisons for different softenings use IDENTICAL Green nodes.
+        # These moderate-size sweeps are cheaper than --basis-verify, but
+        # still scale quadratically in the Green node count.
+        print("\\nIndependent Green L cubature / softening re-solves (fixed R/K):")
+        green_trials = (
+            ("green_wall", (5, 8, 12, 3, 5), (config.field_softening,)),
+            ("green_outer", (5, 10, 16, 3, 4), (config.field_softening,)),
+            ("green_softening", (5, 8, 12, 3, 4), (0.018, 0.012)),
+        )
+        for label, orders, softenings in green_trials:
+            radial, polar, azimuthal, normal, tangential = orders
+            green_points, green_weights = scene.box_shell_quadrature(
+                radial, polar, azimuthal,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=config.shell_width_factor,
+                shell_normal_order=normal,
+                shell_tangential_order=tangential,
+            )
+            checks = teacher.independent_green_metrics(
+                green_points, green_weights, currents, probes=probes,
+                softenings=softenings,
+                kernel_chunk_size=config.kernel_chunk_size,
+            )
+            for check in checks:
+                print(
+                    f"{label:>20}: nodes={len(green_points):6d}, "
+                    f"a={check['softening']:.5g} m, "
+                    f"dL={check['relative_inductance_difference']:.6g}, "
+                    f"re_solved_dZ={check['relative_resolved_impedance_change']:.6g}, "
+                    f"dq={check['relative_resolved_probe_change']:.6g}, "
+                    f"dP={check['relative_resolved_power_change']:.6g}, "
+                    f"residual={check['relative_heldout_residual']:.6g}",
+                    flush=True,
+                )
+
     if verify:
         # Optional expensive second REFERENCE solve. Unlike the cheap
         # holdouts above, this changes the full nonlocal Green L operator
@@ -226,10 +265,10 @@ def basis_convergence(*, verify: bool = False):
 
 def main(
     full: bool = False, basis_only: bool = False,
-    basis_verify: bool = False,
+    basis_verify: bool = False, basis_green: bool = False,
 ):
-    if basis_only or basis_verify:
-        return basis_convergence(verify=basis_verify)
+    if basis_only or basis_verify or basis_green:
+        return basis_convergence(verify=basis_verify, green=basis_green)
     scene = build_demo_scene()
     base = dict(
         radial_order=4, polar_order=6, azimuthal_order=8,
@@ -379,14 +418,15 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-verify]"
+            "[--full|--basis|--basis-green|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
         basis_only="--basis" in sys.argv[1:],
         basis_verify="--basis-verify" in sys.argv[1:],
+        basis_green="--basis-green" in sys.argv[1:],
     )
