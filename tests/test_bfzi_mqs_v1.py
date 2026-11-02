@@ -1239,3 +1239,35 @@ def test_sphere_and_box_slab_k_parts_recombine_for_both_forms():
         )
     with pytest.raises(ValueError, match="return_sphere_count"):
         scene.box_shell_quadrature(**kwargs, return_sphere_count=1)
+
+
+def test_composite_near_wall_face_panels_are_positive_and_independent():
+    """Refine real face/edge widths without changing the sphere or Green L."""
+    scene = scene_pair()
+    kw = dict(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=4,
+    )
+    coarse_x, coarse_w, coarse_sphere = scene.box_shell_quadrature(
+        **kw, return_sphere_count=True,
+    )
+    fine_x, fine_w, fine_sphere = scene.box_shell_quadrature(
+        **kw, shell_tangential_max_panel_width=0.025,
+        return_sphere_count=True,
+    )
+    assert len(fine_x) > len(coarse_x)
+    assert coarse_sphere == fine_sphere
+    np.testing.assert_array_equal(
+        fine_x[:fine_sphere], coarse_x[:coarse_sphere],
+    )
+    np.testing.assert_array_equal(
+        fine_w[:fine_sphere], coarse_w[:coarse_sphere],
+    )
+    assert scene.in_seawater(fine_x).all()
+    assert np.isfinite(fine_w).all() and np.all(fine_w > 0)
+    with pytest.raises(ValueError, match="shell_tangential_max_panel_width"):
+        scene.box_shell_quadrature(
+            **kw, shell_tangential_max_panel_width=0,
+        )
+    with pytest.raises(ValueError, match="shell_tangential_max_panel_width"):
+        SeaMQSConfig(shell_tangential_max_panel_width=-0.01)
