@@ -851,18 +851,33 @@ the true curved/partition-weighted cell.
 
 Three new end-to-end verification entry points retain the same
 kernel selection through the physical calculations:
-`--basis-ball` reuses the established nested-mode and
-held-out local R/K diagnostics; `--basis-domain-ball`
-repeats complete finite-domain Galerkin solves across
-0.52, 0.70, 0.85, 1.05 and 1.30 m, with independent
-basis normalization and all associated ports; and
-`--mode bfzi --green-ball` runs the complete port,
-volume Joule, wire skin impedance and illustrative
-current/voltage-driven thermal demonstrations.
-The modal and domain runs retain their **existing cubature**
-and must be interpreted with their printed held-out R/K
-errors; a small step alone does not certify the solution.
-Neither experimental mode enables neural FAST by default.
+`--basis-ball` uses the **461648-node, operator-only fine R/K**
+rule from the previously accepted near-wall refinement, combined
+with the 7504-node uniform-ball magnetic A rule. Four strictly
+nested physical trial spaces are re-solved from the *same* R/L/K,
+with port Z, probe heat, dissipative power, and a full-parent
+R-inverse Galerkin residual reported for each. Both current-potential
+and curl-dual K formulations are compared at 63 modes.
+
+`--basis-domain-ball` builds fresh basis/port/magnetic operators
+on five independent outer radii (0.52, 0.70, 0.85, 1.05 and 1.30 m).
+It independently **streams fine R/K on every radius** using the
+same 0.06 m radial and 0.0167 m near-wall tangential panel caps;
+magnetic L remains uniform-ball, and both K weak forms are
+checked at each radius. It compares successive port Z, probe
+Joule heat and modal sea power without storing the large
+volume Joule tensor. This is more expensive than the previous
+coarse-R/K domain screen, intentionally avoiding a false
+radius plateau from under-integrated near-wall currents.
+
+`--mode bfzi --green-ball` runs complete two-port port Z,
+spatial Joule/wire losses and illustrative current/voltage-driven
+thermal channels with the selected ball L. The thermal ROM still
+models conductor temperature feedback **only**, not the fully
+temperature-dependent seawater properties. None of these
+experimental modes auto-enable neural FAST. Modal and domain
+convergence require inspection of their actual new numerical
+logs, not a declared pass based only on Green A/B agreement.
 
 Run sequentially, stopping for failures:
 
