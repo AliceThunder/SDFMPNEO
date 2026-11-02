@@ -404,12 +404,15 @@ class BfziScene:
             # Fixed Gauss order on a growing outer-radius interval loses
             # physical radial resolution and masquerades as domain error.
             # Split only the smooth spherical rule, never the near-box slabs.
-            intervals = [
-                (a + (b - a) * k / n, a + (b - a) * (k + 1) / n)
-                for a, b in intervals
-                for n in [max(1, math.ceil((b - a) / max_radial_panel_width))]
-                for k in range(n)
-            ]
+            radial_panels = []
+            for a, b in intervals:
+                count = max(1, math.ceil((b - a) / max_radial_panel_width))
+                step = (b - a) / count
+                radial_panels.extend(
+                    (a + k * step, a + (k + 1) * step)
+                    for k in range(count)
+                )
+            intervals = radial_panels
         rr = np.concatenate([
             0.5 * (hi - lo) * r_nodes + 0.5 * (hi + lo)
             for lo, hi in intervals
