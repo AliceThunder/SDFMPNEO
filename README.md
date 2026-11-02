@@ -185,16 +185,32 @@ box walls is unchanged. These parameters are available in
 `SeaMQSConfig` and apply to both primary R/K and optional Green L
 quadratures.
 
-`--basis-angular` compares independent polar splits and azimuth
-Gauss orders while holding the original 63-mode physical basis,
-Green L and source unchanged. The output provides separate `dR/dK`,
-the re-solved `dZ/dq/dP` and actual four-point `probe_q` values;
-a last composite coarse-to-fine line is a limited within-family
-consistency check. None of these runs is a certified continuum
-reference. In particular a small total port-power change can mask
-large pointwise heat errors. Composite Gauss angular rules usually
-cost extra spherical field evaluations; choose orders from measured
-stability rather than assuming the largest order is exact.
+The latest local `aa958f5` run passed **36 tests** and reported
+`polar_split2` `base_dZ=0.154019` and `base_dP=0.177437`.
+The mixed refinement `polar2_phi3` to `polar2_phi3_fine` changed
+`dZ=0.138306`, `dq=0.0818322`, `dP=0.16552`.
+Thus just repartitioning ten total polar points is **not** equivalent
+to refining a quadrature, and a polar/azimuth simultaneous change
+does not isolate which direction still needs more accuracy.
+
+The updated `--basis-angular` first checks midpoint-versus-Gauss
+azimuth, then runs the *same* two-polar-panel, two-Gauss-points-per-
+azimuth-sector rule at total polar orders **10, 14, 18 and 22**,
+with radial order, sector count, shell orders, mode basis, source and
+Green L unchanged. Finally it separately compares azimuth Gauss order
+two versus three at the same 22 polar nodes. Each row reports
+`dR/dK`, re-solved `dZ/dq/dP`, and four absolute
+`probe_q` values; each following row additionally prints
+`step_from_previous` and the maximum per-probe relative change.
+Only the polar-order 10/14/18/22 rows form a meaningful
+single-axis order refinement. The Gauss nodes are not mathematically
+nested, so small consecutive differences alone are not a rigorous
+error bound. The old quadrature stays as the default.
+
+Composite Gauss angular rules cost extra spherical field evaluations.
+In particular, small total port-power errors can hide much larger
+local heat-source changes; choose reference orders from verified
+pointwise and port stability, not node count alone.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
