@@ -28,6 +28,7 @@ python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
+python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -165,6 +166,35 @@ successive combined stages. Only the combined stages form a
 monotonically refined quadrature hierarchy; the single-axis rows are
 diagnostic, not a sequential convergence curve. These refined responses
 are R/K-only references, not certified continuum solutions.
+
+**Composite angular sphere integration (2026-11-02).** On the
+35-test-passing local `af9f56d` reference, changing just the outer
+angles caused `base_dZ=0.0878657` and `base_dP=0.0998883`.
+The combined R/K fine-grid change was `step_dZ=0.0109989`,
+`step_dq=0.187754` and `step_dP=0.0129961`, so the original,
+nonmonotonic single-axis comparisons do **not** establish convergence.
+
+The sphere component of `box_shell_quadrature` now supports two
+optional controls: `polar_panel_count` partitions the cosine
+polar coordinate into equal Gauss panels (must divide the total
+`polar_order` to preserve north-south symmetry), and
+`azimuthal_panel_order` uses Gauss-Legendre points inside each fixed
+periodic azimuth sector. Default `(1,1)` preserves the historical
+global Gauss-mu / single midpoint-phi rule. Slab integration near the
+box walls is unchanged. These parameters are available in
+`SeaMQSConfig` and apply to both primary R/K and optional Green L
+quadratures.
+
+`--basis-angular` compares independent polar splits and azimuth
+Gauss orders while holding the original 63-mode physical basis,
+Green L and source unchanged. The output provides separate `dR/dK`,
+the re-solved `dZ/dq/dP` and actual four-point `probe_q` values;
+a last composite coarse-to-fine line is a limited within-family
+consistency check. None of these runs is a certified continuum
+reference. In particular a small total port-power change can mask
+large pointwise heat errors. Composite Gauss angular rules usually
+cost extra spherical field evaluations; choose orders from measured
+stability rather than assuming the largest order is exact.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
