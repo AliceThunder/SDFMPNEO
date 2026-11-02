@@ -330,3 +330,20 @@ response = solve_seawater_reference(source, basis=basis)
 4. 增加一个聚焦测试，检验扩大外球后的径向分片节点数量、权重正性、海水有效域及非法参数拒绝。之前 34 个测试是更改前的结果，不能据此宣称该新测试通过。
 
 按优先级下一步本地运行 `pytest`、`--basis-local`、`--basis-domain`。若组合 R/K 连续加密后未出现稳定平台，再研究分区积分/场函数解析局部尺度，而不是开始神经网络训练。
+
+
+### 2026-11-02：实测 35 passed，外域趋稳；优先修复球面角向求积混叠
+
+用户本地 `af9f56d` 输出：
+- `35 passed in 13.13s`；外域 1.05→1.30m `dZ=0.000207249,dq=0.0000489691,dP=0.00010326`，且 `raw_mode_dW=0`，说明该组离散条件下对外域半径的敏感性显著下降。**这仍不是整个参考解的收敛证明**，不能与 R/K、Green、模式误差混为一谈。
+- `--basis-local`：仅增大球域角阶数 `base_dZ=0.0878657,base_dP=0.0998883`，远大于仅径向 `base_dZ=0.0155822`、盒壁 `base_dZ=0.0166565`。
+- `combined`→`combined_finer`：`step_dZ=0.0109989,step_dq=0.187754,step_dP=0.0129961`。fine 结果接近旧 baseline 是可能的误差抵消，不能视为收敛。固定四个点的 q 是局部精度要求，不能拿总功率收敛替代。
+- 59→63 模态：`dq=0.0245979`，但 `dP=7.45e-05`，同样证明端口小变化不代表局部热源小变化。
+
+已提交针对球域角向规则的算法改进，等待本地验证：
+- `scene.box_shell_quadrature(..., polar_panel_count=1, azimuthal_panel_order=1)` 为新参数，均默认旧规则；`polar_panel_count>1` 将 cos 极角按固定分片分别 Gauss，分片数必须整除极角总阶数，从而保留南北对称；`azimuthal_panel_order>1` 将每个周期性方位角区间从单点中点升为多点 Gauss，使球域角向积分更局部可控、保持严格正权。近盒壁六面 slab 积分保持不变。
+- 对应参数已加入 `SeaMQSConfig`，传播到主 R/K 与独立 Green L 双积分，避免相同配置在两种积分路径被不同解释。
+- `python run.py --mode bfzi-convergence --basis-angular` 固定原始 Green L/63 物理基/源，仅重积分 R/K；依次比较 `polar_split2`, `phi_gauss2/3`, `polar2_phi2/3`, `polar2_phi3_fine`。打印模态矩阵 `dR/dK`、重新求解 `dZ/dq/dP` 和各探针的绝对 q；末尾报告同一种分片规则下的粗→细差。这里各前五个方法是独立对照，**不是**同一嵌套精化序列。
+- 新增一个正权和真实海水采样的针对性单测；本轮尚无本地测试输出。默认旧角向参数不会被悄然改变，后续先看新结果再决定是否切换参考默认值。
+
+下一步优先本地 `pytest` 和 `--basis-angular`；若同一分片积分家族连续精化趋稳，再固定高精度 R/K 后重新开展外域、基函数和 Green 独立收敛（不能以低精度 R/K 下的外域稳定性取代）。
