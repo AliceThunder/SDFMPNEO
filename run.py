@@ -342,6 +342,7 @@ def main(argv=None):
                     basis_geometry="--basis-geometry" in args,
                     basis_radial="--basis-radial" in args,
                     basis_kparts="--basis-kparts" in args,
+                    basis_wallpanels="--basis-wallpanels" in args,
                 )
                 return 0
 
