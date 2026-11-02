@@ -37,12 +37,18 @@ def train(argv=None):
 def infer(argv=None):
     parser=argparse.ArgumentParser(description="Fast BFZI neural field query")
     parser.add_argument("--model",default="bfzi_neural.pt")
+    parser.add_argument(
+        "--raw-port-loss",action="store_true",
+        help="skip positive local R closure for the fastest but inconsistent output",
+    )
     args=parser.parse_args(argv)
     scene=build_demo_scene()
     sources=build_bfzi_source(scene,200_000.0,order=4)
     basis=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
     model=BFZINeuralSurrogate.load(args.model)
-    pred=model.predict(sources,basis)
+    pred=model.predict(
+        sources,basis,power_consistent=not args.raw_port_loss,
+    )
     points=np.array([
         [0.,0.,0.],
         [0.13,0.,0.],
@@ -64,11 +70,29 @@ def infer(argv=None):
           pred.port_total_power(currents),flush=True)
     print("Port loss minimum eigenvalue:",
           np.linalg.eigvalsh(pred.impedance_seawater.real)[0],flush=True)
-    print("Outside observed varying-feature range:",
+    print("Outside observed whole-feature training range:",
           pred.out_of_training_range,flush=True)
-    print("PROVISIONAL model: port passivity is parameterized, "
-          "but independently learned J/Z need not satisfy exact "
-          "volume-to-port Joule closure.",flush=True)
+    if pred.power_closure_enabled:
+        integrated=pred.integrated_seawater_power(currents)
+        from_port=pred.port_seawater_power(currents)
+        print("Inference local-R closure nodes:",
+              len(pred.closure_points),flush=True)
+        print("Port vs spatial Joule quadrature (W):",
+              from_port,integrated,flush=True)
+        print("Relative port/spatial power mismatch:",
+              abs(from_port-integrated)/max(abs(integrated),1e-30),
+              flush=True)
+        print("Physical current response correction (relative):",
+              pred.response_correction_relative,flush=True)
+        print("Reciprocal energy Gram imaginary defect:",
+              pred.reciprocal_gram_defect,flush=True)
+    else:
+        print("Uncorrected fast path: learned field and port loss "
+              "are INDEPENDENT and need not close.",flush=True)
+    print("PROVISIONAL: power closure applies only to the selected "
+          "local-R cubature. It does not certify reference-field "
+          "accuracy, local Joule resolution or learned MQS reactance.",
+          flush=True)
 
 
 if __name__=="__main__":
