@@ -337,6 +337,7 @@ def main(argv=None):
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
+                    basis_geometry="--basis-geometry" in args,
                 )
                 return 0
 
