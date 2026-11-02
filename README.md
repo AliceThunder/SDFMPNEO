@@ -25,6 +25,8 @@ python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
 python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/Joule cubature
+python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
+python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -113,6 +115,22 @@ Green `L`**, without any new `O(Q²)` magnetic assembly. This reports
 `dZ`, fixed-probe `dq`, and `dP` for the changed local operators,
 which are more directly meaningful than a full matrix-norm difference.
 These are same-L numerical sensitivity results, not a new truth solution.
+The independent `--basis-green` sweep uses the exact original
+`R/K` and heat cubature, but recomputes and re-solves the symmetric
+Green `L` on alternative magnetic quadratures. At one fixed magnetic
+cubature it also compares 25, 18 and 12 mm kernel softenings. The
+underlying Green distances are shared between the alternate softenings.
+This isolates `dL`, induced `dZ/dq/dP` and the original-current
+equation residual. **Softening must not be extrapolated to zero at fixed
+cubature:** point-collocation self terms scale like `w_i²/a` and may
+produce an artificial divergence, even though the continuum Coulomb
+double integral is finite. Refine the magnetic rule jointly with `a`.
+The separate `--basis-domain` mode solves the same 63-mode *construction*
+on outer radii 0.52, 0.70, 0.85 and 1.05 m. Those are distinct
+boundary-conditioned trial spaces, so domain changes are not a
+fixed-matrix L-only test. Both switches can be costly; neither certifies
+the infinite-domain limit.
+
 The optional `--basis-verify` solves the same fine 63-mode
 `R/K` system again, this time recomputing `L` on that full finer
 cubature rather than reusing the coarse Green rule. It reports resulting
