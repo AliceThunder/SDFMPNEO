@@ -30,6 +30,7 @@ def _indices_in_enriched_basis(enriched, subset):
             if np.array_equal(mode.center, candidate.center)
             and np.array_equal(mode.direction, candidate.direction)
             and mode.width == candidate.width
+            and mode.source_port == candidate.source_port
         ]
         if len(matches) != 1:
             raise ValueError("trial spaces are not a strictly nested hierarchy")
@@ -38,9 +39,9 @@ def _indices_in_enriched_basis(enriched, subset):
 
 
 def basis_convergence():
-    """Three nested Galerkin spaces with ONE shared cubature and Green solve.
+    """Four nested Galerkin spaces with ONE shared cubature and Green solve.
 
-    Target the broad faces of the thin charging pads before escalating to
+    Target the broad faces and actual closed-port field curls before escalating to
     all-face patch refinement. Only the enriched teacher's expensive
     Coulomb R/L/K assembly is computed.
     """
@@ -53,7 +54,8 @@ def basis_convergence():
     source = build_bfzi_source(scene, 200_000., order=4)
     enriched = build_sea_basis(
         scene, modes_per_face=2, face_refinement=2,
-        refine_thin_faces_only=True,
+        refine_thin_faces_only=True, sources=source,
+        include_source_guided=True,
     )
     print("Building enriched thin-face Galerkin operator...",
           f"raw modes={enriched.size}", flush=True)
@@ -72,15 +74,18 @@ def basis_convergence():
         ("one_tangent", 1, 1, False),
         ("two_tangents", 2, 1, False),
         ("thin_face_patches", 2, 2, True),
+        ("guided_port_curls", 2, 2, True),
     ):
+        guided = label == "guided_port_curls"
         subset = build_sea_basis(
             scene, modes_per_face=modes_per_face,
             face_refinement=face_refinement,
             refine_thin_faces_only=thin,
+            sources=source if guided else None,
+            include_source_guided=guided,
         )
         solution = (
-            teacher if label == "thin_face_patches"
-            else restrict_seawater_response(
+            teacher if guided else restrict_seawater_response(
                 teacher, _indices_in_enriched_basis(enriched, subset),
             )
         )
@@ -107,7 +112,7 @@ def basis_convergence():
             f"{coarse[0]} -> {fine[0]}: "
             f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}"
         )
-    print("NOT CERTIFIED: next verify the enriched solution under cubature and further basis refinement.")
+    print("NOT CERTIFIED: source-guided and spatial refinements require independent cubature checks.")
 
 
 def main(full: bool = False, basis_only: bool = False):
