@@ -1719,6 +1719,30 @@ def test_rank_four_snapshot_rom_reconstructs_parent_and_saves(tmp_path):
         restored.impedance_seawater,snapshot.impedance_seawater,
         rtol=1e-12,atol=1e-14,
     )
+    from sdfmpneo_bfzi import (
+        BFZIResponseLabel, geometry_features,
+        save_response_labels, load_response_labels,
+    )
+    label = BFZIResponseLabel.from_snapshot(snapshot)
+    np.testing.assert_allclose(
+        label.raw_unit_modes,
+        ref.transform @ ref.unit_current_modes,
+        rtol=2e-8, atol=1e-12,
+    )
+    assert label.reference_status == "provisional"
+    assert label.features.shape == geometry_features(sources).shape
+    data_path = tmp_path/"bfzi_labels.npz"
+    save_response_labels(data_path, (label,))
+    recovered, = load_response_labels(data_path)
+    np.testing.assert_array_equal(recovered.features, label.features)
+    np.testing.assert_array_equal(
+        recovered.raw_unit_modes, label.raw_unit_modes,
+    )
+    np.testing.assert_array_equal(
+        recovered.impedance_seawater, label.impedance_seawater,
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        save_response_labels(data_path,(label,label))
     wrong_scene = replace(scene,seawater=Seawater(6.0))
     wrong_sources = build_bfzi_source(wrong_scene,200_000.0,order=3)
     wrong_basis = build_sea_basis(
