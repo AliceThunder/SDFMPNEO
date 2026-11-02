@@ -30,7 +30,7 @@ class SeaCurrentBasis:
     modes: tuple[CurrentMode, ...]
     wall_scale: float
     source_lines: tuple[LineSource, LineSource] | None = None
-    outer_envelope: str = "boundary_layer"
+    outer_envelope: str = "quadratic"
     outer_taper_width: float = 0.0
 
     @property
