@@ -27,6 +27,7 @@ python run.py --mode bfzi-convergence --full   # additional high-cost refinement
 python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/Joule cubature
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
 python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K + independent Green L
+python run.py --mode bfzi-convergence --basis-green-cross  # two independent magnetic quadratures, diagnostic
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -612,6 +613,62 @@ not yet certify any softened/unsoftened continuum
 limit. Do not infer the electromagnetic field
 reference is accurate merely from passive
 dissipation or local R/K convergence.
+
+**Green diagonal alias and cross-rule diagnostic (2026-11-02).**
+The user's `e3c0a48` run passed **46 BFZI tests** and
+measured independent Green errors on 461648 fixed refined
+R/K/Joule nodes. The original 7504-node magnetic rule at
+softening 25mm had a *discrete same-node self* share of
+`diag_trace=0.189174`. At fixed magnetic nodes,
+softening 18mm gave `dL=0.0923051`,
+`dZ=0.00261412`, `dq=0.000388053`;
+12mm gave `dL=0.224198`, `dZ=0.00632986`,
+`dq=0.000927456`, while
+`diag_trace=0.30113`. At 25mm, refining just the
+Green shell from (3,4) to (3,5) gave
+`dL=0.0160046`, `dZ=0.000117128`;
+refining Green outer angular nodes from (8,12) to
+(10,16) gave `dL=0.0896424`,
+`dZ=0.00268619`.
+Port Z's relative insensitivity to L is NOT evidence
+that the nonlocal magnetic field is converged.
+
+The optional diagnostic
+`SeawaterResponse.reintegrate_cross_green_matrices(
+left_points,left_weights,right_points,right_weights,
+softenings=...)` computes the true
+`(left × right)` Green double sum with independently
+sampled wet-domain quadratures. It returns the
+symmetrized matrix and the number of exactly overlapping
+cross pairs; with identical left/right nodes it
+reproduces the existing symmetric one-rule Green
+operator. With disjoint rules the artificial
+`i=j` term disappears. This **does not make the
+result automatically more accurate**: changing one
+quadrature rule introduces other integration errors.
+Furthermore a two-rule symmetric cross matrix is
+NOT guaranteed PSD, so this is explicitly **not**
+a replacement for the passive default Green L.
+
+Run `python run.py --mode bfzi-convergence
+--basis-green-cross` to first stream the same refined
+63-mode R/K, then compare the symmetric 7504-node
+self-rule A with the symmetric cross-rule A×B.
+Rule A is (5,8,12,3,4); independently sampled
+rule B is (5,9,14,4,5), each interpreted as
+(radial,polar,azimuthal,normal,tangential).
+Three fixed softening lengths 25/18/12mm reuse
+Green pair distances. The output reports cross
+coincidence count, `dL/dZ/dq/dP`, old
+`diag_trace`, the **smallest cross-matrix
+eigenvalue**, and both original/curl-dual K
+re-solves while keeping one fixed fine R/K.
+If this discrepancy is large it motivates a
+consistent near-pair integration/positive Green
+kernel correction, not a blind extrapolation
+of softening to zero. This command contains
+`O(N_A N_B)` Green work and has **not yet been
+run on the user's machine**.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
