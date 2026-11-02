@@ -10,6 +10,9 @@
     python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
     python run.py --mode bfzi --green-ball # 完整均匀球Green电磁热示例
     python run.py --mode bfzi-snapshot --out bfzi_response.npz # 双端口低秩保存加载推理
+    python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # 跨几何样本
+    python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 实验网络训练
+    python run.py --mode bfzi-infer --model bfzi_neural.pt # 推理
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
@@ -341,6 +344,18 @@ def main(argv=None):
             if mode == "bfzi-snapshot":
                 from examples.bfzi_snapshot_demo import main as bfzi_main
                 bfzi_main(args[index + 2:])
+                return 0
+            if mode == "bfzi-generate":
+                from examples.bfzi_dataset_generate import main as generate_main
+                generate_main(args[index + 2:])
+                return 0
+            if mode == "bfzi-train":
+                from examples.bfzi_neural_demo import train as neural_train
+                neural_train(args[index + 2:])
+                return 0
+            if mode == "bfzi-infer":
+                from examples.bfzi_neural_demo import infer as neural_infer
+                neural_infer(args[index + 2:])
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
