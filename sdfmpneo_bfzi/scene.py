@@ -352,8 +352,33 @@ class BfziScene:
         angles = 2.0 * math.pi * (
             np.arange(azimuthal_order) + 0.5
         ) / azimuthal_order
-        rr = 0.5 * self.outer_radius * (1.0 + r_nodes)
-        rw = 0.5 * self.outer_radius * r_weights * rr**2
+        # Resolve radial changes of the blending field at approximately
+        # the distances of the packages, independently of angular order.
+        cuts = [0.0, self.outer_radius]
+        for assembly in self.assemblies:
+            distance = float(np.linalg.norm(assembly.pose.center - center))
+            reach = float(np.linalg.norm(assembly.enclosure.half_extents))
+            cuts.extend((
+                max(0.0, distance - shell_width),
+                distance,
+                min(self.outer_radius, distance + reach + shell_width),
+            ))
+        cuts = sorted(set(
+            float(np.clip(v, 0.0, self.outer_radius)) for v in cuts
+        ))
+        intervals = [
+            (a, b) for a, b in zip(cuts[:-1], cuts[1:])
+            if b - a > 1e-12
+        ]
+        rr = np.concatenate([
+            0.5 * (hi - lo) * r_nodes + 0.5 * (hi + lo)
+            for lo, hi in intervals
+        ])
+        rw = np.concatenate([
+            0.5 * (hi - lo) * r_weights
+            * (0.5 * (hi - lo) * r_nodes + 0.5 * (hi + lo))**2
+            for lo, hi in intervals
+        ])
         transverse = np.sqrt(np.maximum(0.0, 1.0 - mu**2))
         directions = np.stack((
             transverse[:, None] * np.cos(angles),
