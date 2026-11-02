@@ -112,6 +112,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             return float(np.linalg.norm(a-b) / max(np.linalg.norm(b), 1e-30))
 
         previous = None
+        fixed_cap006 = None
         for label, use_cuts, width, order in experiments:
             cfg = replace(
                 config, radial_order=order, radial_geometry_cuts=use_cuts,
@@ -154,7 +155,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 flush=True,
             )
             if previous is not None:
-                old_label, old_curl, old_dual = previous
+                # The final Gauss-degree cross-check must compare with
+                # the SAME 0.06 m radial panels, not preceding 0.03 m.
+                reference = (
+                    fixed_cap006 if label == "radial_cap_006_g7"
+                    else previous
+                )
+                old_label, old_curl, old_dual = reference
                 for form, response, old in (
                     ("curl_K", curl, old_curl),
                     ("dual_K", dual, old_dual),
@@ -173,6 +180,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                         f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
                         flush=True,
                     )
+            if label == "radial_cap_006":
+                fixed_cap006 = label, curl, dual
             previous = label, curl, dual
         print(
             "The cap 0.03 vs 0.06 comparison refines physical "
