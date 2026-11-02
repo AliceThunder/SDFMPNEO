@@ -185,6 +185,7 @@ class SeawaterResponse:
 
     def independent_cubature_metrics(
         self, points, weights, port_currents=(1.0, 0.0),
+        *, probes=None,
     ) -> dict[str, float]:
         """Held-out R/K integration with both frozen-current and re-solved error.
 
@@ -206,7 +207,16 @@ class SeawaterResponse:
             @ self.unit_current_modes
             + 1j * self.sources.omega * held.coupling
         )
+        probe_change = None
+        if probes is not None:
+            old_q = np.asarray(self.seawater_loss(probes, currents))
+            new_q = np.asarray(held.seawater_loss(probes, currents))
+            probe_change = float(
+                np.linalg.norm(new_q - old_q)
+                / max(np.linalg.norm(old_q), 1e-30)
+            )
         return {
+            "relative_resolved_probe_change": probe_change,
             "heldout_power": power,
             "on_grid_power": port_power,
             "resolved_power": updated_power,
