@@ -421,6 +421,53 @@ class SeawaterResponse:
             impedance_seawater=impedance,
         )
 
+    def reintegrate_green_matrices(
+        self, points, weights, *, softenings=None,
+        kernel_chunk_size: int = 128,
+    ) -> tuple[tuple[np.ndarray, ...], float]:
+        """Independent L matrices plus point-diagonal numerator.
+
+        L uses the original physical trial modes/whitening but neither
+        primary R/K nor their heat-node cubature. The returned scalar
+        D=mu0/(4*pi)*sum_i(w_i**2*|J_i|_F**2) gives the discrete
+        coincident-node share D/(a*trace(L_a)) for each softening a.
+        This share is a sampling warning, not a continuum self-energy.
+        All requested softenings reuse the same point distances.
+        """
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3 or
+                w.shape != (len(x),) or len(x) == 0 or
+                not np.isfinite(x).all() or not np.isfinite(w).all() or
+                np.any(w <= 0) or
+                not self.sources.scene.in_seawater(x).all()):
+            raise ValueError("Green cubature requires positive seawater nodes")
+        if (not isinstance(kernel_chunk_size, int)
+                or isinstance(kernel_chunk_size, bool)
+                or kernel_chunk_size < 1):
+            raise ValueError("kernel_chunk_size must be a positive integer")
+        if softenings is None:
+            softenings = (self.field_softening,)
+        softenings = tuple(float(a) for a in softenings)
+        if not softenings or any(
+            not math.isfinite(a) or a <= 0 for a in softenings
+        ):
+            raise ValueError("softenings must be positive finite lengths")
+        modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
+            optimize=True,
+        )
+        self_numerator = (
+            MU0 / (4 * math.pi)
+            * float(np.einsum(
+                "n,nmc,nmc->", w**2, modes, modes, optimize=True,
+            ))
+        )
+        matrices = _assemble_green_inductances(
+            x, w, modes, softenings, kernel_chunk_size,
+        )
+        return matrices, self_numerator
+
     def reintegrate_green_responses(
         self, points, weights, *, softenings=None, kernel_chunk_size=128,
     ) -> tuple[SeawaterResponse, ...]:
@@ -453,12 +500,9 @@ class SeawaterResponse:
             not math.isfinite(a) or a <= 0 for a in softenings
         ):
             raise ValueError("softenings must be positive finite lengths")
-        modes = np.einsum(
-            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
-            optimize=True,
-        )
-        inductances = _assemble_green_inductances(
-            x, w, modes, softenings, kernel_chunk_size,
+        inductances, _ = self.reintegrate_green_matrices(
+            x, w, softenings=softenings,
+            kernel_chunk_size=kernel_chunk_size,
         )
         omega = self.sources.omega
         responses = []
