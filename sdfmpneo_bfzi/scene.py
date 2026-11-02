@@ -275,6 +275,7 @@ class BfziScene:
         azimuthal_order: int = 16, *, wall_scale: float | None = None,
         shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
+        outer_taper_width: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
 
@@ -305,6 +306,11 @@ class BfziScene:
         )
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError("wall_scale must be positive and finite")
+        if outer_taper_width is not None and (
+            not math.isfinite(outer_taper_width)
+            or not 0 < outer_taper_width < self.outer_radius
+        ):
+            raise ValueError("outer_taper_width must be within (0, outer_radius)")
 
         shell_width = shell_width_factor * scale
         center = np.asarray(self.outer_center)
@@ -355,6 +361,12 @@ class BfziScene:
         # Resolve radial changes of the blending field at approximately
         # the distances of the packages, independently of angular order.
         cuts = [0.0, self.outer_radius]
+        if outer_taper_width is not None:
+            # Resolve the artificial outer-boundary taper with its own
+            # radial Gauss interval. This is essential when R grows:
+            # otherwise fixed-order far-field integration may miss the
+            # thin transition and falsely look like domain convergence.
+            cuts.append(self.outer_radius - outer_taper_width)
         for assembly in self.assemblies:
             distance = float(np.linalg.norm(assembly.pose.center - center))
             reach = float(np.linalg.norm(assembly.enclosure.half_extents))
