@@ -273,57 +273,62 @@ class BfziScene:
     def box_shell_quadrature(
         self, radial_order: int = 7, polar_order: int = 10,
         azimuthal_order: int = 16, *, wall_scale: float | None = None,
-        shell_width_factor: float = 8.0, shell_normal_order: int = 3,
+        shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Meshless, nonoverlapping near-box shells plus spherical far field.
+        """Positive, meshless partition-of-unity near-box / sphere cubature.
 
-        A rectangular shell around each rotated insulating box is split
-        into six *disjoint* slabs. Positivity-preserving tensor Gauss nodes
-        resolve the sharp normal current profile at every face, including
-        thin horizontal packages missed by coarse spherical angles. The
-        remaining sphere excludes the *expanded* boxes on clipped rays.
-        This is geometric cubature, not an electromagnetic spatial mesh.
+        Six nonoverlapping oriented rectangular slabs cover the neighborhood
+        of each insulating box. The full outer sphere is integrated *without*
+        cutting angular rays at the expanded box boundaries: instead a C2
+        smooth step of the physical distance to each box blends the two
+        integration rules. This removes a discontinuous angular wet-mask
+        at each expanded box, the source of severe coarse-angle aliasing.
 
-        Each shell must lie inside the outer sphere and remain disjoint
-        from the other; the requested thickness is reduced when necessary.
-        The far-field angular integral still requires convergence testing.
+        The shell rule carries 1 - blend and the full-sphere rule carries
+        blend. Their weights add to exactly one at every wet point in the
+        continuous integral. The box interiors get zero spherical weight.
+        Geometry-local slabs are not an electromagnetic volumetric mesh.
         """
+        if min(radial_order, polar_order, azimuthal_order) < 2:
+            raise ValueError("outer sphere Gauss orders must be >= 2")
         if (not isinstance(shell_normal_order, int)
                 or shell_normal_order < 2
                 or not isinstance(shell_tangential_order, int)
                 or shell_tangential_order < 2):
             raise ValueError("shell Gauss orders must be integers >= 2")
         if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
-            raise ValueError("shell_width_factor must be positive and finite")
+            raise ValueError("shell_width_factor must be finite and positive")
         scale = (
             0.075 * min(min(a.enclosure.half_extents) for a in self.assemblies)
             if wall_scale is None else float(wall_scale)
         )
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError("wall_scale must be positive and finite")
+
         shell_width = shell_width_factor * scale
         center = np.asarray(self.outer_center)
-        # An expanded box is checked at all eight corners. This protects
-        # the exact box-shell partition from truncation by the outer sphere.
+        # Expanded shells must stay disjoint and entirely inside the sphere.
+        # Only the shell *width* is reduced when geometric clearance demands it.
         for _ in range(32):
             expanded = [
                 replace(
-                    a, enclosure=InsulatingBox(tuple(
-                        np.asarray(a.enclosure.half_extents) + shell_width
+                    assembly,
+                    enclosure=InsulatingBox(tuple(
+                        np.asarray(assembly.enclosure.half_extents) + shell_width
                     )),
                 )
-                for a in self.assemblies
+                for assembly in self.assemblies
             ]
             valid = _obb_disjoint(*expanded)
             if valid:
-                for a in expanded:
-                    half = np.asarray(a.enclosure.half_extents)
+                for assembly in expanded:
+                    half = np.asarray(assembly.enclosure.half_extents)
                     corners = np.array(np.meshgrid(
                         [-half[0], half[0]], [-half[1], half[1]],
                         [-half[2], half[2]], indexing="ij",
                     )).reshape(3, -1).T
-                    world = a.pose.position(corners)
+                    world = assembly.pose.position(corners)
                     if np.max(np.linalg.norm(world - center, axis=1)) >= self.outer_radius:
                         valid = False
                         break
@@ -331,63 +336,99 @@ class BfziScene:
                 break
             shell_width *= 0.5
         else:
-            raise ValueError("cannot place disjoint box shells within outer sphere")
+            raise ValueError("cannot place disjoint box shells inside outer sphere")
 
-        outer_points, outer_weights = self.quadrature(
-            radial_order, polar_order, azimuthal_order,
-            wall_layers=0, wall_scale=scale, exclusion_padding=shell_width,
-        )
+        def smooth_far_weight(x: np.ndarray, assembly: BFZIAssembly):
+            distance2, _ = assembly.enclosure.squared_exterior_distance(
+                x, assembly.pose,
+            )
+            t = np.clip(np.sqrt(distance2) / shell_width, 0.0, 1.0)
+            return t**3 * (10.0 + t * (-15.0 + 6.0 * t))
+
+        # Full sphere without a hard box mask. An interior-box quadrature
+        # node has exactly zero weight; skip it before basis evaluation.
+        r_nodes, r_weights = np.polynomial.legendre.leggauss(radial_order)
+        mu, mu_weights = np.polynomial.legendre.leggauss(polar_order)
+        angles = 2.0 * math.pi * (
+            np.arange(azimuthal_order) + 0.5
+        ) / azimuthal_order
+        rr = 0.5 * self.outer_radius * (1.0 + r_nodes)
+        rw = 0.5 * self.outer_radius * r_weights * rr**2
+        transverse = np.sqrt(np.maximum(0.0, 1.0 - mu**2))
+        directions = np.stack((
+            transverse[:, None] * np.cos(angles),
+            transverse[:, None] * np.sin(angles),
+            np.broadcast_to(mu[:, None], (polar_order, azimuthal_order)),
+        ), axis=-1).reshape(-1, 3)
+        angular_weights = np.broadcast_to(
+            mu_weights[:, None] * (2.0 * math.pi / azimuthal_order),
+            (polar_order, azimuthal_order),
+        ).reshape(-1)
+        sphere_points = (
+            center + rr[:, None, None] * directions[None, :, :]
+        ).reshape(-1, 3)
+        sphere_weights = (rw[:, None] * angular_weights[None, :]).reshape(-1)
+        for assembly in self.assemblies:
+            sphere_weights *= smooth_far_weight(sphere_points, assembly)
+        # Strict >0 also removes the non-conductive box interiors.
+        wet = sphere_weights > 0
+        point_sets = [sphere_points[wet]]
+        weight_sets = [sphere_weights[wet]]
+
         normal_nodes, normal_weights = np.polynomial.legendre.leggauss(
             shell_normal_order
         )
         tangent_nodes, tangent_weights = np.polynomial.legendre.leggauss(
             shell_tangential_order
         )
-        point_sets = [outer_points]
-        weight_sets = [outer_weights]
         for assembly in self.assemblies:
             half = np.asarray(assembly.enclosure.half_extents)
-            # All shell slabs are mutually disjoint: for the current
-            # exterior axis the earlier axes stay inside the *inner*
-            # extent and the later axes cover the expanded extent.
+            # In lexicographic order, earlier axes have the original box
+            # extent; later axes have the full expanded extent. Consequently
+            # these six sign/axis slabs are pairwise disjoint, including
+            # their edge and corner regions.
             for axis in range(3):
                 for sign in (-1.0, 1.0):
-                    bounds = [
+                    intervals = [
                         (-half[j], half[j]) if j < axis else
                         (-half[j] - shell_width, half[j] + shell_width)
                         for j in range(3)
                     ]
-                    # Separate the steepest wall scale from the outer part
-                    # without creating a mesh or integrating the solid.
-                    split = min(1.5 * scale, shell_width)
-                    for lower, upper in ((0.0, split), (split, shell_width)):
-                        if upper <= lower:
-                            continue
-                        normal_range = (
+                    # Geometric normal splitting resolves both the sharp
+                    # physical box-wall current trace and the blend shoulder.
+                    boundaries = [0.0]
+                    distance = 1.5 * scale
+                    while distance < shell_width:
+                        boundaries.append(distance)
+                        distance *= 3.0
+                    boundaries.append(shell_width)
+                    for lower, upper in zip(boundaries[:-1], boundaries[1:]):
+                        local_intervals = list(intervals)
+                        local_intervals[axis] = (
                             (half[axis] + lower, half[axis] + upper)
-                            if sign > 0 else
+                            if sign > 0.0 else
                             (-half[axis] - upper, -half[axis] - lower)
                         )
-                        intervals = list(bounds)
-                        intervals[axis] = normal_range
                         axes = []
                         weights = []
-                        for j, (lo, hi) in enumerate(intervals):
+                        for j, (lo, hi) in enumerate(local_intervals):
                             nodes, w = (
                                 (normal_nodes, normal_weights) if j == axis
                                 else (tangent_nodes, tangent_weights)
                             )
                             axes.append(0.5 * (hi - lo) * nodes + 0.5 * (hi + lo))
                             weights.append(0.5 * (hi - lo) * w)
-                        coordinates = np.meshgrid(*axes, indexing="ij")
+                        grid = np.meshgrid(*axes, indexing="ij")
                         weight_grid = np.meshgrid(*weights, indexing="ij")
-                        local = np.stack(
-                            [c.ravel() for c in coordinates], axis=-1
+                        points = assembly.pose.position(
+                            np.stack([c.ravel() for c in grid], axis=-1)
                         )
-                        point_sets.append(assembly.pose.position(local))
-                        weight_sets.append(
-                            np.prod(np.stack(weight_grid, axis=0), axis=0).ravel()
-                        )
-        points = np.concatenate(point_sets)
-        weights = np.concatenate(weight_sets)
-        return points, weights
+                        w = np.prod(
+                            np.stack(weight_grid, axis=0), axis=0
+                        ).ravel()
+                        w *= 1.0 - smooth_far_weight(points, assembly)
+                        active = w > 0
+                        if np.any(active):
+                            point_sets.append(points[active])
+                            weight_sets.append(w[active])
+        return np.concatenate(point_sets), np.concatenate(weight_sets)
