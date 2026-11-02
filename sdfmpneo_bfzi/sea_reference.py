@@ -34,6 +34,9 @@ class SeaMQSConfig:
     # Defaults reproduce the historical global-mu/midpoint-phi rule.
     polar_panel_count: int = 1
     azimuthal_panel_order: int = 1
+    # Optional Gauss degree on each geometry-projected polar panel.
+    # Panel edges follow actual enclosures and blending-shell silhouettes.
+    polar_geometry_order: int | None = None
     # Optional physical-length cap for spherical radial Gauss intervals.
     # Especially useful when increasing the finite outer domain.
     max_radial_panel_width: float | None = None
@@ -68,6 +71,16 @@ class SeaMQSConfig:
                 or isinstance(self.azimuthal_panel_order, bool)
                 or self.azimuthal_panel_order < 1):
             raise ValueError("azimuthal_panel_order must be a positive integer")
+        if self.polar_geometry_order is not None and (
+            not isinstance(self.polar_geometry_order, int)
+            or isinstance(self.polar_geometry_order, bool)
+            or self.polar_geometry_order < 2
+            or self.polar_panel_count != 1
+        ):
+            raise ValueError(
+                "polar_geometry_order must be >= 2 and "
+                "requires polar_panel_count=1"
+            )
         if self.max_radial_panel_width is not None and (
             not math.isfinite(self.max_radial_panel_width)
             or self.max_radial_panel_width <= 0
@@ -580,6 +593,7 @@ def solve_seawater_reference(
             max_radial_panel_width=cfg.max_radial_panel_width,
             polar_panel_count=cfg.polar_panel_count,
             azimuthal_panel_order=cfg.azimuthal_panel_order,
+            polar_geometry_order=cfg.polar_geometry_order,
         )
     else:
         points, weights = scene.quadrature(
@@ -627,6 +641,7 @@ def solve_seawater_reference(
             max_radial_panel_width=cfg.max_radial_panel_width,
             polar_panel_count=cfg.polar_panel_count,
             azimuthal_panel_order=cfg.azimuthal_panel_order,
+            polar_geometry_order=cfg.polar_geometry_order,
         )
         magnetic_modes = np.einsum(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
