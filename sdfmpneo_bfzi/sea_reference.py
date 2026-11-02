@@ -44,6 +44,10 @@ class SeaMQSConfig:
     # Optional physical-length cap for spherical radial Gauss intervals.
     # Especially useful when increasing the finite outer domain.
     max_radial_panel_width: float | None = None
+    # Extra spherical radial panels at exact oriented enclosure and
+    # blending-shell min/max radii. In independent-L configurations
+    # only primary R/K inherits these geometry-local radial cuts.
+    radial_geometry_cuts: bool = False
     # Optional five orders for the Green double integral only:
     # (radial, polar, azimuthal, shell_normal, shell_tangential).
     # R/K/Joule remain on the primary, potentially finer cubature.
@@ -92,6 +96,8 @@ class SeaMQSConfig:
                 "polar_geometry_order must be >= 2 and "
                 "requires polar_panel_count=1"
             )
+        if not isinstance(self.radial_geometry_cuts, bool):
+            raise ValueError("radial_geometry_cuts must be a boolean")
         if self.max_radial_panel_width is not None and (
             not math.isfinite(self.max_radial_panel_width)
             or self.max_radial_panel_width <= 0
@@ -660,6 +666,7 @@ def solve_seawater_reference(
             shell_tangential_order=cfg.shell_tangential_order,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
+            radial_geometry_cuts=cfg.radial_geometry_cuts,
             polar_panel_count=cfg.polar_panel_count,
             azimuthal_panel_order=cfg.azimuthal_panel_order,
             polar_geometry_order=cfg.polar_geometry_order,
