@@ -151,7 +151,7 @@ def basis_convergence(*, verify: bool = False):
     # reintegrate that *same solution* using independent near-wall and
     # far-field rules. This is much cheaper than a second O(Q^2) Green
     # assembly and catches deceptively well-closing aliased R/K matrices.
-    print("\nIndependent cubature of the 63-mode solution (no new Green solve):")
+    print("\nHeld-out R/K integration and re-solved response (same Green L):")
     holdout_configs = (
         ("wall_heldout", replace(
             config, shell_normal_order=5, shell_tangential_order=6,
@@ -169,14 +169,22 @@ def basis_convergence(*, verify: bool = False):
             shell_tangential_order=cfg.shell_tangential_order,
         )
         check = teacher.independent_cubature_metrics(
-            points, weights, currents,
+            points, weights, currents, probes=probes,
         )
         print(
             f"{name:>20}: nodes={len(points):6d}, "
             f"dR={check['relative_resistance_difference']:.6g}, "
             f"dK={check['relative_coupling_difference']:.6g}, "
-            f"dP={check['relative_power_difference']:.6g}, "
-            f"heldout_P={check['heldout_power']:.8g} W",
+            f"frozen_dP={check['relative_power_difference']:.6g}, "
+            f"residual={check['relative_heldout_residual']:.6g}",
+            flush=True,
+        )
+        print(
+            f"{'re_solved':>20}: "
+            f"dZ={check['relative_resolved_impedance_change']:.6g}, "
+            f"dq={check['relative_resolved_probe_change']:.6g}, "
+            f"dP={check['relative_resolved_power_change']:.6g}, "
+            f"sea_power={check['resolved_power']:.8g} W",
             flush=True,
         )
     if verify:
