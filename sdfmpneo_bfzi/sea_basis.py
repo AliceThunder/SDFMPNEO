@@ -205,8 +205,9 @@ def build_sea_basis(
 
     The face-localized modes are tangential and update with 6-DOF box
     pose. Face refinement adds four nested smaller Gaussian patches per
-    selected face. Level 3 nests four narrower edge-centered patches
-    to test spatial accuracy without replacing earlier modes.
+    selected face. Level 3 nests four narrower edge-centered patches.
+    Level 4 adds eight compact patches per selected face, including four
+    corner locations, without replacing any previous physical modes.
     refine_thin_faces_only=True restricts these *extra*
     patches to the two faces normal to the box's shortest dimension
     (typically the broad top/bottom charging-pad surfaces), keeping the
@@ -216,8 +217,8 @@ def build_sea_basis(
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
-    if face_refinement not in (1, 2, 3):
-        raise ValueError("face_refinement must be 1, 2 or 3")
+    if face_refinement not in (1, 2, 3, 4):
+        raise ValueError("face_refinement must be 1, 2, 3 or 4")
     if not isinstance(refine_thin_faces_only, bool):
         raise ValueError("refine_thin_faces_only must be a boolean")
     if outer_envelope not in ("boundary_layer", "quadratic"):
@@ -275,10 +276,20 @@ def build_sea_basis(
                         for u in (-0.45, 0.45)
                         for v in (-0.45, 0.45)
                     )
-                    if face_refinement == 3:
+                    if face_refinement >= 3:
                         patches.extend((u, v, 0.50) for u, v in (
                             (-0.70, 0.0), (0.70, 0.0),
                             (0.0, -0.70), (0.0, 0.70),
+                        ))
+                    if face_refinement >= 4:
+                        patches.extend(
+                            (u, v, 0.34)
+                            for u in (-0.72, 0.72)
+                            for v in (-0.72, 0.72)
+                        )
+                        patches.extend((u, v, 0.34) for u, v in (
+                            (-0.25, 0.0), (0.25, 0.0),
+                            (0.0, -0.25), (0.0, 0.25),
                         ))
                 for u, v, width_factor in patches:
                     local = np.zeros(3)
