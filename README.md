@@ -38,6 +38,7 @@ python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_pr
 python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # many provisional geometry labels
 python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400 # torch optional
 python run.py --mode bfzi-infer --model bfzi_neural.pt # no electromagnetic reference solve
+python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # original held-out geometries
 python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
@@ -1295,6 +1296,68 @@ geometry holdouts. The essential independent
 159-mode magnetic A/B check remains
 `python run.py --mode bfzi-convergence --basis-ball-check-l`.
 No GitHub Actions are used.
+
+**Geometry-held-out neural spatial accuracy evaluator (2026-11-02).**
+The user's `0423006` run passed **53 tests in 40.39 s**.
+The local-R closure predicted spatial heat power
+`0.00010943817170283617 W` versus port sea power
+`0.00010943817153353738 W`: relative closure
+`1.5469812e-9`, with a **0.1202%** relative
+correction to the raw two-port current response.
+The reciprocal Gram imaginary defect was
+`1.02357e-9`, and `outside_training_range=True`.
+The uncorrected MLP instead predicted seawater port
+power `0.00011542299 W`, about **5.2% higher**.
+This shows successful *discrete consistency*, NOT
+an improvement in physical predictive accuracy.
+
+A new `scene_from_geometry_features` reconstructs
+the full two-coil scene (including both rigid poses,
+enclosures, conductor material parameters, and
+explicit return routes) and frequency from the
+saved label vector. This permits independent
+**geometry-held-out error assessment** without
+rebuilding the expensive sea Galerkin R/L/K.
+`--mode bfzi-eval` uses the checkpoint's recorded
+`validation_signatures` and **only those actual
+unseen sample geometries**. For each sample it
+compares the saved provisional physical
+27-mode current and port Z against both the
+uncorrected model and the local-R-power-closed model.
+Reported quantities include complex port Z error,
+spatial complex J error, near-wall Joule q error,
+port sea-power error, extrapolation warnings,
+current correction, and achieved discrete closure.
+Both per-geometry values and mean/max results
+are emitted. Crucially, the script **does not
+replace held-out geometric samples with the
+fixed demonstration scene**, and it never declares
+a lower closure error a lower physical-model error.
+
+Use existing `bfzi_neural.pt` and
+`bfzi_geometry_labels.npz`; neither retraining
+nor additional reference solves are necessary:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py tests/test_bfzi_neural_v1.py -q
+python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt
+```
+
+The current feature-label v1 format does **not**
+persist source line integration order or the
+general physical modal topology. Evaluation
+currently reconstructs the original **27-mode**
+training basis with default `--source-order 4`
+(the eight-sample dataset used order 4).
+If data were generated using
+`bfzi-generate --source-order N`, supply
+`bfzi-eval --source-order N` to match the
+physical source signature. Higher modal
+topologies require a future explicit basis
+descriptor. All reported errors remain relative
+to the explicitly **provisional** labels, not a
+certified ocean-continuum solution.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
