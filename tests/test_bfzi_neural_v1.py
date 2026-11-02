@@ -13,12 +13,12 @@ from sdfmpneo_bfzi import (
 from sdfmpneo_bfzi.sea_neural import (
     BFZINeuralSurrogate, train_response_surrogate,
 )
-from tests.test_bfzi_mqs_v1 import scene_pair
+from examples.bfzi_mqs_demo import build_demo_scene
 
 
 def test_provisional_neural_holdout_and_passive_inference(tmp_path):
     pytest.importorskip("torch")
-    scene=scene_pair()
+    scene=build_demo_scene()
     source=build_bfzi_source(scene,200_000.0,order=3)
     basis=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
     features=geometry_features(source)
