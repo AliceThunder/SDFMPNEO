@@ -269,6 +269,83 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             f"P_dual={original_base[1][2]:.8g} W",
             flush=True,
         )
+        if green_cross:
+            # A and B cover the same box-shell partition of unity, using
+            # independently shifted Gauss-degree/sector nodes. Off-diagonal
+            # cross-pairs no longer contain artificial i=j self terms.
+            # This is an error-diagnostic estimator, NOT a PSD teacher.
+            print("\nCross versus same-rule Green cubature "
+                  "(identical refined R/K):", flush=True)
+            softenings = (0.025, 0.018, 0.012)
+            magnetic_rules = (
+                ("A", (5, 8, 12, 3, 4)),
+                ("B", (5, 9, 14, 4, 5)),
+            )
+            (ra, pa, aa, na, ta) = magnetic_rules[0][1]
+            (rb, pb, ab, nb, tb) = magnetic_rules[1][1]
+            ax, aw = scene.box_shell_quadrature(
+                ra, pa, aa, wall_scale=enriched.wall_scale,
+                shell_width_factor=config.shell_width_factor,
+                shell_normal_order=na, shell_tangential_order=ta,
+                outer_taper_width=enriched.outer_taper_width,
+            )
+            bx, bw = scene.box_shell_quadrature(
+                rb, pb, ab, wall_scale=enriched.wall_scale,
+                shell_width_factor=config.shell_width_factor,
+                shell_normal_order=nb, shell_tangential_order=tb,
+                outer_taper_width=enriched.outer_taper_width,
+            )
+            print(
+                f"  rule A: {len(ax)} nodes; rule B: {len(bx)} nodes; "
+                f"softenings={softenings}; same physical seawater domain",
+                flush=True,
+            )
+            self_matrices, diagonal_numerator = (
+                teacher.reintegrate_green_matrices(
+                    ax, aw, softenings=softenings,
+                    kernel_chunk_size=config.kernel_chunk_size,
+                )
+            )
+            print("  self-rule Green L assembled; now cross-rule pairs",
+                  flush=True)
+            cross_matrices, overlap = (
+                teacher.reintegrate_cross_green_matrices(
+                    ax, aw, bx, bw, softenings=softenings,
+                    kernel_chunk_size=config.kernel_chunk_size,
+                )
+            )
+            print(f"  exactly coincident cross-pairs={overlap}",
+                  flush=True)
+            for a, ls, lc in zip(
+                softenings, self_matrices, cross_matrices,
+            ):
+                old = metrics(ls, k_current)
+                cross = metrics(lc, k_current)
+                old_dual = metrics(ls, k_dual)
+                cross_dual = metrics(lc, k_dual)
+                eigen = np.linalg.eigvalsh(lc)
+                print(
+                    f"{'cross_vs_self':>20}: a={a:.4g} m, "
+                    f"dL={relative(lc,ls):.6g}, "
+                    f"self_diag_trace={diagonal_numerator/(a*max(np.trace(ls),1e-30)):.6g}, "
+                    f"min_L_cross_eig={eigen[0]:.7g} H, "
+                    f"dZ={relative(cross[0],old[0]):.6g}, "
+                    f"dq={relative(cross[1],old[1]):.6g}, "
+                    f"dP={abs(cross[2]-old[2])/max(abs(old[2]),1e-30):.6g}, "
+                    f"dual_dZ={relative(cross_dual[0],old_dual[0]):.6g}, "
+                    f"dual_dq={relative(cross_dual[1],old_dual[1]):.6g}, "
+                    f"dual_dP={abs(cross_dual[2]-old_dual[2])/max(abs(old_dual[2]),1e-30):.6g}",
+                    flush=True,
+                )
+            print(
+                "Cross rule is symmetric but not guaranteed PSD; its "
+                "lack of diagonal does not prove accuracy. Compare "
+                "both quadrature rules jointly before changing the "
+                "production Green operator.",
+                flush=True,
+            )
+            return
+
         # At fixed Green nodes, a=25/18/12 mm isolates regularization.
         # Other rows hold a=25 mm and isolate independently wall/outer
         # magnetic cubature. Never compare different axes as a sequence.
