@@ -431,7 +431,22 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             sparse = np.zeros_like(raw_f)
             sparse[selected] = coeff
             residual = raw_a @ sparse + raw_f
-            score = np.sqrt(np.sum(np.abs(residual)**2, axis=1) / diag_r)
+            # Each missing direction is R-orthogonalized against the
+            # already selected space via a diagonal Schur complement.
+            # This rejects near-duplicate Gaussian patches instead of
+            # letting tiny residual differences dominate their ranking.
+            cross = raw_r[:, selected]
+            schur = np.diag(raw_r) - np.einsum(
+                "ij,ji->i", cross,
+                np.linalg.solve(raw_r[np.ix_(selected,selected)], cross.T),
+                optimize=True,
+            )
+            independent = schur > 1e-10*diag_r
+            score = np.full(enriched.size, -np.inf)
+            score[independent] = (
+                np.linalg.norm(residual[independent], axis=1) /
+                np.sqrt(schur[independent])
+            )
             score[selected] = -np.inf
             dz = relative(z, full_z)
             dq = relative(q, full_q)
@@ -458,13 +473,16 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     flush=True,
                 )
                 break
-            if len(selected) == enriched.size:
-                print("  adaptive_screen: full candidate space reached "
-                      "without independent higher-order holdout", flush=True)
+            if len(selected) == enriched.size or not np.any(
+                np.isfinite(score)
+            ):
+                print("  adaptive_screen: no independent candidate "
+                      "direction remains; NOT continuum-certified",
+                      flush=True)
                 break
-            # Select the most violated missing *Galerkin equations*.
-            # The resistance diagonal removes arbitrary basis amplitude
-            # scaling from the ranking. Eight-at-a-time limits re-solves.
+            # Select the most violated missing *Galerkin equations*
+            # after projecting away selected-current correlations.
+            # Eight-at-a-time limits expensive modal re-solves.
             available = np.flatnonzero(np.isfinite(score))
             ranked = available[np.argsort(-score[available],kind="stable")]
             selected.extend(int(i) for i in ranked[:8])
