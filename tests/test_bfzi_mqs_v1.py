@@ -1136,3 +1136,29 @@ def test_curl_dual_source_coupling_is_passive_and_uses_same_r_l():
     )
     with pytest.raises(ValueError, match="coupling_form"):
         SeaMQSConfig(coupling_form="invalid")
+
+
+def test_source_coupling_primitives_curl_to_original_current_modes():
+    """Verify the new weak-form F is exactly the curl primitive of J."""
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    basis = build_sea_basis(
+        scene, sources=source, include_source_guided=True,
+    )
+    x = np.array([[0.0, 0.0, 0.0], [0.14, 0.0, 0.0]])
+    eps = 2e-6
+    derivatives = []
+    for direction in np.eye(3):
+        plus = basis.potential_primitive(x + eps * direction)
+        minus = basis.potential_primitive(x - eps * direction)
+        derivatives.append((plus - minus) / (2 * eps))
+    approx_curl = np.stack((
+        derivatives[1][:, :, 2] - derivatives[2][:, :, 1],
+        derivatives[2][:, :, 0] - derivatives[0][:, :, 2],
+        derivatives[0][:, :, 1] - derivatives[1][:, :, 0],
+    ), axis=-1)
+    np.testing.assert_allclose(
+        approx_curl, basis.evaluate(x), rtol=4e-3, atol=2e-5,
+    )
