@@ -31,6 +31,7 @@ python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combin
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
 python run.py --mode bfzi-convergence --basis-geometry # enclosure-projected polar Gauss refinement
 python run.py --mode bfzi-convergence --basis-radial   # physical radial panels, both K weak forms
+python run.py --mode bfzi-convergence --basis-kparts   # sphere vs box-wall partition of K weak-form error
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -394,6 +395,48 @@ A small form gap and small same-family successive changes
 are both necessary practical indicators, but do not prove
 whole-model convergence. This branch has not yet had the
 new radial command validated by the user's local pytest.
+
+**After 42 passing tests: localized K integration error (2026-11-02).**
+The user-run `307b86e` experiment confirmed physical radial
+panel convergence. With exact geometry cuts and geometry mu8 Gauss
+panels, shrinking radial panels from 0.06 m to 0.03 m changed
+the curl-current K solution by `dZ=0.0000659457`,
+`dq=0.0000627926`, `dP=0.0000764537`,
+and the dual K solution by `dZ=0.0000391847`,
+`dq=0.00003342`, `dP=0.0000440785`.
+But the two mathematically equivalent K forms did **not** approach
+each other: their discrepancy stabilized at
+`dK≈0.04567`, `dZ≈0.03771`, `dP≈0.03020`.
+This rules out simply increasing radial integration orders as
+a productive next step. The source Biot-Savart field and vector
+potential use the same point-line discretization; their analytic
+curl relationship is implemented by cross products consistently,
+but their **integrated** weak-form equality still depends on
+sufficiently accurate near-box and full-sphere integrations.
+
+`BfziScene.box_shell_quadrature(...,return_sphere_count=True)`
+now optionally includes a third result with the number of
+spherical nodes at the beginning of its output. The remaining
+nodes are the disjoint six-face box slabs. This is an optional
+diagnostic output; ordinary callers still receive only
+`(points,weights)` and their integration results are unchanged.
+
+The new dedicated `--basis-kparts` command holds the same
+63-mode physical basis, independently coarse Green L, geometry
+radial cuts with a 0.06 m cap, polar geometry mu8 and
+2-point azimuth-sector Gauss fixed. It increases **only** the
+near-wall Gauss normal/tangential orders through 4/5, 5/6,
+6/7 and 8/9, then changes only the geometry polar order
+8→10 as a separate angular heldout. Each row reports
+`K_gap_by_region`: the normalized contributions to the
+curl/dual K difference from spherical and near-wall slab
+integrations, their signed alignment/cancellation, the
+full weak-form impedance/heat/power discrepancy and each
+weak form's successive response change. This identifies the
+**numerical location** of the persistent weak-form mismatch;
+it does not prejudge which method is correct. It is much more
+targeted than broad brute-force refinement, though the
+seawater point evaluations are still substantial.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
