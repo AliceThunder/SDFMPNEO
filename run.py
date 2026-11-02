@@ -12,6 +12,7 @@
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
     python run.py --mode bfzi-convergence --basis-green-cross   # 双套独立磁节点交叉Green对照
+    python run.py --mode bfzi-convergence --basis-green-gaussian # 高斯Green A/B和宽度敏感性诊断
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
