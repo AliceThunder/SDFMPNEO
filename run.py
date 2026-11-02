@@ -8,7 +8,9 @@
 
     python run.py --mode train     # 无界面训练（历史 vNext）
     python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
-    python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断\n    python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断\n    python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
+    python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
+    python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
+    python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --fresh          # 忽略模型 checkpoint，但继续复用 teacher 缓存
 
 所有面向用户的训练、缓存、采样、teacher、CUDA/CPU、GUI、checkpoint
@@ -328,7 +330,9 @@ def main(argv=None):
                 bfzi_main(
                     full="--full" in args,
                     basis_only="--basis" in args,
-                    basis_verify="--basis-verify" in args,\n                    basis_green="--basis-green" in args,\n                    basis_domain="--basis-domain" in args,
+                    basis_verify="--basis-verify" in args,
+                    basis_green="--basis-green" in args,
+                    basis_domain="--basis-domain" in args,
                 )
                 return 0
 
