@@ -35,6 +35,9 @@ python run.py --mode bfzi-convergence --basis-domain-ball # independent outer ra
 python run.py --mode bfzi --green-ball # experimental full MQS port/Joule and coil/sea thermal
 python run.py --mode bfzi-snapshot --out bfzi_response.npz # save/load/query four-real-snapshot ROM
 python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_provisional_labels.npz # two distinct poses
+python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # many provisional geometry labels
+python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400 # torch optional
+python run.py --mode bfzi-infer --model bfzi_neural.pt # no electromagnetic reference solve
 python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
@@ -1145,6 +1148,79 @@ python run.py --mode bfzi-convergence --basis-ball-check-l
 
 No GitHub Actions are used; there is no BFZI neural
 FAST model in this branch yet.
+
+**First experimental BFZI neural training/inference shell (2026-11-02).**
+The user successfully ran the prior multi-geometry data smoke on
+`9e29ca9`: **51/51 tests in 35.96 s** and two independently
+solved `provisional` geometry records were saved. The rank-4
+snapshot still reproduces only its 27-mode parent
+(`dZ=1.2573013e-16`, probe `dq=1.4191841e-15`,
+zero numerical port/modal power mismatch).
+
+The new explicit-opt-in `bfzi-generate` samples multiple
+independent BFZI configurations (receiver 6-DOF pose,
+both coil shape parameters, seawater conductivity) with
+an unchanged deterministic **27-mode** physical curl
+topology and the uniform-ball reference. It saves each
+sample as a separately solved provisional response with
+raw physical mode coefficients and port Z. The default
+`--samples 12` is a small functional dataset, **not**
+coverage for arbitrary pose, size, material or marine
+conditions. Each sample still requires an offline MQS
+solve, and can be slow.
+
+The new `bfzi-train` PyTorch MLP predicts the complex
+physical raw-mode unit-port response and the passive
+reciprocal 2×2 seawater reaction impedance from the
+geometry feature vector. Training/held-out validation are
+split at the **whole geometry level**, with feature and
+target normalization fit ONLY on training geometries.
+The model learns the *real Cholesky factor* of the
+nonnegative port-loss matrix and the three independent
+imaginary entries, making predicted Z reciprocal and
+its real part PSD by construction. The checkpoint records
+reference status, training/validation counts, normalization
+and held-out signatures; loading uses numeric tensors
+and `torch.load(..., weights_only=True)`.
+
+`bfzi-infer` loads this model and queries the
+deterministic scene's geometry-dependent analytic curl
+basis and port source; **no sea R/L/K Green assembly**
+is performed online. It produces seawater impedance,
+arbitrary-location complex J and positive Joule heat,
+plus an extrapolation diagnostic based on observed
+training-feature ranges. However, `J` and `Z`
+are currently **distinct supervised outputs**:
+integrated spatial Joule power is NOT guaranteed equal
+to port dissipation, unlike the exact Galerkin ROM.
+Do not call this experimental model a fully
+structure-preserving electrothermal surrogate.
+Its tiny provisional data are inadequate for physical
+accuracy or out-of-distribution generalization.
+
+To use the neural option, install optional Torch
+(`pip install -e ".[neural]"`) and run:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py tests/test_bfzi_neural_v1.py -q
+python run.py --mode bfzi-generate --samples 12 --seed 23 --out bfzi_geometry_labels.npz
+python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400
+python run.py --mode bfzi-infer --model bfzi_neural.pt
+```
+
+If Torch is not installed, the optional neural test will
+skip and the existing physics tests still work; training
+requires installing that optional dependency. A 12-sample
+experiment can demonstrate plumbing and geometry-held-out
+provisional agreement, but its errors do **not** measure
+real-world electromagnetic accuracy. **Do not publish or
+deploy** these results as reliable thermal/safety
+predictions. Next: independent 159-mode magnetic A/B
+screen, non-Gaussian spatial reference basis, more
+geometries/physics, and a response/port-loss consistency
+constraint. None of these are solved by the present MLP.
+No GitHub Actions are used.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
