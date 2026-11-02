@@ -385,6 +385,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         # The same source, raw basis, R-whitening and Green L are retained.
         print("\nGeometry-aligned polar R/K ladder (fixed Green L):")
         previous = None
+        stable_geometry = None
         for label, mu_order, phi_order in (
             ("geometry_mu3", 3, 2),
             ("geometry_mu4", 4, 2),
@@ -453,7 +454,69 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}",
                     flush=True,
                 )
+            if label == "geometry_mu8":
+                stable_geometry = full
             previous = label, full
+
+        # With the converged-in-angle geometry_mu8 rule as the *new*
+        # comparator, independently perturb radial and wall cubature.
+        # These are not successive refinements of the same axis.
+        if stable_geometry is None:
+            raise RuntimeError("missing geometry_mu8 comparator")
+        print("\nHeld-out radial / near-wall R/K at geometry_mu8 (same L):")
+        geometry_q = stable_geometry.seawater_loss(probes, currents)
+        geometry_p = stable_geometry.port_seawater_power(currents)
+        geometry_z = stable_geometry.impedance_seawater
+        for label, changes in (
+            ("radial7", {"radial_order": 7}),
+            ("wall5_6", {"shell_normal_order": 5, "shell_tangential_order": 6}),
+            ("radial7_wall5_6", {
+                "radial_order": 7, "shell_normal_order": 5,
+                "shell_tangential_order": 6,
+            }),
+        ):
+            cfg = replace(
+                config, polar_geometry_order=8,
+                azimuthal_panel_order=2, **changes,
+            )
+            points, weights = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+                polar_geometry_order=cfg.polar_geometry_order,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
+            )
+            modified = teacher.reintegrate_local_response(points, weights)
+            now_q = modified.seawater_loss(probes, currents)
+            now_p = modified.port_seawater_power(currents)
+            dz = np.linalg.norm(
+                modified.impedance_seawater - geometry_z,
+            ) / max(np.linalg.norm(geometry_z), 1e-30)
+            dq = np.linalg.norm(
+                now_q - geometry_q,
+            ) / max(np.linalg.norm(geometry_q), 1e-30)
+            dr = np.linalg.norm(
+                modified.resistance - stable_geometry.resistance,
+            ) / max(np.linalg.norm(stable_geometry.resistance), 1e-30)
+            dk = np.linalg.norm(
+                modified.coupling - stable_geometry.coupling,
+            ) / max(np.linalg.norm(stable_geometry.coupling), 1e-30)
+            max_dq = np.max(np.abs(
+                now_q - geometry_q,
+            ) / np.maximum(np.abs(geometry_q), 1e-30))
+            print(
+                f"{label:>20}: nodes={len(points):6d}, "
+                f"vs_geom8_dR={dr:.6g}, vs_geom8_dK={dk:.6g}, "
+                f"vs_geom8_dZ={dz:.6g}, vs_geom8_dq={dq:.6g}, "
+                f"max_probe_dq={max_dq:.6g}, "
+                f"vs_geom8_dP={abs(now_p - geometry_p) / max(abs(geometry_p), 1e-30):.6g}, "
+                f"P={now_p:.8g} W",
+                flush=True,
+            )
 
     if green:
         # Keep the original 63-mode R/K, basis, whitening, power cubature,
