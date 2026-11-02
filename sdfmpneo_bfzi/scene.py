@@ -5,7 +5,7 @@ reinterprets the historical superellipse as a BFZI spiral.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import numpy as np
 
@@ -156,6 +156,7 @@ class BfziScene:
         self, radial_order: int = 7, polar_order: int = 10,
         azimuthal_order: int = 16, *, wall_layers: int = 2,
         wall_scale: float | None = None,
+        exclusion_padding: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive meshless cubature with exact box cuts and graded wall layers.
 
@@ -176,6 +177,8 @@ class BfziScene:
         )
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError("wall_scale must be positive and finite")
+        if not math.isfinite(exclusion_padding) or exclusion_padding < 0:
+            raise ValueError("exclusion_padding must be finite and nonnegative")
         rr, rw = np.polynomial.legendre.leggauss(radial_order)
         mu, mw = np.polynomial.legendre.leggauss(polar_order)
         theta = (np.arange(azimuthal_order) + 0.5) * (
@@ -199,7 +202,7 @@ class BfziScene:
         for assembly in self.assemblies:
             origin = (outer_center - assembly.pose.center) @ assembly.pose.rotation
             rays = directions @ assembly.pose.rotation
-            half = np.asarray(assembly.enclosure.half_extents)
+            half = np.asarray(assembly.enclosure.half_extents) + exclusion_padding
             entering = np.full(n_rays, -np.inf)
             exiting = np.full(n_rays, np.inf)
             intersects = np.ones(n_rays, dtype=bool)
@@ -232,7 +235,11 @@ class BfziScene:
         mid = outer_center + (
             (left + right)[:, :, None] * 0.5 * directions[:, None, :]
         )
-        wet = (right > left) & self.in_seawater(mid)
+        wet = right > left
+        for assembly in self.assemblies:
+            local = (mid - assembly.pose.center) @ assembly.pose.rotation
+            half = np.asarray(assembly.enclosure.half_extents) + exclusion_padding
+            wet &= ~np.all(np.abs(local) <= half, axis=-1)
         if not np.any(wet):
             return np.empty((0, 3)), np.empty(0)
 
@@ -262,3 +269,125 @@ class BfziScene:
         )
         points = outer_center + r[..., None] * directions[:, None, None, None, :]
         return points[valid].reshape(-1, 3), weights[valid].reshape(-1)
+
+    def box_shell_quadrature(
+        self, radial_order: int = 7, polar_order: int = 10,
+        azimuthal_order: int = 16, *, wall_scale: float | None = None,
+        shell_width_factor: float = 8.0, shell_normal_order: int = 3,
+        shell_tangential_order: int = 4,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Meshless, nonoverlapping near-box shells plus spherical far field.
+
+        A rectangular shell around each rotated insulating box is split
+        into six *disjoint* slabs. Positivity-preserving tensor Gauss nodes
+        resolve the sharp normal current profile at every face, including
+        thin horizontal packages missed by coarse spherical angles. The
+        remaining sphere excludes the *expanded* boxes on clipped rays.
+        This is geometric cubature, not an electromagnetic spatial mesh.
+
+        Each shell must lie inside the outer sphere and remain disjoint
+        from the other; the requested thickness is reduced when necessary.
+        The far-field angular integral still requires convergence testing.
+        """
+        if (not isinstance(shell_normal_order, int)
+                or shell_normal_order < 2
+                or not isinstance(shell_tangential_order, int)
+                or shell_tangential_order < 2):
+            raise ValueError("shell Gauss orders must be integers >= 2")
+        if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
+            raise ValueError("shell_width_factor must be positive and finite")
+        scale = (
+            0.075 * min(min(a.enclosure.half_extents) for a in self.assemblies)
+            if wall_scale is None else float(wall_scale)
+        )
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("wall_scale must be positive and finite")
+        shell_width = shell_width_factor * scale
+        center = np.asarray(self.outer_center)
+        # An expanded box is checked at all eight corners. This protects
+        # the exact box-shell partition from truncation by the outer sphere.
+        for _ in range(32):
+            expanded = [
+                replace(
+                    a, enclosure=InsulatingBox(tuple(
+                        np.asarray(a.enclosure.half_extents) + shell_width
+                    )),
+                )
+                for a in self.assemblies
+            ]
+            valid = _obb_disjoint(*expanded)
+            if valid:
+                for a in expanded:
+                    half = np.asarray(a.enclosure.half_extents)
+                    corners = np.array(np.meshgrid(
+                        [-half[0], half[0]], [-half[1], half[1]],
+                        [-half[2], half[2]], indexing="ij",
+                    )).reshape(3, -1).T
+                    world = a.pose.position(corners)
+                    if np.max(np.linalg.norm(world - center, axis=1)) >= self.outer_radius:
+                        valid = False
+                        break
+            if valid:
+                break
+            shell_width *= 0.5
+        else:
+            raise ValueError("cannot place disjoint box shells within outer sphere")
+
+        outer_points, outer_weights = self.quadrature(
+            radial_order, polar_order, azimuthal_order,
+            wall_layers=0, wall_scale=scale, exclusion_padding=shell_width,
+        )
+        normal_nodes, normal_weights = np.polynomial.legendre.leggauss(
+            shell_normal_order
+        )
+        tangent_nodes, tangent_weights = np.polynomial.legendre.leggauss(
+            shell_tangential_order
+        )
+        point_sets = [outer_points]
+        weight_sets = [outer_weights]
+        for assembly in self.assemblies:
+            half = np.asarray(assembly.enclosure.half_extents)
+            # All shell slabs are mutually disjoint: for the current
+            # exterior axis the earlier axes stay inside the *inner*
+            # extent and the later axes cover the expanded extent.
+            for axis in range(3):
+                for sign in (-1.0, 1.0):
+                    bounds = [
+                        (-half[j], half[j]) if j < axis else
+                        (-half[j] - shell_width, half[j] + shell_width)
+                        for j in range(3)
+                    ]
+                    # Separate the steepest wall scale from the outer part
+                    # without creating a mesh or integrating the solid.
+                    split = min(1.5 * scale, shell_width)
+                    for lower, upper in ((0.0, split), (split, shell_width)):
+                        if upper <= lower:
+                            continue
+                        normal_range = (
+                            (half[axis] + lower, half[axis] + upper)
+                            if sign > 0 else
+                            (-half[axis] - upper, -half[axis] - lower)
+                        )
+                        intervals = list(bounds)
+                        intervals[axis] = normal_range
+                        axes = []
+                        weights = []
+                        for j, (lo, hi) in enumerate(intervals):
+                            nodes, w = (
+                                (normal_nodes, normal_weights) if j == axis
+                                else (tangent_nodes, tangent_weights)
+                            )
+                            axes.append(0.5 * (hi - lo) * nodes + 0.5 * (hi + lo))
+                            weights.append(0.5 * (hi - lo) * w)
+                        coordinates = np.meshgrid(*axes, indexing="ij")
+                        weight_grid = np.meshgrid(*weights, indexing="ij")
+                        local = np.stack(
+                            [c.ravel() for c in coordinates], axis=-1
+                        )
+                        point_sets.append(assembly.pose.position(local))
+                        weight_sets.append(
+                            np.prod(np.stack(weight_grid, axis=0), axis=0).ravel()
+                        )
+        points = np.concatenate(point_sets)
+        weights = np.concatenate(weight_sets)
+        return points, weights
