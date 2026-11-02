@@ -880,3 +880,60 @@ def test_green_reintegration_changes_only_L_and_remains_passive():
     assert np.isfinite(metrics[1]["green_diagonal_trace_fraction"])
     assert metrics[1]["green_diagonal_trace_fraction"] > 0
     assert np.isfinite(metrics[1]["relative_resolved_power_change"])
+
+
+
+def test_localized_outer_envelope_keeps_near_pad_modes_invariant():
+    """Moving the artificial boundary must not rescale the physical interior."""
+    from dataclasses import replace
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    expanded = replace(scene, outer_radius=0.85)
+    initial = build_sea_basis(
+        scene, modes_per_face=2, face_refinement=2,
+        refine_thin_faces_only=True,
+    )
+    enlarged = build_sea_basis(
+        expanded, modes_per_face=2, face_refinement=2,
+        refine_thin_faces_only=True,
+    )
+    probes = np.array([
+        [0.0, 0.0, 0.0],
+        [0.13, 0.0, 0.0],
+        [0.0, 0.13, 0.0],
+        [0.0, 0.0, 0.32],
+    ])
+    assert scene.in_seawater(probes).all()
+    assert expanded.in_seawater(probes).all()
+    assert initial.outer_envelope == "boundary_layer"
+    assert enlarged.outer_envelope == "boundary_layer"
+    assert initial.outer_taper_width == enlarged.outer_taper_width
+    np.testing.assert_allclose(
+        initial.evaluate(probes), enlarged.evaluate(probes),
+        rtol=1e-13, atol=1e-13,
+    )
+    legacy = build_sea_basis(scene, outer_envelope="quadratic")
+    old_large = build_sea_basis(expanded, outer_envelope="quadratic")
+    assert (
+        np.linalg.norm(legacy.evaluate(probes) - old_large.evaluate(probes))
+        > 0.01 * np.linalg.norm(legacy.evaluate(probes))
+    )
+    x, w = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=2,
+        shell_tangential_order=3,
+        outer_taper_width=initial.outer_taper_width,
+    )
+    assert len(x) == len(w)
+    assert np.all(w > 0)
+    assert scene.in_seawater(x).all()
+
+
+def test_localized_outer_taper_rejects_invalid_width():
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    with pytest.raises(ValueError, match="outer_taper_width"):
+        build_sea_basis(scene, outer_taper_width=1.0)
+    with pytest.raises(ValueError, match="outer_envelope"):
+        build_sea_basis(scene, outer_envelope="unknown")
