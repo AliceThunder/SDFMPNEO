@@ -244,7 +244,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     local[axis] = sign*(
                         half[axis] + max(0.003, 3.0*enriched.wall_scale)
                     )
-                    local[tangents] = (u, v)*half[tangents]
+                    local[tangents] = np.asarray((u, v))*half[tangents]
                     near_wall.append(assembly.pose.position(local))
         probes = np.concatenate((probes, np.asarray(near_wall)))
         if not scene.in_seawater(probes).all():
