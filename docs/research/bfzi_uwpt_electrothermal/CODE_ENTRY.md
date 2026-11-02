@@ -520,3 +520,26 @@ response = solve_seawater_reference(source, basis=basis)
 - 扩展现有一项 Green 测试：当 A=B 时交叉与原对称 Green 积分一致，统计同点对；当 A/B 从不重合的节点块构造时同点对数为零；保留小型非法块宽参数检查。无 Github Actions，尚需用户运行本地 pytest。
 
 接下来根据 cross 和 single-rule 是否接近来确定 Green 核心改进：如果两者大幅偏离，应改为真正积分近对角核（可能是可证明 PSD 的有限体积分布/局部 analytic kernel），再检查 softening 与精细 R/K 下的场/端口；不能凭一个交叉结果直接宣布无软化真解。用户下一步：`git pull`，原两个 BFZI 测试，`python run.py --mode bfzi-convergence --basis-green-cross`。
+
+
+### 2026-11-02：46 passed，但 Green 第二关未通过；引入保持 PSD 的解析 Gaussian 有限体积磁核
+
+用户在 `26dea37` 上执行 `--basis-green-cross`：**46 passed in 23.20s**。固定 **461648** 个 R/K 节点及 63 个物理模态，Green 规则 A=7504 节点，B=15154 节点，交叉积分无节点重合。在事先冻结的阈值中，25mm Plummer 软化下 `dL=0.186255` 明显高于 5%，端口 `dZ=0.00565544` 高于 0.2%；`dq=0.000459404,dP=0.000507797` 通过 0.5%/0.2%。`min_L_cross_eig=4.445835e-11 H>0`。18/12mm 下 `dL=0.243143/0.316715`，同节点自项分别为 23.33%/30.11%，明显表明现有双积分及软化核在近对角采样方面不可信，但交叉误差同时包含规则 B 本身的积分误差，不能把全部差值等同于人工自项。**第二关明确未通过，不启动正式训练标签生产。**
+
+本轮对真正 Green 核心新增一条可选、无网格、保持正定核结构的近场求积路径（旧缺省算子未替换）：
+
+- `_assemble_gaussian_green_inductances` 根据正体积权重 `w_i` 定义等体积球半径 `r_i=(3w_i/(4π))^(1/3)`，与球均匀质量二阶矩相匹配的三维各向同性高斯标准差 `h_i=r_i/√5`。把本来高度集中在 Gauss 节点的电流样本视作局部 Gaussian 电流云，解析精确计算两团电流云的 Coulomb 非局部相互作用：
+  `G_ij = erf(d_ij/√(2(h_i²+h_j²+a²)))/d_ij`；`d_ij=0` 时连续极限为 `√(2/π)/√(h_i²+h_j²+a²)`。其中 `a≥0` 是可选**额外 Gaussian 模糊长度**，与原代码 `1/√(d²+a²)` 的 Plummer 参数物理意义不同；零 Gaussian 模糊时积分仍有限，无 `w_i²/a` 假发散。
+- Fourier 意义下，Gauss 电流云分别乘以 `exp(-h_i²|k|²/2)`，再作用于正的 Coulomb `4π/|k|²`，故**同一套正权 Gauss 节点**上构建的矢量磁感应矩阵天然对称 PSD（容许舍入误差）。不能直接将此前交叉 A×B 对称矩阵替换为新 PSD 算子：交叉并不保持严格 Gram 结构。
+- `SeawaterResponse.reintegrate_gaussian_green_matrices(...,extra_blurs=(0.0,),width_factor=1.0,kernel_chunk_size=128)` 独立构造该候选 L，返回矩阵及其离散同节点自项迹贡献。所有积分仍双重分块且 O(N²)，候选物理 h 是对实际复杂球/盒加权求积小体积的**矩匹配近似**，不代表已精确计算任意旋转封装外侧几何体积，也不保证 Gaussian 尾巴严格位于导电域。必须经过磁节点及 width-factor 收敛后才能提升为默认或作为训练标签。
+- `python run.py --mode bfzi-convergence --basis-green-gaussian` 复用固定 ~46 万节点精化 R/K，独立 Green A=(5,8,12,3,4)，以额外 Gaussian 模糊长度0及0.012m对比旧 Plummer L；B=(5,9,14,4,5)，在额外模糊0时独立构造 PSD L。输出两套规则 `gaussian_B_vs_A` 的 `dL,dZ,dq,dP` 与双 K 弱式版本、`min_L_eig`、diag_share，直接按已冻结的 Green 第二关阈值进行下一轮判断。B 规则双积分可能耗时，不允许宣称尚未测得的实验成功。
+- 原 `SeaMQSConfig` 缺省、旧 `--basis-green-cross` 诊断及全部正常 BFZI 接口不变。新增一项定向测试：零额外 Gaussian 模糊的严格解析单云自相互作用、矩阵 PSD、不同块宽数值一致。没有 GitHub Actions。
+
+待本地重测命令：
+```powershell
+git pull
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-convergence --basis-green-gaussian
+```
+
+如果新 Gaussian A/B 在零额外模糊下仍然 `dL>5%` 或 `dZ>0.2%`，不要调宽数值门槛；应分析 Gaussian 等体积尺度、球域/盒壁求积分片和几何边界是否导致误差。若满足也只能进入必要的 width-factor 与模态/外域联合验收，绝不可称此为已认证无正则化 Coulomb 真值。
