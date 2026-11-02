@@ -505,3 +505,18 @@ response = solve_seawater_reference(source, basis=basis)
 - 保持此前 `--basis-green` 旧命令可用，但新命令不会让未精化旧 teacher R/K 决定 Green 试验的物理结果。针对新 Green 矩阵接口增加一项小型测试，对比原有完整 `reintegrate_green_responses`、对称正定和有效输入校验；不搞多余的审计代码，也未调用 GitHub Actions。
 
 建议：先 `git pull`，运行既有两个 BFZI 文件的 `pytest -q`，然后运行 `python run.py --mode bfzi-convergence --basis-green-refined`。该磁双重积分可能明显慢于单体 R/K 分块求积；脚本会在每个 Green 列表开始前报告所需节点数。分析当前真实 Green L 响应敏感度以后，再决定是否改近场积分核或进入外域/模态完备性检查，不继续漫无目的加高所有 Gauss 阶数。
+
+
+### 2026-11-02：实测 46 passed；Green L 同点离散自项显著，新增交叉求积核心
+
+用户本地在 `e3c0a48` 得到 **46 passed in 26.30s**。`--basis-green-refined` 用 461648 个精细 R/K 节点后固定 R/K，只更换磁算子 L：
+- 原始 Green 7504 节点（5,8,12,3,4）与软化 0.025m：离散同点项占 `trace(L)` 的 `diag_trace=0.189174`；同节点软化 0.018m 时 `dL=0.0923051,dZ=0.00261412,dq=0.000388053`，同点占比 `0.233301`；软化 0.012m 时 `dL=0.224198,dZ=0.00632986,dq=0.000927456`，同点占比 `0.30113`。
+- 固定软化 0.025m，单独 Green 近壁 `(3,4)→(3,5)`：`dL=0.0160046,dZ=0.000117128,dq=0.000150245`；外域角向 `(8,12)→(10,16)`：`dL=0.0896424,dZ=0.00268619,dq=0.00028299`。
+- 结论：R/K 已进入较稳定区间，但 Green L 仍明显对规则与软化敏感；端口响应的相对稳健性不能替代非局部 L 和 B 场收敛。直接在固定同点积分类中把 softening 逼近0会放大不物理的 `w_i²/a` 离散自项。
+
+本轮核心实现（尚未在用户本地跑新测试）：
+- `SeawaterResponse.reintegrate_cross_green_matrices(left_points,left_weights,right_points,right_weights,softenings=...,kernel_chunk_size=...)`，独立两套球域+六面正权海水求积规则，直接计算 `M^{AB}=μ0/(4π) Σ_i∈A Σ_j∈B (w_i w_j J_i·J_j)/√(r_ij²+a²)` 并对称化。无重合节点时 `i=j` 完全消失。接口返回每个 a 的 L 以及精确重合节点对数。该离散化**不保证半正定**，仅用于诊断，不能擅自成为默认被动 MQS Green 算子。与原同节点矩阵相比，除了自项也同时改动一套求积规则，因此差异不能简单全数归因于自项；须综合检查 L、场响应和最小特征值。
+- 新 CLI `python run.py --mode bfzi-convergence --basis-green-cross`，复用 `--basis-green-refined` 的固定高精度 R/K（原/双 K）和真实物理试探空间；Green A=(5,8,12,3,4) 7504 节点，独立规则 B=(5,9,14,4,5)，在 `a=0.025/0.018/0.012m` 同时计算 A 自配与 A×B 交叉 Green，分别重新求解矩阵、端口 Z、四探针 q 与耗散 P，报告最小交叉特征值、同点对数量、旧自项占比以及 `dL/dZ/dq/dP`。该研究需约 `O(N_A N_B)` 磁双积分，属于诊断而非最终 Green 近奇异修正。
+- 扩展现有一项 Green 测试：当 A=B 时交叉与原对称 Green 积分一致，统计同点对；当 A/B 从不重合的节点块构造时同点对数为零；保留小型非法块宽参数检查。无 Github Actions，尚需用户运行本地 pytest。
+
+接下来根据 cross 和 single-rule 是否接近来确定 Green 核心改进：如果两者大幅偏离，应改为真正积分近对角核（可能是可证明 PSD 的有限体积分布/局部 analytic kernel），再检查 softening 与精细 R/K 下的场/端口；不能凭一个交叉结果直接宣布无软化真解。用户下一步：`git pull`，原两个 BFZI 测试，`python run.py --mode bfzi-convergence --basis-green-cross`。
