@@ -285,6 +285,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_tangential_order=tangent,
                 outer_taper_width=enriched.outer_taper_width,
             )
+            n_green = len(gx)
+            print(
+                f"  assembling {label}: {n_green} Green nodes, "
+                f"{len(softenings)} regularization lengths",
+                flush=True,
+            )
             matrices, diagonal_numerator = (
                 teacher.reintegrate_green_matrices(
                     gx, gw, softenings=softenings,
@@ -297,7 +303,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 z, q, p = metrics(l, k_current)
                 zd, qd, pd = metrics(l, k_dual)
                 print(
-                    f"{label:>20}: nodes={len(gw) if False else 'see above'}, "
+                    f"{label:>20}: nodes={n_green:6d}, "
                     f"a={a:.4g} m, "
                     f"dL={relative(l,base_l):.6g}, "
                     f"diag_trace={diagonal_numerator/(a*max(np.trace(l),1e-30)):.6g}, "
