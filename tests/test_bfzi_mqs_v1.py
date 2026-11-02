@@ -576,3 +576,76 @@ def test_box_shell_tangential_gauss_and_global_modes_keep_geometry_consistent():
         assert np.all(weights > 0.0)
     # The composite tangential rule now splits every physical edge and
     # face center, rather than moving a few global Gauss nodes past them.
+
+
+
+def test_restricted_galerkin_subspace_matches_independent_direct_solve():
+    """One Green assembly gives the exact same-cubature nested 15-mode solve."""
+    from sdfmpneo_bfzi import (
+        build_sea_basis, restrict_seawater_response,
+    )
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    config = SeaMQSConfig(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=3,
+        field_softening=0.025,
+    )
+    enriched_basis = build_sea_basis(scene, modes_per_face=2)
+    coarse_basis = build_sea_basis(scene, modes_per_face=1)
+    fine = solve_seawater_reference(
+        source, basis=enriched_basis, config=config,
+    )
+    # Every first tangent in the 27-mode hierarchy is one of its
+    # original face-center functions. The three global modes also match.
+    kept = []
+    for mode in coarse_basis.modes:
+        matching = [
+            i for i, candidate in enumerate(enriched_basis.modes)
+            if np.array_equal(candidate.center, mode.center)
+            and np.array_equal(candidate.direction, mode.direction)
+            and candidate.width == mode.width
+        ]
+        assert len(matching) == 1
+        kept.extend(matching)
+    coarse_from_fine = restrict_seawater_response(fine, kept)
+    direct = solve_seawater_reference(
+        source, basis=coarse_basis, config=config,
+    )
+    np.testing.assert_allclose(
+        coarse_from_fine.impedance_seawater, direct.impedance_seawater,
+        rtol=2e-7, atol=1e-12,
+    )
+    currents = np.array([1.0 + 0.3j, -0.6 + 0.2j])
+    np.testing.assert_allclose(
+        coarse_from_fine.quadrature_power(currents),
+        direct.quadrature_power(currents),
+        rtol=2e-7, atol=1e-12,
+    )
+    probe = np.array([[0., 0., 0.], [0.14, 0.0, 0.0]])
+    np.testing.assert_allclose(
+        coarse_from_fine.current_density(probe, currents),
+        direct.current_density(probe, currents),
+        rtol=2e-7, atol=1e-11,
+    )
+
+
+def test_thin_face_refinement_is_strictly_nested_in_original_basis():
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    basic = build_sea_basis(scene, modes_per_face=2)
+    patches = build_sea_basis(
+        scene, modes_per_face=2, face_refinement=2,
+        refine_thin_faces_only=True,
+    )
+    assert basic.size == 27
+    assert patches.size == 59
+    for mode in basic.modes:
+        assert any(
+            np.array_equal(mode.center, candidate.center)
+            and np.array_equal(mode.direction, candidate.direction)
+            and mode.width == candidate.width
+            for candidate in patches.modes
+        )
