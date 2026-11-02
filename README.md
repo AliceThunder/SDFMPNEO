@@ -29,6 +29,7 @@ python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Gr
 python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K + independent Green L
 python run.py --mode bfzi-convergence --basis-green-cross  # two independent magnetic quadratures, diagnostic
 python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian Green: A/B plus width-factor sensitivity
+python run.py --mode bfzi-convergence --basis-green-ball # PSD exact uniform-ball Coulomb Green A/B and shape test
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -769,6 +770,50 @@ python run.py --mode bfzi-convergence --basis-green-gaussian
 If the width gate fails, correct the near-field/cell averaging
 itself and repeat the *same* gate; do not relax limits or
 blindly multiply quadrature orders. No GitHub Actions are used.
+
+**Failed width gate and analytic uniform-ball alternative (2026-11-02).**
+On revision `35f05f9`, the user verified **47 tests passed
+in 31.68 s**. At fixed independent rule A, moving the Gaussian
+width factor from 1.0 to 0.75 gave
+`dL=0.0733328`, `dZ=0.00198059`; moving to 1.25
+gave `dL=0.0518377`, `dZ=0.0013855`. Both **fail**
+the fixed `dL<=0.05` gate even though the A/B rule
+comparison and the PSD check pass. Promotion remains **HOLD**.
+
+The experimental `--basis-green-ball` run now assembles an
+**exact analytic uniform-solid-ball pair Coulomb interaction**
+for each equal-volume node cloud. In contrast to infinite-tail
+Gaussian clouds, two disjoint balls interact as exactly `1/d`,
+while fully contained/overlapping balls and self-interactions use
+closed-form finite values (equal-radius self `6/(5r)`).
+The model is unsoftened and has **no tunable blur/width factor**.
+The Fourier/Coulomb energy of the resulting real vector-current
+clouds is positive semidefinite. It reports the B-versus-A
+rule difference and, at matched A nodes, the difference
+between ball and original Gaussian cloud shapes, using the
+same **5%/0.2%/0.5%/0.2%** thresholds for diagnostics.
+The run holds fixed the 63 modes, fine R/K, dual K forms
+and outer seawater domain.
+
+This is a *core-kernel cross-check*, **not** a claim that a Gauss
+weight is the volume of a true isotropic material cell. In fact,
+`box_shell_quadrature` has positive partition-of-unity
+weights that vary with integration rules. If the new A/B or
+ball-versus-Gaussian shape gate fails, the next physics step
+is an explicitly geometry-aware near-pair integration of
+the actual smooth partitions (or a validated continuous
+Green formulation), **not** arbitrary width fitting,
+increased quadrature degree or PSD projection.
+The existing `SeaMQSConfig` production Green is unchanged.
+No GitHub Actions are used.
+
+Next local commands:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-convergence --basis-green-ball
+```
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
