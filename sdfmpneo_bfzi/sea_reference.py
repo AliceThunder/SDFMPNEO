@@ -30,6 +30,10 @@ class SeaMQSConfig:
     shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
+    # Independent composite angular rules for the spherical portion.
+    # Defaults reproduce the historical global-mu/midpoint-phi rule.
+    polar_panel_count: int = 1
+    azimuthal_panel_order: int = 1
     # Optional physical-length cap for spherical radial Gauss intervals.
     # Especially useful when increasing the finite outer domain.
     max_radial_panel_width: float | None = None
@@ -55,6 +59,14 @@ class SeaMQSConfig:
                 or not isinstance(self.shell_tangential_order, int)
                 or self.shell_tangential_order < 2):
             raise ValueError("shell Gauss orders must be integers >= 2")
+        if (not isinstance(self.polar_panel_count, int)
+                or isinstance(self.polar_panel_count, bool)
+                or not 1 <= self.polar_panel_count <= self.polar_order):
+            raise ValueError("polar_panel_count must be in [1, polar_order]")
+        if (not isinstance(self.azimuthal_panel_order, int)
+                or isinstance(self.azimuthal_panel_order, bool)
+                or self.azimuthal_panel_order < 1):
+            raise ValueError("azimuthal_panel_order must be a positive integer")
         if self.max_radial_panel_width is not None and (
             not math.isfinite(self.max_radial_panel_width)
             or self.max_radial_panel_width <= 0
@@ -541,6 +553,8 @@ def solve_seawater_reference(
             shell_tangential_order=cfg.shell_tangential_order,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
+            polar_panel_count=cfg.polar_panel_count,
+            azimuthal_panel_order=cfg.azimuthal_panel_order,
         )
     else:
         points, weights = scene.quadrature(
@@ -586,6 +600,8 @@ def solve_seawater_reference(
             shell_tangential_order=tangential,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
+            polar_panel_count=cfg.polar_panel_count,
+            azimuthal_panel_order=cfg.azimuthal_panel_order,
         )
         magnetic_modes = np.einsum(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
