@@ -860,8 +860,12 @@ Five nested spaces (15/27/59/63/95) are re-solved from the *same*
 fine R/K and PSD L, with port Z, probe heat, dissipative power,
 and a full-parent R-inverse Galerkin residual. Both current-potential
 and curl-dual K formulations are compared on the 95-mode parent.
-The decisive holdout is **63 → 95 probe Joule heat**, not the
-automatically zero residual of a full 63-dimensional parent.
+The modal screen evaluates four original bulk probes **plus twelve
+oriented near-wall probes** (both broad faces of each package, at
+center and tangential offsets), and prints both global `dq` and
+`max_probe_dq` for successive spaces. The decisive holdout is
+**63 → 95 local Joule heat**, not the automatically zero
+residual of a full 63-dimensional parent.
 
 `--basis-domain-ball` builds fresh basis/port/magnetic operators
 on five independent outer radii (0.52, 0.70, 0.85, 1.05 and 1.30 m).
