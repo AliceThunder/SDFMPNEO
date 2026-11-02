@@ -30,6 +30,10 @@ class SeaMQSConfig:
     shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
+    # Stokes/integration-by-parts dual source-coupling form avoids
+    # differentiating the sharp box-wall curl modes inside K integrals.
+    # Historical current.potential form remains the default.
+    coupling_form: str = "current_potential"
     # Independent composite angular rules for the spherical portion.
     # Defaults reproduce the historical global-mu/midpoint-phi rule.
     polar_panel_count: int = 1
@@ -57,6 +61,10 @@ class SeaMQSConfig:
             raise ValueError("wall_layers must be an integer from 0 to 6")
         if self.quadrature_scheme not in ("ray", "box_shell"):
             raise ValueError("quadrature_scheme must be 'ray' or 'box_shell'")
+        if self.coupling_form not in ("current_potential", "curl_dual"):
+            raise ValueError(
+                "coupling_form must be 'current_potential' or 'curl_dual'"
+            )
         if (not math.isfinite(self.shell_width_factor)
                 or self.shell_width_factor <= 0):
             raise ValueError("shell_width_factor must be finite and positive")
@@ -150,6 +158,48 @@ def _assemble_green_inductances(
     return tuple(0.5 * (matrix + matrix.T) for matrix in matrices)
 
 
+def _assemble_port_coupling(
+    sources: BFZISources, basis: SeaCurrentBasis,
+    transform: np.ndarray, points: np.ndarray, weights: np.ndarray,
+    *, coupling_form: str, current_modes: np.ndarray | None = None,
+) -> np.ndarray:
+    """Two equivalent continuous volume expressions for physical K.
+
+    With J_m=curl(F_m), F_m=0 on both insulation and outer boundary:
+        K_mp = mu0 * integral J_m.C_port
+             = integral F_m.B_port.
+    The second weak form removes sharp wall derivatives from the K
+    integrand. Both are Galerkin coupling integrals with the SAME modes,
+    not a fitted or independently invented source approximation.
+    """
+    if coupling_form == "current_potential":
+        if current_modes is None:
+            current_modes = np.einsum(
+                "nmc,mr->nrc", basis.evaluate(points), transform,
+                optimize=True,
+            )
+        return MU0 * np.einsum(
+            "n,nmc,ncp->mp", weights, current_modes,
+            sources.potential_kernels(points), optimize=True,
+        )
+    if coupling_form == "curl_dual":
+        primitive = np.einsum(
+            "nmc,mr->nrc", basis.potential_primitive(points), transform,
+            optimize=True,
+        )
+        source_magnetic = np.stack(
+            [np.real(line.magnetic_field(points)) for line in sources.lines],
+            axis=-1,
+        )
+        return np.einsum(
+            "n,nmc,ncp->mp", weights, primitive,
+            source_magnetic, optimize=True,
+        )
+    raise ValueError(
+        "coupling_form must be 'current_potential' or 'curl_dual'"
+    )
+
+
 @dataclass(frozen=True)
 class SeawaterResponse:
     sources: BFZISources
@@ -216,7 +266,23 @@ class SeawaterResponse:
         q = np.sum(np.abs(j)**2, axis=-1) / (2 * self.sources.scene.seawater.conductivity)
         return float(self.integration_weights @ q)
 
-    def reintegrate_local_response(self, points, weights) -> SeawaterResponse:
+    def reintegrate_source_coupling(self, points, weights, *,
+                                     coupling_form="curl_dual") -> np.ndarray:
+        """Integrate K independently from R/L using the selected weak form."""
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3 or w.shape != (len(x),)
+                or len(x) == 0 or not np.isfinite(x).all()
+                or not np.isfinite(w).all() or np.any(w <= 0)
+                or not self.sources.scene.in_seawater(x).all()):
+            raise ValueError("coupling cubature needs positive seawater nodes")
+        return _assemble_port_coupling(
+            self.sources, self.basis, self.transform, x, w,
+            coupling_form=coupling_form,
+        )
+
+    def reintegrate_local_response(self, points, weights, *,
+                                   coupling_form="current_potential") -> SeawaterResponse:
         """Re-solve on independent R/K/Joule nodes while holding Green L fixed.
 
         This is a controlled single-axis cubature comparison, not a full
@@ -245,9 +311,9 @@ class SeawaterResponse:
             "n,nic,njc->ij", w / sigma, modes, modes, optimize=True,
         )
         r = 0.5 * (r + r.T)
-        k = MU0 * np.einsum(
-            "n,nmc,ncp->mp", w, modes,
-            self.sources.potential_kernels(x), optimize=True,
+        k = _assemble_port_coupling(
+            self.sources, self.basis, self.transform, x, w,
+            coupling_form=coupling_form, current_modes=modes,
         )
         omega = self.sources.omega
         coefficients = solve(
@@ -660,9 +726,9 @@ def solve_seawater_reference(
         (cfg.field_softening,), cfg.kernel_chunk_size,
     )[0]
 
-    csource = sources.potential_kernels(points)
-    coupling = MU0 * np.einsum(
-        "n,nmc,ncp->mp", weights, w, csource, optimize=True,
+    coupling = _assemble_port_coupling(
+        sources, basis, transform, points, weights,
+        coupling_form=cfg.coupling_form, current_modes=w,
     )
     matrix = resistance + 1j * sources.omega * inductance
     unit_modes = solve(matrix, -1j * sources.omega * coupling,
