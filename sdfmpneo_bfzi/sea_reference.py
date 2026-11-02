@@ -537,6 +537,7 @@ def solve_seawater_reference(
         points, weights = scene.quadrature(
             cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
             wall_layers=cfg.wall_layers, wall_scale=basis.wall_scale,
+            outer_taper_width=taper_width,
         )
     if len(points) == 0:
         raise ValueError("no seawater integration nodes")
