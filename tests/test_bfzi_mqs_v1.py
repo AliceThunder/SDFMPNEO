@@ -1569,6 +1569,9 @@ def test_ball_green_full_reference_modal_power_and_electrothermal_closure():
     np.testing.assert_allclose(reference.coupling, legacy.coupling, rtol=1e-12)
     assert np.linalg.norm(reference.inductance - legacy.inductance) > 0
     assert np.linalg.eigvalsh(reference.inductance)[0] >= -1e-12
+    assert reference.inductance_kernel == "uniform_ball"
+    reduced = compress_seawater_response(reference, rank=2)
+    assert reduced.inductance_kernel == "uniform_ball"
 
     gx, gw = scene.box_shell_quadrature(
         3, 4, 6, wall_scale=reference.basis.wall_scale,
@@ -1591,6 +1594,31 @@ def test_ball_green_full_reference_modal_power_and_electrothermal_closure():
          weights @ heat], rtol=5e-8, atol=1e-12,
     )
     assert reference.as_structured_prediction().power_closure_error() < 1e-8
+    # The response's induced magnetic field must use the same physical
+    # uniform-solid-ball cloud model, not the historical Plummer field.
+    from sdfmpneo_bfzi.source import MU0
+    query = reference.integration_points[:1]
+    b = reference.magnetic_field(query, i, chunk_size=1)
+    offsets = query[:, None, :] - reference.integration_points[None, :, :]
+    radii2 = (3*weights/(4*np.pi))**(2.0/3.0)
+    denom = np.maximum(
+        np.sum(offsets**2, axis=-1), radii2[None, :]
+    )**1.5
+    currents_at_nodes = np.einsum(
+        "nmc,m->nc", reference.integration_modes,
+        reference.unit_current_modes @ i,
+    )
+    expected = source.magnetic_field(query, i) + (
+        MU0/(4*np.pi)*np.sum(
+            np.cross(
+                (weights[:, None]*currents_at_nodes)[None, :, :],
+                offsets,
+            ) / denom[..., None], axis=1,
+        )
+    )
+    np.testing.assert_allclose(b, expected, rtol=1e-9, atol=1e-12)
+    assert np.isfinite(b).all()
+
     thermal = build_lumped_coil_thermal_model((
         CoilThermalProperties(20.0, 0.7),
         CoilThermalProperties(20.0, 0.7),
