@@ -170,6 +170,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             shell_width_factor=cfg.shell_width_factor,
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
+            outer_taper_width=enriched.outer_taper_width,
         )
         check = teacher.independent_cubature_metrics(
             points, weights, currents, probes=probes,
@@ -210,6 +211,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_width_factor=config.shell_width_factor,
                 shell_normal_order=normal,
                 shell_tangential_order=tangential,
+                outer_taper_width=enriched.outer_taper_width,
             )
             checks = teacher.independent_green_metrics(
                 green_points, green_weights, currents, probes=probes,
@@ -253,6 +255,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             larger = solve_seawater_reference(
                 larger_source, basis=larger_basis, config=config,
             )
+            # Identical raw trial fields at physical near-coil probes
+            # distinguish boundary-position effects from basis renormalization.
+            near_mode_change = (
+                np.linalg.norm(
+                    larger_basis.evaluate(probes) - enriched.evaluate(probes)
+                ) / max(np.linalg.norm(enriched.evaluate(probes)), 1e-30)
+            )
             z = larger.impedance_seawater
             q = larger.seawater_loss(probes, currents)
             power = larger.port_seawater_power(currents)
@@ -269,6 +278,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"radius={radius:.3g} m: "
                 f"nodes={len(larger.integration_points):6d}, "
                 f"modes={larger.resistance.shape[0]:3d}, "
+                f"raw_mode_dW={near_mode_change:.3g}, "
                 f"step_dZ={dz:.6g}, step_dq={dq:.6g}, "
                 f"step_dP={dp:.6g}, sea_power={power:.8g} W",
                 flush=True,
