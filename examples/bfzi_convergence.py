@@ -480,45 +480,74 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
                 z = 1j*omega*k.T @ coefficient
                 z = 0.5*(z+z.T)
-                j = np.einsum(
+                field = np.einsum(
                     "nmc,m->nc",probe_modes,coefficient @ currents,
                     optimize=True,
                 )
-                q = np.sum(np.abs(j)**2,axis=1)/(
+                q = np.sum(np.abs(field)**2,axis=1)/(
                     2*scene.seawater.conductivity
                 )
                 power = 0.5*float(np.real(np.vdot(
                     coefficient @ currents,r @ (coefficient @ currents)
                 )))
-                return z,q,power
-            z_b,q_b,p_b = full_with_l(magnetic_b,k_curl)
-            z_a,q_a,p_a = full_with_l(teacher.inductance,k_curl)
+                return z,q,power,field,coefficient
+
+            # Only the magnetic cubature changes: same refined R,
+            # curl-current K, whitened 159-mode space and physical probes.
+            z_b,q_b,p_b,j_b,u_b = full_with_l(magnetic_b,k_curl)
+            z_a,q_a,p_a,j_a,u_a = full_with_l(
+                teacher.inductance,k_curl,
+            )
             dL = relative(magnetic_b,teacher.inductance)
             dZ = relative(z_b,z_a)
+            dJ = relative(j_b,j_a)
             dq = relative(q_b,q_a)
             dP = abs(p_b-p_a)/max(abs(p_a),1e-30)
+            # Test the actual A solution in the *independently assembled*
+            # B variational operator. A small response delta alone is not
+            # enough if the two magnetic rules share a discretization bias.
+            b_residual=(
+                (r+1j*omega*magnetic_b) @ u_a + 1j*omega*k_curl
+            )
+            b_relative_residual=np.sqrt(max(float(np.real(np.vdot(
+                b_residual,np.linalg.solve(r,b_residual),
+            ))),0.0))/forcing_norm
+            passed=(
+                dL<=0.05 and dZ<=0.002 and dJ<=0.01
+                and dq<=0.005 and dP<=0.002
+                and b_relative_residual<=0.01
+            )
             print(
                 f"  ball_159_B_vs_A: dL={dL:.6g}, "
-                f"dZ={dZ:.6g}, dq={dq:.6g}, "
+                f"dZ={dZ:.6g}, dJ={dJ:.6g}, dq={dq:.6g}, "
                 f"max_probe_dq={np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10)):.6g}, "
                 f"dP={dP:.6g}, "
+                f"B_on_A_Rinv_residual={b_relative_residual:.6g}, "
                 f"min_L_B_eig={np.linalg.eigvalsh(magnetic_b)[0]:.6g}, "
-                f"gate={'PASS' if dL<=0.05 and dZ<=0.002 and dq<=0.005 and dP<=0.002 else 'FAIL'}",
+                f"gate={'PASS' if passed else 'FAIL'}",
                 flush=True,
             )
-            za_dual,qa_dual,pa_dual = full_with_l(
+            za_dual,qa_dual,pa_dual,ja_dual,_ = full_with_l(
                 teacher.inductance,k_dual,
             )
-            zb_dual,qb_dual,pb_dual = full_with_l(
+            zb_dual,qb_dual,pb_dual,jb_dual,_ = full_with_l(
                 magnetic_b,k_dual,
             )
             print(
                 "  ball_159_dual_B_vs_A: "
                 f"dZ={relative(zb_dual,za_dual):.6g}, "
+                f"dJ={relative(jb_dual,ja_dual):.6g}, "
                 f"dq={relative(qb_dual,qa_dual):.6g}, "
                 f"dP={abs(pb_dual-pa_dual)/max(abs(pa_dual),1e-30):.6g}",
                 flush=True,
             )
+            if not passed:
+                print(
+                    "  magnetic_gate_failed: A/B magnetic integration is "
+                    "unresolved in the 159-mode space; do NOT use either "
+                    "as high-accuracy cross-geometry training truth.",
+                    flush=True,
+                )
             print("  magnetic_note: compare with 95→159 mode change; "
                   "both must be small before declaring a spatial teacher.",
                   flush=True)
