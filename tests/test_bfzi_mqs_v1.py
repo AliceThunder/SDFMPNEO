@@ -969,3 +969,32 @@ def test_fixed_physical_radial_panel_width_on_growing_outer_domain():
     with pytest.raises(ValueError, match="max_radial_panel_width"):
         scene.box_shell_quadrature(**base_kwargs,
                                    max_radial_panel_width=0.0)
+
+
+def test_composite_sphere_angular_gauss_remains_positive_and_symmetric():
+    """Angular subpanels preserve weight positivity and seawater geometry."""
+    scene = scene_pair()
+    base = dict(
+        radial_order=3, polar_order=8, azimuthal_order=12,
+        shell_normal_order=2, shell_tangential_order=3,
+    )
+    coarse_x, coarse_w = scene.box_shell_quadrature(**base)
+    polar_x, polar_w = scene.box_shell_quadrature(
+        **base, polar_panel_count=2,
+    )
+    gaussian_x, gaussian_w = scene.box_shell_quadrature(
+        **base, polar_panel_count=2, azimuthal_panel_order=2,
+    )
+    assert len(polar_x) == len(coarse_x)
+    assert len(gaussian_x) > len(coarse_x)
+    for points, weights in (
+        (polar_x, polar_w), (gaussian_x, gaussian_w),
+    ):
+        assert scene.in_seawater(points).all()
+        assert np.isfinite(weights).all()
+        assert np.all(weights > 0)
+        assert np.isfinite(weights.sum())
+    with pytest.raises(ValueError, match="polar_panel_count"):
+        scene.box_shell_quadrature(**base, polar_panel_count=3)
+    with pytest.raises(ValueError, match="azimuthal_panel_order"):
+        scene.box_shell_quadrature(**base, azimuthal_panel_order=0)
