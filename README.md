@@ -854,18 +854,33 @@ kernel selection through the physical calculations:
 `--basis-ball` uses the **461648-node, operator-only fine R/K**
 rule from the previously accepted near-wall refinement, combined
 with the 7504-node uniform-ball magnetic A rule. The 95-mode
-parent adds 32 strictly nested curl-patch directions on the four
-broad enclosure faces, retaining all 63 original physical modes.
-Five nested spaces (15/27/59/63/95) are re-solved from the *same*
-fine R/K and PSD L, with port Z, probe heat, dissipative power,
-and a full-parent R-inverse Galerkin residual. Both current-potential
-and curl-dual K formulations are compared on the 95-mode parent.
+space adds 32 strictly nested face-edge curl patches to the
+63 original physical modes, while level 4 adds another 64
+corner/interior-current patches on the broad enclosure faces.
+The full **159-mode parent** now supplies independent
+holdouts of 63→95→159 (15/27/59/63/95/159 nested spaces).
+All projected re-solves use the *same* fine R/K and PSD L,
+reporting Z, probe heat, power and a parent-space
+R-inverse Galerkin residual. Current-potential and curl-dual
+K formulations are compared on the 159-mode parent.
 The modal screen evaluates four original bulk probes **plus twelve
-oriented near-wall probes** (both broad faces of each package, at
-center and tangential offsets), and prints both global `dq` and
-`max_probe_dq` for successive spaces. The decisive holdout is
-**63 → 95 local Joule heat**, not the automatically zero
-residual of a full 63-dimensional parent.
+oriented near-wall probes** (both broad faces of each package,
+center plus tangential offsets), printing global `dq` and
+`max_probe_dq`.
+
+An additional **residual-driven selective-enrichment** pass
+starts from the physical 63-mode subset. It R-orthogonalizes
+missing candidate directions with a Schur-complement diagonal
+to avoid selecting near-duplicate Gaussian patches, ranks
+their dual-port Galerkin residual, and adds up to eight at
+a time. The sparse re-solved Z, near-wall/bulk heat and
+power are checked against the assembled 159-mode parent:
+`dZ<=0.002, dq<=0.005, dP<=0.002,
+max_probe_dq<=0.05`. These are *offline candidate-space*
+metrics, not an independent continuum accuracy certificate
+or neural FAST training. The decisive next physics holdout
+is **95→159 local Joule heat**, not the automatically zero
+residual of a full 95-dimensional parent.
 
 `--basis-domain-ball` builds fresh basis/port/magnetic operators
 on five independent outer radii (0.52, 0.70, 0.85, 1.05 and 1.30 m).
@@ -916,9 +931,19 @@ difference fails** the existing 0.5% spatial gate
 even though the impedance and modal power appear converged.
 The 59-mode parent residual was `0.00821778`
 against the full 63-mode space, and does not bound
-errors outside that space. The 95-mode independent
-holdout is therefore a necessary next check; its new
-numbers are not yet measured.
+errors outside that space. The user's next run on
+`2ac541b` passed **50 tests in 36.54 s** and established:
+`guided_port_curls_to_edge_face_patches` (63→95):
+`dZ=0.0106665`, `dq=0.327308`,
+`max_probe_dq=0.577651`, `dP=0.0129773`;
+the 63-mode R-inverse residual against the 95-mode
+parent was `0.100378`. **All spatial and port
+convergence gates still fail**. The 95-mode parent
+also changes near-wall heat by 30–58% at some sampled
+locations; this is physical-basis truncation and
+cannot be cured by more Green kernel polishing alone.
+The newly added 159-mode candidate/greedy holdout has
+not yet been executed.
 
 The 63-mode outer-radius sequence with independently fine
 R/K showed the **1.05 → 1.30 m** step
