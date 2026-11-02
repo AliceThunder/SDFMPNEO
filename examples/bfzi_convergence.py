@@ -63,11 +63,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_gaussian: bool = False,
                       green_ball: bool = False,
                       ball_reference: bool = False):
-    """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
+    """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
-    Target the broad faces and actual closed-port field curls before escalating to
-    all-face patch refinement. Only the enriched teacher's expensive
-    Coulomb R/L/K assembly is computed.
+    The experimental uniform-ball modal route includes a level-4
+    159-mode physical parent and residual-driven sparse-mode enrichment.
+    Only that parent's expensive nonlocal Green L is assembled; nested
+    subspaces re-solve projected R/L/K, not separate Green double integrals.
     """
     scene = build_demo_scene()
     # Resolve the locally sharp curl-mode resistance and true source
