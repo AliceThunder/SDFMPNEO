@@ -11,6 +11,7 @@
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
+    python run.py --mode bfzi-convergence --basis-green-cross   # 双套独立磁节点交叉Green对照
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
@@ -338,6 +339,7 @@ def main(argv=None):
                     basis_verify="--basis-verify" in args,
                     basis_green="--basis-green" in args,
                     basis_green_refined="--basis-green-refined" in args,
+                    basis_green_cross="--basis-green-cross" in args,
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
