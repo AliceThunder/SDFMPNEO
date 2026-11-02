@@ -8,7 +8,8 @@ import pytest
 
 from sdfmpneo_bfzi import (
     BFZIResponseLabel, build_sea_basis, build_bfzi_source,
-    geometry_features, save_response_labels,
+    geometry_features, scene_from_geometry_features,
+    save_response_labels,
 )
 from sdfmpneo_bfzi.sea_neural import (
     BFZINeuralSurrogate, train_response_surrogate,
@@ -35,6 +36,18 @@ def test_provisional_geometry_sampler_changes_two_valid_packages():
     assert geometry_features(source).shape==geometry_features(
         build_bfzi_source(baseline,200_000.0,order=3)
     ).shape
+    # Full-feature inverse must recover two oriented poses, materials,
+    # complete return routes and source integration geometry exactly.
+    features=geometry_features(source)
+    restored_scene,frequency=scene_from_geometry_features(features)
+    restored=build_bfzi_source(restored_scene,frequency,order=3)
+    np.testing.assert_array_equal(geometry_features(restored),features)
+    assert restored_scene.seawater.conductivity==varied.seawater.conductivity
+    for first,second in zip(varied.assemblies,restored_scene.assemblies):
+        np.testing.assert_array_equal(first.pose.rotation,second.pose.rotation)
+        assert first.return_waypoints==second.return_waypoints
+    with pytest.raises(ValueError,match="feature vector"):
+        scene_from_geometry_features(features[:-1])
 
 
 def test_provisional_neural_holdout_and_passive_inference(tmp_path):
