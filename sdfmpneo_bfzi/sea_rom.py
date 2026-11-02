@@ -11,6 +11,7 @@ import numpy as np
 from scipy.linalg import eigh, solve
 
 from .sea_reference import SeawaterResponse
+from .sea_basis import SeaCurrentBasis
 
 
 def compress_seawater_response(
@@ -60,4 +61,79 @@ def compress_seawater_response(
         np.einsum("nmc,mr->nrc", reference.integration_modes, reduction),
         reference.field_softening,
         reference.raw_basis_count,
+    )
+
+
+
+def restrict_seawater_response(
+    reference: SeawaterResponse, raw_indices,
+) -> SeawaterResponse:
+    """Resolve a nested raw-mode subspace on exactly the parent cubature.
+
+    An enriched teacher already contains the Galerkin R/L/K matrices for
+    *every* retained trial direction. Restricting those matrices to a
+    selected nested subset is an exact discrete Galerkin operation and
+    needs no second O(Q**2) Green assembly. It is only possible when
+    the parent's resistance whitening has not discarded any of the
+    requested raw directions; fail explicitly rather than silently
+    presenting a rank-truncated subset as a reference solution.
+
+    This is a diagnostic/projection utility, not an independently
+    trained neural surrogate.
+    """
+    indices = np.asarray(raw_indices)
+    n_raw = reference.basis.size
+    if (indices.ndim != 1 or indices.size == 0
+            or not np.issubdtype(indices.dtype, np.integer)
+            or np.any(indices < 0) or np.any(indices >= n_raw)
+            or len(np.unique(indices)) != len(indices)):
+        raise ValueError("raw_indices must be unique valid mode indices")
+    selection = np.eye(n_raw)[:, indices]
+    # The parent's whitened current modes are raw_modes @ transform.
+    # Translate the selected raw trial functions back into this space.
+    coordinates, _, _, _ = np.linalg.lstsq(
+        reference.transform, selection, rcond=None,
+    )
+    if not np.allclose(
+        reference.transform @ coordinates, selection,
+        rtol=1e-8, atol=1e-9,
+    ):
+        raise ValueError(
+            "requested raw subspace includes discarded resistance modes; "
+            "refine cubature or lower resistance_rank_tolerance"
+        )
+    R = coordinates.T @ reference.resistance @ coordinates
+    L = coordinates.T @ reference.inductance @ coordinates
+    K = coordinates.T @ reference.coupling
+    R = 0.5 * (R + R.T)
+    L = 0.5 * (L + L.T)
+    # Resistive normalization improves conditioning of independently
+    # requested subspaces even if the parent whitening is well conditioned.
+    evals, directions = eigh(R, check_finite=True)
+    if np.min(evals) <= 0:
+        raise ValueError("selected subspace has nonpositive resistance")
+    normalization = directions / np.sqrt(evals)[None, :]
+    R = normalization.T @ R @ normalization
+    L = normalization.T @ L @ normalization
+    K = normalization.T @ K
+    R = 0.5 * (R + R.T)
+    L = 0.5 * (L + L.T)
+    omega = reference.sources.omega
+    z_modes = solve(
+        R + 1j * omega * L, -1j * omega * K,
+        assume_a="gen", check_finite=True,
+    )
+    z_sea = 1j * omega * K.T @ z_modes
+    z_sea = 0.5 * (z_sea + z_sea.T)
+    projection = coordinates @ normalization
+    selection_transform = selection @ normalization
+    fields = np.einsum(
+        "nmc,mr->nrc", reference.integration_modes,
+        projection, optimize=True,
+    )
+    return SeawaterResponse(
+        reference.sources, reference.basis, selection_transform,
+        R, L, K, z_modes, z_sea,
+        reference.integration_points, reference.integration_weights,
+        fields, reference.field_softening, len(indices),
     )
