@@ -13,6 +13,7 @@
     python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # 跨几何样本
     python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 实验网络训练
     python run.py --mode bfzi-infer --model bfzi_neural.pt # 推理
+    python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
@@ -356,6 +357,10 @@ def main(argv=None):
             if mode == "bfzi-infer":
                 from examples.bfzi_neural_demo import infer as neural_infer
                 neural_infer(args[index + 2:])
+                return 0
+            if mode == "bfzi-eval":
+                from examples.bfzi_neural_demo import evaluate as neural_evaluate
+                neural_evaluate(args[index + 2:])
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
