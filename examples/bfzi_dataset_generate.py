@@ -21,7 +21,7 @@ from sdfmpneo_bfzi import (
 
 
 def make_scene(seed_scene, rng):
-    """Small, reproducible 6-DOF, coil-shape and medium perturbations."""
+    """Small, reproducible two-pose, package, coil-shape and medium perturbations."""
     coil = seed_scene.receiver.coil
     coil_new = replace(
         coil,
@@ -37,9 +37,15 @@ def make_scene(seed_scene, rng):
         -0.012, 0.012, size=3,
     )
     receiver = replace(
-        seed_scene.receiver,
-        coil=coil_new,
+        seed_scene.receiver,coil=coil_new,
         pose=RigidPose(rot, center),
+        enclosure=replace(
+            seed_scene.receiver.enclosure,
+            half_extents=tuple(
+                np.asarray(seed_scene.receiver.enclosure.half_extents)
+                *rng.uniform(0.98,1.02,size=3)
+            ),
+        ),
     )
     transmitter = seed_scene.transmitter
     tx_coil = replace(
@@ -48,7 +54,25 @@ def make_scene(seed_scene, rng):
             transmitter.coil.alpha+rng.uniform(-0.04,0.04),0.1,0.9,
         )),
     )
-    transmitter = replace(transmitter,coil=tx_coil)
+    tx_pose=transmitter.pose
+    tx_rot=Rotation.from_rotvec(
+        rng.uniform(-0.06,0.06,size=3)
+    ).as_matrix() @ tx_pose.rotation
+    transmitter = replace(
+        transmitter,coil=tx_coil,
+        pose=RigidPose(
+            tx_rot,np.asarray(tx_pose.center)+rng.uniform(
+                -0.006,0.006,size=3
+            ),
+        ),
+        enclosure=replace(
+            transmitter.enclosure,
+            half_extents=tuple(
+                np.asarray(transmitter.enclosure.half_extents)
+                *rng.uniform(0.98,1.02,size=3)
+            ),
+        ),
+    )
     return replace(
         seed_scene, transmitter=transmitter, receiver=receiver,
         seawater=Seawater(
