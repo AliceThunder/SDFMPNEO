@@ -195,7 +195,130 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
-    if kparts or wallpanels:
+    if wallpanels:
+        # Fixed sphere and Green L: refine only oriented-box slab panels.
+        # Stream R/K to avoid retaining hundreds of thousands of 63-mode
+        # integration tensors. Full Joule power follows from c* R c.
+        print("\nStreaming near-wall face/edge R/K/Joule convergence "
+              "(fixed 63 modes, sphere and Green L):", flush=True)
+        scheme = (
+            ("cap050", 0.05, 5, 6),
+            ("cap025", 0.025, 5, 6),
+            ("cap020", 0.020, 5, 6),
+            ("cap0167", 0.0167, 5, 6),
+            ("cap0167_t7", 0.0167, 5, 7),
+            ("cap0167_n6", 0.0167, 6, 6),
+        )
+        fixed = dict(
+            wall_scale=enriched.wall_scale,
+            shell_width_factor=config.shell_width_factor,
+            outer_taper_width=enriched.outer_taper_width,
+            max_radial_panel_width=0.06,
+            radial_geometry_cuts=True,
+            polar_geometry_order=8,
+            azimuthal_panel_order=2,
+        )
+        # The shell blend and radial/angular rule are identical across
+        # all experiments. Assemble the large sphere part only once.
+        sphere_r = sphere_k = sphere_k_dual = None
+        sphere_count = None
+        probe_modes = np.einsum(
+            "nmc,mr->nrc", enriched.evaluate(probes), teacher.transform,
+            optimize=True,
+        )
+        omega = source.omega
+        conductivity = scene.seawater.conductivity
+
+        def summary(r, k):
+            coefficients = np.linalg.solve(
+                r + 1j * omega * teacher.inductance,
+                -1j * omega * k,
+            )
+            impedance = 1j * omega * k.T @ coefficients
+            impedance = 0.5 * (impedance + impedance.T)
+            port_modes = coefficients @ currents
+            j = np.einsum("nmc,m->nc", probe_modes, port_modes)
+            heat = np.sum(np.abs(j)**2, axis=1) / (2 * conductivity)
+            power = 0.5 * float(np.real(
+                np.vdot(port_modes, r @ port_modes),
+            ))
+            return dict(R=r, K=k, Z=impedance, q=heat, P=power)
+
+        def rel(a, b):
+            return float(np.linalg.norm(a - b)
+                         / max(np.linalg.norm(b), 1e-30))
+
+        earlier = None
+        fine_baseline = None
+        for label, cap, normal, tangent in scheme:
+            x, weights, split = scene.box_shell_quadrature(
+                config.radial_order, config.polar_order,
+                config.azimuthal_order, shell_normal_order=normal,
+                shell_tangential_order=tangent,
+                shell_tangential_max_panel_width=cap,
+                return_sphere_count=True, **fixed,
+            )
+            if sphere_r is None:
+                sphere_count = split
+                sphere_r, sphere_k, sphere_k_dual = (
+                    teacher.reintegrate_local_operators(
+                        x[:split], weights[:split],
+                    )
+                )
+                print(f"  fixed sphere nodes={sphere_count}; "
+                      "assembled only once", flush=True)
+            elif split != sphere_count:
+                raise RuntimeError(
+                    "spherical quadrature changed during wall-only refinement"
+                )
+            slab_r, slab_k, slab_k_dual = (
+                teacher.reintegrate_local_operators(
+                    x[split:], weights[split:],
+                )
+            )
+            r = sphere_r + slab_r
+            current = summary(r, sphere_k + slab_k)
+            dual = summary(r, sphere_k_dual + slab_k_dual)
+            print(
+                f"{label:>20}: slab_nodes={len(x)-split:6d}, "
+                f"P={current['P']:.8g} W, "
+                f"dual_P={dual['P']:.8g} W, "
+                f"weak_dK={rel(dual['K'],current['K']):.6g}, "
+                f"weak_dZ={rel(dual['Z'],current['Z']):.6g}",
+                flush=True,
+            )
+            baseline = (
+                fine_baseline if label in ("cap0167_t7", "cap0167_n6")
+                else earlier
+            )
+            if baseline is not None:
+                for form, now, old in (
+                    ("curl_K_step", current, baseline[1]),
+                    ("dual_K_step", dual, baseline[2]),
+                ):
+                    now_q, old_q = now["q"], old["q"]
+                    print(
+                        f"{form:>20}: from={baseline[0]}, "
+                        f"dR={rel(now['R'],old['R']):.6g}, "
+                        f"dK={rel(now['K'],old['K']):.6g}, "
+                        f"dZ={rel(now['Z'],old['Z']):.6g}, "
+                        f"dq={rel(now_q,old_q):.6g}, "
+                        f"max_probe_dq={np.max(np.abs(now_q-old_q)/np.maximum(np.abs(old_q),1e-30)):.6g}, "
+                        f"dP={abs(now['P']-old['P'])/max(abs(old['P']),1e-30):.6g}",
+                        flush=True,
+                    )
+            if label == "cap0167":
+                fine_baseline = label, current, dual
+            earlier = label, current, dual
+            del x, weights
+        print(
+            "Cap refinements are successive; t7/n6 compare independently "
+            "against cap0167 at fixed panels. Green L is unchanged.",
+            flush=True,
+        )
+        return
+
+    if kparts:
         # The two continuous curl-integration forms agree only after
         # integrating BOTH pieces of the partition-of-unity quadrature.
         # Isolate the sphere and box-wall contributions on identical
