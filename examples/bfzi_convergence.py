@@ -205,6 +205,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         print("Fixed radial geometry cuts and 0.06 m maximum panel "
               "width; same 63 modes and Green L.", flush=True)
         previous = None
+        previous_slab_nodes = None
 
         def relative(a, b):
             return float(np.linalg.norm(a - b)
@@ -249,6 +250,16 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 azimuthal_panel_order=cfg.azimuthal_panel_order,
                 return_sphere_count=True,
             )
+            slab_nodes = len(points) - sphere_count
+            if (wallpanels
+                    and label in ("wall_cap050_5_6", "wall_cap025_5_6")
+                    and previous_slab_nodes is not None
+                    and slab_nodes <= previous_slab_nodes):
+                raise RuntimeError(
+                    "near-wall panel width did not refine slab nodes; "
+                    "check shell_tangential_max_panel_width forwarding"
+                )
+            previous_slab_nodes = slab_nodes
             full = teacher.reintegrate_local_response(points, weights)
             sphere_points = points[:sphere_count]
             sphere_weights = weights[:sphere_count]
