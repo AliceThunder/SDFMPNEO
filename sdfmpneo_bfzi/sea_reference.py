@@ -446,6 +446,7 @@ class SeawaterResponse:
     integration_modes: np.ndarray
     field_softening: float
     raw_basis_count: int
+    inductance_kernel: str = "plummer"
 
     @property
     def port_impedance(self) -> np.ndarray:
@@ -610,6 +611,7 @@ class SeawaterResponse:
             self.sources, self.basis, self.transform, r,
             self.inductance, k, coefficients, z,
             x, w, modes, self.field_softening, self.raw_basis_count,
+            self.inductance_kernel,
         )
 
     def resolve_with_coupling(self, coupling) -> SeawaterResponse:
@@ -1109,13 +1111,29 @@ class SeawaterResponse:
         z = self.unit_current_modes @ currents
         jsea = np.einsum("nmc,m->nc", self.integration_modes, z)
         weighted = self.integration_weights[:, None] * jsea
+        # The ball kernel uses the exact field of a uniform solid current
+        # cloud: outside its radius the Biot-Savart factor is 1/d**3,
+        # inside it is 1/radius**3. This is consistent with the
+        # unsoftened finite-ball *field* model, unlike Plummer softening.
+        if self.inductance_kernel == "uniform_ball":
+            radius2 = np.cbrt(
+                3.0*self.integration_weights/(4.0*math.pi)
+            )**2
         for start in range(0, len(flat), chunk_size):
-            offset = flat[start:start + chunk_size, None, :] - self.integration_points[None, :, :]
-            dist2 = np.einsum("ijk,ijk->ij", offset, offset) + self.field_softening**2
+            offset = (
+                flat[start:start + chunk_size, None, :]
+                - self.integration_points[None, :, :]
+            )
+            dist2 = np.einsum("ijk,ijk->ij", offset, offset)
+            if self.inductance_kernel == "uniform_ball":
+                distance_power = np.maximum(dist2, radius2[None, :])**1.5
+            else:
+                distance_power = (dist2 + self.field_softening**2)**1.5
             b[start:start + chunk_size] += (
                 MU0 / (4 * math.pi)
                 * np.sum(
-                    np.cross(weighted[None, :, :], offset) / dist2[..., None]**1.5,
+                    np.cross(weighted[None, :, :], offset)
+                    / distance_power[..., None],
                     axis=1,
                 )
             )
@@ -1245,4 +1263,5 @@ def solve_seawater_reference(
     return SeawaterResponse(
         sources, basis, transform, resistance, inductance, coupling,
         unit_modes, z_sea, points, weights, w, cfg.field_softening, basis.size,
+        cfg.inductance_kernel,
     )
