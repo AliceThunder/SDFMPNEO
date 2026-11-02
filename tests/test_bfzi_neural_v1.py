@@ -75,6 +75,14 @@ def test_provisional_neural_holdout_and_passive_inference(tmp_path):
         prediction.impedance_seawater.T,atol=1e-13,
     )
     assert np.linalg.eigvalsh(prediction.impedance_seawater.real)[0]>=-1e-12
+    np.testing.assert_allclose(
+        prediction.port_impedance,
+        1j*source.omega*source.inductance_air
+        + prediction.impedance_seawater
+        + np.diag(source.conductor_internal_impedance()),
+        atol=1e-12,rtol=1e-12,
+    )
+    assert prediction.port_total_power()>=0
     points=np.array([[0.0,0.0,0.0],[0.13,0.0,0.0]])
     heat=prediction.seawater_loss(points)
     assert heat.shape==(2,) and np.isfinite(heat).all()
