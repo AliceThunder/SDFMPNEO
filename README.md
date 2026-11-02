@@ -26,6 +26,7 @@ python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
 python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/Joule cubature
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
+python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K + independent Green L
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -556,6 +557,61 @@ The new run is **not yet numerically validated**.
 Do not claim the thermal source, Green L, or complete
 REFERENCE is converged merely because one local
 Gaussian degree is stable.
+
+**Independent Green L after physically refined R/K (2026-11-02).**
+The user's `f99e73f` run passed **45 BFZI tests**.
+At 0.0167m near-wall tangential panels,
+`normal5,tangential6` compared with `tangential7`
+produced `dR=2.27502e-05`, `dZ=2.98506e-06`,
+`dq=9.38626e-05`; separately raising
+normal 5→6 gave `dR=0.000151424`,
+`dZ=0.000185796` and `dq=8.39262e-05`.
+The old and dual K weak forms differed in port Z by
+`weak_dZ≈0.00084`. Refining physical face width from
+0.020 to 0.0167m still changed port
+`dZ=0.00139931` and probe `dq=0.00174193`,
+so these are stable local *comparison* values, not
+an a priori full-reference error bound.
+
+`SeawaterResponse.reintegrate_green_matrices(
+points,weights,softenings=...,kernel_chunk_size=...)`
+now returns just the independent symmetric Green L
+matrices and the discrete coincident-point diagonal
+numerator `D=(mu0/(4*pi))*sum(w_i²*|J_i|²)`.
+The self-sampling share on softening `a` is
+`D/(a*trace(L_a))`; this is a **collocation-alias
+warning**, not a physical energy fraction in the
+unsoftened continuous kernel. Multiple softening
+lengths reuse pairwise point distances. Existing
+`reintegrate_green_responses` reuses this same
+assembly interface, retaining its existing API.
+One small regression compares Green matrices from
+the new interface with the previously supported
+full-response path.
+
+The new `python run.py --mode bfzi-convergence
+--basis-green-refined` command first streams the
+high-accuracy one-volume R/K on geometry-mu8,
+0.06m maximum radial panels and 0.0167m
+near-wall tangential panels (normal5,tangential6),
+without storing a half-million volume J modes.
+It then independently varies only Green L:
+the existing baseline `(5,8,12,3,4)` with fixed
+nodes and softening 0.025/0.018/0.012m, a
+wall-integration refinement `(5,8,12,3,5)`
+at 0.025m, and an outer-angular refinement
+`(5,10,16,3,4)` at 0.025m.
+All experiments use the exact same 63-mode physical
+basis, R, source, trial-mode whitening and either
+original or curl-dual K. They report the Green node
+count, normalized L changes, coincident-node
+fraction, and **re-solved** port Z, four-probe
+heat and sea power changes. It is an intentionally
+costly `O(N_G²)` *magnetic* calculation and does
+not yet certify any softened/unsoftened continuum
+limit. Do not infer the electromagnetic field
+reference is accurate merely from passive
+dissipation or local R/K convergence.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
