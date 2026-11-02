@@ -734,3 +734,51 @@ def test_source_guided_curl_modes_match_complete_port_vector_potential():
     assert metrics["relative_resistance_difference"] < 1e-8
     assert metrics["relative_coupling_difference"] < 1e-8
     assert metrics["relative_power_difference"] < 1e-8
+
+
+
+def test_separate_green_quadrature_preserves_passivity_and_loss_closure():
+    """Coarser L integral never compromises accurate dissipative R/K."""
+    from dataclasses import replace
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    config = SeaMQSConfig(
+        radial_order=4, polar_order=5, azimuthal_order=8,
+        shell_normal_order=2, shell_tangential_order=3,
+        field_softening=0.025,
+    )
+    reference = solve_seawater_reference(source, config=config)
+    equivalent = solve_seawater_reference(
+        source, config=replace(
+            config, inductance_quadrature=(4, 5, 8, 2, 3),
+        ),
+    )
+    np.testing.assert_allclose(
+        reference.impedance_seawater, equivalent.impedance_seawater,
+        rtol=2e-10, atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        reference.inductance, equivalent.inductance,
+        rtol=2e-10, atol=1e-12,
+    )
+    mixed = solve_seawater_reference(
+        source, config=replace(
+            config, radial_order=5, polar_order=7, azimuthal_order=10,
+            shell_normal_order=3, shell_tangential_order=4,
+            inductance_quadrature=(4, 5, 8, 2, 3),
+        ),
+    )
+    assert np.min(np.linalg.eigvalsh(mixed.inductance)) > -1e-10
+    assert np.min(np.linalg.eigvalsh(
+        0.5 * (mixed.impedance_seawater +
+               mixed.impedance_seawater.conj().T)
+    )) > -1e-10
+    current = np.array([1.2 + 0.1j, -0.3 + 0.5j])
+    np.testing.assert_allclose(
+        mixed.port_seawater_power(current),
+        mixed.quadrature_power(current),
+        rtol=1e-8, atol=1e-12,
+    )
+    with pytest.raises(ValueError, match="five integer orders"):
+        SeaMQSConfig(inductance_quadrature=(4, 5, 8))
