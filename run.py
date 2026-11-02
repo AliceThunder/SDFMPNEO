@@ -9,6 +9,7 @@
     python run.py --mode train     # 无界面训练（历史 vNext）
     python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
     python run.py --mode bfzi --green-ball # 完整均匀球Green电磁热示例
+    python run.py --mode bfzi-snapshot --out bfzi_response.npz # 双端口低秩保存加载推理
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
@@ -335,6 +336,10 @@ def main(argv=None):
             if mode == "bfzi":
                 from examples.bfzi_mqs_demo import main as bfzi_main
                 bfzi_main(ball_reference="--green-ball" in args)
+                return 0
+            if mode == "bfzi-snapshot":
+                from examples.bfzi_snapshot_demo import main as bfzi_main
+                bfzi_main(args[index + 2:])
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
