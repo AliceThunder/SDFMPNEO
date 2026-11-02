@@ -467,9 +467,15 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             if (dz <= 0.002 and dq <= 0.005 and dp <= 0.002
                     and max_dq <= 0.05):
+                status = (
+                    "SPARSE_MATCH" if len(selected) < enriched.size
+                    else "FULL_PARENT_ONLY"
+                )
                 print(
-                    "  adaptive_screen: matched 159-mode port/probe/power "
-                    "including <=5% max relative local probe difference; "
+                    f"  adaptive_screen: {status}; "
+                    f"selected={len(selected)}/{enriched.size}, "
+                    "matched 159-mode port/probe/power including <=5% "
+                    "maximum local probe difference; "
                     "NOT continuum-certified",
                     flush=True,
                 )
