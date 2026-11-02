@@ -300,6 +300,52 @@ configuration, L still uses the primary R/K nodes; specify
 geometry-R/K reference. Green L convergence and softening
 must be verified separately.
 
+**Integration-by-parts / curl-dual source coupling K (2026-11-02).**
+In the user-run `4363d9a` reference, **39 tests passed**.
+With geometry-angle quadrature held at `geometry_mu8`, radial order
+6→7 changed `dZ=0.0230224`, `dq=0.0519701`
+and maximum individual probe q by **10.19%**.
+Increasing box-wall Gauss orders 4/5→5/6 instead changed
+`dZ=0.0170344` and `dP=0.0193525`.
+The combined variation was `dZ=0.040216`,
+`dq=0.050943`. Therefore, **angular convergence does not mean
+all R/K components have converged**.
+
+There is an exact (continuous) integration-by-parts identity for
+every BFZI curl trial current `J_m=curl(F_m)`, because its vector
+primitive `F_m` vanishes on insulating-box and artificial
+outer-domain boundaries:
+
+```text
+K_mp = mu0 * integral_sea J_m dot C_port dV
+     =       integral_sea F_m dot B_port dV,
+B_port = mu0 * curl(C_port)
+```
+
+The second expression has no direct spatial derivatives of the
+rapidly changing box-wall mode envelope, and may offer much smoother
+K cubature. The new `SeaCurrentBasis.potential_primitive(points)`
+returns the actual primitive for every constant-vector and source-guided
+mode, without changing the physical trial space.
+`SeaMQSConfig(coupling_form="curl_dual")` opts into the second
+form for a complete reference solve;
+`coupling_form="current_potential"` is still the default.
+`SeawaterResponse.reintegrate_source_coupling(points,weights,
+coupling_form="curl_dual")` independently integrates K on chosen
+nodes; `resolve_with_coupling(K)` can then re-solve using unchanged R,
+L and heat nodes. The `--basis-geometry` run now compares
+**both coupling formulas** on `geometry_mu8` and on the
+independent radial/near-wall held-out cubatures, printing
+`curl_dual_K` step changes in port Z, pointwise heat and power.
+
+This is **not** a new electromagnetic model: both K forms have the
+same continuous limit when the boundary traces vanish, and the
+discrete port/volume energy closure still holds. Comparing them
+provides an independent convergence indicator, not a guarantee
+that one form is already converged. Avoid choosing the final
+coupling form until the measured independent radial/near-wall
+refinements are stable.
+
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
 `max_radial_panel_width` (meters): all physical radial intervals
