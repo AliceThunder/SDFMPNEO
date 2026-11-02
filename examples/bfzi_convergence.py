@@ -39,9 +39,18 @@ def main(full: bool = False):
         ("tangent_5", scene, 1, 1, SeaMQSConfig(
             **{**base, "shell_tangential_order": 5},
         )),
+        ("outer_radial", scene, 1, 1, SeaMQSConfig(
+            **{**base, "radial_order": 6},
+        )),
+        ("outer_angles", scene, 1, 1, SeaMQSConfig(
+            **{**base, "polar_order": 9, "azimuthal_order": 12},
+        )),
         ("outer_cubature", scene, 1, 1, SeaMQSConfig(
             **{**base, "radial_order": 5, "polar_order": 8,
                "azimuthal_order": 12},
+        )),
+        ("shell_width_16", scene, 1, 1, SeaMQSConfig(
+            **{**base, "shell_width_factor": 16.0},
         )),
         ("face_modes_2", scene, 2, 1, SeaMQSConfig(**base)),
         ("outer_radius_070", replace(scene, outer_radius=0.70),
@@ -115,7 +124,10 @@ def main(full: bool = False):
         ("box_shell", "ray"),
         ("normal_4", "box_shell"),
         ("tangent_5", "box_shell"),
+        ("outer_radial", "box_shell"),
+        ("outer_angles", "box_shell"),
         ("outer_cubature", "box_shell"),
+        ("shell_width_16", "box_shell"),
         ("face_modes_2", "box_shell"),
         ("outer_radius_070", "box_shell"),
         ("softening_018", "box_shell"),
