@@ -403,24 +403,57 @@ class BfziScene:
         normal_nodes, normal_weights = np.polynomial.legendre.leggauss(
             shell_normal_order
         )
-        tangent_nodes, tangent_weights = np.polynomial.legendre.leggauss(
-            shell_tangential_order
+        # Integrate tangential coordinates *piecewise* at the physical
+        # box edges and the face center. A single Gauss rule across the
+        # enlarged [-h-w,h+w] interval samples different near-wall patches
+        # at even/odd orders, which can alter R and K by order-one amounts.
+        # On exterior edge strips use u**2 mapping to cluster positive
+        # Gauss weights within one wall_scale of the sharp edge transition.
+        center_order = max(2, (shell_tangential_order + 1) // 2)
+        edge_order = max(2, shell_tangential_order // 2)
+        center_nodes, center_weights = np.polynomial.legendre.leggauss(
+            center_order
         )
+        edge_nodes, edge_weights = np.polynomial.legendre.leggauss(
+            edge_order
+        )
+        center_t = 0.5 * (center_nodes + 1.0)
+        center_w = 0.5 * center_weights
+        edge_t = 0.5 * (edge_nodes + 1.0)
+        edge_w = 0.5 * edge_weights
+
+        def tangent_rule(half_extent: float, extended: bool):
+            # Two interior patches resolve face-centered basis functions.
+            # Both positive and negative exterior strips are independent
+            # from the interior, including the nonsmooth physical edge.
+            interior_negative = -half_extent + half_extent * center_t
+            interior_positive = half_extent * center_t
+            nodes = [interior_negative, interior_positive]
+            weights = [half_extent * center_w] * 2
+            if extended:
+                stretch = shell_width * edge_t**2
+                stretch_w = 2.0 * shell_width * edge_t * edge_w
+                nodes = [
+                    -half_extent - stretch, *nodes,
+                    half_extent + stretch,
+                ]
+                weights = [stretch_w, *weights, stretch_w]
+            return np.concatenate(nodes), np.concatenate(weights)
+
         for assembly in self.assemblies:
             half = np.asarray(assembly.enclosure.half_extents)
-            # In lexicographic order, earlier axes have the original box
-            # extent; later axes have the full expanded extent. Consequently
-            # these six sign/axis slabs are pairwise disjoint, including
-            # their edge and corner regions.
+            # Earlier slab axes stay inside the physical face extent; later
+            # axes include face, edge and corner regions. This partitions
+            # the full shell exactly without geometric overlap.
             for axis in range(3):
+                tangential = [
+                    tangent_rule(half[j], extended=(j > axis))
+                    if j != axis else None
+                    for j in range(3)
+                ]
                 for sign in (-1.0, 1.0):
-                    intervals = [
-                        (-half[j], half[j]) if j < axis else
-                        (-half[j] - shell_width, half[j] + shell_width)
-                        for j in range(3)
-                    ]
-                    # Geometric normal splitting resolves both the sharp
-                    # physical box-wall current trace and the blend shoulder.
+                    # Geometric normal splitting resolves the sharp box
+                    # boundary gradient and the smooth blending shoulder.
                     boundaries = [0.0]
                     distance = 1.5 * scale
                     while distance < shell_width:
@@ -428,21 +461,26 @@ class BfziScene:
                         distance *= 3.0
                     boundaries.append(shell_width)
                     for lower, upper in zip(boundaries[:-1], boundaries[1:]):
-                        local_intervals = list(intervals)
-                        local_intervals[axis] = (
+                        lo, hi = (
                             (half[axis] + lower, half[axis] + upper)
                             if sign > 0.0 else
                             (-half[axis] - upper, -half[axis] - lower)
                         )
                         axes = []
                         weights = []
-                        for j, (lo, hi) in enumerate(local_intervals):
-                            nodes, w = (
-                                (normal_nodes, normal_weights) if j == axis
-                                else (tangent_nodes, tangent_weights)
-                            )
-                            axes.append(0.5 * (hi - lo) * nodes + 0.5 * (hi + lo))
-                            weights.append(0.5 * (hi - lo) * w)
+                        for j in range(3):
+                            if j == axis:
+                                axes.append(
+                                    0.5 * (hi - lo) * normal_nodes
+                                    + 0.5 * (hi + lo)
+                                )
+                                weights.append(
+                                    0.5 * (hi - lo) * normal_weights
+                                )
+                            else:
+                                nodes, w = tangential[j]
+                                axes.append(nodes)
+                                weights.append(w)
                         grid = np.meshgrid(*axes, indexing="ij")
                         weight_grid = np.meshgrid(*weights, indexing="ij")
                         points = assembly.pose.position(
