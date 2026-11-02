@@ -378,7 +378,9 @@ def test_level_three_thin_face_modes_nest_63_into_95():
     )
     original = build_sea_basis(scene, face_refinement=2, **kwargs)
     expanded = build_sea_basis(scene, face_refinement=3, **kwargs)
+    candidate = build_sea_basis(scene, face_refinement=4, **kwargs)
     assert original.size == 63 and expanded.size == 95
+    assert candidate.size == 159
 
     def signature(mode):
         return (
@@ -388,6 +390,9 @@ def test_level_three_thin_face_modes_nest_63_into_95():
 
     assert set(map(signature, original.modes)).issubset(
         set(map(signature, expanded.modes))
+    )
+    assert set(map(signature, expanded.modes)).issubset(
+        set(map(signature, candidate.modes))
     )
     points, _ = scene.box_shell_quadrature(
         3, 4, 6, shell_normal_order=2, shell_tangential_order=3,
@@ -401,9 +406,16 @@ def test_level_three_thin_face_modes_nest_63_into_95():
         full[:, indices, :], original.evaluate(query),
         rtol=1e-12, atol=1e-12,
     )
-    assert np.isfinite(full).all()
+    enlarged = candidate.evaluate(query)
+    indices3 = [next(i for i, mode in enumerate(candidate.modes)
+                     if signature(mode) == signature(parent))
+                for parent in expanded.modes]
+    np.testing.assert_allclose(
+        enlarged[:, indices3, :], full, rtol=1e-12, atol=1e-12,
+    )
+    assert np.isfinite(full).all() and np.isfinite(enlarged).all()
     with pytest.raises(ValueError, match="face_refinement"):
-        build_sea_basis(scene, face_refinement=4)
+        build_sea_basis(scene, face_refinement=5)
 
 
 def test_reference_refuses_basis_from_a_different_outer_domain():
