@@ -202,6 +202,15 @@ two versus three at the same 22 polar nodes. Each row reports
 `dR/dK`, re-solved `dZ/dq/dP`, and four absolute
 `probe_q` values; each following row additionally prints
 `step_from_previous` and the maximum per-probe relative change.
+The run additionally prints `K_only_re_solved` using the *same*
+new coupling integral but the original R, Green L and spatial Joule
+nodes. This isolates how much of each response change is attributable
+to the source-coupling matrix rather than the resistive operator.
+`SeawaterResponse.resolve_with_coupling(K)` exposes this same passive
+re-solve for externally reintegrated two-port coupling matrices;
+matching R and heat nodes still ensure exact discrete energy closure.
+It does **not** make an arbitrarily supplied K physically accurate.
+
 Only the polar-order 10/14/18/22 rows form a meaningful
 single-axis order refinement. The Gauss nodes are not mathematically
 nested, so small consecutive differences alone are not a rigorous
