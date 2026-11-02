@@ -246,6 +246,30 @@ class SeawaterResponse:
             x, w, modes, self.field_softening, self.raw_basis_count,
         )
 
+    def resolve_with_coupling(self, coupling) -> SeawaterResponse:
+        """Re-solve with an independently integrated physical port coupling.
+
+        R, Green L, physical basis and the original R/Joule heat quadrature
+        remain untouched. Energy closure stays exact because it is the same
+        R matrix that determines both modal Joule heat and port dissipation.
+        A new coupling matrix should be integrated on the *same physical*
+        two-port sources and retained Galerkin basis, not fitted freely.
+        """
+        k = np.asarray(coupling, dtype=float)
+        if k.shape != self.coupling.shape or not np.isfinite(k).all():
+            raise ValueError("refined coupling must be a finite real (m,2) matrix")
+        omega = self.sources.omega
+        coefficients = solve(
+            self.resistance + 1j * omega * self.inductance,
+            -1j * omega * k, assume_a="gen", check_finite=True,
+        )
+        impedance = 1j * omega * k.T @ coefficients
+        impedance = 0.5 * (impedance + impedance.T)
+        return replace(
+            self, coupling=k, unit_current_modes=coefficients,
+            impedance_seawater=impedance,
+        )
+
     def reintegrate_green_responses(
         self, points, weights, *, softenings=None, kernel_chunk_size=128,
     ) -> tuple[SeawaterResponse, ...]:
