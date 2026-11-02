@@ -49,7 +49,8 @@ def _indices_in_enriched_basis(enriched, subset):
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
-                      radial: bool = False, kparts: bool = False):
+                      radial: bool = False, kparts: bool = False,
+                      wallpanels: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -126,6 +127,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_width_factor=cfg.shell_width_factor,
                 shell_normal_order=cfg.shell_normal_order,
                 shell_tangential_order=cfg.shell_tangential_order,
+                shell_tangential_max_panel_width=cfg.shell_tangential_max_panel_width,
                 outer_taper_width=enriched.outer_taper_width,
                 max_radial_panel_width=cfg.max_radial_panel_width,
                 radial_geometry_cuts=cfg.radial_geometry_cuts,
@@ -192,7 +194,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
-    if kparts:
+    if kparts or wallpanels:
         # The two continuous curl-integration forms agree only after
         # integrating BOTH pieces of the partition-of-unity quadrature.
         # Isolate the sphere and box-wall contributions on identical
@@ -207,19 +209,30 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             return float(np.linalg.norm(a - b)
                          / max(np.linalg.norm(b), 1e-30))
 
-        for label, normal, tangential, mu, phi in (
+        schemes = (
             ("wall4_5", 4, 5, 8, 2),
             ("wall5_6", 5, 6, 8, 2),
             ("wall6_7", 6, 7, 8, 2),
             ("wall8_9", 8, 9, 8, 2),
             ("wall8_9_mu10", 8, 9, 10, 2),
-        ):
+        )
+        if wallpanels:
+            schemes = (
+                ("wall_base_5_6", 5, 6, 8, 2),
+                ("wall_cap050_5_6", 5, 6, 8, 2),
+                ("wall_cap025_5_6", 5, 6, 8, 2),
+                ("wall_cap025_5_7", 5, 7, 8, 2),
+            )
+        for label, normal, tangential, mu, phi in schemes:
+            width = (0.05 if "cap050" in label else
+                     0.025 if "cap025" in label else None)
             cfg = replace(
                 config, polar_geometry_order=mu,
                 azimuthal_panel_order=phi, radial_geometry_cuts=True,
                 max_radial_panel_width=0.06,
                 shell_normal_order=normal,
                 shell_tangential_order=tangential,
+                shell_tangential_max_panel_width=width,
             )
             points, weights, sphere_count = scene.box_shell_quadrature(
                 cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
