@@ -120,6 +120,69 @@ class SeawaterResponse:
         q = np.sum(np.abs(j)**2, axis=-1) / (2 * self.sources.scene.seawater.conductivity)
         return float(self.integration_weights @ q)
 
+    def independent_cubature_metrics(
+        self, points, weights, port_currents=(1.0, 0.0),
+    ) -> dict[str, float]:
+        """Reintegrate an existing MQS solution on *independent* wet nodes.
+
+        No second Green solve is needed. The held-out quadrature checks the
+        dissipative operator R, the source coupling K, and the physical
+        Joule integral. Disagreement reveals quadrature aliasing even when
+        the original discrete port/volume power closes exactly.
+
+        This deliberately does not certify the nonlocal Green matrix L or
+        the completeness of the current trial space; those require a
+        separately refined solve.
+        """
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3 or w.shape != (len(x),)
+                or len(x) == 0 or not np.isfinite(x).all()
+                or not np.isfinite(w).all() or np.any(w <= 0)):
+            raise ValueError(
+                "independent cubature requires nonempty (n,3) points "
+                "and strictly positive finite (n,) volume weights"
+            )
+        if not self.sources.scene.in_seawater(x).all():
+            raise ValueError("independent cubature points must be in seawater")
+        currents = self._currents(port_currents)
+        fields = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
+            optimize=True,
+        )
+        sigma = self.sources.scene.seawater.conductivity
+        heldout_r = np.einsum(
+            "n,nic,njc->ij", w / sigma, fields, fields,
+            optimize=True,
+        )
+        heldout_k = MU0 * np.einsum(
+            "n,nmc,ncp->mp", w, fields,
+            self.sources.potential_kernels(x), optimize=True,
+        )
+        amplitudes = self.unit_current_modes @ currents
+        current_density = np.einsum(
+            "nmc,m->nc", fields, amplitudes, optimize=True,
+        )
+        power = float(w @ (
+            np.sum(np.abs(current_density)**2, axis=1) / (2 * sigma)
+        ))
+        port_power = self.port_seawater_power(currents)
+        return {
+            "heldout_power": power,
+            "on_grid_power": port_power,
+            "relative_power_difference": abs(power - port_power) / max(
+                abs(port_power), 1e-30,
+            ),
+            "relative_resistance_difference": float(
+                np.linalg.norm(heldout_r - self.resistance)
+                / max(np.linalg.norm(self.resistance), 1e-30)
+            ),
+            "relative_coupling_difference": float(
+                np.linalg.norm(heldout_k - self.coupling)
+                / max(np.linalg.norm(self.coupling), 1e-30)
+            ),
+        }
+
     def seawater_heat_nodes(self, port_currents=(1.0, 0.0)):
         """Positive seawater heat cubature (xyz, dV, q in W/m^3).
 
