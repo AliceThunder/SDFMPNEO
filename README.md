@@ -30,6 +30,7 @@ python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere rad
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
 python run.py --mode bfzi-convergence --basis-geometry # enclosure-projected polar Gauss refinement
+python run.py --mode bfzi-convergence --basis-radial   # physical radial panels, both K weak forms
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -345,6 +346,54 @@ provides an independent convergence indicator, not a guarantee
 that one form is already converged. Avoid choosing the final
 coupling form until the measured independent radial/near-wall
 refinements are stable.
+
+**Radial geometry cuts and two-form K convergence (2026-11-02).**
+The user-run `8f46998` experiment passed **41 tests** and
+showed that the new curl-dual K formulation does not automatically
+cure all one-volume integration error. With the same `geometry_mu8`
+polar rule, updating only radial Gauss degree from 6 to 7 changed
+the historical K solution by `dZ=0.0230224` and maximum
+probe `dq=0.101934`, versus `dZ=0.0369192` and maximum
+probe `dq=0.219208` under the dual weak form. At the **same**
+original `geometry_mu8` nodes, the two continuous-equivalent
+formulations differed by `dK=0.0242518`,
+`dZ=0.0356102`, `dq=0.038667` and
+`dP=0.036494`. It is **not** justified to switch the default
+source-coupling integration until radial/wall discretization is
+controlled and the two forms approach one another.
+
+`box_shell_quadrature(..., radial_geometry_cuts=True)` now optionally
+inserts **actual box and enlarged blending-shell radial extents**
+into the existing spherical integration intervals. For each oriented
+enclosure it finds the exact minimum sphere-center-to-box distance,
+plus the maximum sphere-center-to-corner radius. This remains
+geometry-driven for arbitrary poses and does not introduce a
+world volume mesh. Combined with the existing
+`max_radial_panel_width` in meters, sphere Gauss panels keep
+controlled physical radial sizes. These options do not alter
+the separate geometry-local box-wall slabs. The new
+`SeaMQSConfig.radial_geometry_cuts` is applied to the primary
+R/K/Joule quadrature; an explicitly independent Green L
+quadrature retains its own less costly radial cuts. Legacy
+behavior remains the default.
+
+`python run.py --mode bfzi-convergence --basis-radial`
+builds the original 63-mode source/Green L just once and
+then independently compares the `geometry_mu8` radial reference,
+new actual box radius cuts, and caps of **0.12, 0.06, 0.03 m**.
+For every integration it re-solves R/K using the historical
+curl-current K and the boundary-dual primitive K, holding
+Green L and physical modes fixed. It reports differences
+between the two forms on **identical R and nodes** and
+consecutive fixed-geometry radial-stage differences in
+`R/K/Z/q/P`, including the largest individual probe
+heat change. The last row compares a radial Gauss-degree
+6→7 increase on the **same** 0.06 m panelization,
+rather than confusing that change with a 0.03 m cap.
+A small form gap and small same-family successive changes
+are both necessary practical indicators, but do not prove
+whole-model convergence. This branch has not yet had the
+new radial command validated by the user's local pytest.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
