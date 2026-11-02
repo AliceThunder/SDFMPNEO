@@ -157,6 +157,7 @@ class BfziScene:
         azimuthal_order: int = 16, *, wall_layers: int = 2,
         wall_scale: float | None = None,
         exclusion_padding: float = 0.0,
+        outer_taper_width: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive meshless cubature with exact box cuts and graded wall layers.
 
@@ -179,6 +180,11 @@ class BfziScene:
             raise ValueError("wall_scale must be positive and finite")
         if not math.isfinite(exclusion_padding) or exclusion_padding < 0:
             raise ValueError("exclusion_padding must be finite and nonnegative")
+        if outer_taper_width is not None and (
+            not math.isfinite(outer_taper_width)
+            or not 0 < outer_taper_width < self.outer_radius
+        ):
+            raise ValueError("outer_taper_width must be within (0, outer_radius)")
         rr, rw = np.polynomial.legendre.leggauss(radial_order)
         mu, mw = np.polynomial.legendre.leggauss(polar_order)
         theta = (np.arange(azimuthal_order) + 0.5) * (
@@ -247,6 +253,12 @@ class BfziScene:
         # remain positive, and the sum of radial cubature weights integrates
         # r^2 exactly on every subinterval for radial_order >= 2.
         knots = [left, right]
+        if outer_taper_width is not None:
+            # Split the ray cubature at the same artificial sphere transition
+            # as the box-shell rule, without changing its wet domain.
+            knots.append(np.clip(
+                radius - outer_taper_width, left, right,
+            ))
         for layer in range(wall_layers):
             distance = scale * 4**layer
             knots.append(np.where(
