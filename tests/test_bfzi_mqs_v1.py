@@ -649,3 +649,66 @@ def test_thin_face_refinement_is_strictly_nested_in_original_basis():
             and mode.width == candidate.width
             for candidate in patches.modes
         )
+
+
+
+def test_source_guided_curl_modes_match_complete_port_vector_potential():
+    """A spatially weighted closed-wire A has the expected solenoidal curl."""
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    base = build_sea_basis(scene, modes_per_face=2)
+    guided = build_sea_basis(
+        scene, modes_per_face=2, sources=source,
+        include_source_guided=True,
+    )
+    assert guided.size == base.size + 4
+    for i in range(base.size):
+        np.testing.assert_allclose(
+            guided.modes[i].center, base.modes[i].center
+        )
+        np.testing.assert_allclose(
+            guided.modes[i].direction, base.modes[i].direction
+        )
+        assert guided.modes[i].width == base.modes[i].width
+        assert guided.modes[i].source_port == -1
+    assert [m.source_port for m in guided.modes[-4:]] == [0, 0, 1, 1]
+    with pytest.raises(ValueError, match="complete port sources"):
+        build_sea_basis(scene, include_source_guided=True)
+
+    probe = np.array([0.155, 0.025, 0.17])
+    assert scene.in_seawater(probe)
+    mode = guided.modes[-2]
+    line = guided.source_lines[mode.source_port]
+
+    def potential(x):
+        outer = scene.outer_radius
+        rel = x - scene.outer_center
+        envelope = 1 - np.dot(rel, rel) / outer**2
+        for assembly in scene.assemblies:
+            dist2, _ = assembly.enclosure.squared_exterior_distance(
+                x, assembly.pose,
+            )
+            d = np.sqrt(dist2)
+            envelope *= d / (d + guided.wall_scale)
+        offset = x - mode.center
+        gaussian = np.exp(-np.dot(offset, offset) / mode.width**2)
+        return envelope * gaussian * line.potential_kernel(x)
+
+    h = 1e-5
+    derivatives = []
+    for axis in range(3):
+        delta = np.eye(3)[axis] * h
+        derivatives.append(
+            (potential(probe + delta) - potential(probe - delta)) / (2 * h)
+        )
+    curl = np.array([
+        derivatives[1][2] - derivatives[2][1],
+        derivatives[2][0] - derivatives[0][2],
+        derivatives[0][1] - derivatives[1][0],
+    ])
+    np.testing.assert_allclose(
+        guided.evaluate(probe[None, :])[0, -2], curl,
+        rtol=2e-5, atol=1e-7,
+    )
