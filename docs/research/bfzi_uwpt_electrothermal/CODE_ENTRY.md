@@ -447,3 +447,20 @@ response = solve_seawater_reference(source, basis=basis)
 4. 新增针对性测试，验证返回的球域/近壁节点拼接完整无损，并且两个弱式的分区 K 相加与整体 K 一致。继续保留旧 K 形式为默认；没有调用 GitHub Actions。
 
 建议本地运行三条命令（`git pull`、两个 BFZI 测试、`python run.py --mode bfzi-convergence --basis-kparts`）。本轮目的不是再做宽泛网格收敛，而是确定持续约3.77%端口 K 弱式差异的空间来源，随后直接针对对应的主积分算法做物理合理的局部修改。
+
+
+### 2026-11-02：43 passed；K 球/盒分区内部边界抵消，R/热源近壁仍未收敛
+
+用户本地 `dd16b7c` 得到 **43 passed in 14.21s**。固定真实几何极角 mu8、径向几何 cuts + 0.06m cap、63模式、同一 Green L，逐级加密原盒面 Gauss：
+- `wall4_5` 的完整双弱式差 `dK=0.0456624,dZ=0.0377317`；`wall5_6` 降为 `dK=0.0253086,dZ=0.013131`；`wall6_7` 降为 `dK=0.00471007,dZ=0.00244113`；`wall8_9` 降为 `dK=0.00367166,dZ=0.000971325`。其 `wall8_9_mu10` 只加密极角到10时原 K 端口 `dZ=1.73114e-05`，角向误差已小。
+- 球域贡献对原始 K 归一化约0.82，近壁 slab贡献约0.82，二者方向 `alignment≈-0.999995`，互相抵消。这些是将积分分区后**未独立满足分部积分等式的内部边界项**，不是两块都存在82%的物理误差。最终差异不断减小证明该抵消随近壁规则改善。
+- 但 R 从 `wall5_6→wall6_7` 仍有 `dR=0.205192`，从 `wall6_7→wall8_9` 仍有 `dR=0.085981`。探针 q 对应有 `0.17451` 和 `0.0785902` 的变化。**R/Joule 的近壁切向积分，比当前双 K 弱式一致性更需要改善**。不能提前把 wall8/9 当成真实连续物理参考。
+
+本轮在主代码中增加真实物理宽度的复合近壁积分（用户尚未复测）：
+- `BfziScene.box_shell_quadrature(...,shell_tangential_max_panel_width=<m>)`：以前每个盒面局部切向正/负半面只有一个 Gauss 区间，局部高斯电流模式在此区域迅速变化，导致升高切向阶数会突然挪动较大范围节点。现在在封装的**实际局部坐标**中，每半面按物理间隔长度细分成等宽 Gauss 面板，不改变面中心/真实边缘的切分界面。
+- 盒面外的 edge/corner strips 原先用 `distance=shell_width*u²` 聚集边缘 Gauss 节点，新选项也依据物理宽度约束，将 `u∈[0,1]` 细分，并保留严格正权 Jacobian `d(distance)=2 shell_width*u du`。这一部分重要，因为从 wall5→6 的巨大 R 变化恰好伴随着 edge Gauss 阶数变化。
+- `SeaMQSConfig.shell_tangential_max_panel_width` 传入主 R/K/Joule 求积；显式独立 Green L 的节点与阶数继续保持不变，避免 Green 二重积分成本爆炸。参数默认 `None` 兼容原有求积。面板沿任意旋转盒体的局部轴，不构建世界网格。
+- 新增 `--basis-wallpanels` 专用运行方式，复用 K 球域/近壁贡献定位代码，但改为逐级执行：旧规则 `wall_base_5_6`，切向物理上限0.05m `wall_cap050_5_6`、0.025m `wall_cap025_5_6`，再在0.025m固定切分上将切向 Gauss 6→7（`wall_cap025_5_7`）。全部固定 `shell_normal_order=5`、极角 mu8、方位扇区 Gauss2、径向 0.06m 和 Green L。使用原来的分区完整 K 对照，输出两种 K 弱式及 R/K/端口/四探针热源/功率的前后差异。
+- 新增简短测试：盒面和外侧边缘 composite 面板的有效正权海水节点、球域积分保持不变，以及不合法物理宽度的拒绝。
+
+执行 `git pull`、原两个 BFZI 测试、`python run.py --mode bfzi-convergence --basis-wallpanels`。该实验可判断对 R 的主要误差能否由物理尺度驱动的局部面板直接收敛，而不再把全局切向 Gauss 阶数无限加大。此前 43 passed 是用户旧版本结果，本轮代码尚未由用户本地测试。禁止 GitHub Actions。
