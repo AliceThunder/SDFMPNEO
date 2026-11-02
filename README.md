@@ -37,9 +37,12 @@ python run.py --mode bfzi-snapshot --out bfzi_response.npz # save/load/query fou
 python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_provisional_labels.npz # two distinct poses
 python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # many provisional geometry labels
 python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400 # torch optional
-python run.py --mode bfzi-infer --model bfzi_neural.pt # no electromagnetic reference solve
+python run.py --mode bfzi-infer --model bfzi_neural.pt # default RAW learned Z; no reference solve
+python run.py --mode bfzi-infer --model bfzi_neural.pt --power-closure # diagnostic: rebuild Re(Z) from J
 python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # original held-out geometries
 python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
+python run.py --mode bfzi-convergence --basis-ball-face # experimental 159→167 source-face-curl enrichment
+python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l # independent 167-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -50,6 +53,37 @@ python run.py --mode bfzi-convergence --basis-wallpanels # physical face/edge Ga
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
+
+**BFZI held-out model evaluation (2026-11-02):**
+The original 8-geometry dataset has only 6 training geometries and 2
+held-out scenes, both outside at least one coordinate's training min/max.
+This high-dimensional bounding-box flag does **not** by itself quantify
+physical extrapolation distance. The saved 27-mode labels remain
+provisional. Measured mean raw errors were Z=9.04%, J=79.60% and
+local probe Joule=92.71%. Reconstructing Re(Z) from the poorly learned
+current field increased Z error to 18.63%, despite a tiny algebraic
+power-identity mismatch. **Raw independent port Z is now the inference
+default**; pass `--power-closure` only to inspect the current-derived
+passive reciprocal loss and its spatial energy identity. The old
+`--raw-port-loss` flag is accepted as a redundant compatibility alias.
+`bfzi-eval` reports both raw and closed accuracy, plus
+`raw_mode_relative_error` and `raw_power_mismatch` on the same positive
+cubature. These diagnostics are not a continuum accuracy certificate.
+
+The 159-mode uniform-ball reference has *not* converged in its physical
+trial space (95→159: dZ=23.9%, probe dq=50.5%). The
+`--basis-ball-check-l` command now independently tests magnetic rule B
+against A on the **same** 159-mode, same refined-R/K operator and fixed
+probes: it prints dL/dZ/dJ/dq/dP and the R-inverse-weighted B-equation
+residual of the A solution. The gate remains experimental and must be
+run; a PASS would only validate that particular A/B comparison, not
+the complete reference. The optional `--basis-ball-face` study adds
+eight real solenoidal modes `curl(g C_port)` with complete physical
+port potential and independent broad-face envelopes (159→167). It
+reuses the nested parent solve to measure whether these **physics-guided**
+directions matter for field/port accuracy; it neither replaces the
+existing 159-mode benchmark by default nor claims convergence. Combine
+both flags to run A/B on the 167-mode parent.
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
