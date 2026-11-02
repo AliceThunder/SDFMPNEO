@@ -782,3 +782,49 @@ def test_separate_green_quadrature_preserves_passivity_and_loss_closure():
     )
     with pytest.raises(ValueError, match="five integer orders"):
         SeaMQSConfig(inductance_quadrature=(4, 5, 8))
+
+
+
+def test_reintegrated_local_response_reuses_green_and_closes_power():
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    reference = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            field_softening=0.025,
+        ),
+    )
+    current = np.array([1.0 + 0.2j, -0.4 + 0.5j])
+    probes = np.array([[0., 0., 0.], [0.16, 0., 0.]])
+    identical = reference.reintegrate_local_response(
+        reference.integration_points, reference.integration_weights,
+    )
+    np.testing.assert_allclose(
+        identical.impedance_seawater, reference.impedance_seawater,
+        rtol=1e-8, atol=1e-12,
+    )
+    metrics = reference.independent_cubature_metrics(
+        reference.integration_points, reference.integration_weights,
+        current, probes=probes,
+    )
+    assert metrics["relative_resolved_impedance_change"] < 1e-8
+    assert metrics["relative_resolved_power_change"] < 1e-8
+    assert metrics["relative_resolved_probe_change"] < 1e-8
+    assert metrics["relative_heldout_residual"] < 1e-8
+
+    # Change only R/K and positive heat nodes. L, source, basis and its
+    # original normalization are held exactly fixed.
+    x, w = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=3, shell_tangential_order=4,
+        wall_scale=reference.basis.wall_scale,
+    )
+    refined = reference.reintegrate_local_response(x, w)
+    np.testing.assert_allclose(refined.inductance, reference.inductance)
+    np.testing.assert_allclose(refined.transform, reference.transform)
+    np.testing.assert_allclose(
+        refined.port_seawater_power(current),
+        refined.quadrature_power(current), rtol=1e-8, atol=1e-12,
+    )
+    assert refined.port_seawater_power(current) >= 0
+    assert np.isfinite(refined.impedance_seawater).all()
