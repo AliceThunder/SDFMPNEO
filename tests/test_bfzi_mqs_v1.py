@@ -1417,6 +1417,17 @@ def test_gaussian_volume_green_is_finite_psd_and_chunk_independent():
         np.testing.assert_allclose(self_trace, individual_self[0], rtol=1e-12)
         assert np.linalg.eigvalsh(matrix)[0] >= -1e-12
     np.testing.assert_allclose(ladder[1], matrices[0], rtol=1e-9, atol=1e-13)
+    # Same public response path, independent physical volume shape.
+    ball, ball_self = reference.reintegrate_ball_green_matrix(
+        points, weights, kernel_chunk_size=17,
+    )
+    ball_other, ball_self_other = reference.reintegrate_ball_green_matrix(
+        points, weights, kernel_chunk_size=23,
+    )
+    np.testing.assert_allclose(ball, ball_other, rtol=1e-9, atol=1e-13)
+    np.testing.assert_allclose(ball_self, ball_self_other, rtol=1e-12)
+    assert np.linalg.eigvalsh(ball)[0] >= -1e-12
+    assert ball_self > 0 and np.trace(ball) > 0
     with pytest.raises(ValueError, match="width_factor"):
         reference.reintegrate_gaussian_green_matrices(
             points, weights, width_factor=(0.75, 0.0),
