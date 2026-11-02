@@ -70,13 +70,84 @@ def _decode_target(vector, n_modes):
     return raw, re + 1j*im
 
 
+def _local_resistance(basis: SeaCurrentBasis, *, orders=(4, 6, 8, 2, 3),
+                      chunk_size=768):
+    """Positive local Joule Gram; NO inductance/Green assembly or full heat tensor.
+
+    The inexpensive cubature is explicitly an inference *closure rule*;
+    its resolution has not been physically certified. It should not be
+    confused with the separate highly refined MQS reference R/K rule.
+    """
+    if (len(orders) != 5
+            or any(not isinstance(v, int) or isinstance(v,bool) or v<2
+                   for v in orders)):
+        raise ValueError("closure orders must be five integers >=2")
+    r, p, a, n, t = orders
+    x,w=basis.scene.box_shell_quadrature(
+        r,p,a, wall_scale=basis.wall_scale,
+        shell_normal_order=n,shell_tangential_order=t,
+        outer_taper_width=(
+            basis.outer_taper_width
+            if basis.outer_envelope=="boundary_layer" else None
+        ),
+    )
+    if len(x)==0:
+        raise ValueError("closure cubature returned no seawater samples")
+    resistance=np.zeros((basis.size,basis.size))
+    for start in range(0,len(x),chunk_size):
+        end=min(start+chunk_size,len(x))
+        modes=basis.evaluate(x[start:end])
+        resistance+=np.einsum(
+            "n,nic,njc->ij",w[start:end]/basis.scene.seawater.conductivity,
+            modes,modes,optimize=True,
+        )
+    return 0.5*(resistance+resistance.T),x,w
+
+
+def _power_consistent_response(basis,raw,learned_z,orders):
+    """Project learned unit responses onto reciprocal two-port Joule closure.
+
+    For two complex responses U=[u1,u2] in a *real* physical curl basis,
+    H=U^H R U is PSD Hermitian. Reciprocity requires Im(H12)=0.
+    A minimum one-column correction in the R metric,
+        u2 <- u2 - j Im(H12)/H11 * u1,
+    imposes that single identity without constructing magnetic L or
+    performing a 27/159-mode complex MQS solve. Then H is real symmetric
+    up to rounding and supplies Re(Z). The learned reciprocal Im(Z)
+    is retained. Accuracy of the adjusted field is NOT certified.
+    """
+    resistance,points,weights=_local_resistance(basis,orders=orders)
+    adjusted=np.array(raw,copy=True)
+    gram=adjusted.conj().T @ resistance @ adjusted
+    denom=float(np.real(gram[0,0]))
+    phase_gap=float(np.imag(gram[0,1]))
+    if denom>1e-30:
+        adjusted[:,1]-=1j*(phase_gap/denom)*adjusted[:,0]
+    elif abs(phase_gap)>1e-14:
+        raise ValueError("inconsistent null first-port current in closure")
+    fixed=adjusted.conj().T @ resistance @ adjusted
+    fixed=0.5*(fixed+fixed.conj().T)
+    magnitude=max(float(np.linalg.norm(fixed)),1e-30)
+    defect=float(np.linalg.norm(fixed.imag)/magnitude)
+    if defect>1e-8:
+        raise RuntimeError(
+            f"reciprocal Joule closure failed: imaginary Gram defect {defect:g}"
+        )
+    dissipative=0.5*(fixed.real+fixed.real.T)
+    corrected_z=dissipative+1j*learned_z.imag
+    shift=float(np.linalg.norm(adjusted-raw)/max(np.linalg.norm(raw),1e-30))
+    return adjusted,corrected_z,points,weights,shift,defect
+
+
 @dataclass(frozen=True)
 class BFZINeuralPrediction:
     """Fast spatial J(x) and q(x) after one geometry-conditioned network pass.
 
-    Impedance real part is PSD and imaginary part reciprocal by construction.
-    Unlike a fully physical MQS solve, its learned J and Z are predicted
-    separately: their *integrated* Joule losses need not close exactly.
+    With power_consistent=True the real impedance is reconstructed from
+    predicted analytic curl fields on one POSITIVE closure cubature, and
+    two-port phase reciprocity is enforced by a minimal field correction.
+    Discrete power closure is exact at that rule, not a continuum certificate.
+    With power_consistent=False the learned fields and Z remain independent.
     """
 
     sources: BFZISources
@@ -84,6 +155,24 @@ class BFZINeuralPrediction:
     raw_unit_modes: np.ndarray
     impedance_seawater: np.ndarray
     out_of_training_range: bool
+    closure_points: np.ndarray | None = None
+    closure_weights: np.ndarray | None = None
+    response_correction_relative: float = 0.0
+    reciprocal_gram_defect: float = 0.0
+
+    @property
+    def power_closure_enabled(self):
+        return self.closure_points is not None
+
+    def integrated_seawater_power(self,currents=(1.,0.)):
+        """Independent spatial Joule integral on inference closure cubature."""
+        if not self.power_closure_enabled:
+            raise ValueError("spatial power closure is not enabled")
+        return float(
+            self.closure_weights @ self.seawater_loss(
+                self.closure_points,currents,
+            )
+        )
 
     @property
     def port_impedance(self):
@@ -161,7 +250,9 @@ class BFZINeuralSurrogate:
         model.eval()
         return cls(model,record)
 
-    def predict(self,sources: BFZISources,basis: SeaCurrentBasis):
+    def predict(self,sources: BFZISources,basis: SeaCurrentBasis, *,
+                power_consistent: bool = True,
+                closure_orders=(4,6,8,2,3)):
         torch,_=_torch()
         if basis.scene is not sources.scene:
             raise ValueError("query basis does not belong to source scene")
@@ -202,8 +293,15 @@ class BFZINeuralSurrogate:
         raw,z=_decode_target(output,meta["mode_count"])
         if not np.isfinite(raw).all() or not np.isfinite(z).all():
             raise FloatingPointError("BFZI network returned nonfinite response")
+        points=weights=None
+        shift=defect=0.0
+        if power_consistent:
+            raw,z,points,weights,shift,defect=_power_consistent_response(
+                basis,raw,z,closure_orders,
+            )
         return BFZINeuralPrediction(
             sources,basis,raw,z,out_of_training_range,
+            points,weights,shift,defect,
         )
 
 
