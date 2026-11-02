@@ -288,6 +288,7 @@ class BfziScene:
         shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
         outer_taper_width: float | None = None,
+        max_radial_panel_width: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
 
@@ -323,6 +324,11 @@ class BfziScene:
             or not 0 < outer_taper_width < self.outer_radius
         ):
             raise ValueError("outer_taper_width must be within (0, outer_radius)")
+        if max_radial_panel_width is not None and (
+            not math.isfinite(max_radial_panel_width)
+            or max_radial_panel_width <= 0
+        ):
+            raise ValueError("max_radial_panel_width must be positive and finite")
 
         shell_width = shell_width_factor * scale
         center = np.asarray(self.outer_center)
@@ -394,6 +400,16 @@ class BfziScene:
             (a, b) for a, b in zip(cuts[:-1], cuts[1:])
             if b - a > 1e-12
         ]
+        if max_radial_panel_width is not None:
+            # Fixed Gauss order on a growing outer-radius interval loses
+            # physical radial resolution and masquerades as domain error.
+            # Split only the smooth spherical rule, never the near-box slabs.
+            intervals = [
+                (a + (b - a) * k / n, a + (b - a) * (k + 1) / n)
+                for a, b in intervals
+                for n in [max(1, math.ceil((b - a) / max_radial_panel_width))]
+                for k in range(n)
+            ]
         rr = np.concatenate([
             0.5 * (hi - lo) * r_nodes + 0.5 * (hi + lo)
             for lo, hi in intervals
