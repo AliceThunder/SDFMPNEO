@@ -179,69 +179,63 @@ def _assemble_green_inductances(
 def _assemble_gaussian_green_inductances(
     points: np.ndarray, weights: np.ndarray, modes: np.ndarray,
     extra_blurs: tuple[float, ...], chunk_size: int,
-    width_factor: float,
+    width_factor: float | tuple[float, ...],
 ) -> tuple[tuple[np.ndarray, ...], tuple[float, ...]]:
-    """Positive-kernel Green L from finite-volume Gaussian current clouds.
+    """Positive-semidefinite Coulomb energy of Gaussian volume clouds.
 
-    A wet node of cubature weight w has equal-volume sphere radius
-    r=(3*w/(4*pi))**(1/3). A uniform sphere's one-coordinate variance
-    is r**2/5, hence its isotropic Gaussian width h=r/sqrt(5).
-    This is a *volume moment-matched approximation* and does not resolve
-    exact curved shell/corner cells. Optional width_factor scales h.
+    A node of weight w receives the moment-matched one-axis width
+    h = (3*w/(4*pi))**(1/3)/sqrt(5), multiplied by width_factor.
+    The exact Gaussian-pair interaction is erf(d/(sqrt(2)*sigma))/d,
+    sigma**2=h_i**2+h_j**2+a**2, with its analytic d=0 limit.
 
-    The Coulomb interaction of Gaussian distributions centered at x_i,x_j
-    with per-coordinate standard deviations h_i,h_j is exactly
-
-       G_ij = erf(d/sqrt(2*(h_i**2+h_j**2+a**2))) / d,
-
-    with continuous d=0 value sqrt(2/pi)/sqrt(h_i**2+h_j**2+a**2).
-    a>=0 adds independent Gaussian smoothing of variance a**2/2 to
-    *each* cloud, NOT the old Plummer sqrt(d**2+a**2) kernel.
-
-    In Fourier variables the scalar kernel is the Coulomb multiplier
-    (4*pi/k**2) times products of real Gaussian Fourier transforms.
-    Consequently the single-rule R3-vector-current L matrix is PSD
-    before floating-point roundoff. No arbitrary deletion/subtraction
-    of i=j terms is used. Convergence in the independently refined
-    positive cubature is still mandatory.
+    A tuple of width factors shares every expensive pair-distance block.
+    Outputs are ordered (width factor first, extra blur second); a scalar
+    factor preserves the original single-factor interface.
+    Every output remains a Gaussian-cloud Gram matrix, hence PSD up to
+    floating-point roundoff. The diagonal is included, never subtracted.
     """
+    factors = (
+        (float(width_factor),) if np.isscalar(width_factor)
+        else tuple(float(factor) for factor in width_factor)
+    )
     n_points, n_modes, _ = modes.shape
     radius = np.cbrt(3.0 * weights / (4.0 * math.pi))
-    widths2 = (width_factor * radius / math.sqrt(5.0))**2
+    base_widths2 = (radius / math.sqrt(5.0))**2
     weighted = weights[:, None, None] * modes
     packed = weighted.reshape(n_points, 3 * n_modes)
-    matrices = [np.zeros((n_modes, n_modes), dtype=float) for _ in extra_blurs]
-    diag_numerators = []
+    cases = [
+        (factor, a) for factor in factors for a in extra_blurs
+    ]
+    matrices = [np.zeros((n_modes, n_modes), dtype=float) for _ in cases]
     squared_norms = np.einsum("nic,nic->n", modes, modes, optimize=True)
-    for a in extra_blurs:
-        k0 = (
-            math.sqrt(2.0 / math.pi)
-            / np.sqrt(2.0 * widths2 + a*a)
-        )
-        diag_numerators.append(
-            float(MU0 / (4.0 * math.pi) *
-                  np.dot(weights**2 * squared_norms, k0))
-        )
-
     prefactor = MU0 / (4.0 * math.pi)
+    diag_numerators = [
+        float(prefactor * np.dot(
+            weights**2 * squared_norms,
+            math.sqrt(2.0 / math.pi)
+            / np.sqrt(2.0 * factor**2 * base_widths2 + a*a),
+        ))
+        for factor, a in cases
+    ]
+
     for start in range(0, n_points, chunk_size):
         stop = min(start + chunk_size, n_points)
         left = weighted[start:stop]
         for other in range(start, n_points, chunk_size):
             end = min(other + chunk_size, n_points)
-            d2 = cdist(
+            distance2 = cdist(
                 points[start:stop], points[other:end],
                 metric="sqeuclidean",
             )
-            distance = np.sqrt(np.maximum(0.0, d2))
-            variance = (
-                widths2[start:stop, None]
-                + widths2[None, other:end]
+            distance = np.sqrt(np.maximum(0.0, distance2))
+            variance_base = (
+                base_widths2[start:stop, None]
+                + base_widths2[None, other:end]
             )
-            for a, inductance in zip(extra_blurs, matrices):
-                sigma = np.sqrt(variance + a*a)
+            nonzero = distance > 1e-12
+            for (factor, a), inductance in zip(cases, matrices):
+                sigma = np.sqrt(factor**2 * variance_base + a*a)
                 kernel = np.empty_like(distance)
-                nonzero = distance > 1e-12
                 np.divide(
                     erf(distance / (math.sqrt(2.0) * sigma)),
                     distance, out=kernel, where=nonzero,
@@ -562,7 +556,8 @@ class SeawaterResponse:
 
     def reintegrate_gaussian_green_matrices(
         self, points, weights, *, extra_blurs=(0.0,),
-        kernel_chunk_size: int = 128, width_factor: float = 1.0,
+        kernel_chunk_size: int = 128,
+        width_factor: float | tuple[float, ...] = 1.0,
     ) -> tuple[tuple[np.ndarray, ...], tuple[float, ...]]:
         """Independently integrate PSD Gaussian-volume Green L matrices.
 
@@ -570,8 +565,10 @@ class SeawaterResponse:
         Coulomb cloud interaction), not Plummer softenings. Each
         positive quadrature node has a finite Gaussian current volume;
         positive weights define volume, not a physical lattice mesh.
-        The second return value is the self-pair trace contribution
-        for each blur, useful for convergence diagnostics only.
+        The second return value is the self-pair trace contribution.
+        A tuple of width factors reuses each pair-distance block; outputs
+        are ordered by width factor, then by extra blur. This is a
+        width-sensitivity diagnostic, not a continuum convergence proof.
         """
         x = np.asarray(points, dtype=float)
         w = np.asarray(weights, dtype=float)
@@ -585,8 +582,14 @@ class SeawaterResponse:
                 or isinstance(kernel_chunk_size, bool)
                 or kernel_chunk_size < 1):
             raise ValueError("kernel_chunk_size must be a positive integer")
-        if (not math.isfinite(width_factor) or width_factor <= 0):
-            raise ValueError("width_factor must be positive and finite")
+        factors = (
+            (float(width_factor),) if np.isscalar(width_factor)
+            else tuple(float(factor) for factor in width_factor)
+        )
+        if not factors or any(
+            not math.isfinite(factor) or factor <= 0 for factor in factors
+        ):
+            raise ValueError("width_factor must contain positive finite values")
         extra_blurs = tuple(float(a) for a in extra_blurs)
         if not extra_blurs or any(
             not math.isfinite(a) or a < 0 for a in extra_blurs
@@ -597,7 +600,8 @@ class SeawaterResponse:
             optimize=True,
         )
         return _assemble_gaussian_green_inductances(
-            x, w, modes, extra_blurs, kernel_chunk_size, width_factor,
+            x, w, modes, extra_blurs, kernel_chunk_size,
+            factors if len(factors) != 1 else factors[0],
         )
 
     def reintegrate_cross_green_matrices(
