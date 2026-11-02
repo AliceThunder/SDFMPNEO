@@ -2,6 +2,7 @@
 
 From repository root:
     python examples/bfzi_mqs_demo.py
+    python run.py --mode bfzi --green-ball  # experimental full electrothermal reference
 The reported numbers are UNCONVERGED prototype results, not experimental
 predictions or certified infinite-ocean accuracy.
 """
@@ -38,15 +39,17 @@ def build_demo_scene():
     return BfziScene(tx, rx, Seawater(5.0), outer_radius=0.52)
 
 
-def main():
+def main(*, ball_reference: bool = False):
     scene = build_demo_scene()
     sources = build_bfzi_source(scene, frequency_hz=200_000, order=4)
     result = solve_seawater_reference(
         sources, config=SeaMQSConfig(
             radial_order=5, polar_order=7, azimuthal_order=10,
             field_softening=0.025,
+            inductance_kernel="uniform_ball" if ball_reference else "plummer",
         ),
     )
+    print("Green kernel:", "uniform_ball" if ball_reference else "plummer")
     current = np.array([1.0, 0.3 + 0.2j])
     print("Air L (H):", sources.inductance_air)
     print("Seawater reaction Z (ohm):", result.impedance_seawater)
@@ -103,8 +106,11 @@ def main():
     print("Illustrative coil/sea-node temperatures (K):",
           sea_coupled.temperatures)
     print("Retained modes:", result.resistance.shape[0], "/", result.raw_basis_count)
-    print("Note: finite-domain/basis/softening convergence not established")
+    print("Note: finite-domain/basis/continuum Green convergence not certified")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] != "--green-ball"):
+        raise SystemExit("usage: python -m examples.bfzi_mqs_demo [--green-ball]")
+    main(ball_reference="--green-ball" in sys.argv[1:])
