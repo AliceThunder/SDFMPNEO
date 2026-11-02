@@ -196,6 +196,126 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
+    if green_refined:
+        # This comparison changes ONLY Green L after a single high-quality
+        # streamed R/K solve. It avoids the original teacher's inaccurate
+        # global-angle/near-wall R/K while retaining that teacher's modes,
+        # whitening, and separate Green rule.
+        print("\nIndependent Green L / softening with refined 63-mode R/K:",
+              flush=True)
+        r_cfg = replace(
+            config, polar_geometry_order=8, azimuthal_panel_order=2,
+            radial_geometry_cuts=True, max_radial_panel_width=0.06,
+            shell_normal_order=5, shell_tangential_order=6,
+            shell_tangential_max_panel_width=0.0167,
+        )
+        x, w = scene.box_shell_quadrature(
+            r_cfg.radial_order, r_cfg.polar_order, r_cfg.azimuthal_order,
+            wall_scale=enriched.wall_scale,
+            shell_width_factor=r_cfg.shell_width_factor,
+            shell_normal_order=r_cfg.shell_normal_order,
+            shell_tangential_order=r_cfg.shell_tangential_order,
+            shell_tangential_max_panel_width=r_cfg.shell_tangential_max_panel_width,
+            outer_taper_width=enriched.outer_taper_width,
+            max_radial_panel_width=r_cfg.max_radial_panel_width,
+            radial_geometry_cuts=r_cfg.radial_geometry_cuts,
+            polar_geometry_order=r_cfg.polar_geometry_order,
+            azimuthal_panel_order=r_cfg.azimuthal_panel_order,
+        )
+        resistance, k_current, k_dual = (
+            teacher.reintegrate_local_operators(x, w)
+        )
+        print(f"  refined R/K nodes={len(x)}; operator-only, no retained "
+              "volume Joule tensor", flush=True)
+        del x, w
+        probe_modes = np.einsum(
+            "nmc,mr->nrc", enriched.evaluate(probes),
+            teacher.transform, optimize=True,
+        )
+
+        def metrics(l, k):
+            coefficients = np.linalg.solve(
+                resistance + 1j * source.omega * l,
+                -1j * source.omega * k,
+            )
+            z = 1j * source.omega * k.T @ coefficients
+            z = 0.5 * (z + z.T)
+            amplitude = coefficients @ currents
+            j = np.einsum(
+                "nmc,m->nc", probe_modes, amplitude, optimize=True,
+            )
+            q = np.sum(np.abs(j)**2, axis=1) / (
+                2 * scene.seawater.conductivity
+            )
+            p = 0.5 * float(
+                np.real(np.vdot(amplitude, resistance @ amplitude))
+            )
+            return (z, q, p)
+
+        def relative(a, b):
+            return float(np.linalg.norm(a - b)
+                         / max(np.linalg.norm(b), 1e-30))
+
+        base_l = teacher.inductance
+        original_base = (
+            metrics(base_l, k_current), metrics(base_l, k_dual),
+        )
+        print(
+            f"  initial independent L from teacher: "
+            f"trace={np.trace(base_l):.8g} H; "
+            f"P_curl={original_base[0][2]:.8g} W, "
+            f"P_dual={original_base[1][2]:.8g} W",
+            flush=True,
+        )
+        # At fixed Green nodes, a=25/18/12 mm isolates regularization.
+        # Other rows hold a=25 mm and isolate independently wall/outer
+        # magnetic cubature. Never compare different axes as a sequence.
+        green_trials = (
+            ("green_same_nodes", (5, 8, 12, 3, 4), (0.025, 0.018, 0.012)),
+            ("green_wall", (5, 8, 12, 3, 5), (0.025,)),
+            ("green_outer", (5, 10, 16, 3, 4), (0.025,)),
+        )
+        for label, orders, softenings in green_trials:
+            radial, polar, azimuthal, normal, tangent = orders
+            gx, gw = scene.box_shell_quadrature(
+                radial, polar, azimuthal,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=config.shell_width_factor,
+                shell_normal_order=normal,
+                shell_tangential_order=tangent,
+                outer_taper_width=enriched.outer_taper_width,
+            )
+            matrices, diagonal_numerator = (
+                teacher.reintegrate_green_matrices(
+                    gx, gw, softenings=softenings,
+                    kernel_chunk_size=config.kernel_chunk_size,
+                )
+            )
+            del gx, gw
+            for a, l in zip(softenings, matrices):
+                old_curl, old_dual = original_base
+                z, q, p = metrics(l, k_current)
+                zd, qd, pd = metrics(l, k_dual)
+                print(
+                    f"{label:>20}: nodes={len(gw) if False else 'see above'}, "
+                    f"a={a:.4g} m, "
+                    f"dL={relative(l,base_l):.6g}, "
+                    f"diag_trace={diagonal_numerator/(a*max(np.trace(l),1e-30)):.6g}, "
+                    f"dZ={relative(z,old_curl[0]):.6g}, "
+                    f"dq={relative(q,old_curl[1]):.6g}, "
+                    f"dP={abs(p-old_curl[2])/max(abs(old_curl[2]),1e-30):.6g}, "
+                    f"dual_dZ={relative(zd,old_dual[0]):.6g}, "
+                    f"dual_dq={relative(qd,old_dual[1]):.6g}, "
+                    f"dual_dP={abs(pd-old_dual[2])/max(abs(old_dual[2]),1e-30):.6g}",
+                    flush=True,
+                )
+        print(
+            "Independent magnetic cubature and softening are NOT "
+            "a combined continuum limit; verify both axes separately.",
+            flush=True,
+        )
+        return
+
     if wallpanels:
         # Fixed sphere and Green L: refine only oriented-box slab panels.
         # Stream R/K to avoid retaining hundreds of thousands of 63-mode
