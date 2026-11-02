@@ -69,6 +69,20 @@ def basis_convergence():
         [0.0, 0.13, 0.0],
         [0.0, 0.0, 0.22],
     ])
+    # A posteriori residual in the same enriched physical Galerkin space.
+    # This distinguishes a genuine missing trial direction from merely
+    # redistributing energy among coarse basis functions.
+    system = (
+        teacher.resistance + 1j * source.omega * teacher.inductance
+    )
+    forcing = 1j * source.omega * teacher.coupling
+    inverse_resistance_forcing = np.linalg.solve(
+        teacher.resistance, forcing,
+    )
+    forcing_norm = np.sqrt(max(
+        float(np.real(np.vdot(forcing, inverse_resistance_forcing))),
+        1e-60,
+    ))
     stages = []
     for label, modes_per_face, face_refinement, thin in (
         ("one_tangent", 1, 1, False),
@@ -92,10 +106,23 @@ def basis_convergence():
         z = solution.impedance_seawater
         q = solution.seawater_loss(probes, currents)
         p = solution.port_seawater_power(currents)
+        lift, *_ = np.linalg.lstsq(
+            teacher.transform,
+            solution.transform @ solution.unit_current_modes,
+            rcond=None,
+        )
+        residual = system @ lift + forcing
+        relative_residual = np.sqrt(max(
+            float(np.real(np.vdot(
+                residual, np.linalg.solve(teacher.resistance, residual),
+            ))), 0.0,
+        )) / forcing_norm
         stages.append((label, z, q, p))
         print(
             f"{label:>20}: modes={solution.resistance.shape[0]:3d}, "
-            f"sea_power={p:.8g} W, Zsw={z.tolist()}",
+            f"sea_power={p:.8g} W, "
+            f"relative_Rinv_residual={relative_residual:.5g}, "
+            f"Zsw={z.tolist()}",
             flush=True,
         )
         print(f"{'fixed_probe_q':>20}: {q.tolist()}", flush=True)
