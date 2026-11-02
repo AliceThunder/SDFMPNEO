@@ -33,6 +33,8 @@ python run.py --mode bfzi-convergence --basis-green-ball # PSD exact uniform-bal
 python run.py --mode bfzi-convergence --basis-ball # full uniform-ball L nested modal and held-out R/K
 python run.py --mode bfzi-convergence --basis-domain-ball # independent outer radius with uniform-ball L
 python run.py --mode bfzi --green-ball # experimental full MQS port/Joule and coil/sea thermal
+python run.py --mode bfzi-snapshot --out bfzi_response.npz # save/load/query four-real-snapshot ROM
+python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -988,6 +990,94 @@ geometry/pose sampling, independent geometry holdouts,
 train/save/load/infer and passive structured port/Joule
 outputs; do not use the legacy 27-mode demo as an
 accuracy teacher. No GitHub Actions are used.
+
+**User's 159-mode / adaptive results and new response-snapshot path (2026-11-02).**
+The user's `68d2777` run passed **50 tests in 36.65 s**.
+With fine 461648-node R/K and independent uniform-ball A magnetic L,
+the successive 63→95→159 trial spaces are **not** converged.
+For the **95→159** step, `dZ=0.239214`, `dq=0.50494`,
+`max_probe_dq=2.46521` and `dP=0.279814`.
+The 63→159 R-inverse residual is `0.450642` and
+95→159 residual `0.441551`. The existing adaptive residual-greedy
+selector required the entire 159-mode candidate space:
+`adaptive_screen: FULL_PARENT_ONLY`. This rules out using
+63, 95 or 159 spatial Joule labels as certified data.
+No arbitrary extra face patch level will be interpreted as
+a justified continuum error bound.
+
+**Crucial distinction: finite-space reference accuracy vs
+response rank.** At a fixed geometry, excitation frequency and
+two-port linear MQS state, two complex unit-port current snapshots
+span at most **four real physical directions**.
+The new `BFZISnapshotROM.from_operators` constructs an
+R-orthonormal real Galerkin subspace from those snapshots,
+projects the *same* R/L/K onto rank 1–4, re-solves the reduced
+passive complex system, and evaluates J(x), Joule q(x),
+symmetric port Z and sea dissipative power. Rank 4 must reconstruct
+both unit-port responses of its **discrete parent** to numerical
+accuracy. This is an algebraic response-manifold observation;
+it says **nothing** about parent-space convergence or
+generalization to unseen poses/geometry/frequency.
+
+Unlike `SeawaterResponse`, the snapshot artifact requires
+**no stored large heat integration tensor**. You can build one
+directly from streamed fine R/K and the independent Green L:
+`BFZISnapshotROM.from_operators(sources, basis,
+parent.transform, R_fine, L_ball, K_fine, rank=4)`.
+`.save(path)` writes a non-pickled numerical `.npz`
+containing projection, R/L/K and dual-port states;
+`BFZISnapshotROM.load(path, sources, basis)` validates
+a deterministic physical-scene/source/basis signature
+before allowing arbitrary seawater-location J and Joule
+heat queries. No need to repeat the expensive matrix
+assembly at load time. Changing geometry requires a new
+label/ROM or a **future trained geometry-conditioned
+predictor**: the file does not claim to generalize.
+
+The lightweight `--mode bfzi-snapshot` demo executes
+the full save→load→query path on a **provisional 27-mode
+teacher** so the plumbing can be verified without
+the huge 159-mode solve. The `--basis-ball` scientific
+screen also reports `snapshot_rank_2` vs
+`snapshot_rank_4` against the exact *same* 159-mode parent,
+measuring port, heat, max-probe and power differences.
+It does not automatically save a research label.
+
+**Important separate risk:** the published Gaussian/ball
+magnetic A/B checks were performed on **63 modes only**.
+Their success cannot be assumed to hold for 159 narrower
+current patches. For a targeted follow-up,
+`--basis-ball-check-l` repeats the 159-mode fine R/K
+test and independently assembles the 15154-node B rule
+uniform-ball L, reports B/A differences of the complete
+159-mode port/near-wall heat responses for both K forms,
+without modifying the Green implementation.
+This option is substantially more expensive. If it fails,
+the 159-mode L *discretization* must be improved before
+inferring that spatial-basis truncation alone explains
+all changes. If it passes, pursue non-Gaussian,
+source-aligned spatial current representations rather than
+blindly multiplying Gaussian patches.
+
+Suggested **lightweight first** commands:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-snapshot --out bfzi_response.npz
+```
+
+Only after those succeed, run the targeted heavier check
+when practical:
+
+```powershell
+python run.py --mode bfzi-convergence --basis-ball-check-l
+```
+
+No GitHub Actions are used. A trained cross-geometry neural
+FAST model has **not yet been built**; the compact response
+artifact establishes a physically interpretable target and
+save/load/query baseline, not a neural prediction.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
