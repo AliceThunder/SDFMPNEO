@@ -1195,3 +1195,47 @@ def test_geometry_radial_cuts_and_physical_cap_preserve_positive_wet_nodes():
         SeaMQSConfig(radial_geometry_cuts=1)
     with pytest.raises(ValueError, match="radial_geometry_cuts"):
         scene.box_shell_quadrature(**orders, radial_geometry_cuts=1)
+
+
+def test_sphere_and_box_slab_k_parts_recombine_for_both_forms():
+    """Exact node partition adds to K for either continuous weak form."""
+    scene = scene_pair()
+    kwargs = dict(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=3,
+        polar_geometry_order=2, radial_geometry_cuts=True,
+    )
+    x, w, split = scene.box_shell_quadrature(
+        **kwargs, return_sphere_count=True,
+    )
+    original_x, original_w = scene.box_shell_quadrature(**kwargs)
+    np.testing.assert_array_equal(x, original_x)
+    np.testing.assert_array_equal(w, original_w)
+    assert 0 < split < len(x)
+    assert np.all(w > 0)
+
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    response = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            inductance_quadrature=(3, 4, 6, 2, 3),
+        ),
+    )
+    for form in ("current_potential", "curl_dual"):
+        full_k = response.reintegrate_source_coupling(
+            x, w, coupling_form=form,
+        )
+        pieces_k = sum((
+            response.reintegrate_source_coupling(
+                x[:split], w[:split], coupling_form=form,
+            ),
+            response.reintegrate_source_coupling(
+                x[split:], w[split:], coupling_form=form,
+            ),
+        ))
+        np.testing.assert_allclose(
+            pieces_k, full_k, rtol=5e-12, atol=1e-12,
+        )
+    with pytest.raises(ValueError, match="return_sphere_count"):
+        scene.box_shell_quadrature(**kwargs, return_sphere_count=1)
