@@ -30,6 +30,9 @@ python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K 
 python run.py --mode bfzi-convergence --basis-green-cross  # two independent magnetic quadratures, diagnostic
 python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian Green: A/B plus width-factor sensitivity
 python run.py --mode bfzi-convergence --basis-green-ball # PSD exact uniform-ball Coulomb Green A/B and shape test
+python run.py --mode bfzi-convergence --basis-ball # full uniform-ball L nested modal and held-out R/K
+python run.py --mode bfzi-convergence --basis-domain-ball # independent outer radius with uniform-ball L
+python run.py --mode bfzi --green-ball # experimental full MQS port/Joule and coil/sea thermal
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -814,6 +817,72 @@ git pull --ff-only
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 python run.py --mode bfzi-convergence --basis-green-ball
 ```
+
+**Uniform-ball Green: experimental full MQS reference selection (2026-11-02).**
+The user's `e5d26ff` run passed **48 tests in 34.08 s**.
+Its 63-mode, 461648-node held-R/K magnetic screen yielded:
+`ball_B_vs_A: dL=0.0236467, dZ=0.000321814,
+dq=0.00014229, dP=0.0000351903`;
+`ball_vs_gaussian_A: dL=0.0102897,
+dZ=0.00028554, dq=0.0000257011,
+dP=0.000023242`. Both pass fixed
+`5%/0.2%/0.5%/0.2%` screens including dual K, and
+both uniform-ball L matrices are PSD.
+This closes the **candidate finite-volume magnetic kernel
+engineering screen**, not the continuum/outer-domain
+accuracy proof. The earlier Gaussian *width* sensitivity
+failure remains documented: comparing two different cloud
+shape prescriptions at factor 1.0 does not make arbitrary
+Gaussian width choices well determined.
+
+`SeaMQSConfig(inductance_kernel="uniform_ball")`
+now selects the analytic ball Coulomb energy inside the full
+two-port MQS solve (retaining positive magnetic quadrature,
+common R-whitened Galerkin basis, original R/K/heat nodes,
+and the complete modal solve). The default remains
+`inductance_kernel="plummer"` so existing workflows are
+unchanged. Under `uniform_ball`, `field_softening`
+is accepted for configuration compatibility but **does not
+enter L**; it is neither tuned nor silently interpreted as
+a ball radius. The ball radius derives from positive magnetic
+quadrature weight. This is an experimental volume-cloud
+model of the meshless cubature, not exact integration over
+the true curved/partition-weighted cell.
+
+Three new end-to-end verification entry points retain the same
+kernel selection through the physical calculations:
+`--basis-ball` reuses the established nested-mode and
+held-out local R/K diagnostics; `--basis-domain-ball`
+repeats complete finite-domain Galerkin solves across
+0.52, 0.70, 0.85, 1.05 and 1.30 m, with independent
+basis normalization and all associated ports; and
+`--mode bfzi --green-ball` runs the complete port,
+volume Joule, wire skin impedance and illustrative
+current/voltage-driven thermal demonstrations.
+The modal and domain runs retain their **existing cubature**
+and must be interpreted with their printed held-out R/K
+errors; a small step alone does not certify the solution.
+Neither experimental mode enables neural FAST by default.
+
+Run sequentially, stopping for failures:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-convergence --basis-ball
+python run.py --mode bfzi-convergence --basis-domain-ball
+python run.py --mode bfzi --green-ball
+```
+
+The additional full-path regression checks unchanged R/K on
+switching the kernel, independent ball L assembly, finite PSD
+spectrum, equal port/modal/spatial Joule power, and both thermal
+drive envelopes. **This new revision has not yet been executed
+on the user's machine.** No GitHub Actions are used.
+Do not start BFZI neural training on absolute reference labels
+until the new modal/domain reports are checked; neural input
+geometry coverage and held-out geometries will be a separate
+validation gate.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
