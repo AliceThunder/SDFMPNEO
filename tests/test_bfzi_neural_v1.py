@@ -16,6 +16,27 @@ from sdfmpneo_bfzi.sea_neural import (
 from examples.bfzi_mqs_demo import build_demo_scene
 
 
+def test_provisional_geometry_sampler_changes_two_valid_packages():
+    from examples.bfzi_dataset_generate import make_scene
+    baseline=build_demo_scene()
+    varied=make_scene(baseline,np.random.default_rng(23))
+    assert not np.allclose(
+        varied.transmitter.pose.rotation,baseline.transmitter.pose.rotation,
+    )
+    assert not np.allclose(
+        varied.receiver.pose.center,baseline.receiver.pose.center,
+    )
+    assert not np.array_equal(
+        varied.receiver.enclosure.half_extents,
+        baseline.receiver.enclosure.half_extents,
+    )
+    assert varied.seawater.conductivity>0
+    source=build_bfzi_source(varied,200_000.0,order=3)
+    assert geometry_features(source).shape==geometry_features(
+        build_bfzi_source(baseline,200_000.0,order=3)
+    ).shape
+
+
 def test_provisional_neural_holdout_and_passive_inference(tmp_path):
     pytest.importorskip("torch")
     scene=build_demo_scene()
