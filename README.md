@@ -490,6 +490,26 @@ and step changes in R, K, port impedance, heat probes
 and power. At this revision, this improvement has **not
 yet** been validated by the user's next local experiment.
 
+**Wall-panel CLI forwarding correction (2026-11-02).**
+The user-run `fef1b8b` completed **44 tests**, but the
+`--basis-wallpanels` rows `wall_base_5_6`, `wall_cap050_5_6`
+and `wall_cap025_5_6` all had exactly 19,024 slab nodes
+and exactly zero numerical change. Inspection found a specific
+CLI bug: the experiment correctly populated
+`SeaMQSConfig.shell_tangential_max_panel_width` but omitted
+passing this value into its direct
+`scene.box_shell_quadrature(...)` call. Thus those apparent
+zero-error comparisons were invalid; the underlying composite
+quadrature implementation was not tested in that run.
+The experiment now forwards the width explicitly and stops with
+a descriptive error if the 0.05m or 0.025m refinement does
+not actually increase the number of near-wall slab nodes.
+A lightweight solver-path regression also checks that the
+main R/K/Joule integration forwards the face-panel width,
+while independent Green L remains unaffected. Keep the
+old 44-passing report associated only with the previous
+revision; the corrected study needs a new local run.
+
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
 `max_radial_panel_width` (meters): all physical radial intervals
