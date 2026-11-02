@@ -876,4 +876,7 @@ def test_green_reintegration_changes_only_L_and_remains_passive():
     assert metrics[0]["relative_resolved_probe_change"] < 1e-8
     assert metrics[0]["relative_heldout_residual"] < 1e-8
     assert metrics[1]["relative_inductance_difference"] > 0
+    assert metrics[0]["green_diagonal_trace_fraction"] > 0
+    assert (metrics[1]["green_diagonal_trace_fraction"]
+            > metrics[0]["green_diagonal_trace_fraction"])
     assert np.isfinite(metrics[1]["relative_resolved_power_change"])
