@@ -1399,6 +1399,29 @@ def test_gaussian_volume_green_is_finite_psd_and_chunk_independent():
     np.testing.assert_allclose(diagonal, another_diag, rtol=1e-12)
     assert np.linalg.norm(matrices[0] - matrices[1]) > 0
 
+    # Multi-width evaluation must match independent single-width calls.
+    # Sharing pair distances must not change the Green operator or PSD.
+    factors = (0.75, 1.0, 1.25)
+    ladder, ladder_self = reference.reintegrate_gaussian_green_matrices(
+        points, weights, extra_blurs=(0.0,),
+        width_factor=factors, kernel_chunk_size=19,
+    )
+    for factor, matrix, self_trace in zip(factors, ladder, ladder_self):
+        individual, individual_self = (
+            reference.reintegrate_gaussian_green_matrices(
+                points, weights, extra_blurs=(0.0,),
+                width_factor=factor, kernel_chunk_size=23,
+            )
+        )
+        np.testing.assert_allclose(matrix, individual[0], rtol=1e-9, atol=1e-13)
+        np.testing.assert_allclose(self_trace, individual_self[0], rtol=1e-12)
+        assert np.linalg.eigvalsh(matrix)[0] >= -1e-12
+    np.testing.assert_allclose(ladder[1], matrices[0], rtol=1e-9, atol=1e-13)
+    with pytest.raises(ValueError, match="width_factor"):
+        reference.reintegrate_gaussian_green_matrices(
+            points, weights, width_factor=(0.75, 0.0),
+        )
+
     # Direct analytic single-cloud Coulomb self interaction:
     # K(0)=1/(sqrt(pi)*h), h=equal-volume-radius/sqrt(5).
     from sdfmpneo_bfzi.sea_reference import _assemble_gaussian_green_inductances
