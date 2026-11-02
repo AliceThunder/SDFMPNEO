@@ -24,6 +24,9 @@ class SeaMQSConfig:
     polar_order: int = 10
     azimuthal_order: int = 16
     field_softening: float = 0.018
+    # Experimental, geometry-independent positive-volume kernel selector.
+    # Default Plummer reproduces earlier reference calculations unchanged.
+    inductance_kernel: str = "plummer"
     wall_layers: int = 2
     resistance_rank_tolerance: float = 1e-9
     kernel_chunk_size: int = 128
@@ -65,6 +68,8 @@ class SeaMQSConfig:
             raise ValueError("quadrature orders must be >= 2")
         if not math.isfinite(self.field_softening) or self.field_softening <= 0:
             raise ValueError("field_softening must be positive")
+        if self.inductance_kernel not in ("plummer", "uniform_ball"):
+            raise ValueError("inductance_kernel must be 'plummer' or 'uniform_ball'")
         if not isinstance(self.wall_layers, int) or not 0 <= self.wall_layers <= 6:
             raise ValueError("wall_layers must be an integer from 0 to 6")
         if self.quadrature_scheme not in ("ray", "box_shell"):
@@ -1132,6 +1137,8 @@ def solve_seawater_reference(
     dissipative identity. Softened 3D Green kernels approximate self/near-field
     volume interactions.
     They must be refined rather than mistaken for an exact continuum reference.
+    The experimental uniform_ball kernel instead integrates analytic
+    equal-volume solid-ball interactions without using field_softening.
     """
     cfg = config or SeaMQSConfig()
     scene = sources.scene
@@ -1215,10 +1222,16 @@ def solve_seawater_reference(
     # Nonlocal L is assembled on its own positive cubature with the same
     # physical basis and R normalization. Compare its resolution and the
     # softening independently; neither is proven converged by power closure.
-    inductance = _assemble_green_inductances(
-        magnetic_points, magnetic_weights, magnetic_modes,
-        (cfg.field_softening,), cfg.kernel_chunk_size,
-    )[0]
+    if cfg.inductance_kernel == "uniform_ball":
+        inductance, _ = _assemble_ball_green_inductance(
+            magnetic_points, magnetic_weights, magnetic_modes,
+            cfg.kernel_chunk_size,
+        )
+    else:
+        inductance = _assemble_green_inductances(
+            magnetic_points, magnetic_weights, magnetic_modes,
+            (cfg.field_softening,), cfg.kernel_chunk_size,
+        )[0]
 
     coupling = _assemble_port_coupling(
         sources, basis, transform, points, weights,
