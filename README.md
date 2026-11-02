@@ -510,6 +510,53 @@ while independent Green L remains unaffected. Keep the
 old 44-passing report associated only with the previous
 revision; the corrected study needs a new local run.
 
+**Wall-panel convergence after 44 passing tests (2026-11-02).**
+The corrected local `19686b9` run confirmed that physical
+face and edge-strip segmentation is active:
+`slab_nodes=19024→38800→123072` for the unpanelled,
+0.05m and 0.025m stages, with unchanged 204224-node
+sphere. Refining width 0.05→0.025m changed
+`dR=0.00740772`, `dZ=0.00187433`,
+`dq=0.0376711` and `dP=0.00218495` (original
+curl-current K form). Therefore the physical wall heat
+distribution was **not yet converged in panel width**.
+On the SAME 0.025m panels, increasing tangential
+order 6→7 changed `dR=0.000147977`,
+`dZ=5.28789e-06`, `dq=0.00126934`
+and `dP=5.89506e-06`. The change 6→7 affects
+the **interior-face** Gauss order 3→4, while the
+exterior-edge Gauss order remains 3, indicating the
+dominant old Gauss parity error came from sampling
+the broad face patches. Two equivalent K weak forms
+also became closer, with `weak_dK=0.0011528`
+on the 0.025m, tangential order 7 panels.
+Tests: **44 passed in 14.48 s** for that revision.
+
+The follow-up introduces
+`SeawaterResponse.reintegrate_local_operators(points,weights,
+chunk_size=2048)`, which assembles the *same physical*
+R and both K forms incrementally in bounded-size
+point batches, without keeping the full three-dimensional
+volume-mode tensor in every held-out response. This is
+an operator-only interface for convergence studies;
+`reintegrate_local_response` still stores full positive
+Joule nodes for ordinary field/thermal predictions.
+The `--basis-wallpanels` experiment now assembles
+the fixed sphere operator once and adds only streamed
+oriented-box slab contributions. The sequence compares
+width 0.05, 0.025, 0.020 and 0.0167m at fixed
+normal/tangential Gauss orders 5/6, then independently
+tests tangent 6→7 and normal 5→6 at the same 0.0167m
+panel width. It reports R/K/Z, four-probe heat and
+power changes for **both** coupling weak forms while
+holding the 63-mode space and independent Green L fixed.
+The operator-only path is covered by a targeted
+full-versus-chunked and sphere-plus-slab regression test.
+The new run is **not yet numerically validated**.
+Do not claim the thermal source, Green L, or complete
+REFERENCE is converged merely because one local
+Gaussian degree is stable.
+
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
 `max_radial_panel_width` (meters): all physical radial intervals
