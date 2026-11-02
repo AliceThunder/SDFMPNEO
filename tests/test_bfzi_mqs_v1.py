@@ -1095,3 +1095,44 @@ def test_geometry_rk_refinement_does_not_expand_independent_green_l(monkeypatch)
         response.quadrature_power(currents),
         rtol=1e-9, atol=1e-12,
     )
+
+
+def test_curl_dual_source_coupling_is_passive_and_uses_same_r_l():
+    """Boundary-dual K = integral F.B retains exactly the same R/L physics."""
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    basis = build_sea_basis(
+        scene, sources=source, include_source_guided=True,
+    )
+    config = SeaMQSConfig(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=3,
+        inductance_quadrature=(3, 4, 6, 2, 3),
+        coupling_form="curl_dual",
+    )
+    dual = solve_seawater_reference(source, basis=basis, config=config)
+    from dataclasses import replace
+    original = solve_seawater_reference(
+        source, basis=basis,
+        config=replace(config, coupling_form="current_potential"),
+    )
+    np.testing.assert_allclose(dual.resistance, original.resistance)
+    np.testing.assert_allclose(dual.inductance, original.inductance)
+    assert np.isfinite(dual.coupling).all()
+    assert np.linalg.norm(dual.coupling) > 0
+    currents = (1.0 + 0.2j, -0.3 + 0.5j)
+    np.testing.assert_allclose(
+        dual.port_seawater_power(currents),
+        dual.quadrature_power(currents),
+        rtol=1e-9, atol=1e-12,
+    )
+    k_reintegrated = original.reintegrate_source_coupling(
+        original.integration_points, original.integration_weights,
+    )
+    np.testing.assert_allclose(
+        k_reintegrated, dual.coupling, rtol=1e-9, atol=1e-12,
+    )
+    with pytest.raises(ValueError, match="coupling_form"):
+        SeaMQSConfig(coupling_form="invalid")
