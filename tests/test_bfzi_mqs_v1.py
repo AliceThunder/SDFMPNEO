@@ -1344,5 +1344,24 @@ def test_independent_green_matrices_match_response_and_identify_self_sampling():
         assert np.isfinite(matrix).all()
     assert diagonal > 0
     assert diagonal / (0.025 * np.trace(matrices[0])) > 0
+    same_cross, same_pair_count = baseline.reintegrate_cross_green_matrices(
+        x, w, x, w, softenings=(0.025, 0.018),
+        kernel_chunk_size=23,
+    )
+    assert same_pair_count >= len(x)
+    for cross_matrix, ordinary_matrix in zip(same_cross, matrices):
+        np.testing.assert_allclose(
+            cross_matrix, ordinary_matrix, rtol=2e-10, atol=1e-13,
+        )
+    split = len(x) // 2
+    _, staggered_pair_count = baseline.reintegrate_cross_green_matrices(
+        x[:split], w[:split], x[split:], w[split:],
+        kernel_chunk_size=17,
+    )
+    assert staggered_pair_count == 0
     with pytest.raises(ValueError, match="kernel_chunk_size"):
         baseline.reintegrate_green_matrices(x, w, kernel_chunk_size=0)
+    with pytest.raises(ValueError, match="kernel_chunk_size"):
+        baseline.reintegrate_cross_green_matrices(
+            x, w, x, w, kernel_chunk_size=0,
+        )
