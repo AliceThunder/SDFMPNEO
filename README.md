@@ -853,11 +853,15 @@ Three new end-to-end verification entry points retain the same
 kernel selection through the physical calculations:
 `--basis-ball` uses the **461648-node, operator-only fine R/K**
 rule from the previously accepted near-wall refinement, combined
-with the 7504-node uniform-ball magnetic A rule. Four strictly
-nested physical trial spaces are re-solved from the *same* R/L/K,
-with port Z, probe heat, dissipative power, and a full-parent
-R-inverse Galerkin residual reported for each. Both current-potential
-and curl-dual K formulations are compared at 63 modes.
+with the 7504-node uniform-ball magnetic A rule. The 95-mode
+parent adds 32 strictly nested curl-patch directions on the four
+broad enclosure faces, retaining all 63 original physical modes.
+Five nested spaces (15/27/59/63/95) are re-solved from the *same*
+fine R/K and PSD L, with port Z, probe heat, dissipative power,
+and a full-parent R-inverse Galerkin residual. Both current-potential
+and curl-dual K formulations are compared on the 95-mode parent.
+The decisive holdout is **63 → 95 probe Joule heat**, not the
+automatically zero residual of a full 63-dimensional parent.
 
 `--basis-domain-ball` builds fresh basis/port/magnetic operators
 on five independent outer radii (0.52, 0.70, 0.85, 1.05 and 1.30 m).
@@ -898,6 +902,63 @@ Do not start BFZI neural training on absolute reference labels
 until the new modal/domain reports are checked; neural input
 geometry coverage and held-out geometries will be a separate
 validation gate.
+
+**New user-run modal/domain/thermal results (2026-11-02).**
+The user's `8f74a9b` run passed **49 tests in 35.72 s**.
+The previous 63-mode parent versus 59-mode subset yielded
+`dZ=0.0000670036`, `dq=0.0198242`,
+`dP=0.0000691795`; the **1.98242% probe-heat
+difference fails** the existing 0.5% spatial gate
+even though the impedance and modal power appear converged.
+The 59-mode parent residual was `0.00821778`
+against the full 63-mode space, and does not bound
+errors outside that space. The 95-mode independent
+holdout is therefore a necessary next check; its new
+numbers are not yet measured.
+
+The 63-mode outer-radius sequence with independently fine
+R/K showed the **1.05 → 1.30 m** step
+`dZ=0.000362475`, `dq=0.0000510951`,
+`dP=0.00000829131`. These meet the fixed
+5%/0.2%/0.5%/0.2% operator/port/probe/power
+screen's available port/probe/power limits, although
+a further radius holdout would be needed for a strict
+infinite-domain certificate. The prior **0.85 → 1.05 m**
+step (`dZ=0.00802547`, `dP=0.00374837`)
+was not yet stable.
+
+The full demo `--mode bfzi --green-ball` preserved
+port / volume / conductor power identities and ran
+current- and voltage-controlled thermal envelopes.
+Its **27 retained modes** and illustrative thermal
+material parameters are *not* the 63/95-mode fine
+reference, nor a calibrated seawater thermal transient.
+
+The selected Green kernel name now propagates through
+Galerkin restriction and modal compression. When
+`inductance_kernel="uniform_ball"`, querying
+`magnetic_field` uses the analytic field of
+finite uniform solid current clouds (exterior
+`1/d^3`; interior `1/r^3`) rather than silently
+reverting to the Plummer field. This corrects the
+model mismatch in the former field-decoding path,
+but does not remove the cell-shape approximation.
+
+The next run is a **single 95-mode modal holdout**, not
+another Green integration/width sweep:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-convergence --basis-ball
+```
+
+After 63→95 spatial and residual convergence is measured,
+the next implementation milestone is labeled BFZI
+geometry/pose sampling, independent geometry holdouts,
+train/save/load/infer and passive structured port/Joule
+outputs; do not use the legacy 27-mode demo as an
+accuracy teacher. No GitHub Actions are used.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
