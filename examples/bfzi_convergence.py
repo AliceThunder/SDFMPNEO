@@ -8,6 +8,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --full
     python run.py --mode bfzi-convergence --basis
     python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
+    python run.py --mode bfzi-convergence --basis-green-refined # converged-wall R/K, independent L
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
@@ -51,7 +52,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
                       radial: bool = False, kparts: bool = False,
-                      wallpanels: bool = False):
+                      wallpanels: bool = False,
+                      green_refined: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -1053,15 +1055,18 @@ def main(
     basis_angular: bool = False, basis_geometry: bool = False,
     basis_radial: bool = False, basis_kparts: bool = False,
     basis_wallpanels: bool = False,
+    basis_green_refined: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
-            or basis_radial or basis_kparts or basis_wallpanels):
+            or basis_radial or basis_kparts or basis_wallpanels
+            or basis_green_refined):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
             geometry=basis_geometry, radial=basis_radial,
             kparts=basis_kparts, wallpanels=basis_wallpanels,
+            green_refined=basis_green_refined,
         )
     scene = build_demo_scene()
     base = dict(
@@ -1212,11 +1217,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -1230,4 +1235,5 @@ if __name__ == "__main__":
         basis_radial="--basis-radial" in sys.argv[1:],
         basis_kparts="--basis-kparts" in sys.argv[1:],
         basis_wallpanels="--basis-wallpanels" in sys.argv[1:],
+        basis_green_refined="--basis-green-refined" in sys.argv[1:],
     )
