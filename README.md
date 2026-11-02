@@ -183,8 +183,9 @@ polar coordinate into equal Gauss panels (must divide the total
 periodic azimuth sector. Default `(1,1)` preserves the historical
 global Gauss-mu / single midpoint-phi rule. Slab integration near the
 box walls is unchanged. These parameters are available in
-`SeaMQSConfig` and apply to both primary R/K and optional Green L
-quadratures.
+`SeaMQSConfig`. They apply to primary R/K and to Green L only when
+Green L uses the same primary cubature. With explicitly independent
+`inductance_quadrature`, Green L uses its own angular rule.
 
 The latest local `aa958f5` run passed **36 tests** and reported
 `polar_split2` `base_dZ=0.154019` and `base_dP=0.177437`.
@@ -243,7 +244,7 @@ not on the chosen Gauss integration order. It uses exactly
 interval**; this is distinct from the global `polar_order`
 parameter, which is ignored for this one optional polar rule.
 Geometry panels cannot be combined with uniform `polar_panel_count>1`.
-Both R/K and nonlocal Green L honor this option when selected.
+R/K honor this option. Green L inherits it only if no separate `inductance_quadrature` is specified; an independent Green L quadrature keeps its own lower-cost angular rule.
 Default behavior remains unchanged.
 
 `python run.py --mode bfzi-convergence --basis-geometry`
