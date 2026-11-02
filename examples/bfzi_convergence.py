@@ -8,6 +8,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --full
     python run.py --mode bfzi-convergence --basis
     python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
+    python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -40,7 +41,8 @@ def _indices_in_enriched_basis(enriched, subset):
     return np.asarray(indices, dtype=int)
 
 
-def basis_convergence(*, verify: bool = False, green: bool = False):
+def basis_convergence(*, verify: bool = False, green: bool = False,
+                      domain: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -226,6 +228,52 @@ def basis_convergence(*, verify: bool = False, green: bool = False):
                     flush=True,
                 )
 
+    if domain:
+        # Unlike a held-out Green integral, a larger physical seawater
+        # domain changes the boundary-conditioned trial functions. These
+        # are fresh complete R/K/L Galerkin solves at FIXED mode hierarchy,
+        # softening, frequency and cubature orders, not a Green-only test.
+        print("\\nOuter-domain sequence (independent 63-mode solves):")
+        baseline_z, baseline_q = stages[-1][1:3]
+        baseline_power = stages[-1][3]
+        previous_z, previous_q, previous_power = (
+            baseline_z, baseline_q, baseline_power
+        )
+        for radius in (0.70, 0.85, 1.05):
+            larger_scene = replace(scene, outer_radius=radius)
+            larger_source = build_bfzi_source(
+                larger_scene, 200_000., order=4,
+            )
+            larger_basis = build_sea_basis(
+                larger_scene, modes_per_face=2, face_refinement=2,
+                refine_thin_faces_only=True, sources=larger_source,
+                include_source_guided=True,
+            )
+            larger = solve_seawater_reference(
+                larger_source, basis=larger_basis, config=config,
+            )
+            z = larger.impedance_seawater
+            q = larger.seawater_loss(probes, currents)
+            power = larger.port_seawater_power(currents)
+            dz = np.linalg.norm(z - previous_z) / max(
+                np.linalg.norm(previous_z), 1e-30
+            )
+            dq = np.linalg.norm(q - previous_q) / max(
+                np.linalg.norm(previous_q), 1e-30
+            )
+            dp = abs(power - previous_power) / max(
+                abs(previous_power), 1e-30
+            )
+            print(
+                f"radius={radius:.3g} m: "
+                f"nodes={len(larger.integration_points):6d}, "
+                f"modes={larger.resistance.shape[0]:3d}, "
+                f"step_dZ={dz:.6g}, step_dq={dq:.6g}, "
+                f"step_dP={dp:.6g}, sea_power={power:.8g} W",
+                flush=True,
+            )
+            previous_z, previous_q, previous_power = z, q, power
+
     if verify:
         # Optional expensive second REFERENCE solve. Unlike the cheap
         # holdouts above, this changes the full nonlocal Green L operator
@@ -266,9 +314,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False):
 def main(
     full: bool = False, basis_only: bool = False,
     basis_verify: bool = False, basis_green: bool = False,
+    basis_domain: bool = False,
 ):
-    if basis_only or basis_verify or basis_green:
-        return basis_convergence(verify=basis_verify, green=basis_green)
+    if basis_only or basis_verify or basis_green or basis_domain:
+        return basis_convergence(verify=basis_verify, green=basis_green,
+                                 domain=basis_domain)
     scene = build_demo_scene()
     base = dict(
         radial_order=4, polar_order=6, azimuthal_order=8,
@@ -418,15 +468,16 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-green|--basis-verify]"
+            "[--full|--basis|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
         basis_only="--basis" in sys.argv[1:],
         basis_verify="--basis-verify" in sys.argv[1:],
         basis_green="--basis-green" in sys.argv[1:],
+        basis_domain="--basis-domain" in sys.argv[1:],
     )
