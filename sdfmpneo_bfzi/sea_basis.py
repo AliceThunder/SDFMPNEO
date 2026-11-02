@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .scene import BfziScene
+from .source import BFZISources, LineSource, MU0
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,9 @@ class CurrentMode:
     center: np.ndarray
     direction: np.ndarray
     width: float
+    # -1 means curl(scalar * constant vector); 0/1 means
+    # curl(scalar * actual closed-port vector potential).
+    source_port: int = -1
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,7 @@ class SeaCurrentBasis:
     scene: BfziScene
     modes: tuple[CurrentMode, ...]
     wall_scale: float
+    source_lines: tuple[LineSource, LineSource] | None = None
 
     @property
     def size(self) -> int:
@@ -64,6 +69,22 @@ class SeaCurrentBasis:
         envelope = out_factor * boxes
         envelope_grad = out_grad * boxes[:, None] + out_factor[:, None] * boxes_grad
 
+        guided_ports = {
+            mode.source_port for mode in self.modes if mode.source_port >= 0
+        }
+        source_fields = {}
+        if guided_ports:
+            if self.source_lines is None:
+                raise ValueError("source-guided basis has no complete port lines")
+            for port in guided_ports:
+                line = self.source_lines[port]
+                # LineSource stores C=A/mu0 and B=mu0*curl(C).
+                # Evaluating once per port avoids repeating Biot-Savart
+                # evaluation for modes with different spatial envelopes.
+                source_fields[port] = (
+                    line.potential_kernel(points),
+                    np.real(line.magnetic_field(points)) / MU0,
+                )
         out = np.empty((len(points), self.size, 3), dtype=float)
         for k, mode in enumerate(self.modes):
             offset = points - mode.center
@@ -72,7 +93,17 @@ class SeaCurrentBasis:
             gradient = gauss[:, None] * (
                 envelope_grad - 2 * envelope[:, None] * offset / width2
             )
-            out[:, k, :] = np.cross(gradient, mode.direction)
+            if mode.source_port < 0:
+                out[:, k, :] = np.cross(gradient, mode.direction)
+            else:
+                # Exact curl(g C_port), real, solenoidal by construction:
+                # grad(g) x C_port + g curl(C_port). Because g=0 on
+                # insulating boxes, the trace has zero normal component.
+                potential, curl_potential = source_fields[mode.source_port]
+                out[:, k, :] = (
+                    np.cross(gradient, potential)
+                    + (envelope * gauss)[:, None] * curl_potential
+                )
         return out
 
 
@@ -83,6 +114,8 @@ def build_sea_basis(
     face_refinement: int = 1,
     include_global: bool = True,
     refine_thin_faces_only: bool = False,
+    sources: BFZISources | None = None,
+    include_source_guided: bool = False,
 ) -> SeaCurrentBasis:
     """Generate box-following curl modes and optional long-range modes.
 
@@ -101,6 +134,13 @@ def build_sea_basis(
         raise ValueError("face_refinement must be 1 or 2")
     if not isinstance(refine_thin_faces_only, bool):
         raise ValueError("refine_thin_faces_only must be a boolean")
+    if include_source_guided and (
+        sources is None or sources.scene is not scene
+    ):
+        raise ValueError(
+            "source-guided trial modes require complete port sources "
+            "constructed for the same seawater scene"
+        )
     scale = (
         0.075 * min(
             min(assembly.enclosure.half_extents)
@@ -155,4 +195,20 @@ def build_sea_basis(
         global_width = 1.5 * package_reach
         for axis in range(3):
             modes.append(CurrentMode(center, np.eye(3)[axis], global_width))
-    return SeaCurrentBasis(scene, tuple(modes), scale)
+    if include_source_guided:
+        # Use two envelope widths per physical port. These are new
+        # current *directions*, not extra translations of the generic
+        # constant-vector Gaussian basis. The widths depend on the pad,
+        # not on the artificial outer sphere.
+        for port, assembly in enumerate(scene.assemblies):
+            reach = float(np.linalg.norm(assembly.enclosure.half_extents))
+            for width_factor in (1.0, 2.0):
+                modes.append(CurrentMode(
+                    np.asarray(assembly.pose.center).copy(),
+                    np.zeros(3), reach * width_factor,
+                    source_port=port,
+                ))
+    return SeaCurrentBasis(
+        scene, tuple(modes), scale,
+        sources.lines if include_source_guided else None,
+    )
