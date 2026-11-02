@@ -137,19 +137,14 @@ class SeawaterResponse:
         q = np.sum(np.abs(j)**2, axis=-1) / (2 * self.sources.scene.seawater.conductivity)
         return float(self.integration_weights @ q)
 
-    def independent_cubature_metrics(
-        self, points, weights, port_currents=(1.0, 0.0),
-    ) -> dict[str, float]:
-        """Reintegrate an existing MQS solution on *independent* wet nodes.
+    def reintegrate_local_response(self, points, weights) -> SeawaterResponse:
+        """Re-solve on independent R/K/Joule nodes while holding Green L fixed.
 
-        No second Green solve is needed. The held-out quadrature checks the
-        dissipative operator R, the source coupling K, and the physical
-        Joule integral. Disagreement reveals quadrature aliasing even when
-        the original discrete port/volume power closes exactly.
-
-        This deliberately does not certify the nonlocal Green matrix L or
-        the completeness of the current trial space; those require a
-        separately refined solve.
+        This is a controlled single-axis cubature comparison, not a full
+        second MQS reference solve. The trial basis, source, outer domain,
+        physical-mode transform, omega and nonlocal inductance remain fixed.
+        Only the one-volume R and K integrals are changed; the new positive
+        heat nodes match the new dissipative operator.
         """
         x = np.asarray(points, dtype=float)
         w = np.asarray(weights, dtype=float)
@@ -162,41 +157,83 @@ class SeawaterResponse:
             )
         if not self.sources.scene.in_seawater(x).all():
             raise ValueError("independent cubature points must be in seawater")
-        currents = self._currents(port_currents)
-        fields = np.einsum(
+        modes = np.einsum(
             "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
             optimize=True,
         )
         sigma = self.sources.scene.seawater.conductivity
-        heldout_r = np.einsum(
-            "n,nic,njc->ij", w / sigma, fields, fields,
-            optimize=True,
+        r = np.einsum(
+            "n,nic,njc->ij", w / sigma, modes, modes, optimize=True,
         )
-        heldout_k = MU0 * np.einsum(
-            "n,nmc,ncp->mp", w, fields,
+        r = 0.5 * (r + r.T)
+        k = MU0 * np.einsum(
+            "n,nmc,ncp->mp", w, modes,
             self.sources.potential_kernels(x), optimize=True,
         )
-        amplitudes = self.unit_current_modes @ currents
-        current_density = np.einsum(
-            "nmc,m->nc", fields, amplitudes, optimize=True,
+        omega = self.sources.omega
+        coefficients = solve(
+            r + 1j * omega * self.inductance,
+            -1j * omega * k, assume_a="gen", check_finite=True,
         )
-        power = float(w @ (
-            np.sum(np.abs(current_density)**2, axis=1) / (2 * sigma)
-        ))
+        z = 1j * omega * k.T @ coefficients
+        z = 0.5 * (z + z.T)
+        return SeawaterResponse(
+            self.sources, self.basis, self.transform, r,
+            self.inductance, k, coefficients, z,
+            x, w, modes, self.field_softening, self.raw_basis_count,
+        )
+
+    def independent_cubature_metrics(
+        self, points, weights, port_currents=(1.0, 0.0),
+    ) -> dict[str, float]:
+        """Held-out R/K integration with both frozen-current and re-solved error.
+
+        Report whether the *original* current still integrates accurately
+        and how the port response changes when R and K are reassembled,
+        without redoing the expensive nonlocal Green L double integral.
+        These metrics do not establish convergence of L or basis completeness.
+        """
+        currents = self._currents(port_currents)
+        held = self.reintegrate_local_response(points, weights)
+        amplitudes = self.unit_current_modes @ currents
+        power = 0.5 * float(np.real(np.vdot(
+            amplitudes, held.resistance @ amplitudes,
+        )))
         port_power = self.port_seawater_power(currents)
+        updated_power = held.port_seawater_power(currents)
+        original_system_residual = (
+            (held.resistance + 1j * self.sources.omega * self.inductance)
+            @ self.unit_current_modes
+            + 1j * self.sources.omega * held.coupling
+        )
         return {
             "heldout_power": power,
             "on_grid_power": port_power,
+            "resolved_power": updated_power,
             "relative_power_difference": abs(power - port_power) / max(
                 abs(port_power), 1e-30,
             ),
             "relative_resistance_difference": float(
-                np.linalg.norm(heldout_r - self.resistance)
+                np.linalg.norm(held.resistance - self.resistance)
                 / max(np.linalg.norm(self.resistance), 1e-30)
             ),
             "relative_coupling_difference": float(
-                np.linalg.norm(heldout_k - self.coupling)
+                np.linalg.norm(held.coupling - self.coupling)
                 / max(np.linalg.norm(self.coupling), 1e-30)
+            ),
+            "relative_resolved_impedance_change": float(
+                np.linalg.norm(held.impedance_seawater - self.impedance_seawater)
+                / max(np.linalg.norm(self.impedance_seawater), 1e-30)
+            ),
+            "relative_resolved_power_change": abs(
+                updated_power - port_power
+            ) / max(abs(port_power), 1e-30),
+            "relative_heldout_residual": float(
+                np.linalg.norm(original_system_residual)
+                / max(
+                    np.linalg.norm(1j * self.sources.omega * held.coupling),
+                    1e-30,
+                )
             ),
         }
 
