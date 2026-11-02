@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-from .sea_snapshot import BFZISnapshotROM
+from .sea_snapshot import BFZISnapshotROM, _scene_signature
 from .source import BFZISources
 from .sea_basis import SeaCurrentBasis
 
@@ -90,9 +90,9 @@ class BFZIResponseLabel:
         cls, snapshot: BFZISnapshotROM, *,
         max_return_waypoints: int = 8,
     ) -> "BFZIResponseLabel":
-        if snapshot.signature != __import__(
-            "sdfmpneo_bfzi.sea_snapshot",fromlist=["_scene_signature"]
-        )._scene_signature(snapshot.sources,snapshot.basis):
+        if snapshot.signature != _scene_signature(
+            snapshot.sources, snapshot.basis,
+        ):
             raise ValueError("snapshot geometry/source mismatch")
         features=geometry_features(
             snapshot.sources,max_return_waypoints=max_return_waypoints,
@@ -130,6 +130,8 @@ def save_response_labels(path,labels):
         raise ValueError("at least one BFZIResponseLabel is required")
     if len({s.scene_signature for s in samples})!=len(samples):
         raise ValueError("duplicate geometry/source signatures in labels")
+    if len({s.features.tobytes() for s in samples})!=len(samples):
+        raise ValueError("duplicate geometry features in labels")
     nfeat=samples[0].features.shape
     nraw=samples[0].raw_unit_modes.shape
     if any(s.features.shape!=nfeat or s.raw_unit_modes.shape!=nraw
