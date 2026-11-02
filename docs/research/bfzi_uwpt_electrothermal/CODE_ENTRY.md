@@ -361,3 +361,9 @@ response = solve_seawater_reference(source, basis=basis)
 2. `polar2_mu10`、`polar2_mu14`、`polar2_mu18`、`polar2_mu22`：在共同的两个 `cos(theta)` 极角分片中分别用每片5、7、9、11点Gauss，**完全固定**径向、方位扇区数、方位扇区高斯阶数、近壁六面slab、63模式及Green L。
 3. `polar2_mu22_phi3`：固定极角22点，再单独把方位扇区Gauss由2提高为3。
 每组报告独立 `dR/dK`、基线 `dZ/dq/dP`、四个独立探针 `q`，以及与上一组的 `step_from_previous` 和 `max_probe_dq`。新定义避免此前同时改变两轴参数的混淆，仍需本地实测。**不会悄悄切换默认积分配置，也不会在未证明收敛时进入神经网络正式训练。**
+
+
+本轮追加一个面向核心求解器的最小解耦接口：
+- `SeawaterResponse.resolve_with_coupling(K)` 对**已经独立重积分**的实数端口耦合矩阵重求解 `(R+iωL)X=-iωK`，保留原始 R/L、模式、Joule 节点与权重，故两端口电功率与海水空间热源的离散功率仍严格闭合；准确度仍须由 K 求积收敛判断。
+- `--basis-angular` 已经算出的全 R/K 解中的 `K` 被直接复用作 `K_only_re_solved`，不重复计算任何场或 Green L，用 `dZ/dq/dP` 区分 K 误差与仅 R 变化。
+- 新增一个小型端口能量闭合测试（尚待用户本地验证），未使用 CI 或 GitHub Actions。
