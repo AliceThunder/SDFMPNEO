@@ -64,7 +64,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_gaussian: bool = False,
                       green_ball: bool = False,
                       ball_reference: bool = False,
-                      ball_l_check: bool = False):
+                      ball_l_check: bool = False,
+                      source_face_guided: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes a level-4
@@ -95,6 +96,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         face_refinement=4 if spatial_holdout else 2,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
+        include_source_face_guided=source_face_guided,
     )
     print(f"Building enriched {enriched.size}-mode Galerkin operator...",
           f"raw modes={enriched.size}, "
@@ -256,7 +258,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         # independently refined near-wall R/K, NOT the preliminary coarse
         # teacher R/K. The uniform-ball L was assembled on magnetic A
         # by the teacher and is held fixed for every nested Galerkin solve.
-        print("\nRefined R/K + uniform-ball L: independent 63-to-95-to-159 modal holdout",
+        print(f"\nRefined R/K + uniform-ball L: independent 63-to-95-to-{enriched.size} modal holdout",
               flush=True)
         r_cfg = replace(
             config, polar_geometry_order=8, azimuthal_panel_order=2,
@@ -328,20 +330,24 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             return z, q, p, relative_residual
 
         previous = None
-        for label, modes_per_face, face_refinement, thin, guided in (
-            ("one_tangent", 1, 1, False, False),
-            ("two_tangents", 2, 1, False, False),
-            ("thin_face_patches", 2, 2, True, False),
-            ("guided_port_curls", 2, 2, True, True),
-            ("edge_face_patches", 2, 3, True, True),
-            ("corner_face_patches", 2, 4, True, True),
-        ):
+        levels = [
+            ("one_tangent", 1, 1, False, False, False),
+            ("two_tangents", 2, 1, False, False, False),
+            ("thin_face_patches", 2, 2, True, False, False),
+            ("guided_port_curls", 2, 2, True, True, False),
+            ("edge_face_patches", 2, 3, True, True, False),
+            ("corner_face_patches", 2, 4, True, True, False),
+        ]
+        if source_face_guided:
+            levels.append(("source_face_guided", 2, 4, True, True, True))
+        for label, modes_per_face, face_refinement, thin, guided, face_guided in levels:
             subset = build_sea_basis(
                 scene, modes_per_face=modes_per_face,
                 face_refinement=face_refinement,
                 refine_thin_faces_only=thin,
                 sources=source if guided else None,
                 include_source_guided=guided,
+                include_source_face_guided=face_guided,
             )
             indices = _indices_in_enriched_basis(enriched, subset)
             selection = np.eye(enriched.size)[:, indices]
@@ -391,7 +397,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             atol=1e-8, rtol=1e-8,
         ):
             raise RuntimeError(
-                "level-4 hierarchy contains discarded physical modes; "
+                "enriched hierarchy contains discarded physical modes; "
                 "need better-resolved primary whitening before greedy selection"
             )
         raw_r = raw_directions.T @ r @ raw_directions
@@ -451,7 +457,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
         print(
             "  snapshot_note: rank-4 exactness is ONLY relative to "
-            "the unconverged 159-mode parent at this scene/frequency. "
+            f"the unconverged {enriched.size}-mode parent at this scene/frequency. "
             "It does not validate a cross-geometry model or local heat truth.",
             flush=True,
         )
@@ -461,7 +467,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             # 159 much narrower physical directions. This independently
             # resolves magnetic integration without changing the 461k-node
             # fine resistance, both port couplings, or physical probes.
-            print("\nIndependent 159-mode uniform-ball magnetic L B rule:",
+            print(f"\nIndependent {enriched.size}-mode uniform-ball magnetic L B rule:",
                   flush=True)
             bx,bw = scene.box_shell_quadrature(
                 5,9,14,wall_scale=enriched.wall_scale,
@@ -518,7 +524,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 and b_relative_residual<=0.01
             )
             print(
-                f"  ball_159_B_vs_A: dL={dL:.6g}, "
+                f"  ball_{enriched.size}_B_vs_A: dL={dL:.6g}, "
                 f"dZ={dZ:.6g}, dJ={dJ:.6g}, dq={dq:.6g}, "
                 f"max_probe_dq={np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10)):.6g}, "
                 f"dP={dP:.6g}, "
@@ -534,7 +540,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 magnetic_b,k_dual,
             )
             print(
-                "  ball_159_dual_B_vs_A: "
+                f"  ball_{enriched.size}_dual_B_vs_A: "
                 f"dZ={relative(zb_dual,za_dual):.6g}, "
                 f"dJ={relative(jb_dual,ja_dual):.6g}, "
                 f"dq={relative(qb_dual,qa_dual):.6g}, "
@@ -544,11 +550,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             if not passed:
                 print(
                     "  magnetic_gate_failed: A/B magnetic integration is "
-                    "unresolved in the 159-mode space; do NOT use either "
+                    f"unresolved in the {enriched.size}-mode space; do NOT use either "
                     "as high-accuracy cross-geometry training truth.",
                     flush=True,
                 )
-            print("  magnetic_note: compare with 95→159 mode change; "
+            print("  magnetic_note: compare with successive modal changes; "
                   "both must be small before declaring a spatial teacher.",
                   flush=True)
 
@@ -606,7 +612,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 print(
                     f"  adaptive_screen: {status}; "
                     f"selected={len(selected)}/{enriched.size}, "
-                    "matched 159-mode port/probe/power including <=5% "
+                    f"matched {enriched.size}-mode port/probe/power including <=5% "
                     "maximum local probe difference; "
                     "NOT continuum-certified",
                     flush=True,
@@ -2045,6 +2051,7 @@ def main(
     basis_green_ball: bool = False,
     basis_ball: bool = False,
     basis_ball_check_l: bool = False,
+    basis_ball_face: bool = False,
     basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
@@ -2052,7 +2059,8 @@ def main(
             or basis_radial or basis_kparts or basis_wallpanels
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
-            or basis_ball or basis_domain_ball or basis_ball_check_l):
+            or basis_ball or basis_domain_ball or basis_ball_check_l
+            or basis_ball_face):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2063,8 +2071,10 @@ def main(
             green_cross=basis_green_cross,
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
-            ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l,
+            ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
+            or basis_ball_face,
             ball_l_check=basis_ball_check_l,
+            source_face_guided=basis_ball_face,
         )
     scene = build_demo_scene()
     base = dict(
@@ -2215,11 +2225,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball", "--basis-ball", "--basis-ball-check-l", "--basis-domain-ball")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball", "--basis-ball", "--basis-ball-check-l", "--basis-ball-face", "--basis-domain-ball")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-ball|--basis-ball-check-l|--basis-domain-ball|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-ball|--basis-ball-check-l|--basis-ball-face|--basis-domain-ball|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -2239,5 +2249,6 @@ if __name__ == "__main__":
         basis_green_ball="--basis-green-ball" in sys.argv[1:],
         basis_ball="--basis-ball" in sys.argv[1:],
         basis_ball_check_l="--basis-ball-check-l" in sys.argv[1:],
+        basis_ball_face="--basis-ball-face" in sys.argv[1:],
         basis_domain_ball="--basis-domain-ball" in sys.argv[1:],
     )
