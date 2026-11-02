@@ -258,6 +258,47 @@ the dominant numerical error mechanism, **not** evidence
 that the geometry-panel approach is converged until local results
 verify it. More panels can increase field-evaluation cost.
 
+**After 38 passing tests: K polar convergence and next error source.**
+The user-run geometry-aligned integration sequence on `4d02f50`
+showed `geometry_mu6→geometry_mu8` changes
+`dZ=0.000242124`, `dq=0.000444726`,
+`dP=0.000296029`; `geometry_mu8` with azimuth
+Gauss order two versus three gave `dZ=0.000413271`,
+`dq=0.000109597`, `dP=0.000500205`.
+This strongly supports convergence of the **spherical angular
+portion** of primary R/K at the fixed 63-mode basis, Green L,
+radial and wall cubatures. It does **not** certify R/K, Joule
+or full electromagnetic reference convergence. Relative to the
+old global-angular reference, the converged-in-angle
+`geometry_mu8` response still differs by ~6.38% in port Z:
+the original reference had a substantial angular bias.
+
+`--basis-geometry` now also re-integrates the same
+`geometry_mu8` solution with radial order 6→7,
+box-wall orders 4/5→5/6, and both together. These held-out
+comparisons **all use geometry_mu8 as the baseline**, not
+the old under-resolved global-angular reference.
+They reveal which one-volume R/K errors remain after
+the angular bottleneck is addressed.
+
+**Important Green cost separation.** When
+`SeaMQSConfig.inductance_quadrature=(radial,polar,azimuthal,
+shell_normal,shell_tangential)` is explicitly given, the
+independent Green L cubature now uses exactly its own
+global Gauss-mu/midpoint-azimuth angular rule,
+**not** the R/K `polar_geometry_order`,
+`polar_panel_count` or `azimuthal_panel_order`.
+Otherwise, enabling high-resolution R/K geometry panels
+would accidentally increase L double-integration work from
+thousands to tens of thousands of nodes, causing a
+quadratic-cost explosion. The outer radial panel cap is
+still shared, and the physical trial modes and R-derived
+whitening remain identical. Without an independent L
+configuration, L still uses the primary R/K nodes; specify
+`inductance_quadrature` for a practical high-resolution
+geometry-R/K reference. Green L convergence and softening
+must be verified separately.
+
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
 `max_radial_panel_width` (meters): all physical radial intervals
