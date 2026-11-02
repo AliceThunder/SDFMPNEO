@@ -28,6 +28,7 @@ python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
 python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K + independent Green L
 python run.py --mode bfzi-convergence --basis-green-cross  # two independent magnetic quadratures, diagnostic
+python run.py --mode bfzi-convergence --basis-green-gaussian # PSD analytic Gaussian volume Green, two-rule comparison
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -669,6 +670,75 @@ kernel correction, not a blind extrapolation
 of softening to zero. This command contains
 `O(N_A N_B)` Green work and has **not yet been
 run on the user's machine**.
+
+**Green acceptance gate: failed; positive Gaussian-volume candidate (2026-11-02).**
+The user's `26dea37` run passed **46 BFZI tests**
+but failed the previously agreed magnetic convergence gate.
+At 25 mm old Plummer softening, the independent
+A (7504 nodes) vs A×B (B=15154 nodes) Green
+rules showed `dL=0.186255`, `dZ=0.00565544`,
+`dq=0.000459404`, `dP=0.000507797`.
+The fixed gate requires `dL<=0.05`,
+`dZ<=0.002`, `dq<=0.005`, `dP<=0.002`;
+so magnetic L and port Z **fail**, despite zero
+exactly coincident cross pairs and a positive
+smallest cross L eigenvalue (`4.445835e-11 H`).
+At softening 18/12 mm, `dL` grows to
+`0.243143/0.316715`, tracking the previous
+same-node diagonal fraction `0.233301/0.30113`.
+Cross-rule differences also include changes in
+one of the quadrature rules; they cannot be
+assigned exclusively to the self-point term.
+
+A new **experimental, structure-preserving**
+Green quadrature candidate is available:
+`SeawaterResponse.reintegrate_gaussian_green_matrices(
+points, weights, extra_blurs=(0.,), width_factor=1.,
+kernel_chunk_size=128)`.
+Each positive-volume cubature node of weight `w_i`
+is assigned the same one-axis variance as an
+equal-volume uniform sphere:
+`h_i = (3 w_i/(4 pi))^(1/3)/sqrt(5)`, scaled by
+`width_factor`. The exact Coulomb interaction of
+two *isotropic Gaussian current clouds* is
+`G_ij = erf(d/sqrt(2*(h_i²+h_j²+a²)))/d`,
+with continuous self limit
+`sqrt(2/pi)/sqrt(h_i²+h_j²+a²)`.
+Here `a` is an **additional Gaussian blur** length,
+not the previous Plummer softening; `a=0`
+is finite because the clouds have positive widths.
+In Fourier space, each cloud multiplies a
+positive Coulomb kernel by Gaussian smoothing
+factors, preserving a **positive-semidefinite
+single-rule L** without dropping diagonal
+terms. This is only an approximate cubature-cell
+volume moment matching, **not** an analytic
+integration of the actual oriented package
+corners, nor a certified continuum Coulomb
+operator. Width-factor and geometric boundary
+convergence remain mandatory.
+
+`--basis-green-gaussian` holds the same
+461648-node R/K (63 physical modes, both
+source K weak forms), then independently
+assembles positive Gaussian Green matrices:
+A=(5,8,12,3,4) with a=0 and 0.012m;
+B=(5,9,14,4,5) with a=0. It reports
+`gaussian_B_vs_A: dL/dZ/dq/dP` and both
+K forms, plus each L's minimum eigenvalue
+and finite self trace share. The A/B
+comparison at a=0 is checked against the
+**same predeclared 5%/0.2%/0.5%/0.2%**
+magnetic/port/probe/power thresholds.
+Even meeting them would not automatically
+justify production use: a further width-scale
+and discretization check is required. The
+default `SeaMQSConfig` and original Green
+L are **unchanged**. One focused test checks
+the exact single-cloud self formula, positive
+spectrum and chunk invariance; the current
+new revision has not been user-tested.
+No GitHub Actions are used.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
