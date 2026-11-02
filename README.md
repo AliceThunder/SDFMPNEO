@@ -92,14 +92,26 @@ the zero normal trace at insulating surfaces and global solenoidality.
 They are optional in `build_sea_basis(scene, sources=source,
 include_source_guided=True)` and do not silently change the standard
 27-mode demo. The full all-face 123-mode hierarchy remains optional.
-The same `--basis` run also checks the 63-mode result on **two
-independent cubatures**: one refining the near-wall normal/tangential rules,
-another refining the outer-sphere radial/angular rules. It reports relative
+The same `--basis` run now uses **fine primary cubature**
+`(radial,polar,azimuthal,shell_normal,shell_tangent)=(6,10,16,4,5)`
+to assemble `R`, `K` and positive spatial heat nodes, while its expensive
+nonlocal `L` double integral uses the *same physical modes and whitening*
+but the earlier `(5,8,12,3,4)` points. This avoids increasing quadratic
+Green-matrix cost merely to resolve locally sharp resistive/source terms.
+The standard single-quadrature reference solver remains unchanged unless
+`SeaMQSConfig(inductance_quadrature=(5,8,12,3,4))` is supplied.
+It is a controlled approximation: independent verification of the
+nonlocal `L` is still required.
+
+The `--basis` run then checks the 63-mode result on **two
+independent finer cubatures**: one refining the near-wall normal/tangential
+rules, another refining the outer-sphere radial/angular rules. It reports relative
 differences in the resistance matrix `R`, source coupling `K`, and held-out
 spatial Joule heat integral, without reassembling the expensive nonlocal Green
-kernel `L`. The optional `--basis-verify` repeats a full 63-mode
-reference solve on a jointly refined cubature and reports `dZ`, `dq`, and
-`dP`; this can be significantly slower. Small holdout discrepancies
+kernel `L`. The optional `--basis-verify` solves the same fine 63-mode
+`R/K` system again, this time recomputing `L` on that full finer
+cubature rather than reusing the coarse Green rule. It reports resulting
+`dZ`, `dq` and `dP` and can be **substantially** slower. Small holdout discrepancies
 alone do **not** certify `L`, basis completeness, or outer-domain convergence.
 These are trial-space/reference diagnostics, not neural surrogate training;
 the 63-mode response is not yet certified.
