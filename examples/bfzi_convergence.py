@@ -45,7 +45,7 @@ def _indices_in_enriched_basis(enriched, subset):
 
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
-                      angular: bool = False):
+                      angular: bool = False, geometry: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -379,6 +379,81 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             flush=True,
         )
 
+    if geometry:
+        # Refine Gauss order within fixed package-projected mu panels.
+        # The same source, raw basis, R-whitening and Green L are retained.
+        print("\nGeometry-aligned polar R/K ladder (fixed Green L):")
+        previous = None
+        for label, mu_order, phi_order in (
+            ("geometry_mu3", 3, 2),
+            ("geometry_mu4", 4, 2),
+            ("geometry_mu5", 5, 2),
+            ("geometry_mu6", 6, 2),
+            ("geometry_mu8", 8, 2),
+            ("geometry_mu8_phi3", 8, 3),
+        ):
+            cfg = replace(
+                config, polar_geometry_order=mu_order,
+                azimuthal_panel_order=phi_order,
+            )
+            points, weights = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+                polar_geometry_order=cfg.polar_geometry_order,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
+            )
+            full = teacher.reintegrate_local_response(points, weights)
+            k_only = teacher.resolve_with_coupling(full.coupling)
+            r_only = full.resolve_with_coupling(teacher.coupling)
+            z = full.impedance_seawater
+            q = full.seawater_loss(probes, currents)
+            power = full.port_seawater_power(currents)
+            base_q = teacher.seawater_loss(probes, currents)
+            base_p = teacher.port_seawater_power(currents)
+            def relative(a, b):
+                return np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30)
+            print(
+                f"{label:>20}: nodes={len(points):6d}, "
+                f"dR={relative(full.resistance, teacher.resistance):.6g}, "
+                f"dK={relative(full.coupling, teacher.coupling):.6g}, "
+                f"base_dZ={relative(z, teacher.impedance_seawater):.6g}, "
+                f"base_dq={relative(q, base_q):.6g}, "
+                f"base_dP={abs(power-base_p)/max(abs(base_p),1e-30):.6g}, "
+                f"P={power:.8g} W",
+                flush=True,
+            )
+            print(
+                f"{'K_only':>20}: "
+                f"dZ={relative(k_only.impedance_seawater, teacher.impedance_seawater):.6g}, "
+                f"dq={relative(k_only.seawater_loss(probes, currents), base_q):.6g}; "
+                f"R_only_dZ={relative(r_only.impedance_seawater, teacher.impedance_seawater):.6g}, "
+                f"R_only_dq={relative(r_only.seawater_loss(probes, currents), base_q):.6g}",
+                flush=True,
+            )
+            print(
+                f"{'probe_q':>20}: "
+                + " ".join(f"{value:.8g}" for value in q),
+                flush=True,
+            )
+            if previous is not None:
+                old_label, old = previous
+                old_q = old.seawater_loss(probes, currents)
+                old_p = old.port_seawater_power(currents)
+                print(
+                    f"{'step_from_previous':>20}: from={old_label}, "
+                    f"dZ={relative(z, old.impedance_seawater):.6g}, "
+                    f"dq={relative(q, old_q):.6g}, "
+                    f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-30)):.6g}, "
+                    f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}",
+                    flush=True,
+                )
+            previous = label, full
+
     if green:
         # Keep the original 63-mode R/K, basis, whitening, power cubature,
         # and port source fixed. Vary only the nonlocal L double integration.
@@ -517,13 +592,14 @@ def main(
     full: bool = False, basis_only: bool = False,
     basis_verify: bool = False, basis_green: bool = False,
     basis_domain: bool = False, basis_local: bool = False,
-    basis_angular: bool = False,
+    basis_angular: bool = False, basis_geometry: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
-            or basis_local or basis_angular):
+            or basis_local or basis_angular or basis_geometry):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
+            geometry=basis_geometry,
         )
     scene = build_demo_scene()
     base = dict(
@@ -674,7 +750,7 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
@@ -688,4 +764,5 @@ if __name__ == "__main__":
         basis_domain="--basis-domain" in sys.argv[1:],
         basis_local="--basis-local" in sys.argv[1:],
         basis_angular="--basis-angular" in sys.argv[1:],
+        basis_geometry="--basis-geometry" in sys.argv[1:],
     )
