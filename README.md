@@ -1225,6 +1225,77 @@ geometries/physics, and a response/port-loss consistency
 constraint. None of these are solved by the present MLP.
 No GitHub Actions are used.
 
+**First trained-BFZI smoke and inference Joule consistency (2026-11-02).**
+The user's `137733c` execution passed **53 tests in 42.22 s**,
+generated eight independent `provisional` 27-mode geometries,
+trained on six and held out two. Best epoch 14 of 400 gave
+normalized validation MSE `1.345816`, held-out
+raw current-mode relative error `0.213656` (21.4%),
+and held-out seawater port Z error `0.090424` (9.0%).
+This is successful SOFTWARE training, **not** learned
+electromagnetic accuracy. More epochs are not a solution to
+a 6-geometry / dozens-of-features problem. The report
+`Outside observed varying-feature range: True`
+means the inference scene is outside at least one
+coordinate's **six-training-scene range**; with so few
+independent geometries this is expected and a warning
+against interpreting predictions quantitatively.
+
+**Inference-only local-R closure** now defaults to on.
+`BFZINeuralSurrogate.predict(sources,basis,
+power_consistent=True)` evaluates a small, positive,
+near-wall-aware `box_shell_quadrature` with default
+orders `(4,6,8,2,3)` and streams the geometry-dependent
+local resistance R in bounded chunks. It does **NOT**
+assemble the nonlocal magnetic inductance matrix or
+redo a full MQS solve. The learned complex raw-mode
+unit responses U produce the Hermitian Gram
+`U.conj().T @ R @ U`. Because general independently
+learned U may violate the reciprocal two-port identity
+`Im(Gram[0,1])=0`, the second port field receives the
+minimal R-norm correction (first port fixed),
+`u2 -= 1j * Im(Gram[0,1])/Gram[0,0] * u1`.
+The resulting **real symmetric PSD Gram** replaces
+the learned seawater impedance's real part, while its
+learned reciprocal imaginary part is retained.
+This ensures, for arbitrary *complex* port current
+phasors, exact **discrete**
+`port_seawater_power(currents) ==
+closure_weights @ seawater_loss(closure_points,currents)`
+up to roundoff, on the **specified positive closure
+rule**. The field correction magnitude and imaginary
+Gram defect are reported. This changes the learned
+response, and neither quadrature resolution nor
+magnetic reactance/true Joule distribution is certified.
+It is not an exact solution of the Maxwell MQS
+equations.
+
+The uncorrected fastest path remains available:
+`predict(...,power_consistent=False)` or
+`bfzi-infer --raw-port-loss`, which retains independent
+learned field and port power without any closure claim.
+The new `bfzi-infer` output prints spatial cubature
+power, matched port loss, correction size and
+out-of-training-range flag. To exercise the **existing
+trained checkpoint**, no new sample generation or
+retraining is needed:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py tests/test_bfzi_neural_v1.py -q
+python run.py --mode bfzi-infer --model bfzi_neural.pt
+python run.py --mode bfzi-infer --model bfzi_neural.pt --raw-port-loss
+```
+
+The earlier 9.0% held-out Z metric pertains to the
+original **uncorrected** MLP target; the loss-closure
+postprocessing changes its real part. It must be
+re-evaluated against *independently validated*
+geometry holdouts. The essential independent
+159-mode magnetic A/B check remains
+`python run.py --mode bfzi-convergence --basis-ball-check-l`.
+No GitHub Actions are used.
+
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
 `max_radial_panel_width` (meters): all physical radial intervals
