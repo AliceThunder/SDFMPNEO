@@ -186,7 +186,7 @@ class SeawaterResponse:
     def independent_cubature_metrics(
         self, points, weights, port_currents=(1.0, 0.0),
         *, probes=None,
-    ) -> dict[str, float]:
+    ) -> dict[str, float | None]:
         """Held-out R/K integration with both frozen-current and re-solved error.
 
         Report whether the *original* current still integrates accurately
