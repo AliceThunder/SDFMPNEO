@@ -221,6 +221,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"{label:>20}: nodes={len(green_points):6d}, "
                     f"a={check['softening']:.5g} m, "
                     f"dL={check['relative_inductance_difference']:.6g}, "
+                    f"self_trace={check['green_diagonal_trace_fraction']:.6g}, "
                     f"re_solved_dZ={check['relative_resolved_impedance_change']:.6g}, "
                     f"dq={check['relative_resolved_probe_change']:.6g}, "
                     f"dP={check['relative_resolved_power_change']:.6g}, "
