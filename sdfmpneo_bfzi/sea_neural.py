@@ -79,10 +79,37 @@ class BFZINeuralPrediction:
     separately: their *integrated* Joule losses need not close exactly.
     """
 
+    sources: BFZISources
     basis: SeaCurrentBasis
     raw_unit_modes: np.ndarray
     impedance_seawater: np.ndarray
     out_of_training_range: bool
+
+    @property
+    def port_impedance(self):
+        return self.port_impedance_at()
+
+    def port_impedance_at(self, temperatures=None):
+        """Air L plus learned sea Z plus finite-conductor internal impedance."""
+        return (
+            1j*self.sources.omega*self.sources.inductance_air
+            + self.impedance_seawater
+            + np.diag(self.sources.conductor_internal_impedance(temperatures))
+        )
+
+    def port_conductor_power(self,currents=(1.,0.),temperatures=None):
+        i=np.asarray(currents,dtype=complex)
+        if i.shape!=(2,) or not np.isfinite(i).all():
+            raise ValueError("currents must be a finite complex two-vector")
+        return 0.5*np.abs(i)**2*self.sources.conductor_internal_impedance(
+            temperatures,
+        ).real
+
+    def port_total_power(self,currents=(1.,0.),temperatures=None):
+        return float(
+            np.sum(self.port_conductor_power(currents,temperatures))
+            + self.port_seawater_power(currents)
+        )
 
     def current_density(self, xyz, currents=(1.,0.)):
         i = np.asarray(currents,dtype=complex)
@@ -176,7 +203,7 @@ class BFZINeuralSurrogate:
         if not np.isfinite(raw).all() or not np.isfinite(z).all():
             raise FloatingPointError("BFZI network returned nonfinite response")
         return BFZINeuralPrediction(
-            basis,raw,z,out_of_training_range,
+            sources,basis,raw,z,out_of_training_range,
         )
 
 
