@@ -464,3 +464,12 @@ response = solve_seawater_reference(source, basis=basis)
 - 新增简短测试：盒面和外侧边缘 composite 面板的有效正权海水节点、球域积分保持不变，以及不合法物理宽度的拒绝。
 
 执行 `git pull`、原两个 BFZI 测试、`python run.py --mode bfzi-convergence --basis-wallpanels`。该实验可判断对 R 的主要误差能否由物理尺度驱动的局部面板直接收敛，而不再把全局切向 Gauss 阶数无限加大。此前 43 passed 是用户旧版本结果，本轮代码尚未由用户本地测试。禁止 GitHub Actions。
+
+
+### 2026-11-02：实测 44 passed；修复 near-wall panel 诊断未传参的问题
+
+用户本地 `fef1b8b` 实测 **44 passed in 14.53s**。`--basis-wallpanels` 输出的 `wall_base_5_6`、`wall_cap050_5_6`、`wall_cap025_5_6` 三组近壁节点全部恰好 **19024**，比较 `dR/dK/dZ/dq/dP` 全为零。直接检查脚本，证实**是实验入口漏传参数**：`cfg.shell_tangential_max_panel_width` 设置成功，但其后单独调用的 `scene.box_shell_quadrature` 并没有传递该字段，因此三个标签都实际运行了默认未分片规则。**这不是新求积已收敛，旧实验作废。**
+
+已在 `examples/bfzi_convergence.py` 修复这个唯一的直接传参漏洞，并在 `--basis-wallpanels` 的 0.05m、0.025m 两级加入最小 fail-fast 约束：如果后续 finer physical cap 没有实际增加近壁 slab 积分节点，直接抛出说明参数未传的异常，而不打印误导性的全零数据。同时扩展现有 `test_geometry_rk_refinement_does_not_expand_independent_green_l`，确认 `SeaMQSConfig.shell_tangential_max_panel_width` 实际传入主 R/K/Joule 求积，但不传给独立 Green L。这属于少量核心回归，不额外搭建复杂审计逻辑。
+
+值得注意：同一旧日志中将原 5/6 Gauss 改为 5/7 Gauss 后 `dR=0.205154`、空间探针 `dq=0.174538`，仍表现出很大的近壁积分敏感性，必须在**新分片真实生效之后**重新测量，才有资格判断 physical-width Gauss 分片能否解决这一问题。用户请执行 `git pull`、两个 BFZI 测试以及 `python run.py --mode bfzi-convergence --basis-wallpanels`。禁止 GitHub Actions。
