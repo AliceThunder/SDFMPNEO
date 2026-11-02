@@ -94,7 +94,7 @@ def basis_convergence():
             flush=True,
         )
         print(f"{'fixed_probe_q':>20}: {q.tolist()}", flush=True)
-    print("\\nNested-basis changes (identical Q, kernel, domain and source):")
+    print("\nNested-basis changes (identical Q, kernel, domain and source):")
     for coarse, fine in zip(stages[:-1], stages[1:]):
         dz = np.linalg.norm(fine[1] - coarse[1]) / max(
             np.linalg.norm(coarse[1]), 1e-30,
