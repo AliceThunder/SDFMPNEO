@@ -34,6 +34,7 @@ python run.py --mode bfzi-convergence --basis-ball # full uniform-ball L nested 
 python run.py --mode bfzi-convergence --basis-domain-ball # independent outer radius with uniform-ball L
 python run.py --mode bfzi --green-ball # experimental full MQS port/Joule and coil/sea thermal
 python run.py --mode bfzi-snapshot --out bfzi_response.npz # save/load/query four-real-snapshot ROM
+python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_provisional_labels.npz # two distinct poses
 python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
@@ -1078,6 +1079,72 @@ No GitHub Actions are used. A trained cross-geometry neural
 FAST model has **not yet been built**; the compact response
 artifact establishes a physically interpretable target and
 save/load/query baseline, not a neural prediction.
+
+**Provisional geometry-conditional response label contract (2026-11-02).**
+The user's `e907ad2` run passed **51 tests in 37.07 s**,
+then successfully saved/reloaded the 27→4 real-snapshot ROM,
+with relative `dZ=1.2573013e-16`, four-probe Joule
+`dq=1.4191841e-15` and `0 W` modal/port
+power closure. This establishes a reliable
+**fixed-scene compression and numeric artifact**; the
+underlying 27-mode physical response is still provisional.
+
+`sdfmpneo_bfzi/sea_dataset.py` now defines a stable
+geometry-to-dual-port-response **sample contract**, not a
+trained neural network. `geometry_features(sources)`
+extracts both complete BFZI geometry parameter sets,
+their arbitrary proper 3×3 rigid orientations,
+enclosure extents, finite wire properties and local
+return waypoints, seawater conductivity, frequency and
+outer-domain data. Variable-length return paths are
+padded with an explicit point count up to a caller-set
+capacity (default eight); larger paths are rejected
+rather than silently clipped.
+
+`BFZIResponseLabel.from_snapshot(rom)` stores two
+complex physical **raw current-mode response vectors**
+`raw_unit_modes = raw_projection @ unit_modes`, plus
+the complete reciprocal seawater port Z and scene/source
+signature. These targets are invariant to the
+indeterminate signs/rotations of the four-dimensional
+SVD compression basis. For use in a common neural output
+space, all geometries must still employ the **same
+deterministic physical basis construction and ordering**.
+
+`save_response_labels(path, labels)` and
+`load_response_labels(path)` provide a non-pickled
+fixed-width array file suitable for later supervised
+training; mixed feature/mode counts, identical geometry
+records and repeated signatures are rejected.
+All dataset files are explicitly marked
+`reference_status="provisional"`, and this stage
+**does not train on them automatically**. The label
+schema does not yet encode a validated
+generalization domain, geometry-stratified test split,
+or certification of electromagnetic/thermal fidelity.
+
+Optional end-to-end dataset smoke example:
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_provisional_labels.npz
+```
+
+The example builds **two independently solved receiver
+poses** at the same reference order and emits both
+provisional records. This tests feature diversity and
+portable labels; two examples are intentionally **not**
+represented as sufficient training coverage. Before
+valid quantitative training labels are generated,
+run the independent 159-mode magnetic A/B refinement:
+
+```powershell
+python run.py --mode bfzi-convergence --basis-ball-check-l
+```
+
+No GitHub Actions are used; there is no BFZI neural
+FAST model in this branch yet.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
