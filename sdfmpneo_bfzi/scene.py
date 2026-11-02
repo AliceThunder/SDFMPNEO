@@ -644,7 +644,12 @@ class BfziScene:
                         ),
                     )
                 )
-                edge_boundaries = np.linspace(0.0, 1.0, edge_count + 1)
+                # Equal physical-distance subpanels in s=shell_width*u^2:
+                # their actual s-width is <= the requested cap, while
+                # Gauss nodes still cluster at the sharp physical edge.
+                edge_boundaries = np.sqrt(
+                    np.linspace(0.0, 1.0, edge_count + 1)
+                )
                 edge_du = np.diff(edge_boundaries)
                 u = (
                     edge_boundaries[:-1, None]
