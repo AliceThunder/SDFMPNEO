@@ -146,11 +146,14 @@ def _power_consistent_response(basis,raw,learned_z,orders):
 class BFZINeuralPrediction:
     """Fast spatial J(x) and q(x) after one geometry-conditioned network pass.
 
-    With power_consistent=True the real impedance is reconstructed from
-    predicted analytic curl fields on one POSITIVE closure cubature, and
+    With explicit power_consistent=True the real impedance is reconstructed
+    from predicted analytic curl fields on one POSITIVE closure cubature, and
     two-port phase reciprocity is enforced by a minimal field correction.
     Discrete power closure is exact at that rule, not a continuum certificate.
-    With power_consistent=False the learned fields and Z remain independent.
+    By default (power_consistent=False), learned fields and Z remain
+    independent: the measured held-out fields are not accurate enough to
+    justify overwriting the better learned Z with a field-derived resistance.
+    Closure is an optional energy-identity diagnostic, NOT an accuracy fix.
     """
 
     sources: BFZISources
@@ -254,7 +257,7 @@ class BFZINeuralSurrogate:
         return cls(model,record)
 
     def predict(self,sources: BFZISources,basis: SeaCurrentBasis, *,
-                power_consistent: bool = True,
+                power_consistent: bool = False,
                 closure_orders=(4,6,8,2,3)):
         torch,_=_torch()
         if basis.scene is not sources.scene:
@@ -516,7 +519,22 @@ def evaluate_geometry_holdouts(
         record={
             "scene_signature":sample.scene_signature[:12],
             "outside_training_range":corrected.out_of_training_range,
+            "raw_mode_relative_error":relative(
+                uncorrected.raw_unit_modes,sample.raw_unit_modes,
+            ),
         }
+        # Both paths use exactly the same independent positive cubature.
+        # Report the uncorrected mismatch too; otherwise the tiny closed
+        # mismatch can misleadingly look like an accuracy certificate.
+        raw_spatial_power=float(
+            corrected.closure_weights @ uncorrected.seawater_loss(
+                corrected.closure_points,drive,
+            )
+        )
+        raw_port_power=uncorrected.port_seawater_power(drive)
+        record["raw_power_mismatch"]=abs(
+            raw_spatial_power-raw_port_power
+        )/max(abs(raw_port_power),1e-30)
         for name,predicted in (
             ("raw",uncorrected),("closed",corrected),
         ):
@@ -548,6 +566,7 @@ def evaluate_geometry_holdouts(
         "raw_j_relative_error","closed_j_relative_error",
         "raw_probe_q_relative_error","closed_probe_q_relative_error",
         "raw_port_power_relative_error","closed_port_power_relative_error",
+        "raw_mode_relative_error","raw_power_mismatch",
         "response_correction_relative","closed_power_mismatch",
     ]
     summary={
