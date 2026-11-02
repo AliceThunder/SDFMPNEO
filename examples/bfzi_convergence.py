@@ -9,6 +9,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis
     python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
+    python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -42,7 +43,7 @@ def _indices_in_enriched_basis(enriched, subset):
 
 
 def basis_convergence(*, verify: bool = False, green: bool = False,
-                      domain: bool = False):
+                      domain: bool = False, local: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -60,6 +61,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         shell_normal_order=4, shell_tangential_order=5,
         field_softening=0.025,
         inductance_quadrature=(5, 8, 12, 3, 4),
+        max_radial_panel_width=0.18 if domain else None,
     )
     source = build_bfzi_source(scene, 200_000., order=4)
     enriched = build_sea_basis(
@@ -171,6 +173,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
             outer_taper_width=enriched.outer_taper_width,
+            max_radial_panel_width=cfg.max_radial_panel_width,
         )
         check = teacher.independent_cubature_metrics(
             points, weights, currents, probes=probes,
@@ -191,6 +194,79 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             f"sea_power={check['resolved_power']:.8g} W",
             flush=True,
         )
+    if local:
+        print("\nR/K-only refinement ladder (fixed Green L and physical basis):")
+        refinements = (
+            ("radial_only", replace(config, radial_order=7)),
+            ("angles_only", replace(
+                config, polar_order=12, azimuthal_order=20,
+            )),
+            ("wall_only", replace(
+                config, shell_normal_order=5, shell_tangential_order=6,
+            )),
+            ("combined", replace(
+                config, radial_order=7, polar_order=12,
+                azimuthal_order=20, shell_normal_order=5,
+                shell_tangential_order=6,
+            )),
+            ("combined_finer", replace(
+                config, radial_order=8, polar_order=14,
+                azimuthal_order=24, shell_normal_order=6,
+                shell_tangential_order=7,
+            )),
+        )
+        original_z = teacher.impedance_seawater
+        original_q = teacher.seawater_loss(probes, currents)
+        original_p = teacher.port_seawater_power(currents)
+        preceding_combined = teacher
+        for label, cfg in refinements:
+            local_points, local_weights = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+            )
+            updated = teacher.reintegrate_local_response(
+                local_points, local_weights,
+            )
+            new_z = updated.impedance_seawater
+            new_q = updated.seawater_loss(probes, currents)
+            new_p = updated.port_seawater_power(currents)
+            dz = np.linalg.norm(new_z - original_z) / max(
+                np.linalg.norm(original_z), 1e-30,
+            )
+            dq = np.linalg.norm(new_q - original_q) / max(
+                np.linalg.norm(original_q), 1e-30,
+            )
+            dp = abs(new_p - original_p) / max(abs(original_p), 1e-30)
+            previous_z = preceding_combined.impedance_seawater
+            previous_q = preceding_combined.seawater_loss(probes, currents)
+            previous_p = preceding_combined.port_seawater_power(currents)
+            step_dz = np.linalg.norm(new_z - previous_z) / max(
+                np.linalg.norm(previous_z), 1e-30,
+            )
+            step_dq = np.linalg.norm(new_q - previous_q) / max(
+                np.linalg.norm(previous_q), 1e-30,
+            )
+            step_dp = abs(new_p - previous_p) / max(abs(previous_p), 1e-30)
+            print(
+                f"{label:>20}: nodes={len(local_points):6d}, "
+                f"base_dZ={dz:.6g}, base_dq={dq:.6g}, "
+                f"base_dP={dp:.6g}, "
+                f"step_dZ={step_dz:.6g}, "
+                f"step_dq={step_dq:.6g}, "
+                f"step_dP={step_dp:.6g}, "
+                f"sea_power={new_p:.8g} W",
+                flush=True,
+            )
+            # Single-axis cases compare with the original reference.
+            # The combined cases alone form the sequential refinement.
+            if label in ("combined", "combined_finer"):
+                preceding_combined = updated
+
     if green:
         # Keep the original 63-mode R/K, basis, whitening, power cubature,
         # and port source fixed. Vary only the nonlocal L double integration.
@@ -212,6 +288,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_normal_order=normal,
                 shell_tangential_order=tangential,
                 outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=config.max_radial_panel_width,
             )
             checks = teacher.independent_green_metrics(
                 green_points, green_weights, currents, probes=probes,
@@ -242,7 +319,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         previous_z, previous_q, previous_power = (
             baseline_z, baseline_q, baseline_power
         )
-        for radius in (0.70, 0.85, 1.05):
+        for radius in (0.70, 0.85, 1.05, 1.30):
             larger_scene = replace(scene, outer_radius=radius)
             larger_source = build_bfzi_source(
                 larger_scene, 200_000., order=4,
@@ -325,11 +402,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
 def main(
     full: bool = False, basis_only: bool = False,
     basis_verify: bool = False, basis_green: bool = False,
-    basis_domain: bool = False,
+    basis_domain: bool = False, basis_local: bool = False,
 ):
-    if basis_only or basis_verify or basis_green or basis_domain:
+    if basis_only or basis_verify or basis_green or basis_domain or basis_local:
         return basis_convergence(verify=basis_verify, green=basis_green,
-                                 domain=basis_domain)
+                                 domain=basis_domain, local=basis_local)
     scene = build_demo_scene()
     base = dict(
         radial_order=4, polar_order=6, azimuthal_order=8,
@@ -479,11 +556,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -491,4 +568,5 @@ if __name__ == "__main__":
         basis_verify="--basis-verify" in sys.argv[1:],
         basis_green="--basis-green" in sys.argv[1:],
         basis_domain="--basis-domain" in sys.argv[1:],
+        basis_local="--basis-local" in sys.argv[1:],
     )
