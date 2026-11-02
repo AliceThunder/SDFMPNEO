@@ -998,3 +998,36 @@ def test_composite_sphere_angular_gauss_remains_positive_and_symmetric():
         scene.box_shell_quadrature(**base, polar_panel_count=3)
     with pytest.raises(ValueError, match="azimuthal_panel_order"):
         scene.box_shell_quadrature(**base, azimuthal_panel_order=0)
+
+
+def test_independent_coupling_resolution_keeps_heat_energy_identity():
+    """K-only refinement does not change R, L, or Joule integration nodes."""
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    original = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            field_softening=0.025,
+        ),
+    )
+    same = original.resolve_with_coupling(original.coupling)
+    np.testing.assert_allclose(
+        same.impedance_seawater, original.impedance_seawater,
+        rtol=1e-10, atol=1e-13,
+    )
+    modified = original.resolve_with_coupling(1.02 * original.coupling)
+    np.testing.assert_allclose(modified.resistance, original.resistance)
+    np.testing.assert_allclose(modified.inductance, original.inductance)
+    np.testing.assert_allclose(
+        modified.integration_weights, original.integration_weights,
+    )
+    currents = np.array([1 + 0.2j, -0.4 + 0.3j])
+    np.testing.assert_allclose(
+        modified.port_seawater_power(currents),
+        modified.quadrature_power(currents),
+        rtol=1e-10, atol=1e-12,
+    )
+    assert modified.port_seawater_power(currents) > 0
+    with pytest.raises(ValueError, match="refined coupling"):
+        original.resolve_with_coupling(np.ones((3, 3)))
