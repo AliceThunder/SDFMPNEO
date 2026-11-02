@@ -291,6 +291,7 @@ class BfziScene:
         max_radial_panel_width: float | None = None,
         polar_panel_count: int = 1,
         azimuthal_panel_order: int = 1,
+        polar_geometry_order: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
 
@@ -317,6 +318,16 @@ class BfziScene:
                 or isinstance(azimuthal_panel_order, bool)
                 or azimuthal_panel_order < 1):
             raise ValueError("azimuthal_panel_order must be a positive integer")
+        if polar_geometry_order is not None and (
+            not isinstance(polar_geometry_order, int)
+            or isinstance(polar_geometry_order, bool)
+            or polar_geometry_order < 2
+            or polar_panel_count != 1
+        ):
+            raise ValueError(
+                "polar_geometry_order must be an integer >= 2 "
+                "and cannot be combined with polar_panel_count"
+            )
         if (not isinstance(shell_normal_order, int)
                 or shell_normal_order < 2
                 or not isinstance(shell_tangential_order, int)
@@ -383,7 +394,47 @@ class BfziScene:
         # Full sphere without a hard box mask. An interior-box quadrature
         # node has exactly zero weight; skip it before basis evaluation.
         r_nodes, r_weights = np.polynomial.legendre.leggauss(radial_order)
-        if polar_panel_count == 1:
+        if polar_geometry_order is not None:
+            # Enclosure projections determine *fixed physical* mu-panel
+            # boundaries, independent of the integration order. Both the
+            # box and its partition-of-unity outer shell contribute; this
+            # avoids cutting through their rapidly changing angular
+            # silhouettes with a single broad Gauss interval.
+            mu_cuts = [-1.0, 1.0]
+            for inside, outside in zip(self.assemblies, expanded):
+                for assembly in (inside, outside):
+                    half = np.asarray(assembly.enclosure.half_extents)
+                    corners = np.array(np.meshgrid(
+                        (-half[0], half[0]),
+                        (-half[1], half[1]),
+                        (-half[2], half[2]),
+                        indexing="ij",
+                    )).reshape(3, -1).T
+                    vectors = assembly.pose.position(corners) - center
+                    norm = np.linalg.norm(vectors, axis=1)
+                    mu_corners = vectors[:, 2] / np.maximum(norm, 1e-30)
+                    mu_cuts.extend((
+                        float(np.min(mu_corners)),
+                        float(np.max(mu_corners)),
+                    ))
+            boundaries = [-1.0]
+            for value in sorted(mu_cuts):
+                if boundaries[-1] + 1e-5 < value < 1.0 - 1e-5:
+                    boundaries.append(value)
+            boundaries.append(1.0)
+            gaussian_mu, gaussian_mw = np.polynomial.legendre.leggauss(
+                polar_geometry_order
+            )
+            panel_mu, panel_mw = [], []
+            for left, right in zip(boundaries[:-1], boundaries[1:]):
+                panel_mu.append(
+                    0.5 * (right - left) * gaussian_mu
+                    + 0.5 * (right + left)
+                )
+                panel_mw.append(0.5 * (right - left) * gaussian_mw)
+            mu = np.concatenate(panel_mu)
+            mu_weights = np.concatenate(panel_mw)
+        elif polar_panel_count == 1:
             mu, mu_weights = np.polynomial.legendre.leggauss(polar_order)
         else:
             # Resolve angular changes around the equatorial and other
