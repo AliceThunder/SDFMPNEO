@@ -372,7 +372,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
             previous = label, z, q, p
 
-        # Goal-oriented, residual-driven sparse trial selection from the
+        # Residual-driven sparse trial selection from the
         # strictly nested level-4 *physical* current family. This is an
         # offline diagnostic, not an online approximation: the full parent
         # R/L/K must first be assembled, so no continuum accuracy is claimed.
@@ -399,7 +399,6 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         raw_probes = np.einsum(
             "nmc,mr->nrc", probe_modes, raw_directions, optimize=True,
         )
-        full_amplitudes = np.linalg.solve(raw_a, -raw_f)
         def report_sparse(selected):
             chosen = np.asarray(selected, dtype=int)
             rr = raw_r[np.ix_(chosen,chosen)]
@@ -450,10 +449,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"max_residual_score={np.max(score):.6g}",
                 flush=True,
             )
-            if (dz <= 0.002 and dq <= 0.005 and dp <= 0.002):
+            if (dz <= 0.002 and dq <= 0.005 and dp <= 0.002
+                    and max_dq <= 0.05):
                 print(
                     "  adaptive_screen: matched 159-mode port/probe/power "
-                    "within fixed thresholds; NOT continuum-certified",
+                    "including <=5% max relative local probe difference; "
+                    "NOT continuum-certified",
                     flush=True,
                 )
                 break
