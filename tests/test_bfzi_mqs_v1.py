@@ -1365,3 +1365,56 @@ def test_independent_green_matrices_match_response_and_identify_self_sampling():
         baseline.reintegrate_cross_green_matrices(
             x, w, x, w, kernel_chunk_size=0,
         )
+
+
+def test_gaussian_volume_green_is_finite_psd_and_chunk_independent():
+    """Analytic cloud self interaction removes 1/a singular collocation."""
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    reference = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            inductance_quadrature=(3, 4, 6, 2, 3),
+        ),
+    )
+    points, weights = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=2, shell_tangential_order=3,
+        outer_taper_width=reference.basis.outer_taper_width,
+    )
+    matrices, diagonal = reference.reintegrate_gaussian_green_matrices(
+        points, weights, extra_blurs=(0.0, 0.012),
+        kernel_chunk_size=17,
+    )
+    another, another_diag = reference.reintegrate_gaussian_green_matrices(
+        points, weights, extra_blurs=(0.0, 0.012),
+        kernel_chunk_size=23,
+    )
+    for a, b, d in zip(matrices, another, diagonal):
+        np.testing.assert_allclose(a, b, rtol=1e-9, atol=1e-13)
+        np.testing.assert_allclose(a, a.T, rtol=1e-12, atol=1e-14)
+        assert np.isfinite(a).all()
+        assert np.linalg.eigvalsh(a)[0] >= -1e-12
+        assert 0 < d < np.trace(a)
+    np.testing.assert_allclose(diagonal, another_diag, rtol=1e-12)
+    assert np.linalg.norm(matrices[0] - matrices[1]) > 0
+
+    # Direct analytic single-cloud Coulomb self interaction:
+    # K(0)=1/(sqrt(pi)*h), h=equal-volume-radius/sqrt(5).
+    from sdfmpneo_bfzi.sea_reference import _assemble_gaussian_green_inductances
+    from sdfmpneo_bfzi.source import MU0
+    sample_weight = np.array([0.001])
+    sample_j = np.array([[[1.0, 0.0, 0.0]]])
+    self_m, self_d = _assemble_gaussian_green_inductances(
+        np.array([[0.0, 0.0, 0.0]]),
+        sample_weight, sample_j, (0.0,), 1, 1.0,
+    )
+    radius = np.cbrt(3 * sample_weight[0] / (4 * np.pi))
+    h = radius / np.sqrt(5)
+    expected = MU0 / (4*np.pi) * sample_weight[0]**2 / (np.sqrt(np.pi)*h)
+    np.testing.assert_allclose(self_m[0][0, 0], expected, rtol=1e-12)
+    np.testing.assert_allclose(self_d[0], expected, rtol=1e-12)
+    with pytest.raises(ValueError, match="width_factor"):
+        reference.reintegrate_gaussian_green_matrices(
+            points, weights, width_factor=0.0,
+        )
