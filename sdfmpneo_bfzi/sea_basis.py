@@ -30,6 +30,8 @@ class SeaCurrentBasis:
     modes: tuple[CurrentMode, ...]
     wall_scale: float
     source_lines: tuple[LineSource, LineSource] | None = None
+    outer_envelope: str = "boundary_layer"
+    outer_taper_width: float = 0.0
 
     @property
     def size(self) -> int:
@@ -50,9 +52,30 @@ class SeaCurrentBasis:
         if np.any(~self.scene.in_seawater(points)):
             raise ValueError("sea current basis can only be evaluated in seawater")
         sphere = points - np.asarray(self.scene.outer_center)
-        radius2 = self.scene.outer_radius**2
-        out_factor = 1.0 - np.sum(sphere**2, axis=1) / radius2
-        out_grad = -2.0 * sphere / radius2
+        radius2 = np.einsum("ni,ni->n", sphere, sphere)
+        if self.outer_envelope == "quadratic":
+            # Historical global factor, kept only for explicit comparison.
+            # This modifies even near-coil currents whenever R changes.
+            out_factor = 1.0 - radius2 / self.scene.outer_radius**2
+            out_grad = -2.0 * sphere / self.scene.outer_radius**2
+        else:
+            # Compact outer boundary transition. The physical interior,
+            # including all enclosure corners, sees exactly f=1 and grad f=0
+            # for every sufficiently large truncation radius. At the outer
+            # surface f=0 and grad f=0, so curl(f*g*a) remains solenoidal
+            # and has zero normal flux (the trial space is more restrictive
+            # than the continuum's tangential boundary trace).
+            thickness = self.outer_taper_width
+            t = np.clip(
+                (self.scene.outer_radius - np.sqrt(radius2)) / thickness,
+                0.0, 1.0,
+            )
+            out_factor = t**3 * (10.0 + t * (-15.0 + 6.0 * t))
+            slope = 30.0 * t**2 * (1.0 - t)**2
+            out_grad = (
+                -(slope / thickness
+                  / np.maximum(np.sqrt(radius2), 1e-30))[:, None] * sphere
+            )
 
         boxes = np.ones(len(points), dtype=float)
         boxes_grad = np.zeros_like(points)
@@ -116,6 +139,8 @@ def build_sea_basis(
     refine_thin_faces_only: bool = False,
     sources: BFZISources | None = None,
     include_source_guided: bool = False,
+    outer_envelope: str = "boundary_layer",
+    outer_taper_width: float | None = None,
 ) -> SeaCurrentBasis:
     """Generate box-following curl modes and optional long-range modes.
 
@@ -134,6 +159,8 @@ def build_sea_basis(
         raise ValueError("face_refinement must be 1 or 2")
     if not isinstance(refine_thin_faces_only, bool):
         raise ValueError("refine_thin_faces_only must be a boolean")
+    if outer_envelope not in ("boundary_layer", "quadratic"):
+        raise ValueError("outer_envelope must be 'boundary_layer' or 'quadratic'")
     if include_source_guided and (
         sources is None or sources.scene is not scene
     ):
@@ -150,6 +177,24 @@ def build_sea_basis(
     )
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("wall_scale must be positive")
+    # Physical package reach is independent of the artificial outer radius.
+    # Use a fixed physical taper width whenever the boundary has clearance;
+    # only geometrically tight scenes require reducing that width.
+    origin = np.asarray(scene.outer_center)
+    package_reach = max(
+        float(np.linalg.norm(assembly.pose.center - origin)
+              + np.linalg.norm(assembly.enclosure.half_extents))
+        for assembly in scene.assemblies
+    )
+    clearance = scene.outer_radius - package_reach
+    if clearance <= 0:
+        raise ValueError("outer sphere does not contain all package extents")
+    if outer_taper_width is None:
+        taper_width = min(0.25 * package_reach, 0.5 * clearance)
+    else:
+        taper_width = float(outer_taper_width)
+        if not np.isfinite(taper_width) or not 0 < taper_width < clearance:
+            raise ValueError("outer_taper_width must be finite, positive, and below package clearance")
     modes = []
     for assembly in scene.assemblies:
         half = np.asarray(assembly.enclosure.half_extents)
@@ -181,17 +226,12 @@ def build_sea_basis(
                         direction = assembly.pose.rotation[:, tangent_axis]
                         modes.append(CurrentMode(center, direction, width))
     if include_global:
-        center = np.asarray(scene.outer_center)
+        center = origin
         # Keep the physical Gaussian part of the global trial functions
         # unchanged when only the artificial outer radius is refined.
         # Previously width=0.8*outer_radius changed the entire basis at
         # the same time as the truncation boundary, confounding domain
         # convergence by an unrelated approximation-space change.
-        package_reach = max(
-            np.linalg.norm(assembly.pose.center - center)
-            + np.linalg.norm(assembly.enclosure.half_extents)
-            for assembly in scene.assemblies
-        )
         global_width = 1.5 * package_reach
         for axis in range(3):
             modes.append(CurrentMode(center, np.eye(3)[axis], global_width))
@@ -211,4 +251,5 @@ def build_sea_basis(
     return SeaCurrentBasis(
         scene, tuple(modes), scale,
         sources.lines if include_source_guided else None,
+        outer_envelope, taper_width,
     )
