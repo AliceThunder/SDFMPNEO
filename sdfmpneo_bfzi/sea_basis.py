@@ -37,6 +37,65 @@ class SeaCurrentBasis:
     def size(self) -> int:
         return len(self.modes)
 
+    def potential_primitive(self, xyz) -> np.ndarray:
+        """Curl potentials F for all modes, with J=curl(F).
+
+        F is identically zero on the insulating-box and artificial outer
+        boundaries. For a source vector potential C with curl(C)=B/mu0,
+        integration by parts gives
+            mu0 * integral curl(F).C = integral F.B
+        with no surface term. The latter is a smoother way to integrate
+        the physical two-port source coupling K near the insulating walls.
+        """
+        points = np.asarray(xyz, dtype=float)
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("xyz must have shape (n,3)")
+        if not np.isfinite(points).all():
+            raise ValueError("basis query positions must be finite")
+        if not self.scene.in_seawater(points).all():
+            raise ValueError("sea current basis can only be evaluated in seawater")
+        radial = np.linalg.norm(
+            points - np.asarray(self.scene.outer_center), axis=1,
+        )
+        if self.outer_envelope == "quadratic":
+            envelope = 1.0 - (radial / self.scene.outer_radius)**2
+        else:
+            t = np.clip(
+                (self.scene.outer_radius - radial)
+                / self.outer_taper_width, 0.0, 1.0,
+            )
+            envelope = t**3 * (10.0 + t * (-15.0 + 6.0 * t))
+        for assembly in self.scene.assemblies:
+            squared, _ = assembly.enclosure.squared_exterior_distance(
+                points, assembly.pose,
+            )
+            distance = np.sqrt(squared)
+            envelope *= distance / (distance + self.wall_scale)
+
+        guided_ports = {
+            mode.source_port for mode in self.modes if mode.source_port >= 0
+        }
+        source_fields = {}
+        if guided_ports:
+            if self.source_lines is None:
+                raise ValueError("source-guided basis has no complete port lines")
+            source_fields = {
+                port: self.source_lines[port].potential_kernel(points)
+                for port in guided_ports
+            }
+        primitive = np.empty((len(points), self.size, 3), dtype=float)
+        for index, mode in enumerate(self.modes):
+            offset = points - mode.center
+            factor = envelope * np.exp(
+                -np.einsum("ni,ni->n", offset, offset) / mode.width**2,
+            )
+            direction = (
+                mode.direction if mode.source_port < 0
+                else source_fields[mode.source_port]
+            )
+            primitive[:, index, :] = factor[:, None] * direction
+        return primitive
+
     def evaluate(self, xyz) -> np.ndarray:
         """Vector current modes at points, shaped (n_points,n_modes,3).
 
