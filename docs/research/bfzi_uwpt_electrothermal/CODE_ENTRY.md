@@ -412,3 +412,21 @@ response = solve_seawater_reference(source, basis=basis)
 - 新增两项小型单测：双形式求解与能量闭合，及对全部普通/源引导模态的数值旋度与原始 `J` 一致性。未运行 GitHub Actions。
 
 下一步执行旧的三条命令 `git pull`、指定两文件 `pytest -q`、`--basis-geometry`。新构造要以实际输出判断，不提前将新 K 形式设为默认或宣称总体参考精度已收敛。
+
+
+### 2026-11-02：实测 41 passed；弱式没有直接解决积分误差，改为真实几何径向分片
+
+用户本地在 `8f46998` 得到 `41 passed in 14.34s`。`--basis-geometry` 结果：
+- `geometry_mu8` 两种连续等价 K 弱式，在**相同 R、相同节点**下 `vs_curl_dK=0.0242518,dZ=0.0356102,dq=0.038667,dP=0.036494`。新的 F·B 并不是现阶段已通过检验的替代默认公式。
+- `radial7` 相对原几何 mu8：原 J·C 型 `dZ=0.0230224,dq=0.0519701,max_probe_dq=0.101934,dP=0.0262679`；新 F·B 型 `dZ=0.0369192,dq=0.0238529,max_probe_dq=0.219208,dP=0.0333895`。原值和新值均对径向规则敏感，且各探针误差有时大于平均误差。
+- `wall5_6`：原型 `dZ=0.0170344,dP=0.0193525`，新型 `dZ=0.010464,dP=0.0076653`；后者有所改善，但不能抵消其径向不稳定。
+- `radial7_wall5_6`：原型 `dZ=0.040216,dq=0.050943,dP=0.0458016`；新型 `dZ=0.025498,dq=0.0309792,dP=0.0244349`。二者均未收敛。
+
+因此下一步仍需实质性求积改进，而不是把 K 弱式误差归因于物理错误或直接切换默认。
+
+**本轮提交（未在用户本地复测）**：
+- `BfziScene.box_shell_quadrature(...,radial_geometry_cuts=True)`：根据每个任意 6DOF 位姿绝缘盒以及它的扩展 blending shell，求到球心的最小距离（精确 OBB 外距离）与所有角点最大距离，作为固定物理半径分片边界；再与现有盒中心/球域 taper/radial max-width 规则结合。保持积分权重为正、所有节点在海水有效域、不引入 world mesh；默认关闭，不改变旧结果。
+- `SeaMQSConfig.radial_geometry_cuts` 透传到主 R/K/Joule 球域积分。显式独立的 Green L 五阶积分继续保持自己的低成本规则，不继承此几何半径分片（也不继承高成本极角分片）。
+- `python run.py --mode bfzi-convergence --basis-radial` 为专用快捷实验入口：不再重复已完成的 15/27/59/63 模态与角向梯度对照；构造一个 63 模态、原始 Green L，再固定极角几何每片8点、方位每扇区2点、近壁4/5，逐级比较：`geo8_original`、`geo8_radial_cuts`、`radial_cap_012`、`radial_cap_006`、`radial_cap_003`、`radial_cap_006_g7`。每组在相同 R 和节点下构造原来的 J·C 与新 F·B 两种 K，打印互相差异 `weak_form_gap`，以及同一形式前后分片的 `dR/dK/dZ/dq/max_probe_dq/dP`。最后的 g7 行明确**对比 0.06m 相同分片的 6 阶基线**，不会和前一行 0.03m 不同宽度混为一谈。
+- 增加一项面向主求积的测试，检验几何半径断点与固定物理面板长度会产生更多有效正权海水节点、非法参数拒绝；扩展独立 Green L 的已有回归测试，防止它意外继承高成本 R/K 半径分片。新一轮的测试通过数量未知，尚未运行 GitHub Actions（项目中禁止）。
+- 下一步仍独立验证 Green L 软化核积分、模态、外域，才能把 BFZI 参考算例用于电磁热 NN 标签。**不要根据双形式积分仅在一个节点序列上接近就宣称 continuum truth**。
