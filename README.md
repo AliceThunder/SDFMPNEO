@@ -1158,8 +1158,9 @@ snapshot still reproduces only its 27-mode parent
 zero numerical port/modal power mismatch).
 
 The new explicit-opt-in `bfzi-generate` samples multiple
-independent BFZI configurations (receiver 6-DOF pose,
-both coil shape parameters, seawater conductivity) with
+independent BFZI configurations (both 6-DOF poses,
+both oriented enclosure sizes, coil shape parameters,
+and seawater conductivity) with
 an unchanged deterministic **27-mode** physical curl
 topology and the uniform-ball reference. It saves each
 sample as a separately solved provisional response with
