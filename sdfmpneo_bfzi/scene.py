@@ -293,7 +293,8 @@ class BfziScene:
         polar_panel_count: int = 1,
         azimuthal_panel_order: int = 1,
         polar_geometry_order: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        return_sphere_count: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, int]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
 
         Six nonoverlapping oriented rectangular slabs cover the neighborhood
@@ -307,6 +308,9 @@ class BfziScene:
         blend. Their weights add to exactly one at every wet point in the
         continuous integral. The box interiors get zero spherical weight.
         Geometry-local slabs are not an electromagnetic volumetric mesh.
+        If return_sphere_count=True, also return the number of initial
+        spherical nodes. The remaining nodes are the disjoint box slabs;
+        the two weighted regions exactly partition the continuous integral.
         """
         if min(radial_order, polar_order, azimuthal_order) < 2:
             raise ValueError("outer sphere Gauss orders must be >= 2")
@@ -354,6 +358,8 @@ class BfziScene:
             raise ValueError("max_radial_panel_width must be positive and finite")
         if not isinstance(radial_geometry_cuts, bool):
             raise ValueError("radial_geometry_cuts must be a boolean")
+        if not isinstance(return_sphere_count, bool):
+            raise ValueError("return_sphere_count must be a boolean")
 
         shell_width = shell_width_factor * scale
         center = np.asarray(self.outer_center)
@@ -659,4 +665,8 @@ class BfziScene:
                         if np.any(active):
                             point_sets.append(points[active])
                             weight_sets.append(w[active])
-        return np.concatenate(point_sets), np.concatenate(weight_sets)
+        positions = np.concatenate(point_sets)
+        weights = np.concatenate(weight_sets)
+        if return_sphere_count:
+            return positions, weights, len(point_sets[0])
+        return positions, weights
