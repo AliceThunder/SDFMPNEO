@@ -8,13 +8,15 @@ Run: python run.py --mode bfzi-snapshot --out bfzi_response.npz
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import argparse
 import numpy as np
 
 from .bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi import (
-    BFZISnapshotROM, SeaMQSConfig, build_bfzi_source,
+    BFZISnapshotROM, SeaMQSConfig, RigidPose, build_bfzi_source,
     build_sea_basis, solve_seawater_reference,
+    BFZIResponseLabel, save_response_labels,
 )
 
 
@@ -22,6 +24,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out",default="bfzi_response.npz",
                         help="output .npz snapshot artifact (numeric, no pickle)")
+    parser.add_argument("--dataset-out",default=None,
+                        help="also write two separate provisional geometry labels")
     args = parser.parse_args(argv)
     scene = build_demo_scene()
     source = build_bfzi_source(scene,200_000.0,order=4)
@@ -67,6 +71,43 @@ def main(argv=None):
     print("UNCERTIFIED DEMO: rank-4 reproduces ONLY the provisional "
           "fixed-scene parent. No cross-geometry training or spatial "
           "continuum accuracy is claimed.",flush=True)
+    if args.dataset_out is not None:
+        # Second geometry is a genuinely different receiver rigid pose,
+        # not a re-sampled probe from the same reference response.
+        modified_receiver = replace(
+            scene.receiver,
+            pose=RigidPose(
+                scene.receiver.pose.rotation,
+                np.asarray(scene.receiver.pose.center) + [0.008,0.0,0.015],
+            ),
+        )
+        varied_scene = replace(scene, receiver=modified_receiver)
+        varied_source = build_bfzi_source(
+            varied_scene, 200_000.0, order=4,
+        )
+        varied_basis = build_sea_basis(
+            varied_scene, modes_per_face=2, face_refinement=1,
+        )
+        varied_parent = solve_seawater_reference(
+            varied_source, basis=varied_basis, config=cfg,
+        )
+        varied_snapshot = BFZISnapshotROM.from_operators(
+            varied_source, varied_basis, varied_parent.transform,
+            varied_parent.resistance, varied_parent.inductance,
+            varied_parent.coupling, inductance_kernel=cfg.inductance_kernel,
+        )
+        save_response_labels(
+            args.dataset_out, (
+                BFZIResponseLabel.from_snapshot(rom),
+                BFZIResponseLabel.from_snapshot(varied_snapshot),
+            )
+        )
+        print(f"Saved 2 independent PROVISIONAL geometry labels: "
+              f"{args.dataset_out}",flush=True)
+        print("Dataset records contain geometry features, two-port raw "
+              "current response coefficients and reciprocal Zsea; "
+              "neither the labels nor the tiny dataset have been "
+              "certified for neural training.",flush=True)
 
 
 if __name__ == "__main__":
