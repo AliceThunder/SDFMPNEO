@@ -1162,3 +1162,33 @@ def test_source_coupling_primitives_curl_to_original_current_modes():
     np.testing.assert_allclose(
         approx_curl, basis.evaluate(x), rtol=4e-3, atol=2e-5,
     )
+
+
+
+def test_geometry_radial_cuts_and_physical_cap_preserve_positive_wet_nodes():
+    """Use actual oriented box extents to split radial Gauss integration."""
+    scene = scene_pair()
+    orders = dict(
+        radial_order=3, polar_order=6, azimuthal_order=8,
+        shell_normal_order=2, shell_tangential_order=3,
+        polar_geometry_order=3,
+    )
+    ordinary_x, _ = scene.box_shell_quadrature(**orders)
+    cut_x, cut_w = scene.box_shell_quadrature(
+        **orders, radial_geometry_cuts=True,
+    )
+    fine_x, fine_w = scene.box_shell_quadrature(
+        **orders, radial_geometry_cuts=True,
+        max_radial_panel_width=0.06,
+    )
+    assert len(cut_x) > len(ordinary_x)
+    assert len(fine_x) > len(cut_x)
+    for x, w in ((cut_x, cut_w), (fine_x, fine_w)):
+        assert scene.in_seawater(x).all()
+        assert np.all(np.isfinite(w))
+        assert np.all(w > 0)
+        assert w.sum() > 0
+    with pytest.raises(ValueError, match="radial_geometry_cuts"):
+        SeaMQSConfig(radial_geometry_cuts=1)
+    with pytest.raises(ValueError, match="radial_geometry_cuts"):
+        scene.box_shell_quadrature(**orders, radial_geometry_cuts=1)
