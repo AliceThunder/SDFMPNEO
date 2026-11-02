@@ -293,6 +293,20 @@ class SeawaterResponse:
             kernel_chunk_size=kernel_chunk_size,
         )
         previous_power = self.port_seawater_power(currents)
+        # The exact coincident-node contribution is proportional to
+        # w_i**2/a. A large trace share flags point-collocation aliasing;
+        # it is NOT the continuum's integrable near-field self energy.
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
+            optimize=True,
+        )
+        self_trace_numerator = (
+            MU0 / (4 * math.pi)
+            * np.einsum("n,nmc,nmc->", w**2, modes, modes,
+                        optimize=True)
+        )
         old_q = (
             np.asarray(self.seawater_loss(probes, currents))
             if probes is not None else None
@@ -311,6 +325,10 @@ class SeawaterResponse:
             )
             result.append({
                 "softening": updated.field_softening,
+                "green_diagonal_trace_fraction": float(
+                    (self_trace_numerator / updated.field_softening)
+                    / max(float(np.trace(updated.inductance)), 1e-30)
+                ),
                 "relative_inductance_difference": float(
                     np.linalg.norm(updated.inductance - self.inductance)
                     / max(np.linalg.norm(self.inductance), 1e-30)
