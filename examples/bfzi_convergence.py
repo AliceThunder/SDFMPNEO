@@ -274,31 +274,41 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 preceding_combined = updated
 
     if angular:
-        # Resolve the reported 8.8% shift when changing global angular
-        # orders by comparing independent composite-mu and Gauss-phi rules.
-        # All trials keep R-whitened physical modes and Green L fixed.
-        print("\nComposite sphere-angle R/K study (same modes and Green L):")
-        angle_trials = (
-            ("polar_split2", replace(config, polar_panel_count=2)),
-            ("phi_gauss2", replace(config, azimuthal_panel_order=2)),
-            ("phi_gauss3", replace(config, azimuthal_panel_order=3)),
-            ("polar2_phi2", replace(
+        # A comparison with equal total mu nodes but shifted Gauss panels
+        # is a consistency check, not convergence. Hold phi sectors,
+        # radial cubature, wall Gauss, basis, and L fixed while increasing
+        # *only* the Gaussian order within each of two mu panels.
+        print("\nSame-family polar Gauss order ladder (fixed phi/radial/wall/L):")
+        polar_trials = (
+            ("phi2_global10", replace(
+                config, polar_panel_count=1, azimuthal_panel_order=2,
+            )),
+            ("polar2_mu10", replace(
                 config, polar_panel_count=2, azimuthal_panel_order=2,
             )),
-            ("polar2_phi3", replace(
-                config, polar_panel_count=2, azimuthal_panel_order=3,
+            ("polar2_mu14", replace(
+                config, polar_order=14, polar_panel_count=2,
+                azimuthal_panel_order=2,
             )),
-            ("polar2_phi3_fine", replace(
-                config, polar_order=14, azimuthal_order=24,
-                polar_panel_count=2, azimuthal_panel_order=3,
+            ("polar2_mu18", replace(
+                config, polar_order=18, polar_panel_count=2,
+                azimuthal_panel_order=2,
+            )),
+            ("polar2_mu22", replace(
+                config, polar_order=22, polar_panel_count=2,
+                azimuthal_panel_order=2,
+            )),
+            ("polar2_mu22_phi3", replace(
+                config, polar_order=22, polar_panel_count=2,
+                azimuthal_panel_order=3,
             )),
         )
         base_z = teacher.impedance_seawater
         base_q = teacher.seawater_loss(probes, currents)
-        base_power = teacher.port_seawater_power(currents)
-        previous_fine = None
-        for label, cfg in angle_trials:
-            x, weight = scene.box_shell_quadrature(
+        base_p = teacher.port_seawater_power(currents)
+        previous = None
+        for label, cfg in polar_trials:
+            points, weights = scene.box_shell_quadrature(
                 cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
                 wall_scale=enriched.wall_scale,
                 shell_width_factor=cfg.shell_width_factor,
@@ -309,28 +319,22 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 polar_panel_count=cfg.polar_panel_count,
                 azimuthal_panel_order=cfg.azimuthal_panel_order,
             )
-            updated = teacher.reintegrate_local_response(x, weight)
-            z = updated.impedance_seawater
-            q = updated.seawater_loss(probes, currents)
-            power = updated.port_seawater_power(currents)
-            dz = np.linalg.norm(z - base_z) / max(
-                np.linalg.norm(base_z), 1e-30,
-            )
-            dq = np.linalg.norm(q - base_q) / max(
-                np.linalg.norm(base_q), 1e-30,
-            )
-            dp = abs(power - base_power) / max(abs(base_power), 1e-30)
-            dr = np.linalg.norm(updated.resistance - teacher.resistance) / max(
-                np.linalg.norm(teacher.resistance), 1e-30,
-            )
-            dk = np.linalg.norm(updated.coupling - teacher.coupling) / max(
-                np.linalg.norm(teacher.coupling), 1e-30,
-            )
+            resolved = teacher.reintegrate_local_response(points, weights)
+            z = resolved.impedance_seawater
+            q = resolved.seawater_loss(probes, currents)
+            p = resolved.port_seawater_power(currents)
+            def relative(a, b):
+                return np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30)
+            dr = relative(resolved.resistance, teacher.resistance)
+            dk = relative(resolved.coupling, teacher.coupling)
+            dz = relative(z, base_z)
+            dq = relative(q, base_q)
+            dp = abs(p - base_p) / max(abs(base_p), 1e-30)
             print(
-                f"{label:>20}: nodes={len(x):6d}, "
+                f"{label:>20}: nodes={len(points):6d}, "
                 f"dR={dr:.6g}, dK={dk:.6g}, "
                 f"base_dZ={dz:.6g}, base_dq={dq:.6g}, "
-                f"base_dP={dp:.6g}, sea_power={power:.8g} W",
+                f"base_dP={dp:.6g}, sea_power={p:.8g} W",
                 flush=True,
             )
             print(
@@ -338,17 +342,29 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 + " ".join(f"{value:.8g}" for value in q),
                 flush=True,
             )
-            if label == "polar2_phi3":
-                previous_fine = updated
-            elif label == "polar2_phi3_fine" and previous_fine is not None:
-                earlier_q = previous_fine.seawater_loss(probes, currents)
+            if previous is not None:
+                old = previous[1]
+                old_q = old.seawater_loss(probes, currents)
+                old_p = old.port_seawater_power(currents)
+                point_relative = np.abs(q - old_q) / np.maximum(
+                    np.abs(old_q), 1e-30,
+                )
                 print(
-                    "  coarse->fine (same composite quadrature family): "
-                    f"dZ={np.linalg.norm(z - previous_fine.impedance_seawater) / max(np.linalg.norm(previous_fine.impedance_seawater), 1e-30):.6g}, "
-                    f"dq={np.linalg.norm(q - earlier_q) / max(np.linalg.norm(earlier_q), 1e-30):.6g}, "
-                    f"dP={abs(power - previous_fine.port_seawater_power(currents)) / max(previous_fine.port_seawater_power(currents), 1e-30):.6g}",
+                    f"{'step_from_previous':>20}: "
+                    f"from={previous[0]}, "
+                    f"dZ={relative(z, old.impedance_seawater):.6g}, "
+                    f"dq={relative(q, old_q):.6g}, "
+                    f"max_probe_dq={np.max(point_relative):.6g}, "
+                    f"dP={abs(p - old_p) / max(abs(old_p), 1e-30):.6g}",
                     flush=True,
                 )
+            previous = label, resolved
+        print(
+            "The polar2_mu10/14/18/22 rows increase ONLY mu Gauss "
+            "degree on the same two panels; the last phi3 row "
+            "separately checks azimuthal resolution.",
+            flush=True,
+        )
 
     if green:
         # Keep the original 63-mode R/K, basis, whitening, power cubature,
