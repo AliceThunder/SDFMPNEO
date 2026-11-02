@@ -685,7 +685,14 @@ def test_source_guided_curl_modes_match_complete_port_vector_potential():
     def potential(x):
         outer = scene.outer_radius
         rel = x - scene.outer_center
-        envelope = 1 - np.dot(rel, rel) / outer**2
+        if guided.outer_envelope == "quadratic":
+            envelope = 1 - np.dot(rel, rel) / outer**2
+        else:
+            t = np.clip(
+                (outer - np.linalg.norm(rel)) / guided.outer_taper_width,
+                0.0, 1.0,
+            )
+            envelope = t**3 * (10.0 + t * (-15.0 + 6.0 * t))
         for assembly in scene.assemblies:
             dist2, _ = assembly.enclosure.squared_exterior_distance(
                 x, assembly.pose,
