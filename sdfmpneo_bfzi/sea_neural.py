@@ -13,7 +13,9 @@ import copy
 
 import numpy as np
 
-from .sea_dataset import geometry_features, load_response_labels
+from .sea_dataset import (
+    geometry_features, load_response_labels, scene_from_geometry_features,
+)
 from .sea_basis import SeaCurrentBasis
 from .source import BFZISources
 
@@ -417,5 +419,147 @@ def train_response_surrogate(
         "normalized_val_mse":float(lowest),
         "heldout_raw_mode_relative_error":float(np.mean(err_current)),
         "heldout_port_z_relative_error":float(np.mean(err_z)),
+    }
+    return summary
+
+
+def evaluate_geometry_holdouts(
+    dataset_path,model_path,*,source_order=4,
+):
+    """Test actual held-out geometries against SAVED provisional MQS labels.
+
+    Rebuilds physical scenes from lossless geometry features; never reruns
+    electromagnetic R/L/K or reads training source labels for predictions.
+    Compares both original neural Z/J and local-R-closure-adjusted Z/J,
+    including probe Joule and full-drive port power. A correct energy
+    identity alone is NOT treated as an accuracy improvement.
+    """
+    from .source import build_bfzi_source
+    from .sea_basis import build_sea_basis
+    from .sea_snapshot import _scene_signature
+
+    model=BFZINeuralSurrogate.load(model_path)
+    samples=load_response_labels(dataset_path)
+    heldout=set(model.metadata["validation_signatures"])
+    selected=[s for s in samples if s.scene_signature in heldout]
+    if not selected or len(selected)!=len(heldout):
+        raise ValueError(
+            "dataset is not the checkpoint's original geometry holdout"
+        )
+    if model.metadata["mode_count"]!=27:
+        raise ValueError(
+            "v1 holdout reconstruction supports the 27-mode basis only; "
+            "a higher-mode checkpoint needs its basis specification"
+        )
+    if not isinstance(source_order,int) or source_order<2:
+        raise ValueError("source_order must be integer >=2")
+
+    def relative(predicted,reference):
+        return float(
+            np.linalg.norm(predicted-reference)/
+            max(float(np.linalg.norm(reference)),1e-30)
+        )
+
+    metrics=[]
+    drive=np.array([1.0+0.2j,-0.4+0.5j])
+    for sample in selected:
+        scene,frequency=scene_from_geometry_features(
+            sample.features,
+            max_return_waypoints=model.metadata["max_return_waypoints"],
+        )
+        source=build_bfzi_source(
+            scene,frequency_hz=frequency,order=source_order,
+        )
+        basis=build_sea_basis(
+            scene,modes_per_face=2,face_refinement=1,
+        )
+        if _scene_signature(source,basis)!=sample.scene_signature:
+            raise ValueError(
+                "label/source/basis signature mismatch for held-out "
+                "scene; check the original --source-order"
+            )
+        # Completely separate inference calls for raw and corrected paths.
+        uncorrected=model.predict(source,basis,power_consistent=False)
+        corrected=model.predict(source,basis,power_consistent=True)
+
+        probes=[
+            np.asarray(scene.outer_center,dtype=float),
+        ]
+        for assembly in scene.assemblies:
+            half=np.asarray(assembly.enclosure.half_extents)
+            normal=int(np.argmin(half))
+            tangents=[axis for axis in range(3) if axis!=normal]
+            for sign in (-1,1):
+                for u,v in ((0.,0.),(.50,.50)):
+                    local=np.zeros(3)
+                    local[normal]=sign*(
+                        half[normal]+max(0.003,3*basis.wall_scale)
+                    )
+                    local[tangents]=np.array([u,v])*half[tangents]
+                    probes.append(assembly.pose.position(local))
+        points=np.array(probes,dtype=float)
+        if not scene.in_seawater(points).all():
+            raise ValueError("held-out probes must be in seawater")
+        evaluated=basis.evaluate(points)
+        true_j=np.einsum(
+            "nmc,m->nc",evaluated,sample.raw_unit_modes @ drive,
+            optimize=True,
+        )
+        true_q=np.sum(np.abs(true_j)**2,axis=1)/(
+            2*scene.seawater.conductivity
+        )
+        true_z=sample.impedance_seawater
+        true_power=0.5*float(np.real(np.vdot(
+            drive,true_z.real @ drive,
+        )))
+
+        record={
+            "scene_signature":sample.scene_signature[:12],
+            "outside_training_range":corrected.out_of_training_range,
+        }
+        for name,predicted in (
+            ("raw",uncorrected),("closed",corrected),
+        ):
+            p_z=predicted.impedance_seawater
+            p_j=predicted.current_density(points,drive)
+            p_q=np.sum(np.abs(p_j)**2,axis=1)/(
+                2*scene.seawater.conductivity
+            )
+            record[f"{name}_z_relative_error"]=relative(p_z,true_z)
+            record[f"{name}_j_relative_error"]=relative(p_j,true_j)
+            record[f"{name}_probe_q_relative_error"]=relative(p_q,true_q)
+            record[f"{name}_port_power_relative_error"]=(
+                abs(predicted.port_seawater_power(drive)-true_power)/
+                max(abs(true_power),1e-30)
+            )
+        record["response_correction_relative"]=(
+            corrected.response_correction_relative
+        )
+        record["closed_power_mismatch"]=(
+            abs(
+                corrected.integrated_seawater_power(drive)
+                -corrected.port_seawater_power(drive)
+            )/max(abs(corrected.port_seawater_power(drive)),1e-30)
+        )
+        metrics.append(record)
+
+    errors=[
+        "raw_z_relative_error","closed_z_relative_error",
+        "raw_j_relative_error","closed_j_relative_error",
+        "raw_probe_q_relative_error","closed_probe_q_relative_error",
+        "raw_port_power_relative_error","closed_port_power_relative_error",
+        "response_correction_relative","closed_power_mismatch",
+    ]
+    summary={
+        "reference_status":"provisional",
+        "heldout_geometries":len(metrics),
+        "outside_training_range_count":sum(
+            int(m["outside_training_range"]) for m in metrics
+        ),
+        "mean":{key:float(np.mean([m[key] for m in metrics]))
+                for key in errors},
+        "max":{key:float(np.max([m[key] for m in metrics]))
+               for key in errors},
+        "per_geometry":metrics,
     }
     return summary
