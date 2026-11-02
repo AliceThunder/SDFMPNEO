@@ -229,7 +229,7 @@ def main(full: bool = False, basis_only: bool = False):
             ("tangent_6", "tangent_5"),
             ("normal_5", "normal_4"),
             ("finer_outer", "outer_cubature"),
-            ("face_refined", "face_modes_2"),
+            ("face_refined", "box_shell"),
             ("outer_radius_085", "outer_radius_070"),
             ("softening_012", "softening_018"),
         ])
