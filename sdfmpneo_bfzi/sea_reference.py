@@ -7,7 +7,7 @@ a reusable response object. Accuracy requires basis/cubature/domain refinement.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 import numpy as np
 from scipy.linalg import eigh, solve
@@ -69,6 +69,48 @@ class SeaMQSConfig:
             raise ValueError(
                 "inductance_quadrature currently requires box_shell scheme"
             )
+
+
+
+def _assemble_green_inductances(
+    points: np.ndarray, weights: np.ndarray, modes: np.ndarray,
+    softenings: tuple[float, ...], chunk_size: int,
+) -> tuple[np.ndarray, ...]:
+    """Shared-distance symmetric Green assembly for one or more softenings.
+
+    Each L uses the same real Galerkin modes and positive volume cubature.
+    Distances are computed once per block, including when comparing several
+    regularization lengths. The discrete kernel is positive definite for
+    every strictly positive softening.
+    """
+    n_points, n_modes, _ = modes.shape
+    weighted = weights[:, None, None] * modes
+    packed = weighted.reshape(n_points, 3 * n_modes)
+    matrices = [np.zeros((n_modes, n_modes), dtype=float) for _ in softenings]
+    for start in range(0, n_points, chunk_size):
+        stop = min(start + chunk_size, n_points)
+        left = weighted[start:stop]
+        for other in range(start, n_points, chunk_size):
+            end = min(other + chunk_size, n_points)
+            distance2 = cdist(
+                points[start:stop], points[other:end],
+                metric="sqeuclidean",
+            )
+            for softening, inductance in zip(softenings, matrices):
+                kernel = MU0 / (4 * math.pi) / np.sqrt(
+                    distance2 + softening**2
+                )
+                projected = (kernel @ packed[other:end]).reshape(
+                    stop - start, n_modes, 3,
+                )
+                block = np.einsum(
+                    "pic,pjc->ij", left, projected, optimize=True,
+                )
+                if other == start:
+                    inductance += block
+                else:
+                    inductance += block + block.T
+    return tuple(0.5 * (matrix + matrix.T) for matrix in matrices)
 
 
 @dataclass(frozen=True)
@@ -182,6 +224,121 @@ class SeawaterResponse:
             self.inductance, k, coefficients, z,
             x, w, modes, self.field_softening, self.raw_basis_count,
         )
+
+    def reintegrate_green_responses(
+        self, points, weights, *, softenings=None, kernel_chunk_size=128,
+    ) -> tuple[SeawaterResponse, ...]:
+        """Re-solve with new Green L only; R/K/Joule cubature stays fixed.
+
+        The provided nodes are an independent *double* Green cubature. Every
+        response retains the original physical basis, R whitening, K, port
+        sources, and heat nodes, so port/volume dissipation still closes.
+        Distances are reused across regularization lengths to keep a
+        softening sweep cheaper than separate full reference solves.
+        """
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3 or w.shape != (len(x),)
+                or len(x) == 0 or not np.isfinite(x).all()
+                or not np.isfinite(w).all() or np.any(w <= 0)):
+            raise ValueError(
+                "Green cubature requires nonempty (n,3) points "
+                "and strictly positive finite (n,) weights"
+            )
+        if not self.sources.scene.in_seawater(x).all():
+            raise ValueError("Green cubature points must be in seawater")
+        if (not isinstance(kernel_chunk_size, int)
+                or kernel_chunk_size < 1):
+            raise ValueError("kernel_chunk_size must be a positive integer")
+        if softenings is None:
+            softenings = (self.field_softening,)
+        softenings = tuple(softenings)
+        if not softenings or any(
+            not math.isfinite(a) or a <= 0 for a in softenings
+        ):
+            raise ValueError("softenings must be positive finite lengths")
+        modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
+            optimize=True,
+        )
+        inductances = _assemble_green_inductances(
+            x, w, modes, softenings, kernel_chunk_size,
+        )
+        omega = self.sources.omega
+        responses = []
+        for softening, inductance in zip(softenings, inductances):
+            coefficients = solve(
+                self.resistance + 1j * omega * inductance,
+                -1j * omega * self.coupling,
+                assume_a="gen", check_finite=True,
+            )
+            impedance = 1j * omega * self.coupling.T @ coefficients
+            impedance = 0.5 * (impedance + impedance.T)
+            responses.append(replace(
+                self, inductance=inductance,
+                unit_current_modes=coefficients,
+                impedance_seawater=impedance,
+                field_softening=softening,
+            ))
+        return tuple(responses)
+
+    def independent_green_metrics(
+        self, points, weights, port_currents=(1.0, 0.0), *,
+        probes=None, softenings=None, kernel_chunk_size=128,
+    ) -> list[dict[str, float | None]]:
+        """Independent fixed-R/K Green changes, not a continuum error bound."""
+        currents = self._currents(port_currents)
+        held = self.reintegrate_green_responses(
+            points, weights, softenings=softenings,
+            kernel_chunk_size=kernel_chunk_size,
+        )
+        previous_power = self.port_seawater_power(currents)
+        old_q = (
+            np.asarray(self.seawater_loss(probes, currents))
+            if probes is not None else None
+        )
+        result = []
+        for updated in held:
+            power = updated.port_seawater_power(currents)
+            new_q = (
+                np.asarray(updated.seawater_loss(probes, currents))
+                if probes is not None else None
+            )
+            residual = (
+                1j * self.sources.omega
+                * (updated.inductance - self.inductance)
+                @ self.unit_current_modes
+            )
+            result.append({
+                "softening": updated.field_softening,
+                "relative_inductance_difference": float(
+                    np.linalg.norm(updated.inductance - self.inductance)
+                    / max(np.linalg.norm(self.inductance), 1e-30)
+                ),
+                "relative_resolved_impedance_change": float(
+                    np.linalg.norm(
+                        updated.impedance_seawater - self.impedance_seawater
+                    ) / max(np.linalg.norm(self.impedance_seawater), 1e-30)
+                ),
+                "relative_resolved_probe_change": (
+                    float(np.linalg.norm(new_q - old_q)
+                          / max(np.linalg.norm(old_q), 1e-30))
+                    if old_q is not None else None
+                ),
+                "relative_resolved_power_change": abs(
+                    power - previous_power
+                ) / max(abs(previous_power), 1e-30),
+                "relative_heldout_residual": float(
+                    np.linalg.norm(residual)
+                    / max(
+                        np.linalg.norm(
+                            1j * self.sources.omega * self.coupling
+                        ), 1e-30,
+                    )
+                ),
+                "resolved_power": power,
+            })
+        return result
 
     def independent_cubature_metrics(
         self, points, weights, port_currents=(1.0, 0.0),
@@ -398,42 +555,13 @@ def solve_seawater_reference(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
             optimize=True,
         )
-    # Softened Coulomb kernel 1/sqrt(r^2+a^2) is positive definite. Using
-    # a common kernel across all basis modes preserves L >= 0.
-    # Matrix-free-in-memory Green contraction: only a small block of the
-    # Q-by-Q volume kernel is materialized at once. This borrows the vNext
-    # memory-bounded reference pattern without changing the energy kernel.
-    weighted_modes = magnetic_weights[:, None, None] * magnetic_modes
-    n_modes = transform.shape[1]
-    # Symmetric two-block Green assembly. Compute each pair of cubature
-    # blocks once: the transposed off-diagonal contribution is its exact
-    # discrete reciprocal counterpart. Peak kernel memory is O(chunk**2)
-    # rather than O(chunk * total_nodes); no full QxQ kernel is formed.
-    packed = weighted_modes.reshape(len(magnetic_points), 3 * n_modes)
-    inductance = np.zeros((n_modes, n_modes), dtype=float)
-    chunk = cfg.kernel_chunk_size
-    for start in range(0, len(magnetic_points), chunk):
-        stop = min(start + chunk, len(magnetic_points))
-        left = weighted_modes[start:stop]
-        for other in range(start, len(magnetic_points), chunk):
-            end = min(other + chunk, len(magnetic_points))
-            distance2 = cdist(
-                magnetic_points[start:stop],
-                magnetic_points[other:end],
-                metric="sqeuclidean",
-            )
-            kernel = MU0 / (4 * math.pi) / np.sqrt(
-                distance2 + cfg.field_softening**2
-            )
-            projected = (kernel @ packed[other:end]).reshape(
-                stop - start, n_modes, 3,
-            )
-            block = np.einsum("pic,pjc->ij", left, projected, optimize=True)
-            if other == start:
-                inductance += block
-            else:
-                inductance += block + block.T
-    inductance = 0.5 * (inductance + inductance.T)
+    # Nonlocal L is assembled on its own positive cubature with the same
+    # physical basis and R normalization. Compare its resolution and the
+    # softening independently; neither is proven converged by power closure.
+    inductance = _assemble_green_inductances(
+        magnetic_points, magnetic_weights, magnetic_modes,
+        (cfg.field_softening,), cfg.kernel_chunk_size,
+    )[0]
 
     csource = sources.potential_kernels(points)
     coupling = MU0 * np.einsum(
