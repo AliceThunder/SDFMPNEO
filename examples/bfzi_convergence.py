@@ -10,6 +10,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-green  # independent Green L and softening
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
+    python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -43,7 +44,8 @@ def _indices_in_enriched_basis(enriched, subset):
 
 
 def basis_convergence(*, verify: bool = False, green: bool = False,
-                      domain: bool = False, local: bool = False):
+                      domain: bool = False, local: bool = False,
+                      angular: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -174,6 +176,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             shell_tangential_order=cfg.shell_tangential_order,
             outer_taper_width=enriched.outer_taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
+            polar_panel_count=cfg.polar_panel_count,
+            azimuthal_panel_order=cfg.azimuthal_panel_order,
         )
         check = teacher.independent_cubature_metrics(
             points, weights, currents, probes=probes,
@@ -228,6 +232,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_tangential_order=cfg.shell_tangential_order,
                 outer_taper_width=enriched.outer_taper_width,
                 max_radial_panel_width=cfg.max_radial_panel_width,
+                polar_panel_count=cfg.polar_panel_count,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
             )
             updated = teacher.reintegrate_local_response(
                 local_points, local_weights,
@@ -267,6 +273,83 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             if label in ("combined", "combined_finer"):
                 preceding_combined = updated
 
+    if angular:
+        # Resolve the reported 8.8% shift when changing global angular
+        # orders by comparing independent composite-mu and Gauss-phi rules.
+        # All trials keep R-whitened physical modes and Green L fixed.
+        print("\nComposite sphere-angle R/K study (same modes and Green L):")
+        angle_trials = (
+            ("polar_split2", replace(config, polar_panel_count=2)),
+            ("phi_gauss2", replace(config, azimuthal_panel_order=2)),
+            ("phi_gauss3", replace(config, azimuthal_panel_order=3)),
+            ("polar2_phi2", replace(
+                config, polar_panel_count=2, azimuthal_panel_order=2,
+            )),
+            ("polar2_phi3", replace(
+                config, polar_panel_count=2, azimuthal_panel_order=3,
+            )),
+            ("polar2_phi3_fine", replace(
+                config, polar_order=14, azimuthal_order=24,
+                polar_panel_count=2, azimuthal_panel_order=3,
+            )),
+        )
+        base_z = teacher.impedance_seawater
+        base_q = teacher.seawater_loss(probes, currents)
+        base_power = teacher.port_seawater_power(currents)
+        previous_fine = None
+        for label, cfg in angle_trials:
+            x, weight = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+                polar_panel_count=cfg.polar_panel_count,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
+            )
+            updated = teacher.reintegrate_local_response(x, weight)
+            z = updated.impedance_seawater
+            q = updated.seawater_loss(probes, currents)
+            power = updated.port_seawater_power(currents)
+            dz = np.linalg.norm(z - base_z) / max(
+                np.linalg.norm(base_z), 1e-30,
+            )
+            dq = np.linalg.norm(q - base_q) / max(
+                np.linalg.norm(base_q), 1e-30,
+            )
+            dp = abs(power - base_power) / max(abs(base_power), 1e-30)
+            dr = np.linalg.norm(updated.resistance - teacher.resistance) / max(
+                np.linalg.norm(teacher.resistance), 1e-30,
+            )
+            dk = np.linalg.norm(updated.coupling - teacher.coupling) / max(
+                np.linalg.norm(teacher.coupling), 1e-30,
+            )
+            print(
+                f"{label:>20}: nodes={len(x):6d}, "
+                f"dR={dr:.6g}, dK={dk:.6g}, "
+                f"base_dZ={dz:.6g}, base_dq={dq:.6g}, "
+                f"base_dP={dp:.6g}, sea_power={power:.8g} W",
+                flush=True,
+            )
+            print(
+                f"{'probe_q':>20}: "
+                + " ".join(f"{value:.8g}" for value in q),
+                flush=True,
+            )
+            if label == "polar2_phi3":
+                previous_fine = updated
+            elif label == "polar2_phi3_fine" and previous_fine is not None:
+                earlier_q = previous_fine.seawater_loss(probes, currents)
+                print(
+                    "  coarse->fine (same composite quadrature family): "
+                    f"dZ={np.linalg.norm(z - previous_fine.impedance_seawater) / max(np.linalg.norm(previous_fine.impedance_seawater), 1e-30):.6g}, "
+                    f"dq={np.linalg.norm(q - earlier_q) / max(np.linalg.norm(earlier_q), 1e-30):.6g}, "
+                    f"dP={abs(power - previous_fine.port_seawater_power(currents)) / max(previous_fine.port_seawater_power(currents), 1e-30):.6g}",
+                    flush=True,
+                )
+
     if green:
         # Keep the original 63-mode R/K, basis, whitening, power cubature,
         # and port source fixed. Vary only the nonlocal L double integration.
@@ -289,6 +372,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 shell_tangential_order=tangential,
                 outer_taper_width=enriched.outer_taper_width,
                 max_radial_panel_width=config.max_radial_panel_width,
+                polar_panel_count=config.polar_panel_count,
+                azimuthal_panel_order=config.azimuthal_panel_order,
             )
             checks = teacher.independent_green_metrics(
                 green_points, green_weights, currents, probes=probes,
@@ -403,10 +488,14 @@ def main(
     full: bool = False, basis_only: bool = False,
     basis_verify: bool = False, basis_green: bool = False,
     basis_domain: bool = False, basis_local: bool = False,
+    basis_angular: bool = False,
 ):
-    if basis_only or basis_verify or basis_green or basis_domain or basis_local:
-        return basis_convergence(verify=basis_verify, green=basis_green,
-                                 domain=basis_domain, local=basis_local)
+    if (basis_only or basis_verify or basis_green or basis_domain
+            or basis_local or basis_angular):
+        return basis_convergence(
+            verify=basis_verify, green=basis_green, domain=basis_domain,
+            local=basis_local, angular=basis_angular,
+        )
     scene = build_demo_scene()
     base = dict(
         radial_order=4, polar_order=6, azimuthal_order=8,
@@ -556,7 +645,7 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
@@ -569,4 +658,5 @@ if __name__ == "__main__":
         basis_green="--basis-green" in sys.argv[1:],
         basis_domain="--basis-domain" in sys.argv[1:],
         basis_local="--basis-local" in sys.argv[1:],
+        basis_angular="--basis-angular" in sys.argv[1:],
     )
