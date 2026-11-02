@@ -30,6 +30,10 @@ class SeaMQSConfig:
     shell_width_factor: float = 32.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
+    # Optional five orders for the Green double integral only:
+    # (radial, polar, azimuthal, shell_normal, shell_tangential).
+    # R/K/Joule remain on the primary, potentially finer cubature.
+    inductance_quadrature: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self):
         if min(self.radial_order, self.polar_order, self.azimuthal_order) < 2:
@@ -52,6 +56,19 @@ class SeaMQSConfig:
             raise ValueError("resistance_rank_tolerance must be in (0,1)")
         if not isinstance(self.kernel_chunk_size, int) or self.kernel_chunk_size < 1:
             raise ValueError("kernel_chunk_size must be a positive integer")
+        orders = self.inductance_quadrature
+        if orders is not None and (
+            not isinstance(orders, tuple) or len(orders) != 5
+            or any(not isinstance(value, int) or value < 2 for value in orders)
+        ):
+            raise ValueError(
+                "inductance_quadrature must be five integer orders >= 2 "
+                "or None"
+            )
+        if orders is not None and self.quadrature_scheme != "box_shell":
+            raise ValueError(
+                "inductance_quadrature currently requires box_shell scheme"
+            )
 
 
 @dataclass(frozen=True)
@@ -310,27 +327,50 @@ def solve_seawater_reference(
     resistance = np.einsum("n,nic,njc->ij", wres, w, w, optimize=True)
     resistance = 0.5 * (resistance + resistance.T)
 
+    # R and K above use the primary accurate quadrature. The nonlocal
+    # Green double integral has quadratic node cost; optionally evaluate
+    # only L on an independent, usually coarser positive quadrature. The
+    # same physical basis and R-derived normalization are kept, so L
+    # remains a symmetric PSD Galerkin approximation without perturbing
+    # the dissipative port/volume identity.
+    if cfg.inductance_quadrature is None:
+        magnetic_points, magnetic_weights, magnetic_modes = points, weights, w
+    else:
+        radial, polar, azimuthal, normal, tangential = cfg.inductance_quadrature
+        magnetic_points, magnetic_weights = scene.box_shell_quadrature(
+            radial, polar, azimuthal,
+            wall_scale=basis.wall_scale,
+            shell_width_factor=cfg.shell_width_factor,
+            shell_normal_order=normal,
+            shell_tangential_order=tangential,
+        )
+        magnetic_modes = np.einsum(
+            "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
+            optimize=True,
+        )
     # Softened Coulomb kernel 1/sqrt(r^2+a^2) is positive definite. Using
     # a common kernel across all basis modes preserves L >= 0.
     # Matrix-free-in-memory Green contraction: only a small block of the
     # Q-by-Q volume kernel is materialized at once. This borrows the vNext
     # memory-bounded reference pattern without changing the energy kernel.
-    weighted_modes = weights[:, None, None] * w
+    weighted_modes = magnetic_weights[:, None, None] * magnetic_modes
     n_modes = transform.shape[1]
     # Symmetric two-block Green assembly. Compute each pair of cubature
     # blocks once: the transposed off-diagonal contribution is its exact
     # discrete reciprocal counterpart. Peak kernel memory is O(chunk**2)
     # rather than O(chunk * total_nodes); no full QxQ kernel is formed.
-    packed = weighted_modes.reshape(len(points), 3 * n_modes)
+    packed = weighted_modes.reshape(len(magnetic_points), 3 * n_modes)
     inductance = np.zeros((n_modes, n_modes), dtype=float)
     chunk = cfg.kernel_chunk_size
-    for start in range(0, len(points), chunk):
-        stop = min(start + chunk, len(points))
+    for start in range(0, len(magnetic_points), chunk):
+        stop = min(start + chunk, len(magnetic_points))
         left = weighted_modes[start:stop]
-        for other in range(start, len(points), chunk):
-            end = min(other + chunk, len(points))
+        for other in range(start, len(magnetic_points), chunk):
+            end = min(other + chunk, len(magnetic_points))
             distance2 = cdist(
-                points[start:stop], points[other:end], metric="sqeuclidean",
+                magnetic_points[start:stop],
+                magnetic_points[other:end],
+                metric="sqeuclidean",
             )
             kernel = MU0 / (4 * math.pi) / np.sqrt(
                 distance2 + cfg.field_softening**2
