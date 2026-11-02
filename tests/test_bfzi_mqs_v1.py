@@ -366,6 +366,46 @@ def test_nested_face_basis_refinement_keeps_original_current_modes():
     assert np.isfinite(fields).all()
 
 
+
+def test_level_three_thin_face_modes_nest_63_into_95():
+    """Added spatial directions preserve the 63-mode physical trial space."""
+    from sdfmpneo_bfzi import build_sea_basis
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    kwargs = dict(
+        modes_per_face=2, refine_thin_faces_only=True,
+        sources=source, include_source_guided=True,
+    )
+    original = build_sea_basis(scene, face_refinement=2, **kwargs)
+    expanded = build_sea_basis(scene, face_refinement=3, **kwargs)
+    assert original.size == 63 and expanded.size == 95
+
+    def signature(mode):
+        return (
+            tuple(mode.center), tuple(mode.direction),
+            mode.width, mode.source_port,
+        )
+
+    assert set(map(signature, original.modes)).issubset(
+        set(map(signature, expanded.modes))
+    )
+    points, _ = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=2, shell_tangential_order=3,
+    )
+    query = points[:8]
+    full = expanded.evaluate(query)
+    indices = [next(i for i, mode in enumerate(expanded.modes)
+                    if signature(mode) == signature(original_mode))
+               for original_mode in original.modes]
+    np.testing.assert_allclose(
+        full[:, indices, :], original.evaluate(query),
+        rtol=1e-12, atol=1e-12,
+    )
+    assert np.isfinite(full).all()
+    with pytest.raises(ValueError, match="face_refinement"):
+        build_sea_basis(scene, face_refinement=4)
+
+
 def test_reference_refuses_basis_from_a_different_outer_domain():
     from dataclasses import replace
     from sdfmpneo_bfzi import build_sea_basis
