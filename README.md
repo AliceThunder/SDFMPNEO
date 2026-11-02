@@ -24,7 +24,7 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
-python run.py --mode bfzi-convergence --basis  # single Green assembly: nested 15/27/59 modes
+python run.py --mode bfzi-convergence --basis  # one assembly: nested 15/27/59/63 modes
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
 
@@ -79,12 +79,20 @@ The **ordinary** convergence probes now use the same 27-mode/two-tangent
 trial space as the BFZI demo; the one-tangent 15-mode space is reported only
 as a deliberately lower-order comparison. The dedicated `--basis` probe
 uses one enriched reference assembly and exact Galerkin restriction to
-compare 15, 27 and 59 nested curl modes with *identical* volume cubature,
-softening, outer boundary and source quadrature. The extra 32 modes are
-localized to the broad faces of thin insulating pads; this avoids the
-much larger all-face 123-mode hierarchy unless explicitly requested.
-Such restriction is not surrogate training, and convergence of the 59-mode
-answer has not yet been demonstrated.
+compare 15, 27, 59 and 63 nested curl modes with *identical* volume
+cubature, softening, outer boundary and source quadrature. The 27-to-59
+enrichment adds 32 localized modes on the broad faces of thin insulating
+pads. The 59-to-63 enrichment adds four physically informed, real,
+source-guided solenoidal modes, two per complete port, using
+`curl(g A_port / mu0)` with a box- and sphere-vanishing smooth envelope.
+The actual closed BFZI coil-plus-return vector potential supplies the
+direction field, not an arbitrary constant vector. These modes retain
+the zero normal trace at insulating surfaces and global solenoidality.
+They are optional in `build_sea_basis(scene, sources=source,
+include_source_guided=True)` and do not silently change the standard
+27-mode demo. The full all-face 123-mode hierarchy remains optional.
+This is a trial-space diagnostic, not neural surrogate training;
+the 63-mode response must still be tested for independent convergence.
 
 The two complete paths use `BFZIAssembly.wire_radius` and the existing
 `sdfmpneo_vnext.scene.ConductorMaterial` temperature law to compute
