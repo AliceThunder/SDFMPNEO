@@ -323,6 +323,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             z = resolved.impedance_seawater
             q = resolved.seawater_loss(probes, currents)
             p = resolved.port_seawater_power(currents)
+            # Update K alone, using the same independent nodes already
+            # evaluated for the full R/K solve. Avoid recomputing source
+            # fields or any Green L quadrature.
+            k_only = teacher.resolve_with_coupling(resolved.coupling)
+            k_q = k_only.seawater_loss(probes, currents)
+            k_p = k_only.port_seawater_power(currents)
             def relative(a, b):
                 return np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30)
             dr = relative(resolved.resistance, teacher.resistance)
@@ -335,6 +341,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"dR={dr:.6g}, dK={dk:.6g}, "
                 f"base_dZ={dz:.6g}, base_dq={dq:.6g}, "
                 f"base_dP={dp:.6g}, sea_power={p:.8g} W",
+                flush=True,
+            )
+            print(
+                f"{'K_only_re_solved':>20}: "
+                f"dZ={relative(k_only.impedance_seawater, base_z):.6g}, "
+                f"dq={relative(k_q, base_q):.6g}, "
+                f"dP={abs(k_p - base_p) / max(abs(base_p), 1e-30):.6g}",
                 flush=True,
             )
             print(
