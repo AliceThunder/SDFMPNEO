@@ -289,6 +289,8 @@ class BfziScene:
         shell_tangential_order: int = 4,
         outer_taper_width: float | None = None,
         max_radial_panel_width: float | None = None,
+        polar_panel_count: int = 1,
+        azimuthal_panel_order: int = 1,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
 
@@ -306,6 +308,14 @@ class BfziScene:
         """
         if min(radial_order, polar_order, azimuthal_order) < 2:
             raise ValueError("outer sphere Gauss orders must be >= 2")
+        if (not isinstance(polar_panel_count, int)
+                or isinstance(polar_panel_count, bool)
+                or not 1 <= polar_panel_count <= polar_order):
+            raise ValueError("polar_panel_count must be in [1, polar_order]")
+        if (not isinstance(azimuthal_panel_order, int)
+                or isinstance(azimuthal_panel_order, bool)
+                or azimuthal_panel_order < 1):
+            raise ValueError("azimuthal_panel_order must be a positive integer")
         if (not isinstance(shell_normal_order, int)
                 or shell_normal_order < 2
                 or not isinstance(shell_tangential_order, int)
@@ -372,10 +382,52 @@ class BfziScene:
         # Full sphere without a hard box mask. An interior-box quadrature
         # node has exactly zero weight; skip it before basis evaluation.
         r_nodes, r_weights = np.polynomial.legendre.leggauss(radial_order)
-        mu, mu_weights = np.polynomial.legendre.leggauss(polar_order)
-        angles = 2.0 * math.pi * (
-            np.arange(azimuthal_order) + 0.5
-        ) / azimuthal_order
+        if polar_panel_count == 1:
+            mu, mu_weights = np.polynomial.legendre.leggauss(polar_order)
+        else:
+            # Resolve angular changes around the equatorial and other
+            # latitude panel interfaces without moving *every* polar
+            # sample when total order changes. Preserve exactly
+            # polar_order positive Gauss points over [-1,1].
+            counts = [
+                polar_order // polar_panel_count
+                + (i < polar_order % polar_panel_count)
+                for i in range(polar_panel_count)
+            ]
+            boundaries = np.linspace(-1.0, 1.0, polar_panel_count + 1)
+            angular_mu = []
+            angular_mw = []
+            for index, count in enumerate(counts):
+                gauss_mu, gauss_mw = np.polynomial.legendre.leggauss(count)
+                a, b = boundaries[index:index + 2]
+                angular_mu.append(0.5 * (b - a) * gauss_mu
+                                  + 0.5 * (b + a))
+                angular_mw.append(0.5 * (b - a) * gauss_mw)
+            mu = np.concatenate(angular_mu)
+            mu_weights = np.concatenate(angular_mw)
+        if azimuthal_panel_order == 1:
+            angles = 2.0 * math.pi * (
+                np.arange(azimuthal_order) + 0.5
+            ) / azimuthal_order
+            azimuthal_weights = np.full(
+                azimuthal_order, 2.0 * math.pi / azimuthal_order,
+            )
+        else:
+            # Periodic azimuth split into azimuthal_order fixed sectors;
+            # Gauss nodes within each sector suppress angular aliasing.
+            gauss_phi, gauss_pw = np.polynomial.legendre.leggauss(
+                azimuthal_panel_order
+            )
+            delta_phi = 2.0 * math.pi / azimuthal_order
+            angles = (
+                delta_phi * (
+                    np.arange(azimuthal_order)[:, None]
+                    + 0.5 * (1.0 + gauss_phi)[None, :]
+                )
+            ).reshape(-1)
+            azimuthal_weights = np.tile(
+                0.5 * delta_phi * gauss_pw, azimuthal_order,
+            )
         # Resolve radial changes of the blending field at approximately
         # the distances of the packages, independently of angular order.
         cuts = [0.0, self.outer_radius]
@@ -426,11 +478,10 @@ class BfziScene:
         directions = np.stack((
             transverse[:, None] * np.cos(angles),
             transverse[:, None] * np.sin(angles),
-            np.broadcast_to(mu[:, None], (polar_order, azimuthal_order)),
+            np.broadcast_to(mu[:, None], (len(mu), len(angles))),
         ), axis=-1).reshape(-1, 3)
-        angular_weights = np.broadcast_to(
-            mu_weights[:, None] * (2.0 * math.pi / azimuthal_order),
-            (polar_order, azimuthal_order),
+        angular_weights = (
+            mu_weights[:, None] * azimuthal_weights[None, :]
         ).reshape(-1)
         sphere_points = (
             center + rr[:, None, None] * directions[None, :, :]
