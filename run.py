@@ -338,6 +338,7 @@ def main(argv=None):
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
                     basis_geometry="--basis-geometry" in args,
+                    basis_radial="--basis-radial" in args,
                 )
                 return 0
 
