@@ -28,7 +28,7 @@ python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
 python run.py --mode bfzi-convergence --basis-green-refined # streamed fine R/K + independent Green L
 python run.py --mode bfzi-convergence --basis-green-cross  # two independent magnetic quadratures, diagnostic
-python run.py --mode bfzi-convergence --basis-green-gaussian # PSD analytic Gaussian volume Green, two-rule comparison
+python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian Green: A/B plus width-factor sensitivity
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -718,27 +718,57 @@ corners, nor a certified continuum Coulomb
 operator. Width-factor and geometric boundary
 convergence remain mandatory.
 
-`--basis-green-gaussian` holds the same
-461648-node R/K (63 physical modes, both
-source K weak forms), then independently
-assembles positive Gaussian Green matrices:
-A=(5,8,12,3,4) with a=0 and 0.012m;
-B=(5,9,14,4,5) with a=0. It reports
-`gaussian_B_vs_A: dL/dZ/dq/dP` and both
-K forms, plus each L's minimum eigenvalue
-and finite self trace share. The A/B
-comparison at a=0 is checked against the
-**same predeclared 5%/0.2%/0.5%/0.2%**
-magnetic/port/probe/power thresholds.
-Even meeting them would not automatically
-justify production use: a further width-scale
-and discretization check is required. The
-default `SeaMQSConfig` and original Green
-L are **unchanged**. One focused test checks
-the exact single-cloud self formula, positive
-spectrum and chunk invariance; the current
-new revision has not been user-tested.
-No GitHub Actions are used.
+**User-run Gaussian outcome at `e39c48e` (2026-11-02).**
+The independent `pytest` run passed **47 tests in 31.60 s**.
+With the same 461648-node streamed R/K operators and both K weak
+forms, a=0 Gaussian Green A (7504 nodes) versus B (15154 nodes)
+returned `dL=0.0250117`, `dZ=0.000379592`,
+`dq=0.000142698`, and `dP=0.0000403977`.
+These **pass** the predeclared magnetic/port/probe/power
+A/B thresholds of `0.05/0.002/0.005/0.002`;
+the curl-dual K differences are also below them.
+Both L matrices are numerically PSD, with minimum eigenvalues
+`3.4080103e-10 H` (A) and `2.9597503e-10 H` (B).
+However, Gaussian self-pair shares of `0.149648` (A) and
+`0.123415` (B) and the single prescribed width model leave
+a real near-field systematic-error question. This is a
+**discrete A/B gate pass**, **not** continuum Green validation or
+permission to promote this candidate to production.
+
+The updated `--basis-green-gaussian` experiment holds fixed the
+63-mode Galerkin basis, 461648-node R/K, two K weak forms, outer
+domain and zero *additional* Gaussian blur. It compares two
+independent magnetic rules at width factor 1.0, and also tests
+rule A at width factors `(0.75, 1.0, 1.25)`. The new tuple-valued
+`width_factor` parameter to
+`SeawaterResponse.reintegrate_gaussian_green_matrices`
+reuses **one** expensive pair-distance calculation per block across
+the width ladder, instead of repeating the whole O(N²) distance
+work. Single-valued calls remain compatible. Matrices and self
+contributions are returned width-major, then blur-major.
+
+`gaussian_B_vs_A`, `width_0.75_vs_A1`, and
+`width_1.25_vs_A1` each report `dL/dZ/dq/dP`,
+the curl-dual K counterpart, and a fixed-threshold PASS/FAIL.
+`gaussian_screen` summarizes A/B, width sensitivity, and PSD.
+Passing width *perturbations* is only a robustness screen:
+it does not establish the true width→0/N→∞ continuum limit.
+The production `SeaMQSConfig`/Plummer Green operator is
+**unchanged**. Hold promotion until additional modal,
+outer-domain and electrothermal closure checks; don't switch
+the neural-network teacher based only on these screens.
+
+Run on the research branch:
+
+```powershell
+git pull
+python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
+python run.py --mode bfzi-convergence --basis-green-gaussian
+```
+
+If the width gate fails, correct the near-field/cell averaging
+itself and repeat the *same* gate; do not relax limits or
+blindly multiply quadrature orders. No GitHub Actions are used.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
