@@ -103,6 +103,128 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         [0.0, 0.13, 0.0],
         [0.0, 0.0, 0.22],
     ])
+    if ball_reference and domain:
+        # Rebuild the *complete* physical MQS reference for each radius.
+        # The magnetic quadrature is independent and uses uniform-ball L;
+        # critically, R/K is independently re-integrated on the accepted
+        # high-resolution wall/radial rule for EVERY domain, so apparent
+        # convergence cannot be due to the old coarse dissipative rule.
+        print("\nOuter-domain sequence: full ball L plus refined R/K",
+              flush=True)
+        previous = None
+        for radius in (0.52, 0.70, 0.85, 1.05, 1.30):
+            current_scene = (
+                scene if radius == scene.outer_radius
+                else replace(scene, outer_radius=radius)
+            )
+            current_source = (
+                source if current_scene is scene
+                else build_bfzi_source(
+                    current_scene, 200_000., order=4,
+                )
+            )
+            current_basis = (
+                enriched if current_scene is scene
+                else build_sea_basis(
+                    current_scene, modes_per_face=2,
+                    face_refinement=2, refine_thin_faces_only=True,
+                    sources=current_source, include_source_guided=True,
+                )
+            )
+            # Parent L is assembled separately for each outer domain
+            # using the same physical angular/near-wall magnetic rule.
+            parent = (
+                teacher if current_scene is scene
+                else solve_seawater_reference(
+                    current_source, basis=current_basis, config=config,
+                )
+            )
+            r_cfg = replace(
+                config, polar_geometry_order=8,
+                azimuthal_panel_order=2,
+                radial_geometry_cuts=True, max_radial_panel_width=0.06,
+                shell_normal_order=5, shell_tangential_order=6,
+                shell_tangential_max_panel_width=0.0167,
+            )
+            rx, rw = current_scene.box_shell_quadrature(
+                r_cfg.radial_order, r_cfg.polar_order, r_cfg.azimuthal_order,
+                wall_scale=current_basis.wall_scale,
+                shell_width_factor=r_cfg.shell_width_factor,
+                shell_normal_order=r_cfg.shell_normal_order,
+                shell_tangential_order=r_cfg.shell_tangential_order,
+                shell_tangential_max_panel_width=r_cfg.shell_tangential_max_panel_width,
+                outer_taper_width=current_basis.outer_taper_width,
+                max_radial_panel_width=r_cfg.max_radial_panel_width,
+                radial_geometry_cuts=r_cfg.radial_geometry_cuts,
+                polar_geometry_order=r_cfg.polar_geometry_order,
+                azimuthal_panel_order=r_cfg.azimuthal_panel_order,
+            )
+            r, k_curl, k_dual = parent.reintegrate_local_operators(
+                rx, rw,
+            )
+            n_rk = len(rx)
+            del rx, rw
+            query_modes = np.einsum(
+                "nmc,mr->nrc", current_basis.evaluate(probes),
+                parent.transform, optimize=True,
+            )
+
+            def response_for(k):
+                coeff = np.linalg.solve(
+                    r + 1j*current_source.omega*parent.inductance,
+                    -1j*current_source.omega*k,
+                )
+                z = 1j*current_source.omega*k.T @ coeff
+                z = 0.5*(z + z.T)
+                v = coeff @ currents
+                j = np.einsum(
+                    "nmc,m->nc", query_modes, v, optimize=True,
+                )
+                q = np.sum(np.abs(j)**2, axis=1) / (
+                    2*current_scene.seawater.conductivity
+                )
+                power = 0.5*float(np.real(np.vdot(v, r @ v)))
+                return z, q, power
+
+            z, q, power = response_for(k_curl)
+            zd, qd, pd = response_for(k_dual)
+
+            def relative(a, b):
+                return float(np.linalg.norm(a-b) /
+                             max(np.linalg.norm(b), 1e-30))
+
+            print(
+                f"  radius={radius:.3g} m, fine_RK_nodes={n_rk}, "
+                f"Green_L=uniform_ball, modes={len(r)}, "
+                f"min_L_eig={np.linalg.eigvalsh(parent.inductance)[0]:.6g} H, "
+                f"sea_power={power:.8g} W",
+                flush=True,
+            )
+            print(
+                f"  weak_form_gap: dK={relative(k_dual,k_curl):.6g}, "
+                f"dZ={relative(zd,z):.6g}, "
+                f"dq={relative(qd,q):.6g}, "
+                f"dP={abs(pd-power)/max(abs(power),1e-30):.6g}",
+                flush=True,
+            )
+            if previous is not None:
+                old_radius, old_z, old_q, old_p = previous
+                print(
+                    f"  domain_step: {old_radius:.3g}->{radius:.3g} m, "
+                    f"dZ={relative(z,old_z):.6g}, "
+                    f"dq={relative(q,old_q):.6g}, "
+                    f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}",
+                    flush=True,
+                )
+            previous = radius, z, q, power
+        print(
+            "Outer-domain screening uses independently refined R/K "
+            "at every radius and physical ball L. Port/probe/power "
+            "stability still needs a validated radius plateau.",
+            flush=True,
+        )
+        return
+
     if ball_reference and not domain and not (
         radial or green_refined or green_cross
         or green_gaussian or green_ball
