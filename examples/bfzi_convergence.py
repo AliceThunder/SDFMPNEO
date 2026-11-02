@@ -40,17 +40,23 @@ def _indices_in_enriched_basis(enriched, subset):
 
 
 def basis_convergence(*, verify: bool = False):
-    """Four nested Galerkin spaces with ONE shared cubature and Green solve.
+    """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
     all-face patch refinement. Only the enriched teacher's expensive
     Coulomb R/L/K assembly is computed.
     """
     scene = build_demo_scene()
+    # Resolve the locally sharp curl-mode resistance and true source
+    # coupling on a finer rule. The costly nonlocal L double integral uses
+    # the earlier 5/8/12/3/4 cubature with the *same* trial functions
+    # and whitening; this isolates the measured 11-27% near-wall R/K
+    # aliasing without raising Green cost quadratically.
     config = SeaMQSConfig(
-        radial_order=5, polar_order=8, azimuthal_order=12,
-        shell_normal_order=3, shell_tangential_order=4,
+        radial_order=6, polar_order=10, azimuthal_order=16,
+        shell_normal_order=4, shell_tangential_order=5,
         field_softening=0.025,
+        inductance_quadrature=(5, 8, 12, 3, 4),
     )
     source = build_bfzi_source(scene, 200_000., order=4)
     enriched = build_sea_basis(
@@ -58,8 +64,9 @@ def basis_convergence(*, verify: bool = False):
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
     )
-    print("Building enriched thin-face Galerkin operator...",
-          f"raw modes={enriched.size}", flush=True)
+    print("Building enriched 63-mode Galerkin operator...",
+          f"raw modes={enriched.size}, "
+          "fine R/K/Joule cubature; independently coarse L", flush=True)
     teacher = solve_seawater_reference(
         source, basis=enriched, config=config,
     )
@@ -140,17 +147,17 @@ def basis_convergence(*, verify: bool = False):
             f"{coarse[0]} -> {fine[0]}: "
             f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}"
         )
-    # The enriched solution was assembled on the base cubature. Now
+    # The enriched solution was assembled on the fine R/K cubature. Now
     # reintegrate that *same solution* using independent near-wall and
     # far-field rules. This is much cheaper than a second O(Q^2) Green
     # assembly and catches deceptively well-closing aliased R/K matrices.
     print("\nIndependent cubature of the 63-mode solution (no new Green solve):")
     holdout_configs = (
         ("wall_heldout", replace(
-            config, shell_normal_order=4, shell_tangential_order=5,
+            config, shell_normal_order=5, shell_tangential_order=6,
         )),
         ("far_heldout", replace(
-            config, radial_order=6, polar_order=10, azimuthal_order=16,
+            config, radial_order=7, polar_order=12, azimuthal_order=20,
         )),
     )
     for name, cfg in holdout_configs:
@@ -176,13 +183,10 @@ def basis_convergence(*, verify: bool = False):
         # Optional expensive second REFERENCE solve. Unlike the cheap
         # holdouts above, this changes the full nonlocal Green L operator
         # and recomputes the coupled 63-mode current state.
-        fine_config = replace(
-            config,
-            radial_order=6, polar_order=10, azimuthal_order=16,
-            shell_normal_order=4, shell_tangential_order=5,
-        )
+        fine_config = replace(config, inductance_quadrature=None)
         print(
-            "\nFull independent 63-mode R/L/K solve on refined cubature...",
+            "\nFull 63-mode nonlocal Green L verification on fine "
+            "R/K/Joule cubature (expensive)...",
             flush=True,
         )
         fine = solve_seawater_reference(
