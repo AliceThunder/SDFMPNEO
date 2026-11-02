@@ -381,3 +381,15 @@ response = solve_seawater_reference(source, basis=basis)
 - 该选项在 `SeaMQSConfig` 中透传给主 R/K、Green L 的独立积分配置；不兼容 `polar_panel_count>1`。默认 `None` 保持旧算法不变。
 - `--basis-geometry` 保持 63 物理模态、原始 Green L、近壁/径向规则、方位扇区不变，用 N=3,4,5,6,8 做极角收敛，最后单独升方位 Gauss 2→3。每组输出 K-only、R-only、全 R/K、四个探针及逐级误差。
 - 加了一个针对性正权、海水有效域与参数拒绝单测；本轮代码尚未在用户本地执行 pytest，不能声称 38 passed。仍未使用 GitHub Actions。
+
+
+### 2026-11-02：实测 38 passed，几何极角收敛；重建高精度 R/K 基准
+
+本地上一轮 `4d02f50` 实测 **38 passed in 13.80s**，`geometry_mu6→geometry_mu8` 在同一基函数、Green L、径向和盒壁规则上得到 `dZ=0.000242124, dq=0.000444726, dP=0.000296029`；`geometry_mu8→geometry_mu8_phi3` 得到 `dZ=0.000413271, dq=0.000109597, dP=0.000500205`。这说明球域角向求积在该有限场景下明显趋稳，但与旧全局角向基线仍有 `base_dZ=0.0638183`，是旧基线的积分偏差警示，不能将旧基线误当真值。**上述数据只约束角向收敛，不证明径向、盒壁或 Green L 收敛。**
+
+本轮继续直接修改主体代码（尚无新一轮本地测试）：
+- 在 `--basis-geometry` 的已收敛角向 `geometry_mu8` 上，追加 `radial7`、`wall5_6`、`radial7_wall5_6` 三个单轴及交叉对照，全部保持先前的 Green L、63 物理模式、几何极角8阶、方位角2阶。新输出 `vs_geom8_dR/dK/dZ/dq/dP` 和最大逐点热源误差，不再与低精度旧角向规则对比。
+- 发现并修正独立 Green L 求积的隐式高成本继承：之前 `SeaMQSConfig(polar_geometry_order=8,inductance_quadrature=(5,8,12,3,4))` 会**同时**把几何极角8阶应用到第二套 L 积分，造成 Green 双积分节点数从几千变为数万并以 Q² 级别膨胀。现在在指定 `inductance_quadrature` 时，L 的角向规则专属其指定的5元组（全局 mu Gauss / 方位角 midpoint），不继承用于 R/K 的几何极角分片或方位角细化。可独立用 `--basis-green` 和 `independent_green_metrics` 进行 L 精化；R 归一化和能量闭合完全保留。
+- 新增一项针对性测试：通过截取实际求积调用检验高精度几何 R/K 使用该参数，而独立 L 不意外继承高成本几何角度参数，并验证端口能量与海水 Joule 体积分离散闭合。
+
+执行建议：`git pull`，`python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q`，`python run.py --mode bfzi-convergence --basis-geometry`。后续若这些几何基准下的独立径向与盒壁比较均小，再利用该高精度 R/K 配置检查 Green 核正则化、模态完备性与更大外域。始终不使用 GitHub Actions。
