@@ -60,6 +60,7 @@ def compress_seawater_response(
         np.einsum("nmc,mr->nrc", reference.integration_modes, reduction),
         reference.field_softening,
         reference.raw_basis_count,
+        reference.inductance_kernel,
     )
 
 
@@ -135,4 +136,5 @@ def restrict_seawater_response(
         R, L, K, z_modes, z_sea,
         reference.integration_points, reference.integration_weights,
         fields, reference.field_softening, len(indices),
+        reference.inductance_kernel,
     )
