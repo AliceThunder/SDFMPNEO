@@ -260,6 +260,130 @@ def _assemble_gaussian_green_inductances(
     )
 
 
+
+def _uniform_ball_coulomb_kernel(
+    distance: np.ndarray, left_radii: np.ndarray,
+    right_radii: np.ndarray,
+) -> np.ndarray:
+    """Exact pair-averaged 1/r for uniform, unit-mass spherical clouds.
+
+    Arrays broadcast to the distance-block shape. This is a physical
+    finite-volume *model*, not an exact integration cell reconstruction.
+    Non-overlapping balls interact as precisely 1/d. Entirely contained
+    balls admit a quadratic formula; partial overlaps use a stable
+    polynomial avoiding cancellation between 1/d and its correction
+    when similarly sized balls almost coincide.
+    """
+    radius_a = np.broadcast_to(left_radii, distance.shape)
+    radius_b = np.broadcast_to(right_radii, distance.shape)
+    large = np.maximum(radius_a, radius_b)
+    small = np.minimum(radius_a, radius_b)
+    total = large + small
+    difference = large - small
+
+    kernel = np.empty_like(distance)
+    far = distance >= total
+    np.divide(1.0, distance, out=kernel, where=far)
+
+    inside = (~far) & (distance <= difference)
+    if np.any(inside):
+        r = large[inside]
+        s = small[inside]
+        d = distance[inside]
+        kernel[inside] = (
+            1.5 / r - (d*d + 0.6*s*s) / (2.0*r**3)
+        )
+
+    partial = (~far) & (~inside)
+    if np.any(partial):
+        a = large[partial]
+        b = small[partial]
+        d = distance[partial]
+        p = a + b
+        q = a - b
+        x = d / p
+        y = q / p
+        # For comparable radii, the polynomial representation stays
+        # finite as x,y -> 0 (including equal-radius near-coincidence).
+        comparable = y <= 0.5
+        values = np.empty_like(d)
+        if np.any(comparable):
+            xx = x[comparable]
+            yy = y[comparable]
+            yy2 = yy*yy
+            values[comparable] = (
+                12.0 - 20.0*xx**2 + 15.0*xx**3 - 2.0*xx**5
+                + yy2*(-60.0 + 90.0*xx - 60.0*xx**2
+                       + 15.0*xx**3)
+                + (15.0*yy2**2 - 5.0*yy2**3)/xx
+            ) / (5.0*p[comparable]*(1.0-yy2)**3)
+        if np.any(~comparable):
+            aa = a[~comparable]
+            bb = b[~comparable]
+            dd = d[~comparable]
+            pp = p[~comparable]
+            # Small sphere sliding across the larger boundary:
+            # Newton's exact far-field 1/d plus overlap correction.
+            values[~comparable] = (
+                1.0/dd
+                + (pp-dd)**4
+                * (5.0*aa**2 - 20.0*aa*bb + 5.0*bb**2
+                   - 4.0*pp*dd - dd**2)
+                / (160.0*aa**3*bb**3*dd)
+            )
+        kernel[partial] = values
+    return kernel
+
+
+def _assemble_ball_green_inductance(
+    points: np.ndarray, weights: np.ndarray, modes: np.ndarray,
+    chunk_size: int,
+) -> tuple[np.ndarray, float]:
+    """PSD Coulomb Galerkin matrix of moment-free uniform volume balls.
+
+    Each positive cubature weight supplies an equal-volume ball radius.
+    The pair energy is analytic for all separations, with no Gaussian
+    width parameter, extra blur or Plummer length. Its discrete current
+    distributions have a nonnegative Coulomb energy in Fourier space.
+    This remains an *approximate* representation of actual quadrature
+    cells; A/B and shape-model convergence are mandatory.
+    """
+    n_points, n_modes, _ = modes.shape
+    radii = np.cbrt(3.0*weights/(4.0*math.pi))
+    weighted = weights[:, None, None] * modes
+    packed = weighted.reshape(n_points, 3*n_modes)
+    inductance = np.zeros((n_modes, n_modes), dtype=float)
+    prefactor = MU0/(4.0*math.pi)
+    squared_norms = np.einsum("nic,nic->n", modes, modes, optimize=True)
+    self_trace = float(prefactor * np.dot(
+        weights**2 * squared_norms, 6.0/(5.0*radii),
+    ))
+    for start in range(0, n_points, chunk_size):
+        stop = min(start+chunk_size, n_points)
+        left = weighted[start:stop]
+        for other in range(start, n_points, chunk_size):
+            end = min(other+chunk_size, n_points)
+            distance2 = cdist(
+                points[start:stop], points[other:end],
+                metric="sqeuclidean",
+            )
+            kernel = _uniform_ball_coulomb_kernel(
+                np.sqrt(np.maximum(distance2, 0.0)),
+                radii[start:stop, None], radii[None, other:end],
+            )
+            projected = (prefactor * kernel @ packed[other:end]).reshape(
+                stop-start, n_modes, 3,
+            )
+            block = np.einsum(
+                "pic,pjc->ij", left, projected, optimize=True,
+            )
+            if other == start:
+                inductance += block
+            else:
+                inductance += block + block.T
+    return 0.5*(inductance + inductance.T), self_trace
+
+
 def _assemble_port_coupling(
     sources: BFZISources, basis: SeaCurrentBasis,
     transform: np.ndarray, points: np.ndarray, weights: np.ndarray,
@@ -602,6 +726,38 @@ class SeawaterResponse:
         return _assemble_gaussian_green_inductances(
             x, w, modes, extra_blurs, kernel_chunk_size,
             factors if len(factors) != 1 else factors[0],
+        )
+
+    def reintegrate_ball_green_matrix(
+        self, points, weights, *, kernel_chunk_size: int = 128,
+    ) -> tuple[np.ndarray, float]:
+        """Experimental no-width PSD uniform-ball Coulomb Green matrix.
+
+        This compares an analytic compact-support volume-cloud kernel
+        with Gaussian smoothing while retaining identical modes,
+        currents, positive weights, and upstream physical operators.
+        The returned scalar is the exact ball self-pair trace contribution.
+        An equal-volume ball is still a *model*, not the true cubature
+        patch or a guaranteed continuum-reference representation.
+        """
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3
+                or w.shape != (len(x),) or len(x) == 0
+                or not np.isfinite(x).all()
+                or not np.isfinite(w).all() or np.any(w <= 0)
+                or not self.sources.scene.in_seawater(x).all()):
+            raise ValueError("ball Green cubature requires positive seawater nodes")
+        if (not isinstance(kernel_chunk_size, int)
+                or isinstance(kernel_chunk_size, bool)
+                or kernel_chunk_size < 1):
+            raise ValueError("kernel_chunk_size must be a positive integer")
+        modes = np.einsum(
+            "nmc,mr->nrc", self.basis.evaluate(x), self.transform,
+            optimize=True,
+        )
+        return _assemble_ball_green_inductance(
+            x, w, modes, kernel_chunk_size,
         )
 
     def reintegrate_cross_green_matrices(
