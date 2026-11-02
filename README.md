@@ -42,12 +42,16 @@ meshless spherical-ray cubature remains available with
 `SeaMQSConfig(quadrature_scheme="ray")`, including exact box-wall ray cuts
 and optional `wall_layers`. **The new default is
 `quadrature_scheme="box_shell"`**: disjoint rotated-box Gauss shells cover
-every insulating face, and the outer spherical-ray region excludes expanded
-boxes. It resolves thin-package near-wall modes without depending on a
-coarse spherical ray intersecting a particular face.
-`shell_normal_order`, `shell_tangential_order`, and `shell_width_factor`
-control near-wall refinement separately from the far-field
-`radial_order`, `polar_order`, `azimuthal_order`. This uses positive
+every insulating face. A smooth, nonnegative partition of unity blends
+the localized shell integral with the **full** spherical integral: the
+sphere receives zero weight inside insulation and smoothly regains unit
+weight away from the box; the local shells carry the complementary weight.
+The spherical radial rule is further split around package distances.
+This avoids hard angular masking of the expanded boxes and resolves
+thin-package wall modes without depending on a coarse ray intersecting
+a particular face. `shell_normal_order`, `shell_tangential_order`, and
+`shell_width_factor` control near-wall refinement independently of
+`radial_order`, `polar_order`, `azimuthal_order` for the spherical part. This uses positive
 geometry-local quadrature, not a world spatial solver mesh. The original
 run output showed 52% mode sensitivity and 71% cubature sensitivity, so
 angular, basis, outer-domain and singular-kernel convergence remain explicitly
