@@ -367,3 +367,17 @@ response = solve_seawater_reference(source, basis=basis)
 - `SeawaterResponse.resolve_with_coupling(K)` 对**已经独立重积分**的实数端口耦合矩阵重求解 `(R+iωL)X=-iωK`，保留原始 R/L、模式、Joule 节点与权重，故两端口电功率与海水空间热源的离散功率仍严格闭合；准确度仍须由 K 求积收敛判断。
 - `--basis-angular` 已经算出的全 R/K 解中的 `K` 被直接复用作 `K_only_re_solved`，不重复计算任何场或 Green L，用 `dZ/dq/dP` 区分 K 误差与仅 R 变化。
 - 新增一个小型端口能量闭合测试（尚待用户本地验证），未使用 CI 或 GitHub Actions。
+
+
+### 2026-11-02：实测 37 passed；局部源耦合 K 的极角误差
+
+在上一版 `10a615d` 上，用户运行 `pytest` 得到 **37 passed in 12.92s**。`--basis-angular` 的单轴系列显示：
+- 同一两个极角区间、方位阶数不变：`polar2_mu14→mu18` 的 `dZ=0.0483211,dq=0.0177359,dP=0.055679`；`mu18→mu22` 的 `dZ=0.0243709,dq=0.0107691,dP=0.0279711`。虽下降但尚未收敛。
+- `polar2_mu22`→`polar2_mu22_phi3` 仅提高方位 Gauss：`dZ=0.000767303,dq=0.000226775,dP=0.000609357`。方位角不是目前最主要的收敛瓶颈。
+- K-only 重求解几乎复现极角细化的端口变化，例如 `mu22` 的全 R/K `base_dZ=0.056195`，K-only `dZ=0.059104`；`mu18` 的全 R/K `base_dZ=0.0787081`，K-only `dZ=0.0827523`。说明优先解决源耦合 K 的角向积分，比盲目提高 R 或扩展外域更有效。
+
+**新代码（尚待用户本地验证）**：
+- `box_shell_quadrature(...,polar_geometry_order=N)` 将各封装实体和其 partition-of-unity 外壳的八角点投影为 `mu=z/|r|`，把真实几何的角向覆盖边界的 `mu_min,mu_max` 作为高斯积分分片节点；每段执行 `N` 点 Gauss，正权，保持原有二维方位角与球域径向规则以及盒壁 slab 不变。一般姿态下仍可使用，且分片边界与 N 无关，故不同 N 可构成真正同分区单轴求积阶数系列。
+- 该选项在 `SeaMQSConfig` 中透传给主 R/K、Green L 的独立积分配置；不兼容 `polar_panel_count>1`。默认 `None` 保持旧算法不变。
+- `--basis-geometry` 保持 63 物理模态、原始 Green L、近壁/径向规则、方位扇区不变，用 N=3,4,5,6,8 做极角收敛，最后单独升方位 Gauss 2→3。每组输出 K-only、R-only、全 R/K、四个探针及逐级误差。
+- 加了一个针对性正权、海水有效域与参数拒绝单测；本轮代码尚未在用户本地执行 pytest，不能声称 38 passed。仍未使用 GitHub Actions。
