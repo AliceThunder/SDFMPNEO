@@ -1082,6 +1082,7 @@ def test_geometry_rk_refinement_does_not_expand_independent_green_l(monkeypatch)
         shell_normal_order=2, shell_tangential_order=3,
         polar_geometry_order=2, azimuthal_panel_order=2,
         radial_geometry_cuts=True,
+        shell_tangential_max_panel_width=0.025,
         inductance_quadrature=(3, 4, 6, 2, 3),
     )
     response = solve_seawater_reference(source, config=config)
@@ -1089,7 +1090,9 @@ def test_geometry_rk_refinement_does_not_expand_independent_green_l(monkeypatch)
     assert seen[0][1]["polar_geometry_order"] == 2
     assert seen[0][1]["azimuthal_panel_order"] == 2
     assert seen[0][1]["radial_geometry_cuts"] is True
+    assert seen[0][1]["shell_tangential_max_panel_width"] == 0.025
     assert seen[1][1].get("radial_geometry_cuts", False) is False
+    assert seen[1][1].get("shell_tangential_max_panel_width") is None
     assert seen[1][1].get("polar_geometry_order") is None
     assert seen[1][1].get("azimuthal_panel_order", 1) == 1
     currents = (1.0, -0.3 + 0.4j)
