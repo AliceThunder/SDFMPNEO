@@ -1503,3 +1503,71 @@ def test_uniform_ball_coulomb_green_exact_pairs_and_psd():
     np.testing.assert_allclose(matrix, matrix.T, atol=1e-16)
     assert np.linalg.eigvalsh(matrix)[0] >= -1e-14
     assert 0 < self_trace < np.trace(matrix)
+
+
+def test_ball_green_full_reference_modal_power_and_electrothermal_closure():
+    """Ball L is consumed by the actual MQS solver, not just a diagnostic."""
+    from dataclasses import replace
+    from sdfmpneo_vnext.electrothermal import (
+        CoilThermalProperties, build_lumped_coil_thermal_model,
+    )
+    from sdfmpneo_bfzi import BFZIVoltageControlledEnvelope
+
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    cfg = SeaMQSConfig(
+        radial_order=3, polar_order=4, azimuthal_order=6,
+        shell_normal_order=2, shell_tangential_order=3,
+        inductance_quadrature=(3, 4, 6, 2, 3),
+        inductance_kernel="uniform_ball", field_softening=0.025,
+    )
+    reference = solve_seawater_reference(source, config=cfg)
+    legacy = solve_seawater_reference(
+        source, config=replace(cfg, inductance_kernel="plummer"),
+    )
+    np.testing.assert_allclose(reference.resistance, legacy.resistance, rtol=1e-12)
+    np.testing.assert_allclose(reference.coupling, legacy.coupling, rtol=1e-12)
+    assert np.linalg.norm(reference.inductance - legacy.inductance) > 0
+    assert np.linalg.eigvalsh(reference.inductance)[0] >= -1e-12
+
+    gx, gw = scene.box_shell_quadrature(
+        3, 4, 6, wall_scale=reference.basis.wall_scale,
+        shell_normal_order=2, shell_tangential_order=3,
+        outer_taper_width=reference.basis.outer_taper_width,
+    )
+    independent_l, _ = reference.reintegrate_ball_green_matrix(
+        gx, gw, kernel_chunk_size=23,
+    )
+    np.testing.assert_allclose(
+        reference.inductance, independent_l, rtol=1e-10, atol=1e-13,
+    )
+
+    i = np.array([1.1 + 0.2j, -0.3 + 0.4j])
+    points, weights, heat = reference.seawater_heat_nodes(i)
+    assert len(points) == len(weights) == len(heat)
+    np.testing.assert_allclose(
+        reference.port_seawater_power(i),
+        [reference.seawater_power(i), reference.quadrature_power(i),
+         weights @ heat], rtol=5e-8, atol=1e-12,
+    )
+    assert reference.as_structured_prediction().power_closure_error() < 1e-8
+    thermal = build_lumped_coil_thermal_model((
+        CoilThermalProperties(20.0, 0.7),
+        CoilThermalProperties(20.0, 0.7),
+        CoilThermalProperties(100.0, 0.2),
+    ))
+    current_step = BFZICurrentControlledEnvelope(
+        reference, thermal,
+    ).step(np.zeros(3), i, 30.0)
+    assert current_step.converged
+    assert np.isfinite(current_step.temperatures).all()
+    external = np.diag([0.05 - 0.15j, 0.05 - 0.15j])
+    voltage_step = BFZIVoltageControlledEnvelope(
+        reference, thermal, external_impedance=external,
+    ).step(np.zeros(3), (reference.port_impedance + external) @ i, 30.0)
+    assert voltage_step.converged
+    assert np.isfinite(voltage_step.currents).all()
+    assert reference.port_seawater_power(voltage_step.currents) >= 0
+
+    with pytest.raises(ValueError, match="inductance_kernel"):
+        SeaMQSConfig(inductance_kernel="unsupported")
