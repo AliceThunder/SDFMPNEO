@@ -12,6 +12,7 @@ from .bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi import build_bfzi_source, build_sea_basis
 from sdfmpneo_bfzi.sea_neural import (
     BFZINeuralSurrogate, train_response_surrogate,
+    evaluate_geometry_holdouts,
 )
 
 
@@ -92,6 +93,24 @@ def infer(argv=None):
     print("PROVISIONAL: power closure applies only to the selected "
           "local-R cubature. It does not certify reference-field "
           "accuracy, local Joule resolution or learned MQS reactance.",
+          flush=True)
+
+
+def evaluate(argv=None):
+    parser=argparse.ArgumentParser(
+        description="Evaluate real geometry-held-out BFZI J, Joule and port Z"
+    )
+    parser.add_argument("--dataset",default="bfzi_geometry_labels.npz")
+    parser.add_argument("--model",default="bfzi_neural.pt")
+    parser.add_argument("--source-order",type=int,default=4)
+    args=parser.parse_args(argv)
+    results=evaluate_geometry_holdouts(
+        args.dataset,args.model,source_order=args.source_order,
+    )
+    print(json.dumps(results,indent=2),flush=True)
+    print("These comparisons use the original provisional 27-mode "
+          "geometry labels, NOT a converged electromagnetic reference. "
+          "Small power mismatch is not proof of accurate fields.",
           flush=True)
 
 
