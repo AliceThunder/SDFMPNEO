@@ -282,6 +282,59 @@ class SeawaterResponse:
         q = np.sum(np.abs(j)**2, axis=-1) / (2 * self.sources.scene.seawater.conductivity)
         return float(self.integration_weights @ q)
 
+    def reintegrate_local_operators(self, points, weights, *,
+                                     chunk_size: int = 2048
+                                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Stream primary R and both equivalent K integrals in bounded memory.
+
+        Unlike reintegrate_local_response, this returns only the Galerkin
+        operators, not a field response with every heat quadrature mode
+        retained. Intended for high-node-count cubature convergence studies:
+        each positive node contributes to the same R/K/Joule integrals, while
+        modal power and probe heat can be evaluated after the small solve.
+        R, K_current and K_dual use the identical nodes and whitening.
+        """
+        x = np.asarray(points, dtype=float)
+        w = np.asarray(weights, dtype=float)
+        if (x.ndim != 2 or x.shape[1] != 3 or
+                w.shape != (len(x),) or len(x) == 0 or
+                not np.isfinite(x).all() or not np.isfinite(w).all() or
+                np.any(w <= 0) or
+                not self.sources.scene.in_seawater(x).all()):
+            raise ValueError("operator cubature requires positive seawater nodes")
+        if not isinstance(chunk_size, int) or isinstance(chunk_size, bool) or chunk_size < 1:
+            raise ValueError("chunk_size must be a positive integer")
+
+        resistance = np.zeros_like(self.resistance)
+        current_k = np.zeros_like(self.coupling)
+        dual_k = np.zeros_like(self.coupling)
+        sigma = self.sources.scene.seawater.conductivity
+        for start in range(0, len(x), chunk_size):
+            stop = min(start + chunk_size, len(x))
+            points_chunk = x[start:stop]
+            weights_chunk = w[start:stop]
+            modes = np.einsum(
+                "nmc,mr->nrc",
+                self.basis.evaluate(points_chunk), self.transform,
+                optimize=True,
+            )
+            resistance += np.einsum(
+                "n,nic,njc->ij", weights_chunk / sigma,
+                modes, modes, optimize=True,
+            )
+            current_k += _assemble_port_coupling(
+                self.sources, self.basis, self.transform,
+                points_chunk, weights_chunk,
+                coupling_form="current_potential", current_modes=modes,
+            )
+            dual_k += _assemble_port_coupling(
+                self.sources, self.basis, self.transform,
+                points_chunk, weights_chunk,
+                coupling_form="curl_dual",
+            )
+        resistance = 0.5 * (resistance + resistance.T)
+        return resistance, current_k, dual_k
+
     def reintegrate_source_coupling(self, points, weights, *,
                                      coupling_form="curl_dual") -> np.ndarray:
         """Integrate K independently from R/L using the selected weak form."""
