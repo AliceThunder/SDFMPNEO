@@ -13,6 +13,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
     python run.py --mode bfzi-convergence --basis-geometry # geometry-guided mu panels
     python run.py --mode bfzi-convergence --basis-radial   # fixed-geometry radial panels and two K forms
+    python run.py --mode bfzi-convergence --basis-kparts   # sphere versus near-wall weak-form K gap
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -48,7 +49,7 @@ def _indices_in_enriched_basis(enriched, subset):
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
-                      radial: bool = False):
+                      radial: bool = False, kparts: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -187,6 +188,131 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             "The cap 0.03 vs 0.06 comparison refines physical "
             "radial panels. The g7 row changes only the Gauss degree "
             "at cap 0.06. Green L and the 63-mode trial space stay fixed.",
+            flush=True,
+        )
+        return
+
+    if kparts:
+        # The two continuous curl-integration forms agree only after
+        # integrating BOTH pieces of the partition-of-unity quadrature.
+        # Isolate the sphere and box-wall contributions on identical
+        # positive points; angular/radial resolution is already high.
+        print("\nSphere/slab source K weak-form gap localization:",
+              flush=True)
+        print("Fixed radial geometry cuts and 0.06 m maximum panel "
+              "width; same 63 modes and Green L.", flush=True)
+        previous = None
+
+        def relative(a, b):
+            return float(np.linalg.norm(a - b)
+                         / max(np.linalg.norm(b), 1e-30))
+
+        for label, normal, tangential, mu, phi in (
+            ("wall4_5", 4, 5, 8, 2),
+            ("wall5_6", 5, 6, 8, 2),
+            ("wall6_7", 6, 7, 8, 2),
+            ("wall8_9", 8, 9, 8, 2),
+            ("wall8_9_mu10", 8, 9, 10, 2),
+        ):
+            cfg = replace(
+                config, polar_geometry_order=mu,
+                azimuthal_panel_order=phi, radial_geometry_cuts=True,
+                max_radial_panel_width=0.06,
+                shell_normal_order=normal,
+                shell_tangential_order=tangential,
+            )
+            points, weights, sphere_count = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+                radial_geometry_cuts=cfg.radial_geometry_cuts,
+                polar_geometry_order=cfg.polar_geometry_order,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
+                return_sphere_count=True,
+            )
+            full = teacher.reintegrate_local_response(points, weights)
+            sphere_points = points[:sphere_count]
+            sphere_weights = weights[:sphere_count]
+            slab_points = points[sphere_count:]
+            slab_weights = weights[sphere_count:]
+            k_sphere = teacher.reintegrate_source_coupling(
+                sphere_points, sphere_weights,
+                coupling_form="current_potential",
+            )
+            k_sphere_dual = teacher.reintegrate_source_coupling(
+                sphere_points, sphere_weights, coupling_form="curl_dual",
+            )
+            k_slab_dual = teacher.reintegrate_source_coupling(
+                slab_points, slab_weights, coupling_form="curl_dual",
+            )
+            k_slab = full.coupling - k_sphere
+            k_dual = k_sphere_dual + k_slab_dual
+            response_dual = full.resolve_with_coupling(k_dual)
+            delta_sphere = k_sphere_dual - k_sphere
+            delta_slab = k_slab_dual - k_slab
+            delta_total = delta_sphere + delta_slab
+            norm_k = max(np.linalg.norm(full.coupling), 1e-30)
+            alignment = float(np.vdot(
+                delta_sphere, delta_slab,
+            ).real / max(
+                np.linalg.norm(delta_sphere) * np.linalg.norm(delta_slab),
+                1e-30,
+            ))
+            q_curl = full.seawater_loss(probes, currents)
+            q_dual = response_dual.seawater_loss(probes, currents)
+            p_curl = full.port_seawater_power(currents)
+            p_dual = response_dual.port_seawater_power(currents)
+            print(
+                f"{label:>20}: sphere_nodes={sphere_count:6d}, "
+                f"slab_nodes={len(points)-sphere_count:6d}, "
+                f"normK={norm_k:.8g}",
+                flush=True,
+            )
+            print(
+                f"{'K_gap_by_region':>20}: "
+                f"sphere={np.linalg.norm(delta_sphere)/norm_k:.6g}, "
+                f"slab={np.linalg.norm(delta_slab)/norm_k:.6g}, "
+                f"total={np.linalg.norm(delta_total)/norm_k:.6g}, "
+                f"alignment={alignment:.6g}, "
+                f"curl_slab_share={np.linalg.norm(k_slab)/norm_k:.6g}",
+                flush=True,
+            )
+            print(
+                f"{'weak_form_response':>20}: "
+                f"dZ={relative(response_dual.impedance_seawater,full.impedance_seawater):.6g}, "
+                f"dq={relative(q_dual,q_curl):.6g}, "
+                f"max_probe_dq={np.max(np.abs(q_dual-q_curl)/np.maximum(np.abs(q_curl),1e-30)):.6g}, "
+                f"dP={abs(p_dual-p_curl)/max(abs(p_curl),1e-30):.6g}",
+                flush=True,
+            )
+            if previous is not None:
+                old_label, old_curl, old_dual = previous
+                for name, response, old in (
+                    ("curl_K_step", full, old_curl),
+                    ("dual_K_step", response_dual, old_dual),
+                ):
+                    q = response.seawater_loss(probes, currents)
+                    old_q = old.seawater_loss(probes, currents)
+                    p = response.port_seawater_power(currents)
+                    old_p = old.port_seawater_power(currents)
+                    print(
+                        f"{name:>20}: from={old_label}, "
+                        f"dR={relative(response.resistance,old.resistance):.6g}, "
+                        f"dK={relative(response.coupling,old.coupling):.6g}, "
+                        f"dZ={relative(response.impedance_seawater,old.impedance_seawater):.6g}, "
+                        f"dq={relative(q,old_q):.6g}, "
+                        f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-30)):.6g}, "
+                        f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
+                        flush=True,
+                    )
+            previous = label, full, response_dual
+        print(
+            "Only the final mu10 row changes angular order. "
+            "All earlier rows change the near-wall Gauss rule alone.",
             flush=True,
         )
         return
@@ -798,14 +924,16 @@ def main(
     basis_verify: bool = False, basis_green: bool = False,
     basis_domain: bool = False, basis_local: bool = False,
     basis_angular: bool = False, basis_geometry: bool = False,
-    basis_radial: bool = False,
+    basis_radial: bool = False, basis_kparts: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
-            or basis_local or basis_angular or basis_geometry or basis_radial):
+            or basis_local or basis_angular or basis_geometry
+            or basis_radial or basis_kparts):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
             geometry=basis_geometry, radial=basis_radial,
+            kparts=basis_kparts,
         )
     scene = build_demo_scene()
     base = dict(
@@ -956,11 +1084,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -972,4 +1100,5 @@ if __name__ == "__main__":
         basis_angular="--basis-angular" in sys.argv[1:],
         basis_geometry="--basis-geometry" in sys.argv[1:],
         basis_radial="--basis-radial" in sys.argv[1:],
+        basis_kparts="--basis-kparts" in sys.argv[1:],
     )
