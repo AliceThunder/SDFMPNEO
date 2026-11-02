@@ -24,12 +24,12 @@ class SeaMQSConfig:
     azimuthal_order: int = 16
     field_softening: float = 0.018
     wall_layers: int = 2
+    resistance_rank_tolerance: float = 1e-9
+    kernel_chunk_size: int = 128
     quadrature_scheme: str = "box_shell"
     shell_width_factor: float = 8.0
     shell_normal_order: int = 3
     shell_tangential_order: int = 4
-    resistance_rank_tolerance: float = 1e-9
-    kernel_chunk_size: int = 128
 
     def __post_init__(self):
         if min(self.radial_order, self.polar_order, self.azimuthal_order) < 2:
