@@ -83,6 +83,24 @@ def test_provisional_neural_holdout_and_passive_inference(tmp_path):
         atol=1e-12,rtol=1e-12,
     )
     assert prediction.port_total_power()>=0
+    assert prediction.power_closure_enabled
+    assert len(prediction.closure_points)>0
+    for phasors in (
+        np.array([1.2+0.3j,-0.4+0.8j]),
+        np.array([-0.2+0.9j,0.7-0.3j]),
+    ):
+        np.testing.assert_allclose(
+            prediction.port_seawater_power(phasors),
+            prediction.integrated_seawater_power(phasors),
+            rtol=1e-9,atol=1e-12,
+        )
+    assert prediction.reciprocal_gram_defect<1e-8
+    raw_prediction=BFZINeuralSurrogate.load(model).predict(
+        source,basis,power_consistent=False,
+    )
+    assert not raw_prediction.power_closure_enabled
+    with pytest.raises(ValueError,match="not enabled"):
+        raw_prediction.integrated_seawater_power()
     points=np.array([[0.0,0.0,0.0],[0.13,0.0,0.0]])
     heat=prediction.seawater_loss(points)
     assert heat.shape==(2,) and np.isfinite(heat).all()
