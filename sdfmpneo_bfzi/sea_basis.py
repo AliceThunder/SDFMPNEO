@@ -198,6 +198,7 @@ def build_sea_basis(
     refine_thin_faces_only: bool = False,
     sources: BFZISources | None = None,
     include_source_guided: bool = False,
+    include_source_face_guided: bool = False,
     outer_envelope: str = "boundary_layer",
     outer_taper_width: float | None = None,
 ) -> SeaCurrentBasis:
@@ -211,8 +212,13 @@ def build_sea_basis(
     refine_thin_faces_only=True restricts these *extra*
     patches to the two faces normal to the box's shortest dimension
     (typically the broad top/bottom charging-pad surfaces), keeping the
-    original complete 27-mode two-tangent base unchanged. The global
-    modes resolve long-range circulating currents. A finite trial space
+    original complete 27-mode two-tangent base unchanged. Optionally,
+    include_source_face_guided adds eight full-port curl potentials centered
+    on the two broad package faces, with two physically scaled footprints
+    per face and port; it is nested after the existing four center-guided
+    full-port modes. This allows distinct near-wall induced responses
+    without adding another hierarchy of arbitrary constant-vector patches.
+    The global modes resolve long-range circulating currents. A finite trial space
     is not guaranteed accurate before a hierarchy converges.
     """
     if modes_per_face not in (1, 2):
@@ -223,7 +229,7 @@ def build_sea_basis(
         raise ValueError("refine_thin_faces_only must be a boolean")
     if outer_envelope not in ("boundary_layer", "quadratic"):
         raise ValueError("outer_envelope must be 'boundary_layer' or 'quadratic'")
-    if include_source_guided and (
+    if (include_source_guided or include_source_face_guided) and (
         sources is None or sources.scene is not scene
     ):
         raise ValueError(
@@ -325,8 +331,30 @@ def build_sea_basis(
                     np.zeros(3), reach * width_factor,
                     source_port=port,
                 ))
+    if include_source_face_guided:
+        # Current loops induced by a complete physical port concentrate
+        # around the two broad package faces, but the previous center-only
+        # source modes have no independent top/bottom amplitudes. Curl of
+        # each localized full-port vector potential provides that missing
+        # physics-informed direction while retaining div(J)=0 and zero
+        # normal current at every insulating boundary.
+        for port, assembly in enumerate(scene.assemblies):
+            half=np.asarray(assembly.enclosure.half_extents)
+            normal=int(np.argmin(half))
+            for sign in (-1.0,1.0):
+                local=np.zeros(3)
+                local[normal]=sign*(
+                    half[normal]+max(scale,0.15*half[normal])
+                )
+                center=assembly.pose.position(local)
+                for width_factor in (0.45,0.85):
+                    modes.append(CurrentMode(
+                        center,np.zeros(3),
+                        max(width_factor*half.max(),3.0*scale),
+                        source_port=port,
+                    ))
     return SeaCurrentBasis(
         scene, tuple(modes), scale,
-        sources.lines if include_source_guided else None,
+        sources.lines if (include_source_guided or include_source_face_guided) else None,
         outer_envelope, taper_width,
     )
