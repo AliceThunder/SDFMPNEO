@@ -1274,3 +1274,39 @@ def test_composite_near_wall_face_panels_are_positive_and_independent():
         )
     with pytest.raises(ValueError, match="shell_tangential_max_panel_width"):
         SeaMQSConfig(shell_tangential_max_panel_width=-0.01)
+
+
+def test_streamed_wall_operators_match_full_r_and_both_k_forms():
+    """Bounded-memory R/K integration matches the existing physical solver."""
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    reference = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            inductance_quadrature=(3, 4, 6, 2, 3),
+        ),
+    )
+    x, w, split = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=2, shell_tangential_order=3,
+        shell_tangential_max_panel_width=0.025,
+        return_sphere_count=True,
+    )
+    r, k, kd = reference.reintegrate_local_operators(
+        x, w, chunk_size=113,
+    )
+    full = reference.reintegrate_local_response(x, w)
+    np.testing.assert_allclose(r, full.resistance, rtol=5e-9, atol=1e-12)
+    np.testing.assert_allclose(k, full.coupling, rtol=5e-9, atol=1e-14)
+    np.testing.assert_allclose(
+        kd, reference.reintegrate_source_coupling(x, w),
+        rtol=5e-9, atol=1e-14,
+    )
+    sphere = reference.reintegrate_local_operators(
+        x[:split], w[:split], chunk_size=113,
+    )
+    slab = reference.reintegrate_local_operators(
+        x[split:], w[split:], chunk_size=113,
+    )
+    for combined, a, b in zip((r, k, kd), sphere, slab):
+        np.testing.assert_allclose(combined, a + b, rtol=5e-9, atol=1e-14)
