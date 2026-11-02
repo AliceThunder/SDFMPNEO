@@ -37,13 +37,21 @@ The BFZI branch does not rename or feed its path into the legacy superellipse.
 
 Physical scope: two sealed nonconductive nonmagnetic boxes, static SE(3)
 poses, finite spherical conducting seawater domain, fixed frequency and
-a divergence-free Galerkin seawater current basis. Radial Gauss intervals
-are now cut **exactly at the oriented box surfaces** for each angular ray
-(positive, meshless cubature), rather than dropping samples in the boxes.
-`SeaMQSConfig.wall_layers` adds graded subintervals near the physical walls,
-and each layer uses the active `SeaCurrentBasis.wall_scale`. The default is
-two graded layers. Angular, outer-domain and singular-kernel convergence
-still require independent refinement. `L_air` uses a softened finite-radius
+a divergence-free Galerkin seawater current basis. The original positive
+meshless spherical-ray cubature remains available with
+`SeaMQSConfig(quadrature_scheme="ray")`, including exact box-wall ray cuts
+and optional `wall_layers`. **The new default is
+`quadrature_scheme="box_shell"`**: disjoint rotated-box Gauss shells cover
+every insulating face, and the outer spherical-ray region excludes expanded
+boxes. It resolves thin-package near-wall modes without depending on a
+coarse spherical ray intersecting a particular face.
+`shell_normal_order`, `shell_tangential_order`, and `shell_width_factor`
+control near-wall refinement separately from the far-field
+`radial_order`, `polar_order`, `azimuthal_order`. This uses positive
+geometry-local quadrature, not a world spatial solver mesh. The original
+run output showed 52% mode sensitivity and 71% cubature sensitivity, so
+angular, basis, outer-domain and singular-kernel convergence remain explicitly
+**unproven** until the new runs and successive refinements agree. `L_air` uses a softened finite-radius
 Neumann approximation. Its self entries now subdivide the *analytic*
 continuous BFZI-plus-return path into short panels and integrate each
 straight-panel diagonal analytically, avoiding the strong coincident-node
