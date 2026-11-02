@@ -473,3 +473,17 @@ response = solve_seawater_reference(source, basis=basis)
 已在 `examples/bfzi_convergence.py` 修复这个唯一的直接传参漏洞，并在 `--basis-wallpanels` 的 0.05m、0.025m 两级加入最小 fail-fast 约束：如果后续 finer physical cap 没有实际增加近壁 slab 积分节点，直接抛出说明参数未传的异常，而不打印误导性的全零数据。同时扩展现有 `test_geometry_rk_refinement_does_not_expand_independent_green_l`，确认 `SeaMQSConfig.shell_tangential_max_panel_width` 实际传入主 R/K/Joule 求积，但不传给独立 Green L。这属于少量核心回归，不额外搭建复杂审计逻辑。
 
 值得注意：同一旧日志中将原 5/6 Gauss 改为 5/7 Gauss 后 `dR=0.205154`、空间探针 `dq=0.174538`，仍表现出很大的近壁积分敏感性，必须在**新分片真实生效之后**重新测量，才有资格判断 physical-width Gauss 分片能否解决这一问题。用户请执行 `git pull`、两个 BFZI 测试以及 `python run.py --mode bfzi-convergence --basis-wallpanels`。禁止 GitHub Actions。
+
+
+### 2026-11-02：实测 44 passed；面板参数生效，转为分块 R/K 与固定球域复用
+
+用户本地在 `19686b9` 完成 **44 passed in 14.48 s**。新 `--basis-wallpanels` 确认真正启用了近壁切向物理长度分片，固定球域 204224 节点，近壁 slab 节点由 19024→38800→123072。用真实物理 cap `0.05→0.025m`，原 K 形式响应 `dR=0.00740772, dK=0.00301764, dZ=0.00187433, dq=0.0376711, dP=0.00218495`，最大探针 q 变化 `0.0472444`。**探针热源仍对物理面板宽度敏感，不能把 0.025m 当作最终连续积分**。同样 0.025m 分片只改变切向 order 6→7，`dR=0.000147977,dK=0.0000515811,dZ=5.28789e-06,dq=0.00126934,dP=5.89506e-06`。原先 Gauss 6→7 的大跃迁主要由同一半盒面 Gauss3→4 引起，边缘 Gauss3 保持不变；物理分片消除了大部分节点奇偶性偏差。
+
+**本轮主体优化（当前新提交未经用户本地复测）**：
+- 新增 `SeawaterResponse.reintegrate_local_operators(points,weights,chunk_size=2048)`：分块直接累计 R 与两种 K 弱式矩阵，保持同样的真实电流、闭合端口磁场、归一化、正权物理积分；返回小型 `(R,K_current,K_dual)`，不生成包含全量海水 `integration_modes` 的大型响应。专门服务于几十万到百万节点的高精度单轴求积研究；不影响常规 `reintegrate_local_response` 的正权 Joule 节点与空间场接口。
+- `--basis-wallpanels` 精简为独立实验路径，固定 63 个物理模态、独立 Green L、实际几何极角 mu8、16 扇区方位2点、真实封装径向断点及 0.06m径向上限。球域 ~204224 个节点的 R/K/双形式 K **只组装一次**，每级实验仅重新积分局部盒壁 slab，并与固定球域算子相加。局部求解 `(R+iωL)c=-iωK` 后独立输出端口、4点 q 与从 `0.5 c^†Rc` 获取的物理海水耗散功率。
+- 面板宽度 `0.05→0.025→0.020→0.0167m` 固定 `normal=5,tangential=6`，之后在同一 `0.0167m` 节点分片上分别提高 tangential 6→7、normal 5→6，分轴检验 R/Joule/heat 误差。只做 operator-level 收敛诊断，不改变完整场热源语义。
+- 新增**一项**定向测试：较小求积下，streamed (R,K,K_{dual}) 与完整 `reintegrate_local_response` / `reintegrate_source_coupling` 一致，并验证球域+盒壁分块可重组完整结果。旧 `--basis-kparts` 的功能保持不变，清除了与新面板实验混合的死代码，避免误用。
+- 现有 `SeaMQSConfig.shell_tangential_max_panel_width` 以及普通求解器仍然支持几何高精度近壁面板；未改变默认值。未使用 GitHub Actions（禁止）。
+
+执行 `git pull`、两个 BFZI 测试、`python run.py --mode bfzi-convergence --basis-wallpanels`。待宽度和法向误差均稳定后，才推进 Green L/外域/模态，再将该物理参考用于训练高精度电磁热 NN。
