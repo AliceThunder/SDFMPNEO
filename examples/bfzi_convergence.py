@@ -139,7 +139,42 @@ def basis_convergence():
             f"{coarse[0]} -> {fine[0]}: "
             f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}"
         )
-    print("NOT CERTIFIED: source-guided and spatial refinements require independent cubature checks.")
+    # The enriched solution was assembled on the base cubature. Now
+    # reintegrate that *same solution* using independent near-wall and
+    # far-field rules. This is much cheaper than a second O(Q^2) Green
+    # assembly and catches deceptively well-closing aliased R/K matrices.
+    print("\nIndependent cubature of the 63-mode solution (no new Green solve):")
+    holdout_configs = (
+        ("wall_heldout", replace(
+            config, shell_normal_order=4, shell_tangential_order=5,
+        )),
+        ("far_heldout", replace(
+            config, radial_order=6, polar_order=10, azimuthal_order=16,
+        )),
+    )
+    for name, cfg in holdout_configs:
+        points, weights = scene.box_shell_quadrature(
+            cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+            wall_scale=enriched.wall_scale,
+            shell_width_factor=cfg.shell_width_factor,
+            shell_normal_order=cfg.shell_normal_order,
+            shell_tangential_order=cfg.shell_tangential_order,
+        )
+        check = teacher.independent_cubature_metrics(
+            points, weights, currents,
+        )
+        print(
+            f"{name:>20}: nodes={len(points):6d}, "
+            f"dR={check['relative_resistance_difference']:.6g}, "
+            f"dK={check['relative_coupling_difference']:.6g}, "
+            f"dP={check['relative_power_difference']:.6g}, "
+            f"heldout_P={check['heldout_power']:.8g} W",
+            flush=True,
+        )
+    print(
+        "NOT CERTIFIED: R/K/Joule heldouts do not certify Green L, "
+        "outer-domain independence, or basis completeness."
+    )
 
 
 def main(full: bool = False, basis_only: bool = False):
