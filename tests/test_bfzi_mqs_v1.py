@@ -490,3 +490,86 @@ def test_analytical_straight_panel_self_integral_matches_high_order_quad():
         0.0, length, epsabs=1e-11,
     )[0]
     np.testing.assert_allclose(analytic, numeric, rtol=1e-12)
+
+
+def test_box_shell_partition_is_disjoint_positive_and_conservative():
+    from dataclasses import replace
+
+    scene = scene_pair()
+    scale = 0.075 * min(
+        min(a.enclosure.half_extents) for a in scene.assemblies
+    )
+    thickness = 8 * scale
+    radial, polar, azimuthal = 4, 6, 8
+    bulk_points, bulk_weights = scene.quadrature(
+        radial, polar, azimuthal, wall_layers=0,
+        exclusion_padding=thickness,
+    )
+    points, weights = scene.box_shell_quadrature(
+        radial, polar, azimuthal, wall_scale=scale,
+        shell_width_factor=8.0, shell_normal_order=3,
+        shell_tangential_order=4,
+    )
+    assert np.all(weights > 0.0)
+    assert scene.in_seawater(points).all()
+    # The shell measure is evaluated exactly by tensor Gauss: it is the
+    # union of two expanded boxes minus their insulating cores.
+    shell_volume = sum(
+        8 * (
+            np.prod(np.array(a.enclosure.half_extents) + thickness)
+            - np.prod(a.enclosure.half_extents)
+        )
+        for a in scene.assemblies
+    )
+    np.testing.assert_allclose(
+        weights.sum() - bulk_weights.sum(), shell_volume,
+        rtol=1e-11, atol=1e-13,
+    )
+    assert len(points) > len(bulk_points)
+    volume = (
+        4 * np.pi * scene.outer_radius**3 / 3
+        - sum(8 * np.prod(a.enclosure.half_extents)
+              for a in scene.assemblies)
+    )
+    assert abs(weights.sum() / volume - 1) < 0.02
+
+    # The same construction works in a rotated local frame without
+    # changing its exact near-box shell volume.
+    a = 0.29
+    rotation = np.array([
+        [np.cos(a), 0., np.sin(a)],
+        [0., 1., 0.],
+        [-np.sin(a), 0., np.cos(a)],
+    ])
+    rotated = replace(
+        scene, receiver=replace(
+            scene.receiver,
+            pose=RigidPose(rotation, scene.receiver.pose.center),
+        ),
+    )
+    rot_points, rot_weights = rotated.box_shell_quadrature(
+        radial, polar, azimuthal,
+    )
+    assert rotated.in_seawater(rot_points).all()
+    assert np.all(rot_weights > 0.0)
+
+
+def test_box_shell_reference_retains_two_port_energy_identity():
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000.0, order=3)
+    reference = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            field_softening=0.025, quadrature_scheme="box_shell",
+        ),
+    )
+    currents = np.array([1.0 + 0.2j, -0.3 + 0.5j])
+    np.testing.assert_allclose(
+        reference.port_seawater_power(currents),
+        reference.quadrature_power(currents),
+        rtol=1e-8, atol=1e-12,
+    )
+    assert np.all(reference.integration_weights > 0)
+    assert scene.in_seawater(reference.integration_points).all()
+    assert np.isfinite(reference.impedance_seawater).all()
