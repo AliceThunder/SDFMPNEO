@@ -80,7 +80,10 @@ def test_provisional_neural_holdout_and_passive_inference(tmp_path):
     )
     assert result["train_geometries"]==4
     assert result["heldout_geometries"]==2
-    prediction=BFZINeuralSurrogate.load(model).predict(source,basis)
+    # Closure is opt-in: it can reduce accuracy when J is poorly learned.
+    prediction=BFZINeuralSurrogate.load(model).predict(
+        source,basis,power_consistent=True,
+    )
     assert prediction.raw_unit_modes.shape==(m,2)
     assert np.isfinite(prediction.impedance_seawater).all()
     np.testing.assert_allclose(
@@ -109,9 +112,15 @@ def test_provisional_neural_holdout_and_passive_inference(tmp_path):
         )
     assert prediction.reciprocal_gram_defect<1e-8
     raw_prediction=BFZINeuralSurrogate.load(model).predict(
-        source,basis,power_consistent=False,
+        source,basis,
     )
     assert not raw_prediction.power_closure_enabled
+    np.testing.assert_allclose(
+        raw_prediction.impedance_seawater,
+        BFZINeuralSurrogate.load(model).predict(
+            source,basis,power_consistent=False,
+        ).impedance_seawater,
+    )
     with pytest.raises(ValueError,match="not enabled"):
         raw_prediction.integrated_seawater_power()
     points=np.array([[0.0,0.0,0.0],[0.13,0.0,0.0]])
