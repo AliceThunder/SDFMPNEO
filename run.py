@@ -340,6 +340,7 @@ def main(argv=None):
                     basis_green="--basis-green" in args,
                     basis_green_refined="--basis-green-refined" in args,
                     basis_green_cross="--basis-green-cross" in args,
+                    basis_green_gaussian="--basis-green-gaussian" in args,
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
