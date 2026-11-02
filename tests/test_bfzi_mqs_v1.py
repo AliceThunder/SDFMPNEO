@@ -828,3 +828,52 @@ def test_reintegrated_local_response_reuses_green_and_closes_power():
     )
     assert refined.port_seawater_power(current) >= 0
     assert np.isfinite(refined.impedance_seawater).all()
+
+
+def test_green_reintegration_changes_only_L_and_remains_passive():
+    """Fixed R/K and heat nodes isolate the nonlocal Green integration error."""
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    original = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            field_softening=0.025,
+        ),
+    )
+    currents = np.array([1.0 + 0.2j, -0.4 + 0.5j])
+    probes = np.array([[0., 0., 0.], [0.16, 0., 0.]])
+    same, sharper = original.reintegrate_green_responses(
+        original.integration_points, original.integration_weights,
+        softenings=(0.025, 0.018), kernel_chunk_size=17,
+    )
+    np.testing.assert_allclose(same.inductance, original.inductance,
+                               rtol=1e-10, atol=1e-13)
+    np.testing.assert_allclose(
+        same.impedance_seawater, original.impedance_seawater,
+        rtol=1e-10, atol=1e-12,
+    )
+    assert np.linalg.norm(sharper.inductance - same.inductance) > 0
+    for resolved in (same, sharper):
+        np.testing.assert_array_equal(resolved.resistance, original.resistance)
+        np.testing.assert_array_equal(resolved.coupling, original.coupling)
+        np.testing.assert_array_equal(
+            resolved.integration_points, original.integration_points,
+        )
+        assert np.min(np.linalg.eigvalsh(resolved.inductance)) > -1e-10
+        np.testing.assert_allclose(
+            resolved.port_seawater_power(currents),
+            resolved.quadrature_power(currents),
+            rtol=1e-8, atol=1e-12,
+        )
+        assert resolved.port_seawater_power(currents) >= 0.0
+    metrics = original.independent_green_metrics(
+        original.integration_points, original.integration_weights,
+        currents, probes=probes, softenings=(0.025, 0.018),
+        kernel_chunk_size=17,
+    )
+    assert metrics[0]["relative_resolved_impedance_change"] < 1e-8
+    assert metrics[0]["relative_resolved_probe_change"] < 1e-8
+    assert metrics[0]["relative_heldout_residual"] < 1e-8
+    assert metrics[1]["relative_inductance_difference"] > 0
+    assert np.isfinite(metrics[1]["relative_resolved_power_change"])
