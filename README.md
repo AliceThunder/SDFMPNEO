@@ -29,6 +29,7 @@ python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Gr
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
+python run.py --mode bfzi-convergence --basis-geometry # enclosure-projected polar Gauss refinement
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -220,6 +221,42 @@ Composite Gauss angular rules cost extra spherical field evaluations.
 In particular, small total port-power errors can hide much larger
 local heat-source changes; choose reference orders from verified
 pointwise and port stability, not node count alone.
+
+**Geometry-aligned polar R/K refinement (2026-11-02).** The
+37-test-passing `10a615d` run showed that varying two fixed polar
+panels' Gaussian degree from 14→18→22 changed the re-solved port
+`dZ=0.0483211` and `0.0243709` respectively, while changing
+azimuth Gauss order from 2→3 at 22 polar nodes gave only
+`dZ=0.000767303`. Almost all of the polar-induced port change was
+reproduced by K-only re-solves; the pressing problem is **geometry-
+localized source coupling K angular integration**, not a
+generalized lack of outer-sphere azimuthal resolution.
+
+The new optional `polar_geometry_order` for
+`BfziScene.box_shell_quadrature` and `SeaMQSConfig` partitions the
+cosine-polar interval at the minimum/maximum projected polar angles
+of the actual oriented insulation-box corners **and** the same
+corners on their partition-of-unity blending shells. The panel
+boundaries depend on the physical scene and box-shell blending width,
+not on the chosen Gauss integration order. It uses exactly
+`polar_geometry_order` positive Gauss nodes **per geometric
+interval**; this is distinct from the global `polar_order`
+parameter, which is ignored for this one optional polar rule.
+Geometry panels cannot be combined with uniform `polar_panel_count>1`.
+Both R/K and nonlocal Green L honor this option when selected.
+Default behavior remains unchanged.
+
+`python run.py --mode bfzi-convergence --basis-geometry`
+holds the original 63-mode basis, source, R whitening, Green L,
+radial and box-wall cubature, and azimuth sectors fixed. It tests
+per-panel polar Gauss orders 3, 4, 5, 6, 8 at azimuthal Gauss
+order 2, then varies only azimuth Gauss 2→3 at polar order 8.
+It reports `dR/dK`, baseline and consecutive-step
+`dZ/dq/dP`, maximum individual probe `dq`, and separate
+**K-only and R-only** re-solves. This is a hypothesis about
+the dominant numerical error mechanism, **not** evidence
+that the geometry-panel approach is converged until local results
+verify it. More panels can increase field-evaluation cost.
 
 **Outer radial physical resolution.** The spherical portion of
 `box_shell_quadrature` additionally supports
