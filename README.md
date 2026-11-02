@@ -125,6 +125,26 @@ equation residual. **Softening must not be extrapolated to zero at fixed
 cubature:** point-collocation self terms scale like `w_i²/a` and may
 produce an artificial divergence, even though the continuum Coulomb
 double integral is finite. Refine the magnetic rule jointly with `a`.
+**Outer-boundary basis fix (2026-11-02).** Earlier domain scans were
+confounded by the factor `1-r²/R²` multiplying every current trial
+function: moving the artificial sphere changed the basis throughout
+the charging region. `build_sea_basis` now defaults to a compact
+`boundary_layer` spherical cutoff with a fixed physical transition
+width determined by enclosure reach (or explicit `outer_taper_width`).
+Within the common physical interior both the cutoff and its gradient
+are exactly 1 and 0 respectively, so raw near-pad trial modes are
+invariant under outer radius changes. The legacy `quadratic` option
+remains selectable for comparisons. The `box_shell` radial rule now
+splits exactly at the cutoff transition onset; the R/K and independent
+Green L cubatures use the same split. `--basis-domain` prints
+`raw_mode_dW` at fixed near-pad probes to expose unwanted trial
+space changes. This updated domain sequence **must be re-run**;
+results cannot be numerically compared to prior outputs as if only
+the outer radius had changed, because the basis construction changed.
+The compact cutoff also imposes a stronger zero-current trace on the
+artificial boundary, and still needs convergence against larger
+domains and richer long-range modes.
+
 The separate `--basis-domain` mode solves the same 63-mode *construction*
 on outer radii 0.52, 0.70, 0.85 and 1.05 m. Those are distinct
 boundary-conditioned trial spaces, so domain changes are not a
