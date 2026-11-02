@@ -82,18 +82,25 @@ def build_sea_basis(
     modes_per_face: int = 2,
     face_refinement: int = 1,
     include_global: bool = True,
+    refine_thin_faces_only: bool = False,
 ) -> SeaCurrentBasis:
     """Generate box-following curl modes and optional long-range modes.
 
-    The face-localized modes are tangential and update with 6-DOF box pose;
-    the global modes resolve long-range circulating current. This spans only
-    a finite trial subspace; it is not claimed to approximate arbitrary
-    seawater eddies without basis/cubature convergence.
+    The face-localized modes are tangential and update with 6-DOF box
+    pose. Face refinement adds four nested smaller Gaussian patches per
+    selected face. refine_thin_faces_only=True restricts these *extra*
+    patches to the two faces normal to the box's shortest dimension
+    (typically the broad top/bottom charging-pad surfaces), keeping the
+    original complete 27-mode two-tangent base unchanged. The global
+    modes resolve long-range circulating currents. A finite trial space
+    is not guaranteed accurate before a hierarchy converges.
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
     if face_refinement not in (1, 2):
         raise ValueError("face_refinement must be 1 or 2")
+    if not isinstance(refine_thin_faces_only, bool):
+        raise ValueError("refine_thin_faces_only must be a boolean")
     scale = (
         0.075 * min(
             min(assembly.enclosure.half_extents)
@@ -106,6 +113,7 @@ def build_sea_basis(
     modes = []
     for assembly in scene.assemblies:
         half = np.asarray(assembly.enclosure.half_extents)
+        thinnest = int(np.argmin(half))
         for axis in range(3):
             tangents = [j for j in range(3) if j != axis]
             for sign in (-1, 1):
@@ -113,7 +121,9 @@ def build_sea_basis(
                 # level adds four tangentially shifted modes per face, giving
                 # a nested trial space rather than replacing the baseline.
                 patches = [(0.0, 0.0, 1.0)]
-                if face_refinement == 2:
+                if face_refinement == 2 and (
+                    not refine_thin_faces_only or axis == thinnest
+                ):
                     patches.extend(
                         (u, v, 0.70)
                         for u in (-0.45, 0.45)
