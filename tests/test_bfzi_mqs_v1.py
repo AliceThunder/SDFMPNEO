@@ -492,54 +492,30 @@ def test_analytical_straight_panel_self_integral_matches_high_order_quad():
     np.testing.assert_allclose(analytic, numeric, rtol=1e-12)
 
 
-def test_box_shell_partition_is_disjoint_positive_and_conservative():
+def test_box_shell_partition_is_positive_and_volume_consistent():
     from dataclasses import replace
 
     scene = scene_pair()
-    scale = 0.075 * min(
-        min(a.enclosure.half_extents) for a in scene.assemblies
-    )
-    thickness = 8 * scale
-    radial, polar, azimuthal = 4, 6, 8
-    bulk_points, bulk_weights = scene.quadrature(
-        radial, polar, azimuthal, wall_layers=0,
-        exclusion_padding=thickness,
-    )
     points, weights = scene.box_shell_quadrature(
-        radial, polar, azimuthal, wall_scale=scale,
-        shell_width_factor=8.0, shell_normal_order=3,
-        shell_tangential_order=4,
+        8, 14, 24, shell_normal_order=3, shell_tangential_order=6,
     )
     assert np.all(weights > 0.0)
     assert scene.in_seawater(points).all()
-    # The shell measure is evaluated exactly by tensor Gauss: it is the
-    # union of two expanded boxes minus their insulating cores.
-    shell_volume = sum(
-        8 * (
-            np.prod(np.array(a.enclosure.half_extents) + thickness)
-            - np.prod(a.enclosure.half_extents)
-        )
-        for a in scene.assemblies
-    )
-    np.testing.assert_allclose(
-        weights.sum() - bulk_weights.sum(), shell_volume,
-        rtol=1e-11, atol=1e-13,
-    )
-    assert len(points) > len(bulk_points)
-    volume = (
+    exact_volume = (
         4 * np.pi * scene.outer_radius**3 / 3
         - sum(8 * np.prod(a.enclosure.half_extents)
               for a in scene.assemblies)
     )
-    assert abs(weights.sum() / volume - 1) < 0.02
+    # A smooth partition of unity allows positive overlap between the
+    # shell and sphere cubatures: their weights must NOT be naively added
+    # as unweighted disjoint shell volumes.
+    assert abs(weights.sum() / exact_volume - 1) < 0.02
 
-    # The same construction works in a rotated local frame without
-    # changing its exact near-box shell volume.
-    a = 0.29
+    angle = 0.29
     rotation = np.array([
-        [np.cos(a), 0., np.sin(a)],
+        [np.cos(angle), 0., np.sin(angle)],
         [0., 1., 0.],
-        [-np.sin(a), 0., np.cos(a)],
+        [-np.sin(angle), 0., np.cos(angle)],
     ])
     rotated = replace(
         scene, receiver=replace(
@@ -548,10 +524,11 @@ def test_box_shell_partition_is_disjoint_positive_and_conservative():
         ),
     )
     rot_points, rot_weights = rotated.box_shell_quadrature(
-        radial, polar, azimuthal,
+        8, 14, 24, shell_normal_order=3, shell_tangential_order=6,
     )
     assert rotated.in_seawater(rot_points).all()
     assert np.all(rot_weights > 0.0)
+    assert abs(rot_weights.sum() / exact_volume - 1) < 0.02
 
 
 def test_box_shell_reference_retains_two_port_energy_identity():
