@@ -11,6 +11,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-green-refined # converged-wall R/K, independent L
     python run.py --mode bfzi-convergence --basis-green-cross # noncoincident magnetic cross-rule test
     python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian volume Green test
+    python run.py --mode bfzi-convergence --basis-green-ball # exact uniform-ball Coulomb volume kernel
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
@@ -57,7 +58,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       wallpanels: bool = False,
                       green_refined: bool = False,
                       green_cross: bool = False,
-                      green_gaussian: bool = False):
+                      green_gaussian: bool = False,
+                      green_ball: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -200,7 +202,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         return
 
-    if green_refined or green_cross or green_gaussian:
+    if green_refined or green_cross or green_gaussian or green_ball:
         # This comparison changes ONLY Green L after a single high-quality
         # streamed R/K solve. It avoids the original teacher's inaccurate
         # global-angle/near-wall R/K while retaining that teacher's modes,
@@ -344,6 +346,110 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 "lack of diagonal does not prove accuracy. Compare "
                 "both quadrature rules jointly before changing the "
                 "production Green operator.",
+                flush=True,
+            )
+            return
+
+        if green_ball:
+            # Same refined R/K and unchanged Galerkin trial modes as the
+            # Gaussian screen. Uniform *solid* clouds interact with the
+            # exact unsoftened Coulomb kernel: K=1/d for disjoint balls,
+            # analytic finite overlap/self values and a PSD Gram L.
+            print("\nUniform-ball Coulomb Green L (PSD alternative):",
+                  flush=True)
+            magnetic_rules = (
+                ("A", (5, 8, 12, 3, 4)),
+                ("B", (5, 9, 14, 4, 5)),
+            )
+            results = {}
+            gaussian_a = None
+            for label, orders in magnetic_rules:
+                radial, polar, azimuthal, normal, tangent = orders
+                gx, gw = scene.box_shell_quadrature(
+                    radial, polar, azimuthal,
+                    wall_scale=enriched.wall_scale,
+                    shell_width_factor=config.shell_width_factor,
+                    shell_normal_order=normal,
+                    shell_tangential_order=tangent,
+                    outer_taper_width=enriched.outer_taper_width,
+                )
+                print(
+                    f"  assembling uniform-ball rule {label}: "
+                    f"{len(gx)} nodes, no blur or fitted width",
+                    flush=True,
+                )
+                l, diagonal = teacher.reintegrate_ball_green_matrix(
+                    gx, gw, kernel_chunk_size=config.kernel_chunk_size,
+                )
+                current = metrics(l, k_current)
+                dual = metrics(l, k_dual)
+                eigen = float(np.linalg.eigvalsh(l)[0])
+                results[label] = (l, current, dual, eigen)
+                print(
+                    f"{'ball_L':>20}: rule={label}, "
+                    f"trace={np.trace(l):.8g} H, "
+                    f"diag_share={diagonal/max(np.trace(l),1e-30):.6g}, "
+                    f"min_L_eig={eigen:.8g} H, "
+                    f"vs_old_dL={relative(l,base_l):.6g}, "
+                    f"vs_old_dZ={relative(current[0],original_base[0][0]):.6g}, "
+                    f"vs_old_dq={relative(current[1],original_base[0][1]):.6g}, "
+                    f"vs_old_dP={abs(current[2]-original_base[0][2])/max(abs(original_base[0][2]),1e-30):.6g}",
+                    flush=True,
+                )
+                if label == "A":
+                    print("  assembling Gaussian A at matched nodes for "
+                          "shape-model discrepancy", flush=True)
+                    gauss, _ = teacher.reintegrate_gaussian_green_matrices(
+                        gx, gw, extra_blurs=(0.0,),
+                        width_factor=1.0,
+                        kernel_chunk_size=config.kernel_chunk_size,
+                    )
+                    gaussian_a = gauss[0]
+                del gx, gw
+
+            def report_ball(label, candidate, target):
+                cl, cc, cd, _ = candidate
+                tl, tc, td, _ = target
+                dL = relative(cl, tl)
+                dZ = relative(cc[0], tc[0])
+                dq = relative(cc[1], tc[1])
+                dP = abs(cc[2]-tc[2])/max(abs(tc[2]),1e-30)
+                dual_dZ = relative(cd[0], td[0])
+                dual_dq = relative(cd[1], td[1])
+                dual_dP = abs(cd[2]-td[2])/max(abs(td[2]),1e-30)
+                passed = (
+                    dL <= 0.05 and max(dZ, dual_dZ) <= 0.002
+                    and max(dq, dual_dq) <= 0.005
+                    and max(dP, dual_dP) <= 0.002
+                )
+                print(
+                    f"{label:>20}: dL={dL:.6g}, dZ={dZ:.6g}, "
+                    f"dq={dq:.6g}, dP={dP:.6g}, "
+                    f"dual_dZ={dual_dZ:.6g}, "
+                    f"dual_dq={dual_dq:.6g}, "
+                    f"dual_dP={dual_dP:.6g}, "
+                    f"gate={'PASS' if passed else 'FAIL'}",
+                    flush=True,
+                )
+                return passed
+
+            a = results["A"]
+            b = results["B"]
+            cross_pass = report_ball("ball_B_vs_A", b, a)
+            gaussian_current = metrics(gaussian_a, k_current)
+            gaussian_dual = metrics(gaussian_a, k_dual)
+            shape_pass = report_ball(
+                "ball_vs_gaussian_A",
+                a, (gaussian_a, gaussian_current, gaussian_dual, 0.0),
+            )
+            psd_pass = all(item[3] >= -1e-12 for item in results.values())
+            print(
+                "  ball_screen: "
+                f"cross_rule={'PASS' if cross_pass else 'FAIL'}, "
+                f"shape_agreement={'PASS' if shape_pass else 'FAIL'}, "
+                f"PSD={'PASS' if psd_pass else 'FAIL'}; "
+                "promotion=HOLD until near-cell geometry/continuum "
+                "and mode/domain/electrothermal checks.",
                 flush=True,
             )
             return
@@ -1387,12 +1493,13 @@ def main(
     basis_green_refined: bool = False,
     basis_green_cross: bool = False,
     basis_green_gaussian: bool = False,
+    basis_green_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
             or basis_radial or basis_kparts or basis_wallpanels
             or basis_green_refined or basis_green_cross
-            or basis_green_gaussian):
+            or basis_green_gaussian or basis_green_ball):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
@@ -1401,6 +1508,7 @@ def main(
             green_refined=basis_green_refined,
             green_cross=basis_green_cross,
             green_gaussian=basis_green_gaussian,
+            green_ball=basis_green_ball,
         )
     scene = build_demo_scene()
     base = dict(
@@ -1551,11 +1659,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -1572,4 +1680,5 @@ if __name__ == "__main__":
         basis_green_refined="--basis-green-refined" in sys.argv[1:],
         basis_green_cross="--basis-green-cross" in sys.argv[1:],
         basis_green_gaussian="--basis-green-gaussian" in sys.argv[1:],
+        basis_green_ball="--basis-green-ball" in sys.argv[1:],
     )
