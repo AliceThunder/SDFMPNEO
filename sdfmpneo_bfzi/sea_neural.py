@@ -150,11 +150,19 @@ class BFZINeuralSurrogate:
         xmax=meta["train_max"].cpu().numpy()
         width=xmax-xmin
         moving=width>1e-12
-        out_of_training_range=bool(np.any(
-            ((features < xmin-1e-6*width)
-             | (features > xmax+1e-6*width)) & moving
-        ))
         mean=meta["x_mean"].cpu().numpy()
+        # Even a coordinate fixed in all training samples (e.g. coil
+        # winding or transmitter pose) can change at inference.
+        stationary_outside = (~moving) & (
+            np.abs(features-mean) > 1e-8*np.maximum(np.abs(mean),1.0)
+        )
+        moving_outside = moving & (
+            (features < xmin-1e-6*width)
+            | (features > xmax+1e-6*width)
+        )
+        out_of_training_range=bool(np.any(
+            stationary_outside | moving_outside
+        ))
         scale=meta["x_scale"].cpu().numpy()
         x=(features-mean)/scale
         with torch.no_grad():
