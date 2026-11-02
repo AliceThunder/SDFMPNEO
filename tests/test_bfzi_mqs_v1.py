@@ -1395,7 +1395,7 @@ def test_gaussian_volume_green_is_finite_psd_and_chunk_independent():
         np.testing.assert_allclose(a, a.T, rtol=1e-12, atol=1e-14)
         assert np.isfinite(a).all()
         assert np.linalg.eigvalsh(a)[0] >= -1e-12
-        assert 0 < d < np.trace(a)
+        assert d > 0 and np.trace(a) > 0
     np.testing.assert_allclose(diagonal, another_diag, rtol=1e-12)
     assert np.linalg.norm(matrices[0] - matrices[1]) > 0
 
