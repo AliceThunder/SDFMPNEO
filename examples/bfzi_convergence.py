@@ -13,6 +13,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian volume Green test
     python run.py --mode bfzi-convergence --basis-green-ball # exact uniform-ball Coulomb volume kernel
     python run.py --mode bfzi-convergence --basis-ball # nested modes with uniform-ball L
+    python run.py --mode bfzi-convergence --basis-ball-check-l # expensive 159-mode magnetic A/B cross-rule
     python run.py --mode bfzi-convergence --basis-domain-ball # outer-domain sequence with uniform-ball L
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
@@ -62,7 +63,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_cross: bool = False,
                       green_gaussian: bool = False,
                       green_ball: bool = False,
-                      ball_reference: bool = False):
+                      ball_reference: bool = False,
+                      ball_l_check: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes a level-4
@@ -453,6 +455,74 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             "It does not validate a cross-geometry model or local heat truth.",
             flush=True,
         )
+
+        if ball_l_check:
+            # 63-mode magnetic A/B agreement cannot be promoted to
+            # 159 much narrower physical directions. This independently
+            # resolves magnetic integration without changing the 461k-node
+            # fine resistance, both port couplings, or physical probes.
+            print("\nIndependent 159-mode uniform-ball magnetic L B rule:",
+                  flush=True)
+            bx,bw = scene.box_shell_quadrature(
+                5,9,14,wall_scale=enriched.wall_scale,
+                shell_width_factor=config.shell_width_factor,
+                shell_normal_order=4,shell_tangential_order=5,
+                outer_taper_width=enriched.outer_taper_width,
+            )
+            print(f"  assembling B nodes={len(bx)}",flush=True)
+            magnetic_b, _ = teacher.reintegrate_ball_green_matrix(
+                bx,bw,kernel_chunk_size=config.kernel_chunk_size,
+            )
+            del bx,bw
+            def full_with_l(l_matrix, k):
+                coefficient = np.linalg.solve(
+                    r + 1j*omega*l_matrix,-1j*omega*k,
+                )
+                z = 1j*omega*k.T @ coefficient
+                z = 0.5*(z+z.T)
+                j = np.einsum(
+                    "nmc,m->nc",probe_modes,coefficient @ currents,
+                    optimize=True,
+                )
+                q = np.sum(np.abs(j)**2,axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                power = 0.5*float(np.real(np.vdot(
+                    coefficient @ currents,r @ (coefficient @ currents)
+                )))
+                return z,q,power
+            z_b,q_b,p_b = full_with_l(magnetic_b,k_curl)
+            z_a,q_a,p_a = full_with_l(teacher.inductance,k_curl)
+            dL = relative(magnetic_b,teacher.inductance)
+            dZ = relative(z_b,z_a)
+            dq = relative(q_b,q_a)
+            dP = abs(p_b-p_a)/max(abs(p_a),1e-30)
+            print(
+                f"  ball_159_B_vs_A: dL={dL:.6g}, "
+                f"dZ={dZ:.6g}, dq={dq:.6g}, "
+                f"max_probe_dq={np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10)):.6g}, "
+                f"dP={dP:.6g}, "
+                f"min_L_B_eig={np.linalg.eigvalsh(magnetic_b)[0]:.6g}, "
+                f"gate={'PASS' if dL<=0.05 and dZ<=0.002 and dq<=0.005 and dP<=0.002 else 'FAIL'}",
+                flush=True,
+            )
+            za_dual,qa_dual,pa_dual = full_with_l(
+                teacher.inductance,k_dual,
+            )
+            zb_dual,qb_dual,pb_dual = full_with_l(
+                magnetic_b,k_dual,
+            )
+            print(
+                "  ball_159_dual_B_vs_A: "
+                f"dZ={relative(zb_dual,za_dual):.6g}, "
+                f"dq={relative(qb_dual,qa_dual):.6g}, "
+                f"dP={abs(pb_dual-pa_dual)/max(abs(pa_dual),1e-30):.6g}",
+                flush=True,
+            )
+            print("  magnetic_note: compare with 95→159 mode change; "
+                  "both must be small before declaring a spatial teacher.",
+                  flush=True)
+
         initial_basis = build_sea_basis(
             scene, modes_per_face=2, face_refinement=2,
             refine_thin_faces_only=True, sources=source,
@@ -1945,6 +2015,7 @@ def main(
     basis_green_gaussian: bool = False,
     basis_green_ball: bool = False,
     basis_ball: bool = False,
+    basis_ball_check_l: bool = False,
     basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
@@ -1952,7 +2023,7 @@ def main(
             or basis_radial or basis_kparts or basis_wallpanels
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
-            or basis_ball or basis_domain_ball):
+            or basis_ball or basis_domain_ball or basis_ball_check_l):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -1963,7 +2034,8 @@ def main(
             green_cross=basis_green_cross,
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
-            ball_reference=basis_ball or basis_domain_ball,
+            ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l,
+            ball_l_check=basis_ball_check_l,
         )
     scene = build_demo_scene()
     base = dict(
@@ -2114,11 +2186,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball", "--basis-ball", "--basis-domain-ball")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball", "--basis-ball", "--basis-ball-check-l", "--basis-domain-ball")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-ball|--basis-domain-ball|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-ball|--basis-ball-check-l|--basis-domain-ball|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -2137,5 +2209,6 @@ if __name__ == "__main__":
         basis_green_gaussian="--basis-green-gaussian" in sys.argv[1:],
         basis_green_ball="--basis-green-ball" in sys.argv[1:],
         basis_ball="--basis-ball" in sys.argv[1:],
+        basis_ball_check_l="--basis-ball-check-l" in sys.argv[1:],
         basis_domain_ball="--basis-domain-ball" in sys.argv[1:],
     )
