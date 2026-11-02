@@ -23,7 +23,8 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 ```bash
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
-python run.py --mode bfzi-convergence --full  # additional high-cost refinements
+python run.py --mode bfzi-convergence --full   # additional high-cost refinements
+python run.py --mode bfzi-convergence --basis  # single Green assembly: nested 15/27/59 modes
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
 
@@ -73,6 +74,17 @@ wire radii per panel. This is still not a fully resolved GMD or
 cross-section magnetic solution.
 The seawater heat source integrates to the seawater port channel **under the
 same cubature**; Green-kernel assembly remains memory-bounded in blocks.
+
+The **ordinary** convergence probes now use the same 27-mode/two-tangent
+trial space as the BFZI demo; the one-tangent 15-mode space is reported only
+as a deliberately lower-order comparison. The dedicated `--basis` probe
+uses one enriched reference assembly and exact Galerkin restriction to
+compare 15, 27 and 59 nested curl modes with *identical* volume cubature,
+softening, outer boundary and source quadrature. The extra 32 modes are
+localized to the broad faces of thin insulating pads; this avoids the
+much larger all-face 123-mode hierarchy unless explicitly requested.
+Such restriction is not surrogate training, and convergence of the 59-mode
+answer has not yet been demonstrated.
 
 The two complete paths use `BFZIAssembly.wire_radius` and the existing
 `sdfmpneo_vnext.scene.ConductorMaterial` temperature law to compute
