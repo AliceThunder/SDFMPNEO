@@ -1310,3 +1310,39 @@ def test_streamed_wall_operators_match_full_r_and_both_k_forms():
     )
     for combined, a, b in zip((r, k, kd), sphere, slab):
         np.testing.assert_allclose(combined, a + b, rtol=5e-9, atol=1e-14)
+
+
+def test_independent_green_matrices_match_response_and_identify_self_sampling():
+    """Operator-only Green L agrees with full solver at identical nodes."""
+    scene = scene_pair()
+    source = build_bfzi_source(scene, 200_000., order=3)
+    baseline = solve_seawater_reference(
+        source, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            inductance_quadrature=(3, 4, 6, 2, 3),
+            field_softening=0.025,
+        ),
+    )
+    x, w = scene.box_shell_quadrature(
+        3, 4, 6, shell_normal_order=2, shell_tangential_order=3,
+        outer_taper_width=baseline.basis.outer_taper_width,
+    )
+    matrices, diagonal = baseline.reintegrate_green_matrices(
+        x, w, softenings=(0.025, 0.018),
+        kernel_chunk_size=29,
+    )
+    resolved = baseline.reintegrate_green_responses(
+        x, w, softenings=(0.025, 0.018),
+        kernel_chunk_size=17,
+    )
+    for matrix, answer in zip(matrices, resolved):
+        np.testing.assert_allclose(
+            matrix, answer.inductance, rtol=1e-10, atol=1e-13,
+        )
+        assert np.min(np.linalg.eigvalsh(matrix)) >= -1e-12
+        assert np.isfinite(matrix).all()
+    assert diagonal > 0
+    assert diagonal / (0.025 * np.trace(matrices[0])) > 0
+    with pytest.raises(ValueError, match="kernel_chunk_size"):
+        baseline.reintegrate_green_matrices(x, w, kernel_chunk_size=0)
