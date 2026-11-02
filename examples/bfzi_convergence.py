@@ -12,6 +12,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
     python run.py --mode bfzi-convergence --basis-geometry # geometry-guided mu panels
+    python run.py --mode bfzi-convergence --basis-radial   # fixed-geometry radial panels and two K forms
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -46,7 +47,8 @@ def _indices_in_enriched_basis(enriched, subset):
 
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
-                      angular: bool = False, geometry: bool = False):
+                      angular: bool = False, geometry: bool = False,
+                      radial: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -85,6 +87,101 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         [0.0, 0.13, 0.0],
         [0.0, 0.0, 0.22],
     ])
+    if radial:
+        # Do not build the redundant nested basis and global angular
+        # studies: this experiment holds those axes fixed and isolates
+        # spherical radial panels, including the two weak forms of K.
+        print("\nRadial geometry/cap convergence (fixed 63 modes and Green L):",
+              flush=True)
+        print(
+            "All rows use geometry polar Gauss order 8, azimuth sectors "
+            "16 with 2-point Gauss, fixed box-wall (4,5), and "
+            "the same R-whitened physical Galerkin space.",
+            flush=True,
+        )
+        experiments = (
+            ("geo8_original", False, None, 6),
+            ("geo8_radial_cuts", True, None, 6),
+            ("radial_cap_012", True, 0.12, 6),
+            ("radial_cap_006", True, 0.06, 6),
+            ("radial_cap_003", True, 0.03, 6),
+            ("radial_cap_006_g7", True, 0.06, 7),
+        )
+
+        def relative(a, b):
+            return float(np.linalg.norm(a-b) / max(np.linalg.norm(b), 1e-30))
+
+        previous = None
+        for label, use_cuts, width, order in experiments:
+            cfg = replace(
+                config, radial_order=order, radial_geometry_cuts=use_cuts,
+                max_radial_panel_width=width, polar_geometry_order=8,
+                azimuthal_panel_order=2,
+            )
+            x, weights = scene.box_shell_quadrature(
+                cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=cfg.shell_width_factor,
+                shell_normal_order=cfg.shell_normal_order,
+                shell_tangential_order=cfg.shell_tangential_order,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=cfg.max_radial_panel_width,
+                radial_geometry_cuts=cfg.radial_geometry_cuts,
+                polar_geometry_order=cfg.polar_geometry_order,
+                azimuthal_panel_order=cfg.azimuthal_panel_order,
+            )
+            curl = teacher.reintegrate_local_response(x, weights)
+            dual_k = teacher.reintegrate_source_coupling(
+                x, weights, coupling_form="curl_dual",
+            )
+            dual = curl.resolve_with_coupling(dual_k)
+            curl_q = curl.seawater_loss(probes, currents)
+            dual_q = dual.seawater_loss(probes, currents)
+            curl_p = curl.port_seawater_power(currents)
+            dual_p = dual.port_seawater_power(currents)
+            print(
+                f"{label:>22}: nodes={len(x):6d}, "
+                f"P_curl={curl_p:.8g} W, P_dual={dual_p:.8g} W",
+                flush=True,
+            )
+            print(
+                f"{'weak_form_gap':>22}: "
+                f"dK={relative(dual.coupling,curl.coupling):.6g}, "
+                f"dZ={relative(dual.impedance_seawater,curl.impedance_seawater):.6g}, "
+                f"dq={relative(dual_q,curl_q):.6g}, "
+                f"max_probe_dq={np.max(np.abs(dual_q-curl_q)/np.maximum(np.abs(curl_q),1e-30)):.6g}, "
+                f"dP={abs(dual_p-curl_p)/max(abs(curl_p),1e-30):.6g}",
+                flush=True,
+            )
+            if previous is not None:
+                old_label, old_curl, old_dual = previous
+                for form, response, old in (
+                    ("curl_K", curl, old_curl),
+                    ("dual_K", dual, old_dual),
+                ):
+                    q = response.seawater_loss(probes, currents)
+                    p = response.port_seawater_power(currents)
+                    old_q = old.seawater_loss(probes, currents)
+                    old_p = old.port_seawater_power(currents)
+                    print(
+                        f"{form:>22}: from={old_label}, "
+                        f"dR={relative(response.resistance,old.resistance):.6g}, "
+                        f"dK={relative(response.coupling,old.coupling):.6g}, "
+                        f"dZ={relative(response.impedance_seawater,old.impedance_seawater):.6g}, "
+                        f"dq={relative(q,old_q):.6g}, "
+                        f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-30)):.6g}, "
+                        f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
+                        flush=True,
+                    )
+            previous = label, curl, dual
+        print(
+            "The cap 0.03 vs 0.06 comparison refines physical "
+            "radial panels. The g7 row changes only the Gauss degree "
+            "at cap 0.06. Green L and the 63-mode trial space stay fixed.",
+            flush=True,
+        )
+        return
+
     # A posteriori residual in the same enriched physical Galerkin space.
     # This distinguishes a genuine missing trial direction from merely
     # redistributing energy among coarse basis functions.
@@ -692,13 +789,14 @@ def main(
     basis_verify: bool = False, basis_green: bool = False,
     basis_domain: bool = False, basis_local: bool = False,
     basis_angular: bool = False, basis_geometry: bool = False,
+    basis_radial: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
-            or basis_local or basis_angular or basis_geometry):
+            or basis_local or basis_angular or basis_geometry or basis_radial):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
-            geometry=basis_geometry,
+            geometry=basis_geometry, radial=basis_radial,
         )
     scene = build_demo_scene()
     base = dict(
@@ -849,11 +947,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -864,4 +962,5 @@ if __name__ == "__main__":
         basis_local="--basis-local" in sys.argv[1:],
         basis_angular="--basis-angular" in sys.argv[1:],
         basis_geometry="--basis-geometry" in sys.argv[1:],
+        basis_radial="--basis-radial" in sys.argv[1:],
     )
