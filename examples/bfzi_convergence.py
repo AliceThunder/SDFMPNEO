@@ -12,6 +12,8 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-green-cross # noncoincident magnetic cross-rule test
     python run.py --mode bfzi-convergence --basis-green-gaussian # PSD Gaussian volume Green test
     python run.py --mode bfzi-convergence --basis-green-ball # exact uniform-ball Coulomb volume kernel
+    python run.py --mode bfzi-convergence --basis-ball # nested modes with uniform-ball L
+    python run.py --mode bfzi-convergence --basis-domain-ball # outer-domain sequence with uniform-ball L
     python run.py --mode bfzi-convergence --basis-domain  # independent outer domain
     python run.py --mode bfzi-convergence --basis-local   # same-L R/K ladder
     python run.py --mode bfzi-convergence --basis-angular # composite sphere angle tests
@@ -59,7 +61,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_refined: bool = False,
                       green_cross: bool = False,
                       green_gaussian: bool = False,
-                      green_ball: bool = False):
+                      green_ball: bool = False,
+                      ball_reference: bool = False):
     """Four nested Galerkin spaces with shared fine R/K and coarse L cubatures.
 
     Target the broad faces and actual closed-port field curls before escalating to
@@ -76,6 +79,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         radial_order=6, polar_order=10, azimuthal_order=16,
         shell_normal_order=4, shell_tangential_order=5,
         field_softening=0.025,
+        inductance_kernel="uniform_ball" if ball_reference else "plummer",
         inductance_quadrature=(5, 8, 12, 3, 4),
         max_radial_panel_width=0.18 if domain else None,
     )
@@ -87,6 +91,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     )
     print("Building enriched 63-mode Galerkin operator...",
           f"raw modes={enriched.size}, "
+          f"kernel={config.inductance_kernel}; "
           "fine R/K/Joule cubature; independently coarse L", flush=True)
     teacher = solve_seawater_reference(
         source, basis=enriched, config=config,
@@ -1494,14 +1499,18 @@ def main(
     basis_green_cross: bool = False,
     basis_green_gaussian: bool = False,
     basis_green_ball: bool = False,
+    basis_ball: bool = False,
+    basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
             or basis_radial or basis_kparts or basis_wallpanels
             or basis_green_refined or basis_green_cross
-            or basis_green_gaussian or basis_green_ball):
+            or basis_green_gaussian or basis_green_ball
+            or basis_ball or basis_domain_ball):
         return basis_convergence(
-            verify=basis_verify, green=basis_green, domain=basis_domain,
+            verify=basis_verify, green=basis_green,
+            domain=basis_domain or basis_domain_ball,
             local=basis_local, angular=basis_angular,
             geometry=basis_geometry, radial=basis_radial,
             kparts=basis_kparts, wallpanels=basis_wallpanels,
@@ -1509,6 +1518,7 @@ def main(
             green_cross=basis_green_cross,
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
+            ball_reference=basis_ball or basis_domain_ball,
         )
     scene = build_demo_scene()
     base = dict(
@@ -1659,11 +1669,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels", "--basis-green-refined", "--basis-green-cross", "--basis-green-gaussian", "--basis-green-ball", "--basis-ball", "--basis-domain-ball")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green-refined|--basis-green-cross|--basis-green-gaussian|--basis-green-ball|--basis-ball|--basis-domain-ball|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -1681,4 +1691,6 @@ if __name__ == "__main__":
         basis_green_cross="--basis-green-cross" in sys.argv[1:],
         basis_green_gaussian="--basis-green-gaussian" in sys.argv[1:],
         basis_green_ball="--basis-green-ball" in sys.argv[1:],
+        basis_ball="--basis-ball" in sys.argv[1:],
+        basis_domain_ball="--basis-domain-ball" in sys.argv[1:],
     )
