@@ -1031,3 +1031,35 @@ def test_independent_coupling_resolution_keeps_heat_energy_identity():
     assert modified.port_seawater_power(currents) > 0
     with pytest.raises(ValueError, match="refined coupling"):
         original.resolve_with_coupling(np.ones((3, 3)))
+
+
+
+def test_package_aligned_polar_panels_are_positive_and_refinable():
+    """Project real enclosure corners into fixed positive Gauss mu panels."""
+    scene = scene_pair()
+    kw = dict(
+        radial_order=3, polar_order=6, azimuthal_order=8,
+        shell_normal_order=2, shell_tangential_order=3,
+    )
+    low_x, low_w = scene.box_shell_quadrature(
+        **kw, polar_geometry_order=2,
+    )
+    high_x, high_w = scene.box_shell_quadrature(
+        **kw, polar_geometry_order=4,
+    )
+    assert len(high_x) > len(low_x)
+    for x, w in ((low_x, low_w), (high_x, high_w)):
+        assert scene.in_seawater(x).all()
+        assert np.isfinite(w).all()
+        assert np.all(w > 0)
+        assert np.isfinite(w.sum())
+    with pytest.raises(ValueError, match="polar_geometry_order"):
+        scene.box_shell_quadrature(**kw, polar_geometry_order=1)
+    with pytest.raises(ValueError, match="polar_geometry_order"):
+        scene.box_shell_quadrature(
+            **kw, polar_geometry_order=3, polar_panel_count=2,
+        )
+    with pytest.raises(ValueError, match="polar_geometry_order"):
+        SeaMQSConfig(polar_geometry_order=1)
+    with pytest.raises(ValueError, match="polar_geometry_order"):
+        SeaMQSConfig(polar_geometry_order=3, polar_panel_count=2)
