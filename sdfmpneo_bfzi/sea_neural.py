@@ -1,9 +1,10 @@
 """Optional PyTorch BFZI geometry-to-response network.
 
 Experimental supervised learner for *provisional* raw-mode current responses
-and passive reciprocal two-port seawater Z. It does NOT calculate an MQS
-reference, certify data, guarantee local Joule/port loss closure, or represent
-unseen material types beyond the feature schema.
+and passive reciprocal two-port seawater Z. At inference, the optional
+positive local-R rule enforces discrete port/spatial Joule-power closure.
+It does NOT calculate an MQS reference, certify local quadrature accuracy,
+enforce the full electromagnetic weak form, or cover unseen material types.
 """
 from __future__ import annotations
 
