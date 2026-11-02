@@ -61,7 +61,8 @@ class SeaMQSConfig:
             raise ValueError("shell Gauss orders must be integers >= 2")
         if (not isinstance(self.polar_panel_count, int)
                 or isinstance(self.polar_panel_count, bool)
-                or not 1 <= self.polar_panel_count <= self.polar_order):
+                or not 1 <= self.polar_panel_count <= self.polar_order
+                or self.polar_order % self.polar_panel_count != 0):
             raise ValueError("polar_panel_count must be in [1, polar_order]")
         if (not isinstance(self.azimuthal_panel_order, int)
                 or isinstance(self.azimuthal_panel_order, bool)
