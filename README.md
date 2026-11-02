@@ -1187,7 +1187,9 @@ and `torch.load(..., weights_only=True)`.
 `bfzi-infer` loads this model and queries the
 deterministic scene's geometry-dependent analytic curl
 basis and port source; **no sea R/L/K Green assembly**
-is performed online. It produces seawater impedance,
+is performed online. It produces passive reciprocal
+seawater impedance, complete air+seawater+finite-conductor
+port Z, the two conductor loss channels, total port power,
 arbitrary-location complex J and positive Joule heat,
 plus an extrapolation diagnostic based on observed
 training-feature ranges. However, `J` and `Z`
