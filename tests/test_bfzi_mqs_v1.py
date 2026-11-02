@@ -550,3 +550,29 @@ def test_box_shell_reference_retains_two_port_energy_identity():
     assert np.all(reference.integration_weights > 0)
     assert scene.in_seawater(reference.integration_points).all()
     assert np.isfinite(reference.impedance_seawater).all()
+
+
+def test_box_shell_tangential_gauss_and_global_modes_keep_geometry_consistent():
+    from dataclasses import replace
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene = scene_pair()
+    # Changing the artificial outer sphere must not secretly rescale the
+    # underlying global Gaussian trial functions.
+    larger = replace(scene, outer_radius=0.70)
+    global_a = build_sea_basis(scene).modes[-3:]
+    global_b = build_sea_basis(larger).modes[-3:]
+    np.testing.assert_allclose(
+        [mode.width for mode in global_a],
+        [mode.width for mode in global_b],
+        rtol=0, atol=1e-14,
+    )
+    for order in (4, 5):
+        points, weights = scene.box_shell_quadrature(
+            5, 8, 12, shell_normal_order=3,
+            shell_tangential_order=order,
+        )
+        assert scene.in_seawater(points).all()
+        assert np.all(weights > 0.0)
+    # The composite tangential rule now splits every physical edge and
+    # face center, rather than moving a few global Gauss nodes past them.
