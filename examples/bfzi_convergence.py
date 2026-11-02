@@ -103,6 +103,149 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         [0.0, 0.13, 0.0],
         [0.0, 0.0, 0.22],
     ])
+    if ball_reference and not domain and not (
+        radial or green_refined or green_cross
+        or green_gaussian or green_ball
+    ):
+        # Genuine nested-mode comparison with the already established
+        # independently refined near-wall R/K, NOT the preliminary coarse
+        # teacher R/K. The uniform-ball L was assembled on magnetic A
+        # by the teacher and is held fixed for every nested Galerkin solve.
+        print("\nRefined R/K + uniform-ball L: nested modal study",
+              flush=True)
+        r_cfg = replace(
+            config, polar_geometry_order=8, azimuthal_panel_order=2,
+            radial_geometry_cuts=True, max_radial_panel_width=0.06,
+            shell_normal_order=5, shell_tangential_order=6,
+            shell_tangential_max_panel_width=0.0167,
+        )
+        rx, rw = scene.box_shell_quadrature(
+            r_cfg.radial_order, r_cfg.polar_order, r_cfg.azimuthal_order,
+            wall_scale=enriched.wall_scale,
+            shell_width_factor=r_cfg.shell_width_factor,
+            shell_normal_order=r_cfg.shell_normal_order,
+            shell_tangential_order=r_cfg.shell_tangential_order,
+            shell_tangential_max_panel_width=r_cfg.shell_tangential_max_panel_width,
+            outer_taper_width=enriched.outer_taper_width,
+            max_radial_panel_width=r_cfg.max_radial_panel_width,
+            radial_geometry_cuts=r_cfg.radial_geometry_cuts,
+            polar_geometry_order=r_cfg.polar_geometry_order,
+            azimuthal_panel_order=r_cfg.azimuthal_panel_order,
+        )
+        r, k_curl, k_dual = teacher.reintegrate_local_operators(rx, rw)
+        print(
+            f"  refined R/K nodes={len(rx)}; L=A uniform_ball; "
+            "no 461648-node heat tensor retained",
+            flush=True,
+        )
+        del rx, rw
+        probe_modes = np.einsum(
+            "nmc,mr->nrc", enriched.evaluate(probes),
+            teacher.transform, optimize=True,
+        )
+        omega = source.omega
+        m = len(r)
+        full_system = r + 1j * omega * teacher.inductance
+        full_forcing = 1j * omega * k_curl
+        forcing_norm = np.sqrt(max(float(np.real(np.vdot(
+            full_forcing, np.linalg.solve(r, full_forcing),
+        ))), 1e-60))
+
+        def relative(a, b):
+            return float(np.linalg.norm(a-b) /
+                         max(np.linalg.norm(b), 1e-30))
+
+        def solve_nested(coords, coupling):
+            reduced_r = coords.T @ r @ coords
+            reduced_l = coords.T @ teacher.inductance @ coords
+            reduced_k = coords.T @ coupling
+            amplitudes = np.linalg.solve(
+                reduced_r + 1j * omega * reduced_l,
+                -1j * omega * reduced_k,
+            )
+            z = 1j * omega * reduced_k.T @ amplitudes
+            z = 0.5 * (z + z.T)
+            driven = amplitudes @ currents
+            j = np.einsum(
+                "nmc,m->nc", probe_modes,
+                coords @ driven, optimize=True,
+            )
+            q = np.sum(np.abs(j)**2, axis=1) / (
+                2 * scene.seawater.conductivity
+            )
+            p = 0.5 * float(np.real(
+                np.vdot(driven, reduced_r @ driven)
+            ))
+            residual = full_system @ (coords @ amplitudes) + full_forcing
+            relative_residual = np.sqrt(max(float(np.real(np.vdot(
+                residual, np.linalg.solve(r, residual),
+            ))), 0.0)) / forcing_norm
+            return z, q, p, relative_residual
+
+        previous = None
+        for label, modes_per_face, face_refinement, thin in (
+            ("one_tangent", 1, 1, False),
+            ("two_tangents", 2, 1, False),
+            ("thin_face_patches", 2, 2, True),
+            ("guided_port_curls", 2, 2, True),
+        ):
+            if label == "guided_port_curls":
+                coords = np.eye(m)
+            else:
+                subset = build_sea_basis(
+                    scene, modes_per_face=modes_per_face,
+                    face_refinement=face_refinement,
+                    refine_thin_faces_only=thin,
+                )
+                indices = _indices_in_enriched_basis(enriched, subset)
+                selection = np.eye(enriched.size)[:, indices]
+                coords, _, _, _ = np.linalg.lstsq(
+                    teacher.transform, selection, rcond=None,
+                )
+                if not np.allclose(
+                    teacher.transform @ coords, selection,
+                    rtol=1e-8, atol=1e-9,
+                ):
+                    raise RuntimeError(
+                        "nested current modes were discarded by R whitening"
+                    )
+            z, q, p, residual = solve_nested(coords, k_curl)
+            print(
+                f"  {label}: modes={coords.shape[1]}, "
+                f"relative_Rinv_residual={residual:.6g}, "
+                f"sea_power={p:.8g} W, Zsw={z.tolist()}",
+                flush=True,
+            )
+            print(f"  {label}_probes: q={q.tolist()}", flush=True)
+            if previous is not None:
+                old_label, old_z, old_q, old_p = previous
+                print(
+                    f"  {old_label}_to_{label}: "
+                    f"dZ={relative(z,old_z):.6g}, "
+                    f"dq={relative(q,old_q):.6g}, "
+                    f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
+                    flush=True,
+                )
+            previous = label, z, q, p
+
+        final = solve_nested(np.eye(m), k_curl)
+        dual = solve_nested(np.eye(m), k_dual)
+        print(
+            "  full_weak_form: "
+            f"dK={relative(k_dual,k_curl):.6g}, "
+            f"dZ={relative(dual[0],final[0]):.6g}, "
+            f"dq={relative(dual[1],final[1]):.6g}, "
+            f"dP={abs(dual[2]-final[2])/max(abs(final[2]),1e-30):.6g}",
+            flush=True,
+        )
+        print(
+            "Modal screen uses refined streamed R/K and A uniform-ball L. "
+            "It measures missing trial directions within the 63-mode "
+            "parent, not a continuum accuracy certificate.",
+            flush=True,
+        )
+        return
+
     if radial:
         # Do not build the redundant nested basis and global angular
         # studies: this experiment holds those axes fixed and isolates
