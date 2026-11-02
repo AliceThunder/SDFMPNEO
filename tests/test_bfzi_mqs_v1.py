@@ -5,7 +5,7 @@ import pytest
 from sdfmpneo_bfzi import (
     BFZICoil, RigidPose, InsulatingBox, BFZIAssembly, Seawater,
     BfziScene, SeaMQSConfig, build_bfzi_source, solve_seawater_reference,
-    compress_seawater_response,
+    compress_seawater_response, BFZICurrentControlledEnvelope,
 )
 from sdfmpneo_bfzi.vnext_bridge import BFZIVNextGeometry
 
