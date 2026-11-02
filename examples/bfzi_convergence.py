@@ -420,6 +420,39 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         full_z, full_q, full_power, _ = report_sparse(
             np.arange(enriched.size)
         )
+
+        # A two-port phasor solution has at most four REAL response
+        # directions regardless of the size of the physical trial space.
+        # The parent MUST be converged separately; this only proves that
+        # the already computed frequency/geometry response is compressible.
+        from sdfmpneo_bfzi.sea_snapshot import BFZISnapshotROM
+        print("\nStructure-preserving fixed-scene response compression:",
+              flush=True)
+        for rank in (2, 4):
+            snapshot = BFZISnapshotROM.from_operators(
+                source, enriched, teacher.transform,
+                r, teacher.inductance, k_curl,
+                rank=rank, inductance_kernel="uniform_ball",
+            )
+            reduced_z = snapshot.impedance_seawater
+            reduced_q = snapshot.seawater_loss(probes, currents)
+            reduced_power = snapshot.port_seawater_power(currents)
+            modal_power = snapshot.modal_seawater_power(currents)
+            print(
+                f"  snapshot_rank_{rank}: "
+                f"dZ={relative(reduced_z,full_z):.6g}, "
+                f"dq={relative(reduced_q,full_q):.6g}, "
+                f"max_probe_dq={np.max(np.abs(reduced_q-full_q)/np.maximum(full_q,1e-10)):.6g}, "
+                f"dP={abs(reduced_power-full_power)/max(abs(full_power),1e-30):.6g}, "
+                f"power_closure={abs(reduced_power-modal_power)/max(abs(modal_power),1e-30):.6g}",
+                flush=True,
+            )
+        print(
+            "  snapshot_note: rank-4 exactness is ONLY relative to "
+            "the unconverged 159-mode parent at this scene/frequency. "
+            "It does not validate a cross-geometry model or local heat truth.",
+            flush=True,
+        )
         initial_basis = build_sea_basis(
             scene, modes_per_face=2, face_refinement=2,
             refine_thin_faces_only=True, sources=source,
