@@ -639,9 +639,11 @@ def solve_seawater_reference(
             shell_tangential_order=tangential,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
-            polar_panel_count=cfg.polar_panel_count,
-            azimuthal_panel_order=cfg.azimuthal_panel_order,
-            polar_geometry_order=cfg.polar_geometry_order,
+            # The independent five-order L rule must NOT implicitly
+            # inherit the potentially much finer geometry-angle R/K
+            # rule. A 60k-node L rule costs billions of Green pairs.
+            # This intentionally uses the default global mu / midpoint
+            # azimuth for the separately specified L integration.
         )
         magnetic_modes = np.einsum(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
