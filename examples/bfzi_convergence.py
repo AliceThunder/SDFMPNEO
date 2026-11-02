@@ -194,7 +194,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False):
         # Comparisons for different softenings use IDENTICAL Green nodes.
         # These moderate-size sweeps are cheaper than --basis-verify, but
         # still scale quadratically in the Green node count.
-        print("\\nIndependent Green L cubature / softening re-solves (fixed R/K):")
+        print("\nIndependent Green L cubature / softening re-solves (fixed R/K):")
         green_trials = (
             ("green_wall", (5, 8, 12, 3, 5), (config.field_softening,)),
             ("green_outer", (5, 10, 16, 3, 4), (config.field_softening,)),
