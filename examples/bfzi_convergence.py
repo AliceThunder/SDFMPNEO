@@ -14,6 +14,7 @@ basis, softening, and outer domain *independently*.
     python run.py --mode bfzi-convergence --basis-geometry # geometry-guided mu panels
     python run.py --mode bfzi-convergence --basis-radial   # fixed-geometry radial panels and two K forms
     python run.py --mode bfzi-convergence --basis-kparts   # sphere versus near-wall weak-form K gap
+    python run.py --mode bfzi-convergence --basis-wallpanels # composite physical face Gauss
     python run.py --mode bfzi-convergence --basis-verify  # expensive fine Green L
 """
 from __future__ import annotations
@@ -323,11 +324,19 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                         flush=True,
                     )
             previous = label, full, response_dual
-        print(
-            "Only the final mu10 row changes angular order. "
-            "All earlier rows change the near-wall Gauss rule alone.",
-            flush=True,
-        )
+        if wallpanels:
+            print(
+                "Half-face physical tangential caps: unpanelled, "
+                "0.05 m, 0.025 m (same wall orders 5/6), "
+                "then 5/7 on identical 0.025 m panels.",
+                flush=True,
+            )
+        else:
+            print(
+                "Only the final mu10 row changes angular order. "
+                "All earlier rows change the near-wall Gauss rule alone.",
+                flush=True,
+            )
         return
 
     # A posteriori residual in the same enriched physical Galerkin space.
@@ -938,15 +947,16 @@ def main(
     basis_domain: bool = False, basis_local: bool = False,
     basis_angular: bool = False, basis_geometry: bool = False,
     basis_radial: bool = False, basis_kparts: bool = False,
+    basis_wallpanels: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
-            or basis_radial or basis_kparts):
+            or basis_radial or basis_kparts or basis_wallpanels):
         return basis_convergence(
             verify=basis_verify, green=basis_green, domain=basis_domain,
             local=basis_local, angular=basis_angular,
             geometry=basis_geometry, radial=basis_radial,
-            kparts=basis_kparts,
+            kparts=basis_kparts, wallpanels=basis_wallpanels,
         )
     scene = build_demo_scene()
     base = dict(
@@ -1097,11 +1107,11 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (
         len(sys.argv) == 2
-        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts")
+        and sys.argv[1] not in ("--full", "--basis", "--basis-verify", "--basis-green", "--basis-domain", "--basis-local", "--basis-angular", "--basis-geometry", "--basis-radial", "--basis-kparts", "--basis-wallpanels")
     ):
         raise SystemExit(
             "usage: python -m examples.bfzi_convergence "
-            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-green|--basis-domain|--basis-verify]"
+            "[--full|--basis|--basis-local|--basis-angular|--basis-geometry|--basis-radial|--basis-kparts|--basis-wallpanels|--basis-green|--basis-domain|--basis-verify]"
         )
     main(
         full="--full" in sys.argv[1:],
@@ -1114,4 +1124,5 @@ if __name__ == "__main__":
         basis_geometry="--basis-geometry" in sys.argv[1:],
         basis_radial="--basis-radial" in sys.argv[1:],
         basis_kparts="--basis-kparts" in sys.argv[1:],
+        basis_wallpanels="--basis-wallpanels" in sys.argv[1:],
     )
