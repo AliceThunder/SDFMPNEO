@@ -8,12 +8,15 @@
 
     python run.py --mode train     # 无界面训练（历史 vNext）
     python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
+    python run.py --mode bfzi --green-ball # 完整均匀球Green电磁热示例
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
     python run.py --mode bfzi-convergence --basis-green-cross   # 双套独立磁节点交叉Green对照
     python run.py --mode bfzi-convergence --basis-green-gaussian # 高斯Green A/B和宽度敏感性诊断
     python run.py --mode bfzi-convergence --basis-green-ball # 均匀实体球解析Coulomb Green对照
+    python run.py --mode bfzi-convergence --basis-ball # 均匀球Green嵌套模态检查
+    python run.py --mode bfzi-convergence --basis-domain-ball # 均匀球Green外域检查
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
@@ -331,7 +334,7 @@ def main(argv=None):
             mode = args[index + 1]
             if mode == "bfzi":
                 from examples.bfzi_mqs_demo import main as bfzi_main
-                bfzi_main()
+                bfzi_main(ball_reference="--green-ball" in args)
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
@@ -344,6 +347,8 @@ def main(argv=None):
                     basis_green_cross="--basis-green-cross" in args,
                     basis_green_gaussian="--basis-green-gaussian" in args,
                     basis_green_ball="--basis-green-ball" in args,
+                    basis_ball="--basis-ball" in args,
+                    basis_domain_ball="--basis-domain-ball" in args,
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
