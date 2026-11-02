@@ -519,6 +519,11 @@ def solve_seawater_reference(
     basis = basis or build_sea_basis(scene)
     if basis.scene is not scene:
         raise ValueError("seawater current basis must belong to the source scene")
+    # Resolve the outer cutoff on a dedicated radial integration interval.
+    taper_width = (
+        basis.outer_taper_width
+        if basis.outer_envelope == "boundary_layer" else None
+    )
     if cfg.quadrature_scheme == "box_shell":
         points, weights = scene.box_shell_quadrature(
             cfg.radial_order, cfg.polar_order, cfg.azimuthal_order,
@@ -526,6 +531,7 @@ def solve_seawater_reference(
             shell_width_factor=cfg.shell_width_factor,
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
+            outer_taper_width=taper_width,
         )
     else:
         points, weights = scene.quadrature(
@@ -568,6 +574,7 @@ def solve_seawater_reference(
             shell_width_factor=cfg.shell_width_factor,
             shell_normal_order=normal,
             shell_tangential_order=tangential,
+            outer_taper_width=taper_width,
         )
         magnetic_modes = np.einsum(
             "nmc,mr->nrc", basis.evaluate(magnetic_points), transform,
