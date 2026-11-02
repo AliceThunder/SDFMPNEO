@@ -712,3 +712,17 @@ def test_source_guided_curl_modes_match_complete_port_vector_potential():
         guided.evaluate(probe[None, :])[0, -2], curl,
         rtol=2e-5, atol=1e-7,
     )
+
+    response = solve_seawater_reference(
+        source, basis=guided, config=SeaMQSConfig(
+            radial_order=3, polar_order=4, azimuthal_order=6,
+            shell_normal_order=2, shell_tangential_order=3,
+            field_softening=0.025,
+        ),
+    )
+    currents = np.array([1.0 + 0.2j, -0.4 + 0.3j])
+    assert np.isfinite(response.impedance_seawater).all()
+    np.testing.assert_allclose(
+        response.port_seawater_power(currents),
+        response.quadrature_power(currents), rtol=2e-8, atol=1e-12,
+    )
