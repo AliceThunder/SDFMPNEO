@@ -310,8 +310,9 @@ class BfziScene:
             raise ValueError("outer sphere Gauss orders must be >= 2")
         if (not isinstance(polar_panel_count, int)
                 or isinstance(polar_panel_count, bool)
-                or not 1 <= polar_panel_count <= polar_order):
-            raise ValueError("polar_panel_count must be in [1, polar_order]")
+                or not 1 <= polar_panel_count <= polar_order
+                or polar_order % polar_panel_count != 0):
+            raise ValueError("polar_panel_count must divide polar_order")
         if (not isinstance(azimuthal_panel_order, int)
                 or isinstance(azimuthal_panel_order, bool)
                 or azimuthal_panel_order < 1):
@@ -389,16 +390,12 @@ class BfziScene:
             # latitude panel interfaces without moving *every* polar
             # sample when total order changes. Preserve exactly
             # polar_order positive Gauss points over [-1,1].
-            counts = [
-                polar_order // polar_panel_count
-                + (i < polar_order % polar_panel_count)
-                for i in range(polar_panel_count)
-            ]
+            count_per_panel = polar_order // polar_panel_count
             boundaries = np.linspace(-1.0, 1.0, polar_panel_count + 1)
             angular_mu = []
             angular_mw = []
-            for index, count in enumerate(counts):
-                gauss_mu, gauss_mw = np.polynomial.legendre.leggauss(count)
+            gauss_mu, gauss_mw = np.polynomial.legendre.leggauss(count_per_panel)
+            for index in range(polar_panel_count):
                 a, b = boundaries[index:index + 2]
                 angular_mu.append(0.5 * (b - a) * gauss_mu
                                   + 0.5 * (b + a))
