@@ -349,16 +349,18 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             return
 
         if green_gaussian:
-            # Positive definite finite-volume cloud kernel replaces the
-            # artificially concentrated magnetic self points. Both rules
-            # retain the same 63-mode trial space and already fine R/K.
+            # A/B tests cubature at fixed physical width prescription.
+            # A width-factor ladder tests that prescription separately,
+            # sharing each pair-distance block rather than increasing
+            # cubature orders or discarding the positive self energy.
             print("\nFinite-volume Gaussian Green L (PSD candidate):",
                   flush=True)
             rules = (
                 ("A", (5, 8, 12, 3, 4)),
                 ("B", (5, 9, 14, 4, 5)),
             )
-            previous = {}
+            width_ladder = (0.75, 1.0, 1.25)
+            reference = {}
             for label, orders in rules:
                 radial, polar, azimuthal, normal, tangent = orders
                 gx, gw = scene.box_shell_quadrature(
@@ -369,56 +371,101 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     shell_tangential_order=tangent,
                     outer_taper_width=enriched.outer_taper_width,
                 )
-                blurs = (0.0, 0.012) if label == "A" else (0.0,)
+                factors = width_ladder if label == "A" else (1.0,)
                 print(
                     f"  assembling Gaussian rule {label}: {len(gx)} "
-                    f"nodes, additional Gaussian blur(s)={blurs} m",
+                    f"nodes, width factors={factors}, extra blur=0 m",
                     flush=True,
                 )
                 matrices, diagonals = (
                     teacher.reintegrate_gaussian_green_matrices(
-                        gx, gw, extra_blurs=blurs,
+                        gx, gw, extra_blurs=(0.0,),
+                        width_factor=factors,
                         kernel_chunk_size=config.kernel_chunk_size,
                     )
                 )
-                for blur, l, diag in zip(blurs, matrices, diagonals):
+                del gx, gw
+                for factor, l, diag in zip(factors, matrices, diagonals):
                     curl = metrics(l, k_current)
                     dual = metrics(l, k_dual)
-                    eig = np.linalg.eigvalsh(l)
+                    eigen = float(np.linalg.eigvalsh(l)[0])
+                    reference[(label, factor)] = (l, curl, dual, eigen)
                     print(
-                        f"{'gaussian_L':>20}: rule={label}, a={blur:.4g} m, "
+                        f"{'gaussian_L':>20}: rule={label}, "
+                        f"width_factor={factor:.4g}, a=0 m, "
                         f"trace={np.trace(l):.8g} H, "
                         f"diag_share={diag/max(np.trace(l),1e-30):.6g}, "
-                        f"min_L_eig={eig[0]:.8g} H, "
+                        f"min_L_eig={eigen:.8g} H, "
                         f"vs_old_dL={relative(l,base_l):.6g}, "
                         f"vs_old_dZ={relative(curl[0],original_base[0][0]):.6g}, "
                         f"vs_old_dq={relative(curl[1],original_base[0][1]):.6g}, "
                         f"vs_old_dP={abs(curl[2]-original_base[0][2])/max(abs(original_base[0][2]),1e-30):.6g}",
                         flush=True,
                     )
-                    if blur == 0.0:
-                        previous[label] = (l, curl, dual)
-                del gx, gw
 
-            l_a, curl_a, dual_a = previous["A"]
-            l_b, curl_b, dual_b = previous["B"]
-            print(
-                f"{'gaussian_B_vs_A':>20}: "
-                f"dL={relative(l_b,l_a):.6g}, "
-                f"dZ={relative(curl_b[0],curl_a[0]):.6g}, "
-                f"dq={relative(curl_b[1],curl_a[1]):.6g}, "
-                f"dP={abs(curl_b[2]-curl_a[2])/max(abs(curl_a[2]),1e-30):.6g}, "
-                f"dual_dZ={relative(dual_b[0],dual_a[0]):.6g}, "
-                f"dual_dq={relative(dual_b[1],dual_a[1]):.6g}, "
-                f"dual_dP={abs(dual_b[2]-dual_a[2])/max(abs(dual_a[2]),1e-30):.6g}",
-                flush=True,
+            # Fixed gates: 5% magnetic L, 0.2% port Z,
+            # 0.5% local heat, 0.2% integrated dissipative power.
+            thresholds = (0.05, 0.002, 0.005, 0.002)
+
+            def compare_gaussian(candidate, target):
+                lc, cc, dc, _ = candidate
+                lr, cr, dr, _ = target
+                differences = (
+                    relative(lc, lr),
+                    relative(cc[0], cr[0]),
+                    relative(cc[1], cr[1]),
+                    abs(cc[2]-cr[2])/max(abs(cr[2]),1e-30),
+                )
+                dual_differences = (
+                    differences[0], relative(dc[0], dr[0]),
+                    relative(dc[1], dr[1]),
+                    abs(dc[2]-dr[2])/max(abs(dr[2]),1e-30),
+                )
+                passed = all(
+                    value <= bound
+                    for values in (differences, dual_differences)
+                    for value, bound in zip(values, thresholds)
+                )
+                return differences, dual_differences, passed
+
+            def report(label, candidate, target):
+                values, dual_values, passed = compare_gaussian(
+                    candidate, target,
+                )
+                print(
+                    f"{label:>20}: "
+                    f"dL={values[0]:.6g}, dZ={values[1]:.6g}, "
+                    f"dq={values[2]:.6g}, dP={values[3]:.6g}, "
+                    f"dual_dZ={dual_values[1]:.6g}, "
+                    f"dual_dq={dual_values[2]:.6g}, "
+                    f"dual_dP={dual_values[3]:.6g}, "
+                    f"gate={'PASS' if passed else 'FAIL'}",
+                    flush=True,
+                )
+                return passed
+
+            a = reference[("A", 1.0)]
+            cross_passed = report(
+                "gaussian_B_vs_A", reference[("B", 1.0)], a,
+            )
+            widths_passed = True
+            for factor in width_ladder:
+                if factor == 1.0:
+                    continue
+                passed = report(
+                    f"width_{factor:g}_vs_A1", reference[("A", factor)], a,
+                )
+                widths_passed = widths_passed and passed
+            psd_passed = all(
+                result[3] >= -1e-12 for result in reference.values()
             )
             print(
-                "No extra blur means the analytic Coulomb interaction "
-                "of finite Gaussian volume clouds, NOT pointwise "
-                "a=0 Plummer. This candidate is PSD but needs "
-                "cross-rule and width-factor convergence before "
-                "promotion to the production reference.",
+                "  gaussian_screen: "
+                f"cross_rule={'PASS' if cross_passed else 'FAIL'}, "
+                f"width_sensitivity={'PASS' if widths_passed else 'FAIL'}, "
+                f"PSD={'PASS' if psd_passed else 'FAIL'}; "
+                "promotion=HOLD pending mode/domain/electrothermal checks "
+                "and independent continuum corroboration.",
                 flush=True,
             )
             return
