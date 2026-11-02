@@ -386,6 +386,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         print("\nGeometry-aligned polar R/K ladder (fixed Green L):")
         previous = None
         stable_geometry = None
+        stable_geometry_dual = None
         for label, mu_order, phi_order in (
             ("geometry_mu3", 3, 2),
             ("geometry_mu4", 4, 2),
@@ -456,12 +457,27 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
             if label == "geometry_mu8":
                 stable_geometry = full
+                # Compare curl-mode C coupling with its boundary-dual
+                # primitive-mode B coupling on exactly identical nodes.
+                k_dual = teacher.reintegrate_source_coupling(
+                    points, weights, coupling_form="curl_dual",
+                )
+                stable_geometry_dual = full.resolve_with_coupling(k_dual)
+                dual_q = stable_geometry_dual.seawater_loss(probes, currents)
+                print(
+                    f"{'geometry_mu8_dual_K':>20}: "
+                    f"vs_curl_dK={relative(k_dual, full.coupling):.6g}, "
+                    f"vs_curl_dZ={relative(stable_geometry_dual.impedance_seawater, z):.6g}, "
+                    f"vs_curl_dq={relative(dual_q, q):.6g}, "
+                    f"vs_curl_dP={abs(stable_geometry_dual.port_seawater_power(currents)-power)/max(abs(power),1e-30):.6g}",
+                    flush=True,
+                )
             previous = label, full
 
         # With the converged-in-angle geometry_mu8 rule as the *new*
         # comparator, independently perturb radial and wall cubature.
         # These are not successive refinements of the same axis.
-        if stable_geometry is None:
+        if stable_geometry is None or stable_geometry_dual is None:
             raise RuntimeError("missing geometry_mu8 comparator")
         print("\nHeld-out radial / near-wall R/K at geometry_mu8 (same L):")
         geometry_q = stable_geometry.seawater_loss(probes, currents)
@@ -491,6 +507,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 azimuthal_panel_order=cfg.azimuthal_panel_order,
             )
             modified = teacher.reintegrate_local_response(points, weights)
+            k_dual = teacher.reintegrate_source_coupling(
+                points, weights, coupling_form="curl_dual",
+            )
+            dual = modified.resolve_with_coupling(k_dual)
             now_q = modified.seawater_loss(probes, currents)
             now_p = modified.port_seawater_power(currents)
             dz = np.linalg.norm(
@@ -515,6 +535,21 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"max_probe_dq={max_dq:.6g}, "
                 f"vs_geom8_dP={abs(now_p - geometry_p) / max(abs(geometry_p), 1e-30):.6g}, "
                 f"P={now_p:.8g} W",
+                flush=True,
+            )
+            dual_q = dual.seawater_loss(probes, currents)
+            base_dual_q = stable_geometry_dual.seawater_loss(
+                probes, currents,
+            )
+            dual_p = dual.port_seawater_power(currents)
+            base_dual_p = stable_geometry_dual.port_seawater_power(currents)
+            print(
+                f"{'curl_dual_K':>20}: "
+                f"vs_geom8_dZ={np.linalg.norm(dual.impedance_seawater-stable_geometry_dual.impedance_seawater)/max(np.linalg.norm(stable_geometry_dual.impedance_seawater),1e-30):.6g}, "
+                f"vs_geom8_dq={np.linalg.norm(dual_q-base_dual_q)/max(np.linalg.norm(base_dual_q),1e-30):.6g}, "
+                f"max_probe_dq={np.max(np.abs(dual_q-base_dual_q)/np.maximum(np.abs(base_dual_q),1e-30)):.6g}, "
+                f"vs_geom8_dP={abs(dual_p-base_dual_p)/max(abs(base_dual_p),1e-30):.6g}, "
+                f"P={dual_p:.8g} W",
                 flush=True,
             )
 
