@@ -100,6 +100,34 @@ def test_same_state_seawater_impedance_and_joule_heat():
     assert reduced.seawater_power(i) >= 0
 
 
+def test_optional_face_guided_basis_nests_complete_port_curls():
+    """Physics-informed face modes extend, not replace, the older trial space."""
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene=scene_pair()
+    source=build_bfzi_source(scene,200_000.,order=3)
+    old=build_sea_basis(scene,sources=source,include_source_guided=True)
+    enriched=build_sea_basis(
+        scene,sources=source,include_source_guided=True,
+        include_source_face_guided=True,
+    )
+    assert enriched.size==old.size+8
+    for previous,new in zip(old.modes,enriched.modes[:old.size]):
+        np.testing.assert_array_equal(previous.center,new.center)
+        np.testing.assert_array_equal(previous.direction,new.direction)
+        assert previous.width==new.width
+        assert previous.source_port==new.source_port
+    assert {mode.source_port for mode in enriched.modes[-8:]}=={0,1}
+    points=np.array([[0.0,0.0,0.0],[0.13,0.0,-0.13]])
+    assert scene.in_seawater(points).all()
+    modes=enriched.evaluate(points)
+    assert modes.shape==(2,enriched.size,3)
+    assert np.isfinite(modes).all()
+    np.testing.assert_allclose(
+        modes[:,:old.size,:],old.evaluate(points),rtol=1e-12,atol=1e-12,
+    )
+
+
 def test_reject_overlapping_packages():
     scene = scene_pair()
     with pytest.raises(ValueError, match="overlap"):
