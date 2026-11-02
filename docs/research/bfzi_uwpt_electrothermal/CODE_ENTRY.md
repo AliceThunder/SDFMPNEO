@@ -487,3 +487,21 @@ response = solve_seawater_reference(source, basis=basis)
 - 现有 `SeaMQSConfig.shell_tangential_max_panel_width` 以及普通求解器仍然支持几何高精度近壁面板；未改变默认值。未使用 GitHub Actions（禁止）。
 
 执行 `git pull`、两个 BFZI 测试、`python run.py --mode bfzi-convergence --basis-wallpanels`。待宽度和法向误差均稳定后，才推进 Green L/外域/模态，再将该物理参考用于训练高精度电磁热 NN。
+
+
+### 2026-11-02：实测 45 passed；近壁 R/K 已足够稳定，开始独立 Green L/软化核验证
+
+用户 `f99e73f` 本地实际运行 **45 passed in 16.88 s**。`--basis-wallpanels` 已用低内存分块积分路径将球域 204224 节点只计算一次、之后仅重新积分局部封装 slab；同一个63模态/Green L/源/物理空间。观测：
+- `cap025→cap020`：`dR=0.000298606,dK=0.0000614537,dZ=0.0000386816,dq=0.00177179,dP=0.0000438287`。
+- `cap020→cap0167`：`dR=0.00167318,dK=0.000446957,dZ=0.00139931,dq=0.00174193,dP=0.00112537`；仍存在分片宽度敏感性（约0.14%端口及0.174%探针）。
+- 固定 `cap0167`，单独提升切向6→7：`dR=0.0000227502,dK=0.00000572275,dZ=0.00000298506,dq=0.0000938626,dP=0.00000341888`。
+- 固定 `cap0167`，单独提升法向5→6：`dR=0.000151424,dK=0.00000681733,dZ=0.000185796,dq=0.0000839262,dP=0.000148863`。
+- 两种 K 弱式同规则的端口差 `weak_dZ≈0.00084`，比早期3.77%明显减少。
+据此保留 `cap0167,normal5,tangent6,geometry_mu8,radial_width0.06m` 为**下一阶段的固定比较基线**，不是最终物理误差认证。
+
+本轮代码（未执行本地测试）：
+- `SeawaterResponse.reintegrate_green_matrices(points,weights,softenings=...,kernel_chunk_size=...)` 新增不保留场/热节点的独立磁感应矩阵积分接口，直接返回各 `a` 对应的同一试探空间对称 Green L 矩阵，以及用于衡量同点离散自相互作用的 `D=mu0/(4π)Σw_i²||J_i||²`，输出 `D/(a trace L_a)` 是**离散积分 alias 警告，不是连续自磁能占比**。同一组 Green 节点对多个软化长度复用两两距离；既有 `reintegrate_green_responses` 改为复用此接口，不改变其返回语义。
+- `python run.py --mode bfzi-convergence --basis-green-refined` 新命令先在 ~46万个高精度 R/K 积分节点以分块模式建立 63模态的 `R,K_{J·C},K_{F·B}`，不留全量 `integration_modes`；然后固定这三矩阵与模态空间，按三个独立测试改变 Green：原始 `(5,8,12,3,4)` 相同节点 `a=0.025,0.018,0.012 m`；单独近壁 Green 规则 `(5,8,12,3,5)` at `a=0.025`；单独球域角向 Green 规则 `(5,10,16,3,4)` at `a=0.025`。每项重新解 `(R+iωL)C=-iωK`，分别对两种 K 计算响应的 `dZ/dq/dP` 与 `dL`、自项别名比例。Green积分仍为 `O(N_G²)`，必须优先关注真实求积收敛/软化误差，不要错将正则化长度趋0当作已收敛。
+- 保持此前 `--basis-green` 旧命令可用，但新命令不会让未精化旧 teacher R/K 决定 Green 试验的物理结果。针对新 Green 矩阵接口增加一项小型测试，对比原有完整 `reintegrate_green_responses`、对称正定和有效输入校验；不搞多余的审计代码，也未调用 GitHub Actions。
+
+建议：先 `git pull`，运行既有两个 BFZI 文件的 `pytest -q`，然后运行 `python run.py --mode bfzi-convergence --basis-green-refined`。该磁双重积分可能明显慢于单体 R/K 分块求积；脚本会在每个 Green 列表开始前报告所需节点数。分析当前真实 Green L 响应敏感度以后，再决定是否改近场积分核或进入外域/模态完备性检查，不继续漫无目的加高所有 Gauss 阶数。
