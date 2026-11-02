@@ -16,6 +16,9 @@ import numpy as np
 from .sea_snapshot import BFZISnapshotROM, _scene_signature
 from .source import BFZISources
 from .sea_basis import SeaCurrentBasis
+from .geometry import BFZICoil, RigidPose
+from .scene import BFZIAssembly, BfziScene, InsulatingBox, Seawater
+from sdfmpneo_vnext.scene import ConductorMaterial
 
 
 SCHEMA_VERSION = 1
@@ -64,6 +67,77 @@ def geometry_features(sources: BFZISources, *, max_return_waypoints: int = 8):
     if not np.isfinite(features).all():
         raise ValueError("BFZI features must be finite")
     return features
+
+
+def scene_from_geometry_features(features, *, max_return_waypoints: int = 8):
+    """Reconstruct the exact BFZI physical scene and frequency from a label.
+
+    Enables a genuinely geometry-held-out field/Joule test against the
+    *stored* current-mode label without re-solving the sea MQS reference.
+    Complete line-source quadrature order is not stored in schema v1:
+    callers must use the order originally used for label generation.
+    """
+    if (not isinstance(max_return_waypoints, int)
+            or isinstance(max_return_waypoints, bool)
+            or max_return_waypoints < 2):
+        raise ValueError("max_return_waypoints must be an integer >=2")
+    vector=np.asarray(features,dtype=float)
+    expected=6+2*(27+3*max_return_waypoints)
+    if (vector.shape!=(expected,) or not np.isfinite(vector).all()):
+        raise ValueError(
+            f"geometry feature vector must contain {expected} finite scalars"
+        )
+    offset=0
+
+    def take(count):
+        nonlocal offset
+        part=vector[offset:offset+count]
+        offset+=count
+        return part
+
+    def integer(value,name):
+        if not np.isfinite(value) or abs(value-round(value))>1e-8:
+            raise ValueError(f"{name} must be integer-valued")
+        return int(round(value))
+
+    frequency,conductivity,outer_radius=take(3)
+    center=tuple(take(3))
+    assemblies=[]
+    for port in range(2):
+        turns,outer_half,corner,pitch,alpha,winding=take(6)
+        coil=BFZICoil(
+            integer(turns,"turns"),outer_half,corner,pitch,
+            alpha,integer(winding,"winding"),
+        )
+        pose_center=take(3)
+        rotation=take(9).reshape(3,3)
+        half_extents=tuple(take(3))
+        wire_radius,metal_sigma,mu_r,reference_t,alpha_r=take(5)
+        count=integer(take(1)[0],"return waypoint count")
+        if not 2<=count<=max_return_waypoints:
+            raise ValueError("invalid number of return waypoints")
+        waypoint_block=take(3*max_return_waypoints).reshape(
+            max_return_waypoints,3,
+        )
+        if np.any(waypoint_block[count:]!=0):
+            raise ValueError("nonzero padding in stored return route")
+        assemblies.append(BFZIAssembly(
+            coil=coil,
+            pose=RigidPose(rotation,pose_center),
+            enclosure=InsulatingBox(half_extents),
+            return_waypoints=tuple(map(tuple,waypoint_block[:count])),
+            wire_radius=float(wire_radius),
+            material=ConductorMaterial(
+                float(metal_sigma),float(mu_r),
+                float(alpha_r),float(reference_t),
+            ),
+        ))
+    if offset!=expected:
+        raise RuntimeError("feature schema was not fully decoded")
+    return BfziScene(
+        assemblies[0],assemblies[1],Seawater(conductivity),
+        outer_radius,center,
+    ),float(frequency)
 
 
 @dataclass(frozen=True)
