@@ -11,7 +11,6 @@ import numpy as np
 from scipy.linalg import eigh, solve
 
 from .sea_reference import SeawaterResponse
-from .sea_basis import SeaCurrentBasis
 
 
 def compress_seawater_response(
