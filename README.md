@@ -105,10 +105,15 @@ nonlocal `L` is still required.
 
 The `--basis` run then checks the 63-mode result on **two
 independent finer cubatures**: one refining the near-wall normal/tangential
-rules, another refining the outer-sphere radial/angular rules. It reports relative
-differences in the resistance matrix `R`, source coupling `K`, and held-out
-spatial Joule heat integral, without reassembling the expensive nonlocal Green
-kernel `L`. The optional `--basis-verify` solves the same fine 63-mode
+rules, another refining the outer-sphere radial/angular rules. In addition
+to changes in `R`, `K`, and the **frozen-current** Joule integral,
+`SeawaterResponse.reintegrate_local_response(points, weights)` now
+re-solves the two-port system using held-out `R/K` and **the original
+Green `L`**, without any new `O(Q²)` magnetic assembly. This reports
+`dZ`, fixed-probe `dq`, and `dP` for the changed local operators,
+which are more directly meaningful than a full matrix-norm difference.
+These are same-L numerical sensitivity results, not a new truth solution.
+The optional `--basis-verify` solves the same fine 63-mode
 `R/K` system again, this time recomputing `L` on that full finer
 cubature rather than reusing the coarse Green rule. It reports resulting
 `dZ`, `dq` and `dP` and can be **substantially** slower. Small holdout discrepancies
