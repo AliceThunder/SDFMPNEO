@@ -11,6 +11,10 @@ from .sea_basis import SeaCurrentBasis, build_sea_basis
 from .sea_reference import SeaMQSConfig, SeawaterResponse, solve_seawater_reference
 from .sea_rom import compress_seawater_response, restrict_seawater_response
 from .sea_snapshot import BFZISnapshotROM
+from .sea_dataset import (
+    BFZIResponseLabel, geometry_features,
+    save_response_labels, load_response_labels,
+)
 from .electrothermal import (
     BFZICurrentControlledEnvelope, BFZIVoltageControlledEnvelope,
 )
@@ -22,6 +26,8 @@ __all__ = [
     "SeaMQSConfig", "SeawaterResponse", "solve_seawater_reference",
     "compress_seawater_response", "restrict_seawater_response",
     "BFZISnapshotROM",
+    "BFZIResponseLabel", "geometry_features",
+    "save_response_labels", "load_response_labels",
     "BFZICurrentControlledEnvelope",
     "BFZIVoltageControlledEnvelope",
 ]
