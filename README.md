@@ -27,6 +27,7 @@ python run.py --mode bfzi-convergence --full   # additional high-cost refinement
 python run.py --mode bfzi-convergence --basis  # nested modes + independent R/K/Joule cubature
 python run.py --mode bfzi-convergence --basis-green   # fixed R/K, reassemble Green L / vary softening
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
+python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-verify  # optional costly refined R/L/K solve
 python -m pytest tests/test_bfzi_geometry_v1.py tests/test_bfzi_mqs_v1.py -q
 ```
@@ -150,6 +151,32 @@ on outer radii 0.52, 0.70, 0.85 and 1.05 m. Those are distinct
 boundary-conditioned trial spaces, so domain changes are not a
 fixed-matrix L-only test. Both switches can be costly; neither certifies
 the infinite-domain limit.
+
+**Local R/K convergence extension (2026-11-02).** A local test on
+the previous reference returned resolved port changes of **1.6657%**
+for near-wall refinement and **2.8853%** for outer sphere quadrature
+refinement, even though the same-L energy algebra closes. The new
+`--basis-local` option therefore independently varies outer *radial*
+order, outer *angular* orders, near-wall orders, then computes two
+combined progressively finer R/K solutions with the **same 63 physical
+trial modes, same Green L, and same source**. It reports port `dZ`,
+probe `dq`, and seawater power `dP` against the original and between
+successive combined stages. Only the combined stages form a
+monotonically refined quadrature hierarchy; the single-axis rows are
+diagnostic, not a sequential convergence curve. These refined responses
+are R/K-only references, not certified continuum solutions.
+
+**Outer radial physical resolution.** The spherical portion of
+`box_shell_quadrature` additionally supports
+`max_radial_panel_width` (meters): all physical radial intervals
+longer than the cap are split into positive Gauss panels, without
+altering the box shells. The `--basis-domain` sequence enables a
+0.18 m cap for both R/K and Green L at radii 0.52, 0.70, 0.85, 1.05
+and 1.30 m. This prevents the outermost Gauss interval from becoming
+arbitrarily broad at fixed order as the sphere grows. Enabling this
+cap changes the discretization, and its convergence must be checked
+independently: it does not by itself validate the infinite-seawater
+limit. Larger-radius Green L integration becomes costlier.
 
 The optional `--basis-verify` solves the same fine 63-mode
 `R/K` system again, this time recomputing `L` on that full finer
