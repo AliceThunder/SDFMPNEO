@@ -284,9 +284,12 @@ def solve_seawater_reference(
 ) -> SeawaterResponse:
     """Assemble physically linked R,L,K; solve both unit-port excitations.
 
-    A shared real basis and identical positive spatial cubature ensure exact
-    *discrete* equality between port seawater loss and integrated Joule heat.
-    Softened 3D Green kernels approximate self/near-field volume interactions.
+    A shared real basis with the same positive primary cubature for R, K
+    and spatial Joule heat ensures exact *discrete* port/volume loss closure.
+    The optional separate L cubature is only a controllable approximation
+    for the expensive nonlocal magnetic term; it does not redefine that
+    dissipative identity. Softened 3D Green kernels approximate self/near-field
+    volume interactions.
     They must be refined rather than mistaken for an exact continuum reference.
     """
     cfg = config or SeaMQSConfig()
