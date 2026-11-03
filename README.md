@@ -49,6 +49,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 1
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
+python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # full-parent energy bound and leave-one-mode physical influence
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -308,6 +309,48 @@ and power differences. It does not check all spatial integration
 directions. The existing `--basis-ball-check-l` instead changes
 only the nonlocal magnetic Green rule; it is independent from the
 new local-R/K option. These expensive studies may be run separately.
+
+**Measured normal R/K verification (2026-11-03; 57 tests passed):**
+The user's 207-mode fixed-basis face-normal A/B (Gauss 5→6) found
+`dR=9.821e-5`, `dK=1.23374e-5`,
+`dZ=0.000133542`, full-volume driven
+`dJ_volume=0.000201619`, both-port
+`dJ_ports_volume=0.000226541`, local
+`dq=0.000116462`, and peak single-probe
+relative difference `0.000716925`: the local-response
+gate **passed**. This supports stability of the chosen face-normal
+R/K cubature at 207 modes. It does *not* settle the independent
+magnetic L operator, other quadrature axes or continuum basis error.
+In contrast, **199→207** previously changed full-volume J by
+`0.0396445` and both-port J by `0.0387992`, and normal-profile
+hotspot heating by up to `0.0623939` relative to its peak. These
+are material changes in the trial space, not normal-Gauss noise.
+
+**Finite-parent error estimate and leave-one-mode diagnostic:**
+The nested and residual-driven greedy outputs now include
+`parent_dJ_energy_upper`, a coercivity-based upper bound on the
+**relative current R norm error against the fully solved, fixed
+finite-dimensional parent**. With `A=R+iωL`, `A u=-f` and
+residual `r=A u_trial+f`, the absolute R-energy error is bounded
+above by `sqrt(r^H R^{-1} r)`; the relative upper bound uses
+`||u_trial||_R - ||r||_{R^{-1}}` as a conservative lower bound
+for the unknown parent solution's R norm. `inf` means the bound
+is inconclusive. It is deliberately not advertised as a continuum
+a posteriori error certificate or a bound for numerical quadrature
+bias.
+
+Add `--basis-ball-ablate` (for example, together with
+`--basis-ball-aniso`) to rank existing physical modes by the
+result of **deleting one mode and re-solving all other Galerkin
+equations**. This uses inverse-column rank-one corrections, not
+207 separate Green matrix assemblies. Reports full-volume
+`dJ_volume`, both-port `dJ_ports_volume`, peak-scaled
+fixed-probe and 40-point normal-profile heat differences; top six
+modes are listed for current energy and normal heating separately.
+This is a diagnostic of which **included** modes matter.
+Collective/correlated mode contributions cannot be inferred from
+single-mode ablation; neither can the influence of as-yet missing
+physical directions.
 
 **Do not generate cross-geometry high-fidelity labels from the
 207-mode parent yet.**
