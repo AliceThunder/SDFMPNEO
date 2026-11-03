@@ -330,10 +330,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             z = 1j * omega * reduced_k.T @ amplitudes
             z = 0.5 * (z + z.T)
             driven = amplitudes @ currents
-            j = np.einsum(
-                "nmc,m->nc", probe_modes,
-                coords @ driven, optimize=True,
+            j_ports = np.einsum(
+                "nmc,mp->ncp",probe_modes,coords @ amplitudes,
+                optimize=True,
             )
+            j = np.einsum("ncp,p->nc",j_ports,currents,optimize=True)
             q = np.sum(np.abs(j)**2, axis=1) / (
                 2 * scene.seawater.conductivity
             )
@@ -344,7 +345,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             relative_residual = np.sqrt(max(float(np.real(np.vdot(
                 residual, np.linalg.solve(r, residual),
             ))), 0.0)) / forcing_norm
-            return z, q, p, relative_residual, j
+            return z, q, p, relative_residual, j, j_ports
 
         previous = None
         levels = [
@@ -385,7 +386,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 raise RuntimeError(
                     "nested current modes were discarded by R whitening"
                 )
-            z, q, p, residual, j = solve_nested(coords, k_curl)
+            z, q, p, residual, j, j_ports = solve_nested(coords, k_curl)
             print(
                 f"  {label}: modes={coords.shape[1]}, "
                 f"relative_Rinv_residual={residual:.6g}, "
@@ -394,11 +395,14 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             print(f"  {label}_probes: q={q.tolist()}", flush=True)
             if previous is not None:
-                old_label, old_z, old_q, old_p, old_j = previous
+                old_label, old_z, old_q, old_p, old_j, old_j_ports = previous
                 print(
                     f"  {old_label}_to_{label}: "
                     f"dZ={relative(z,old_z):.6g}, "
                     f"dJ={relative(j,old_j):.6g}, "
+                    f"dJ_ports={relative(j_ports,old_j_ports):.6g}, "
+                    f"dJ_port0={relative(j_ports[:,:,0],old_j_ports[:,:,0]):.6g}, "
+                    f"dJ_port1={relative(j_ports[:,:,1],old_j_ports[:,:,1]):.6g}, "
                     f"dq={relative(q,old_q):.6g}, "
                     f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-10)):.6g}, "
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
@@ -426,7 +430,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"peak_scaled_max_dq={np.max(delta)/peak:.6g}",
                     flush=True,
                 )
-            previous = label, z, q, p, j
+            previous = label, z, q, p, j, j_ports
 
         # Residual-driven sparse trial selection from the
         # strictly nested physical current family. This is an
@@ -533,9 +537,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
                 z = 1j*omega*k.T @ coefficient
                 z = 0.5*(z+z.T)
-                field = np.einsum(
-                    "nmc,m->nc",probe_modes,coefficient @ currents,
+                field_ports = np.einsum(
+                    "nmc,mp->ncp",probe_modes,coefficient,
                     optimize=True,
+                )
+                field = np.einsum(
+                    "ncp,p->nc",field_ports,currents,optimize=True,
                 )
                 q = np.sum(np.abs(field)**2,axis=1)/(
                     2*scene.seawater.conductivity
@@ -543,12 +550,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 power = 0.5*float(np.real(np.vdot(
                     coefficient @ currents,r @ (coefficient @ currents)
                 )))
-                return z,q,power,field,coefficient
+                return z,q,power,field,coefficient,field_ports
 
             # Only the magnetic cubature changes: same refined R,
             # curl-current K, whitened parent space and physical probes.
-            z_b,q_b,p_b,j_b,u_b = full_with_l(magnetic_b,k_curl)
-            z_a,q_a,p_a,j_a,u_a = full_with_l(
+            z_b,q_b,p_b,j_b,u_b,j_b_ports = full_with_l(magnetic_b,k_curl)
+            z_a,q_a,p_a,j_a,u_a,j_a_ports = full_with_l(
                 teacher.inductance,k_curl,
             )
             dL = relative(magnetic_b,teacher.inductance)
@@ -559,6 +566,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             dReZ = relative(z_b.real,z_a.real)
             dImZ = relative(z_b.imag,z_a.imag)
             dJ = relative(j_b,j_a)
+            dJ_ports=relative(j_b_ports,j_a_ports)
             dq = relative(q_b,q_a)
             dP = abs(p_b-p_a)/max(abs(p_a),1e-30)
             # Test the actual A solution in the *independently assembled*
@@ -572,7 +580,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             ))),0.0))/forcing_norm
             operator_pass=(dL<=0.05)
             response_pass=(
-                dZ<=0.002 and dJ<=0.01
+                dZ<=0.002 and dJ<=0.01 and dJ_ports<=0.01
                 and dq<=0.005 and dP<=0.002
                 and b_relative_residual<=0.01
                 and np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10))<=0.05
@@ -582,7 +590,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"  ball_{enriched.size}_B_vs_A: dL={dL:.6g}, "
                 f"dZ={dZ:.6g}, dReZ={dReZ:.6g}, "
                 f"dImZ={dImZ:.6g}, "
-                f"dJ={dJ:.6g}, dq={dq:.6g}, "
+                f"dJ={dJ:.6g}, dJ_ports={dJ_ports:.6g}, "
+                f"dJ_port0={relative(j_b_ports[:,:,0],j_a_ports[:,:,0]):.6g}, "
+                f"dJ_port1={relative(j_b_ports[:,:,1],j_a_ports[:,:,1]):.6g}, "
+                f"dq={dq:.6g}, "
                 f"max_probe_dq={np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10)):.6g}, "
                 f"dP={dP:.6g}, "
                 f"B_on_A_Rinv_residual={b_relative_residual:.6g}, "
@@ -592,10 +603,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"combined_gate={'PASS' if passed else 'FAIL'}",
                 flush=True,
             )
-            za_dual,qa_dual,pa_dual,ja_dual,_ = full_with_l(
+            za_dual,qa_dual,pa_dual,ja_dual,_,_ = full_with_l(
                 teacher.inductance,k_dual,
             )
-            zb_dual,qb_dual,pb_dual,jb_dual,_ = full_with_l(
+            zb_dual,qb_dual,pb_dual,jb_dual,_,_ = full_with_l(
                 magnetic_b,k_dual,
             )
             print(
