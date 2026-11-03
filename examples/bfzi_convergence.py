@@ -726,7 +726,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 azimuthal_panel_order=b_cfg.azimuthal_panel_order,
             )
             print(
-                f"\\nIndependent {enriched.size}-mode R/K face-normal cubature: "
+                f"\nIndependent {enriched.size}-mode R/K face-normal cubature: "
                 f"A_normal={r_cfg.shell_normal_order}, "
                 f"B_normal={b_cfg.shell_normal_order}, "
                 f"B_nodes={len(nx)}",flush=True,
