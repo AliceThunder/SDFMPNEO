@@ -63,6 +63,22 @@ def _indices_in_enriched_basis(enriched, subset):
     return np.asarray(indices, dtype=int)
 
 
+def _relative_dissipation_norm(resistance, current, reference):
+    """Full-volume weighted current error in a common Galerkin basis.
+
+    R_ij = integral_sea (J_i dot J_j)/sigma dV; unlike a handful of
+    point probes, sqrt(delta_u^H R delta_u / u_ref^H R u_ref)
+    compares the whole sampled seawater domain. Complex arrays may
+    contain either one driven field or both independent port fields.
+    """
+    delta=current-reference
+    numerator=float(np.real(np.vdot(delta,resistance @ delta)))
+    denominator=float(np.real(np.vdot(
+        reference,resistance @ reference,
+    )))
+    return float(np.sqrt(max(numerator,0.0)/max(denominator,1e-60)))
+
+
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
@@ -345,7 +361,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             relative_residual = np.sqrt(max(float(np.real(np.vdot(
                 residual, np.linalg.solve(r, residual),
             ))), 0.0)) / forcing_norm
-            return z, q, p, relative_residual, j, j_ports
+            return z, q, p, relative_residual, j, j_ports, coords @ amplitudes
 
         previous = None
         levels = [
@@ -386,7 +402,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 raise RuntimeError(
                     "nested current modes were discarded by R whitening"
                 )
-            z, q, p, residual, j, j_ports = solve_nested(coords, k_curl)
+            z, q, p, residual, j, j_ports, unit_modes = solve_nested(
+                coords,k_curl,
+            )
             print(
                 f"  {label}: modes={coords.shape[1]}, "
                 f"relative_Rinv_residual={residual:.6g}, "
@@ -395,12 +413,15 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             print(f"  {label}_probes: q={q.tolist()}", flush=True)
             if previous is not None:
-                old_label, old_z, old_q, old_p, old_j, old_j_ports = previous
+                (old_label, old_z, old_q, old_p, old_j,
+                 old_j_ports,old_unit_modes) = previous
                 print(
                     f"  {old_label}_to_{label}: "
                     f"dZ={relative(z,old_z):.6g}, "
                     f"dJ={relative(j,old_j):.6g}, "
                     f"dJ_ports={relative(j_ports,old_j_ports):.6g}, "
+                    f"dJ_volume={_relative_dissipation_norm(r,unit_modes @ currents,old_unit_modes @ currents):.6g}, "
+                    f"dJ_ports_volume={_relative_dissipation_norm(r,unit_modes,old_unit_modes):.6g}, "
                     f"dJ_port0={relative(j_ports[:,:,0],old_j_ports[:,:,0]):.6g}, "
                     f"dJ_port1={relative(j_ports[:,:,1],old_j_ports[:,:,1]):.6g}, "
                     f"dq={relative(q,old_q):.6g}, "
@@ -430,7 +451,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"peak_scaled_max_dq={np.max(delta)/peak:.6g}",
                     flush=True,
                 )
-            previous = label, z, q, p, j, j_ports
+            previous = label, z, q, p, j, j_ports, unit_modes
 
         # Residual-driven sparse trial selection from the
         # strictly nested physical current family. This is an
@@ -476,7 +497,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             power = 0.5*float(np.real(np.vdot(driven,rr @ driven)))
             return impedance, heat, power, coeff
-        full_z, full_q, full_power, _ = report_sparse(
+        full_z, full_q, full_power, full_coeff = report_sparse(
             np.arange(enriched.size)
         )
 
@@ -567,6 +588,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             dImZ = relative(z_b.imag,z_a.imag)
             dJ = relative(j_b,j_a)
             dJ_ports=relative(j_b_ports,j_a_ports)
+            dJ_volume=_relative_dissipation_norm(
+                r,u_b @ currents,u_a @ currents,
+            )
+            dJ_ports_volume=_relative_dissipation_norm(r,u_b,u_a)
             dq = relative(q_b,q_a)
             dP = abs(p_b-p_a)/max(abs(p_a),1e-30)
             # Test the actual A solution in the *independently assembled*
@@ -581,6 +606,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             operator_pass=(dL<=0.05)
             response_pass=(
                 dZ<=0.002 and dJ<=0.01 and dJ_ports<=0.01
+                and dJ_volume<=0.01 and dJ_ports_volume<=0.01
                 and dq<=0.005 and dP<=0.002
                 and b_relative_residual<=0.01
                 and np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10))<=0.05
@@ -591,6 +617,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"dZ={dZ:.6g}, dReZ={dReZ:.6g}, "
                 f"dImZ={dImZ:.6g}, "
                 f"dJ={dJ:.6g}, dJ_ports={dJ_ports:.6g}, "
+                f"dJ_volume={dJ_volume:.6g}, "
+                f"dJ_ports_volume={dJ_ports_volume:.6g}, "
                 f"dJ_port0={relative(j_b_ports[:,:,0],j_a_ports[:,:,0]):.6g}, "
                 f"dJ_port1={relative(j_b_ports[:,:,1],j_a_ports[:,:,1]):.6g}, "
                 f"dq={dq:.6g}, "
@@ -648,6 +676,14 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             dz = relative(z, full_z)
             dq = relative(q, full_q)
             dp = abs(power-full_power)/max(abs(full_power),1e-30)
+            sparse_coeff=np.zeros_like(full_coeff)
+            sparse_coeff[selected]=coeff
+            dj_volume=_relative_dissipation_norm(
+                raw_r,sparse_coeff @ currents,full_coeff @ currents,
+            )
+            dj_ports_volume=_relative_dissipation_norm(
+                raw_r,sparse_coeff,full_coeff,
+            )
             heat_change = np.abs(q-full_q)
             per_probe_rel = heat_change/np.maximum(full_q,1e-10)
             worst_probe = int(np.argmax(per_probe_rel))
@@ -689,6 +725,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             print(
                 f"  adaptive_{iteration:02d}: modes={len(selected)}, "
                 f"dZ={dz:.6g}, dq={dq:.6g}, "
+                f"dJ_volume={dj_volume:.6g}, "
+                f"dJ_ports_volume={dj_ports_volume:.6g}, "
                 f"max_probe_dq={max_dq:.6g}, "
                 f"hotspot_max_dq={hotspot_max_dq:.6g}, "
                 f"peak_scaled_max_dq={max_peak_scaled_dq:.6g}, "
