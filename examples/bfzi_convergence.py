@@ -379,6 +379,25 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
                     flush=True,
                 )
+            if label == "source_face_guided":
+                # Distinguish a large relative change in a cool location
+                # from a comparable change in a heating hotspot.
+                old_q = previous[2] if previous is not None else q
+                delta = np.abs(q-old_q)
+                relative_probe = delta/np.maximum(old_q,1e-10)
+                peak = max(float(np.max(old_q)),1e-30)
+                worst = int(np.argmax(relative_probe))
+                hot = old_q>=0.1*peak
+                print(
+                    f"  source_face_heat_detail: "
+                    f"worst_probe={worst}, "
+                    f"reference_q={old_q[worst]:.8g}, "
+                    f"enriched_q={q[worst]:.8g}, "
+                    f"worst_point={probes[worst].tolist()}, "
+                    f"hotspot_max_dq={np.max(relative_probe[hot]):.6g}, "
+                    f"peak_scaled_max_dq={np.max(delta)/peak:.6g}",
+                    flush=True,
+                )
             previous = label, z, q, p
 
         # Residual-driven sparse trial selection from the
@@ -572,75 +591,97 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         selected = list(_indices_in_enriched_basis(enriched, initial_basis))
         diag_r = np.maximum(np.diag(raw_r), 1e-30)
-        for iteration in range(0, 13):
+        iteration = 0
+        while True:
+            # Do not silently stop at the historical 159-mode iteration
+            # count: an enriched 167-mode parent needs one further batch.
+            # The loop is finite because each step adds independent modes
+            # and stops at either a match or exhaustion of the parent.
             z, q, power, coeff = report_sparse(selected)
-            sparse = np.zeros_like(raw_f)
-            sparse[selected] = coeff
-            residual = raw_a @ sparse + raw_f
-            # Each missing direction is R-orthogonalized against the
-            # already selected space via a diagonal Schur complement.
-            # This rejects near-duplicate Gaussian patches instead of
-            # letting tiny residual differences dominate their ranking.
-            cross = raw_r[:, selected]
-            schur = np.diag(raw_r) - np.einsum(
-                "ij,ji->i", cross,
-                np.linalg.solve(raw_r[np.ix_(selected,selected)], cross.T),
-                optimize=True,
-            )
-            independent = schur > 1e-10*diag_r
-            score = np.full(enriched.size, -np.inf)
-            score[independent] = (
-                np.linalg.norm(residual[independent], axis=1) /
-                np.sqrt(schur[independent])
-            )
-            score[selected] = -np.inf
             dz = relative(z, full_z)
             dq = relative(q, full_q)
             dp = abs(power-full_power)/max(abs(full_power),1e-30)
-            # Near-zero probe heat is not an informative relative metric;
-            # floor is for a comparison only, never a training loss.
-            max_dq = float(np.max(
-                np.abs(q-full_q)/np.maximum(full_q,1e-10)
-            ))
+            heat_change = np.abs(q-full_q)
+            per_probe_rel = heat_change/np.maximum(full_q,1e-10)
+            worst_probe = int(np.argmax(per_probe_rel))
+            max_dq = float(per_probe_rel[worst_probe])
+            peak_q = max(float(np.max(full_q)),1e-30)
+            max_peak_scaled_dq = float(np.max(heat_change)/peak_q)
+            hotspot = full_q >= 0.1*peak_q
+            hotspot_max_dq = float(np.max(per_probe_rel[hotspot]))
+            hotspot_match = (
+                dz<=0.002 and dq<=0.005 and dp<=0.002
+                and hotspot_max_dq<=0.05
+                and max_peak_scaled_dq<=0.01
+            )
+            # Full near-wall agreement remains a stricter, separate gate.
+            # A hotspot match is a diagnostic, never a certificate for
+            # cooler but potentially thermally sensitive locations.
+            sparse = np.zeros_like(raw_f)
+            sparse[selected] = coeff
+            residual = raw_a @ sparse + raw_f
+            if len(selected)==enriched.size:
+                score = np.full(enriched.size,-np.inf)
+            else:
+                # R-orthogonalize each candidate against selected modes.
+                # This suppresses near-duplicate Gaussian directions.
+                cross = raw_r[:, selected]
+                schur = np.diag(raw_r) - np.einsum(
+                    "ij,ji->i",cross,
+                    np.linalg.solve(
+                        raw_r[np.ix_(selected,selected)],cross.T,
+                    ),optimize=True,
+                )
+                independent = schur > 1e-10*diag_r
+                score = np.full(enriched.size,-np.inf)
+                score[independent] = (
+                    np.linalg.norm(residual[independent],axis=1)
+                    /np.sqrt(schur[independent])
+                )
+                score[selected] = -np.inf
             print(
                 f"  adaptive_{iteration:02d}: modes={len(selected)}, "
                 f"dZ={dz:.6g}, dq={dq:.6g}, "
                 f"max_probe_dq={max_dq:.6g}, "
+                f"hotspot_max_dq={hotspot_max_dq:.6g}, "
+                f"peak_scaled_max_dq={max_peak_scaled_dq:.6g}, "
+                f"worst_probe={worst_probe}, "
                 f"dP={dp:.6g}, "
-                f"max_residual_score={np.max(score):.6g}",
+                f"max_residual_score={np.max(score):.6g}, "
+                f"hotspot_match={hotspot_match}",
                 flush=True,
             )
-            if (dz <= 0.002 and dq <= 0.005 and dp <= 0.002
-                    and max_dq <= 0.05):
+            if (dz<=0.002 and dq<=0.005 and dp<=0.002
+                    and max_dq<=0.05):
                 status = (
-                    "SPARSE_MATCH" if len(selected) < enriched.size
+                    "SPARSE_MATCH" if len(selected)<enriched.size
                     else "FULL_PARENT_ONLY"
                 )
                 print(
                     f"  adaptive_screen: {status}; "
                     f"selected={len(selected)}/{enriched.size}, "
-                    f"matched {enriched.size}-mode port/probe/power including <=5% "
-                    "maximum local probe difference; "
+                    "matched all fixed heat probes to <=5% plus port "
+                    "and aggregate heat criteria relative to this parent; "
                     "NOT continuum-certified",
                     flush=True,
                 )
                 break
-            if len(selected) == enriched.size or not np.any(
-                np.isfinite(score)
-            ):
+            if len(selected)==enriched.size:
+                print("  adaptive_screen: FULL_PARENT_ONLY; "
+                      "all available directions selected, "
+                      "NOT continuum-certified",flush=True)
+                break
+            available = np.flatnonzero(np.isfinite(score))
+            if not len(available):
                 print("  adaptive_screen: no independent candidate "
                       "direction remains; NOT continuum-certified",
                       flush=True)
                 break
-            # Select the most violated missing *Galerkin equations*
-            # after projecting away selected-current correlations.
-            # Eight-at-a-time limits expensive modal re-solves.
-            available = np.flatnonzero(np.isfinite(score))
+            # Select the eight most violated remaining Galerkin equations,
+            # then re-solve. The final batch may contain fewer than eight.
             ranked = available[np.argsort(-score[available],kind="stable")]
             selected.extend(int(i) for i in ranked[:8])
-        else:
-            print("  adaptive_screen: iteration cap reached; "
-                  "not validated", flush=True)
+            iteration += 1
 
         final = solve_nested(np.eye(m), k_curl)
         dual = solve_nested(np.eye(m), k_dual)
