@@ -482,8 +482,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
 
         if ball_l_check:
-            # 63-mode magnetic A/B agreement cannot be promoted to
-            # 159 much narrower physical directions. This independently
+            # Smaller-space magnetic A/B agreement cannot be promoted to
+            # a larger physical trial space. This independently
             # resolves magnetic integration without changing the 461k-node
             # fine resistance, both port couplings, or physical probes.
             print(f"\nIndependent {enriched.size}-mode uniform-ball magnetic L B rule:",
@@ -518,7 +518,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 return z,q,power,field,coefficient
 
             # Only the magnetic cubature changes: same refined R,
-            # curl-current K, whitened 159-mode space and physical probes.
+            # curl-current K, whitened parent space and physical probes.
             z_b,q_b,p_b,j_b,u_b = full_with_l(magnetic_b,k_curl)
             z_a,q_a,p_a,j_a,u_a = full_with_l(
                 teacher.inductance,k_curl,
@@ -695,7 +695,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         )
         print(
             "Modal screen uses refined streamed R/K and A uniform-ball L. "
-            "It measures missing trial directions within the 159-mode "
+            f"It measures missing trial directions within the {enriched.size}-mode "
             "parent, not a continuum accuracy certificate.",
             flush=True,
         )
