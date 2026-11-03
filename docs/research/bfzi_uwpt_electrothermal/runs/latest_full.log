@@ -1,6 +1,6 @@
 pytest:
 ............................................................             [100%]
-60 passed in 37.98s
+60 passed in 42.59s
 
 Building enriched 229-mode Galerkin operator... raw modes=229, kernel=uniform_ball; fine R/K/Joule cubature; independently coarse L
 
@@ -38,16 +38,24 @@ Refined R/K + uniform-ball L: independent 63-to-95-to-229 modal holdout
   edge_lip_patches_to_anisotropic_face_curls: dZ=0.00149159, dJ=0.0303386, dJ_ports=0.0308608, dJ_volume=0.0396445, dJ_ports_volume=0.0387992, dJ_port0=0.0301732, dJ_port1=0.0315336, dq=0.030114, max_probe_dq=4.07843, dP=0.00157138
   anisotropic_face_curls_normal_sweep: dq=0.0447162, peak_scaled_max_dq=0.0623939, max_abs_point=[0.065, 0.0, -0.111625], reference_q=0.095612677, enriched_q=0.089300826
   anisotropic_face_curls_heat_detail: worst_probe=3, reference_q=8.1135734e-06, enriched_q=4.120425e-05, worst_point=[0.0, 0.0, 0.22], hotspot_max_dq=0.0660148, peak_scaled_max_dq=0.0559755
+  global_short_scale: modes=210, relative_Rinv_residual=0.220881, parent_dJ_energy_upper=0.293046, sea_power=0.0011707542 W, Zsw=[[(0.002176412069671866-7.016463481904176e-05j), (0.0013604921116344465-6.789448209790783e-05j)], [(0.0013604921116344465-6.789448209790783e-05j), (0.002181305025129133-7.03675824607763e-05j)]]
+  global_short_scale_probes: q=[4.6980572618431114e-05, 0.01298552039578293, 0.013368989641768367, 3.975510540580931e-05, 0.00021914787054171868, 0.15722121871853204, 0.17186015477047478, 0.0018817698663349991, 0.15625665535969355, 0.18417333556780785, 0.00015411786314549724, 0.0585593096606193, 0.06332123153432609, 0.0006649854193254222, 0.05064767780645475, 0.0586384881290027]
+  anisotropic_face_curls_to_global_short_scale: dZ=1.79013, dJ=0.441398, dJ_ports=0.57031, dJ_volume=0.892147, dJ_ports_volume=1.13071, dJ_port0=0.569769, dJ_port1=0.57085, dq=0.600084, max_probe_dq=1399.11, dP=0.795658
+  global_short_scale_normal_sweep: dq=0.839728, peak_scaled_max_dq=0.664375, max_abs_point=[0.065, 0.0, -0.111625], reference_q=0.089300826, enriched_q=0.15625666
+  global_short_scale_heat_detail: worst_probe=2, reference_q=9.548529e-06, enriched_q=0.01336899, worst_point=[0.0, 0.13, 0.0], hotspot_max_dq=0.749778, peak_scaled_max_dq=0.629631
+  global_scale_condition_global_short_scale: added=3, min_R_independent_fraction=0.177163, normalized_R_cond=156908
   global_multiscale: modes=213, relative_Rinv_residual=0.0056129, parent_dJ_energy_upper=0.00564875, sea_power=0.0012180167 W, Zsw=[[(0.002287478545063929-6.474335614081261e-05j), (0.001472056302700228-6.246770999990159e-05j)], [(0.001472056302700228-6.246770999990159e-05j), (0.0022933888506059654-6.493360552945493e-05j)]]
   global_multiscale_probes: q=[4.592694347076155e-05, 0.018857643648189877, 0.019318737513331737, 3.9866277323911354e-05, 0.00022053374435878947, 0.16198516227219192, 0.1768505283314173, 0.0018814022154689763, 0.16387132424848586, 0.19225548765441033, 0.0001584361216922791, 0.06220425496465717, 0.06708536151403019, 0.0006680033958329664, 0.053067519508072744, 0.06080337673397925]
-  anisotropic_face_curls_to_global_multiscale: dZ=1.95291, dJ=0.493369, dJ_ports=0.637522, dJ_volume=0.931925, dJ_ports_volume=1.18121, dJ_port0=0.63683, dJ_port1=0.638213, dq=0.668683, max_probe_dq=2022.22, dP=0.868147
-  global_multiscale_normal_sweep: dq=0.935068, peak_scaled_max_dq=0.739933, max_abs_point=[0.065, 0.0, -0.111625], reference_q=0.089300826, enriched_q=0.16387132
-  global_multiscale_heat_detail: worst_probe=2, reference_q=9.548529e-06, enriched_q=0.019318738, worst_point=[0.0, 0.13, 0.0], hotspot_max_dq=0.835048, peak_scaled_max_dq=0.701145
+  global_short_scale_to_global_multiscale: dZ=0.0614532, dJ=0.0439169, dJ_ports=0.05069, dJ_volume=0.201029, dJ_ports_volume=0.226387, dJ_port0=0.0506308, dJ_port1=0.0507489, dq=0.0469662, max_probe_dq=0.452205, dP=0.0403693
+  global_multiscale_normal_sweep: dq=0.0569884, peak_scaled_max_dq=0.0484328, max_abs_point=[0.065, 0.0, -0.111625], reference_q=0.15625666, enriched_q=0.16387132
+  global_multiscale_heat_detail: worst_probe=1, reference_q=0.01298552, enriched_q=0.018857644, worst_point=[0.13, 0.0, 0.0], hotspot_max_dq=0.0622437, peak_scaled_max_dq=0.0438834
+  global_scale_condition_global_multiscale: added=3, min_R_independent_fraction=0.117633, normalized_R_cond=157749
   corner_source_curls: modes=229, relative_Rinv_residual=2.411e-13, parent_dJ_energy_upper=2.41273e-13, sea_power=0.0012180773 W, Zsw=[[(0.002287561199438353-6.47435856589924e-05j), (0.0014720395399377484-6.246775825934881e-05j)], [(0.0014720395399377484-6.246775825934881e-05j), (0.002293450596037443-6.493349931009618e-05j)]]
   corner_source_curls_probes: q=[4.788048195095315e-05, 0.018860377473786497, 0.019321318798329136, 3.822151112847453e-05, 0.00020824221057274615, 0.16216473158289185, 0.17686248425729503, 0.0018719000001358606, 0.16336975762139186, 0.19198203441247197, 0.00014886521599797098, 0.06227210351877429, 0.06708956120252144, 0.0006735844054037126, 0.05305922879480984, 0.06073544350840078]
   global_multiscale_to_corner_source_curls: dZ=2.74777e-05, dJ=0.00486618, dJ_ports=0.00387194, dJ_volume=0.00706703, dJ_ports_volume=0.00561699, dJ_port0=0.00419446, dJ_port1=0.00352182, dq=0.0016402, max_probe_dq=0.0604086, dP=4.9808e-05
   corner_source_curls_normal_sweep: dq=0.00203641, peak_scaled_max_dq=0.00306073, max_abs_point=[0.065, 0.0, -0.111625], reference_q=0.16387132, enriched_q=0.16336976
   corner_source_curls_heat_detail: worst_probe=10, reference_q=0.00015843612, enriched_q=0.00014886522, worst_point=[0.0, 0.0, 0.111625], hotspot_max_dq=0.00306073, peak_scaled_max_dq=0.00260885
+  global_scale_condition_corner_source_curls: added=16, min_R_independent_fraction=0.293691, normalized_R_cond=166047
 
 Residual-driven selective enrichment from 63 modes:
 
@@ -55,6 +63,13 @@ Structure-preserving fixed-scene response compression:
   snapshot_rank_2: dZ=0.000586125, dq=0.0114374, max_probe_dq=0.0444183, dP=0.000394357, power_closure=1.77948e-16
   snapshot_rank_4: dZ=1.22216e-15, dq=1.4748e-13, max_probe_dq=8.45351e-12, dP=5.16254e-15, power_closure=1.78019e-16
   snapshot_note: rank-4 exactness is ONLY relative to the unconverged 229-mode parent at this scene/frequency. It does not validate a cross-geometry model or local heat truth.
+
+Independent 229-mode uniform-ball magnetic L B rule:
+  assembling B nodes=15154
+  ball_229_B_vs_A: dL=0.131987, dZ=0.000735625, dReZ=2.35217e-05, dImZ=0.0222468, dJ=0.000461274, dJ_ports=0.000480709, dJ_volume=0.00153044, dJ_ports_volume=0.00167289, dJ_port0=0.000495128, dJ_port1=0.000465924, dq=0.000577146, max_probe_dq=0.00225707, dP=1.69521e-05, B_on_A_Rinv_residual=0.00167176, min_L_B_eig=1.43433e-10, operator_gate=FAIL, response_gate=PASS, combined_gate=FAIL
+  ball_229_dual_B_vs_A: dZ=0.000734059, dJ=0.000461126, dq=0.000577213, dP=1.69227e-05
+  magnetic_gate_failed: operator=FAIL, response=PASS; response agreement does not establish operator convergence, and neither certifies continuum accuracy.
+  magnetic_note: a resistive-dominated full dZ can hide reactive impedance error; inspect dImZ separately. Also compare successive modal changes before declaring a spatial teacher.
   adaptive_00: modes=63, dZ=0.739986, dq=0.470892, dJ_volume=0.767861, dJ_ports_volume=0.81815, parent_dJ_energy_upper=inf, max_probe_dq=0.999846, hotspot_max_dq=0.999846, peak_scaled_max_dq=0.543689, worst_probe=2, dP=0.589425, max_residual_score=0.0493092, hotspot_match=False
   adaptive_01: modes=71, dZ=0.0707914, dq=0.141253, dJ_volume=0.344935, dJ_ports_volume=0.289516, parent_dJ_energy_upper=0.433629, max_probe_dq=8.9772, hotspot_max_dq=0.229573, peak_scaled_max_dq=0.205274, worst_probe=0, dP=0.118973, max_residual_score=0.00288458, hotspot_match=False
   adaptive_02: modes=79, dZ=0.0587994, dq=0.136554, dJ_volume=0.314312, dJ_ports_volume=0.26374, parent_dJ_energy_upper=0.376312, max_probe_dq=23.443, hotspot_max_dq=0.171679, peak_scaled_max_dq=0.146503, worst_probe=4, dP=0.098783, max_residual_score=0.00354936, hotspot_match=False
