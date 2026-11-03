@@ -1,5 +1,5 @@
 > **BFZI 研究分支｜当前研发进度（2026-11-03）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**207 模态空间参考解未认证**，正在开展收敛与模态诊断。最新 BFZI 专项实测为 **58 passed（代码基线 `cb33df6`）**，207 模态父空间残差上界及模态消融均已运行；封装角部与全局海水电流模式都具有明显影响，**207 模态独立磁积分 B/A 尚未运行**。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
+> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**207 模态空间参考解未认证**，正在开展收敛与模态诊断。最新 BFZI 专项实测为 **58 passed（代码基线 `cb33df6`）**，207 模态父空间残差上界及模态消融均已运行；封装角部与全局海水电流模式都具有明显影响；**207 模态磁积分 B/A 已测：算子门槛 FAIL，受迫响应 PASS**。新增的可选 207→213→229 定向电流基试验还未运行。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
 
 # SDF-MPNEO vNext
 
@@ -50,7 +50,8 @@ python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l # i
 python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 independent face-edge curl directions (expensive)
 python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199-mode A/B magnetic cubature (more expensive)
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
-python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B
+python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
+python run.py --mode bfzi-convergence --basis-ball-targeted # optional unrun 207→213→229 nested global scales & package-corner currents
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # full-parent energy bound and leave-one-mode physical influence
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
@@ -359,6 +360,33 @@ now also requires both the combined-drive and both-unit-port
 in addition to the pre-existing port, power, aggregate heat and
 all-probe criteria. The R-norm bound remains an independently reported
 conservative diagnostic, not an assumed continuum certificate.
+
+**207-mode independent magnetic A/B measurement (2026-11-03):**
+For the same complete 207 physical modes and fine R/K, the new
+uniform-ball magnetic B rule (15,154 nodes) gave `dL=0.126388`,
+`dZ=0.000295995`, `dImZ=0.0128088`,
+`dJ_volume=0.000875828`,
+`dJ_ports_volume=0.000953918`, local `dq=4.45415e-5`,
+and B-on-A R-inverse residual `0.000954538`.
+The **operator gate FAILED**, while the currently driven **response
+gate PASSED**. In particular the 1.28% reactive impedance sensitivity
+is larger than the full-complex Z difference. This suggests that the
+big 199→207 physical-field change is not simply an artifact of this
+single magnetic cubature perturbation; it does **not** certify the
+Green operator or the continuum response.
+
+**Optional targeted 207→213→229 physical-space holdout (not yet run):**
+`--basis-ball-targeted` retains the current 207 directions, adds six
+independent large-scale curl modes at two physical scene length scales
+(213), then sixteen anisotropic, pose-following complete-port curls
+localized at the broad-face package corners (229). This controls for
+both the prominent global direction and near-corner heat sensitivity
+seen in the single-mode ablation experiment without replacing the
+previous reference defaults or claiming that 229 directions are
+more accurate. The same streamed R/K and magnetic A rule are used
+for every nested stage; acceptance must compare *full-volume current*
+and the package-normal heat profile, not merely Z. The flag may be
+computationally expensive and requires local tests before interpretation.
 
 **Do not generate cross-geometry high-fidelity labels from the
 207-mode parent yet.**
