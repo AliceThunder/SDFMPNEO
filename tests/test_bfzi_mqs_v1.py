@@ -191,12 +191,16 @@ def test_anisotropic_face_curls_nest_199_and_follow_rotated_pose():
     )
     assert isotropic.size==199
     assert enriched.size==207
+    from examples.bfzi_convergence import _indices_in_enriched_basis
+    indices=_indices_in_enriched_basis(enriched,isotropic)
+    assert len(indices)==isotropic.size
+    assert len(set(indices))==isotropic.size
     point=receiver.pose.position(np.array([0.04,0.01,0.042]))
     assert rotated.in_seawater(point)
     old_j=isotropic.evaluate(point[None,:])
     new_j=enriched.evaluate(point[None,:])
     np.testing.assert_allclose(
-        new_j[:,:isotropic.size],old_j,rtol=1e-12,atol=1e-12,
+        new_j[:,indices],old_j,rtol=1e-12,atol=1e-12,
     )
     for mode in enriched.modes[-8:]:
         assert mode.gaussian_metric is not None
