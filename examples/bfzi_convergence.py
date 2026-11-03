@@ -287,6 +287,29 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         probes = np.concatenate((probes, np.asarray(near_wall)))
         if not scene.in_seawater(probes).all():
             raise RuntimeError("modal wall probes must lie in seawater")
+
+        # An independent face-normal sweep catches localization shifts
+        # which the original 16 fixed probes can miss. It is evaluated
+        # only after the common parent operator has been assembled;
+        # no extra Green integral or solver mesh is created.
+        normal_line = []
+        for assembly in scene.assemblies:
+            half=np.asarray(assembly.enclosure.half_extents)
+            axis=int(np.argmin(half))
+            tangents=[j for j in range(3) if j!=axis]
+            for sign in (-1.0,1.0):
+                for u,v in ((0.0,0.0),(0.65,0.0)):
+                    for step in (0.0,0.010,0.025,0.050,0.075):
+                        local=np.zeros(3)
+                        local[axis]=sign*(
+                            half[axis]
+                            +max(0.003,3.0*enriched.wall_scale)+step
+                        )
+                        local[tangents]=np.array((u,v))*half[tangents]
+                        normal_line.append(assembly.pose.position(local))
+        normal_line=np.asarray(normal_line)
+        if not scene.in_seawater(normal_line).all():
+            raise RuntimeError("normal sweep probes must lie in seawater")
         # Genuine nested-mode comparison with the already established
         # independently refined near-wall R/K, NOT the preliminary coarse
         # teacher R/K. The uniform-ball L was assembled on magnetic A
@@ -321,6 +344,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         del rx, rw
         probe_modes = np.einsum(
             "nmc,mr->nrc", enriched.evaluate(probes),
+            teacher.transform, optimize=True,
+        )
+        normal_modes = np.einsum(
+            "nmc,mr->nrc", enriched.evaluate(normal_line),
             teacher.transform, optimize=True,
         )
         omega = source.omega
@@ -361,7 +388,14 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             relative_residual = np.sqrt(max(float(np.real(np.vdot(
                 residual, np.linalg.solve(r, residual),
             ))), 0.0)) / forcing_norm
-            return z, q, p, relative_residual, j, j_ports, coords @ amplitudes
+            normal_j=np.einsum(
+                "nmc,m->nc",normal_modes,coords @ driven,optimize=True,
+            )
+            normal_q=np.sum(np.abs(normal_j)**2,axis=1)/(
+                2*scene.seawater.conductivity
+            )
+            return (z,q,p,relative_residual,j,j_ports,
+                    coords @ amplitudes,normal_q)
 
         previous = None
         levels = [
@@ -402,7 +436,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 raise RuntimeError(
                     "nested current modes were discarded by R whitening"
                 )
-            z, q, p, residual, j, j_ports, unit_modes = solve_nested(
+            z, q, p, residual, j, j_ports, unit_modes, normal_q = solve_nested(
                 coords,k_curl,
             )
             print(
@@ -414,7 +448,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             print(f"  {label}_probes: q={q.tolist()}", flush=True)
             if previous is not None:
                 (old_label, old_z, old_q, old_p, old_j,
-                 old_j_ports,old_unit_modes) = previous
+                 old_j_ports,old_unit_modes,old_normal_q) = previous
                 print(
                     f"  {old_label}_to_{label}: "
                     f"dZ={relative(z,old_z):.6g}, "
@@ -441,6 +475,18 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 peak = max(float(np.max(old_q)),1e-30)
                 worst = int(np.argmax(relative_probe))
                 hot = old_q>=0.1*peak
+                normal_delta=np.abs(normal_q-old_normal_q)
+                normal_peak=max(float(np.max(old_normal_q)),1e-30)
+                normal_worst=int(np.argmax(normal_delta))
+                print(
+                    f"  {label}_normal_sweep: "
+                    f"dq={relative(normal_q,old_normal_q):.6g}, "
+                    f"peak_scaled_max_dq={np.max(normal_delta)/normal_peak:.6g}, "
+                    f"max_abs_point={normal_line[normal_worst].tolist()}, "
+                    f"reference_q={old_normal_q[normal_worst]:.8g}, "
+                    f"enriched_q={normal_q[normal_worst]:.8g}",
+                    flush=True,
+                )
                 print(
                     f"  {label}_heat_detail: "
                     f"worst_probe={worst}, "
@@ -451,7 +497,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"peak_scaled_max_dq={np.max(delta)/peak:.6g}",
                     flush=True,
                 )
-            previous = label, z, q, p, j, j_ports, unit_modes
+            previous = label, z, q, p, j, j_ports, unit_modes, normal_q
 
         # Residual-driven sparse trial selection from the
         # strictly nested physical current family. This is an
