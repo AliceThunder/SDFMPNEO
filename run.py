@@ -28,7 +28,10 @@
     python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199模态磁积分A/B；更昂贵
     python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 旋转各向异性面法向电流响应
     python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # 207模态独立法向 R/K 积分对照
-    python run.py --mode bfzi-convergence --basis-ball-targeted # 实验性 207→213→229 全局尺度/封装角部嵌套电流基
+    python run.py --mode bfzi-convergence --basis-ball-targeted # 默认精简终端输出、保存并推送最新日志
+    python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests # 同时运行 BFZI 测试并保存结果
+    python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # 终端也显示原始详细输出
+    python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # 只写本地，不提交 Git
     python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # 207模态父空间误差上界与重要方向筛选
     python run.py --mode bfzi-convergence --basis-domain-ball # 均匀球Green外域检查
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
@@ -372,7 +375,8 @@ def main(argv=None):
                 return 0
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
-                bfzi_main(
+                from examples.bfzi_run_record import run_and_publish
+                return run_and_publish(lambda: bfzi_main(
                     full="--full" in args,
                     basis_only="--basis" in args,
                     basis_verify="--basis-verify" in args,
@@ -397,8 +401,11 @@ def main(argv=None):
                     basis_radial="--basis-radial" in args,
                     basis_kparts="--basis-kparts" in args,
                     basis_wallpanels="--basis-wallpanels" in args,
+                ), flags=args,
+                    verbose="--verbose-log" in args,
+                    publish="--no-publish-log" not in args,
+                    with_tests="--with-tests" in args,
                 )
-                return 0
 
     from sdfmpneo_vnext.workflow import launch
 
