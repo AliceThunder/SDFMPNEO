@@ -52,7 +52,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 1
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
 python run.py --mode bfzi-convergence --basis-ball-targeted # next: 207→210→213→229 global-scale isolation and Gram diagnostics
-python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests # concise screen, local Git commit/push latest summary and full log
+python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-l --with-tests # concise screen, local Git commit/push latest summary and full log
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # run and log locally without Git push
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # optional full console output
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
