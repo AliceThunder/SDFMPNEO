@@ -65,7 +65,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_ball: bool = False,
                       ball_reference: bool = False,
                       ball_l_check: bool = False,
-                      source_face_guided: bool = False):
+                      source_face_guided: bool = False,
+                      edge_refinement: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes a level-4
@@ -73,6 +74,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     Only that parent's expensive nonlocal Green L is assembled; nested
     subspaces re-solve projected R/L/K, not separate Green double integrals.
     """
+    if edge_refinement and not source_face_guided:
+        raise ValueError("edge refinement requires source-face guided parent")
     scene = build_demo_scene()
     # Resolve the locally sharp curl-mode resistance and true source
     # coupling on a finer rule. The costly nonlocal L double integral uses
@@ -93,7 +96,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     )
     enriched = build_sea_basis(
         scene, modes_per_face=2,
-        face_refinement=4 if spatial_holdout else 2,
+        face_refinement=(5 if edge_refinement else 4) if spatial_holdout else 2,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
         include_source_face_guided=source_face_guided,
@@ -340,6 +343,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         ]
         if source_face_guided:
             levels.append(("source_face_guided", 2, 4, True, True, True))
+        if edge_refinement:
+            levels.append(("edge_lip_patches", 2, 5, True, True, True))
         for label, modes_per_face, face_refinement, thin, guided, face_guided in levels:
             subset = build_sea_basis(
                 scene, modes_per_face=modes_per_face,
@@ -379,7 +384,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
                     flush=True,
                 )
-            if label == "source_face_guided":
+            if label in ("source_face_guided", "edge_lip_patches"):
                 # Distinguish a large relative change in a cool location
                 # from a comparable change in a heating hotspot.
                 old_q = previous[2] if previous is not None else q
@@ -389,7 +394,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 worst = int(np.argmax(relative_probe))
                 hot = old_q>=0.1*peak
                 print(
-                    f"  source_face_heat_detail: "
+                    f"  {label}_heat_detail: "
                     f"worst_probe={worst}, "
                     f"reference_q={old_q[worst]:.8g}, "
                     f"enriched_q={q[worst]:.8g}, "
@@ -2100,6 +2105,7 @@ def main(
     basis_ball: bool = False,
     basis_ball_check_l: bool = False,
     basis_ball_face: bool = False,
+    basis_ball_edge: bool = False,
     basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
@@ -2108,7 +2114,7 @@ def main(
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face):
+            or basis_ball_face or basis_ball_edge):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2120,9 +2126,10 @@ def main(
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face,
+            or basis_ball_face or basis_ball_edge,
             ball_l_check=basis_ball_check_l,
-            source_face_guided=basis_ball_face,
+            source_face_guided=basis_ball_face or basis_ball_edge,
+            edge_refinement=basis_ball_edge,
         )
     scene = build_demo_scene()
     base = dict(
