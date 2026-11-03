@@ -1,4 +1,5 @@
-> **BFZI research branch (2026-11-01).** The active implementation is `sdfmpneo_bfzi/`: exact BFZI continuous-coil geometry, enclosed twin-port scenes, explicit return paths, direct air Neumann integrals, finite-domain seawater MQS Galerkin fields, shared Joule dissipation, and deterministic reduced subspaces. This is an **unconverged finite-domain prototype**, not yet a validated ocean/FEM surrogate. The vNext commands further below remain **legacy superellipse workflows**, not BFZI electrothermal training. See [new code instructions](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) and [theory](theory/main.tex).
+> **BFZI 研究分支｜当前研发进度（2026-11-03）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
+> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**207 模态空间参考解未认证**，正在开展收敛与模态诊断。上次已运行的 BFZI 专项测试为 **57 passed**，之后的新代码仍待测试。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
 
 # SDF-MPNEO vNext
 
@@ -17,6 +18,8 @@ thermal queries. REFERENCE, FAST, and CERTIFIED remain separate execution
 paths so neural inference never silently replaces the correctness backend.
 
 ## BFZI-MQS prototype (current research branch)
+
+**最新状态与下一关口以 [BFZI 进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) 为准**；下方保留历史开发命令及实验说明，部分当时的“尚未运行”叙述是研究记录快照，不应覆盖进度看板中的后续实测。
 
 Install with `pip install -e ".[dev]"`. Run the small example with:
 
