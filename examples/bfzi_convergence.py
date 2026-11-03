@@ -69,8 +69,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       edge_refinement: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
-    The experimental uniform-ball modal route includes a level-4
-    159-mode physical parent and residual-driven sparse-mode enrichment.
+    The experimental uniform-ball modal route includes nested 159-,
+    167- and optional 199-mode physical parents, and residual-driven
+    sparse-mode enrichment inside the selected parent.
     Only that parent's expensive nonlocal Green L is assembled; nested
     subspaces re-solve projected R/L/K, not separate Green double integrals.
     """
@@ -407,10 +408,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             previous = label, z, q, p, j
 
         # Residual-driven sparse trial selection from the
-        # strictly nested level-4 *physical* current family. This is an
+        # strictly nested physical current family. This is an
         # offline diagnostic, not an online approximation: the full parent
         # R/L/K must first be assembled, so no continuum accuracy is claimed.
-        # Unlike fixed 159-mode promotion, it records how many additional
+        # It records how many additional
         # modes are actually needed for Z, Joule probes and port power.
         print("\nResidual-driven selective enrichment from 63 modes:",
               flush=True)
