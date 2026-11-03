@@ -518,11 +518,14 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             b_relative_residual=np.sqrt(max(float(np.real(np.vdot(
                 b_residual,np.linalg.solve(r,b_residual),
             ))),0.0))/forcing_norm
-            passed=(
-                dL<=0.05 and dZ<=0.002 and dJ<=0.01
+            operator_pass=(dL<=0.05)
+            response_pass=(
+                dZ<=0.002 and dJ<=0.01
                 and dq<=0.005 and dP<=0.002
                 and b_relative_residual<=0.01
+                and np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10))<=0.05
             )
+            passed=operator_pass and response_pass
             print(
                 f"  ball_{enriched.size}_B_vs_A: dL={dL:.6g}, "
                 f"dZ={dZ:.6g}, dJ={dJ:.6g}, dq={dq:.6g}, "
@@ -530,7 +533,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"dP={dP:.6g}, "
                 f"B_on_A_Rinv_residual={b_relative_residual:.6g}, "
                 f"min_L_B_eig={np.linalg.eigvalsh(magnetic_b)[0]:.6g}, "
-                f"gate={'PASS' if passed else 'FAIL'}",
+                f"operator_gate={'PASS' if operator_pass else 'FAIL'}, "
+                f"response_gate={'PASS' if response_pass else 'FAIL'}, "
+                f"combined_gate={'PASS' if passed else 'FAIL'}",
                 flush=True,
             )
             za_dual,qa_dual,pa_dual,ja_dual,_ = full_with_l(
@@ -549,9 +554,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             if not passed:
                 print(
-                    "  magnetic_gate_failed: A/B magnetic integration is "
-                    f"unresolved in the {enriched.size}-mode space; do NOT use either "
-                    "as high-accuracy cross-geometry training truth.",
+                    "  magnetic_gate_failed: "
+                    f"operator={'FAIL' if not operator_pass else 'PASS'}, "
+                    f"response={'FAIL' if not response_pass else 'PASS'}; "
+                    "response agreement does not establish operator "
+                    "convergence, and neither certifies continuum accuracy.",
                     flush=True,
                 )
             print("  magnetic_note: compare with successive modal changes; "
