@@ -285,12 +285,12 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     console=StringIO()
     with redirect_stdout(console):
         writer=_LogWriter(full,verbose=False)
-        writer.write("  early_probes: q=[0.1, 0.2, 0.3]\\n".replace("\\\\n","\\n"))
+        writer.write("  early_probes: q=[0.1, 0.2, 0.3]\n")
         writer.write(
             "  anisotropic_face_curls_to_global_multiscale: "
             "dZ=1.95291, dJ_volume=0.931925, "
             "dJ_ports_volume=1.18121, dq=0.668683, "
-            "max_probe_dq=2022.22, dP=0.868147\\n".replace("\\\\n","\\n")
+            "max_probe_dq=2022.22, dP=0.868147\n"
         )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
