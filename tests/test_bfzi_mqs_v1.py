@@ -161,6 +161,77 @@ def test_edge_lip_level_five_nests_167_into_199():
     assert np.isfinite(expanded.evaluate(points)).all()
 
 
+def test_anisotropic_face_curls_nest_199_and_follow_rotated_pose():
+    """A geometry-rotated anisotropic potential has its exact analytical curl."""
+    from dataclasses import replace
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene=scene_pair()
+    angle=0.31
+    rotation=np.array([
+        [np.cos(angle),0.,np.sin(angle)],
+        [0.,1.,0.],
+        [-np.sin(angle),0.,np.cos(angle)],
+    ])
+    receiver=replace(
+        scene.receiver,
+        pose=RigidPose(rotation,scene.receiver.pose.center),
+    )
+    rotated=replace(scene,receiver=receiver)
+    source=build_bfzi_source(rotated,200_000.,order=3)
+    args=dict(
+        modes_per_face=2,face_refinement=5,
+        refine_thin_faces_only=True,
+        sources=source,include_source_guided=True,
+        include_source_face_guided=True,
+    )
+    isotropic=build_sea_basis(rotated,**args)
+    enriched=build_sea_basis(
+        rotated,**args,include_anisotropic_face_guided=True,
+    )
+    assert isotropic.size==199
+    assert enriched.size==207
+    point=receiver.pose.position(np.array([0.04,0.01,0.042]))
+    assert rotated.in_seawater(point)
+    old_j=isotropic.evaluate(point[None,:])
+    new_j=enriched.evaluate(point[None,:])
+    np.testing.assert_allclose(
+        new_j[:,:isotropic.size],old_j,rtol=1e-12,atol=1e-12,
+    )
+    for mode in enriched.modes[-8:]:
+        assert mode.gaussian_metric is not None
+        np.testing.assert_allclose(
+            mode.gaussian_metric,mode.gaussian_metric.T,atol=1e-12,
+        )
+        assert np.linalg.eigvalsh(mode.gaussian_metric)[0]>0
+    # The anisotropic metric must rotate with the package's full pose.
+    face_mode=enriched.modes[-2]
+    local_metric=rotation.T @ face_mode.gaussian_metric @ rotation
+    np.testing.assert_allclose(
+        local_metric,np.diag(np.diag(local_metric)),
+        rtol=0,atol=1e-12,
+    )
+    assert local_metric[2,2]>local_metric[0,0]
+
+    # Numerical differentiation checks the physical curl rather than
+    # comparing two implementations of the same Gaussian formula.
+    h=1e-5
+    derivative=[]
+    for axis in range(3):
+        delta=np.eye(3)[axis]*h
+        plus=enriched.potential_primitive((point+delta)[None,:])[0,-1]
+        minus=enriched.potential_primitive((point-delta)[None,:])[0,-1]
+        derivative.append((plus-minus)/(2*h))
+    curl=np.array([
+        derivative[1][2]-derivative[2][1],
+        derivative[2][0]-derivative[0][2],
+        derivative[0][1]-derivative[1][0],
+    ])
+    np.testing.assert_allclose(
+        new_j[0,-1],curl,rtol=3e-4,atol=1e-6,
+    )
+
+
 def test_reject_overlapping_packages():
     scene = scene_pair()
     with pytest.raises(ValueError, match="overlap"):
