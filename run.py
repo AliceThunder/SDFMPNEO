@@ -26,6 +26,7 @@
     python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l # 167模态磁积分A/B
     python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 近边缘方向扩展；昂贵
     python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199模态磁积分A/B；更昂贵
+    python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 旋转各向异性面法向电流响应
     python run.py --mode bfzi-convergence --basis-domain-ball # 均匀球Green外域检查
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
@@ -381,6 +382,7 @@ def main(argv=None):
                     basis_ball_check_l="--basis-ball-check-l" in args,
                     basis_ball_face="--basis-ball-face" in args,
                     basis_ball_edge="--basis-ball-edge" in args,
+                    basis_ball_aniso="--basis-ball-aniso" in args,
                     basis_domain_ball="--basis-domain-ball" in args,
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
