@@ -311,10 +311,66 @@ class BFZINeuralSurrogate:
         )
 
 
+
+def _physical_probes(scene,basis):
+    """Geometry-following bulk and face probes shared by train and evaluation.
+
+    These samples target *physical* currents and near-wall heat, not the
+    arbitrary relative scaling of curl-basis coefficients. They are sparse
+    training probes, NOT a quadrature or a certified spatial error norm.
+    """
+    probes=[np.asarray(scene.outer_center,dtype=float)]
+    for assembly in scene.assemblies:
+        half=np.asarray(assembly.enclosure.half_extents)
+        normal=int(np.argmin(half))
+        tangents=[axis for axis in range(3) if axis!=normal]
+        for sign in (-1,1):
+            for u,v in ((0.,0.),(.50,.50)):
+                local=np.zeros(3)
+                local[normal]=sign*(
+                    half[normal]+max(0.003,3*basis.wall_scale)
+                )
+                local[tangents]=np.array([u,v])*half[tangents]
+                probes.append(assembly.pose.position(local))
+    points=np.asarray(probes,dtype=float)
+    if not scene.in_seawater(points).all():
+        raise ValueError("physical probes must lie in seawater")
+    return points
+
+
+def _training_spatial_data(labels,max_return_waypoints):
+    """Map saved 27-mode labels into geometry-dependent physical J operators.
+
+    No MQS re-solve or new synthetic truth is introduced. Unsupported trial
+    topologies need an explicit basis specification in a newer label schema;
+    do not silently build the wrong modes and train on misaligned fields.
+    """
+    from .sea_basis import build_sea_basis
+    operators=[]
+    fields=[]
+    conductivities=[]
+    for sample in labels:
+        scene,_=scene_from_geometry_features(
+            sample.features,max_return_waypoints=max_return_waypoints,
+        )
+        basis=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
+        if basis.size!=sample.raw_unit_modes.shape[0]:
+            raise ValueError("geometry label / reconstructed basis size mismatch")
+        modes=basis.evaluate(_physical_probes(scene,basis))
+        operators.append(modes)
+        fields.append(np.einsum(
+            "pmc,mu->pcu",modes,sample.raw_unit_modes,optimize=True,
+        ))
+        conductivities.append(scene.seawater.conductivity)
+    return (np.stack(operators),np.stack(fields),
+            np.asarray(conductivities,dtype=float))
+
+
 def train_response_surrogate(
     dataset_path,model_path,*,epochs=400,hidden=96,
     learning_rate=1e-3,seed=13,validation_fraction=0.25,
     max_return_waypoints=8,
+    field_loss_weight=1.0,joule_loss_weight=0.15,
 ):
     """Train on independent geometry records, never split spatial points.
 
@@ -330,7 +386,9 @@ def train_response_surrogate(
     if (not isinstance(epochs,int) or epochs<1
             or not isinstance(hidden,int) or hidden<4
             or not np.isfinite(learning_rate) or learning_rate<=0
-            or not 0<validation_fraction<0.5):
+            or not 0<validation_fraction<0.5
+            or not np.isfinite(field_loss_weight) or field_loss_weight<0
+            or not np.isfinite(joule_loss_weight) or joule_loss_weight<0):
         raise ValueError("invalid BFZI training hyperparameters")
     if any(s.reference_status!="provisional" for s in labels):
         raise ValueError("this experimental trainer expects provisional labels")
@@ -353,6 +411,81 @@ def train_response_surrogate(
     model=_network(x.shape[1],y.shape[1],hidden)
     xx=torch.as_tensor(xx,dtype=torch.float32)
     yy=torch.as_tensor(yy,dtype=torch.float32)
+    # Coefficient-only normalized MSE is a poor physical proxy: the
+    # held-out 27-mode coefficients had ~21% error but actual J ~80%.
+    # Give separately normalized port outputs and geometry-local fields
+    # explicit influence on checkpoint selection. Only v1's deterministic
+    # 27-mode topology can currently be reconstructed without ambiguity.
+    spatial_enabled=(mode_count==27 and (
+        field_loss_weight>0 or joule_loss_weight>0
+    ))
+    y_mean_t=torch.as_tensor(y_mean,dtype=torch.float32)
+    y_scale_t=torch.as_tensor(y_scale,dtype=torch.float32)
+    if spatial_enabled:
+        modes_np,field_np,sigma_np=_training_spatial_data(
+            labels,max_return_waypoints,
+        )
+        spatial_modes=torch.as_tensor(modes_np,dtype=torch.float32)
+        field_true_re=torch.as_tensor(field_np.real.copy(),dtype=torch.float32)
+        field_true_im=torch.as_tensor(field_np.imag.copy(),dtype=torch.float32)
+        sigma=torch.as_tensor(sigma_np,dtype=torch.float32)
+        drive_re=torch.tensor([1.0,-0.4],dtype=torch.float32)
+        drive_im=torch.tensor([0.2,0.5],dtype=torch.float32)
+
+    def objective(predicted,ids):
+        truth=yy[ids]
+        coeff_mse=nn.functional.mse_loss(
+            predicted[:,:4*mode_count],truth[:,:4*mode_count],
+        )
+        port_mse=nn.functional.mse_loss(
+            predicted[:,4*mode_count:],truth[:,4*mode_count:],
+        )
+        total=0.25*coeff_mse+0.75*port_mse
+        if not spatial_enabled:
+            return total,None,None
+        decoded=(
+            predicted[:,:4*mode_count]*y_scale_t[:4*mode_count]
+            +y_mean_t[:4*mode_count]
+        )
+        size=2*mode_count
+        real=decoded[:,:size].reshape(-1,mode_count,2)
+        imag=decoded[:,size:].reshape(-1,mode_count,2)
+        modes=spatial_modes[ids]
+        jr=torch.einsum("bpmc,bmu->bpcu",modes,real)
+        ji=torch.einsum("bpmc,bmu->bpcu",modes,imag)
+        target_r=field_true_re[ids]
+        target_i=field_true_im[ids]
+        field_error=(
+            ((jr-target_r).square()+(ji-target_i).square())
+            .sum(dim=(1,2,3))
+            / (target_r.square()+target_i.square())
+              .sum(dim=(1,2,3)).clamp_min(1e-20)
+        ).mean()
+
+        def probe_heat(real_fields,imag_fields):
+            driven_real=(
+                torch.einsum("bpcu,u->bpc",real_fields,drive_re)
+                -torch.einsum("bpcu,u->bpc",imag_fields,drive_im)
+            )
+            driven_imag=(
+                torch.einsum("bpcu,u->bpc",real_fields,drive_im)
+                +torch.einsum("bpcu,u->bpc",imag_fields,drive_re)
+            )
+            return (driven_real.square()+driven_imag.square()).sum(
+                dim=2,
+            )/(2*sigma[ids,None])
+        predicted_q=probe_heat(jr,ji)
+        truth_q=probe_heat(target_r,target_i)
+        joule_error=(
+            (predicted_q-truth_q).square().sum(dim=1)
+            /truth_q.square().sum(dim=1).clamp_min(1e-20)
+        ).mean()
+        total=(
+            total+field_loss_weight*field_error
+            +joule_loss_weight*joule_error
+        )
+        return total,field_error,joule_error
+
     optimizer=torch.optim.Adam(model.parameters(),lr=learning_rate)
     lowest=float("inf")
     best=None
@@ -361,15 +494,14 @@ def train_response_surrogate(
     for epoch in range(epochs):
         model.train()
         prediction=model(xx[train_idx])
-        loss=nn.functional.mse_loss(prediction,yy[train_idx])
+        loss,_,_=objective(prediction,train_idx)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         model.eval()
         with torch.no_grad():
-            valid=nn.functional.mse_loss(
-                model(xx[val_idx]),yy[val_idx],
-            ).item()
+            valid,_,_=objective(model(xx[val_idx]),val_idx)
+            valid=valid.item()
         if valid<lowest:
             lowest=valid
             best=copy.deepcopy(model.state_dict())
@@ -395,12 +527,21 @@ def train_response_surrogate(
         "validation_signatures":[labels[i].scene_signature for i in val_idx],
         "training_count":int(len(train_idx)),
         "validation_count":int(len(val_idx)),
+        "training_objective":"port+modal+geometry_probe_j+joule_v1"
+            if spatial_enabled else "port+modal_v1",
+        "field_loss_weight":float(field_loss_weight) if spatial_enabled else 0.0,
+        "joule_loss_weight":float(joule_loss_weight) if spatial_enabled else 0.0,
     }
     torch.save(record,model_path)
     # Report errors in the PHYSICAL outputs, not just normalized MSE.
     model.eval()
     with torch.no_grad():
         result=model(xx[val_idx]).cpu().numpy()
+    with torch.no_grad():
+        val_loss,val_field,val_heat=objective(model(xx[val_idx]),val_idx)
+        normalized_val_mse=nn.functional.mse_loss(
+            model(xx[val_idx]),yy[val_idx],
+        ).item()
     result=result*y_scale+y_mean
     err_current=[]
     err_z=[]
@@ -419,7 +560,17 @@ def train_response_surrogate(
         "train_geometries":int(len(train_idx)),
         "heldout_geometries":int(len(val_idx)),
         "best_epoch":int(best_epoch),
-        "normalized_val_mse":float(lowest),
+        "normalized_val_mse":float(normalized_val_mse),
+        "validation_objective":float(val_loss.item()),
+        "heldout_probe_j_relative_error":(
+            float(np.sqrt(val_field.item()))
+            if val_field is not None else None
+        ),
+        "heldout_probe_q_relative_error":(
+            float(np.sqrt(val_heat.item()))
+            if val_heat is not None else None
+        ),
+        "spatial_supervision_enabled":bool(spatial_enabled),
         "heldout_raw_mode_relative_error":float(np.mean(err_current)),
         "heldout_port_z_relative_error":float(np.mean(err_z)),
     }
@@ -485,24 +636,7 @@ def evaluate_geometry_holdouts(
         uncorrected=model.predict(source,basis,power_consistent=False)
         corrected=model.predict(source,basis,power_consistent=True)
 
-        probes=[
-            np.asarray(scene.outer_center,dtype=float),
-        ]
-        for assembly in scene.assemblies:
-            half=np.asarray(assembly.enclosure.half_extents)
-            normal=int(np.argmin(half))
-            tangents=[axis for axis in range(3) if axis!=normal]
-            for sign in (-1,1):
-                for u,v in ((0.,0.),(.50,.50)):
-                    local=np.zeros(3)
-                    local[normal]=sign*(
-                        half[normal]+max(0.003,3*basis.wall_scale)
-                    )
-                    local[tangents]=np.array([u,v])*half[tangents]
-                    probes.append(assembly.pose.position(local))
-        points=np.array(probes,dtype=float)
-        if not scene.in_seawater(points).all():
-            raise ValueError("held-out probes must be in seawater")
+        points=_physical_probes(scene,basis)
         evaluated=basis.evaluate(points)
         true_j=np.einsum(
             "nmc,m->nc",evaluated,sample.raw_unit_modes @ drive,
