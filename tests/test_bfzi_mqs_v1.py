@@ -275,6 +275,29 @@ def test_targeted_global_and_package_corner_modes_preserve_207_parent():
         assert np.linalg.eigvalsh(mode.gaussian_metric)[0]>0
 
 
+def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
+    """Keep detailed evidence on disk while showing compact physics deltas."""
+    from io import StringIO
+    from contextlib import redirect_stdout
+    from examples.bfzi_run_record import _LogWriter
+
+    full=StringIO()
+    console=StringIO()
+    with redirect_stdout(console):
+        writer=_LogWriter(full,verbose=False)
+        writer.write("  early_probes: q=[0.1, 0.2, 0.3]\\n".replace("\\\\n","\\n"))
+        writer.write(
+            "  anisotropic_face_curls_to_global_multiscale: "
+            "dZ=1.95291, dJ_volume=0.931925, "
+            "dJ_ports_volume=1.18121, dq=0.668683, "
+            "max_probe_dq=2022.22, dP=0.868147\\n".replace("\\\\n","\\n")
+        )
+    assert "early_probes: q=" in full.getvalue()
+    assert "early_probes" not in console.getvalue()
+    assert "dJ_volume=0.931925" in console.getvalue()
+    assert "dJ_ports_volume=1.18121" in console.getvalue()
+
+
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
     """The R-weighted metric equals whole-domain J/sigma quadrature."""
     from sdfmpneo_bfzi import build_sea_basis
