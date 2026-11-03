@@ -104,6 +104,19 @@ def _parent_galerkin_energy_bound(resistance, system, forcing, coefficients):
     return float(absolute_bound/(trial_norm-absolute_bound))
 
 
+def _leave_one_out_coefficients(inverse_system, full_coefficients, index):
+    """Exact constrained Galerkin solution with physical mode index removed.
+
+    For A u = -f, the inverse-column correction eliminates coefficient
+    u[index] while satisfying every remaining row of A u = -f.
+    Works for both unit ports simultaneously; no new kernel integral.
+    """
+    column=inverse_system[:,index]
+    return full_coefficients-np.outer(
+        column,full_coefficients[index]/column[index],
+    )
+
+
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
@@ -603,9 +616,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             normal_peak=max(float(np.max(full_normal_q)),1e-30)
             effects=[]
             for index,mode in enumerate(enriched.modes):
-                column=inverse_columns[:,index]
-                removed=full_coeff-np.outer(
-                    column/column[index],full_coeff[index],
+                removed=_leave_one_out_coefficients(
+                    inverse_columns,full_coeff,index,
                 )
                 driven=removed @ currents
                 fixed_j=np.einsum(
