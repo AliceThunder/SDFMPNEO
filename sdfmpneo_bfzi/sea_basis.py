@@ -210,6 +210,8 @@ def build_sea_basis(
     include_source_guided: bool = False,
     include_source_face_guided: bool = False,
     include_anisotropic_face_guided: bool = False,
+    include_global_multiscale: bool = False,
+    include_corner_source_guided: bool = False,
     outer_envelope: str = "boundary_layer",
     outer_taper_width: float | None = None,
 ) -> SeaCurrentBasis:
@@ -236,6 +238,11 @@ def build_sea_basis(
     and narrower face-normal widths. The Gaussian metric rotates with
     each package pose, so this is a genuine normal-vs-tangential
     refinement rather than another set of face-plane translations.
+    Optional global_multiscale adds six independent large/medium-length
+    curl directions; optional corner_source_guided adds 16 face-corner
+    full-port curls with rotated anisotropic Gaussian footprints.
+    Both are experimental holdouts of the already solved 207-mode space,
+    not silently selected new reference defaults.
     The global modes resolve long-range circulating currents. A finite
     trial space is not guaranteed accurate before a hierarchy converges.
     """
@@ -251,8 +258,13 @@ def build_sea_basis(
         raise ValueError(
             "anisotropic face modes require source-face guided parent"
         )
+    if include_corner_source_guided and not include_anisotropic_face_guided:
+        raise ValueError(
+            "corner source-guided modes require anisotropic face parent"
+        )
     if (include_source_guided or include_source_face_guided
-            or include_anisotropic_face_guided) and (
+            or include_anisotropic_face_guided
+            or include_corner_source_guided) and (
         sources is None or sources.scene is not scene
     ):
         raise ValueError(
@@ -352,6 +364,16 @@ def build_sea_basis(
         global_width = 1.5 * package_reach
         for axis in range(3):
             modes.append(CurrentMode(center, np.eye(3)[axis], global_width))
+        if include_global_multiscale:
+            # The influential long-range direction may still miss other
+            # radial scales. Test these separately from corner-local modes.
+            # Widths depend only on the physical package reach, never on
+            # the artificial outer integration radius.
+            for factor in (0.75, 2.4):
+                for axis in range(3):
+                    modes.append(CurrentMode(
+                        center, np.eye(3)[axis], factor*package_reach,
+                    ))
     if include_source_guided:
         # Use two envelope widths per physical port. These are new
         # current *directions*, not extra translations of the generic
@@ -418,9 +440,40 @@ def build_sea_basis(
                         center,np.zeros(3),float(np.max(widths)),
                         source_port=port,gaussian_metric=metric,
                     ))
+    if include_corner_source_guided:
+        # Each physical box contributes a different field shape at each
+        # broad-face corner. The full-port vector potential supplies a
+        # direction different from the existing constant-vector patches.
+        # Keep these strictly *after* the 207-mode family.
+        for port, assembly in enumerate(scene.assemblies):
+            half=np.asarray(assembly.enclosure.half_extents,dtype=float)
+            normal=int(np.argmin(half))
+            tangents=[axis for axis in range(3) if axis!=normal]
+            widths=np.maximum(0.35*half,6.0*scale)
+            widths[normal]=max(
+                0.22*float(half.max()),2.0*half[normal],6.0*scale,
+            )
+            metric=(
+                assembly.pose.rotation @ np.diag(1.0/widths**2)
+                @ assembly.pose.rotation.T
+            )
+            for sign in (-1.0,1.0):
+                for u in (-0.72,0.72):
+                    for v in (-0.72,0.72):
+                        local=np.zeros(3)
+                        local[normal]=sign*(
+                            half[normal]+max(scale,0.15*half[normal])
+                        )
+                        local[tangents]=np.array((u,v))*half[tangents]
+                        modes.append(CurrentMode(
+                            assembly.pose.position(local),
+                            np.zeros(3),float(np.max(widths)),
+                            source_port=port,gaussian_metric=metric.copy(),
+                        ))
     return SeaCurrentBasis(
         scene, tuple(modes), scale,
         sources.lines if (include_source_guided or include_source_face_guided
-                          or include_anisotropic_face_guided) else None,
+                          or include_anisotropic_face_guided
+                          or include_corner_source_guided) else None,
         outer_envelope, taper_width,
     )
