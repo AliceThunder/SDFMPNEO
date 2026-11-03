@@ -330,7 +330,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             relative_residual = np.sqrt(max(float(np.real(np.vdot(
                 residual, np.linalg.solve(r, residual),
             ))), 0.0)) / forcing_norm
-            return z, q, p, relative_residual
+            return z, q, p, relative_residual, j
 
         previous = None
         levels = [
@@ -366,7 +366,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 raise RuntimeError(
                     "nested current modes were discarded by R whitening"
                 )
-            z, q, p, residual = solve_nested(coords, k_curl)
+            z, q, p, residual, j = solve_nested(coords, k_curl)
             print(
                 f"  {label}: modes={coords.shape[1]}, "
                 f"relative_Rinv_residual={residual:.6g}, "
@@ -375,10 +375,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             print(f"  {label}_probes: q={q.tolist()}", flush=True)
             if previous is not None:
-                old_label, old_z, old_q, old_p = previous
+                old_label, old_z, old_q, old_p, old_j = previous
                 print(
                     f"  {old_label}_to_{label}: "
                     f"dZ={relative(z,old_z):.6g}, "
+                    f"dJ={relative(j,old_j):.6g}, "
                     f"dq={relative(q,old_q):.6g}, "
                     f"max_probe_dq={np.max(np.abs(q-old_q)/np.maximum(np.abs(old_q),1e-10)):.6g}, "
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
@@ -403,7 +404,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"peak_scaled_max_dq={np.max(delta)/peak:.6g}",
                     flush=True,
                 )
-            previous = label, z, q, p
+            previous = label, z, q, p, j
 
         # Residual-driven sparse trial selection from the
         # strictly nested level-4 *physical* current family. This is an
