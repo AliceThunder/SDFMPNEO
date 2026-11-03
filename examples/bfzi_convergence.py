@@ -577,6 +577,92 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             np.arange(enriched.size)
         )
 
+        if mode_ablation:
+            # Exact offline leave-one-out Galerkin responses inside this
+            # fixed parent, without assembling further Green integrals.
+            # If A*u=-f and C=A^{-1}, deleting physical mode k gives
+            # u_without_k=u-C[:,k]*(u[k]/C[k,k]) for each unit port.
+            # It answers WHICH present directions matter, not whether
+            # any missing directions outside this parent are resolved.
+            print("\nPhysical-mode leave-one-out response sensitivity:",
+                  flush=True)
+            inverse_columns=np.linalg.solve(
+                raw_a,np.eye(enriched.size,dtype=complex),
+            )
+            normal_raw=np.einsum(
+                "nmc,mr->nrc",normal_modes,raw_directions,optimize=True,
+            )
+            full_normal=np.einsum(
+                "nmc,m->nc",normal_raw,full_coeff @ currents,
+                optimize=True,
+            )
+            full_normal_q=np.sum(np.abs(full_normal)**2,axis=1)/(
+                2*scene.seawater.conductivity
+            )
+            fixed_peak=max(float(np.max(full_q)),1e-30)
+            normal_peak=max(float(np.max(full_normal_q)),1e-30)
+            effects=[]
+            for index,mode in enumerate(enriched.modes):
+                column=inverse_columns[:,index]
+                removed=full_coeff-np.outer(
+                    column/column[index],full_coeff[index],
+                )
+                driven=removed @ currents
+                fixed_j=np.einsum(
+                    "nmc,m->nc",raw_probes,driven,optimize=True,
+                )
+                fixed_q=np.sum(np.abs(fixed_j)**2,axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                norm_j=np.einsum(
+                    "nmc,m->nc",normal_raw,driven,optimize=True,
+                )
+                norm_q=np.sum(np.abs(norm_j)**2,axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                volume=_relative_dissipation_norm(
+                    raw_r,driven,full_coeff @ currents,
+                )
+                ports=_relative_dissipation_norm(raw_r,removed,full_coeff)
+                peak_fixed=float(np.max(np.abs(fixed_q-full_q))/fixed_peak)
+                peak_normal=float(
+                    np.max(np.abs(norm_q-full_normal_q))/normal_peak
+                )
+                effects.append((
+                    index,volume,ports,peak_fixed,peak_normal,
+                ))
+            def show_sensitive(title,ranking):
+                print(f"  {title}: top 6 full-parent removals",
+                      flush=True)
+                for index,volume,ports,peak_fixed,peak_normal in ranking[:6]:
+                    mode=enriched.modes[index]
+                    print(
+                        f"    mode={index}, port={mode.source_port}, "
+                        f"anisotropic={mode.gaussian_metric is not None}, "
+                        f"center={mode.center.tolist()}, width={mode.width:.6g}, "
+                        f"dJ_volume={volume:.6g}, "
+                        f"dJ_ports_volume={ports:.6g}, "
+                        f"peak_scaled_probe_dq={peak_fixed:.6g}, "
+                        f"peak_scaled_normal_dq={peak_normal:.6g}",
+                        flush=True,
+                    )
+            show_sensitive(
+                "most_influential_for_volume_J",
+                sorted(effects,key=lambda e:e[1],reverse=True),
+            )
+            show_sensitive(
+                "most_influential_for_normal_Joule",
+                sorted(effects,key=lambda e:e[4],reverse=True),
+            )
+            print(
+                "  ablation_note: each deletion re-solves the remaining "
+                "Galerkins exactly by a single inverse-column update. "
+                "Small individual effects can coexist with a large "
+                "collective effect from correlated modes; this does "
+                "not establish continuum basis completeness.",
+                flush=True,
+            )
+
         # A two-port phasor solution has at most four REAL response
         # directions regardless of the size of the physical trial space.
         # The parent MUST be converged separately; this only proves that
