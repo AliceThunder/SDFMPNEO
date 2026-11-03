@@ -48,6 +48,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 independent 
 python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199-mode A/B magnetic cubature (more expensive)
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B
+python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -263,9 +264,53 @@ The nested diagnostic now also compares the individual complex
 `dJ_ports`), rather than relying only on one combined phasor
 drive which may accidentally cancel errors. The magnetic A/B
 response gate includes both-port current-field consistency.
-The 207-mode parent and its A/B result remain **unverified**
-until numerically executed; the extra modes should not be used
-for cross-geometry label production yet.
+**Measured 199→207 response (2026-11-03, 56 tests passing):**
+The added normal/tangential anisotropic curls yield
+`dZ=0.00149159`, `dJ=0.0303386`,
+`dJ_ports=0.0308608`, `dq=0.030114`,
+and `dP=0.00157138`. Hotspot maximum pointwise heat
+changes by 6.60%; the largest per-point relative change is
+4.07843 at fixed probe `[0,0,0.22]`, where q changes from
+`8.11357e-6` to `4.12042e-5 W/m^3`.
+This is a significant **sensitivity to missing trial directions**,
+not a demonstrated improvement in accuracy. Residual-driven
+selection still requires 207/207 modes for the strict all-probe
+criterion, and the new full parent is not continuum-certified.
+The independent 207-mode magnetic or local R/K A/B comparisons have
+**not yet been measured**.
+
+**Integrated electromagnetic current and normal-profile convergence:**
+The nested modal, adaptive and magnetic A/B reports now include
+`dJ_volume` for the combined port drive and
+`dJ_ports_volume` for both unit-port fields. These are
+resistance-weighted physical current norm ratios:
+`sqrt(delta_u^H R delta_u / u_ref^H R u_ref)`, using the
+same *refined* positive seawater volume R integration (not an
+additional solver mesh or a small collection of spot samples).
+They measure an approximate full-seawater L²(J/sqrt(sigma)) error
+**relative to the chosen reference solution**, not a continuum
+error certificate. The magnetic driven-response gate also requires
+both volume-norm errors to be ≤1%.
+
+A separate 40-point `*_normal_sweep` follows the outward normals
+of both package broad faces at several distances and two tangential
+positions. Its heat comparison is reported independently from the
+original 16 fixed probes (whose earlier values are not redefined).
+This targets the large near-receiver normal-direction sensitivity
+without altering the old convergence series.
+
+Use `--basis-ball-aniso --basis-ball-check-rk` for one **independent
+normal integration** refinement (A order 5 vs B order 6): it keeps
+all 207 basis directions, Green L, radial and tangential integration
+settings fixed, streams the new R/K integrals, and prints
+`dR`, both forms of `dK`, Z, pointwise/Joule, full-volume J,
+and power differences. It does not check all spatial integration
+directions. The existing `--basis-ball-check-l` instead changes
+only the nonlocal magnetic Green rule; it is independent from the
+new local-R/K option. These expensive studies may be run separately.
+
+**Do not generate cross-geometry high-fidelity labels from the
+207-mode parent yet.**
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
