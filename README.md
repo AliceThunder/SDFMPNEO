@@ -212,11 +212,15 @@ seawater current patterns. `--basis-ball-edge` keeps the complete
 Gaussian curl patches along the outer midpoints of each broad face,
 for two tangential current directions and two boxes: 32 new real modes.
 The generated modes remain curl potentials with the same insulating
-wall and outer-boundary constraints. The diagnostic reports Z,
+wall and outer-boundary constraints. The diagnostic reports Z, **complex physical current-field dJ**,
 all near-wall heat probes, hotspot/max-absolute heat sensitivity,
 power and R-inverse equation residual against the unchanged 167
 subspace. Optional `--basis-ball-check-l` also compares independent
-magnetic quadrature rules within the full 199-mode space.
+magnetic quadrature rules within the full 199-mode space, reporting
+`dReZ` and `dImZ` separately: an impedance dominated by resistance
+can have a tiny combined `dZ` while the relative reactive impedance
+error is much larger. These componentwise values are descriptive,
+not a new operator-convergence certification gate.
 
 This 199-mode experiment is **not yet run**, and should not be treated
 as an accuracy improvement until the user executes it. The reduced
