@@ -135,7 +135,16 @@ new spatial objective helps on these particular labels, **not**
 evidence of generalization to arbitrary poses, package sizes or media.
 The source teacher remains the same unverified 27-mode one. Further
 training-data expansion should follow, not precede, physical teacher
-convergence.
+convergence. The training summary also includes
+`heldout_drive_j_relative_error` and
+`heldout_drive_q_relative_error`, defined as the **mean of per-geometry
+relative norms under the same complex port drive and probes as
+`bfzi-eval`**. These are directly comparable to `raw_j_relative_error`
+and `raw_probe_q_relative_error`. Older
+`heldout_probe_j_relative_error` and
+`heldout_probe_q_relative_error` are RMS loss summaries across both
+unit-port fields and must not be numerically equated to driven holdout
+means.
 
 **Measured 159→167 face-guided enrichment (2026-11-02):**
 On the same high-resolution streamed R/K and original magnetic A
