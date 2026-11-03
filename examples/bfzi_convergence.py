@@ -1004,7 +1004,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 flush=True,
             )
             if (dz<=0.002 and dq<=0.005 and dp<=0.002
-                    and max_dq<=0.05):
+                    and max_dq<=0.05
+                    and dj_volume<=0.01 and dj_ports_volume<=0.01):
                 status = (
                     "SPARSE_MATCH" if len(selected)<enriched.size
                     else "FULL_PARENT_ONLY"
@@ -1012,7 +1013,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 print(
                     f"  adaptive_screen: {status}; "
                     f"selected={len(selected)}/{enriched.size}, "
-                    "matched all fixed heat probes to <=5% plus port "
+                    "matched all fixed heat probes to <=5%, "
+                    "both full-volume J norms to <=1%, plus port "
                     "and aggregate heat criteria relative to this parent; "
                     "NOT continuum-certified",
                     flush=True,
