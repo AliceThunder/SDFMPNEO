@@ -123,11 +123,56 @@ alongside the earlier metrics. The new loss is currently enabled
 only for the **explicitly reconstructible 27-mode v1 topology**;
 other topologies still use the coefficient/port objective until
 labels persist the complete physical-basis construction.
-This experiment has **not** improved or validated the old checkpoint
-without retraining, and the same provisional reference still limits
-all labels. No amount of neural fitting can certify inaccurate
-electromagnetic training targets. Re-train to a *new* model filename
-to compare without overwriting the existing checkpoint.
+**Measured retraining outcome (2026-11-02, 54 passing tests):**
+At 400 requested epochs, validation selected epoch 25 on the original
+6-train/2-holdout provisional dataset. Using
+`--field-loss-weight 1.0 --joule-loss-weight 0.15`, held-out
+mean raw field J error fell **0.7960→0.7033** and local Joule error
+**0.9271→0.8120**, while raw port Z error rose
+**0.0904→0.0936**. With only two holdouts, both outside at least
+one training coordinate's observed range, this is evidence that the
+new spatial objective helps on these particular labels, **not**
+evidence of generalization to arbitrary poses, package sizes or media.
+The source teacher remains the same unverified 27-mode one. Further
+training-data expansion should follow, not precede, physical teacher
+convergence.
+
+**Measured 159→167 face-guided enrichment (2026-11-02):**
+On the same high-resolution streamed R/K and original magnetic A
+uniform-ball rule, the eight source-face guided curl modes changed
+`dZ=0.000968301`, aggregate probe `dq=0.0165902`,
+and `dP=0.00103697`. Maximum single-probe
+relative `dq=0.797511` occurs at a cooler location
+(reference q ≈3.69e-4 W/m³, change ≈2.95e-4 W/m³).
+The worst **absolute** heat difference is about 2.82% of the parent
+peak q; at probes at least 10% as hot as that peak the largest
+pointwise relative difference is about 3.23%.
+These are different diagnostics: a small global heat norm does not
+guarantee every local thermal query is accurate. The 167-mode parent
+still lacks an independently run B magnetic integral and a stable
+further physical-basis hierarchy. **Do not promote it to trusted
+cross-geometry label generation.**
+
+The residual-driven greedy comparison now continues to the true end
+of the parent (including the 167th direction), rather than hitting
+the former fixed 13-iteration 159-mode limit. It additionally reports
+`hotspot_max_dq` (probes whose reference heat reaches at least 10%
+of its maximum), `peak_scaled_max_dq` (worst absolute difference
+normalized by the peak), and the original uncompromised
+`max_probe_dq` strict acceptance criterion. A
+`hotspot_match=True` is an informative weaker diagnostic, not
+a strict success or a continuum certificate.
+
+Next run, if needed after the inexpensive tests:
+
+```bash
+python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l
+```
+
+This keeps the 167-mode physical trial space and refined R/K fixed
+while comparing independent magnetic A and B cubatures. The run
+still performs expensive Green assembly; no A/B result for the
+167-mode parent is currently available.
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
