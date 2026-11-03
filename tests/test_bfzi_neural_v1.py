@@ -83,6 +83,8 @@ def test_provisional_neural_holdout_and_passive_inference(tmp_path):
     assert result["spatial_supervision_enabled"]
     assert np.isfinite(result["heldout_probe_j_relative_error"])
     assert np.isfinite(result["heldout_probe_q_relative_error"])
+    assert np.isfinite(result["heldout_drive_j_relative_error"])
+    assert np.isfinite(result["heldout_drive_q_relative_error"])
     assert np.isfinite(result["validation_objective"])
     # Closure is opt-in: it can reduce accuracy when J is poorly learned.
     prediction=BFZINeuralSurrogate.load(model).predict(
