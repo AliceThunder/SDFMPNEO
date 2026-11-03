@@ -1028,6 +1028,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
                 dJports=_relative_dissipation_norm(r,ub,ua)
                 dZ=relative(zb,za)
+                dImZ=relative(zb.imag,za.imag)
                 dq=relative(qb,qa)
                 dP=abs(pb-pa)/max(abs(pa),1e-30)
                 peak_nq=float(np.max(np.abs(qnb-qna)))/max(
@@ -1036,7 +1037,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 max_probe_dq=float(np.max(
                     np.abs(qb-qa)/np.maximum(qa,1e-10)
                 ))
-                gate=(dZ<=0.002 and dJ<=0.01 and dJports<=0.01
+                # Reactive port impedance is separately significant:
+                # full complex-Z agreement can hide >1% error in Im(Z).
+                gate=(dZ<=0.002 and dImZ<=0.01
+                      and dJ<=0.01 and dJports<=0.01
                       and dq<=0.005 and dP<=0.002
                       and max_probe_dq<=0.05 and peak_nq<=0.01)
                 print(
@@ -1045,7 +1049,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"dK={relative(kb,k_curl):.6g}, "
                     f"dK_dual={relative(kdb,k_dual):.6g}, "
                     f"dZ={dZ:.6g}, "
-                    f"dImZ={relative(zb.imag,za.imag):.6g}, "
+                    f"dImZ={dImZ:.6g}, "
                     f"dJ_volume={dJ:.6g}, "
                     f"dJ_ports_volume={dJports:.6g}, "
                     f"dq={dq:.6g}, "
