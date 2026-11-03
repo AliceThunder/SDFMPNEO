@@ -23,16 +23,27 @@ def train(argv=None):
     parser.add_argument("--epochs",type=int,default=400)
     parser.add_argument("--hidden",type=int,default=96)
     parser.add_argument("--seed",type=int,default=13)
+    parser.add_argument(
+        "--field-loss-weight",type=float,default=1.0,
+        help="supervise geometry-following physical current probes (27-mode labels)",
+    )
+    parser.add_argument(
+        "--joule-loss-weight",type=float,default=0.15,
+        help="supervise local physical Joule probes under a fixed complex drive",
+    )
     args=parser.parse_args(argv)
     result=train_response_surrogate(
         args.dataset,args.model,epochs=args.epochs,
         hidden=args.hidden,seed=args.seed,
+        field_loss_weight=args.field_loss_weight,
+        joule_loss_weight=args.joule_loss_weight,
     )
     print(json.dumps(result,indent=2),flush=True)
     print("Saved PROVISIONAL model:",args.model,flush=True)
-    print("Held-out errors are against provisional small-mode labels; "
-          "no physical accuracy or cross-domain generalization "
-          "has been certified.",flush=True)
+    print("Held-out field/Joule metrics are evaluated against the same "
+          "provisional 27-mode labels; they are NOT converged MQS truth. "
+          "A held-out geometry split does not establish robust "
+          "extrapolation.",flush=True)
 
 
 def infer(argv=None):
