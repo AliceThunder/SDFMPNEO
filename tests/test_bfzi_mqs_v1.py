@@ -236,6 +236,43 @@ def test_anisotropic_face_curls_nest_199_and_follow_rotated_pose():
     )
 
 
+def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
+    """The R-weighted metric equals whole-domain J/sigma quadrature."""
+    from sdfmpneo_bfzi import build_sea_basis
+    from examples.bfzi_convergence import _relative_dissipation_norm
+
+    scene=scene_pair()
+    basis=build_sea_basis(scene,modes_per_face=1)
+    points,weights=scene.box_shell_quadrature(
+        3,4,6,shell_normal_order=2,shell_tangential_order=3,
+    )
+    modes=basis.evaluate(points)
+    inv_sigma_weights=weights/scene.seawater.conductivity
+    resistance=np.einsum(
+        "n,nic,njc->ij",inv_sigma_weights,modes,modes,optimize=True,
+    )
+    reference=np.zeros((basis.size,2),dtype=complex)
+    reference[0,0]=1.0+0.25j
+    reference[1,1]=-0.3+0.2j
+    approximate=reference.copy()
+    approximate[0,0]+=0.1+0.04j
+    approximate[2,1]+=0.02-0.03j
+    current_ref=np.einsum(
+        "nic,ip->npc",modes,reference,optimize=True,
+    )
+    current_error=np.einsum(
+        "nic,ip->npc",modes,approximate-reference,optimize=True,
+    )
+    physical=np.sqrt(
+        np.sum(inv_sigma_weights[:,None,None]*np.abs(current_error)**2)
+        /np.sum(inv_sigma_weights[:,None,None]*np.abs(current_ref)**2)
+    )
+    np.testing.assert_allclose(
+        _relative_dissipation_norm(resistance,approximate,reference),
+        physical,rtol=1e-11,atol=1e-12,
+    )
+
+
 def test_reject_overlapping_packages():
     scene = scene_pair()
     with pytest.raises(ValueError, match="overlap"):
