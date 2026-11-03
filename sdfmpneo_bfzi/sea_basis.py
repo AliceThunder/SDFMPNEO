@@ -208,7 +208,9 @@ def build_sea_basis(
     pose. Face refinement adds four nested smaller Gaussian patches per
     selected face. Level 3 nests four narrower edge-centered patches.
     Level 4 adds eight compact patches per selected face, including four
-    corner locations, without replacing any previous physical modes.
+    corner locations. Level 5 adds four narrower edge-lip patches per
+    selected face (without replacing previous modes) to independently
+    test whether the 167-mode parent misses near-perimeter currents.
     refine_thin_faces_only=True restricts these *extra*
     patches to the two faces normal to the box's shortest dimension
     (typically the broad top/bottom charging-pad surfaces), keeping the
@@ -223,8 +225,8 @@ def build_sea_basis(
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
-    if face_refinement not in (1, 2, 3, 4):
-        raise ValueError("face_refinement must be 1, 2, 3 or 4")
+    if face_refinement not in (1, 2, 3, 4, 5):
+        raise ValueError("face_refinement must be 1, 2, 3, 4 or 5")
     if not isinstance(refine_thin_faces_only, bool):
         raise ValueError("refine_thin_faces_only must be a boolean")
     if outer_envelope not in ("boundary_layer", "quadratic"):
@@ -296,6 +298,17 @@ def build_sea_basis(
                         patches.extend((u, v, 0.34) for u, v in (
                             (-0.25, 0.0), (0.25, 0.0),
                             (0.0, -0.25), (0.0, 0.25),
+                        ))
+                    if face_refinement >= 5:
+                        # Independent near-perimeter edge-lip responses.
+                        # Stage 4 resolves corners and quarter-face
+                        # gradients, but not thin current variation near
+                        # the midpoints of the four outer face edges.
+                        # A width ~0.03 m for 0.1 m half faces remains
+                        # resolved by the refined tangential panel rule.
+                        patches.extend((u, v, 0.30) for u, v in (
+                            (-0.92, 0.0), (0.92, 0.0),
+                            (0.0, -0.92), (0.0, 0.92),
                         ))
                 for u, v, width_factor in patches:
                     local = np.zeros(3)
