@@ -44,6 +44,8 @@ python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_n
 python run.py --mode bfzi-convergence --basis-ball-check-l # optional expensive 159-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-ball-face # experimental 159→167 source-face-curl enrichment
 python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l # independent 167-mode magnetic A/B
+python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 independent face-edge curl directions (expensive)
+python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199-mode A/B magnetic cubature (more expensive)
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -182,6 +184,45 @@ This keeps the 167-mode physical trial space and refined R/K fixed
 while comparing independent magnetic A and B cubatures. The run
 still performs expensive Green assembly; no A/B result for the
 167-mode parent is currently available.
+
+**Independent 167-mode A/B result (2026-11-02; 54 tests passed):**
+The user's completed `--basis-ball-face --basis-ball-check-l` run
+confirmed `dL=0.103331` (whole-operator FAIL) but
+`dZ=0.000286255`, `dJ=0.000576561`,
+`dq=0.000189255`, `dP=0.000022392`, maximal
+individual probe `dq=0.00314065`, and B-on-A R-inverse
+residual `0.000897201` (driven-response PASS). These independent
+magnetic rules agree strongly on the driven response, but neither
+rules out shared bias nor certifies physical completeness. The fixed
+167-mode response compression has rank four in real coordinates only
+at the same geometry/frequency.
+
+The repaired residual-driven 167-mode selection completed at
+`adaptive_13` and needed **all 167 modes** for the strict
+all-probe ≤5% criterion. The 151-mode subset had
+`hotspot_max_dq=0.00214038` and
+`peak_scaled_max_dq=0.001425` (hotspot match), but still
+`max_probe_dq=0.264188` because cooler locations respond
+differently. Keep strict and hotspot criteria distinct.
+
+**New optional 167→199 nested edge-lip trial:**
+The next unresolved physical axis is the independence of near-perimeter
+seawater current patterns. `--basis-ball-edge` keeps the complete
+167-mode face-guided hierarchy and adds four narrower localized
+Gaussian curl patches along the outer midpoints of each broad face,
+for two tangential current directions and two boxes: 32 new real modes.
+The generated modes remain curl potentials with the same insulating
+wall and outer-boundary constraints. The diagnostic reports Z,
+all near-wall heat probes, hotspot/max-absolute heat sensitivity,
+power and R-inverse equation residual against the unchanged 167
+subspace. Optional `--basis-ball-check-l` also compares independent
+magnetic quadrature rules within the full 199-mode space.
+
+This 199-mode experiment is **not yet run**, and should not be treated
+as an accuracy improvement until the user executes it. The reduced
+`dZ` from 159→167 alone does not prove spatial convergence;
+the large 95→159 response change is the reason to test additional
+independent near-edge directions, not to train more provisional labels.
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
