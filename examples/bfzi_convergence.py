@@ -532,6 +532,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             dL = relative(magnetic_b,teacher.inductance)
             dZ = relative(z_b,z_a)
+            # The seawater impedance is mostly resistive here. A small
+            # full-complex dZ can obscure a much larger relative error
+            # in its physically important reactive component.
+            dReZ = relative(z_b.real,z_a.real)
+            dImZ = relative(z_b.imag,z_a.imag)
             dJ = relative(j_b,j_a)
             dq = relative(q_b,q_a)
             dP = abs(p_b-p_a)/max(abs(p_a),1e-30)
@@ -554,7 +559,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             passed=operator_pass and response_pass
             print(
                 f"  ball_{enriched.size}_B_vs_A: dL={dL:.6g}, "
-                f"dZ={dZ:.6g}, dJ={dJ:.6g}, dq={dq:.6g}, "
+                f"dZ={dZ:.6g}, dReZ={dReZ:.6g}, "
+                f"dImZ={dImZ:.6g}, "
+                f"dJ={dJ:.6g}, dq={dq:.6g}, "
                 f"max_probe_dq={np.max(np.abs(q_b-q_a)/np.maximum(q_a,1e-10)):.6g}, "
                 f"dP={dP:.6g}, "
                 f"B_on_A_Rinv_residual={b_relative_residual:.6g}, "
@@ -587,9 +594,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     "convergence, and neither certifies continuum accuracy.",
                     flush=True,
                 )
-            print("  magnetic_note: compare with successive modal changes; "
-                  "both must be small before declaring a spatial teacher.",
-                  flush=True)
+            print("  magnetic_note: a resistive-dominated full dZ can "
+                  "hide reactive impedance error; inspect dImZ separately. "
+                  "Also compare successive modal changes before declaring "
+                  "a spatial teacher.",flush=True)
 
         initial_basis = build_sea_basis(
             scene, modes_per_face=2, face_refinement=2,
