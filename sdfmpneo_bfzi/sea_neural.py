@@ -545,6 +545,9 @@ def train_response_surrogate(
     result=result*y_scale+y_mean
     err_current=[]
     err_z=[]
+    err_drive_j=[]
+    err_drive_q=[]
+    drive=np.array([1.0+0.2j,-0.4+0.5j])
     for row,j in zip(result,val_idx):
         estimate,z=_decode_target(row,mode_count)
         truth=labels[j]
@@ -556,6 +559,30 @@ def train_response_surrogate(
             np.linalg.norm(z-truth.impedance_seawater)/
             max(np.linalg.norm(truth.impedance_seawater),1e-30)
         ))
+        if spatial_enabled:
+            # Same physical points, complex drive and per-scene reduction
+            # used by bfzi-eval. This is deliberately distinct from
+            # sqrt(mean(two-port normalized squared J/Joule loss)).
+            estimated_j=np.einsum(
+                "pmc,m->pc",modes_np[j],estimate @ drive,optimize=True,
+            )
+            reference_j=np.einsum(
+                "pcu,u->pc",field_np[j],drive,optimize=True,
+            )
+            estimated_q=np.sum(np.abs(estimated_j)**2,axis=1)/(
+                2*sigma_np[j]
+            )
+            reference_q=np.sum(np.abs(reference_j)**2,axis=1)/(
+                2*sigma_np[j]
+            )
+            err_drive_j.append(float(
+                np.linalg.norm(estimated_j-reference_j)/
+                max(np.linalg.norm(reference_j),1e-30)
+            ))
+            err_drive_q.append(float(
+                np.linalg.norm(estimated_q-reference_q)/
+                max(np.linalg.norm(reference_q),1e-30)
+            ))
     summary={
         "train_geometries":int(len(train_idx)),
         "heldout_geometries":int(len(val_idx)),
@@ -571,6 +598,12 @@ def train_response_surrogate(
             if val_heat is not None else None
         ),
         "spatial_supervision_enabled":bool(spatial_enabled),
+        "heldout_drive_j_relative_error":(
+            float(np.mean(err_drive_j)) if err_drive_j else None
+        ),
+        "heldout_drive_q_relative_error":(
+            float(np.mean(err_drive_q)) if err_drive_q else None
+        ),
         "heldout_raw_mode_relative_error":float(np.mean(err_current)),
         "heldout_port_z_relative_error":float(np.mean(err_z)),
     }
