@@ -350,7 +350,12 @@ modes are listed for current energy and normal heating separately.
 This is a diagnostic of which **included** modes matter.
 Collective/correlated mode contributions cannot be inferred from
 single-mode ablation; neither can the influence of as-yet missing
-physical directions.
+physical directions. The adaptive `SPARSE_MATCH` acceptance gate
+now also requires both the combined-drive and both-unit-port
+`dJ_volume` metrics to be at most 1% relative to the fixed parent,
+in addition to the pre-existing port, power, aggregate heat and
+all-probe criteria. The R-norm bound remains an independently reported
+conservative diagnostic, not an assumed continuum certificate.
 
 **Do not generate cross-geometry high-fidelity labels from the
 207-mode parent yet.**
