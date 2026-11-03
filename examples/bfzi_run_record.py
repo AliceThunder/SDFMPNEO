@@ -58,8 +58,8 @@ def _short(line: str) -> str | None:
         label, rest = line.split(":", 1)
         # Show final physical stages only. All early stages remain in the file.
         if not any(part in label for part in (
-            "to_anisotropic_face_curls", "to_global_multiscale",
-            "to_corner_source_curls",
+            "to_anisotropic_face_curls", "to_global_short_scale",
+            "to_global_multiscale", "to_corner_source_curls",
         )):
             return None
         values = _fields(rest)
@@ -70,6 +70,7 @@ def _short(line: str) -> str | None:
             ) if k in values
         )
     if line.startswith(("anisotropic_face_curls_normal_sweep:",
+                        "global_short_scale_normal_sweep:",
                         "global_multiscale_normal_sweep:",
                         "corner_source_curls_normal_sweep:")):
         values = _fields(line)
@@ -78,9 +79,11 @@ def _short(line: str) -> str | None:
                 "dq", "peak_scaled_max_dq",
             ) if k in values
         )
+    if line.startswith("global_scale_condition_"):
+        return line
     if ": modes=" in line and any(line.startswith(x) for x in (
-        "anisotropic_face_curls:", "global_multiscale:",
-        "corner_source_curls:",
+        "anisotropic_face_curls:", "global_short_scale:",
+        "global_multiscale:", "corner_source_curls:",
     )):
         values = _fields(line)
         return line.split(":", 1)[0] + ": " + ", ".join(
@@ -143,7 +146,9 @@ def _summary(root, flags, started, ended, status, raw):
         if "_to_" in line and ": dZ=" in line:
             label, rest = line.split(":", 1)
             comparisons.append((label, _fields(rest)))
-        if ("_vs_A:" in line or line.startswith("adaptive_screen:")):
+        if ("_vs_A:" in line or line.startswith((
+            "adaptive_screen:", "global_scale_condition_",
+        ))):
             gates.append(line)
 
     commit = _git(root, "rev-parse", "--short", "HEAD")
