@@ -273,6 +273,46 @@ def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
     )
 
 
+def test_parent_energy_bound_and_mode_deletion_match_direct_galerkin():
+    """Small complex-symmetric MQS system: bound and removal are physical."""
+    from examples.bfzi_convergence import (
+        _relative_dissipation_norm, _parent_galerkin_energy_bound,
+        _leave_one_out_coefficients,
+    )
+
+    r=np.array([[3.,0.3,0.],[0.3,1.5,0.1],[0.,0.1,2.]])
+    l=np.array([[2.,0.1,0.],[0.1,1.,0.2],[0.,0.2,1.2]])
+    system=r+1j*3.*l
+    forcing=np.array([
+        [0.5+0.1j,-0.2j],
+        [-0.2+0.3j,0.7],
+        [0.1,-0.4+0.2j],
+    ])
+    full=np.linalg.solve(system,-forcing)
+    trial=full.copy()
+    trial[0]=0
+    trial[2]*=0.85
+    error=_relative_dissipation_norm(r,trial,full)
+    bound=_parent_galerkin_energy_bound(r,system,forcing,trial)
+    assert error>0
+    assert error<=bound*(1+1e-12)
+    assert _parent_galerkin_energy_bound(
+        r,system,forcing,full,
+    )<1e-12
+
+    inverse=np.linalg.solve(system,np.eye(3))
+    for index in (0,1,2):
+        dropped=_leave_one_out_coefficients(inverse,full,index)
+        keep=[i for i in range(3) if i!=index]
+        direct=np.linalg.solve(
+            system[np.ix_(keep,keep)],-forcing[keep],
+        )
+        np.testing.assert_allclose(dropped[index],0.,atol=1e-13)
+        np.testing.assert_allclose(
+            dropped[keep],direct,rtol=1e-12,atol=1e-13,
+        )
+
+
 def test_reject_overlapping_packages():
     scene = scene_pair()
     with pytest.raises(ValueError, match="overlap"):
