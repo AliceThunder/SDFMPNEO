@@ -8,7 +8,6 @@ from __future__ import annotations
 from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime, timezone
 from pathlib import Path
-import os
 import re
 import subprocess
 import sys
@@ -281,7 +280,7 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
         writer.flush()
     ended = datetime.now(timezone.utc).isoformat(timespec="seconds")
     raw = full_path.read_text(encoding="utf-8")
-    status = "PASS（程序完成；不代表物理收敛）" if not failed else "FAIL（执行异常）"
+    status = "PASS（程序完成；不代表物理收敛）" if not failed else "FAIL（测试或执行未通过）"
     summary_path.write_text(
         _summary(root, flags, started, ended, status, raw),
         encoding="utf-8",
