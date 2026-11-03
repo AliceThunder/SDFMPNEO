@@ -128,6 +128,39 @@ def test_optional_face_guided_basis_nests_complete_port_curls():
     )
 
 
+def test_edge_lip_level_five_nests_167_into_199():
+    """Experimental edge-lip directions remain independent and nested."""
+    from sdfmpneo_bfzi import build_sea_basis
+
+    scene=scene_pair()
+    source=build_bfzi_source(scene,200_000.,order=3)
+    args=dict(
+        modes_per_face=2,refine_thin_faces_only=True,
+        sources=source,include_source_guided=True,
+        include_source_face_guided=True,
+    )
+    earlier=build_sea_basis(scene,face_refinement=4,**args)
+    expanded=build_sea_basis(scene,face_refinement=5,**args)
+    assert earlier.size==167
+    assert expanded.size==199
+
+    def signature(mode):
+        return (
+            tuple(mode.center),tuple(mode.direction),
+            mode.width,mode.source_port,
+        )
+    index={signature(mode):j for j,mode in enumerate(expanded.modes)}
+    indices=[index[signature(mode)] for mode in earlier.modes]
+    assert len(indices)==len(set(indices))==earlier.size
+    points=np.array([[0.,0.,0.],[0.13,0.,-0.13]])
+    assert scene.in_seawater(points).all()
+    np.testing.assert_allclose(
+        expanded.evaluate(points)[:,indices,:],
+        earlier.evaluate(points),rtol=1e-12,atol=1e-12,
+    )
+    assert np.isfinite(expanded.evaluate(points)).all()
+
+
 def test_reject_overlapping_packages():
     scene = scene_pair()
     with pytest.raises(ValueError, match="overlap"):
@@ -443,7 +476,7 @@ def test_level_three_thin_face_modes_nest_63_into_95():
     )
     assert np.isfinite(full).all() and np.isfinite(enlarged).all()
     with pytest.raises(ValueError, match="face_refinement"):
-        build_sea_basis(scene, face_refinement=5)
+        build_sea_basis(scene, face_refinement=6)
 
 
 def test_reference_refuses_basis_from_a_different_outer_domain():
