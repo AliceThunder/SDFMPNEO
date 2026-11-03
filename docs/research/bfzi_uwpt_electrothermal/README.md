@@ -6,9 +6,9 @@
 
 1. [项目当前进度总图与看板](PROJECT_PROGRESS.md)：物理模块、**封装**、数值验收、神经代理、热演化、下一关口和本地测试证据；**当前状态以此为准**。
 2. [新理论主文档](../../../theory/main.tex)：多文件 LaTeX 主入口。
-2. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
-3. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
-4. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
+3. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
+4. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
+5. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
 
 ## 几何权威来源
 
