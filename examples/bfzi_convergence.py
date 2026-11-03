@@ -90,6 +90,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       green_ball: bool = False,
                       ball_reference: bool = False,
                       ball_l_check: bool = False,
+                      rk_normal_check: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
                       anisotropic_refinement: bool = False):
@@ -704,6 +705,91 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                   "hide reactive impedance error; inspect dImZ separately. "
                   "Also compare successive modal changes before declaring "
                   "a spatial teacher.",flush=True)
+
+        if rk_normal_check:
+            # Independently resolve the face-normal one-volume R/K rule
+            # without recomputing the expensive Green L, changing basis,
+            # or retaining a giant heat tensor. Hold all tangential,
+            # angular, radial and source parameters fixed.
+            b_cfg=replace(r_cfg,shell_normal_order=r_cfg.shell_normal_order+1)
+            nx,nw=scene.box_shell_quadrature(
+                b_cfg.radial_order,b_cfg.polar_order,b_cfg.azimuthal_order,
+                wall_scale=enriched.wall_scale,
+                shell_width_factor=b_cfg.shell_width_factor,
+                shell_normal_order=b_cfg.shell_normal_order,
+                shell_tangential_order=b_cfg.shell_tangential_order,
+                shell_tangential_max_panel_width=b_cfg.shell_tangential_max_panel_width,
+                outer_taper_width=enriched.outer_taper_width,
+                max_radial_panel_width=b_cfg.max_radial_panel_width,
+                radial_geometry_cuts=b_cfg.radial_geometry_cuts,
+                polar_geometry_order=b_cfg.polar_geometry_order,
+                azimuthal_panel_order=b_cfg.azimuthal_panel_order,
+            )
+            print(
+                f"\\nIndependent {enriched.size}-mode R/K face-normal cubature: "
+                f"A_normal={r_cfg.shell_normal_order}, "
+                f"B_normal={b_cfg.shell_normal_order}, "
+                f"B_nodes={len(nx)}",flush=True,
+            )
+            r_b,k_b,kdual_b=teacher.reintegrate_local_operators(nx,nw)
+            del nx,nw
+            def rk_response(local_r,local_k):
+                coeff=np.linalg.solve(
+                    local_r+1j*omega*teacher.inductance,
+                    -1j*omega*local_k,
+                )
+                z=1j*omega*local_k.T @ coeff
+                z=0.5*(z+z.T)
+                field=np.einsum(
+                    "nmc,m->nc",probe_modes,coeff @ currents,
+                    optimize=True,
+                )
+                heat=np.sum(np.abs(field)**2,axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                power=0.5*float(np.real(np.vdot(
+                    coeff @ currents,local_r @ (coeff @ currents),
+                )))
+                return coeff,z,field,heat,power
+
+            u_ka,z_ka,j_ka,q_ka,p_ka=rk_response(r,k_curl)
+            u_kb,z_kb,j_kb,q_kb,p_kb=rk_response(r_b,k_b)
+            rk_field_energy=_relative_dissipation_norm(
+                r,u_kb @ currents,u_ka @ currents,
+            )
+            rk_ports_energy=_relative_dissipation_norm(r,u_kb,u_ka)
+            rk_response_pass=(
+                relative(z_kb,z_ka)<=0.002
+                and relative(j_kb,j_ka)<=0.01
+                and rk_field_energy<=0.01 and rk_ports_energy<=0.01
+                and relative(q_kb,q_ka)<=0.005
+                and np.max(np.abs(q_kb-q_ka)/np.maximum(q_ka,1e-10))<=0.05
+                and abs(p_kb-p_ka)/max(abs(p_ka),1e-30)<=0.002
+            )
+            print(
+                f"  rk_normal_{enriched.size}_B_vs_A: "
+                f"dR={relative(r_b,r):.6g}, "
+                f"dK={relative(k_b,k_curl):.6g}, "
+                f"dK_dual={relative(kdual_b,k_dual):.6g}, "
+                f"dZ={relative(z_kb,z_ka):.6g}, "
+                f"dReZ={relative(z_kb.real,z_ka.real):.6g}, "
+                f"dImZ={relative(z_kb.imag,z_ka.imag):.6g}, "
+                f"dJ={relative(j_kb,j_ka):.6g}, "
+                f"dJ_volume={rk_field_energy:.6g}, "
+                f"dJ_ports_volume={rk_ports_energy:.6g}, "
+                f"dq={relative(q_kb,q_ka):.6g}, "
+                f"max_probe_dq={np.max(np.abs(q_kb-q_ka)/np.maximum(q_ka,1e-10)):.6g}, "
+                f"dP={abs(p_kb-p_ka)/max(abs(p_ka),1e-30):.6g}, "
+                f"response_gate={'PASS' if rk_response_pass else 'FAIL'}",
+                flush=True,
+            )
+            print(
+                "  rk_normal_note: B changes only face-normal integration "
+                "order. The reported full-volume J metric uses common "
+                "A-rule resistance; passing this comparison alone does "
+                "not certify tangential, far-field or Green convergence.",
+                flush=True,
+            )
 
         initial_basis = build_sea_basis(
             scene, modes_per_face=2, face_refinement=2,
@@ -2230,6 +2316,7 @@ def main(
     basis_green_ball: bool = False,
     basis_ball: bool = False,
     basis_ball_check_l: bool = False,
+    basis_ball_check_rk: bool = False,
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
     basis_ball_aniso: bool = False,
@@ -2241,7 +2328,8 @@ def main(
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face or basis_ball_edge or basis_ball_aniso):
+            or basis_ball_check_rk or basis_ball_face or basis_ball_edge
+            or basis_ball_aniso):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2253,8 +2341,10 @@ def main(
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face or basis_ball_edge or basis_ball_aniso,
+            or basis_ball_check_rk or basis_ball_face or basis_ball_edge
+            or basis_ball_aniso,
             ball_l_check=basis_ball_check_l,
+            rk_normal_check=basis_ball_check_rk,
             source_face_guided=(
                 basis_ball_face or basis_ball_edge or basis_ball_aniso
             ),
