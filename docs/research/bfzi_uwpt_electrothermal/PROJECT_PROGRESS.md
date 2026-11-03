@@ -175,7 +175,8 @@ flowchart LR
 git pull --ff-only
 # 自动运行三组 BFZI pytest、执行指定数值实验，并把摘要和完整日志推送 GitHub
 # 新版本默认精简终端输出；不使用 GitHub Actions
-python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests
+python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-l --with-tests
+# 这次同时检验 207→210→213→229 各层，以及 229 模态 Green L A/B
 # 可选：--verbose-log 恢复终端详细输出；--no-publish-log 只保存在本地
 # 已完成并保留的对照重现（可选，均比较昂贵）：
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l
