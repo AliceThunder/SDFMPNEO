@@ -236,6 +236,45 @@ def test_anisotropic_face_curls_nest_199_and_follow_rotated_pose():
     )
 
 
+def test_targeted_global_and_package_corner_modes_preserve_207_parent():
+    """Nested geometry-following fields, not a replacement for original coils."""
+    from sdfmpneo_bfzi import build_sea_basis
+    from examples.bfzi_convergence import _indices_in_enriched_basis
+
+    scene=scene_pair()
+    source=build_bfzi_source(scene,200_000.,order=3)
+    options=dict(
+        modes_per_face=2,face_refinement=5,
+        refine_thin_faces_only=True,sources=source,
+        include_source_guided=True,
+        include_source_face_guided=True,
+        include_anisotropic_face_guided=True,
+    )
+    parent=build_sea_basis(scene,**options)
+    global_trial=build_sea_basis(
+        scene,**options,include_global_multiscale=True,
+    )
+    corner_trial=build_sea_basis(
+        scene,**options,include_global_multiscale=True,
+        include_corner_source_guided=True,
+    )
+    assert parent.size==207
+    assert global_trial.size==213
+    assert corner_trial.size==229
+    assert len(_indices_in_enriched_basis(global_trial,parent))==207
+    indices=_indices_in_enriched_basis(corner_trial,parent)
+    assert len(indices)==207 and len(set(indices))==207
+    probes=np.array([[0.,0.,0.],[0.13,0.,-0.13]])
+    np.testing.assert_allclose(
+        corner_trial.evaluate(probes)[:,indices,:],
+        parent.evaluate(probes),atol=1e-12,rtol=1e-12,
+    )
+    for mode in corner_trial.modes[-16:]:
+        assert mode.source_port in (0,1)
+        assert mode.gaussian_metric is not None
+        assert np.linalg.eigvalsh(mode.gaussian_metric)[0]>0
+
+
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
     """The R-weighted metric equals whole-domain J/sigma quadrature."""
     from sdfmpneo_bfzi import build_sea_basis
