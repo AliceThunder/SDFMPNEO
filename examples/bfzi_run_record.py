@@ -151,7 +151,7 @@ def _summary(root, flags, started, ended, status, raw):
     code_ref = commit.stdout.strip() if commit.returncode == 0 else "unknown"
     command = "python run.py --mode bfzi-convergence " + " ".join(
         x for x in flags if x.startswith("--") and x not in (
-            "--verbose-log", "--no-publish-log", "--with-tests",
+            "--mode", "--verbose-log", "--no-publish-log", "--with-tests",
         )
     )
     parts = [
@@ -160,8 +160,8 @@ def _summary(root, flags, started, ended, status, raw):
         f"- 运行状态：**{status}**",
         f"- 开始（UTC）：{started}",
         f"- 结束（UTC）：{ended}",
-        f"- 当时检出的代码提交：\`{code_ref}\`",
-        f"- 执行：\`{command.strip()}\`",
+        f"- 当时检出的代码提交：`{code_ref}`",
+        f"- 执行：`{command.strip()}`",
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
         "",
@@ -189,7 +189,7 @@ def _summary(root, flags, started, ended, status, raw):
             f"{values.get('dq','—')} |"
         )
     parts.extend(["", "## 收敛判定与诊断", ""])
-    parts.extend(f"- \`{line}\`" for line in gates)
+    parts.extend(f"- `{line}`" for line in gates)
     if not stages and not comparisons and not gates:
         parts.append("- 该运行没有可自动提取的嵌套指标；请看完整日志。")
     parts.extend([
@@ -288,7 +288,9 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
     )
     print(f"[BFZI] 执行状态：{status}；详细日志 {full_path.relative_to(root)}")
     if publish:
-        _publish(root, [summary_path, full_path])
+        uploaded = _publish(root, [summary_path, full_path])
+        if not uploaded and failed == 0:
+            return 2  # The solve completed, but publishing its log failed.
     else:
         print("[BFZI] 已按 --no-publish-log 仅保存本地结果。")
     return failed
