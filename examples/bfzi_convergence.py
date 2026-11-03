@@ -79,6 +79,31 @@ def _relative_dissipation_norm(resistance, current, reference):
     return float(np.sqrt(max(numerator,0.0)/max(denominator,1e-60)))
 
 
+def _parent_galerkin_energy_bound(resistance, system, forcing, coefficients):
+    """A posteriori upper bound on relative R-energy current error.
+
+    For the fixed finite Galerkin parent, A=R+i*omega*L with R positive
+    definite and L real symmetric: Re(u^H A u)=u^H R u.
+    Thus ||u_exact-u_trial||_R <= ||A*u_trial+forcing||_(R^-1).
+    Normalize by the unknown exact norm using the reverse triangle
+    inequality: ||u_exact||_R >= ||u_trial||_R - residual_bound.
+    An infinite result means this estimate is inconclusive, not that
+    the actual parent-space error is infinite.
+    """
+    residual=system @ coefficients+forcing
+    residual_energy=max(float(np.real(np.vdot(
+        residual,np.linalg.solve(resistance,residual),
+    ))),0.0)
+    trial_energy=max(float(np.real(np.vdot(
+        coefficients,resistance @ coefficients,
+    ))),0.0)
+    absolute_bound=np.sqrt(residual_energy)
+    trial_norm=np.sqrt(trial_energy)
+    if trial_norm <= absolute_bound:
+        return float("inf")
+    return float(absolute_bound/(trial_norm-absolute_bound))
+
+
 def basis_convergence(*, verify: bool = False, green: bool = False,
                       domain: bool = False, local: bool = False,
                       angular: bool = False, geometry: bool = False,
@@ -91,6 +116,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       ball_reference: bool = False,
                       ball_l_check: bool = False,
                       rk_normal_check: bool = False,
+                      mode_ablation: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
                       anisotropic_refinement: bool = False):
@@ -396,7 +422,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 2*scene.seawater.conductivity
             )
             return (z,q,p,relative_residual,j,j_ports,
-                    coords @ amplitudes,normal_q)
+                    coords @ amplitudes,normal_q,
+                    _parent_galerkin_energy_bound(
+                        r,full_system,full_forcing,coords @ amplitudes,
+                    ))
 
         previous = None
         levels = [
@@ -437,12 +466,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 raise RuntimeError(
                     "nested current modes were discarded by R whitening"
                 )
-            z, q, p, residual, j, j_ports, unit_modes, normal_q = solve_nested(
-                coords,k_curl,
-            )
+            (z,q,p,residual,j,j_ports,unit_modes,
+             normal_q,parent_energy_bound) = solve_nested(coords,k_curl)
             print(
                 f"  {label}: modes={coords.shape[1]}, "
                 f"relative_Rinv_residual={residual:.6g}, "
+                f"parent_dJ_energy_upper={parent_energy_bound:.6g}, "
                 f"sea_power={p:.8g} W, Zsw={z.tolist()}",
                 flush=True,
             )
@@ -835,6 +864,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             sparse = np.zeros_like(raw_f)
             sparse[selected] = coeff
             residual = raw_a @ sparse + raw_f
+            # Use the same well-scaled parent-coordinate R for the
+            # residual energy estimator, not the potentially ill-scaled
+            # unwhitened raw physical Gaussian basis.
+            white_coeff=raw_directions @ sparse
+            energy_bound=_parent_galerkin_energy_bound(
+                r,full_system,full_forcing,white_coeff,
+            )
             if len(selected)==enriched.size:
                 score = np.full(enriched.size,-np.inf)
             else:
@@ -859,6 +895,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"dZ={dz:.6g}, dq={dq:.6g}, "
                 f"dJ_volume={dj_volume:.6g}, "
                 f"dJ_ports_volume={dj_ports_volume:.6g}, "
+                f"parent_dJ_energy_upper={energy_bound:.6g}, "
                 f"max_probe_dq={max_dq:.6g}, "
                 f"hotspot_max_dq={hotspot_max_dq:.6g}, "
                 f"peak_scaled_max_dq={max_peak_scaled_dq:.6g}, "
@@ -2317,6 +2354,7 @@ def main(
     basis_ball: bool = False,
     basis_ball_check_l: bool = False,
     basis_ball_check_rk: bool = False,
+    basis_ball_ablate: bool = False,
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
     basis_ball_aniso: bool = False,
@@ -2328,8 +2366,8 @@ def main(
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_check_rk or basis_ball_face or basis_ball_edge
-            or basis_ball_aniso):
+            or basis_ball_check_rk or basis_ball_ablate
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2341,10 +2379,11 @@ def main(
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_check_rk or basis_ball_face or basis_ball_edge
-            or basis_ball_aniso,
+            or basis_ball_check_rk or basis_ball_ablate
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso,
             ball_l_check=basis_ball_check_l,
             rk_normal_check=basis_ball_check_rk,
+            mode_ablation=basis_ball_ablate,
             source_face_guided=(
                 basis_ball_face or basis_ball_edge or basis_ball_aniso
             ),
