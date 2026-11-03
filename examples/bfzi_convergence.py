@@ -132,7 +132,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       mode_ablation: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
-                      anisotropic_refinement: bool = False):
+                      anisotropic_refinement: bool = False,
+                      targeted_refinement: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes nested 159-,
@@ -145,6 +146,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         raise ValueError("edge refinement requires source-face guided parent")
     if anisotropic_refinement and not edge_refinement:
         raise ValueError("anisotropic refinement requires edge-refined parent")
+    if targeted_refinement and not anisotropic_refinement:
+        raise ValueError("targeted refinement requires 207-mode anisotropic parent")
     scene = build_demo_scene()
     # Resolve the locally sharp curl-mode resistance and true source
     # coupling on a finer rule. The costly nonlocal L double integral uses
@@ -170,6 +173,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         include_source_guided=True,
         include_source_face_guided=source_face_guided,
         include_anisotropic_face_guided=anisotropic_refinement,
+        include_global_multiscale=targeted_refinement,
+        include_corner_source_guided=targeted_refinement,
     )
     print(f"Building enriched {enriched.size}-mode Galerkin operator...",
           f"raw modes={enriched.size}, "
@@ -455,6 +460,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             levels.append(("edge_lip_patches", 2, 5, True, True, True))
         if anisotropic_refinement:
             levels.append(("anisotropic_face_curls", 2, 5, True, True, True))
+        if targeted_refinement:
+            levels.append(("global_multiscale", 2, 5, True, True, True))
+            levels.append(("corner_source_curls", 2, 5, True, True, True))
         for label, modes_per_face, face_refinement, thin, guided, face_guided in levels:
             subset = build_sea_basis(
                 scene, modes_per_face=modes_per_face,
@@ -464,8 +472,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 include_source_guided=guided,
                 include_source_face_guided=face_guided,
                 include_anisotropic_face_guided=(
-                    label=="anisotropic_face_curls"
+                    label in ("anisotropic_face_curls",
+                              "global_multiscale","corner_source_curls")
                 ),
+                include_global_multiscale=(
+                    label in ("global_multiscale","corner_source_curls")
+                ),
+                include_corner_source_guided=label=="corner_source_curls",
             )
             indices = _indices_in_enriched_basis(enriched, subset)
             selection = np.eye(enriched.size)[:, indices]
@@ -508,7 +521,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
             if label in (
                 "source_face_guided","edge_lip_patches",
-                "anisotropic_face_curls",
+                "anisotropic_face_curls","global_multiscale",
+                "corner_source_curls",
             ):
                 # Distinguish a large relative change in a cool location
                 # from a comparable change in a heating hotspot.
@@ -2458,6 +2472,7 @@ def main(
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
     basis_ball_aniso: bool = False,
+    basis_ball_targeted: bool = False,
     basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
@@ -2467,7 +2482,8 @@ def main(
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
             or basis_ball_check_rk or basis_ball_ablate
-            or basis_ball_face or basis_ball_edge or basis_ball_aniso):
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso
+            or basis_ball_targeted):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2480,15 +2496,20 @@ def main(
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
             or basis_ball_check_rk or basis_ball_ablate
-            or basis_ball_face or basis_ball_edge or basis_ball_aniso,
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso
+            or basis_ball_targeted,
             ball_l_check=basis_ball_check_l,
             rk_normal_check=basis_ball_check_rk,
             mode_ablation=basis_ball_ablate,
             source_face_guided=(
                 basis_ball_face or basis_ball_edge or basis_ball_aniso
+                or basis_ball_targeted
             ),
-            edge_refinement=basis_ball_edge or basis_ball_aniso,
-            anisotropic_refinement=basis_ball_aniso,
+            edge_refinement=(
+                basis_ball_edge or basis_ball_aniso or basis_ball_targeted
+            ),
+            anisotropic_refinement=basis_ball_aniso or basis_ball_targeted,
+            targeted_refinement=basis_ball_targeted,
         )
     scene = build_demo_scene()
     base = dict(
