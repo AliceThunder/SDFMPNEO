@@ -580,12 +580,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 independent_fraction = np.sqrt(np.maximum(
                     np.diag(schur) / np.diag(g_new),0.0,
                 ))
+                scale = np.sqrt(np.outer(np.diag(gram), np.diag(gram)))
+                normalized_cond = np.linalg.cond(gram / scale)
                 print(
                     f"  global_scale_condition_{label}: "
                     f"added={len(new_pos)}, "
                     f"min_R_independent_fraction={np.min(independent_fraction):.6g}, "
-                    f"normalized_R_cond={np.linalg.cond(gram / np.sqrt("
-                    f"np.outer(np.diag(gram), np.diag(gram)))):.6g}",
+                    f"normalized_R_cond={normalized_cond:.6g}",
                     flush=True,
                 )
             previous_indices = indices
