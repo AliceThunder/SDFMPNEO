@@ -1,5 +1,5 @@
 > **BFZI 研究分支｜当前研发进度（2026-11-03）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**207 模态空间参考解未认证**，正在开展收敛与模态诊断。最新 BFZI 专项实测为 **58 passed（代码基线 `cb33df6`）**，207 模态父空间残差上界及模态消融均已运行；封装角部与全局海水电流模式都具有明显影响；**207 模态磁积分 B/A 已测：算子门槛 FAIL，受迫响应 PASS**。新增的可选 207→213→229 定向电流基试验还未运行。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
+> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**207 模态空间参考解未认证**，正在开展收敛与模态诊断。最新 BFZI 专项实测为 **59 passed（代码基线 `908f59b`）**：207→213 全局电流尺度扩充使全海水 J 改变 **93.19%**、Z 改变 **195.29%**，213→229 封装角部补充使 J 改变 0.71%；**229 模态也尚未收敛**。207 模态独立磁积分是算子门槛 FAIL、受迫响应 PASS。已新增 [本地自动日志归档说明](docs/research/bfzi_uwpt_electrothermal/runs/README.md)：新版本 BFZI 收敛命令只向终端输出重要指标，并在完成后把最近一次详细日志和摘要提交/推送 GitHub；新功能尚待用户本地试运行。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
 
 # SDF-MPNEO vNext
 
@@ -51,7 +51,10 @@ python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 independent 
 python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199-mode A/B magnetic cubature (more expensive)
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
-python run.py --mode bfzi-convergence --basis-ball-targeted # optional unrun 207→213→229 nested global scales & package-corner currents
+python run.py --mode bfzi-convergence --basis-ball-targeted # measured 207→213→229; global basis changed J by 93.19%
+python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests # concise screen, local Git commit/push latest summary and full log
+python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # run and log locally without Git push
+python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # optional full console output
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # full-parent energy bound and leave-one-mode physical influence
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
