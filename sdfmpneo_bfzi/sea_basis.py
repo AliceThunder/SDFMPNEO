@@ -22,6 +22,9 @@ class CurrentMode:
     # -1 means curl(scalar * constant vector); 0/1 means
     # curl(scalar * actual closed-port vector potential).
     source_port: int = -1
+    # Optional rotated SPD Gaussian precision tensor, exp(-dx.T @ G @ dx).
+    # None exactly preserves the historical isotropic width-based modes.
+    gaussian_metric: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -86,8 +89,12 @@ class SeaCurrentBasis:
         primitive = np.empty((len(points), self.size, 3), dtype=float)
         for index, mode in enumerate(self.modes):
             offset = points - mode.center
+            scaled = (
+                offset / mode.width**2 if mode.gaussian_metric is None
+                else offset @ mode.gaussian_metric
+            )
             factor = envelope * np.exp(
-                -np.einsum("ni,ni->n", offset, offset) / mode.width**2,
+                -np.einsum("ni,ni->n", offset, scaled),
             )
             direction = (
                 mode.direction if mode.source_port < 0
@@ -170,10 +177,13 @@ class SeaCurrentBasis:
         out = np.empty((len(points), self.size, 3), dtype=float)
         for k, mode in enumerate(self.modes):
             offset = points - mode.center
-            width2 = mode.width**2
-            gauss = np.exp(-np.sum(offset**2, axis=1) / width2)
+            scaled = (
+                offset / mode.width**2 if mode.gaussian_metric is None
+                else offset @ mode.gaussian_metric
+            )
+            gauss = np.exp(-np.einsum("ni,ni->n", offset, scaled))
             gradient = gauss[:, None] * (
-                envelope_grad - 2 * envelope[:, None] * offset / width2
+                envelope_grad - 2 * envelope[:, None] * scaled
             )
             if mode.source_port < 0:
                 out[:, k, :] = np.cross(gradient, mode.direction)
@@ -199,6 +209,7 @@ def build_sea_basis(
     sources: BFZISources | None = None,
     include_source_guided: bool = False,
     include_source_face_guided: bool = False,
+    include_anisotropic_face_guided: bool = False,
     outer_envelope: str = "boundary_layer",
     outer_taper_width: float | None = None,
 ) -> SeaCurrentBasis:
@@ -220,8 +231,13 @@ def build_sea_basis(
     per face and port; it is nested after the existing four center-guided
     full-port modes. This allows distinct near-wall induced responses
     without adding another hierarchy of arbitrary constant-vector patches.
-    The global modes resolve long-range circulating currents. A finite trial space
-    is not guaranteed accurate before a hierarchy converges.
+    Optional anisotropic full-port face curls add eight independent
+    geometry-following responses with physical face-tangential widths
+    and narrower face-normal widths. The Gaussian metric rotates with
+    each package pose, so this is a genuine normal-vs-tangential
+    refinement rather than another set of face-plane translations.
+    The global modes resolve long-range circulating currents. A finite
+    trial space is not guaranteed accurate before a hierarchy converges.
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
@@ -231,7 +247,12 @@ def build_sea_basis(
         raise ValueError("refine_thin_faces_only must be a boolean")
     if outer_envelope not in ("boundary_layer", "quadratic"):
         raise ValueError("outer_envelope must be 'boundary_layer' or 'quadratic'")
-    if (include_source_guided or include_source_face_guided) and (
+    if include_anisotropic_face_guided and not include_source_face_guided:
+        raise ValueError(
+            "anisotropic face modes require source-face guided parent"
+        )
+    if (include_source_guided or include_source_face_guided
+            or include_anisotropic_face_guided) and (
         sources is None or sources.scene is not scene
     ):
         raise ValueError(
@@ -366,8 +387,41 @@ def build_sea_basis(
                         max(width_factor*half.max(),3.0*scale),
                         source_port=port,
                     ))
+    if include_anisotropic_face_guided:
+        # Test missing normal boundary-layer resolution independently of
+        # lateral edge patches: two distinct normal scales at every broad
+        # face, but one geometry-sized tangential footprint. The precision
+        # matrix rotates as R diag(1/w_i^2) R.T for arbitrary SE(3) poses.
+        for port, assembly in enumerate(scene.assemblies):
+            half = np.asarray(assembly.enclosure.half_extents,dtype=float)
+            normal = int(np.argmin(half))
+            tangents = [axis for axis in range(3) if axis != normal]
+            lateral_widths = np.maximum(0.9*half,6.0*scale)
+            for sign in (-1.,1.):
+                local=np.zeros(3)
+                local[normal]=sign*(
+                    half[normal]+max(scale,0.15*half[normal])
+                )
+                center=assembly.pose.position(local)
+                for normal_factor in (0.20,0.35):
+                    widths=lateral_widths.copy()
+                    widths[normal]=max(
+                        normal_factor*half.max(),
+                        (2.0 if normal_factor==0.20 else 4.0)*half[normal],
+                        6.0*scale,
+                    )
+                    metric=(
+                        assembly.pose.rotation
+                        @ np.diag(1.0/widths**2)
+                        @ assembly.pose.rotation.T
+                    )
+                    modes.append(CurrentMode(
+                        center,np.zeros(3),float(np.max(widths)),
+                        source_port=port,gaussian_metric=metric,
+                    ))
     return SeaCurrentBasis(
         scene, tuple(modes), scale,
-        sources.lines if (include_source_guided or include_source_face_guided) else None,
+        sources.lines if (include_source_guided or include_source_face_guided
+                          or include_anisotropic_face_guided) else None,
         outer_envelope, taper_width,
     )
