@@ -251,6 +251,10 @@ def test_targeted_global_and_package_corner_modes_preserve_207_parent():
         include_anisotropic_face_guided=True,
     )
     parent=build_sea_basis(scene,**options)
+    near_global=build_sea_basis(
+        scene,**options,include_global_multiscale=True,
+        global_scale_factors=(0.75,),
+    )
     global_trial=build_sea_basis(
         scene,**options,include_global_multiscale=True,
     )
@@ -259,8 +263,12 @@ def test_targeted_global_and_package_corner_modes_preserve_207_parent():
         include_corner_source_guided=True,
     )
     assert parent.size==207
+    assert near_global.size==210
     assert global_trial.size==213
     assert corner_trial.size==229
+    assert len(_indices_in_enriched_basis(near_global,parent))==207
+    assert len(_indices_in_enriched_basis(global_trial,near_global))==210
+    assert len(_indices_in_enriched_basis(corner_trial,global_trial))==213
     assert len(_indices_in_enriched_basis(global_trial,parent))==207
     indices=_indices_in_enriched_basis(corner_trial,parent)
     assert len(indices)==207 and len(set(indices))==207
