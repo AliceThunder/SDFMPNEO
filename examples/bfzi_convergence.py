@@ -47,6 +47,15 @@ def _indices_in_enriched_basis(enriched, subset):
             and np.array_equal(mode.direction, candidate.direction)
             and mode.width == candidate.width
             and mode.source_port == candidate.source_port
+            and (
+                (mode.gaussian_metric is None
+                 and candidate.gaussian_metric is None)
+                or (mode.gaussian_metric is not None
+                    and candidate.gaussian_metric is not None
+                    and np.array_equal(
+                        mode.gaussian_metric,candidate.gaussian_metric,
+                    ))
+            )
         ]
         if len(matches) != 1:
             raise ValueError("trial spaces are not a strictly nested hierarchy")
@@ -66,7 +75,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       ball_reference: bool = False,
                       ball_l_check: bool = False,
                       source_face_guided: bool = False,
-                      edge_refinement: bool = False):
+                      edge_refinement: bool = False,
+                      anisotropic_refinement: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes nested 159-,
@@ -77,6 +87,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     """
     if edge_refinement and not source_face_guided:
         raise ValueError("edge refinement requires source-face guided parent")
+    if anisotropic_refinement and not edge_refinement:
+        raise ValueError("anisotropic refinement requires edge-refined parent")
     scene = build_demo_scene()
     # Resolve the locally sharp curl-mode resistance and true source
     # coupling on a finer rule. The costly nonlocal L double integral uses
@@ -101,6 +113,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
         include_source_face_guided=source_face_guided,
+        include_anisotropic_face_guided=anisotropic_refinement,
     )
     print(f"Building enriched {enriched.size}-mode Galerkin operator...",
           f"raw modes={enriched.size}, "
@@ -346,6 +359,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             levels.append(("source_face_guided", 2, 4, True, True, True))
         if edge_refinement:
             levels.append(("edge_lip_patches", 2, 5, True, True, True))
+        if anisotropic_refinement:
+            levels.append(("anisotropic_face_curls", 2, 5, True, True, True))
         for label, modes_per_face, face_refinement, thin, guided, face_guided in levels:
             subset = build_sea_basis(
                 scene, modes_per_face=modes_per_face,
@@ -354,6 +369,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 sources=source if guided else None,
                 include_source_guided=guided,
                 include_source_face_guided=face_guided,
+                include_anisotropic_face_guided=(
+                    label=="anisotropic_face_curls"
+                ),
             )
             indices = _indices_in_enriched_basis(enriched, subset)
             selection = np.eye(enriched.size)[:, indices]
@@ -386,7 +404,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"dP={abs(p-old_p)/max(abs(old_p),1e-30):.6g}",
                     flush=True,
                 )
-            if label in ("source_face_guided", "edge_lip_patches"):
+            if label in (
+                "source_face_guided","edge_lip_patches",
+                "anisotropic_face_curls",
+            ):
                 # Distinguish a large relative change in a cool location
                 # from a comparable change in a heating hotspot.
                 old_q = previous[2] if previous is not None else q
@@ -2116,6 +2137,7 @@ def main(
     basis_ball_check_l: bool = False,
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
+    basis_ball_aniso: bool = False,
     basis_domain_ball: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
@@ -2124,7 +2146,7 @@ def main(
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face or basis_ball_edge):
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2136,10 +2158,13 @@ def main(
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_face or basis_ball_edge,
+            or basis_ball_face or basis_ball_edge or basis_ball_aniso,
             ball_l_check=basis_ball_check_l,
-            source_face_guided=basis_ball_face or basis_ball_edge,
-            edge_refinement=basis_ball_edge,
+            source_face_guided=(
+                basis_ball_face or basis_ball_edge or basis_ball_aniso
+            ),
+            edge_refinement=basis_ball_edge or basis_ball_aniso,
+            anisotropic_refinement=basis_ball_aniso,
         )
     scene = build_demo_scene()
     base = dict(
