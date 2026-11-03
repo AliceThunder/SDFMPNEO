@@ -153,6 +153,7 @@ def _summary(root, flags, started, ended, status, raw):
             "--mode", "--verbose-log", "--no-publish-log", "--with-tests",
         )
     )
+    test_result = re.search(r"\\d+ passed in [\\d.]+s", raw)
     parts = [
         "# BFZI 最近一次本地运行摘要",
         "",
@@ -161,6 +162,7 @@ def _summary(root, flags, started, ended, status, raw):
         f"- 结束（UTC）：{ended}",
         f"- 当时检出的代码提交：`{code_ref}`",
         f"- 执行：`{command.strip()}`",
+        f"- 同批 pytest：{test_result.group(0) if test_result else '未包含或未通过'}",
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
         "",
