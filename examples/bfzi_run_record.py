@@ -153,7 +153,7 @@ def _summary(root, flags, started, ended, status, raw):
             "--mode", "--verbose-log", "--no-publish-log", "--with-tests",
         )
     )
-    test_result = re.search(r"\\d+ passed in [\\d.]+s", raw)
+    test_result = re.search(r"\d+ passed in [\d.]+s", raw)
     parts = [
         "# BFZI 最近一次本地运行摘要",
         "",
