@@ -395,7 +395,6 @@ def build_sea_basis(
         for port, assembly in enumerate(scene.assemblies):
             half = np.asarray(assembly.enclosure.half_extents,dtype=float)
             normal = int(np.argmin(half))
-            tangents = [axis for axis in range(3) if axis != normal]
             lateral_widths = np.maximum(0.9*half,6.0*scale)
             for sign in (-1.,1.):
                 local=np.zeros(3)
