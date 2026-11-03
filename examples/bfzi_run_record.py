@@ -18,8 +18,9 @@ LOG_DIR = Path("docs/research/bfzi_uwpt_electrothermal/runs")
 BRANCH = "research/bfzi-uwpt-electrothermal-surrogate"
 FIELDS = (
     "modes", "relative_Rinv_residual", "parent_dJ_energy_upper",
-    "sea_power", "dL", "dZ", "dImZ", "dJ_volume",
-    "dJ_ports_volume", "dq", "max_probe_dq", "peak_scaled_max_dq",
+    "sea_power", "dR", "dK", "dK_dual", "dL", "dZ", "dImZ",
+    "dJ_volume", "dJ_ports_volume", "dq", "max_probe_dq",
+    "peak_scaled_max_dq", "normal_peak_scaled_dq",
     "operator_gate", "response_gate", "combined_gate",
 )
 MATCH_FIELD = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=([^\s,]+)")
@@ -48,7 +49,7 @@ def _short(line: str) -> str | None:
     if line.startswith(("most_influential_for_volume_J:",
                         "most_influential_for_normal_Joule:")):
         return line
-    if line.startswith(("ball_", "rk_normal_")) and "_vs_A:" in line:
+    if line.startswith(("ball_", "rk_normal_", "rk_far_")) and "_vs_A:" in line:
         label, rest = line.split(":", 1)
         values = _fields(rest)
         return label + ": " + ", ".join(
