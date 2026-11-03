@@ -46,6 +46,8 @@ python run.py --mode bfzi-convergence --basis-ball-face # experimental 159→167
 python run.py --mode bfzi-convergence --basis-ball-face --basis-ball-check-l # independent 167-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-ball-edge # 167→199 independent face-edge curl directions (expensive)
 python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 199-mode A/B magnetic cubature (more expensive)
+python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
+python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B
 python run.py --mode bfzi-convergence --basis-domain  # 63-mode outer sphere radius sequence
 python run.py --mode bfzi-convergence --basis-local   # radial/angle/wall/combined R/K ladder (fixed L)
 python run.py --mode bfzi-convergence --basis-angular # polar/azimuth composite Gauss R/K tests
@@ -227,6 +229,43 @@ as an accuracy improvement until the user executes it. The reduced
 `dZ` from 159→167 alone does not prove spatial convergence;
 the large 95→159 response change is the reason to test additional
 independent near-edge directions, not to train more provisional labels.
+
+**199-mode edge-lip outcome (2026-11-02; 55 passing tests):**
+The user's `--basis-ball-edge` run completed 199 modes and
+confirmed the extra 32 edge-lip directions are physically significant.
+Relative to 167 modes, the 199-mode response had
+`dZ=0.00292632`, complex driven `dJ=0.0512951`,
+aggregate local `dq=0.0982027`, `dP=0.00299008`,
+hotspot maximum pointwise `dq=0.110172`, and
+peak-normalized maximum absolute heat change `0.0969358`.
+Thus 167 modes **did not converge in current or near-wall Joule
+heating**, despite much smaller integrated port changes. 199-mode
+selective enrichment required all 199 modes for the strict fixed
+probe criterion. The 175-mode `hotspot_match=True` did not pass
+the strict all-probe test. Neither 199-mode magnetic A/B nor any
+continuum physical convergence is established by these numbers.
+
+**Rotated anisotropic source-face current trial (199→207):**
+`--basis-ball-aniso` preserves all 199 older modes and adds eight
+`curl(g C_port)` modes, two broad faces and two face-normal envelope
+widths per package/port. In contrast to the older isotropic Gaussians,
+their physically sized **tangential** footprint and independently
+narrow **normal** footprint are represented by a positive definite
+Gaussian precision matrix `G=R diag(1/w_x²,1/w_y²,1/w_z²) Rᵀ`,
+which rotates with the complete package SE(3) pose. The derivative
+of the same Gaussian appears in both its potential primitive and
+its exact analytical curl; the old isotropic path is unchanged.
+This separates previously confounded normal boundary-layer error
+from lateral edge-pattern deficiency.
+
+The nested diagnostic now also compares the individual complex
+**unit-port current fields** (`dJ_port0`, `dJ_port1`,
+`dJ_ports`), rather than relying only on one combined phasor
+drive which may accidentally cancel errors. The magnetic A/B
+response gate includes both-port current-field consistency.
+The 207-mode parent and its A/B result remain **unverified**
+until numerically executed; the extra modes should not be used
+for cross-geometry label production yet.
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
