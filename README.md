@@ -36,7 +36,8 @@ python run.py --mode bfzi --green-ball # experimental full MQS port/Joule and co
 python run.py --mode bfzi-snapshot --out bfzi_response.npz # save/load/query four-real-snapshot ROM
 python run.py --mode bfzi-snapshot --out bfzi_response.npz --dataset-out bfzi_provisional_labels.npz # two distinct poses
 python run.py --mode bfzi-generate --samples 12 --out bfzi_geometry_labels.npz # many provisional geometry labels
-python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400 # torch optional
+python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt --epochs 400 # torch optional; J/Joule-aware 27-mode objective
+python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural_physics.pt --epochs 400 --field-loss-weight 1.0 --joule-loss-weight 0.15 # keep original checkpoint for A/B
 python run.py --mode bfzi-infer --model bfzi_neural.pt # default RAW learned Z; no reference solve
 python run.py --mode bfzi-infer --model bfzi_neural.pt --power-closure # diagnostic: rebuild Re(Z) from J
 python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # original held-out geometries
@@ -84,6 +85,49 @@ reuses the nested parent solve to measure whether these **physics-guided**
 directions matter for field/port accuracy; it neither replaces the
 existing 159-mode benchmark by default nor claims convergence. Combine
 both flags to run A/B on the 167-mode parent.
+
+**Follow-up numerical evidence (54 passed, 2026-11-02):**
+The independent 159-mode magnetic A/B comparison found
+`dL=0.092214`, but driven `dZ=0.000286086`,
+`dJ=0.000570731`, `dq=0.000191601`,
+`dP=0.0000224192`, maximum individual probe `dq=0.003429`,
+and B-system residual of the A solution `0.000895751` in the
+R-inverse norm. Therefore the old combined magnetic gate **fails on
+whole-operator dL**, while the physical *driven response* meets the
+chosen A/B thresholds. The command now prints
+`operator_gate`, `response_gate`, and `combined_gate` separately;
+it does not silently lower the original operator threshold.
+A/B response agreement does not establish convergence against a
+third rule, finite-volume cell shape, outer-domain extension, or
+further trial-space refinement. In fact, 95→159 still produced
+`dZ=0.239214` and `dq=0.50494` (local max `dq=2.46521`).
+Residual-driven enrichment needed **all 159 modes** to satisfy the
+specified local-probe target. The rank-4 real snapshot reconstruction
+is exact only relative to that unconverged parent.
+
+**Physical-field-aware neural training experiment:**
+The previous 27-mode MLP training minimized mean standardized output
+MSE, not actual spatial field error. A sample with 21.37% mean raw
+coefficient error produced 79.60% mean J and 92.71% mean local Joule
+errors, so the measured field must affect training explicitly.
+`bfzi-train` now uses a mixed objective with separately normalized
+port Z and modal supervision, plus losses on the two complex
+port-current fields and a fixed complex-drive local Joule field at
+geometry-following near-package and bulk probes. The weights are
+configurable via `--field-loss-weight` (default 1) and
+`--joule-loss-weight` (default 0.15); pass both as zero for the
+port/modal-only comparison. `bfzi-train` returns
+`heldout_probe_j_relative_error`,
+`heldout_probe_q_relative_error`, and `validation_objective`
+alongside the earlier metrics. The new loss is currently enabled
+only for the **explicitly reconstructible 27-mode v1 topology**;
+other topologies still use the coefficient/port objective until
+labels persist the complete physical-basis construction.
+This experiment has **not** improved or validated the old checkpoint
+without retraining, and the same provisional reference still limits
+all labels. No amount of neural fitting can certify inaccurate
+electromagnetic training targets. Re-train to a *new* model filename
+to compare without overwriting the existing checkpoint.
 
 The new API imports `BFZICoil`, `RigidPose`, `InsulatingBox`, `BFZIAssembly`,
 `BfziScene`, `build_bfzi_source`, `solve_seawater_reference`,
