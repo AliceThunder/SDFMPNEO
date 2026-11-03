@@ -129,6 +129,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       ball_reference: bool = False,
                       ball_l_check: bool = False,
                       rk_normal_check: bool = False,
+                      rk_far_check: bool = False,
                       mode_ablation: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
@@ -965,6 +966,99 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 "order. The reported full-volume J metric uses common "
                 "A-rule resistance; passing this comparison alone does "
                 "not certify tangential, far-field or Green convergence.",
+                flush=True,
+            )
+
+        if rk_far_check:
+            # Hold all physical modes, enclosure/source geometry, near-wall
+            # panels and the (expensive) Green L fixed. Independently vary
+            # each spherical ANGULAR integration axis of the streamed R/K.
+            def far_response(rr, kk):
+                u = np.linalg.solve(
+                    rr + 1j*omega*teacher.inductance, -1j*omega*kk,
+                )
+                z = 1j*omega*kk.T @ u
+                z = 0.5*(z+z.T)
+                j = np.einsum(
+                    "nmc,m->nc", probe_modes, u @ currents, optimize=True,
+                )
+                q = np.sum(np.abs(j)**2, axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                jn = np.einsum(
+                    "nmc,m->nc", normal_modes, u @ currents, optimize=True,
+                )
+                qn = np.sum(np.abs(jn)**2, axis=1)/(
+                    2*scene.seawater.conductivity
+                )
+                p = 0.5*float(np.real(np.vdot(
+                    u @ currents, rr @ (u @ currents),
+                )))
+                return u,z,q,qn,p
+
+            ua,za,qa,qna,pa = far_response(r,k_curl)
+            for axis,alternate in (
+                ("polar",replace(
+                    r_cfg,polar_geometry_order=r_cfg.polar_geometry_order+2,
+                )),
+                ("azimuth",replace(
+                    r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+1,
+                )),
+            ):
+                bx,bw = scene.box_shell_quadrature(
+                    alternate.radial_order,alternate.polar_order,
+                    alternate.azimuthal_order,
+                    wall_scale=enriched.wall_scale,
+                    shell_width_factor=alternate.shell_width_factor,
+                    shell_normal_order=alternate.shell_normal_order,
+                    shell_tangential_order=alternate.shell_tangential_order,
+                    shell_tangential_max_panel_width=alternate.shell_tangential_max_panel_width,
+                    outer_taper_width=enriched.outer_taper_width,
+                    max_radial_panel_width=alternate.max_radial_panel_width,
+                    radial_geometry_cuts=alternate.radial_geometry_cuts,
+                    polar_geometry_order=alternate.polar_geometry_order,
+                    azimuthal_panel_order=alternate.azimuthal_panel_order,
+                )
+                print(f"  rk_far_{axis}_nodes: B={len(bx)}",flush=True)
+                rb,kb,kdb=teacher.reintegrate_local_operators(bx,bw)
+                del bx,bw
+                ub,zb,qb,qnb,pb = far_response(rb,kb)
+                dJ=_relative_dissipation_norm(
+                    r,ub @ currents,ua @ currents,
+                )
+                dJports=_relative_dissipation_norm(r,ub,ua)
+                dZ=relative(zb,za)
+                dq=relative(qb,qa)
+                dP=abs(pb-pa)/max(abs(pa),1e-30)
+                peak_nq=float(np.max(np.abs(qnb-qna)))/max(
+                    float(np.max(qna)),1e-30,
+                )
+                max_probe_dq=float(np.max(
+                    np.abs(qb-qa)/np.maximum(qa,1e-10)
+                ))
+                gate=(dZ<=0.002 and dJ<=0.01 and dJports<=0.01
+                      and dq<=0.005 and dP<=0.002
+                      and max_probe_dq<=0.05 and peak_nq<=0.01)
+                print(
+                    f"  rk_far_{axis}_{enriched.size}_B_vs_A: "
+                    f"dR={relative(rb,r):.6g}, "
+                    f"dK={relative(kb,k_curl):.6g}, "
+                    f"dK_dual={relative(kdb,k_dual):.6g}, "
+                    f"dZ={dZ:.6g}, "
+                    f"dImZ={relative(zb.imag,za.imag):.6g}, "
+                    f"dJ_volume={dJ:.6g}, "
+                    f"dJ_ports_volume={dJports:.6g}, "
+                    f"dq={dq:.6g}, "
+                    f"max_probe_dq={max_probe_dq:.6g}, "
+                    f"normal_peak_scaled_dq={peak_nq:.6g}, "
+                    f"dP={dP:.6g}, "
+                    f"response_gate={'PASS' if gate else 'FAIL'}",
+                    flush=True,
+                )
+            print(
+                "  rk_far_note: only the spherical polar/azimuthal R/K "
+                "rules changed one at a time. This does not certify "
+                "radial, outer-domain, basis or Green convergence.",
                 flush=True,
             )
 
@@ -2504,6 +2598,7 @@ def main(
     basis_ball: bool = False,
     basis_ball_check_l: bool = False,
     basis_ball_check_rk: bool = False,
+    basis_ball_check_far: bool = False,
     basis_ball_ablate: bool = False,
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
@@ -2517,7 +2612,8 @@ def main(
             or basis_green_refined or basis_green_cross
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_check_rk or basis_ball_ablate
+            or basis_ball_check_rk or basis_ball_check_far
+            or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
             or basis_ball_targeted):
         return basis_convergence(
@@ -2531,11 +2627,13 @@ def main(
             green_gaussian=basis_green_gaussian,
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
-            or basis_ball_check_rk or basis_ball_ablate
+            or basis_ball_check_rk or basis_ball_check_far
+            or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
             or basis_ball_targeted,
             ball_l_check=basis_ball_check_l,
             rk_normal_check=basis_ball_check_rk,
+            rk_far_check=basis_ball_check_far,
             mode_ablation=basis_ball_ablate,
             source_face_guided=(
                 basis_ball_face or basis_ball_edge or basis_ball_aniso
