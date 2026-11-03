@@ -211,6 +211,7 @@ def build_sea_basis(
     include_source_face_guided: bool = False,
     include_anisotropic_face_guided: bool = False,
     include_global_multiscale: bool = False,
+    global_scale_factors: tuple[float, ...] = (0.75, 2.4),
     include_corner_source_guided: bool = False,
     outer_envelope: str = "boundary_layer",
     outer_taper_width: float | None = None,
@@ -261,6 +262,16 @@ def build_sea_basis(
     if include_corner_source_guided and not include_anisotropic_face_guided:
         raise ValueError(
             "corner source-guided modes require anisotropic face parent"
+        )
+    if include_global_multiscale and (
+        not include_global or not global_scale_factors
+        or any(not np.isfinite(factor) or factor <= 0
+               for factor in global_scale_factors)
+        or len(set(global_scale_factors)) != len(global_scale_factors)
+    ):
+        raise ValueError(
+            "global scale factors must be distinct positive finite "
+            "values and include_global must be True"
         )
     if (include_source_guided or include_source_face_guided
             or include_anisotropic_face_guided
@@ -369,7 +380,7 @@ def build_sea_basis(
             # radial scales. Test these separately from corner-local modes.
             # Widths depend only on the physical package reach, never on
             # the artificial outer integration radius.
-            for factor in (0.75, 2.4):
+            for factor in global_scale_factors:
                 for axis in range(3):
                     modes.append(CurrentMode(
                         center, np.eye(3)[axis], factor*package_reach,
