@@ -11,7 +11,7 @@
 
 ```powershell
 git pull --ff-only
-python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests
+python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-l --with-tests
 # 只保留本地，不推送：
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 # 如需看到全部原始标准输出：
