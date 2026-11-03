@@ -80,7 +80,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes nested 159-,
-    167- and optional 199-mode physical parents, and residual-driven
+    167-, 199- and optional 207-mode physical parents, and residual-driven
     sparse-mode enrichment inside the selected parent.
     Only that parent's expensive nonlocal Green L is assembled; nested
     subspaces re-solve projected R/L/K, not separate Green double integrals.
