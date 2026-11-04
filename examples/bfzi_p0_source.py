@@ -24,6 +24,22 @@ def probes_for_scene(scene):
                     local = np.zeros(3)
                     local[direction] = side*(half[direction]+distance)
                     xs.append(assembly.pose.position(local))
+    # Real OBB edges and corners, not just face-center rays.
+    # Each local point is transported with its *own* assembly pose.
+    # Every wall query remains 2.5 or 25 mm outside the sealed housing.
+    for assembly in scene.assemblies:
+        half = np.asarray(assembly.enclosure.half_extents)
+        for distance in (0.0025, 0.025):
+            for i, j in ((0, 1), (0, 2), (1, 2)):
+                for sign_i in (-1.0, 1.0):
+                    for sign_j in (-1.0, 1.0):
+                        local = np.zeros(3)
+                        local[i] = sign_i * (half[i] + distance)
+                        local[j] = sign_j * (half[j] + distance)
+                        xs.append(assembly.pose.position(local))
+            for sign in (-1.0, 1.0):
+                local = sign * (half + distance)
+                xs.append(assembly.pose.position(local))
     for p in (
         (0.28, 0.07, 0.19),
         (-0.24, 0.19, -0.05),
@@ -39,6 +55,14 @@ def probes_for_scene(scene):
 
 def relative(a, b):
     return float(np.linalg.norm(a-b)/max(float(np.linalg.norm(b)), 1e-30))
+
+
+def peak_scaled_max(a, b):
+    """Worst *absolute* vector error divided by the reference peak."""
+    return float(
+        np.max(np.linalg.norm(a-b, axis=-1))
+        / max(float(np.max(np.linalg.norm(b, axis=-1))), 1e-30)
+    )
 
 
 def main():
@@ -91,11 +115,23 @@ def main():
             dC = relative(approx_c,ref_c)
             dB = relative(approx_b,ref_b)
             order_metrics[order]=(dC,dB)
+            div = line.divergence_kernel(positions)
+            # div C has units 1/metre. Normalize with enclosure
+            # characteristic length; an exact closed filament has div C=0.
+            characteristic=0.10
+            div_scaled = (
+                characteristic*np.linalg.norm(div)
+                / max(np.linalg.norm(approx_c),1e-30)
+            )
             print(
                 f"p0_source: port={port},order={order}, "
                 f"dC={dC:.6g},dB={dB:.6g}, "
-                f"dC_near={relative(approx_c[:24],ref_c[:24]):.6g}, "
-                f"dB_near={relative(approx_b[:24],ref_b[:24]):.6g}, "
+                f"dC_faces={relative(approx_c[:24],ref_c[:24]):.6g}, "
+                f"dB_faces={relative(approx_b[:24],ref_b[:24]):.6g}, "
+                f"dC_edges={relative(approx_c[24:-4],ref_c[24:-4]):.6g}, "
+                f"dB_edges={relative(approx_b[24:-4],ref_b[24:-4]):.6g}, "
+                f"dB_peak_max={peak_scaled_max(approx_b,ref_b):.6g}, "
+                f"divC_scaled={div_scaled:.6g}, "
                 f"legacy_dC={relative(old_c,ref_c):.6g}, "
                 f"legacy_dB={relative(old_b,ref_b):.6g}, "
                 f"line_closure_over_length={closure/max(arc,1e-30):.6g}",
@@ -113,8 +149,9 @@ def main():
         "p0_note: C/B fields are checked against analytic straight lines "
         "+ independent high-order curved-corner Gauss, NOT against a "
         "full-wave/copper-proximity or infinite-seawater solution. "
-        "No source order is certified until the measured differences "
-        "meet a predeclared accuracy target.",
+        "The 0.1pct source gate uses global vector norms; peak-scaled "
+        "point maxima and divC are separate diagnostics. Broader geometry "
+        "or finite-radius wire contact is not certified.",
         flush=True,
     )
 
