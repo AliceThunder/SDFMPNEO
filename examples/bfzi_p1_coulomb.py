@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import math
 import numpy as np
-from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_split
+from scipy.spatial.distance import cdist
+from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_split, _near_window
 from sdfmpneo_bfzi.source import MU0
 
 
@@ -67,6 +68,93 @@ def vortex_green_potential(points, radius:float):
     return (
         (2*math.pi*radius**2/3-2*math.pi*np.sum(x*x,axis=-1)/5)
         [...,None,None]*vortex_modes(x)
+    )
+
+
+def diagnose_original_split(
+    radius, x_rule, y_rule, local_radius, *,
+    original_l11=None,
+):
+    """Locate x, y-far, and local quadrature error without fitting data.
+
+    The C2 split window used by the production kernel has exact radial
+    moment ∫_0^1 t χ(t) dt=2/7. If the local sphere is wholly inside
+    the ball and W(y)=W(x)+constant-gradient*(y-x), its local Coulomb
+    integral is EXACTLY (8π/7)*a(x)^2 W(x). Odd angular terms cancel.
+    All quantities below have the same unsoftened physical 1/r kernel.
+    """
+    x, wx = ball_rule(radius, *x_rule)
+    y, wy = ball_rule(radius, *y_rule)
+    vx, vy = vortex_modes(x), vortex_modes(y)
+    a = np.minimum(
+        local_radius*radius,
+        0.6*(radius-np.linalg.norm(x, axis=1)),
+    )
+    near_exact = (8.0*math.pi/7.0)*a[:,None,None]**2*vx
+    sphere_scalar = (
+        2.0*math.pi*(radius**2-np.sum(x*x,axis=1)/3.0)
+    )
+    far_l = np.zeros((3,3))
+    sub_l = np.zeros((3,3))
+    for start in range(0,len(x),64):
+        stop=min(len(x),start+64)
+        d=cdist(x[start:stop],y)
+        window=_near_window(d/a[start:stop,None])
+        far_k=np.divide(
+            1.0-window,d,out=np.zeros_like(d),where=d>0.0,
+        )
+        # Independent numerical y-far operator, exactly the same
+        # y volume quadrature as the original split implementation.
+        far_pot=np.einsum(
+            "ij,jmc->imc",far_k*wy[None,:],vy,optimize=True,
+        )
+        far_l+=np.einsum(
+            "i,imc,inc->mn",
+            wx[start:stop],vx[start:stop],far_pot,optimize=True,
+        )
+        # Independent unsmoothed constant-density singularity subtraction
+        # on the BALL. V0(x)=∫_ball 1/|x-y| dy is exactly known.
+        k=np.divide(
+            1.0,d,out=np.zeros_like(d),where=d>0.0,
+        )
+        residual=np.einsum(
+            "ij,ijmc->imc",k*wy[None,:],
+            vy[None,:,:,:]-vx[start:stop,None,:,:],
+            optimize=True,
+        )
+        smooth_pot=(
+            sphere_scalar[start:stop,None,None]*vx[start:stop]
+            +residual
+        )
+        sub_l+=np.einsum(
+            "i,imc,inc->mn",
+            wx[start:stop],vx[start:stop],smooth_pot,optimize=True,
+        )
+    scale=MU0/(4.0*math.pi)
+    far_l*=scale
+    sub_l*=scale
+    near_l=scale*np.einsum(
+        "i,imc,inc->mn",wx,vx,near_exact,optimize=True,
+    )
+    exact_x=scale*np.einsum(
+        "i,imc,inc->mn",
+        wx,vx,vortex_green_potential(x,radius),optimize=True,
+    )
+    exact=exact_vortex_green(radius)
+    far_plus_near=0.5*(far_l+far_l.T)+near_l
+    sub_l=0.5*(sub_l+sub_l.T)
+    norm=max(np.linalg.norm(exact),1e-30)
+    return dict(
+        x_exact_rel=float(np.linalg.norm(exact_x-exact)/norm),
+        far_y_rel=float(np.linalg.norm(far_plus_near-exact_x)/norm),
+        local_l11_rel=(
+            float(abs(original_l11-far_plus_near[0,0])/exact[0,0])
+            if original_l11 is not None else float("nan")
+        ),
+        global_constant_subtraction_rel=float(
+            np.linalg.norm(sub_l-exact)/norm
+        ),
+        global_constant_subtraction_l11=float(sub_l[0,0]),
     )
 
 
@@ -123,6 +211,19 @@ def main():
     ):
         z=trial(radius,x,y,local,0.4)
         evidence[name]=z
+        if name in ("base","both"):
+            d=diagnose_original_split(
+                radius,x,y,0.4,original_l11=z["L11"],
+            )
+            print(
+                f"p1_decomp: variant={name},"
+                f"x_exact_rel={d['x_exact_rel']:.7g},"
+                f"far_y_rel={d['far_y_rel']:.7g},"
+                f"near_local_l11_rel={d['local_l11_rel']:.7g},"
+                f"global_const_sub_rel={d['global_constant_subtraction_rel']:.7g},"
+                f"global_const_sub_L11={d['global_constant_subtraction_l11']:.12g}",
+                flush=True,
+            )
         print(
             f"p1_ball: variant={name},x_nodes={z['nx']},"
             f"y_nodes={z['ny']},rel_L={z['norm_error']:.7g},"
@@ -161,7 +262,12 @@ def main():
         flush=True,
     )
     print(
-        "p1_note: exact-vortex BALL benchmark tests the ORIGINAL Coulomb "
+        "p1_note: p1_decomp splits x-integration, exactly integrated "
+        "local spherical C2 kernel and y-far cubature; the independent "
+        "whole-ball constant subtraction has an EXACT ball scalar kernel, "
+        "which cannot be reused for two-box geometry without obtaining "
+        "its actual scalar geometry potential. Original 1/r is unchanged. "
+        "Exact-vortex BALL benchmark tests the ORIGINAL Coulomb "
         "double integral against an analytic three-mode matrix. It does "
         "NOT certify rotated two-box wet-domain L, its near-wall integrals, "
         "or the 229-mode and infinite-ocean physical reference.",
