@@ -1,0 +1,159 @@
+% BFZI P0, 2026-11-04. Source-only derivation and validation contract.
+\section{P0：锁定磁准静态物理域、连续闭合源项与有限直导线参考}
+\label{sec:p0-physical-source}
+
+\subsection{单一物理场景与相量符号}
+在本节首先只讨论静止、线性、$\mu=\mu_0$、
+海水标量电导率 $\sigma_s>0$、
+两只互不相交的理想绝缘实心封装及
+BFZI 圆形--圆角方形\textbf{单根连续螺旋}。
+每个端口的电流沿螺旋外端到内端，
+再沿显式规定的封装内回流折线回到外端，
+形成相同方向约定下的闭合曲线 $\Gamma_p$。
+正频相量为 $e^{+\jj\omega t}$，端口电流使用峰值。
+圆形情形是角部连续绕行与直边长度为零的
+合法极限，不重新引入旧超椭圆族。
+
+海水外部真实区域与人工有限计算区域不同：
+\[
+\Omega_\infty=\RR^3\setminus(\overline B_1\cup\overline B_2),
+\qquad
+\Omega_R=B_R\setminus(\overline B_1\cup\overline B_2).
+\]
+封装界面满足 $\bm n\cdot\bm J_s=0$，
+而计算球的相同零法向条件只是
+\emph{人为的有限域电流条件}。
+在未对人工球和无限海水外区实现非局部相容耦合前，
+不得称 $\Omega_R$ 的离散解为连续无限域真值。
+
+\subsection{涡流近似的必要尺度核查}
+海水中忽略位移电流并不等于自动满足
+Maxwell--MQS 的所有适用条件：
+至少需检验
+\[
+\eta_{\mathrm D}
+=\frac{\omega\epsilon_s}{\sigma_s}\ll1,
+\qquad
+\eta_{\mathrm wave}
+=k_0D=\frac{\omega D}{c_0}\ll1,
+\qquad
+\delta_s=\sqrt{\frac{2}{\omega\mu_0\sigma_s}} .
+\]
+还要检查真实介质波数与装置尺度、
+源电流的连续性、界面极化/介电损耗是否可忽略。
+Ammari--Buffa--N\'ed\'elec~\cite{ammaribuffanedelec2000}
+强调涡流近似的高阶准确性依赖
+外加源所满足的额外兼容条件。
+例如 $f=200\,\mathrm{kHz}$、
+$\sigma_s=5\,\mathrm{S/m}$、
+$D=0.52\,\mathrm m$ 时
+$\delta_s\approx0.503\,\mathrm m$，
+$k_0D\approx2.18\times10^{-3}$；
+\emph{仅作例示}若设海水相对介电常数为 $80$，
+则 $\eta_{\mathrm D}\approx1.78\times10^{-4}$。
+当前海水模型尚无实际的色散介电输入，
+这些示例数字\textbf{不提供任意海水工况的电磁误差界}。
+
+\subsection{同一闭合路径的理想线源核}
+将外部指定单位电流源记作
+\[
+\bm C_p(\bm x)=\frac1{4\pi}
+\oint_{\Gamma_p}\frac{\mathrm d\bm\ell'}{|\bm x-\bm r'|},
+\qquad
+\bm A_{\mathrm{src},p}=\mu_0\bm C_p,\qquad
+\bm B_{\mathrm{src},p}=\mu_0\Curl\bm C_p .
+\]
+它只在实际海水域中评价，避免零半径导线上的
+奇异核。闭合曲线积分与
+\emph{有限节点点线元加权和}不是同一个分布：
+\[
+\bm C_{p,h}(\bm x)=\frac1{4\pi}
+\sum_k\frac{\bm h_k}{|\bm x-\bm r_k|}.
+\]
+两者在光滑、离线距离有正下界的查询区域可通过
+积分阶次收敛相互逼近。
+虽然 $\bm B_{p,h}=\mu_0\Curl\bm C_{p,h}$
+对上述同一核严格成立，
+且 $\sum_k\bm h_k\approx0$，
+仍不自动使有限点线元分布成为
+严格无散度的物理闭合回路电流。
+必须独立检查盒壁附近的
+$\bm C_{p,h}$、$\bm B_{p,h}$ 求积误差。
+
+\subsection{不依赖源 Gauss 节点的精确有限直导线核}
+对起止点 $\bm a\to\bm b$，
+令 $L=|\bm b-\bm a|$、
+$\bm t=(\bm b-\bm a)/L$、
+$\bm R_1=\bm x-\bm a$、
+$\bm R_2=\bm x-\bm b$、
+$r_1=|\bm R_1|$、$r_2=|\bm R_2|$。
+从线积分直接计算得到
+\[
+\boxed{
+\bm C_{\mathrm{seg}}(\bm x)
+=\frac{\bm t}{4\pi}
+\log\frac{r_1+r_2+L}{r_1+r_2-L}
+}
+\]
+和
+\[
+\boxed{
+\bm B_{\mathrm{seg}}(\bm x)
+=\frac{\mu_0}{4\pi}
+\frac{(\bm R_1\times\bm R_2)(r_1+r_2)}
+{r_1r_2(r_1r_2+\bm R_1\cdot\bm R_2)} .
+}
+\]
+仅在不位于理想导线的场点使用。
+这两个公式无近奇异 Gauss 点问题，
+可以作为 BFZI 每根\textbf{真实直边}
+及每段明确回流线的独立源场参考。
+BFZI 角部仍然是连续曲线：
+固定角部几何和真实有向线元，
+仅对角部使用高阶 Gauss 收敛，不得
+用圆弧中心拟合、独立闭合匝或假定匝同心
+来替代实际 BFZI 公式。
+
+代码 \texttt{sdfmpneo\_bfzi/source\_reference.py}
+提供 \texttt{straight\_segment\_field} 与
+\texttt{continuous\_port\_field}。
+默认解算器的
+\texttt{LineSource} 暂不自动切换算法，
+以避免在缺乏真实源阶次证据时
+偷偷改变 $K$、$L^{\mathrm{air}}$ 或
+铜线热源的数值定义。
+
+\subsection{P0 验收和与 P1 的严格分界}
+P0 必须在固定两端口位姿、
+真实连续中心线和完整回流下执行：
+\begin{enumerate}
+\item 直边、角部及相邻匝真实首尾连接；
+线圈外端到内端再沿回流回到外端；
+旋转变换和源向量方向符合右手坐标。
+\item 在与真实直线源远离的场点，解析
+$\bm C_{\mathrm{seg}},\bm B_{\mathrm{seg}}$
+与足够高阶的独立 Gauss 源积分相等；
+检查刚体协变和
+$\bm B_{\mathrm{src}}=\mu_0\Curl\bm C_{\mathrm{src}}$。
+\item 圆形与圆角方形均以独立参考阶次
+\texttt{corner\_order=24/32} 比较场；
+固定盒壁、边缘、角点和远场查询点，
+报告生产 \texttt{order=3/4/6/8/12}
+的源场相对误差，不以端口能量闭合替代。
+\item 对每个目标介质/频率重新核查
+$\omega\epsilon_s/\sigma_s$、$k_0D$、
+皮肤深度和内部导体材料近似。
+本节不认证超出线性均匀海水的情形。
+\item P0 的正确闭合源只是
+下一阶段原 Coulomb 磁电感积分的
+\emph{已冻结外部激励}；在磁能
+$L_{mn}$ 尚未独立收敛前，
+不能宣称海水 $J$、$q$、阻抗或神经教师达到真值。
+\end{enumerate}
+本机入口是
+\texttt{python run.py --mode bfzi-p0-source --with-tests}，
+将只输出源项与尺度的
+\texttt{p0\_physics/p0\_reference/p0\_source}，
+不启用 GitHub Actions。
+新增测试和算法仍待用户本机运行。
+当前\textbf{P0 尚未全部验收，G1=FAIL}。
