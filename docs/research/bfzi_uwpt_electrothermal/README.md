@@ -30,7 +30,7 @@ python run.py --mode bfzi-p0-source --with-tests
 python run.py --mode bfzi-p1-coulomb --with-tests
 ```
 
-**P1 原 1/r 解析球基准已在本机实测 FAIL：** 85 passed 只证明程序运行；原 `assemble_coulomb_split` 的 `base/x_only/y_only/both` 磁能矩阵相对解析真值误差为 **2.121%/1.556%/1.146%/0.6145%**，同时加密仍未达到原定 **0.1%**；改变局部分区半径后 L11 差 **0.4230%**。现新增可直接验证的局部球窗口精确积分 `8πa²/7 W(x)`、x/y/局部三项误差归因与**不软化的全域常量奇异减除** `assemble_coulomb_subtracted`。该方法在球上使用独立解析的 `S_B(x)`，但真实双盒 `SΩ(x)` 尚未认证，不会在不验证几何标量势时强行切换生产磁矩阵。新程序仍用上述命令运行，日志自动版本化到独立 [`runs/p1/`](runs/p1/)；新算法待本机复验，**P1-A/G1 仍 FAIL**。正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
+**P1 原 1/r 解析球基准已在本机实测 FAIL：** 85 passed 只证明程序运行；原 `assemble_coulomb_split` 的 `base/x_only/y_only/both` 磁能矩阵相对解析真值误差为 **2.121%/1.556%/1.146%/0.6145%**，同时加密仍未达到原定 **0.1%**；改变局部分区半径后 L11 差 **0.4230%**。已实现精确局部球矩 `8πa²/7 W(x)` 与误差分解，进而实现保留真实 `1/r` 的全域常值＋**一阶 Taylor 奇异减除**：需要独立可信的几何标量势 `SΩ` 和几何一阶矩 `MΩ=∮|y-x| n_y dS`。为确保不只是把线性涡流的余项消成零，新增**非线性且无散度**的三模式 `W=r²(e×x)` 和解析矩阵真值 `16πμ0R¹¹/693 I₃`。独立短程球积分同样 480×756 节点下，该非线性磁能误差由仅减常值约 **0.245%** 降为一阶减除约 **0.016%**，但不是用户本机 GitHub 新日志。**真实两盒 `SΩ/MΩ` 尚未认证；P1 新代码待本机复验，P1-A/G1 仍 FAIL。** 命令及自动日志路径不变，正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
 
 ## 阅读顺序
 
