@@ -33,6 +33,7 @@ def assemble_coulomb_split(
     local_polar_order: int = 6,
     local_azimuthal_order: int = 12,
     chunk_size: int = 32,
+    radial_segments=None,
     return_diagnostics: bool = False,
 ):
     """Return real Galerkin L for a continuous vector-current evaluator.
@@ -44,7 +45,10 @@ def assemble_coulomb_split(
     clearance : callable(points)->(n,) distance to the nearest domain boundary.
         Every local integration ball must be wholly inside the same conductor.
     local_radius : maximum physical sphere radius in metres.
-    local_fraction : strictly less than one to avoid crossing a boundary.
+    local_fraction : strictly less than one for the legacy interior-ball split.
+    radial_segments : callable(x, directions, radius)->(low, high), optional.
+        Supplies disjoint seawater segments along each ray so the near ball
+        can cross insulating walls without sampling inside the solid.
 
     Formula for each outer point x:
        ∫ J_n(y)/|x-y| dy
@@ -76,7 +80,8 @@ def assemble_coulomb_split(
     if (distances.shape != (len(x),) or not np.isfinite(distances).all()
             or np.any(distances <= 0.0)):
         raise ValueError("outer integration nodes must be strictly inside conductor")
-    radii = np.minimum(local_radius, local_fraction*distances)
+    radii = (np.minimum(local_radius, local_fraction*distances)
+             if radial_segments is None else np.full(len(x), local_radius))
     vx = np.asarray(evaluate(x), float)
     vy = np.asarray(evaluate(y), float)
     if (vx.ndim != 3 or vx.shape[0] != len(x) or vx.shape[2] != 3
@@ -117,19 +122,54 @@ def assemble_coulomb_split(
         )
         for j in range(start,stop):
             a = radii[j]
-            rho = 0.5*a*(tr+1.0)
-            weight_r = 0.5*a*tw*rho*_near_window(rho/a)
-            locations = (
-                x[j, None, None, :]
-                + rho[:, None, None]*dirs[None, :, :]
-            ).reshape(-1,3)
-            local_modes = np.asarray(evaluate(locations), float).reshape(
-                len(rho), len(dirs), m, 3,
-            )
-            local_pot = np.einsum(
-                "r,a,ramc->mc", weight_r, domega,
-                local_modes, optimize=True,
-            )
+            if radial_segments is None:
+                rho = 0.5*a*(tr+1.0)
+                weight_r = 0.5*a*tw*rho*_near_window(rho/a)
+                locations = (
+                    x[j, None, None, :]
+                    + rho[:, None, None]*dirs[None, :, :]
+                ).reshape(-1,3)
+                local_modes = np.asarray(evaluate(locations), float).reshape(
+                    len(rho), len(dirs), m, 3,
+                )
+                local_pot = np.einsum(
+                    "r,a,ramc->mc", weight_r, domega,
+                    local_modes, optimize=True,
+                )
+            else:
+                # Integrate wet subintervals of an x-centred *fixed*
+                # physical ball. No near-wall collapse of cutoff radius.
+                low, high = radial_segments(x[j], dirs, a)
+                low, high = np.asarray(low, float), np.asarray(high, float)
+                if (low.shape != high.shape or low.ndim != 2
+                        or low.shape[0] != len(dirs)
+                        or not np.isfinite(low).all()
+                        or not np.isfinite(high).all()
+                        or np.any(low < -1e-12)
+                        or np.any(high > a+1e-12)):
+                    raise ValueError("invalid clipped conducting ray intervals")
+                di, si = np.nonzero(high > low+1e-14)
+                if not len(di):
+                    local_pot = np.zeros((m, 3))
+                else:
+                    begin = low[di, si]
+                    half = 0.5*(high[di, si]-begin)
+                    rho = begin[:, None]+half[:, None]*(tr[None, :]+1)
+                    locations = (
+                        x[j, None, None, :]
+                        + rho[:, :, None]*dirs[di, None, :]
+                    ).reshape(-1, 3)
+                    local_modes = np.asarray(
+                        evaluate(locations), float,
+                    ).reshape(len(di), len(tr), m, 3)
+                    weights = (
+                        half[:, None]*tw[None, :]*rho
+                        *_near_window(rho/a)*domega[di, None]
+                    )
+                    local_pot = np.einsum(
+                        "sr,srmc->mc", weights, local_modes,
+                        optimize=True,
+                    )
             accum += wx[j]*np.einsum(
                 "mc,nc->mn", vx[j], local_pot, optimize=True,
             )
@@ -144,10 +184,80 @@ def assemble_coulomb_split(
     return (symmetric,skew) if return_diagnostics else symmetric
 
 
+def _bfzi_wet_radial_segments(scene, point, directions, radius):
+    """Clip an x-centred spherical patch against real rotated boxes.
+
+    For each ray, return all disjoint positive radial seawater intervals.
+    Intersections with oriented box slabs and the outer sphere are exact;
+    angular/radial Gauss integration remains independently refinable.
+    """
+    point = np.asarray(point, float)
+    directions = np.asarray(directions, float)
+    origin = point-np.asarray(scene.outer_center, float)
+    dot = directions @ origin
+    remaining = scene.outer_radius**2-float(origin @ origin)
+    if remaining <= 0:
+        raise ValueError("Coulomb outer point must be inside exterior sphere")
+    outer_exit = -dot+np.sqrt(dot*dot+remaining)
+    rmax = np.minimum(radius, outer_exit)
+    low = np.zeros((len(directions), 1), float)
+    high = rmax[:, None]
+
+    for assembly in scene.assemblies:
+        pose = assembly.pose
+        local_point = (point-pose.center) @ pose.rotation
+        local_directions = directions @ pose.rotation
+        half = np.asarray(assembly.enclosure.half_extents, float)
+        parallel = np.abs(local_directions) < 1e-14
+        outside_parallel = np.any(
+            parallel & (np.abs(local_point)[None, :] > half[None, :]),
+            axis=1,
+        )
+        near_face = np.divide(
+            -half-local_point, local_directions,
+            out=np.zeros_like(local_directions), where=~parallel,
+        )
+        far_face = np.divide(
+            half-local_point, local_directions,
+            out=np.zeros_like(local_directions), where=~parallel,
+        )
+        entry = np.max(np.where(
+            parallel, -np.inf, np.minimum(near_face, far_face),
+        ), axis=1)
+        exit = np.min(np.where(
+            parallel, np.inf, np.maximum(near_face, far_face),
+        ), axis=1)
+        hit = (
+            ~outside_parallel & (exit > np.maximum(entry, 0))
+            & (entry < rmax)
+        )
+        entry = np.where(hit, np.maximum(entry, 0), rmax)
+        exit = np.where(hit, np.minimum(exit, rmax), rmax)
+        # Subtract each solid interval from all remaining wet segments.
+        # The two independent BFZI solids cannot overlap, so each ray
+        # produces at most three nonempty seawater intervals.
+        before_end = np.where(
+            hit[:, None], np.minimum(high, entry[:, None]), high,
+        )
+        after_start = np.where(
+            hit[:, None], np.maximum(low, exit[:, None]), high,
+        )
+        low, high = (
+            np.concatenate((low, after_start), axis=1),
+            np.concatenate((before_end, high), axis=1),
+        )
+    return low, np.maximum(low, high)
+
+
 def assemble_basis_coulomb_split(
-    basis, transform, x, wx, y, wy, **kwargs,
+    basis, transform, x, wx, y, wy, *,
+    clip_local_to_domain: bool = True, **kwargs,
 ):
-    """Unsoftened Coulomb L for a finite BFZI scene and fixed mode space."""
+    """Unsoftened Coulomb L with domain-clipped near balls by default.
+
+    clip_local_to_domain=False reproduces the previous clearance-shrunk
+    split for controlled comparison at the same x/y quadrature nodes.
+    """
     scene = basis.scene
     origin = np.asarray(scene.outer_center)
     def clearance(points):
@@ -165,5 +275,10 @@ def assemble_basis_coulomb_split(
             optimize=True,
         )
     return assemble_coulomb_split(
-        x, wx, y, wy, evaluate, clearance, **kwargs,
+        x, wx, y, wy, evaluate, clearance,
+        radial_segments=(
+            (lambda point, directions, radius:
+             _bfzi_wet_radial_segments(scene, point, directions, radius))
+            if clip_local_to_domain else None
+        ), **kwargs,
     )
