@@ -1,0 +1,185 @@
+% Independent theory/numerics review, 2026-11-04.
+% The section is a contract for future verification, NOT a convergence claim.
+\section{G1 理论与数值积分的文献对照及重新验收顺序}
+\label{sec:g1-numerics-literature}
+
+\subsection{确认 Maxwell--MQS 问题而非仅确认 Galerkin 矩阵}
+取两只不相交的密封绝缘实心盒 $B_1,B_2$、
+$\Omega_\infty=\RR^3\setminus(\overline B_1\cup\overline B_2)$，
+静止、线性、均匀 $\mu=\mu_0$、$\sigma_s>0$，
+闭合 BFZI 端口路径及相量 $e^{\jj\omega t}$。
+必须同时检查 MQS 所忽略的位移电流、传播长度、
+线源的散度兼容性与导电域拓扑条件。
+Ammari--Buffa--N\'ed\'elec 对涡流近似的源兼容
+及低频误差阶有明确分析~\cite{ammaribuffanedelec2000}。
+仅给出正定的 $\bm R$ 和被动的阻抗，
+\emph{不能反向证明} Maxwell 模型和外域处理正确。
+
+将符合绝缘封装零法向和无穷远衰减的海水涡流
+记为 $\bm J$。在合适连续空间内，
+\[
+\bm A_{\rm src}=\mu_0\sum_p\bm C_pI_p,\quad
+\bm A_{\rm sea}=\mu_0\mathcal G_0\bm J,\quad
+\sigma_s^{-1}\bm J+\jj\omega(\bm A_{\rm src}+
+\bm A_{\rm sea})+\grad\phi=0,
+\]
+其中 $\mathcal G_0\bm J(\bm x)=\int_{\Omega}
+\bm J(\bm y)/(4\pi|\bm x-\bm y|)\,\mathrm d\bm y$。
+对所有散度为零且全边界法向迹为零的测试场 $\bm v$，
+标量势项才能通过分部积分消去。
+由此所得的
+$\bm R+\jj\omega\bm L$、$\bm K$、$\bm Z_{\rm sw}$
+及耗散恒等式已在
+第~\ref{sec:galerkin} 和 \ref{sec:g1-foundation-recheck} 节证明；
+它们是\textbf{正确的条件代数结构}，
+不是原 Coulomb 积分或实际电流近似的误差证书。
+
+\subsection{电流的合法性、完备性和人工外球}
+令 $\bm W_m=\Curl\bm F_m$，
+若 $\bm F_m$ 有合适的 $H(\mathrm{curl})$ 正则性且
+$\bm n\times\bm F_m=0$，
+则 $\bm W_m$ 无散度、零法向迹。
+但这不能推出有限高斯／紧支字典在目标
+$H(\mathrm{div})$ 电流空间中的稠密性；
+需建立插值/近似、稳定性和真正的层级收敛性。
+符合微分形式的空间构造及收敛问题见
+Hiptmair~\cite{hiptmair2002}；
+局部环流与可能的拓扑自由度的不同职责
+见 Voltolina 等~\cite{voltolina2021}。
+两只不穿孔的实心盒本身不能自动推出一阶环流拓扑缺陷。
+
+当前外球的窗函数通常令边界
+$\bm W_m|_{\partial B_R}=0$，
+比人工绝缘边界的 $\bm n\cdot\bm W_m=0$ 更强。
+而\textbf{人工绝缘球域并非无限导电海水}。
+改变 $R$ 还改变全域包络；
+外球对照不能在没有固定试探空间的情况下
+认作单纯截断误差。
+可通过完整内外区非局部边界算子或边界积分来
+模拟无限外域；相应理论与 FEM--BEM 对称耦合见
+Hiptmair~\cite{hiptmair2001coupling}。
+局部球谐外推已实现，但不能充当双盒内外
+连续场与边界迹双向匹配的证据。
+
+\subsection{Coulomb 磁能的核心问题是奇异积分的一致性}
+目标仍是\emph{原核}：
+\begin{equation}
+L_{mn}=\frac{\mu_0}{4\pi}
+\int_\Omega\int_\Omega
+\frac{\bm W_m(\bm x)\cdot\bm W_n(\bm y)}
+{|\bm x-\bm y|}\,\mathrm d\bm y\,\mathrm d\bm x.
+\label{eq:g1-review-original-coulomb}
+\end{equation}
+任意求积权重所造的等体积球形电流云，
+即使获得半正定的磁能 Gram 矩阵，
+仍不是式 \eqref{eq:g1-review-original-coulomb}
+的一致性证明。
+
+针对涡流体积分方法的直接先行文献
+Passarotto--Pitassi--Specogna~\cite{passarotto2022}
+对电感双积分的自项、相邻项及电流空间构造
+开展专门分析，并指出简单采用两组内外数值
+求积可使磁矩阵对角积分出现严重错误。
+这与本项目 $x/y$ 分轴加密大幅非加性相呼应；
+不能以双轴变化较小来认定两种错误相消后的答案正确。
+奇异抽取与 Duffy 型变量替换参见
+\cite{jarvenpaa2003,duffy1982}。
+
+\paragraph{优先实验的等价连续奇异减除公式}
+对固定点 $\bm x$、任何满足所需局部正则性的
+模式 $\bm W_n$ 和局部径向窗 $\chi_a$，
+可写严格恒等式
+\begin{align}
+\int_\Omega\frac{\bm W_n(\bm y)}{|\bm x-\bm y|}
+\,\mathrm d\bm y
+={}&\int_\Omega
+\frac{\bm W_n(\bm y)-\chi_a(|\bm x-\bm y|)\bm W_n(\bm x)}
+{|\bm x-\bm y|}\,\mathrm d\bm y\nonumber\\
+&+\bm W_n(\bm x)
+\int_{\Omega\cap B_a(\bm x)}
+\frac{\chi_a(|\bm x-\bm y|)}{|\bm x-\bm y|}
+\,\mathrm d\bm y.
+\label{eq:g1-review-subtraction}
+\end{align}
+第一项在近对角的主导常值奇异性被抵消，
+第二项是仅与真实边界几何有关的标量积分；
+可利用物理球坐标 $\rho^2\,\mathrm d\rho/
+\rho=\rho\,\mathrm d\rho$ 和旋转盒精确射线裁剪。
+公式本身不引入核软化，但仍要求
+对盒角、边缘、切触方向和场低正则性进行
+\emph{独立的局部积分误差控制}。
+优先以解析可核的固定小模态测试该式，
+再研究原核 $\bm L$ 的对角/相邻元素，
+不立即扩张至 229 模态。
+
+\subsection{端口两种等价弱式是积分误差探针}
+对 $\bm W_m=\Curl\bm F_m$，
+由积分恒等式
+\[
+\int_\Omega(\Curl\bm F_m)\cdot\bm C_p
+=\int_\Omega\bm F_m\cdot(\Curl\bm C_p)
++\int_{\partial\Omega}(\bm n\times\bm F_m)
+\cdot\bm C_p\,\mathrm dS.
+\]
+若整个边界 $\bm n\times\bm F_m=0$ 且
+$\bm B_{\rm src,p}=\mu_0\Curl\bm C_p$，则
+\begin{equation}
+\boxed{K_{mp}
+=\mu_0\int_\Omega \bm W_m\cdot\bm C_p\,\mathrm dV
+=\int_\Omega\bm F_m\cdot\bm B_{\rm src,p}\,\mathrm dV.}
+\label{eq:g1-review-kdual}
+\end{equation}
+现有离散线源的 $\bm B$ 正是其节点势核 $\bm C$
+的解析旋度；故离散的两种 $K$ 公式相差
+百分之几至几十个百分点，
+主要反映体积分欠分辨（或基/源码调用不一致），
+不是两个不同的物理理论。
+将 sphere 与 shell 分开算时，
+二者界面可能产生额外边界项，
+不能要求每个子分区各自满足 \eqref{eq:g1-review-kdual}。
+
+\subsection{正权、QMC 与离散能量恒等式的正确用途}
+正权求积能保正的电阻 Gram 矩阵；
+利用球形电流云或别的光滑核也可能保正的
+\emph{替代}磁能。但正定、互易与被动性
+不能取代真正的原核积分误差分析。
+扰乱 Sobol QMC 可以对 $\bm R,\bm K$
+提供独立构造的交叉检查，
+但靠单次随机扰乱差异不能得到严格
+连续积分的高精度证书。
+非光滑/不连续被积函数的随机 QMC 收敛
+另有条件与速率分析~\cite{hewang2015}；
+复杂边界层不能直接套用光滑被积函数的最优阶。
+
+\subsection{严格分关口的参考验证合同}
+\begin{enumerate}
+\item \textbf{源和物理域：} 锁定 BFZI 连续线圈、
+闭合回流、源节点阶次、盒壁和材料参数，
+确认电流源连续性、C/B 同源旋度及 MQS 适用尺度。
+\item \textbf{原核积分：}
+在解析可解几何和固定电流场中，
+分别控制原 Coulomb $\bm L$ 的对角、
+相邻、远区块；与独立奇异抽取和另一构造比较。
+不能用 uniform-ball 的半正定代替一致性。
+\item \textbf{R/K：}
+同一连续模式下独立计算每个矩阵元素，
+在盒面/边/角与球远区分开定量估计；
+完整域上式 \eqref{eq:g1-review-kdual}
+须随加密收敛到同一极限。
+\item \textbf{空间与外域：}
+在积分可靠之后检验真正嵌套的函数空间和
+固定边界算子；比较合规无限域续接或
+独立外部物理参考，区分外球误差与模式误差。
+\item \textbf{场和代理：}
+使用固定独立参考检验 $\bm Z$、
+海水 $\bm J$、盒壁/角部焦耳热及总损耗；
+再建立热场和跨几何神经教师，必要时允许
+\emph{离线} FEM/BEM 作裁判，不迫使在线代理使用固定网格。
+\end{enumerate}
+
+TEAM 7 的跨方法与实测基准说明需要
+独立外部裁判而非单实现自洽性~\cite{fujiwara1990team7}，
+但 TEAM 7 的有孔导电体不是当前双实心绝缘盒
+外部导电海水问题，不能替代 BFZI 自身基准。
+上述关口完成以前，
+\textbf{G1 仍不通过；本节不批准新的正式神经教师。}
