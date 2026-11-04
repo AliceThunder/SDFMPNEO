@@ -127,7 +127,7 @@ def _hierarchy_current_pilot(
     )
 
 
-def main(hierarchy=False):
+def main(hierarchy=False, source_panels=False):
     scene = build_demo_scene()
     source = build_bfzi_source(scene,200_000.,order=4)
     base = build_sea_basis(
@@ -336,7 +336,8 @@ def main(hierarchy=False):
     k_shell_base=k-k_sphere_base
     kd_shell_base=k_dual-kd_sphere_base
     shell_previous=None
-    for label,options in (
+    shell_qmc_comparison=None
+    shell_rules=[
         ("log_normal_2",dict(shell_normal_mapping="log")),
         ("log_normal_4",dict(
             shell_normal_mapping="log",shell_normal_order=4,
@@ -345,16 +346,23 @@ def main(hierarchy=False):
             shell_normal_mapping="log",shell_normal_order=4,
             shell_tangential_max_panel_width=0.05,
         )),
-        ("log_normal_4_source",dict(
-            shell_normal_mapping="log",shell_normal_order=4,
-            shell_source_tangential_cuts=True,
-        )),
-        ("log_normal_4_source_tangent",dict(
-            shell_normal_mapping="log",shell_normal_order=4,
-            shell_source_tangential_cuts=True,
-            shell_tangential_max_panel_width=0.05,
-        )),
-    ):
+    ]
+    if source_panels:
+        # These tensor-products were measured at 155k/175k nodes and
+        # did not converge the two K weak forms. Keep for optional
+        # comparison, not on every routine G1 run.
+        shell_rules.extend((
+            ("log_normal_4_source",dict(
+                shell_normal_mapping="log",shell_normal_order=4,
+                shell_source_tangential_cuts=True,
+            )),
+            ("log_normal_4_source_tangent",dict(
+                shell_normal_mapping="log",shell_normal_order=4,
+                shell_source_tangential_cuts=True,
+                shell_tangential_max_panel_width=0.05,
+            )),
+        ))
+    for label,options in shell_rules:
         xs,ws,sphere_s=quadrature(
             3,5,8,return_sphere_count=True,**options,
         )
@@ -374,6 +382,8 @@ def main(hierarchy=False):
                 flush=True,
             )
         shell_previous=(label,rs,ks,kds)
+        if label=="log_normal_4_tangent":
+            shell_qmc_comparison=(rs,ks,kds)
         print(
             f"g1_volume_shell: rule={label}, "
             f"x_nodes={len(xs)},shell_nodes={len(xs)-sphere_s}, "
@@ -384,6 +394,43 @@ def main(hierarchy=False):
             f"dR_shell_only={np.linalg.norm(rs-r)/max(np.linalg.norm(r_shell_base),1e-30):.6g}, "
             f"dK_shell_only={np.linalg.norm(ks-k)/max(np.linalg.norm(k_shell_base),1e-30):.6g}, "
             f"dK_dual_shell_only={np.linalg.norm(kds-k_dual)/max(np.linalg.norm(kd_shell_base),1e-30):.6g}",
+            flush=True,
+        )
+
+    # Meshless QMC is an independent integration CONSTRUCTION, rather
+    # than another Cartesian-product set of source-aligned Gauss panels.
+    # The exact physical shell/sphere partition and positive Jacobians
+    # are retained; independently scrambled seeds are diagnostic
+    # replicates, not statistical proof of continuum correctness.
+    qmc_previous=None
+    qmc_volume=4*math.pi*scene.outer_radius**3/3-8*sum(
+        np.prod(a.enclosure.half_extents) for a in scene.assemblies
+    )
+    for bits,seed in ((9,13),(10,13),(10,37)):
+        xq,wq,n_sphere=scene.box_shell_qmc(
+            bits,seed=seed,wall_scale=trial.wall_scale,
+            return_sphere_count=True,
+        )
+        rq,kq,kdq=volume_matrices(xq,wq)
+        reference_r,reference_k,reference_kdual=shell_qmc_comparison
+        if qmc_previous is not None:
+            prev_label,pr,pk,pkd=qmc_previous
+            print(
+                f"g1_volume_qmc_step: from={prev_label}, "
+                f"to={bits}_{seed}, dR={relative(rq,pr):.6g}, "
+                f"dK={relative(kq,pk):.6g}, "
+                f"dK_dual={relative(kdq,pkd):.6g}",
+                flush=True,
+            )
+        qmc_previous=(f"{bits}_{seed}",rq,kq,kdq)
+        print(
+            f"g1_volume_qmc: bits={bits},seed={seed}, "
+            f"x_nodes={len(xq)},sphere_nodes={n_sphere}, "
+            f"volume_rel_error={abs(wq.sum()/qmc_volume-1):.6g}, "
+            f"dR_vs_gauss={relative(rq,reference_r):.6g}, "
+            f"dK_vs_gauss={relative(kq,reference_k):.6g}, "
+            f"dK_dual_vs_gauss={relative(kdq,reference_kdual):.6g}, "
+            f"dK_dual={relative(kdq,kq):.6g}",
             flush=True,
         )
 
