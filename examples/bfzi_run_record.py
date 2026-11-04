@@ -37,6 +37,8 @@ def _fields(line: str):
 
 def _short(line: str) -> str | None:
     line = line.strip()
+    if line.startswith("g1_"):
+        return line
     if line.startswith(("Building enriched", "Refined R/K +", "Independent ")):
         return line
     if line.startswith("refined R/K nodes="):
@@ -172,8 +174,11 @@ def _summary(root, flags, started, ended, status, raw):
     lines = raw.splitlines()
     stages, comparisons, gates, domains, domain_steps = [], [], [], [], []
     domain_operators = []
+    g1_pilot = []
     for rawline in lines:
         line = rawline.strip()
+        if line.startswith("g1_"):
+            g1_pilot.append(line)
         if ": modes=" in line:
             label, rest = line.split(":", 1)
             values = _fields(rest)
@@ -202,7 +207,12 @@ def _summary(root, flags, started, ended, status, raw):
 
     commit = _git(root, "rev-parse", "--short", "HEAD")
     code_ref = commit.stdout.strip() if commit.returncode == 0 else "unknown"
-    command = "python run.py --mode bfzi-convergence " + " ".join(
+    run_mode = (
+        flags[flags.index("--mode")+1]
+        if "--mode" in flags and flags.index("--mode")+1 < len(flags)
+        else "bfzi-convergence"
+    )
+    command = "python run.py --mode " + run_mode + " " + " ".join(
         x for x in flags if x.startswith("--") and x not in (
             "--mode", "--verbose-log", "--no-publish-log", "--with-tests",
         )
@@ -220,6 +230,16 @@ def _summary(root, flags, started, ended, status, raw):
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
     ]
+    if g1_pilot:
+        parts.extend([
+            "", "## G1 三条基础路线的实验基准（尚非认证）", "",
+        ])
+        parts.extend(f"- `{line}`" for line in g1_pilot)
+        parts.append(
+            "\nGreen L 独立奇异拆分当前仅在小试探空间运行；"
+            "紧支 curl 层级仅证明构造/嵌套，尚未证明逼近收敛；"
+            "解析透明边界只适用于球腔偶极的 l=1 扇区。"
+        )
     if stages:
         parts.extend([
             "", "## 嵌套物理空间", "",
@@ -303,7 +323,7 @@ def _summary(root, flags, started, ended, status, raw):
         )
     parts.extend(["", "## 收敛判定与诊断", ""])
     parts.extend(f"- `{line}`" for line in gates)
-    if not stages and not comparisons and not gates and not domains:
+    if not stages and not comparisons and not gates and not domains and not g1_pilot:
         parts.append("- 该运行没有可自动提取的嵌套指标；请看完整日志。")
     parts.extend([
         "",
