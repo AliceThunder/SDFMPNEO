@@ -199,18 +199,31 @@ def assemble_coulomb_split(
                     local_pot = np.zeros((m, 3))
                 else:
                     begin = low[di, si]
-                    half = 0.5*(high[di, si]-begin)
-                    rho = begin[:, None]+half[:, None]*(tr[None, :]+1)
+                    finish = high[di, si]
+                    # The C2 cutoff changes polynomial pieces at a/2.
+                    # Split the *radial* Gauss rule there exactly instead
+                    # of asking one low-order rule to cross the kink.
+                    seam = np.clip(0.5*a, begin, finish)
+                    start_r = np.concatenate((begin, seam))
+                    end_r = np.concatenate((seam, finish))
+                    ray = np.concatenate((di, di))
+                    nonempty = end_r > start_r+1e-14
+                    start_r, end_r, ray = (
+                        start_r[nonempty], end_r[nonempty],
+                        ray[nonempty],
+                    )
+                    half = 0.5*(end_r-start_r)
+                    rho = start_r[:, None]+half[:, None]*(tr[None, :]+1)
                     locations = (
                         x[j, None, None, :]
-                        + rho[:, :, None]*local_dirs[di, None, :]
+                        + rho[:, :, None]*local_dirs[ray, None, :]
                     ).reshape(-1, 3)
                     local_modes = np.asarray(
                         evaluate(locations), float,
-                    ).reshape(len(di), len(tr), m, 3)
+                    ).reshape(len(ray), len(tr), m, 3)
                     weights = (
                         half[:, None]*tw[None, :]*rho
-                        *_near_window(rho/a)*local_domega[di, None]
+                        *_near_window(rho/a)*local_domega[ray, None]
                     )
                     local_pot = np.einsum(
                         "sr,srmc->mc", weights, local_modes,
