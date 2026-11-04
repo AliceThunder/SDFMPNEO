@@ -102,6 +102,38 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_log_shell_normal_chart_keeps_domain_and_sphere_rule():
+    # The optional wall-normal coordinate change does NOT alter physical
+    # domain, spherical nodes or partition weights; only shell Gauss
+    # positions and positive Jacobian factors are redistributed.
+    scene = scene_pair()
+    common=dict(
+        wall_scale=0.001125,shell_normal_order=2,
+        shell_tangential_order=2,return_sphere_count=True,
+    )
+    old_x,old_w,old_s=scene.box_shell_quadrature(
+        3,5,8,shell_normal_mapping="linear",**common,
+    )
+    new_x,new_w,new_s=scene.box_shell_quadrature(
+        3,5,8,shell_normal_mapping="log",**common,
+    )
+    assert old_s == new_s
+    np.testing.assert_array_equal(old_x[:old_s],new_x[:new_s])
+    np.testing.assert_array_equal(old_w[:old_s],new_w[:new_s])
+    assert np.all(new_w > 0)
+    assert scene.in_seawater(new_x).all()
+    assert np.linalg.norm(new_x[old_s:]-old_x[old_s:]) > 0
+    true_volume=4*np.pi*scene.outer_radius**3/3-8*sum(
+        np.prod(a.enclosure.half_extents) for a in scene.assemblies
+    )
+    assert abs(new_w.sum()/true_volume-1) < 0.08
+    assert SeaMQSConfig(shell_normal_mapping="log").shell_normal_mapping == "log"
+    with pytest.raises(ValueError,match="shell_normal_mapping"):
+        SeaMQSConfig(shell_normal_mapping="exp")
+    with pytest.raises(ValueError,match="shell_normal_mapping"):
+        scene.box_shell_quadrature(3,5,8,shell_normal_mapping="exp")
+
+
 def test_g1_sphere_only_refinement_does_not_change_near_box_shell():
     # The near-box slab rule is identical when the SPHERE radial/angle
     # rules change. This makes x-only changes in R/K/Green L attributable
