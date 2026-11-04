@@ -206,6 +206,12 @@ def main(hierarchy=False):
         local_polar_order=6,local_azimuthal_order=12,
         return_diagnostics=True,**kwargs,
     )
+    l_unpanel,skew_unpanel=assemble_basis_coulomb_split(
+        trial,transform,x,wx,y,wy,
+        angular_face_panels=False,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
+    )
     l_patch,skew_patch=assemble_basis_coulomb_split(
         trial,transform,x,wx,y,wy,
         local_radius=0.08,local_fraction=0.6,local_radial_order=4,
@@ -217,6 +223,12 @@ def main(hierarchy=False):
     # physical modes and the port forcing from the first rule.
     x2,wx2 = quadrature(4,6,10)
     y2,wy2 = quadrature(5,8,14)
+    modes_x2=trial.evaluate(x2)
+    r_x2=np.einsum(
+        "n,nmc,nkc->mk",wx2/scene.seawater.conductivity,
+        modes_x2,modes_x2,optimize=True,
+    )
+    k_x2=_coupling(source,modes_x2,wx2,x2)
     # Factorial 2x2 x/y volume cubature: isolate each integration axis.
     # This answers whether the 2.98% L change in the last log came
     # primarily from x, from y or from their coupled quadrature aliasing.
@@ -288,8 +300,10 @@ def main(hierarchy=False):
     print(
         f"g1_coulomb_patch: modes={trial.size}, "
         f"clip_vs_clearance_dL={relative(lb,l_clearance):.6g}, "
+        f"face_panels_vs_uniform_dL={relative(lb,l_unpanel):.6g}, "
         f"radius_055_to_080_dL={relative(l_patch,lb):.6g}, "
         f"raw_skew_clearance={skew_clearance:.6g}, "
+        f"raw_skew_unpanel={skew_unpanel:.6g}, "
         f"raw_skew_clip_055={skew_base:.6g}, "
         f"raw_skew_clip_080={skew_patch:.6g}",
         flush=True,
@@ -306,6 +320,8 @@ def main(hierarchy=False):
         f"raw_skew_both={skew_refined:.6g}, "
         f"dimensionless_dL_x={dynamic_x:.6g}, "
         f"dimensionless_dL_y={dynamic_y:.6g}, "
+        f"x_cubature_dR={relative(r_x2,r):.6g}, "
+        f"x_cubature_dK={relative(k_x2,k):.6g}, "
         f"dZ_x_only={relative(zx,zb):.6g}, "
         f"dZ_y_only={relative(zy,zb):.6g}, "
         f"dq_x_only={relative(probe_heat(ux),probe_heat(ub)):.6g}, "
@@ -331,8 +347,9 @@ def main(hierarchy=False):
     )
     print(
         "g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened "
-        "singularity-split pilot; x/y cubatures, near-ray clipping and "
-        "patch radius are compared, not yet converged. No 229-mode certificate.",
+        "singularity-split pilot; x/y cubatures, face-aligned angular "
+        "panels and near-patch radius must all converge independently. "
+        "No 229-mode certificate.",
         flush=True,
     )
     if hierarchy:
