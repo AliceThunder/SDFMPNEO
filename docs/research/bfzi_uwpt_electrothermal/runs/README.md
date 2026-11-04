@@ -20,6 +20,6 @@ python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 ```
 
-**最近真正本机实测（2026-11-04 UTC，旧代码基线 `19c2c52`）：** `60 passed in 49.90s`；229 模态外域 0.85→1.05→1.30m 两步均 `domain_response_gate=FAIL`，最后一步 `dZ=0.9506%`、共同域 `dJ=2.2970%`、设备近区 `dJ=1.3923%`。**新 G1 代码尚未运行**。下一次使用 `--mode bfzi-g1-foundations`，摘要将专门保留原始 Coulomb Green L 奇异分拆 5 模态实验、27→71→211 紧支 curl 层级和解析球腔无限域边界的全部指标。它们是先导物理基准，尚不能用作 229 模态高精度教师。
+**最近本机实测（2026-11-04 UTC，代码基线 `cd73a65`）：** `62 passed in 43.75s`，新的 `bfzi-g1-foundations` 三路物理基准首次正常运行：5 模态原始 Coulomb Green L 的局部角度加密 `dL=4.51102e-7`，但 x/y 两轴同时加密仍 `dL=0.0298039`、`dZ=0.00182062`、探针 `dq=0.00058998`，与旧球云法 `dL=0.0778894`。系统性紧支 curl 27→71→211 构造成功；球腔 `l=1` 的有限 Dirichlet 截断 J 误差随外球 R=0.52/0.85/1.30m 分别为 9.345%/1.488%/0.199%。**下一次运行同一命令会增加全新的 2×2 独立 x/y 求积拆分，以及未经强制对称化的磁矩阵 skew。新版尚未本机实测；229 模态及完整 BFZI 连续 G1 仍 FAIL。**
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
