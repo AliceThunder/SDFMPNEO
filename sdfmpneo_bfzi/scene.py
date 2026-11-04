@@ -762,14 +762,20 @@ class BfziScene:
                             distance_weights = (
                                 0.5*(upper-lower)*normal_weights
                             )
+                        # Maintain increasing local coordinate order on
+                        # negative faces; the Jacobian is the positive
+                        # absolute wall-normal distance measure.
+                        face_nodes = sign*(half[axis]+distance_nodes)
+                        face_weights = distance_weights
+                        if sign < 0:
+                            face_nodes = face_nodes[::-1]
+                            face_weights = face_weights[::-1]
                         axes = []
                         weights = []
                         for j in range(3):
                             if j == axis:
-                                axes.append(
-                                    sign*(half[axis]+distance_nodes)
-                                )
-                                weights.append(distance_weights)
+                                axes.append(face_nodes)
+                                weights.append(face_weights)
                             else:
                                 nodes, w = tangential[j]
                                 axes.append(nodes)
