@@ -371,16 +371,18 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     # Identical physical control volume and sampling weights
                     # at every outer radius (not a changing-domain R metric).
                     def common_j_error(new, old):
-                        error = np.sum(common_w[:,None] * np.sum(
-                            np.abs(new-old)**2, axis=tuple(
-                                range(2,new.ndim)
-                            ) if new.ndim>2 else (-1,),
-                        )[:,None])
-                        base = np.sum(common_w[:,None] * np.sum(
-                            np.abs(old)**2, axis=tuple(
-                                range(2,old.ndim)
-                            ) if old.ndim>2 else (-1,),
-                        )[:,None])
+                        # Sum spatial components and both ports at each
+                        # positive cubature node, then the same common
+                        # physical volume for both finite-domain solutions.
+                        component_axes=tuple(range(1,new.ndim))
+                        error=float(np.dot(
+                            common_w,
+                            np.sum(np.abs(new-old)**2,axis=component_axes),
+                        ))
+                        base=float(np.dot(
+                            common_w,
+                            np.sum(np.abs(old)**2,axis=component_axes),
+                        ))
                         return float(np.sqrt(error/max(base,1e-60)))
                     details = (
                         f", dJ_common={common_j_error(common_drive,old_drive):.6g}"
@@ -1099,10 +1101,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 # Separate coarse 2→3 angular bias from 3→4 convergence.
                 # Refine spherical radius independently of azimuth.
                 variants = (
-                    ("azimuth_3",replace(
+                    (f"azimuth_{r_cfg.azimuthal_panel_order+1}",replace(
                         r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+1,
                     )),
-                    ("azimuth_4",replace(
+                    (f"azimuth_{r_cfg.azimuthal_panel_order+2}",replace(
                         r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+2,
                     )),
                     ("radial",replace(
@@ -1178,7 +1180,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     if previous_azimuth is not None:
                         # The real convergence question is 3→4, not just
                         # whether 2→3 crosses the original 0.5% q gate.
-                        r3,k3,kd3,u3,z3,q3,qn3,p3=previous_azimuth
+                        r3,k3,kd3,u3,z3,q3,qn3,p3,_=previous_azimuth
                         step_z=relative(zb,z3)
                         step_imz=relative(zb.imag,z3.imag)
                         step_j=_relative_dissipation_norm(
@@ -1200,7 +1202,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                             and step_normal<=0.01 and step_p<=0.002
                         )
                         print(
-                            f"  rk_far_azimuth_4_vs_3: "
+                            f"  rk_far_azimuth_{alternate.azimuthal_panel_order}"
+                            f"_vs_{previous_azimuth[-1]}: "
                             f"dR={relative(rb,r3):.6g}, "
                             f"dK={relative(kb,k3):.6g}, "
                             f"dK_dual={relative(kdb,kd3):.6g}, "
@@ -1215,11 +1218,12 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                             f"response_gate={'PASS' if step_gate else 'FAIL'}",
                             flush=True,
                         )
-                    previous_azimuth=(rb,kb,kdb,ub,zb,qb,qnb,pb)
+                    previous_azimuth=(rb,kb,kdb,ub,zb,qb,qnb,pb,
+                                      alternate.azimuthal_panel_order)
             print(
                 "  rk_far_note: single-axis spherical R/K changes only; "
-                "azimuth 3→4 compares successive Gauss orders. These are "
-                "not outer-domain, basis or Green convergence certificates.",
+                "adjacent azimuth Gauss orders are compared explicitly. "
+                "These are not outer-domain, basis or Green certificates.",
                 flush=True,
             )
 
