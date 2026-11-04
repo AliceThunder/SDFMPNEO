@@ -37,7 +37,8 @@
     python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # 207模态父空间误差上界与重要方向筛选
     python run.py --mode bfzi-convergence --basis-domain-ball # 均匀球Green外域检查
     python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --with-tests # 已测：229模态外域0.52→0.70→0.85m均FAIL
-    python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-extend --with-tests # 续测0.85→1.05→1.30m及0.35m内区，自动上传
+    python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-extend --with-tests # 已测：0.85→1.05→1.30m均FAIL
+    python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests # 新：1.05→1.30→1.60m及R/K与Green L敏感性拆分
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
@@ -401,6 +402,7 @@ def main(argv=None):
                     basis_ball_targeted="--basis-ball-targeted" in args,
                     basis_domain_ball="--basis-domain-ball" in args,
                     basis_domain_extend="--basis-domain-extend" in args,
+                    basis_domain_far="--basis-domain-far" in args,
                     basis_domain="--basis-domain" in args,
                     basis_local="--basis-local" in args,
                     basis_angular="--basis-angular" in args,
