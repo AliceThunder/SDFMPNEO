@@ -102,6 +102,52 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_sobol_shell_cubature_is_positive_wet_and_independent():
+    # Same two-box wet domain as the tensor Gauss rule, but a genuinely
+    # different, reproducible physical integration construction:
+    # Sobol sphere + twelve positive oriented shell charts.
+    from dataclasses import replace
+    original=scene_pair()
+    angle=0.27
+    c,sn=np.cos(angle),np.sin(angle)
+    rotated=replace(
+        original,
+        receiver=replace(
+            original.receiver,
+            pose=RigidPose(
+                np.array([[c,-sn,0.0],[sn,c,0.0],[0.0,0.0,1.0]]),
+                original.receiver.pose.center,
+            ),
+        ),
+    )
+    for scene in (original,rotated):
+        params=dict(
+            m=8,seed=13,sphere_extra_bits=2,
+            wall_scale=0.001125,return_sphere_count=True,
+        )
+        x,w,n=scene.box_shell_qmc(**params)
+        x_repeat,w_repeat,n_repeat=scene.box_shell_qmc(**params)
+        np.testing.assert_array_equal(x,x_repeat)
+        np.testing.assert_array_equal(w,w_repeat)
+        assert n==n_repeat
+        assert 0<n<len(x)
+        assert np.all(w>0.0)
+        assert scene.in_seawater(x).all()
+        volume=4*np.pi*scene.outer_radius**3/3-8*sum(
+            np.prod(a.enclosure.half_extents) for a in scene.assemblies
+        )
+        assert abs(np.sum(w)/volume-1)<0.03
+        x2,w2,_=scene.box_shell_qmc(**dict(params,seed=37))
+        assert not np.array_equal(x2,x)
+        assert np.all(w2>0.0)
+        assert scene.in_seawater(x2).all()
+        assert abs(np.sum(w2)/volume-1)<0.03
+    with pytest.raises(ValueError, match="QMC log2"):
+        original.box_shell_qmc(m=4)
+    with pytest.raises(ValueError, match="QMC seed"):
+        original.box_shell_qmc(seed=-1)
+
+
 def test_g1_coil_aligned_shell_panels_preserve_obb_domain_and_sphere():
     # A source-informed *cubature chart* does not move the spiral, alter
     # the sealed boxes, or turn positive quadrature into a fitted kernel.
