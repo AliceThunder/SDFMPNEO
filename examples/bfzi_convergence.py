@@ -1077,10 +1077,52 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     f"response_gate={'PASS' if gate else 'FAIL'}",
                     flush=True,
                 )
+                if axis.startswith("azimuth"):
+                    if previous_azimuth is not None:
+                        # The real convergence question is 3→4, not just
+                        # whether 2→3 crosses the original 0.5% q gate.
+                        r3,k3,kd3,u3,z3,q3,qn3,p3=previous_azimuth
+                        step_z=relative(zb,z3)
+                        step_imz=relative(zb.imag,z3.imag)
+                        step_j=_relative_dissipation_norm(
+                            r,ub @ currents,u3 @ currents,
+                        )
+                        step_ports=_relative_dissipation_norm(r,ub,u3)
+                        step_q=relative(qb,q3)
+                        step_max_q=float(np.max(
+                            np.abs(qb-q3)/np.maximum(q3,1e-10)
+                        ))
+                        step_normal=float(np.max(np.abs(qnb-qn3)))/max(
+                            float(np.max(qn3)),1e-30,
+                        )
+                        step_p=abs(pb-p3)/max(abs(p3),1e-30)
+                        step_gate=(
+                            step_z<=0.002 and step_imz<=0.01
+                            and step_j<=0.01 and step_ports<=0.01
+                            and step_q<=0.005 and step_max_q<=0.05
+                            and step_normal<=0.01 and step_p<=0.002
+                        )
+                        print(
+                            f"  rk_far_azimuth_4_vs_3: "
+                            f"dR={relative(rb,r3):.6g}, "
+                            f"dK={relative(kb,k3):.6g}, "
+                            f"dK_dual={relative(kdb,kd3):.6g}, "
+                            f"dZ={step_z:.6g}, "
+                            f"dImZ={step_imz:.6g}, "
+                            f"dJ_volume={step_j:.6g}, "
+                            f"dJ_ports_volume={step_ports:.6g}, "
+                            f"dq={step_q:.6g}, "
+                            f"max_probe_dq={step_max_q:.6g}, "
+                            f"normal_peak_scaled_dq={step_normal:.6g}, "
+                            f"dP={step_p:.6g}, "
+                            f"response_gate={'PASS' if step_gate else 'FAIL'}",
+                            flush=True,
+                        )
+                    previous_azimuth=(rb,kb,kdb,ub,zb,qb,qnb,pb)
             print(
-                "  rk_far_note: only the spherical polar/azimuthal R/K "
-                "rules changed one at a time. This does not certify "
-                "radial, outer-domain, basis or Green convergence.",
+                "  rk_far_note: single-axis spherical R/K changes only; "
+                "azimuth 3→4 compares successive Gauss orders. These are "
+                "not outer-domain, basis or Green convergence certificates.",
                 flush=True,
             )
 
