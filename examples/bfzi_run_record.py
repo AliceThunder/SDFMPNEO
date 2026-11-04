@@ -37,7 +37,7 @@ def _fields(line: str):
 
 def _short(line: str) -> str | None:
     line = line.strip()
-    if line.startswith(("g1_", "p0_")):
+    if line.startswith(("g1_", "p0_", "p1_")):
         return line
     if line.startswith(("Building enriched", "Refined R/K +", "Independent ")):
         return line
@@ -176,12 +176,15 @@ def _summary(root, flags, started, ended, status, raw):
     domain_operators = []
     g1_pilot = []
     p0_evidence = []
+    p1_evidence = []
     for rawline in lines:
         line = rawline.strip()
         if line.startswith("g1_"):
             g1_pilot.append(line)
         if line.startswith("p0_"):
             p0_evidence.append(line)
+        if line.startswith("p1_"):
+            p1_evidence.append(line)
         if ": modes=" in line:
             label, rest = line.split(":", 1)
             values = _fields(rest)
@@ -233,6 +236,16 @@ def _summary(root, flags, started, ended, status, raw):
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
     ]
+    if p1_evidence:
+        parts.extend([
+            "", "## P1 原 Coulomb 磁能算子：三解析无散度球电流（尚非双盒认证）", "",
+        ])
+        parts.extend(f"- `{line}`" for line in p1_evidence)
+        parts.append(
+            "\n以上只检验不软化 1/r 的解析球域对照。"
+            "原 BFZI 双绝缘盒的奇异自项、近邻块、R/K、外域"
+            "及神经教师仍须各自通过独立验收。"
+        )
     if p0_evidence:
         parts.extend([
             "", "## P0 物理源：独立直线解析与曲线 Gauss 收敛（非电磁教师认证）", "",
@@ -337,7 +350,7 @@ def _summary(root, flags, started, ended, status, raw):
         )
     parts.extend(["", "## 收敛判定与诊断", ""])
     parts.extend(f"- `{line}`" for line in gates)
-    if not stages and not comparisons and not gates and not domains and not g1_pilot and not p0_evidence:
+    if not stages and not comparisons and not gates and not domains and not g1_pilot and not p0_evidence and not p1_evidence:
         parts.append("- 该运行没有可自动提取的嵌套指标；请看完整日志。")
     parts.extend([
         "",
@@ -388,7 +401,7 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
     root = Path(__file__).resolve().parents[1]
     output_dir = root / LOG_DIR
     if log_subdir is not None:
-        if not isinstance(log_subdir, str) or log_subdir not in ("p0",):
+        if not isinstance(log_subdir, str) or log_subdir not in ("p0", "p1"):
             raise ValueError("unsupported BFZI log subdirectory")
         output_dir = output_dir / log_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -406,7 +419,8 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
                  "tests/test_bfzi_geometry_v1.py",
                  "tests/test_bfzi_mqs_v1.py",
                  "tests/test_bfzi_neural_v1.py",
-                 "tests/test_bfzi_source_p0.py", "-q"],
+                 "tests/test_bfzi_source_p0.py",
+                 "tests/test_bfzi_p1_coulomb.py", "-q"],
                 cwd=root, capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
             )
