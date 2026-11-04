@@ -1,6 +1,6 @@
 pytest:
 ............................................................             [100%]
-60 passed in 38.05s
+60 passed in 38.01s
 
 Building enriched 229-mode Galerkin operator... raw modes=229, kernel=uniform_ball; fine R/K/Joule cubature; independently coarse L
 
@@ -63,11 +63,14 @@ Structure-preserving fixed-scene response compression:
   snapshot_rank_2: dZ=0.000586125, dq=0.0114374, max_probe_dq=0.0444183, dP=0.000394357, power_closure=1.77948e-16
   snapshot_rank_4: dZ=1.22216e-15, dq=1.4748e-13, max_probe_dq=8.45351e-12, dP=5.16254e-15, power_closure=1.78019e-16
   snapshot_note: rank-4 exactness is ONLY relative to the unconverged 229-mode parent at this scene/frequency. It does not validate a cross-geometry model or local heat truth.
-  rk_far_polar_nodes: B=512608
-  rk_far_polar_229_B_vs_A: dR=0.000438292, dK=0.00020224, dK_dual=0.000134226, dZ=4.28866e-05, dImZ=1.14635e-05, dJ_volume=0.000137776, dJ_ports_volume=0.000122708, dq=0.000241242, max_probe_dq=0.00372525, normal_peak_scaled_dq=0.000328497, dP=4.24288e-05, response_gate=PASS
-  rk_far_azimuth_nodes: B=563728
-  rk_far_azimuth_229_B_vs_A: dR=0.00340629, dK=0.000925737, dK_dual=0.000373921, dZ=0.00012873, dImZ=5.49805e-05, dJ_volume=0.00284505, dJ_ports_volume=0.0023946, dq=0.00572717, max_probe_dq=0.00621096, normal_peak_scaled_dq=0.00621096, dP=0.000218457, response_gate=FAIL
-  rk_far_note: only the spherical polar/azimuthal R/K rules changed one at a time. This does not certify radial, outer-domain, basis or Green convergence.
+  rk_far_azimuth_3_nodes: B=563728
+  rk_far_azimuth_3_229_B_vs_A: dR=0.00340629, dK=0.000925737, dK_dual=0.000373921, dZ=0.00012873, dImZ=5.49805e-05, dJ_volume=0.00284505, dJ_ports_volume=0.0023946, dq=0.00572717, max_probe_dq=0.00621096, normal_peak_scaled_dq=0.00621096, dP=0.000218457, response_gate=FAIL
+  rk_far_azimuth_4_nodes: B=665760
+  rk_far_azimuth_4_229_B_vs_A: dR=0.00312196, dK=0.000900968, dK_dual=0.000376099, dZ=7.78919e-05, dImZ=6.53571e-06, dJ_volume=0.00263565, dJ_ports_volume=0.00222456, dq=0.00530688, max_probe_dq=0.00575923, normal_peak_scaled_dq=0.00575923, dP=0.00013251, response_gate=FAIL
+  rk_far_azimuth_4_vs_3: dR=0.000293162, dK=0.000118234, dK_dual=4.20131e-05, dZ=5.08614e-05, dImZ=4.9276e-05, dJ_volume=0.000232565, dJ_ports_volume=0.000196596, dq=0.000422756, max_probe_dq=0.00045455, normal_peak_scaled_dq=0.00045455, dP=8.59655e-05, response_gate=PASS
+  rk_far_radial_nodes: B=489296
+  rk_far_radial_229_B_vs_A: dR=2.30534e-09, dK=2.07595e-08, dK_dual=2.50786e-10, dZ=7.24941e-09, dImZ=3.40868e-08, dJ_volume=1.89663e-08, dJ_ports_volume=2.11416e-08, dq=1.45338e-09, max_probe_dq=1.9332e-08, normal_peak_scaled_dq=2.69385e-09, dP=5.49791e-09, response_gate=PASS
+  rk_far_note: single-axis spherical R/K changes only; azimuth 3→4 compares successive Gauss orders. These are not outer-domain, basis or Green convergence certificates.
   adaptive_00: modes=63, dZ=0.739986, dq=0.470892, dJ_volume=0.767861, dJ_ports_volume=0.81815, parent_dJ_energy_upper=inf, max_probe_dq=0.999846, hotspot_max_dq=0.999846, peak_scaled_max_dq=0.543689, worst_probe=2, dP=0.589425, max_residual_score=0.0493092, hotspot_match=False
   adaptive_01: modes=71, dZ=0.0707914, dq=0.141253, dJ_volume=0.344935, dJ_ports_volume=0.289516, parent_dJ_energy_upper=0.433629, max_probe_dq=8.9772, hotspot_max_dq=0.229573, peak_scaled_max_dq=0.205274, worst_probe=0, dP=0.118973, max_residual_score=0.00288458, hotspot_match=False
   adaptive_02: modes=79, dZ=0.0587994, dq=0.136554, dJ_volume=0.314312, dJ_ports_volume=0.26374, parent_dJ_energy_upper=0.376312, max_probe_dq=23.443, hotspot_max_dq=0.171679, peak_scaled_max_dq=0.146503, worst_probe=4, dP=0.098783, max_residual_score=0.00354936, hotspot_match=False
