@@ -185,7 +185,65 @@ M_B(x)=\frac{4\pi}{15}(|x|^2-5R^2)x.
 
 **明确的使用边界：** 真实双旋转盒海水域的 `SΩ,MΩ` 可以由真正的外球和盒壁几何边界积分定义，但近壁数值精度尚未核实；**绝不拿球的 (S_B,M_B) 代替真实双盒域**，也不据此恢复神经教师。
 
-## 8. P1 的逐级停止规则
+## 8. P1 第二步：真实双绝缘盒海水域的几何势与一阶矩（新代码待本机运行）
+
+球形解析基准的一阶减除已经在本机 87 passed、非线性源相对磁能误差 **1.59619e-4**（0.01596%）中达到原定 0.1% 门槛；旧分区算法仍然 FAIL，不能因新方法通过单个球基准就宣布实际 BFZI 双盒原核 L 已经收敛。
+
+本轮不再使用球的 \`S_B/M_B\` 近似真实海水域；已为**实际的两只 SE(3) 旋转长方体绝缘封装和外球**实现严格几何积分。有限海水域
+
+\[
+\Omega=B_R(c_0)\setminus(\overline B_1\cup\overline B_2)
+\]
+
+的真 Coulomb 几何矩始终按积分域线性拆分：
+
+\[
+S_\Omega=S_{B_R}-S_{B_1}-S_{B_2},\qquad
+M_\Omega=M_{B_R}-M_{B_1}-M_{B_2}.
+\]
+
+对于位于外球内部的 \(x\)，球的两项仍可解析：
+\[
+S_{B_R}(x)=2\pi\left(R^2-\frac{|x-c_0|^2}{3}\right),
+\quad
+M_{B_R}(x)=\frac{4\pi}{15}\left(|x-c_0|^2-5R^2\right)(x-c_0).
+\]
+
+**矩形盒无需有限元或体积高斯点。** 对任一面的局部正交坐标 \((u,v)\) 和有符号面间距 \(w\)，令 \(d=\sqrt{u^2+v^2+w^2}\)、\(z=|w|\)。两个完全解析的矩形面原函数为
+
+\[
+F_{-1}(u,v;w)=u\,\operatorname{asinh}\frac{v}{\sqrt{u^2+w^2}}
++v\,\operatorname{asinh}\frac{u}{\sqrt{v^2+w^2}}
+-z\,\operatorname{atan2}(uv,zd),
+\]
+
+\[
+F_{+1}(u,v;w)=\frac{uvd}{3}
++\frac{u(u^2+3w^2)}{6}\operatorname{asinh}\frac{v}{\sqrt{u^2+w^2}}
++\frac{v(v^2+3w^2)}{6}\operatorname{asinh}\frac{u}{\sqrt{v^2+w^2}}
+-\frac{z^3}{3}\operatorname{atan2}(uv,zd).
+\]
+
+在面矩形的四个角点作符号交替差，直接精确得到
+\[
+I_{-1}=\iint_{\mathrm{face}}\frac{du\,dv}{d},\qquad
+I_{+1}=\iint_{\mathrm{face}}d\,du\,dv.
+\]
+依据真实边界散度定理（注意内盒是**从海水域减去**）：
+\[
+S_{\mathrm{box}}(x)=\frac12\sum_f
+[\mathbf n_f\cdot(\mathbf y_f-x)] I_{-1,f},\quad
+M_{\mathrm{box}}(x)=\sum_f\mathbf n_f I_{+1,f}.
+\]
+实际计算先在每只盒的局部坐标完成，再用该盒的刚体旋转矩阵把向量矩转回世界坐标，支持两只盒**独立任意合法姿态和尺寸**。这两个积分量与电流基、源、频率无关，**没有任何 1/r 软化或矩形表面网格求解**。
+
+主代码：\`sdfmpneo_bfzi/coulomb_geometry_moments.py\` 的 \`box_coulomb_moments\`、\`ball_coulomb_moments\`、\`sea_coulomb_moments\`。
+
+**独立验收，不用解析面原函数自我测试：** 新 \`examples/bfzi_p1_geometry.py\` 对每端口真实封装的**盒面中心附近／棱附近／角附近**分别选取 2.5mm 海水探针，使用另一种实现的**自适应分片正权二维高斯曲面积分**逐面比较标量和向量矩。这套独立算法不调用解析矩形原函数；预先将每种矩在各个近壁探针上的最大相对差目标固定为 **<1e-8**。同时测试解析盒面公式与独立三维盒体 Gauss 积分的一致性，以及 SE(3) 刚体协变。日志为 \`p1_geom_box\`、\`p1_geom_wet\`、\`p1_geom_gate\`，与现有 P1 原球矩阵日志共同保存在 \`runs/p1/\`。
+
+**新关口的意义与限制：** 这使真实双盒域所需的 \`S_\Omega,M_\Omega\` 成为精确几何算子而不是未经认证的拟合或体积软化；但它**不提供真实双盒合规连续电流模式的 Taylor 余项求积真值**，也不完成其自/邻 Coulomb L 磁能、人工外球的无限域外推。新增代码和阈值目前**待用户本机运行**；在实际日志验证前不可宣布几何矩 PASS，G1 继续 FAIL。
+
+## 9. P1 的逐级停止规则
 
 1. **P1-A 原核解析球基准：** 提前固定**解析球专用**数值目标：最终 `both` 规则原核矩阵 Frobenius 相对误差、最大对角相对误差和离对角矩阵相对误差均 **<0.001（0.1%）**；相同基准 `x/y` 节点下两个物理上等价的局部分区半径对应的 `L11` 差值，除以解析 `L11`，也必须 **<0.001**。这些只是第一道算子基准门槛，还应人工检查 `base/x_only/y_only/both` 向解析真值的稳定收敛。程序输出 `p1_gate`；任何一项不满足都记录 FAIL，不通过临时改阈值伪装成功。**现有 split 已实测 FAIL；新增精确归因与常量奇异减除待本机复验，仍不得宣布 P1 PASS**。
 2. **P1-B 真实 BFZI 双盒域：** 球基准通过后，固定一个真实的有限海水域、固定小数目的 \(\mathbf W=\nabla\times\mathbf F\)，独立比较对角、近邻及远区原核 1/r 积分，不替换为 uniform-ball 或 Plummer。需按 Passarotto–Pitassi–Specogna 2022 的原核自项/奇异提取思路评估现有公式，不仅对比两种未认证规则。
