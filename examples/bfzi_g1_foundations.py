@@ -121,6 +121,20 @@ def main():
     energy_delta = float(np.real(np.vdot(delta_u,r@delta_u)))
     energy_base = float(np.real(np.vdot(ua,r@ua)))
     dj_r = math.sqrt(max(energy_delta,0.0)/max(energy_base,1e-60))
+    eigenvalues,eigenvectors = np.linalg.eigh(r)
+    if np.min(eigenvalues) <= 0.0:
+        raise RuntimeError("pilot R Gram is unresolved; refine volume rule")
+    invsqrt = (eigenvectors/np.sqrt(eigenvalues))@eigenvectors.T
+    weighted_delta = w*invsqrt@(lc-lb)@invsqrt
+    dynamic_dL = float(np.linalg.norm(weighted_delta,ord=2))
+    refined_residual = (
+        (r+1j*w*lc)@ub+1j*w*k
+    )
+    forcing = 1j*w*k
+    driven_residual = (
+        np.linalg.norm(invsqrt@refined_residual)
+        /max(np.linalg.norm(invsqrt@forcing),1e-30)
+    )
     test_currents = np.array([1.0+0.2j,-0.4+0.5j])
     probe=np.array([[0.,0.,0.],[0.15,0.,0.],[0.,0.12,0.],[0.,0.,0.22]])
     probe_modes=trial.evaluate(probe)
@@ -141,6 +155,8 @@ def main():
         f"local_angular_dJ_R={dj_r:.6g}, "
         f"volume_x_nodes={len(x2)}, volume_y_nodes={len(y2)}, "
         f"volume_dL={relative(lc,lb):.6g}, "
+        f"dimensionless_dL={dynamic_dL:.6g}, "
+        f"refined_on_coarse_residual={driven_residual:.6g}, "
         f"volume_dZ={relative(zc,zb):.6g}, "
         f"volume_probe_dq={relative(probe_heat(uc),probe_heat(ub)):.6g}, "
         f"min_L_split_eig={np.linalg.eigvalsh(lc)[0]:.6g}",
