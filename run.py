@@ -14,6 +14,7 @@
     python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 实验网络训练
     python run.py --mode bfzi-infer --model bfzi_neural.pt # 推理
     python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
+    python run.py --mode bfzi-g1-foundations --with-tests # G1新物理基准：原始Coulomb奇异拆分+可细分curl基+解析无限域外边界（自动上传）
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
@@ -378,6 +379,15 @@ def main(argv=None):
                 from examples.bfzi_neural_demo import evaluate as neural_evaluate
                 neural_evaluate(args[index + 2:])
                 return 0
+            if mode == "bfzi-g1-foundations":
+                from examples.bfzi_g1_foundations import main as g1_main
+                from examples.bfzi_run_record import run_and_publish
+                return run_and_publish(
+                    g1_main, flags=args,
+                    verbose="--verbose-log" in args,
+                    publish="--no-publish-log" not in args,
+                    with_tests="--with-tests" in args,
+                )
             if mode == "bfzi-convergence":
                 from examples.bfzi_convergence import main as bfzi_main
                 from examples.bfzi_run_record import run_and_publish
