@@ -11,13 +11,13 @@
 
 ```powershell
 git pull --ff-only
-python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --with-tests
+python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-extend --with-tests
 # 只保留本地，不推送：
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 # 如需看到全部原始标准输出：
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 ```
 
-**最近自动上传（2026-11-04 UTC，代码基线 `7982bfa`）：** `60 passed in 38.01s`；229 模态方位角 2→3 q 差异 0.5727% FAIL、**3→4 q 差异 0.0423% PASS**；径向分片 0.06→0.04m PASS。本轮代码将精细 R/K 角向阶数提升为 3，并提供**同一 229 模态电流族**外域 0.52、0.70、0.85m 对照，自动记录各半径 Z、q、海水功率，以及共同 0.52m 控制体积的组合电流与双端口 J 差异。**新外域实验尚待本机运行**；Green L 算子依然没有通过独立积分收敛验收。
+**最新本机上传（2026-11-04 UTC，代码基线 `60a3ba7`）：** `60 passed in 39.33s`；同一套 229 物理电流方向的外域 0.52→0.70→0.85m 两个步长均 `domain_response_gate=FAIL`。0.70→0.85m 的共同海水 J 变化 `1.9287%`、4+12 个固定探针 q 变化 `4.0557%`、海水功率变化 `0.4269%`。新命令（尚未本机运行）从 `0.85m` 直接计算 `1.05/1.30m`，无需重算两个旧外域；Markdown 摘要将并列记录共同 0.52m 湿区和设备附近 0.35m 区域的 J、两端口 J 与空间 q，并保留逐步 PASS/FAIL。磁 Green L 算子独立验收仍 FAIL，外域平台通过也不等于最终 G1 通过。
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
