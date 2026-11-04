@@ -102,6 +102,34 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_wall_normal_gauss_matches_sharp_curl_envelope_integral():
+    # Analytic one-dimensional wall-normal component of curl-envelope
+    # energy. This checks the *actual* quadrature transform and Jacobian,
+    # not a fitted reference answer or merely a point-cloud volume.
+    from sdfmpneo_bfzi.scene import _wall_normal_gauss
+    scale=0.001125
+    width=32*scale
+    boundaries=(0.0,1.5*scale,4.5*scale,13.5*scale,width)
+    nodes,weights=np.polynomial.legendre.leggauss(2)
+    exact=(1-(scale/(scale+width))**3)/(3*scale)
+    errors={}
+    for mapping in ("linear","log"):
+        moment=0.0
+        for lower,upper in zip(boundaries[:-1],boundaries[1:]):
+            distances,positive_weights=_wall_normal_gauss(
+                lower,upper,scale,nodes,weights,mapping,
+            )
+            assert np.all(distances > lower)
+            assert np.all(distances < upper)
+            assert np.all(positive_weights > 0)
+            moment+=np.dot(
+                positive_weights,(scale/(distances+scale)**2)**2,
+            )
+        errors[mapping]=abs(moment/exact-1)
+    assert errors["log"] < 0.02
+    assert errors["log"] < 0.2*errors["linear"]
+
+
 def test_g1_log_shell_normal_chart_keeps_domain_and_sphere_rule():
     # The optional wall-normal coordinate change does NOT alter physical
     # domain, spherical nodes or partition weights; only shell Gauss
