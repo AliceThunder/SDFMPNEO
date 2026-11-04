@@ -366,33 +366,43 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 )
             if previous is not None:
                 old_radius, old_z, old_q, old_p, old_drive, old_ports = previous
+                dz = relative(z,old_z)
+                dq = relative(q,old_q)
+                dp = abs(power-old_p)/max(abs(old_p),1e-30)
                 details = ""
                 if targeted_domain:
                     # Identical physical control volume and sampling weights
                     # at every outer radius (not a changing-domain R metric).
                     def common_j_error(new, old):
-                        # Sum spatial components and both ports at each
-                        # positive cubature node, then the same common
-                        # physical volume for both finite-domain solutions.
-                        component_axes=tuple(range(1,new.ndim))
-                        error=float(np.dot(
-                            common_w,
-                            np.sum(np.abs(new-old)**2,axis=component_axes),
+                        component_axes = tuple(range(1,new.ndim))
+                        error = float(np.dot(
+                            common_w, np.sum(
+                                np.abs(new-old)**2,axis=component_axes,
+                            ),
                         ))
-                        base=float(np.dot(
-                            common_w,
-                            np.sum(np.abs(old)**2,axis=component_axes),
+                        base = float(np.dot(
+                            common_w, np.sum(
+                                np.abs(old)**2,axis=component_axes,
+                            ),
                         ))
                         return float(np.sqrt(error/max(base,1e-60)))
+                    dj = common_j_error(common_drive,old_drive)
+                    dj_ports = common_j_error(common_ports,old_ports)
+                    # Stepwise response agreement is NOT a continuum
+                    # domain certificate. L is independently reassembled
+                    # for each radius and remains under its own FAIL gate.
+                    step_gate = (
+                        dz<=0.002 and dq<=0.005 and dp<=0.002
+                        and dj<=0.01 and dj_ports<=0.01
+                    )
                     details = (
-                        f", dJ_common={common_j_error(common_drive,old_drive):.6g}"
-                        f", dJ_ports_common={common_j_error(common_ports,old_ports):.6g}"
+                        f", dJ_common={dj:.6g}"
+                        f", dJ_ports_common={dj_ports:.6g}"
+                        f", domain_response_gate={'PASS' if step_gate else 'FAIL'}"
                     )
                 print(
                     f"  domain_step: {old_radius:.3g}->{radius:.3g} m, "
-                    f"dZ={relative(z,old_z):.6g}, "
-                    f"dq={relative(q,old_q):.6g}, "
-                    f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}"
+                    f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}"
                     + details,
                     flush=True,
                 )
