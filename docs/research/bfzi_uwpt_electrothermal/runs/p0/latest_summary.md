@@ -1,34 +1,34 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T10:54:24+00:00
-- 结束（UTC）：2026-11-04T10:55:07+00:00
-- 当时检出的代码提交：`ce086b1`
+- 开始（UTC）：2026-11-04T11:15:02+00:00
+- 结束（UTC）：2026-11-04T11:15:45+00:00
+- 当时检出的代码提交：`325d47b`
 - 执行：`python run.py --mode bfzi-p0-source`
-- 同批 pytest：77 passed in 41.67s
+- 同批 pytest：79 passed in 41.43s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
 ## P0 物理源：独立直线解析与曲线 Gauss 收敛（非电磁教师认证）
 
 - `p0_physics: model=linear_MQS, source=prescribed_closed_ideal_line, f_hz=200000,sigma_s=5,mu_rel=1, sea_skin_depth_m=0.5032921, omega_eps_over_sigma_if_epsr80=0.000178024, air_k0_R=0.002179679, insulating_boxes=2,outer_sphere=artificial_no_normal_current, finite_wire_proximity=excluded,displacement_current=excluded`
-- `p0_reference: port=0,probe_count=28, corner_24_to_32_dC=3.23941e-16, corner_24_to_32_dB=2.79896e-16`
-- `p0_source: port=0,order=3, dC=0.000507298,dB=0.00114483, dC_near=0.000508098, dB_near=0.00114491, legacy_dC=0.00296249, legacy_dB=0.031072, line_closure_over_length=3.45706e-08`
-- `p0_source: port=0,order=4, dC=2.24176e-05,dB=0.000195457, dC_near=2.24532e-05, dB_near=0.000195471, legacy_dC=0.00252616, legacy_dB=0.0117353, line_closure_over_length=9.70638e-11`
-- `p0_source: port=0,order=6, dC=3.08869e-07,dB=1.74811e-06, dC_near=3.09379e-07, dB_near=1.74823e-06, legacy_dC=8.68585e-05, legacy_dB=0.00466037, line_closure_over_length=1.40757e-16`
-- `p0_source: port=0,order=8, dC=2.47805e-09,dB=5.23552e-09, dC_near=2.48214e-09, dB_near=5.23589e-09, legacy_dC=6.34857e-05, legacy_dB=0.000943337, line_closure_over_length=6.18479e-17`
-- `p0_source: port=0,order=12, dC=8.38606e-14,dB=1.93691e-12, dC_near=8.39991e-14, dB_near=1.93705e-12, legacy_dC=1.17728e-06, legacy_dB=3.80127e-05, line_closure_over_length=6.77102e-17`
+- `p0_reference: port=0,probe_count=84, corner_24_to_32_dC=3.19002e-16, corner_24_to_32_dB=2.69094e-16`
+- `p0_source: port=0,order=3, dC=0.000739756,dB=0.00277731, dC_faces=0.000508098, dB_faces=0.00114491, dC_edges=0.000840304, dB_edges=0.00494655, dB_peak_max=0.00274026, divC_scaled=0.00060302, legacy_dC=0.00216317, legacy_dB=0.0280064, line_closure_over_length=3.45706e-08`
+- `p0_source: port=0,order=4, dC=7.27886e-05,dB=0.000426786, dC_faces=2.24532e-05, dB_faces=0.000195471, dC_edges=8.90303e-05, dB_edges=0.000747542, dB_peak_max=0.000466244, divC_scaled=0.000105544, legacy_dC=0.00150751, legacy_dB=0.0101801, line_closure_over_length=9.70638e-11`
+- `p0_source: port=0,order=6, dC=1.19878e-06,dB=9.36054e-06, dC_faces=3.09379e-07, dB_faces=1.74823e-06, dC_edges=1.47389e-06, dB_edges=1.75758e-05, dB_peak_max=1.28001e-05, divC_scaled=3.31482e-06, legacy_dC=5.18714e-05, legacy_dB=0.00396435, line_closure_over_length=1.40757e-16`
+- `p0_source: port=0,order=8, dC=2.16237e-08,dB=2.20882e-07, dC_faces=2.48214e-09, dB_faces=5.23589e-09, dC_edges=2.68417e-08, dB_edges=4.19986e-07, dB_peak_max=3.36958e-07, divC_scaled=1.01574e-07, legacy_dC=3.77749e-05, legacy_dB=0.000802404, line_closure_over_length=6.18479e-17`
+- `p0_source: port=0,order=12, dC=8.43451e-12,dB=1.28316e-10, dC_faces=8.39991e-14, dB_faces=1.93705e-12, dC_edges=1.04941e-11, dB_edges=2.44009e-10, dB_peak_max=2.22692e-10, divC_scaled=8.86243e-11, legacy_dC=7.00482e-07, legacy_dB=3.23334e-05, line_closure_over_length=6.77102e-17`
 - `p0_gate: port=0,source_order=4, source_dC_le_0p1pct=True, source_dB_le_0p1pct=True`
 - `p0_gate: port=0,source_order=12, source_dC_le_0p1pct=True, source_dB_le_0p1pct=True`
-- `p0_reference: port=1,probe_count=28, corner_24_to_32_dC=3.22292e-16, corner_24_to_32_dB=2.79523e-16`
-- `p0_source: port=1,order=3, dC=0.000507054,dB=0.00114486, dC_near=0.000508097, dB_near=0.0011449, legacy_dC=0.00296077, legacy_dB=0.0310729, line_closure_over_length=3.45706e-08`
-- `p0_source: port=1,order=4, dC=2.24063e-05,dB=0.000195463, dC_near=2.24532e-05, dB_near=0.00019547, legacy_dC=0.00252468, legacy_dB=0.0117356, line_closure_over_length=9.70638e-11`
-- `p0_source: port=1,order=6, dC=3.08689e-07,dB=1.74816e-06, dC_near=3.09379e-07, dB_near=1.74822e-06, legacy_dC=8.68078e-05, legacy_dB=0.00466051, line_closure_over_length=1.40757e-16`
-- `p0_source: port=1,order=8, dC=2.4766e-09,dB=5.23568e-09, dC_near=2.48214e-09, dB_near=5.23587e-09, legacy_dC=6.34486e-05, legacy_dB=0.000943366, line_closure_over_length=6.18479e-17`
-- `p0_source: port=1,order=12, dC=8.38116e-14,dB=1.93697e-12, dC_near=8.39989e-14, dB_near=1.93704e-12, legacy_dC=1.17659e-06, legacy_dB=3.80138e-05, line_closure_over_length=6.77102e-17`
+- `p0_reference: port=1,probe_count=84, corner_24_to_32_dC=3.24662e-16, corner_24_to_32_dB=2.72021e-16`
+- `p0_source: port=1,order=3, dC=0.000739608,dB=0.00277736, dC_faces=0.000508097, dB_faces=0.0011449, dC_edges=0.00084029, dB_edges=0.00494649, dB_peak_max=0.00274026, divC_scaled=0.000603013, legacy_dC=0.00216271, legacy_dB=0.0280069, line_closure_over_length=3.45706e-08`
+- `p0_source: port=1,order=4, dC=7.27729e-05,dB=0.000426794, dC_faces=2.24532e-05, dB_faces=0.00019547, dC_edges=8.90289e-05, dB_edges=0.000747531, dB_peak_max=0.000466244, divC_scaled=0.000105522, legacy_dC=0.00150718, legacy_dB=0.0101803, line_closure_over_length=9.70638e-11`
+- `p0_source: port=1,order=6, dC=1.19852e-06,dB=9.36071e-06, dC_faces=3.09379e-07, dB_faces=1.74822e-06, dC_edges=1.47387e-06, dB_edges=1.75755e-05, dB_peak_max=1.28001e-05, divC_scaled=3.3141e-06, legacy_dC=5.18601e-05, legacy_dB=0.00396442, line_closure_over_length=1.40757e-16`
+- `p0_source: port=1,order=8, dC=2.1619e-08,dB=2.20886e-07, dC_faces=2.48214e-09, dB_faces=5.23587e-09, dC_edges=2.68413e-08, dB_edges=4.1998e-07, dB_peak_max=3.36958e-07, divC_scaled=1.01552e-07, legacy_dC=3.77667e-05, legacy_dB=0.000802418, line_closure_over_length=6.18479e-17`
+- `p0_source: port=1,order=12, dC=8.43268e-12,dB=1.28318e-10, dC_faces=8.39989e-14, dB_faces=1.93704e-12, dC_edges=1.04939e-11, dB_edges=2.44006e-10, dB_peak_max=2.22692e-10, divC_scaled=8.8605e-11, legacy_dC=7.0033e-07, legacy_dB=3.2334e-05, line_closure_over_length=6.77102e-17`
 - `p0_gate: port=1,source_order=4, source_dC_le_0p1pct=True, source_dB_le_0p1pct=True`
 - `p0_gate: port=1,source_order=12, source_dC_le_0p1pct=True, source_dB_le_0p1pct=True`
-- `p0_note: C/B fields are checked against analytic straight lines + independent high-order curved-corner Gauss, NOT against a full-wave/copper-proximity or infinite-seawater solution. No source order is certified until the measured differences meet a predeclared accuracy target.`
+- `p0_note: C/B fields are checked against analytic straight lines + independent high-order curved-corner Gauss, NOT against a full-wave/copper-proximity or infinite-seawater solution. The 0.1pct source gate uses global vector norms; peak-scaled point maxima and divC are separate diagnostics. Broader geometry or finite-radius wire contact is not certified.`
 
 P0 只检验已指定的线圈/回流源与磁准静态尺度；线元 Gauss 闭合或 C/B curl 同源不足以证明全 Maxwell、海水 R/K/L 或无限外域精度。
 
