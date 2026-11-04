@@ -198,30 +198,32 @@ def _summary(root, flags, started, ended, status, raw):
         f"- 同批 pytest：{test_result.group(0) if test_result else '未包含或未通过'}",
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
-        "",
-        "## 嵌套物理空间",
-        "",
-        "| 层级 | 模态数 | 父空间电流上界 | 海水功率 (W) |",
-        "|---|---:|---:|---:|",
     ]
-    for label, values in stages:
-        parts.append(
-            f"| {label} | {values.get('modes','—')} | "
-            f"{values.get('parent_dJ_energy_upper','—')} | "
-            f"{values.get('sea_power','—')} |"
-        )
-    parts.extend([
-        "", "## 相邻空间变化（相对于前一级，不是连续真解误差）", "",
-        "| 阶段 | dZ | dJ_volume | dJ_ports_volume | dq |",
-        "|---|---:|---:|---:|---:|",
-    ])
-    for label, values in comparisons:
-        parts.append(
-            f"| {label} | {values.get('dZ','—')} | "
-            f"{values.get('dJ_volume','—')} | "
-            f"{values.get('dJ_ports_volume','—')} | "
-            f"{values.get('dq','—')} |"
-        )
+    if stages:
+        parts.extend([
+            "", "## 嵌套物理空间", "",
+            "| 层级 | 模态数 | 父空间电流上界 | 海水功率 (W) |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, values in stages:
+            parts.append(
+                f"| {label} | {values.get('modes','—')} | "
+                f"{values.get('parent_dJ_energy_upper','—')} | "
+                f"{values.get('sea_power','—')} |"
+            )
+    if comparisons:
+        parts.extend([
+            "", "## 相邻空间变化（相对于前一级，不是连续真解误差）", "",
+            "| 阶段 | dZ | dJ_volume | dJ_ports_volume | dq |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, values in comparisons:
+            parts.append(
+                f"| {label} | {values.get('dZ','—')} | "
+                f"{values.get('dJ_volume','—')} | "
+                f"{values.get('dJ_ports_volume','—')} | "
+                f"{values.get('dq','—')} |"
+            )
     if domains:
         parts.extend([
             "", "## 有限外域：相同物理方向、不同人工边界", "",
