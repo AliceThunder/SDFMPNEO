@@ -2,7 +2,7 @@
 
 > **持续更新的项目进度入口** · 最近核对：2026-11-04 UTC · 工作分支：`research/bfzi-uwpt-electrothermal-surrogate`
 >
-> **当前阶段：P0 在既定 demo 理想闭合 BFZI 线源范围内 PASS；P1-A 原 1/r Coulomb 磁能解析球基准首次实测 FAIL。** 用户本机 `ba16d6a` 的 [最新 P1 日志](runs/p1/latest_summary.md)为 **85 passed**（只表明程序完成），但解析 3×3 磁能矩阵 `both` 规则相对误差 **0.6145% > 0.1%**；单独 x/y 细化分别仍差 1.556%/1.146%；局部分区半径更改下 L11 差 **0.4230%**。非对角和反对称接近零并不能证明磁能正确。本轮新增可解析的 C² 窗局部球矩 `8πa²/7 W(x)` 与**原核全域常量奇异减除**，据此逐项定位 x 外积分、y 远区积分和局部球误差；暂仅用真实球解析标量势，不把它错误套用于双盒。代码和针对性测试**尚待本机复验**，G1 继续 FAIL。详见 [P1 根因与数学合同](P1_COULOMB_ANALYTIC_GATE.md) / [正式 TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。**没有更动 BFZI 源、R/K、电流字典和神经教师，禁止 GitHub Actions。**
+> **当前阶段：P0 限定理想 BFZI 闭合源 PASS，P1-A 原 1/r Coulomb L 解析球基准上一轮实测 FAIL。** 用户本机 `ba16d6a` 的 85 passed 并不代表解析磁能过关：旧 `assemble_coulomb_split` 双轴细化误差 0.6145%（先定目标 0.1%），局部核拆分半径敏感度 0.4230%。**恢复后的根因推进**：新增真正保留原 `1/r` 的常值＋一阶 Taylor 奇异减除 `W(x)SΩ(x)+∇W(x)MΩ(x)+∫余项/r`，其中 `MΩ=∮|x-y|n_y dS`；使用解析球内几何矩校验，避免重复尝试任意采样阶数。新增非线性合法涡流 `W_i=r²(e_i×x)`，其解析磁能 `16πμ0R¹¹/693 I₃` 能测试非零余项。在独立短程相同 480×756 球规则核算中，它的仅常值减除误差约 0.2453%，一阶减除约 0.01596%；**不是 GitHub 用户本机最新 P1 实测**。新代码及专项测试待本机运行，真实双盒 `SΩ,MΩ` 仍未认证，整体 G1=FAIL。见 [P1 数学与停止规则](P1_COULOMB_ANALYTIC_GATE.md) / [正式 TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)，不使用 GitHub Actions。
 >
 > **最新独立证据与状态：** P0 本机 `21daadf`，**83 passed**，指定双端口 84 探针 C/B 合格，严格闭合折线 `divC~1e-16` 且曲角二阶收敛，[P0 日志](runs/p0/latest_summary.md)；有限线径自接触/任意参数域未认证。P1 本机 `ba16d6a`，**85 passed**，[P1 原始日志](runs/p1/latest_full.log)；解析球双积分 Frobenius 误差 2.121%→0.6145%，仍远超 0.1%，**P1-A FAIL**。新 `p1_decomp/p1_sub_gate` 将独立列出误差分解与常量奇异减除效果；不得提前宣布通过。旧 G1 双盒 [失败日志](runs/latest_summary.md)仍保留。
 
@@ -76,7 +76,7 @@ flowchart TB
 | A4 两端口物理源与铜内部损耗 | ✅ 已实现 | ◐ 特定假设 | 闭合回流、有向积分、空气耦合；圆线截面集肤近似，不含充分校验的完整邻近/联合铜海水导电求解 |
 | B1 无网格 MQS R/L/K 求解 | ✅ **P0 指定 demo 源数值 83 passed**；双端口 84 探针默认 4 阶 C/B 精度先定门槛通过 | ◐ 严格闭合折线参考 `divC~2e-16`、圆角弦段约二阶几何收敛；**完整有限线径回流自接触及任意参数域未认证** | 源项/端口相量/非磁性封装范围已按 [P0→P1 契约](P1_COULOMB_ANALYTIC_GATE.md)冻结；不借此认证海水 R/K/L 或铜近邻损耗 |
 | B2 **空间参考解收敛** | ◐ 27→71→211 严格嵌套构造已实测；新增选取方向 5→11→17 J/q 求解入口待运行 | ⛔ **旧 229 父空间仍未认证** | `structured_level=1,2` 具有解析紧支 curl；可选 `--g1-hierarchy` 在同一 R/K/Green 规则和固定近壁探针比较 J、双端口 J、q、Z，但选取模式不等于完整 27→71→211 认证 |
-| B3 积分与磁核独立验证 | ◐ **P1-A 原核解析球实验 85 passed，真实磁能精度 FAIL**；已实现有解析局部球矩的误差分解与原核常量奇异减除 | ⛔ x/y 同时细化仍相对真值差 **0.6145%**（目标 <0.1%），改分区半径 L11 差 **0.4230%**，仅对称性不能证明正确 | 固定 3 个 `W_i=e_i×x` 真值，用 `8πa²/7 W(x)` 算局部精确项定位远区 y 误差；新 `assemble_coulomb_subtracted` 需要独立认证的真实几何 `SΩ(x)`，当前仅球域解析可用；`run.py --mode bfzi-p1-coulomb --with-tests` 单独保存 `runs/p1/`，新算法待实测 |
+| B3 积分与磁核独立验证 | ◐ **旧 split 的解析球真值实测 FAIL，改为有精确几何矩的原核 Taylor 减除** | ⛔ 85 passed 旧法双轴真实 L 误差 0.6145%；新解析球对线性／非线性涡流短程比较已见误差下降但未运行用户本机 GitHub P1 日志；双盒真实 SΩ/MΩ 尚未认证 | `assemble_coulomb_subtracted` 支持经独立认证的几何标量势和一阶矩；新增非仿射 `r²(e_i×x)` 的解析 L=`16πμ0R¹¹/693` 和 `p1_taylor` 指标。待本机重跑 `python run.py --mode bfzi-p1-coulomb --with-tests`，通过后再做真实盒棱角算子 |
 | B4 残差估计与稀疏方向筛选 | ✅ 已实现 | ◐ **229 模态自适应已运行；60 tests passed** | 207 模态留一和误差上界已测；229 父空间严格筛选仍要求 229/229。上界只对固定父空间成立，不是连续物理误差保证 |
 | C1 跨几何数据记录与固定场景 ROM | ✅ 已实现 | ◐ 父空间未收敛 | 几何、封装、位姿、材料和端口标签；固定场景 rank-4 实响应重建只对当前父空间精确 |
 | C2 神经网络训练、加载、推理 | ✅ 实验版 | ⛔ 空间精度不足 | 6 训练/2 留出；27 模态不可靠标签；物理场监督改善 J/q，但数值仍大 |
@@ -226,7 +226,7 @@ flowchart LR
 17. ✅ **70 passed 本机实测：** 155k/175k 节点源几何面板未改善 K 双弱式差（7.35%/7.67%，对比 14.7k 普通切向的 6.17%），不再安排为默认 G1 试验。
 18. **本轮新主算法待本机运行：** `BfziScene.box_shell_qmc` 独立正权重扰乱 Sobol 球域+12 旋转 OBB shell 的 3D 连续积分映射，盒壳对数法向使用准确 Jacobian；默认 G1 打印 `g1_volume_qmc` 和 `g1_volume_qmc_step`，对比 `2^9`/`2^{10}`、两扰乱种子及 14.7k Gauss 算出的 R/K/K-dual，新增旋转盒域、权重、体积测试。旧 155k 源面板仍可用 `--g1-source-panels` 显式重现。
 19. **远场已完成解析模块本机验证，但整体仍 FAIL：** 均匀导电海水的多极球面 DtN、尾区 Joule 和 l=1/l=2 环向电流解析一致性已运行；仍需以散度相容/边界项方式真正与双盒 Galerkin 内区耦合，不能由解析外区 PASS 推出无限域 G1 通过。
-20. **P1 第一关的真实失败和修正计划**：P0 限定 demo 理想源已在 83 passed 验收，禁止再用源项误差解释当前磁能问题。P1 解析球中现有原核分区双积分 `both` 差 0.6145%，分区半径变化 0.4230%，均超过先定 0.1%；外积分直接应用解析内势与局部 C² 球矩 `8πa²/7 W(x)` 可用于**定位真正未收敛的 y-远区**。新增不软化的数学恒等式 `W(x)SΩ(x)+∫(W(y)-W(x))/r`，球上 `S_B=2π(R²-r²/3)` 已知，真实双盒 `SΩ` 尚待独立构造与验证。继续停在 P1-A，直到解析矩阵和分区稳定性达到既定门槛，才推进 P1-B 双盒，禁止 GitHub Actions。
+20. **P1-A 解析球仍是当前优先级**：用户实测旧 1/r split 误差 0.6145% > 0.1%；仅作常值奇异减除的球基准短程结果仍约 0.1497%，继续未达标。恢复后对**真实原核的 affine Taylor 项**应用 `SΩ=∫1/r` 和 `MΩ=∫(y-x)/r=∮|y-x| n_y` 的严格等价恒等式；线性球涡流余项为零，因此新增非线性合法三模态 `W=r²(e×x)` 的真磁矩阵，短程数值同样节点约 0.01596%。不能把这个球的几何矩移植到两盒实际海水。先让真实本机 P1 日志、测试与受控误差数据满足先定阈值，再推进双盒原核自/邻项；无 Github Actions。
 21. `--basis-domain-far` 的 R/K-only/L-only 对照仅为可选归因实验，**不再作为 G1 主推进路线**。
 
 当前可复现命令（在本地工作树执行，非 GitHub Actions）：
@@ -302,6 +302,7 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 | 2026-11-04 UTC | **P1 原 Coulomb L 解析基准已落地（尚待本机运行）**：球内 3 个合规 `curl F` 环流模式，真磁矩阵 `16πμ0 R^7/315 I3`；以现有 `assemble_coulomb_split` 原核直接比较 x/y 两轴、局部拆分半径，不再凭同一种离散规则自洽声称真值 | [P1 数学契约](P1_COULOMB_ANALYTIC_GATE.md)、[P1 主理论](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)、`run.py --mode bfzi-p1-coulomb --with-tests`、独立 `runs/p1/` |
 | 2026-11-04 UTC | **P1 原 1/r 磁能解析球 85 passed，但数值门槛 FAIL**：三合规球电流的解析矩阵已核，base/x_only/y_only/both 相对差 2.121%/1.556%/1.146%/0.6145%；局部分区半径引起的 L11 差 0.4230%，目标 0.1%，不能因 skew=0 宣称正确 | 本机 `ba16d6a`，[P1 最新日志](runs/p1/latest_summary.md) |
 | 2026-11-04 UTC | **P1 原核数学根因隔离代码待本机复验**：局部 C² 窗对线性涡流的精确积分为 `8πa²/7 W(x)`；用已知球内势核对纯 x 外积分并单独报告 y-远区误差，另以真实球 `S_B(x)` 实现全域常量奇异减除（原始 1/r 不变）。两盒真实 `SΩ` 尚无可信解析/表面几何算子，绝不直接切换生产磁矩阵 | `green_coulomb.py`、`bfzi_p1_coulomb.py`、`test_bfzi_p1_coulomb.py`、[P1 契约](P1_COULOMB_ANALYTIC_GATE.md)；**P1 继续 FAIL** |
+| 2026-11-04 UTC | **中断恢复，P1-A 继续理论驱动的主算法修复**：原核全域减常值后还会有方向相关极限；现用经认证的几何一阶矩与电流梯度继续减除线性项，得到 O(|y-x|) 余项。球线性涡流余项为零不算有效余项验证，因此增加 r²(e×x) 非线性无散度零法向真值模式；独立短程计算相同 480×756 规则 const/affine 误差约 0.2453%/0.01596%，尚待本机运行 | `green_coulomb.py`、`bfzi_p1_coulomb.py`、`tests/test_bfzi_p1_coulomb.py`、[P1 理论](P1_COULOMB_ANALYTIC_GATE.md)、[TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)；不改 BFZI 源和 R/K |
 
 ---
 [研究目录索引](README.md) · [验证计划历史快照](validation_roadmap.md) · [代码入口](CODE_ENTRY.md) · [仓库根目录](../../../README.md)
