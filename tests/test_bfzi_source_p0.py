@@ -1,10 +1,13 @@
 """P0 physical-source tests; no seawater Galerkin or Green L computation."""
 from dataclasses import replace
 import numpy as np
+import pytest
+
+from sdfmpneo_vnext.scene import ConductorMaterial
 
 from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.geometry import BFZICoil, RigidPose
-from sdfmpneo_bfzi.source import LineSource, MU0, build_line_source
+from sdfmpneo_bfzi.source import LineSource, MU0, build_line_source, build_bfzi_source
 from sdfmpneo_bfzi.source_reference import (
     straight_segment_field, continuous_port_field,
 )
@@ -107,3 +110,18 @@ def test_source_reference_is_pose_covariant_and_b_is_curl_of_c():
     np.testing.assert_allclose(
         MU0*curl,b[0],rtol=3e-6,atol=2e-14,
     )
+
+
+def test_magnetic_wire_cannot_silently_use_uniform_mu0_sea_source():
+    scene=build_demo_scene()
+    magnetic=replace(
+        scene.transmitter,
+        material=ConductorMaterial(
+            conductivity=5.8e7,relative_permeability=1.2,
+        ),
+    )
+    with pytest.raises(ValueError,match="nonmagnetic wire"):
+        build_bfzi_source(
+            replace(scene,transmitter=magnetic),
+            frequency_hz=200000.0,order=4,
+        )
