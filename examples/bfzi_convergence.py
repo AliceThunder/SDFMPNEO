@@ -141,7 +141,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
                       anisotropic_refinement: bool = False,
-                      targeted_refinement: bool = False):
+                      targeted_refinement: bool = False,
+                      domain_extension: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes nested 159-,
@@ -156,7 +157,13 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         raise ValueError("anisotropic refinement requires edge-refined parent")
     if targeted_refinement and not anisotropic_refinement:
         raise ValueError("targeted refinement requires 207-mode anisotropic parent")
+    if domain_extension and not (domain and ball_reference and targeted_refinement):
+        raise ValueError("domain extension requires targeted ball-reference domain")
+    # Continue the already-measured 0.52→0.70→0.85 m sequence without
+    # reassembling its first two expensive 229-mode Green operators.
     scene = build_demo_scene()
+    if domain_extension:
+        scene = replace(scene, outer_radius=0.85)
     # Resolve the locally sharp curl-mode resistance and true source
     # coupling on a finer rule. The costly nonlocal L double integral uses
     # the earlier 5/8/12/3/4 cubature with the *same* trial functions
@@ -200,6 +207,26 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         [0.0, 0.13, 0.0],
         [0.0, 0.0, 0.22],
     ])
+    if targeted_domain:
+        # The historic four bulk probes alone miss thermal changes at
+        # enclosure faces. Keep these fixed physical locations as the
+        # artificial sea boundary moves farther away.
+        near_wall = []
+        for assembly in scene.assemblies:
+            half = np.asarray(assembly.enclosure.half_extents)
+            normal = int(np.argmin(half))
+            lateral = [i for i in range(3) if i != normal]
+            for sign in (-1.0, 1.0):
+                for u, v in ((0.0,0.0),(0.65,0.0),(0.0,0.65)):
+                    local = np.zeros(3)
+                    local[normal] = sign * (
+                        half[normal] + max(0.003, 3.0*enriched.wall_scale)
+                    )
+                    local[lateral] = np.array([u,v])*half[lateral]
+                    near_wall.append(assembly.pose.position(local))
+        probes = np.concatenate((probes, np.asarray(near_wall)))
+        if not scene.in_seawater(probes).all():
+            raise RuntimeError("fixed package wall probes must lie in sea")
     if ball_reference and domain:
         # Rebuild the *complete* physical MQS reference for each radius.
         # The magnetic quadrature is independent and uses uniform-ball L;
@@ -212,15 +239,28 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             # All radii must use the SAME 229-dimensional physical family,
             # including global scales; otherwise domain variation is
             # confounded with a completely different trial space.
-            radii = (scene.outer_radius, 0.70, 0.85)
-            common_x, common_w = scene.box_shell_quadrature(
+            # The common 0.52m wet quadrature is independent of the
+            # outer radius being solved, especially in extension mode.
+            common_scene = build_demo_scene()
+            radii = (
+                (0.85, 1.05, 1.30) if domain_extension
+                else (scene.outer_radius, 0.70, 0.85)
+            )
+            common_x, common_w = common_scene.box_shell_quadrature(
                 4, 6, 8, wall_scale=enriched.wall_scale,
                 outer_taper_width=enriched.outer_taper_width,
                 shell_normal_order=3, shell_tangential_order=4,
             )
+            common_r = np.linalg.norm(
+                common_x - np.asarray(scene.outer_center), axis=1,
+            )
+            near_weights = np.where(common_r <= 0.35, common_w, 0.0)
+            if np.count_nonzero(near_weights) < 100:
+                raise RuntimeError("not enough interior seawater quadrature nodes")
             print(
                 f"  fixed_domain_family: expected_modes={enriched.size}, "
                 f"common_wet_nodes={len(common_x)}, "
+                f"near035_nodes={np.count_nonzero(near_weights)}, "
                 f"radii={radii}", flush=True,
             )
         else:
