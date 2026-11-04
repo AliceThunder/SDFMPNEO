@@ -301,6 +301,98 @@ f_\infty\sin\theta\) 与 \(q=|J_\phi|^2/(2\sigma_s)\)。
 推广须处理完整矢量球谐的极向/环向模及耦合边界映射，
 或改用严谨的边界积分施加非局部透明条件。
 
+\subsection{真实封装几何裁剪的固定半径 Coulomb 奇异补偿}
+第一版为保证近场球全部落在海水，使用
+\(a(\bm x)=\min(a_0,0.6\,\mathrm{dist}(\bm x,\partial\Omega_R))\)。
+在封装面附近，这会使 \(a(\bm x)\to0\)；
+理论恒等式并未失效，但需要由粗全局 \(\bm y\) 求积
+解析越来越尖锐的近对角核，易出现积分次序别名与相消。
+现在允许固定物理补偿半径 \(a_0>0\)，
+但\emph{严格按真实海水域裁剪}球形补偿区：
+\[
+\int_{\Omega_R\cap B_{a_0}(\bm x)}
+\frac{\chi_{a_0}(|\bm y-\bm x|)\bm W_n(\bm y)}
+{|\bm y-\bm x|}\,\mathrm dV_y
+=\int_{S^2}\sum_{[s_k,t_k]\subset I_{\bm x,\bm n}}
+\int_{s_k}^{t_k}\rho\,\chi_{a_0}(\rho)
+\bm W_n(\bm x+\rho\bm n)\,\mathrm d\rho\,\mathrm d\Omega,
+\]
+其中 \(I_{\bm x,\bm n}\) 是沿固定射线
+\(\bm x+\rho\bm n\) 的海水区间与 \([0,a_0]\) 的交，
+用真实旋转盒的射线--板交点和外球交点构造，
+不在封装内部评估任何电流模态。
+全局 \(\bm y\) 部分仍使用
+\((1-\chi_{a_0})/|\bm x-\bm y|\)，
+因此\emph{连续}双积分依旧严格等于原始 Coulomb 算子。
+
+此修正仅移除了\emph{近壁补偿球被迫收缩}的结构性限制，
+并未使数值求积自动收敛。因为球被盒体切割，
+沿方向 \(\bm n\) 的积分具有遮挡/切触轮廓，
+角向采样也必须独立加密；必须同时检查
+\(a_0\)、局部角向阶数、\(\bm x/\bm y\) 体积规则，
+以及对驱动相关的 \(\omega R^{-1/2}LR^{-1/2}\) 的影响。
+2026-11-04 的旧规则实测
+\(dL_{\bm x}=9.8049\%\)、\(dL_{\bm y}=3.4771\%\)、
+\(dL_{\bm x\bm y}=2.9804\%\)，
+非加性指标 \(10.4896\%\)，
+不能仅据双轴误差抵消宣称新旧任何一方已收敛。
+
+\subsection{均匀导电海水的完整球谐外区映射：当前实现边界}
+选择包围所有绝缘封装、完整端口源的球面
+\(S_R\)，球外只有均匀正标量电导率海水。
+由 \(\Div\bm J=0\)、
+\(\Curl\bm E=-\jj\omega\mu_0\bm H\)、
+\(\Curl\bm H=\bm J=\sigma_s\bm E\) 得
+\[
+(\Delta-\gamma^2)\bm J=0,\qquad
+\gamma^2=\jj\omega\mu_0\sigma_s,\quad\Re\gamma>0.
+\]
+故在固定 Cartesian 分量下，对\emph{散度相容}的边界迹
+\(\bm J(R,\theta,\varphi)\)，外区衰减解为
+\begin{equation}
+J_i(r,\theta,\varphi)
+=\sum_{\ell=0}^{\infty}\sum_{m=-\ell}^{\ell}
+j_{i,\ell m}(R)
+\frac{k_\ell(\gamma r)}{k_\ell(\gamma R)}
+Y_{\ell m}(\theta,\varphi),\qquad r\ge R.
+\end{equation}
+球面透明算子是角向非局部的
+\begin{equation}
+\partial_r J_i(R,\theta,\varphi)
+=\sum_{\ell,m}
+\underbrace{\gamma\frac{k'_\ell(\gamma R)}
+{k_\ell(\gamma R)}}_{\lambda_\ell(R)}
+j_{i,\ell m}(R)Y_{\ell m}(\theta,\varphi).
+\label{eq:g1-multipolar-dtn}
+\end{equation}
+这解释了为什么\textbf{只有一个} Robin 系数在一般
+双盒 BFZI 问题中不正确，且其 \(\ell=1\)
+子块与前述解析偶极基准相符。
+利用球谐正交性，已知相容球面电流系数时，外海水
+平均 Joule 功率为
+\[
+P_{\mathrm{tail}}
+=\frac1{2\sigma_s}\sum_{i,\ell,m}
+|j_{i,\ell m}(R)|^2
+\int_R^\infty r^2\left|
+\frac{k_\ell(\gamma r)}{k_\ell(\gamma R)}
+\right|^2\,\mathrm dr .
+\]
+
+实现 \texttt{ExteriorSphericalCurrent} 提供
+有限 \(\ell_{\max}\) 截断下的投影、外区续接、
+复对数导数与尾区损耗，
+并加入 \(\ell=1,2\) 环向无散度模态数值基准。
+\textbf{关键未完成：}
+从有限域原始 Coulomb Galerkin 解得到的任意球面迹
+未必满足无限域散度相容条件，且现有外球包络将
+边界电流强制压零。必须将式
+\eqref{eq:g1-multipolar-dtn}
+作为非局部边界条件\emph{反向耦合}到双盒内区求解，
+并控制角向截断、匹配球半径与真物理边界误差。
+只对某个已截断的数值场做球谐外推，
+不构成完整 BFZI 无穷域误差证书。
+
 \subsection{纠正后的 G1 通过条件与工作次序}
 \begin{enumerate}
 \item \textbf{正确边值问题：}
