@@ -475,6 +475,61 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                         f", dq_near035={dq_near:.6g}"
                         f", domain_response_gate={'PASS' if step_gate else 'FAIL'}"
                     )
+                    if domain_far:
+                        # Raw physical Gaussian mode definitions are the
+                        # same at every radius, but R whitening is not.
+                        # Express both Galerkin systems in the *previous*
+                        # radius's whitened coordinates before swapping
+                        # operator blocks. This is a diagnostic ablation,
+                        # not a physical mixed-domain solution.
+                        old_t, old_r, old_k, old_l = previous_operators
+                        coords = np.linalg.solve(
+                            parent.transform, old_t,
+                        )
+                        new_r = coords.T @ r @ coords
+                        new_k = coords.T @ k_curl
+                        new_l = coords.T @ parent.inductance @ coords
+                        omega = current_source.omega
+
+                        def split_response(rr, kk, ll):
+                            amplitudes = np.linalg.solve(
+                                rr + 1j*omega*ll, -1j*omega*kk,
+                            )
+                            zz = 1j*omega*kk.T @ amplitudes
+                            return 0.5*(zz+zz.T), amplitudes
+
+                        z_rk_only, u_rk_only = split_response(
+                            new_r, new_k, old_l,
+                        )
+                        z_l_only, u_l_only = split_response(
+                            old_r, old_k, new_l,
+                        )
+
+                        def near_j_from_old_coordinates(amplitudes):
+                            # Evaluate the new domain's basis using its
+                            # whitened coefficients. The sampled 0.35m
+                            # core lies outside every outer taper.
+                            new_white = coords @ (amplitudes @ currents)
+                            field = np.einsum(
+                                "nmc,m->nc", common_modes, new_white,
+                                optimize=True,
+                            )
+                            return weighted_field_change(
+                                field, old_drive, near_weights,
+                            )
+
+                        print(
+                            f"  domain_operator_step: "
+                            f"{old_radius:.3g}->{radius:.3g} m, "
+                            f"dR_common={relative(new_r,old_r):.6g}, "
+                            f"dK_common={relative(new_k,old_k):.6g}, "
+                            f"dL_common={relative(new_l,old_l):.6g}, "
+                            f"dZ_RK_only={relative(z_rk_only,old_z):.6g}, "
+                            f"dZ_L_only={relative(z_l_only,old_z):.6g}, "
+                            f"dJ_near035_RK_only={near_j_from_old_coordinates(u_rk_only):.6g}, "
+                            f"dJ_near035_L_only={near_j_from_old_coordinates(u_l_only):.6g}",
+                            flush=True,
+                        )
                 print(
                     f"  domain_step: {old_radius:.3g}->{radius:.3g} m, "
                     f"dZ={dz:.6g}, dq={dq:.6g}, dP={dp:.6g}"
