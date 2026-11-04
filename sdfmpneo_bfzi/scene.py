@@ -288,6 +288,7 @@ class BfziScene:
         shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
         shell_tangential_max_panel_width: float | None = None,
+        shell_normal_mapping: str = "linear",
         outer_taper_width: float | None = None,
         max_radial_panel_width: float | None = None,
         radial_geometry_cuts: bool = False,
@@ -340,6 +341,8 @@ class BfziScene:
                 or not isinstance(shell_tangential_order, int)
                 or shell_tangential_order < 2):
             raise ValueError("shell Gauss orders must be integers >= 2")
+        if shell_normal_mapping not in ("linear", "log"):
+            raise ValueError("shell_normal_mapping must be 'linear' or 'log'")
         if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
             raise ValueError("shell_width_factor must be finite and positive")
         if shell_tangential_max_panel_width is not None and (
@@ -738,22 +741,35 @@ class BfziScene:
                         distance *= 3.0
                     boundaries.append(shell_width)
                     for lower, upper in zip(boundaries[:-1], boundaries[1:]):
-                        lo, hi = (
-                            (half[axis] + lower, half[axis] + upper)
-                            if sign > 0.0 else
-                            (-half[axis] - upper, -half[axis] - lower)
-                        )
+                        if shell_normal_mapping == "log":
+                            # The wall curl envelope contains d/(d+s):
+                            # t=log(1+d/s) has a smooth, positive Jacobian
+                            # dd=(s+d)dt and concentrates nodes where the
+                            # actual basis gradient varies most rapidly.
+                            t0 = math.log1p(lower/scale)
+                            t1 = math.log1p(upper/scale)
+                            t = 0.5*(t1-t0)*normal_nodes+0.5*(t1+t0)
+                            distance_nodes = scale*np.expm1(t)
+                            distance_weights = (
+                                0.5*(t1-t0)*normal_weights
+                                *(scale+distance_nodes)
+                            )
+                        else:
+                            distance_nodes = (
+                                0.5*(upper-lower)*normal_nodes
+                                + 0.5*(upper+lower)
+                            )
+                            distance_weights = (
+                                0.5*(upper-lower)*normal_weights
+                            )
                         axes = []
                         weights = []
                         for j in range(3):
                             if j == axis:
                                 axes.append(
-                                    0.5 * (hi - lo) * normal_nodes
-                                    + 0.5 * (hi + lo)
+                                    sign*(half[axis]+distance_nodes)
                                 )
-                                weights.append(
-                                    0.5 * (hi - lo) * normal_weights
-                                )
+                                weights.append(distance_weights)
                             else:
                                 nodes, w = tangential[j]
                                 axes.append(nodes)
