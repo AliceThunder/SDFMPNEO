@@ -311,6 +311,7 @@ class BfziScene:
         shell_width_factor: float = 32.0, shell_normal_order: int = 3,
         shell_tangential_order: int = 4,
         shell_tangential_max_panel_width: float | None = None,
+        shell_source_tangential_cuts: bool = False,
         shell_normal_mapping: str = "linear",
         outer_taper_width: float | None = None,
         max_radial_panel_width: float | None = None,
@@ -364,6 +365,8 @@ class BfziScene:
                 or not isinstance(shell_tangential_order, int)
                 or shell_tangential_order < 2):
             raise ValueError("shell Gauss orders must be integers >= 2")
+        if not isinstance(shell_source_tangential_cuts, bool):
+            raise ValueError("shell_source_tangential_cuts must be a boolean")
         if shell_normal_mapping not in ("linear", "log"):
             raise ValueError("shell_normal_mapping must be 'linear' or 'log'")
         if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
@@ -675,33 +678,48 @@ class BfziScene:
         edge_t = 0.5 * (edge_nodes + 1.0)
         edge_w = 0.5 * edge_weights
 
-        def tangent_rule(half_extent: float, extended: bool):
+        def tangent_rule(
+            half_extent: float, extended: bool, feature_knots=(),
+        ):
             # The physical face center and two real edges remain panel
-            # boundaries. Fine Gaussian current patches can be much
-            # narrower than a half-face: split each half into fixed
-            # physical-length panels instead of escalating a global
-            # polynomial on a broad patch. Exact positive Gauss weights
-            # are retained, including arbitrary oriented boxes.
-            count = (
-                1 if shell_tangential_max_panel_width is None
-                else max(
-                    1, math.ceil(
-                        half_extent / shell_tangential_max_panel_width
+            # boundaries. When requested, every turn's actual planar
+            # coil side coordinates and return-waypoint coordinates are
+            # additional FIXED integration-panel boundaries. The knots
+            # follow each box's local axes under arbitrary SE(3) poses.
+            # They change neither the conductor nor the seawater domain.
+            cuts = [-half_extent, 0.0, half_extent]
+            cuts.extend(
+                float(k) for k in feature_knots
+                if np.isfinite(k) and -half_extent < k < half_extent
+            )
+            cuts.sort()
+            boundaries = [cuts[0]]
+            tolerance = max(1e-12, 1e-7*half_extent)
+            for knot in cuts[1:]:
+                if knot-boundaries[-1] > tolerance:
+                    boundaries.append(knot)
+            boundaries[-1] = half_extent
+            panels = []
+            for left, right in zip(boundaries[:-1], boundaries[1:]):
+                count = (
+                    1 if shell_tangential_max_panel_width is None
+                    else max(
+                        1, math.ceil(
+                            (right-left)/shell_tangential_max_panel_width
+                        )
                     )
                 )
-            )
-            patches = []
-            patch_weights = []
-            for left, right in ((-half_extent, 0.0), (0.0, half_extent)):
-                boundaries = np.linspace(left, right, count + 1)
-                widths = np.diff(boundaries)
-                patches.append((
-                    boundaries[:-1, None]
-                    + widths[:, None] * center_t[None, :]
-                ).reshape(-1))
-                patch_weights.append((
-                    widths[:, None] * center_w[None, :]
-                ).reshape(-1))
+                segment = np.linspace(left, right, count+1)
+                widths = np.diff(segment)
+                panels.append((segment[:-1],widths))
+            patches = [
+                (start[:,None]+width[:,None]*center_t[None,:]).reshape(-1)
+                for start,width in panels
+            ]
+            patch_weights = [
+                (width[:,None]*center_w[None,:]).reshape(-1)
+                for _,width in panels
+            ]
             nodes = patches
             weights = patch_weights
             if extended:
@@ -745,13 +763,30 @@ class BfziScene:
 
         for assembly in self.assemblies:
             half = np.asarray(assembly.enclosure.half_extents)
+            source_knots = [[], [], []]
+            if shell_source_tangential_cuts:
+                # For the continuous round-square spiral, each turn has
+                # actual in-plane side scales A(eta), with four quarter-
+                # turn phases. Include both signs to cover every side.
+                coil = assembly.coil
+                for turn in range(coil.turns):
+                    for side in range(4):
+                        eta = turn + side/4.0
+                        a_side = coil.outer_half_size-coil.pitch*eta
+                        source_knots[0].extend((-a_side,a_side))
+                        source_knots[1].extend((-a_side,a_side))
+                for waypoint in assembly.return_waypoints:
+                    for j,coordinate in enumerate(waypoint):
+                        source_knots[j].append(float(coordinate))
             # Earlier slab axes stay inside the physical face extent; later
             # axes include face, edge and corner regions. This partitions
             # the full shell exactly without geometric overlap.
             for axis in range(3):
                 tangential = [
-                    tangent_rule(half[j], extended=(j > axis))
-                    if j != axis else None
+                    tangent_rule(
+                        half[j],extended=(j > axis),
+                        feature_knots=source_knots[j],
+                    ) if j != axis else None
                     for j in range(3)
                 ]
                 for sign in (-1.0, 1.0):
