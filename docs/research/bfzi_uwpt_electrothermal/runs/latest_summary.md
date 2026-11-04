@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-03T14:07:16+00:00
-- 结束（UTC）：2026-11-03T14:08:57+00:00
-- 当时检出的代码提交：`8193aa8`
-- 执行：`python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-l`
-- 同批 pytest：60 passed in 42.59s
+- 开始（UTC）：2026-11-04T01:04:43+00:00
+- 结束（UTC）：2026-11-04T01:07:47+00:00
+- 当时检出的代码提交：`980dfdb`
+- 执行：`python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far`
+- 同批 pytest：60 passed in 38.05s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -69,8 +69,8 @@
 - `global_scale_condition_global_short_scale: added=3, min_R_independent_fraction=0.177163, normalized_R_cond=156908`
 - `global_scale_condition_global_multiscale: added=3, min_R_independent_fraction=0.117633, normalized_R_cond=157749`
 - `global_scale_condition_corner_source_curls: added=16, min_R_independent_fraction=0.293691, normalized_R_cond=166047`
-- `ball_229_B_vs_A: dL=0.131987, dZ=0.000735625, dReZ=2.35217e-05, dImZ=0.0222468, dJ=0.000461274, dJ_ports=0.000480709, dJ_volume=0.00153044, dJ_ports_volume=0.00167289, dJ_port0=0.000495128, dJ_port1=0.000465924, dq=0.000577146, max_probe_dq=0.00225707, dP=1.69521e-05, B_on_A_Rinv_residual=0.00167176, min_L_B_eig=1.43433e-10, operator_gate=FAIL, response_gate=PASS, combined_gate=FAIL`
-- `ball_229_dual_B_vs_A: dZ=0.000734059, dJ=0.000461126, dq=0.000577213, dP=1.69227e-05`
+- `rk_far_polar_229_B_vs_A: dR=0.000438292, dK=0.00020224, dK_dual=0.000134226, dZ=4.28866e-05, dImZ=1.14635e-05, dJ_volume=0.000137776, dJ_ports_volume=0.000122708, dq=0.000241242, max_probe_dq=0.00372525, normal_peak_scaled_dq=0.000328497, dP=4.24288e-05, response_gate=PASS`
+- `rk_far_azimuth_229_B_vs_A: dR=0.00340629, dK=0.000925737, dK_dual=0.000373921, dZ=0.00012873, dImZ=5.49805e-05, dJ_volume=0.00284505, dJ_ports_volume=0.0023946, dq=0.00572717, max_probe_dq=0.00621096, normal_peak_scaled_dq=0.00621096, dP=0.000218457, response_gate=FAIL`
 - `adaptive_screen: FULL_PARENT_ONLY; selected=229/229, matched all fixed heat probes to <=5%, both full-volume J norms to <=1%, plus port and aggregate heat criteria relative to this parent; NOT continuum-certified`
 
 **注意：** 留一模态、全域电流变化和 A/B 磁积分响应通过，都不能单独构成连续物理参考解的精度证明。

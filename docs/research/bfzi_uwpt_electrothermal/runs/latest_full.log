@@ -1,6 +1,6 @@
 pytest:
 ............................................................             [100%]
-60 passed in 42.59s
+60 passed in 38.05s
 
 Building enriched 229-mode Galerkin operator... raw modes=229, kernel=uniform_ball; fine R/K/Joule cubature; independently coarse L
 
@@ -63,13 +63,11 @@ Structure-preserving fixed-scene response compression:
   snapshot_rank_2: dZ=0.000586125, dq=0.0114374, max_probe_dq=0.0444183, dP=0.000394357, power_closure=1.77948e-16
   snapshot_rank_4: dZ=1.22216e-15, dq=1.4748e-13, max_probe_dq=8.45351e-12, dP=5.16254e-15, power_closure=1.78019e-16
   snapshot_note: rank-4 exactness is ONLY relative to the unconverged 229-mode parent at this scene/frequency. It does not validate a cross-geometry model or local heat truth.
-
-Independent 229-mode uniform-ball magnetic L B rule:
-  assembling B nodes=15154
-  ball_229_B_vs_A: dL=0.131987, dZ=0.000735625, dReZ=2.35217e-05, dImZ=0.0222468, dJ=0.000461274, dJ_ports=0.000480709, dJ_volume=0.00153044, dJ_ports_volume=0.00167289, dJ_port0=0.000495128, dJ_port1=0.000465924, dq=0.000577146, max_probe_dq=0.00225707, dP=1.69521e-05, B_on_A_Rinv_residual=0.00167176, min_L_B_eig=1.43433e-10, operator_gate=FAIL, response_gate=PASS, combined_gate=FAIL
-  ball_229_dual_B_vs_A: dZ=0.000734059, dJ=0.000461126, dq=0.000577213, dP=1.69227e-05
-  magnetic_gate_failed: operator=FAIL, response=PASS; response agreement does not establish operator convergence, and neither certifies continuum accuracy.
-  magnetic_note: a resistive-dominated full dZ can hide reactive impedance error; inspect dImZ separately. Also compare successive modal changes before declaring a spatial teacher.
+  rk_far_polar_nodes: B=512608
+  rk_far_polar_229_B_vs_A: dR=0.000438292, dK=0.00020224, dK_dual=0.000134226, dZ=4.28866e-05, dImZ=1.14635e-05, dJ_volume=0.000137776, dJ_ports_volume=0.000122708, dq=0.000241242, max_probe_dq=0.00372525, normal_peak_scaled_dq=0.000328497, dP=4.24288e-05, response_gate=PASS
+  rk_far_azimuth_nodes: B=563728
+  rk_far_azimuth_229_B_vs_A: dR=0.00340629, dK=0.000925737, dK_dual=0.000373921, dZ=0.00012873, dImZ=5.49805e-05, dJ_volume=0.00284505, dJ_ports_volume=0.0023946, dq=0.00572717, max_probe_dq=0.00621096, normal_peak_scaled_dq=0.00621096, dP=0.000218457, response_gate=FAIL
+  rk_far_note: only the spherical polar/azimuthal R/K rules changed one at a time. This does not certify radial, outer-domain, basis or Green convergence.
   adaptive_00: modes=63, dZ=0.739986, dq=0.470892, dJ_volume=0.767861, dJ_ports_volume=0.81815, parent_dJ_energy_upper=inf, max_probe_dq=0.999846, hotspot_max_dq=0.999846, peak_scaled_max_dq=0.543689, worst_probe=2, dP=0.589425, max_residual_score=0.0493092, hotspot_match=False
   adaptive_01: modes=71, dZ=0.0707914, dq=0.141253, dJ_volume=0.344935, dJ_ports_volume=0.289516, parent_dJ_energy_upper=0.433629, max_probe_dq=8.9772, hotspot_max_dq=0.229573, peak_scaled_max_dq=0.205274, worst_probe=0, dP=0.118973, max_residual_score=0.00288458, hotspot_match=False
   adaptive_02: modes=79, dZ=0.0587994, dq=0.136554, dJ_volume=0.314312, dJ_ports_volume=0.26374, parent_dJ_energy_upper=0.376312, max_probe_dq=23.443, hotspot_max_dq=0.171679, peak_scaled_max_dq=0.146503, worst_probe=4, dP=0.098783, max_residual_score=0.00354936, hotspot_match=False
