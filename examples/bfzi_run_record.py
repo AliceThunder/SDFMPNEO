@@ -378,16 +378,19 @@ def _publish(root, paths):
         print(f"  [日志已在本地提交；推送失败] {push.stderr.strip()}")
         print("  请检查认证或远端是否前进；解决后运行 git push origin HEAD")
         return False
-    print(f"  [已推送 GitHub] {BRANCH} · "
-          "docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md")
+    print(f"  [已推送 GitHub] {BRANCH} · {relative[0]}")
     return True
 
 
 def run_and_publish(run, *, flags, verbose=False, publish=True,
-                    with_tests=False):
+                    with_tests=False, log_subdir=None):
     """Run BFZI once, stream only useful metrics, publish local evidence."""
     root = Path(__file__).resolve().parents[1]
     output_dir = root / LOG_DIR
+    if log_subdir is not None:
+        if not isinstance(log_subdir, str) or log_subdir not in ("p0",):
+            raise ValueError("unsupported BFZI log subdirectory")
+        output_dir = output_dir / log_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
     full_path = output_dir / "latest_full.log"
     summary_path = output_dir / "latest_summary.md"
