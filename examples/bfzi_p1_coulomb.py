@@ -7,7 +7,7 @@ before interpreting any two-box seawater magnetic energy.
 On the BALL |x|<R, three exact solenoidal, zero-normal-current fields
     W_axis(x) = axis cross x
 are curls of vector potentials with zero tangential boundary traces.
-The original free-space 1/|x-y| double integral is *analytically known*:
+This polynomial basis is unnormalised (matrix entry is not port H).\nThe original free-space 1/|x-y| double integral is *analytically known*:
     L_mn = 16*pi*mu0*R**7 / 315 * delta_mn.
 """
 from __future__ import annotations
@@ -104,7 +104,7 @@ def main():
     print(
         f"p1_exact: domain=conducting_ball, radius_m={radius:.5g},"
         f"modes=3,divJ=0,wall_normal_J=0,"
-        f"original_kernel=1/r,analytical_L_diag_H={reference:.12g},"
+        f"original_kernel=1/r,analytical_L_diag_basis_SI={reference:.12g},"
         "analytical_offdiag=0,no_softening=True",
         flush=True,
     )
@@ -126,8 +126,8 @@ def main():
             f"diag_rel={z['diag_error']:.7g},"
             f"offdiag_rel={z['offdiag_error']:.7g},"
             f"raw_skew={z['raw_skew']:.7g},"
-            f"L11_H={z['L11']:.12g},"
-            f"true_L11_H={z['reference']:.12g}",
+            f"L11_basis_SI={z['L11']:.12g},"
+            f"true_L11_basis_SI={z['reference']:.12g}",
             flush=True,
         )
     # Hold the physical field and both cubatures fixed to isolate the
