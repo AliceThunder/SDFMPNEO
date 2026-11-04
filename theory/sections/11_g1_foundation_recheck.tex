@@ -224,6 +224,83 @@ L_{mn}
 但这并不控制盒壁极局部的 \(L^\infty\) 热点；
 必须另外检查几何随体的壁面/边缘/角部点列及更强局部范数。
 
+\subsection{第一批可实施的数学重构（小空间实验，而非直接认证）}
+\paragraph{不修改 Coulomb 核的近场奇异分拆}
+为避免将任意高斯求积权重伪装成\emph{球形体积单元}，
+固定海水测试空间和有限域，取
+\(\bm x\in\Omega_R\)，
+\(0<a(\bm x)<\operatorname{dist}(\bm x,\partial\Omega_R)\)。
+构造 \(C^2\) 径向窗 \(\chi_a(\rho)\)，
+在 \(\rho\le a/2\) 时为 \(1\)，在 \(\rho\ge a\) 时为 \(0\)。
+则对任何可积向量场 \(\bm W_n\) 有严格恒等式
+\begin{align}
+\int_{\Omega_R}\frac{\bm W_n(\bm y)}{|\bm x-\bm y|}\,\mathrm dV_y
+={}&\int_{\Omega_R}
+\frac{1-\chi_a(|\bm x-\bm y|)}
+{|\bm x-\bm y|}\bm W_n(\bm y)\,\mathrm dV_y
+\nonumber\\
+&+\int_{S^2}\int_0^{a(\bm x)}
+\rho\,\chi_a(\rho)\,
+\bm W_n(\bm x+\rho\bm s)\,\mathrm d\rho\,\mathrm d\Omega_{\bm s}.
+\label{eq:g1-coulomb-exact-split}
+\end{align}
+第二项在物理球坐标中解析消除了 \(1/\rho\) 奇异因子，
+\emph{不引入核软化或节点云球模型}。
+这是核恒等式，离散计算仍须分别对
+\(\bm x\)、远场 \(\bm y\)、近场径向和角度作独立加密，
+并保证相应求积的积分区域与模式评估精确一致。
+实现 \texttt{sdfmpneo\_bfzi/green\_coulomb.py} 是有限模态小型
+对照器，不能直接宣称其粗节点解精确或可快速运行 229 模态；
+使用不同 \(\bm x/\bm y\) 求积时暂以对称化矩阵诊断，
+\textbf{不能强迫其正定以掩盖积分误差}。
+
+\paragraph{可逐级加密的紧支 curl 图谱}
+用 \(C^2\) Wendland 核
+\[
+\psi(s)=(1-s)_+^4(4s+1),\qquad
+\grad\psi(\sqrt{\bm r^{\mathsf T}G\bm r})
+=-20(1-s)_+^3G\bm r
+\]
+替换局部高斯分布的固定有限个采样方向，
+在封装外的面片以 \(2^\ell\times 2^\ell\)
+网格状\emph{中心选点}生成紧支向量势，
+再取 \(\Curl(\psi\,d_{\rm ins}\,\bm a)\)。
+这不是有限元体网格，而是\emph{解析紧支基函数的层级索引}，
+可在层级加密时保持所有已存在的电流方向与
+精确解析 curl。额外建立按物理封装长度而非人工球半径
+选择中心的远场图谱。实现
+\texttt{build\_sea\_basis(structured\_level=1,2)} 已构造此嵌套字典；
+目前尚无空间稠密性定理或跨几何误差界。
+
+\paragraph{真正无限域的解析边界基准}
+把任意 BFZI 双盒问题直接附加一个经验 Robin 常数是错误的。
+先在最简单、可解析的绝缘球腔内中心磁偶极模型中求解。
+对偶极的轴对称环向模 \(A_\phi=f(r)\sin\theta\)，
+令 \(\gamma^2=\jj\omega\mu_0\sigma_s\)、
+\(\operatorname{Re}\gamma>0\)，则海水中
+\[
+f''+\frac2r f'-\frac2{r^2}f-\gamma^2 f=0,\qquad
+f_\infty(r)=Ck_1(\gamma r),
+\]
+\(k_1\) 为衰减的修正球 Bessel 函数。
+在任何包围球腔的半径 \(R\)，此\emph{唯一球谐扇区}
+的精确无限域透明条件为
+\begin{equation}
+\boxed{\frac{f_\infty'(R)}{f_\infty(R)}
+=\gamma\frac{k_1'(\gamma R)}{k_1(\gamma R)}.}
+\label{eq:g1-exact-dtn-l1}
+\end{equation}
+内侧真空向量势由 \(M/r^2+Dr\) 组成；
+在腔壁连续匹配 \(f\) 和 \(f'\)，
+可以得到不含人工外球的精确海水 \(J_\phi=-\jj\omega\sigma_s
+f_\infty\sin\theta\) 与 \(q=|J_\phi|^2/(2\sigma_s)\)。
+这已在 \texttt{sdfmpneo\_bfzi/exterior\_dipole.py} 中实现，
+同时可比较把外球的 \(A_\phi\) 强制为零导致的截断误差。
+\textbf{式 \eqref{eq:g1-exact-dtn-l1} 不适用于任意 BFZI
+线圈、多极混合和两个长方体封装。}
+推广须处理完整矢量球谐的极向/环向模及耦合边界映射，
+或改用严谨的边界积分施加非局部透明条件。
+
 \subsection{纠正后的 G1 通过条件与工作次序}
 \begin{enumerate}
 \item \textbf{正确边值问题：}
