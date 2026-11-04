@@ -102,6 +102,60 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_coil_aligned_shell_panels_preserve_obb_domain_and_sphere():
+    # A source-informed *cubature chart* does not move the spiral, alter
+    # the sealed boxes, or turn positive quadrature into a fitted kernel.
+    # Check the same property after rotating just the receiver package.
+    from dataclasses import replace
+    angle=0.37
+    c,sin=np.cos(angle),np.sin(angle)
+    rotation=np.array([
+        [c,-sin,0.0],[sin,c,0.0],[0.0,0.0,1.0],
+    ])
+    original=scene_pair()
+    scenes=[
+        original,
+        replace(
+            original,
+            receiver=replace(
+                original.receiver,
+                pose=RigidPose(
+                    rotation,original.receiver.pose.center,
+                ),
+            ),
+        ),
+    ]
+    for scene in scenes:
+        common=dict(
+            wall_scale=0.001125, shell_normal_order=2,
+            shell_tangential_order=2,
+            shell_normal_mapping="log",return_sphere_count=True,
+        )
+        x0,w0,n0=scene.box_shell_quadrature(
+            3,5,8,shell_source_tangential_cuts=False,**common,
+        )
+        x1,w1,n1=scene.box_shell_quadrature(
+            3,5,8,shell_source_tangential_cuts=True,**common,
+        )
+        assert n0==n1
+        np.testing.assert_array_equal(x0[:n0],x1[:n1])
+        np.testing.assert_array_equal(w0[:n0],w1[:n1])
+        assert len(x1)>len(x0)
+        assert np.all(w1>0)
+        assert scene.in_seawater(x1).all()
+        volume=4*np.pi*scene.outer_radius**3/3-8*sum(
+            np.prod(a.enclosure.half_extents) for a in scene.assemblies
+        )
+        assert abs(np.sum(w1)/volume-1)<0.08
+    assert SeaMQSConfig(shell_source_tangential_cuts=True).shell_source_tangential_cuts
+    with pytest.raises(ValueError,match="shell_source_tangential_cuts"):
+        SeaMQSConfig(shell_source_tangential_cuts=1)
+    with pytest.raises(ValueError,match="shell_source_tangential_cuts"):
+        original.box_shell_quadrature(
+            3,5,8,shell_source_tangential_cuts=1,
+        )
+
+
 def test_g1_wall_normal_gauss_matches_sharp_curl_envelope_integral():
     # Analytic one-dimensional wall-normal component of curl-envelope
     # energy. This checks the *actual* quadrature transform and Jacobian,
