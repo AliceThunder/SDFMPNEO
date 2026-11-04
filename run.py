@@ -14,7 +14,8 @@
     python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 实验网络训练
     python run.py --mode bfzi-infer --model bfzi_neural.pt # 推理
     python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
-    python run.py --mode bfzi-g1-foundations --with-tests # G1新物理基准：原始Coulomb奇异拆分+可细分curl基+解析无限域外边界（自动上传）
+    python run.py --mode bfzi-g1-foundations --with-tests # G1：裁剪局部Green积分+层级curl构造+多极外域解析对照（自动上传）
+    python run.py --mode bfzi-g1-foundations --g1-hierarchy # 可选昂贵的5→11→17层级J/q试验（尚非精度证书）
     python run.py --mode bfzi-convergence  # BFZI 海水数值收敛分轴诊断
     python run.py --mode bfzi-convergence --basis-green  # Green L/软化单轴诊断
     python run.py --mode bfzi-convergence --basis-green-refined # 高精度R/K固定，独立Green L/软化研究
@@ -383,7 +384,8 @@ def main(argv=None):
                 from examples.bfzi_g1_foundations import main as g1_main
                 from examples.bfzi_run_record import run_and_publish
                 return run_and_publish(
-                    g1_main, flags=args,
+                    lambda: g1_main(hierarchy="--g1-hierarchy" in args),
+                    flags=args,
                     verbose="--verbose-log" in args,
                     publish="--no-publish-log" not in args,
                     with_tests="--with-tests" in args,
