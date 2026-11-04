@@ -37,6 +37,12 @@ from sdfmpneo_bfzi import (
 )
 
 
+# At 229 physical modes: 2→3 angular R/K q difference was 0.5727%,
+# but 3→4 was only 0.0423%. This fine quadrature is not a certificate
+# for the separate Green L, finite outer domain or continuum field.
+BFZI_FINE_AZIMUTHAL_GAUSS_ORDER = 3
+
+
 def _indices_in_enriched_basis(enriched, subset):
     """Identify nested physical curl trial modes without reordering."""
     indices = []
@@ -168,9 +174,11 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
     spatial_holdout = ball_reference and not domain and not (
         radial or green_refined or green_cross or green_gaussian or green_ball
     )
+    targeted_domain = ball_reference and domain and targeted_refinement
     enriched = build_sea_basis(
         scene, modes_per_face=2,
-        face_refinement=(5 if edge_refinement else 4) if spatial_holdout else 2,
+        face_refinement=(5 if edge_refinement else 4)
+        if (spatial_holdout or targeted_domain) else 2,
         refine_thin_faces_only=True, sources=source,
         include_source_guided=True,
         include_source_face_guided=source_face_guided,
@@ -230,7 +238,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             )
             r_cfg = replace(
                 config, polar_geometry_order=8,
-                azimuthal_panel_order=2,
+                azimuthal_panel_order=BFZI_FINE_AZIMUTHAL_GAUSS_ORDER,
                 radial_geometry_cuts=True, max_radial_panel_width=0.06,
                 shell_normal_order=5, shell_tangential_order=6,
                 shell_tangential_max_panel_width=0.0167,
@@ -364,7 +372,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         print(f"\nRefined R/K + uniform-ball L: independent 63-to-95-to-{enriched.size} modal holdout",
               flush=True)
         r_cfg = replace(
-            config, polar_geometry_order=8, azimuthal_panel_order=2,
+            config, polar_geometry_order=8,
+            azimuthal_panel_order=BFZI_FINE_AZIMUTHAL_GAUSS_ORDER,
             radial_geometry_cuts=True, max_radial_panel_width=0.06,
             shell_normal_order=5, shell_tangential_order=6,
             shell_tangential_max_panel_width=0.0167,
