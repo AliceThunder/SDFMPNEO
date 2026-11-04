@@ -150,8 +150,9 @@ def main():
     dynamic_y = float(np.linalg.norm(
         w*invsqrt@(ly-lb)@invsqrt,ord=2,
     ))
-    nonadditive = relative(
-        lc-(lx+ly-lb),lb,
+    nonadditive = float(
+        np.linalg.norm(lc-lx-ly+lb)
+        /max(np.linalg.norm(lb),1e-30)
     )
     refined_residual = (
         (r+1j*w*lc)@ub+1j*w*k
