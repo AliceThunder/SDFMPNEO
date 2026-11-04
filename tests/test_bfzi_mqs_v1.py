@@ -65,6 +65,32 @@ def test_g1_unsoftened_coulomb_integrates_the_original_singularity():
     )
 
 
+
+def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
+    from sdfmpneo_bfzi.green_coulomb import _bfzi_wet_radial_segments
+    scene = scene_pair()
+    directions = np.array([
+        [-1., 0., 0.], [1., 0., 0.], [0., 0., 1.],
+    ])
+    point = np.array([0.105, 0., -0.13])  # 5 mm from first box face
+    assert scene.in_seawater(point)
+    low, high = _bfzi_wet_radial_segments(
+        scene, point, directions, 0.06,
+    )
+    wet_lengths = np.sum(high-low, axis=1)
+    np.testing.assert_allclose(
+        wet_lengths, [0.005, 0.06, 0.06], atol=1e-12,
+    )
+    # The same fixed-radius rule also clips the outer sphere.
+    outer_point = np.array([0.5, 0., 0.])
+    low, high = _bfzi_wet_radial_segments(
+        scene, outer_point, directions, 0.06,
+    )
+    np.testing.assert_allclose(
+        np.sum(high-low, axis=1), [0.06, 0.02, 0.06], atol=1e-12,
+    )
+
+
 def test_g1_compact_curl_and_exact_exterior():
     from sdfmpneo_bfzi.sea_basis import build_sea_basis
     from sdfmpneo_bfzi.exterior_dipole import ExteriorDipole
