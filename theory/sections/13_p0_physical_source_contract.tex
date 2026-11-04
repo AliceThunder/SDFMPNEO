@@ -137,7 +137,44 @@ $10^{-3}$ 门槛。
 源场两种读出继续使用同一
 $\bm C$ 的解析旋度，即
 $\bm B=\mu_0\Curl\bm C$；
-\textbf{修正后的实际精度仍待本机数值复验}。
+本机在代码 \texttt{ce086b1} 上最新
+77 项测试通过，并在两端口各 28 个海水探针上测得：
+新 4 阶 $\bm C/\bm B$ 的相对误差分别为
+$2.24\times10^{-5}$ 与 $1.95\times10^{-4}$，
+原全 Gauss 4 阶则为
+$2.53\times10^{-3}$ 与 $1.17\times10^{-2}$。
+故\textbf{固定示例上的源场已通过预定 $10^{-3}$ 门槛}，
+不能将该点集结果外推全部几何参数域或
+真实有限截面导线近邻电磁分布。
+
+\paragraph{闭合回路的 Coulomb 规范连续性检查}
+完整的光滑闭合源曲线在导线外满足
+\[
+\Div\bm C_p(\bm x)
+=-\frac1{4\pi}\oint_{\Gamma_p}
+\frac{\mathrm d\bm\ell'\cdot(\bm x-\bm r')}
+{|\bm x-\bm r'|^3}
+=\frac1{4\pi}\oint_{\Gamma_p}
+\mathrm d_{\ell'}\frac1{|\bm x-\bm r'|}
+=0.
+\]
+对任何直线段 $\bm a\to\bm b$，
+这项的精确贡献为
+\[
+\Div\bm C_{\rm seg}(\bm x)=
+\frac1{4\pi}\left(
+\frac1{|\bm x-\bm a|}
+-\frac1{|\bm x-\bm b|}\right).
+\]
+沿物理闭合路径各段端点项望远镜式抵消；
+仅曲角用有限 Gauss 时残留可测数值偏差。
+现在实现的
+\texttt{LineSource.divergence\_kernel}
+直接积分这些解析端点项和曲角点线元的导数核，
+而不是通过 $B=\mu_0\Curl C$ 自我验证。
+同时新增盒面、棱、角外点的局部源场误差。
+本项扩展诊断尚待本机运行，不作为新的
+全 Maxwell 认证或非磁性有限截面适用域证明。
 
 \subsection{P0 验收和与 P1 的严格分界}
 P0 必须在固定两端口位姿、
@@ -171,5 +208,6 @@ $L_{mn}$ 尚未独立收敛前，
 将只输出源项与尺度的
 \texttt{p0\_physics/p0\_reference/p0\_source}，
 不启用 GitHub Actions。
-新增测试和算法仍待用户本机运行。
-当前\textbf{P0 尚未全部验收，G1=FAIL}。
+原解析源修正已在本机 77 项测试中通过，新增闭合\texttt{div C}
+与盒棱/角源场扩展诊断尚待本机复测。
+当前\textbf{P0 固定示例源精度通过，但参数域尚未全部验收，G1=FAIL}。
