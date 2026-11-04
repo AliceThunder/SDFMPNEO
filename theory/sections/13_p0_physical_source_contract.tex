@@ -117,11 +117,27 @@ BFZI 角部仍然是连续曲线：
 代码 \texttt{sdfmpneo\_bfzi/source\_reference.py}
 提供 \texttt{straight\_segment\_field} 与
 \texttt{continuous\_port\_field}。
-默认解算器的
-\texttt{LineSource} 暂不自动切换算法，
-以避免在缺乏真实源阶次证据时
-偷偷改变 $K$、$L^{\mathrm{air}}$ 或
-铜线热源的数值定义。
+首轮 P0 本机 \texttt{a50ed62} 的
+75 项测试通过；独立角段 24/32 阶积分一致至机器精度，
+但旧生产源的 4 阶整路径 Gauss
+$\bm C/\bm B$ 探针误差分别约
+$0.253\%$ 和 $1.174\%$，
+12 阶时分别约 $0.000118\%$ 和 $0.00380\%$。
+因此旧 4 阶源场\textbf{未达到}预先规定的
+$10^{-3}$ 门槛。
+
+随后已经据此修正\texttt{LineSource}：
+实际端口源场 $\bm C$ 与 $\bm B$ 的直边
+和全部回流段使用上述解析有限直导线核，
+曲角才采用该阶次的 Gauss 节点。
+完整的旧线元节点仍独立保留用于导线长度、
+铜线热源和空气 Neumann 互感近似，
+避免错误地把上述源场修正称为已修复铜线
+邻近效应或完整空气自感。
+源场两种读出继续使用同一
+$\bm C$ 的解析旋度，即
+$\bm B=\mu_0\Curl\bm C$；
+\textbf{修正后的实际精度仍待本机数值复验}。
 
 \subsection{P0 验收和与 P1 的严格分界}
 P0 必须在固定两端口位姿、
