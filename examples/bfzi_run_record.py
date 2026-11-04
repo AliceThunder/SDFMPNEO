@@ -23,6 +23,9 @@ FIELDS = (
     "peak_scaled_max_dq", "normal_peak_scaled_dq",
     "dJ_common", "dJ_ports_common", "dJ_near035",
     "dJ_ports_near035", "dq_near035", "domain_response_gate",
+    "dR_common", "dK_common", "dL_common",
+    "dZ_RK_only", "dZ_L_only",
+    "dJ_near035_RK_only", "dJ_near035_L_only",
     "operator_gate", "response_gate", "combined_gate",
 )
 MATCH_FIELD = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=([^\s,]+)")
@@ -93,6 +96,16 @@ def _short(line: str) -> str | None:
         return line
     if line.startswith("radius="):
         return line
+    if line.startswith("domain_operator_step:"):
+        pair = line.split(":",1)[1].strip().split(" ",1)[0]
+        values = _fields(line)
+        return "domain_operator_step: "+pair+" "+", ".join(
+            f"{k}={values[k]}" for k in (
+                "dR_common", "dK_common", "dL_common",
+                "dZ_RK_only", "dZ_L_only",
+                "dJ_near035_RK_only", "dJ_near035_L_only",
+            ) if k in values
+        )
     if line.startswith("domain_step:"):
         label, rest = line.split(":",1)
         values = _fields(rest)
@@ -158,6 +171,7 @@ def _git(root, *args):
 def _summary(root, flags, started, ended, status, raw):
     lines = raw.splitlines()
     stages, comparisons, gates, domains, domain_steps = [], [], [], [], []
+    domain_operators = []
     for rawline in lines:
         line = rawline.strip()
         if ": modes=" in line:
@@ -173,6 +187,11 @@ def _summary(root, flags, started, ended, status, raw):
         if line.startswith("domain_step:"):
             domain_steps.append((line.split(":",1)[1].strip().split(" ",1)[0],
                                  _fields(line)))
+        if line.startswith("domain_operator_step:"):
+            domain_operators.append((
+                line.split(":",1)[1].strip().split(" ",1)[0],
+                _fields(line),
+            ))
         if ("_vs_A:" in line
                 or (line.startswith("rk_far_azimuth_")
                     and re.search(r"_vs_\d+:",line))
@@ -252,6 +271,29 @@ def _summary(root, flags, started, ended, status, raw):
                 f"{d.get('dq_near035','—')} | "
                 f"{d.get('dq','—')} | {d.get('dP','—')} | "
                 f"{d.get('domain_response_gate','—')} |"
+            )
+        if domain_operators:
+            parts.extend([
+                "",
+                "## 外域响应拆分：R/K 与磁 Green L",
+                "",
+                "| 半径比较 | dR 共坐标 | dK 共坐标 | dL 共坐标 | 仅变 R/K 时 dZ | 仅变 L 时 dZ | 近区 dJ（仅变 R/K） | 近区 dJ（仅变 L） |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|",
+            ])
+            for label,d in domain_operators:
+                parts.append(
+                    f"| {label} | {d.get('dR_common','—')} | "
+                    f"{d.get('dK_common','—')} | "
+                    f"{d.get('dL_common','—')} | "
+                    f"{d.get('dZ_RK_only','—')} | "
+                    f"{d.get('dZ_L_only','—')} | "
+                    f"{d.get('dJ_near035_RK_only','—')} | "
+                    f"{d.get('dJ_near035_L_only','—')} |"
+                )
+            parts.append(
+                "\n拆分使用相同物理高斯方向与前一半径的 R 白化坐标，"
+                "只更换一组算子做敏感性分析；混合系统不是实际物理外域解，"
+                "两列误差不可相加，也不能代替磁积分收敛证书。"
             )
         parts.append(
             "\n共同海水区域指标是固定 0.52 m 球域中的加权采样差异；"
