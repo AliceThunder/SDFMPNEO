@@ -1,5 +1,5 @@
 > **BFZI 研究分支｜当前研发进度（2026-11-04 UTC）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、合法三维位姿的绝缘封装 + 海水电磁热代理**，不把旧 vNext 超椭圆线圈混入本项目。最新自动日志（本地代码 `19c2c52`，2026-11-04 UTC）：**60 passed**；相同 229 模态、三阶精细 R/K 的外域 0.85→1.05→1.30m 两步均 **FAIL**，且 1.05→1.30m 的 Z 差 **0.951%**、共域 J 差 **2.297%**、设备近区 J 差 **1.392%**，相对上一阶段反而增大。新增的 `--basis-domain-far` 将续测 1.05→1.30→1.60m，并在同一白化坐标中分别替换 R/K 与磁 Green L，定位外域漂移来源，**新代码待本地运行**。磁 Green L 独立算子 A/B 此前 **FAIL（约 13.2%）**，G1 高精度教师仍未通过。详见 [总体进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) 与 [最新自动日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)；只用本机 Git 上传日志，不使用 GitHub Actions。
+> 本研究分支仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、合法三维位姿的绝缘封装 + 海水电磁热代理**。**G1 已完成理论重核，但物理精度仍未通过。**已确认 A–φ/MQS 到 R/L/K 的弱式、互易、端口功率一致性在严格假设下成立；同时修正有限域外边界测试空间漏写的条件，并指出现有 229 高斯基无法证明完备、人工球面实际上使 J 全矢量为零、跨半径基函数非严格嵌套、uniform-ball 磁 Green 的连续体积分一致性未证实。默认 f=200kHz、海水 σ=5S/m 时磁扩散深度约 **0.503m**，此前 0.52～1.30m 外域不是自然可信的无限域近似。最近本机 `19c2c52` 代码基线 **60 passed**，但 `1.05→1.30m` 仍有 `dZ=0.951%`、共同域 `dJ=2.297%`，G1 FAIL。**后续改为先解决固定域 Green L 积分与系统性空间逼近，再谈外域和神经教师**，不再默认盲目加半径或经验高斯模态。详细推导：[G1 理论复查](theory/sections/11_g1_foundation_recheck.tex)、[总体进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)、[最近本地日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)。不使用 GitHub Actions。
 
 # SDF-MPNEO vNext
 
@@ -52,7 +52,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 1
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
 python run.py --mode bfzi-convergence --basis-ball-targeted # completed 207→210→213→229: global J changed 89.21% then 20.10%
-python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests # next: 1.05→1.30→1.60m and R/K-only versus Green-L-only sensitivity, auto-pushed
+python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests # OPTIONAL diagnosis only; G1 priority is fixed-domain Green-L and basis convergence
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # run and log locally without Git push
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # optional full console output
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
