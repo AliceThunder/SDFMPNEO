@@ -245,6 +245,7 @@ def assemble_coulomb_split(
 
 def assemble_coulomb_subtracted(
     x, wx, y, wy, evaluate, scalar_potential, *,
+    gradient=None, first_moment=None,
     chunk_size: int = 32, return_diagnostics: bool = False,
 ):
     """Unsoftened Coulomb L with exact continuous constant-density subtraction.
@@ -256,8 +257,19 @@ def assemble_coulomb_subtracted(
         = W(x)*S_Omega(x)
           + ∫_Omega [W(y)-W(x)]/|x-y| dy.
 
-    For Lipschitz W the residual integrand is bounded near the
-    diagonal, unlike the original 1/r kernel. This does not silently
+    Optionally, with an independently verified first geometry moment
+      M_Omega(x) = ∫_Omega (y-x)/|x-y| dy
+                 = ∫_{boundary Omega} n_y |x-y| dS_y,
+    and a current gradient D W(x), subtract the affine Taylor term:
+      W(x)*S_Omega(x) + D W(x)*M_Omega(x)
+        + ∫ [W(y)-W(x)-D W(x)*(y-x)]/|x-y| dy.
+    This identity is exact and the residual is O(|y-x|) for C2 W.
+    Exact affine modes have IDENTICALLY ZERO residual: they test the
+    scalar/first-moment mathematics, not the near-kernel cubature.
+    To test actual residual integration, use a nonaffine current mode.
+
+    For Lipschitz W the constant-subtracted residual is bounded near
+    the diagonal, unlike the original 1/r kernel. This does not silently
     replace the original physical kernel with a softened/cloud kernel.
     x and y quadrature nodes must be DISJOINT, since the residual
     has an angle-dependent pointwise limit on the diagonal; a single
@@ -286,6 +298,17 @@ def assemble_coulomb_subtracted(
     if scalar.shape!=(len(x),) or not np.isfinite(scalar).all():
         raise ValueError("scalar Coulomb potential must be finite (n,)")
     m=vx.shape[1]
+    if (gradient is None) != (first_moment is None):
+        raise ValueError("gradient and first_moment must be provided together")
+    grads=moments=None
+    if gradient is not None:
+        grads=np.asarray(gradient(x),float)
+        moments=np.asarray(first_moment(x),float)
+        if (grads.shape!=(len(x),m,3,3) or
+                moments.shape!=(len(x),3) or
+                not np.isfinite(grads).all() or
+                not np.isfinite(moments).all()):
+            raise ValueError("expected gradient (n,m,3,3) and first_moment (n,3)")
     accum=np.zeros((m,m))
     for i in range(0,len(x),chunk_size):
         end=min(len(x),i+chunk_size)
@@ -295,12 +318,23 @@ def assemble_coulomb_subtracted(
                 "singularity-subtracted Coulomb requires disjoint x/y nodes"
             )
         kernel=wy[None,:]/distance
+        numerator=vy[None,:,:,:]-vx[i:end,None,:,:]
+        if grads is not None:
+            # Tensor convention: grads[n,mode,component,coordinate].
+            taylor=np.einsum(
+                "imck,ijk->ijmc",grads[i:end],
+                y[None,:,:]-x[i:end,None,:],optimize=True,
+            )
+            numerator=numerator-taylor
         residual=np.einsum(
-            "ij,ijmc->imc",kernel,
-            vy[None,:,:,:]-vx[i:end,None,:,:],
-            optimize=True,
+            "ij,ijmc->imc",kernel,numerator,optimize=True,
         )
         potential=scalar[i:end,None,None]*vx[i:end]+residual
+        if grads is not None:
+            potential+=np.einsum(
+                "imck,ik->imc",grads[i:end],moments[i:end],
+                optimize=True,
+            )
         accum+=np.einsum(
             "i,imc,inc->mn",wx[i:end],vx[i:end],potential,
             optimize=True,
