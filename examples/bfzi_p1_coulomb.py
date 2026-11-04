@@ -190,6 +190,7 @@ def main():
     y1=(6,9,14)
     local=(6,8,12)
     evidence={}
+    decomp_both=None
     for name,x,y in (
         ("base",x0,y0),
         ("x_only",x1,y0),
@@ -202,6 +203,8 @@ def main():
             d=diagnose_original_split(
                 radius,x,y,0.4,original_l11=z["L11"],
             )
+            if name=="both":
+                decomp_both=d
             print(
                 f"p1_decomp: variant={name},"
                 f"x_exact_rel={d['x_exact_rel']:.7g},"
@@ -233,6 +236,15 @@ def main():
             f"diag_rel={z['diag_error']:.7g}",
             flush=True,
         )
+    print(
+        f"p1_sub_gate: target_rel=0.001,"
+        f"global_constant_subtraction_frob_pass="
+        f"{decomp_both['global_constant_subtraction_rel']<0.001},"
+        f"global_constant_subtraction_rel="
+        f"{decomp_both['global_constant_subtraction_rel']:.7g},"
+        "domain_scalar_potential=analytic_ball_only",
+        flush=True,
+    )
     # One predeclared target for this analytically solvable three-mode
     # ball ONLY. It is not a target for the actual BFZI two-box G1 model.
     ref_norm=abs(reference)
