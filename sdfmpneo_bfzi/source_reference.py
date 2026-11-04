@@ -113,3 +113,83 @@ def continuous_port_field(
         c += cp
         b += bp
     return c, b
+
+
+def polygonal_port_vertices(
+    assembly: BFZIAssembly, *, panels_per_corner: int = 32,
+):
+    """Vertices of one EXACTLY CLOSED finite-segment current path.
+
+    Every rounded BFZI corner is replaced by chords between points on
+    its true analytic centerline. All genuine straight sides and the
+    explicitly routed return are kept exact, preserving their direction.
+    This is a *separate* geometric approximation, not Gauss point currents.
+    """
+    if (isinstance(panels_per_corner, bool)
+            or not isinstance(panels_per_corner, int)
+            or panels_per_corner < 2):
+        raise ValueError("panels_per_corner must be an integer >= 2")
+    coil, pose = assembly.coil, assembly.pose
+    vertices = []
+    knots = np.linspace(0.0, math.pi / 2.0, panels_per_corner + 1)[1:]
+    for turn in range(coil.turns):
+        for side in range(4):
+            start, _ = coil.segment(turn, "side", side, -1.0, pose)
+            stop, _ = coil.segment(turn, "side", side, 1.0, pose)
+            if not vertices:
+                vertices.append(start)
+            elif np.linalg.norm(vertices[-1]-start) > 1e-11:
+                raise ValueError("BFZI side/corner polyline is discontinuous")
+            if np.linalg.norm(stop-vertices[-1]) > 1e-14:
+                vertices.append(stop)
+            corner_points, _ = coil.segment(
+                turn, "corner", side, knots, pose,
+            )
+            vertices.extend(corner_points)
+    outer, inner = coil.endpoints()
+    route = pose.position(np.vstack((
+        inner, np.asarray(assembly.return_waypoints), outer,
+    )))
+    if np.linalg.norm(vertices[-1]-route[0]) > 1e-11:
+        raise ValueError("BFZI inner terminal does not join return")
+    vertices.extend(route[1:])
+    path = np.asarray(vertices, dtype=float)
+    if np.linalg.norm(path[-1]-path[0]) > 1e-11:
+        raise ValueError("BFZI port source polyline is not closed")
+    if np.any(np.linalg.norm(np.diff(path,axis=0),axis=1) <= 1e-14):
+        raise ValueError("zero-length physical port polyline segment")
+    # Force bitwise closure, so exact segment-divergence terms telescope.
+    path[-1] = path[0]
+    return path
+
+
+def polygonal_port_field(
+    assembly: BFZIAssembly, positions, *, panels_per_corner: int = 32,
+):
+    """Closed, distributionally solenoidal polygonal current C/B/divC.
+
+    The polygon approximates curved BFZI geometry with progressively
+    shorter *physical chords*. Each chord is integrated analytically;
+    unlike a Gauss point-line source, the whole polygon is an actually
+    closed current distribution, with div C=0 off the source to rounding.
+    Compare panel refinement against the independent continuous curve,
+    NOT against another Gauss discretization of the same corner.
+    """
+    x = np.asarray(positions, dtype=float)
+    if x.ndim != 2 or x.shape[1] != 3 or not np.isfinite(x).all():
+        raise ValueError("polygonal source queries must be finite (n,3)")
+    vertices = polygonal_port_vertices(
+        assembly, panels_per_corner=panels_per_corner,
+    )
+    c = np.zeros_like(x)
+    b = np.zeros_like(x)
+    div_c = np.zeros(len(x))
+    for start, stop in zip(vertices[:-1], vertices[1:]):
+        cc, bb = straight_segment_field(start, stop, x)
+        c += cc
+        b += bb
+        div_c += (
+            1.0/np.linalg.norm(x-start, axis=1)
+            -1.0/np.linalg.norm(x-stop, axis=1)
+        )/(4.0*math.pi)
+    return c, b, div_c
