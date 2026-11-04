@@ -102,6 +102,35 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_geometry_azimuth_cubature_is_positive_and_covers_wet_volume():
+    # Sphere-minus-two-rotated-box geometry is integrated with a C2
+    # box/sphere partition of unity, not a hard masked longitude grid.
+    scene = scene_pair()
+    rules = [
+        scene.box_shell_quadrature(
+            3, 5, 8, wall_scale=0.001125,
+            shell_normal_order=2, shell_tangential_order=2,
+            polar_geometry_order=2, azimuthal_geometry_order=degree,
+        )
+        for degree in (2, 3)
+    ]
+    volume = 4*np.pi*scene.outer_radius**3/3
+    for assembly in scene.assemblies:
+        volume -= 8*np.prod(assembly.enclosure.half_extents)
+    for points, weights in rules:
+        assert len(points) == len(weights)
+        assert len(points) > 100
+        assert np.all(weights > 0)
+        assert scene.in_seawater(points).all()
+        assert abs(np.sum(weights)/volume-1) < 0.05
+    with pytest.raises(ValueError, match="azimuthal_geometry_order"):
+        scene.box_shell_quadrature(
+            3, 5, 8, azimuthal_geometry_order=1,
+        )
+    with pytest.raises(ValueError, match="azimuthal_geometry_order"):
+        SeaMQSConfig(azimuthal_geometry_order=2, azimuthal_panel_order=2)
+
+
 def test_g1_clipped_coulomb_polar_panels_resolve_near_wall_cap():
     # Uniform current near a planar insulating wall has an independent
     # analytic solid-angle integral, including a real Coulomb singularity.
