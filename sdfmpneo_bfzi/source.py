@@ -118,6 +118,43 @@ class LineSource:
             out[start:start + chunk_size] = currents * result
         return out.reshape(original_shape + (3,))
 
+    def divergence_kernel(self, positions, chunk_size: int = 128):
+        """Analytic div_x C for a line-source quadrature.
+
+        For a truly closed continuous filament, div C=0 off the wire.
+        Exact straight-segment contributions use endpoint telescoping,
+        not finite-differencing C; only curved corner integration can
+        leave a residual in a hybrid source. The residual is a direct
+        source-continuity diagnostic, not an electromagnetic error bound.
+        """
+        x = np.asarray(positions, dtype=float)
+        original_shape = x.shape[:-1]
+        if x.shape[-1:] != (3,):
+            raise ValueError("positions must have trailing dimension 3")
+        flat = x.reshape(-1, 3)
+        out = np.empty(len(flat), dtype=float)
+        src = self.points if self.field_mask is None else self.points[self.field_mask]
+        dl = self.line_elements if self.field_mask is None else self.line_elements[self.field_mask]
+        for start in range(0, len(flat), chunk_size):
+            query = flat[start:start + chunk_size]
+            delta = query[:, None, :] - src[None, :, :]
+            distance = np.linalg.norm(delta, axis=-1)
+            if np.any(distance < 1e-12):
+                raise ValueError("source divergence query too close to ideal wire")
+            value = -np.einsum(
+                "ijk,jk->i", delta / distance[..., None]**3, dl,
+                optimize=True,
+            ) / (4.0 * math.pi)
+            if self.straight_segments is not None:
+                for aa, bb in self.straight_segments:
+                    ra = np.linalg.norm(query-aa, axis=1)
+                    rb = np.linalg.norm(query-bb, axis=1)
+                    # The exact divergence of a straight C segment is
+                    # (1/|x-a|-1/|x-b|)/(4*pi).
+                    value += (1.0/ra-1.0/rb)/(4.0*math.pi)
+            out[start:start + chunk_size] = value
+        return out.reshape(original_shape)
+
 
 def build_line_source(assembly: BFZIAssembly, order: int = 4) -> LineSource:
     """Complete BFZI spiral followed by explicit return path in world frame."""
