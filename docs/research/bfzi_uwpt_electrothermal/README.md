@@ -20,15 +20,28 @@ python run.py --mode bfzi-p0-source --with-tests
 
 **P0 日志**自动提交至 [`runs/p0/`](runs/p0/)，不覆盖此前 [G1 日志](runs/latest_summary.md)；79 passed 的面／棱／角及 div C 收敛已经实测，新增独立闭合折线与非退化几何测试待本机验证。完成 P0 的明确适用范围验收后，才进入 P1 真实 Coulomb L 算子。
 
+## 已按五阶段路线进入 P1：原 Coulomb 1/r 磁能真值（2026-11-04）
+
+**P0 限定演示基准已在本机 83 passed 实测通过：** 双端口各 84 点，4 阶源 C/B 误差为 7.28e-5 / 4.27e-4；独立严格闭合折线源的 16/32/64 面板 B 误差为 3.90e-4 / 9.76e-5 / 2.44e-5，`div C` 接近机器零，验证了独立几何收敛与闭合恒等式。有限线径自碰撞与全参数域不属于该限定结论。
+
+**P1 第一个可证伪关口已写成程序与 [完整推导／验收合同](P1_COULOMB_ANALYTIC_GATE.md)**：真实均匀球中的三个严格无散度零法向电流 `W_i=e_i×x`，其**原始 1/r Coulomb** 三模态磁能矩阵有解析真值 `16π μ0 R^7/315 I3`。直接检验现有原核 `assemble_coulomb_split` 的 x/y 分别细化、局部截断分区，不运行 BFZI 229 模态，也不换软化核。
+
+```powershell
+python run.py --mode bfzi-p1-coulomb --with-tests
+```
+
+P1 程序尚待本机运行，日志将自动版本化到独立 `runs/p1/`；不能据此宣布 G1 PASS。正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
+
 ## 阅读顺序
 
-1. [P0 物理与源项锁定契约](P0_PHYSICS_SOURCE_CONTRACT.md)：当前执行阶段，解析源基准和定量验收门槛。
-2. [G1 理论与数值实现系统复查](G1_THEORY_NUMERICS_REVIEW.md)：当前优先级，严禁把离散自洽当作连续真值。
-3. [项目当前进度总图与看板](PROJECT_PROGRESS.md)：物理模块、**封装**、数值验收、神经代理、热演化、下一关口和本地测试证据；**当前状态以此为准**。
-4. [新理论主文档](../../../theory/main.tex)：多文件 LaTeX 主入口。
-5. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
-6. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
-7. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
+1. [P1 原 Coulomb L 真值／P0 限定交接](P1_COULOMB_ANALYTIC_GATE.md)：当前阶段，三个有解析答案的无散度球形电流。
+2. [P0 物理与源项锁定契约](P0_PHYSICS_SOURCE_CONTRACT.md)：已完成限定物理基准，保留全参数域约束与历史数值过程。
+3. [G1 理论与数值实现系统复查](G1_THEORY_NUMERICS_REVIEW.md)：当前优先级，严禁把离散自洽当作连续真值。
+4. [项目当前进度总图与看板](PROJECT_PROGRESS.md)：物理模块、**封装**、数值验收、神经代理、热演化、下一关口和本地测试证据；**当前状态以此为准**。
+5. [新理论主文档](../../../theory/main.tex)：多文件 LaTeX 主入口。
+6. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
+7. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
+8. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
 
 ## 几何权威来源
 
