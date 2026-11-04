@@ -329,6 +329,12 @@ def main(hierarchy=False):
         modes[:sphere_x],modes[:sphere_x],optimize=True,
     )
     r_shell_base=r-r_sphere_base
+    k_sphere_base=_coupling(
+        source,modes[:sphere_x],wx[:sphere_x],x[:sphere_x],
+    )
+    kd_sphere_base=coupling_dual(x[:sphere_x],wx[:sphere_x])
+    k_shell_base=k-k_sphere_base
+    kd_shell_base=k_dual-kd_sphere_base
     for label,options in (
         ("log_normal_2",dict(shell_normal_mapping="log")),
         ("log_normal_4",dict(
@@ -355,7 +361,9 @@ def main(hierarchy=False):
             f"dK_vs_base={relative(ks,k):.6g}, "
             f"dK_dual={relative(kds,ks):.6g}, "
             f"dK_dual_vs_base={relative(kds,k_dual):.6g}, "
-            f"dR_shell_only={np.linalg.norm(rs-r)/max(np.linalg.norm(r_shell_base),1e-30):.6g}",
+            f"dR_shell_only={np.linalg.norm(rs-r)/max(np.linalg.norm(r_shell_base),1e-30):.6g}, "
+            f"dK_shell_only={np.linalg.norm(ks-k)/max(np.linalg.norm(k_shell_base),1e-30):.6g}, "
+            f"dK_dual_shell_only={np.linalg.norm(kds-k_dual)/max(np.linalg.norm(kd_shell_base),1e-30):.6g}",
             flush=True,
         )
 
