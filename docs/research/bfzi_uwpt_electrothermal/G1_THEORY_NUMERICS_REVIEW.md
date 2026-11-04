@@ -43,6 +43,10 @@ Rmn=∫ σ_s^(-1) Wm·Wn，Lmn=μ0∬ Wm(x)·Wn(y)/(4π|x-y|)，Kmp=μ0∫ Wm·C
 - 海水被假定均匀、各向同性、非磁性；有磁芯、导电屏蔽、介质色散或海水显著流动的情况，不能简单沿用该基线。
 - 完整线圈和回流路径必须是同一个有向闭合电流。现有 LineSource 以 Gauss 线元加权和逼近 C 和 B；对**离散**势有 B=μ0 curl C，但这不等于离散线源在分布意义下自动严格无散度。必须做源阶次、总加权线元闭合误差、源磁场与线源精确解析基准核查。
 
+### 与 BFZI 原几何论文的逐式对照
+
+已独立读取 `AliceThunder/0UnifiedModelingUWPT/sections/02_geometry_model.tex` 与当前 `sdfmpneo_bfzi/geometry.py`。代码的直边 `r=A n + σ(χξ−β)t`、`dr/dξ=σχt` 和角部 `r=h n+σh't`、`dr/du=σ[ρ−2σ(1−α)β(e·t)]t` 与原理论公式一致；参数 `η=k+τ/(2π)`、`β=s/(2π)`、`A=χ+ρ`、刚体变换方向也相对应。这是**公式对应性核对**，不等于已经证明所有参数域无自交、有限截面导线互不碰撞，亦未替代对源场离散误差和端点闭合误差的实测。
+
 ## 3. 三个最重要的理论／算法缺口
 
 ### G1-A：人工外边界与无限海水被混淆
@@ -85,7 +89,7 @@ Kmp=μ0∫Ω Wm·C_p=∫Ω Fm·B_src,p。
 |---|---|---|---|
 | Ammari, Buffa & Nédélec (2000), *A Justification of Eddy Currents Model for the Maxwell Equations* | https://doi.org/10.1137/S0036139998348979 | MQS 适用范围、源兼容和拓扑条件 | 不能证明 BFZI 数值结果 |
 | Hiptmair (2002), *Finite elements in computational electromagnetism* | https://doi.org/10.1017/S0962492902000041 | H(curl)/H(div) 合规空间和逼近收敛证明的要求 | 不等于必须用 FEM 做在线代理 |
-| Hiptmair (2001), *Symmetric Coupling for Eddy Current Problems* | https://doi.org/10.1137/S0036142900380467 | 非局部边界与导体／外区一致耦合 | 不是单一常数 Robin 的依据 |
+| Hiptmair (2002), *Symmetric Coupling for Eddy Current Problems* | https://doi.org/10.1137/S0036142900380467 | 非局部边界与导体／外区一致耦合 | 不是单一常数 Robin 的依据 |
 | Passarotto, Pitassi & Specogna (2022), *Foundations of volume integral methods for eddy current problems* | https://doi.org/10.1016/j.cma.2022.114626 | 兼容电流空间、原 Coulomb L 的奇异自项和快速分解 | 不可直接把其离散网格误差界转嫁到 QMC |
 | Duffy (1982), *Quadrature Over a Pyramid or Cube of Integrands with a Singularity at a Vertex* | https://doi.org/10.1137/0719090 | 近奇异/奇异变换的独立参考策略 | 不能靠直接加随机点解决六维自项 |
 | Järvenpää, Taskinen & Ylä-Oijala (2003), *Singularity extraction technique for integral equation methods...* | https://doi.org/10.1002/nme.810 | 抽出奇异核并解析处理，自由度内积分精度 | 原文多项式基的解析式不能无修改用于高斯 curl |
