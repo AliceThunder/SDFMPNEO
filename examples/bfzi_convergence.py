@@ -2846,6 +2846,7 @@ def main(
     basis_ball_aniso: bool = False,
     basis_ball_targeted: bool = False,
     basis_domain_ball: bool = False,
+    basis_domain_extend: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
@@ -2856,7 +2857,7 @@ def main(
             or basis_ball_check_rk or basis_ball_check_far
             or basis_ball_check_far_refined or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
-            or basis_ball_targeted):
+            or basis_ball_targeted or basis_domain_extend):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2886,6 +2887,7 @@ def main(
             ),
             anisotropic_refinement=basis_ball_aniso or basis_ball_targeted,
             targeted_refinement=basis_ball_targeted,
+            domain_extension=basis_domain_extend,
         )
     scene = build_demo_scene()
     base = dict(
