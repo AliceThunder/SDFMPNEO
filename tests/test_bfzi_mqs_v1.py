@@ -56,9 +56,12 @@ def test_g1_unsoftened_coulomb_integrates_the_original_singularity():
         lambda p: np.ones(len(p)),
         local_radius=0.5,local_radial_order=6,
         local_polar_order=4,local_azimuthal_order=8,
+        return_diagnostics=True,
     )
+    value,raw_skew=answer
+    assert raw_skew == 0.0  # one-mode matrix is necessarily symmetric
     np.testing.assert_allclose(
-        answer[0,0],MU0/2.0,rtol=0.01,
+        value[0,0],MU0/2.0,rtol=0.01,
     )
 
 
