@@ -1,6 +1,6 @@
 # BFZI 最近一次本地运行日志
 
-此目录由用户本地的 `python run.py --mode bfzi-convergence ...` 自动维护，不使用 GitHub Actions 或云端后台任务。
+此目录由用户本地的 `python run.py --mode bfzi-convergence ...` 或 `python run.py --mode bfzi-g1-foundations ...` 自动维护，不使用 GitHub Actions 或云端后台任务。
 
 **以下两个文件已在用户本机实际生成并成功推送 GitHub，后续运行自动覆盖更新：**
 
@@ -11,7 +11,9 @@
 
 ```powershell
 git pull --ff-only
-python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests
+python run.py --mode bfzi-g1-foundations --with-tests
+# 可选旧版外域算子归因（不作为主要 G1 路线）：
+# python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests
 # 只保留本地，不推送：
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 # 如需看到全部原始标准输出：
