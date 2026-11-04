@@ -775,7 +775,13 @@ class BfziScene:
                         a_side = coil.outer_half_size-coil.pitch*eta
                         source_knots[0].extend((-a_side,a_side))
                         source_knots[1].extend((-a_side,a_side))
-                for waypoint in assembly.return_waypoints:
+                # Complete return route also includes the two spiral
+                # terminals, not just the explicit intermediate waypoints.
+                outer_terminal, inner_terminal = coil.endpoints()
+                for waypoint in (
+                    outer_terminal, inner_terminal,
+                    *assembly.return_waypoints,
+                ):
                     for j,coordinate in enumerate(waypoint):
                         source_knots[j].append(float(coordinate))
             # Earlier slab axes stay inside the physical face extent; later
