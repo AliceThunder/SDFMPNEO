@@ -350,6 +350,13 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
             "dJ_ports_near035=0.007, dq_near035=0.004, "
             "domain_response_gate=FAIL\n"
         )
+        writer.write(
+            "  domain_operator_step: 1.3->1.6 m, "
+            "dR_common=0.02, dK_common=0.01, dL_common=0.03, "
+            "dZ_RK_only=0.004, dZ_L_only=0.008, "
+            "dJ_near035_RK_only=0.005, "
+            "dJ_near035_L_only=0.012\n"
+        )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
     assert "dJ_volume=0.931925" in console.getvalue()
@@ -362,6 +369,9 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     assert "dJ_near035=0.006" in console.getvalue()
     assert "dq_near035=0.004" in console.getvalue()
     assert "domain_response_gate=FAIL" in console.getvalue()
+    assert "domain_operator_step: 1.3->1.6" in console.getvalue()
+    assert "dZ_L_only=0.008" in console.getvalue()
+    assert "dJ_near035_RK_only=0.005" in console.getvalue()
 
 
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
