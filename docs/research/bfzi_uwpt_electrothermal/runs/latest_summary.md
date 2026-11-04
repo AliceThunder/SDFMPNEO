@@ -1,26 +1,28 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T06:53:37+00:00
-- 结束（UTC）：2026-11-04T06:54:37+00:00
-- 当时检出的代码提交：`149dbfb`
+- 开始（UTC）：2026-11-04T07:42:59+00:00
+- 结束（UTC）：2026-11-04T07:44:01+00:00
+- 当时检出的代码提交：`433f914`
 - 执行：`python run.py --mode bfzi-g1-foundations`
-- 同批 pytest：62 passed in 45.07s
+- 同批 pytest：64 passed in 38.20s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
 ## G1 三条基础路线的实验基准（尚非认证）
 
 - `g1_structured_basis: base=27, level1=71, level2=211, compact_level1=44`
-- `g1_coulomb_axes: modes=5, dL_x_only=0.098049, dL_y_only=0.0347706, dL_both=0.0298039, nonadditive_dL=0.104896, raw_skew_base=0.00246786, raw_skew_x_only=6.46189e-05, raw_skew_y_only=0.00199146, raw_skew_both=0.000411339, dimensionless_dL_x=0.00589706, dimensionless_dL_y=0.00227705, dZ_x_only=0.00545258, dZ_y_only=0.00216996, dq_x_only=0.00157538, dq_y_only=0.000550579`
-- `g1_coulomb_split: modes=5, x_nodes=4008, y_nodes=4584, local_angular_dL=4.51102e-07, ball_vs_split_dL=0.0778894, local_angular_dZ=9.46672e-10, ball_vs_split_dZ=0.00481719, local_angular_dJ_R=1.27697e-09, volume_x_nodes=4584, volume_y_nodes=6124, volume_dL=0.0298039, dimensionless_dL=0.00196389, refined_on_coarse_residual=0.00193254, volume_dZ=0.00182062, volume_probe_dq=0.00058998, min_L_split_eig=1.04838e-09`
-- `g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened singularity-split pilot; both x/y volume cubatures and local angles are compared, not yet converged. No 229-mode certificate.`
+- `g1_coulomb_patch: modes=5, clip_vs_clearance_dL=0.0542375, radius_055_to_080_dL=0.0211519, raw_skew_clearance=0.00246786, raw_skew_clip_055=0.00275427, raw_skew_clip_080=0.0019838`
+- `g1_coulomb_axes: modes=5, dL_x_only=0.112368, dL_y_only=0.0137432, dL_both=0.0114953, nonadditive_dL=0.127894, raw_skew_base=0.00275427, raw_skew_x_only=0.000187368, raw_skew_y_only=0.00214087, raw_skew_both=0.000339892, dimensionless_dL_x=0.00503909, dimensionless_dL_y=0.00113808, dZ_x_only=0.00464031, dZ_y_only=0.00012835, dq_x_only=0.000817922, dq_y_only=0.000122247`
+- `g1_coulomb_split: modes=5, x_nodes=4008, y_nodes=4584, local_angular_dL=0.00360734, ball_vs_split_dL=0.0840291, local_angular_dZ=2.3884e-05, ball_vs_split_dZ=0.00403443, local_angular_dJ_R=2.43695e-05, volume_x_nodes=4584, volume_y_nodes=6124, volume_dL=0.0114953, dimensionless_dL=0.00107495, refined_on_coarse_residual=0.000800367, volume_dZ=0.000699307, volume_probe_dq=0.000323344, min_L_split_eig=8.14599e-10`
+- `g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened singularity-split pilot; x/y cubatures, near-ray clipping and patch radius are compared, not yet converged. No 229-mode certificate.`
 - `g1_exact_exterior: outer_radius=0.52, skin_depth=0.503292, dirichlet_rel_dJ=0.0934458, transparent_log_derivative=-4.66172-1.60492j`
 - `g1_exact_exterior: outer_radius=0.85, skin_depth=0.503292, dirichlet_rel_dJ=0.0148812, transparent_log_derivative=-3.47714-1.78985j`
 - `g1_exact_exterior: outer_radius=1.3, skin_depth=0.503292, dirichlet_rel_dJ=0.00199346, transparent_log_derivative=-2.89742-1.88508j`
-- `g1_exterior_note: exact l=1 toroidal spherical-cavity MQS transparent boundary is not a general BFZI two-box DtN map.`
+- `g1_exterior_multipole: lmax=3, boundary_projection_error=6.4802e-16, l1_l2_tail_error=4.56147e-16, tail_ohmic_power_for_unit_trace=0.0470848`
+- `g1_exterior_note: multiple exact toroidal exterior harmonics and vector spherical-harmonic continuation now implemented; their DtN must still be coupled to interior BFZI J at a matching sphere with divergence compatibility. G1 infinite-domain FAIL remains.`
 
-Green L 独立奇异拆分当前仅在小试探空间运行；紧支 curl 层级仅证明构造/嵌套，尚未证明逼近收敛；解析透明边界只适用于球腔偶极的 l=1 扇区。
+Green L 当前仍为小空间原核积分试验，新增真实海水几何裁剪与分割半径对照；可选 J/q 仅为选取方向的嵌套实验；已实现均匀外海水的球面多极 DtN 和 Joule 尾场，但尚未耦合完整双盒求解。所有 G1 物理精度仍待独立验收。
 
 ## 收敛判定与诊断
 
