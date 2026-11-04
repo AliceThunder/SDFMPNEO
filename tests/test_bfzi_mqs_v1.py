@@ -346,7 +346,7 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
         writer.write(
             "  domain_step: 0.52->0.7 m, dZ=0.004, dq=0.01, "
             "dP=0.008, dJ_common=0.02, "
-            "dJ_ports_common=0.015\n"
+            "dJ_ports_common=0.015, domain_response_gate=FAIL\n"
         )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
@@ -357,6 +357,7 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     assert "rk_far_azimuth_4_vs_3" in console.getvalue()
     assert "domain_step: 0.52->0.7" in console.getvalue()
     assert "dJ_ports_common=0.015" in console.getvalue()
+    assert "domain_response_gate=FAIL" in console.getvalue()
 
 
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
