@@ -89,6 +89,31 @@ def main():
         flush=True,
     )
     for port, assembly in enumerate(scene.assemblies):
+        # The axis-aligned local box is convex. Bounding the entire
+        # continuous spiral by A0+beta and every return vertex by the
+        # enclosure half-extents proves their entire radius-r sweep
+        # remains inside the sealed box. This does NOT prove self-clearance.
+        half=np.asarray(assembly.enclosure.half_extents)
+        r=assembly.wire_radius
+        coil_xy_margin=(
+            min(half[:2])-assembly.coil.outer_half_size-assembly.coil.beta-r
+        )
+        coil_z_margin=half[2]-r
+        outer,inner=assembly.coil.endpoints()
+        return_vertices=np.vstack((
+            inner,np.asarray(assembly.return_waypoints),outer,
+        ))
+        route_wall_margin=float(
+            np.min(half-np.abs(return_vertices))-r
+        )
+        print(
+            f"p0_geometry: port={port},"
+            f"coil_xy_margin_m={coil_xy_margin:.7g},"
+            f"coil_z_margin_m={coil_z_margin:.7g},"
+            f"return_wall_margin_m={route_wall_margin:.7g},"
+            "finite_wire_self_clearance=not_certified",
+            flush=True,
+        )
         order_metrics = {}
         ref_c, ref_b = continuous_port_field(
             assembly, positions, corner_order=32,
