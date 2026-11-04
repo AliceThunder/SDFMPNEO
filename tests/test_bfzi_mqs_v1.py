@@ -101,6 +101,58 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
     )
 
 
+
+def test_g1_clipped_coulomb_polar_panels_resolve_near_wall_cap():
+    # Uniform current near a planar insulating wall has an independent
+    # analytic solid-angle integral, including a real Coulomb singularity.
+    # The angular break at cos(theta)=wall_distance/patch_radius matters.
+    from scipy.integrate import quad
+    from sdfmpneo_bfzi.green_coulomb import (
+        assemble_coulomb_split, _near_window,
+    )
+    from sdfmpneo_bfzi.source import MU0
+    distance = 0.02
+    radius = 0.06
+
+    def constant_current(points):
+        out = np.zeros((len(points), 1, 3))
+        out[:, 0, 0] = 1.0
+        return out
+
+    def wet_halfspace(point, dirs, cutoff):
+        z = float(point[2])
+        stop = np.where(
+            dirs[:, 2] < 0,
+            np.minimum(cutoff, z/np.maximum(-dirs[:, 2], 1e-30)),
+            cutoff,
+        )
+        return np.zeros((len(dirs), 1)), stop[:, None]
+
+    def solve(frame):
+        return assemble_coulomb_split(
+            np.array([[0.,0.,distance]]), np.ones(1),
+            np.array([[0.,0.,1.0]]), np.array([1e-40]),
+            constant_current, lambda points: np.ones(len(points)),
+            local_radius=radius, local_radial_order=4,
+            local_polar_order=6, local_azimuthal_order=8,
+            radial_segments=wet_halfspace, angular_frame=frame,
+        )[0, 0]
+
+    # For rho<=distance, all 4*pi steradians are wet. Beyond that,
+    # the wet solid angle is 2*pi*(1+distance/rho).
+    exact = (
+        quad(lambda r: 4*np.pi*r*_near_window(r/radius),
+             0, distance, epsabs=1e-12)[0]
+        +quad(lambda r: 2*np.pi*(r+distance)*_near_window(r/radius),
+              distance, radius, points=[radius/2], epsabs=1e-12)[0]
+    )*MU0/(4*np.pi)
+    uniform = solve(None)
+    panelled = solve(
+        lambda point, cutoff: (np.array([0.,0.,-1.]), distance/cutoff)
+    )
+    assert abs(panelled-exact)/exact < 1e-3
+    assert abs(panelled-exact) < abs(uniform-exact)/10
+
 def test_g1_compact_curl_and_exact_exterior():
     from sdfmpneo_bfzi.sea_basis import build_sea_basis
     from sdfmpneo_bfzi.exterior_dipole import ExteriorDipole
