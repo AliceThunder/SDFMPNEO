@@ -98,12 +98,22 @@ def main():
         trial,transform,x,wx,y,wy,
         local_polar_order=6,local_azimuthal_order=12,**kwargs,
     )
+    # More important than another local-angle tweak: independently
+    # refine BOTH physical x and y volume cubatures. Keep R/K,
+    # physical modes and the port forcing from the first rule.
+    x2,wx2 = quadrature(4,6,10)
+    y2,wy2 = quadrature(5,8,14)
+    lc=assemble_basis_coulomb_split(
+        trial,transform,x2,wx2,y2,wy2,
+        local_polar_order=6,local_azimuthal_order=12,**kwargs,
+    )
     w=source.omega
     def solve(l):
         u=np.linalg.solve(r+1j*w*l,-1j*w*k)
         return 1j*w*k.T @ u,u
     za,ua=solve(la)
     zb,ub=solve(lb)
+    zc,uc=solve(lc)
     zball,uball=solve(lball)
     # The common R-energy metric is meaningful only for this fixed
     # pilot space, not a bound on continuum current error.
@@ -111,6 +121,16 @@ def main():
     energy_delta = float(np.real(np.vdot(delta_u,r@delta_u)))
     energy_base = float(np.real(np.vdot(ua,r@ua)))
     dj_r = math.sqrt(max(energy_delta,0.0)/max(energy_base,1e-60))
+    test_currents = np.array([1.0+0.2j,-0.4+0.5j])
+    probe=np.array([[0.,0.,0.],[0.15,0.,0.],[0.,0.12,0.],[0.,0.,0.22]])
+    probe_modes=trial.evaluate(probe)
+    def probe_heat(u):
+        current=np.einsum(
+            "nmc,m->nc",probe_modes,u@test_currents,optimize=True,
+        )
+        return np.sum(np.abs(current)**2,axis=1)/(
+            2*scene.seawater.conductivity
+        )
     print(
         f"g1_coulomb_split: modes={trial.size}, x_nodes={len(x)}, "
         f"y_nodes={len(y)}, "
@@ -119,13 +139,17 @@ def main():
         f"local_angular_dZ={relative(zb,za):.6g}, "
         f"ball_vs_split_dZ={relative(zball,zb):.6g}, "
         f"local_angular_dJ_R={dj_r:.6g}, "
-        f"min_L_split_eig={np.linalg.eigvalsh(lb)[0]:.6g}",
+        f"volume_x_nodes={len(x2)}, volume_y_nodes={len(y2)}, "
+        f"volume_dL={relative(lc,lb):.6g}, "
+        f"volume_dZ={relative(zc,zb):.6g}, "
+        f"volume_probe_dq={relative(probe_heat(uc),probe_heat(ub)):.6g}, "
+        f"min_L_split_eig={np.linalg.eigvalsh(lc)[0]:.6g}",
         flush=True,
     )
     print(
         "g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened "
-        "singularity-split pilot; radial, outer cubature and full-space "
-        "convergence remain untested. No 229-mode certificate.",
+        "singularity-split pilot; both x/y volume cubatures and local "
+        "angles are compared, not yet converged. No 229-mode certificate.",
         flush=True,
     )
 
