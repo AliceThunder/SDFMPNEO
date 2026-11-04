@@ -1,7 +1,7 @@
 > **BFZI 研究分支｜最新进度（2026-11-04 UTC）：[📊 总体路线图 · P0 验收 · P1 当前关口](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
 > 本研究只针对 **BFZI 圆形／圆角方形单根连续螺旋、两独立绝缘封装、均匀非磁性导电海水与电磁热代理**，不是历史超椭圆线圈。**P0 已在限定的理想闭合双端口线源 demo 上通过 83 项本机测试**：84 探针默认 4 阶 C/B 相对误差 7.28e-5/4.27e-4；严格闭合物理折线 16/32/64 曲角面板的 B 误差约 3.90e-4/9.76e-5/2.44e-5，`div C` 约 1e-16。**不是全几何参数域有限线径无碰撞或铜邻近效应的认证。**  
-> **正在推进 P1：真实未软化 1/r Coulomb 磁能算子。** 上一轮用户本机 **85 passed** 的解析球基准测出旧 split 双轴加密仍有 **0.6145%** 真实磁能误差（原定目标 0.1%），P1-A FAIL。现按真实 Coulomb 恒等式建立具有独立几何标量势和一阶矩的 **常值／Taylor 余项奇异减除**；另增非线性、无散度、零球壁法向的解析 `r²(e×x)` 磁能真值。独立短程对照的非线性磁矩阵误差从仅减常值时约 **0.245%** 降至一阶减除约 **0.016%**（不是新 GitHub 本机日志）；真实双盒几何矩仍待独立认证。**新代码待本机复验；双盒 Green L、R/K、无限海水与神经教师仍 FAIL。**  
-> 本机下一命令：`python run.py --mode bfzi-p1-coulomb --with-tests`（独立日志上传至 `runs/p1/`，不使用 GitHub Actions）。[P0→P1 理论/停止条件](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 第 14 节](theory/sections/14_p1_exact_coulomb_sphere.tex) · [P0 83-pass 日志](docs/research/bfzi_uwpt_electrothermal/runs/p0/latest_summary.md) · [P1 85-pass、算子 FAIL 日志](docs/research/bfzi_uwpt_electrothermal/runs/p1/latest_summary.md)。
+> **正在推进 P1：真实未软化 1/r Coulomb 磁能算子。** 本机 `0863a41` **87 passed**：旧 split 解析球磁能误差仍为 **0.6145%**（FAIL），但保持原核的**一阶 Taylor 减除**在具有独立真值的非线性无散度球涡流上误差为 **0.01596%**，已通过预定 0.1% 球基准。**本轮转入真实双封装几何：**为外球减去两只独立 SE(3) 旋转绝缘盒的有限海水域，解析计算真实 `SΩ` 与 `MΩ`，使用盒面精确四角原函数，新增独立近面/棱/角二维表面积分对照和 1e-8 预定几何矩门槛。**这批新代码待本机运行；实际双盒电流 Coulomb L 的余项、自/邻项、无限海水与神经教师仍 FAIL。**  
+> 本机下一命令：`python run.py --mode bfzi-p1-coulomb --with-tests`（独立日志上传至 `runs/p1/`，不使用 GitHub Actions）。[P0→P1 理论/停止条件](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 第 14 节](theory/sections/14_p1_exact_coulomb_sphere.tex) · [P0 83-pass 日志](docs/research/bfzi_uwpt_electrothermal/runs/p0/latest_summary.md) · [P1 87-pass 球形新算子日志](docs/research/bfzi_uwpt_electrothermal/runs/p1/latest_summary.md)。
 
 # SDF-MPNEO vNext
 
