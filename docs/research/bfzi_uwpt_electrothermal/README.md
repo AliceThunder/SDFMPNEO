@@ -30,7 +30,21 @@ python run.py --mode bfzi-p0-source --with-tests
 python run.py --mode bfzi-p1-coulomb --with-tests
 ```
 
-**P1 原 1/r 解析球基准已在本机实测 FAIL：** 85 passed 只证明程序运行；原 `assemble_coulomb_split` 的 `base/x_only/y_only/both` 磁能矩阵相对解析真值误差为 **2.121%/1.556%/1.146%/0.6145%**，同时加密仍未达到原定 **0.1%**；改变局部分区半径后 L11 差 **0.4230%**。已实现精确局部球矩 `8πa²/7 W(x)` 与误差分解，进而实现保留真实 `1/r` 的全域常值＋**一阶 Taylor 奇异减除**：需要独立可信的几何标量势 `SΩ` 和几何一阶矩 `MΩ=∮|y-x| n_y dS`。为确保不只是把线性涡流的余项消成零，新增**非线性且无散度**的三模式 `W=r²(e×x)` 和解析矩阵真值 `16πμ0R¹¹/693 I₃`。独立短程球积分同样 480×756 节点下，该非线性磁能误差由仅减常值约 **0.245%** 降为一阶减除约 **0.016%**，但不是用户本机 GitHub 新日志。**真实两盒 `SΩ/MΩ` 尚未认证；P1 新代码待本机复验，P1-A/G1 仍 FAIL。** 命令及自动日志路径不变，正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
+**P1 的旧分区算法在解析球上 FAIL，新一阶 Taylor 算法已在本机 87 passed 的非线性解析球上 PASS（相对磁能误差 0.01596%，先定目标 0.1%）。** 以下保留旧算法失败的数据与最新求积修正的独立比较： 85 passed 只证明程序运行；原 `assemble_coulomb_split` 的 `base/x_only/y_only/both` 磁能矩阵相对解析真值误差为 **2.121%/1.556%/1.146%/0.6145%**，同时加密仍未达到原定 **0.1%**；改变局部分区半径后 L11 差 **0.4230%**。已实现精确局部球矩 `8πa²/7 W(x)` 与误差分解，进而实现保留真实 `1/r` 的全域常值＋**一阶 Taylor 奇异减除**：需要独立可信的几何标量势 `SΩ` 和几何一阶矩 `MΩ=∮|y-x| n_y dS`。为确保不只是把线性涡流的余项消成零，新增**非线性且无散度**的三模式 `W=r²(e×x)` 和解析矩阵真值 `16πμ0R¹¹/693 I₃`。独立短程球积分同样 480×756 节点下，该非线性磁能误差由仅减常值约 **0.245%** 降为一阶减除约 **0.016%**，但不是用户本机 GitHub 新日志。**真实两盒 `SΩ/MΩ` 尚未认证；P1 新代码待本机复验，P1-A/G1 仍 FAIL。** 命令及自动日志路径不变，正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
+
+## P1 最新第二关：双封装真实海水几何矩（2026-11-04）
+
+球形 Taylor 新算法已在本机 `0863a41` 的 **87 passed** 中实测：线性环流误差 3.58e-16、非线性无散度环流原核磁能误差 **1.596e-4**，已通过 0.1% 的该项解析球关口；旧 split 和仅减常值依然不合格。
+
+新代码 `sdfmpneo_bfzi/coulomb_geometry_moments.py` 严格计算**外球减去两只各自独立任意刚体旋转的长方体绝缘封装**的 Coulomb 标量几何势 `SΩ` 与一阶矩 `MΩ`；所有盒面均用 `∬face(1/r)` 和 `∬face r` 的**精确解析四角原函数**，不使用任何软化、uniform-ball 电流云、球几何势代替双盒或固定世界网格。新 `bfzi_p1_geometry.py` 同步提供实际近面、棱、角 2.5mm 海水探针的独立分片面 Gauss 验证，**提前固定 1e-8 的几何矩相对误差目标**，并增加独立三维盒 Gauss 与 SE(3) 协变测试。
+
+以下仍用同一命令，把 `p1_geom_box/p1_geom_wet/p1_geom_gate` 并入自动更新的 [P1 日志](runs/p1/latest_summary.md)：
+
+```powershell
+python run.py --mode bfzi-p1-coulomb --with-tests
+```
+
+**新双盒几何关尚待本机复验；真实双盒原核 L 的电流余项、自/邻积分及无限海水外域仍未认证，G1=FAIL。** 以 [P1 验收理论](P1_COULOMB_ANALYTIC_GATE.md) 和 [项目进度看板](PROJECT_PROGRESS.md) 为准。
 
 ## 阅读顺序
 
