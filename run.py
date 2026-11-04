@@ -31,7 +31,7 @@
     python run.py --mode bfzi-convergence --basis-ball-targeted # 默认精简终端输出、保存并推送最新日志
     python run.py --mode bfzi-convergence --basis-ball-targeted --with-tests # 同时运行 BFZI 测试并保存结果
     python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far --with-tests # 两种独立远场角度R/K对照，自动上传
-    python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far-refined --with-tests # 方位角2→3→4及独立径向R/K，自动上传
+    python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far-refined --with-tests # 当前三阶精细基准再比较4/5阶，径向独立检验
     python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # 终端也显示原始详细输出
     python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # 只写本地，不提交 Git
     python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # 207模态父空间误差上界与重要方向筛选
