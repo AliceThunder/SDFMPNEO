@@ -21,7 +21,7 @@ FIELDS = (
     "sea_power", "dR", "dK", "dK_dual", "dL", "dZ", "dImZ",
     "dJ_volume", "dJ_ports_volume", "dq", "max_probe_dq",
     "peak_scaled_max_dq", "normal_peak_scaled_dq",
-    "dJ_common", "dJ_ports_common",
+    "dJ_common", "dJ_ports_common", "domain_response_gate",
     "operator_gate", "response_gate", "combined_gate",
 )
 MATCH_FIELD = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=([^\s,]+)")
@@ -98,7 +98,8 @@ def _short(line: str) -> str | None:
         pair = rest.strip().split(" ",1)[0]
         return label+": "+pair+" "+", ".join(
             f"{k}={values[k]}" for k in
-            ("dZ","dJ_common","dJ_ports_common","dq","dP")
+            ("dZ","dJ_common","dJ_ports_common","dq","dP",
+             "domain_response_gate")
             if k in values
         )
     if ": modes=" in line and any(line.startswith(x) for x in (
@@ -237,15 +238,16 @@ def _summary(root, flags, started, ended, status, raw):
             )
         parts.extend([
             "",
-            "| 半径比较 | dZ | 共同海水区域 dJ | 双端口 dJ | 局部 dq | dP |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| 半径比较 | dZ | 共同海水区域 dJ | 双端口 dJ | 局部 dq | dP | 阶段响应门槛 |",
+            "|---|---:|---:|---:|---:|---:|---|",
         ])
         for label,d in domain_steps:
             parts.append(
                 f"| {label} | {d.get('dZ','—')} | "
                 f"{d.get('dJ_common','—')} | "
                 f"{d.get('dJ_ports_common','—')} | "
-                f"{d.get('dq','—')} | {d.get('dP','—')} |"
+                f"{d.get('dq','—')} | {d.get('dP','—')} | "
+                f"{d.get('domain_response_gate','—')} |"
             )
         parts.append(
             "\n共同海水区域指标是固定 0.52 m 球域中的加权采样差异；"
