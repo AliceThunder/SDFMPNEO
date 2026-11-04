@@ -359,6 +359,18 @@ def main(hierarchy=False):
             )
         )
         parts=(sphere_parts,shell_parts)
+        dual_discrepancy=all_dual-all_k
+        bad_mode,bad_port=np.unravel_index(
+            np.argmax(abs(dual_discrepancy)),dual_discrepancy.shape,
+        )
+        print(
+            f"g1_volume_k_entry: rule={name}, "
+            f"mode={bad_mode},port={bad_port}, "
+            f"primal_K={all_k[bad_mode,bad_port]:.6g}, "
+            f"dual_K={all_dual[bad_mode,bad_port]:.6g}, "
+            f"entry_gap_over_K_norm={abs(dual_discrepancy[bad_mode,bad_port])/max(np.linalg.norm(all_k),1e-30):.6g}",
+            flush=True,
+        )
         print(
             f"g1_volume_regions: rule={name}, "
             f"sphere_nodes={split},shell_nodes={len(points)-split}, "
