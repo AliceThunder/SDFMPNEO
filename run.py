@@ -14,6 +14,7 @@
     python run.py --mode bfzi-train --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 实验网络训练
     python run.py --mode bfzi-infer --model bfzi_neural.pt # 推理
     python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
+    python run.py --mode bfzi-p0-source --with-tests # P0：锁定物理源，解析直线 + 高阶角段 C/B 与线圈离散收敛（自动上传）
     python run.py --mode bfzi-g1-foundations --with-tests # G1：裁剪局部Green积分+层级curl构造+多极外域解析对照（自动上传）
     python run.py --mode bfzi-g1-foundations --g1-hierarchy # 可选昂贵的5→11→17层级J/q试验（尚非精度证书）
     python run.py --mode bfzi-g1-foundations --g1-source-panels # 可选昂贵的15万节点源坐标切向实验（默认跳过）
@@ -381,6 +382,16 @@ def main(argv=None):
                 from examples.bfzi_neural_demo import evaluate as neural_evaluate
                 neural_evaluate(args[index + 2:])
                 return 0
+            if mode == "bfzi-p0-source":
+                from examples.bfzi_p0_source import main as p0_source_main
+                from examples.bfzi_run_record import run_and_publish
+                return run_and_publish(
+                    p0_source_main,
+                    flags=args,
+                    verbose="--verbose-log" in args,
+                    publish="--no-publish-log" not in args,
+                    with_tests="--with-tests" in args,
+                )
             if mode == "bfzi-g1-foundations":
                 from examples.bfzi_g1_foundations import main as g1_main
                 from examples.bfzi_run_record import run_and_publish
