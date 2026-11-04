@@ -452,6 +452,18 @@ def build_bfzi_source(
 ):
     if not math.isfinite(float(frequency_hz)) or frequency_hz <= 0:
         raise ValueError("frequency must be positive and finite")
+    # The current free-space C/B and seawater Green kernels require
+    # uniform mu0. A magnetic wire/core needs interface magnetization
+    # coupling; merely changing the isolated-wire skin mu is not valid.
+    for assembly in scene.assemblies:
+        if not math.isclose(
+            assembly.material.relative_permeability, 1.0,
+            rel_tol=0.0, abs_tol=1e-12,
+        ):
+            raise ValueError(
+                "BFZI MQS-v1 requires nonmagnetic wire (mu_r=1); "
+                "magnetic conductor/core coupling is not implemented"
+            )
     lines = tuple(build_line_source(item, order) for item in scene.assemblies)
     return BFZISources(
         scene=scene,
