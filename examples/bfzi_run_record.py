@@ -37,7 +37,7 @@ def _fields(line: str):
 
 def _short(line: str) -> str | None:
     line = line.strip()
-    if line.startswith("g1_"):
+    if line.startswith(("g1_", "p0_")):
         return line
     if line.startswith(("Building enriched", "Refined R/K +", "Independent ")):
         return line
@@ -175,10 +175,13 @@ def _summary(root, flags, started, ended, status, raw):
     stages, comparisons, gates, domains, domain_steps = [], [], [], [], []
     domain_operators = []
     g1_pilot = []
+    p0_evidence = []
     for rawline in lines:
         line = rawline.strip()
         if line.startswith("g1_"):
             g1_pilot.append(line)
+        if line.startswith("p0_"):
+            p0_evidence.append(line)
         if ": modes=" in line:
             label, rest = line.split(":", 1)
             values = _fields(rest)
@@ -230,6 +233,16 @@ def _summary(root, flags, started, ended, status, raw):
         "- 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。",
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
     ]
+    if p0_evidence:
+        parts.extend([
+            "", "## P0 物理源：独立直线解析与曲线 Gauss 收敛（非电磁教师认证）", "",
+        ])
+        parts.extend(f"- `{line}`" for line in p0_evidence)
+        parts.append(
+            "\nP0 只检验已指定的线圈/回流源与磁准静态尺度；"
+            "线元 Gauss 闭合或 C/B curl 同源不足以证明全 Maxwell、"
+            "海水 R/K/L 或无限外域精度。"
+        )
     if g1_pilot:
         parts.extend([
             "", "## G1 三条基础路线的实验基准（尚非认证）", "",
@@ -324,7 +337,7 @@ def _summary(root, flags, started, ended, status, raw):
         )
     parts.extend(["", "## 收敛判定与诊断", ""])
     parts.extend(f"- `{line}`" for line in gates)
-    if not stages and not comparisons and not gates and not domains and not g1_pilot:
+    if not stages and not comparisons and not gates and not domains and not g1_pilot and not p0_evidence:
         parts.append("- 该运行没有可自动提取的嵌套指标；请看完整日志。")
     parts.extend([
         "",
@@ -384,12 +397,13 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
     with full_path.open("w", encoding="utf-8") as file:
         writer = _LogWriter(file, verbose)
         if with_tests:
-            print("[BFZI] 运行 3 组 BFZI pytest...", flush=True)
+            print("[BFZI] 运行 BFZI 专项 pytest（含 P0 源）...", flush=True)
             test = subprocess.run(
                 [sys.executable, "-m", "pytest",
                  "tests/test_bfzi_geometry_v1.py",
                  "tests/test_bfzi_mqs_v1.py",
-                 "tests/test_bfzi_neural_v1.py", "-q"],
+                 "tests/test_bfzi_neural_v1.py",
+                 "tests/test_bfzi_source_p0.py", "-q"],
                 cwd=root, capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
             )
