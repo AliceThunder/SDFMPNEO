@@ -139,6 +139,43 @@ def test_g1_compact_curl_and_exact_exterior():
     np.testing.assert_allclose(dipole.skin_depth,0.503292121,rtol=1e-6)
 
 
+
+def test_g1_exterior_spherical_multipoles_continue_divergence_free_tail():
+    from scipy.special import spherical_kn
+    from sdfmpneo_bfzi.exterior_dipole import ExteriorSphericalCurrent, ExteriorDipole
+    sphere = ExteriorSphericalCurrent(0.52, 200_000., 5.0, max_degree=3)
+    mu, phi, _ = sphere.angular_nodes()
+    sine = np.sqrt(1-mu**2)
+    tangent = np.column_stack((
+        -sine*np.sin(phi), sine*np.cos(phi), np.zeros(len(mu)),
+    ))
+    # Two independent toroidal harmonics, l=1 and l=2, both div J=0.
+    boundary = (1+0.4*mu)[:,None]*tangent
+    coefficients, reconstruction_error = sphere.project(boundary)
+    assert reconstruction_error < 1e-12
+    assert np.all(np.isfinite(sphere.log_derivatives()))
+    r = 0.85
+    g = sphere.gamma
+    expected = (
+        spherical_kn(1,g*r)/spherical_kn(1,g*sphere.radius)
+        + 0.4*mu*spherical_kn(2,g*r)/spherical_kn(2,g*sphere.radius)
+    )[:,None]*tangent
+    np.testing.assert_allclose(
+        sphere.evaluate(coefficients,r,mu,phi), expected,
+        rtol=1e-11, atol=1e-12,
+    )
+    # The l=1 modal DtN agrees exactly with the independent dipole solution.
+    dipole = ExteriorDipole(0.16, 200_000., 5.0)
+    for i,(l,m) in enumerate(sphere.modes):
+        if l == 1:
+            np.testing.assert_allclose(
+                sphere.log_derivatives()[i],
+                dipole.transparent_log_derivative(sphere.radius),
+                rtol=2e-13,
+            )
+    assert 0 < sphere.tail_ohmic_power(coefficients) < np.inf
+
+
 def test_port_source_closed_and_air_mutual():
     scene = scene_pair()
     source = build_bfzi_source(scene, 200_000., order=3)
