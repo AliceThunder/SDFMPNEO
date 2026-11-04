@@ -102,6 +102,19 @@ class BFZICoil:
             raise ValueError("outer size collapses before final turn ends")
         if self.corner_radius - self.alpha * self.pitch * self.turns <= 0:
             raise ValueError("corner radius collapses before final turn ends")
+        # The true BFZI support-function corner derivative is
+        # g_corner = winding * [rho(eta) -
+        #   2*winding*(1-alpha)*beta*(e_m dot t)] * t.
+        # On each corner winding*(e_m dot t) lies in [-1,1],
+        # hence rho_min>2*(1-alpha)*beta is a simple sufficient
+        # non-reversal condition for both clockwise and anticlockwise
+        # continuous spirals. rho>0 alone does NOT guarantee this.
+        min_rho = self.corner_radius - self.alpha * self.pitch * self.turns
+        if min_rho <= 2.0 * (1.0 - self.alpha) * self.beta:
+            raise ValueError(
+                "BFZI rounded corner tangent degenerates or reverses; "
+                "increase corner radius, reduce pitch or adjust alpha"
+            )
         straight_end = (
             self.outer_half_size - self.corner_radius
             - (1.0 - self.alpha) * self.pitch * self.turns
