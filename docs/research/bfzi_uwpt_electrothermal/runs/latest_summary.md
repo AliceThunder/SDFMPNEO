@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T08:20:46+00:00
-- 结束（UTC）：2026-11-04T08:22:13+00:00
-- 当时检出的代码提交：`3c89c38`
+- 开始（UTC）：2026-11-04T08:34:35+00:00
+- 结束（UTC）：2026-11-04T08:36:03+00:00
+- 当时检出的代码提交：`7f79df1`
 - 执行：`python run.py --mode bfzi-g1-foundations`
-- 同批 pytest：67 passed in 38.36s
+- 同批 pytest：69 passed in 38.44s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -16,6 +16,9 @@
 - `g1_volume_axis: rule=angular_only, x_nodes=4284,sphere_nodes=860, dR_vs_base=0.00103539, dK_vs_base=0.0328869, dK_dual=0.223777, dK_dual_vs_base=0.0767532`
 - `g1_volume_axis: rule=radial_geometry, x_nodes=4592,sphere_nodes=1168, dR_vs_base=0.000744726, dK_vs_base=0.00535857, dK_dual=0.167537, dK_dual_vs_base=0.0196853`
 - `g1_volume_axis: rule=angle_geometry_3, x_nodes=9439,sphere_nodes=6015, dR_vs_base=0.00163222, dK_vs_base=0.0225556, dK_dual=0.219931, dK_dual_vs_base=0.0628785`
+- `g1_volume_shell: rule=log_normal_2, x_nodes=4008,shell_nodes=3424, dR_vs_base=0.079353, dK_vs_base=0.00577429, dK_dual=0.184866, dK_dual_vs_base=0.00295144, dR_shell_only=0.0899451, dK_shell_only=0.0180177, dK_dual_shell_only=0.0197264`
+- `g1_volume_shell: rule=log_normal_4, x_nodes=7576,shell_nodes=6992, dR_vs_base=0.0893364, dK_vs_base=0.00564807, dK_dual=0.183848, dK_dual_vs_base=0.00158087, dR_shell_only=0.101261, dK_shell_only=0.0176238, dK_dual_shell_only=0.010566`
+- `g1_volume_shell: rule=log_normal_4_tangent, x_nodes=14680,shell_nodes=14096, dR_vs_base=0.0890175, dK_vs_base=0.00945682, dK_dual=0.0616959, dK_dual_vs_base=0.147664, dR_shell_only=0.1009, dK_shell_only=0.0295083, dK_dual_shell_only=0.986938`
 - `g1_volume_ray: rule=4x8x16, x_nodes=2304, dR_vs_base=0.235548, dR_vs_refined=0.246748, dK_vs_base=0.171713, dK_vs_refined=0.137588, dK_dual=0.150428, volume_rel_error=0.000977882`
 - `g1_volume_ray: rule=5x12x24, x_nodes=6480, dR_vs_base=0.174375, dR_vs_refined=0.184994, dK_vs_base=0.126416, dK_vs_refined=0.0906829, dK_dual=0.233559, volume_rel_error=0.000130881`
 - `g1_volume_k_entry: rule=base, mode=4,port=1, primal_K=1.92154e-08, dual_K=1.56278e-08, entry_gap_over_K_norm=0.131447`
