@@ -11,13 +11,13 @@
 
 ```powershell
 git pull --ff-only
-python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far-refined --with-tests
+python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --with-tests
 # 只保留本地，不推送：
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 # 如需看到全部原始标准输出：
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 ```
 
-**已经验证的自动上传：** 2026-11-03 用户 Windows 本地运行（代码基线 `e95a377`），`60 passed in 37.98s`，229 模态数值实验正常完成，最新摘要与完整日志已上传。最新代码基线 `980dfdb` 的 **229 模态球域 R/K 极角、方位角独立积分**已自动归档（60 passed）：极角 8→10 `response_gate=PASS`，方位角 2→3 因 `dq=0.00572717` 超过 0.005 门槛而 `response_gate=FAIL`。本轮新命令将检验**方位角 2→3、2→4、3→4，以及径向分片宽度 0.06→0.04 m**，但结果尚未生成。历史 229 Green L A/B 算子仍为 FAIL，不能仅凭 q 通过就宣称整个物理参考解收敛。
+**最近自动上传（2026-11-04 UTC，代码基线 `7982bfa`）：** `60 passed in 38.01s`；229 模态方位角 2→3 q 差异 0.5727% FAIL、**3→4 q 差异 0.0423% PASS**；径向分片 0.06→0.04m PASS。本轮代码将精细 R/K 角向阶数提升为 3，并提供**同一 229 模态电流族**外域 0.52、0.70、0.85m 对照，自动记录各半径 Z、q、海水功率，以及共同 0.52m 控制体积的组合电流与双端口 J 差异。**新外域实验尚待本机运行**；Green L 算子依然没有通过独立积分收敛验收。
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
