@@ -321,15 +321,18 @@ def main(hierarchy=False):
     # Artificial sphere/shell partition pieces have nonzero interface
     # fluxes individually, so their primal-vs-dual differences should
     # only be compared after adding both components.
-    for name,points,weights,split in (
-        ("base",x,wx,sphere_x),
-        ("ordinary_refined",x2,wx2,sphere_x2),
-        ("geometry",x_geom,wx_geom,sphere_geom),
+    for name,points,weights,split,all_r,all_k,all_dual in (
+        ("base",x,wx,sphere_x,r,k,k_dual),
+        ("ordinary_refined",x2,wx2,sphere_x2,r_x2,k_x2,k_dual_x2),
+        ("geometry",x_geom,wx_geom,sphere_geom,r_geom,k_geom,k_dual_geom),
     ):
-        parts=[]
-        for sl in (slice(None,split),slice(split,None)):
-            rr,kk,kd=volume_matrices(points[sl],weights[sl])
-            parts.append((rr,kk,kd))
+        sphere_parts=volume_matrices(points[:split],weights[:split])
+        shell_parts=tuple(
+            full-sph for full,sph in zip(
+                (all_r,all_k,all_dual),sphere_parts,
+            )
+        )
+        parts=(sphere_parts,shell_parts)
         print(
             f"g1_volume_regions: rule={name}, "
             f"sphere_nodes={split},shell_nodes={len(points)-split}, "
