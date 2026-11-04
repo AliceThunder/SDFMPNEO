@@ -15,7 +15,7 @@ def test_p1_ball_vortex_exact_analytic_potential_and_energy():
     x,w=ball_rule(radius,5,6,8)
     modes=vortex_modes(x)
     np.testing.assert_allclose(
-        np.einsum("nic,ic->ni",modes,x),
+        np.einsum("nmc,nc->nm",modes,x),
         0.0,rtol=0,atol=2e-16,
     )
     potential=vortex_green_potential(x,radius)
