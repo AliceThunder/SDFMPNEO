@@ -10,7 +10,9 @@ import numpy as np
 
 from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.source import LineSource, build_line_source, MU0
-from sdfmpneo_bfzi.source_reference import continuous_port_field
+from sdfmpneo_bfzi.source_reference import (
+    continuous_port_field, polygonal_port_field,
+)
 
 
 def probes_for_scene(scene):
@@ -100,6 +102,17 @@ def main():
             f"corner_24_to_32_dB={relative(ref_b24,ref_b):.6g}",
             flush=True,
         )
+        for panels in (16, 32, 64):
+            pc,pb,pdiv=polygonal_port_field(
+                assembly,positions,panels_per_corner=panels,
+            )
+            print(
+                f"p0_polygon: port={port},corner_panels={panels}, "
+                f"dC={relative(pc,ref_c):.6g}, "
+                f"dB={relative(pb,ref_b):.6g}, "
+                f"divC_scaled={0.1*np.linalg.norm(pdiv)/max(np.linalg.norm(pc),1e-30):.6g}",
+                flush=True,
+            )
         for order in (3,4,6,8,12):
             line = build_line_source(assembly, order=order)
             approx_c = line.potential_kernel(positions)
@@ -149,9 +162,10 @@ def main():
         "p0_note: C/B fields are checked against analytic straight lines "
         "+ independent high-order curved-corner Gauss, NOT against a "
         "full-wave/copper-proximity or infinite-seawater solution. "
-        "The 0.1pct source gate uses global vector norms; peak-scaled "
-        "point maxima and divC are separate diagnostics. Broader geometry "
-        "or finite-radius wire contact is not certified.",
+        "P0 polygon uses actual closed finite segments and analytic kernels: "
+        "its divC vanishes by telescoping but chord-shape error still needs "
+        "panel refinement. Neither source method certifies finite-radius wire "
+        "self-clearance, full Maxwell fields, or continuous seawater R/K/L.",
         flush=True,
     )
 
