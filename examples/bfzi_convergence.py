@@ -142,7 +142,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       edge_refinement: bool = False,
                       anisotropic_refinement: bool = False,
                       targeted_refinement: bool = False,
-                      domain_extension: bool = False):
+                      domain_extension: bool = False,
+                      domain_far: bool = False):
     """Nested Galerkin spaces and spatial holdouts on independent R/K and L.
 
     The experimental uniform-ball modal route includes nested 159-,
@@ -157,13 +158,21 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         raise ValueError("anisotropic refinement requires edge-refined parent")
     if targeted_refinement and not anisotropic_refinement:
         raise ValueError("targeted refinement requires 207-mode anisotropic parent")
-    if domain_extension and not (domain and ball_reference and targeted_refinement):
-        raise ValueError("domain extension requires targeted ball-reference domain")
+    if (domain_extension or domain_far) and not (
+        domain and ball_reference and targeted_refinement
+    ):
+        raise ValueError(
+            "outer-domain continuation requires targeted ball-reference domain"
+        )
+    if domain_extension and domain_far:
+        raise ValueError("choose either first or far outer-domain continuation")
     # Continue the already-measured 0.52→0.70→0.85 m sequence without
     # reassembling its first two expensive 229-mode Green operators.
     scene = build_demo_scene()
-    if domain_extension:
-        scene = replace(scene, outer_radius=0.85)
+    if domain_extension or domain_far:
+        scene = replace(
+            scene, outer_radius=1.05 if domain_far else 0.85,
+        )
     # Resolve the locally sharp curl-mode resistance and true source
     # coupling on a finer rule. The costly nonlocal L double integral uses
     # the earlier 5/8/12/3/4 cubature with the *same* trial functions
@@ -243,7 +252,8 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             # outer radius being solved, especially in extension mode.
             common_scene = build_demo_scene()
             radii = (
-                (0.85, 1.05, 1.30) if domain_extension
+                (1.05, 1.30, 1.60) if domain_far
+                else (0.85, 1.05, 1.30) if domain_extension
                 else (scene.outer_radius, 0.70, 0.85)
             )
             common_x, common_w = common_scene.box_shell_quadrature(
@@ -266,6 +276,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         else:
             radii = (0.52, 0.70, 0.85, 1.05, 1.30)
         previous = None
+        previous_operators = None
         for radius in radii:
             current_scene = (
                 scene if radius == scene.outer_radius
@@ -475,6 +486,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 common_drive if targeted_domain else None,
                 common_ports if targeted_domain else None,
             )
+            if targeted_domain:
+                previous_operators = (
+                    parent.transform, r, k_curl, parent.inductance,
+                )
         print(
             "Outer-domain screening uses independently refined R/K "
             "at every radius and reassembled physical ball L. "
@@ -2847,6 +2862,7 @@ def main(
     basis_ball_targeted: bool = False,
     basis_domain_ball: bool = False,
     basis_domain_extend: bool = False,
+    basis_domain_far: bool = False,
 ):
     if (basis_only or basis_verify or basis_green or basis_domain
             or basis_local or basis_angular or basis_geometry
@@ -2857,7 +2873,8 @@ def main(
             or basis_ball_check_rk or basis_ball_check_far
             or basis_ball_check_far_refined or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
-            or basis_ball_targeted or basis_domain_extend):
+            or basis_ball_targeted or basis_domain_extend
+            or basis_domain_far):
         return basis_convergence(
             verify=basis_verify, green=basis_green,
             domain=basis_domain or basis_domain_ball,
@@ -2888,6 +2905,7 @@ def main(
             anisotropic_refinement=basis_ball_aniso or basis_ball_targeted,
             targeted_refinement=basis_ball_targeted,
             domain_extension=basis_domain_extend,
+            domain_far=basis_domain_far,
         )
     scene = build_demo_scene()
     base = dict(
