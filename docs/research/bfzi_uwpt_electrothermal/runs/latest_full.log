@@ -1,17 +1,17 @@
 pytest:
 ............................................................             [100%]
-60 passed in 39.33s
+60 passed in 49.90s
 
 Building enriched 229-mode Galerkin operator... raw modes=229, kernel=uniform_ball; fine R/K/Joule cubature; independently coarse L
 
 Outer-domain sequence: full ball L plus refined R/K
-  fixed_domain_family: expected_modes=229, common_wet_nodes=6128, radii=(0.52, 0.7, 0.85)
-  radius=0.52 m, fine_RK_nodes=563728, Green_L=uniform_ball, modes=229, min_L_eig=2.7104e-11 H, sea_power=0.0012178112 W
-  weak_form_gap: dK=0.000355602, dZ=0.000129187, dq=3.26877e-05, dP=0.000212915
-  radius=0.7 m, fine_RK_nodes=625936, Green_L=uniform_ball, modes=229, min_L_eig=2.70417e-11 H, sea_power=0.0011871948 W
-  weak_form_gap: dK=0.000362122, dZ=0.000127995, dq=2.72551e-05, dP=0.000212092
-  domain_step: 0.52->0.7 m, dZ=0.0375088, dq=0.183645, dP=0.0251406, dJ_common=0.131712, dJ_ports_common=0.145801, domain_response_gate=FAIL
+  fixed_domain_family: expected_modes=229, common_wet_nodes=6128, near035_nodes=5792, radii=(0.85, 1.05, 1.3)
   radius=0.85 m, fine_RK_nodes=667408, Green_L=uniform_ball, modes=229, min_L_eig=2.70415e-11 H, sea_power=0.0011821263 W
-  weak_form_gap: dK=0.000363392, dZ=0.000127272, dq=2.5291e-05, dP=0.000211337
-  domain_step: 0.7->0.85 m, dZ=0.00648359, dq=0.0405572, dP=0.00426931, dJ_common=0.0192869, dJ_ports_common=0.0214407, domain_response_gate=FAIL
-Outer-domain screening uses independently refined R/K at every radius and reassembled physical ball L. For targeted tests, physical Gaussian directions stay fixed and dJ_common uses common 0.52 m wet sampling. The outer taper and magnetic cubature still vary with radius; there is no continuum-domain certificate.
+  weak_form_gap: dK=0.000363392, dZ=0.000127272, dq=0.000583718, dP=0.000211337
+  radius=1.05 m, fine_RK_nodes=750352, Green_L=uniform_ball, modes=229, min_L_eig=2.7036e-11 H, sea_power=0.0011842132 W
+  weak_form_gap: dK=0.000362924, dZ=0.000126372, dq=0.000582734, dP=0.000210279
+  domain_step: 0.85->1.05 m, dZ=0.00369954, dq=0.00208308, dP=0.00176539, dJ_common=0.00992417, dJ_ports_common=0.0110302, dJ_near035=0.00835574, dJ_ports_near035=0.0093124, dq_near035=0.0101324, domain_response_gate=FAIL
+  radius=1.3 m, fine_RK_nodes=833296, Green_L=uniform_ball, modes=229, min_L_eig=2.70435e-11 H, sea_power=0.0011886402 W
+  weak_form_gap: dK=0.00036082, dZ=0.00012637, dq=0.00058151, dP=0.000210167
+  domain_step: 1.05->1.3 m, dZ=0.00950606, dq=0.00594089, dP=0.00373841, dJ_common=0.0229696, dJ_ports_common=0.0255412, dJ_near035=0.013923, dJ_ports_near035=0.0155186, dq_near035=0.00503747, domain_response_gate=FAIL
+Outer-domain screening uses independently refined R/K at every radius and reassembled physical ball L. For targeted tests, physical Gaussian directions stay fixed and J_common samples the same 0.52m sea. J_near035 and q_near035 only sample the fixed physical 0.35m core to separate device-near change from artificial boundary change. L is reassembled at each radius and not Green-certified.
