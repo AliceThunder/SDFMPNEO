@@ -21,6 +21,7 @@ FIELDS = (
     "sea_power", "dR", "dK", "dK_dual", "dL", "dZ", "dImZ",
     "dJ_volume", "dJ_ports_volume", "dq", "max_probe_dq",
     "peak_scaled_max_dq", "normal_peak_scaled_dq",
+    "dJ_common", "dJ_ports_common",
     "operator_gate", "response_gate", "combined_gate",
 )
 MATCH_FIELD = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=([^\s,]+)")
@@ -50,7 +51,10 @@ def _short(line: str) -> str | None:
                         "most_influential_for_normal_Joule:")):
         return line
     if line.startswith(("ball_", "rk_normal_", "rk_far_")) and (
-        "_vs_A:" in line or line.startswith("rk_far_azimuth_4_vs_3:")
+        "_vs_A:" in line or (
+            line.startswith("rk_far_azimuth_")
+            and re.search(r"_vs_\d+:$",line.split(":",1)[0]+":")
+        )
     ):
         label, rest = line.split(":", 1)
         values = _fields(rest)
@@ -84,6 +88,19 @@ def _short(line: str) -> str | None:
         )
     if line.startswith("global_scale_condition_"):
         return line
+    if line.startswith("fixed_domain_family:"):
+        return line
+    if line.startswith("radius="):
+        return line
+    if line.startswith("domain_step:"):
+        label, rest = line.split(":",1)
+        values = _fields(rest)
+        pair = rest.strip().split(" ",1)[0]
+        return label+": "+pair+" "+", ".join(
+            f"{k}={values[k]}" for k in
+            ("dZ","dJ_common","dJ_ports_common","dq","dP")
+            if k in values
+        )
     if ": modes=" in line and any(line.startswith(x) for x in (
         "anisotropic_face_curls:", "global_short_scale:",
         "global_multiscale:", "corner_source_curls:",
@@ -138,7 +155,7 @@ def _git(root, *args):
 
 def _summary(root, flags, started, ended, status, raw):
     lines = raw.splitlines()
-    stages, comparisons, gates = [], [], []
+    stages, comparisons, gates, domains, domain_steps = [], [], [], [], []
     for rawline in lines:
         line = rawline.strip()
         if ": modes=" in line:
@@ -149,8 +166,14 @@ def _summary(root, flags, started, ended, status, raw):
         if "_to_" in line and ": dZ=" in line:
             label, rest = line.split(":", 1)
             comparisons.append((label, _fields(rest)))
+        if line.startswith("radius=") and "sea_power=" in line:
+            domains.append(_fields(line))
+        if line.startswith("domain_step:"):
+            domain_steps.append((line.split(":",1)[1].strip().split(" ",1)[0],
+                                 _fields(line)))
         if ("_vs_A:" in line
-                or line.startswith("rk_far_azimuth_4_vs_3:")
+                or (line.startswith("rk_far_azimuth_")
+                    and re.search(r"_vs_\d+:",line))
                 or line.startswith((
                     "adaptive_screen:", "global_scale_condition_",
                 ))):
@@ -199,9 +222,36 @@ def _summary(root, flags, started, ended, status, raw):
             f"{values.get('dJ_ports_volume','—')} | "
             f"{values.get('dq','—')} |"
         )
+    if domains:
+        parts.extend([
+            "", "## 有限外域：相同物理方向、不同人工边界", "",
+            "| 外域半径 (m) | 模态数 | R/K 节点 | 海水功率 (W) |",
+            "|---:|---:|---:|---:|",
+        ])
+        for d in domains:
+            parts.append(
+                f"| {d.get('radius','—')} | {d.get('modes','—')} | "
+                f"{d.get('fine_RK_nodes','—')} | {d.get('sea_power','—')} |"
+            )
+        parts.extend([
+            "",
+            "| 半径比较 | dZ | 共同海水区域 dJ | 双端口 dJ | 局部 dq | dP |",
+            "|---|---:|---:|---:|---:|---:|",
+        ])
+        for label,d in domain_steps:
+            parts.append(
+                f"| {label} | {d.get('dZ','—')} | "
+                f"{d.get('dJ_common','—')} | "
+                f"{d.get('dJ_ports_common','—')} | "
+                f"{d.get('dq','—')} | {d.get('dP','—')} |"
+            )
+        parts.append(
+            "\n共同海水区域指标是固定 0.52 m 球域中的加权采样差异；"
+            "各半径仍独立重组磁 L，不能代替无穷海水域的收敛证明。"
+        )
     parts.extend(["", "## 收敛判定与诊断", ""])
     parts.extend(f"- `{line}`" for line in gates)
-    if not stages and not comparisons and not gates:
+    if not stages and not comparisons and not gates and not domains:
         parts.append("- 该运行没有可自动提取的嵌套指标；请看完整日志。")
     parts.extend([
         "",
