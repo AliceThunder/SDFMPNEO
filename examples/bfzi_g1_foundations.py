@@ -168,11 +168,12 @@ def main(hierarchy=False):
     )
     transform = np.eye(trial.size)
     def quadrature(radial, polar, azimuth, **options):
+        settings=dict(shell_normal_order=2,shell_tangential_order=2)
+        settings.update(options)
         return scene.box_shell_quadrature(
             radial,polar,azimuth,
             wall_scale=trial.wall_scale,outer_taper_width=trial.outer_taper_width,
-            shell_normal_order=2,shell_tangential_order=2,
-            **options,
+            **settings,
         )
     x,wx,sphere_x = quadrature(3,5,8,return_sphere_count=True)
     y,wy = quadrature(4,6,10)
@@ -314,6 +315,41 @@ def main(hierarchy=False):
             f"dK_vs_base={relative(kk,k):.6g}, "
             f"dK_dual={relative(kd,kk):.6g}, "
             f"dK_dual_vs_base={relative(kd,k_dual):.6g}",
+            flush=True,
+        )
+
+    # Actual near-wall curl modes include derivatives of the envelope
+    # d/(d+wall_scale). A normal Gauss rule uniform in physical distance
+    # may miss its thin layer; a log(1+d/wall_scale) rule integrates on
+    # the SAME slabs with a positive exact Jacobian. Compare and refine
+    # the shell in isolation, holding every spherical node unchanged.
+    for label,options in (
+        ("log_normal_2",dict(shell_normal_mapping="log")),
+        ("log_normal_4",dict(
+            shell_normal_mapping="log",shell_normal_order=4,
+        )),
+        ("log_normal_4_tangent",dict(
+            shell_normal_mapping="log",shell_normal_order=4,
+            shell_tangential_max_panel_width=0.05,
+        )),
+    ):
+        xs,ws,sphere_s=quadrature(
+            3,5,8,return_sphere_count=True,**options,
+        )
+        if not (
+            np.array_equal(x[:sphere_x],xs[:sphere_s])
+            and np.array_equal(wx[:sphere_x],ws[:sphere_s])
+        ):
+            raise RuntimeError("shell-only refinement changed sphere quadrature")
+        rs,ks,kds=volume_matrices(xs,ws)
+        print(
+            f"g1_volume_shell: rule={label}, "
+            f"x_nodes={len(xs)},shell_nodes={len(xs)-sphere_s}, "
+            f"dR_vs_base={relative(rs,r):.6g}, "
+            f"dK_vs_base={relative(ks,k):.6g}, "
+            f"dK_dual={relative(kds,ks):.6g}, "
+            f"dK_dual_vs_base={relative(kds,k_dual):.6g}, "
+            f"dR_shell_only={relative(rs-r+volume_matrices(x[:sphere_x],wx[:sphere_x])[0],volume_matrices(x[sphere_x:],wx[sphere_x:])[0]):.6g}",
             flush=True,
         )
 
