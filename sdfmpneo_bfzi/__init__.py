@@ -9,6 +9,8 @@ from .scene import BfziScene, BFZIAssembly, InsulatingBox, Seawater
 from .source import BFZISources, LineSource, build_bfzi_source
 from .sea_basis import SeaCurrentBasis, build_sea_basis
 from .sea_reference import SeaMQSConfig, SeawaterResponse, solve_seawater_reference
+from .green_coulomb import assemble_coulomb_split, assemble_basis_coulomb_split
+from .exterior_dipole import ExteriorDipole
 from .sea_rom import compress_seawater_response, restrict_seawater_response
 from .sea_snapshot import BFZISnapshotROM
 from .sea_dataset import (
@@ -25,6 +27,8 @@ __all__ = [
     "InsulatingBox", "Seawater", "BFZISources", "LineSource",
     "build_bfzi_source", "SeaCurrentBasis", "build_sea_basis",
     "SeaMQSConfig", "SeawaterResponse", "solve_seawater_reference",
+    "assemble_coulomb_split", "assemble_basis_coulomb_split",
+    "ExteriorDipole",
     "compress_seawater_response", "restrict_seawater_response",
     "BFZISnapshotROM",
     "BFZIResponseLabel", "geometry_features",
