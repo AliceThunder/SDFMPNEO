@@ -94,18 +94,33 @@ def main():
         trial,transform,x,wx,y,wy,
         local_polar_order=4,local_azimuthal_order=8,**kwargs,
     )
-    lb=assemble_basis_coulomb_split(
+    lb,skew_base=assemble_basis_coulomb_split(
         trial,transform,x,wx,y,wy,
-        local_polar_order=6,local_azimuthal_order=12,**kwargs,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
     )
     # More important than another local-angle tweak: independently
     # refine BOTH physical x and y volume cubatures. Keep R/K,
     # physical modes and the port forcing from the first rule.
     x2,wx2 = quadrature(4,6,10)
     y2,wy2 = quadrature(5,8,14)
-    lc=assemble_basis_coulomb_split(
+    # Factorial 2x2 x/y volume cubature: isolate each integration axis.
+    # This answers whether the 2.98% L change in the last log came
+    # primarily from x, from y or from their coupled quadrature aliasing.
+    lx,skew_x=assemble_basis_coulomb_split(
+        trial,transform,x2,wx2,y,wy,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
+    )
+    ly,skew_y=assemble_basis_coulomb_split(
+        trial,transform,x,wx,y2,wy2,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
+    )
+    lc,skew_refined=assemble_basis_coulomb_split(
         trial,transform,x2,wx2,y2,wy2,
-        local_polar_order=6,local_azimuthal_order=12,**kwargs,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
     )
     w=source.omega
     def solve(l):
@@ -114,6 +129,8 @@ def main():
     za,ua=solve(la)
     zb,ub=solve(lb)
     zc,uc=solve(lc)
+    zx,ux=solve(lx)
+    zy,uy=solve(ly)
     zball,uball=solve(lball)
     # The common R-energy metric is meaningful only for this fixed
     # pilot space, not a bound on continuum current error.
@@ -127,6 +144,15 @@ def main():
     invsqrt = (eigenvectors/np.sqrt(eigenvalues))@eigenvectors.T
     weighted_delta = w*invsqrt@(lc-lb)@invsqrt
     dynamic_dL = float(np.linalg.norm(weighted_delta,ord=2))
+    dynamic_x = float(np.linalg.norm(
+        w*invsqrt@(lx-lb)@invsqrt,ord=2,
+    ))
+    dynamic_y = float(np.linalg.norm(
+        w*invsqrt@(ly-lb)@invsqrt,ord=2,
+    ))
+    nonadditive = relative(
+        lc-(lx+ly-lb),lb,
+    )
     refined_residual = (
         (r+1j*w*lc)@ub+1j*w*k
     )
@@ -145,6 +171,24 @@ def main():
         return np.sum(np.abs(current)**2,axis=1)/(
             2*scene.seawater.conductivity
         )
+    print(
+        f"g1_coulomb_axes: modes={trial.size}, "
+        f"dL_x_only={relative(lx,lb):.6g}, "
+        f"dL_y_only={relative(ly,lb):.6g}, "
+        f"dL_both={relative(lc,lb):.6g}, "
+        f"nonadditive_dL={nonadditive:.6g}, "
+        f"raw_skew_base={skew_base:.6g}, "
+        f"raw_skew_x_only={skew_x:.6g}, "
+        f"raw_skew_y_only={skew_y:.6g}, "
+        f"raw_skew_both={skew_refined:.6g}, "
+        f"dimensionless_dL_x={dynamic_x:.6g}, "
+        f"dimensionless_dL_y={dynamic_y:.6g}, "
+        f"dZ_x_only={relative(zx,zb):.6g}, "
+        f"dZ_y_only={relative(zy,zb):.6g}, "
+        f"dq_x_only={relative(probe_heat(ux),probe_heat(ub)):.6g}, "
+        f"dq_y_only={relative(probe_heat(uy),probe_heat(ub)):.6g}",
+        flush=True,
+    )
     print(
         f"g1_coulomb_split: modes={trial.size}, x_nodes={len(x)}, "
         f"y_nodes={len(y)}, "
