@@ -37,6 +37,9 @@ class SeaMQSConfig:
     # Physical half-face composite Gauss panel cap (meters).
     # Optional R/K/Joule refinement, independent of Green L.
     shell_tangential_max_panel_width: float | None = None
+    # Optional wall-distance-normal log chart, resolves the d/(d+scale)
+    # gradient; linear preserves the previous quadrature by default.
+    shell_normal_mapping: str = "linear"
     # Stokes/integration-by-parts dual source-coupling form avoids
     # differentiating the sharp box-wall curl modes inside K integrals.
     # Historical current.potential form remains the default.
@@ -82,6 +85,8 @@ class SeaMQSConfig:
             raise ValueError(
                 "shell_tangential_max_panel_width must be finite and positive"
             )
+        if self.shell_normal_mapping not in ("linear", "log"):
+            raise ValueError("shell_normal_mapping must be 'linear' or 'log'")
         if self.coupling_form not in ("current_potential", "curl_dual"):
             raise ValueError(
                 "coupling_form must be 'current_potential' or 'curl_dual'"
@@ -1184,6 +1189,7 @@ def solve_seawater_reference(
             shell_normal_order=cfg.shell_normal_order,
             shell_tangential_order=cfg.shell_tangential_order,
             shell_tangential_max_panel_width=cfg.shell_tangential_max_panel_width,
+            shell_normal_mapping=cfg.shell_normal_mapping,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
             radial_geometry_cuts=cfg.radial_geometry_cuts,
@@ -1234,6 +1240,7 @@ def solve_seawater_reference(
             shell_width_factor=cfg.shell_width_factor,
             shell_normal_order=normal,
             shell_tangential_order=tangential,
+            shell_normal_mapping=cfg.shell_normal_mapping,
             outer_taper_width=taper_width,
             max_radial_panel_width=cfg.max_radial_panel_width,
             # The independent five-order L rule must NOT implicitly
