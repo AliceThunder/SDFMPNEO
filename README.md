@@ -1,5 +1,5 @@
 > **BFZI 研究分支｜当前研发进度（2026-11-03）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把历史 vNext 的超椭圆线圈算进本项目。当前已实现物理与神经代理原型，**当前 229 模态空间参考解仍未认证**，正在开展收敛与模态诊断。最新 BFZI 专项本地实测为 **60 passed（代码基线 `980dfdb`，2026-11-04 UTC）**，本机自动上传 GitHub 已验证：[最新数值摘要](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)。207→210（0.75× 全局尺度）的全域 J 变化 **89.21%**；210→213（2.4×）再变化 **20.10%**。229 模态 Green L A/B 算子 FAIL、受迫响应 PASS；229 模态球域 R/K 极角 8→10 **PASS**、方位角 2→3 因 `dq=0.5727%` 超出 0.5% 门槛而 **FAIL**。本轮新代码增加方位角 **2→3→4** 和径向分片 0.06→0.04m 的进一步独立验证，**待运行**；229 模态仍不是可信教师。收敛命令默认精简终端输出，并自动将 [完整日志和摘要](docs/research/bfzi_uwpt_electrothermal/runs/README.md) 提交/推送 GitHub。每轮实质性实现/数值验收应同步更新上述看板；禁止 GitHub Actions。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
+> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、任意合法静态位姿的绝缘封装 + 海水电磁热代理**；不把旧 vNext 超椭圆线圈算进本项目。最新本机数值日志（`7982bfa`，2026-11-04 UTC）：**60 passed**；固定 229 模态时精细 R/K 方位角 **3→4 的 q 差异仅 0.0423%（PASS）**、径向 0.06→0.04m PASS；之前 2→3 的 q 比较仍 FAIL，表明二阶偏粗。本轮已将 BFZI 细 R/K 主计算升到三阶，并修正外域试验在新半径退回小电流基的问题：下一步使用同一套 **229 物理模态**检查外径 0.52/0.70/0.85m 的 Z/q/共同海水域 J，**尚待本机实测**。229 磁 Green L 算子仍 FAIL，G1 仍阻塞，不能生成正式教师标签。最新证据和全部历史见 [进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)、[自动上传日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)。默认终端精简输出，执行后直接使用本地 Git 推送日志；**不使用 GitHub Actions**。参见 [代码入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) 和 [理论](theory/main.tex)。
 
 # SDF-MPNEO vNext
 
@@ -52,7 +52,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 1
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
 python run.py --mode bfzi-convergence --basis-ball-targeted # completed 207→210→213→229: global J changed 89.21% then 20.10%
-python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far-refined --with-tests # next: azimuth 2/3/4 and radial 0.06/0.04m R/K, auto-pushed
+python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --with-tests # next: same 229 physical modes at 0.52/0.70/0.85m, common-water J, auto-pushed
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # run and log locally without Git push
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # optional full console output
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
