@@ -4,6 +4,7 @@ import numpy as np
 from examples.bfzi_p1_coulomb import (
     ball_rule, vortex_modes, vortex_green_potential,
     exact_vortex_green, trial, diagnose_original_split,
+    taylor_subtraction_diagnostics, cubic_vortex_modes,
 )
 from sdfmpneo_bfzi.source import MU0
 
@@ -68,3 +69,21 @@ def test_p1_exact_local_ball_moment_and_global_subtraction_operator():
         diagnostic["global_constant_subtraction_rel"]
         < diagnostic["far_y_rel"]
     )
+
+
+def test_nonaffine_solenoidal_cubic_vortex_uses_real_residual_kernel():
+    # W=r²(e_i cross x) is nonaffine, div-free, zero sphere-normal.
+    # Unlike affine W, its Taylor-subtracted residual is NOT zero.
+    xyz=np.array([[0.25,-0.1,0.3],[0.4,0.12,-0.21]])
+    modes=cubic_vortex_modes(xyz)
+    np.testing.assert_allclose(
+        np.einsum("nmc,nc->nm",modes,xyz),
+        0.0,rtol=0,atol=1e-15,
+    )
+    metrics=taylor_subtraction_diagnostics(
+        1.0,(5,8,12),(6,9,14),
+    )
+    assert metrics["linear_affine_rel"]<1e-12
+    assert metrics["cubic_outer_exact_rel"]<1e-3
+    assert metrics["cubic_affine_rel"]<1e-3
+    assert metrics["cubic_const_rel"]>metrics["cubic_affine_rel"]
