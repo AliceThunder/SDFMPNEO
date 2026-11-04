@@ -73,6 +73,91 @@ def vortex_green_potential(points, radius:float):
     )
 
 
+def vortex_gradient(points):
+    """DW[n,i,component,coordinate] for W_i=e_i cross x."""
+    points=np.asarray(points,float).reshape(-1,3)
+    axes=np.eye(3)
+    grad=np.cross(axes[:,None,:],axes[None,:,:]).transpose(0,2,1)
+    return np.broadcast_to(grad[None,:,:,:],(len(points),3,3,3))
+
+
+def cubic_vortex_modes(points):
+    """Nonaffine physical current W_i=|x|^2 (e_i cross x)."""
+    x=np.asarray(points,float).reshape(-1,3)
+    return np.einsum(
+        "n,nmc->nmc",np.einsum("nc,nc->n",x,x),vortex_modes(x),
+    )
+
+
+def cubic_vortex_gradient(points):
+    """Gradient of cubic divergence-free vortex modes."""
+    x=np.asarray(points,float).reshape(-1,3)
+    radius2=np.einsum("nc,nc->n",x,x)
+    return (
+        2*vortex_modes(x)[:,:,:,None]*x[:,None,None,:]
+        +radius2[:,None,None,None]*vortex_gradient(x)
+    )
+
+
+def cubic_vortex_green_potential(points,radius):
+    """Exact original 1/r Newton potential of cubic vortex on ball."""
+    x=np.asarray(points,float)
+    r2=np.einsum("nc,nc->n",x,x)
+    return (
+        (math.pi*radius**4/3-math.pi*r2*r2/7)
+        [:,None,None]*vortex_modes(x)
+    )
+
+
+def exact_cubic_vortex_green(radius):
+    """Exact original 1/r Gram for W_i=|x|²(e_i cross x)."""
+    return (16*math.pi*MU0/693)*radius**11*np.eye(3)
+
+
+def ball_first_moment(points,radius):
+    """Exact ∫_{ball} (y-x)/|x-y| dy for interior x."""
+    x=np.asarray(points,float)
+    r2=np.einsum("nc,nc->n",x,x)
+    return (4*math.pi/15)*(r2-5*radius**2)[:,None]*x
+
+
+def taylor_subtraction_diagnostics(radius,x_rule,y_rule):
+    """Nonaffine analytic-vortex check: genuine residual integration remains."""
+    x,wx=ball_rule(radius,*x_rule)
+    y,wy=ball_rule(radius,*y_rule)
+    scalar=lambda p:2*math.pi*(
+        radius**2-np.einsum("nc,nc->n",p,p)/3
+    )
+    first=lambda p:ball_first_moment(p,radius)
+    lin=assemble_coulomb_subtracted(
+        x,wx,y,wy,vortex_modes,scalar,
+        gradient=vortex_gradient,first_moment=first,
+    )
+    cubic_constant=assemble_coulomb_subtracted(
+        x,wx,y,wy,cubic_vortex_modes,scalar,
+    )
+    cubic_affine=assemble_coulomb_subtracted(
+        x,wx,y,wy,cubic_vortex_modes,scalar,
+        gradient=cubic_vortex_gradient,first_moment=first,
+    )
+    exact_linear=exact_vortex_green(radius)
+    exact_cubic=exact_cubic_vortex_green(radius)
+    cubic_exact_x=MU0/(4*math.pi)*np.einsum(
+        "n,nmc,nkc->mk",
+        wx,cubic_vortex_modes(x),
+        cubic_vortex_green_potential(x,radius),optimize=True,
+    )
+    relative=lambda got,expected:float(
+        np.linalg.norm(got-expected)/np.linalg.norm(expected)
+    )
+    return dict(
+        linear_affine_rel=relative(lin,exact_linear),
+        cubic_const_rel=relative(cubic_constant,exact_cubic),
+        cubic_affine_rel=relative(cubic_affine,exact_cubic),
+        cubic_outer_exact_rel=relative(cubic_exact_x,exact_cubic),
+    )
+
+
 def diagnose_original_split(
     radius, x_rule, y_rule, local_radius, *,
     original_l11=None,
@@ -236,6 +321,19 @@ def main():
             f"diag_rel={z['diag_error']:.7g}",
             flush=True,
         )
+    taylor=taylor_subtraction_diagnostics(radius,x1,y1)
+    print(
+        f"p1_taylor: x_nodes={x1[0]*x1[1]*x1[2]},"
+        f"y_nodes={y1[0]*y1[1]*y1[2]},"
+        f"linear_affine_rel={taylor['linear_affine_rel']:.7g},"
+        f"cubic_outer_exact_rel={taylor['cubic_outer_exact_rel']:.7g},"
+        f"cubic_const_rel={taylor['cubic_const_rel']:.7g},"
+        f"cubic_affine_rel={taylor['cubic_affine_rel']:.7g},"
+        f"cubic_affine_pass_0p1pct={taylor['cubic_affine_rel']<0.001},"
+        "linear_exact_residual_by_construction=True,"
+        "cubic_source_nonaffine=True",
+        flush=True,
+    )
     print(
         f"p1_sub_gate: target_rel=0.001,"
         f"global_constant_subtraction_frob_pass="
