@@ -358,6 +358,8 @@ def main():
         "scope=exact_ball_only",
         flush=True,
     )
+    from examples.bfzi_p1_geometry import main as p1_geometry_main
+    p1_geometry_main()
     print(
         "p1_note: p1_decomp splits x-integration, exactly integrated "
         "local spherical C2 kernel and y-far cubature; the independent "
