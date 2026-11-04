@@ -548,8 +548,9 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         print(
             "Outer-domain screening uses independently refined R/K "
             "at every radius and reassembled physical ball L. "
-            "For targeted tests, physical Gaussian directions stay fixed "
-            "and J_common samples the same 0.52m sea. J_near035 and "
+            "For targeted tests, Gaussian centers/widths/directions stay "
+            "fixed, but the outer cutoff changes the actual basis functions. "
+            "J_common samples the same 0.52m sea. J_near035 and "
             "q_near035 only sample the fixed physical 0.35m core to "
             "separate device-near change from artificial boundary change. "
             "L is reassembled at each radius and not Green-certified.",
