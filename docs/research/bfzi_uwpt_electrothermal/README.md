@@ -8,14 +8,27 @@
 
 正式多文件理论请读 [G1 文献、奇异积分与重新验收 TeX](../../../theory/sections/12_g1_numerical_foundations_literature.tex)，已由 [theory/main.tex](../../../theory/main.tex) 纳入主稿并在 [references.bib](../../../theory/references.bib) 增补 9 篇已核对 DOI 的文献。2022 年 Passarotto--Pitassi--Specogna 的涡流体积分基础论文对电感双积分的奇异自项以及内外积分分离造成的不稳定有直接分析，优先于继续添加采样规则。**这一轮是理论/文献复核，未宣称已经新完成代码求解或物理收敛；G1 仍 FAIL。** 以现有 70 passed 本机实测和未运行的后续 QMC 实验为真实进度边界。
 
+## 正在执行 P0：锁定物理与闭合 BFZI 源（2026-11-04）
+
+第一步已形成 [P0 物理问题／源项验收契约](P0_PHYSICS_SOURCE_CONTRACT.md)，正式 LaTeX 见 [第 13 节](../../../theory/sections/13_p0_physical_source_contract.tex)。它冻结圆形—圆角方形连续线圈、两独立绝缘封装、完整定向回流、均匀线性非磁性海水、MQS 峰值相量与人工外球假设；**当前只批准 source-only 复核，不批准新的海水 R/K/L 精度声明或正式神经教师。**
+
+新增 `source_reference.py`：真实直边和整条回流用有限直导线解析 C/B，真实曲角用独立高阶 Gauss，对照原来 `LineSource` 的阶次；并新增显式非磁性导线校验。运行：
+
+```powershell
+python run.py --mode bfzi-p0-source --with-tests
+```
+
+**P0 日志**将自动提交至 [`runs/p0/`](runs/p0/)，不覆盖此前 [G1 日志](runs/latest_summary.md)；新代码尚待本机执行。P0 通过其预先声明的物理源精度门槛后，才继续 P1 真实 Coulomb L 算子。
+
 ## 阅读顺序
 
-1. [G1 理论与数值实现系统复查](G1_THEORY_NUMERICS_REVIEW.md)：当前优先级，严禁把离散自洽当作连续真值。
-2. [项目当前进度总图与看板](PROJECT_PROGRESS.md)：物理模块、**封装**、数值验收、神经代理、热演化、下一关口和本地测试证据；**当前状态以此为准**。
-3. [新理论主文档](../../../theory/main.tex)：多文件 LaTeX 主入口。
-4. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
-5. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
-6. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
+1. [P0 物理与源项锁定契约](P0_PHYSICS_SOURCE_CONTRACT.md)：当前执行阶段，解析源基准和定量验收门槛。
+2. [G1 理论与数值实现系统复查](G1_THEORY_NUMERICS_REVIEW.md)：当前优先级，严禁把离散自洽当作连续真值。
+3. [项目当前进度总图与看板](PROJECT_PROGRESS.md)：物理模块、**封装**、数值验收、神经代理、热演化、下一关口和本地测试证据；**当前状态以此为准**。
+4. [新理论主文档](../../../theory/main.tex)：多文件 LaTeX 主入口。
+5. [文献分析](literature_review.md)：已讨论的电动机、IPT/WPT、UWPT 和谐振变换器文献及限制。
+6. [方案分析](architecture_proposal.md)：BFZI 几何、电磁反作用、损耗、热动力、谐振电路的耦合选择。
+7. [验证路线](validation_roadmap.md)：研究阶段、基准、开放问题。
 
 ## 几何权威来源
 
