@@ -89,6 +89,16 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
     np.testing.assert_allclose(
         np.sum(high-low, axis=1), [0.06, 0.02, 0.06], atol=1e-12,
     )
+    # The same physical ray can cross both separate insulating boxes.
+    # The wet segments must be disjoint and their lengths must add up.
+    low, high = _bfzi_wet_radial_segments(
+        scene, np.array([0.,0.,-0.3]),
+        np.array([[0.,0.,1.]]), 0.5,
+    )
+    np.testing.assert_allclose(
+        np.sort((high-low).ravel()), [0.,0.055,0.155,0.23],
+        atol=1e-12,
+    )
 
 
 def test_g1_compact_curl_and_exact_exterior():
