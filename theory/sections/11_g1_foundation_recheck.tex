@@ -1,0 +1,262 @@
+% G1 theory-only correction and verification contract (2026-11-04 UTC).
+% Restricts claims to the linear MQS baseline. Not an assertion that G1 has passed.
+\section{G1 基础方程、近似空间与可信参考解的重新核查}
+\label{sec:g1-foundation-recheck}
+
+\subsection{首先区分三个不同的数学对象}
+G1 最终要近似的是无限均匀导电海水中的连续磁准静态问题。
+设两个互不相交的绝缘实心封装为 \(B_1,B_2\)，
+\[
+\Omega_\infty=\RR^3\setminus(\overline{B_1}\cup\overline{B_2}),
+\qquad
+\Omega_R=B_R(\bm c_0)\setminus(\overline{B_1}\cup\overline{B_2}).
+\]
+第一层是 \(\Omega_\infty\) 上满足无穷远物理衰减的场；
+第二层是 \(\Omega_R\) 上指定了\emph{人工}外边界条件的连续问题；
+第三层才是有限维试探函数及数值积分得到的离散问题。
+\textbf{有限维功率闭合、有限外域相邻解接近、磁核矩阵半正定，
+分别不能证明这三层问题已经一致。}
+
+首版只假设静止、线性、非磁性绝缘封装、
+\(\mu=\mu_0\)、均匀正海水电导率 \(\sigma_s\)、
+闭合的外加 BFZI 两端口电流源及峰值相量 \(e^{\jj\omega t}\)。
+不把本模型扩大解释为含磁芯非线性、导电屏蔽、
+位移电流、运动感应和铜线内全耦合涡流的通用参考解。
+
+\subsection{从 Maxwell 方程严格得到电流弱式}
+在海水无外加体电流的区域，磁准静态方程为
+\begin{align}
+\Curl\bm H&=\bm J_s,&
+\Curl\bm E&=-\jj\omega\bm B,&
+\Div\bm B&=0,\\
+\bm B&=\mu_0\bm H,&
+\bm J_s&=\sigma_s\bm E,&
+\Div\bm J_s&=0.
+\end{align}
+完整闭合源线电流的单位磁矢势记为
+\(\bm A_{{\rm src},p}=\mu_0\bm C_p\)，
+\(\bm C_p=\frac1{4\pi}\int_{\Gamma_p}\mathrm d\bm\ell'/|\bm x-\bm r'|\)。
+取合适规范下的自由空间核
+\((\mathcal G_0\bm J)(\bm x)=\int_{\Omega}\bm J(\bm y)/
+(4\pi|\bm x-\bm y|)\,\mathrm dV_y\)，则
+\[
+\sigma_s^{-1}\bm J_s+\jj\omega\mu_0\mathcal G_0\bm J_s
++\grad\phi=-\jj\omega\mu_0\sum_p\bm C_p I_p.
+\]
+对有限外域，若使用人工绝缘截断条件，正确的测试空间为
+\begin{equation}
+\boxed{
+\mathcal V_R=\{\bm v\in H(\operatorname{div};\Omega_R):
+\Div\bm v=0,\quad
+\bm v\cdot\bm n=0\ \text{于 }
+\partial B_1\cup\partial B_2\cup\partial B_R\}.
+}
+\label{eq:g1-full-boundary-space}
+\end{equation}
+关键是\textbf{整个有限域边界}都要出现在零法向条件中；
+否则
+\[
+\int_{\Omega_R}\overline{\bm v}\cdot\grad\phi\,\mathrm dV
+=\int_{\partial\Omega_R}\phi\,\overline{\bm v}\cdot\bm n\,\mathrm dS
+\]
+在人工外球处未必为零，不能从弱式中凭空删除该边界项。
+如采用非反射人工边界、允许非零外球电流通量，则必须
+\textbf{保留并正确处理}对应边界算子/边界功项，
+不能套用同一个无边界项弱式。
+无限域则应使用具有相应远场衰减和磁能可积性的函数空间，
+证明无穷远边界项消失后再作消元。
+
+对所有 \(\bm v\in\mathcal V_R\) 得
+\begin{equation}
+a_R(\bm J_s,\bm v)
+=\int_{\Omega_R}\sigma_s^{-1}\bm J_s\cdot\overline{\bm v}\,\mathrm dV
++\jj\omega\mu_0\int_{\Omega_R}
+(\mathcal G_0\bm J_s)\cdot\overline{\bm v}\,\mathrm dV
+=-\jj\omega\sum_p I_p\,(\bm A_{{\rm src},p},\bm v)_{L^2}.
+\label{eq:g1-weak-corrected}
+\end{equation}
+这是\emph{人工绝缘有限域问题}的正确变分形式，
+并不表示该问题等于无限海水的限制。
+
+\subsection{哪些有限维结构结论确实正确}
+选取实值线性独立的 \(\bm W_m\in\mathcal V_R\)，
+以本稿式 \eqref{eq:Rs}--\eqref{eq:Kbfzi}
+精确或一致求积定义 \(\bm R,\bm L,\bm K\)。
+对实正 \(\sigma_s\)、自由空间对称 Coulomb 核及闭合端口，
+理论上
+\[
+\bm R=\bm R^{\mathsf T}\succ0,\quad
+\bm L=\bm L^{\mathsf T}\succeq0,\quad
+(\bm R+\jj\omega\bm L)\bm z=-\jj\omega\bm K\bm I.
+\]
+令 \(\bm A=\bm R+\jj\omega\bm L\)，则
+\[
+\bm Z_{\rm sw}
+=\omega^2\bm K^{\mathsf T}\bm A^{-1}\bm K,\qquad
+\operatorname{Herm}(\bm Z_{\rm sw})
+=\omega^2\bm K^{\mathsf T}\bm A^{-\mathrm H}
+\bm R\bm A^{-1}\bm K\succeq0.
+\]
+故 \(\bm Z_{\rm sw}^{\mathsf T}=\bm Z_{\rm sw}\)，且
+\[
+\tfrac12\bm I^{\mathrm H}\operatorname{Herm}(\bm Z_{\rm sw})\bm I
+=\tfrac12\bm z^{\mathrm H}\bm R\bm z
+=\int_{\Omega_R}\frac{|\bm J_s|^2}{2\sigma_s}\,\mathrm dV.
+\]
+这些是\textbf{同一个离散系统的代数定理}；
+它们证明约束、互易和耗散结构，不给出
+\(\|\bm J_s-\bm J_\infty\|\) 或热点误差的任何界。
+以离散自身的 \(\bm R,\bm K\) 重建功率，
+即使 \(\bm L\) 或电流空间错误，仍可在机器精度闭合。
+
+\subsection{当前 curl--高斯基的数学优势与缺口}
+实现取 \(\bm W_m=\Curl\bm F_m\)，
+\(\bm F_m\) 是高斯包络、绝缘盒体距离因子及外球截断因子
+的乘积再乘常向量或完整端口的源磁矢势。
+在适当的分片 \(H(\operatorname{curl})\) 正则性及相容迹下，
+若 \(\bm n\times\bm F_m=0\)，可保证
+\(\Div\bm W_m=0\) 与 \(\bm n\cdot\bm W_m=0\)；
+这是本方案可保留的正确设计。
+
+但当前外球 \(C^2\) 截断函数同时满足
+\(f(R)=f'(R)=0\)，因此在外球处实际强制
+\(\bm W_m|_{\partial B_R}=0\)，不仅是法向电流为零。
+这在有限模态下是\emph{过于受限的合规子空间}，
+并不等价于整个 \(\mathcal V_R\)；
+它在 \(L^2\)/\(H(\operatorname{div})\) 完备性层面
+未必构成不可逾越的阻碍，但需要\textbf{系统的空间加密证明}，
+不能由 229 个高斯方向或有限几种长度尺度自行推出。
+改变外球半径还会改变所有模式的边界包络，
+故即使每个高斯中心、宽度及方向保持不变，
+\textbf{跨半径函数空间也不是严格嵌套的}；
+相邻解差异同时包含外域、外球边界和试探空间改变。
+
+两个不相交、各自同胚于三维闭球的\emph{实心}绝缘盒体
+在三维球域中的补集，一般没有一维同调环的拓扑障碍；
+\textbf{不能由“有两个封装/多个边界分支”直接推断
+必须加入非零的一阶拓扑谐和电流}。
+物理上仍需表示跨封装及海水远场的\emph{普通大尺度涡流}，
+这是空间逼近问题而不是自动出现的拓扑缺陷。
+几何若改成穿孔实体、导电回路等，才需要重新计算拓扑条件。
+
+\subsection{磁 Green 离散与连续 Coulomb 双积分不可混淆}
+目标磁算子是
+\[
+L_{mn}
+=\frac{\mu_0}{4\pi}
+\int_{\Omega_R}\int_{\Omega_R}
+\frac{\bm W_m(\bm x)\cdot\bm W_n(\bm y)}
+{|\bm x-\bm y|}\,\mathrm dV_y\mathrm dV_x.
+\]
+目前 \texttt{uniform\_ball} 规则把每个求积权重视作等体积
+\emph{球形电流云}，用球--球平均 Coulomb 核替代真实单元内的
+双体积分。这能构造对称非负的近似磁能，
+但球未必是实际正权积分单元的形状或支撑，
+也未必保持真实海水边界和点值电流的无散度结构；
+\textbf{正定性不蕴含对上述目标算子的数值一致性}。
+必须独立检查采样节点分辨率、球形替代误差、
+近对角奇异项与非局部尾项；当模式数和外域改变时不能
+仅复用低精度 Green 矩阵并宣称参考级精度。
+当前 229 模态 A/B \(\|\Delta L\|_F/\|L_A\|_F\approx13.2\%\)，
+确实没有算子收敛证据。
+这一 Frobenius 相对量本身也不能代替
+\(\omega\|\bm R^{-1/2}\Delta\bm L\bm R^{-1/2}\|_2\)
+或被激发方向的残差响应敏感度；
+需同时检查这些\emph{无量纲动力学相关指标}，
+不能仅由一个全矩阵百分比判断各端口场的误差。
+
+\subsection{实际海水穿透深度与截断半径}
+对于远离封装的均匀导电海水，在 MQS 假设下
+\[
+\grad^2\bm H=\jj\omega\mu_0\sigma_s\bm H,\qquad
+\gamma=\sqrt{\jj\omega\mu_0\sigma_s}
+=\frac{1+\jj}{\delta_s},\qquad
+\delta_s=\sqrt{\frac{2}{\omega\mu_0\sigma_s}}.
+\]
+默认示例 \(f=200\,\mathrm{kHz}\)，
+\(\sigma_s=5\,\mathrm{S/m}\)，
+\(\mu=\mu_0\) 时 \(\delta_s\simeq0.503\,\mathrm m\)。
+目前 \(0.52\)--\(1.30\,\mathrm m\) 的球半径仅约
+\(1.03\)--\(2.58\) 个穿透深度（从球心计）；
+因此外域远场电流及其磁反馈未必足够小，
+\textbf{不能预设这些半径应形成收敛平台}。
+球形/非均匀几何中的振幅还含角向及代数衰减，
+实际截断误差不能只用 \(e^{-R/\delta_s}\) 代替测量。
+较大的球域也会增加 Green 积分的求积误差：
+外域相邻解非单调并不能单凭日志判断是物理尾部还是积分别名。
+
+\subsection{从代数残差升级到 G1 可解释的误差界}
+在固定\emph{连续}有限域问题中定义
+\(\|\bm u\|_{\mathcal R}^2=
+\int_{\Omega_R}\sigma_s^{-1}|\bm u|^2\,\mathrm dV\)。
+因 \(\operatorname{Re}a_R(\bm u,\bm u)
+=\|\bm u\|_{\mathcal R}^2\)，
+对真实有限域解 \(\bm J_R\) 和任意合规近似
+\(\bm J_h\)，其在\emph{完整测试空间}上的残差
+\[
+\mathfrak r_h(\bm v)
+=\ell_R(\bm v)-a_R(\bm J_h,\bm v),\qquad
+\|\mathfrak r_h\|_{\mathcal V_R'}
+=\sup_{\bm v\in\mathcal V_R\setminus\{0\}}
+\frac{|\mathfrak r_h(\bm v)|}{\|\bm v\|_{\mathcal R}}
+\]
+满足
+\begin{equation}
+\boxed{\|\bm J_R-\bm J_h\|_{\mathcal R}
+\leq\|\mathfrak r_h\|_{\mathcal V_R'}.}
+\label{eq:g1-residual-continuum}
+\end{equation}
+该结论是对\emph{相同连续算子与完整空间}的有条件估计，
+不是当前离散 229 父空间上的残差上界。
+只在另一个有限测试字典上取 supremum 时，
+得到的是完整对偶残差范数的\emph{下界}，
+除非再建立可靠的稳定性、饱和性或误差上界估计。
+因此目前 \texttt{parent\_dJ\_energy\_upper}
+只证明\emph{给定父空间内部}的逼近效果，
+不能作无限维电磁参考误差认证。
+
+对空间焦耳热有连续积分控制
+\[
+\|q(\bm J)-q(\bm J_h)\|_{L^1(\Omega_R)}
+\leq\tfrac12\|\bm J-\bm J_h\|_{\mathcal R}
+\big(\|\bm J\|_{\mathcal R}+\|\bm J_h\|_{\mathcal R}\big),
+\]
+但这并不控制盒壁极局部的 \(L^\infty\) 热点；
+必须另外检查几何随体的壁面/边缘/角部点列及更强局部范数。
+
+\subsection{纠正后的 G1 通过条件与工作次序}
+\begin{enumerate}
+\item \textbf{正确边值问题：}
+证明每个频率与材料参数下源回路闭合，
+说明无限域衰减与人工外域边界算子的关系，
+区分非导电封装的零法向和人为外球条件；
+检查 MQS 适用范围（例如 \(\omega\epsilon/\sigma\ll1\)）。
+\item \textbf{真实磁核：}
+在固定物理基及同一个外域上，独立加密 Green 积分、
+控制对角近奇异项、球云形状替代和远场尾项，
+给出动力学加权磁算子及双端口受迫场的一致误差，
+而非仅验证 PSD。
+\item \textbf{有系统的海水空间逼近：}
+建立随尺度加密的紧支 curl/Piola 近盒、间隙、
+完整远场角向/径向字典，保证合规与适当稠密性；
+对独立大父空间评估 J、双端口 J、q 和残差，
+不是只在固定 229 父解里做压缩。
+\item \textbf{外域独立收敛：}
+固定共同物理湿区，同时用真正物理一致的
+外域尾场/透明边界或多个充分大的截断半径核对；
+必须把外域截断、边界包络变化、R/K 求积和 Green L
+积分误差作为\emph{不同}来源逐项控制。
+\item \textbf{独立物理基准：}
+至少在代表性几何、错位姿态和封装尺寸下与
+不同离散原则的高精度解（解析可用极限、
+独立边界积分或其他可信参考）交叉核对，
+报告端口、海水体积 J、封装近壁 q 和功率误差。
+允许参考方法使用局部离散；
+主代理仍可坚持无固定世界网格设计。
+\end{enumerate}
+在以上各项证据成立以前，
+\textbf{G1=未通过，229 模态不能用作正式跨几何神经教师}。
+下一轮优先分离同一物理坐标中的 R/K 与 Green L
+敏感性，接着修磁核求积和边界/空间逼近；
+不再把简单扩大外域或增加少数经验高斯模式
+当作充分的 G1 收敛方案。
