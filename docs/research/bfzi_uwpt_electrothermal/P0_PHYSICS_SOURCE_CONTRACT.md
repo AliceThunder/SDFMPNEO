@@ -92,7 +92,7 @@ git pull --ff-only
 python run.py --mode bfzi-p0-source --with-tests
 ```
 
-日志自动提交到 `runs/latest_summary.md` 与 `runs/latest_full.log`，**不使用 GitHub Actions**。相较于 G1 全求解，该模式**只计算源场**，不会执行海水 R/K/L、电热或神经模型。
+日志自动提交到 `runs/p0/latest_summary.md` 与 `runs/p0/latest_full.log`，不覆盖已有 G1 原始对照，**不使用 GitHub Actions**。相较于 G1 全求解，该模式**只计算源场**，不会执行海水 R/K/L、电热或神经模型。
 
 `p0_physics` 记录频率、电导率、穿透深度和两项条件尺度（在假定介电常数下）；`p0_reference` 比较曲线角段 24→32 阶以确认参考自己已细化；`p0_source` 比较生产源 `order=3/4/6/8/12` 的 C、B 和完整回路点线元闭合残差。固定世界坐标的探针包括盒壁外 2.5mm/25mm 处及远场，并保持全在海水中。
 
