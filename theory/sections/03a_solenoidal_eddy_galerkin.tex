@@ -11,7 +11,8 @@
 \mathcal V(\Omega_s)
 =\{\bm v\in H(\mathrm{div};\Omega_s):
 \nabla\cdot\bm v=0,\ 
-\bm n\cdot\bm v|_{\partial\Omega_s^{\rm ins}}=0\}.
+\bm n\cdot\bm v|_{\partial\Omega_s}=0\quad
+\text{（有限域中含人工绝缘外边界）}\}.
 \label{eq:sea-solenoidal-space}
 \end{equation}
 对无限海水，还需要无穷远处衰减、能量有限及适当的函数空间闭合；
@@ -52,8 +53,12 @@
 \]
 取任意 \(\bm v\in\mathcal V\) 测试，上式与 \(\bm v\) 做
 \(L^2\) 内积并对 \(\Omega_s\) 积分。
-由分部积分、\(\nabla\cdot\bm v=0\) 和边界零法向电流，
+对采用人工绝缘外边界的\emph{有限域}，
+由分部积分、\(\nabla\cdot\bm v=0\) 和\emph{整个边界}
+的测试场零法向迹，可得
 \(\int_{\Omega_s}\bm v\cdot\nabla\phi\,\mathrm dV=0\)。
+若人工外边界允许非零法向通量，则该边界项
+不可直接消去；详见第 \ref{sec:g1-foundation-recheck} 节。
 故有
 \begin{equation}
 \int_{\Omega_s}\sigma_s^{-1}\bm v\cdot\bm J_s\,\mathrm dV
