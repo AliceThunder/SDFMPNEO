@@ -9,7 +9,7 @@ import math
 import numpy as np
 
 from examples.bfzi_mqs_demo import build_demo_scene
-from sdfmpneo_bfzi.source import build_line_source, MU0
+from sdfmpneo_bfzi.source import LineSource, build_line_source, MU0
 from sdfmpneo_bfzi.source_reference import continuous_port_field
 
 
@@ -63,6 +63,7 @@ def main():
         flush=True,
     )
     for port, assembly in enumerate(scene.assemblies):
+        order_metrics = {}
         ref_c, ref_b = continuous_port_field(
             assembly, positions, corner_order=32,
         )
@@ -79,13 +80,33 @@ def main():
             line = build_line_source(assembly, order=order)
             approx_c = line.potential_kernel(positions)
             approx_b = np.real(line.magnetic_field(positions))
+            # Historical all-Gauss source on the *same* physical path.
+            # This isolates the effect of the analytic straight+return
+            # integration from corner-order or geometry changes.
+            old = LineSource(line.points, line.line_elements)
+            old_c = old.potential_kernel(positions)
+            old_b = np.real(old.magnetic_field(positions))
             closure = np.linalg.norm(line.line_elements.sum(axis=0))
             arc = np.linalg.norm(line.line_elements, axis=1).sum()
+            dC = relative(approx_c,ref_c)
+            dB = relative(approx_b,ref_b)
+            order_metrics[order]=(dC,dB)
             print(
                 f"p0_source: port={port},order={order}, "
-                f"dC={relative(approx_c,ref_c):.6g}, "
-                f"dB={relative(approx_b,ref_b):.6g}, "
+                f"dC={dC:.6g},dB={dB:.6g}, "
+                f"dC_near={relative(approx_c[:24],ref_c[:24]):.6g}, "
+                f"dB_near={relative(approx_b[:24],ref_b[:24]):.6g}, "
+                f"legacy_dC={relative(old_c,ref_c):.6g}, "
+                f"legacy_dB={relative(old_b,ref_b):.6g}, "
                 f"line_closure_over_length={closure/max(arc,1e-30):.6g}",
+                flush=True,
+            )
+        for order in (4,12):
+            dc,db=order_metrics[order]
+            print(
+                f"p0_gate: port={port},source_order={order}, "
+                f"source_dC_le_0p1pct={dc<0.001}, "
+                f"source_dB_le_0p1pct={db<0.001}",
                 flush=True,
             )
     print(
