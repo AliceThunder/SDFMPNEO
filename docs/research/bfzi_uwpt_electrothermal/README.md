@@ -8,7 +8,7 @@
 
 正式多文件理论请读 [G1 文献、奇异积分与重新验收 TeX](../../../theory/sections/12_g1_numerical_foundations_literature.tex)，已由 [theory/main.tex](../../../theory/main.tex) 纳入主稿并在 [references.bib](../../../theory/references.bib) 增补 9 篇已核对 DOI 的文献。2022 年 Passarotto--Pitassi--Specogna 的涡流体积分基础论文对电感双积分的奇异自项以及内外积分分离造成的不稳定有直接分析，优先于继续添加采样规则。**这一轮是理论/文献复核，未宣称已经新完成代码求解或物理收敛；G1 仍 FAIL。** 以现有 70 passed 本机实测和未运行的后续 QMC 实验为真实进度边界。
 
-## 正在执行 P0：锁定物理与闭合 BFZI 源（2026-11-04）
+## P0 历史过程：锁定物理与闭合 BFZI 源（2026-11-04）
 
 第一步已形成 [P0 物理问题／源项验收契约](P0_PHYSICS_SOURCE_CONTRACT.md)，正式 LaTeX 见 [第 13 节](../../../theory/sections/13_p0_physical_source_contract.tex)。它冻结圆形—圆角方形连续线圈、两独立绝缘封装、完整定向回流、均匀线性非磁性海水、MQS 峰值相量与人工外球假设；**当前只批准 source-only 复核，不批准新的海水 R/K/L 精度声明或正式神经教师。**
 
@@ -30,7 +30,7 @@ python run.py --mode bfzi-p0-source --with-tests
 python run.py --mode bfzi-p1-coulomb --with-tests
 ```
 
-P1 程序尚待本机运行，日志将自动版本化到独立 `runs/p1/`；不能据此宣布 G1 PASS。正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
+**P1 原 1/r 解析球基准已在本机实测 FAIL：** 85 passed 只证明程序运行；原 `assemble_coulomb_split` 的 `base/x_only/y_only/both` 磁能矩阵相对解析真值误差为 **2.121%/1.556%/1.146%/0.6145%**，同时加密仍未达到原定 **0.1%**；改变局部分区半径后 L11 差 **0.4230%**。现新增可直接验证的局部球窗口精确积分 `8πa²/7 W(x)`、x/y/局部三项误差归因与**不软化的全域常量奇异减除** `assemble_coulomb_subtracted`。该方法在球上使用独立解析的 `S_B(x)`，但真实双盒 `SΩ(x)` 尚未认证，不会在不验证几何标量势时强行切换生产磁矩阵。新程序仍用上述命令运行，日志自动版本化到独立 [`runs/p1/`](runs/p1/)；新算法待本机复验，**P1-A/G1 仍 FAIL**。正式 TeX 见 [第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。禁止 GitHub Actions。
 
 ## 阅读顺序
 
