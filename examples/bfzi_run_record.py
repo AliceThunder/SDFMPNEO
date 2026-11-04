@@ -49,7 +49,9 @@ def _short(line: str) -> str | None:
     if line.startswith(("most_influential_for_volume_J:",
                         "most_influential_for_normal_Joule:")):
         return line
-    if line.startswith(("ball_", "rk_normal_", "rk_far_")) and "_vs_A:" in line:
+    if line.startswith(("ball_", "rk_normal_", "rk_far_")) and (
+        "_vs_A:" in line or line.startswith("rk_far_azimuth_4_vs_3:")
+    ):
         label, rest = line.split(":", 1)
         values = _fields(rest)
         return label + ": " + ", ".join(
@@ -147,9 +149,11 @@ def _summary(root, flags, started, ended, status, raw):
         if "_to_" in line and ": dZ=" in line:
             label, rest = line.split(":", 1)
             comparisons.append((label, _fields(rest)))
-        if ("_vs_A:" in line or line.startswith((
-            "adaptive_screen:", "global_scale_condition_",
-        ))):
+        if ("_vs_A:" in line
+                or line.startswith("rk_far_azimuth_4_vs_3:")
+                or line.startswith((
+                    "adaptive_screen:", "global_scale_condition_",
+                ))):
             gates.append(line)
 
     commit = _git(root, "rev-parse", "--short", "HEAD")
