@@ -90,9 +90,12 @@ def continuous_port_field(
         for side in range(4):
             start, _ = coil.segment(turn, "side", side, -1.0, pose)
             stop, _ = coil.segment(turn, "side", side, 1.0, pose)
-            cp, bp = straight_segment_field(start, stop, x)
-            c += cp
-            b += bp
+            # The circular BFZI limit has chi=0: its four "sides"
+            # vanish geometrically, leaving only four curved arcs.
+            if np.linalg.norm(stop-start) > 1e-14:
+                cp, bp = straight_segment_field(start, stop, x)
+                c += cp
+                b += bp
             points, tangents = coil.segment(
                 turn, "corner", side, u, pose,
             )
