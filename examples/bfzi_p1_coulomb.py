@@ -16,7 +16,9 @@ from __future__ import annotations
 import math
 import numpy as np
 from scipy.spatial.distance import cdist
-from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_split, _near_window
+from sdfmpneo_bfzi.green_coulomb import (
+    assemble_coulomb_split, assemble_coulomb_subtracted, _near_window,
+)
 from sdfmpneo_bfzi.source import MU0
 
 
@@ -91,11 +93,7 @@ def diagnose_original_split(
         0.6*(radius-np.linalg.norm(x, axis=1)),
     )
     near_exact = (8.0*math.pi/7.0)*a[:,None,None]**2*vx
-    sphere_scalar = (
-        2.0*math.pi*(radius**2-np.sum(x*x,axis=1)/3.0)
-    )
     far_l = np.zeros((3,3))
-    sub_l = np.zeros((3,3))
     for start in range(0,len(x),64):
         stop=min(len(x),start+64)
         d=cdist(x[start:stop],y)
@@ -112,27 +110,17 @@ def diagnose_original_split(
             "i,imc,inc->mn",
             wx[start:stop],vx[start:stop],far_pot,optimize=True,
         )
-        # Independent unsmoothed constant-density singularity subtraction
-        # on the BALL. V0(x)=∫_ball 1/|x-y| dy is exactly known.
-        k=np.divide(
-            1.0,d,out=np.zeros_like(d),where=d>0.0,
-        )
-        residual=np.einsum(
-            "ij,ijmc->imc",k*wy[None,:],
-            vy[None,:,:,:]-vx[start:stop,None,:,:],
-            optimize=True,
-        )
-        smooth_pot=(
-            sphere_scalar[start:stop,None,None]*vx[start:stop]
-            +residual
-        )
-        sub_l+=np.einsum(
-            "i,imc,inc->mn",
-            wx[start:stop],vx[start:stop],smooth_pot,optimize=True,
-        )
     scale=MU0/(4.0*math.pi)
     far_l*=scale
-    sub_l*=scale
+    # Call the reusable physical original-Coulomb operator, not an
+    # independently typed copy of the constant-density subtraction.
+    sub_l=assemble_coulomb_subtracted(
+        x,wx,y,wy,vortex_modes,
+        lambda p:2*math.pi*(
+            radius**2-np.einsum("nc,nc->n",p,p)/3.0
+        ),
+        chunk_size=64,
+    )
     near_l=scale*np.einsum(
         "i,imc,inc->mn",wx,vx,near_exact,optimize=True,
     )
@@ -142,7 +130,6 @@ def diagnose_original_split(
     )
     exact=exact_vortex_green(radius)
     far_plus_near=0.5*(far_l+far_l.T)+near_l
-    sub_l=0.5*(sub_l+sub_l.T)
     norm=max(np.linalg.norm(exact),1e-30)
     return dict(
         x_exact_rel=float(np.linalg.norm(exact_x-exact)/norm),
