@@ -21,7 +21,8 @@ FIELDS = (
     "sea_power", "dR", "dK", "dK_dual", "dL", "dZ", "dImZ",
     "dJ_volume", "dJ_ports_volume", "dq", "max_probe_dq",
     "peak_scaled_max_dq", "normal_peak_scaled_dq",
-    "dJ_common", "dJ_ports_common", "domain_response_gate",
+    "dJ_common", "dJ_ports_common", "dJ_near035",
+    "dJ_ports_near035", "dq_near035", "domain_response_gate",
     "operator_gate", "response_gate", "combined_gate",
 )
 MATCH_FIELD = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=([^\s,]+)")
@@ -98,8 +99,8 @@ def _short(line: str) -> str | None:
         pair = rest.strip().split(" ",1)[0]
         return label+": "+pair+" "+", ".join(
             f"{k}={values[k]}" for k in
-            ("dZ","dJ_common","dJ_ports_common","dq","dP",
-             "domain_response_gate")
+            ("dZ","dJ_common","dJ_near035","dq_near035",
+             "dq","dP","domain_response_gate")
             if k in values
         )
     if ": modes=" in line and any(line.startswith(x) for x in (
@@ -238,19 +239,24 @@ def _summary(root, flags, started, ended, status, raw):
             )
         parts.extend([
             "",
-            "| 半径比较 | dZ | 共同海水区域 dJ | 双端口 dJ | 局部 dq | dP | 阶段响应门槛 |",
-            "|---|---:|---:|---:|---:|---:|---|",
+            "| 半径比较 | dZ | 0.52m dJ | 0.52m 双端口 dJ | 0.35m dJ | 0.35m 双端口 dJ | 0.35m dq | 探针 dq | dP | 阶段响应门槛 |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ])
         for label,d in domain_steps:
             parts.append(
                 f"| {label} | {d.get('dZ','—')} | "
                 f"{d.get('dJ_common','—')} | "
                 f"{d.get('dJ_ports_common','—')} | "
+                f"{d.get('dJ_near035','—')} | "
+                f"{d.get('dJ_ports_near035','—')} | "
+                f"{d.get('dq_near035','—')} | "
                 f"{d.get('dq','—')} | {d.get('dP','—')} | "
                 f"{d.get('domain_response_gate','—')} |"
             )
         parts.append(
             "\n共同海水区域指标是固定 0.52 m 球域中的加权采样差异；"
+            "设备近区是半径 0.35 m 的固定湿区权重子集。"
+            "两者分别显示人工边界附近和封装周围的空间误差。"
             "各半径仍独立重组磁 L，不能代替无穷海水域的收敛证明。"
         )
     parts.extend(["", "## 收敛判定与诊断", ""])
