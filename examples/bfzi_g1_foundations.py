@@ -323,6 +323,12 @@ def main(hierarchy=False):
     # may miss its thin layer; a log(1+d/wall_scale) rule integrates on
     # the SAME slabs with a positive exact Jacobian. Compare and refine
     # the shell in isolation, holding every spherical node unchanged.
+    r_sphere_base=np.einsum(
+        "n,nmc,nkc->mk",
+        wx[:sphere_x]/scene.seawater.conductivity,
+        modes[:sphere_x],modes[:sphere_x],optimize=True,
+    )
+    r_shell_base=r-r_sphere_base
     for label,options in (
         ("log_normal_2",dict(shell_normal_mapping="log")),
         ("log_normal_4",dict(
@@ -349,7 +355,7 @@ def main(hierarchy=False):
             f"dK_vs_base={relative(ks,k):.6g}, "
             f"dK_dual={relative(kds,ks):.6g}, "
             f"dK_dual_vs_base={relative(kds,k_dual):.6g}, "
-            f"dR_shell_only={relative(rs-r+volume_matrices(x[:sphere_x],wx[:sphere_x])[0],volume_matrices(x[sphere_x:],wx[sphere_x:])[0]):.6g}",
+            f"dR_shell_only={np.linalg.norm(rs-r)/max(np.linalg.norm(r_shell_base),1e-30):.6g}",
             flush=True,
         )
 
