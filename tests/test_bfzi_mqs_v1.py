@@ -305,12 +305,18 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
             "dJ_volume=0.004, dJ_ports_volume=0.005, "
             "normal_peak_scaled_dq=0.002, response_gate=PASS\n"
         )
+        writer.write(
+            "  rk_far_azimuth_4_vs_3: dR=0.0003, dK=0.0001, "
+            "dJ_volume=0.001, dq=0.002, "
+            "normal_peak_scaled_dq=0.001, response_gate=PASS\n"
+        )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
     assert "dJ_volume=0.931925" in console.getvalue()
     assert "dJ_ports_volume=1.18121" in console.getvalue()
     assert "rk_far_polar_229_B_vs_A" in console.getvalue()
     assert "normal_peak_scaled_dq=0.002" in console.getvalue()
+    assert "rk_far_azimuth_4_vs_3" in console.getvalue()
 
 
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
