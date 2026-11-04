@@ -122,7 +122,10 @@ def test_g1_log_shell_normal_chart_keeps_domain_and_sphere_rule():
     np.testing.assert_array_equal(old_w[:old_s],new_w[:new_s])
     assert np.all(new_w > 0)
     assert scene.in_seawater(new_x).all()
-    assert np.linalg.norm(new_x[old_s:]-old_x[old_s:]) > 0
+    assert (
+        len(new_x)-new_s != len(old_x)-old_s
+        or not np.array_equal(new_x[new_s:],old_x[old_s:])
+    )
     true_volume=4*np.pi*scene.outer_radius**3/3-8*sum(
         np.prod(a.enclosure.half_extents) for a in scene.assemblies
     )
