@@ -413,31 +413,55 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 if targeted_domain:
                     # Identical physical control volume and sampling weights
                     # at every outer radius (not a changing-domain R metric).
-                    def common_j_error(new, old):
-                        component_axes = tuple(range(1,new.ndim))
-                        error = float(np.dot(
-                            common_w, np.sum(
-                                np.abs(new-old)**2,axis=component_axes,
-                            ),
-                        ))
-                        base = float(np.dot(
-                            common_w, np.sum(
-                                np.abs(old)**2,axis=component_axes,
-                            ),
-                        ))
-                        return float(np.sqrt(error/max(base,1e-60)))
-                    dj = common_j_error(common_drive,old_drive)
-                    dj_ports = common_j_error(common_ports,old_ports)
+                    def weighted_field_change(new, old, weights):
+                        # Same physical cubature and integration weights,
+                        # for scalar Joule fields or vector/two-port J.
+                        delta_sq = np.abs(new-old)**2
+                        base_sq = np.abs(old)**2
+                        if new.ndim>1:
+                            components = tuple(range(1,new.ndim))
+                            delta_sq = np.sum(delta_sq,axis=components)
+                            base_sq = np.sum(base_sq,axis=components)
+                        err = float(np.dot(weights,delta_sq))
+                        ref = float(np.dot(weights,base_sq))
+                        return float(np.sqrt(err/max(ref,1e-60)))
+                    dj = weighted_field_change(
+                        common_drive,old_drive,common_w,
+                    )
+                    dj_ports = weighted_field_change(
+                        common_ports,old_ports,common_w,
+                    )
+                    dj_near = weighted_field_change(
+                        common_drive,old_drive,near_weights,
+                    )
+                    dj_ports_near = weighted_field_change(
+                        common_ports,old_ports,near_weights,
+                    )
+                    sigma = current_scene.seawater.conductivity
+                    q_new = np.sum(np.abs(common_drive)**2,axis=1)/(
+                        2*sigma
+                    )
+                    q_old = np.sum(np.abs(old_drive)**2,axis=1)/(
+                        2*sigma
+                    )
+                    dq_near = weighted_field_change(
+                        q_new,q_old,near_weights,
+                    )
                     # Stepwise response agreement is NOT a continuum
                     # domain certificate. L is independently reassembled
-                    # for each radius and remains under its own FAIL gate.
+                    # and currently fails its independent operator test.
                     step_gate = (
                         dz<=0.002 and dq<=0.005 and dp<=0.002
                         and dj<=0.01 and dj_ports<=0.01
+                        and dj_near<=0.01 and dj_ports_near<=0.01
+                        and dq_near<=0.005
                     )
                     details = (
                         f", dJ_common={dj:.6g}"
                         f", dJ_ports_common={dj_ports:.6g}"
+                        f", dJ_near035={dj_near:.6g}"
+                        f", dJ_ports_near035={dj_ports_near:.6g}"
+                        f", dq_near035={dq_near:.6g}"
                         f", domain_response_gate={'PASS' if step_gate else 'FAIL'}"
                     )
                 print(
@@ -455,9 +479,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
             "Outer-domain screening uses independently refined R/K "
             "at every radius and reassembled physical ball L. "
             "For targeted tests, physical Gaussian directions stay fixed "
-            "and dJ_common uses common 0.52 m wet sampling. The outer "
-            "taper and magnetic cubature still vary with radius; "
-            "there is no continuum-domain certificate.",
+            "and J_common samples the same 0.52m sea. J_near035 and "
+            "q_near035 only sample the fixed physical 0.35m core to "
+            "separate device-near change from artificial boundary change. "
+            "L is reassembled at each radius and not Green-certified.",
             flush=True,
         )
         return
