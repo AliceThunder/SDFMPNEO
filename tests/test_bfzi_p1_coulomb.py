@@ -3,7 +3,7 @@ import numpy as np
 
 from examples.bfzi_p1_coulomb import (
     ball_rule, vortex_modes, vortex_green_potential,
-    exact_vortex_green, trial,
+    exact_vortex_green, trial, diagnose_original_split,
 )
 from sdfmpneo_bfzi.source import MU0
 
@@ -41,3 +41,30 @@ def test_p1_original_coulomb_split_is_finite_on_exact_vortex_mode():
     assert np.isfinite(result["diag_error"])
     assert np.isfinite(result["offdiag_error"])
     assert np.isfinite(result["L11"])
+
+
+def test_p1_exact_local_ball_moment_and_global_subtraction_operator():
+    # For the existing C2 cutoff: int_0^1 s*chi(s) ds == 2/7.
+    # Full local sphere contribution for the linear vortex is thus
+    # (8*pi*a*a/7) * W(x), independently of local angular nodes.
+    from sdfmpneo_bfzi.green_coulomb import _near_window
+    g,w=np.polynomial.legendre.leggauss(8)
+    integral=0.0
+    for start,stop in ((0.0,0.5),(0.5,1.0)):
+        radius=0.5*(stop-start)*g+0.5*(start+stop)
+        weights=0.5*(stop-start)*w
+        integral+=float(np.dot(weights,radius*_near_window(radius)))
+    np.testing.assert_allclose(integral,2/7,rtol=1e-13,atol=1e-15)
+
+    # Outer integration of the ANALYTIC ball Newton potential must be
+    # exact with this polynomial-positive sphere rule. The remaining
+    # inner 1/r quadrature has an independently measurable discrepancy.
+    diagnostic=diagnose_original_split(
+        1.0,(4,6,8),(4,6,10),0.4,
+    )
+    assert diagnostic["x_exact_rel"]<1e-12
+    assert diagnostic["far_y_rel"]>1e-3
+    assert (
+        diagnostic["global_constant_subtraction_rel"]
+        < diagnostic["far_y_rel"]
+    )
