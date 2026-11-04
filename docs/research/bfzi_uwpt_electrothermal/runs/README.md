@@ -11,13 +11,13 @@
 
 ```powershell
 git pull --ff-only
-python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far --with-tests
+python run.py --mode bfzi-convergence --basis-ball-targeted --basis-ball-check-far-refined --with-tests
 # 只保留本地，不推送：
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 # 如需看到全部原始标准输出：
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 ```
 
-**已经验证的自动上传：** 2026-11-03 用户 Windows 本地运行（代码基线 `e95a377`），`60 passed in 37.98s`，229 模态数值实验正常完成，最新摘要与完整日志已上传。最新代码基线 `8193aa8` 的 **207→210→213→229** 与 229 模态磁 L A/B 已经自动归档：0.75× 全局尺度引起全域 J 变化 89.21%，2.4× 再变化 20.10%；229 磁算子 `operator_gate=FAIL`。下一个命令仅新增两项**球域远场 R/K 极角、方位角独立积分**，数据尚待本机运行。
+**已经验证的自动上传：** 2026-11-03 用户 Windows 本地运行（代码基线 `e95a377`），`60 passed in 37.98s`，229 模态数值实验正常完成，最新摘要与完整日志已上传。最新代码基线 `980dfdb` 的 **229 模态球域 R/K 极角、方位角独立积分**已自动归档（60 passed）：极角 8→10 `response_gate=PASS`，方位角 2→3 因 `dq=0.00572717` 超过 0.005 门槛而 `response_gate=FAIL`。本轮新命令将检验**方位角 2→3、2→4、3→4，以及径向分片宽度 0.06→0.04 m**，但结果尚未生成。历史 229 Green L A/B 算子仍为 FAIL，不能仅凭 q 通过就宣称整个物理参考解收敛。
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
