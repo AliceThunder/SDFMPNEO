@@ -7,7 +7,8 @@ before interpreting any two-box seawater magnetic energy.
 On the BALL |x|<R, three exact solenoidal, zero-normal-current fields
     W_axis(x) = axis cross x
 are curls of vector potentials with zero tangential boundary traces.
-This polynomial basis is unnormalised (matrix entry is not port H).\nThe original free-space 1/|x-y| double integral is *analytically known*:
+This polynomial basis is unnormalised (matrix entry is not port H).
+The original free-space 1/|x-y| double integral is *analytically known*:
     L_mn = 16*pi*mu0*R**7 / 315 * delta_mn.
 """
 from __future__ import annotations
