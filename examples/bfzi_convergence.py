@@ -130,6 +130,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                       ball_l_check: bool = False,
                       rk_normal_check: bool = False,
                       rk_far_check: bool = False,
+                      rk_far_refined_check: bool = False,
                       mode_ablation: bool = False,
                       source_face_guided: bool = False,
                       edge_refinement: bool = False,
@@ -969,7 +970,7 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 flush=True,
             )
 
-        if rk_far_check:
+        if rk_far_check or rk_far_refined_check:
             # Hold all physical modes, enclosure/source geometry, near-wall
             # panels and the (expensive) Green L fixed. Independently vary
             # each spherical ANGULAR integration axis of the streamed R/K.
@@ -997,14 +998,31 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 return u,z,q,qn,p
 
             ua,za,qa,qna,pa = far_response(r,k_curl)
-            for axis,alternate in (
-                ("polar",replace(
-                    r_cfg,polar_geometry_order=r_cfg.polar_geometry_order+2,
-                )),
-                ("azimuth",replace(
-                    r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+1,
-                )),
-            ):
+            if rk_far_refined_check:
+                # Separate coarse 2→3 angular bias from 3→4 convergence.
+                # Refine spherical radius independently of azimuth.
+                variants = (
+                    ("azimuth_3",replace(
+                        r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+1,
+                    )),
+                    ("azimuth_4",replace(
+                        r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+2,
+                    )),
+                    ("radial",replace(
+                        r_cfg,max_radial_panel_width=0.04,
+                    )),
+                )
+            else:
+                variants = (
+                    ("polar",replace(
+                        r_cfg,polar_geometry_order=r_cfg.polar_geometry_order+2,
+                    )),
+                    ("azimuth",replace(
+                        r_cfg,azimuthal_panel_order=r_cfg.azimuthal_panel_order+1,
+                    )),
+                )
+            previous_azimuth = None
+            for axis,alternate in variants:
                 bx,bw = scene.box_shell_quadrature(
                     alternate.radial_order,alternate.polar_order,
                     alternate.azimuthal_order,
@@ -2603,6 +2621,7 @@ def main(
     basis_ball_check_l: bool = False,
     basis_ball_check_rk: bool = False,
     basis_ball_check_far: bool = False,
+    basis_ball_check_far_refined: bool = False,
     basis_ball_ablate: bool = False,
     basis_ball_face: bool = False,
     basis_ball_edge: bool = False,
@@ -2617,7 +2636,7 @@ def main(
             or basis_green_gaussian or basis_green_ball
             or basis_ball or basis_domain_ball or basis_ball_check_l
             or basis_ball_check_rk or basis_ball_check_far
-            or basis_ball_ablate
+            or basis_ball_check_far_refined or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
             or basis_ball_targeted):
         return basis_convergence(
@@ -2632,12 +2651,13 @@ def main(
             green_ball=basis_green_ball,
             ball_reference=basis_ball or basis_domain_ball or basis_ball_check_l
             or basis_ball_check_rk or basis_ball_check_far
-            or basis_ball_ablate
+            or basis_ball_check_far_refined or basis_ball_ablate
             or basis_ball_face or basis_ball_edge or basis_ball_aniso
             or basis_ball_targeted,
             ball_l_check=basis_ball_check_l,
             rk_normal_check=basis_ball_check_rk,
             rk_far_check=basis_ball_check_far,
+            rk_far_refined_check=basis_ball_check_far_refined,
             mode_ablation=basis_ball_ablate,
             source_face_guided=(
                 basis_ball_face or basis_ball_edge or basis_ball_aniso
