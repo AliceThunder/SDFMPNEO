@@ -33,6 +33,7 @@ def assemble_coulomb_split(
     local_polar_order: int = 6,
     local_azimuthal_order: int = 12,
     chunk_size: int = 32,
+    return_diagnostics: bool = False,
 ):
     """Return real Galerkin L for a continuous vector-current evaluator.
 
@@ -51,6 +52,10 @@ def assemble_coulomb_split(
            + ∫_{|y-x|<a} χ(|x-y|/a) J_n(y)/|x-y| dy.
     There is NO softened Coulomb kernel, substitute cloud or artificial
     self-pair. The local spherical Jacobian cancels the 1/r singularity.
+    If return_diagnostics is true, also return the relative Frobenius
+    norm of the UNSYMMETRIZED Galerkin matrix's antisymmetric part.
+    Nonzero skew from independent x/y cubature is integration error,
+    not a physical violation of Lorentz reciprocity.
     """
     x = np.asarray(x, float)
     y = np.asarray(y, float)
@@ -128,10 +133,15 @@ def assemble_coulomb_split(
             accum += wx[j]*np.einsum(
                 "mc,nc->mn", vx[j], local_pot, optimize=True,
             )
-    # The continuum Coulomb form is symmetric; quadratures x/y
-    # need not be reciprocal. Their antisymmetric error is discarded
-    # only after both contributions have been computed.
-    return MU0/(4.0*math.pi)*0.5*(accum+accum.T)
+    # Continuum Coulomb L is symmetric; independently chosen x/y
+    # cubature is not. Monitor the raw skew *before* symmetrization so
+    # that a symmetric final matrix cannot hide an under-resolved rule.
+    skew = float(
+        np.linalg.norm(accum-accum.T)
+        /max(np.linalg.norm(accum),1e-60)
+    )
+    symmetric = MU0/(4.0*math.pi)*0.5*(accum+accum.T)
+    return (symmetric,skew) if return_diagnostics else symmetric
 
 
 def assemble_basis_coulomb_split(
