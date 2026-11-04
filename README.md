@@ -1,5 +1,7 @@
-> **BFZI 研究分支｜当前研发进度（2026-11-04 UTC）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本研究分支研究**BFZI 圆形／圆角方形连续螺旋线圈、双独立绝缘封装及海水电磁热代理**。G1 在理论重核后已完成三条独立物理基准的首次本机实验（2026-11-04 UTC，代码 `cd73a65`，**62 passed**）：① 5 模态原始 `1/r` Coulomb 磁 Green L：近场角向加密 `dL=4.51e-7`，但 x/y 双体积分加密 `dL=2.9804%`，与旧球云法差 `7.7889%`；② 系统性紧支 curl 空间 27→71→211 已构造及检查；③ 解析球腔偶极人工 Dirichlet 截断在 R=0.52/0.85/1.30m 处的 J 误差为 9.345%、1.488%、0.199%（**仅限 l=1 球腔，非双盒 BFZI**）。本轮新增 **只加密 x / 只加密 y / 同时加密的 2×2 磁算子对照**，并报告对称化前的原始 Galerkin skew、动力学 L 差异和受迫 Z/q；**新代码尚待本机运行**。旧 229 模态 Green L 仍不满足参考精度，**G1 保持 FAIL，禁止正式神经教师训练**。下一命令 `python run.py --mode bfzi-g1-foundations --with-tests`（自动上传日志、不使用 GitHub Actions）。[G1 理论](theory/sections/11_g1_foundation_recheck.tex) · [项目进度](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) · [最近日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)。
+> **BFZI 研究分支｜最新进度（2026-11-04 UTC）：[📊 总体路线图 · P0 验收 · P1 当前关口](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
+> 本研究只针对 **BFZI 圆形／圆角方形单根连续螺旋、两独立绝缘封装、均匀非磁性导电海水与电磁热代理**，不是历史超椭圆线圈。**P0 已在限定的理想闭合双端口线源 demo 上通过 83 项本机测试**：84 探针默认 4 阶 C/B 相对误差 7.28e-5/4.27e-4；严格闭合物理折线 16/32/64 曲角面板的 B 误差约 3.90e-4/9.76e-5/2.44e-5，`div C` 约 1e-16。**不是全几何参数域有限线径无碰撞或铜邻近效应的认证。**  
+> **正在推进 P1：真实未软化 1/r Coulomb 磁能算子。** 已推导并提交三解析无散度、零球壁法向电流模式的真矩阵 `L_ij=16πμ0R⁷/315 δij`，直接校准现有 Coulomb 双积分的 x/y 轴及奇异分区。**新 P1 本机实验待运行；原 BFZI 双盒 Green L、R/K、人工外球/无限导电海水与教师仍未通过，G1=FAIL。**  
+> 本机下一命令：`python run.py --mode bfzi-p1-coulomb --with-tests`（独立日志上传至 `runs/p1/`，不使用 GitHub Actions）。[P0→P1 理论/停止条件](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 第 14 节](theory/sections/14_p1_exact_coulomb_sphere.tex) · [P0 最新 83-pass 日志](docs/research/bfzi_uwpt_electrothermal/runs/p0/latest_summary.md)。
 
 # SDF-MPNEO vNext
 
@@ -24,6 +26,8 @@ paths so neural inference never silently replaces the correctness backend.
 Install with `pip install -e ".[dev]"`. Run the small example with:
 
 ```bash
+python run.py --mode bfzi-p0-source --with-tests # P0 locked ideal BFZI source evidence
+python run.py --mode bfzi-p1-coulomb --with-tests # P1 original Coulomb 1/r analytic vortex benchmark
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
