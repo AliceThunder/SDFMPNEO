@@ -49,9 +49,12 @@ def main():
     # The historical modes are kept byte-for-byte; new charts use an
     # independent smooth C2 window with finite spatial support.
     for current in (systematic1,systematic2):
-        for old,new in zip(base.modes,current.modes):
-            if old is not new:
-                raise RuntimeError("structured hierarchy replaced a baseline mode")
+        for original,mode in zip(base.modes,current.modes):
+            if (not np.array_equal(original.center,mode.center)
+                or not np.array_equal(original.direction,mode.direction)
+                or original.width != mode.width
+                or original.profile != mode.profile):
+                raise RuntimeError("structured hierarchy changed a baseline mode")
     print(
         f"g1_structured_basis: base={base.size}, "
         f"level1={systematic1.size}, level2={systematic2.size}, "
@@ -102,6 +105,10 @@ def main():
     za,ua=solve(la)
     zb,ub=solve(lb)
     zball,uball=solve(lball)
+    # The common R-energy metric is meaningful only for this fixed
+    # pilot space, not a bound on continuum current error.
+    chol_r = np.linalg.cholesky(r).T
+    dj_r = relative(chol_r@ub,chol_r@ua)
     print(
         f"g1_coulomb_split: modes={trial.size}, x_nodes={len(x)}, "
         f"y_nodes={len(y)}, "
@@ -109,10 +116,7 @@ def main():
         f"ball_vs_split_dL={relative(lball,lb):.6g}, "
         f"local_angular_dZ={relative(zb,za):.6g}, "
         f"ball_vs_split_dZ={relative(zball,zb):.6g}, "
-        f"local_angular_dJ_R={relative(
-            np.linalg.cholesky(r).T@ub,
-            np.linalg.cholesky(r).T@ua
-        ):.6g}, "
+        f"local_angular_dJ_R={dj_r:.6g}, "
         f"min_L_split_eig={np.linalg.eigvalsh(lb)[0]:.6g}",
         flush=True,
     )
