@@ -391,6 +391,7 @@ def main(argv=None):
                     verbose="--verbose-log" in args,
                     publish="--no-publish-log" not in args,
                     with_tests="--with-tests" in args,
+                    log_subdir="p0",
                 )
             if mode == "bfzi-g1-foundations":
                 from examples.bfzi_g1_foundations import main as g1_main
