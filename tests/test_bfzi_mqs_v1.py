@@ -102,6 +102,35 @@ def test_g1_coulomb_near_wall_rays_are_clipped_to_real_seawater():
 
 
 
+def test_g1_sphere_only_refinement_does_not_change_near_box_shell():
+    # The near-box slab rule is identical when the SPHERE radial/angle
+    # rules change. This makes x-only changes in R/K/Green L attributable
+    # to the spherical piece, without inferring convergence from them.
+    scene=scene_pair()
+    common=dict(
+        wall_scale=0.001125,shell_normal_order=2,
+        shell_tangential_order=2,return_sphere_count=True,
+    )
+    base_x,base_w,base_s=scene.box_shell_quadrature(3,5,8,**common)
+    variants=(
+        scene.box_shell_quadrature(4,6,10,**common),
+        scene.box_shell_quadrature(
+            3,5,8,polar_geometry_order=2,
+            azimuthal_geometry_order=2,**common,
+        ),
+        scene.box_shell_quadrature(
+            3,5,8,radial_geometry_cuts=True,
+            max_radial_panel_width=0.10,**common,
+        ),
+    )
+    for points,weights,sphere_count in variants:
+        assert sphere_count != base_s
+        np.testing.assert_array_equal(points[sphere_count:],base_x[base_s:])
+        np.testing.assert_array_equal(weights[sphere_count:],base_w[base_s:])
+    assert base_s > 0
+    assert base_s < len(base_x)
+
+
 def test_g1_geometry_azimuth_cubature_is_positive_and_covers_wet_volume():
     # Sphere-minus-two-rotated-box geometry is integrated with a C2
     # box/sphere partition of unity, not a hard masked longitude grid.
