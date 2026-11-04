@@ -36,6 +36,7 @@
     python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # 只写本地，不提交 Git
     python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate # 207模态父空间误差上界与重要方向筛选
     python run.py --mode bfzi-convergence --basis-domain-ball # 均匀球Green外域检查
+    python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --with-tests # 229模态同族：外域0.52→0.70→0.85m，自动上传
     python run.py --mode bfzi-convergence --basis-domain # 外域半径收敛
     python run.py --mode bfzi-convergence --basis-local  # R/K 分轴与组合加密
     python run.py --mode bfzi-convergence --basis-angular  # 球域角向分片 Gauss 积分
