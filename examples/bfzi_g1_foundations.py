@@ -174,7 +174,7 @@ def main(hierarchy=False):
             shell_normal_order=2,shell_tangential_order=2,
             **options,
         )
-    x,wx = quadrature(3,5,8)
+    x,wx,sphere_x = quadrature(3,5,8,return_sphere_count=True)
     y,wy = quadrature(4,6,10)
     modes=trial.evaluate(x)
     r = np.einsum(
@@ -222,7 +222,7 @@ def main(hierarchy=False):
     # More important than another local-angle tweak: independently
     # refine BOTH physical x and y volume cubatures. Keep R/K,
     # physical modes and the port forcing from the first rule.
-    x2,wx2 = quadrature(4,6,10)
+    x2,wx2,sphere_x2 = quadrature(4,6,10,return_sphere_count=True)
     y2,wy2 = quadrature(5,8,14)
     modes_x2=trial.evaluate(x2)
     r_x2=np.einsum(
@@ -233,9 +233,20 @@ def main(hierarchy=False):
     # Replace global spherical angular aliasing by fixed physical panel
     # cuts projected from BOTH oriented boxes and their blending shells.
     # The shell rule, current space, source and y rule are unchanged.
-    x_geom,wx_geom=quadrature(
+    x_geom,wx_geom,sphere_geom=quadrature(
         3,5,8,polar_geometry_order=2,azimuthal_geometry_order=2,
+        return_sphere_count=True,
     )
+    # The near-box slab rule must be unchanged when radial/angular
+    # parameters of the spherical quadrature are varied. Then x-only
+    # differences are rigorously attributable to the spherical integral.
+    for other, other_w, split in (
+        (x2,wx2,sphere_x2),(x_geom,wx_geom,sphere_geom),
+    ):
+        if not (np.array_equal(x[sphere_x:], other[split:])
+                and np.array_equal(wx[sphere_x:],other_w[split:])):
+            raise RuntimeError("sphere-only refinement changed box shell rule")
+
     modes_geom=trial.evaluate(x_geom)
     r_geom=np.einsum(
         "n,nmc,nkc->mk",wx_geom/scene.seawater.conductivity,
@@ -258,6 +269,78 @@ def main(hierarchy=False):
     k_dual=coupling_dual(x,wx)
     k_dual_x2=coupling_dual(x2,wx2)
     k_dual_geom=coupling_dual(x_geom,wx_geom)
+    # Angular/radial x refinements separated on a COMMON shell rule.
+    # R and K are much cheaper to recompute than Coulomb L, so each
+    # factor can be inspected without another full double integral.
+    def volume_matrices(points, weights):
+        modes_here=trial.evaluate(points)
+        rr=np.einsum(
+            "n,nmc,nkc->mk",weights/scene.seawater.conductivity,
+            modes_here,modes_here,optimize=True,
+        )
+        kk=_coupling(source,modes_here,weights,points)
+        kd=coupling_dual(points,weights)
+        return rr,kk,kd
+
+    x_refinements=(
+        ("radial_only",dict(radial=4,polar=5,azimuth=8)),
+        ("angular_only",dict(radial=3,polar=6,azimuth=10)),
+        ("radial_geometry",dict(
+            radial=3,polar=5,azimuth=8,
+            radial_geometry_cuts=True,max_radial_panel_width=0.10,
+        )),
+        ("angle_geometry_3",dict(
+            radial=3,polar=5,azimuth=8,
+            polar_geometry_order=3,azimuthal_geometry_order=3,
+        )),
+    )
+    for label,options in x_refinements:
+        options=dict(options)
+        r_order=options.pop("radial")
+        p_order=options.pop("polar")
+        a_order=options.pop("azimuth")
+        xr,wr,sphere_r=quadrature(
+            r_order,p_order,a_order,
+            return_sphere_count=True,**options,
+        )
+        if not (np.array_equal(x[sphere_x:],xr[sphere_r:])
+                and np.array_equal(wx[sphere_x:],wr[sphere_r:])):
+            raise RuntimeError("x radial/angle change altered the fixed box shell")
+        rr,kk,kd=volume_matrices(xr,wr)
+        print(
+            f"g1_volume_axis: rule={label}, "
+            f"x_nodes={len(xr)},sphere_nodes={sphere_r}, "
+            f"dR_vs_base={relative(rr,r):.6g}, "
+            f"dK_vs_base={relative(kk,k):.6g}, "
+            f"dK_dual={relative(kd,kk):.6g}, "
+            f"dK_dual_vs_base={relative(kd,k_dual):.6g}",
+            flush=True,
+        )
+
+    # The weak-form identity holds over the *complete* wet region.
+    # Artificial sphere/shell partition pieces have nonzero interface
+    # fluxes individually, so their primal-vs-dual differences should
+    # only be compared after adding both components.
+    for name,points,weights,split in (
+        ("base",x,wx,sphere_x),
+        ("ordinary_refined",x2,wx2,sphere_x2),
+        ("geometry",x_geom,wx_geom,sphere_geom),
+    ):
+        parts=[]
+        for sl in (slice(None,split),slice(split,None)):
+            rr,kk,kd=volume_matrices(points[sl],weights[sl])
+            parts.append((rr,kk,kd))
+        print(
+            f"g1_volume_regions: rule={name}, "
+            f"sphere_nodes={split},shell_nodes={len(points)-split}, "
+            f"sphere_R_norm={np.linalg.norm(parts[0][0]):.6g}, "
+            f"shell_R_norm={np.linalg.norm(parts[1][0]):.6g}, "
+            f"sphere_K_norm={np.linalg.norm(parts[0][1]):.6g}, "
+            f"shell_K_norm={np.linalg.norm(parts[1][1]):.6g}, "
+            f"sphere_dual_K_norm={np.linalg.norm(parts[0][2]):.6g}, "
+            f"shell_dual_K_norm={np.linalg.norm(parts[1][2]):.6g}",
+            flush=True,
+        )
     # Factorial 2x2 x/y volume cubature: isolate each integration axis.
     # This answers whether the 2.98% L change in the last log came
     # primarily from x, from y or from their coupled quadrature aliasing.
