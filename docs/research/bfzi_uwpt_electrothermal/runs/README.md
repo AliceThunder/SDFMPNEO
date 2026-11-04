@@ -20,6 +20,6 @@ python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 ```
 
-**最新本机实测（2026-11-04 UTC，代码基线 `19c2c52`）：** `60 passed in 49.90s`；相同 229 个物理模态的外域 0.85→1.05→1.30m 两步 `domain_response_gate=FAIL`。特别是 1.05→1.30m 的 `dZ=0.9506%`、共同 0.52m 海水 J `dJ=2.2970%`、设备 0.35m 近区 `dJ=1.3923%`，误差并非单调下降。下一命令（**待本地实测**）将在 1.05→1.30→1.60m 中增设同一白化坐标系的 R/K-only 与 Green L-only 受控敏感性拆分；摘要新增独立表格（`dR_common/dK_common/dL_common`、两项 `dZ` 与设备近区 `dJ`），仍会保留完整实际外域对照和 FAIL 标志。这些混合算子结果仅用于诊断，不能被称作真实物理外域解或 Green L 已通过验收。
+**最近真正本机实测（2026-11-04 UTC，旧代码基线 `19c2c52`）：** `60 passed in 49.90s`；229 模态外域 0.85→1.05→1.30m 两步均 `domain_response_gate=FAIL`，最后一步 `dZ=0.9506%`、共同域 `dJ=2.2970%`、设备近区 `dJ=1.3923%`。**新 G1 代码尚未运行**。下一次使用 `--mode bfzi-g1-foundations`，摘要将专门保留原始 Coulomb Green L 奇异分拆 5 模态实验、27→71→211 紧支 curl 层级和解析球腔无限域边界的全部指标。它们是先导物理基准，尚不能用作 229 模态高精度教师。
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
