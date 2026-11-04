@@ -1,28 +1,25 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T02:58:45+00:00
-- 结束（UTC）：2026-11-04T03:05:16+00:00
-- 当时检出的代码提交：`19c2c52`
-- 执行：`python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-extend`
-- 同批 pytest：60 passed in 49.90s
+- 开始（UTC）：2026-11-04T06:45:05+00:00
+- 结束（UTC）：2026-11-04T06:45:58+00:00
+- 当时检出的代码提交：`cd73a65`
+- 执行：`python run.py --mode bfzi-g1-foundations`
+- 同批 pytest：62 passed in 43.75s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
-## 有限外域：相同物理方向、不同人工边界
+## G1 三条基础路线的实验基准（尚非认证）
 
-| 外域半径 (m) | 模态数 | R/K 节点 | 海水功率 (W) |
-|---:|---:|---:|---:|
-| 0.85 | 229 | 667408 | 0.0011821263 |
-| 1.05 | 229 | 750352 | 0.0011842132 |
-| 1.3 | 229 | 833296 | 0.0011886402 |
+- `g1_structured_basis: base=27, level1=71, level2=211, compact_level1=44`
+- `g1_coulomb_split: modes=5, x_nodes=4008, y_nodes=4584, local_angular_dL=4.51102e-07, ball_vs_split_dL=0.0778894, local_angular_dZ=9.46672e-10, ball_vs_split_dZ=0.00481719, local_angular_dJ_R=1.27697e-09, volume_x_nodes=4584, volume_y_nodes=6124, volume_dL=0.0298039, dimensionless_dL=0.00196389, refined_on_coarse_residual=0.00193254, volume_dZ=0.00182062, volume_probe_dq=0.00058998, min_L_split_eig=1.04838e-09`
+- `g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened singularity-split pilot; both x/y volume cubatures and local angles are compared, not yet converged. No 229-mode certificate.`
+- `g1_exact_exterior: outer_radius=0.52, skin_depth=0.503292, dirichlet_rel_dJ=0.0934458, transparent_log_derivative=-4.66172-1.60492j`
+- `g1_exact_exterior: outer_radius=0.85, skin_depth=0.503292, dirichlet_rel_dJ=0.0148812, transparent_log_derivative=-3.47714-1.78985j`
+- `g1_exact_exterior: outer_radius=1.3, skin_depth=0.503292, dirichlet_rel_dJ=0.00199346, transparent_log_derivative=-2.89742-1.88508j`
+- `g1_exterior_note: exact l=1 toroidal spherical-cavity MQS transparent boundary is not a general BFZI two-box DtN map.`
 
-| 半径比较 | dZ | 0.52m dJ | 0.52m 双端口 dJ | 0.35m dJ | 0.35m 双端口 dJ | 0.35m dq | 探针 dq | dP | 阶段响应门槛 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| 0.85->1.05 | 0.00369954 | 0.00992417 | 0.0110302 | 0.00835574 | 0.0093124 | 0.0101324 | 0.00208308 | 0.00176539 | FAIL |
-| 1.05->1.3 | 0.00950606 | 0.0229696 | 0.0255412 | 0.013923 | 0.0155186 | 0.00503747 | 0.00594089 | 0.00373841 | FAIL |
-
-共同海水区域指标是固定 0.52 m 球域中的加权采样差异；设备近区是半径 0.35 m 的固定湿区权重子集。两者分别显示人工边界附近和封装周围的空间误差。各半径仍独立重组磁 L，不能代替无穷海水域的收敛证明。
+Green L 独立奇异拆分当前仅在小试探空间运行；紧支 curl 层级仅证明构造/嵌套，尚未证明逼近收敛；解析透明边界只适用于球腔偶极的 l=1 扇区。
 
 ## 收敛判定与诊断
 
