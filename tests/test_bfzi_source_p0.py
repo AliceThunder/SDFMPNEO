@@ -180,3 +180,40 @@ def test_magnetic_wire_cannot_silently_use_uniform_mu0_sea_source():
             replace(scene,transmitter=magnetic),
             frequency_hz=200000.0,order=4,
         )
+
+
+def test_source_coulomb_gauge_divergence_uses_exact_segment_endpoints():
+    # Analytic source continuity identity is separate from B=curl C:
+    # div ∫_a^b dl/|x-r| = 1/|x-a|-1/|x-b|.
+    aa=np.array([0.03,-0.07,0.06])
+    bb=np.array([0.18,0.04,-0.02])
+    x=np.array([[0.26,0.09,0.11],[0.01,-0.13,0.18]])
+    u,w=np.polynomial.legendre.leggauss(64)
+    pts=aa+0.5*(u[:,None]+1.0)*(bb-aa)
+    dl=0.5*w[:,None]*(bb-aa)
+    sample=LineSource(pts,dl)
+    expected=(
+        1.0/np.linalg.norm(x-aa,axis=1)
+        -1.0/np.linalg.norm(x-bb,axis=1)
+    )/(4*np.pi)
+    np.testing.assert_allclose(
+        sample.divergence_kernel(x),expected,rtol=2e-13,atol=2e-14,
+    )
+
+
+def test_complete_port_analytic_straights_restore_coulomb_gauge():
+    # A physically closed continuous filament is solenoidal. Remaining
+    # finite div C is entirely the curved-corner quadrature residual.
+    scene=build_demo_scene()
+    for assembly in scene.assemblies:
+        local=np.array([
+            [0.13,0.04,0.045],[-0.14,0.09,0.06],
+            [0.0,0.0,0.034],[0.15,-0.02,0.06],
+        ])
+        x=assembly.pose.position(local)
+        coarse=build_line_source(assembly,order=4)
+        fine=build_line_source(assembly,order=12)
+        res_coarse=np.linalg.norm(coarse.divergence_kernel(x))
+        res_fine=np.linalg.norm(fine.divergence_kernel(x))
+        assert res_fine < 1e-7
+        assert res_fine < res_coarse
