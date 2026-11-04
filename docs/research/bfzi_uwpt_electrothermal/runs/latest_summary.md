@@ -1,17 +1,29 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T08:07:39+00:00
-- 结束（UTC）：2026-11-04T08:09:07+00:00
-- 当时检出的代码提交：`49be830`
+- 开始（UTC）：2026-11-04T08:20:46+00:00
+- 结束（UTC）：2026-11-04T08:22:13+00:00
+- 当时检出的代码提交：`3c89c38`
 - 执行：`python run.py --mode bfzi-g1-foundations`
-- 同批 pytest：66 passed in 39.23s
+- 同批 pytest：67 passed in 38.36s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
 ## G1 三条基础路线的实验基准（尚非认证）
 
 - `g1_structured_basis: base=27, level1=71, level2=211, compact_level1=44`
+- `g1_volume_axis: rule=radial_only, x_nodes=4192,sphere_nodes=768, dR_vs_base=0.0104033, dK_vs_base=0.0106306, dK_dual=0.0421719, dK_dual_vs_base=0.1897`
+- `g1_volume_axis: rule=angular_only, x_nodes=4284,sphere_nodes=860, dR_vs_base=0.00103539, dK_vs_base=0.0328869, dK_dual=0.223777, dK_dual_vs_base=0.0767532`
+- `g1_volume_axis: rule=radial_geometry, x_nodes=4592,sphere_nodes=1168, dR_vs_base=0.000744726, dK_vs_base=0.00535857, dK_dual=0.167537, dK_dual_vs_base=0.0196853`
+- `g1_volume_axis: rule=angle_geometry_3, x_nodes=9439,sphere_nodes=6015, dR_vs_base=0.00163222, dK_vs_base=0.0225556, dK_dual=0.219931, dK_dual_vs_base=0.0628785`
+- `g1_volume_ray: rule=4x8x16, x_nodes=2304, dR_vs_base=0.235548, dR_vs_refined=0.246748, dK_vs_base=0.171713, dK_vs_refined=0.137588, dK_dual=0.150428, volume_rel_error=0.000977882`
+- `g1_volume_ray: rule=5x12x24, x_nodes=6480, dR_vs_base=0.174375, dR_vs_refined=0.184994, dK_vs_base=0.126416, dK_vs_refined=0.0906829, dK_dual=0.233559, volume_rel_error=0.000130881`
+- `g1_volume_k_entry: rule=base, mode=4,port=1, primal_K=1.92154e-08, dual_K=1.56278e-08, entry_gap_over_K_norm=0.131447`
+- `g1_volume_regions: rule=base, sphere_nodes=584,shell_nodes=3424, sphere_R_norm=1.24583, shell_R_norm=7.95555, sphere_K_norm=3.60037e-08, shell_K_norm=8.74691e-09, sphere_dual_K_norm=1.888e-08, shell_dual_K_norm=3.32114e-09`
+- `g1_volume_k_entry: rule=ordinary_refined, mode=4,port=0, primal_K=1.84968e-08, dual_K=1.92856e-08, entry_gap_over_K_norm=0.0300448`
+- `g1_volume_regions: rule=ordinary_refined, sphere_nodes=1160,shell_nodes=3424, sphere_R_norm=1.15324, shell_R_norm=7.95555, sphere_K_norm=3.49589e-08, shell_K_norm=8.74691e-09, sphere_dual_K_norm=2.39942e-08, shell_dual_K_norm=3.32114e-09`
+- `g1_volume_k_entry: rule=geometry, mode=4,port=0, primal_K=1.88011e-08, dual_K=1.51306e-08, entry_gap_over_K_norm=0.137429`
+- `g1_volume_regions: rule=geometry, sphere_nodes=2640,shell_nodes=3424, sphere_R_norm=1.24499, shell_R_norm=7.95555, sphere_K_norm=3.5419e-08, shell_K_norm=8.74691e-09, sphere_dual_K_norm=1.81532e-08, shell_dual_K_norm=3.32114e-09`
 - `g1_coulomb_patch: modes=5, clip_vs_clearance_dL=0.047611, face_panels_vs_uniform_dL=0.00789322, radius_055_to_080_dL=0.0208704, raw_skew_clearance=0.00246786, raw_skew_unpanel=0.00280427, raw_skew_clip_055=0.00283556, raw_skew_clip_080=0.0021507`
 - `g1_coulomb_axes: modes=5, dL_x_only=0.111862, dL_y_only=0.013673, dL_both=0.0114144, nonadditive_dL=0.127241, raw_skew_base=0.00283556, raw_skew_x_only=0.000344436, raw_skew_y_only=0.00221105, raw_skew_both=0.000398456, dimensionless_dL_x=0.00503948, dimensionless_dL_y=0.00113808, x_cubature_dR=0.0102768, x_cubature_dK=0.0395661, dZ_x_only=0.004642, dZ_y_only=0.00012835, dq_x_only=0.00081723, dq_y_only=0.000122256`
 - `g1_volume_geom_x: modes=5, x_base_nodes=4008, x_refined_nodes=4584, x_geom_nodes=6064, dR_geom_vs_base=0.00188964, dR_geom_vs_refined=0.0104568, dK_geom_vs_base=0.0215318, dK_geom_vs_refined=0.0199579, dK_dual_base=0.187166, dK_dual_refined=0.0419591, dK_dual_geom=0.197297, dL_geom_vs_base=0.0244189, dL_geom_vs_refined_x=0.149748, raw_skew_geom=0.00472866`
