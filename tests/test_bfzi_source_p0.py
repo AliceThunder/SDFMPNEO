@@ -112,6 +112,61 @@ def test_source_reference_is_pose_covariant_and_b_is_curl_of_c():
     )
 
 
+
+def test_production_source_integrates_exact_straights_and_only_curved_corners():
+    # Reconstruct the complete physical line with an independent analytic
+    # straight-segment + curved-corner reference. Keep the original
+    # all-Gauss nodes for copper heat and air Neumann integration.
+    scene=build_demo_scene()
+    for assembly in scene.assemblies:
+        points=np.array([
+            assembly.pose.position([0.13,0.04,0.045]),
+            assembly.pose.position([-0.14,0.09,0.06]),
+        ])
+        order=4
+        hybrid=build_line_source(assembly,order=order)
+        assert hybrid.field_mask is not None
+        assert hybrid.straight_segments is not None
+        assert np.count_nonzero(hybrid.field_mask)==4*assembly.coil.turns*order
+        assert hybrid.points.shape[0]==len(hybrid.line_elements)
+        direct_c,direct_b=continuous_port_field(
+            assembly,points,corner_order=order,
+        )
+        np.testing.assert_allclose(
+            hybrid.potential_kernel(points),direct_c,
+            rtol=3e-12,atol=2e-14,
+        )
+        np.testing.assert_allclose(
+            hybrid.magnetic_field(points).real,direct_b,
+            rtol=3e-12,atol=2e-16,
+        )
+
+
+def test_circular_production_field_keeps_only_arcs_and_return():
+    scene=build_demo_scene()
+    original=scene.transmitter
+    circular=BFZICoil(
+        turns=2,outer_half_size=0.075,corner_radius=0.075,
+        pitch=0.005,alpha=1.0,
+    )
+    assembly=replace(original,coil=circular)
+    x=np.array([
+        assembly.pose.position([0.16,0.02,0.04]),
+        assembly.pose.position([-0.12,0.13,0.07]),
+    ])
+    hybrid=build_line_source(assembly,order=6)
+    # Only the return has finite straight segments in the circular limit.
+    assert len(hybrid.straight_segments)==len(assembly.return_waypoints)+1
+    c,b=continuous_port_field(assembly,x,corner_order=6)
+    np.testing.assert_allclose(
+        hybrid.potential_kernel(x),c,rtol=1e-11,atol=1e-13,
+    )
+    np.testing.assert_allclose(
+        hybrid.magnetic_field(x).real,b,rtol=1e-11,atol=1e-16,
+    )
+
+
+
 def test_magnetic_wire_cannot_silently_use_uniform_mu0_sea_source():
     scene=build_demo_scene()
     magnetic=replace(
