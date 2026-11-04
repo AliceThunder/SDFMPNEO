@@ -167,11 +167,12 @@ def main(hierarchy=False):
         base.outer_envelope,base.outer_taper_width,
     )
     transform = np.eye(trial.size)
-    def quadrature(radial, polar, azimuth):
+    def quadrature(radial, polar, azimuth, **options):
         return scene.box_shell_quadrature(
             radial,polar,azimuth,
             wall_scale=trial.wall_scale,outer_taper_width=trial.outer_taper_width,
             shell_normal_order=2,shell_tangential_order=2,
+            **options,
         )
     x,wx = quadrature(3,5,8)
     y,wy = quadrature(4,6,10)
@@ -229,6 +230,34 @@ def main(hierarchy=False):
         modes_x2,modes_x2,optimize=True,
     )
     k_x2=_coupling(source,modes_x2,wx2,x2)
+    # Replace global spherical angular aliasing by fixed physical panel
+    # cuts projected from BOTH oriented boxes and their blending shells.
+    # The shell rule, current space, source and y rule are unchanged.
+    x_geom,wx_geom=quadrature(
+        3,5,8,polar_geometry_order=2,azimuthal_geometry_order=2,
+    )
+    modes_geom=trial.evaluate(x_geom)
+    r_geom=np.einsum(
+        "n,nmc,nkc->mk",wx_geom/scene.seawater.conductivity,
+        modes_geom,modes_geom,optimize=True,
+    )
+    k_geom=_coupling(source,modes_geom,wx_geom,x_geom)
+    # Exact continuum identity: int curl(F).C = int F.curl(C),
+    # since F vanishes on both insulating and artificial boundaries.
+    # The independent K weak form is a cubature diagnostic, not a
+    # replacement for the original two-port physical definition.
+    def coupling_dual(points, weights):
+        primitive=trial.potential_primitive(points)
+        fields=np.stack([
+            np.real(line.magnetic_field(points))
+            for line in source.lines
+        ],axis=-1)
+        return np.einsum(
+            "n,nmc,ncp->mp", weights,primitive,fields,optimize=True,
+        )
+    k_dual=coupling_dual(x,wx)
+    k_dual_x2=coupling_dual(x2,wx2)
+    k_dual_geom=coupling_dual(x_geom,wx_geom)
     # Factorial 2x2 x/y volume cubature: isolate each integration axis.
     # This answers whether the 2.98% L change in the last log came
     # primarily from x, from y or from their coupled quadrature aliasing.
@@ -244,6 +273,11 @@ def main(hierarchy=False):
     )
     lc,skew_refined=assemble_basis_coulomb_split(
         trial,transform,x2,wx2,y2,wy2,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
+    )
+    l_geom,skew_geom=assemble_basis_coulomb_split(
+        trial,transform,x_geom,wx_geom,y,wy,
         local_polar_order=6,local_azimuthal_order=12,
         return_diagnostics=True,**kwargs,
     )
@@ -329,6 +363,22 @@ def main(hierarchy=False):
         flush=True,
     )
     print(
+        f"g1_volume_geom_x: modes={trial.size}, "
+        f"x_base_nodes={len(x)}, x_refined_nodes={len(x2)}, "
+        f"x_geom_nodes={len(x_geom)}, "
+        f"dR_geom_vs_base={relative(r_geom,r):.6g}, "
+        f"dR_geom_vs_refined={relative(r_geom,r_x2):.6g}, "
+        f"dK_geom_vs_base={relative(k_geom,k):.6g}, "
+        f"dK_geom_vs_refined={relative(k_geom,k_x2):.6g}, "
+        f"dK_dual_base={relative(k_dual,k):.6g}, "
+        f"dK_dual_refined={relative(k_dual_x2,k_x2):.6g}, "
+        f"dK_dual_geom={relative(k_dual_geom,k_geom):.6g}, "
+        f"dL_geom_vs_base={relative(l_geom,lb):.6g}, "
+        f"dL_geom_vs_refined_x={relative(l_geom,lx):.6g}, "
+        f"raw_skew_geom={skew_geom:.6g}",
+        flush=True,
+    )
+    print(
         f"g1_coulomb_split: modes={trial.size}, x_nodes={len(x)}, "
         f"y_nodes={len(y)}, "
         f"local_angular_dL={relative(lb,la):.6g}, "
@@ -349,7 +399,8 @@ def main(hierarchy=False):
         "g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened "
         "singularity-split pilot; x/y cubatures, face-aligned angular "
         "panels and near-patch radius must all converge independently. "
-        "No 229-mode certificate.",
+        "The geometry-projected x rule and dual K are independent "
+        "diagnostics, not reference truth. No 229-mode certificate.",
         flush=True,
     )
     if hierarchy:
