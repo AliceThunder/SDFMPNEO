@@ -107,8 +107,10 @@ def main():
     zball,uball=solve(lball)
     # The common R-energy metric is meaningful only for this fixed
     # pilot space, not a bound on continuum current error.
-    chol_r = np.linalg.cholesky(r).T
-    dj_r = relative(chol_r@ub,chol_r@ua)
+    delta_u = ub-ua
+    energy_delta = float(np.real(np.vdot(delta_u,r@delta_u)))
+    energy_base = float(np.real(np.vdot(ua,r@ua)))
+    dj_r = math.sqrt(max(energy_delta,0.0)/max(energy_base,1e-60))
     print(
         f"g1_coulomb_split: modes={trial.size}, x_nodes={len(x)}, "
         f"y_nodes={len(y)}, "
