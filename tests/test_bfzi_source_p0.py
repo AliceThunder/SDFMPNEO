@@ -10,6 +10,7 @@ from sdfmpneo_bfzi.geometry import BFZICoil, RigidPose
 from sdfmpneo_bfzi.source import LineSource, MU0, build_line_source, build_bfzi_source
 from sdfmpneo_bfzi.source_reference import (
     straight_segment_field, continuous_port_field,
+    polygonal_port_vertices, polygonal_port_field,
 )
 
 
@@ -217,3 +218,60 @@ def test_complete_port_analytic_straights_restore_coulomb_gauge():
         res_fine=np.linalg.norm(fine.divergence_kernel(x))
         assert res_fine < 1e-7
         assert res_fine < res_coarse
+
+
+def test_closed_polygonal_bfzi_is_strictly_solenoidal_and_refines():
+    scene=build_demo_scene()
+    for assembly in scene.assemblies:
+        x=np.array([
+            assembly.pose.position([0.14,0.03,0.04]),
+            assembly.pose.position([-0.12,0.10,0.07]),
+            assembly.pose.position([0.06,-0.06,0.065]),
+        ])
+        reference_c,reference_b=continuous_port_field(
+            assembly,x,corner_order=28,
+        )
+        errors=[]
+        for panels in (12,48):
+            vertices=polygonal_port_vertices(
+                assembly,panels_per_corner=panels,
+            )
+            np.testing.assert_allclose(
+                vertices[-1],vertices[0],rtol=0,atol=0,
+            )
+            np.testing.assert_allclose(
+                np.diff(vertices,axis=0).sum(axis=0),
+                np.zeros(3),atol=2e-16,
+            )
+            c,b,div=polygonal_port_field(
+                assembly,x,panels_per_corner=panels,
+            )
+            assert np.max(np.abs(div))<2e-12
+            errors.append((
+                np.linalg.norm(c-reference_c),
+                np.linalg.norm(b-reference_b),
+            ))
+        assert errors[1][0] < errors[0][0]
+        assert errors[1][1] < errors[0][1]
+
+
+def test_closed_polygonal_circular_limit_is_divergence_free():
+    scene=build_demo_scene()
+    circle=BFZICoil(
+        turns=2,outer_half_size=0.075,corner_radius=0.075,
+        pitch=0.005,alpha=1.0,
+    )
+    assembly=replace(scene.transmitter,coil=circle)
+    points=np.array([
+        assembly.pose.position([0.15,0.04,0.05]),
+        assembly.pose.position([-0.16,0.02,0.07]),
+    ])
+    vertices=polygonal_port_vertices(
+        assembly,panels_per_corner=20,
+    )
+    assert np.all(np.linalg.norm(np.diff(vertices,axis=0),axis=1)>0)
+    c,b,div=polygonal_port_field(
+        assembly,points,panels_per_corner=20,
+    )
+    assert np.max(np.abs(div))<2e-12
+    assert np.isfinite(c).all() and np.isfinite(b).all()
