@@ -447,6 +447,7 @@ class BfziScene:
             raise ValueError("return_sphere_count must be a boolean")
 
         shell_width, expanded = self._box_shell_geometry(scale, shell_width_factor)
+        center = np.asarray(self.outer_center)
 
         def smooth_far_weight(x: np.ndarray, assembly: BFZIAssembly):
             distance2, _ = assembly.enclosure.squared_exterior_distance(
