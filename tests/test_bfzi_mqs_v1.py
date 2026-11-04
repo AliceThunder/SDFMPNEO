@@ -282,6 +282,39 @@ def test_targeted_global_and_package_corner_modes_preserve_207_parent():
         assert mode.gaussian_metric is not None
         assert np.linalg.eigvalsh(mode.gaussian_metric)[0]>0
 
+    # Physical current directions must survive an outer-radius change.
+    # Their boundary taper may differ, but their center, width, port,
+    # and rotated anisotropic Gaussian metric must not change.
+    from dataclasses import replace
+    expanded_scene = replace(
+        scene, outer_radius=scene.outer_radius + 0.25,
+    )
+    expanded_source = build_bfzi_source(
+        expanded_scene, 200_000., order=3,
+    )
+    expanded = build_sea_basis(
+        expanded_scene,
+        modes_per_face=2,face_refinement=5,
+        refine_thin_faces_only=True,sources=expanded_source,
+        include_source_guided=True,
+        include_source_face_guided=True,
+        include_anisotropic_face_guided=True,
+        include_global_multiscale=True,
+        include_corner_source_guided=True,
+    )
+    assert expanded.size == corner_trial.size == 229
+    for old, new in zip(corner_trial.modes, expanded.modes):
+        np.testing.assert_array_equal(old.center,new.center)
+        np.testing.assert_array_equal(old.direction,new.direction)
+        assert old.width == new.width
+        assert old.source_port == new.source_port
+        if old.gaussian_metric is None:
+            assert new.gaussian_metric is None
+        else:
+            np.testing.assert_array_equal(
+                old.gaussian_metric,new.gaussian_metric,
+            )
+
 
 def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     """Keep detailed evidence on disk while showing compact physics deltas."""
@@ -310,6 +343,11 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
             "dJ_volume=0.001, dq=0.002, "
             "normal_peak_scaled_dq=0.001, response_gate=PASS\n"
         )
+        writer.write(
+            "  domain_step: 0.52->0.7 m, dZ=0.004, dq=0.01, "
+            "dP=0.008, dJ_common=0.02, "
+            "dJ_ports_common=0.015\n"
+        )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
     assert "dJ_volume=0.931925" in console.getvalue()
@@ -317,6 +355,8 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     assert "rk_far_polar_229_B_vs_A" in console.getvalue()
     assert "normal_peak_scaled_dq=0.002" in console.getvalue()
     assert "rk_far_azimuth_4_vs_3" in console.getvalue()
+    assert "domain_step: 0.52->0.7" in console.getvalue()
+    assert "dJ_ports_common=0.015" in console.getvalue()
 
 
 def test_galerkin_volume_current_error_matches_physical_sea_quadrature():
