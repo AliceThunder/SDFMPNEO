@@ -12,7 +12,7 @@
 
 第一步已形成 [P0 物理问题／源项验收契约](P0_PHYSICS_SOURCE_CONTRACT.md)，正式 LaTeX 见 [第 13 节](../../../theory/sections/13_p0_physical_source_contract.tex)。它冻结圆形—圆角方形连续线圈、两独立绝缘封装、完整定向回流、均匀线性非磁性海水、MQS 峰值相量与人工外球假设；**当前只批准 source-only 复核，不批准新的海水 R/K/L 精度声明或正式神经教师。**
 
-新增 `source_reference.py`：真实直边和整条回流用有限直导线解析 C/B，真实曲角用独立高阶 Gauss，对照原来 `LineSource` 的阶次；并新增显式非磁性导线校验。运行：
+P0 首轮本机 **75 passed**，但原生产 `LineSource` 4 阶在 28 个海水探针上磁场 B 对独立参考相差 **1.174%**（先定 0.1% 门槛未过）；12 阶相差 **0.00380%**。本轮已据此修正**生产源项**：真实 BFZI 直边和整条回流用有限直导线解析 C/B，圆角曲段保留 Gauss，并保存原完整节点给空气互感、导体长度与铜热；独立 `source_reference.py` 仍可用来比较。新增 `p0_source` 的旧/新同阶对照及近壁误差输出，**新版本待本机复测**。运行：
 
 ```powershell
 python run.py --mode bfzi-p0-source --with-tests
