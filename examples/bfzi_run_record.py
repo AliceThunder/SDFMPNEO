@@ -236,9 +236,10 @@ def _summary(root, flags, started, ended, status, raw):
         ])
         parts.extend(f"- `{line}`" for line in g1_pilot)
         parts.append(
-            "\nGreen L 独立奇异拆分当前仅在小试探空间运行；"
-            "紧支 curl 层级仅证明构造/嵌套，尚未证明逼近收敛；"
-            "解析透明边界只适用于球腔偶极的 l=1 扇区。"
+            "\nGreen L 当前仍为小空间原核积分试验，新增真实海水几何裁剪与分割半径对照；"
+            "可选 J/q 仅为选取方向的嵌套实验；"
+            "已实现均匀外海水的球面多极 DtN 和 Joule 尾场，但尚未耦合完整双盒求解。"
+            "所有 G1 物理精度仍待独立验收。"
         )
     if stages:
         parts.extend([
