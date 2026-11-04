@@ -99,6 +99,23 @@ def main():
         local_polar_order=6,local_azimuthal_order=12,
         return_diagnostics=True,**kwargs,
     )
+    # The old cutoff shrank to the distance from the boxes, leaving
+    # near-wall near-singular work to sparse global y cubature. The new
+    # clipped-ray integration uses the same physical radius even across
+    # an insulating-box silhouette. Compare both on IDENTICAL x/y nodes,
+    # and vary the partition radius without changing the continuous L.
+    l_clearance,skew_clearance=assemble_basis_coulomb_split(
+        trial,transform,x,wx,y,wy,
+        clip_local_to_domain=False,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,**kwargs,
+    )
+    l_patch,skew_patch=assemble_basis_coulomb_split(
+        trial,transform,x,wx,y,wy,
+        local_radius=0.08,local_fraction=0.6,local_radial_order=4,
+        local_polar_order=6,local_azimuthal_order=12,
+        return_diagnostics=True,
+    )
     # More important than another local-angle tweak: independently
     # refine BOTH physical x and y volume cubatures. Keep R/K,
     # physical modes and the port forcing from the first rule.
@@ -173,6 +190,15 @@ def main():
             2*scene.seawater.conductivity
         )
     print(
+        f"g1_coulomb_patch: modes={trial.size}, "
+        f"clip_vs_clearance_dL={relative(lb,l_clearance):.6g}, "
+        f"radius_055_to_080_dL={relative(l_patch,lb):.6g}, "
+        f"raw_skew_clearance={skew_clearance:.6g}, "
+        f"raw_skew_clip_055={skew_base:.6g}, "
+        f"raw_skew_clip_080={skew_patch:.6g}",
+        flush=True,
+    )
+    print(
         f"g1_coulomb_axes: modes={trial.size}, "
         f"dL_x_only={relative(lx,lb):.6g}, "
         f"dL_y_only={relative(ly,lb):.6g}, "
@@ -209,8 +235,8 @@ def main():
     )
     print(
         "g1_coulomb_note: this is a 5-mode fixed-domain, unsoftened "
-        "singularity-split pilot; both x/y volume cubatures and local "
-        "angles are compared, not yet converged. No 229-mode certificate.",
+        "singularity-split pilot; x/y cubatures, near-ray clipping and "
+        "patch radius are compared, not yet converged. No 229-mode certificate.",
         flush=True,
     )
 
