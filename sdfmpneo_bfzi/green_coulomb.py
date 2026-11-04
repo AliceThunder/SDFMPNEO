@@ -34,6 +34,7 @@ def assemble_coulomb_split(
     local_azimuthal_order: int = 12,
     chunk_size: int = 32,
     radial_segments=None,
+    angular_frame=None,
     return_diagnostics: bool = False,
 ):
     """Return real Galerkin L for a continuous vector-current evaluator.
@@ -49,6 +50,11 @@ def assemble_coulomb_split(
     radial_segments : callable(x, directions, radius)->(low, high), optional.
         Supplies disjoint seawater segments along each ray so the near ball
         can cross insulating walls without sampling inside the solid.
+    angular_frame : callable(x, radius)->(unit_axis, polar_cut) or None.
+        Optional geometry-aligned polar coordinate system. Each side of
+        polar_cut gets its own Gauss panel, resolving the angular kink where
+        near rays first reach a solid face or the outer spherical boundary.
+        This changes only the angular cubature, not the Coulomb identity.
 
     Formula for each outer point x:
        ∫ J_n(y)/|x-y| dy
@@ -102,6 +108,45 @@ def assemble_coulomb_split(
         np.broadcast_to(mu[:, None], (len(mu),len(phi))),
     ), axis=-1).reshape(-1, 3)
     domega = np.repeat(mw, len(phi))*(2.0*math.pi/len(phi))
+    cos_phi, sin_phi = np.cos(phi), np.sin(phi)
+    def angular_nodes_for(point, radius):
+        if angular_frame is None:
+            return dirs, domega
+        frame = angular_frame(point, radius)
+        if frame is None:
+            return dirs, domega
+        axis, cut = frame
+        axis = np.asarray(axis, float)
+        if (axis.shape != (3,) or not np.isfinite(axis).all()
+                or not np.isfinite(cut) or abs(np.linalg.norm(axis)-1)>1e-8):
+            raise ValueError("invalid local spherical angular frame")
+        cut = float(np.clip(cut, -1.0, 1.0))
+        # The normal-oriented ray/surface transition becomes a fixed
+        # polar-panel interface. No missed angular silhouette inside
+        # the wide single-interval Gauss rule near a wall.
+        polar_nodes = []
+        polar_weights = []
+        for left, right in ((-1.0, cut), (cut, 1.0)):
+            if right-left > 1e-13:
+                polar_nodes.append(
+                    0.5*(right-left)*mu+0.5*(left+right)
+                )
+                polar_weights.append(0.5*(right-left)*mw)
+        panel_mu = np.concatenate(polar_nodes)
+        panel_w = np.concatenate(polar_weights)
+        ref = np.array([0.,0.,1.]) if abs(axis[2]) < 0.9 else np.array([0.,1.,0.])
+        e1 = np.cross(ref, axis)
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(axis, e1)
+        st = np.sqrt(np.maximum(0.0, 1-panel_mu*panel_mu))
+        new_dirs = (
+            panel_mu[:,None,None]*axis
+            + st[:,None,None]*(
+                cos_phi[None,:,None]*e1 + sin_phi[None,:,None]*e2
+            )
+        ).reshape(-1, 3)
+        new_weights = np.repeat(panel_w,len(phi))*(2*math.pi/len(phi))
+        return new_dirs, new_weights
     # The far term vanishes identically around x; even a coinciding
     # quadrature node contributes exactly zero, not an epsilon substitute.
     for start in range(0, len(x), chunk_size):
@@ -122,27 +167,28 @@ def assemble_coulomb_split(
         )
         for j in range(start,stop):
             a = radii[j]
+            local_dirs, local_domega = angular_nodes_for(x[j], a)
             if radial_segments is None:
                 rho = 0.5*a*(tr+1.0)
                 weight_r = 0.5*a*tw*rho*_near_window(rho/a)
                 locations = (
                     x[j, None, None, :]
-                    + rho[:, None, None]*dirs[None, :, :]
+                    + rho[:, None, None]*local_dirs[None, :, :]
                 ).reshape(-1,3)
                 local_modes = np.asarray(evaluate(locations), float).reshape(
-                    len(rho), len(dirs), m, 3,
+                    len(rho), len(local_dirs), m, 3,
                 )
                 local_pot = np.einsum(
-                    "r,a,ramc->mc", weight_r, domega,
+                    "r,a,ramc->mc", weight_r, local_domega,
                     local_modes, optimize=True,
                 )
             else:
                 # Integrate wet subintervals of an x-centred *fixed*
                 # physical ball. No near-wall collapse of cutoff radius.
-                low, high = radial_segments(x[j], dirs, a)
+                low, high = radial_segments(x[j], local_dirs, a)
                 low, high = np.asarray(low, float), np.asarray(high, float)
                 if (low.shape != high.shape or low.ndim != 2
-                        or low.shape[0] != len(dirs)
+                        or low.shape[0] != len(local_dirs)
                         or not np.isfinite(low).all()
                         or not np.isfinite(high).all()
                         or np.any(low < -1e-12)
@@ -157,14 +203,14 @@ def assemble_coulomb_split(
                     rho = begin[:, None]+half[:, None]*(tr[None, :]+1)
                     locations = (
                         x[j, None, None, :]
-                        + rho[:, :, None]*dirs[di, None, :]
+                        + rho[:, :, None]*local_dirs[di, None, :]
                     ).reshape(-1, 3)
                     local_modes = np.asarray(
                         evaluate(locations), float,
                     ).reshape(len(di), len(tr), m, 3)
                     weights = (
                         half[:, None]*tw[None, :]*rho
-                        *_near_window(rho/a)*domega[di, None]
+                        *_near_window(rho/a)*local_domega[di, None]
                     )
                     local_pot = np.einsum(
                         "sr,srmc->mc", weights, local_modes,
@@ -249,14 +295,52 @@ def _bfzi_wet_radial_segments(scene, point, directions, radius):
     return low, np.maximum(low, high)
 
 
+def _bfzi_angular_face_frame(scene, point, radius):
+    """Choose the nearest physical boundary for one angular polar panel cut.
+
+    This is an integration-coordinate change ONLY. The actual conducting
+    intervals are still determined by exact box and sphere ray intersection.
+    A face-normal cut resolves the major tangency kink; near edges, corners
+    and multiple objects the angular quadrature still needs refinement.
+    """
+    point = np.asarray(point, float)
+    center = np.asarray(scene.outer_center, float)
+    rel = point-center
+    radial = np.linalg.norm(rel)
+    d_outer = scene.outer_radius-radial
+    best = None
+    if 0 < d_outer < radius and radial > 0:
+        # At rho=radius, the sphere boundary appears at this polar cosine.
+        cut = (scene.outer_radius**2-radial**2-radius**2)/(
+            2*radius*radial
+        )
+        best = (d_outer, rel/radial, cut)
+    for assembly in scene.assemblies:
+        pose = assembly.pose
+        local = (point-pose.center) @ pose.rotation
+        half = np.asarray(assembly.enclosure.half_extents)
+        displacement = local-np.clip(local, -half, half)
+        distance = np.linalg.norm(displacement)
+        if 0 < distance < radius and (
+                best is None or distance < best[0]):
+            # Face normal when the nearest point is in a face interior;
+            # closest-point direction elsewhere handles corners/edges.
+            toward = -(displacement @ pose.rotation.T)/distance
+            best = (distance, toward, distance/radius)
+    return None if best is None else (best[1],best[2])
+
+
 def assemble_basis_coulomb_split(
     basis, transform, x, wx, y, wy, *,
-    clip_local_to_domain: bool = True, **kwargs,
+    clip_local_to_domain: bool = True,
+    angular_face_panels: bool = True, **kwargs,
 ):
     """Unsoftened Coulomb L with domain-clipped near balls by default.
 
     clip_local_to_domain=False reproduces the previous clearance-shrunk
     split for controlled comparison at the same x/y quadrature nodes.
+    angular_face_panels=True resolves the first box/outer-boundary ray
+    crossing in a separate polar Gauss panel when near a boundary.
     """
     scene = basis.scene
     origin = np.asarray(scene.outer_center)
@@ -280,5 +364,10 @@ def assemble_basis_coulomb_split(
             (lambda point, directions, radius:
              _bfzi_wet_radial_segments(scene, point, directions, radius))
             if clip_local_to_domain else None
+        ),
+        angular_frame=(
+            (lambda point, radius:
+             _bfzi_angular_face_frame(scene, point, radius))
+            if clip_local_to_domain and angular_face_panels else None
         ), **kwargs,
     )
