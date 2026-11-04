@@ -13,6 +13,29 @@ from .geometry import BFZICoil, RigidPose
 from sdfmpneo_vnext.scene import ConductorMaterial
 
 
+def _wall_normal_gauss(
+    lower: float, upper: float, scale: float,
+    nodes: np.ndarray, weights: np.ndarray, mapping: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Positive Gauss measure in true wall distance d, optionally log(1+d/s).
+
+    The logarithmic coordinate resolves the physical curl-envelope
+    derivative scale d/(d+s); dd=(s+d)dt. Exact continuum measure is
+    unchanged and no softened electromagnetic kernel is introduced.
+    """
+    if mapping == "log":
+        t0, t1 = math.log1p(lower/scale), math.log1p(upper/scale)
+        t = 0.5*(t1-t0)*nodes+0.5*(t1+t0)
+        d = scale*np.expm1(t)
+        w = 0.5*(t1-t0)*weights*(scale+d)
+    elif mapping == "linear":
+        d = 0.5*(upper-lower)*nodes+0.5*(upper+lower)
+        w = 0.5*(upper-lower)*weights
+    else:
+        raise ValueError("shell_normal_mapping must be 'linear' or 'log'")
+    return d, w
+
+
 @dataclass(frozen=True)
 class InsulatingBox:
     """Sealed nonconductive, nonmagnetic, oriented rectangular enclosure."""
@@ -741,27 +764,11 @@ class BfziScene:
                         distance *= 3.0
                     boundaries.append(shell_width)
                     for lower, upper in zip(boundaries[:-1], boundaries[1:]):
-                        if shell_normal_mapping == "log":
-                            # The wall curl envelope contains d/(d+s):
-                            # t=log(1+d/s) has a smooth, positive Jacobian
-                            # dd=(s+d)dt and concentrates nodes where the
-                            # actual basis gradient varies most rapidly.
-                            t0 = math.log1p(lower/scale)
-                            t1 = math.log1p(upper/scale)
-                            t = 0.5*(t1-t0)*normal_nodes+0.5*(t1+t0)
-                            distance_nodes = scale*np.expm1(t)
-                            distance_weights = (
-                                0.5*(t1-t0)*normal_weights
-                                *(scale+distance_nodes)
-                            )
-                        else:
-                            distance_nodes = (
-                                0.5*(upper-lower)*normal_nodes
-                                + 0.5*(upper+lower)
-                            )
-                            distance_weights = (
-                                0.5*(upper-lower)*normal_weights
-                            )
+                        distance_nodes, distance_weights = _wall_normal_gauss(
+                            lower, upper, scale,
+                            normal_nodes, normal_weights,
+                            shell_normal_mapping,
+                        )
                         # Maintain increasing local coordinate order on
                         # negative faces; the Jacobian is the positive
                         # absolute wall-normal distance measure.
