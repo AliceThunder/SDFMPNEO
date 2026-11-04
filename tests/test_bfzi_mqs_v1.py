@@ -346,7 +346,9 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
         writer.write(
             "  domain_step: 0.52->0.7 m, dZ=0.004, dq=0.01, "
             "dP=0.008, dJ_common=0.02, "
-            "dJ_ports_common=0.015, domain_response_gate=FAIL\n"
+            "dJ_ports_common=0.015, dJ_near035=0.006, "
+            "dJ_ports_near035=0.007, dq_near035=0.004, "
+            "domain_response_gate=FAIL\n"
         )
     assert "early_probes: q=" in full.getvalue()
     assert "early_probes" not in console.getvalue()
@@ -356,7 +358,9 @@ def test_bfzi_log_recorder_filters_noise_without_losing_raw_metrics():
     assert "normal_peak_scaled_dq=0.002" in console.getvalue()
     assert "rk_far_azimuth_4_vs_3" in console.getvalue()
     assert "domain_step: 0.52->0.7" in console.getvalue()
-    assert "dJ_ports_common=0.015" in console.getvalue()
+    assert "dJ_ports_common=0.015" in full.getvalue()
+    assert "dJ_near035=0.006" in console.getvalue()
+    assert "dq_near035=0.004" in console.getvalue()
     assert "domain_response_gate=FAIL" in console.getvalue()
 
 
