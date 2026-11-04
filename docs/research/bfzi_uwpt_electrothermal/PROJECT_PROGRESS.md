@@ -2,9 +2,9 @@
 
 > **持续更新的项目进度入口** · 最近核对：2026-11-04 UTC · 工作分支：`research/bfzi-uwpt-electrothermal-surrogate`
 >
-> **当前阶段：按 [五阶段 G1 理论/数值复核](G1_THEORY_NUMERICS_REVIEW.md) 正式推进 P0「物理问题与闭合源项锁定」。** 物理范围已冻结为圆形/圆角方形单根连续 BFZI 螺旋、两只任意合法独立姿态绝缘盒、均匀线性非磁性海水、闭合端口单位线源、静止峰值相量 e^{+jωt} 与人工有限绝缘外球（`Ω_R` **不能当成**无限海水 `Ω∞`）。新增 [P0 验收契约](P0_PHYSICS_SOURCE_CONTRACT.md) 和 [正式 TeX P0](../../../theory/sections/13_p0_physical_source_contract.tex)；引入直导线**解析** C/B + BFZI 曲角高阶求积作为独立源场参照，新增源专用测试和短日志。生产 `build_bfzi_source` 已拒绝不受外部 μ0 Green 模型支持的磁性导线。**当前 P0 公式/范围梳理已完成，新数值结果待本机实测；G1=FAIL。** 以当前 70 passed 基线为准，禁止 GitHub Actions。
+> **当前阶段：P0 源项数值实测已完成第一轮，75 passed；** [P0 日志](runs/p0/latest_summary.md)表明旧全 Gauss 4 阶源的磁场 B 对独立参考相差 **1.174%**，12 阶相差约 **0.0038%**，高阶角段参考 24→32 阶接近机器精度。源项低阶误差是一个已被隔离出的明确问题。**本轮将生产 C/B 的真实 BFZI 直边与完整回流改为解析有限直导线核，只对圆角曲段保留 Gauss；生产导线长度/铜热节点/空气互感完整原线元不变。** 新算法待本机复验，在 P0 完成前不改变海水 R/K/L 积分、不训练正式代理。见 [P0 物理契约与实测](P0_PHYSICS_SOURCE_CONTRACT.md)、[主理论](../../../theory/sections/13_p0_physical_source_contract.tex)。**P0=部分验证；G1=FAIL。禁止 GitHub Actions。**
 >
-> **最新本地实测：** 2026-11-04 UTC，用户本机 `0759068` 的 `bfzi-g1-foundations` **70 passed**：[最新摘要](runs/latest_summary.md) / [完整日志](runs/latest_full.log)。固定五模态场景中，近壁 `log_normal_4_tangent` 为 14,680 节点，双弱式 `K=μ0∫curl(F)·C` / `K=∫F·B` 相对差 **6.16959%**；改为源侧边坐标面板 `log_normal_4_source` 155,976 节点，相对差 **7.34853%**；再联合 0.05m 切向分片 `log_normal_4_source_tangent` 175,640 节点，相对差 **7.66732%**。两次新增十万级节点都未改善双弱式准确度；其相邻 K-dual 的相对变化约 1.23021% 与 0.469023%，不能把该接近性误认为真值。R 的 log 4 与旧线性仍相差约 8.9%，真实 Coulomb L x-only `dL=11.1862%` 尚无新认证。**本轮算法：** 新增 `BfziScene.box_shell_qmc`，在同一海水球域及 12 个不重叠 OBB 壳层上以独立扰乱 Sobol 序列做正权重积分；法向采用精确 `d=s(expm1(u log(1+w/s)))` 和 Jacobian，球域采用 `r=Ru^{1/3}` 的等体积变换，保留原 `C^2` sphere/shell partition，不引入网格或软核。G1 默认新增 `g1_volume_qmc` 的 `2^9→2^{10}` 和两次独立扰乱 R/K/K-dual 比较，同时从例行运行移除 155k/175k 节点源面板（需手动 `--g1-source-panels` 才开启）。**QMC 的完整 BFZI 数值结果和新增测试仍待用户本机运行；随机扰乱差不能作为严格误差上界。G1=FAIL；229 模态、无穷海水教师尚未认证。**
+> **最新 P0 本机实测：** 用户本机 `a50ed62`、2026-11-04 UTC、**75 passed**；[P0 摘要](runs/p0/latest_summary.md) / [P0 完整日志](runs/p0/latest_full.log)。双端口各 28 个探针，曲角 24→32 阶参考 dC/dB 约 3e-16；旧源 3 阶 B 误差 3.107%，**4 阶 B 误差 1.174%**，8 阶 0.0943%，12 阶 0.00380%；旧 4 阶 C 误差约 0.253%，12 阶 0.000118%。近壁源场比离散闭合指标更敏感。新增的解析直边/回流主实现和源对比日志尚待本机执行。原 G1 2026-11-04 `0759068` 的 **70 passed** [日志保留在原目录](runs/latest_summary.md)，G1 原 Coulomb L、有限外球与连续电流字典仍 FAIL。
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
@@ -74,7 +74,7 @@ flowchart TB
 | A2 **双封装几何** | ✅ 已实现 | ◐ 基础测试 | `scene.py`：两套长宽厚、旋转/平移、线圈容纳、独立盒 OBB 不重叠、回流始终在盒内 |
 | A3 **封装—海水电磁边界** | ✅ 已实现 | ◐ 尚需跨场景收敛 | 海水排除盒内；绝缘壁零法向电流；跟随盒体位姿的 curl 基；盒壁/角部/边缘局部求积 |
 | A4 两端口物理源与铜内部损耗 | ✅ 已实现 | ◐ 特定假设 | 闭合回流、有向积分、空气耦合；圆线截面集肤近似，不含充分校验的完整邻近/联合铜海水导电求解 |
-| B1 无网格 MQS R/L/K 求解 | ◐ P0 锁定物理和闭合端口源：新增独立解析有限直线 C/B + 高阶 BFZI 角段参考；磁性导线明确拒绝 | ⛔ 生产点线元 3/4/6/8/12 阶在近壁的源误差尚待实测，有限截面邻近效应、全 Maxwell 和无限海水均非当前源模型 | `python run.py --mode bfzi-p0-source --with-tests` 自动提交 P0 源阶次/屏蔽假设/条件无量纲尺度，门槛在 [P0 契约](P0_PHYSICS_SOURCE_CONTRACT.md) 冻结；禁止提前认证 P1/P2 |
+| B1 无网格 MQS R/L/K 求解 | ◐ **P0 75 passed**、解析曲角参考收敛；旧源 4 阶磁场 B 精度未达 0.1% | ⛔ 旧 4 阶源 dB=1.174%、dC=0.253%；旧 12 阶 dB=0.00380%；**新解析直线生产源尚未本机复验** | `LineSource` 的完整路径线元保留供铜热/空气电感；**仅源 C/B** 使用真实直边与闭合回流解析积分、曲角 Gauss，P0 同阶报告 `legacy_dB/dB_near` 和 0.1% 预定门槛 |
 | B2 **空间参考解收敛** | ◐ 27→71→211 严格嵌套构造已实测；新增选取方向 5→11→17 J/q 求解入口待运行 | ⛔ **旧 229 父空间仍未认证** | `structured_level=1,2` 具有解析紧支 curl；可选 `--g1-hierarchy` 在同一 R/K/Green 规则和固定近壁探针比较 J、双端口 J、q、Z，但选取模式不等于完整 27→71→211 认证 |
 | B3 积分与磁核独立验证 | ◐ 70 passed 的最新程序证据；**本轮已完成理论/文献重核与积分路线重排（未新增数值实验）** | ⛔ 14.7k/156k/176k Gauss 的 K 双弱式差 6.17%/7.35%/7.67%；Green L x-only 11.19%，均未认证 | 根据 Passarotto 等 (2022) 首先对 **相同固定电流 W 的真实原核 1/r 自项/邻近项** 建立奇异抽取的独立基准，暂停靠进一步增加 Gauss/Sobol 点数寻找偶然相消；详见 G1 理论/数值专项复查 |
 | B4 残差估计与稀疏方向筛选 | ✅ 已实现 | ◐ **229 模态自适应已运行；60 tests passed** | 207 模态留一和误差上界已测；229 父空间严格筛选仍要求 229/229。上界只对固定父空间成立，不是连续物理误差保证 |
@@ -226,7 +226,7 @@ flowchart LR
 17. ✅ **70 passed 本机实测：** 155k/175k 节点源几何面板未改善 K 双弱式差（7.35%/7.67%，对比 14.7k 普通切向的 6.17%），不再安排为默认 G1 试验。
 18. **本轮新主算法待本机运行：** `BfziScene.box_shell_qmc` 独立正权重扰乱 Sobol 球域+12 旋转 OBB shell 的 3D 连续积分映射，盒壳对数法向使用准确 Jacobian；默认 G1 打印 `g1_volume_qmc` 和 `g1_volume_qmc_step`，对比 `2^9`/`2^{10}`、两扰乱种子及 14.7k Gauss 算出的 R/K/K-dual，新增旋转盒域、权重、体积测试。旧 155k 源面板仍可用 `--g1-source-panels` 显式重现。
 19. **远场已完成解析模块本机验证，但整体仍 FAIL：** 均匀导电海水的多极球面 DtN、尾区 Joule 和 l=1/l=2 环向电流解析一致性已运行；仍需以散度相容/边界项方式真正与双盒 Galerkin 内区耦合，不能由解析外区 PASS 推出无限域 G1 通过。
-20. **当前已开启 P0（物理模型与源）**：按 [P0 物理/源项契约](P0_PHYSICS_SOURCE_CONTRACT.md) 核对 BFZI 圆形/圆角方形连续螺旋、回流真实闭环、相量电压与材料、人工球域以及 Maxwell–MQS 的频率/位移电流尺度；新 `straight_segment_field` 用解析直线核独立验证 `LineSource` 的 C/B，曲角 24/32 阶与源 3/4/6/8/12 阶分别做源项收敛（不求 R/K/L）。**P0=待本机源阶次复验**。通过后再依次进入 P1 原 Coulomb L、P2 R/K、P3 函数空间/无限域、P4 Z/J/q/代理教师；不改变优先顺序。
+20. **P0 当前工作（首轮 75 passed，源精度不达标）**：原理/几何/相量/盒壁与外球定义已锁定；旧点线元 4 阶 C/B 对独立真实源分别差 0.253%/1.174%，尽管闭合矩积分约 1e-10。现将真实 BFZI 直边、回流改为有限直线解析积分，曲角仍使用可加密 Gauss，保留空气互感/铜热原路径节点；新旧同阶比较 P0 0.1% 门槛未复验。若新默认源仍不达标，再**有证据地**提高曲角独立阶次；在 P0 通过前不得改 G1 R/K/L 或训练教师。P1 真实原核 Coulomb L 次之。
 21. `--basis-domain-far` 的 R/K-only/L-only 对照仅为可选归因实验，**不再作为 G1 主推进路线**。
 
 当前可复现命令（在本地工作树执行，非 GitHub Actions）：
@@ -292,6 +292,8 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 | 2026-11-04 UTC | **新代码待本机验证**：原连续 sphere/shell 积分区域不变，增加三维扰乱 Sobol＋对数壁距正 Jacobian，独立密度/种子 R/K 与两弱式核对，日常运行跳过十几万源面板；禁止 GitHub Actions | `scene.py`、`bfzi_g1_foundations.py`、`test_bfzi_mqs_v1.py`、`run.py` |
 | 2026-11-04 UTC | **已完成理论体系与数值论文复核；G1 仍 FAIL**：核查正确条件下的 MQS/Schur 补和 K 双弱式；发现有限球不能当无限海水、curl 字典无稠密性证书、uniform-ball 不是原核积分、x/y Coulomb 奇异自项风险；停止反复调参，优先原核算子和外部物理基准 | [系统复查](G1_THEORY_NUMERICS_REVIEW.md)、[TeX 第 12 节](../../../theory/sections/12_g1_numerical_foundations_literature.tex)、9 篇期刊 DOI 参考；**本轮未进行新算法物理测试** |
 | 2026-11-04 UTC | **正式启动 P0**：核对 BFZI 单根连续螺旋、闭合回流、μ0/σ_s/ω/人工外球；显式拒绝磁性导线；独立实现有限直导线解析 C/B + 曲角高阶积分，新增定量源阶次实验、旋转圆形/圆角方形测试以及本机日志入口；**新 P0 代码待本机测试、G1=FAIL** | [P0 契约](P0_PHYSICS_SOURCE_CONTRACT.md)、[TeX 第 13 节](../../../theory/sections/13_p0_physical_source_contract.tex)、`source_reference.py`、`bfzi_p0_source.py`、`test_bfzi_source_p0.py`、`run.py` |
+| 2026-11-04 UTC | **P0 源项首轮 75 passed；默认源精度 FAIL**：两端口 28 探针，曲角参考 24/32 阶一致至机器精度；旧 4 阶 C/B 误差 0.253%/1.174%，12 阶 0.000118%/0.00380%，表明闭合矩积分很小不能证明 B 准确 | [P0 日志](runs/p0/latest_summary.md)，基线 `a50ed62` |
+| 2026-11-04 UTC | **生产源数值修正待本机验证**：对真实连续 BFZI 直边和完整回流实现有限直导线解析 C/B，Gauss 只计算曲角，原完整线元保留供铜热和空气互感；P0 日志对照 `legacy_dB`、近壁误差及默认源门槛 | `source.py`、`bfzi_p0_source.py`、`test_bfzi_source_p0.py`，**不使用 GitHub Actions** |
 
 ---
 [研究目录索引](README.md) · [验证计划历史快照](validation_roadmap.md) · [代码入口](CODE_ENTRY.md) · [仓库根目录](../../../README.md)
