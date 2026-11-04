@@ -1,5 +1,5 @@
-> **BFZI 研究分支｜当前研发进度（2026-11-03）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套尺寸可变、合法静态 SE(3) 位姿的绝缘封装 + 海水电磁热代理**，不把旧 vNext 超椭圆线圈混入本项目。最新本地自动日志（代码基线 `60a3ba7`，2026-11-04 UTC）：**60 passed**；固定 229 物理电流方向的三阶精细 R/K 外域实验已完成，**0.52→0.70 m 和 0.70→0.85 m 均 FAIL**：后者端口 Z 变化 0.648%、共同海水 J 变化 1.93%、探针 q 变化 4.06%，0.85m 不是合格无限域近似。新代码增量续测 **0.85→1.05→1.30 m**，并首次分别报告固定 0.52m 共同域和设备近区 0.35m 的空间 J/q；**待本地实测**。229 磁 Green L 算子独立 A/B 仍 FAIL，**G1 高精度教师尚未通过**。详情见 [BFZI 进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) 和 [自动上传日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)，继续使用本机 Git 自动推送日志，不使用 GitHub Actions。
+> **BFZI 研究分支｜当前研发进度（2026-11-04 UTC）：[📊 总体路线图 · 封装专项 · 验收看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
+> 本工作仅针对**圆形／圆角方形连续螺旋线圈 + 两套可变尺寸、合法三维位姿的绝缘封装 + 海水电磁热代理**，不把旧 vNext 超椭圆线圈混入本项目。最新自动日志（本地代码 `19c2c52`，2026-11-04 UTC）：**60 passed**；相同 229 模态、三阶精细 R/K 的外域 0.85→1.05→1.30m 两步均 **FAIL**，且 1.05→1.30m 的 Z 差 **0.951%**、共域 J 差 **2.297%**、设备近区 J 差 **1.392%**，相对上一阶段反而增大。新增的 `--basis-domain-far` 将续测 1.05→1.30→1.60m，并在同一白化坐标中分别替换 R/K 与磁 Green L，定位外域漂移来源，**新代码待本地运行**。磁 Green L 独立算子 A/B 此前 **FAIL（约 13.2%）**，G1 高精度教师仍未通过。详见 [总体进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) 与 [最新自动日志](docs/research/bfzi_uwpt_electrothermal/runs/latest_summary.md)；只用本机 Git 上传日志，不使用 GitHub Actions。
 
 # SDF-MPNEO vNext
 
@@ -52,7 +52,7 @@ python run.py --mode bfzi-convergence --basis-ball-edge --basis-ball-check-l # 1
 python run.py --mode bfzi-convergence --basis-ball-aniso # 199→207 rotated anisotropic face-normal current curls
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-l # independent 207-mode magnetic A/B (measured: operator FAIL, response PASS)
 python run.py --mode bfzi-convergence --basis-ball-targeted # completed 207→210→213→229: global J changed 89.21% then 20.10%
-python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-extend --with-tests # next: 229-mode 0.85→1.05→1.30m plus device-near J/q, auto-pushed
+python run.py --mode bfzi-convergence --basis-domain-ball --basis-ball-targeted --basis-domain-far --with-tests # next: 1.05→1.30→1.60m and R/K-only versus Green-L-only sensitivity, auto-pushed
 python run.py --mode bfzi-convergence --basis-ball-targeted --no-publish-log # run and log locally without Git push
 python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log # optional full console output
 python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-check-rk # face-normal R/K A/B, fixed Green L
