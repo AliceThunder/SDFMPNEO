@@ -260,6 +260,103 @@ S_\Omega(\bm x)=\frac12
 已新增诊断和原核减除实现，
 但这些变更尚未取得用户本机 P1 新实测。
 
+
+\subsection{原核进一步减除一阶几何矩：非线性解析涡流验算}
+仅使用式 \eqref{eq:p1-global-constant-subtraction}
+减去常量时，剩余被积核虽然有界，
+但对角附近仍具有角向极限。
+对有合适 $C^2$ 正则性的电流，
+可以进一步将 \emph{完全相同的物理原核}
+分解为
+\begin{align}
+\bm U_W(\bm x)
+={}&\bm W(\bm x)\,S_\Omega(\bm x)
++\nabla\bm W(\bm x)\,\bm M_\Omega(\bm x)
+\notag\\
+&+
+\int_\Omega
+\frac{
+ \bm W(\bm y)-\bm W(\bm x)
+ -\nabla\bm W(\bm x)(\bm y-\bm x)}
+ {|\bm x-\bm y|}\,\mathrm d\bm y ,
+\label{eq:p1-affine-taylor-subtraction}\\
+\bm M_\Omega(\bm x)
+={}&\int_\Omega\frac{\bm y-\bm x}{|\bm x-\bm y|}
+\,\mathrm d\bm y
+=\int_{\partial\Omega}
+ |\bm x-\bm y|\bm n_{\bm y}\,\mathrm dS_{\bm y}.
+\label{eq:p1-geometry-first-moment}
+\end{align}
+最后一式由
+$\nabla_{\bm y}|\bm x-\bm y|=
+(\bm y-\bm x)/|\bm y-\bm x|$
+及散度定理给出。
+余项因一阶 Taylor 减除在对角仅为
+$O(|\bm x-\bm y|)$，
+从数学上比原始 $1/r$ 核和零阶减除更规则。
+\textbf{式 \eqref{eq:p1-affine-taylor-subtraction}
+是严格恒等式，不是软化或新的物理模型}。
+
+球内的两个几何矩具有独立的解析值：
+\[
+S_{B_R}(\bm x)=
+2\pi\left(R^2-\frac{|\bm x|^2}{3}\right),\qquad
+\boxed{\bm M_{B_R}(\bm x)=
+\frac{4\pi}{15}(|\bm x|^2-5R^2)\bm x.}
+\]
+若仅用一阶电流 $\bm W_i=\bm e_i\times\bm x$，
+Taylor 余项\emph{严格为零}，因而该例只能
+验证 $\bm S,\bm M$ 和球外积分，
+\textbf{不能}据此认证余项的实际求积。
+
+为防止上述制造解过于平凡，
+新增一个\emph{非线性、严格无散度、
+球壁零法向} 的第二级真值模式：
+\[
+\bm W_i^{(3)}(\bm x)
+=|\bm x|^2(\bm e_i\times\bm x),\qquad
+\bm F_i^{(3)}(\bm x)
+=\frac{R^4-|\bm x|^4}{4}\bm e_i ,
+\quad \Curl\bm F_i^{(3)}=\bm W_i^{(3)} .
+\]
+从 $\Delta\bm U_i^{(3)}=-4\pi\bm W_i^{(3)}$
+及球外 $l=1$ 匹配得到
+\begin{equation}
+\boxed{\bm U_i^{(3)}(\bm x)
+=\left(\frac{\pi R^4}{3}
+-\frac{\pi|\bm x|^4}{7}\right)
+(\bm e_i\times\bm x),\quad
+L_{ij}^{(3)}=\frac{16\pi\mu_0 R^{11}}{693}\delta_{ij}.}
+\label{eq:p1-cubic-vortex-exact}
+\end{equation}
+这个模式的 Taylor 余项一般\emph{不为零}，
+可以真正检验式
+\eqref{eq:p1-affine-taylor-subtraction}
+的残余 $y$ 积分。
+独立短程球体积数值计算在固定 480 个 $x$、
+756 个 $y$ 节点下发现：
+仅减常量的非线性电流磁矩阵相对误差约
+$2.453\times10^{-3}$，
+进一步减除一阶项后约
+$1.596\times10^{-4}$，
+而解析内势仅在 $x$ 节点积分类似误差约
+$5.91\times10^{-6}$。
+这些是独立短程校验数值，
+\textbf{新增 GitHub P1 自动日志与单测尚待本机复跑}，
+不能将其等同于完整 BFZI 教师验收。
+
+生产代码的\texttt{assemble\_coulomb\_subtracted}
+现在支持配对参数
+\texttt{gradient}、\texttt{first\_moment}，
+并坚持输入 \emph{已独立可信的}
+实际几何标量势和一阶矩。
+对有两个旋转绝缘盒孔洞的海水域，
+不能直接代入球公式：
+\textbf{真实双盒 $S_\Omega,\bm M_\Omega$
+和临近盒壁的相应积分必须分别认证}。
+这一步没有改动原 BFZI 端口源、
+$R/K$ 或神经网络教师训练。
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
