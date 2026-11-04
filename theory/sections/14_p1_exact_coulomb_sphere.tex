@@ -1,0 +1,139 @@
+% 2026-11-04. P0 limited source acceptance and exact P1 Coulomb test.
+\section{P0 限定源项冻结与 P1 原 Coulomb 磁能的解析关口}
+\label{sec:p1-exact-coulomb-gate}
+
+\subsection{P0 的可验证结论及适用域}
+本机在 \texttt{21daadf} 上
+83 项单元测试通过，P0 两端口各 84 个海水
+面/棱/角/远场采样点上，
+生产源四阶解析直线与曲角 Gauss 方法
+的 $\bm C$、$\bm B$ 相对误差为
+$7.28\times10^{-5}$、$4.27\times10^{-4}$，
+曲角 24--32 阶高阶独立参考近机器一致。
+另一种基于原 BFZI 曲角的物理闭合折线
+对 16、32、64 弦段的相对磁场误差
+分别约 $3.90\times10^{-4}$、
+$9.76\times10^{-5}$、$2.44\times10^{-5}$，
+呈近似二阶衰减，且每一折线
+$\Div\bm C_{\rm poly}$ 在导线外均为机器零。
+
+因此可以将\emph{给定物理参数和理想闭合单位线源}
+的 P0 源积分定义与对照视为限定通过，
+不能将之拓展为全参数域、有限线径的自碰撞
+或真实铜线近邻电流分布的认证。
+固定相量方向、回流路径和材料条件，
+并明确人工有限绝缘外球仍非无限导电海水。
+
+\subsection{严格符合电流约束的解析球形原核基准}
+在 $\Omega_R=\{\bm x\in\RR^3:|\bm x|<R\}$，
+选取三个真实电流向量基：
+\[
+\bm W_i(\bm x)=\bm e_i\times\bm x,\qquad i=1,2,3.
+\]
+各模式满足
+\[
+\Div\bm W_i=0,\qquad
+\bm n\cdot\bm W_i|_{\partial\Omega_R}=0,
+\qquad
+\bm W_i=\Curl\bm F_i,\qquad
+\bm F_i=\frac{R^2-|\bm x|^2}{2}\bm e_i,
+\quad
+\bm F_i|_{\partial\Omega_R}=0 .
+\]
+这是具有连续物理零法向边界条件和零迹旋度势的
+严格电流模式，不是随意选择的常向量试验。
+
+对任一笛卡尔分量为 $\bm W_i$ 的线性函数，
+定义原 Coulomb Newton 势
+\[
+\bm U_i(\bm x)
+=\int_{\Omega_R}
+\frac{\bm W_i(\bm y)}{|\bm x-\bm y|}\,
+\mathrm d\bm y .
+\]
+利用 $\Delta_{\bm x}\bm U_i=-4\pi\bm W_i$，
+球内 $l=1$ 正则径向解
+$\bm U_i=c(r)\bm W_i$，
+以及球外衰减偶极项的连续匹配，可得
+\begin{equation}
+\boxed{
+\bm U_i(\bm x)
+=\left(\frac{2\pi R^2}{3}
+-\frac{2\pi|\bm x|^2}{5}\right)
+\bm W_i(\bm x),\quad |\bm x|\le R .
+}
+\label{eq:p1-ball-exact-potential}
+\end{equation}
+这里不含任何软化、替代球云电流模型或数值
+对角自项定义，且边界与标准 $1/r$ 核均为真实积分。
+
+球的各向同性使不同坐标轴模式正交。
+由于
+\[
+\int_{\Omega_R}|\bm W_i|^2\,\mathrm d\bm x
+=\frac{8\pi R^5}{15},\qquad
+\int_{\Omega_R}|\bm x|^2|\bm W_i|^2
+\,\mathrm d\bm x=\frac{8\pi R^7}{21},
+\]
+代入原核双重积分直接得到
+\begin{align}
+L_{ij}
+&=\frac{\mu_0}{4\pi}
+\iint_{\Omega_R\times\Omega_R}
+\frac{\bm W_i(\bm x)\cdot\bm W_j(\bm y)}
+{|\bm x-\bm y|}
+\,\mathrm d\bm y\,\mathrm d\bm x\\
+&=\boxed{\frac{16\pi\mu_0 R^7}{315}\,\delta_{ij}}.
+\label{eq:p1-ball-analytic-L}
+\end{align}
+这些模式\emph{没有按安培载流量归一化}，
+故其算子双线性型带模式尺寸因子，不得
+把该数值误标为真实两端口电感的亨利数值。
+本关以完全已知的对角/非对角三模态磁能矩阵
+提供\textbf{可证伪的原核数值参考}。
+
+\subsection{相同电流、不同积分轴与局部核分区}
+\texttt{examples/bfzi\_p1\_coulomb.py}
+使用独立球形 Gauss \texttt{x/y} 积分规则，
+直接调用当前未软化原核
+\texttt{assemble\_coulomb\_split}：
+\begin{enumerate}
+\item 固定上述 $\Omega_R,\bm W_i$，
+将外积分轴 $x$、内积分轴 $y$ 以
+\texttt{base/x\_only/y\_only/both} 四组比较
+\emph{同一个解析真值}；
+\item 固定节点和电流，改变局部
+分区球半径 $a/R=0.25,0.55$，
+检查结果对\emph{数学上等价的原核分区}
+的敏感度，不改变核 $1/r$；
+\item 记录原双重积分三模态矩阵与式
+\eqref{eq:p1-ball-analytic-L} 的整体
+Frobenius 相对误差、最大对角相对误差、
+非对角误差及对称性偏差；
+\item 若球基准未达到有证据的稳定性，
+先查核奇异区、局部求积与
+内外积分轴，而不继续扩大 229 模态字典，
+不更换成 Plummer 或实体球云近似。
+\end{enumerate}
+本机独立入口为
+\texttt{python run.py --mode bfzi-p1-coulomb --with-tests}，
+独立版本化日志在
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/runs/p1/}。
+当前\textbf{该 P1 新算例尚未取得本机数值运行证据}，
+不能宣布原核求积成功。
+
+\subsection{与真实 BFZI 双盒积分之间的限制}
+即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
+它只证明在此解析无散度电流空间和球形边界
+下的原 Coulomb 核积分经过了一个独立基准。
+BFZI 的真实海水域是
+两只独立 SE(3) 旋转绝缘盒的外部，
+存在非光滑棱角和多体近邻相互作用，
+另需对\emph{同一固定物理电流场} 的对角块、
+靠近盒面的局部积分与远区子块单独认证。
+涡流体积积分中的奇异电感自项与
+分离内外积分轴的困难见
+Passarotto--Pitassi--Specogna~\cite{passarotto2022}；
+式 \eqref{eq:g1-review-subtraction} 的解析
+奇异减除仍是后续优先途径，
+不可以用球形算例代替所有边界角度验证。
