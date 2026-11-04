@@ -357,6 +357,109 @@ $5.91\times10^{-6}$。
 这一步没有改动原 BFZI 端口源、
 $R/K$ 或神经网络教师训练。
 
+
+\subsection{真实双盒海水域的解析几何标量势及一阶矩}
+球内非线性无散度模式的首次本机实测
+\texttt{0863a41} 为 87 项程序单测通过，
+其中 Taylor 减除后原核磁能相对误差
+$1.59619\times10^{-4}$，
+达到预先固定的 $10^{-3}$ 球基准目标；
+而旧 \texttt{split} 算子仍为
+$6.144858\times10^{-3}$，
+并没有通过。两者不可混为一个 G1 认证。
+
+为了把\eqref{eq:p1-affine-taylor-subtraction}
+应用到\emph{真实两只任意旋转封装}的海水区域，
+先单独求解绝对连续几何矩
+\[
+S_\Omega(\bm x)=\int_\Omega
+\frac{\mathrm d\bm y}{|\bm x-\bm y|},\qquad
+\bm M_\Omega(\bm x)=\int_\Omega
+\frac{\bm y-\bm x}{|\bm x-\bm y|}
+\,\mathrm d\bm y .
+\]
+对于人工外球减去两只绝缘盒的域，
+积分线性性给出
+\[
+S_\Omega=S_{B_R}-S_{B_1}-S_{B_2},\qquad
+\bm M_\Omega=\bm M_{B_R}-\bm M_{B_1}-\bm M_{B_2}.
+\]
+以 $\bm d=\bm x-\bm c_0$ 记外球中心相对位移，
+球内两矩严格为
+\begin{align}
+S_{B_R}(\bm x)&=
+2\pi\bigl(R^2-|\bm d|^2/3\bigr),\\
+\bm M_{B_R}(\bm x)&=
+\frac{4\pi}{15}\bigl(|\bm d|^2-5R^2\bigr)\bm d .
+\end{align}
+对盒 $B$ 应用同一原核的真实几何散度定理，
+无需在盒内置入任何积分节点：
+\begin{align}
+S_B(\bm x)&=\frac12
+\sum_{f\subset\partial B}
+\int_f
+\frac{\bm n_f\cdot(\bm y-\bm x)}
+{|\bm y-\bm x|}\,\mathrm dS_{\bm y},\\
+\bm M_B(\bm x)&=\sum_{f\subset\partial B}
+\bm n_f\int_f|\bm y-\bm x|\,
+\mathrm dS_{\bm y}.
+\label{eq:p1-box-surface-moments}
+\end{align}
+各矩形面上 $\bm n_f$ 为实心盒的\emph{外法向}；
+海水域用减去盒矩的方式自动实现其内边界法向反号。
+
+在面法向距离 $w$、面内有向坐标 $u,v$ 下，
+令 $d=\sqrt{u^2+v^2+w^2},\ z=|w|$，
+\[
+\begin{aligned}
+P_{-1}(u,v;w)={}&
+u\,\mathrm{asinh}\frac{v}{\sqrt{u^2+w^2}}+
+v\,\mathrm{asinh}\frac{u}{\sqrt{v^2+w^2}}-
+z\,\mathrm{atan2}(uv,zd),\\
+P_{+1}(u,v;w)={}&
+\frac{uvd}{3}
++\frac{u(u^2+3w^2)}6
+ \mathrm{asinh}\frac{v}{\sqrt{u^2+w^2}}\\
+&+\frac{v(v^2+3w^2)}6
+ \mathrm{asinh}\frac{u}{\sqrt{v^2+w^2}}
+-\frac{z^3}{3}\mathrm{atan2}(uv,zd).
+\end{aligned}
+\]
+逐项微分可检验
+\[
+\partial_u\partial_v P_{-1}=1/d,
+\qquad
+\partial_u\partial_v P_{+1}=d.
+\]
+对每面两种原函数取四角交替差，
+就获得式\eqref{eq:p1-box-surface-moments}
+中全部精确矩形面积分。
+当某个面内坐标与法向距离同时趋零时，
+采用 $0\,\mathrm{asinh}(\pm\infty)\to0$
+的连续极限解释，无需软化 Coulomb 分母。
+这些标量与向量矩在独立封装的
+局部正交坐标中计算，按其各自 SE(3)
+旋转变换为世界坐标，
+故两盒无需共轴、共面或共尺度。
+
+新主文件
+\texttt{sdfmpneo\_bfzi/coulomb\_geometry\_moments.py}
+直接实现此解析原函数及
+\texttt{sea\_coulomb\_moments}。
+为检验公式没有自证，
+另在
+\texttt{examples/bfzi\_p1\_geometry.py}
+对每只盒的面、棱、角附近
+$2.5\,{\rm mm}$ 湿区点，
+采用\emph{不使用上述原函数}的
+分片正权二重面 Gauss 积分作对照。
+事前固定其最大相对误差门槛为 $10^{-8}$，
+并增加非近场独立三维盒体 Gauss
+与 SE(3) 协变测试。
+\textbf{新增算例尚待用户本机运行；
+即使几何矩通过，也不代表双盒电流模式
+的 Taylor 剩余积分或无限海水 G1 已通过。}
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
