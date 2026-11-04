@@ -32,7 +32,102 @@ def _coupling(source, modes, weights, points):
     )
 
 
-def main():
+def _hierarchy_current_pilot(
+    scene, source, trial, level1, level2,
+    x, wx, y, wy, check_x, check_weights, local_kwargs, l0, u0, z0,
+):
+    """Selected nested h-directions: a J/q diagnostic, NOT 211-mode truth.
+
+    Use the same physical R/K rule, Green method, common seawater cubature,
+    two-port sources and matching near-wall probes at every enrichment.
+    We deliberately keep this optional until the underlying L converges.
+    """
+    first = tuple(trial.modes)
+    additions1 = tuple(level1.modes[i] for i in (27,34,43,50,59,67))
+    additions2 = tuple(level2.modes[i] for i in (71,87,103,135,151,199))
+    families = (
+        first,
+        first+additions1,
+        first+additions1+additions2,
+    )
+    wall_probes = []
+    for assembly in scene.assemblies:
+        half = np.asarray(assembly.enclosure.half_extents)
+        normal = int(np.argmin(half))
+        for sign in (-1.0,1.0):
+            local = np.zeros(3)
+            local[normal] = sign*(half[normal]+max(0.002,0.2*trial.wall_scale))
+            wall_probes.append(assembly.pose.position(local))
+    wall_probes = np.asarray(wall_probes)
+    if not scene.in_seawater(wall_probes).all():
+        raise RuntimeError("near-wall hierarchy probes not in seawater")
+
+    drive = np.array([1.0+0.2j,-0.4+0.5j])
+    sigma = scene.seawater.conductivity
+    previous = None
+    for stage, modes in enumerate(families):
+        basis = SeaCurrentBasis(
+            scene, modes, trial.wall_scale, trial.source_lines,
+            trial.outer_envelope, trial.outer_taper_width,
+        )
+        if stage == 0:
+            u, z, skew = u0, z0, float("nan")
+        else:
+            values = basis.evaluate(x)
+            resistance = np.einsum(
+                "n,nmc,nkc->mk", wx/sigma, values, values, optimize=True,
+            )
+            coupling = _coupling(source, values, wx, x)
+            inductance, skew = assemble_basis_coulomb_split(
+                basis, np.eye(basis.size), x, wx, y, wy,
+                local_polar_order=6, local_azimuthal_order=12,
+                return_diagnostics=True, **local_kwargs,
+            )
+            u = np.linalg.solve(
+                resistance+1j*source.omega*inductance,
+                -1j*source.omega*coupling,
+            )
+            z = 1j*source.omega*coupling.T@u
+        j_ports = np.einsum(
+            "nmc,mp->ncp", basis.evaluate(check_x), u, optimize=True,
+        )
+        j_driven = np.einsum("ncp,p->nc",j_ports,drive,optimize=True)
+        near_wall_j = np.einsum(
+            "nmc,m->nc",basis.evaluate(wall_probes),u@drive,
+            optimize=True,
+        )
+        wall_heat = np.sum(abs(near_wall_j)**2,axis=1)/(2*sigma)
+        if previous is not None:
+            old_size,old_j,old_ports,old_heat,old_z = previous
+            d_j = math.sqrt(
+                np.sum(check_weights*np.sum(abs(j_driven-old_j)**2,axis=1))
+                /max(np.sum(check_weights*np.sum(abs(old_j)**2,axis=1)),1e-60)
+            )
+            d_ports = math.sqrt(
+                np.sum(check_weights[:,None]*np.sum(
+                    abs(j_ports-old_ports)**2,axis=1))
+                /max(np.sum(check_weights[:,None]*np.sum(
+                    abs(old_ports)**2,axis=1)),1e-60)
+            )
+            d_q_wall = relative(wall_heat,old_heat)
+            print(
+                f"g1_hierarchy_jq: from_modes={old_size}, "
+                f"to_modes={basis.size}, "
+                f"dJ_volume={d_j:.6g}, dJ_ports_volume={d_ports:.6g}, "
+                f"dq_wall={d_q_wall:.6g}, "
+                f"dZ={relative(z,old_z):.6g}, raw_L_skew={skew:.6g}",
+                flush=True,
+            )
+        previous = (basis.size,j_driven,j_ports,wall_heat,z)
+    print(
+        "g1_hierarchy_note: selected nested 5->11->17 current directions "
+        "on fixed finite domain, with one x/y cubature. NOT full 27->71->211 "
+        "convergence, and NOT a 229-mode or infinite-domain certificate.",
+        flush=True,
+    )
+
+
+def main(hierarchy=False):
     scene = build_demo_scene()
     source = build_bfzi_source(scene,200_000.,order=4)
     base = build_sea_basis(
@@ -240,6 +335,11 @@ def main():
         "patch radius are compared, not yet converged. No 229-mode certificate.",
         flush=True,
     )
+    if hierarchy:
+        _hierarchy_current_pilot(
+            scene, source, trial, systematic1, systematic2,
+            x, wx, y, wy, x2, wx2, kwargs, lb, ub, zb,
+        )
 
     dipole=ExteriorDipole(0.16,200_000.,scene.seawater.conductivity)
     true_j=dipole.current_phi(0.25,math.pi/2)
