@@ -305,6 +305,43 @@ class BfziScene:
         points = outer_center + r[..., None] * directions[:, None, None, None, :]
         return points[valid].reshape(-1, 3), weights[valid].reshape(-1)
 
+    def _box_shell_geometry(self, scale: float, shell_width_factor: float):
+        """Resolve identical disjoint rotated shell geometry for Gauss and QMC."""
+        shell_width = shell_width_factor * scale
+        center = np.asarray(self.outer_center)
+        # Expanded shells must stay disjoint and entirely inside the sphere.
+        # Only the shell *width* is reduced when geometric clearance demands it.
+        for _ in range(32):
+            expanded = [
+                replace(
+                    assembly,
+                    enclosure=InsulatingBox(tuple(
+                        np.asarray(assembly.enclosure.half_extents) + shell_width
+                    )),
+                )
+                for assembly in self.assemblies
+            ]
+            valid = _obb_disjoint(*expanded)
+            if valid:
+                for assembly in expanded:
+                    half = np.asarray(assembly.enclosure.half_extents)
+                    corners = np.array(np.meshgrid(
+                        [-half[0], half[0]], [-half[1], half[1]],
+                        [-half[2], half[2]], indexing="ij",
+                    )).reshape(3, -1).T
+                    world = assembly.pose.position(corners)
+                    if np.max(np.linalg.norm(world - center, axis=1)) >= self.outer_radius:
+                        valid = False
+                        break
+            if valid:
+                break
+            shell_width *= 0.5
+        else:
+            raise ValueError("cannot place disjoint box shells inside outer sphere")
+        return shell_width, expanded
+
+
+
     def box_shell_quadrature(
         self, radial_order: int = 7, polar_order: int = 10,
         azimuthal_order: int = 16, *, wall_scale: float | None = None,
@@ -409,37 +446,7 @@ class BfziScene:
         if not isinstance(return_sphere_count, bool):
             raise ValueError("return_sphere_count must be a boolean")
 
-        shell_width = shell_width_factor * scale
-        center = np.asarray(self.outer_center)
-        # Expanded shells must stay disjoint and entirely inside the sphere.
-        # Only the shell *width* is reduced when geometric clearance demands it.
-        for _ in range(32):
-            expanded = [
-                replace(
-                    assembly,
-                    enclosure=InsulatingBox(tuple(
-                        np.asarray(assembly.enclosure.half_extents) + shell_width
-                    )),
-                )
-                for assembly in self.assemblies
-            ]
-            valid = _obb_disjoint(*expanded)
-            if valid:
-                for assembly in expanded:
-                    half = np.asarray(assembly.enclosure.half_extents)
-                    corners = np.array(np.meshgrid(
-                        [-half[0], half[0]], [-half[1], half[1]],
-                        [-half[2], half[2]], indexing="ij",
-                    )).reshape(3, -1).T
-                    world = assembly.pose.position(corners)
-                    if np.max(np.linalg.norm(world - center, axis=1)) >= self.outer_radius:
-                        valid = False
-                        break
-            if valid:
-                break
-            shell_width *= 0.5
-        else:
-            raise ValueError("cannot place disjoint box shells inside outer sphere")
+        shell_width, expanded = self._box_shell_geometry(scale, shell_width_factor)
 
         def smooth_far_weight(x: np.ndarray, assembly: BFZIAssembly):
             distance2, _ = assembly.enclosure.squared_exterior_distance(
