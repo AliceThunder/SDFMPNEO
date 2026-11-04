@@ -25,6 +25,91 @@ def scene_pair():
     return BfziScene(first, second, Seawater(5.0), outer_radius=0.52)
 
 
+def test_g1_unsoftened_coulomb_integrates_the_original_singularity():
+    # Newton potential at the center of a uniform unit ball:
+    # integral_{|y|<1} |y|^-1 dV = 2*pi, without a softening length.
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_split
+    from sdfmpneo_bfzi.source import MU0
+    radial,w_radial=np.polynomial.legendre.leggauss(24)
+    radius=(radial+1.0)/2.0
+    w_radius=w_radial*radius**2/2.0
+    mu,w_mu=np.polynomial.legendre.leggauss(4)
+    phi=2.0*np.pi*(np.arange(8)+0.5)/8.0
+    transverse=np.sqrt(1.0-mu**2)
+    directions=np.stack((
+        transverse[:,None]*np.cos(phi),
+        transverse[:,None]*np.sin(phi),
+        np.broadcast_to(mu[:,None],(4,8)),
+    ),axis=-1).reshape(-1,3)
+    points=(radius[:,None,None]*directions[None,:,:]).reshape(-1,3)
+    weights=(w_radius[:,None]
+             *np.repeat(w_mu,8)[None,:]*(2*np.pi/8)).reshape(-1)
+
+    def constant_vector(nodes):
+        values=np.zeros((len(nodes),1,3))
+        values[:,0,0]=1.0
+        return values
+
+    answer=assemble_coulomb_split(
+        np.zeros((1,3)),np.ones(1),
+        points,weights,constant_vector,
+        lambda p: np.ones(len(p)),
+        local_radius=0.5,local_radial_order=6,
+        local_polar_order=4,local_azimuthal_order=8,
+    )
+    np.testing.assert_allclose(
+        answer[0,0],MU0/2.0,rtol=0.01,
+    )
+
+
+def test_g1_compact_curl_and_exact_exterior():
+    from sdfmpneo_bfzi.sea_basis import build_sea_basis
+    from sdfmpneo_bfzi.exterior_dipole import ExteriorDipole
+    from sdfmpneo_bfzi.source import MU0
+    scene=scene_pair()
+    base=build_sea_basis(scene)
+    refined=build_sea_basis(scene,structured_level=1)
+    more=build_sea_basis(scene,structured_level=2)
+    assert len(base.modes)==27
+    assert len(refined.modes)==71
+    assert len(more.modes)==211
+    assert all(m.profile=="compact" for m in refined.modes[27:])
+    # Direct finite differences of the *same* vector potential must
+    # reproduce the new divergence-free curl evaluator.
+    mode_index=27
+    x=refined.modes[mode_index].center.copy()
+    x += 0.003*refined.modes[mode_index].direction
+    assert scene.in_seawater(x)
+    step=2e-6
+    derivatives=[]
+    for axis in range(3):
+        shift=np.eye(3)[axis]*step
+        potentials=refined.potential_primitive(
+            np.stack((x+shift,x-shift))
+        )[:,mode_index,:]
+        derivatives.append((potentials[0]-potentials[1])/(2*step))
+    actual=np.array([
+        derivatives[1][2]-derivatives[2][1],
+        derivatives[2][0]-derivatives[0][2],
+        derivatives[0][1]-derivatives[1][0],
+    ])
+    predicted=refined.evaluate(x[None,:])[0,mode_index,:]
+    np.testing.assert_allclose(actual,predicted,rtol=2e-4,atol=1e-7)
+
+    dipole=ExteriorDipole(0.16,200_000.,5.0)
+    a=dipole.cavity_radius
+    c,e,d=dipole._coefficients()
+    np.testing.assert_allclose(
+        dipole.azimuthal_potential(a),
+        MU0/(4*np.pi*a*a)+d*a,rtol=2e-12,atol=1e-20,
+    )
+    assert abs(
+        dipole.azimuthal_potential(0.25)
+        -dipole.azimuthal_potential(0.25,outer_radius=0.52)
+    )>0.0
+    np.testing.assert_allclose(dipole.skin_depth,0.503292121,rtol=1e-6)
+
+
 def test_port_source_closed_and_air_mutual():
     scene = scene_pair()
     source = build_bfzi_source(scene, 200_000., order=3)
