@@ -18,9 +18,18 @@ MU0 = 4e-7 * math.pi
 
 @dataclass(frozen=True)
 class LineSource:
-    """World-space source nodes and weighted oriented d-ell vectors."""
+    """Complete port quadrature and optional physically exact straight field.
+
+    `points`/`line_elements` retain the full closed BFZI path for
+    finite-wire length, copper heat and legacy Neumann air inductance.
+    When `straight_segments` is set, C/B fields integrate the actual
+    straight line segments analytically, while `field_mask` selects
+    only the curved-corner Gauss elements, preventing double counting.
+    """
     points: np.ndarray
     line_elements: np.ndarray
+    field_mask: np.ndarray | None = None
+    straight_segments: np.ndarray | None = None
 
     def __post_init__(self):
         p = np.asarray(self.points, dtype=float)
@@ -29,8 +38,28 @@ class LineSource:
             raise ValueError("line source arrays must have shape (n,3)")
         if not np.isfinite(p).all() or not np.isfinite(h).all():
             raise ValueError("line source arrays must be finite")
+        mask = self.field_mask
+        if mask is not None:
+            mask = np.asarray(mask)
+            if mask.shape != (len(p),) or mask.dtype != np.bool_:
+                raise ValueError("field_mask must be a boolean per line element")
+        segments = self.straight_segments
+        if segments is not None:
+            segments = np.asarray(segments, dtype=float)
+            if (segments.ndim != 3 or segments.shape[1:] != (2, 3)
+                    or not np.isfinite(segments).all()
+                    or np.any(np.linalg.norm(
+                        segments[:, 1] - segments[:, 0], axis=1,
+                    ) <= 0)):
+                raise ValueError("straight_segments must be nondegenerate (n,2,3)")
+            if mask is None:
+                raise ValueError("analytic segments require a curved-source field_mask")
+        elif mask is not None:
+            raise ValueError("field_mask requires analytic straight segments")
         object.__setattr__(self, "points", p)
         object.__setattr__(self, "line_elements", h)
+        object.__setattr__(self, "field_mask", mask)
+        object.__setattr__(self, "straight_segments", segments)
 
     def potential_kernel(self, positions, chunk_size: int = 128):
         """C(x) = integral dl/(4*pi*|x-r|), without the mu0 factor."""
@@ -40,15 +69,24 @@ class LineSource:
             raise ValueError("positions must have trailing dimension 3")
         flat = x.reshape(-1, 3)
         out = np.empty_like(flat)
+        src = self.points if self.field_mask is None else self.points[self.field_mask]
+        dl = self.line_elements if self.field_mask is None else self.line_elements[self.field_mask]
+        if self.straight_segments is not None:
+            # Lazy import: the analytic source-only reference also uses
+            # LineSource for curved BFZI corners.
+            from .source_reference import straight_segment_field
         for start in range(0, len(flat), chunk_size):
             query = flat[start:start + chunk_size]
-            offset = query[:, None, :] - self.points[None, :, :]
+            offset = query[:, None, :] - src[None, :, :]
             dist = np.linalg.norm(offset, axis=-1)
             if np.any(dist < 1e-12):
                 raise ValueError("field evaluation too close to ideal line source")
-            out[start:start + chunk_size] = (
-                np.reciprocal(dist) @ self.line_elements
-            ) / (4 * math.pi)
+            result = (np.reciprocal(dist) @ dl) / (4 * math.pi)
+            if self.straight_segments is not None:
+                for a, b in self.straight_segments:
+                    potential, _ = straight_segment_field(a, b, query)
+                    result += potential
+            out[start:start + chunk_size] = result
         return out.reshape(original_shape + (3,))
 
     def magnetic_field(self, positions, currents: complex = 1.0, chunk_size: int = 128):
@@ -59,18 +97,25 @@ class LineSource:
             raise ValueError("positions must have trailing dimension 3")
         flat = x.reshape(-1, 3)
         out = np.empty((len(flat), 3), dtype=complex)
+        src = self.points if self.field_mask is None else self.points[self.field_mask]
+        dl = self.line_elements if self.field_mask is None else self.line_elements[self.field_mask]
+        if self.straight_segments is not None:
+            from .source_reference import straight_segment_field
         for start in range(0, len(flat), chunk_size):
-            offset = flat[start:start + chunk_size, None, :] - self.points[None, :, :]
+            query = flat[start:start + chunk_size]
+            offset = query[:, None, :] - src[None, :, :]
             dist = np.linalg.norm(offset, axis=-1)
             if np.any(dist < 1e-12):
                 raise ValueError("magnetic field too close to ideal line source")
-            out[start:start + chunk_size] = (
-                MU0 * currents / (4 * math.pi)
-                * np.sum(
-                    np.cross(self.line_elements[None, :, :], offset)
-                    / dist[..., None]**3, axis=1
-                )
+            result = MU0 / (4 * math.pi) * np.sum(
+                np.cross(dl[None, :, :], offset)
+                / dist[..., None]**3, axis=1
             )
+            if self.straight_segments is not None:
+                for a, b in self.straight_segments:
+                    _, magnetic = straight_segment_field(a, b, query)
+                    result += magnetic
+            out[start:start + chunk_size] = currents * result
         return out.reshape(original_shape + (3,))
 
 
@@ -106,7 +151,32 @@ def build_line_source(assembly: BFZIAssembly, order: int = 4) -> LineSource:
     size = max(float(np.linalg.norm(dl, axis=1).sum()), 1e-30)
     if closure > max(1e-8, size * 1e-4):
         raise ValueError("BFZI port source did not close; check return direction and order")
-    return LineSource(points, dl)
+    # One physical source, two representations:
+    # - full Gauss nodes remain available for length/heat/air mutual terms;
+    # - C and B integrate real straight segments exactly, leaving only
+    #   actual rounded-square/circular corner curves under Gauss.
+    mask = np.zeros(len(points), dtype=bool)
+    exact_segments = []
+    for turn in range(assembly.coil.turns):
+        for side in range(4):
+            start_index = (4 * turn + side) * 2 * order
+            mask[start_index + order:start_index + 2 * order] = True
+            a, _ = assembly.coil.segment(
+                turn, "side", side, -1.0, assembly.pose,
+            )
+            b, _ = assembly.coil.segment(
+                turn, "side", side, 1.0, assembly.pose,
+            )
+            if np.linalg.norm(b-a) > 1e-14:
+                exact_segments.append((a, b))
+    world_route = assembly.pose.position(route_local)
+    exact_segments.extend(
+        (a, b) for a, b in zip(world_route[:-1], world_route[1:])
+    )
+    return LineSource(
+        points, dl, field_mask=mask,
+        straight_segments=np.asarray(exact_segments, dtype=float),
+    )
 
 
 def _segmented_complete_wire(assembly: BFZIAssembly, max_length: float):
