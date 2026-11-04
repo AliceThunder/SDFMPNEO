@@ -335,6 +335,7 @@ def main(hierarchy=False):
     kd_sphere_base=coupling_dual(x[:sphere_x],wx[:sphere_x])
     k_shell_base=k-k_sphere_base
     kd_shell_base=k_dual-kd_sphere_base
+    shell_previous=None
     for label,options in (
         ("log_normal_2",dict(shell_normal_mapping="log")),
         ("log_normal_4",dict(
@@ -342,6 +343,15 @@ def main(hierarchy=False):
         )),
         ("log_normal_4_tangent",dict(
             shell_normal_mapping="log",shell_normal_order=4,
+            shell_tangential_max_panel_width=0.05,
+        )),
+        ("log_normal_4_source",dict(
+            shell_normal_mapping="log",shell_normal_order=4,
+            shell_source_tangential_cuts=True,
+        )),
+        ("log_normal_4_source_tangent",dict(
+            shell_normal_mapping="log",shell_normal_order=4,
+            shell_source_tangential_cuts=True,
             shell_tangential_max_panel_width=0.05,
         )),
     ):
@@ -354,6 +364,16 @@ def main(hierarchy=False):
         ):
             raise RuntimeError("shell-only refinement changed sphere quadrature")
         rs,ks,kds=volume_matrices(xs,ws)
+        if shell_previous is not None:
+            prev_label,prev_r,prev_k,prev_dual=shell_previous
+            print(
+                f"g1_volume_shell_step: from={prev_label},to={label}, "
+                f"dR={relative(rs,prev_r):.6g}, "
+                f"dK={relative(ks,prev_k):.6g}, "
+                f"dK_dual={relative(kds,prev_dual):.6g}",
+                flush=True,
+            )
+        shell_previous=(label,rs,ks,kds)
         print(
             f"g1_volume_shell: rule={label}, "
             f"x_nodes={len(xs)},shell_nodes={len(xs)-sphere_s}, "
