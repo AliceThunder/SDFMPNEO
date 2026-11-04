@@ -317,6 +317,32 @@ def main(hierarchy=False):
             flush=True,
         )
 
+    # Independent geometric integration principle: intersect physical
+    # seawater rays with the actual oriented boxes (no shell blending).
+    # This is R/K-only because the Coulomb double integral is much
+    # costlier. Angular refinement MUST be checked: a single ray rule
+    # can miss narrow projected box features.
+    physical_volume=4*math.pi*scene.outer_radius**3/3-8*sum(
+        np.prod(a.enclosure.half_extents) for a in scene.assemblies
+    )
+    for r_order,p_order,a_order in ((4,8,16),(5,12,24)):
+        xr,wr=scene.quadrature(
+            r_order,p_order,a_order,wall_scale=trial.wall_scale,
+            wall_layers=2,outer_taper_width=trial.outer_taper_width,
+        )
+        rr,kk,kd=volume_matrices(xr,wr)
+        print(
+            f"g1_volume_ray: rule={r_order}x{p_order}x{a_order}, "
+            f"x_nodes={len(xr)}, "
+            f"dR_vs_base={relative(rr,r):.6g}, "
+            f"dR_vs_refined={relative(rr,r_x2):.6g}, "
+            f"dK_vs_base={relative(kk,k):.6g}, "
+            f"dK_vs_refined={relative(kk,k_x2):.6g}, "
+            f"dK_dual={relative(kd,kk):.6g}, "
+            f"volume_rel_error={abs(wr.sum()/physical_volume-1):.6g}",
+            flush=True,
+        )
+
     # The weak-form identity holds over the *complete* wet region.
     # Artificial sphere/shell partition pieces have nonzero interface
     # fluxes individually, so their primal-vs-dual differences should
