@@ -114,6 +114,7 @@ def main():
     x1=(5,8,12)
     y1=(6,9,14)
     local=(6,8,12)
+    evidence={}
     for name,x,y in (
         ("base",x0,y0),
         ("x_only",x1,y0),
@@ -121,6 +122,7 @@ def main():
         ("both",x1,y1),
     ):
         z=trial(radius,x,y,local,0.4)
+        evidence[name]=z
         print(
             f"p1_ball: variant={name},x_nodes={z['nx']},"
             f"y_nodes={z['ny']},rel_L={z['norm_error']:.7g},"
@@ -133,14 +135,31 @@ def main():
         )
     # Hold the physical field and both cubatures fixed to isolate the
     # partition-radius sensitivity of the original 1/r numerical integral.
+    partition={}
     for a in (0.25,0.55):
         z=trial(radius,x0,y0,local,a)
+        partition[a]=z
         print(
             f"p1_partition: near_radius_over_R={a:.3g},"
             f"rel_L={z['norm_error']:.7g},"
             f"diag_rel={z['diag_error']:.7g}",
             flush=True,
         )
+    # One predeclared target for this analytically solvable three-mode
+    # ball ONLY. It is not a target for the actual BFZI two-box G1 model.
+    ref_norm=abs(reference)
+    partition_gap=abs(partition[0.25]["L11"]-partition[0.55]["L11"])/max(ref_norm,1e-30)
+    both=evidence["both"]
+    print(
+        f"p1_gate: target_rel=0.001,"
+        f"ball_frob_pass={both['norm_error']<0.001},"
+        f"ball_diag_pass={both['diag_error']<0.001},"
+        f"ball_offdiag_pass={both['offdiag_error']<0.001},"
+        f"partition_L11_gap={partition_gap:.7g},"
+        f"partition_L11_pass={partition_gap<0.001},"
+        "scope=exact_ball_only",
+        flush=True,
+    )
     print(
         "p1_note: exact-vortex BALL benchmark tests the ORIGINAL Coulomb "
         "double integral against an analytic three-mode matrix. It does "
