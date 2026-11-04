@@ -33,6 +33,10 @@ class SeaCurrentBasis:
     modes: tuple[CurrentMode, ...]
     wall_scale: float
     source_lines: tuple[LineSource, LineSource] | None = None
+    # Both available outer envelopes make F=0 on the artificial sphere.
+    # boundary_layer has f(R)=f'(R)=0: hence J=curl(F)=0 there.
+    # This is STRONGER than the finite-domain condition n·J=0 and its
+    # fixed 229-dimensional span is not certified to be boundary-complete.
     outer_envelope: str = "quadratic"
     outer_taper_width: float = 0.0
 
