@@ -82,3 +82,28 @@ def test_quadrature_and_invalid_shapes():
         BFZICoil(5, 0.1, 0.1, 0.01, alpha=0.1)
     with pytest.raises(ValueError):
         RigidPose(np.diag([1, 1, -1]), [0, 0, 0])
+
+
+@pytest.mark.parametrize("winding", [+1, -1])
+def test_corner_support_curve_rejects_reversing_tangent(winding):
+    # Positive rho alone is not sufficient: for a rounded-square
+    # corner with alpha=0, min corner speed is rho-2*beta.
+    pitch=0.004
+    bad_rho=0.0005
+    with pytest.raises(ValueError, match="corner tangent"):
+        BFZICoil(
+            turns=1,outer_half_size=0.035,
+            corner_radius=bad_rho,pitch=pitch,
+            alpha=0.0,winding=winding,
+        )
+    good_rho=0.0025
+    coil=BFZICoil(
+        turns=1,outer_half_size=0.035,
+        corner_radius=good_rho,pitch=pitch,
+        alpha=0.0,winding=winding,
+    )
+    for j in range(4):
+        _,dr=coil.segment(
+            0,"corner",j,np.linspace(0,np.pi/2,21),
+        )
+        assert np.min(np.linalg.norm(dr,axis=1))>0.0
