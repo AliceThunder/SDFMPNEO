@@ -73,6 +73,8 @@ def main():
         "ball_moments=analytic,no_softening=True",
         flush=True,
     )
+    max_s_rel=0.0
+    max_m_rel=0.0
     for i,assembly in enumerate(scene.assemblies):
         half=np.asarray(assembly.enclosure.half_extents)
         specs=(
@@ -91,6 +93,8 @@ def main():
             s_exact,m_exact=float(s_exact[0]),m_exact[0]
             s12,m12=_independent_box_surface_moments(point,assembly,12)
             s18,m18=_independent_box_surface_moments(point,assembly,18)
+            max_s_rel=max(max_s_rel,_relative(s12,s_exact),_relative(s18,s_exact))
+            max_m_rel=max(max_m_rel,_relative(m12,m_exact),_relative(m18,m_exact))
             print(
                 f"p1_geom_box: port={i},probe={label},"
                 f"S_box={s_exact:.11g},M_box_norm={np.linalg.norm(m_exact):.11g},"
@@ -110,6 +114,15 @@ def main():
                 f"positive_S={bool(s_sea[0]>0)}",
                 flush=True,
             )
+    print(
+        f"p1_geom_gate: target_rel=1e-8,"
+        f"S_worst_rel={max_s_rel:.7g},"
+        f"M_worst_rel={max_m_rel:.7g},"
+        f"S_pass={max_s_rel<1e-8},"
+        f"M_pass={max_m_rel<1e-8},"
+        "scope=specified_real_sea_near_wall_face_edge_corner_only",
+        flush=True,
+    )
     print(
         "p1_geom_note: analytic box face integrals are directly checked "
         "against independent graded surface quadrature near physical "
