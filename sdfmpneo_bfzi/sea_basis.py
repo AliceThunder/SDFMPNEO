@@ -25,6 +25,29 @@ class CurrentMode:
     # Optional rotated SPD Gaussian precision tensor, exp(-dx.T @ G @ dx).
     # None exactly preserves the historical isotropic width-based modes.
     gaussian_metric: np.ndarray | None = None
+    # Compact C2 Wendland (1-r)^4(4r+1) support for systematic h-refinement.
+    # The historical empirical Gaussian modes keep their original behavior.
+    profile: str = "gaussian"
+
+
+def _mode_window(offset: np.ndarray, mode: CurrentMode):
+    """Scalar curl-potential window and its exact spatial gradient."""
+    scaled = (
+        offset / mode.width**2 if mode.gaussian_metric is None
+        else offset @ mode.gaussian_metric
+    )
+    radius_sq = np.einsum("ni,ni->n", offset, scaled)
+    if mode.profile == "gaussian":
+        value = np.exp(-radius_sq)
+        gradient = -2.0*value[:, None]*scaled
+    elif mode.profile == "compact":
+        radius = np.sqrt(np.maximum(radius_sq, 0.0))
+        positive = np.maximum(1.0-radius, 0.0)
+        value = positive**4*(4.0*radius+1.0)
+        gradient = -20.0*positive[:, None]**3*scaled
+    else:
+        raise ValueError("unknown current mode window")
+    return value, gradient
 
 
 @dataclass(frozen=True)
@@ -93,13 +116,8 @@ class SeaCurrentBasis:
         primitive = np.empty((len(points), self.size, 3), dtype=float)
         for index, mode in enumerate(self.modes):
             offset = points - mode.center
-            scaled = (
-                offset / mode.width**2 if mode.gaussian_metric is None
-                else offset @ mode.gaussian_metric
-            )
-            factor = envelope * np.exp(
-                -np.einsum("ni,ni->n", offset, scaled),
-            )
+            window, _ = _mode_window(offset, mode)
+            factor = envelope * window
             direction = (
                 mode.direction if mode.source_port < 0
                 else source_fields[mode.source_port]
@@ -181,13 +199,10 @@ class SeaCurrentBasis:
         out = np.empty((len(points), self.size, 3), dtype=float)
         for k, mode in enumerate(self.modes):
             offset = points - mode.center
-            scaled = (
-                offset / mode.width**2 if mode.gaussian_metric is None
-                else offset @ mode.gaussian_metric
-            )
-            gauss = np.exp(-np.einsum("ni,ni->n", offset, scaled))
-            gradient = gauss[:, None] * (
-                envelope_grad - 2 * envelope[:, None] * scaled
+            window, window_grad = _mode_window(offset, mode)
+            gradient = (
+                window[:, None]*envelope_grad
+                + envelope[:, None]*window_grad
             )
             if mode.source_port < 0:
                 out[:, k, :] = np.cross(gradient, mode.direction)
@@ -198,7 +213,7 @@ class SeaCurrentBasis:
                 potential, curl_potential = source_fields[mode.source_port]
                 out[:, k, :] = (
                     np.cross(gradient, potential)
-                    + (envelope * gauss)[:, None] * curl_potential
+                    + (envelope * window)[:, None] * curl_potential
                 )
         return out
 
@@ -217,6 +232,7 @@ def build_sea_basis(
     include_global_multiscale: bool = False,
     global_scale_factors: tuple[float, ...] = (0.75, 2.4),
     include_corner_source_guided: bool = False,
+    structured_level: int = 0,
     outer_envelope: str = "boundary_layer",
     outer_taper_width: float | None = None,
 ) -> SeaCurrentBasis:
@@ -253,6 +269,10 @@ def build_sea_basis(
     """
     if modes_per_face not in (1, 2):
         raise ValueError("modes_per_face must be 1 or 2")
+    if (not isinstance(structured_level, int)
+            or isinstance(structured_level, bool)
+            or structured_level not in (0, 1, 2)):
+        raise ValueError("structured_level must be 0, 1 or 2")
     if face_refinement not in (1, 2, 3, 4, 5):
         raise ValueError("face_refinement must be 1, 2, 3, 4 or 5")
     if not isinstance(refine_thin_faces_only, bool):
@@ -485,6 +505,51 @@ def build_sea_basis(
                             np.zeros(3),float(np.max(widths)),
                             source_port=port,gaussian_metric=metric.copy(),
                         ))
+    # Genuine nested, h-refinable compact curl potentials. Every dyadic
+    # level adds distinct face tiles, plus far-field curl directions at
+    # physical radii set by the packages rather than the artificial sphere.
+    # C2 support and multiplication by the wall/outer envelopes preserve
+    # div(J)=0 and the insulating zero-normal conditions.
+    for level in range(1, structured_level+1):
+        cells = 2**level
+        coordinates = (2.0*np.arange(cells)+1.0)/cells-1.0
+        for assembly in scene.assemblies:
+            half = np.asarray(assembly.enclosure.half_extents)
+            normal = int(np.argmin(half))
+            tangent = [i for i in range(3) if i != normal]
+            support = max(
+                1.35*min(half[tangent])/cells,3.0*scale,
+            )
+            for sign in (-1.0,1.0):
+                for u in coordinates:
+                    for v in coordinates:
+                        local = np.zeros(3)
+                        local[normal] = sign*(
+                            half[normal]+max(scale,0.08*half[normal])
+                        )
+                        local[tangent] = (u*half[tangent[0]],
+                                          v*half[tangent[1]])
+                        center = assembly.pose.position(local)
+                        for axis in tangent:
+                            modes.append(CurrentMode(
+                                center,np.asarray(
+                                    assembly.pose.rotation[:,axis]
+                                ).copy(),support,profile="compact",
+                            ))
+        # The localized far-field charts also refine predictably by
+        # physical shell index, not by an ad hoc enlargement of one Gaussian.
+        far_radius = package_reach*(0.85+0.5*(level-1))
+        far_support = package_reach*(0.95 if level == 1 else 0.7)
+        for axis in range(3):
+            tangent = [j for j in range(3) if j != axis]
+            for sign in (-1.0,1.0):
+                center = origin.copy()
+                center[axis] += sign*far_radius
+                for t in tangent:
+                    modes.append(CurrentMode(
+                        center.copy(),np.eye(3)[t].copy(),
+                        far_support,profile="compact",
+                    ))
     return SeaCurrentBasis(
         scene, tuple(modes), scale,
         sources.lines if (include_source_guided or include_source_face_guided
