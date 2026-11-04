@@ -48,6 +48,7 @@ class SeaMQSConfig:
     # Optional Gauss degree on each geometry-projected polar panel.
     # Panel edges follow actual enclosures and blending-shell silhouettes.
     polar_geometry_order: int | None = None
+    azimuthal_geometry_order: int | None = None
     # Optional physical-length cap for spherical radial Gauss intervals.
     # Especially useful when increasing the finite outer domain.
     max_radial_panel_width: float | None = None
@@ -112,6 +113,13 @@ class SeaMQSConfig:
                 "polar_geometry_order must be >= 2 and "
                 "requires polar_panel_count=1"
             )
+        if self.azimuthal_geometry_order is not None and (
+            not isinstance(self.azimuthal_geometry_order, int)
+            or isinstance(self.azimuthal_geometry_order, bool)
+            or self.azimuthal_geometry_order < 2
+            or self.azimuthal_panel_order != 1
+        ):
+            raise ValueError("invalid azimuthal_geometry_order")
         if not isinstance(self.radial_geometry_cuts, bool):
             raise ValueError("radial_geometry_cuts must be a boolean")
         if self.max_radial_panel_width is not None and (
@@ -1182,6 +1190,7 @@ def solve_seawater_reference(
             polar_panel_count=cfg.polar_panel_count,
             azimuthal_panel_order=cfg.azimuthal_panel_order,
             polar_geometry_order=cfg.polar_geometry_order,
+            azimuthal_geometry_order=cfg.azimuthal_geometry_order,
         )
     else:
         points, weights = scene.quadrature(
