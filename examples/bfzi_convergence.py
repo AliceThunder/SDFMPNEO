@@ -208,8 +208,25 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
         # convergence cannot be due to the old coarse dissipative rule.
         print("\nOuter-domain sequence: full ball L plus refined R/K",
               flush=True)
+        if targeted_domain:
+            # All radii must use the SAME 229-dimensional physical family,
+            # including global scales; otherwise domain variation is
+            # confounded with a completely different trial space.
+            radii = (scene.outer_radius, 0.70, 0.85)
+            common_x, common_w = scene.box_shell_quadrature(
+                4, 6, 8, wall_scale=enriched.wall_scale,
+                outer_taper_width=enriched.outer_taper_width,
+                shell_normal_order=3, shell_tangential_order=4,
+            )
+            print(
+                f"  fixed_domain_family: expected_modes={enriched.size}, "
+                f"common_wet_nodes={len(common_x)}, "
+                f"radii={radii}", flush=True,
+            )
+        else:
+            radii = (0.52, 0.70, 0.85, 1.05, 1.30)
         previous = None
-        for radius in (0.52, 0.70, 0.85, 1.05, 1.30):
+        for radius in radii:
             current_scene = (
                 scene if radius == scene.outer_radius
                 else replace(scene, outer_radius=radius)
@@ -220,14 +237,46 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     current_scene, 200_000., order=4,
                 )
             )
-            current_basis = (
-                enriched if current_scene is scene
-                else build_sea_basis(
+            if current_scene is scene:
+                current_basis = enriched
+            elif targeted_domain:
+                current_basis = build_sea_basis(
+                    current_scene, modes_per_face=2,
+                    face_refinement=5, refine_thin_faces_only=True,
+                    sources=current_source, include_source_guided=True,
+                    include_source_face_guided=True,
+                    include_anisotropic_face_guided=True,
+                    include_global_multiscale=True,
+                    include_corner_source_guided=True,
+                )
+                if current_basis.size != enriched.size:
+                    raise RuntimeError(
+                        "domain comparison changed the physical mode count"
+                    )
+                for old, new in zip(enriched.modes, current_basis.modes):
+                    if (not np.array_equal(old.center,new.center)
+                        or not np.array_equal(old.direction,new.direction)
+                        or old.width!=new.width
+                        or old.source_port!=new.source_port
+                        or not (
+                            old.gaussian_metric is None
+                            and new.gaussian_metric is None
+                            or old.gaussian_metric is not None
+                            and new.gaussian_metric is not None
+                            and np.array_equal(
+                                old.gaussian_metric,new.gaussian_metric,
+                            )
+                        )
+                    ):
+                        raise RuntimeError(
+                            "outer-radius experiment changed physical Gaussian modes"
+                        )
+            else:
+                current_basis = build_sea_basis(
                     current_scene, modes_per_face=2,
                     face_refinement=2, refine_thin_faces_only=True,
                     sources=current_source, include_source_guided=True,
                 )
-            )
             # Parent L is assembled separately for each outer domain
             # using the same physical angular/near-wall magnetic rule.
             parent = (
@@ -281,10 +330,10 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                     2*current_scene.seawater.conductivity
                 )
                 power = 0.5*float(np.real(np.vdot(v, r @ v)))
-                return z, q, power
+                return z, q, power, coeff
 
-            z, q, power = response_for(k_curl)
-            zd, qd, pd = response_for(k_dual)
+            z, q, power, coeff = response_for(k_curl)
+            zd, qd, pd, _ = response_for(k_dual)
 
             def relative(a, b):
                 return float(np.linalg.norm(a-b) /
@@ -304,20 +353,59 @@ def basis_convergence(*, verify: bool = False, green: bool = False,
                 f"dP={abs(pd-power)/max(abs(power),1e-30):.6g}",
                 flush=True,
             )
+            if targeted_domain:
+                common_modes = np.einsum(
+                    "nmc,mr->nrc", current_basis.evaluate(common_x),
+                    parent.transform, optimize=True,
+                )
+                common_ports = np.einsum(
+                    "nmc,mp->npc", common_modes, coeff, optimize=True,
+                )
+                common_drive = np.einsum(
+                    "npc,p->nc", common_ports, currents, optimize=True,
+                )
             if previous is not None:
-                old_radius, old_z, old_q, old_p = previous
+                old_radius, old_z, old_q, old_p, old_drive, old_ports = previous
+                details = ""
+                if targeted_domain:
+                    # Identical physical control volume and sampling weights
+                    # at every outer radius (not a changing-domain R metric).
+                    def common_j_error(new, old):
+                        error = np.sum(common_w[:,None] * np.sum(
+                            np.abs(new-old)**2, axis=tuple(
+                                range(2,new.ndim)
+                            ) if new.ndim>2 else (-1,),
+                        )[:,None])
+                        base = np.sum(common_w[:,None] * np.sum(
+                            np.abs(old)**2, axis=tuple(
+                                range(2,old.ndim)
+                            ) if old.ndim>2 else (-1,),
+                        )[:,None])
+                        return float(np.sqrt(error/max(base,1e-60)))
+                    details = (
+                        f", dJ_common={common_j_error(common_drive,old_drive):.6g}"
+                        f", dJ_ports_common={common_j_error(common_ports,old_ports):.6g}"
+                    )
                 print(
                     f"  domain_step: {old_radius:.3g}->{radius:.3g} m, "
                     f"dZ={relative(z,old_z):.6g}, "
                     f"dq={relative(q,old_q):.6g}, "
-                    f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}",
+                    f"dP={abs(power-old_p)/max(abs(old_p),1e-30):.6g}"
+                    + details,
                     flush=True,
                 )
-            previous = radius, z, q, power
+            previous = (
+                radius, z, q, power,
+                common_drive if targeted_domain else None,
+                common_ports if targeted_domain else None,
+            )
         print(
             "Outer-domain screening uses independently refined R/K "
-            "at every radius and physical ball L. Port/probe/power "
-            "stability still needs a validated radius plateau.",
+            "at every radius and reassembled physical ball L. "
+            "For targeted tests, physical Gaussian directions stay fixed "
+            "and dJ_common uses common 0.52 m wet sampling. The outer "
+            "taper and magnetic cubature still vary with radius; "
+            "there is no continuum-domain certificate.",
             flush=True,
         )
         return
