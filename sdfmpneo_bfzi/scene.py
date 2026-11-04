@@ -294,6 +294,7 @@ class BfziScene:
         polar_panel_count: int = 1,
         azimuthal_panel_order: int = 1,
         polar_geometry_order: int | None = None,
+        azimuthal_geometry_order: int | None = None,
         return_sphere_count: bool = False,
     ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, int]:
         """Positive, meshless partition-of-unity near-box / sphere cubature.
@@ -366,6 +367,16 @@ class BfziScene:
             raise ValueError("max_radial_panel_width must be positive and finite")
         if not isinstance(radial_geometry_cuts, bool):
             raise ValueError("radial_geometry_cuts must be a boolean")
+        if azimuthal_geometry_order is not None and (
+            not isinstance(azimuthal_geometry_order, int)
+            or isinstance(azimuthal_geometry_order, bool)
+            or azimuthal_geometry_order < 2
+            or azimuthal_panel_order != 1
+        ):
+            raise ValueError(
+                "azimuthal_geometry_order must be integer >=2 and "
+                "requires azimuthal_panel_order=1"
+            )
         if not isinstance(return_sphere_count, bool):
             raise ValueError("return_sphere_count must be a boolean")
 
@@ -470,7 +481,44 @@ class BfziScene:
                 angular_mw.append(0.5 * (b - a) * gauss_mw)
             mu = np.concatenate(angular_mu)
             mu_weights = np.concatenate(angular_mw)
-        if azimuthal_panel_order == 1:
+        if azimuthal_geometry_order is not None:
+            # Projection of both physical box corners and smooth shell
+            # corners into phi. These angular references are FIXED when
+            # changing the Gauss order. No hard angular wet masking:
+            # the exact box-shell partition of unity stays in place.
+            phi_cuts = [0.0, 2.0 * math.pi]
+            for inner, outer in zip(self.assemblies, expanded):
+                for assembly in (inner, outer):
+                    half = np.asarray(assembly.enclosure.half_extents)
+                    corners = np.array(np.meshgrid(
+                        (-half[0], half[0]),
+                        (-half[1], half[1]),
+                        (-half[2], half[2]), indexing="ij",
+                    )).reshape(3, -1).T
+                    vectors = assembly.pose.position(corners)-center
+                    transverse = np.linalg.norm(vectors[:, :2], axis=1)
+                    good = transverse > 1e-12
+                    phi_cuts.extend(np.mod(
+                        np.arctan2(vectors[good, 1], vectors[good, 0]),
+                        2.0*math.pi,
+                    ).tolist())
+            boundaries = [0.0]
+            for value in sorted(phi_cuts):
+                if boundaries[-1]+1e-7 < value < 2.0*math.pi-1e-7:
+                    boundaries.append(value)
+            boundaries.append(2.0*math.pi)
+            gauss_phi, gauss_pw = np.polynomial.legendre.leggauss(
+                azimuthal_geometry_order
+            )
+            angles, azimuthal_weights = [], []
+            for left, right in zip(boundaries[:-1], boundaries[1:]):
+                halfspan = 0.5*(right-left)
+                midpoint = 0.5*(right+left)
+                angles.append(midpoint+halfspan*gauss_phi)
+                azimuthal_weights.append(halfspan*gauss_pw)
+            angles = np.concatenate(angles)
+            azimuthal_weights = np.concatenate(azimuthal_weights)
+        elif azimuthal_panel_order == 1:
             angles = 2.0 * math.pi * (
                 np.arange(azimuthal_order) + 0.5
             ) / azimuthal_order
