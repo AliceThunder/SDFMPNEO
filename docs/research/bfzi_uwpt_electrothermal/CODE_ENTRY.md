@@ -4,7 +4,9 @@
 
 **唯一推进分支：** research/bfzi-uwpt-electrothermal-surrogate。
 
-正式理论入口：[theory/main.tex](../../../theory/main.tex)；决策依据：[首版封版条款](../../../theory/sections/10_frozen_mvp_contract.tex)。
+正式理论入口：[theory/main.tex](../../../theory/main.tex)；决策依据：[首版封版条款](../../../theory/sections/10_frozen_mvp_contract.tex)、[G1 严格重核及三线算法](../../../theory/sections/11_g1_foundation_recheck.tex)。
+
+**2026-11-04 UTC G1 重构入口（首批代码已实现、待本地数值验证）：** `python run.py --mode bfzi-g1-foundations --with-tests`。实验包含原始 Coulomb 核的局部消奇异独立积分、小模态 Green L/响应比较、27→71→211 的解析紧支 curl 层级及球腔磁偶极无穷海水解/l=1 透明边界。它是**新参考路径的先导实验**，尚非可替换现有 229 模态的正式教师；完整双封装 DtN、系统空间收敛和全域 Green 积分还在后续。原有单频 MQS R/L/K 弱式仍在限定假设下成立，但必须纠正人工边界与数值一致性问题。
 
 ## 一、BFZI-MQS-v1 已冻结的适用域
 
