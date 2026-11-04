@@ -854,3 +854,113 @@ class BfziScene:
         if return_sphere_count:
             return positions, weights, len(point_sets[0])
         return positions, weights
+
+    def box_shell_qmc(
+        self, m: int = 10, *, seed: int = 13,
+        wall_scale: float | None = None,
+        shell_width_factor: float = 32.0,
+        sphere_extra_bits: int = 3,
+        return_sphere_count: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, int]:
+        """Meshless randomized Sobol volume cubature on the *same* wet domain.
+
+        This is an independent local-operator R/K/Joule integration rule,
+        not a 229-mode Green double-integral reference. The sphere carries
+        the smooth blend b1*b2; twelve oriented, nonoverlapping box slabs
+        carry (1-bi). Each slab is parameterized by a true logarithmic
+        wall distance and two physical tangents. Its positive Jacobian is
+        evaluated at every point. No finite-element/voxel mesh, hard mask
+        of near-box rays, or softened physical kernel is introduced.
+
+        Vary m and independent scrambled seeds to detect aliasing. A
+        scramble-to-scramble spread is a diagnostic, NOT a certified bound.
+        """
+        from scipy.stats import qmc
+
+        if (not isinstance(m, int) or isinstance(m, bool)
+                or not 5 <= m <= 15):
+            raise ValueError("QMC log2 samples per oriented slab must be 5..15")
+        if (not isinstance(sphere_extra_bits, int)
+                or isinstance(sphere_extra_bits, bool)
+                or not 0 <= sphere_extra_bits <= 4):
+            raise ValueError("sphere_extra_bits must be an integer 0..4")
+        if (not isinstance(seed, int) or isinstance(seed, bool)
+                or seed < 0):
+            raise ValueError("QMC seed must be a nonnegative integer")
+        if not isinstance(return_sphere_count, bool):
+            raise ValueError("return_sphere_count must be boolean")
+        if not math.isfinite(shell_width_factor) or shell_width_factor <= 0:
+            raise ValueError("shell_width_factor must be positive")
+        scale = (
+            0.075 * min(min(a.enclosure.half_extents) for a in self.assemblies)
+            if wall_scale is None else float(wall_scale)
+        )
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("wall_scale must be positive")
+        width, _ = self._box_shell_geometry(scale, shell_width_factor)
+        origin = np.asarray(self.outer_center, dtype=float)
+
+        def blend(x, assembly):
+            d2, _ = assembly.enclosure.squared_exterior_distance(
+                x, assembly.pose,
+            )
+            t = np.clip(np.sqrt(d2)/width, 0.0, 1.0)
+            return t**3*(10.0+t*(-15.0+6.0*t))
+
+        def points_in_unit_cube(region, bits):
+            return qmc.Sobol(
+                d=3, scramble=True, seed=seed+104729*region,
+            ).random_base2(bits)
+
+        # Uniform Cartesian volume in the exact enclosing ball:
+        # r=R*u**(1/3), mu=2v-1, phi=2*pi*w.
+        unit = points_in_unit_cube(0, m+sphere_extra_bits)
+        rad = self.outer_radius*np.cbrt(unit[:, 0])
+        mu = 2.0*unit[:, 1]-1.0
+        phi = 2.0*math.pi*unit[:, 2]
+        sine = np.sqrt(np.maximum(1.0-mu**2, 0.0))
+        sphere = origin + rad[:, None]*np.column_stack((
+            sine*np.cos(phi),sine*np.sin(phi),mu,
+        ))
+        sphere_weights = np.full(
+            len(sphere), 4.0*math.pi*self.outer_radius**3/(3*len(sphere)),
+        )
+        for assembly in self.assemblies:
+            sphere_weights *= blend(sphere, assembly)
+        active = sphere_weights > 0.0
+        points_sets = [sphere[active]]
+        weight_sets = [sphere_weights[active]]
+        n_sphere = len(points_sets[0])
+
+        log_span = math.log1p(width/scale)
+        region = 0
+        for assembly in self.assemblies:
+            half = np.asarray(assembly.enclosure.half_extents)
+            for normal_axis in range(3):
+                for sign in (-1.0, 1.0):
+                    region += 1
+                    unit = points_in_unit_cube(region, m)
+                    local = np.empty_like(unit)
+                    weights = np.full(len(unit), 1.0/len(unit))
+                    for axis in range(3):
+                        if axis == normal_axis:
+                            d = scale*np.expm1(log_span*unit[:, axis])
+                            local[:, axis] = sign*(half[axis]+d)
+                            weights *= log_span*(scale+d)
+                        else:
+                            reach = half[axis]+(
+                                width if axis > normal_axis else 0.0
+                            )
+                            local[:, axis] = reach*(2.0*unit[:, axis]-1.0)
+                            weights *= 2.0*reach
+                    points = assembly.pose.position(local)
+                    weights *= 1.0-blend(points, assembly)
+                    active = weights > 0.0
+                    if np.any(active):
+                        points_sets.append(points[active])
+                        weight_sets.append(weights[active])
+        points = np.concatenate(points_sets)
+        weights = np.concatenate(weight_sets)
+        if return_sphere_count:
+            return points, weights, n_sphere
+        return points, weights
