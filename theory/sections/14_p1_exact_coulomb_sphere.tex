@@ -134,6 +134,132 @@ Frobenius 相对误差、最大对角相对误差、
 当前\textbf{该 P1 新算例尚未取得本机数值运行证据}，
 不能宣布原核求积成功。
 
+
+\subsection{P1 原核球基准实测失败及严格误差归因}
+用户本机 \texttt{ba16d6a} 的第一个 P1 运行
+85 项程序单测通过，但\emph{原核解析准确度失败}。
+在 $R=1\,{\rm m}$ 的三解析无散度模式上，
+当前分区算子 \texttt{assemble\_coulomb\_split}
+分别以基础、只加密 $x$、只加密 $y$、
+双轴加密的体积规则得到 Frobenius 相对误差
+$2.120667\%$、$1.556394\%$、
+$1.146122\%$、$0.614486\%$，
+最后一项仍高于预定 $0.1\%$ 目标。
+固定 $x/y$ 规则，局部分区半径 $a/R$
+改为 $0.25,0.55$ 后，
+$L_{11}$ 的差值相对解析真值为 $0.4230034\%$。
+对称性、非对角元误差均接近机器零，
+没有提供数值正确性的充分证据。
+
+目前的 C$^2$ 局部径向窗函数满足
+$\chi(s)=1$（$s\le1/2$），
+$\chi(s)=0$（$s\ge1$），中间为
+\[
+\chi(s)=1-10(2s-1)^3+15(2s-1)^4-6(2s-1)^5,
+\qquad \frac12<s<1,
+\]
+故其局部矩可\emph{完全解析}：
+\[
+\int_0^1 s\chi(s)\,\mathrm ds=\frac27 .
+\]
+令 $a(\bm x)=
+\min(a_{\max},0.6\,\mathrm{dist}(\bm x,\partial\Omega_R))$，
+局部球包含于导电球内部，
+且 $\bm W_i(\bm y)=
+\bm W_i(\bm x)+\bm e_i\times(\bm y-\bm x)$；
+后项在对称球上积分为零，于是
+\begin{equation}
+\boxed{
+\int_{|\bm y-\bm x|<a(\bm x)}
+\frac{\chi(|\bm y-\bm x|/a)}
+{|\bm x-\bm y|}\bm W_i(\bm y)\,\mathrm d\bm y
+=\frac{8\pi}{7}\,a(\bm x)^2\,\bm W_i(\bm x).
+}
+\label{eq:p1-analytic-local-window}
+\end{equation}
+这一式直接给出\emph{原积分分区}的确切局部值，
+无需再加密局部球的径向、极向或方位求积。
+已有球内势的解析解
+\eqref{eq:p1-ball-exact-potential} 则可直接在
+$x$ 规则上计算原算子而不经过任何 $y$ 求积。
+两者相减就能将误差定位为：
+\begin{enumerate}
+\item 解析内势经 $x$ 求积的外积分误差；
+\item 局部球采用式
+\eqref{eq:p1-analytic-local-window} 精确值后，
+$y$ 远区规则相对解析内势的误差；
+\item 原程序给出的局部球数值值与上述精确值的差。
+\end{enumerate}
+其中远区核
+$(1-\chi(|\bm x-\bm y|/a(\bm x)))/|\bm x-\bm y|$
+虽然在对角线取零，但靠近球壁时
+$a(\bm x)\to0$，转折层收缩。
+固定全局球 Gauss 求积容易漏掉这类细小空间尺度。
+新 \texttt{p1\_decomp} 旨在直接证实或反驳
+该误差来源，不能凭直觉认定它已经通过。
+
+\subsection{保留物理原核的全域奇异常量减除}
+对任何具有足够正则性的测试场，恒等式
+\begin{equation}
+\boxed{
+\int_\Omega\frac{\bm W(\bm y)}{|\bm x-\bm y|}
+\,\mathrm d\bm y
+=\bm W(\bm x)\,S_\Omega(\bm x)
++\int_\Omega
+\frac{\bm W(\bm y)-\bm W(\bm x)}{|\bm x-\bm y|}
+\,\mathrm d\bm y,
+\quad
+S_\Omega(\bm x)=\int_\Omega
+\frac{\mathrm d\bm y}{|\bm x-\bm y|}.
+}
+\label{eq:p1-global-constant-subtraction}
+\end{equation}
+当 $\bm W$ 局部 Lipschitz 时，
+最后一项在 $y\to x$ 的函数值有界，
+但一般仍有依赖方向的极限，不得在
+$x/y$ 节点重合处任意赋值。
+这是\textbf{未软化的原始 Coulomb 核}，
+且并非均匀小球电流云替代模型。
+
+球形几何的标量势已知：
+\[
+S_{B_R}(\bm x)=2\pi
+\left(R^2-\frac{|\bm x|^2}{3}\right).
+\]
+据此新增
+\texttt{green\_coulomb.assemble\_coulomb\_subtracted}，
+直接用给定真实几何的独立标量势
+和独立 $x/y$ 体积节点，对式
+\eqref{eq:p1-global-constant-subtraction}
+构成原核磁能矩阵，作为第二种 P1 算法候选。
+当前仅能在\emph{球上}把解析
+$S_{B_R}$ 当成数值真值。
+
+对双盒排除的海水域 \emph{不可以直接使用}
+球形 $S_{B_R}$。
+若要使该算法应用于真实
+$\Omega=B_R\setminus(\overline B_1\cup\overline B_2)$，
+仍需独立构造并验证
+$S_\Omega(\bm x)$。
+用散度恒等式
+$\Div_{\bm y}[(\bm y-\bm x)/|\bm y-\bm x|]
+=2/|\bm y-\bm x|$，
+可将其形式上写成物理边界的曲面积分：
+\[
+\boxed{
+S_\Omega(\bm x)=\frac12
+\int_{\partial\Omega}
+\frac{\bm n_{\bm y}\cdot(\bm y-\bm x)}
+{|\bm y-\bm x|}\,\mathrm dS_{\bm y}.
+}
+\]
+外球使用外法向，而内盒壁使用\emph{海水域外法向}
+（即朝向绝缘盒内部）。
+该表面表示本身需要近壁误差控制，
+\textbf{在未经证明或核对前不能称双盒算法已通过}。
+已新增诊断和原核减除实现，
+但这些变更尚未取得用户本机 P1 新实测。
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
