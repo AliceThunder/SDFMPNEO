@@ -14,7 +14,8 @@ from sdfmpneo_bfzi import (
 )
 from sdfmpneo_bfzi.source import MU0
 from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_split
-from sdfmpneo_bfzi.exterior_dipole import ExteriorDipole
+from scipy.special import spherical_kn
+from sdfmpneo_bfzi.exterior_dipole import ExteriorDipole, ExteriorSphericalCurrent
 from sdfmpneo_bfzi.sea_reference import _assemble_ball_green_inductance
 
 
@@ -253,9 +254,39 @@ def main():
             f"transparent_log_derivative={dipole.transparent_log_derivative(radius):.6g}",
             flush=True,
         )
+    # Actual homogeneous seawater outside an arbitrary enclosing sphere
+    # has an infinite diagonal vector *spherical-harmonic* DtN (after
+    # angular projection), not a single Robin scalar. Check two distinct
+    # divergence-free toroidal degrees and the independent tail loss.
+    exterior = ExteriorSphericalCurrent(
+        0.52, 200_000., scene.seawater.conductivity, max_degree=3,
+    )
+    mu,phi,_ = exterior.angular_nodes()
+    transverse = np.sqrt(1-mu**2)
+    tangent = np.column_stack((
+        -transverse*np.sin(phi), transverse*np.cos(phi), np.zeros(len(mu)),
+    ))
+    boundary_current = (1+0.4*mu)[:,None]*tangent
+    coefficients,projection_error = exterior.project(boundary_current)
+    radius=0.85
+    gamma=exterior.gamma
+    exact_tail = (
+        spherical_kn(1,gamma*radius)/spherical_kn(1,gamma*exterior.radius)
+        +0.4*mu*spherical_kn(2,gamma*radius)
+        /spherical_kn(2,gamma*exterior.radius)
+    )[:,None]*tangent
     print(
-        "g1_exterior_note: exact l=1 toroidal spherical-cavity MQS "
-        "transparent boundary is not a general BFZI two-box DtN map.",
+        f"g1_exterior_multipole: lmax={exterior.max_degree}, "
+        f"boundary_projection_error={projection_error:.6g}, "
+        f"l1_l2_tail_error={relative(exterior.evaluate(coefficients,radius,mu,phi),exact_tail):.6g}, "
+        f"tail_ohmic_power_for_unit_trace={exterior.tail_ohmic_power(coefficients):.6g}",
+        flush=True,
+    )
+    print(
+        "g1_exterior_note: multiple exact toroidal exterior harmonics and "
+        "vector spherical-harmonic continuation now implemented; their "
+        "DtN must still be coupled to interior BFZI J at a matching sphere "
+        "with divergence compatibility. G1 infinite-domain FAIL remains.",
         flush=True,
     )
 
