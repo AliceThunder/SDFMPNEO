@@ -243,6 +243,73 @@ def assemble_coulomb_split(
     return (symmetric,skew) if return_diagnostics else symmetric
 
 
+def assemble_coulomb_subtracted(
+    x, wx, y, wy, evaluate, scalar_potential, *,
+    chunk_size: int = 32, return_diagnostics: bool = False,
+):
+    """Unsoftened Coulomb L with exact continuous constant-density subtraction.
+
+    Let S_Omega(x) = ∫_Omega 1/|x-y| dy, supplied by an INDEPENDENT,
+    accurate scalar geometry-potential evaluator. Then, exactly:
+
+      ∫_Omega W(y)/|x-y| dy
+        = W(x)*S_Omega(x)
+          + ∫_Omega [W(y)-W(x)]/|x-y| dy.
+
+    For Lipschitz W the residual integrand is bounded near the
+    diagonal, unlike the original 1/r kernel. This does not silently
+    replace the original physical kernel with a softened/cloud kernel.
+    x and y quadrature nodes must be DISJOINT, since the residual
+    has an angle-dependent pointwise limit on the diagonal; a single
+    zero-distance node cannot be assigned a valid quadrature value.
+
+    This routine is useful only after the geometry-dependent scalar
+    potential S_Omega has its OWN independent validation. The P1 unit
+    ball supplies S_B(x) = 2π(R²-|x|²/3) analytically. In general two
+    rotated box exclusions, this spherical S_B is NOT the true S_Omega.
+    """
+    x, y = np.asarray(x,float), np.asarray(y,float)
+    wx, wy = np.asarray(wx,float), np.asarray(wy,float)
+    if (x.ndim!=2 or y.ndim!=2 or x.shape[1]!=3 or y.shape[1]!=3
+            or wx.shape!=(len(x),) or wy.shape!=(len(y),)
+            or not len(x) or not len(y) or
+            not np.isfinite(x).all() or not np.isfinite(y).all()
+            or not np.isfinite(wx).all() or not np.isfinite(wy).all()
+            or np.any(wx<=0) or np.any(wy<=0) or chunk_size<1):
+        raise ValueError("expected nonempty finite (n,3) volume rules")
+    vx, vy = np.asarray(evaluate(x),float), np.asarray(evaluate(y),float)
+    if (vx.ndim!=3 or vx.shape[0]!=len(x) or vx.shape[2]!=3
+            or vy.shape!=(len(y),vx.shape[1],3)
+            or not np.isfinite(vx).all() or not np.isfinite(vy).all()):
+        raise ValueError("current modes must be finite (n,m,3)")
+    scalar = np.asarray(scalar_potential(x),float)
+    if scalar.shape!=(len(x),) or not np.isfinite(scalar).all():
+        raise ValueError("scalar Coulomb potential must be finite (n,)")
+    m=vx.shape[1]
+    accum=np.zeros((m,m))
+    for i in range(0,len(x),chunk_size):
+        end=min(len(x),i+chunk_size)
+        distance=cdist(x[i:end],y)
+        if np.any(distance<=1e-14):
+            raise ValueError(
+                "singularity-subtracted Coulomb requires disjoint x/y nodes"
+            )
+        kernel=wy[None,:]/distance
+        residual=np.einsum(
+            "ij,ijmc->imc",kernel,
+            vy[None,:,:,:]-vx[i:end,None,:,:],
+            optimize=True,
+        )
+        potential=scalar[i:end,None,None]*vx[i:end]+residual
+        accum+=np.einsum(
+            "i,imc,inc->mn",wx[i:end],vx[i:end],potential,
+            optimize=True,
+        )
+    skew=float(np.linalg.norm(accum-accum.T)/max(np.linalg.norm(accum),1e-60))
+    result=MU0/(4.0*math.pi)*0.5*(accum+accum.T)
+    return (result,skew) if return_diagnostics else result
+
+
 def _bfzi_wet_radial_segments(scene, point, directions, radius):
     """Clip an x-centred spherical patch against real rotated boxes.
 
