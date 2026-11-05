@@ -680,3 +680,50 @@ sphere_angles、sphere_phys、phys_tangent，
 
 **新算法仍待本机日志，P1-C/G1 FAIL；
 不训练正式教师、不使用 GitHub Actions。**
+
+
+## 2026-11-05 第六次 P1-C 真实日志与解析几何矩主算法入口
+
+日志 8b743b0 / 实跑代码 946c10c：
+102 passed in 43.29s、全部五模态原核计算完成；
+但新增物理外 x 的 L00/L11 各相对于旧 x1
+变化 12.166%/22.944%，实际海水解析体积误差
+从 0.08525% 升至 0.10368%，并未收敛。
+不将 phys_x_both 的 1.579% raw skew
+误认为物理高精度证据。
+
+当前主要新数值实现为点心
+assemble_coulomb_radial 的可选
+exact_scalar_moments 物理控制变量：
+U=ΣqW(x+ru)+[SΩ(x)−Σq]W(x)。
+assemble_basis_coulomb_radial 在显式
+exact_scalar_control=True 时从现有
+sea_coulomb_moments(scene,x) 读取
+真正外球减两绝缘盒的解析 SΩ，
+完全保留原湿射线分片和原始 1/r。
+常量向量源积分对此严格解析一致，
+空间变化 W 和磁能仍需独立检验。
+该控制矩对磁矩阵贡献严格对称，
+不能修复绝对 raw skew。
+
+五模态独立主实验用 scalar_control_both
+代替此前已经证伪的昂贵 corner_both，
+保持完全相同外 x / 内径向 / 极角 / 方位
+与旧 both 对照，并输出模式级磁自/互项。
+原真实双盒非零旋转解析 SΩ 低成本探针保留。
+
+无核外 x Gram 又新增 phys_tangent_half
+和 phys_angle3 两个仅单轴变化案例，
+测试最窄 Gaussian 窗宽与真实几何角扇区
+的进一步收敛，而不增加昂贵大规模 Green
+双重积分次数。保留物理候选
+phys_x_both 作长期单轴对照，不将其认定教师。
+
+本机操作：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+新修改尚待最新本机实跑；
+**P1-C/G1=FAIL，不开启正式神经教师训练，
+禁止 GitHub Actions。**
