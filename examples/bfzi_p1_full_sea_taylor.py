@@ -487,6 +487,35 @@ def main():
         flush=True,
     )
     _report_modes("corner_both",corner["L"])
+    # The physical outer cubature is now an actual full five-curl
+    # Coulomb candidate, not merely a separate G diagnostic.
+    # Hold the Green radial/polar/azimuth rule and all currents fixed.
+    # This is intentionally one matched expensive solve after the
+    # no-kernel decompositions; no arbitrary high-order sweep.
+    physical_x=("shell_phys",3,4,8,3)
+    physical=trial(
+        basis,physical_x,inner1,cache,method="radial",
+        angle_scheme="uniform",
+    )
+    print(
+        "p1_full_sea: variant=phys_x_both,method=radial,"
+        f"x_nodes={physical['nx']},inner_rule={physical['ny']},"
+        f"norm_L={physical['norm']:.10g},trace_L={physical['trace']:.10g},"
+        f"raw_skew={physical['diagnostic']:.7g},"
+        f"min_eig={physical['min_eig']:.10g},"
+        f"max_eig={physical['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("phys_x_both",physical["L"])
+    print(
+        "p1_full_sea_physical_outer_cross: "
+        "same_inner_radial_polar_azimuth_and_modes,"
+        f"relative_L={_relative(physical['L'],results['both']['L']):.8g},"
+        f"self_relative={_self_change(physical['L'],results['both']['L']):.8g},"
+        f"mutual_scaled={_mutual_change(physical['L'],results['both']['L']):.8g},"
+        "gate=not_certified",
+        flush=True,
+    )
     b=results["base"]["L"]
     xo=results["x_only"]["L"]
     yo=results["inner_only"]["L"]
@@ -539,6 +568,7 @@ def main():
     per_mode_changes("radial_only_vs_x_only",inner_rad,xo)
     per_mode_changes("angular_only_vs_inner_radial",both,inner_rad)
     per_mode_changes("corner_both_vs_uniform_both",corner["L"],both)
+    per_mode_changes("phys_x_both_vs_uniform_both",physical["L"],both)
     print(
         "p1_full_sea_corner_cross: same_x_and_radial_rules,"
         f"relative_L={_relative(corner['L'],both):.8g},"
