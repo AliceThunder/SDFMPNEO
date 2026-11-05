@@ -613,3 +613,35 @@ p1_full_sea_outer_gram 与 outer_gram_change
 优先看旋转/未旋转 SΩ 真值下 box_corners vs uniform、
 无核 G 自项变化以及 corner_both 的原磁能稳定性。
 **新实现待本机执行，G1=FAIL，不训练教师，无 GitHub Actions。**
+
+
+## P1-C 101-pass 最新事实与下一次运行重点
+
+最新本机代码 dd6b055、日志 aa8ec81（101 passed）确认：
+无 Coulomb 核 G=∫Ω Wi·Wj dx 在 x0/x1 仍有 2.248%
+整体变化，五个自项各有 2.209%–4.101% 变化，
+所以外 x 本身尚未收敛；弱模态磁能 L00/L22 对 x
+分别变化约 54%/50%。两盒顶点方位角分片在解析
+SΩ 近角真值中不一致优于 uniform，且原矩阵 skew
+从 2.333% 恶化到 2.946%；不设为主默认。
+
+已在主 P1-C 程序中追加 _outer_gram_diagnostics：
+- 四组球图和盒壳法向的两轴交叉规则与
+  真实模态窗口宽度指导的 face_tangent；
+- 真实海水域的解析体积和关于外球中心的
+  精确二阶矩，分别检查体积正权；
+- 每个实际模式的 Gii、sphere/shell 份额；
+- 两个独立 scrambled Sobol seeds 13/37
+  的已有 box_shell_qmc 电流 Gram 对照。
+
+主原核 Green 五模式参数、物理盒、线圈和
+默认 uniform 内积分**均没有改变**，新增诊断
+不会伪造磁矩阵改善。只有下次本机分轴输出后才
+确定 x 数值方案的修复点。
+
+运行：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+**整体 G1 FAIL；正式教师训练不得开始；不使用 GitHub Actions。**
