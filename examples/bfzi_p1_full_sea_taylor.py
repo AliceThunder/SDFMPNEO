@@ -19,14 +19,19 @@ from sdfmpneo_bfzi.sea_basis import SeaCurrentBasis, build_sea_basis
 from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_taylor
 
 
-def trial(basis,x_rule,y_rule):
+def trial(basis,x_rule,y_rule,cache=None):
     scene=basis.scene
+    if cache is None:
+        cache={}
     opts=dict(
         wall_layers=1,wall_scale=basis.wall_scale,
         outer_taper_width=basis.outer_taper_width,
     )
-    x,wx=scene.quadrature(*x_rule,**opts)
-    y,wy=scene.quadrature(*y_rule,**opts)
+    for rule in (x_rule,y_rule):
+        if rule not in cache:
+            cache[rule]=scene.quadrature(*rule,**opts)
+    x,wx=cache[x_rule]
+    y,wy=cache[y_rule]
     if not np.all(scene.in_seawater(x)) or not np.all(scene.in_seawater(y)):
         raise ValueError("full sea Coulomb cubature produced a solid point")
     l,skew=assemble_basis_coulomb_taylor(
@@ -78,13 +83,14 @@ def main():
     x1=(4,6,10)
     y1=(5,7,12)
     trials={}
+    rules_cache={}
     for name,xr,yr in (
         ("base",x0,y0),
         ("x_only",x1,y0),
         ("y_only",x0,y1),
         ("both",x1,y1),
     ):
-        z=trial(basis,xr,yr)
+        z=trial(basis,xr,yr,rules_cache)
         trials[name]=z
         print(
             f"p1_full_sea: variant={name},"
