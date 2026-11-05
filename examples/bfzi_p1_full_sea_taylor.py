@@ -289,6 +289,39 @@ def main():
             flush=True,
         )
         _report_modes(name,z["L"])
+    # Independently isolate x-volume quadrature without any Coulomb kernel:
+    # G_ij = integral W_i.W_j dx is the uniform-sigma resistive Galerkin
+    # Gram matrix multiplied by sigma. A weak self-mode error here is an
+    # OUTER cubature defect, not an inner 1/r Green cubature defect.
+    grams={}
+    for x_label,xrule in (("x0",x0),("x1",x1)):
+        xx,ww=_quadrature(scene,basis,xrule,cache)
+        currents=basis.evaluate(xx)
+        g=np.einsum(
+            "n,nic,njc->ij",ww,currents,currents,optimize=True,
+        )
+        grams[x_label]=g
+        print(
+            f"p1_full_sea_outer_gram: variant={x_label},"
+            f"x_nodes={len(xx)},"
+            +",".join(f"G{i}{i}={g[i,i]:.10g}"
+                      for i in range(basis.size))
+            +f",norm_G={np.linalg.norm(g):.10g},"
+            "scope=original_current_W_squared_no_Green_kernel",
+            flush=True,
+        )
+    gc,gf=grams["x0"],grams["x1"]
+    gmode=np.abs(np.diag(gf)-np.diag(gc))/np.maximum(
+        np.abs(np.diag(gc)),1e-40,
+    )
+    print(
+        "p1_full_sea_outer_gram_change: "
+        f"relative_G={_relative(gf,gc):.8g},"
+        +",".join(f"self{i}={v:.8g}"
+                  for i,v in enumerate(gmode))
+        +",scope=x_cubature_only_not_L",
+        flush=True,
+    )
     # Hold ALL physical x and radial/angular orders fixed to measure the
     # effect of geometry-defined azimuth panels only. This is a controlled
     # pilot, not an automatic replacement or certification.
