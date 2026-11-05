@@ -276,6 +276,16 @@ def _outer_gram_diagnostics(scene,basis):
         ("sphere_angles",(3,4,8,3),None,angular_physical),
         ("sphere_phys",(3,4,8,3),None,physical),
         ("phys_tangent",(3,4,8,3),half_mode_width,physical),
+        # Two independent physical-coordinate refinements after the
+        # 102-pass full-L pilot still varied weak self-energies by 12-23%.
+        # Only the named axis is changed at each step, and these tests
+        # evaluate G (not a second 20k-point Green double integral).
+        ("phys_tangent_half",(3,4,8,3),0.5*half_mode_width,physical),
+        ("phys_angle3",(3,4,8,3),half_mode_width,{
+            **radial_physical,
+            "polar_geometry_order":3,
+            "azimuthal_geometry_order":3,
+        }),
     )
     gram={}
     gram_parts={}
@@ -345,6 +355,8 @@ def _outer_gram_diagnostics(scene,basis):
     compare("sphere_phys_vs_sphere_angles","sphere_phys","sphere_angles")
     compare("phys_tangent_vs_sphere_phys","phys_tangent","sphere_phys")
     compare("phys_tangent_vs_face_tangent","phys_tangent","face_tangent")
+    compare("phys_tangent_half_vs_phys_tangent","phys_tangent_half","phys_tangent")
+    compare("phys_angle3_vs_phys_tangent","phys_angle3","phys_tangent")
 
     # Independent sampling algorithm on the same continuous box-shell
     # partition. Two independent Sobol scrambles are an uncertainty
