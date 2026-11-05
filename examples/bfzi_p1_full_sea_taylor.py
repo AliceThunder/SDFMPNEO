@@ -15,6 +15,7 @@ No neural teacher or G1 certificate is produced.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import numpy as np
 
 from examples.bfzi_mqs_demo import build_demo_scene
@@ -26,9 +27,11 @@ from sdfmpneo_bfzi.green_coulomb import (
     assemble_coulomb_radial,
     _bfzi_wet_radial_segments,
     _bfzi_angular_face_frame,
+    _bfzi_projected_box_azimuth_rule,
 )
 from sdfmpneo_bfzi.coulomb_geometry_moments import sea_coulomb_moments
 from sdfmpneo_bfzi.source import MU0
+from sdfmpneo_bfzi.geometry import RigidPose
 
 
 def _relative(a, b):
@@ -66,13 +69,15 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference"):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform"):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
         raise ValueError("P1-C requires disjoint x/y quadrature rules")
     if method not in ("difference","taylor","radial"):
         raise ValueError("unknown original Coulomb assembly method")
+    if angle_scheme not in ("uniform","box_corners"):
+        raise ValueError("unknown angular integration scheme")
     if cache is None:
         cache={}
     scene=basis.scene
@@ -85,9 +90,13 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference"):
             radial_order=y_rule[0],
             polar_order=y_rule[1],
             azimuthal_order=y_rule[2],
+            box_corner_azimuth_panels=(angle_scheme=="box_corners"),
             return_diagnostics=True,
         )
-        ny=f"inner_radial_{y_rule[0]}_polar_{y_rule[1]}_azimuth_{y_rule[2]}"
+        ny=(
+            f"inner_radial_{y_rule[0]}_polar_{y_rule[1]}_"
+            f"azimuth_{y_rule[2]}_scheme_{angle_scheme}"
+        )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
         if not np.all(scene.in_seawater(y)):
@@ -120,7 +129,7 @@ def _report_modes(name,L):
 
 
 
-def _scalar_geometry_diagnostic(scene, wall_scale):
+def _scalar_geometry_diagnostic(scene, wall_scale, pose_label):
     """Independent analytic S_Omega checks only ray geometry and angles.
 
     A constant vector density gives U(x) = S_Omega(x)*a. Its inner radial
@@ -164,33 +173,41 @@ def _scalar_geometry_diagnostic(scene, wall_scale):
         frame = _bfzi_angular_face_frame(scene,point,far_reach)
         return np.array((0.0,0.0,1.0)) if frame is None else frame[0]
 
-    for polar,azimuth in ((3,8),(8,32)):
-        deviations = []
-        for point,truth in zip(wet_points,true_scalar):
-            numerical = assemble_coulomb_radial(
-                point[None,:],np.ones(1),
-                constant_current,intervals,radial_order=2,
-                polar_order=polar,azimuthal_order=azimuth,
-                polar_axis=axis,
-            )[0,0]*4.0*np.pi/MU0
-            deviations.append(abs(numerical-truth)/truth)
-        error = dict(zip(
-            ("face","edge","corner"),
-            (max(e for e,k in zip(deviations,kinds) if k==kind)
-             for kind in ("face","edge","corner")),
-        ))
-        print(
-            f"p1_full_sea_scalar: polar_per_hemisphere={polar},"
-            f"azimuth={azimuth},"
-            f"face_rel={error['face']:.8g},"
-            f"edge_rel={error['edge']:.8g},"
-            f"corner_rel={error['corner']:.8g},"
-            f"max_rel={max(deviations):.8g},"
-            "radial_error=analytically_zero_for_constant_density,"
-            "truth=exact_ball_minus_two_box_S,"
-            "scope=angular_clipping_geometry_only",
-            flush=True,
-        )
+    for scheme in ("uniform","box_corners"):
+        if scheme=="box_corners":
+            azimuthal=lambda p,e1,e2,n: _bfzi_projected_box_azimuth_rule(
+                scene,p,e1,e2,n,
+            )
+        else:
+            azimuthal=None
+        for polar,azimuth in ((3,8),(8,32)):
+            deviations = []
+            for point,truth in zip(wet_points,true_scalar):
+                numerical = assemble_coulomb_radial(
+                    point[None,:],np.ones(1),
+                    constant_current,intervals,radial_order=2,
+                    polar_order=polar,azimuthal_order=azimuth,
+                    polar_axis=axis,azimuthal_rule=azimuthal,
+                )[0,0]*4.0*np.pi/MU0
+                deviations.append(abs(numerical-truth)/truth)
+            error = dict(zip(
+                ("face","edge","corner"),
+                (max(e for e,k in zip(deviations,kinds) if k==kind)
+                 for kind in ("face","edge","corner")),
+            ))
+            print(
+                f"p1_full_sea_scalar: pose={pose_label},"
+                f"angular_scheme={scheme},"
+                f"polar_per_hemisphere={polar},azimuth={azimuth},"
+                f"face_rel={error['face']:.8g},"
+                f"edge_rel={error['edge']:.8g},"
+                f"corner_rel={error['corner']:.8g},"
+                f"max_rel={max(deviations):.8g},"
+                "radial_error=analytically_zero_for_constant_density,"
+                "truth=exact_ball_minus_two_box_S,"
+                "scope=angular_clipping_geometry_only",
+                flush=True,
+            )
 
 
 def main():
@@ -212,8 +229,34 @@ def main():
         "wall_normal=log_panels,gate=not_certified",
         flush=True,
     )
-    _scalar_geometry_diagnostic(scene,basis.wall_scale)
-    # Only two independent physical axes are changed in this experiment:
+    _scalar_geometry_diagnostic(scene,basis.wall_scale,"aligned_demo")
+
+    # The ordinary five-mode demonstration has identity rotations on
+    # both boxes; do not claim these modes validate rotated poses.
+    # A separate scalar exact-Green probe rotates each *complete* BFZI
+    # assembly independently while retaining the same physical boxes.
+    ax,ay = 0.24,-0.31
+    rot_x = np.array([
+        [1,0,0],[0,np.cos(ax),-np.sin(ax)],
+        [0,np.sin(ax),np.cos(ax)],
+    ])
+    rot_y = np.array([
+        [np.cos(ay),0,np.sin(ay)],
+        [0,1,0],[-np.sin(ay),0,np.cos(ay)],
+    ])
+    rotated = replace(
+        scene,
+        transmitter=replace(
+            scene.transmitter,
+            pose=RigidPose(rot_x,scene.transmitter.pose.center),
+        ),
+        receiver=replace(
+            scene.receiver,
+            pose=RigidPose(rot_y,scene.receiver.pose.center),
+        ),
+    )
+    _scalar_geometry_diagnostic(rotated,basis.wall_scale,"two_rotated_boxes")
+    # The next comparison independently changes x and inner radial/angle rules:
     # (a) the x external cubature, now using oriented box shells
     # (b) the Green potential's x-centred radial/angular chart.
     # Do not interpret the four outcomes as continuous reference truth.
@@ -244,6 +287,23 @@ def main():
             flush=True,
         )
         _report_modes(name,z["L"])
+    # Hold ALL physical x and radial/angular orders fixed to measure the
+    # effect of geometry-defined azimuth panels only. This is a controlled
+    # pilot, not an automatic replacement or certification.
+    corner=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="box_corners",
+    )
+    print(
+        "p1_full_sea: variant=corner_both,method=radial,"
+        f"x_nodes={corner['nx']},inner_rule={corner['ny']},"
+        f"norm_L={corner['norm']:.10g},trace_L={corner['trace']:.10g},"
+        f"raw_skew={corner['diagnostic']:.7g},"
+        f"min_eig={corner['min_eig']:.10g},"
+        f"max_eig={corner['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("corner_both",corner["L"])
     b=results["base"]["L"]
     xo=results["x_only"]["L"]
     yo=results["inner_only"]["L"]
@@ -273,6 +333,35 @@ def main():
         f"mutual_inner={_mutual_change(yo,b):.7g},"
         f"mutual_both={_mutual_change(both,b):.7g},"
         "pass_status=not_certified_without_independent_reference",
+        flush=True,
+    )
+    def per_mode_changes(label, matrix_a, matrix_b):
+        da,db=np.diag(matrix_a),np.diag(matrix_b)
+        relative=np.abs(da-db)/np.maximum(np.abs(db),1e-40)
+        # Unit-robust pair metric relative to each current mode's own
+        # magnetic self-energy (not dominated by global mode 44).
+        scale=np.sqrt(np.outer(np.maximum(np.abs(db),1e-40),
+                               np.maximum(np.abs(db),1e-40)))
+        normalized_pair=np.abs((matrix_a-matrix_b)/scale)
+        upper=normalized_pair[np.triu_indices(len(db),1)]
+        print(
+            f"p1_full_sea_mode_delta: comparison={label},"
+            +",".join(f"self{i}={v:.8g}" for i,v in enumerate(relative))
+            +f",max_self={max(relative):.8g},"
+            +f"max_mutual_self_normalized={max(upper):.8g}",
+            flush=True,
+        )
+
+    per_mode_changes("x_only_vs_base",xo,b)
+    per_mode_changes("radial_only_vs_x_only",inner_rad,xo)
+    per_mode_changes("angular_only_vs_inner_radial",both,inner_rad)
+    per_mode_changes("corner_both_vs_uniform_both",corner["L"],both)
+    print(
+        "p1_full_sea_corner_cross: same_x_and_radial_rules,"
+        f"relative_L={_relative(corner['L'],both):.8g},"
+        f"self_relative={_self_change(corner['L'],both):.8g},"
+        f"mutual_scaled={_mutual_change(corner['L'],both):.8g},"
+        "gate=diagnostic_only",
         flush=True,
     )
     # Previous 97-pass P1-C run already falsified the globally subtracted
