@@ -109,8 +109,8 @@ def main():
         f"x_only_vs_base={_relative(trials['x_only']['L'],base):.7g},"
         f"y_only_vs_base={_relative(trials['y_only']['L'],base):.7g},"
         f"both_vs_base={_relative(fine,base):.7g},"
-        f"both_vs_x_only={_relative(fine,trials['x_only']['L']):.7g},"
-        f"both_vs_y_only={_relative(fine,trials['y_only']['L']):.7g},"
+        f"both_vs_x_only={_relative(fine, trials['x_only']['L']):.7g},"
+        f"both_vs_y_only={_relative(fine, trials['y_only']['L']):.7g},"
         "pass_status=not_determined_without_independent_truth,"
         flush=True,
     )
