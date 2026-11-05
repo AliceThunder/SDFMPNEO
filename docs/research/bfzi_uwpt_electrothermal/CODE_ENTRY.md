@@ -545,3 +545,34 @@ python run.py --mode bfzi-convergence --basis-green-gaussian
 ```
 
 如果新 Gaussian A/B 在零额外模糊下仍然 `dL>5%` 或 `dZ>0.2%`，不要调宽数值门槛；应分析 Gaussian 等体积尺度、球域/盒壁求积分片和几何边界是否导致误差。若满足也只能进入必要的 width-factor 与模态/外域联合验收，绝不可称此为已认证无正则化 Coulomb 真值。
+
+
+## P1-C 当前首选代码入口（2026-11-05 UTC）
+
+当前阶段不启动正式代理教师训练；BFZI 双封装全海水五 curl 模式仍处于
+G1 真实 Green L 数值收敛关口。入口：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+新本机 99 passed 的原始日志保存在
+[runs/p1_full/latest_full.log](runs/p1_full/latest_full.log)：
+点心 Green 外 x 细化 5.937%、固定细 x 的内径向变化
+**30.248%**、内角向变化 1.936%，最细 raw skew 1.746%。
+因此程序运行成功而原核 L **仍未通过物理收敛**。
+
+主代码 sdfmpneo_bfzi/green_coulomb.py 的
+assemble_coulomb_radial / assemble_basis_coulomb_radial
+现将盒距因子 d/(d+s) 的尖锐导数积分分片对齐到
+**每条湿射线与实际旋转绝缘盒相交的径向区间端点**，
+不再只使用以 x 为原点的 wall_scale 距离。
+同一实际核心函数新增基于真实 s/(d+s)^2
+的单射线解析原函数针对性测试，
+而主实验增加真实两盒 SΩ(x) 六个近面/棱/角
+常量密度的精确标量 Green 对照，用于单独定位角域误差。
+结果将自动推送本机 P1-C 日志，不使用 GitHub Actions。
+
+完整推导见
+[theory/sections/14_p1_exact_coulomb_sphere.tex](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)、
+[P1 严格验收契约](P1_COULOMB_ANALYTIC_GATE.md)。
+**这些修复尚待用户新的 P1-C 实跑，G1=FAIL。**
