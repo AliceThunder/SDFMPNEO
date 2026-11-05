@@ -148,3 +148,32 @@ def test_actual_box_original_coulomb_taylor_small_space_runs():
     assert got.shape==(2,2) and np.isfinite(got).all()
     assert np.isfinite(skew)
     np.testing.assert_allclose(got,got.T,rtol=0,atol=0)
+
+
+def test_real_two_box_physical_outer_rule_is_positive_and_wet():
+    """The production P1-C physical x rule keeps exact seawater geometry.
+
+    This guards the actual box/radial/angular/tangent call used for the
+    new L candidate; it does not claim electromagnetic convergence.
+    """
+    from examples.bfzi_p1_full_sea_taylor import _quadrature
+    scene=build_demo_scene()
+    original=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
+    selected=(0,1,12,13,24)
+    basis=SeaCurrentBasis(
+        scene,tuple(original.modes[i] for i in selected),
+        original.wall_scale,original.source_lines,
+        original.outer_envelope,original.outer_taper_width,
+    )
+    x,w=_quadrature(
+        scene,basis,("shell_phys",3,4,8,3),{},
+    )
+    assert len(x)>0
+    assert np.isfinite(x).all() and np.isfinite(w).all()
+    assert np.all(w>0) and np.all(scene.in_seawater(x))
+    exact_volume=4*np.pi*scene.outer_radius**3/3
+    for assembly in scene.assemblies:
+        exact_volume-=8*np.prod(assembly.enclosure.half_extents)
+    # Loose geometry smoke only. High-precision volume and all 5 Gram
+    # modes are measured in the P1-C local log, not certified by pytest.
+    assert abs(np.sum(w)-exact_volume)/exact_volume<0.03
