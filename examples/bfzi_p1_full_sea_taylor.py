@@ -9,8 +9,8 @@ Exact wet ray intervals intersect both independently posed insulating
 boxes and the outer ball. The outer x integration uses already available
 face/edge-aligned positive box-shell cubature (not a volumetric mesh).
 
-The present four-rule experiment is diagnostic until actual x/angular/
-radial, near-wall and near-edge convergence has independent evidence.
+The five-rule x/inner experiment plus one corner-projected angular pilot
+is diagnostic until near-wall and near-edge convergence is established.
 No neural teacher or G1 certificate is produced.
 """
 from __future__ import annotations
@@ -220,7 +220,9 @@ def main():
         full.outer_envelope,full.outer_taper_width,
     )
     print(
-        "p1_full_sea_exact: domain=outer_ball_minus_two_actual_rotated_boxes,"
+        "p1_full_sea_exact: domain=outer_ball_minus_two_actual_boxes,"
+        "five_mode_poses=both_identity,"
+        "separate_scalar_geometry_probes=aligned_and_two_rotated_boxes,"
         "modes=5,mode_indices=0-1-12-13-24,"
         "kernel=original_unsoftened_1/r,"
         "inner=point_centered_exact_wet_ray_intervals,"
@@ -259,7 +261,7 @@ def main():
     # The next comparison independently changes x and inner radial/angle rules:
     # (a) the x external cubature, now using oriented box shells
     # (b) the Green potential's x-centred radial/angular chart.
-    # Do not interpret the four outcomes as continuous reference truth.
+    # Do not interpret these cases as continuous reference truth.
     x0=("shell",2,3,6,2)
     x1=("shell",3,4,8,3)
     inner0=(3,3,8)
