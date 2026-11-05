@@ -48,6 +48,28 @@ def test_full_sea_quadrature_rejects_identical_x_y_axes():
         full_sea_trial(None,(4,6,10),(4,6,10))
 
 
+
+def test_actual_box_symmetric_difference_coulomb_small_space_runs():
+    from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_difference
+
+    scene = build_demo_scene()
+    original = build_sea_basis(scene, modes_per_face=2, face_refinement=1)
+    basis = SeaCurrentBasis(
+        scene, tuple(original.modes[i] for i in (0, 12)),
+        original.wall_scale, original.source_lines,
+        original.outer_envelope, original.outer_taper_width,
+    )
+    x, wx = scene.quadrature(2, 4, 6, wall_layers=0)
+    y, wy = scene.quadrature(3, 5, 7, wall_layers=0)
+    L, ratio = assemble_basis_coulomb_difference(
+        basis, np.eye(basis.size), x, wx, y, wy,
+        return_diagnostics=True,
+    )
+    assert L.shape == (2, 2) and np.isfinite(L).all()
+    assert np.isfinite(ratio)
+    np.testing.assert_allclose(L, L.T, atol=1e-20, rtol=1e-12)
+
+
 def test_actual_box_original_coulomb_taylor_small_space_runs():
     scene=build_demo_scene()
     original=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
