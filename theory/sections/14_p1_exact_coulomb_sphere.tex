@@ -2214,3 +2214,68 @@ Computer Physics Communications
 由当前物理模型独立导出；
 真实五模态的内角向、外 x、
 以及有限球截断误差仍须独立验收。
+
+
+\subsection{P1-C 第十一次：区分原核 Green 内势与双线性磁能}
+\label{sec:p1-c-green-inner-potential-vs-energy}
+最新代码 \texttt{cd82e4f} 的本机日志
+\texttt{7906a58} 为
+\textbf{107 passed，1 failed}，
+主五模态求解因此未开始，
+没有本轮 \texttt{source\_cap\_both}
+磁矩阵可以比较。
+唯一失败的是球面角帽的
+窄 Gaussian 精确 Green 测试；
+根因是\emph{测试量定义错误}，
+不能据此断言球帽数值算法的精度。
+
+原测试将一个观察点的对称磁能自项
+\[
+ L_{gg}^{\mathrm{disc}}=
+ \frac{\mu_0}{4\pi}
+ w_x\,\bm W_g(\bm x)\cdot\bm U_g(\bm x)
+\]
+与\emph{单独的点心 Green 内势}
+\[
+ \bm U_g(\bm x)=\int_\Omega
+ \frac{\bm W_g(\bm y)}
+      {|\bm x-\bm y|}\,\mathrm d\bm y
+\]
+错误地当作同一数值比较。
+取离 $\bm x$ 很远的窄 Gaussian，
+$\bm W_g(\bm x)$ 指数趋零，
+但 $\bm U_g(\bm x)$ 有有限值。
+原失败报告 $L_{gg}\sim10^{-229}$，
+而测试期望是
+$\mu_0 U_g/(4\pi)\sim10^{-11}$；
+两者即使准确也相差极大。
+
+为彻底分离上述数学量，
+点心 Green 装配新增加可选
+\texttt{return\_point\_potentials=True}，
+独立返回每个 $x_n$、每个模式的
+原始无前因子内势 $\bm U_j(\bm x_n)$，
+而原返回的对称磁矩阵依旧是
+\[
+ L_{ij}=\frac{\mu_0}{4\pi}
+ \operatorname{sym}\sum_n
+ w_n\bm W_i(\bm x_n)\cdot\bm U_j(\bm x_n).
+\]
+选项未开启时完全保持旧接口。
+修正后的解析单测直接比较
+$\mu_0U_g(\bm0)/(4\pi)$
+与独立 Gaussian Newton 真值
+$\mu_0\pi^{3/2}w^3
+\operatorname{erf}(|\bm c|/w)/
+(4\pi|\bm c|)$。
+这里外球截断的 Gaussian
+指数尾部微小；该解析测试
+不是壁面无流的真实 BFZI
+Gaussian-curl 双盒磁能验收。
+
+本轮亦修复自动日志摘要对
+\texttt{1 failed, 107 passed}
+误截成仅含 \texttt{107 passed}
+的错误，确保失败数不再丢失。
+\textbf{新测试和新内势接口尚待本机运行；
+G1/P1-C 仍 FAIL。}
