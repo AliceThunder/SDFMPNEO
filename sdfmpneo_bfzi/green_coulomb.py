@@ -696,7 +696,7 @@ def _bfzi_source_cap_angular_rule(
         t=np.clip((z-cos_limits)/(1.0-cos_limits),0.0,1.0)
         # Smooth support at every cap boundary; a finite h scale avoids
         # a nearly discontinuous indicator requiring very high Gauss.
-        return 8.0*t*t*(3.0-2.0*t)
+        return 32.0*t*t*(3.0-2.0*t)
 
     original_profiles=profiles(base_directions)
     result_dirs=[base_directions]
