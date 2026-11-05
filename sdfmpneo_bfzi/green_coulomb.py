@@ -752,6 +752,7 @@ def assemble_coulomb_radial(
     angular_moment_tolerance: float | None = None,
     angular_refine_levels: int = 1,
     angular_moment_stats: dict | None = None,
+    return_point_potentials: bool = False,
     return_diagnostics: bool = False,
 ):
     """Direct unsoftened Green potential in x-centred polar coordinates.
@@ -805,6 +806,10 @@ def assemble_coulomb_radial(
     The unsymmetrized matrix skew is returned as a diagnostic, NOT a
     convergence certificate. This assembly uses one outer x cubature
     and a point-dependent inner spherical cubature (no reusable y grid).
+    Optional return_point_potentials exposes the PREFACTOR-free inner
+    Green vector U_j(x) for each x and mode, independent of the outer
+    bilinear L_ij and its numerical symmetrization. The usual L return
+    signature is unchanged unless this option is explicitly set.
     """
     x = np.asarray(x, float)
     wx = np.asarray(wx, float)
@@ -910,6 +915,10 @@ def assemble_coulomb_radial(
             ).ravel()
             angular_levels.append((angles,sinmu,ph,weights))
     accum = np.zeros((vx.shape[1],vx.shape[1]))
+    point_potentials = (
+        np.zeros((len(x),vx.shape[1],3),dtype=float)
+        if return_point_potentials else None
+    )
     if source_cap_stats is not None:
         source_cap_stats.clear()
         source_cap_stats.update(points=0,points_with_caps=0,
@@ -1155,12 +1164,16 @@ def assemble_coulomb_radial(
                 "mcd,d->mc",jac[xi],first[xi]-first_quadrature,
                 optimize=True,
             )
+        if point_potentials is not None:
+            point_potentials[xi]=potential
         accum += weight*np.einsum(
             "mc,nc->mn",vx[xi],potential,optimize=True,
         )
     skew = float(np.linalg.norm(accum-accum.T)/
                  max(np.linalg.norm(accum),1e-60))
     L = MU0/(4*math.pi)*0.5*(accum+accum.T)
+    if return_point_potentials:
+        return (L,skew,point_potentials) if return_diagnostics else (L,point_potentials)
     return (L,skew) if return_diagnostics else L
 
 
