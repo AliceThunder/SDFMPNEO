@@ -652,6 +652,7 @@ def assemble_coulomb_radial(
     radial_wall_scale: float | None = None,
     polar_axis=None,
     azimuthal_rule=None,
+    exact_scalar_moments=None,
     return_diagnostics: bool = False,
 ):
     """Direct unsoftened Green potential in x-centred polar coordinates.
@@ -675,6 +676,16 @@ def assemble_coulomb_radial(
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
     exactly the full [0,2*pi] domain; it does not alter the wet domain.
+    exact_scalar_moments is an optional (len(x),) vector of INDEPENDENT
+    exact geometric S_Omega(x)=int_Omega dy/|x-y|. At each x, the
+    Green integral is then evaluated via the analytically identical
+        U_j = integral (W_j(y)-W_j(x))/|x-y| dy
+              + S_Omega(x)*W_j(x).
+    The numerical implementation uses an equivalent moment correction
+    after the radial sum, avoiding unnecessary subtraction per y node.
+    It removes the quadrature defect for constant vector density at
+    arbitrary x and actual OBB rotations, without regularizing 1/r.
+    It does NOT prove convergence for actual rapidly varying curl W.
     The unsymmetrized matrix skew is returned as a diagnostic, NOT a
     convergence certificate. This assembly uses one outer x cubature
     and a point-dependent inner spherical cubature (no reusable y grid).
@@ -688,6 +699,12 @@ def assemble_coulomb_radial(
             or any(not isinstance(v, int) or v < 2
                    for v in (radial_order, polar_order, azimuthal_order))):
         raise ValueError("expected finite positive x rule and orders >=2")
+    moment = None
+    if exact_scalar_moments is not None:
+        moment = np.asarray(exact_scalar_moments, dtype=float)
+        if (moment.shape != (len(x),) or not np.isfinite(moment).all()
+                or np.any(moment <= 0)):
+            raise ValueError("exact_scalar_moments must be positive finite (n_x,)")
     cuts = np.asarray(radial_breakpoints, dtype=float)
     if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
         raise ValueError("radial_breakpoints must be finite positive distances")
@@ -807,6 +824,13 @@ def assemble_coulomb_radial(
             sampled.reshape(len(lower),radial_order,vx.shape[1],3),
             optimize=True,
         )
+        if moment is not None:
+            # Exact addition/subtraction identity at the SAME x node:
+            # sum(w [W(y)-W(x)]) + S_exact(x) W(x).
+            # The scalar sum(w) uses identical positive Green weights;
+            # evaluating the correction once avoids a matrix-subtraction
+            # instability and never modifies the original kernel.
+            potential += (moment[xi]-float(np.sum(radial_weights)))*vx[xi]
         accum += weight*np.einsum(
             "mc,nc->mn",vx[xi],potential,optimize=True,
         )
@@ -822,6 +846,7 @@ def assemble_basis_coulomb_radial(
     polar_order: int = 4,
     azimuthal_order: int = 10,
     box_corner_azimuth_panels: bool = False,
+    exact_scalar_control: bool = False,
     return_diagnostics: bool = False,
 ):
     """Actual box-clipped BFZI Green L using radial Jacobian cancellation.
@@ -866,6 +891,13 @@ def assemble_basis_coulomb_radial(
             scene,point,e1,e2,order,
         )
 
+    # Exact domain moments are geometry-only and independently known:
+    # this is a controlled Green constant-density correction, NOT a
+    # new trial basis, altered seawater material, or kernel softening.
+    exact_scalar = (
+        sea_coulomb_moments(scene,x)[0]
+        if exact_scalar_control else None
+    )
     return assemble_coulomb_radial(
         x,wx,current,intervals,
         radial_order=radial_order,
@@ -877,6 +909,7 @@ def assemble_basis_coulomb_radial(
         azimuthal_rule=(
             azimuthal if box_corner_azimuth_panels else None
         ),
+        exact_scalar_moments=exact_scalar,
         return_diagnostics=return_diagnostics,
     )
 
