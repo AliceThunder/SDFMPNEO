@@ -779,14 +779,11 @@ def assemble_basis_coulomb_radial(
         raise ValueError("transform must be finite (basis.size,reduced_size)")
     scene = basis.scene
     radius = 2.0*scene.outer_radius
-    # Fixed physical distances, not successive arbitrary Gaussian orders.
-    # Resolve the real wall-factor length as well as mode window scales.
+    # Mode-window lengths may be measured from x. But the sharp wall
+    # envelope must be resolved relative to the *local wet ray endpoints*,
+    # below. Do not duplicate wall-scale cuts in unrelated x coordinates.
     widths = [mode.width for mode in basis.modes]
     breaks = tuple(sorted(set((
-        basis.wall_scale,
-        4*basis.wall_scale,
-        16*basis.wall_scale,
-        64*basis.wall_scale,
         0.5*min(widths),
         min(widths),
         max(widths),
