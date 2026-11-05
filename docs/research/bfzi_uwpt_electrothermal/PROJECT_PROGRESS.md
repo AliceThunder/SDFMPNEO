@@ -1,14 +1,14 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · 分支：research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 进度看板 · 2026-11-05 UTC · 分支 research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新本机实测：100 passed，但真实 P1-C 五模式未软化 Coulomb L 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)（代码 35895a4、日志 b383da2a）。真实盒壁湿区端点分片使内径向独立变化由 **30.248% 降到 2.831%**；但内角向仍 **3.607%**、外 x **1.841%**、两轴联动 **7.349%**、最细 raw skew **2.333%**。单独改变 x 时，弱模态 L00 改变约 **54%**、L22 约 **50%**，总矩阵 Frobenius 仅 1.841%，过去的整体指标会遮蔽弱模态严重误差。程序/pytest PASS 不等于物理收敛。
+> **最新实际运行（代码 dd6b055，日志 aa8ec81）：101 passed，真实五模式 P1-C/G1 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)。在原实盒双端口、五个 W 模态及原始未软化 1/r 下，无核外积分 Gram x0/x1 差 **2.248%**，五个 Gii 各差 **2.209%–4.101%**。因此不管内 Green 算法怎样变化，外 x 本身尚未收敛。仅改变 x 时 L00、L22 分别差 **53.978%、49.902%**，而整体磁矩阵仅差 1.841%，此前只看整体 Frobenius 容易掩盖弱模态错误。
 >
-> **新增独立角域真值线索：** 常量密度原核积分与解析两盒势 SΩ(x) 对照，细角规则的 face/edge/corner 最坏误差分别为 0.05998%/0.02679%/**0.11072%**；因常密度径向积分严格精确，这是角度/射线裁剪问题。原五模态 demo 的两只真实盒旋转均为**单位阵**，不是已验证非零旋转几何；本轮新增两只分别绕 x/y 轴旋转的**独立标量 Green 真值**对照，明确区分几何验证与五模态 L。
+> **新角向算法的负结果必须保留：** 同 x/内径/极角下，box_corners vs uniform 的 L 差 **1.593%**，原矩阵偏斜由 2.333% **恶化为 2.946%**。已验证的双盒原核常密度解析 SΩ：对齐盒 fine (8,32) 最大误差 uniform 0.1107%、box_corners 0.1133%（更差）；独立非零旋转两盒分别为 0.1118%/0.1052%（提升太小，不能认证）。两盒顶点投影方位分片不升为生产默认。原五模式场景两盒 rotation 均为单位阵；仅独立标量几何使用非零旋转。
 >
-> **本轮代码与数学路线：** 保留实际原核 1/r、点心 r²/r=r 消奇和盒壁端点物理分片；新增可选的**两盒顶点投影方位分片**，使用当前观察点所见的真实 OBB 角向几何在每个扇区单独正权 Gauss 求积。先与 uniform 在相同 x/径向/极角规则下比较 corner_both，不能因为使用新分片就宣布通过。新增每个自项与自能归一化互项的独立收敛指标；并在两套外 x 规则上单独计算无 Coulomb 核的真实海水电流 Gram G=∫Wi·Wj dx（均匀电导率下 R=G/σ），将外 x 体积采样误差与原核 Green 内积分误差物理分离。近盒棱的完整极角轮廓、外 x 及旋转五模态 L 仍未通过。
+> **本轮已提交的新定位实验：** 保留当前物理模型和完整 Green 主算法，首先独立检查 x 体积求积。把 x0=(2,3,6,2) 到 x1=(3,4,8,3) 拆成仅改变球图 (sphere_only)、仅改变盒壳法向 (normal_only)，在同一 x1 上额外使用实际最窄 W 高斯窗宽一半的盒面切向子片 (face_tangent)。各组报告五模态无核 Gii、sphere/shell 贡献和分轴差；另与真实外球减两盒的**解析体积、解析二阶矩**比较，并用两个不同 seed 的 Sobol 正权 box_shell_qmc 与确定性 Gauss 相互核对。QMC 分散度不是误差界，也不代替原核 L。
 >
-> **本机下一轮：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests；自动更新 [runs/p1_full/](runs/p1_full/README.md)。先看 aligned/rotated 的 p1_full_sea_scalar uniform vs box_corners，再看 corner_both 与 uniform_both、逐模态误差和 raw skew。历史 P0/P1-A/P1-B 限定 PASS 保留。**P1-C/G1=FAIL，禁止 GitHub Actions，正式神经教师仍不开启。**
+> **本机下次运行：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。日志自动更新到 [runs/p1_full/](runs/p1_full/README.md)。优先根据无核 Gram 分轴和解析几何矩确定球图/盒法向/切向的真正误差来源，再决定修复哪一个算子。历史 P0/P1-A/P1-B 限定 PASS 保留；**P1-C/G1=FAIL，不启动正式教师训练，禁止 GitHub Actions。**
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
