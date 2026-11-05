@@ -190,3 +190,83 @@ def test_nonaffine_solenoidal_cubic_vortex_uses_real_residual_kernel():
     assert metrics["cubic_outer_exact_rel"]<1e-3
     assert metrics["cubic_affine_rel"]<1e-3
     assert metrics["cubic_const_rel"]>metrics["cubic_affine_rel"]
+
+
+def test_true_gaussian_mode_peak_gets_ray_centered_radial_panels():
+    """Independent analytic radial integral for a narrow off-center mode.
+
+    A positive Gaussian source has a sharp peak in the MIDDLE of a
+    physical wet ray, not at a box wall or near the observer. With the
+    same coarse Gauss-3 rule, the original panels nearly miss this
+    source; actual projected Gaussian-window knots must resolve it.
+    """
+    import math
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+
+    nmu,nphi=2,4
+    angular,_=np.polynomial.legendre.leggauss(nmu)
+    mu=(angular[-1]+1)/2
+    phi=2*np.pi*(nphi-0.5)/nphi
+    direction=np.array([
+        np.sqrt(1-mu**2)*np.sin(phi),
+        -np.sqrt(1-mu**2)*np.cos(phi),
+        mu,
+    ])
+    width=0.02
+    center=0.57*direction
+    boost=1000.0
+
+    def field(y):
+        q=np.sum((y-center)**2,axis=1)/width**2
+        return (1+boost*np.exp(-q))[:,None,None]*np.array([
+            1.0,0.0,0.0,
+        ])[None,None,:]
+
+    def full_ball(point,directions):
+        return (np.zeros((len(directions),1)),
+                np.ones((len(directions),1)))
+
+    # Compute the exact radial contribution for EVERY discrete ray,
+    # keeping the same angular rule. Only radial quadrature differs.
+    nodes,weights=np.polynomial.legendre.leggauss(nmu)
+    mus=np.concatenate(((nodes-1)/2,(nodes+1)/2))
+    wmu=np.tile(weights/2,2)
+    value=2*np.pi # Gauss-3 integrates the constant kernel r exactly.
+    for polar,wpolar in zip(mus,wmu):
+        for az in range(nphi):
+            a=2*np.pi*(az+0.5)/nphi
+            u=np.array([
+                np.sqrt(1-polar**2)*np.sin(a),
+                -np.sqrt(1-polar**2)*np.cos(a),
+                polar,
+            ])
+            projection=float(u@center)
+            transverse=max(0.,float(center@center-projection**2))
+            scalar=math.exp(-transverse/width**2)
+            integral=(
+                -width**2/2*(
+                    math.exp(-((1-projection)/width)**2)
+                    -math.exp(-(projection/width)**2)
+                )
+                +projection*width*math.sqrt(math.pi)/2*(
+                    math.erf((1-projection)/width)
+                    +math.erf(projection/width)
+                )
+            )
+            value+=boost*(2*np.pi/nphi)*wpolar*scalar*integral
+
+    args=dict(
+        x=np.zeros((1,3)),wx=np.ones(1),evaluate=field,
+        wet_radial_segments=full_ball,radial_order=3,
+        polar_order=nmu,azimuthal_order=nphi,
+    )
+    raw=assemble_coulomb_radial(**args)[0,0]
+    adjusted=assemble_coulomb_radial(
+        **args,radial_mode_windows=(
+            center[None,:],(np.eye(3)/width**2)[None,:,:],
+        ),
+    )[0,0]
+    from sdfmpneo_bfzi.source import MU0
+    exact=MU0/(4*np.pi)*value
+    assert abs(raw-exact)/exact>0.3
+    assert abs(adjusted-exact)/exact<1e-4
