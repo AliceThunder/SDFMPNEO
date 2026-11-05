@@ -6,7 +6,7 @@
 >
 > **新增独立角域真值线索：** 常量密度原核积分与解析两盒势 SΩ(x) 对照，细角规则的 face/edge/corner 最坏误差分别为 0.05998%/0.02679%/**0.11072%**；因常密度径向积分严格精确，这是角度/射线裁剪问题。原五模态 demo 的两只真实盒旋转均为**单位阵**，不是已验证非零旋转几何；本轮新增两只分别绕 x/y 轴旋转的**独立标量 Green 真值**对照，明确区分几何验证与五模态 L。
 >
-> **本轮代码与数学路线：** 保留实际原核 1/r、点心 r²/r=r 消奇和盒壁端点物理分片；新增可选的**两盒顶点投影方位分片**，使用当前观察点所见的真实 OBB 角向几何在每个扇区单独正权 Gauss 求积。先与 uniform 在相同 x/径向/极角规则下比较 corner_both，不能因为使用新分片就宣布通过。新增每个自项与自能归一化互项的独立收敛指标；近盒棱的完整极角轮廓、外 x 及旋转五模态 L 仍未通过。
+> **本轮代码与数学路线：** 保留实际原核 1/r、点心 r²/r=r 消奇和盒壁端点物理分片；新增可选的**两盒顶点投影方位分片**，使用当前观察点所见的真实 OBB 角向几何在每个扇区单独正权 Gauss 求积。先与 uniform 在相同 x/径向/极角规则下比较 corner_both，不能因为使用新分片就宣布通过。新增每个自项与自能归一化互项的独立收敛指标；并在两套外 x 规则上单独计算无 Coulomb 核的真实海水电流 Gram G=∫Wi·Wj dx（均匀电导率下 R=G/σ），将外 x 体积采样误差与原核 Green 内积分误差物理分离。近盒棱的完整极角轮廓、外 x 及旋转五模态 L 仍未通过。
 >
 > **本机下一轮：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests；自动更新 [runs/p1_full/](runs/p1_full/README.md)。先看 aligned/rotated 的 p1_full_sea_scalar uniform vs box_corners，再看 corner_both 与 uniform_both、逐模态误差和 raw skew。历史 P0/P1-A/P1-B 限定 PASS 保留。**P1-C/G1=FAIL，禁止 GitHub Actions，正式神经教师仍不开启。**
 
