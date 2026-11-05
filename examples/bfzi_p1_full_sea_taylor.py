@@ -145,6 +145,9 @@ def main():
         ("base",x0,inner0),
         ("x_only",x1,inner0),
         ("inner_only",x0,inner1),
+        # At the fixed refined x rule, independently isolate the
+        # inner radial change before refining angular quadrature.
+        ("inner_radial_only",x1,(inner1[0],inner0[1],inner0[2])),
         ("both",x1,inner1),
     )
     cache={}
@@ -165,6 +168,17 @@ def main():
     xo=results["x_only"]["L"]
     yo=results["inner_only"]["L"]
     both=results["both"]["L"]
+    inner_rad=results["inner_radial_only"]["L"]
+    print(
+        "p1_full_sea_inner_axes: at_fixed_x=x1,"
+        f"radial_step={_relative(inner_rad,xo):.7g},"
+        f"angle_step={_relative(both,inner_rad):.7g},"
+        f"self_radial_step={_self_change(inner_rad,xo):.7g},"
+        f"self_angle_step={_self_change(both,inner_rad):.7g},"
+        f"mutual_radial_step={_mutual_change(inner_rad,xo):.7g},"
+        f"mutual_angle_step={_mutual_change(both,inner_rad):.7g}",
+        flush=True,
+    )
     print(
         "p1_full_sea_change: method=radial,"
         f"x_only_vs_base={_relative(xo,b):.7g},"
