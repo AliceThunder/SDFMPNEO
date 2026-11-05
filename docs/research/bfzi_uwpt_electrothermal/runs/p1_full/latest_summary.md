@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-05T05:54:09+00:00
-- 结束（UTC）：2026-11-05T05:56:38+00:00
-- 当时检出的代码提交：`dd6b055`
+- 开始（UTC）：2026-11-05T06:20:33+00:00
+- 结束（UTC）：2026-11-05T06:23:04+00:00
+- 当时检出的代码提交：`1661bd5`
 - 执行：`python run.py --mode bfzi-p1-full-sea`
-- 同批 pytest：101 passed in 43.36s
+- 同批 pytest：101 passed in 43.62s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -35,8 +35,19 @@
 - `p1_full_sea: variant=both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform,norm_L=8.434903004e-08,trace_L=8.779798362e-08,raw_skew=0.02333248,min_eig=7.189537446e-10,max_eig=8.433093702e-08`
 - `p1_full_sea_self: variant=both,L00=8.955181723e-10,L11=8.496627911e-10,L22=8.955181723e-10,L33=8.496627911e-10,L44=8.430762169e-08`
 - `p1_full_sea_mutual: variant=both,L01=7.360847023e-25,L02=-8.709649262e-11,L03=3.524942585e-25,L04=8.249664801e-24,L12=-3.412900542e-25,L13=1.073937147e-10,L14=9.871417153e-10,L23=8.751944765e-25,L24=1.392201405e-24,L34=-9.871417153e-10`
-- `p1_full_sea_outer_gram: variant=x0,x_nodes=2716,G00=3.694400971,G11=1.204228519,G22=3.694400971,G33=1.204228519,G44=44.11246717,norm_G=44.45343532,scope=original_current_W_squared_no_Green_kernel`
-- `p1_full_sea_outer_gram: variant=x1,x_nodes=4336,G00=3.845907865,G11=1.240193223,G22=3.845907865,G33=1.240193223,G44=45.08675859,norm_G=45.4475077,scope=original_current_W_squared_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=x0,x_nodes=2716,sphere_nodes=172,tangent_cap=None,G00=3.694400971,G11=1.204228519,G22=3.694400971,G33=1.204228519,G44=44.11246717,norm_G=44.45343532,volume_relative_error=0.017283292,second_moment_relative_error=0.0030738817,shell_fraction0=0.95258671,shell_fraction1=0.83285452,shell_fraction2=0.95258671,shell_fraction3=0.83285452,shell_fraction4=0.91179547,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=sphere_only,x_nodes=3008,sphere_nodes=464,tangent_cap=None,G00=3.810443452,G11=1.226952952,G22=3.810443452,G33=1.226952952,G44=44.7021914,norm_G=45.05926857,volume_relative_error=0.00087664196,second_moment_relative_error=1.5999667e-05,shell_fraction0=0.92357683,shell_fraction1=0.81742919,shell_fraction2=0.92357683,shell_fraction3=0.81742919,shell_fraction4=0.8997668,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=normal_only,x_nodes=4044,sphere_nodes=172,tangent_cap=None,G00=3.729865384,G11=1.21746879,G22=3.729865384,G33=1.21746879,G44=44.49703435,norm_G=44.84166522,volume_relative_error=0.017259118,second_moment_relative_error=0.0030699655,shell_fraction0=0.95303753,shell_fraction1=0.83467227,shell_fraction2=0.95303753,shell_fraction3=0.83467227,shell_fraction4=0.91255778,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=x1,x_nodes=4336,sphere_nodes=464,tangent_cap=None,G00=3.845907865,G11=1.240193223,G22=3.845907865,G33=1.240193223,G44=45.08675859,norm_G=45.4475077,volume_relative_error=0.00085246823,second_moment_relative_error=1.9915947e-05,shell_fraction0=0.92428155,shell_fraction1=0.81937832,shell_fraction2=0.92428155,shell_fraction3=0.81937832,shell_fraction4=0.90062174,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=face_tangent,x_nodes=13424,sphere_nodes=464,tangent_cap=0.045000000000000005,G00=3.761821819,G11=1.229014253,G22=3.761821819,G33=1.229014253,G44=45.08938703,norm_G=45.43543078,volume_relative_error=0.00085246823,second_moment_relative_error=1.9915947e-05,shell_fraction0=0.92258906,shell_fraction1=0.8177354,shell_fraction2=0.92258906,shell_fraction3=0.8177354,shell_fraction4=0.90062754,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram_axis: comparison=sphere_only_vs_x0,relative_G=0.01381135,relative_sphere=0.15705257,relative_shell=0,self0=0.031410364,self1=0.018870532,self2=0.031410364,self3=0.018870532,self4=0.013368652,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=normal_only_vs_x0,relative_G=0.0087344352,relative_sphere=0,relative_shell=0.0095744968,self0=0.0095995029,self1=0.010994816,self2=0.0095995029,self3=0.010994816,self4=0.0087178797,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=x1_vs_sphere_only,relative_G=0.0086169985,relative_sphere=0,relative_shell=0.0095744968,self0=0.0093071616,self1=0.010791181,self2=0.0093071616,self3=0.010791181,self4=0.008602871,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=x1_vs_normal_only,relative_G=0.013691775,relative_sphere=0.15705257,relative_shell=0,self0=0.031111707,self1=0.018665311,self2=0.031111707,self3=0.018665311,self4=0.013253113,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=face_tangent_vs_x1,relative_G=0.0026402056,relative_sphere=0,relative_shell=0.0029307967,self0=0.02186377,self1=0.009013894,self2=0.02186377,self3=0.009013894,self4=5.8297367e-05,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_qmc: seed=13,x_nodes=9980,G00=3.756544674,G11=1.26235873,G22=3.719893123,G33=1.257293412,G44=44.72430137,relative_vs_gauss_face_tangent=0.0081772445,scope=independent_scrambled_positive_volume_not_Green`
+- `p1_full_sea_outer_gram_qmc: seed=37,x_nodes=9979,G00=3.792549662,G11=1.288893386,G22=3.776122006,G33=1.308134091,G44=44.84409157,relative_vs_gauss_face_tangent=0.0059420776,scope=independent_scrambled_positive_volume_not_Green`
+- `p1_full_sea_outer_gram_qmc_spread: relative_G=0.0033744998,self0=0.0095846027,self1=0.021019901,self2=0.015115725,self3=0.040436606,self4=0.0026784141,scope=two_seeds_not_error_bound`
 - `p1_full_sea_outer_gram_change: relative_G=0.022483653,self0=0.041009867,self1=0.029865349,self2=0.041009867,self3=0.029865349,self4=0.022086532,scope=x_cubature_only_not_L`
 - `p1_full_sea: variant=corner_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_box_corners,norm_L=8.56915408e-08,trace_L=8.915056369e-08,raw_skew=0.02946208,min_eig=7.315288299e-10,max_eig=8.567367877e-08`
 - `p1_full_sea_self: variant=corner_both,L00=8.881856323e-10,L11=8.626717743e-10,L22=8.884576868e-10,L33=8.623371262e-10,L44=8.564891147e-08`
