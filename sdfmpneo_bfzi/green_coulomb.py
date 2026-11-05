@@ -771,7 +771,6 @@ def _bfzi_positive_coulomb_angular_balance(
     base=w/float(np.sum(w))
     multiplier=np.zeros(4)
     best_error=float("inf")
-    best=None
     for _ in range(max_iterations):
         logits=features@multiplier
         shifted=logits-float(np.max(logits))
@@ -780,8 +779,7 @@ def _bfzi_positive_coulomb_angular_balance(
         mean=tilted@features
         residual=target-mean
         error=float(np.max(np.abs(residual)))
-        if error<best_error:
-            best_error,best=error,tilted
+        best_error=min(best_error,error)
         if error<=tolerance:
             result=4*math.pi*tilted
             if np.all(result>0):
@@ -789,7 +787,12 @@ def _bfzi_positive_coulomb_angular_balance(
             break
         centered=features-mean
         covariance=centered.T@(tilted[:,None]*centered)
-        delta=np.linalg.lstsq(covariance,residual,rcond=1.e-11)[0]
+        try:
+            delta=np.linalg.lstsq(covariance,residual,rcond=1.e-11)[0]
+        except np.linalg.LinAlgError:
+            # An unresolvable fixed ray set must fail closed to the
+            # geometry-qualified background, not crash the G1 solve.
+            break
         if not np.isfinite(delta).all():
             break
         # Newton with backtracking; arbitrary unbounded tilts can
