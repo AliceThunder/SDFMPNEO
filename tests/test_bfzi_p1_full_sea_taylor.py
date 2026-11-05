@@ -406,3 +406,48 @@ def test_independent_rotated_box_first_coulomb_moment_by_volume_integral():
         np.testing.assert_allclose(
             m_exact[0],m_num,rtol=1e-8,atol=1e-12,
         )
+
+
+def test_real_box_moment_guided_inner_angles_keep_constant_green_exact():
+    """Moment-select angular rays BEFORE field quadrature on actual seawater."""
+    from sdfmpneo_bfzi.green_coulomb import (
+        assemble_coulomb_radial,_bfzi_wet_radial_segments,
+    )
+    from sdfmpneo_bfzi.coulomb_geometry_moments import sea_coulomb_moments
+    from sdfmpneo_bfzi.source import MU0
+
+    scene=build_demo_scene()
+    pts=np.array([
+        [0.0,0.0,-0.112],
+        [0.108,0.108,-0.112],
+    ])
+    assert np.all(scene.in_seawater(pts))
+    S,M=sea_coulomb_moments(scene,pts)
+    assert np.isfinite(S).all() and np.isfinite(M).all()
+    wx=np.array([0.6,0.4])
+
+    def current(y):
+        return np.broadcast_to(
+            np.array([[[1.,0.3,-0.2]]]),(len(y),1,3),
+        )
+
+    def rays(point,directions):
+        return _bfzi_wet_radial_segments(
+            scene,point,directions,2*scene.outer_radius,
+        )
+
+    stats={}
+    result=assemble_coulomb_radial(
+        pts,wx,current,rays,
+        radial_order=2,polar_order=2,azimuthal_order=4,
+        exact_scalar_moments=S,exact_first_moments=M,
+        angular_moment_tolerance=1e-5,
+        angular_refine_levels=1,angular_moment_stats=stats,
+    )
+    truth=MU0/(4*np.pi)*np.dot(wx,S)*(1.+0.3**2+0.2**2)
+    np.testing.assert_allclose(result[0,0],truth,rtol=2e-13,atol=1e-22)
+    assert stats["total"]==len(pts)
+    assert 0<=stats["refined"]<=len(pts)
+    assert 0<=stats["unresolved"]<=len(pts)
+    assert np.isfinite(stats["maximum_scalar_rel"])
+    assert np.isfinite(stats["maximum_first_scaled"])
