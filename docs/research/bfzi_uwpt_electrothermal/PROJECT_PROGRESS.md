@@ -1,14 +1,14 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 进度看板 · 2026-11-05 UTC · 分支 research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新本机：106 passed，但真实五模态原始 1/r Green P1-C/G1 仍 FAIL。** [完整原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，运行代码 40c4890、日志提交 a8d664e。真实两盒、五个固定非源引导 curl 模态的解析 SΩ/MΩ 角向自适应使用 4336 个 x 外观察点，其中 1296 个点（29.89%）提高内极角和方位角分辨率，**unresolved=0**。最大标量几何矩相对误差 **0.24912%**、一阶矩缩放误差 **0.13166%**，满足此次 0.25% 几何阈值；原矩阵 raw skew 从 scalar_control_both **2.352% 降至 1.091%**。**但真实 L00/L11 相对 scalar_control_both 仍变化 7.6446%/10.2046%**，相对未修正 both 的 L11 差 18.0656%。这直接证明几何低阶矩通过不代表真实贴壁 Gaussian-curl 磁能收敛。
+> **最新本机：107 passed，但真实五模态原始 1/r Green P1-C/G1 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，执行代码 ca263e6、日志提交 1da0e43。在 4336 个 x、相同由真实双盒 S/M 选定的内角方向（refined=1296、unresolved=0）、相同壁面和原核 Green 规则下，仅加入实际高斯模式中心的径向子片，真实磁矩阵整体变化 **0.960502%**、五模式最大自项变化 **0.960534%**，弱模态 L00/L11 分别差 **0.470693%/0.596213%**；raw skew 仅从 **1.091112%** 到 **1.090614%**，没有实质改善。径向源峰已得到独立解析 Gaussian 单测支持，但它不是此前角向 7%–10% 弱模态差的主因。
 >
-> **本轮从理论和主代码进一步定位真实源加权径向欠解析：** 原点心未软化 1/r 湿射线 Green 仅按实体盒壁端点、wall_scale 和少量固定观察点径向距离分片，可能漏掉位于区间内部的窄 Gaussian 电流模式峰值。新增 mode_centered_radial_panels，将每个**真实 BFZI 模式**的高斯中心 c 和各向同性或 SE(3) 旋转的 SPD Gaussian 指标 G 沿每条物理射线精确投影，求 r_peak=(uᵀG(c−x))/(uᵀGu)、w_ray=(uᵀGu)^(−1/2)，在 r_peak 加减 1、2、3 倍物理宽度处增添可选正权 Gauss 子片。所有断点仍裁剪到原外球减两独立旋转实心绝缘盒的真实湿射线区间，原物理 curl 模态、未软化 Green 核、贴壁径向分片、外 x 和角向选择规则全部不变。不采用世界体素／FEM 网格。横向距窗筛选只为效率，不冒充误差上界。
+> **本轮主数值改进：实际电流模态中心的局部球面角帽正权单位分解。** 原内角规则在点心坐标中围绕几何盒面，但不能保证采到远端宽度 w、距离 d 的真实模式 Gaussian 窄角峰（典型角宽 w/d）。使用本来 BFZI basis.modes 的实际模式中心和 SPD 高斯指标，依真实观察点生成局部球面帽，在帽内做正权 Legendre × 周期方位角积分，并与已有几何 S/M 角向背景通过 H0=1/(1+Σh)、Hm=h_m/(1+Σh) 平滑正权单位分解连接。**连续角域不重复计数、物理 curl 电流和原始未软化 1/r 核不变**；有限角权总测度误差仍单独打印，不能作为精度证书。源窗径向片、真实双 SE(3) 绝缘盒湿射线及 4336 个外 x 均保持不变。
 >
-> **已提交独立解析源峰测试：** 对偏离观察点、宽度 0.02 的三维 Gaussian 真实正权球内 1/r 积分，使用 erf 闭式逐角射线径向真值；测试原 Gauss-3 漏采、真实中心窗口分片恢复。该测试密度不冒充实际导电海水 curl 模式。另在原双盒小空间装配接入真实模式窗入口。
+> **已提交理论与解析试验：** 对窄三维 Gaussian 密度用精确全空间 Newton 势 π^(3/2)w³ erf(d/w)/d 作独立角向基准，背景与角帽使用相同径向 Gaussian 窗子片，严格隔离角向漏采；实际双盒小空间真实 curl 装配亦添加模式角帽通路。它只是单核数值测试，不能替代真实 BFZI G1 认证。相关数值积分文献亦认为需根据局部被积函数尖峰设置求积坐标，但其边界元表面积分不是本项目的体积算子。
 >
-> **下一轮本机命令：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。新主实验 mode_radial_both 对比 moment_angle_both，在 4336 相同 x 点、完全相同解析 S/M 选定角方向、相同 wall_scale 和径向 Gauss 阶数下，**仅切换源模式高斯峰附近的径向面板**，报告五自十互 L、raw skew 和角向筛选的重复性。其输出才能确定内径向模式峰是否为重要数值瓶颈；否则下一步应针对实际 curl 模式角向求积，不再做无目标阶数搜索。研究范围仍严格是圆形／圆角方形单根连续 BFZI 线圈、真实双独立 SE(3) 封装盒和海水，**不是历史超椭圆**。P0/P1-A/P1-B 限定历史 PASS，**P1-C/G1=FAIL，教师训练关闭，禁止 GitHub Actions。**
+> **下一次实际日志：** source_cap_both vs mode_radial_both 在相同 x1、相同真实 S/M 背景角规则、同五个实际 curl 模式、同模式径向窗口 Gauss 下，**仅增加物理模式中心局部球面帽**；输出五自项、十互项、raw skew、额外角方向数、球面权重相对 4π 的误差。此前无核外 x Gram 仍未严格收敛，也必须后续独立认证。**Windows：git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。** 范围仍为圆形/圆角方形连续 BFZI 螺旋及双独立 SE(3) 绝缘盒，绝非旧超椭圆。P0/P1-A/P1-B 限定历史 PASS，**P1-C/G1=FAIL，正式神经教师关闭，禁止 GitHub Actions**。
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
