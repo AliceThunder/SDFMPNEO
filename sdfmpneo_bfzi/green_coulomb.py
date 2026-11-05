@@ -600,6 +600,49 @@ def assemble_basis_coulomb_taylor(
 
 
 
+
+def _bfzi_projected_box_azimuth_rule(scene, point, e1, e2, order):
+    """Positive azimuth panels at actual OBB corner bearings from point.
+
+    Project both physical box vertex directions onto the plane normal to
+    the x-centred polar axis. The resulting azimuth knot positions change
+    with observer point and with BOTH box poses. They are geometry-defined
+    angular partitions, not a volumetric mesh and not artificial domain
+    clipping. Box silhouette changes inside polar panels are NOT fully
+    resolved by these azimuth cuts alone.
+    """
+    corner_phi = []
+    for assembly in scene.assemblies:
+        half = np.asarray(assembly.enclosure.half_extents)
+        local_corners = np.array(np.meshgrid(
+            (-half[0], half[0]), (-half[1], half[1]),
+            (-half[2], half[2]), indexing="ij",
+        )).reshape(3,-1).T
+        vectors = assembly.pose.position(local_corners) - point
+        projection = np.stack((vectors @ e1, vectors @ e2), axis=1)
+        valid = np.linalg.norm(projection, axis=1) > 1e-12
+        corner_phi.extend(np.mod(
+            np.arctan2(projection[valid,1],projection[valid,0]),
+            2*math.pi,
+        ).tolist())
+    boundaries = [0.0]
+    for angle in sorted(corner_phi):
+        if angle > boundaries[-1]+1e-9 and angle < 2*math.pi-1e-9:
+            boundaries.append(angle)
+    boundaries.append(2*math.pi)
+    # A physical sector is integrated by a positive Gauss rule.
+    # The nominal angular order controls local sector polynomial degree,
+    # not an unrelated rotation of a global equally-spaced point grid.
+    gauss_order = max(2, math.ceil(order/4))
+    nodes, weights = np.polynomial.legendre.leggauss(gauss_order)
+    bounds = np.asarray(boundaries)
+    centre = 0.5*(bounds[1:]+bounds[:-1])
+    halfspan = 0.5*np.diff(bounds)
+    phi = (centre[:,None]+halfspan[:,None]*nodes[None,:]).ravel()
+    wphi = (halfspan[:,None]*weights[None,:]).ravel()
+    return phi, wphi
+
+
 def assemble_coulomb_radial(
     x, wx, evaluate, wet_radial_segments, *,
     radial_order: int = 4,
@@ -608,6 +651,7 @@ def assemble_coulomb_radial(
     radial_breakpoints=(),
     radial_wall_scale: float | None = None,
     polar_axis=None,
+    azimuthal_rule=None,
     return_diagnostics: bool = False,
 ):
     """Direct unsoftened Green potential in x-centred polar coordinates.
@@ -628,6 +672,9 @@ def assemble_coulomb_radial(
     x-relative breakpoints can miss it by an entire enclosure spacing.
     Neither set of breakpoints changes the domain or the original kernel.
 
+    azimuthal_rule is an optional point-dependent physical angular-panel
+    provider. It returns positive azimuth nodes and weights integrating
+    exactly the full [0,2*pi] domain; it does not alter the wet domain.
     The unsymmetrized matrix skew is returned as a diagnostic, NOT a
     convergence certificate. This assembly uses one outer x cubature
     and a point-dependent inner spherical cubature (no reusable y grid).
@@ -658,22 +705,13 @@ def assemble_coulomb_radial(
     # tangent great circle a panel boundary, rather than blending across it.
     mu = np.concatenate(((angular-1)/2, (angular+1)/2))
     wmu = np.tile(wangular/2, 2)
-    phi = 2*math.pi*(np.arange(azimuthal_order)+0.5)/azimuthal_order
+    uniform_phi = 2*math.pi*(
+        np.arange(azimuthal_order)+0.5
+    )/azimuthal_order
+    uniform_wphi = np.full(
+        azimuthal_order,2*math.pi/azimuthal_order,
+    )
     transversal = np.sqrt(np.maximum(0, 1-mu*mu))
-    cos_az = np.cos(phi)
-    sin_az = np.sin(phi)
-    normal_component = np.repeat(mu, azimuthal_order)
-    planar_x = np.repeat(transversal, azimuthal_order)*np.tile(
-        cos_az, len(mu)
-    )
-    planar_y = np.repeat(transversal, azimuthal_order)*np.tile(
-        sin_az, len(mu)
-    )
-    area_weights = (
-        np.repeat(wmu, azimuthal_order)
-        * np.tile(np.full(azimuthal_order, 2*math.pi/azimuthal_order),
-                  len(mu))
-    )
     accum = np.zeros((vx.shape[1],vx.shape[1]))
     for xi, (point, weight) in enumerate(zip(x, wx)):
         if polar_axis is None:
@@ -693,11 +731,30 @@ def assemble_coulomb_radial(
         e1 = np.cross(seed,axis)
         e1 /= np.linalg.norm(e1)
         e2 = np.cross(axis,e1)
+        if azimuthal_rule is None:
+            phi,wphi = uniform_phi,uniform_wphi
+        else:
+            phi,wphi = azimuthal_rule(
+                point,e1,e2,azimuthal_order,
+            )
+            phi,wphi = np.asarray(phi,float),np.asarray(wphi,float)
+            if (phi.ndim != 1 or wphi.shape != phi.shape
+                    or not len(phi) or not np.isfinite(phi).all()
+                    or not np.isfinite(wphi).all() or np.any(wphi <= 0)
+                    or not np.isclose(np.sum(wphi),2*math.pi,
+                                      rtol=1e-12,atol=1e-12)):
+                raise ValueError(
+                    "azimuthal rule must integrate full 2*pi with "
+                    "positive finite weights"
+                )
         directions = (
-            planar_x[:,None]*e1[None,:]
-            +planar_y[:,None]*e2[None,:]
-            +normal_component[:,None]*axis[None,:]
-        )
+            (transversal[:,None]*np.cos(phi)[None,:])[:,:,None]
+                *e1[None,None,:]
+            +(transversal[:,None]*np.sin(phi)[None,:])[:,:,None]
+                *e2[None,None,:]
+            +mu[:,None,None]*axis[None,None,:]
+        ).reshape(-1,3)
+        area_weights = (wmu[:,None]*wphi[None,:]).ravel()
         lo, hi = wet_radial_segments(point,directions)
         lo,hi = np.asarray(lo,float),np.asarray(hi,float)
         if (lo.ndim != 2 or lo.shape != hi.shape
@@ -764,6 +821,7 @@ def assemble_basis_coulomb_radial(
     radial_order: int = 4,
     polar_order: int = 4,
     azimuthal_order: int = 10,
+    box_corner_azimuth_panels: bool = False,
     return_diagnostics: bool = False,
 ):
     """Actual box-clipped BFZI Green L using radial Jacobian cancellation.
@@ -803,6 +861,11 @@ def assemble_basis_coulomb_radial(
         frame = _bfzi_angular_face_frame(scene,point,radius)
         return np.array((0.0,0.0,1.0)) if frame is None else frame[0]
 
+    def azimuthal(point,e1,e2,order):
+        return _bfzi_projected_box_azimuth_rule(
+            scene,point,e1,e2,order,
+        )
+
     return assemble_coulomb_radial(
         x,wx,current,intervals,
         radial_order=radial_order,
@@ -811,6 +874,9 @@ def assemble_basis_coulomb_radial(
         radial_breakpoints=breaks,
         radial_wall_scale=basis.wall_scale,
         polar_axis=axis,
+        azimuthal_rule=(
+            azimuthal if box_corner_azimuth_panels else None
+        ),
         return_diagnostics=return_diagnostics,
     )
 
