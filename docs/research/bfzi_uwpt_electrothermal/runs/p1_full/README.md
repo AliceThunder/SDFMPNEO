@@ -1,28 +1,32 @@
-# P1-C：真实双盒全海水原始 Coulomb L 的本机证据
+# P1-C：真实双盒全海水原始 Coulomb L 的本机记录
 
-该目录只保存独立入口 `python run.py --mode bfzi-p1-full-sea --with-tests` 的实际结果，不覆盖原 P1-A/P1-B 解析球与紧支涡流日志。
+本目录保存独立入口 python run.py --mode bfzi-p1-full-sea --with-tests 的实际结果，
+不与 P1-A/P1-B 解析球或双紧支涡流日志混淆。
 
-- [latest_full.log](latest_full.log)：原始 pytest、真实五个 curl 模式的五自项与十互项、外 x 和点心径/角分轴变化，以及诊断。
-- [latest_summary.md](latest_summary.md)：代码基线、程序执行状态及摘要。**程序 PASS 不代表连续磁能求积 PASS。**
+- [latest_full.log](latest_full.log)：pytest 和真实五模式五自项、十互项、x／内径向／内角向变化及专项诊断。
+- [latest_summary.md](latest_summary.md)：检出代码、时间及运行状态。**程序 PASS 不代表物理 PASS。**
 
-## 已有运行证据
+## 真实 P1-C 三轮失败证据
 
-- 旧对称差分原核（代码 a9f48db）：97 passed，但内 y 独立变化 23.560%、x/y 联合变化 28.437%，与 Taylor 结果相差 80.941%，并存在 98% 大项抵消及负自项。物理 FAIL。
-- 新点心直接原核（代码 8c26357，日志提交 02805877）：99 passed，外 x 变化 5.937%、固定细 x 内径向变化 **30.248%**、随后内角向变化 1.936%，联合变化 35.311%，最细原矩阵 skew 1.746%。物理仍 FAIL，最小特征值为正不足以认证。
+1. 对称差分原核（代码 a9f48db）：97 passed、程序完成，但内 y 变化 23.560%，x/y 联合 28.437%，与 Taylor 差 80.941%，98% 大项抵消，粗规则负自项。物理 FAIL。
+2. 点心直接原核初版（代码 8c26357）：99 passed，但盒壁未相对射线端点分片，固定细 x 内径向变化 **30.248%**、最细 raw skew 1.746%。物理 FAIL。
+3. **目前最新原始日志**（代码 35895a4、提交 b383da2a）：100 passed，真实盒壁端点分片改进使内径向变化降至 **2.831%**，但内角向 **3.607%**、外 x **1.841%**、联动 **7.349%**、最细 raw skew **2.333%**。真实双盒解析 SΩ 对照在近面／棱／角细角规则残差为 0.05998%／0.02679%／**0.11072%**。物理仍 FAIL。
 
-## 已提交、等待下一份本机日志的算法改进
+由于最强模态 L44 占主导，仅改变 x 规则时 L00、L22 自项分别变化约 **54% 和 50%**，但总体 Frobenius 只有 1.841%；不得以总体矩阵变化代替每模态精度。
 
-点心射线求积保持原始未软化 1/r，并沿两只真实独立旋转绝缘盒和外球解析裁剪；对每条真实湿区间的**两端**以 wall_scale × (1,3,9,27,81) 锚定径向分片，解决此前只围绕观察点分片、漏掉实际盒壁尖层的问题。
+## 新代码已提交，下次本机运行待证
 
-同时增加 `p1_full_sea_scalar`：每只盒的近面／棱／角共六个真实湿点，直接积分常量测试密度并与独立解析的 `SΩ` 比较。因为常量密度的内径向被积式严格为 r，该诊断只检验**射线裁剪和角向求积**。它不是实际合规电流，也不能当成 G1 PASS。
+从每个观察点投影两个实际 OBB 的各八个顶点，在点心极轴横平面获得真实顶点方位，将 [0,2π] 划分物理扇区，每段执行正权 Gauss。这是角积分坐标分片，**不完整解析盒棱在球面极角的轮廓**。
 
-主实验仍打印 `p1_full_sea_self`、`p1_full_sea_mutual`、`p1_full_sea_inner_axes`、`p1_full_sea_change`。先根据独立标量近壁角向误差决定是否改几何角向分片，再看真实 curl 内径向误差，避免继续盲目增加求积阶数。
+- 原五种 uniform 规则不变；另在完全相同细 x1 和内径向／极角规则下，只改变方位规则得到 corner_both，与 uniform_both 比较。
+- 独立解析 SΩ 几何对照新增 aligned_demo（原两盒均单位旋转）及 two_rotated_boxes（TX 绕 x 轴 +0.24 rad、RX 绕 y 轴 -0.31 rad）；分别记录两种角规则在面/棱/角粗细比较。
+- p1_full_sea_mode_delta 报告五个 self 相对变化及自能归一化互项变化；p1_full_sea_corner_cross 记录角规则同条件差异。
 
-运行：
+**纠正以前错误描述：** 原五模式演示函数 build_demo_scene 的两盒旋转矩阵都为单位阵，并非非零旋转盒；新代码标记 five_mode_poses=both_identity。独立旋转双盒的常量标量 Green 对照尚不构成任意位姿磁矩阵认证。
 
-```powershell
-git pull --ff-only
-python run.py --mode bfzi-p1-full-sea --with-tests
-```
+执行命令：
 
-本机日志自动 Git 提交推送，**不使用 GitHub Actions**。P1-C 未认证、整体 G1=FAIL，正式教师训练不得开始。
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+用户本机自动更新本目录日志，禁止 GitHub Actions。正式神经教师仍不训练。**P1-C/G1=FAIL。**
