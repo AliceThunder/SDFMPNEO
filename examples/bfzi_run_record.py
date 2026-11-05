@@ -237,14 +237,26 @@ def _summary(root, flags, started, ended, status, raw):
         "- [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。",
     ]
     if p1_evidence:
-        parts.extend([
-            "", "## P1 原 Coulomb 磁能：球解析真值、双盒几何矩、两紧支涡流（尚非全域教师认证）", "",
-        ])
+        is_full_sea = run_mode == "bfzi-p1-full-sea"
+        heading = (
+            "## P1-C 真实双盒全海水五个 curl 模式原核 L "
+            "（仅数值对照，尚非物理验收）"
+            if is_full_sea else
+            "## P1 原 Coulomb 磁能：球解析真值、双盒几何矩、"
+            "两紧支涡流（尚非全域教师认证）"
+        )
+        parts.extend(["", heading, ""])
         parts.extend(f"- `{line}`" for line in p1_evidence)
         parts.append(
-            "\n以上只检验不软化 1/r 的解析球域对照。"
-            "原 BFZI 双绝缘盒的奇异自项、近邻块、R/K、外域"
-            "及神经教师仍须各自通过独立验收。"
+            (
+                "\n此运行是实际双盒全海水 curl 模式及原核 L 的数值收敛实验；"
+                "没有独立连续真值，且角向射线对盒壁/棱角的裁剪仍须单独验证。"
+                "程序完成、对称、谱正性或分轴差异小，均不能独立证明 G1 PASS。"
+            ) if is_full_sea else (
+                "\n球解析基准、真实双盒几何矩或紧支双涡流自/互项"
+                "都不等于全部 BFZI 海水 curl 模式的原核 L 认证；"
+                "R/K、外域与神经教师仍须分别验收。"
+            )
         )
     if p0_evidence:
         parts.extend([
