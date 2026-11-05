@@ -734,6 +734,87 @@ def _bfzi_source_cap_angular_rule(
     return directions[valid],weights[valid],len(active)
 
 
+
+def _bfzi_positive_coulomb_angular_balance(
+    weights, directions, lo, hi, exact_s, exact_m,
+    *, tolerance=2.0e-7, max_iterations=14,
+):
+    """Fit exact spherical measure and true wet-domain Coulomb S/M.
+
+    Minimize relative entropy from the *positive* source-cap Gauss
+    weights subject to exact sphere area, scalar Green moment and
+    three first Green moments. A four-dimensional exponential tilt
+    enforces positivity, and normalizing by its partition function
+    conserves 4*pi by construction. If the analytic target is
+    infeasible for the chosen finite rays, return None; the caller
+    must fall back to the already geometry-qualified background rule.
+    The fitting uses ONLY ray endpoint polynomials, never source values.
+    """
+    w=np.asarray(weights,float)
+    u=np.asarray(directions,float)
+    a=np.asarray(lo,float)
+    z=np.asarray(hi,float)
+    if (w.ndim!=1 or u.shape!=(len(w),3)
+            or a.shape!=z.shape or a.ndim!=2
+            or a.shape[0]!=len(w) or not np.all(w>0)
+            or not np.isfinite(exact_s) or exact_s<=0):
+        raise ValueError("invalid positive Coulomb angular moment rule")
+    rays_s=np.sum(0.5*(z*z-a*a),axis=1)
+    rays_m=u*np.sum((z*z*z-a*a*a)/3.0,axis=1)[:,None]
+    radius=max(float(np.max(z)),1.e-30)
+    scale_s=exact_s/(4*math.pi)
+    scale_m=exact_s*radius/(4*math.pi)
+    features=np.column_stack((rays_s/scale_s,rays_m/scale_m))
+    target=np.concatenate(([1.0],np.asarray(exact_m,float)/(exact_s*radius)))
+    if not np.isfinite(features).all() or not np.isfinite(target).all():
+        raise ValueError("nonfinite analytical Coulomb moment features")
+    base=w/float(np.sum(w))
+    multiplier=np.zeros(4)
+    best_error=float("inf")
+    best=None
+    for _ in range(max_iterations):
+        logits=features@multiplier
+        shifted=logits-float(np.max(logits))
+        tilted=base*np.exp(np.maximum(shifted,-700.0))
+        tilted/=float(np.sum(tilted))
+        mean=tilted@features
+        residual=target-mean
+        error=float(np.max(np.abs(residual)))
+        if error<best_error:
+            best_error,best=error,tilted
+        if error<=tolerance:
+            result=4*math.pi*tilted
+            if np.all(result>0):
+                return result,error
+            break
+        centered=features-mean
+        covariance=centered.T@(tilted[:,None]*centered)
+        delta=np.linalg.lstsq(covariance,residual,rcond=1.e-11)[0]
+        if not np.isfinite(delta).all():
+            break
+        # Newton with backtracking; arbitrary unbounded tilts can
+        # create a false small residual via exponential underflow.
+        accepted=False
+        step=1.0
+        for _ in range(12):
+            trial=multiplier+step*delta
+            logits_trial=features@trial
+            shift=logits_trial-float(np.max(logits_trial))
+            q=base*np.exp(np.maximum(shift,-700.0))
+            q/=float(np.sum(q))
+            new_error=float(np.max(np.abs(target-q@features)))
+            if np.isfinite(new_error) and new_error<error:
+                multiplier=trial
+                accepted=True
+                break
+            step*=0.5
+        if not accepted:
+            break
+    return None,best_error
+
+
+
+
 def assemble_coulomb_radial(
     x, wx, evaluate, wet_radial_segments, *,
     radial_order: int = 4,
@@ -923,6 +1004,8 @@ def assemble_coulomb_radial(
         source_cap_stats.clear()
         source_cap_stats.update(points=0,points_with_caps=0,
                                 cap_charts=0,cap_nodes=0,
+                                accepted=0,fall_back=0,
+                                worst_balance_residual=0.0,
                                 max_solid_angle_rel=0.0,
                                 exact_moment_checks=0,
                                 max_scalar_moment_rel=0.0,
@@ -1024,44 +1107,76 @@ def assemble_coulomb_radial(
                 rec['maximum_first_scaled']=max(rec['maximum_first_scaled'],m_err)
         if source_angular_caps is not None:
             old_count=len(directions)
-            new_directions,new_weights,cap_count=_bfzi_source_cap_angular_rule(
+            base_directions,base_weights=directions,area_weights
+            base_lo,base_hi=lo,hi
+            cap_dirs,cap_weights,cap_count=_bfzi_source_cap_angular_rule(
                 point,directions,area_weights,cap_centers,cap_metrics,
                 polar_order,azimuthal_order,
             )
-            if len(new_directions)>old_count:
-                new_lo,new_hi=wet_radial_segments(
-                    point,new_directions[old_count:],
+            if cap_count:
+                # Every finite source cap changes the numerical angular
+                # chart; the continuous partition-of-unity alone cannot
+                # preserve its 4*pi, S and M quadrature moments.
+                cap_lo,cap_hi=wet_radial_segments(
+                    point,cap_dirs[old_count:],
                 )
-                lo=np.concatenate((np.asarray(lo),np.asarray(new_lo)),axis=0)
-                hi=np.concatenate((np.asarray(hi),np.asarray(new_hi)),axis=0)
-            directions,area_weights=new_directions,new_weights
+                all_lo=np.concatenate((np.asarray(base_lo),
+                                       np.asarray(cap_lo)),axis=0)
+                all_hi=np.concatenate((np.asarray(base_hi),
+                                       np.asarray(cap_hi)),axis=0)
+                if moment is not None and first is not None:
+                    fitted,fit_error=_bfzi_positive_coulomb_angular_balance(
+                        cap_weights,cap_dirs,all_lo,all_hi,
+                        moment[xi],first[xi],
+                    )
+                else:
+                    fitted,fit_error=cap_weights,0.0
+                if source_cap_stats is not None:
+                    source_cap_stats['worst_balance_residual']=max(
+                        source_cap_stats['worst_balance_residual'],
+                        fit_error,
+                    )
+                if fitted is not None:
+                    directions,area_weights,lo,hi=(
+                        cap_dirs,fitted,all_lo,all_hi
+                    )
+                    if source_cap_stats is not None:
+                        source_cap_stats['accepted']+=1
+                        source_cap_stats['points_with_caps']+=1
+                        source_cap_stats['cap_charts']+=cap_count
+                        source_cap_stats['cap_nodes']+=len(cap_dirs)-old_count
+                else:
+                    # A genuinely infeasible finite positive moment
+                    # problem must not contaminate the physical L.
+                    # The original S/M-qualified background is retained.
+                    directions,area_weights,lo,hi=(
+                        base_directions,base_weights,base_lo,base_hi
+                    )
+                    if source_cap_stats is not None:
+                        source_cap_stats['fall_back']+=1
             if source_cap_stats is not None:
-                source_cap_stats['points']+=1
-                source_cap_stats['points_with_caps']+=int(cap_count>0)
-                source_cap_stats['cap_charts']+=cap_count
-                source_cap_stats['cap_nodes']+=len(directions)-old_count
-                source_cap_stats['max_solid_angle_rel']=max(
-                    source_cap_stats['max_solid_angle_rel'],
+                rec=source_cap_stats
+                rec['points']+=1
+                rec['max_solid_angle_rel']=max(
+                    rec['max_solid_angle_rel'],
                     abs(float(np.sum(area_weights))/(4*math.pi)-1),
                 )
                 if moment is not None and first is not None:
-                    # The source cap is a NEW angular rule; base-chart
-                    # S/M certification does not automatically carry over.
-                    # Evaluate its actual wet-ray endpoint moments too.
-                    lo_cap,hi_cap=np.asarray(lo),np.asarray(hi)
-                    measure=np.sum(0.5*(hi_cap**2-lo_cap**2),axis=1)
-                    linear=np.sum((hi_cap**3-lo_cap**3)/3,axis=1)
-                    s_cap=float(np.dot(area_weights,measure))
-                    m_cap=np.einsum(
-                        "r,r,rc->c",area_weights,linear,directions,
+                    # Verify the ACTUALLY SELECTED weights (after fit or
+                    # explicit fallback), not the unbalanced cap proposal.
+                    lo0,hi0=np.asarray(lo),np.asarray(hi)
+                    ray_s=np.sum(0.5*(hi0**2-lo0**2),axis=1)
+                    ray_m=np.sum((hi0**3-lo0**3)/3.0,axis=1)
+                    scalar=float(np.dot(area_weights,ray_s))
+                    vector=np.einsum(
+                        "r,r,rc->c",area_weights,ray_m,directions,
                         optimize=True,
                     )
-                    relative_s=abs(s_cap-moment[xi])/moment[xi]
-                    m_scale=moment[xi]*max(float(np.max(hi_cap)),1e-30)
+                    relative_s=abs(scalar-moment[xi])/moment[xi]
+                    scale_m=moment[xi]*max(float(np.max(hi0)),1.e-30)
                     relative_m=float(np.linalg.norm(
-                        m_cap-first[xi],
-                    )/m_scale)
-                    rec=source_cap_stats
+                        vector-first[xi],
+                    )/scale_m)
                     rec['exact_moment_checks']+=1
                     rec['max_scalar_moment_rel']=max(
                         rec['max_scalar_moment_rel'],relative_s,
