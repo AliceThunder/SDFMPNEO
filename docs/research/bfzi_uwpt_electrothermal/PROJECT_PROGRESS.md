@@ -1,14 +1,13 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · 分支 research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 进度看板 · 2026-11-05 UTC · research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新本机：107 passed，但真实五模态原始 1/r Green P1-C/G1 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，执行代码 ca263e6、日志提交 1da0e43。在 4336 个 x、相同由真实双盒 S/M 选定的内角方向（refined=1296、unresolved=0）、相同壁面和原核 Green 规则下，仅加入实际高斯模式中心的径向子片，真实磁矩阵整体变化 **0.960502%**、五模式最大自项变化 **0.960534%**，弱模态 L00/L11 分别差 **0.470693%/0.596213%**；raw skew 仅从 **1.091112%** 到 **1.090614%**，没有实质改善。径向源峰已得到独立解析 Gaussian 单测支持，但它不是此前角向 7%–10% 弱模态差的主因。
+> **最新实跑失败：107 passed、1 failed；五模态主计算未执行。** [原始日志](runs/p1_full/latest_full.log) / [自动摘要](runs/p1_full/latest_summary.md)，执行代码 cd82e4f、日志提交 7906a58。唯一失败测试把远端窄 Gaussian 的**点心 Green 势**误当作双线性磁能自项：观察点的 Gaussian 值接近零使 Lgg≈1.13e-229，但解析势对应量约 1.55e-11。这是比较量不一致，尚无法断言源中心角帽通过或失败。上次真正完成的五模态运行仍是代码 ca263e6、日志 1da0e43 的 107-pass 模式径向试验：相同 S/M 选角下径向源窗修改造成全矩阵变化 **0.9605%**、最大自项变化 **0.9605%**，P1-C/G1 未认证。
 >
-> **本轮主数值改进：实际电流模态中心的局部球面角帽正权单位分解。** 原内角规则在点心坐标中围绕几何盒面，但不能保证采到远端宽度 w、距离 d 的真实模式 Gaussian 窄角峰（典型角宽 w/d）。使用本来 BFZI basis.modes 的实际模式中心和 SPD 高斯指标，依真实观察点生成局部球面帽，在帽内做正权 Legendre × 周期方位角积分，并与已有几何 S/M 角向背景通过 H0=1/(1+Σh)、Hm=h_m/(1+Σh) 平滑正权单位分解连接。**连续角域不重复计数、物理 curl 电流和原始未软化 1/r 核不变**；有限角权总测度误差仍单独打印，不能作为精度证书。源窗径向片、真实双 SE(3) 绝缘盒湿射线及 4336 个外 x 均保持不变。
+> **本轮已修复主代码的物理量接口：** 原始未软化 1/r 点心 Green 装配新增明确可选的逐观察点、逐模式内势 Uj(x) 返回，不改变原 L、raw skew 或既有默认调用；修正 Gaussian 解析测试直接用该内势与精确 Newton 公式对照，避免被 Wj(x)≈0 的自项误导。自动日志摘要也已修复，明确保留 pytest 失败数，不再只打印 passed 部分。
 >
-> **已提交理论与解析试验：** 对窄三维 Gaussian 密度用精确全空间 Newton 势 π^(3/2)w³ erf(d/w)/d 作独立角向基准，背景与角帽使用相同径向 Gaussian 窗子片，严格隔离角向漏采；实际双盒小空间真实 curl 装配亦添加模式角帽通路。它只是单核数值测试，不能替代真实 BFZI G1 认证。相关数值积分文献亦认为需根据局部被积函数尖峰设置求积坐标，但其边界元表面积分不是本项目的体积算子。
->
-> **下一次实际日志：** source_cap_both vs mode_radial_both 在相同 x1、相同真实 S/M 背景角规则、同五个实际 curl 模式、同模式径向窗口 Gauss 下，**仅增加物理模式中心局部球面帽**；输出五自项、十互项、raw skew、额外角方向数、球面权重相对 4π 的误差。此前无核外 x Gram 仍未严格收敛，也必须后续独立认证。**Windows：git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。** 范围仍为圆形/圆角方形连续 BFZI 螺旋及双独立 SE(3) 绝缘盒，绝非旧超椭圆。P0/P1-A/P1-B 限定历史 PASS，**P1-C/G1=FAIL，正式神经教师关闭，禁止 GitHub Actions**。
+> **下一次验证：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。先要求 108 项专项测试全部通过，再首次得到 source_cap_both 与 mode_radial_both 的真实五模态 L 逐项差异、额外角帽数量、正权 4π 测度误差和独立 S/M 几何矩误差。角帽无论通过测试与否仍只是待验收数值候选。保持圆形／圆角方形连续 BFZI 单线圈、真实双独立 SE(3) 绝缘盒和海水；不是超椭圆。**P1-C/G1=FAIL，教师训练关闭，禁止 GitHub Actions。**
+
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
