@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-04T14:52:46+00:00
-- 结束（UTC）：2026-11-04T14:53:32+00:00
-- 当时检出的代码提交：`0863a41`
+- 开始（UTC）：2026-11-05T01:33:55+00:00
+- 结束（UTC）：2026-11-05T01:34:39+00:00
+- 当时检出的代码提交：`585bf12`
 - 执行：`python run.py --mode bfzi-p1-coulomb`
-- 同批 pytest：87 passed in 45.04s
+- 同批 pytest：90 passed in 42.12s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -23,6 +23,21 @@
 - `p1_taylor: x_nodes=480,y_nodes=756,linear_affine_rel=3.576688e-16,cubic_outer_exact_rel=5.90514e-06,cubic_const_rel=0.002453187,cubic_affine_rel=0.000159619,cubic_affine_pass_0p1pct=True,linear_exact_residual_by_construction=True,cubic_source_nonaffine=True`
 - `p1_sub_gate: target_rel=0.001,global_constant_subtraction_frob_pass=False,global_constant_subtraction_rel=0.001497178,domain_scalar_potential=analytic_ball_only`
 - `p1_gate: target_rel=0.001,ball_frob_pass=False,ball_diag_pass=False,ball_offdiag_pass=True,partition_L11_gap=0.004230034,partition_L11_pass=False,scope=exact_ball_only`
+- `p1_geom_exact: domain=ball_minus_two_rotated_insulating_boxes,S=integral_wet(1/r),M=integral_wet((y-x)/r),box_face_integrals=analytic_rectangle_primitives,ball_moments=analytic,no_softening=True`
+- `p1_geom_box: port=0,probe=face,S_box=0.018173654666,M_box_norm=0.0003060896711,S_gauss12_rel=1.909053e-16,S_gauss18_rel=1.909053e-16,M_gauss12_rel=1.416843e-15,M_gauss18_rel=1.416843e-15`
+- `p1_geom_wet: port=0,probe=face,S_wet=1.6495908706,M_wet_norm=0.12539744253,positive_S=True`
+- `p1_geom_box: port=0,probe=edge,S_box=0.012594953843,M_box_norm=0.00096159965802,S_gauss12_rel=1.377316e-16,S_gauss18_rel=5.509265e-16,M_gauss12_rel=2.254997e-16,M_gauss18_rel=1.06368e-15`
+- `p1_geom_wet: port=0,probe=edge,S_wet=1.6334673846,M_wet_norm=0.16787688172,positive_S=True`
+- `p1_geom_box: port=0,probe=corner,S_box=0.0094441374405,M_box_norm=0.0010989435536,S_gauss12_rel=0,S_gauss18_rel=0,M_gauss12_rel=1.603012e-15,M_gauss18_rel=1.578537e-15`
+- `p1_geom_wet: port=0,probe=corner,S_wet=1.6148702112,M_wet_norm=0.2008244936,positive_S=True`
+- `p1_geom_box: port=1,probe=face,S_box=0.018173654666,M_box_norm=0.0003060896711,S_gauss12_rel=1.909053e-16,S_gauss18_rel=1.909053e-16,M_gauss12_rel=1.416843e-15,M_gauss18_rel=0`
+- `p1_geom_wet: port=1,probe=face,S_wet=1.6310777725,M_wet_norm=0.16291904634,positive_S=True`
+- `p1_geom_box: port=1,probe=edge,S_box=0.012594953843,M_box_norm=0.00096159965802,S_gauss12_rel=1.377316e-16,S_gauss18_rel=4.131949e-16,M_gauss12_rel=2.254997e-16,M_gauss18_rel=1.06368e-15`
+- `p1_geom_wet: port=1,probe=edge,S_wet=1.6148701148,M_wet_norm=0.19675890232,positive_S=True`
+- `p1_geom_box: port=1,probe=corner,S_box=0.0094441374405,M_box_norm=0.0010989435536,S_gauss12_rel=0,S_gauss18_rel=3.673651e-16,M_gauss12_rel=7.892687e-16,M_gauss18_rel=1.63309e-15`
+- `p1_geom_wet: port=1,probe=corner,S_wet=1.5962065579,M_wet_norm=0.22484118804,positive_S=True`
+- `p1_geom_gate: target_rel=1e-8,S_worst_rel=5.509265e-16,M_worst_rel=1.63309e-15,S_pass=True,M_pass=True,scope=specified_real_sea_near_wall_face_edge_corner_only`
+- `p1_geom_note: analytic box face integrals are directly checked against independent graded surface quadrature near physical face/edge/corner. This validates geometry moments only; the induced-current Taylor residual and entire BFZI L must be separately tested on the SAME wet domain.`
 - `p1_note: p1_decomp splits x-integration, exactly integrated local spherical C2 kernel and y-far cubature; the independent whole-ball constant subtraction has an EXACT ball scalar kernel, which cannot be reused for two-box geometry without obtaining its actual scalar geometry potential. Original 1/r is unchanged. Exact-vortex BALL benchmark tests the ORIGINAL Coulomb double integral against an analytic three-mode matrix. It does NOT certify rotated two-box wet-domain L, its near-wall integrals, or the 229-mode and infinite-ocean physical reference.`
 
 以上只检验不软化 1/r 的解析球域对照。原 BFZI 双绝缘盒的奇异自项、近邻块、R/K、外域及神经教师仍须各自通过独立验收。
