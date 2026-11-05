@@ -650,6 +650,7 @@ def assemble_coulomb_radial(
     azimuthal_order: int = 10,
     radial_breakpoints=(),
     radial_wall_scale: float | None = None,
+    radial_mode_windows=None,
     polar_axis=None,
     azimuthal_rule=None,
     exact_scalar_moments=None,
@@ -677,6 +678,13 @@ def assemble_coulomb_radial(
     occurs next to the ray's box ENTRY/EXIT, not next to x. Using only
     x-relative breakpoints can miss it by an entire enclosure spacing.
     Neither set of breakpoints changes the domain or the original kernel.
+    radial_mode_windows optionally supplies (centers, SPD Gaussian metrics)
+    from the REAL curl basis. For a ray y=x+r*u, the window exponent
+      (y-c)^T G (y-c) = q_perp + (r-r_peak)^2 / w_ray^2.
+    Only rays within three transverse Gaussian widths receive positive
+    Gauss panels at r_peak plus/minus 1, 2, 3 w_ray. These resolve
+    genuine source peaks BETWEEN the old wall / x-distance panels.
+    This is source-guided radial quadrature, NOT a change of W or 1/r.
 
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
@@ -735,6 +743,23 @@ def assemble_coulomb_radial(
         first = np.asarray(exact_first_moments,dtype=float)
         if first.shape!=(len(x),3) or not np.isfinite(first).all():
             raise ValueError("exact_first_moments must be finite (n_x,3)")
+    window_centers,window_metrics = None,None
+    if radial_mode_windows is not None:
+        try:
+            window_centers,window_metrics=radial_mode_windows
+        except (ValueError,TypeError) as exc:
+            raise ValueError("radial_mode_windows requires (centers, metrics)") from exc
+        window_centers=np.asarray(window_centers,float)
+        window_metrics=np.asarray(window_metrics,float)
+        if (window_centers.ndim!=2 or window_centers.shape[1]!=3
+                or len(window_centers)<1
+                or window_metrics.shape!=(len(window_centers),3,3)
+                or not np.isfinite(window_centers).all()
+                or not np.isfinite(window_metrics).all()
+                or not np.allclose(window_metrics,
+                                   window_metrics.transpose(0,2,1))
+                or np.any(np.linalg.eigvalsh(window_metrics)<=0)):
+            raise ValueError("radial source windows require finite centers and SPD metrics")
     cuts = np.asarray(radial_breakpoints, dtype=float)
     if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
         raise ValueError("radial_breakpoints must be finite positive distances")
@@ -889,6 +914,34 @@ def assemble_coulomb_radial(
         # box intersection along the ray; old x-centred fixed knots
         # left these wall-adjacent intervals almost entirely unresolved.
         panels = [lo[:,:,None],hi[:,:,None]]
+        if window_centers is not None:
+            # Analytically project every actual Gaussian footprint into
+            # each x-centred wet direction. The cross-ray Mahalanobis
+            # distance rejects negligible Gaussian tails; no guessed
+            # global r breakpoints or world-space volume mesh is used.
+            delta=window_centers-point
+            along=np.einsum(
+                "ri,mij,rj->rm",directions,window_metrics,directions,
+                optimize=True,
+            )
+            linear=np.einsum(
+                "ri,mij,mj->rm",directions,window_metrics,delta,
+                optimize=True,
+            )
+            peak=linear/along
+            perp=np.maximum(
+                np.einsum("mi,mij,mj->m",delta,window_metrics,delta,
+                          optimize=True)[None,:]-linear*peak,0.0,
+            )
+            width=1.0/np.sqrt(along)
+            offsets=np.array((-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0))
+            knots=peak[:,:,None]+width[:,:,None]*offsets
+            near=(peak+3*width>0)&(perp<=9.0)
+            knots=np.where(near[:,:,None],knots,-1.0)
+            knots=knots.reshape(len(directions),-1)
+            panels.append(np.clip(
+                knots[:,None,:],lo[:,:,None],hi[:,:,None],
+            ))
         if len(cuts):
             panels.append(
                 np.clip(cuts[None,None,:],lo[:,:,None],hi[:,:,None])
@@ -960,6 +1013,7 @@ def assemble_basis_coulomb_radial(
     polar_order: int = 4,
     azimuthal_order: int = 10,
     box_corner_azimuth_panels: bool = False,
+    mode_centered_radial_panels: bool = False,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
     angular_moment_tolerance: float | None = None,
@@ -1025,6 +1079,17 @@ def assemble_basis_coulomb_radial(
         def jacobian(pts):
             original = evaluate_nonguided_curl_jacobian(basis,pts)
             return np.einsum("nmcd,mk->nkcd",original,t,optimize=True)
+    windows=None
+    if mode_centered_radial_panels:
+        windows=(
+            np.array([mode.center for mode in basis.modes]),
+            np.array([
+                np.eye(3)/mode.width**2
+                if mode.gaussian_metric is None
+                else mode.gaussian_metric
+                for mode in basis.modes
+            ]),
+        )
     return assemble_coulomb_radial(
         x,wx,current,intervals,
         radial_order=radial_order,
@@ -1032,6 +1097,7 @@ def assemble_basis_coulomb_radial(
         azimuthal_order=azimuthal_order,
         radial_breakpoints=breaks,
         radial_wall_scale=basis.wall_scale,
+        radial_mode_windows=windows,
         polar_axis=axis,
         azimuthal_rule=(
             azimuthal if box_corner_azimuth_panels else None
