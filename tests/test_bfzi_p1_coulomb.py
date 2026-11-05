@@ -67,6 +67,51 @@ def test_unsoftened_x_centered_radial_green_matches_independent_analytic_ball():
 
 
 
+
+def test_x_centered_green_rays_resolve_exact_physical_wall_slope():
+    """Independent closed-form 1D wall envelope integral through real ray code.
+
+    A shell with a radial density proportional to d/(d+s)' tests the
+    exact wall-normal derivative s/(d+s)^2. This is a controlled kernel
+    quadrature test, NOT a physical BFZI curl mode or a G1 certificate.
+    """
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+
+    a,b,s=0.20,0.52,0.001125
+    def current(points):
+        radius=np.linalg.norm(points,axis=1)
+        amp=np.where(radius<a,1.0,s/(radius-a+s)**2)
+        return amp[:,None,None]*np.array([1.0,0.0,0.0])[None,None,:]
+
+    def radial_shell(point,directions):
+        return (
+            np.full((len(directions),1),a),
+            np.full((len(directions),1),b),
+        )
+
+    # Physical transformed integrand is exactly r*s/(r-a+s)^2.
+    def antiderivative(r):
+        z=r-a+s
+        return s*np.log(z)-s*(a-s)/z
+
+    truth=antiderivative(b)-antiderivative(a)
+    x=np.zeros((1,3))
+    wx=np.ones(1)
+    raw=assemble_coulomb_radial(
+        x,wx,current,radial_shell,
+        radial_order=3,polar_order=2,azimuthal_order=4,
+    )[0,0]/MU0
+    aligned=assemble_coulomb_radial(
+        x,wx,current,radial_shell,
+        radial_order=3,polar_order=2,azimuthal_order=4,
+        radial_wall_scale=s,
+    )[0,0]/MU0
+    # With identical order, only physical ray endpoint panels change.
+    assert abs(raw-truth)/truth > 0.5
+    assert abs(aligned-truth)/truth < 0.001
+
+
+
 def test_p1_ball_vortex_exact_analytic_potential_and_energy():
     # W_i=e_i cross x, div W_i=0 and x dot W_i=0 on the sphere.
     # ΔU_i=-4πW_i with exterior dipole matching.
