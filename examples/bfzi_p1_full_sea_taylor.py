@@ -9,8 +9,8 @@ Exact wet ray intervals intersect both independently posed insulating
 boxes and the outer ball. The outer x integration uses already available
 face/edge-aligned positive box-shell cubature (not a volumetric mesh).
 
-The five-rule x/inner experiment plus one corner-projected angular pilot
-is diagnostic until near-wall and near-edge convergence is established.
+The five-rule x/inner experiment and exact scalar/first-domain-moment
+control pilots are diagnostic until weak-mode convergence is established.
 No neural teacher or G1 certificate is produced.
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -89,8 +89,10 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         raise ValueError("unknown original Coulomb assembly method")
     if angle_scheme not in ("uniform","box_corners"):
         raise ValueError("unknown angular integration scheme")
-    if scalar_control and method!="radial":
-        raise ValueError("exact scalar control requires radial Green assembly")
+    if (scalar_control or affine_control) and method!="radial":
+        raise ValueError("exact moment control requires radial Green assembly")
+    if affine_control and not scalar_control:
+        raise ValueError("affine control requires scalar Green control")
     if cache is None:
         cache={}
     scene=basis.scene
@@ -105,12 +107,14 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             azimuthal_order=y_rule[2],
             box_corner_azimuth_panels=(angle_scheme=="box_corners"),
             exact_scalar_control=scalar_control,
+            exact_affine_control=affine_control,
             return_diagnostics=True,
         )
         ny=(
             f"inner_radial_{y_rule[0]}_polar_{y_rule[1]}_"
             f"azimuth_{y_rule[2]}_scheme_{angle_scheme}"
-            +("_exact_scalar_S" if scalar_control else "")
+            +("_exact_affine_SM" if affine_control else
+              "_exact_scalar_S" if scalar_control else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -286,6 +290,14 @@ def _outer_gram_diagnostics(scene,basis):
             "polar_geometry_order":3,
             "azimuthal_geometry_order":3,
         }),
+        # The 103-pass log showed that physical angle order 2->3
+        # changes weak Gram self terms by >2% while the tangent axis
+        # is already stable at 6e-5: refine ANGLES ONLY once more.
+        ("phys_angle4",(3,4,8,3),half_mode_width,{
+            **radial_physical,
+            "polar_geometry_order":4,
+            "azimuthal_geometry_order":4,
+        }),
     )
     gram={}
     gram_parts={}
@@ -357,6 +369,7 @@ def _outer_gram_diagnostics(scene,basis):
     compare("phys_tangent_vs_face_tangent","phys_tangent","face_tangent")
     compare("phys_tangent_half_vs_phys_tangent","phys_tangent_half","phys_tangent")
     compare("phys_angle3_vs_phys_tangent","phys_angle3","phys_tangent")
+    compare("phys_angle4_vs_phys_angle3","phys_angle4","phys_angle3")
 
     # Independent sampling algorithm on the same continuous box-shell
     # partition. Two independent Sobol scrambles are an uncertainty
@@ -516,35 +529,38 @@ def main():
         "gate=diagnostic_not_truth_for_varying_W",
         flush=True,
     )
-    # The physical outer cubature is now an actual full five-curl
-    # Coulomb candidate, not merely a separate G diagnostic.
-    # Hold the Green radial/polar/azimuth rule and all currents fixed.
-    # This is intentionally one matched expensive solve after the
-    # no-kernel decompositions; no arbitrary high-order sweep.
-    physical_x=("shell_phys",3,4,8,3)
-    physical=trial(
-        basis,physical_x,inner1,cache,method="radial",
-        angle_scheme="uniform",
+    # Verify first-moment control at exactly the same x and inner Green
+    # nodes as the scalar and original variants. The curl Jacobian is
+    # analytic only for nonguided modes; none of these 5 is guided.
+    affine=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="uniform",scalar_control=True,affine_control=True,
     )
     print(
-        "p1_full_sea: variant=phys_x_both,method=radial,"
-        f"x_nodes={physical['nx']},inner_rule={physical['ny']},"
-        f"norm_L={physical['norm']:.10g},trace_L={physical['trace']:.10g},"
-        f"raw_skew={physical['diagnostic']:.7g},"
-        f"min_eig={physical['min_eig']:.10g},"
-        f"max_eig={physical['max_eig']:.10g}",
+        "p1_full_sea: variant=affine_control_both,method=radial,"
+        f"x_nodes={affine['nx']},inner_rule={affine['ny']},"
+        f"norm_L={affine['norm']:.10g},"
+        f"trace_L={affine['trace']:.10g},"
+        f"raw_skew={affine['diagnostic']:.7g},"
+        f"min_eig={affine['min_eig']:.10g},"
+        f"max_eig={affine['max_eig']:.10g}",
         flush=True,
     )
-    _report_modes("phys_x_both",physical["L"])
+    _report_modes("affine_control_both",affine["L"])
     print(
-        "p1_full_sea_physical_outer_cross: "
-        "same_inner_radial_polar_azimuth_and_modes,"
-        f"relative_L={_relative(physical['L'],results['both']['L']):.8g},"
-        f"self_relative={_self_change(physical['L'],results['both']['L']):.8g},"
-        f"mutual_scaled={_mutual_change(physical['L'],results['both']['L']):.8g},"
-        "gate=not_certified",
+        "p1_full_sea_affine_control_cross: "
+        "same_x_inner_radial_polar_azimuth_and_modes,"
+        f"relative_vs_scalar={_relative(affine['L'],controlled['L']):.8g},"
+        f"relative_vs_original={_relative(affine['L'],results['both']['L']):.8g},"
+        f"raw_skew_scalar={controlled['diagnostic']:.8g},"
+        f"raw_skew_affine={affine['diagnostic']:.8g},"
+        "gate=diagnostic_not_truth_for_curved_W",
         flush=True,
     )
+    # The 18,816-node phys_x_both was already run in 102- and 103-pass
+    # logs and changed weak self-modes 12-23% with nonmonotone volume.
+    # Do not repeat that costly unchanged failed variant each run.
+    # Its physical outer cubature and no-kernel G diagnostics remain.
     b=results["base"]["L"]
     xo=results["x_only"]["L"]
     yo=results["inner_only"]["L"]
@@ -597,7 +613,8 @@ def main():
     per_mode_changes("radial_only_vs_x_only",inner_rad,xo)
     per_mode_changes("angular_only_vs_inner_radial",both,inner_rad)
     per_mode_changes("scalar_control_vs_uniform_both",controlled["L"],both)
-    per_mode_changes("phys_x_both_vs_uniform_both",physical["L"],both)
+    per_mode_changes("affine_vs_scalar_both",affine["L"],controlled["L"])
+    per_mode_changes("affine_vs_uniform_both",affine["L"],both)
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
