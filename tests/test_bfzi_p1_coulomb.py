@@ -290,29 +290,30 @@ def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball
     windows=(center[None,:],metric)
 
     def density(y):
-        gaussian=np.exp(-np.sum((y-center)**2,axis=1)/width**2)
-        # The assembler produces a symmetric BILINEAR matrix, not
-        # pointwise Green potentials. Use a constant left test mode to
-        # probe the remote Gaussian right source. At x=0 the Gaussian
-        # left mode is ~exp(-500), so 2*L[0,1] is the desired potential
-        # up to that exponentially small reverse-pair contribution.
-        amplitudes=np.column_stack((np.ones(len(y)),gaussian))
-        return amplitudes[:,:,None]*np.array([[[1.,0.,0.]]])
+        return np.exp(
+            -np.sum((y-center)**2,axis=1)/width**2
+        )[:,None,None]*np.array([[[1.,0.,0.]]])
 
     def sphere(point,directions):
         return np.zeros((len(directions),1)),np.ones((len(directions),1))
 
+    # Test the point-centered INNER Green potential U(x) directly.
+    # The old failed test mistakenly compared a vanishing self-bilinear
+    # L11=mu0/(4*pi)*W(x)*U(x) with a finite analytic U(x).
     common=dict(
         x=np.zeros((1,3)),wx=np.ones(1),evaluate=density,
         wet_radial_segments=sphere,
         radial_order=3,polar_order=4,azimuthal_order=10,
         radial_mode_windows=windows,
+        return_point_potentials=True,
     )
-    plain=2*assemble_coulomb_radial(**common)[0,1]
+    _,plain_u=assemble_coulomb_radial(**common)
     stats={}
-    corrected=2*assemble_coulomb_radial(
+    _,corrected_u=assemble_coulomb_radial(
         **common,source_angular_caps=windows,source_cap_stats=stats,
-    )[0,1]
+    )
+    plain=MU0/(4*math.pi)*plain_u[0,0,0]
+    corrected=MU0/(4*math.pi)*corrected_u[0,0,0]
     # Newton potential of a whole-space Gaussian at the observer:
     # pi^(3/2) w^3 erf(|c|/w)/|c|. The omitted sphere exterior is
     # exponentially tiny because c lies >18 Gaussian widths within it.
