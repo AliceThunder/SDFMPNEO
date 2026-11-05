@@ -138,7 +138,7 @@ def test_actual_box_direct_radial_original_coulomb_small_space_runs():
     caps={}
     localized=assemble_basis_coulomb_radial(
         basis,np.eye(basis.size),x[:3],wx[:3],
-        radial_order=2,polar_order=2,azimuthal_order=6,
+        radial_order=2,polar_order=4,azimuthal_order=10,
         mode_centered_radial_panels=True,
         mode_source_angular_caps=True,
         exact_scalar_control=True,
