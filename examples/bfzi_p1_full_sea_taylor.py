@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -103,6 +103,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
     if not np.all(scene.in_seawater(x)):
         raise ValueError("physical x cubature produced a solid point")
     angle_stats={}
+    cap_stats={}
     if method=="radial":
         L,diagnostic=assemble_basis_coulomb_radial(
             basis,np.eye(basis.size),x,wx,
@@ -113,6 +114,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             exact_scalar_control=scalar_control,
             exact_affine_control=affine_control,
             mode_centered_radial_panels=mode_radial_panels,
+            mode_source_angular_caps=mode_source_caps,
+            source_cap_stats=cap_stats if mode_source_caps else None,
             angular_moment_tolerance=moment_angle_tol,
             angular_refine_levels=angle_levels,
             angular_moment_stats=angle_stats if moment_angle_tol is not None else None,
@@ -125,6 +128,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
               "_exact_scalar_S" if scalar_control else "")
             +("_moment_adaptive_angle" if moment_angle_tol is not None else "")
             +("_source_window_radial" if mode_radial_panels else "")
+            +("_source_angular_caps" if mode_source_caps else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -144,7 +148,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         L=L,method=method,diagnostic=diagnostic,nx=len(x),ny=ny,
         norm=float(np.linalg.norm(L)),trace=float(np.trace(L)),
         min_eig=float(np.min(eig)),max_eig=float(np.max(eig)),
-        angular_stats=angle_stats,
+        angular_stats=angle_stats,source_cap_stats=cap_stats,
     )
 
 
@@ -627,6 +631,50 @@ def main():
         "match_geometry_selection=true",
         flush=True,
     )
+    # Real-mode-localized angular caps are blended with the same
+    # geometry-selected background angular rule by a strictly positive
+    # spherical partition of unity. All x, source windows, wall and
+    # mode-centered radial Gauss panels are IDENTICAL to mode_radial.
+    localized=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="uniform",scalar_control=True,
+        moment_angle_tol=0.0025,angle_levels=1,
+        mode_radial_panels=True,mode_source_caps=True,
+    )
+    print(
+        "p1_full_sea: variant=source_cap_both,method=radial,"
+        f"x_nodes={localized['nx']},inner_rule={localized['ny']},"
+        f"norm_L={localized['norm']:.10g},"
+        f"trace_L={localized['trace']:.10g},"
+        f"raw_skew={localized['diagnostic']:.7g},"
+        f"min_eig={localized['min_eig']:.10g},"
+        f"max_eig={localized['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("source_cap_both",localized["L"])
+    cap=localized["source_cap_stats"]
+    print(
+        "p1_full_sea_source_cap_quality: "
+        f"points={cap['points']},"
+        f"points_with_caps={cap['points_with_caps']},"
+        f"total_cap_charts={cap['cap_charts']},"
+        f"added_positive_directions={cap['cap_nodes']},"
+        f"max_angular_measure_rel={cap['max_solid_angle_rel']:.8g},"
+        "partition=pointwise_positive_background_plus_real_mode_caps,"
+        "status=geometry_and_source_pilot_not_certified",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_source_cap_cross: "
+        "same_x_same_mode_window_radial_same_geometry_selected_background,"
+        f"relative_L={_relative(localized['L'],mode_radial['L']):.8g},"
+        f"self_relative={_self_change(localized['L'],mode_radial['L']):.8g},"
+        f"raw_skew_old={mode_radial['diagnostic']:.8g},"
+        f"raw_skew_new={localized['diagnostic']:.8g},"
+        "only_added_positive_local_angular_caps=true,"
+        "gate=not_certified",
+        flush=True,
+    )
     # The affine experiment stays callable as an explicit research
     # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
@@ -684,6 +732,7 @@ def main():
     per_mode_changes("moment_angle_vs_scalar_both",adaptive["L"],controlled["L"])
     per_mode_changes("moment_angle_vs_uniform_both",adaptive["L"],both)
     per_mode_changes("mode_radial_vs_moment_angle",mode_radial["L"],adaptive["L"])
+    per_mode_changes("source_cap_vs_mode_radial",localized["L"],mode_radial["L"])
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
