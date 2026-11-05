@@ -460,6 +460,121 @@ $2.5\,{\rm mm}$ 湿区点，
 即使几何矩通过，也不代表双盒电流模式
 的 Taylor 剩余积分或无限海水 G1 已通过。}
 
+
+\subsection{P1 双盒几何矩实测与具有解析自／互项的真实海水紧支涡流}
+用户本机在代码 \texttt{585bf12} 上
+90 项程序测试通过；两只真实绝缘封装的
+6 个近面、棱、角海水探针上，
+解析盒标量矩 $S_B$ 与真实盒一阶矩
+$\bm M_B$ 相对独立分片曲面积分的
+最大误差分别为
+$5.509265\times10^{-16}$ 和
+$1.63309\times10^{-15}$，
+严格小于提前规定的 $10^{-8}$ 目标。
+因此本次\emph{有限外球减去双独立旋转实心盒}
+的几何矩在这些采样点得到
+可复核的正面证据；
+它不证明全海水电流磁能矩阵。
+
+为在\emph{实际双盒海水区域}构造一个
+有完全解析 \emph{自项与非零互项}的
+原核磁能裁判，在两只绝缘盒相向的水域
+分别放置半径 $a_p$ 的测试电流支撑球
+$D_p=B_{a_p}(\bm c_p)$，
+满足 $\overline D_p\Subset\Omega$ 且
+$\overline D_1\cap\overline D_2=\emptyset$。
+此处球仅是\textbf{真实测试电流的紧支区域}，
+并非以小球云或 softened kernel 近似导线。
+对单位向量 $\bm e_p$ 定义
+\[
+\bm W_p(\bm x)=
+\begin{cases}
+(1-|\bm x-\bm c_p|^2/a_p^2)^2\,
+\bm e_p\times(\bm x-\bm c_p),
+&|\bm x-\bm c_p|<a_p,\\
+0,&\text{otherwise}.
+\end{cases}
+\]
+存在在其支撑边界零迹的旋度势
+\[
+\bm F_p(\bm x)=
+\bm e_p\int_{|\bm x-\bm c_p|}^{a_p}
+s(1-s^2/a_p^2)^2\,\mathrm ds
+\quad(\bm x\in D_p),\qquad
+\bm W_p=\Curl\bm F_p.
+\]
+故这是连续可微、严格无散度且在
+\emph{真实双盒壁和人工外球}零法向的
+物理合法测试模式，不依赖球腔模型来
+逃避盒壁边界条件。
+在默认两盒场景中两支撑球分别离盒壁
+$2.5\,{\rm mm}$，半径均为 $45\,{\rm mm}$；
+两球没有交叠。
+
+以 $r=|\bm x-\bm c_p|$ 表示局部球半径，
+原始 $1/|\bm x-\bm y|$ 对该电流的 Newton 势
+在支撑内部严格为
+\[
+\bm U_p(\bm x)=
+4\pi a_p^2\!
+\left[\frac1{18}-\frac{r^2}{10a_p^2}
++\frac{r^4}{14a_p^4}
+-\frac{r^6}{54a_p^6}\right]
+\bm e_p\times(\bm x-\bm c_p).
+\]
+在支撑球外则精确是偶极型势
+\[
+\bm U_p(\bm x)=
+D_p\frac{\bm e_p\times(\bm x-\bm c_p)}{r^3},
+\qquad D_p=\frac{32\pi a_p^5}{945}.
+\]
+在定义双线性形式时\emph{不更换 Coulomb 核}：
+\[
+L_{pq}=\frac{\mu_0}{4\pi}
+\iint_{\Omega\times\Omega}
+\frac{\bm W_p(\bm x)\cdot\bm W_q(\bm y)}
+{|\bm x-\bm y|}\,\mathrm d\bm y\,\mathrm d\bm x .
+\]
+由于支撑球外 $\bm W_p=0$，
+原积分自然降为各支撑球上的积分
+（无其它海水体积贡献）。
+对角自项及非零互项均有独立真值：
+\begin{equation}
+\boxed{
+L_{pp}^{\mathrm{exact}}=
+\frac{2048\pi\mu_0 a_p^7}{1216215},\qquad
+L_{12}^{\mathrm{exact}}=
+\frac{\mu_0D_1D_2}{4\pi d^3}
+\left[3(\bm e_1\!\cdot\!\bm n)
+(\bm e_2\!\cdot\!\bm n)-\bm e_1\!\cdot\!\bm e_2\right],
+}
+\label{eq:p1-two-physical-vortices-L}
+\end{equation}
+其中 $d=|\bm c_1-\bm c_2|$，
+$\bm n=(\bm c_1-\bm c_2)/d$。
+若两个偶极沿相互连接方向定向，
+互项为正且不为零，能独立核对完整
+$2\times2$ 磁能矩阵并避免仅对角项自洽。
+
+原核减除在此使用
+\emph{两个真实电流支撑球并集}的解析
+$S$ 和 $\bm M$：
+由于支撑外电流严格为零，
+这是对原 $\Omega$ 双积分的等价局部化，
+并非把支撑球的 $S$ 误用为
+\emph{整个海水区域}的几何矩。
+因此这一步认证的是实海水域中
+两个真实合法的紧支测试电流的
+原 Coulomb $L_{11},L_{22},L_{12}$，
+尚未触及全海水支撑、盒壁切向涡流
+或旧 229 模态分布误差。
+新程序位于
+\texttt{examples/bfzi\_p1\_wet\_vortices.py}，
+由原 P1 本机日志入口一起执行，
+预先固定 $L$ 自项、互项及整体矩阵
+各相对误差小于 $10^{-3}$ 的有限基准目标；
+\textbf{新增双电流基准尚待本机实测}。
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
