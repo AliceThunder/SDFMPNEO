@@ -39,6 +39,34 @@ def test_symmetric_difference_unsoftened_1_over_r_against_independent_ball_truth
     assert np.isfinite(same).all()
 
 
+
+def test_unsoftened_x_centered_radial_green_matches_independent_analytic_ball():
+    """Exact kernel; inner Jacobian removes 1/r without subtraction."""
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+    from examples.bfzi_p1_coulomb import exact_cubic_vortex_green
+
+    x, wx = ball_rule(1.0, 5, 6, 10)
+
+    def ball_rays(point, dirs):
+        dot = dirs @ point
+        reach = -dot + np.sqrt(dot**2 + 1.0 - np.dot(point,point))
+        return np.zeros((len(dirs),1)), reach[:,None]
+
+    for modes, exact in (
+        (vortex_modes, exact_vortex_green(1.0)),
+        (cubic_vortex_modes, exact_cubic_vortex_green(1.0)),
+    ):
+        L, skew = assemble_coulomb_radial(
+            x,wx,modes,ball_rays,
+            radial_order=4,polar_order=4,azimuthal_order=10,
+            return_diagnostics=True,
+        )
+        assert np.isfinite(skew)
+        assert np.linalg.norm(L-exact)/np.linalg.norm(exact) < 0.001
+        np.testing.assert_allclose(L,L.T,rtol=0,atol=0)
+
+
+
 def test_p1_ball_vortex_exact_analytic_potential_and_energy():
     # W_i=e_i cross x, div W_i=0 and x dot W_i=0 on the sphere.
     # ΔU_i=-4πW_i with exterior dipole matching.
