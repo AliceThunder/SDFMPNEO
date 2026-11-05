@@ -202,9 +202,13 @@ def main():
             flush=True,
         )
     outcomes={}
+    # On the exact self potential, the x-radial energy integrand is a
+    # degree-14 polynomial: Gauss 8 is sufficient for that outer moment.
+    # Keep the y-rule independent; the remaining inner residual is NOT a
+    # polynomial and is evaluated against an exact self/mutual matrix.
     for name,x_rule,y_rule in (
         ("base",(3,5,8),(4,6,10)),
-        ("both",(5,8,12),(6,9,14)),
+        ("both",(8,10,16),(8,11,18)),
     ):
         z=wet_vortex_trial(supports,x_rule,y_rule)
         outcomes[name]=z
