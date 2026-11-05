@@ -576,3 +576,40 @@ assemble_coulomb_radial / assemble_basis_coulomb_radial
 [theory/sections/14_p1_exact_coulomb_sphere.tex](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)、
 [P1 严格验收契约](P1_COULOMB_ANALYTIC_GATE.md)。
 **这些修复尚待用户新的 P1-C 实跑，G1=FAIL。**
+
+
+## P1-C 100-pass 后的角域与外积分隔离入口（2026-11-05 UTC）
+
+最新本机代码 35895a4、日志 b383da2a 在 100 项 pytest
+通过时仍表现内径向 2.831%、内角向 3.607%、
+外 x 1.841%、联合 7.349% 的五模态 L 差异，
+最细 raw skew 2.333%，**G1 仍 FAIL**。
+
+最新仓库代码对真实 OBB 观察点顶点方位做正权
+Gauss 角扇区分片，作为可选 box_corner_azimuth_panels，
+保留全部旧 uniform 条件对照；在 same x/radial/polar
+条件下新增 corner_both，仅测试改变角域坐标的影响。
+
+原本使用的 build_demo_scene 两盒均单位旋转；
+已修正“五模式旋转盒”的不准确表述，
+另增加两只独立非零 SE(3) 姿态的解析 SΩ
+标量 Green 对照——只认证几何求积，非旋转五模态
+L 或电热教师的物理精度。
+
+为区分外 x 与内 Green 误差，
+新增真实电流 Gram G_ij=∫Ω Wi·Wj dx；
+在均匀标量海水电导率下 R=G/σ。
+p1_full_sea_outer_gram 与 outer_gram_change
+逐项报告自能与外 x 对照，不引入原核内积分。
+另报告 p1_full_sea_mode_delta 的逐模态 L 自/互项，
+避免 L44 强模态的矩阵范数掩盖 L00/L22
+高达约 54%/50% 的弱模态 x 变化。
+
+本机入口不变：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+优先看旋转/未旋转 SΩ 真值下 box_corners vs uniform、
+无核 G 自项变化以及 corner_both 的原磁能稳定性。
+**新实现待本机执行，G1=FAIL，不训练教师，无 GitHub Actions。**
