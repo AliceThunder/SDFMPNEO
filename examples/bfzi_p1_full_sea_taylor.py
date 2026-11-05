@@ -23,7 +23,12 @@ from sdfmpneo_bfzi.green_coulomb import (
     assemble_basis_coulomb_taylor,
     assemble_basis_coulomb_difference,
     assemble_basis_coulomb_radial,
+    assemble_coulomb_radial,
+    _bfzi_wet_radial_segments,
+    _bfzi_angular_face_frame,
 )
+from sdfmpneo_bfzi.coulomb_geometry_moments import sea_coulomb_moments
+from sdfmpneo_bfzi.source import MU0
 
 
 def _relative(a, b):
@@ -114,6 +119,80 @@ def _report_modes(name,L):
     print(f"p1_full_sea_mutual: variant={name},{mutual}",flush=True)
 
 
+
+def _scalar_geometry_diagnostic(scene, wall_scale):
+    """Independent analytic S_Omega checks only ray geometry and angles.
+
+    A constant vector density gives U(x) = S_Omega(x)*a. Its inner radial
+    integral is exactly linear in r, so Gauss-2 has no radial truncation
+    error on any correctly clipped wet interval. Differences from the
+    exact ball-minus-box rectangle primitives isolate angular geometry.
+    The constant vector is a DIAGNOSTIC density, not a legal wall current
+    or a claimed physical BFZI basis mode.
+    """
+    wet_points = []
+    kinds = []
+    for index, assembly in enumerate(scene.assemblies):
+        half = np.asarray(assembly.enclosure.half_extents)
+        sign = 1.0 if index == 0 else -1.0
+        gap = 2.0*wall_scale
+        local = np.array((
+            (0.0, 0.0, sign*(half[2]+gap)),
+            (half[0]+gap, 0.0, sign*(half[2]+gap)),
+            (half[0]+gap, half[1]+gap, sign*(half[2]+gap)),
+        ))
+        world = assembly.pose.position(local)
+        if not np.all(scene.in_seawater(world)):
+            raise ValueError("near-wall scalar geometry probes must be wet")
+        wet_points.extend(world)
+        kinds.extend(("face","edge","corner"))
+    wet_points = np.asarray(wet_points)
+    true_scalar = sea_coulomb_moments(scene,wet_points)[0]
+    far_reach = 2.0*scene.outer_radius
+
+    def constant_current(x):
+        return np.broadcast_to(
+            np.array([[[1.0,0.0,0.0]]]),(len(x),1,3)
+        )
+
+    def intervals(point,directions):
+        return _bfzi_wet_radial_segments(
+            scene,point,directions,far_reach,
+        )
+
+    def axis(point):
+        frame = _bfzi_angular_face_frame(scene,point,far_reach)
+        return np.array((0.0,0.0,1.0)) if frame is None else frame[0]
+
+    for polar,azimuth in ((3,8),(8,32)):
+        deviations = []
+        for point,truth in zip(wet_points,true_scalar):
+            numerical = assemble_coulomb_radial(
+                point[None,:],np.ones(1),
+                constant_current,intervals,radial_order=2,
+                polar_order=polar,azimuthal_order=azimuth,
+                polar_axis=axis,
+            )[0,0]*4.0*np.pi/MU0
+            deviations.append(abs(numerical-truth)/truth)
+        error = dict(zip(
+            ("face","edge","corner"),
+            (max(e for e,k in zip(deviations,kinds) if k==kind)
+             for kind in ("face","edge","corner")),
+        ))
+        print(
+            f"p1_full_sea_scalar: polar_per_hemisphere={polar},"
+            f"azimuth={azimuth},"
+            f"face_rel={error['face']:.8g},"
+            f"edge_rel={error['edge']:.8g},"
+            f"corner_rel={error['corner']:.8g},"
+            f"max_rel={max(deviations):.8g},"
+            "radial_error=analytically_zero_for_constant_density,"
+            "truth=exact_ball_minus_two_box_S,"
+            "scope=angular_clipping_geometry_only",
+            flush=True,
+        )
+
+
 def main():
     scene=build_demo_scene()
     full=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
@@ -133,6 +212,7 @@ def main():
         "wall_normal=log_panels,gate=not_certified",
         flush=True,
     )
+    _scalar_geometry_diagnostic(scene,basis.wall_scale)
     # Only two independent physical axes are changed in this experiment:
     # (a) the x external cubature, now using oriented box shells
     # (b) the Green potential's x-centred radial/angular chart.
