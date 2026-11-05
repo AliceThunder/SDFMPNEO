@@ -727,3 +727,67 @@ phys_x_both 作长期单轴对照，不将其认定教师。
 新修改尚待最新本机实跑；
 **P1-C/G1=FAIL，不开启正式神经教师训练，
 禁止 GitHub Actions。**
+
+
+## 2026-11-05 第七次 P1-C 主数值算法：精确 S/M 仿射 Green 控制变量
+
+实际本机日志 f5f66cc / 实跑代码 7847765：
+**103 passed，但物理 G1 FAIL**。
+原始五模态相同 x、内径/角规则的
+精确标量 SΩ Green 控制变量令
+L00 变化 7.176%、L11 变化 31.483%，
+证实弱模态内求积的常量分量误差明显。
+无核外 x 实验显示盒面切向 Gauss 最大片宽
+4.5→2.25 cm 后整体 G 仅变化 0.000726%、
+最坏逐自项 0.00626%；然而球域几何角片
+Gauss 2→3 后弱 G00/G11 仍差 2.324%/2.184%。
+不再盲目加密已经稳定的盒面切向。
+
+**新增可选原核修正：**
+assemble_coulomb_radial 现支持
+exact_first_moments 与 current_jacobian，
+与先前 exact_scalar_moments 联合调用：
+
+    U=ΣqW(y)+(SΩ−Σq)W(x)+J(MΩ−Σq(y−x))
+
+在 assemble_basis_coulomb_radial 中，
+显式 exact_affine_control=True 时调用
+现有 sea_coulomb_moments 获取两独立旋转
+绝缘盒真实 SΩ、MΩ，调用已有
+evaluate_nonguided_curl_jacobian
+获取实际 curl 模态解析 Hessian 导出的 J。
+它保留未软化 1/r、真实海水和相同正权湿射线，
+且对全仿射向量源精确。
+**仅支持没有 source_port 的模式**，
+因为理想源引导项的对应解析高阶导数尚未实现；
+不使用有限差分掩盖缺失的物理数学实现。
+
+**新增独立物理验证：**
+真实两只盒各自非零旋转的
+仿射向量源 Green 恒等式，
+以及旋转实体盒外观测点下
+与闭式矩形面积分独立的
+18^3 三维正权体积分 S_box/M_box 对照。
+G1 正式验收仍须逐模态的真实 curl
+非线性积分精度，不能靠这些恒等式替代。
+
+**主流程：** 相同旧 x1 和
+inner1 下同时比较 both、
+scalar_control_both 和新的
+affine_control_both。
+已重复且未收敛的旧 18,816 点
+phys_x_both 重型五模式试跑停止
+每轮重复，但它的外积分算法和既有日志
+不被删除，独立无核 G 仍测试其分片。
+另新增 phys_angle4_vs_phys_angle3
+只对真实五模式无核 Gram 和解析体积、
+二阶矩进行球图角向单轴验证。
+
+本机：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+新增仿射 Green 和几何积分测试尚待本机运行；
+**整体 P1-C/G1=FAIL，正式神经教师关闭，
+禁止 GitHub Actions。**
