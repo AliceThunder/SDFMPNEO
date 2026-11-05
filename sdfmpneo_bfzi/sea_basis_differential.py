@@ -23,7 +23,7 @@ from .sea_basis import SeaCurrentBasis
 def _multiply(value, grad, hess, f, df, hf):
     """Value, first and Hessian product rule for a scalar factor."""
     mixed=np.einsum("ni,nj->nij",grad,df)
-    mixed+=mixed.transpose(0,2,1)
+    mixed=mixed+mixed.transpose(0,2,1)
     return (
         value*f,
         grad*f[:,None]+value[:,None]*df,
