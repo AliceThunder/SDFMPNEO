@@ -238,7 +238,7 @@ def _summary(root, flags, started, ended, status, raw):
     ]
     if p1_evidence:
         parts.extend([
-            "", "## P1 原 Coulomb 磁能算子：三解析无散度球电流（尚非双盒认证）", "",
+            "", "## P1 原 Coulomb 磁能：球解析真值、双盒几何矩、两紧支涡流（尚非全域教师认证）", "",
         ])
         parts.extend(f"- `{line}`" for line in p1_evidence)
         parts.append(
