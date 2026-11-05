@@ -177,3 +177,76 @@ def test_real_two_box_physical_outer_rule_is_positive_and_wet():
     # Loose geometry smoke only. High-precision volume and all 5 Gram
     # modes are measured in the P1-C local log, not certified by pytest.
     assert abs(np.sum(w)-exact_volume)/exact_volume<0.03
+
+
+def test_point_centered_green_exact_scalar_control_on_both_rotated_boxes():
+    """Exact box-minus-ball S removes angular error for CONSTANT density.
+
+    This is a necessary Green geometry identity, not a certificate for
+    spatially varying BFZI curl modes or their magnetic matrix.
+    """
+    from dataclasses import replace
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from sdfmpneo_bfzi.green_coulomb import (
+        assemble_coulomb_radial, _bfzi_wet_radial_segments,
+    )
+    from sdfmpneo_bfzi.coulomb_geometry_moments import sea_coulomb_moments
+    from sdfmpneo_bfzi.source import MU0
+
+    original=build_demo_scene()
+    ax,ay=0.24,-0.31
+    rx=np.array([
+        [1,0,0],[0,np.cos(ax),-np.sin(ax)],
+        [0,np.sin(ax),np.cos(ax)],
+    ])
+    ry=np.array([
+        [np.cos(ay),0,np.sin(ay)],
+        [0,1,0],[-np.sin(ay),0,np.cos(ay)],
+    ])
+    scene=replace(
+        original,
+        transmitter=replace(
+            original.transmitter,
+            pose=RigidPose(rx,original.transmitter.pose.center),
+        ),
+        receiver=replace(
+            original.receiver,
+            pose=RigidPose(ry,original.receiver.pose.center),
+        ),
+    )
+    gap=0.00225
+    pts=np.array([
+        assembly.pose.position(
+            np.array([0.0,0.0,
+                      sign*(assembly.enclosure.half_extents[2]+gap)])
+        )
+        for sign,assembly in zip((1.0,-1.0),scene.assemblies)
+    ])
+    assert scene.in_seawater(pts).all()
+    truth=sea_coulomb_moments(scene,pts)[0]
+
+    def constant(points):
+        return np.broadcast_to(
+            np.array([[[1.0,0.0,0.0]]]),(len(points),1,3),
+        )
+
+    def wet(point,directions):
+        return _bfzi_wet_radial_segments(
+            scene,point,directions,2.0*scene.outer_radius,
+        )
+
+    wx=np.ones(len(pts))
+    plain=assemble_coulomb_radial(
+        pts,wx,constant,wet,radial_order=2,
+        polar_order=3,azimuthal_order=8,
+    )[0,0]
+    corrected=assemble_coulomb_radial(
+        pts,wx,constant,wet,radial_order=2,
+        polar_order=3,azimuthal_order=8,
+        exact_scalar_moments=truth,
+    )[0,0]
+    exact=MU0/(4*np.pi)*sum(truth)
+    # Original 1/r point-centered radial Jacobian is retained exactly;
+    # its approximate angular measure cancels for constant density.
+    np.testing.assert_allclose(corrected,exact,rtol=2e-14,atol=1e-22)
+    assert np.isfinite(plain) and abs(plain-exact)/exact>1e-5
