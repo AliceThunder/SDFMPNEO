@@ -715,7 +715,7 @@ def assemble_coulomb_radial(
                 np.clip(cuts[None,None,:],lo[:,:,None],hi[:,:,None])
             )
         if radial_wall_scale is not None:
-            offsets = radial_wall_scale*np.array([1.0,4.0,16.0,64.0])
+            offsets = radial_wall_scale*np.array([1.0,3.0,9.0,27.0,81.0])
             panels.extend((
                 np.minimum(lo[:,:,None]+offsets[None,None,:],
                            hi[:,:,None]),
