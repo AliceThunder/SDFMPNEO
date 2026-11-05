@@ -1588,3 +1588,181 @@ Gauss 阶数 $2\to3$。
 102-pass 日志属于旧代码，
 \textbf{新的控制变量尚未本机运行}。
 P1-C/G1 继续 FAIL，神经教师不可开启。
+
+
+\subsection{P1-C 第七次实跑：标量修正的弱模态反证与一阶精确 Green 控制变量}
+\label{sec:p1-c-affine-green-control}
+本机在代码 \texttt{7847765}、
+日志提交 \texttt{f5f66cc} 上，
+103 项 pytest 均通过，
+而五个真实 curl 模态的未软化
+Coulomb 双线性型仍不能认证。
+在相同外 $x$ 节点与内径/极角/方位
+节点上，精确标量几何矩
+$S_{\Omega}(\bm x)$ 控制变量使
+$L_{00}$ 改变 $7.1757209\%$，
+$L_{11}$ 改变 $31.482923\%$。
+其全矩阵变化仅 $0.93823816\%$，
+但由最高能的第 4 模态支配，
+不代表五模式精度。
+归一化原矩阵偏斜
+$2.3332485\%\to2.3522407\%$，
+符合标量修正增量严格对称、
+但比值分母仍可改变的理论结果。
+
+外 $x$ 独立实验证明
+\texttt{phys\_tangent} 的最大片宽
+$0.045$ m 再减半至 $0.0225$ m，
+$G$ 整体仅变化
+$7.2639777\times10^{-6}$，
+最坏逐模态自项变化
+$6.2577772\times10^{-5}$。
+在本次五模式、当前 Gaussian
+窗口的范围内继续整体加密
+盒面切向不再是主导误差。
+与之对照，球图实体投影每片
+Gauss 角向阶数 $2\to3$，
+$G_{00}$ 相对变化 $2.323954\%$，
+$G_{11}$ 相对变化 $2.1838035\%$；
+独立解析体积误差
+$1.0368201\times10^{-3}$
+降为 $2.7442959\times10^{-5}$。
+说明球域角向乃当前未解决的
+真实模式和几何求积瓶颈，
+不能只依赖新增角扇区的数量。
+
+\paragraph{真实双绝缘盒下的一阶精确修正。}
+现有闭式几何矩不仅给出
+$S_\Omega(\bm x)$，还有
+\[
+ \bm M_\Omega(\bm x)=
+ \int_{\Omega_R}
+ \frac{\bm y-\bm x}{|\bm x-\bm y|}\,
+ \mathrm d\bm y .
+\]
+它由外球的闭式矩与两个独立
+$SO(3)$ 旋转实盒的精确矩形面
+原函数相减构成，并不引入
+任何替代介质或磁核软化。
+设 $\bm W_j$ 是真实 BFZI
+无源引导电流模式，
+$D\bm W_j(\bm x)$ 是其
+$3\times3$ 精确空间雅可比，
+则连续 Green 内势的\emph{恒等式}为
+\begin{align}
+ \bm U_j(\bm x)
+ &= S_\Omega(\bm x)\bm W_j(\bm x)
+   +D\bm W_j(\bm x)\bm M_\Omega(\bm x)
+   \nonumber\\[-1mm]
+ &\quad+
+   \int_{\Omega_R}
+   \frac{\bm W_j(\bm y)-\bm W_j(\bm x)
+    -D\bm W_j(\bm x)(\bm y-\bm x)}
+        {|\bm x-\bm y|}
+   \,\mathrm d\bm y .
+ \label{eq:p1-c-affine-control}
+\end{align}
+式中减去的一阶 Taylor 多项式
+不必在整个远场成为好的近似；
+它只需是\emph{代数恒等分解}。
+因此远场或贴壁剧烈变化的
+余项数值误差仍可能较大，
+不能预先保证精度提升。
+
+在严格裁剪湿射线
+$\bm y_\ell=\bm x+r_\ell\bm u_\ell$
+上，$q_\ell$ 是原核
+$r\,\mathrm dr\,\mathrm d\Omega$
+正权离散。仅须累积
+\[
+ \hat S_q(\bm x)=\sum_\ell q_\ell,\qquad
+ \hat{\bm M}_q(\bm x)=
+     \sum_\ell q_\ell r_\ell\bm u_\ell .
+\]
+不增加任何场采样点即得
+\begin{align}
+ \widehat{\bm U}_j^\mathrm{aff}(\bm x)
+ &=\sum_\ell q_\ell\bm W_j(\bm y_\ell)
+  +\bigl[S_\Omega(\bm x)-\hat S_q(\bm x)\bigr]
+       \bm W_j(\bm x) \nonumber\\
+ &\quad+
+ D\bm W_j(\bm x)
+ \bigl[\bm M_\Omega(\bm x)
+       -\hat{\bm M}_q(\bm x)\bigr].
+ \label{eq:p1-c-affine-control-implemented}
+\end{align}
+对所有全域仿射场
+$\bm W_j(\bm y)=\bm a_j+\bm B_j\bm y$
+且 $D\bm W_j=\bm B_j$，
+上式在任意观察点与任意
+完整合法正权角径节点下
+\emph{精确恢复}原 Green 内势，
+无需 $h$ 极限。
+本仓库的
+\texttt{evaluate\_nonguided\_curl\_jacobian}
+已解析包含
+真实两旋转盒距离光滑因子、
+外球渐变窗与每个电流模式
+Gaussian/compact 窗的 Hessian。
+对于
+$\bm W=\nabla g\times\bm a$，
+$D\bm W$ 由
+$\mathrm{Hess}(g)$ 的列
+与 $\bm a$ 叉乘给出，
+不需要数值有限差分。
+距离函数跨盒棱分区只分段光滑，
+正积分节点位于真实水域内部，
+跨界精度仍需独立收敛检查。
+
+这里有两个绝对限制：
+第一，含理想端口
+$\bm C_{\rm port}$ 的源引导模式
+尚无所需解析二阶导数，
+\emph{必须显式拒绝}该修正，
+不得把有限差分当作替代；
+第二，与标量校正不同，
+$D\bm W_j\bm M$ 的矩阵改变量
+\emph{一般不严格对称}，
+它可能改变未对称矩阵偏斜，
+也不能把偏斜下降直接解释为准确。
+实际 G1 仍须在所有弱模态
+及独立角/径外积分的层级上验收。
+
+\paragraph{实跑设计与计算量控制。}
+新增真实两盒分别绕独立轴
+非零旋转的全仿射向量场
+闭式 $S_\Omega,\bm M_\Omega$
+原核检验；
+其性质为几何与积分算子
+\emph{一致性定理}，并非
+真实 curl 模态误差证书。
+在同一 $x_1$、同一内 Green
+阶数下，独立比较
+\texttt{both}（原始）、
+\texttt{scalar\_control\_both}
+（精确零阶）与
+\texttt{affine\_control\_both}
+（精确零阶+一阶）；
+全部输出五自项、十互项和
+模式尺度的差异，
+不允许只凭 Frobenius 改善判定 PASS。
+
+原 \texttt{phys\_x\_both}
+$18\,816$ 点昂贵主实验
+已经反复以相同规则实跑，
+证明低能自项变化 $12$--$23\%$，
+仍可由原 Git 日志追溯；
+本轮不再重复一模一样的
+失败性全 Green 实验，
+保留该外 $x$ 规则及其无核 Gram。
+球图实体角片 Gauss 从 $3\to4$
+只新增\emph{无核}真实电流 Gram、
+精确海水体积与二阶矩的
+独立单轴比较，明确集中资源
+于仍未收敛的球域角积分。
+
+\textbf{103-pass 的实测属于旧修正版；
+本段的一阶控制变量和角域 4 点规则
+尚需下一次本机实跑验证。}
+P1-C/G1 继续 FAIL，
+正式磁教师不得启动。
