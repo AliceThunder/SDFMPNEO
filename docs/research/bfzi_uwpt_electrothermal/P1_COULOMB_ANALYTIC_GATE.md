@@ -1032,3 +1032,100 @@ W 模式或数值核拟合。径向多项式严格解析，
 
 **当前 G1/P1-C=FAIL，不开启神经教师，
 不使用 GitHub Actions。**
+
+
+## 22. 第九次本机 106-pass：低阶几何矩完全达标，真实弱自磁能仍变化 7%–10%
+
+**最新本机原始结果：** [latest_full.log](runs/p1_full/latest_full.log)，
+代码 40c4890，日志提交 a8d664e：
+**106 passed in 43.91s，五模式磁能 G1/P1-C 仍 FAIL**。
+
+新 SΩ/MΩ 角向自适应对真实两盒五模式
+所有 4336 个外观察点进行几何角矩筛选：
+- 1296 点（29.89%）加密，**unresolved=0**；
+- 最大 scalar 几何相对误差 **0.24912%**，
+  一阶几何矩缩放误差 **0.13166%**，
+  均小于目标 0.25%；
+- raw skew：标量控制 2.352%→角向自适应 1.091%；
+- 然而相同 x/径向规则的 L00、L11
+  相对于标量方案分别仍变
+  **7.6446% 和 10.2046%**。
+  对原始未校正 both，L11 仍变 **18.0656%**。
+
+这是一个有意义的负结果：
+常量与仿射几何矩的角向分辨率
+**不能代替真实盒壁 Gaussian-curl 源加权 Green**
+的精度认证。继续仅收紧该几何阈值既不够充分
+也可能产生大量无效计算。
+
+### 本轮真正的数值修复：沿真实湿射线投影电流 Gaussian 窗
+
+已在 assemble_coulomb_radial 新增可选
+radial_mode_windows=(centers, SPD_metrics)，
+并在 assemble_basis_coulomb_radial 新增显式
+mode_centered_radial_panels 选项。
+不是抽象理论测试：参数直接取**实际 BFZI
+基模态**的中心及旋转 SPD Gaussian 窗。
+对于原点心射线 y=x+r u，精确推导
+
+    alpha = u.T G u
+    beta = u.T G (c-x)
+    r_peak = beta/alpha
+    w_ray = 1/sqrt(alpha)
+    q_perp = (c-x).T G(c-x) - beta²/alpha
+
+该真实高斯窗的射线指数正好为
+q_perp + (r-r_peak)²/w_ray²。
+当 ray 与真实模式中心的横向平方
+Mahalanobis 距离不大于 9，
+且投影的正向峰值有可能落在正 r 上，
+在物理射线区间内额外加入
+r_peak + k*w_ray，k=-3,-2,-1,0,1,2,3
+作为**正权径向 Gauss 子区间的断点**。
+它们被精确裁剪到原来外球减两个真实
+SE(3) 绝缘盒的湿射线区间内，
+并与原有真实盒壁入/出端点、
+wall_scale 贴壁数值分片共存。
+源窗横向阈值仅是减少开销的启发式，
+不是磁能误差上界或新物理近似。
+
+本轮另加入一个可解析的窄三维 Gaussian
+球体原核径向参考：
+旧 Gauss-3 可能几乎完全漏掉区间中间
+真正离开观察点的源峰，
+新 Gaussian 中心投影分片须逼近由
+erf 闭式计算的逐方向积分；
+角方向严格保持不变，从而
+隔离真正的径向源加权误差。
+注意该解析测试源只是数值核验密度，
+不是实际 BFZI 保边界 curl 模态。
+亦新增已有双盒小空间
+assemble_basis_coulomb_radial 真实窗口
+端到端入口覆盖。
+
+### 下一份真实五模式日志的唯一新轴
+
+保留原 x1 外规则，
+使用已有 moment_angle_both 经
+闭式 S/M 几何矩选出的**相同角方向**，
+不改现有径向 Gauss 阶数和 wall_scale，
+仅为原五个真实 Gaussian-curl 模态
+添加其自身中心和宽度的射线径向子片，
+形成 mode_radial_both。
+新增逐模式五自磁能、十互磁能、
+raw skew、与 moment_angle_both
+的直接差异及角向筛选结果一致性检查。
+若弱模态随源中心分片发生较大变化，
+证实过去存在未解析的模式径向峰值；
+若相差小，则应集中考虑
+**电流加权的局部角向欠解析**，
+而不是无限重复同类断点尝试。
+
+新方法目前仅完成 GitHub 提交，
+下一次 Windows 本机执行：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+**真实全域磁能和神经教师参考仍未认证；
+P1-C/G1=FAIL，不使用 GitHub Actions。**
