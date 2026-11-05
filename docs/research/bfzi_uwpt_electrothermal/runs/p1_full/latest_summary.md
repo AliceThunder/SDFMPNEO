@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-05T07:23:30+00:00
-- 结束（UTC）：2026-11-05T07:27:05+00:00
-- 当时检出的代码提交：`946c10c`
+- 开始（UTC）：2026-11-05T11:35:35+00:00
+- 结束（UTC）：2026-11-05T11:38:27+00:00
+- 当时检出的代码提交：`7847765`
 - 执行：`python run.py --mode bfzi-p1-full-sea`
-- 同批 pytest：102 passed in 43.29s
+- 同批 pytest：103 passed in 46.35s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -44,6 +44,8 @@
 - `p1_full_sea_outer_gram: variant=sphere_angles,x_nodes=6512,sphere_nodes=2640,tangent_cap=None,G00=3.77992444,G11=1.302914991,G22=3.77992444,G33=1.302914991,G44=45.14739077,norm_G=45.50010447,volume_relative_error=0.00033652935,second_moment_relative_error=0.00018442847,shell_fraction0=0.94041607,shell_fraction1=0.7799338,shell_fraction2=0.94041607,shell_fraction3=0.7799338,shell_fraction4=0.89941222,scope=x_only_original_W_no_Green_kernel`
 - `p1_full_sea_outer_gram: variant=sphere_phys,x_nodes=9728,sphere_nodes=5856,tangent_cap=None,G00=3.793762598,G11=1.314866907,G22=3.793762598,G33=1.314866907,G44=45.20417874,norm_G=45.55942696,volume_relative_error=0.0010368201,second_moment_relative_error=0.00017291071,shell_fraction0=0.9369858,shell_fraction1=0.77284433,shell_fraction2=0.9369858,shell_fraction3=0.77284433,shell_fraction4=0.89828233,scope=x_only_original_W_no_Green_kernel`
 - `p1_full_sea_outer_gram: variant=phys_tangent,x_nodes=18816,sphere_nodes=5856,tangent_cap=0.045000000000000005,G00=3.709676553,G11=1.303687937,G22=3.709676553,G33=1.303687937,G44=45.20680718,norm_G=45.54754234,volume_relative_error=0.0010368201,second_moment_relative_error=0.00017291071,shell_fraction0=0.93555748,shell_fraction1=0.7708965,shell_fraction2=0.93555748,shell_fraction3=0.7708965,shell_fraction4=0.89828825,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=phys_tangent_half,x_nodes=32512,sphere_nodes=5856,tangent_cap=0.022500000000000003,G00=3.70944441,G11=1.303666519,G22=3.70944441,G33=1.303666519,G44=45.20683488,norm_G=45.5475308,volume_relative_error=0.0010368201,second_moment_relative_error=0.00017291071,shell_fraction0=0.93555345,shell_fraction1=0.77089273,shell_fraction2=0.93555345,shell_fraction3=0.77089273,shell_fraction4=0.89828831,scope=x_only_original_W_no_Green_kernel`
+- `p1_full_sea_outer_gram: variant=phys_angle3,x_nodes=26095,sphere_nodes=13135,tangent_cap=0.045000000000000005,G00=3.795887728,G11=1.275217955,G22=3.795887728,G33=1.275217955,G44=45.15761873,norm_G=45.51133129,volume_relative_error=2.7442959e-05,second_moment_relative_error=2.1216695e-05,shell_fraction0=0.91430935,shell_fraction1=0.78810721,shell_fraction2=0.91430935,shell_fraction3=0.78810721,shell_fraction4=0.89926672,scope=x_only_original_W_no_Green_kernel`
 - `p1_full_sea_outer_gram_axis: comparison=sphere_only_vs_x0,relative_G=0.01381135,relative_sphere=0.15705257,relative_shell=0,self0=0.031410364,self1=0.018870532,self2=0.031410364,self3=0.018870532,self4=0.013368652,scope=independent_x_axis_no_Green`
 - `p1_full_sea_outer_gram_axis: comparison=normal_only_vs_x0,relative_G=0.0087344352,relative_sphere=0,relative_shell=0.0095744968,self0=0.0095995029,self1=0.010994816,self2=0.0095995029,self3=0.010994816,self4=0.0087178797,scope=independent_x_axis_no_Green`
 - `p1_full_sea_outer_gram_axis: comparison=x1_vs_sphere_only,relative_G=0.0086169985,relative_sphere=0,relative_shell=0.0095744968,self0=0.0093071616,self1=0.010791181,self2=0.0093071616,self3=0.010791181,self4=0.008602871,scope=independent_x_axis_no_Green`
@@ -55,13 +57,16 @@
 - `p1_full_sea_outer_gram_axis: comparison=sphere_phys_vs_sphere_angles,relative_G=0.0014486258,relative_sphere=0.014421087,relative_shell=0,self0=0.0036609617,self1=0.0091732123,self2=0.0036609617,self3=0.0091732123,self4=0.001257835,scope=independent_x_axis_no_Green`
 - `p1_full_sea_outer_gram_axis: comparison=phys_tangent_vs_sphere_phys,relative_G=0.0026337197,relative_sphere=0,relative_shell=0.0029307967,self0=0.022164288,self1=0.0085019785,self2=0.022164288,self3=0.0085019785,self4=5.8145937e-05,scope=independent_x_axis_no_Green`
 - `p1_full_sea_outer_gram_axis: comparison=phys_tangent_vs_face_tangent,relative_G=0.003868154,relative_sphere=0.038962242,relative_shell=0,self0=0.013861706,self1=0.060759006,self2=0.013861706,self3=0.060759006,self4=0.0026041639,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=phys_tangent_half_vs_phys_tangent,relative_G=7.2639777e-06,relative_sphere=0,relative_shell=8.0836709e-06,self0=6.2577772e-05,self1=1.6428775e-05,self2=6.2577772e-05,self3=1.6428775e-05,self4=6.1273289e-07,scope=independent_x_axis_no_Green`
+- `p1_full_sea_outer_gram_axis: comparison=phys_angle3_vs_phys_tangent,relative_G=0.0030215291,relative_sphere=0.029725331,relative_shell=0,self0=0.02323954,self1=0.021838035,self2=0.02323954,self3=0.021838035,self4=0.0010880762,scope=independent_x_axis_no_Green`
 - `p1_full_sea_outer_gram_qmc: seed=13,x_nodes=9980,G00=3.756544674,G11=1.26235873,G22=3.719893123,G33=1.257293412,G44=44.72430137,relative_vs_gauss_face_tangent=0.0081772445,relative_vs_phys_tangent=0.010737026,scope=independent_scrambled_positive_volume_not_Green`
 - `p1_full_sea_outer_gram_qmc: seed=37,x_nodes=9979,G00=3.792549662,G11=1.288893386,G22=3.776122006,G33=1.308134091,G44=44.84409157,relative_vs_gauss_face_tangent=0.0059420776,relative_vs_phys_tangent=0.0083314805,scope=independent_scrambled_positive_volume_not_Green`
 - `p1_full_sea_outer_gram_qmc_spread: relative_G=0.0033744998,self0=0.0095846027,self1=0.021019901,self2=0.015115725,self3=0.040436606,self4=0.0026784141,scope=two_seeds_not_error_bound`
 - `p1_full_sea_outer_gram_change: relative_G=0.022483653,self0=0.041009867,self1=0.029865349,self2=0.041009867,self3=0.029865349,self4=0.022086532,scope=x_cubature_only_not_L`
-- `p1_full_sea: variant=corner_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_box_corners,norm_L=8.56915408e-08,trace_L=8.915056369e-08,raw_skew=0.02946208,min_eig=7.315288299e-10,max_eig=8.567367877e-08`
-- `p1_full_sea_self: variant=corner_both,L00=8.881856323e-10,L11=8.626717743e-10,L22=8.884576868e-10,L33=8.623371262e-10,L44=8.564891147e-08`
-- `p1_full_sea_mutual: variant=corner_both,L01=4.537913378e-13,L02=-6.76809583e-11,L03=-1.308183302e-13,L04=-4.049107457e-12,L12=-1.308183302e-13,L13=1.062067392e-10,L14=1.021261098e-09,L23=4.537913378e-13,L24=4.049107457e-12,L34=-1.029644348e-09`
+- `p1_full_sea: variant=scalar_control_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform_exact_scalar_S,norm_L=8.366789392e-08,trace_L=8.777234894e-08,raw_skew=0.02352241,min_eig=8.716699236e-10,max_eig=8.36420121e-08`
+- `p1_full_sea_self: variant=scalar_control_both,L00=9.597780566e-10,L11=1.117161472e-09,L22=9.597780566e-10,L33=1.117161472e-09,L44=8.361846988e-08`
+- `p1_full_sea_mutual: variant=scalar_control_both,L01=1.328967028e-24,L02=-8.8108133e-11,L03=3.540808937e-25,L04=8.017996191e-24,L12=-3.87106614e-25,L13=1.078850925e-10,L14=9.862448417e-10,L23=1.419605378e-24,L24=1.461685052e-24,L34=-9.862448417e-10`
+- `p1_full_sea_scalar_control_cross: same_x_inner_radial_polar_azimuth_and_modes,relative_L=0.0093823816,self_relative=0.0093849349,raw_skew_before=0.023332485,raw_skew_after=0.023522407,gate=diagnostic_not_truth_for_varying_W`
 - `p1_full_sea: variant=phys_x_both,method=radial,x_nodes=18816,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform,norm_L=8.446368597e-08,trace_L=8.808890111e-08,raw_skew=0.01579404,min_eig=7.462917068e-10,max_eig=8.44433587e-08`
 - `p1_full_sea_self: variant=phys_x_both,L00=7.865658285e-10,L11=1.044609072e-09,L22=7.865658285e-10,L33=1.044609072e-09,L44=8.442655131e-08`
 - `p1_full_sea_mutual: variant=phys_x_both,L01=1.353832997e-24,L02=-4.027412175e-11,L03=1.314397456e-25,L04=-2.570966424e-24,L12=6.111424497e-27,L13=1.421972527e-10,L14=8.378858019e-10,L23=1.301566943e-24,L24=-6.181584566e-25,L34=-8.378858019e-10`
@@ -71,9 +76,8 @@
 - `p1_full_sea_mode_delta: comparison=x_only_vs_base,self0=0.53978201,self1=0.13423006,self2=0.49902468,self3=0.12728098,self4=0.006278837,max_self=0.53978201,max_mutual_self_normalized=0.26306242`
 - `p1_full_sea_mode_delta: comparison=radial_only_vs_x_only,self0=0.059699004,self1=0.028393821,self2=0.059699004,self3=0.028393821,self4=0.02798627,max_self=0.059699004,max_mutual_self_normalized=0.105613`
 - `p1_full_sea_mode_delta: comparison=angular_only_vs_inner_radial,self0=0.00098685276,self1=0.036889622,self2=0.00098685276,self3=0.036889622,self4=0.031275988,max_self=0.036889622,max_mutual_self_normalized=0.21764845`
-- `p1_full_sea_mode_delta: comparison=corner_both_vs_uniform_both,self0=0.0081880415,self1=0.01531076,self2=0.0078842458,self3=0.0149169,self4=0.015909472,max_self=0.015909472,max_mutual_self_normalized=0.021680782`
+- `p1_full_sea_mode_delta: comparison=scalar_control_vs_uniform_both,self0=0.071757209,self1=0.31482923,self2=0.071757209,self3=0.31482923,self4=0.0081742527,max_self=0.31482923,max_mutual_self_normalized=0.0011296704`
 - `p1_full_sea_mode_delta: comparison=phys_x_both_vs_uniform_both,self0=0.12166402,self1=0.22943959,self2=0.12166402,self3=0.22943959,self4=0.0014106627,max_self=0.22943959,max_mutual_self_normalized=0.052285227`
-- `p1_full_sea_corner_cross: same_x_and_radial_rules,relative_L=0.015933441,self_relative=0.015907979,mutual_scaled=0.00068947811,gate=diagnostic_only`
 - `p1_full_sea_note: previous difference pilot had 23.56018-percent y-axis L change, 80.94096-percent Taylor cross-formulation gap, and 98-percent subtraction ratio. New radial Green operator has no large matrix subtraction. It must still pass independent x/inner angular/radial and near-wall/corner convergence; a small raw skew or one PSD matrix is not a true solution certificate. G1 remains FAIL.`
 
 此运行是实际双盒全海水 curl 模式及原核 L 的数值收敛实验；没有独立连续真值，且角向射线对盒壁/棱角的裁剪仍须单独验证。程序完成、对称、谱正性或分轴差异小，均不能独立证明 G1 PASS。
