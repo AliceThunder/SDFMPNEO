@@ -831,3 +831,107 @@ P1-C 与整个 G1 继续 FAIL。}
 近奇异积分往往需要针对几何的变量变换或
 局部奇异积分技术，而不是只增大全局 Gauss 阶数
 \cite{duffy1982,montanelli2022curved,hu2026near}.
+
+
+\subsection{P1-C 真实五模态第一次实跑否证与主算法变更}
+\label{sec:p1-direct-radial-ray}
+在代码 \texttt{a9f48db} 上用户本机 2026-11-05 UTC 的
+\texttt{runs/p1\_full/latest\_full.log}
+显示 97 项 pytest 通过和程序正常结束，
+但\textbf{对称差分法不满足连续磁能的必要数值条件}。
+固定五个真实海水 curl 模式与同一海水几何，
+$x$ 单轴变化为 $1.949\%$，
+$y$ 单轴变化为 $23.560\%$，
+两轴联合变化为 $28.437\%$，
+与原全域 Taylor 算法的相对矩阵差异为 $80.941\%$。
+对称差分公式的正负项抵消比例为
+$98.12\%$--$98.35\%$。
+粗规则的 $L_{00}=L_{22}=-4.61025\times10^{-10}$
+且最小特征值为 $-5.13724\times10^{-10}$；
+连续 Coulomb 双积分在实值电流上的 Gram 型应半正定。
+这些是\emph{失败证据}，
+不是物理电感为负的现象。
+当前真实电流具有毫米尺度盒壁包络，
+全域差分加粗球心射线 x/y 规则误差被严重放大。
+
+因此不再把式~\eqref{eq:p1-symmetric-difference}
+直接用作 P1-C 的推荐求积路径：
+从定义出发，在每个\emph{外积分节点} $\bm x\in\Omega$
+使用以 $\bm x$ 为原点的相对坐标
+$\bm y=\bm x+r\bm u,\ \bm u\in\mathbb S^2$。
+两只绝缘盒和外球在每条射线
+$\bm x+\RR_+\bm u$ 上造成若干不相交的
+\emph{精确导电径向区间}
+$\mathcal I_\Omega(\bm x,\bm u)$。
+相应的原核 Green 内势严格化为
+\begin{equation}
+\label{eq:p1-direct-ray}
+\boxed{
+\bm U_j(\bm x)=
+\int_{\mathbb S^2}\ \sum_{[a,b]\subset\mathcal I_\Omega(\bm x,\bm u)}
+\int_a^b r\,\bm W_j(\bm x+r\bm u)
+\,\mathrm dr\,\mathrm d\bm u .
+}
+\end{equation}
+式中 $r^2\,\mathrm dr\,\mathrm d\bm u$
+是三维体积 Jacobian，而原核仍是 $1/r$：
+精确相消留下 $r\,\mathrm dr$。
+\textbf{没有核软化、局部球电流替代、
+人工自项或两个大矩阵相减。}
+经正权外积分
+\[
+L_{ij}=\frac{\mu_0}{4\pi}
+\int_\Omega \bm W_i(\bm x)\cdot
+\bm U_j(\bm x)\,\mathrm d\bm x
+\]
+得到原物理双线性型。
+这个方法属于弱奇异积分的
+\emph{坐标消奇异}路线；
+与 Duffy 型 Jacobian 消除奇异的基本思想一致，
+但不是直接套用表面元 Duffy 公式
+\cite{duffy1982,passarotto2022}。
+
+现复用原有
+\texttt{\_bfzi\_wet\_radial\_segments}
+逐方向解析裁剪 OBB 实心盒和外球。
+径向 Gauss 规则按既有真实盒壁尺度、
+模式包络宽度切分\emph{实际湿区间}，
+角向极轴朝向最近实体边界，
+并将两个半球分面；
+外积分改用已有
+\texttt{BfziScene.box\_shell\_quadrature}，
+使两封装的面、棱、角按其自身坐标作
+正权几何分片，而不是让所有贴壁电流均
+投影到外球中心低阶角节点。
+这属于改变求积\emph{坐标结构}，
+不是提高一个未经归因的全局阶数。
+
+\paragraph{独立球基准与认证边界。}
+已用与仓库正式函数数学独立的
+Python 球坐标原型数值检验，
+球半径 $1$、外规则
+$(n_r,n_\mu,n_\phi)=(5,6,10)$，
+内点心规则 $(4,4,10)$（每半球 4 个极角点），
+解析线性涡流磁矩阵 Frobenius 真值误差
+$1.1433\times10^{-15}$，
+三次非仿射涡流误差
+$5.90514\times10^{-6}$。
+原型未执行仓库中全套依赖；
+已将相同数学定义加入正式单元测试，
+仍需本机新日志验证。
+这些球上的良好结果只检查方程与消奇异坐标，
+不证明真实盒面/棱角的角向收敛，
+也不证明五模态全海水电流空间完整性。
+
+新实验以原五个 \texttt{SeaCurrentBasis}
+模式和两只独立位姿真实盒子为约束，
+报告改变外部 box-shell x 规则或内部 Green
+径向/角向规则的四种独立变化，
+分别列示五个自项和十个互项及
+未强制对称矩阵的 skew。
+由于盒角会造成射线导电区间拓扑改变，
+其角向 integrand 仍可分片不光滑。
+因此\textbf{局部盒面、棱角、两体相互作用、
+外球截断和原核非负谱仍必须单独验收}。
+这一轮主算法已提交但\textbf{尚无新本机 P1-C 数值日志}；
+G1 继续 FAIL，正式教师训练继续关闭。
