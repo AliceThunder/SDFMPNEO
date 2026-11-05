@@ -60,6 +60,22 @@ python run.py --mode bfzi-p1-coulomb --with-tests
 
 **新双电流基准待本机运行；即使通过，也只认证实海水域中的两维紧支测试子空间，不证明旧 229 模态、贴壁电流、外球趋于无穷海水或完整 G1。** 数学公式及下一关口见 [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) 与 [正式 TeX 第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。不使用 GitHub Actions。
 
+## P1-C：接通真实全海水 curl 基的原核 Taylor 磁算子（2026-11-05 UTC）
+
+用户本机最新 [P1 原始日志](runs/p1/latest_full.log)：**92 passed**。实际双盒海水中，两只严格合法、与盒壁保持间隙的光滑紧支涡流，其解析 (L_{11}/L_{22}) 自项最大相对误差 **0.02382213%**、非零 (L_{12}) 互项相对误差约 **1.37751e-8%**，整体矩阵误差 **0.02382024%**，均达到预定 0.1% 门槛。旧 split 的原核球误差仍有 0.6145%，**不能混淆新旧算法通过范围**。
+
+本轮已实现 `sea_basis_differential.evaluate_nonguided_curl_jacobian`，对原有 BFZI 海水 `SeaCurrentBasis` 的真实**外球包络、两只独立 SE(3) 旋转绝缘盒距离包络、原 Gaussian/Wendland 窗口**给出物理 Hessian，从而解析计算非源引导 `curl` 电流的 `dW/dx`。新 `green_coulomb.assemble_basis_coulomb_taylor` 使用真实两盒外海水域的精确 `SΩ/MΩ`、未软化 (1/r) 的一阶 Taylor 残差，不另造等效体积球云。
+
+新 `bfzi_p1_full_sea_taylor.py` 固定旧 27 维基中的 5 个真实模式，输出 `p1_full_sea` 与 `p1_full_sea_change`：同一电流、同一物理域、分别加密 x/y、矩阵原偏斜和特征值。**这是尚待本机运行的算子数值诊断，尚无独立五维连续真值；不会仅凭两阶差值宣称全域 G1 通过。** 源引导模式需另外验证端口场的空间 Jacobian，暂显式拒绝。
+
+使用原命令：
+
+```powershell
+python run.py --mode bfzi-p1-coulomb --with-tests
+```
+
+P0 闭合 BFZI 源、R/K、热代理和神经模型均未修改，不使用 GitHub Actions。
+
 ## 阅读顺序
 
 1. [P1 原 Coulomb L 真值／P0 限定交接](P1_COULOMB_ANALYTIC_GATE.md)：当前阶段，三个有解析答案的无散度球形电流。
