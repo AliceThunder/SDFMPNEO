@@ -50,9 +50,19 @@ def _mutual_change(a, b):
 
 def _quadrature(scene, basis, rule, cache):
     if rule not in cache:
-        if isinstance(rule[0],str) and rule[0] == "shell":
-            # Physical coordinate separation: local box faces and edges
-            # are represented directly; no spherical angular wet-mask.
+        if isinstance(rule[0],str) and rule[0] in ("shell","shell_phys"):
+            # Physical corner silhouettes of BOTH actual OBBs constrain the
+            # spherical part of the positive shell partition of unity.
+            # The accepted historical "shell" rules stay unchanged.
+            geometry = (
+                dict(radial_geometry_cuts=True,
+                     polar_geometry_order=2,
+                     azimuthal_geometry_order=2,
+                     max_radial_panel_width=min(m.width for m in basis.modes),
+                     shell_tangential_max_panel_width=
+                         0.5*min(m.width for m in basis.modes))
+                if rule[0]=="shell_phys" else {}
+            )
             cache[rule] = scene.box_shell_quadrature(
                 *rule[1:4],wall_scale=basis.wall_scale,
                 shell_width_factor=12.0,
@@ -60,6 +70,7 @@ def _quadrature(scene, basis, rule, cache):
                 shell_tangential_order=4,
                 shell_normal_mapping="log",
                 outer_taper_width=basis.outer_taper_width,
+                **geometry,
             )
         else:
             cache[rule] = scene.quadrature(
