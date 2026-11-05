@@ -995,3 +995,19 @@ raw skew、各模式变化、
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 先确认 corrected Gaussian source-cap 解析单测通过，再获取新的 source_cap_both / mode_radial_both 五模式单轴对照、局部帽角测度及独立 S/M 几何矩误差。**P1-C/G1=FAIL，正式神经教师关闭，不使用 GitHub Actions。**
+
+
+## 第十二次实跑（代码 78c8353，日志 53f635d）：108 passed，但未配平角帽显著破坏解析几何矩
+
+同一五模式原核 Green x/径向规则，新增局部模式方向角帽后：L 整体相对变化 **12.859%**，弱自项 L00 **+105.634%**、L11 **+78.354%**，强自项 L44 **−12.661%**。同时，角向正权和相对完整 4π 偏差最高 **4.9684%**，真实外球减两盒解析 S/M 几何矩误差变为 **5.7221%/2.6418%**，比原几何选角的约 0.249%/0.132% 大幅恶化。raw skew 降至 0.905% 不能证明解更好。**108 项测试通过只代表程序完成，P1-C/G1 依然 FAIL**。
+
+**本轮新实现：** 固定原背景和模式球帽真实角方向，在每个 x 的精确湿射线端点直接形成 A_k=Σ(b²−a²)/2、B_k=u_kΣ(b³−a³)/3，用正权相对熵指数倾斜修正权重，约束 Σw=4π、ΣwA=SΩ、ΣwB=MΩ（三分量），在规范化矩残差低于 2e-7 时接受。如果固定方向不存在数值可行的正权解或 Newton 停滞，则拒绝该观察点的角帽，回退到原先经过双盒 S/M 几何筛选的背景正角方向；记录 moment_fit_accepted、fallback_to_geometry_background、最坏拟合残差以及最终实际使用规则的 4π/S/M 误差。原始未软化 1/r、真实旋转盒湿域、wall_scale 和实际 Gaussian-curl 都不改变。
+
+**新增必要测试：** 球心、单位外球的独立解析 S=2π、M=0 和 4π 总测度；真实双盒小空间同时接通正权配平/回退入口。匹配低阶矩仍无法证明非线性真实 curl 模态已经收敛。
+
+下一次 Windows：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+本轮新代码未实跑；**P1-C/G1 FAIL，正式磁教师关闭，禁止 GitHub Actions。**
