@@ -1172,3 +1172,24 @@ $x$ 轴 $0.24$ rad 与 $y$ 轴 $-0.31$ rad
 不得把它作为生产 Green 参考装配。
 该代码已提交，完整仓库本机结果尚未运行。
 P1-C 与 G1 均保持 FAIL。
+
+
+\paragraph{无 Coulomb 核的外积分隔离指标。}
+为避免误把 $x$ 外积分的电流体积误差归咎于 Green
+内势，新增两套相同真实 $\bm W_i$ 的外 $x$ 求积
+\begin{equation}
+ G^{(x)}_{ij}=\int_\Omega\bm W_i(\bm x)\cdot
+ \bm W_j(\bm x)\,\mathrm d\bm x,
+ \qquad R^{(x)}_{ij}=G^{(x)}_{ij}/\sigma_{\rm sea}.
+\end{equation}
+在此首版均匀标量海水电导率的约定下，
+$G$ 与电阻弱式 $R$ 相差固定正比例常数，
+它\emph{没有} $1/|\bm x-\bm y|$，
+也不涉及人工对称化磁能或内径/角规则。
+若 $G_{ii}$ 在两个外体积规则间同样不稳定，
+应先修复外积分的真盒壁局部基函数空间采样；
+若 $G_{ii}$ 已稳定而对应 $L_{ii}$
+不稳定，才进一步定向研究 Green 内势误差。
+本轮新增 \texttt{p1\_full\_sea\_outer\_gram} 和
+\texttt{p1\_full\_sea\_outer\_gram\_change}
+为此分离提供真实输出；\textbf{新日志尚待运行}。
