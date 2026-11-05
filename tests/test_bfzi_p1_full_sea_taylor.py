@@ -1,5 +1,6 @@
 """P1-C: analytic Jacobian of real BFZI non-guided curl trial currents."""
 import numpy as np
+import pytest
 
 from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.sea_basis import build_sea_basis, SeaCurrentBasis
@@ -38,6 +39,13 @@ def test_bfzi_actual_box_curl_jacobian_matches_physical_perturbations():
     assert np.linalg.norm(analytical-numerical)/max(
         np.linalg.norm(numerical),1e-30
     ) < 2e-4
+
+
+def test_full_sea_quadrature_rejects_identical_x_y_axes():
+    # The first P1-C experiment must never evaluate the Taylor residual
+    # at an identical pair of x/y quadrature nodes.
+    with pytest.raises(ValueError, match="disjoint x/y"):
+        full_sea_trial(None,(4,6,10),(4,6,10))
 
 
 def test_actual_box_original_coulomb_taylor_small_space_runs():
