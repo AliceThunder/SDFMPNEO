@@ -2,11 +2,13 @@
 
 > **BFZI G1 进度看板 · 2026-11-05 UTC · 分支：research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新实测：P1-C 99 passed，但五模式 Coulomb L 物理收敛 FAIL。** 代码基线 `8c26357`、日志提交 `02805877`，[原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)。点心射线 Green x-only 改变 5.937%，固定细 x 下内径向改变 **30.248%**，随后内角向改变 1.936%，联合改变 35.311%；最细 raw skew 1.746%。最小特征值为正仅是必要条件，不等于连续真值。历史对称差分法的 98% 消去及负对角自项仍为已被证伪的路线。
+> **最新本机实测：100 passed，但真实 P1-C 五模式未软化 Coulomb L 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)（代码 35895a4、日志 b383da2a）。真实盒壁湿区端点分片使内径向独立变化由 **30.248% 降到 2.831%**；但内角向仍 **3.607%**、外 x **1.841%**、两轴联动 **7.349%**、最细 raw skew **2.333%**。单独改变 x 时，弱模态 L00 改变约 **54%**、L22 约 **50%**，总矩阵 Frobenius 仅 1.841%，过去的整体指标会遮蔽弱模态严重误差。程序/pytest PASS 不等于物理收敛。
 >
-> **本轮理论根因与主代码修复：** 原 BFZI 盒距包络 `d/(d+wall_scale)` 的导数在**真实盒壁射线交点**附近形成尖层，而旧径向断点只以观察点为原点，未贴合盒壁入/出口。现为每个精确湿区间的**两个端点**加入 `wall_scale × (1,3,9,27,81)` 物理几何分片，保留原未软化 `1/r`、正权和真实两盒/外球射线裁剪。一维壁因子导数解析积分的同三点 Gauss 误差从 90.2794% 降至 0.060285%，这只是独立局部模型而非五模式 PASS。另将**常量密度的真实海水 Green 内势**和已独立验证的解析 `SΩ(x)` 相比，在两盒近面/棱/角逐项隔离角向几何裁剪误差，避免混入 curl 的内径向误差。
+> **新增独立角域真值线索：** 常量密度原核积分与解析两盒势 SΩ(x) 对照，细角规则的 face/edge/corner 最坏误差分别为 0.05998%/0.02679%/**0.11072%**；因常密度径向积分严格精确，这是角度/射线裁剪问题。原五模态 demo 的两只真实盒旋转均为**单位阵**，不是已验证非零旋转几何；本轮新增两只分别绕 x/y 轴旋转的**独立标量 Green 真值**对照，明确区分几何验证与五模态 L。
 >
-> **下次运行：** `git pull --ff-only`；`python run.py --mode bfzi-p1-full-sea --with-tests`，本机自动提交 [runs/p1_full/](runs/p1_full/README.md)。优先看 `p1_full_sea_scalar` 的面/棱/角误差，随后看 `p1_full_sea_inner_axes` 的真实内径向变化；若角向残差大，改角域分片而不是盲目调高阶数。历史 P0、P1-A/P1-B 限定 PASS 保留，**P1-C/G1=FAIL，不启动正式教师训练；禁止 GitHub Actions。**
+> **本轮代码与数学路线：** 保留实际原核 1/r、点心 r²/r=r 消奇和盒壁端点物理分片；新增可选的**两盒顶点投影方位分片**，使用当前观察点所见的真实 OBB 角向几何在每个扇区单独正权 Gauss 求积。先与 uniform 在相同 x/径向/极角规则下比较 corner_both，不能因为使用新分片就宣布通过。新增每个自项与自能归一化互项的独立收敛指标；近盒棱的完整极角轮廓、外 x 及旋转五模态 L 仍未通过。
+>
+> **本机下一轮：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests；自动更新 [runs/p1_full/](runs/p1_full/README.md)。先看 aligned/rotated 的 p1_full_sea_scalar uniform vs box_corners，再看 corner_both 与 uniform_both、逐模态误差和 raw skew。历史 P0/P1-A/P1-B 限定 PASS 保留。**P1-C/G1=FAIL，禁止 GitHub Actions，正式神经教师仍不开启。**
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
@@ -320,3 +322,5 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 | 2026-11-05 UTC | **P1-C 97 passed 但真实 L FAIL**：旧对称差分 98% 抵消，外 x 1.949%、内 y 23.560%、联动 28.437%，对 Taylor 差 80.941%；粗自项与最小特征值为负。**改用新点心径向 Green**，r²/r=r 精确消奇，内射线解析裁剪两盒，外用真实盒面/棱角 box-shell。独立解析球原型线性/三次误差 1.14327e-15 / 5.90514e-6；真实五模态新运行待证，G1 FAIL | [实际失败日志](runs/p1_full/latest_summary.md) · `green_coulomb.py` · `bfzi_p1_full_sea_taylor.py` · [TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex) |
 
 | 2026-11-05 UTC | **99 passed 仍 P1-C FAIL，内径向主导 30.248%**。新代码在真实两盒射线每个湿区间端点加入壁距几何分片，数学依据是 BFZI `d/(d+s)` 导数的近壁尖层；独立一维解析积分的 Gauss-3 误差从 90.2794% 降至 0.060285%，仅为局部证据。新增六个盒面/棱/角湿点的原 1/r 常密度内势与精确 `SΩ` 对照，隔离角向裁剪误差。G1 不认证 | [失败日志](runs/p1_full/latest_full.log) · [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) · [TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex) |
+
+| 2026-11-05 UTC | **P1-C 100 passed、物理 L 仍 FAIL**：真实盒壁端点改进使内径向差 30.248%→2.831%，但内角 3.607%、联合 7.349%、raw skew 2.333%。真实两盒解析 SΩ 角向近角误差最高 0.1107%；外 x 总相对差仅 1.841%，弱自项 L00/L22 却变化 54%/50%。本轮新增真实盒顶点方位分片 corner_both 同条件对照、两盒独立非零旋转标量真值及逐模态自/互磁能指标；原五模态两盒姿态均为单位阵，纠正旧措辞。待本机新结果，G1 FAIL | [日志](runs/p1_full/latest_full.log) · [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) · [理论](../../../theory/sections/14_p1_exact_coulomb_sphere.tex) |
