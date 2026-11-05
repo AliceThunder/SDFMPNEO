@@ -1,6 +1,6 @@
 > **BFZI 研究分支｜最新进度（2026-11-04 UTC）：[📊 总体路线图 · P0 验收 · P1 当前关口](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
 > 本研究只针对 **BFZI 圆形／圆角方形单根连续螺旋、两独立绝缘封装、均匀非磁性导电海水与电磁热代理**，不是历史超椭圆线圈。**P0 已在限定的理想闭合双端口线源 demo 上通过 83 项本机测试**：84 探针默认 4 阶 C/B 相对误差 7.28e-5/4.27e-4；严格闭合物理折线 16/32/64 曲角面板的 B 误差约 3.90e-4/9.76e-5/2.44e-5，`div C` 约 1e-16。**不是全几何参数域有限线径无碰撞或铜邻近效应的认证。**  
-> **P1 最新阶段：** 本机 `79c9eed` **92 passed**，两个真实封装旁的无散度海水紧支涡流，其原始 `1/r` Coulomb 自项最大相对误差 **0.02382%**、非零互项约 **1.38e-8%**，通过预定 0.1% 解析真值目标。先前非线性球 Taylor（87 passed）与真实双旋转盒 `SΩ/MΩ` 几何矩（90 passed）也各在其限定基准下 PASS；**旧 split 仍 FAIL**。**本轮已接入现有 BFZI 27 维 `curl` 基的真实全海水五模式 Taylor 磁算子**：对原外球/两独立盒距离/模式窗口求解析 Hessian，采用真正湿区几何矩，比较独立 x/y 求积；当前只支持非源引导模式，**新全海水数值结果待本机运行，尚无独立连续磁能真值，完整 G1 FAIL**。
+> **P1 最新状态（2026-11-05 UTC）：** 用户本机最新日志在代码 `983ad60` 上 **94 passed，但主执行 FAIL**：P1-C 全海水五模式实验的两处 f-string 漏括号导致 `SyntaxError`，因此没有任何新 L 收敛数据。已修复语法并让 pytest 直接导入主模块；另修正原 `x_only` 与 `y0` 共用同一 Gauss 规则造成的 Taylor 残差零距离节点问题。前一轮 P1-B 双合法紧支电流原 1/r 自/非零互项 **92 passed 且解析真值 PASS** 不受影响。**新推荐直接运行 `python run.py --mode bfzi-p1-full-sea --with-tests`，单独上传 `runs/p1_full/`；不必反复运行已验证 P1-A/B。全湿区 L 尚无独立真值，G1 仍 FAIL。**
 > 本机下一命令：`python run.py --mode bfzi-p1-coulomb --with-tests`（独立日志上传至 `runs/p1/`，不使用 GitHub Actions）。[P0→P1 理论/停止条件](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 第 14 节](theory/sections/14_p1_exact_coulomb_sphere.tex) · [P0 83-pass 日志](docs/research/bfzi_uwpt_electrothermal/runs/p0/latest_summary.md) · [P1 92-pass 双电流磁能日志](docs/research/bfzi_uwpt_electrothermal/runs/p1/latest_summary.md)。
 
 # SDF-MPNEO vNext
@@ -27,7 +27,8 @@ Install with `pip install -e ".[dev]"`. Run the small example with:
 
 ```bash
 python run.py --mode bfzi-p0-source --with-tests # P0 locked ideal BFZI source evidence
-python run.py --mode bfzi-p1-coulomb --with-tests # P1 original Coulomb 1/r analytic vortex benchmark
+python run.py --mode bfzi-p1-coulomb --with-tests # P1-A/B historical analytic 1/r reference
+python run.py --mode bfzi-p1-full-sea --with-tests # P1-C focused true BFZI wet-domain curl L, logs to runs/p1_full
 python run.py --mode bfzi             # twin-port seawater + wire + thermal demo
 python run.py --mode bfzi-convergence         # lighter wall/basis/domain/kernel probes
 python run.py --mode bfzi-convergence --full   # additional high-cost refinements
