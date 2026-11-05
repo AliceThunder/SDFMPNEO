@@ -5,6 +5,9 @@ from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.sea_basis import build_sea_basis, SeaCurrentBasis
 from sdfmpneo_bfzi.sea_basis_differential import evaluate_nonguided_curl_jacobian
 from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_taylor
+# The main P1 driver imports this module only after other long experiments.
+# Importing it during pytest catches a syntax regression before any run.
+from examples.bfzi_p1_full_sea_taylor import trial as full_sea_trial
 
 
 def test_bfzi_actual_box_curl_jacobian_matches_physical_perturbations():
