@@ -70,6 +70,30 @@ def test_actual_box_symmetric_difference_coulomb_small_space_runs():
     np.testing.assert_allclose(L, L.T, atol=1e-20, rtol=1e-12)
 
 
+
+def test_actual_box_direct_radial_original_coulomb_small_space_runs():
+    """Exact box-ray clipping, no x/y diagonal and no large subtraction."""
+    from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_radial
+
+    scene=build_demo_scene()
+    original=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
+    basis=SeaCurrentBasis(
+        scene,tuple(original.modes[i] for i in (0,12)),
+        original.wall_scale,original.source_lines,
+        original.outer_envelope,original.outer_taper_width,
+    )
+    x,wx=scene.quadrature(2,3,4,wall_layers=0)
+    L,skew=assemble_basis_coulomb_radial(
+        basis,np.eye(basis.size),x,wx,
+        radial_order=2,polar_order=2,azimuthal_order=6,
+        return_diagnostics=True,
+    )
+    assert L.shape==(2,2) and np.isfinite(L).all()
+    assert np.isfinite(skew)
+    np.testing.assert_allclose(L,L.T,rtol=0,atol=0)
+
+
+
 def test_actual_box_original_coulomb_taylor_small_space_runs():
     scene=build_demo_scene()
     original=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
