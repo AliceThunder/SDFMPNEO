@@ -493,8 +493,10 @@ U_j(x)=\int_{S^2}\sum_{[a,b]\subset \mathcal I_\Omega(x,u)}
     git pull --ff-only
     python run.py --mode bfzi-p1-full-sea --with-tests
 
-新日志用 base/x_only/inner_only/both
-分离外部物理盒壳 x 规则与点心 Green 内径向／角向规则，
+新日志用 base/x_only/inner_only/inner_radial_only/both
+分离外部物理盒壳 x 规则与点心 Green 内径向／角向规则；
+在固定细外积分下，inner_radial_only 独立隔离内径向变化，
+与 both 的差异隔离内角向变化，
 逐组输出五自项、十互项、未强制对称原矩阵 skew、
 最小特征值及分轴变化。因内势积分依赖 x 中心，
 已没有可重用的全局 y 体积积分点；
