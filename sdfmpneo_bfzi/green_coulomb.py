@@ -598,6 +598,206 @@ def assemble_basis_coulomb_taylor(
     )
 
 
+
+
+def assemble_coulomb_radial(
+    x, wx, evaluate, wet_radial_segments, *,
+    radial_order: int = 4,
+    polar_order: int = 4,
+    azimuthal_order: int = 10,
+    radial_breakpoints=(),
+    polar_axis=None,
+    return_diagnostics: bool = False,
+):
+    """Direct unsoftened Green potential in x-centred polar coordinates.
+
+    Set y = x + r*u, with |u|=1. The exact physical integral is
+
+        U_j(x) = int_{S2} int_{wet ray intervals} r*W_j(x+r*u) dr du.
+
+    This uses r**2 dr du / |x-y| = r dr du, so no singular node,
+    artificial self term, Taylor cancellation or softened kernel exists.
+    The caller supplies the EXACT wet ray intervals along each direction;
+    quadrature of the radial/angle integrand still needs independent
+    convergence checks, especially when box edges change the ray topology.
+    radial_breakpoints are fixed physical distances that split each
+    *wet* interval; they do not change the domain or the original kernel.
+
+    The unsymmetrized matrix skew is returned as a diagnostic, NOT a
+    convergence certificate. This assembly uses one outer x cubature
+    and a point-dependent inner spherical cubature (no reusable y grid).
+    """
+    x = np.asarray(x, float)
+    wx = np.asarray(wx, float)
+    if (x.ndim != 2 or x.shape[1] != 3 or not len(x)
+            or wx.shape != (len(x),)
+            or not np.isfinite(x).all() or not np.isfinite(wx).all()
+            or np.any(wx <= 0)
+            or any(not isinstance(v, int) or v < 2
+                   for v in (radial_order, polar_order, azimuthal_order))):
+        raise ValueError("expected finite positive x rule and orders >=2")
+    cuts = np.asarray(radial_breakpoints, dtype=float)
+    if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
+        raise ValueError("radial_breakpoints must be finite positive distances")
+    cuts = np.unique(cuts)
+    vx = np.asarray(evaluate(x), float)
+    if (vx.ndim != 3 or vx.shape[0] != len(x)
+            or vx.shape[2] != 3 or not np.isfinite(vx).all()):
+        raise ValueError("current evaluator must return finite (x,m,3)")
+    nr, wr = np.polynomial.legendre.leggauss(radial_order)
+    angular, wangular = np.polynomial.legendre.leggauss(polar_order)
+    # Two exact angular hemispheres make the nearest physical wall's
+    # tangent great circle a panel boundary, rather than blending across it.
+    mu = np.concatenate(((angular-1)/2, (angular+1)/2))
+    wmu = np.tile(wangular/2, 2)
+    phi = 2*math.pi*(np.arange(azimuthal_order)+0.5)/azimuthal_order
+    transversal = np.sqrt(np.maximum(0, 1-mu*mu))
+    cos_az = np.cos(phi)
+    sin_az = np.sin(phi)
+    normal_component = np.repeat(mu, azimuthal_order)
+    planar_x = np.repeat(transversal, azimuthal_order)*np.tile(
+        cos_az, len(mu)
+    )
+    planar_y = np.repeat(transversal, azimuthal_order)*np.tile(
+        sin_az, len(mu)
+    )
+    area_weights = (
+        np.repeat(wmu, azimuthal_order)
+        * np.tile(np.full(azimuthal_order, 2*math.pi/azimuthal_order),
+                  len(mu))
+    )
+    accum = np.zeros((vx.shape[1],vx.shape[1]))
+    for xi, (point, weight) in enumerate(zip(x, wx)):
+        if polar_axis is None:
+            axis = np.array((0.0, 0.0, 1.0))
+        else:
+            axis = np.asarray(polar_axis(point), float)
+            if axis.shape != (3,) or not np.isfinite(axis).all():
+                raise ValueError("polar_axis must return finite 3-vector")
+            length = np.linalg.norm(axis)
+            if length < 1e-12:
+                raise ValueError("polar_axis must be nonzero")
+            axis = axis/length
+        seed = (
+            np.array((1.0,0.0,0.0))
+            if abs(axis[0]) < 0.9 else np.array((0.0,1.0,0.0))
+        )
+        e1 = np.cross(seed,axis)
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(axis,e1)
+        directions = (
+            planar_x[:,None]*e1[None,:]
+            +planar_y[:,None]*e2[None,:]
+            +normal_component[:,None]*axis[None,:]
+        )
+        lo, hi = wet_radial_segments(point,directions)
+        lo,hi = np.asarray(lo,float),np.asarray(hi,float)
+        if (lo.ndim != 2 or lo.shape != hi.shape
+                or lo.shape[0] != len(directions)
+                or not np.isfinite(lo).all() or not np.isfinite(hi).all()
+                or np.any(lo < 0) or np.any(hi < lo)):
+            raise ValueError("invalid wet ray intervals")
+        if len(cuts):
+            clipped = np.clip(cuts[None,None,:],lo[:,:,None],hi[:,:,None])
+            edges = np.concatenate(
+                (lo[:,:,None],clipped,hi[:,:,None]),axis=-1
+            )
+        else:
+            edges = np.stack((lo,hi),axis=-1)
+        a, b = edges[:,:,:-1],edges[:,:,1:]
+        valid = b > a
+        if not np.any(valid):
+            continue
+        ray_ids = np.broadcast_to(
+            np.arange(len(directions))[:,None,None],a.shape
+        )[valid]
+        lower, upper = a[valid],b[valid]
+        r = (
+            0.5*(lower+upper)[:,None]
+            +0.5*(upper-lower)[:,None]*nr[None,:]
+        )
+        y = (point[None,None,:]
+             +r[:,:,None]*directions[ray_ids,None,:])
+        sampled = np.asarray(evaluate(y.reshape(-1,3)),float)
+        if (sampled.shape != (y.size//3,vx.shape[1],3)
+                or not np.isfinite(sampled).all()):
+            raise ValueError("nonfinite/incorrect inner current values")
+        radial_weights = (
+            (0.5*(upper-lower)*area_weights[ray_ids])[:,None]
+            *wr[None,:]*r
+        )
+        potential = np.einsum(
+            "ab,abmc->mc",radial_weights,
+            sampled.reshape(len(lower),radial_order,vx.shape[1],3),
+            optimize=True,
+        )
+        accum += weight*np.einsum(
+            "mc,nc->mn",vx[xi],potential,optimize=True,
+        )
+    skew = float(np.linalg.norm(accum-accum.T)/
+                 max(np.linalg.norm(accum),1e-60))
+    L = MU0/(4*math.pi)*0.5*(accum+accum.T)
+    return (L,skew) if return_diagnostics else L
+
+
+def assemble_basis_coulomb_radial(
+    basis, transform, x, wx, *,
+    radial_order: int = 4,
+    polar_order: int = 4,
+    azimuthal_order: int = 10,
+    return_diagnostics: bool = False,
+):
+    """Actual box-clipped BFZI Green L using radial Jacobian cancellation.
+
+    Geometry is the existing two independent OBBs inside the enclosing
+    sphere. Supports every SeaCurrentBasis curl mode, including guided
+    source modes, without differentiating C_port or imposing a false
+    magnetic ball on an actual two-box seawater domain.
+    """
+    t = np.asarray(transform, float)
+    if (t.ndim != 2 or t.shape[0] != basis.size
+            or not np.isfinite(t).all()):
+        raise ValueError("transform must be finite (basis.size,reduced_size)")
+    scene = basis.scene
+    radius = 2.0*scene.outer_radius
+    # Fixed physical distances, not successive arbitrary Gaussian orders.
+    # Resolve the real wall-factor length as well as mode window scales.
+    widths = [mode.width for mode in basis.modes]
+    breaks = tuple(sorted(set((
+        basis.wall_scale,
+        4*basis.wall_scale,
+        16*basis.wall_scale,
+        64*basis.wall_scale,
+        0.5*min(widths),
+        min(widths),
+        max(widths),
+    ))))
+
+    def current(pts):
+        return np.einsum(
+            "nmc,mk->nkc",basis.evaluate(pts),t,optimize=True
+        )
+
+    def intervals(point,directions):
+        return _bfzi_wet_radial_segments(
+            scene,point,directions,radius
+        )
+
+    def axis(point):
+        frame = _bfzi_angular_face_frame(scene,point,radius)
+        return np.array((0.0,0.0,1.0)) if frame is None else frame[0]
+
+    return assemble_coulomb_radial(
+        x,wx,current,intervals,
+        radial_order=radial_order,
+        polar_order=polar_order,
+        azimuthal_order=azimuthal_order,
+        radial_breakpoints=breaks,
+        polar_axis=axis,
+        return_diagnostics=return_diagnostics,
+    )
+
+
 def assemble_basis_coulomb_split(
     basis, transform, x, wx, y, wy, *,
     clip_local_to_domain: bool = True,
