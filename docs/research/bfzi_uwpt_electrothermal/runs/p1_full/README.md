@@ -1,56 +1,28 @@
-# P1-C 原核 1/r：五个真实 BFZI 全海水 curl 模式的本机日志
+# P1-C：真实双盒全海水原始 Coulomb L 的本机证据
 
-本目录属于独立运行入口 **python run.py --mode bfzi-p1-full-sea --with-tests**；
-不与历史球解析基准 runs/p1/ 或 G1 总日志相混淆。
+该目录只保存独立入口 `python run.py --mode bfzi-p1-full-sea --with-tests` 的实际结果，不覆盖原 P1-A/P1-B 解析球与紧支涡流日志。
 
-**初建此目录时尚无真实 P1-C 本机运行结果。** 旧 runs/p1/
-文件包含 94 passed 但 P1-C 主导入 SyntaxError 的失败记录，不是本关结果。
-只在本机真正运行并成功推送后才会出现：
+- [latest_full.log](latest_full.log)：原始 pytest、真实五个 curl 模式的五自项与十互项、外 x 和点心径/角分轴变化，以及诊断。
+- [latest_summary.md](latest_summary.md)：代码基线、程序执行状态及摘要。**程序 PASS 不代表连续磁能求积 PASS。**
 
-- latest_summary.md：完整运行状态、测试统计和全部 P1-C 收敛摘要。
-- latest_full.log：五个自项、十个互项、x/y 独立分轴变化与差分/Taylor 交叉指标。
+## 已有运行证据
 
-本轮主程序在固定的真实两旋转绝缘盒外海水域，使用现有五个
-非源引导 curl 模式与精确双盒标量几何矩 SΩ，
-优先采用未软化 Coulomb **对称差分原核算子**；
-最后用同一细化规则的原 Taylor 算子交叉核算。
-两个算法自身的 x/y 误差或相互接近均不能替代独立真值。
-对称差分本来就对称，不得以 skew=0 宣布通过。
+- 旧对称差分原核（代码 a9f48db）：97 passed，但内 y 独立变化 23.560%、x/y 联合变化 28.437%，与 Taylor 结果相差 80.941%，并存在 98% 大项抵消及负自项。物理 FAIL。
+- 新点心直接原核（代码 8c26357，日志提交 02805877）：99 passed，外 x 变化 5.937%、固定细 x 内径向变化 **30.248%**、随后内角向变化 1.936%，联合变化 35.311%，最细原矩阵 skew 1.746%。物理仍 FAIL，最小特征值为正不足以认证。
 
-应先确认 P1-C 完整执行、分轴自项与互项是否稳定、
-有无非正特征值或严重减除抵消，再开展近面/棱角的独立精度基准。
-**P1-C/G1 暂不认证，禁止开始正式教师训练。**
+## 已提交、等待下一份本机日志的算法改进
 
-运行（用户 Windows 本机）：
+点心射线求积保持原始未软化 1/r，并沿两只真实独立旋转绝缘盒和外球解析裁剪；对每条真实湿区间的**两端**以 wall_scale × (1,3,9,27,81) 锚定径向分片，解决此前只围绕观察点分片、漏掉实际盒壁尖层的问题。
 
-    git pull --ff-only
-    python run.py --mode bfzi-p1-full-sea --with-tests
+同时增加 `p1_full_sea_scalar`：每只盒的近面／棱／角共六个真实湿点，直接积分常量测试密度并与独立解析的 `SΩ` 比较。因为常量密度的内径向被积式严格为 r，该诊断只检验**射线裁剪和角向求积**。它不是实际合规电流，也不能当成 G1 PASS。
 
-输出由已有本机 Git 机制自动提交推送，**不使用 GitHub Actions**。
+主实验仍打印 `p1_full_sea_self`、`p1_full_sea_mutual`、`p1_full_sea_inner_axes`、`p1_full_sea_change`。先根据独立标量近壁角向误差决定是否改几何角向分片，再看真实 curl 内径向误差，避免继续盲目增加求积阶数。
 
+运行：
 
-## 2026-11-05 UTC：首份实跑已出现，但物理 L 明确失败
+```powershell
+git pull --ff-only
+python run.py --mode bfzi-p1-full-sea --with-tests
+```
 
-[原始日志](latest_full.log) / [自动摘要](latest_summary.md) 对应
-a9f48db 基线、97 passed。原对称差分算法在五模式上
-x-only 1.949%、y-only 23.560%、both 28.437%
-的矩阵变化；与 Taylor 80.941% 不一致，
-98% 大项抵消；粗 self L00/L22 与最小特征值为负。
-**此为失败证据，不是 97 项单测的物理 PASS。**
-
-现已更换下次 P1-C 默认主算法：
-使用每个外点 x 的相对球坐标直接计算原核 1/r Green
-内势，r²/r=r 精确消奇；沿射线对两个真实旋转盒与外球
-几何解析裁剪。外点用 box-shell 面/棱/角正权坐标，
-而不是粗球心角向湿区射线；只保留历史差分/Taylor
-作为已否证的参考数据，不自动替代成真值。
-
-下一次运行保持同一命令：
-    git pull --ff-only
-    python run.py --mode bfzi-p1-full-sea --with-tests
-
-新日志应输出 base/x_only/inner_only/inner_radial_only/both 五种对照，
-逐项五个自项、十个互项和未对称原矩阵 skew、
-特征值以及外积分 x 与点心内径／角向的独立变化。
-它们仍是**离散收敛趋势而非连续真值**；
-真实近面、棱角和无穷域尚待独立验收。
+本机日志自动 Git 提交推送，**不使用 GitHub Actions**。P1-C 未认证、整体 G1=FAIL，正式教师训练不得开始。
