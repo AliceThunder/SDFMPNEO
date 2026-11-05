@@ -46,6 +46,20 @@ python run.py --mode bfzi-p1-coulomb --with-tests
 
 **新双盒几何关尚待本机复验；真实双盒原核 L 的电流余项、自/邻积分及无限海水外域仍未认证，G1=FAIL。** 以 [P1 验收理论](P1_COULOMB_ANALYTIC_GATE.md) 和 [项目进度看板](PROJECT_PROGRESS.md) 为准。
 
+## P1 真实双盒合法电流的自／互项解析基准（2026-11-05 UTC）
+
+最新用户本机 **90 passed**：[P1 原始日志](runs/p1/latest_full.log)，代码 `585bf12`。外球减去两只任意 SE(3) 旋转盒的**真实海水域**，盒面、棱、角附近的 (S_\Omega)、(M_\Omega) 的盒体贡献已通过独立分片曲面积分验收：最大相对差分别 **5.51e-16** 与 **1.63e-15**，远小于预先确定的 1e-8。非线性解析球涡流的一阶 Taylor 磁能误差仍为 **1.596e-4**，通过其 0.1% 目标；旧 split 算法仍不合格。
+
+本轮新增 `examples/bfzi_p1_wet_vortices.py`：在**两只真实 BFZI 绝缘盒旁的海水中**分别构造一根不与盒壁接触的光滑紧支涡流 (W_p=[1-r_p^2/a_p^2]_+^2(e_p\times(x-c_p)))，它在真实双盒海水域严格无散度、零法向。两个原 Coulomb (1/r) 自项以及**非零**互项都可独立精确推导，从而直接测试同一物理域的 (L_{11},L_{22},L_{12})；不是 uniform-ball 导线电流替代模型。新增 `p1_wet_L`／`p1_wet_gate`，预定整体、自项、互项误差各小于 0.1%，针对性测试已加入自动本机运行。
+
+仍使用：
+
+```powershell
+python run.py --mode bfzi-p1-coulomb --with-tests
+```
+
+**新双电流基准待本机运行；即使通过，也只认证实海水域中的两维紧支测试子空间，不证明旧 229 模态、贴壁电流、外球趋于无穷海水或完整 G1。** 数学公式及下一关口见 [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) 与 [正式 TeX 第 14 节](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)。不使用 GitHub Actions。
+
 ## 阅读顺序
 
 1. [P1 原 Coulomb L 真值／P0 限定交接](P1_COULOMB_ANALYTIC_GATE.md)：当前阶段，三个有解析答案的无散度球形电流。
