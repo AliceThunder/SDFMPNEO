@@ -252,3 +252,84 @@ def test_point_centered_green_exact_scalar_control_on_both_rotated_boxes():
     # A coarse old quadrature may sometimes cancel across observer
     # points; only its finiteness, not a forced lower error, is required.
     assert np.isfinite(plain)
+
+
+def test_point_centered_green_affine_control_exact_for_two_rotated_boxes():
+    """The original 1/r Green rule reproduces affine vector fields exactly.
+
+    Independently rotate both real boxes, compare to closed-form S and
+    first Coulomb moment M; use a deliberately coarse inner angular
+    rule so the result cannot be a chance quadrature convergence claim.
+    """
+    from dataclasses import replace
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from sdfmpneo_bfzi.green_coulomb import (
+        assemble_coulomb_radial, _bfzi_wet_radial_segments,
+    )
+    from sdfmpneo_bfzi.coulomb_geometry_moments import sea_coulomb_moments
+    from sdfmpneo_bfzi.source import MU0
+
+    scene=build_demo_scene()
+    ax,ay=0.24,-0.31
+    rx=np.array([
+        [1.,0.,0.],[0.,np.cos(ax),-np.sin(ax)],
+        [0.,np.sin(ax),np.cos(ax)],
+    ])
+    ry=np.array([
+        [np.cos(ay),0.,np.sin(ay)],
+        [0.,1.,0.],[-np.sin(ay),0.,np.cos(ay)],
+    ])
+    scene=replace(
+        scene,
+        transmitter=replace(
+            scene.transmitter,
+            pose=RigidPose(rx,scene.transmitter.pose.center),
+        ),
+        receiver=replace(
+            scene.receiver,
+            pose=RigidPose(ry,scene.receiver.pose.center),
+        ),
+    )
+    x=np.array([
+        [0.018,0.033,-0.077],
+        [-0.027,0.041,0.065],
+        [0.16,-0.09,0.02],
+    ])
+    assert np.all(scene.in_seawater(x))
+    wx=np.array([0.4,0.6,0.3])
+    a=np.array([[1.,0.2,-0.4],[0.3,-0.5,0.8]])
+    # Traceless affine tensors also represent solenoidal test fields.
+    B=np.array([
+        [[0.0,0.9,-0.2],[-0.5,0.0,0.3],[0.2,-0.1,0.0]],
+        [[0.4,0.1,-0.4],[-0.2,-0.1,0.6],[0.1,-0.3,-0.3]],
+    ])
+
+    def field(points):
+        return a[None,:,:]+np.einsum("mcd,nd->nmc",B,points)
+
+    def jacobian(points):
+        return np.broadcast_to(B,(len(points),len(B),3,3))
+
+    def wet(point,directions):
+        return _bfzi_wet_radial_segments(
+            scene,point,directions,2.0*scene.outer_radius,
+        )
+
+    S,M=sea_coulomb_moments(scene,x)
+    values=field(x)
+    true_potential=(
+        S[:,None,None]*values
+        +np.einsum("mcd,nd->nmc",B,M)
+    )
+    raw=np.einsum(
+        "n,nic,njc->ij",wx,values,true_potential,optimize=True,
+    )
+    exact=MU0/(4*np.pi)*0.5*(raw+raw.T)
+    got=assemble_coulomb_radial(
+        x,wx,field,wet,
+        radial_order=2,polar_order=2,azimuthal_order=4,
+        exact_scalar_moments=S,
+        exact_first_moments=M,
+        current_jacobian=jacobian,
+    )
+    np.testing.assert_allclose(got,exact,rtol=3e-13,atol=1e-21)
