@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -112,6 +112,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             box_corner_azimuth_panels=(angle_scheme=="box_corners"),
             exact_scalar_control=scalar_control,
             exact_affine_control=affine_control,
+            mode_centered_radial_panels=mode_radial_panels,
             angular_moment_tolerance=moment_angle_tol,
             angular_refine_levels=angle_levels,
             angular_moment_stats=angle_stats if moment_angle_tol is not None else None,
@@ -123,6 +124,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             +("_exact_affine_SM" if affine_control else
               "_exact_scalar_S" if scalar_control else "")
             +("_moment_adaptive_angle" if moment_angle_tol is not None else "")
+            +("_source_window_radial" if mode_radial_panels else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -585,6 +587,46 @@ def main():
         "gate=diagnostic_not_continuum_certification",
         flush=True,
     )
+    # Hold x and every selected angular direction fixed. Only add
+    # per-ray Gauss panels at analytically projected actual mode windows,
+    # supplementing (not replacing) the exact wet-ray wall panels.
+    mode_radial=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="uniform",scalar_control=True,
+        moment_angle_tol=0.0025,angle_levels=1,
+        mode_radial_panels=True,
+    )
+    print(
+        "p1_full_sea: variant=mode_radial_both,method=radial,"
+        f"x_nodes={mode_radial['nx']},inner_rule={mode_radial['ny']},"
+        f"norm_L={mode_radial['norm']:.10g},"
+        f"trace_L={mode_radial['trace']:.10g},"
+        f"raw_skew={mode_radial['diagnostic']:.7g},"
+        f"min_eig={mode_radial['min_eig']:.10g},"
+        f"max_eig={mode_radial['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("mode_radial_both",mode_radial["L"])
+    print(
+        "p1_full_sea_mode_window_radial_cross: "
+        "same_x_same_geometry_selected_angles_same_mode_currents,"
+        f"relative_L={_relative(mode_radial['L'],adaptive['L']):.8g},"
+        f"self_relative={_self_change(mode_radial['L'],adaptive['L']):.8g},"
+        f"skew_old={adaptive['diagnostic']:.8g},"
+        f"skew_new={mode_radial['diagnostic']:.8g},"
+        "only_added_mode_window_radial_panels=true,"
+        "gate=not_certified",
+        flush=True,
+    )
+    radial_stats=mode_radial["angular_stats"]
+    print(
+        "p1_full_sea_mode_window_angle_repeat: "
+        f"points={radial_stats['total']},"
+        f"refined={radial_stats['refined']},"
+        f"unresolved={radial_stats['unresolved']},"
+        "match_geometry_selection=true",
+        flush=True,
+    )
     # The affine experiment stays callable as an explicit research
     # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
@@ -641,6 +683,7 @@ def main():
     per_mode_changes("scalar_control_vs_uniform_both",controlled["L"],both)
     per_mode_changes("moment_angle_vs_scalar_both",adaptive["L"],controlled["L"])
     per_mode_changes("moment_angle_vs_uniform_both",adaptive["L"],both)
+    per_mode_changes("mode_radial_vs_moment_angle",mode_radial["L"],adaptive["L"])
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
