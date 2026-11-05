@@ -9,8 +9,9 @@ Exact wet ray intervals intersect both independently posed insulating
 boxes and the outer ball. The outer x integration uses already available
 face/edge-aligned positive box-shell cubature (not a volumetric mesh).
 
-The five-rule x/inner experiment and exact scalar/first-domain-moment
-control pilots are diagnostic until weak-mode convergence is established.
+The five-rule x/inner experiment plus independently exact
+S/M-moment-guided angular refinement is diagnostic until five-mode
+weak self-energy convergence and actual continuous accuracy are established.
 No neural teacher or G1 certificate is produced.
 """
 from __future__ import annotations
@@ -80,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -93,12 +94,15 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         raise ValueError("exact moment control requires radial Green assembly")
     if affine_control and not scalar_control:
         raise ValueError("affine control requires scalar Green control")
+    if moment_angle_tol is not None and method!="radial":
+        raise ValueError("angular moment refinement requires radial Green")
     if cache is None:
         cache={}
     scene=basis.scene
     x,wx=_quadrature(scene,basis,x_rule,cache)
     if not np.all(scene.in_seawater(x)):
         raise ValueError("physical x cubature produced a solid point")
+    angle_stats={}
     if method=="radial":
         L,diagnostic=assemble_basis_coulomb_radial(
             basis,np.eye(basis.size),x,wx,
@@ -108,6 +112,9 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             box_corner_azimuth_panels=(angle_scheme=="box_corners"),
             exact_scalar_control=scalar_control,
             exact_affine_control=affine_control,
+            angular_moment_tolerance=moment_angle_tol,
+            angular_refine_levels=angle_levels,
+            angular_moment_stats=angle_stats if moment_angle_tol is not None else None,
             return_diagnostics=True,
         )
         ny=(
@@ -115,6 +122,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             f"azimuth_{y_rule[2]}_scheme_{angle_scheme}"
             +("_exact_affine_SM" if affine_control else
               "_exact_scalar_S" if scalar_control else "")
+            +("_moment_adaptive_angle" if moment_angle_tol is not None else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -134,6 +142,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         L=L,method=method,diagnostic=diagnostic,nx=len(x),ny=ny,
         norm=float(np.linalg.norm(L)),trace=float(np.trace(L)),
         min_eig=float(np.min(eig)),max_eig=float(np.max(eig)),
+        angular_stats=angle_stats,
     )
 
 
@@ -529,38 +538,55 @@ def main():
         "gate=diagnostic_not_truth_for_varying_W",
         flush=True,
     )
-    # Verify first-moment control at exactly the same x and inner Green
-    # nodes as the scalar and original variants. The curl Jacobian is
-    # analytic only for nonguided modes; none of these 5 is guided.
-    affine=trial(
+    # The global affine correction in the 105-pass run inflated actual
+    # weak-mode self energies 9-36x and global L by 3.5x. Its exact
+    # affine test is valid, but its full-domain Taylor residual is NOT
+    # numerically useful for sharp actual wall currents. Replace that
+    # expensive pilot with actual source evaluation on angular rays
+    # selected by independently known exact S and M geometry moments.
+    # For the matched x1 + inner1 baseline, only angle nodes may change;
+    # the true wet intervals and all radial rules remain untouched.
+    adaptive=trial(
         basis,x1,inner1,cache,method="radial",
-        angle_scheme="uniform",scalar_control=True,affine_control=True,
+        angle_scheme="uniform",scalar_control=True,
+        moment_angle_tol=0.0025,angle_levels=1,
     )
     print(
-        "p1_full_sea: variant=affine_control_both,method=radial,"
-        f"x_nodes={affine['nx']},inner_rule={affine['ny']},"
-        f"norm_L={affine['norm']:.10g},"
-        f"trace_L={affine['trace']:.10g},"
-        f"raw_skew={affine['diagnostic']:.7g},"
-        f"min_eig={affine['min_eig']:.10g},"
-        f"max_eig={affine['max_eig']:.10g}",
+        "p1_full_sea: variant=moment_angle_both,method=radial,"
+        f"x_nodes={adaptive['nx']},inner_rule={adaptive['ny']},"
+        f"norm_L={adaptive['norm']:.10g},"
+        f"trace_L={adaptive['trace']:.10g},"
+        f"raw_skew={adaptive['diagnostic']:.7g},"
+        f"min_eig={adaptive['min_eig']:.10g},"
+        f"max_eig={adaptive['max_eig']:.10g}",
         flush=True,
     )
-    _report_modes("affine_control_both",affine["L"])
+    _report_modes("moment_angle_both",adaptive["L"])
+    st=adaptive["angular_stats"]
     print(
-        "p1_full_sea_affine_control_cross: "
-        "same_x_inner_radial_polar_azimuth_and_modes,"
-        f"relative_vs_scalar={_relative(affine['L'],controlled['L']):.8g},"
-        f"relative_vs_original={_relative(affine['L'],results['both']['L']):.8g},"
+        "p1_full_sea_moment_angle_quality: "
+        f"target=0.0025,levels=1,"
+        f"points={st['total']},refined={st['refined']},"
+        f"unresolved={st['unresolved']},"
+        f"max_scalar_rel={st['maximum_scalar_rel']:.8g},"
+        f"max_first_scaled={st['maximum_first_scaled']:.8g},"
+        "first_moment_scale=S_exact_times_max_ray,"
+        "selection=geometry_only_before_curl_evaluation,"
+        "gate=diagnostic_unresolved_not_certified",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_moment_angular_cross: "
+        "same_x_true_wet_domain_radial_rules_and_modes,"
+        f"relative_vs_scalar={_relative(adaptive['L'],controlled['L']):.8g},"
+        f"relative_vs_original={_relative(adaptive['L'],results['both']['L']):.8g},"
         f"raw_skew_scalar={controlled['diagnostic']:.8g},"
-        f"raw_skew_affine={affine['diagnostic']:.8g},"
-        "gate=diagnostic_not_truth_for_curved_W",
+        f"raw_skew_adaptive={adaptive['diagnostic']:.8g},"
+        "gate=diagnostic_not_continuum_certification",
         flush=True,
     )
-    # The 18,816-node phys_x_both was already run in 102- and 103-pass
-    # logs and changed weak self-modes 12-23% with nonmonotone volume.
-    # Do not repeat that costly unchanged failed variant each run.
-    # Its physical outer cubature and no-kernel G diagnostics remain.
+    # The affine experiment stays callable as an explicit research
+    # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
     xo=results["x_only"]["L"]
     yo=results["inner_only"]["L"]
@@ -613,8 +639,8 @@ def main():
     per_mode_changes("radial_only_vs_x_only",inner_rad,xo)
     per_mode_changes("angular_only_vs_inner_radial",both,inner_rad)
     per_mode_changes("scalar_control_vs_uniform_both",controlled["L"],both)
-    per_mode_changes("affine_vs_scalar_both",affine["L"],controlled["L"])
-    per_mode_changes("affine_vs_uniform_both",affine["L"],both)
+    per_mode_changes("moment_angle_vs_scalar_both",adaptive["L"],controlled["L"])
+    per_mode_changes("moment_angle_vs_uniform_both",adaptive["L"],both)
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
