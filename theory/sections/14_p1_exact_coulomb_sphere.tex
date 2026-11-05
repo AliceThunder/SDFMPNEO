@@ -2279,3 +2279,177 @@ Gaussian-curl 双盒磁能验收。
 的错误，确保失败数不再丢失。
 \textbf{新测试和新内势接口尚待本机运行；
 G1/P1-C 仍 FAIL。}
+
+
+\subsection{P1-C 第十二次实跑：局部正权角帽不守恒，须在离散层面匹配解析矩}
+\label{sec:p1-c-positive-entropy-moment-fit}
+最新本机在代码 \texttt{78c8353}、
+日志提交 \texttt{53f635d}
+上 \textbf{108 项 pytest 均通过}，
+真实双盒原核五模态
+\texttt{source\_cap\_both} 首次完整运行，
+但 P1-C/G1 继续 FAIL。
+在完全相同的 4336 个外观察点、
+解析 S/M 选出的背景角规则、
+实际电流模态和径向源窗节点上，
+对 3500 个观察点启用
+7344 个模式中心球帽，
+累计新增 293760 个正权方向。
+相对于 \texttt{mode\_radial\_both}，
+原始磁矩阵整体变化
+$0.12859057$（$12.859\%$），
+$L_{00}$ 增加 $105.634\%$，
+$L_{11}$ 增加 $78.354\%$，
+而最强 $L_{44}$ 下降 $12.661\%$。
+归一化原矩阵偏斜
+$0.01090614\to0.00905149$
+下降，\emph{但不能用于精度认证}。
+
+该实验直接揭露之前只在连续积分
+上建立的局部球帽单位分解
+\[
+ H_0(\bm u)+\sum_mH_m(\bm u)=1
+\]
+在背景与各模式局部帽上分别使用
+有限 Gauss 后，\emph{不会使离散
+求积自动保持常数、真实海水
+Coulomb 标量和一阶矩}。
+实测角权和相对于 $4\pi$
+的最大误差为 $0.049684075$，
+实际双盒湿射线积分的
+$S_\Omega$ 最大相对误差
+$0.057221061$，
+$M_\Omega$ 缩放误差
+$0.026417834$；
+显著恶于未添加球帽前
+$S$ 的 $0.0024911893$、
+$M$ 的 $0.0013165591$。
+所以当前新增球帽给出的磁矩阵大变化
+既可能包含真实窄角电流峰，
+也混入了球面测度严重失配，
+\textbf{不可把变化解释为更准确的解}。
+
+\paragraph{有限正权角节点上的精确矩匹配。}
+对当前固定观察点 $\bm x$，
+设背景+球帽全部角方向为
+$\{\bm u_k\}$，初始权重
+$\omega_k^0>0$，
+它们对应真实外球减两独立
+旋转绝缘盒的湿区射线区间
+$[a_{kp},b_{kp}]$。
+令
+\[
+ A_k=\frac12\sum_p(b_{kp}^2-a_{kp}^2),
+ \qquad
+ \bm B_k=\frac{\bm u_k}{3}
+              \sum_p(b_{kp}^3-a_{kp}^3).
+\]
+则原连续 $1/r$ Coulomb
+角积分的三个基础守恒条件为
+\[
+ \sum_k\widehat\omega_k=4\pi,\qquad
+ \sum_k\widehat\omega_k A_k=S_\Omega(\bm x),
+ \qquad
+ \sum_k\widehat\omega_k\bm B_k
+      =\bm M_\Omega(\bm x).
+\]
+其中第二个是一个标量条件，
+第三个有三个向量分量，
+加上球角面积，总计五个线性矩约束。
+这里 $A_k,\bm B_k$ 通过
+真实射线端点\emph{严格径向积分}，
+不是非物理模式假设，
+也没有改变 $1/r$ 的 Jacobian。
+
+取 $r_{\max}=\max_{kp}b_{kp}$，
+令归一化每方向的特征为
+\[
+ \bm f_k=\left(
+ \frac{4\pi A_k}{S_\Omega},
+ \frac{4\pi\bm B_k}{S_\Omega r_{\max}}
+ \right),\qquad
+ \bm f_\star=
+ \left(1,\frac{\bm M_\Omega}{S_\Omega r_{\max}}\right).
+\]
+将原始正权归一为
+$p_k^0=\omega_k^0/\sum_j\omega_j^0$，
+寻求与其相对熵最小的
+离散概率权
+\[
+ \min_{\bm p}\sum_k
+ p_k\log\frac{p_k}{p_k^0},
+ \qquad
+ p_k>0,\ \sum_kp_k=1,\quad
+ \sum_kp_k\bm f_k=\bm f_\star.
+\]
+其内部驻点由指数倾斜给出
+\begin{equation}
+ p_k(\bm\lambda)=
+ \frac{p_k^0\exp(\bm\lambda\cdot\bm f_k)}
+      {\sum_\ell p_\ell^0
+       \exp(\bm\lambda\cdot\bm f_\ell)},
+ \qquad
+ \widehat\omega_k=4\pi p_k(\bm\lambda).
+ \label{eq:p1-c-positive-moment-tilt}
+\end{equation}
+每个 $\widehat\omega_k$ 均为正值，
+球面总测度 $4\pi$ 由归一化严格保持。
+通过阻尼 Newton 迭代
+$\mathrm{Cov}_{p(\lambda)}(\bm f)$
+的 $4\times4$ 矩阵，
+在已经固定的角方向上匹配
+真实双盒精确 $S_\Omega,\bm M_\Omega$。
+这与最大熵精确离散矩匹配研究
+\cite{tanaka2015exactmoments}
+及正权数值 cubature 的基本原则
+\cite{glaubitz2023positive} 一致。
+但这些文献中的离散收敛理论
+\emph{不能直接代替}本项目
+复杂湿区核及电流模式的误差估计。
+并且对\emph{预先固定}的有限角方向，
+可行性不总能保证，
+不允许因为有连续正权求积存在性
+就假设当前这些节点一定存在
+严格正矩解。
+
+\paragraph{不可行角节点的物理回退与诊断。}
+本轮明确规定在阻尼迭代预算内，
+若不能以正权达到归一化
+四特征最大残差 $2\times10^{-7}$，
+\emph{整点回退}至先前已经实际选中
+并满足 $S/M$ 几何误差目标
+$0.0025$ 的背景角方向和权重。
+回退不表示当前源帽积分已收敛，
+仅防止把物理低阶矩明显失败
+的角帽强行送进磁能矩阵。
+真正接受的正权局部帽
+仍照原模式窗口径向高斯分片
+和真实湿射线区间计算。
+日志必须分别报告
+\texttt{moment\_fit\_accepted}、
+\texttt{fallback\_to\_geometry\_background}、
+最大矩匹配残差及
+\emph{最终实际采用规则}的
+$4\pi,S,M$ 误差，
+不能只报告提议球帽的理论单位分解。
+数学测试另使用观察点在球心、
+外球半径为 1 的独立精确真值
+$S=2\pi,\bm M=\bm0$ 检验
+球帽正权平衡、
+球面测度和 Green 常量源内势。
+
+这里还有未消除的真实误差：
+即使 5 个低阶矩离散上精确，
+局部 Gaussian-curl 的非线性角域结构、
+贴壁尖峰及外观察点盒壳/球图求积
+仍可能不稳定。
+故下一轮必须用同一五个实际模式
+与相同外 $x$、径向、背景角节点，
+对比旧 \texttt{mode\_radial\_both}
+及新的\texttt{source\_cap\_both}，
+解释其弱自项与强项变化；
+如任何测试仍不通过，
+主程序不得执行或宣称认证。
+新正权矩匹配实现\emph{尚待本机实跑}，
+\textbf{P1-C/G1=FAIL，
+正式神经教师仍关闭。}
