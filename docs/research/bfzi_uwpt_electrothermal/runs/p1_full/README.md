@@ -33,3 +33,39 @@
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 日志由 Windows 本机自动 Git 提交，**不使用 GitHub Actions**。P1-C/G1 尚未认证，不启动神经教师训练。
+
+
+## 第五次原始日志（cb02be3，代码 1661bd5；101 passed）与下一次物理 x 候选
+
+最近一次完成的日志提供了与 Green 内核无关的实验证据：
+外球球图从 x0 单独变化到更细规则时，实际海水解析体积误差从
+1.7283% 降为 0.0877%；盒壳法向单独细化后仍为 1.7259%。
+球图对无核 Gram 的**独立贡献**变化 15.705%，
+盒壳法向对整个 Gram 的影响 0.873%，
+盒面切向物理子片对弱自项 G00/G22 的影响各为 2.186%。
+独立 Sobol 双种子最坏自项变化 4.044%，不构成误差上界。
+真实原核 G1 仍 FAIL。
+
+此次代码新增真正参与**五模态原始 1/r Green 磁能装配**
+的外 x 候选规则 shell_phys：在正权球/盒壳分区上，
+球域按真实两盒和扩展盒的角度/径向几何断点分片，
+最大球径向片宽为实际高斯最窄窗宽，
+盒面切向片宽为其一半。
+此法不改变原始 BFZI 物理问题或内 Green 积分；
+物理盒棱的球面投影曲线仍须独立验收。
+
+新的日志会出现：
+- sphere_radial、sphere_angles、sphere_phys、
+  phys_tangent 四组无核 Gram 的独立真实体积和二阶矩对照；
+- p1_full_sea_physical_outer_cross：
+  在相同内 Green 规则下 phys_x_both 与旧 both 的实际五模态 L 对比；
+- p1_full_sea_mode_delta：
+  逐模态自磁能和按自能归一化互耦，避免最强 L44 掩盖问题。
+
+本机：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+新物理规则尚待新本机日志，**不自动视为已收敛。
+G1/P1-C=FAIL，不启动教师训练，不使用 GitHub Actions。**
