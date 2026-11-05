@@ -9,6 +9,36 @@ from examples.bfzi_p1_coulomb import (
 from sdfmpneo_bfzi.source import MU0
 
 
+
+def test_symmetric_difference_unsoftened_1_over_r_against_independent_ball_truth():
+    """Both affine and NON-affine exact solenoidal balls at fixed rules."""
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_difference
+    from examples.bfzi_p1_coulomb import exact_cubic_vortex_green
+
+    x, wx = ball_rule(1.0, 5, 7, 12)
+    y, wy = ball_rule(1.0, 6, 8, 14)
+    scalar = lambda p: 2 * np.pi * (
+        1 - np.einsum("nc,nc->n", p, p) / 3
+    )
+    for evaluate, exact in (
+        (vortex_modes, exact_vortex_green(1.0)),
+        (cubic_vortex_modes, exact_cubic_vortex_green(1.0)),
+    ):
+        got, ratio = assemble_coulomb_difference(
+            x, wx, y, wy, evaluate, scalar, return_diagnostics=True,
+        )
+        assert np.isfinite(got).all() and np.isfinite(ratio)
+        # Predetermined P1 sphere benchmark, not a two-box G1 claim.
+        assert np.linalg.norm(got-exact)/np.linalg.norm(exact) < 0.001
+        np.testing.assert_allclose(got, got.T, atol=1e-21, rtol=1e-13)
+
+    # The difference integrand vanishes on the diagonal: identical
+    # physical node sets do not require a fake softened self kernel.
+    xx, ww = ball_rule(1.0, 3, 5, 8)
+    same = assemble_coulomb_difference(xx, ww, xx, ww, vortex_modes, scalar)
+    assert np.isfinite(same).all()
+
+
 def test_p1_ball_vortex_exact_analytic_potential_and_energy():
     # W_i=e_i cross x, div W_i=0 and x dot W_i=0 on the sphere.
     # ΔU_i=-4πW_i with exterior dipole matching.
