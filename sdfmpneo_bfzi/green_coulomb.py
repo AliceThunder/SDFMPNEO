@@ -765,6 +765,23 @@ def assemble_coulomb_radial(
         azimuthal_order,2*math.pi/azimuthal_order,
     )
     transversal = np.sqrt(np.maximum(0, 1-mu*mu))
+    # Precompute the complete angular hierarchy ONCE, rather than
+    # factoring Legendre roots at every physical observation node.
+    angular_levels=[]
+    if angular_moment_tolerance is not None:
+        for level in range(angular_refine_levels+1):
+            nmu=polar_order*(2**level)
+            nphi=azimuthal_order*(2**level)
+            gm,gw=np.polynomial.legendre.leggauss(nmu)
+            angles=np.concatenate(((gm-1)/2,(gm+1)/2))
+            mu_weight=np.tile(gw/2,2)
+            ph=2*math.pi*(np.arange(nphi)+0.5)/nphi
+            sinmu=np.sqrt(np.maximum(0,1-angles*angles))
+            weights=np.broadcast_to(
+                mu_weight[:,None]*(2*math.pi/nphi),
+                (len(angles),nphi),
+            ).ravel()
+            angular_levels.append((angles,sinmu,ph,weights))
     accum = np.zeros((vx.shape[1],vx.shape[1]))
     if angular_moment_stats is not None:
         angular_moment_stats.clear()
@@ -821,14 +838,8 @@ def assemble_coulomb_radial(
             # Radial integrals of a constant / affine density are exact
             # polynomials in their true wet-ray endpoints; no magnetic
             # approximation or costly over-refinement of radial panels.
-            for level in range(angular_refine_levels+1):
-                nmu = polar_order*(2**level)
-                nphi = azimuthal_order*(2**level)
-                gm,gw = np.polynomial.legendre.leggauss(nmu)
-                angles = np.concatenate(((gm-1)/2,(gm+1)/2))
-                mu_weight = np.tile(gw/2,2)
-                ph = 2*math.pi*(np.arange(nphi)+0.5)/nphi
-                sinmu = np.sqrt(np.maximum(0,1-angles*angles))
+            best_error=float("inf")
+            for level,(angles,sinmu,ph,weights) in enumerate(angular_levels):
                 directions = (
                     (sinmu[:,None]*np.cos(ph)[None,:])[:,:,None]
                        *e1[None,None,:]
@@ -836,32 +847,35 @@ def assemble_coulomb_radial(
                        *e2[None,None,:]
                     +angles[:,None,None]*axis[None,None,:]
                 ).reshape(-1,3)
-                area_weights = np.broadcast_to(
-                    mu_weight[:,None]*(2*math.pi/nphi),
-                    (len(angles),nphi),
-                ).ravel()
                 lo,hi=wet_radial_segments(point,directions)
                 lo0,hi0=np.asarray(lo,float),np.asarray(hi,float)
-                # Exact inner radial integral of 1/r and (y-x)/r.
+                # For constant/linear densities the inner radial
+                # 1/r integrals are exact endpoint polynomials.
                 ray_s=np.sum(0.5*(hi0**2-lo0**2),axis=1)
                 ray_m=np.sum((hi0**3-lo0**3)/3,axis=1)
-                s_test=float(np.dot(area_weights,ray_s))
+                s_test=float(np.dot(weights,ray_s))
                 m_test=np.einsum(
-                    "r,r,rc->c",area_weights,ray_m,directions,
+                    "r,r,rc->c",weights,ray_m,directions,
                     optimize=True,
                 )
-                s_err=abs(s_test-moment[xi])/moment[xi]
-                # M may be exactly zero by symmetry. Normalize its
-                # ABSOLUTE vector error to S*ray extent, not |M|.
-                m_scale=moment[xi]*max(float(np.max(hi0)),1e-30)
-                m_err=float(np.linalg.norm(m_test-first[xi])/m_scale)
-                if max(s_err,m_err)<=angular_moment_tolerance:
+                scalar_error=abs(s_test-moment[xi])/moment[xi]
+                # M may vanish by symmetry; compare its absolute error
+                # against a domain-scaled physical S moment.
+                radius=moment[xi]*max(float(np.max(hi0)),1e-30)
+                vector_error=float(np.linalg.norm(m_test-first[xi])/radius)
+                error=max(scalar_error,vector_error)
+                if error<best_error:
+                    best_error=error
+                    best=(level,directions,weights,lo,hi,
+                          scalar_error,vector_error)
+                if error<=angular_moment_tolerance:
                     break
+            selected,directions,area_weights,lo,hi,s_err,m_err=best
             if angular_moment_stats is not None:
                 rec=angular_moment_stats
                 rec['total']+=1
-                rec['refined']+=int(level>0)
-                rec['unresolved']+=int(max(s_err,m_err)>angular_moment_tolerance)
+                rec['refined']+=int(selected>0)
+                rec['unresolved']+=int(best_error>angular_moment_tolerance)
                 rec['maximum_scalar_rel']=max(rec['maximum_scalar_rel'],s_err)
                 rec['maximum_first_scaled']=max(rec['maximum_first_scaled'],m_err)
         lo,hi = np.asarray(lo,float),np.asarray(hi,float)
