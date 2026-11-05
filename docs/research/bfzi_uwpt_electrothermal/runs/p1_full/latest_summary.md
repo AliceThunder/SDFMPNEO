@@ -1,11 +1,11 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-05T12:28:04+00:00
-- 结束（UTC）：2026-11-05T12:30:19+00:00
-- 当时检出的代码提交：`40c4890`
+- 开始（UTC）：2026-11-05T12:46:08+00:00
+- 结束（UTC）：2026-11-05T12:49:06+00:00
+- 当时检出的代码提交：`ca263e6`
 - 执行：`python run.py --mode bfzi-p1-full-sea`
-- 同批 pytest：106 passed in 43.91s
+- 同批 pytest：107 passed in 43.49s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
@@ -74,6 +74,11 @@
 - `p1_full_sea_mutual: variant=moment_angle_both,L01=9.242421335e-25,L02=-2.163315635e-11,L03=3.021531419e-25,L04=2.015056448e-24,L12=-4.576616668e-25,L13=1.471155668e-10,L14=6.21533441e-10,L23=8.439194352e-25,L24=3.551220042e-24,L34=-6.21533441e-10`
 - `p1_full_sea_moment_angle_quality: target=0.0025,levels=1,points=4336,refined=1296,unresolved=0,max_scalar_rel=0.0024911893,max_first_scaled=0.0013165591,first_moment_scale=S_exact_times_max_ray,selection=geometry_only_before_curl_evaluation,gate=diagnostic_unresolved_not_certified`
 - `p1_full_sea_moment_angular_cross: same_x_true_wet_domain_radial_rules_and_modes,relative_vs_scalar=0.020520069,relative_vs_original=0.013595355,raw_skew_scalar=0.023522407,raw_skew_adaptive=0.01091112,gate=diagnostic_not_continuum_certification`
+- `p1_full_sea: variant=mode_radial_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform_exact_scalar_S_moment_adaptive_angle_source_window_radial,norm_L=8.436963086e-08,trace_L=8.813842524e-08,raw_skew=0.01090614,min_eig=8.580493537e-10,max_eig=8.434800622e-08`
+- `p1_full_sea_self: variant=mode_radial_both,L00=8.905788418e-10,L11=1.009140799e-09,L22=8.905788418e-10,L33=1.009140799e-09,L44=8.433898596e-08`
+- `p1_full_sea_mutual: variant=mode_radial_both,L01=4.1066106e-25,L02=-1.814285496e-11,L03=1.94187152e-25,L04=3.884573698e-25,L12=-2.293176304e-25,L13=1.42071186e-10,L14=6.1360398e-10,L23=2.2542145e-26,L24=3.961152825e-24,L34=-6.1360398e-10`
+- `p1_full_sea_mode_window_radial_cross: same_x_same_geometry_selected_angles_same_mode_currents,relative_L=0.0096050227,self_relative=0.0096037302,skew_old=0.01091112,skew_new=0.010906139,only_added_mode_window_radial_panels=true,gate=not_certified`
+- `p1_full_sea_mode_window_angle_repeat: points=4336,refined=1296,unresolved=0,match_geometry_selection=true`
 - `p1_full_sea_inner_axes: at_fixed_x=x1,radial_step=0.02830751,angle_step=0.03606858,self_radial_step=0.02800063,self_angle_step=0.03127346,mutual_radial_step=0.002946739,mutual_angle_step=0.01270753`
 - `p1_full_sea_change: method=radial,x_only_vs_base=0.01841002,inner_only_vs_base=0.01531267,both_vs_base=0.07349419,both_vs_x_only=0.06190275,both_vs_inner_only=0.07130619,self_x=0.008743887,self_inner=0.002406856,self_both=0.06698166,mutual_x=0.01145592,mutual_inner=0.01069311,mutual_both=0.02138963,pass_status=not_certified_without_independent_reference`
 - `p1_full_sea_mode_delta: comparison=x_only_vs_base,self0=0.53978201,self1=0.13423006,self2=0.49902468,self3=0.12728098,self4=0.006278837,max_self=0.53978201,max_mutual_self_normalized=0.26306242`
@@ -82,6 +87,7 @@
 - `p1_full_sea_mode_delta: comparison=scalar_control_vs_uniform_both,self0=0.071757209,self1=0.31482923,self2=0.071757209,self3=0.31482923,self4=0.0081742527,max_self=0.31482923,max_mutual_self_normalized=0.0011296704`
 - `p1_full_sea_mode_delta: comparison=moment_angle_vs_scalar_both,self0=0.07644629,self1=0.10204581,self2=0.07644629,self3=0.10204581,self4=0.018398776,max_self=0.10204581,max_mutual_self_normalized=0.06926078`
 - `p1_full_sea_mode_delta: comparison=moment_angle_vs_uniform_both,self0=0.010174654,self1=0.18065642,self2=0.010174654,self3=0.18065642,self4=0.010074127,max_self=0.18065642,max_mutual_self_normalized=0.07310107`
+- `p1_full_sea_mode_delta: comparison=mode_radial_vs_moment_angle,self0=0.0047069336,self1=0.0059621342,self2=0.0047069336,self3=0.0059621342,self4=0.0096053398,max_self=0.0096053398,max_mutual_self_normalized=0.0050284917`
 - `p1_full_sea_note: previous difference pilot had 23.56018-percent y-axis L change, 80.94096-percent Taylor cross-formulation gap, and 98-percent subtraction ratio. New radial Green operator has no large matrix subtraction. It must still pass independent x/inner angular/radial and near-wall/corner convergence; a small raw skew or one PSD matrix is not a true solution certificate. G1 remains FAIL.`
 
 此运行是实际双盒全海水 curl 模式及原核 L 的数值收敛实验；没有独立连续真值，且角向射线对盒壁/棱角的裁剪仍须单独验证。程序完成、对称、谱正性或分轴差异小，均不能独立证明 G1 PASS。
