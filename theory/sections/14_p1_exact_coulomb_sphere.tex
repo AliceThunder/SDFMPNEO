@@ -733,3 +733,101 @@ Passarotto--Pitassi--Specogna~\cite{passarotto2022}；
 式 \eqref{eq:g1-review-subtraction} 的解析
 奇异减除仍是后续优先途径，
 不可以用球形算例代替所有边界角度验证。
+
+
+\subsection{P1-C 的对称差分原 Coulomb 磁能表示（2026-11-05）}
+\label{sec:p1-symmetric-difference}
+在固定的真实海水域
+$\Omega=B_R(c_0)\setminus(\overline B_1\cup\overline B_2)$，
+对实值、平方可积并在各内部采样点局部 Lipschitz 的
+原物理 $\bm W_i$，令
+\[
+ S_\Omega(\bm x)=\int_\Omega
+  \frac{\mathrm d\bm y}{|\bm x-\bm y|}.
+\]
+将 $\bm x,\bm y$ 互换并展开平方差，
+可由\emph{严格等式}（不是近似光滑核）得到
+\begin{equation}
+\label{eq:p1-symmetric-difference}
+\boxed{
+ L_{ij}=\frac{\mu_0}{4\pi}
+ \left[
+ \int_\Omega S_\Omega(\bm x)\,
+      \bm W_i(\bm x)\cdot\bm W_j(\bm x)\,\mathrm d\bm x
+ -\frac12\iint_{\Omega^2}
+ \frac{[\bm W_i(\bm x)-\bm W_i(\bm y)]\cdot
+       [\bm W_j(\bm x)-\bm W_j(\bm y)]}
+      {|\bm x-\bm y|}\,\mathrm d\bm y\,\mathrm d\bm x
+ \right].
+}
+\end{equation}
+证明只用两个交叉项的积分相等：
+双重差分积分的展开为
+$2\int_\Omega S_\Omega\bm W_i\cdot\bm W_j
+ -(8\pi/\mu_0)L_{ij}$。
+所以式~\eqref{eq:p1-symmetric-difference}
+仍是\textbf{完全未软化 $1/r$ 的原双线性磁能}；
+没有 Plummer 长度、球云或改变磁导率。
+
+若在固定内部 $\bm x$ 的邻域
+$\bm W$ 局部 Lipschitz，则分子为
+$O(|\bm x-\bm y|^2)$，
+差分积分核为 $O(|\bm x-\bm y|)$，
+在同一离散点 $\bm y=\bm x$ 可连续赋值为零。
+这与零阶 Taylor 减除的方向依赖极限不同；
+本式也\emph{不需要} Hessian 或
+$\bm M_\Omega$，因而可以用于当前已有
+$\bm W=\Curl(g\bm C_{\rm port})$ 电流，
+但并不证明这样的源引导电流空间已经完备。
+
+数值上为降低单边外积分偏差，外部的局部项采用
+$\bm x$ 与 $\bm y$ 两套正权测度的平均：
+\[
+ A_{ij}^{xy}=\frac12\left[
+ \sum_a w_a^x S_\Omega(x_a)\bm W_i(x_a)\cdot\bm W_j(x_a)
+ +\sum_b w_b^y S_\Omega(y_b)\bm W_i(y_b)\cdot\bm W_j(y_b)
+ \right],
+\]
+\[
+ D_{ij}^{xy}=\sum_{a,b}
+ \frac{w_a^xw_b^y}{|x_a-y_b|}
+ [\bm W_i(x_a)-\bm W_i(y_b)]\cdot
+ [\bm W_j(x_a)-\bm W_j(y_b)].
+\]
+取 $L^{xy}=\mu_0(A^{xy}-D^{xy}/2)/(4\pi)$。
+此离散式按构造是对称的，
+故\emph{不能}以 raw skew 接近零作精度认证。
+较大的 $\|D^{xy}/2\|/\|A^{xy}\|$
+警示两大矩阵相减的消去风险；
+离散特征值也\emph{不保证}非负，
+尽管连续磁能 Gram 型为半正定。
+
+已在独立数值原型使用现有球域正权规则
+$x=(5,8,12)$、$y=(6,9,14)$
+与解析真值比较：
+线性无散度涡流的 Frobenius 相对误差
+$2.38421\times10^{-4}$，
+非仿射三次涡流为
+$5.61633\times10^{-4}$；
+它们仅说明这一\emph{有限球例}的原核积分
+已达到事前 $10^{-3}$ 目标，
+不是 GitHub 仓库运行记录，也不是实盒参考解。
+针对真实双盒五维 curl 子空间，
+已新增上述差分装配及四组独立 $x/y$ 规则，
+逐项打印五个自项、十个互项及
+与旧一阶 Taylor 法相同积分规则上的交叉差异。
+\textbf{目前仓库不存在 \texttt{runs/p1\_full/} 实跑日志；
+P1-C 与整个 G1 继续 FAIL。}
+
+\paragraph{近盒面与棱角的独立数值问题。}
+对两盒距离包络，$\bm W$ 在湿区内部逐片光滑，
+但几何切换线和靠近棱角的薄层
+使上述局部 Lipschitz 常数不均匀。
+因此 $1/r$ 对角正则化\emph{不等于}
+近盒面、棱角、外球截断与 $x/y$ 体积测度已收敛；
+应先读取真实五模态的自项/互项以及
+分轴敏感性，再对真实固定电流开展
+近壁和棱角的单独几何加密或独立参考。
+近奇异积分往往需要针对几何的变量变换或
+局部奇异积分技术，而不是只增大全局 Gauss 阶数
+\cite{duffy1982,montanelli2022curved,hu2026near}.
