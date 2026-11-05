@@ -1,34 +1,36 @@
 # BFZI 最近一次本地运行摘要
 
 - 运行状态：**PASS（程序完成；不代表物理收敛）**
-- 开始（UTC）：2026-11-05T03:32:55+00:00
-- 结束（UTC）：2026-11-05T03:34:13+00:00
-- 当时检出的代码提交：`8c26357`
+- 开始（UTC）：2026-11-05T05:25:52+00:00
+- 结束（UTC）：2026-11-05T05:27:22+00:00
+- 当时检出的代码提交：`35895a4`
 - 执行：`python run.py --mode bfzi-p1-full-sea`
-- 同批 pytest：99 passed in 47.16s
+- 同批 pytest：100 passed in 42.86s
 - 物理验收：**未自动认证**。下面仅为本次数值相互比较；请根据收敛实验人工判断。
 - [查看完整原始日志](latest_full.log)；此摘要与原始日志均由本机 Git 更新，不使用 GitHub Actions。
 
 ## P1-C 真实双盒全海水五个 curl 模式原核 L （仅数值对照，尚非物理验收）
 
 - `p1_full_sea_exact: domain=outer_ball_minus_two_actual_rotated_boxes,modes=5,mode_indices=0-1-12-13-24,kernel=original_unsoftened_1/r,inner=point_centered_exact_wet_ray_intervals,inner_measure=r_dr_dsolidangle,outer=geometry_aligned_positive_box_shell_cubature,wall_normal=log_panels,gate=not_certified`
-- `p1_full_sea: variant=base,method=radial,x_nodes=2716,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=4.791769187e-08,trace_L=5.050727444e-08,raw_skew=0.02347326,min_eig=3.747919685e-10,max_eig=4.78985733e-08`
-- `p1_full_sea_self: variant=base,L00=5.213758672e-10,L11=7.738013133e-10,L22=5.35827356e-10,L33=7.779127523e-10,L44=4.789835715e-08`
-- `p1_full_sea_mutual: variant=base,L01=-3.203197291e-25,L02=-1.536398221e-10,L03=-1.348744881e-25,L04=-8.76460913e-25,L12=3.027630055e-25,L13=1.050967683e-10,L14=-6.132118957e-11,L23=1.696576305e-25,L24=3.707695544e-25,L34=8.029299847e-11`
-- `p1_full_sea: variant=x_only,method=radial,x_nodes=4336,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=5.053674333e-08,trace_L=5.394680769e-08,raw_skew=0.02176694,min_eig=7.749438156e-10,max_eig=5.050735644e-08`
-- `p1_full_sea_self: variant=x_only,L00=8.461027502e-10,L11=8.772781146e-10,L22=8.461027502e-10,L33=8.772781146e-10,L44=5.050004596e-08`
-- `p1_full_sea_mutual: variant=x_only,L01=4.62902666e-26,L02=7.115893453e-11,L03=9.737974002e-28,L04=-7.125765142e-25,L12=-1.068491059e-25,L13=1.9053606e-11,L14=4.26003949e-10,L23=-3.984507767e-26,L24=1.065854469e-24,L34=-4.26003949e-10`
-- `p1_full_sea: variant=inner_only,method=radial,x_nodes=2716,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=6.509124132e-08,trace_L=6.776012064e-08,raw_skew=0.02002767,min_eig=4.924858296e-10,max_eig=6.507697887e-08`
-- `p1_full_sea_self: variant=inner_only,L00=5.937453069e-10,L11=7.531987194e-10,L22=5.907594909e-10,L33=7.508919714e-10,L44=6.507152515e-08`
-- `p1_full_sea_mutual: variant=inner_only,L01=2.105731165e-26,L02=9.975539872e-11,L03=-2.408729242e-26,L04=-2.126355386e-24,L12=-2.914149551e-25,L13=7.514136008e-11,L14=4.11343098e-10,L23=-1.005081804e-25,L24=1.346547632e-24,L34=-4.266339108e-10`
-- `p1_full_sea: variant=inner_radial_only,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_3_azimuth_8,norm_L=6.581031382e-08,trace_L=6.888271355e-08,raw_skew=0.01031976,min_eig=7.013725518e-10,max_eig=6.579209074e-08`
-- `p1_full_sea_self: variant=inner_radial_only,L00=7.251044669e-10,L11=8.243550298e-10,L22=7.251044669e-10,L33=8.243550298e-10,L44=6.578379456e-08`
-- `p1_full_sea_mutual: variant=inner_radial_only,L01=-8.345381258e-27,L02=2.373191511e-11,L03=-1.217864105e-27,L04=-9.331985023e-25,L12=-1.641481986e-25,L13=5.065427764e-13,L14=5.191282677e-10,L23=1.179715083e-26,L24=1.235980251e-24,L34=-5.191282677e-10`
-- `p1_full_sea: variant=both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=6.475686132e-08,trace_L=6.801801557e-08,raw_skew=0.01745615,min_eig=6.975082334e-10,max_eig=6.473576119e-08`
-- `p1_full_sea_self: variant=both,L00=8.125184958e-10,L11=8.397474365e-10,L22=8.125184958e-10,L33=8.397474365e-10,L44=6.471348371e-08`
-- `p1_full_sea_mutual: variant=both,L01=1.325891185e-25,L02=-4.679579858e-11,L03=7.39678549e-26,L04=-2.07758092e-25,L12=3.515229744e-25,L13=1.199617238e-10,L14=8.444271931e-10,L23=1.329125225e-26,L24=2.620493891e-24,L34=-8.444271931e-10`
-- `p1_full_sea_inner_axes: at_fixed_x=x1,radial_step=0.3024768,angle_step=0.01935873,self_radial_step=0.3024947,self_angle_step=0.01637708,mutual_radial_step=0.002794017,mutual_angle_step=0.007301322`
-- `p1_full_sea_change: method=radial,x_only_vs_base=0.05937477,inner_only_vs_base=0.3590569,both_vs_base=0.3531091,both_vs_x_only=0.2817736,both_vs_inner_only=0.01545355,self_x=0.0551804,self_inner=0.3584016,self_both=0.3510289,mutual_x=0.0155017,mutual_inner=0.01541341,mutual_both=0.02710676,pass_status=not_certified_without_independent_reference`
+- `p1_full_sea_scalar: polar_per_hemisphere=3,azimuth=8,face_rel=0.0036226908,edge_rel=0.00067666495,corner_rel=0.0015097484,max_rel=0.0036226908,radial_error=analytically_zero_for_constant_density,truth=exact_ball_minus_two_box_S,scope=angular_clipping_geometry_only`
+- `p1_full_sea_scalar: polar_per_hemisphere=8,azimuth=32,face_rel=0.00059979506,edge_rel=0.00026794007,corner_rel=0.0011071854,max_rel=0.0011071854,radial_error=analytically_zero_for_constant_density,truth=exact_ball_minus_two_box_S,scope=angular_clipping_geometry_only`
+- `p1_full_sea: variant=base,method=radial,x_nodes=2716,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=7.904257106e-08,trace_L=8.177576846e-08,raw_skew=0.006070683,min_eig=4.846461393e-10,max_eig=7.90300625e-08`
+- `p1_full_sea_self: variant=base,L00=6.191231772e-10,L11=7.435713525e-10,L22=6.359566598e-10,L33=7.481550709e-10,L44=7.90289622e-08`
+- `p1_full_sea_mutual: variant=base,L01=1.110803363e-25,L02=-1.42645682e-10,L03=2.524357859e-24,L04=-1.103269976e-24,L12=-2.369733717e-24,L13=1.369606703e-10,L14=-1.97991612e-10,L23=-3.340215979e-25,L24=2.017521969e-24,L34=2.169918295e-10`
+- `p1_full_sea: variant=x_only,method=radial,x_nodes=4336,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=7.954993505e-08,trace_L=8.31185636e-08,raw_skew=0.00855177,min_eig=7.841339961e-10,max_eig=7.952953725e-08`
+- `p1_full_sea_self: variant=x_only,L00=9.533147302e-10,L11=8.433809825e-10,L22=9.533147302e-10,L33=8.433809825e-10,L44=7.952517217e-08`
+- `p1_full_sea_mutual: variant=x_only,L01=1.439528847e-25,L02=-5.249468019e-11,L03=-5.259508247e-25,L04=-1.438275642e-24,L12=2.444879302e-25,L13=-5.924698637e-11,L14=4.142539351e-10,L23=1.621478737e-25,L24=4.474684188e-24,L34=-4.142539351e-10`
+- `p1_full_sea: variant=inner_only,method=radial,x_nodes=2716,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=7.885471972e-08,trace_L=8.159447929e-08,raw_skew=0.03246775,min_eig=5.845354069e-10,max_eig=7.884253007e-08`
+- `p1_full_sea_self: variant=inner_only,L00=6.239559317e-10,L11=7.512235326e-10,L22=6.330193833e-10,L33=7.473185458e-10,L44=7.883896189e-08`
+- `p1_full_sea_mutual: variant=inner_only,L01=-6.052470761e-26,L02=4.371800311e-11,L03=-3.749381651e-25,L04=-2.971579748e-24,L12=4.346061207e-25,L13=7.216655051e-11,L14=3.537346253e-10,L23=-3.255009645e-25,L24=-1.477299245e-24,L34=-3.921469123e-10`
+- `p1_full_sea: variant=inner_radial_only,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_3_azimuth_8,norm_L=8.17708894e-08,trace_L=8.518245906e-08,raw_skew=0.005844198,min_eig=7.432256851e-10,max_eig=8.175251936e-08`
+- `p1_full_sea_self: variant=inner_radial_only,L00=8.964027898e-10,L11=8.194341741e-10,L22=8.964027898e-10,L33=8.194341741e-10,L44=8.175078513e-08`
+- `p1_full_sea_mutual: variant=inner_radial_only,L01=8.513312832e-26,L02=-1.531771047e-10,L03=-6.143612889e-25,L04=-1.513513419e-24,L12=3.389484021e-25,L13=-7.09548632e-11,L14=2.647959304e-10,L23=4.162257455e-26,L24=4.39392851e-24,L34=-2.647959304e-10`
+- `p1_full_sea: variant=both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=8.434903004e-08,trace_L=8.779798362e-08,raw_skew=0.02333248,min_eig=7.189537446e-10,max_eig=8.433093702e-08`
+- `p1_full_sea_self: variant=both,L00=8.955181723e-10,L11=8.496627911e-10,L22=8.955181723e-10,L33=8.496627911e-10,L44=8.430762169e-08`
+- `p1_full_sea_mutual: variant=both,L01=7.360847023e-25,L02=-8.709649262e-11,L03=3.524942585e-25,L04=8.249664801e-24,L12=-3.412900542e-25,L13=1.073937147e-10,L14=9.871417153e-10,L23=8.751944765e-25,L24=1.392201405e-24,L34=-9.871417153e-10`
+- `p1_full_sea_inner_axes: at_fixed_x=x1,radial_step=0.02830751,angle_step=0.03606858,self_radial_step=0.02800063,self_angle_step=0.03127346,mutual_radial_step=0.002946739,mutual_angle_step=0.01270753`
+- `p1_full_sea_change: method=radial,x_only_vs_base=0.01841002,inner_only_vs_base=0.01531267,both_vs_base=0.07349419,both_vs_x_only=0.06190275,both_vs_inner_only=0.07130619,self_x=0.008743887,self_inner=0.002406856,self_both=0.06698166,mutual_x=0.01145592,mutual_inner=0.01069311,mutual_both=0.02138963,pass_status=not_certified_without_independent_reference`
 - `p1_full_sea_note: previous difference pilot had 23.56018-percent y-axis L change, 80.94096-percent Taylor cross-formulation gap, and 98-percent subtraction ratio. New radial Green operator has no large matrix subtraction. It must still pass independent x/inner angular/radial and near-wall/corner convergence; a small raw skew or one PSD matrix is not a true solution certificate. G1 remains FAIL.`
 
 此运行是实际双盒全海水 curl 模式及原核 L 的数值收敛实验；没有独立连续真值，且角向射线对盒壁/棱角的裁剪仍须单独验证。程序完成、对称、谱正性或分轴差异小，均不能独立证明 G1 PASS。
