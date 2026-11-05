@@ -373,3 +373,20 @@ raw skew、各模式变化、
 
     git pull --ff-only
     python run.py --mode bfzi-p1-full-sea --with-tests
+
+## 24. 第十一次本机：107 passed、1 failed，源角帽单测比较了错误的物理量
+
+最新日志提交 7906a58（运行代码 cd82e4f）：**107 passed，1 failed；由于单测失败，本次五模态主求解没有运行**。所以不能把上轮 source_cap_both 的候选当作已经实算，也不能用这次日志对其真实磁矩阵效果作判断。
+
+失败测试为 test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball：它拿远离观察点的窄 Gaussian 电流的 **自磁能 Lgg** 同有限的 **点心 Green 内势 Ug(x)** 比较。因为在观测点的 Gaussian 值指数微小，Lgg=μ0/(4π)·Wg(x)·Ug(x) 自然趋零，即使 Ug(x) 已精确积分。原测试得到约 1.1343e-229，而错误真值约 1.5529e-11，属于测试定义混淆，**不足以证伪或验证真实角帽算法**。
+
+本轮修复了主接口：assemble_coulomb_radial 增加可选 return_point_potentials=True，直接返回每个外观察点和源模态的**无 μ0/(4π) 前因子的原核 Green 内势**；既有对称磁矩阵 L 返回保持向后兼容。新解析测试比较 μ0/(4π)·Ug(0) 与独立 Newton Gaussian 解析真值，不再误拿 Lgg。当前真实双盒五模态及几何磁能仍未认证。
+
+同时修复 examples/bfzi_run_record.py 中 pytest 终行解析：失败日志的完整 **1 failed, 107 passed** 不再被自动摘要截成只有 **107 passed**。原始日志仍完整保留以便追溯。
+
+**下一次 Windows 本机执行：**
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+先确认 corrected Gaussian source-cap 解析单测通过，再获取新的 source_cap_both / mode_radial_both 五模式单轴对照、局部帽角测度及独立 S/M 几何矩误差。**P1-C/G1=FAIL，正式神经教师关闭，不使用 GitHub Actions。**
