@@ -894,10 +894,11 @@ def assemble_basis_coulomb_radial(
     # Exact domain moments are geometry-only and independently known:
     # this is a controlled Green constant-density correction, NOT a
     # new trial basis, altered seawater material, or kernel softening.
-    exact_scalar = (
-        sea_coulomb_moments(scene,x)[0]
-        if exact_scalar_control else None
-    )
+    if exact_scalar_control:
+        from .coulomb_geometry_moments import sea_coulomb_moments
+        exact_scalar = sea_coulomb_moments(scene,x)[0]
+    else:
+        exact_scalar = None
     return assemble_coulomb_radial(
         x,wx,current,intervals,
         radial_order=radial_order,
