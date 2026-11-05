@@ -655,6 +655,9 @@ def assemble_coulomb_radial(
     exact_scalar_moments=None,
     exact_first_moments=None,
     current_jacobian=None,
+    angular_moment_tolerance: float | None = None,
+    angular_refine_levels: int = 1,
+    angular_moment_stats: dict | None = None,
     return_diagnostics: bool = False,
 ):
     """Direct unsoftened Green potential in x-centred polar coordinates.
@@ -714,10 +717,19 @@ def assemble_coulomb_radial(
         if (moment.shape != (len(x),) or not np.isfinite(moment).all()
                 or np.any(moment <= 0)):
             raise ValueError("exact_scalar_moments must be positive finite (n_x,)")
-    if (exact_first_moments is None) != (current_jacobian is None):
-        raise ValueError("exact_first_moments and current_jacobian must be supplied together")
+    if current_jacobian is not None and exact_first_moments is None:
+        raise ValueError("current_jacobian requires exact_first_moments")
     if exact_first_moments is not None and moment is None:
-        raise ValueError("affine correction requires exact_scalar_moments")
+        raise ValueError("first moment requires exact_scalar_moments")
+    if angular_moment_tolerance is not None:
+        if (not math.isfinite(angular_moment_tolerance)
+                or angular_moment_tolerance <= 0
+                or exact_first_moments is None
+                or azimuthal_rule is not None
+                or not isinstance(angular_refine_levels,int)
+                or not 0 <= angular_refine_levels <= 3):
+            raise ValueError("moment angular refinement requires exact S/M, "
+                             "uniform azimuth and 0..3 refinement levels")
     first = None
     if exact_first_moments is not None:
         first = np.asarray(exact_first_moments,dtype=float)
@@ -735,7 +747,7 @@ def assemble_coulomb_radial(
             or vx.shape[2] != 3 or not np.isfinite(vx).all()):
         raise ValueError("current evaluator must return finite (x,m,3)")
     jac = None
-    if first is not None:
+    if current_jacobian is not None:
         jac = np.asarray(current_jacobian(x),dtype=float)
         if (jac.shape != (len(x),vx.shape[1],3,3)
                 or not np.isfinite(jac).all()):
@@ -754,6 +766,11 @@ def assemble_coulomb_radial(
     )
     transversal = np.sqrt(np.maximum(0, 1-mu*mu))
     accum = np.zeros((vx.shape[1],vx.shape[1]))
+    if angular_moment_stats is not None:
+        angular_moment_stats.clear()
+        angular_moment_stats.update(total=0,refined=0,unresolved=0,
+                                   maximum_scalar_rel=0.0,
+                                   maximum_first_scaled=0.0)
     for xi, (point, weight) in enumerate(zip(x, wx)):
         if polar_axis is None:
             axis = np.array((0.0, 0.0, 1.0))
@@ -788,15 +805,65 @@ def assemble_coulomb_radial(
                     "azimuthal rule must integrate full 2*pi with "
                     "positive finite weights"
                 )
-        directions = (
-            (transversal[:,None]*np.cos(phi)[None,:])[:,:,None]
-                *e1[None,None,:]
-            +(transversal[:,None]*np.sin(phi)[None,:])[:,:,None]
-                *e2[None,None,:]
-            +mu[:,None,None]*axis[None,None,:]
-        ).reshape(-1,3)
-        area_weights = (wmu[:,None]*wphi[None,:]).ravel()
-        lo, hi = wet_radial_segments(point,directions)
+        if angular_moment_tolerance is None:
+            directions = (
+                (transversal[:,None]*np.cos(phi)[None,:])[:,:,None]
+                    *e1[None,None,:]
+                +(transversal[:,None]*np.sin(phi)[None,:])[:,:,None]
+                    *e2[None,None,:]
+                +mu[:,None,None]*axis[None,None,:]
+            ).reshape(-1,3)
+            area_weights = (wmu[:,None]*wphi[None,:]).ravel()
+            lo, hi = wet_radial_segments(point,directions)
+        else:
+            # ANGULAR adaptivity is selected by INDEPENDENT exact
+            # geometry moments BEFORE any expensive current evaluation.
+            # Radial integrals of a constant / affine density are exact
+            # polynomials in their true wet-ray endpoints; no magnetic
+            # approximation or costly over-refinement of radial panels.
+            for level in range(angular_refine_levels+1):
+                nmu = polar_order*(2**level)
+                nphi = azimuthal_order*(2**level)
+                gm,gw = np.polynomial.legendre.leggauss(nmu)
+                angles = np.concatenate(((gm-1)/2,(gm+1)/2))
+                mu_weight = np.tile(gw/2,2)
+                ph = 2*math.pi*(np.arange(nphi)+0.5)/nphi
+                sinmu = np.sqrt(np.maximum(0,1-angles*angles))
+                directions = (
+                    (sinmu[:,None]*np.cos(ph)[None,:])[:,:,None]
+                       *e1[None,None,:]
+                    +(sinmu[:,None]*np.sin(ph)[None,:])[:,:,None]
+                       *e2[None,None,:]
+                    +angles[:,None,None]*axis[None,None,:]
+                ).reshape(-1,3)
+                area_weights = np.broadcast_to(
+                    mu_weight[:,None]*(2*math.pi/nphi),
+                    (len(angles),nphi),
+                ).ravel()
+                lo,hi=wet_radial_segments(point,directions)
+                lo0,hi0=np.asarray(lo,float),np.asarray(hi,float)
+                # Exact inner radial integral of 1/r and (y-x)/r.
+                ray_s=np.sum(0.5*(hi0**2-lo0**2),axis=1)
+                ray_m=np.sum((hi0**3-lo0**3)/3,axis=1)
+                s_test=float(np.dot(area_weights,ray_s))
+                m_test=np.einsum(
+                    "r,r,rc->c",area_weights,ray_m,directions,
+                    optimize=True,
+                )
+                s_err=abs(s_test-moment[xi])/moment[xi]
+                # M may be exactly zero by symmetry. Normalize its
+                # ABSOLUTE vector error to S*ray extent, not |M|.
+                m_scale=moment[xi]*max(float(np.max(hi0)),1e-30)
+                m_err=float(np.linalg.norm(m_test-first[xi])/m_scale)
+                if max(s_err,m_err)<=angular_moment_tolerance:
+                    break
+            if angular_moment_stats is not None:
+                rec=angular_moment_stats
+                rec['total']+=1
+                rec['refined']+=int(level>0)
+                rec['unresolved']+=int(max(s_err,m_err)>angular_moment_tolerance)
+                rec['maximum_scalar_rel']=max(rec['maximum_scalar_rel'],s_err)
+                rec['maximum_first_scaled']=max(rec['maximum_first_scaled'],m_err)
         lo,hi = np.asarray(lo,float),np.asarray(hi,float)
         if (lo.ndim != 2 or lo.shape != hi.shape
                 or lo.shape[0] != len(directions)
@@ -881,6 +948,9 @@ def assemble_basis_coulomb_radial(
     box_corner_azimuth_panels: bool = False,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
+    angular_moment_tolerance: float | None = None,
+    angular_refine_levels: int = 1,
+    angular_moment_stats: dict | None = None,
     return_diagnostics: bool = False,
 ):
     """Actual box-clipped BFZI Green L using radial Jacobian cancellation.
@@ -930,7 +1000,7 @@ def assemble_basis_coulomb_radial(
     # new trial basis, altered seawater material, or kernel softening.
     if exact_affine_control and not exact_scalar_control:
         raise ValueError("exact affine Green control requires scalar control")
-    if exact_scalar_control:
+    if exact_scalar_control or angular_moment_tolerance is not None:
         from .coulomb_geometry_moments import sea_coulomb_moments
         exact_scalar, exact_first = sea_coulomb_moments(scene,x)
     else:
@@ -953,8 +1023,13 @@ def assemble_basis_coulomb_radial(
             azimuthal if box_corner_azimuth_panels else None
         ),
         exact_scalar_moments=exact_scalar,
-        exact_first_moments=exact_first if exact_affine_control else None,
+        exact_first_moments=exact_first if (
+            exact_affine_control or angular_moment_tolerance is not None
+        ) else None,
         current_jacobian=jacobian,
+        angular_moment_tolerance=angular_moment_tolerance,
+        angular_refine_levels=angular_refine_levels,
+        angular_moment_stats=angular_moment_stats,
         return_diagnostics=return_diagnostics,
     )
 
