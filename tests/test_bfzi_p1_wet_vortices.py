@@ -53,8 +53,10 @@ def test_two_compact_vortex_self_and_mutual_original_coulomb_converge():
     coarse=wet_vortex_trial(
         supports,(3,5,8),(4,6,10),
     )
+    # Eight x-radial Gauss nodes exactly integrate polynomials up to
+    # degree 15, including the analytic degree-14 self-energy moment.
     fine=wet_vortex_trial(
-        supports,(5,8,12),(6,9,14),
+        supports,(8,10,16),(8,11,18),
     )
     assert np.isfinite(fine["frob_rel"])
     assert np.isfinite(fine["mutual_rel"])
