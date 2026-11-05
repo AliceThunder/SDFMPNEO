@@ -673,6 +673,51 @@ $\nabla\Curl\bm C_{\mathrm{port}}$。
 新主实现和针对性单测已经提交，
 \textbf{尚待用户本机执行}。
 
+
+\subsection{P1-C 首次实跑的运行阻断与独立求积轴要求}
+用户本机 2026-11-05 UTC 在代码
+\texttt{983ad60} 上执行 P1 共 94 项单元测试通过，
+但新全海水试验导入
+\texttt{bfzi\_p1\_full\_sea\_taylor.py}
+时遇到 \texttt{p1\_full\_sea\_change} 打印语句
+两个 \texttt{\_relative} 调用的关闭括号遗漏，
+故\emph{没有取得 P1-C 的任何磁能求积数值结果}。
+该语法错误已改正，新专项单测直接导入该主模块，
+使其今后在运行长程序之前就能暴露。
+
+另外原设的四组 $x/y$ 规则中
+$\texttt{x1}=\texttt{y0}=(4,6,10)$，
+二者重用了完全相同的三维节点。
+式\eqref{eq:p1-affine-taylor-subtraction} 的
+一阶 Taylor 剩余核在 $\bm y\to\bm x$ 时
+若 $\bm W\in C^2$ 则可以连续延拓为零，
+但实际未作该极限延拓的商式求积在
+$\bm x=\bm y$ 处成为 $0/0$，
+当前原核算子故意拒绝该误用；
+仅作零阶减除时甚至没有唯一的角向极限。
+因此首次 P1-C 试验明确使用四组互异规则：
+\[
+\begin{array}{ll}
+x_0=(3,5,8),&y_0=(4,6,10),\\
+x_1=(5,7,12),&y_1=(6,8,14),
+\end{array}
+\]
+并比较 $(x_0,y_0)$、$(x_1,y_0)$、
+$(x_0,y_1)$、$(x_1,y_1)$，
+各组 Gauss 方位中点互不重合。
+这仅仅选择独立正权积分测度，
+没有改变原 Maxwell 电流、原 $1/r$ 核、
+海水真实域或五个固定基函数。
+
+为减少已认证解析球和紧支双涡流的重复计算，
+另设独立入口
+\texttt{python run.py --mode bfzi-p1-full-sea --with-tests}，
+保留本机自动提交日志机制，
+但写入单独的 \texttt{runs/p1\_full/}，
+而非覆盖 P1-A／P1-B 的 \texttt{runs/p1/}。
+\textbf{修复尚待本机新日志；
+真实全湿区 BFZI curl 原核 $L$ 继续未认证。}
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
