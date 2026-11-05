@@ -76,6 +76,19 @@ python run.py --mode bfzi-p1-coulomb --with-tests
 
 P0 闭合 BFZI 源、R/K、热代理和神经模型均未修改，不使用 GitHub Actions。
 
+## P1-C 首轮运行错误修复与单独日志入口（2026-11-05 UTC）
+
+最新用户本机代码 `983ad60` 的 [原 P1 日志](runs/p1/latest_full.log)显示 **94 passed，但 P1-C 主实验在导入时 SyntaxError，运行状态 FAIL**。不是磁能 L 的误差实测。已经修复 `bfzi_p1_full_sea_taylor.py` 两个 `_relative()` f-string 漏闭合括号，pytest 现直接导入该主实验模块。另发现原 `x_only` 规则 `x1=(4,6,10)` 与 `y0` 完全相同，会触发原核 Taylor 程序拒绝共址积分节点；现在采用互不重复的 `x0=(3,5,8)`、`y0=(4,6,10)`、`x1=(5,7,12)`、`y1=(6,8,14)`，不修改物理电流或真核。
+
+**新的独立 P1-C 运行入口**：
+
+```powershell
+git pull --ff-only
+python run.py --mode bfzi-p1-full-sea --with-tests
+```
+
+将自动把最新摘要和原始日志推送到 [`runs/p1_full/`](runs/p1_full/)，不覆盖现有 [P1-A/B 解析参考日志](runs/p1/latest_summary.md)。**这次代码修正还未取得用户本机完整 P1-C 实测；仍须分析实际五维 curl L 的 x/y 规则差、正定性与盒壁数值问题，不能仅因 pytest PASS 就认定 G1。** 禁止 GitHub Actions。
+
 ## 阅读顺序
 
 1. [P1 原 Coulomb L 真值／P0 限定交接](P1_COULOMB_ANALYTIC_GATE.md)：当前阶段，三个有解析答案的无散度球形电流。
