@@ -388,3 +388,56 @@ python run.py --mode bfzi-p1-full-sea --with-tests
 4. 若球算子都不能稳定收敛，不开展 229 模态、神经教师或因反作用而改变电源路径的数值尝试；优先修复数学上的奇异项积分。
 
 当前 **P0 限定基准 PASS；P1-A 球解析真值 PASS；双盒几何矩 PASS；P1-B 双紧支海水自/互原核 L PASS；旧 split FAIL；P1-C 最近一次 94 passed 但主执行 SyntaxError，现已修复并补独立节点规则和专用入口，等待用户本机新的五模式全湿区 L 结果；完整 G1=FAIL**。
+
+
+## 13. P1-C 数学根因推进：对称差分原核 L 候选（代码已提交，待本机验证）
+
+**远端证据：** 最初核对的分支 HEAD 为 6438fb75；当时 runs/p1_full/
+尚不存在。旧 runs/p1/ 仅有 94 项 pytest 通过但主程序 SyntaxError 的失败记录；
+不能据此虚构五个真实 curl 模式的磁能数据。
+
+对相同真实海水域及原有物理电流，以 x/y 交换对称性可证明
+下面这个原 1/r Coulomb 磁能的**精确恒等式**：
+
+\[
+L_{ij}=\frac{\mu_0}{4\pi}\left[
+\int_\Omega S_\Omega(x)W_i(x)\cdot W_j(x)\,dx
+-\frac12\iint_{\Omega^2}
+\frac{[W_i(x)-W_i(y)]\cdot[W_j(x)-W_j(y)]}{|x-y|}
+\,dx\,dy\right].
+\]
+
+对于局部光滑的实际电流，后一个双积分核为 O(|x-y|)，
+即使 x=y 也可连续取零。不再需要全域 Taylor Hessian 与一阶几何矩
+的抵消；仍使用已经独立验证的真实两盒 SΩ，物理域和核完全不变。
+但数值形式依然是**两个可能接近的大矩阵相减**，故必须检查
+subtraction_ratio、最小特征值及 x/y 独立收敛。
+算子本身按代数构造对称，因此 raw skew=0 不能用于认证。
+
+独立数值原型的解析球结果（480/756 x/y 节点）：
+线性无散涡流原核 Frobenius 相对误差 2.38421e-4，
+三次非仿射无散涡流 5.61633e-4，二者低于事先
+固定的球门槛 1e-3。这不是仓库完整测试记录，也不是实盒 G1 PASS。
+与相同解析真值的对应测试已经提交，尚需本机 pytest 复验。
+
+新主实现为 sdfmpneo_bfzi/green_coulomb.py 中的
+assemble_coulomb_difference 和 assemble_basis_coulomb_difference。
+P1-C 入口现在按 base/x_only/y_only/both 使用
+对称差分，报告五个自项和十个互项，以及 x/y 单轴、联合和
+自项/互项单独的变化；在 both 规则上另外计算旧一阶 Taylor
+装配作交叉验证。两套公式共享几何、电流和离散积分点，
+相互一致也**不是独立连续真值**。
+
+**未完成：** 真实盒面与棱角区的独立局部误差证书，
+五维连续参考磁矩阵、源引导/大空间及无穷海水外域。
+关于近奇异几何积分与变量变换的数值文献可参见
+[Montanelli–Aussal–Haddar (SIAM)](https://doi.org/10.1137/21M1462027)、
+[Hu 等 (CPC, 2026)](https://doi.org/10.1016/j.cpc.2026.110159)；
+论文不能代替本项目代码与物理精度验证。
+
+**本机下一命令：** 首先 git pull --ff-only，然后运行
+python run.py --mode bfzi-p1-full-sea --with-tests。
+日志会自动提交到 runs/p1_full/，不使用 GitHub Actions。
+取得五模式真实分轴结果后，先分析自/互项和 Taylor 交叉差异，
+再设计近壁/棱角独立参考，而非盲目提高求积阶数。
+**G1=FAIL，正式教师训练继续禁止。**
