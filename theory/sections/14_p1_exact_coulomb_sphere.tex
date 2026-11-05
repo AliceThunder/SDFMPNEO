@@ -575,6 +575,104 @@ $S$ 和 $\bm M$：
 各相对误差小于 $10^{-3}$ 的有限基准目标；
 \textbf{新增双电流基准尚待本机实测}。
 
+\subsection{P1-B 解析自／互项实测通过与 P1-C 全湿区 curl 基连接}
+最新用户本机 \texttt{79c9eed} 的
+92 项程序测试通过。在真正的双绝缘盒有限海水域
+中，两个光滑紧支合规涡流的解析原核磁能
+自项、非零互项以及整体矩阵的
+精细求积相对真值误差分别为
+$2.382213\times10^{-4}$、
+$1.37751\times10^{-10}$ 和
+$2.382024\times10^{-4}$，
+均小于事前规定的 $10^{-3}$。
+因此式 \eqref{eq:p1-two-physical-vortices-L}
+在\emph{该两维合规紧支空间}得到独立
+数值证据；旧 \texttt{split} 算法的球磁能误差
+仍不合格，此处通过与旧算法无关。
+
+下一步必须回到真实 BFZI 模型已经建立的
+海水盒面 curl 模式。
+对任一非源引导方向 $\bm a_m$
+和原来的物理标量包络
+$g_m(\bm x)$，定义
+\[
+\bm F_m(\bm x)=g_m(\bm x)\bm a_m,\qquad
+\bm W_m(\bm x)=\nabla g_m(\bm x)\times\bm a_m,\qquad
+\partial_k\bm W_m(\bm x)
+=\bigl(\partial_k\nabla g_m(\bm x)\bigr)\times\bm a_m.
+\]
+$g_m$ 严格保留原 BFZI
+\texttt{SeaCurrentBasis} 的
+\emph{外球截断包络、两只独立旋转绝缘盒的
+距离包络、原 Gaussian 或紧支窗口}。
+在光滑分片上乘积法则给出其 Hessian：
+\[
+\nabla^2(fg)=
+f\nabla^2g+g\nabla^2f+
+\nabla f(\nabla g)^\top+
+\nabla g(\nabla f)^\top.
+\]
+令盒局部坐标 $\bm q$，
+$\bm v_i=\operatorname{sgn}(q_i)
+\max(|q_i|-h_i,0)$，
+$d=|\bm v|$，则在固定活跃面分片
+（$d>0$）有
+\[
+\nabla_{\bm q}d=\frac{\bm v}{d},\qquad
+\nabla^2_{\bm q}d=
+\frac{\operatorname{diag}(
+\mathbf1_{\{|q_i|>h_i\}})}d-
+\frac{\bm v\bm v^\top}{d^3}.
+\]
+盒的刚体旋转将此 Hessian
+转换到世界坐标；对
+$f(d)=d/(d+\ell)$，
+$f'(d)=\ell/(d+\ell)^2$，
+$f''(d)=-2\ell/(d+\ell)^3$。
+非光滑盒棱的活跃面切换集只有测度零，
+但邻近该集的高阶导数误差仍必须
+在后续积分精度研究中单独核查。
+
+新主代码
+\texttt{sea\_basis\_differential.py}
+用上式直接计算真正原 BFZI 非源引导电流
+$D\bm W_m$，并由
+\texttt{green\_coulomb.assemble\_basis\_coulomb\_taylor}
+使用真实
+\[
+S_\Omega=S_{B_R}-S_{B_1}-S_{B_2},\qquad
+\bm M_\Omega=\bm M_{B_R}-\bm M_{B_1}-\bm M_{B_2}
+\]
+及式 \eqref{eq:p1-affine-taylor-subtraction}
+装配\emph{真实双盒海水体积}的原核磁能。
+此处不再使用 P1-B 两支撑球的
+几何矩，也不增设新的测试电流定义。
+
+新 \texttt{bfzi\_p1\_full\_sea\_taylor.py}
+固定现有 27 维空间中的五个非源引导模式，
+在相同几何、相同模式、相同物理原核下，
+分别变动 $x/y$ 体积正权求积规则，
+记录矩阵范数、最小特征值及
+未对称原始求积的 skew。
+这只是\textbf{首次实海水 curl 模式求积收敛诊断}。
+在缺乏该五维连续双积分的独立真值之前，
+两次规则之间的微小差异
+不能代替严格连续误差界，
+\textbf{P1-C 与整个 G1 仍未完成认证}。
+
+源引导电流的原始方向为
+$\Curl(g_m\bm C_{\mathrm{port}})$，
+其 Jacobian 额外包含
+$\nabla\bm C_{\mathrm{port}}$ 和
+$\nabla\Curl\bm C_{\mathrm{port}}$。
+目前不通过有限差分隐含这些导数，
+而是\textbf{明确不支持该类模式的 Taylor 装配}，
+直到已有解析端口线核的导数被独立验证。
+本轮未更动 P0 连续 BFZI 线源、
+原海水 $R/K$、无限外域模型或神经代理。
+新主实现和针对性单测已经提交，
+\textbf{尚待用户本机执行}。
+
 \subsection{与真实 BFZI 双盒积分之间的限制}
 即使式 \eqref{eq:p1-ball-analytic-L} 在球上成功，
 它只证明在此解析无散度电流空间和球形边界
