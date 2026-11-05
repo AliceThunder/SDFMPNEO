@@ -1,21 +1,24 @@
 pytest:
-........................................................................ [ 74%]
-.........................                                                [100%]
-97 passed in 43.72s
+........................................................................ [ 72%]
+...........................                                              [100%]
+99 passed in 47.16s
 
-p1_full_sea_exact: physical_domain=outer_ball_minus_two_actual_boxes,modes=5,mode_indices=0-1-12-13-24,current=existing_box_following_curl_basis,domain_S=exact_true_rotated_geometry,method=symmetric_difference_unsoftened_1/r,comparison=global_affine_Taylor,gate=convergence_study_not_certified
-p1_full_sea: variant=base,method=difference,x_nodes=384,y_nodes=720,norm_L=7.907577091e-08,trace_L=8.00955972e-08,subtraction_ratio=0.9812443,min_eig=-5.137240687e-10,max_eig=7.906078106e-08
-p1_full_sea_self: variant=base,L00=-4.610254011e-10,L11=9.791743888e-10,L22=-4.610254011e-10,L33=9.791743888e-10,L44=7.905929922e-08
-p1_full_sea_mutual: variant=base,L01=-3.151505194e-25,L02=-5.26986676e-11,L03=1.003945801e-25,L04=-9.342985166e-25,L12=4.17587243e-26,L13=1.113643953e-10,L14=-2.406961825e-10,L23=3.560502994e-25,L24=-1.295621596e-24,L34=2.406961825e-10
-p1_full_sea: variant=x_only,method=difference,x_nodes=1320,y_nodes=720,norm_L=8.024264573e-08,trace_L=8.186248019e-08,subtraction_ratio=0.9817608,min_eig=-2.660792537e-11,max_eig=8.02353731e-08
-p1_full_sea_self: variant=x_only,L00=6.844157211e-11,L11=7.451334192e-10,L22=6.844157211e-11,L33=7.451334192e-10,L44=8.023533021e-08
-p1_full_sea_mutual: variant=x_only,L01=7.582825473e-25,L02=-9.504949748e-11,L03=-5.355498158e-26,L04=3.936585622e-26,L12=7.747042745e-27,L13=1.209675389e-10,L14=4.131848258e-11,L23=3.531174478e-25,L24=-1.666113807e-25,L34=-4.131848258e-11
-p1_full_sea: variant=y_only,method=difference,x_nodes=384,y_nodes=2352,norm_L=9.758095521e-08,trace_L=1.019730079e-07,subtraction_ratio=0.9834941,min_eig=9.17534729e-10,max_eig=9.75556298e-08
-p1_full_sea_self: variant=y_only,L00=1.11519793e-09,L11=1.094019155e-09,L22=1.11519793e-09,L33=1.094019155e-09,L44=9.755457375e-08
-p1_full_sea_mutual: variant=y_only,L01=8.265688091e-25,L02=2.46389114e-11,L03=4.098448325e-25,L04=1.396316608e-24,L12=-8.190146855e-26,L13=1.754283827e-10,L14=-2.258903553e-10,L23=6.005802409e-24,L24=-8.185726402e-25,L34=2.258903553e-10
-p1_full_sea: variant=both,method=difference,x_nodes=1320,y_nodes=2352,norm_L=1.013685079e-07,trace_L=1.072654497e-07,subtraction_ratio=0.9833488,min_eig=1.101663156e-09,max_eig=1.013236583e-07
-p1_full_sea_self: variant=both,L00=1.718585735e-09,L11=1.252326091e-09,L22=1.718585735e-09,L33=1.252326091e-09,L44=1.01323626e-07
-p1_full_sea_mutual: variant=both,L01=8.432108207e-24,L02=-2.863742892e-11,L03=7.850804281e-26,L04=-2.216010244e-25,L12=-7.28646858e-27,L13=1.506306707e-10,L14=4.020939877e-11,L23=3.085952785e-24,L24=5.217722955e-26,L34=-4.020939877e-11
-p1_full_sea_change: method=difference,x_only_vs_base=0.01948965,y_only_vs_base=0.2356018,both_vs_base=0.2843744,both_vs_x_only=0.264565,both_vs_y_only=0.04005104,self_x=0.01812127,self_y=0.2355996,self_both=0.2842904,mutual_x=0.00507344,mutual_y=0.001297302,mutual_both=0.005057438,pass_status=not_determined_without_independent_truth
-p1_full_sea_cross: variant=both,difference_vs_taylor_unsoftened=1/r,relative_L=0.8094096,self_relative=0.8094096,mutual_scaled=0.0006784406,taylor_raw_skew=0.01090924,taylor_min_eig=9.988316472e-10
-p1_full_sea_note: all five currents and both rotated insulating solids are unchanged across rules and formulations. The difference integral is symmetric by identity (raw_skew is not a gate); near-wall/edge angular x and y cubature, true reference L and infinite ocean remain unverified. Ball analytic tests alone cannot certify BFZI physical accuracy or teacher training.
+p1_full_sea_exact: domain=outer_ball_minus_two_actual_rotated_boxes,modes=5,mode_indices=0-1-12-13-24,kernel=original_unsoftened_1/r,inner=point_centered_exact_wet_ray_intervals,inner_measure=r_dr_dsolidangle,outer=geometry_aligned_positive_box_shell_cubature,wall_normal=log_panels,gate=not_certified
+p1_full_sea: variant=base,method=radial,x_nodes=2716,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=4.791769187e-08,trace_L=5.050727444e-08,raw_skew=0.02347326,min_eig=3.747919685e-10,max_eig=4.78985733e-08
+p1_full_sea_self: variant=base,L00=5.213758672e-10,L11=7.738013133e-10,L22=5.35827356e-10,L33=7.779127523e-10,L44=4.789835715e-08
+p1_full_sea_mutual: variant=base,L01=-3.203197291e-25,L02=-1.536398221e-10,L03=-1.348744881e-25,L04=-8.76460913e-25,L12=3.027630055e-25,L13=1.050967683e-10,L14=-6.132118957e-11,L23=1.696576305e-25,L24=3.707695544e-25,L34=8.029299847e-11
+p1_full_sea: variant=x_only,method=radial,x_nodes=4336,inner_rule=inner_radial_3_polar_3_azimuth_8,norm_L=5.053674333e-08,trace_L=5.394680769e-08,raw_skew=0.02176694,min_eig=7.749438156e-10,max_eig=5.050735644e-08
+p1_full_sea_self: variant=x_only,L00=8.461027502e-10,L11=8.772781146e-10,L22=8.461027502e-10,L33=8.772781146e-10,L44=5.050004596e-08
+p1_full_sea_mutual: variant=x_only,L01=4.62902666e-26,L02=7.115893453e-11,L03=9.737974002e-28,L04=-7.125765142e-25,L12=-1.068491059e-25,L13=1.9053606e-11,L14=4.26003949e-10,L23=-3.984507767e-26,L24=1.065854469e-24,L34=-4.26003949e-10
+p1_full_sea: variant=inner_only,method=radial,x_nodes=2716,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=6.509124132e-08,trace_L=6.776012064e-08,raw_skew=0.02002767,min_eig=4.924858296e-10,max_eig=6.507697887e-08
+p1_full_sea_self: variant=inner_only,L00=5.937453069e-10,L11=7.531987194e-10,L22=5.907594909e-10,L33=7.508919714e-10,L44=6.507152515e-08
+p1_full_sea_mutual: variant=inner_only,L01=2.105731165e-26,L02=9.975539872e-11,L03=-2.408729242e-26,L04=-2.126355386e-24,L12=-2.914149551e-25,L13=7.514136008e-11,L14=4.11343098e-10,L23=-1.005081804e-25,L24=1.346547632e-24,L34=-4.266339108e-10
+p1_full_sea: variant=inner_radial_only,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_3_azimuth_8,norm_L=6.581031382e-08,trace_L=6.888271355e-08,raw_skew=0.01031976,min_eig=7.013725518e-10,max_eig=6.579209074e-08
+p1_full_sea_self: variant=inner_radial_only,L00=7.251044669e-10,L11=8.243550298e-10,L22=7.251044669e-10,L33=8.243550298e-10,L44=6.578379456e-08
+p1_full_sea_mutual: variant=inner_radial_only,L01=-8.345381258e-27,L02=2.373191511e-11,L03=-1.217864105e-27,L04=-9.331985023e-25,L12=-1.641481986e-25,L13=5.065427764e-13,L14=5.191282677e-10,L23=1.179715083e-26,L24=1.235980251e-24,L34=-5.191282677e-10
+p1_full_sea: variant=both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10,norm_L=6.475686132e-08,trace_L=6.801801557e-08,raw_skew=0.01745615,min_eig=6.975082334e-10,max_eig=6.473576119e-08
+p1_full_sea_self: variant=both,L00=8.125184958e-10,L11=8.397474365e-10,L22=8.125184958e-10,L33=8.397474365e-10,L44=6.471348371e-08
+p1_full_sea_mutual: variant=both,L01=1.325891185e-25,L02=-4.679579858e-11,L03=7.39678549e-26,L04=-2.07758092e-25,L12=3.515229744e-25,L13=1.199617238e-10,L14=8.444271931e-10,L23=1.329125225e-26,L24=2.620493891e-24,L34=-8.444271931e-10
+p1_full_sea_inner_axes: at_fixed_x=x1,radial_step=0.3024768,angle_step=0.01935873,self_radial_step=0.3024947,self_angle_step=0.01637708,mutual_radial_step=0.002794017,mutual_angle_step=0.007301322
+p1_full_sea_change: method=radial,x_only_vs_base=0.05937477,inner_only_vs_base=0.3590569,both_vs_base=0.3531091,both_vs_x_only=0.2817736,both_vs_inner_only=0.01545355,self_x=0.0551804,self_inner=0.3584016,self_both=0.3510289,mutual_x=0.0155017,mutual_inner=0.01541341,mutual_both=0.02710676,pass_status=not_certified_without_independent_reference
+p1_full_sea_note: previous difference pilot had 23.56018-percent y-axis L change, 80.94096-percent Taylor cross-formulation gap, and 98-percent subtraction ratio. New radial Green operator has no large matrix subtraction. It must still pass independent x/inner angular/radial and near-wall/corner convergence; a small raw skew or one PSD matrix is not a true solution certificate. G1 remains FAIL.
