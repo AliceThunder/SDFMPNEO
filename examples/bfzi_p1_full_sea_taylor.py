@@ -660,6 +660,9 @@ def main():
         f"total_cap_charts={cap['cap_charts']},"
         f"added_positive_directions={cap['cap_nodes']},"
         f"max_angular_measure_rel={cap['max_solid_angle_rel']:.8g},"
+        f"exact_moment_checks={cap['exact_moment_checks']},"
+        f"max_scalar_moment_rel={cap['max_scalar_moment_rel']:.8g},"
+        f"max_first_moment_scaled={cap['max_first_moment_scaled']:.8g},"
         "partition=pointwise_positive_background_plus_real_mode_caps,"
         "status=geometry_and_source_pilot_not_certified",
         flush=True,
