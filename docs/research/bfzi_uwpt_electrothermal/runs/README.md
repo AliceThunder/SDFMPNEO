@@ -23,3 +23,18 @@ python run.py --mode bfzi-convergence --basis-ball-targeted --verbose-log
 **最近本机实测（2026-11-04 UTC，代码基线 `cd73a65`）：** `62 passed in 43.75s`，新的 `bfzi-g1-foundations` 三路物理基准首次正常运行：5 模态原始 Coulomb Green L 的局部角度加密 `dL=4.51102e-7`，但 x/y 两轴同时加密仍 `dL=0.0298039`、`dZ=0.00182062`、探针 `dq=0.00058998`，与旧球云法 `dL=0.0778894`。系统性紧支 curl 27→71→211 构造成功；球腔 `l=1` 的有限 Dirichlet 截断 J 误差随外球 R=0.52/0.85/1.30m 分别为 9.345%/1.488%/0.199%。**下一次运行同一命令会增加全新的 2×2 独立 x/y 求积拆分，以及未经强制对称化的磁矩阵 skew。新版尚未本机实测；229 模态及完整 BFZI 连续 G1 仍 FAIL。**
 
 **物理有效性：** 程序成功或测试通过不代表连续物理场达到精度目标。父空间内的 `FULL_PARENT_ONLY`、功率代数闭合和响应门槛也不能代替独立收敛验证。
+
+
+## P1-C 专项实海水入口（新增）
+
+[P1-C 五模式真实海水 Coulomb L 证据目录](p1_full/README.md) 与旧全局
+latest_full.log / p1/ 完全独立。首次建立目录只含说明文件，
+**尚无实际运行日志**。本机执行：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+随后才会自动生成并尝试推送 p1_full/latest_summary.md 与
+p1_full/latest_full.log；保存五个自项、十个互项、
+base/x_only/y_only/both 的独立分轴变化及两种原核表示交叉比较。
+程序正常结束也不意味着 G1 物理精度验收通过。
