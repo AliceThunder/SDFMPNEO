@@ -791,3 +791,64 @@ phys_x_both 重型五模式试跑停止
 新增仿射 Green 和几何积分测试尚待本机运行；
 **整体 P1-C/G1=FAIL，正式神经教师关闭，
 禁止 GitHub Actions。**
+
+
+## 2026-11-05 第八次 P1-C：105-pass 证明全域仿射控制数值失败，改为精确几何矩驱动内角向规则
+
+实际代码 d7c59a5 / 最新本机日志 238f32d：
+**105 passed，完整五模态 L 计算完成，但 G1 FAIL**。
+同一 x 与内径/角节点中，
+全域精确 SΩ/MΩ 的仿射控制
+相对纯标量 SΩ 校正使实际 L 整体
+变化 **350.4647%**，真实弱自能 L00
+相对变化 **3541.339%**。尽管 raw skew
+降至 0.759%，因盒壁处大雅可比远场
+外推产生的大量余项，此结果不能
+成为高精度参考。仿射恒等式独立测试
+仍通过，函数保留显式可选，
+主默认试验停止重复昂贵失败方案。
+
+真实 x 外积分的球域角向 Gauss 3→4
+Gram 整体仍变化 0.5383%、独立球图
+变化 5.3395%；几何解析体积误差
+虽到 0.001616%，加权电流尚未收敛。
+
+**已新增实际内 Green 算子能力：**
+assemble_coulomb_radial 与
+assemble_basis_coulomb_radial 可选
+angular_moment_tolerance、
+angular_refine_levels（首轮 1）
+及 angular_moment_stats。
+对每个真实湿域观察点，
+先按双独立旋转盒和外球精确射线区间
+用闭式端点积分算出 S_ray、M_ray，
+并与已有真实闭式 SΩ(x)、MΩ(x) 比较；
+若误差超阈值只在该点加倍
+极角/方位点数，选最小真实几何矩误差
+候选后才评价昂贵的 W(x+ru)。
+原始未软化 1/r 与 r²/r=r、
+两盒物理域、实际五 curl 模态
+及径向贴壁物理节点均不改变。
+若最大角向预算仍未达标，
+unresolved 计数保留并禁止假验收。
+
+新实验 moment_angle_both
+使用原 x1/inner1、同五个模式，
+配合已验证的精确标量 S 校正，
+比较 both / scalar_control_both /
+moment_angle_both 全五自项、十互项。
+默认实验阈值 0.0025、追加角向
+至多 1 层（两个方向点数加倍），
+输出真正加密点数、未达标点数、
+最大标量/一阶矩几何误差。
+原 affine_control_both 路径保留可选
+但不再每轮执行。
+
+本机：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+上述新角向算法仍待本机运行；
+**P1-C/G1=FAIL，正式磁教师不可开始，
+不使用 GitHub Actions。**
