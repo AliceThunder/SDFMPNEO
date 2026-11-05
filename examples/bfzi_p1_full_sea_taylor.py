@@ -210,6 +210,107 @@ def _scalar_geometry_diagnostic(scene, wall_scale, pose_label):
             )
 
 
+
+def _outer_gram_diagnostics(scene,basis):
+    """Separate box normal, bulk spherical and face tangential x errors.
+
+    The exact wet volume and its second moment are available WITHOUT
+    electromagnetic field solutions. Their agreement checks the cubature
+    partition before current energy is considered. The physical-current
+    Gram G=integral Wi.Wj then isolates x from every Green inner rule.
+    """
+    radius=scene.outer_radius
+    center=np.asarray(scene.outer_center)
+    volume_exact=4*np.pi*radius**3/3
+    second_exact=4*np.pi*radius**5/5
+    for assembly in scene.assemblies:
+        half=np.asarray(assembly.enclosure.half_extents)
+        vol=8*np.prod(half)
+        shift=np.asarray(assembly.pose.center)-center
+        volume_exact-=vol
+        second_exact-=vol*(
+            np.dot(shift,shift)+np.dot(half,half)/3
+        )
+
+    # x0 -> spherical_only changes physical bulk angular/radial sampling;
+    # x0 -> normal_only changes ONLY the true box-wall normal Gauss degree.
+    # The combination exactly reproduces the x1 geometry rule.
+    # Last case halves max local tangential panel width relative to the
+    # narrowest actual W Gaussian window. No other knob changes.
+    half_mode_width=0.5*min(mode.width for mode in basis.modes)
+    cases=(
+        ("x0",(2,3,6,2),None),
+        ("sphere_only",(3,4,8,2),None),
+        ("normal_only",(2,3,6,3),None),
+        ("x1",(3,4,8,3),None),
+        ("face_tangent",(3,4,8,3),half_mode_width),
+    )
+    gram={}
+    for label,(nr,npole,naz,nwall),tangent_cap in cases:
+        xx,ww,nsphere=scene.box_shell_quadrature(
+            nr,npole,naz,wall_scale=basis.wall_scale,
+            shell_width_factor=12.0,shell_normal_order=nwall,
+            shell_tangential_order=4,
+            shell_tangential_max_panel_width=tangent_cap,
+            shell_normal_mapping="log",
+            outer_taper_width=basis.outer_taper_width,
+            return_sphere_count=True,
+        )
+        currents=basis.evaluate(xx)
+        sphere=np.einsum(
+            "n,nic,njc->ij",ww[:nsphere],
+            currents[:nsphere],currents[:nsphere],optimize=True,
+        )
+        shell=np.einsum(
+            "n,nic,njc->ij",ww[nsphere:],
+            currents[nsphere:],currents[nsphere:],optimize=True,
+        )
+        gram[label]=sphere+shell
+        wet=np.einsum("ni,ni->n",xx-center,xx-center)
+        volume=float(np.sum(ww))
+        moment=float(np.dot(ww,wet))
+        diag=np.diag(gram[label])
+        contribution=np.diag(shell)/np.maximum(diag,1e-40)
+        print(
+            f"p1_full_sea_outer_gram: variant={label},"
+            f"x_nodes={len(xx)},sphere_nodes={nsphere},"
+            f"tangent_cap={tangent_cap},"
+            +",".join(f"G{i}{i}={v:.10g}" for i,v in enumerate(diag))
+            +f",norm_G={np.linalg.norm(gram[label]):.10g},"
+            +f"volume_relative_error={abs(volume-volume_exact)/volume_exact:.8g},"
+            +f"second_moment_relative_error={abs(moment-second_exact)/second_exact:.8g},"
+            +f"min_shell_self_fraction={min(contribution):.8g},"
+            +f"max_shell_self_fraction={max(contribution):.8g},"
+            "scope=x_only_original_W_no_Green_kernel",
+            flush=True,
+        )
+
+    def compare(label,new,base):
+        a,b=gram[new],gram[base]
+        d=np.abs(np.diag(a)-np.diag(b))/np.maximum(np.abs(np.diag(b)),1e-40)
+        print(
+            f"p1_full_sea_outer_gram_axis: comparison={label},"
+            f"relative_G={_relative(a,b):.8g},"
+            +",".join(f"self{i}={v:.8g}" for i,v in enumerate(d))
+            +",scope=independent_x_axis_no_Green",
+            flush=True,
+        )
+    compare("sphere_only_vs_x0","sphere_only","x0")
+    compare("normal_only_vs_x0","normal_only","x0")
+    compare("x1_vs_sphere_only","x1","sphere_only")
+    compare("x1_vs_normal_only","x1","normal_only")
+    compare("face_tangent_vs_x1","face_tangent","x1")
+    # Backward-compatible key to compare the previous completed run.
+    a,b=gram["x1"],gram["x0"]
+    d=np.abs(np.diag(a)-np.diag(b))/np.maximum(np.diag(b),1e-40)
+    print(
+        f"p1_full_sea_outer_gram_change: relative_G={_relative(a,b):.8g},"
+        +",".join(f"self{i}={v:.8g}" for i,v in enumerate(d))
+        +",scope=x_cubature_only_not_L",
+        flush=True,
+    )
+
+
 def main():
     scene=build_demo_scene()
     full=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
@@ -289,39 +390,9 @@ def main():
             flush=True,
         )
         _report_modes(name,z["L"])
-    # Independently isolate x-volume quadrature without any Coulomb kernel:
-    # G_ij = integral W_i.W_j dx is the uniform-sigma resistive Galerkin
-    # Gram matrix multiplied by sigma. A weak self-mode error here is an
-    # OUTER cubature defect, not an inner 1/r Green cubature defect.
-    grams={}
-    for x_label,xrule in (("x0",x0),("x1",x1)):
-        xx,ww=_quadrature(scene,basis,xrule,cache)
-        currents=basis.evaluate(xx)
-        g=np.einsum(
-            "n,nic,njc->ij",ww,currents,currents,optimize=True,
-        )
-        grams[x_label]=g
-        print(
-            f"p1_full_sea_outer_gram: variant={x_label},"
-            f"x_nodes={len(xx)},"
-            +",".join(f"G{i}{i}={g[i,i]:.10g}"
-                      for i in range(basis.size))
-            +f",norm_G={np.linalg.norm(g):.10g},"
-            "scope=original_current_W_squared_no_Green_kernel",
-            flush=True,
-        )
-    gc,gf=grams["x0"],grams["x1"]
-    gmode=np.abs(np.diag(gf)-np.diag(gc))/np.maximum(
-        np.abs(np.diag(gc)),1e-40,
-    )
-    print(
-        "p1_full_sea_outer_gram_change: "
-        f"relative_G={_relative(gf,gc):.8g},"
-        +",".join(f"self{i}={v:.8g}"
-                  for i,v in enumerate(gmode))
-        +",scope=x_cubature_only_not_L",
-        flush=True,
-    )
+    # A deliberately separate no-Coulomb operator, isolating the x
+    # cubature axes and the physical face tangential Gaussian footprint.
+    _outer_gram_diagnostics(scene,basis)
     # Hold ALL physical x and radial/angular orders fixed to measure the
     # effect of geometry-defined azimuth panels only. This is a controlled
     # pilot, not an automatic replacement or certification.
