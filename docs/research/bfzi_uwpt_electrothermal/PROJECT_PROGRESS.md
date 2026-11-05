@@ -1,13 +1,12 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 最新进度 · 2026-11-05 · research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新实跑失败：107 passed、1 failed；五模态主计算未执行。** [原始日志](runs/p1_full/latest_full.log) / [自动摘要](runs/p1_full/latest_summary.md)，执行代码 cd82e4f、日志提交 7906a58。唯一失败测试把远端窄 Gaussian 的**点心 Green 势**误当作双线性磁能自项：观察点的 Gaussian 值接近零使 Lgg≈1.13e-229，但解析势对应量约 1.55e-11。这是比较量不一致，尚无法断言源中心角帽通过或失败。上次真正完成的五模态运行仍是代码 ca263e6、日志 1da0e43 的 107-pass 模式径向试验：相同 S/M 选角下径向源窗修改造成全矩阵变化 **0.9605%**、最大自项变化 **0.9605%**，P1-C/G1 未认证。
+> **本机 108 passed，但 P1-C/G1 物理 FAIL。** [真实完整日志](runs/p1_full/latest_full.log) / [自动摘要](runs/p1_full/latest_summary.md)，代码 78c8353，日志提交 53f635d。在固定 4336 个真实外 x、相同五个 Gaussian-curl 模态及同一源窗径向 Gauss 下，原局部源中心角帽使 L 整体变化 **12.859%**，L00 **+105.634%**、L11 **+78.354%**、L44 **−12.661%**。虽然 raw skew 从 1.091% 降为 0.905%，离散角面测度相对于 4π 最大偏差 **4.9684%**，真实海水解析 SΩ/MΩ 最大误差 **5.7221%/2.6418%**。连续正权单位分解不代表分区后有限 Gauss 节点自动守恒；角帽结果不是连续真值。
 >
-> **本轮已修复主代码的物理量接口：** 原始未软化 1/r 点心 Green 装配新增明确可选的逐观察点、逐模式内势 Uj(x) 返回，不改变原 L、raw skew 或既有默认调用；修正 Gaussian 解析测试直接用该内势与精确 Newton 公式对照，避免被 Wj(x)≈0 的自项误导。自动日志摘要也已修复，明确保留 pytest 失败数，不再只打印 passed 部分。
+> **本轮真正的数值修复：** 对原正权背景＋源模式球帽的**同一物理方向和真实双独立 SE(3) 盒湿射线**，利用解析径向端点矩 A=Σ(b²−a²)/2、B=uΣ(b³−a³)/3，对每个 x 的 4π、独立 SΩ 和 MΩ（三分量）共五个低阶几何矩作正权相对熵匹配。令 p∝p0 exp(λ·f) 保证全部权重非负，并阻尼 Newton 匹配四个规范化非平凡矩；达到 2e-7 时接受。若固定角节点没有可行的正权匹配，则**明确回退到此前已通过几何 S/M 筛选的背景角规则**，并记录 accepted/fall_back、最大残差和最终实际 4π/S/M 误差，不强行把错误角帽送进 Green。原始 1/r、实际 curl 模态、壁面贴合及径向窗口完全不变。
 >
-> **下一次验证：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。先要求 108 项专项测试全部通过，再首次得到 source_cap_both 与 mode_radial_both 的真实五模态 L 逐项差异、额外角帽数量、正权 4π 测度误差和独立 S/M 几何矩误差。角帽无论通过测试与否仍只是待验收数值候选。保持圆形／圆角方形连续 BFZI 单线圈、真实双独立 SE(3) 绝缘盒和海水；不是超椭圆。**P1-C/G1=FAIL，教师训练关闭，禁止 GitHub Actions。**
-
+> **真实物理验收仍然关闭：** 新增独立球心 S=2π、M=0、球面 4π 的正权矩匹配单测，真实双盒小空间入口同步使用真正 S/M；TeX 已给出算法与固定节点不可行时的限制，参照 Tanaka–Toda (2015) 和 Glaubitz (2023) 正权矩匹配研究。**下次运行：git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。** 先看全部测试及 accepted/fall_back，再对比 source_cap_both 与 mode_radial_both 的五自十互、无对称化 skew 和独立几何矩；后续仍需外 x／内角和有限海水半径的连续精度验证。项目只考虑圆形／圆角方形连续 BFZI 双线圈和独立位姿实盒，绝非超椭圆。**P1-C/G1=FAIL，正式磁教师关闭，禁止 GitHub Actions。**
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
