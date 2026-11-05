@@ -245,3 +245,79 @@ raw skew 虽降至 0.759%，绝不能视为算法精度提升。
 本轮新方案尚未本机实跑，
 **G1/P1-C 仍 FAIL，神经教师关闭，
 不使用 GitHub Actions。**
+
+
+## 第九次本机 106-pass（a8d664e；代码 40c4890）：几何矩达标，真实磁能未达标
+
+最新完整原始日志： [latest_full.log](latest_full.log)，
+**106 passed in 43.91s，但 G1/P1-C 仍 FAIL**。
+
+真实外 x=4336 个观察点，
+几何矩选角规则使其中 1296 点（29.89%）
+加密，unresolved=0；
+最大解析标量几何矩误差 0.24912%，
+一阶几何矩缩放误差 0.13166%。
+但该规则与原 scalar_control_both 相比，
+实际五模态 L00/L11 相差
+**7.6446%/10.2046%**，
+即使 raw skew 下降到 1.091%，
+仍不代表磁能收敛。
+几何 S/M 两种低阶矩不能作为
+真实 Gaussian-curl 磁能误差上界。
+
+### 本轮新增源模式中心径向求积算法
+
+在原始 1/r、x 点心球角、
+真实盒壁端点/贴壁尺度径向 Gauss 上，
+新增独立可选的 mode_centered_radial_panels，
+对实际 BFZI 模式 Gaussian 窗
+中心 c、正定指标 G 沿射线计算
+
+    r_peak = (uᵀG(c−x))/(uᵀGu)
+    width_ray = 1/sqrt(uᵀGu)
+
+只在真实模式 Gaussian 峰可能影响的
+方向上，在物理湿射线区间内添加
+r_peak±3、±2、±1、0 倍 width_ray
+的 Gauss 子区间断点，
+严格保留原球减双独立 SE(3) 实盒
+湿区、物理 current、壁面端点、
+未软化 Green 与正权 Jacobian。
+这解决的是固定盒壁断点可能漏掉
+位于射线区间内部的窄源峰，
+并非用高斯替代原核或实际电流。
+横向 3 倍窗宽筛选为效率启发式，
+不声称为严格误差界。
+
+**两项测试：**
+- 不依赖实现的 erf 解析
+  窄三维 Gaussian 球内射线积分，
+  验证旧低阶 Gauss 漏采的
+  模态源峰能否被新分片准确解析；
+- 真实双盒小空间 curl 组装接口
+  对应 Gaussian mode 的通路。
+
+**下一次实际五模式单轴试验：**
+保留原 moment_angle_both。
+新增 mode_radial_both，
+它与前者使用**完全相同**的 x1、
+双盒闭式几何矩选出的角方向、
+原内 Gauss 阶数、五 curl 模态，
+只新增原模式 Gaussian 投影径向子片。
+打印真实五自项、十互项、
+归一化 raw skew、逐模态相对差，
+并核对两次的角向筛选统计完全相同。
+如果差异很大，应继续建立
+径向源模式细分收敛层级；
+如果很小，下一步重点应转为
+真实 W 加权角向源分辨率检查，
+而不能仅凭几何矩 0 unresolved。
+
+本机执行：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+本轮新增算法尚待真实本机日志。
+**P1-C/G1=FAIL，正式磁教师关闭，
+不使用 GitHub Actions。**
