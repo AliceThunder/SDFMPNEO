@@ -2,9 +2,11 @@
 
 > **持续更新的项目进度入口** · 最近核对：2026-11-04 UTC · 工作分支：`research/bfzi-uwpt-electrothermal-surrogate`
 >
-> **当前阶段（2026-11-05 UTC）：P0 限定 BFZI 理想闭合源 PASS；P1-A 新 Taylor 球形解析基准 PASS；双独立旋转封装的真实海水 Coulomb 几何矩 PASS；P1-B 实水域两个合法紧支涡流自／非零互项 PASS（92 passed）；**完整 G1 继续 FAIL。** 最新提交日志显示 **94 passed 但执行 FAIL**：P1-C `examples/bfzi_p1_full_sea_taylor.py` 第 108 行附近 f-string 中两个 `_relative(...)` 漏闭合括号，导致主实验尚未开始。已修复语法，另查出最初 x_only 规则恰与 y0 相同、违反 Taylor 余项不允许 x=y 节点的要求，已改为 x/y 两轴完全不同的张量规则并补专项测试。新增只运行实海水 P1-C 的 `python run.py --mode bfzi-p1-full-sea --with-tests`，自动将摘要／原始日志推到 `runs/p1_full/`，保留旧 `runs/p1/` 解析基准。**本轮修复尚未在用户本机实测，不能声称真实全湿区 L 已收敛。** 原 P0 回流与源、R/K、神经代理、人工外域不改；不使用 GitHub Actions。见 [P1 主验收契约](P1_COULOMB_ANALYTIC_GATE.md)。
+> **2026-11-05 UTC 状态：** P0 限定理想闭合源 PASS；P1-A 解析球 Taylor 原核、真实双盒几何 S/M 和 P1-B 两紧支海水涡流自/非零互 L 已有历史实测 PASS。**P1-C 真实五个全海水 curl 模式与整体 G1 继续 FAIL／未认证，正式教师训练禁止。** 最初核对分支基线 6438fb75 时，runs/p1_full/ 尚不存在；旧 runs/p1/ 只记录 94 passed 加主执行 SyntaxError，不能当成 P1-C 数值结果。
 >
-> **最新本机证据和阻断信息：** `runs/p1/latest_full.log` 对应用户本机 `983ad60`，**94 passed in 44.00s，随后主程序 SyntaxError，运行状态 FAIL**。不能因为单测全部通过就算 P1-C 通过。已在专项 pytest 直接导入主 P1-C 模块，防止此类迟发语法错误；并拒绝同一套 x/y 积分节点。之前 `79c9eed` **92 passed** 及两个合法紧支涡流原始 L 自项、非零互项解析真值 PASS 保持不变。**下一次先查看独立 `runs/p1_full/latest_summary.md`／`latest_full.log`**；这里还没有本机执行结果。
+> **本轮推进：** 不继续盲目加积分点，而是从原 Coulomb 双线性型推导并实现无核软化的对称差分装配：真实双盒 SΩ 几何标量矩加有限的电流差分积分；避免全域 Taylor 梯度与 MΩ 的大范围抵消。独立球数值原型的线性／三次无散模式误差为 2.38421e-4 / 5.61633e-4（目标 1e-3，**仅原型球基准**），仓库专项测试已新增但未在用户本机运行。P1-C 同四组 x/y 分轴规则报告五自项、十互项以及对称差分与旧 Taylor 的交叉差异。对称差分的数值 skew=0 是代数结果，不是精度证书；近盒壁/棱角、完整真实五模态参考解依然没有独立认证。
+>
+> **本机优先：** 运行 `git pull --ff-only`，再运行 `python run.py --mode bfzi-p1-full-sea --with-tests`；本机自动将最新原始与摘要日志提交到 [runs/p1_full/](runs/p1_full/)，不使用 GitHub Actions。先判五模态 L 自/互项的 x/y 变化和交叉公式偏差，再进行近面/棱角局部独立参考。详见 [P1 原核验收契约](P1_COULOMB_ANALYTIC_GATE.md)。
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
@@ -312,3 +314,5 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 [研究目录索引](README.md) · [验证计划历史快照](validation_roadmap.md) · [代码入口](CODE_ENTRY.md) · [仓库根目录](../../../README.md)
 | 2026-11-05 UTC | **P1-C 实际 BFZI 全海水 curl 字典装配待本机复验**：真实两盒外球体域，原有 27 维基选五个非源引导模式；解析两盒距离/外球/模式窗口 Hessian 构建电流梯度，真实几何 SΩ/MΩ + 原始 1/r Taylor 残差；四组独立 x/y 求积仅作趋势诊断，尚无该五维 L 的独立连续真值 | sea_basis_differential.py、green_coulomb.py、bfzi_p1_full_sea_taylor.py、test_bfzi_p1_full_sea_taylor.py |
 | 2026-11-05 UTC | **P1-C 主实验中断根因已核查，修复提交待本机验收**：本机 94 passed 但代码 `983ad60` 在 `bfzi_p1_full_sea_taylor.py` 收敛信息打印的 f-string 漏两处闭合括号而发生 SyntaxError；额外发现 x_only=x1 规则与 y0 完全相同，Taylor 余项对角节点不可定义。已修复并加入直接导入和相同节点拒绝的专项测试；新增单独 P1-C 模式／日志目录，不覆盖 92-pass P1-B 基准 | `run.py --mode bfzi-p1-full-sea --with-tests` → `runs/p1_full/`；当下 G1 FAIL |
+
+| 2026-11-05 UTC | **P1-C 物理主算法新候选已提交，未本机实跑：** 精确对称差分原 1/r 表示，不需 curl Hessian 与 MΩ；独立球原型线性／三次误差 2.38421e-4 / 5.61633e-4。五模态实海水 x/y 四角、五自十互 L 及 Taylor 交叉对照已接通。仍缺 runs/p1_full/ 数值证据、盒壁棱角独立误差与连续参考，**G1=FAIL** | `green_coulomb.py`、`bfzi_p1_full_sea_taylor.py`、解析球/真实双盒专项测试、[正式 TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex)；无 GitHub Actions |
