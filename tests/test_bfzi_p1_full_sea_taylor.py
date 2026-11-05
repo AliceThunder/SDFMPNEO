@@ -135,6 +135,18 @@ def test_actual_box_direct_radial_original_coulomb_small_space_runs():
         mode_centered_radial_panels=True,
     )
     assert windowed.shape==L.shape and np.isfinite(windowed).all()
+    caps={}
+    localized=assemble_basis_coulomb_radial(
+        basis,np.eye(basis.size),x[:3],wx[:3],
+        radial_order=2,polar_order=2,azimuthal_order=6,
+        mode_centered_radial_panels=True,
+        mode_source_angular_caps=True,
+        source_cap_stats=caps,
+    )
+    assert localized.shape==L.shape and np.isfinite(localized).all()
+    assert caps["points"]==3
+    assert caps["cap_charts"]>=0
+    assert caps["max_solid_angle_rel"]<0.05
     # Run the genuine BFZI curl-Jacobian connection once on a tiny set,
     # so the affine benchmark cannot accidentally bypass its real mode path.
     affine=assemble_basis_coulomb_radial(
