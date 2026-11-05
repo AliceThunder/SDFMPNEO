@@ -444,6 +444,55 @@ def _bfzi_angular_face_frame(scene, point, radius):
     return None if best is None else (best[1],best[2])
 
 
+def assemble_basis_coulomb_taylor(
+    basis, transform, x, wx, y, wy, *,
+    chunk_size: int = 24, return_diagnostics: bool = False,
+):
+    """Actual BFZI seawater L with exact-domain S/M and analytic curl DW.
+
+    Uses the ORIGINAL 1/r Coulomb bilinear form over the actual seawater
+    volume (outer sphere minus TWO oriented insulating enclosures).
+    Exact scalar and first moments of that FULL domain are computed from
+    real rectangle face primitives, NOT the support-only ball moment in
+    P1-B. The residual is integrated with independent x/y positive
+    seawater volume quadratures.
+
+    Only non-source-guided modes are supported until the spatial Hessians
+    of C_port and curl C_port have an exact, validated expression.
+    Convergence of this quadrature still requires physical x/y studies.
+    """
+    from .coulomb_geometry_moments import sea_coulomb_moments
+    from .sea_basis_differential import evaluate_nonguided_curl_jacobian
+    t=np.asarray(transform,float)
+    if t.ndim!=2 or t.shape[0]!=basis.size or not np.isfinite(t).all():
+        raise ValueError("transform must be finite (basis.size, reduced_size)")
+    if any(mode.source_port>=0 for mode in basis.modes):
+        raise NotImplementedError(
+            "source-guided BFZI curl modes require port-field Jacobians"
+        )
+
+    def current(points):
+        return np.einsum(
+            "nmc,mk->nkc",basis.evaluate(points),t,optimize=True,
+        )
+
+    def current_gradient(points):
+        return np.einsum(
+            "nmcd,mk->nkcd",
+            evaluate_nonguided_curl_jacobian(basis,points),
+            t,optimize=True,
+        )
+
+    return assemble_coulomb_subtracted(
+        x,wx,y,wy,current,
+        lambda p:sea_coulomb_moments(basis.scene,p)[0],
+        gradient=current_gradient,
+        first_moment=lambda p:sea_coulomb_moments(basis.scene,p)[1],
+        chunk_size=chunk_size,
+        return_diagnostics=return_diagnostics,
+    )
+
+
 def assemble_basis_coulomb_split(
     basis, transform, x, wx, y, wy, *,
     clip_local_to_domain: bool = True,
