@@ -20,6 +20,11 @@ from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_taylor
 
 
 def trial(basis,x_rule,y_rule,cache=None):
+    # The Taylor residual has no unique point value at x=y. The physical
+    # x and y measures must be sampled independently, never using the
+    # identical tensor rule on the two integration axes.
+    if x_rule == y_rule:
+        raise ValueError("P1-C requires disjoint x/y quadrature rules")
     scene=basis.scene
     if cache is None:
         cache={}
@@ -78,10 +83,13 @@ def main():
         "gate=convergence_study_not_certified",
         flush=True,
     )
+    # Adjacent axis orders must not coincide. Azimuth counts below
+    # (8/10/12/14) also have nonoverlapping midpoint angle sets for
+    # every x/y pair, so no diagonal residual sample is fabricated.
     x0=(3,5,8)
     y0=(4,6,10)
-    x1=(4,6,10)
-    y1=(5,7,12)
+    x1=(5,7,12)
+    y1=(6,8,14)
     trials={}
     rules_cache={}
     for name,xr,yr in (
