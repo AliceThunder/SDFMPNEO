@@ -370,8 +370,9 @@ def main():
         "its actual scalar geometry potential. Original 1/r is unchanged. "
         "Exact-vortex BALL benchmark tests the ORIGINAL Coulomb "
         "double integral against an analytic three-mode matrix. It does "
-        "NOT certify rotated two-box wet-domain L, its near-wall integrals, "
-        "or the 229-mode and infinite-ocean physical reference.",
+        "NOT certify the global wet-domain curl dictionary, its wall-hugging "
+        "self/near terms, or the 229-mode and infinite-ocean reference. "
+        "The separate p1_wet gate checks ONLY exact two compact wet currents.",
         flush=True,
     )
 
