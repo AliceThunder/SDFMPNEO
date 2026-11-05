@@ -290,9 +290,14 @@ def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball
     windows=(center[None,:],metric)
 
     def density(y):
-        return np.exp(
-            -np.sum((y-center)**2,axis=1)/width**2
-        )[:,None,None]*np.array([[[1.,0.,0.]]])
+        gaussian=np.exp(-np.sum((y-center)**2,axis=1)/width**2)
+        # The assembler produces a symmetric BILINEAR matrix, not
+        # pointwise Green potentials. Use a constant left test mode to
+        # probe the remote Gaussian right source. At x=0 the Gaussian
+        # left mode is ~exp(-500), so 2*L[0,1] is the desired potential
+        # up to that exponentially small reverse-pair contribution.
+        amplitudes=np.column_stack((np.ones(len(y)),gaussian))
+        return amplitudes[:,:,None]*np.array([[[1.,0.,0.]]])
 
     def sphere(point,directions):
         return np.zeros((len(directions),1)),np.ones((len(directions),1))
@@ -303,11 +308,11 @@ def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball
         radial_order=3,polar_order=4,azimuthal_order=10,
         radial_mode_windows=windows,
     )
-    plain=assemble_coulomb_radial(**common)[0,0]
+    plain=2*assemble_coulomb_radial(**common)[0,1]
     stats={}
-    corrected=assemble_coulomb_radial(
+    corrected=2*assemble_coulomb_radial(
         **common,source_angular_caps=windows,source_cap_stats=stats,
-    )[0,0]
+    )[0,1]
     # Newton potential of a whole-space Gaussian at the observer:
     # pi^(3/2) w^3 erf(|c|/w)/|c|. The omitted sphere exterior is
     # exponentially tiny because c lies >18 Gaussian widths within it.
