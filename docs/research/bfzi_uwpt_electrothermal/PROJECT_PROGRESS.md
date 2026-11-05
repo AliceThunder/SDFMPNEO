@@ -1,14 +1,14 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · 研究分支 research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 进度看板 · 2026-11-05 UTC · research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新本机实跑：105 passed，真实五模式 P1-C/G1 仍 FAIL。** [完整原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，执行代码 d7c59a5、日志提交 238f32d。真实双盒原核 Green 在相同 x/内径/角节点上从标量 SΩ 修正换成全域仿射 SΩ+MΩ 修正后，**全矩阵相对变化 350.465%**，弱磁能 L00 从 9.598e-10 升至 3.495e-8（相对变化 3541%），L44 约增 346%。raw skew 虽降至 0.759%，但不是正确性证据。原因是实际贴壁 Gaussian-curl 模态的局部大雅可比不适合全域线性 Taylor 外推；仿射公式的代数恒等式与独立盒矩测试仍成立，仅保留为可选研究工具，不再默认重复其昂贵完整五模态磁矩阵试跑。
+> **最新本机：106 passed，但真实五模态原始 1/r Green P1-C/G1 仍 FAIL。** [完整原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，运行代码 40c4890、日志提交 a8d664e。真实两盒、五个固定非源引导 curl 模态的解析 SΩ/MΩ 角向自适应使用 4336 个 x 外观察点，其中 1296 个点（29.89%）提高内极角和方位角分辨率，**unresolved=0**。最大标量几何矩相对误差 **0.24912%**、一阶矩缩放误差 **0.13166%**，满足此次 0.25% 几何阈值；原矩阵 raw skew 从 scalar_control_both **2.352% 降至 1.091%**。**但真实 L00/L11 相对 scalar_control_both 仍变化 7.6446%/10.2046%**，相对未修正 both 的 L11 差 18.0656%。这直接证明几何低阶矩通过不代表真实贴壁 Gaussian-curl 磁能收敛。
 >
-> **独立无核外积分证据：** 球图真实实体角片每片 Gauss 3→4 时 Gram 整体仍差 **0.5383%**，球图自身贡献差 **5.340%**，最坏自项差 **1.177%**。解析海水体积误差虽降至 **0.001616%**，不能代替电流自项收敛。盒壳切向再加密整体 Gram 差仅 **0.000726%**，已不属优先瓶颈。
+> **本轮从理论和主代码进一步定位真实源加权径向欠解析：** 原点心未软化 1/r 湿射线 Green 仅按实体盒壁端点、wall_scale 和少量固定观察点径向距离分片，可能漏掉位于区间内部的窄 Gaussian 电流模式峰值。新增 mode_centered_radial_panels，将每个**真实 BFZI 模式**的高斯中心 c 和各向同性或 SE(3) 旋转的 SPD Gaussian 指标 G 沿每条物理射线精确投影，求 r_peak=(uᵀG(c−x))/(uᵀGu)、w_ray=(uᵀGu)^(−1/2)，在 r_peak 加减 1、2、3 倍物理宽度处增添可选正权 Gauss 子片。所有断点仍裁剪到原外球减两独立旋转实心绝缘盒的真实湿射线区间，原物理 curl 模态、未软化 Green 核、贴壁径向分片、外 x 和角向选择规则全部不变。不采用世界体素／FEM 网格。横向距窗筛选只为效率，不冒充误差上界。
 >
-> **本轮数值主算法改动：** 在原始未软化 1/r、真实双独立 SE(3) 实盒及精确湿射线裁剪框架中，增加**解析几何标量/一阶 Coulomb 矩驱动的每观察点角向自适应**。对每条真实湿射线区间 [a,b]，几何常量矩由角权 Σω(b²−a²)/2、一阶矩由 Σωu(b³−a³)/3 精确径向计算；与原双盒闭式 SΩ(x)、MΩ(x) 比较后，仅对未通过几何阈值的观察点加倍极角/方位点数，最后才计算昂贵的真实 curl 电流。首轮阈值 0.25%，每点最多一层；若达上限仍未达到几何阈值，选真实计算过的最小误差规则并报告 unresolved 数，不得宣称收敛。**这只检验低阶几何角矩，真实 Gaussian-curl 磁能仍需独立精度证明。**
+> **已提交独立解析源峰测试：** 对偏离观察点、宽度 0.02 的三维 Gaussian 真实正权球内 1/r 积分，使用 erf 闭式逐角射线径向真值；测试原 Gauss-3 漏采、真实中心窗口分片恢复。该测试密度不冒充实际导电海水 curl 模式。另在原双盒小空间装配接入真实模式窗入口。
 >
-> **下一份日志入口：** 原 both、零阶 scalar_control_both 与新 moment_angle_both 在相同 x1/相同真实径向规则、同样五个 curl 模态下比较全部自能、互耦和 raw skew。旧全域 affine_control_both 的不稳定主试跑停止重复，其独立仿射/旋转盒单测保留。**本机：git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。** 项目仍只考虑圆形/圆角方形单根连续 BFZI 螺旋，绝非历史超椭圆；P0/P1-A/P1-B 限定历史 PASS，**P1-C/G1=FAIL，正式神经教师关闭，禁止 GitHub Actions**。
+> **下一轮本机命令：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。新主实验 mode_radial_both 对比 moment_angle_both，在 4336 相同 x 点、完全相同解析 S/M 选定角方向、相同 wall_scale 和径向 Gauss 阶数下，**仅切换源模式高斯峰附近的径向面板**，报告五自十互 L、raw skew 和角向筛选的重复性。其输出才能确定内径向模式峰是否为重要数值瓶颈；否则下一步应针对实际 curl 模式角向求积，不再做无目标阶数搜索。研究范围仍严格是圆形／圆角方形单根连续 BFZI 线圈、真实双独立 SE(3) 封装盒和海水，**不是历史超椭圆**。P0/P1-A/P1-B 限定历史 PASS，**P1-C/G1=FAIL，教师训练关闭，禁止 GitHub Actions。**
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
