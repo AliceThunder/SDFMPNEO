@@ -914,7 +914,10 @@ def assemble_coulomb_radial(
         source_cap_stats.clear()
         source_cap_stats.update(points=0,points_with_caps=0,
                                 cap_charts=0,cap_nodes=0,
-                                max_solid_angle_rel=0.0)
+                                max_solid_angle_rel=0.0,
+                                exact_moment_checks=0,
+                                max_scalar_moment_rel=0.0,
+                                max_first_moment_scaled=0.0)
     if angular_moment_stats is not None:
         angular_moment_stats.clear()
         angular_moment_stats.update(total=0,refined=0,unresolved=0,
@@ -1032,6 +1035,31 @@ def assemble_coulomb_radial(
                     source_cap_stats['max_solid_angle_rel'],
                     abs(float(np.sum(area_weights))/(4*math.pi)-1),
                 )
+                if moment is not None and first is not None:
+                    # The source cap is a NEW angular rule; base-chart
+                    # S/M certification does not automatically carry over.
+                    # Evaluate its actual wet-ray endpoint moments too.
+                    lo_cap,hi_cap=np.asarray(lo),np.asarray(hi)
+                    measure=np.sum(0.5*(hi_cap**2-lo_cap**2),axis=1)
+                    linear=np.sum((hi_cap**3-lo_cap**3)/3,axis=1)
+                    s_cap=float(np.dot(area_weights,measure))
+                    m_cap=np.einsum(
+                        "r,r,rc->c",area_weights,linear,directions,
+                        optimize=True,
+                    )
+                    relative_s=abs(s_cap-moment[xi])/moment[xi]
+                    m_scale=moment[xi]*max(float(np.max(hi_cap)),1e-30)
+                    relative_m=float(np.linalg.norm(
+                        m_cap-first[xi],
+                    )/m_scale)
+                    rec=source_cap_stats
+                    rec['exact_moment_checks']+=1
+                    rec['max_scalar_moment_rel']=max(
+                        rec['max_scalar_moment_rel'],relative_s,
+                    )
+                    rec['max_first_moment_scaled']=max(
+                        rec['max_first_moment_scaled'],relative_m,
+                    )
         lo,hi = np.asarray(lo,float),np.asarray(hi,float)
         if (lo.ndim != 2 or lo.shape != hi.shape
                 or lo.shape[0] != len(directions)
