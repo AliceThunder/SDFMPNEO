@@ -342,3 +342,67 @@ def test_point_centered_green_affine_control_exact_for_two_rotated_boxes():
         current_jacobian=jacobian,
     )
     np.testing.assert_allclose(got,exact,rtol=3e-13,atol=1e-21)
+
+
+def test_independent_rotated_box_first_coulomb_moment_by_volume_integral():
+    """Check the closed-form FIRST moment independently, not against itself.
+
+    The affine Green identity alone tests the algebra and would be
+    circular if the same incorrect M(x) were used for its reference.
+    Here a nonsingular exterior observation uses direct 3D tensor Gauss
+    over each independently rotated real solid insulating box.
+    """
+    from dataclasses import replace
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from sdfmpneo_bfzi.coulomb_geometry_moments import box_coulomb_moments
+
+    scene=build_demo_scene()
+    theta=0.24
+    rotation_x=np.array([
+        [1,0,0],
+        [0,np.cos(theta),-np.sin(theta)],
+        [0,np.sin(theta),np.cos(theta)],
+    ])
+    phi=-0.31
+    rotation_y=np.array([
+        [np.cos(phi),0,np.sin(phi)],
+        [0,1,0],
+        [-np.sin(phi),0,np.cos(phi)],
+    ])
+    scene=replace(
+        scene,
+        transmitter=replace(
+            scene.transmitter,
+            pose=RigidPose(rotation_x,scene.transmitter.pose.center),
+        ),
+        receiver=replace(
+            scene.receiver,
+            pose=RigidPose(rotation_y,scene.receiver.pose.center),
+        ),
+    )
+    x=np.array([0.235,0.013,-0.027])
+    assert scene.in_seawater(x)
+    t,w=np.polynomial.legendre.leggauss(18)
+    grid=np.stack(np.meshgrid(t,t,t,indexing="ij"),axis=-1).reshape(-1,3)
+    weights=np.prod(
+        np.stack(np.meshgrid(w,w,w,indexing="ij"),axis=-1),axis=-1,
+    ).ravel()
+    for assembly in scene.assemblies:
+        half=np.asarray(assembly.enclosure.half_extents)
+        points=assembly.pose.position(grid*half)
+        delta=points-x
+        distance=np.linalg.norm(delta,axis=1)
+        volume_weights=weights*np.prod(half)
+        s_num=np.sum(volume_weights/distance)
+        m_num=np.einsum(
+            "n,nc->c",volume_weights/distance,delta,
+        )
+        s_exact,m_exact=box_coulomb_moments(
+            x[None,:],assembly.pose.center,assembly.pose.rotation,half,
+        )
+        np.testing.assert_allclose(
+            s_exact[0],s_num,rtol=1e-8,atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            m_exact[0],m_num,rtol=1e-8,atol=1e-12,
+        )
