@@ -127,6 +127,15 @@ def test_actual_box_direct_radial_original_coulomb_small_space_runs():
     assert L.shape==(2,2) and np.isfinite(L).all()
     assert np.isfinite(skew)
     np.testing.assert_allclose(L,L.T,rtol=0,atol=0)
+    # Run the genuine BFZI curl-Jacobian connection once on a tiny set,
+    # so the affine benchmark cannot accidentally bypass its real mode path.
+    affine=assemble_basis_coulomb_radial(
+        basis,np.eye(basis.size),x[:3],wx[:3],
+        radial_order=2,polar_order=2,azimuthal_order=6,
+        exact_scalar_control=True,exact_affine_control=True,
+    )
+    assert affine.shape==L.shape and np.isfinite(affine).all()
+    np.testing.assert_allclose(affine,affine.T,rtol=0,atol=0)
 
 
 
