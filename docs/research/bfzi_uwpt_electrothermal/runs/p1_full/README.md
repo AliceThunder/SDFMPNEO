@@ -49,7 +49,7 @@ x-only 1.949%、y-only 23.560%、both 28.437%
     git pull --ff-only
     python run.py --mode bfzi-p1-full-sea --with-tests
 
-新日志应输出 base/x_only/inner_only/both 四种对照，
+新日志应输出 base/x_only/inner_only/inner_radial_only/both 五种对照，
 逐项五个自项、十个互项和未对称原矩阵 skew、
 特征值以及外积分 x 与点心内径／角向的独立变化。
 它们仍是**离散收敛趋势而非连续真值**；
