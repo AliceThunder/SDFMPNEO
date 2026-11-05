@@ -645,3 +645,38 @@ SΩ 近角真值中不一致优于 uniform，且原矩阵 skew
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 **整体 G1 FAIL；正式教师训练不得开始；不使用 GitHub Actions。**
+
+
+## 2026-11-05 P1-C 最新入口：物理外球／盒壳求积正式接入 Green L
+
+101-pass 最新本机实跑（日志 cb02be3、代码 1661bd5）
+已独立证实外 x 未收敛：
+粗 x0 海水体积误差 1.7283%，单独改变球图后
+降至 0.0877%，只改变盒壳法向仍为 1.7259%；
+真实无核 G 的球图独立变化 15.705%，
+盒壳切向单独分片对弱模态 G00/G22
+各影响 2.186%，QMC 两种子最坏自项差 4.044%。
+原 G1 整体继续 FAIL。
+
+已接通物理求积外 x 候选 shell_phys：
+球图径/极角/方位角按实际两盒几何分片，
+最大球图径向片宽为当前实际模式最小宽度；
+真实盒面切向按其半宽分片。
+保留原正权海水球域/双盒壳单位分解，
+未软化 Green 1/r 与原五个 curl 模态。
+新增 phys_x_both 在与旧 both 相同的
+内 Green 阶数下直接组装五自项、十互项，
+不是仅仅打印无核体积。
+
+无核 Gram 则独立列出 sphere_radial、
+sphere_angles、sphere_phys、phys_tangent，
+各自检查真实域解析体积/中心二阶矩，
+并继续和双 Sobol seed 对照。
+只有在这些独立几何/模式证据和原 Green
+矩阵逐模态稳定后才能讨论参考教师。
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+**新算法仍待本机日志，P1-C/G1 FAIL；
+不训练正式教师、不使用 GitHub Actions。**
