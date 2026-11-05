@@ -249,16 +249,33 @@ def _outer_gram_diagnostics(scene,basis):
     # Last case halves max local tangential panel width relative to the
     # narrowest actual W Gaussian window. No other knob changes.
     half_mode_width=0.5*min(mode.width for mode in basis.modes)
+    mode_width=min(mode.width for mode in basis.modes)
+    radial_physical=dict(
+        radial_geometry_cuts=True,
+        max_radial_panel_width=mode_width,
+    )
+    angular_physical=dict(
+        polar_geometry_order=2,
+        azimuthal_geometry_order=2,
+    )
+    physical={**radial_physical,**angular_physical}
     cases=(
-        ("x0",(2,3,6,2),None),
-        ("sphere_only",(3,4,8,2),None),
-        ("normal_only",(2,3,6,3),None),
-        ("x1",(3,4,8,3),None),
-        ("face_tangent",(3,4,8,3),half_mode_width),
+        ("x0",(2,3,6,2),None,{}),
+        ("sphere_only",(3,4,8,2),None,{}),
+        ("normal_only",(2,3,6,3),None,{}),
+        ("x1",(3,4,8,3),None,{}),
+        ("face_tangent",(3,4,8,3),half_mode_width,{}),
+        # Physically specified knot positions keep the same continuous
+        # volume/partition. Separate these geometric subspaces before
+        # combining them in a testable candidate for the actual L.
+        ("sphere_radial",(3,4,8,3),None,radial_physical),
+        ("sphere_angles",(3,4,8,3),None,angular_physical),
+        ("sphere_phys",(3,4,8,3),None,physical),
+        ("phys_tangent",(3,4,8,3),half_mode_width,physical),
     )
     gram={}
     gram_parts={}
-    for label,(nr,npole,naz,nwall),tangent_cap in cases:
+    for label,(nr,npole,naz,nwall),tangent_cap,extra in cases:
         xx,ww,nsphere=scene.box_shell_quadrature(
             nr,npole,naz,wall_scale=basis.wall_scale,
             shell_width_factor=12.0,shell_normal_order=nwall,
@@ -267,6 +284,7 @@ def _outer_gram_diagnostics(scene,basis):
             shell_normal_mapping="log",
             outer_taper_width=basis.outer_taper_width,
             return_sphere_count=True,
+            **extra,
         )
         currents=basis.evaluate(xx)
         sphere=np.einsum(
@@ -317,6 +335,12 @@ def _outer_gram_diagnostics(scene,basis):
     compare("x1_vs_sphere_only","x1","sphere_only")
     compare("x1_vs_normal_only","x1","normal_only")
     compare("face_tangent_vs_x1","face_tangent","x1")
+    compare("sphere_radial_vs_x1","sphere_radial","x1")
+    compare("sphere_angles_vs_x1","sphere_angles","x1")
+    compare("sphere_phys_vs_sphere_radial","sphere_phys","sphere_radial")
+    compare("sphere_phys_vs_sphere_angles","sphere_phys","sphere_angles")
+    compare("phys_tangent_vs_sphere_phys","phys_tangent","sphere_phys")
+    compare("phys_tangent_vs_face_tangent","phys_tangent","face_tangent")
 
     # Independent sampling algorithm on the same continuous box-shell
     # partition. Two independent Sobol scrambles are an uncertainty
@@ -337,6 +361,7 @@ def _outer_gram_diagnostics(scene,basis):
             f"x_nodes={len(xq)},"
             +",".join(f"G{i}{i}={v:.10g}" for i,v in enumerate(qself))
             +f",relative_vs_gauss_face_tangent={_relative(q,gram['face_tangent']):.8g},"
+            +f"relative_vs_phys_tangent={_relative(q,gram['phys_tangent']):.8g},"
             "scope=independent_scrambled_positive_volume_not_Green",
             flush=True,
         )
