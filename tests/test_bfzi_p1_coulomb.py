@@ -270,3 +270,56 @@ def test_true_gaussian_mode_peak_gets_ray_centered_radial_panels():
     exact=MU0/(4*np.pi)*value
     assert abs(raw-exact)/exact>0.3
     assert abs(adjusted-exact)/exact<1e-4
+
+
+def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball():
+    """An actual remote Gaussian is almost invisible to coarse sphere angles.
+
+    Keep the radial Gaussian-window panels IDENTICAL in both trials.
+    The only change is source-centred, positive partition-of-unity
+    spherical cap charts; compare with a 3D analytic Newton potential
+    of an isotropic Gaussian, truncated at radius 1 (>18 widths away).
+    """
+    import math
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+    from sdfmpneo_bfzi.source import MU0
+
+    center=np.array([0.33,0.31,0.33])
+    width=0.025
+    metric=(np.eye(3)/width**2)[None,:,:]
+    windows=(center[None,:],metric)
+
+    def density(y):
+        return np.exp(
+            -np.sum((y-center)**2,axis=1)/width**2
+        )[:,None,None]*np.array([[[1.,0.,0.]]])
+
+    def sphere(point,directions):
+        return np.zeros((len(directions),1)),np.ones((len(directions),1))
+
+    common=dict(
+        x=np.zeros((1,3)),wx=np.ones(1),evaluate=density,
+        wet_radial_segments=sphere,
+        radial_order=3,polar_order=4,azimuthal_order=10,
+        radial_mode_windows=windows,
+    )
+    plain=assemble_coulomb_radial(**common)[0,0]
+    stats={}
+    corrected=assemble_coulomb_radial(
+        **common,source_angular_caps=windows,source_cap_stats=stats,
+    )[0,0]
+    # Newton potential of a whole-space Gaussian at the observer:
+    # pi^(3/2) w^3 erf(|c|/w)/|c|. The omitted sphere exterior is
+    # exponentially tiny because c lies >18 Gaussian widths within it.
+    exact=(
+        MU0/(4*math.pi)*math.pi**1.5*width**3
+        *math.erf(np.linalg.norm(center)/width)
+        /np.linalg.norm(center)
+    )
+    assert abs(plain-exact)/exact>0.8
+    assert abs(corrected-exact)/exact<0.09
+    assert stats["points"]==1
+    assert stats["points_with_caps"]==1
+    assert stats["cap_charts"]==1
+    assert stats["cap_nodes"]>0
+    assert stats["max_solid_angle_rel"]<0.01
