@@ -27,3 +27,30 @@
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 输出由已有本机 Git 机制自动提交推送，**不使用 GitHub Actions**。
+
+
+## 2026-11-05 UTC：首份实跑已出现，但物理 L 明确失败
+
+[原始日志](latest_full.log) / [自动摘要](latest_summary.md) 对应
+a9f48db 基线、97 passed。原对称差分算法在五模式上
+x-only 1.949%、y-only 23.560%、both 28.437%
+的矩阵变化；与 Taylor 80.941% 不一致，
+98% 大项抵消；粗 self L00/L22 与最小特征值为负。
+**此为失败证据，不是 97 项单测的物理 PASS。**
+
+现已更换下次 P1-C 默认主算法：
+使用每个外点 x 的相对球坐标直接计算原核 1/r Green
+内势，r²/r=r 精确消奇；沿射线对两个真实旋转盒与外球
+几何解析裁剪。外点用 box-shell 面/棱/角正权坐标，
+而不是粗球心角向湿区射线；只保留历史差分/Taylor
+作为已否证的参考数据，不自动替代成真值。
+
+下一次运行保持同一命令：
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+新日志应输出 base/x_only/inner_only/both 四种对照，
+逐项五个自项、十个互项和未对称原矩阵 skew、
+特征值以及外积分 x 与点心内径／角向的独立变化。
+它们仍是**离散收敛趋势而非连续真值**；
+真实近面、棱角和无穷域尚待独立验收。
