@@ -329,3 +329,47 @@ def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball
     assert stats["cap_charts"]==1
     assert stats["cap_nodes"]>0
     assert stats["max_solid_angle_rel"]<0.01
+
+
+def test_source_cap_positive_moment_fit_conserves_exact_ball_area_s_and_m():
+    """Same narrow source caps, independently exact ball S/M and 4*pi.
+
+    For x=0 in a unit ball, S=2*pi and M=0 analytically.
+    Unlike the source-only Gaussian test, this checks the REAL finite
+    angular weights after partition-of-unity and positive moment fitting.
+    """
+    import math
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+
+    center=np.array([0.33,0.31,0.33])
+    width=0.025
+    windows=(center[None,:],(np.eye(3)/width**2)[None,:,:])
+
+    def source(points):
+        return np.broadcast_to(
+            np.array([[[1.,0.,0.]]]),(len(points),1,3)
+        )
+
+    def unit_ball(point,directions):
+        return (
+            np.zeros((len(directions),1)),
+            np.ones((len(directions),1)),
+        )
+
+    stats={}
+    _,u=assemble_coulomb_radial(
+        np.zeros((1,3)),np.ones(1),source,unit_ball,
+        radial_order=3,polar_order=4,azimuthal_order=10,
+        source_angular_caps=windows,
+        exact_scalar_moments=np.array([2*math.pi]),
+        exact_first_moments=np.zeros((1,3)),
+        source_cap_stats=stats,
+        return_point_potentials=True,
+    )
+    assert stats["points"]==1
+    assert stats["accepted"]==1
+    assert stats["fall_back"]==0
+    assert stats["max_solid_angle_rel"]<2e-8
+    assert stats["max_scalar_moment_rel"]<2e-8
+    assert stats["max_first_moment_scaled"]<2e-7
+    np.testing.assert_allclose(u[0,0],[2*math.pi,0,0],rtol=1e-9,atol=1e-12)
