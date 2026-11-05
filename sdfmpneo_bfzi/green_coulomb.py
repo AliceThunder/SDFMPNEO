@@ -643,6 +643,97 @@ def _bfzi_projected_box_azimuth_rule(scene, point, e1, e2, order):
     return phi, wphi
 
 
+def _bfzi_source_cap_angular_rule(
+    point, base_directions, base_weights, centers, metrics,
+    polar_order, azimuthal_order,
+):
+    """Positive partition-of-unity angular charts centred on ACTUAL modes.
+
+    Each localized Gaussian mode supplies a spherical cap around the ray
+    from x to its real Gaussian centre. The full-sphere background and
+    each cap carry nonnegative partition weights summing to one at each
+    direction: H_0=1/(1+sum h_m), H_m=h_m/(1+sum h_j).
+    Integrate H_0 on the existing physical angular rule and H_m with a
+    cap-local Gauss rule. This has no overlap double counting in the
+    continuous integral, no artificial kernel, and no world voxel mesh.
+    """
+    base_directions=np.asarray(base_directions,float)
+    base_weights=np.asarray(base_weights,float)
+    if (base_directions.ndim!=2 or base_directions.shape[1]!=3
+            or base_weights.shape!=(len(base_directions),)
+            or not np.all(base_weights>0)):
+        raise ValueError("invalid base angular rule for source caps")
+    centers=np.asarray(centers,float)
+    metrics=np.asarray(metrics,float)
+    if (centers.ndim!=2 or centers.shape[1]!=3
+            or metrics.shape!=(len(centers),3,3)
+            or not np.isfinite(centers).all()
+            or not np.isfinite(metrics).all()
+            or np.any(np.linalg.eigvalsh(metrics)<=0)):
+        raise ValueError("source caps require finite centers and SPD metrics")
+
+    active=[]
+    for center,G in zip(centers,metrics):
+        delta=center-point
+        distance=float(np.linalg.norm(delta))
+        # Broader than ~3 Gaussian widths is already resolved well by
+        # the base full-sphere angular chart; add caps only for narrow
+        # source directions seen from this particular observation point.
+        width=1.0/math.sqrt(float(np.min(np.linalg.eigvalsh(G))))
+        if distance<=3.0*width:
+            continue
+        axis=delta/distance
+        theta=math.asin(min(0.95,3.0*width/distance))
+        active.append((axis,math.cos(theta)))
+    if not active:
+        return base_directions,base_weights,0
+
+    axes=np.array([a for a,_ in active])
+    cos_limits=np.array([c for _,c in active])
+
+    def profiles(directions):
+        z=directions@axes.T
+        t=np.clip((z-cos_limits)/(1.0-cos_limits),0.0,1.0)
+        # Smooth support at every cap boundary; a finite h scale avoids
+        # a nearly discontinuous indicator requiring very high Gauss.
+        return 8.0*t*t*(3.0-2.0*t)
+
+    original_profiles=profiles(base_directions)
+    result_dirs=[base_directions]
+    result_weights=[
+        base_weights/(1.0+np.sum(original_profiles,axis=1))
+    ]
+    nodes,weights=np.polynomial.legendre.leggauss(polar_order)
+    for mode_index,(axis,cos_lower) in enumerate(active):
+        mu=0.5*(1.0-cos_lower)*nodes+0.5*(1.0+cos_lower)
+        wmu=0.5*(1.0-cos_lower)*weights
+        phi=2*math.pi*(np.arange(azimuthal_order)+0.5)/azimuthal_order
+        seed=(np.array((1.,0.,0.)) if abs(axis[0])<0.9
+              else np.array((0.,1.,0.)))
+        e1=np.cross(seed,axis)
+        e1/=np.linalg.norm(e1)
+        e2=np.cross(axis,e1)
+        transverse=np.sqrt(np.maximum(0.,1.-mu*mu))
+        directions=(
+            transverse[:,None,None]*
+            (np.cos(phi)[None,:,None]*e1+
+             np.sin(phi)[None,:,None]*e2)
+            +mu[:,None,None]*axis
+        ).reshape(-1,3)
+        solid_weights=np.broadcast_to(
+            wmu[:,None]*(2*math.pi/azimuthal_order),
+            (len(mu),len(phi)),
+        ).ravel()
+        h=profiles(directions)
+        patch_weight=h[:,mode_index]/(1.0+np.sum(h,axis=1))
+        result_dirs.append(directions)
+        result_weights.append(solid_weights*patch_weight)
+    directions=np.concatenate(result_dirs)
+    weights=np.concatenate(result_weights)
+    valid=weights>0
+    return directions[valid],weights[valid],len(active)
+
+
 def assemble_coulomb_radial(
     x, wx, evaluate, wet_radial_segments, *,
     radial_order: int = 4,
@@ -651,6 +742,8 @@ def assemble_coulomb_radial(
     radial_breakpoints=(),
     radial_wall_scale: float | None = None,
     radial_mode_windows=None,
+    source_angular_caps=None,
+    source_cap_stats: dict | None = None,
     polar_axis=None,
     azimuthal_rule=None,
     exact_scalar_moments=None,
@@ -685,6 +778,9 @@ def assemble_coulomb_radial(
     Gauss panels at r_peak plus/minus 1, 2, 3 w_ray. These resolve
     genuine source peaks BETWEEN the old wall / x-distance panels.
     This is source-guided radial quadrature, NOT a change of W or 1/r.
+    source_angular_caps alternatively builds source-centred local
+    spherical cap charts with an exact positive partition of unity
+    against the existing full-sphere background angular rule.
 
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
@@ -760,6 +856,12 @@ def assemble_coulomb_radial(
                                    window_metrics.transpose(0,2,1))
                 or np.any(np.linalg.eigvalsh(window_metrics)<=0)):
             raise ValueError("radial source windows require finite centers and SPD metrics")
+    if source_angular_caps is not None:
+        cap_centers,cap_metrics=source_angular_caps
+        cap_centers=np.asarray(cap_centers,float)
+        cap_metrics=np.asarray(cap_metrics,float)
+        if cap_centers.ndim!=2 or cap_centers.shape[1]!=3 or cap_metrics.shape!=(len(cap_centers),3,3):
+            raise ValueError("source_angular_caps require (centers, SPD metrics)")
     cuts = np.asarray(radial_breakpoints, dtype=float)
     if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
         raise ValueError("radial_breakpoints must be finite positive distances")
@@ -808,6 +910,11 @@ def assemble_coulomb_radial(
             ).ravel()
             angular_levels.append((angles,sinmu,ph,weights))
     accum = np.zeros((vx.shape[1],vx.shape[1]))
+    if source_cap_stats is not None:
+        source_cap_stats.clear()
+        source_cap_stats.update(points=0,points_with_caps=0,
+                                cap_charts=0,cap_nodes=0,
+                                max_solid_angle_rel=0.0)
     if angular_moment_stats is not None:
         angular_moment_stats.clear()
         angular_moment_stats.update(total=0,refined=0,unresolved=0,
@@ -903,6 +1010,28 @@ def assemble_coulomb_radial(
                 rec['unresolved']+=int(best_error>angular_moment_tolerance)
                 rec['maximum_scalar_rel']=max(rec['maximum_scalar_rel'],s_err)
                 rec['maximum_first_scaled']=max(rec['maximum_first_scaled'],m_err)
+        if source_angular_caps is not None:
+            old_count=len(directions)
+            new_directions,new_weights,cap_count=_bfzi_source_cap_angular_rule(
+                point,directions,area_weights,cap_centers,cap_metrics,
+                polar_order,azimuthal_order,
+            )
+            if len(new_directions)>old_count:
+                new_lo,new_hi=wet_radial_segments(
+                    point,new_directions[old_count:],
+                )
+                lo=np.concatenate((np.asarray(lo),np.asarray(new_lo)),axis=0)
+                hi=np.concatenate((np.asarray(hi),np.asarray(new_hi)),axis=0)
+            directions,area_weights=new_directions,new_weights
+            if source_cap_stats is not None:
+                source_cap_stats['points']+=1
+                source_cap_stats['points_with_caps']+=int(cap_count>0)
+                source_cap_stats['cap_charts']+=cap_count
+                source_cap_stats['cap_nodes']+=len(directions)-old_count
+                source_cap_stats['max_solid_angle_rel']=max(
+                    source_cap_stats['max_solid_angle_rel'],
+                    abs(float(np.sum(area_weights))/(4*math.pi)-1),
+                )
         lo,hi = np.asarray(lo,float),np.asarray(hi,float)
         if (lo.ndim != 2 or lo.shape != hi.shape
                 or lo.shape[0] != len(directions)
@@ -1014,6 +1143,8 @@ def assemble_basis_coulomb_radial(
     azimuthal_order: int = 10,
     box_corner_azimuth_panels: bool = False,
     mode_centered_radial_panels: bool = False,
+    mode_source_angular_caps: bool = False,
+    source_cap_stats: dict | None = None,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
     angular_moment_tolerance: float | None = None,
@@ -1080,7 +1211,7 @@ def assemble_basis_coulomb_radial(
             original = evaluate_nonguided_curl_jacobian(basis,pts)
             return np.einsum("nmcd,mk->nkcd",original,t,optimize=True)
     windows=None
-    if mode_centered_radial_panels:
+    if mode_centered_radial_panels or mode_source_angular_caps:
         windows=(
             np.array([mode.center for mode in basis.modes]),
             np.array([
@@ -1097,7 +1228,9 @@ def assemble_basis_coulomb_radial(
         azimuthal_order=azimuthal_order,
         radial_breakpoints=breaks,
         radial_wall_scale=basis.wall_scale,
-        radial_mode_windows=windows,
+        radial_mode_windows=windows if mode_centered_radial_panels else None,
+        source_angular_caps=windows if mode_source_angular_caps else None,
+        source_cap_stats=source_cap_stats,
         polar_axis=axis,
         azimuthal_rule=(
             azimuthal if box_corner_azimuth_panels else None
