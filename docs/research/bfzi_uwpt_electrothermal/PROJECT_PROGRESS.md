@@ -1,14 +1,14 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
-> **BFZI G1 进度看板 · 2026-11-05 UTC · 分支 research/bfzi-uwpt-electrothermal-surrogate。**
+> **BFZI G1 进度看板 · 2026-11-05 UTC · 研究分支 research/bfzi-uwpt-electrothermal-surrogate。**
 >
-> **最新实际运行（代码 dd6b055，日志 aa8ec81）：101 passed，真实五模式 P1-C/G1 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)。在原实盒双端口、五个 W 模态及原始未软化 1/r 下，无核外积分 Gram x0/x1 差 **2.248%**，五个 Gii 各差 **2.209%–4.101%**。因此不管内 Green 算法怎样变化，外 x 本身尚未收敛。仅改变 x 时 L00、L22 分别差 **53.978%、49.902%**，而整体磁矩阵仅差 1.841%，此前只看整体 Frobenius 容易掩盖弱模态错误。
+> **最新本机日志：101 passed，原核五模态 P1-C/G1 仍 FAIL。** [原始日志](runs/p1_full/latest_full.log) / [摘要](runs/p1_full/latest_summary.md)，代码 1661bd5、日志 cb02be3。真实两盒无核 Gram 的球图单独采样变化为 **1.381%**（球图自身贡献变化 **15.705%**），盒壳法向单独变化 **0.873%**，在 x1 上仅改变盒面切向物理分片使整体 Gram 变化 **0.264%**，但弱自项 G00/G22 各变化 **2.186%**。实际外海水解析体积误差 x0 **1.7283%**、仅细化球图后 **0.0877%**；仅改变盒法向依然 **1.7259%**。这是外部球图求积本身未收敛的独立证据，不能归咎于内 Green。
 >
-> **新角向算法的负结果必须保留：** 同 x/内径/极角下，box_corners vs uniform 的 L 差 **1.593%**，原矩阵偏斜由 2.333% **恶化为 2.946%**。已验证的双盒原核常密度解析 SΩ：对齐盒 fine (8,32) 最大误差 uniform 0.1107%、box_corners 0.1133%（更差）；独立非零旋转两盒分别为 0.1118%/0.1052%（提升太小，不能认证）。两盒顶点投影方位分片不升为生产默认。原五模式场景两盒 rotation 均为单位阵；仅独立标量几何使用非零旋转。
+> **外部独立验证：** 两套 scrambled Sobol seeds 13/37 的 Gram 总差 0.337%、最坏自项差 **4.044%**，不是连续真值或误差上界。旧真实五模态外 x 变化导致 L00/L22 相对差约 54%/50%，而总矩阵范数仅变化 1.84%。此前角向两盒顶点方位方案没有在解析 SΩ 几何真值下稳定改善，已保持非默认试验，不称为 G1 PASS。
 >
-> **本轮已提交的新定位实验：** 保留当前物理模型和完整 Green 主算法，首先独立检查 x 体积求积。把 x0=(2,3,6,2) 到 x1=(3,4,8,3) 拆成仅改变球图 (sphere_only)、仅改变盒壳法向 (normal_only)，在同一 x1 上额外使用实际最窄 W 高斯窗宽一半的盒面切向子片 (face_tangent)。各组报告五模态无核 Gii、sphere/shell 贡献和分轴差；另与真实外球减两盒的**解析体积、解析二阶矩**比较，并用两个不同 seed 的 Sobol 正权 box_shell_qmc 与确定性 Gauss 相互核对。QMC 分散度不是误差界，也不代替原核 L。
+> **本轮真正接入的主数值候选：** 新 shell_phys 外 x 规则沿用现成正权外球加双实盒壳光滑单位分解，将球图极角／方位角按**两个真实 OBB 及分区盒的角点方位**分片，球图径向按真实盒的最近/最远几何距离分片，并按当前 Gaussian 模式最窄窗宽设置最大物理片宽；真实盒面切向最大片宽为该窗宽的一半。现在 phys_x_both 在**原五个 curl 模态、完全相同 Green 内积分规则**下装配完整未软化 1/r 磁矩阵，并与旧 both 对照，不自动作为参考。
 >
-> **本机下次运行：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。日志自动更新到 [runs/p1_full/](runs/p1_full/README.md)。优先根据无核 Gram 分轴和解析几何矩确定球图/盒法向/切向的真正误差来源，再决定修复哪一个算子。历史 P0/P1-A/P1-B 限定 PASS 保留；**P1-C/G1=FAIL，不启动正式教师训练，禁止 GitHub Actions。**
+> **下一次日志应先看：** sphere_radial / sphere_angles / sphere_phys / phys_tangent 各自的五模式无核 G、解析体积与二阶矩、QMC 交叉；随后看 phys_x_both vs both 的五个自项、十个互项和未对称 raw skew。只在新的 x 已稳健后考虑再细化内核角积分。**下次 Windows 本机命令：git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。** 历史 P0/P1-A/P1-B 限定 PASS 保留；P1-C/G1=FAIL，禁止正式神经教师训练及 GitHub Actions。
 
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
