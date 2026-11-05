@@ -1892,3 +1892,194 @@ $S/M$ 判别角规则的低阶误差。
 新的几何矩角向选择及真实磁能
 尚待下一次本机运行，
 \textbf{P1-C/G1=FAIL}。
+
+
+\subsection{P1-C 第九次实跑：解析几何角矩全部达标仍不足以认证真实磁能}
+\label{sec:p1-c-mode-projected-radial-panels}
+最新本机代码 \texttt{40c4890}
+在日志提交 \texttt{a8d664e} 上
+106 项 pytest 全部通过，
+真实双盒五个 curl 模式的 Green
+计算完整结束，但\textbf{G1 继续 FAIL}。
+利用独立解析
+$S_\Omega(\bm x),\bm M_\Omega(\bm x)$
+选择内角向规则，
+在 4336 个真实外观察点中，
+1296 点（$29.8893\%$）提高了
+极角/方位角分辨率，
+无一超过两层规则的几何误差目标
+$\tau=0.0025$；
+最大标量矩相对误差
+$0.0024911893$，
+最大一阶矩缩放误差
+$0.0013165591$。
+相同外 $x$ 和径向规则下，
+原矩阵的相对未对称偏斜
+从标量校正的 $0.023522407$
+降至 $0.01091112$。
+\emph{这只说明几何角向低阶矩
+达标及原矩阵偏斜减小。}
+与原标量修正 Green 相比，
+磁自能 $L_{00},L_{11}$
+仍分别变化 $7.644629\%$、
+$10.204581\%$，
+且与未校正的旧 \texttt{both}
+相比 $L_{11}$ 变化 $18.065642\%$。
+因此角矩阈值远远不是实际
+Gaussian-curl 模态的磁能误差上界。
+
+\paragraph{分析旧贴壁径向分片的遗漏。}
+现有原核 Green 的
+$\bm y=\bm x+r\bm u$
+严格湿射线与
+$r^2\mathrm dr/r=r\mathrm dr$
+恒等仍然正确。
+原先径向断点来自
+湿射线的实体盒入/出边界、
+观察点相对固定距离，以及
+盒壁尺度 $s_{\rm wall}$ 的
+分级法向偏移。
+这些端点对盒壁因子
+$d/(d+s_{\rm wall})$ 很关键，
+但\emph{不能保证}恰好采样
+真实模式的高斯窗中心：
+当某个高斯中心 $\bm c_m$
+远离观察点和盒壁入射点时，
+$\bm W_m(\bm x+r\bm u)$
+可能在某个长湿射线区间的内部
+出现宽度远小于该区间长度的峰值。
+固定 3--4 阶的径向 Gauss
+可能没有节点靠近它，
+即使同一方向的湿射线几何矩
+已经解析精确，也不会发现
+这个\emph{由真实电流源引入}
+的非多项式径向误差。
+
+\paragraph{由实际高斯窗 SPD 度量严格投影到每条湿射线。}
+每个现有 BFZI 模态
+具有真实物理中心 $\bm c_m$
+及正定高斯精度矩阵
+$G_m=G_m^\mathsf T\succ0$，
+对于各向同性模式
+$G_m=w_m^{-2}I$，
+旋转各向异性模式
+可有独立的 $G_m$。
+设 $\bm d_m=\bm c_m-\bm x$，
+沿观测点中心射线有
+\[
+ (\bm x+r\bm u-\bm c_m)^\mathsf T
+ G_m(\bm x+r\bm u-\bm c_m)
+ =
+ q_{\perp,m}+
+ \alpha_m(r-r_{\star,m})^2,
+\]
+其中
+\begin{align}
+ \alpha_m &=\bm u^\mathsf T G_m\bm u>0,\\
+ \beta_m &=\bm u^\mathsf T G_m\bm d_m,\\
+ r_{\star,m}&=\beta_m/\alpha_m,\\
+ w_{\parallel,m}&=\alpha_m^{-1/2},\\
+ q_{\perp,m}&=
+ \bm d_m^\mathsf T G_m\bm d_m-
+ \beta_m^2/\alpha_m\ge0.
+\end{align}
+这不是新的电流近似，而是
+\emph{原本使用的 Gaussian/旋转 SPD
+模态高斯窗在固定射线上的精确恒等式}。
+对于 $r_{\star,m}+3w_{\parallel,m}>0$
+且 $q_{\perp,m}\le9$
+的相关射线，除了原来
+严格物理盒壁端点分片，
+新增可选的源窗径向子片断点
+\[
+ r=r_{\star,m}
+       +k\,w_{\parallel,m},
+ \qquad k\in\{-3,-2,-1,0,1,2,3\}.
+\]
+将所有断点\emph{裁剪在
+真实湿射线子区间内}，
+然后在各段上执行原来
+阶数的\emph{正权} Gauss。
+当模态窗口的横向 Mahalanobis
+距离很大时不添加无用子片；
+阈值 $q_\perp\le9$
+仅为有限工作量下
+截去 Gaussian 很小的角向尾巴的启发式，
+\textbf{不是严格积分误差上界}。
+原始未软化 $1/r$、
+双独立 SE(3) 盒、湿域、
+连续电流模式和壁面法向
+求积均未改变。
+这类几何+模式导向的局部
+正权 Gauss 分片不是 FEM
+世界网格，也不引入替代的
+固定源云。
+
+\paragraph{独立解析测试与真实五模式单轴实验。}
+新增数学上可积分的
+单观察点正权球内高斯源：
+\[
+ \bm W(\bm y)=
+ \bm e_1\left(
+ 1+A\exp[-|\bm y-\bm c|^2/w^2]
+ \right),\quad
+ |\bm c|=0.57,\quad w=0.02,\quad A=1000.
+\]
+此场\emph{只是径向求积测试密度}，
+不是一个合法壁面无流条件的
+真实 BFZI curl 模式。
+在观测点 $\bm x=\bm0$
+的每个给定角方向 $\bm u$，
+令 $a=\bm u\cdot\bm c$、
+$b=|\bm c|^2-a^2$，
+则精确径向参考为
+\[
+ I(\bm u)=\int_0^1
+ r\exp[-((r-a)^2+b)/w^2]\,\mathrm dr
+ =e^{-b/w^2}
+ \left[
+ -\frac{w^2}{2}
+ \left(e^{-(1-a)^2/w^2}-e^{-a^2/w^2}\right)
+ +\frac{aw\sqrt{\pi}}2
+ \left(\mathrm{erf}\frac{1-a}{w}
+            +\mathrm{erf}\frac{a}{w}\right)
+ \right].
+\]
+因此可\emph{固定完全相同角方向}
+逐方向对照原未分片 Gauss-3
+与新真实高斯源窗分片 Gauss-3，
+独立测试峰值是否真正解析，
+不把源窗方案直接宣称为
+全 BFZI G1 认证。
+
+生产研究代码中新增
+\texttt{mode\_centered\_radial\_panels}
+可选参数，
+在\texttt{assemble\_basis\_coulomb\_radial}
+从\emph{实际模式}读取中心与
+SPD 高斯窗；同一个
+\texttt{assemble\_coulomb\_radial}
+在给定湿射线端点上
+加入模式中心的物理径向子片。
+下一次本机保留 4336 个
+$x_1$ 外点、
+相同原角矩阈值
+$\tau=0.0025$、
+相同至多一层角向细化、
+相同五个 curl 模态、
+同一原核与原来各段 Gauss 阶数，
+比较
+\texttt{moment\_angle\_both} 与
+\texttt{mode\_radial\_both}：
+\emph{仅源窗径向子片不同}。
+必须逐模态比较五自能、
+十互耦和 raw skew，
+并核对两次输出完全相同的
+角向加密点数与 unresolved，
+以避免跨轴误差混杂。
+
+\textbf{本轮新的源窗径向求积
+与对应解析测试仍待本机运行；
+现有 106-pass 是旧代码实跑。}
+P1-C/G1 继续 FAIL，
+不能开始神经教师训练。
