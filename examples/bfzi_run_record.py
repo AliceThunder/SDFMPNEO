@@ -401,7 +401,7 @@ def run_and_publish(run, *, flags, verbose=False, publish=True,
     root = Path(__file__).resolve().parents[1]
     output_dir = root / LOG_DIR
     if log_subdir is not None:
-        if not isinstance(log_subdir, str) or log_subdir not in ("p0", "p1"):
+        if not isinstance(log_subdir, str) or log_subdir not in ("p0", "p1", "p1_full"):
             raise ValueError("unsupported BFZI log subdirectory")
         output_dir = output_dir / log_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
