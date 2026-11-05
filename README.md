@@ -1,7 +1,7 @@
-> **BFZI 研究分支｜最新进度（2026-11-04 UTC）：[📊 总体路线图 · P0 验收 · P1 当前关口](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**  
-> 本研究只针对 **BFZI 圆形／圆角方形单根连续螺旋、两独立绝缘封装、均匀非磁性导电海水与电磁热代理**，不是历史超椭圆线圈。**P0 已在限定的理想闭合双端口线源 demo 上通过 83 项本机测试**：84 探针默认 4 阶 C/B 相对误差 7.28e-5/4.27e-4；严格闭合物理折线 16/32/64 曲角面板的 B 误差约 3.90e-4/9.76e-5/2.44e-5，`div C` 约 1e-16。**不是全几何参数域有限线径无碰撞或铜邻近效应的认证。**  
-> **P1 最新状态（2026-11-05 UTC）：** 用户本机最新日志在代码 `983ad60` 上 **94 passed，但主执行 FAIL**：P1-C 全海水五模式实验的两处 f-string 漏括号导致 `SyntaxError`，因此没有任何新 L 收敛数据。已修复语法并让 pytest 直接导入主模块；另修正原 `x_only` 与 `y0` 共用同一 Gauss 规则造成的 Taylor 残差零距离节点问题。前一轮 P1-B 双合法紧支电流原 1/r 自/非零互项 **92 passed 且解析真值 PASS** 不受影响。**新推荐直接运行 `python run.py --mode bfzi-p1-full-sea --with-tests`，单独上传 `runs/p1_full/`；不必反复运行已验证 P1-A/B。全湿区 L 尚无独立真值，G1 仍 FAIL。**
-> 本机下一命令：`python run.py --mode bfzi-p1-coulomb --with-tests`（独立日志上传至 `runs/p1/`，不使用 GitHub Actions）。[P0→P1 理论/停止条件](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 第 14 节](theory/sections/14_p1_exact_coulomb_sphere.tex) · [P0 83-pass 日志](docs/research/bfzi_uwpt_electrothermal/runs/p0/latest_summary.md) · [P1 92-pass 双电流磁能日志](docs/research/bfzi_uwpt_electrothermal/runs/p1/latest_summary.md)。
+> **BFZI 研究分支｜P1-C 最新推进（2026-11-05 UTC）：** [总体进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) · [正式 P1 契约](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [TeX 推导](theory/sections/14_p1_exact_coulomb_sphere.tex)。严格针对**圆形／圆角方形连续 BFZI 螺旋、两只独立位姿实心绝缘封装、均匀线性非磁海水**，不混入历史超椭圆线圈。
+> 已有**本机实测**：P0 限定源项 PASS、P1 球 Taylor 解析基准 PASS、真实双盒几何 S/M PASS、两个海水内紧支涡流原核 L 自/非零互项 PASS。**最新 P1 旧日志 94 passed 但主程序 SyntaxError；最初检查时 runs/p1_full/ 仍不存在**，所以真实五个全海水 curl 模式 P1-C 和整体 G1 依然未认证，不能启动正式教师训练。
+> **本轮已提交新物理算子候选：** 不软化 1/r 的对称差分原核 L，复用双盒真实 SΩ，并用有限的电流差分双积分代替全域一阶 Taylor Hessian 减除。独立解析球原型的线性／三次模式相对误差为 2.38421e-4／5.61633e-4（只验球、不验真实双盒）。P1-C 按 x/y 四种分轴规则逐项打印五个 L 自项、十个互项，与原 Taylor 法的双细规则交叉比较；专项测试已提交但尚待本机完整运行。**不要因差分公式天然对称或两套公式接近就称 G1 PASS。**
+> **下一条本机命令：** `git pull --ff-only`，随后 `python run.py --mode bfzi-p1-full-sea --with-tests`。摘要和原始日志自动保存并推送至 [runs/p1_full/](docs/research/bfzi_uwpt_electrothermal/runs/p1_full/)；禁止 GitHub Actions、不盲目提高求积阶数。
 
 # SDF-MPNEO vNext
 
