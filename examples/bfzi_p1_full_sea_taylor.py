@@ -631,10 +631,13 @@ def main():
         "match_geometry_selection=true",
         flush=True,
     )
-    # Real-mode-localized angular caps are blended with the same
-    # geometry-selected background angular rule by a strictly positive
-    # spherical partition of unity. All x, source windows, wall and
-    # mode-centered radial Gauss panels are IDENTICAL to mode_radial.
+    # The 108-pass unbalanced caps changed weak self energies 78-106%
+    # and violated the analytic S/M moments by up to 5.72%. A continuous
+    # partition-of-unity is NOT finite cubature conservation. The new
+    # positive entropy tilt fits 4*pi and the exact real two-OBB S/M
+    # at every x, with explicit fallback to the qualified background
+    # if no feasible positive fit exists. Compare on identical x and
+    # actual source-window radial panels, never infer G1 from smaller skew.
     localized=trial(
         basis,x1,inner1,cache,method="radial",
         angle_scheme="uniform",scalar_control=True,
@@ -659,12 +662,15 @@ def main():
         f"points_with_caps={cap['points_with_caps']},"
         f"total_cap_charts={cap['cap_charts']},"
         f"added_positive_directions={cap['cap_nodes']},"
+        f"moment_fit_accepted={cap['accepted']},"
+        f"fallback_to_geometry_background={cap['fall_back']},"
+        f"worst_moment_fit_residual={cap['worst_balance_residual']:.8g},"
         f"max_angular_measure_rel={cap['max_solid_angle_rel']:.8g},"
         f"exact_moment_checks={cap['exact_moment_checks']},"
         f"max_scalar_moment_rel={cap['max_scalar_moment_rel']:.8g},"
         f"max_first_moment_scaled={cap['max_first_moment_scaled']:.8g},"
-        "partition=pointwise_positive_background_plus_real_mode_caps,"
-        "status=geometry_and_source_pilot_not_certified",
+        "partition=positive_caps_exact_geometry_moment_fitted_or_background_fallback,"
+        "status=not_certified_for_real_curl_modes",
         flush=True,
     )
     print(
