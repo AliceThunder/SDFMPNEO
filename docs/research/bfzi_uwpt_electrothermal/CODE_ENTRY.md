@@ -852,3 +852,77 @@ moment_angle_both 全五自项、十互项。
 上述新角向算法仍待本机运行；
 **P1-C/G1=FAIL，正式磁教师不可开始，
 不使用 GitHub Actions。**
+
+
+## 2026-11-05 第九次 P1-C：106-pass 几何角矩达标，但源模式径向峰值待解析
+
+实测代码 40c4890、最新本机日志 a8d664e：
+**106 passed，原核五模式真实磁矩阵
+G1/P1-C 物理 FAIL**。
+旧 SΩ/MΩ 几何矩驱动角向规则对
+4336 个 x 中的 1296 点追加角向节点，
+unresolved=0，最大几何标量矩误差
+0.24912%、一阶矩缩放误差 0.13166%；
+但五模式 L00/L11 相对原标量修正
+仍变化 7.6446%/10.2046%。
+raw skew 下降 2.352%→1.091%
+不能当作磁能精度证明。
+
+**本轮实质数值算法：**
+在 sdfmpneo_bfzi/green_coulomb.py 的
+assemble_coulomb_radial 新增可选
+radial_mode_windows=(centers, SPD_metrics)，
+在 assemble_basis_coulomb_radial 增加
+mode_centered_radial_panels。
+该参数从本来真实 BFZI basis.modes
+直接取得各个中心和 Gaussian SPD
+指标（支持物理旋转的各向异性窗口）。
+对真实球心湿射线 y=x+r u，
+精确投影高斯指数为
+q_perp+(r-r_peak)²/w_ray²。
+仅在横向 q_perp≤9 的相关射线，
+在真实湿射线入/出界间插入
+r_peak+k*w_ray（k=-3,-2,-1,0,1,2,3）
+的新增正权 Gauss 子片。
+不改变原物理海水、两只独立
+SE(3) 实盒、圆/圆角方形连续线圈、
+原始未软化 1/r、实际 curl 模态、
+已有 wall_scale 贴壁径向分片。
+
+**本机可复现的独立内核测试：**
+在 tests/test_bfzi_p1_coulomb.py 新增
+test_true_gaussian_mode_peak_gets_ray_centered_radial_panels，
+使用解析 erf 的狭窄偏心 Gaussian 球内
+r-dr 真值，在完全相同球面角点、
+相同 Gauss-3 径向阶数下
+检查旧固定径向节点漏采和新
+真实 Gaussian 中心分片恢复。
+另在 tests/test_bfzi_p1_full_sea_taylor.py
+的实际双盒小空间测试中接通新参数。
+两测试结果尚待本机运行。
+
+**新的真实五模态主实验：**
+在 examples/bfzi_p1_full_sea_taylor.py，
+同一 4336 x1 点、同一双盒精确
+SΩ/MΩ 选中角向、
+同一内径阶和 wall_scale、
+同样五真实 curl 模式，
+比较 moment_angle_both 和新增
+mode_radial_both，唯一差异为
+mode-centered Gaussian 射线径向分片。
+日志新增 p1_full_sea_mode_window_radial_cross、
+p1_full_sea_mode_window_angle_repeat、
+五模式自/互磁能和 mode_delta。
+下一次检查是否有模式因窄窗内部
+峰值漏采引起的独立径向误差；
+如果没有，再转向电流源加权的
+角向局部自适应，避免继续无根据
+提高同类几何矩阶数。
+
+本机运行：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+**P1-C/G1 FAIL，正式神经教师关闭，
+禁止 GitHub Actions。**
