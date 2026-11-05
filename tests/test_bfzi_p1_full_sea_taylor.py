@@ -71,6 +71,42 @@ def test_actual_box_symmetric_difference_coulomb_small_space_runs():
 
 
 
+
+def test_coulomb_azimuth_panels_follow_both_real_box_poses():
+    """Angular sectors use projected OBB vertices and preserve full 2pi."""
+    from dataclasses import replace
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from sdfmpneo_bfzi.green_coulomb import (
+        _bfzi_projected_box_azimuth_rule,
+    )
+
+    scene=build_demo_scene()
+    angle=0.29
+    rot=np.array([
+        [np.cos(angle),0,np.sin(angle)],
+        [0,1,0],
+        [-np.sin(angle),0,np.cos(angle)],
+    ])
+    turned=replace(
+        scene,
+        transmitter=replace(
+            scene.transmitter,
+            pose=RigidPose(rot,scene.transmitter.pose.center),
+        ),
+    )
+    p=np.array([0.15,0.14,0.01])
+    assert scene.in_seawater(p) and turned.in_seawater(p)
+    e1,e2=np.eye(3)[:2]
+    unrotated,wu=_bfzi_projected_box_azimuth_rule(scene,p,e1,e2,8)
+    rotated,wr=_bfzi_projected_box_azimuth_rule(turned,p,e1,e2,8)
+    for nodes,weights in ((unrotated,wu),(rotated,wr)):
+        assert np.isfinite(nodes).all() and np.all(weights>0)
+        assert np.all((nodes>0)&(nodes<2*np.pi))
+        np.testing.assert_allclose(sum(weights),2*np.pi,rtol=1e-14)
+    assert not np.array_equal(unrotated,rotated)
+
+
+
 def test_actual_box_direct_radial_original_coulomb_small_space_runs():
     """Exact box-ray clipping, no x/y diagonal and no large subtraction."""
     from sdfmpneo_bfzi.green_coulomb import assemble_basis_coulomb_radial
