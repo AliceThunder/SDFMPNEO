@@ -1,7 +1,7 @@
 pytest:
 ........................................................................ [ 66%]
-....................................                                     [100%]
-108 passed in 42.80s
+.....................................                                    [100%]
+109 passed in 45.51s
 
 p1_full_sea_exact: domain=outer_ball_minus_two_actual_boxes,five_mode_poses=both_identity,separate_scalar_geometry_probes=aligned_and_two_rotated_boxes,modes=5,mode_indices=0-1-12-13-24,kernel=original_unsoftened_1/r,inner=point_centered_exact_wet_ray_intervals,inner_measure=r_dr_dsolidangle,outer=geometry_aligned_positive_box_shell_cubature,wall_normal=log_panels,gate=not_certified
 p1_full_sea_scalar: pose=aligned_demo,angular_scheme=uniform,polar_per_hemisphere=3,azimuth=8,face_rel=0.0036226908,edge_rel=0.00067666495,corner_rel=0.0015097484,max_rel=0.0036226908,radial_error=analytically_zero_for_constant_density,truth=exact_ball_minus_two_box_S,scope=angular_clipping_geometry_only
@@ -71,11 +71,11 @@ p1_full_sea_self: variant=mode_radial_both,L00=8.905788418e-10,L11=1.009140799e-
 p1_full_sea_mutual: variant=mode_radial_both,L01=4.1066106e-25,L02=-1.814285496e-11,L03=1.94187152e-25,L04=3.884573698e-25,L12=-2.293176304e-25,L13=1.42071186e-10,L14=6.1360398e-10,L23=2.2542145e-26,L24=3.961152825e-24,L34=-6.1360398e-10
 p1_full_sea_mode_window_radial_cross: same_x_same_geometry_selected_angles_same_mode_currents,relative_L=0.0096050227,self_relative=0.0096037302,skew_old=0.01091112,skew_new=0.010906139,only_added_mode_window_radial_panels=true,gate=not_certified
 p1_full_sea_mode_window_angle_repeat: points=4336,refined=1296,unresolved=0,match_geometry_selection=true
-p1_full_sea: variant=source_cap_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform_exact_scalar_S_moment_adaptive_angle_source_window_radial_source_angular_caps,norm_L=7.375210848e-08,trace_L=8.09233682e-08,raw_skew=0.009051488,min_eig=1.611963781e-09,max_eig=7.366220654e-08
-p1_full_sea_self: variant=source_cap_both,L00=1.831334939e-09,L11=1.799842463e-09,L22=1.831334939e-09,L33=1.799842463e-09,L44=7.366101339e-08
-p1_full_sea_mutual: variant=source_cap_both,L01=-8.075961189e-25,L02=-1.637777426e-11,L03=2.2110566e-25,L04=-1.447632241e-24,L12=-2.539228231e-25,L13=1.866855328e-10,L14=2.073224865e-10,L23=-2.353008842e-25,L24=2.814916304e-27,L34=-2.073224865e-10
-p1_full_sea_source_cap_quality: points=4336,points_with_caps=3500,total_cap_charts=7344,added_positive_directions=293760,max_angular_measure_rel=0.049684075,exact_moment_checks=4336,max_scalar_moment_rel=0.057221061,max_first_moment_scaled=0.026417834,partition=pointwise_positive_background_plus_real_mode_caps,status=geometry_and_source_pilot_not_certified
-p1_full_sea_source_cap_cross: same_x_same_mode_window_radial_same_geometry_selected_background,relative_L=0.12859057,self_relative=0.12824115,raw_skew_old=0.010906139,raw_skew_new=0.0090514884,only_added_positive_local_angular_caps=true,gate=not_certified
+p1_full_sea: variant=source_cap_both,method=radial,x_nodes=4336,inner_rule=inner_radial_4_polar_4_azimuth_10_scheme_uniform_exact_scalar_S_moment_adaptive_angle_source_window_radial_source_angular_caps,norm_L=9.017390909e-08,trace_L=9.378620722e-08,raw_skew=0.007038062,min_eig=7.49819181e-10,max_eig=9.015519157e-08
+p1_full_sea_self: variant=source_cap_both,L00=8.73326893e-10,L11=9.426981734e-10,L22=8.73326893e-10,L33=9.426981734e-10,L44=9.015415708e-08
+p1_full_sea_mutual: variant=source_cap_both,L01=4.438873379e-24,L02=-1.576135872e-11,L03=2.1085434e-25,L04=-1.607501761e-24,L12=-2.563050698e-25,L13=1.918445047e-10,L14=2.150438209e-10,L23=4.254898937e-24,L24=-9.84222713e-26,L34=-2.150438209e-10
+p1_full_sea_source_cap_quality: points=4336,points_with_caps=3500,total_cap_charts=7344,added_positive_directions=293760,moment_fit_accepted=3500,fallback_to_geometry_background=0,worst_moment_fit_residual=1.9795167e-07,max_angular_measure_rel=3.3306691e-16,exact_moment_checks=4336,max_scalar_moment_rel=0.0024911893,max_first_moment_scaled=0.00091115346,partition=positive_caps_exact_geometry_moment_fitted_or_background_fallback,status=not_certified_for_real_curl_modes
+p1_full_sea_source_cap_cross: same_x_same_mode_window_radial_same_geometry_selected_background,relative_L=0.069583991,self_relative=0.068942029,raw_skew_old=0.010906139,raw_skew_new=0.0070380621,only_added_positive_local_angular_caps=true,gate=not_certified
 p1_full_sea_inner_axes: at_fixed_x=x1,radial_step=0.02830751,angle_step=0.03606858,self_radial_step=0.02800063,self_angle_step=0.03127346,mutual_radial_step=0.002946739,mutual_angle_step=0.01270753
 p1_full_sea_change: method=radial,x_only_vs_base=0.01841002,inner_only_vs_base=0.01531267,both_vs_base=0.07349419,both_vs_x_only=0.06190275,both_vs_inner_only=0.07130619,self_x=0.008743887,self_inner=0.002406856,self_both=0.06698166,mutual_x=0.01145592,mutual_inner=0.01069311,mutual_both=0.02138963,pass_status=not_certified_without_independent_reference
 p1_full_sea_mode_delta: comparison=x_only_vs_base,self0=0.53978201,self1=0.13423006,self2=0.49902468,self3=0.12728098,self4=0.006278837,max_self=0.53978201,max_mutual_self_normalized=0.26306242
@@ -85,5 +85,5 @@ p1_full_sea_mode_delta: comparison=scalar_control_vs_uniform_both,self0=0.071757
 p1_full_sea_mode_delta: comparison=moment_angle_vs_scalar_both,self0=0.07644629,self1=0.10204581,self2=0.07644629,self3=0.10204581,self4=0.018398776,max_self=0.10204581,max_mutual_self_normalized=0.06926078
 p1_full_sea_mode_delta: comparison=moment_angle_vs_uniform_both,self0=0.010174654,self1=0.18065642,self2=0.010174654,self3=0.18065642,self4=0.010074127,max_self=0.18065642,max_mutual_self_normalized=0.07310107
 p1_full_sea_mode_delta: comparison=mode_radial_vs_moment_angle,self0=0.0047069336,self1=0.0059621342,self2=0.0047069336,self3=0.0059621342,self4=0.0096053398,max_self=0.0096053398,max_mutual_self_normalized=0.0050284917
-p1_full_sea_mode_delta: comparison=source_cap_vs_mode_radial,self0=1.0563423,self1=0.78353949,self2=1.0563423,self3=0.78353949,self4=0.12660779,max_self=1.0563423,max_mutual_self_normalized=0.04421023
+p1_full_sea_mode_delta: comparison=source_cap_vs_mode_radial,self0=0.019371613,self1=0.065840788,self2=0.019371613,self3=0.065840788,self4=0.068949977,max_self=0.068949977,max_mutual_self_normalized=0.049322472
 p1_full_sea_note: previous difference pilot had 23.56018-percent y-axis L change, 80.94096-percent Taylor cross-formulation gap, and 98-percent subtraction ratio. New radial Green operator has no large matrix subtraction. It must still pass independent x/inner angular/radial and near-wall/corner convergence; a small raw skew or one PSD matrix is not a true solution certificate. G1 remains FAIL.
