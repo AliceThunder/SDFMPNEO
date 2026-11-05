@@ -1435,3 +1435,156 @@ $V_\Omega=4\pi R^3/3-\sum V_p$
 \textbf{上述代码与数学推导已提交，但新的外积分
 候选尚无本机实跑结果。}
 P1-C/G1 继续 FAIL，正式神经教师训练禁止开始。
+
+
+\subsection{P1-C 第六次实跑：真实外积分坐标图改善偏斜，但弱磁能仍未收敛}
+\label{sec:p1-c-sixth-exact-scalar-control}
+2026-11-05 的本机代码 \texttt{946c10c}
+运行（日志提交 \texttt{8b743b0}）
+102 项 pytest 全部通过，五模态真实双盒
+未软化 Coulomb 原核实验完整结束。
+新的几何引导外 $x$ 规则
+\texttt{phys\_x\_both}
+使用 $18\,816$ 个外积分点，
+相对于 $4\,336$ 点旧
+\texttt{both} 的结果如下：
+\begin{itemize}
+\item 未对称原矩阵相对偏斜从 $0.02333248$
+      降为 $0.01579404$，但它仍非准确性证书。
+\item $L_{00}$ 由 $8.955181723\times10^{-10}$
+      变为 $7.865658285\times10^{-10}$，
+      相对改变 $12.166402\%$；
+      $L_{11}$ 由 $8.496627911\times10^{-10}$
+      变为 $1.044609072\times10^{-9}$，
+      相对改变 $22.943959\%$。
+      强全局模态 $L_{44}$ 仅改变 $0.141066\%$，
+      故整体矩阵差 $0.54304165\%$
+      会错误遮盖弱模态的严重不稳定。
+\item 独立的真实海水体积解析基准并未随
+      $x$ 点数增加而单调改善：
+      原细 $x_1$ 误差 $0.00085246823$，
+      新 \texttt{phys\_tangent} 误差
+      $0.0010368201$，\emph{反而变大}。
+      单独使用几何角向子片时弱模式
+      $G_{11}$ 的变化可达 $5.057419\%$，
+      改变球图分片与盒面切向之后
+      $G_{11}$ 仍可变 $6.0759006\%$。
+\end{itemize}
+故当前几何角片与径向片的方案
+保留为\emph{待优化的候选外求积}，
+绝不升级为可靠 $G1$ 教师。
+
+\paragraph{引入真实双盒几何标量 Green 控制变量。}
+任给合法外观察点 $\bm x\in\Omega_R$，
+由本项目已实现、并独立用常量密度验证过的
+长方体矩形面闭式积分，可得到
+\[
+ S_{\Omega}(\bm x)=\int_{\Omega_R}
+ \frac{\mathrm d\bm y}{|\bm x-\bm y|}
+ =
+ 2\pi\left(R^2-
+       \frac{|\bm x-\bm c_0|^2}{3}\right)
+ -\sum_{p=1}^2 S_{{\rm OBB},p}(\bm x),
+\]
+其中绝缘盒按各自的真实姿态旋转，不假设
+两盒共轴，不对 $1/r$ 做软化。
+对于任意真实 curl 模态 $\bm W_j$，
+连续原核内势满足\emph{恒等式}
+\begin{equation}
+ \label{eq:p1-c-scalar-control}
+ \bm U_j(\bm x)
+ =\int_{\Omega_R}
+ \frac{\bm W_j(\bm y)-\bm W_j(\bm x)}
+      {|\bm x-\bm y|}\,\mathrm d\bm y
+   + S_\Omega(\bm x)\bm W_j(\bm x).
+\end{equation}
+在已有点心严格湿射线区间上，
+每个内积分 Gauss 权重本来就包含
+$r^2/r=r$。如果以 $q_{\ell}(\bm x)$
+代表同一个有限的正权内球角径向节点权重，
+则\emph{不改变一个物理节点和原核}便有
+\begin{equation}
+ \widehat{\bm U}_j^{\rm cv}(\bm x)=
+ \sum_\ell q_\ell(\bm x)
+ \bm W_j(\bm y_\ell)
+ +\underbrace{\left[
+ S_\Omega(\bm x)-\sum_\ell q_\ell(\bm x)
+ \right]}_{\text{精确几何矩修正}}
+ \bm W_j(\bm x).
+\end{equation}
+这与数值积分
+$\sum q_\ell[\bm W_j(\bm y_\ell)
+-\bm W_j(\bm x)]
++S_\Omega\bm W_j(\bm x)$
+在代数上严格等价，
+却避免了每个 $\bm y_\ell$
+重复减去一个常量。
+尤其当 $\bm W_j(\bm y)=\bm a$
+为整个域的常量向量时，
+修正后的 Green 内势严格等于
+$S_\Omega(\bm x)\bm a$
+（只限浮点舍入），
+不再有任何角向几何欠解析引起的
+\emph{常量密度部分}误差。
+这是解析可验证的\emph{一致性改进}；
+空间变化的真实 curl 模态剩余积分
+依然需要独立径向与角向收敛。
+
+该修正可直接用本仓库
+\texttt{sea\_coulomb\_moments(scene,x)[0]}
+实现，既不是假材料也不是新核。
+此外对于同一个外 $x$ 规则，
+修正给出的双线性型增量是
+\[
+ \Delta L_{ij}=
+ \frac{\mu_0}{4\pi}
+ \sum_{x_n} w_n
+ \left[S_\Omega(x_n)-\sum_\ell q_\ell(x_n)\right]
+ \bm W_i(x_n)\cdot\bm W_j(x_n),
+\]
+其在 $i,j$ 下\emph{严格对称}。
+因此这类常量控制变量
+\textbf{不能直接修复原矩阵反对称部分}，
+也不能期望它必然降低 raw skew；
+归一化偏斜可能仅因分母变化。
+这条不变性是正确判断后续日志的必要条件，
+不可以把校正后的自动对称谱正性
+误报为 G1 物理精度证据。
+
+\paragraph{不增加昂贵五模态求积次数的验收路径。}
+此前几何顶点方位的全五模态
+\texttt{corner\_both} 曾在解析常密度基准上
+未稳定优于均匀方位，且 raw skew 更差；
+本轮保留它的低成本标量几何对照，
+但\emph{停止}重复昂贵的全五模态试跑。
+在原 \texttt{x1}、原精细内径/极角/方位规则上，
+以新的\texttt{scalar\_control\_both}
+替代旧 \texttt{corner\_both}，
+直接打印五自项、十互项及
+\texttt{p1\_full\_sea\_scalar\_control\_cross}，
+可确认常量密度误差到底贡献了多大
+磁矩阵变化。
+新增一个对真实独立非零旋转两盒的
+正权湿射线常量向量控制变量测试，
+要求解析几何矩精度（非磁能精度）。
+
+对外 $x$ 的模态稳定性，
+保留先前四类物理分轴，再单独引入
+\texttt{phys\_tangent\_half}：
+仅将盒面切向子片宽
+从 $w_{\min}/2$ 减至 $w_{\min}/4$；
+\texttt{phys\_angle3}：
+同一外径向/盒面切向规则，
+仅将物理极角与方位角的每段
+Gauss 阶数 $2\to3$。
+二者只计算实际五模态的
+\emph{无核} Gram 与独立解析体积/二阶矩，
+不再增加大型 Green 双重积分的试验次数。
+如二者仍不稳定，下一轮应定位
+具体的物理积分子图和模态，
+而非用总 Frobenius 小值做验收。
+
+新修正与分轴代码已提交；
+102-pass 日志属于旧代码，
+\textbf{新的控制变量尚未本机运行}。
+P1-C/G1 继续 FAIL，神经教师不可开启。
