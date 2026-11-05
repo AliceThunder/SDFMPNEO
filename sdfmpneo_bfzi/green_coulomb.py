@@ -344,6 +344,111 @@ def assemble_coulomb_subtracted(
     return (result,skew) if return_diagnostics else result
 
 
+
+def assemble_coulomb_difference(
+    x, wx, y, wy, evaluate, scalar_potential, *,
+    chunk_size: int = 24, return_diagnostics: bool = False,
+):
+    """Symmetric-difference Galerkin form of the ORIGINAL unsoftened 1/r.
+
+    For real vector fields W_i on Omega, exchange x and y in the double
+    integral to obtain the exact continuum identity
+
+      L_ij * (4*pi/mu0) =
+          integral S_Omega(x) W_i(x).W_j(x) dx
+        - (1/2) double_integral
+          [W_i(x)-W_i(y)].[W_j(x)-W_j(y)]/|x-y| dx dy.
+
+    For locally Lipschitz currents the difference integrand is O(|x-y|)
+    on the diagonal; its value there is exactly zero. Thus even coincident
+    x/y nodes are legal, unlike the one-sided Taylor residual. Both
+    orders must still be refined independently. Analytic S_Omega MUST
+    correspond to the actual conducting integration domain, not a ball
+    substituted for a box-excluded sea.
+
+    The formula is symmetric algebraically, so a tiny skew is NOT an
+    accuracy certificate. A near-unity subtraction ratio indicates that
+    the difference of the two large terms may be ill conditioned.
+    """
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    wx, wy = np.asarray(wx, float), np.asarray(wy, float)
+    if (
+        x.ndim != 2 or y.ndim != 2 or x.shape[1] != 3 or y.shape[1] != 3
+        or wx.shape != (len(x),) or wy.shape != (len(y),)
+        or not len(x) or not len(y) or chunk_size < 1
+        or not np.isfinite(x).all() or not np.isfinite(y).all()
+        or not np.isfinite(wx).all() or not np.isfinite(wy).all()
+        or np.any(wx <= 0) or np.any(wy <= 0)
+    ):
+        raise ValueError("expected positive finite seawater volume rules")
+    vx = np.asarray(evaluate(x), float)
+    vy = np.asarray(evaluate(y), float)
+    if (
+        vx.ndim != 3 or vx.shape[0] != len(x) or vx.shape[2] != 3
+        or vy.shape != (len(y), vx.shape[1], 3)
+        or not np.isfinite(vx).all() or not np.isfinite(vy).all()
+    ):
+        raise ValueError("current modes must be finite (n,m,3)")
+    sx = np.asarray(scalar_potential(x), float)
+    sy = np.asarray(scalar_potential(y), float)
+    if (
+        sx.shape != (len(x),) or sy.shape != (len(y),)
+        or not np.isfinite(sx).all() or not np.isfinite(sy).all()
+        or np.any(sx <= 0) or np.any(sy <= 0)
+    ):
+        raise ValueError("exact domain scalar moments must be positive")
+    local = 0.5 * (
+        np.einsum("n,n,nic,njc->ij", wx, sx, vx, vx, optimize=True)
+        + np.einsum("n,n,nic,njc->ij", wy, sy, vy, vy, optimize=True)
+    )
+    difference = np.zeros_like(local)
+    for start in range(0, len(x), chunk_size):
+        stop = min(start + chunk_size, len(x))
+        radius = cdist(x[start:stop], y)
+        weight = np.divide(
+            wx[start:stop, None] * wy[None, :], radius,
+            out=np.zeros_like(radius), where=radius > 0,
+        )
+        delta = vx[start:stop, None, :, :] - vy[None, :, :, :]
+        difference += np.einsum(
+            "ab,abic,abjc->ij", weight, delta, delta, optimize=True,
+        )
+    scale = MU0 / (4.0 * math.pi)
+    result = scale * (local - 0.5 * difference)
+    subtraction_ratio = float(
+        np.linalg.norm(0.5 * difference) / max(np.linalg.norm(local), 1e-60)
+    )
+    return (result, subtraction_ratio) if return_diagnostics else result
+
+
+def assemble_basis_coulomb_difference(
+    basis, transform, x, wx, y, wy, *,
+    chunk_size: int = 24, return_diagnostics: bool = False,
+):
+    """Actual two-pose BFZI seawater L without Taylor Hessians or kernel softening.
+
+    Supports every current mode evaluable by SeaCurrentBasis, including
+    source-guided modes; it does not assert their completeness or G1 accuracy.
+    """
+    from .coulomb_geometry_moments import sea_coulomb_moments
+
+    t = np.asarray(transform, float)
+    if t.ndim != 2 or t.shape[0] != basis.size or not np.isfinite(t).all():
+        raise ValueError("transform must be finite (basis.size, reduced_size)")
+
+    def current(points):
+        return np.einsum(
+            "nmc,mk->nkc", basis.evaluate(points), t, optimize=True,
+        )
+
+    return assemble_coulomb_difference(
+        x, wx, y, wy, current,
+        lambda p: sea_coulomb_moments(basis.scene, p)[0],
+        chunk_size=chunk_size,
+        return_diagnostics=return_diagnostics,
+    )
+
+
 def _bfzi_wet_radial_segments(scene, point, directions, radius):
     """Clip an x-centred spherical patch against real rotated boxes.
 
