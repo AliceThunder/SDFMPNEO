@@ -606,6 +606,7 @@ def assemble_coulomb_radial(
     polar_order: int = 4,
     azimuthal_order: int = 10,
     radial_breakpoints=(),
+    radial_wall_scale: float | None = None,
     polar_axis=None,
     return_diagnostics: bool = False,
 ):
@@ -620,8 +621,12 @@ def assemble_coulomb_radial(
     The caller supplies the EXACT wet ray intervals along each direction;
     quadrature of the radial/angle integrand still needs independent
     convergence checks, especially when box edges change the ray topology.
-    radial_breakpoints are fixed physical distances that split each
-    *wet* interval; they do not change the domain or the original kernel.
+    radial_breakpoints are fixed physical distances measured from x;
+    radial_wall_scale adds physically graded subpanels measured FROM BOTH
+    ends of every wet interval. Crucially, the box-face boundary layer
+    occurs next to the ray's box ENTRY/EXIT, not next to x. Using only
+    x-relative breakpoints can miss it by an entire enclosure spacing.
+    Neither set of breakpoints changes the domain or the original kernel.
 
     The unsymmetrized matrix skew is returned as a diagnostic, NOT a
     convergence certificate. This assembly uses one outer x cubature
@@ -640,6 +645,9 @@ def assemble_coulomb_radial(
     if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
         raise ValueError("radial_breakpoints must be finite positive distances")
     cuts = np.unique(cuts)
+    if radial_wall_scale is not None and (
+            not np.isfinite(radial_wall_scale) or radial_wall_scale <= 0):
+        raise ValueError("radial_wall_scale must be finite positive")
     vx = np.asarray(evaluate(x), float)
     if (vx.ndim != 3 or vx.shape[0] != len(x)
             or vx.shape[2] != 3 or not np.isfinite(vx).all()):
@@ -697,13 +705,24 @@ def assemble_coulomb_radial(
                 or not np.isfinite(lo).all() or not np.isfinite(hi).all()
                 or np.any(lo < 0) or np.any(hi < lo)):
             raise ValueError("invalid wet ray intervals")
+        # The conducting current uses d_wall/(d_wall + scale).
+        # Its sharp normal derivative must be resolved at the *actual*
+        # box intersection along the ray; old x-centred fixed knots
+        # left these wall-adjacent intervals almost entirely unresolved.
+        panels = [lo[:,:,None],hi[:,:,None]]
         if len(cuts):
-            clipped = np.clip(cuts[None,None,:],lo[:,:,None],hi[:,:,None])
-            edges = np.concatenate(
-                (lo[:,:,None],clipped,hi[:,:,None]),axis=-1
+            panels.append(
+                np.clip(cuts[None,None,:],lo[:,:,None],hi[:,:,None])
             )
-        else:
-            edges = np.stack((lo,hi),axis=-1)
+        if radial_wall_scale is not None:
+            offsets = radial_wall_scale*np.array([1.0,4.0,16.0,64.0])
+            panels.extend((
+                np.minimum(lo[:,:,None]+offsets[None,None,:],
+                           hi[:,:,None]),
+                np.maximum(hi[:,:,None]-offsets[None,None,:],
+                           lo[:,:,None]),
+            ))
+        edges = np.sort(np.concatenate(panels,axis=-1),axis=-1)
         a, b = edges[:,:,:-1],edges[:,:,1:]
         valid = b > a
         if not np.any(valid):
@@ -793,6 +812,7 @@ def assemble_basis_coulomb_radial(
         polar_order=polar_order,
         azimuthal_order=azimuthal_order,
         radial_breakpoints=breaks,
+        radial_wall_scale=basis.wall_scale,
         polar_axis=axis,
         return_diagnostics=return_diagnostics,
     )
