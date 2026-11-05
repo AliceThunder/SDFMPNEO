@@ -653,6 +653,8 @@ def assemble_coulomb_radial(
     polar_axis=None,
     azimuthal_rule=None,
     exact_scalar_moments=None,
+    exact_first_moments=None,
+    current_jacobian=None,
     return_diagnostics: bool = False,
 ):
     """Direct unsoftened Green potential in x-centred polar coordinates.
@@ -686,6 +688,13 @@ def assemble_coulomb_radial(
     It removes the quadrature defect for constant vector density at
     arbitrary x and actual OBB rotations, without regularizing 1/r.
     It does NOT prove convergence for actual rapidly varying curl W.
+    Optionally supply the independent exact first moment M_Omega(x) and
+    an analytic Jacobian DW_j(x) together with S_Omega(x). Then
+      U = sum(q W(y)) + (S-sum(q)) W(x)
+          + DW(x) @ [M-sum(q*(y-x))].
+    This is exact for ALL vector-affine source fields W(y)=a+B*y
+    on any valid two-box geometry, while retaining the original kernel.
+    The remaining nonlinear spatial variation still needs convergence.
     The unsymmetrized matrix skew is returned as a diagnostic, NOT a
     convergence certificate. This assembly uses one outer x cubature
     and a point-dependent inner spherical cubature (no reusable y grid).
@@ -705,6 +714,15 @@ def assemble_coulomb_radial(
         if (moment.shape != (len(x),) or not np.isfinite(moment).all()
                 or np.any(moment <= 0)):
             raise ValueError("exact_scalar_moments must be positive finite (n_x,)")
+    if (exact_first_moments is None) != (current_jacobian is None):
+        raise ValueError("exact_first_moments and current_jacobian must be supplied together")
+    if exact_first_moments is not None and moment is None:
+        raise ValueError("affine correction requires exact_scalar_moments")
+    first = None
+    if exact_first_moments is not None:
+        first = np.asarray(exact_first_moments,dtype=float)
+        if first.shape!=(len(x),3) or not np.isfinite(first).all():
+            raise ValueError("exact_first_moments must be finite (n_x,3)")
     cuts = np.asarray(radial_breakpoints, dtype=float)
     if cuts.ndim != 1 or not np.isfinite(cuts).all() or np.any(cuts <= 0):
         raise ValueError("radial_breakpoints must be finite positive distances")
@@ -716,6 +734,12 @@ def assemble_coulomb_radial(
     if (vx.ndim != 3 or vx.shape[0] != len(x)
             or vx.shape[2] != 3 or not np.isfinite(vx).all()):
         raise ValueError("current evaluator must return finite (x,m,3)")
+    jac = None
+    if first is not None:
+        jac = np.asarray(current_jacobian(x),dtype=float)
+        if (jac.shape != (len(x),vx.shape[1],3,3)
+                or not np.isfinite(jac).all()):
+            raise ValueError("current_jacobian must return finite (n_x,m,3,3)")
     nr, wr = np.polynomial.legendre.leggauss(radial_order)
     angular, wangular = np.polynomial.legendre.leggauss(polar_order)
     # Two exact angular hemispheres make the nearest physical wall's
@@ -825,12 +849,21 @@ def assemble_coulomb_radial(
             optimize=True,
         )
         if moment is not None:
-            # Exact addition/subtraction identity at the SAME x node:
-            # sum(w [W(y)-W(x)]) + S_exact(x) W(x).
-            # The scalar sum(w) uses identical positive Green weights;
-            # evaluating the correction once avoids a matrix-subtraction
-            # instability and never modifies the original kernel.
+            # Scalar Coulomb moment controls constant-vector density.
             potential += (moment[xi]-float(np.sum(radial_weights)))*vx[xi]
+        if jac is not None:
+            # The same physical ray quadrature applied to (y-x)/|y-x|:
+            # y-x=r*u. q = r*dr*dOmega, so q*(y-x) needs one more r.
+            # Avoid finite differences of actual near-wall curl modes:
+            # use their already implemented exact analytic Jacobian.
+            first_quadrature = np.einsum(
+                "pr,pr,pc->c",radial_weights,r,directions[ray_ids],
+                optimize=True,
+            )
+            potential += np.einsum(
+                "mcd,d->mc",jac[xi],first[xi]-first_quadrature,
+                optimize=True,
+            )
         accum += weight*np.einsum(
             "mc,nc->mn",vx[xi],potential,optimize=True,
         )
@@ -847,6 +880,7 @@ def assemble_basis_coulomb_radial(
     azimuthal_order: int = 10,
     box_corner_azimuth_panels: bool = False,
     exact_scalar_control: bool = False,
+    exact_affine_control: bool = False,
     return_diagnostics: bool = False,
 ):
     """Actual box-clipped BFZI Green L using radial Jacobian cancellation.
@@ -894,11 +928,19 @@ def assemble_basis_coulomb_radial(
     # Exact domain moments are geometry-only and independently known:
     # this is a controlled Green constant-density correction, NOT a
     # new trial basis, altered seawater material, or kernel softening.
+    if exact_affine_control and not exact_scalar_control:
+        raise ValueError("exact affine Green control requires scalar control")
     if exact_scalar_control:
         from .coulomb_geometry_moments import sea_coulomb_moments
-        exact_scalar = sea_coulomb_moments(scene,x)[0]
+        exact_scalar, exact_first = sea_coulomb_moments(scene,x)
     else:
-        exact_scalar = None
+        exact_scalar, exact_first = None, None
+    jacobian = None
+    if exact_affine_control:
+        from .sea_basis_differential import evaluate_nonguided_curl_jacobian
+        def jacobian(pts):
+            original = evaluate_nonguided_curl_jacobian(basis,pts)
+            return np.einsum("nmcd,mk->nkcd",original,t,optimize=True)
     return assemble_coulomb_radial(
         x,wx,current,intervals,
         radial_order=radial_order,
@@ -911,6 +953,8 @@ def assemble_basis_coulomb_radial(
             azimuthal if box_corner_azimuth_panels else None
         ),
         exact_scalar_moments=exact_scalar,
+        exact_first_moments=exact_first if exact_affine_control else None,
+        current_jacobian=jacobian,
         return_diagnostics=return_diagnostics,
     )
 
