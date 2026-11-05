@@ -246,6 +246,7 @@ def _outer_gram_diagnostics(scene,basis):
         ("face_tangent",(3,4,8,3),half_mode_width),
     )
     gram={}
+    gram_parts={}
     for label,(nr,npole,naz,nwall),tangent_cap in cases:
         xx,ww,nsphere=scene.box_shell_quadrature(
             nr,npole,naz,wall_scale=basis.wall_scale,
@@ -266,6 +267,7 @@ def _outer_gram_diagnostics(scene,basis):
             currents[nsphere:],currents[nsphere:],optimize=True,
         )
         gram[label]=sphere+shell
+        gram_parts[label]=(sphere,shell)
         wet=np.einsum("ni,ni->n",xx-center,xx-center)
         volume=float(np.sum(ww))
         moment=float(np.dot(ww,wet))
@@ -279,18 +281,22 @@ def _outer_gram_diagnostics(scene,basis):
             +f",norm_G={np.linalg.norm(gram[label]):.10g},"
             +f"volume_relative_error={abs(volume-volume_exact)/volume_exact:.8g},"
             +f"second_moment_relative_error={abs(moment-second_exact)/second_exact:.8g},"
-            +f"min_shell_self_fraction={min(contribution):.8g},"
-            +f"max_shell_self_fraction={max(contribution):.8g},"
-            "scope=x_only_original_W_no_Green_kernel",
+            +",".join(f"shell_fraction{i}={v:.8g}"
+                      for i,v in enumerate(contribution))
+            +",scope=x_only_original_W_no_Green_kernel",
             flush=True,
         )
 
     def compare(label,new,base):
         a,b=gram[new],gram[base]
         d=np.abs(np.diag(a)-np.diag(b))/np.maximum(np.abs(np.diag(b)),1e-40)
+        asp,ash=gram_parts[new]
+        bsp,bsh=gram_parts[base]
         print(
             f"p1_full_sea_outer_gram_axis: comparison={label},"
             f"relative_G={_relative(a,b):.8g},"
+            f"relative_sphere={_relative(asp,bsp):.8g},"
+            f"relative_shell={_relative(ash,bsh):.8g},"
             +",".join(f"self{i}={v:.8g}" for i,v in enumerate(d))
             +",scope=independent_x_axis_no_Green",
             flush=True,
