@@ -2083,3 +2083,108 @@ $\tau=0.0025$、
 现有 106-pass 是旧代码实跑。}
 P1-C/G1 继续 FAIL，
 不能开始神经教师训练。
+
+
+\subsection{P1-C 第十次：真实模式球面角帽的正权单位分解}
+\label{sec:p1-c-real-source-spherical-cap}
+最新本机日志 \texttt{1da0e43} 在代码
+\texttt{ca263e6} 上 107 项测试通过，
+原始五模式 Green 计算完成，但 G1 仍 FAIL。
+在相同 4336 个外观察点及同一解析几何矩
+选定的角方向（两次都是 1296 个加密点、
+零个几何未达标点），仅增加实际 Gaussian
+模式窗口的径向中心/宽度分片，
+磁矩阵整体变化 $0.0096050227$，
+最大自磁能变化 $0.0096053398$；
+$L_{00}$、$L_{11}$ 各变化约
+$0.4707\%$、$0.5962\%$，
+raw skew $0.01091112\to0.010906139$。
+因此窄窗径向分片有效但不是此前
+$7$--$10\%$ 弱自磁能差的主因，
+接下来必须处理真实电流加权的角向积分。
+
+对于实际模式的中心 $\bm c_m$ 和
+SPD Gaussian 精度张量 $G_m$，
+观察点 $\bm x$ 到该中心距离
+$d_m=|\bm c_m-\bm x|$，
+其方向上的电流可集中在角宽
+约 $\lambda_{\min}(G_m)^{-1/2}/d_m$
+的窄球面区域，可能被原统一
+Gauss 极角/方位角节点整体跳过。
+为此对 $d_m>3w_m$ 的模式定义
+\[
+ w_m=\lambda_{\min}(G_m)^{-1/2},\quad
+ \bm a_m=(\bm c_m-\bm x)/d_m,\quad
+ \theta_m=\arcsin\min(0.95,3w_m/d_m).
+\]
+模式局部球帽
+$\mathcal C_m=\{\bm u\cdot\bm a_m
+\ge\cos\theta_m\}$，
+直接在围绕 $\bm a_m$ 的局部
+$\mu\in[\cos\theta_m,1]$ 和
+$\phi\in[0,2\pi)$ 上做正权
+Gauss/周期方位角求积。
+这不是新源电流模型，而是既有真实
+Gaussian 模态方向的求积坐标选取。
+
+球帽与原全球角规则不能直接相加，
+否则物理上双重计算重叠角域。
+定义 $\eta_m=\cos\theta_m$，
+\[
+ t_m(\bm u)=\operatorname{clip}
+ \left(\frac{\bm u\cdot\bm a_m-\eta_m}
+ {1-\eta_m},0,1\right),\qquad
+ h_m=32\,t_m^2(3-2t_m),
+\]
+以及正权单位分解
+\[
+ H_0=\frac1{1+\sum_m h_m},\qquad
+ H_m=\frac{h_m}{1+\sum_jh_j},\qquad
+ H_0+\sum_mH_m=1.
+\]
+因此对所有真实电流模式均有恒等式
+\[
+ \int_{\mathbb S^2}F(\bm u)\,\mathrm d\Omega
+ =\int_{\mathbb S^2}H_0F\,\mathrm d\Omega
+  +\sum_m\int_{\mathcal C_m}H_mF\,\mathrm d\Omega.
+\]
+第一项在原几何矩选择的全球球角节点上
+计算，第二项在实际模式方向的局部球帽
+节点上计算。所有角权非负，
+并共用真实双 SE(3) 实盒精确湿射线裁剪、
+未软化 $1/r$、$r\mathrm dr$ Jacobian、
+原来的贴壁和源模式中心径向分片。
+与重复计数或任意平滑原核的办法不同，
+此规则连续上完全保持原 Coulomb 算子。
+但\emph{有限正权角规则并不精确积分}
+$H_0,H_m$，角权之和只近似 $4\pi$，
+需显式记录误差、仍不能宣称 G1 PASS。
+
+一个独立解析测试把实际磁核求积作用于
+$\exp(-|\bm y-\bm c|^2/w^2)$，
+其中 $\bm c=(0.33,0.31,0.33)$、
+$w=0.025$、观测点原点、
+外球半径 1。
+球外 Gaussian 尾部指数微小，
+精确全空间原核势是
+\[
+ S_G(0)=\frac{\pi^{3/2}w^3}{|\bm c|}
+ \operatorname{erf}(|\bm c|/w).
+\]
+在完全相同的源模式径向片下
+比较原全球角规则与局部球帽规则，
+隔离\emph{角向}漏采问题。
+此测试密度不是物理无流 curl 模态，
+不能代替真实 BFZI G1 磁能验收。
+
+下一次真实五模式只新增
+\texttt{source\_cap\_both} 与原已运行的
+\texttt{mode\_radial\_both} 单轴对照；
+两者固定 4336 外观察点、同五模式、
+同一 S/M 低阶几何角选择和同一模式
+径向峰值分片，唯一改变局部球帽的
+正权角域分配。输出五自/十互磁能、
+raw skew、额外角方向数及
+角权对 $4\pi$ 的偏差。
+\textbf{当前 P1-C/G1 FAIL，
+正式神经教师不可启动。}
