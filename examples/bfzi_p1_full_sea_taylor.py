@@ -300,6 +300,41 @@ def _outer_gram_diagnostics(scene,basis):
     compare("x1_vs_sphere_only","x1","sphere_only")
     compare("x1_vs_normal_only","x1","normal_only")
     compare("face_tangent_vs_x1","face_tangent","x1")
+
+    # Independent sampling algorithm on the same continuous box-shell
+    # partition. Two independent Sobol scrambles are an uncertainty
+    # diagnostic, NOT an error bound or a pass criterion. Never use this
+    # QMC experiment as the full Coulomb Green reference.
+    qmc={}
+    for seed in (13,37):
+        xq,wq=scene.box_shell_qmc(
+            m=9,seed=seed,wall_scale=basis.wall_scale,
+            shell_width_factor=12.0,sphere_extra_bits=3,
+        )
+        wval=basis.evaluate(xq)
+        q=np.einsum("n,nic,njc->ij",wq,wval,wval,optimize=True)
+        qmc[seed]=q
+        qself=np.diag(q)
+        print(
+            f"p1_full_sea_outer_gram_qmc: seed={seed},"
+            f"x_nodes={len(xq)},"
+            +",".join(f"G{i}{i}={v:.10g}" for i,v in enumerate(qself))
+            +f",relative_vs_gauss_face_tangent={_relative(q,gram['face_tangent']):.8g},"
+            "scope=independent_scrambled_positive_volume_not_Green",
+            flush=True,
+        )
+    q0,q1=qmc[13],qmc[37]
+    d=np.abs(np.diag(q1)-np.diag(q0))/np.maximum(
+        np.abs(np.diag(q0)),1e-40,
+    )
+    print(
+        "p1_full_sea_outer_gram_qmc_spread: "
+        f"relative_G={_relative(q1,q0):.8g},"
+        +",".join(f"self{i}={v:.8g}" for i,v in enumerate(d))
+        +",scope=two_seeds_not_error_bound",
+        flush=True,
+    )
+
     # Backward-compatible key to compare the previous completed run.
     a,b=gram["x1"],gram["x0"]
     d=np.abs(np.diag(a)-np.diag(b))/np.maximum(np.diag(b),1e-40)
