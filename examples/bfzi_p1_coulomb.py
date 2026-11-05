@@ -360,8 +360,10 @@ def main():
     )
     from examples.bfzi_p1_geometry import main as p1_geometry_main
     from examples.bfzi_p1_wet_vortices import main as p1_wet_vortices_main
+    from examples.bfzi_p1_full_sea_taylor import main as p1_full_sea_main
     p1_geometry_main()
     p1_wet_vortices_main()
+    p1_full_sea_main()
     print(
         "p1_note: p1_decomp splits x-integration, exactly integrated "
         "local spherical C2 kernel and y-far cubature; the independent "
