@@ -80,7 +80,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform"):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -89,6 +89,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         raise ValueError("unknown original Coulomb assembly method")
     if angle_scheme not in ("uniform","box_corners"):
         raise ValueError("unknown angular integration scheme")
+    if scalar_control and method!="radial":
+        raise ValueError("exact scalar control requires radial Green assembly")
     if cache is None:
         cache={}
     scene=basis.scene
@@ -102,11 +104,13 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             polar_order=y_rule[1],
             azimuthal_order=y_rule[2],
             box_corner_azimuth_panels=(angle_scheme=="box_corners"),
+            exact_scalar_control=scalar_control,
             return_diagnostics=True,
         )
         ny=(
             f"inner_radial_{y_rule[0]}_polar_{y_rule[1]}_"
             f"azimuth_{y_rule[2]}_scheme_{angle_scheme}"
+            +("_exact_scalar_S" if scalar_control else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -470,23 +474,36 @@ def main():
     # A deliberately separate no-Coulomb operator, isolating the x
     # cubature axes and the physical face tangential Gaussian footprint.
     _outer_gram_diagnostics(scene,basis)
-    # Hold ALL physical x and radial/angular orders fixed to measure the
-    # effect of geometry-defined azimuth panels only. This is a controlled
-    # pilot, not an automatic replacement or certification.
-    corner=trial(
+    # The previous full five-mode box-corner pilot was falsified by
+    # independent scalar S_Omega benchmarks and worsening raw skew.
+    # Retain its inexpensive analytic scalar geometry checks above,
+    # but replace its expensive Green run by the exact-domain-moment
+    # control variate at the SAME x, angular and radial nodes as "both".
+    controlled=trial(
         basis,x1,inner1,cache,method="radial",
-        angle_scheme="box_corners",
+        angle_scheme="uniform",scalar_control=True,
     )
     print(
-        "p1_full_sea: variant=corner_both,method=radial,"
-        f"x_nodes={corner['nx']},inner_rule={corner['ny']},"
-        f"norm_L={corner['norm']:.10g},trace_L={corner['trace']:.10g},"
-        f"raw_skew={corner['diagnostic']:.7g},"
-        f"min_eig={corner['min_eig']:.10g},"
-        f"max_eig={corner['max_eig']:.10g}",
+        "p1_full_sea: variant=scalar_control_both,method=radial,"
+        f"x_nodes={controlled['nx']},inner_rule={controlled['ny']},"
+        f"norm_L={controlled['norm']:.10g},"
+        f"trace_L={controlled['trace']:.10g},"
+        f"raw_skew={controlled['diagnostic']:.7g},"
+        f"min_eig={controlled['min_eig']:.10g},"
+        f"max_eig={controlled['max_eig']:.10g}",
         flush=True,
     )
-    _report_modes("corner_both",corner["L"])
+    _report_modes("scalar_control_both",controlled["L"])
+    print(
+        "p1_full_sea_scalar_control_cross: "
+        "same_x_inner_radial_polar_azimuth_and_modes,"
+        f"relative_L={_relative(controlled['L'],results['both']['L']):.8g},"
+        f"self_relative={_self_change(controlled['L'],results['both']['L']):.8g},"
+        f"raw_skew_before={results['both']['diagnostic']:.8g},"
+        f"raw_skew_after={controlled['diagnostic']:.8g},"
+        "gate=diagnostic_not_truth_for_varying_W",
+        flush=True,
+    )
     # The physical outer cubature is now an actual full five-curl
     # Coulomb candidate, not merely a separate G diagnostic.
     # Hold the Green radial/polar/azimuth rule and all currents fixed.
@@ -567,16 +584,8 @@ def main():
     per_mode_changes("x_only_vs_base",xo,b)
     per_mode_changes("radial_only_vs_x_only",inner_rad,xo)
     per_mode_changes("angular_only_vs_inner_radial",both,inner_rad)
-    per_mode_changes("corner_both_vs_uniform_both",corner["L"],both)
+    per_mode_changes("scalar_control_vs_uniform_both",controlled["L"],both)
     per_mode_changes("phys_x_both_vs_uniform_both",physical["L"],both)
-    print(
-        "p1_full_sea_corner_cross: same_x_and_radial_rules,"
-        f"relative_L={_relative(corner['L'],both):.8g},"
-        f"self_relative={_self_change(corner['L'],both):.8g},"
-        f"mutual_scaled={_mutual_change(corner['L'],both):.8g},"
-        "gate=diagnostic_only",
-        flush=True,
-    )
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
