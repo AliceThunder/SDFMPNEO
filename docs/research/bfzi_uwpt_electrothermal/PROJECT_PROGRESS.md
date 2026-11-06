@@ -1,4 +1,7 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
+> **D2 表面测点与空间场修正（2026-11-06 最新）：** 独立检验证实在同一 `z=0` 金属/真空界面，两个物理上相同的测点由不同电导率网格分别选单元时会出现**不同的四面体索引**，造成材料反作用场的虚假跳变。已在 [direct3d_probe.py](../../../sdfmpneo_bfzi/direct3d_probe.py) 新增 `cell_indices` 强制复用导电侧四面体，且 [direct3d_fields.py](../../../sdfmpneo_bfzi/direct3d_fields.py) 的导电/真空主次场相减共用相同单元；[专项测试](../../../tests/test_bfzi_d2_mesh_probe.py) 固定该界面条件。独立本地 Python 版本的原型/插值/端口等 **11项 pytest PASS**；此为方法级测试，不替代仓库全组合运行或 Elmer 参考。高保真空间 B/J/E/q 与外域仍未验收：**D2 OPEN、旧 G1 FAIL、教师冻结；禁止 GitHub Actions**。
+>
+
 > **最新 D2 空间场推进（2026-11-06，本段覆盖下面关于空间场已通过的历史说法）：** 本地独立真空闭合方环 Biot–Savart 对照，固定外盒 `[-0.4,0.4]^3 m`、4 个非源点，最低阶总场 Nédélec 计算在 **3072/6000/10368 四面体**的向量 B 相对 L2 误差为 **38.20%/28.35%/31.93%**，不单调，明确判定**原始全场 B 未达到空间精度验收**。现已提交 [解析源 B/E＋同网格导电/真空 FE 反作用场分离](../../../sdfmpneo_bfzi/direct3d_fields.py)，并在 [3D 精确测点计算](../../../sdfmpneo_bfzi/direct3d_probe.py) 中用 Whitney 仿射插值替代单元平均 J，输出位置复 `E/J/q`；[TEAM-7 主入口](../../../examples/bfzi_d2_team7.py) 报告原始全场 FEM 与主次场重构两组数值，[BFZI 双端口入口](../../../examples/bfzi_d2_aphi.py) 支持重复 `--probe x y z` 查询及 `I=(1,0),(0,1),(1,±1),(1,i)` 的 B/E/J/q。新增 [可重现真空磁场误差试验](../../../examples/bfzi_d2_vacuum_field.py) 与物理场专项测试；本地直接数值探针插值、原型双端口及真空主次场测试 **9 passed**，远端全部组合测试未在当前环境运行。**真空主次场的解析准确是构造恒等式，不能当材料反作用验证；纠正场 Joule 与 Galerkin 端口功率仍可能相差很大，正式 TEAM-7/Elmer、高质量 Gmsh 网格及外域收敛均 OPEN**。不启动 G1/教师，禁止 GitHub Actions。正式数学说明见 [第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。
 >
 
