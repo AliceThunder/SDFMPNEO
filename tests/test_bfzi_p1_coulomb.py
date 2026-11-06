@@ -330,6 +330,17 @@ def test_source_centered_caps_resolve_narrow_angular_gaussian_against_exact_ball
     assert stats["cap_nodes"]>0
     assert stats["max_solid_angle_rel"]<0.01
 
+    # Independent local-cap Gauss refinement must be able to change
+    # ONLY the cap charts, not the background or true source kernel.
+    # Compare both against the same exact Newton potential; this
+    # tests actual Gaussian weighted angles rather than only S/M.
+    _,fine_u=assemble_coulomb_radial(
+        **common,source_angular_caps=windows,
+        source_cap_polar_order=6,source_cap_azimuthal_order=14,
+    )
+    fine=MU0/(4*math.pi)*fine_u[0,0,0]
+    assert abs(fine-exact)/exact<0.09
+
 
 def test_source_cap_positive_moment_fit_conserves_exact_ball_area_s_and_m():
     """Same narrow source caps, independently exact ball S/M and 4*pi.
