@@ -67,3 +67,12 @@ def test_real_team7_metal_current_50_and_200Hz():
                         rtol=1e-9,atol=1e-9)
         assert_allclose(r.material_increment_z,
                         r.material_increment_z.T,atol=1e-11)
+        # The analytically known coil source is reconstructed independently
+        # for spatial E/Joule. It is deliberately NOT forced to equal the
+        # coarse Galerkin port power: that gap detects source-space error.
+        A_source, _, _ = team7_stranded_source(
+            2,2,5,return_strands=True)
+        q = r.analytic_source_corrected_joule(f,[A_source])
+        assert q.shape == (1,1)
+        assert np.isfinite(q).all() and q[0,0].real >= 0
+        assert_allclose(q,q.conj().T,rtol=1e-12,atol=1e-12)
