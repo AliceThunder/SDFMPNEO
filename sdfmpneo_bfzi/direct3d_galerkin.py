@@ -39,6 +39,51 @@ class ClosedPortResult:
     def joule_density(self, currents):
         return self.medium.joule_density_at_quadrature(currents)
 
+    def analytic_source_corrected_joule(self, frequency_hz, source_potentials):
+        """Return independent E-field Joule matrix using analytic vacuum source.
+
+        Replace the coarse mesh representation of the *known vacuum source*
+        with its exact closed-filament potential, retaining only the
+        finite-element difference A_medium-A_vacuum and induced grad(phi).
+        This is a spatial-accuracy diagnostic (and an improved field
+        reconstruction candidate), NOT the Galerkin port-energy identity.
+        It must converge independently before using corrected J/q as
+        high-fidelity thermal labels.
+
+        source_potentials[p](xyz[n,3]) returns analytic unit-port A[n,3].
+        Only electrically conducting cells are evaluated: avoids an
+        ideal-wire singularity inside insulating source boxes.
+        """
+        from .direct3d_aphi import _BARY4
+        nports = len(self.source_edge_load)
+        if (len(source_potentials) != nports or not np.isfinite(frequency_hz)
+                or frequency_hz <= 0):
+            raise ValueError("Expected one analytic closed-source potential per port")
+        mesh = self.medium.mesh
+        selected = np.flatnonzero(mesh.sigma > 0)
+        matrix = np.zeros((nports,nports),complex)
+        if not len(selected):
+            return matrix
+        corners = mesh.nodes[mesh.tetrahedra[selected]]
+        qpoints = np.einsum("qi,tij->tqj", _BARY4, corners)
+        total_points = qpoints.reshape(-1,3)
+        reaction = (self.medium.electric_at_quadrature[:,selected]
+                    - self.vacuum.electric_at_quadrature[:,selected])
+        omega = 2*np.pi*frequency_hz
+        for port,source in enumerate(source_potentials):
+            incident = np.asarray(source(total_points),dtype=complex)
+            if incident.shape != total_points.shape or not np.isfinite(incident).all():
+                raise ValueError("Analytic source must return finite vector potential")
+            reaction[port] -= 1j*omega*incident.reshape(len(selected),4,3)
+        volume = np.abs(np.linalg.det(
+            (corners[:,1:]-corners[:,0,None,:]).transpose(0,2,1)))/6
+        matrix = np.einsum(
+            "t,ptqc,rtqc->pr",
+            mesh.sigma[selected]*volume/4,
+            reaction.conj(),reaction,
+            optimize=True)
+        return matrix
+
 
 def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands):
     """Independent 3D two- or n-port edge-FEM reference, closed filaments.
