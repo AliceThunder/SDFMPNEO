@@ -138,33 +138,52 @@ def official_probe_lines():
             'A4_B4_Jy_bottom':line(.072,0.)}
 
 
-def coarse_team7_tetra_mesh():
-    """Very coarse nonuniform *official geometry* TEAM-7 smoke grid only.
+def graded_team7_smoke_mesh(level=1):
+    """Conforming rectangular TEAM-7 plate/hole mesh refinement, LOCAL smoke.
 
-    Uses correct 294x294x19 mm conductor and 108 mm eccentric through-hole,
-    but the plate contains only 48 conductive tets. NEVER compare its
-    numerical field values as a benchmark accuracy claim.
+    Exact plate/hole planar surfaces, but a small fixed exterior box and
+    structured first-order tetrahedra. Increase level to resolve the
+    19-mm-thick aluminum; this NEVER replaces official Gmsh/Elmer reference.
     """
-    axes=(np.array([-.15,0,.018,.126,.294,.44]),
-          np.array([-.15,0,.018,.126,.294,.44]),
-          np.array([-.08,0,.019,.049,.149,.25]))
-    nodes=np.stack(np.meshgrid(*axes,indexing='ij'),axis=-1).reshape(-1,3)
-    dims=[len(a)-1 for a in axes]
-    def idx(i,j,k): return (i*(dims[1]+1)+j)*(dims[2]+1)+k
-    cube=((0,1,3,7),(0,3,2,7),(0,2,6,7),(0,6,4,7),
-          (0,4,5,7),(0,5,1,7))
-    tetra=[];sig=[]
+    if isinstance(level, bool) or not isinstance(level, int) or level < 1:
+        raise ValueError('level must be a positive integer')
+    def axis(knots, parts):
+        result = []
+        for low, high, n in zip(knots[:-1], knots[1:], parts):
+            result.extend(np.linspace(low, high, n+1)[:-1])
+        return np.r_[result, knots[-1]]
+    xy = axis([-.15, 0., .018, .126, .294, .44],
+              [1, level, level, level, 1])
+    zz = axis([-.08, 0., .019, .049, .149, .25],
+              [1, level, 1, 1, 1])
+    axes = (xy, xy, zz)
+    nodes = np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1,3)
+    dims = [len(v)-1 for v in axes]
+    def index(i,j,k):
+        return (i*(dims[1]+1)+j)*(dims[2]+1)+k
+    cube = ((0,1,3,7),(0,3,2,7),(0,2,6,7),
+            (0,6,4,7),(0,4,5,7),(0,5,1,7))
+    cells = []
+    sigma = []
     for i in range(dims[0]):
         for j in range(dims[1]):
             for k in range(dims[2]):
-                v=(idx(i,j,k),idx(i+1,j,k),idx(i,j+1,k),idx(i+1,j+1,k),
-                   idx(i,j,k+1),idx(i+1,j,k+1),idx(i,j+1,k+1),idx(i+1,j+1,k+1))
-                c=.5*(nodes[v[0]]+nodes[v[7]])
-                plate=(0<=c[0]<=PLATE_SIZE and 0<=c[1]<=PLATE_SIZE
-                       and 0<=c[2]<=PLATE_THICKNESS)
-                hole=(HOLE_X0<c[0]<HOLE_X0+HOLE_WIDTH
-                      and HOLE_Y0<c[1]<HOLE_Y0+HOLE_WIDTH)
-                for tet in cube:
-                    tetra.append([v[q] for q in tet])
-                    sig.append(ALUMINUM_SIGMA if plate and not hole else 0.)
-    return TetraMesh(nodes,np.asarray(tetra),np.asarray(sig))
+                corners = (index(i,j,k), index(i+1,j,k),
+                           index(i,j+1,k), index(i+1,j+1,k),
+                           index(i,j,k+1), index(i+1,j,k+1),
+                           index(i,j+1,k+1), index(i+1,j+1,k+1))
+                x = .5*(nodes[corners[0]]+nodes[corners[7]])
+                plate = (0 <= x[0] <= PLATE_SIZE
+                         and 0 <= x[1] <= PLATE_SIZE
+                         and 0 <= x[2] <= PLATE_THICKNESS)
+                hole = (HOLE_X0 < x[0] < HOLE_X0+HOLE_WIDTH
+                        and HOLE_Y0 < x[1] < HOLE_Y0+HOLE_WIDTH)
+                for local in cube:
+                    cells.append([corners[t] for t in local])
+                    sigma.append(ALUMINUM_SIGMA if plate and not hole else 0.)
+    return TetraMesh(nodes, np.asarray(cells), np.asarray(sigma))
+
+
+def coarse_team7_tetra_mesh():
+    """Backward-compatible level-one TEAM-7 smoke input: 48 metal tets."""
+    return graded_team7_smoke_mesh(level=1)
