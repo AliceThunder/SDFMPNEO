@@ -1,4 +1,19 @@
 # BFZI 新理论封版与代码启动合同
+> **最新 D2 物理空间场命令（2026-11-06）：** 原始低阶总场 B 对独立 Biot–Savart 仍有 28–38% 且非单调的误差，**D2 高精度 OPEN**。先用以下命令复核已知真空场误差，再在共形网格和真实 BFZI 双盒上查询 `B/E/J/q`（主次场诊断值不能冒充正式热教师）：
+>
+> ```powershell
+> git pull --ff-only
+> python -m pytest tests/test_bfzi_d2_fields.py tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_mesh_probe.py -q
+> python -m examples.bfzi_d2_vacuum_field --levels 4 6 8
+> # 下面要求已在本机安装 gmsh；真实高精度还需外域/网格收敛
+> python -m examples.bfzi_d2_aphi --case bfzi --write-geo bfzi_d2.geo --mesh-size 0.025
+> gmsh bfzi_d2.geo -3 -format msh2 -o bfzi_d2.msh
+> python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --probe 0.2 0 0 --probe 0.2 0.02 0 --output d2_probe.json
+> ```
+>
+> 实际测点按 Nédélec 单元内仿射 E 取值；原始 FE B、解析 Biot–Savart 主场、材料 B 反作用和任意复电流组合分开记录。**不使用 GitHub Actions，旧 G1 FAIL，教师训练冻结。**
+>
+
 > **最新 D2 空间场指令（2026-11-06）：** 此前修复的闭合源 Galerkin `Pport=Pvolume_FEM` 仅是离散守恒条件；现在还必须检查 `analytic_source_corrected_joule_W_for_1A`（或 BFZI 的 `analytic_source_corrected_seawater_joule_W`）与源/端口功率的差异，防止以粗网格自洽掩盖空间场精度不足。运行 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --corner-panels 5 --frequency 50 --summary-only`，随后 2/3/4 档；查看完整原始探针加 `--output runs/d2_team7/level1.json`。新的 [第17节理论](../../../theory/sections/17_d2_aphi_reference_and_ports.tex) 与 [D2 实测/代码记录](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md) 已更新，**D2 OPEN**、无 GitHub Actions。
 >
 
