@@ -182,18 +182,24 @@ def _topology(mesh):
 
 
 def solve_aphi(mesh: TetraMesh, frequency_hz:float,
-               incident_potentials: list[Callable], *, mu:float=MU0) -> AphiResult:
+               incident_potentials: list[Callable], *, mu:float=MU0,
+               outer_bc: str = 'secondary_zero') -> AphiResult:
     """Gauge-fixed 3D secondary A-phi, sources=unit-current incident A fields.
 
     Assumes mu=mu0 everywhere, prescribed incident potentials come from CLOSED
     sources outside conducting cells; copper self impedance is excluded.
-    Outer tangential A_secondary=0 is finite-domain, not infinity.
+    outer_bc='secondary_zero': n x A_react=0 (old finite-domain model).
+    outer_bc='total_zero': n x (A_src+A_react)=0; impose projected
+    edge traces -int_edge A_src·dl. This matches zero tangential TOTAL
+    vector potential on the finite boundary, not an infinite-ocean condition.
     Only a conforming material/geometry mesh is appropriate.
     """
     if not np.isfinite(frequency_hz) or frequency_hz <= 0 or mu != MU0:
         raise ValueError('Positive frequency and currently uniform mu0 required')
     if not incident_potentials:
         raise ValueError('At least one incident port is required')
+    if outer_bc not in ('secondary_zero', 'total_zero'):
+        raise ValueError('outer_bc must be secondary_zero or total_zero')
     omega=2*np.pi*frequency_hz
     edges,le,sg,bnodes,bedges=_topology(mesh)
     ne=len(edges); nn=len(mesh.nodes)
@@ -280,7 +286,29 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     if not len(keep):
         raise ValueError('No interior DOFs in the given mesh')
     Kr=K[keep,:][:,keep]
-    rhsr=rhs[keep]
+    bc_values=np.zeros((size,len(incident_potentials)),complex)
+    if outer_bc=='total_zero':
+        # Nedelec boundary edge DOFs are oriented circulation integrals,
+        # not point values. Project each source's tangential A onto the
+        # same globally oriented boundary edges with 3-point Gauss.
+        t,wg=np.polynomial.legendre.leggauss(3)
+        t=(t+1)/2
+        wg=wg/2
+        by_idx={v:k for k,v in edges.items()}
+        indices=np.array(sorted(bedges),dtype=int)
+        for start in range(0,len(indices),512):
+            ids=indices[start:start+512]
+            ends=np.array([by_idx[int(ii)] for ii in ids])
+            start_x=mesh.nodes[ends[:,0]]
+            tangent=mesh.nodes[ends[:,1]]-start_x
+            eval_x=(start_x[:,None,:] + t[None,:,None]*tangent[:,None,:])
+            for port,field in enumerate(incident_potentials):
+                values=np.asarray(field(eval_x.reshape(-1,3)),dtype=complex)
+                if values.shape != (eval_x.shape[0]*3,3) or not np.isfinite(values).all():
+                    raise ValueError('Invalid vector potential on outer boundary')
+                values=values.reshape(len(ids),3,3)
+                bc_values[ids,port]=-np.einsum('eqc,ec,q->e',values,tangent,wg)
+    rhsr=rhs[keep]-K[keep,:]@bc_values
     maxrow=np.asarray(abs(Kr).max(axis=1).toarray()).ravel()
     if np.any(maxrow==0):
         raise ValueError('Null row: disconnected conductive or gauge basis')
@@ -290,7 +318,7 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     if result.ndim==1: result=result[:,None]
     if not np.isfinite(result).all():
         raise ValueError('A-phi solve failed (singular or non-finite)')
-    full=np.zeros((size,len(incident_potentials)),complex)
+    full=bc_values
     full[keep,:]=scale[:,None]*result
     nports=len(incident_potentials)
     jbar=np.zeros((nports,len(mesh.tetrahedra),3),complex)
