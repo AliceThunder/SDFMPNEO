@@ -52,6 +52,12 @@ Shimin Wang, Wangqiang Niu, Xianwen Zhou, *Modeling wireless power transfer in m
 
 **严格复阻抗约定（与 Wang 场—路模型衔接）：** 给定 `e^{+iωt}` 和同向端口定义，若只考虑海水响应，`ΔZ_sw=R_sw+iX_sw`，定义增量复感 `ΔL_complex=ΔZ_sw/(iω)=X_sw/ω-iR_sw/ω`。故导电海水的正耗散对应**复感的负虚部**，不可将 `Im ΔL_complex` 直接截成正损耗。总耦合器矩阵需另加有限截面导线自身 `Z_cu`、原始真空自/互感，以及经独立核算的其他材料域阻抗，不能把 `ΔZ_sw` 当总 `Z_EM`。对单纯串联支路，可写 `V=(Z_EM+Z_series)I`；Wang 的实际串—并联拓扑还应按节点/支路 KCL/KVL 建立完整网络方程，**不能把并联电容或负载当成对角串联阻抗直接加和**。本文未取得该论文完整可复现元件数值表，不宣称已经完成 460 kHz 系统效率或负载电压复现。
 
+### Wang 等（2025）最新核验补注
+
+出版商 `Measurement` 251:117224 全文页的可公开方法节与实验节片段表明：论文采用**串—并联（series–parallel）补偿**，两线圈在建模中共轴并忽略对接误差；其实验线圈均为 **AWG16、17 匝、内径 12 cm、外径 22.5 cm**，作者将真实不同半径匝等效为同一半径以便解析化，频率约 **460 kHz**。出版商明确提到以 **LCR、次级开路法和仿真** 三种方式验证复自/互感，再用实验验证负载电压及效率。资料：https://www.sciencedirect.com/science/article/pii/S0263224125005834 以及 https://www.sciencedirect.com/science/article/abs/pii/S0263224125005834 。
+
+**可用证据边界：** 当前出版商公开页面含摘要和方法/实验小节摘录，但论文完整参数表与复感公式全文需合法全文访问；不凭空补入其损耗、电容、电阻、负载或实测复感数字。因此本项目现阶段只冻结 `Z_EM↔L_complex` 变换及 `series–parallel` 独立 KCL/KVL 接口，而不标 Wang 实验全数值复现已完成。其论文的等效环半径更不能被当成 BFZI 连续螺旋的真实源模型。
+
 ## 4. 原论文表 2 独立数值复现
 
 使用公开表 1 参数、`d=0.10 m`、径向中心距 `2.5 mm`、`include_displacement=True`、`k_max=5000 m^-1`。每格为 `R_tx/R_rx/R_mutual`（Ω，实部）；左列为论文正式表 2 的 **analytical** 栏，右列为本实现值（不是测量）。源代码中电流幅度为单位峰值相量，输出电阻与激励幅值无关。
