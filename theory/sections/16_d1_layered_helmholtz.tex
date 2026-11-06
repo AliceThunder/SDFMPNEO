@@ -1,0 +1,135 @@
+% Independent D1 coaxial spectral reference. 2026-11-06; D1 remains open.
+\section{D1 独立共轴分层 Helmholtz 物理直接参考：谱域传播与端口--场一致性}
+\label{sec:bfzi-d1-layered-helmholtz}
+
+\paragraph{角色及严格适用范围。}
+本节是物理直接法锁定规范（第~\ref{sec:bfzi-physical-direct-locked}~节）的
+D1 半解析标准问题，\emph{不是} BFZI 任意位姿和绝缘双盒的解析解。
+参照 Shafiei 等~\cite{shafiei2025uwpt}，两组圆形共轴薄环位于平面
+$z=0$ 和 $z=d$，各向同性常数磁导率取 $\mu_0$，三个
+沿 $z$ 的平面层横向无限，材料参数为
+$(\sigma_j,\varepsilon_j)$，$j=1,2,3$。
+所有薄环同向端口，峰值相量约定 $\exp(+\mathrm i\omega t)$；
+相对于真实 BFZI 连续闭合馈回流，此处只用封闭圆环的标准求解基准。
+
+\subsection{复传播常数及界面 Dirichlet--Neumann 消元}
+取 Hankel 波数 $k\geq0$、$J_1$ 为一阶 Bessel 函数，
+由均匀材料层中的 $\mathrm A_\varphi$ 或等价的
+$\mathrm E_\varphi=-\mathrm i\omega \mathrm A_\varphi$ 满足的
+Helmholtz 方程，可取
+\begin{equation}
+u_j(k)^2=k^2+\mathrm i\omega\mu_0\sigma_j
+                 -\omega^2\mu_0\varepsilon_j,\qquad
+q_j=\frac{u_j}{\mu_0},\qquad t=e^{-u_2d}.
+\end{equation}
+平方根取保证半空间衰减/出射的分支。
+D1 对论文完整复现保留位移电流项；对 MQS 验证显式去掉
+$-\omega^2\mu_0\varepsilon_j$，二者不可无条件混称。
+
+若在两个源面定义谱域环向位势的迹
+$(F_0,F_d)^T$，由两个源平面的跳跃条件、
+上下半空间出射条件和中间层双向传播，得到
+\begin{equation}
+\begin{bmatrix}F_0\\F_d\end{bmatrix}
+=\bm G_{\rm int}(k)
+\begin{bmatrix}S_1(k)I_1\\S_2(k)I_2\end{bmatrix},
+\quad
+S_p(k)=\sum_{n=1}^{N_p}a_{pn}J_1(ka_{pn}),
+\end{equation}
+其中
+\begin{align}
+D &= (q_2+q_1)(q_2+q_3)-(q_2-q_1)(q_2-q_3)t^2,\\
+G_{00} &=\frac{(q_2+q_3)+(q_2-q_3)t^2}{D},&
+G_{0d}&=\frac{2q_2t}{D},&
+G_{dd}&=\frac{(q_2+q_1)+(q_2-q_1)t^2}{D},\\
+\bm G_{\rm int}&=
+\begin{bmatrix}G_{00}&G_{0d}\\G_{0d}&G_{dd}\end{bmatrix}.
+\end{align}
+这是一种不含增长指数 $e^{+u_2d}$ 的等价数值表示。
+上下介质完全相同时应严格退化为
+$G_{00}=G_{dd}=\mu_0/(2u)$ 和
+$G_{0d}=\mu_0 e^{-ud}/(2u)$。
+源面法向导数跳跃在谱域满足
+\begin{equation}
+\frac{\partial_zF(0^-)-\partial_zF(0^+)}{\mu_0}=S_1I_1,\quad
+\frac{\partial_zF(d^-)-\partial_zF(d^+)}{\mu_0}=S_2I_2,
+\end{equation}
+并对两个独立源列分别验证。这里的 $F$ 为谱域振幅；
+实际场按 $A_\varphi(r,z)=\int_0^\infty
+ kJ_1(kr)F(k,z)\,\mathrm dk$ 重建。
+
+\subsection{复增量端口与空间物理量}
+对零半径线源，真空自感发散，因此只在\emph{相同薄环集合}上
+定义有限的介质反作用增量
+\begin{equation}
+\boxed{
+\Delta Z_{pq}
+= 2\pi\mathrm i\omega
+\int_0^\infty k\, S_p(k)\,
+\left[G_{pq}(k)-G^{\rm vac}_{pq}(k)\right]\,
+S_q(k)\,\mathrm dk.}
+\end{equation}
+这不会产生有限铜截面的绝对自阻抗，也不含补偿电容、
+整流器或负载。复感定义
+$\Delta L_{pq}=\Delta Z_{pq}/(\mathrm i\omega)$，
+正的海水耗散对应其负虚部，
+与 Wang 等~\cite{wang2025marinewpt} 所用的
+场--路复参数思想相容，但 Wang 具体串--并联外电路
+须独立按 KCL/KVL 组合，不能简单当作串联对角阻抗。
+
+通过谱域重建（仅在非源面有效）：
+\begin{equation}
+E_\varphi=-\mathrm i\omega A_\varphi,\qquad
+B_r=-\partial_z A_\varphi,\qquad
+B_z=\frac1r\partial_r(rA_\varphi),\qquad
+J_\varphi=\sigma_j E_\varphi,\qquad
+q_j=\tfrac12\sigma_j|E_\varphi|^2.
+\end{equation}
+在这个共轴环向纯模态问题中，$\varphi$ 的附加梯度
+不产生环向分量；一般三维 BFZI \emph{不许}据此省略
+$A$--$\phi$ 中的电标势及规范条件。
+
+\paragraph{总场与海水反作用场不可混淆。}
+令 $E^{\rm sec}_\varphi=E^{\rm med}_\varphi-
+E^{\rm vac}_\varphi$，两项严格在同一线源、频率和
+端口相量下计算。Shafiei 等所列表~2 的六组电场峰值
+在数值上与本模型的 $|E^{\rm sec}_\varphi|$ 峰值高度吻合，
+而不与源附近的 $|E^{\rm med}_\varphi|$ 相符；
+但作者未显式给出这一等式作为表项定义，
+因此这只是目前最有数据支持的\emph{复现解释}，
+不是独立精度认证。
+海水热源必须计算
+$q_j=\tfrac12\sigma_j|E^{\rm med}_\varphi|^2$，
+\textbf{禁止}以 $\sigma_j|E^{\rm sec}_\varphi|^2/2$
+冒充真实功率。
+
+在 MQS 下，Bessel--Parseval 恒等式给出可执行的
+端口--体积功率等价检查：
+\begin{equation}
+P_{\rm sea}
+=\frac12\int_{\Omega_{\rm sea}}\sigma|\bm E^{\rm med}|^2\,\mathrm dV
+=\pi\omega^2\int_0^\infty k\sum_{j=1}^3
+\sigma_j\int_{\text{layer }j}|F(k,z)|^2\,\mathrm dz\,\mathrm dk
+=\tfrac12\bm I^{\rm H}\Herm{\Delta\bm Z}\bm I.
+\end{equation}
+两侧半空间的 $z$ 积分可解析求出，有限厚度层单独数值积分；
+这仍是同一半解析模型的内部场--端口一致性检查。
+保留位移电流时必须分账远场辐射，
+不能把真空扣除后增量阻抗的全部实部自动定义成海水 Joule 损耗。
+
+\subsection{实算结果和 D1 状态}
+对原论文表~1 的 $N_1/N_2=15/17$、内径
+$170/165\,$mm、导线之间净距 $1\,$mm、
+导线直径 $1.5\,$mm，
+按圆环中心径向间距 $2.5\,$mm 进行 D1 薄环标准件计算。
+无限与半无限海水在 $85/400\,$kHz 的附加
+自阻和互阻复现原文表~2 的舍入精度；
+有限海水层在 $400\,$kHz 下的三项电阻仍低于论文
+解析栏约 $4$--$5\%$，且对谱域截断较稳定。
+三种介质在两频率的海水反作用电场离散峰值与原文表~2
+相差约 $0.33\%$--$4.15\%$；该比较的观测量
+定义尚待原论文/作者确认，\textbf{不作事后设门槛的 D1 PASS}。
+全部复现参数、空间网格、数据和可运行命令见
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/D1\_SHAFIEI\_SPECTRAL\_REPRODUCTION.md}。
+D1 仍 OPEN，D2 独立三维 $A$--$\phi$/TEAM--7 尚未验收；
+旧 G1 五模态 FAIL、正式神经教师冻结。
