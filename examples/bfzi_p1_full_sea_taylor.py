@@ -896,5 +896,158 @@ def main():
     )
 
 
+
+def main_focused():
+    """Current P1-C bottleneck only: same-order physical cap phase.
+
+    Preserve the full historic 5-rule/outer-Gram experiment in main().
+    This focused run does not silently reuse prior L values: both
+    complete five-mode 1/r Green matrices are reassembled on the SAME
+    true wet x nodes and mode radial panels. It only skips already
+    archived diagnostic experiments that are identical every time.
+    """
+    scene=build_demo_scene()
+    full=build_sea_basis(scene,modes_per_face=2,face_refinement=1)
+    chosen=(0,1,12,13,24)
+    basis=SeaCurrentBasis(
+        scene,tuple(full.modes[i] for i in chosen),
+        full.wall_scale,full.source_lines,
+        full.outer_envelope,full.outer_taper_width,
+    )
+    x1=("shell",3,4,8,3)
+    inner1=(4,4,10)
+    cache={}
+    print(
+        "p1_full_sea_focused: scope=real_5_curl_modes,"
+        "domain=outer_ball_minus_two_actual_boxes,"
+        "poses=both_identity,"
+        "kernel=original_unsoftened_1/r,"
+        "x_rule=shell_3_4_8_3,"
+        "background_moment_tolerance=0.0025,"
+        "local_cap_order=polar_6_azimuth_14,"
+        "phase_pair=0_and_0.25,"
+        "source_radial_windows=true,"
+        "exact_positive_4pi_S_M_moment_fit=true,"
+        "historical_diagnostics=available_with_--p1-full-history,"
+        "gate=not_certified",
+        flush=True,
+    )
+    outcome={}
+    for phase,label in (
+        (0.0,"source_cap_refined_both"),
+        (0.25,"source_cap_phase_shift_both"),
+    ):
+        z=trial(
+            basis,x1,inner1,cache,method="radial",
+            angle_scheme="uniform",scalar_control=True,
+            moment_angle_tol=0.0025,angle_levels=1,
+            mode_radial_panels=True,mode_source_caps=True,
+            cap_polar_order=6,cap_azimuthal_order=14,
+            cap_azimuth_phase=phase,
+        )
+        outcome[label]=z
+        print(
+            f"p1_full_sea: variant={label},method=radial,"
+            f"x_nodes={z['nx']},inner_rule={z['ny']},"
+            f"norm_L={z['norm']:.10g},"
+            f"trace_L={z['trace']:.10g},"
+            f"raw_skew={z['diagnostic']:.8g},"
+            f"min_eig={z['min_eig']:.10g},"
+            f"max_eig={z['max_eig']:.10g}",
+            flush=True,
+        )
+        _report_modes(label,z["L"])
+        cap=z["source_cap_stats"]
+        bg=z["angular_stats"]
+        print(
+            "p1_full_sea_focused_cap_quality: "
+            f"variant={label},"
+            f"azimuth_phase={phase:g},"
+            f"x_points={cap['points']},"
+            f"accepted={cap['accepted']},"
+            f"fallback={cap['fall_back']},"
+            f"unique_charts={cap['cap_charts']},"
+            f"positive_cap_nodes={cap['cap_nodes']},"
+            f"max_angular_measure_rel={cap['max_solid_angle_rel']:.8g},"
+            f"max_scalar_moment_rel={cap['max_scalar_moment_rel']:.8g},"
+            f"max_first_moment_scaled={cap['max_first_moment_scaled']:.8g},"
+            f"background_refined={bg['refined']},"
+            f"background_unresolved={bg['unresolved']},"
+            "gate=not_certified",
+            flush=True,
+        )
+        pair=z["pair_reciprocity_stats"]
+        print(
+            "p1_full_sea_pair_reciprocity: "
+            f"variant={label},"
+            f"worst_pair={pair['worst_pair']},"
+            f"max_pair_self_normalized={pair['maximum_pair_self_normalized']:.8g},"
+            f"global_raw_skew={pair['raw_global_skew']:.8g},"
+            "pre_symmetrization=true,gate=not_certified",
+            flush=True,
+        )
+        print(
+            "p1_full_sea_pair_reciprocity_details: "
+            f"variant={label},"
+            +",".join(
+                f"pair{i}{j}={v:.8g}"
+                for i,j,v in pair["all_pairs"]
+            )
+            +",scope=raw_pair_antisymmetry_relative_to_self_energies",
+            flush=True,
+        )
+    base=outcome["source_cap_refined_both"]
+    shifted=outcome["source_cap_phase_shift_both"]
+    L0,L1=base["L"],shifted["L"]
+    diag0,diag1=np.diag(L0),np.diag(L1)
+    frac=np.abs(diag1-diag0)/np.maximum(np.abs(diag0),1e-40)
+    scale=np.sqrt(np.outer(
+        np.maximum(np.abs(diag0),1e-40),
+        np.maximum(np.abs(diag0),1e-40),
+    ))
+    normalized=np.abs((L1-L0)/scale)
+    mutual=normalized[np.triu_indices(basis.size,1)]
+    print(
+        "p1_full_sea_source_cap_phase_cross: "
+        "same_x_same_curl_modes_same_cap_order_same_radial_"
+        "same_exact_4pi_S_M,"
+        f"relative_L={_relative(L1,L0):.8g},"
+        f"self_relative={_self_change(L1,L0):.8g},"
+        f"raw_skew_unshifted={base['diagnostic']:.8g},"
+        f"raw_skew_shifted={shifted['diagnostic']:.8g},"
+        "only_local_azimuthal_phase_changed=true,"
+        "gate=not_certified",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_mode_delta: "
+        "comparison=source_cap_phase_shift_vs_refined,"
+        +",".join(f"self{i}={v:.8g}" for i,v in enumerate(frac))
+        +f",max_self={max(frac):.8g},"
+        +f"max_mutual_self_normalized={max(mutual):.8g}",
+        flush=True,
+    )
+    # Explicit weak mutual pair values: unlike a total L norm, this
+    # makes a change of sign in L02 observable in the concise log.
+    print(
+        "p1_full_sea_focused_weak_mutual: "
+        f"L02_unshifted={L0[0,2]:.12g},"
+        f"L02_shifted={L1[0,2]:.12g},"
+        f"L13_unshifted={L0[1,3]:.12g},"
+        f"L13_shifted={L1[1,3]:.12g},"
+        f"L14_unshifted={L0[1,4]:.12g},"
+        f"L14_shifted={L1[1,4]:.12g},"
+        "gate=not_certified",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_note: focused_current_bottleneck_only,"
+        "historical_full_diagnostics=--p1-full-history,"
+        "independent_x_and_continuum_accuracy_still_unresolved,"
+        "G1=FAIL",
+        flush=True,
+    )
+
+
 if __name__=="__main__":
     main()
