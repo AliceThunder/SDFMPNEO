@@ -327,3 +327,75 @@ $P_{\rm sea}=\frac12\bm I^{\mathrm H}
 $\pm2742$ A匝电流正方向和时域/频域观测定义。
 \textbf{D2 尚无独立高保真 PASS；
 G1 仍 FAIL，正式神经教师不得启动。}
+
+
+\subsection{独立空间场核查：解析源场与有限元材料反作用分离}
+\label{sec:bfzi-d2-primary-secondary-spatial}
+
+\paragraph{不能以功率闭合代替空间场误差。}
+有限维源--端口对偶 $L$ 保证同一 Galerkin 解的功率
+恒等式；但零半径细丝的真空场在源附近具有奇异性，
+低阶 N\'ed\'elec 有限元对 \emph{已知}真空源场的离散近似
+可能很粗。对没有导体的闭合正方形薄丝，
+以同一外立方体 $[-0.4,0.4]^3$ 和四个非源点为对象，
+真空 $\nabla\times\bm A_h^{(0)}$ 对独立 Biot--Savart 的
+向量 L2 相对误差，在 3072、6000、10368 四面体下分别
+约为 $38.20\%,28.35\%,31.93\%$。
+这组误差\emph{尚未单调收敛}，并直接否决将当前粗网格
+全场边元解当作独立可信的空间磁场真值。
+
+\paragraph{奇异源场解析分离。}
+在与真实 BFZI 连续闭合路径相同的物理源约定下，
+用可直接求值的真空细丝解析场
+$\bm A^{(0)}_{\rm exact},\bm B^{(0)}_{\rm exact}$
+与固定材料网格的两个数值解构造诊断空间场：
+\begin{align}
+\bm A_{\rm ps}(\bm x)
+ &=\bm A_{\rm exact}^{(0)}(\bm x)+
+   \bm A_h^{(\sigma)}(\bm x)-\bm A_h^{(0)}(\bm x),\\
+\bm B_{\rm ps}(\bm x)
+ &=\bm B_{\rm exact}^{(0)}(\bm x)+
+   \nabla\times[\bm A_h^{(\sigma)}-\bm A_h^{(0)}](\bm x),\\
+\bm E_{\rm ps}(\bm x)
+ &=-\mathrm i\omega\bm A_{\rm exact}^{(0)}(\bm x)+
+    [\bm E_h^{(\sigma)}(\bm x)-\bm E_h^{(0)}(\bm x)],\\
+\bm J_{\rm ps}&=\sigma\bm E_{\rm ps},\qquad
+q_{\rm ps}=\tfrac12\sigma|\bm E_{\rm ps}|^2.
+\end{align}
+所有相减必须使用同一几何、源电流、有限外域与网格，
+只在离开理想细丝的合法探针处计算。$\bm A_h^{(0)}$
+在此为\emph{总场真空有限元解}，不是从前述反作用场
+单独求取的真空电磁零解。材料反作用
+$\bm A_h^{(\sigma)}-\bm A_h^{(0)}$ 比全场更平滑；
+但实际导电区域的边元阶数、绝缘壁和远场误差仍需验证。
+
+在每个四面体内部，最低阶 Whitney 电场
+$\bm E_h(\bm x)$ 为仿射函数。令
+$\lambda_i(\bm x)$ 是探针的四个重心坐标，
+$M_{qi}=\lambda_i(\bm x_q)$ 是二阶四点 Gauss
+位置 $\bm x_q$ 的重心坐标矩阵，则
+\begin{equation}
+ \bm E_h(\bm x)
+  = \sum_{q=1}^4 [\bm\lambda(\bm x)M^{-1}]_q
+      \bm E_h(\bm x_q).
+\end{equation}
+该式对最低阶边元单元内的\emph{位置取值}精确，
+不能以四点平均电流直接冒充边界单侧测点电流；
+但即使位置取值精确，也不表示该单元内真实涡流被
+充分空间解析。新实现见
+\texttt{direct3d\_fields.sample\_primary\_secondary\_fields}、
+\texttt{direct3d\_probe.sample\_cell\_fields}。
+
+\paragraph{必须保留的独立关口。}
+$\bm B_{\rm ps}$ 在 $\sigma=0$ 时退化为精确
+Biot--Savart 属于\emph{按构造得到的真空恒等式}，
+不构成材料反作用场精度认证；
+而 $q_{\rm ps}$ 的体积积分通常不等于
+此前 Galerkin 同源端口的离散功率。
+这两个数值版本必须作为不同物理精度诊断
+\emph{同时报告}，不可选一个更接近预期的结果
+作为事后 PASS，更不可在未完成独立空间收敛前
+以 $q_{\rm ps}$ 作为正式热训练教师。
+须进一步依据 TEAM--7 等独立求解器测量数据，
+在材料区 $h$、源弦段、线圈截面求积与外域 $R$
+各维度收敛后，冻结高保真场/功率计算方法。
