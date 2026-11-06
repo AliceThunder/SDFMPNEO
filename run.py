@@ -16,7 +16,7 @@
     python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
     python run.py --mode bfzi-p0-source --with-tests # P0：锁定物理源，解析直线 + 高阶角段 C/B 与线圈离散收敛（自动上传）
     python run.py --mode bfzi-p1-coulomb --with-tests # P1：原核 1/r 磁能解析真值（无散度球电流）
-    python run.py --mode bfzi-p1-full-sea --with-tests # P1-C：默认比较真实五 curl 源帽均匀方位与双物理盒角投影分段 Gauss，自动日志
+    python run.py --mode bfzi-p1-full-sea --with-tests # P1-C：默认比较双实盒角点方位与逐极角真实盒边求交分段 Gauss，自动日志
     python run.py --mode bfzi-p1-full-sea --p1-full-history --with-tests # 可选：完整历史多轴磁能／外 x Gram（较慢）
     python run.py --mode bfzi-g1-foundations --with-tests # G1：裁剪局部Green积分+层级curl构造+多极外域解析对照（自动上传）
     python run.py --mode bfzi-g1-foundations --g1-hierarchy # 可选昂贵的5→11→17层级J/q试验（尚非精度证书）
@@ -404,8 +404,8 @@ def main(argv=None):
                 from examples.bfzi_run_record import run_and_publish
                 # Keep the expensive historical multi-axis experiment
                 # opt-in; the default recomputes only the CURRENT
-                # 5-curl 6x14 uniform vs true dual-OBB corner azimuth
-                # panel comparison, with exact 4pi/S/M conservation.
+                # 5-curl physical OBB-corner vs mu-dependent OBB-edge
+                # azimuth panel comparison, with exact 4pi/S/M conservation.
                 focus = "--p1-full-history" not in args
                 return run_and_publish(
                     p1_full_sea_focused if focus else p1_full_sea_history,
