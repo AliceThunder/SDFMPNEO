@@ -43,7 +43,6 @@ def team7_geo(mesh_size=.08, plate_size=.009,
     sx,sy,sz=np.diff(box,axis=1).ravel()
     return f'''SetFactory("OpenCASCADE");
 Mesh.MshFileVersion = 2.2;
-Mesh.SaveAll = 1;
 Box(1) = {{{x0:.17g},{y0:.17g},{z0:.17g},{sx:.17g},{sy:.17g},{sz:.17g}}};
 Box(2) = {{0,0,0,0.294,0.294,0.019}};
 Box(3) = {{0.018,0.018,-0.001,0.108,0.108,0.021}};
