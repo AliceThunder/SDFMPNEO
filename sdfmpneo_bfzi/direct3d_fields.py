@@ -61,3 +61,48 @@ def sample_primary_secondary_b(reference, source_strands, points, *,
         "E_total_fem_V_m": med["E_total_V_m"],
         "q_total_fem_W_m3": med["q_W_m3"],
     }
+
+
+def sample_primary_secondary_fields(reference, source_strands, frequency_hz,
+                                    points, *, prefer_conductor=False,
+                                    nearest=256):
+    """Primary-secondary B/E/J/q diagnostics at actual spatial probe points.
+
+    A coherent *field reconstruction* is obtained by adding the analytic
+    filament vacuum potential to the medium-minus-vacuum finite-element
+    difference. This does not preserve the discrete port-power equality
+    and must NOT be silently used as a certified training/thermal reference.
+    """
+    from .direct3d_aphi import closed_polyline_potential
+
+    if not np.isfinite(frequency_hz) or frequency_hz <= 0:
+        raise ValueError("Expected a positive finite frequency")
+    p = np.asarray(points, float)
+    out = sample_primary_secondary_b(
+        reference, source_strands, p,
+        prefer_conductor=prefer_conductor, nearest=nearest)
+    vacuum = sample_cell_fields(
+        reference.vacuum, p, prefer_conductor=prefer_conductor,
+        nearest=nearest)
+    nports = len(reference.source_edge_load)
+    a_primary = np.zeros((nports, len(p), 3), dtype=complex)
+    for port, strands in enumerate(source_strands):
+        for weight, polygon in strands:
+            a_primary[port] += weight*closed_polyline_potential(polygon)(p)
+    omega = 2*np.pi*frequency_hz
+    e_inc = -1j*omega*a_primary
+    e_react = out["E_total_fem_V_m"] - vacuum["E_total_V_m"]
+    e_corrected = e_inc + e_react
+    sigma = out["sigma_S_m"]
+    j_corrected = sigma[None,:,None]*e_corrected
+    q_corrected = .5*sigma[None,:]*np.sum(
+        abs(e_corrected)**2, axis=-1)
+    out.update({
+        "A_primary_analytic_T_m": a_primary,
+        "E_primary_analytic_V_m": e_inc,
+        "E_material_reaction_fem_V_m": e_react,
+        "E_total_primary_secondary_V_m": e_corrected,
+        "J_total_primary_secondary_A_m2": j_corrected,
+        "q_primary_secondary_W_m3": q_corrected,
+    })
+    return out
