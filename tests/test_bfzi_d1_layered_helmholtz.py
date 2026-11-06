@@ -1,4 +1,6 @@
-"""Focused D1 spectral reference tests; they do not certify D1 or D2."""
+"""D1 method tests: physical limits, interfaces and power; no paper-table fit gate."""
+# Optional historical paper comparison is kept as an example function below,
+# but is not run by pytest as an algorithm-acceptance condition.
 import numpy as np
 from numpy.testing import assert_allclose
 from sdfmpneo_bfzi.layered_helmholtz import (
@@ -35,7 +37,7 @@ def test_cutoff_and_layers():
         assert z1[0, 0].real >= 0 and z1[1, 1].real >= 0
 
 
-def test_published_table_2_infinite_and_semifinite():
+def example_published_table_2_infinite_and_semifinite():
     # Published analytical (R_tx,R_rx,R_mutual) [ohm], not fitted data.
     reference = {
         (85000., "infinite"): (.261, .334, .209),
