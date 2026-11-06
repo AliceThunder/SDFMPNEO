@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None,cap_azimuth_phase=0.0):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -117,6 +117,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             mode_source_angular_caps=mode_source_caps,
             source_cap_polar_order=cap_polar_order,
             source_cap_azimuthal_order=cap_azimuthal_order,
+            source_cap_azimuth_phase=cap_azimuth_phase,
             source_cap_stats=cap_stats if mode_source_caps else None,
             angular_moment_tolerance=moment_angle_tol,
             angular_refine_levels=angle_levels,
@@ -133,6 +134,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             +("_source_angular_caps" if mode_source_caps else "")
             +(f"_cap_polar_{cap_polar_order}_azimuth_{cap_azimuthal_order}"
               if mode_source_caps and cap_polar_order is not None else "")
+            +(f"_cap_phase_{cap_azimuth_phase:g}"
+              if mode_source_caps and cap_azimuth_phase != 0 else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -745,6 +748,57 @@ def main():
         "gate=not_certified",
         flush=True,
     )
+    # The 109-pass 4x10 -> 6x14 cap-only refinement changed the
+    # strong self-energy by 0.7201%, while the weak L02 mutual flipped
+    # sign. A second, same-order azimuth PHASE checks whether the
+    # apparently converged self entries hide phi aliasing at box edges.
+    # Source centres and original S/M physical constraints are frozen.
+    phase_shift=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="uniform",scalar_control=True,
+        moment_angle_tol=0.0025,angle_levels=1,
+        mode_radial_panels=True,mode_source_caps=True,
+        cap_polar_order=6,cap_azimuthal_order=14,
+        cap_azimuth_phase=0.25,
+    )
+    print(
+        "p1_full_sea: variant=source_cap_phase_shift_both,method=radial,"
+        f"x_nodes={phase_shift['nx']},inner_rule={phase_shift['ny']},"
+        f"norm_L={phase_shift['norm']:.10g},"
+        f"trace_L={phase_shift['trace']:.10g},"
+        f"raw_skew={phase_shift['diagnostic']:.7g},"
+        f"min_eig={phase_shift['min_eig']:.10g},"
+        f"max_eig={phase_shift['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("source_cap_phase_shift_both",phase_shift["L"])
+    phase_stats=phase_shift["source_cap_stats"]
+    print(
+        "p1_full_sea_source_cap_phase_quality: "
+        "cap_polar=6,cap_azimuth=14,azimuth_phase=0.25,"
+        f"points={phase_stats['points']},"
+        f"accepted={phase_stats['accepted']},"
+        f"fallback={phase_stats['fall_back']},"
+        f"unique_cap_charts={phase_stats['cap_charts']},"
+        f"cap_nodes={phase_stats['cap_nodes']},"
+        f"max_angular_measure_rel={phase_stats['max_solid_angle_rel']:.8g},"
+        f"max_scalar_moment_rel={phase_stats['max_scalar_moment_rel']:.8g},"
+        f"max_first_moment_scaled={phase_stats['max_first_moment_scaled']:.8g},"
+        "scope=independent_local_azimuthal_phase_not_continuum_truth",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_source_cap_phase_cross: "
+        "same_x_same_local_cap_order_same_source_centres_"
+        "same_radial_same_geometry_moment_constraints,"
+        f"relative_L={_relative(phase_shift['L'],cap_refined['L']):.8g},"
+        f"self_relative={_self_change(phase_shift['L'],cap_refined['L']):.8g},"
+        f"raw_skew_unshifted={cap_refined['diagnostic']:.8g},"
+        f"raw_skew_shifted={phase_shift['diagnostic']:.8g},"
+        "only_local_azimuthal_phase_changed=true,"
+        "gate=not_certified",
+        flush=True,
+    )
     # The affine experiment stays callable as an explicit research
     # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
@@ -804,6 +858,7 @@ def main():
     per_mode_changes("mode_radial_vs_moment_angle",mode_radial["L"],adaptive["L"])
     per_mode_changes("source_cap_vs_mode_radial",localized["L"],mode_radial["L"])
     per_mode_changes("source_cap_refined_vs_source_cap",cap_refined["L"],localized["L"])
+    per_mode_changes("source_cap_phase_shift_vs_refined",phase_shift["L"],cap_refined["L"])
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
