@@ -55,7 +55,9 @@ def sample_primary_secondary_b(reference, source_strands, points, *,
         "B_total_raw_fem_T": med["B_secondary_T"],
         "B_vacuum_raw_fem_T": vac["B_secondary_T"],
         "J_total_fem_A_m2": med["J_A_m2"],
-        # q_mean is based on cell-mean J, NOT the full quadratic Joule
-        # energy. For total energy use result.medium.volume_power(I).
-        "q_of_mean_J_W_m3": med["q_mean_W_m3"],
+        # Pointwise Nedelec electric field and Joule heat at the physical
+        # probe. Integrating individual probes does NOT replace volumetric
+        # quadrature; use result.medium.volume_power(I) for total energy.
+        "E_total_fem_V_m": med["E_total_V_m"],
+        "q_total_fem_W_m3": med["q_W_m3"],
     }
