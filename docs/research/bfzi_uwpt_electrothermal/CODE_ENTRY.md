@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **最新 D2 空间场指令（2026-11-06）：** 此前修复的闭合源 Galerkin `Pport=Pvolume_FEM` 仅是离散守恒条件；现在还必须检查 `analytic_source_corrected_joule_W_for_1A`（或 BFZI 的 `analytic_source_corrected_seawater_joule_W`）与源/端口功率的差异，防止以粗网格自洽掩盖空间场精度不足。运行 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --corner-panels 5 --frequency 50 --summary-only`，随后 2/3/4 档；查看完整原始探针加 `--output runs/d2_team7/level1.json`。新的 [第17节理论](../../../theory/sections/17_d2_aphi_reference_and_ports.tex) 与 [D2 实测/代码记录](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md) 已更新，**D2 OPEN**、无 GitHub Actions。
+>
+
 > **2026-11-06 D2 当前最新可运行主算法：** [一致闭合源 3D Galerkin D2](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)、[物理双端口 CLI](../../../examples/bfzi_d2_aphi.py)、[TEAM7 CLI](../../../examples/bfzi_d2_team7.py)。已修复旧体源与真实闭合端口非对偶导致的错误大功率差；现在四档铝板网格的端口与 Joule 离散功率精确一致（各绝对功率仍未网格收敛！）。首次运行请执行 `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_port.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q`；接着 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --summary-only`，再加密 level=2/3/4。正式同域 Gmsh/Elmer 和双独立 SE(3) BFZI 求解仍需要本机实际完成，**D2 OPEN、旧 G1 FAIL、禁用 GitHub Actions 和教师训练**。
 >
 
