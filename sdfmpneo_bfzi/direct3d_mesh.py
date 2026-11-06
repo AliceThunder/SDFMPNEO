@@ -62,7 +62,6 @@ def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float) -> str:
     center=np.asarray(scene.outer_center)
     radius=scene.outer_radius
     s=['SetFactory("OpenCASCADE");', 'Mesh.MshFileVersion = 2.2;',
-       'Mesh.SaveAll = 1;',
        f'Mesh.MeshSizeMin = {mesh_size_m/3:.17g};',
        f'Mesh.MeshSizeMax = {mesh_size_m:.17g};',
        f'Box(1) = {{{center[0]-radius:.17g}, {center[1]-radius:.17g}, {center[2]-radius:.17g}, {2*radius:.17g}, {2*radius:.17g}, {2*radius:.17g}}};']
