@@ -645,7 +645,7 @@ def _bfzi_projected_box_azimuth_rule(scene, point, e1, e2, order):
 
 def _bfzi_source_cap_angular_rule(
     point, base_directions, base_weights, centers, metrics,
-    polar_order, azimuthal_order,
+    polar_order, azimuthal_order, azimuth_phase=0.0,
 ):
     """Positive partition-of-unity angular charts centred on ACTUAL modes.
 
@@ -672,6 +672,12 @@ def _bfzi_source_cap_angular_rule(
             or np.any(np.linalg.eigvalsh(metrics)<=0)):
         raise ValueError("source caps require finite centers and SPD metrics")
 
+    if (not np.isfinite(azimuth_phase)
+            or not 0 <= azimuth_phase < 1):
+        raise ValueError("source cap azimuth phase must be in [0,1)")
+    # Exact duplicates of a Gaussian window produce the same angular
+    # cap. Merge their nodes but preserve the multiplicity in the
+    # partition profiles, leaving the physical angular integral intact.
     active=[]
     for center,G in zip(centers,metrics):
         delta=center-point
@@ -684,19 +690,26 @@ def _bfzi_source_cap_angular_rule(
             continue
         axis=delta/distance
         theta=math.asin(min(0.95,3.0*width/distance))
-        active.append((axis,math.cos(theta)))
+        duplicate=next((entry for entry in active
+                        if np.array_equal(entry[3],center)
+                        and np.array_equal(entry[4],G)),None)
+        if duplicate is not None:
+            duplicate[2]+=1
+        else:
+            active.append([axis,math.cos(theta),1,center,G])
     if not active:
         return base_directions,base_weights,0
 
-    axes=np.array([a for a,_ in active])
-    cos_limits=np.array([c for _,c in active])
+    axes=np.array([entry[0] for entry in active])
+    cos_limits=np.array([entry[1] for entry in active])
+    multiplicities=np.array([entry[2] for entry in active])
 
     def profiles(directions):
         z=directions@axes.T
         t=np.clip((z-cos_limits)/(1.0-cos_limits),0.0,1.0)
         # Smooth support at every cap boundary; a finite h scale avoids
         # a nearly discontinuous indicator requiring very high Gauss.
-        return 32.0*t*t*(3.0-2.0*t)
+        return (32.0*t*t*(3.0-2.0*t))*multiplicities[None,:]
 
     original_profiles=profiles(base_directions)
     result_dirs=[base_directions]
@@ -704,10 +717,10 @@ def _bfzi_source_cap_angular_rule(
         base_weights/(1.0+np.sum(original_profiles,axis=1))
     ]
     nodes,weights=np.polynomial.legendre.leggauss(polar_order)
-    for mode_index,(axis,cos_lower) in enumerate(active):
+    for mode_index,(axis,cos_lower,_,_,_) in enumerate(active):
         mu=0.5*(1.0-cos_lower)*nodes+0.5*(1.0+cos_lower)
         wmu=0.5*(1.0-cos_lower)*weights
-        phi=2*math.pi*(np.arange(azimuthal_order)+0.5)/azimuthal_order
+        phi=2*math.pi*(np.arange(azimuthal_order)+0.5+azimuth_phase)/azimuthal_order
         seed=(np.array((1.,0.,0.)) if abs(axis[0])<0.9
               else np.array((0.,1.,0.)))
         e1=np.cross(seed,axis)
@@ -829,6 +842,7 @@ def assemble_coulomb_radial(
     source_angular_caps=None,
     source_cap_polar_order: int | None = None,
     source_cap_azimuthal_order: int | None = None,
+    source_cap_azimuth_phase: float = 0.0,
     source_cap_stats: dict | None = None,
     polar_axis=None,
     azimuthal_rule=None,
@@ -873,6 +887,7 @@ def assemble_coulomb_radial(
     nodes, radial rule, exact S/M constraints and real sources stay fixed.
     Comparing two local-cap orders tests actual curl angular convergence,
     not just the low-order geometry moment constraints.
+    The phase shifts ONLY local azimuth nodes, never actual sources.
 
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
@@ -1130,7 +1145,7 @@ def assemble_coulomb_radial(
             base_lo,base_hi=lo,hi
             cap_dirs,cap_weights,cap_count=_bfzi_source_cap_angular_rule(
                 point,directions,area_weights,cap_centers,cap_metrics,
-                cap_polar,cap_azimuth,
+                cap_polar,cap_azimuth,source_cap_azimuth_phase,
             )
             if cap_count:
                 # Every finite source cap changes the numerical angular
@@ -1321,6 +1336,7 @@ def assemble_basis_coulomb_radial(
     mode_source_angular_caps: bool = False,
     source_cap_polar_order: int | None = None,
     source_cap_azimuthal_order: int | None = None,
+    source_cap_azimuth_phase: float = 0.0,
     source_cap_stats: dict | None = None,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
@@ -1409,6 +1425,7 @@ def assemble_basis_coulomb_radial(
         source_angular_caps=windows if mode_source_angular_caps else None,
         source_cap_polar_order=source_cap_polar_order,
         source_cap_azimuthal_order=source_cap_azimuthal_order,
+        source_cap_azimuth_phase=source_cap_azimuth_phase,
         source_cap_stats=source_cap_stats,
         polar_axis=axis,
         azimuthal_rule=(
