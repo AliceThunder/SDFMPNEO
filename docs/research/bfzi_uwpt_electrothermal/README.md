@@ -1,4 +1,7 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+> **2026-11-06 当前优先代码入口：** [D2 一致 Galerkin 物理直接法与真实数值](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)。上一轮三维端口/体积功率差的根因已通过**闭合线源激励和读出共用同一个 Nédélec 泛函矩阵 L** 修正；真正独立的 BFZI 两端口和 TEAM-7 程序默认接入新求解器。50Hz 四档粗网格功率在同一网格内闭合，但**网格/外域/Elmer 真值尚未通过，D2 OPEN，G1 FAIL，正式教师冻结**。旧体源加载和论文拟合记录只作研究档案，禁止 GitHub Actions。
+>
+
 
 > **当前 D2 核心更新（2026-11-06）：** 以真实三维 Maxwell–MQS A–φ 边元、闭合 BFZI 端口感生电压和独立成熟参考为中心，而非论文数字拟合。新 [Elmer/TEAM7 交叉参考计划](D2_ELMER_INDEPENDENT_REFERENCE.md)、[D2 原理和真实端口修正](D2_APHI_CORE_IMPLEMENTATION.md)、[三维闭合端口求解器](../../../sdfmpneo_bfzi/direct3d_port.py)、[正式理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex) 已提交。此前的体积重叠功率恒等式**不是**真实两端口功率认证；完成三档网格及外域、独立实测验证之前始终标记 **D2 未通过**。旧 G1 FAIL，禁止正式教师训练和 GitHub Actions。
 >
