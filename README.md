@@ -1,7 +1,7 @@
-> **BFZI 电磁热代理研究主分支｜2026-11-06 UTC：** [项目进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) · [P1 验收契约](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [数学 TeX](theory/sections/14_p1_exact_coulomb_sphere.tex)。仍只研究圆形／圆角方形连续 BFZI 线圈、双独立 SE(3) 绝缘盒和真实导电海水，不考虑历史超椭圆。P0/P1-A/P1-B 限定历史 PASS；**P1-C/G1 FAIL，正式神经教师关闭**。
-> **最新本机日志：** [原始 110-pass](docs/research/bfzi_uwpt_electrothermal/runs/p1_full/latest_full.log)（代码 c8e5aca、日志提交 5c84a46）。在完全相同原始 1/r、4336 外 x、五真实 curl 模式、正权 4π/SΩ/MΩ 几何矩及局部源帽 6×14 下，仅平移局部方位 Gauss 节点四分之一步长，即使 3500 角帽点全部匹配、0 回退，实际 L 整体仍变化 **0.7253%**，互耦最大归一化变化 **2.4195%**，L02 从 **+8.504e-12** 变为 **−1.263e-11**。最坏原矩阵成对互易性误差达 **3.370%**。这证明仅保持低阶几何矩不能保证真实 curl 电流角向精度。
-> **本轮主算法：** 新增按每个观察点的局部模式球面角帽坐标，投影两个真实独立旋转绝缘盒的全部 16 个实际世界空间角点，按其方位划分完整 [0,2π] 并在每个扇区运行正权二阶 Gauss。保留原 Gaussian 模式中心/宽度、局部极角6阶、原湿射线与径向源窗分片、未软化原核、真实五 curl 基，最终真实角节点仍独立正权匹配同一个 4π/SΩ/MΩ。新增 2π 方位测度、单位球原核几何矩、真实双盒小空间 curl 实验测试。**不是严格 OBB 遮挡切线完整解析分区，也不是已经认证的磁能参考解。**
-> **下次默认实跑：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。只重算相同物理问题的 source_cap_refined_both（周期均匀）与 source_cap_box_corners_both（双物理盒角投影方位分段），输出五自十互、成对互易性和 4π/S/M；完整旧多轴/相位实验可用 --p1-full-history。新代码尚未经过本机实测，**P1-C/G1 继续 FAIL，不使用 GitHub Actions。**
+> **BFZI 电磁热代理研究分支｜2026-11-06 UTC：** [进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) · [P1 验收](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [原核 TeX](theory/sections/14_p1_exact_coulomb_sphere.tex)。范围：圆形/圆角方形连续 BFZI 线圈、真实双独立 SE(3) 盒及海水；非旧超椭圆。**G1/P1-C FAIL，正式神经教师关闭。**
+> **最新本机：** [112-pass 完整日志](docs/research/bfzi_uwpt_electrothermal/runs/p1_full/latest_full.log)，代码 1956ed3、日志 7bc9266。双盒角点投影扇区 Gauss2 相对均匀 6×14：全 L 差 **0.065772%**，但 L00 差 **0.730025%**、互耦自能归一化差最大 **2.783924%**，L02 从 +8.5036e−12 反号到 −1.5815e−11，最坏原核成对互易性 **2.4506%→2.6112%**。两者 3500 accepted、0 fallback，低阶 S/M 误差相同；因此盒角方位仍不足以解析真实电流高阶角域。
+> **本轮主算法：** 对每个真实 Gaussian 模式球帽的每个极角 mu，解析求两实际 OBB 的 24 条物理盒棱与该极角圆交点；在保留上一轮全部角点方位断点的基础上加上新交点，把每个新扇区继续用正权 Gauss2 积分。未软化 1/r、五真实 curl、双盒精确湿射线、Gaussian 径向子片、外 x 和 4π/S/M 正权拟合均不变。已添加盒边解析交点、2π/4π/S/M 及真实双盒小空间测试，**尚待本机实跑，非磁能参考真值**。
+> **下一次 Windows：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。默认同条件比较 source_cap_box_corners_both 与 source_cap_box_edges_both；完整历史保留 --p1-full-history。**P1-C/G1 FAIL，不使用 GitHub Actions。**
 
 # SDF-MPNEO vNext
 
