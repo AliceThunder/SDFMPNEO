@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **2026-11-06 最新测试与物理源 E 插值纠错：** `python -m pytest tests/test_bfzi_d2_elliptic_limit.py tests/test_bfzi_d2_primary_secondary.py tests/test_bfzi_d2_fields.py tests/test_bfzi_d2_galerkin.py -q`；`python -m examples.bfzi_d2_elliptic_limit --output runs/d2_elliptic.json`。`--solve-analytic-primary` 要求另求真正 Maxwell 材料反作用 PDE，并用精确闭合源在空间测点取 `E/B/J/q`，**不是**对求完的粗网格总电场强行插值/替换真空源。本地真空源 E 初版确实 FAIL（因已知解析 A 非仿射），已在 probe 实现中先减解析源、只插值 FEM 仿射反作用、再加真实测点解析源；16 项本地合并通过。物理公式和有限几何收敛证据：[新 D2 记录](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)。TEAM7 正式 h/R、外部 Elmer 独立比对及真实 BFZI 铜损耗尚 OPEN；禁止 G1 修补、正式教师与 GitHub Actions。
+>
+
 > **最新 D2 方法级物理验证入口（2026-11-06）：** `python -m pytest tests/test_bfzi_d2_elliptic_limit.py tests/test_bfzi_d2_primary_secondary.py tests/test_bfzi_d2_fields.py -q`，随后 `python -m examples.bfzi_d2_elliptic_limit --output runs/d2_elliptic.json` 得到完整五档解析 `E/phi/q` 对照。真正的 BFZI 双盒 FEM 网格建成后，`python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --solve-analytic-primary --probe 0.2 0 0 --output runs/bfzi_analytic_primary.json`；TEAM7 初级同场 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --solve-analytic-primary --summary-only`。**须单独比较 PDE 解析源材料解与总场 Galerkin 解，不能用后处理解析主场替换视作已重求材料反作用电流。** 代码和五档实算见 [新 D2 文档](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)。Gmsh/Elmer、趋肤及外域收敛 OPEN；不使用 GitHub Actions，不训练教师。
 >
 
