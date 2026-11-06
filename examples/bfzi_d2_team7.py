@@ -40,6 +40,7 @@ def main():
                         default='secondary_zero')
     parser.add_argument('--outer-box',choices=('compumag','elmer'),default='compumag')
     parser.add_argument('--port-subsegments',type=int,default=2)
+    parser.add_argument('--current-sign',type=int,choices=(-1,1),default=1)
     args=parser.parse_args()
     if args.write_geo:
         bounds=((-.2,.494),(-.2,.494),(-.2,.394)) if args.outer_box=='elmer' else (
@@ -53,7 +54,8 @@ def main():
         parser.error('Choose one of --coarse-smoke or --mesh MSH2_PATH')
     mesh=coarse_team7_tetra_mesh() if args.coarse_smoke else team7_mesh(args.mesh)
     A_source,B_source,strands=team7_stranded_source(
-        args.width_order,args.height_order,args.corner_panels,return_strands=True)
+        args.width_order,args.height_order,args.corner_panels,
+        return_strands=True,current_sign=args.current_sign)
     sol=solve_aphi(mesh,args.frequency,[A_source],outer_bc=args.outer_bc)
     from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance
     port_z=closed_source_port_impedance(sol,args.frequency,[strands],
@@ -74,7 +76,7 @@ def main():
         'frequency_hz':args.frequency,'coarse_smoke':args.coarse_smoke,
         'nodes':len(mesh.nodes),'tetrahedra':len(mesh.tetrahedra),
         'metal_tetrahedra':int(np.count_nonzero(mesh.sigma)),
-        'source':'2742 AT racetrack, 25x100 mm cross-section Gauss filament approximation',
+        'source':f'{args.current_sign*2742} AT racetrack, 25x100 mm cross-section Gauss filament approximation',
         'volume_overlap_z_real_imag_ohm':[
             float(sol.delta_z[0,0].real),float(sol.delta_z[0,0].imag)],
         'true_closed_source_reaction_z_real_imag_ohm':[
