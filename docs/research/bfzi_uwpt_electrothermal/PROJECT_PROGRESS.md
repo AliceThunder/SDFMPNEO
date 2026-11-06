@@ -14,6 +14,8 @@
 
 > **2026-11-06 D0→D1 实施进度更新（覆盖下方旧规划）：** 已提交独立三层共轴圆环 Helmholtz–Bessel 谱域求解器 `sdfmpneo_bfzi/layered_helmholtz.py` 与专项测试 `tests/test_bfzi_d1_layered_helmholtz.py`，包括复增量两端口阻抗、空间 `A/E/B/J/q`、MQS 海水 Parseval 体积损耗及复相位功率核对。Shafiei 2025 原论文 85/400 kHz 的无限/半无限海水表 2 已逐项定量复现；400 kHz 有限海水层的 3 个阻值相差约 4–5%，**保留 D1 OPEN，继续查原始论文细节**。已在独立 Python 计算环境运行了谱域原型的 4 项基础检查、部分论文数值与功率结果；远端新提交代码的本机 pytest 结果仍待用户工作站记录。新的公式、误差与下一步见 [D1 复现记录](D1_SHAFIEI_SPECTRAL_REPRODUCTION.md)。D2 独立三维 A–φ/TEAM-7 仅完成技术方案，**尚无 FEM 代码和独立真值**。旧 G1 仍 FAIL、神经教师冻结，禁止 GitHub Actions。
 >
+> **2026-11-06 D1 第二轮：发表论文 E 场的物理量归属已厘清一大部分（仍未验收）**。新增 [二维矢量化 Helmholtz 场重构](../../../sdfmpneo_bfzi/layered_grid.py)、[Shafiei 表 2 命令行复现](../../../examples/bfzi_d1_shafiei.py)、[专项测试](../../../tests/test_bfzi_d1_layered_grid.py)。在 15/17 匝、两端口各 5 A、85/400 kHz、三种水层场景中，海水反作用电场 `E_secondary = E_medium - E_vacuum` 的六组峰值与论文表 2 解析栏相差约 0.33%–4.15%；而完整 `E_total` 在源附近远大于论文电场表项。**原论文并未明确把表中 E_max 定义为反作用场；这只是高度一致的定量解释，不能据此设置后验 5% PASS 门槛。** 海水真实 `q=0.5σ|E_total|²`，不得以二次场平方替代。独立双源面跳跃满足到浮点精度，二维场批量与逐点积分互核。有限海水层 400 kHz 端口 R 仍与论文解析栏相差约 4–5%，**D1 OPEN；D2 三维 TEAM-7 A–φ 仍待实施，旧 G1 FAIL，教师训练冻结**。详见 [D1 实算与公式记录](D1_SHAFIEI_SPECTRAL_REPRODUCTION.md)。本轮本地算例数值和部分 pytest 已执行，用户工作站整套测试日志仍待复验；无 GitHub Actions。
+>
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
 **本项目：** 圆角方形／圆形**单根连续螺旋线圈族**，两套独立、可变尺寸与任意合法静态 SE(3) 位姿的**密封绝缘封装**，完整端口馈回流，封装外海水的双端口 MQS 电磁反作用、空间电流与焦耳热，导体损耗、封装／线圈／海水电热时间演化，以及跨几何快速神经代理。
