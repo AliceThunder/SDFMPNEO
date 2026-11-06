@@ -81,6 +81,58 @@ Elmer TEAM--7 实例构造相同的有限域边界条件；
 至少三档外域（或透明边界/外场边界积分）证明
 端口和空间场尾部的收敛。
 
+\subsection{线元端口的四面体交段精确积分及真空边界扣除}
+
+最低阶有向 Whitney--N\'ed\'elec 边元
+$\bm w_{ij}=\lambda_i\nabla\lambda_j-\lambda_j\nabla\lambda_i$，
+在单个四面体上为仿射函数。对真实闭合馈回流折线的
+任一线段 $\bm r(t)=\bm r_a+t\bm d$，其中 $\bm d=\bm r_b-\bm r_a$，
+在其穿过某四面体的 $[t_0,t_1]$ 子区间有恒等式
+\begin{equation}
+\begin{split}
+  \bm w_{ij}(\bm r(t))\cdot\bm d
+   &= \lambda_i(\bm r_a)
+        \bigl(\nabla\lambda_j\cdot\bm d\bigr)
+     -\lambda_j(\bm r_a)
+        \bigl(\nabla\lambda_i\cdot\bm d\bigr),\\
+  \int_{t_0}^{t_1}
+     \bm w_{ij}(\bm r(t))\cdot\bm d\,\mathrm dt
+   &=(t_1-t_0)\,
+        \bm w_{ij}(\bm r((t_0+t_1)/2))\cdot\bm d .
+\end{split}
+\end{equation}
+因为含 $t$ 的两项正好相消，第二式是\emph{精确恒等式}，
+不是 Gauss 规则的近似。算法先用各单元的重心坐标半空间
+对 $\Gamma_p$ 的每条直线段求交，再对各交段按其有向
+边元 DOF 求积；沿共享面或共享棱的重合交段只取一个
+单元，避免重复累加。其剩余误差是有限元空间、
+真实 BFZI 圆角弦段几何与人工外域误差，\emph{不再含}
+固定 Gauss 采样跨四面体界面所致的端口积分误差。
+实现见 \texttt{direct3d\_port.closed\_source\_port\_impedance\_exact}。
+
+尤其当人工截断边界设为
+$\bm n\times(\bm A_{\rm src}+\bm a)=0$，
+即使 $\sigma=0$，仍可有
+$\bm a^{\rm vac}\ne0$：
+这是使自由空间入射场满足人工总场边界的镜像场，
+其闭合端口积分对应\emph{真空有限盒修正电感}，
+\textbf{不能}直接称为海水增量感抗。
+同一网格、相同源、同一外边界条件下，
+正确的\emph{导电材料相对有限盒真空}端口增量为
+\begin{equation}
+ \boxed{\Delta Z_{pq}^{\rm mat}
+ =\mathrm i\omega\oint_{\Gamma_p}
+  \Bigl[\bm a_q(\sigma)-\bm a_q(0)\Bigr]
+        \cdot\mathrm d\bm\ell.}
+\end{equation}
+对 $\bm n\times\bm a=0$ 且全域 $\mu=\mu_0$
+的受限基线，无导电真空反作用场可严格为零；
+但对总场截断边界必须显式扣去真空项。
+在 $\sigma\to0$ 极限，$\Delta\bm Z^{\rm mat}\to0$
+是方法上的必要条件；该差分并不自动消除
+有限域对\emph{非零导电响应}的外边界误差。
+这些推导不包含铜内自阻抗与馈电线路外部回路损耗。
+
 \subsection{真实闭合端口、有限域边界项与功率}
 对单位端口 $q$，反作用场 $\bm a_q$ 在源环上光滑，
 真实海水\emph{增量感生电压}应从
