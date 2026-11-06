@@ -40,7 +40,9 @@ class PrimarySecondary3D:
         """Return actual-position E/J/q and analytic-primary plus reaction B."""
         return sample_cell_fields(
             self.reaction, points, prefer_conductor=prefer_conductor,
-            nearest=nearest, incident_magnetic=self.source_B)
+            nearest=nearest, incident_magnetic=self.source_B,
+            incident_potentials=self.source_A,
+            frequency_hz=self.frequency_hz)
 
 
 def _weighted_closed_source(strands, field_factory):
