@@ -168,6 +168,50 @@ $4\times10^{-14}$ W 以内。加密四面体后电阻/磁抗
 仍非单调收敛，故 \textbf{D2 仍 OPEN}，禁止据此
 将高保真参考宣称为 PASS。
 
+\subsection{解析真空源重构与独立空间场精度检验}
+\label{sec:bfzi-d2-analytic-source-reconstruction}
+同源 Galerkin 加载/读取保证端口能量在有限元
+空间内一致，却不保证粗网格已准确表示
+$\bm A_{\rm src}$ 的强近场。因此在真实导电材料区和
+远离理想零半径导线的探针，另提供\emph{独立空间场重构}：
+令 $\bm A_h^\sigma$、$\bm A_h^0$ 为前述同一
+有限边界下有海水与真空的\emph{总场}离散解。
+对闭合实线源可用解析直线段积分得到
+$\bm A_{\rm src}^{\rm exact}$ 及 Biot--Savart
+$\bm B_{\rm src}^{\rm exact}$。定义
+\begin{align}
+ \bm A_{\rm phys,h}
+  &=\bm A_{\rm src}^{\rm exact}
+       +(\bm A_h^\sigma-\bm A_h^0),\\
+ \bm B_{\rm phys,h}
+  &=\bm B_{\rm src}^{\rm exact}
+       +\nabla\times(\bm A_h^\sigma-\bm A_h^0),\\
+ \bm E_{\rm phys,h}
+  &=-\mathrm i\omega\bm A_{\rm phys,h}-\nabla\phi_h^\sigma,\\
+ P_{\rm phys,h}
+  &=\frac12\int_{\Omega_c}\sigma|\bm E_{\rm phys,h}|^2\,\mathrm dV.
+\end{align}
+该重构消除了数值真空自场在空间探针上的部分逼近误差，
+而**并未**将 FEM 的材料反作用误差自动归零。
+$\bm E_{\rm phys,h}$ 与 Galerkin 自身
+$\bm E_h^\sigma$ 在粗网格可能相差显著，
+因此 $P_{\rm phys,h}$ 在尚未独立空间收敛时
+\textbf{不应}被强制等于端口离散耗散。
+它们的差距是额外的源场精度指标，而非需要事后
+调参消除的“功率守恒不通过”。
+
+本轮 50 Hz、同一 TEAM--7 铝板与有限小盒的
+750/2304/5082/9408 四面体下，
+Galerkin 配对端口/体积 Joule 分别为约
+$6.93/6.83/7.09/6.74$ W，而重新加入解析真空
+源势得到的导电体积分量约为
+$46.99/23.56/17.45/15.16$ W。
+两类数值尚\emph{没有}一致收敛，证明即使源--端口
+代数功率恒等式恢复，低阶网格对真实总电场的逼近
+也仍未达可靠高保真水平。该信息必须进入 D2
+空间误差预算，并在网格/外域及参考工具对照达到要求
+之前继续保持 \textbf{D2 OPEN}。
+
 \subsection{线元端口的四面体交段精确积分及真空边界扣除}
 
 最低阶有向 Whitney--N\'ed\'elec 边元
