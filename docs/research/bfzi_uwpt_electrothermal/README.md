@@ -1,4 +1,7 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+> **当前精度边界（2026-11-06）：** [D2 一致源载荷及解析源场重构](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)：真实闭合端口的 Galerkin 离散能量现严格闭合，但对源场采取解析真空线积分、只把材料反作用留给 3D FEM 时，四档 TEAM7 网格的 Joule 功率仍相差很大。因此高保真并未认证；新 CLI **同时报告离散 Joule 与解析源修正 Joule**，作为后续空间误差诊断。禁止以单个功率恒等式、论文数字拟合或旧 G1 结果宣布物理高精度；G1 FAIL、D2 OPEN、教师冻结、无 GitHub Actions。
+>
+
 > **2026-11-06 当前优先代码入口：** [D2 一致 Galerkin 物理直接法与真实数值](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)。上一轮三维端口/体积功率差的根因已通过**闭合线源激励和读出共用同一个 Nédélec 泛函矩阵 L** 修正；真正独立的 BFZI 两端口和 TEAM-7 程序默认接入新求解器。50Hz 四档粗网格功率在同一网格内闭合，但**网格/外域/Elmer 真值尚未通过，D2 OPEN，G1 FAIL，正式教师冻结**。旧体源加载和论文拟合记录只作研究档案，禁止 GitHub Actions。
 >
 
