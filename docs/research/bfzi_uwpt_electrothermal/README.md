@@ -1,5 +1,9 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
 
+> **2026-11-06 D2 最新入口（优先于下方旧路线与论文拟合描述）：** 已实际提交独立三维 A–φ 边元求解器和 TEAM-7 官方几何初始受迫涡流案例，而不是继续复现 Shafiei/Wang 论文表格。请从 [三维核心实现与物理局限](D2_APHI_CORE_IMPLEMENTATION.md)、[官方 TEAM-7 几何及粗网格结果](D2_TEAM7_OFFICIAL_CASE.md)、[两独立盒 Gmsh 三维入口](../../../examples/bfzi_d2_aphi.py) 进入。当前只有基础测试和极粗 TEAM-7 运算通过，真实 Gmsh 官方外域、网格收敛及测量数据对照仍缺失：**D2 未通过、G1 FAIL、禁止教师训练**。理论方法衔接见 [D1→D2](METHOD_TRANSFER_D1_TO_D2.md)。
+>
+
+
 ## 当前首要任务：物理直接法 V1.0 锁定（2026-11-06）
 
 **从此优先阅读：** [物理直接法锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md)、[论文证据与 D0–D6 验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)、[TeX 第15节](../../../theory/sections/15_physical_direct_reference_lock.tex)。
