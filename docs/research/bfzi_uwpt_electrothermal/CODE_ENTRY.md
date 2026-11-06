@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **D2 当前补充（2026-11-06）：** BFZI/TEAM7 的 `B/E/J/q` 主次场探针现使用**相同材料侧四面体**进行导电解—真空解相减；表面 `J_y` 不再因真空网格重选单元落到气侧。新增 `tests/test_bfzi_d2_fields.py`、`tests/test_bfzi_d2_mesh_probe.py` 的场与界面专项，建议本地执行 `python -m pytest tests/test_bfzi_d2_fields.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_galerkin.py -q`。先看 [真空闭环 Biot–Savart 误差脚本](../../../examples/bfzi_d2_vacuum_field.py) 及 [第17节真实空间场要求](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)，再做正式 Gmsh 共形网格/Elmer 与无限海水收敛。**未宣布 D2 PASS。**
+>
+
 > **最新 D2 物理空间场命令（2026-11-06）：** 原始低阶总场 B 对独立 Biot–Savart 仍有 28–38% 且非单调的误差，**D2 高精度 OPEN**。先用以下命令复核已知真空场误差，再在共形网格和真实 BFZI 双盒上查询 `B/E/J/q`（主次场诊断值不能冒充正式热教师）：
 >
 > ```powershell
