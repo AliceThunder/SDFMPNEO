@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **最新 D2 方法级物理验证入口（2026-11-06）：** `python -m pytest tests/test_bfzi_d2_elliptic_limit.py tests/test_bfzi_d2_primary_secondary.py tests/test_bfzi_d2_fields.py -q`，随后 `python -m examples.bfzi_d2_elliptic_limit --output runs/d2_elliptic.json` 得到完整五档解析 `E/phi/q` 对照。真正的 BFZI 双盒 FEM 网格建成后，`python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --solve-analytic-primary --probe 0.2 0 0 --output runs/bfzi_analytic_primary.json`；TEAM7 初级同场 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --solve-analytic-primary --summary-only`。**须单独比较 PDE 解析源材料解与总场 Galerkin 解，不能用后处理解析主场替换视作已重求材料反作用电流。** 代码和五档实算见 [新 D2 文档](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)。Gmsh/Elmer、趋肤及外域收敛 OPEN；不使用 GitHub Actions，不训练教师。
+>
+
 > **D2 当前补充（2026-11-06）：** BFZI/TEAM7 的 `B/E/J/q` 主次场探针现使用**相同材料侧四面体**进行导电解—真空解相减；表面 `J_y` 不再因真空网格重选单元落到气侧。新增 `tests/test_bfzi_d2_fields.py`、`tests/test_bfzi_d2_mesh_probe.py` 的场与界面专项，建议本地执行 `python -m pytest tests/test_bfzi_d2_fields.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_galerkin.py -q`。先看 [真空闭环 Biot–Savart 误差脚本](../../../examples/bfzi_d2_vacuum_field.py) 及 [第17节真实空间场要求](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)，再做正式 Gmsh 共形网格/Elmer 与无限海水收敛。**未宣布 D2 PASS。**
 >
 
