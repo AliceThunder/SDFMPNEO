@@ -106,8 +106,8 @@ def closed_polyline_potential(vertices):
 
 @dataclass
 class AphiResult:
-    delta_z: np.ndarray
-    power_matrix: np.ndarray   # P(I)=.5 real(I^H matrix I)
+    delta_z: np.ndarray  # volume overlap i*w*int A_src·J, NOT true finite-boundary port Z
+    power_matrix: np.ndarray  # Hermitian of overlap; internal diagnostic only
     power_from_fields: np.ndarray
     current_at_cells: np.ndarray   # (port,tet,3)
     magnetic_secondary: np.ndarray  # (port,tet,3)
@@ -129,11 +129,28 @@ class AphiResult:
         e=np.einsum('p,pnqc->nqc',i,self.electric_at_quadrature)
         return .5*self.mesh.sigma[:,None]*np.sum(abs(e)**2,axis=-1)
 
-    def port_power(self, currents):
+    def overlap_power(self, currents):
+        """Quadratic form from volume-overlap Z, NOT true finite-box port power."""
         i=np.asarray(currents,dtype=complex)
         if i.shape!=(len(self.delta_z),) or not np.isfinite(i).all():
             raise ValueError('Expected one finite complex current per port')
         return float((.5*np.vdot(i,self.delta_z@i)).real)
+
+    def port_power(self, currents, *, port_impedance=None):
+        """Actual closed-source port power; supply independently integrated Z.
+
+        Use direct3d_port.closed_source_port_impedance(...) and compare
+        against volume_power(...). Never infer port power from the
+        finite-domain i*w*int(A_src.J) overlap by default.
+        """
+        if port_impedance is None:
+            raise ValueError('Physical closed-path port Z required; use direct3d_port')
+        i=np.asarray(currents,dtype=complex)
+        z=np.asarray(port_impedance,dtype=complex)
+        if (i.shape!=(len(self.delta_z),) or z.shape!=self.delta_z.shape
+                or not np.isfinite(i).all() or not np.isfinite(z).all()):
+            raise ValueError('Expected compatible finite port currents and Z')
+        return float((.5*np.vdot(i,z@i)).real)
 
     def volume_power(self, currents):
         i=np.asarray(currents,dtype=complex)
