@@ -92,6 +92,40 @@ python -m pytest tests/test_bfzi_d1_layered_helmholtz.py -q
 python -c "from sdfmpneo_bfzi.layered_helmholtz import paper_case,field_point,spectral_joule_power; c=paper_case('infinite',turns_tx=2,turns_rx=2); print(field_point(c,.1,.04)); print(spectral_joule_power(c,(1,1j)))"
 ```
 
+## 4.2 二次反作用场空间复现：新增可解释性证据（2026-11-06）
+
+**重要发现：Shafiei 正式 PDF 第 28997 页表 2 的 `E_max` 与本项目物理总场 `E_total` 不一致，却与“相同线源海水解减去真空解”的二次反作用电场高度一致。** 论文未明确声明表 2 的量就是这一差值，因此这是具有明确支持数据的**复现解释假说**，不得冒充作者书面定义。其 85→400 kHz 的约二十倍增长亦更符合反作用场随频率的主导二次尺度，而非近场总感应场的主导一次尺度。
+
+算法：新 `sdfmpneo_bfzi/layered_grid.py` 的 `field_grid` 用复 Hankel 波数分段 Gauss–Legendre 谱积分，在任意 1D 径向/轴向采样轴上矢量化重构 `Aφ/Eφ/B_r/B_z/Jφ/q`（导电海水场采用完整 `E_total`）；`secondary_field_grid` 在**同样线圈和同样频率**下逐点减去三层全真空 `σ=0, εr=1` 场，输出 `E_secondary/B_secondary`。这是端口源自场与材料反作用场的物理分账，不能把 `0.5σ|E_secondary|²` 当成真实海水 Joule 功率。
+
+在原文表 1 的 15/17 匝、中心距 2.5 mm、两端口均 5 A 峰值、`d=0.1m`、`μ=μ0`、海水 `σ=4S/m,εr=81` 下，用 `include_displacement=True`；二维 `r∈[0,0.5]m`、151 点，`z` 分为 `[-.12,-.0008]` 31 点、`[.0008,.0992]` 57 点和 `[.1008,.22]` 31 点；仅在该场景的**海水区域**搜索最大值。波数上限 `4000m⁻¹`，谱积分分片 `8m⁻¹`、每片 8 点。所报 `E_max` 是**固定采样域离散最大值**，不是未正则化的源面连续最大值。
+
+| 介质 | f (kHz) | 原文表 2 解析 Emax (V/m) | 海水反作用 Emax (V/m) | 偏差 |
+|---|---:|---:|---:|---:|
+| 无限海水 | 85 | 0.298 | 0.30245 | +1.49% |
+| 无限海水 | 400 | 5.375 | 5.59832 | +4.15% |
+| 半无限海水 | 85 | 0.231 | 0.23201 | +0.44% |
+| 半无限海水 | 400 | 4.497 | 4.59640 | +2.21% |
+| 有限海水层 | 85 | 0.132 | 0.13280 | +0.60% |
+| 有限海水层 | 400 | 2.900 | 2.90961 | +0.33% |
+
+这些数值不是通过调整源电流、盐度、电导率、频率或事后单独拟合阈值得到的。**结果非常支持反作用场解释，但并不消除有限层 400 kHz 端口 R 的 4–5% 差异，也不是论文 E 场量定义的形式证明。** 必须继续调查原文图 11–16 的字段/图例、FEM 求差口径、最大值空间筛选规则与实际有限截面/网格，不得以匹配 Emax 让 D1 提前 PASS。
+
+与直接逐点 `field_point` 的复数 `A/E/B/J/q` 比较，在每种介质 2 匝缩小示例的 4×4 近场及外场网格上，相对偏差在当前 `3e-5` 精度下通过；海水二次电场于 `k_max=1800, 4000, 6000, 9000m⁻¹` 对同一空间网格的峰值相同到表列数字，`panel_width=8` 与 `4` 的幅值差小于 `2e-4 V/m`（无限 400k 和有限 400k 核对）。本轮本地 Python 数学原型：**13 项 pytest 通过**，另独立逐谱核验三种介质的双端口源跳跃至约机器精度。GitHub 新增测试还需在用户工作站再运行并保存日志，不能替代本项目完整三维独立 A–φ 参考。
+
+**源奇异与量的正确归属：** 理想零半径圆环在 `z=0,d` 源线上使局部 `Aφ` 和 `E_total=-iωAφ` 具有细丝自场奇异；不能把不含有限铜截面的连续 `max|E_total|` 当成与论文 FEM 线圈附近格点独立无关的参考常数。二次反作用场经同源真空场相减，消除了主奇异自场，但本文仍只声明给定海水区域和给定网格的离散最大值。真实 BFZI 将另用有限铜截面验证线圈内部和邻近损耗，且 `E_total` 才用于 `q=0.5σ|E_total|²`。
+
+**可复现运行：**
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_d1_layered_helmholtz.py tests/test_bfzi_d1_layered_grid.py -q
+python -m examples.bfzi_d1_shafiei --scenario finite --frequency-khz 400
+python -m examples.bfzi_d1_shafiei --scenario infinite --frequency-khz 85
+```
+
+脚本报告完整 `ΔZ` 的实虚矩阵、论文表 2 电阻、峰值电场及观察位置，标记 `D1 partial - not PASS`。为核验收敛，可将 `--k-max 4000` 换为 `8000`、`--panel-width 8` 改为 `4` 或加密 `--radial-points`。**不要把求差电场用于海水真实焦耳热预算。**
+
 ## 5. D1 剩余及 D2 固定实施路线
 
 1. **先完成 D1**：解决有限海水层 400 kHz 的表格差异；对现有 `Aφ/Eφ/B_r/B_z` 再核验层界切向场与源导数跳跃，并比较论文图 11–14 和表 2 的 `E_max`（注意场峰值定义和观测位置）。`spectral_joule_power` 在 MQS 下已有端口功率闭合的受限数值结果，但仍需跨频率、源匝数、积分上限、空间场探针收敛和独立解析/实验数据验证。谱域全波须将辐射与导电耗散分开，不可直接使用 MQS 功率恒等式。
