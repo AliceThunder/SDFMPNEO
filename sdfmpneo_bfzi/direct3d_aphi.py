@@ -116,6 +116,7 @@ class AphiResult:
     n_edge_dofs: int
     n_potential_dofs: int
     n_gauge_dofs: int
+    edge_coefficients: np.ndarray | None = None  # [port, global edge], includes imposed boundary traces
 
     def joule_density_at_quadrature(self, currents):
         """Joule heat source [W/m3] for arbitrary complex peak port currents.
@@ -342,4 +343,4 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
             zp += 1j*omega*vol/4*np.einsum('pqc,rqc->pr',src,sig*E)
             p_from_fields += sig*vol/4*np.einsum('pqc,rqc->pr',E.conj(),E)
     return AphiResult(zp,(zp+zp.conj().T)/2,p_from_fields,
-                      jbar,bsec,e_quad,mesh,len(free_edges),pe,pg)
+                      jbar,bsec,e_quad,mesh,len(free_edges),pe,pg,full[:ne,:].T.copy())
