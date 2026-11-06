@@ -399,3 +399,87 @@ Biot--Savart 属于\emph{按构造得到的真空恒等式}，
 须进一步依据 TEAM--7 等独立求解器测量数据，
 在材料区 $h$、源弦段、线圈截面求积与外域 $R$
 各维度收敛后，冻结高保真场/功率计算方法。
+
+
+\subsection{非轴对称导体电标势的独立解析极限验收}
+\label{sec:bfzi-d2-elliptic-limit}
+
+三维 $A$--$\phi$ 的验证不应只依赖同源离散
+端口--Joule 功率恒等式或他人论文表格。
+设有限高 $H$ 的椭圆柱体内
+$\sigma>0,\mu=\mu_0$，截面
+$x^2/a^2+y^2/b^2\leq1$，外加均匀轴向交流磁场
+$B_0e^{\mathrm i\omega t}\bm e_z$。
+取入射真空矢势
+\begin{equation}
+ \bm A_0=\tfrac{B_0}{2}(-y,x,0).
+\end{equation}
+在 $\alpha=\omega\mu_0\sigma\max(a,b)^2\ll1$
+的低感应强度极限，令
+$\nabla\cdot(\sigma\bm E)=0$ 与导体表面
+$\bm n\cdot\bm J=0$，并保持
+$\bm E=-\mathrm i\omega\bm A_0-\nabla\phi$，
+可\emph{直接推导}出
+\begin{align}
+ \phi_0(x,y)&=
+  -\frac{\mathrm i\omega B_0(a^2-b^2)}
+   {2(a^2+b^2)}xy,\\
+ \bm E_0(x,y)&=
+  \frac{\mathrm i\omega B_0}{a^2+b^2}
+    (a^2y,-b^2x,0),\\
+ q_0(x,y)&=\tfrac12\sigma|\bm E_0|^2,\\
+ P_0&=\frac{\sigma\omega^2|B_0|^2
+         \pi H a^3b^3}{8(a^2+b^2)}.
+\end{align}
+这组解在真椭圆侧壁及柱体上下端面满足
+零法向电流；除 $a=b$ 的圆柱特例外，
+$\phi_0$ \emph{不得忽略}。
+它不仅检验场量幅值和功率，更独立约束
+导电区域电荷守恒和自然绝缘边界。
+
+本项目采用 $a=0.12\,\mathrm m,b=0.07\,\mathrm m$、
+$H=0.1\,\mathrm m,\sigma=4\,\mathrm{S/m}$、
+$f=1\,\mathrm{kHz},B_0=1\,\mathrm{mT}$，
+于是 $\alpha\simeq4.548\times10^{-4}$。
+将真实椭圆边界用逐渐加密的内接多边形近似，
+生成全导电三维共形四面体，
+在 $48/288/1080/2688/6336$ 四面体下
+得到相对解析复电场的体积 $L^2$ 误差
+$29.27/15.01/10.35/7.88/5.29\%$，
+相对解析总 Joule 功率的误差
+$-11.80/-2.88/-1.22/-0.66/-0.29\%$。
+如果强制令 $\phi=0$，则本例的解析电场
+体积 $L^2$ 误差约为 $56.55\%$。
+以上结果独立于任何同源端口矩阵代数恒等式，
+但其物理适用域是 $\alpha\ll1$，并仍有
+椭圆多边形几何误差和有限外边界误差。
+数学和可运行证据见
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/
+D2\_INDEPENDENT\_ELLIPTIC\_AND\_ANALYTIC\_PRIMARY.md}。
+
+\paragraph{反作用方程必须在解析源给定后重新求解。}
+对于 BFZI 完整闭合馈回流 $\Gamma_p$，
+若用 \emph{解析} $A_{\rm src,p}$ 消除
+真空线源的空间网格奇异误差，
+应直接在材料弱式右端使用
+$-\mathrm i\omega\sigma\sum_pI_p\bm A_{\rm src,p}$
+并同时满足导电域标量电势方程，求得
+$\bm a_{\rm ps},\phi_{\rm ps}$；
+再输出
+\begin{equation}
+ \bm B_{\rm total}=\bm B_{\rm Biot-Savart}
+                         +\nabla\times\bm a_{\rm ps},
+ \quad
+ \bm E_{\rm total}=
+  -\mathrm i\omega(\bm A_{\rm src}+\bm a_{\rm ps})
+                           -\nabla\phi_{\rm ps}.
+\end{equation}
+\textbf{只在已有低阶总场 Galerkin 解结束后，
+用 $A_{\rm src,exact}$ 替换粗网格真空总场，
+却不重新求 $\bm a,\phi$，不是同一材料 PDE 的解。}
+新的 \texttt{direct3d\_primary\_secondary.py}
+专门建立该解析源材料方程。
+一致总场 Galerkin 的端口源--读出精确对偶
+仍可作为不同方法的独立离散检查，但其
+功率严格闭合本身不能替代本节的空间场
+与功率物理解析极限验收。
