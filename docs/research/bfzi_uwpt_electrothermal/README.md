@@ -1,4 +1,7 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+> **D2 当前最高优先级（2026-11-06）：空间场精度独立核验。** 已发现低阶 3D 总场 FEM 即使端口/Joule 完全自洽，在已知真空闭合方形丝源的四个非源探针处仍有约 **28–38%** 的 Biot–Savart 磁场误差；而且细化 3 档不单调。已新增 [解析源与材料反作用场分离](../../../sdfmpneo_bfzi/direct3d_fields.py)、[精确位置 E/J/q 探针](../../../sdfmpneo_bfzi/direct3d_probe.py)、[真空独立场误差脚本](../../../examples/bfzi_d2_vacuum_field.py)，并接入 [TEAM-7](../../../examples/bfzi_d2_team7.py) 和 [BFZI 双端口](../../../examples/bfzi_d2_aphi.py)。**这不是高精度 D2 通过；独立 TEAM-7/Elmer、高质量网格和无限海水外域仍 OPEN。** 不追 Shafiei/Wang 表格，不重开 G1，不训练教师，禁用 GitHub Actions。
+>
+
 > **当前精度边界（2026-11-06）：** [D2 一致源载荷及解析源场重构](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)：真实闭合端口的 Galerkin 离散能量现严格闭合，但对源场采取解析真空线积分、只把材料反作用留给 3D FEM 时，四档 TEAM7 网格的 Joule 功率仍相差很大。因此高保真并未认证；新 CLI **同时报告离散 Joule 与解析源修正 Joule**，作为后续空间误差诊断。禁止以单个功率恒等式、论文数字拟合或旧 G1 结果宣布物理高精度；G1 FAIL、D2 OPEN、教师冻结、无 GitHub Actions。
 >
 
