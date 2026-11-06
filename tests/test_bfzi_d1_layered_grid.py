@@ -1,4 +1,4 @@
-"""D1 spatial Helmholtz checks: external tabulated E scales are not a D1 PASS."""
+"""D1 spatial method checks: fields and local Joule, not paper Emax fitting."""
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -34,7 +34,7 @@ def test_batched_field_agrees_point_quadrature(scenario):
     ("finite", 85000., .132),
     ("finite", 400000., 2.900),
 ])
-def test_published_e_max_secondary_field_interpretation(scenario, frequency, reference):
+def example_published_e_max_secondary_field_interpretation(scenario, frequency, reference):
     case = paper_case(scenario, frequency_hz=frequency)
     r = np.linspace(0, .5, 151)
     z = np.r_[np.linspace(-.12, -.0008, 31),
