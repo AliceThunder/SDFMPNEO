@@ -159,6 +159,26 @@ def test_actual_box_direct_radial_original_coulomb_small_space_runs():
     assert caps["max_solid_angle_rel"]<1e-9
     assert caps["max_scalar_moment_rel"]<0.003
     assert caps["max_first_moment_scaled"]<0.003
+    corner_caps={}
+    corner_L=assemble_basis_coulomb_radial(
+        basis,np.eye(basis.size),x[:2],wx[:2],
+        radial_order=2,polar_order=4,azimuthal_order=10,
+        mode_centered_radial_panels=True,
+        mode_source_angular_caps=True,
+        source_cap_polar_order=6,
+        source_cap_box_corner_panels=True,
+        source_cap_box_corner_sector_order=2,
+        exact_scalar_control=True,
+        angular_moment_tolerance=0.0025,
+        angular_refine_levels=1,
+        source_cap_stats=corner_caps,
+    )
+    assert corner_L.shape==L.shape and np.isfinite(corner_L).all()
+    assert corner_caps["points"]==2
+    assert corner_caps["accepted"]+corner_caps["fall_back"]<=2
+    assert corner_caps["max_solid_angle_rel"]<1e-9
+    assert corner_caps["max_scalar_moment_rel"]<0.003
+    assert corner_caps["max_first_moment_scaled"]<0.003
     # Run the genuine BFZI curl-Jacobian connection once on a tiny set,
     # so the affine benchmark cannot accidentally bypass its real mode path.
     affine=assemble_basis_coulomb_radial(
