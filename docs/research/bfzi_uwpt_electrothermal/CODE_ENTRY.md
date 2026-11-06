@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **最新直接法代码入口（2026-11-06）**：应按 [D2 3D A–φ 核心实现](D2_APHI_CORE_IMPLEMENTATION.md) 与 [COMPUMAG TEAM-7 标准几何](D2_TEAM7_OFFICIAL_CASE.md) 运行 `python -m pytest tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q` 及 `python -m examples.bfzi_d2_team7 --coarse-smoke --frequency 50`。这是真正独立于 G1 的 H(curl) 三维 FEM 起点，**不是已经高精度认证的求解器**；Gmsh 共形网格、真实双 SE(3) 盒、TEAM-7 原始实测和外域误差仍待完成。下文按历史日期存档，**任何旧 G1 角帽/五模态继续加密命令不得作为新默认路线**。禁用 GitHub Actions。
+>
+
+
 > **2026-11-06 V1.0 方法路线更新（优先于以下历史正文）：** 物理直接法已按 [权威规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) 和 [D0–D6 验收](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) 锁定。先独立复现共轴海水 Helmholtz 半解析与三维 A–φ 参考，再对完整 BFZI 复阻抗/感生电流/海水损耗逐项验证。**旧 G1/P1-C 角帽及原核五模态历史试验挂起，G1 FAIL，禁止正式神经教师与 GitHub Actions。** 下文属历史记录，不应继续按其“下一次运行”命令进行数值试错；本轮未改代码、未本机实跑。
 
 
