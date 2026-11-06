@@ -1,0 +1,162 @@
+
+% Frozen physical direct problem, 2026-11-06; no solver accuracy certified.
+\section{锁定 BFZI 物理直接法：Maxwell--MQS、独立参考和验收}
+\label{sec:bfzi-physical-direct-locked}
+
+\paragraph{锁定决定。}
+此节以及
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/PHYSICAL\_DIRECT\_METHOD\_LOCKED.md}
+和
+\texttt{PHYSICAL\_DIRECT\_METHOD\_EVIDENCE\_AND\_GATES.md}
+是物理直接法 V1.0 的优先约束。历史 P1-C/G1
+真实海水五模态原核积分仍未收敛，保持 FAIL。
+不要把对称、正权积分的代数性质或两种相近的角向规则
+当作物理连续解精度的证明。正式神经教师保持暂停。
+
+\subsection{物理任务与文献适用性}
+用户提供的 2026-11-05 水下 WPT 综述严格区分
+A 类代理、B 类前向物理求解、C 类在线参数辨识。
+当前先完成 B 类。
+Shafiei 等~\cite{shafiei2025uwpt}
+在共轴圆形平面线圈与分层导电介质的
+特定 Helmholtz 模型下计算海水附加电阻和互阻；
+Wang 等~\cite{wang2025marinewpt}
+将复自感和复互感与场路联立；
+Fei 等~\cite{fei2025seawater}
+通过提取模式和拟合评估互阻及相位影响。
+这些结果不是任意 SE(3) 双盒和连续圆角方形
+BFZI 绕线的通用闭式真值。
+成熟三维独立参考采用合规的 $A$--$\phi$ 涡流法，
+必要时配合 FEM--BEM 开域耦合
+~\cite{hiptmair2001coupling,hiptmaiostrowski2005}；
+仅在材料和边界假设匹配时考虑 BEM
+~\cite{tsuboitanaka1990}。
+
+\subsection{固定真实场景和源}
+两独立、互不穿透的非导电、非磁性实体绝缘盒
+$B_1,B_2$ 允许各自变尺寸及刚体 SE(3) 位姿；
+每盒包含圆形或圆角方形\emph{单根连续多匝 BFZI}
+线圈及明确的完整闭合馈回流，不是超椭圆。
+海水基线：
+\[
+ \Omega_\infty=\RR^3\setminus
+ (\overline{B_1}\cup\overline{B_2}),
+ \qquad \sigma_s>0,\quad\mu=\mu_0.
+\]
+两个端口峰值相量 $\bm I=(I_1,I_2)^T$
+取 $e^{+\jj\omega t}$。
+源须满足分布连续性；有限直径铜的自阻抗
+不能由零半径闭合线源的发散自积分代替。
+磁准静态近似必须先检查频率、尺度、
+电导率和位移电流以及源兼容性
+~\cite{ammaribuffanedelec2000}。
+
+\subsection{锁定 Maxwell--MQS 与 $A$--$\phi$}
+\begin{align}
+ \Curl\bm H&=\bm J_{\rm src}+\bm J_e,&
+ \Curl\bm E&=-\jj\omega\bm B,\\
+ \Div\bm B&=0,&
+ \bm B&=\mu\bm H,&
+ \bm J_e&=\sigma\bm E.
+\end{align}
+海水域 $\Div\bm J_e=0$，
+两实心封装表面 $\bm n\cdot\bm J_e=0$，
+其余材料界面需相容的电磁跳跃条件。
+以 $\bm B=\Curl\bm A$、
+$\bm E=-\jj\omega\bm A-\grad\phi$ 得
+\begin{equation}
+\boxed{
+\begin{aligned}
+ \Curl(\mu^{-1}\Curl\bm A)
+ &=\bm J_{\rm src}-\sigma(\jj\omega\bm A+\grad\phi),\\
+ \Div[\sigma(\jj\omega\bm A+\grad\phi)]&=0
+ \quad\text{（导电域）}.
+\end{aligned}}
+\label{eq:bfzi-direct-locked-a-phi}
+\end{equation}
+实际三维参考必须处理规范/零空间、拓扑、
+导体--绝缘体界面和正确无穷远衰减。
+人工外球的 $\bm n\cdot\bm J_e=0$
+只定义另一个截断问题，不能自动等同无限海水。
+
+\subsection{原 Green 电流弱式的条件性等价}
+只在常数 $\mu=\mu_0$、合法完整源、
+真正无散度零法向测试空间及收敛原核双积分
+条件下，令
+\[
+ (\mathcal G_0\bm f)(\bm x)=
+ \int_{\Omega_\infty}
+ \frac{\bm f(\bm y)}{4\pi|\bm x-\bm y|}\,
+ \mathrm d\bm y,\qquad
+ \bm A=\mu_0\sum_{p=1}^2\bm C_pI_p+
+ \mu_0\mathcal G_0\bm J_e.
+\]
+对实合规电流基 $\bm W_m$：
+\begin{align}
+ R_{mn}&=\int_{\Omega_\infty}\sigma_s^{-1}
+ \bm W_m\cdot\bm W_n\,\mathrm dV,\\
+ L_{mn}&=\mu_0\int_{\Omega_\infty}
+ \bm W_m\cdot\mathcal G_0\bm W_n\,\mathrm dV,\\
+ K_{mp}&=\mu_0\int_{\Omega_\infty}
+ \bm W_m\cdot\bm C_p\,\mathrm dV .
+\end{align}
+由弱式得到
+\begin{equation}
+\boxed{
+ (\bm R+\jj\omega\bm L)\bm z
+ =-\jj\omega\bm K\bm I,\qquad
+ \bm Z_{\rm sw}=\omega^2\bm K^T
+ (\bm R+\jj\omega\bm L)^{-1}\bm K .
+}
+\label{eq:bfzi-direct-locked-schur}
+\end{equation}
+此式在已声明条件下数学上合法，
+\textbf{并非当前有限 Gauss--curl 字典、
+原核 1/r 求积或外球截断已经收敛的证据}。
+有非均匀磁导率时，自由空间核不得直接代替
+完整磁化与界面响应。
+
+\subsection{复端口与周期平均损耗}
+线性互易、无源双端口要求
+\[
+ \bm Z_{\rm EM}=\bm Z_{\rm EM}^T,\qquad
+ \Herm{\bm Z_{\rm EM}}\succeq0,
+\]
+非对角互阻可取负值，不得逐项夹正。
+峰值相量下必须用相同实际海水响应验算
+\begin{equation}
+\boxed{
+ P_{\rm sea}=\frac12\int_{\Omega_\infty}
+ \frac{|\bm J_e|^2}{\sigma_s}\,\mathrm dV
+ =\frac12\bm I^{\mathrm H}
+ \Herm{\bm Z_{\rm sw}}\bm I .
+}
+\end{equation}
+$\bm Z_{\rm sw}$ 只表示海水增量；
+铜/磁性材料/电路损耗需独立、无重数归属。
+同源代数功率闭合本身不能代替
+独立参考场和端口精度的证明。
+
+\subsection{顺序验收与停止规则}
+\begin{enumerate}
+ \item D0：物理场景、源、MQS 适用与相量方向；
+ \item D1：圆形共轴分层海水 Helmholtz 半解析与互阻；
+ \item D2：独立三维 $A$--$\phi$ 求解及 TEAM-7 等
+  基准、网格和远场收敛；
+ \item D3：真实 BFZI 从无盒、单盒到双独立盒、
+  从共轴到任意合法 SE(3)，比较两端口复阻抗和
+  $\bm E,\bm B,\bm J_e,q$；
+ \item D4：不同端口相位下互易、被动、
+  真实铜/海水分账和端口--体积功率一致；
+ \item D5：合规 BEM/FEM--BEM 或 Green--Galerkin
+  与独立参考交叉验证后再择优作为高效直接法；
+ \item D6：只有可信物理直接教师验收后，
+  才进行空间热演化与跨几何神经代理。
+\end{enumerate}
+三维 FEM 允许作为\emph{独立精度参考}；
+尽量避免世界体网格是后续 D5 速度目标，
+不能阻止验证真值。
+原 P0/P1-A/P1-B 限定范围 PASS 仍保留；
+原五模态 G1/P1-C 数值工作冻结为
+\textbf{未认证历史试验}，
+不继续无目标调整角帽、外球及节点。
