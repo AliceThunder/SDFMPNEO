@@ -57,8 +57,9 @@ def main():
         args.width_order,args.height_order,args.corner_panels,
         return_strands=True,current_sign=args.current_sign)
     sol=solve_aphi(mesh,args.frequency,[A_source],outer_bc=args.outer_bc)
-    from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance_exact
-    port_z=closed_source_port_impedance_exact(sol,args.frequency,[strands])
+    from sdfmpneo_bfzi.direct3d_port import medium_vacuum_port_increment
+    medium_reaction_z,vacuum_image_z,port_z = medium_vacuum_port_increment(
+        sol,args.frequency,[A_source],[strands],outer_bc=args.outer_bc)
     probes={}
     for name,coords in official_probe_lines().items():
         samples=sample_cell_fields(
@@ -78,8 +79,13 @@ def main():
         'source':f'{args.current_sign*2742} AT racetrack, 25x100 mm cross-section Gauss filament approximation',
         'volume_overlap_z_real_imag_ohm':[
             float(sol.delta_z[0,0].real),float(sol.delta_z[0,0].imag)],
-        'true_closed_source_reaction_z_real_imag_ohm':[
+        'material_increment_closed_port_z_real_imag_ohm':[
             float(port_z[0,0].real),float(port_z[0,0].imag)],
+        'finite_domain_vacuum_image_z_real_imag_ohm':[
+            float(vacuum_image_z[0,0].real),float(vacuum_image_z[0,0].imag)],
+        'total_medium_reaction_z_real_imag_ohm':[
+            float(medium_reaction_z[0,0].real),
+            float(medium_reaction_z[0,0].imag)],
         'outer_bc':args.outer_bc,'outer_box':args.outer_box,
         'closed_source_power_W_for_1A':float(.5*port_z[0,0].real),
         'source_voltage_vs_metal_joule_relative_gap':float(
