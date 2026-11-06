@@ -1,5 +1,11 @@
 # D2｜独立三维 Maxwell–MQS A–φ 参考求解器：核心实现与待验收范围
 
+> **2026-11-06 D2 本轮新进度（优先于以下旧叙述）：** 闭合端口引入**四面体交段精确 Nédélec 切向线积分**（非固定 Gauss 采样）和\`total_zero\`人工边界条件下**同一有限域真空基线扣除**，海水/铝板增量定义为
+> \(\Delta Z_{\rm mat}=i\omega\oint_{\Gamma}(A_{\rm react,\sigma}-A_{\rm react,\sigma=0})\cdot dl\)。
+> 已实际运行 50 Hz TEAM-7 保持官方材料几何的 4 档分层网格：750/2304/5082/9408 四面体，闭合源端口功率与导体 Joule 比值从 0.382 变化到 0.723，**仍未闭合、D2 OPEN**。该变化不只属于端口求积，而涉及导体 FEM 细化及有限外域能量通量。将外盒加大但不细化外域网格，已经观察到结果恶化，不把这种操作称“外域收敛”。具体数据和命令详见 [D2 TEAM-7 同域计算记录](D2_TEAM7_OFFICIAL_CASE.md)；精确路径积分及真空基准的数学式见 [第 17 节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。本地独立 Python 模块核心及端口专项共 **9 项 pytest 通过**，远端完整仓库组合测试还需工作站复跑。**禁止神经教师、旧 G1、GitHub Actions。**
+>
+
+
 **2026-11-06；目标分支：research/bfzi-uwpt-electrothermal-surrogate。**
 
 > 当前状态：已有一套**真正求解三维边元 A–φ 混合有限元方程**的独立初始实现，非旧 G1 磁 Green 五模态。针对基础三维封闭源、线性互易和功率的有限网格数值测试已在本轮隔离 Python 环境运行；**尚无 TEAM-7 官方几何/测量比对、无网格与外域收敛证书，不能标记 D2 PASS 或 BFZI 高精度教师通过。** 参见 [物理 V1.0 锁定](PHYSICAL_DIRECT_METHOD_LOCKED.md)、[D0/D1 方法迁移](METHOD_TRANSFER_D1_TO_D2.md)。
