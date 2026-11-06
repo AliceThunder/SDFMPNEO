@@ -400,3 +400,62 @@ def test_source_cap_positive_moment_fit_conserves_exact_ball_area_s_and_m():
     assert refined_stats["max_scalar_moment_rel"]<2e-8
     assert refined_stats["max_first_moment_scaled"]<2e-7
     np.testing.assert_allclose(fine_u[0,0],[2*math.pi,0,0],rtol=1e-9,atol=1e-12)
+
+
+def test_identical_source_caps_merge_without_losing_pou_multiplicity():
+    """Duplicate physical Gaussian modes must not duplicate ray evaluations."""
+    import math
+    from sdfmpneo_bfzi.green_coulomb import _bfzi_source_cap_angular_rule
+
+    center=np.array([0.33,0.31,0.33])
+    width=0.025
+    metric=np.eye(3)/width**2
+    # A simple positive full-sphere background; only exact POU algebra
+    # (not its finite integration error) is tested here.
+    base=np.vstack((np.eye(3),-np.eye(3)))
+    weights=np.ones(6)*(4*math.pi/6)
+    duplicated_centers=np.array([center,center])
+    duplicated_metrics=np.array([metric,metric])
+
+    directions,angular_weights,count=_bfzi_source_cap_angular_rule(
+        np.zeros(3),base,weights,
+        duplicated_centers,duplicated_metrics,4,10,
+    )
+    single_dirs,single_weights,single_count=_bfzi_source_cap_angular_rule(
+        np.zeros(3),base,weights,center[None,:],
+        metric[None,:,:],4,10,
+    )
+    assert count==single_count==1
+    assert len(directions)==len(single_dirs)==len(base)+40
+    np.testing.assert_allclose(directions,single_dirs,rtol=0,atol=0)
+
+    axis=center/np.linalg.norm(center)
+    boundary=math.cos(math.asin(3*width/np.linalg.norm(center)))
+    t=np.clip((directions@axis-boundary)/(1-boundary),0,1)
+    h=32*t*t*(3-2*t)
+    # Original TWO coincident positive angular caps have identical
+    # Gauss directions. Summing their discrete weights gives 2h/(1+2h).
+    np.testing.assert_allclose(
+        angular_weights[:len(base)],weights/(1+2*h[:len(base)]),
+        rtol=1e-13,atol=1e-15,
+    )
+    nodes,wmu=np.polynomial.legendre.leggauss(4)
+    cap_weight=np.repeat(
+        0.5*(1-boundary)*wmu*(2*math.pi/10),10,
+    )
+    np.testing.assert_allclose(
+        angular_weights[len(base):],
+        cap_weight*(2*h[len(base):])/(1+2*h[len(base):]),
+        rtol=1e-13,atol=1e-15,
+    )
+    assert np.all(angular_weights>0)
+    # A quarter-azimuth-step changes the local sample locations,
+    # without moving the source centre or altering cap solid measure.
+    rotated,rot_weights,rot_count=_bfzi_source_cap_angular_rule(
+        np.zeros(3),base,weights,
+        duplicated_centers,duplicated_metrics,4,10,0.25,
+    )
+    assert rot_count==1 and len(rotated)==len(directions)
+    np.testing.assert_allclose(rotated[:len(base)],base,rtol=0,atol=0)
+    assert not np.allclose(rotated[len(base):],directions[len(base):])
+    assert np.all(rot_weights>0)
