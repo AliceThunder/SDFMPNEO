@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None,cap_azimuth_phase=0.0,cap_box_corner_panels=False,cap_corner_sector_order=2):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None,cap_azimuth_phase=0.0,cap_box_corner_panels=False,cap_corner_sector_order=2,cap_box_edge_panels=False,cap_edge_sector_order=2):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -121,6 +121,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             source_cap_azimuth_phase=cap_azimuth_phase,
             source_cap_box_corner_panels=cap_box_corner_panels,
             source_cap_box_corner_sector_order=cap_corner_sector_order,
+            source_cap_box_edge_panels=cap_box_edge_panels,
+            source_cap_box_edge_sector_order=cap_edge_sector_order,
             source_cap_stats=cap_stats if mode_source_caps else None,
             reciprocity_stats=pair_stats,
             angular_moment_tolerance=moment_angle_tol,
@@ -142,6 +144,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
               if mode_source_caps and cap_azimuth_phase != 0 else "")
             +(f"_cap_true_OBB_corner_sector_{cap_corner_sector_order}"
               if mode_source_caps and cap_box_corner_panels else "")
+            +(f"_cap_true_OBB_edge_mu_sector_{cap_edge_sector_order}"
+              if mode_source_caps and cap_box_edge_panels else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -902,7 +906,7 @@ def main():
 
 
 def main_focused():
-    """Current P1-C bottleneck: real-OBB corner-guided cap azimuth.
+    """Current P1-C bottleneck: true OBB edge crossings at each polar mu.
 
     Preserve the full historic 5-rule/outer-Gram experiment in main().
     This focused run does not silently reuse prior L values: both
@@ -928,18 +932,18 @@ def main_focused():
         "kernel=original_unsoftened_1/r,"
         "x_rule=shell_3_4_8_3,"
         "background_moment_tolerance=0.0025,"
-        "local_cap_order=polar_6_azimuth_14,"
-        "cap_azimuth_axis=periodic_uniform_vs_true_dual_OBB_corner_sectors,"
+        "local_cap_polar_order=6,"
+        "cap_azimuth_axis=dual_OBB_corner_vs_mu_dependent_true_edge_sectors,"
         "source_radial_windows=true,"
         "exact_positive_4pi_S_M_moment_fit=true,"
-        "historical_phase_diagnostics=available_with_--p1-full-history,"
+        "historical_uniform_phase_diagnostics=available_with_--p1-full-history,"
         "gate=not_certified",
         flush=True,
     )
     outcome={}
-    for corners,label in (
-        (False,"source_cap_refined_both"),
-        (True,"source_cap_box_corners_both"),
+    for edges,label in (
+        (False,"source_cap_box_corners_both"),
+        (True,"source_cap_box_edges_both"),
     ):
         z=trial(
             basis,x1,inner1,cache,method="radial",
@@ -948,8 +952,10 @@ def main_focused():
             mode_radial_panels=True,mode_source_caps=True,
             cap_polar_order=6,cap_azimuthal_order=14,
             cap_azimuth_phase=0.0,
-            cap_box_corner_panels=corners,
+            cap_box_corner_panels=not edges,
             cap_corner_sector_order=2,
+            cap_box_edge_panels=edges,
+            cap_edge_sector_order=2,
         )
         outcome[label]=z
         print(
@@ -968,7 +974,7 @@ def main_focused():
         print(
             "p1_full_sea_focused_cap_quality: "
             f"variant={label},"
-            f"azimuth_scheme={'true_OBB_corner_sectors' if corners else 'uniform_periodic'},"
+            f"azimuth_scheme={'true_OBB_edges_at_each_mu' if edges else 'true_OBB_corner_sectors'},"
             f"x_points={cap['points']},"
             f"accepted={cap['accepted']},"
             f"fallback={cap['fall_back']},"
@@ -1002,8 +1008,8 @@ def main_focused():
             +",scope=raw_pair_antisymmetry_relative_to_self_energies",
             flush=True,
         )
-    base=outcome["source_cap_refined_both"]
-    shifted=outcome["source_cap_box_corners_both"]
+    base=outcome["source_cap_box_corners_both"]
+    shifted=outcome["source_cap_box_edges_both"]
     L0,L1=base["L"],shifted["L"]
     diag0,diag1=np.diag(L0),np.diag(L1)
     frac=np.abs(diag1-diag0)/np.maximum(np.abs(diag0),1e-40)
@@ -1014,37 +1020,37 @@ def main_focused():
     normalized=np.abs((L1-L0)/scale)
     mutual=normalized[np.triu_indices(basis.size,1)]
     print(
-        "p1_full_sea_source_cap_corner_cross: "
-        "same_x_same_curl_modes_same_cap_polar_order_same_radial_"
+        "p1_full_sea_source_cap_edge_cross: "
+        "same_x_same_curl_modes_same_cap_polar_and_sector_order_same_radial_"
         "same_exact_4pi_S_M,"
         f"relative_L={_relative(L1,L0):.8g},"
         f"self_relative={_self_change(L1,L0):.8g},"
         f"raw_skew_unshifted={base['diagnostic']:.8g},"
         f"raw_skew_shifted={shifted['diagnostic']:.8g},"
-        "only_local_azimuth_quadrature_changed=true,"
-        "true_OBB_corner_bearings_both_packages=true,"
+        "only_local_azimuth_mu_dependent_edge_cuts_added=true,"
+        "all_original_corner_cuts_preserved=true,"
         "gate=not_certified",
         flush=True,
     )
     print(
         "p1_full_sea_mode_delta: "
-        "comparison=source_cap_box_corners_vs_refined,"
+        "comparison=source_cap_box_edges_vs_corners,"
         +",".join(f"self{i}={v:.8g}" for i,v in enumerate(frac))
         +f",max_self={max(frac):.8g},"
         +f"max_mutual_self_normalized={max(mutual):.8g}",
         flush=True,
     )
-    # Explicit weak mutual pair values from genuinely different
-    # physical-box angular charts, without interpreting a sign change
-    # in a small near-cancelled coupling as a physical fact.
+    # Explicit weak mutual pair values isolate each physical OBB
+    # edge-cone polar angle intersection from fixed corner bearings.
+    # A small signed coupling has no certified sign until convergence.
     print(
         "p1_full_sea_focused_weak_mutual: "
-        f"L02_uniform={L0[0,2]:.12g},"
-        f"L02_corner={L1[0,2]:.12g},"
-        f"L13_uniform={L0[1,3]:.12g},"
-        f"L13_corner={L1[1,3]:.12g},"
-        f"L14_uniform={L0[1,4]:.12g},"
-        f"L14_corner={L1[1,4]:.12g},"
+        f"L02_corner={L0[0,2]:.12g},"
+        f"L02_edge={L1[0,2]:.12g},"
+        f"L13_corner={L0[1,3]:.12g},"
+        f"L13_edge={L1[1,3]:.12g},"
+        f"L14_corner={L0[1,4]:.12g},"
+        f"L14_edge={L1[1,4]:.12g},"
         "gate=not_certified",
         flush=True,
     )
