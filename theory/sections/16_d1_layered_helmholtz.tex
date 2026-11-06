@@ -1,5 +1,17 @@
 % Independent D1 coaxial spectral reference. 2026-11-06; D1 remains open.
 \section{D1 独立共轴分层 Helmholtz 物理直接参考：谱域传播与端口--场一致性}
+
+\paragraph{方法迁移，而不是论文数字拟合。}
+本节谱域 Helmholtz 分离、衰减分支、源跳跃、层界面 DtN、
+复端口与 Joule 功率是为了学习并提取成熟计算方法。
+原论文表格对照只作为受限轴对称模型的历史附加证据，
+\textbf{不是}任意 SE(3) BFZI 求解的必要验收标准，
+也不因个别表格差异而继续为其调参。
+真实 BFZI 任意位姿和两个绝缘盒需要独立三维
+Maxwell--MQS $A$--$\phi$ 保结构参考及
+TEAM--7 证据，详见
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/METHOD\_TRANSFER\_D1\_TO\_D2.md}。
+
 \label{sec:bfzi-d1-layered-helmholtz}
 
 \paragraph{角色及严格适用范围。}
