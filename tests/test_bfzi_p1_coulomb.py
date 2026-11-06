@@ -384,3 +384,19 @@ def test_source_cap_positive_moment_fit_conserves_exact_ball_area_s_and_m():
     assert stats["max_scalar_moment_rel"]<2e-8
     assert stats["max_first_moment_scaled"]<2e-7
     np.testing.assert_allclose(u[0,0],[2*math.pi,0,0],rtol=1e-9,atol=1e-12)
+    refined_stats={}
+    _,fine_u=assemble_coulomb_radial(
+        np.zeros((1,3)),np.ones(1),source,unit_ball,
+        radial_order=3,polar_order=4,azimuthal_order=10,
+        source_angular_caps=windows,
+        source_cap_polar_order=6,source_cap_azimuthal_order=14,
+        exact_scalar_moments=np.array([2*math.pi]),
+        exact_first_moments=np.zeros((1,3)),
+        source_cap_stats=refined_stats,
+        return_point_potentials=True,
+    )
+    assert refined_stats["accepted"]==1
+    assert refined_stats["max_solid_angle_rel"]<2e-8
+    assert refined_stats["max_scalar_moment_rel"]<2e-8
+    assert refined_stats["max_first_moment_scaled"]<2e-7
+    np.testing.assert_allclose(fine_u[0,0],[2*math.pi,0,0],rtol=1e-9,atol=1e-12)
