@@ -20,7 +20,8 @@ from sdfmpneo_bfzi.direct3d_aphi import (
 )
 
 
-def _report(result, case, frequency, *, outer_bc='secondary_zero', closed_path_z=None):
+def _report(result, case, frequency, *, outer_bc='secondary_zero', closed_path_z=None,
+            vacuum_image_z=None, medium_reaction_z=None):
     def to_complex_matrix(a):
         return [[[float(v.real), float(v.imag)] for v in row] for row in a]
     phase_cases={}
@@ -43,8 +44,14 @@ def _report(result, case, frequency, *, outer_bc='secondary_zero', closed_path_z
         status="D2 early 3D finite-volume-domain A-phi prototype; not TEAM-7 or G1 PASS",
         case=case, frequency_hz=frequency,
         volume_overlap_z_ohm=to_complex_matrix(result.delta_z),
-        closed_path_reaction_z_ohm=(
+        material_increment_closed_port_z_ohm=(
             to_complex_matrix(closed_path_z) if closed_path_z is not None else None),
+        vacuum_image_reaction_z_ohm=(
+            to_complex_matrix(vacuum_image_z)
+            if vacuum_image_z is not None else None),
+        total_medium_reaction_z_ohm=(
+            to_complex_matrix(medium_reaction_z)
+            if medium_reaction_z is not None else None),
         phase_port_vs_volume=phase_cases,
         closed_source_reciprocity_error_ohm=(
             float(reciprocity_error) if reciprocity_error is not None else None),
@@ -88,6 +95,8 @@ def main():
         sol=solve_aphi(mesh,args.frequency,[imposed_uniform_B],
                        outer_bc=args.outer_bc)
         closed_path_z=None
+        vacuum_image_z=None
+        medium_reaction_z=None
     else:
         from examples.bfzi_mqs_demo import build_demo_scene
         from sdfmpneo_bfzi.source_reference import polygonal_port_vertices
@@ -113,11 +122,13 @@ def main():
             sources.append(closed_polyline_potential(polygon))
             port_paths.append([(1.,polygon)])
         sol=solve_aphi(mesh,args.frequency,sources,outer_bc=args.outer_bc)
-        from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance_exact
-        closed_path_z=closed_source_port_impedance_exact(
-            sol,args.frequency,port_paths )
+        from sdfmpneo_bfzi.direct3d_port import medium_vacuum_port_increment
+        medium_reaction_z,vacuum_image_z,closed_path_z = medium_vacuum_port_increment(
+            sol,args.frequency,sources,port_paths,outer_bc=args.outer_bc)
     print(json.dumps(_report(sol,args.case,args.frequency,
-                             outer_bc=args.outer_bc,closed_path_z=closed_path_z),
+                             outer_bc=args.outer_bc,closed_path_z=closed_path_z,
+                             vacuum_image_z=vacuum_image_z,
+                             medium_reaction_z=medium_reaction_z),
                      indent=2))
 
 
