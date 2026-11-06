@@ -82,7 +82,6 @@ def main():
     parser.add_argument('--panels-per-corner',type=int,default=12)
     parser.add_argument('--outer-bc',choices=('secondary_zero','total_zero'),
                         default='secondary_zero')
-    parser.add_argument('--port-subsegments',type=int,default=2)
     args=parser.parse_args()
     if args.case=='smoke':
         if args.mesh or args.write_geo:
