@@ -1,4 +1,7 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+> **D2 最新（2026-11-06）：** [非圆椭圆柱解析 Maxwell `phi/E/Joule` 极限和实算](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)、[真实解析源直接参与 3D A–φ 材料 PDE](../../../sdfmpneo_bfzi/direct3d_primary_secondary.py)，以及[修复非仿射源 E 错误插值](../../../sdfmpneo_bfzi/direct3d_probe.py)均已提交。初次真空闭合线圈 E 专项测试曾失败，修正后本地 16 tests passed；BFZI/TEAM7 现在可选 `--solve-analytic-primary` 用物理材料 PDE 解空间场，而非粗总场求完后替换源。**仅低感应强度非轴对称材料解析验证获得收敛趋势，正式 D2/TEAM7/无限海水高保真仍 OPEN**；旧 G1 FAIL、教师冻结，无 GitHub Actions。
+>
+
 > **2026-11-06 D2 当前方向：独立真实 PDE 精度，而非仅端口代数闭合。** 新增 [椭圆柱非零 `phi` 的解析 Maxwell 场/Joule 与五档实际计算](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)，验证了材料电荷守恒和三维 A–φ 的低感应强度极限；并把**解析真空闭合线源真正用于导电 PDE 激励**，作为 BFZI/TEAM-7 的新独立物理场求解路径（`--solve-analytic-primary`）。低频椭圆柱 Joule 最细档误差约 −0.29%，但 E 仍误差 5.29%；高导电 TEAM-7 与真实双 SE(3) 盒仍无已认证的 h/R/独立数值精度，**D2 OPEN**。前述修正不等于论文复现或教师验收。G1 FAIL，教师冻结，禁用 GitHub Actions。
 >
 
