@@ -1,5 +1,8 @@
 # BFZI P1-C：真实双盒全海水五模态原始 Coulomb L 的本机日志
 
+> **2026-11-06 V1.0 方法路线更新（优先于以下历史正文）：** 物理直接法已按 [权威规范](../../PHYSICAL_DIRECT_METHOD_LOCKED.md) 和 [D0–D6 验收](../../PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) 锁定。先独立复现共轴海水 Helmholtz 半解析与三维 A–φ 参考，再对完整 BFZI 复阻抗/感生电流/海水损耗逐项验证。**旧 G1/P1-C 角帽及原核五模态历史试验挂起，G1 FAIL，禁止正式神经教师与 GitHub Actions。** 下文属历史记录，不应继续按其“下一次运行”命令进行数值试错；本轮未改代码、未本机实跑。
+
+
 - [最新完整原始日志](latest_full.log)
 - [最新自动摘要](latest_summary.md)
 - 本机独立入口：python run.py --mode bfzi-p1-full-sea --with-tests
