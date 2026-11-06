@@ -119,13 +119,19 @@ def test_actual_box_direct_radial_original_coulomb_small_space_runs():
         original.outer_envelope,original.outer_taper_width,
     )
     x,wx=scene.quadrature(2,3,4,wall_layers=0)
+    raw_pairs={}
     L,skew=assemble_basis_coulomb_radial(
         basis,np.eye(basis.size),x,wx,
         radial_order=2,polar_order=2,azimuthal_order=6,
+        reciprocity_stats=raw_pairs,
         return_diagnostics=True,
     )
     assert L.shape==(2,2) and np.isfinite(L).all()
     assert np.isfinite(skew)
+    assert raw_pairs["worst_pair"]==(0,1)
+    assert np.isfinite(raw_pairs["maximum_pair_self_normalized"])
+    assert len(raw_pairs["all_pairs"])==1
+    assert abs(raw_pairs["raw_global_skew"]-skew)<1e-15
     np.testing.assert_allclose(L,L.T,rtol=0,atol=0)
     # Exercise real BFZI mode-center + (possibly rotated) Gaussian
     # metrics, with the same physical wet-ray clipping.
