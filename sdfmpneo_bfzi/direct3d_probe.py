@@ -32,11 +32,17 @@ def closed_polyline_magnetic(vertices):
 
 
 def sample_cell_fields(result, points, *, incident_magnetic=None,
-                       prefer_conductor=False, nearest=96, cell_indices=None):
+                       prefer_conductor=False, nearest=96, cell_indices=None,
+                       incident_potentials=None, frequency_hz=None):
     """Sample J and B on known physical tetrahedra.
 
     incident_magnetic: list[callable([n,3]) -> [n,3]] for *unit* ports;
       without it only B_secondary is returned (cannot claim total B).
+    incident_potentials/frequency_hz: when E contains a non-affine
+    analytic closed-source field, analytically remove it at quadrature
+    points before Whitney interpolation, then restore at probe positions.
+    Otherwise E is assumed affine in the tetrahedron. This distinction
+    matters even for sigma=0, and for all BFZI physical E/J/q probes.
     cell_indices fixes the SAME tetrahedra for medium/vacuum subtraction
     even on conductor/insulator interfaces; each point is checked to lie
     in its specified cell. Without it, selection may change when sigma
@@ -87,8 +93,38 @@ def sample_cell_fields(result, points, *, incident_magnetic=None,
     # quadrature field values, rather than using cell-mean J as pointwise J.
     lam=np.asarray(probe_bary)
     quad_weights=lam @ np.linalg.inv(_BARY4)
-    E=np.einsum('nq,pnqc->pnc',quad_weights,
-                result.electric_at_quadrature[:,idx])
+    quadrature_E=result.electric_at_quadrature[:,idx]
+    if incident_potentials is None:
+        if frequency_hz is not None:
+            raise ValueError('frequency_hz requires incident_potentials')
+        E=np.einsum('nq,pnqc->pnc',quad_weights,quadrature_E)
+    else:
+        # A known closed-wire A_source is NON-AFFINE within a tetrahedron.
+        # The interpolation contract applies only to Nedelec reaction A
+        # and P1 grad(phi), not to the exact analytic source field.
+        nports=quadrature_E.shape[0]
+        if (len(incident_potentials)!=nports or frequency_hz is None
+                or not np.isfinite(frequency_hz) or frequency_hz<=0):
+            raise ValueError('One analytic A per port and positive frequency required')
+        omega=2*np.pi*frequency_hz
+        qpoints=np.einsum('qi,tij->tqj',_BARY4,corners[idx])
+        flat=qpoints.reshape(-1,3)
+        source_at_quadrature=np.asarray([
+            np.asarray(fun(flat),complex).reshape(len(p),4,3)
+            for fun in incident_potentials])
+        source_at_probe=np.asarray([
+            np.asarray(fun(p),complex) for fun in incident_potentials])
+        if (source_at_quadrature.shape!=quadrature_E.shape
+                or source_at_probe.shape!=(nports,len(p),3)
+                or not np.isfinite(source_at_quadrature).all()
+                or not np.isfinite(source_at_probe).all()):
+            raise ValueError('Invalid analytic primary potential values')
+        # E_quad = -iω(A_reaction_h + A_exact) - grad(phi_h).
+        # Remove A_exact at Gauss positions, interpolate the truly affine
+        # FE reaction-only part, then add A_exact at the ACTUAL probe.
+        reaction_q = quadrature_E + 1j*omega*source_at_quadrature
+        reaction_p = np.einsum('nq,pnqc->pnc',quad_weights,reaction_q)
+        E = reaction_p - 1j*omega*source_at_probe
     J=mesh.sigma[idx][None,:,None]*E
     q=.5*mesh.sigma[idx][None,:]*np.sum(abs(E)**2,axis=-1)
     out={'cell_index':idx,'sigma_S_m':mesh.sigma[idx],
