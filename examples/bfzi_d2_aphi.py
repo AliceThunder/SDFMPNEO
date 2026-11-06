@@ -113,9 +113,9 @@ def main():
             sources.append(closed_polyline_potential(polygon))
             port_paths.append([(1.,polygon)])
         sol=solve_aphi(mesh,args.frequency,sources,outer_bc=args.outer_bc)
-        from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance
-        closed_path_z=closed_source_port_impedance(
-            sol,args.frequency,port_paths,subsegments=args.port_subsegments)
+        from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance_exact
+        closed_path_z=closed_source_port_impedance_exact(
+            sol,args.frequency,port_paths )
     print(json.dumps(_report(sol,args.case,args.frequency,
                              outer_bc=args.outer_bc,closed_path_z=closed_path_z),
                      indent=2))
