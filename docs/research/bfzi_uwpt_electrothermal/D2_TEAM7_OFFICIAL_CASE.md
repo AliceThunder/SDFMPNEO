@@ -1,5 +1,9 @@
 # D2｜COMPUMAG TEAM-7 官方三维涡流 benchmark：几何、源与初始实算
 
+> **2026-11-06 最新修订：** 下面粗网格表的 50/200 Hz 数值属于旧 `secondary_zero` 有限域和**体积重叠算子**，只代表代数内部计算，不是物理闭合端口认证。已新增三维真实线圈路径感生电压 `direct3d_port.py`、边元总场边界选项 `outer_bc='total_zero'`、独立 [Elmer TEAM7 源/网格/时域/边界对照契约](D2_ELMER_INDEPENDENT_REFERENCE.md)。真实端口电压、体积 Joule、互易、外域/网格还没有独立收敛；不可把下面的 `Pport=Pvolume` 旧描述视为本轮最终判断。独立参考正式理论见 [第 17 节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。**D2 仍 OPEN。**
+>
+
+
 **2026-11-06｜状态：官方物理输入已转为代码，粗网格 50/200 Hz 已在隔离 Python 环境实跑。此处仅表示 D2 程序通路形成，**不是**测量精度或外域收敛验收。**
 
 ## 权威来源与物理输入
