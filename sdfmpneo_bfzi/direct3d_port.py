@@ -91,3 +91,96 @@ def closed_source_port_impedance(result, frequency_hz, source_strands,
             integral=np.einsum('psrqj,sj,q->p',a,dl,w)/subsegments
             Z[p] += 1j*2*np.pi*frequency_hz*weight*integral
     return Z
+
+
+def closed_source_port_impedance_exact(result, frequency_hz, source_strands):
+    """Exact source-chord circulation of first-order Nedelec A_react.
+
+    Partition each straight source chord at all intersected tetrahedral
+    faces, integrate each cellwise *tangential* Whitney edge field exactly.
+    Handles paths on shared faces without double-counting. This eliminates
+    Gauss sampling error, NOT mesh error or finite-domain boundary flux.
+    """
+    if not np.isfinite(frequency_hz) or frequency_hz <= 0:
+        raise ValueError('Frequency must be positive')
+    if (result.edge_coefficients is None or
+            len(source_strands) != len(result.edge_coefficients)):
+        raise ValueError('Port paths must match solved incident excitations')
+    mesh = result.mesh
+    vtx = mesh.nodes[mesh.tetrahedra]
+    centers = vtx.mean(axis=1)
+    max_radius = float(np.linalg.norm(
+        vtx-centers[:, None, :], axis=2).max())
+    tree = cKDTree(centers)
+    _, edge_ids, signs, *_ = _topology(mesh)
+    grads = np.zeros((len(vtx), 4, 3))
+    transforms = (vtx[:, 1:] - vtx[:, 0, None, :]).transpose(0, 2, 1)
+    grads[:, 1:, :] = np.linalg.inv(transforms)
+    grads[:, 0, :] = -grads[:, 1:, :].sum(axis=1)
+    out = np.zeros((len(source_strands), len(source_strands)), complex)
+    for p, strands in enumerate(source_strands):
+        if not strands:
+            raise ValueError('Every physical port requires a closed source')
+        for weight, path in strands:
+            v = np.asarray(path, float)
+            if (v.ndim != 2 or v.shape[1] != 3 or len(v) < 4
+                    or not np.isfinite(v).all()
+                    or not np.array_equal(v[0], v[-1])
+                    or not np.isfinite(weight) or not np.isreal(weight)
+                    or np.any(np.linalg.norm(np.diff(v, axis=0), axis=1) <= 0)):
+                raise ValueError('Source strand must be real-weight and exactly closed')
+            for start, stop in zip(v[:-1], v[1:]):
+                dx = stop-start
+                # Any point on a segment in a tet lies within its vertex
+                # radius of the cell centroid; the global bound is safe,
+                # even for a graded nonuniform mesh.
+                candidates = tree.query_ball_point(
+                    (start+stop)/2,
+                    float(np.linalg.norm(dx))/2 + 1.00001*max_radius + 1e-12)
+                if not candidates:
+                    raise ValueError('Source chord outside tetrahedral reference mesh')
+                candidates = np.asarray(sorted(candidates), dtype=int)
+                g = grads[candidates]
+                bary123 = np.einsum('tij,tj->ti', g[:, 1:, :],
+                                    start-vtx[candidates, 0])
+                lam = np.column_stack((1-bary123.sum(axis=1), bary123))
+                slopes = np.einsum('tij,j->ti', g, dx)
+                low = np.zeros(len(candidates))
+                high = np.ones(len(candidates))
+                valid = np.ones(len(candidates), dtype=bool)
+                for a in range(4):
+                    d = slopes[:, a]
+                    flat = abs(d) <= 1e-13
+                    valid &= ~(flat & (lam[:, a] < -1e-10))
+                    leaving = d < -1e-13
+                    entering = d > 1e-13
+                    high[leaving] = np.minimum(
+                        high[leaving], -lam[leaving, a]/d[leaving])
+                    low[entering] = np.maximum(
+                        low[entering], -lam[entering, a]/d[entering])
+                intersect = valid & (high-low > 1e-11)
+                if not np.any(intersect):
+                    raise ValueError('Source chord outside tetrahedral reference mesh')
+                cells = candidates[intersect]
+                lo = low[intersect]
+                hi = high[intersect]
+                cuts = np.sort(np.r_[0., 1., lo, hi])
+                for left, right in zip(cuts[:-1], cuts[1:]):
+                    if right-left <= 1e-11:
+                        continue
+                    mid = .5*(left+right)
+                    cover = np.flatnonzero(
+                        (lo <= mid+1e-11) & (hi >= mid-1e-11))
+                    if not len(cover):
+                        raise ValueError('Source chord escapes tetrahedral reference mesh')
+                    cell = int(cells[int(cover[0])])
+                    gc = grads[cell]
+                    dlam = gc@dx
+                    b123 = gc[1:]@(start+mid*dx-vtx[cell, 0])
+                    b4 = np.r_[1-b123.sum(), b123]
+                    tangential = np.array([
+                        (b4[i]*dlam[j]-b4[j]*dlam[i])*signs[cell, e]
+                        for e, (i, j) in enumerate(_EDGES)])
+                    out[p] += weight*(right-left)*(
+                        result.edge_coefficients[:, edge_ids[cell]]@tangential)
+    return 1j*(2*np.pi*frequency_hz)*out
