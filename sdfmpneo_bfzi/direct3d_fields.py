@@ -34,7 +34,7 @@ def sample_primary_secondary_b(reference, source_strands, points, *,
                              prefer_conductor=prefer_conductor,
                              nearest=nearest)
     vac = sample_cell_fields(reference.vacuum, points,
-                             prefer_conductor=prefer_conductor,
+                             cell_indices=med["cell_index"],
                              nearest=nearest)
     if not np.array_equal(med["cell_index"], vac["cell_index"]):
         raise ValueError("Medium/vacuum probes must use identical tetrahedra")
@@ -82,7 +82,7 @@ def sample_primary_secondary_fields(reference, source_strands, frequency_hz,
         reference, source_strands, p,
         prefer_conductor=prefer_conductor, nearest=nearest)
     vacuum = sample_cell_fields(
-        reference.vacuum, p, prefer_conductor=prefer_conductor,
+        reference.vacuum, p, cell_indices=out["cell_index"],
         nearest=nearest)
     nports = len(reference.source_edge_load)
     a_primary = np.zeros((nports, len(p), 3), dtype=complex)
