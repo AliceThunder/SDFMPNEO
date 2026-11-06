@@ -1,5 +1,45 @@
 # D2｜COMPUMAG TEAM-7 官方三维涡流 benchmark：几何、源与初始实算
 
+> **2026-11-06 后续实算与修正（以下内容为当前优先证据）：** 端口积分现已改为\`direct3d_port.closed_source_port_impedance_exact\`：将每条真实闭合源弦段与四面体精确裁剪、在每段上解析积分最低阶 Nédélec 切向场。并引入\`medium_vacuum_port_increment\`，对于\`total_zero\`外边界先扣除同一有限域真空镜像电感，不把纯真空边界反作用误标成海水/铝板感抗。旧表的端口重叠与功率闭合并非真实感生端口证据。新源码和真实运行结果见下文，**D2 仍 OPEN**。
+>
+## 新增：材料共形分层加密后的直接端口与 Joule 数值（不作 PASS）
+
+为在不依赖尚未安装的 Gmsh/Elmer 软件时先检查三维离散核心，引入\`graded_team7_smoke_mesh(level=1..4)\`。其导电铝板、偏心方孔与真实厚度固定；对每个区间分别细分，\`z=0..19 mm\` 方向分成 \`level\` 层，金属和孔边界恰好落在网格面。材料真实体积在四级网格中均为 \`0.001420668 m³\`，不是通过重新缩放或平移金属面积获得数值变化。
+
+固定\`50 Hz\`、\`+2742 AT\`、线圈截面\`2×2\` Gauss、每个圆角\`5\` 弦段、\`secondary_zero\`、外盒\`x,y∈[-0.15,0.44]m, z∈[-0.08,0.25]m\`，独立隔离环境实算：
+
+| 分层级别 | 全部四面体 | 铝板四面体 | 精确闭合源线积分端口功率 (W) | 金属总场 Joule (W) | 两者比值 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 750 | 48 | 8.220679 | 21.544659 | 0.3816 |
+| 2 | 2304 | 384 | 7.388486 | 13.162529 | 0.5613 |
+| 3 | 5082 | 1296 | 7.312475 | 10.899082 | 0.6709 |
+| 4 | 9408 | 3072 | 7.084795 | 9.802378 | 0.7228 |
+
+这证明前一轮端口采样高低阶不是全部差异的根源；实际三维材料离散细化显著改变体积损耗。同一外盒有限边界的反作用场能量通量与路径/体积有限元误差仍未消除，**不能仅通过精确积分或一条网格序列就宣称物理功率守恒**。50 Hz 和 200 Hz 的真实材料趋肤深度、源截面积分、外域边界差异须分别处理。上表不是 Elmer 或实验测量结果，也不是在官方大外盒上得到的精度判断。
+
+\`total_zero\` 在真空时反作用势可以非零：在该粗 TEAM-7 小盒下得到真空镜像项约 \`-22.6271 i Ω\`（50 Hz、同一细丝源离散），它是人工总场边界引入的电感偏移，不能算成金属感抗。代码明确输出：
+- \`total_medium_reaction_z\`：导电时相对无限真空入射源的反作用；
+- \`finite_domain_vacuum_image_z\`：无导电时、相同外域的边界镜像；
+- \`material_increment_closed_port_z = total_medium_reaction_z - finite_domain_vacuum_image_z\`：材料相对同一有限外盒真空的增量；
+- \`volume_dissipation_W_for_1A\`：导电区\`0.5 σ |E_total|²\`积分；
+- \`source_voltage_vs_metal_joule_relative_gap\`：独立源路径与导电功率仍未闭合的差异。
+
+用下面命令重复同一四档网格测试（无任何 GitHub Actions）：
+
+\`\`\`powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_port.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q
+
+python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5
+python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 2 --frequency 50 --corner-panels 5
+python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 3 --frequency 50 --corner-panels 5
+python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 4 --frequency 50 --corner-panels 5
+\`\`\`
+
+真实无限海水与 TEAM-7 标准验收的下一关仍是：**同一物理源、共形 Gmsh 官方尺寸细网格、外域条件与 Elmer WhitneyAVSolver 同工况对照**；一旦其中端口与体积能量出现不一致，就先按物理边界能量通量和源/场离散处理，禁止后验拟合论文表格。
+
+
+
 > **2026-11-06 最新修订：** 下面粗网格表的 50/200 Hz 数值属于旧 `secondary_zero` 有限域和**体积重叠算子**，只代表代数内部计算，不是物理闭合端口认证。已新增三维真实线圈路径感生电压 `direct3d_port.py`、边元总场边界选项 `outer_bc='total_zero'`、独立 [Elmer TEAM7 源/网格/时域/边界对照契约](D2_ELMER_INDEPENDENT_REFERENCE.md)。真实端口电压、体积 Joule、互易、外域/网格还没有独立收敛；不可把下面的 `Pport=Pvolume` 旧描述视为本轮最终判断。独立参考正式理论见 [第 17 节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。**D2 仍 OPEN。**
 >
 
