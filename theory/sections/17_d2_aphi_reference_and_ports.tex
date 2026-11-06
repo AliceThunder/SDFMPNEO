@@ -81,6 +81,93 @@ Elmer TEAM--7 实例构造相同的有限域边界条件；
 至少三档外域（或透明边界/外场边界积分）证明
 端口和空间场尾部的收敛。
 
+\subsection{关键更正：闭合端口载荷必须与边元端口读出对偶一致}
+\label{sec:bfzi-d2-consistent-galerkin}
+
+早期反作用分解原型采用
+$-\mathrm i\omega\int_{\Omega_c}\sigma\bm A_{\rm src}\cdot
+\bar{\bm v}_h\,\mathrm dV$
+加载导电涡流，却对有限元反作用解沿真实线圈路径另行
+计算感生电压。前者把已知源势强加为体源项，后者把线圈
+作为闭合\emph{线流源}；在有限维空间中二者并非严格互为
+转置。即使端口线积分本身已精确，也可能使端口--体积
+Joule 功率显著不闭合，不能把所有偏差归咎于磁边界或
+后处理求积。
+
+当前 D2 正式主算法改用\emph{总场} $\bm A_h$ 的同一
+Galerkin 源载荷，保持 $e^{+\mathrm i\omega t}$ 约定：
+\begin{equation}
+ \nabla\times(\mu_0^{-1}\nabla\times\bm A)
+   +\sigma(\mathrm i\omega\bm A+\nabla\phi)
+       =\sum_{p=1}^2 I_p\bm j_p,
+ \qquad \bm j_p(\bm x)
+   =\oint_{\Gamma_p}\delta(\bm x-\bm r)\,\mathrm d\bm\ell .
+\end{equation}
+对第 $p$ 条独立闭合端口与第 $e$ 个有向
+N\'ed\'elec 基函数 $\bm w_e$ 定义\emph{一次性}源矩阵
+\begin{equation}
+  \boxed{L_{pe}=\oint_{\Gamma_p}\bm w_e\cdot
+        \mathrm d\bm\ell.}
+\end{equation}
+对真实连续 BFZI，$\Gamma_p$ 包括整根螺旋和完整
+馈回流；圆角仅经显式的几何弦段加密逼近。由
+第~\ref{sec:bfzi-d2-aphi}~节对应的弱式装配，
+边元方程的右端就是 $\bm L^{\mathsf T}\bm I$；
+在相同的有向全局边元坐标下，\emph{电压读出使用
+完全相同的 $\bm L$}。令 $\bm a_h^\sigma$ 与
+$\bm a_h^0$ 为同一有限外域、同一网格、相同
+$H(\mathrm{curl})$ 空间和 $n\times\bm A=0$
+总场边界下分别带导电材料与全真空的总场系数，则
+\begin{equation}
+ \boxed{
+ \Delta\bm Z_h^{\mathrm{material}}
+   =\mathrm i\omega\,\bm L
+    (\bm a_h^\sigma-\bm a_h^0),\qquad
+ \bm Z_h^\sigma=\mathrm i\omega\bm L\bm a_h^\sigma .
+ }
+\end{equation}
+这里的 $\bm a_h$ 按两个独立单位端口求解所得的
+自由度矩阵，符号与上一节中的反作用连续场
+$\bm a$ 不同。有限导线的真空自阻抗不能由零半径
+线源模型直接获得；$\bm Z_h^\sigma-\bm Z_h^0$
+在同一离散上的相减只给导电材料增量，且仍需
+源弦段、网格、外域的独立收敛。
+
+由于复频域离散系统采用一致的对称（非 Hermitian）
+Galerkin 双线性型，$\bm L$ 又同时负责激励与
+源端口读取，材料增量自然满足
+$\Delta\bm Z_h^{\mathsf T}=\Delta\bm Z_h$
+（离散互易）。在闭合边界上的总势切向为零、
+线性无源材料和电荷守恒子空间得到正确离散的条件下，
+变分功率恒等式给出
+\begin{equation}
+ \boxed{
+ \frac12\Re\left[
+ \bm I^{\mathrm H}\Delta\bm Z_h^{\mathrm{material}}\bm I
+ \right]
+ =\frac12\int_{\Omega_c}\sigma
+  \left|\mathrm i\omega\bm A_h^\sigma
+       +\nabla\phi_h^\sigma\right|^2\,\mathrm dV .
+ }
+\end{equation}
+此处导电区电场
+$\bm E_h=-\mathrm i\omega\bm A_h^\sigma-\nabla\phi_h^\sigma$。
+两侧使用相互独立的自由度组合和四面体体积积分。
+\textbf{这是离散结构、源/端口方向及功率装配的必要检验，
+不是对连续 Maxwell 解或 TEAM--7 实测精度的充分证明。}
+细丝真空自场的数值网格奇异性需要同域扣除，
+而体积有限元 $\bm A_h^\sigma$ 的外域截断、趋肤
+空间层、独立测点和材料几何仍需单独收敛。
+
+在相同的 50 Hz TEAM--7 带孔铝板、小截断外盒
+和固定 $2\times2$ 赛道截面积分下，原体积分离源法
+曾得到约 $8.221$ W 线圈端口对约 $21.545$ W
+体积 Joule（750 四面体）。改用该一致源载荷后，
+对应两者同为约 $6.932518$ W，差异在
+$4\times10^{-14}$ W 以内。加密四面体后电阻/磁抗
+仍非单调收敛，故 \textbf{D2 仍 OPEN}，禁止据此
+将高保真参考宣称为 PASS。
+
 \subsection{线元端口的四面体交段精确积分及真空边界扣除}
 
 最低阶有向 Whitney--N\'ed\'elec 边元
