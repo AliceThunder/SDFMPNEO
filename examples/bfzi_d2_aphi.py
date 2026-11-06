@@ -33,8 +33,13 @@ def main():
     p.add_argument('--mesh-size', type=float, default=.025)
     p.add_argument('--panels-per-corner', type=int, default=12)
     p.add_argument('--output', type=Path, help='Optional full JSON report')
+    p.add_argument('--probe', type=float, nargs=3, action='append',
+                   metavar=('X','Y','Z'),
+                   help='3D field query in meters (repeatable, BFZI case only)')
     args = p.parse_args()
 
+    if args.case == 'smoke' and args.probe:
+        p.error('--probe is for a physical BFZI closed-port case')
     if args.case == 'smoke':
         if args.mesh or args.write_geo:
             p.error('Smoke uses built-in tetrahedra, not a Gmsh mesh')
@@ -94,6 +99,51 @@ def main():
                 'total_field_seawater_joule_W':volume,
                 'absolute_gap_W':abs(port-volume),
             }
+        probe_report = None
+        if args.probe:
+            from sdfmpneo_bfzi.direct3d_fields import (
+                sample_primary_secondary_fields)
+            points = np.asarray(args.probe, dtype=float)
+            sample = sample_primary_secondary_fields(
+                reference, ports, args.frequency, points,
+                prefer_conductor=True)
+            def carray(a):
+                a = np.asarray(a)
+                return np.stack((a.real,a.imag),axis=-1).tolist()
+            e = sample['E_total_primary_secondary_V_m']
+            b = sample['B_total_corrected_T']
+            sigma = sample['sigma_S_m']
+            phased = {}
+            for name,current in {
+                'I10':(1.,0.), 'I01':(0.,1.),
+                'I11':(1.,1.), 'I1minus1':(1.,-1.),
+                'I1plusi':(1.,1j),
+            }.items():
+                I = np.asarray(current,dtype=complex)
+                ei = np.einsum('p,pnc->nc',I,e)
+                bi = np.einsum('p,pnc->nc',I,b)
+                phased[name] = {
+                    'B_T':carray(bi),
+                    'E_V_m':carray(ei),
+                    'J_A_m2':carray(sigma[:,None]*ei),
+                    'q_W_m3':(.5*sigma*np.sum(abs(ei)**2,axis=-1)).tolist(),
+                }
+            probe_report = {
+                'positions_m':points.tolist(),
+                'selected_tetrahedra':sample['cell_index'].tolist(),
+                'sigma_S_m':sigma.tolist(),
+                'corrected_B_per_unit_port_T':carray(b),
+                'corrected_E_per_unit_port_V_m':carray(e),
+                'material_B_reaction_per_unit_port_T':carray(
+                    sample['B_material_reaction_fem_T']),
+                'raw_fem_B_per_unit_port_T':carray(
+                    sample['B_total_raw_fem_T']),
+                'current_combinations':phased,
+                'warning':('These primary-secondary spatial E/J/q fields '
+                           'are independent diagnostics; they are not certified '
+                           'by the discrete Galerkin port-power identity. '
+                           'No source-wire or outside-domain probes.'),
+            }
         report = {
             'status':'D2 3D BFZI closed-port Galerkin core; NOT high-fidelity PASS',
             'frequency_hz':args.frequency,
@@ -111,6 +161,7 @@ def main():
                 reference.material_increment_z[0,1]-
                 reference.material_increment_z[1,0])),
             'phase_port_vs_seawater_joule':phase_cases,
+            'spatial_field_probes':probe_report,
             'limitations':'Discrete source/port Joule equality does NOT certify corrected-source field accuracy. No finite copper self/skin/proximity losses, '
                           'no independently verified outer-domain and h convergence, '
                           'no completed Elmer TEAM-7 experiment agreement',
