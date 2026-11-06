@@ -38,6 +38,9 @@ def main():
     parser.add_argument('--current-sign', type=int, choices=(-1, 1), default=1)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--summary-only', action='store_true')
+    parser.add_argument('--solve-analytic-primary', action='store_true',
+                        help='Independently re-solve the conductivity A-phi PDE '
+                             'with the exact analytical closed-source incident A')
     args = parser.parse_args()
 
     if args.write_geo:
@@ -60,6 +63,12 @@ def main():
         args.width_order, args.height_order, args.corner_panels,
         return_strands=True, current_sign=args.current_sign)
     reference = solve_closed_ports(mesh, args.frequency, [strands])
+    physical = None
+    if args.solve_analytic_primary:
+        from sdfmpneo_bfzi.direct3d_primary_secondary import (
+            solve_closed_primary_secondary)
+        physical = solve_closed_primary_secondary(
+            mesh,args.frequency,[strands])
     corrected_joule_matrix = reference.analytic_source_corrected_joule(
         args.frequency, [A_source])
     corrected_power = .5*float(corrected_joule_matrix[0,0].real)
@@ -70,16 +79,22 @@ def main():
             reference, [strands], args.frequency, coords,
             prefer_conductor=('Jy_' in name), nearest=256)
         is_j = 'Jy_' in name
-        values = (sample['J_total_primary_secondary_A_m2'][0,:,1]
-                  if is_j else sample['B_total_corrected_T'][0,:,2])
+        if physical is not None:
+            independent = physical.sample_fields(
+                coords,prefer_conductor=is_j,nearest=256)
+            values = (independent['J_A_m2'][0,:,1] if is_j
+                      else independent['B_total_T'][0,:,2])
+        else:
+            values = (sample['J_total_primary_secondary_A_m2'][0,:,1]
+                      if is_j else sample['B_total_corrected_T'][0,:,2])
         raw = (sample['J_total_fem_A_m2'][0,:,1]
                if is_j else sample['B_total_raw_fem_T'][0,:,2])
         probes[name] = {
             'unit': 'A/m2' if is_j else 'T',
-            'observable': (
-                'analytic-primary plus FEM-material-reaction pointwise J_y'
-                if is_j else
-                'Biot-Savart-primary plus FEM-material-reaction B_z'),
+            'observable':(
+                'PDE-solved analytic primary E/J and reaction B'
+                if physical is not None else
+                'post-hoc primary substitution after total-Galerkin solve'),
             'values_real_imag': [
                 [float(v.real), float(v.imag)] for v in values],
             'raw_total_FEM_values_real_imag': [
@@ -110,13 +125,27 @@ def main():
         'closed_port_material_power_W_for_1A':port,
         'conducting_volume_joule_W_for_1A':volume,
         'analytic_source_corrected_joule_W_for_1A':corrected_power,
+        'analytic_primary_PDE_solved_joule_W_for_1A':(
+            physical.volume_power(np.array([1.+0j]))
+            if physical is not None else None),
+        'analytic_primary_PDE_closed_path_reaction_z_ohm':(
+            [float(physical.closed_source_reaction_z[0,0].real),
+             float(physical.closed_source_reaction_z[0,0].imag)]
+            if physical is not None else None),
+        'analytic_primary_PDE_volume_overlap_z_ohm':(
+            [float(physical.volume_overlap_z[0,0].real),
+             float(physical.volume_overlap_z[0,0].imag)]
+            if physical is not None else None),
         'corrected_field_vs_port_relative_gap':(
             abs(corrected_power-port)/max(abs(corrected_power),1e-30)),
         'absolute_power_gap_W':abs(port-volume),
         'relative_power_gap':abs(port-volume)/max(abs(volume),1e-30),
         'probes':probes,
         'B_probe_definition':'analytic Biot-Savart source plus FEM conductor reaction',
-        'J_probe_definition':'coarse Galerkin cell mean: NOT corrected surface-trace J',
+        'J_probe_definition':(
+            'PDE-solved analytic-primary Nedelec pointwise conductor-side J'
+            if physical is not None else
+            'post-hoc corrected Nedelec pointwise J; not a verified surface trace'),
         'phasor':'peak e^(+i omega t): phase0=Re, phase90=-Im',
         'limitations':(
             'Corrected pointwise J/B use analytic primary plus finite-element '
@@ -141,7 +170,8 @@ def main():
             'conducting_volume_joule_W_for_1A',
             'absolute_power_gap_W','relative_power_gap',
             'analytic_source_corrected_joule_W_for_1A',
-            'corrected_field_vs_port_relative_gap')
+            'corrected_field_vs_port_relative_gap',
+            'analytic_primary_PDE_solved_joule_W_for_1A')
         print(json.dumps({k:report[k] for k in selected},indent=2))
     else:
         print(json.dumps(report,indent=2))
