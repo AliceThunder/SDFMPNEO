@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **2026-11-06 D2 当前最新可运行主算法：** [一致闭合源 3D Galerkin D2](D2_CONSISTENT_GALERKIN_SOURCE_AND_PORT.md)、[物理双端口 CLI](../../../examples/bfzi_d2_aphi.py)、[TEAM7 CLI](../../../examples/bfzi_d2_team7.py)。已修复旧体源与真实闭合端口非对偶导致的错误大功率差；现在四档铝板网格的端口与 Joule 离散功率精确一致（各绝对功率仍未网格收敛！）。首次运行请执行 `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_port.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q`；接着 `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --summary-only`，再加密 level=2/3/4。正式同域 Gmsh/Elmer 和双独立 SE(3) BFZI 求解仍需要本机实际完成，**D2 OPEN、旧 G1 FAIL、禁用 GitHub Actions 和教师训练**。
+>
+
 > **2026-11-06 D2 最新可运行入口：** `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --summary-only`，再对 `--refinement-level 2/3/4` 重复。若需保留完整 4 条 × 17 点 B/J 复场而终端只看重点，加 `--output runs/d2_team7/level1.json --summary-only`。求解器采用精确四面体交段闭合源路径积分，`total_zero` 自动另求真空镜像并从材料复阻抗扣除。源路径功率与材料体积 Joule **当前仍未闭合**；真实 TEAM-7 Gmsh/Elmer 官方网格验证仍 OPEN。见 [本轮四档原始数值](D2_TEAM7_OFFICIAL_CASE.md) 和 [正式理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。**禁止旧 G1 修补、神经教师与 GitHub Actions。**
 >
 
