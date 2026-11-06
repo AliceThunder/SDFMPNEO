@@ -1011,3 +1011,39 @@ raw skew、各模式变化、
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 本轮新代码未实跑；**P1-C/G1 FAIL，正式磁教师关闭，禁止 GitHub Actions。**
+
+
+## 第十三次本机日志 634535f（运行代码 84a730a）：109 passed，源角帽几何矩已匹配，实际磁能尚差 6.96%
+
+本次实跑 109 项 pytest 全部通过，并计算完真实双盒五模态原始 Coulomb L。
+角帽正权矩匹配在提出的全部 **3500** 个观察点成功，**回退 0**；
+最终角权相对 4π 最大误差 **3.33e-16**、
+真实双盒解析 SΩ 最大误差 **0.0024911893**、
+MΩ 缩放误差 **0.00091115346**。
+这些数据证实先前未配平角帽的 4.97% 球面测度和 5.72% SΩ 误差已消除。
+
+但 source_cap_both 相对同 x、同实际模式 Gaussian 径向分片及背景角的 mode_radial_both：
+**全矩阵相对变化 6.9584%**，自项 L00 差 **1.9372%**、
+L11 差 **6.5841%**、L44 差 **6.8950%**。
+raw skew 1.0906%→0.7038% 不能认证物理磁能精度。
+守恒解析 S/M 是必要不充分条件，必须直接做真实 curl 角向收敛。
+
+**本轮新增真实五模式单轴实验：**
+已有 source_cap_both 的局部源帽 Gauss 阶数为极角/方位 (4,10)，
+新增 source_cap_refined_both 设置局部源帽 (6,14)。
+保持原 **4336** 个外 x 点、原自适应低阶几何背景规则、
+原径向模式窗口、原实际五个无源引导 curl 模式、
+真实双独立 SE(3) 实盒外海水、未软化 1/r 完全不变。
+两级局部帽各自在自己的节点上正权拟合相同 4π/S/M 解析真值，
+避免因改变局部 Gauss 节点再次混入几何矩误差。
+
+新日志包含 p1_full_sea_source_cap_refinement_quality、
+p1_full_sea_source_cap_refinement_cross 和
+source_cap_refined_vs_source_cap 五自十互差异。
+独立 Gaussian Newton 势测试和单位球的 4π/S/M 正权测试
+也同时调用细化球帽。新代码尚待本机实跑。
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+**P1-C/G1 继续 FAIL，正式神经教师不可开启；禁止 GitHub Actions。**
