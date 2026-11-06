@@ -98,3 +98,29 @@ def test_layered_seawater_parseval_power_matches_complex_port_power():
             assert port_watts > 0
             assert_allclose(volume_watts, port_watts, rtol=2e-5,
                             atol=1e-10)
+
+
+def test_two_independent_sheet_source_jump_conditions():
+    # Validate source normalization, interface DtN and independent port
+    # directions without referring to fitted paper curves or G1 matrices.
+    from sdfmpneo_bfzi.layered_helmholtz import propagation, interface_green
+    for scenario in ("infinite", "semifinite", "finite"):
+        case = paper_case(scenario, frequency_hz=400000.)
+        d = case.gap_m
+        omega = 2 * np.pi * case.frequency_hz
+        for k in (.05, 10., 200., 1500.):
+            u1, u2, u3 = (
+                propagation(k, omega, s, er, include_displacement=True)
+                for s, er in zip(case.conductivity_s_m, case.eps_r)
+            )
+            g00, g0d, gdd = interface_green(k, case, include_displacement=True)
+            for st, sr in ((1.+0j, 0j), (0j, 1.+0j), (1.+2j, -.7+.3j)):
+                a0, ad = g00*st + g0d*sr, g0d*st + gdd*sr
+                t = np.exp(-u2*d)
+                denominator = -np.expm1(-2*u2*d)
+                slab_deriv_0 = (-u2*(1+t*t)*a0 + 2*u2*t*ad)/denominator
+                slab_deriv_d = (-2*u2*t*a0 + u2*(1+t*t)*ad)/denominator
+                jump0 = (u1*a0 - slab_deriv_0)/MU0
+                jumpd = (slab_deriv_d + u3*ad)/MU0
+                assert_allclose(jump0, st, rtol=2e-12, atol=2e-12)
+                assert_allclose(jumpd, sr, rtol=2e-12, atol=2e-12)
