@@ -23,12 +23,31 @@ from sdfmpneo_bfzi.direct3d_aphi import (
 def _report(result, case, frequency, *, outer_bc='secondary_zero', closed_path_z=None):
     def to_complex_matrix(a):
         return [[[float(v.real), float(v.imag)] for v in row] for row in a]
+    phase_cases={}
+    if closed_path_z is not None:
+        for key,trial in {
+            'I10':(1.,0.), 'I01':(0.,1.), 'I11':(1.,1.),
+            'I1minus1':(1.,-1.), 'I1plusi':(1.,1j)
+        }.items():
+            I=np.asarray(trial,dtype=complex)
+            port_w=.5*float(np.vdot(I,closed_path_z@I).real)
+            sea_w=result.volume_power(I)
+            phase_cases[key]={
+                'closed_path_port_W':port_w,
+                'total_field_seawater_joule_W':sea_w,
+                'absolute_difference_W':abs(port_w-sea_w)
+            }
+    reciprocity_error=(abs(closed_path_z[0,1]-closed_path_z[1,0])
+                       if closed_path_z is not None else None)
     return dict(
         status="D2 early 3D finite-volume-domain A-phi prototype; not TEAM-7 or G1 PASS",
         case=case, frequency_hz=frequency,
         volume_overlap_z_ohm=to_complex_matrix(result.delta_z),
         closed_path_reaction_z_ohm=(
             to_complex_matrix(closed_path_z) if closed_path_z is not None else None),
+        phase_port_vs_volume=phase_cases,
+        closed_source_reciprocity_error_ohm=(
+            float(reciprocity_error) if reciprocity_error is not None else None),
         port_loss_from_closed_path_W_for_1A=(
             [float(.5*closed_path_z[p,p].real) for p in range(len(closed_path_z))]
             if closed_path_z is not None else None),
