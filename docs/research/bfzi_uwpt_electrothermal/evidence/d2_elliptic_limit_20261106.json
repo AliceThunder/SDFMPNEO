@@ -1,0 +1,64 @@
+{
+  "run_context": "2026-11-06 isolated Python 3 scientific environment; core direct3d_aphi local mirror of repository; not a remote full-repo test",
+  "project": "AliceThunder/SDFMPNEO research/bfzi-uwpt-electrothermal-surrogate",
+  "benchmark": "Independent Maxwell low-induction conducting elliptical cylinder; NOT paper-table reproduction",
+  "alpha": 0.00045479137080219756,
+  "a_m": 0.12,
+  "b_m": 0.07,
+  "height_m": 0.1,
+  "sigma_S_m": 4,
+  "frequency_Hz": 1000,
+  "B_peak_T": 0.001,
+  "analytic_ellipse_joule_W": 0.0001904408726789681,
+  "field_only_no_phi_relative_L2": 0.5654761904761904,
+  "results": [
+    {
+      "sectors": 8,
+      "radial": 1,
+      "axial": 2,
+      "tetra": 48,
+      "relative_E_L2": 0.29265932660872457,
+      "relative_Joule": -0.11799939689727668
+    },
+    {
+      "sectors": 16,
+      "radial": 2,
+      "axial": 2,
+      "tetra": 288,
+      "relative_E_L2": 0.1500566598146587,
+      "relative_Joule": -0.028845039145590334
+    },
+    {
+      "sectors": 24,
+      "radial": 3,
+      "axial": 3,
+      "tetra": 1080,
+      "relative_E_L2": 0.10345366826483986,
+      "relative_Joule": -0.012152183542585626
+    },
+    {
+      "sectors": 32,
+      "radial": 4,
+      "axial": 4,
+      "tetra": 2688,
+      "relative_E_L2": 0.07879846001245275,
+      "relative_Joule": -0.00664711734286294
+    },
+    {
+      "sectors": 48,
+      "radial": 6,
+      "axial": 4,
+      "tetra": 6336,
+      "relative_E_L2": 0.05289319762241207,
+      "relative_Joule": -0.002915166560376603
+    }
+  ],
+  "local_pytest": "13 passed in 4.93s (ellipse + local 3D core/source/spatial tests)",
+  "gates": {
+    "elliptic_low_induction": "method evidence only",
+    "team7_full_mesh": "OPEN",
+    "elmer_independent": "OPEN",
+    "bfzi_full_3d": "OPEN",
+    "neural_teacher": "FROZEN"
+  }
+}
