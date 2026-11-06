@@ -1,5 +1,8 @@
 # P0 限定验收冻结 → P1 原 Coulomb 磁能解析基准
 
+> **2026-11-06 V1.0 方法路线更新（优先于以下历史正文）：** 物理直接法已按 [权威规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) 和 [D0–D6 验收](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) 锁定。先独立复现共轴海水 Helmholtz 半解析与三维 A–φ 参考，再对完整 BFZI 复阻抗/感生电流/海水损耗逐项验证。**旧 G1/P1-C 角帽及原核五模态历史试验挂起，G1 FAIL，禁止正式神经教师与 GitHub Actions。** 下文属历史记录，不应继续按其“下一次运行”命令进行数值试错；本轮未改代码、未本机实跑。
+
+
 **2026-11-05 UTC；P0 限定源项 PASS；P1 球形 Taylor 基准 PASS、真实双盒几何矩 PASS、两紧支海水涡流原核自／互项 PASS（92 passed）；P1-C 正式海水 curl 基的全域原核 L 已接入但待本机复验，完整 G1 仍 FAIL。旧 split 仍 FAIL。** 本文件是第一阶段已取得的实际证据及第二阶段第一道可证伪验收，不是整个 BFZI 海水代理的完成声明。
 
 ## 1. P0 的正式阶段结论（根据本机 83 passed）
