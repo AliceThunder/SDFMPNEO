@@ -36,18 +36,28 @@ def main():
     parser.add_argument('--width-order',type=int,default=2)
     parser.add_argument('--height-order',type=int,default=2)
     parser.add_argument('--corner-panels',type=int,default=12)
+    parser.add_argument('--outer-bc',choices=('secondary_zero','total_zero'),
+                        default='secondary_zero')
+    parser.add_argument('--outer-box',choices=('compumag','elmer'),default='compumag')
+    parser.add_argument('--port-subsegments',type=int,default=2)
     args=parser.parse_args()
     if args.write_geo:
-        args.write_geo.write_text(team7_geo(args.mesh_size,args.plate_size),
+        bounds=((-.2,.494),(-.2,.494),(-.2,.394)) if args.outer_box=='elmer' else (
+            (-1.353,1.647),(-1.353,1.647),(-.300,.449))
+        args.write_geo.write_text(team7_geo(args.mesh_size,args.plate_size,
+                                             outer_bounds=bounds),
                                  encoding='utf-8')
         print('Wrote official-profile TEAM-7 Gmsh geometry:',args.write_geo)
         if not args.coarse_smoke and args.mesh is None:return
     if args.coarse_smoke == bool(args.mesh):
         parser.error('Choose one of --coarse-smoke or --mesh MSH2_PATH')
     mesh=coarse_team7_tetra_mesh() if args.coarse_smoke else team7_mesh(args.mesh)
-    A_source,B_source=team7_stranded_source(
-        args.width_order,args.height_order,args.corner_panels)
-    sol=solve_aphi(mesh,args.frequency,[A_source])
+    A_source,B_source,strands=team7_stranded_source(
+        args.width_order,args.height_order,args.corner_panels,return_strands=True)
+    sol=solve_aphi(mesh,args.frequency,[A_source],outer_bc=args.outer_bc)
+    from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance
+    port_z=closed_source_port_impedance(sol,args.frequency,[strands],
+                                        subsegments=args.port_subsegments)
     probes={}
     for name,coords in official_probe_lines().items():
         samples=sample_cell_fields(
@@ -65,13 +75,23 @@ def main():
         'nodes':len(mesh.nodes),'tetrahedra':len(mesh.tetrahedra),
         'metal_tetrahedra':int(np.count_nonzero(mesh.sigma)),
         'source':'2742 AT racetrack, 25x100 mm cross-section Gauss filament approximation',
-        'sea_or_metal_added_impedance_real_imag_ohm':[
+        'volume_overlap_z_real_imag_ohm':[
             float(sol.delta_z[0,0].real),float(sol.delta_z[0,0].imag)],
+        'true_closed_source_reaction_z_real_imag_ohm':[
+            float(port_z[0,0].real),float(port_z[0,0].imag)],
+        'outer_bc':args.outer_bc,'outer_box':args.outer_box,
+        'closed_source_power_W_for_1A':float(.5*port_z[0,0].real),
+        'source_voltage_vs_metal_joule_relative_gap':float(
+            abs(.5*port_z[0,0].real-.5*sol.power_from_fields[0,0].real)/
+            max(abs(.5*sol.power_from_fields[0,0].real),1e-30)),
         'volume_dissipation_W_for_1A':float(.5*sol.power_from_fields[0,0].real),
-        'port_increment_dissipation_W_for_1A':float(.5*sol.power_matrix[0,0].real),
+        'overlap_response_power_W_for_1A':float(.5*sol.power_matrix[0,0].real),
         'probes':probes,
         'time_phasor':'exp(+iwt), phase 0=Re, phase 90=-Im',
-        'caveat':('Not experimental agreement. Inner source quadrature, first-order '
+        'caveat':('Not experimental agreement; volume overlap is not a genuine '
+                  'closed-source voltage at arbitrary finite boundaries. '
+                  'The two independent power diagnostics may disagree until '
+                  'mesh/source/outer-domain convergence. Inner source quadrature, first-order '
                   'Nedelec space, h, outer-domain truncation and one-sided '
                   'metal surface J probe require independent convergence.'),
     }
