@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-06 D2 本轮最新（覆盖下方旧“端口功率闭合”措辞）：** 针对真实 Maxwell–MQS 端口修正了关键理论/数值实现：新增有向 Nédélec 总场边界迹 `total_zero`、闭合物理馈回流的真实感生电压 `ΔZ_port=iω∮A_react·dl`，与旧 `iω∫A_src·J` 有限域重叠积分明确分离。小网格实际出现端口/体积功率与双端口互易差异，**如实保持未收敛，不做后验截正/对称化**。隔离计算环境中三维基础+端口方向测试 **7 passed**，远端完整测试仍待用户本机执行。独立成熟参考已锁定 [ElmerCSC 官方 TEAM-7 仓库](D2_ELMER_INDEPENDENT_REFERENCE.md)，对齐其 25×100 mm 体积线圈、−2742 A匝、瞬态 50Hz、`A{e}=0` 和相同外域后才可以比较真实场。实现：[direct3d_aphi.py](../../../sdfmpneo_bfzi/direct3d_aphi.py) · [direct3d_port.py](../../../sdfmpneo_bfzi/direct3d_port.py) · [D2 TeX 第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。当前尚无可执行的 Gmsh/Elmer 本机安装和标准细网格/实测验收证据：**D2 OPEN，G1 FAIL，正式神经教师冻结，禁用 GitHub Actions**。
+>
+
+
 > **最新 D2 实质进展（2026-11-06，覆盖后面旧的“尚无 FEM 代码”描述）**：已提交独立三维 **Nédélec H(curl) A–φ** 有限元求解器 [direct3d_aphi.py](../../../sdfmpneo_bfzi/direct3d_aphi.py)，包含 Coulomb 规范、导体标量电位与两单位端口源，输出海水/导体增量复阻抗、空间 E/B/J 和 Joule 功率。另有 [共形双 SE(3) 封装网格](../../../sdfmpneo_bfzi/direct3d_mesh.py)、[场探针](../../../sdfmpneo_bfzi/direct3d_probe.py)、[BFZI 三维入口](../../../examples/bfzi_d2_aphi.py)、[COMPUMAG 官方 TEAM-7 物理配置](../../../sdfmpneo_bfzi/direct3d_team7.py) 与 [TEAM-7 入口](../../../examples/bfzi_d2_team7.py)。隔离 Python 环境中三维核心 **5 tests passed**；TEAM-7 官方 294mm 铝板/偏心方孔的 **48 个导电单元粗网格**已在 50/200 Hz 真正求解，得到场/端口同源功率闭合，但**绝不作为测量精度或网格收敛证明**。Gmsh 官方尺寸高精度网格与两旋转实盒尚未实际网格求解，外边界仍有限截断；**D2 OPEN、G1 FAIL、正式教师冻结**。详细 [D2 核心方程与代码](D2_APHI_CORE_IMPLEMENTATION.md) · [TEAM-7 官方几何/实算记录](D2_TEAM7_OFFICIAL_CASE.md)。严格禁止 GitHub Actions。
 >
 
