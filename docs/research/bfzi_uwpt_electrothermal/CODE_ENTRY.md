@@ -1,5 +1,25 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-06 D2 核心最新执行入口（优先于下文旧 P0/P1-C 命令）：** 独立 A–φ、闭合端口感生电压及 Elmer TEAM-7 同条件对照已提交，见 [D2 3D 核心](D2_APHI_CORE_IMPLEMENTATION.md)、[成熟 Elmer 独立基准](D2_ELMER_INDEPENDENT_REFERENCE.md)、[正式理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。当前不是“同源代数功率闭合 PASS”，而是直接报告 `ΔZ_port=iω∮Γ A_react·dl` 和 `Psea=0.5∫σ|E|²` 的差；必须在真实三维共形网格和外域细化后才验收。**D2 OPEN, G1 FAIL, 教师冻结**。
+>
+> ```powershell
+> git pull --ff-only
+> python -m pytest tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_port.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q
+> python -m examples.bfzi_d2_aphi --case smoke
+>
+> # 下两项需要工作站本地 Gmsh；不会运行 GitHub Actions
+> python -m examples.bfzi_d2_aphi --case bfzi --write-geo bfzi_d2.geo --mesh-size 0.025
+> gmsh bfzi_d2.geo -3 -format msh2 -o bfzi_d2.msh
+> python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --outer-bc total_zero --port-subsegments 4
+>
+> # 与成熟 Elmer TEAM-7 有限盒比较：同域、总场边界、-2742 安匝
+> python -m examples.bfzi_d2_team7 --write-geo team7_elmer.geo --outer-box elmer
+> gmsh team7_elmer.geo -3 -format msh2 -o team7_elmer.msh
+> python -m examples.bfzi_d2_team7 --mesh team7_elmer.msh --frequency 50 --outer-box elmer --outer-bc total_zero --current-sign -1
+> ```
+>
+
+
 > **最新直接法代码入口（2026-11-06）**：应按 [D2 3D A–φ 核心实现](D2_APHI_CORE_IMPLEMENTATION.md) 与 [COMPUMAG TEAM-7 标准几何](D2_TEAM7_OFFICIAL_CASE.md) 运行 `python -m pytest tests/test_bfzi_d2_aphi.py tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_team7.py -q` 及 `python -m examples.bfzi_d2_team7 --coarse-smoke --frequency 50`。这是真正独立于 G1 的 H(curl) 三维 FEM 起点，**不是已经高精度认证的求解器**；Gmsh 共形网格、真实双 SE(3) 盒、TEAM-7 原始实测和外域误差仍待完成。下文按历史日期存档，**任何旧 G1 角帽/五模态继续加密命令不得作为新默认路线**。禁用 GitHub Actions。
 >
 
