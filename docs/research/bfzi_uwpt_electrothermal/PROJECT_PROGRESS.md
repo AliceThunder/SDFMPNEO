@@ -8,13 +8,15 @@
 >
 > **准确状态**：历史 P0/P1-A/P1-B 仅在限定解析/紧支电流基准 PASS；真实 P1-C/G1 **FAIL**，最后已核对 112 passed 的日志仅证明旧实验代码运行，弱互耦仍不稳定。此前“下一次运行 bfzi-p1-full-sea”的旧建议**自本决策起挂起，不再是默认推进任务**。该句所述锁定版本当时只新增理论及验收文档；**随后已新增 D1 独立谱域基准代码与离线计算**；禁止启动正式神经教师，禁止 GitHub Actions。
 >
-> **下一步仅 D0→D1→D2：** 先落地物理案例与源/材料/频率无量纲检查表；严格复现 Shafiei 共轴分层海水 Helmholtz 模型；启动独立 TEAM-7 三维 A–φ 参考与开放边界误差预算。达到明确验收前，不用两类角帽互相对比冒充连续物理参考。
+> **下一步仅 D0→D1→D2：** 锁定源/材料/MQS 适用域；学习并核对 Shafiei 的 Helmholtz 分层算法及 Wang 的场路复端口方法（不追论文表格数字）；优先落实独立 TEAM-7 三维 A–φ 参考及网格/外域收敛。达到明确验收前，不用两类角帽互相对比冒充连续物理参考。
 
 
 
 > **2026-11-06 D0→D1 实施进度更新（覆盖下方旧规划）：** 已提交独立三层共轴圆环 Helmholtz–Bessel 谱域求解器 `sdfmpneo_bfzi/layered_helmholtz.py` 与专项测试 `tests/test_bfzi_d1_layered_helmholtz.py`，包括复增量两端口阻抗、空间 `A/E/B/J/q`、MQS 海水 Parseval 体积损耗及复相位功率核对。Shafiei 2025 原论文 85/400 kHz 的无限/半无限海水表 2 已逐项定量复现；400 kHz 有限海水层的 3 个阻值相差约 4–5%，**保留 D1 OPEN，继续查原始论文细节**。已在独立 Python 计算环境运行了谱域原型的 4 项基础检查、部分论文数值与功率结果；远端新提交代码的本机 pytest 结果仍待用户工作站记录。新的公式、误差与下一步见 [D1 复现记录](D1_SHAFIEI_SPECTRAL_REPRODUCTION.md)。D2 独立三维 A–φ/TEAM-7 仅完成技术方案，**尚无 FEM 代码和独立真值**。旧 G1 仍 FAIL、神经教师冻结，禁止 GitHub Actions。
 >
 > **2026-11-06 D1 第二轮：发表论文 E 场的物理量归属已厘清一大部分（仍未验收）**。新增 [二维矢量化 Helmholtz 场重构](../../../sdfmpneo_bfzi/layered_grid.py)、[Shafiei 表 2 命令行复现](../../../examples/bfzi_d1_shafiei.py)、[专项测试](../../../tests/test_bfzi_d1_layered_grid.py)。在 15/17 匝、两端口各 5 A、85/400 kHz、三种水层场景中，海水反作用电场 `E_secondary = E_medium - E_vacuum` 的六组峰值与论文表 2 解析栏相差约 0.33%–4.15%；而完整 `E_total` 在源附近远大于论文电场表项。**原论文并未明确把表中 E_max 定义为反作用场；这只是高度一致的定量解释，不能据此设置后验 5% PASS 门槛。** 海水真实 `q=0.5σ|E_total|²`，不得以二次场平方替代。独立双源面跳跃满足到浮点精度，二维场批量与逐点积分互核。有限海水层 400 kHz 端口 R 仍与论文解析栏相差约 4–5%，**D1 OPEN；D2 三维 TEAM-7 A–φ 仍待实施，旧 G1 FAIL，教师训练冻结**。详见 [D1 实算与公式记录](D1_SHAFIEI_SPECTRAL_REPRODUCTION.md) 和 [正式理论第 16 节](../../../theory/sections/16_d1_layered_helmholtz.tex)（已由 theory/main.tex 引入）。本轮本地算例数值和部分 pytest 已执行，用户工作站整套测试日志仍待复验；无 GitHub Actions。
+>
+> **2026-11-06 用户明确纠偏（当前最新进度，覆盖后面所有“追论文表 2/有限层差异”的旧计划）：** 论文用于**学习成熟计算方法，不是论文数值逐项拟合目标**。Shafiei 提取复 Helmholtz、稳定分层界面/源跳跃、涡流场—损耗计算；Wang 提取复端口—电路接口。已更新 [V1.0 锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md)、[D1/D2 验收](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)、[方法迁移与 D2 实施](METHOD_TRANSFER_D1_TO_D2.md) 和理论第 15–16 节。历史论文表格数值/峰值电场比较存档保留，但**不再阻塞 D2**；两项论文表格比对测试降为自愿运行的示例函数，强制测试保留源跳跃、物理极限、场/功率等。**下一个主工作直接是建立独立 H(curl) A–φ 3D 参考求解器并用 TEAM-7 检验，再迁移到真实连续 BFZI 双闭合端口、两独立 SE(3) 绝缘盒。** D1 方法适用性尚待限定验证；D2 3D 代码和实测证据尚未建立；旧 G1 FAIL、教师冻结、禁用 GitHub Actions。
 >
 ## 0. 项目范围（防止与旧 vNext 项目混淆）
 
