@@ -549,3 +549,88 @@ def test_true_box_corner_cap_angles_preserve_unit_ball_exact_moments():
     np.testing.assert_allclose(
         potential[0,0],[2*math.pi,0.,0.],rtol=1e-9,atol=1e-12,
     )
+
+
+def test_true_obb_edge_cone_cuts_resolve_mu_dependent_bearings():
+    """An actual horizontal box edge crosses a fixed polar mu inside corners.
+
+    The two boxes are at z=+/-0.13, with half extent z=.015 and x/y=.1.
+    From the sea point x=0, the upper box's z=.115, y=.1 edge crosses
+    mu=.67 at x=sqrt((.115/.67)^2-.115^2-.1^2), strictly BETWEEN
+    x=-.1 and x=+.1. Its phi is not a vertex-projection bearing.
+    """
+    import math
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.green_coulomb import (
+        _bfzi_projected_box_edge_azimuth_boundaries,
+        _bfzi_projected_box_edge_azimuth_rule,
+    )
+
+    scene=build_demo_scene()
+    point=np.zeros(3)
+    axis=np.array([0.,0.,1.])
+    e1=np.array([1.,0.,0.])
+    e2=np.array([0.,1.,0.])
+    mu=.67
+    edge_x=math.sqrt((.115/mu)**2-.115**2-.1**2)
+    assert 0<edge_x<.1
+    expected=math.atan2(.1,edge_x)
+    boundaries=_bfzi_projected_box_edge_azimuth_boundaries(
+        scene,point,axis,e1,e2,mu,
+    )
+    assert np.all(np.diff(boundaries)>0)
+    assert abs(boundaries[0])<1e-15
+    assert abs(boundaries[-1]-2*math.pi)<1e-15
+    assert np.min(np.abs(boundaries-expected))<2e-9
+    assert np.min(np.abs(boundaries-(math.pi/4)))<1e-10
+    # A physical non-vertex crossing strictly splits a corner sector.
+    assert expected>math.pi/4+0.05
+    assert expected<math.pi/2-0.05
+    phi,wphi=_bfzi_projected_box_edge_azimuth_rule(
+        scene,point,axis,e1,e2,mu,2,
+    )
+    assert len(phi)==2*(len(boundaries)-1)
+    assert np.all(np.diff(phi)>0) and np.all(wphi>0)
+    np.testing.assert_allclose(np.sum(wphi),2*math.pi,atol=1e-12,rtol=0)
+
+
+def test_mu_dependent_real_obb_edges_keep_positive_exact_ball_green_moments():
+    """Independent S=2pi, M=0 with real box edge-cone azimuth cuts."""
+    import math
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+
+    scene=build_demo_scene()
+    center=np.array([.33,.31,.33])
+    windows=(center[None,:],(np.eye(3)/.025**2)[None,:,:])
+
+    def constant(y):
+        return np.broadcast_to(
+            np.array([[[1.,0.,0.]]]),(len(y),1,3),
+        )
+
+    def unit_ball(point,directions):
+        return (np.zeros((len(directions),1)),
+                np.ones((len(directions),1)))
+
+    stats={}
+    _,potential=assemble_coulomb_radial(
+        np.zeros((1,3)),np.ones(1),constant,unit_ball,
+        radial_order=3,polar_order=4,azimuthal_order=10,
+        source_angular_caps=windows,
+        source_cap_polar_order=6,
+        source_cap_box_edge_scene=scene,
+        source_cap_box_edge_sector_order=2,
+        exact_scalar_moments=np.array([2*math.pi]),
+        exact_first_moments=np.zeros((1,3)),
+        source_cap_stats=stats,
+        return_point_potentials=True,
+    )
+    assert stats["accepted"]==1 and stats["fall_back"]==0
+    assert stats["max_solid_angle_rel"]<2e-8
+    assert stats["max_scalar_moment_rel"]<2e-8
+    assert stats["max_first_moment_scaled"]<2e-7
+    np.testing.assert_allclose(
+        potential[0,0],[2*math.pi,0.,0.],
+        rtol=1e-9,atol=1e-12,
+    )
