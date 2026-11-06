@@ -57,9 +57,8 @@ def main():
         args.width_order,args.height_order,args.corner_panels,
         return_strands=True,current_sign=args.current_sign)
     sol=solve_aphi(mesh,args.frequency,[A_source],outer_bc=args.outer_bc)
-    from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance
-    port_z=closed_source_port_impedance(sol,args.frequency,[strands],
-                                        subsegments=args.port_subsegments)
+    from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance_exact
+    port_z=closed_source_port_impedance_exact(sol,args.frequency,[strands])
     probes={}
     for name,coords in official_probe_lines().items():
         samples=sample_cell_fields(
