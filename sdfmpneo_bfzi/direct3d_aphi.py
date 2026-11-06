@@ -201,7 +201,7 @@ def _topology(mesh):
 
 def solve_aphi(mesh: TetraMesh, frequency_hz:float,
                incident_potentials: list[Callable], *, mu:float=MU0,
-               outer_bc: str = 'secondary_zero') -> AphiResult:
+               outer_bc: str = 'secondary_zero', edge_source_load=None) -> AphiResult:
     """Gauge-fixed 3D secondary A-phi, sources=unit-current incident A fields.
 
     Assumes mu=mu0 everywhere, prescribed incident potentials come from CLOSED
@@ -298,6 +298,15 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
                         rhs[phimap[int(tet[v])],port] += -sigma*V/4*np.einsum('qc,c->',a,g[v])
         local_vals.append((V,g,w,curl,ee,tet))
         source_at_quad.append(a_fields)
+    if edge_source_load is not None:
+        # Same exact Whitney-edge line functional L for coil forcing and
+        # port readout: L.T @ I drives the weak curl-curl equation.
+        # Pass *zero* incident fields when using the total-field formulation.
+        load = np.asarray(edge_source_load, dtype=complex)
+        if (load.shape != (len(incident_potentials), ne)
+                or not np.isfinite(load).all()):
+            raise ValueError("edge_source_load must be finite (n_ports,n_edges)")
+        rhs[:ne, :] += load.T
     K=coo_matrix((np.asarray(data,dtype=complex),(rows,cols)),shape=(size,size)).tocsc()
     free_edges=[i for i in range(ne) if i not in bedges]
     keep=np.array(free_edges+list(range(ne,size)),dtype=int)
