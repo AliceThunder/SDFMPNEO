@@ -369,22 +369,54 @@ q_{\rm ps}=\tfrac12\sigma|\bm E_{\rm ps}|^2.
 $\bm A_h^{(\sigma)}-\bm A_h^{(0)}$ 比全场更平滑；
 但实际导电区域的边元阶数、绝缘壁和远场误差仍需验证。
 
-在每个四面体内部，最低阶 Whitney 电场
-$\bm E_h(\bm x)$ 为仿射函数。令
-$\lambda_i(\bm x)$ 是探针的四个重心坐标，
-$M_{qi}=\lambda_i(\bm x_q)$ 是二阶四点 Gauss
-位置 $\bm x_q$ 的重心坐标矩阵，则
+\paragraph{重要插值修正：解析线源总电场\emph{不是}四面体内的仿射场。}
+在一个四面体内，最低阶 Whitney 反作用势
+$\bm a_h(\bm x)$ 是仿射函数且
+$\nabla\phi_h$ 为单元常值，故
 \begin{equation}
- \bm E_h(\bm x)
-  = \sum_{q=1}^4 [\bm\lambda(\bm x)M^{-1}]_q
-      \bm E_h(\bm x_q).
+ \bm E_h^{\rm FE}(\bm x)
+   =-\mathrm i\omega\bm a_h(\bm x)-\nabla\phi_h
 \end{equation}
-该式对最低阶边元单元内的\emph{位置取值}精确，
-不能以四点平均电流直接冒充边界单侧测点电流；
-但即使位置取值精确，也不表示该单元内真实涡流被
-充分空间解析。新实现见
-\texttt{direct3d\_fields.sample\_primary\_secondary\_fields}、
-\texttt{direct3d\_probe.sample\_cell\_fields}。
+为仿射函数。
+\emph{但}真实闭合细丝的解析入射场
+$\bm A_{\rm src,exact}(\bm x)$ 在单元内一般非仿射，
+因此物理总电场
+$\bm E_{\rm tot}=-\mathrm i\omega\bm A_{\rm src,exact}
++\bm E_h^{\rm FE}$ \textbf{不能直接做四点仿射插值}。
+令 $\lambda_i(\bm x)$ 为探针重心坐标，
+$M_{qi}=\lambda_i(\bm x_q)$ 为
+四点 Gauss 重心坐标矩阵，则应取
+\begin{equation}
+\boxed{
+ \bm E_{\rm tot}(\bm x)
+ =-\mathrm i\omega\bm A_{\rm src,exact}(\bm x)
+ +\sum_{q=1}^4[\bm\lambda(\bm x)M^{-1}]_q
+ \left[
+  \bm E_{\rm tot}(\bm x_q)
+ +\mathrm i\omega\bm A_{\rm src,exact}(\bm x_q)
+ \right].}
+\end{equation}
+第一项在\emph{实际探针位置}直接由闭合解析线源计算；
+括号内才是有限元仿射反作用电场。在源面以外的
+真空工况 $\sigma=0$，此式应恰好恢复独立
+Biot--Savart/$-\mathrm i\omega A_{\rm src}$ 场，
+不受粗四面体近场源插值污染。
+本轮实际单元探针测试曾发现未经分解的非仿射
+源插值在真空中产生 $\sim10^{-4}$ V/m 量级错误，
+修正后真空 $E$ 的对应绝对误差在数值精度内消失。
+接下来必须由总 $\bm E_{\rm tot}$ 在材料区
+逐点定义 $\bm J=\sigma\bm E$ 与
+$q=\sigma|\bm E|^2/2$，不得用单元平均 $\bm J$
+冒充导体表面的单侧物理测点值。
+
+新实现由
+\texttt{direct3d\_probe.sample\_cell\_fields}
+的 \texttt{incident\_potentials} 参数执行；
+\texttt{direct3d\_primary\_secondary.py} 在
+空间查询时传入与弱式装配\emph{完全相同}
+的解析端口源闭合曲线。
+这修正了实际空间物理查询，但并不自动令材料反作用场
+的有限元 $h/R$ 误差趋零。
 
 \paragraph{必须保留的独立关口。}
 $\bm B_{\rm ps}$ 在 $\sigma=0$ 时退化为精确
