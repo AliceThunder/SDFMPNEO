@@ -1,4 +1,7 @@
 # BFZI 新理论封版与代码启动合同
+> **2026-11-06 D2 最新可运行入口：** `python -m examples.bfzi_d2_team7 --coarse-smoke --refinement-level 1 --frequency 50 --corner-panels 5 --summary-only`，再对 `--refinement-level 2/3/4` 重复。若需保留完整 4 条 × 17 点 B/J 复场而终端只看重点，加 `--output runs/d2_team7/level1.json --summary-only`。求解器采用精确四面体交段闭合源路径积分，`total_zero` 自动另求真空镜像并从材料复阻抗扣除。源路径功率与材料体积 Joule **当前仍未闭合**；真实 TEAM-7 Gmsh/Elmer 官方网格验证仍 OPEN。见 [本轮四档原始数值](D2_TEAM7_OFFICIAL_CASE.md) 和 [正式理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。**禁止旧 G1 修补、神经教师与 GitHub Actions。**
+>
+
 
 > **2026-11-06 D2 核心最新执行入口（优先于下文旧 P0/P1-C 命令）：** 独立 A–φ、闭合端口感生电压及 Elmer TEAM-7 同条件对照已提交，见 [D2 3D 核心](D2_APHI_CORE_IMPLEMENTATION.md)、[成熟 Elmer 独立基准](D2_ELMER_INDEPENDENT_REFERENCE.md)、[正式理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。当前不是“同源代数功率闭合 PASS”，而是直接报告 `ΔZ_port=iω∮Γ A_react·dl` 和 `Psea=0.5∫σ|E|²` 的差；必须在真实三维共形网格和外域细化后才验收。**D2 OPEN, G1 FAIL, 教师冻结**。
 >
@@ -10,7 +13,7 @@
 > # 下两项需要工作站本地 Gmsh；不会运行 GitHub Actions
 > python -m examples.bfzi_d2_aphi --case bfzi --write-geo bfzi_d2.geo --mesh-size 0.025
 > gmsh bfzi_d2.geo -3 -format msh2 -o bfzi_d2.msh
-> python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --outer-bc total_zero --port-subsegments 4
+> python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --outer-bc total_zero
 >
 > # 与成熟 Elmer TEAM-7 有限盒比较：同域、总场边界、-2742 安匝
 > python -m examples.bfzi_d2_team7 --write-geo team7_elmer.geo --outer-box elmer
