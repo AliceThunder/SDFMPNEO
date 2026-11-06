@@ -82,3 +82,16 @@ def test_tetra_exact_closed_port_flux_and_shared_facet():
         lambda x: np.array([.3, -.2, .6]), 5)
     zg = closed_source_port_impedance_exact(result, 400., [[(1.,path)]])
     assert abs(zg[0,0]) < 1e-12
+
+
+def test_total_field_boundary_vacuum_image_is_not_seawater_impedance():
+    from sdfmpneo_bfzi.direct3d_port import medium_vacuum_port_increment
+    path = _loop()
+    source = closed_polyline_potential(path)
+    mesh = box_tetra_mesh([[-.2, .2]]*3,[4, 4, 4],lambda x: 0.)
+    response = solve_aphi(mesh,10000.,[source],outer_bc='total_zero')
+    medium_z, image_z, sea_z = medium_vacuum_port_increment(
+        response,10000.,[source],[[(1.,path)]],outer_bc='total_zero')
+    assert abs(image_z[0,0].imag)>1e-6
+    assert_allclose(medium_z,image_z,rtol=0,atol=1e-14)
+    assert_allclose(sea_z,0.,rtol=0,atol=1e-14)
