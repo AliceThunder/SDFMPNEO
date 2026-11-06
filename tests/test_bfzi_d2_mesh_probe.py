@@ -78,3 +78,25 @@ def test_probe_affine_nedelec_electric_field_exact():
     assert_allclose(sample['J_A_m2'][0],7*expected,rtol=0,atol=1e-12)
     assert_allclose(sample['q_W_m3'][0],3.5*np.sum(abs(expected)**2,axis=1),
                     rtol=0,atol=1e-12)
+
+
+def test_material_interface_probe_reuses_exact_medium_tetra_in_vacuum():
+    """The same surface point has non-unique cells: never mix their traces."""
+    from types import SimpleNamespace
+    from sdfmpneo_bfzi.direct3d_aphi import TetraMesh
+    m=box_tetra_mesh([[-.2,.2]]*3,[4,4,4],
+                     lambda x:5. if x[2]<0. else 0.)
+    vacuum=TetraMesh(m.nodes,m.tetrahedra,np.zeros_like(m.sigma))
+    count=len(m.tetrahedra)
+    def sample_result(mesh):
+        return SimpleNamespace(
+            mesh=mesh,magnetic_secondary=np.zeros((1,count,3),complex),
+            current_at_cells=np.zeros((1,count,3),complex),
+            electric_at_quadrature=np.ones((1,count,4,3),complex))
+    pts=np.array([[.05,.05,0.],[.04,-.03,0.]])
+    metal=sample_cell_fields(sample_result(m),pts,prefer_conductor=True)
+    vac=sample_cell_fields(sample_result(vacuum),pts,
+                           cell_indices=metal['cell_index'])
+    assert np.array_equal(metal['cell_index'],vac['cell_index'])
+    assert np.all(metal['sigma_S_m']>0)
+    assert np.all(vac['sigma_S_m']==0)
