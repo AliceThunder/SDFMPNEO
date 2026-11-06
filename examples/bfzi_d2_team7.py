@@ -42,6 +42,10 @@ def main():
                         default='secondary_zero')
     parser.add_argument('--outer-box',choices=('compumag','elmer'),default='compumag')
     parser.add_argument('--current-sign',type=int,choices=(-1,1),default=1)
+    parser.add_argument('--summary-only',action='store_true',
+                        help='Print compact D2 power/mesh values, not 4x17 probes')
+    parser.add_argument('--output',type=Path,
+                        help='Write the complete complex probe and port JSON')
     args=parser.parse_args()
     if args.write_geo:
         bounds=((-.2,.494),(-.2,.494),(-.2,.394)) if args.outer_box=='elmer' else (
@@ -114,7 +118,20 @@ def main():
                   'Nedelec space, h, outer-domain truncation and one-sided '
                   'metal surface J probe require independent convergence.'),
     }
-    print(json.dumps(report,indent=2))
+    if args.output:
+        args.output.parent.mkdir(parents=True,exist_ok=True)
+        args.output.write_text(json.dumps(report,indent=2),encoding='utf-8')
+        print('Full TEAM-7 fields saved:',args.output)
+    if args.summary_only:
+        compact={key:report[key] for key in (
+            'status','frequency_hz','tetrahedra','metal_tetrahedra',
+            'structured_refinement_level','outer_bc','outer_box',
+            'material_increment_closed_port_z_real_imag_ohm',
+            'volume_dissipation_W_for_1A','closed_source_power_W_for_1A',
+            'source_voltage_vs_metal_joule_relative_gap')}
+        print(json.dumps(compact,indent=2))
+    else:
+        print(json.dumps(report,indent=2))
 
 
 if __name__=='__main__':main()
