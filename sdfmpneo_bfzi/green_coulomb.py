@@ -646,6 +646,7 @@ def _bfzi_projected_box_azimuth_rule(scene, point, e1, e2, order):
 def _bfzi_source_cap_angular_rule(
     point, base_directions, base_weights, centers, metrics,
     polar_order, azimuthal_order, azimuth_phase=0.0,
+    box_corner_scene=None, box_corner_sector_order=2,
 ):
     """Positive partition-of-unity angular charts centred on ACTUAL modes.
 
@@ -656,6 +657,12 @@ def _bfzi_source_cap_angular_rule(
     Integrate H_0 on the existing physical angular rule and H_m with a
     cap-local Gauss rule. This has no overlap double counting in the
     continuous integral, no artificial kernel, and no world voxel mesh.
+    When box_corner_scene is supplied, use POSITIVE Gauss phi panels
+    bounded by the actual corners of BOTH independently posed real
+    insulating boxes projected onto each cap's local tangent frame.
+    It changes only the angle cubature, not the physical wet ray domain.
+    Those corner bearings do NOT resolve every mu-dependent silhouette
+    edge; actual curl magnetic energy still requires convergence tests.
     """
     base_directions=np.asarray(base_directions,float)
     base_weights=np.asarray(base_weights,float)
@@ -675,6 +682,11 @@ def _bfzi_source_cap_angular_rule(
     if (not np.isfinite(azimuth_phase)
             or not 0 <= azimuth_phase < 1):
         raise ValueError("source cap azimuth phase must be in [0,1)")
+    if (not isinstance(box_corner_sector_order,int)
+            or box_corner_sector_order<2):
+        raise ValueError("cap corner sector Gauss order must be >=2")
+    if box_corner_scene is not None and azimuth_phase != 0:
+        raise ValueError("corner-partitioned cap angles do not have a uniform azimuth phase")
     # Exact duplicates of a Gaussian window produce the same angular
     # cap. Merge their nodes but preserve the multiplicity in the
     # partition profiles, leaving the physical angular integral intact.
@@ -720,12 +732,21 @@ def _bfzi_source_cap_angular_rule(
     for mode_index,(axis,cos_lower,_,_,_) in enumerate(active):
         mu=0.5*(1.0-cos_lower)*nodes+0.5*(1.0+cos_lower)
         wmu=0.5*(1.0-cos_lower)*weights
-        phi=2*math.pi*(np.arange(azimuthal_order)+0.5+azimuth_phase)/azimuthal_order
         seed=(np.array((1.,0.,0.)) if abs(axis[0])<0.9
               else np.array((0.,1.,0.)))
         e1=np.cross(seed,axis)
         e1/=np.linalg.norm(e1)
         e2=np.cross(axis,e1)
+        if box_corner_scene is None:
+            phi=2*math.pi*(
+                np.arange(azimuthal_order)+0.5+azimuth_phase
+            )/azimuthal_order
+            wphi=np.full(len(phi),2*math.pi/len(phi))
+        else:
+            phi,wphi=_bfzi_projected_box_azimuth_rule(
+                box_corner_scene,point,e1,e2,
+                4*box_corner_sector_order,
+            )
         transverse=np.sqrt(np.maximum(0.,1.-mu*mu))
         directions=(
             transverse[:,None,None]*
@@ -733,10 +754,7 @@ def _bfzi_source_cap_angular_rule(
              np.sin(phi)[None,:,None]*e2)
             +mu[:,None,None]*axis
         ).reshape(-1,3)
-        solid_weights=np.broadcast_to(
-            wmu[:,None]*(2*math.pi/azimuthal_order),
-            (len(mu),len(phi)),
-        ).ravel()
+        solid_weights=(wmu[:,None]*wphi[None,:]).ravel()
         h=profiles(directions)
         patch_weight=h[:,mode_index]/(1.0+np.sum(h,axis=1))
         result_dirs.append(directions)
@@ -843,6 +861,8 @@ def assemble_coulomb_radial(
     source_cap_polar_order: int | None = None,
     source_cap_azimuthal_order: int | None = None,
     source_cap_azimuth_phase: float = 0.0,
+    source_cap_box_corner_scene=None,
+    source_cap_box_corner_sector_order: int = 2,
     source_cap_stats: dict | None = None,
     reciprocity_stats: dict | None = None,
     polar_axis=None,
@@ -889,6 +909,10 @@ def assemble_coulomb_radial(
     Comparing two local-cap orders tests actual curl angular convergence,
     not just the low-order geometry moment constraints.
     The phase shifts ONLY local azimuth nodes, never actual sources.
+    When source_cap_box_corner_scene is present, each local cap uses
+    Gauss sectors bounded by the bearings of BOTH real OBB corners.
+    This is a geometry-guided integration chart, not modified current,
+    altered domain, softened Green, or an exact silhouette partition.
 
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
@@ -977,6 +1001,8 @@ def assemble_coulomb_radial(
     if (not isinstance(cap_polar,int) or not isinstance(cap_azimuth,int)
             or cap_polar<2 or cap_azimuth<4):
         raise ValueError("source cap Gauss orders must be integers (polar>=2, azimuth>=4)")
+    if source_cap_box_corner_scene is not None and source_angular_caps is None:
+        raise ValueError("source cap box corner panels require source_angular_caps")
     if source_angular_caps is not None:
         cap_centers,cap_metrics=source_angular_caps
         cap_centers=np.asarray(cap_centers,float)
@@ -1147,6 +1173,7 @@ def assemble_coulomb_radial(
             cap_dirs,cap_weights,cap_count=_bfzi_source_cap_angular_rule(
                 point,directions,area_weights,cap_centers,cap_metrics,
                 cap_polar,cap_azimuth,source_cap_azimuth_phase,
+                source_cap_box_corner_scene,source_cap_box_corner_sector_order,
             )
             if cap_count:
                 # Every finite source cap changes the numerical angular
@@ -1357,6 +1384,8 @@ def assemble_basis_coulomb_radial(
     source_cap_polar_order: int | None = None,
     source_cap_azimuthal_order: int | None = None,
     source_cap_azimuth_phase: float = 0.0,
+    source_cap_box_corner_panels: bool = False,
+    source_cap_box_corner_sector_order: int = 2,
     source_cap_stats: dict | None = None,
     reciprocity_stats: dict | None = None,
     exact_scalar_control: bool = False,
@@ -1447,6 +1476,8 @@ def assemble_basis_coulomb_radial(
         source_cap_polar_order=source_cap_polar_order,
         source_cap_azimuthal_order=source_cap_azimuthal_order,
         source_cap_azimuth_phase=source_cap_azimuth_phase,
+        source_cap_box_corner_scene=(basis.scene if source_cap_box_corner_panels else None),
+        source_cap_box_corner_sector_order=source_cap_box_corner_sector_order,
         source_cap_stats=source_cap_stats,
         reciprocity_stats=reciprocity_stats,
         polar_axis=axis,
