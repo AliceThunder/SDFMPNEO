@@ -1,4 +1,7 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
+> **2026-11-06 最新 D2 核心进度（覆盖下方旧“端口功率闭合”或“尚无 FEM”的历史段落）：** 独立三维 Nédélec A–φ 已新增 [四面体交段精确闭合源端口](../../../sdfmpneo_bfzi/direct3d_port.py)、[总场人工边界下的有限盒真空镜像扣除](../../../sdfmpneo_bfzi/direct3d_port.py)、[TEAM-7 铝板/偏心孔固定几何的 1–4 档分层共形四面体](../../../sdfmpneo_bfzi/direct3d_team7.py)、[精简输出和完整探针 JSON](../../../examples/bfzi_d2_team7.py)。实际 50 Hz 固定源/外盒试验：**750/2304/5082/9408 总四面体**，材料区体积严格保持 `0.001420668m³`，真实闭合端口平均功率 `8.221→7.388→7.312→7.085W`；金属总场体积 Joule `21.545→13.163→10.899→9.802W`。二者尚不闭合，**不是 D2 PASS**；本轮另确认仅增大外盒而不增加外域网格会恶化求解结果。隔离 Python 主方法共 **9 tests passed**，未运行完整仓库组合测试和 Gmsh/Elmer 正式同域参考。下一关：真实外盒+近/远场联合网格、50/200 Hz/趋肤层收敛、成熟 Elmer WhitneyAVSolver 同源对照；真实 BFZI 双独立 SE(3) 盒的 Gmsh 网格与铜损耗仍待完成。[实际四档数值与运行命令](D2_TEAM7_OFFICIAL_CASE.md) · [理论第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。**D2 OPEN、旧 G1 FAIL、教师冻结、无 GitHub Actions。**
+>
+
 
 > **2026-11-06 D2 本轮最新（覆盖下方旧“端口功率闭合”措辞）：** 针对真实 Maxwell–MQS 端口修正了关键理论/数值实现：新增有向 Nédélec 总场边界迹 `total_zero`、闭合物理馈回流的真实感生电压 `ΔZ_port=iω∮A_react·dl`，与旧 `iω∫A_src·J` 有限域重叠积分明确分离。小网格实际出现端口/体积功率与双端口互易差异，**如实保持未收敛，不做后验截正/对称化**。隔离计算环境中三维基础+端口方向测试 **7 passed**，远端完整测试仍待用户本机执行。独立成熟参考已锁定 [ElmerCSC 官方 TEAM-7 仓库](D2_ELMER_INDEPENDENT_REFERENCE.md)，对齐其 25×100 mm 体积线圈、−2742 A匝、瞬态 50Hz、`A{e}=0` 和相同外域后才可以比较真实场。实现：[direct3d_aphi.py](../../../sdfmpneo_bfzi/direct3d_aphi.py) · [direct3d_port.py](../../../sdfmpneo_bfzi/direct3d_port.py) · [D2 TeX 第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。当前尚无可执行的 Gmsh/Elmer 本机安装和标准细网格/实测验收证据：**D2 OPEN，G1 FAIL，正式神经教师冻结，禁用 GitHub Actions**。
 >
