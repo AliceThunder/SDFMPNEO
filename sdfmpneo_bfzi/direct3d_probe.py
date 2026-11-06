@@ -32,11 +32,15 @@ def closed_polyline_magnetic(vertices):
 
 
 def sample_cell_fields(result, points, *, incident_magnetic=None,
-                       prefer_conductor=False, nearest=96):
+                       prefer_conductor=False, nearest=96, cell_indices=None):
     """Sample J and B on known physical tetrahedra.
 
     incident_magnetic: list[callable([n,3]) -> [n,3]] for *unit* ports;
       without it only B_secondary is returned (cannot claim total B).
+    cell_indices fixes the SAME tetrahedra for medium/vacuum subtraction
+    even on conductor/insulator interfaces; each point is checked to lie
+    in its specified cell. Without it, selection may change when sigma
+    becomes zero in the vacuum reference.
     Prefer conductor on a face only for deliberately one-sided TEAM-7 J
     probes; do not conflate a sea/air surface with metal interior.
     """
@@ -46,9 +50,19 @@ def sample_cell_fields(result, points, *, incident_magnetic=None,
     mesh=result.mesh
     corners=mesh.nodes[mesh.tetrahedra]
     centres=corners.mean(axis=1)
-    k=min(max(1,int(nearest)),len(corners))
-    _, candidates=cKDTree(centres).query(p,k=k)
-    candidates=np.asarray(candidates).reshape(len(p),-1)
+    if cell_indices is None:
+        k=min(max(1,int(nearest)),len(corners))
+        _, candidates=cKDTree(centres).query(p,k=k)
+        candidates=np.asarray(candidates).reshape(len(p),-1)
+    else:
+        # Critical for medium-vacuum subtraction at material interfaces:
+        # reuse the conductor-side cell selected by the medium solution.
+        indices=np.asarray(cell_indices)
+        if (indices.shape != (len(p),) or
+                not np.issubdtype(indices.dtype,np.integer) or
+                np.any(indices<0) or np.any(indices>=len(corners))):
+            raise ValueError('cell_indices must be valid tetra IDs per probe')
+        candidates=indices.reshape(-1,1)
     labels=[]
     probe_bary=[]
     for point,inds in zip(p,candidates):
