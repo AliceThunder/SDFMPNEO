@@ -104,6 +104,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         raise ValueError("physical x cubature produced a solid point")
     angle_stats={}
     cap_stats={}
+    pair_stats={}
     if method=="radial":
         L,diagnostic=assemble_basis_coulomb_radial(
             basis,np.eye(basis.size),x,wx,
@@ -119,6 +120,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             source_cap_azimuthal_order=cap_azimuthal_order,
             source_cap_azimuth_phase=cap_azimuth_phase,
             source_cap_stats=cap_stats if mode_source_caps else None,
+            reciprocity_stats=pair_stats,
             angular_moment_tolerance=moment_angle_tol,
             angular_refine_levels=angle_levels,
             angular_moment_stats=angle_stats if moment_angle_tol is not None else None,
@@ -156,6 +158,7 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
         norm=float(np.linalg.norm(L)),trace=float(np.trace(L)),
         min_eig=float(np.min(eig)),max_eig=float(np.max(eig)),
         angular_stats=angle_stats,source_cap_stats=cap_stats,
+        pair_reciprocity_stats=pair_stats,
     )
 
 
@@ -799,6 +802,26 @@ def main():
         "gate=not_certified",
         flush=True,
     )
+    # Pair-normalized raw Coulomb reciprocity localizes angular
+    # aliasing which is hidden under a large L44-dominated Frobenius
+    # global norm. Report the worst weak mutual i<j for both equal-
+    # order cap phases, before L is symmetrized.
+    for tag,record in (
+        ("source_cap_6x14",cap_refined),
+        ("source_cap_phase_6x14",phase_shift),
+    ):
+        pair=record["pair_reciprocity_stats"]
+        worst=pair["worst_pair"]
+        print(
+            "p1_full_sea_pair_reciprocity: "
+            f"variant={tag},"
+            f"worst_pair={worst},"
+            f"max_pair_self_normalized={pair['maximum_pair_self_normalized']:.8g},"
+            f"global_raw_skew={pair['raw_global_skew']:.8g},"
+            "meaning=pre_symmetrization_original_Coulomb_reciprocity,"
+            "gate=physical_diagnostic_not_continuum_truth",
+            flush=True,
+        )
     # The affine experiment stays callable as an explicit research
     # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
