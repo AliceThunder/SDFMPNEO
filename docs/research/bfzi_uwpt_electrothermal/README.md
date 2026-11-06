@@ -1,4 +1,7 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+> **2026-11-06 D2 当前方向：独立真实 PDE 精度，而非仅端口代数闭合。** 新增 [椭圆柱非零 `phi` 的解析 Maxwell 场/Joule 与五档实际计算](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)，验证了材料电荷守恒和三维 A–φ 的低感应强度极限；并把**解析真空闭合线源真正用于导电 PDE 激励**，作为 BFZI/TEAM-7 的新独立物理场求解路径（`--solve-analytic-primary`）。低频椭圆柱 Joule 最细档误差约 −0.29%，但 E 仍误差 5.29%；高导电 TEAM-7 与真实双 SE(3) 盒仍无已认证的 h/R/独立数值精度，**D2 OPEN**。前述修正不等于论文复现或教师验收。G1 FAIL，教师冻结，禁用 GitHub Actions。
+>
+
 > **D2 当前最高优先级（2026-11-06）：空间场精度独立核验。** 已发现低阶 3D 总场 FEM 即使端口/Joule 完全自洽，在已知真空闭合方形丝源的四个非源探针处仍有约 **28–38%** 的 Biot–Savart 磁场误差；而且细化 3 档不单调。已新增 [解析源与材料反作用场分离](../../../sdfmpneo_bfzi/direct3d_fields.py)、[精确位置 E/J/q 探针](../../../sdfmpneo_bfzi/direct3d_probe.py)、[真空独立场误差脚本](../../../examples/bfzi_d2_vacuum_field.py)，并接入 [TEAM-7](../../../examples/bfzi_d2_team7.py) 和 [BFZI 双端口](../../../examples/bfzi_d2_aphi.py)。**这不是高精度 D2 通过；独立 TEAM-7/Elmer、高质量网格和无限海水外域仍 OPEN。** 不追 Shafiei/Wang 表格，不重开 G1，不训练教师，禁用 GitHub Actions。
 >
 
