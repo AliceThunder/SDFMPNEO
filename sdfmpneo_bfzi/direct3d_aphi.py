@@ -117,6 +117,29 @@ class AphiResult:
     n_potential_dofs: int
     n_gauge_dofs: int
 
+    def joule_density_at_quadrature(self, currents):
+        """Joule heat source [W/m3] for arbitrary complex peak port currents.
+
+        Return (n_tetra, 4) at the field quadrature points; insulation = 0.
+        """
+        i=np.asarray(currents,dtype=complex)
+        if i.shape!=(len(self.electric_at_quadrature),) or not np.isfinite(i).all():
+            raise ValueError('Expected one finite complex peak current per port')
+        e=np.einsum('p,pnqc->nqc',i,self.electric_at_quadrature)
+        return .5*self.mesh.sigma[:,None]*np.sum(abs(e)**2,axis=-1)
+
+    def port_power(self, currents):
+        i=np.asarray(currents,dtype=complex)
+        if i.shape!=(len(self.delta_z),) or not np.isfinite(i).all():
+            raise ValueError('Expected one finite complex current per port')
+        return float((.5*np.vdot(i,self.delta_z@i)).real)
+
+    def volume_power(self, currents):
+        i=np.asarray(currents,dtype=complex)
+        if i.shape!=(len(self.power_from_fields),) or not np.isfinite(i).all():
+            raise ValueError('Expected one finite complex current per port')
+        return float((.5*np.vdot(i,self.power_from_fields@i)).real)
+
 
 def _element_geometry(coords):
     transform = (coords[1:] - coords[0]).T
