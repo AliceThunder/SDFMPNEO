@@ -184,3 +184,31 @@ def closed_source_port_impedance_exact(result, frequency_hz, source_strands):
                     out[p] += weight*(right-left)*(
                         result.edge_coefficients[:, edge_ids[cell]]@tangential)
     return 1j*(2*np.pi*frequency_hz)*out
+
+
+def medium_vacuum_port_increment(medium_result, frequency_hz,
+                                 incident_potentials, source_strands,
+                                 *, outer_bc='secondary_zero'):
+    """Return (medium reaction Z, vacuum image Z, material-induced Delta Z).
+
+    For total_zero, A_react has a nonzero *vacuum* boundary image even
+    when sigma=0. Subtract a vacuum solve using the same mesh, source
+    and outer boundary BEFORE calling the remainder seawater/metal Z.
+    """
+    from .direct3d_aphi import TetraMesh, solve_aphi
+    medium_z = closed_source_port_impedance_exact(
+        medium_result, frequency_hz, source_strands)
+    if outer_bc == 'secondary_zero':
+        vacuum_z = np.zeros_like(medium_z)
+    elif outer_bc == 'total_zero':
+        mesh = medium_result.mesh
+        empty = TetraMesh(mesh.nodes, mesh.tetrahedra,
+                          np.zeros_like(mesh.sigma))
+        empty_solution = solve_aphi(empty, frequency_hz,
+                                    incident_potentials,
+                                    outer_bc='total_zero')
+        vacuum_z = closed_source_port_impedance_exact(
+            empty_solution, frequency_hz, source_strands)
+    else:
+        raise ValueError('outer_bc must be secondary_zero or total_zero')
+    return medium_z, vacuum_z, medium_z-vacuum_z
