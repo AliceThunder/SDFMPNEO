@@ -16,7 +16,8 @@
     python run.py --mode bfzi-eval --dataset bfzi_geometry_labels.npz --model bfzi_neural.pt # 独立几何误差验证
     python run.py --mode bfzi-p0-source --with-tests # P0：锁定物理源，解析直线 + 高阶角段 C/B 与线圈离散收敛（自动上传）
     python run.py --mode bfzi-p1-coulomb --with-tests # P1：原核 1/r 磁能解析真值（无散度球电流）
-    python run.py --mode bfzi-p1-full-sea --with-tests # P1-C：仅运行真实双封装全海水 curl L 分轴收敛（独立自动日志）
+    python run.py --mode bfzi-p1-full-sea --with-tests # P1-C：默认仅重算当前真实五 curl 局部球帽同阶方位相位，快速自动日志
+    python run.py --mode bfzi-p1-full-sea --p1-full-history --with-tests # 可选：完整历史多轴磁能／外 x Gram（较慢）
     python run.py --mode bfzi-g1-foundations --with-tests # G1：裁剪局部Green积分+层级curl构造+多极外域解析对照（自动上传）
     python run.py --mode bfzi-g1-foundations --g1-hierarchy # 可选昂贵的5→11→17层级J/q试验（尚非精度证书）
     python run.py --mode bfzi-g1-foundations --g1-source-panels # 可选昂贵的15万节点源坐标切向实验（默认跳过）
@@ -396,10 +397,17 @@ def main(argv=None):
                     log_subdir="p0",
                 )
             if mode == "bfzi-p1-full-sea":
-                from examples.bfzi_p1_full_sea_taylor import main as p1_full_sea_main
+                from examples.bfzi_p1_full_sea_taylor import (
+                    main as p1_full_sea_history,
+                    main_focused as p1_full_sea_focused,
+                )
                 from examples.bfzi_run_record import run_and_publish
+                # Keep the expensive historical multi-axis experiment
+                # opt-in; the default only recomputes the CURRENT
+                # five-curl 6x14 source-cap azimuth phase pair.
+                focus = "--p1-full-history" not in args
                 return run_and_publish(
-                    p1_full_sea_main,
+                    p1_full_sea_focused if focus else p1_full_sea_history,
                     flags=args,
                     verbose="--verbose-log" in args,
                     publish="--no-publish-log" not in args,
