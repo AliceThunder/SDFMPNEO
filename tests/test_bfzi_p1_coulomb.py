@@ -460,3 +460,92 @@ def test_identical_source_caps_merge_without_losing_pou_multiplicity():
     np.testing.assert_allclose(rotated[:len(base)],base,rtol=0,atol=0)
     assert not np.allclose(rotated[len(base):],directions[len(base):])
     assert np.all(rot_weights>0)
+
+
+def test_source_cap_true_two_box_corner_panels_are_positive_and_full_azimuth():
+    """Local cap phi sectors follow both real OBB poses, not fixed sample phase."""
+    import math
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.green_coulomb import (
+        _bfzi_projected_box_azimuth_rule,
+        _bfzi_source_cap_angular_rule,
+    )
+
+    scene=build_demo_scene()
+    point=np.array([0.0,0.0,-0.112])
+    center=point+np.array([0.18,0.13,0.09])
+    metric=(np.eye(3)/0.025**2)[None,:,:]
+    axes=np.vstack((np.eye(3),-np.eye(3)))
+    original=np.ones(6)*2*math.pi/3
+
+    # A genuine physical cap is split at the projected corner bearings
+    # of both independently movable insulation packages. Every sector
+    # remains positive and their union covers the full periodic azimuth.
+    direction=(center-point)/np.linalg.norm(center-point)
+    seed=np.array([0.,0.,1.]) if abs(direction[2])<0.9 else np.array([1.,0.,0.])
+    e1=np.cross(seed,direction)
+    e1/=np.linalg.norm(e1)
+    e2=np.cross(direction,e1)
+    phi,wphi=_bfzi_projected_box_azimuth_rule(scene,point,e1,e2,8)
+    assert np.all(np.diff(phi)>0)
+    assert np.all(wphi>0)
+    np.testing.assert_allclose(np.sum(wphi),2*math.pi,rtol=0,atol=1e-12)
+
+    directions,weights,caps=_bfzi_source_cap_angular_rule(
+        point,axes,original,
+        center[None,:],metric,4,10,0.0,scene,2,
+    )
+    assert caps==1 and len(directions)==len(axes)+4*len(phi)
+    assert np.isfinite(weights).all() and np.all(weights>0)
+    np.testing.assert_allclose(
+        directions[:len(axes)],axes,rtol=0,atol=0,
+    )
+    np.testing.assert_allclose(
+        np.linalg.norm(directions,axis=1),1.0,rtol=0,atol=1e-13,
+    )
+
+
+def test_true_box_corner_cap_angles_preserve_unit_ball_exact_moments():
+    """Independent ball S=2pi, M=0 after true-OBB angular sectorization."""
+    import math
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.green_coulomb import assemble_coulomb_radial
+
+    scene=build_demo_scene()
+    center=np.array([0.33,0.31,0.33])
+    width=0.025
+    windows=(center[None,:],(np.eye(3)/width**2)[None,:,:])
+
+    def constant(y):
+        return np.broadcast_to(
+            np.array([[[1.,0.,0.]]]),(len(y),1,3),
+        )
+
+    def ball(point,directions):
+        return (
+            np.zeros((len(directions),1)),
+            np.ones((len(directions),1)),
+        )
+
+    stats={}
+    _,potential=assemble_coulomb_radial(
+        np.zeros((1,3)),np.ones(1),constant,ball,
+        polar_order=4,azimuthal_order=10,radial_order=3,
+        source_angular_caps=windows,
+        source_cap_polar_order=6,
+        source_cap_azimuthal_order=14,
+        source_cap_box_corner_scene=scene,
+        source_cap_box_corner_sector_order=2,
+        exact_scalar_moments=np.array([2*math.pi]),
+        exact_first_moments=np.zeros((1,3)),
+        source_cap_stats=stats,
+        return_point_potentials=True,
+    )
+    assert stats["accepted"]==1
+    assert stats["fall_back"]==0
+    assert stats["max_solid_angle_rel"]<2e-8
+    assert stats["max_scalar_moment_rel"]<2e-8
+    assert stats["max_first_moment_scaled"]<2e-7
+    np.testing.assert_allclose(
+        potential[0,0],[2*math.pi,0.,0.],rtol=1e-9,atol=1e-12,
+    )
