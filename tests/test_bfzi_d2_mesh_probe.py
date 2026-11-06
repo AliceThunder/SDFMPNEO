@@ -53,3 +53,28 @@ def test_gmsh_geometry_contains_two_independent_box_poses():
     assert 'Volume{2,3}' in geo
     assert 'Physical Volume' in geo
     assert 'Mesh.SaveAll' not in geo  # MSH2 would discard physical-region labels
+
+
+def test_probe_affine_nedelec_electric_field_exact():
+    """Pointwise E/J/q are not cell averages: manufactured affine E."""
+    from types import SimpleNamespace
+    from sdfmpneo_bfzi.direct3d_aphi import TetraMesh, _BARY4
+    vertices=np.array([[0.,0.,0.],[1,0,0],[0,1,0],[0,0,1]])
+    mesh=TetraMesh(vertices,np.array([[0,1,2,3]]),np.array([7.]))
+    points4=_BARY4 @ vertices
+    def field(x):
+        return np.column_stack((
+            1.+x[:,0]+2*x[:,1],
+            3*x[:,1]-x[:,2],
+            -2*x[:,0]+5*x[:,2])).astype(complex)
+    reference=SimpleNamespace(
+        mesh=mesh,electric_at_quadrature=field(points4)[None,None,:,:],
+        magnetic_secondary=np.zeros((1,1,3),complex),
+        current_at_cells=np.zeros((1,1,3),complex))
+    probes=np.array([[.1,.2,.3],[.3,.1,.1]])
+    sample=sample_cell_fields(reference,probes)
+    expected=field(probes)
+    assert_allclose(sample['E_total_V_m'][0],expected,rtol=0,atol=1e-13)
+    assert_allclose(sample['J_A_m2'][0],7*expected,rtol=0,atol=1e-12)
+    assert_allclose(sample['q_W_m3'][0],3.5*np.sum(abs(expected)**2,axis=1),
+                    rtol=0,atol=1e-12)
