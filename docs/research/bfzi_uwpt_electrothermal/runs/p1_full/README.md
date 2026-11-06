@@ -442,3 +442,20 @@ source_cap_refined_vs_source_cap 五自十互差异。
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 **P1-C/G1 继续 FAIL，正式神经教师不可开启；禁止 GitHub Actions。**
+
+
+## 第十四次本机日志 4239872（运行代码 fb4ff27）：109 passed，但弱耦合角向反号
+
+最新实跑对相同真实 x/双盒海水湿射线、五个固定无源引导 curl 模式、源窗口径向分片和相同解析 4π/SΩ/MΩ 正权拟合，仅把局部角帽阶数从 (4,10) 提升至 (6,14)，得 L 整体相对变化 **0.727321%**、最坏自能变化 **0.720073%**；弱自能 L00/L11 各变化约 **0.02356%/0.02491%**，但自归一化互耦最大变化 **2.77845%**，L02 从 **−1.5761e−11 → +8.5036e−12**，符号仍不稳定。两级局部帽均 3500 accepted、0 fallback，最终 4π 误差约 4.44e−16、解析 S/M 最大误差 0.2491%/0.0911%；总体 raw skew 从 0.7038% 降至 0.4993%，但强模态可以掩盖弱互耦数值问题。**P1-C/G1 继续 FAIL。**
+
+**本轮实质代码：**
+1. 不再为两个完全相同的实际 Gaussian 中心和 SPD 指标、但不同真实 curl 切向方向，重复生成并评价同一批球面角帽。合并的是计算节点，不是物理基；k 个重合帽的分区函数按 k·h 精确保留，因此和原重复角帽的离散权重之和逐点一致。新增直接解析节点权重测试。
+2. 在原 (6,14) 局部帽基础上新增方位角四分之一步长相位，source_cap_phase_shift_both；保持真实几何、所有模式、所有 x/径向节点、同一背景角向规则和解析正权 S/M 约束，单独检验周期方位角别名误差。原角帽物理轴线与开角不变。
+3. 对原始未对称 Green 装配矩阵新增逐模态对自能归一化的互易性差，输出最差模态对，避免强 L44 掩盖弱 L02 等的原矩阵不对称。
+
+**下一轮日志：** source_cap_phase_shift_both、p1_full_sea_source_cap_phase_cross、source_cap_phase_shift_vs_refined、p1_full_sea_pair_reciprocity。优先核对 L02 的幅值与符号、正权配平接受/回退和去重后的角方向数。当前新代码尚待本机验证。
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+G1/P1-C FAIL，正式磁教师关闭；不使用 GitHub Actions。
