@@ -94,7 +94,8 @@ def racetrack_vertices(offset_m, height_m, corners=12):
     return np.vstack((v,v[0]))
 
 
-def team7_stranded_source(n_width=2, n_height=2, n_corner=12, *, return_strands=False):
+def team7_stranded_source(n_width=2, n_height=2, n_corner=12, *, return_strands=False,
+                          current_sign=1):
     """1-A drive with 2742 distributed turns; A and B of each closed strand.
 
     Approximate homogenized coil using 2D Gauss quadrature over
@@ -103,6 +104,8 @@ def team7_stranded_source(n_width=2, n_height=2, n_corner=12, *, return_strands=
     """
     if min(n_width,n_height,n_corner)<2:
         raise ValueError('At least 2 samples in transverse and corner directions')
+    if current_sign not in (-1,1):
+        raise ValueError('current_sign must be +1 or -1')
     x,wx=np.polynomial.legendre.leggauss(n_width)
     z,wz=np.polynomial.legendre.leggauss(n_height)
     paths=[]
@@ -111,7 +114,7 @@ def team7_stranded_source(n_width=2, n_height=2, n_corner=12, *, return_strands=
         for j in range(n_height):
             offset=COIL_RADIAL_WIDTH*(x[i]+1)/2
             height=COIL_Z0+(COIL_Z1-COIL_Z0)*(z[j]+1)/2
-            turns=COIL_TURNS*wx[i]*wz[j]/4
+            turns=current_sign*COIL_TURNS*wx[i]*wz[j]/4
             path=racetrack_vertices(offset,height,n_corner)
             paths.append((turns,closed_polyline_potential(path),
                           closed_polyline_magnetic(path)))
