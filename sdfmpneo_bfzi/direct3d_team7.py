@@ -130,3 +130,35 @@ def official_probe_lines():
     return {'A1_B1_Bz':line(.072,.034),'A2_B2_Bz':line(.144,.034),
             'A3_B3_Jy_top':line(.072,.019),
             'A4_B4_Jy_bottom':line(.072,0.)}
+
+
+def coarse_team7_tetra_mesh():
+    """Very coarse nonuniform *official geometry* TEAM-7 smoke grid only.
+
+    Uses correct 294x294x19 mm conductor and 108 mm eccentric through-hole,
+    but the plate contains only 48 conductive tets. NEVER compare its
+    numerical field values as a benchmark accuracy claim.
+    """
+    axes=(np.array([-.15,0,.018,.126,.294,.44]),
+          np.array([-.15,0,.018,.126,.294,.44]),
+          np.array([-.08,0,.019,.049,.149,.25]))
+    nodes=np.stack(np.meshgrid(*axes,indexing='ij'),axis=-1).reshape(-1,3)
+    dims=[len(a)-1 for a in axes]
+    def idx(i,j,k): return (i*(dims[1]+1)+j)*(dims[2]+1)+k
+    cube=((0,1,3,7),(0,3,2,7),(0,2,6,7),(0,6,4,7),
+          (0,4,5,7),(0,5,1,7))
+    tetra=[];sig=[]
+    for i in range(dims[0]):
+        for j in range(dims[1]):
+            for k in range(dims[2]):
+                v=(idx(i,j,k),idx(i+1,j,k),idx(i,j+1,k),idx(i+1,j+1,k),
+                   idx(i,j,k+1),idx(i+1,j,k+1),idx(i,j+1,k+1),idx(i+1,j+1,k+1))
+                c=.5*(nodes[v[0]]+nodes[v[7]])
+                plate=(0<=c[0]<=PLATE_SIZE and 0<=c[1]<=PLATE_SIZE
+                       and 0<=c[2]<=PLATE_THICKNESS)
+                hole=(HOLE_X0<c[0]<HOLE_X0+HOLE_WIDTH
+                      and HOLE_Y0<c[1]<HOLE_Y0+HOLE_WIDTH)
+                for tet in cube:
+                    tetra.append([v[q] for q in tet])
+                    sig.append(ALUMINUM_SIGMA if plate and not hole else 0.)
+    return TetraMesh(nodes,np.asarray(tetra),np.asarray(sig))
