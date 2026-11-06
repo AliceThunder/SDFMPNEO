@@ -45,3 +45,40 @@ def test_real_source_loop_voltage_orientation_and_no_extrapolation():
     assert impedance[0,0].real>0
     with pytest.raises(ValueError,match='outside'):
         reaction_potential_at_points(result,np.array([[2.,2.,2.]]))
+
+
+def test_tetra_exact_closed_port_flux_and_shared_facet():
+    """Real analytic Stokes flux, reverse direction, gauge and face tie."""
+    from types import SimpleNamespace
+    from sdfmpneo_bfzi.direct3d_aphi import _topology
+    from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance_exact
+
+    def whitney_representation(analytic_A, n):
+        mesh = box_tetra_mesh([[-.25, .25]]*3, [n]*3, lambda x: 0.)
+        edges, *_ = _topology(mesh)
+        coefficients = np.zeros(len(edges), complex)
+        for (i, j), edge in edges.items():
+            a, b = mesh.nodes[i], mesh.nodes[j]
+            coefficients[edge] = np.dot(analytic_A((a+b)/2), b-a)
+        return SimpleNamespace(mesh=mesh,
+                               edge_coefficients=coefficients[None, :])
+
+    B0 = .19
+    A = lambda x: .5*B0*np.array([-x[1], x[0], 0.])
+    for z, n in ((.013, 5), (0., 4)):
+        result = whitney_representation(A, n)
+        path = np.array([[-.075,-.065,z],[.08,-.065,z],
+                         [.08,.073,z],[-.075,.073,z],
+                         [-.075,-.065,z]])
+        za = closed_source_port_impedance_exact(result, 400., [[(1.,path)]])
+        true_flux = B0*(.08+.075)*(.073+.065)
+        assert_allclose(za[0,0]/(1j*2*np.pi*400), true_flux,
+                        rtol=0, atol=2e-14)
+        zr = closed_source_port_impedance_exact(result, 400.,
+                                                [[(1.,path[::-1])]])
+        assert_allclose(zr, -za, rtol=0, atol=2e-12)
+
+    result = whitney_representation(
+        lambda x: np.array([.3, -.2, .6]), 5)
+    zg = closed_source_port_impedance_exact(result, 400., [[(1.,path)]])
+    assert abs(zg[0,0]) < 1e-12
