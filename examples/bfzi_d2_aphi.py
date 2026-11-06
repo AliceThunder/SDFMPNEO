@@ -33,6 +33,10 @@ def main():
     p.add_argument('--mesh-size', type=float, default=.025)
     p.add_argument('--panels-per-corner', type=int, default=12)
     p.add_argument('--output', type=Path, help='Optional full JSON report')
+    p.add_argument('--solve-analytic-primary', action='store_true',
+                   help='Additionally solve the Maxwell material PDE with analytic '
+                        'closed-port incident A; compare physical E/Joule versus '
+                        'Galerkin total-field/post-hoc correction')
     p.add_argument('--probe', type=float, nargs=3, action='append',
                    metavar=('X','Y','Z'),
                    help='3D field query in meters (repeatable, BFZI case only)')
@@ -79,6 +83,12 @@ def main():
                 assembly,panels_per_corner=args.panels_per_corner))]
             for assembly in scene.assemblies]
         reference = solve_closed_ports(mesh,args.frequency,ports)
+        physical = None
+        if args.solve_analytic_primary:
+            from sdfmpneo_bfzi.direct3d_primary_secondary import (
+                solve_closed_primary_secondary)
+            physical = solve_closed_primary_secondary(
+                mesh,args.frequency,ports)
         physical_source_potentials = [
             closed_polyline_potential(port[0][1]) for port in ports]
         corrected_joule_matrix = reference.analytic_source_corrected_joule(
@@ -93,6 +103,8 @@ def main():
             volume = reference.conductor_power(i)
             corrected = float((.5*np.vdot(i, corrected_joule_matrix@i)).real)
             phase_cases[name] = {
+                'PDE_solved_analytic_primary_seawater_joule_W':(
+                    physical.volume_power(i) if physical is not None else None),
                 'analytic_source_corrected_seawater_joule_W':corrected,
                 'corrected_vs_port_absolute_gap_W':abs(port-corrected),
                 'material_port_W':port,
@@ -110,8 +122,14 @@ def main():
             def carray(a):
                 a = np.asarray(a)
                 return np.stack((a.real,a.imag),axis=-1).tolist()
-            e = sample['E_total_primary_secondary_V_m']
-            b = sample['B_total_corrected_T']
+            if physical is not None:
+                sample = physical.sample_fields(
+                    points,prefer_conductor=True)
+                e = sample['E_total_V_m']
+                b = sample['B_total_T']
+            else:
+                e = sample['E_total_primary_secondary_V_m']
+                b = sample['B_total_corrected_T']
             sigma = sample['sigma_S_m']
             phased = {}
             for name,current in {
@@ -135,10 +153,15 @@ def main():
                 'corrected_B_per_unit_port_T':carray(b),
                 'corrected_E_per_unit_port_V_m':carray(e),
                 'material_B_reaction_per_unit_port_T':carray(
-                    sample['B_material_reaction_fem_T']),
+                    sample['B_secondary_T'] if physical is not None
+                    else sample['B_material_reaction_fem_T']),
                 'raw_fem_B_per_unit_port_T':carray(
-                    sample['B_total_raw_fem_T']),
+                    reference.medium.magnetic_secondary[:,sample['cell_index']]
+                    if physical is not None else sample['B_total_raw_fem_T']),
                 'current_combinations':phased,
+                'method':('PDE-solved analytic primary plus FEM reaction'
+                          if physical is not None else
+                          'Post-hoc corrected coarse total-Galerkin FEM'),
                 'warning':('These primary-secondary spatial E/J/q fields '
                            'are independent diagnostics; they are not certified '
                            'by the discrete Galerkin port-power identity. '
@@ -157,6 +180,19 @@ def main():
                 reference.vacuum_port_z),
             'analytic_source_corrected_joule_matrix':complex_matrix(
                 corrected_joule_matrix),
+            'PDE_analytic_primary_volume_overlap_z_ohm':(
+                complex_matrix(physical.volume_overlap_z)
+                if physical is not None else None),
+            'PDE_analytic_primary_closed_source_reaction_z_ohm':(
+                complex_matrix(physical.closed_source_reaction_z)
+                if physical is not None else None),
+            'PDE_analytic_primary_warning':(
+                'Analytic primary is imposed INSIDE the Maxwell conductivity '
+                'weak form, not substituted after solving. Its finite-domain '
+                'closed-path reaction Z and volume-overlap Z can differ by '
+                'boundary/discretization terms; neither is a certified '
+                'infinite-seawater port until h/R convergence.'
+                if physical is not None else None),
             'two_port_reciprocity_gap_ohm':float(abs(
                 reference.material_increment_z[0,1]-
                 reference.material_increment_z[1,0])),
