@@ -106,11 +106,16 @@ def elliptic_3d_benchmark(*, a=.12, b=.07, height=.1, sigma=4.,
         quadrature.reshape(-1,3), frequency, B_peak, a, b)
     analytic = analytic.reshape(len(corners), 4, 3)
     computed = solution.electric_at_quadrature[0]
+    bare_induction = -1j*(2*np.pi*frequency)*axial_uniform_potential(
+        quadrature.reshape(-1,3), B_peak).reshape(len(corners),4,3)
     volume = np.abs(np.linalg.det(
         (corners[:,1:]-corners[:,0,None,:]).transpose(0,2,1)))/6
     weight = volume[:,None,None]
     error = np.sqrt(np.sum(weight*np.abs(computed-analytic)**2)/
                     np.sum(weight*np.abs(analytic)**2))
+    no_phi_error = np.sqrt(
+        np.sum(weight*np.abs(bare_induction-analytic)**2)/
+        np.sum(weight*np.abs(analytic)**2))
     predicted = elliptic_low_induction_power(
         a, b, height, sigma, frequency, B_peak)
     actual = solution.volume_power(np.array([1.+0j]))
@@ -122,6 +127,7 @@ def elliptic_3d_benchmark(*, a=.12, b=.07, height=.1, sigma=4.,
             float(2*np.pi*frequency*MU0*sigma*max(a,b)**2),
         "n_tetrahedra": len(corners),
         "relative_e_l2_error": float(error),
+        "induction_only_no_phi_e_error":float(no_phi_error),
         "fem_joule_W": float(actual),
         "analytic_ellipse_joule_W": float(predicted),
         "analytic_field_integral_on_polygon_W":
