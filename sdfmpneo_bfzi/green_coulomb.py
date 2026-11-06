@@ -827,6 +827,8 @@ def assemble_coulomb_radial(
     radial_wall_scale: float | None = None,
     radial_mode_windows=None,
     source_angular_caps=None,
+    source_cap_polar_order: int | None = None,
+    source_cap_azimuthal_order: int | None = None,
     source_cap_stats: dict | None = None,
     polar_axis=None,
     azimuthal_rule=None,
@@ -866,6 +868,11 @@ def assemble_coulomb_radial(
     source_angular_caps alternatively builds source-centred local
     spherical cap charts with an exact positive partition of unity
     against the existing full-sphere background angular rule.
+    The optional source_cap_*_order independently refine ONLY the
+    localized source charts; the background S/M-selected angular
+    nodes, radial rule, exact S/M constraints and real sources stay fixed.
+    Comparing two local-cap orders tests actual curl angular convergence,
+    not just the low-order geometry moment constraints.
 
     azimuthal_rule is an optional point-dependent physical angular-panel
     provider. It returns positive azimuth nodes and weights integrating
@@ -945,6 +952,15 @@ def assemble_coulomb_radial(
                                    window_metrics.transpose(0,2,1))
                 or np.any(np.linalg.eigvalsh(window_metrics)<=0)):
             raise ValueError("radial source windows require finite centers and SPD metrics")
+    if ((source_cap_polar_order is not None or
+         source_cap_azimuthal_order is not None)
+            and source_angular_caps is None):
+        raise ValueError("source cap orders require source_angular_caps")
+    cap_polar=polar_order if source_cap_polar_order is None else source_cap_polar_order
+    cap_azimuth=azimuthal_order if source_cap_azimuthal_order is None else source_cap_azimuthal_order
+    if (not isinstance(cap_polar,int) or not isinstance(cap_azimuth,int)
+            or cap_polar<2 or cap_azimuth<4):
+        raise ValueError("source cap Gauss orders must be integers (polar>=2, azimuth>=4)")
     if source_angular_caps is not None:
         cap_centers,cap_metrics=source_angular_caps
         cap_centers=np.asarray(cap_centers,float)
@@ -1114,7 +1130,7 @@ def assemble_coulomb_radial(
             base_lo,base_hi=lo,hi
             cap_dirs,cap_weights,cap_count=_bfzi_source_cap_angular_rule(
                 point,directions,area_weights,cap_centers,cap_metrics,
-                polar_order,azimuthal_order,
+                cap_polar,cap_azimuth,
             )
             if cap_count:
                 # Every finite source cap changes the numerical angular
@@ -1303,6 +1319,8 @@ def assemble_basis_coulomb_radial(
     box_corner_azimuth_panels: bool = False,
     mode_centered_radial_panels: bool = False,
     mode_source_angular_caps: bool = False,
+    source_cap_polar_order: int | None = None,
+    source_cap_azimuthal_order: int | None = None,
     source_cap_stats: dict | None = None,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
@@ -1389,6 +1407,8 @@ def assemble_basis_coulomb_radial(
         radial_wall_scale=basis.wall_scale,
         radial_mode_windows=windows if mode_centered_radial_panels else None,
         source_angular_caps=windows if mode_source_angular_caps else None,
+        source_cap_polar_order=source_cap_polar_order,
+        source_cap_azimuthal_order=source_cap_azimuthal_order,
         source_cap_stats=source_cap_stats,
         polar_axis=axis,
         azimuthal_rule=(
