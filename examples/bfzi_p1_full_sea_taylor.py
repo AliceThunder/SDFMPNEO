@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -115,6 +115,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             exact_affine_control=affine_control,
             mode_centered_radial_panels=mode_radial_panels,
             mode_source_angular_caps=mode_source_caps,
+            source_cap_polar_order=cap_polar_order,
+            source_cap_azimuthal_order=cap_azimuthal_order,
             source_cap_stats=cap_stats if mode_source_caps else None,
             angular_moment_tolerance=moment_angle_tol,
             angular_refine_levels=angle_levels,
@@ -129,6 +131,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             +("_moment_adaptive_angle" if moment_angle_tol is not None else "")
             +("_source_window_radial" if mode_radial_panels else "")
             +("_source_angular_caps" if mode_source_caps else "")
+            +(f"_cap_polar_{cap_polar_order}_azimuth_{cap_azimuthal_order}"
+              if mode_source_caps and cap_polar_order is not None else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -684,6 +688,63 @@ def main():
         "gate=not_certified",
         flush=True,
     )
+    # All 3500 local caps in the 109-pass run passed exact 4*pi,
+    # Coulomb S and first M moment fitting, yet real five-mode self
+    # energies still moved 1.9-6.9% against the matched no-cap trial.
+    # Moment fitting is a necessary geometry identity, NOT a bound on
+    # the real Gaussian-curl angular residual. Freeze the x rule,
+    # S/M-selected background directions, source-window radial Gauss,
+    # source cap axes and exact S/M moment fit. Change ONLY the cap-local
+    # Gauss order to test actual field-weighted angular convergence.
+    cap_refined=trial(
+        basis,x1,inner1,cache,method="radial",
+        angle_scheme="uniform",scalar_control=True,
+        moment_angle_tol=0.0025,angle_levels=1,
+        mode_radial_panels=True,mode_source_caps=True,
+        cap_polar_order=6,cap_azimuthal_order=14,
+    )
+    print(
+        "p1_full_sea: variant=source_cap_refined_both,method=radial,"
+        f"x_nodes={cap_refined['nx']},inner_rule={cap_refined['ny']},"
+        f"norm_L={cap_refined['norm']:.10g},"
+        f"trace_L={cap_refined['trace']:.10g},"
+        f"raw_skew={cap_refined['diagnostic']:.7g},"
+        f"min_eig={cap_refined['min_eig']:.10g},"
+        f"max_eig={cap_refined['max_eig']:.10g}",
+        flush=True,
+    )
+    _report_modes("source_cap_refined_both",cap_refined["L"])
+    fine_stats=cap_refined["source_cap_stats"]
+    fine_bg=cap_refined["angular_stats"]
+    print(
+        "p1_full_sea_source_cap_refinement_quality: "
+        "cap_old=polar_4_azimuth_10,"
+        "cap_new=polar_6_azimuth_14,"
+        f"points={fine_stats['points']},"
+        f"accepted={fine_stats['accepted']},"
+        f"fallback={fine_stats['fall_back']},"
+        f"cap_charts={fine_stats['cap_charts']},"
+        f"cap_nodes={fine_stats['cap_nodes']},"
+        f"max_angular_measure_rel={fine_stats['max_solid_angle_rel']:.8g},"
+        f"max_scalar_moment_rel={fine_stats['max_scalar_moment_rel']:.8g},"
+        f"max_first_moment_scaled={fine_stats['max_first_moment_scaled']:.8g},"
+        f"background_refined={fine_bg['refined']},"
+        f"background_unresolved={fine_bg['unresolved']},"
+        "scope=actual_5_curl_modes_not_continuum_certificate",
+        flush=True,
+    )
+    print(
+        "p1_full_sea_source_cap_refinement_cross: "
+        "same_x_same_background_angles_same_source_modes_same_radial_"
+        "same_exact_S_M_constraint,"
+        f"relative_L={_relative(cap_refined['L'],localized['L']):.8g},"
+        f"self_relative={_self_change(cap_refined['L'],localized['L']):.8g},"
+        f"raw_skew_old={localized['diagnostic']:.8g},"
+        f"raw_skew_refined={cap_refined['diagnostic']:.8g},"
+        "only_cap_local_Gauss_order_changed=true,"
+        "gate=not_certified",
+        flush=True,
+    )
     # The affine experiment stays callable as an explicit research
     # reference, but no longer runs on every five-mode G1 attempt.
     b=results["base"]["L"]
@@ -742,6 +803,7 @@ def main():
     per_mode_changes("moment_angle_vs_uniform_both",adaptive["L"],both)
     per_mode_changes("mode_radial_vs_moment_angle",mode_radial["L"],adaptive["L"])
     per_mode_changes("source_cap_vs_mode_radial",localized["L"],mode_radial["L"])
+    per_mode_changes("source_cap_refined_vs_source_cap",cap_refined["L"],localized["L"])
     # Previous 97-pass P1-C run already falsified the globally subtracted
     # difference pilot; it is not silently reused as magnetic teacher.
     print(
