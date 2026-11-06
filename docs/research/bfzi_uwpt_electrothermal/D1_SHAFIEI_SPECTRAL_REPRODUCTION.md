@@ -1,6 +1,6 @@
 # D0 → D1 独立物理直接法：Shafiei 三层 Helmholtz 复现记录（2026-11-06）
 
-> **状态：D0 受限场景量级核验完成；D1 谱域核心实现和论文表 2 的部分复现完成，D1 总关口仍 OPEN；D2 尚未实现。** 旧 G1/P1-C 不变为 FAIL。不得以本文结果启动神经教师。
+> **状态：D0 受限场景量级核验完成；D1 谱域复阻抗、空间场与 Joule 功率核心实现和论文表 2 的部分复现完成，D1 总关口仍 OPEN；D2 尚未实现。** 旧 G1/P1-C 不变为 FAIL。不得以本文结果启动神经教师。
 >
 > 权威物理范围参见 [锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) 与 [验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)。
 > 实现：`sdfmpneo_bfzi/layered_helmholtz.py`；精简测试：`tests/test_bfzi_d1_layered_helmholtz.py`。
@@ -44,7 +44,7 @@ G0d = 2 q2 t/D
 
 它等价于界面 Dirichlet-to-Neumann 矩阵求逆，且不包含指数增长项 `exp(+u2*d)`。对于相同介质，`G00=Gdd=μ0/(2u)`, `G0d=μ0 exp(-ud)/(2u)`。对于两个端口每匝半径 `a_p,n`，定义 `S_p(k)=Σ_n a_p,n J1(k a_p,n)`，完整环路场造成的复端口相互作用为 `Z_pq=iω·2π∫ k S_p(k)G_pq(k)S_q(k) dk`。没有有限截面自感正则化时，`Z_pp` 的真空磁自项发散；实现返回同一薄环集合相对真空的**有限差值 `ΔZ`**，同频、同半径、同端口方向逐核相减。
 
-MQS 的空气参照纯虚，`Re ΔZ` 为总海水诱导损耗的端口表示。保留位移电流的全波形式同时包含真空辐射差值，不能未经附加判据就以 `Herm(ΔZ)` 当作纯海水 Joule 功率。积分 `k_max` 显式有限，必须外推或加倍上限并报告差异；`quad_vec` 提供积分容差。此求解器**仅计算复端口增量**，尚未实现 `Eφ(r,z), B_r, B_z, q` 空间输出及海水体积功率闭合，不构成 D1 PASS。
+MQS 的空气参照纯虚，`Re ΔZ` 为总海水诱导损耗的端口表示。保留位移电流的全波形式同时包含真空辐射差值，不能未经附加判据就以 `Herm(ΔZ)` 当作纯海水 Joule 功率。积分 `k_max` 显式有限，必须外推或加倍上限并报告差异；`quad_vec` 提供积分容差。此求解器提供 `incremental_impedance` 复端口海水增量、`field_point` 空间 `Aφ/Eφ/B_r/B_z/Jφ/q` 与 `spectral_joule_power` 的 MQS 海水全体积功率。界面源平面仅允许单侧极限；有限截面铜/真实闭合馈回流、真实 BFZI 绝缘盒均不在此解析场景内。新增空间功率验证仍属于同一谱模型内部的独立积分恒等式，不构成 D1 PASS 或独立 3D 精度证明。
 
 ### 复阻抗与场—路接口（Wang 2025）
 
@@ -77,9 +77,22 @@ python -c "from sdfmpneo_bfzi.layered_helmholtz import paper_case,incremental_im
 
 **执行证据边界：** 当前会话在独立 Python 计算环境实跑核心函数的四项检查和表 2 四组无限/半无限对照；GitHub 仓库版本已提交，但尚未收到用户工作站对上述 pytest 的日志。完整代码在远端可按命令复测，不能伪称 3D 本机 FEM 已完成。
 
+### 4.1 空间场及海水功率（2026-11-06 同轮新增）
+
+`field_point(case,r,z,currents)`：将界面 Green 系数沿 `z` 方向向三个材料层传播，计算纯轴对称 `Aφ`、`Eφ=-iωAφ`、`B_r=-∂_z Aφ`、`B_z=(1/r)∂_r(rAφ)`、`Jφ=σEφ` 和 `q=0.5σ|Eφ|²`。本实现以 Hankel/J1 积分和 `k²J0(kr)` 的磁通表达处理轴线 `r=0`，未在 `z=0,d` 的环流源面隐式平均不连续磁场；需要单侧极限时必须显式偏离该源面。
+
+`spectral_joule_power`：通过 Bessel–Parseval 恒等式把 `P=0.5∫σ|Eφ|² dV` 中的径向 `2πr dr` 积分换成 `π ω²∫k dk`。上下半空间的 `z` 积分用 `1/(2 Re u_j)` 闭式求出，有限厚度层采用 Gauss–Legendre 积分。**此函数严格限定 MQS 模型**；目前未包含完整 Maxwell 的辐射或电介质损耗，不能用于全波模型无条件功率认证。
+
+本轮独立解析轴线上 `B_z=μ0 I a²/[2(a²+z²)^{3/2}]` 的单圆环无海水极限达到数值积分精度；不同端口复电流的 `A/E/B/J` 线性组合与局部 `q` 正定表达一致。对三种海水场景和 `(1,0),(0,1),(1,i),(1,-1)` 四种复电流，`P_vol` 与 `0.5 Re[Iᴴ ΔZ I]` 的相对差异约 `1e-7–1e-6`（2 匝缩小案例、400 kHz、`k_max=2400 m⁻¹`）。**两种计算共享同一个半解析物理核**，只是场积分与端口算子的代数/数值交叉检查，不能取代独立 A–φ FEM 或论文原始实验图。正式 15/17 匝、全部频率及空间收敛仍待完成。
+
+```powershell
+python -m pytest tests/test_bfzi_d1_layered_helmholtz.py -q
+python -c "from sdfmpneo_bfzi.layered_helmholtz import paper_case,field_point,spectral_joule_power; c=paper_case('infinite',turns_tx=2,turns_rx=2); print(field_point(c,.1,.04)); print(spectral_joule_power(c,(1,1j)))"
+```
+
 ## 5. D1 剩余及 D2 固定实施路线
 
-1. **先完成 D1**：解决有限海水层 400 kHz 的表格差异；实现同一谱核在三个空间层的 `Aφ, Eφ=-iω Aφ, B_r=-∂_z Aφ, B_z=(1/r)∂_r(rAφ)`，验证层界切向场、源导数跳跃、导电区体积 `0.5 σ|E|²` 与端口功率的一致性。谱域全波需把辐射功率与耗散分开；真正做 MQS 端口功率闭合时使用 MQS 基线。用加倍波数截断+空间积分半径做误差预算，并对论文图 11–14、表 2 的 `E_max` 做相同定义的对照。
+1. **先完成 D1**：解决有限海水层 400 kHz 的表格差异；对现有 `Aφ/Eφ/B_r/B_z` 再核验层界切向场与源导数跳跃，并比较论文图 11–14 和表 2 的 `E_max`（注意场峰值定义和观测位置）。`spectral_joule_power` 在 MQS 下已有端口功率闭合的受限数值结果，但仍需跨频率、源匝数、积分上限、空间场探针收敛和独立解析/实验数据验证。谱域全波须将辐射与导电耗散分开，不可直接使用 MQS 功率恒等式。
 2. **再进入 D2**：以 TEAM Problem 7 作为非轴对称三维基准：`σ_Al = 3.526e7 S/m`、`μr=1`、线圈 `2742 turns × 1 A/turn`、`f=50/200 Hz`。由原始 benchmark 几何构建不对称带孔铝板与激励；不要用本项目 BFZI 线圈偷换基准。使用 `H(curl)` 保形边元 / `A–φ` 一致弱式、`φ` gauge、铜激励与非导电域约束，消除梯度零空间。
 3. D2 预先冻结探针及误差口径：磁通 `B_z` 沿 `y=72 mm,z=34 mm,0≤x≤288 mm`；涡流 `J_y` 沿 `y=72 mm,z=19 mm,0≤x≤288 mm`，逐频对官方/实验数据。每个物理工况至少三个空间网格细化等级和三个外域半径（或两类独立开域处理），分别记录探针复场、铜/铝损耗、端口和计算时间；人工边界不称无限域。
 4. D2 的独立 3D 解达到标准基准后，才将相同 `A–φ` 机制映射到真实 BFZI 的单连续闭合回路、单盒、双盒两独立 SE(3)；导线有限截面与细丝外部场分账，端口复 `Z`、空间 `J/B/E` 和 Joule 体热不缺项。BEM/FEM–BEM、旧 Green–Galerkin 仅在后续 D5 比较；禁止 G1 角帽试错和 GitHub Actions。
