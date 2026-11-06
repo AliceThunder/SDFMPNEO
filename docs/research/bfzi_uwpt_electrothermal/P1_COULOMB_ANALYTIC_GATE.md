@@ -1317,3 +1317,23 @@ mode_radial_both 的严格匹配对照；
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 **本轮新算法尚待本机实跑；P1-C/G1=FAIL，教师训练继续关闭，禁止 GitHub Actions。**
+
+
+## 28. 本轮远端尚无新相位日志：聚焦重算当前真实五模态问题，保留历史完整模式
+
+2026-11-06 UTC 本轮检查分支 HEAD e17afa9c，远端 [latest_full.log](runs/p1_full/latest_full.log) 仍是运行代码 fb4ff27、日志 4239872 的 109-pass 历史实跑；没有 source_cap_phase_shift_both 或 p1_full_sea_pair_reciprocity，因此**不能宣称重复角帽合并、方位相位与弱互耦互易诊断已经本机验证**。最后一次可信的单轴结果仍是局部角帽 (4,10)→(6,14) 使 L 整体相对变化 0.727321%，强自能 L44 变化 0.720073%，L02 符号翻转。
+
+**本轮改进计算工作流（不改任何物理源/电流或 Green 核）：** 原来的 P1-C main() 每次重复历史 x0/x1、内径/角、scalar-only、无源帽及外 x Gram 多轴试验；这些旧指标已存于历史日志，每轮重复耗时。新增 main_focused()，由默认 run.py --mode bfzi-p1-full-sea 调用，**只重算两个真实原核五 curl 磁矩阵**：同一个 x1=4336 点、背景 S/M 选角、同一个 (6,14) 真实模式帽、相同源窗径向 Gauss、同一个正权 4π/S/M 约束，唯一不同的局部帽方位相位 δ=0、δ=0.25。两种均从头求真实 L，不读取缓存；新增在简洁日志中直接输出 L02、L13、L14 及全部十对原未对称互易性误差。注意这不是少算原核精度，而是**停止反复计算已经有历史结果的其他数值试验**。
+
+**全部历史试验没有删除：** 使用 --p1-full-history 仍执行原 main()（完整外 x Gram、背景角、历史内径/角和所有源帽变体）。两种模式均可 --with-tests，并由本机原有 Git 机制自动发布 latest_full.log 和 latest_summary.md，禁止 GitHub Actions。
+
+下一次本机默认：
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+需要完整历史分轴时：
+
+    python run.py --mode bfzi-p1-full-sea --p1-full-history --with-tests
+
+**本轮新聚焦代码尚未本机实跑，P1-C/G1=FAIL，正式磁教师关闭。**
