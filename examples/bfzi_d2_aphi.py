@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh, solve_aphi
+from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh, solve_aphi, closed_polyline_potential
 from sdfmpneo_bfzi.direct3d_galerkin import solve_closed_ports
 
 
@@ -74,6 +74,10 @@ def main():
                 assembly,panels_per_corner=args.panels_per_corner))]
             for assembly in scene.assemblies]
         reference = solve_closed_ports(mesh,args.frequency,ports)
+        physical_source_potentials = [
+            closed_polyline_potential(port[0][1]) for port in ports]
+        corrected_joule_matrix = reference.analytic_source_corrected_joule(
+            args.frequency, physical_source_potentials)
         phase_cases = {}
         for name,current in {
             'I10':(1.,0.),'I01':(0.,1.),'I11':(1.,1.),
@@ -82,7 +86,10 @@ def main():
             i = np.asarray(current,complex)
             port = reference.port_power(i)
             volume = reference.conductor_power(i)
+            corrected = float((.5*np.vdot(i, corrected_joule_matrix@i)).real)
             phase_cases[name] = {
+                'analytic_source_corrected_seawater_joule_W':corrected,
+                'corrected_vs_port_absolute_gap_W':abs(port-corrected),
                 'material_port_W':port,
                 'total_field_seawater_joule_W':volume,
                 'absolute_gap_W':abs(port-volume),
@@ -98,11 +105,13 @@ def main():
                 reference.material_increment_z),
             'finite_box_vacuum_2port_z_ohm':complex_matrix(
                 reference.vacuum_port_z),
+            'analytic_source_corrected_joule_matrix':complex_matrix(
+                corrected_joule_matrix),
             'two_port_reciprocity_gap_ohm':float(abs(
                 reference.material_increment_z[0,1]-
                 reference.material_increment_z[1,0])),
             'phase_port_vs_seawater_joule':phase_cases,
-            'limitations':'No finite copper self/skin/proximity losses, '
+            'limitations':'Discrete source/port Joule equality does NOT certify corrected-source field accuracy. No finite copper self/skin/proximity losses, '
                           'no independently verified outer-domain and h convergence, '
                           'no completed Elmer TEAM-7 experiment agreement',
         }
