@@ -52,3 +52,4 @@ def test_gmsh_geometry_contains_two_independent_box_poses():
     assert 'BooleanFragments' in geo
     assert 'Volume{2,3}' in geo
     assert 'Physical Volume' in geo
+    assert 'Mesh.SaveAll' not in geo  # MSH2 would discard physical-region labels
