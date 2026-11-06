@@ -113,12 +113,7 @@ def main():
             }
         probe_report = None
         if args.probe:
-            from sdfmpneo_bfzi.direct3d_fields import (
-                sample_primary_secondary_fields)
             points = np.asarray(args.probe, dtype=float)
-            sample = sample_primary_secondary_fields(
-                reference, ports, args.frequency, points,
-                prefer_conductor=True)
             def carray(a):
                 a = np.asarray(a)
                 return np.stack((a.real,a.imag),axis=-1).tolist()
@@ -128,6 +123,11 @@ def main():
                 e = sample['E_total_V_m']
                 b = sample['B_total_T']
             else:
+                from sdfmpneo_bfzi.direct3d_fields import (
+                    sample_primary_secondary_fields)
+                sample = sample_primary_secondary_fields(
+                    reference, ports, args.frequency, points,
+                    prefer_conductor=True)
                 e = sample['E_total_primary_secondary_V_m']
                 b = sample['B_total_corrected_T']
             sigma = sample['sigma_S_m']
