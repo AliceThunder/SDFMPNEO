@@ -390,6 +390,7 @@ def test_source_cap_positive_moment_fit_conserves_exact_ball_area_s_and_m():
         radial_order=3,polar_order=4,azimuthal_order=10,
         source_angular_caps=windows,
         source_cap_polar_order=6,source_cap_azimuthal_order=14,
+        source_cap_azimuth_phase=0.25,
         exact_scalar_moments=np.array([2*math.pi]),
         exact_first_moments=np.zeros((1,3)),
         source_cap_stats=refined_stats,
