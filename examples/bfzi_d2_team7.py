@@ -56,20 +56,29 @@ def main():
 
     mesh = (graded_team7_smoke_mesh(args.refinement_level)
             if args.coarse_smoke else team7_mesh(args.mesh))
-    _, _, strands = team7_stranded_source(
+    A_source, B_source, strands = team7_stranded_source(
         args.width_order, args.height_order, args.corner_panels,
         return_strands=True, current_sign=args.current_sign)
     reference = solve_closed_ports(mesh, args.frequency, [strands])
+    corrected_joule_matrix = reference.analytic_source_corrected_joule(
+        args.frequency, [A_source])
+    corrected_power = .5*float(corrected_joule_matrix[0,0].real)
 
     probes = {}
     for name, coords in official_probe_lines().items():
         sample = sample_cell_fields(
             reference.medium, coords, prefer_conductor=('Jy_' in name),
             nearest=256)
-        # direct3d_probe's "B_secondary_T" field is the solved curl(A).
-        # This solver directly solves TOTAL A (not the old reaction A).
-        values = (sample['J_A_m2'][0,:,1] if 'Jy_' in name
-                  else sample['B_secondary_T'][0,:,2])
+
+        if 'Jy_' in name:
+            # Currently a coarse conductor cell-average, not a surface trace
+            # of the analytic-source-corrected electric field.
+            values = sample['J_A_m2'][0,:,1]
+        else:
+            vac = sample_cell_fields(reference.vacuum, coords, nearest=256)
+            values = (B_source(coords)[:,2]
+                      + sample['B_secondary_T'][0,:,2]
+                      - vac['B_secondary_T'][0,:,2])
         probes[name] = {
             'unit': 'A/m2' if 'Jy_' in name else 'T',
             'values_real_imag': [
@@ -95,13 +104,18 @@ def main():
             float(reference.vacuum_port_z[0,0].imag)],
         'closed_port_material_power_W_for_1A':port,
         'conducting_volume_joule_W_for_1A':volume,
+        'analytic_source_corrected_joule_W_for_1A':corrected_power,
+        'corrected_field_vs_port_relative_gap':(
+            abs(corrected_power-port)/max(abs(corrected_power),1e-30)),
         'absolute_power_gap_W':abs(port-volume),
         'relative_power_gap':abs(port-volume)/max(abs(volume),1e-30),
         'probes':probes,
+        'B_probe_definition':'analytic Biot-Savart source plus FEM conductor reaction',
+        'J_probe_definition':'coarse Galerkin cell mean: NOT corrected surface-trace J',
         'phasor':'peak e^(+i omega t): phase0=Re, phase90=-Im',
         'limitations':(
             'Physical source/measurement use identical Galerkin line loads. '
-            'Power closure verifies discrete assembly, NOT TEAM-7 measured '
+            'Galerkin power closure verifies discrete assembly, NOT TEAM-7 measured '
             'B/J accuracy. Mesh, coil cross-section/chords, outer boundary '
             'and independent Elmer benchmark still need convergence.'),
     }
@@ -116,7 +130,9 @@ def main():
             'material_delta_z_real_imag_ohm',
             'closed_port_material_power_W_for_1A',
             'conducting_volume_joule_W_for_1A',
-            'absolute_power_gap_W','relative_power_gap')
+            'absolute_power_gap_W','relative_power_gap',
+            'analytic_source_corrected_joule_W_for_1A',
+            'corrected_field_vs_port_relative_gap')
         print(json.dumps({k:report[k] for k in selected},indent=2))
     else:
         print(json.dumps(report,indent=2))
