@@ -1102,3 +1102,17 @@ G1/P1-C FAIL，正式磁教师关闭；不使用 GitHub Actions。
     python run.py --mode bfzi-p1-full-sea --with-tests
 
 **本轮新增候选尚待 Windows 本机实跑；P1-C/G1=FAIL，正式神经教师关闭，不使用 GitHub Actions。**
+
+
+## 第十六次 112-pass：真实盒角扇区没解决弱互耦；新增逐极角盒边解析角断点
+
+代码 1956ed3、日志 7bc9266：**112 项测试通过、五真实 curl 磁矩阵完成，但 P1-C/G1 FAIL**。双盒角点方位扇区 Gauss2 相对原局部均匀 6×14，虽然全 L 相差仅 **0.065772%**，弱 L00 仍相差 **0.730025%**、自能归一化互耦最差变化 **2.783924%**，L02 从 +8.503606326e−12 反号为 −1.581488039e−11。最差原核模态对互易性 2.45056%→2.61120%。两规则 3500 accepted、0 fallback，独立 4π/S/M 矩误差一致，物理误差不能归因于旧低阶几何矩失配。
+
+**本轮代码：** 在源角帽每个极角 mu 上，对两真实独立 SE(3) 盒各 12 条实际棱边，精确求 (edge(t)−x) 与极轴夹角的带符号二次方程交点；该交点方位新增至上一轮保留的全部盒角方位断点。每个新增扇区继续正权二阶 Gauss，原局部极角六阶、五 curl 模式、原始 1/r、真实湿射线、Gaussian 模式径向面板、同一 x1=4336 和解析 4π/S/M 正权拟合均不变；不引入 FEM 网格。单元测试包含真实上盒 z=.115、y=.1、mu=.67 下处于盒角扇区**内部**的盒边交点，以及 2π/4π/S/M 和双盒小空间 curl 通路。
+
+**下一份默认真实五模态主试验：** source_cap_box_corners_both（原角点分段）对 source_cap_box_edges_both（额外逐 mu 边交分段），报告五个自能、十个互耦、L02/L13/L14、全部原矩阵对称性误差、角方向数量及 accepted/fallback/最终 S/M。新代码尚待本机实跑，不作为磁教师。
+
+    git pull --ff-only
+    python run.py --mode bfzi-p1-full-sea --with-tests
+
+需全部历史分轴时附加 --p1-full-history。**P1-C/G1 FAIL，教师关闭，不使用 GitHub Actions。**
