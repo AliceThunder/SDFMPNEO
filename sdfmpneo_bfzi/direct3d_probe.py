@@ -6,7 +6,7 @@ Uses cellwise B_secondary (exact for first-order Nedelec) and barycenter J
 from __future__ import annotations
 import numpy as np
 from scipy.spatial import cKDTree
-from .direct3d_aphi import MU0
+from .direct3d_aphi import MU0, _BARY4
 
 
 def closed_polyline_magnetic(vertices):
@@ -50,6 +50,7 @@ def sample_cell_fields(result, points, *, incident_magnetic=None,
     _, candidates=cKDTree(centres).query(p,k=k)
     candidates=np.asarray(candidates).reshape(len(p),-1)
     labels=[]
+    probe_bary=[]
     for point,inds in zip(p,candidates):
         hits=[]
         for idx in inds:
@@ -58,20 +59,27 @@ def sample_cell_fields(result, points, *, incident_magnetic=None,
             local=np.linalg.solve((tet[1:]-tet[0]).T,point-tet[0])
             bary=np.r_[1.-local.sum(),local]
             if np.min(bary)>=-1e-9 and np.max(bary)<=1.+1e-9:
-                hits.append(idx)
+                hits.append((idx,bary))
         if not hits:
             raise ValueError('Probe outside mesh or requires a larger nearest window')
         if prefer_conductor:
-            hits.sort(key=lambda j:mesh.sigma[j],reverse=True)
-        labels.append(hits[0])
+            hits.sort(key=lambda j:mesh.sigma[j[0]],reverse=True)
+        labels.append(hits[0][0])
+        probe_bary.append(hits[0][1])
     idx=np.asarray(labels,int)
     Bsc=result.magnetic_secondary[:,idx]
-    J=result.current_at_cells[:,idx]
-    q=np.zeros((J.shape[0],len(idx)))
-    positive=mesh.sigma[idx]>0
-    q[:,positive]=.5*np.sum(abs(J[:,positive])**2,axis=-1)/mesh.sigma[idx[positive]]
+    # The solved Nedelec E field is affine per tetrahedron; reconstitute
+    # it EXACTLY at each physical probe from the four second-order
+    # quadrature field values, rather than using cell-mean J as pointwise J.
+    lam=np.asarray(probe_bary)
+    quad_weights=lam @ np.linalg.inv(_BARY4)
+    E=np.einsum('nq,pnqc->pnc',quad_weights,
+                result.electric_at_quadrature[:,idx])
+    J=mesh.sigma[idx][None,:,None]*E
+    q=.5*mesh.sigma[idx][None,:]*np.sum(abs(E)**2,axis=-1)
     out={'cell_index':idx,'sigma_S_m':mesh.sigma[idx],
-         'J_A_m2':J,'B_secondary_T':Bsc,'q_mean_W_m3':q}
+         'E_total_V_m':E,'J_A_m2':J,'B_secondary_T':Bsc,
+         'q_W_m3':q,'J_cell_mean_A_m2':result.current_at_cells[:,idx]}
     if incident_magnetic is not None:
         if len(incident_magnetic)!=len(Bsc):
             raise ValueError('Expected one incident B provider per port')
