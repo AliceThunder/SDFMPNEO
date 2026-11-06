@@ -844,6 +844,7 @@ def assemble_coulomb_radial(
     source_cap_azimuthal_order: int | None = None,
     source_cap_azimuth_phase: float = 0.0,
     source_cap_stats: dict | None = None,
+    reciprocity_stats: dict | None = None,
     polar_axis=None,
     azimuthal_rule=None,
     exact_scalar_moments=None,
@@ -1320,6 +1321,25 @@ def assemble_coulomb_radial(
         )
     skew = float(np.linalg.norm(accum-accum.T)/
                  max(np.linalg.norm(accum),1e-60))
+    if reciprocity_stats is not None:
+        # Raw source/observation reciprocity is a strict identity of the
+        # real unsoftened Coulomb bilinear form. Unlike the Frobenius
+        # norm, pairwise self-normalization exposes weak couplings
+        # otherwise masked by a single strong global mode.
+        entries=[]
+        for i in range(accum.shape[0]):
+            for j in range(i+1,accum.shape[1]):
+                scale=max(math.sqrt(abs(accum[i,i]*accum[j,j])),1.e-60)
+                mismatch=float(abs(accum[i,j]-accum[j,i])/scale)
+                entries.append((i,j,mismatch))
+        entries.sort(key=lambda entry:entry[2],reverse=True)
+        reciprocity_stats.clear()
+        reciprocity_stats.update(
+            maximum_pair_self_normalized=entries[0][2] if entries else 0.,
+            worst_pair=(entries[0][0],entries[0][1]) if entries else None,
+            all_pairs=entries,
+            raw_global_skew=skew,
+        )
     L = MU0/(4*math.pi)*0.5*(accum+accum.T)
     if return_point_potentials:
         return (L,skew,point_potentials) if return_diagnostics else (L,point_potentials)
@@ -1338,6 +1358,7 @@ def assemble_basis_coulomb_radial(
     source_cap_azimuthal_order: int | None = None,
     source_cap_azimuth_phase: float = 0.0,
     source_cap_stats: dict | None = None,
+    reciprocity_stats: dict | None = None,
     exact_scalar_control: bool = False,
     exact_affine_control: bool = False,
     angular_moment_tolerance: float | None = None,
@@ -1427,6 +1448,7 @@ def assemble_basis_coulomb_radial(
         source_cap_azimuthal_order=source_cap_azimuthal_order,
         source_cap_azimuth_phase=source_cap_azimuth_phase,
         source_cap_stats=source_cap_stats,
+        reciprocity_stats=reciprocity_stats,
         polar_axis=axis,
         azimuthal_rule=(
             azimuthal if box_corner_azimuth_panels else None
