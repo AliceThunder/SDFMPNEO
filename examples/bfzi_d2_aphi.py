@@ -20,20 +20,29 @@ from sdfmpneo_bfzi.direct3d_aphi import (
 )
 
 
-def _report(result, case, frequency):
+def _report(result, case, frequency, *, outer_bc='secondary_zero', closed_path_z=None):
     def to_complex_matrix(a):
         return [[[float(v.real), float(v.imag)] for v in row] for row in a]
     return dict(
         status="D2 early 3D finite-volume-domain A-phi prototype; not TEAM-7 or G1 PASS",
         case=case, frequency_hz=frequency,
-        delta_z_sw_ohm=to_complex_matrix(result.delta_z),
+        volume_overlap_z_ohm=to_complex_matrix(result.delta_z),
+        closed_path_reaction_z_ohm=(
+            to_complex_matrix(closed_path_z) if closed_path_z is not None else None),
+        port_loss_from_closed_path_W_for_1A=(
+            [float(.5*closed_path_z[p,p].real) for p in range(len(closed_path_z))]
+            if closed_path_z is not None else None),
         seawater_power_matrix=to_complex_matrix(result.power_matrix),
         sea_field_power_matrix=to_complex_matrix(result.power_from_fields),
         n_nodes=len(result.mesh.nodes), n_tetrahedra=len(result.mesh.tetrahedra),
         n_nedelec_edges=result.n_edge_dofs,
         n_phi=result.n_potential_dofs, n_gauge=result.n_gauge_dofs,
-        boundary="zero tangential secondary A on finite cube; outer-radius convergence required",
-        caveat="Thin closed filament has no finite copper self Z; no TEAM-7 validation",
+        boundary=outer_bc + ' on finite cube; outer-radius convergence required',
+        caveat=('The volume-overlap Z is NOT guaranteed to be the genuine source '
+                'port impedance for finite artificial boundaries. Only the closed-path '
+                'reaction line integral measures the induced source voltage; compare '
+                'its REAL part against the volume Joule power separately, then refine '
+                'mesh/source/exterior. Finite wire copper self Z is missing.'),
     )
 
 
@@ -45,6 +54,9 @@ def main():
     parser.add_argument('--mesh',type=Path)
     parser.add_argument('--mesh-size',type=float,default=.055)
     parser.add_argument('--panels-per-corner',type=int,default=12)
+    parser.add_argument('--outer-bc',choices=('secondary_zero','total_zero'),
+                        default='secondary_zero')
+    parser.add_argument('--port-subsegments',type=int,default=2)
     args=parser.parse_args()
     if args.case=='smoke':
         if args.mesh or args.write_geo:
@@ -54,7 +66,9 @@ def main():
         def imposed_uniform_B(p):
             return np.column_stack((-5e-4*p[:,1], 5e-4*p[:,0],
                                     np.zeros(len(p))))
-        sol=solve_aphi(mesh,args.frequency,[imposed_uniform_B])
+        sol=solve_aphi(mesh,args.frequency,[imposed_uniform_B],
+                       outer_bc=args.outer_bc)
+        closed_path_z=None
     else:
         from examples.bfzi_mqs_demo import build_demo_scene
         from sdfmpneo_bfzi.source_reference import polygonal_port_vertices
@@ -73,12 +87,19 @@ def main():
             parser.error('BFZI solver needs Gmsh MSH 2.2 file (--mesh)')
         mesh=bfzi_mesh_from_gmsh22(args.mesh,scene)
         sources=[]
+        port_paths=[]
         for assembly in scene.assemblies:
             polygon=polygonal_port_vertices(
                 assembly,panels_per_corner=args.panels_per_corner)
             sources.append(closed_polyline_potential(polygon))
-        sol=solve_aphi(mesh,args.frequency,sources)
-    print(json.dumps(_report(sol,args.case,args.frequency),indent=2))
+            port_paths.append([(1.,polygon)])
+        sol=solve_aphi(mesh,args.frequency,sources,outer_bc=args.outer_bc)
+        from sdfmpneo_bfzi.direct3d_port import closed_source_port_impedance
+        closed_path_z=closed_source_port_impedance(
+            sol,args.frequency,port_paths,subsegments=args.port_subsegments)
+    print(json.dumps(_report(sol,args.case,args.frequency,
+                             outer_bc=args.outer_bc,closed_path_z=closed_path_z),
+                     indent=2))
 
 
 if __name__=='__main__':
