@@ -1,0 +1,146 @@
+% Independent D2 3D A-phi implementation, 2026-11-06.
+% Not certified for infinite seawater or TEAM-7 reference accuracy.
+\section{D2 三维 $A$--$\phi$ 直接法：边元、规范、边界和真实端口}\label{sec:bfzi-d2-aphi}
+
+\paragraph{方法选择与独立性。}
+承接第~\ref{sec:bfzi-physical-direct-locked}~节锁定的 BFZI 场景，
+先用可独立检验的三维 Maxwell--MQS $A$--$\phi$ 有限元直接解，
+不调用 G1 的五模态 Green/Coulomb 矩阵。
+在 $\mu=\mu_0$、静止线性材料与 $e^{+\mathrm i\omega t}$ 基线，
+固定两条真实闭合有向端口源曲线 $\Gamma_p$：
+\begin{equation}
+  \bm A_{\rm src,p}(\bm x)
+    =\frac{\mu_0}{4\pi}\oint_{\Gamma_p}
+        \frac{\mathrm d\bm\ell'}{|\bm x-\bm r'|},\quad
+  \bm A=\sum_pI_p\bm A_{\rm src,p}+\bm a,\quad
+  \bm E=-\mathrm i\omega\bm A-\nabla\phi.
+\end{equation}
+源中心线位于绝缘封装内部；薄丝只用于\emph{铜线外部}
+海水耦合，不提供有限的铜自感、集肤或邻近效应。
+圆形／圆角方形 BFZI 的单根连续螺旋和折线馈回流不得
+被独立理想环集合或超椭圆线圈替代。
+
+\subsection{反作用场与电荷守恒的混合弱式}
+在由导电海水 $\Omega_c$ 和无电导绝缘/空气共同形成的有界
+参考域 $Q_R$ 中，令 $\bm J_c=\sigma\bm E$：
+\begin{align}
+ \nabla\times\mu_0^{-1}\nabla\times\bm a
+  &=\bm J_c,\qquad
+ \nabla\cdot\bm J_c=0\quad(\Omega_c),\\
+ \bm n\cdot\bm J_c&=0 \quad \text{于绝缘盒界面},\qquad
+ \bm B_{\rm react}=\nabla\times\bm a .
+\end{align}
+令 $\bm v\in H(\mathrm{curl};Q_R)$、
+$\psi\in H^1(\Omega_c)$，规范乘子 $p,q\in H^1_0(Q_R)$，
+取一致的复共轭测试。反作用场的
+$A$--$\phi$--$p$ 弱式为
+\begin{align}
+\int_{Q_R}\mu_0^{-1}(\nabla\times\bm a)\cdot
+ (\nabla\times\bar{\bm v})\,\mathrm dV+
+\int_{\Omega_c}\sigma(\mathrm i\omega\bm a+\nabla\phi)
+ \cdot\bar{\bm v}\,\mathrm dV+
+\int_{Q_R}\nabla p\cdot\bar{\bm v}\,\mathrm dV
+ &=-\mathrm i\omega\int_{\Omega_c}\sigma\bm A_{\rm src}
+ \cdot\bar{\bm v}\,\mathrm dV,\\
+\int_{\Omega_c}\sigma
+  \left(\bm a+\frac{\nabla\phi}{\mathrm i\omega}\right)
+  \cdot\nabla\bar\psi\,\mathrm dV
+ &=-\int_{\Omega_c}\sigma\bm A_{\rm src}
+ \cdot\nabla\bar\psi\,\mathrm dV,\\
+\int_{Q_R}\bm a\cdot\nabla\bar q\,\mathrm dV&=0 .
+\end{align}
+第二式是导电区零电荷累积约束除以
+$\mathrm i\omega$，并自然给出导体--绝缘体界面
+$\bm n\cdot\bm J_c=0$；它并不允许把任意材料界面
+一律设为绝缘面。
+$H(\mathrm{curl})$ 用最低阶有向 Nédélec 四面体边元，
+$\phi$ 用导体上的连续 P1 标量元，规范乘子用
+$H_0^1(Q_R)$ 标量元；对每个导体连通分量单独去除
+$\phi$ 常数零模。该可运行初阶方法不能自动声称高精度；
+需要材料共形网格、误差预算及 TEAM--7 测量比对。
+
+\subsection{有限外边界不是无限海水：两种不同问题}
+当前求解器具备两个**可选择的截断问题**：
+\begin{align}
+  \texttt{secondary\_zero:}&\quad \bm n\times\bm a=0,\\
+  \texttt{total\_zero:}&\quad
+     \bm n\times\left(\bm a+\bm A_{\rm src}\right)=0
+  \quad\text{于 }\partial Q_R.
+\end{align}
+后者对全局边 $e=(a,b)$ 的自由度施加
+\begin{equation}
+  \int_e\bm a\cdot\mathrm d\bm\ell=
+   -\int_e\bm A_{\rm src}\cdot\mathrm d\bm\ell ,
+\end{equation}
+使用真实有向边切向迹和独立的边上积分；
+\emph{不是}在节点简单设置向量势零。
+\texttt{total\_zero} 可用于与使用总矢势零边界的
+Elmer TEAM--7 实例构造相同的有限域边界条件；
+但即使如此，也仍须核对两软件的实体线圈源、
+时间模型与外域尺寸。真实无限导电海水仍要求
+至少三档外域（或透明边界/外场边界积分）证明
+端口和空间场尾部的收敛。
+
+\subsection{真实闭合端口、有限域边界项与功率}
+对单位端口 $q$，反作用场 $\bm a_q$ 在源环上光滑，
+真实海水\emph{增量感生电压}应从
+\begin{equation}\label{eq:bfzi-d2-real-port-reaction}
+ \boxed{\Delta Z_{pq}^{\mathrm{port}}
+ =\mathrm i\omega\oint_{\Gamma_p}\bm a_q\cdot
+ \mathrm d\bm\ell }
+\end{equation}
+抽取；该闭环积分对单值梯度规范变换不变。
+多股/等效匝源需按其真实源电流方向和
+安匝权重合成闭合路径，不能直接乘一个模糊的
+等效半径。该感生电压与无限空间的
+$\mathrm i\omega\int_{\Omega_c}
+  \bm A_{\rm src,p}\cdot\bm J_{c,q}\,\mathrm dV$
+在有限截断域中**不必相等**。
+用源磁场 $\bm H_{\rm src,p}$、反作用磁场
+$\bm H_{\rm react,q}$ 的连续积分分部关系，
+两式的差含有边界项
+\begin{equation}
+ \begin{split}
+  \oint_{\Gamma_p}\bm a_q\cdot\mathrm d\bm\ell
+   - \int_{\Omega_c}\bm A_{\rm src,p}\cdot
+      \bm J_{c,q}\,\mathrm dV
+  =\int_{\partial Q_R}\big[
+     (\bm n\times\bm H_{\rm src,p})\cdot\bm a_q
+    -(\bm n\times\bm H_{\rm react,q})\cdot
+       \bm A_{\rm src,p}
+    \big]\,\mathrm dS .
+ \end{split}
+\end{equation}
+此处源丝在域内、边界取不穿过源的光滑迹；
+有限元离散还含线源曲线积分、材料网格和数值积分误差。
+因此不能用共享同一体积求积的 Schur 补功率恒等式
+宣称真实闭合端口精度已经得到独立验证。
+
+海水的真实时间平均耗散始终是
+\begin{equation}
+ P_{\rm sea}(\bm I)=\frac12\int_{\Omega_c}\sigma
+    \left|\sum_p I_p\bm E_p\right|^2\,\mathrm dV,
+ \qquad q(\bm x;\bm I)=\frac12\sigma
+    \left|\sum_p I_p\bm E_p(\bm x)\right|^2.
+\end{equation}
+在无限域正确衰减、全局源与材料分账一致、
+边界通量已处理、数值误差趋零时，才可检验
+$P_{\rm sea}=\frac12\bm I^{\mathrm H}
+\Herm{\Delta\bm Z_{\rm sw}^{\mathrm{port}}}\bm I$。
+粗网格或不同边界下二者有差距属于**未通过的数值误差预算**，
+绝不可硬对称/截正端口矩阵去制造 PASS。
+
+\paragraph{当前程序范围。}
+\texttt{direct3d\_aphi.py} 解混合系统，
+\texttt{direct3d\_port.py} 在各四面体内按边元插值
+沿闭合物理端口做复电压积分；
+\texttt{direct3d\_team7.py} 建立 COMPUMAG 偏心带孔
+铝板及非 BFZI 的赛道形安匝源。
+初步小网格求解和规范梯度极限已实跑，
+但源路径反作用电压与体积 Joule 功率在粗网格
+仍有不可忽略的差距。为独立方法对照，
+可采用 ElmerCSC \texttt{CoilSolver/WhitneyAVSolver}
+官方 TEAM--7 配置，必须匹配有限外域、总场边界、
+$\pm2742$ A匝电流正方向和时域/频域观测定义。
+\textbf{D2 尚无独立高保真 PASS；
+G1 仍 FAIL，正式神经教师不得启动。}
