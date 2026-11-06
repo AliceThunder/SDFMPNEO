@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from sdfmpneo_bfzi.direct3d_galerkin import solve_closed_ports
-from sdfmpneo_bfzi.direct3d_probe import sample_cell_fields
+from sdfmpneo_bfzi.direct3d_fields import sample_primary_secondary_fields
 from sdfmpneo_bfzi.direct3d_team7 import (
     team7_geo, team7_mesh, team7_stranded_source, official_probe_lines,
     graded_team7_smoke_mesh,
@@ -66,24 +66,29 @@ def main():
 
     probes = {}
     for name, coords in official_probe_lines().items():
-        sample = sample_cell_fields(
-            reference.medium, coords, prefer_conductor=('Jy_' in name),
-            nearest=256)
-
-        if 'Jy_' in name:
-            # Currently a coarse conductor cell-average, not a surface trace
-            # of the analytic-source-corrected electric field.
-            values = sample['J_A_m2'][0,:,1]
-        else:
-            vac = sample_cell_fields(reference.vacuum, coords, nearest=256)
-            values = (B_source(coords)[:,2]
-                      + sample['B_secondary_T'][0,:,2]
-                      - vac['B_secondary_T'][0,:,2])
+        sample = sample_primary_secondary_fields(
+            reference, [strands], args.frequency, coords,
+            prefer_conductor=('Jy_' in name), nearest=256)
+        is_j = 'Jy_' in name
+        values = (sample['J_total_primary_secondary_A_m2'][0,:,1]
+                  if is_j else sample['B_total_corrected_T'][0,:,2])
+        raw = (sample['J_total_fem_A_m2'][0,:,1]
+               if is_j else sample['B_total_raw_fem_T'][0,:,2])
         probes[name] = {
-            'unit': 'A/m2' if 'Jy_' in name else 'T',
+            'unit': 'A/m2' if is_j else 'T',
+            'observable': (
+                'analytic-primary plus FEM-material-reaction pointwise J_y'
+                if is_j else
+                'Biot-Savart-primary plus FEM-material-reaction B_z'),
             'values_real_imag': [
                 [float(v.real), float(v.imag)] for v in values],
+            'raw_total_FEM_values_real_imag': [
+                [float(v.real), float(v.imag)] for v in raw],
         }
+        if not is_j:
+            secondary = sample['B_material_reaction_fem_T'][0,:,2]
+            probes[name]['material_reaction_Bz_real_imag_T'] = [
+                [float(v.real), float(v.imag)] for v in secondary]
 
     z = reference.material_increment_z[0,0]
     volume = reference.conductor_power(np.array([1.+0j]))
@@ -114,6 +119,10 @@ def main():
         'J_probe_definition':'coarse Galerkin cell mean: NOT corrected surface-trace J',
         'phasor':'peak e^(+i omega t): phase0=Re, phase90=-Im',
         'limitations':(
+            'Corrected pointwise J/B use analytic primary plus finite-element '
+            'material-vacuum difference, and are NOT automatically Galerkin '
+            'power-conserving. Spatial convergence and independent reference '
+            'are required. '
             'Physical source/measurement use identical Galerkin line loads. '
             'Galerkin power closure verifies discrete assembly, NOT TEAM-7 measured '
             'B/J accuracy. Mesh, coil cross-section/chords, outer boundary '
