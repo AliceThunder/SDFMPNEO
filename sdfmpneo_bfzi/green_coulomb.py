@@ -643,10 +643,122 @@ def _bfzi_projected_box_azimuth_rule(scene, point, e1, e2, order):
     return phi, wphi
 
 
+
+def _bfzi_projected_box_edge_azimuth_boundaries(
+    scene, point, axis, e1, e2, mu,
+):
+    """Exact edge-ray cuts on one physical x-centred constant-mu circle.
+
+    A box edge is an actual world-space segment p(t)=p0+t*(p1-p0).
+    Its bearing lies on the cap's constant polar cosine mu precisely
+    when ((p(t)-x).axis)^2=mu^2*|p(t)-x|^2 AND the signed cosine
+    equals mu. This is a scalar quadratic in t, with no world mesh.
+    Every accepted root gives a physical azimuth cut. Retain all
+    existing projected-corner cuts as well, so the only new numerical
+    axis versus corner panels is subdivision at TRUE edge crossings.
+    This is not a proof that every current-weighted angular kink
+    has been resolved; finite positive Gauss still needs convergence.
+    """
+    point=np.asarray(point,float)
+    axis=np.asarray(axis,float)
+    e1=np.asarray(e1,float)
+    e2=np.asarray(e2,float)
+    mu=float(mu)
+    if not np.isfinite(mu) or not -1.0<=mu<=1.0:
+        raise ValueError("constant polar cosine must be finite in [-1,1]")
+    corners=[]
+    starts=[]
+    ends=[]
+    for assembly in scene.assemblies:
+        half=np.asarray(assembly.enclosure.half_extents,float)
+        local=np.array(np.meshgrid(
+            (-half[0],half[0]),(-half[1],half[1]),
+            (-half[2],half[2]),indexing="ij",
+        )).reshape(3,-1).T
+        world=assembly.pose.position(local)
+        corners.append(world)
+        # Adjacent cube corners differ along exactly one coordinate.
+        # Meshgrid's flattened binary indexing is k-major: xor 1,2,4.
+        for k in range(8):
+            for mask in (1,2,4):
+                j=k^mask
+                if k<j:
+                    starts.append(world[k])
+                    ends.append(world[j])
+    corner_vectors=np.concatenate(corners)-point
+    corner_xy=np.column_stack((corner_vectors@e1,corner_vectors@e2))
+    keep=np.linalg.norm(corner_xy,axis=1)>1e-12
+    cuts=np.mod(np.arctan2(corner_xy[keep,1],corner_xy[keep,0]),
+                2*math.pi).tolist()
+
+    q0=np.asarray(starts)-point
+    dq=np.asarray(ends)-np.asarray(starts)
+    z0=q0@axis
+    dz=dq@axis
+    mu2=mu*mu
+    aa=dz*dz-mu2*np.einsum("ij,ij->i",dq,dq)
+    bb=2*(z0*dz-mu2*np.einsum("ij,ij->i",q0,dq))
+    cc=z0*z0-mu2*np.einsum("ij,ij->i",q0,q0)
+    for k in range(len(aa)):
+        A,B,C=float(aa[k]),float(bb[k]),float(cc[k])
+        if abs(A)<1e-13*max(abs(B),abs(C),1e-12):
+            if abs(B)<1e-14:
+                continue
+            roots=(-C/B,)
+        else:
+            disc=B*B-4*A*C
+            if disc < -1e-13*max(B*B,abs(4*A*C),1e-14):
+                continue
+            root_disc=math.sqrt(max(disc,0.0))
+            roots=((-B-root_disc)/(2*A),(-B+root_disc)/(2*A))
+        for t in roots:
+            if not -1e-12<=t<=1.0+1e-12:
+                continue
+            v=q0[k]+np.clip(t,0.0,1.0)*dq[k]
+            length=float(np.linalg.norm(v))
+            if length<1e-12:
+                continue
+            # Squaring the cone equation also admits the OPPOSITE
+            # polar cone. Always discard that nonphysical branch.
+            if abs(float(v@axis)/length-mu)>2e-9:
+                continue
+            tangential=np.array((v@e1,v@e2))
+            if np.linalg.norm(tangential)<1e-12:
+                continue
+            cuts.append(float(np.mod(
+                math.atan2(tangential[1],tangential[0]),2*math.pi
+            )))
+    bounds=[0.0]
+    for angle in sorted(cuts):
+        if angle>bounds[-1]+1e-9 and angle<2*math.pi-1e-9:
+            bounds.append(angle)
+    bounds.append(2*math.pi)
+    return np.asarray(bounds)
+
+
+def _bfzi_projected_box_edge_azimuth_rule(
+    scene, point, axis, e1, e2, mu, sector_gauss_order=2,
+):
+    """Positive exact-2pi azimuth panels with actual mu-dependent OBB edge cuts."""
+    if not isinstance(sector_gauss_order,int) or sector_gauss_order<2:
+        raise ValueError("edge azimuthal Gauss sector order must be >=2")
+    bounds=_bfzi_projected_box_edge_azimuth_boundaries(
+        scene,point,axis,e1,e2,mu,
+    )
+    nodes,weights=np.polynomial.legendre.leggauss(sector_gauss_order)
+    mids=0.5*(bounds[1:]+bounds[:-1])
+    half=0.5*np.diff(bounds)
+    phi=(mids[:,None]+half[:,None]*nodes[None,:]).ravel()
+    wphi=(half[:,None]*weights[None,:]).ravel()
+    return phi,wphi
+
+
+
 def _bfzi_source_cap_angular_rule(
     point, base_directions, base_weights, centers, metrics,
     polar_order, azimuthal_order, azimuth_phase=0.0,
     box_corner_scene=None, box_corner_sector_order=2,
+    box_edge_scene=None, box_edge_sector_order=2,
 ):
     """Positive partition-of-unity angular charts centred on ACTUAL modes.
 
@@ -687,6 +799,10 @@ def _bfzi_source_cap_angular_rule(
         raise ValueError("cap corner sector Gauss order must be >=2")
     if box_corner_scene is not None and azimuth_phase != 0:
         raise ValueError("corner-partitioned cap angles do not have a uniform azimuth phase")
+    if box_edge_scene is not None and (box_corner_scene is not None or azimuth_phase != 0):
+        raise ValueError("physical OBB edge caps exclude a second cap azimuth scheme")
+    if not isinstance(box_edge_sector_order,int) or box_edge_sector_order<2:
+        raise ValueError("cap edge sector Gauss order must be >=2")
     # Exact duplicates of a Gaussian window produce the same angular
     # cap. Merge their nodes but preserve the multiplicity in the
     # partition profiles, leaving the physical angular integral intact.
@@ -737,24 +853,45 @@ def _bfzi_source_cap_angular_rule(
         e1=np.cross(seed,axis)
         e1/=np.linalg.norm(e1)
         e2=np.cross(axis,e1)
-        if box_corner_scene is None:
-            phi=2*math.pi*(
-                np.arange(azimuthal_order)+0.5+azimuth_phase
-            )/azimuthal_order
-            wphi=np.full(len(phi),2*math.pi/len(phi))
+        if box_edge_scene is not None:
+            # At each polar Gauss node use that EXACT mu to intersect
+            # both OBBs' physical EDGES with the small circle. Different
+            # mu values generally have different phi subintervals.
+            rows=[]
+            row_weights=[]
+            for mu_i,wmu_i in zip(mu,wmu):
+                phi,wphi=_bfzi_projected_box_edge_azimuth_rule(
+                    box_edge_scene,point,axis,e1,e2,float(mu_i),
+                    box_edge_sector_order,
+                )
+                rho=math.sqrt(max(0.,1.-float(mu_i)**2))
+                rows.append(
+                    rho*(np.cos(phi)[:,None]*e1+
+                         np.sin(phi)[:,None]*e2)
+                    +float(mu_i)*axis
+                )
+                row_weights.append(wmu_i*wphi)
+            directions=np.concatenate(rows,axis=0)
+            solid_weights=np.concatenate(row_weights)
         else:
-            phi,wphi=_bfzi_projected_box_azimuth_rule(
-                box_corner_scene,point,e1,e2,
-                4*box_corner_sector_order,
-            )
-        transverse=np.sqrt(np.maximum(0.,1.-mu*mu))
-        directions=(
-            transverse[:,None,None]*
-            (np.cos(phi)[None,:,None]*e1+
-             np.sin(phi)[None,:,None]*e2)
-            +mu[:,None,None]*axis
-        ).reshape(-1,3)
-        solid_weights=(wmu[:,None]*wphi[None,:]).ravel()
+            if box_corner_scene is None:
+                phi=2*math.pi*(
+                    np.arange(azimuthal_order)+0.5+azimuth_phase
+                )/azimuthal_order
+                wphi=np.full(len(phi),2*math.pi/len(phi))
+            else:
+                phi,wphi=_bfzi_projected_box_azimuth_rule(
+                    box_corner_scene,point,e1,e2,
+                    4*box_corner_sector_order,
+                )
+            transverse=np.sqrt(np.maximum(0.,1.-mu*mu))
+            directions=(
+                transverse[:,None,None]*
+                (np.cos(phi)[None,:,None]*e1+
+                 np.sin(phi)[None,:,None]*e2)
+                +mu[:,None,None]*axis
+            ).reshape(-1,3)
+            solid_weights=(wmu[:,None]*wphi[None,:]).ravel()
         h=profiles(directions)
         patch_weight=h[:,mode_index]/(1.0+np.sum(h,axis=1))
         result_dirs.append(directions)
@@ -863,6 +1000,8 @@ def assemble_coulomb_radial(
     source_cap_azimuth_phase: float = 0.0,
     source_cap_box_corner_scene=None,
     source_cap_box_corner_sector_order: int = 2,
+    source_cap_box_edge_scene=None,
+    source_cap_box_edge_sector_order: int = 2,
     source_cap_stats: dict | None = None,
     reciprocity_stats: dict | None = None,
     polar_axis=None,
@@ -1001,8 +1140,8 @@ def assemble_coulomb_radial(
     if (not isinstance(cap_polar,int) or not isinstance(cap_azimuth,int)
             or cap_polar<2 or cap_azimuth<4):
         raise ValueError("source cap Gauss orders must be integers (polar>=2, azimuth>=4)")
-    if source_cap_box_corner_scene is not None and source_angular_caps is None:
-        raise ValueError("source cap box corner panels require source_angular_caps")
+    if (source_cap_box_corner_scene is not None or source_cap_box_edge_scene is not None) and source_angular_caps is None:
+        raise ValueError("physical box corner/edge source cap panels require source_angular_caps")
     if source_angular_caps is not None:
         cap_centers,cap_metrics=source_angular_caps
         cap_centers=np.asarray(cap_centers,float)
@@ -1174,6 +1313,7 @@ def assemble_coulomb_radial(
                 point,directions,area_weights,cap_centers,cap_metrics,
                 cap_polar,cap_azimuth,source_cap_azimuth_phase,
                 source_cap_box_corner_scene,source_cap_box_corner_sector_order,
+                source_cap_box_edge_scene,source_cap_box_edge_sector_order,
             )
             if cap_count:
                 # Every finite source cap changes the numerical angular
@@ -1386,6 +1526,8 @@ def assemble_basis_coulomb_radial(
     source_cap_azimuth_phase: float = 0.0,
     source_cap_box_corner_panels: bool = False,
     source_cap_box_corner_sector_order: int = 2,
+    source_cap_box_edge_panels: bool = False,
+    source_cap_box_edge_sector_order: int = 2,
     source_cap_stats: dict | None = None,
     reciprocity_stats: dict | None = None,
     exact_scalar_control: bool = False,
@@ -1478,6 +1620,8 @@ def assemble_basis_coulomb_radial(
         source_cap_azimuth_phase=source_cap_azimuth_phase,
         source_cap_box_corner_scene=(basis.scene if source_cap_box_corner_panels else None),
         source_cap_box_corner_sector_order=source_cap_box_corner_sector_order,
+        source_cap_box_edge_scene=(basis.scene if source_cap_box_edge_panels else None),
+        source_cap_box_edge_sector_order=source_cap_box_edge_sector_order,
         source_cap_stats=source_cap_stats,
         reciprocity_stats=reciprocity_stats,
         polar_axis=axis,
