@@ -53,12 +53,13 @@
       "relative_Joule": -0.002915166560376603
     }
   ],
-  "local_pytest": "13 passed in 4.93s (ellipse + local 3D core/source/spatial tests)",
+  "local_pytest": "16 passed in 5.33s after exact-nonaffine-source E probe fix (elliptic + analytic-primary closed ports + local 3D core/source/spatial tests)",
   "gates": {
     "elliptic_low_induction": "method evidence only",
     "team7_full_mesh": "OPEN",
     "elmer_independent": "OPEN",
     "bfzi_full_3d": "OPEN",
     "neural_teacher": "FROZEN"
-  }
+  },
+  "newly_identified_and_fixed": "Known analytic line-source E is nonaffine within tetrahedra. Probe interpolation must remove analytic primary at quadrature, interpolate only affine FEM reaction E, then restore primary at physical point. Vacuum test failed before fix and passed afterward."
 }
