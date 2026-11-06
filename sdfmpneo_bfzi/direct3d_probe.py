@@ -1,7 +1,10 @@
-"""3-D A-phi finite-element field sampling for independent D2 benchmarks.
+"""3-D A-phi physical spatial probes at actual tetrahedral positions.
 
-Uses cellwise B_secondary (exact for first-order Nedelec) and barycenter J
-(quadrature-consistent cell mean) for mesh-refinement diagnostics.
+First-order Nedelec reaction A and P1 grad(phi) are affine inside each
+tetrahedron; KNOWN analytic closed-wire A_primary is not. Subtract
+analytic A_primary at Gauss points before interpolating finite-element
+reaction E, then restore it at the true 3D probe position.
+The sampled J/q are pointwise, not misleading cell averages.
 """
 from __future__ import annotations
 import numpy as np
