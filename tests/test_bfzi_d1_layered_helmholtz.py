@@ -3,7 +3,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 from sdfmpneo_bfzi.layered_helmholtz import (
     LayeredCoaxialCase, interface_green, incremental_impedance, paper_case,
-    propagation, MU0,
+    propagation, MU0, field_point, spectral_joule_power,
 )
 
 
@@ -60,3 +60,41 @@ def test_full_wave_and_invalid_geometry():
         pass
     else:
         raise AssertionError("Invalid source radius accepted")
+
+
+def test_independent_on_axis_biot_savart_and_field_superposition():
+    dry = LayeredCoaxialCase((.1,), (.08,), .12, 100000., (0., 0., 0.))
+    z = -.07
+    field = field_point(dry, 0., z, k_max=4000)
+    expected_bz = MU0 * .1**2 / (2 * (.1**2 + z**2)**1.5)
+    assert_allclose(field["B_z_T"], expected_bz, rtol=1e-5)
+    assert abs(field["B_r_T"]) < 1e-12
+    assert field["q_W_m3"] == 0.0
+
+    wet = LayeredCoaxialCase((.1,), (.08,), .12, 100000., (4., 4., 4.))
+    point = (0.12, 0.04)
+    f0 = field_point(wet, *point, (1., 0.), k_max=1600)
+    f1 = field_point(wet, *point, (0., 1.), k_max=1600)
+    combined = field_point(wet, *point, (1., 1j), k_max=1600)
+    for key in ("A_phi_T_m", "E_phi_V_m", "B_r_T", "B_z_T", "J_phi_A_m2"):
+        assert_allclose(combined[key], f0[key] + 1j*f1[key], rtol=2e-8, atol=1e-12)
+    assert_allclose(combined["q_W_m3"],
+                    abs(combined["J_phi_A_m2"])**2 / (2*4.),
+                    rtol=1e-13)
+
+
+def test_layered_seawater_parseval_power_matches_complex_port_power():
+    # Internal spectral-model identity, not an independent 3-D A-phi benchmark.
+    for scenario in ("infinite", "semifinite", "finite"):
+        case = paper_case(scenario, frequency_hz=400000.,
+                          turns_tx=2, turns_rx=2)
+        z = incremental_impedance(case, k_max=2400,
+                                  include_displacement=False)
+        for currents in ((1.,0.), (0.,1.), (1.,1j), (1.,-1.)):
+            i = np.asarray(currents, dtype=complex)
+            port_watts = .5 * np.vdot(i, z @ i).real
+            volume_watts = spectral_joule_power(case, currents,
+                                                k_max=2400)
+            assert port_watts > 0
+            assert_allclose(volume_watts, port_watts, rtol=2e-5,
+                            atol=1e-10)
