@@ -81,7 +81,7 @@ def _quadrature(scene, basis, rule, cache):
     return cache[rule]
 
 
-def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None,cap_azimuth_phase=0.0):
+def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="uniform",scalar_control=False,affine_control=False,moment_angle_tol=None,angle_levels=1,mode_radial_panels=False,mode_source_caps=False,cap_polar_order=None,cap_azimuthal_order=None,cap_azimuth_phase=0.0,cap_box_corner_panels=False,cap_corner_sector_order=2):
     # Legacy x/y disjoint requirement remains for Taylor benchmark.
     # New direct radial solver uses y_rule as (radial,polar,azimuth) orders.
     if x_rule == y_rule:
@@ -119,6 +119,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
             source_cap_polar_order=cap_polar_order,
             source_cap_azimuthal_order=cap_azimuthal_order,
             source_cap_azimuth_phase=cap_azimuth_phase,
+            source_cap_box_corner_panels=cap_box_corner_panels,
+            source_cap_box_corner_sector_order=cap_corner_sector_order,
             source_cap_stats=cap_stats if mode_source_caps else None,
             reciprocity_stats=pair_stats,
             angular_moment_tolerance=moment_angle_tol,
@@ -138,6 +140,8 @@ def trial(basis,x_rule,y_rule,cache=None,method="difference",angle_scheme="unifo
               if mode_source_caps and cap_polar_order is not None else "")
             +(f"_cap_phase_{cap_azimuth_phase:g}"
               if mode_source_caps and cap_azimuth_phase != 0 else "")
+            +(f"_cap_true_OBB_corner_sector_{cap_corner_sector_order}"
+              if mode_source_caps and cap_box_corner_panels else "")
         )
     else:
         y,wy=_quadrature(scene,basis,y_rule,cache)
@@ -898,7 +902,7 @@ def main():
 
 
 def main_focused():
-    """Current P1-C bottleneck only: same-order physical cap phase.
+    """Current P1-C bottleneck: real-OBB corner-guided cap azimuth.
 
     Preserve the full historic 5-rule/outer-Gram experiment in main().
     This focused run does not silently reuse prior L values: both
@@ -925,17 +929,17 @@ def main_focused():
         "x_rule=shell_3_4_8_3,"
         "background_moment_tolerance=0.0025,"
         "local_cap_order=polar_6_azimuth_14,"
-        "phase_pair=0_and_0.25,"
+        "cap_azimuth_axis=periodic_uniform_vs_true_dual_OBB_corner_sectors,"
         "source_radial_windows=true,"
         "exact_positive_4pi_S_M_moment_fit=true,"
-        "historical_diagnostics=available_with_--p1-full-history,"
+        "historical_phase_diagnostics=available_with_--p1-full-history,"
         "gate=not_certified",
         flush=True,
     )
     outcome={}
-    for phase,label in (
-        (0.0,"source_cap_refined_both"),
-        (0.25,"source_cap_phase_shift_both"),
+    for corners,label in (
+        (False,"source_cap_refined_both"),
+        (True,"source_cap_box_corners_both"),
     ):
         z=trial(
             basis,x1,inner1,cache,method="radial",
@@ -943,7 +947,9 @@ def main_focused():
             moment_angle_tol=0.0025,angle_levels=1,
             mode_radial_panels=True,mode_source_caps=True,
             cap_polar_order=6,cap_azimuthal_order=14,
-            cap_azimuth_phase=phase,
+            cap_azimuth_phase=0.0,
+            cap_box_corner_panels=corners,
+            cap_corner_sector_order=2,
         )
         outcome[label]=z
         print(
@@ -962,7 +968,7 @@ def main_focused():
         print(
             "p1_full_sea_focused_cap_quality: "
             f"variant={label},"
-            f"azimuth_phase={phase:g},"
+            f"azimuth_scheme={'true_OBB_corner_sectors' if corners else 'uniform_periodic'},"
             f"x_points={cap['points']},"
             f"accepted={cap['accepted']},"
             f"fallback={cap['fall_back']},"
@@ -997,7 +1003,7 @@ def main_focused():
             flush=True,
         )
     base=outcome["source_cap_refined_both"]
-    shifted=outcome["source_cap_phase_shift_both"]
+    shifted=outcome["source_cap_box_corners_both"]
     L0,L1=base["L"],shifted["L"]
     diag0,diag1=np.diag(L0),np.diag(L1)
     frac=np.abs(diag1-diag0)/np.maximum(np.abs(diag0),1e-40)
@@ -1008,41 +1014,44 @@ def main_focused():
     normalized=np.abs((L1-L0)/scale)
     mutual=normalized[np.triu_indices(basis.size,1)]
     print(
-        "p1_full_sea_source_cap_phase_cross: "
-        "same_x_same_curl_modes_same_cap_order_same_radial_"
+        "p1_full_sea_source_cap_corner_cross: "
+        "same_x_same_curl_modes_same_cap_polar_order_same_radial_"
         "same_exact_4pi_S_M,"
         f"relative_L={_relative(L1,L0):.8g},"
         f"self_relative={_self_change(L1,L0):.8g},"
         f"raw_skew_unshifted={base['diagnostic']:.8g},"
         f"raw_skew_shifted={shifted['diagnostic']:.8g},"
-        "only_local_azimuthal_phase_changed=true,"
+        "only_local_azimuth_quadrature_changed=true,"
+        "true_OBB_corner_bearings_both_packages=true,"
         "gate=not_certified",
         flush=True,
     )
     print(
         "p1_full_sea_mode_delta: "
-        "comparison=source_cap_phase_shift_vs_refined,"
+        "comparison=source_cap_box_corners_vs_refined,"
         +",".join(f"self{i}={v:.8g}" for i,v in enumerate(frac))
         +f",max_self={max(frac):.8g},"
         +f"max_mutual_self_normalized={max(mutual):.8g}",
         flush=True,
     )
-    # Explicit weak mutual pair values: unlike a total L norm, this
-    # makes a change of sign in L02 observable in the concise log.
+    # Explicit weak mutual pair values from genuinely different
+    # physical-box angular charts, without interpreting a sign change
+    # in a small near-cancelled coupling as a physical fact.
     print(
         "p1_full_sea_focused_weak_mutual: "
-        f"L02_unshifted={L0[0,2]:.12g},"
-        f"L02_shifted={L1[0,2]:.12g},"
-        f"L13_unshifted={L0[1,3]:.12g},"
-        f"L13_shifted={L1[1,3]:.12g},"
-        f"L14_unshifted={L0[1,4]:.12g},"
-        f"L14_shifted={L1[1,4]:.12g},"
+        f"L02_uniform={L0[0,2]:.12g},"
+        f"L02_corner={L1[0,2]:.12g},"
+        f"L13_uniform={L0[1,3]:.12g},"
+        f"L13_corner={L1[1,3]:.12g},"
+        f"L14_uniform={L0[1,4]:.12g},"
+        f"L14_corner={L1[1,4]:.12g},"
         "gate=not_certified",
         flush=True,
     )
     print(
         "p1_full_sea_note: focused_current_bottleneck_only,"
         "historical_full_diagnostics=--p1-full-history,"
+        "historical_phase_pair=available_in_full_history,"
         "independent_x_and_continuum_accuracy_still_unresolved,"
         "G1=FAIL",
         flush=True,
