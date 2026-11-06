@@ -50,6 +50,8 @@ MQS 的空气参照纯虚，`Re ΔZ` 为总海水诱导损耗的端口表示。�
 
 Shimin Wang, Wangqiang Niu, Xianwen Zhou, *Modeling wireless power transfer in marine environment via integrated electromagnetic field and circuit analysis*, **Measurement** 251 (2025), 117224, DOI: https://doi.org/10.1016/j.measurement.2025.117224。出版商摘要证实将复自感、复互感与外部电路方程联立，实验使用 22.5 cm 线圈、460 kHz。无官方可用全参数数值表时，不虚构其 `Z` 数值；本模块只给电磁增量端口矩阵。电路串补容抗、负载和逆变器/整流器各自独立组装，避免双重计入水损或铜损。
 
+**严格复阻抗约定（与 Wang 场—路模型衔接）：** 给定 `e^{+iωt}` 和同向端口定义，若只考虑海水响应，`ΔZ_sw=R_sw+iX_sw`，定义增量复感 `ΔL_complex=ΔZ_sw/(iω)=X_sw/ω-iR_sw/ω`。故导电海水的正耗散对应**复感的负虚部**，不可将 `Im ΔL_complex` 直接截成正损耗。总耦合器矩阵需另加有限截面导线自身 `Z_cu`、原始真空自/互感，以及经独立核算的其他材料域阻抗，不能把 `ΔZ_sw` 当总 `Z_EM`。对单纯串联支路，可写 `V=(Z_EM+Z_series)I`；Wang 的实际串—并联拓扑还应按节点/支路 KCL/KVL 建立完整网络方程，**不能把并联电容或负载当成对角串联阻抗直接加和**。本文未取得该论文完整可复现元件数值表，不宣称已经完成 460 kHz 系统效率或负载电压复现。
+
 ## 4. 原论文表 2 独立数值复现
 
 使用公开表 1 参数、`d=0.10 m`、径向中心距 `2.5 mm`、`include_displacement=True`、`k_max=5000 m^-1`。每格为 `R_tx/R_rx/R_mutual`（Ω，实部）；左列为论文正式表 2 的 **analytical** 栏，右列为本实现值（不是测量）。源代码中电流幅度为单位峰值相量，输出电阻与激励幅值无关。
