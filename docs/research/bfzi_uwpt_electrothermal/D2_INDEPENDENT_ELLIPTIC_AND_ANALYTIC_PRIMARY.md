@@ -1,4 +1,7 @@
 # D2：独立椭圆柱 A–φ 解析极限与真实解析入射场求解
+> **2026-11-06 实测测试失败后完成的关键空间探针纠正：** 在加入解析源 PDE 的真空闭合方环专项测试时，`B` 已正确，但旧探针将“解析线源 + Whitney FEM 反作用”混合总场直接假定为单元仿射，导致真空 `E` 测点误差最大约 `1.38e-4 V/m`（本例两点）。这与 Maxwell PDE 数值积分或椭圆柱结果不同，是**空间查询后处理的具体实现错误**。现在在 [direct3d_probe.py](../../../sdfmpneo_bfzi/direct3d_probe.py) 中新增 `incident_potentials` 与 `frequency_hz`：对四面体 Gauss 的 `E_total` 先加回 `+iω A_source_exact(x_q)` 提取真正可仿射插值的有限元反作用电场，仅对该部分进行 Whitney 重构，然后在实际测点减去 `iω A_source_exact(x)`。正式 [analytic-primary 解](../../../sdfmpneo_bfzi/direct3d_primary_secondary.py) 自动传入真实闭合端口解析源。**本地 16 项合并 pytest 已实际通过（5.33 秒）**，含先失败后修复的真空源 `E/B`、有介质 `J/q`、两端口、非圆形 `phi`、椭圆柱网格极限及此前独立 Galerkin 基础；远端完整仓库测试尚无工作站日志。正式物理推导已同步 [第17节](../../../theory/sections/17_d2_aphi_reference_and_ports.tex)。仍必须通过材料反作用场的 h/R、趋肤与独立 Elmer/TEAM-7 收敛后才能确认高精度教师。
+>
+
 
 **2026-11-06｜方法验证已实算；正式 D2 仍为 OPEN。**
 
