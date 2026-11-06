@@ -7,8 +7,8 @@ Official geometry: https://www.compumag.org/wp/wp-content/uploads/2018/06/proble
     gmsh team7.geo -3 -format msh2 -o team7.msh
     python -m examples.bfzi_d2_team7 --mesh team7.msh --frequency 50
 
-COARSE-SMOKE has only 48 metal tetrahedra; do not compare its amplitudes
-to experimental references. TEAM-7 is an independent FEM calibration case,
+COARSE-SMOKE at level 1 has only 48 metal tetrahedra; refinements are
+still NOT experimental validation. TEAM-7 is an independent FEM calibration case,
 not a replacement for the actual BFZI continuous spiral and two OBBs.
 """
 from __future__ import annotations
@@ -92,7 +92,13 @@ def main():
         'total_medium_reaction_z_real_imag_ohm':[
             float(medium_reaction_z[0,0].real),
             float(medium_reaction_z[0,0].imag)],
-        'outer_bc':args.outer_bc,'outer_box':args.outer_box,
+        'outer_bc':args.outer_bc,
+        'outer_box':('local_small_box' if args.coarse_smoke else args.outer_box),
+        'outer_bounds_m':(
+            [[-.15,.44],[-.15,.44],[-.08,.25]] if args.coarse_smoke
+            else ([[-.2,.494],[-.2,.494],[-.2,.394]]
+                  if args.outer_box=='elmer'
+                  else [[-1.353,1.647],[-1.353,1.647],[-.3,.449]])),
         'closed_source_power_W_for_1A':float(.5*port_z[0,0].real),
         'source_voltage_vs_metal_joule_relative_gap':float(
             abs(.5*port_z[0,0].real-.5*sol.power_from_fields[0,0].real)/
