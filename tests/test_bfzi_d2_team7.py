@@ -15,6 +15,7 @@ def test_official_team7_geometry_and_source():
     assert '0.294,0.294,0.019' in geo
     assert '0.018,0.018' in geo
     assert 'BooleanDifference' in geo and 'BooleanFragments' in geo
+    assert 'Mesh.SaveAll' not in geo  # physical id is needed by MSH2 importer
     path=racetrack_vertices(.0125,.1,corners=8)
     assert np.array_equal(path[0],path[-1])
     assert np.min(np.linalg.norm(np.diff(path,axis=0),axis=1))>0
