@@ -21,7 +21,7 @@ from sdfmpneo_bfzi.direct3d_aphi import solve_aphi
 from sdfmpneo_bfzi.direct3d_probe import sample_cell_fields
 from sdfmpneo_bfzi.direct3d_team7 import (
     team7_geo, team7_mesh, team7_stranded_source, official_probe_lines,
-    coarse_team7_tetra_mesh,
+    graded_team7_smoke_mesh,
 )
 
 
@@ -30,6 +30,8 @@ def main():
     parser.add_argument('--write-geo',type=Path)
     parser.add_argument('--mesh',type=Path)
     parser.add_argument('--coarse-smoke',action='store_true')
+    parser.add_argument('--refinement-level',type=int,default=1,
+                        help='1..N, only for --coarse-smoke structured mesh')
     parser.add_argument('--frequency',type=int,choices=(50,200),default=50)
     parser.add_argument('--mesh-size',type=float,default=.08)
     parser.add_argument('--plate-size',type=float,default=.009)
@@ -39,7 +41,6 @@ def main():
     parser.add_argument('--outer-bc',choices=('secondary_zero','total_zero'),
                         default='secondary_zero')
     parser.add_argument('--outer-box',choices=('compumag','elmer'),default='compumag')
-    parser.add_argument('--port-subsegments',type=int,default=2)
     parser.add_argument('--current-sign',type=int,choices=(-1,1),default=1)
     args=parser.parse_args()
     if args.write_geo:
@@ -52,7 +53,11 @@ def main():
         if not args.coarse_smoke and args.mesh is None:return
     if args.coarse_smoke == bool(args.mesh):
         parser.error('Choose one of --coarse-smoke or --mesh MSH2_PATH')
-    mesh=coarse_team7_tetra_mesh() if args.coarse_smoke else team7_mesh(args.mesh)
+    if not args.coarse_smoke and args.refinement_level!=1:
+        parser.error('--refinement-level requires --coarse-smoke')
+    if args.refinement_level < 1:
+        parser.error('--refinement-level must be positive')
+    mesh=graded_team7_smoke_mesh(args.refinement_level) if args.coarse_smoke else team7_mesh(args.mesh)
     A_source,B_source,strands=team7_stranded_source(
         args.width_order,args.height_order,args.corner_panels,
         return_strands=True,current_sign=args.current_sign)
@@ -74,6 +79,7 @@ def main():
         'status':'D2 TEAM-7 initial FEM; no benchmark PASS',
         'geometry':'COMPUMAG Problem 7 Fig.1 (not BFZI)',
         'frequency_hz':args.frequency,'coarse_smoke':args.coarse_smoke,
+        'structured_refinement_level':(args.refinement_level if args.coarse_smoke else None),
         'nodes':len(mesh.nodes),'tetrahedra':len(mesh.tetrahedra),
         'metal_tetrahedra':int(np.count_nonzero(mesh.sigma)),
         'source':f'{args.current_sign*2742} AT racetrack, 25x100 mm cross-section Gauss filament approximation',
