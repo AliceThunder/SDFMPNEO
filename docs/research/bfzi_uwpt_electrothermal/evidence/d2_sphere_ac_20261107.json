@@ -1,0 +1,74 @@
+{
+  "status": "D2 OPEN: isolated SciPy reproduction of first-order 3D A-phi weak form, not full remote-repo test suite",
+  "case": "finite-frequency conducting sphere in a uniform axial magnetic field",
+  "radius_m": 0.05,
+  "conductivity_s_m": 35260000,
+  "frequency_hz": 50,
+  "B0_peak_T": [
+    0,
+    0,
+    0.001
+  ],
+  "mu_H_m": 0.0000012566370614359173,
+  "exact_sphere_joule_W": 0.026846944091138105,
+  "analytic_validation": "numerical curl(B)-mu*sigma*E relative residual approximately 1e-9 at a non-axis interior probe",
+  "boundary": "Nedelec tangential exact total A on piecewise planar inscribed ball; no interior source",
+  "quadrature": "four Gauss points per tetra for E and B; constant FEM B; sphere/polyhedron volume separately",
+  "rows": [
+    {
+      "divisions": 2,
+      "tetrahedra": 48,
+      "relative_L2_E": 0.7669409164340267,
+      "relative_L2_B": 0.5959674593150621,
+      "fem_Joule_W": 0.02098760880622379,
+      "exact_same_polyhedron_Joule_W": 0.012386520992865718,
+      "exact_whole_sphere_Joule_W": 0.026846944091138105,
+      "relative_Joule_error_on_same_polyhedron": 0.6943909285191583,
+      "polyhedron_to_sphere_volume_ratio": 0.76641304
+    },
+    {
+      "divisions": 4,
+      "tetrahedra": 384,
+      "relative_L2_E": 0.5221710127652484,
+      "relative_L2_B": 0.4992361114871585,
+      "fem_Joule_W": 0.028976315799423915,
+      "exact_same_polyhedron_Joule_W": 0.02152547265592515,
+      "exact_whole_sphere_Joule_W": 0.026846944091138105,
+      "relative_Joule_error_on_same_polyhedron": 0.34614074508825365,
+      "polyhedron_to_sphere_volume_ratio": 0.92883818
+    },
+    {
+      "divisions": 6,
+      "tetrahedra": 1296,
+      "relative_L2_E": 0.37687017277769574,
+      "relative_L2_B": 0.3790522846875026,
+      "fem_Joule_W": 0.02811043270220609,
+      "exact_same_polyhedron_Joule_W": 0.024318893869793613,
+      "exact_whole_sphere_Joule_W": 0.026846944091138105,
+      "relative_Joule_error_on_same_polyhedron": 0.15590918126099185,
+      "polyhedron_to_sphere_volume_ratio": 0.96716467
+    },
+    {
+      "divisions": 8,
+      "tetrahedra": 3072,
+      "relative_L2_E": 0.29333756954321216,
+      "relative_L2_B": 0.2983920921477459,
+      "fem_Joule_W": 0.02750339978543653,
+      "exact_same_polyhedron_Joule_W": 0.025398020431080647,
+      "exact_whole_sphere_Joule_W": 0.026846944091138105,
+      "relative_Joule_error_on_same_polyhedron": 0.08289541147779533,
+      "polyhedron_to_sphere_volume_ratio": 0.98127964
+    },
+    {
+      "divisions": 10,
+      "tetrahedra": 6000,
+      "relative_L2_E": 0.23961908621496972,
+      "relative_L2_B": 0.24417563738338852,
+      "fem_Joule_W": 0.027225616166922564,
+      "exact_same_polyhedron_Joule_W": 0.025912757707460956,
+      "exact_whole_sphere_Joule_W": 0.026846944091138105,
+      "relative_Joule_error_on_same_polyhedron": 0.05066455968457584,
+      "polyhedron_to_sphere_volume_ratio": 0.98794314
+    }
+  ]
+}
