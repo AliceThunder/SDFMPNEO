@@ -148,8 +148,8 @@ def sphere_d2_benchmark(reference: HarmonicConductingSphere, divisions=6):
     gauss_pts = np.einsum("qi,nic->nqc", _BARY4, corners)
     e_exact = reference.fields(gauss_pts)["E_V_m"]
     e_fem = solved.electric_at_quadrature[0]
-    e_exact_norm = np.sum(volumes[:, None]*abs(e_exact)**2)/4
-    e_diff_norm = np.sum(volumes[:, None]*abs(e_fem-e_exact)**2)/4
+    e_exact_norm = np.sum(volumes[:, None, None]*abs(e_exact)**2)/4
+    e_diff_norm = np.sum(volumes[:, None, None]*abs(e_fem-e_exact)**2)/4
     b_exact = reference.fields(corners.mean(axis=1))["B_T"]
     b_fem = solved.magnetic_secondary[0]  # total solved A, no source split
     b_exact_norm = np.sum(volumes[:, None]*abs(b_exact)**2)
