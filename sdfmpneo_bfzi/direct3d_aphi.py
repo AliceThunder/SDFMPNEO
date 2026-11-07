@@ -201,7 +201,8 @@ def _topology(mesh):
 
 def solve_aphi(mesh: TetraMesh, frequency_hz:float,
                incident_potentials: list[Callable], *, mu:float=MU0,
-               outer_bc: str = 'secondary_zero', edge_source_load=None) -> AphiResult:
+               outer_bc: str = 'secondary_zero', edge_source_load=None,
+               boundary_total_potentials=None) -> AphiResult:
     """Gauge-fixed 3D secondary A-phi, sources=unit-current incident A fields.
 
     Assumes mu=mu0 everywhere, prescribed incident potentials come from CLOSED
@@ -210,14 +211,24 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     outer_bc='total_zero': n x (A_src+A_react)=0; impose projected
     edge traces -int_edge A_src·dl. This matches zero tangential TOTAL
     vector potential on the finite boundary, not an infinite-ocean condition.
+    outer_bc='prescribed_total': n x (A_incident+A_reaction) equals a
+    supplied exact total vector potential on the boundary. This mode
+    permits independent manufactured/analytic Maxwell diffusion tests.
     Only a conforming material/geometry mesh is appropriate.
     """
     if not np.isfinite(frequency_hz) or frequency_hz <= 0 or mu != MU0:
         raise ValueError('Positive frequency and currently uniform mu0 required')
     if not incident_potentials:
         raise ValueError('At least one incident port is required')
-    if outer_bc not in ('secondary_zero', 'total_zero'):
-        raise ValueError('outer_bc must be secondary_zero or total_zero')
+    if outer_bc not in ('secondary_zero', 'total_zero', 'prescribed_total'):
+        raise ValueError('Invalid outer_bc')
+    if outer_bc == 'prescribed_total':
+        if (not isinstance(boundary_total_potentials, (tuple, list))
+                or len(boundary_total_potentials) != len(incident_potentials)
+                or not all(callable(f) for f in boundary_total_potentials)):
+            raise ValueError('prescribed_total needs one exact boundary A field per port')
+    elif boundary_total_potentials is not None:
+        raise ValueError('boundary_total_potentials only with prescribed_total')
     omega=2*np.pi*frequency_hz
     edges,le,sg,bnodes,bedges=_topology(mesh)
     ne=len(edges); nn=len(mesh.nodes)
@@ -314,7 +325,7 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
         raise ValueError('No interior DOFs in the given mesh')
     Kr=K[keep,:][:,keep]
     bc_values=np.zeros((size,len(incident_potentials)),complex)
-    if outer_bc=='total_zero':
+    if outer_bc in ('total_zero', 'prescribed_total'):
         # Nedelec boundary edge DOFs are oriented circulation integrals,
         # not point values. Project each source's tangential A onto the
         # same globally oriented boundary edges with 3-point Gauss.
@@ -334,7 +345,18 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
                 if values.shape != (eval_x.shape[0]*3,3) or not np.isfinite(values).all():
                     raise ValueError('Invalid vector potential on outer boundary')
                 values=values.reshape(len(ids),3,3)
-                bc_values[ids,port]=-np.einsum('eqc,ec,q->e',values,tangent,wg)
+                if outer_bc == 'prescribed_total':
+                    specified=np.asarray(
+                        boundary_total_potentials[port](eval_x.reshape(-1,3)),
+                        dtype=complex)
+                    if (specified.shape != (len(ids)*3,3)
+                            or not np.isfinite(specified).all()):
+                        raise ValueError('Invalid prescribed total A boundary field')
+                    values=specified.reshape(len(ids),3,3)-values
+                else:
+                    values=-values
+                bc_values[ids,port]=np.einsum(
+                    'eqc,ec,q->e',values,tangent,wg)
     rhsr=rhs[keep]-K[keep,:]@bc_values
     maxrow=np.asarray(abs(Kr).max(axis=1).toarray()).ravel()
     if np.any(maxrow==0):
