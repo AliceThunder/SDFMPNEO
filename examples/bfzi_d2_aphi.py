@@ -31,6 +31,10 @@ def main():
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
     p.add_argument('--mesh-size', type=float, default=.025)
+    p.add_argument('--near-mesh-size',type=float,
+                   help='Near both independently rotated insulating boxes (m)')
+    p.add_argument('--near-padding',type=float,
+                   help='World-distance padding around each oriented box (m)')
     p.add_argument('--panels-per-corner', type=int, default=12)
     p.add_argument('--output', type=Path, help='Optional full JSON report')
     p.add_argument('--solve-analytic-primary', action='store_true',
@@ -70,7 +74,9 @@ def main():
         scene = build_demo_scene()
         if args.write_geo:
             args.write_geo.write_text(
-                gmsh_bfzi_two_boxes(scene, mesh_size_m=args.mesh_size),
+                gmsh_bfzi_two_boxes(scene, mesh_size_m=args.mesh_size,
+                                    near_mesh_size_m=args.near_mesh_size,
+                                    near_padding_m=args.near_padding),
                 encoding='utf-8')
             print('Wrote two independently posed OBBs:',args.write_geo)
             if args.mesh is None:
