@@ -13,6 +13,22 @@
 
 > 当前状态：已有一套**真正求解三维边元 A–φ 混合有限元方程**的独立初始实现，非旧 G1 磁 Green 五模态。针对基础三维封闭源、线性互易和功率的有限网格数值测试已在本轮隔离 Python 环境运行；**尚无 TEAM-7 官方几何/测量比对、无网格与外域收敛证书，不能标记 D2 PASS 或 BFZI 高精度教师通过。** 参见 [物理 V1.0 锁定](PHYSICAL_DIRECT_METHOD_LOCKED.md)、[D0/D1 方法迁移](METHOD_TRANSFER_D1_TO_D2.md)。
 
+## 2026-11-07：真实 BFZI 两独立 SE(3) 封装的局部共形网格尺度
+
+原 `gmsh_bfzi_two_boxes(scene,mesh_size_m)` 对两只薄绝缘封装和远场海水使用同一全域近似网格尺度。若为了两只厚仅约 30 mm 的薄盒把全域网格不断减小，外域自由度会急剧增长；反之采用过粗统一网格会使盒/海水界面缺少单元。这不是调端口电阻能解决的问题。
+
+已修改 **真正的 BFZI Gmsh 网格生成主代码** `sdfmpneo_bfzi/direct3d_mesh.py`，新增 `near_mesh_size_m` 和 `near_padding_m`。它保留 OpenCASCADE 真实**两只独立三维有向 OBB**的 `BooleanFragments`，只对背景网格尺寸使用两只 OBB 的世界坐标 AABB 包络 `h_world = |R| @ half_extents`。分别生成 Gmsh 官方 `Box` 尺度场、设置 `VIn=near`、`VOut=far` 和平滑 `Thickness`，用 `Min` 合并。**背景轴对齐尺寸盒不替代真正旋转的绝缘体几何**。两个封装可分别在任意合法 SE(3) 姿态拥有不同位置的近场加密；远海水仍粗分辨。保持 MSH2.2 物理体积标签而禁止 `Mesh.SaveAll`（以免丢标签），导电海水与两个无电导绝缘盒通过材料共形四面体区分。依据 [Gmsh 官方背景网格尺度文档](https://www.gmsh.info/doc/texinfo/gmsh.html)。
+
+```powershell
+# Gmsh 已安装的 Windows 工作站，以下命令只是操作入口，当前环境尚未实跑 Gmsh
+git pull --ff-only
+python -m examples.bfzi_d2_aphi --case bfzi --write-geo bfzi_d2.geo --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025
+gmsh bfzi_d2.geo -3 -format msh2 -o bfzi_d2.msh
+python -m examples.bfzi_d2_aphi --case bfzi --mesh bfzi_d2.msh --frequency 200000 --output runs/bfzi_d2_localmesh.json
+```
+
+**严格限制：** 这是一项真正的网格生成算法改进，不是已完成 Gmsh/Elmer 精度验收；`Box` 背景场只控制局部目标尺寸，不保证导电海水近壁分辨率、铜集肤层或 Maxwell A–φ 物理误差自动达标。必须实际用 Gmsh 生成共形四面体、检查单元质量、加密近场 `h` 及远域边界 `R`、验证两组闭合端口空间 B/E/J/q 与同域 Elmer 独立参考。正式教师仍冻结。
+
 ## 1. D2 主求解器代码
 
 - `sdfmpneo_bfzi/direct3d_aphi.py`：三维线性四面体最低阶**有向 Nédélec 边元**求海水/空气总域内的反作用磁矢势；导电域 P1 标量势 `phi`；全域 `H^1_0` Coulomb 规范乘子；导体分量的标量常数自由度逐个固定；复稀疏块系统与有限域边界。
