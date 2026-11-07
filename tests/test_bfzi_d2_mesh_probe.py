@@ -100,3 +100,42 @@ def test_material_interface_probe_reuses_exact_medium_tetra_in_vacuum():
     assert np.array_equal(metal['cell_index'],vac['cell_index'])
     assert np.all(metal['sigma_S_m']>0)
     assert np.all(vac['sigma_S_m']==0)
+
+
+def test_independent_rotated_obb_nearfield_mesh_sizing():
+    """Physical OBB rotation changes mesh AABB, not conductor geometry."""
+    from dataclasses import replace
+    import re
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.geometry import RigidPose
+
+    scene=build_demo_scene()
+    angle=.35
+    rotation=np.array([[np.cos(angle),0,np.sin(angle)],
+                       [0,1,0],
+                       [-np.sin(angle),0,np.cos(angle)]])
+    tilted=replace(scene.receiver,
+                   pose=RigidPose(rotation, scene.receiver.pose.center))
+    scene=replace(scene,receiver=tilted)
+    geo=gmsh_bfzi_two_boxes(
+        scene,mesh_size_m=.07,near_mesh_size_m=.008,
+        near_padding_m=.025)
+    assert 'BooleanFragments' in geo
+    assert 'Field[1] = Box;' in geo
+    assert 'Field[2] = Box;' in geo
+    assert 'Field[3].FieldsList = {1,2};' in geo
+    assert 'Background Field = 3;' in geo
+    assert 'Mesh.SaveAll' not in geo
+    def setting(name):
+        found=re.search(re.escape(name)+r'\s*=\s*([-+0-9.eE]+);',geo)
+        assert found is not None
+        return float(found.group(1))
+    assert_allclose(setting("Field[2].VIn"), .008)
+    assert_allclose(setting("Field[2].VOut"), .07)
+    extent=np.abs(rotation)@np.asarray(tilted.enclosure.half_extents)
+    assert_allclose(
+        setting("Field[2].XMin"),
+        tilted.pose.center[0]-extent[0]-.025,atol=1e-14)
+    assert_allclose(
+        setting("Field[2].ZMax"),
+        tilted.pose.center[2]+extent[2]+.025,atol=1e-14)
