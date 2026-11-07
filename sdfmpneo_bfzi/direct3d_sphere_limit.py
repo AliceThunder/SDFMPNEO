@@ -150,10 +150,10 @@ def sphere_d2_benchmark(reference: HarmonicConductingSphere, divisions=6):
     e_fem = solved.electric_at_quadrature[0]
     e_exact_norm = np.sum(volumes[:, None, None]*abs(e_exact)**2)/4
     e_diff_norm = np.sum(volumes[:, None, None]*abs(e_fem-e_exact)**2)/4
-    b_exact = reference.fields(corners.mean(axis=1))["B_T"]
-    b_fem = solved.magnetic_secondary[0]  # total solved A, no source split
-    b_exact_norm = np.sum(volumes[:, None]*abs(b_exact)**2)
-    b_diff_norm = np.sum(volumes[:, None]*abs(b_fem-b_exact)**2)
+    b_exact = reference.fields(gauss_pts)["B_T"]
+    b_fem = solved.magnetic_secondary[0][:, None, :]  # constant per tetra
+    b_exact_norm = np.sum(volumes[:, None, None]*abs(b_exact)**2)/4
+    b_diff_norm = np.sum(volumes[:, None, None]*abs(b_fem-b_exact)**2)/4
     sigma = reference.conductivity_s_m
     exact_poly_joule = .5*sigma*e_exact_norm
     fem_joule = solved.volume_power([1.])
