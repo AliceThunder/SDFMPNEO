@@ -1,0 +1,142 @@
+% D2 independent magnetic-diffusion reference, 2026-11-07.
+% A conducting sphere in a uniform AC magnetic field. Not BFZI or TEAM7.
+\section{D2 独立有限频率磁扩散解析基准：三维导电球}
+\label{sec:bfzi-d2-ac-sphere}
+
+\paragraph{为何需要额外的独立物理基准。}
+闭合源与端口使用同一个 N\'ed\'elec 泛函，可以保证\emph{有限元离散代数}
+的互易与功率恒等式；但这种自一致性\emph{无法证明}空间
+$\bm E,\bm B,\bm J$ 和真实 Joule 功率达到连续方程精度。
+第~\ref{sec:bfzi-d2-aphi}~节的 TEAM--7 和真实 BFZI 参考
+还需专门核对磁扩散、材料边界和趋肤层。
+为此引入一个\textbf{具有完整频率响应且不需要拟合论文数据}
+的三维连续物理问题：非磁导电球暴露于外加均匀谐波磁场。
+这也是三维涡流高阶有限元的经典独立基准类型
+（见例如 MRI 扫描器涡流数值文献的 conducting-sphere AC stage）。
+
+\subsection{独立求得的 $A/B/E/J$ 解析解}
+半径 $a>0$ 的导电球具有均匀实电导率 $\sigma>0$，
+球内外 $\mu=\mu_0$，外部为空气。
+给定远场峰值复相量 $\bm B_\infty$，
+采用 $e^{+\mathrm i\omega t}$ 及 Maxwell--MQS：
+\begin{equation}
+\nabla\times\mu_0^{-1}\nabla\times\bm A
+ +\mathrm i\omega\sigma\bm A=\bm0,\qquad
+\bm E=-\mathrm i\omega\bm A,\qquad
+\bm J=\sigma\bm E
+\quad (r<a).
+\end{equation}
+对轴对称纯环流解，电标势可取 $\phi=0$，
+并且 $\nabla\cdot\bm J=0$、
+$\bm n\cdot\bm J|_{r=a}=0$。
+若 $\bm B_\infty$ 取任意固定空间方向，可以写
+\begin{equation}
+\bm A(\bm x)=h(r)\,(\bm B_\infty\times\bm x),\qquad
+r=\|\bm x\|,\qquad
+\kappa^2=\mathrm i\omega\mu_0\sigma.
+\end{equation}
+令 $i_1$ 为\emph{第一类修正球 Bessel 函数}，
+$x_a=\kappa a$，从磁场及磁矢势的界面连续性，
+令
+\begin{equation}
+F=\frac{3a/2}{2+x_a i_1'(x_a)/i_1(x_a)},\quad
+D=a^2(F-a/2),\qquad
+h(r)=\begin{cases}
+\dfrac{F i_1(\kappa r)}{r\,i_1(\kappa a)},&r\leq a,\\[6pt]
+\dfrac12+\dfrac{D}{r^3},&r>a.
+\end{cases}
+\end{equation}
+在球心使用稳定极限
+$h(0)=F\kappa/[3i_1(\kappa a)]$。
+空间磁场由 $\bm B=\nabla\times\bm A$ 给出
+\begin{equation}
+\boxed{
+\bm B(\bm x)=
+\bigl(2h(r)+rh'(r)\bigr)\bm B_\infty
+-\frac{h'(r)}{r}\,\bm x\,(\bm x\cdot\bm B_\infty),
+\qquad
+\bm E=-\mathrm i\omega h(r)(\bm B_\infty\times\bm x).}
+\end{equation}
+$r=0$ 时右式采用 $h'(0)=0$ 的连续极限。
+该解析场在球内满足
+$\nabla\times\bm B=\mu_0\sigma\bm E$，
+边界上 $\bm A$、法向 $\bm B$ 和切向 $\bm H$
+连续。低感应数极限 $\kappa a\to0$ 给出
+$h\to1/2$、$\bm B\to\bm B_\infty$。
+趋肤深度
+$\delta=\sqrt{2/(\omega\mu_0\sigma)}$ 由同一式决定，
+无需调整任何实验拟合参数。
+
+球内真实时间平均损耗的\emph{一维解析约化积分}：
+\begin{equation}
+\boxed{P_\mathrm{sphere}=
+\frac{4\pi}{3}\sigma\omega^2
+\|\bm B_\infty\|^2
+\int_0^a |h(r)|^2r^4\,\mathrm dr.}
+\end{equation}
+该积分可用高阶一维 Gauss--Legendre 直接求值，
+与三维 FEM 组装和空间电场重建\textbf{没有共用源字典}。
+
+\subsection{实际三维边元验证的边界与误差归属}
+代码在一个立方体结构四面体网格上执行径向
+cube-to-ball 映射，使全部外边界顶点落在
+$r=a$ 的球面；但每个有限元边界面仍是平三角，
+实际材料体积 $\Omega_h\subset B_a$。
+通过单独的
+\texttt{solve\_aphi(...,outer\_bc='prescribed\_total',
+boundary\_total\_potentials=[A\_exact])}
+在**三维有向边上**精确（边积分数值求积）施加
+$\bm n\times\bm A_{\rm total}
+=\bm n\times\bm A_{\rm exact}$，
+球内不添加任意人造电流体源，材料频率项
+$\mathrm i\omega\sigma$ 和
+$A$--$\phi$--规范混合系统均由实际三维求解器负责。
+
+解析连续场限制到多面体内仍满足相同\emph{内部} Maxwell--MQS
+微分方程，因此评价空间 E/B 时必须与\emph{同一多面体}
+的解析积分比较；此外单独列出多面体体积和完整球体损耗，
+不得把两者几何差异当作有限元物理误差。
+具体定义
+\begin{equation}
+\varepsilon_E=
+\frac{\|\bm E_h-\bm E_\mathrm{exact}\|_{L^2(\Omega_h)}}
+{\|\bm E_\mathrm{exact}\|_{L^2(\Omega_h)}},\quad
+\varepsilon_B=
+\frac{\|\bm B_h-\bm B_\mathrm{exact}\|_{L^2(\Omega_h)}}
+{\|\bm B_\mathrm{exact}\|_{L^2(\Omega_h)}},
+\quad
+\varepsilon_{P|\Omega_h}=
+\frac{P_h-P_{\mathrm{exact},\Omega_h}}
+{P_{\mathrm{exact},\Omega_h}}.
+\end{equation}
+上述三维数值积分采用与有限元 Gauss 点一致的位置，
+属于独立\emph{闭式连续场}值对照，
+而非端口矩阵的离散代数互证。
+
+\paragraph{首轮实际独立计算。}
+$a=0.05\,$m，$\sigma=3.526\times10^7$ S/m，
+$f=50$ Hz，$\|\bm B_\infty\|=1$ mT，
+逐次使用 $48,384,1296,3072,6000$ 个一阶四面体。
+独立数值实现得到的空间 $\varepsilon_E$
+为 $76.69,52.22,37.69,29.33,23.96\%$，
+$\varepsilon_B$ 为
+$67.54,36.18,23.64,17.55,13.97\%$。
+完整球体解析 Joule 约
+$0.0268469441$ W。
+此结果是对一阶边元数值主路径的\emph{可复现实算}
+及其明显的精度局限，\textbf{不是 D2 高精度验收通过}。
+同参数、同球几何的 $P_h$ 与
+$P_{\mathrm{exact},\Omega_h}$ 必须分别报告
+（参见项目 D2 球体数据文档）。
+
+\paragraph{程序与停止规则。}
+\texttt{sdfmpneo\_bfzi/direct3d\_sphere\_limit.py} 给出
+独立 Bessel 解析场、完整球体 Joule 与多面体构网；
+\texttt{examples/bfzi\_d2\_sphere\_limit.py} 负责实际
+五档三维场/损耗测试；
+\texttt{tests/test\_bfzi\_d2\_sphere\_limit.py} 检查
+Maxwell--Amp\`ere 方程、跨界面连续、正确低感应极限与
+三维网格细化。该基准通过后仍需真实 TEAM--7 的
+非轴对称 B/J 与独立成熟软件对照，以及 BFZI
+双独立绝缘盒、源近场和开放外域收敛。
+\textbf{D2 OPEN，G1 FAIL，教师继续冻结。}
