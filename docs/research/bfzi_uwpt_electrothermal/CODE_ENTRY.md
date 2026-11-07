@@ -1,4 +1,8 @@
 # BFZI 新理论封版与代码启动合同
+
+> **2026-11-07 最新可执行 D2 独立磁扩散验证：** `git pull --ff-only`；`python -m pytest tests/test_bfzi_d2_sphere_limit.py -q`；`python -m examples.bfzi_d2_sphere_limit --divisions 2 4 6 8 10 --output runs/d2_sphere_20261107.json`。脚本只给解析总 A 边界，内部完全由独立三维边元 A–φ 解出真实 E/B/Joule，且把多面体解析功率和完整球体解析功率分开；[真实五档实算](D2_SPHERE_AC_MAGNETIC_DIFFUSION.md)。该球体对比不是 BFZI 线圈/双封装，也不是 TEAM-7 正式高精度通过；空间 E/B 精度暂时仍不足。D2 OPEN，不启动 G1/教师，不使用 GitHub Actions。
+>
+
 > **2026-11-06 最新测试与物理源 E 插值纠错：** `python -m pytest tests/test_bfzi_d2_elliptic_limit.py tests/test_bfzi_d2_primary_secondary.py tests/test_bfzi_d2_fields.py tests/test_bfzi_d2_galerkin.py -q`；`python -m examples.bfzi_d2_elliptic_limit --output runs/d2_elliptic.json`。`--solve-analytic-primary` 要求另求真正 Maxwell 材料反作用 PDE，并用精确闭合源在空间测点取 `E/B/J/q`，**不是**对求完的粗网格总电场强行插值/替换真空源。本地真空源 E 初版确实 FAIL（因已知解析 A 非仿射），已在 probe 实现中先减解析源、只插值 FEM 仿射反作用、再加真实测点解析源；16 项本地合并通过。物理公式和有限几何收敛证据：[新 D2 记录](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)。TEAM7 正式 h/R、外部 Elmer 独立比对及真实 BFZI 铜损耗尚 OPEN；禁止 G1 修补、正式教师与 GitHub Actions。
 >
 
