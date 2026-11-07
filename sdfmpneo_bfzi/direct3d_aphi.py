@@ -3,8 +3,9 @@
 Lowest-order oriented tetrahedral Nedelec edge elements for secondary A,
 continuous P1 phi in conductive cells, continuous P1 gauge multiplier over Q.
 Incident A comes from externally specified closed source(s); mu=mu0.
-The outer boundary uses homogeneous tangential A_secondary=0: finite box only,
-NOT an infinite-seawater reference without outer-domain convergence.
+Artificial outer boundary choices include secondary-zero, total-zero and
+an exact prescribed total-A trace for independent analytical PDE tests.
+NONE represents infinite seawater without separate exterior convergence.
 """
 from __future__ import annotations
 from dataclasses import dataclass
