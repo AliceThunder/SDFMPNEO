@@ -50,20 +50,38 @@ def read_gmsh22(filename, conductivity_by_tag):
     return TetraMesh(np.array(nodes),np.array(tets),np.array(sigma))
 
 
-def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float) -> str:
-    """OCC fragmenting full outer cube + both independently rotated OBBs.
+def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float,
+                        near_mesh_size_m: float | None = None,
+                        near_padding_m: float | None = None) -> str:
+    """Gmsh OCC two independently posed insulating OBBs plus exterior cube.
 
-    Input is existing BfziScene (validated disjoint enclosures). Classify the
-    resulting conforming tetra by centroid after import with
-    bfzi_mesh_from_gmsh22. Gmsh is run locally, not from this function.
+    Physical material interfaces are explicitly Boolean-fragmented.
+    Two independent world-axis-aligned Box background sizing fields are
+    calculated from each OBB's TRUE SE(3) rotation, not from the old
+    vNext superellipse geometry. They resolve each package plus adjacent
+    seawater while keeping a coarser exterior. AABB envelopes are *sizing
+    supports*, not a replacement for the actual oriented OBB surfaces.
+
+    mesh_size_m is the exterior target; near_mesh_size_m defaults to
+    mesh_size_m/3. near_padding_m defaults to 2*near_mesh_size_m.
+    Must still independently verify h, material-interface and outer-domain
+    convergence after Gmsh actually builds the tetra mesh.
     """
-    if not np.isfinite(mesh_size_m) or mesh_size_m<=0:
-        raise ValueError('mesh_size_m must be positive')
+    far=float(mesh_size_m)
+    near=far/3 if near_mesh_size_m is None else float(near_mesh_size_m)
+    pad=2*near if near_padding_m is None else float(near_padding_m)
+    if not all(np.isfinite(v) for v in (far, near, pad)):
+        raise ValueError('Finite near/far mesh sizes and padding required')
+    if not (0 < near <= far) or pad < 0:
+        raise ValueError('Require 0<near_mesh_size_m<=mesh_size_m and nonnegative padding')
     center=np.asarray(scene.outer_center)
     radius=scene.outer_radius
     s=['SetFactory("OpenCASCADE");', 'Mesh.MshFileVersion = 2.2;',
-       f'Mesh.MeshSizeMin = {mesh_size_m/3:.17g};',
-       f'Mesh.MeshSizeMax = {mesh_size_m:.17g};',
+       'Mesh.MeshSizeFromPoints = 0;',
+       'Mesh.MeshSizeFromCurvature = 0;',
+       'Mesh.MeshSizeExtendFromBoundary = 0;',
+       f'Mesh.MeshSizeMin = {near/3:.17g};',
+       f'Mesh.MeshSizeMax = {far:.17g};',
        f'Box(1) = {{{center[0]-radius:.17g}, {center[1]-radius:.17g}, {center[2]-radius:.17g}, {2*radius:.17g}, {2*radius:.17g}, {2*radius:.17g}}};']
     for i,assembly in enumerate(scene.assemblies,2):
         h=np.asarray(assembly.enclosure.half_extents)
@@ -78,7 +96,29 @@ def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float) -> str:
         s.append(f'Translate {{{t[0]:.17g},{t[1]:.17g},{t[2]:.17g}}} {{ Volume{{{i}}}; }}')
     s.append('v() = BooleanFragments{ Volume{1}; Delete; }{ Volume{2,3}; Delete; };')
     s.append('Physical Volume("all",1) = {v()};')
-    s.append('Mesh 3;')
+    # The true geometry remains rotated OBB surfaces, but each background
+    # field uses its exact axis-aligned envelope |R|*half_extent in WORLD XYZ.
+    # Box.Thickness blends near and far element sizes outside the envelope.
+    for i,assembly in enumerate(scene.assemblies,1):
+        h=np.asarray(assembly.enclosure.half_extents)
+        extent=np.abs(assembly.pose.rotation)@h
+        center=np.asarray(assembly.pose.center)
+        lo=center-extent-pad
+        hi=center+extent+pad
+        s.extend([
+            f'Field[{i}] = Box;',
+            f'Field[{i}].VIn = {near:.17g};',
+            f'Field[{i}].VOut = {far:.17g};',
+            f'Field[{i}].XMin = {lo[0]:.17g};',
+            f'Field[{i}].XMax = {hi[0]:.17g};',
+            f'Field[{i}].YMin = {lo[1]:.17g};',
+            f'Field[{i}].YMax = {hi[1]:.17g};',
+            f'Field[{i}].ZMin = {lo[2]:.17g};',
+            f'Field[{i}].ZMax = {hi[2]:.17g};',
+            f'Field[{i}].Thickness = {max(pad, 2*near):.17g};',
+        ])
+    s.extend(['Field[3] = Min;', 'Field[3].FieldsList = {1,2};',
+              'Background Field = 3;', 'Mesh 3;'])
     return '\n'.join(s)+'\n'
 
 
