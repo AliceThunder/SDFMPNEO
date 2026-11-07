@@ -70,5 +70,58 @@
       "relative_Joule_error_on_same_polyhedron": 0.05066455968457584,
       "polyhedron_to_sphere_volume_ratio": 0.98794314
     }
-  ]
+  ],
+  "additional_frequency_200Hz": {
+    "frequency_hz": 200,
+    "skin_depth_m": 0.005993271883615538,
+    "exact_whole_sphere_Joule_W": 0.06214327230582529,
+    "note": "Same independent isolated Nedelec FEM and 4-point tetra E/B norms, finite-frequency skin-depth sensitivity; NOT remote pytest or TEAM7 certification",
+    "rows": [
+      {
+        "divisions": 2,
+        "tetrahedra": 48,
+        "relative_L2_E_rounded": 1.9276,
+        "relative_L2_B_rounded": 0.7954,
+        "fem_Joule_W_rounded": 0.052389243,
+        "exact_same_polyhedron_Joule_W_rounded": 0.011795006,
+        "relative_Joule_error_on_same_polyhedron_rounded": 3.441646150921839
+      },
+      {
+        "divisions": 4,
+        "tetrahedra": 384,
+        "relative_L2_E_rounded": 1.1461,
+        "relative_L2_B_rounded": 0.707,
+        "fem_Joule_W_rounded": 0.095413064,
+        "exact_same_polyhedron_Joule_W_rounded": 0.036835355,
+        "relative_Joule_error_on_same_polyhedron_rounded": 1.5902577564407894
+      },
+      {
+        "divisions": 6,
+        "tetrahedra": 1296,
+        "relative_L2_E_rounded": 0.815,
+        "relative_L2_B_rounded": 0.623,
+        "fem_Joule_W_rounded": 0.09189179,
+        "exact_same_polyhedron_Joule_W_rounded": 0.049322476,
+        "relative_Joule_error_on_same_polyhedron_rounded": 0.8630814478981146
+      },
+      {
+        "divisions": 8,
+        "tetrahedra": 3072,
+        "relative_L2_E_rounded": 0.6401,
+        "relative_L2_B_rounded": 0.5316,
+        "fem_Joule_W_rounded": 0.083256519,
+        "exact_same_polyhedron_Joule_W_rounded": 0.054856129,
+        "relative_Joule_error_on_same_polyhedron_rounded": 0.5177250111833449
+      },
+      {
+        "divisions": 10,
+        "tetrahedra": 6000,
+        "relative_L2_E_rounded": 0.5295,
+        "relative_L2_B_rounded": 0.456,
+        "fem_Joule_W_rounded": 0.076646716,
+        "exact_same_polyhedron_Joule_W_rounded": 0.057537053,
+        "relative_Joule_error_on_same_polyhedron_rounded": 0.332127941971585
+      }
+    ]
+  }
 }
