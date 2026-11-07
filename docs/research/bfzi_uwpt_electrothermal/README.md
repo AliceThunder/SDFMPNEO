@@ -1,4 +1,8 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
+
+> **2026-11-07 新增 D2 独立物理精度基准：** 在旧“同一离散端口—体积功率恒等式”之外，已经用交流导电球的完整频率解析解检验实际三维 **E/B/Joule**（包括趋肤效应）；一阶 6000 四面体仍只有 E 23.96%、B 24.42% 体积相对 L² 精度，故**不准宣称高精度直接法完成**。见 [本轮实算与严格几何误差分账](D2_SPHERE_AC_MAGNETIC_DIFFUSION.md)、[主求解器解析总场边界](../../../sdfmpneo_bfzi/direct3d_aphi.py)、[理论第18节](../../../theory/sections/18_d2_sphere_ac_diffusion.tex)。结合此前椭圆柱非零 φ 验证，该新球基准专门隔离检验真实磁扩散 PDE，绝不取代 TEAM-7/双 SE(3) BFZI。**D2 OPEN；G1 FAIL，教师冻结，禁用 GitHub Actions。**
+>
+
 > **D2 最新（2026-11-06）：** [非圆椭圆柱解析 Maxwell `phi/E/Joule` 极限和实算](D2_INDEPENDENT_ELLIPTIC_AND_ANALYTIC_PRIMARY.md)、[真实解析源直接参与 3D A–φ 材料 PDE](../../../sdfmpneo_bfzi/direct3d_primary_secondary.py)，以及[修复非仿射源 E 错误插值](../../../sdfmpneo_bfzi/direct3d_probe.py)均已提交。初次真空闭合线圈 E 专项测试曾失败，修正后本地 16 tests passed；BFZI/TEAM7 现在可选 `--solve-analytic-primary` 用物理材料 PDE 解空间场，而非粗总场求完后替换源。**仅低感应强度非轴对称材料解析验证获得收敛趋势，正式 D2/TEAM7/无限海水高保真仍 OPEN**；旧 G1 FAIL、教师冻结，无 GitHub Actions。
 >
 
