@@ -217,6 +217,9 @@ def main():
                     tetrahedra=mesh.tetrahedra,
                     quadrature_positions_m=quadrature_m,
                     sigma_S_m=sigma,
+                    # MQS A-phi does not resolve gauge-independent E
+                    # inside sigma=0 insulation; keep the mask with data.
+                    electric_field_physically_defined_tetra=sigma>0,
                     frequency_hz=np.asarray(args.frequency),
                     time_phasor=np.asarray("exp(+i*omega*t)"),
                     source_contract_sha256=np.asarray(
