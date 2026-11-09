@@ -17,7 +17,8 @@ from sdfmpneo_bfzi.direct3d_structured_bfzi import axis_aligned_bfzi_tetra_mesh
 from sdfmpneo_bfzi.source_reference import polygonal_port_vertices
 
 
-def _physical_file(tmp_path, scene, *, tag_override=None):
+def _physical_file(tmp_path, scene, *, tag_override=None,
+                   surface_override=None):
     mesh=axis_aligned_bfzi_tetra_mesh(
         scene,far_step_m=.30,near_padding_m=.02,box_layers=1)
     centroids=mesh.nodes[mesh.tetrahedra].mean(axis=1)
@@ -26,6 +27,15 @@ def _physical_file(tmp_path, scene, *, tag_override=None):
     tags=np.where(tx,2,np.where(rx,3,1))
     if tag_override is not None:
         tags=tag_override(tags.copy())
+    tets=mesh.tetrahedra
+    all_faces=np.concatenate((
+        tets[:,(0,1,2)],tets[:,(0,1,3)],
+        tets[:,(0,2,3)],tets[:,(1,2,3)]),axis=0)
+    faces,counts=np.unique(np.sort(all_faces,axis=1),axis=0,
+                           return_counts=True)
+    outer_faces=faces[counts==1]
+    if surface_override is not None:
+        outer_faces=surface_override(outer_faces.copy())
     path=tmp_path/'bfzi_physical123.msh'
     with path.open('w',encoding='utf-8') as fh:
         fh.write('$MeshFormat\n2.2 0 8\n$EndMeshFormat\n')
@@ -33,8 +43,12 @@ def _physical_file(tmp_path, scene, *, tag_override=None):
         for index,xyz in enumerate(mesh.nodes,1):
             fh.write(f'{index} {xyz[0]:.17g} {xyz[1]:.17g} '
                      f'{xyz[2]:.17g}\n')
-        fh.write(f'$EndNodes\n$Elements\n{len(mesh.tetrahedra)}\n')
-        for index,(tet,tag) in enumerate(zip(mesh.tetrahedra,tags),1):
+        fh.write(f'$EndNodes\n$Elements\n{len(mesh.tetrahedra)+len(outer_faces)}\n')
+        for index,tri in enumerate(outer_faces,1):
+            fh.write(f'{index} 2 2 101 101 '
+                     + ' '.join(str(v+1) for v in tri)+'\n')
+        for index,(tet,tag) in enumerate(
+                zip(mesh.tetrahedra,tags),len(outer_faces)+1):
             fh.write(f'{index} 4 2 {tag} {tag} '
                      + ' '.join(str(v+1) for v in tet)+'\n')
         fh.write('$EndElements\n')
@@ -94,3 +108,15 @@ def test_msh2_rejects_swapped_or_missing_regions_and_wrong_outer_R(tmp_path):
     changed=replace(scene,outer_radius=.40)
     with pytest.raises(ValueError,match='outer radius'):
         bfzi_mesh_from_gmsh22(path,changed)
+
+
+def test_msh2_rejects_incomplete_external_surface_101(tmp_path):
+    scene=replace(build_demo_scene(),outer_radius=.32)
+    path,_=_physical_file(
+        tmp_path,scene,surface_override=lambda faces:faces[1:])
+    with pytest.raises(ValueError,match='physical surface 101'):
+        bfzi_mesh_from_gmsh22(path,scene)
+    path,_=_physical_file(
+        tmp_path,scene,surface_override=lambda faces:faces[:0])
+    with pytest.raises(ValueError,match='missing physical surface 101'):
+        bfzi_mesh_from_gmsh22(path,scene)
