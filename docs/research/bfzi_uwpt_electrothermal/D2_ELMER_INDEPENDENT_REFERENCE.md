@@ -1,5 +1,15 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-09 新的可运行交接路径与源不等价硬门槛
+
+已新增独立于原细丝 CLI 的可执行 [Gmsh/ElmerGrid → BFZI 体源 A–φ 交接程序](../../../examples/bfzi_d2_elmer_handoff.py)：输入已经真实生成的三材料 OCC MSH2、严格哈希源合同、ElmerGrid 实际转换目录，先核对全部三材料物理体域、外边界、四面体 ID 和独立 SE(3) 几何一致性（可由 `--run-elmergrid` 在工作站直接调用 ElmerGrid）；只有显式提供两个独立真实单位体电流的七列外部文件时，才在**本项目自身**的 A–φ 中做相同加载、真空差分、完整复 2×2 Z、I10/I01/I11/I1minus1/I1plusi 功率，并可按实际四面体导出 E/B/J/q 的复数 NPZ。其本质是源/场交接的生产主程序，**并不调用 ElmerSolver**，不能把其结果当独立 Elmer 高精度参考。
+
+上游 [Elmer 官方两个闭合线圈示例](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/tests/mgdyn_steady_coils/case.sif) 用 `CoilSolver`、`Use Elemental CoilCurrent=True` 和 `Fix Input Current density=True`；模型手册也说明 CoilSolver 是在三维物理导体域上求一个体电流场，**不是**当前零截面闭合细丝泛函。重要：`Fix Input Current Density` 可以改变输入源场使其兼容磁矢势规范；本项目不允许直接比较未修正的 CoilSolver 源与独立 Elmer 最终实际用的源，也不允许不经证明直接投影或转化源并声称“同源”。当前仅三个物理域 sea/tx dry/rx dry，尚无真实铜闭合体域和两套实际 Elmer 电流，因而独立参考最大障碍仍未解除。
+
+进入高精度验收之前必须完成：①真实两个独立 SE(3) OCC + `ElmerGrid` 本地运行及测试；②构建真正封闭铜源体或 Elmer 中与细丝完全一致的自定义 RHS（严格对应同一端口回流/相量/源分辨率）；③导出或独立核对 Elmer **最终**边元源的同一性，两个各 1 A 单位端口、离散连续性和铜/海水损耗定义；④核对独立两求解器的空间 E/B/J/q、完整复 2×2 Z、端口功率恒等式，再各自进行 h/R/线源/有限铜横截面收敛。不能以同源体源的**本项目自身**运行替代独立 ElmerSolve 的证据。**D2 OPEN；G1 FAIL；教师冻结；禁止 GitHub Actions。**
+
+
+
 ## 2026-11-09：真实 ElmerGrid 单元/材料/外边界映射及外加源连续性硬门槛
 
 [新增主代码](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py) 按 Elmer 官方文本格式读取 `mesh.nodes`（原生节点 ID/坐标）、`mesh.elements`（体材料编号、四节点 tetra=504）、`mesh.names`（ElmerGrid 重编号的物理组）、`mesh.boundary`（外边界 triangle=303）。先将 Elmer 节点坐标与**本项目同一真实 MSH2 网格**做有限公差的唯一双射，再按每个四面体**排序后节点集合**恢复原 Gmsh 单元下标，不允许按数组顺序碰巧对应。读取 `mesh.names` 后逐四面体检查 sea/tx dry/rx dry 原三材料体标签；读取实际 Elmer 外边界组 ID 后逐三角面核对它与原四面体立方体外表面完全一致，防止误把内部干湿界面当作外部总 A 边界。随后可读取显式文本 `ElmerElementID J1x J1y J1z J2x J2y J2z`（A/m²、实单位端口基）并重排为 `(2,Ntet,3)`。**这张七列表必须由独立 Elmer 后处理明确导出，ElmerGrid 并不会自动生成。** 官方 [ElmerSolver 网格格式手册](https://ftp.csc.fi/index/files/Historical/pub/index/elmer/doc/ElmerSolverManual.pdf) 描述节点/元素/边界文件字段。
