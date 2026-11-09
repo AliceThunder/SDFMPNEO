@@ -1,5 +1,8 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 输出口径：** `--fields-npz` 内 `E_unit_ports_V_m[P,T,Q,3]`、`B_unit_ports_T[P,T,3]`、`J_unit_ports_A_m2[P,T,Q,3]`、`quadrature_positions_m[T,Q,3]`、`q_basis_W_m3[P,T,Q]`，以及**必须保留的相位交叉项** `q_port_cross_W_m3[T,Q,P,P]`（P=2）。`I.conj()@q_port_cross[T,Q]@I` 是任意复单位峰值端口电流 `I` 的 `q` [W/m³]；不要仅把两列独立 `q_basis` 相加。该输出尚未经正式 Elmer 同源 h/R 收敛认证；不得用作神经教师。
+>
+
 ### 2026-11-09：ElmerGrid 到 BFZI 体源 A–φ 的一体化工作站入口（正式 D2 仍 OPEN）
 
 新主程序：[examples/bfzi_d2_elmer_handoff.py](../../../examples/bfzi_d2_elmer_handoff.py)。PowerShell 首先执行现有测试，再用原有 CLI 真正生成**三个材料域 + 101 外边界**且双盒分别斜置的 Gmsh OCC MSH2 和自动同名 `.ports.json`：
