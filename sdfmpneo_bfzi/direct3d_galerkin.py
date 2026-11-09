@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .direct3d_aphi import AphiResult, TetraMesh, solve_aphi
-from .direct3d_edge_source import closed_edge_load
+from .direct3d_edge_source import closed_edge_load, elemental_current_edge_load
 
 
 @dataclass
@@ -102,6 +102,26 @@ def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands, *,
     Not an infinite-domain electromagnetic solution.
     """
     L = closed_edge_load(mesh, source_strands)
+    return _solve_with_edge_source_load(mesh,frequency_hz,L,gauge=gauge)
+
+
+def solve_elemental_current_ports(mesh: TetraMesh, frequency_hz,
+                                  element_current_density, *,
+                                  gauge: str = 'tree'):
+    """Solve with the SAME prescribed unit-port elemental J_s as Elmer.
+
+    Only valid for true 1-A, closed, divergence-compatible physical
+    coil-current distributions on exactly mapped tetrahedra. The caller
+    must independently verify those gates; a 3D array alone is not proof.
+    Copper transport/skin and finite-volume source construction are not
+    computed here. The returned impedance is the generalized incremental
+    response dual to the specified impressed-current functional.
+    """
+    L=elemental_current_edge_load(mesh,element_current_density)
+    return _solve_with_edge_source_load(mesh,frequency_hz,L,gauge=gauge)
+
+
+def _solve_with_edge_source_load(mesh, frequency_hz, L, *, gauge):
     if L.shape[0] < 1:
         raise ValueError("At least one physical source port is required")
 
