@@ -34,6 +34,9 @@ def main():
                    help='Generate a conforming two-box structured tetra mesh '
                         'without Gmsh, ONLY for axis-aligned poses')
     p.add_argument('--structured-far-step',type=float,default=.22)
+    p.add_argument('--structured-near-step',type=float,
+                   help='Independent near-wall wet/dry mesh step (m), '
+                        'not just the interior box_layers')
     p.add_argument('--structured-padding',type=float,default=.025)
     p.add_argument('--structured-box-layers',type=int,default=2)
     p.add_argument('--mesh-size', type=float, default=.025)
@@ -104,7 +107,8 @@ def main():
             mesh = axis_aligned_bfzi_tetra_mesh(
                 scene,near_padding_m=args.structured_padding,
                 far_step_m=args.structured_far_step,
-                box_layers=args.structured_box_layers)
+                box_layers=args.structured_box_layers,
+                near_step_m=args.structured_near_step)
             mesh_source="structured axis-aligned physical OBB; initial D2 smoke only"
         elif args.mesh is not None:
             mesh = bfzi_mesh_from_gmsh22(args.mesh,scene)
@@ -207,6 +211,7 @@ def main():
             'mesh_source':mesh_source,
             'outer_cube_half_extent_m':float(scene.outer_radius),
             'structured_axis_aligned_only':bool(args.structured_axis_aligned),
+            'structured_near_step_m':(args.structured_near_step if args.structured_axis_aligned else None),
             'boundary':'finite cube, n cross A_total=0',
             'geometry':'two genuine BFZI continuous spirals and closed returns, '
                        'polygonal centerline approximation, two independent OBBs',
