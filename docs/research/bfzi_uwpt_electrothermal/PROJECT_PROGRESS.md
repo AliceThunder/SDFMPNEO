@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 XEnergy Elmer 正式安装完成（独立参考运行尚未完成）：** 用户授权后，通过 CSC/FUNET [官方 Windows 预编译镜像](https://www.ftp.funet.fi/pub/files/index/elmer/bin/windows/) 下载 `ElmerFEM-nogui-nompi-Windows-AMD64.zip`，因首次下载在 99% 出现 TLS close_notify 问题，按 Range 断点续传补齐到 **128,365,334 字节**；使用 .NET ZIP 实读（3197 项）并记录 SHA256 `E9072FE8DB3C15AE3BEF36E3F6D5AC59241376002B1D78EB171C9242756B1FC8`。已**实际解压并运行** XEnergy 上 `D:\\work\\ElmerFEM\\ElmerFEM-nogui-nompi-Windows-AMD64\\bin\\ElmerGrid.exe`（输出 **Version 26.2**）和同目录 `ElmerSolver.exe`（输出 **ELMER SOLVER (v 26.2) STARTED**），安装阶段退出码 0。无管理员权限、无全局 PATH 修改、未触及 `D:\\research`。今后 XEnergy 仅必要时用于完整 Gmsh/Elmer，本项目临时工作树保持 `D:\\work\\BFZI-D2-verify`；运行 Elmer 需按该路径**会话级配置 PATH**，且不使用 GitHub Actions。注意**启动自检不是 ElmerSolver 真实 Maxwell 方程求解**，真实 SE(3) Gmsh OCC、ElmerGrid 材料转换、两个真实闭合端口源/最终 Whitney RHS、独立复 Z/场及 h/R 收敛依然 **D2 OPEN**。
+>
+
 > **2026-11-09 XEnergy 工作站实测（覆盖上轮“修复后待测”状态）：** 在独立目录 `D:\\work\\BFZI-D2-verify` 新克隆原分支 `a985c05b`，实际执行 `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q`：**23 passed in 10.91s，退出码 0**，先前 20 passed/3 failed 的三处回归均通过。XEnergy 同次批量检查 `importlib.util.find_spec('gmsh')` 为 True；`ElmerGrid` 和 `ElmerSolver` **未在 PATH 中找到**，尚未确认是否另外安装于非 PATH 路径。此次仅完成完整工作树的**四文件专项 pytest**，未执行真实 Gmsh OCC 双独立 SE(3) 建网，也未执行 ElmerGrid/ElmerSolver 或同源复阻抗/场 h/R 验证；故 **D2 OPEN、G1 FAIL、神经教师冻结**。后续以沙箱优先，只有沙箱缺必要依赖/无法访问完整工程时才在 XEnergy `D:\\work` 下独立目录批量运行；不触碰原研究目录，禁止 GitHub Actions。
 >
 
