@@ -6,8 +6,9 @@ not absolute TEAM-7 experiment accuracy, infinite ocean, or copper self Z.
 import numpy as np
 from numpy.testing import assert_allclose
 
-from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh
-from sdfmpneo_bfzi.direct3d_edge_source import closed_edge_load
+from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh, TetraMesh
+from sdfmpneo_bfzi.direct3d_edge_source import (
+    closed_edge_load, elemental_current_edge_load)
 from sdfmpneo_bfzi.direct3d_galerkin import solve_closed_ports
 from sdfmpneo_bfzi.direct3d_team7 import (
     graded_team7_smoke_mesh, team7_stranded_source,
@@ -102,3 +103,24 @@ def test_tree_gauge_matches_mixed_physical_fields_on_two_real_ports():
         assert_allclose(fast.port_power(currents),
                         fast.conductor_power(currents),
                         atol=1e-10,rtol=1e-8)
+
+
+def test_elemental_current_whitney_source_exact_on_oriented_tetra():
+    """Analytic constant-J volume integral of each Nedelec basis, 2 ports."""
+    nodes=np.array([[0.,0.,0.],[1.,0.,0.],
+                    [0.,1.,0.],[0.,0.,1.]])
+    density=np.array([[[.7,-.2,.9]],[[.1,.8,-.4]]])
+    mesh=TetraMesh(nodes,np.array([[0,1,2,3]]),np.zeros(1))
+    load=elemental_current_edge_load(mesh,density)
+    grads=np.array([[-1.,-1.,-1.],[1.,0.,0.],
+                    [0.,1.,0.],[0.,0.,1.]])
+    pairs=((0,1),(0,2),(0,3),(1,2),(1,3),(2,3))
+    expected=np.array([
+        [np.dot(J,(grads[j]-grads[i]))/24
+         for i,j in pairs] for J in density[:,0]])
+    assert_allclose(load,expected,rtol=0,atol=1e-15)
+    # Flipping tetra vertex storage must not flip globally oriented edges.
+    reversed_mesh=TetraMesh(
+        nodes,np.array([[1,0,2,3]]),np.zeros(1))
+    assert_allclose(elemental_current_edge_load(
+        reversed_mesh,density),load,rtol=0,atol=1e-15)
