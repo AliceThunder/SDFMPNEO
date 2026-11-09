@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 D2 最新源一致性实现（基于 d9b7692）：** 已将 Elmer 端“最终 Whitney 弱载荷”作为独立源比对关口，而不仅只比较两个 `J_s` 体电流数组。新增 [compare_final_elmer_whitney_source](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py)，接受每条 Elmer 网格有向边的 `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，通过实际节点坐标唯一映射、端点顺序符号修正与本项目从同一体 `J_s` 精确装配的 `L[p,e]` 两列逐项比较；拒绝边缺失、重复、非法端点、非有限数值。该四列表**不是 ElmerGrid/ElmerSolver 默认产物**，必须将 Elmer WhitneyAVSolver 经任何 `Fix Input Current Density` 修正后、求解前的**真实物理源边元 RHS**独立导出（不能把总场残差/规范约束误认为源本身）。[新主程序](../../../examples/bfzi_d2_elmer_handoff.py) 增加 `--elmer-final-edge-load FILE`，可选源匹配时不一致即明确 FAIL；未提供则继续允许**仅诊断**的本项目体源求解，并将 Elmer 最终源一致性保持 UNVERIFIED。补充有向边换向/载荷漂移专项测试和从真实三材料 BFZI MSH2 测试夹具贯通交接 CLI 的集成测试（含故意不守恒双口体电流的拒绝测试）。**所有新增测试已提交但整仓库 pytest 未实跑**；本环境无真实 Gmsh/Elmer，因此最终 Elmer RHS 比较、双独立 SE(3) 实建网、独立空间场/复 Z 和 h/R/源收敛仍 OPEN。D2 OPEN、G1 FAIL、神经教师冻结、禁止 GitHub Actions。
+>
+
+
 > **2026-11-09 D2 空间热源完整相位输出补充：** `examples/bfzi_d2_elmer_handoff.py --fields-npz` 现在另外存储四点积分**世界坐标**、频率/相量、源合同哈希，以及 `q_port_cross_W_m3[T,Q,p,r] = 0.5*sigma*conj(E_p)·E_r`（复 Hermitian 两端口空间热源矩阵），使任意峰值复相量 `I` 的海水热源可严格恢复为 `q[T,Q] = I.conj() @ Q[T,Q] @ I`，不会漏掉端口间相位交叉热。单独局部 NumPy 两端口复场算例得到 `I=(1,1j)` 的二次型重建误差 1.42e-14，Hermitian 缺陷 0；**此仅公式级验证，不是实际 BFZI/Elmer 场误差或热标签高精度验收**。D2 OPEN。
 >
 
