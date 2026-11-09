@@ -8,7 +8,8 @@ from numpy.testing import assert_allclose
 
 from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh, TetraMesh
 from sdfmpneo_bfzi.direct3d_edge_source import (
-    closed_edge_load, elemental_current_edge_load)
+    closed_edge_load, elemental_current_edge_load,
+    source_nodal_conservation)
 from sdfmpneo_bfzi.direct3d_galerkin import (
     solve_closed_ports,solve_elemental_current_ports)
 from sdfmpneo_bfzi.direct3d_team7 import (
@@ -30,6 +31,7 @@ def test_source_is_closed_and_obeys_reversal():
     b = closed_edge_load(m,[[(1.,loop[::-1])]])
     assert_allclose(a,-b,rtol=0,atol=1e-12)
     assert np.linalg.norm(a)>0
+    assert source_nodal_conservation(m,a)[0]<1e-10
 
 
 def test_two_real_ports_reciprocity_and_complex_phase_power():
@@ -136,3 +138,17 @@ def test_complex_volume_source_requires_separate_terminal_functional():
     with pytest.raises(ValueError,match='Complex elemental source basis'):
         solve_elemental_current_ports(
             mesh,100000.,np.array([[[1j,0.,0.]]]))
+
+
+
+def test_nonconserving_volume_source_is_refused_before_aphi():
+    """A valid Whitney integral of arbitrary J is NOT a closed-coil source."""
+    import pytest
+    mesh=TetraMesh(np.array([[0.,0.,0.],[1.,0.,0.],
+                             [0.,1.,0.],[0.,0.,1.]]),
+                   np.array([[0,1,2,3]]),np.zeros(1))
+    J=np.array([[[1.,0.,0.]]])
+    L=elemental_current_edge_load(mesh,J)
+    assert source_nodal_conservation(mesh,L)[0]>.1
+    with pytest.raises(ValueError,match="charge-conserving"):
+        solve_elemental_current_ports(mesh,100000.,J)
