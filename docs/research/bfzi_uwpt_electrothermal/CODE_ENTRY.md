@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-08 D2 三材料网格新标准（优先于下方单标签旧命令）：** 正式任意独立 SE(3) 使用 `python -m examples.bfzi_d2_aphi --case bfzi --generate-msh runs/physical_bfzi.msh --mesh-only --rx-rotation-vector 0.35 0.10 0.20 --outer-radius 0.80 --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025`。生成器必须在 `mesh-only` 返回前成功读回 MSH2，并核对海水/tx/rx 三物理区域及真实外域。随后用**完全相同** pose/R 参数加 `--mesh runs/physical_bfzi.msh --gauge tree --summary-only --output runs/bfzi_z.json` 才能开始本求解器的 FEM；ElmerGrid 需另行转换标签，参考 [独立 Elmer 执行方案](D2_ELMER_INDEPENDENT_REFERENCE.md)。既有 `--write-geo` 输出的单 `Physical Volume("all",1)` 是**历史诊断格式**，只能额外传 `--legacy-single-tag-msh` 才允许本项目按几何重分材料，**不可供 Elmer 做材料分区对照**。已经实跑过 1350 四面体的真实 MSH2 三材料网格往返和完整 BFZI 双端口 E/B/Z/Joule 一致性，见 [原始 JSON](evidence/d2_three_material_msh2_roundtrip_20261108.json) 与 [测试](../../../tests/test_bfzi_d2_physical_material_mesh.py)。Gmsh/Elmer 本容器不可用，D2 OPEN、G1 FAIL、教师冻结、禁用 GitHub Actions。
+>
+
+
 > **2026-11-08 D2 最新实算与可运行入口：** 真实双端口数值已验证整体刚体 SE(3) 下 Z/E/B 不变，以及接收端独立旋转 90° 后耦合真实变化，见 [数值证据](evidence/d2_real_bfzi_pose_20261109.json)。[运行主入口](../../../examples/bfzi_d2_aphi.py) 现支持 tx/rx 分别设置 --tx-rotation-vector / --rx-rotation-vector 和 --tx-shift / --rx-shift，单位分别为 rad/m。仅轴置换位姿可直接 --structured-axis-aligned；任意斜置姿态必须 Gmsh。正式材料标签 Gmsh 入口 --generate-msh FILE --mesh-only，输出 sea=1、tx dry=2、rx dry=3、outer surface=101；[Gmsh→ElmerGrid 实际命令和源缺项](D2_ELMER_INDEPENDENT_REFERENCE.md)。**本容器缺 Gmsh/Elmer，API 尚未实跑；Elmer 同物理闭合线源仍未接通，不能标 D2 PASS。** 树规范和 h 扫描既有结果保留，G1 FAIL、教师冻结、禁止 GitHub Actions。
 >
 
