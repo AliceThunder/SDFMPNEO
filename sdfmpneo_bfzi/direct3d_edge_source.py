@@ -133,3 +133,27 @@ def elemental_current_edge_load(mesh, element_current_density):
     for port in range(len(currents)):
         np.add.at(load[port],local_edges.ravel(),local[port].ravel())
     return load
+
+
+
+def source_nodal_conservation(mesh, source_edge_load):
+    """Normalized weak divergence of impressed current against P1 gradients.
+
+    For a closed current that does not leave the finite domain,
+    L[p,:] @ grad(phi_h) must vanish for every continuous P1 phi_h.
+    A piecewise-constant elemental J is not automatically conservative:
+    in particular, discontinuous normal fluxes cause a nonzero residual.
+    Return one dimensionless max-nodal residual per unit source port.
+    """
+    L=np.asarray(source_edge_load)
+    edges,*_= _topology(mesh)
+    if L.ndim!=2 or L.shape[1]!=len(edges) or not np.isfinite(L).all():
+        raise ValueError("Source edge load shape or values are invalid")
+    balance=np.zeros((len(L),len(mesh.nodes)),dtype=complex)
+    for (low,high),idx in edges.items():
+        balance[:,low]-=L[:,idx]
+        balance[:,high]+=L[:,idx]
+    magnitude=np.sum(np.abs(L),axis=1)
+    if np.any(magnitude==0):
+        raise ValueError("Zero impressed current source edge load")
+    return np.max(np.abs(balance),axis=1)/magnitude
