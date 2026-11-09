@@ -41,13 +41,22 @@ def _physical_file(tmp_path, scene, *, tag_override=None):
     return path,mesh
 
 
-def test_three_physical_regions_preserve_real_two_port_E_B_Z_and_joule(tmp_path):
+@pytest.mark.parametrize("receiver_orthogonal",[False,True])
+def test_three_physical_regions_preserve_real_two_port_E_B_Z_and_joule(
+        tmp_path,receiver_orthogonal):
     scene=replace(build_demo_scene(),outer_radius=.32)
+    if receiver_orthogonal:
+        from sdfmpneo_bfzi.geometry import RigidPose
+        rotation=np.array([[1.,0.,0.],[0.,0.,-1.],[0.,1.,0.]])
+        scene=replace(scene,receiver=replace(
+            scene.receiver,
+            pose=RigidPose(rotation,scene.receiver.pose.center)))
     path,original=_physical_file(tmp_path,scene)
     restored=bfzi_mesh_from_gmsh22(path,scene)
     assert_allclose(restored.nodes,original.nodes,rtol=0,atol=0)
     assert_allclose(restored.sigma,original.sigma,rtol=0,atol=0)
-    assert len(restored.tetrahedra)==len(original.tetrahedra)==1350
+    assert len(restored.tetrahedra)==len(original.tetrahedra)==(
+        2430 if receiver_orthogonal else 1350)
     ports=[[(1.,polygonal_port_vertices(a,panels_per_corner=2))]
            for a in scene.assemblies]
     before=solve_closed_ports(original,200000.,ports,gauge='tree')
