@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 XEnergy 工作站实测（覆盖上轮“修复后待测”状态）：** 在独立目录 `D:\\work\\BFZI-D2-verify` 新克隆原分支 `a985c05b`，实际执行 `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q`：**23 passed in 10.91s，退出码 0**，先前 20 passed/3 failed 的三处回归均通过。XEnergy 同次批量检查 `importlib.util.find_spec('gmsh')` 为 True；`ElmerGrid` 和 `ElmerSolver` **未在 PATH 中找到**，尚未确认是否另外安装于非 PATH 路径。此次仅完成完整工作树的**四文件专项 pytest**，未执行真实 Gmsh OCC 双独立 SE(3) 建网，也未执行 ElmerGrid/ElmerSolver 或同源复阻抗/场 h/R 验证；故 **D2 OPEN、G1 FAIL、神经教师冻结**。后续以沙箱优先，只有沙箱缺必要依赖/无法访问完整工程时才在 XEnergy `D:\\work` 下独立目录批量运行；不触碰原研究目录，禁止 GitHub Actions。
+>
+
 > **2026-11-09 本地整仓库 pytest 首次反馈与三项定位修复（当前最高优先级）：** 用户工作站真实执行 D2 四个文件的 pytest，结果 **20 passed、3 failed（8.91 s）**：① tree/mixed 规范比较将绝缘区 `-iωA` 当物理 E 逐点比对，但当前 MQS A–φ 仅在 σ>0 内求 φ，绝缘区未包含位移电流/静电方程，因此该区 E **规范依赖、不能做热场标签**；[测试](../../../tests/test_bfzi_d2_galerkin.py) 已更正为**仅导电区逐点严格比较 E、全域 B、端口 Z 和焦耳功率**，保留原容差，未放松任何物理可观测量。② 一四面体顶点换序改变 `_topology` 的**边列出现顺序**，但物理有向边始终从小节点到大节点；测试改为用全局边端点 key 重排后逐项比较（独立 NumPy 复算原生数组最大差 0.0875，按物理边重排后**精确 0**）。③ 原外域裁剪负例被 `BfziScene.__post_init__` 的**更严格球包含规则**先拒绝，导致未到 OCC 预检；改为分别验证场景球边界拒绝及传入显式无效几何对象后 OCC 立方体预检拒绝。独立几何算例表明旋转盒 x 世界最大 0.321421m > R=0.32m，最远角 0.352614m > 0.98R=0.3136m。这三项测试更正、求解器绝缘区 E 规范说明及 NPZ 导电区 E 有效掩码已提交；**本轮修复后的完整仓库 pytest 必须工作站重新执行，尚不得宣告全部 PASS**。真实斜置 OCC/Elmer 独立同源 h/R 仍 OPEN。D2 OPEN，G1 FAIL，神经教师冻结，禁 GitHub Actions。
 >
 
