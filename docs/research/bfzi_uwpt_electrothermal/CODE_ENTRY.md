@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-08 D2 最新实算与可运行入口：** 真实双端口数值已验证整体刚体 SE(3) 下 Z/E/B 不变，以及接收端独立旋转 90° 后耦合真实变化，见 [数值证据](evidence/d2_real_bfzi_pose_20261109.json)。[运行主入口](../../../examples/bfzi_d2_aphi.py) 现支持 tx/rx 分别设置 --tx-rotation-vector / --rx-rotation-vector 和 --tx-shift / --rx-shift，单位分别为 rad/m。仅轴置换位姿可直接 --structured-axis-aligned；任意斜置姿态必须 Gmsh。正式材料标签 Gmsh 入口 --generate-msh FILE --mesh-only，输出 sea=1、tx dry=2、rx dry=3、outer surface=101；[Gmsh→ElmerGrid 实际命令和源缺项](D2_ELMER_INDEPENDENT_REFERENCE.md)。**本容器缺 Gmsh/Elmer，API 尚未实跑；Elmer 同物理闭合线源仍未接通，不能标 D2 PASS。** 树规范和 h 扫描既有结果保留，G1 FAIL、教师冻结、禁止 GitHub Actions。
+>
+
+
 > **2026-11-08 D2 可运行最新版：** 原来在12960四面体时未完成的复数混合规范系统，已实现 [tree–cotree 规范减元](../../../sdfmpneo_bfzi/direct3d_tree_gauge.py) 并在本地实际运行 **12960 和 17238 四面体**；`--gauge tree` 为真实 BFZI 双端口默认，`--gauge mixed` 可在同一网格上对照旧物理结果。推荐从仓库根目录：`git pull --ff-only`；`python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_structured_ports.py tests/test_bfzi_d2_mesh_probe.py -q`；`python -m examples.bfzi_d2_convergence --vary h --out runs/d2_h`。该扫描真实 h=80/60/40mm，当前树规范已经独立实算得到 Re ΔZ11 **7.34428/7.53243/7.71825mΩ**，复矩阵相邻变化 2.367%/2.377%，**不是 h 收敛通过**。新主求解器不再只检查有限值，会检验缩放复数系统残差 ≤1e-8，打印/保存实际残差及有效未知量。详情 [原理与实测](D2_TREE_COTREE_GAUGE.md) · [原始数据](evidence/d2_tree_gauge_real_bfzi_h_20261108.json)。本次本地运行的是抽取的同弱式源码，仓库完整测试仍待工作站复核，不能写“全部通过”。**D2 OPEN、G1 FAIL、教师冻结、无 GitHub Actions。**
 >
 
