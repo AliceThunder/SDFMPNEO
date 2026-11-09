@@ -56,6 +56,33 @@
 
 根因路径：官方 `transient.sif` 的 `CoilSolver` 在 `Exec Solver="before all"` 只产生固定 `CoilCurrent e`；其 `WhitneyAVSolver` 开启 `Use Elemental CoilCurrent=True` 直接使用静态线圈电流场，而 `Body Force` 所写的 `Current Density Amplitude=cos(...)` 未在输出中体现为有效磁场源调制。官方仓库另附 `TEAM7.sif`，使用 `Current Density 1/2/3 = Variable "time", "CoilCurrent e 1/2/3"` 并显式 `Real LUA "cos(2*3.14*50*tx[0])*tx[1]"`，且没有直接打开 `Use Elemental CoilCurrent`；本轮已安排在隔离目录 `D:\\work\\BFZI-D2-verify\\runs\\bfzi_pdr_team7_ac` **原样运行此官方 SIF 并逐时步核验有效 B/J 激励**，其运行结论另待实测，不得事先写 PASS。
 
+## 3b. 正确的官方 `TEAM7.sif` 已在 XEnergy 实际运行：真正 50Hz AC 成功
+
+发现上述 DC 接通问题后，从**同一 CSC 官方仓库提交**原样复制另一份 `TEAM7.sif`（区别于 `transient.sif`），其 `Body Force 1` 三个源分量均使用 `Variable "time", "CoilCurrent e 1/2/3"` 与 `Real LUA "cos(2*3.14*50*tx[0])*tx[1]"`，并由 `WhitneyAVSolver` 消费。**不再把只含静态 `CoilCurrent e` 的模式错当周期源。**
+
+独立实际运行目录：`D:\\work\\BFZI-D2-verify\\runs\\bfzi_pdr_team7_ac`，运行原样 SIF（不改变几何、线圈、网格、材料、频率和求解容差）：
+
+```powershell
+& 'D:\work\ElmerFEM\ElmerFEM-nogui-nompi-Windows-AMD64\bin\ElmerSolver.exe' TEAM7.sif
+```
+
+**结果**：ElmerSolver 26.2 退出码 **0**，耗时 **150.61 秒**，16 步、`dt=0.0025s`，官方原始 130,707 个四面体，生成实际 16 份 VTU 与 6,464 行 `res/f.dat`。真实用 `pyvista.read` 读取第16步复场（瞬态为实场）：`max(|B_component|)=0.02006847 T`、`max(|J_component|)=1,565,294.80 A/m²`。原版内置参考范数：CoilSolver `4.877344e-7`（PASS），WhitneyAV `0.003324258`（**0.3324258% FAIL**）；保留原始警告，不能假称官方内置 PASS。
+
+**50Hz 激励真实性实证**：在固定 A1–B1 第一个 x 点 `x=0`、`y=0.072m,z=0.034m`，每四步相隔半个周期，`B_z` 依次为：
+
+| 时步 | t(s) | 实测 `Bz` (T) |
+|---|---:|---:|
+| 4 | 0.010 | `+0.0006051084` |
+| 8 | 0.020 | `-0.0005816920` |
+| 12 | 0.030 | `+0.0005936934` |
+| 16 | 0.040 | `-0.0005868447` |
+
+存在明确的周期反向，不再是 DC 接通的单调缓变。两个同相位周期末（第 8→16 步）的 **A1–B1 101 点三分量 B 相对 L² 差 = 1.039409%**；表示仍有一定时间初值/离散误差，不可直接宣告周期稳态精度。
+
+**参考测点初步对照**：从 Elmer 原生 `res/f.dat` 读取 `B_z`，插值到同官方 `TEAM7_A1B1.csv` 的 **17 个有效 x 点**（全程未调整电流幅值、材料或后验截正），第 **16 步**原始相对 L² 差 **3.423216%**，最大绝对差 **`3.988858e-4 T`**；第8步差 **4.351277%**。第 4/12 步因磁场符号相反，相对差约 200%，说明未经相位匹配的逐点比较无物理意义。该 CSV 的时间/相位、实验测量及 Bz 场定义仍须严格核对；当前只是同一官方案例的定量对照，**并未满足事先冻结的高精度与 h/R 证据门槛**。
+
+**结论修正**：`transient.sif` 的 16/32 步数据只可称 DC 接通磁扩散实证；`TEAM7.sif` 才是本轮**真正 50Hz 周期受迫三维涡流 SMOKE PASS**。TEAM-7 正式高精度验证、200Hz、分辨率 h/外域 R/时间步长分轴收敛与本项目 BFZI 两口同源电磁场比较仍 **OPEN**。
+
 ## 4. 本轮关口与后续严格顺序
 
 - **P1-ELMER-3D0 最小软件链路：恒源磁扩散 SMOKE PASS**，官方 130,707 四面体的三维磁场及恒流接通暂态感应涡流均真实运行，非零 `B,J` 已读出；**有效 50Hz 正弦励磁尚未由该运行证实**。此 PASS **仅表示可执行 H(curl) 成功，不表示官方实验精度通过**。
