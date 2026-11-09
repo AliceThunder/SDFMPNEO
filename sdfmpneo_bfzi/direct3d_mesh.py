@@ -10,17 +10,19 @@ from scipy.spatial.transform import Rotation
 from .direct3d_aphi import TetraMesh
 
 
-def read_gmsh22(filename, conductivity_by_tag):
+def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False):
     """Read ASCII Gmsh MSH 2.2 linear tetra, sigma by physical volume id.
 
     For a third-party TEAM-7 mesh, use the verified plate region physical id.
-    All other domains remain insulating. Higher-order tetra are rejected by
-    having no tetra to read; avoid accidentally assigning conductivity to air.
+    All other domains remain insulating for legacy TEAM-7 import.
+    Set return_physical_tags=True for canonical BFZI material verification;
+    the resulting second value contains the physical volume ID of each tetra.
+    Higher-order tetra are not interpreted as linear tetra.
     """
     if not isinstance(conductivity_by_tag, dict):
         raise ValueError('Pass physical-material conductivity map')
     lines=iter(Path(filename).read_text(encoding='utf-8').splitlines())
-    node_ids={}; nodes=[]; tets=[]; sigma=[]; found=False
+    node_ids={}; nodes=[]; tets=[]; sigma=[]; physical_tags=[]; found=False
     for s in lines:
         if s=='$MeshFormat':
             fmt=next(lines).split()
@@ -40,6 +42,7 @@ def read_gmsh22(filename, conductivity_by_tag):
                 if ntag<1:
                     raise ValueError('Every linear tetra needs a physical region tag')
                 tag=row[3]
+                physical_tags.append(tag)
                 tets.append([node_ids[x] for x in row[3+ntag:3+ntag+4]])
                 sig=float(conductivity_by_tag.get(tag,0.0))
                 if not np.isfinite(sig) or sig<0:
@@ -47,7 +50,10 @@ def read_gmsh22(filename, conductivity_by_tag):
                 sigma.append(sig)
     if not found or not nodes or not tets:
         raise ValueError('Missing mesh 2.2 header, nodes or linear tetrahedra')
-    return TetraMesh(np.array(nodes),np.array(tets),np.array(sigma))
+    mesh=TetraMesh(np.array(nodes),np.array(tets),np.array(sigma))
+    if return_physical_tags:
+        return mesh, np.asarray(physical_tags,dtype=int)
+    return mesh
 
 
 def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float,
@@ -122,17 +128,35 @@ def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float,
     return '\n'.join(s)+'\n'
 
 
-def bfzi_mesh_from_gmsh22(filename, scene):
-    """Mesh conforming to OBB surfaces, sea outside, insulators inside.
+def bfzi_mesh_from_gmsh22(filename, scene, *, allow_legacy_single_tag=False):
+    """Read true material-tagged BFZI OCC mesh and verify all three regions.
 
-    Requires Gmsh .geo from gmsh_bfzi_two_boxes (all physical id=1).
-    Outer domain here is a truncated CUBE, not the old artificial sphere
-    and not exact infinite ocean. Must perform exterior-domain convergence.
+    Canonical physical volumes: 1=seawater, 2=transmitter insulation,
+    3=receiver insulation. The three tags are assigned by OCC fragment's
+    original-entity correspondence; material conductivity is read FROM
+    THESE TAGS, not inferred from centroids. Cell centers check the CAD
+    mapping only; they do not overwrite it. Every body's tetra volume
+    must equal the true SE(3) box volume.
+
+    The old .geo script has a single "all" volume tag 1. Explicitly pass
+    allow_legacy_single_tag=True to classify that LEGACY diagnostic mesh
+    by geometry; never silently use that mode for Elmer cross-validation.
     """
-    mesh=read_gmsh22(filename,{1:scene.seawater.conductivity})
-    # An R-sweep must compare genuinely DIFFERENT outer domains.
-    # Reject a mesh generated at a different radius instead of silently
-    # claiming the larger requested boundary in the result metadata.
+    mesh, tags=read_gmsh22(
+        filename,{1:scene.seawater.conductivity,2:0.,3:0.},
+        return_physical_tags=True)
+    seen=set(int(i) for i in tags)
+    legacy=seen=={1}
+    if legacy and not allow_legacy_single_tag:
+        raise ValueError(
+            "Single-region legacy BFZI mesh has no physical insulation "
+            "labels. Generate with --generate-msh or explicitly enable "
+            "the legacy single-volume importer for diagnostics only.")
+    if not legacy and seen!={1,2,3}:
+        raise ValueError(
+            "BFZI mesh needs exactly physical volumes 1=sea, 2=tx dry, "
+            f"3=rx dry; found {sorted(seen)}")
+    # An R sweep must really change the finite outer mesh.
     center=np.asarray(scene.outer_center,dtype=float)
     radius=float(scene.outer_radius)
     lower=mesh.nodes.min(axis=0)
@@ -143,9 +167,41 @@ def bfzi_mesh_from_gmsh22(filename, scene):
         raise ValueError(
             "Gmsh mesh exterior does not match scene outer radius/center; "
             "regenerate the mesh with identical --outer-radius for every R run")
-    x=mesh.nodes[mesh.tetrahedra].mean(axis=1)
-    inside=np.zeros(len(x),dtype=bool)
-    for assembly in scene.assemblies:
-        inside |= assembly.enclosure.contains(x,assembly.pose)
-    return TetraMesh(mesh.nodes,mesh.tetrahedra,
-                     np.where(inside,0.0,scene.seawater.conductivity))
+
+    tetra_coords=mesh.nodes[mesh.tetrahedra]
+    x=tetra_coords.mean(axis=1)
+    tx=scene.transmitter.enclosure.contains(x,scene.transmitter.pose)
+    rx=scene.receiver.enclosure.contains(x,scene.receiver.pose)
+    if np.any(tx & rx):
+        raise ValueError("BFZI insulating boxes overlap")
+    if legacy:
+        return TetraMesh(mesh.nodes,mesh.tetrahedra,
+                         np.where(tx|rx,0.,scene.seawater.conductivity))
+
+    expected=np.where(tx,2,np.where(rx,3,1))
+    mismatch=np.flatnonzero(tags!=expected)
+    if len(mismatch):
+        raise ValueError(
+            f"Gmsh physical material tags disagree with actual SE(3) "
+            f"boxes in {len(mismatch)} tetrahedra; first cell {mismatch[0]} "
+            f"has tag {tags[mismatch[0]]} but lies in region "
+            f"{expected[mismatch[0]]}")
+    # Material volumes have physical meaning in both solvers: a missing
+    # cut/interface would otherwise silently change seawater Joule heat.
+    v1=tetra_coords[:,1]-tetra_coords[:,0]
+    v2=tetra_coords[:,2]-tetra_coords[:,0]
+    v3=tetra_coords[:,3]-tetra_coords[:,0]
+    tet_volumes=np.abs(np.einsum(
+        'ij,ij->i',np.cross(v1,v2),v3))/6.
+    expected_volumes={
+        1:(2*radius)**3-sum(8*np.prod(a.enclosure.half_extents)
+                           for a in scene.assemblies),
+        2:8*np.prod(scene.transmitter.enclosure.half_extents),
+        3:8*np.prod(scene.receiver.enclosure.half_extents)}
+    for tag,volume in expected_volumes.items():
+        actual=float(tet_volumes[tags==tag].sum())
+        if not np.isclose(actual,volume,rtol=2e-7,atol=1e-10):
+            raise ValueError(
+                f"Gmsh physical region {tag} volume {actual:.10g} m3 "
+                f"does not match BFZI geometry {volume:.10g} m3")
+    return mesh
