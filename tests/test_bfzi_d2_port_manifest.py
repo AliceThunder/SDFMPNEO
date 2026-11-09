@@ -11,7 +11,8 @@ from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.geometry import RigidPose
 from sdfmpneo_bfzi.source_reference import polygonal_port_vertices
 from sdfmpneo_bfzi.direct3d_port_manifest import (
-    closed_port_source_manifest,write_closed_port_source_manifest)
+    closed_port_source_manifest,write_closed_port_source_manifest,
+    verify_closed_port_source_manifest)
 
 
 def test_manifest_has_exact_two_closed_1A_physical_bfzi_paths(tmp_path):
@@ -88,3 +89,60 @@ def test_source_only_real_BFZI_CLI_without_gmsh(monkeypatch,tmp_path):
             !=report["ports"][1]["enclosure"]["rotation_local_to_world"])
     assert all(p["path_displacement_norm_m"]<1e-13
                for p in report["ports"])
+
+
+def test_source_manifest_import_rejects_tampering_and_wrong_run(tmp_path):
+    """Strong source matching is independent of Elmer availability."""
+    import hashlib
+    path=tmp_path/"bfzi.ports.json"
+    scene=build_demo_scene()
+    saved=write_closed_port_source_manifest(
+        scene,path,200000.,panels_per_corner=4)
+    verified=verify_closed_port_source_manifest(
+        scene,path,200000.,panels_per_corner=4)
+    assert verified==saved
+
+    with pytest.raises(ValueError,match="differs from actual"):
+        verify_closed_port_source_manifest(
+            scene,path,210000.,panels_per_corner=4)
+    with pytest.raises(ValueError,match="differs from actual"):
+        verify_closed_port_source_manifest(
+            scene,path,200000.,panels_per_corner=8)
+    changed=replace(scene,receiver=replace(
+        scene.receiver,pose=RigidPose(
+            scene.receiver.pose.rotation,
+            scene.receiver.pose.center+np.array([.01,0.,0.]))))
+    with pytest.raises(ValueError,match="differs from actual"):
+        verify_closed_port_source_manifest(
+            changed,path,200000.,panels_per_corner=4)
+
+    forged=json.loads(path.read_text(encoding="utf-8"))
+    forged["ports"][1]["world_vertices_m"][2][0]+=.001
+    path.write_text(json.dumps(forged),encoding="utf-8")
+    with pytest.raises(ValueError,match="SHA256 mismatch"):
+        verify_closed_port_source_manifest(
+            scene,path,200000.,panels_per_corner=4)
+
+    # Even a rehashed, internally consistent *different* source cannot be
+    # paired with the actual two closed ports in this solve.
+    unsigned={k:v for k,v in forged.items()
+              if k!="sha256_of_contract_without_hash"}
+    canonical=json.dumps(unsigned,sort_keys=True,separators=(",",":"),
+                         ensure_ascii=False,allow_nan=False)
+    forged["sha256_of_contract_without_hash"]=hashlib.sha256(
+        canonical.encode("utf-8")).hexdigest()
+    path.write_text(json.dumps(forged),encoding="utf-8")
+    with pytest.raises(ValueError,match="differs from actual"):
+        verify_closed_port_source_manifest(
+            scene,path,200000.,panels_per_corner=4)
+
+
+def test_imported_mesh_must_not_overwrite_source_evidence(monkeypatch):
+    """The CLI rejects overwriting the evidence before checking it."""
+    import sys
+    from examples.bfzi_d2_aphi import main
+    monkeypatch.setattr(sys,"argv",[
+        "bfzi_d2_aphi","--case","bfzi","--mesh","input.msh",
+        "--export-port-manifest","input.ports.json"])
+    with pytest.raises(SystemExit):
+        main()
