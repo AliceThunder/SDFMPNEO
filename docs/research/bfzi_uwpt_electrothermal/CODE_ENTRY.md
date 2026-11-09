@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 最新 D2 Elmer 最终边元源对齐：** 在原有 Gmsh→ElmerGrid→`--two-unit-currents runs/d2_tilt_unit_currents.txt` 入口上可另加 `--elmer-final-edge-load runs/d2_tilt_final_rhs.txt`，其中每行严格为 `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，必须**覆盖全部有向网格边（包含零源边）**，数值为 **Elmer 修正后、已转换为相同 Whitney 取向、求解前的原始实空间单位端口载荷**。交接程序会使用节点坐标/边方向映射与本项目精确装配的 `L` 比较，若差异超过规定公差则输出 `D2_FINAL_ELMER_SOURCE_RHS_MISMATCH` 并以状态 2 退出，不继续当作同源求解。**此文件须由独立 Elmer 端真实实现导出，原始 CoilSolver `J`、矩阵总 RHS（含规范/边界项）或线圈名义电流不能冒充真实弱载荷。** 尚无该官方自动导出，因此当前新增实现是可执行的严格桥接口，而不是 Elmer 独立源 PASS。新增测试 `python -m pytest tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_physical_material_mesh.py -q`（完整源码环境待运行）。D2 OPEN，禁 GitHub Actions。
+>
+
+
 > **2026-11-09 输出口径：** `--fields-npz` 内 `E_unit_ports_V_m[P,T,Q,3]`、`B_unit_ports_T[P,T,3]`、`J_unit_ports_A_m2[P,T,Q,3]`、`quadrature_positions_m[T,Q,3]`、`q_basis_W_m3[P,T,Q]`，以及**必须保留的相位交叉项** `q_port_cross_W_m3[T,Q,P,P]`（P=2）。`I.conj()@q_port_cross[T,Q]@I` 是任意复单位峰值端口电流 `I` 的 `q` [W/m³]；不要仅把两列独立 `q_basis` 相加。该输出尚未经正式 Elmer 同源 h/R 收敛认证；不得用作神经教师。
 >
 
