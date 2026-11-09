@@ -207,3 +207,27 @@ def test_structured_bfzi_wet_wall_h_is_independent_of_dry_box_layers():
         assert len(wet)>0 and np.max(wet)<=.04+1e-12
     with pytest.raises(ValueError,match='near_step_m'):
         axis_aligned_bfzi_tetra_mesh(scene,near_step_m=.4,**kw)
+
+
+def test_fixed_core_keeps_nearfield_tetra_planes_identical_for_R_sweep():
+    """Changing exterior radius must NOT silently change local OBB h."""
+    from dataclasses import replace
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.direct3d_structured_bfzi import _axis_coordinates
+    import pytest
+
+    base=build_demo_scene()
+    for axis in range(3):
+        near_coordinates=[]
+        for radius in (.32,.40,.52):
+            scene=replace(base,outer_radius=radius)
+            coords=_axis_coordinates(scene,axis,.08,.30,1,.08,.24)
+            near_coordinates.append(
+                coords[(coords>=-.24-1e-11)&(coords<=.24+1e-11)])
+        for actual in near_coordinates[1:]:
+            assert_allclose(actual,near_coordinates[0],rtol=0,atol=1e-12)
+    with pytest.raises(ValueError,match='inner_core_radius_m'):
+        from sdfmpneo_bfzi.direct3d_structured_bfzi import (
+            axis_aligned_bfzi_tetra_mesh)
+        axis_aligned_bfzi_tetra_mesh(
+            base,near_padding_m=.08,inner_core_radius_m=.12)
