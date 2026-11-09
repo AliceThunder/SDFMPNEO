@@ -37,6 +37,9 @@ def main():
     p.add_argument('--structured-padding',type=float,default=.025)
     p.add_argument('--structured-box-layers',type=int,default=2)
     p.add_argument('--mesh-size', type=float, default=.025)
+    p.add_argument('--outer-radius',type=float,
+                   help='Independent outer CUBE half extent (m); keep BFZI '
+                        'ports/OBBs fixed and sweep domain truncation')
     p.add_argument('--near-mesh-size',type=float,
                    help='Near both independently rotated insulating boxes (m)')
     p.add_argument('--near-padding',type=float,
@@ -82,6 +85,9 @@ def main():
         from sdfmpneo_bfzi.direct3d_mesh import (
             gmsh_bfzi_two_boxes, bfzi_mesh_from_gmsh22)
         scene = build_demo_scene()
+        if args.outer_radius is not None:
+            from dataclasses import replace
+            scene = replace(scene,outer_radius=args.outer_radius)
         if args.write_geo:
             args.write_geo.write_text(
                 gmsh_bfzi_two_boxes(scene, mesh_size_m=args.mesh_size,
