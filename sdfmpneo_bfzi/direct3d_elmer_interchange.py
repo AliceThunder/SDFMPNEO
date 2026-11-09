@@ -108,3 +108,90 @@ def load_two_unit_element_currents(table_path, elmer_element_to_tetra,
     if np.any(np.sum(np.abs(currents),axis=(1,2))==0):
         raise ValueError("Each of the two real unit-current ports must be nonzero")
     return currents
+
+
+
+def verify_elmer_converted_bfzi_groups(mesh, original_physical_tags,
+                                       elmer_directory, element_mapping,
+                                       scene, *, coordinate_tolerance_m=1e-9):
+    """Validate actual ElmerGrid body/boundary IDs, never assume Gmsh IDs.
+
+    Requires `ElmerGrid ... -names`: three named bodies and named outer
+    boundary. The mapped Elmer element bodies must equal original Gmsh
+    physical 1/2/3 per tetra; every outer 303 triangle must be assigned
+    the named Elmer boundary ID (which need not equal Gmsh 101).
+    """
+    from .direct3d_mesh import _verify_exterior_surface_101
+    folder=Path(elmer_directory)
+    labels={"bodies":{},"boundaries":{}}
+    kind=None
+    for line in (folder/"mesh.names").read_text(encoding="utf-8").splitlines():
+        lowered=line.lower()
+        if "names for bodies" in lowered:
+            kind="bodies"
+        elif "names for boundaries" in lowered:
+            kind="boundaries"
+        elif line.strip().startswith("$") and kind:
+            field=line.strip()[1:].split("=")
+            if len(field)!=2:
+                raise ValueError("Invalid Elmer mesh.names group assignment")
+            name=field[0].strip()
+            tag=int(field[1].strip())
+            if name in labels[kind]:
+                raise ValueError("Duplicated Elmer mesh.names group")
+            labels[kind][name]=tag
+    bodies=labels["bodies"]
+    exterior=labels["boundaries"].get("outer_A_tangential_zero")
+    required=("seawater","transmitter_insulation","receiver_insulation")
+    if not all(name in bodies for name in required) or exterior is None:
+        raise ValueError(
+            "ElmerGrid mesh.names is missing sea/tx/rx body or outer boundary")
+    actual_tags=np.asarray(original_physical_tags,dtype=int)
+    if actual_tags.shape!=(len(mesh.tetrahedra),):
+        raise ValueError("Missing original Gmsh physical tags per tetra")
+    expected={i+1:bodies[name] for i,name in enumerate(required)}
+    for row in (folder/"mesh.elements").read_text(
+            encoding="utf-8").splitlines():
+        if not row.strip():
+            continue
+        fields=row.split()
+        eid=int(fields[0])
+        tet=element_mapping.get(eid)
+        if tet is None or int(fields[1])!=expected.get(int(actual_tags[tet])):
+            raise ValueError("ElmerGrid body assignment changed BFZI materials")
+
+    # Recover native Elmer node IDs by exact position; the ElmerGrid
+    # serialization may reorder and renumber both nodes and elements.
+    elmer_nodes={}
+    for row in (folder/"mesh.nodes").read_text(
+            encoding="utf-8").splitlines():
+        if row.strip():
+            fields=row.split()
+            elmer_nodes[int(fields[0])]=[float(v) for v in fields[2:]]
+    ids=list(elmer_nodes)
+    x=np.asarray([elmer_nodes[k] for k in ids],float)
+    d,indices=cKDTree(mesh.nodes).query(x)
+    if np.any(d>coordinate_tolerance_m) or len(set(indices))!=len(mesh.nodes):
+        raise ValueError("ElmerGrid boundary node mapping is not bijective")
+    back=dict(zip(ids,map(int,indices)))
+    triangles=[]
+    for row in (folder/"mesh.boundary").read_text(
+            encoding="utf-8").splitlines():
+        if not row.strip():
+            continue
+        fields=row.split()
+        if int(fields[1])!=exterior:
+            continue
+        if int(fields[4])!=303 or len(fields)!=8:
+            raise ValueError("BFZI exterior Elmer boundary must be 303 triangles")
+        try:
+            triangles.append([back[int(n)] for n in fields[5:]])
+        except KeyError as exc:
+            raise ValueError("Elmer boundary refers to unknown node") from exc
+    _verify_exterior_surface_101(mesh,np.asarray(triangles,dtype=int).reshape(-1,3),
+                                 np.asarray(scene.outer_center,float),
+                                 float(scene.outer_radius))
+    return {"verified_elmer_tetrahedra":len(element_mapping),
+            "verified_outer_triangles":len(triangles),
+            "elmer_body_ids":{name:bodies[name] for name in required},
+            "elmer_outer_boundary_id":exterior}
