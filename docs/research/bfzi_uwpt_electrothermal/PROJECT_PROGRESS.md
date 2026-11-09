@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 D2 空间热源完整相位输出补充：** `examples/bfzi_d2_elmer_handoff.py --fields-npz` 现在另外存储四点积分**世界坐标**、频率/相量、源合同哈希，以及 `q_port_cross_W_m3[T,Q,p,r] = 0.5*sigma*conj(E_p)·E_r`（复 Hermitian 两端口空间热源矩阵），使任意峰值复相量 `I` 的海水热源可严格恢复为 `q[T,Q] = I.conj() @ Q[T,Q] @ I`，不会漏掉端口间相位交叉热。单独局部 NumPy 两端口复场算例得到 `I=(1,1j)` 的二次型重建误差 1.42e-14，Hermitian 缺陷 0；**此仅公式级验证，不是实际 BFZI/Elmer 场误差或热标签高精度验收**。D2 OPEN。
+>
+
 > **2026-11-09 D2 新交付：ElmerGrid → 本项目同源体电流交接主程序（未完成独立参考）：** 新增 [examples/bfzi_d2_elmer_handoff.py](../../../examples/bfzi_d2_elmer_handoff.py)。正式导入此前 Gmsh OCC 生成的独立 SE(3) 双线圈 MSH2 + 原始 `<mesh>.ports.json`（完整验证闭合细丝源合同与物理标签/外域），可选实际调用工作站 `ElmerGrid 14 2 ... -autoclean -names -out DIR`，随后读取真实原生 `mesh.nodes/elements/names/boundary` 完成节点/四面体双射、三材料体及完整 101 外表面的转换对应。只有**另行由真实 Elmer 求解明确导出**七列 `ElmerElementID J1xyz J2xyz`（两端口实单位体源，A/m²）时，才能重排源、检查离散 P1 电流连续性并在**本项目**树—余树 A–φ 求解同源体源的真空与海水响应、两端口复 Z、各复相位组合功率；可选输出按真实 tetra/四点积分存储的 E/B/J/q NPZ。所有输出明确标识 **ElmerSolver 未由该程序执行、Jfix 后的实际 Elmer RHS 是否同一源未核实、1 A 截面通量/真实铜截面及完全相量/边界条件等价未核实**，绝不自动认定独立高精度通过。已与 Elmer 上游 `mesh.names` 和 Elmer CoilSolver → WhitneyAVSolver 源设置文献核实接口字段；此环境仍缺完整仓库工作树、Gmsh/Elmer，可执行入口与新增仓库专项测试**尚未在完整仓库实际跑通**。保持 **D2 OPEN，G1 FAIL，教师冻结，禁 GitHub Actions**。
 >
 
