@@ -93,3 +93,43 @@ def closed_edge_load(mesh, source_strands):
                     np.add.at(load[port], local_edges[cell],
                               float(weight)*(b-a)*tangents)
     return load
+
+
+def elemental_current_edge_load(mesh, element_current_density):
+    """Exact Whitney load from piecewise-constant impressed J_s [A/m^2].
+
+    Input is [port, tetra, xyz] in *this mesh's element order*.  For each
+    constant J_s in a tetra, the P1 Whitney edge integral is analytic:
+      L[p,e] += V/4 * J_s[p,t] dot
+                (grad(lambda_j)-grad(lambda_i)) * edge_orientation.
+    Use with the SAME two separately solved source current densities in an
+    independent Elmer reference; current continuity, 1-A normalization and
+    mapping of Elmer element IDs to this mesh are separate physical gates.
+    This is NOT a conversion of the existing ideal line source into a
+    finite-volume coil, nor a numerical equivalence certificate.
+    """
+    currents=np.asarray(element_current_density,dtype=complex)
+    if (currents.ndim!=3 or currents.shape[0]<1 or
+            currents.shape[1:]!=(len(mesh.tetrahedra),3) or
+            not np.isfinite(currents).all()):
+        raise ValueError(
+            "Expected finite impressed J [ports,tetrahedra,3] in A/m^2")
+    edges,local_edges,signs,*_= _topology(mesh)
+    vertices=mesh.nodes[mesh.tetrahedra]
+    transforms=(vertices[:,1:]-vertices[:,0,None,:]).transpose(0,2,1)
+    determinants=np.linalg.det(transforms)
+    if np.any(abs(determinants)<1e-16):
+        raise ValueError("Degenerate tetrahedron in volume source mesh")
+    volume=abs(determinants)/6
+    grads=np.zeros((len(vertices),4,3))
+    grads[:,1:]=np.linalg.inv(transforms)
+    grads[:,0]=-grads[:,1:].sum(axis=1)
+    means=np.stack([
+        (grads[:,j]-grads[:,i])/4
+        for i,j in _EDGES],axis=1)*signs[:,:,None]
+    local=np.einsum('ptc,tec,t->pte',
+                    currents,means,volume,optimize=True)
+    load=np.zeros((len(currents),len(edges)),dtype=complex)
+    for port in range(len(currents)):
+        np.add.at(load[port],local_edges.ravel(),local[port].ravel())
+    return load
