@@ -117,7 +117,17 @@ def solve_elemental_current_ports(mesh: TetraMesh, frequency_hz,
     computed here. The returned impedance is the generalized incremental
     response dual to the specified impressed-current functional.
     """
-    L=elemental_current_edge_load(mesh,element_current_density)
+    # The present dual port readout L @ A assumes a real unit-current
+    # source basis. A complex spatial source pattern needs an independently
+    # defined/conjugated terminal functional: otherwise an arbitrary global
+    # phasor rotation changes the reported impedance.
+    currents=np.asarray(element_current_density)
+    if np.iscomplexobj(currents) and np.any(np.imag(currents)!=0):
+        raise ValueError(
+            'Complex elemental source basis needs a physical terminal '
+            'functional; supply real unit-port current densities and apply '
+            'complex port phases only to solved columns')
+    L=elemental_current_edge_load(mesh,currents)
     return _solve_with_edge_source_load(mesh,frequency_hz,L,gauge=gauge)
 
 
