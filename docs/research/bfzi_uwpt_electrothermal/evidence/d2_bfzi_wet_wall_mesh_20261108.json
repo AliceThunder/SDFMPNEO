@@ -1,0 +1,66 @@
+{
+  "status": "D2 OPEN: module-level numerical geometry only; full two-port PDE and Gmsh/Elmer not run",
+  "date": "2026-11-08",
+  "reference_branch": "research/bfzi-uwpt-electrothermal-surrogate",
+  "source": "same Python axis_aligned_bfzi_tetra_mesh implementation, imported locally with matching minimal TetraMesh/scene interfaces",
+  "geometry": {
+    "box_centers_z_m": [
+      -0.13,
+      0.13
+    ],
+    "half_extents_m": [
+      0.1,
+      0.1,
+      0.015
+    ],
+    "sigma_seawater_S_m": 5,
+    "far_step_m": 0.3,
+    "near_padding_m": 0.02,
+    "box_layers": 1
+  },
+  "series_R052": [
+    {
+      "near_step_m": null,
+      "vertices": 768,
+      "tetrahedra": 3234,
+      "insulating_volume_m3": 0.002400000000000001,
+      "cube_volume_m3": 1.124864
+    },
+    {
+      "near_step_m": 0.08,
+      "vertices": 1200,
+      "tetrahedra": 5346,
+      "insulating_volume_m3": 0.0024,
+      "cube_volume_m3": 1.124864
+    },
+    {
+      "near_step_m": 0.02,
+      "vertices": 5776,
+      "tetrahedra": 29160,
+      "insulating_volume_m3": 0.002400000000000001,
+      "cube_volume_m3": 1.124864
+    },
+    {
+      "near_step_m": 0.01,
+      "vertices": 23064,
+      "tetrahedra": 124200,
+      "insulating_volume_m3": 0.0023999999999999994,
+      "cube_volume_m3": 1.124864
+    }
+  ],
+  "outer_radius_comparison_fixed_near_step_0p08": [
+    {
+      "outer_radius_m": 0.52,
+      "tetrahedra": 5346,
+      "insulating_volume_m3": 0.002399999999999999,
+      "cube_volume_m3": 1.124864
+    },
+    {
+      "outer_radius_m": 0.8,
+      "tetrahedra": 9438,
+      "insulating_volume_m3": 0.002399999999999999,
+      "cube_volume_m3": 4.096000000000003
+    }
+  ],
+  "interpretation": "Refines conductive wall-adjacent strips independently from dry box_layers; all material faces remain grid planes. Tensor-product nonlocal refinement becomes prohibitively expensive at 10-20 mm; Gmsh OCC local 3D refinement is required for trustworthy full-SE3 h/R convergence. None of these counts demonstrates electromagnetic convergence."
+}
