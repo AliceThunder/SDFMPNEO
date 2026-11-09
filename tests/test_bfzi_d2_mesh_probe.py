@@ -139,3 +139,39 @@ def test_independent_rotated_obb_nearfield_mesh_sizing():
     assert_allclose(
         setting("Field[2].ZMax"),
         tilted.pose.center[2]+extent[2]+.025,atol=1e-14)
+
+
+def test_real_bfzi_two_axis_aligned_boxes_conforming_structured_mesh():
+    """Actual demo OBB volume is represented by complete, non-cut tetrahedra."""
+    from dataclasses import replace
+    import pytest
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from sdfmpneo_bfzi.direct3d_structured_bfzi import axis_aligned_bfzi_tetra_mesh
+
+    scene=build_demo_scene()
+    mesh=axis_aligned_bfzi_tetra_mesh(
+        scene,far_step_m=.3,near_padding_m=.02,box_layers=1)
+    xyz=mesh.nodes[mesh.tetrahedra]
+    transform=(xyz[:,1:]-xyz[:,0,None,:]).transpose(0,2,1)
+    vol=np.abs(np.linalg.det(transform))/6
+    box_volume=sum(8*np.prod(assembly.enclosure.half_extents)
+                   for assembly in scene.assemblies)
+    assert_allclose(vol[mesh.sigma==0].sum(),box_volume,rtol=0,atol=5e-14)
+    assert_allclose(vol.sum(),(2*scene.outer_radius)**3,rtol=0,atol=5e-13)
+    assert np.count_nonzero(mesh.sigma==0)>0
+    assert np.count_nonzero(mesh.sigma>0)>0
+    centroids=xyz.mean(axis=1)
+    for assembly in scene.assemblies:
+        inside=assembly.enclosure.contains(centroids,assembly.pose)
+        assert np.any(inside)
+        assert np.all(mesh.sigma[inside]==0)
+
+    angle=.2
+    rot=np.array([[np.cos(angle),-np.sin(angle),0.],
+                  [np.sin(angle),np.cos(angle),0.],
+                  [0.,0.,1.]])
+    rotated=replace(scene,receiver=replace(
+        scene.receiver,pose=RigidPose(rot,scene.receiver.pose.center)))
+    with pytest.raises(ValueError,match="Gmsh"):
+        axis_aligned_bfzi_tetra_mesh(rotated)
