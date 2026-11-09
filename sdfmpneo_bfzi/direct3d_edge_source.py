@@ -150,10 +150,23 @@ def source_nodal_conservation(mesh, source_edge_load):
     if L.ndim!=2 or L.shape[1]!=len(edges) or not np.isfinite(L).all():
         raise ValueError("Source edge load shape or values are invalid")
     balance=np.zeros((len(L),len(mesh.nodes)),dtype=complex)
+    nodal_weight=np.zeros((len(L),len(mesh.nodes)))
     for (low,high),idx in edges.items():
         balance[:,low]-=L[:,idx]
         balance[:,high]+=L[:,idx]
-    magnitude=np.sum(np.abs(L),axis=1)
-    if np.any(magnitude==0):
+        nodal_weight[:,low]+=abs(L[:,idx])
+        nodal_weight[:,high]+=abs(L[:,idx])
+    peak=np.max(nodal_weight,axis=1)
+    if np.any(peak==0):
         raise ValueError("Zero impressed current source edge load")
-    return np.max(np.abs(balance),axis=1)/magnitude
+    # Global L1 normalization spuriously improves as the number of remote
+    # edges grows under h refinement. Normalize against the locally active
+    # nodal source scale instead. Ignore roundoff-only nodes whose incident
+    # source is <1e-6 of the peak, but still check their absolute imbalance
+    # relative to that peak (never silently discard a source leak).
+    floor=1e-6*peak[:,None]
+    local=np.where(
+        nodal_weight>=floor,
+        np.abs(balance)/np.maximum(nodal_weight,floor),0.)
+    leaked=np.max(np.abs(balance),axis=1)/peak
+    return np.maximum(np.max(local,axis=1),leaked)
