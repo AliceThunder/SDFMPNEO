@@ -205,3 +205,25 @@ def test_real_bfzi_msh_to_elmergrid_handoff_cli_without_solver(
     assert report["tetrahedra"]==len(mesh.tetrahedra)
     assert report["elmer_grid_groups"]["verified_outer_triangles"]==len(outer)
     assert report["independent_elmer_solution"]=="NOT_RUN_BY_THIS_SCRIPT"
+
+    # Exercise the full explicit two-port table read and conservation gate:
+    # an arbitrary elemental constant J must not trigger a Maxwell solve.
+    bad_sources=tmp_path/"invalid_elemental_J.txt"
+    bad_sources.write_text(
+        "".join(f"{i+1} "
+                + ("1 0 0 0 1 0" if i==0 else "0 0 0 0 0 0")
+                + "\n" for i in range(len(mesh.tetrahedra))),
+        encoding="utf-8")
+    rejected_report=tmp_path/"rejected_current_report.json"
+    monkeypatch.setattr(sys,"argv",[
+        "bfzi_d2_elmer_handoff","--mesh",str(path),
+        "--elmer-grid-dir",str(elmer),"--outer-radius",".32",
+        "--frequency","200000","--panels-per-corner","2",
+        "--two-unit-currents",str(bad_sources),
+        "--output",str(rejected_report)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code==2
+    rejected=json.loads(rejected_report.read_text(encoding="utf-8"))
+    assert rejected["status"]=="D2_VOLUME_SOURCE_CONSERVATION_FAIL"
+    assert max(rejected["volume_source_P1_gradient_defect"])>1e-8
