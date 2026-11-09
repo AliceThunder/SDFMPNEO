@@ -1,5 +1,13 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-09：Elmer WhitneyAV 最终边元载荷同一性桥接
+
+较单纯的 CoilSolver 单元 `J_{s,p}` 读取，本次增加对*真正进入磁场解算的两个独立单位端口源泛函* `L_{p,e}` 的逐边核对。使用 [compare_final_elmer_whitney_source](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py) 和 CLI `--elmer-final-edge-load FILE`：读取 Elmer 本机独立导出的 **四列** `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，每条全局边恰好一条记录（零载荷边也必须提供）；通过两个端点的**真实世界坐标**映射到原始 Gmsh mesh 节点，再按全局有向边翻转符号，对两个单位端口分别与本项目精确体积分载荷 `L^{volume}` 做 L∞ 绝对/相对比较。实现同时拒绝缺边、重复边、未知节点和非有限值；结果作为独立字段写入 JSON，失配拒绝同源求解。项目新增两组反向边与错误 RHS 测试、基于真实 BFZI 三材料 MSH2 夹具的完整交接主程序合成文本集成测试。**不是**声称 Elmer 程序已运行。
+
+注意：Elmer 官方 `mgdyn_steady_coils` 示例分别配置 `CoilSolver`、`Use Elemental CoilCurrent`、`Fix Input Current Density`；ElmerModelsManual 将 CoilSolver 定义为依据**真实闭合体线圈的传导电流**。官方算例**不会**直接生成这里约定的逐边最终 RHS 四列表，必须从经过源修正的独立 `WhitneyAVSolver` 最终源组装环节额外实现导出，而且要区分原始源载荷与边界提升、规范及矩阵项。即使最终有限元 `L` 一致，只能证明**同一离散弱源**；真正的零半径细丝对有限截面体源的物理极限、实际铜损耗及终端口阻抗归一化、人工外域与 h/R/源加密仍需单独通过。此时**仍无真正生成的铜封装闭合体域与 Elmer 两源数值**。D2 OPEN、G1 FAIL、教师冻结，禁止 GitHub Actions。
+
+
+
 > **2026-11-09 体源空间热二次型：** 两实单位体源及导出的复四点电场 `E_p(T,Q)` 允许构造 `Q_{pr}(T,Q)=sigma(T)/2 E_p(T,Q)^*·E_r(T,Q)`；新的 NPZ 中以 `q_port_cross_W_m3[T,Q,2,2]` 保存，包括 `p!=r` 的干涉项，任意 `I` 以 `q=I^H Q I` 恢复。仅有每个单位端口 `q_basis` **不能**恢复任意相位热场。该空间二次型对本项目给定有限盒/同源体电流近似精确，但独立 Elmer、铜源和无限外域尚未验收。D2 OPEN。
 >
 
