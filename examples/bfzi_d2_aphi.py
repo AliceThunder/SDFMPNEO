@@ -46,6 +46,18 @@ def main():
                    help='Fixed near-field cube half width for comparable '
                         'outer R sweeps; must enclose padded boxes')
     p.add_argument('--mesh-size', type=float, default=.025)
+    p.add_argument('--tx-rotation-vector',type=float,nargs=3,
+                   default=(0.,0.,0.),metavar=('RX','RY','RZ'),
+                   help='Transmitter additional world-frame rotation vector (rad)')
+    p.add_argument('--rx-rotation-vector',type=float,nargs=3,
+                   default=(0.,0.,0.),metavar=('RX','RY','RZ'),
+                   help='Receiver additional world-frame rotation vector (rad)')
+    p.add_argument('--tx-shift',type=float,nargs=3,
+                   default=(0.,0.,0.),metavar=('X','Y','Z'),
+                   help='Additional transmitter center translation (m)')
+    p.add_argument('--rx-shift',type=float,nargs=3,
+                   default=(0.,0.,0.),metavar=('X','Y','Z'),
+                   help='Additional receiver center translation (m)')
     p.add_argument('--outer-radius',type=float,
                    help='Independent outer CUBE half extent (m); keep BFZI '
                         'ports/OBBs fixed and sweep domain truncation')
@@ -97,6 +109,24 @@ def main():
         from sdfmpneo_bfzi.direct3d_mesh import (
             gmsh_bfzi_two_boxes, bfzi_mesh_from_gmsh22)
         scene = build_demo_scene()
+        from dataclasses import replace
+        from scipy.spatial.transform import Rotation
+        from sdfmpneo_bfzi.geometry import RigidPose
+        # Transform the entire physical assembly, never the enclosure
+        # separately from its analytic continuous coil and closed return.
+        def move_assembly(assembly, rotvec, displacement):
+            rot=Rotation.from_rotvec(np.asarray(rotvec,float)).as_matrix()
+            pose=RigidPose(
+                rot@assembly.pose.rotation,
+                np.asarray(assembly.pose.center,float)+
+                np.asarray(displacement,float))
+            return replace(assembly,pose=pose)
+        scene=replace(
+            scene,
+            transmitter=move_assembly(
+                scene.transmitter,args.tx_rotation_vector,args.tx_shift),
+            receiver=move_assembly(
+                scene.receiver,args.rx_rotation_vector,args.rx_shift))
         if args.outer_radius is not None:
             from dataclasses import replace
             scene = replace(scene,outer_radius=args.outer_radius)
@@ -238,6 +268,12 @@ def main():
             'structured_inner_core_radius_m':(
                 args.structured_inner_core_radius if args.structured_axis_aligned else None),
             'boundary':'finite cube, n cross A_total=0',
+            'transmitter_pose':{
+                'center_m':scene.transmitter.pose.center.tolist(),
+                'rotation_matrix':scene.transmitter.pose.rotation.tolist()},
+            'receiver_pose':{
+                'center_m':scene.receiver.pose.center.tolist(),
+                'rotation_matrix':scene.receiver.pose.rotation.tolist()},
             'geometry':'two genuine BFZI continuous spirals and closed returns, '
                        'polygonal centerline approximation, two independent OBBs',
             'tetrahedra':len(mesh.tetrahedra),
