@@ -2,7 +2,7 @@
 
 ## 2026-11-09：已落地的 Elmer 体源弱载荷桥接（不是独立参考 PASS）
 
-新增 `elemental_current_edge_load(mesh, element_current_density)` 和 `solve_elemental_current_ports(mesh, frequency_hz, element_current_density, gauge='tree')`，复用现有树—余树 A–φ 材料及真空两组同源场求解。数组严格为 `(n_ports, n_tetra, 3)`，每项为目标有限元网格上该四面体的**分片常量**单位端口外加体电流密度 `J_s`，单位 `A/m²`（峰值相量）。对四面体 `T` 的局部 Whitney 边 `e=(i,j)`，装配精确积分：
+新增 `elemental_current_edge_load(mesh, element_current_density)` 和 `solve_elemental_current_ports(mesh, frequency_hz, element_current_density, gauge='tree')`，复用现有树—余树 A–φ 材料及真空两组同源场求解。数组严格为 `(n_ports, n_tetra, 3)`；当前端口双对偶读取仅接收**实数空间单位电流基**，复相位通过已求解端口列线性组合，复数空间源须另行定义含相量约定的真实端子电压泛函，不能直接由未共轭 `L@A` 冒充阻抗，每项为目标有限元网格上该四面体的**分片常量**单位端口外加体电流密度 `J_s`，单位 `A/m²`（峰值相量）。对四面体 `T` 的局部 Whitney 边 `e=(i,j)`，装配精确积分：
 
 \[
 L_{ep}^{\mathrm{volume}}\big|_T
