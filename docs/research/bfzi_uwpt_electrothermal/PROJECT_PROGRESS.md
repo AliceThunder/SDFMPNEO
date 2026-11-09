@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-08 D2 最新材料共形网格输入修复：** [`direct3d_mesh.py`](../../../sdfmpneo_bfzi/direct3d_mesh.py) 现在直接从 MSH 2.2 的**真实物理体标签**给海水/发射端绝缘盒/接收端绝缘盒赋 `σ=(5,0,0) S/m`，要求三个标签全在、逐四面体核对其实际独立 SE(3) 几何归属、体积与外域一致，不再无条件依据中心点重分类；旧单标签 `.geo` 需显式 `--legacy-single-tag-msh` 才能作为诊断导入。[`--generate-msh --mesh-only` 主入口](../../../examples/bfzi_d2_aphi.py) 也在返回成功前执行实际 MSH2 读回验证，防止产生不可供 Elmer 正确分材的网格。**实际计算证据：** 使用现有两盒物理共形结构化网格写入真实 MSH 2.2（1,350 四面体，海水 1,338 / 发射盒 6 / 接收盒 6），再经新导入器求解 200kHz 两单位闭合 BFZI 端口；与未导出网格直接求解相比，`2×2 ΔZ`、全四面体 E/B、`I=(1,i)` Joule 逐项差为 **0**。交换标签、缺失材料、单标签未授权、外域 R 不匹配四类错误均在本地实际拒绝。新增 [专项可复现测试](../../../tests/test_bfzi_d2_physical_material_mesh.py) 和 [数值证据 JSON](evidence/d2_three_material_msh2_roundtrip_20261108.json)。**这证明的是三材料文件导入及双端口方程没有被网格存取改变，不能冒充真正 Gmsh OCC/Elmer 独立求解**；当前环境 Gmsh 包源无法解析，原项目完整整树测试尚未运行。D2 OPEN，G1 FAIL，神经教师冻结，禁止 GitHub Actions。
+>
+
+
 > **2026-11-08 最新 D2 位姿/Elmer 材料接口（覆盖以下旧状态）：** 已实际使用本地提取的真实 BFZI Nédélec A–φ 双端口求解器，核对两匝圆角方形＋闭合馈回流的**整体刚体 SE(3) 坐标协变性**：完整复 Z 相对差 4.92×10⁻¹²、空间 E/B 相对差 5.52×10⁻¹¹/3.29×10⁻¹²。另真实求解**只旋转接收封装及线圈 90°**的相对位姿（材料界面重新共形）：平行 1350 四面体 Z12 实部 1.11219mΩ，正交 2430 四面体 Z12 实部 0.0477053mΩ；两工况离散端口—体积 Joule 双向一致。两种证据都**不能**证明任意斜置 SE(3) 连续位姿 h/R 收敛。已在 [主 BFZI 运行 CLI](../../../examples/bfzi_d2_aphi.py) 接入 tx/rx 独立旋转向量与平移，并新增 [OCC fragment 来源映射的三材料物理标签共形网格](../../../sdfmpneo_bfzi/direct3d_gmsh_physical.py)：海水 volume 1、发射绝缘 volume 2、接收绝缘 volume 3、有限立方体外边界 surface 101，支持 --generate-msh --mesh-only，不以盒体 AABB 代替旋转几何。[ElmerGrid 的材料/边界标签转换与未完成的真实两端口源说明](D2_ELMER_INDEPENDENT_REFERENCE.md) · [实际双端口位姿证据 JSON](evidence/d2_real_bfzi_pose_20261109.json)。**本容器无 Gmsh/Elmer，新的物理标签 API 尚未实际网格化，Elmer CoilSolver 等效闭合源仍未实现；全仓库 pytest 仍需工作站复跑。** D2 OPEN、G1 FAIL、教师冻结、未使用 GitHub Actions。
 >
 
