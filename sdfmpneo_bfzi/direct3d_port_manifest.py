@@ -124,3 +124,32 @@ def write_closed_port_source_manifest(scene, path, frequency_hz, *,
     target.write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n",
                       encoding="utf-8")
     return result
+
+
+def verify_closed_port_source_manifest(scene, path, frequency_hz, *,
+                                       panels_per_corner=16):
+    """Fail closed unless a saved source equals BOTH its hash and this run.
+
+    This gate binds two oriented closed paths, return leads, independent
+    poses, source chord resolution, phasor, material and finite exterior.
+    It does not assert equivalence to an Elmer finite-volume CoilSolver.
+    """
+    path=Path(path)
+    saved=json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(saved,dict):
+        raise ValueError("BFZI source manifest must be a JSON object")
+    supplied_hash=saved.get("sha256_of_contract_without_hash")
+    unsigned={k:v for k,v in saved.items()
+              if k!="sha256_of_contract_without_hash"}
+    canonical=json.dumps(unsigned,sort_keys=True,separators=(",",":"),
+                         ensure_ascii=False,allow_nan=False)
+    true_hash=hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if not isinstance(supplied_hash,str) or supplied_hash!=true_hash:
+        raise ValueError("BFZI source manifest SHA256 mismatch")
+    expected=closed_port_source_manifest(
+        scene,frequency_hz,panels_per_corner=panels_per_corner)
+    if saved!=expected:
+        raise ValueError(
+            "BFZI source manifest differs from actual closed ports, pose, "
+            "frequency, source discretization, material or outer boundary")
+    return saved
