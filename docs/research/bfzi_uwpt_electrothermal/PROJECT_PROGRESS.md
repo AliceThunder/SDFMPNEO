@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 D2 新交付：ElmerGrid → 本项目同源体电流交接主程序（未完成独立参考）：** 新增 [examples/bfzi_d2_elmer_handoff.py](../../../examples/bfzi_d2_elmer_handoff.py)。正式导入此前 Gmsh OCC 生成的独立 SE(3) 双线圈 MSH2 + 原始 `<mesh>.ports.json`（完整验证闭合细丝源合同与物理标签/外域），可选实际调用工作站 `ElmerGrid 14 2 ... -autoclean -names -out DIR`，随后读取真实原生 `mesh.nodes/elements/names/boundary` 完成节点/四面体双射、三材料体及完整 101 外表面的转换对应。只有**另行由真实 Elmer 求解明确导出**七列 `ElmerElementID J1xyz J2xyz`（两端口实单位体源，A/m²）时，才能重排源、检查离散 P1 电流连续性并在**本项目**树—余树 A–φ 求解同源体源的真空与海水响应、两端口复 Z、各复相位组合功率；可选输出按真实 tetra/四点积分存储的 E/B/J/q NPZ。所有输出明确标识 **ElmerSolver 未由该程序执行、Jfix 后的实际 Elmer RHS 是否同一源未核实、1 A 截面通量/真实铜截面及完全相量/边界条件等价未核实**，绝不自动认定独立高精度通过。已与 Elmer 上游 `mesh.names` 和 Elmer CoilSolver → WhitneyAVSolver 源设置文献核实接口字段；此环境仍缺完整仓库工作树、Gmsh/Elmer，可执行入口与新增仓库专项测试**尚未在完整仓库实际跑通**。保持 **D2 OPEN，G1 FAIL，教师冻结，禁 GitHub Actions**。
+>
+
+
 > **2026-11-09 D2 本轮最新推进（基于 0851222）：** 发现前轮体源仅检验 Whitney 积分公式而**不检验闭合电流连续性**。现在 [direct3d_edge_source.py](../../../sdfmpneo_bfzi/direct3d_edge_source.py) 增加离散 P1 梯度源项残差计算， [direct3d_galerkin.py](../../../sdfmpneo_bfzi/direct3d_galerkin.py) 在两端口 A–φ 求解前硬拒绝归一化弱连续性缺陷大于 1e-8 的 RHS， [BFZI CLI](../../../examples/bfzi_d2_aphi.py) 报告残差；真闭合源仍须通过 h/R 等独立场检验。**独立本地 NumPy 实算：** 单四面体闭合线电流残差 2.22e-16，而任意常体电流在早期全局 L1 归一化下为 6.67e-1；本轮进一步修正为不随网格无关边数稀释的局部活动节点归一化，单元算例为 1.0（均被拒绝）；这是局部物理约束检验，并非完整仓库 pytest。新增 [ElmerGrid 映射主代码](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py)：从实际文本 `mesh.nodes/elements/names/boundary` 按节点坐标+四面体连接还原所有单元 ID，检验转换后的三个材料体域及物理外边界，对两个单位端口的显式七列体源表做重排序，不能按文件位置复制。**另在本地等价 Whitney 弦段裁剪算法（不是仓库 pytest）对 162 四面体、279 全局边的两个真实闭合矩形端口复算新局部守恒指标：1.77e-15/1.16e-14，均小于求解前 1e-8 门槛。** **本地独立合成几何检查：** 8/8 节点、6/6 四面体及材料体、12/12 外边界三角面匹配；缺失面检验被拒绝。新增正式专项测试，但**没有**整仓库 pytest、实际 Gmsh OCC 斜置网格、ElmerGrid/ElmerSolver 运行、物理 CoilSolver 两个闭合源、正式两端口 Z 与空间 E/B/J/q 或 h/R/源联合收敛；本环境无法通过 DNS 连接 GitHub 下载源码，且无 Gmsh/Elmer。当前只支持分片常量实空间单位体电流源，不能把这种离散近似视为 Elmer 原生 Whitney 源、真实有限铜涡流或原细丝物理等价。**D2 OPEN，G1 FAIL，神经教师冻结；不使用 GitHub Actions。**
 >
 
