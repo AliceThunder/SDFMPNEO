@@ -1,0 +1,107 @@
+{
+  "status": "D2 OPEN: two compared spatial probe fields have not independently converged",
+  "source": "Actually solved 6318-tet isolated local extracted equivalently-assembled A-phi/Galerkin source code; not full repo test suite",
+  "physical": {
+    "frequency_hz": 200000,
+    "phase_currents_peak_A": [
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ],
+    "combined_current_peak_A": "I=(1,i)",
+    "seawater_S_m": 5,
+    "outer_cube_halfwidth_m": 0.52,
+    "inner_core_halfwidth_m": 0.24,
+    "wet_near_step_m": 0.08,
+    "near_padding_m": 0.08,
+    "source_panels_per_corner": 16
+  },
+  "methods": {
+    "raw": "Sample total FEM E and B from Nedelec A-phi solution on one actual tetra, affine E interpolation; phi included",
+    "corrected": "At exactly same probe and tetra: E=-iω A_closed_polygon_analytic+(E_medium_FE-E_vacuum_FE), B=B_Biot_Savart_exact+(B_medium_FE-B_vacuum_FE); this posthoc correction is NOT the separately PDE-solved analytic-primary method and is NOT a true reference until converged",
+    "joule": "q=0.5 sigma |E_1+i E_2|^2"
+  },
+  "probes": [
+    {
+      "xyz_m": [
+        0,
+        0,
+        0
+      ],
+      "q_raw_FEM_W_m3": 0.002987769066817164,
+      "q_source_corrected_W_m3": 0.00015890565201513322,
+      "raw_E_norm_per_port_V_m": [
+        0.024576966722312663,
+        0.024263761016701194
+      ],
+      "corrected_E_norm_per_port_V_m": [
+        0.006647878309879816,
+        0.00451609234645462
+      ],
+      "raw_B_norm_per_port_T": [
+        0.000002370821175059023,
+        0.000002374400079204515
+      ],
+      "corrected_B_norm_per_port_T": [
+        0.000002037716559251994,
+        0.000002046384439517404
+      ]
+    },
+    {
+      "xyz_m": [
+        0.15,
+        0,
+        0
+      ],
+      "q_raw_FEM_W_m3": 0.020418783467193037,
+      "q_source_corrected_W_m3": 0.03030977827924882,
+      "raw_E_norm_per_port_V_m": [
+        0.06004819825127145,
+        0.06816094422126188
+      ],
+      "corrected_E_norm_per_port_V_m": [
+        0.07728893304502757,
+        0.07778011017029386
+      ],
+      "raw_B_norm_per_port_T": [
+        4.0958078940067035e-7,
+        4.64523416973799e-7
+      ],
+      "corrected_B_norm_per_port_T": [
+        6.600609752445704e-7,
+        6.646441826650278e-7
+      ]
+    },
+    {
+      "xyz_m": [
+        0,
+        0,
+        0.16
+      ],
+      "q_raw_FEM_W_m3": 0.03833727165881368,
+      "q_source_corrected_W_m3": 0.008554888854525646,
+      "raw_E_norm_per_port_V_m": [
+        0.0017813273614872235,
+        0.12403245353545855
+      ],
+      "corrected_E_norm_per_port_V_m": [
+        0.0010937735431248224,
+        0.058655392844330655
+      ],
+      "raw_B_norm_per_port_T": [
+        2.809430302077099e-7,
+        0.000016124175857807368
+      ],
+      "corrected_B_norm_per_port_T": [
+        2.569931811018057e-7,
+        0.000013004310744104667
+      ]
+    }
+  ],
+  "interpretation": "At fixed coarse h, differences between source-corrected and raw FEM spatial fields remain order one to > one order of magnitude. Discrete reciprocal port and power identities do not certify physical E/B/Joule. Neither probe method is an independent material PDE truth; priority remains h/R convergence and independent Elmer."
+}
