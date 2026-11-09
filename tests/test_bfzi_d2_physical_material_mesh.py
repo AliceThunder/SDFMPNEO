@@ -120,3 +120,19 @@ def test_msh2_rejects_incomplete_external_surface_101(tmp_path):
         tmp_path,scene,surface_override=lambda faces:faces[:0])
     with pytest.raises(ValueError,match='missing physical surface 101'):
         bfzi_mesh_from_gmsh22(path,scene)
+
+def test_occ_rotated_enclosure_must_not_be_clipped_by_outer_cube(tmp_path):
+    """World AABB of the actual rotated dry volume must fit inside R."""
+    from sdfmpneo_bfzi.direct3d_gmsh_physical import (
+        generate_physical_bfzi_msh22)
+    from sdfmpneo_bfzi.geometry import RigidPose
+    from scipy.spatial.transform import Rotation
+    scene=replace(build_demo_scene(),outer_radius=.32)
+    receiver=scene.receiver
+    rotated=RigidPose(
+        Rotation.from_rotvec([0.,0.,np.pi/4]).as_matrix(),
+        receiver.pose.center+np.array([.18,0.,0.]))
+    scene=replace(scene,receiver=replace(receiver,pose=rotated))
+    with pytest.raises(ValueError,match='inside the finite exterior cube'):
+        generate_physical_bfzi_msh22(
+            scene,tmp_path/'should_not_mesh.msh',mesh_size_m=.08)
