@@ -197,6 +197,9 @@ def main():
         report = {
             'status':'D2 3D BFZI closed-port Galerkin core; NOT high-fidelity PASS',
             'frequency_hz':args.frequency,
+            'mesh_source':mesh_source,
+            'outer_cube_half_extent_m':float(scene.outer_radius),
+            'structured_axis_aligned_only':bool(args.structured_axis_aligned),
             'boundary':'finite cube, n cross A_total=0',
             'geometry':'two genuine BFZI continuous spirals and closed returns, '
                        'polygonal centerline approximation, two independent OBBs',
