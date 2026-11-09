@@ -1,5 +1,37 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+
+## 2026-11-08 新增：独立 Elmer 与 BFZI 共用的严格闭合双端口源合同
+
+独立参考不能只共享网格和材料，**还必须共享实际闭合馈回流、电流方向、源截面、频率与相量约定**。原来只有三材料物理标签；并没有相同的 Elmer 线圈源，因此不能直接比较两个求解器的复阻抗。
+
+已提交 [双端口物理源合同主代码](../../../sdfmpneo_bfzi/direct3d_port_manifest.py)，实际使用项目原有的 polygonal_port_vertices 生成**世界坐标有向闭合路径、完整回流、单位峰值电流、铜线径/电导率、两盒独立 SE(3) 姿态、圆角弦段数、外域 R 与 SHA256 内容哈希**。不是为 Elmer 重新绘制一套路径。相量采用 exp(+iωt)；本项目对每个单位线源的定义是：
+
+\[
+\boldsymbol J_{\mathrm s,p}(\boldsymbol x)
+=I_p\oint_{\Gamma_p}\delta^{(3)}(\boldsymbol x-\boldsymbol r)
+\,\mathrm d\boldsymbol\ell,\qquad
+L_{e,p}=\oint_{\Gamma_p}\boldsymbol w_e\cdot\mathrm d\boldsymbol\ell.
+\]
+
+其中 L 是 Whitney 有向边元的源加载泛函；闭合源端口读取使用同一个有向泛函。实现中的弧线以实际弦段近似，**物理回流严格闭合**。
+
+无需安装 Gmsh，即可单独导出当前两个 BFZI 端口的物理合同：
+
+    python -m examples.bfzi_d2_aphi --case bfzi --ports-only --export-port-manifest runs/bfzi_ports.json --frequency 200000 --panels-per-corner 16
+
+各自独立位姿可附加选项：
+
+    --tx-rotation-vector 0.10 0.00 0.15 --tx-shift 0 0 -0.01 --rx-rotation-vector 0.35 0.10 0.20 --rx-shift 0.02 0.00 0.01
+
+正式三材料 Gmsh 建网入口若使用 --generate-msh runs/bfzi_pose.msh，则在 OCC 网格成功生成且三材料 MSH2 读回验证之后，**自动同时导出** runs/bfzi_pose.ports.json，并把源合同哈希写入网格元数据。也可手动指定 --export-port-manifest PATH。由此确保 Gmsh、BFZI 主求解器及未来 Elmer 对照引用同一份闭合导线定义。
+
+**严格区分：该 JSON 不是已经在 Elmer CoilSolver 实现的数学等价线源。** 项目目前采用零截面分布线电流；Elmer 上游 TEAM-7 CoilSolver 使用物理体线圈并通过截面电流约束求解。简单地用标称线径创建铜圆柱并赋均匀电流，并不自动等价于当前理想闭合线源。若双方源项不同，其 E/B/J/q/Z 差异首先是**物理模型差异**，不能当成两个 FEM 求解器的精度误差。下一正式关口必须在两个求解器中实现同一有限截面闭合体电流，或者为 Elmer 明确实现等价的理想闭合线源泛函；然后才允许量化同网格/同相量/同外域的求解误差。
+
+保留锁定顺序：①三材料网格、源回流与外边界合同；②ElmerGrid 转换并核对 mesh.names；③基于上游成熟 TEAM-7 先核对独立 Elmer 方程/励磁；④实现相同物理源后比较 E/B/J/q/2×2 Z；⑤分别完成 h/R/源弦段与铜趋肤层收敛。D2 OPEN、旧 G1 FAIL、教师冻结，不使用 GitHub Actions。
+
+
+
 > **2026-11-08 材料标签读取证据与仍缺项：** 本项目 BFZI FEM 现**严格使用** Gmsh 的 volume 1=sea、2=tx dry、3=rx dry 元素标签赋 σ，并检查每个四面体是否处于其真实 SE(3) 材料区域，以及对应几何体积；新 [Gmsh OCC 主代码](../../../sdfmpneo_bfzi/direct3d_gmsh_physical.py) 在 mesh-only 返回前强制读回并验证。实际写出/重读结构化三材料 MSH 2.2 后，完整 1350 单元双闭合端口的 `ΔZ/E/B/Joule` 与原始内存网格**逐项完全相同**，证据在 [JSON](evidence/d2_three_material_msh2_roundtrip_20261108.json)。对于旧 `Physical Volume("all",1)`，除非明确 `--legacy-single-tag-msh`，否则拒绝；且这种旧网格**不能直接给独立 Elmer 分海水/两盒材料**。当前 Gmsh API/Elmer 无法在本容器启动，OCC 任意斜置 SE(3) 真实建网、Elmer 等价铜闭合源、空间场与复阻抗独立对照均 OPEN。不得把三材料文件往返当成 Elmer PASS。
 >
 
