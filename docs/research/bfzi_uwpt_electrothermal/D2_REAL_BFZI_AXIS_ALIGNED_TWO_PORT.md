@@ -147,7 +147,7 @@ python -m examples.bfzi_d2_aphi --case bfzi --structured-axis-aligned --outer-ra
 ```powershell
 python -m examples.bfzi_d2_aphi --case bfzi --write-geo runs/bfzi_pose.geo --outer-radius 0.80 --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025
 gmsh runs/bfzi_pose.geo -3 -format msh2 -o runs/bfzi_pose.msh
-python -m examples.bfzi_d2_aphi --case bfzi --mesh runs/bfzi_pose.msh --outer-radius 0.80 --frequency 200000 --solve-analytic-primary --probe 0 0 0 --output runs/d2_bfzi_pose.json
+python -m examples.bfzi_d2_aphi --case bfzi --mesh runs/bfzi_pose.msh --legacy-single-tag-msh --outer-radius 0.80 --frequency 200000 --solve-analytic-primary --probe 0 0 0 --output runs/d2_bfzi_pose.json
 ```
 
 Gmsh 独立生成任意两只合法 SE(3) OBB 的真实几何分域，近壁局部尺寸场仅控制网格 h 而不代替几何。正式关口仍为：三档独立材料/海水 h，三档外域 R，至少两档真实源弦段或连续源精度、空间 E/B/J/q 与 2×2 增量复阻抗全部收敛；再与独立 Elmer/TEAM-7 基准及真实 BFZI 共形场求解器核对。现阶段 **D2 OPEN、G1 FAIL、神经教师冻结，未使用 GitHub Actions**。
