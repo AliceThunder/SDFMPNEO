@@ -33,6 +33,10 @@ def main():
                         'A-phi-gauge saddle point for independent comparison')
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
+    p.add_argument('--legacy-single-tag-msh',action='store_true',
+                   help='Explicit diagnostic-only import of old .geo mesh '
+                        'with all tets tagged 1; NOT usable as Elmer '
+                        'material-separated reference')
     p.add_argument('--mesh-only',action='store_true',
                    help='Only generate physically tagged Gmsh mesh, do not run '
                         'large complex SciPy Maxwell solve')
@@ -93,6 +97,9 @@ def main():
         p.error('--structured-axis-aligned cannot combine with Gmsh mesh sources')
     if args.mesh_only and not args.generate_msh:
         p.error('--mesh-only requires --generate-msh')
+    if args.legacy_single_tag_msh and (args.generate_msh or not args.mesh):
+        p.error('--legacy-single-tag-msh requires --mesh and cannot be '
+                'used with physically tagged --generate-msh')
     if args.generate_msh and args.mesh:
         p.error('--generate-msh and --mesh are mutually exclusive')
     if args.generate_msh and args.write_geo:
@@ -185,8 +192,14 @@ def main():
                 inner_core_radius_m=args.structured_inner_core_radius)
             mesh_source="structured axis-aligned physical OBB; initial D2 smoke only"
         elif args.mesh is not None:
-            mesh = bfzi_mesh_from_gmsh22(args.mesh,scene)
-            mesh_source="Gmsh BooleanFragments conforming SE(3) geometry"
+            mesh = bfzi_mesh_from_gmsh22(
+                args.mesh,scene,
+                allow_legacy_single_tag=args.legacy_single_tag_msh)
+            mesh_source=(
+                "legacy single-tag Gmsh, centroid material diagnostic ONLY"
+                if args.legacy_single_tag_msh else
+                "Gmsh OCC physical volumes 1=sea 2=tx 3=rx, "
+                "conforming independently posed SE(3) geometry")
         else:
             p.error('BFZI requires either --structured-axis-aligned '
                     'or a physical Gmsh MSH 2.2 tetrahedral file (--mesh)')
