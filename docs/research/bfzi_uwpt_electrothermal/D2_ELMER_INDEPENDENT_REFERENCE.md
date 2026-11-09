@@ -1,5 +1,23 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-08 补充：MSH2 Surface 101 的强制网格关口与尚未解决的源等价
+
+旧 MSH2 材料验证仅根据 3D 物理标签 1/2/3、包围盒与体积检查，未核实 Elmer 读取时用于施加 `n × A_total = 0` 的物理 Surface 101。现已在 [主网格导入器](../../../sdfmpneo_bfzi/direct3d_mesh.py) 中要求：101 的所有 2D 三角形恰好组成四面体实际**整个外表面**，任何缺少、重复、错误标到盒壁或海水/绝缘分界面都拒绝；逐三角面验证其确在外立方体六面之一。正式 `--generate-msh --mesh-only` 和 `--mesh` 均走这一关口，旧单标签仅在显式 legacy 诊断选项下绕过，不能用于 Elmer reference。相关回归见 [专项测试](../../../tests/test_bfzi_d2_physical_material_mesh.py)。目前只实际运行过一个独立的 NumPy 六四面体示例（1 合法＋4 非法 101 组合通过）；**尚未安装或执行**本分支完整 pytest、Gmsh、ElmerGrid、ElmerSolver。
+
+**源等价的数学硬门槛仍未通过：** 本求解器的单口理想闭合线电流对应每条有向边元激励
+[
+L_{ep}^{\mathrm{line}}=\oint_{\Gamma_p}\boldsymbol w_e\cdot d\boldsymbol\ell.
+]
+Elmer 上游 `CoilSolver → WhitneyAVSolver` 的线圈电流是三维导线域内的 `\boldsymbol J_{s,p}(\boldsymbol x)`，其对应弱式
+[
+L_{ep}^{\mathrm{vol}}=\int_{\Omega_{\mathrm{coil}}}
+\boldsymbol J_{s,p}\cdot\boldsymbol w_e\,dV.
+]
+若未证明源电流的连续物理定义相同，就算电流均为 1 A，**也不能比较得到的空间 E/B/J/q 与完整复 Z 并声称某求解器误差**。对独立 Elmer 仅有两条合规路径：(A) 真实实现与本项目相同、世界坐标/方向/闭合路径/相量一致的分布细丝边元 RHS，并独立验证边方向和端口读数；(B) 双方改为**同一个明确的闭合有限截面体电流密度**，保持电荷连续性、边界与材料分区、两单位端口及铜/海水损耗口径一致，分别求解。仅在 Elmer SIF 启用 `Use Elemental CoilCurrent` 或赋标称铜线径**不能**自动满足 (A) 或 (B)。Elmer 官方 [两线圈示例](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/tests/mgdyn_steady_coils/case.sif) 可以作为体源加载方法参考，**不是 BFZI 同源验证结果**。
+
+工作站执行优先级：①运行 `python -m pytest tests/test_bfzi_d2_physical_material_mesh.py tests/test_bfzi_d2_port_manifest.py -q`；②真实双独立斜置 SE(3) OCC 建网，再 `ElmerGrid 14 2 <mesh.msh> -autoclean -names -out <directory>` 核实标签和外边界；③选定 (A) 或 (B) 并实算**等价源弱载荷/端口取向与两单位源**；④才核对同源、同材料、同外域、同频率和相量下的完整 2×2 复阻抗及 B/E/J/q，并做独立 h/R/源离散收敛。**D2 OPEN，G1 FAIL，教师冻结，不使用 GitHub Actions。**
+
+
 
 ## 2026-11-08 新增：独立 Elmer 与 BFZI 共用的严格闭合双端口源合同
 
