@@ -87,6 +87,8 @@ def axis_aligned_bfzi_tetra_mesh(scene, *,
             and (not np.isfinite(near_step_m)
                  or not 0 < near_step_m <= far_step_m)):
         raise ValueError("near_step_m must be positive and <= far_step_m")
+    if near_step_m is not None and near_padding_m == 0:
+        raise ValueError("near_step_m needs near_padding_m > 0 to refine wet seawater")
     for assembly in scene.assemblies:
         if not _signed_axis_aligned(assembly.pose.rotation):
             raise ValueError(
