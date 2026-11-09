@@ -183,18 +183,31 @@ def main():
             })
             if args.fields_npz:
                 args.fields_npz.parent.mkdir(parents=True,exist_ok=True)
+                from sdfmpneo_bfzi.direct3d_aphi import _BARY4
                 E=result.medium.electric_at_quadrature
                 sigma=mesh.sigma
+                quadrature_m=np.einsum(
+                    "qi,tij->tqj",_BARY4,mesh.nodes[mesh.tetrahedra])
+                # Complete 2x2 Hermitian spatial heating tensor:
+                # q(x; I) = I* Q(x) I, including arbitrary port phases.
+                # Omitting Q_12 would silently lose interference heating.
+                Q=0.5*np.einsum(
+                    "ptqc,rtqc,t->tqpr",E.conj(),E,sigma,optimize=True)
                 np.savez_compressed(
                     args.fields_npz,
                     nodes_m=mesh.nodes,
                     tetrahedra=mesh.tetrahedra,
+                    quadrature_positions_m=quadrature_m,
                     sigma_S_m=sigma,
+                    frequency_hz=np.asarray(args.frequency),
+                    time_phasor=np.asarray("exp(+i*omega*t)"),
+                    source_contract_sha256=np.asarray(
+                        source["sha256_of_contract_without_hash"]),
                     E_unit_ports_V_m=E,
                     B_unit_ports_T=result.medium.magnetic_secondary,
                     J_unit_ports_A_m2=sigma[None,:,None,None]*E,
-                    q_basis_W_m3=0.5*sigma[None,:,None]*np.sum(
-                        np.abs(E)**2,axis=-1),
+                    q_basis_W_m3=Q[:,:,[0,1],[0,1]].transpose(2,0,1),
+                    q_port_cross_W_m3=Q,
                     source_element_J_A_m2=J)
                 report["spatial_fields_npz"]=str(args.fields_npz)
     if args.output:
