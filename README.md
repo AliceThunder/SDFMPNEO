@@ -1,12 +1,10 @@
-> **BFZI 物理直接法 V1.0 已正式锁定（2026-11-06）：先完成成熟的电磁物理直接法，不再试错 G1 角帽/原核五模态。**
-> **权威文件：** [物理方程、真实两端口、边界与方法锁定规范](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_LOCKED.md) · [文献核验及 D0–D6 逐关验收](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) · [正式理论 TeX 第15节](theory/sections/15_physical_direct_reference_lock.tex) · [最新进度](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)。
-> **方法决策：** 先核对共轴圆线圈分层海水 Helmholtz–Bessel 半解析基准；建立可独立验收的三维 Maxwell–MQS A–φ 涡流高保真参考（允许参考阶段使用有限元网格），用真实双独立 SE(3) 绝缘盒与闭合 BFZI 两端口核对完整复阻抗、空间涡流和海水损耗；通过后再评价 BEM/Green–Galerkin 无体网格高效直接法。物理源、场界面、无限海水衰减及海水 Joule/端口功率闭合均须验证。用户给定的 2026-11-05 UWPT 综述是检索依据，不能用共轴解析公式覆盖任意位姿双盒。
-> **当前实测边界：** 历史 P0/P1-A/P1-B 只在限定基准 PASS；真实 P1-C/G1 **仍 FAIL**。最后一份已核对 P1-C 本机日志是 112 项 pytest 通过（运行代码 1956ed3、日志提交 7bc9266），它**没有**证明新物理直接参考成立。2026-11-06 本轮**只提交理论与验收文档，未改求解代码、未实跑**。停止默认执行旧 bfzi-p1-full-sea 来宣称精度；历史实现与日志保留但挂起。正式神经教师暂停；禁止 GitHub Actions。
-
-> **BFZI 电磁热代理研究分支｜2026-11-06 UTC：** [进度看板](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md) · [P1 验收](docs/research/bfzi_uwpt_electrothermal/P1_COULOMB_ANALYTIC_GATE.md) · [原核 TeX](theory/sections/14_p1_exact_coulomb_sphere.tex)。范围：圆形/圆角方形连续 BFZI 线圈、真实双独立 SE(3) 盒及海水；非旧超椭圆。**G1/P1-C FAIL，正式神经教师关闭。**
-> **最新本机：** [112-pass 完整日志](docs/research/bfzi_uwpt_electrothermal/runs/p1_full/latest_full.log)，代码 1956ed3、日志 7bc9266。双盒角点投影扇区 Gauss2 相对均匀 6×14：全 L 差 **0.065772%**，但 L00 差 **0.730025%**、互耦自能归一化差最大 **2.783924%**，L02 从 +8.5036e−12 反号到 −1.5815e−11，最坏原核成对互易性 **2.4506%→2.6112%**。两者 3500 accepted、0 fallback，低阶 S/M 误差相同；因此盒角方位仍不足以解析真实电流高阶角域。
-> **本轮主算法：** 对每个真实 Gaussian 模式球帽的每个极角 mu，解析求两实际 OBB 的 24 条物理盒棱与该极角圆交点；在保留上一轮全部角点方位断点的基础上加上新交点，把每个新扇区继续用正权 Gauss2 积分。未软化 1/r、五真实 curl、双盒精确湿射线、Gaussian 径向子片、外 x 和 4π/S/M 正权拟合均不变。已添加盒边解析交点、2π/4π/S/M 及真实双盒小空间测试，**尚待本机实跑，非磁能参考真值**。
-> **下一次 Windows：** git pull --ff-only；python run.py --mode bfzi-p1-full-sea --with-tests。默认同条件比较 source_cap_box_corners_both 与 source_cap_box_edges_both；完整历史保留 --p1-full-history。**P1-C/G1 FAIL，不使用 GitHub Actions。**
+> **BFZI 当前执行方案： [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](docs/research/bfzi_uwpt_electrothermal/BFZI_PDR_EXECUTION_PLAN.md)（2026-11-09）。**
+>
+> **先建可信独立参考，再谈快速代理。** 保持[物理直接法锁定规范 V1.0](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_LOCKED.md)与[D0–D6 验收表](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)不变。**现在只优先完成 D2：Elmer 真正 3D 涡流/TEAM-7 → BFZI 双独立斜置 SE(3) 真网格 → 两端口真正同源 → 复 2×2 Z、空间 E/B/J/q 与 h/R/源收敛**；合格后才进入 D5 快速无网格直接法与 D6 电磁热代理。D1 学习 Shafiei/Wang 计算方法，不强求论文表值一致。
+>
+> **当前已核实：** XEnergy 完整工作树的四个 D2 专项文件 **23 passed**；Gmsh Python API 可用，ElmerGrid/ElmerSolver **26.2 已独立安装并启动**，但**没有实际 Elmer 3D 场/TEAM-7 独立求解及 BFZI 同源 h/R 验收**。**D0 限定 PASS，D1/D2/D3/D4 OPEN，旧 G1/P1-C FAIL，神经教师冻结。** 历史 P1-C 角帽/G1 实验保留文档存档，不再运行其旧“下一步”命令；禁止 GitHub Actions。
+>
+> 技术入口：[Elmer 独立基准](docs/research/bfzi_uwpt_electrothermal/D2_ELMER_INDEPENDENT_REFERENCE.md) · [运行入口](docs/research/bfzi_uwpt_electrothermal/CODE_ENTRY.md) · [项目进度](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)。工作方式：**沙箱优先；只有必要时在 XEnergy 的 `D:\work` 独立目录批量运行，不修改原研究工作树**。
 
 # SDF-MPNEO vNext
 
