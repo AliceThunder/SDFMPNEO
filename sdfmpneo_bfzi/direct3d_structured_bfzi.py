@@ -18,11 +18,12 @@ def _signed_axis_aligned(rotation):
     return bool(np.all(np.minimum(a,1-a)<1e-9))
 
 
-def _axis_coordinates(scene, axis, pad, far_step, layers):
+def _axis_coordinates(scene, axis, pad, far_step, layers, near_step):
     center=float(scene.outer_center[axis])
     radius=float(scene.outer_radius)
     low, high=center-radius,center+radius
     knots=[low,high]
+    near_intervals=[]
     for assembly in scene.assemblies:
         h=np.asarray(assembly.enclosure.half_extents,float)
         extent=np.abs(assembly.pose.rotation)@h
@@ -34,6 +35,7 @@ def _axis_coordinates(scene, axis, pad, far_step, layers):
         # Hence *all* its physical material faces are mesh coordinate planes.
         knots.extend(np.linspace(a,b,layers+1))
         knots.extend([max(low,a-pad),min(high,b+pad)])
+        near_intervals.append((max(low,a-pad),min(high,b+pad)))
     raw=np.sort(np.asarray(knots,float))
     unique=[float(raw[0])]
     for k in raw[1:]:
@@ -41,7 +43,13 @@ def _axis_coordinates(scene, axis, pad, far_step, layers):
             unique.append(float(k))
     pts=[unique[0]]
     for left,right in zip(unique[:-1],unique[1:]):
-        count=max(1,int(np.ceil((right-left)/far_step)))
+        # This interval lies entirely inside or outside the padded
+        # material coordinate slab because both endpoints are knots.
+        midpoint=.5*(left+right)
+        near=any(a-1e-11 <= midpoint <= b+1e-11
+                 for a,b in near_intervals)
+        step=near_step if near and near_step is not None else far_step
+        count=max(1,int(np.ceil((right-left)/step)))
         pts.extend(np.linspace(left,right,count+1)[1:])
     return np.asarray(pts,float)
 
@@ -49,13 +57,21 @@ def _axis_coordinates(scene, axis, pad, far_step, layers):
 def axis_aligned_bfzi_tetra_mesh(scene, *,
                                 near_padding_m: float = .025,
                                 far_step_m: float = .22,
-                                box_layers: int = 2) -> TetraMesh:
+                                box_layers: int = 2,
+                                near_step_m: float | None = None) -> TetraMesh:
     """Structured 3D conforming tetrahedra around both genuine BFZI boxes.
 
     No hard-coded demo geometry. Both enclosures may have independent
     centers, dimensions, and right-handed axis-permutation orientations.
     Reject any genuinely oblique pose rather than approximating its water
     interface with stair-step voxels.
+
+    near_step_m independently resolves conducting seawater slabs just
+    OUTSIDE the insulating walls (as well as the nearby dry coordinate
+    intervals). Refining only box_layers would otherwise change the dry
+    mesh without resolving wet wall gradients. This is a TENSOR-PRODUCT
+    mesh: cuts extend across the full other axes, so use moderate values
+    and prefer OCC/Gmsh for economical full SE(3) adaptive refinement.
 
     The entire domain is a finite CUBE, as in direct3d_mesh.py.
     The near/far grid is deliberately low order and unverified; use
@@ -67,12 +83,17 @@ def axis_aligned_bfzi_tetra_mesh(scene, *,
             or isinstance(box_layers,bool) or not isinstance(box_layers,int)
             or box_layers<1):
         raise ValueError("Expected nonnegative near padding, positive far step and box_layers>=1")
+    if (near_step_m is not None
+            and (not np.isfinite(near_step_m)
+                 or not 0 < near_step_m <= far_step_m)):
+        raise ValueError("near_step_m must be positive and <= far_step_m")
     for assembly in scene.assemblies:
         if not _signed_axis_aligned(assembly.pose.rotation):
             raise ValueError(
                 "Oblique SE(3) box requires Gmsh conforming BooleanFragments mesh; "
                 "structured voxel approximation is forbidden")
-    axes=[_axis_coordinates(scene,k,near_padding_m,far_step_m,box_layers)
+    axes=[_axis_coordinates(scene,k,near_padding_m,far_step_m,
+                            box_layers,near_step_m)
           for k in range(3)]
     sizes=[len(axis)-1 for axis in axes]
     x=np.stack(np.meshgrid(*axes,indexing='ij'),axis=-1).reshape(-1,3)
