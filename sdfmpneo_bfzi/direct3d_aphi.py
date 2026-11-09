@@ -14,6 +14,7 @@ from typing import Callable
 import numpy as np
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
+from .direct3d_tree_gauge import relative_tree_edges
 
 MU0 = 4e-7 * np.pi
 _EDGES = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
@@ -203,7 +204,8 @@ def _topology(mesh):
 def solve_aphi(mesh: TetraMesh, frequency_hz:float,
                incident_potentials: list[Callable], *, mu:float=MU0,
                outer_bc: str = 'secondary_zero', edge_source_load=None,
-               boundary_total_potentials=None) -> AphiResult:
+               boundary_total_potentials=None,
+               gauge: str = 'mixed') -> AphiResult:
     """Gauge-fixed 3D secondary A-phi, sources=unit-current incident A fields.
 
     Assumes mu=mu0 everywhere, prescribed incident potentials come from CLOSED
@@ -215,12 +217,22 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     outer_bc='prescribed_total': n x (A_incident+A_reaction) equals a
     supplied exact total vector potential on the boundary. This mode
     permits independent manufactured/analytic Maxwell diffusion tests.
+    gauge='mixed' retains the original Coulomb-like multiplier saddle
+    system. gauge='tree' removes the relative grad(P1_0) edge basis
+    using a boundary-rooted spanning forest: no gauge multiplier is
+    needed; electric scalar phi is STILL solved in conductive cells.
+    On a conforming simply connected cube, both gauges produce the
+    same physical E/B and closed-port impedances in exact arithmetic.
+    This tree choice is not an AMG/H(curl) method for arbitrary
+    multiply connected domains. Validate on each actual mesh.
     Only a conforming material/geometry mesh is appropriate.
     """
     if not np.isfinite(frequency_hz) or frequency_hz <= 0 or mu != MU0:
         raise ValueError('Positive frequency and currently uniform mu0 required')
     if not incident_potentials:
         raise ValueError('At least one incident port is required')
+    if gauge not in ('mixed', 'tree'):
+        raise ValueError("gauge must be 'mixed' or 'tree'")
     if outer_bc not in ('secondary_zero', 'total_zero', 'prescribed_total'):
         raise ValueError('Invalid outer_bc')
     if outer_bc == 'prescribed_total':
@@ -233,6 +245,8 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     omega=2*np.pi*frequency_hz
     edges,le,sg,bnodes,bedges=_topology(mesh)
     ne=len(edges); nn=len(mesh.nodes)
+    tree_edges = (relative_tree_edges(edges,bnodes,nn)
+                  if gauge=='tree' else set())
     interior_nodes=[i for i in range(nn) if i not in bnodes]
     is_cond=mesh.sigma>0
     conductor_nodes=set(int(k) for t in mesh.tetrahedra[is_cond] for k in t)
@@ -253,7 +267,7 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
         fixed.setdefault(root,v)
     phi_nodes=sorted(conductor_nodes-set(fixed.values()))
     pe=len(phi_nodes)
-    gauge_nodes=interior_nodes
+    gauge_nodes=interior_nodes if gauge=='mixed' else []
     pg=len(gauge_nodes)
     phimap={n:ne+i for i,n in enumerate(phi_nodes)}
     pmap={n:ne+pe+i for i,n in enumerate(gauge_nodes)}
@@ -320,7 +334,7 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
             raise ValueError("edge_source_load must be finite (n_ports,n_edges)")
         rhs[:ne, :] += load.T
     K=coo_matrix((np.asarray(data,dtype=complex),(rows,cols)),shape=(size,size)).tocsc()
-    free_edges=[i for i in range(ne) if i not in bedges]
+    free_edges=[i for i in range(ne) if i not in bedges and i not in tree_edges]
     keep=np.array(free_edges+list(range(ne,size)),dtype=int)
     if not len(keep):
         raise ValueError('No interior DOFs in the given mesh')
