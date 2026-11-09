@@ -10,7 +10,8 @@ from scipy.spatial.transform import Rotation
 from .direct3d_aphi import TetraMesh
 
 
-def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False):
+def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False,
+                return_outer_faces=False):
     """Read ASCII Gmsh MSH 2.2 linear tetra, sigma by physical volume id.
 
     For a third-party TEAM-7 mesh, use the verified plate region physical id.
@@ -18,11 +19,16 @@ def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False):
     Set return_physical_tags=True for canonical BFZI material verification;
     the resulting second value contains the physical volume ID of each tetra.
     Higher-order tetra are not interpreted as linear tetra.
+    When both return flags are set, also return the node indices of
+    physical surface 101 triangles for strict Elmer boundary verification.
     """
     if not isinstance(conductivity_by_tag, dict):
         raise ValueError('Pass physical-material conductivity map')
+    if return_outer_faces and not return_physical_tags:
+        raise ValueError('return_outer_faces requires return_physical_tags')
     lines=iter(Path(filename).read_text(encoding='utf-8').splitlines())
-    node_ids={}; nodes=[]; tets=[]; sigma=[]; physical_tags=[]; found=False
+    node_ids={}; nodes=[]; tets=[]; sigma=[]; physical_tags=[]
+    outer_triangles=[]; found=False
     for s in lines:
         if s=='$MeshFormat':
             fmt=next(lines).split()
@@ -37,6 +43,12 @@ def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False):
         elif s=='$Elements':
             for _ in range(int(next(lines))):
                 row=list(map(int,next(lines).split()))
+                if row[1]==2 and return_outer_faces:
+                    ntag=row[2]
+                    if ntag>=1 and row[3]==101:
+                        outer_triangles.append(
+                            [node_ids[x] for x in row[3+ntag:6+ntag]])
+                    continue
                 if row[1]!=4:continue
                 ntag=row[2]
                 if ntag<1:
@@ -52,7 +64,10 @@ def read_gmsh22(filename, conductivity_by_tag, *, return_physical_tags=False):
         raise ValueError('Missing mesh 2.2 header, nodes or linear tetrahedra')
     mesh=TetraMesh(np.array(nodes),np.array(tets),np.array(sigma))
     if return_physical_tags:
-        return mesh, np.asarray(physical_tags,dtype=int)
+        tags=np.asarray(physical_tags,dtype=int)
+        if return_outer_faces:
+            return mesh,tags,np.asarray(outer_triangles,dtype=int).reshape(-1,3)
+        return mesh,tags
     return mesh
 
 
@@ -128,6 +143,38 @@ def gmsh_bfzi_two_boxes(scene, *, mesh_size_m: float,
     return '\n'.join(s)+'\n'
 
 
+def _verify_exterior_surface_101(mesh, triangles, center, radius):
+    """Physical 101 must be exactly the exterior tetrahedral facets."""
+    if not len(triangles):
+        raise ValueError("MSH2 missing physical surface 101 on outer boundary")
+    tets=mesh.tetrahedra
+    all_faces=np.concatenate((
+        tets[:,(0,1,2)],tets[:,(0,1,3)],
+        tets[:,(0,2,3)],tets[:,(1,2,3)]),axis=0)
+    unique,counts=np.unique(np.sort(all_faces,axis=1),
+                            axis=0,return_counts=True)
+    if np.any(counts>2):
+        raise ValueError("MSH2 nonmanifold tetrahedral face incidence")
+    outer=unique[counts==1]
+    labelled,face_counts=np.unique(np.sort(triangles,axis=1),
+                                   axis=0,return_counts=True)
+    if np.any(face_counts!=1) or not np.array_equal(outer,labelled):
+        raise ValueError(
+            "MSH2 physical surface 101 must label every exterior tetra "
+            "face exactly once and no dry/wet internal interface")
+    points=mesh.nodes[outer]
+    tolerance=max(1e-9,1e-8*radius)
+    on_cube=np.zeros(len(outer),dtype=bool)
+    for axis in range(3):
+        for sign in (-1.,1.):
+            on_cube |= np.all(np.abs(
+                points[:,:,axis]-(center[axis]+sign*radius))
+                <=tolerance,axis=1)
+    if not np.all(on_cube):
+        raise ValueError(
+            "MSH2 exterior has faces away from finite outer cube boundary")
+
+
 def bfzi_mesh_from_gmsh22(filename, scene, *, allow_legacy_single_tag=False):
     """Read true material-tagged BFZI OCC mesh and verify all three regions.
 
@@ -142,9 +189,9 @@ def bfzi_mesh_from_gmsh22(filename, scene, *, allow_legacy_single_tag=False):
     allow_legacy_single_tag=True to classify that LEGACY diagnostic mesh
     by geometry; never silently use that mode for Elmer cross-validation.
     """
-    mesh, tags=read_gmsh22(
+    mesh, tags, outer_faces=read_gmsh22(
         filename,{1:scene.seawater.conductivity,2:0.,3:0.},
-        return_physical_tags=True)
+        return_physical_tags=True,return_outer_faces=True)
     seen=set(int(i) for i in tags)
     legacy=seen=={1}
     if legacy and not allow_legacy_single_tag:
@@ -177,6 +224,7 @@ def bfzi_mesh_from_gmsh22(filename, scene, *, allow_legacy_single_tag=False):
     if legacy:
         return TetraMesh(mesh.nodes,mesh.tetrahedra,
                          np.where(tx|rx,0.,scene.seawater.conductivity))
+    _verify_exterior_surface_101(mesh,outer_faces,center,radius)
 
     expected=np.where(tx,2,np.where(rx,3,1))
     mismatch=np.flatnonzero(tags!=expected)
