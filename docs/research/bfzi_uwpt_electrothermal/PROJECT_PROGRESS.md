@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 BFZI-PDR P1 真正 Elmer TEAM7 场计算已完成（重大实证进展，精度未验收）：** 在 XEnergy `D:\\work\\BFZI-D2-verify\\runs\\bfzi_pdr_team7` 运行 CSC 官方 [Elmer TEAM7 @ 843037c](https://github.com/ElmerCSC/elmer-elmag/tree/843037c374ba61cf61d02d17a2c5fc11e0d33de3/TEAM7)：130707 四面体、23128 mesh 节点，稳态 14.22s 与 50Hz 真正 16 时步涡流 126.02s 均退出 0；实际 VTU 非零 `B_max_component=0.02078765T`、`J_max_component=82031.43A/m²`，已用 PyVista 真读；再固定官方物理输入/网格/dt，仅延长至 32 步 250.06s，B 的同相位相邻周期 L² 差 **8.54%→2.26%→0.621%**，揭示起始暂态。SIF 内置 WhitneyAV 参考范数仍 **0.332% / 15.74% / 16.88% FAIL**，官方 CSV Bz 尚未相位、周期、方法收敛对齐（原始第16步相对 L² 差 53.12%，不宜解作完整物理误差）。**Elmer 3D eddy-current SMOKE PASS，TEAM-7 benchmark OPEN；D2 OPEN。** 细节、可复现命令与隔离输出： [实算证据](evidence/d2_team7_elmer26_actual_run_20261109.md)。**下一任务仍是 P1-ELMER-3D0 的实际数值精度、参考相位和正式 h/R/200Hz，不可把运行成功错写成 TEAM7 PASS。**
+>
+
 > **2026-11-09 现行统一执行方案：** 正式命名并锁定执行次序为 [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](BFZI_PDR_EXECUTION_PLAN.md)。上位物理 V1.0 和 D0–D6 独立验收不变。**当前 P1 唯一最高优先级：Elmer 26.2 真正执行官方三维涡流场并形成 TEAM-7 独立参考**；之后依次：双独立斜置 SE(3) Gmsh/ElmerGrid 真网格 → 真实相同双口闭合源/最终 Whitney RHS → 复 2×2 Z 与导电域 E/J、B/q 的独立一致性及各轴 h/R/源收敛 → D5 快速候选/D6 高精度代理。当前依据：XEnergy 四个 D2 专项文件 **23 passed**；Gmsh Python API 已发现；ElmerGrid/ElmerSolver **v26.2 实际启动成功，但尚无真实 Maxwell 场求解、TEAM-7 或同源 2×2 参考**。**D0 限定 PASS，D1 OPEN，D2 OPEN，D3 OPEN，D4 OPEN，旧 G1 FAIL，教师冻结。** 历史文件中仍出现“下一轮 G1”“Elmer 未安装”等原始记录，仅作当时历史状态，**不再是现行指令**。沙箱优先，确需 Windows/Gmsh/Elmer 时批量使用 XEnergy `D:\\work`，不触碰用户 `D:\\research`，禁 GitHub Actions。
 >
 
