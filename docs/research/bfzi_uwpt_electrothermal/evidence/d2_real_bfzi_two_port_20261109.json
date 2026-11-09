@@ -131,11 +131,31 @@
       ],
       "reciprocity_gap_ohm": 8.603320154995792e-17,
       "max_port_vs_joule_gap_W": 8.847089727481716e-17
+    },
+    {
+      "radius_m": 0.52,
+      "panels_per_corner": 16,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.00743289311570415,
+        -0.00048191
+      ],
+      "z12_re_im_ohm": [
+        0.0019658672219725927,
+        -0.00028716
+      ],
+      "z22_re_im_ohm": [
+        0.00743824,
+        -0.00048219
+      ],
+      "reciprocity_gap_ohm": 9.074014376350596e-17,
+      "max_port_vs_joule_gap_W": 1.5785983631388945e-16
     }
   ],
   "observations": {
     "R_at_fixed_panels4": "R .32→.40→.52 m changes Z strongly; local core tetra coordinate planes stay unchanged, outer shells still stretch, so not pure outer-boundary convergence",
-    "source_at_fixed_R052": "source panels 2→4→8; normalized Frobenius Z differences about 3.678% then 0.966%; geometric source still not certified",
+    "source_at_fixed_R052": "Source panels 2→4→8→16: relative Frobenius ΔZ changes 3.678%, 0.966%, 0.246% respectively. This is promising source-chord convergence on a FIXED coarse FEM space, not certified spatial h or R accuracy.",
     "power": "5 complex-current combinations (1,0),(0,1),(1,1),(1,-1),(1,i) obey discrete port/volume-Joule identity at ~1e-16 W",
     "refinement_blocker": "At R=.52, near padding=.08, near_step=.06 and 12960 tets, mixed system size 18044 complex unknowns and ~596152 nnz; sparse direct exceeds the execution timeout; unshifted ILU is singular and shifted ILU+GMRES did not achieve residual threshold within configured time. No h PASS.",
     "external_solver_requirement": "Use robust H(curl) auxiliary-space preconditioning plus saddle-point block solver, or independently validated mature Elmer/MFEM/hypre, before larger mesh h verification."
