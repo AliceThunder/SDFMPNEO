@@ -33,6 +33,9 @@ def main():
                         'A-phi-gauge saddle point for independent comparison')
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
+    p.add_argument('--mesh-only',action='store_true',
+                   help='Only generate physically tagged Gmsh mesh, do not run '
+                        'large complex SciPy Maxwell solve')
     p.add_argument('--generate-msh',type=Path,
                    help='Generate directly with Gmsh Python OCC API: '
                         'physical region ids 1=sea, 2=tx dry, 3=rx dry; '
@@ -88,6 +91,8 @@ def main():
     if args.structured_axis_aligned and (
             args.mesh or args.write_geo or args.generate_msh):
         p.error('--structured-axis-aligned cannot combine with Gmsh mesh sources')
+    if args.mesh_only and not args.generate_msh:
+        p.error('--mesh-only requires --generate-msh')
     if args.generate_msh and args.mesh:
         p.error('--generate-msh and --mesh are mutually exclusive')
     if args.generate_msh and args.write_geo:
@@ -158,6 +163,14 @@ def main():
                 scene,args.generate_msh,mesh_size_m=args.mesh_size,
                 near_mesh_size_m=args.near_mesh_size,
                 near_padding_m=args.near_padding)
+            if args.mesh_only:
+                print(json.dumps(physical_mesh_metadata,indent=2))
+                if args.output:
+                    args.output.parent.mkdir(parents=True,exist_ok=True)
+                    args.output.write_text(
+                        json.dumps(physical_mesh_metadata,indent=2),
+                        encoding='utf-8')
+                return
             mesh=bfzi_mesh_from_gmsh22(args.generate_msh,scene)
             mesh_source="Gmsh OCC physically tagged conforming "
             mesh_source+="SE(3) seawater/tx/rx + outer surface"
