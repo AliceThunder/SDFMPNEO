@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 现行统一执行方案：** 正式命名并锁定执行次序为 [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](BFZI_PDR_EXECUTION_PLAN.md)。上位物理 V1.0 和 D0–D6 独立验收不变。**当前 P1 唯一最高优先级：Elmer 26.2 真正执行官方三维涡流场并形成 TEAM-7 独立参考**；之后依次：双独立斜置 SE(3) Gmsh/ElmerGrid 真网格 → 真实相同双口闭合源/最终 Whitney RHS → 复 2×2 Z 与导电域 E/J、B/q 的独立一致性及各轴 h/R/源收敛 → D5 快速候选/D6 高精度代理。当前依据：XEnergy 四个 D2 专项文件 **23 passed**；Gmsh Python API 已发现；ElmerGrid/ElmerSolver **v26.2 实际启动成功，但尚无真实 Maxwell 场求解、TEAM-7 或同源 2×2 参考**。**D0 限定 PASS，D1 OPEN，D2 OPEN，D3 OPEN，D4 OPEN，旧 G1 FAIL，教师冻结。** 历史文件中仍出现“下一轮 G1”“Elmer 未安装”等原始记录，仅作当时历史状态，**不再是现行指令**。沙箱优先，确需 Windows/Gmsh/Elmer 时批量使用 XEnergy `D:\\work`，不触碰用户 `D:\\research`，禁 GitHub Actions。
+>
+
 > **2026-11-09 XEnergy Elmer 正式安装完成（独立参考运行尚未完成）：** 用户授权后，通过 CSC/FUNET [官方 Windows 预编译镜像](https://www.ftp.funet.fi/pub/files/index/elmer/bin/windows/) 下载 `ElmerFEM-nogui-nompi-Windows-AMD64.zip`，因首次下载在 99% 出现 TLS close_notify 问题，按 Range 断点续传补齐到 **128,365,334 字节**；使用 .NET ZIP 实读（3197 项）并记录 SHA256 `E9072FE8DB3C15AE3BEF36E3F6D5AC59241376002B1D78EB171C9242756B1FC8`。已**实际解压并运行** XEnergy 上 `D:\\work\\ElmerFEM\\ElmerFEM-nogui-nompi-Windows-AMD64\\bin\\ElmerGrid.exe`（输出 **Version 26.2**）和同目录 `ElmerSolver.exe`（输出 **ELMER SOLVER (v 26.2) STARTED**），安装阶段退出码 0。无管理员权限、无全局 PATH 修改、未触及 `D:\\research`。今后 XEnergy 仅必要时用于完整 Gmsh/Elmer，本项目临时工作树保持 `D:\\work\\BFZI-D2-verify`；运行 Elmer 需按该路径**会话级配置 PATH**，且不使用 GitHub Actions。注意**启动自检不是 ElmerSolver 真实 Maxwell 方程求解**，真实 SE(3) Gmsh OCC、ElmerGrid 材料转换、两个真实闭合端口源/最终 Whitney RHS、独立复 Z/场及 h/R 收敛依然 **D2 OPEN**。
 >
 
