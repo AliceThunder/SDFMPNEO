@@ -24,7 +24,7 @@
 
 **关键同一时刻比对**：
 
-| 比较 | 物理时刻 | 全空间三分量 B 的 A1–B1 线相对 L² 差 |
+| 比较 | 物理时刻 | 整条测线上三分量 B 的相对 L² 差 |
 |---|---:|---:|
 | 2周期：0.0025s/16步 与 0.00125s/32步 | 0.04 s | **1.143364%** |
 | 4周期：0.0025s/32步 与 0.00125s/64步 | 0.08 s | **1.265094%** |
@@ -42,7 +42,7 @@
 
 ## 4. 已实现并在 XEnergy 真实验证的统一评价入口
 
-新增源码 [`examples/bfzi_d2_team7_elmer_eval.py`](../../../examples/bfzi_d2_team7_elmer_eval.py)，直接读取官方 Elmer `res/f.dat`，只有**完整整数周期、相同源相位**才允许和固定表比较，同时输出周期重复差；已经在 XEnergy 本机对 **5 个真正已求解场文件**实跑并生成 `team7_eval.json`，均正常退出。Windows 独立工作树在提交 `8ff0e1ae` 验证。
+新增源码 [`examples/bfzi_d2_team7_elmer_eval.py`](../../../../examples/bfzi_d2_team7_elmer_eval.py)，直接读取官方 Elmer `res/f.dat`，只有**完整整数周期、相同源相位**才允许和固定表比较，同时输出周期重复差；已经在 XEnergy 本机对 **5 个真正已求解场文件**实跑并生成 `team7_eval.json`，均正常退出。Windows 独立工作树在提交 `8ff0e1ae` 验证。
 
 ```powershell
 cd D:\work\BFZI-D2-verify
