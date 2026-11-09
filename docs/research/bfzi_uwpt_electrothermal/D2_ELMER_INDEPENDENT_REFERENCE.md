@@ -1,5 +1,8 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+> **2026-11-09 官方 TEAM-7 50Hz 首次真正交流涡流跑通：** 详细数值见[CSC 正式案例实算和源口径纠正记录](evidence/d2_team7_elmer26_actual_run_20261109.md)。Elmer 26.2 官方 `TEAM7.sif` 原样运行 16时步/150.61s，已独立证实 `B_z` 随正弦源交替变号、空间 `B/J` 非零，测点对官方 17 点原始 L² 差 3.4232%。初始 `transient.sif` 虽写 cos 50Hz，其 `Use Elemental CoilCurrent=True` 在本次计算中实际仅使用固定的预计算线圈电流，**不能将该算例的 DC 暂态场冒充 AC 验证**。此最新结果只授予 Elmer 3D **50Hz SMOKE PASS**，官方内部 WhitneyAV 参考范数仍 0.3324% FAIL，TEAM-7 时间/官方探针/h/R/200Hz 及本项目双口同源 **OPEN**。下一优先级仍是 D2 TEAM-7 精度，不继续堆积源桥外围代码。
+>
+
 > **2026-11-09 真实成熟 Elmer 参考首次场求解已运行：** [TEAM-7 实算证据](evidence/d2_team7_elmer26_actual_run_20261109.md) 提供 CSC 官方 mesh/SIF 的完整来源提交、50Hz 原始 16 步及单改时长的 32 步日志、非零 `B/J` 场范围、A1–B1 周期差与未通过的官方参考范数检查。此事实**覆盖本文历史“尚未真正运行 ElmerSolver”**；但仅为软件 H(curl) 涡流链路 **SMOKE PASS**，TEAM7 公开场测量/相位与 h/R/时间收敛**仍 OPEN**，更没有 BFZI 两端口物理同源比较。优先核对实验采样相位、延长周期、频率/时间离散，完成 D2 标准参考，再构建真正同源 BFZI 场。
 >
 
