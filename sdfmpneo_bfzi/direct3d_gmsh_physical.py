@@ -114,7 +114,7 @@ def generate_physical_bfzi_msh22(
             [(3,t) for t in sorted(water)],
             combined=True,oriented=False,recursive=False)
         exterior=[]
-        tolerance=max(1e-8,1e-7*radius)
+        tolerance=max(1e-6,1e-6*radius)  # OCC face bbox carries geometric tolerance
         for dim,surface in boundary:
             if dim!=2:
                 continue
