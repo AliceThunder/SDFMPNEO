@@ -185,7 +185,7 @@ def test_structured_bfzi_wet_wall_h_is_independent_of_dry_box_layers():
     import pytest
 
     scene=build_demo_scene()
-    kw=dict(near_padding_m=.02,far_step_m=.30,box_layers=1)
+    kw=dict(near_padding_m=.08,far_step_m=.30,box_layers=1)
     base=axis_aligned_bfzi_tetra_mesh(scene,**kw)
     fine=axis_aligned_bfzi_tetra_mesh(scene,near_step_m=.04,**kw)
     assert len(fine.tetrahedra)>len(base.tetrahedra)
@@ -200,11 +200,17 @@ def test_structured_bfzi_wet_wall_h_is_independent_of_dry_box_layers():
     # The actual wet slab immediately outside a package wall must have
     # cell size <= requested near_step. A higher box_layers alone would
     # not guarantee this for the conductive side.
-    z=_axis_coordinates(scene,2,.02,.30,1,.04)
+    coarse_z=_axis_coordinates(scene,2,.08,.30,1,.08,None)
+    fine_z=_axis_coordinates(scene,2,.08,.30,1,.04,None)
     for center in (-.13,.13):
         upper=center+.015
-        wet=np.diff(z[(z>=upper-1e-11)&(z<=upper+.02+1e-11)])
-        assert len(wet)>0 and np.max(wet)<=.04+1e-12
+        base=np.diff(coarse_z[(coarse_z>=upper-1e-11)&
+                              (coarse_z<=upper+.08+1e-11)])
+        wet=np.diff(fine_z[(fine_z>=upper-1e-11)&
+                           (fine_z<=upper+.08+1e-11)])
+        assert len(base)==1
+        assert len(wet)==2  # Actual wet NORMAL refinement, not only tangential h
+        assert np.max(wet)<=.04+1e-12
     with pytest.raises(ValueError,match='near_step_m'):
         axis_aligned_bfzi_tetra_mesh(scene,near_step_m=.4,**kw)
 
