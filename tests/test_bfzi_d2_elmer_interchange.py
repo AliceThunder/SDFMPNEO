@@ -6,7 +6,8 @@ from numpy.testing import assert_allclose
 from sdfmpneo_bfzi.direct3d_aphi import TetraMesh, box_tetra_mesh
 from sdfmpneo_bfzi.direct3d_elmer_interchange import (
     elmer_to_gmsh_tetra_indices,load_two_unit_element_currents,
-    verify_elmer_converted_bfzi_groups)
+    verify_elmer_converted_bfzi_groups,
+    compare_final_elmer_whitney_source)
 
 
 def test_renumbered_elmer_tetrahedra_and_two_independent_unit_currents(tmp_path):
@@ -95,3 +96,44 @@ def test_elmergrid_relabelled_three_bodies_and_outer_boundary(tmp_path):
     with pytest.raises(ValueError,match="physical surface 101"):
         verify_elmer_converted_bfzi_groups(
             mesh,physical,tmp_path,mapping,scene)
+
+
+def test_final_elmer_source_rhs_maps_oriented_edges_and_rejects_drift(tmp_path):
+    """Same element J is insufficient: the final Elmer Whitney RHS must match."""
+    from sdfmpneo_bfzi.direct3d_aphi import _topology
+    from sdfmpneo_bfzi.direct3d_edge_source import elemental_current_edge_load
+    nodes=np.array([[0.,0.,0.],[1.,0.,0.],
+                    [0.,1.,0.],[0.,0.,1.]])
+    mesh=TetraMesh(nodes,np.array([[0,1,2,3]]),np.zeros(1))
+    source=np.array([[[.7,-.2,.9]],[[-.1,.8,.4]]])
+    expected=elemental_current_edge_load(mesh,source)
+    node_ids={0:83,1:13,2:97,3:23}
+    (tmp_path/"mesh.nodes").write_text(
+        "".join(f"{node_ids[i]} -1 "
+                + " ".join(str(v) for v in nodes[i])+"\n"
+                for i in (2,0,3,1)),encoding="utf-8")
+    edges,*_=_topology(mesh)
+    lines=[
+        f"{node_ids[b]} {node_ids[a]} "
+        f"{-expected[0,index].real:.17g} "
+        f"{-expected[1,index].real:.17g}\n"
+        for (a,b),index in reversed(list(edges.items()))]
+    table=tmp_path/"elmer_final_edge_rhs.txt"
+    table.write_text("".join(lines),encoding="utf-8")
+    result=compare_final_elmer_whitney_source(
+        mesh,tmp_path,table,expected)
+    assert result["matched"]
+    assert result["verified_edge_count"]==6
+    assert max(result["maximum_absolute_difference_A"])<1e-15
+    corrupted=lines.copy()
+    pieces=corrupted[0].split()
+    pieces[2]=str(float(pieces[2])+.05)
+    corrupted[0]=" ".join(pieces)+"\n"
+    table.write_text("".join(corrupted),encoding="utf-8")
+    mismatch=compare_final_elmer_whitney_source(
+        mesh,tmp_path,table,expected)
+    assert not mismatch["matched"]
+    table.write_text("".join(lines[:-1]),encoding="utf-8")
+    with pytest.raises(ValueError,match="every mesh edge"):
+        compare_final_elmer_whitney_source(
+            mesh,tmp_path,table,expected)
