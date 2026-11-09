@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 最新 D2 源合同硬门槛与 Elmer 体源数值入口：** 先运行 `python -m pytest tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py tests/test_bfzi_d2_galerkin.py -q`（**本轮尚未在完整仓库执行**）。正式 `--generate-msh runs/pose.msh --mesh-only --panels-per-corner 16` 生成 `runs/pose.ports.json`；再次 `--mesh runs/pose.msh --panels-per-corner 16` 时**默认强制验证**该源合同。自定义源合同路径用 `--require-port-manifest FILE`；只有明确诊断可选 `--allow-unverified-source-manifest`（此结果不能对照 Elmer）。禁止 `--mesh` 同时 `--export-port-manifest` 覆盖原始证据。独立 Elmer 体线圈电流的前置桥接 API：`elemental_current_edge_load(mesh, J)` 与 `solve_elemental_current_ports(mesh, f, J, gauge='tree')`，其中 `J` 以 **A/m²** 表示，形状严格 `(2, Ntetra, 3)`，**必须先由使用者独立建立 ElmerGrid 单元重编号映射、两单位闭合源电流守恒/1A/相量及两个求解器的同一源物理定义**。当前仅独立 NumPy 验证局部精确 Whitney 公式和换序不变；Gmsh、Elmer、仓库测试均未执行，旧细丝绝不能被体源替换后宣称同源 PASS。**D2 OPEN。**
+>
+
+
 > **2026-11-08 最新 D2 必做网格/源验收：** 三材料 MSH2 正式输入**现必须具有完整物理 Surface 101**；不只检查体标签 1/2/3，还将所有 101 三角面与四面体实际外边界一一核对，内部干湿界面绝不能挂 101。先运行 `python -m pytest tests/test_bfzi_d2_physical_material_mesh.py tests/test_bfzi_d2_port_manifest.py -q`，再按下方 `--generate-msh --mesh-only --rx-rotation-vector 0.35 0.10 0.20` 实际建网与 `ElmerGrid 14 2 ... -autoclean -names` 真实转换，并核查 `mesh.names` 的外边界/三材料。已有本地**隔离 NumPy 网格面算法验证 1 正例＋4 负例通过**，尚无仓库整树 pytest、Gmsh 或 Elmer 实际运行；**不能**把标签检查等同于 Elmer 同源物理场验证。闭合细丝与默认 CoilSolver 体源不等价，见 [源一致性硬门槛](D2_ELMER_INDEPENDENT_REFERENCE.md)。**D2 OPEN；禁用 GitHub Actions、旧 G1 修补和神经训练。**
 >
 
