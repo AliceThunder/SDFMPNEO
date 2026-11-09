@@ -389,6 +389,8 @@ def main():
                 reference.vacuum.n_edge_dofs+
                 reference.vacuum.n_potential_dofs+
                 reference.vacuum.n_gauge_dofs),
+            'source_P1_gradient_conservation_max':(
+                reference.source_nodal_conservation_max),
             'medium_scaled_relative_residual':reference.medium.linear_relative_residual,
             'vacuum_scaled_relative_residual':reference.vacuum.linear_relative_residual,
             'outer_cube_half_extent_m':float(scene.outer_radius),
