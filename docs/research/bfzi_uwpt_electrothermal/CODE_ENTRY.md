@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-08 最新可执行源—网格对齐入口：** 从仓库根目录执行 git pull --ff-only；python -m pytest tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q。未安装 Gmsh 时，先运行 python -m examples.bfzi_d2_aphi --case bfzi --ports-only --export-port-manifest runs/bfzi_ports.json --frequency 200000 --panels-per-corner 16，检查两端口 SHA256/路径与相量。安装 Gmsh Python API 后，运行 python -m examples.bfzi_d2_aphi --case bfzi --generate-msh runs/bfzi_pose.msh --mesh-only --rx-rotation-vector 0.35 0.10 0.20 --outer-radius 0.80 --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025 --panels-per-corner 16，正式 OCC 三材料网格经 MSH2 标签/体积/位姿检查后会自动同时输出 runs/bfzi_pose.ports.json，并在 JSON 元数据中写源 SHA256。**这是共用物理源文件，不代表 Elmer CoilSolver 已实现等价源。** 下一关必须使用成熟 Elmer 同一真实线源或双方一致有限铜截面电流，按 h/R/源/趋肤层收敛核对 2×2 Z 及空间 B/E/J/q。当前没有 Gmsh/Elmer 实跑，完整仓库 pytest 也未在本容器执行，D2 OPEN、G1 FAIL、教师冻结、禁 GitHub Actions。
+>
+
+
 > **2026-11-08 D2 三材料网格新标准（优先于下方单标签旧命令）：** 正式任意独立 SE(3) 使用 `python -m examples.bfzi_d2_aphi --case bfzi --generate-msh runs/physical_bfzi.msh --mesh-only --rx-rotation-vector 0.35 0.10 0.20 --outer-radius 0.80 --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025`。生成器必须在 `mesh-only` 返回前成功读回 MSH2，并核对海水/tx/rx 三物理区域及真实外域。随后用**完全相同** pose/R 参数加 `--mesh runs/physical_bfzi.msh --gauge tree --summary-only --output runs/bfzi_z.json` 才能开始本求解器的 FEM；ElmerGrid 需另行转换标签，参考 [独立 Elmer 执行方案](D2_ELMER_INDEPENDENT_REFERENCE.md)。既有 `--write-geo` 输出的单 `Physical Volume("all",1)` 是**历史诊断格式**，只能额外传 `--legacy-single-tag-msh` 才允许本项目按几何重分材料，**不可供 Elmer 做材料分区对照**。已经实跑过 1350 四面体的真实 MSH2 三材料网格往返和完整 BFZI 双端口 E/B/Z/Joule 一致性，见 [原始 JSON](evidence/d2_three_material_msh2_roundtrip_20261108.json) 与 [测试](../../../tests/test_bfzi_d2_physical_material_mesh.py)。Gmsh/Elmer 本容器不可用，D2 OPEN、G1 FAIL、教师冻结、禁用 GitHub Actions。
 >
 
