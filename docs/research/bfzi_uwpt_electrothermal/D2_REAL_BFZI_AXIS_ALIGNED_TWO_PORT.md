@@ -10,6 +10,46 @@
 
 对任意真正倾斜的 SE(3) 位姿，此路径**明确拒绝**，绝不把旋转盒套上阶梯体素或以近似包围盒代替真实材料。任意 SE(3) 高保真必须采用现有 Gmsh OpenCASCADE `BooleanFragments` 几何接口。
 
+## 2026-11-08：明确修复近壁海水 h，增加三类真正双端口独立扫描
+
+原先仅调整 `--structured-box-layers` 会把盒体内部的分段加密，却**不能保证绝缘盒外导电海水紧贴材料界面的单元变细**。这不符合 D2 对海水空间 `E/J/q` 的网格收敛要求。
+
+现已在真实 `axis_aligned_bfzi_tetra_mesh` 主代码增加 `near_step_m`，CLI 对应 `--structured-near-step`：它在两只盒体的每个世界坐标投影 `[a-pad,b+pad]` 内控制坐标步长，明确覆盖每一侧的**湿侧海水**，而不是只增加干侧盒体层数。若 `near_padding=0` 同时指定 `near_step` 会主动报错，防止误把仅干侧细化当作海水收敛。
+
+在隔离环境中对相同材料共形网格生成算法实际运行的**几何与规模**如下，盒体尺寸和位置绝未改变：
+
+| 外域半边长 R (m) | 近壁步长 (m) | 全域四面体 | 两盒绝缘体积 (m³) | 外部立方体积 (m³) |
+|---:|---:|---:|---:|---:|
+| 0.52 | 未独立设置 | 3,234 | 0.002400 | 1.124864 |
+| 0.52 | 0.08 | 5,346 | 0.002400 | 1.124864 |
+| 0.52 | 0.02 | 29,160 | 0.002400 | 1.124864 |
+| 0.52 | 0.01 | 124,200 | 0.002400 | 1.124864 |
+| 0.80 | 0.08 | 9,438 | 0.002400 | 4.096000 |
+
+[真实网格尺寸与体积结构化证据](evidence/d2_bfzi_wet_wall_mesh_20261108.json)。这些是**网格几何计算**，不是电磁解的 `Z/E/B/J/q` 精度；张量积网格的三个方向切割会横贯整个计算域，0.01–0.02m 的全域四面体增长过快。后续任意 SE(3) 的高分辨率物理界面、开放海水与铜集肤/邻近效应仍必须使用真正三维局部共形/自适应 Gmsh/成熟 FEM，而不能扩大此受限网格代替。
+
+### 直接运行真实 BFZI 三个独立 h/R/源弦段数扫描
+
+新增 [`examples/bfzi_d2_convergence.py`](../../../examples/bfzi_d2_convergence.py)，不重写物理方程，逐工况调用**原来同一个** `examples.bfzi_d2_aphi` 三维真实闭合双端口求解入口。只改变一项数值维度，固定 BFZI 连续螺旋、真实馈回流、海水电导率、各自绝缘封装和频率，输出完整单工况 JSON 与一个简短 `sweep.json`：
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_structured_ports.py -q
+
+# h：R=0.52m，闭合源弦段数4，近壁坐标步长0.12/0.08/0.06m
+python -m examples.bfzi_d2_convergence --vary h --out runs/d2_h
+
+# R：同一源与 h，外域半边长0.32/0.40/0.52m
+python -m examples.bfzi_d2_convergence --vary R --out runs/d2_R
+
+# source：同一外域与 h，BFZI 原连续圆角弦段数2/4/8
+python -m examples.bfzi_d2_convergence --vary source --out runs/d2_source
+```
+
+可加 `--probe X Y Z` 和 `--solve-analytic-primary` 扩展到空间 B/E/J/q 和解析源直接参与的**导电材料 PDE**。`--summary-only` 仅让终端显示 2×2 复阻抗、互易差和各电流相位的端口与场功率差，`--output` 仍保存完整报告，不应为缩短日志丢失原始数据。
+
+必须强调：这些脚本**当前仅完成代码接入，未在本次隔离环境真正求解完整双端口扫描**。相邻网格输出差异小不等于绝对误差小；真实无限海水高精度还需匹配 Elmer 独立参考、全物理源和外域，以及固定位置空间 B/E/J/q。**D2 仍 OPEN，G1 FAIL，神经教师冻结。**
+
 ## 已实现的主计算路径
 
 - 新增 [`direct3d_structured_bfzi.py`](../../../sdfmpneo_bfzi/direct3d_structured_bfzi.py) 的 `axis_aligned_bfzi_tetra_mesh(scene,...)`：从 `BfziScene` **真实两只盒体姿态/尺寸**生成各坐标材料切面，保留盒内/盒外完全共形的六四面体长方体分割；允许独立选择外部 `far_step_m`、局部材料面间填充 `box_layers` 和近壁 `near_padding_m`。仅用于受限的轴对齐 h/R 初步计算。
