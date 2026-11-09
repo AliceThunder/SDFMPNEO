@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 本地整仓库 pytest 首次反馈与三项定位修复（当前最高优先级）：** 用户工作站真实执行 D2 四个文件的 pytest，结果 **20 passed、3 failed（8.91 s）**：① tree/mixed 规范比较将绝缘区 `-iωA` 当物理 E 逐点比对，但当前 MQS A–φ 仅在 σ>0 内求 φ，绝缘区未包含位移电流/静电方程，因此该区 E **规范依赖、不能做热场标签**；[测试](../../../tests/test_bfzi_d2_galerkin.py) 已更正为**仅导电区逐点严格比较 E、全域 B、端口 Z 和焦耳功率**，保留原容差，未放松任何物理可观测量。② 一四面体顶点换序改变 `_topology` 的**边列出现顺序**，但物理有向边始终从小节点到大节点；测试改为用全局边端点 key 重排后逐项比较（独立 NumPy 复算原生数组最大差 0.0875，按物理边重排后**精确 0**）。③ 原外域裁剪负例被 `BfziScene.__post_init__` 的**更严格球包含规则**先拒绝，导致未到 OCC 预检；改为分别验证场景球边界拒绝及传入显式无效几何对象后 OCC 立方体预检拒绝。独立几何算例表明旋转盒 x 世界最大 0.321421m > R=0.32m，最远角 0.352614m > 0.98R=0.3136m。这三项测试更正、求解器绝缘区 E 规范说明及 NPZ 导电区 E 有效掩码已提交；**本轮修复后的完整仓库 pytest 必须工作站重新执行，尚不得宣告全部 PASS**。真实斜置 OCC/Elmer 独立同源 h/R 仍 OPEN。D2 OPEN，G1 FAIL，神经教师冻结，禁 GitHub Actions。
+>
+
+
 > **2026-11-09 D2 最新源一致性实现（基于 d9b7692）：** 已将 Elmer 端“最终 Whitney 弱载荷”作为独立源比对关口，而不仅只比较两个 `J_s` 体电流数组。新增 [compare_final_elmer_whitney_source](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py)，接受每条 Elmer 网格有向边的 `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，通过实际节点坐标唯一映射、端点顺序符号修正与本项目从同一体 `J_s` 精确装配的 `L[p,e]` 两列逐项比较；拒绝边缺失、重复、非法端点、非有限数值。该四列表**不是 ElmerGrid/ElmerSolver 默认产物**，必须将 Elmer WhitneyAVSolver 经任何 `Fix Input Current Density` 修正后、求解前的**真实物理源边元 RHS**独立导出（不能把总场残差/规范约束误认为源本身）。[新主程序](../../../examples/bfzi_d2_elmer_handoff.py) 增加 `--elmer-final-edge-load FILE`，可选源匹配时不一致即明确 FAIL；未提供则继续允许**仅诊断**的本项目体源求解，并将 Elmer 最终源一致性保持 UNVERIFIED。补充有向边换向/载荷漂移专项测试和从真实三材料 BFZI MSH2 测试夹具贯通交接 CLI 的集成测试（含故意不守恒双口体电流的拒绝测试）。**所有新增测试已提交但整仓库 pytest 未实跑**；本环境无真实 Gmsh/Elmer，因此最终 Elmer RHS 比较、双独立 SE(3) 实建网、独立空间场/复 Z 和 h/R/源收敛仍 OPEN。D2 OPEN、G1 FAIL、神经教师冻结、禁止 GitHub Actions。
 >
 
