@@ -1,0 +1,136 @@
+{
+  "date_utc": "2026-11-09",
+  "status": "D2 OPEN; limited pose validation, not arbitrary relative SE3 FEM h/R/Elmer pass",
+  "provenance": "Actually executed local extracted same SciPy Nedelec A-phi and closed Whitney line-source implementation; not a full checkout, Gmsh not installed",
+  "physical": {
+    "frequency_hz": 200000,
+    "seawater_sigma_S_m": 5,
+    "transmitter": "two-turn genuine continuous BFZI rounded square and explicit closed return, dry box",
+    "receiver": "same, independently posed",
+    "centers_m": [
+      [
+        0,
+        0,
+        -0.13
+      ],
+      [
+        0,
+        0,
+        0.13
+      ]
+    ],
+    "dry_half_extents_m": [
+      0.1,
+      0.1,
+      0.015
+    ],
+    "outer_cube_halfwidth_m": 0.32,
+    "corner_panels": 2,
+    "gauge": "relative tree, complete two-unit-current FEM medium and same-domain vacuum solves",
+    "copper": "ideal current filaments, copper skin/proximity omitted"
+  },
+  "global_se3_covariance": {
+    "translation_m": [
+      0.21,
+      -0.29,
+      0.07
+    ],
+    "rotation": "Rz(0.37 rad) @ Rx(0.61 rad)",
+    "complex_2port_Z_relative_difference": 4.920585834685882e-12,
+    "all_tetra_gauss_E_relative_L2_difference": 5.5234413691607346e-11,
+    "all_cell_B_relative_L2_difference": 3.2884302828927212e-12,
+    "note": "Entire mesh, insulating solids and both closed wires rotated+translated together; NOT independent receiver pose"
+  },
+  "independent_receiver_90deg": {
+    "reference_parallel": {
+      "receiver_rotation": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "tetrahedra": 1350,
+      "complex_2port_Z_re_im_ohm": [
+        [
+          [
+            0.004573083187897371,
+            -0.00018721763112963872
+          ],
+          [
+            0.001112188759364341,
+            -0.00007979863975349326
+          ]
+        ],
+        [
+          [
+            0.001112188759357876,
+            -0.00007979863978025857
+          ],
+          [
+            0.004569463814754846,
+            -0.00018691572978551613
+          ]
+        ]
+      ],
+      "I1_iI2_volume_joule_W": 0.004571273501324446,
+      "I1_iI2_closed_port_power_W": 0.0045712735013127255
+    },
+    "receiver_orthogonal": {
+      "receiver_rotation": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          -1
+        ],
+        [
+          0,
+          1,
+          0
+        ]
+      ],
+      "tetrahedra": 2430,
+      "complex_2port_Z_re_im_ohm": [
+        [
+          [
+            0.005638817844783281,
+            -0.00019690386107777447
+          ],
+          [
+            0.00004770528840696681,
+            -0.000003186529890321813
+          ]
+        ],
+        [
+          [
+            0.00004770528840550049,
+            -0.000003186529872092339
+          ],
+          [
+            0.004453768063313423,
+            -0.00016247478867095443
+          ]
+        ]
+      ],
+      "I1_iI2_volume_joule_W": 0.005046292954046351,
+      "I1_iI2_closed_port_power_W": 0.0050462929540574675,
+      "source_and_insulation": "Receiver-only active Rx(+pi/2) rotation around its own center, transmitter unchanged; physical mesh regenerated and both port paths evaluated in world coordinates"
+    },
+    "interpretation": "True physical coupling changes with receiver-only 90-degree pose. Both FEM meshes are material-conforming because orientations are signed axis permutations. The much smaller mutual Z does not certify arbitrary oblique independent rotations; that needs Gmsh API with correctly tagged OCC solids and independent Elmer comparison."
+  }
+}
