@@ -1,5 +1,8 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 主运行顺序已由 [BFZI-PDR V1.0](BFZI_PDR_EXECUTION_PLAN.md) 统一更新：** 首先执行真正的 **Elmer 3D 涡流与 TEAM-7 基准**，再实建双独立 SE(3) BFZI Gmsh OCC/ElmerGrid 共形网格，随后解决最终物理源弱泛函一致性，之后才做完整复 Z、空间 E/B/J/q 与 h/R/源收敛；目前继续重跑旧 G1、增加一般外围接口或正式神经训练均**不是下一步任务**。XEnergy 独立工程 `D:\\work\\BFZI-D2-verify` 已完成当前四文件专项 pytest `23 passed in 10.91s`；`ElmerGrid`/`ElmerSolver` **26.2 已安装并实启**，运行时使用 `D:\\work\\ElmerFEM\\ElmerFEM-nogui-nompi-Windows-AMD64\\bin` 会话级 PATH。下面原有各历史命令仅作特定阶段技术入口，**不改变先后验收关口**。D2 OPEN。
+>
+
 > **2026-11-09 本地测试反馈后的针对性修复：** 首次用户本机运行四文件 pytest：**20 passed / 3 failed**。已提交修复：`tests/test_bfzi_d2_galerkin.py` 的 tree/mixed 对比只在 `mesh.sigma>0` 比较真正有 φ 的 E，B 全域、端口 Z、功率容差不变；一四面体换序载荷按全局边 `(min(node),max(node))` 重新对齐，避免把 `_topology` 的 first-seen edge order 误作物理不变编号；`tests/test_bfzi_d2_physical_material_mesh.py` 区分 `BfziScene` 球外域预拒绝与 OCC cube 预拒绝。求解器文档与 NPZ 均明确：**σ=0 封装内 E 不具有独立规范物理意义，勿作热标签。** 请在工作站重跑以下相同四测试，**本次新提交尚未在本机完整 pytest 验证**：
 >
 > ```powershell
