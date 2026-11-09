@@ -1,5 +1,9 @@
 # BFZI 水下 WPT 电磁热代理：研究目录
 
+> **2026-11-08 BFZI 真实两端口主入口：** 现在可以用 [物理共形轴对齐双盒网格](../../../sdfmpneo_bfzi/direct3d_structured_bfzi.py) 配合 [三维闭合端口求解脚本](../../../examples/bfzi_d2_aphi.py) 直接跑当前 BFZI 连续螺旋与馈回流的 2×2 复海水增量阻抗及空间 E/B/J/q；命令和实际几何体积证据见 [本轮 D2 进展](D2_REAL_BFZI_AXIS_ALIGNED_TWO_PORT.md)。`--structured-axis-aligned` 只是**有物理边界共形保证的轴对齐受限基线**；真正任意双 SE(3) 坚持 Gmsh OpenCASCADE 共形网格，不能以轴对齐结果宣称总体通过。本环境已计算网格几何体积，尚**没有实际跑过新提交的真实双端口 PDE**。D2 OPEN、G1 FAIL、正式教师冻结，不使用 GitHub Actions。
+>
+
+
 > **2026-11-07 新增 D2 独立物理精度基准：** 在旧“同一离散端口—体积功率恒等式”之外，已经用交流导电球的完整频率解析解检验实际三维 **E/B/Joule**（包括趋肤效应）；一阶 6000 四面体仍只有 E 23.96%、B 24.42% 体积相对 L² 精度，故**不准宣称高精度直接法完成**。见 [本轮实算与严格几何误差分账](D2_SPHERE_AC_MAGNETIC_DIFFUSION.md)、[主求解器解析总场边界](../../../sdfmpneo_bfzi/direct3d_aphi.py)、[理论第18节](../../../theory/sections/18_d2_sphere_ac_diffusion.tex)。结合此前椭圆柱非零 φ 验证，该新球基准专门隔离检验真实磁扩散 PDE，绝不取代 TEAM-7/双 SE(3) BFZI。**D2 OPEN；G1 FAIL，教师冻结，禁用 GitHub Actions。**
 >
 
