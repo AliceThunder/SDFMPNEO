@@ -1,5 +1,9 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+> **2026-11-08 材料标签读取证据与仍缺项：** 本项目 BFZI FEM 现**严格使用** Gmsh 的 volume 1=sea、2=tx dry、3=rx dry 元素标签赋 σ，并检查每个四面体是否处于其真实 SE(3) 材料区域，以及对应几何体积；新 [Gmsh OCC 主代码](../../../sdfmpneo_bfzi/direct3d_gmsh_physical.py) 在 mesh-only 返回前强制读回并验证。实际写出/重读结构化三材料 MSH 2.2 后，完整 1350 单元双闭合端口的 `ΔZ/E/B/Joule` 与原始内存网格**逐项完全相同**，证据在 [JSON](evidence/d2_three_material_msh2_roundtrip_20261108.json)。对于旧 `Physical Volume("all",1)`，除非明确 `--legacy-single-tag-msh`，否则拒绝；且这种旧网格**不能直接给独立 Elmer 分海水/两盒材料**。当前 Gmsh API/Elmer 无法在本容器启动，OCC 任意斜置 SE(3) 真实建网、Elmer 等价铜闭合源、空间场与复阻抗独立对照均 OPEN。不得把三材料文件往返当成 Elmer PASS。
+>
+
+
 ## 2026-11-08：真实独立 SE(3) BFZI 三材料共形网格入口（Gmsh/Elmer 待实跑）
 
 旧的 Gmsh .geo 入口把整个计算域标成单一 Physical Volume("all",1)，
