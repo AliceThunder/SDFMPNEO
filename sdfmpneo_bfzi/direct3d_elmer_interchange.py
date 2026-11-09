@@ -195,3 +195,96 @@ def verify_elmer_converted_bfzi_groups(mesh, original_physical_tags,
             "verified_outer_triangles":len(triangles),
             "elmer_body_ids":{name:bodies[name] for name in required},
             "elmer_outer_boundary_id":exterior}
+
+
+def compare_final_elmer_whitney_source(
+        mesh, elmer_directory, elmer_edge_load_table, expected_edge_load, *,
+        relative_tolerance=1e-7, absolute_tolerance_A=1e-11):
+    """Compare both FINAL Elmer edge RHS columns to independently assembled J.
+
+    Four whitespace-separated columns, one record for EVERY edge including
+    zero entries:
+        ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A
+    The RHS columns must be taken AFTER all Elmer source-current fixing and
+    before the field linear solve, in the raw *oriented Whitney edge basis*.
+    Values are real per-unit-current weak loads, not field solutions.
+    This is an explicitly exported artifact: neither ElmerGrid nor an
+    unmodified ElmerSolver produces this table automatically.
+
+    The map is by actual node XYZ and unordered edge incidence; reversal
+    of the Elmer-oriented edge flips its reported RHS sign. It is therefore
+    independent of arbitrary ElmerGrid global node/edge numbering.
+    """
+    from .direct3d_aphi import _topology
+    rtol=float(relative_tolerance)
+    atol=float(absolute_tolerance_A)
+    if (not np.isfinite(rtol) or not np.isfinite(atol)
+            or rtol<0 or atol<0):
+        raise ValueError("Finite nonnegative edge-source tolerances required")
+    edges,*_=_topology(mesh)
+    expectation=np.asarray(expected_edge_load,dtype=complex)
+    if (expectation.shape!=(2,len(edges)) or
+            not np.isfinite(expectation).all() or
+            np.any(np.imag(expectation)!=0)):
+        raise ValueError("Expected two finite real Whitney load rows")
+    folder=Path(elmer_directory)
+    node_records={}
+    for line in (folder/"mesh.nodes").read_text(
+            encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        fields=line.split()
+        if len(fields)!=5:
+            raise ValueError("Invalid Elmer source node record")
+        eid=int(fields[0])
+        if eid in node_records:
+            raise ValueError("Duplicate Elmer source node ID")
+        node_records[eid]=[float(a) for a in fields[2:]]
+    ids=list(node_records)
+    coords=np.asarray([node_records[i] for i in ids],float)
+    if (len(ids)!=len(mesh.nodes) or not np.isfinite(coords).all()):
+        raise ValueError("Elmer source mesh nodes do not match original")
+    distance,index=cKDTree(mesh.nodes).query(coords)
+    if np.any(distance>1e-9) or len(set(index))!=len(mesh.nodes):
+        raise ValueError("Elmer source node mapping is not bijective")
+    elmer_to_original=dict(zip(ids,map(int,index)))
+    observed=np.zeros((2,len(edges)),float)
+    seen=set()
+    for line in Path(elmer_edge_load_table).read_text(
+            encoding="utf-8").splitlines():
+        line=line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields=line.split()
+        if len(fields)!=4:
+            raise ValueError("Expected two Elmer endpoint IDs and two source loads")
+        try:
+            a=elmer_to_original[int(fields[0])]
+            b=elmer_to_original[int(fields[1])]
+        except KeyError as exc:
+            raise ValueError("Elmer source edge has an unknown node") from exc
+        key=tuple(sorted((a,b)))
+        if a==b or key not in edges:
+            raise ValueError("Elmer source references a non-tetrahedral edge")
+        e=edges[key]
+        if e in seen:
+            raise ValueError("Duplicate Elmer oriented edge RHS record")
+        values=np.asarray([float(fields[2]),float(fields[3])])
+        if not np.isfinite(values).all():
+            raise ValueError("Nonfinite Elmer final source RHS")
+        observed[:,e]=values if a<b else -values
+        seen.add(e)
+    if len(seen)!=len(edges):
+        raise ValueError("Final Elmer RHS table must contain every mesh edge")
+    difference=np.abs(observed-expectation.real)
+    scale=np.max(np.abs(expectation),axis=1)
+    threshold=atol+rtol*scale
+    per_port=np.max(difference,axis=1)
+    return {
+        "matched":bool(np.all(per_port<=threshold)),
+        "maximum_absolute_difference_A":per_port.tolist(),
+        "maximum_relative_to_peak_source":(
+            per_port/np.maximum(scale,1e-300)).tolist(),
+        "threshold_A":threshold.tolist(),
+        "verified_edge_count":len(edges),
+    }
