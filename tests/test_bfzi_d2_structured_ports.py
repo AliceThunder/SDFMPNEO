@@ -83,3 +83,48 @@ def test_genuine_bfzi_two_port_global_se3_covariance():
     assert_allclose(transformed.medium.power_from_fields,
                     reference.medium.power_from_fields,
                     rtol=1e-8,atol=1e-11)
+
+
+
+def test_independent_orthogonal_receiver_pose_two_real_bfzi_ports():
+    """Actual receiver-only SE(3) orientation change, NOT global frame change.
+
+    A 90-degree relative rotation is axis-permuting, so the restricted
+    3D tetra mesh represents both rotated insulation boundaries exactly.
+    Tests a real electromagnetic solve with the physical receiver coil and
+    return rotated together; arbitrary OBLIQUE poses still need Gmsh.
+    """
+    from sdfmpneo_bfzi.geometry import RigidPose
+
+    scene=replace(build_demo_scene(),outer_radius=.32)
+    quarter_turn=np.array([[1.,0.,0.],
+                           [0.,0.,-1.],
+                           [0.,1.,0.]])
+    rotated_receiver=replace(
+        scene.receiver,
+        pose=RigidPose(quarter_turn,scene.receiver.pose.center))
+    changed_scene=replace(scene,receiver=rotated_receiver)
+    # Rebuild and solve BOTH geometries: do not reuse the initial material
+    # mesh or keep the physical receiver winding incorrectly unrotated.
+    outputs=[]
+    for current_scene in (scene,changed_scene):
+        mesh=axis_aligned_bfzi_tetra_mesh(
+            current_scene,near_padding_m=.02,
+            far_step_m=.30,box_layers=1)
+        strands=[]
+        for assembly in current_scene.assemblies:
+            path=polygonal_port_vertices(assembly,panels_per_corner=2)
+            assert np.array_equal(path[0],path[-1])
+            assert np.all(assembly.enclosure.contains(
+                path,assembly.pose))
+            strands.append([(1.,path)])
+        result=solve_closed_ports(mesh,200000.,strands,gauge='tree')
+        z=result.material_increment_z
+        assert_allclose(z,z.T,rtol=1e-8,atol=5e-10)
+        I=np.array([1.,1j])
+        assert_allclose(result.port_power(I),result.conductor_power(I),
+                        rtol=1e-8,atol=1e-10)
+        outputs.append((mesh,z))
+    assert len(outputs[0][0].tetrahedra)!=len(outputs[1][0].tetrahedra)
+    # Mutual coupling must reflect the genuinely different receiver pose.
+    assert abs(outputs[1][1][0,1]) < .5*abs(outputs[0][1][0,1])
