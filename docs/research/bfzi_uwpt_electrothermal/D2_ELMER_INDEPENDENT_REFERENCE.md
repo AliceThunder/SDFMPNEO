@@ -1,5 +1,8 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+> **2026-11-09 现行优先级：** 按 [BFZI-PDR V1.0](BFZI_PDR_EXECUTION_PLAN.md) 执行。XEnergy 已有经真实启动验证的 `ElmerGrid` 与 `ElmerSolver` **26.2**（安装于 `D:\\work\\ElmerFEM\\ElmerFEM-nogui-nompi-Windows-AMD64\\bin`）。**此刻不要继续只完善“最终边元 RHS 导出接口”**：先以真实官方 Elmer 三维涡流算例取得非零 B/J 和求解日志，继而使用真实 TEAM-7 非轴对称几何/线圈/50 与 200Hz/公开探针值建立独立参考；标准基准通过后才将 BFZI 独立斜置 OCC/材料网格及真实两端口相同闭合源接入，最后对照完整复 Z、空间 E/B/J/q 与 h/R/源收敛。历史“没有安装 Elmer”描述保留作为原日期记录，**已被本条更新**。Elmer 启动不等于 Maxwell 解、TEAM-7 或 D2 PASS。
+>
+
 ## 2026-11-09：Elmer WhitneyAV 最终边元载荷同一性桥接
 
 较单纯的 CoilSolver 单元 `J_{s,p}` 读取，本次增加对*真正进入磁场解算的两个独立单位端口源泛函* `L_{p,e}` 的逐边核对。使用 [compare_final_elmer_whitney_source](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py) 和 CLI `--elmer-final-edge-load FILE`：读取 Elmer 本机独立导出的 **四列** `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，每条全局边恰好一条记录（零载荷边也必须提供）；通过两个端点的**真实世界坐标**映射到原始 Gmsh mesh 节点，再按全局有向边翻转符号，对两个单位端口分别与本项目精确体积分载荷 `L^{volume}` 做 L∞ 绝对/相对比较。实现同时拒绝缺边、重复边、未知节点和非有限值；结果作为独立字段写入 JSON，失配拒绝同源求解。项目新增两组反向边与错误 RHS 测试、基于真实 BFZI 三材料 MSH2 夹具的完整交接主程序合成文本集成测试。**不是**声称 Elmer 程序已运行。
