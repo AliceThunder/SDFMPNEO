@@ -9,6 +9,11 @@ material and frequency fixed. All full solver reports are saved locally.
     python -m examples.bfzi_d2_convergence --vary R --out runs/d2_R
     python -m examples.bfzi_d2_convergence --vary source --out runs/d2_source
 
+A fixed inner core preserves near-field coordinate planes for R variation.
+The h sweep uses a padding band wide enough to change conductive wet-side
+normal cell layers; h=.08/.06/.04 may exceed a laptop's sparse-direct
+memory budget. Use a capable workstation for the final fine level.
+
 These sweeps are NOT official TEAM-7/Elmer or infinite-ocean certificates.
 Do not treat a small inter-grid difference as evidence of absolute accuracy.
 """
@@ -36,8 +41,10 @@ def main():
     parser.add_argument("--out",type=Path,required=True)
     parser.add_argument("--frequency",type=float,default=200000.)
     parser.add_argument("--far-step",type=float,default=.30)
-    parser.add_argument("--padding",type=float,default=.02)
+    parser.add_argument("--padding",type=float,default=.08)
     parser.add_argument("--box-layers",type=int,default=1)
+    parser.add_argument("--inner-core-radius",type=float,default=.24,
+                        help="Fix both source and near-field grid planes across R sweep")
     parser.add_argument("--solve-analytic-primary",action="store_true")
     parser.add_argument("--probe",type=float,nargs=3,action="append")
     args=parser.parse_args()
@@ -46,7 +53,7 @@ def main():
     args.out.mkdir(parents=True,exist_ok=True)
 
     cases = {
-        "h":[("0p12",.12),("0p08",.08),("0p06",.06)],
+        "h":[("0p08",.08),("0p06",.06),("0p04",.04)],
         "R":[("0p32",.32),("0p40",.40),("0p52",.52)],
         "source":[("2",2),("4",4),("8",8)],
     }[args.vary]
@@ -54,7 +61,7 @@ def main():
     out=[]
     previous=None
     for key,value in cases:
-        near_step = value if args.vary=="h" else .12
+        near_step = value if args.vary=="h" else .08
         radius = value if args.vary=="R" else .52
         panels = value if args.vary=="source" else 4
         report_path=args.out/f"bfzi_{args.vary}_{key}.json"
@@ -67,6 +74,7 @@ def main():
             "--structured-padding",str(args.padding),
             "--structured-box-layers",str(args.box_layers),
             "--structured-near-step",str(near_step),
+            "--structured-inner-core-radius",str(args.inner_core_radius),
             "--panels-per-corner",str(panels),
             "--summary-only","--output",str(report_path),
         ]
@@ -89,6 +97,7 @@ def main():
         }
         item=dict(vary=args.vary,value=value,
                   radius_m=radius,near_step_m=near_step,
+                  near_padding_m=args.padding,inner_core_radius_m=args.inner_core_radius,
                   panels_per_corner=panels,
                   frequency_hz=args.frequency,
                   tetrahedra=report["tetrahedra"],
