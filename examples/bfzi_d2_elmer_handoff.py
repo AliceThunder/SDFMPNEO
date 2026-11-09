@@ -60,6 +60,10 @@ def main():
     p.add_argument("--two-unit-currents",type=Path,
                    help="EXPLICIT Elmer-ID + J1xyz J2xyz data; not "
                         "automatically produced by ElmerSolver")
+    p.add_argument("--elmer-final-edge-load",type=Path,
+                   help="Optional specially exported FINAL Elmer Whitney edge "
+                        "RHS: from-node to-node J1_load J2_load. Compares "
+                        "the post-Jfix forcing against the two mapped J bases")
     p.add_argument("--frequency",type=float,default=200000.)
     p.add_argument("--panels-per-corner",type=int,default=12)
     p.add_argument("--gauge",choices=("tree","mixed"),default="tree")
@@ -78,6 +82,8 @@ def main():
     args=p.parse_args()
     if args.fields_npz and not args.two_unit_currents:
         p.error("--fields-npz requires --two-unit-currents")
+    if args.elmer_final_edge_load and not args.two_unit_currents:
+        p.error("--elmer-final-edge-load requires --two-unit-currents")
     if not np.isfinite(args.frequency) or args.frequency<=0:
         p.error("--frequency must be positive and finite")
 
@@ -152,8 +158,20 @@ def main():
         report["physical_source_kind"]="two_real_elemental_J_basis"
         report["volume_source_1A_flux_and_direction"]="UNVERIFIED"
         report["post_Elmer_Jfix_source_identity"]="UNVERIFIED"
+        final_comparison=None
+        if args.elmer_final_edge_load:
+            from sdfmpneo_bfzi.direct3d_elmer_interchange import (
+                compare_final_elmer_whitney_source)
+            final_comparison=compare_final_elmer_whitney_source(
+                mesh,args.elmer_grid_dir,args.elmer_final_edge_load,load)
+            report["final_elmer_weak_source_comparison"]=final_comparison
+            report["post_Elmer_Jfix_source_identity"]=(
+                "WHITNEY_WEAK_LOAD_MATCH_ONLY" if final_comparison["matched"]
+                else "FINAL_RHS_MISMATCH")
         if np.max(residual)>1e-8:
             report["status"]="D2_VOLUME_SOURCE_CONSERVATION_FAIL"
+        elif final_comparison is not None and not final_comparison["matched"]:
+            report["status"]="D2_FINAL_ELMER_SOURCE_RHS_MISMATCH"
         else:
             result=solve_elemental_current_ports(
                 mesh,args.frequency,J,gauge=args.gauge)
@@ -215,7 +233,9 @@ def main():
         args.output.write_text(
             json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(report,indent=2))
-    if report["status"]=="D2_VOLUME_SOURCE_CONSERVATION_FAIL":
+    if report["status"] in (
+            "D2_VOLUME_SOURCE_CONSERVATION_FAIL",
+            "D2_FINAL_ELMER_SOURCE_RHS_MISMATCH"):
         raise SystemExit(2)
 
 
