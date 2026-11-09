@@ -52,5 +52,58 @@
     "One tag for whole geometry: rejected without explicit diagnostic compatibility flag",
     "Outer cube R incompatible with scene: rejected"
   ],
-  "limits": "No Gmsh runtime available (pip cannot resolve index), OCC-generated tags not yet verified; independent Elmer source still missing; h/R and spatial fields not converged."
+  "limits": "No Gmsh runtime available (pip cannot resolve index), OCC-generated tags not yet verified; independent Elmer source still missing; h/R and spatial fields not converged.",
+  "orthogonal_receiver_only": {
+    "status": "Actual two-port Maxwell FEM before and after tagged MSH2, for receiver rotated independently by 90 degrees",
+    "tetrahedra": 2430,
+    "receiver_rotation_matrix": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "physical_tet_counts": {
+      "sea_1": 2394,
+      "transmitter_insulation_2": 30,
+      "receiver_insulation_3": 6
+    },
+    "material_increment_2port_re_im_ohm": [
+      [
+        [
+          0.0056388178447828305,
+          -0.00019690386109933594
+        ],
+        [
+          0.000047705288403572825,
+          -0.0000031865298796994235
+        ]
+      ],
+      [
+        [
+          0.000047705288403636366,
+          -0.00000318652987925051
+        ],
+        [
+          0.004453768063306091,
+          -0.0001624747886891163
+        ]
+      ]
+    ],
+    "roundtrip_max_abs_Z_ohm": 0,
+    "roundtrip_max_abs_E_V_m": 0,
+    "roundtrip_max_abs_B_T": 0,
+    "roundtrip_abs_Joule_W": 0,
+    "scope": "Receiver-only 90deg signed axis permutation remains exactly material-conforming; NOT arbitrary oblique Gmsh OCC."
+  }
 }
