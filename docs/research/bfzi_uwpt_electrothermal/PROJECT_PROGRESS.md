@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-08 D2 最新主算法修复：** 经复查发现旧 `--structured-box-layers` 仅改变干侧绝缘盒切分，不能单独完成湿侧海水 `h` 收敛。已将 `near_step_m` 真正接入 [双盒共形网格](../../../sdfmpneo_bfzi/direct3d_structured_bfzi.py) 与 [真实两端口运行入口](../../../examples/bfzi_d2_aphi.py)（`--structured-near-step`），并提供 [按同一源/材料分别改变 h、R、圆角弦段数的直接 A–φ 双端口扫描](../../../examples/bfzi_d2_convergence.py)。独立本地网格计算：在 R=0.52m 下，原始 3234 个四面体；近壁步长 80mm/20mm/10mm 对应 5346/29160/124200 个四面体，非导电两盒体积均为 0.0024m³；近壁步长80mm、R=0.80m 时共9438个四面体，外域体积正确变为4.096m³。**这是实际网格几何证据，不是 2×2 端口/空间 E/B/J/q 收敛证书**。张量积几何成本快速增长，任意真实 SE(3) 高保真必须采用 Gmsh 局部共形三维网格。具体 [简明方法、实数表和运行命令](D2_REAL_BFZI_AXIS_ALIGNED_TWO_PORT.md) · [网格 JSON 证据](evidence/d2_bfzi_wet_wall_mesh_20261108.json)。**本轮新增两端口 h/R/source 脚本和集成测试尚未在实际完整仓库上跑通，D2 OPEN、G1 FAIL、教师冻结，不使用 GitHub Actions。**
+>
+
+
 > **2026-11-08 最新 D2（优先于所有后面旧“仅基准/没有 BFZI 真实网格”的段落）：** 新增 [真实 BFZI 两独立盒轴对齐共形四面体网格](../../../sdfmpneo_bfzi/direct3d_structured_bfzi.py) 并接入 [现有两单位闭合源 Galerkin/解析入射源主入口](../../../examples/bfzi_d2_aphi.py)；`--structured-axis-aligned` 允许不安装 Gmsh 时直接执行真实 BFZI 双端口电磁/空间 Joule 基线，且对真正倾斜的盒体**明确拒绝**，绝不把阶梯体素冒称任意 SE(3)。`--outer-radius` 固定 BFZI 几何仅改变有限外域 R，Gmsh 读取会拒绝重复使用与 R 不一致的旧网格。独立本地结构网格几何计算证实固定 R=0.52 m 时 3234/4992/7290 四面体的两盒真实绝缘体积始终 0.002400m³、外立方体积 1.124864m³。新增 [完整 BFZI 两端口集成测试](../../../tests/test_bfzi_d2_structured_ports.py)，**但新提交的两端口 PDE 测试尚未在本环境实际运行**；不可将仅网格几何正确称作 D2 电磁精度完成。详细 [本轮真实 BFZI 求解入口、h/R 命令及局限](D2_REAL_BFZI_AXIS_ALIGNED_TWO_PORT.md)。球磁扩散/椭圆标势独立检验仍有效，但大尺度共形网格、两盒任意 SE(3) Gmsh 实跑、Elmer 独立验证、铜有限截面电流均未通过：**D2 OPEN、G1 FAIL、教师冻结、无 GitHub Actions**。
 >
 
