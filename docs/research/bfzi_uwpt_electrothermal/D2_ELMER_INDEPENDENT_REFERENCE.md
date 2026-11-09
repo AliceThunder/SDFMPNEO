@@ -1,5 +1,8 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+> **2026-11-09 真实成熟 Elmer 参考首次场求解已运行：** [TEAM-7 实算证据](evidence/d2_team7_elmer26_actual_run_20261109.md) 提供 CSC 官方 mesh/SIF 的完整来源提交、50Hz 原始 16 步及单改时长的 32 步日志、非零 `B/J` 场范围、A1–B1 周期差与未通过的官方参考范数检查。此事实**覆盖本文历史“尚未真正运行 ElmerSolver”**；但仅为软件 H(curl) 涡流链路 **SMOKE PASS**，TEAM7 公开场测量/相位与 h/R/时间收敛**仍 OPEN**，更没有 BFZI 两端口物理同源比较。优先核对实验采样相位、延长周期、频率/时间离散，完成 D2 标准参考，再构建真正同源 BFZI 场。
+>
+
 > **2026-11-09 现行优先级：** 按 [BFZI-PDR V1.0](BFZI_PDR_EXECUTION_PLAN.md) 执行。XEnergy 已有经真实启动验证的 `ElmerGrid` 与 `ElmerSolver` **26.2**（安装于 `D:\\work\\ElmerFEM\\ElmerFEM-nogui-nompi-Windows-AMD64\\bin`）。**此刻不要继续只完善“最终边元 RHS 导出接口”**：先以真实官方 Elmer 三维涡流算例取得非零 B/J 和求解日志，继而使用真实 TEAM-7 非轴对称几何/线圈/50 与 200Hz/公开探针值建立独立参考；标准基准通过后才将 BFZI 独立斜置 OCC/材料网格及真实两端口相同闭合源接入，最后对照完整复 Z、空间 E/B/J/q 与 h/R/源收敛。历史“没有安装 Elmer”描述保留作为原日期记录，**已被本条更新**。Elmer 启动不等于 Maxwell 解、TEAM-7 或 D2 PASS。
 >
 
