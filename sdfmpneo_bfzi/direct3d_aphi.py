@@ -113,7 +113,10 @@ class AphiResult:
     power_from_fields: np.ndarray
     current_at_cells: np.ndarray   # (port,tet,3)
     magnetic_secondary: np.ndarray  # (port,tet,3)
-    electric_at_quadrature: np.ndarray  # (port,tet,4,3)
+    # (port,tet,4,3). Physical MQS E only for sigma>0:
+    # in insulating tetrahedra phi is not solved, so -i*omega*A
+    # alone is gauge-dependent and must NOT become an E-field label.
+    electric_at_quadrature: np.ndarray
     mesh: TetraMesh
     n_edge_dofs: int
     n_potential_dofs: int
@@ -223,7 +226,11 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
     using a boundary-rooted spanning forest: no gauge multiplier is
     needed; electric scalar phi is STILL solved in conductive cells.
     On a conforming simply connected cube, both gauges produce the
-    same physical E/B and closed-port impedances in exact arithmetic.
+    same physical E in conductive cells, B across the domain, and
+    closed-port impedances in exact arithmetic. In sigma=0 cells this
+    MQS model does NOT solve phi or displacement-current electrostatics:
+    its reported -i*omega*A there is gauge-dependent, NOT a physical
+    insulating-region electric-field prediction.
     This tree choice is not an AMG/H(curl) method for arbitrary
     multiply connected domains. Validate on each actual mesh.
     Only a conforming material/geometry mesh is appropriate.
