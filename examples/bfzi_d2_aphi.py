@@ -89,6 +89,7 @@ def main():
             from dataclasses import replace
             scene = replace(scene,outer_radius=args.outer_radius)
         if args.write_geo:
+            args.write_geo.parent.mkdir(parents=True,exist_ok=True)
             args.write_geo.write_text(
                 gmsh_bfzi_two_boxes(scene, mesh_size_m=args.mesh_size,
                                     near_mesh_size_m=args.near_mesh_size,
