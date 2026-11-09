@@ -37,6 +37,13 @@ def main():
                    help='Explicit diagnostic-only import of old .geo mesh '
                         'with all tets tagged 1; NOT usable as Elmer '
                         'material-separated reference')
+    p.add_argument('--require-port-manifest',type=Path,
+                   help='For imported physical MSH2: verify this exact source '
+                        'contract; by default read <mesh>.ports.json')
+    p.add_argument('--allow-unverified-source-manifest',action='store_true',
+                   help='Diagnostic only: explicitly bypass absent source '
+                        'contract on imported MSH2; never certify Elmer '
+                        'or D2 under this mode')
     p.add_argument('--export-port-manifest',type=Path,
                    help='Write oriented closed BFZI 1A peak source paths, '
                         'pose, return leads and phasor to JSON')
@@ -107,6 +114,11 @@ def main():
                 '--export-port-manifest without other mesh operations')
     if args.mesh_only and not args.generate_msh:
         p.error('--mesh-only requires --generate-msh')
+    if args.require_port_manifest and (not args.mesh or
+            args.allow_unverified_source_manifest):
+        p.error('--require-port-manifest needs --mesh without bypass')
+    if args.allow_unverified_source_manifest and not args.mesh:
+        p.error('--allow-unverified-source-manifest requires --mesh')
     if args.legacy_single_tag_msh and (args.generate_msh or not args.mesh):
         p.error('--legacy-single-tag-msh requires --mesh and cannot be '
                 'used with physically tagged --generate-msh')
@@ -186,6 +198,8 @@ def main():
             if args.mesh is None and args.generate_msh is None:
                 return
         physical_mesh_metadata=None
+        source_manifest_verification='not_applicable_structured'
+        verified_source_manifest=None
         if args.generate_msh:
             from sdfmpneo_bfzi.direct3d_gmsh_physical import (
                 generate_physical_bfzi_msh22)
@@ -206,6 +220,8 @@ def main():
             physical_mesh_metadata['closed_port_manifest']=str(source_path)
             physical_mesh_metadata['closed_port_source_sha256']=(
                 source_manifest['sha256_of_contract_without_hash'])
+            verified_source_manifest=source_manifest
+            source_manifest_verification='generated_for_this_mesh'
             if args.mesh_only:
                 print(json.dumps(physical_mesh_metadata,indent=2))
                 if args.output:
@@ -228,6 +244,26 @@ def main():
                 inner_core_radius_m=args.structured_inner_core_radius)
             mesh_source="structured axis-aligned physical OBB; initial D2 smoke only"
         elif args.mesh is not None:
+            if args.legacy_single_tag_msh:
+                source_manifest_verification='legacy_diagnostic_not_certified'
+            else:
+                from sdfmpneo_bfzi.direct3d_port_manifest import (
+                    verify_closed_port_source_manifest)
+                required_source=(args.require_port_manifest or
+                                 args.mesh.with_suffix('.ports.json'))
+                if required_source.is_file():
+                    verified_source_manifest=verify_closed_port_source_manifest(
+                        scene,required_source,args.frequency,
+                        panels_per_corner=args.panels_per_corner)
+                    source_manifest_verification='validated_against_current_run'
+                elif args.allow_unverified_source_manifest:
+                    source_manifest_verification='unverified_diagnostic_only'
+                else:
+                    raise ValueError(
+                        'Physical MSH2 requires a matching two-port source '
+                        'manifest (<mesh>.ports.json or --require-port-manifest). '
+                        'Use --allow-unverified-source-manifest only for '
+                        'explicit NON-CERTIFIED diagnostics.')
             mesh = bfzi_mesh_from_gmsh22(
                 args.mesh,scene,
                 allow_legacy_single_tag=args.legacy_single_tag_msh)
@@ -334,6 +370,10 @@ def main():
             'frequency_hz':args.frequency,
             'mesh_source':mesh_source,
             'physical_gmsh_metadata':physical_mesh_metadata,
+            'source_manifest_verification':source_manifest_verification,
+            'closed_port_source_sha256':(
+                verified_source_manifest['sha256_of_contract_without_hash']
+                if verified_source_manifest is not None else None),
             'gauge':args.gauge,
             'mixed_gauge_multiplier_unknowns':int(reference.medium.n_gauge_dofs),
             'medium_solver_unknowns':int(
