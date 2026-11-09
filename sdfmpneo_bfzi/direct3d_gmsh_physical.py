@@ -28,6 +28,24 @@ def generate_physical_bfzi_msh22(
     physical output is not certified without a Gmsh/Elmer run and h/R
     convergence. Gmsh 4.x Python API is needed on the running workstation.
     """
+    # Never clip a rotated dry enclosure against the finite seawater box.
+    # The world-frame extent is exact for an oriented rectangular solid:
+    # |R| @ half_extents (an AABB here is only a containment test).
+    center=np.asarray(scene.outer_center,dtype=float)
+    radius=float(scene.outer_radius)
+    if (center.shape!=(3,) or not np.isfinite(center).all()
+            or not np.isfinite(radius) or radius<=0):
+        raise ValueError("Finite positive BFZI exterior cube required")
+    margin=max(1e-9,1e-8*radius)
+    for assembly in scene.assemblies:
+        c=np.asarray(assembly.pose.center,dtype=float)
+        half=np.asarray(assembly.enclosure.half_extents,dtype=float)
+        extent=np.abs(assembly.pose.rotation)@half
+        if np.any(np.abs(c-center)+extent>=radius-margin):
+            raise ValueError(
+                "Both independent SE(3) BFZI enclosures must lie strictly "
+                "inside the finite exterior cube (no clipped dry material)")
+
     try:
         import gmsh
     except ImportError as exc:
@@ -60,8 +78,6 @@ def generate_physical_bfzi_msh22(
         gmsh.option.setNumber("Mesh.MeshSizeMin",near/3)
         gmsh.option.setNumber("Mesh.MeshSizeMax",far)
 
-        center=np.asarray(scene.outer_center,float)
-        radius=float(scene.outer_radius)
         lo=center-radius
         sea_box=gmsh.model.occ.addBox(
             *map(float,lo),2*radius,2*radius,2*radius)
