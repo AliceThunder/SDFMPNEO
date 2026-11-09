@@ -1,5 +1,25 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-09：已落地的 Elmer 体源弱载荷桥接（不是独立参考 PASS）
+
+新增 `elemental_current_edge_load(mesh, element_current_density)` 和 `solve_elemental_current_ports(mesh, frequency_hz, element_current_density, gauge='tree')`，复用现有树—余树 A–φ 材料及真空两组同源场求解。数组严格为 `(n_ports, n_tetra, 3)`，每项为目标有限元网格上该四面体的**分片常量**单位端口外加体电流密度 `J_s`，单位 `A/m²`（峰值相量）。对四面体 `T` 的局部 Whitney 边 `e=(i,j)`，装配精确积分：
+
+\[
+L_{ep}^{\mathrm{volume}}\big|_T
+=\int_T \boldsymbol J_{s,p,T}\cdot\boldsymbol w_e\,dV
+=\frac{|T|}{4}\,s_{T,e}\,
+\boldsymbol J_{s,p,T}\cdot
+(\nabla\lambda_j-\nabla\lambda_i).
+\]
+
+`s_{T,e}` 是四面体局部边到**全局有向边**的符号。同一个 `L` 既加载右端又读取广义材料增量端口响应（相同外域/真空差分），但它**不是**凭公式自动恢复铜端子电压、铜损耗或零半径细丝真解。已在当前隔离 NumPy 中实际核对两组 J 的**单四面体**精确公式等于四点 Whitney 积分，且交换顶点存储顺序后全局载荷一致；项目对应测试已写入，**完整仓库 pytest 未执行**。
+
+要使本桥接真正可与 Elmer 比较，下一次必须：**先**用 Elmer CoilSolver 在拥有相同实际闭合铜体积的共形网格上独立求出两个单位端口的 `J_{s,1},J_{s,2}`；**逐个单元 ID/顶点坐标建立 ElmerGrid → 原始 Gmsh 四面体的映射**，不能把同长度数组按文件顺序直接复制；核对 1A 截面通量、闭合回流、各单元法向跳跃/连续性、两个端口独立方向、频率与 `exp(+iωt)`，并确保 Elmer WhitneyAVSolver 和本项目加载**完全相同的**分片体源。只有上述门槛通过后，才能把 `L^{volume}`、两组空间 B/E/J/q、完整复 2×2 增量 Z 与 h/R/体源离散收敛作为独立对照。当前**仍是三个物理材料域（sea/tx dry/rx dry）**，还未生成包含**真实铜闭合体**的 Elmer CoilSolver 网格，也未获得 Elmer 的两套源 J，故以上 API 是数学接口而非已完成的物理源同一性。
+
+与此独立，正式物理 MSH2 导入现在验证 `<mesh>.ports.json` 的 SHA256 **以及由当前场景重新计算的全部有向细丝源合同**，不得用 `--mesh --export-port-manifest` 改写证据。该验证只适用于**现有理想细丝路径**，不能被误读为体源与细丝源等价。上游 [Elmer 两线圈 CoilSolver/WhitneyAV 示例](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/tests/mgdyn_steady_coils/case.sif) 表明可以取用元素线圈电流，但其元素电流表示和方向、正常化须实际导出核验，不得按名称推定。**D2 OPEN、G1 FAIL、教师冻结、禁止 GitHub Actions。**
+
+
+
 ## 2026-11-08 补充：MSH2 Surface 101 的强制网格关口与尚未解决的源等价
 
 旧 MSH2 材料验证仅根据 3D 物理标签 1/2/3、包围盒与体积检查，未核实 Elmer 读取时用于施加 `n × A_total = 0` 的物理 Surface 101。现已在 [主网格导入器](../../../sdfmpneo_bfzi/direct3d_mesh.py) 中要求：101 的所有 2D 三角形恰好组成四面体实际**整个外表面**，任何缺少、重复、错误标到盒壁或海水/绝缘分界面都拒绝；逐三角面验证其确在外立方体六面之一。正式 `--generate-msh --mesh-only` 和 `--mesh` 均走这一关口，旧单标签仅在显式 legacy 诊断选项下绕过，不能用于 Elmer reference。相关回归见 [专项测试](../../../tests/test_bfzi_d2_physical_material_mesh.py)。目前只实际运行过一个独立的 NumPy 六四面体示例（1 合法＋4 非法 101 组合通过）；**尚未安装或执行**本分支完整 pytest、Gmsh、ElmerGrid、ElmerSolver。
