@@ -1,5 +1,8 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 最新真实 50Hz 修正（覆盖下方“transient.sif 真正 50Hz”历史说法）：** 实际解析 32 帧 VTU 发现 `transient.sif` 的 `CoilCurrent e` 各帧完全恒定，前述 B 周期差下降仅是 DC 接通暂态衰减，**不能以该运行认定 50Hz 正弦源已施加**。立即选择 CSC 官方同提交 `TEAM7.sif`（显式 `Current Density 1/2/3` 随 `cos(50Hz)` 调制），在 XEnergy `D:\\work\\BFZI-D2-verify\\runs\\bfzi_pdr_team7_ac` 实际跑完 **16步/150.61s，退出0**，并读 VTU：第16步 `max |B_comp|=0.02006847 T`、`max |J_comp|=1.565295e6 A/m²`。A1–B1 第4/8/12/16步 Bz 依次为 `+6.05108e-4 / -5.81692e-4 / +5.93693e-4 / -5.86845e-4 T`，**真实 50Hz 符号振荡成立**。第8→16步同相位全线 B L² 差 `1.0394%`；16步 Bz 与官方 `TEAM7_A1B1.csv` 17点比较 L² 差 `3.4232%`，最大差 `3.989e-4T`；WhitneyAV 内置参考范数相对差 `0.33243%` 仍 **FAIL**。**真正 Elmer 3D AC 涡流软件实算 SMOKE PASS；TEAM-7 精度、时间/h/R/200Hz、BFZI 两端口同源均 OPEN。** 完整来源、误差与原错误解释的纠正见[正式证据](evidence/d2_team7_elmer26_actual_run_20261109.md)。保留所有源/材料输入，严禁为凑参考数值更改口径或默默调整阈值。
+>
+
 > **2026-11-09 BFZI-PDR P1 真正 Elmer TEAM7 场计算已完成（重大实证进展，精度未验收）：** 在 XEnergy `D:\\work\\BFZI-D2-verify\\runs\\bfzi_pdr_team7` 运行 CSC 官方 [Elmer TEAM7 @ 843037c](https://github.com/ElmerCSC/elmer-elmag/tree/843037c374ba61cf61d02d17a2c5fc11e0d33de3/TEAM7)：130707 四面体、23128 mesh 节点，稳态 14.22s 与 50Hz 真正 16 时步涡流 126.02s 均退出 0；实际 VTU 非零 `B_max_component=0.02078765T`、`J_max_component=82031.43A/m²`，已用 PyVista 真读；再固定官方物理输入/网格/dt，仅延长至 32 步 250.06s，B 的同相位相邻周期 L² 差 **8.54%→2.26%→0.621%**，揭示起始暂态。SIF 内置 WhitneyAV 参考范数仍 **0.332% / 15.74% / 16.88% FAIL**，官方 CSV Bz 尚未相位、周期、方法收敛对齐（原始第16步相对 L² 差 53.12%，不宜解作完整物理误差）。**Elmer 3D eddy-current SMOKE PASS，TEAM-7 benchmark OPEN；D2 OPEN。** 细节、可复现命令与隔离输出： [实算证据](evidence/d2_team7_elmer26_actual_run_20261109.md)。**下一任务仍是 P1-ELMER-3D0 的实际数值精度、参考相位和正式 h/R/200Hz，不可把运行成功错写成 TEAM7 PASS。**
 >
 
