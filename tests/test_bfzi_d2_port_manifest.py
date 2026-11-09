@@ -68,3 +68,23 @@ def test_manifest_rejects_bad_frequency_or_port_resolution():
         closed_port_source_manifest(scene,0.)
     with pytest.raises(ValueError,match="panels_per_corner"):
         closed_port_source_manifest(scene,200000.,panels_per_corner=1)
+
+
+def test_source_only_real_BFZI_CLI_without_gmsh(monkeypatch,tmp_path):
+    """The exact source handoff works even if no Gmsh/Elmer is installed."""
+    import sys
+    from examples.bfzi_d2_aphi import main
+    path=tmp_path/"rx_tilted_closed_ports.json"
+    monkeypatch.setattr(sys,"argv",[
+        "bfzi_d2_aphi","--case","bfzi","--ports-only",
+        "--export-port-manifest",str(path),
+        "--rx-rotation-vector",".25","-.13",".33",
+        "--panels-per-corner","4","--frequency","200000"])
+    main()
+    report=json.loads(path.read_text(encoding="utf-8"))
+    assert report["frequency_hz"]==200000.
+    assert len(report["ports"])==2
+    assert (report["ports"][0]["enclosure"]["rotation_local_to_world"]
+            !=report["ports"][1]["enclosure"]["rotation_local_to_world"])
+    assert all(p["path_displacement_norm_m"]<1e-13
+               for p in report["ports"])
