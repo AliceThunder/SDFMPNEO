@@ -13,7 +13,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from .direct3d_aphi import AphiResult, TetraMesh, solve_aphi
-from .direct3d_edge_source import closed_edge_load, elemental_current_edge_load
+from .direct3d_edge_source import (closed_edge_load, elemental_current_edge_load,
+                                   source_nodal_conservation)
 
 
 @dataclass
@@ -24,6 +25,7 @@ class ClosedPortResult:
     medium_port_z: np.ndarray
     vacuum_port_z: np.ndarray
     material_increment_z: np.ndarray
+    source_nodal_conservation_max: float
 
     def port_power(self, currents):
         """Physical material-induced port power, peak-phasor convention."""
@@ -134,6 +136,14 @@ def solve_elemental_current_ports(mesh: TetraMesh, frequency_hz,
 def _solve_with_edge_source_load(mesh, frequency_hz, L, *, gauge):
     if L.shape[0] < 1:
         raise ValueError("At least one physical source port is required")
+    conservation=source_nodal_conservation(mesh,L)
+    if np.max(conservation)>1e-8:
+        raise ValueError(
+            "Impressed source is not a discretely closed, charge-conserving "
+            "current (max normalized P1-gradient defect "
+            f"{float(np.max(conservation)):.3e}). A raw piecewise-constant "
+            "Elmer current field is not automatically an admissible "
+            "closed unit-port source.")
 
     def zero_source(points):
         return np.zeros_like(points, dtype=complex)
@@ -152,4 +162,5 @@ def _solve_with_edge_source_load(mesh, frequency_hz, L, *, gauge):
     medium_z = 1j*omega*(L@medium.edge_coefficients.T)
     vacuum_z = 1j*omega*(L@vacuum.edge_coefficients.T)
     return ClosedPortResult(
-        medium, vacuum, L, medium_z, vacuum_z, medium_z-vacuum_z)
+        medium, vacuum, L, medium_z, vacuum_z, medium_z-vacuum_z,
+        float(np.max(conservation)))
