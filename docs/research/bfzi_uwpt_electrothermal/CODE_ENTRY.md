@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-08 真实 BFZI 双闭合端口受限可运行入口：** `git pull --ff-only`，`python -m pytest tests/test_bfzi_d2_structured_ports.py tests/test_bfzi_d2_mesh_probe.py -q`，然后 `python -m examples.bfzi_d2_aphi --case bfzi --structured-axis-aligned --structured-far-step 0.30 --structured-padding 0.020 --structured-box-layers 1 --frequency 200000 --panels-per-corner 4 --solve-analytic-primary --probe 0 0 0 --output runs/d2_bfzi_axis_l1.json`。近场/外域 h/R 扫描和真正 Gmsh 任意 SE(3) 命令见 [本轮算法文档](D2_REAL_BFZI_AXIS_ALIGNED_TWO_PORT.md)。这一接口的轴对齐实体与外海水是**真实材料共形**，但没有有限铜内场、外域高精度和 Elmer 验证；当前工作站尚未实际执行完整双端口测试，切勿标记 D2 PASS。G1 FAIL、教师冻结、禁用 GitHub Actions。
+>
+
+
 > **2026-11-07 最新可执行 D2 独立磁扩散验证：** `git pull --ff-only`；`python -m pytest tests/test_bfzi_d2_sphere_limit.py -q`；`python -m examples.bfzi_d2_sphere_limit --divisions 2 4 6 8 10 --output runs/d2_sphere_20261107.json`。脚本只给解析总 A 边界，内部完全由独立三维边元 A–φ 解出真实 E/B/Joule，且把多面体解析功率和完整球体解析功率分开；[真实五档实算](D2_SPHERE_AC_MAGNETIC_DIFFUSION.md)。该球体对比不是 BFZI 线圈/双封装，也不是 TEAM-7 正式高精度通过；空间 E/B 精度暂时仍不足。D2 OPEN，不启动 G1/教师，不使用 GitHub Actions。
 >
 
