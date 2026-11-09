@@ -81,7 +81,9 @@
       "ImZ22": -0.0004799235464569679,
       "reciprocity_gap_ohm": 1.7981681253982846e-14,
       "max_power_gap_W": 8.874845303097345e-15,
-      "relative_complex_2x2_change_from_previous": 0.023767024064789293
+      "relative_complex_2x2_change_from_previous": 0.023767024064789293,
+      "scaled_system_relative_residual_conductor_max": 2.91139027e-14,
+      "scaled_system_relative_residual_vacuum_max": 8.96493249e-15
     }
   ],
   "gauge_equivalence": {
