@@ -30,6 +30,12 @@ def main():
     p.add_argument('--frequency', type=float, default=200000.)
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
+    p.add_argument('--structured-axis-aligned',action='store_true',
+                   help='Generate a conforming two-box structured tetra mesh '
+                        'without Gmsh, ONLY for axis-aligned poses')
+    p.add_argument('--structured-far-step',type=float,default=.22)
+    p.add_argument('--structured-padding',type=float,default=.025)
+    p.add_argument('--structured-box-layers',type=int,default=2)
     p.add_argument('--mesh-size', type=float, default=.025)
     p.add_argument('--near-mesh-size',type=float,
                    help='Near both independently rotated insulating boxes (m)')
@@ -46,6 +52,10 @@ def main():
                    help='3D field query in meters (repeatable, BFZI case only)')
     args = p.parse_args()
 
+    if args.structured_axis_aligned and args.case != 'bfzi':
+        p.error('--structured-axis-aligned requires --case bfzi')
+    if args.structured_axis_aligned and (args.mesh or args.write_geo):
+        p.error('--structured-axis-aligned is incompatible with --mesh/--write-geo')
     if args.case == 'smoke' and args.probe:
         p.error('--probe is for a physical BFZI closed-port case')
     if args.case == 'smoke':
@@ -81,9 +91,20 @@ def main():
             print('Wrote two independently posed OBBs:',args.write_geo)
             if args.mesh is None:
                 return
-        if args.mesh is None:
-            p.error('BFZI needs a Gmsh MSH 2.2 tetrahedral file (--mesh)')
-        mesh = bfzi_mesh_from_gmsh22(args.mesh,scene)
+        if args.structured_axis_aligned:
+            from sdfmpneo_bfzi.direct3d_structured_bfzi import (
+                axis_aligned_bfzi_tetra_mesh)
+            mesh = axis_aligned_bfzi_tetra_mesh(
+                scene,near_padding_m=args.structured_padding,
+                far_step_m=args.structured_far_step,
+                box_layers=args.structured_box_layers)
+            mesh_source="structured axis-aligned physical OBB; initial D2 smoke only"
+        elif args.mesh is not None:
+            mesh = bfzi_mesh_from_gmsh22(args.mesh,scene)
+            mesh_source="Gmsh BooleanFragments conforming SE(3) geometry"
+        else:
+            p.error('BFZI requires either --structured-axis-aligned '
+                    'or a physical Gmsh MSH 2.2 tetrahedral file (--mesh)')
         ports = [
             [(1.,polygonal_port_vertices(
                 assembly,panels_per_corner=args.panels_per_corner))]
