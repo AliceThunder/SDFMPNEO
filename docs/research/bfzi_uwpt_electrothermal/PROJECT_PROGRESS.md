@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-08 最新 D2 位姿/Elmer 材料接口（覆盖以下旧状态）：** 已实际使用本地提取的真实 BFZI Nédélec A–φ 双端口求解器，核对两匝圆角方形＋闭合馈回流的**整体刚体 SE(3) 坐标协变性**：完整复 Z 相对差 4.92×10⁻¹²、空间 E/B 相对差 5.52×10⁻¹¹/3.29×10⁻¹²。另真实求解**只旋转接收封装及线圈 90°**的相对位姿（材料界面重新共形）：平行 1350 四面体 Z12 实部 1.11219mΩ，正交 2430 四面体 Z12 实部 0.0477053mΩ；两工况离散端口—体积 Joule 双向一致。两种证据都**不能**证明任意斜置 SE(3) 连续位姿 h/R 收敛。已在 [主 BFZI 运行 CLI](../../../examples/bfzi_d2_aphi.py) 接入 tx/rx 独立旋转向量与平移，并新增 [OCC fragment 来源映射的三材料物理标签共形网格](../../../sdfmpneo_bfzi/direct3d_gmsh_physical.py)：海水 volume 1、发射绝缘 volume 2、接收绝缘 volume 3、有限立方体外边界 surface 101，支持 --generate-msh --mesh-only，不以盒体 AABB 代替旋转几何。[ElmerGrid 的材料/边界标签转换与未完成的真实两端口源说明](D2_ELMER_INDEPENDENT_REFERENCE.md) · [实际双端口位姿证据 JSON](evidence/d2_real_bfzi_pose_20261109.json)。**本容器无 Gmsh/Elmer，新的物理标签 API 尚未实际网格化，Elmer CoilSolver 等效闭合源仍未实现；全仓库 pytest 仍需工作站复跑。** D2 OPEN、G1 FAIL、教师冻结、未使用 GitHub Actions。
+>
+
+
 > **2026-11-08 最新 D2 关键突破（覆盖下列所有历史“12960 四面体解不完”记录）：** 已实现有物理规范不变性依据的 [相对树—余树 H(curl) 规范消元](../../../sdfmpneo_bfzi/direct3d_tree_gauge.py) 并接入 [三维 A–φ 主求解器](../../../sdfmpneo_bfzi/direct3d_aphi.py)、[实际双端口材料/真空差分](../../../sdfmpneo_bfzi/direct3d_galerkin.py) 和 [解析源参与 PDE](../../../sdfmpneo_bfzi/direct3d_primary_secondary.py)。**不是 ILU/GMRES 伪加速**：保留导电区 P1 标势 φ 与电荷守恒，只去掉相对梯度规范边与原规范乘子，仍用可检验残差的稀疏直接求解。独立本地真实 BFZI 两端口：旧 mixed vs tree 的三维复 E/B 相对差 **3.90×10⁻¹¹ / 2.58×10⁻¹²**。前次失败的 h=60mm **12960 四面体**（导电14656/真空11953复未知量）已约15秒实算，线性残差各约 **1.63×10⁻¹⁴ / 7.05×10⁻¹⁵**；进一步 h=40mm **17238 四面体**（导电19544/真空16017复未知量）约28秒实算，残差 **2.91×10⁻¹⁴ / 8.96×10⁻¹⁵**。固定真实双封装/两匝闭合圆角线圈/200kHz/海水5S/m/R=0.52m 的 `h=80/60/40mm`，**Re ΔZ11=7.34428/7.53243/7.71825mΩ**，相邻完整复矩阵偏差 **2.367%/2.377%**，尚无物理 h 收敛。主代码已为每端口增加缩放线性残差硬性判断，并输出有效未知量数；专门测试比较 mixed/tree 的 E/B/Z/Joule。**本地是等价源码抽取后真实运行，原仓库整树 pytest、任意 SE(3) Gmsh 与 Elmer 仍未在本环境执行**。参考 [原理/适用范围/实算与阻塞](D2_TREE_COTREE_GAUGE.md) · [三档全数值 JSON](evidence/d2_tree_gauge_real_bfzi_h_20261108.json)。**D2 OPEN、G1 FAIL、正式教师冻结、未使用 GitHub Actions。**
 >
 
