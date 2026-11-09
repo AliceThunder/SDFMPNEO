@@ -61,7 +61,8 @@ def _weighted_closed_source(strands, field_factory):
     return field
 
 
-def solve_closed_primary_secondary(mesh, frequency_hz, source_strands):
+def solve_closed_primary_secondary(mesh, frequency_hz, source_strands, *,
+                                   gauge='tree'):
     """Solve analytic-primary / FEM-material-reaction A-phi directly.
 
     Uniform mu=mu0, exp(+iwt), insulating enclosed ideal closed strands.
@@ -79,7 +80,8 @@ def solve_closed_primary_secondary(mesh, frequency_hz, source_strands):
     b = tuple(_weighted_closed_source(
         port, closed_polyline_magnetic) for port in source_strands)
     response = solve_aphi(
-        mesh, frequency_hz, list(a), outer_bc="secondary_zero")
+        mesh, frequency_hz, list(a), outer_bc="secondary_zero",
+        gauge=gauge)
     line_z = closed_source_port_impedance_exact(
         response, frequency_hz, source_strands)
     return PrimarySecondary3D(
