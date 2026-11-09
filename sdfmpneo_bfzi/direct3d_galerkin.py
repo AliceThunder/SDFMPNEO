@@ -85,7 +85,8 @@ class ClosedPortResult:
         return matrix
 
 
-def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands):
+def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands, *,
+                       gauge: str = 'tree'):
     """Independent 3D two- or n-port edge-FEM reference, closed filaments.
 
     Args:
@@ -95,6 +96,9 @@ def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands):
             polygon). The identical strand is used in forcing and voltage.
 
     Boundary: n x A_TOTAL = 0 on finite computational boundary.
+    Default gauge='tree' removes redundant gradient Lagrange multipliers,
+    while preserving physical E/B/Joule and closed-port Z. Set 'mixed'
+    to compare against the original saddle-point reference.
     Not an infinite-domain electromagnetic solution.
     """
     L = closed_edge_load(mesh, source_strands)
@@ -106,11 +110,13 @@ def solve_closed_ports(mesh: TetraMesh, frequency_hz, source_strands):
 
     zeros = [zero_source]*len(L)
     medium = solve_aphi(mesh, frequency_hz, zeros,
-                        outer_bc="secondary_zero", edge_source_load=L)
+                        outer_bc="secondary_zero", edge_source_load=L,
+                        gauge=gauge)
     empty = TetraMesh(mesh.nodes, mesh.tetrahedra,
                       np.zeros_like(mesh.sigma))
     vacuum = solve_aphi(empty, frequency_hz, zeros,
-                        outer_bc="secondary_zero", edge_source_load=L)
+                        outer_bc="secondary_zero", edge_source_load=L,
+                        gauge=gauge)
 
     omega = 2*np.pi*frequency_hz
     medium_z = 1j*omega*(L@medium.edge_coefficients.T)
