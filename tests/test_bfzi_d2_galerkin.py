@@ -9,7 +9,8 @@ from numpy.testing import assert_allclose
 from sdfmpneo_bfzi.direct3d_aphi import box_tetra_mesh, TetraMesh
 from sdfmpneo_bfzi.direct3d_edge_source import (
     closed_edge_load, elemental_current_edge_load)
-from sdfmpneo_bfzi.direct3d_galerkin import solve_closed_ports
+from sdfmpneo_bfzi.direct3d_galerkin import (
+    solve_closed_ports,solve_elemental_current_ports)
 from sdfmpneo_bfzi.direct3d_team7 import (
     graded_team7_smoke_mesh, team7_stranded_source,
 )
@@ -124,3 +125,14 @@ def test_elemental_current_whitney_source_exact_on_oriented_tetra():
         nodes,np.array([[1,0,2,3]]),np.zeros(1))
     assert_allclose(elemental_current_edge_load(
         reversed_mesh,density),load,rtol=0,atol=1e-15)
+
+
+def test_complex_volume_source_requires_separate_terminal_functional():
+    """Do not report a phase-dependent pseudo-Z for complex source basis."""
+    import pytest
+    mesh=TetraMesh(np.array([[0.,0.,0.],[1.,0.,0.],
+                             [0.,1.,0.],[0.,0.,1.]]),
+                   np.array([[0,1,2,3]]),np.zeros(1))
+    with pytest.raises(ValueError,match='Complex elemental source basis'):
+        solve_elemental_current_ports(
+            mesh,100000.,np.array([[[1j,0.,0.]]]))
