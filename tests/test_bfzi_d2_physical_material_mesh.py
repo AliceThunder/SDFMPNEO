@@ -132,10 +132,22 @@ def test_occ_rotated_enclosure_must_not_be_clipped_by_outer_cube(tmp_path):
     rotated=RigidPose(
         Rotation.from_rotvec([0.,0.,np.pi/4]).as_matrix(),
         receiver.pose.center+np.array([.18,0.,0.]))
-    scene=replace(scene,receiver=replace(receiver,pose=rotated))
+    bad_receiver=replace(receiver,pose=rotated)
+    # The public BfziScene validates a tighter enclosing SPHERE before any
+    # mesher runs.  This invalid pose must be rejected there first.
+    with pytest.raises(ValueError,match='enclosure touches artificial outer domain'):
+        replace(scene,receiver=bad_receiver)
+    # Exercise the OCC generator's independent CUBE preflight without
+    # requiring gmsh: supply the deliberately invalid geometric inputs
+    # directly, bypassing only the already-verified BfziScene constructor.
+    from types import SimpleNamespace
+    invalid_geometry=SimpleNamespace(
+        outer_center=scene.outer_center,
+        outer_radius=scene.outer_radius,
+        assemblies=(scene.transmitter,bad_receiver))
     with pytest.raises(ValueError,match='inside the finite exterior cube'):
         generate_physical_bfzi_msh22(
-            scene,tmp_path/'should_not_mesh.msh',mesh_size_m=.08)
+            invalid_geometry,tmp_path/'should_not_mesh.msh',mesh_size_m=.08)
 
 
 def test_real_bfzi_msh_to_elmergrid_handoff_cli_without_solver(
