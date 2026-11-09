@@ -93,8 +93,14 @@ def test_tree_gauge_matches_mixed_physical_fields_on_two_real_ports():
     assert mixed.medium.n_gauge_dofs>0
     assert_allclose(fast.material_increment_z,mixed.material_increment_z,
                     atol=3e-10,rtol=1e-8)
-    assert_allclose(fast.medium.electric_at_quadrature,
-                    mixed.medium.electric_at_quadrature,
+    # In the MQS A-phi model phi is solved ONLY inside conducting cells.
+    # In sigma=0 cells, -i*omega*A by itself is gauge dependent: comparing
+    # those values would erroneously test the gauge rather than a physical E.
+    # Conductive E=-i*omega*A-grad(phi) must agree pointwise.
+    wet=mesh.sigma>0
+    assert np.any(wet) and np.any(~wet)
+    assert_allclose(fast.medium.electric_at_quadrature[:,wet],
+                    mixed.medium.electric_at_quadrature[:,wet],
                     atol=3e-8,rtol=1e-8)
     assert_allclose(fast.medium.magnetic_secondary,
                     mixed.medium.magnetic_secondary,
@@ -125,8 +131,15 @@ def test_elemental_current_whitney_source_exact_on_oriented_tetra():
     # Flipping tetra vertex storage must not flip globally oriented edges.
     reversed_mesh=TetraMesh(
         nodes,np.array([[1,0,2,3]]),np.zeros(1))
-    assert_allclose(elemental_current_edge_load(
-        reversed_mesh,density),load,rtol=0,atol=1e-15)
+    # _topology assigns consecutive edge indices in FIRST-SEEN order.
+    # Reordering local tetra vertices changes that enumeration without
+    # changing the physical/global orientation (always min-node -> max-node).
+    from sdfmpneo_bfzi.direct3d_aphi import _topology
+    original_edges,*_=_topology(mesh)
+    permuted_edges,*_=_topology(reversed_mesh)
+    aligned=elemental_current_edge_load(reversed_mesh,density)
+    aligned=aligned[:,[permuted_edges[key] for key in original_edges]]
+    assert_allclose(aligned,load,rtol=0,atol=1e-15)
 
 
 def test_complex_volume_source_requires_separate_terminal_functional():
