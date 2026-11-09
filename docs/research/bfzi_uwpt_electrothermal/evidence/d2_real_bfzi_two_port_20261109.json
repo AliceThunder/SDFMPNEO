@@ -1,0 +1,143 @@
+{
+  "date": "2026-11-09",
+  "status": "D2 OPEN—not h/R convergence, not official codebase integration, not Elmer cross-validation",
+  "provenance": "Actual isolated local Python execution reproducing repo direct3d_aphi 3D Nedelec A-phi weak-form assembly, direct3d_edge_source Whitney chord integration, closed Galerkin port/vacuum subtraction, and actual BFZICoil continuous-turn plus return equations; not a checkout of full GitHub tree.",
+  "physical": {
+    "frequency_hz": 200000,
+    "seawater_conductivity_S_m": 5,
+    "coil_turns_per_port": 2,
+    "outer_half_size_m": 0.075,
+    "corner_radius_m": 0.045,
+    "pitch_m": 0.005,
+    "alpha": 0.5,
+    "box_half_extents_m": [
+      0.1,
+      0.1,
+      0.015
+    ],
+    "port_centers_z_m": [
+      -0.13,
+      0.13
+    ],
+    "time_convention": "exp(+i omega t) peak",
+    "copper": "ideal closed filament, no finite copper skin/proximity"
+  },
+  "mesh": {
+    "method": "restricted axis-aligned structured material-conforming tetrahedra",
+    "near_step_m": 0.08,
+    "near_padding_m": 0.08,
+    "far_step_m": 0.3,
+    "box_layers": 1,
+    "inner_core_halfwidth_m": 0.24,
+    "nearfield_core_planes_identical_for_all_R": true
+  },
+  "runs": [
+    {
+      "radius_m": 0.32,
+      "panels_per_corner": 4,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.005937360425635155,
+        -0.00018565240405571092
+      ],
+      "z12_re_im_ohm": [
+        0.001026071356264338,
+        -0.00007495585337677802
+      ],
+      "z22_re_im_ohm": [
+        0.0059439756675896795,
+        -0.00018598469891545057
+      ],
+      "reciprocity_gap_ohm": 6.1016820141812e-17,
+      "max_port_vs_joule_gap_W": 4.336808689942018e-17
+    },
+    {
+      "radius_m": 0.4,
+      "panels_per_corner": 4,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.006721227268665577,
+        -0.0002964453450222254
+      ],
+      "z12_re_im_ohm": [
+        0.0014594177004431763,
+        -0.00014724551349405154
+      ],
+      "z22_re_im_ohm": [
+        0.006726467924359272,
+        -0.0002967457737321769
+      ],
+      "reciprocity_gap_ohm": 5.578599477255784e-17,
+      "max_port_vs_joule_gap_W": 2.7755575615628914e-17
+    },
+    {
+      "radius_m": 0.52,
+      "panels_per_corner": 2,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.00707860990942422,
+        -0.00045375579077183725
+      ],
+      "z12_re_im_ohm": [
+        0.00185237573698665,
+        -0.0002699850052936371
+      ],
+      "z22_re_im_ohm": [
+        0.007083772317898121,
+        -0.00045401392240401435
+      ],
+      "reciprocity_gap_ohm": 3.699579378197271e-16,
+      "max_port_vs_joule_gap_W": 2.0990154059319366e-16
+    },
+    {
+      "radius_m": 0.52,
+      "panels_per_corner": 4,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.007344281406664014,
+        -0.0004749477296721394
+      ],
+      "z12_re_im_ohm": [
+        0.0019377854031540397,
+        -0.00028291751682447
+      ],
+      "z22_re_im_ohm": [
+        0.007349571175525646,
+        -0.00047522428099481195
+      ],
+      "reciprocity_gap_ohm": 4.674196664288836e-16,
+      "max_port_vs_joule_gap_W": 2.2811613709095013e-16
+    },
+    {
+      "radius_m": 0.52,
+      "panels_per_corner": 8,
+      "tetrahedra": 6318,
+      "vertices": 1400,
+      "z11_re_im_ohm": [
+        0.007414838635069374,
+        -0.00048050157252507296
+      ],
+      "z12_re_im_ohm": [
+        0.001960183494581434,
+        -0.0002863034266385022
+      ],
+      "z22_re_im_ohm": [
+        0.007420179000098368,
+        -0.00048078508673253225
+      ],
+      "reciprocity_gap_ohm": 8.603320154995792e-17,
+      "max_port_vs_joule_gap_W": 8.847089727481716e-17
+    }
+  ],
+  "observations": {
+    "R_at_fixed_panels4": "R .32→.40→.52 m changes Z strongly; local core tetra coordinate planes stay unchanged, outer shells still stretch, so not pure outer-boundary convergence",
+    "source_at_fixed_R052": "source panels 2→4→8; normalized Frobenius Z differences about 3.678% then 0.966%; geometric source still not certified",
+    "power": "5 complex-current combinations (1,0),(0,1),(1,1),(1,-1),(1,i) obey discrete port/volume-Joule identity at ~1e-16 W",
+    "refinement_blocker": "At R=.52, near padding=.08, near_step=.06 and 12960 tets, mixed system size 18044 complex unknowns and ~596152 nnz; sparse direct exceeds the execution timeout; unshifted ILU is singular and shifted ILU+GMRES did not achieve residual threshold within configured time. No h PASS.",
+    "external_solver_requirement": "Use robust H(curl) auxiliary-space preconditioning plus saddle-point block solver, or independently validated mature Elmer/MFEM/hypre, before larger mesh h verification."
+  }
+}
