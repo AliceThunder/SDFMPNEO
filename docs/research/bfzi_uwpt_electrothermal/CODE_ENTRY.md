@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-08 D2 可运行最新版：** 原来在12960四面体时未完成的复数混合规范系统，已实现 [tree–cotree 规范减元](../../../sdfmpneo_bfzi/direct3d_tree_gauge.py) 并在本地实际运行 **12960 和 17238 四面体**；`--gauge tree` 为真实 BFZI 双端口默认，`--gauge mixed` 可在同一网格上对照旧物理结果。推荐从仓库根目录：`git pull --ff-only`；`python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_structured_ports.py tests/test_bfzi_d2_mesh_probe.py -q`；`python -m examples.bfzi_d2_convergence --vary h --out runs/d2_h`。该扫描真实 h=80/60/40mm，当前树规范已经独立实算得到 Re ΔZ11 **7.34428/7.53243/7.71825mΩ**，复矩阵相邻变化 2.367%/2.377%，**不是 h 收敛通过**。新主求解器不再只检查有限值，会检验缩放复数系统残差 ≤1e-8，打印/保存实际残差及有效未知量。详情 [原理与实测](D2_TREE_COTREE_GAUGE.md) · [原始数据](evidence/d2_tree_gauge_real_bfzi_h_20261108.json)。本次本地运行的是抽取的同弱式源码，仓库完整测试仍待工作站复核，不能写“全部通过”。**D2 OPEN、G1 FAIL、教师冻结、无 GitHub Actions。**
+>
+
+
 > **2026-11-09 最新可执行真实双端口 h/R/source 工况（已经有隔离环境实算佐证）：** `git pull --ff-only`；`python -m pytest tests/test_bfzi_d2_mesh_probe.py tests/test_bfzi_d2_structured_ports.py tests/test_bfzi_d2_galerkin.py -q`；`python -m examples.bfzi_d2_convergence --vary R --out runs/d2_R`；`python -m examples.bfzi_d2_convergence --vary source --out runs/d2_source`。现在 R 固定内核心 `0.24m`，源每角弦段2/4/8/16；若需湿侧 h=0.08/0.06/0.04m：`python -m examples.bfzi_d2_convergence --vary h --out runs/d2_h`，**注意 0.06m 档本地12960四面体、约18044未知量的 SciPy 直接解已因求解成本未完成，须使用具备可靠 H(curl) 预条件/混合场求解能力的高性能环境，未收敛不得报告 Z**。最近实际 6318四面体的 `Re ΔZ11` 随外域 R=0.32/0.40/0.52m分别5.937/6.721/7.344mΩ，仍非 R 收敛；真实空间 q 的原始 FE 与主次场修正相差很大，不能作为高精度教师。详见 [记录和原始数值](D2_REAL_BFZI_AXIS_ALIGNED_TWO_PORT.md)。本地为等价源码提取重组求解，非原整树 pytest/Elmer 验收。D2 OPEN、G1 FAIL、禁 GitHub Actions。
 >
 
