@@ -76,3 +76,29 @@ def test_real_team7_metal_current_50_and_200Hz():
         assert q.shape == (1,1)
         assert np.isfinite(q).all() and q[0,0].real >= 0
         assert_allclose(q,q.conj().T,rtol=1e-12,atol=1e-12)
+
+
+def test_tree_gauge_matches_mixed_physical_fields_on_two_real_ports():
+    """Gauge DOFs differ; physical 3-D E/B, port and Joule must not."""
+    mesh=box_tetra_mesh([[-.3,.3]]*3,[3,3,3],
+                        lambda x:5. if x[2]>.1 else 0.)
+    strands=[[(1.,_rectangle(-.07))],[(1.,_rectangle(.08))]]
+    fast=solve_closed_ports(mesh,200000.,strands,gauge='tree')
+    mixed=solve_closed_ports(mesh,200000.,strands,gauge='mixed')
+    assert fast.medium.n_gauge_dofs==0
+    assert mixed.medium.n_gauge_dofs>0
+    assert_allclose(fast.material_increment_z,mixed.material_increment_z,
+                    atol=3e-10,rtol=1e-8)
+    assert_allclose(fast.medium.electric_at_quadrature,
+                    mixed.medium.electric_at_quadrature,
+                    atol=3e-8,rtol=1e-8)
+    assert_allclose(fast.medium.magnetic_secondary,
+                    mixed.medium.magnetic_secondary,
+                    atol=5e-11,rtol=1e-8)
+    for currents in ((1.,0.),(0.,1.),(1.,1j)):
+        assert_allclose(fast.conductor_power(currents),
+                        mixed.conductor_power(currents),
+                        atol=1e-10,rtol=1e-8)
+        assert_allclose(fast.port_power(currents),
+                        fast.conductor_power(currents),
+                        atol=1e-10,rtol=1e-8)
