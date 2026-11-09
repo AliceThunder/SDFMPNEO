@@ -119,6 +119,7 @@ class AphiResult:
     n_potential_dofs: int
     n_gauge_dofs: int
     edge_coefficients: np.ndarray | None = None  # [port, global edge], includes imposed boundary traces
+    linear_relative_residual: float | None = None  # max scaled A-phi system residual over ports
 
     def joule_density_at_quadrature(self, currents):
         """Joule heat source [W/m3] for arbitrary complex peak port currents.
@@ -378,10 +379,17 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
         raise ValueError('Null row: disconnected conductive or gauge basis')
     scale=1/np.sqrt(maxrow)
     Ks=Kr.multiply(scale[:,None]).multiply(scale[None,:]).tocsc()
-    result=spsolve(Ks,scale[:,None]*rhsr)
+    scaled_rhs=scale[:,None]*rhsr
+    result=spsolve(Ks,scaled_rhs)
     if result.ndim==1: result=result[:,None]
     if not np.isfinite(result).all():
         raise ValueError('A-phi solve failed (singular or non-finite)')
+    # A finite iterate is not proof that the indefinite Maxwell system was
+    # solved; check the actual assembled complex equations on every port.
+    relative_residual=np.linalg.norm(Ks@result-scaled_rhs,axis=0)/np.maximum(
+        np.linalg.norm(scaled_rhs,axis=0),1e-300)
+    if not np.isfinite(relative_residual).all() or np.max(relative_residual)>1e-8:
+        raise ValueError('A-phi scaled linear system residual not converged')
     full=bc_values
     full[keep,:]=scale[:,None]*result
     nports=len(incident_potentials)
@@ -406,4 +414,5 @@ def solve_aphi(mesh: TetraMesh, frequency_hz:float,
             zp += 1j*omega*vol/4*np.einsum('pqc,rqc->pr',src,sig*E)
             p_from_fields += sig*vol/4*np.einsum('pqc,rqc->pr',E.conj(),E)
     return AphiResult(zp,(zp+zp.conj().T)/2,p_from_fields,
-                      jbar,bsec,e_quad,mesh,len(free_edges),pe,pg,full[:ne,:].T.copy())
+                      jbar,bsec,e_quad,mesh,len(free_edges),pe,pg,
+                      full[:ne,:].T.copy(),float(np.max(relative_residual)))
