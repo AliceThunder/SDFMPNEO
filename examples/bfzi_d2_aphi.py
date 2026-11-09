@@ -28,6 +28,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--case', choices=('smoke','bfzi'), default='smoke')
     p.add_argument('--frequency', type=float, default=200000.)
+    p.add_argument('--gauge', choices=('tree','mixed'),default='tree',
+                   help='Fast relative tree-cotree gauge or legacy mixed '
+                        'A-phi-gauge saddle point for independent comparison')
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
     p.add_argument('--structured-axis-aligned',action='store_true',
@@ -79,7 +82,7 @@ def main():
         def uniform_B(p):
             return np.column_stack((-5e-4*p[:,1],5e-4*p[:,0],
                                     np.zeros(len(p))))
-        field = solve_aphi(mesh,args.frequency,[uniform_B])
+        field = solve_aphi(mesh,args.frequency,[uniform_B],gauge=args.gauge)
         report = {
             'status':'D2 initial imposed-field smoke ONLY; not a physical port',
             'frequency_hz':args.frequency,
@@ -127,13 +130,14 @@ def main():
             [(1.,polygonal_port_vertices(
                 assembly,panels_per_corner=args.panels_per_corner))]
             for assembly in scene.assemblies]
-        reference = solve_closed_ports(mesh,args.frequency,ports)
+        reference = solve_closed_ports(mesh,args.frequency,ports,
+                                       gauge=args.gauge)
         physical = None
         if args.solve_analytic_primary:
             from sdfmpneo_bfzi.direct3d_primary_secondary import (
                 solve_closed_primary_secondary)
             physical = solve_closed_primary_secondary(
-                mesh,args.frequency,ports)
+                mesh,args.frequency,ports,gauge=args.gauge)
         physical_source_potentials = [
             closed_polyline_potential(port[0][1]) for port in ports]
         corrected_joule_matrix = reference.analytic_source_corrected_joule(
@@ -216,6 +220,8 @@ def main():
             'status':'D2 3D BFZI closed-port Galerkin core; NOT high-fidelity PASS',
             'frequency_hz':args.frequency,
             'mesh_source':mesh_source,
+            'gauge':args.gauge,
+            'mixed_gauge_multiplier_unknowns':int(reference.medium.n_gauge_dofs),
             'outer_cube_half_extent_m':float(scene.outer_radius),
             'structured_axis_aligned_only':bool(args.structured_axis_aligned),
             'structured_near_step_m':(args.structured_near_step if args.structured_axis_aligned else None),
