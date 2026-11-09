@@ -18,11 +18,14 @@ def _signed_axis_aligned(rotation):
     return bool(np.all(np.minimum(a,1-a)<1e-9))
 
 
-def _axis_coordinates(scene, axis, pad, far_step, layers, near_step):
+def _axis_coordinates(scene, axis, pad, far_step, layers, near_step, core_radius):
     center=float(scene.outer_center[axis])
     radius=float(scene.outer_radius)
     low, high=center-radius,center+radius
     knots=[low,high]
+    if core_radius is not None:
+        # Keep identical near-field grid planes across an outer-R sweep.
+        knots.extend((center-core_radius, center+core_radius))
     near_intervals=[]
     for assembly in scene.assemblies:
         h=np.asarray(assembly.enclosure.half_extents,float)
@@ -58,13 +61,18 @@ def axis_aligned_bfzi_tetra_mesh(scene, *,
                                 near_padding_m: float = .025,
                                 far_step_m: float = .22,
                                 box_layers: int = 2,
-                                near_step_m: float | None = None) -> TetraMesh:
+                                near_step_m: float | None = None,
+                                inner_core_radius_m: float | None = None) -> TetraMesh:
     """Structured 3D conforming tetrahedra around both genuine BFZI boxes.
 
     No hard-coded demo geometry. Both enclosures may have independent
     centers, dimensions, and right-handed axis-permutation orientations.
     Reject any genuinely oblique pose rather than approximating its water
     interface with stair-step voxels.
+
+    inner_core_radius_m preserves the same inner coordinate cutting planes
+    when enlarging R; exterior shells then attach to a fixed inner cube.
+    It must enclose both padded boxes and stay strictly inside outer R.
 
     near_step_m independently resolves conducting seawater slabs just
     OUTSIDE the insulating walls (as well as the nearby dry coordinate
@@ -89,13 +97,24 @@ def axis_aligned_bfzi_tetra_mesh(scene, *,
         raise ValueError("near_step_m must be positive and <= far_step_m")
     if near_step_m is not None and near_padding_m == 0:
         raise ValueError("near_step_m needs near_padding_m > 0 to refine wet seawater")
+    if inner_core_radius_m is not None:
+        core=float(inner_core_radius_m)
+        if not np.isfinite(core) or not 0 < core < scene.outer_radius:
+            raise ValueError("inner_core_radius_m must be between 0 and outer radius")
+        for assembly in scene.assemblies:
+            extent=np.abs(assembly.pose.rotation)@np.asarray(
+                assembly.enclosure.half_extents,float)
+            outer=np.abs(np.asarray(assembly.pose.center,float)-
+                         np.asarray(scene.outer_center,float))
+            if np.any(outer+extent+near_padding_m >= core):
+                raise ValueError("inner_core_radius_m must enclose both padded OBBs")
     for assembly in scene.assemblies:
         if not _signed_axis_aligned(assembly.pose.rotation):
             raise ValueError(
                 "Oblique SE(3) box requires Gmsh conforming BooleanFragments mesh; "
                 "structured voxel approximation is forbidden")
     axes=[_axis_coordinates(scene,k,near_padding_m,far_step_m,
-                            box_layers,near_step_m)
+                            box_layers,near_step_m,inner_core_radius_m)
           for k in range(3)]
     sizes=[len(axis)-1 for axis in axes]
     x=np.stack(np.meshgrid(*axes,indexing='ij'),axis=-1).reshape(-1,3)
