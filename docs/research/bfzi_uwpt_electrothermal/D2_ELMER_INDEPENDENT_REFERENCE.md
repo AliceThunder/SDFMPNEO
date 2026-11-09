@@ -1,5 +1,15 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-09：真实 ElmerGrid 单元/材料/外边界映射及外加源连续性硬门槛
+
+[新增主代码](../../../sdfmpneo_bfzi/direct3d_elmer_interchange.py) 按 Elmer 官方文本格式读取 `mesh.nodes`（原生节点 ID/坐标）、`mesh.elements`（体材料编号、四节点 tetra=504）、`mesh.names`（ElmerGrid 重编号的物理组）、`mesh.boundary`（外边界 triangle=303）。先将 Elmer 节点坐标与**本项目同一真实 MSH2 网格**做有限公差的唯一双射，再按每个四面体**排序后节点集合**恢复原 Gmsh 单元下标，不允许按数组顺序碰巧对应。读取 `mesh.names` 后逐四面体检查 sea/tx dry/rx dry 原三材料体标签；读取实际 Elmer 外边界组 ID 后逐三角面核对它与原四面体立方体外表面完全一致，防止误把内部干湿界面当作外部总 A 边界。随后可读取显式文本 `ElmerElementID J1x J1y J1z J2x J2y J2z`（A/m²、实单位端口基）并重排为 `(2,Ntet,3)`。**这张七列表必须由独立 Elmer 后处理明确导出，ElmerGrid 并不会自动生成。** 官方 [ElmerSolver 网格格式手册](https://ftp.csc.fi/index/files/Historical/pub/index/elmer/doc/ElmerSolverManual.pdf) 描述节点/元素/边界文件字段。
+
+更根本的电磁源约束：闭合稳态外加电流不仅要有合法的边元体积分，还必须对离散全部 P1 梯度满足 `L_p · grad(phi_h) = 0`。当前 [主 A–φ 端口求解入口](../../../sdfmpneo_bfzi/direct3d_galerkin.py) 在求解前拒绝归一化弱连续性缺陷 >1e-8 的体源；`source_nodal_conservation(mesh,L)` 返回各端口的残差。独立单四面体 NumPy 实算闭合线源 2.22e-16、任意常体源 6.67e-1；说明**随意逐单元填入 CoilSolver J 即使维度与单位都对，也不一定是闭合线圈源**。严格离散守恒为必要但不充分条件，Elmer 原来实际使用的高阶/节点场和本项目当前**分片常量**表示并不自动等价，必须通过同源边元 RHS、1A 截面通量、连续性及 h 加密共同证明。
+
+本地另运行独立 NumPy 合成数据（并非 ElmerGrid 调用）：8 节点、6 四面体、三个重编号材料组、12 外边界三角面均匹配，删去一外面后严格失败；已新增仓库源码测试 `tests/test_bfzi_d2_elmer_interchange.py` 及非守恒源测试。**当前工作环境无 Gmsh、Elmer、整仓库本地源树；正式新测试尚未执行。** 待工作站运行 `python -m pytest tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_galerkin.py -q`，然后实际 OCC 两独立 SE(3) → ElmerGrid 14 2 → 物理标签与闭合源同一性 → 同外域双端口求解及 h/R/源独立收敛。**D2 OPEN，G1 FAIL，教师冻结，禁止 GitHub Actions。**
+
+
+
 ## 2026-11-09：已落地的 Elmer 体源弱载荷桥接（不是独立参考 PASS）
 
 新增 `elemental_current_edge_load(mesh, element_current_density)` 和 `solve_elemental_current_ports(mesh, frequency_hz, element_current_density, gauge='tree')`，复用现有树—余树 A–φ 材料及真空两组同源场求解。数组严格为 `(n_ports, n_tetra, 3)`；当前端口双对偶读取仅接收**实数空间单位电流基**，复相位通过已求解端口列线性组合，复数空间源须另行定义含相量约定的真实端子电压泛函，不能直接由未共轭 `L@A` 冒充阻抗，每项为目标有限元网格上该四面体的**分片常量**单位端口外加体电流密度 `J_s`，单位 `A/m²`（峰值相量）。对四面体 `T` 的局部 Whitney 边 `e=(i,j)`，装配精确积分：
