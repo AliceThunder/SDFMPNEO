@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-08 本轮最新 D2 Elmer 物理源合同：** 已将两个真实 BFZI 单根连续圆角方形/圆形候选线圈各自的**有向闭合馈回流、世界坐标路径、1A 峰值相量、线径/铜电导率、独立 SE(3) 姿态、频率/相量约定及 SHA256**导出为确定性 [源合同主代码](../../../sdfmpneo_bfzi/direct3d_port_manifest.py)；[三维主 CLI](../../../examples/bfzi_d2_aphi.py) 已支持无需 Gmsh 的 --ports-only --export-port-manifest，以及正式 --generate-msh 成功后自动输出同名 .ports.json 并将源哈希写入网格元数据。新增 [针对两真实闭合端口与接收端独立旋转的测试](../../../tests/test_bfzi_d2_port_manifest.py)。数学源仍是有向闭合理想线源，其边元 RHS 是每条真实线段的 Whitney 切向积分，**不等价于 Elmer CoilSolver 的有限体积铜线圈电流**。已在 [独立 Elmer 执行合同](D2_ELMER_INDEPENDENT_REFERENCE.md) 明确禁止在源不一致时比较复 Z 和空间 E/B/J/q。当前容器无 Gmsh/Elmer，尚无实际 OCC 任意斜置网格/Elmer 等价源实跑；本轮新增整仓库测试待工作站运行。接下来只推进**等价物理源与成熟 Elmer reference**，不要再写新的旧 G1 调参、论文表格拟合或神经教师。**D2 OPEN、G1 FAIL、教师冻结，未使用 GitHub Actions。**
+>
+
+
 > **2026-11-08 补充真实相对位姿材料网格往返验证：** 对接收端连同封装/闭合回路线圈独立绕 x 轴旋转 90°、发射端及外域不动的 BFZI 工况，重新生成 **2430 个四面体**的材料共形结构化网格，分别赋 sea=1 的 2394 个、tx dry=2 的 30 个、rx dry=3 的 6 个四面体，实际写成 MSH2.2 再由最新**严格物理标签导入器**读回，完成前后各一次 200kHz 两单位真空/材料双端口 Maxwell A–φ 求解。完整复 `ΔZ`、全单元 E/B 和 `I=(1,i)` Joule 的文件往返差均为 **0**；平行姿态 1350 四面体也通过。两种真实物理场复算与负例（错标签、漏标签、单标签、错 R）现共用 [源码专项测试](../../../tests/test_bfzi_d2_physical_material_mesh.py)；[真实两种姿态结构化证据](evidence/d2_three_material_msh2_roundtrip_20261108.json)。**限制：** 此处 90° 为有材料界面共形保证的轴置换；不能把它当作 Gmsh 任意斜置 SE(3) 或独立 Elmer 验证。D2 仍 OPEN，G1 FAIL，教师冻结，禁 GitHub Actions。
 >
 
