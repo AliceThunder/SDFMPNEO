@@ -175,3 +175,35 @@ def test_real_bfzi_two_axis_aligned_boxes_conforming_structured_mesh():
         scene.receiver,pose=RigidPose(rot,scene.receiver.pose.center)))
     with pytest.raises(ValueError,match="Gmsh"):
         axis_aligned_bfzi_tetra_mesh(rotated)
+
+
+def test_structured_bfzi_wet_wall_h_is_independent_of_dry_box_layers():
+    """Refine actual conductive seawater near both wall faces, not only dry tets."""
+    from examples.bfzi_mqs_demo import build_demo_scene
+    from sdfmpneo_bfzi.direct3d_structured_bfzi import (
+        _axis_coordinates, axis_aligned_bfzi_tetra_mesh)
+    import pytest
+
+    scene=build_demo_scene()
+    kw=dict(near_padding_m=.02,far_step_m=.30,box_layers=1)
+    base=axis_aligned_bfzi_tetra_mesh(scene,**kw)
+    fine=axis_aligned_bfzi_tetra_mesh(scene,near_step_m=.04,**kw)
+    assert len(fine.tetrahedra)>len(base.tetrahedra)
+    assert np.all(np.isin(fine.sigma,[0.,scene.seawater.conductivity]))
+    for mesh in (base,fine):
+        xyz=mesh.nodes[mesh.tetrahedra]
+        det=np.linalg.det((xyz[:,1:]-xyz[:,0,None,:]).transpose(0,2,1))
+        volume=np.abs(det)/6
+        expected=sum(8*np.prod(a.enclosure.half_extents)
+                     for a in scene.assemblies)
+        assert_allclose(volume[mesh.sigma==0].sum(),expected,atol=1e-12)
+    # The actual wet slab immediately outside a package wall must have
+    # cell size <= requested near_step. A higher box_layers alone would
+    # not guarantee this for the conductive side.
+    z=_axis_coordinates(scene,2,.02,.30,1,.04)
+    for center in (-.13,.13):
+        upper=center+.015
+        wet=np.diff(z[(z>=upper-1e-11)&(z<=upper+.02+1e-11)])
+        assert len(wet)>0 and np.max(wet)<=.04+1e-12
+    with pytest.raises(ValueError,match='near_step_m'):
+        axis_aligned_bfzi_tetra_mesh(scene,near_step_m=.4,**kw)
