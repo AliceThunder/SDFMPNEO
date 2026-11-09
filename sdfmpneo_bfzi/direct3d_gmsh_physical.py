@@ -157,6 +157,12 @@ def generate_physical_bfzi_msh22(
 
         gmsh.model.mesh.generate(3)
         gmsh.write(str(output))
+        # Do not report a generated mesh as ready for independent Elmer
+        # until the actual ASCII MSH2 round-trip recovers all three
+        # materials, correct SE(3) placement and physical volume integrals.
+        # This also protects --mesh-only, which otherwise stops here.
+        from .direct3d_mesh import bfzi_mesh_from_gmsh22
+        verified_mesh=bfzi_mesh_from_gmsh22(output,scene)
         volumes={
             name:float(sum(gmsh.model.occ.getMass(3,t)
                            for t in volume_tags))
@@ -164,6 +170,8 @@ def generate_physical_bfzi_msh22(
         }
         return {
             "mesh":str(output),
+            "verified_tetrahedra":int(len(verified_mesh.tetrahedra)),
+            "mesh_material_volume_and_pose_check":"PASS",
             "physical_volume_tags":{
                 "seawater":1,"transmitter_insulation":2,
                 "receiver_insulation":3},
