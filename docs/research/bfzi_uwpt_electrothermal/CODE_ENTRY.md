@@ -1,5 +1,9 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 D2 最新执行关口（未在整树运行）：** `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q`。已在主求解器新增 `source_nodal_conservation(mesh,L)`（闭合源的 P1-梯度弱连续性）、严禁不守恒的外加体源 RHS；BFZI 报告 `source_P1_gradient_conservation_max`。ElmerGrid 后先使用 `elmer_to_gmsh_tetra_indices(mesh,DIR)` 处理节点/单元重编号，再用 `verify_elmer_converted_bfzi_groups(mesh,physical_tags,DIR,mapping,scene)` 检查三个实际材料组和重编号后的外边界，再使用 `load_two_unit_element_currents(TABLE,mapping,Ntet)` 读取**额外明确导出的七列** `ElmerElementID J1x J1y J1z J2x J2y J2z`（A/m²）；`TABLE` 不是 ElmerSolver 自动生成的文件。两单位真实闭合电流、P1 弱连续性、物理 1 A 归一化、铜体几何/源空间等价、同相量必须先核实，未达标绝不可继续称 Elmer 同源参考。独立 NumPy 实测闭合 vs 非闭合源、合成 6 四面体重编号/物理标签通过；**GitHub 原分支源码的完整 pytest、Gmsh 和 Elmer 未在当前环境实跑**。**D2 OPEN、无 GitHub Actions。**
+>
+
+
 > **2026-11-09 最新 D2 源合同硬门槛与 Elmer 体源数值入口：** 先运行 `python -m pytest tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py tests/test_bfzi_d2_galerkin.py -q`（**本轮尚未在完整仓库执行**）。正式 `--generate-msh runs/pose.msh --mesh-only --panels-per-corner 16` 生成 `runs/pose.ports.json`；再次 `--mesh runs/pose.msh --panels-per-corner 16` 时**默认强制验证**该源合同。自定义源合同路径用 `--require-port-manifest FILE`；只有明确诊断可选 `--allow-unverified-source-manifest`（此结果不能对照 Elmer）。禁止 `--mesh` 同时 `--export-port-manifest` 覆盖原始证据。独立 Elmer 体线圈电流的前置桥接 API：`elemental_current_edge_load(mesh, J)` 与 `solve_elemental_current_ports(mesh, f, J, gauge='tree')`，其中 `J` 以 **A/m²** 表示，形状严格 `(2, Ntetra, 3)`，当前为**实数空间单位电流基**（复数端口相位在求解列上线性叠加，复空间 J 不能直接用未共轭的 L@A 冒充端口 Z），**必须先由使用者独立建立 ElmerGrid 单元重编号映射、两单位闭合源电流守恒/1A/相量及两个求解器的同一源物理定义**。当前仅独立 NumPy 验证局部精确 Whitney 公式和换序不变；Gmsh、Elmer、仓库测试均未执行，旧细丝绝不能被体源替换后宣称同源 PASS。**D2 OPEN。**
 >
 
