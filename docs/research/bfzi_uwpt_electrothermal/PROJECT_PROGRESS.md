@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-08 D2 本轮主接口推进（最新）：** 发现旧三材料 MSH2 导入虽然检查实体 1/2/3、外盒极值、几何体积和 SE(3) 材料归属，**尚未检查物理表面 101**。已修改 [MSH2 导入器](../../../sdfmpneo_bfzi/direct3d_mesh.py)：非 legacy BFZI 必须将 Gmsh 101 的每个三角面与实际四面体外边界面逐项集合比对，拒绝缺面、重复面、内部界面误标、非流形面及不位于六个外立方体面上的表面；保留 TEAM7 通用 MSH2 入口及 legacy 明确诊断模式。新增 [物理 MSH 回归测试](../../../tests/test_bfzi_d2_physical_material_mesh.py) 写出真正的 101 表面元素并覆盖缺失与不全的 101。**已执行的仅是隔离 NumPy 六四面体外面算法验证：1 正例＋4 负例 PASS；仓库 pytest 未执行，Gmsh OCC/ElmerGrid/ElmerSolver 未执行**（此环境无 Gmsh/Elmer，无法用 git 网络拉取整树）。物理源仍是闭合细丝，Elmer CoilSolver 默认有限体源不等价；独立 Z 与空间 B/E/J/q 及 h/R/源收敛**均未验收**。下一步工作站先跑专项 pytest，再跑任意独立 SE(3) OCC/ElmerGrid 网格并核对源装配，然后才做同物理求解器对照。**D2 OPEN、G1 FAIL、教师冻结，无 GitHub Actions。**
+>
+
+
 > **2026-11-08 本轮最新 D2 Elmer 物理源合同：** 已将两个真实 BFZI 单根连续圆角方形/圆形候选线圈各自的**有向闭合馈回流、世界坐标路径、1A 峰值相量、线径/铜电导率、独立 SE(3) 姿态、频率/相量约定及 SHA256**导出为确定性 [源合同主代码](../../../sdfmpneo_bfzi/direct3d_port_manifest.py)；[三维主 CLI](../../../examples/bfzi_d2_aphi.py) 已支持无需 Gmsh 的 --ports-only --export-port-manifest，以及正式 --generate-msh 成功后自动输出同名 .ports.json 并将源哈希写入网格元数据。新增 [针对两真实闭合端口与接收端独立旋转的测试](../../../tests/test_bfzi_d2_port_manifest.py)。数学源仍是有向闭合理想线源，其边元 RHS 是每条真实线段的 Whitney 切向积分，**不等价于 Elmer CoilSolver 的有限体积铜线圈电流**。已在 [独立 Elmer 执行合同](D2_ELMER_INDEPENDENT_REFERENCE.md) 明确禁止在源不一致时比较复 Z 和空间 E/B/J/q。当前容器无 Gmsh/Elmer，尚无实际 OCC 任意斜置网格/Elmer 等价源实跑；本轮新增整仓库测试待工作站运行。接下来只推进**等价物理源与成熟 Elmer reference**，不要再写新的旧 G1 调参、论文表格拟合或神经教师。**D2 OPEN、G1 FAIL、教师冻结，未使用 GitHub Actions。**
 >
 
