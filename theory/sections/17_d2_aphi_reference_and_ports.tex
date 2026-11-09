@@ -515,3 +515,79 @@ $\bm a_{\rm ps},\phi_{\rm ps}$；
 仍可作为不同方法的独立离散检查，但其
 功率严格闭合本身不能替代本节的空间场
 与功率物理解析极限验收。
+
+
+\subsection{相对树--余树规范消元与真实双端口大规模直接解}
+\label{sec:bfzi-d2-relative-tree-gauge}
+
+\paragraph{规范同值性与物理场不变性。}
+对时间相量 $e^{+\mathrm i\omega t}$，有限元矢势与标势允许
+（具有适当外边界条件的）离散梯度规范变换：
+\begin{equation}
+ \bm A_h'=\bm A_h+\nabla\chi_h,\qquad
+ \phi_h'=\phi_h-\mathrm i\omega\chi_h,\qquad
+ \bm B_h'=\bm B_h,\qquad
+ \bm E_h'=\bm E_h.
+\end{equation}
+零阶 N\'ed\'elec 有向边元上，对任一网格边 $(i,j)$，
+$\int_{(i,j)}\nabla\chi_h\cdot d\bm\ell
+=\chi_j-\chi_i$。
+将有限立方体的切向 Dirichlet 边界所有节点设为规范根
+（规定边界处 $\chi_h=0$），用全局边图广度优先生成森林，
+使每个\emph{内部}节点恰有一个父边。逐个选取 $\chi_j$
+即可令该边的 $A_e'=0$。所以只需要冻结
+$n_{\rm vertices}-n_{\rm boundary\ nodes}$
+条树边，无须再引入全域连续 $P_1$ 规范拉格朗日乘子。
+求解未知量由原始
+\[
+  \dim(\bm A_{\rm interior})+\dim(\phi_{\rm conductor})
+       +\dim(\xi_{\rm interior})
+\]
+降至
+\[
+  \dim(\bm A_{\rm interior})-\dim(\xi_{\rm interior})
+       +\dim(\phi_{\rm conductor}).
+\]
+\textbf{导电区电标势及自然电荷守恒方程必须保留。}
+任意真实闭合馈回流满足
+$\oint_{\Gamma_p}\nabla\chi_h\cdot d\bm\ell=0$，
+故闭合端口电压、互易矩阵、体积 Joule 与复磁场
+不应因选取不同规范而发生物理改变。
+
+\paragraph{实际 BFZI 数值验证与适用限制。}
+在两匝连续圆角方形 BFZI、两只独立绝缘盒、
+真实闭合馈回流、海水 $5\,\mathrm{S/m}$ 和
+$f=200\,\mathrm{kHz}$ 的 $1350$ 四面体受限共形网格上，
+旧混合规范与新树规范求解得到的整体空间场相对差
+$\|\Delta E\|/\|E\|=3.895\times10^{-11}$、
+$\|\Delta B\|/\|B\|=2.579\times10^{-12}$。
+相位组合 $I=(1,\mathrm i)$ 的体积平均功率
+两规范绝对差 $1.49\times10^{-15}$ W。
+这是一项针对整个空间 E/B 的实际物理等价检验，
+不是简单的端口同源代数恒等式。
+
+采用原先被稀疏直接求解器阻断的 $h=60$ mm
+工况，新相对树规范现可实际求解
+$12960$ 四面体的导电 $14656$ 复未知量系统
+及相应真空 $11953$ 复未知量系统。
+缩放后复方程残差分别不超过
+$1.626\times10^{-14}$ 和 $7.048\times10^{-15}$。
+进一步实际完成 $h=40$ mm、$17238$ 四面体；
+固定源、外域和其他工况时 $h=80/60/40$ mm
+的 $\Re\Delta Z_{11}$ 分别为
+$7.34428/7.53243/7.71825$ m$\Omega$；
+相邻完整复矩阵变化仍为 $2.367\%/2.377\%$，
+\textbf{尚无空间 $h$ 收敛或高精度证书}。
+
+此处树构造假定整个有限立方体网格连通、
+切向 Dirichlet 外边界可作为规范根，
+两只绝缘盒\emph{仍是计算域内的真空单元}，
+并非拓扑挖孔。对多连通空间、独立边界分量及
+高阶边元需重新处理相关拓扑基及规范约束，
+不得未经验证而直接推广。
+树规范适用于已实际验证的稀疏直接法加速，
+不等于证明普通 ILU/GMRES 已具备
+大型鞍点 Maxwell 系统的稳健预条件。
+更多完整原始数值和适用边界见
+\texttt{docs/research/bfzi\_uwpt\_electrothermal/
+D2\_TREE\_COTREE\_GAUGE.md}。
