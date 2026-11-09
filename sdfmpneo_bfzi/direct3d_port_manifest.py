@@ -57,7 +57,7 @@ def closed_port_source_manifest(scene, frequency_hz, *, panels_per_corner=16):
                 np.diff(path,axis=0).sum(axis=0))),
             "wire_radius_m":float(assembly.wire_radius),
             "copper_conductivity_S_m":float(
-                assembly.material.electrical_conductivity),
+                assembly.material.conductivity),
             "coil":{
                 "turns":int(coil.turns),
                 "outer_half_size_m":float(coil.outer_half_size),
