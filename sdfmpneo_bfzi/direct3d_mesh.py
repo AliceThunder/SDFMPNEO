@@ -130,6 +130,19 @@ def bfzi_mesh_from_gmsh22(filename, scene):
     and not exact infinite ocean. Must perform exterior-domain convergence.
     """
     mesh=read_gmsh22(filename,{1:scene.seawater.conductivity})
+    # An R-sweep must compare genuinely DIFFERENT outer domains.
+    # Reject a mesh generated at a different radius instead of silently
+    # claiming the larger requested boundary in the result metadata.
+    center=np.asarray(scene.outer_center,dtype=float)
+    radius=float(scene.outer_radius)
+    lower=mesh.nodes.min(axis=0)
+    upper=mesh.nodes.max(axis=0)
+    tolerance=max(1e-9,1e-8*radius)
+    if (not np.allclose(lower,center-radius,atol=tolerance,rtol=0)
+            or not np.allclose(upper,center+radius,atol=tolerance,rtol=0)):
+        raise ValueError(
+            "Gmsh mesh exterior does not match scene outer radius/center; "
+            "regenerate the mesh with identical --outer-radius for every R run")
     x=mesh.nodes[mesh.tetrahedra].mean(axis=1)
     inside=np.zeros(len(x),dtype=bool)
     for assembly in scene.assemblies:
