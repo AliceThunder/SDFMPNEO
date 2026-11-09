@@ -39,6 +39,9 @@ def main():
                         'not just the interior box_layers')
     p.add_argument('--structured-padding',type=float,default=.025)
     p.add_argument('--structured-box-layers',type=int,default=2)
+    p.add_argument('--structured-inner-core-radius',type=float,
+                   help='Fixed near-field cube half width for comparable '
+                        'outer R sweeps; must enclose padded boxes')
     p.add_argument('--mesh-size', type=float, default=.025)
     p.add_argument('--outer-radius',type=float,
                    help='Independent outer CUBE half extent (m); keep BFZI '
@@ -111,7 +114,8 @@ def main():
                 scene,near_padding_m=args.structured_padding,
                 far_step_m=args.structured_far_step,
                 box_layers=args.structured_box_layers,
-                near_step_m=args.structured_near_step)
+                near_step_m=args.structured_near_step,
+                inner_core_radius_m=args.structured_inner_core_radius)
             mesh_source="structured axis-aligned physical OBB; initial D2 smoke only"
         elif args.mesh is not None:
             mesh = bfzi_mesh_from_gmsh22(args.mesh,scene)
@@ -215,6 +219,8 @@ def main():
             'outer_cube_half_extent_m':float(scene.outer_radius),
             'structured_axis_aligned_only':bool(args.structured_axis_aligned),
             'structured_near_step_m':(args.structured_near_step if args.structured_axis_aligned else None),
+            'structured_inner_core_radius_m':(
+                args.structured_inner_core_radius if args.structured_axis_aligned else None),
             'boundary':'finite cube, n cross A_total=0',
             'geometry':'two genuine BFZI continuous spirals and closed returns, '
                        'polygonal centerline approximation, two independent OBBs',
