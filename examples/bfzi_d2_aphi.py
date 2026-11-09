@@ -37,6 +37,11 @@ def main():
                    help='Explicit diagnostic-only import of old .geo mesh '
                         'with all tets tagged 1; NOT usable as Elmer '
                         'material-separated reference')
+    p.add_argument('--export-port-manifest',type=Path,
+                   help='Write oriented closed BFZI 1A peak source paths, '
+                        'pose, return leads and phasor to JSON')
+    p.add_argument('--ports-only',action='store_true',
+                   help='Export physical source manifest without needing Gmsh')
     p.add_argument('--mesh-only',action='store_true',
                    help='Only generate physically tagged Gmsh mesh, do not run '
                         'large complex SciPy Maxwell solve')
@@ -95,6 +100,11 @@ def main():
     if args.structured_axis_aligned and (
             args.mesh or args.write_geo or args.generate_msh):
         p.error('--structured-axis-aligned cannot combine with Gmsh mesh sources')
+    if args.ports_only and (
+            args.case!='bfzi' or not args.export_port_manifest or
+            args.mesh or args.generate_msh or args.write_geo):
+        p.error('--ports-only requires --case bfzi and '
+                '--export-port-manifest without other mesh operations')
     if args.mesh_only and not args.generate_msh:
         p.error('--mesh-only requires --generate-msh')
     if args.legacy_single_tag_msh and (args.generate_msh or not args.mesh):
@@ -152,6 +162,19 @@ def main():
         if args.outer_radius is not None:
             from dataclasses import replace
             scene = replace(scene,outer_radius=args.outer_radius)
+        explicit_source_manifest=None
+        if args.export_port_manifest:
+            from sdfmpneo_bfzi.direct3d_port_manifest import (
+                write_closed_port_source_manifest)
+            explicit_source_manifest=write_closed_port_source_manifest(
+                scene,args.export_port_manifest,args.frequency,
+                panels_per_corner=args.panels_per_corner)
+            print('Wrote actual closed BFZI source contract:',
+                  args.export_port_manifest)
+        if args.ports_only:
+            print('BFZI source SHA256:',
+                  explicit_source_manifest['sha256_of_contract_without_hash'])
+            return
         if args.write_geo:
             args.write_geo.parent.mkdir(parents=True,exist_ok=True)
             args.write_geo.write_text(
@@ -170,6 +193,19 @@ def main():
                 scene,args.generate_msh,mesh_size_m=args.mesh_size,
                 near_mesh_size_m=args.near_mesh_size,
                 near_padding_m=args.near_padding)
+            if explicit_source_manifest is None:
+                from sdfmpneo_bfzi.direct3d_port_manifest import (
+                    write_closed_port_source_manifest)
+                source_path=args.generate_msh.with_suffix('.ports.json')
+                source_manifest=write_closed_port_source_manifest(
+                    scene,source_path,args.frequency,
+                    panels_per_corner=args.panels_per_corner)
+            else:
+                source_path=args.export_port_manifest
+                source_manifest=explicit_source_manifest
+            physical_mesh_metadata['closed_port_manifest']=str(source_path)
+            physical_mesh_metadata['closed_port_source_sha256']=(
+                source_manifest['sha256_of_contract_without_hash'])
             if args.mesh_only:
                 print(json.dumps(physical_mesh_metadata,indent=2))
                 if args.output:
