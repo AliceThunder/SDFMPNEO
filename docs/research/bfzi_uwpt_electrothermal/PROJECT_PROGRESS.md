@@ -1,5 +1,9 @@
 # BFZI 电磁热神经代理｜总体进度与验收看板
 
+> **2026-11-09 D2 本轮最新推进（继前一轮 Surface 101 强校验）：** 为避免“网格有三材料但独立源合同漂移”，新增 [源合同真实性验证](../../../sdfmpneo_bfzi/direct3d_port_manifest.py)：导入正式物理 MSH2 默认必须匹配 `<mesh>.ports.json`，核对自带 SHA256 与重新从真实 BFZI 场景计算的两条闭合端口（包含世界 SE(3)、馈回流、频率/相量、弦段数、材料、外域）；缺失直接拒绝，只有显式 `--allow-unverified-source-manifest` 可用于**非认证诊断**，并禁止用 `--mesh --export-port-manifest` 覆盖待验源记录。新增 [分片常量体电流 J_s 的精确 Nédélec/Whitney 载荷装配](../../../sdfmpneo_bfzi/direct3d_edge_source.py) 和 [复用同一 A–φ 求解器的体源双端口入口](../../../sdfmpneo_bfzi/direct3d_galerkin.py)，为以后将 Elmer **两套独立单位体线圈电流**映射至同一四面体网格并逐边比较源项提供主接口。隔离 NumPy 实际核对两端口单四面体解析 Whitney 体积分、四点积分和顶点换序一致：**局部公式 PASS**。新增源漂移、重哈希伪造和体源有向边测试，**仓库 pytest 未执行**；本运行环境无 Gmsh/Elmer 且 GitHub 网络克隆不可用。**Elmer CoilSolver 电流尚未输出、单元重编号与闭合/1A/散度性质尚未独立核对，不能把其体源称为与原零截面细丝等价；空间场、完整复 Z、h/R/源联合收敛未执行。D2 OPEN、G1 FAIL、教师冻结；禁 GitHub Actions。**
+>
+
+
 > **2026-11-08 D2 本轮主接口推进（最新）：** 发现旧三材料 MSH2 导入虽然检查实体 1/2/3、外盒极值、几何体积和 SE(3) 材料归属，**尚未检查物理表面 101**。已修改 [MSH2 导入器](../../../sdfmpneo_bfzi/direct3d_mesh.py)：非 legacy BFZI 必须将 Gmsh 101 的每个三角面与实际四面体外边界面逐项集合比对，拒绝缺面、重复面、内部界面误标、非流形面及不位于六个外立方体面上的表面；保留 TEAM7 通用 MSH2 入口及 legacy 明确诊断模式。新增 [物理 MSH 回归测试](../../../tests/test_bfzi_d2_physical_material_mesh.py) 写出真正的 101 表面元素并覆盖缺失与不全的 101。**已执行的仅是隔离 NumPy 六四面体外面算法验证：1 正例＋4 负例 PASS；仓库 pytest 未执行，Gmsh OCC/ElmerGrid/ElmerSolver 未执行**（此环境无 Gmsh/Elmer，无法用 git 网络拉取整树）。物理源仍是闭合细丝，Elmer CoilSolver 默认有限体源不等价；独立 Z 与空间 B/E/J/q 及 h/R/源收敛**均未验收**。下一步工作站先跑专项 pytest，再跑任意独立 SE(3) OCC/ElmerGrid 网格并核对源装配，然后才做同物理求解器对照。**D2 OPEN、G1 FAIL、教师冻结，无 GitHub Actions。**
 >
 
