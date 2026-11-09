@@ -136,3 +136,72 @@ def test_occ_rotated_enclosure_must_not_be_clipped_by_outer_cube(tmp_path):
     with pytest.raises(ValueError,match='inside the finite exterior cube'):
         generate_physical_bfzi_msh22(
             scene,tmp_path/'should_not_mesh.msh',mesh_size_m=.08)
+
+
+def test_real_bfzi_msh_to_elmergrid_handoff_cli_without_solver(
+        tmp_path,monkeypatch):
+    """Run the actual handoff CLI on BFZI three-material MSH2 and Elmer text.
+
+    The Elmer text is a deterministic fixture built from that same mesh,
+    NOT a claim that ElmerGrid or ElmerSolver was executed in this test.
+    """
+    from sdfmpneo_bfzi.direct3d_mesh import read_gmsh22
+    from sdfmpneo_bfzi.direct3d_port_manifest import (
+        write_closed_port_source_manifest)
+    from examples.bfzi_d2_elmer_handoff import main
+    import json
+    import sys
+
+    scene=replace(build_demo_scene(),outer_radius=.32)
+    path,_=_physical_file(tmp_path,scene)
+    mesh,tags=read_gmsh22(
+        path,{1:scene.seawater.conductivity,2:0.,3:0.},
+        return_physical_tags=True)
+    write_closed_port_source_manifest(
+        scene,path.with_suffix(".ports.json"),200000.,
+        panels_per_corner=2)
+    elmer=tmp_path/"synthetic_elmer_text"
+    elmer.mkdir()
+    (elmer/"mesh.nodes").write_text(
+        "".join(f"{i+1} -1 "
+                + " ".join(f"{x:.17g}" for x in point)+"\n"
+                for i,point in enumerate(mesh.nodes)),
+        encoding="utf-8")
+    (elmer/"mesh.elements").write_text(
+        "".join(f"{i+1} {int(tags[i])} 504 "
+                + " ".join(str(int(v)+1) for v in tet)+"\n"
+                for i,tet in enumerate(mesh.tetrahedra)),
+        encoding="utf-8")
+    (elmer/"mesh.names").write_text(
+        "! ----- names for bodies -----\n"
+        "$ seawater = 1\n"
+        "$ transmitter_insulation = 2\n"
+        "$ receiver_insulation = 3\n"
+        "! ----- names for boundaries -----\n"
+        "$ outer_A_tangential_zero = 101\n",
+        encoding="utf-8")
+    tets=mesh.tetrahedra
+    faces=np.concatenate([
+        tets[:,(0,1,2)],tets[:,(0,1,3)],
+        tets[:,(0,2,3)],tets[:,(1,2,3)]])
+    unique,count=np.unique(np.sort(faces,axis=1),axis=0,
+                           return_counts=True)
+    outer=unique[count==1]
+    (elmer/"mesh.boundary").write_text(
+        "".join(f"{i+1} 101 1 0 303 "
+                + " ".join(str(int(n)+1) for n in tri)+"\n"
+                for i,tri in enumerate(outer)),
+        encoding="utf-8")
+    report_path=tmp_path/"handoff_report.json"
+    monkeypatch.setattr(sys,"argv",[
+        "bfzi_d2_elmer_handoff","--mesh",str(path),
+        "--elmer-grid-dir",str(elmer),"--outer-radius",".32",
+        "--frequency","200000","--panels-per-corner","2",
+        "--output",str(report_path)])
+    main()
+    report=json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"]=="D2_ELMERGRID_MATERIAL_BOUNDARY_MAPPING_PASS_ONLY"
+    assert report["D2"]=="OPEN"
+    assert report["tetrahedra"]==len(mesh.tetrahedra)
+    assert report["elmer_grid_groups"]["verified_outer_triangles"]==len(outer)
+    assert report["independent_elmer_solution"]=="NOT_RUN_BY_THIS_SCRIPT"
