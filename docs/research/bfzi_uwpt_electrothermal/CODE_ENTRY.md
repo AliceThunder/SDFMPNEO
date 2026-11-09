@@ -1,5 +1,25 @@
 # BFZI 新理论封版与代码启动合同
 
+### 2026-11-09：ElmerGrid 到 BFZI 体源 A–φ 的一体化工作站入口（正式 D2 仍 OPEN）
+
+新主程序：[examples/bfzi_d2_elmer_handoff.py](../../../examples/bfzi_d2_elmer_handoff.py)。PowerShell 首先执行现有测试，再用原有 CLI 真正生成**三个材料域 + 101 外边界**且双盒分别斜置的 Gmsh OCC MSH2 和自动同名 `.ports.json`：
+
+```powershell
+git pull --ff-only
+python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q
+python -m examples.bfzi_d2_aphi --case bfzi --generate-msh runs/d2_tilt.msh --mesh-only --mesh-size 0.16 --near-mesh-size 0.06 --panels-per-corner 8 --tx-rotation-vector 0.10 0.05 -0.08 --rx-rotation-vector 0.25 -0.13 0.33 --output runs/d2_tilt_gmsh.json
+python -m examples.bfzi_d2_elmer_handoff --mesh runs/d2_tilt.msh --elmer-grid-dir runs/d2_tilt_elmer --run-elmergrid --tx-rotation-vector 0.10 0.05 -0.08 --rx-rotation-vector 0.25 -0.13 0.33 --panels-per-corner 8 --output runs/d2_tilt_elmer_mapping.json
+```
+
+只有以上正式映射和**另行独立执行的** Elmer CoilSolver 两套实单位源成功导出、证明真正闭合且对应相同源空间（包括 Elmer `Fix Input Current Density` 的后处理实际 RHS）后，才允许在**同一 mesh / 同一源相量 / 同一外域**上求解：
+
+```powershell
+python -m examples.bfzi_d2_elmer_handoff --mesh runs/d2_tilt.msh --elmer-grid-dir runs/d2_tilt_elmer --tx-rotation-vector 0.10 0.05 -0.08 --rx-rotation-vector 0.25 -0.13 0.33 --panels-per-corner 8 --two-unit-currents runs/d2_tilt_unit_currents.txt --fields-npz runs/d2_tilt_bfzi_volume_fields.npz --output runs/d2_tilt_bfzi_volume.json
+```
+
+七列表一行一个 **Elmer 原生 element ID** 加两个端口的 `J1x J1y J1z J2x J2y J2z`，单位 A/m²；此表**非 ElmerGrid、ElmerSolver 默认产物**，必须从独立 CoilSolver 实际取得，并逐端口检查 1A 通量、回流方向、源连续性、两求解器中使用的**最终** J（一致源弱载荷）。`--fields-npz` 输出四面体节点/拓扑、sigma、两端口的四点 E/J/q、单元 B 和输入 J；程序本身绝不触发 ElmerSolver 或宣称 Elmer reference PASS。若离散 P1 梯度守恒大于 1e-8，则只报告 SOURCE_CONSERVATION_FAIL、不进行求解。**工作站命令未在当前缺 Gmsh/Elmer 的环境真实执行；D2 OPEN。**
+
+
 > **2026-11-09 D2 最新执行关口（未在整树运行）：** `python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q`。已在主求解器新增 `source_nodal_conservation(mesh,L)`（闭合源的 P1-梯度弱连续性）、严禁不守恒的外加体源 RHS；BFZI 报告 `source_P1_gradient_conservation_max`。ElmerGrid 后先使用 `elmer_to_gmsh_tetra_indices(mesh,DIR)` 处理节点/单元重编号，再用 `verify_elmer_converted_bfzi_groups(mesh,physical_tags,DIR,mapping,scene)` 检查三个实际材料组和重编号后的外边界，再使用 `load_two_unit_element_currents(TABLE,mapping,Ntet)` 读取**额外明确导出的七列** `ElmerElementID J1x J1y J1z J2x J2y J2z`（A/m²）；`TABLE` 不是 ElmerSolver 自动生成的文件。两单位真实闭合电流、P1 弱连续性、物理 1 A 归一化、铜体几何/源空间等价、同相量必须先核实，未达标绝不可继续称 Elmer 同源参考。独立 NumPy 实测闭合 vs 非闭合源、合成 6 四面体重编号/物理标签通过；**GitHub 原分支源码的完整 pytest、Gmsh 和 Elmer 未在当前环境实跑**。**D2 OPEN、无 GitHub Actions。**
 >
 
