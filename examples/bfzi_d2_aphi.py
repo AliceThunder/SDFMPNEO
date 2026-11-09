@@ -33,6 +33,10 @@ def main():
                         'A-phi-gauge saddle point for independent comparison')
     p.add_argument('--write-geo', type=Path)
     p.add_argument('--mesh', type=Path)
+    p.add_argument('--generate-msh',type=Path,
+                   help='Generate directly with Gmsh Python OCC API: '
+                        'physical region ids 1=sea, 2=tx dry, 3=rx dry; '
+                        'outer physical surface id 101')
     p.add_argument('--structured-axis-aligned',action='store_true',
                    help='Generate a conforming two-box structured tetra mesh '
                         'without Gmsh, ONLY for axis-aligned poses')
@@ -81,8 +85,14 @@ def main():
 
     if args.structured_axis_aligned and args.case != 'bfzi':
         p.error('--structured-axis-aligned requires --case bfzi')
-    if args.structured_axis_aligned and (args.mesh or args.write_geo):
-        p.error('--structured-axis-aligned is incompatible with --mesh/--write-geo')
+    if args.structured_axis_aligned and (
+            args.mesh or args.write_geo or args.generate_msh):
+        p.error('--structured-axis-aligned cannot combine with Gmsh mesh sources')
+    if args.generate_msh and args.mesh:
+        p.error('--generate-msh and --mesh are mutually exclusive')
+    if args.generate_msh and args.write_geo:
+        p.error('Use --generate-msh alone for physically tagged Elmer-compatible geometry; '
+                'legacy --write-geo writes one combined region label')
     if args.case == 'smoke' and args.probe:
         p.error('--probe is for a physical BFZI closed-port case')
     if args.case == 'smoke':
@@ -138,9 +148,20 @@ def main():
                                     near_padding_m=args.near_padding),
                 encoding='utf-8')
             print('Wrote two independently posed OBBs:',args.write_geo)
-            if args.mesh is None:
+            if args.mesh is None and args.generate_msh is None:
                 return
-        if args.structured_axis_aligned:
+        physical_mesh_metadata=None
+        if args.generate_msh:
+            from sdfmpneo_bfzi.direct3d_gmsh_physical import (
+                generate_physical_bfzi_msh22)
+            physical_mesh_metadata=generate_physical_bfzi_msh22(
+                scene,args.generate_msh,mesh_size_m=args.mesh_size,
+                near_mesh_size_m=args.near_mesh_size,
+                near_padding_m=args.near_padding)
+            mesh=bfzi_mesh_from_gmsh22(args.generate_msh,scene)
+            mesh_source="Gmsh OCC physically tagged conforming "
+            mesh_source+="SE(3) seawater/tx/rx + outer surface"
+        elif args.structured_axis_aligned:
             from sdfmpneo_bfzi.direct3d_structured_bfzi import (
                 axis_aligned_bfzi_tetra_mesh)
             mesh = axis_aligned_bfzi_tetra_mesh(
@@ -250,6 +271,7 @@ def main():
             'status':'D2 3D BFZI closed-port Galerkin core; NOT high-fidelity PASS',
             'frequency_hz':args.frequency,
             'mesh_source':mesh_source,
+            'physical_gmsh_metadata':physical_mesh_metadata,
             'gauge':args.gauge,
             'mixed_gauge_multiplier_unknowns':int(reference.medium.n_gauge_dofs),
             'medium_solver_unknowns':int(
