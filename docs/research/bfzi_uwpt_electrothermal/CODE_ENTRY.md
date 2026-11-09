@@ -1,5 +1,14 @@
 # BFZI 新理论封版与代码启动合同
 
+> **2026-11-09 本地测试反馈后的针对性修复：** 首次用户本机运行四文件 pytest：**20 passed / 3 failed**。已提交修复：`tests/test_bfzi_d2_galerkin.py` 的 tree/mixed 对比只在 `mesh.sigma>0` 比较真正有 φ 的 E，B 全域、端口 Z、功率容差不变；一四面体换序载荷按全局边 `(min(node),max(node))` 重新对齐，避免把 `_topology` 的 first-seen edge order 误作物理不变编号；`tests/test_bfzi_d2_physical_material_mesh.py` 区分 `BfziScene` 球外域预拒绝与 OCC cube 预拒绝。求解器文档与 NPZ 均明确：**σ=0 封装内 E 不具有独立规范物理意义，勿作热标签。** 请在工作站重跑以下相同四测试，**本次新提交尚未在本机完整 pytest 验证**：
+>
+> ```powershell
+> git pull --ff-only
+> python -m pytest tests/test_bfzi_d2_galerkin.py tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_port_manifest.py tests/test_bfzi_d2_physical_material_mesh.py -q
+> ```
+>
+
+
 > **2026-11-09 最新 D2 Elmer 最终边元源对齐：** 在原有 Gmsh→ElmerGrid→`--two-unit-currents runs/d2_tilt_unit_currents.txt` 入口上可另加 `--elmer-final-edge-load runs/d2_tilt_final_rhs.txt`，其中每行严格为 `ElmerNodeFrom ElmerNodeTo RHS_Port1_A RHS_Port2_A`，必须**覆盖全部有向网格边（包含零源边）**，数值为 **Elmer 修正后、已转换为相同 Whitney 取向、求解前的原始实空间单位端口载荷**。交接程序会使用节点坐标/边方向映射与本项目精确装配的 `L` 比较，若差异超过规定公差则输出 `D2_FINAL_ELMER_SOURCE_RHS_MISMATCH` 并以状态 2 退出，不继续当作同源求解。**此文件须由独立 Elmer 端真实实现导出，原始 CoilSolver `J`、矩阵总 RHS（含规范/边界项）或线圈名义电流不能冒充真实弱载荷。** 尚无该官方自动导出，因此当前新增实现是可执行的严格桥接口，而不是 Elmer 独立源 PASS。新增测试 `python -m pytest tests/test_bfzi_d2_elmer_interchange.py tests/test_bfzi_d2_physical_material_mesh.py -q`（完整源码环境待运行）。D2 OPEN，禁 GitHub Actions。
 >
 
