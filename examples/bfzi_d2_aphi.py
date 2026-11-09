@@ -101,8 +101,8 @@ def main():
     if args.case == 'smoke' and args.probe:
         p.error('--probe is for a physical BFZI closed-port case')
     if args.case == 'smoke':
-        if args.mesh or args.write_geo:
-            p.error('Smoke uses built-in tetrahedra, not a Gmsh mesh')
+        if args.mesh or args.write_geo or args.generate_msh or args.mesh_only:
+            p.error('Smoke uses built-in tetrahedra, not Gmsh mesh sources')
         mesh = box_tetra_mesh(
             [[-.2,.2]]*3, [3,3,3],
             lambda x: 5. if np.max(np.abs(x)) < .075 else 0.)
