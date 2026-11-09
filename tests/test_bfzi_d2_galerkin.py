@@ -149,6 +149,7 @@ def test_nonconserving_volume_source_is_refused_before_aphi():
                    np.array([[0,1,2,3]]),np.zeros(1))
     J=np.array([[[1.,0.,0.]]])
     L=elemental_current_edge_load(mesh,J)
-    assert source_nodal_conservation(mesh,L)[0]>.1
+    assert_allclose(source_nodal_conservation(mesh,L),[1.],
+                    rtol=0,atol=1e-14)
     with pytest.raises(ValueError,match="charge-conserving"):
         solve_elemental_current_ports(mesh,100000.,J)
