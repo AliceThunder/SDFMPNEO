@@ -1,5 +1,58 @@
 # D2 独立成熟参考：Elmer 官方 TEAM-7（2026-11-06）
 
+## 2026-11-08：真实独立 SE(3) BFZI 三材料共形网格入口（Gmsh/Elmer 待实跑）
+
+旧的 Gmsh .geo 入口把整个计算域标成单一 Physical Volume("all",1)，
+本项目 Python 端再依据元素中心重分海水/绝缘材料。**这种单标签网格不能直接让独立 Elmer 正确分配海水、发射端盒、接收端盒材料，因而不满足正式独立参考的输入要求。**
+
+新增 [Python Gmsh OCC 物理分区主代码](../../../sdfmpneo_bfzi/direct3d_gmsh_physical.py)。
+它不靠布尔后实体编号猜测，而直接读取官方 occ.fragment 返回的原实体至结果实体映射，分别赋值：
+
+| Gmsh 物理组 | 意义 | 用途 |
+|---|---|---|
+| 3D Volume 1 | 导电海水 | 对应海水 sigma |
+| 3D Volume 2 | 发射封装绝缘体 | sigma=0 |
+| 3D Volume 3 | 接收封装绝缘体 | sigma=0 |
+| 2D Surface 101 | 有限立方体六个真正外边界 | 总 A 切向零截断，不包括干/湿内部界面 |
+
+两只封装的**独立真实三维旋转/平移**进入 OpenCASCADE 实体，
+各自世界坐标包围盒只控制周围的局部单元尺寸，不改变实体。
+输出 MSH2.2 ASCII，可分别由本项目 A–φ 网格读取器和
+ElmerGrid 接入。生成材料网格时优先使用新的 --generate-msh，
+不是旧的 --write-geo 单标签模式。
+
+下列命令适用于装有 Gmsh Python API 与 Elmer 的工作站；
+**本容器没有 Gmsh/Elmer 可执行程序，下列两项尚未实跑**：
+
+    git pull --ff-only
+
+    # 仅产生三材料物理共形网格，不立刻执行大型复数 Maxwell 求解
+    python -m examples.bfzi_d2_aphi --case bfzi --generate-msh runs/bfzi_rx_oblique.msh --mesh-only --rx-rotation-vector 0.35 0.10 0.20 --outer-radius 0.80 --mesh-size 0.07 --near-mesh-size 0.008 --near-padding 0.025 --output runs/bfzi_rx_oblique_mesh_meta.json
+
+    # 独立转换为 Elmer 原生网格，实际编号请查看 mesh.names
+    ElmerGrid 14 2 runs/bfzi_rx_oblique.msh -autoclean -names -out runs/bfzi_rx_oblique_elmer
+    Get-Content runs/bfzi_rx_oblique_elmer/mesh.names
+
+    # 在有足够内存和计算资源的工作站才运行本项目真实双端口
+    python -m examples.bfzi_d2_aphi --case bfzi --mesh runs/bfzi_rx_oblique.msh --rx-rotation-vector 0.35 0.10 0.20 --outer-radius 0.80 --frequency 200000 --panels-per-corner 16 --gauge tree --output runs/bfzi_rx_oblique_aphi.json --summary-only
+
+**严格边界：** 三个材料体/外边界标签虽可让 Elmer 明确材料区域，
+但**还没有**与本项目闭合线源泛函等价的 Elmer 两端口源实现。
+本项目在绝缘盒内施加理想零截面闭合线源，
+该网格不含 Elmer CoilSolver 所需的真实三维铜导线体积、
+独立端口电流与连续体电流约束。正式独立 Elmer 必须增加
+一致物理源及 200kHz 相量约定，或先采用上游 TEAM-7 已成熟的
+CoilSolver + WhitneyAVSolver 源—场整体案例独立核对。
+ElmerGrid 可能重新编号组标识，SIF 中的 Target Bodies/
+Target Boundaries 只能采用转换后的 mesh.names 实际编号，
+不能直接假定原 Gmsh 的 1/2/3/101 不变。
+
+参考：
+[Gmsh 官方 OCC fragment 实体结果映射](https://gmsh.info/doc/texinfo/#gmsh/model/occ/fragment)；
+[ElmerGrid mesh.names 重编号问题](https://github.com/ElmerCSC/elmerfem/issues/437)。
+未使用 GitHub Actions。
+
+
 **定位：为 BFZI 三维 A–φ 直接法提供真正独立、成熟的 H(curl) 求解器对照。不是继续匹配 Shafiei/Wang 论文表格，也不是将 TEAM-7 当作 BFZI 几何。**
 
 ## 可信的外部实现
