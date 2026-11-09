@@ -49,6 +49,9 @@ def main():
                    help='World-distance padding around each oriented box (m)')
     p.add_argument('--panels-per-corner', type=int, default=12)
     p.add_argument('--output', type=Path, help='Optional full JSON report')
+    p.add_argument('--summary-only', action='store_true',
+                   help='Print only Z, reciprocity and phase-resolved power; '
+                        'write complete fields using --output')
     p.add_argument('--solve-analytic-primary', action='store_true',
                    help='Additionally solve the Maxwell material PDE with analytic '
                         'closed-port incident A; compare physical E/Joule versus '
@@ -249,7 +252,18 @@ def main():
         args.output.parent.mkdir(parents=True,exist_ok=True)
         args.output.write_text(text,encoding='utf-8')
         print('Wrote complete D2 report:', args.output)
-    print(text)
+    if args.summary_only and args.case == 'bfzi':
+        short = {key: report[key] for key in (
+            'status','frequency_hz','mesh_source','tetrahedra',
+            'material_increment_2port_z_ohm',
+            'two_port_reciprocity_gap_ohm','phase_port_vs_seawater_joule')}
+        print(json.dumps(short,indent=2))
+    elif args.summary_only:
+        print(json.dumps({key:report[key] for key in (
+            'status','frequency_hz','tetrahedra',
+            'volume_joule_W_for_unit_imposed_source')},indent=2))
+    else:
+        print(text)
 
 
 if __name__ == '__main__':
