@@ -112,10 +112,15 @@ def main():
             args.mesh or args.generate_msh or args.write_geo):
         p.error('--ports-only requires --case bfzi and '
                 '--export-port-manifest without other mesh operations')
+    if args.mesh and args.export_port_manifest:
+        p.error('--mesh and --export-port-manifest cannot combine: exporting '
+                'would overwrite the imported mesh source evidence. '
+                'Use --require-port-manifest instead.')
     if args.mesh_only and not args.generate_msh:
         p.error('--mesh-only requires --generate-msh')
     if args.require_port_manifest and (not args.mesh or
-            args.allow_unverified_source_manifest):
+            args.allow_unverified_source_manifest or
+            args.legacy_single_tag_msh):
         p.error('--require-port-manifest needs --mesh without bypass')
     if args.allow_unverified_source_manifest and not args.mesh:
         p.error('--allow-unverified-source-manifest requires --mesh')
