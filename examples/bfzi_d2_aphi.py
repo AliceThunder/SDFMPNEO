@@ -222,6 +222,16 @@ def main():
             'mesh_source':mesh_source,
             'gauge':args.gauge,
             'mixed_gauge_multiplier_unknowns':int(reference.medium.n_gauge_dofs),
+            'medium_solver_unknowns':int(
+                reference.medium.n_edge_dofs+
+                reference.medium.n_potential_dofs+
+                reference.medium.n_gauge_dofs),
+            'vacuum_solver_unknowns':int(
+                reference.vacuum.n_edge_dofs+
+                reference.vacuum.n_potential_dofs+
+                reference.vacuum.n_gauge_dofs),
+            'medium_scaled_relative_residual':reference.medium.linear_relative_residual,
+            'vacuum_scaled_relative_residual':reference.vacuum.linear_relative_residual,
             'outer_cube_half_extent_m':float(scene.outer_radius),
             'structured_axis_aligned_only':bool(args.structured_axis_aligned),
             'structured_near_step_m':(args.structured_near_step if args.structured_axis_aligned else None),
@@ -267,6 +277,8 @@ def main():
     if args.summary_only and args.case == 'bfzi':
         short = {key: report[key] for key in (
             'status','frequency_hz','mesh_source','tetrahedra',
+            'gauge','medium_solver_unknowns','vacuum_solver_unknowns',
+            'medium_scaled_relative_residual','vacuum_scaled_relative_residual',
             'material_increment_2port_z_ohm',
             'two_port_reciprocity_gap_ohm','phase_port_vs_seawater_joule')}
         print(json.dumps(short,indent=2))
