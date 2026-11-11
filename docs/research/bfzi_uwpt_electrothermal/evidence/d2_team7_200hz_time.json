@@ -70,5 +70,95 @@
       "remaining_relative": 2.8514139058901043e-05
     }
   },
+  "waveform": {
+    "eddy": {
+      "rows": [
+        {
+          "steps": 64,
+          "phase_rad": 0.5576588948208859,
+          "harmonic_amplitude": 6.167095792180588,
+          "harmonic_mean": 9.754020233045683,
+          "harmonic_fit_rel": 0.0010528746079976072
+        },
+        {
+          "steps": 128,
+          "phase_rad": 0.7685328544871901,
+          "harmonic_amplitude": 6.718109095015575,
+          "harmonic_mean": 10.035662798940747,
+          "harmonic_fit_rel": 0.0008925353594795773
+        },
+        {
+          "steps": 256,
+          "phase_rad": 0.8705760385175755,
+          "harmonic_amplitude": 6.841039299760749,
+          "harmonic_mean": 10.134824739613721,
+          "harmonic_fit_rel": 0.0008817043007082412
+        }
+      ],
+      "raw_waveform": {
+        "rel64_128": 0.09656737389673473,
+        "rel128_256": 0.04510091706072205,
+        "order": 1.0819446489469917
+      },
+      "shifted_harmonic_model": {
+        "rel64_128": 0.043720103967013715,
+        "rel128_256": 0.011862479508882166,
+        "order": 1.865496817570741
+      },
+      "observed_phase_delta": [
+        0.21087395966630418,
+        0.10204318403038537
+      ],
+      "backward_difference_phase_delta": [
+        0.19625,
+        0.098125
+      ],
+      "note": "Hypothesis diagnostic only; no modified field, energy or power labels"
+    },
+    "energy": {
+      "rows": [
+        {
+          "steps": 64,
+          "phase_rad": -0.009325575379428264,
+          "harmonic_amplitude": 0.2608893630512114,
+          "harmonic_mean": 0.26305545358186005,
+          "harmonic_fit_rel": 1.4004069651132237e-05
+        },
+        {
+          "steps": 128,
+          "phase_rad": -0.009529522524718007,
+          "harmonic_amplitude": 0.2609324516360856,
+          "harmonic_mean": 0.2631632684444213,
+          "harmonic_fit_rel": 1.2668869301136098e-05
+        },
+        {
+          "steps": 256,
+          "phase_rad": -0.009574673388565994,
+          "harmonic_amplitude": 0.26094561292300084,
+          "harmonic_mean": 0.2631884972517648,
+          "harmonic_fit_rel": 1.243795381315442e-05
+        }
+      ],
+      "raw_waveform": {
+        "rel64_128": 0.0003685859250018781,
+        "rel128_256": 8.659968644496225e-05,
+        "order": 2.089452330398144
+      },
+      "shifted_harmonic_model": {
+        "rel64_128": 0.11263466976464794,
+        "rel128_256": 0.05636018036385794,
+        "order": 0.9988322787315853
+      },
+      "observed_phase_delta": [
+        -0.00020394714528974324,
+        -4.5150863847986944e-05
+      ],
+      "backward_difference_phase_delta": [
+        0.19625,
+        0.098125
+      ],
+      "note": "Hypothesis diagnostic only; no modified field, energy or power labels"
+    }
+  },
   "gate": "OPEN"
 }
