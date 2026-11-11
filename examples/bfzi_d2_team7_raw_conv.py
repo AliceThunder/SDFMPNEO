@@ -40,7 +40,7 @@ def run(root, n=11, steps=1):
         raise ValueError("Expected 1 or 64 steps")
     series = (SERIES if steps == 1 else {
         "h": ("h10", "gap06", "gap04"),
-        "R": ("gap06", "rgap30", "rgap40"),
+        "R": ("gap06", "rgap30"),
     })
     cases = tuple(dict.fromkeys(v for vs in series.values() for v in vs))
     sample, energy = {}, {}
