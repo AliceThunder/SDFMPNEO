@@ -40,7 +40,7 @@ def run(root, n=11, steps=1):
     if steps not in (1, 64):
         raise ValueError("Expected 1 or 64 steps")
     series = (SERIES if steps == 1 else {
-        "h": ("h10", "gap06", "gap04", "gap03", "gap025"),
+        "h": ("h10", "gap06", "gap04", "gap03", "gap025", "gap02"),
         "R": ("gap06", "rgap30"),
         "Rfixed": ("gap06", "shell30", "shell40"),
     })
