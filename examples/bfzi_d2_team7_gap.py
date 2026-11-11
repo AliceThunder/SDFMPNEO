@@ -87,6 +87,22 @@ def solve(root, name, bin_dir, freq):
         raise RuntimeError(f"Elmer failed: {out/f'solve_{freq}.log'}")
 
 
+
+def compare(root, freq):
+    """Original elemental SaveLine B/J at fourth-period end on fixed 101 points."""
+    from examples.bfzi_d2_team7_conv import load, cmp
+    cases = ("h10", "gap12", "gap08")
+    vals = {n: load(root/n/f"resene{freq}s64"/"f.dat") for n in cases}
+    return {
+        "frequency_hz": freq, "steps": 64, "phase_time_s": 4/freq,
+        "source": "same CSC TEAM-7 source / solids / 0.20m exterior",
+        "measurement_used": False,
+        "cases": list(cases),
+        "pairs": [{"from": a, "to": b, **cmp(vals[a], vals[b])}
+                  for a, b in zip(cases[:-1], cases[1:])],
+        "status": "D2 OPEN",
+    }
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
@@ -94,12 +110,22 @@ def main():
     p.add_argument("--case", choices=tuple(GAPS), required=True)
     p.add_argument("--mesh", action="store_true")
     p.add_argument("--solve", action="store_true")
+    p.add_argument("--compare", action="store_true")
+    p.add_argument("--out", type=Path)
     p.add_argument("--freq", type=int, choices=(50, 200), default=200)
     a = p.parse_args()
     if a.mesh:
         make(a.root, a.case, a.elmerbin)
     if a.solve:
         solve(a.root, a.case, a.elmerbin, a.freq)
+    if a.compare:
+        import json
+        report = compare(a.root, a.freq)
+        out = json.dumps(report, indent=2)
+        if a.out:
+            a.out.parent.mkdir(parents=True, exist_ok=True)
+            a.out.write_text(out, encoding="utf-8")
+        print(out)
 
 
 if __name__ == "__main__":
