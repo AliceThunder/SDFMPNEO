@@ -16,7 +16,7 @@ from examples.bfzi_d2_team7_raw_b import raw_field
 from examples.bfzi_d2_team7_volume import BOXES, pts
 
 SERIES = {
-    "h": ("h10", "gap06", "gap05", "gap04"),
+    "h": ("h10", "gap06", "gap05", "gap04", "gap03", "gap025"),
     "R": ("gap06", "rgap30", "rgap40"),
     "Rfixed": ("gap06", "shell30", "shell40"),
 }
