@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -50,7 +51,9 @@ def read_av(path, n):
     return last
 
 
-def calc(mesh, result):
+def calc(mesh, result, mu0=MU0):
+    if not np.isfinite(mu0) or mu0 <= 0:
+        raise ValueError("Expected positive vacuum permeability")
     node = np.loadtxt(mesh/"mesh.nodes")
     elem = np.loadtxt(mesh/"mesh.elements", dtype=np.intp)
     if not np.array_equal(node[:, 0].astype(np.intp), np.arange(1, len(node)+1)):
@@ -73,10 +76,11 @@ def calc(mesh, result):
     b = np.einsum("te,tec->tc", av[len(node):][idx]*sign, rot,
                   optimize=True)
     volume = np.abs(det)/6
-    energy = float(np.dot(volume, np.sum(b*b, axis=1))/(2*MU0))
+    energy = float(np.dot(volume, np.sum(b*b, axis=1))/(2*mu0))
     return {"nodes": len(node), "tetrahedra": len(tet),
             "edge_dofs": ned, "av_dofs": len(av),
             "magnetic_energy_J": energy,
+            "mu0_H_per_m": float(mu0),
             "B_rms_T": float(np.sqrt(np.dot(volume, np.sum(b*b, axis=1))/volume.sum()))}
 
 
@@ -85,9 +89,18 @@ def main():
     ap.add_argument("--mesh", type=Path, required=True)
     ap.add_argument("--result", type=Path, required=True)
     ap.add_argument("--phys", type=Path)
+    ap.add_argument("--sif", type=Path)
     ap.add_argument("--out", type=Path)
     a = ap.parse_args()
-    data = calc(a.mesh, a.result)
+    mu0 = MU0
+    if a.sif:
+        sif = a.sif.read_text(encoding="utf-8-sig")
+        m = re.search(r"^\s*Permeability of Vacuum\s*=\s*([\d.eE+-]+)",
+                      sif, flags=re.I | re.M)
+        if not m:
+            raise ValueError("Missing Permeability of Vacuum in Elmer SIF")
+        mu0 = float(m.group(1))
+    data = calc(a.mesh, a.result, mu0=mu0)
     if a.phys:
         native = float(np.atleast_2d(np.loadtxt(a.phys))[-1, 1])
         data["native_energy_J"] = native
