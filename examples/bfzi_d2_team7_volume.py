@@ -25,6 +25,7 @@ SERIES = {
     "R": ("r15", "h10", "r30"),
     "air": ("a40", "h10", "a25"),
     "probe": ("probe10", "probe120", "probe240"),
+    "gap": ("h10", "gap12", "gap08"),
 }
 
 
@@ -79,6 +80,8 @@ def analyze(root, hz, n):
         cache = {}
         for case in dict.fromkeys(q for cases in SERIES.values() for q in cases):
             f = root / case / f"res{hz}" / "transient_t0064.vtu"
+            if not f.exists():
+                f = root / case / f"resene{hz}s64" / "transient_t0064.vtu"
             if f.exists():
                 cache[case] = fields(f, xyz)
         studies = {}
