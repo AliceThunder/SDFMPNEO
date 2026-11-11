@@ -1,4 +1,6 @@
-﻿> **2026-11-10 50 Hz full three-level h/R measured:** all five real Elmer four-cycle BDF2 solves exited 0. A1-B1 Bz successive h differences 11.64293%/10.89298%; successive R=0.15/0.20/0.30 m differences 10.57370%/12.31519%, despite exactly identical actual solid coil and plate tetra meshes across all three R cases. Jy h differences decreased to 1.61%/1.59% (upper/lower). [Actual h/R evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). Full reference accuracy and D2 remain OPEN; investigate air-domain and outer-boundary sensitivity before BFZI teacher training.
+﻿> **2026-11-10 independent air-mesh diagnostic:** real same-R, exactly same solid-mesh TEAM-7 air resolution 40 vs 30 mm gives 50 Hz A1-B1 Bz difference **8.29843%** while Jy is below 0.74%; 200 Hz full three-R sweep yields Bz differences **12.23323%/14.28411%**. Elmer elemental vs nodal reconstructed B at fixed solution differs ~9% on A1-B1, hence direct B field recovery and air discretization are urgent numerical targets. [Evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 precision OPEN, D2 OPEN, G1 FAIL, teacher frozen.
+
+> **2026-11-10 50 Hz full three-level h/R measured:** all five real Elmer four-cycle BDF2 solves exited 0. A1-B1 Bz successive h differences 11.64293%/10.89298%; successive R=0.15/0.20/0.30 m differences 10.57370%/12.31519%, despite exactly identical actual solid coil and plate tetra meshes across all three R cases. Jy h differences decreased to 1.61%/1.59% (upper/lower). [Actual h/R evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). Full reference accuracy and D2 remain OPEN; investigate air-domain and outer-boundary sensitivity before BFZI teacher training.
 
 > **2026-11-10 D2 TEAM-7 h/R real mesh progress:** [five real Gmsh/ElmerGrid meshes and solver diagnosis](evidence/d2_team7_hr_mesh_and_runs_20261110.md). Five native meshes built (h tetra: 53,510/129,305/267,482; R tetra: 97,763/129,305/220,222). The initial Elmer SIGSEGV was resolved by setting ELMER_HOME; the first 1-step Elmer solve exited 0. Full 50/200Hz four-cycle BDF2 h/R field comparisons are still OPEN. G1 FAIL, teacher frozen.
 
@@ -128,4 +130,5 @@ D5 参考通过（或用户依据独立高保真 A–φ 标签**明确授权改�
 | 下一次状态 | 完成上述首次实算方可标记 `Elmer 3D 求解 SMOKE PASS`；**D2 仍 OPEN**，直到完整 benchmark 及后续同源场精度成立 |
 
 **权威关系：** [锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) → [独立验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) → **本文 BFZI-PDR V1.0 执行任务序** → [独立 Elmer 技术细节](D2_ELMER_INDEPENDENT_REFERENCE.md) → [项目进度看板](PROJECT_PROGRESS.md)。不得将后一层的历史描述反过来覆盖前一层。
+
 

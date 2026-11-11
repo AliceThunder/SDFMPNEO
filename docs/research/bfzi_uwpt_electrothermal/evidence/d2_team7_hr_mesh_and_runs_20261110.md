@@ -89,3 +89,20 @@ Two complete 200 Hz meshes also gave independent direct differences (all BDF2, 6
 At 200 Hz h15 and h10 measured 17-point Bz errors were 15.07500% and 17.10490%; r15 was 18.29973%. Completed 200 Hz actual elapsed times: h15 **292.07 s**, h10 **692.05 s**, r15 **536.71 s**. The 200 Hz h075 and r30 solver calculations were still active at this record. They must be read from actual final logs/data before claiming dual-frequency three-axis convergence.
 
 **Next physical action:** investigate coarse air-space field interpolation and finite outer-domain boundary independently while holding the full original coil geometry/source/plate fixed. Do not accept TEAM-7 full accuracy or D2 until these large Bz errors are controlled; 200 Hz temporal budget also remains OPEN. G1 FAIL, teacher frozen.
+
+## Follow-up: complete 200 Hz R sweep and isolate air-domain field error
+
+**200 Hz R=0.30 m** also exited 0 (four cycles, BDF2, 64 steps at 0.3125 ms, **1196.20 s**), with a real `res200/f.dat`. A1-B1 Bz 17-point relative L2 error to 200 Hz measurement = **17.90240%**. Direct same-phase, 101-point pair comparisons (normalization to second):
+
+| R pair | Bz relative L2 | upper Jy relative L2 | lower Jy relative L2 |
+| --- | ---: | ---: | ---: |
+| 0.15 vs 0.20 m | 12.23323% | 2.50661% | 4.17763% |
+| 0.20 vs 0.30 m | **14.28411%** | **1.65294%** | **5.16336%** |
+
+To distinguish boundary-distance changes from air-mesh resolution, new **air-only** experiments keep the same R=0.20 m and exactly the same solid coil and plate elements as h10; only the official `lc_air` is changed, from 30 mm (h10) to **40 mm (a40)** and **25 mm (a25)**. Actual Gmsh/ElmerGrid meshes: a40 **93,656** tetrahedra, h10 **129,305**, a25 **165,013**. Coordinate-based exact physical-tetra comparisons confirm in each all **3,600 coil tetrahedra** and all **27,570 plate tetrahedra** exactly match h10 (100% overlap). Material, volume source, boundary R, phase, time step and solver settings are fixed.
+
+**a40** genuinely completed its 50 Hz 64-step BDF2 solve with exit 0 in **513.50 s**. Direct `a40 vs h10` field differences: A1-B1 Bz **8.29843%**, full A1-B1 Bxyz **6.44568%**, A2-B2 Bz **9.73021%**, upper Jy **0.61755%**, lower Jy **0.73554%**. Therefore **air-domain mesh resolution alone produces multi-percent B-field changes while the solid source/conductor mesh is literally unchanged**. The a25 case remains under actual calculation and will establish a second step in this isolated air-only progression.
+
+A separate same-mesh 50 Hz first-step Elmer re-run changed only `Calculate Nodal Fields = False` to `True` in `MagnetoDynamicsCalcFields`, and exited 0. The newly reported **elemental B and Jy arrays are bit-for-bit equal** to the earlier one-step output (max differences zero). Elmer additionally provides reconstructed nodal B; its full Bxyz differs from the elemental Bxyz on A1-B1 by **9.0175%** and on A2-B2 by **9.8744%**. These are output-reconstruction differences, not independent accuracy estimates; no postprocessing smoothing or nodal recovery is being declared a validated cure. The original 50 Hz two-mesh Bz differences also persist on the independent A2-B2 measurement line, ruling out an issue restricted to the A1-B1 sample set.
+
+**Numerical implication:** isolate and reduce the air-domain discretization, further evaluate physically justified field reconstruction for edge-element B, and then independently check large-domain truncation. R-domain mesh and face discretization changes still contribute to the R scan. No switch to a different TEAM-7 source, physical material, or acceptance criteria. TEAM-7 FULL ACCURACY / D2 OPEN; old G1 FAIL; teacher frozen.
