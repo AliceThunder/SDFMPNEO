@@ -121,3 +121,20 @@ The 25-mm run was exit 0 in 948.13 s; its fixed 17-point 50 Hz Bz relative L2 to
 Additional actual independent same-mesh one-step output experiments enabled `Calculate Nodal Fields=True` in the Elmer `MagnetoDynamicsCalcFields` solver for h15/h10/h075, all exit 0. The resulting elemental B/J values match existing one-step results exactly; `.names` confirms additional **nodal** B fields are distinct from elemental B fields. On A1-B1 the h15/h10 first-step Bz intermesh L2 difference was **12.17593%** for element B versus **20.28627%** for recovered nodal B; h10/h075 was **11.54810%** versus **21.56308%**. Nodal B reconstruction by simply enabling the existing option does **not** cure this convergence defect, and therefore is not adopted as the validated reference observable. These first-time-step comparisons diagnose output reconstruction only, whereas the above acceptance curves remain measured at the 64th step.
 
 **Physical conclusion:** Bz accuracy is presently limited by air-grid-dependent discrete field reconstruction; the truncated outer box contributes additional uncontrolled sensitivity. Both require stronger independent convergence or better controlled B evaluation before D2 passes. TEAM-7/D2 OPEN; G1 FAIL; teacher frozen.
+
+## Completed canonical full 50/200 Hz h/R matrix
+
+All ten genuine official-source/team-material Elmer 26.2 64-step, four-cycle BDF2 cases **now have successful exit 0 and actual fixed 101-point/four-line SaveLine fields**. The last outstanding h075 200 Hz case exited 0 in **1483.23 s**. Fixed 200 Hz A1-B1 17-point Bz experimental L2 discrepancies across h15/h10/h075 were **15.07500% / 17.10490% / 19.27499%**; they increase with mesh refinement and therefore cannot be used as proof of spatial accuracy.
+
+Direct frozen probe vector errors (normalization to second field) in the full 200 Hz h series:
+
+| pair | A1-B1 Bz relative L2 | plate upper Jy | plate lower Jy |
+| --- | ---: | ---: | ---: |
+| h15 vs h10 | **13.53495%** | 4.20926% | 7.83425% |
+| h10 vs h075 | **12.70586%** | 3.31848% | 6.15397% |
+
+The **200 Hz R series** gave successive A1-B1 Bz 12.23323%/14.28411% at R 0.15/0.20/0.30 m. The **50 Hz h series** gave 11.64293%/10.89298%, and the **50 Hz R series** gave 10.57370%/12.31519%. Consequently all ten requested real solver runs are complete, while neither frequency has accepted independent Bz spatial or boundary-domain convergence. Exactly matched solid meshes in the R series and air-only tests constrain the source of the spatial variation; the separate first-step nodal recovery test is not an accepted solution.
+
+**Next targeted implementation in progress:** a small probe-local Gmsh threshold field, confined to air around the official A1-B1 and A2-B2 source-independent Bz lines, was added while keeping the original R=0.20 m and the complete 3,600-coil/27,570-plate tetrahedra identical to h10. This generated the real **130,538-tetrahedron** `probe10` mesh, converted successfully with ElmerGrid `14 2 -names`, and started the same genuine 50 Hz four-cycle BDF2 Elmer solve. No local-probe accuracy claim until its final actual output is evaluated. Files remain at `D:\\work\\BFZI-D2-verify\\runs\\team7_hr\\probe10`.
+
+**Gate status:** primary requested h/R *data acquisition* COMPLETE, TEAM-7 reference accuracy **OPEN**, D2 **OPEN**, old G1 **FAIL**, teacher frozen. Follow-up should first reduce and validate the air-domain B-field error and outer boundary error rather than start BFZI neural training.

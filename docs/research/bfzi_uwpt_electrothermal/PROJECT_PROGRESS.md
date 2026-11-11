@@ -1,4 +1,6 @@
-﻿> **2026-11-10 air-only three-level real 50Hz result:** keeping every coil/plate tetrahedron and R fixed, `lc_air=40/30/25 mm` gives A1-B1 Bz consecutive differences **8.29843%/7.62061%** while plate Jy remains roughly 0.6–1.2%; A2-B2 Bz is not monotonic (9.73%/15.49%). Three matched real ElmerSolver runs exit 0. Simple Elmer nodal B recovery was also tested at fixed first time step and increased h-to-h Bz disagreement to 20–22%, therefore not used as a cure. [Evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 and D2 OPEN; G1 FAIL; teacher frozen.
+﻿> **2026-11-10 TEAM-7 canonical 50/200Hz full h/R matrix completed:** all ten real four-cycle BDF2 ElmerSolver cases exit 0 and output 101-point fields. 50Hz Bz h differences 11.64293%/10.89298%, 200Hz 13.53495%/12.70586%; 50Hz R differences 10.57370%/12.31519%, 200Hz 12.23323%/14.28411%. Additional independent fixed-solid air-only 40/30/25mm scan confirms unresolved 8.30%/7.62% Bz effects; direct nodal recovery does not cure. [Complete evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). h/R data collection DONE; precision TEAM7 and D2 OPEN, old G1 FAIL, teacher frozen.
+
+> **2026-11-10 air-only three-level real 50Hz result:** keeping every coil/plate tetrahedron and R fixed, `lc_air=40/30/25 mm` gives A1-B1 Bz consecutive differences **8.29843%/7.62061%** while plate Jy remains roughly 0.6–1.2%; A2-B2 Bz is not monotonic (9.73%/15.49%). Three matched real ElmerSolver runs exit 0. Simple Elmer nodal B recovery was also tested at fixed first time step and increased h-to-h Bz disagreement to 20–22%, therefore not used as a cure. [Evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 and D2 OPEN; G1 FAIL; teacher frozen.
 
 > **2026-11-10 independent air-mesh diagnostic:** real same-R, exactly same solid-mesh TEAM-7 air resolution 40 vs 30 mm gives 50 Hz A1-B1 Bz difference **8.29843%** while Jy is below 0.74%; 200 Hz full three-R sweep yields Bz differences **12.23323%/14.28411%**. Elmer elemental vs nodal reconstructed B at fixed solution differs ~9% on A1-B1, hence direct B field recovery and air discretization are urgent numerical targets. [Evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 precision OPEN, D2 OPEN, G1 FAIL, teacher frozen.
 
@@ -463,6 +465,7 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 | 2026-11-05 UTC | **99 passed 仍 P1-C FAIL，内径向主导 30.248%**。新代码在真实两盒射线每个湿区间端点加入壁距几何分片，数学依据是 BFZI `d/(d+s)` 导数的近壁尖层；独立一维解析积分的 Gauss-3 误差从 90.2794% 降至 0.060285%，仅为局部证据。新增六个盒面/棱/角湿点的原 1/r 常密度内势与精确 `SΩ` 对照，隔离角向裁剪误差。G1 不认证 | [失败日志](runs/p1_full/latest_full.log) · [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) · [TeX](../../../theory/sections/14_p1_exact_coulomb_sphere.tex) |
 
 | 2026-11-05 UTC | **P1-C 100 passed、物理 L 仍 FAIL**：真实盒壁端点改进使内径向差 30.248%→2.831%，但内角 3.607%、联合 7.349%、raw skew 2.333%。真实两盒解析 SΩ 角向近角误差最高 0.1107%；外 x 总相对差仅 1.841%，弱自项 L00/L22 却变化 54%/50%。本轮新增真实盒顶点方位分片 corner_both 同条件对照、两盒独立非零旋转标量真值及逐模态自/互磁能指标；原五模态两盒姿态均为单位阵，纠正旧措辞。待本机新结果，G1 FAIL | [日志](runs/p1_full/latest_full.log) · [P1 契约](P1_COULOMB_ANALYTIC_GATE.md) · [理论](../../../theory/sections/14_p1_exact_coulomb_sphere.tex) |
+
 
 
 
