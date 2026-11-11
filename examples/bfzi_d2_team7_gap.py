@@ -95,8 +95,8 @@ def solve(root, name, bin_dir, freq):
 
 
 
-def raw_one(root, name, bin_dir, freq=200):
-    """One physical timestep with original Elmer A edge DOFs saved for curl B."""
+def raw_run(root, name, bin_dir, freq=200, steps=1):
+    """Save original Elmer AV edge DOFs at first step or fourth-period end."""
     out = root/name
     if not (out/"TEAM7"/"mesh.elements").is_file():
         raise ValueError("Original Elmer tetra mesh is required")
@@ -104,23 +104,27 @@ def raw_one(root, name, bin_dir, freq=200):
     if ("TimeStep Intervals(1) = 64" not in s or
             'Results Directory "resene'+str(freq)+'s64"' not in s):
         raise ValueError("Expected original TEAM-7 64-step source")
-    s=s.replace("TimeStep Intervals(1) = 64","TimeStep Intervals(1) = 1")
-    s=s.replace("Output Intervals(1) = 64","Output Intervals(1) = 1")
+    if steps not in (1, 64):
+        raise ValueError("Expected one or 64 time steps")
+    if steps == 1:
+        s=s.replace("TimeStep Intervals(1) = 64","TimeStep Intervals(1) = 1")
+        s=s.replace("Output Intervals(1) = 64","Output Intervals(1) = 1")
+    tag=f"raw{steps}"
     s=s.replace(f'Results Directory "resene{freq}s64"',
-                'Results Directory "resraw1"')
-    s=s.replace("Simulation\n", 'Simulation\n  Output File = "raw1.result"\n', 1)
-    (out/"case_raw1.sif").write_text(s, encoding="utf-8")
-    (out/"resraw1").mkdir(exist_ok=True)
+                f'Results Directory "res{tag}"')
+    s=s.replace("Simulation\n", f'Simulation\n  Output File = "{tag}.result"\n', 1)
+    (out/f"case_{tag}.sif").write_text(s, encoding="utf-8")
+    (out/f"res{tag}").mkdir(exist_ok=True)
     env=os.environ.copy()
     env["ELMER_HOME"]=str(bin_dir.parent)
     env["PATH"]=str(bin_dir)+os.pathsep+env.get("PATH","")
-    with (out/"raw1.log").open("w") as log:
-        res=subprocess.run([str(bin_dir/"ElmerSolver.exe"),"case_raw1.sif"],
+    with (out/f"{tag}.log").open("w") as log:
+        res=subprocess.run([str(bin_dir/"ElmerSolver.exe"),f"case_{tag}.sif"],
                            cwd=out,env=env,stdout=log,stderr=subprocess.STDOUT)
-    result=out/"TEAM7"/"raw1.result"
+    result=out/"TEAM7"/f"{tag}.result"
     if res.returncode != 0 or not result.is_file():
         raise RuntimeError(f"Elmer native edge run failed for {name}")
-    print(f"raw1 {name} exit=0 result_bytes={result.stat().st_size}",flush=True)
+    print(f"{tag} {name} exit=0 result_bytes={result.stat().st_size}",flush=True)
 
 def compare(root, freq, axis="h"):
     """Original elemental SaveLine B/J at fourth-period end on fixed 101 points."""
@@ -157,6 +161,7 @@ def main():
     p.add_argument("--mesh", action="store_true")
     p.add_argument("--solve", action="store_true")
     p.add_argument("--raw-one", action="store_true")
+    p.add_argument("--raw-64", action="store_true")
     p.add_argument("--compare", action="store_true")
     p.add_argument("--axis", choices=("h", "R"), default="h")
     p.add_argument("--out", type=Path)
@@ -167,7 +172,9 @@ def main():
     if a.solve:
         solve(a.root, a.case, a.elmerbin, a.freq)
     if a.raw_one:
-        raw_one(a.root, a.case, a.elmerbin, a.freq)
+        raw_run(a.root, a.case, a.elmerbin, a.freq, 1)
+    if a.raw_64:
+        raw_run(a.root, a.case, a.elmerbin, a.freq, 64)
     if a.compare:
         import json
         report = compare(a.root, a.freq, a.axis)
