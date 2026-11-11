@@ -82,6 +82,58 @@ def compare(rows, field):
     )
 
 
+
+def wave(root, col):
+    """Fourth-cycle native waveform, aligned in physical time.
+
+    The half-step shift is a diagnostic for a first backward difference
+    postprocessor, not a modification of Elmer fields or accepted labels.
+    """
+    data = {}
+    for n in STEPS:
+        f = root / "h10" / f"resene200s{n}" / "phys.dat"
+        y = np.loadtxt(f)[-n//4:, col]
+        t = np.arange(3*n//4+1, n+1)*T_END/n
+        w = 4*3.14*200
+        x = np.stack((np.ones_like(t), np.cos(w*t), np.sin(w*t)), axis=1)
+        c = np.linalg.lstsq(x, y, rcond=None)[0]
+        pred = x@c
+        data[n] = dict(coef=c, phase=float(np.arctan2(-c[2], c[1])),
+                       amp=float(np.hypot(c[1], c[2])),
+                       fit_rel=float(np.linalg.norm(y-pred)/np.linalg.norm(y)),
+                       mean=float(c[0]),
+                       raw=y[::n//64],
+                       times=t)
+    # The right endpoints of the common 16 time bins.
+    t = np.arange(49, 65)*T_END/64
+    raw = [data[n]["raw"] for n in STEPS]
+    def pair(vals):
+        a,b,c = vals
+        x,y = np.linalg.norm(a-b), np.linalg.norm(b-c)
+        return dict(rel64_128=float(x/np.linalg.norm(b)),
+                    rel128_256=float(y/np.linalg.norm(c)),
+                    order=float(np.log2(x/y)) if x>0 and y>0 else None)
+    models = []
+    for n in STEPS:
+        c = data[n]["coef"]
+        # Probe whether a half-step temporal delay explains first-order
+        # phase discrepancy; preserve original numerical observations.
+        tt = t + T_END/(2*n)
+        models.append(c[0]+c[1]*np.cos(w*tt)+c[2]*np.sin(w*tt))
+    return dict(
+        rows=[dict(steps=n, phase_rad=data[n]["phase"],
+                   harmonic_amplitude=float(data[n]["amp"]),
+                   harmonic_mean=data[n]["mean"],
+                   harmonic_fit_rel=data[n]["fit_rel"]) for n in STEPS],
+        raw_waveform=pair(raw),
+        shifted_harmonic_model=pair(models),
+        observed_phase_delta=[data[128]["phase"]-data[64]["phase"],
+                              data[256]["phase"]-data[128]["phase"]],
+        backward_difference_phase_delta=[(2*3.14*200)*T_END/128,
+                                         (2*3.14*200)*T_END/256],
+        note="Hypothesis diagnostic only; no modified field, energy or power labels",
+    )
+
 def calc(root):
     read = [read_run(root, n) for n in STEPS]
     rows, configs = zip(*read)
@@ -92,7 +144,8 @@ def calc(root):
     return dict(
         frequency_hz=200, mesh="h10", R_m=0.2,
         scheme="BDF2", source="CSC TEAM7 original three-component cos(2*3.14*f*t)",
-        measurement_used=False, rows=list(rows), comparison=res, gate="OPEN",
+        measurement_used=False, rows=list(rows), comparison=res,
+        waveform={"eddy": wave(root, 0), "energy": wave(root, 1)}, gate="OPEN",
     )
 
 
