@@ -99,7 +99,7 @@ def compare(root, freq, axis="h"):
     from examples.bfzi_d2_team7_conv import load, cmp
     from examples.bfzi_d2_team7_integrals import read_phys
     cases = (("h10", "gap12", "gap08", "gap06", "gap05", "gap04")
-             if axis == "h" else ("rgap15", "gap06", "rgap30"))
+             if axis == "h" else ("rgap15", "gap06", "rgap30", "rgap40"))
     vals = {n: load(root/n/f"resene{freq}s64"/"f.dat") for n in cases}
     native = {n: read_phys(root/n/f"resene{freq}s64"/"phys.dat") for n in cases}
     if any(v["rows"] != 64 for v in native.values()):
