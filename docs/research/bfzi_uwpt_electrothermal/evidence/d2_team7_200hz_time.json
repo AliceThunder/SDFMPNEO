@@ -1,0 +1,54 @@
+{
+  "frequency_hz": 200,
+  "mesh": "h10",
+  "R_m": 0.2,
+  "scheme": "BDF2",
+  "source": "CSC TEAM7 original three-component cos(2*3.14*f*t)",
+  "measurement_used": false,
+  "rows": [
+    {
+      "steps": 64,
+      "dt_s": 0.0003125,
+      "time_s": 0.02,
+      "eddy_W": 15.08128398271,
+      "energy_J": 0.5237866355189,
+      "power_period_rel": 0.0008230978757665179,
+      "energy_period_rel": 9.910891206409313e-05
+    },
+    {
+      "steps": 128,
+      "dt_s": 0.00015625,
+      "time_s": 0.02,
+      "eddy_W": 14.99413658087,
+      "energy_J": 0.5239368486655,
+      "power_period_rel": 0.0014814148043936028,
+      "energy_period_rel": 9.969425443727085e-05
+    },
+    {
+      "steps": 256,
+      "dt_s": 7.8125e-05,
+      "time_s": 0.02,
+      "eddy_W": 14.68591733688,
+      "energy_J": 0.5239731990789,
+      "power_period_rel": 0.0017660567695603044,
+      "energy_period_rel": 9.883379778008584e-05
+    }
+  ],
+  "comparison": {
+    "eddy_W": {
+      "rel64_128": 0.005812098707383045,
+      "rel128_256": 0.02098740153030724,
+      "order": -1.8224273823683643,
+      "extrapolated": null,
+      "remaining_relative": null
+    },
+    "energy_J": {
+      "rel64_128": 0.00028670086286662665,
+      "rel128_256": 6.937456622571562e-05,
+      "order": 2.046967405928133,
+      "extrapolated": 0.523984803864041,
+      "remaining_relative": 2.214717880246343e-05
+    }
+  },
+  "gate": "OPEN"
+}
