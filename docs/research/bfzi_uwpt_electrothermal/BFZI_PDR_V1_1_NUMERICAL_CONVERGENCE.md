@@ -1,3 +1,5 @@
+﻿> **2026-11-10 BFZI-PDR V1.1 D2 3D body field evidence:** actual 50/200 Hz four-cycle Elmer VTUs sampled on identical fixed interior 3D regions, no experiments. 50 Hz air-gap B L2 h 7.9479%/7.1604%, upper-air 8.2709%/5.9261%; 200 Hz plate-bulk J h 19.2427%/17.3987%. RMS-only criteria can hide vector field differences. Same-mesh one-step CSC source representation check confirms identical B and plate J but changed reported coil-body J variable. [Full 3D evidence](evidence/d2_team7_3d_regions.md) ([JSON](evidence/d2_team7_3d_regions.json)). Original elemental curl and true volume-energy convergence still OPEN; D2 OPEN, G1 FAIL, teacher frozen.
+
 # BFZI-PDR V1.1：数值收敛优先的 D2 验收规范
 
 **生效日期：2026-11-10** · **适用分支：** `research/bfzi-uwpt-electrothermal-surrogate` · **关口：D2 OPEN**
@@ -52,3 +54,4 @@ python -m examples.bfzi_d2_team7_conv --root D:\work\BFZI-D2-verify\runs\team7_h
 **从真实 H(curl) 三维体场出发，优先改善场恢复与空气/线圈界面的体网格离散。** 在相同物理源、相同外域及材料下，获取可比较的空间体场误差、磁能量或区域均方观测量，逐一检验边元阶数/旋度 B 恢复方法是否提高收敛；再回头检验三档 R 与更严格的 200 Hz 时间预算。避免继续重复纯测线分段加密或为了实验拟合而调参。完成 D2 数值与物理关口后，按既有计划进入 BFZI 两端口同源比较。
 
 **状态：TEAM-7 完整数值精度 OPEN，D2 OPEN，旧 G1 FAIL，神经代理教师冻结。**
+

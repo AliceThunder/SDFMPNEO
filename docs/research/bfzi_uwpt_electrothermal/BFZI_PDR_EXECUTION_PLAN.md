@@ -1,4 +1,6 @@
-﻿> **现行 D2 验收修订（2026-11-10，BFZI-PDR V1.1）：** [数值收敛优先规范](BFZI_PDR_V1_1_NUMERICAL_CONVERGENCE.md) 替代历史以 TEAM-7 Bz/Jy 实验曲线拟合差作为数值 PASS/FAIL 判据的执行表述。D2 验收顺序为独立 h/R/Δt 数值收敛 → 物理方程及功率一致性 → 同源独立求解器交叉验证；实验仅为最终外部比较。现有 h/R 双频全部数据已用 [无实验数据的数值收敛计算](evidence/d2_team7_numerical_conv.md) 分析，D2 仍 OPEN；G1 FAIL，教师冻结。
+﻿> **2026-11-10 BFZI-PDR V1.1 D2 3D body field evidence:** actual 50/200 Hz four-cycle Elmer VTUs sampled on identical fixed interior 3D regions, no experiments. 50 Hz air-gap B L2 h 7.9479%/7.1604%, upper-air 8.2709%/5.9261%; 200 Hz plate-bulk J h 19.2427%/17.3987%. RMS-only criteria can hide vector field differences. Same-mesh one-step CSC source representation check confirms identical B and plate J but changed reported coil-body J variable. [Full 3D evidence](evidence/d2_team7_3d_regions.md) ([JSON](evidence/d2_team7_3d_regions.json)). Original elemental curl and true volume-energy convergence still OPEN; D2 OPEN, G1 FAIL, teacher frozen.
+
+> **现行 D2 验收修订（2026-11-10，BFZI-PDR V1.1）：** [数值收敛优先规范](BFZI_PDR_V1_1_NUMERICAL_CONVERGENCE.md) 替代历史以 TEAM-7 Bz/Jy 实验曲线拟合差作为数值 PASS/FAIL 判据的执行表述。D2 验收顺序为独立 h/R/Δt 数值收敛 → 物理方程及功率一致性 → 同源独立求解器交叉验证；实验仅为最终外部比较。现有 h/R 双频全部数据已用 [无实验数据的数值收敛计算](evidence/d2_team7_numerical_conv.md) 分析，D2 仍 OPEN；G1 FAIL，教师冻结。
 
 > **2026-11-10 D2 dual-frequency local probe refinement completed:** 60/120/240-segment air-line meshes have identical coil/plate tetrahedra; 120/240 at both 50/200 Hz exited 0. While 17-point A1 Bz measurement-fit improved to 10.29175% (50 Hz) and 11.98845% (200 Hz), 120/240 direct A1 Bz differences remain **8.58829% / 10.12530%** (50/200 Hz), with A2 Bz **10.92639% / 12.95207%**. Convergence FAIL; next solve must target air/interface H(curl) discretization and physical field recovery, rather than increase embedded line segmentation. [Real evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 / D2 OPEN, G1 FAIL, teacher frozen.
 
@@ -138,6 +140,7 @@ D5 参考通过（或用户依据独立高保真 A–φ 标签**明确授权改�
 | 下一次状态 | Elmer 3D 求解 SMOKE PASS，50/200Hz 三档 h/R 数据采集 COMPLETE；**TEAM-7 数值精度 OPEN，D2 OPEN**，直到独立空间/时间/外域数值收敛和物理及同源场精度通过 |
 
 **权威关系：** [锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) → [独立验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) → **本文 BFZI-PDR V1.0 执行任务序** → [独立 Elmer 技术细节](D2_ELMER_INDEPENDENT_REFERENCE.md) → [项目进度看板](PROJECT_PROGRESS.md)。不得将后一层的历史描述反过来覆盖前一层。
+
 
 
 
