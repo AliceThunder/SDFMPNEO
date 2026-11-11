@@ -44,6 +44,7 @@ def test_vector_time_orders(tmp_path):
     d=calc(tmp_path,points=3)
     assert np.isclose(d["observables"]["A1_Bz"]["order"],2,atol=1e-8)
     assert np.isclose(d["observables"]["Jy_top"]["order"],1,atol=1e-8)
+    assert np.isclose(d["observables"]["A1_Bz"]["endpoint"]["order"],2,atol=1e-8)
 
 
 def test_interlevel_geometry_changed(tmp_path):
