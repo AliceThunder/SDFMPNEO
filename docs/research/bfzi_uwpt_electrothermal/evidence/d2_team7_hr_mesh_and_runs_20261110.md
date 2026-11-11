@@ -55,3 +55,37 @@ Use the **same 101 point locations**, final phase-0 time step 64, and calculate 
 | r15 vs h10 (characteristic lengths fixed at 1.0) | **10.57370%** | **2.80915%** | **3.43224%** |
 
 These large field differences are independent direct evidence that both h and finite-domain truncation are material numerical error sources in these runs. The previously measured 50 Hz BDF2 temporal difference (0.174164%, original mesh, 101-point 3-vector B) is substantially smaller in scale and measured on a separate mesh. **Do not compare the 17-point experimental-fit errors as a convergence order.** The fine h075 case and expanded r30 case are required before drawing a monotonic h/R limit; 200 Hz intermesh comparisons are also OPEN.
+
+## 2026-11-10: three-level 50 Hz h/R results and independent 200 Hz partial results
+
+All five **50 Hz** real BDF2 four-period cases have now exited 0 and yielded the actual 101-point/four-line `res50/f.dat`. Timings: h15 **312.45 s**, h10 **822.09 s**, h075 **1682.32 s**, r15 **609.93 s**, r30 **1371.07 s**. Fixed 17-point A1-B1 Bz relative L2 differences to 50 Hz experiment (not convergence orders):
+
+| case | tetrahedra | Bz experimental relative L2 |
+| --- | ---: | ---: |
+| h15 | 53,510 | 11.74929% |
+| h10 = R0.20 | 129,305 | 14.34794% |
+| h075 | 267,482 | 16.24855% |
+| r15 = R0.15 | 97,763 | 15.24475% |
+| r30 = R0.30 | 220,222 | 14.67102% |
+
+Direct end-of-cycle, fixed-probe intermesh differences, normalized to the second result in each pair:
+
+| 50 Hz pair | A1-B1 Bz relative L2 | top plate Jy relative L2 | bottom plate Jy relative L2 |
+| --- | ---: | ---: | ---: |
+| h15 vs h10 | 11.64293% | 2.49029% | 3.90561% |
+| h10 vs h075 | **10.89298%** | **1.61344%** | **1.59238%** |
+| r15 vs h10 | 10.57370% | 2.80915% | 3.43224% |
+| h10 vs r30 | **12.31519%** | **2.09613%** | **3.37253%** |
+
+**Diagnosis:** 50 Hz Bz remains highly sensitive (~11%) at the next finer h, despite Jy improving to ~1.6% on both aluminium probe lines. Measurement-fitting error increases with h refinement, so the best-fitting coarse Bz is not trustworthy evidence of accuracy. The R=0.15/0.20/0.30 m results do not yet show an asymptotic infinite-domain trend. Actual Elmer native `mesh.elements` and `mesh.nodes` were parsed with coordinate-based tetra comparisons: **all 3,600 coil tetrahedra and all 27,570 plate tetrahedra are identical vertex-by-vertex** for the three R meshes (100% overlap). Thus R variations do not arise from re-meshing the solid coil or conductor; air-domain discretization and outer total-A boundary remain the leading suspected causes. This comparison alone does not isolate the two mechanisms.
+
+Two complete 200 Hz meshes also gave independent direct differences (all BDF2, 64 steps, dt 0.3125 ms, final excitation phase 0):
+
+| 200 Hz pair | A1-B1 Bz relative L2 | upper Jy relative L2 | lower Jy relative L2 |
+| --- | ---: | ---: | ---: |
+| h15 vs h10 | **13.53495%** | 4.20926% | 7.83425% |
+| r15 vs h10 | **12.23323%** | 2.50661% | 4.17763% |
+
+At 200 Hz h15 and h10 measured 17-point Bz errors were 15.07500% and 17.10490%; r15 was 18.29973%. Completed 200 Hz actual elapsed times: h15 **292.07 s**, h10 **692.05 s**, r15 **536.71 s**. The 200 Hz h075 and r30 solver calculations were still active at this record. They must be read from actual final logs/data before claiming dual-frequency three-axis convergence.
+
+**Next physical action:** investigate coarse air-space field interpolation and finite outer-domain boundary independently while holding the full original coil geometry/source/plate fixed. Do not accept TEAM-7 full accuracy or D2 until these large Bz errors are controlled; 200 Hz temporal budget also remains OPEN. G1 FAIL, teacher frozen.
