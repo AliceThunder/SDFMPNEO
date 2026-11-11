@@ -1,3 +1,5 @@
+> **2026-11-10 D2 TEAM-7 h/R real mesh progress:** [five real Gmsh/ElmerGrid meshes and solver diagnosis](evidence/d2_team7_hr_mesh_and_runs_20261110.md). Five native meshes built (h tetra: 53,510/129,305/267,482; R tetra: 97,763/129,305/220,222). The initial Elmer SIGSEGV was resolved by setting ELMER_HOME; the first 1-step Elmer solve exited 0. Full 50/200Hz four-cycle BDF2 h/R field comparisons are still OPEN. G1 FAIL, teacher frozen.
+
 # BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0
 
 > **2026-11-10：TEAM-7 h/R 真实网格及首档双频 BDF2 实算。** [阶段证据](evidence/d2_team7_hr_20261110.md)：三档 h 为 53,510/129,305/267,482 个四面体；三档外域 R=0.15/0.20/0.30 m，外盒六面均独立变化。Gmsh 和 ElmerGrid 全部完成；首档 50/200Hz 四周期各 64 步退出 0，17点 Bz 测量相对 L2 差 11.7493% / 15.0750%。h10 双频已完成：50/200Hz Bz 测量差 14.3479%/17.1049%，与 h15 的 11.7493%/15.0750% 比较尚未单调；h075、R 与 Jy 完整对比仍 OPEN，TEAM-7 完整精度及 D2 仍 OPEN，G1 FAIL，教师冻结。
