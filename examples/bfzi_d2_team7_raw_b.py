@@ -51,9 +51,7 @@ def read_av(path, n):
     return last
 
 
-def calc(mesh, result, mu0=MU0):
-    if not np.isfinite(mu0) or mu0 <= 0:
-        raise ValueError("Expected positive vacuum permeability")
+def raw_field(mesh, result):
     node = np.loadtxt(mesh/"mesh.nodes")
     elem = np.loadtxt(mesh/"mesh.elements", dtype=np.intp)
     if not np.array_equal(node[:, 0].astype(np.intp), np.arange(1, len(node)+1)):
@@ -76,9 +74,16 @@ def calc(mesh, result, mu0=MU0):
     b = np.einsum("te,tec->tc", av[len(node):][idx]*sign, rot,
                   optimize=True)
     volume = np.abs(det)/6
+    return node[:, 2:5], tet, b, volume, ned, len(av)
+
+
+def calc(mesh, result, mu0=MU0):
+    if not np.isfinite(mu0) or mu0 <= 0:
+        raise ValueError("Expected positive vacuum permeability")
+    node, tet, b, volume, ned, ndof = raw_field(mesh, result)
     energy = float(np.dot(volume, np.sum(b*b, axis=1))/(2*mu0))
     return {"nodes": len(node), "tetrahedra": len(tet),
-            "edge_dofs": ned, "av_dofs": len(av),
+            "edge_dofs": ned, "av_dofs": ndof,
             "magnetic_energy_J": energy,
             "mu0_H_per_m": float(mu0),
             "B_rms_T": float(np.sqrt(np.dot(volume, np.sum(b*b, axis=1))/volume.sum()))}
