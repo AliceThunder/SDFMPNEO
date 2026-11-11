@@ -16,6 +16,7 @@ def make_case(root, n, *, changed=False, complete=True):
         "TimeStepping Method = BDF", "BDF Order = 2",
         f"Timestep Sizes(1) = Real {0.02/n}",
         f"TimeStep Intervals(1) = {n}",
+        f"Output Intervals(1) = {n}",
         'Component 1 = Variable Time; Real MATC "cos(2*3.14*200*tx[0])"',
         "Sigma = 1" if changed else "Sigma = 0",
     ])
