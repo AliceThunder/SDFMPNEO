@@ -35,3 +35,10 @@ The fixed measurements are A1-B1 `(x,0.072,0.034)m`, 101 points with `Bz` in Sav
 ## First complete field solve: h15, 50 Hz
 
 On the physical 53,510-tetrahedron h15 mesh, the actual BDF2 four-cycle (64 steps, dt=1.25 ms) Elmer solve exited **0** in **312.45 s** and produced `res50/f.dat`. Fixed 17-point A1-B1 Bz measurement-relative L2 error was **11.74929%** and the maximum absolute Jy sampled on the two aluminium-plate lines was **1.0962685e6 A/m^2**. These are measured outcomes of the coarse mesh, not convergence evidence. The remaining h/R/frequency sweeps remain OPEN.
+
+## Additional completed real solves
+
+- h15, 200 Hz, BDF2, 64 steps at 0.3125 ms: actual ElmerSolver exit **0**, elapsed **292.07 s**, `res200/f.dat` present. A1-B1 17-point Bz relative L2 to fixed 200 Hz measurement = **15.07500%**; two plate lines max abs Jy = **2.65811485e6 A/m^2**.
+- r15, 50 Hz, BDF2, 64 steps at 1.25 ms: actual `res50/f.dat` present and solver completed successfully; A1-B1 17-point Bz relative L2 to fixed 50 Hz measurement = **15.24475%**; two plate lines max abs Jy = **1.09307402e6 A/m^2**.
+
+These single-mesh measurement errors do **not** constitute h or R convergence. Direct same-frequency intermesh Bz/Jy comparisons still require all relevant meshes. The 200 Hz temporal error is not independently budgeted yet.
