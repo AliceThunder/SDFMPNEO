@@ -42,3 +42,16 @@ On the physical 53,510-tetrahedron h15 mesh, the actual BDF2 four-cycle (64 step
 - r15, 50 Hz, BDF2, 64 steps at 1.25 ms: actual `res50/f.dat` present and solver completed successfully; A1-B1 17-point Bz relative L2 to fixed 50 Hz measurement = **15.24475%**; two plate lines max abs Jy = **1.09307402e6 A/m^2**.
 
 These single-mesh measurement errors do **not** constitute h or R convergence. Direct same-frequency intermesh Bz/Jy comparisons still require all relevant meshes. The 200 Hz temporal error is not independently budgeted yet.
+
+## First direct same-frequency spatial differences (50 Hz, actual completed fields)
+
+The h10 (=R 0.20 m) four-cycle 50 Hz BDF2 solve completed with exit **0** in **822.09 s**. A1-B1 17-point measured Bz relative L2 error: **14.34794%**, illustrating non-monotonic measurement discrepancy (coarse h15 had 11.74929%). Plate lines peak absolute Jy: **1.11763110e6 A/m^2**. The r15 (=R 0.15 m) 50 Hz solver completed in **609.93 s** with exit 0.
+
+Use the **same 101 point locations**, final phase-0 time step 64, and calculate `norm(v_a-v_b)/norm(v_b)` on physical SaveLine fields:
+
+| 50 Hz pair | A1-B1 Bz relative L2 | plate upper Jy relative L2 | plate lower Jy relative L2 |
+| --- | ---: | ---: | ---: |
+| h15 vs h10 (R fixed at 0.20 m) | **11.64293%** | **2.49029%** | **3.90561%** |
+| r15 vs h10 (characteristic lengths fixed at 1.0) | **10.57370%** | **2.80915%** | **3.43224%** |
+
+These large field differences are independent direct evidence that both h and finite-domain truncation are material numerical error sources in these runs. The previously measured 50 Hz BDF2 temporal difference (0.174164%, original mesh, 101-point 3-vector B) is substantially smaller in scale and measured on a separate mesh. **Do not compare the 17-point experimental-fit errors as a convergence order.** The fine h075 case and expanded r30 case are required before drawing a monotonic h/R limit; 200 Hz intermesh comparisons are also OPEN.
