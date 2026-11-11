@@ -66,6 +66,8 @@ def bdf2_joule(mesh, a_hist, phi, dt):
     """
     from .direct3d_aphi import _BARY4
     edges, loc, sign, *_ = _topology(mesh)
+    if np.iscomplexobj(a_hist) or np.iscomplexobj(phi):
+        raise ValueError("BDF2 transient E/J requires real fields")
     a = np.asarray(a_hist, dtype=float)
     p = np.asarray(phi, dtype=float)
     if (a.shape != (3, len(edges)) or p.shape != (len(mesh.nodes),)
