@@ -34,17 +34,25 @@ def probe(xyz, tet, b, points):
     return np.asarray(res["Braw"], dtype=float)
 
 
-def run(root, n=11):
+def run(root, n=11, steps=1):
     positions = {name: pts(bounds, n) for name, bounds in BOXES.items()}
-    cases = tuple(dict.fromkeys(v for vs in SERIES.values() for v in vs))
+    if steps not in (1, 64):
+        raise ValueError("Expected 1 or 64 steps")
+    series = (SERIES if steps == 1 else {
+        "h": ("h10", "gap06", "gap04"),
+        "R": ("gap06", "rgap30", "rgap40"),
+    })
+    cases = tuple(dict.fromkeys(v for vs in series.values() for v in vs))
     sample, energy = {}, {}
     for name in cases:
         directory = root/name
         mesh = directory/"TEAM7"
-        res = mesh/("edge.result" if name == "h10" else "raw1.result")
+        res = mesh/(f"edge{steps}.result" if name == "h10" and steps==64
+                    else "edge.result" if name == "h10"
+                    else f"raw{steps}.result")
         xyz, tet, b, vol, _, _ = raw_field(mesh, res)
         energy[name] = float(np.dot(vol, np.sum(b*b, axis=1))/(2*MU))
-        phys = directory/("res_edge1" if name == "h10" else "resraw1")/"phys.dat"
+        phys = directory/(f"res_edge{steps}" if name == "h10" else f"resraw{steps}")/"phys.dat"
         native = float(np.atleast_2d(np.loadtxt(phys))[-1, 1])
         if abs(energy[name]-native)/abs(native) > 1e-7:
             raise ValueError(f"Original Whitney B energy differs from native: {name}")
@@ -53,8 +61,8 @@ def run(root, n=11):
         print(name, "raw_energy_J", energy[name], flush=True)
     out = {
         "frequency_hz": 200,
-        "time_s": 0.0003125,
-        "steps": 1,
+        "time_s": steps*0.0003125,
+        "steps": steps,
         "origin": "Original Elmer A edge DOFs / Whitney tetra curl, raw cell sampling",
         "material_mu0": MU,
         "measurements_used": False,
@@ -65,7 +73,7 @@ def run(root, n=11):
     }
     for region in positions:
         studies = {}
-        for axis, names in SERIES.items():
+        for axis, names in series.items():
             rows = []
             for left, right in zip(names[:-1], names[1:]):
                 x, y = sample[left][region], sample[right][region]
@@ -76,6 +84,8 @@ def run(root, n=11):
                     "from": left, "to": right, "count": len(x),
                     "B_L2_rel": float(np.linalg.norm(x-y)/den),
                     "B_rms_rel": float(abs(np.linalg.norm(x)-den)/den),
+                    "B_mean_rel": float(np.linalg.norm(np.mean(x-y,axis=0)) /
+                                        np.sqrt(np.mean(np.sum(y*y,axis=1)))),
                 })
             studies[axis] = rows
         out["regions"][region] = {"bounds_m": BOXES[region],
@@ -88,8 +98,9 @@ def main():
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--n", type=int, default=11)
+    p.add_argument("--steps", type=int, choices=(1,64), default=1)
     a=p.parse_args()
-    result=run(a.root, a.n)
+    result=run(a.root, a.n, a.steps)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     for region, data in result["regions"].items():
