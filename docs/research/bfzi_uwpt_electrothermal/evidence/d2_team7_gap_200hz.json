@@ -1,0 +1,96 @@
+{
+  "frequency_hz": 200,
+  "steps": 64,
+  "phase_time_s": 0.02,
+  "source": "same CSC TEAM-7 source / solids / 0.20m exterior",
+  "measurement_used": false,
+  "cases": [
+    "h10",
+    "gap12",
+    "gap08"
+  ],
+  "native": {
+    "h10": {
+      "eddy_power_W": 15.08128398271,
+      "em_energy_J": 0.5237866355189,
+      "rows": 64,
+      "power_period_rel": 0.0008230978757665179,
+      "energy_period_rel": 9.910891206409313e-05
+    },
+    "gap12": {
+      "eddy_power_W": 14.85180202459,
+      "em_energy_J": 0.525131605059,
+      "rows": 64,
+      "power_period_rel": 0.0008546625856569049,
+      "energy_period_rel": 9.936452766759621e-05
+    },
+    "gap08": {
+      "eddy_power_W": 14.73127507628,
+      "em_energy_J": 0.5260238551821,
+      "rows": 64,
+      "power_period_rel": 0.0008313061521550448,
+      "energy_period_rel": 9.855103868251983e-05
+    }
+  },
+  "energy_pairs": [
+    {
+      "from": "h10",
+      "to": "gap12",
+      "em_energy_J_rel": 0.0025612047097201144,
+      "eddy_power_W_rel": 0.01545145550284389
+    },
+    {
+      "from": "gap12",
+      "to": "gap08",
+      "em_energy_J_rel": 0.0016962160828069908,
+      "eddy_power_W_rel": 0.008181705092458096
+    }
+  ],
+  "pairs": [
+    {
+      "from": "h10",
+      "to": "gap12",
+      "A1_Bz_rel": 0.11214456817215823,
+      "A1_Bz_rms_delta": 0.00045651789422741703,
+      "A1_Bz_mean_delta_T": -2.5931777806005058e-05,
+      "A1_Bz_mean_delta_over_rms": 0.006347258940376821,
+      "A1_Bz_rms_rel": 0.0026599513427572018,
+      "A1_Bxyz_rel": 0.07436565598836599,
+      "A1_Bxyz_rms_delta": 0.00035468092014104,
+      "A2_Bz_rel": 0.13810816400852197,
+      "A2_Bz_rms_delta": 0.0004883934005379222,
+      "A2_Bz_mean_delta_T": -0.00011648116338626876,
+      "A2_Bz_mean_delta_over_rms": 0.03282727418904759,
+      "A2_Bz_rms_rel": 0.025917661384209444,
+      "A2_Bxyz_rel": 0.0817639973677968,
+      "A2_Bxyz_rms_delta": 0.0003918009422073128,
+      "Jy_top_rel": 0.014698270473297846,
+      "Jy_top_rms_delta": 13774.05771094002,
+      "Jy_bottom_rel": 0.007862251294621847,
+      "Jy_bottom_rms_delta": 2325.528279816491
+    },
+    {
+      "from": "gap12",
+      "to": "gap08",
+      "A1_Bz_rel": 0.09223930515935382,
+      "A1_Bz_rms_delta": 0.00037710154276846593,
+      "A1_Bz_mean_delta_T": 9.860665805514987e-06,
+      "A1_Bz_mean_delta_over_rms": 0.0024025295206224293,
+      "A1_Bz_rms_rel": 0.004574943754099272,
+      "A1_Bxyz_rel": 0.0635980039153818,
+      "A1_Bxyz_rms_delta": 0.00030302959209260803,
+      "A2_Bz_rel": 0.1136620304068784,
+      "A2_Bz_rms_delta": 0.00040841839123558534,
+      "A2_Bz_mean_delta_T": -5.280868536662543e-05,
+      "A2_Bz_mean_delta_over_rms": 0.014639512864987868,
+      "A2_Bz_rms_rel": 0.01634648888191545,
+      "A2_Bxyz_rel": 0.06535554004142494,
+      "A2_Bxyz_rms_delta": 0.0003121315744068857,
+      "Jy_top_rel": 0.014788581151710471,
+      "Jy_top_rms_delta": 13966.092181053398,
+      "Jy_bottom_rel": 0.006947520841197184,
+      "Jy_bottom_rms_delta": 2063.9832256779628
+    }
+  ],
+  "status": "D2 OPEN"
+}
