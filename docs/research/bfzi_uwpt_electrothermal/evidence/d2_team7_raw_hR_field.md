@@ -25,11 +25,36 @@ h 加密在空气间隙原始 B 上确实降低相邻场差；R 相邻场差仍�
 
 作为同一数据的独立物理观察量，空气间隙 B 的 **RMS 幅值相邻差** 在 h 6→5、5→4 时仅为 0.267%、0.272%，R 0.20→0.30、0.30→0.40 时为 0.263%、0.260%。对应 **区域均值向量差除以参考 RMS** 为 0.146%、0.210% 和 0.553%、0.233%。这说明原始分片常值 B 的局部空间差异远大于整体能量/均值差，不能用 RMS 或平滑后的较低差值替代原始 B 的向量场收敛。
 
+## 四周期终点原始 B：真实三维 h/R 收敛
+
+再次独立运行三个真实 200 Hz、BDF2 64 步四周期算例（gap06、gap04、rgap30，均 exit 0），加上先前已经完成的 h10 全周期原始 A 输出，固定 \(t=0.0200000\mathrm{s}\) 重建原始 Whitney B。全部使用与一步相同的 TetraEdgeMap、有向边自由度、11³ 固定物理三维位置和常值单元 B 取样，不读取恢复节点场。
+
+| 四周期终点原始 B 向量 L² 相邻差 | h10→gap06 | gap06→gap04 | R0.20→R0.30（间隙 6 mm） |
+|---|---:|---:|---:|
+| 三维空气间隙 | **23.0704%** | **10.1374%** | **11.3915%** |
+| 三维上方空气 | 10.5946% | **5.4951%** | 24.6772% |
+| 三维铝板内部 | 8.6061% | **3.3366%** | 3.5189% |
+
+对应三维空气间隙 B 的 RMS 幅值相邻差为 **2.7632%、0.5418%、0.2753%**；B 的区域均值向量相邻差除以参考 RMS 为 **0.7161%、0.1195%、0.5522%**。幅值与均值表现比局部向量 L² 差更稳定，不能用于替代场精度验收。
+
+| 四周期原始 Whitney B 独立磁能量 | 实测积分 J |
+|---|---:|
+| h10 | 0.523786635518865 |
+| gap06 | 0.526432759590605 |
+| gap04 | 0.527003630529929 |
+| rgap30 | 0.529728591439518 |
+
+四个积分分别与同一工况的 Elmer 原生 SaveScalars 磁能量通过相对差 \(10^{-7}\) 的独立数值一致性判定；其中 h10 与 gap06 已分别达到 \(6.72\times10^{-14}\)、\(9.28\times10^{-15}\)，rgap30 为 \(3.37\times10^{-14}\)。因此当前场间差异来自真实的独立网格离散场变化，不是边编号或磁导率使用错误。
+
+[完整四周期原始 B JSON](d2_team7_raw_hR_200hz_64.json)。本轮的 R=0.40 m 原始 B 在**一步**结果中已验证，四周期 R=0.40 m 原始边数据尚未重新计算，现有原生积分及节点重建场四周期证据保留在 [外域 R 原生结果](d2_team7_rgap_200hz.json)。
+
+**数值结论：** 加密真实空气网格明显降低原始 B 的空间差异，R 增大时原始 B 的局部向量场仍有约 11.4% 相邻差。当前 R 扫描也伴随近场空气网格重新剖分，因此下一项直接处理固定近场体网格的外域延伸，并继续原始 Whitney B 的跨网格 h/R 收敛。TEAM-7 数值精度、D2 均 **OPEN**。
+
 ## 证据与复现
 
 - [真实一步原始 B 场完整 JSON](d2_team7_raw_hR_200hz_1step.json)
-- [原始 Whitney curl B 实现](../../../examples/bfzi_d2_team7_raw_b.py)
-- [三维 h/R 同位置直接比较程序](../../../examples/bfzi_d2_team7_raw_conv.py)
+- [原始 Whitney curl B 实现](../../../../examples/bfzi_d2_team7_raw_b.py)
+- [三维 h/R 同位置直接比较程序](../../../../examples/bfzi_d2_team7_raw_conv.py)
 - [同源原始磁能量一致性证据](d2_team7_whitney_raw_b.md)
 
 复现：`python -m examples.bfzi_d2_team7_gap --root D:/work/BFZI-D2-verify/runs/team7_hr --elmerbin D:/work/ElmerFEM/ElmerFEM-nogui-nompi-Windows-AMD64/bin --case gap04 --raw-one --freq 200`，然后运行 `python -m examples.bfzi_d2_team7_raw_conv --root D:/work/BFZI-D2-verify/runs/team7_hr --steps 1 --n 11 --out docs/research/bfzi_uwpt_electrothermal/evidence/d2_team7_raw_hR_200hz_1step.json`。
