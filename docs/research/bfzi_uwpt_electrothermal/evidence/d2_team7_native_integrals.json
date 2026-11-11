@@ -1,0 +1,128 @@
+{
+  "kind": "Elmer native integrated electromagnetic field energy and eddy power",
+  "source": "TEAM-7 3D physical body coil",
+  "measurements_used": false,
+  "steps": 1,
+  "phase": "first time step",
+  "status": "OPEN",
+  "runs": {
+    "50": {
+      "cases": {
+        "h15": {
+          "eddy_power_W": 9.345060026748,
+          "em_energy_J": 0.4390936344562,
+          "rows": 1
+        },
+        "h10": {
+          "eddy_power_W": 9.152455840128,
+          "em_energy_J": 0.4574253964612,
+          "rows": 1
+        },
+        "h075": {
+          "eddy_power_W": 8.962002011943,
+          "em_energy_J": 0.4652717391498,
+          "rows": 1
+        },
+        "r15": {
+          "eddy_power_W": 8.774195376039,
+          "em_energy_J": 0.4540297075812,
+          "rows": 1
+        },
+        "r30": {
+          "eddy_power_W": 9.504175697506,
+          "em_energy_J": 0.4603030876942,
+          "rows": 1
+        }
+      },
+      "pairs": [
+        {
+          "axis": "h",
+          "from": "h15",
+          "to": "h10",
+          "em_energy_J_rel": 0.04007596024798981,
+          "eddy_power_W_rel": 0.021043989720829413
+        },
+        {
+          "axis": "h",
+          "from": "h10",
+          "to": "h075",
+          "em_energy_J_rel": 0.01686400017103508,
+          "eddy_power_W_rel": 0.021251259253367433
+        },
+        {
+          "axis": "R",
+          "from": "r15",
+          "to": "h10",
+          "em_energy_J_rel": 0.007423481307050813,
+          "eddy_power_W_rel": 0.041328848857216764
+        },
+        {
+          "axis": "R",
+          "from": "h10",
+          "to": "r30",
+          "em_energy_J_rel": 0.006251731326451035,
+          "eddy_power_W_rel": 0.03700687661637969
+        }
+      ]
+    },
+    "200": {
+      "cases": {
+        "h15": {
+          "eddy_power_W": 20.45027591993,
+          "em_energy_J": 0.4355955265347,
+          "rows": 1
+        },
+        "h10": {
+          "eddy_power_W": 20.46788466112,
+          "em_energy_J": 0.4539051022355,
+          "rows": 1
+        },
+        "h075": {
+          "eddy_power_W": 20.10709612887,
+          "em_energy_J": 0.4618224193164,
+          "rows": 1
+        },
+        "r15": {
+          "eddy_power_W": 19.77121565101,
+          "em_energy_J": 0.4506085002842,
+          "rows": 1
+        },
+        "r30": {
+          "eddy_power_W": 21.1352965838,
+          "em_energy_J": 0.4566855715924,
+          "rows": 1
+        }
+      },
+      "pairs": [
+        {
+          "axis": "h",
+          "from": "h15",
+          "to": "h10",
+          "em_energy_J_rel": 0.04033789356106515,
+          "eddy_power_W_rel": 0.0008603107493295633
+        },
+        {
+          "axis": "h",
+          "from": "h10",
+          "to": "h075",
+          "em_energy_J_rel": 0.017143639524082394,
+          "eddy_power_W_rel": 0.0179433434812088
+        },
+        {
+          "axis": "R",
+          "from": "r15",
+          "to": "h10",
+          "em_energy_J_rel": 0.007262755882372995,
+          "eddy_power_W_rel": 0.034037176857526726
+        },
+        {
+          "axis": "R",
+          "from": "h10",
+          "to": "r30",
+          "em_energy_J_rel": 0.006088366985637068,
+          "eddy_power_W_rel": 0.03157807225622584
+        }
+      ]
+    }
+  }
+}
