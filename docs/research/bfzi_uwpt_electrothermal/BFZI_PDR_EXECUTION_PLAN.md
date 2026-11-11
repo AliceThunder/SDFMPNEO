@@ -1,4 +1,6 @@
-﻿> **2026-11-10 D2 dual-frequency local probe refinement completed:** 60/120/240-segment air-line meshes have identical coil/plate tetrahedra; 120/240 at both 50/200 Hz exited 0. While 17-point A1 Bz measurement-fit improved to 10.29175% (50 Hz) and 11.98845% (200 Hz), 120/240 direct A1 Bz differences remain **8.58829% / 10.12530%** (50/200 Hz), with A2 Bz **10.92639% / 12.95207%**. Convergence FAIL; next solve must target air/interface H(curl) discretization and physical field recovery, rather than increase embedded line segmentation. [Real evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 / D2 OPEN, G1 FAIL, teacher frozen.
+﻿> **现行 D2 验收修订（2026-11-10，BFZI-PDR V1.1）：** [数值收敛优先规范](BFZI_PDR_V1_1_NUMERICAL_CONVERGENCE.md) 替代历史以 TEAM-7 Bz/Jy 实验曲线拟合差作为数值 PASS/FAIL 判据的执行表述。D2 验收顺序为独立 h/R/Δt 数值收敛 → 物理方程及功率一致性 → 同源独立求解器交叉验证；实验仅为最终外部比较。现有 h/R 双频全部数据已用 [无实验数据的数值收敛计算](evidence/d2_team7_numerical_conv.md) 分析，D2 仍 OPEN；G1 FAIL，教师冻结。
+
+> **2026-11-10 D2 dual-frequency local probe refinement completed:** 60/120/240-segment air-line meshes have identical coil/plate tetrahedra; 120/240 at both 50/200 Hz exited 0. While 17-point A1 Bz measurement-fit improved to 10.29175% (50 Hz) and 11.98845% (200 Hz), 120/240 direct A1 Bz differences remain **8.58829% / 10.12530%** (50/200 Hz), with A2 Bz **10.92639% / 12.95207%**. Convergence FAIL; next solve must target air/interface H(curl) discretization and physical field recovery, rather than increase embedded line segmentation. [Real evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 / D2 OPEN, G1 FAIL, teacher frozen.
 
 > **2026-11-10 TEAM-7 canonical 50/200Hz full h/R matrix completed:** all ten real four-cycle BDF2 ElmerSolver cases exit 0 and output 101-point fields. 50Hz Bz h differences 11.64293%/10.89298%, 200Hz 13.53495%/12.70586%; 50Hz R differences 10.57370%/12.31519%, 200Hz 12.23323%/14.28411%. Additional independent fixed-solid air-only 40/30/25mm scan confirms unresolved 8.30%/7.62% Bz effects; direct nodal recovery does not cure. [Complete evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). h/R data collection DONE; precision TEAM7 and D2 OPEN, old G1 FAIL, teacher frozen.
 
@@ -74,10 +76,10 @@
 
 ### 第一步（当前 P1）｜真实 Elmer 场求解 → 3D0 TEAM-7 独立基准
 
-**先做实事：** 利用安装好的 `ElmerGrid` / `ElmerSolver`，优先选官方**现成的三维涡流示例网格/SIF**，在单进程 Windows 上真正跑通，获得 ElmerSolver 正常结束的求解日志、场变量文件和实际非零的复/时域 B/J。再使用**官方 TEAM Problem 7 原始几何与激励定义**，核对 50Hz/200Hz、材料、线圈电流/匝数、外域及取样位置；验证公开标准的 `B_z`、`J_y` 空间曲线。不能将自制粗网格、不同源或我们的 BFZI 线圈冒充正式 TEAM-7。
+**先做实事：** 利用安装好的 `ElmerGrid` / `ElmerSolver`，优先选官方**现成的三维涡流示例网格/SIF**，在单进程 Windows 上真正跑通，获得 ElmerSolver 正常结束的求解日志、场变量文件和实际非零的复/时域 B/J。再使用**官方 TEAM Problem 7 原始几何与激励定义**，核对 50Hz/200Hz、材料、线圈电流/匝数、外域及取样位置；验证实际 50/200 Hz 物理场的独立数值收敛与一致性；Bz/Jy 实测曲线仅作外部对照。不能将自制粗网格、不同源或我们的 BFZI 线圈冒充正式 TEAM-7。
 
 - **最小交付**：可追溯版本的 `.sif`、实际 mesh、独立 Elmer 运行日志、非零可解析场数据、运行命令与条件；明确官方几何/源/探针是否完全一致。
-- **TEAM-7 验收**：官方相符的物理算例、至少三档空间离散，以及三档外域半径或两种独立外域处理；给绝对与参考尺度归一误差、线性收敛/时间或频域约定及真实耗时；未获得公开测量数据时不宣称测量误差通过。
+- **TEAM-7 验收（按 V1.1）：** 官方相符的物理算例、至少三档空间 h，以及三档外域 R 或两种独立开域处理；单独报告时间误差、点/线/区域观测、体场/能量收敛、物理一致性、独立同源对照和不确定性。实验 Bz/Jy 仅为外部验证，不得作为 D2 数值精度 PASS/FAIL 的前置条件。
 - **本项目对照**：对**相同物理材料、源定义与观测点**单独比较我们的 H(curl) A–φ 与成熟参考，发现不收敛先修方程/源/边界，不急着推进 BFZI 复杂几何。
 - **停止条件**：只有 EXE 启动、mesh 转换、空字段或粗网格线性残差时，仍为 D2 OPEN，不推进“已获真值”的说法。**当前先完成这一阶段，不提前搭建铜域/更大外围审计框架。**
 
@@ -128,12 +130,12 @@ D5 参考通过（或用户依据独立高保真 A–φ 标签**明确授权改�
 
 | 字段 | 已锁定内容 |
 |---|---|
-| 任务 | 实际运行至少一个官方三维涡流 Elmer 算例，获取可读取的非零 B/J 数值；随后进入 TEAM-7 的真实几何与 50/200Hz 对照 |
+| 任务（V1.1 当前） | TEAM-7 的 50/200Hz 三档 h/R 均已真实求解；使用固定物理源完成无实测拟合的数值误差分解，解决空气域 H(curl) 体场离散与 B 恢复误差，补齐物理/同源交叉验证 |
 | 输入 | 已安装的 Elmer 26.2，完整官方 SIF/mesh/版本，必要时本地 Gmsh |
 | 不能替代 | `ElmerSolver -h` 启动测试、ElmerGrid 转换、空结果文件、合成 Elmer 文本与本站 A–φ 自洽 |
 | 首次成功定义 | ElmerSolver 真正求解收敛且写出非零场，报告物理模型/激励/单位/边界，并能独立读取至少一个 B 与 J 取样值 |
 | TEAM-7 进入条件 | 使用真实标准非轴对称铝板/线圈/频率与实验测量点，固定误差定义 |
-| 下一次状态 | 完成上述首次实算方可标记 `Elmer 3D 求解 SMOKE PASS`；**D2 仍 OPEN**，直到完整 benchmark 及后续同源场精度成立 |
+| 下一次状态 | Elmer 3D 求解 SMOKE PASS，50/200Hz 三档 h/R 数据采集 COMPLETE；**TEAM-7 数值精度 OPEN，D2 OPEN**，直到独立空间/时间/外域数值收敛和物理及同源场精度通过 |
 
 **权威关系：** [锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) → [独立验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) → **本文 BFZI-PDR V1.0 执行任务序** → [独立 Elmer 技术细节](D2_ELMER_INDEPENDENT_REFERENCE.md) → [项目进度看板](PROJECT_PROGRESS.md)。不得将后一层的历史描述反过来覆盖前一层。
 
