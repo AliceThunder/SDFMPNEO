@@ -64,22 +64,22 @@ def solve(root, name, bin_dir, freq):
     out = root / name
     if not (out/"TEAM7"/"mesh.elements").exists():
         raise ValueError("Generate Elmer mesh first")
-    s = (root/"h10"/f"TEAM7_{freq}.sif").read_text(encoding="utf-8-sig")
+    s = (root/"h10"/f"case_ene{freq}s64.sif").read_text(encoding="utf-8-sig")
     dt = .00125 * 50/freq
     if (f"cos(2*3.14*{freq}*tx[0])" not in s
             or "TimeStep Intervals(1) = 64" not in s
             or "BDF Order = 2" not in s
             or f"Timestep Sizes(1) = Real {dt}" not in s):
         raise ValueError("Unchanged CSC source / four-period BDF2 input required")
-    (out/f"TEAM7_{freq}.sif").write_text(s, encoding="utf-8")
-    (out/f"res{freq}").mkdir(exist_ok=True)
+    (out/f"case_ene{freq}s64.sif").write_text(s, encoding="utf-8")
+    (out/f"resene{freq}s64").mkdir(exist_ok=True)
     env = os.environ.copy()
     env["ELMER_HOME"] = str(bin_dir.parent)
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     start = time.perf_counter()
     with (out/f"solve_{freq}.log").open("w") as f:
         res = subprocess.run([str(bin_dir/"ElmerSolver.exe"),
-                              f"TEAM7_{freq}.sif"], cwd=out, env=env,
+                              f"case_ene{freq}s64.sif"], cwd=out, env=env,
                              stdout=f, stderr=subprocess.STDOUT)
     print(f"{name} {freq}Hz: exit={res.returncode}, elapsed={time.perf_counter()-start:.1f}s",
           flush=True)
