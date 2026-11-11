@@ -12,6 +12,7 @@ import subprocess
 import time
 
 GAPS = {"gap12": .012, "gap08": .008, "gap06": .006, "gap05": .005, "gap04": .004}
+RADII = {"rgap30": .30, "rgap40": .40}
 FIELD = """
 Field[90] = Box;
 Field[90].VIn = {h:.9g};
@@ -32,13 +33,18 @@ Background Field = 91;
 
 def make(root, name, bin_dir):
     import gmsh
-    h = GAPS[name]
+    h = GAPS.get(name, .006)
     base = root / "h10" / "TEAM7.geo"
     out = root / name
     out.mkdir(parents=True, exist_ok=True)
     geo = base.read_text(encoding="utf-8-sig")
     if "AirVolume[0]" not in geo or "lc_air = 30*mm;" not in geo:
         raise ValueError("Original CSC TEAM-7 geo required")
+    if name in RADII:
+        if "boxt = 200*mm;" not in geo or "394*mm+boxt" not in geo:
+            raise ValueError("Expected fixed CSC TEAM-7 air-box geometry")
+        geo = geo.replace("boxt = 200*mm;", f"boxt = {RADII[name]*1000:g}*mm;")
+        geo = geo.replace("394*mm+boxt", "194*mm+2*boxt")
     (out/"TEAM7.geo").write_text(geo + FIELD.format(h=h), encoding="utf-8")
     gmsh.initialize()
     try:
@@ -88,11 +94,12 @@ def solve(root, name, bin_dir, freq):
 
 
 
-def compare(root, freq):
+def compare(root, freq, axis="h"):
     """Original elemental SaveLine B/J at fourth-period end on fixed 101 points."""
     from examples.bfzi_d2_team7_conv import load, cmp
     from examples.bfzi_d2_team7_integrals import read_phys
-    cases = ("h10", "gap12", "gap08", "gap06", "gap05", "gap04")
+    cases = (("h10", "gap12", "gap08", "gap06", "gap05", "gap04")
+             if axis == "h" else ("gap06", "rgap30", "rgap40"))
     vals = {n: load(root/n/f"resene{freq}s64"/"f.dat") for n in cases}
     native = {n: read_phys(root/n/f"resene{freq}s64"/"phys.dat") for n in cases}
     if any(v["rows"] != 64 for v in native.values()):
@@ -105,7 +112,8 @@ def compare(root, freq):
     ]
     return {
         "frequency_hz": freq, "steps": 64, "phase_time_s": 4/freq,
-        "source": "same CSC TEAM-7 source / solids / 0.20m exterior",
+        "axis": axis,
+        "source": "same CSC TEAM-7 source, solids, and 6mm gap mesh target",
         "measurement_used": False,
         "cases": list(cases), "native": native, "energy_pairs": energy,
         "pairs": [{"from": a, "to": b, **cmp(vals[a], vals[b])}
@@ -117,10 +125,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--elmerbin", type=Path, required=True)
-    p.add_argument("--case", choices=tuple(GAPS), required=True)
+    p.add_argument("--case", choices=tuple(GAPS)+tuple(RADII), required=True)
     p.add_argument("--mesh", action="store_true")
     p.add_argument("--solve", action="store_true")
     p.add_argument("--compare", action="store_true")
+    p.add_argument("--axis", choices=("h", "R"), default="h")
     p.add_argument("--out", type=Path)
     p.add_argument("--freq", type=int, choices=(50, 200), default=200)
     a = p.parse_args()
@@ -130,7 +139,7 @@ def main():
         solve(a.root, a.case, a.elmerbin, a.freq)
     if a.compare:
         import json
-        report = compare(a.root, a.freq)
+        report = compare(a.root, a.freq, a.axis)
         out = json.dumps(report, indent=2)
         if a.out:
             a.out.parent.mkdir(parents=True, exist_ok=True)
