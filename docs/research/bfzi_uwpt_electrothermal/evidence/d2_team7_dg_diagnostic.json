@@ -1,0 +1,13 @@
+{
+  "tets": 53510,
+  "energy_dg_J": 0.3982899157317732,
+  "plate_power_dg_W": 7.873236608325086,
+  "regions_m3": {
+    "1": 0.0015732233046985337,
+    "2": 0.2830978926953015,
+    "3": 0.001420667999999999
+  },
+  "note": "DG vertex field interpolation, not raw Whitney curl Gauss integration",
+  "energy_rel": 0.09292714701947472,
+  "power_rel": 0.15749748147258244
+}

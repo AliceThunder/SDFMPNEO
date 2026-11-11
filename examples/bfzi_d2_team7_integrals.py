@@ -24,8 +24,8 @@ def input_sif(src, hz, steps, out):
     assert "Active Solvers(3) = 2 3 4" in s
     s = s.replace(f'Results Directory "res{hz}"', f'Results Directory "{out}"')
     s = s.replace("TimeStep Intervals(1) = 64", f"TimeStep Intervals(1) = {steps}")
-    s = s.replace("Active Solvers(4) = 1 2 3 4", "Active Solvers(5) = 1 2 3 4 6")
-    s = s.replace("Active Solvers(3) = 2 3 4", "Active Solvers(4) = 2 3 4 6")
+    s = s.replace("Active Solvers(4) = 1 2 3 4", "Active Solvers(4) = 1 2 3 6")
+    s = s.replace("Active Solvers(3) = 2 3 4", "Active Solvers(3) = 2 3 6")
     i = s.index("Equation 1\n")
     return s[:i] + """Solver 6
   Exec Solver = Always
