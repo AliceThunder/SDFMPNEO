@@ -53,3 +53,48 @@ def magnetic_energy(mesh, b, *, phase_rad=0., average=False):
     else:
         sq = np.sum(np.real(b*np.exp(1j*phase_rad))**2, axis=-1)
     return np.einsum('t,pt->p', vol, sq)/(2*MU0)
+
+
+def bdf2_joule(mesh, a_hist, phi, dt):
+    """Recover transient E, q and loss at the ORIGINAL Whitney tetra quadrature.
+
+    a_hist: (3,n_edge) global oriented A circulations at n-2,n-1,n.
+    phi: scalar electric potential at n on all mesh vertices; only conducting
+    tetrahedra contribute. Temporal gauge transforms must use the same BDF2
+    derivative for phi. This is a real transient-field operator, not phasor.
+    Returns (E[n_tet,4,3], q[n_tet,4], total_watts); insulation entries zero.
+    """
+    from .direct3d_aphi import _BARY4
+    edges, loc, sign, *_ = _topology(mesh)
+    a = np.asarray(a_hist, dtype=float)
+    p = np.asarray(phi, dtype=float)
+    if (a.shape != (3, len(edges)) or p.shape != (len(mesh.nodes),)
+            or not np.isfinite(a).all() or not np.isfinite(p).all()
+            or not np.isfinite(dt) or dt <= 0):
+        raise ValueError("Expected real finite Whitney history, nodal phi and positive dt")
+    e = np.zeros((len(mesh.tetrahedra), 4, 3))
+    q = np.zeros((len(mesh.tetrahedra), 4))
+    wet = np.flatnonzero(mesh.sigma > 0)
+    if not len(wet):
+        return e, q, 0.
+    tet = mesh.tetrahedra[wet]
+    xyz = mesh.nodes[tet]
+    mat = (xyz[:, 1:] - xyz[:, 0, None, :]).transpose(0, 2, 1)
+    det = np.linalg.det(mat)
+    if np.any(abs(det) < 1e-16):
+        raise ValueError("Degenerate tetrahedron")
+    grad = np.empty((len(wet), 4, 3))
+    grad[:, 1:] = np.linalg.inv(mat)
+    grad[:, 0] = -grad[:, 1:].sum(axis=1)
+    bas = np.stack([
+        _BARY4[None, :, i, None] * grad[:, None, j]
+        - _BARY4[None, :, j, None] * grad[:, None, i]
+        for i, j in _EDGES], axis=1)
+    bas *= sign[wet, :, None, None]
+    da = (3*a[2] - 4*a[1] + a[0])/(2*dt)
+    grad_phi = np.einsum("ti,tic->tc", p[tet], grad)
+    e[wet] = (-np.einsum("te,teqc->tqc", da[loc[wet]], bas,
+                          optimize=True) - grad_phi[:, None, :])
+    q[wet] = mesh.sigma[wet, None]*np.sum(e[wet]**2, axis=-1)
+    watts = float(np.dot(abs(det)/6, q[wet].mean(axis=1)))
+    return e, q, watts
