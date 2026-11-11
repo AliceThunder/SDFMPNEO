@@ -67,6 +67,8 @@ BFZI-PDR V1.1，2026-11-11。已完成六档空气间隙 h、四档外域 R 的�
 
 前两个 JSON 源自真实原生 `SaveScalars phys.dat` 及 `SaveLine f.dat`；三维体场来自 Elmer VTU 的重建场。原始 Whitney curl-B 已通过真实 h10 网格的一步与四周期终点原生磁能量积分同源验证（相对差分别为 1.87×10⁻¹³ 和 6.72×10⁻¹⁴）；[直接计算证据](d2_team7_whitney_raw_b.md) 与 [四周期 JSON](d2_team7_whitney_raw_b64.json)。跨网格原始 B 场的空间误差仍需独立验收。
 
+**最新原始 Whitney B 跨网格直接结果：** [四周期真实原始 B h/R 证据](d2_team7_raw_hR_field.md) 已从同一终点的有向边自由度计算完成。三维空气间隙 B 相邻 L² 差：h10→gap06 为 **23.0704%**，gap06→gap04 为 **10.1374%**，R0.20→R0.30 为 **11.3915%**。这些数值来自分片常值原始四面体旋度，显著高于 VTU 节点恢复场相邻差，D2 原始局部 B 数值精度继续 OPEN。
+
 复现命令：`python -m examples.bfzi_d2_team7_gap --root D:/work/BFZI-D2-verify/runs/team7_hr --elmerbin D:/work/ElmerFEM/ElmerFEM-nogui-nompi-Windows-AMD64/bin --case gap05 --axis h --freq 200 --compare --out docs/research/bfzi_uwpt_electrothermal/evidence/d2_team7_gap_200hz.json`。R 轴改用 `--case rgap15 --axis R` 及对应 R JSON 输出文件。三维体场沿用 `examples/bfzi_d2_team7_volume.py`。
 
 **当前最高优先级：外域 R 的剩余磁场误差与跨网格原始 Whitney B 数值收敛；其次继续降低间隙 B 场约 1.92% 的相邻差。TEAM-7 数值精度 OPEN，D2 OPEN，旧 G1 FAIL，神经代理教师冻结。**
