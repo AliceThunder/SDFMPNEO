@@ -45,8 +45,12 @@ def read_phys(path):
     a = np.atleast_2d(np.loadtxt(path))
     if a.shape[1] != 2:
         raise ValueError(f"Expected two native scalar quantities, got {a.shape}")
-    return {"eddy_power_W": float(a[-1, 0]),
-            "em_energy_J": float(a[-1, 1]), "rows": len(a)}
+    result = {"eddy_power_W": float(a[-1, 0]),
+              "em_energy_J": float(a[-1, 1]), "rows": len(a)}
+    if len(a) >= 32 and len(a) % 16 == 0:
+        result["power_period_rel"] = abs(a[-1, 0]-a[-17, 0])/abs(a[-1, 0])
+        result["energy_period_rel"] = abs(a[-1, 1]-a[-17, 1])/abs(a[-1, 1])
+    return result
 
 
 def run(root, el, name, hz, steps):
