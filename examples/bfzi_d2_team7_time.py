@@ -102,7 +102,7 @@ def wave(root, col):
                        amp=float(np.hypot(c[1], c[2])),
                        fit_rel=float(np.linalg.norm(y-pred)/np.linalg.norm(y)),
                        mean=float(c[0]),
-                       raw=y[::n//64],
+                       raw=y[n//64-1::n//64],
                        times=t)
     # The right endpoints of the common 16 time bins.
     t = np.arange(49, 65)*T_END/64
