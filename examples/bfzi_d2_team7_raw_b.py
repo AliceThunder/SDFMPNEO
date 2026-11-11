@@ -33,6 +33,7 @@ def edge_ids(tet):
 
 def read_av(path, n):
     """Read original global-DOF AV values; Perm is solver reordering metadata."""
+    last = None
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line in f:
             if line.strip() != "a":
@@ -42,9 +43,11 @@ def read_av(path, n):
                 raise ValueError("Unexpected Elmer AV permutation header")
             for _ in range(n):
                 next(f)
-            return np.fromiter((float(next(f)) for _ in range(n)),
+            last = np.fromiter((float(next(f)) for _ in range(n)),
                                dtype=float, count=n)
-    raise ValueError("Elmer result has no AV variable 'a'")
+    if last is None:
+        raise ValueError("Elmer result has no AV variable 'a'")
+    return last
 
 
 def calc(mesh, result):
