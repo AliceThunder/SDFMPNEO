@@ -91,13 +91,23 @@ def solve(root, name, bin_dir, freq):
 def compare(root, freq):
     """Original elemental SaveLine B/J at fourth-period end on fixed 101 points."""
     from examples.bfzi_d2_team7_conv import load, cmp
+    from examples.bfzi_d2_team7_integrals import read_phys
     cases = ("h10", "gap12", "gap08")
     vals = {n: load(root/n/f"resene{freq}s64"/"f.dat") for n in cases}
+    native = {n: read_phys(root/n/f"resene{freq}s64"/"phys.dat") for n in cases}
+    if any(v["rows"] != 64 for v in native.values()):
+        raise ValueError("Incomplete four-period native Elmer energy/power")
+    energy = [
+        {"from": a, "to": b,
+         **{q+"_rel": abs(native[a][q]-native[b][q])/abs(native[b][q])
+            for q in ("em_energy_J", "eddy_power_W")}}
+        for a,b in zip(cases[:-1], cases[1:])
+    ]
     return {
         "frequency_hz": freq, "steps": 64, "phase_time_s": 4/freq,
         "source": "same CSC TEAM-7 source / solids / 0.20m exterior",
         "measurement_used": False,
-        "cases": list(cases),
+        "cases": list(cases), "native": native, "energy_pairs": energy,
         "pairs": [{"from": a, "to": b, **cmp(vals[a], vals[b])}
                   for a, b in zip(cases[:-1], cases[1:])],
         "status": "D2 OPEN",
