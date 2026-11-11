@@ -2,13 +2,16 @@
   "frequency_hz": 200,
   "steps": 64,
   "phase_time_s": 0.02,
-  "source": "same CSC TEAM-7 source / solids / 0.20m exterior",
+  "axis": "h",
+  "source": "same CSC TEAM-7 source, solids, and 6mm gap mesh target",
   "measurement_used": false,
   "cases": [
     "h10",
     "gap12",
     "gap08",
-    "gap06"
+    "gap06",
+    "gap05",
+    "gap04"
   ],
   "native": {
     "h10": {
@@ -38,6 +41,20 @@
       "rows": 64,
       "power_period_rel": 0.0007653491063063672,
       "energy_period_rel": 9.817262633928593e-05
+    },
+    "gap05": {
+      "eddy_power_W": 14.97736166727,
+      "em_energy_J": 0.5266508071265,
+      "rows": 64,
+      "power_period_rel": 0.0006887708509131033,
+      "energy_period_rel": 9.823055295827757e-05
+    },
+    "gap04": {
+      "eddy_power_W": 15.16335898951,
+      "em_energy_J": 0.5270036305299,
+      "rows": 64,
+      "power_period_rel": 0.0006182481359496062,
+      "energy_period_rel": 9.832901748301769e-05
     }
   },
   "energy_pairs": [
@@ -58,6 +75,18 @@
       "to": "gap06",
       "em_energy_J_rel": 0.0007767457496717027,
       "eddy_power_W_rel": 0.004997178987494739
+    },
+    {
+      "from": "gap06",
+      "to": "gap05",
+      "em_energy_J_rel": 0.0004140267762803811,
+      "eddy_power_W_rel": 0.011490812774194644
+    },
+    {
+      "from": "gap05",
+      "to": "gap04",
+      "em_energy_J_rel": 0.0006694895119511116,
+      "eddy_power_W_rel": 0.01226623483415998
     }
   ],
   "pairs": [
@@ -126,6 +155,50 @@
       "Jy_top_rms_delta": 17307.92686287858,
       "Jy_bottom_rel": 0.014808840041187701,
       "Jy_bottom_rms_delta": 4443.6545180759795
+    },
+    {
+      "from": "gap06",
+      "to": "gap05",
+      "A1_Bz_rel": 0.04069014684593128,
+      "A1_Bz_rms_delta": 0.00017233459795458153,
+      "A1_Bz_mean_delta_T": -1.963592786283993e-05,
+      "A1_Bz_mean_delta_over_rms": 0.004618082418585954,
+      "A1_Bz_rms_rel": 0.007848727094406463,
+      "A1_Bxyz_rel": 0.027525239276445092,
+      "A1_Bxyz_rms_delta": 0.0001316911964764225,
+      "A2_Bz_rel": 0.05062759035266778,
+      "A2_Bz_rms_delta": 0.00018979158319224658,
+      "A2_Bz_mean_delta_T": 1.844916026518488e-05,
+      "A2_Bz_mean_delta_over_rms": 0.004902300817456751,
+      "A2_Bz_rms_rel": 0.007065939469036165,
+      "A2_Bxyz_rel": 0.032341168458360346,
+      "A2_Bxyz_rms_delta": 0.0001559935658755646,
+      "Jy_top_rel": 0.008908061345430573,
+      "Jy_top_rms_delta": 8541.548801051496,
+      "Jy_bottom_rel": 0.010048140119074279,
+      "Jy_bottom_rms_delta": 3039.786645264379
+    },
+    {
+      "from": "gap05",
+      "to": "gap04",
+      "A1_Bz_rel": 0.034593374963054466,
+      "A1_Bz_rms_delta": 0.0001461019398556112,
+      "A1_Bz_mean_delta_T": 2.9065550132949674e-06,
+      "A1_Bz_mean_delta_over_rms": 0.0006855415845797405,
+      "A1_Bz_rms_rel": 0.0028708431081333123,
+      "A1_Bxyz_rel": 0.021525894225179636,
+      "A1_Bxyz_rms_delta": 0.00010266725366536876,
+      "A2_Bz_rel": 0.030831879696281705,
+      "A2_Bz_rms_delta": 0.00011612295761479781,
+      "A2_Bz_mean_delta_T": -1.6218263323960008e-05,
+      "A2_Bz_mean_delta_over_rms": 0.004289107129656219,
+      "A2_Bz_rms_rel": 0.004733943447934295,
+      "A2_Bxyz_rel": 0.01850574125308784,
+      "A2_Bxyz_rms_delta": 8.923843436937729e-05,
+      "Jy_top_rel": 0.00888360021243087,
+      "Jy_top_rms_delta": 8518.973655207425,
+      "Jy_bottom_rel": 0.01621611630109594,
+      "Jy_bottom_rms_delta": 4947.038593947245
     }
   ],
   "status": "D2 OPEN"

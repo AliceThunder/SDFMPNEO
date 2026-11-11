@@ -1,0 +1,97 @@
+{
+  "frequency_hz": 200,
+  "steps": 64,
+  "phase_time_s": 0.02,
+  "axis": "R",
+  "source": "same CSC TEAM-7 source, solids, and 6mm gap mesh target",
+  "measurement_used": false,
+  "cases": [
+    "rgap15",
+    "gap06",
+    "rgap30"
+  ],
+  "native": {
+    "rgap15": {
+      "eddy_power_W": 14.29090867262,
+      "em_energy_J": 0.5227420169572,
+      "rows": 64,
+      "power_period_rel": 0.0007755689406394989,
+      "energy_period_rel": 9.828309727043954e-05
+    },
+    "gap06": {
+      "eddy_power_W": 14.8052596085,
+      "em_energy_J": 0.5264327595906,
+      "rows": 64,
+      "power_period_rel": 0.0007653491063063672,
+      "energy_period_rel": 9.817262633928593e-05
+    },
+    "rgap30": {
+      "eddy_power_W": 15.24020951017,
+      "em_energy_J": 0.5297285914395,
+      "rows": 64,
+      "power_period_rel": 0.0007617034806676221,
+      "energy_period_rel": 9.919981109042499e-05
+    }
+  },
+  "energy_pairs": [
+    {
+      "from": "rgap15",
+      "to": "gap06",
+      "em_energy_J_rel": 0.007010852888923956,
+      "eddy_power_W_rel": 0.03474109535942891
+    },
+    {
+      "from": "gap06",
+      "to": "rgap30",
+      "em_energy_J_rel": 0.006221736757579655,
+      "eddy_power_W_rel": 0.028539627449330827
+    }
+  ],
+  "pairs": [
+    {
+      "from": "rgap15",
+      "to": "gap06",
+      "A1_Bz_rel": 0.0441318692745065,
+      "A1_Bz_rms_delta": 0.00018544077708797536,
+      "A1_Bz_mean_delta_T": -7.290727257184087e-06,
+      "A1_Bz_mean_delta_over_rms": 0.0017282366444076563,
+      "A1_Bz_rms_rel": 0.0024069972627680674,
+      "A1_Bxyz_rel": 0.02978854077833508,
+      "A1_Bxyz_rms_delta": 0.00014195340069538527,
+      "A2_Bz_rel": 0.05685080684290607,
+      "A2_Bz_rms_delta": 0.0002146170513373875,
+      "A2_Bz_mean_delta_T": -6.094160304176494e-05,
+      "A2_Bz_mean_delta_over_rms": 0.016079751021438413,
+      "A2_Bz_rms_rel": 0.01848767944407897,
+      "A2_Bxyz_rel": 0.04005233003591115,
+      "A2_Bxyz_rms_delta": 0.00019351570835124334,
+      "Jy_top_rel": 0.017170309657792288,
+      "Jy_top_rms_delta": 16456.347708681624,
+      "Jy_bottom_rel": 0.04143910256346547,
+      "Jy_bottom_rms_delta": 12434.536048671418
+    },
+    {
+      "from": "gap06",
+      "to": "rgap30",
+      "A1_Bz_rel": 0.04121966168810253,
+      "A1_Bz_rms_delta": 0.00017518778642481884,
+      "A1_Bz_mean_delta_T": -4.088758200799997e-05,
+      "A1_Bz_mean_delta_over_rms": 0.009583687829573886,
+      "A1_Bz_rms_rel": 0.011199054216753662,
+      "A1_Bxyz_rel": 0.026768647322812866,
+      "A1_Bxyz_rms_delta": 0.0001284498667703252,
+      "A2_Bz_rel": 0.04816896883703927,
+      "A2_Bz_rms_delta": 0.00018182621127323334,
+      "A2_Bz_mean_delta_T": -5.735474687945031e-06,
+      "A2_Bz_mean_delta_over_rms": 0.001513560569927419,
+      "A2_Bz_rms_rel": 0.00014966071587850827,
+      "A2_Bxyz_rel": 0.03251097056085299,
+      "A2_Bxyz_rms_delta": 0.0001578938352761429,
+      "Jy_top_rel": 0.01546038005811889,
+      "Jy_top_rms_delta": 15011.024572280186,
+      "Jy_bottom_rel": 0.047326780745802446,
+      "Jy_bottom_rms_delta": 14782.346290594545
+    }
+  ],
+  "status": "D2 OPEN"
+}
