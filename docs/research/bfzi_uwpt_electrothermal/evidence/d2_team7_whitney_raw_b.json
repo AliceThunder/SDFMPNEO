@@ -3,10 +3,11 @@
   "tetrahedra": 129305,
   "edge_dofs": 155796,
   "av_dofs": 178647,
-  "magnetic_energy_J": 0.453674991692702,
+  "magnetic_energy_J": 0.453905102235415,
+  "mu0_H_per_m": 1.256e-06,
   "B_rms_T": 0.001996363665098554,
   "native_energy_J": 0.4539051022355,
-  "energy_rel_diff": 0.0005069573830845502,
+  "energy_rel_diff": 1.87236433599201e-13,
   "field_source": "Elmer native AV global edge DOFs / original Whitney curl",
   "measurement_used": false
 }
