@@ -73,7 +73,8 @@ def calc(root, points=101):
             idx = np.arange(3*n//4+step-1, n, step)
             rows = inp[n][0][idx, line]
             vals.append(rows[..., list(cols)])
-        results[name] = pair(vals)
+        end = [inp[n][0][-1, line, :, list(cols)] for n in STEPS]
+        results[name] = {**pair(vals), "endpoint": pair(end)}
     return {
         "frequency_hz": 200, "mesh": "h10", "steps": list(STEPS),
         "sample_times_s": [float(k*0.02/64) for k in range(49,65)],
