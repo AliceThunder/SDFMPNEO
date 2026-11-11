@@ -62,6 +62,8 @@ def read_run(root, steps):
     row = dict(
         steps=steps, dt_s=dt, time_s=steps*dt,
         eddy_W=float(a[-1, 0]), energy_J=float(a[-1, 1]),
+        eddy_cycle_mean_W=float(np.mean(a[-k:, 0])),
+        energy_cycle_mean_J=float(np.mean(a[-k:, 1])),
         power_period_rel=float(abs(a[-1, 0] - a[-1-k, 0])/abs(a[-1, 0])),
         energy_period_rel=float(abs(a[-1, 1] - a[-1-k, 1])/abs(a[-1, 1])),
     )
@@ -85,7 +87,8 @@ def calc(root):
     rows, configs = zip(*read)
     if configs[0] != configs[1] or configs[1] != configs[2]:
         raise ValueError("Input SIF physics differ beyond dt, steps and result directory")
-    res = {field: compare(rows, field) for field in ("eddy_W", "energy_J")}
+    res = {field: compare(rows, field) for field in
+           ("eddy_W", "energy_J", "eddy_cycle_mean_W", "energy_cycle_mean_J")}
     return dict(
         frequency_hz=200, mesh="h10", R_m=0.2,
         scheme="BDF2", source="CSC TEAM7 original three-component cos(2*3.14*f*t)",
