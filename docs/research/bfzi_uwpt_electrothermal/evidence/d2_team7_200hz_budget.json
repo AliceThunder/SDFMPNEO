@@ -1,0 +1,170 @@
+{
+  "frequency_hz": 200,
+  "time_s": 0.02,
+  "source": "Elmer SaveLine 200Hz BDF2; numerical values, no measurements",
+  "time_comparison": "h10 64 vs 128 steps, fixed mesh and R",
+  "spatial_comparison": "64 steps, fixed dt per independent h or R pair",
+  "observations": [
+    {
+      "axis": "h",
+      "pair": "h15/h10",
+      "field": "A1_Bz",
+      "spatial_rel": 0.13534954580181,
+      "time_h10_64_128_rel": 0.0021898772076679985,
+      "spatial_over_time": 61.80691105778657
+    },
+    {
+      "axis": "h",
+      "pair": "h15/h10",
+      "field": "A1_Bxyz",
+      "spatial_rel": 0.08294209773084985,
+      "time_h10_64_128_rel": 0.0013932338404557354,
+      "spatial_over_time": 59.53207230720076
+    },
+    {
+      "axis": "h",
+      "pair": "h15/h10",
+      "field": "A2_Bz",
+      "spatial_rel": 0.23002154222655885,
+      "time_h10_64_128_rel": 0.0025876250850521967,
+      "spatial_over_time": 88.8929171213066
+    },
+    {
+      "axis": "h",
+      "pair": "h15/h10",
+      "field": "Jy_top",
+      "spatial_rel": 0.042092620867043705,
+      "time_h10_64_128_rel": 0.016867173776517693,
+      "spatial_over_time": 2.4955349025718
+    },
+    {
+      "axis": "h",
+      "pair": "h15/h10",
+      "field": "Jy_bottom",
+      "spatial_rel": 0.07834253497438085,
+      "time_h10_64_128_rel": 0.03405449847425021,
+      "spatial_over_time": 2.3005047345982312
+    },
+    {
+      "axis": "h",
+      "pair": "h10/h075",
+      "field": "A1_Bz",
+      "spatial_rel": 0.12705860921356255,
+      "time_h10_64_128_rel": 0.0021898772076679985,
+      "spatial_over_time": 58.02088298314558
+    },
+    {
+      "axis": "h",
+      "pair": "h10/h075",
+      "field": "A1_Bxyz",
+      "spatial_rel": 0.0768156063008211,
+      "time_h10_64_128_rel": 0.0013932338404557354,
+      "spatial_over_time": 55.13475489203897
+    },
+    {
+      "axis": "h",
+      "pair": "h10/h075",
+      "field": "A2_Bz",
+      "spatial_rel": 0.19895674480034092,
+      "time_h10_64_128_rel": 0.0025876250850521967,
+      "spatial_over_time": 76.88777866223523
+    },
+    {
+      "axis": "h",
+      "pair": "h10/h075",
+      "field": "Jy_top",
+      "spatial_rel": 0.03318483788184785,
+      "time_h10_64_128_rel": 0.016867173776517693,
+      "spatial_over_time": 1.9674213547291157
+    },
+    {
+      "axis": "h",
+      "pair": "h10/h075",
+      "field": "Jy_bottom",
+      "spatial_rel": 0.0615397283441595,
+      "time_h10_64_128_rel": 0.03405449847425021,
+      "spatial_over_time": 1.807095423551512
+    },
+    {
+      "axis": "R",
+      "pair": "r15/h10",
+      "field": "A1_Bz",
+      "spatial_rel": 0.12233231368213426,
+      "time_h10_64_128_rel": 0.0021898772076679985,
+      "spatial_over_time": 55.86263615776248
+    },
+    {
+      "axis": "R",
+      "pair": "r15/h10",
+      "field": "A1_Bxyz",
+      "spatial_rel": 0.07375587443968193,
+      "time_h10_64_128_rel": 0.0013932338404557354,
+      "spatial_over_time": 52.93861826924612
+    },
+    {
+      "axis": "R",
+      "pair": "r15/h10",
+      "field": "A2_Bz",
+      "spatial_rel": 0.12089404939701058,
+      "time_h10_64_128_rel": 0.0025876250850521967,
+      "spatial_over_time": 46.720079386837426
+    },
+    {
+      "axis": "R",
+      "pair": "r15/h10",
+      "field": "Jy_top",
+      "spatial_rel": 0.025066149390004042,
+      "time_h10_64_128_rel": 0.016867173776517693,
+      "spatial_over_time": 1.4860906588216267
+    },
+    {
+      "axis": "R",
+      "pair": "r15/h10",
+      "field": "Jy_bottom",
+      "spatial_rel": 0.04177632844338072,
+      "time_h10_64_128_rel": 0.03405449847425021,
+      "spatial_over_time": 1.2267491907117427
+    },
+    {
+      "axis": "R",
+      "pair": "h10/r30",
+      "field": "A1_Bz",
+      "spatial_rel": 0.14284113705721246,
+      "time_h10_64_128_rel": 0.0021898772076679985,
+      "spatial_over_time": 65.22792079713184
+    },
+    {
+      "axis": "R",
+      "pair": "h10/r30",
+      "field": "A1_Bxyz",
+      "spatial_rel": 0.0800435414484374,
+      "time_h10_64_128_rel": 0.0013932338404557354,
+      "spatial_over_time": 57.45162019769392
+    },
+    {
+      "axis": "R",
+      "pair": "h10/r30",
+      "field": "A2_Bz",
+      "spatial_rel": 0.11389886542389133,
+      "time_h10_64_128_rel": 0.0025876250850521967,
+      "spatial_over_time": 44.01675732773081
+    },
+    {
+      "axis": "R",
+      "pair": "h10/r30",
+      "field": "Jy_top",
+      "spatial_rel": 0.016529398622645804,
+      "time_h10_64_128_rel": 0.016867173776517693,
+      "spatial_over_time": 0.9799744071919069
+    },
+    {
+      "axis": "R",
+      "pair": "h10/r30",
+      "field": "Jy_bottom",
+      "spatial_rel": 0.0516336092851398,
+      "time_h10_64_128_rel": 0.03405449847425021,
+      "spatial_over_time": 1.5162052474266141
+    }
+  ],
+  "status": "D2 OPEN"
+}
