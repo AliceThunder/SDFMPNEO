@@ -73,7 +73,7 @@ def test_bdf2_joule_second_order_and_transient_gauge():
         hist = np.array([field(t-2*dt), field(t-dt), field(t)])
         e, q, power = bdf2_joule(mesh, hist, np.zeros(len(nodes)), dt)
         assert np.all(e[1] == 0) and np.all(q[1] == 0)
-        assert power > 0 and np.isclose(power, q[0].mean()*12/6)
+        assert power > 0 and np.isclose(power, q[0].mean()/6)
         errs.append(np.linalg.norm(e[0]-true_e))
         # Discrete time-varying gauge A+=grad(chi), phi-=BDF2(chi)
         def chi(time):
