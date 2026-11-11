@@ -31,6 +31,21 @@ BFZI-PDR V1.1 · 2026-11-11 · D2 数值精度 OPEN
 
 gap03 的原始 Whitney 磁能量与原生 Elmer SaveScalars 值 0.4567614919061 J 相对差 \(2.75\times10^{-13}\)。两档新增数据都经 `examples/bfzi_d2_team7_raw_conv.py` 的同源磁能量一致性检查。专项 `tests/test_bfzi_d2_team7_raw_b.py` 已执行：1 passed。
 
-本轮另已**启动** gap03 的真实 BDF2 64 步四周期原始 A 边自由度计算：`D:/work/BFZI-D2-verify/runs/team7_hr/gap03/raw64.log`、`case_raw64.sif`、`resraw64/phys.dat`、`TEAM7/raw64.result`。该长计算尚待完整 64/64 后取得终点 B 和原生积分；步骤未完成时不得把一步场收敛写成四周期结论。
+## gap03 四周期终点原始 Whitney B：真实空间 h 收敛
+
+官方 TEAM-7 200 Hz、BDF2 64/64 步真实求解结束；t=0.0200000 s 从原始 Elmer A 有向边自由度直接恢复四面体 Whitney curl B，固定三个物理三维区域的 11³ 个相同采样点，无节点化重建或实验拟合。
+
+| 四周期终点原始 B 向量相邻 L² 差 | h10→gap06 | gap06→gap04 | gap04→gap03 |
+|---|---:|---:|---:|
+| 三维空气间隙 | 23.0704% | 10.1374% | 6.4710% |
+| 三维上方空气 | 10.5946% | 5.4951% | 9.2425% |
+| 三维铝板内部 | 8.6061% | 3.3366% | 0.8333% |
+
+| 同终点原生/原始积分 | gap04 | gap03 | 相邻相对差 |
+|---|---:|---:|---:|
+| Whitney B 磁能量 (J) | 0.52700363053 | 0.526972896589 | 0.0058% |
+| 原生涡流功率 (W) | 15.1633589895 | 16.1791498408 | 6.2784% |
+
+gap03 的独立 Whitney B 磁能量与原生 SaveScalars 磁能量相对差 **8.764e-14**，通过 1e−7 同源积分检查。gap03→gap025 的真实第一步空气间隙原始 B 相邻差为 5.0932%，因此下一步继续 gap025 的完整四周期计算，以取得更细 h 终点场差。当前 TEAM-7 数值精度 OPEN、D2 OPEN、旧 G1 FAIL、教师冻结。[四周期 JSON](d2_team7_raw_hR_200hz_64.json)。
 
 [含全部六档细化 h 及 R 的一步原始场 JSON](d2_team7_raw_hR_200hz_1step.json)。本轮仅更新 BFZI-PDR V1.1 的 h 数值收敛主线，D2 OPEN、TEAM-7 数值精度 OPEN、旧 G1 FAIL、神经代理教师冻结。
