@@ -48,3 +48,43 @@ def test_actual_team7_edge_solution_matches_independent_curl():
         energy = magnetic_energy(mesh, med, phase_rad=angle)[0]
         assert energy >= 0 and np.isfinite(energy)
     assert magnetic_energy(mesh, med, average=True)[0] > 0
+
+
+def test_bdf2_joule_second_order_and_transient_gauge():
+    """Analytic time-harmonic A and P1 gauge: real transient E on wet tetra."""
+    from sdfmpneo_bfzi.direct3d_aphi import _BARY4
+    from sdfmpneo_bfzi.direct3d_whitney import bdf2_joule
+    nodes = np.array([[0., 0., 0.], [1., 0., 0.],
+                      [0., 1., 0.], [0., 0., 1.],
+                      [0., 0., -1.]])
+    mesh = TetraMesh(nodes, np.array([[0, 1, 2, 3], [1, 0, 2, 4]]),
+                     np.array([12., 0.]))
+    edges, *_ = _topology(mesh)
+    t, w = .018, 2*np.pi*200
+    def field(time):
+        b = .2*np.sin(w*time)
+        vec = np.cross([0,0,b], nodes)/2
+        return np.array([np.dot((vec[i]+vec[j])/2, nodes[j]-nodes[i])
+                         for i,j in edges])
+    exact_pos = _BARY4 @ nodes[mesh.tetrahedra[0]]
+    true_e = -np.cross([0, 0, .1*w*np.cos(w*t)], exact_pos)
+    errs = []
+    for dt in (.0002, .0001, .00005):
+        hist = np.array([field(t-2*dt), field(t-dt), field(t)])
+        e, q, power = bdf2_joule(mesh, hist, np.zeros(len(nodes)), dt)
+        assert np.all(e[1] == 0) and np.all(q[1] == 0)
+        assert power > 0 and np.isclose(power, q[0].mean()*12/6)
+        errs.append(np.linalg.norm(e[0]-true_e))
+        # Discrete time-varying gauge A+=grad(chi), phi-=BDF2(chi)
+        def chi(time):
+            return nodes @ np.array([.4*np.sin(w*time),
+                                     .2*np.cos(w*time), 0.])
+        cs = np.stack([chi(t-2*dt), chi(t-dt), chi(t)])
+        grad_a = np.array([[c[j]-c[i] for i,j in edges] for c in cs])
+        dot_chi = (cs[0]-4*cs[1]+3*cs[2])/(2*dt)
+        eg, qg, pg = bdf2_joule(mesh, hist+grad_a, -dot_chi, dt)
+        np.testing.assert_allclose(eg, e, rtol=0, atol=3e-12)
+        np.testing.assert_allclose(qg, q, rtol=1e-11, atol=1e-9)
+        np.testing.assert_allclose(pg, power, rtol=1e-11)
+    assert 3.7 < errs[0]/errs[1] < 4.4
+    assert 3.8 < errs[1]/errs[2] < 4.3
