@@ -85,7 +85,7 @@ def make(root, name, bin_dir):
     if np.any(np.abs(det) < 1e-15):
         raise ValueError("Degenerate tetrahedra in outer shell")
     neg = det < 0
-    tet[neg, [0, 1]] = tet[neg][:, [1, 0]]
+    tet[neg] = tet[neg][:, [1, 0, 2, 3]]
     shell_volume = float(np.sum(np.abs(det))/6)
     outer = (high-low+2*(r-.2)).prod()
     inner = (high-low).prod()
