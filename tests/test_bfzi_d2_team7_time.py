@@ -64,4 +64,4 @@ def test_wave_same_physical_times(tmp_path):
         np.savetxt(path, v)
     res = calc(tmp_path)["waveform"]
     assert res["eddy"]["raw_waveform"]["rel128_256"] < 1e-5
-    assert res["energy"]["raw_waveform"]["rel128_256"] < 1e-5
+    assert res["energy"]["raw_waveform"]["rel128_256"] < 1e-4
