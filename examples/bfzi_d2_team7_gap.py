@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 import time
 
-GAPS = {"gap12": .012, "gap08": .008, "gap06": .006, "gap05": .005, "gap04": .004, "gap03": .003, "gap025": .0025}
+GAPS = {"gap12": .012, "gap08": .008, "gap06": .006, "gap05": .005, "gap04": .004, "gap03": .003, "gap025": .0025, "gap02": .002}
 RADII = {"rgap15": .15, "rgap30": .30, "rgap40": .40}
 FIELD = """
 Field[90] = Box;
