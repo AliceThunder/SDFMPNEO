@@ -12,7 +12,7 @@ import subprocess
 import time
 
 GAPS = {"gap12": .012, "gap08": .008, "gap06": .006, "gap05": .005, "gap04": .004}
-RADII = {"rgap30": .30, "rgap40": .40}
+RADII = {"rgap15": .15, "rgap30": .30, "rgap40": .40}
 FIELD = """
 Field[90] = Box;
 Field[90].VIn = {h:.9g};
@@ -99,7 +99,7 @@ def compare(root, freq, axis="h"):
     from examples.bfzi_d2_team7_conv import load, cmp
     from examples.bfzi_d2_team7_integrals import read_phys
     cases = (("h10", "gap12", "gap08", "gap06", "gap05", "gap04")
-             if axis == "h" else ("gap06", "rgap30", "rgap40"))
+             if axis == "h" else ("rgap15", "gap06", "rgap30"))
     vals = {n: load(root/n/f"resene{freq}s64"/"f.dat") for n in cases}
     native = {n: read_phys(root/n/f"resene{freq}s64"/"phys.dat") for n in cases}
     if any(v["rows"] != 64 for v in native.values()):
