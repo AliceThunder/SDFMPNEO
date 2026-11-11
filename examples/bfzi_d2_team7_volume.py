@@ -26,7 +26,7 @@ SERIES = {
     "air": ("a40", "h10", "a25"),
     "probe": ("probe10", "probe120", "probe240"),
     "gap": ("h10", "gap12", "gap08", "gap06", "gap05", "gap04"),
-    "Rgap": ("gap06", "rgap30", "rgap40"),
+    "Rgap": ("rgap15", "gap06", "rgap30"),
 }
 
 
