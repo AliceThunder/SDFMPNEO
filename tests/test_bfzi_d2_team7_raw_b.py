@@ -37,3 +37,6 @@ def test_original_whitney_uniform_b(tmp_path):
     np.testing.assert_allclose(res["magnetic_energy_J"], expected, rtol=1e-13)
     np.testing.assert_allclose(res["B_rms_T"], 3., rtol=1e-13)
     assert res["edge_dofs"] == len(edges)
+    alt = calc(tmp_path, tmp_path/"edge.result", mu0=1.256e-6)
+    np.testing.assert_allclose(alt["magnetic_energy_J"], expected*MU0/1.256e-6)
+
