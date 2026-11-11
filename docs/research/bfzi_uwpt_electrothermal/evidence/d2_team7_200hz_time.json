@@ -12,6 +12,8 @@
       "time_s": 0.02,
       "eddy_W": 15.08128398271,
       "energy_J": 0.5237866355189,
+      "eddy_cycle_mean_W": 9.752095797219937,
+      "energy_cycle_mean_J": 0.26292841358278096,
       "power_period_rel": 0.0008230978757665179,
       "energy_period_rel": 9.910891206409313e-05
     },
@@ -21,6 +23,8 @@
       "time_s": 0.02,
       "eddy_W": 14.99413658087,
       "energy_J": 0.5239368486655,
+      "eddy_cycle_mean_W": 10.033647018248875,
+      "energy_cycle_mean_J": 0.26303186306663817,
       "power_period_rel": 0.0014814148043936028,
       "energy_period_rel": 9.969425443727085e-05
     },
@@ -30,6 +34,8 @@
       "time_s": 0.02,
       "eddy_W": 14.68591733688,
       "energy_J": 0.5239731990789,
+      "eddy_cycle_mean_W": 10.132792980075202,
+      "energy_cycle_mean_J": 0.26305622028157355,
       "power_period_rel": 0.0017660567695603044,
       "energy_period_rel": 9.883379778008584e-05
     }
@@ -48,6 +54,20 @@
       "order": 2.046967405928133,
       "extrapolated": 0.523984803864041,
       "remaining_relative": 2.214717880246343e-05
+    },
+    "eddy_cycle_mean_W": {
+      "rel64_128": 0.02806070619355668,
+      "rel128_256": 0.009784662730333531,
+      "order": 1.5057714891749965,
+      "extrapolated": 10.18668354106801,
+      "remaining_relative": 0.005290294998911742
+    },
+    "energy_cycle_mean_J": {
+      "rel64_128": 0.0003932963963039003,
+      "rel128_256": 9.259319133113784e-05,
+      "order": 2.086505360702801,
+      "extrapolated": 0.26306372131710454,
+      "remaining_relative": 2.8514139058901043e-05
     }
   },
   "gate": "OPEN"
