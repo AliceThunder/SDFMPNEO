@@ -45,7 +45,7 @@ def run(root, n=11, steps=1):
         "Rfixed": ("gap06", "shell30", "shell40"),
     })
     cases = tuple(dict.fromkeys(v for vs in series.values() for v in vs))
-    sample, energy = {}, {}
+    sample, energy, power = {}, {}, {}
     for name in cases:
         directory = root/name
         mesh = directory/"TEAM7"
@@ -55,7 +55,9 @@ def run(root, n=11, steps=1):
         xyz, tet, b, vol, _, _ = raw_field(mesh, res)
         energy[name] = float(np.dot(vol, np.sum(b*b, axis=1))/(2*MU))
         phys = directory/(f"res_edge{steps}" if name == "h10" else f"resraw{steps}")/"phys.dat"
-        native = float(np.atleast_2d(np.loadtxt(phys))[-1, 1])
+        scalars = np.atleast_2d(np.loadtxt(phys))[-1]
+        native = float(scalars[1])
+        power[name] = float(scalars[0])
         if abs(energy[name]-native)/abs(native) > 1e-7:
             raise ValueError(f"Original Whitney B energy differs from native: {name}")
         sample[name] = {region: probe(xyz, tet, b, pos)
@@ -70,6 +72,14 @@ def run(root, n=11, steps=1):
         "measurements_used": False,
         "n_axis": n,
         "energy_J": energy,
+        "native_power_W": power,
+        "native_integral_pairs": {
+            axis: [{"from": a, "to": b,
+                    "energy_rel": float(abs(energy[a]-energy[b])/abs(energy[b])),
+                    "power_rel": float(abs(power[a]-power[b])/abs(power[b]))}
+                   for a, b in zip(names[:-1], names[1:])]
+            for axis, names in series.items()
+        },
         "regions": {},
         "status": "D2 OPEN",
     }
