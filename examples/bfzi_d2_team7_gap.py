@@ -94,6 +94,34 @@ def solve(root, name, bin_dir, freq):
 
 
 
+
+def raw_one(root, name, bin_dir, freq=200):
+    """One physical timestep with original Elmer A edge DOFs saved for curl B."""
+    out = root/name
+    if not (out/"TEAM7"/"mesh.elements").is_file():
+        raise ValueError("Original Elmer tetra mesh is required")
+    s=(root/"h10"/f"case_ene{freq}s64.sif").read_text(encoding="utf-8-sig")
+    if ("TimeStep Intervals(1) = 64" not in s or
+            'Results Directory "resene'+str(freq)+'s64"' not in s):
+        raise ValueError("Expected original TEAM-7 64-step source")
+    s=s.replace("TimeStep Intervals(1) = 64","TimeStep Intervals(1) = 1")
+    s=s.replace("Output Intervals(1) = 64","Output Intervals(1) = 1")
+    s=s.replace(f'Results Directory "resene{freq}s64"',
+                'Results Directory "resraw1"')
+    s=s.replace("Simulation\n", 'Simulation\n  Output File = "raw1.result"\n', 1)
+    (out/"case_raw1.sif").write_text(s, encoding="utf-8")
+    (out/"resraw1").mkdir(exist_ok=True)
+    env=os.environ.copy()
+    env["ELMER_HOME"]=str(bin_dir.parent)
+    env["PATH"]=str(bin_dir)+os.pathsep+env.get("PATH","")
+    with (out/"raw1.log").open("w") as log:
+        res=subprocess.run([str(bin_dir/"ElmerSolver.exe"),"case_raw1.sif"],
+                           cwd=out,env=env,stdout=log,stderr=subprocess.STDOUT)
+    result=out/"TEAM7"/"raw1.result"
+    if res.returncode != 0 or not result.is_file():
+        raise RuntimeError(f"Elmer native edge run failed for {name}")
+    print(f"raw1 {name} exit=0 result_bytes={result.stat().st_size}",flush=True)
+
 def compare(root, freq, axis="h"):
     """Original elemental SaveLine B/J at fourth-period end on fixed 101 points."""
     from examples.bfzi_d2_team7_conv import load, cmp
@@ -128,6 +156,7 @@ def main():
     p.add_argument("--case", choices=tuple(GAPS)+tuple(RADII), required=True)
     p.add_argument("--mesh", action="store_true")
     p.add_argument("--solve", action="store_true")
+    p.add_argument("--raw-one", action="store_true")
     p.add_argument("--compare", action="store_true")
     p.add_argument("--axis", choices=("h", "R"), default="h")
     p.add_argument("--out", type=Path)
@@ -137,6 +166,8 @@ def main():
         make(a.root, a.case, a.elmerbin)
     if a.solve:
         solve(a.root, a.case, a.elmerbin, a.freq)
+    if a.raw_one:
+        raw_one(a.root, a.case, a.elmerbin, a.freq)
     if a.compare:
         import json
         report = compare(a.root, a.freq, a.axis)
