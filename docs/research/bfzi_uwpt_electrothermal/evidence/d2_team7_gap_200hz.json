@@ -7,7 +7,8 @@
   "cases": [
     "h10",
     "gap12",
-    "gap08"
+    "gap08",
+    "gap06"
   ],
   "native": {
     "h10": {
@@ -30,6 +31,13 @@
       "rows": 64,
       "power_period_rel": 0.0008313061521550448,
       "energy_period_rel": 9.855103868251983e-05
+    },
+    "gap06": {
+      "eddy_power_W": 14.8052596085,
+      "em_energy_J": 0.5264327595906,
+      "rows": 64,
+      "power_period_rel": 0.0007653491063063672,
+      "energy_period_rel": 9.817262633928593e-05
     }
   },
   "energy_pairs": [
@@ -44,6 +52,12 @@
       "to": "gap08",
       "em_energy_J_rel": 0.0016962160828069908,
       "eddy_power_W_rel": 0.008181705092458096
+    },
+    {
+      "from": "gap08",
+      "to": "gap06",
+      "em_energy_J_rel": 0.0007767457496717027,
+      "eddy_power_W_rel": 0.004997178987494739
     }
   ],
   "pairs": [
@@ -90,6 +104,28 @@
       "Jy_top_rms_delta": 13966.092181053398,
       "Jy_bottom_rel": 0.006947520841197184,
       "Jy_bottom_rms_delta": 2063.9832256779628
+    },
+    {
+      "from": "gap08",
+      "to": "gap06",
+      "A1_Bz_rel": 0.07790154577244933,
+      "A1_Bz_rms_delta": 0.0003273399341990376,
+      "A1_Bz_mean_delta_T": -0.00013850867434961507,
+      "A1_Bz_mean_delta_over_rms": 0.03283290653116356,
+      "A1_Bz_rms_rel": 0.027096277649876446,
+      "A1_Bxyz_rel": 0.05038789402699917,
+      "A1_Bxyz_rms_delta": 0.0002401169283261212,
+      "A2_Bz_rel": 0.10200154228103753,
+      "A2_Bz_rms_delta": 0.0003850652515225254,
+      "A2_Bz_mean_delta_T": -0.00013574366499687993,
+      "A2_Bz_mean_delta_over_rms": 0.03581665441900984,
+      "A2_Bz_rms_rel": 0.048203340088665884,
+      "A2_Bxyz_rel": 0.057586305902068,
+      "A2_Bxyz_rms_delta": 0.00027823237169918527,
+      "Jy_top_rel": 0.018058834744556756,
+      "Jy_top_rms_delta": 17307.92686287858,
+      "Jy_bottom_rel": 0.014808840041187701,
+      "Jy_bottom_rms_delta": 4443.6545180759795
     }
   ],
   "status": "D2 OPEN"
