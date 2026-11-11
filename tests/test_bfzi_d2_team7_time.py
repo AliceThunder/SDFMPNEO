@@ -51,3 +51,17 @@ def test_incomplete(tmp_path):
         make_case(tmp_path, n, complete=n != 256)
     with pytest.raises(ValueError, match="not complete"):
         calc(tmp_path)
+
+
+def test_wave_same_physical_times(tmp_path):
+    for n in (64, 128, 256):
+        make_case(tmp_path, n)
+        path = tmp_path / "h10" / f"resene200s{n}" / "phys.dat"
+        v = np.loadtxt(path)
+        t = (np.arange(n) + 1)*.02/n
+        v[:, 0] = 10 + 2*np.cos(4*3.14*200*t) + 1/n**2
+        v[:, 1] = .5 + .2*np.sin(4*3.14*200*t) + 1/n**2
+        np.savetxt(path, v)
+    res = calc(tmp_path)["waveform"]
+    assert res["eddy"]["raw_waveform"]["rel128_256"] < 1e-5
+    assert res["energy"]["raw_waveform"]["rel128_256"] < 1e-5
