@@ -18,6 +18,7 @@ from examples.bfzi_d2_team7_volume import BOXES, pts
 SERIES = {
     "h": ("h10", "gap06", "gap05", "gap04"),
     "R": ("gap06", "rgap30", "rgap40"),
+    "Rfixed": ("gap06", "shell30", "shell40"),
 }
 MU = 1.256e-6
 
@@ -41,6 +42,7 @@ def run(root, n=11, steps=1):
     series = (SERIES if steps == 1 else {
         "h": ("h10", "gap06", "gap04"),
         "R": ("gap06", "rgap30"),
+        "Rfixed": ("gap06", "shell30", "shell40"),
     })
     cases = tuple(dict.fromkeys(v for vs in series.values() for v in vs))
     sample, energy = {}, {}
