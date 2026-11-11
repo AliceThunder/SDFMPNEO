@@ -24,12 +24,14 @@ def test_original_whitney_uniform_b(tmp_path):
     vals = np.r_[np.zeros(len(x)), dof]
     n = len(vals)
     with (tmp_path/"edge.result").open("w") as f:
-        f.write("ASCII 3\nTime: 1 1 0.1\na\n")
-        f.write(f"Perm: {n} {n}\n")
-        for i in range(n):
-            f.write(f"{i+1} {n-i}\n")
-        for v in vals:
-            f.write(f"{v:.17g}\n")
+        f.write("ASCII 3\n")
+        for step, values in ((1, np.zeros_like(vals)), (2, vals)):
+            f.write(f"Time: {step} {step} {step*.1}\na\n")
+            f.write(f"Perm: {n} {n}\n")
+            for i in range(n):
+                f.write(f"{i+1} {n-i}\n")
+            for v in values:
+                f.write(f"{v:.17g}\n")
     res = calc(tmp_path, tmp_path/"edge.result")
     expected = (2/6) * (3**2)/(2*MU0)
     np.testing.assert_allclose(res["magnetic_energy_J"], expected, rtol=1e-13)
