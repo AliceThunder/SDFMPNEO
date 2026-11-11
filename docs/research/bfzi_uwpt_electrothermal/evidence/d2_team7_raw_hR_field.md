@@ -106,3 +106,21 @@ gap025 独立 Whitney B 磁能量与 Elmer 原生 SaveScalars 能量相对差 **
 复现：`python -m examples.bfzi_d2_team7_gap --root D:/work/BFZI-D2-verify/runs/team7_hr --elmerbin D:/work/ElmerFEM/ElmerFEM-nogui-nompi-Windows-AMD64/bin --case gap04 --raw-one --freq 200`，然后运行 `python -m examples.bfzi_d2_team7_raw_conv --root D:/work/BFZI-D2-verify/runs/team7_hr --steps 1 --n 11 --out docs/research/bfzi_uwpt_electrothermal/evidence/d2_team7_raw_hR_200hz_1step.json`。
 
 完整四周期 h/R 原始场同源比较及固定近场 R 外域扩展均已实算。下一项继续近场 h 加密与剩余 R 功率误差的数值极限。当前 **TEAM-7 数值精度 OPEN、D2 OPEN、旧 G1 FAIL、神经代理教师冻结**。
+
+## gap02 四周期终点：2.0 mm 原始 Whitney B 空间精度
+
+官方 TEAM-7 200 Hz、BDF2 64/64 步完成，t=0.0200000 s。从 Elmer 原始有向 A 边自由度直接计算四面体 Whitney curl B；三个三维物理区域各使用固定 11³ 同位置单元 B 采样点，不使用节点平滑或实验拟合。与 gap025 相比，线圈 3600、铝板 27570 实体四面体保持相同，外域 R=0.20m、源及材料相同。
+
+| 四周期终点原始 B 向量相邻 L² 差 | gap04→gap03 | gap03→gap025 | gap025→gap02 |
+|---|---:|---:|---:|
+| 三维空气间隙 | 6.4710% | 5.0369% | 4.2534% |
+| 三维上方空气 | 9.2425% | 7.3757% | 8.7622% |
+| 三维铝板内部 | 0.8333% | 2.9978% | 3.0656% |
+
+| 原始/原生物理量 | gap025 | gap02 | 相邻差 |
+|---|---:|---:|---:|
+| Whitney B 磁能量 (J) | 0.527020994932 | 0.526811337365 | 0.0398% |
+| 原生涡流功率 (W) | 17.2586383713 | 19.1938898116 | 10.0826% |
+
+gap02 独立 Whitney B 磁能量与 Elmer 原生磁能量相对差 **8.598e-14**，通过同源积分 1e−7 检查。三维间隙相邻原始 B 差 **4.2534%**；上方空气 **8.7622%**；铝板 **3.0656%**。TEAM-7 数值精度与 D2 OPEN，旧 G1 FAIL，教师冻结。[四周期 JSON](d2_team7_raw_hR_200hz_64.json)。
+
