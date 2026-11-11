@@ -1,4 +1,6 @@
-﻿> **2026-11-10 TEAM-7 canonical 50/200Hz full h/R matrix completed:** all ten real four-cycle BDF2 ElmerSolver cases exit 0 and output 101-point fields. 50Hz Bz h differences 11.64293%/10.89298%, 200Hz 13.53495%/12.70586%; 50Hz R differences 10.57370%/12.31519%, 200Hz 12.23323%/14.28411%. Additional independent fixed-solid air-only 40/30/25mm scan confirms unresolved 8.30%/7.62% Bz effects; direct nodal recovery does not cure. [Complete evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). h/R data collection DONE; precision TEAM7 and D2 OPEN, old G1 FAIL, teacher frozen.
+﻿> **2026-11-10 D2 dual-frequency local probe refinement completed:** 60/120/240-segment air-line meshes have identical coil/plate tetrahedra; 120/240 at both 50/200 Hz exited 0. While 17-point A1 Bz measurement-fit improved to 10.29175% (50 Hz) and 11.98845% (200 Hz), 120/240 direct A1 Bz differences remain **8.58829% / 10.12530%** (50/200 Hz), with A2 Bz **10.92639% / 12.95207%**. Convergence FAIL; next solve must target air/interface H(curl) discretization and physical field recovery, rather than increase embedded line segmentation. [Real evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 / D2 OPEN, G1 FAIL, teacher frozen.
+
+> **2026-11-10 TEAM-7 canonical 50/200Hz full h/R matrix completed:** all ten real four-cycle BDF2 ElmerSolver cases exit 0 and output 101-point fields. 50Hz Bz h differences 11.64293%/10.89298%, 200Hz 13.53495%/12.70586%; 50Hz R differences 10.57370%/12.31519%, 200Hz 12.23323%/14.28411%. Additional independent fixed-solid air-only 40/30/25mm scan confirms unresolved 8.30%/7.62% Bz effects; direct nodal recovery does not cure. [Complete evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). h/R data collection DONE; precision TEAM7 and D2 OPEN, old G1 FAIL, teacher frozen.
 
 > **2026-11-10 air-only three-level real 50Hz result:** keeping every coil/plate tetrahedron and R fixed, `lc_air=40/30/25 mm` gives A1-B1 Bz consecutive differences **8.29843%/7.62061%** while plate Jy remains roughly 0.6–1.2%; A2-B2 Bz is not monotonic (9.73%/15.49%). Three matched real ElmerSolver runs exit 0. Simple Elmer nodal B recovery was also tested at fixed first time step and increased h-to-h Bz disagreement to 20–22%, therefore not used as a cure. [Evidence](evidence/d2_team7_hr_mesh_and_runs_20261110.md). TEAM-7 and D2 OPEN; G1 FAIL; teacher frozen.
 
@@ -134,6 +136,7 @@ D5 参考通过（或用户依据独立高保真 A–φ 标签**明确授权改�
 | 下一次状态 | 完成上述首次实算方可标记 `Elmer 3D 求解 SMOKE PASS`；**D2 仍 OPEN**，直到完整 benchmark 及后续同源场精度成立 |
 
 **权威关系：** [锁定规范](PHYSICAL_DIRECT_METHOD_LOCKED.md) → [独立验收表](PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md) → **本文 BFZI-PDR V1.0 执行任务序** → [独立 Elmer 技术细节](D2_ELMER_INDEPENDENT_REFERENCE.md) → [项目进度看板](PROJECT_PROGRESS.md)。不得将后一层的历史描述反过来覆盖前一层。
+
 
 
 

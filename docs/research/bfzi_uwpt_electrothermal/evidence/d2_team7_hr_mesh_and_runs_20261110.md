@@ -146,3 +146,32 @@ The local `probe10` geometry adds a Gmsh Distance/Threshold background size fiel
 A larger near-probe threshold radius caused the coil tetrahedra to remesh (only 760/3600 overlapped), so it was **discarded as an isolated air-only convergence comparison** before completing the expensive solver. Instead, a controlled refinement was implemented by increasing only the embedded original probe-curve `Transfinite Curve` segmentation from 60 to **120** and **240** with the same local threshold field and original core mesh. Actual `probe120` and `probe240` native meshes comprise **131,517** and **133,084** tetrahedra respectively; coordinate-verified coil match **3,600/3,600** and plate match **27,570/27,570** for both. The genuine 50/200 Hz 64-step four-cycle Elmer solves were launched for both cases; final field verdict is pending actual `result_50.json`, `result_200.json` and `res*/f.dat`. Original results and scripts are in `D:\\work\\BFZI-D2-verify\\runs\\team7_hr`.
 
 TEAM-7 full field accuracy OPEN; D2 OPEN; old G1 FAIL; neural teacher frozen.
+
+## D2 probe-line 60 / 120 / 240: completed two-frequency evidence and gate decision
+
+The original `probe10` line used **60 Gmsh Transfinite Curve segments**. Two controlled true-mesh variants used 120 and 240 segments in the *same* two embedded A1-B1 and A2-B2 curves. All preserve the **same 3,600 coil tetrahedra and 27,570 plate tetrahedra vertex-for-vertex** as h10 and use the same R=0.20m, original TEAM-7 current excitation, conductivity, BDF2, 64 steps per four periods and fixed SaveLine coordinates. Exact native mesh tetrahedra: 60 segments **130,538**, 120 **131,517**, 240 **133,084**.
+
+All four new 120/240 × 50/200 Hz Elmer 26.2 four-cycle solves completed with **exit 0** and saved real `res50/f.dat`/`res200/f.dat`. Elapsed seconds: 120: **752.37 / 730.47**; 240: **762.88 / 761.77** (50/200 Hz respectively).
+
+Experimental A1-B1 Bz 17-point relative L2 (fit to data, not numerical h convergence):
+
+| Case | 50 Hz | 200 Hz |
+|---|---:|---:|
+| h10 unrefined | 14.34794% | 17.10490% |
+| 60 segments + local air field | 14.10795% | not run |
+| 120 segments + local air field | 12.71025% | 14.81229% |
+| 240 segments + local air field | 10.29175% | 11.98845% |
+
+**Direct actual 101-point physical end-phase field differences** (second case in each pair is the L2 denominator):
+
+| Frequency | pair | A1 Bz | A1 Bxyz | A2 Bz | A2 Bxyz | upper plate Jy | lower plate Jy |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 50 Hz | 60 vs 120 | 9.56097% | 7.08382% | 11.51224% | 7.60335% | 6.78158% | 0.73830% |
+| 50 Hz | 120 vs 240 | **8.58829%** | 7.40807% | **10.92639%** | 6.88168% | **4.56011%** | 1.10482% |
+| 200 Hz | 120 vs 240 | **10.12530%** | 7.72974% | **12.95207%** | 7.10287% | **8.64426%** | 2.15291% |
+
+**Decision:** A1-B1 Bz's measured fit improved as the embedded line was segmented more finely, but *physical intermesh* Bz remains 8–10%, A2-B2 is 11–13%, and top-surface Jy varies up to 8.6%. This does **not** satisfy the precision gate. Do not equate a better fit to measurements with grid convergence, do not accept low-order nodal averaging as a cure, and do not spend further rounds solely increasing probe-line segmentation. Further D2 effort should address the actual 3D H(curl) air/coil-interface discretization and field recovery, then independently re-evaluate truncation R and 200-Hz time budget on a demonstrably convergent reference.
+
+Official `TEAM7.geo` has an original upper extrusion `394*mm+boxt`; the prior real R=0.15 and R=0.30 files were already correctly generated with `194*mm+2*boxt` in accordance with existing `examples/bfzi_d2_team7_hr.py` so the upper and lower air boundaries both vary with R. **No repeat R meshing is necessary**.
+
+TEAM-7 field accuracy **OPEN**; D2 **OPEN**; old G1 **FAIL**; neural teacher **frozen**.
