@@ -1,3 +1,5 @@
+> **2026-11-11 D2 200 Hz 独立时间扫描：** TEAM-7 h10真实网格/官方源/四周期，BDF2 dt=0.3125/0.15625/0.078125ms（64/128/256步），64步已完成，新128/256步实算进行中。已实现时间误差分析程序 examples/bfzi_d2_team7_time.py，见 [原生时间收敛证据](evidence/d2_team7_200hz_time_20261111.md)。待全部计算完成再判定 p 与 Richardson 误差。D2 OPEN、旧G1 FAIL、教师冻结。
+
 > **2026-11-11 BFZI-PDR V1.1 D2 四周期原生积分完成：** TEAM-7 官方同源 50/200 Hz 三档 h + 三档 R 共 10 个 Elmer BDF2 四周期 64 步积分求解均退出 0，[双频 h/R 数值结果](evidence/d2_team7_native_integrals_64.md) 与 [原始 JSON](evidence/d2_team7_native_integrals_64.json) 已生成。50/200 Hz 磁能量 h 相邻差分别为 3.86194%→2.90520% 与 4.00746%→2.98629%；涡流功率 R 相邻差分别为 4.93586%→4.36012% 与 3.45848%→2.97690%。第三至第四周期名义相位终点差保留源相位偏移的影响。原生积分和 DG 单元节点重建的差异已独立记录。数值精度 TEAM-7 OPEN、D2 OPEN，旧 G1 FAIL、神经代理教师冻结。
 
 > **2026-11-10 D2 V1.1 原生物理积分验证：** 已对官方 TEAM-7 50/200 Hz 的三档 h、三档 R 完成 10 组真实 Elmer 首时间步 `SaveScalars` 电磁场能量及涡流功率求解（10/10 exit 0）。能量 h 相邻差约 4.0%→1.7%；涡流功率 h/R 仍有数个百分点差异；全四周期末端积分及原始 Whitney 旋度 B 精度仍 OPEN。见 [真实积分证据](evidence/d2_team7_native_integrals.md) 和 [JSON](evidence/d2_team7_native_integrals.json)。D2 OPEN、G1 FAIL、教师冻结。
