@@ -31,3 +31,7 @@ The fixed measurements are A1-B1 `(x,0.072,0.034)m`, 101 points with `Bz` in Sav
 ## Status
 
 **TEAM-7 FULL ACCURACY OPEN; D2 OPEN; G1 FAIL; neural teacher frozen.** Complete field comparisons, quantitative Jy, spatial extrapolation, R trend, and 200 Hz time-error budget remain to be established from the actual solver outputs. No GitHub Actions.
+
+## First complete field solve: h15, 50 Hz
+
+On the physical 53,510-tetrahedron h15 mesh, the actual BDF2 four-cycle (64 steps, dt=1.25 ms) Elmer solve exited **0** in **312.45 s** and produced `res50/f.dat`. Fixed 17-point A1-B1 Bz measurement-relative L2 error was **11.74929%** and the maximum absolute Jy sampled on the two aluminium-plate lines was **1.0962685e6 A/m^2**. These are measured outcomes of the coarse mesh, not convergence evidence. The remaining h/R/frequency sweeps remain OPEN.
