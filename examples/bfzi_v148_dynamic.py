@@ -8,6 +8,7 @@ Green/resolvent, source mass and air inductance are the electromagnetic base.
 """
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +47,11 @@ def main(argv=None):
         p.error("source and load resistances must be positive")
     if min(a.voltage,a.step,a.heat,a.cool,a.restart) <= 0:
         p.error("drive voltage and times must be positive")
+    rev=subprocess.run(
+        ["git","-C",str(a.bfzi_root.resolve()),"rev-parse","HEAD"],
+        capture_output=True,text=True,check=False)
+    bfzi_sha=rev.stdout.strip() if rev.returncode==0 else None
+    front="v150" if (a.bfzi_root/"run_v150.py").is_file() else "v148/v149"
     sys.path.insert(0,str(a.bfzi_root.resolve()))
     import bfzi_v148_results as calc
 
@@ -86,6 +92,8 @@ def main(argv=None):
                       (archive_rel is not None and archive_rel<=1e-5))
     baseline={
         "sample":a.sample,"frequency_hz":backend.omega/(2*np.pi),
+        "bfzi_frontend":front,"bfzi_commit":bfzi_sha,
+        "bfzi_em_solver":"bfzi_v148_results / bfzi_v142_results",
         "baseline_tolerance":1e-5,
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archived_Zsea_relative_error":archive_rel,
@@ -172,6 +180,7 @@ def main(argv=None):
     report={
         "status":"Original BFZI v148 warm electrothermal prototype; thermal and EM numerical accuracy OPEN",
         "sample":a.sample,
+        "bfzi_frontend":front,"bfzi_commit":bfzi_sha,
         "em_backend":"independent AliceThunder/BFZI v148 Green/resolvent and local source correction",
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
