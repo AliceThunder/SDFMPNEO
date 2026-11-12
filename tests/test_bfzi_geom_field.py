@@ -59,14 +59,14 @@ def test_material_field_inference_uses_any_cell_count():
               for k,arr in enumerate((x,boxes[0],boxes[1]))]
     net=SpaceTemp()
     states=np.array([[0.]*8,
-                     [.02,.5,.7,1.1,.9,1.5,.1,3.]])
+                     [.06,.5,.7,1.1,.9,1.5,.1,3.]])
     sea,pkg=infer_field(net,features,states,np.array([0.,30.]),
                         np.ones(len(x)))
     assert sea.shape==(2,len(x))
     assert pkg.shape==(2,2,len(boxes[0]))
     assert np.all(sea[0]==0) and np.all(pkg[0]==0)
     assert np.isclose(np.max(sea[1]),.5)
-    assert np.isclose(sea[1].mean(),.02,atol=1e-6)
+    assert np.isclose(sea[1].mean(),.06,atol=1e-6)
     for p in range(2):
         assert np.isclose(np.max(pkg[1,p]),states[1,4+p])
         assert np.isclose(np.mean(pkg[1,p]),states[1,2+p],atol=1e-6)
