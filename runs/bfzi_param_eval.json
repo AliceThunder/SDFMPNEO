@@ -1,0 +1,59 @@
+{
+  "original_geometry_anchor": "runs\\bfzi_param_anchor.npz",
+  "original_BFZI_direct_probe": "runs\\bfzi_param_anchor_probe.npz",
+  "pretrained_fractional_model": "runs\\bfzi_geom_frac_v5.pt",
+  "original_cold_Z_relative_error": 0.0,
+  "original_direct_time_points": 21,
+  "drive_program_V": [
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0,
+    75.0
+  ],
+  "rom_setup_seconds": 0.0012851000064983964,
+  "full_FV": {
+    "sea_max_K": 0.00023559633547165504,
+    "pkg_max_K": 4.401177665158684e-05,
+    "cu_max_K": 0.00017949410209894268,
+    "seconds": 0.04232679994311184,
+    "dynamic_Z_relative_L2": 0.04079106190851364,
+    "sea_source_power_gap_W": 3.552713678800501e-15,
+    "thermal_node_residual_W": 3.071320975323033e-11
+  },
+  "conservative_ROM": {
+    "sea_max_K": 0.000250520950714872,
+    "pkg_max_K": 8.237395962851224e-05,
+    "cu_max_K": 0.00017949413415863091,
+    "seconds": 0.03491829999256879,
+    "dynamic_Z_relative_L2": 0.04079106190247319,
+    "sea_source_power_gap_W": 1.7763568394002505e-15,
+    "thermal_node_residual_W": 0.00020985641160081725,
+    "material_budget_W": 3.071320975323033e-11,
+    "rom_rank": 32
+  },
+  "ROM_vs_full_FV": {
+    "sea_max_K": 5.191292694917138e-05,
+    "pkg_max_K": 6.519988210129668e-05,
+    "cu_max_K": 9.299014891439583e-10,
+    "speedup": 1.2121666848649477,
+    "Z_dynamic_additive_relative_L2": 2.8333654604330843e-11,
+    "q_relative_L2": 1.5017008415579306e-07
+  }
+}
