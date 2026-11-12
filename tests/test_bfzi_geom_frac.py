@@ -11,8 +11,8 @@ def test_geometry_summary_independent_of_fv_cell_count():
     for ns in (384,2250):
         nt=3
         t=np.full((nt,ns+66),293.15)
-        t[:,ns:ns+32]=np.arange(nt)[:,None]*2.
-        t[:,ns+32:ns+64]=np.arange(nt)[:,None]*3.
+        t[:,ns:ns+32]=293.15+np.arange(nt)[:,None]*2.
+        t[:,ns+32:ns+64]=293.15+np.arange(nt)[:,None]*3.
         t[:,-2:]=293.15+np.arange(nt)[:,None]*4.
         s=thermal_summary(t,ns,32,np.ones(ns),293.15)
         assert s.shape==(3,8)
