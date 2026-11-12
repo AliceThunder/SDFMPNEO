@@ -87,3 +87,25 @@ python run.py --mode bfzi-et-v148 \
 - **精度阶段：** 当前热模块在海水用原 BFZI 的 FV 热传导，在两个封装和两根铜线用集中热状态。原 BFZI v148 的几何范围以现有 M1–M4 案例为起点；任意双 SE(3) 的原算子扩展、铜/封装完整三维温度以及独立热/电磁高保真参考均继续推进。
 
 **下一关键项：** 在具有独立 BFZI checkout 的 Python 环境中执行上面的真实 M4 时程，核对等温相对误差、动态复阻抗、真实热源及升温/关断冷却。发现问题直接修改实现，随后扩展跨几何与空间热 ROM。
+
+
+## 2026-11-12 下一轮：等温回归提前执行和动态传输效率
+
+原始 BFZI 等温复阻抗现在是**进入长时热计算的前置实际数值检查**。新增 `--check-only` 只构造原 BFZI M4 电磁数据、求初始全复海水阻抗，并对照两项数值：
+- 原 BFZI `calc.formal_with_local_mass(data)` 的等温 `Zsea`；同方法数值回归相对阈值设为 `1e-5`。若未达到则中止完整热积分，并保留独立检查结果 JSON。
+- 直接读取独立 BFZI checkout 中 `outputs_v148/bfzi_v148_all_samples_matrix.csv` 的 M4 原始海水复阻抗矩阵。由存档列 `R_ohm` 与 `L_sea_reaction_uH` 按 `R+jωLsea` 重建，不再硬编码存档阻抗常数。
+
+```bash
+python run.py --mode bfzi-et-v148 --bfzi-root /path/to/BFZI --sample M4 --check-only --out runs/m4_check.json
+python run.py --mode bfzi-et-v148 --bfzi-root /path/to/BFZI --sample M4 --voltage 3 --source-r 0.5 --load-r 0.5 --step 60 --heat 240 --cool 180 --restart 180 --out runs/m4_dynamic.json
+```
+
+真实时间记录新增 `Pinput_W`、`Pload_W`、`Psource_loss_W` 与 `efficiency`。电路采用完整温度相关 `ZEM(T)`，发射侧串联源电阻 `Rsrc`，接收侧电阻负载 `Rload` 和固定串联容性补偿：
+
+[
+P_{\mathrm{in}}(t)=\tfrac12\operatorname{Re}[\mathbf V(t)^\dagger\mathbf I(t)],\quad
+P_{\mathrm{load}}(t)=\tfrac12 R_{\mathrm{load}}\lvert I_2(t)\rvert^2,\quad
+\eta(t)=P_{\mathrm{load}}(t)/P_{\mathrm{in}}(t).
+]
+
+沙箱合成两端口电路 `V=(1,0)V`、`Rsrc=Rload=0.5Ω` 的输入功率 `0.7575755978738048W`、接收负载功率 `0.00013175411099177107W`、效率 `0.00017391546317166142`，完整代数功率分账残差 `5.55e−17W`；动态热时程局部测试仍 **3 passed**。上述结果为合成物理耦合验证，**真实 M4 等温回归结果、温度时程及效率仍待执行**。
