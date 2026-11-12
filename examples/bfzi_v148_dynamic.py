@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
-from sdfmpneo_bfzi.v148_et import BFZIV148ET
+from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
 
 
 def pair(x):
@@ -78,9 +78,8 @@ def main(argv=None):
     rows=[]
     for s in trace:
         v=drive(s.time)
-        p_in=float(.5*np.real(np.vdot(v,s.currents)))
-        p_load=float(.5*a.load_r*abs(s.currents[1])**2)
-        p_src=float(.5*a.source_r*abs(s.currents[0])**2)
+        p_in,p_load,p_src,eta = circuit_power(
+            v,s.currents,a.source_r,a.load_r)
         rows.append({
             "time_s":s.time,
             "drive":"on" if np.any(abs(s.currents)>0) else "off",
@@ -98,7 +97,7 @@ def main(argv=None):
             "Pinput_W":p_in,
             "Pload_W":p_load,
             "Psource_loss_W":p_src,
-            "efficiency":p_load/p_in if p_in>0 else 0.,
+            "efficiency":eta,
             "heat_input_W":s.heat_power,
             "stored_heat_J":s.energy,
             "Tsea_max_K":float(et.amb+s.temp[:et.count].max()),
