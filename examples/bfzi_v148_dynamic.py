@@ -18,6 +18,7 @@ import numpy as np
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
 from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
 from sdfmpneo_bfzi.v148_rom import BFZIV148ROM
+from sdfmpneo_bfzi.v148_heat_rom import BFZIV148HeatROM
 
 
 def pair(x):
@@ -41,6 +42,8 @@ def main(argv=None):
     p.add_argument("--rom-train",type=Path,nargs="+",default=None,
                    help="Original BFZI unit-J and thermal snapshots for projected ROM")
     p.add_argument("--rom-rank",type=int,default=8)
+    p.add_argument("--heat-rom-train",type=Path,nargs="+",default=None)
+    p.add_argument("--heat-rom-rank",type=int,default=8)
     p.add_argument("--check-only",action="store_true",
                    help="Verify original BFZI isothermal complex Z without thermal time stepping")
     p.add_argument("--out",type=Path,default=Path("runs/bfzi_v148_dynamic.json"))
@@ -121,7 +124,10 @@ def main(argv=None):
     rom=(BFZIV148ROM(backend,a.rom_train,rank=a.rom_rank)
          if a.rom_train else None)
     basis_sec=time.perf_counter()-t0
-    et=BFZIV148ET(rom or backend,external=extra)
+    heat_rom=bool(a.heat_rom_train)
+    et=(BFZIV148HeatROM(rom or backend,a.heat_rom_train,
+                        rank=a.heat_rom_rank,external=extra)
+        if heat_rom else BFZIV148ET(rom or backend,external=extra))
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
                            a.heat,a.heat+a.cool,duration])
@@ -202,6 +208,10 @@ def main(argv=None):
             "train_files":[str(x) for x in a.rom_train],
             "basis_build_sec":basis_sec}),
         "trajectory_runtime_sec":trace_sec,
+        "heat_rom":(None if not heat_rom else {
+            "rank":et.hrank,"snapshot_count":et.hsensors,
+            "retained_energy":et.hretained,
+            "train_files":[str(x) for x in a.heat_rom_train]}),
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
@@ -221,6 +231,7 @@ def main(argv=None):
         "seawater_cells":et.count,
         "steps":len(trace),
         "rom_rank":None if rom is None else rom.rank,
+        "heat_rom_rank":et.hrank if heat_rom else None,
         "trajectory_runtime_sec":trace_sec,
         "Z11_first_ohm":rows[0]["Z_ohm"][0][0],
         "Z11_last_ohm":rows[-1]["Z_ohm"][0][0],
