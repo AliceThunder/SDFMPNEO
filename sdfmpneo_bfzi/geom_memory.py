@@ -10,7 +10,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .frac_memory import sources,zmat
+from .frac_memory import zmat
+from .frac_port import PortModel
 
 G_SCALE=np.array([
     .1,.1,.05,.05,1.,1.,10.,10.,.001,.001,.05,
@@ -26,6 +27,33 @@ def geom_feat(g,z0):
     if a.shape!=(len(G_SCALE),):
         raise ValueError("expected BFZI physical geometry and original cold Z")
     return a/G_SCALE
+
+
+def geom_port(g):
+    """Exact BFZI copper/air model from physical geometry and copper capacity."""
+    a=np.asarray(g,float)
+    if a.shape!=(16,):
+        raise ValueError("original BFZI requires 16 two-coil parameters")
+    r=a[8:10]
+    length=a[14:16]/(3.45e6*np.pi*r*r)
+    air=np.array([[a[11],a[12]],[a[12],a[13]]])
+    return PortModel(
+        2*np.pi*200000,air,length,r,
+        np.full(2,5.8e7),np.full(2,.00393),
+        np.full(2,4e-7*np.pi),np.full(2,293.15))
+
+
+def heat_drive(voltage,z,ext,port,tc,cap):
+    """Original BFZI energy sources: sea W, copper heating K/s for each port."""
+    if voltage==0:
+        return np.zeros(3)
+    v=np.array([voltage,0.],complex)
+    I=np.linalg.solve(z+ext,v)
+    cu=port.copper(tc)
+    sea=z-1j*port.omega*port.air-np.diag(cu)
+    qsea=max(.5*float(np.vdot(I,sea@I).real),0.)
+    qcu=.5*cu.real*abs(I)**2
+    return np.r_[qsea,qcu/np.asarray(cap,float)]
 
 
 def thermal_summary(t,nsea,npkg,vol,amb):
@@ -111,6 +139,7 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
             or ex.shape!=(2,2)):
         raise ValueError("invalid BFZI two-port time history")
     geom=geom_feat(geometry,z0)
+    port=geom_port(geometry)
     g=torch.tensor(geom[None,:],dtype=torch.float32)
     h=net.init_state(1)
     out=np.zeros((len(t),N_OUT))
@@ -119,7 +148,9 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
     ys=np.asarray(ck["y_scale"],float)
     us=np.asarray(ck["src_scale"],float)
     for k in range(1,len(t)):
-        u=sources(float(v[k]),z,ex)
+        tc=np.array([293.15,293.15])+out[k-1,-2:]
+        u=heat_drive(float(v[k]),z,ex,port,tc,
+                     np.asarray(geometry)[14:16])
         src[k]=u
         h,y=net.step(h,torch.tensor((u/us)[None,:],
                                    dtype=torch.float32),
