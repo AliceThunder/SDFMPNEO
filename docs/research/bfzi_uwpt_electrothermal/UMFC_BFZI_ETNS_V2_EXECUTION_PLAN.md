@@ -1,3 +1,5 @@
+> **执行方案已升级为 [V2.1：动态电磁—热双向反作用闭环](UMFC_BFZI_DYNAMIC_ETNS_V2_1_EXECUTION_PLAN.md)。** 本 V2.0 文件作为历史设计依据保留。V2.1 直接复用 [BFZI 独立仓库](https://github.com/AliceThunder/BFZI) 的复阻抗计算，新增铜/海水空间温度影响完整复 2×2 阻抗、等效自感互感、谐振电路及持续的时间演化。下一任务优先建立动态热反馈闭环。
+
 # UMFC–BFZI 水下 WPT 电磁热神经代理系统完整实施方案 V2.0
 
 **状态：正式执行方案** · **2026-11-11** · **分支：** `research/bfzi-uwpt-electrothermal-surrogate`
