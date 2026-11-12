@@ -50,7 +50,11 @@ class BFZIV148HeatROM(BFZIV148ET):
         mark /= np.linalg.norm(mark,axis=0)[None,:]
         A = w[:,None]*np.column_stack(frames)
         Ares = A-mark@(mark.T@A)
-        u,_,_ = np.linalg.svd(Ares,full_matrices=False)
+        u,s,_ = np.linalg.svd(Ares,full_matrices=False)
+        # Singular vectors with zero snapshot energy can overlap forced
+        # material modes and invalidate Phi.T @ Cap @ Phi = I.
+        good=int(np.count_nonzero(s>max(s[0]*1e-12,1e-14))) if len(s) else 0
+        self.hrank=5+min(self.hrank-5,good)
         self.phi = np.column_stack(
             (mark,u[:,:self.hrank-5]))/w[:,None]
         U = self.phi*w[:,None]
