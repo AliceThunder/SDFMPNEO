@@ -1,0 +1,23 @@
+{
+  "sample": "M3",
+  "teacher": "runs\\m3_frac_holdout.npz",
+  "model": "runs\\bfzi_geom_frac_v5.pt",
+  "anchor": "runs\\m3_bfzi_anchor.npz",
+  "anchor_build_seconds": 0.005007999949157238,
+  "cold_Z_relative_error": 0.0,
+  "sea_cells": 2250,
+  "package_cells_per_box": 32,
+  "physical_source": "original BFZI cold unit J and port weak Joule",
+  "history": "learned causal fractional SOE sea delta",
+  "heat": "original 3-D BFZI FV conservative heat operator",
+  "no_dynamic_BFZI_EM_solve": true,
+  "results": [
+    {
+      "case": -1,
+      "voltage_V": 100.0,
+      "neural_trajectory_sec": 0.24358919996302575,
+      "max_FV_energy_residual_W": 2.0602186623364105e-11,
+      "max_sea_source_gap_W": 3.552713678800501e-14
+    }
+  ]
+}
