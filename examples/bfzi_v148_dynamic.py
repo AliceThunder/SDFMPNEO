@@ -61,7 +61,7 @@ def main(argv=None):
     z_ref,_,_,_,_ = calc.formal_with_local_mass(data)
     warm_rel = float(np.linalg.norm(trace[0].sea_z-z_ref)
                      / max(np.linalg.norm(z_ref),1e-30))
-    # Independent BFZI master/output_v148 archive, M4 two-port sea reaction.
+    # Independent BFZI master/outputs_v148 archive, M4 two-port sea reaction.
     # This is a source-code regression target, not an experimental reference.
     archive_rel = None
     if a.sample == "M4":
@@ -126,6 +126,8 @@ def main(argv=None):
         "Z11_first_ohm":rows[0]["Z_ohm"][0][0],
         "Z11_last_ohm":rows[-1]["Z_ohm"][0][0],
         "v148_isothermal_Zsea_relative_error":warm_rel,
+        "v148_M4_archive_relative_error":archive_rel,
+        "max_sea_power_relative_gap":max(r["Psea_port_volume_relative_gap"] for r in rows),
         "sea_P_first_W":rows[0]["Psea_volume_W"],
         "max_temperature_K":max(r["Tsea_max_K"] for r in rows),
     },indent=2))
