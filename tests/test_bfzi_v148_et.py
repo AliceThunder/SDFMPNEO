@@ -79,8 +79,14 @@ class Model:
         self.vol=np.ones(4)*.01
         self.omega=1.256637e6
         fam=[
-            SimpleNamespace(coil=SimpleNamespace(center=(-.2,0,0))),
-            SimpleNamespace(coil=SimpleNamespace(center=(.2,0,0))),
+            SimpleNamespace(
+                coil=SimpleNamespace(center=(-.2,0,0)),
+                active=SimpleNamespace(pos=np.array([[-.23,0,-.02],[-.17,0,.02]]),
+                                       dl=np.array([[.03,0,0],[.03,0,0]]))),
+            SimpleNamespace(
+                coil=SimpleNamespace(center=(.2,0,0)),
+                active=SimpleNamespace(pos=np.array([[.17,0,-.02],[.23,0,.02]]),
+                                       dl=np.array([[.03,0,0],[.03,0,0]]))),
         ]
         self.base={
             "families":fam,"sample":{},
@@ -208,6 +214,50 @@ def test_heat_rom_conserves_each_package(tmp_path):
     for idx in [np.arange(et.count),*[np.array([j]) for j in range(et.count,et.n)]]:
         assert abs(np.sum(residual[idx]))<1e-5
     assert np.isfinite(et.hretained)
+
+
+
+def test_spatial_package_3d_flux_and_heat_rom(tmp_path):
+    from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
+    from sdfmpneo_bfzi.v148_heat_rom import BFZIV148PkgHeatROM
+    model=Model()
+    args=dict(pkg_shape=(2,2,2),sea_rhoc=1.,pkg_rhoc=1.,
+              cu_rhoc=1.,sea_k=.05,pkg_k=.25,cu_pkg_g=.08,
+              pkg_sea_g=.04,outer_h=.1,external=np.diag([.5,.5]))
+    et=BFZIV148Pkg3D(model,**args)
+    assert et.pkg_n==8 and et.n==model.vol.size+18
+    temp=et.advance(et.zeros(),[8,0],.1)
+    _,_,heat,_,_=et.em(temp,[8,0])
+    cp,ps,amb=et.heat_flux(temp)
+    res=et.cap*temp/.1+et.H@temp-heat
+    assert np.max(abs(res))<1e-5
+    assert np.isclose((et.H@temp).sum(),amb,atol=1e-12)
+    assert cp.shape==ps.shape==(2,)
+    assert np.isclose(et.cap[et.pkg].sum(),
+                      np.sum([8*np.prod(half) for _,half in et.boxes]),rtol=1e-12)
+    xyz=et.pkg_xyz[0]
+    vals=et.temperature_at(xyz,temp)
+    assert np.allclose(vals,et.amb+temp[et.count:et.count+et.pkg_n])
+    for p in range(2):
+        idx=slice(et.pkg.start+p*et.pkg_n,et.pkg.start+(p+1)*et.pkg_n)
+        assert abs(np.sum(res[idx]))<1e-5
+    # Train the material-preserving POD on the same spatial shape.
+    path=tmp_path/"pkg3d.npz"
+    snap=np.stack([et.zeros(),temp,temp*1.5])
+    np.savez(path,Tsea_K=et.amb+snap[:,:et.count],
+             Tpkg_cells_K=et.amb+snap[:,et.pkg].reshape(3,2,et.pkg_n),
+             Tcu_K=et.amb+snap[:,et.cu])
+    rom=BFZIV148PkgHeatROM(model,[path],rank=7,**args)
+    reduced=rom.advance(rom.zeros(),[8,0],.1)
+    _,_,heat_r,_,_=rom.em(reduced,[8,0])
+    res_r=rom.cap*reduced/.1+rom.H@reduced-heat_r
+    groups=[np.arange(rom.count)]
+    groups.extend(np.arange(rom.pkg.start+p*rom.pkg_n,
+                            rom.pkg.start+(p+1)*rom.pkg_n) for p in range(2))
+    groups.extend([np.array([rom.cu.start+p]) for p in range(2)])
+    assert max(abs(res_r[g].sum()) for g in groups)<1e-5
+    assert np.allclose(rom.cap,et.cap)
+
 
 
 def test_v148_circuit_efficiency():
