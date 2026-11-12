@@ -1,3 +1,10 @@
+> **V2.1 最新跨几何三维电磁热代理（2026-11-12）：** 已在独立原 BFZI V150 的 M3 **完整几何留出**上建立并实测**一次冷态 J/Qweak + 原三维海水/双封装/铜 FV 热算子 + 几何分数阶 SOE 神经动态复阻抗**的高精度闭环，输出每时间点的完整复 Z/双端口 I、**2316 个热状态、2250×3 复海水 J 和 2250 个海水弱形式 q**。M3 40/115 V 两条真实 21 步时程相对原 BFZI 加速 **158×/209×**，海水空间最大温差分别 **1.48e−5/7.67e−4 K**、双封装 **3.34e−6/1.77e−4 K**、铜 **2.85e−5/1.68e−3 K**；动态热复阻抗变化相对误差 **5.83%/7.91%**，所有材料 FV 热能量残差 **<1e−10 W**。已独立运行无需 BFZI 电磁求解器的 **100 V、15 s、41 时刻**任意 XYZ 空间温度查询，耗时 **0.244 s**，9 项相关测试通过。纯连续坐标神经空间头也已训练并以 M3 完全留出验证；保守物理热传播路径的三维场精度明显更高。新几何需**一次原 BFZI 冷态场/热算子预计算**，后续任意动态演化无需 BFZI 电磁解算。[完整源代码、冷态锚、真实留出结果与下一步](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_crossgeometry_3d_surrogate.md)。
+
+```powershell
+# 完整神经-三维热保守推理：M3 已保存原 BFZI 冷态场、已训练 V5 分数阶记忆；运行不需要 BFZI 安装
+python -m examples.bfzi_geom_heat --standalone --anchor runs/m3_bfzi_anchor.npz --model runs/bfzi_geom_frac_v5.pt --voltage 100 --heat 210 --cool 210 --step 15 --horizon 600 --query runs/m3_bfzi_query.npy --query-time 300 --out runs/m3_bfzi_heat_user.json
+```
+
 > **UMFC–BFZI V2.1 最新跨几何分数阶神经代理（2026-11-12）：** 已直接接通独立 BFZI V150 `M1/M2/M3/M4` 的圆形极限—圆角方形统一线圈家族，真实海水 FV 从 **384** 到 **2250** 单元、三维海水+双封装+铜热态从 **450** 到 **2316** 维。用 M1/M2/M4 **30 条物理教师训练、8 条验证**，并以 M1/M2/M4 独立启停时程及 **M3 完全未见几何**检验共享分数阶 SOE+指数记忆。采用原 BFZI 铜趋肤和空气自感互感、三材料功率激励、海水动态复阻抗头及铜温度耦合的**物理端口 Jacobian 损失**，V5 模型 M1/M2/M3/M4 的动态复 Z 热变化相对误差分别 **4.35%/5.17%/8.27%/4.50%**；M3 电路功率收支最大 **1.60e-13 W**。V2 模型对 M3 封装热点温度更准确（0.900 K vs V5 3.172 K），双方权重及真实对照均保留。**22 项专项测试通过**。[完整实测、消融和下一步三维空间查询计划](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_crossgeometry_fractional.md)。
 
 ```powershell
