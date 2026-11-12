@@ -58,6 +58,15 @@ def data_file(path,probe=None):
     summ=np.stack([thermal_summary(a,ns,npkg,vol,amb)
                    for a in temp])
     port=geom_port(geom)
+    cold_cu=port.copper(np.full(2,amb))
+    sea_delta=z-z0
+    for i in range(len(vin)):
+        for k in range(len(times)):
+            dz=port.copper(temp[i,k,-2:])-cold_cu
+            sea_delta[i,k,0]-=dz[0].real
+            sea_delta[i,k,1]-=dz[0].imag
+            sea_delta[i,k,4]-=dz[1].real
+            sea_delta[i,k,5]-=dz[1].imag
     src=np.zeros(vin.shape+(3,))
     for i in range(len(vin)):
         for k in range(1,len(times)):
@@ -66,7 +75,7 @@ def data_file(path,probe=None):
                 temp[i,k-1,-2:],geom[14:16])
     return dict(sample=sample,geom=geom,z0=z0,ext=ext,
                 times=times,v=vin,z=z,train=train,
-                src=src,temp=summ,cases=cases)
+                src=src,temp=summ,sea_delta=sea_delta,cases=cases)
 
 
 def data_all(files,probe):
@@ -89,10 +98,11 @@ def data_all(files,probe):
     return fit,val,test
 
 
-def tensors(rows,src_scale,y_scale):
+def tensors(rows,src_scale,y_scale,port_sea=False):
     src=np.stack([d["src"][i] for d,i in rows])/src_scale
     y=np.stack([np.concatenate(
-        (d["z"][i]-d["z0"],d["temp"][i]),axis=-1)
+        (d["sea_delta"][i] if port_sea else
+         d["z"][i]-d["z0"],d["temp"][i]),axis=-1)
         for d,i in rows])/y_scale
     geom=np.stack([geom_feat(d["geom"],d["z0"])
                    for d,i in rows])
@@ -145,6 +155,8 @@ def main():
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_geom_frac_metrics.json"))
     p.add_argument("--epochs",type=int,default=1600)
+    p.add_argument("--port-sea",action="store_true",
+                   help="Train sea delta and assemble exact temperature-dependent BFZI copper Z")
     p.add_argument("--patience",type=int,default=280)
     args=p.parse_args()
     torch.set_num_threads(2)
@@ -153,16 +165,18 @@ def main():
     sample,t=fit[0][0]["sample"],fit[0][0]["times"]
     other=data_file(args.test_geo)
     hold[other["sample"]]=[(other,i) for i in range(len(other["v"]))]
-    sy=np.stack([np.concatenate((d["z"][i]-d["z0"],d["temp"][i]),-1)
-                 for d,i in fit])
+    sy=np.stack([np.concatenate(
+        (d["sea_delta"][i] if args.port_sea else
+         d["z"][i]-d["z0"],d["temp"][i]),-1)
+        for d,i in fit])
     ystd=np.std(sy[:,1:].reshape(-1,14),axis=0)
     yscale=np.maximum(ystd,np.r_[
         np.full(6,max(float(max(ystd[:6]))*.001,1e-7)),
         np.full(8,max(float(max(ystd[6:]))*.001,1e-3))])
     src_scale=np.maximum(np.max(
         np.stack([d["src"][i] for d,i in fit]),axis=(0,1)),1e-4)
-    u,y,g=tensors(fit,src_scale,yscale)
-    uv,yv,gv=tensors(val,src_scale,yscale)
+    u,y,g=tensors(fit,src_scale,yscale,args.port_sea)
+    uv,yv,gv=tensors(val,src_scale,yscale,args.port_sea)
     model=GeomFrac()
     opt=torch.optim.Adam(model.parameters(),lr=.003)
     best=1e30;state=None;best_epoch=0
@@ -192,7 +206,8 @@ def main():
         state=model.state_dict(),
         src_scale=torch.tensor(src_scale,dtype=torch.float32),
         y_scale=torch.tensor(yscale,dtype=torch.float32),
-        ng=model.ng,history="fractional SOE + exponential",
+        ng=model.ng,port_sea=bool(args.port_sea),
+        history="fractional SOE + exponential",
         trained_samples=[d["sample"] for d in
                          {id(d):d for d,i in fit}.values()])
     args.model.parent.mkdir(parents=True,exist_ok=True)
@@ -200,7 +215,7 @@ def main():
     output=dict(
         model=str(args.model),
         train_samples=sorted(set(d["sample"] for d,i in fit)),
-        heldout_geometry=other["sample"],
+        heldout_geometry=other["sample"],port_sea=bool(args.port_sea),
         train_cases=len(fit),val_cases=len(val),
         trained_steps=len(t),epochs=epoch+1,best_epoch=best_epoch,
         val_loss=best,
