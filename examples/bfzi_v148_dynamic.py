@@ -56,6 +56,11 @@ def main(argv=None):
         return np.array([a.voltage if active else 0.,0.],complex)
 
     trace=et.trajectory(times,drive)
+    # Exactly the same original BFZI v148 isothermal sea impedance is the
+    # regression baseline: geometry, Green, port orientation and local mass.
+    z_ref,_,_,_,_ = calc.formal_with_local_mass(data)
+    warm_rel = float(np.linalg.norm(trace[0].sea_z-z_ref)
+                     / max(np.linalg.norm(z_ref),1e-30))
     rows=[]
     for s in trace:
         rows.append({
@@ -93,6 +98,7 @@ def main(argv=None):
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
+        "v148_isothermal_Zsea_relative_error":warm_rel,
         "sea_alpha_per_K":a.sea_alpha,
         "ambient_K":et.amb,
         "fields_npz":str(fields),
@@ -106,6 +112,7 @@ def main(argv=None):
         "steps":len(trace),
         "Z11_first_ohm":rows[0]["Z_ohm"][0][0],
         "Z11_last_ohm":rows[-1]["Z_ohm"][0][0],
+        "v148_isothermal_Zsea_relative_error":warm_rel,
         "sea_P_first_W":rows[0]["Psea_volume_W"],
         "max_temperature_K":max(r["Tsea_max_K"] for r in rows),
     },indent=2))
