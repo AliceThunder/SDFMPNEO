@@ -47,6 +47,16 @@ def main():
                    default=Path("runs/m3_bfzi_heat_metrics.json"))
     p.add_argument("--bench-direct",action="store_true")
     p.add_argument("--field-check",action="store_true")
+    p.add_argument("--standalone",action="store_true",
+                   help="Use user-selected voltage/time program, no dynamic BFZI teacher")
+    p.add_argument("--voltage",type=float,default=100.)
+    p.add_argument("--heat",type=float,default=240.)
+    p.add_argument("--cool",type=float,default=180.)
+    p.add_argument("--step",type=float,default=30.)
+    p.add_argument("--horizon",type=float,default=600.)
+    p.add_argument("--query",type=Path,default=None,
+                   help="Optional Nx3 .npy positions for continuous xyz temperature queries")
+    p.add_argument("--query-time",type=float,default=600.)
     args=p.parse_args()
     torch.set_num_threads(2)
     start=time.perf_counter()
@@ -72,37 +82,49 @@ def main():
     net=GeomFrac(ng=int(ck["ng"]))
     net.load_state_dict(ck["state"])
     net.eval()
-    with np.load(args.teacher) as d:
-        t=np.asarray(d["time_s"],float)
-        v=np.asarray(d["voltage_v"],float)
-        true=np.asarray(d["temp_K"],float)
-        ztrue=np.asarray(d["z6"],float)
-        refI=np.asarray(d["currents_A"],complex)
-        case_meta=json.loads(str(d["cases_json"]))
-        g=np.asarray(d["geometry"],float)
-        z0=np.asarray(d["z6"][0,0],float)
-    if not np.allclose(g,head.geom,rtol=1e-9,atol=1e-10):
-        raise ValueError("original BFZI holdout geometry differs from cached cold anchor")
-    cold_err=relative(head.z0,z0)
-    if cold_err>1e-8:
-        raise ValueError(f"original BFZI cold complex port mismatch: {cold_err}")
+    true=None;ztrue=None;refI=None
+    if args.standalone:
+        if args.step<=0 or args.horizon<=0 or args.horizon%args.step:
+            p.error("positive --step must divide --horizon")
+        t=np.arange(0,args.horizon+args.step/2,args.step,dtype=float)
+        v=np.where((t<=args.heat)|(t>args.heat+args.cool),
+                   args.voltage,0.)[None,:]
+        case_meta=[dict(id=-1,voltage_v=args.voltage)]
+        cold_err=0.
+    else:
+        with np.load(args.teacher) as d:
+            t=np.asarray(d["time_s"],float)
+            v=np.asarray(d["voltage_v"],float)
+            true=np.asarray(d["temp_K"],float)
+            ztrue=np.asarray(d["z6"],float)
+            refI=np.asarray(d["currents_A"],complex)
+            case_meta=json.loads(str(d["cases_json"]))
+            g=np.asarray(d["geometry"],float)
+            z0=np.asarray(d["z6"][0,0],float)
+        if not np.allclose(g,head.geom,rtol=1e-9,atol=1e-10):
+            raise ValueError("original BFZI holdout geometry differs from cached cold anchor")
+        cold_err=relative(head.z0,z0)
+        if cold_err>1e-8:
+            raise ValueError(f"original BFZI cold complex port mismatch: {cold_err}")
     results=[];state=[];zpred=[];qpred=[];jpred=[]
-    q_truth=[];j_truth=[]
     for i in range(len(v)):
         t0=time.perf_counter()
         pr=head.rollout(net,ck,v[i],t)
         sec=time.perf_counter()-t0
-        one=metrics(pr["temp_K"],true[i],head.ns,head.npkg,ztrue[i])
+        one=(metrics(pr["temp_K"],true[i],head.ns,head.npkg,ztrue[i])
+             if true is not None else {})
         one.update(
             case=int(case_meta[i]["id"]),
             voltage_V=float(case_meta[i]["voltage_v"]),
             neural_trajectory_sec=sec,
-            dynamic_Z_relative_L2=relative(pr["z6"]-z0,ztrue[i]-z0),
             max_FV_energy_residual_W=float(pr["fv_node_residual_W"].max()),
             max_sea_source_gap_W=float(np.max(abs(
                 pr["qsea_W_m3"]@head.vol-pr["Psea_W"]))))
+        if ztrue is not None:
+            one["dynamic_Z_relative_L2"]=relative(
+                pr["z6"]-ztrue[i,0],ztrue[i]-ztrue[i,0])
         if args.bench_direct:
-            if et is None:
+            if et is None or true is None:
                 raise ValueError("--bench-direct requires --bfzi-root")
             def drive(tm):
                 idx=int(np.argmin(abs(t-float(tm))))
@@ -113,7 +135,7 @@ def main():
             one["direct_trajectory_sec"]=original_sec
             one["speedup"]=original_sec/sec
         if args.field_check:
-            if em is None:
+            if em is None or true is None:
                 raise ValueError("--field-check requires --bfzi-root")
             fields=[]
             for k in (0,5,10,15,20):
@@ -145,12 +167,21 @@ def main():
               results=results)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(data,indent=2),encoding="utf-8")
-    np.savez_compressed(args.out.with_suffix(".npz"),time_s=t,
-        temp_true_K=true,temp_pred_K=np.asarray(state),
-        z_true=ztrue,z_pred=np.asarray(zpred),
-        qsea_pred_W_m3=np.asarray(qpred),
+    saved=dict(time_s=t,voltage_v=v,temp_pred_K=np.asarray(state),
+        z_pred=np.asarray(zpred),qsea_pred_W_m3=np.asarray(qpred),
         Jsea_pred_A_m2=np.asarray(jpred),
         sea_xyz_m=head.xyz,pkg_xyz_m=head.pkg_xyz,sea_vol_m3=head.vol)
+    if true is not None:
+        saved.update(temp_true_K=true,z_true=ztrue)
+    if args.query is not None:
+        pts=np.asarray(np.load(args.query),float).reshape(-1,3)
+        k=int(np.argmin(abs(t-args.query_time)))
+        saved.update(
+            query_xyz_m=pts,query_time_s=float(t[k]),
+            query_temp_K=head.query_temp(pts,state[0][k]),
+            query_sea_J_A_m2=head.query_sea(pts,jpred[0][k]),
+            query_sea_q_W_m3=head.query_sea(pts,qpred[0][k]))
+    np.savez_compressed(args.out.with_suffix(".npz"),**saved)
     print("SAVED",args.out,flush=True)
 
 
