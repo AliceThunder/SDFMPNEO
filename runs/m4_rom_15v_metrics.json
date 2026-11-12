@@ -1,0 +1,25 @@
+{
+  "direct": "runs\\m4_dynamic_15v.json",
+  "rom": "runs\\m4_rom_15v.json",
+  "rom_basis": {
+    "rank": 8,
+    "snapshot_columns": 44,
+    "retained_energy": 1.0,
+    "train_files": [
+      "runs\\m4_dynamic.npz",
+      "runs\\m4_dynamic_30v.npz"
+    ],
+    "basis_build_sec": 0.029224100057035685
+  },
+  "steps": 11,
+  "complex_Z_relative_L2": 4.268919174509374e-12,
+  "complex_Z_max_abs_ohm": 7.214291114527741e-11,
+  "sea_J_unit_relative_L2": 9.809752284489015e-09,
+  "sea_q_relative_L2": 5.6262091588806415e-09,
+  "Tsea_max_absolute_K": 4.814637577510439e-11,
+  "Tcu_max_absolute_K": 8.526512829121202e-12,
+  "eta_max_absolute": 4.959355148770328e-11,
+  "direct_trajectory_sec": 1.0799979000585154,
+  "rom_trajectory_sec": 0.9520258000120521,
+  "speedup": 1.1344208319195166
+}
