@@ -95,3 +95,34 @@ python run.py --mode bfzi-m1 --rx-rotvec 0 0.18 0 --generate-msh runs/m1_r075h08
 python -m examples.bfzi_m1_conv --root runs --out docs/research/bfzi_uwpt_electrothermal/evidence/m1_se3_hr_200khz.json
 python -m pytest tests/test_bfzi_m1_direct.py -q
 ```
+
+## 6. 独立圆形／圆角方形组合与海水电导率参数化
+
+M1 入口新增 `--tx-shape circle|rounded`、`--rx-shape circle|rounded`、`--sigma`。圆形使用同一连续 BFZI/UMFC 几何族的圆形极限，两个端口可分别选择形状。场景中两个独立 SE(3) 位姿和导电海水材料仍由同一物理求解器处理，保持原源项及热源计算结构。
+
+**真实运行：** TX 连续圆形 2 匝、RX 连续圆角方形 2 匝、RX 绕 y 轴旋转 0.18 rad、海水电导率 **3 S/m**、200 kHz、每圆角折线 6 段；复电流 `I=(1,0.4+0.3j) A`；复用相同绝缘盒物理边界的 **3445 tetra Gmsh OCC** 网格。
+
+| 输出 | 实际值 |
+|---|---:|
+| 海水体积分损耗 `∫q dV` | **0.0033243936924376915 W** |
+| 空间热源 Gauss 积分 | **0.0033243936924376885 W** |
+| 同源端口反作用功率 | **0.0033243936924376885 W** |
+| 有限域闭合路径反作用功率（独立参照） | 0.0029000779844347876 W |
+| A–φ 线性系统相对残差 | **4.9210611012572616e−14** |
+
+对应海水附加复阻抗：
+
+```text
+[[0.004150904563 - 0.000167924811j, 0.001495166841 - 0.000127339181j],
+ [0.001495166841 - 0.000127339181j, 0.005206997398 - 0.000218182810j]] Ω
+```
+
+数据：[m1_mixed_shape.json](m1_mixed_shape.json)。运行入口：
+
+```bash
+python run.py --mode bfzi-m1 --tx-shape circle --rx-shape rounded --sigma 3 --rx-rotvec 0 0.18 0 --mesh runs/m1_rot.msh --panels 6 --output runs/m1_mixed_shape.json
+python -m pytest tests/test_bfzi_m1_direct.py -q
+```
+
+形状、介质参数化专项 **2 passed**；初始场景另与既有 D2 闭合端口测试一起累计 **9 passed**。这证明参数化电磁物理计算链可在圆形／圆角方形组合和不同海水电导率下运行，**独立空间数值精度仍 OPEN**。
+
