@@ -145,7 +145,7 @@ class BFZIV148Adapter:
     """Original BFZI v148 two-port EM with locally temperature-dependent sea."""
 
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
-                 copper_sigma=5.8e7, copper_alpha=.00393):
+                 copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
         self.calc = calc
@@ -160,6 +160,12 @@ class BFZIV148Adapter:
         self.proj = calc.core.StrictFVScalarPotentialProjector(
             data["records"] or [],self.points,variant="fv_internal_only")
         self.mass = _mass(data,calc)
+        if sea_only:
+            # M4 isothermal gate tests only the sea solver. Its expensive
+            # Neumann/GMD air calculation is needed for the time history.
+            self.air = np.zeros((2,2),float)
+            self.copper = None
+            return
         self.air_uH,_ = calc.compute_air_matrix_direct_zlead(data)
         self.air = np.asarray(self.air_uH,float)*1e-6
         lines = []
@@ -203,7 +209,8 @@ class BFZIV148Adapter:
         dz = -1j*self.omega*self.mu*np.einsum(
             "p,pij->ij",gamma,self.mass,optimize=True)
         z = core.sym_complex(z+dz)
-        zcu = self.copper.conductor_internal_impedance(tc)
+        zcu = (np.zeros(2,complex) if self.copper is None
+               else self.copper.conductor_internal_impedance(tc))
         total = z+1j*self.omega*self.air+np.diag(zcu)
         unit_j = np.stack([-gamma[:,None]*px for px in P],axis=1)
         return V148State(z,total,zcu,unit_j,sig,res)
