@@ -21,13 +21,16 @@ def main():
     ap.add_argument("--model",type=Path,default=Path("runs/m4_frac_hybrid.pt"))
     ap.add_argument("--out",type=Path,default=Path("runs/m4_frac_bench.json"))
     ap.add_argument("--case",type=int,default=-1)
+    ap.add_argument("--step",type=float,default=30.)
     a=ap.parse_args()
     sys.path.insert(0,str(a.bfzi_root.resolve()))
     import bfzi_v148_results as calc
     v,windows,split=programs()[a.case]
     if split!="test":
         raise ValueError("benchmark requires a held-out program")
-    times=np.arange(0,601,30.,dtype=float)
+    if a.step<=0 or 600%a.step:
+        ap.error("--step must divide 600")
+    times=np.arange(0,600+a.step/2,a.step,dtype=float)
     data=calc.build_circle_data("M4")
     em=BFZIV148Adapter(data,calc,heat_mode="port-weak")
     extra=np.diag([.5-1j*em.omega*em.air[0,0],
@@ -51,7 +54,7 @@ def main():
     ns=et.count; npkg=et.pkg_n*2
     metrics=dict(
         model=str(a.model),heldout_voltage_v=v,heldout_windows_s=windows,
-        steps=len(times),thermal_states=et.n,
+        steps=len(times),step_s=a.step,thermal_states=et.n,
         direct_trajectory_sec=direct_sec,
         neural_trajectory_sec=neural_sec,
         speedup=direct_sec/neural_sec,
@@ -62,7 +65,7 @@ def main():
         package_max_abs_K=float(np.max(abs(dt[:,ns:ns+npkg]))),
         copper_max_abs_K=float(np.max(abs(dt[:,ns+npkg:]))),
         source="independent original BFZI v150 M4, full EM and 3-D heat",
-        runtime_scope="same 21-step rollout, excludes BFZI geometry/Green setup and neural training")
+        runtime_scope="same-grid rollout, excludes BFZI geometry/Green setup and neural training")
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(metrics,indent=2),encoding="utf-8")
     print(json.dumps(metrics,indent=2))
