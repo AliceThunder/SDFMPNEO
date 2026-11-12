@@ -208,3 +208,15 @@ def test_port_model_exact_skin_and_physical_neural_circuit(tmp_path):
         assert np.allclose(z,expect,rtol=2e-7,atol=2e-6)
     assert np.all(res["current_A"][2]==0)
     assert res["eta"][2]==0.
+    ex=ck["external_z"].cpu().numpy()
+    for k,I in enumerate(res["current_A"]):
+        th=res["temp_K"][k]
+        zsea=res["Zsea_ohm"][k]
+        zcu=res["Zcu_ohm"][k]
+        _,q,_=head.at(th[:4],I)
+        pin=.5*np.real(volts[k]*I[0].conj())
+        pext=.5*np.vdot(I,ex@I).real
+        pcu=.5*np.sum(zcu.real*abs(I)**2)
+        psea=.5*np.vdot(I,zsea@I).real
+        assert np.isclose(q@vol,psea,rtol=1e-10,atol=1e-10)
+        assert abs(pin-pext-pcu-psea)<1e-9
