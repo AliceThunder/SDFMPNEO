@@ -51,6 +51,8 @@ class BFZIV148ET:
         self.cap = np.zeros(self.n)
         self.cap[:self.count] = sea_rhoc*model.vol
         self.boxes = []
+        self.cu_pkg_g = float(cu_pkg_g)
+        self.pkg_links = []
         sample = model.base["sample"]
         cfg = model.base["cfg"]
         for p,fam in enumerate(model.base["families"]):
@@ -85,19 +87,40 @@ class BFZIV148ET:
             take=np.argsort(dist)[:min(12,self.count)]
             g = 1/np.maximum(dist[take],.005)
             g /= g.sum()
-            for cell,weight in zip(take,g):
-                link(int(cell),self.count+p,pkg_sea_g*weight)
+            links = [(int(cell),float(pkg_sea_g*weight))
+                     for cell,weight in zip(take,g)]
+            self.pkg_links.append(links)
+            for cell,cond in links:
+                link(cell,self.count+p,cond)
             link(self.count+p,self.count+2+p,cu_pkg_g)
         amb_g = np.zeros(self.n)
         for i,axis,side,area,is_outer in model.proj.boundary:
             if is_outer:
                 amb_g[i] += outer_h*area
+        self.amb_g = amb_g
         self.H = coo_matrix((vals,(rows,cols)),shape=(self.n,self.n)).tocsr()
         self.H += diags(amb_g)
         self._factor = {}
 
     def zeros(self):
         return np.zeros(self.n)
+
+    def heat_flux(self,state):
+        """Current heat flows, W: copper -> package -> seawater -> ambient.
+
+        These exchanges use the same conductances as the FV heat operator.
+        Positive values indicate outward flow in the named direction.
+        """
+        theta=np.asarray(state,float)
+        if theta.shape!=(self.n,):
+            raise ValueError("invalid thermal state")
+        cp=self.cu_pkg_g*(theta[self.cu]-theta[self.pkg])
+        ps=np.array([
+            sum(cond*(theta[self.count+p]-theta[cell])
+                for cell,cond in links)
+            for p,links in enumerate(self.pkg_links)])
+        amb=float(self.amb_g@theta)
+        return cp,ps,amb
 
     def temperature_at(self,points,state):
         pts = np.asarray(points,float).reshape(-1,3)
