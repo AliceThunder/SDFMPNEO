@@ -10,12 +10,14 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
 
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
 from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
+from sdfmpneo_bfzi.v148_rom import BFZIV148ROM
 
 
 def pair(x):
@@ -36,6 +38,9 @@ def main(argv=None):
     p.add_argument("--cool",type=float,default=180.)
     p.add_argument("--restart",type=float,default=180.)
     p.add_argument("--sea-alpha",type=float,default=.02)
+    p.add_argument("--rom-train",type=Path,nargs="+",default=None,
+                   help="Original BFZI unit-J and thermal snapshots for projected ROM")
+    p.add_argument("--rom-rank",type=int,default=8)
     p.add_argument("--check-only",action="store_true",
                    help="Verify original BFZI isothermal complex Z without thermal time stepping")
     p.add_argument("--out",type=Path,default=Path("runs/bfzi_v148_dynamic.json"))
@@ -112,7 +117,11 @@ def main(argv=None):
         return
     if not baseline["isothermal_baseline_pass"]:
         raise RuntimeError("BFZI v148 isothermal solver or M4 archive impedance mismatch; use --check-only")
-    et=BFZIV148ET(backend,external=extra)
+    t0=time.perf_counter()
+    rom=(BFZIV148ROM(backend,a.rom_train,rank=a.rom_rank)
+         if a.rom_train else None)
+    basis_sec=time.perf_counter()-t0
+    et=BFZIV148ET(rom or backend,external=extra)
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
                            a.heat,a.heat+a.cool,duration])
@@ -120,7 +129,9 @@ def main(argv=None):
         active=(t<=a.heat or t>a.heat+a.cool)
         return np.array([a.voltage if active else 0.,0.],complex)
 
+    t1=time.perf_counter()
     trace=et.trajectory(times,drive)
+    trace_sec=time.perf_counter()-t1
     rows=[]
     for k,s in enumerate(trace):
         v=drive(s.time)
@@ -183,7 +194,14 @@ def main(argv=None):
         "status":"Original BFZI v148 warm electrothermal prototype; thermal and EM numerical accuracy OPEN",
         "sample":a.sample,
         "bfzi_frontend":front,"bfzi_commit":bfzi_sha,
-        "em_backend":"independent AliceThunder/BFZI v148 Green/resolvent and local source correction",
+        "em_backend":("BFZI v148 temperature-projected resolvent ROM"
+                      if rom else "independent AliceThunder/BFZI v148 Green/resolvent and local source correction"),
+        "rom":(None if rom is None else {
+            "rank":rom.rank,"snapshot_columns":rom.sources,
+            "retained_energy":rom.retained,
+            "train_files":[str(x) for x in a.rom_train],
+            "basis_build_sec":basis_sec}),
+        "trajectory_runtime_sec":trace_sec,
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
@@ -202,6 +220,8 @@ def main(argv=None):
         "fields":str(fields),
         "seawater_cells":et.count,
         "steps":len(trace),
+        "rom_rank":None if rom is None else rom.rank,
+        "trajectory_runtime_sec":trace_sec,
         "Z11_first_ohm":rows[0]["Z_ohm"][0][0],
         "Z11_last_ohm":rows[-1]["Z_ohm"][0][0],
         "v148_isothermal_Zsea_relative_error":warm_rel,
