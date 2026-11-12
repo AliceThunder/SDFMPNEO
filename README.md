@@ -1,8 +1,8 @@
-> **UMFC?BFZI-ETNS V2.0 ?? M1?** ??????????????????`Zsea=j??A_source?Jsea dV`???????????????? `?q dV` ?????????????????????????????????????/D2 ? OPEN?
+> **UMFC–BFZI-ETNS V2.0 当前主线：** [完整实施方案](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_ETNS_V2_EXECUTION_PLAN.md)。M1 已跑通真实双连续 UMFC、双绝缘 SE(3) 封装的三维电磁直接法，输出复 2×2 阻抗、E/B/H/J、空间热源与同源功率。运行：`python run.py --mode bfzi-m1 --output runs/m1_demo.json`；独立旋转盒可通过 `--rx-rotvec 0 0.18 0 --generate-msh runs/m1_rot.msh --mesh-size 0.25 --near-mesh-size 0.08` 直接生成真实 Gmsh OCC 物理网格。
 
-> **UMFC?BFZI-ETNS V2.0 ???** [??????](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_ETNS_V2_EXECUTION_PLAN.md)?M1 ??? UMFC/??????????`python run.py --mode bfzi-m1 --output runs/m1_demo.json`??? `--rx-rotvec 0 0.18 0 --generate-msh runs/m1_rot.msh --mesh-size 0.25 --near-mesh-size 0.08` ???????? OCC ???????????????? OPEN?[??????](docs/research/bfzi_uwpt_electrothermal/evidence/m1_dual_umfc_direct.md)?
+> **M1 数值进展：** 同源海水端口功率／空间 Joule 热源闭合至浮点精度，复端口互易与被动性验证通过。源每圆角 6→12 段的复 Z 相邻差 0.4775%。同一双封装 SE(3) 场景 h=.08→.06 m 的 Z 相邻差 0.5366%，R=.75→1.20 m 的 Z 相邻差 5.8142%；外域及空间精度 **OPEN**，正式神经教师冻结。[真实 M1 证据](docs/research/bfzi_uwpt_electrothermal/evidence/m1_dual_umfc_direct.md) · [h/R 数值 JSON](docs/research/bfzi_uwpt_electrothermal/evidence/m1_se3_hr_200khz.json) · [项目进度](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)。
 
-> **BFZI 当前执行方案： [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](docs/research/bfzi_uwpt_electrothermal/BFZI_PDR_EXECUTION_PLAN.md)（2026-11-09）。**
+> **历史 BFZI-PDR V1.0 专项方案： [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](docs/research/bfzi_uwpt_electrothermal/BFZI_PDR_EXECUTION_PLAN.md)（2026-11-09）。**
 >
 > **先建可信独立参考，再谈快速代理。** 保持[物理直接法锁定规范 V1.0](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_LOCKED.md)与[D0–D6 验收表](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)不变。**现在只优先完成 D2：Elmer 真正 3D 涡流/TEAM-7 → BFZI 双独立斜置 SE(3) 真网格 → 两端口真正同源 → 复 2×2 Z、空间 E/B/J/q 与 h/R/源收敛**；合格后才进入 D5 快速无网格直接法与 D6 电磁热代理。D1 学习 Shafiei/Wang 计算方法，不强求论文表值一致。
 >
