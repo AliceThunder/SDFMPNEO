@@ -9,7 +9,7 @@
   "physical_neural_dynamic_z_relative_L2": 0.06330463430500069,
   "network_dynamic_z_relative_L2": 0.06437248688065902,
   "max_circuit_balance_absolute_W": 2.842170943040401e-14,
-  "max_sea_energy_gap_absolute_W": 0.0,
-  "end_to_end_two_models_sec": 0.016584400087594986,
+  "max_sea_energy_gap_absolute_W": 1.7763568394002505e-15,
+  "end_to_end_two_models_sec": 0.010102499974891543,
   "independent_bfzi_used_for_constants_only": true
 }
