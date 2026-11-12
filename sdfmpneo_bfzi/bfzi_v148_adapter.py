@@ -11,6 +11,7 @@ its original near-source local-mass integral cell by cell.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ast import literal_eval
 from types import SimpleNamespace
 import numpy as np
 import scipy.sparse as sp
@@ -201,6 +202,9 @@ class BFZIV148Adapter:
         G = [a-b for a,b in zip(C,proj.project(C))]
         X,res = self.calc.core.solve_operator(
             data,proj,C,op_mode="KP",tol=2e-7,maxiter=180)
+        infos = res["gmres_infos"]
+        if any(int(v)!=0 for v in literal_eval(infos)):
+            raise RuntimeError(f"BFZI sea GMRES did not converge: {infos}")
         P = proj.project(X)
         GX = [x-p for x,p in zip(X,P)]
         core = self.calc.core
