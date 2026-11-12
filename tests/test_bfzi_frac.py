@@ -76,3 +76,52 @@ def test_hybrid_fractional_and_exponential_memory():
     assert torch.linalg.vector_norm(net.raw.grad)>0
     assert torch.linalg.vector_norm(net.raw_tau.grad)>0
     assert torch.isfinite(y).all()
+
+
+
+def test_multigrid_teacher_split_and_backprop(tmp_path):
+    import json
+    from examples.bfzi_frac import dataset
+    paths=[]
+    ncase=6
+    train=np.array([True,True,True,True,False,False])
+    cases=[dict(id=i,voltage_v=float(i+5),
+                windows_s=[[0,30],[45,60]],
+                split="train" if train[i] else "test")
+           for i in range(ncase)]
+    for step in (30,15):
+        t=np.arange(0,60+step,step,dtype=float)
+        volt=np.tile(np.array([5.]*len(t)),(ncase,1))
+        volt[:,(t>30)&(t<=45)]=0
+        temp=np.full((ncase,len(t),10),293.15)
+        z=np.broadcast_to(
+            np.array([.25,20.,.1,6.,.25,20.]),
+            (ncase,len(t),6)).copy()
+        for i in range(ncase):
+            temp[i]+=((i+1)*t[:,None]/60)*np.linspace(.02,2.,10)
+            z[i,:,0]+=(i+1)*t*1e-4
+        path=tmp_path/f"teacher_{step}.npz"
+        np.savez_compressed(
+            path,time_s=t,voltage_v=volt,
+            temp_K=temp,z6=z,
+            currents_A=np.zeros((ncase,len(t),2),complex),
+            eta=np.zeros((ncase,len(t))),
+            train=train,nsea=4,npkg=2,
+            ambient_K=293.15,external_z=np.eye(2)*.5,
+            cases_json=json.dumps(cases))
+        paths.append(path)
+    d=dataset(paths,rank=5)
+    assert len(d["grids"])==2
+    assert list(d["train"])==[0,1,2]
+    assert list(d["val"])==[3]
+    assert list(d["test"])==[4,5]
+    assert d["basis"].shape==(10,5)
+    assert d["grids"][0]["y"].shape==(6,3,11)
+    assert d["grids"][1]["y"].shape==(6,5,11)
+    net=FracNet(11,"hybrid")
+    preds=[net(torch.tensor(g["src"][:3],dtype=torch.float32),
+               g["times"]) for g in d["grids"]]
+    loss=sum(torch.mean(p**2) for p in preds)
+    loss.backward()
+    assert torch.isfinite(net.raw.grad).all()
+    assert torch.isfinite(net.raw_tau.grad).all()
