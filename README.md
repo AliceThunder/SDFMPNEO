@@ -1,3 +1,13 @@
+> **2026-11-13 最新：原 BFZI 连续几何 + 异形双线圈 + 相对位姿已实算。** 新增原 BFZI V150 原生参数入口 `examples/bfzi_param.py`，分别控制两线圈圆形—圆角方形连续 `alpha/core`、相对 x/y/z 位移、yaw/pitch/roll 以及封装尺寸；电磁 Green、线圈路径、场源、铜/空气阻抗和三维传热均继续调用原 BFZI。未改几何时与原 M4 的坐标、体积、Green G0、源 C **逐项完全一致**。在两个真实新几何、75 V、600 s 通电/关断/重启动态时程上，原 M1/M2/M4 训练的分数阶网络**未经新几何重训**，动态复阻抗变化相对误差为 **4.079%/4.062%**；相对原 BFZI 直接法，海水空间最大温差 ≤**0.000236 K**、封装 ≤**0.0000441 K**、铜 ≤**0.0001795 K**。包含圆形发射端＋圆角方形接收端、位移(5,0,3)mm、原生旋转(1,1,2)°的**异形配对**，绕组实际法向夹角 **2.2203°**，32阶保守热 ROM 五材料能量收支差 **1.65e−11 W**。已入库原 BFZI 冷态锚、600s 直接法、两种 ROM 与全部实测结果。[完整报告与复现](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_parametric_geometry.md)。
+
+```powershell
+# 圆形发射端 + 中间圆角方形接收端，带三维相对平移、三个原生旋转角和 214 mm 封装
+python -m examples.bfzi_param --bfzi-root D:/work/bfzi-et-v2.1/BFZI --sample M4 --alpha1 1 --core1-mm 0 --alpha2 .8 --core2-mm 20 --shift-mm 5 0 3 --yaw-deg 1 --pitch-deg 1 --tilt-deg 2 --box-mm 214 --probe --voltage 75 --heat 210 --cool 210 --horizon 600 --step 30 --out runs/bfzi_param_mixed.npz
+
+# 相同启停工况：原 BFZI 完整直接法与未经该几何训练的分数阶+保守热 ROM
+python -m examples.bfzi_param_eval --anchor runs/bfzi_param_mixed.npz --probe runs/bfzi_param_mixed_probe.npz --model runs/bfzi_geom_frac_v5.pt --rank 32 --rom-file runs/bfzi_param_mixed_rom.npz --out runs/bfzi_param_mixed_eval.json
+```
+
 > **2026-11-12 最新：原 BFZI 三维热 ROM 已验证。** 原 M3 冷态 BFZI J/Qweak/FV 传热锚点 + 跨几何分数阶 SOE 阻抗网络，现在可切换**五材料热量守恒的 32 阶空间热 ROM**，将 **2316 热状态降至 32 阶**，保留三维海水/双封装温度、双铜温度和空间 J/q 全场输出。原 BFZI M3 动态全留出的 40/115 V 30 s 和独立 100 V 15 s 时程中，ROM 比完整 2316 维物理热代理进一步加速 **1.45×/1.34×/1.37×**；ROM 附加海水最大空间温差 ≤**0.00177 K**、封装 ≤**0.000766 K**、铜 ≤**8.16e−8 K**，五材料能量预算误差 ≤**7.73e−11 W**。基只用原冷态场与物理传热方程建立，M3 留出动态真值未参与构基。**9 项相关测试通过**。[原始数值、误差和操作命令](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_conservative_heat_rom.md)。
 
 ```powershell
