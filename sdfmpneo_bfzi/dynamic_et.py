@@ -28,6 +28,8 @@ class ETStep:
     heat_power: float
     energy: float  # stored thermal energy above ambient, J
     sea_q: np.ndarray  # 3-D cell-averaged Joule source, W/m3
+    sea_j: np.ndarray | None = None  # actual complex seawater current, A/m2
+    unit_j: np.ndarray | None = None  # two unit-port currents, A/m2/A
 
 
 class BFZIDynamicET:
