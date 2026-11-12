@@ -19,7 +19,7 @@ import torch
 from sdfmpneo_bfzi.frac_memory import FracNet,build_sources,predict
 
 
-def dataset(path,rank=20):
+def dataset(path,rank=20,basis_mode="joint"):
     """Build one normalized POD space shared by all teacher time grids.
 
     Case IDs have fixed histories; validation/test programs remain disjoint
@@ -79,9 +79,29 @@ def dataset(path,rank=20):
     for sl in widths:
         block[sl]=max(float(np.std(rise[:,sl])),1e-3)
     weighted=rise/block
-    _,_,vh=np.linalg.svd(weighted,full_matrices=False)
-    rank=min(int(rank),len(vh))
-    basis=vh[:rank].T.copy()
+    if basis_mode=="material":
+        if rank<5:
+            raise ValueError("material POD needs rank >= 5")
+        extra=int(rank)-2
+        sizes=[extra//3+(1 if p<extra%3 else 0) for p in range(3)]
+        groups=[slice(0,nsea),slice(nsea,nsea+npkg),
+                slice(nsea+npkg,nsea+2*npkg),
+                slice(nsea+2*npkg,nsea+2*npkg+1),
+                slice(nsea+2*npkg+1,nsea+2*npkg+2)]
+        sizes=[sizes[0],sizes[1],sizes[2],1,1]
+        cols=[]
+        for group,size in zip(groups,sizes):
+            _,_,vh=np.linalg.svd(weighted[:,group],full_matrices=False)
+            for vec in vh[:size]:
+                col=np.zeros(nstate)
+                col[group]=vec
+                cols.append(col)
+        basis=np.column_stack(cols)
+        rank=basis.shape[1]
+    else:
+        _,_,vh=np.linalg.svd(weighted,full_matrices=False)
+        rank=min(int(rank),len(vh))
+        basis=vh[:rank].T.copy()
     z0=grids[0]["z"][0,0].copy()
     for g in grids:
         coef=((g["temp"]-amb)/block)@basis
@@ -127,7 +147,8 @@ def load(path):
     return model,ck
 
 
-def fit_one(d,mode,epochs=900,patience=180):
+def fit_one(d,mode,epochs=900,patience=180,
+            material_loss=0.,hotspot_loss=0.):
     torch.manual_seed(41)
     model=FracNet(d["rank"]+6,mode)
     train=np.asarray(d["train"],int)
@@ -136,6 +157,31 @@ def fit_one(d,mode,epochs=900,patience=180):
                 y=torch.tensor(g["y"],dtype=torch.float32))
            for g in d["grids"]]
     op=torch.optim.Adam(model.parameters(),lr=.003)
+    rank=d["rank"]
+    basis=torch.tensor(d["basis"],dtype=torch.float32)
+    tscale=torch.tensor(d["t_scale"],dtype=torch.float32)
+    scale=torch.tensor(d["scale"][:rank],dtype=torch.float32)
+    ns=d["nsea"];npkg=d["npkg"]
+    groups=(slice(0,ns),slice(ns,ns+npkg),
+            slice(ns+npkg,ns+2*npkg),
+            slice(ns+2*npkg,ns+2*npkg+1),
+            slice(ns+2*npkg+1,ns+2*npkg+2))
+    def group_loss(pred,target):
+        if material_loss<=0 and hotspot_loss<=0:
+            return pred.new_zeros(())
+        dt=(pred[...,:rank]-target[...,:rank])*scale
+        err=(dt@basis.T)*tscale
+        # Normalize each material by its observed training temperature
+        # scale. Every package and every copper port contributes separately.
+        terms=[]
+        for group in groups:
+            y=err[...,group]/tscale[group]
+            term=y.square().mean()
+            if hotspot_loss>0:
+                term=term+hotspot_loss*torch.amax(
+                    y.abs(),dim=-1).square().mean()
+            terms.append(term)
+        return material_loss*torch.stack(terms).mean()
     best=1e30; best_state=None; best_epoch=0
     t0=time.perf_counter()
     for epoch in range(epochs):
@@ -144,6 +190,7 @@ def fit_one(d,mode,epochs=900,patience=180):
         preds=[model(g["src"][train],g["t"]) for g in grids]
         loss=torch.stack([
             torch.mean((pr-g["y"][train])**2)
+            +group_loss(pr,g["y"][train])
             for pr,g in zip(preds,grids)]).mean()
         # Force identical physical times to agree across discretizations.
         if len(grids)>1:
@@ -161,7 +208,9 @@ def fit_one(d,mode,epochs=900,patience=180):
         model.eval()
         with torch.no_grad():
             vloss=float(torch.stack([
-                torch.mean((model(g["src"][val],g["t"])-g["y"][val])**2)
+                (lambda pr: torch.mean((pr-g["y"][val])**2)
+                 +group_loss(pr,g["y"][val]))(
+                    model(g["src"][val],g["t"]))
                 for g in grids]).mean())
         if vloss<best-1e-7:
             best=vloss
@@ -231,7 +280,7 @@ def eval_one(model,ck,d,ids):
 
 
 def train(args):
-    d=dataset(args.data,args.rank)
+    d=dataset(args.data,args.rank,args.basis_mode)
     grids=[dict(d,**g) for g in d["grids"]]
     args.out.parent.mkdir(parents=True,exist_ok=True)
     result=dict(data=[str(p) for p in args.data],
@@ -240,6 +289,9 @@ def train(args):
                 train_cases=len(d["train"]),validation_cases=len(d["val"]),
                 test_cases=len(d["test"]),
                 times_per_case=[len(g["times"]) for g in grids],
+                basis_mode=args.basis_mode,
+                material_loss=args.material_loss,
+                hotspot_loss=args.hotspot_loss,
                 fractional_kernel="positive logarithmic SOE for t^(alpha-1), 0<alpha<1",
                 electrical_feedback="solve predicted complex 2-port Z at every interval")
     if args.baseline is not None:
@@ -252,7 +304,9 @@ def train(args):
         print(json.dumps(dict(baseline=baseline),indent=2),flush=True)
     for mode in args.modes:
         net,train_info=fit_one(
-            d,mode,epochs=args.epochs,patience=args.patience)
+            d,mode,epochs=args.epochs,patience=args.patience,
+            material_loss=args.material_loss,
+            hotspot_loss=args.hotspot_loss)
         ck=checkpoint(net,d)
         path=(args.model if mode=="frac" else args.model.with_name(
             args.model.stem+"_"+mode+args.model.suffix))
@@ -363,6 +417,9 @@ def main():
                    help="Trained seawater J/q spatial decoder for inference")
     p.add_argument("--out",type=Path,default=None)
     p.add_argument("--rank",type=int,default=20)
+    p.add_argument("--basis-mode",choices=("joint","material"),default="joint")
+    p.add_argument("--material-loss",type=float,default=0.)
+    p.add_argument("--hotspot-loss",type=float,default=0.)
     p.add_argument("--epochs",type=int,default=900)
     p.add_argument("--patience",type=int,default=180)
     p.add_argument("--voltage",type=float,default=100)
