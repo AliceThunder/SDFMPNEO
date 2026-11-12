@@ -58,7 +58,7 @@ def main(argv=None):
     # before investing in any expensive repeated thermal time steps.
     cold=backend.solve(np.full(len(backend.vol),backend.ambient),
                        np.full(2,backend.ambient))
-    z_ref,_,_,_,_=calc.formal_with_local_mass(data)
+    z_ref,_,_,_,_=calc.base.formal_with_local_mass(data)
     warm_rel=float(np.linalg.norm(cold.sea_z-z_ref)
                    / max(np.linalg.norm(z_ref),1e-30))
     archive_rel=None
