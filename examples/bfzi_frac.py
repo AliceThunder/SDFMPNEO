@@ -318,16 +318,34 @@ def infer(args):
             Tcu_K=x[ns+2*npkg:].tolist(),
             Z6=r["z6"][k].tolist(),
             efficiency=float(r["eta"][k])))
+    spatial={}
+    if args.field is not None:
+        from sdfmpneo_bfzi.frac_field import SeaHead
+        head=SeaHead.load(args.field)
+        if int(ck["nsea"])!=len(head.vol):
+            raise ValueError("field head and neural seawater cell counts differ")
+        jvec=[];qvec=[];zvec=[]
+        for k,x in enumerate(r["temp_K"]):
+            j,q,z=head.at(x[:len(head.vol)],r["current_A"][k])
+            jvec.append(j);qvec.append(q);zvec.append(z)
+            rows[k]["Psea_pred_W"]=float(q@head.vol)
+            rows[k]["qsea_max_W_m3"]=float(np.max(q))
+        spatial=dict(Jsea_A_m2=np.asarray(jvec),
+                     qsea_W_m3=np.asarray(qvec),
+                     Zsea_ohm=np.asarray(zvec),
+                     sea_vol_m3=head.vol)
     args.out.parent.mkdir(parents=True,exist_ok=True)
-    args.out.write_text(json.dumps(dict(
-        model=str(args.model),mode=model.mode,
-        inference_sec=time.perf_counter()-t0,
-        time_step_s=args.step,trace=rows),indent=2),encoding="utf-8")
+    info=dict(model=str(args.model),mode=model.mode,
+              field_model=str(args.field) if args.field else None,
+              inference_sec=time.perf_counter()-t0,
+              time_step_s=args.step,trace=rows)
+    args.out.write_text(json.dumps(info,indent=2),encoding="utf-8")
     np.savez_compressed(args.out.with_suffix(".npz"),time_s=times,
-                        voltage_v=vin,**r)
+                        voltage_v=vin,**r,**spatial)
     print(json.dumps(dict(out=str(args.out),steps=len(times),
         Tpkg_last_K=rows[-1]["Tpkg_max_K"],Tcu_last_K=rows[-1]["Tcu_K"],
-        efficiency_last=rows[-1]["efficiency"]),indent=2))
+        efficiency_last=rows[-1]["efficiency"],
+        predicted_space_fields=bool(args.field)),indent=2))
 
 
 def main():
@@ -341,6 +359,8 @@ def main():
     p.add_argument("--baseline",type=Path,default=None)
     p.add_argument("--model",type=Path,
                    default=Path("runs/m4_frac.pt"))
+    p.add_argument("--field",type=Path,default=None,
+                   help="Trained seawater J/q spatial decoder for inference")
     p.add_argument("--out",type=Path,default=None)
     p.add_argument("--rank",type=int,default=20)
     p.add_argument("--epochs",type=int,default=900)
