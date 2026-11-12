@@ -1,3 +1,5 @@
+> **2026-11-12 实施进度更新：** 首个确定性动态闭环代码已提交：`sdfmpneo_bfzi/dynamic_et.py`（温度相关海水 R/L/K 复阻抗、铜内部 Z、3D 海水热单元、铜/封装热节点、热时间积分）、`examples/bfzi_dynamic_et.py` 及 `run.py --mode bfzi-et-dynamic`。沙箱合成小型场景 PASS；[详见开发证据](evidence/v2_1_dynamic_et_prototype.md)。当前电磁后端采用 SDFMPNEO 已有 BFZI Green–Galerkin，**独立 BFZI V148/V149 原算法尚未接通；真实双 BFZI 时程、热参考精度、代理仍 OPEN**。下一优先工作：运行真实场景，继而接入原 BFZI 算法并保持同源 J/q。
+
 # UMFC–BFZI 动态电磁—热双向反作用神经代理系统实施方案 V2.1
 
 **状态：当前唯一主执行方案** · **日期：2026-11-11** · **工作分支：** `research/bfzi-uwpt-electrothermal-surrogate`
