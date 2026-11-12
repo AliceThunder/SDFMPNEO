@@ -114,7 +114,7 @@ class M1Direct:
         }
 
 
-def solve_m1(scene, mesh: TetraMesh, frequency_hz, *, panels_per_corner=4):
+def solve_m1(scene, mesh: TetraMesh, frequency_hz, *, panels_per_corner=6):
     """Compute two independently excited closed UMFC ports on a real 3-D mesh.
 
     The mesh must conform to both insulating packages and the outer domain.

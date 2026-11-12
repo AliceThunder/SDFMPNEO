@@ -37,7 +37,7 @@ def main(argv=None):
     ap.add_argument("--tx-shift", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--rx-shift", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--far-step", type=float, default=.50)
-    ap.add_argument("--panels", type=int, default=3)
+    ap.add_argument("--panels", type=int, default=6)
     ap.add_argument("--rx-rotvec", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--probe", type=float, nargs=3, action="append")
     ap.add_argument("--currents", type=float, nargs=4, default=(1, 0, .4, .3),
