@@ -214,5 +214,13 @@ class BFZIV148Adapter:
             raise ValueError("currents must have two complex ports")
         j = np.einsum("npc,p->nc",state.unit_j,I,optimize=True)
         q = .5*np.sum(abs(j)**2,axis=1)/state.sigma
+        # Original v148 local source shape-mass Delta M_p accounts for
+        # intra-cell C variations unresolved by the FV-averaged current.
+        # Its real port correction is Delta Z_p=(w*mu)^2 sigma_p Delta M_p.
+        # Assign the SAME positive quadratic loss to each original wet cell
+        # rather than feeding its resistance into Z without thermal Joule.
+        variance = np.real(np.einsum(
+            "i,pij,j->p",np.conjugate(I),self.mass,I,optimize=True))
+        q += .5*(self.omega*self.mu)**2*state.sigma*variance/self.vol
         cu = .5*state.copper_z.real*abs(I)**2
         return q,cu
