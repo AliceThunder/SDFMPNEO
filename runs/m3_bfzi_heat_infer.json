@@ -1,0 +1,42 @@
+{
+  "sample": "M3",
+  "teacher": "runs\\m3_frac_holdout.npz",
+  "model": "runs\\bfzi_geom_frac_v5.pt",
+  "anchor": "runs\\m3_bfzi_anchor.npz",
+  "anchor_build_seconds": 0.004446499980986118,
+  "cold_Z_relative_error": 0.0,
+  "sea_cells": 2250,
+  "package_cells_per_box": 32,
+  "physical_source": "original BFZI cold unit J and port weak Joule",
+  "history": "learned causal fractional SOE sea delta",
+  "heat": "original 3-D BFZI FV conservative heat operator",
+  "no_dynamic_BFZI_EM_solve": true,
+  "results": [
+    {
+      "sea_max_abs_K": 1.4772268855267612e-05,
+      "pkg_max_abs_K": 3.337484372423205e-06,
+      "cu_max_abs_K": 2.8515425015029905e-05,
+      "sea_L2_relative": 0.00010640073560970485,
+      "pkg_L2_relative": 4.530867437726601e-06,
+      "case": 20,
+      "voltage_V": 40.0,
+      "neural_trajectory_sec": 0.11363050004001707,
+      "dynamic_Z_relative_L2": 1.0146772430685385,
+      "max_FV_energy_residual_W": 5.209166431541234e-13,
+      "max_sea_source_gap_W": 3.552713678800501e-15
+    },
+    {
+      "sea_max_abs_K": 0.0007668831858040903,
+      "pkg_max_abs_K": 0.00017745257969181694,
+      "cu_max_abs_K": 0.0016822262880964445,
+      "sea_L2_relative": 0.0006327861597990117,
+      "pkg_L2_relative": 2.569816106270116e-05,
+      "case": 29,
+      "voltage_V": 115.0,
+      "neural_trajectory_sec": 0.11134440009482205,
+      "dynamic_Z_relative_L2": 1.0303375376283297,
+      "max_FV_energy_residual_W": 7.72786279412685e-11,
+      "max_sea_source_gap_W": 5.684341886080802e-14
+    }
+  ]
+}
