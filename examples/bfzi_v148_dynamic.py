@@ -61,6 +61,15 @@ def main(argv=None):
     z_ref,_,_,_,_ = calc.formal_with_local_mass(data)
     warm_rel = float(np.linalg.norm(trace[0].sea_z-z_ref)
                      / max(np.linalg.norm(z_ref),1e-30))
+    # Independent BFZI master/output_v148 archive, M4 two-port sea reaction.
+    # This is a source-code regression target, not an experimental reference.
+    archive_rel = None
+    if a.sample == "M4":
+        z11 = .12781381449951726-0.0038545269438708036j
+        z12 = .10805885891894453-0.003731629612853443j
+        archive = np.array([[z11,z12],[z12,z11]])
+        archive_rel = float(np.linalg.norm(z_ref-archive)
+                            / np.linalg.norm(archive))
     rows=[]
     for s in trace:
         rows.append({
@@ -73,6 +82,9 @@ def main(argv=None):
             "Psea_volume_W":s.sea_power,
             "Psea_port_W":float(.5*np.real(
                 np.vdot(s.currents,s.sea_z@s.currents))),
+            "Psea_port_volume_relative_gap":float(
+                abs(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents))
+                    -s.sea_power)/max(abs(s.sea_power),1e-30)),
             "Pcu_W":s.copper_power.tolist(),
             "heat_input_W":s.heat_power,
             "stored_heat_J":s.energy,
@@ -99,6 +111,7 @@ def main(argv=None):
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
         "v148_isothermal_Zsea_relative_error":warm_rel,
+        "v148_M4_archived_Zsea_relative_error":archive_rel,
         "sea_alpha_per_K":a.sea_alpha,
         "ambient_K":et.amb,
         "fields_npz":str(fields),
