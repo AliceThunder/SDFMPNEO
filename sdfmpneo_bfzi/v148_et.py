@@ -15,6 +15,21 @@ from scipy.spatial import cKDTree
 from .dynamic_et import ETStep
 
 
+def circuit_power(voltage, currents, source_r, load_r):
+    """Peak-phasor source input, receiver load output and WPT efficiency."""
+    v = np.asarray(voltage, complex)
+    i = np.asarray(currents, complex)
+    if v.shape != (2,) or i.shape != (2,):
+        raise ValueError("two complex ports required")
+    if source_r <= 0 or load_r <= 0:
+        raise ValueError("source and receiver load resistances must be positive")
+    p_in = float(.5 * np.real(np.vdot(v, i)))
+    p_load = float(.5 * load_r * abs(i[1])**2)
+    p_src = float(.5 * source_r * abs(i[0])**2)
+    eta = p_load/p_in if p_in > 0 else 0.
+    return p_in, p_load, p_src, eta
+
+
 class BFZIV148ET:
     def __init__(self, model, *, ambient=293.15, external=None,
                  sea_rhoc=4.0e6, sea_k=.6,
