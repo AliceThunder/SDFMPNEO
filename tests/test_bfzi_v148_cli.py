@@ -36,8 +36,9 @@ def test_m4_check_only_uses_original_bfzi_base(monkeypatch, tmp_path):
                          (sea.copy(),None,None,omega,{}))
     calc=SimpleNamespace(base=base,build_circle_data=lambda name: {"name":name})
     monkeypatch.setitem(sys.modules,"bfzi_v148_results",calc)
+    om=omega
     class Stub:
-        omega=omega
+        omega=om
         vol=np.ones(4)
         ambient=293.15
         air=np.eye(2)*1e-5
