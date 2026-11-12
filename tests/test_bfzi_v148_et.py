@@ -136,6 +136,13 @@ def test_v148_fv_heat_and_off_cooling():
     assert restart[-1].temp.max()>0
     assert abs(restart[-1].impedance[0,0]-restart[0].impedance[0,0])>1e-6
     assert restart[-1].sea_q.shape==(et.count,)
+    assert restart[-1].sea_j.shape==(et.count,3)
+    assert restart[-1].unit_j.shape==(et.count,2,3)
+    assert np.allclose(
+        restart[-1].sea_j,
+        np.einsum("npc,p->nc",restart[-1].unit_j,
+                  restart[-1].currents))
+    assert np.allclose(steps[-1].sea_j,0)
 
 
 def test_coupled_heat_balance():
