@@ -1,3 +1,5 @@
+> **UMFC?BFZI-ETNS V2.0 ???** [??????](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_ETNS_V2_EXECUTION_PLAN.md)?M1 ??? UMFC/??????????`python run.py --mode bfzi-m1 --output runs/m1_demo.json`?????????????? OPEN?[??????](docs/research/bfzi_uwpt_electrothermal/evidence/m1_dual_umfc_direct.md)?
+
 > **BFZI 当前执行方案： [《BFZI 可信物理直接法攻坚计划（BFZI-PDR）V1.0》](docs/research/bfzi_uwpt_electrothermal/BFZI_PDR_EXECUTION_PLAN.md)（2026-11-09）。**
 >
 > **先建可信独立参考，再谈快速代理。** 保持[物理直接法锁定规范 V1.0](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_LOCKED.md)与[D0–D6 验收表](docs/research/bfzi_uwpt_electrothermal/PHYSICAL_DIRECT_METHOD_EVIDENCE_AND_GATES.md)不变。**现在只优先完成 D2：Elmer 真正 3D 涡流/TEAM-7 → BFZI 双独立斜置 SE(3) 真网格 → 两端口真正同源 → 复 2×2 Z、空间 E/B/J/q 与 h/R/源收敛**；合格后才进入 D5 快速无网格直接法与 D6 电磁热代理。D1 学习 Shafiei/Wang 计算方法，不强求论文表值一致。

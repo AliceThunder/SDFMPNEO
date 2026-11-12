@@ -365,6 +365,10 @@ def main(argv=None):
                 from examples.bfzi_mqs_demo import main as bfzi_main
                 bfzi_main(ball_reference="--green-ball" in args)
                 return 0
+            if mode == "bfzi-m1":
+                from examples.bfzi_m1_direct import main as m1_main
+                m1_main(args[index + 2:])
+                return 0
             if mode == "bfzi-snapshot":
                 from examples.bfzi_snapshot_demo import main as bfzi_main
                 bfzi_main(args[index + 2:])

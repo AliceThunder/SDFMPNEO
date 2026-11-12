@@ -18,6 +18,8 @@ from .sea_dataset import (
     scene_from_geometry_features,
     save_response_labels, load_response_labels,
 )
+from .m1_direct import M1Direct, solve_m1
+from .m1_direct import M1Direct, solve_m1
 from .electrothermal import (
     BFZICurrentControlledEnvelope, BFZIVoltageControlledEnvelope,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "BFZIResponseLabel", "geometry_features",
     "scene_from_geometry_features",
     "save_response_labels", "load_response_labels",
+    "M1Direct", "solve_m1",
+    "M1Direct", "solve_m1",
     "BFZICurrentControlledEnvelope",
     "BFZIVoltageControlledEnvelope",
 ]
