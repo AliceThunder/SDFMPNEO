@@ -96,7 +96,7 @@ def _mass(data, calc, order=3):
     y_extra = .5*sizes[1]
     masks = []
     for i,fam in enumerate(fams):
-        lp,ldl = calc._source_line_for_family(fam,cfg)
+        lp,ldl = calc.base._source_line_for_family(fam,cfg)
         yc = float(np.asarray(fam.coil.center)[1])
         hy = float(cfg.get("BSR_PACKAGE_NORMAL_HALF_M",.0055))
         if len(fams) == 1:
@@ -110,7 +110,7 @@ def _mass(data, calc, order=3):
             zn = float(sample.get(prefix+"package_z_neg_half_mm",102.))*1e-3
         face = ((mn[:,1]<=yc-hy+y_extra)&(mx[:,1]>=yc-hy-y_extra)
                 | (mn[:,1]<=yc+hy+y_extra)&(mx[:,1]>=yc+hy-y_extra))
-        dist = calc._nearest_dist_xz(pts,lp,chunk=4096)
+        dist = calc.base._nearest_dist_xz(pts,lp,chunk=4096)
         masks.append((abs(pts[:,0])<=hx)&(pts[:,2]<=zp)
                      &(pts[:,2]>=-zn)&face&(dist<=rad))
     out = np.zeros((n,len(fams),len(fams)),float)
@@ -120,7 +120,7 @@ def _mass(data, calc, order=3):
         geom,_ = calc.zlead_line_geom_for_coil(fam.coil,cfg)
         lead.append(geom)
     for p in np.flatnonzero(union):
-        q,w = calc._record_quadrature(rec[p],order)
+        q,w = calc.base._record_quadrature(rec[p],order)
         if len(q) == 0:
             continue
         src = []
@@ -128,7 +128,7 @@ def _mass(data, calc, order=3):
             Cq = calc.fs.air_projection_to_points_centerline_family_quadratic(
                 q,fam,point_chunk=512)
             if len(geom.pos):
-                Cq += calc._air_projection_to_points(
+                Cq += calc.base._air_projection_to_points(
                     q,np.asarray(geom.pos,float),np.asarray(geom.dl,float),
                     chunk_points=512,chunk_line=1024)
             src.append(Cq)
