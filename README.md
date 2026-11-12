@@ -1,3 +1,14 @@
+> **V2.1 最新神经代理实测（2026-11-12）：** 基于原 BFZI V150 的 **450 维海水 + 双三维封装 + 铜**动态真实求解，已生成 **30 条不同电压/启停历史**并训练可独立推理的**分数阶 SOE / 单指数 / 混合记忆神经网络**。10 条留出历史上，混合网络海水/封装平均最大空间温差 **0.0286/0.3478 K**，纯分数阶的铜平均最大误差 **1.098 K**、动态复阻抗变化相对误差 **4.98%**；模型会使用自己预测的 2×2 复 Z 重新计算电流及下一步记忆。115 V 三次启动同网格真实验证，21 步加速 **187×**，未训练的 15 s 时间步 41 步加速 **384×**。**[真实教师、网络权重和研究证据](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_m4_fractional_neural.md)**。
+
+```powershell
+# 直接生成真实 BFZI 教师轨迹（训练集和留出集固定）
+python -m examples.bfzi_frac_data --bfzi-root D:\work\bfzi-et-v2.1\BFZI --out runs/m4_frac_teacher.npz
+# 三种记忆结构的训练与独立时程消融
+python -m examples.bfzi_frac train --data runs/m4_frac_teacher.npz --model runs/m4_frac.pt --epochs 2400
+# 独立神经推理，过程无需 BFZI 安装
+python -m examples.bfzi_frac infer --model runs/m4_frac_hybrid.pt --voltage 100 --heat 210 --cool 210 --step 15
+```
+
 > **V2.1 最新实算（2026-11-12）：** 独立 BFZI V150 M4 的原复阻抗等温回归、30/100/150 V 完整通电—断电冷却—再启动时程已在 XEnergy 实跑。现支持原 BFZI 三维海水 **384 FV** 单元、两只封装各 **4×2×4 三维热单元**及两铜热态的动态反作用。原 FV `J²/σ` 与端口海水损耗约 1.15% 差额已定位到原投影非幂等性；新增同源端口弱形式 `--sea-heat port-weak` 后，端口功率/局部弱形式积分相对差最大 **4.19e−16**，原 `J²` 积分仍独立保存。联合 EM rank 8 / 热 rank 12 ROM 对留出 100 V 完整时程复 Z 相对误差 **1.57e−10**、封装三维温度最大绝对误差 **1.50e−4 K**；专项 **12 passed**。**[实测与方法](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_m4_pkg3d_weak.md)** · **[研究主线](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**。
 
 ### 原 BFZI V150 动态电磁热运行
