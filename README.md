@@ -1,3 +1,13 @@
+> **2026-11-12 最新：原 BFZI 三维热 ROM 已验证。** 原 M3 冷态 BFZI J/Qweak/FV 传热锚点 + 跨几何分数阶 SOE 阻抗网络，现在可切换**五材料热量守恒的 32 阶空间热 ROM**，将 **2316 热状态降至 32 阶**，保留三维海水/双封装温度、双铜温度和空间 J/q 全场输出。原 BFZI M3 动态全留出的 40/115 V 30 s 和独立 100 V 15 s 时程中，ROM 比完整 2316 维物理热代理进一步加速 **1.45×/1.34×/1.37×**；ROM 附加海水最大空间温差 ≤**0.00177 K**、封装 ≤**0.000766 K**、铜 ≤**8.16e−8 K**，五材料能量预算误差 ≤**7.73e−11 W**。基只用原冷态场与物理传热方程建立，M3 留出动态真值未参与构基。**9 项相关测试通过**。[原始数值、误差和操作命令](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_conservative_heat_rom.md)。
+
+```powershell
+# 首次物理热 ROM 构建 + 完整 2316 态热代理同网格验证（无需原 BFZI 电磁求解器）
+python -m examples.bfzi_geom_heat --anchor runs/m3_bfzi_anchor.npz --teacher runs/m3_frac_holdout.npz --model runs/bfzi_geom_frac_v5.pt --rom-rank 32 --rom-file runs/m3_bfzi_rom.npz --compare-full --out runs/m3_bfzi_rom_metrics.json
+
+# 复用已保存热 ROM：100 V 15 s 启停历史，完整 3D T/J/q 独立推理
+python -m examples.bfzi_geom_heat --standalone --voltage 100 --heat 210 --cool 210 --step 15 --horizon 600 --anchor runs/m3_bfzi_anchor.npz --model runs/bfzi_geom_frac_v5.pt --rom-rank 32 --rom-file runs/m3_bfzi_rom.npz --out runs/m3_bfzi_rom_user.json
+```
+
 > **V2.1 最新跨几何三维电磁热代理（2026-11-12）：** 已在独立原 BFZI V150 的 M3 **完整几何留出**上建立并实测**一次冷态 J/Qweak + 原三维海水/双封装/铜 FV 热算子 + 几何分数阶 SOE 神经动态复阻抗**的高精度闭环，输出每时间点的完整复 Z/双端口 I、**2316 个热状态、2250×3 复海水 J 和 2250 个海水弱形式 q**。M3 40/115 V 两条真实 21 步时程相对原 BFZI 加速 **158×/209×**，海水空间最大温差分别 **1.48e−5/7.67e−4 K**、双封装 **3.34e−6/1.77e−4 K**、铜 **2.85e−5/1.68e−3 K**；动态热复阻抗变化相对误差 **5.83%/7.91%**，所有材料 FV 热能量残差 **<1e−10 W**。已独立运行无需 BFZI 电磁求解器的 **100 V、15 s、41 时刻**任意 XYZ 空间温度查询，耗时 **0.244 s**，9 项相关测试通过。纯连续坐标神经空间头也已训练并以 M3 完全留出验证；保守物理热传播路径的三维场精度明显更高。新几何需**一次原 BFZI 冷态场/热算子预计算**，后续任意动态演化无需 BFZI 电磁解算。[完整源代码、冷态锚、真实留出结果与下一步](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_crossgeometry_3d_surrogate.md)。
 
 ```powershell
