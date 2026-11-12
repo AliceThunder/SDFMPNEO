@@ -101,9 +101,6 @@ def main():
             max_FV_energy_residual_W=float(pr["fv_node_residual_W"].max()),
             max_sea_source_gap_W=float(np.max(abs(
                 pr["qsea_W_m3"]@head.vol-pr["Psea_W"]))))
-        # The z error is the difference of the two *dynamic* delta Z curves.
-        one["dynamic_Z_relative_L2"]=relative(
-            pr["z6"]-ztrue[i],ztrue[i]-z0)
         if args.bench_direct:
             if et is None:
                 raise ValueError("--bench-direct requires --bfzi-root")
