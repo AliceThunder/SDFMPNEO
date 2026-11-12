@@ -23,6 +23,7 @@ def originals(root):
 
 
 def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
+           alpha1=None,alpha2=None,core1_mm=None,core2_mm=None,
            shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
            pitch_deg=0.,box_mm=None):
     """Rebuild the genuine BFZI field operators for modified native coils."""
@@ -54,11 +55,15 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
     else:
         raise ValueError("two-coil original BFZI samples are M1/M2/M3/M4")
     old=[dataclasses.replace(c) for c in coils]
+    alphas=(alpha1,alpha2)
+    cores=(core1_mm,core2_mm)
     for p,c in enumerate(old):
+        core_input=cores[p] if cores[p] is not None else core_mm
+        alpha_input=alphas[p] if alphas[p] is not None else alpha
         core=(float(c.rounded_square_core_half_m)
-              if core_mm is None else float(core_mm)*.001)
+              if core_input is None else float(core_input)*.001)
         a=(float(c.rounded_square_alpha)
-           if alpha is None else float(alpha))
+           if alpha_input is None else float(alpha_input))
         outer=float(c.effective_outer_radius_m)
         r0=outer-core
         inner_r=r0-a*c.turns*pitch
@@ -120,6 +125,17 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
               vol_meta=volume_meta,
               gmeta=dict(gmeta,geometry_family="BFZI_native_continuous",
                          prep_sec=time.perf_counter()-t0))
+    normals=[]
+    for fam in families:
+        pos=np.asarray(fam.active.pos,float)
+        q=pos-pos.mean(axis=0)
+        _,eig=np.linalg.eigh(q.T@q)
+        n=eig[:,0]
+        if n[1]<0:
+            n=-n
+        normals.append(n)
+    angle=float(np.degrees(np.arccos(np.clip(
+        abs(np.dot(normals[0],normals[1])),-1.,1.))))
     details=dict(sample=sid,
                  alpha=[float(c.rounded_square_alpha) for c in coils],
                  core_mm=[float(c.rounded_square_core_half_m)*1000
@@ -128,6 +144,8 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                  roll_deg=[float(c.roll_deg) for c in coils],
                  yaw_deg=[float(c.yaw_deg) for c in coils],
                  pitch_deg=[float(c.pitch_deg) for c in coils],
+                 winding_normal_xyz=[n.tolist() for n in normals],
+                 physical_relative_tilt_deg=angle,
                  box_mm=box_mm,
                  sea_cells=len(points),
                  bfzi_prep_sec=time.perf_counter()-t0)
@@ -140,6 +158,10 @@ def main():
     p.add_argument("--sample",choices=("M1","M2","M3","M4"),default="M4")
     p.add_argument("--alpha",type=float,default=None)
     p.add_argument("--core-mm",type=float,default=None)
+    p.add_argument("--alpha1",type=float,default=None)
+    p.add_argument("--alpha2",type=float,default=None)
+    p.add_argument("--core1-mm",type=float,default=None)
+    p.add_argument("--core2-mm",type=float,default=None)
     p.add_argument("--shift-mm",nargs=3,type=float,
                    default=[0.,0.,0.])
     p.add_argument("--tilt-deg",type=float,default=0.,
@@ -160,6 +182,8 @@ def main():
     bf,original=originals(a.bfzi_root)
     data,info=create(
         bf,original,a.sample,alpha=a.alpha,core_mm=a.core_mm,
+        alpha1=a.alpha1,alpha2=a.alpha2,
+        core1_mm=a.core1_mm,core2_mm=a.core2_mm,
         shift_mm=a.shift_mm,tilt_deg=a.tilt_deg,
         yaw_deg=a.yaw_deg,pitch_deg=a.pitch_deg,box_mm=a.box_mm)
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
