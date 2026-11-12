@@ -39,6 +39,12 @@ def main(argv=None):
     p.add_argument("--cool",type=float,default=180.)
     p.add_argument("--restart",type=float,default=180.)
     p.add_argument("--sea-alpha",type=float,default=.02)
+    p.add_argument("--pkg-rhoc",type=float,default=1.5e6,
+                   help="Package effective volumetric thermal capacity, J/(m3 K)")
+    p.add_argument("--pkg-sea-g",type=float,default=.6,
+                   help="Thermal conductance per package to seawater, W/K")
+    p.add_argument("--cu-pkg-g",type=float,default=.8,
+                   help="Thermal conductance per copper coil to its package, W/K")
     p.add_argument("--rom-train",type=Path,nargs="+",default=None,
                    help="Original BFZI unit-J and thermal snapshots for projected ROM")
     p.add_argument("--rom-rank",type=int,default=8)
@@ -53,7 +59,8 @@ def main(argv=None):
         p.error("bfzi-root must be an existing BFZI repository checkout")
     if (a.source_r <= 0 or a.load_r <= 0):
         p.error("source and load resistances must be positive")
-    if min(a.voltage,a.step,a.heat,a.cool,a.restart) <= 0:
+    if min(a.voltage,a.step,a.heat,a.cool,a.restart,
+           a.pkg_rhoc,a.pkg_sea_g,a.cu_pkg_g) <= 0:
         p.error("drive voltage and times must be positive")
     rev=subprocess.run(
         ["git","-C",str(a.bfzi_root.resolve()),"rev-parse","HEAD"],
@@ -125,9 +132,11 @@ def main(argv=None):
          if a.rom_train else None)
     basis_sec=time.perf_counter()-t0
     heat_rom=bool(a.heat_rom_train)
+    therm=dict(external=extra,pkg_rhoc=a.pkg_rhoc,
+               pkg_sea_g=a.pkg_sea_g,cu_pkg_g=a.cu_pkg_g)
     et=(BFZIV148HeatROM(rom or backend,a.heat_rom_train,
-                        rank=a.heat_rom_rank,external=extra)
-        if heat_rom else BFZIV148ET(rom or backend,external=extra))
+                        rank=a.heat_rom_rank,**therm)
+        if heat_rom else BFZIV148ET(rom or backend,**therm))
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
                            a.heat,a.heat+a.cool,duration])
@@ -140,6 +149,15 @@ def main(argv=None):
     trace_sec=time.perf_counter()-t1
     rows=[]
     for k,s in enumerate(trace):
+        pkg_t=(et.amb+s.temp[et.pkg])
+        cu_t=(et.amb+s.temp[et.cu])
+        sea_t=(et.amb+s.temp[:et.count])
+        e_sea=float(et.cap[:et.count]@s.temp[:et.count])
+        e_pkg=(et.cap[et.pkg]*s.temp[et.pkg])
+        e_cu=(et.cap[et.cu]*s.temp[et.cu])
+        q_cp,q_ps,q_amb=et.heat_flux(s.temp)
+        gaps=None
+
         v=drive(s.time)
         if k:
             dt=s.time-trace[k-1].time
@@ -149,6 +167,23 @@ def main(argv=None):
             scale=max(abs(s.energy-trace[k-1].energy),
                       dt*abs(p_out),dt*abs(s.heat_power),1e-30)
             heat_gap=float(abs(defect)/scale)
+            prev=trace[k-1].temp
+            de_sea=e_sea-float(et.cap[:et.count]@prev[:et.count])
+            de_pkg=e_pkg-et.cap[et.pkg]*prev[et.pkg]
+            de_cu=e_cu-et.cap[et.cu]*prev[et.cu]
+            rhs_sea=dt*(s.sea_power+sum(q_ps)-q_amb)
+            rhs_pkg=dt*(q_cp-q_ps)
+            rhs_cu=dt*(s.copper_power-q_cp)
+            # Each material satisfies its own discrete energy budget.
+            def rel_gap(delta,rhs):
+                delta=np.asarray(delta,float)
+                rhs=np.asarray(rhs,float)
+                return float(np.max(abs(delta-rhs)
+                    /np.maximum(np.maximum(abs(delta),abs(rhs)),1e-12)))
+            gaps={
+                "sea":rel_gap(de_sea,rhs_sea),
+                "package":rel_gap(de_pkg,rhs_pkg),
+                "copper":rel_gap(de_cu,rhs_cu)}
         else:
             p_out=0.
             heat_gap=None
@@ -177,11 +212,21 @@ def main(argv=None):
             "efficiency":eta,
             "heat_input_W":s.heat_power,
             "stored_heat_J":s.energy,
+            "Esea_J":e_sea,
+            "Epkg_J":e_pkg.tolist(),
+            "Ecu_J":e_cu.tolist(),
+            "Qcu_to_pkg_W":q_cp.tolist(),
+            "Qpkg_to_sea_W":q_ps.tolist(),
+            "Qsea_to_ambient_W":q_amb,
+            "material_balance_relative_gap":gaps,
             "ambient_cooling_W":p_out,
             "thermal_balance_relative_gap":heat_gap,
-            "Tsea_max_K":float(et.amb+s.temp[:et.count].max()),
-            "Tpkg_K":(et.amb+s.temp[et.pkg]).tolist(),
-            "Tcu_K":(et.amb+s.temp[et.cu]).tolist(),
+            "Tsea_max_K":float(sea_t.max()),
+            "Tsea_mean_K":float(np.average(sea_t,weights=backend.vol)),
+            "Tpkg_K":pkg_t.tolist(),
+            "Tpkg_max_K":float(pkg_t.max()),
+            "Tpkg_rise_K":(pkg_t-et.amb).tolist(),
+            "Tcu_K":cu_t.tolist(),
         })
     fields=a.out.with_suffix(".npz")
     a.out.parent.mkdir(parents=True,exist_ok=True)
@@ -218,7 +263,14 @@ def main(argv=None):
         "isothermal_regression":baseline,
         "sea_alpha_per_K":a.sea_alpha,
         "source_resistance_ohm":a.source_r,
+        "source_voltage_peak_V":a.voltage,
         "load_resistance_ohm":a.load_r,
+        "package_thermal_model":"independent effective-capacity node per enclosure, coupled Cu->package->sea",
+        "package_rhoc_J_m3K":a.pkg_rhoc,
+        "package_to_sea_G_W_K":a.pkg_sea_g,
+        "copper_to_package_G_W_K":a.cu_pkg_g,
+        "package_heat_capacity_J_K":et.cap[et.pkg].tolist(),
+        "copper_heat_capacity_J_K":et.cap[et.cu].tolist(),
         "external_Z_ohm":pair(extra),
         "ambient_K":et.amb,
         "fields_npz":str(fields),
@@ -245,6 +297,11 @@ def main(argv=None):
         "efficiency_last":rows[-1]["efficiency"],
         "sea_P_first_W":rows[0]["Psea_volume_W"],
         "max_temperature_K":max(r["Tsea_max_K"] for r in rows),
+        "max_package_temperature_K":max(r["Tpkg_max_K"] for r in rows),
+        "max_copper_temperature_K":max(max(r["Tcu_K"]) for r in rows),
+        "max_material_balance_relative_gap":max(
+            max(r["material_balance_relative_gap"].values())
+            for r in rows[1:]),
     },indent=2))
 
 
