@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 
-from .bfzi_v148_adapter import V148State, WeightedFV
+from .bfzi_v148_adapter import V148State, WeightedFV, _weak_q
 
 
 class BFZIV148ROM:
@@ -98,4 +98,7 @@ class BFZIV148ROM:
         total = sea_z+1j*model.omega*model.air+np.diag(zcu)
         j = np.stack([-gamma[:, None]*px for px in P],axis=1)
         res = {"rom_rank":self.rank,"retained_energy":self.retained}
-        return V148State(sea_z,total,zcu,j,sig,res)
+        weak=(_weak_q(C,X,GC,GX,sig,model.mass,model.vol,
+                      model.omega,model.mu)
+              if model.heat_mode=="port-weak" else None)
+        return V148State(sea_z,total,zcu,j,sig,res,weak)
