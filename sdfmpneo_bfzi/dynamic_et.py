@@ -116,11 +116,14 @@ class BFZIDynamicET:
         if k_near == 1:
             near = near.reshape(-1,1)
         scene = ref.sources.scene
+        seen = set()
         for i in range(self.count):
             for j in np.atleast_1d(near[i]):
                 j = int(j)
-                if j <= i:
+                a,b = sorted((i,j))
+                if a == b or (a,b) in seen:
                     continue
+                seen.add((a,b))
                 mid = (self.centers[i]+self.centers[j])/2
                 if any(a.enclosure.contains(mid[None,:],a.pose)[0]
                        for a in scene.assemblies):
@@ -141,7 +144,7 @@ class BFZIDynamicET:
         radius = float(scene.outer_radius)
         ambient_g = np.zeros(self.n)
         outer = np.linalg.norm(self.centers-center,axis=1) > .75*radius
-        ambient_g[:self.count][outer] = outer_h*self.vol[outer]**(2/3)
+        ambient_g[np.flatnonzero(outer)] = outer_h*self.vol[outer]**(2/3)
         self.H = coo_matrix((vals,(rows,cols)),shape=(self.n,self.n)).tocsr()
         self.H += diags(ambient_g)
         self._solve_cache = {}
