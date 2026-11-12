@@ -66,9 +66,12 @@ def main():
     zn=np.asarray([zmat(x) for x in neural["z6"]])
     zp=np.asarray([zmat(x) for x in neutral["z6"]])
     full_res=[]
+    sea_res=[]
     for k,I in enumerate(neutral["current_A"]):
         zs=neutral["Zsea_ohm"][k]
         zc=neutral["Zcu_ohm"][k]
+        _,q,zi=head.at(neutral["temp_K"][k,:len(head.vol)],I)
+        sea_res.append(abs(float(q@head.vol)-.5*np.vdot(I,zi@I).real))
         Rs=float(ck["external_z"][0,0].real)
         Rl=float(ck["external_z"][1,1].real)
         pin=.5*np.real(np.vdot(np.array([v[k],0],complex),I))
@@ -90,7 +93,7 @@ def main():
         network_dynamic_z_relative_L2=err(zn,ref)/max(
             float(np.linalg.norm(ref-ref[0])/np.linalg.norm(ref)),1e-14),
         max_circuit_balance_absolute_W=max(full_res),
-        max_sea_energy_gap_absolute_W=0.,
+        max_sea_energy_gap_absolute_W=max(sea_res),
         end_to_end_two_models_sec=sec,
         independent_bfzi_used_for_constants_only=True)
     if result["original_z_assembly_relative_L2"]>1e-11:
