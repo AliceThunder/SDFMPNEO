@@ -79,14 +79,18 @@ def main(argv=None):
     pos, dw, q = result.heat_nodes(i)
     p_volume = result.volume_power(i)
     p_port = result.port_sea_power(i)
+    p_closed = result.closed_port_sea_power(i)
     report = {
-        "status": "M1 functional prototype; D2 independent accuracy OPEN",
+        "status": "M1 same-source power closure PASS; D2 reference accuracy OPEN",
+        "sea_impedance_readout": "free-space source-J overlap on finite-domain induced current",
+        "closed_path_readout": "FEM reaction-A line integral, separate boundary diagnostic",
         "scene": "two real closed continuous BFZI spirals / dual insulating boxes",
         "mesh": mesh_kind,
         "tetrahedra": len(mesh.tetrahedra),
         "frequency_hz": args.frequency,
         "currents_A": pair(i),
         "unit_port_Zsea_ohm": pair(result.z_sea),
+        "unit_port_Zsea_closed_path_ohm": pair(result.z_closed),
         "Zem_ohm": pair(result.z_em),
         "sea_dissipation_channel_ohm": pair(result.z_loss),
         "probe_m": x.tolist(),
@@ -99,11 +103,13 @@ def main(argv=None):
         "seawater_power_volume_W": p_volume,
         "seawater_power_heat_integral_W": float(dw@q),
         "seawater_power_port_W": p_port,
+        "seawater_power_closed_path_W": p_closed,
+        "closed_path_vs_volume_power_gap_W": abs(p_closed-p_volume),
         "port_volume_power_gap_W": abs(p_port-p_volume),
         "port_reciprocity_gap_ohm": float(abs(result.z_sea[0,1]-result.z_sea[1,0])),
         "linear_residual": result.physical.reaction.linear_relative_residual,
         "limitations": "Finite outer cube, first-order Nedelec, polygonal source; "
-                       "h/R/port-power independence still OPEN; not a certified neural teacher.",
+                       "h/R and independent field/port accuracy still OPEN; not a certified neural teacher.",
     }
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +120,7 @@ def main(argv=None):
         "P_volume_W": p_volume,
         "P_heat_W": report["seawater_power_heat_integral_W"],
         "P_port_W": p_port,
+        "P_closed_path_W": p_closed,
         "q_probe_W_m3": report["q_W_m3"],
         "linear_residual": report["linear_residual"],
         "status": report["status"],

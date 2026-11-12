@@ -32,7 +32,17 @@ class M1Direct:
 
     @property
     def z_sea(self):
-        """Closed-path sea-induced port Z from the analytic-primary PDE."""
+        """Free-space reaction Z of induced seawater J, using source reciprocity.
+
+        Z[p,q] = i*omega*integral A_primary[p] dot J_sea[q] dV.
+        The SAME total E/J determines this matrix and spatial Joule heat.
+        The induced J itself is approximated on the finite A-phi mesh.
+        """
+        return self.physical.volume_overlap_z
+
+    @property
+    def z_closed(self):
+        """Finite-domain FE reaction-A closed-path readout, for comparison."""
         return self.physical.closed_source_reaction_z
 
     @property
@@ -52,9 +62,14 @@ class M1Direct:
         return self.physical.volume_power(_currents(i))
 
     def port_sea_power(self, i=(1, 0)):
-        """Closed-path induced sea power; its residual exposes finite-box error."""
+        """Source-overlap reaction power; agrees with same-current Joule heat."""
         i = _currents(i)
         return float(.5*np.real(np.vdot(i, self.z_sea@i)))
+
+    def closed_port_sea_power(self, i=(1, 0)):
+        """Finite-boundary reaction-A line readout, independent of loss dual."""
+        i = _currents(i)
+        return float(.5*np.real(np.vdot(i, self.z_closed@i)))
 
     def heat_nodes(self, i=(1, 0)):
         """Conductor-only original tetra Gauss nodes, dV weights and q[W/m3]."""

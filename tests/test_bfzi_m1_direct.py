@@ -42,6 +42,16 @@ def test_m1_real_dual_umfc_fields_and_same_heat():
     assert p > 0
     assert_allclose(w @ q, p, rtol=1e-10)
     assert_allclose(.5*np.real(np.vdot(i, ref.z_loss@i)), p, rtol=1e-10)
+    assert_allclose(ref.port_sea_power(i), p, rtol=1e-10)
+    assert_allclose(ref.z_sea, ref.z_sea.T, rtol=1e-11, atol=1e-13)
+    assert np.linalg.eigvalsh(.5*(ref.z_sea+ref.z_sea.conj().T)).min() >= -1e-12
+    assert_allclose(.5*(ref.z_sea+ref.z_sea.conj().T), ref.z_loss,
+                    rtol=1e-10, atol=1e-12)
+    for phase in ((1, 0), (0, 1), (1, 1), (1, -1), (1, 1j)):
+        assert_allclose(ref.port_sea_power(phase),
+                        ref.volume_power(phase), rtol=1e-10)
+    assert np.isfinite(ref.z_closed).all()
+    assert ref.closed_port_sea_power(i) != ref.port_sea_power(i)
 
     # The complex two-port phase interference must enter q before squaring.
     e1 = ref.fields(a, (1, 0))["E_V_m"]
