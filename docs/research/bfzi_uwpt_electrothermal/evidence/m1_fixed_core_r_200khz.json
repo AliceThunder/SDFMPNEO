@@ -1,0 +1,47 @@
+{
+  "status": "fixed-inner-core finite R convergence OPEN",
+  "source": "same unified BFZI dual coil with 12 chords per corner",
+  "frequency_hz": 200000.0,
+  "sigma_S_m": 5.0,
+  "core_radius_m": 0.3,
+  "near_step_m": 0.12,
+  "far_step_m": 0.3,
+  "R_m": {
+    "052": 0.52,
+    "075": 0.75,
+    "105": 1.05
+  },
+  "power_W": {
+    "052": 0.0064949477121905895,
+    "075": 0.006748644577116176,
+    "105": 0.006690002960555819
+  },
+  "tetra": {
+    "052": 4224,
+    "075": 7800,
+    "105": 12960
+  },
+  "comparisons": {
+    "R052_R075": {
+      "tetra_from": 4224,
+      "tetra_to": 7800,
+      "port_Z_rel": 0.06356000799007021,
+      "unit_B_probes_rel": 0.007992242789427102,
+      "unit_E_probes_rel": 0.011573512309673123,
+      "J_probes_rel": 0.01141440173124402,
+      "power_rel": 0.03759226938485414,
+      "port_power_close_rel": 3.033162701431438e-14
+    },
+    "R075_R105": {
+      "tetra_from": 7800,
+      "tetra_to": 12960,
+      "port_Z_rel": 0.045337432977588625,
+      "unit_B_probes_rel": 0.005848185617405483,
+      "unit_E_probes_rel": 0.03350987303921918,
+      "J_probes_rel": 0.025337673044628858,
+      "power_rel": 0.008765559134443855,
+      "port_power_close_rel": 4.0191632255132185e-15
+    }
+  },
+  "limits": "3D field probes are two fixed water points; only structured axis aligned box. R not certified, outer shell grids differ."
+}

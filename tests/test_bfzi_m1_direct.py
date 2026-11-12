@@ -84,3 +84,34 @@ def test_m1_circular_tx_and_variable_seawater():
     assert_allclose(result.port_sea_power(current),
                     result.volume_power(current), rtol=1e-10)
     assert_allclose(result.z_sea, result.z_sea.T, rtol=1e-10, atol=1e-12)
+
+
+def test_unified_bfzi_coil_cli_parameter_domain():
+    from examples.bfzi_m1_direct import coil_from
+
+    base = build_demo_scene().transmitter.coil
+    circle = coil_from([2, .075, .075, .005, 1., 1.], base)
+    rounded = coil_from([2, .075, .045, .005, .5, -1.], base)
+    assert circle.outer_half_size == circle.corner_radius
+    assert circle.alpha == 1.
+    assert rounded.winding == -1
+    assert rounded.alpha == .5
+    assert rounded.corner_radius < rounded.outer_half_size
+    assert coil_from(None, base) is base
+    with pytest.raises(ValueError):
+        coil_from([2.1, .075, .075, .005, 1., 1.], base)
+
+
+def test_fixed_core_grid_coordinates_across_R():
+    from dataclasses import replace
+
+    a = build_demo_scene()
+    b = replace(a, outer_radius=.75)
+    # Exact core coordinates are independent of exterior R.
+    one = axis_aligned_bfzi_tetra_mesh(
+        a, far_step_m=.30, box_layers=1, inner_core_radius_m=.30)
+    two = axis_aligned_bfzi_tetra_mesh(
+        b, far_step_m=.30, box_layers=1, inner_core_radius_m=.30)
+    x = lambda m: np.unique(np.round(m.nodes[:,0], 12))
+    inner = lambda z: z[(z>=-.30) & (z<=.30)]
+    assert_allclose(inner(x(one)), inner(x(two)), atol=1e-12)

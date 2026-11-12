@@ -15,7 +15,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from examples.bfzi_mqs_demo import build_demo_scene
-from sdfmpneo_bfzi.geometry import RigidPose
+from sdfmpneo_bfzi.geometry import BFZICoil, RigidPose
 from sdfmpneo_bfzi.scene import Seawater
 from sdfmpneo_bfzi.direct3d_mesh import bfzi_mesh_from_gmsh22
 from sdfmpneo_bfzi.direct3d_structured_bfzi import axis_aligned_bfzi_tetra_mesh
@@ -26,13 +26,27 @@ def pair(z):
     return np.stack((np.asarray(z).real, np.asarray(z).imag), axis=-1).tolist()
 
 
+def coil_from(vals, old):
+    """Decode the existing unified BFZICoil parameters (N,A0,rho0,s,alpha,w)."""
+    if vals is None:
+        return old
+    n, a, rho, pitch, alpha, w = vals
+    if not np.isfinite(vals).all() or n != int(n) or w != int(w):
+        raise ValueError("N and winding must be finite integers")
+    return BFZICoil(int(n), a, rho, pitch, alpha, int(w))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--frequency", type=float, default=200000.)
     ap.add_argument("--sigma", type=float, default=5.0,
                     help="Seawater conductivity (S/m)")
-    ap.add_argument("--tx-shape", choices=("rounded", "circle"), default="rounded")
-    ap.add_argument("--rx-shape", choices=("rounded", "circle"), default="rounded")
+    ap.add_argument("--tx-coil", nargs=6, type=float,
+                    metavar=("N","A0","RHO0","PITCH","ALPHA","W"),
+                    help="Unified BFZI tx parameters: turns, A0, rho0, pitch, alpha, winding")
+    ap.add_argument("--rx-coil", nargs=6, type=float,
+                    metavar=("N","A0","RHO0","PITCH","ALPHA","W"),
+                    help="Unified BFZI rx parameters; circle: rho0=A0 and alpha=1")
     ap.add_argument("--mesh", type=Path, help="Physical-tag Gmsh 2.2 mesh")
     ap.add_argument("--generate-msh", type=Path, help="Build conforming arbitrary-SE3 Gmsh OCC mesh")
     ap.add_argument("--mesh-size", type=float, default=.25)
@@ -42,6 +56,10 @@ def main(argv=None):
     ap.add_argument("--tx-shift", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--rx-shift", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--far-step", type=float, default=.50)
+    ap.add_argument("--near-step", type=float)
+    ap.add_argument("--core-radius", type=float,
+                    help="Fixed inner cube half-width for comparable outer-R meshes")
+    ap.add_argument("--box-layers", type=int, default=1)
     ap.add_argument("--panels", type=int, default=6)
     ap.add_argument("--rx-rotvec", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--probe", type=float, nargs=3, action="append")
@@ -54,12 +72,8 @@ def main(argv=None):
         ap.error("Use one of --mesh or --generate-msh")
     scene = build_demo_scene()
     tx, rx = scene.assemblies
-    if args.tx_shape == "circle":
-        tx = replace(tx, coil=replace(tx.coil,
-            corner_radius=tx.coil.outer_half_size, alpha=1.0))
-    if args.rx_shape == "circle":
-        rx = replace(rx, coil=replace(rx.coil,
-            corner_radius=rx.coil.outer_half_size, alpha=1.0))
+    tx = replace(tx, coil=coil_from(args.tx_coil, tx.coil))
+    rx = replace(rx, coil=coil_from(args.rx_coil, rx.coil))
     t_rot = Rotation.from_rotvec(args.tx_rotvec).as_matrix()
     r_rot = Rotation.from_rotvec(args.rx_rotvec).as_matrix()
     tx = replace(tx, pose=RigidPose(t_rot@tx.pose.rotation,
@@ -80,7 +94,8 @@ def main(argv=None):
         mesh_kind = "physical-tag Gmsh OCC SE(3)"
     else:
         mesh = axis_aligned_bfzi_tetra_mesh(
-            scene, far_step_m=args.far_step, box_layers=1)
+            scene, far_step_m=args.far_step, box_layers=args.box_layers,
+            near_step_m=args.near_step, inner_core_radius_m=args.core_radius)
         mesh_kind = "axis-aligned conforming smoke"
     result = solve_m1(scene, mesh, args.frequency,
                       panels_per_corner=args.panels)
@@ -101,18 +116,21 @@ def main(argv=None):
         "tetrahedra": len(mesh.tetrahedra),
         "frequency_hz": args.frequency,
         "seawater_S_m": scene.seawater.conductivity,
-        "tx_shape": args.tx_shape,
-        "rx_shape": args.rx_shape,
         "tx_coil": {"turns": tx.coil.turns,
                     "outer_half_size_m": tx.coil.outer_half_size,
                     "corner_radius_m": tx.coil.corner_radius,
-                    "pitch_m": tx.coil.pitch, "alpha": tx.coil.alpha},
+                    "pitch_m": tx.coil.pitch, "alpha": tx.coil.alpha,
+                    "winding": tx.coil.winding},
         "rx_coil": {"turns": rx.coil.turns,
                     "outer_half_size_m": rx.coil.outer_half_size,
                     "corner_radius_m": rx.coil.corner_radius,
-                    "pitch_m": rx.coil.pitch, "alpha": rx.coil.alpha},
+                    "pitch_m": rx.coil.pitch, "alpha": rx.coil.alpha,
+                    "winding": rx.coil.winding},
         "outer_radius_m": scene.outer_radius,
         "corner_panels": args.panels,
+        "inner_core_radius_m": args.core_radius,
+        "structured_near_step_m": args.near_step,
+        "structured_box_layers": args.box_layers,
         "tx_pose": {"center_m": tx.pose.center.tolist(),
                     "rotation": tx.pose.rotation.tolist()},
         "rx_pose": {"center_m": rx.pose.center.tolist(),
