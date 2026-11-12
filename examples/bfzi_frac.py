@@ -359,8 +359,14 @@ def infer(args):
     vin=np.array([
         args.voltage if t<=args.heat or t>args.heat+args.cool
         else 0 for t in times],float)
+    from sdfmpneo_bfzi.frac_field import SeaHead
+    from sdfmpneo_bfzi.frac_port import PortModel
+    head=SeaHead.load(args.field) if args.field is not None else None
+    port=PortModel.load(args.port) if args.port is not None else None
+    if port is not None and head is None:
+        raise ValueError("--port requires --field")
     t0=time.perf_counter()
-    r=predict(model,ck,vin,times)
+    r=predict(model,ck,vin,times,field=head,port=port)
     ns=int(ck["nsea"]);npkg=int(ck["npkg"])
     rows=[]
     for k,t in enumerate(times):
@@ -373,9 +379,7 @@ def infer(args):
             Z6=r["z6"][k].tolist(),
             efficiency=float(r["eta"][k])))
     spatial={}
-    if args.field is not None:
-        from sdfmpneo_bfzi.frac_field import SeaHead
-        head=SeaHead.load(args.field)
+    if head is not None:
         if int(ck["nsea"])!=len(head.vol):
             raise ValueError("field head and neural seawater cell counts differ")
         jvec=[];qvec=[];zvec=[]
@@ -386,11 +390,13 @@ def infer(args):
             rows[k]["qsea_max_W_m3"]=float(np.max(q))
         spatial=dict(Jsea_A_m2=np.asarray(jvec),
                      qsea_W_m3=np.asarray(qvec),
-                     Zsea_ohm=np.asarray(zvec),
                      sea_vol_m3=head.vol)
+        if port is None:
+            spatial["Zsea_ohm"]=np.asarray(zvec)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     info=dict(model=str(args.model),mode=model.mode,
               field_model=str(args.field) if args.field else None,
+              port_model=str(args.port) if args.port else None,
               inference_sec=time.perf_counter()-t0,
               time_step_s=args.step,trace=rows)
     args.out.write_text(json.dumps(info,indent=2),encoding="utf-8")
@@ -415,6 +421,8 @@ def main():
                    default=Path("runs/m4_frac.pt"))
     p.add_argument("--field",type=Path,default=None,
                    help="Trained seawater J/q spatial decoder for inference")
+    p.add_argument("--port",type=Path,default=None,
+                   help="Saved BFZI original copper and air assembly for physical Z")
     p.add_argument("--out",type=Path,default=None)
     p.add_argument("--rank",type=int,default=20)
     p.add_argument("--basis-mode",choices=("joint","material"),default="joint")
