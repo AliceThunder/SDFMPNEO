@@ -47,6 +47,14 @@ def test_geom_fractional_memory_and_unseen_geometry_rollout():
     assert np.all(out["temp_rise_K"]>=0)
     assert np.allclose(out["z6"][0],z0)
     assert np.allclose(out["current_A"][2],0)
+    ckp=dict(ck,port_sea=True)
+    physical=rollout(net,ckp,v,times,geom,z0,np.diag([.5,.5]))
+    assert physical["Zsea_ohm"].shape==(4,2,2)
+    assert physical["Zcu_ohm"].shape==(4,2)
+    assert physical["Pcu_W"].shape==(4,2)
+    assert np.max(physical["circuit_gap_W"])<1e-9
+    assert np.allclose(physical["z6"][0],z0)
+    assert np.allclose(physical["current_A"][2],0)
 
 
 def test_original_bfzi_geometry_source_partition():
