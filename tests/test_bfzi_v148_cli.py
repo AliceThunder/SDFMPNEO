@@ -8,6 +8,7 @@ import sys
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from examples import bfzi_v148_dynamic as cli
 
@@ -57,5 +58,29 @@ def test_m4_check_only_uses_original_bfzi_base(monkeypatch, tmp_path):
               "--check-only","--out",str(outfile)])
     result=json.loads(outfile.read_text())
     assert result["isothermal_baseline_pass"]
+    assert result["v148_original_solver_pass"]
+    assert result["v148_M4_archive_pass"]
     assert result["v148_isothermal_Zsea_relative_error"]<1e-12
     assert result["v148_M4_archived_Zsea_relative_error"]<1e-12
+
+    # An incomplete or stale archive must not silently pass the M4 gate.
+    archive=outdir/"bfzi_v148_all_samples_matrix.csv"
+    rows=archive.read_text(encoding="utf-8-sig")
+    assert "0.1278138145" in rows
+    archive.write_text(rows.replace("0.1278138145",
+                                    "0.2278138145",1),encoding="utf-8")
+    with pytest.raises(RuntimeError,match="archive"):
+        cli.main(["--bfzi-root",str(tmp_path),
+                  "--check-only","--out",str(outfile)])
+    bad=json.loads(outfile.read_text())
+    assert bad["v148_original_solver_pass"]
+    assert not bad["v148_M4_archive_pass"]
+    assert not bad["isothermal_baseline_pass"]
+
+    archive.unlink()
+    with pytest.raises(RuntimeError,match="archive"):
+        cli.main(["--bfzi-root",str(tmp_path),
+                  "--check-only","--out",str(outfile)])
+    missing=json.loads(outfile.read_text())
+    assert missing["v148_M4_archived_Zsea_relative_error"] is None
+    assert not missing["isothermal_baseline_pass"]
