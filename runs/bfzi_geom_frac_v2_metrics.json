@@ -1,0 +1,345 @@
+{
+  "model": "runs\\bfzi_geom_frac_v2.pt",
+  "train_samples": [
+    "M1",
+    "M2",
+    "M4"
+  ],
+  "heldout_geometry": "M3",
+  "train_cases": 30,
+  "val_cases": 8,
+  "trained_steps": 21,
+  "epochs": 1800,
+  "best_epoch": 1678,
+  "val_loss": 0.008401036262512207,
+  "train_seconds": 45.8247965000337,
+  "fractional_orders": [
+    0.41631487011909485,
+    0.5872751474380493,
+    0.770806074142456
+  ],
+  "M4": {
+    "aggregate": {
+      "cases": 10,
+      "dynamic_Z_relative_L2_mean": 0.10107906868492804,
+      "dynamic_Z_relative_L2_max": 0.1434690071898363,
+      "full_Z_relative_L2_mean": 1.684624316382119e-05,
+      "full_Z_relative_L2_max": 2.9992780109198577e-05,
+      "Tsea_mean_max_K_mean": 0.003219665019469642,
+      "Tsea_mean_max_K_max": 0.006363793321825462,
+      "Tsea_hot_max_K_mean": 0.0938920294551,
+      "Tsea_hot_max_K_max": 0.16149906023815674,
+      "Tpkg_mean_max_K_mean": 1.285471825401006,
+      "Tpkg_mean_max_K_max": 2.0604948253112525,
+      "Tpkg_hot_max_K_mean": 1.6070960715099887,
+      "Tpkg_hot_max_K_max": 2.6401692907374468,
+      "Tcu_max_K_mean": 2.260736025701911,
+      "Tcu_max_K_max": 3.870143106094474
+    },
+    "cases": [
+      {
+        "sample": "M4",
+        "case": 20,
+        "voltage_v": 40.0,
+        "dynamic_Z_relative_L2": 0.1434690071898363,
+        "full_Z_relative_L2": 4.748223146187944e-06,
+        "Tsea_mean_max_K": 0.0007098105153147682,
+        "Tsea_hot_max_K": 0.01861129038858511,
+        "Tpkg_mean_max_K": 0.2974556804395476,
+        "Tpkg_hot_max_K": 0.36625690447493753,
+        "Tcu_max_K": 0.5300324987510976
+      },
+      {
+        "sample": "M4",
+        "case": 21,
+        "voltage_v": 40.0,
+        "dynamic_Z_relative_L2": 0.12928183306005855,
+        "full_Z_relative_L2": 4.906109404042087e-06,
+        "Tsea_mean_max_K": 0.0009942491825503663,
+        "Tsea_hot_max_K": 0.03078273611223903,
+        "Tpkg_mean_max_K": 0.36917661367917276,
+        "Tpkg_hot_max_K": 0.4605208073058975,
+        "Tcu_max_K": 0.6285777690655721
+      },
+      {
+        "sample": "M4",
+        "case": 22,
+        "voltage_v": 75.0,
+        "dynamic_Z_relative_L2": 0.12367876956358875,
+        "full_Z_relative_L2": 1.451120059238331e-05,
+        "Tsea_mean_max_K": 0.001982963084156242,
+        "Tsea_hot_max_K": 0.05894902842002381,
+        "Tpkg_mean_max_K": 0.8524859401339882,
+        "Tpkg_hot_max_K": 1.057121658684423,
+        "Tcu_max_K": 1.6701186025041466
+      },
+      {
+        "sample": "M4",
+        "case": 23,
+        "voltage_v": 75.0,
+        "dynamic_Z_relative_L2": 0.10992811906002621,
+        "full_Z_relative_L2": 1.4799765732113835e-05,
+        "Tsea_mean_max_K": 0.0029570020101882255,
+        "Tsea_hot_max_K": 0.08710207932724856,
+        "Tpkg_mean_max_K": 1.1461285733397233,
+        "Tpkg_hot_max_K": 1.4347845114167512,
+        "Tcu_max_K": 1.9391222955676994
+      },
+      {
+        "sample": "M4",
+        "case": 24,
+        "voltage_v": 105.0,
+        "dynamic_Z_relative_L2": 0.09700607970767222,
+        "full_Z_relative_L2": 2.255933607526947e-05,
+        "Tsea_mean_max_K": 0.003374597925459577,
+        "Tsea_hot_max_K": 0.09804937927007984,
+        "Tpkg_mean_max_K": 1.3595109161051653,
+        "Tpkg_hot_max_K": 1.701581777033482,
+        "Tcu_max_K": 2.7555837781127934
+      },
+      {
+        "sample": "M4",
+        "case": 25,
+        "voltage_v": 105.0,
+        "dynamic_Z_relative_L2": 0.08601633564233102,
+        "full_Z_relative_L2": 2.2975524895715498e-05,
+        "Tsea_mean_max_K": 0.0043313249130561005,
+        "Tsea_hot_max_K": 0.11340414774461038,
+        "Tpkg_mean_max_K": 1.8313441125646932,
+        "Tpkg_hot_max_K": 2.3080193636017725,
+        "Tcu_max_K": 3.0832370845378136
+      },
+      {
+        "sample": "M4",
+        "case": 26,
+        "voltage_v": 135.0,
+        "dynamic_Z_relative_L2": 0.06529341287644377,
+        "full_Z_relative_L2": 2.5477335612662265e-05,
+        "Tsea_mean_max_K": 0.004552004830648437,
+        "Tsea_hot_max_K": 0.12203706047787932,
+        "Tpkg_mean_max_K": 1.994475471579733,
+        "Tpkg_hot_max_K": 2.5075116619022424,
+        "Tcu_max_K": 3.777018688632097
+      },
+      {
+        "sample": "M4",
+        "case": 27,
+        "voltage_v": 135.0,
+        "dynamic_Z_relative_L2": 0.06683637136908176,
+        "full_Z_relative_L2": 2.9992780109198577e-05,
+        "Tsea_mean_max_K": 0.003777156951355831,
+        "Tsea_hot_max_K": 0.15296989754244805,
+        "Tpkg_mean_max_K": 2.0604948253112525,
+        "Tpkg_hot_max_K": 2.6401692907374468,
+        "Tcu_max_K": 3.870143106094474
+      },
+      {
+        "sample": "M4",
+        "case": 28,
+        "voltage_v": 65.0,
+        "dynamic_Z_relative_L2": 0.11297068273826733,
+        "full_Z_relative_L2": 9.036779995459815e-06,
+        "Tsea_mean_max_K": 0.0031537474601414095,
+        "Tsea_hot_max_K": 0.09551561502972916,
+        "Tpkg_mean_max_K": 0.969568984532259,
+        "Tpkg_hot_max_K": 1.1837630672195587,
+        "Tcu_max_K": 1.3051938913257004
+      },
+      {
+        "sample": "M4",
+        "case": 29,
+        "voltage_v": 115.0,
+        "dynamic_Z_relative_L2": 0.07631007564197448,
+        "full_Z_relative_L2": 1.9455376075179068e-05,
+        "Tsea_mean_max_K": 0.006363793321825462,
+        "Tsea_hot_max_K": 0.16149906023815674,
+        "Tpkg_mean_max_K": 1.9740771363245244,
+        "Tpkg_hot_max_K": 2.4112316727233747,
+        "Tcu_max_K": 3.0483325424277155
+      }
+    ]
+  },
+  "M1": {
+    "aggregate": {
+      "cases": 5,
+      "dynamic_Z_relative_L2_mean": 0.09004846597754831,
+      "dynamic_Z_relative_L2_max": 0.11841123261678405,
+      "full_Z_relative_L2_mean": 1.2607276411726191e-05,
+      "full_Z_relative_L2_max": 2.16912406797661e-05,
+      "Tsea_mean_max_K_mean": 0.003692497018435181,
+      "Tsea_mean_max_K_max": 0.0063377970541789175,
+      "Tsea_hot_max_K_mean": 0.23324324494448093,
+      "Tsea_hot_max_K_max": 0.4171583767321465,
+      "Tpkg_mean_max_K_mean": 1.0714463652910027,
+      "Tpkg_mean_max_K_max": 1.9575346189604375,
+      "Tpkg_hot_max_K_mean": 1.2958484686861766,
+      "Tpkg_hot_max_K_max": 2.3888722919775205,
+      "Tcu_max_K_mean": 1.7274513736789288,
+      "Tcu_max_K_max": 3.4133913701916754
+    },
+    "cases": [
+      {
+        "sample": "M1",
+        "case": 20,
+        "voltage_v": 40.0,
+        "dynamic_Z_relative_L2": 0.11841123261678405,
+        "full_Z_relative_L2": 3.850810178404393e-06,
+        "Tsea_mean_max_K": 0.0008998873821656761,
+        "Tsea_hot_max_K": 0.0523241460042172,
+        "Tpkg_mean_max_K": 0.2799418674425951,
+        "Tpkg_hot_max_K": 0.33489420148714544,
+        "Tcu_max_K": 0.4233447125592136
+      },
+      {
+        "sample": "M1",
+        "case": 22,
+        "voltage_v": 75.0,
+        "dynamic_Z_relative_L2": 0.10222605900380094,
+        "full_Z_relative_L2": 1.1777703329463764e-05,
+        "Tsea_mean_max_K": 0.0026726893002348984,
+        "Tsea_hot_max_K": 0.16657351990271252,
+        "Tpkg_mean_max_K": 0.8023956892964179,
+        "Tpkg_hot_max_K": 0.9621742770163451,
+        "Tcu_max_K": 1.3436713577976889
+      },
+      {
+        "sample": "M1",
+        "case": 24,
+        "voltage_v": 105.0,
+        "dynamic_Z_relative_L2": 0.08076320967485665,
+        "full_Z_relative_L2": 1.8426215356986007e-05,
+        "Tsea_mean_max_K": 0.004478235390079854,
+        "Tsea_hot_max_K": 0.27805766186517644,
+        "Tpkg_mean_max_K": 1.3400762203509373,
+        "Tpkg_hot_max_K": 1.6343282315750685,
+        "Tcu_max_K": 2.38682104938448
+      },
+      {
+        "sample": "M1",
+        "case": 26,
+        "voltage_v": 135.0,
+        "dynamic_Z_relative_L2": 0.05673239836582748,
+        "full_Z_relative_L2": 2.16912406797661e-05,
+        "Tsea_mean_max_K": 0.0063377970541789175,
+        "Tsea_hot_max_K": 0.4171583767321465,
+        "Tpkg_mean_max_K": 1.9575346189604375,
+        "Tpkg_hot_max_K": 2.3888722919775205,
+        "Tcu_max_K": 3.4133913701916754
+      },
+      {
+        "sample": "M1",
+        "case": 28,
+        "voltage_v": 65.0,
+        "dynamic_Z_relative_L2": 0.09210943022647244,
+        "full_Z_relative_L2": 7.290412514010685e-06,
+        "Tsea_mean_max_K": 0.00407387596551656,
+        "Tsea_hot_max_K": 0.25210252021815194,
+        "Tpkg_mean_max_K": 0.9772834304046256,
+        "Tpkg_hot_max_K": 1.1589733413748036,
+        "Tcu_max_K": 1.0700283784615863
+      }
+    ]
+  },
+  "M2": {
+    "aggregate": {
+      "cases": 3,
+      "dynamic_Z_relative_L2_mean": 0.06304297426087702,
+      "dynamic_Z_relative_L2_max": 0.07511421626675478,
+      "full_Z_relative_L2_mean": 2.5479097117328998e-05,
+      "full_Z_relative_L2_max": 4.974058773976571e-05,
+      "Tsea_mean_max_K_mean": 0.013244689701622292,
+      "Tsea_mean_max_K_max": 0.02317543780214848,
+      "Tsea_hot_max_K_mean": 0.44463353789344734,
+      "Tsea_hot_max_K_max": 0.8603176083022959,
+      "Tpkg_mean_max_K_mean": 1.4713513132350566,
+      "Tpkg_mean_max_K_max": 2.287124320736325,
+      "Tpkg_hot_max_K_mean": 1.8312336700577891,
+      "Tpkg_hot_max_K_max": 2.9550306370966837,
+      "Tcu_max_K_mean": 4.782459275973338,
+      "Tcu_max_K_max": 9.64632458178454
+    },
+    "cases": [
+      {
+        "sample": "M2",
+        "case": 20,
+        "voltage_v": 40.0,
+        "dynamic_Z_relative_L2": 0.07511421626675478,
+        "full_Z_relative_L2": 7.534561845982699e-06,
+        "Tsea_mean_max_K": 0.004756302039945481,
+        "Tsea_hot_max_K": 0.14253153260165163,
+        "Tpkg_mean_max_K": 0.5977757742743535,
+        "Tpkg_hot_max_K": 0.7189420107217757,
+        "Tcu_max_K": 1.3058570248866204
+      },
+      {
+        "sample": "M2",
+        "case": 22,
+        "voltage_v": 75.0,
+        "dynamic_Z_relative_L2": 0.05329382017855792,
+        "full_Z_relative_L2": 1.916214176623858e-05,
+        "Tsea_mean_max_K": 0.011802329262772915,
+        "Tsea_hot_max_K": 0.33105147277639446,
+        "Tpkg_mean_max_K": 1.5291538446944912,
+        "Tpkg_hot_max_K": 1.8197283623549083,
+        "Tcu_max_K": 3.3951962212488525
+      },
+      {
+        "sample": "M2",
+        "case": 29,
+        "voltage_v": 115.0,
+        "dynamic_Z_relative_L2": 0.06072088633731833,
+        "full_Z_relative_L2": 4.974058773976571e-05,
+        "Tsea_mean_max_K": 0.02317543780214848,
+        "Tsea_hot_max_K": 0.8603176083022959,
+        "Tpkg_mean_max_K": 2.287124320736325,
+        "Tpkg_hot_max_K": 2.9550306370966837,
+        "Tcu_max_K": 9.64632458178454
+      }
+    ]
+  },
+  "M3": {
+    "aggregate": {
+      "cases": 2,
+      "dynamic_Z_relative_L2_mean": 0.09789784363717075,
+      "dynamic_Z_relative_L2_max": 0.10525710899532828,
+      "full_Z_relative_L2_mean": 1.3894719122228892e-05,
+      "full_Z_relative_L2_max": 2.4231371198510618e-05,
+      "Tsea_mean_max_K_mean": 0.017353326269700486,
+      "Tsea_mean_max_K_max": 0.030500859253656643,
+      "Tsea_hot_max_K_mean": 0.3822770558536739,
+      "Tsea_hot_max_K_max": 0.6911768790251074,
+      "Tpkg_mean_max_K_mean": 0.8493586371859143,
+      "Tpkg_mean_max_K_max": 1.4330973538362741,
+      "Tpkg_hot_max_K_mean": 0.9004704894248619,
+      "Tpkg_hot_max_K_max": 1.4859573962405648,
+      "Tcu_max_K_mean": 2.5580447362571874,
+      "Tcu_max_K_max": 4.3577199610305115
+    },
+    "cases": [
+      {
+        "sample": "M3",
+        "case": 20,
+        "voltage_v": 40.0,
+        "dynamic_Z_relative_L2": 0.10525710899532828,
+        "full_Z_relative_L2": 3.5580670459471667e-06,
+        "Tsea_mean_max_K": 0.00420579328574433,
+        "Tsea_hot_max_K": 0.07337723268224039,
+        "Tpkg_mean_max_K": 0.2656199205355545,
+        "Tpkg_hot_max_K": 0.31498358260915893,
+        "Tcu_max_K": 0.7583695114838633
+      },
+      {
+        "sample": "M3",
+        "case": 29,
+        "voltage_v": 115.0,
+        "dynamic_Z_relative_L2": 0.0905385782790132,
+        "full_Z_relative_L2": 2.4231371198510618e-05,
+        "Tsea_mean_max_K": 0.030500859253656643,
+        "Tsea_hot_max_K": 0.6911768790251074,
+        "Tpkg_mean_max_K": 1.4330973538362741,
+        "Tpkg_hot_max_K": 1.4859573962405648,
+        "Tcu_max_K": 4.3577199610305115
+      }
+    ]
+  }
+}
