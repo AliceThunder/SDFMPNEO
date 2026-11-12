@@ -20,6 +20,7 @@ from .sea_dataset import (
 )
 from .m1_direct import M1Direct, solve_m1
 from .m1_direct import M1Direct, solve_m1
+from .dynamic_et import BFZIDynamicET, ETStep
 from .electrothermal import (
     BFZICurrentControlledEnvelope, BFZIVoltageControlledEnvelope,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "save_response_labels", "load_response_labels",
     "M1Direct", "solve_m1",
     "M1Direct", "solve_m1",
+    "BFZIDynamicET", "ETStep",
     "BFZICurrentControlledEnvelope",
     "BFZIVoltageControlledEnvelope",
 ]
