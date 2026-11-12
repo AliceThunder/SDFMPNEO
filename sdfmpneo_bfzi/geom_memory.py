@@ -145,8 +145,15 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
     out=np.zeros((len(t),N_OUT))
     src=np.zeros((len(t),3))
     z=zmat(z0)
+    zhist=[z0.copy()]
     ys=np.asarray(ck["y_scale"],float)
     us=np.asarray(ck["src_scale"],float)
+    sea_mode=bool(ck.get("port_sea",False))
+    cu0=port.copper(np.full(2,293.15))
+    def pack(mat):
+        return np.array([mat[0,0].real,mat[0,0].imag,
+                         mat[0,1].real,mat[0,1].imag,
+                         mat[1,1].real,mat[1,1].imag])
     for k in range(1,len(t)):
         tc=np.array([293.15,293.15])+out[k-1,-2:]
         u=heat_drive(float(v[k]),z,ex,port,tc,
@@ -157,7 +164,13 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
                      float(t[k]-t[k-1]),g)
         out[k]=y[0].cpu().numpy()*ys
         z=zmat(z0+out[k,:6])
-    out[:,:6]+=z0
+        if sea_mode:
+            # Output 6 encodes sea delta; exact original BFZI skin
+            # impedance supplies the varying copper part of the full Z.
+            hot=port.copper(293.15+out[k,-2:])
+            z+=np.diag(hot-cu0)
+        zhist.append(pack(z))
+    out[:,:6]=np.asarray(zhist)
     curr=np.asarray([
         np.linalg.solve(zmat(zi)+ex,np.array([a,0.],complex))
         for zi,a in zip(out[:,:6],v)])
