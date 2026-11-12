@@ -105,6 +105,12 @@ def calibrate(raw,mean,hot,weight=None):
     # Nonzero floor preserves almost uniform package temperatures.
     # Exponent sets the FV-volume-weighted mean while the peak is exact.
     r=.03+.97*r
+    # Distinct FV cells can have equal peaks on a symmetric winding.
+    # Select one peak cell as the anchor so an arbitrary feasible mean
+    # can be imposed with a nonnegative shape.
+    peak=int(np.argmax(r))
+    r=np.minimum(r,.995)
+    r[peak]=1.
     lo,hi=1e-6,2048.
     for _ in range(38):
         mid=.5*(lo+hi)
