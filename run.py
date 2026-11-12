@@ -8,6 +8,7 @@
 
     python run.py --mode train     # 无界面训练（历史 vNext）
     python run.py --mode bfzi      # BFZI-MQS 海水、圆截面铜损与电热示例
+    python run.py --mode bfzi-et-v148 --bfzi-root /path/to/BFZI --sample M4 # original BFZI v148 dynamic thermal feedback
     python run.py --mode bfzi-et-dynamic --out runs/bfzi_et_dynamic.json # V2.1 空间海水、铜/封装热与动态复阻抗闭环
     python run.py --mode bfzi --green-ball # 完整均匀球Green电磁热示例
     python run.py --mode bfzi-snapshot --out bfzi_response.npz # 双端口低秩保存加载推理
@@ -365,6 +366,10 @@ def main(argv=None):
             if mode == "bfzi":
                 from examples.bfzi_mqs_demo import main as bfzi_main
                 bfzi_main(ball_reference="--green-ball" in args)
+                return 0
+            if mode == "bfzi-et-v148":
+                from examples.bfzi_v148_dynamic import main as v148_main
+                v148_main(args[index + 2:])
                 return 0
             if mode == "bfzi-et-dynamic":
                 from examples.bfzi_dynamic_et import main as et_main
