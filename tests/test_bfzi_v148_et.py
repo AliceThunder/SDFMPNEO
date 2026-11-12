@@ -205,3 +205,29 @@ def test_v148_rejects_failed_original_resolvent():
     adapter.calc=SimpleNamespace(core=core)
     with pytest.raises(RuntimeError,match="GMRES"):
         adapter.solve(np.full(4,293.15),np.full(2,293.15))
+
+
+def test_m4_archive_circuit_power_reference():
+    """Original BFZI M4 archive, 200 kHz: sea+air only, no copper.
+
+    Independent of the expensive original Green solve; checks the complex
+    mutual coupling, compensation convention, and four-way power split.
+    """
+    w=2*np.pi*200000.
+    sea_r=np.array([[.12781381449951726,.10805885891894453],
+                    [.10805885891894453,.12781381449951723]])
+    sea_l=np.array([[-.0030673350819896755,-.002969536493368606],
+                    [-.002969536493368606,-.003067335081989676]])*1e-6
+    air_l=np.array([[15.827666708487106,5.077003979629416],
+                    [5.077003979629416,15.827666708487106]])*1e-6
+    zsea=sea_r+1j*w*sea_l
+    zem=zsea+1j*w*air_l
+    ext=np.diag([.5-1j*w*air_l[0,0],
+                 .5-1j*w*air_l[1,1]])
+    v=np.array([3.,0.],complex)
+    i=np.linalg.solve(zem+ext,v)
+    pin,pload,psrc,eta=circuit_power(v,i,.5,.5)
+    psea=float(.5*np.real(np.vdot(i,zsea@i)))
+    assert np.isclose(pin,pload+psrc+psea,atol=1e-12)
+    assert np.isclose(eta,.789055655984629,rtol=1e-12)
+    assert np.isclose(psea,.013982265015249606,rtol=1e-12)
