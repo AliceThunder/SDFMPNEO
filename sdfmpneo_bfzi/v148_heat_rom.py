@@ -1,7 +1,7 @@
 """Energy-conserving BFZI sea/package/copper transient heat POD.
 
 The original 3-D FV conduction matrix and Joule source are retained. A
-capacity-weighted constant test/trial mode preserves global heat balance.
+capacity-weighted material indicator modes preserve each component's heat budget.
 """
 from pathlib import Path
 import numpy as np
@@ -26,20 +26,32 @@ class BFZIV148HeatROM(BFZIV148ET):
             frames.extend(np.hstack((sea,pkg,cu))-self.amb)
         if not frames:
             raise ValueError("missing thermal snapshots")
-        w = np.sqrt(self.cap)
-        u0 = w/np.linalg.norm(w)
-        A = w[:,None]*np.column_stack(frames)
-        A -= u0[:,None]*(u0@A)[None,:]
-        u,s,_ = np.linalg.svd(A, full_matrices=False)
+        # Five capacity-weighted indicator modes make the projected
+        # equations satisfy individual material power budgets: sea,
+        # package 1/2, copper 1/2. Orthogonal POD modes describe the
+        # remaining spatial gradient within seawater.
         self.hrank = min(int(rank),self.n)
-        # Include the spatially constant temperature mode for exact total
-        # stored-heat versus Joule/ambient-flux balance in the reduced space.
-        U = np.column_stack((u0,u[:,:self.hrank-1]))
-        self.phi = U/w[:,None]
+        if self.hrank < 5:
+            raise ValueError("heat ROM needs at least five material modes")
+        w = np.sqrt(self.cap)
+        mark = np.zeros((self.n,5))
+        mark[:self.count,0] = w[:self.count]
+        for k in range(4):
+            mark[self.count+k,k+1] = w[self.count+k]
+        mark /= np.linalg.norm(mark,axis=0)[None,:]
+        A = w[:,None]*np.column_stack(frames)
+        Ares = A-mark@(mark.T@A)
+        u,_,_ = np.linalg.svd(Ares,full_matrices=False)
+        self.phi = np.column_stack(
+            (mark,u[:,:self.hrank-5]))/w[:,None]
+        U = self.phi*w[:,None]
+        defect=A-U@(U.T@A)
+        total=float(np.sum(A*A))
+        self.hretained=1-float(np.sum(defect*defect))/max(total,1e-30)
         self.hk = self.phi.T@(self.H@self.phi)
         self._hfac = {}
-        self.hretained = float(np.sum(s[:self.hrank-1]**2)/max(np.sum(s**2),1e-30))
         self.hsensors = len(frames)
+        self.hgroups = 5
 
     def advance(self,state,drive,dt,*,iterations=8,tol=1e-5):
         if not np.isfinite(dt) or dt<=0:
