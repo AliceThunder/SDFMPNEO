@@ -300,6 +300,29 @@ def test_v148_local_mass_heat_matches_port():
     assert np.isclose(pcu[0],.5*.08*abs(I[0])**2)
 
 
+
+def test_bfzi_port_weak_heat_closes_two_port_power():
+    adapter=BFZIV148Adapter.__new__(BFZIV148Adapter)
+    adapter.heat_mode="port-weak"
+    adapter.vol=np.array([.02,.04])
+    adapter.omega=2*np.pi*200000
+    adapter.mu=4e-7*np.pi
+    adapter.mass=np.zeros((2,2,2))
+    weak=np.array([
+        [[2.,.2],[.2,1.]],
+        [[1.,-.1],[-.1,.5]],
+    ])
+    state=V148State(
+        np.zeros((2,2),complex),np.zeros((2,2),complex),
+        np.array([.08,.09],complex),
+        np.zeros((2,2,3),complex),np.ones(2)*5.,None,weak)
+    i=np.array([1+.2j,.5-.4j])
+    q,cu=adapter.heat(state,i)
+    R=np.einsum("p,pij->ij",adapter.vol,weak)
+    assert np.all(q>0)
+    assert np.isclose(q@adapter.vol,.5*np.vdot(i,R@i).real,atol=1e-14)
+    assert np.isclose(cu.sum(),.5*np.sum(state.copper_z.real*abs(i)**2))
+
 def test_v148_rejects_failed_original_resolvent():
     adapter=BFZIV148Adapter.__new__(BFZIV148Adapter)
     adapter.omega=2*np.pi*200000.
