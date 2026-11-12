@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter, WeightedFV
 
 
