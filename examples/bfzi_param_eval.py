@@ -30,7 +30,7 @@ def errors(est,base,geom):
 
 def evaluate(obj,model,ck,t,voltage,ref_t,ref_z):
     start=time.perf_counter()
-    p=obj.rollout(model,ck,np.full(len(t),voltage),t)
+    p=obj.rollout(model,ck,np.asarray(voltage,float),t)
     sec=time.perf_counter()-start
     err=errors(p["temp_K"],ref_t,obj)
     err.update(
@@ -67,6 +67,8 @@ def main():
         t=np.asarray(p["time_s"],float)
         tr=np.asarray(p["temp_K"],float)
         zr=np.asarray(p["z6"],float)
+        voltage=np.asarray(p["voltage_v"],float) if "voltage_v" in p \
+            else np.full(len(t),a.voltage)
     ck=torch.load(a.model,map_location="cpu",weights_only=True)
     model=GeomFrac(ng=int(ck["ng"]))
     model.load_state_dict(ck["state"])
@@ -74,7 +76,7 @@ def main():
     cold_err=ratio(head.z0-zr[0],zr[0])
     if cold_err>1e-10:
         raise ValueError("original BFZI cold Z and saved geometry anchor differ")
-    full,fp=evaluate(head,model,ck,t,a.voltage,tr,zr)
+    full,fp=evaluate(head,model,ck,t,voltage,tr,zr)
     start=time.perf_counter()
     if a.rom_file.exists():
         rom=GeomHeatROM.load(head,a.rom_file)
@@ -83,7 +85,7 @@ def main():
         a.rom_file.parent.mkdir(parents=True,exist_ok=True)
         rom.save(a.rom_file)
     setup=time.perf_counter()-start
-    reduced,rp=evaluate(rom,model,ck,t,a.voltage,tr,zr)
+    reduced,rp=evaluate(rom,model,ck,t,voltage,tr,zr)
     d=errors(rp["temp_K"],fp["temp_K"],head)
     result=dict(
         original_geometry_anchor=str(a.anchor),
@@ -91,6 +93,7 @@ def main():
         pretrained_fractional_model=str(a.model),
         original_cold_Z_relative_error=cold_err,
         original_direct_time_points=len(t),
+        drive_program_V=voltage.tolist(),
         rom_setup_seconds=setup,
         full_FV=full,conservative_ROM=reduced,
         ROM_vs_full_FV=dict(
