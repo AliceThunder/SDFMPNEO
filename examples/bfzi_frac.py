@@ -20,51 +20,91 @@ from sdfmpneo_bfzi.frac_memory import FracNet,build_sources,predict
 
 
 def dataset(path,rank=20):
-    with np.load(path) as d:
-        t=np.asarray(d["time_s"],float)
-        vin=np.asarray(d["voltage_v"],float)
-        temp=np.asarray(d["temp_K"],float)
-        z=np.asarray(d["z6"],float)
-        cur=np.asarray(d["currents_A"])
-        eta=np.asarray(d["eta"],float)
-        train=np.asarray(d["train"],bool)
-        nsea=int(d["nsea"]); npkg=int(d["npkg"])
-        amb=float(d["ambient_K"])
-        ext=np.asarray(d["external_z"],complex)
-        cases=json.loads(str(d["cases_json"]))
-    # Withhold one full switching program per training voltage for
-    # validation. The 10 physically generated test histories stay untouched.
-    ids=np.flatnonzero(train)
+    """Build one normalized POD space shared by all teacher time grids.
+
+    Case IDs have fixed histories; validation/test programs remain disjoint
+    across 15 s and 30 s datasets.
+    """
+    paths=list(path) if isinstance(path,(list,tuple)) else [path]
+    if not paths:
+        raise ValueError("at least one BFZI teacher dataset required")
+    grids=[]
+    ref=None
+    for file in paths:
+        with np.load(file) as d:
+            g=dict(
+                times=np.asarray(d["time_s"],float),
+                v=np.asarray(d["voltage_v"],float),
+                temp=np.asarray(d["temp_K"],float),
+                z=np.asarray(d["z6"],float),
+                cur=np.asarray(d["currents_A"]),
+                eta=np.asarray(d["eta"],float))
+            meta=dict(
+                train=np.asarray(d["train"],bool),
+                nsea=int(d["nsea"]),npkg=int(d["npkg"]),
+                amb=float(d["ambient_K"]),
+                ext=np.asarray(d["external_z"],complex),
+                cases=json.loads(str(d["cases_json"])))
+        if ref is None:
+            ref=meta
+        elif (not np.array_equal(meta["train"],ref["train"]) or
+              meta["cases"]!=ref["cases"] or
+              meta["nsea"]!=ref["nsea"] or
+              meta["npkg"]!=ref["npkg"] or
+              meta["amb"]!=ref["amb"] or
+              not np.allclose(meta["ext"],ref["ext"])):
+            raise ValueError("all time grids must share BFZI geometry and case splits")
+        if (g["v"].shape!=(len(ref["train"]),len(g["times"])) or
+            g["temp"].shape[:2]!=g["v"].shape or
+            g["z"].shape!=g["v"].shape+(6,)):
+            raise ValueError("invalid original BFZI trajectory array")
+        if (g["times"][0]!=0 or
+            np.any(np.diff(g["times"])<=0)):
+            raise ValueError("teacher time grid must start at zero")
+        grids.append(g)
+    ids=np.flatnonzero(ref["train"])
     val=ids[3::4]
     fit=np.setdiff1d(ids,val)
-    rise=temp-amb
+    amb=ref["amb"]
+    nsea=ref["nsea"];npkg=ref["npkg"]
+    nstate=grids[0]["temp"].shape[-1]
+    if nstate!=nsea+2*npkg+2:
+        raise ValueError("thermal POD needs the original sea, two packages and copper")
+    rise=np.concatenate(
+        [(g["temp"][fit]-amb).reshape(-1,nstate) for g in grids],axis=0)
     widths=(slice(None,nsea),
             slice(nsea,nsea+2*npkg),
             slice(nsea+2*npkg,None))
-    block=np.ones(temp.shape[-1])
+    block=np.ones(nstate)
     for sl in widths:
-        block[sl]=max(float(np.std(rise[fit,:,sl])),1e-3)
-    weighted=rise[fit].reshape(-1,rise.shape[-1])/block
+        block[sl]=max(float(np.std(rise[:,sl])),1e-3)
+    weighted=rise/block
     _,_,vh=np.linalg.svd(weighted,full_matrices=False)
     rank=min(int(rank),len(vh))
     basis=vh[:rank].T.copy()
-    coef=(rise/block)@basis
-    z0=z[0,0].copy()
-    yy=np.concatenate([coef,z-z0],axis=-1)
-    raw_std=np.std(yy[fit,1:],axis=(0,1))
+    z0=grids[0]["z"][0,0].copy()
+    for g in grids:
+        coef=((g["temp"]-amb)/block)@basis
+        g["raw_y"]=np.concatenate([coef,g["z"]-z0],axis=-1)
+        g["raw_src"]=build_sources(g["v"],g["z"],ref["ext"])
+    yfit=np.concatenate(
+        [g["raw_y"][fit,1:].reshape(-1,rank+6) for g in grids],axis=0)
+    raw_std=np.std(yfit,axis=0)
     c_floor=max(float(np.max(raw_std[:rank]))*.002,1e-5)
     z_floor=max(float(np.max(raw_std[rank:]))*.002,1e-8)
     scale=np.maximum(raw_std,np.r_[
         np.full(rank,c_floor),np.full(6,z_floor)])
-    y=yy/scale
-    src=build_sources(vin,z,ext)
-    src_scale=np.maximum(np.max(src[fit],axis=(0,1)),1e-4)
-    return dict(times=t,v=vin,temp=temp,z=z,cur=cur,eta=eta,
-                train=fit,val=val,test=np.flatnonzero(~train),
-                cases=cases,nsea=nsea,npkg=npkg,amb=amb,
-                ext=ext,src=src/src_scale,
+    src_scale=np.maximum(np.maximum.reduce([
+        np.max(g["raw_src"][fit],axis=(0,1)) for g in grids]),1e-4)
+    for g in grids:
+        g["y"]=g.pop("raw_y")/scale
+        g["src"]=g.pop("raw_src")/src_scale
+    return dict(**grids[0],
+                grids=grids,train=fit,val=val,
+                test=np.flatnonzero(~ref["train"]),cases=ref["cases"],
+                nsea=nsea,npkg=npkg,amb=amb,ext=ref["ext"],
                 src_scale=src_scale,basis=basis,t_scale=block,
-                z0=z0,scale=scale,y=y,rank=rank)
+                z0=z0,scale=scale,rank=rank)
 
 
 def checkpoint(model,d):
