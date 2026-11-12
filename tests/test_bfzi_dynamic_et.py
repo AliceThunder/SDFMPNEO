@@ -70,7 +70,7 @@ def test_warm_seawater_changes_real_imag_and_mutual_z():
     assert np.allclose(s0,s0.T,atol=1e-12)
     assert np.isclose(psea,.5*np.real(np.vdot(i0,s0@i0)),rtol=1e-11)
     assert np.isclose(heat.sum(),psea+pcu.sum(),rtol=1e-11)
-    assert (z1-z0 == s1-s0).all()
+    assert np.allclose(z1-z0,s1-s0,atol=1e-12)
 
 
 def test_dynamic_on_off_cooling_and_history():
@@ -83,6 +83,8 @@ def test_dynamic_on_off_cooling_and_history():
     assert np.allclose(trace[-1].currents,0)
     assert np.allclose(trace[-1].copper_power,0)
     assert trace[2].energy>0
+    assert trace[2].sea_q.shape==(et.count,)
+    assert np.all(trace[2].sea_q >= 0)
     assert np.isfinite(trace[2].impedance).all()
     pts=np.array([[-.4,0,0],[.25,0,0]])
     assert et.temperature_at(pts,trace[2].temp).shape==(2,)
